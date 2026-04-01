@@ -34,6 +34,7 @@ type Props = {
   activeCollectionId: string | null;
   onSelectCollection: (id: string | null) => void;
   onTriageComplete: () => void;
+  collectionsReloadToken?: number;
 };
 
 const visOptions: { value: PostVisibility | "all"; label: string }[] = [
@@ -63,7 +64,8 @@ export default function GallerySidebar({
   selectedPostIds,
   activeCollectionId,
   onSelectCollection,
-  onTriageComplete
+  onTriageComplete,
+  collectionsReloadToken = 0
 }: Props) {
   const [triageResult, setTriageResult] = useState<TriageResult | null>(null);
   const [triageApplying, setTriageApplying] = useState(false);
@@ -151,6 +153,7 @@ export default function GallerySidebar({
             <p className="text-xs text-red-400">{triageError}</p>
           ) : null}
           <button
+            id="sidebar-run-auto-cleaner"
             type="button"
             onClick={() => void runAnalyze()}
             disabled={triageLoading}
@@ -263,6 +266,7 @@ export default function GallerySidebar({
             onSelectCollection={onSelectCollection}
             selectedPostIds={selectedPostIds}
             onCollectionChange={onTriageComplete}
+            reloadToken={collectionsReloadToken}
           />
         </section>
 

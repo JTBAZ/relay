@@ -307,10 +307,16 @@ export function buildCampaignAndTiersFromCampaignsDoc(
       strAttr(ta, "edited_at").trim() ||
       strAttr(ta, "created_at").trim() ||
       upstream;
+    const rawAmt = ta.amount_cents;
+    const amountCents =
+      typeof rawAmt === "number" && Number.isFinite(rawAmt) && rawAmt >= 0
+        ? rawAmt
+        : undefined;
     tiers.push({
       tier_id: `patreon_tier_${link.id}`,
       title,
       campaign_id: campaign.campaign_id,
+      ...(amountCents !== undefined ? { amount_cents: amountCents } : {}),
       upstream_updated_at: tu
     });
   }
@@ -321,12 +327,14 @@ export function buildCampaignAndTiersFromCampaignsDoc(
       tier_id: RELAY_TIER_PUBLIC,
       title: "Public",
       campaign_id: campaign.campaign_id,
+      amount_cents: 0,
       upstream_updated_at: upstream
     },
     {
       tier_id: RELAY_TIER_ALL_PATRONS,
       title: "All patrons",
       campaign_id: campaign.campaign_id,
+      amount_cents: 1,
       upstream_updated_at: upstream
     }
   ];

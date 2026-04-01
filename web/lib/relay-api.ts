@@ -49,10 +49,17 @@ export type Collection = {
   title: string;
   description?: string;
   cover_media_id?: string;
+  access_ceiling_tier_id?: string;
+  theme_tag_ids: string[];
   post_ids: string[];
   sort_order: number;
   created_at: string;
   updated_at: string;
+};
+
+export type CollectionAddPostsResult = {
+  collection: Collection;
+  rejected_post_ids: { post_id: string; reason: string }[];
 };
 
 export type GalleryListData = {
@@ -60,7 +67,7 @@ export type GalleryListData = {
   next_cursor: string | null;
 };
 
-export type TierFacet = { tier_id: string; title: string };
+export type TierFacet = { tier_id: string; title: string; amount_cents?: number };
 export type FacetsData = { tag_ids: string[]; tier_ids: string[]; tiers: TierFacet[] };
 
 export type GalleryPostDetail = {
@@ -138,7 +145,7 @@ export function buildGalleryVisibilityBody(
   );
   return {
     creator_id: creatorId,
-    post_ids: [...new Set(postOnly.map((i) => i.post_id))],
+    post_ids: Array.from(new Set(postOnly.map((i) => i.post_id))),
     media_targets: mediaRows.map((i) => ({ post_id: i.post_id, media_id: i.media_id })),
     visibility
   };

@@ -10,6 +10,8 @@ type Props = {
   onSelectCollection: (id: string | null) => void;
   selectedPostIds: string[];
   onCollectionChange: () => void;
+  /** Increment to force reload from API (e.g. after creating a collection elsewhere). */
+  reloadToken?: number;
 };
 
 export default function CollectionsPanel({
@@ -17,7 +19,8 @@ export default function CollectionsPanel({
   activeCollectionId,
   onSelectCollection,
   selectedPostIds,
-  onCollectionChange
+  onCollectionChange,
+  reloadToken = 0
 }: Props) {
   const [collections, setCollections] = useState<Collection[]>([]);
   const [showEditor, setShowEditor] = useState(false);
@@ -33,7 +36,7 @@ export default function CollectionsPanel({
 
   useEffect(() => {
     void loadCollections();
-  }, [loadCollections]);
+  }, [loadCollections, reloadToken]);
 
   const createCollection = async (title: string, description: string) => {
     await fetch(`${RELAY_API_BASE}/api/v1/gallery/collections`, {
@@ -56,11 +59,12 @@ export default function CollectionsPanel({
 
   const addSelectedToCollection = async (collectionId: string) => {
     if (selectedPostIds.length === 0) return;
-    await fetch(`${RELAY_API_BASE}/api/v1/gallery/collections/${collectionId}/posts`, {
+    const res = await fetch(`${RELAY_API_BASE}/api/v1/gallery/collections/${collectionId}/posts`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ post_ids: selectedPostIds })
     });
+    if (!res.ok) return;
     await loadCollections();
     onCollectionChange();
   };

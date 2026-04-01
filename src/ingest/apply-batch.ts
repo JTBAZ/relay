@@ -77,11 +77,18 @@ export function applySyncBatchToSnapshot(
     const tiers = ensureNested(snapshot.tiers, creatorId);
     const existing = tiers[t.tier_id] as import("./canonical-store.js").TierRow | undefined;
     const nextSeq = existing ? existing.version_seq + 1 : 1;
+    const nextAmount =
+      typeof t.amount_cents === "number" && Number.isFinite(t.amount_cents)
+        ? t.amount_cents
+        : existing && typeof existing.amount_cents === "number"
+          ? existing.amount_cents
+          : undefined;
     tiers[t.tier_id] = {
       tier_id: t.tier_id,
       creator_id: creatorId,
       campaign_id: t.campaign_id,
       title: t.title,
+      ...(nextAmount !== undefined ? { amount_cents: nextAmount } : {}),
       upstream_updated_at: t.upstream_updated_at,
       version_seq: nextSeq
     };

@@ -10,6 +10,11 @@ import {
   type KeyboardEvent as ReactKeyboardEvent
 } from "react";
 import {
+  loadLibraryOnboarding,
+  saveLibraryOnboarding,
+  type LibraryOnboardingStep
+} from "@/lib/library-onboarding";
+import {
   RELAY_API_BASE,
   buildGalleryQuery,
   buildGalleryVisibilityBody,
@@ -23,6 +28,8 @@ import {
 } from "@/lib/relay-api";
 import GallerySidebar from "./components/GallerySidebar";
 import GalleryListRow from "./components/GalleryListRow";
+import GalleryGrid from "./components/GalleryGrid";
+import CollectionBuilderDrawer from "./components/CollectionBuilderDrawer";
 import InspectModal from "./components/InspectModal";
 import BulkActionBar from "./components/BulkActionBar";
 import type { MediaTypeValue } from "./components/MediaTypeMultiSelect";
@@ -61,7 +68,27 @@ export default function GalleryView() {
   const [preview, setPreview] = useState<GalleryItem | null>(null);
   const [previewDetail, setPreviewDetail] = useState<GalleryPostDetail | null>(null);
 
+  const [viewMode, setViewMode] = useState<"grid" | "list">(() =>
+    typeof window !== "undefined" && window.localStorage.getItem("relay.galleryViewMode") === "list"
+      ? "list"
+      : "grid"
+  );
+  const [onboardingStep, setOnboardingStep] = useState<
+    LibraryOnboardingStep | "pending"
+  >("pending");
+  const [collectionDrawerOpen, setCollectionDrawerOpen] = useState(false);
+  const [collectionsReloadToken, setCollectionsReloadToken] = useState(0);
+  const onboardingHydratedRef = useRef(false);
+  const autoImageFilterAppliedRef = useRef(false);
+
   const listRef = useRef<HTMLDivElement>(null);
+
+  const persistViewMode = useCallback((mode: "grid" | "list") => {
+    setViewMode(mode);
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem("relay.galleryViewMode", mode);
+    }
+  }, []);
 
   const tierTitleById = useMemo(() => {
     const m: Record<string, string> = {};
@@ -179,8 +206,21 @@ export default function GalleryView() {
     [items, activeCollectionId, mediaTypes]
   );
 
+  useEffect(() => {
+    if (onboardingHydratedRef.current) return;
+    if (displayItems.length === 0) return;
+    onboardingHydratedRef.current = true;
+    const stored = loadLibraryOnboarding(creatorId);
+    if (!stored) {
+      saveLibraryOnboarding({ creator_id: creatorId, step: "welcome" });
+      setOnboardingStep("welcome");
+    } else {
+      setOnboardingStep(stored.step);
+    }
+  }, [creatorId, displayItems.length]);
+
   const rowVirtualizer = useVirtualizer({
-    count: displayItems.length,
+    count: viewMode === "list" ? displayItems.length : 0,
     getScrollElement: () => listRef.current,
     estimateSize: (): number => 88,
     overscan: 6
@@ -271,6 +311,7 @@ export default function GalleryView() {
       }
       return;
     }
+    if (viewMode === "grid") return;
     if (displayItems.length === 0) return;
     if (e.key === "ArrowDown") {
       e.preventDefault();
@@ -286,11 +327,31 @@ export default function GalleryView() {
   };
 
   useEffect(() => {
+    if (viewMode !== "list") return;
     rowVirtualizer.scrollToIndex(focusIndex, { align: "auto" });
-  }, [focusIndex, rowVirtualizer]);
+  }, [focusIndex, rowVirtualizer, viewMode]);
 
   const handleTriageComplete = () => {
     void fetchPage(null, false);
+    void refreshFacets();
+    const stored = loadLibraryOnboarding(creatorId);
+    if (stored?.step === "welcome") {
+      saveLibraryOnboarding({ creator_id: creatorId, step: "after_clean" });
+      setOnboardingStep("after_clean");
+      if (!autoImageFilterAppliedRef.current) {
+        setMediaTypes(["image"]);
+        autoImageFilterAppliedRef.current = true;
+      }
+    }
+  };
+
+  const dismissOnboarding = () => {
+    saveLibraryOnboarding({ creator_id: creatorId, step: "completed" });
+    setOnboardingStep("completed");
+  };
+
+  const triggerHeroAutoClean = () => {
+    document.getElementById("sidebar-run-auto-cleaner")?.click();
   };
 
   const handleBulkActionDone = () => {
@@ -375,9 +436,85 @@ export default function GalleryView() {
           activeCollectionId={activeCollectionId}
           onSelectCollection={setActiveCollectionId}
           onTriageComplete={handleTriageComplete}
+          collectionsReloadToken={collectionsReloadToken}
         />
 
-        <main className="flex flex-col">
+        <main className="flex flex-col min-w-0">
+          {onboardingStep === "welcome" ? (
+            <section
+              className="mx-4 mt-4 mb-2 px-5 py-6 rounded-xl border border-[#4a3f36] bg-[#1a1510] motion-safe:transition-[margin,padding] duration-300"
+              aria-labelledby="onb-welcome-title"
+            >
+              <h2
+                id="onb-welcome-title"
+                className="font-[family-name:var(--font-display)] text-xl md:text-2xl text-[#f5ebe0] text-center"
+              >
+                Your Patreon library is here
+              </h2>
+              <p className="text-sm text-[#b8a995] text-center max-w-xl mx-auto mt-2">
+                Everything is in your workspace — including text posts and extras. Run Auto Cleaner once
+                to flag clutter (duplicates, covers, text-only rows) so your gallery stays focused on
+                real art.
+              </p>
+              <div className="flex flex-wrap justify-center gap-3 mt-5">
+                <button
+                  type="button"
+                  onClick={triggerHeroAutoClean}
+                  className="text-sm px-5 py-2.5 rounded-lg bg-[#c45c2d] text-white hover:bg-[#d66d3d] font-medium"
+                >
+                  Run Auto Cleaner
+                </button>
+                <button
+                  type="button"
+                  onClick={dismissOnboarding}
+                  className="text-sm px-4 py-2.5 rounded-lg border border-[#4a3f36] text-[#c9bfb3] hover:border-[#6b5a3e]"
+                >
+                  Skip tips
+                </button>
+              </div>
+            </section>
+          ) : null}
+
+          {onboardingStep === "after_clean" ? (
+            <section
+              className="mx-4 mt-2 mb-2 px-5 py-6 rounded-xl border border-[#5c4f44] bg-[#1f1915] motion-safe:transition-all duration-300"
+              aria-labelledby="onb-collections-title"
+            >
+              <h2
+                id="onb-collections-title"
+                className="font-[family-name:var(--font-display)] text-lg md:text-xl text-[#f5ebe0] text-center"
+              >
+                Your gallery is in — now organize it
+              </h2>
+              <p className="text-xs text-[#8a7f72] text-center max-w-lg mx-auto mt-2">
+                Collections group pieces for fans (favorites, series, themes). Click a slot to build one
+                from your workspace without removing anything from the grid.
+              </p>
+              <div className="grid grid-cols-3 gap-3 max-w-md mx-auto mt-5">
+                {[0, 1, 2].map((slot) => (
+                  <button
+                    key={slot}
+                    type="button"
+                    onClick={() => setCollectionDrawerOpen(true)}
+                    className="aspect-square rounded-xl border-2 border-dashed border-[#6b5a3e] bg-[#2a221c]/50 hover:bg-[#322a22] hover:border-[#e8a077] flex items-center justify-center text-4xl text-[#8a7f72] hover:text-[#e8d4b0] motion-safe:transition-colors"
+                    aria-label={`Start collection ${slot + 1}`}
+                  >
+                    +
+                  </button>
+                ))}
+              </div>
+              <p className="text-center mt-3">
+                <button
+                  type="button"
+                  onClick={dismissOnboarding}
+                  className="text-[11px] text-[#6b645c] hover:text-[#b8a995] underline"
+                >
+                  Dismiss tips
+                </button>
+              </p>
+            </section>
+          ) : null}
+
           {listError ? (
             <div
               className="mx-4 mt-2 px-3 py-2 rounded border border-[#8b3a1a] bg-[#2a1810] text-sm text-[#f0c4b8]"
@@ -396,20 +533,45 @@ export default function GalleryView() {
           ) : null}
           <div className="px-4 py-2 text-xs text-[#8a7f72] flex justify-between items-center border-b border-[#3d342b] flex-wrap gap-2">
             <span>
-              {displayItems.length} assets{activeCollectionId ? " (filtered by collection)" : ""} · ↑↓
-              focus · Enter preview · Esc close
+              {displayItems.length} assets{activeCollectionId ? " (filtered by collection)" : ""}
+              {viewMode === "list"
+                ? " · ↑↓ focus · Enter preview · Esc close"
+                : " · Grid · click image to inspect · Esc closes preview"}
             </span>
-            <label className="flex items-center gap-2 text-[#c9bfb3]">
-              <span className="text-[10px] uppercase tracking-wide">Sort</span>
-              <select
-                value={sortMode}
-                onChange={(e) => setSortMode(e.target.value as GallerySortMode)}
-                className="bg-[#2a221c] border border-[#4a3f36] rounded px-2 py-0.5 text-[#ede5da]"
-              >
-                <option value="published">Published</option>
-                <option value="visibility">Visibility</option>
-              </select>
-            </label>
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-[10px] uppercase tracking-wide text-[#c9bfb3]">View</span>
+              <div className="flex rounded border border-[#4a3f36] overflow-hidden">
+                <button
+                  type="button"
+                  onClick={() => persistViewMode("grid")}
+                  className={`text-[10px] px-2 py-1 ${
+                    viewMode === "grid" ? "bg-[#4a3728] text-[#f0e6d8]" : "text-[#8a7f72]"
+                  }`}
+                >
+                  Grid
+                </button>
+                <button
+                  type="button"
+                  onClick={() => persistViewMode("list")}
+                  className={`text-[10px] px-2 py-1 ${
+                    viewMode === "list" ? "bg-[#4a3728] text-[#f0e6d8]" : "text-[#8a7f72]"
+                  }`}
+                >
+                  List
+                </button>
+              </div>
+              <label className="flex items-center gap-2 text-[#c9bfb3]">
+                <span className="text-[10px] uppercase tracking-wide">Sort</span>
+                <select
+                  value={sortMode}
+                  onChange={(e) => setSortMode(e.target.value as GallerySortMode)}
+                  className="bg-[#2a221c] border border-[#4a3f36] rounded px-2 py-0.5 text-[#ede5da]"
+                >
+                  <option value="published">Published</option>
+                  <option value="visibility">Visibility</option>
+                </select>
+              </label>
+            </div>
             <div className="flex items-center gap-3">
               <div className="flex items-center gap-2">
                 <button
@@ -441,65 +603,82 @@ export default function GalleryView() {
               ) : null}
             </div>
           </div>
-          <div
-            ref={listRef}
-            className="flex-1 overflow-auto outline-none focus:ring-1 focus:ring-[#c45c2d]"
-            style={{ maxHeight: "calc(100vh - 140px)" }}
-            tabIndex={-1}
-          >
+          {viewMode === "grid" ? (
             <div
-              style={{
-                height: `${rowVirtualizer.getTotalSize()}px`,
-                position: "relative",
-                width: "100%"
-              }}
+              className="flex-1 overflow-auto outline-none"
+              style={{ maxHeight: "calc(100vh - 140px)" }}
             >
-              {rowVirtualizer.getVirtualItems().map((virtualRow) => {
-                const it = displayItems[virtualRow.index];
-                if (!it) return null;
-                const k = itemKey(it);
-                return (
-                  <div
-                    key={k}
-                    data-index={virtualRow.index}
-                    ref={rowVirtualizer.measureElement}
-                    style={{
-                      position: "absolute",
-                      top: 0,
-                      left: 0,
-                      width: "100%",
-                      transform: `translateY(${virtualRow.start}px)`
-                    }}
-                  >
-                    <GalleryListRow
-                      item={it}
-                      tierTitleById={tierTitleById}
-                      isFocused={virtualRow.index === focusIndex}
-                      isSelected={selected.has(k)}
-                      onSelect={() => toggleSelect(it)}
-                      onFocus={() => setFocusIndex(virtualRow.index)}
-                      onInspect={() => void openPreview(it)}
-                      onRestoreToWorkspace={
-                        it.visibility !== "visible"
-                          ? () => {
-                              void (async () => {
-                                try {
-                                  await setItemVisibility([it], "visible");
-                                  await refreshFacets();
-                                  refreshList();
-                                } catch (e) {
-                                  setListError(e instanceof Error ? e.message : String(e));
-                                }
-                              })();
-                            }
-                          : undefined
-                      }
-                    />
-                  </div>
-                );
-              })}
+              <GalleryGrid
+                items={displayItems}
+                tierTitleById={tierTitleById}
+                selectedKeys={selected}
+                focusIndex={focusIndex}
+                onToggleSelect={toggleSelect}
+                onFocusIndex={setFocusIndex}
+                onInspect={(it) => void openPreview(it)}
+              />
             </div>
-          </div>
+          ) : (
+            <div
+              ref={listRef}
+              className="flex-1 overflow-auto outline-none focus:ring-1 focus:ring-[#c45c2d]"
+              style={{ maxHeight: "calc(100vh - 140px)" }}
+              tabIndex={-1}
+            >
+              <div
+                style={{
+                  height: `${rowVirtualizer.getTotalSize()}px`,
+                  position: "relative",
+                  width: "100%"
+                }}
+              >
+                {rowVirtualizer.getVirtualItems().map((virtualRow) => {
+                  const it = displayItems[virtualRow.index];
+                  if (!it) return null;
+                  const k = itemKey(it);
+                  return (
+                    <div
+                      key={k}
+                      data-index={virtualRow.index}
+                      ref={rowVirtualizer.measureElement}
+                      style={{
+                        position: "absolute",
+                        top: 0,
+                        left: 0,
+                        width: "100%",
+                        transform: `translateY(${virtualRow.start}px)`
+                      }}
+                    >
+                      <GalleryListRow
+                        item={it}
+                        tierTitleById={tierTitleById}
+                        isFocused={virtualRow.index === focusIndex}
+                        isSelected={selected.has(k)}
+                        onSelect={() => toggleSelect(it)}
+                        onFocus={() => setFocusIndex(virtualRow.index)}
+                        onInspect={() => void openPreview(it)}
+                        onRestoreToWorkspace={
+                          it.visibility !== "visible"
+                            ? () => {
+                                void (async () => {
+                                  try {
+                                    await setItemVisibility([it], "visible");
+                                    await refreshFacets();
+                                    refreshList();
+                                  } catch (e) {
+                                    setListError(e instanceof Error ? e.message : String(e));
+                                  }
+                                })();
+                              }
+                            : undefined
+                        }
+                      />
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
           <BulkActionBar
             selectedCount={selected.size}
             creatorId={creatorId}
@@ -509,6 +688,18 @@ export default function GalleryView() {
           />
         </main>
       </div>
+
+      <CollectionBuilderDrawer
+        creatorId={creatorId}
+        open={collectionDrawerOpen}
+        onClose={() => setCollectionDrawerOpen(false)}
+        facets={facets}
+        onComplete={() => {
+          setCollectionsReloadToken((n) => n + 1);
+          void refreshFacets();
+          refreshList();
+        }}
+      />
 
       {preview ? (
         <InspectModal

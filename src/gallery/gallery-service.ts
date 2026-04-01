@@ -65,10 +65,17 @@ export class GalleryService {
     // creator. This ensures the Access Review panel shows campaign tiers even before
     // all posts have been re-ingested with tier data.
     const allTierIds = new Set([...Object.keys(tierMap), ...facetValues.tier_ids]);
-    const tiers = [...allTierIds].sort().map((tierId) => ({
-      tier_id: tierId,
-      title: tierMap[tierId]?.title ?? tierId
-    }));
+    const tiers = [...allTierIds].sort().map((tierId) => {
+      const row = tierMap[tierId];
+      const facet: import("./types.js").GalleryTierFacet = {
+        tier_id: tierId,
+        title: row?.title ?? tierId
+      };
+      if (typeof row?.amount_cents === "number" && Number.isFinite(row.amount_cents)) {
+        facet.amount_cents = row.amount_cents;
+      }
+      return facet;
+    });
     return { ...facetValues, tiers };
   }
 
@@ -84,10 +91,17 @@ export class GalleryService {
     const all = buildGalleryItems(creatorId, snapshot, index, ov, cols);
     const media = all.filter((item) => item.post_id === postId);
     const tierMap = snapshot.tiers[creatorId] ?? {};
-    const tiers = post.current.tier_ids.map((tierId) => ({
-      tier_id: tierId,
-      title: tierMap[tierId]?.title ?? tierId
-    }));
+    const tiers = post.current.tier_ids.map((tierId) => {
+      const row = tierMap[tierId];
+      const facet: import("./types.js").GalleryTierFacet = {
+        tier_id: tierId,
+        title: row?.title ?? tierId
+      };
+      if (typeof row?.amount_cents === "number" && Number.isFinite(row.amount_cents)) {
+        facet.amount_cents = row.amount_cents;
+      }
+      return facet;
+    });
     return {
       post_id: postId,
       title: post.current.title,

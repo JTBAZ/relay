@@ -14,6 +14,8 @@ export type TierRow = {
   creator_id: string;
   campaign_id?: string;
   title: string;
+  /** Pledge floor in cents when known (Patreon tiers). */
+  amount_cents?: number;
   upstream_updated_at: string;
   version_seq: number;
 };

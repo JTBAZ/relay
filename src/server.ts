@@ -23,6 +23,7 @@ import {
 import { GalleryService } from "./gallery/gallery-service.js";
 import { FileGalleryOverridesStore } from "./gallery/overrides-store.js";
 import { FileCollectionsStore } from "./gallery/collections-store.js";
+import { postFitsAccessCeiling } from "./gallery/tier-access.js";
 import { FilePageLayoutStore } from "./gallery/layout-store.js";
 import { FileSavedFiltersStore } from "./gallery/saved-filters-store.js";
 import { TriageService } from "./gallery/triage-service.js";
@@ -1002,10 +1003,25 @@ export function createApp(config: AppConfig): CreateAppResult {
         .status(400)
         .json(errorEnvelope("VALIDATION_ERROR", "Invalid request.", traceId, details));
     }
+    const extras: {
+      access_ceiling_tier_id?: string;
+      theme_tag_ids?: string[];
+    } = {};
+    if (typeof body.access_ceiling_tier_id === "string" && body.access_ceiling_tier_id.trim()) {
+      extras.access_ceiling_tier_id = body.access_ceiling_tier_id.trim();
+    }
+    if (Array.isArray(body.theme_tag_ids)) {
+      const tags = body.theme_tag_ids
+        .filter((x): x is string => typeof x === "string")
+        .map((s) => s.trim())
+        .filter(Boolean);
+      if (tags.length) extras.theme_tag_ids = tags;
+    }
     const created = await collectionsStore.create(
       body.creator_id as string,
       body.title as string,
-      typeof body.description === "string" ? body.description : undefined
+      typeof body.description === "string" ? body.description : undefined,
+      Object.keys(extras).length > 0 ? extras : undefined
     );
     return res.status(201).json(successEnvelope(created, traceId));
   });
@@ -1018,6 +1034,23 @@ export function createApp(config: AppConfig): CreateAppResult {
     if (typeof body.description === "string") patch.description = body.description;
     if (typeof body.cover_media_id === "string") patch.cover_media_id = body.cover_media_id;
     if (typeof body.sort_order === "number") patch.sort_order = body.sort_order;
+    if (body.access_ceiling_tier_id !== undefined) {
+      if (
+        body.access_ceiling_tier_id === null ||
+        (typeof body.access_ceiling_tier_id === "string" && !body.access_ceiling_tier_id.trim())
+      ) {
+        (patch as { access_ceiling_tier_id?: string | null }).access_ceiling_tier_id = null;
+      } else if (typeof body.access_ceiling_tier_id === "string") {
+        (patch as { access_ceiling_tier_id?: string }).access_ceiling_tier_id =
+          body.access_ceiling_tier_id.trim();
+      }
+    }
+    if (Array.isArray(body.theme_tag_ids)) {
+      (patch as { theme_tag_ids?: string[] }).theme_tag_ids = body.theme_tag_ids
+        .filter((x): x is string => typeof x === "string")
+        .map((s) => s.trim())
+        .filter(Boolean);
+    }
     const updated = await collectionsStore.update(req.params.collection_id, patch as Parameters<typeof collectionsStore.update>[1]);
     if (!updated) {
       return res.status(404).json(errorEnvelope("NOT_FOUND", "Collection not found.", traceId));
@@ -1045,11 +1078,32 @@ export function createApp(config: AppConfig): CreateAppResult {
         ])
       );
     }
-    const updated = await collectionsStore.addPosts(req.params.collection_id, postIds as string[]);
+    const col = await collectionsStore.getById(req.params.collection_id);
+    if (!col) {
+      return res.status(404).json(errorEnvelope("NOT_FOUND", "Collection not found.", traceId));
+    }
+    const snapshot = await canonicalStore.load();
+    const ceiling = col.access_ceiling_tier_id;
+    const incoming = postIds as string[];
+    let toAdd = incoming;
+    const rejected: { post_id: string; reason: string }[] = [];
+    if (ceiling && ceiling.length > 0) {
+      toAdd = [];
+      for (const pid of incoming) {
+        if (postFitsAccessCeiling(snapshot, col.creator_id, pid, ceiling)) {
+          toAdd.push(pid);
+        } else {
+          rejected.push({ post_id: pid, reason: "incompatible_with_access_ceiling" });
+        }
+      }
+    }
+    const updated = await collectionsStore.addPosts(req.params.collection_id, toAdd);
     if (!updated) {
       return res.status(404).json(errorEnvelope("NOT_FOUND", "Collection not found.", traceId));
     }
-    return res.status(200).json(successEnvelope(updated, traceId));
+    return res
+      .status(200)
+      .json(successEnvelope({ collection: updated, rejected_post_ids: rejected }, traceId));
   });
 
   app.delete("/api/v1/gallery/collections/:collection_id/posts", async (req: Request, res: Response) => {

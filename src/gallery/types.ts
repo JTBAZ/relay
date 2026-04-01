@@ -19,6 +19,7 @@ export type GalleryItem = {
 export type GalleryTierFacet = {
   tier_id: string;
   title: string;
+  amount_cents?: number;
 };
 
 export type GalleryPostDetail = {
@@ -104,6 +105,13 @@ export type Collection = {
   title: string;
   description?: string;
   cover_media_id?: string;
+  /**
+   * When set, posts added to this collection must not require a higher pledge
+   * floor than this tier (see tier-access helpers).
+   */
+  access_ceiling_tier_id?: string;
+  /** Collection-scoped theme labels (search/filter in Designer / future Library). */
+  theme_tag_ids: string[];
   post_ids: string[];
   sort_order: number;
   created_at: string;

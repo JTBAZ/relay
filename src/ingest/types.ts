@@ -8,6 +8,8 @@ export type IngestTier = {
   tier_id: string;
   title: string;
   campaign_id?: string;
+  /** Patreon pledge floor in cents; used for collection access ceilings. */
+  amount_cents?: number;
   upstream_updated_at: string;
 };
 

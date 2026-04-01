@@ -7,6 +7,13 @@ function emptyRoot(): CollectionsRoot {
   return { collections: [] };
 }
 
+function normalizeCollection(c: Collection): Collection {
+  return {
+    ...c,
+    theme_tag_ids: Array.isArray(c.theme_tag_ids) ? c.theme_tag_ids : []
+  };
+}
+
 export class FileCollectionsStore {
   private readonly filePath: string;
 
@@ -32,13 +39,24 @@ export class FileCollectionsStore {
     const root = await this.load();
     return root.collections
       .filter((c) => c.creator_id === creatorId)
-      .sort((a, b) => a.sort_order - b.sort_order);
+      .sort((a, b) => a.sort_order - b.sort_order)
+      .map((c) => normalizeCollection(c));
+  }
+
+  public async getById(collectionId: string): Promise<Collection | null> {
+    const root = await this.load();
+    const col = root.collections.find((c) => c.collection_id === collectionId);
+    return col ? normalizeCollection(col) : null;
   }
 
   public async create(
     creatorId: string,
     title: string,
-    description?: string
+    description?: string,
+    extras?: {
+      access_ceiling_tier_id?: string;
+      theme_tag_ids?: string[];
+    }
   ): Promise<Collection> {
     const root = await this.load();
     const existing = root.collections.filter((c) => c.creator_id === creatorId);
@@ -49,6 +67,10 @@ export class FileCollectionsStore {
       creator_id: creatorId,
       title,
       description,
+      ...(extras?.access_ceiling_tier_id
+        ? { access_ceiling_tier_id: extras.access_ceiling_tier_id }
+        : {}),
+      theme_tag_ids: extras?.theme_tag_ids?.length ? [...extras.theme_tag_ids] : [],
       post_ids: [],
       sort_order: maxOrder + 1,
       created_at: now,
@@ -56,12 +78,21 @@ export class FileCollectionsStore {
     };
     root.collections.push(collection);
     await this.save(root);
-    return collection;
+    return normalizeCollection(collection);
   }
 
   public async update(
     collectionId: string,
-    patch: Partial<Pick<Collection, "title" | "description" | "cover_media_id" | "sort_order">>
+    patch: Partial<
+      Pick<
+        Collection,
+        | "title"
+        | "description"
+        | "cover_media_id"
+        | "sort_order"
+        | "theme_tag_ids"
+      > & { access_ceiling_tier_id?: string | null }
+    >
   ): Promise<Collection | null> {
     const root = await this.load();
     const col = root.collections.find((c) => c.collection_id === collectionId);
@@ -70,9 +101,20 @@ export class FileCollectionsStore {
     if (patch.description !== undefined) col.description = patch.description;
     if (patch.cover_media_id !== undefined) col.cover_media_id = patch.cover_media_id;
     if (patch.sort_order !== undefined) col.sort_order = patch.sort_order;
+    if (patch.access_ceiling_tier_id !== undefined) {
+      const v = patch.access_ceiling_tier_id;
+      if (v === null || v === "") {
+        delete col.access_ceiling_tier_id;
+      } else {
+        col.access_ceiling_tier_id = v;
+      }
+    }
+    if (patch.theme_tag_ids !== undefined) {
+      col.theme_tag_ids = [...patch.theme_tag_ids];
+    }
     col.updated_at = new Date().toISOString();
     await this.save(root);
-    return col;
+    return normalizeCollection(col);
   }
 
   public async delete(collectionId: string): Promise<boolean> {
@@ -93,7 +135,7 @@ export class FileCollectionsStore {
     col.post_ids = [...existing];
     col.updated_at = new Date().toISOString();
     await this.save(root);
-    return col;
+    return normalizeCollection(col);
   }
 
   public async removePosts(collectionId: string, postIds: string[]): Promise<Collection | null> {
@@ -104,7 +146,7 @@ export class FileCollectionsStore {
     col.post_ids = col.post_ids.filter((id) => !removeSet.has(id));
     col.updated_at = new Date().toISOString();
     await this.save(root);
-    return col;
+    return normalizeCollection(col);
   }
 
   public async reorder(creatorId: string, orderedIds: string[]): Promise<void> {

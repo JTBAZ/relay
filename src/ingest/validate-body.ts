@@ -85,7 +85,7 @@ export function validateIngestBatchBody(body: unknown): {
           details: [{ field: `tiers[${i}].tier_id`, issue: "missing" }]
         };
       }
-      batch.tiers.push({
+      const tier: import("./types.js").IngestTier = {
         tier_id: tierId.trim(),
         title: typeof o.title === "string" ? o.title : "",
         campaign_id:
@@ -96,7 +96,11 @@ export function validateIngestBatchBody(body: unknown): {
           typeof o.upstream_updated_at === "string" && o.upstream_updated_at
             ? o.upstream_updated_at
             : new Date().toISOString()
-      });
+      };
+      if (typeof o.amount_cents === "number" && Number.isFinite(o.amount_cents)) {
+        tier.amount_cents = o.amount_cents;
+      }
+      batch.tiers.push(tier);
     }
   }
 
