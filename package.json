@@ -6,7 +6,9 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "start": "node dist/src/main.js",
-    "test": "vitest run"
+    "test": "vitest run",
+    "inspect:patreon-content": "node scripts/inspect-patreon-post-content.mjs",
+    "probe:patreon-description": "node scripts/probe-patreon-post-description.mjs"
   },
   "dependencies": {
     "dotenv": "^17.3.1",

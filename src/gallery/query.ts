@@ -6,6 +6,7 @@ import type {
   GalleryListParams,
   GalleryListResult,
   GalleryOverridesRoot,
+  GallerySortMode,
   PostVisibility
 } from "./types.js";
 
@@ -26,12 +27,59 @@ function effectiveTags(
   return [...next];
 }
 
-function resolveVisibility(
+/**
+ * Whether this row gets the "cover" chip. Attachment ids (`patreon_media_*`) are never
+ * cover even if canonical `role` was wrongly merged to "cover" for all assets.
+ */
+function isGalleryCoverAsset(mediaRole: string | undefined, mediaId: string): boolean {
+  if (/^patreon_media_/i.test(mediaId)) {
+    return false;
+  }
+  if (/^patreon_\d+_cover$/i.test(mediaId)) {
+    return true;
+  }
+  return mediaRole === "cover";
+}
+
+function tagIsCoverChip(tag: string): boolean {
+  return /^cover$/i.test(tag);
+}
+
+/** Tags per row: show the cover chip only on real cover assets (role or id pattern). */
+function galleryRowTags(
+  postLevelTags: string[],
+  mediaRole: string | undefined,
+  mediaId: string,
+  isPostOnlySynthetic: boolean
+): string[] {
+  if (isPostOnlySynthetic) {
+    return [...postLevelTags];
+  }
+  const tags = [...postLevelTags];
+  const rowIsCover = isGalleryCoverAsset(mediaRole, mediaId);
+  if (rowIsCover) {
+    if (!tags.some(tagIsCoverChip)) {
+      tags.push("cover");
+    }
+    return tags;
+  }
+  return tags.filter((t) => !tagIsCoverChip(t));
+}
+
+function resolveItemVisibility(
   creatorId: string,
   postId: string,
+  mediaId: string,
   overrides: GalleryOverridesRoot
 ): PostVisibility {
-  return overrides.creators[creatorId]?.posts[postId]?.visibility ?? "visible";
+  const post = overrides.creators[creatorId]?.posts[postId];
+  if (!mediaId.startsWith("post_only_")) {
+    const mediaVis = post?.media?.[mediaId]?.visibility;
+    if (mediaVis !== undefined) {
+      return mediaVis;
+    }
+  }
+  return post?.visibility ?? "visible";
 }
 
 export function buildGalleryItems(
@@ -59,14 +107,13 @@ export function buildGalleryItems(
     if (postRow.upstream_status === "deleted") {
       continue;
     }
-    const tags = effectiveTags(
+    const baseTags = effectiveTags(
       postRow.current.tag_ids,
       creatorId,
       postId,
       overrides
     );
 
-    const vis = resolveVisibility(creatorId, postId, overrides);
     const colIds = postCollectionMap.get(postId) ?? [];
 
     let addedMedia = false;
@@ -76,6 +123,7 @@ export function buildGalleryItems(
         continue;
       }
       const hasExport = Boolean(exportIndex.media[mediaId]);
+      const tags = galleryRowTags(baseTags, m.current.role, mediaId, false);
       items.push({
         media_id: mediaId,
         post_id: postId,
@@ -85,27 +133,29 @@ export function buildGalleryItems(
         tag_ids: tags,
         tier_ids: [...postRow.current.tier_ids],
         mime_type: m.current.mime_type,
+        media_role: m.current.role,
         has_export: hasExport,
         content_url_path: `/api/v1/export/media/${encodeURIComponent(creatorId)}/${encodeURIComponent(mediaId)}/content`,
-        visibility: vis,
+        visibility: resolveItemVisibility(creatorId, postId, mediaId, overrides),
         collection_ids: colIds
       });
       addedMedia = true;
     }
 
     if (!addedMedia) {
+      const syntheticId = `post_only_${postId}`;
       items.push({
-        media_id: `post_only_${postId}`,
+        media_id: syntheticId,
         post_id: postId,
         title: postRow.current.title,
         description: postRow.current.description,
         published_at: postRow.current.published_at,
-        tag_ids: tags,
+        tag_ids: galleryRowTags(baseTags, undefined, syntheticId, true),
         tier_ids: [...postRow.current.tier_ids],
         mime_type: undefined,
         has_export: false,
         content_url_path: "",
-        visibility: vis,
+        visibility: resolveItemVisibility(creatorId, postId, syntheticId, overrides),
         collection_ids: colIds
       });
     }
@@ -189,7 +239,13 @@ function sortKey(item: GalleryItem): [string, string, string] {
   return [item.published_at, item.post_id, item.media_id];
 }
 
-function cmp(a: GalleryItem, b: GalleryItem): number {
+function visibilityRank(v: PostVisibility): number {
+  if (v === "visible") return 0;
+  if (v === "hidden") return 1;
+  return 2;
+}
+
+function cmpPublishedDesc(a: GalleryItem, b: GalleryItem): number {
   const ka = sortKey(a);
   const kb = sortKey(b);
   if (ka[0] !== kb[0]) {
@@ -201,12 +257,25 @@ function cmp(a: GalleryItem, b: GalleryItem): number {
   return ka[2] < kb[2] ? -1 : ka[2] > kb[2] ? 1 : 0;
 }
 
+function cmpVisibilityThenPublished(a: GalleryItem, b: GalleryItem): number {
+  const ra = visibilityRank(a.visibility);
+  const rb = visibilityRank(b.visibility);
+  if (ra !== rb) {
+    return ra - rb;
+  }
+  return cmpPublishedDesc(a, b);
+}
+
+function cmpForMode(mode: GallerySortMode | undefined): (a: GalleryItem, b: GalleryItem) => number {
+  return mode === "visibility" ? cmpVisibilityThenPublished : cmpPublishedDesc;
+}
+
 export function listGalleryItems(
   all: GalleryItem[],
   params: GalleryListParams
 ): GalleryListResult {
   const filtered = all.filter((i) => matchesFilters(i, params));
-  filtered.sort(cmp);
+  filtered.sort(cmpForMode(params.sort));
 
   let start = 0;
   if (params.cursor) {

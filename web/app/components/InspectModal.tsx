@@ -1,14 +1,50 @@
 "use client";
 
-import { RELAY_API_BASE, type GalleryItem, type GalleryPostDetail } from "@/lib/relay-api";
+import {
+  RELAY_API_BASE,
+  type GalleryItem,
+  type GalleryPostDetail,
+  type PostVisibility
+} from "@/lib/relay-api";
 
 type Props = {
   preview: GalleryItem;
   previewDetail: GalleryPostDetail | null;
   onClose: () => void;
+  onVisibilityApplied: () => void;
+  onVisibilityError?: (message: string) => void;
+  setItemVisibility: (items: GalleryItem[], visibility: PostVisibility) => Promise<void>;
 };
 
-export default function InspectModal({ preview, previewDetail, onClose }: Props) {
+export default function InspectModal({
+  preview,
+  previewDetail,
+  onClose,
+  onVisibilityApplied,
+  onVisibilityError,
+  setItemVisibility
+}: Props) {
+  const accessTiers =
+    previewDetail && previewDetail.tiers.length > 0
+      ? previewDetail.tiers
+      : preview.tier_ids.map((tier_id) => ({
+          tier_id,
+          title: tier_id.startsWith("patreon_tier_")
+            ? tier_id.slice("patreon_tier_".length)
+            : tier_id.startsWith("relay_tier_")
+              ? tier_id.slice("relay_tier_".length)
+              : tier_id
+        }));
+
+  const applyVis = async (visibility: PostVisibility) => {
+    try {
+      await setItemVisibility([preview], visibility);
+      onVisibilityApplied();
+    } catch (e) {
+      onVisibilityError?.(e instanceof Error ? e.message : String(e));
+    }
+  };
+
   return (
     <div
       className="fixed inset-0 z-50 bg-black/85 flex items-center justify-center p-8"
@@ -70,12 +106,45 @@ export default function InspectModal({ preview, previewDetail, onClose }: Props)
               </span>
             ))}
           </div>
-          <div className="mt-3 flex flex-wrap gap-1">
-            {(previewDetail?.tiers ?? []).map((tier) => (
-              <span key={tier.tier_id} className="text-[10px] px-1.5 rounded border border-[#4a3f36]">
-                {tier.title}
-              </span>
-            ))}
+          <div className="mt-3">
+            <p className="text-xs uppercase tracking-wider text-[#8a7f72] mb-1">Patreon access</p>
+            {accessTiers.length > 0 ? (
+              <div className="flex flex-wrap gap-1">
+                {accessTiers.map((tier) => (
+                  <span
+                    key={tier.tier_id}
+                    className="text-[10px] px-1.5 rounded border border-[#6b5a3e] text-[#e8d4b0] bg-[#1a1510]"
+                  >
+                    {tier.title}
+                  </span>
+                ))}
+              </div>
+            ) : (
+              <p className="text-[11px] text-[#6b645c]">No tier data ingested for this post.</p>
+            )}
+          </div>
+          <div className="mt-4 flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => void applyVis("visible")}
+              className="text-xs px-3 py-1.5 rounded bg-green-900/50 border border-green-700/60 text-[#ede5da] hover:bg-green-900/70"
+            >
+              To workspace
+            </button>
+            <button
+              type="button"
+              onClick={() => void applyVis("flagged")}
+              className="text-xs px-3 py-1.5 rounded bg-amber-900/40 border border-amber-700/60 text-[#ede5da] hover:bg-amber-900/60"
+            >
+              Flag
+            </button>
+            <button
+              type="button"
+              onClick={() => void applyVis("hidden")}
+              className="text-xs px-3 py-1.5 rounded bg-gray-800/60 border border-[#4a3f36] text-[#ede5da] hover:bg-gray-800"
+            >
+              Hide
+            </button>
           </div>
           <div className="mt-4">
             <p className="text-xs uppercase tracking-wider text-[#8a7f72] mb-1">Description</p>
@@ -85,7 +154,7 @@ export default function InspectModal({ preview, previewDetail, onClose }: Props)
                 dangerouslySetInnerHTML={{ __html: previewDetail.description }}
               />
             ) : (
-              <p className="text-[#8a7f72] text-sm">Description unavailable for this post.</p>
+              <p className="text-[#8a7f72] text-sm italic">No text content for this post.</p>
             )}
           </div>
         </aside>

@@ -1,32 +1,42 @@
 "use client";
 
-import { RELAY_API_BASE, type PostVisibility } from "@/lib/relay-api";
+import {
+  RELAY_API_BASE,
+  buildGalleryVisibilityBody,
+  type GalleryItem,
+  type PostVisibility
+} from "@/lib/relay-api";
 
 type Props = {
   selectedCount: number;
   creatorId: string;
-  selectedPostIds: string[];
+  selectedItems: GalleryItem[];
   onDone: () => void;
+  onVisibilityError?: (message: string) => void;
 };
 
 export default function BulkActionBar({
   selectedCount,
   creatorId,
-  selectedPostIds,
-  onDone
+  selectedItems,
+  onDone,
+  onVisibilityError
 }: Props) {
   if (selectedCount === 0) return null;
 
   const setVisibility = async (visibility: PostVisibility) => {
-    await fetch(`${RELAY_API_BASE}/api/v1/gallery/visibility`, {
+    const body = buildGalleryVisibilityBody(creatorId, selectedItems, visibility);
+    const res = await fetch(`${RELAY_API_BASE}/api/v1/gallery/visibility`, {
       method: "POST",
+      cache: "no-store",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        creator_id: creatorId,
-        post_ids: selectedPostIds,
-        visibility
-      })
+      body: JSON.stringify(body)
     });
+    if (!res.ok) {
+      const j = (await res.json().catch(() => null)) as { error?: { message?: string } } | null;
+      onVisibilityError?.(j?.error?.message ?? res.statusText);
+      return;
+    }
     onDone();
   };
 
@@ -45,7 +55,7 @@ export default function BulkActionBar({
         onClick={() => void setVisibility("visible")}
         className="text-xs px-3 py-1 rounded bg-green-700/60 hover:bg-green-700 text-[#ede5da]"
       >
-        Show
+        To workspace
       </button>
       <button
         type="button"

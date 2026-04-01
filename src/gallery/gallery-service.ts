@@ -60,7 +60,12 @@ export class GalleryService {
     const all = buildGalleryItems(creatorId, snapshot, index, ov, cols);
     const facetValues = collectFacets(all);
     const tierMap = snapshot.tiers[creatorId] ?? {};
-    const tiers = facetValues.tier_ids.map((tierId) => ({
+
+    // Union of tier_ids seen on posts PLUS every tier stored in canonical for this
+    // creator. This ensures the Access Review panel shows campaign tiers even before
+    // all posts have been re-ingested with tier data.
+    const allTierIds = new Set([...Object.keys(tierMap), ...facetValues.tier_ids]);
+    const tiers = [...allTierIds].sort().map((tierId) => ({
       tier_id: tierId,
       title: tierMap[tierId]?.title ?? tierId
     }));

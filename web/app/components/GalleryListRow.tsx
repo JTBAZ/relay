@@ -10,20 +10,33 @@ const visibilityBadge: Record<PostVisibility, { dot: string; label: string }> = 
 
 type Props = {
   item: GalleryItem;
+  /** tier_id → display title (from gallery facets / canonical tiers) */
+  tierTitleById: Record<string, string>;
   isFocused: boolean;
   isSelected: boolean;
   onSelect: () => void;
   onFocus: () => void;
   onInspect: () => void;
+  onRestoreToWorkspace?: () => void;
 };
+
+function accessChipLabel(tierId: string, tierTitleById: Record<string, string>): string {
+  const t = tierTitleById[tierId]?.trim();
+  if (t) return t;
+  if (tierId.startsWith("patreon_tier_")) return tierId.slice("patreon_tier_".length);
+  if (tierId.startsWith("relay_tier_")) return tierId.slice("relay_tier_".length);
+  return tierId;
+}
 
 export default function GalleryListRow({
   item,
+  tierTitleById,
   isFocused,
   isSelected,
   onSelect,
   onFocus,
-  onInspect
+  onInspect,
+  onRestoreToWorkspace
 }: Props) {
   const badge = visibilityBadge[item.visibility] ?? visibilityBadge.visible;
 
@@ -81,6 +94,18 @@ export default function GalleryListRow({
         <div className="text-[10px] text-[#8a7f72]">
           {item.published_at.slice(0, 10)} · {item.media_id}
         </div>
+        {item.tier_ids.length > 0 ? (
+          <div className="flex flex-wrap gap-1 mt-1" title="Patreon access / tiers">
+            {item.tier_ids.map((tid) => (
+              <span
+                key={tid}
+                className="text-[10px] px-1.5 rounded border border-[#6b5a3e] text-[#e8d4b0] bg-[#1a1510]"
+              >
+                {accessChipLabel(tid, tierTitleById)}
+              </span>
+            ))}
+          </div>
+        ) : null}
         <div className="flex flex-wrap gap-1 mt-1">
           {item.tag_ids.map((t) => (
             <span key={t} className="text-[10px] px-1.5 bg-[#2a221c] rounded">
@@ -88,6 +113,18 @@ export default function GalleryListRow({
             </span>
           ))}
         </div>
+        {onRestoreToWorkspace ? (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onRestoreToWorkspace();
+            }}
+            className="mt-1 text-[10px] text-[#7fd4bc] hover:text-[#b8f5e3] underline"
+          >
+            To workspace
+          </button>
+        ) : null}
       </div>
     </div>
   );

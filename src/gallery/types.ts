@@ -9,6 +9,7 @@ export type GalleryItem = {
   tag_ids: string[];
   tier_ids: string[];
   mime_type?: string;
+  media_role?: string;
   has_export: boolean;
   content_url_path: string;
   visibility: PostVisibility;
@@ -30,6 +31,8 @@ export type GalleryPostDetail = {
   media: GalleryItem[];
 };
 
+export type GallerySortMode = "published" | "visibility";
+
 export type GalleryListParams = {
   creator_id: string;
   q?: string;
@@ -39,6 +42,8 @@ export type GalleryListParams = {
   published_after?: string;
   published_before?: string;
   visibility?: PostVisibility | "all";
+  /** Default published: date desc. visibility: flagged rows last, then date desc. */
+  sort?: GallerySortMode;
   cursor?: string;
   limit: number;
 };
@@ -48,10 +53,16 @@ export type GalleryListResult = {
   next_cursor: string | null;
 };
 
+export type MediaOverride = {
+  visibility?: PostVisibility;
+};
+
 export type PostOverride = {
   add_tag_ids: string[];
   remove_tag_ids: string[];
   visibility?: PostVisibility;
+  /** Per-asset visibility; wins over post-level for that media row in the gallery. */
+  media?: Record<string, MediaOverride>;
 };
 
 /** @deprecated Use PostOverride instead */

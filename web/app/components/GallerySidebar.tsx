@@ -37,10 +37,10 @@ type Props = {
 };
 
 const visOptions: { value: PostVisibility | "all"; label: string }[] = [
-  { value: "all", label: "All" },
-  { value: "visible", label: "Visible" },
+  { value: "visible", label: "Workspace" },
+  { value: "flagged", label: "Flagged" },
   { value: "hidden", label: "Hidden" },
-  { value: "flagged", label: "Flagged" }
+  { value: "all", label: "All" }
 ];
 
 export default function GallerySidebar({
@@ -101,39 +101,19 @@ export default function GallerySidebar({
   const confirmAutoFlag = async (categories: TriageCategory[]) => {
     if (!triageResult) return;
     setTriageApplying(true);
+    setTriageError(null);
     try {
-      // Collect post IDs for the selected categories only
-      const postIdsToFlag = new Set<string>();
-
-      if (categories.includes("text_only")) {
-        for (const id of triageResult.text_only_post_ids) postIdsToFlag.add(id);
-      }
-      if (categories.includes("duplicates")) {
-        for (const g of triageResult.duplicate_groups) {
-          for (const id of g.duplicate_post_ids) postIdsToFlag.add(id);
-        }
-      }
-
-      // For small media, we need to flag via the auto-flag endpoint or via visibility
-      if (categories.includes("text_only") && categories.includes("duplicates") && categories.includes("small_media")) {
-        await fetch(`${RELAY_API_BASE}/api/v1/gallery/triage/auto-flag`, {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ creator_id: creatorId })
-        });
-      } else if (postIdsToFlag.size > 0) {
-        await fetch(`${RELAY_API_BASE}/api/v1/gallery/visibility`, {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({
-            creator_id: creatorId,
-            post_ids: Array.from(postIdsToFlag),
-            visibility: "flagged"
-          })
-        });
+      const res = await fetch(`${RELAY_API_BASE}/api/v1/gallery/triage/auto-flag`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ creator_id: creatorId, categories })
+      });
+      if (!res.ok) {
+        const j = (await res.json().catch(() => null)) as { error?: { message?: string } } | null;
+        setTriageError(j?.error?.message ?? res.statusText);
+        return;
       }
 
-      // Build toast summary
       const parts: string[] = [];
       if (categories.includes("text_only") && triageResult.text_only_post_ids.length > 0) {
         parts.push(`${triageResult.text_only_post_ids.length} text-only posts flagged`);
@@ -144,6 +124,9 @@ export default function GallerySidebar({
       }
       if (categories.includes("small_media") && triageResult.small_media_ids.length > 0) {
         parts.push(`${triageResult.small_media_ids.length} small media flagged`);
+      }
+      if (categories.includes("cover_images") && triageResult.cover_media_ids.length > 0) {
+        parts.push(`${triageResult.cover_media_ids.length} cover images flagged`);
       }
 
       setTriageResult(null);
@@ -162,7 +145,7 @@ export default function GallerySidebar({
             1) Auto Cleaner
           </h3>
           <p className="text-[10px] text-[#8a7f72]">
-            Scan for text-only posts, duplicates, and blank thumbnails to clean up your library.
+            Scan for text-only posts, duplicates, blank thumbnails, and cover images to clean up your library.
           </p>
           {triageError ? (
             <p className="text-xs text-red-400">{triageError}</p>
@@ -230,7 +213,7 @@ export default function GallerySidebar({
             3) Access Review
           </h3>
           <p className="text-[10px] text-[#8a7f72]">
-            Check who across each tier can see each piece of content.
+            Workspace is the default working set (visible items). Flagged collects auto-clean and manual flags for review.
           </p>
           <div className="flex flex-wrap gap-1.5">
             {visOptions.map((opt) => (

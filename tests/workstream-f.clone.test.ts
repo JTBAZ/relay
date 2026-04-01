@@ -56,7 +56,7 @@ describe("Workstream F clone generation", () => {
             title: "Public Update",
             published_at: "2026-03-20T12:00:00Z",
             tag_ids: ["news"],
-            tier_ids: [],
+            tier_ids: ["relay_tier_public"],
             upstream_revision: "r2",
             media: [{ media_id: "m2", mime_type: "image/jpeg", upstream_revision: "mr2" }]
           },

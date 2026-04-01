@@ -68,8 +68,10 @@ function testConfig(tempDir: string, fetchImpl: typeof fetch) {
     patreon_client_secret: "s",
     relay_token_encryption_key: randomBytes(32).toString("base64"),
     credential_store_path: join(tempDir, "patreon.json"),
+    cookie_store_path: join(tempDir, "cookies.json"),
     ingest_canonical_path: join(tempDir, "canonical.json"),
     ingest_dlq_path: join(tempDir, "dlq.json"),
+    patreon_sync_watermark_path: join(tempDir, "watermarks.json"),
     export_storage_root: join(tempDir, "exports"),
     gallery_post_overrides_path: join(tempDir, "gallery_overrides.json"),
     gallery_saved_filters_path: join(tempDir, "saved_filters.json"),
@@ -130,7 +132,7 @@ describe("Patreon scrape → ingest", () => {
     expect(dry.status).toBe(200);
     expect(dry.body.data.posts_fetched).toBe(2);
     expect(dry.body.data.summary.posts).toBe(2);
-    expect(dry.body.data.summary.tiers).toBe(1);
+    expect(dry.body.data.summary.tiers).toBe(3);
     expect(dry.body.data.summary.media_items).toBeGreaterThanOrEqual(2);
     const sample = dry.body.data.sample_posts as Array<{ media_count: number }>;
     const sketch = sample.find((s) => s.media_count >= 2);
@@ -149,6 +151,14 @@ describe("Patreon scrape → ingest", () => {
       .query({ creator_id: "cr_mock", limit: 20 });
     expect(gallery.status).toBe(200);
     expect(gallery.body.data.items.length).toBeGreaterThanOrEqual(2);
+
+    const detail = await request(app)
+      .get("/api/v1/gallery/post-detail")
+      .query({ creator_id: "cr_mock", post_id: "patreon_post_111" });
+    expect(detail.status).toBe(200);
+    expect(detail.body.data.description).toBe(
+      '<p>Hi</p><img src="https://cdn.example.com/art.png?token=abc" alt="x" />'
+    );
   });
 
   it("returns 404 when no OAuth tokens for creator", async () => {

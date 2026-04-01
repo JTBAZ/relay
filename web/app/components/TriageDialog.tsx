@@ -3,7 +3,7 @@
 import { useState } from "react";
 import type { TriageResult } from "@/lib/relay-api";
 
-type TriageCategory = "text_only" | "duplicates" | "small_media";
+type TriageCategory = "text_only" | "duplicates" | "small_media" | "cover_images";
 
 type Props = {
   result: TriageResult;
@@ -16,7 +16,7 @@ export type { TriageCategory };
 
 export default function TriageDialog({ result, onConfirm, onCancel, applying }: Props) {
   const [selected, setSelected] = useState<Set<TriageCategory>>(
-    () => new Set<TriageCategory>(["text_only", "duplicates", "small_media"])
+    () => new Set<TriageCategory>(["text_only", "duplicates", "small_media", "cover_images"])
   );
 
   const toggle = (cat: TriageCategory) => {
@@ -48,6 +48,12 @@ export default function TriageDialog({ result, onConfirm, onCancel, applying }: 
       label: "Small/blank media",
       detail: "Exported media under 5KB (likely blank thumbnails)",
       count: result.small_media_ids.length
+    },
+    {
+      id: "cover_images",
+      label: "Cover images",
+      detail: "Post cover/thumbnail images (not primary content)",
+      count: (result.cover_media_ids ?? []).length
     }
   ];
 
@@ -112,7 +118,7 @@ export default function TriageDialog({ result, onConfirm, onCancel, applying }: 
 
         {!nothingFound ? (
           <p className="text-xs text-[#8a7f72]">
-            {selectedCount} items will be flagged for review. Flagged items remain visible but are marked for cleanup.
+            {selectedCount} items will be flagged. In the default Workspace view they stay out of the main list—open Flagged to review or restore them.
           </p>
         ) : null}
 

@@ -157,12 +157,16 @@ export function validateIngestBatchBody(body: unknown): {
           media_id: mo.media_id.trim(),
           mime_type: typeof mo.mime_type === "string" ? mo.mime_type : undefined,
           upstream_url: typeof mo.upstream_url === "string" ? mo.upstream_url : undefined,
-          upstream_revision: mo.upstream_revision.trim()
+          upstream_revision: mo.upstream_revision.trim(),
+          role: typeof mo.role === "string" ? mo.role : undefined
         });
       }
       batch.posts.push({
         post_id: String(o.post_id).trim(),
         title: String(o.title).trim(),
+        description: typeof o.description === "string" && o.description.trim()
+          ? o.description.trim()
+          : undefined,
         published_at: String(o.published_at).trim(),
         tag_ids: tagIds,
         tier_ids: tierIds,

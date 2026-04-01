@@ -16,6 +16,7 @@ export type IngestMediaItem = {
   mime_type?: string;
   upstream_url?: string;
   upstream_revision: string;
+  role?: string;
 };
 
 export type IngestPost = {

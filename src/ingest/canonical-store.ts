@@ -43,6 +43,7 @@ export type MediaVersionRow = {
   upstream_revision: string;
   mime_type?: string;
   upstream_url?: string;
+  role?: string;
   ingested_at: string;
 };
 

@@ -52,7 +52,9 @@ export class FileGalleryOverridesStore {
     }
     root.creators[creatorId].posts[postId] = {
       add_tag_ids: [...addSet],
-      remove_tag_ids: [...remSet]
+      remove_tag_ids: [...remSet],
+      ...(existing.visibility !== undefined ? { visibility: existing.visibility } : {}),
+      ...(existing.media && Object.keys(existing.media).length > 0 ? { media: existing.media } : {})
     };
     await this.save(root);
   }
@@ -72,6 +74,28 @@ export class FileGalleryOverridesStore {
         remove_tag_ids: []
       };
       existing.visibility = visibility;
+      root.creators[creatorId].posts[postId] = existing;
+    }
+    await this.save(root);
+  }
+
+  public async setMediaVisibility(
+    creatorId: string,
+    entries: { post_id: string; media_id: string; visibility: PostVisibility }[]
+  ): Promise<void> {
+    if (entries.length === 0) return;
+    const root = await this.load();
+    if (!root.creators[creatorId]) {
+      root.creators[creatorId] = { posts: {} };
+    }
+    for (const { post_id: postId, media_id: mediaId, visibility } of entries) {
+      const existing = root.creators[creatorId].posts[postId] ?? {
+        add_tag_ids: [],
+        remove_tag_ids: []
+      };
+      const media = { ...(existing.media ?? {}) };
+      media[mediaId] = { visibility };
+      existing.media = media;
       root.creators[creatorId].posts[postId] = existing;
     }
     await this.save(root);

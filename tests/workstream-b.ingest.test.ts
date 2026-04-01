@@ -142,4 +142,65 @@ describe("Workstream B ingest", () => {
     const snap3 = JSON.parse(await readFile(join(tempDir, "canonical.json"), "utf8")) as CanonicalSnapshot;
     expect(snap3.posts.creator_123.post_1.upstream_status).toBe("deleted");
   });
+
+  it("keeps cover on media role; gallery shows cover tag only on cover row", async () => {
+    const tempDir = await mkdtemp(join(tmpdir(), "relay-b-cover-"));
+    const { app } = createApp(baseConfig(tempDir));
+
+    const body = {
+      creator_id: "creator_456",
+      posts: [
+        {
+          post_id: "p_cover",
+          title: "Post with cover",
+          published_at: "2026-03-30T12:00:00Z",
+          tag_ids: ["art"],
+          tier_ids: [],
+          upstream_revision: "rev_cover",
+          media: [
+            {
+              media_id: "m_content",
+              mime_type: "image/png",
+              upstream_revision: "mr_content"
+            },
+            {
+              media_id: "m_cover",
+              mime_type: "image/jpeg",
+              upstream_revision: "mr_cover",
+              role: "cover"
+            }
+          ]
+        }
+      ]
+    };
+
+    const res = await request(app).post("/api/v1/ingest/batches?process_sync=true").send(body);
+    expect(res.status).toBe(200);
+
+    const snapRaw = await readFile(join(tempDir, "canonical.json"), "utf8");
+    const snap = JSON.parse(snapRaw) as CanonicalSnapshot;
+
+    const post = snap.posts.creator_456.p_cover;
+    expect(post.current.tag_ids).not.toContain("cover");
+    expect(post.current.tag_ids).toContain("art");
+
+    const coverMedia = snap.media.creator_456.m_cover;
+    expect(coverMedia.current.role).toBe("cover");
+
+    const galleryRes = await request(app)
+      .get("/api/v1/gallery/items")
+      .query({ creator_id: "creator_456", limit: 50 });
+    expect(galleryRes.status).toBe(200);
+    const coverItem = galleryRes.body.data.items.find(
+      (i: { media_id: string }) => i.media_id === "m_cover"
+    );
+    expect(coverItem).toBeDefined();
+    expect(coverItem.media_role).toBe("cover");
+    expect(coverItem.tag_ids).toContain("cover");
+    const contentItem = galleryRes.body.data.items.find(
+      (i: { media_id: string }) => i.media_id === "m_content"
+    );
+    expect(contentItem).toBeDefined();
+    expect(contentItem.tag_ids).not.toContain("cover");
+  });
 });

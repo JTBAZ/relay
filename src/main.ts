@@ -21,6 +21,7 @@ function configFromEnv(): Parameters<typeof createApp>[0] {
     credential_store_path: process.env.RELAY_CREDENTIAL_STORE_PATH,
     ingest_canonical_path: process.env.RELAY_INGEST_CANONICAL_PATH,
     ingest_dlq_path: process.env.RELAY_INGEST_DLQ_PATH,
+    patreon_sync_watermark_path: process.env.RELAY_PATREON_SYNC_WATERMARK_PATH,
     export_storage_root: process.env.RELAY_EXPORT_STORAGE_ROOT,
     gallery_post_overrides_path: process.env.RELAY_GALLERY_POST_OVERRIDES_PATH,
     gallery_saved_filters_path: process.env.RELAY_GALLERY_SAVED_FILTERS_PATH,

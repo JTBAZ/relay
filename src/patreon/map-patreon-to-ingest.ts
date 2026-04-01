@@ -1,6 +1,11 @@
 import type { IngestCampaign, IngestPost, IngestTier, SyncBatchInput } from "../ingest/types.js";
 import type { JsonApiDocument, JsonApiResource } from "./jsonapi-types.js";
 import { asDataArray, indexIncluded } from "./patreon-resource-api.js";
+import {
+  RELAY_TIER_ALL_PATRONS,
+  RELAY_TIER_PUBLIC
+} from "./relay-access-tiers.js";
+import { flattenProseMirrorDoc, normalizePatreonPostContent } from "./post-content.js";
 
 const IMG_IN_CONTENT_RE =
   /https?:\/\/[^\s"'<>]+?\.(?:jpg|jpeg|png|gif|webp)(?:\?[^\s"'<>]*)?/gi;
@@ -24,15 +29,121 @@ function guessMimeFromUrl(url: string): string | undefined {
   return undefined;
 }
 
-/** Map Patreon tier IDs from post.attributes.tiers (array of ids). */
-function tierIdsFromPostAttributes(
-  attrs: Record<string, unknown> | undefined
+function normalizeTierRefArray(raw: unknown): string[] {
+  if (!Array.isArray(raw) || raw.length === 0) return [];
+  const out: string[] = [];
+  for (const x of raw) {
+    if (typeof x === "string" || typeof x === "number") {
+      const id = String(x).trim();
+      if (id) out.push(`patreon_tier_${id}`);
+      continue;
+    }
+    if (x && typeof x === "object") {
+      const o = x as Record<string, unknown>;
+      const id = o.id ?? o.tier_id;
+      if (typeof id === "string" || typeof id === "number") {
+        const s = String(id).trim();
+        if (s) out.push(`patreon_tier_${s}`);
+      }
+    }
+  }
+  return out;
+}
+
+function tierLinksToIds(
+  data:
+    | { type: string; id: string }
+    | Array<{ type: string; id: string }>
+    | null
+    | undefined
 ): string[] {
-  const raw = attrs?.tiers;
-  if (!Array.isArray(raw)) return [];
-  return raw
-    .map((x) => `patreon_tier_${String(x)}`)
-    .filter((s) => s.length > "patreon_tier_".length);
+  if (!data) return [];
+  const links = Array.isArray(data) ? data : [data];
+  const out: string[] = [];
+  for (const link of links) {
+    if (link?.type === "tier" && link.id) {
+      out.push(`patreon_tier_${String(link.id)}`);
+    }
+  }
+  return out;
+}
+
+/**
+ * Tier ids from a Patreon post resource: `attributes.tiers` (strings, numbers, or
+ * JSON:API-style objects) and fallback to `relationships.tiers.data`.
+ */
+export function tierIdsFromPatreonPost(resource: JsonApiResource): string[] {
+  const a = resource.attributes ?? {};
+  const fromAttrs = normalizeTierRefArray(a.tiers);
+  if (fromAttrs.length > 0) return fromAttrs;
+  return tierLinksToIds(resource.relationships?.tiers?.data);
+}
+
+/** Patreon sometimes sends booleans as strings in JSON:API attributes. */
+export function patreonBoolAttr(
+  attrs: Record<string, unknown>,
+  key: string
+): boolean | undefined {
+  const v = attrs[key];
+  if (v === true) return true;
+  if (v === false) return false;
+  if (typeof v === "string") {
+    const s = v.trim().toLowerCase();
+    if (s === "true") return true;
+    if (s === "false") return false;
+  }
+  return undefined;
+}
+
+/**
+ * Use `is_public` when Patreon sends it so we distinguish public posts from
+ * patron-only posts that have an empty `tiers` array (common on older posts).
+ * When `is_public` is omitted, falls back to `is_paid` to avoid treating
+ * ambiguous posts as public.
+ */
+export function applyPatreonAccessToTierIds(
+  patreonTierIds: string[],
+  attrs: Record<string, unknown>
+): string[] {
+  const pub = patreonBoolAttr(attrs, "is_public");
+  if (pub === true) {
+    return [RELAY_TIER_PUBLIC];
+  }
+  if (pub === false) {
+    if (patreonTierIds.length > 0) return patreonTierIds;
+    return [RELAY_TIER_ALL_PATRONS];
+  }
+  if (patreonTierIds.length > 0) return patreonTierIds;
+  const paid = patreonBoolAttr(attrs, "is_paid");
+  if (paid === true) return [RELAY_TIER_ALL_PATRONS];
+  if (paid === false) return [RELAY_TIER_PUBLIC];
+  return patreonTierIds;
+}
+
+/**
+ * Diagnostic dump of the raw API fields that drive description and tier extraction.
+ * Pushed into scrape warnings so dry-run output reveals the exact shape Patreon sent.
+ */
+export function diagnosePostResource(resource: JsonApiResource): string {
+  const a = resource.attributes ?? {};
+  const contentType = a.content === null ? "null" : typeof a.content;
+  const contentKeys =
+    a.content && typeof a.content === "object"
+      ? Object.keys(a.content as Record<string, unknown>).join(",")
+      : undefined;
+  const hasJsonString = typeof a.content_json_string === "string" && a.content_json_string.length > 0;
+  const tiersAttr = JSON.stringify(a.tiers ?? null).slice(0, 150);
+  const tiersRel = JSON.stringify(resource.relationships?.tiers?.data ?? null).slice(0, 150);
+  return (
+    `[diag] Post ${resource.id}: ` +
+    `content_type=${contentType}` +
+    (contentKeys ? ` content_keys=[${contentKeys}]` : "") +
+    ` content_json_string=${hasJsonString ? "present" : "absent"}` +
+    ` is_public=${String(a.is_public ?? "(absent)")}` +
+    ` is_paid=${String(a.is_paid ?? "(absent)")}` +
+    ` attr.tiers=${tiersAttr}` +
+    ` rel.tiers=${tiersRel}`
+  );
 }
 
 /**
@@ -98,12 +209,17 @@ export function mapPatreonPostToIngest(resource: JsonApiResource): IngestPost {
   if (!publishedAt) {
     publishedAt = new Date().toISOString();
   }
-  const revBase = `${id}:${publishedAt}`;
+  const editedAt = strAttr(a, "edited_at").trim();
+  const revTime = editedAt || publishedAt;
+  const revBase = `${id}:${publishedAt}:${revTime}`;
   const upstream_revision = `patreon:${revBase}`;
 
-  const tier_ids = tierIdsFromPostAttributes(a);
+  const baseTiers = tierIdsFromPatreonPost(resource);
+  const tier_ids = applyPatreonAccessToTierIds(baseTiers, a);
 
-  const content = strAttr(a, "content");
+  const content =
+    normalizePatreonPostContent(a.content) ||
+    flattenProseMirrorDoc(a.content_json_string);
   const embedUrl = strAttr(a, "embed_url").trim();
   const embedData = a.embed_data;
 
@@ -197,6 +313,27 @@ export function buildCampaignAndTiersFromCampaignsDoc(
       campaign_id: campaign.campaign_id,
       upstream_updated_at: tu
     });
+  }
+
+  const have = new Set(tiers.map((t) => t.tier_id));
+  const synthetic: IngestTier[] = [
+    {
+      tier_id: RELAY_TIER_PUBLIC,
+      title: "Public",
+      campaign_id: campaign.campaign_id,
+      upstream_updated_at: upstream
+    },
+    {
+      tier_id: RELAY_TIER_ALL_PATRONS,
+      title: "All patrons",
+      campaign_id: campaign.campaign_id,
+      upstream_updated_at: upstream
+    }
+  ];
+  for (const st of synthetic) {
+    if (!have.has(st.tier_id)) {
+      tiers.push(st);
+    }
   }
 
   return { campaign, tiers };

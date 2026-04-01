@@ -12,11 +12,13 @@ import {
 import {
   RELAY_API_BASE,
   buildGalleryQuery,
+  buildGalleryVisibilityBody,
   relayFetch,
   type FacetsData,
   type GalleryItem,
   type GalleryListData,
   type GalleryPostDetail,
+  type GallerySortMode,
   type PostVisibility
 } from "@/lib/relay-api";
 import GallerySidebar from "./components/GallerySidebar";
@@ -40,7 +42,8 @@ export default function GalleryView() {
   const [mediaTypes, setMediaTypes] = useState<MediaTypeValue[]>([]);
   const [publishedAfter, setPublishedAfter] = useState("");
   const [publishedBefore, setPublishedBefore] = useState("");
-  const [visibilityFilter, setVisibilityFilter] = useState<PostVisibility | "all">("all");
+  const [visibilityFilter, setVisibilityFilter] = useState<PostVisibility | "all">("visible");
+  const [sortMode, setSortMode] = useState<GallerySortMode>("published");
   const [activeCollectionId, setActiveCollectionId] = useState<string | null>(null);
 
   const [items, setItems] = useState<GalleryItem[]>([]);
@@ -60,6 +63,14 @@ export default function GalleryView() {
 
   const listRef = useRef<HTMLDivElement>(null);
 
+  const tierTitleById = useMemo(() => {
+    const m: Record<string, string> = {};
+    for (const t of facets.tiers) {
+      m[t.tier_id] = t.title;
+    }
+    return m;
+  }, [facets.tiers]);
+
   const mediaTypeQuery = useMemo(() => {
     // Current backend query accepts a single media_type prefix. Keep using one prefix for server-side
     // filtering and apply any additional selected types client-side until dynamic MIME facets land.
@@ -75,9 +86,20 @@ export default function GalleryView() {
       media_type: mediaTypeQuery,
       published_after: publishedAfter || undefined,
       published_before: publishedBefore || undefined,
-      visibility: visibilityFilter !== "all" ? visibilityFilter : undefined
+      visibility: visibilityFilter !== "all" ? visibilityFilter : undefined,
+      sort: sortMode
     }),
-    [creatorId, q, tagPick, tierPick, mediaTypeQuery, publishedAfter, publishedBefore, visibilityFilter]
+    [
+      creatorId,
+      q,
+      tagPick,
+      tierPick,
+      mediaTypeQuery,
+      publishedAfter,
+      publishedBefore,
+      visibilityFilter,
+      sortMode
+    ]
   );
 
   const refreshFacets = useCallback(async () => {
@@ -192,6 +214,32 @@ export default function GalleryView() {
         )
       ),
     [selected]
+  );
+
+  const selectedItems = useMemo(
+    () => displayItems.filter((it) => selected.has(itemKey(it))),
+    [displayItems, selected]
+  );
+
+  const refreshList = useCallback(() => {
+    void fetchPage(null, false);
+  }, [fetchPage]);
+
+  const setItemVisibility = useCallback(
+    async (items: GalleryItem[], visibility: PostVisibility) => {
+      const body = buildGalleryVisibilityBody(creatorId, items, visibility);
+      const res = await fetch(`${RELAY_API_BASE}/api/v1/gallery/visibility`, {
+        method: "POST",
+        cache: "no-store",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body)
+      });
+      if (!res.ok) {
+        const j = (await res.json().catch(() => null)) as { error?: { message?: string } } | null;
+        throw new Error(j?.error?.message ?? res.statusText);
+      }
+    },
+    [creatorId]
   );
 
   const applyBulkTags = async () => {
@@ -346,10 +394,22 @@ export default function GalleryView() {
               </p>
             </div>
           ) : null}
-          <div className="px-4 py-2 text-xs text-[#8a7f72] flex justify-between items-center border-b border-[#3d342b]">
+          <div className="px-4 py-2 text-xs text-[#8a7f72] flex justify-between items-center border-b border-[#3d342b] flex-wrap gap-2">
             <span>
-              {displayItems.length} assets{activeCollectionId ? " (filtered by collection)" : ""} · ↑↓ focus · Enter preview · Esc close
+              {displayItems.length} assets{activeCollectionId ? " (filtered by collection)" : ""} · ↑↓
+              focus · Enter preview · Esc close
             </span>
+            <label className="flex items-center gap-2 text-[#c9bfb3]">
+              <span className="text-[10px] uppercase tracking-wide">Sort</span>
+              <select
+                value={sortMode}
+                onChange={(e) => setSortMode(e.target.value as GallerySortMode)}
+                className="bg-[#2a221c] border border-[#4a3f36] rounded px-2 py-0.5 text-[#ede5da]"
+              >
+                <option value="published">Published</option>
+                <option value="visibility">Visibility</option>
+              </select>
+            </label>
             <div className="flex items-center gap-3">
               <div className="flex items-center gap-2">
                 <button
@@ -413,11 +473,27 @@ export default function GalleryView() {
                   >
                     <GalleryListRow
                       item={it}
+                      tierTitleById={tierTitleById}
                       isFocused={virtualRow.index === focusIndex}
                       isSelected={selected.has(k)}
                       onSelect={() => toggleSelect(it)}
                       onFocus={() => setFocusIndex(virtualRow.index)}
                       onInspect={() => void openPreview(it)}
+                      onRestoreToWorkspace={
+                        it.visibility !== "visible"
+                          ? () => {
+                              void (async () => {
+                                try {
+                                  await setItemVisibility([it], "visible");
+                                  await refreshFacets();
+                                  refreshList();
+                                } catch (e) {
+                                  setListError(e instanceof Error ? e.message : String(e));
+                                }
+                              })();
+                            }
+                          : undefined
+                      }
                     />
                   </div>
                 );
@@ -427,8 +503,9 @@ export default function GalleryView() {
           <BulkActionBar
             selectedCount={selected.size}
             creatorId={creatorId}
-            selectedPostIds={selectedPostIds}
+            selectedItems={selectedItems}
             onDone={handleBulkActionDone}
+            onVisibilityError={(msg) => setListError(msg)}
           />
         </main>
       </div>
@@ -441,6 +518,12 @@ export default function GalleryView() {
             setPreview(null);
             setPreviewDetail(null);
           }}
+          onVisibilityApplied={() => {
+            void refreshFacets();
+            refreshList();
+          }}
+          onVisibilityError={(msg) => setListError(msg)}
+          setItemVisibility={setItemVisibility}
         />
       ) : null}
     </div>

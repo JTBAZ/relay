@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { InMemoryEventBus } from "../events/event-bus.js";
 import { applySyncBatchToSnapshot } from "./apply-batch.js";
+import { enrichBatch } from "./auto-enrich.js";
 import type { FileCanonicalStore } from "./canonical-store.js";
 import type { ApplyBatchResult, SyncBatchInput } from "./types.js";
 
@@ -19,9 +20,10 @@ export class IngestService {
     jobId?: string
   ): Promise<ApplyBatchResult> {
     const id = jobId ?? `job_${randomUUID()}`;
+    const enriched = enrichBatch(batch);
     let result!: ApplyBatchResult;
     await this.store.mutate((snapshot) => {
-      result = applySyncBatchToSnapshot(snapshot, batch, id, traceId, this.eventBus);
+      result = applySyncBatchToSnapshot(snapshot, enriched, id, traceId, this.eventBus);
     });
     return result!;
   }

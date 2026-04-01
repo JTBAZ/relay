@@ -116,4 +116,60 @@ describe("Workstream D gallery API", () => {
     );
     expect(del.status).toBe(200);
   });
+
+  it("media_targets-only visible restores one row when post is post-level flagged", async () => {
+    const tempDir = await mkdtemp(join(tmpdir(), "relay-d-vis-"));
+    const { app } = testApp(tempDir);
+
+    await request(app)
+      .post("/api/v1/ingest/batches?process_sync=true")
+      .send({
+        creator_id: "crV",
+        tiers: [],
+        posts: [
+          {
+            post_id: "p_multi",
+            title: "Multi",
+            published_at: "2026-03-30T12:00:00Z",
+            tag_ids: [],
+            tier_ids: [],
+            upstream_revision: "v1",
+            media: [
+              { media_id: "ma", mime_type: "image/png", upstream_revision: "ma" },
+              { media_id: "mb", mime_type: "image/png", upstream_revision: "mb" }
+            ]
+          }
+        ]
+      });
+
+    const flagPost = await request(app).post("/api/v1/gallery/visibility").send({
+      creator_id: "crV",
+      post_ids: ["p_multi"],
+      media_targets: [],
+      visibility: "flagged"
+    });
+    expect(flagPost.status).toBe(200);
+
+    const restoreOne = await request(app).post("/api/v1/gallery/visibility").send({
+      creator_id: "crV",
+      post_ids: [],
+      media_targets: [{ post_id: "p_multi", media_id: "ma" }],
+      visibility: "visible"
+    });
+    expect(restoreOne.status).toBe(200);
+
+    const visible = await request(app).get(
+      "/api/v1/gallery/items?creator_id=crV&visibility=visible&limit=50"
+    );
+    expect(visible.status).toBe(200);
+    const visibleIds = visible.body.data.items.map((i: { media_id: string }) => i.media_id);
+    expect(visibleIds).toContain("ma");
+
+    const stillFlagged = await request(app).get(
+      "/api/v1/gallery/items?creator_id=crV&visibility=flagged&limit=50"
+    );
+    const flaggedIds = stillFlagged.body.data.items.map((i: { media_id: string }) => i.media_id);
+    expect(flaggedIds).toContain("mb");
+    expect(flaggedIds).not.toContain("ma");
+  });
 });

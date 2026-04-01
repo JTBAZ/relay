@@ -42,7 +42,7 @@ async function seedAndClone(app: ReturnType<typeof createApp>["app"]) {
           title: "Public Post",
           published_at: "2026-03-15T12:00:00Z",
           tag_ids: [],
-          tier_ids: [],
+          tier_ids: ["relay_tier_public"],
           upstream_revision: "r1",
           media: [{ media_id: "m1", mime_type: "image/png", upstream_revision: "mr1" }]
         },

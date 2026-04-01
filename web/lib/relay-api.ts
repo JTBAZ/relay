@@ -1,6 +1,11 @@
 /** No trailing slash — paths like `/api/v1/...` are appended below. */
-const rawBase = process.env.NEXT_PUBLIC_RELAY_API_URL ?? "http://127.0.0.1:8787";
-export const RELAY_API_BASE = rawBase.replace(/\/+$/, "");
+function resolveRelayApiBase(): string {
+  const fromEnv = (process.env.NEXT_PUBLIC_RELAY_API_URL ?? "").trim();
+  const raw = fromEnv.length > 0 ? fromEnv : "http://127.0.0.1:8787";
+  const trimmed = raw.replace(/\/+$/, "");
+  return trimmed.length > 0 ? trimmed : "http://127.0.0.1:8787";
+}
+export const RELAY_API_BASE = resolveRelayApiBase();
 
 type Envelope<T> = { data: T; meta: { trace_id: string } };
 
@@ -10,7 +15,8 @@ export async function relayFetch<T>(path: string, init?: RequestInit): Promise<T
     headers: {
       "content-type": "application/json",
       ...init?.headers
-    }
+    },
+    cache: "no-store"
   });
   const json = (await res.json()) as Envelope<T> & { error?: { message: string } };
   if (!res.ok) {
@@ -30,6 +36,7 @@ export type GalleryItem = {
   tag_ids: string[];
   tier_ids: string[];
   mime_type?: string;
+  media_role?: string;
   has_export: boolean;
   content_url_path: string;
   visibility: PostVisibility;
@@ -78,6 +85,7 @@ export type TriageResult = {
   text_only_post_ids: string[];
   duplicate_groups: { canonical_post_id: string; duplicate_post_ids: string[] }[];
   small_media_ids: string[];
+  cover_media_ids: string[];
   total_flagged: number;
 };
 
@@ -111,6 +119,31 @@ export type PageLayout = {
   updated_at: string;
 };
 
+export type GallerySortMode = "published" | "visibility";
+
+/** Asset-level visibility: real media uses only media_targets; text-only rows use post_ids. */
+export function buildGalleryVisibilityBody(
+  creatorId: string,
+  items: GalleryItem[],
+  visibility: PostVisibility
+): {
+  creator_id: string;
+  post_ids: string[];
+  media_targets: { post_id: string; media_id: string }[];
+  visibility: PostVisibility;
+} {
+  const postOnly = items.filter((i) => i.media_id?.startsWith("post_only_"));
+  const mediaRows = items.filter(
+    (i) => i.media_id && !i.media_id.startsWith("post_only_")
+  );
+  return {
+    creator_id: creatorId,
+    post_ids: [...new Set(postOnly.map((i) => i.post_id))],
+    media_targets: mediaRows.map((i) => ({ post_id: i.post_id, media_id: i.media_id })),
+    visibility
+  };
+}
+
 export function buildGalleryQuery(params: {
   creator_id: string;
   q?: string;
@@ -120,6 +153,7 @@ export function buildGalleryQuery(params: {
   published_after?: string;
   published_before?: string;
   visibility?: PostVisibility | "all";
+  sort?: GallerySortMode;
   cursor?: string | null;
   limit?: number;
 }): string {
@@ -132,6 +166,7 @@ export function buildGalleryQuery(params: {
   if (params.published_after) u.set("published_after", params.published_after);
   if (params.published_before) u.set("published_before", params.published_before);
   if (params.visibility && params.visibility !== "all") u.set("visibility", params.visibility);
+  if (params.sort) u.set("sort", params.sort);
   if (params.cursor) u.set("cursor", params.cursor);
   if (params.limit != null) u.set("limit", String(params.limit));
   return `/api/v1/gallery/items?${u.toString()}`;

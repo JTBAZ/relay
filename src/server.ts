@@ -10,6 +10,7 @@ import { FileCanonicalStore } from "./ingest/canonical-store.js";
 import { FileDeadLetterQueue } from "./ingest/dlq.js";
 import { IngestService } from "./ingest/ingest-service.js";
 import { IngestRetryQueue } from "./ingest/retry-queue.js";
+import { SyncWatermarkStore } from "./ingest/sync-watermark-store.js";
 import { validateIngestBatchBody } from "./ingest/validate-body.js";
 import { TokenEncryption } from "./lib/crypto.js";
 import { ExportService } from "./export/export-service.js";
@@ -40,6 +41,7 @@ import { FilePaymentStore } from "./payments/payment-store.js";
 import { StripeAdapter, PayPalAdapter } from "./payments/provider-adapter.js";
 import type { TierProductMapping, BillingInterval, PaymentProvider } from "./payments/types.js";
 import { PatreonSyncService } from "./patreon/patreon-sync-service.js";
+import { processPatreonWebhook } from "./webhooks/patreon-webhook.js";
 import { CampaignService } from "./migrate/campaign-service.js";
 import { FileMigrationStore } from "./migrate/migration-store.js";
 import type { TierMapping } from "./migrate/types.js";
@@ -61,6 +63,7 @@ export type AppConfig = {
   cookie_store_path?: string;
   ingest_canonical_path?: string;
   ingest_dlq_path?: string;
+  patreon_sync_watermark_path?: string;
   ingest_retry_policy?: { max_attempts: number; base_delay_ms: number };
   export_storage_root?: string;
   gallery_post_overrides_path?: string;
@@ -229,6 +232,9 @@ export function createApp(config: AppConfig): CreateAppResult {
     config.cookie_store_path ?? ".relay-data/patreon_cookies.json",
     encryption
   );
+  const watermarkStore = new SyncWatermarkStore(
+    config.patreon_sync_watermark_path ?? ".relay-data/patreon_sync_watermarks.json"
+  );
 
   const patreonClient = new PatreonClient({
     client_id: required(config.patreon_client_id, "patreon_client_id"),
@@ -241,7 +247,10 @@ export function createApp(config: AppConfig): CreateAppResult {
     tokenStore,
     cookieStore,
     ingestService,
-    config.fetch_impl
+    watermarkStore,
+    config.fetch_impl,
+    exportService,
+    identityService
   );
 
   const app = express();
@@ -348,12 +357,14 @@ export function createApp(config: AppConfig): CreateAppResult {
       typeof body.max_post_pages === "number" && Number.isFinite(body.max_post_pages)
         ? body.max_post_pages
         : undefined;
+    const forceRefreshPostAccess = body.force_refresh_post_access === true;
 
     try {
       const result = await patreonSyncService.scrapeOrSync(creatorId, traceId, {
         campaign_id: campaignId || undefined,
         dry_run: dryRun,
-        max_post_pages: maxPostPages
+        max_post_pages: maxPostPages,
+        force_refresh_post_access: forceRefreshPostAccess
       });
       const batch = result.batch;
       const mediaTotal = batch.posts?.reduce((n, p) => n + p.media.length, 0) ?? 0;
@@ -394,6 +405,59 @@ export function createApp(config: AppConfig): CreateAppResult {
       return res
         .status(notFound ? 404 : 502)
         .json(errorEnvelope(notFound ? "NOT_FOUND" : "PATREON_SCRAPE_ERROR", msg, traceId));
+    }
+  });
+
+  app.post("/api/v1/patreon/sync-members", async (req: Request, res: Response) => {
+    const traceId = traceIdFrom(req);
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const details = validateRequiredFields(body, ["creator_id"]);
+    if (details.length > 0) {
+      return res
+        .status(400)
+        .json(errorEnvelope("VALIDATION_ERROR", "Invalid request payload.", traceId, details));
+    }
+    try {
+      const result = await patreonSyncService.syncMembers(
+        body.creator_id as string,
+        {
+          campaign_id: typeof body.campaign_id === "string" ? body.campaign_id.trim() : undefined,
+          max_pages: typeof body.max_pages === "number" ? body.max_pages : undefined
+        }
+      );
+      return res.status(200).json(successEnvelope(result, traceId));
+    } catch (err: unknown) {
+      const msg = (err as Error).message;
+      const notFound = msg.includes("No Patreon tokens");
+      return res
+        .status(notFound ? 404 : 502)
+        .json(errorEnvelope(notFound ? "NOT_FOUND" : "MEMBER_SYNC_ERROR", msg, traceId));
+    }
+  });
+
+  app.post("/api/v1/webhooks/patreon", async (req: Request, res: Response) => {
+    const traceId = traceIdFrom(req);
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    try {
+      const result = await processPatreonWebhook(
+        {
+          creator_id: typeof body.creator_id === "string" ? body.creator_id : undefined,
+          campaign_id: typeof body.campaign_id === "string" ? body.campaign_id : undefined,
+          event_type: typeof body.event_type === "string" ? body.event_type : undefined
+        },
+        traceId,
+        patreonSyncService
+      );
+      if (!result.accepted) {
+        return res
+          .status(400)
+          .json(errorEnvelope("VALIDATION_ERROR", result.reason ?? "Invalid webhook payload.", traceId));
+      }
+      return res.status(202).json(successEnvelope(result, traceId));
+    } catch (err: unknown) {
+      return res
+        .status(502)
+        .json(errorEnvelope("PATREON_WEBHOOK_ERROR", (err as Error).message, traceId));
     }
   });
 
@@ -634,6 +698,8 @@ export function createApp(config: AppConfig): CreateAppResult {
     const visibility = (visibilityRaw === "visible" || visibilityRaw === "hidden" || visibilityRaw === "flagged" || visibilityRaw === "all")
       ? visibilityRaw
       : undefined;
+    const sortRaw = typeof req.query.sort === "string" ? req.query.sort : undefined;
+    const sort = sortRaw === "visibility" || sortRaw === "published" ? sortRaw : undefined;
     const limit = parseGalleryLimit(req);
 
     const result = await galleryService.list({
@@ -645,9 +711,11 @@ export function createApp(config: AppConfig): CreateAppResult {
       published_after,
       published_before,
       visibility,
+      sort,
       cursor,
       limit
     });
+    res.setHeader("Cache-Control", "private, no-store");
     return res.status(200).json(successEnvelope(result, traceId));
   });
 
@@ -664,6 +732,7 @@ export function createApp(config: AppConfig): CreateAppResult {
         );
     }
     const facets = await galleryService.facets(creatorId);
+    res.setHeader("Cache-Control", "private, no-store");
     return res.status(200).json(successEnvelope(facets, traceId));
   });
 
@@ -683,6 +752,7 @@ export function createApp(config: AppConfig): CreateAppResult {
     if (!detail) {
       return res.status(404).json(errorEnvelope("NOT_FOUND", "Post not found.", traceId));
     }
+    res.setHeader("Cache-Control", "private, no-store");
     return res.status(200).json(successEnvelope(detail, traceId));
   });
 
@@ -805,9 +875,14 @@ export function createApp(config: AppConfig): CreateAppResult {
         .status(400)
         .json(errorEnvelope("VALIDATION_ERROR", "Invalid request.", traceId, details));
     }
+    const categoriesRaw = body.categories;
+    const categories = Array.isArray(categoriesRaw)
+      ? categoriesRaw.filter((x): x is string => typeof x === "string")
+      : undefined;
     const result = await triageService.autoFlag(
       body.creator_id as string,
-      galleryOverridesStore
+      galleryOverridesStore,
+      categories
     );
     return res.status(200).json(successEnvelope(result, traceId));
   });
@@ -816,11 +891,54 @@ export function createApp(config: AppConfig): CreateAppResult {
     const traceId = traceIdFrom(req);
     const body = (req.body ?? {}) as Record<string, unknown>;
     const details = validateRequiredFields(body, ["creator_id"]);
-    const postIdsRaw = body.post_ids;
-    if (!Array.isArray(postIdsRaw) || !postIdsRaw.every((x) => typeof x === "string")) {
+    let postIdsRaw: string[] = [];
+    if (body.post_ids === undefined) {
+      postIdsRaw = [];
+    } else if (
+      Array.isArray(body.post_ids) &&
+      (body.post_ids as unknown[]).every((x) => typeof x === "string")
+    ) {
+      postIdsRaw = body.post_ids as string[];
+    } else {
       return res.status(400).json(
-        errorEnvelope("VALIDATION_ERROR", "post_ids array required.", traceId, [
+        errorEnvelope("VALIDATION_ERROR", "post_ids must be an array of strings.", traceId, [
           { field: "post_ids", issue: "invalid" }
+        ])
+      );
+    }
+    const mediaTargetsRaw = body.media_targets;
+    const mediaTargets: { post_id: string; media_id: string }[] = [];
+    if (mediaTargetsRaw !== undefined) {
+      if (!Array.isArray(mediaTargetsRaw)) {
+        return res.status(400).json(
+          errorEnvelope("VALIDATION_ERROR", "media_targets must be an array.", traceId, [
+            { field: "media_targets", issue: "invalid" }
+          ])
+        );
+      }
+      for (const entry of mediaTargetsRaw) {
+        if (!entry || typeof entry !== "object") {
+          return res.status(400).json(
+            errorEnvelope("VALIDATION_ERROR", "Invalid media_targets entry.", traceId, [
+              { field: "media_targets", issue: "invalid" }
+            ])
+          );
+        }
+        const rec = entry as Record<string, unknown>;
+        if (typeof rec.post_id !== "string" || typeof rec.media_id !== "string") {
+          return res.status(400).json(
+            errorEnvelope("VALIDATION_ERROR", "Each media_targets item needs post_id and media_id.", traceId, [
+              { field: "media_targets", issue: "invalid" }
+            ])
+          );
+        }
+        mediaTargets.push({ post_id: rec.post_id, media_id: rec.media_id });
+      }
+    }
+    if (postIdsRaw.length === 0 && mediaTargets.length === 0) {
+      return res.status(400).json(
+        errorEnvelope("VALIDATION_ERROR", "Provide post_ids and/or media_targets.", traceId, [
+          { field: "post_ids", issue: "empty" }
         ])
       );
     }
@@ -837,14 +955,26 @@ export function createApp(config: AppConfig): CreateAppResult {
         .status(400)
         .json(errorEnvelope("VALIDATION_ERROR", "Invalid request.", traceId, details));
     }
-    await galleryOverridesStore.setVisibility(
-      body.creator_id as string,
-      postIdsRaw as string[],
-      vis as PostVisibility
+    const creatorId = body.creator_id as string;
+    const v = vis as PostVisibility;
+    if (postIdsRaw.length > 0) {
+      await galleryOverridesStore.setVisibility(creatorId, postIdsRaw as string[], v);
+    }
+    if (mediaTargets.length > 0) {
+      await galleryOverridesStore.setMediaVisibility(
+        creatorId,
+        mediaTargets.map((t) => ({ ...t, visibility: v }))
+      );
+    }
+    return res.status(200).json(
+      successEnvelope(
+        {
+          updated_post_count: postIdsRaw.length,
+          updated_media_count: mediaTargets.length
+        },
+        traceId
+      )
     );
-    return res
-      .status(200)
-      .json(successEnvelope({ updated_post_count: postIdsRaw.length }, traceId));
   });
 
   // --- Collections endpoints ---

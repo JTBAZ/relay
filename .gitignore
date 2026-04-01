@@ -1,5 +1,6 @@
 node_modules
 dist
 .relay-data
+.relay-backups
 .env
 *.pem
