@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { RELAY_API_BASE, relayFetch, type Collection } from "@/lib/relay-api";
 import CollectionEditor from "./CollectionEditor";
@@ -71,17 +72,26 @@ export default function CollectionsPanel({
 
   return (
     <section className="space-y-2">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <h3 className="font-[family-name:var(--font-display)] text-lg text-[#f0e6d8]">
           Collections
         </h3>
-        <button
-          type="button"
-          onClick={() => setShowEditor(true)}
-          className="text-xs px-2 py-0.5 rounded bg-[#4a3728] hover:bg-[#5c4a38] text-[#ede5da]"
-        >
-          + New
-        </button>
+        <div className="flex flex-wrap items-center gap-1.5">
+          <Link
+            href="/designer"
+            className="text-[10px] px-2 py-0.5 rounded border border-[#4a3f36] text-[#c9bfb3] hover:border-[#e8a077] hover:text-[#e8a077]"
+            title="Arrange collections on your patron-facing page"
+          >
+            Arrange page
+          </Link>
+          <button
+            type="button"
+            onClick={() => setShowEditor(true)}
+            className="text-xs px-2 py-0.5 rounded bg-[#4a3728] hover:bg-[#5c4a38] text-[#ede5da]"
+          >
+            + New
+          </button>
+        </div>
       </div>
 
       <div className="flex flex-col gap-1 max-h-48 overflow-y-auto">
@@ -110,6 +120,13 @@ export default function CollectionsPanel({
               {col.title}
               <span className="ml-1 text-[#8a7f72]">({col.post_ids.length})</span>
             </button>
+            <Link
+              href={`/designer?highlight=collection:${encodeURIComponent(col.collection_id)}`}
+              className="text-[10px] text-[#8a7f72] hover:text-[#e8a077] opacity-0 group-hover:opacity-100 px-0.5"
+              title="Jump to Designer section for this collection"
+            >
+              Page
+            </Link>
             <button
               type="button"
               onClick={() => void deleteCollection(col.collection_id)}

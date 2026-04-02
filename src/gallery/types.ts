@@ -14,6 +14,8 @@ export type GalleryItem = {
   content_url_path: string;
   visibility: PostVisibility;
   collection_ids: string[];
+  /** Theme tags from collections that include this post (for search / UI). */
+  collection_theme_tag_ids: string[];
 };
 
 export type GalleryTierFacet = {

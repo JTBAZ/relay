@@ -48,6 +48,25 @@ export default function HeroEditor({ hero, onChange }: Props) {
         placeholder="Subtitle (optional)"
         className="w-full bg-[#2a221c] border border-[#4a3f36] px-3 py-1.5 rounded text-sm text-[#ede5da]"
       />
+      <div>
+        <p className="text-[10px] uppercase tracking-[0.2em] text-[#b8a995] mb-1">
+          Cover image (media id)
+        </p>
+        <input
+          value={hero.cover_media_id ?? ""}
+          onChange={(e) =>
+            onChange({
+              ...hero,
+              cover_media_id: e.target.value.trim() || undefined
+            })
+          }
+          placeholder="Exported media id for hero background"
+          className="w-full bg-[#2a221c] border border-[#4a3f36] px-3 py-1.5 rounded text-xs text-[#ede5da] font-mono"
+        />
+        <p className="text-[10px] text-[#8a7f72] mt-1">
+          Use an image asset from your Library (same id as in grid rows). Shown full-bleed behind the title in preview.
+        </p>
+      </div>
     </div>
   );
 }

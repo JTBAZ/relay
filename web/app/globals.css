@@ -16,4 +16,19 @@ body {
   .text-balance {
     text-wrap: balance;
   }
+
+  .animate-post-batch-modal {
+    animation: postBatchModalIn 0.22s ease-out;
+  }
+}
+
+@keyframes postBatchModalIn {
+  from {
+    opacity: 0;
+    transform: scale(0.96) translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
 }

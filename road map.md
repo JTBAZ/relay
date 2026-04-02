@@ -2,30 +2,60 @@
 
 ## Executive Summary
 
-Creators on Patreon have limited control over how their work is discovered, archived, and monetized outside Patreon. Relay addresses this through a two-tier product strategy:
+Creators on Patreon have limited control over how their work is discovered, archived, and monetized outside Patreon. Relay addresses this through a three-part product strategy:
 
 - Part 1, Gallery Export: creators can export and host their media in a searchable, artist-owned gallery managed through Relay.
 - Part 2, Gallery Clone: creators can reproduce their full membership experience (content, tiers, and access logic) on infrastructure they control, with guided audience re-population.
+- Part 3, Patron Network: fans get a unified consumption experience—one feed for creators they support, optional discovery of opted-in public or promo content, and (when offered) audience-side monetization that does not tax creator subscription revenue.
 
 This roadmap prioritizes creator safety, legal compliance, migration confidence, and measurable value at each release gate.
+
+## Product narrative
+
+Relay is **two intentional products** that share one **access and content model**, so patron-facing surfaces never fork a second truth from artist curation.
+
+### Artist Relay (creator account)
+
+- After **register** and **Patreon connect** (OAuth plus ingest/scrape as implemented), the artist lands in the **Library**: a chronological or tier-aware inventory of Patreon-sourced content.
+- The Library is the **curation hub and source of truth** for what Relay may expose: visibility (including hiding duplicates or legacy work), retagging, hygiene, and **Collections** that shape how viewers browse.
+- The **homepage / public gallery** is a **projection** of that policy plus **layout** (Designer): not a separate inventory. Patreon-side changes should **flow in continuously** after initial setup; curation is overlays, not re-entry of every post.
+- **Tier and access rules** from Patreon remain authoritative for paywalled material; Relay applies **artist overrides** on top of canonical ingested rows.
+
+### Fan Relay (patron account)
+
+- After **register** and **Patreon patron OAuth**, Relay maintains **entitlements** (active subscriptions and tiers) against its database of artists.
+- Fans get a **unified feed** of supported creators, **artist profiles** for deep browsing, and **Browse**: an algorithmic surface that may mix entitled content with **opt-in free / discovery** material (volume and similarity-based suggestions), within caps and policy.
+- **Comments, favorites, and Relay-native collections** are on-platform engagement, separate from Patreon’s UI unless explicitly synced later.
+- **Paywall enforcement** follows entitlement snapshots: cancel or downgrade on Patreon → lose access here when OAuth/sync confirms the change. **Upgrading a pledge** should unlock higher tiers quickly; prefer **scheduled plus on-demand** entitlement refresh (login, refresh, pre-play, return from checkout) and, where allowed, **in-app upgrade** via Patreon deep links or API flows with compliance review.
+
+### Sync and “instant mirror” (product expectation)
+
+- Deliver **best-effort freshness** via incremental jobs, retries, and clear **sync status** in the Library—not a guarantee of zero lag versus Patreon.
+- Document **SLOs** for ingest and patron entitlement refresh as they are defined in operations specs.
 
 ## Builder Navigation (Read This First)
 
 Use this roadmap as the execution sequence and use the reference docs for deeper implementation decisions:
 
+- Library + Designer UX ideals, workflows, gaps, and phased UI backlog:
+  - [docs/pattern-library.md](docs/pattern-library.md)
 - Standardized build contracts, quality gates, and traceability:
   - [builder-boost-pack/README.md](c:\Users\jorda\Documents\Coding Projects\Rescue\builder-boost-pack\README.md)
 - Analytics decisioning, action cards, data contracts, and execution APIs:
   - [analytics-action-center-spec.md](c:\Users\jorda\Documents\Coding Projects\Rescue\analytics-action-center-spec.md)
 - Pricing model, COGS guardrails, hosting modes, and post-independence operations:
   - [monetization-scheme-infrastructure-plan.md](c:\Users\jorda\Documents\Coding Projects\Rescue\monetization-scheme-infrastructure-plan.md)
+- **Audience Premium, daily paywalled promos, and boost tokens** — strategic constraints and agent prompt for roadmap/plan edits:
+  - [docs/monetization-discovery-premium-agent-prompt.md](docs/monetization-discovery-premium-agent-prompt.md)
 
 Quick routing:
 
 - Context and product behavior for recommendations -> Analytics Action Center Spec.
 - Data sourcing, event contracts, and service boundaries -> Builder Boost Pack contracts + Analytics Action Center Spec.
 - Pathing for managed vs BYOI deployment and migration economics -> Monetization Scheme and Infrastructure Plan.
+- Daily promo slot, Premium viewer tier, boost tokens, attribution -> [docs/monetization-discovery-premium-agent-prompt.md](docs/monetization-discovery-premium-agent-prompt.md).
 - Security, compliance, and outreach governance decisions -> Builder Boost Pack standards + Monetization Scheme and Infrastructure Plan.
+- Library and Designer sequencing before heavy patron-facing polish -> [docs/pattern-library.md](docs/pattern-library.md) (Part 3 builds on stable gallery and layout contracts).
 
 ## Product Boundaries
 
@@ -53,6 +83,25 @@ Includes:
 - Payment provider handoff (Stripe/PayPal first).
 - Re-Populate workflow to invite existing members to mapped replacement tiers.
 
+### Part 3: Patron Network
+
+Goal: give patrons a reason to use Relay directly—aggregated updates from creators they follow, tier-appropriate access, and optional discovery—while keeping infrastructure and compliance bounded (metadata-rich, heavy media via creator storage or signed delivery, not an unbounded public CDN).
+
+Includes:
+- Patron accounts, session model, and follow graph (seeded where possible from existing OAuth relationships; extended with on-platform follows).
+- **Continuous patron OAuth and entitlement refresh** so subscription and tier changes (upgrade, downgrade, cancel) converge without manual re-linking; short-TTL or on-demand checks before sensitive actions (full media, deep browse) where required.
+- Unified feed combining subscribed creators’ published or entitled content with configurable mix rules (for example majority subscription, minority discovery).
+- **Browse** experience: algorithmic scrolling across libraries the patron is connected to, with **free-tier / opt-in discovery** inserts for volume; similarity and subscription signals inform ranking where policy allows, with **audit-friendly** decision logs for non-chronological ordering.
+- **Relay-native engagement**: comments, favorites, and patron-side collections (distinct from artist Library collections); moderation and abuse tooling aligned with Terms.
+- **Pledge upgrade path**: transparent flows to Patreon checkout or supported APIs so patrons can increase tier from Relay where permitted; entitlement refresh on return.
+- Creator controls for promo or teaser content eligible for discovery surfaces, aligned with tags and access rules.
+- Feed and discovery APIs with rate limits, abuse controls, and explainable ranking inputs where ranking is used.
+
+Does not include (until explicitly scoped):
+- Full replacement of Patreon (or other platforms) for fan acquisition and checkout.
+- Autonomous algorithmic publishing without creator approval for gated content.
+- Paid boost or premium viewer products before policy review and baseline DAU (see monetization plan).
+
 ## Architecture Baseline
 
 ### Application Stack
@@ -69,6 +118,9 @@ Includes:
 - Identity: users, creators, OAuth credentials, provider metadata.
 - Content: campaigns, posts, media, tags, content versions.
 - Membership: tiers, tier rules, patron snapshots, migration mappings.
+- Patron network: patron profiles, follows, feed cursors, notification preferences, entitlement snapshots for feed assembly.
+- Engagement: comments, favorites, patron collections (Relay-native; separate schema from artist Library collections unless later unified by product decision).
+- Discovery: creator opt-in promo slots, tag targeting metadata, ranking features and audit-friendly decision logs (where applicable).
 - Operations: sync jobs, retries, dead letters, migration runs, email batches.
 
 ### Security Defaults
@@ -77,6 +129,13 @@ Includes:
 - Signed URLs for private media delivery.
 - Least privilege service roles for storage and database.
 - Per-tenant rate limits and API abuse controls.
+
+### Patreon dependency and contingency
+
+- **Canonical store:** Ingested content and artist overrides in Relay remain the **operational source of truth** for the product experience; Patreon is the **upstream** for creator sync and patron billing state, not a second UI database.
+- **Provider abstraction:** Design patron and creator integrations so alternative identity or billing providers can be added without rewriting feed or gallery core logic.
+- **Degradation modes:** If Patreon APIs change, rate-limit, or fail, define behavior explicitly: for example stale entitlements with read-only patron experience, creator-visible sync errors, and alerts—rather than silent wrong access.
+- **Long-term:** Full independence (Relay as primary platform) is a scale and product decision documented in monetization and clone tracks; it is not assumed for early phases.
 
 Reference for operational cost and hosting tradeoffs:
 - [monetization-scheme-infrastructure-plan.md](c:\Users\jorda\Documents\Coding Projects\Rescue\monetization-scheme-infrastructure-plan.md)
@@ -269,6 +328,78 @@ Operational assets:
 - Domain and DNS setup guide for creators.
 - Incident runbook for migration failures and rollback recovery.
 
+## Part 3 Delivery Track: Patron Network
+
+### Objective
+
+Turn Relay from a creator-centric tool into a **patron-valued surface**: one place to catch up on supported creators, with optional discovery that respects paywalls and creator opt-in. Bootstrap via creators sharing gallery or site links; a feed with few followed creators still beats opening multiple platform profiles.
+
+**Sequencing:** Start Part 3 after Part 1 gallery and Designer **data contracts** are stable (including section sources and entitlement semantics), so the feed does not fork a second truth for visibility and tiers. See [docs/pattern-library.md](docs/pattern-library.md).
+
+### Workstream K: Patron Identity and Follow Graph
+
+- Patron registration, login, and session lifecycle (including optional link to provider identity where allowed).
+- **Patreon patron OAuth** lifecycle: token refresh, health status, and **revalidation** on login and on a schedule so subscription changes are picked up without manual reconnect.
+- Follow model: creators on Relay, with initial suggestions from OAuth-derived relationships when available.
+- Privacy controls: unfollow, mute, data export and deletion aligned with regional privacy requirements.
+
+Exit gate:
+- Cross-tenant isolation tests pass for patron data and follow lists.
+- Median feed assembly for a patron with N follows completes within agreed P95 latency target at pilot scale.
+
+### Workstream L: Feed Assembly and Entitlements
+
+- **Entitlement snapshots** per patron: materialized tier access used by feed, profile, and Browse; invalidate on OAuth refresh or provider webhook where available.
+- Server-side feed builder: merge updates from followed creators; enforce tier, **artist Library visibility**, and layout-derived surfaces before surfacing gated thumbnails or links (same rules as artist “viewer sees” projection—see [docs/pattern-library.md](docs/pattern-library.md)).
+- **Browse** assembly: algorithmic ordering across connected libraries with discovery caps; document non-chronological behavior for patrons.
+- Pagination and stale-content handling; graceful degradation if upstream sync or OAuth is temporarily unavailable.
+- Clear labeling when content is discovery vs subscription-sourced.
+
+Exit gate:
+- Zero unauthorized tier content in feed integration and security tests.
+- Documented fallback behavior when a creator disconnects Patreon or export stalls.
+
+### Workstream M: Discovery and Creator-Opt-In Promos
+
+- Creator UI to designate content safe for discovery or promo surfaces (and to revoke).
+- Tag-aware insertion rules for optional discovery slice of the feed (for example cap on percentage of discovery items).
+- Instrumentation for impressions and clicks to support analytics and future Action Center style recommendations.
+
+Exit gate:
+- Only opt-in content appears in discovery; automated tests cover revocation.
+- Creator-facing summary of what is exposed to non-subscribers.
+
+### Workstream O: Patron Engagement and Upgrade Path
+
+- **Relay-native** comments, favorites, and patron **collections** (distinct from artist Library collections); moderation tooling and Terms alignment before broad launch.
+- **Upgrade flows:** deep links or supported flows to Patreon for higher tiers; post-return entitlement refresh; clear UX when access is pending verification.
+
+Exit gate:
+- Engagement features covered by abuse playbook and content policy review.
+- Upgrade path tested end-to-end for at least one tier increase scenario in staging.
+
+### Workstream N: Audience Monetization (Optional Layer)
+
+- After baseline feed retention exists: optional **premium viewer** tier (cosmetics, denser discovery, or similar non-extractive perks).
+- Optional **boost** or signal products: paid visibility must be disclosed, auditable, and subordinate to creator opt-in and policy.
+- Revenue model stays aligned with [monetization-scheme-infrastructure-plan.md](c:\Users\jorda\Documents\Coding Projects\Rescue\monetization-scheme-infrastructure-plan.md): primary recurring revenue remains creator SaaS; audience revenue offsets patron-side COGS.
+
+Exit gate:
+- Legal and product review for paid ranking or boosts completed before launch.
+- No hidden pay-to-win against creator subscription economics without explicit positioning.
+
+### Required Assets for Part 3
+
+Technical assets:
+- Patron-facing app routes or client bundle (**dedicated shell** recommended: feed and Browse separate from artist control-room chrome); feed, Browse, and follow APIs.
+- Caching strategy for hot feeds without breaking entitlement checks.
+- Feature flags for discovery percentage and premium modules.
+
+Operational assets:
+- Abuse and spam playbook for fake follows and feed gaming.
+- Transparency copy for how discovery ordering works where it is not purely chronological.
+- Moderation alignment with Terms for user-generated discovery context (comments or reactions, if added later).
+
 ## Re-Populate User Experience Flow
 
 ### Creator Flow
@@ -302,6 +433,7 @@ Operational assets:
 - Provide unsubscribe and preference center in all outreach emails.
 - Enforce suppression list checks before any campaign send.
 - Maintain audit trails for imports, exports, and outreach actions.
+- Part 3: honor patron consent for notifications and discovery; disclose paid or boosted placement where applicable; avoid deceptive engagement patterns in ranked surfaces; align feed retention features with applicable consumer and platform rules as the product scales.
 
 Builder reference:
 - Contract/policy baseline and operational compliance ownership model:
@@ -314,6 +446,7 @@ Builder reference:
 - Unit: ingest transforms, tier mapping logic, entitlement checks.
 - Integration: OAuth refresh, queue retry behavior, payment adapters.
 - End-to-end: creator onboarding, clone deploy, Re-Populate campaign.
+- Part 3: feed entitlement tests, follow graph isolation, discovery opt-in enforcement, patron OAuth refresh, Browse ranking invariants where applicable.
 - Security: auth bypass tests, signed URL expiration tests, data isolation tests.
 
 ### Reliability SLOs
@@ -327,6 +460,7 @@ Builder reference:
 - Pilot with a small creator cohort first.
 - Require dry-run migration success before production migrations.
 - Gate broad release on conversion, support load, and reliability targets.
+- Part 3: ship patron feed and follows before widening discovery; gate paid audience features on policy review and engagement baselines.
 
 Builder reference:
 - Analytics rollout phases and recommendation quality gates:
@@ -342,11 +476,16 @@ Builder reference:
 4. Part 2 foundation: replica schema, clone generation, access model.
 5. Part 2 migration: payment handoff, Re-Populate pipeline, deploy and rollback.
 6. Part 2 hardening: compliance automation, deliverability tuning, DR readiness.
+7. Part 3 foundation: patron identity, follow graph, feed assembly with strict entitlements.
+8. Part 3 growth: discovery and creator-opt-in promos, Browse ranking, patron engagement (comments, favorites, collections), pledge upgrade path, instrumentation, abuse controls.
+9. Part 3 optional monetization: premium viewer and disclosed boost surfaces after policy review and baseline engagement.
 
 ## End State
 
-Relay provides a practical ladder to creator independence:
+Relay provides a practical ladder to creator independence and a durable network layer for fans:
 
 - Part 1 gives creators ownership and discoverability now.
 - Part 2 gives creators an operational off-ramp from Patreon when they choose.
-- Both parts are measured by migration safety, creator confidence, and audience continuity.
+- Part 3 gives patrons a unified, trustworthy way to follow and discover supported creators without replacing creator-owned checkout by default.
+
+Parts 1 and 2 are measured by migration safety, creator confidence, and audience continuity. Part 3 adds patron retention, fair discovery, and sustainable audience-side economics where offered.

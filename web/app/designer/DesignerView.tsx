@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import {
   RELAY_API_BASE,
   relayFetch,
@@ -12,6 +13,7 @@ import ThemePicker from "./ThemePicker";
 import HeroEditor from "./HeroEditor";
 import SectionEditor from "./SectionEditor";
 import LayoutPreview from "./LayoutPreview";
+import DesignerPreviewToolbar from "./DesignerPreviewToolbar";
 
 const defaultCreatorId =
   process.env.NEXT_PUBLIC_RELAY_CREATOR_ID?.trim() || "creator_1";
@@ -27,6 +29,7 @@ type PublishPreflight = {
 };
 
 export default function DesignerView() {
+  const searchParams = useSearchParams();
   const [creatorId] = useState(defaultCreatorId);
   const [layout, setLayout] = useState<PageLayout | null>(null);
   const [collections, setCollections] = useState<Collection[]>([]);
@@ -35,6 +38,7 @@ export default function DesignerView() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [publishPreflight, setPublishPreflight] = useState<PublishPreflight | null>(null);
   const [publishing, setPublishing] = useState(false);
+  const [previewWidth, setPreviewWidth] = useState(1280);
 
   const loadLayout = useCallback(async () => {
     setLoadError(null);
@@ -47,7 +51,6 @@ export default function DesignerView() {
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       setLoadError(msg);
-      // Fall back to a default empty layout so the UI isn't stuck
       setLayout({
         creator_id: creatorId,
         theme: { color_scheme: "dark" },
@@ -72,6 +75,28 @@ export default function DesignerView() {
     void loadLayout();
     void loadCollections();
   }, [loadLayout, loadCollections]);
+
+  useEffect(() => {
+    const raw = searchParams.get("highlight");
+    if (!raw?.startsWith("collection:")) return;
+    const collectionId = decodeURIComponent(raw.slice("collection:".length));
+    const t = window.setTimeout(() => {
+      const esc =
+        typeof CSS !== "undefined" && typeof CSS.escape === "function"
+          ? CSS.escape(collectionId)
+          : collectionId.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+      const el = document.querySelector(`[data-designer-collection="${esc}"]`) as HTMLElement | null;
+      el?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      if (el) {
+        const prev = el.style.boxShadow;
+        el.style.boxShadow = "0 0 0 2px rgba(232, 160, 119, 0.55)";
+        window.setTimeout(() => {
+          el.style.boxShadow = prev;
+        }, 2200);
+      }
+    }, 180);
+    return () => window.clearTimeout(t);
+  }, [searchParams, layout?.sections]);
 
   const saveLayout = async () => {
     if (!layout) return;
@@ -159,9 +184,12 @@ export default function DesignerView() {
 
   if (!layout) {
     return (
-      <div className="flex flex-col items-center justify-center h-64 gap-3 text-[#8a7f72]">
+      <div className="flex h-64 flex-col items-center justify-center gap-3 text-[#8a7f72]">
         <p>Loading designer…</p>
-        <p className="text-[10px]">Make sure the API server is running and rebuilt (<code className="text-[#ede5da]">npm run build &amp;&amp; npm start</code>)</p>
+        <p className="text-[10px]">
+          Make sure the API server is running and rebuilt (
+          <code className="text-[#ede5da]">npm run build &amp;&amp; npm start</code>)
+        </p>
       </div>
     );
   }
@@ -169,10 +197,16 @@ export default function DesignerView() {
   const sortedSections = [...layout.sections].sort((a, b) => a.sort_order - b.sort_order);
 
   return (
-    <div className="min-h-screen bg-[#100c0a] text-[#ede5da]">
-      <div className="border-b border-[#3d342b] px-6 py-3 flex items-center justify-between bg-[#1a1410]/90 backdrop-blur sticky top-0 z-20">
-        <h2 className="font-[family-name:var(--font-display)] text-lg">Page Designer</h2>
-        <div className="flex items-center gap-3">
+    <div className="flex min-h-screen flex-col bg-[#0a0807] text-[#ede5da]">
+      <header className="sticky top-0 z-30 flex flex-wrap items-center justify-between gap-3 border-b border-[#2a2420] bg-[#120e0c]/95 px-4 py-3 backdrop-blur-md sm:px-6">
+        <div>
+          <h2 className="font-[family-name:var(--font-display)] text-lg text-[#f0e6d8]">Designer</h2>
+          <p className="mt-0.5 max-w-md text-[10px] leading-relaxed text-[#8a7f72]">
+            Stage for your patron-facing page. Structure on the left; preview at right. Library controls
+            visibility per file; collections and tags feed sections and search.
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2 sm:gap-3">
           {dirty ? (
             <span className="text-[10px] text-[#e8a077]">Unsaved changes</span>
           ) : null}
@@ -180,131 +214,145 @@ export default function DesignerView() {
             type="button"
             onClick={() => void saveLayout()}
             disabled={saving || !dirty}
-            className="text-xs px-4 py-1.5 rounded bg-[#8b3a1a] text-white disabled:opacity-50"
+            className="rounded-md bg-[#8b3a1a] px-4 py-1.5 text-xs text-white disabled:opacity-50 motion-safe:transition-opacity"
           >
-            {saving ? "Saving…" : "Save Layout"}
+            {saving ? "Saving…" : "Save layout"}
           </button>
           <button
             type="button"
             onClick={() => void runPublishPreflight()}
             disabled={publishing || dirty}
-            className="text-xs px-4 py-1.5 rounded bg-[#2d6a5c] text-white disabled:opacity-50"
+            className="rounded-md bg-[#2d6a5c] px-4 py-1.5 text-xs text-white disabled:opacity-50 motion-safe:transition-opacity"
             title={dirty ? "Save layout first" : "Publish to patron site"}
           >
             {publishing ? "Preparing…" : "Publish"}
           </button>
         </div>
-      </div>
+      </header>
 
       {loadError ? (
-        <div className="mx-4 mt-2 px-3 py-2 rounded border border-[#8b3a1a] bg-[#2a1810] text-sm text-[#f0c4b8]">
-          <strong className="block text-xs uppercase tracking-wide text-[#e8a077] mb-1">
+        <div className="mx-4 mt-2 rounded border border-[#8b3a1a] bg-[#2a1810] px-3 py-2 text-sm text-[#f0c4b8]">
+          <strong className="mb-1 block text-xs uppercase tracking-wide text-[#e8a077]">
             Failed to load layout from API
           </strong>
           {loadError}
           <p className="mt-1 text-[10px] text-[#b8a995]">
-            Using default empty layout. Run <code className="text-[#ede5da]">npm run build &amp;&amp; npm start</code> to rebuild the API server.
+            Using default empty layout. Run{" "}
+            <code className="text-[#ede5da]">npm run build &amp;&amp; npm start</code> to rebuild the API
+            server.
           </p>
         </div>
       ) : null}
 
-      <div className="grid lg:grid-cols-[380px_1fr] gap-0 min-h-[calc(100vh-52px)]">
-        <aside className="border-r border-[#3d342b] p-4 space-y-6 bg-[#161210] overflow-y-auto">
-          <section>
-            <h3 className="font-[family-name:var(--font-display)] text-lg text-[#f0e6d8] mb-3">
-              Theme
-            </h3>
-            <ThemePicker
-              colorScheme={layout.theme.color_scheme}
-              accentColor={layout.theme.accent_color}
-              onChange={(scheme, accent) =>
-                updateLayout({ theme: { color_scheme: scheme, accent_color: accent } })
-              }
-            />
-          </section>
-
-          <section>
-            <h3 className="font-[family-name:var(--font-display)] text-lg text-[#f0e6d8] mb-3">
-              Hero
-            </h3>
-            <HeroEditor
-              hero={layout.hero}
-              onChange={(hero) => updateLayout({ hero })}
-            />
-          </section>
-
-          <section className="space-y-3">
-            <div className="flex items-center justify-between">
-              <h3 className="font-[family-name:var(--font-display)] text-lg text-[#f0e6d8]">
-                Sections
-              </h3>
-              <button
-                type="button"
-                onClick={() => void addSection()}
-                className="text-xs px-2 py-0.5 rounded bg-[#4a3728] hover:bg-[#5c4a38] text-[#ede5da]"
-              >
-                + Add
-              </button>
-            </div>
-            {sortedSections.map((sec, i) => (
-              <SectionEditor
-                key={sec.section_id}
-                section={sec}
-                collections={collections}
-                onUpdate={(patch) => updateSection(sec.section_id, patch)}
-                onRemove={() => removeSection(sec.section_id)}
-                onMoveUp={() => moveSection(sec.section_id, -1)}
-                onMoveDown={() => moveSection(sec.section_id, 1)}
-                isFirst={i === 0}
-                isLast={i === sortedSections.length - 1}
+      <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
+        <aside className="flex max-h-[min(42vh,520px)] w-full shrink-0 flex-col overflow-y-auto border-b border-[#2a2420] bg-[#141210] px-4 py-5 lg:max-h-none lg:w-[min(400px,100%)] lg:max-w-[420px] lg:border-b-0 lg:border-r lg:border-[#2a2420]">
+          <div className="space-y-6">
+            <section>
+              <h3 className="mb-3 font-[family-name:var(--font-display)] text-base text-[#f0e6d8]">Theme</h3>
+              <ThemePicker
+                colorScheme={layout.theme.color_scheme}
+                accentColor={layout.theme.accent_color}
+                onChange={(scheme, accent) =>
+                  updateLayout({ theme: { color_scheme: scheme, accent_color: accent } })
+                }
               />
-            ))}
-            {sortedSections.length === 0 ? (
-              <p className="text-xs text-[#8a7f72]">No sections yet. Add one to get started.</p>
-            ) : null}
-          </section>
+            </section>
+
+            <section>
+              <h3 className="mb-3 font-[family-name:var(--font-display)] text-base text-[#f0e6d8]">Hero</h3>
+              <HeroEditor hero={layout.hero} onChange={(hero) => updateLayout({ hero })} />
+            </section>
+
+            <section className="space-y-3">
+              <div className="flex items-center justify-between gap-2">
+                <h3 className="font-[family-name:var(--font-display)] text-base text-[#f0e6d8]">Sections</h3>
+                <button
+                  type="button"
+                  onClick={() => void addSection()}
+                  className="rounded bg-[#4a3728] px-2 py-0.5 text-xs text-[#ede5da] hover:bg-[#5c4a38]"
+                >
+                  + Add
+                </button>
+              </div>
+              {sortedSections.map((sec, i) => (
+                <SectionEditor
+                  key={sec.section_id}
+                  section={sec}
+                  collections={collections}
+                  onUpdate={(patch) => updateSection(sec.section_id, patch)}
+                  onRemove={() => removeSection(sec.section_id)}
+                  onMoveUp={() => moveSection(sec.section_id, -1)}
+                  onMoveDown={() => moveSection(sec.section_id, 1)}
+                  isFirst={i === 0}
+                  isLast={i === sortedSections.length - 1}
+                />
+              ))}
+              {sortedSections.length === 0 ? (
+                <p className="text-xs text-[#8a7f72]">
+                  No sections yet. Add one, or define collections in the Library and source a section from
+                  them.
+                </p>
+              ) : null}
+            </section>
+          </div>
         </aside>
 
-        <main className="p-6 overflow-auto">
-          <p className="text-[10px] uppercase tracking-[0.2em] text-[#b8a995] mb-3">Live Preview</p>
-          <LayoutPreview
-            layout={layout}
-            creatorId={creatorId}
-            collections={collections}
-          />
-        </main>
+        <div className="flex min-h-[min(70vh,900px)] min-w-0 flex-1 flex-col bg-[#060504] lg:min-h-[calc(100vh-8.5rem)]">
+          <DesignerPreviewToolbar previewWidth={previewWidth} onPreviewWidth={setPreviewWidth} />
+          <div className="relative flex-1 overflow-auto motion-safe:transition-[background] motion-safe:duration-300">
+            <div
+              className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_top,_rgba(196,92,45,0.06),_transparent_55%)]"
+              aria-hidden
+            />
+            <div className="relative flex min-h-full justify-center px-3 py-6 sm:px-6 sm:py-10">
+              <LayoutPreview
+                layout={layout}
+                creatorId={creatorId}
+                collections={collections}
+                previewWidth={previewWidth}
+                className="motion-safe:transition-[max-width] motion-safe:duration-300 motion-safe:ease-out"
+              />
+            </div>
+          </div>
+        </div>
       </div>
 
       {publishPreflight ? (
         <div
-          className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-6"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-6"
           role="dialog"
           aria-modal
           onClick={() => setPublishPreflight(null)}
         >
           <div
-            className="bg-[#1a1410] border border-[#3d342b] rounded-lg p-6 max-w-md w-full space-y-4"
+            className="w-full max-w-md space-y-4 rounded-lg border border-[#3d342b] bg-[#1a1410] p-6"
             onClick={(e) => e.stopPropagation()}
           >
             <h3 className="font-[family-name:var(--font-display)] text-lg text-[#f0e6d8]">
-              Publish Preflight
+              Publish preflight
             </h3>
             <div className="space-y-2 text-sm text-[#d8cebf]">
               <p>
-                <span className="text-[#e8a077] font-medium">{publishPreflight.section_count}</span> sections
+                <span className="font-medium text-[#e8a077]">{publishPreflight.section_count}</span>{" "}
+                sections
               </p>
               <p>
-                <span className="text-[#e8a077] font-medium">{publishPreflight.layout_posts}</span> posts from layout,{" "}
+                <span className="font-medium text-[#e8a077]">{publishPreflight.layout_posts}</span> posts
+                from layout,{" "}
                 <span className="text-[#8a7f72]">{publishPreflight.remaining_posts} additional</span>
               </p>
               <p>
-                <span className="text-[#e8a077] font-medium">{publishPreflight.total_posts}</span> total posts ·{" "}
-                <span className="text-[#e8a077] font-medium">{publishPreflight.total_media}</span> media
+                <span className="font-medium text-[#e8a077]">{publishPreflight.total_posts}</span> total
+                posts ·{" "}
+                <span className="font-medium text-[#e8a077]">{publishPreflight.total_media}</span> media
               </p>
               {publishPreflight.tiers.length > 0 ? (
-                <div className="flex flex-wrap gap-1 mt-2">
+                <div className="mt-2 flex flex-wrap gap-1">
                   {publishPreflight.tiers.map((t) => (
-                    <span key={t.tier_id} className="text-[10px] px-2 py-0.5 rounded border border-[#4a3f36]">
+                    <span
+                      key={t.tier_id}
+                      className="rounded border border-[#4a3f36] px-2 py-0.5 text-[10px]"
+                    >
                       {t.title}
                     </span>
                   ))}
@@ -315,16 +363,16 @@ export default function DesignerView() {
               <button
                 type="button"
                 onClick={() => setPublishPreflight(null)}
-                className="text-xs px-4 py-2 rounded border border-[#4a3f36] text-[#c9bfb3]"
+                className="rounded border border-[#4a3f36] px-4 py-2 text-xs text-[#c9bfb3]"
               >
                 Cancel
               </button>
               <button
                 type="button"
                 onClick={() => setPublishPreflight(null)}
-                className="text-xs px-4 py-2 rounded bg-[#2d6a5c] text-white"
+                className="rounded bg-[#2d6a5c] px-4 py-2 text-xs text-white"
               >
-                Confirm &amp; Publish
+                Confirm &amp; publish
               </button>
             </div>
           </div>

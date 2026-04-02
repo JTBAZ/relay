@@ -18,7 +18,9 @@ import {
   RELAY_API_BASE,
   buildGalleryQuery,
   buildGalleryVisibilityBody,
+  fetchGalleryPostDetail,
   relayFetch,
+  type Collection,
   type FacetsData,
   type GalleryItem,
   type GalleryListData,
@@ -31,6 +33,7 @@ import GalleryListRow from "./components/GalleryListRow";
 import GalleryGrid from "./components/GalleryGrid";
 import CollectionBuilderDrawer from "./components/CollectionBuilderDrawer";
 import InspectModal from "./components/InspectModal";
+import PostBatchModal from "./components/PostBatchModal";
 import BulkActionBar from "./components/BulkActionBar";
 import type { MediaTypeValue } from "./components/MediaTypeMultiSelect";
 
@@ -67,6 +70,13 @@ export default function GalleryView() {
   const [focusIndex, setFocusIndex] = useState(0);
   const [preview, setPreview] = useState<GalleryItem | null>(null);
   const [previewDetail, setPreviewDetail] = useState<GalleryPostDetail | null>(null);
+  const [postBatchModal, setPostBatchModal] = useState<{
+    items: GalleryItem[];
+    startFlatIndex: number;
+  } | null>(null);
+  const [batchModalDetail, setBatchModalDetail] = useState<GalleryPostDetail | null>(null);
+  const [batchModalDetailLoading, setBatchModalDetailLoading] = useState(false);
+  const [batchModalCollections, setBatchModalCollections] = useState<Collection[]>([]);
 
   const [viewMode, setViewMode] = useState<"grid" | "list">(() =>
     typeof window !== "undefined" && window.localStorage.getItem("relay.galleryViewMode") === "list"
@@ -142,15 +152,70 @@ export default function GalleryView() {
     setPreview(it);
     setPreviewDetail(null);
     try {
-      const u = new URLSearchParams();
-      u.set("creator_id", creatorId);
-      u.set("post_id", it.post_id);
-      const detail = await relayFetch<GalleryPostDetail>(`/api/v1/gallery/post-detail?${u.toString()}`);
+      const detail = await fetchGalleryPostDetail(creatorId, it.post_id);
       setPreviewDetail(detail);
     } catch {
       setPreviewDetail(null);
     }
   }, [creatorId]);
+
+  useEffect(() => {
+    if (!postBatchModal) {
+      setBatchModalDetail(null);
+      setBatchModalDetailLoading(false);
+      return;
+    }
+    const postId = postBatchModal.items[0]?.post_id;
+    if (!postId) return;
+    let cancelled = false;
+    setBatchModalDetail(null);
+    setBatchModalDetailLoading(true);
+    void (async () => {
+      try {
+        const d = await fetchGalleryPostDetail(creatorId, postId);
+        if (!cancelled) setBatchModalDetail(d);
+      } catch {
+        if (!cancelled) setBatchModalDetail(null);
+      } finally {
+        if (!cancelled) setBatchModalDetailLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [postBatchModal, creatorId]);
+
+  useEffect(() => {
+    if (!postBatchModal) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, [postBatchModal]);
+
+  useEffect(() => {
+    if (!postBatchModal) {
+      setBatchModalCollections([]);
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      try {
+        const u = new URLSearchParams();
+        u.set("creator_id", creatorId);
+        const res = await relayFetch<{ items: Collection[] }>(
+          `/api/v1/gallery/collections?${u}`
+        );
+        if (!cancelled) setBatchModalCollections(res.items);
+      } catch {
+        if (!cancelled) setBatchModalCollections([]);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [postBatchModal, creatorId, collectionsReloadToken]);
 
   const fetchPage = useCallback(
     async (cursor: string | null, append: boolean) => {
@@ -265,6 +330,19 @@ export default function GalleryView() {
     void fetchPage(null, false);
   }, [fetchPage]);
 
+  const handleBatchModalMetadataUpdated = useCallback(async () => {
+    await refreshFacets();
+    await fetchPage(null, false);
+    const pid = postBatchModal?.items[0]?.post_id;
+    if (!pid) return;
+    try {
+      const d = await fetchGalleryPostDetail(creatorId, pid);
+      setBatchModalDetail(d);
+    } catch {
+      setBatchModalDetail(null);
+    }
+  }, [refreshFacets, fetchPage, postBatchModal, creatorId]);
+
   const setItemVisibility = useCallback(
     async (items: GalleryItem[], visibility: PostVisibility) => {
       const body = buildGalleryVisibilityBody(creatorId, items, visibility);
@@ -304,11 +382,20 @@ export default function GalleryView() {
   };
 
   const onListKeyDown = (e: ReactKeyboardEvent) => {
-    if (preview) {
-      if (e.key === "Escape") {
+    if (e.key === "Escape") {
+      if (preview) {
+        e.preventDefault();
         setPreview(null);
         setPreviewDetail(null);
+        return;
       }
+      if (postBatchModal) {
+        e.preventDefault();
+        setPostBatchModal(null);
+        return;
+      }
+    }
+    if (preview) {
       return;
     }
     if (viewMode === "grid") return;
@@ -536,7 +623,7 @@ export default function GalleryView() {
               {displayItems.length} assets{activeCollectionId ? " (filtered by collection)" : ""}
               {viewMode === "list"
                 ? " · ↑↓ focus · Enter preview · Esc close"
-                : " · Grid · click image to inspect · Esc closes preview"}
+                : " · Grid · See All opens post set · Esc closes overlays"}
             </span>
             <div className="flex items-center gap-2 flex-wrap">
               <span className="text-[10px] uppercase tracking-wide text-[#c9bfb3]">View</span>
@@ -616,6 +703,9 @@ export default function GalleryView() {
                 onToggleSelect={toggleSelect}
                 onFocusIndex={setFocusIndex}
                 onInspect={(it) => void openPreview(it)}
+                onOpenPostBatch={(items, startFlatIndex) =>
+                  setPostBatchModal({ items, startFlatIndex })
+                }
               />
             </div>
           ) : (
@@ -700,6 +790,26 @@ export default function GalleryView() {
           refreshList();
         }}
       />
+
+      {postBatchModal ? (
+        <PostBatchModal
+          items={postBatchModal.items}
+          startFlatIndex={postBatchModal.startFlatIndex}
+          tierTitleById={tierTitleById}
+          selectedKeys={selected}
+          focusIndex={focusIndex}
+          postDetail={batchModalDetail}
+          postDetailLoading={batchModalDetailLoading}
+          creatorId={creatorId}
+          facets={facets}
+          collections={batchModalCollections}
+          onClose={() => setPostBatchModal(null)}
+          onToggleSelect={toggleSelect}
+          onInspect={(it) => void openPreview(it)}
+          onFocusIndex={setFocusIndex}
+          onPostMetadataUpdated={handleBatchModalMetadataUpdated}
+        />
+      ) : null}
 
       {preview ? (
         <InspectModal

@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Preview: single-post grid tile (GalleryGridTile)</title>
+    <style>
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        background: #100c0a;
+        color: #ede5da;
+        font-family: system-ui, "Segoe UI", sans-serif;
+        padding: 2rem 1.5rem 3rem;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 2rem;
+      }
+      p.note {
+        max-width: 40rem;
+        font-size: 0.85rem;
+        color: #8a7f72;
+        line-height: 1.55;
+        text-align: center;
+        margin: 0;
+      }
+      p.note code {
+        color: #e8d4b0;
+        font-size: 0.8rem;
+      }
+      h1 {
+        margin: 0;
+        font-size: 1.1rem;
+        font-weight: 600;
+        color: #f5ebe0;
+        letter-spacing: 0.02em;
+      }
+      .section {
+        width: 100%;
+        max-width: 920px;
+      }
+      .section h2 {
+        margin: 0 0 0.75rem;
+        font-size: 0.7rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.12em;
+        color: #8a7f72;
+      }
+      .row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 1rem;
+        justify-content: center;
+        align-items: flex-start;
+      }
+
+      /* --- Matches web/app/components/GalleryGridTile.tsx (default, non-compact) --- */
+      .tile {
+        width: 100%;
+        max-width: 220px;
+        border-radius: 0.5rem;
+        border: 1px solid #3d342b;
+        overflow: hidden;
+        background: #1a1510;
+        outline: none;
+        transition: border-color 0.15s, box-shadow 0.15s;
+      }
+      .tile:hover {
+        border-color: #5c4f44;
+      }
+      .tile.focused {
+        border-color: #c45c2d;
+        box-shadow: 0 0 0 2px #c45c2d;
+      }
+      .thumb {
+        aspect-ratio: 1;
+        position: relative;
+        background: #2a221c;
+      }
+      .thumb img {
+        display: block;
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+      }
+      .dot {
+        position: absolute;
+        top: 0.5rem;
+        left: 0.5rem;
+        width: 0.5rem;
+        height: 0.5rem;
+        border-radius: 9999px;
+        background: #22c55e;
+        z-index: 2;
+      }
+      .dot.flagged {
+        background: #f59e0b;
+      }
+      .dot.hidden {
+        background: #6b7280;
+      }
+      .select-hit {
+        position: absolute;
+        top: 0.5rem;
+        right: 0.5rem;
+        z-index: 3;
+        display: flex;
+        height: 1.5rem;
+        width: 1.5rem;
+        cursor: pointer;
+        align-items: center;
+        justify-content: center;
+        border-radius: 0.25rem;
+        background: rgba(0, 0, 0, 0.5);
+      }
+      .select-hit input {
+        width: 0.875rem;
+        height: 0.875rem;
+        margin: 0;
+        cursor: pointer;
+      }
+      .meta {
+        padding: 0.5rem;
+        display: flex;
+        flex-direction: column;
+        gap: 0.25rem;
+      }
+      .meta .title {
+        margin: 0;
+        font-size: 11px;
+        font-weight: 500;
+        color: #ede5da;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .meta .date {
+        margin: 0;
+        font-size: 9px;
+        color: #6b645c;
+      }
+      .chips {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.125rem;
+      }
+      .chip {
+        font-size: 8px;
+        padding: 0 0.25rem;
+        border-radius: 0.25rem;
+        border: 1px solid #5c4f44;
+        color: #e8d4b0;
+      }
+
+      /* --- Experiment: larger meta (closer to PostBatchGridCell readability pass) --- */
+      .tile.tile-lg .meta {
+        min-height: 4.5rem;
+        padding: 0.75rem 0.75rem 0.625rem;
+        gap: 0.5rem;
+      }
+      .tile.tile-lg .meta .title {
+        font-size: 0.875rem;
+        font-weight: 600;
+        line-height: 1.35;
+      }
+      .tile.tile-lg .meta .date {
+        font-size: 0.75rem;
+        color: #9a9188;
+      }
+      .tile.tile-lg .chips {
+        margin-top: auto;
+        gap: 0.25rem;
+        padding-top: 0.125rem;
+      }
+      .tile.tile-lg .chip {
+        font-size: 10px;
+        padding: 0.125rem 0.5rem;
+        font-weight: 500;
+        border-color: #6b5a4e;
+        background: rgba(36, 31, 26, 0.8);
+      }
+
+      /* Left experiment only: warm strip behind title for contrast (reference card on the right stays plain). */
+      .tile.tile-lg.tile-title-backdrop .meta .title {
+        padding: 0.2rem 0.55rem;
+        border-radius: 0.3rem;
+        max-width: 100%;
+        display: inline-block;
+        box-decoration-break: clone;
+        -webkit-box-decoration-break: clone;
+        background: linear-gradient(
+          105deg,
+          rgba(196, 92, 45, 0.38) 0%,
+          rgba(90, 62, 42, 0.72) 100%
+        );
+        box-shadow:
+          inset 0 0 0 1px rgba(232, 160, 119, 0.25),
+          0 1px 3px rgba(0, 0, 0, 0.35);
+        text-shadow: 0 1px 2px rgba(8, 6, 5, 0.85);
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Single-post grid tile preview</h1>
+    <p class="note">
+      <strong>Preview only.</strong> Static HTML to diagnose how a <strong>one-asset post</strong> renders in the gallery
+      (<code>GalleryGridTile</code> — not the multi-image <code>PostBatchGridCell</code>). Open from the dev server as
+      <code>/single-post-grid-tile-preview.html</code>. Compare <em>Baseline</em> to your ref screenshot; use
+      <em>Larger meta (experiment)</em> if you want to trial typography like the batch cards.
+    </p>
+
+    <div class="section">
+      <h2>Baseline — current GalleryGridTile defaults</h2>
+      <div class="row">
+        <article class="tile" aria-label="Default border">
+          <div class="thumb">
+            <img
+              src="https://picsum.photos/seed/relay-post-a/400/400"
+              alt=""
+              width="400"
+              height="400"
+            />
+            <span class="dot" title="visible"></span>
+            <label class="select-hit" title="Select for bulk actions">
+              <input type="checkbox" />
+            </label>
+          </div>
+          <div class="meta">
+            <p class="title">Test post 7</p>
+            <p class="date">2026-03-31</p>
+            <div class="chips">
+              <span class="chip">All patrons</span>
+            </div>
+          </div>
+        </article>
+
+        <article class="tile focused" aria-label="Focused — orange ring">
+          <div class="thumb">
+            <img
+              src="https://picsum.photos/seed/relay-post-b/400/400"
+              alt=""
+              width="400"
+              height="400"
+            />
+            <span class="dot" title="visible"></span>
+            <label class="select-hit">
+              <input type="checkbox" checked />
+            </label>
+          </div>
+          <div class="meta">
+            <p class="title">Test post 7</p>
+            <p class="date">2026-03-31</p>
+            <div class="chips">
+              <span class="chip">All patrons</span>
+            </div>
+          </div>
+        </article>
+
+        <article class="tile">
+          <div class="thumb">
+            <img
+              src="https://picsum.photos/seed/relay-post-c/400/400"
+              alt=""
+              width="400"
+              height="400"
+            />
+            <span class="dot flagged" title="flagged"></span>
+            <label class="select-hit">
+              <input type="checkbox" />
+            </label>
+          </div>
+          <div class="meta">
+            <p class="title">Flagged sample — long title truncates with ellipsis</p>
+            <p class="date">2026-01-15</p>
+            <div class="chips">
+              <span class="chip">Tier 5</span>
+              <span class="chip">+1</span>
+            </div>
+          </div>
+        </article>
+
+        <article class="tile">
+          <div class="thumb">
+            <img
+              src="https://picsum.photos/seed/relay-post-d/400/400"
+              alt=""
+              width="400"
+              height="400"
+            />
+            <span class="dot hidden" title="hidden"></span>
+            <label class="select-hit">
+              <input type="checkbox" />
+            </label>
+          </div>
+          <div class="meta">
+            <p class="title">Hidden in workspace</p>
+            <p class="date">2025-12-01</p>
+            <div class="chips">
+              <span class="chip">Public</span>
+            </div>
+          </div>
+        </article>
+      </div>
+    </div>
+
+    <div class="section">
+      <h2>Experiment — larger meta (optional GalleryGridTile tweak)</h2>
+      <p class="note" style="margin: -0.5rem 0 0.5rem">
+        <strong>Right card is the reference</strong> (“Same layout, not focused”) — unchanged.
+        <strong>Left</strong> duplicates it with a small color block behind the title only.
+      </p>
+      <div class="row">
+        <article class="tile tile-lg tile-title-backdrop" aria-label="Same as reference + title backdrop">
+          <div class="thumb">
+            <img
+              src="https://picsum.photos/seed/relay-post-lg2/400/400"
+              alt=""
+              width="400"
+              height="400"
+            />
+            <span class="dot"></span>
+            <label class="select-hit">
+              <input type="checkbox" />
+            </label>
+          </div>
+          <div class="meta">
+            <p class="title">Same layout, not focused</p>
+            <p class="date">2026-03-31</p>
+            <div class="chips">
+              <span class="chip">All patrons</span>
+            </div>
+          </div>
+        </article>
+        <article class="tile tile-lg" aria-label="Reference — do not change">
+          <div class="thumb">
+            <img
+              src="https://picsum.photos/seed/relay-post-lg2/400/400"
+              alt=""
+              width="400"
+              height="400"
+            />
+            <span class="dot"></span>
+            <label class="select-hit">
+              <input type="checkbox" />
+            </label>
+          </div>
+          <div class="meta">
+            <p class="title">Same layout, not focused</p>
+            <p class="date">2026-03-31</p>
+            <div class="chips">
+              <span class="chip">All patrons</span>
+            </div>
+          </div>
+        </article>
+      </div>
+    </div>
+  </body>
+</html>

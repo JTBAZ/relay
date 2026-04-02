@@ -41,6 +41,7 @@ export type GalleryItem = {
   content_url_path: string;
   visibility: PostVisibility;
   collection_ids: string[];
+  collection_theme_tag_ids: string[];
 };
 
 export type Collection = {
@@ -79,6 +80,16 @@ export type GalleryPostDetail = {
   tiers: TierFacet[];
   media: GalleryItem[];
 };
+
+export async function fetchGalleryPostDetail(
+  creatorId: string,
+  postId: string
+): Promise<GalleryPostDetail> {
+  const u = new URLSearchParams();
+  u.set("creator_id", creatorId);
+  u.set("post_id", postId);
+  return relayFetch<GalleryPostDetail>(`/api/v1/gallery/post-detail?${u.toString()}`);
+}
 
 export type SavedFilter = {
   filter_id: string;
@@ -177,4 +188,66 @@ export function buildGalleryQuery(params: {
   if (params.cursor) u.set("cursor", params.cursor);
   if (params.limit != null) u.set("limit", String(params.limit));
   return `/api/v1/gallery/items?${u.toString()}`;
+}
+
+/**
+ * Maps a layout section `filter.query` object to gallery list params (parity with Library / `buildGalleryQuery`).
+ * Unknown or invalid fields are ignored.
+ */
+export function galleryParamsFromLayoutFilterQuery(query: Record<string, unknown>): {
+  q?: string;
+  tag_ids?: string[];
+  tier_ids?: string[];
+  media_type?: string;
+  published_after?: string;
+  published_before?: string;
+  visibility?: PostVisibility | "all";
+  sort?: GallerySortMode;
+} {
+  const out: {
+    q?: string;
+    tag_ids?: string[];
+    tier_ids?: string[];
+    media_type?: string;
+    published_after?: string;
+    published_before?: string;
+    visibility?: PostVisibility | "all";
+    sort?: GallerySortMode;
+  } = {};
+
+  if (typeof query.q === "string" && query.q.trim()) {
+    out.q = query.q.trim();
+  }
+
+  if (Array.isArray(query.tag_ids) && query.tag_ids.every((x) => typeof x === "string")) {
+    out.tag_ids = query.tag_ids;
+  }
+
+  if (Array.isArray(query.tier_ids) && query.tier_ids.every((x) => typeof x === "string")) {
+    out.tier_ids = query.tier_ids;
+  }
+
+  if (typeof query.media_type === "string" && query.media_type.trim()) {
+    out.media_type = query.media_type.trim();
+  }
+
+  if (typeof query.published_after === "string" && query.published_after.trim()) {
+    out.published_after = query.published_after.trim();
+  }
+
+  if (typeof query.published_before === "string" && query.published_before.trim()) {
+    out.published_before = query.published_before.trim();
+  }
+
+  const vis = query.visibility;
+  if (vis === "visible" || vis === "hidden" || vis === "flagged" || vis === "all") {
+    out.visibility = vis;
+  }
+
+  const sort = query.sort;
+  if (sort === "published" || sort === "visibility") {
+    out.sort = sort;
+  }
+
+  return out;
 }

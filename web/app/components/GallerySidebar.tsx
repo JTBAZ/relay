@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useMemo, useState } from "react";
 import {
   RELAY_API_BASE,
@@ -170,7 +171,7 @@ export default function GallerySidebar({
           <input
             value={q}
             onChange={(e) => onSetQ(e.target.value)}
-            placeholder="Search title..."
+            placeholder="Search title, tags, description, themes…"
             className="w-full bg-[#2a221c] border border-[#4a3f36] px-2 py-1 rounded text-xs"
           />
           <p className="text-[10px] text-[#8a7f72]">Media types</p>
@@ -268,6 +269,22 @@ export default function GallerySidebar({
             onCollectionChange={onTriageComplete}
             reloadToken={collectionsReloadToken}
           />
+        </section>
+
+        <section className="space-y-2 rounded-lg border border-[#3d342b] bg-[#1a1410]/60 p-3">
+          <h3 className="font-[family-name:var(--font-display)] text-sm text-[#f0e6d8]">
+            Visitor page
+          </h3>
+          <p className="text-[10px] leading-relaxed text-[#8a7f72]">
+            Collections and tags power search here and can feed your published layout. What patrons see
+            still respects per-file visibility from this Library.
+          </p>
+          <Link
+            href="/designer"
+            className="inline-flex items-center rounded-md border border-[#5c4f44] bg-[#2a221c] px-3 py-1.5 text-xs font-medium text-[#e8a077] hover:border-[#e8a077] hover:text-[#f0c4b8] motion-safe:transition-colors"
+          >
+            Open Designer
+          </Link>
         </section>
 
         <section className="space-y-2">

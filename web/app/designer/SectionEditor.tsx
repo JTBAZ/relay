@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import type { Collection, LayoutMode, PageSection } from "@/lib/relay-api";
 
 type Props = {
@@ -30,9 +31,27 @@ export default function SectionEditor({
   isLast
 }: Props) {
   const sourceType = section.source.type;
+  const filterSnapshot =
+    section.source.type === "filter" ? JSON.stringify(section.source.query) : "";
+  const [filterDraft, setFilterDraft] = useState<string>(() =>
+    section.source.type === "filter" ? JSON.stringify(section.source.query, null, 2) : "{}"
+  );
+
+  useEffect(() => {
+    if (section.source.type === "filter") {
+      setFilterDraft(JSON.stringify(section.source.query, null, 2));
+    }
+    /* filterSnapshot serializes query; omitting section.source.query avoids reset on every parent render */
+  }, [section.section_id, filterSnapshot]); // eslint-disable-line react-hooks/exhaustive-deps -- sync keyed by filterSnapshot
 
   return (
-    <div className="p-3 border border-[#3d342b] rounded bg-[#1a1410] space-y-3">
+    <div
+      className="p-3 border border-[#3d342b] rounded bg-[#1a1410] space-y-3 scroll-mt-4 ring-offset-[#161210] motion-safe:transition-shadow"
+      data-section-id={section.section_id}
+      {...(section.source.type === "collection"
+        ? { "data-designer-collection": section.source.collection_id }
+        : {})}
+    >
       <div className="flex items-center justify-between">
         <input
           value={section.title}
@@ -104,6 +123,37 @@ export default function SectionEditor({
           </div>
         ) : null}
       </div>
+
+      {sourceType === "filter" && section.source.type === "filter" ? (
+        <div className="space-y-1.5">
+          <p className="text-[10px] leading-relaxed text-[#8a7f72]">
+            Same keys as the gallery list API (
+            <code className="text-[#b8a995]">q</code>,{" "}
+            <code className="text-[#b8a995]">tag_ids</code>, <code className="text-[#b8a995]">tier_ids</code>,{" "}
+            <code className="text-[#b8a995]">visibility</code>, <code className="text-[#b8a995]">sort</code>, dates,{" "}
+            <code className="text-[#b8a995]">media_type</code>). Empty {`{}`} → up to 200 items.
+          </p>
+          <textarea
+            value={filterDraft}
+            onChange={(e) => setFilterDraft(e.target.value)}
+            onBlur={() => {
+              try {
+                const parsed = JSON.parse(filterDraft) as unknown;
+                if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+                  onUpdate({ source: { type: "filter", query: parsed as Record<string, unknown> } });
+                }
+              } catch {
+                if (section.source.type === "filter") {
+                  setFilterDraft(JSON.stringify(section.source.query, null, 2));
+                }
+              }
+            }}
+            spellCheck={false}
+            rows={5}
+            className="w-full resize-y rounded border border-[#4a3f36] bg-[#0d0a08] p-2 font-mono text-[10px] leading-snug text-[#c9bfb3] focus:border-[#e8a077] focus:outline-none"
+          />
+        </div>
+      ) : null}
 
       <div className="grid grid-cols-3 gap-2">
         <div>

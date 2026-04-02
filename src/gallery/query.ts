@@ -10,7 +10,8 @@ import type {
   PostVisibility
 } from "./types.js";
 
-function effectiveTags(
+/** Post-level tags after gallery override add/remove deltas (matches list rows). */
+export function effectiveTags(
   base: string[],
   creatorId: string,
   postId: string,
@@ -82,6 +83,67 @@ function resolveItemVisibility(
   return post?.visibility ?? "visible";
 }
 
+/** Cap description scan length for universal `q` search (cost bound). */
+const MAX_DESC_SEARCH_CHARS = 16_000;
+
+/**
+ * Strip HTML for substring search: tags removed, common entities simplified, whitespace collapsed.
+ */
+export function stripHtmlForSearch(html: string | undefined): string {
+  if (!html?.trim()) {
+    return "";
+  }
+  const noTags = html.replace(/<[^>]*>/g, " ");
+  const decoded = noTags
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#(\d+);/g, (_, n) => {
+      const code = Number(n);
+      return Number.isFinite(code) && code >= 0 && code <= 0x10ffff
+        ? String.fromCodePoint(code)
+        : "";
+    });
+  return decoded.replace(/\s+/g, " ").trim();
+}
+
+/**
+ * Universal Find Assets `q`: whitespace tokens, AND across tokens; each token matches if it appears
+ * (case-insensitive substring) in title, any row tag, stripped description (first MAX_DESC_SEARCH_CHARS),
+ * any collection theme tag, or post_id / media_id.
+ */
+export function itemMatchesFreeTextQuery(item: GalleryItem, raw: string): boolean {
+  const tokens = raw
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((t) => t.toLowerCase());
+  if (tokens.length === 0) {
+    return true;
+  }
+
+  const titleLower = item.title.toLowerCase();
+  const postIdLower = item.post_id.toLowerCase();
+  const mediaIdLower = item.media_id.toLowerCase();
+  const descHay = stripHtmlForSearch(item.description)
+    .slice(0, MAX_DESC_SEARCH_CHARS)
+    .toLowerCase();
+
+  for (const token of tokens) {
+    const inTitle = titleLower.includes(token);
+    const inTag = item.tag_ids.some((t) => t.toLowerCase().includes(token));
+    const inDesc = descHay.includes(token);
+    const inTheme = item.collection_theme_tag_ids.some((t) => t.toLowerCase().includes(token));
+    const inIds = postIdLower.includes(token) || mediaIdLower.includes(token);
+    if (!inTitle && !inTag && !inDesc && !inTheme && !inIds) {
+      return false;
+    }
+  }
+  return true;
+}
+
 export function buildGalleryItems(
   creatorId: string,
   snapshot: CanonicalSnapshot,
@@ -95,11 +157,24 @@ export function buildGalleryItems(
 
   // Pre-index: postId -> collection_ids
   const postCollectionMap = new Map<string, string[]>();
+  /** postId -> deduped collection theme tags (for universal search). */
+  const postThemeTags = new Map<string, Set<string>>();
   for (const col of collections) {
     for (const pid of col.post_ids) {
       const arr = postCollectionMap.get(pid);
       if (arr) arr.push(col.collection_id);
       else postCollectionMap.set(pid, [col.collection_id]);
+      const themes = col.theme_tag_ids ?? [];
+      if (themes.length > 0) {
+        let set = postThemeTags.get(pid);
+        if (!set) {
+          set = new Set<string>();
+          postThemeTags.set(pid, set);
+        }
+        for (const th of themes) {
+          if (th.trim()) set.add(th.trim());
+        }
+      }
     }
   }
 
@@ -115,6 +190,7 @@ export function buildGalleryItems(
     );
 
     const colIds = postCollectionMap.get(postId) ?? [];
+    const themeTagList = [...(postThemeTags.get(postId) ?? [])];
 
     let addedMedia = false;
     for (const mediaId of postRow.current.media_ids) {
@@ -137,7 +213,8 @@ export function buildGalleryItems(
         has_export: hasExport,
         content_url_path: `/api/v1/export/media/${encodeURIComponent(creatorId)}/${encodeURIComponent(mediaId)}/content`,
         visibility: resolveItemVisibility(creatorId, postId, mediaId, overrides),
-        collection_ids: colIds
+        collection_ids: colIds,
+        collection_theme_tag_ids: themeTagList
       });
       addedMedia = true;
     }
@@ -156,7 +233,8 @@ export function buildGalleryItems(
         has_export: false,
         content_url_path: "",
         visibility: resolveItemVisibility(creatorId, postId, syntheticId, overrides),
-        collection_ids: colIds
+        collection_ids: colIds,
+        collection_theme_tag_ids: themeTagList
       });
     }
   }
@@ -198,8 +276,7 @@ function matchesFilters(item: GalleryItem, p: GalleryListParams): boolean {
     }
   }
   if (p.q && p.q.trim()) {
-    const q = p.q.trim().toLowerCase();
-    if (!item.title.toLowerCase().includes(q)) {
+    if (!itemMatchesFreeTextQuery(item, p.q)) {
       return false;
     }
   }

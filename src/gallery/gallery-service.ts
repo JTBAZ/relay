@@ -3,6 +3,7 @@ import type { FileExportIndex } from "../export/export-index.js";
 import {
   buildGalleryItems,
   collectFacets,
+  effectiveTags,
   listGalleryItems
 } from "./query.js";
 import type { FileGalleryOverridesStore } from "./overrides-store.js";
@@ -107,7 +108,7 @@ export class GalleryService {
       title: post.current.title,
       description: post.current.description,
       published_at: post.current.published_at,
-      tag_ids: [...post.current.tag_ids],
+      tag_ids: effectiveTags(post.current.tag_ids, creatorId, postId, ov),
       tiers,
       media
     };
