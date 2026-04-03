@@ -75,6 +75,10 @@ export class GalleryService {
     tier_ids: string[];
     tiers: GalleryTierFacet[];
     tag_counts: Record<string, number>;
+    /** Sum of exported blob sizes (export index only). Omitted for `visitor_catalog`. */
+    export_total_bytes?: number;
+    /** Count of entries in export index. Omitted for `visitor_catalog`. */
+    export_media_count?: number;
   }> {
     const snapshot = await this.canonical.load();
     const index = await this.exportIndex.load(creatorId);
@@ -102,7 +106,22 @@ export class GalleryService {
       }
       return facet;
     });
-    return { ...facetValues, tiers };
+    const base = { ...facetValues, tiers };
+    if (options?.visitor_catalog) {
+      return base;
+    }
+    let exportTotalBytes = 0;
+    for (const rec of Object.values(index.media ?? {})) {
+      const n = rec.byte_length;
+      if (typeof n === "number" && Number.isFinite(n) && n >= 0) {
+        exportTotalBytes += n;
+      }
+    }
+    return {
+      ...base,
+      export_total_bytes: exportTotalBytes,
+      export_media_count: Object.keys(index.media ?? {}).length
+    };
   }
 
   public async postDetail(

@@ -920,6 +920,50 @@ export function createApp(config: AppConfig): CreateAppResult {
     }
   });
 
+  app.get("/api/v1/export/library-zip", async (req, res) => {
+    const traceId = traceIdFrom(req);
+    const creatorId =
+      typeof req.query.creator_id === "string" ? req.query.creator_id.trim() : "";
+    if (!creatorId) {
+      return res
+        .status(400)
+        .json(
+          errorEnvelope("VALIDATION_ERROR", "creator_id is required.", traceId, [
+            { field: "creator_id", issue: "missing" }
+          ])
+        );
+    }
+    try {
+      if (await exportService.isLibraryZipEmpty(creatorId)) {
+        return res
+          .status(404)
+          .json(
+            errorEnvelope(
+              "NOT_FOUND",
+              "No exported media for this creator. Run export or Patreon sync first.",
+              traceId
+            )
+          );
+      }
+      const safeName = creatorId.replace(/[^\w.-]+/g, "_") || "library";
+      res.setHeader("Content-Type", "application/zip");
+      res.setHeader(
+        "Content-Disposition",
+        `attachment; filename="relay-library-${safeName}.zip"`
+      );
+      res.setHeader("Cache-Control", "private, no-store");
+      await exportService.pipeLibraryZip(creatorId, res);
+    } catch (err: unknown) {
+      const e = err as Error & { code?: string };
+      if (!res.headersSent) {
+        return res
+          .status(502)
+          .json(errorEnvelope("EXPORT_ZIP_ERROR", e.message ?? "Zip failed.", traceId));
+      }
+      res.end();
+    }
+  });
+
   app.get("/api/v1/export/media/:creator_id/:media_id/content", async (req, res) => {
     const traceId = traceIdFrom(req);
     try {

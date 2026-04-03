@@ -1,6 +1,8 @@
+import archiver from "archiver";
 import { createHash } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { join, relative, resolve } from "node:path";
+import type { Writable } from "node:stream";
 import type { FileCanonicalStore } from "../ingest/canonical-store.js";
 import { FileExportIndex } from "./export-index.js";
 import {
@@ -28,6 +30,31 @@ function clearExportFailure(index: CreatorExportIndex, mediaId: string): void {
     delete index.export_failures;
   }
 }
+
+/** Split `relative_blob_path` from the export index; reject `..` and absolute-ish segments. */
+function pathSegmentsFromRelativeBlob(relativeBlobPath: string): string[] {
+  const parts = relativeBlobPath.split(/[/\\]+/).filter((p) => p.length > 0);
+  if (parts.some((p) => p === ".." || p === ".")) {
+    throw new Error("Unsafe relative_blob_path in export index");
+  }
+  return parts;
+}
+
+function absoluteBlobPathUnderCreator(
+  storageRoot: string,
+  creatorId: string,
+  parts: string[]
+): string {
+  const creatorRoot = resolve(join(storageRoot, creatorId));
+  const abs = resolve(creatorRoot, ...parts);
+  const rel = relative(creatorRoot, abs);
+  if (rel.startsWith("..") || rel === "") {
+    throw new Error("Export path escapes creator directory");
+  }
+  return abs;
+}
+
+const LIBRARY_ZIP_EMPTY_CODE = "LIBRARY_ZIP_EMPTY";
 
 export class ExportService {
   private readonly canonicalStore: FileCanonicalStore;
@@ -173,6 +200,63 @@ export class ExportService {
   public async getExportRecord(creatorId: string, mediaId: string) {
     const index = await this.exportIndex.load(creatorId);
     return index.media[mediaId] ?? null;
+  }
+
+  /** True when there is nothing to put in `GET /api/v1/export/library-zip`. */
+  public async isLibraryZipEmpty(creatorId: string): Promise<boolean> {
+    const index = await this.exportIndex.load(creatorId);
+    return Object.keys(index.media ?? {}).length === 0;
+  }
+
+  /**
+   * Stream a zip of all exported blobs (paths from `relative_blob_path`) plus manifests JSON.
+   * Caller must set `Content-Type` / `Content-Disposition` on `dest` before calling, after `isLibraryZipEmpty` is false.
+   */
+  public async pipeLibraryZip(creatorId: string, dest: Writable): Promise<void> {
+    const index = await this.exportIndex.load(creatorId);
+    const mediaEntries = Object.entries(index.media ?? {});
+    if (mediaEntries.length === 0) {
+      const e = new Error("No exported media for library zip.");
+      (e as NodeJS.ErrnoException).code = LIBRARY_ZIP_EMPTY_CODE;
+      throw e;
+    }
+
+    const snapshot = await this.canonicalStore.load();
+    const archive = archiver("zip", { zlib: { level: 6 } });
+
+    const finished = new Promise<void>((resolvePromise, rejectPromise) => {
+      archive.on("error", rejectPromise);
+      archive.on("warning", (err: Error & { code?: string }) => {
+        if (err.code === "ENOENT") {
+          rejectPromise(err);
+        }
+      });
+      dest.on("error", rejectPromise);
+      archive.on("end", () => resolvePromise());
+    });
+
+    archive.pipe(dest);
+
+    const mediaManifest = buildMediaManifest(creatorId, snapshot, index);
+    archive.append(JSON.stringify(mediaManifest, null, 2), {
+      name: "manifests/media-manifest.json"
+    });
+    archive.append(JSON.stringify(buildPostMap(creatorId, snapshot), null, 2), {
+      name: "manifests/post-map.json"
+    });
+    archive.append(JSON.stringify(buildTierMap(creatorId, snapshot), null, 2), {
+      name: "manifests/tier-map.json"
+    });
+
+    for (const [, rec] of mediaEntries) {
+      const parts = pathSegmentsFromRelativeBlob(rec.relative_blob_path);
+      const abs = absoluteBlobPathUnderCreator(this.storageRoot, creatorId, parts);
+      const nameInZip = parts.join("/");
+      archive.file(abs, { name: nameInZip });
+    }
+
+    await archive.finalize();
+    await finished;
   }
 
   public async materializeManifests(creatorId: string): Promise<{

@@ -9,7 +9,8 @@ export const RELAY_API_BASE = resolveRelayApiBase();
 
 type Envelope<T> = { data: T; meta: { trace_id: string } };
 
-function patronAuthHeader(): Record<string, string> {
+/** Bearer session when `relay_session_token` is in `localStorage` (client-only). */
+export function relayPatronAuthHeaders(): Record<string, string> {
   if (typeof window === "undefined") {
     return {};
   }
@@ -22,7 +23,7 @@ export async function relayFetch<T>(path: string, init?: RequestInit): Promise<T
     ...init,
     headers: {
       "content-type": "application/json",
-      ...patronAuthHeader(),
+      ...relayPatronAuthHeaders(),
       ...init?.headers
     },
     cache: "no-store"
@@ -89,6 +90,10 @@ export type FacetsData = {
   tiers: TierFacet[];
   /** Asset-row counts per tag (same ordering basis as `tag_ids`, which is sorted by frequency desc). */
   tag_counts: Record<string, number>;
+  /** Present on creator Library facets only: sum of `byte_length` in export index. */
+  export_total_bytes?: number;
+  /** Present on creator Library facets only: number of exported media records. */
+  export_media_count?: number;
 };
 
 export type GalleryPostDetail = {

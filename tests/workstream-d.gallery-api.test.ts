@@ -83,6 +83,15 @@ describe("Workstream D gallery API", () => {
     expect(facets.status).toBe(200);
     expect(facets.body.data.tag_ids).toContain("forest");
     expect(facets.body.data.tier_ids).toContain("t_gold");
+    expect(facets.body.data.export_total_bytes).toBe(0);
+    expect(facets.body.data.export_media_count).toBe(0);
+
+    const facetsVisitor = await request(app).get(
+      "/api/v1/gallery/facets?creator_id=cr1&visitor=true"
+    );
+    expect(facetsVisitor.status).toBe(200);
+    expect(facetsVisitor.body.data.export_total_bytes).toBeUndefined();
+    expect(facetsVisitor.body.data.export_media_count).toBeUndefined();
 
     const bulk = await request(app).post("/api/v1/gallery/media/bulk-tags").send({
       creator_id: "cr1",

@@ -55,7 +55,9 @@ export default function GalleryView() {
     tag_ids: [],
     tier_ids: [],
     tiers: [],
-    tag_counts: {}
+    tag_counts: {},
+    export_total_bytes: 0,
+    export_media_count: 0
   });
   const [collections, setCollections] = useState<Collection[]>([]);
   const [collectionsReloadToken, setCollectionsReloadToken] = useState(0);
@@ -131,7 +133,11 @@ export default function GalleryView() {
     const params = new URLSearchParams();
     params.set("creator_id", creatorId);
     const res = await relayFetch<FacetsData>(`/api/v1/gallery/facets?${params.toString()}`);
-    setFacets(res);
+    setFacets({
+      ...res,
+      export_total_bytes: res.export_total_bytes ?? 0,
+      export_media_count: res.export_media_count ?? 0
+    });
   }, [creatorId]);
 
   const fetchPage = useCallback(

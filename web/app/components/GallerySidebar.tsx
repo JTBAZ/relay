@@ -1,8 +1,9 @@
 "use client";
 
-import { useMemo, useState, type ElementType } from "react";
+import { useCallback, useMemo, useState, type ElementType } from "react";
 import {
   ChevronRight,
+  Download,
   Eye,
   EyeOff,
   FileText,
@@ -12,9 +13,28 @@ import {
   Search,
   ShieldAlert
 } from "lucide-react";
-import type { FacetsData } from "@/lib/relay-api";
+import {
+  RELAY_API_BASE,
+  relayPatronAuthHeaders,
+  type FacetsData
+} from "@/lib/relay-api";
 import CollectionsPanel from "./CollectionsPanel";
 import MediaTypeMultiSelect, { type MediaTypeValue } from "./MediaTypeMultiSelect";
+
+function formatExportedBytes(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes < 0) return "—";
+  if (bytes === 0) return "0 B";
+  const units = ["B", "KB", "MB", "GB", "TB"];
+  let v = bytes;
+  let i = 0;
+  while (v >= 1024 && i < units.length - 1) {
+    v /= 1024;
+    i += 1;
+  }
+  const rounded =
+    i === 0 ? String(Math.round(v)) : v >= 10 ? String(Math.round(v)) : v.toFixed(1);
+  return `${rounded} ${units[i]}`;
+}
 
 type VisibilityState = {
   hidden: boolean;
@@ -120,6 +140,60 @@ export default function GallerySidebar({
   const [visibleTagCount, setVisibleTagCount] = useState(20);
   const [collectionsOpen, setCollectionsOpen] = useState(true);
   const [collectionEditorOpen, setCollectionEditorOpen] = useState(false);
+  const [zipLoading, setZipLoading] = useState(false);
+  const [zipError, setZipError] = useState<string | null>(null);
+
+  const downloadLibraryZip = useCallback(async () => {
+    setZipError(null);
+    setZipLoading(true);
+    try {
+      const u = new URLSearchParams();
+      u.set("creator_id", creatorId);
+      const res = await fetch(
+        `${RELAY_API_BASE}/api/v1/export/library-zip?${u.toString()}`,
+        {
+          method: "GET",
+          headers: { ...relayPatronAuthHeaders() },
+          cache: "no-store"
+        }
+      );
+      if (!res.ok) {
+        const text = await res.text();
+        let msg = res.statusText || "Request failed";
+        if (text) {
+          try {
+            const j = JSON.parse(text) as { error?: { message?: string } };
+            if (typeof j.error?.message === "string" && j.error.message.trim()) {
+              msg = j.error.message.trim();
+            }
+          } catch {
+            const snippet = text.replace(/\s+/g, " ").trim().slice(0, 160);
+            if (snippet && !snippet.startsWith("<")) msg = snippet;
+          }
+        }
+        if (res.status === 404 && msg === "Not Found") {
+          msg =
+            "No library ZIP (no exported files yet, or Relay API needs updating). Run a live Patreon sync, then try again.";
+        }
+        throw new Error(msg);
+      }
+      const blob = await res.blob();
+      const href = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = href;
+      const safe = creatorId.replace(/[^\w.-]+/g, "_") || "library";
+      a.download = `relay-library-${safe}.zip`;
+      a.rel = "noopener";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(href);
+    } catch (e) {
+      setZipError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setZipLoading(false);
+    }
+  }, [creatorId]);
 
   const filteredTags = useMemo(() => {
     const search = tagSearch.trim().toLowerCase();
@@ -314,13 +388,38 @@ export default function GallerySidebar({
         </section>
       </div>
 
-      <div className="border-t border-[var(--lib-border)] p-3">
-        <div className="flex items-center justify-between text-[10px] text-[var(--lib-fg-muted)]">
-          <span>
+      <div className="space-y-2 border-t border-[var(--lib-border)] p-3">
+        <div className="flex items-center justify-between gap-2 text-[10px] text-[var(--lib-fg-muted)]">
+          <span className="min-w-0">
             {assetsInView.toLocaleString()} across {collectionCount} collections
           </span>
-          <span>1.2 TB</span>
+          <span
+            className="shrink-0 tabular-nums"
+            title="Total size of exported files stored by Relay (not unexported or Patreon-only URLs)."
+          >
+            {formatExportedBytes(facets.export_total_bytes ?? 0)}
+          </span>
         </div>
+        <button
+          type="button"
+          onClick={() => void downloadLibraryZip()}
+          disabled={zipLoading}
+          title="ZIP includes only files in Relay export storage (after a live sync or successful per-item export), plus JSON manifests."
+          className="flex w-full items-center justify-center gap-1.5 rounded-md border border-[var(--lib-border)] bg-[var(--lib-input)] px-2 py-1.5 text-[10px] font-medium text-[var(--lib-fg)] transition-colors hover:border-[var(--lib-primary)]/55 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          <Download className="h-3 w-3 shrink-0 text-[var(--lib-primary)]" aria-hidden />
+          {zipLoading ? "Preparing ZIP…" : "Download library ZIP"}
+        </button>
+        {(facets.export_media_count ?? 0) === 0 && !zipError ? (
+          <p className="text-[10px] leading-snug text-[var(--lib-fg-muted)]">
+            0 exported files — run a{" "}
+            <strong className="font-medium text-[var(--lib-fg)]">live</strong> Patreon sync (not dry run)
+            so media is saved under export storage, then download works.
+          </p>
+        ) : null}
+        {zipError ? (
+          <p className="text-[10px] leading-snug text-[var(--lib-destructive)]">{zipError}</p>
+        ) : null}
       </div>
     </aside>
   );
