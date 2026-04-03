@@ -1,79 +1,74 @@
 "use client";
 
-import { useMemo } from "react";
-import { groupGalleryItemsByPost, galleryItemKey } from "@/lib/gallery-group";
-import type { GalleryItem } from "@/lib/relay-api";
+import { galleryItemKey, type PostGalleryGroup } from "@/lib/gallery-group";
+import type { GalleryItem, TierFacet } from "@/lib/relay-api";
 import GalleryGridTile from "./GalleryGridTile";
-import PostBatchGridCell from "./PostBatchGridCell";
+
+export type GalleryGridDensity = "dense" | "normal";
+
+function groupFullySelected(group: PostGalleryGroup, selectedKeys: Set<string>): boolean {
+  return (
+    group.items.length > 0 && group.items.every((i) => selectedKeys.has(galleryItemKey(i)))
+  );
+}
+
+function groupPartiallySelected(group: PostGalleryGroup, selectedKeys: Set<string>): boolean {
+  if (group.items.length <= 1) return false;
+  const any = group.items.some((i) => selectedKeys.has(galleryItemKey(i)));
+  return any && !groupFullySelected(group, selectedKeys);
+}
 
 type Props = {
-  items: GalleryItem[];
+  groups: PostGalleryGroup[];
   tierTitleById: Record<string, string>;
+  tierFacets?: TierFacet[];
   selectedKeys: Set<string>;
-  focusIndex: number;
-  onToggleSelect: (item: GalleryItem) => void;
+  /** Dense = more columns (control-room style); comfortable = larger thumbnails */
+  gridDensity?: GalleryGridDensity;
+  onToggleSelectGroup: (items: GalleryItem[]) => void;
   onFocusIndex: (index: number) => void;
-  onInspect: (item: GalleryItem) => void;
-  onOpenPostBatch: (items: GalleryItem[], startFlatIndex: number) => void;
+  /** Carousel thumb (etc.): select only this asset, not the whole post. */
+  onIsolateAssetSelection?: (item: GalleryItem) => void;
+  creatorId: string;
+  onExportRetryComplete?: () => void;
 };
 
 export default function GalleryGrid({
-  items,
+  groups,
   tierTitleById,
+  tierFacets = [],
   selectedKeys,
-  focusIndex,
-  onToggleSelect,
+  gridDensity = "dense",
+  onToggleSelectGroup,
   onFocusIndex,
-  onInspect,
-  onOpenPostBatch
+  onIsolateAssetSelection,
+  creatorId,
+  onExportRetryComplete
 }: Props) {
-  const groups = useMemo(() => groupGalleryItemsByPost(items), [items]);
-
-  let startFlatIndex = 0;
+  const gridClass =
+    gridDensity === "dense"
+      ? "grid grid-cols-2 auto-rows-[minmax(14rem,1fr)] gap-2 p-4 sm:grid-cols-3 lg:grid-cols-5 xl:grid-cols-6"
+      : "grid grid-cols-2 auto-rows-[minmax(14rem,1fr)] gap-3 p-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-4 xl:grid-cols-5";
 
   return (
-    <div
-      className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2 p-4"
-      role="list"
-    >
-      {groups.map((group) => {
-        const { post_id, items: groupItems } = group;
-        const start = startFlatIndex;
-        startFlatIndex += groupItems.length;
-
-        if (groupItems.length === 1) {
-          const item = groupItems[0]!;
-          const k = galleryItemKey(item);
-          return (
-            <div key={post_id} role="listitem">
-              <GalleryGridTile
-                item={item}
-                tierTitleById={tierTitleById}
-                selected={selectedKeys.has(k)}
-                focused={focusIndex === start}
-                flatIndex={start}
-                onToggleSelect={onToggleSelect}
-                onInspect={onInspect}
-                onFocusIndex={onFocusIndex}
-              />
-            </div>
-          );
-        }
-
-        return (
-          <div key={post_id} role="listitem">
-            <PostBatchGridCell
-              items={groupItems}
-              startFlatIndex={start}
-              tierTitleById={tierTitleById}
-              focusIndex={focusIndex}
-              onOpenPostBatch={() => onOpenPostBatch(groupItems, start)}
-              onInspect={onInspect}
-              onFocusIndex={onFocusIndex}
-            />
-          </div>
-        );
-      })}
+    <div className={gridClass} role="list">
+      {groups.map((group, idx) => (
+        <div key={group.post_id} className="flex h-full min-h-0 min-w-0 w-full">
+          <GalleryGridTile
+            items={group.items}
+            tierTitleById={tierTitleById}
+            tierFacets={tierFacets}
+            selected={groupFullySelected(group, selectedKeys)}
+            partiallySelected={groupPartiallySelected(group, selectedKeys)}
+            flatIndex={idx}
+            onToggleSelect={onToggleSelectGroup}
+            onFocusIndex={onFocusIndex}
+            onIsolateAssetSelection={onIsolateAssetSelection}
+            creatorId={creatorId}
+            onExportRetryComplete={onExportRetryComplete}
+          />
+        </div>
+      ))}
     </div>
   );
 }

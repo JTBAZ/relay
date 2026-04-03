@@ -7,7 +7,8 @@ export type TriageResult = {
   duplicate_groups: { canonical_post_id: string; duplicate_post_ids: string[] }[];
   small_media_ids: string[];
   cover_media_ids: string[];
-  total_flagged: number;
+  /** Count of posts/media rows that auto-clean would move to Review (for UI summaries). */
+  total_review_items: number;
 };
 
 export const TRIAGE_CATEGORY_KEYS = [
@@ -238,7 +239,7 @@ export class TriageService {
 
     const duplicateGroups = buildDuplicateGroupsByTitleAndSha(posts, mediaMap, index);
 
-    const total_flagged =
+    const total_review_items =
       textOnlyIds.length +
       duplicateGroups.reduce((n, g) => n + g.duplicate_post_ids.length, 0) +
       smallMediaIds.length +
@@ -249,7 +250,7 @@ export class TriageService {
       duplicate_groups: duplicateGroups,
       small_media_ids: smallMediaIds,
       cover_media_ids: coverMediaIds,
-      total_flagged
+      total_review_items
     };
   }
 
@@ -295,12 +296,12 @@ export class TriageService {
     }
 
     if (postIdsToFlag.size > 0) {
-      await overrides.setVisibility(creatorId, [...postIdsToFlag], "flagged");
+      await overrides.setVisibility(creatorId, [...postIdsToFlag], "review");
     }
     if (mediaFlagTargets.length > 0) {
       await overrides.setMediaVisibility(
         creatorId,
-        mediaFlagTargets.map((t) => ({ ...t, visibility: "flagged" }))
+        mediaFlagTargets.map((t) => ({ ...t, visibility: "review" }))
       );
     }
 

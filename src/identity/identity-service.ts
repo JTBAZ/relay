@@ -93,6 +93,26 @@ export class IdentityService {
     return this.createSessionForUser(user);
   }
 
+  /**
+   * After Patreon patron OAuth: upsert user + `tier_ids` from identity, then session.
+   * Matches `registerPatreonFallback` + session issuance in one step.
+   */
+  public async completePatreonPatronOAuth(
+    creatorId: string,
+    patreonUserId: string,
+    email: string,
+    tierIds: string[]
+  ): Promise<{ user: UserAccount; session: SessionToken }> {
+    const user = await this.registerPatreonFallback(
+      creatorId,
+      patreonUserId,
+      email,
+      tierIds
+    );
+    const session = await this.createSessionForUser(user);
+    return { user, session };
+  }
+
   public async resolveSession(
     token: string
   ): Promise<SessionToken | null> {

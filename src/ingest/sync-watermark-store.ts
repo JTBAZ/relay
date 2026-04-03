@@ -1,7 +1,7 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 
-type WatermarkRow = {
+export type WatermarkRow = {
   last_synced_at: string;
   updated_at: string;
 };
@@ -25,8 +25,17 @@ export class SyncWatermarkStore {
     creatorId: string,
     campaignId: string
   ): Promise<string | null> {
+    const row = await this.getRow(creatorId, campaignId);
+    return row?.last_synced_at ?? null;
+  }
+
+  /** Full row for UI (newest post `published_at` at last successful apply + wall time). */
+  public async getRow(
+    creatorId: string,
+    campaignId: string
+  ): Promise<WatermarkRow | null> {
     const root = await this.readRoot();
-    return root.records[keyFor(creatorId, campaignId)]?.last_synced_at ?? null;
+    return root.records[keyFor(creatorId, campaignId)] ?? null;
   }
 
   public async set(

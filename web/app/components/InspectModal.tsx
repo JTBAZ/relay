@@ -133,10 +133,10 @@ export default function InspectModal({
             </button>
             <button
               type="button"
-              onClick={() => void applyVis("flagged")}
+              onClick={() => void applyVis("review")}
               className="text-xs px-3 py-1.5 rounded bg-amber-900/40 border border-amber-700/60 text-[#ede5da] hover:bg-amber-900/60"
             >
-              Flag
+              Review
             </button>
             <button
               type="button"

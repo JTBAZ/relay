@@ -12,6 +12,48 @@ body {
   background: var(--background);
 }
 
+/* Library control room baseline tokens (v0 prototype) */
+.library-shell {
+  --lib-bg: oklch(0.12 0.008 160);
+  --lib-card: oklch(0.14 0.008 160);
+  --lib-border: oklch(0.22 0.008 160);
+  --lib-muted: oklch(0.16 0.008 160);
+  --lib-input: oklch(0.18 0.008 160);
+  --lib-fg: oklch(0.92 0.008 160);
+  --lib-fg-muted: oklch(0.55 0.008 160);
+  --lib-primary: oklch(0.65 0.15 160);
+  --lib-primary-fg: oklch(0.12 0.008 160);
+  --lib-sidebar: oklch(0.1 0.008 160);
+  --lib-sidebar-accent: oklch(0.16 0.008 160);
+  --lib-success: oklch(0.65 0.15 160);
+  --lib-warning: oklch(0.75 0.15 85);
+  --lib-destructive: oklch(0.55 0.2 25);
+  --lib-ring: oklch(0.65 0.15 160);
+  --lib-accent-border: #00ffb4;
+  --lib-tile: oklch(0.14 0.008 160);
+  /* Library grid canvas + selection outline (spec) */
+  --lib-grid-bg: #131a19;
+  --lib-selection: #00aa6f;
+}
+
+.library-shell ::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.library-shell ::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.library-shell ::-webkit-scrollbar-thumb {
+  background: oklch(0.25 0.008 160);
+  border-radius: 3px;
+}
+
+.library-shell ::-webkit-scrollbar-thumb:hover {
+  background: oklch(0.35 0.008 160);
+}
+
 @layer utilities {
   .text-balance {
     text-wrap: balance;

@@ -1,11 +1,15 @@
 import type { FileCanonicalStore } from "../ingest/canonical-store.js";
 import type { FileExportIndex } from "../export/export-index.js";
+import { evaluateTierRules } from "../clone/tier-rules.js";
+import type { SessionToken } from "../identity/types.js";
 import {
   buildGalleryItems,
   collectFacets,
   effectiveTags,
+  galleryItemsPostPrimaryView,
   listGalleryItems
 } from "./query.js";
+import { redactGalleryItemExportIfLocked } from "./patron-media-access.js";
 import type { FileGalleryOverridesStore } from "./overrides-store.js";
 import type { FileCollectionsStore } from "./collections-store.js";
 import type {
@@ -40,25 +44,46 @@ export class GalleryService {
     return this.collections.listForCreator(creatorId);
   }
 
-  public async list(params: GalleryListParams): Promise<GalleryListResult> {
+  public async list(
+    params: GalleryListParams & { patron_session?: SessionToken | null }
+  ): Promise<GalleryListResult> {
     const snapshot = await this.canonical.load();
     const index = await this.exportIndex.load(params.creator_id);
     const ov = await this.overrides.load();
     const cols = await this.loadCollections(params.creator_id);
-    const all = buildGalleryItems(params.creator_id, snapshot, index, ov, cols);
-    return listGalleryItems(all, params);
+    let all = buildGalleryItems(params.creator_id, snapshot, index, ov, cols);
+    const wantsSearchFocus = params.display === "post_primary" && Boolean(params.q?.trim());
+    if (params.display === "post_primary" && !wantsSearchFocus) {
+      all = galleryItemsPostPrimaryView(all);
+    }
+    const result = listGalleryItems(all, params);
+    if (params.visitor_catalog) {
+      const tierRules = evaluateTierRules(snapshot.tiers[params.creator_id] ?? {});
+      const session = params.patron_session ?? null;
+      result.items = result.items.map((item) =>
+        redactGalleryItemExportIfLocked(item, params.creator_id, session, tierRules)
+      );
+    }
+    return result;
   }
 
-  public async facets(creatorId: string): Promise<{
+  public async facets(
+    creatorId: string,
+    options?: { visitor_catalog?: boolean }
+  ): Promise<{
     tag_ids: string[];
     tier_ids: string[];
     tiers: GalleryTierFacet[];
+    tag_counts: Record<string, number>;
   }> {
     const snapshot = await this.canonical.load();
     const index = await this.exportIndex.load(creatorId);
     const ov = await this.overrides.load();
     const cols = await this.loadCollections(creatorId);
-    const all = buildGalleryItems(creatorId, snapshot, index, ov, cols);
+    let all = buildGalleryItems(creatorId, snapshot, index, ov, cols);
+    if (options?.visitor_catalog) {
+      all = all.filter((i) => i.visibility !== "hidden");
+    }
     const facetValues = collectFacets(all);
     const tierMap = snapshot.tiers[creatorId] ?? {};
 
@@ -80,7 +105,11 @@ export class GalleryService {
     return { ...facetValues, tiers };
   }
 
-  public async postDetail(creatorId: string, postId: string): Promise<GalleryPostDetail | null> {
+  public async postDetail(
+    creatorId: string,
+    postId: string,
+    options?: { visitor_catalog?: boolean; patron_session?: SessionToken | null }
+  ): Promise<GalleryPostDetail | null> {
     const snapshot = await this.canonical.load();
     const post = snapshot.posts[creatorId]?.[postId];
     if (!post || post.upstream_status === "deleted") {
@@ -90,7 +119,20 @@ export class GalleryService {
     const ov = await this.overrides.load();
     const cols = await this.loadCollections(creatorId);
     const all = buildGalleryItems(creatorId, snapshot, index, ov, cols);
-    const media = all.filter((item) => item.post_id === postId);
+    let media = all.filter((item) => item.post_id === postId);
+    if (options?.visitor_catalog) {
+      media = media.filter((m) => m.visibility !== "hidden");
+      if (media.length === 0) {
+        return null;
+      }
+    }
+    if (options?.visitor_catalog) {
+      const tierRules = evaluateTierRules(snapshot.tiers[creatorId] ?? {});
+      const session = options.patron_session ?? null;
+      media = media.map((item) =>
+        redactGalleryItemExportIfLocked(item, creatorId, session, tierRules)
+      );
+    }
     const tierMap = snapshot.tiers[creatorId] ?? {};
     const tiers = post.current.tier_ids.map((tierId) => {
       const row = tierMap[tierId];
@@ -112,5 +154,21 @@ export class GalleryService {
       tiers,
       media
     };
+  }
+
+  /** Post ids that have at least one non-hidden gallery row (visitor-safe catalog). */
+  public async visitorVisiblePostIdSet(creatorId: string): Promise<Set<string>> {
+    const snapshot = await this.canonical.load();
+    const index = await this.exportIndex.load(creatorId);
+    const ov = await this.overrides.load();
+    const cols = await this.loadCollections(creatorId);
+    const all = buildGalleryItems(creatorId, snapshot, index, ov, cols);
+    const set = new Set<string>();
+    for (const it of all) {
+      if (it.visibility !== "hidden") {
+        set.add(it.post_id);
+      }
+    }
+    return set;
   }
 }

@@ -31,7 +31,7 @@ export async function fetchCampaignsWithTiers(
   params.set("include", "tiers");
   params.set(
     "fields[campaign]",
-    "created_at,name,published_at,vanity,summary,creation_name"
+    "created_at,name,published_at,vanity,summary,creation_name,image_url,image_small_url,patron_count"
   );
   params.set("fields[tier]", "title,created_at,edited_at,published");
   const url = `${API_ROOT}/campaigns?${params.toString()}`;

@@ -22,9 +22,13 @@ function configFromEnv(): Parameters<typeof createApp>[0] {
     ingest_canonical_path: process.env.RELAY_INGEST_CANONICAL_PATH,
     ingest_dlq_path: process.env.RELAY_INGEST_DLQ_PATH,
     patreon_sync_watermark_path: process.env.RELAY_PATREON_SYNC_WATERMARK_PATH,
+    patreon_sync_health_path: process.env.RELAY_PATREON_SYNC_HEALTH_PATH,
+    creator_campaign_display_path: process.env.RELAY_CREATOR_CAMPAIGN_DISPLAY_PATH,
     export_storage_root: process.env.RELAY_EXPORT_STORAGE_ROOT,
     gallery_post_overrides_path: process.env.RELAY_GALLERY_POST_OVERRIDES_PATH,
     gallery_saved_filters_path: process.env.RELAY_GALLERY_SAVED_FILTERS_PATH,
+    patron_favorites_store_path: process.env.RELAY_PATRON_FAVORITES_PATH,
+    patron_collections_store_path: process.env.RELAY_PATRON_COLLECTIONS_PATH,
     analytics_store_path: process.env.RELAY_ANALYTICS_STORE_PATH,
     analytics_confidence_threshold: (() => {
       const raw = process.env.RELAY_ANALYTICS_CONFIDENCE_THRESHOLD;
@@ -40,7 +44,30 @@ function configFromEnv(): Parameters<typeof createApp>[0] {
     stripe_secret_key: process.env.STRIPE_SECRET_KEY,
     stripe_webhook_secret: process.env.STRIPE_WEBHOOK_SECRET,
     paypal_client_id: process.env.PAYPAL_CLIENT_ID,
-    paypal_client_secret: process.env.PAYPAL_CLIENT_SECRET
+    paypal_client_secret: process.env.PAYPAL_CLIENT_SECRET,
+    export_fetch_retry_policy: (() => {
+      const maxRaw = process.env.RELAY_EXPORT_MAX_ATTEMPTS;
+      const delayRaw = process.env.RELAY_EXPORT_BASE_DELAY_MS;
+      const timeoutRaw = process.env.RELAY_EXPORT_FETCH_TIMEOUT_MS;
+      const partial: {
+        max_attempts?: number;
+        base_delay_ms?: number;
+        timeout_ms?: number;
+      } = {};
+      if (maxRaw !== undefined && maxRaw.trim() !== "") {
+        const n = Number(maxRaw);
+        if (Number.isFinite(n) && n >= 1) partial.max_attempts = Math.min(n, 10);
+      }
+      if (delayRaw !== undefined && delayRaw.trim() !== "") {
+        const n = Number(delayRaw);
+        if (Number.isFinite(n) && n >= 0) partial.base_delay_ms = n;
+      }
+      if (timeoutRaw !== undefined && timeoutRaw.trim() !== "") {
+        const n = Number(timeoutRaw);
+        if (Number.isFinite(n) && n >= 1000) partial.timeout_ms = n;
+      }
+      return Object.keys(partial).length > 0 ? partial : undefined;
+    })()
   };
 }
 

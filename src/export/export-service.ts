@@ -8,24 +8,52 @@ import {
   buildPostMap,
   buildTierMap
 } from "./manifests.js";
-import type { ExportOneResult } from "./types.js";
+import { fetchUpstreamWithRetries } from "./fetch-retry.js";
+import type {
+  CreatorExportIndex,
+  ExportFetchRetryPolicy,
+  ExportOneResult
+} from "./types.js";
+import { DEFAULT_EXPORT_FETCH_RETRY_POLICY } from "./types.js";
+
+function normalizeExportIndex(index: CreatorExportIndex): void {
+  if (!index.media) index.media = {};
+  if (!index.export_failures) index.export_failures = {};
+}
+
+function clearExportFailure(index: CreatorExportIndex, mediaId: string): void {
+  normalizeExportIndex(index);
+  delete index.export_failures![mediaId];
+  if (Object.keys(index.export_failures!).length === 0) {
+    delete index.export_failures;
+  }
+}
 
 export class ExportService {
   private readonly canonicalStore: FileCanonicalStore;
   private readonly exportIndex: FileExportIndex;
   private readonly storageRoot: string;
   private readonly fetchImpl: typeof fetch;
+  private readonly retryPolicy: ExportFetchRetryPolicy;
+  private readonly sleepFn: (ms: number) => Promise<void>;
 
   public constructor(
     canonicalStore: FileCanonicalStore,
     exportIndex: FileExportIndex,
     storageRoot: string,
-    fetchImpl?: typeof fetch
+    fetchImpl?: typeof fetch,
+    retryPolicy?: Partial<ExportFetchRetryPolicy>,
+    sleepFn?: (ms: number) => Promise<void>
   ) {
     this.canonicalStore = canonicalStore;
     this.exportIndex = exportIndex;
     this.storageRoot = storageRoot;
     this.fetchImpl = fetchImpl ?? fetch;
+    this.retryPolicy = {
+      ...DEFAULT_EXPORT_FETCH_RETRY_POLICY,
+      ...retryPolicy
+    };
+    this.sleepFn = sleepFn ?? ((ms) => new Promise((r) => setTimeout(r, ms)));
   }
 
   public async exportMedia(creatorId: string, mediaId: string): Promise<ExportOneResult> {
@@ -41,11 +69,14 @@ export class ExportService {
     }
 
     const index = await this.exportIndex.load(creatorId);
+    normalizeExportIndex(index);
     const existing = index.media[mediaId];
     if (
       existing &&
       existing.upstream_revision === row.current.upstream_revision
     ) {
+      clearExportFailure(index, mediaId);
+      await this.exportIndex.save(index);
       return {
         media_id: mediaId,
         creator_id: creatorId,
@@ -55,46 +86,63 @@ export class ExportService {
       };
     }
 
-    const response = await this.fetchImpl(url);
-    if (!response.ok) {
-      throw new Error(`Download failed with status ${response.status}`);
+    try {
+      const response = await fetchUpstreamWithRetries(
+        url,
+        this.fetchImpl,
+        this.retryPolicy,
+        this.sleepFn
+      );
+      const buffer = Buffer.from(await response.arrayBuffer());
+      const sha256 = createHash("sha256").update(buffer).digest("hex");
+      const relativeBlobPath = `media/${mediaId}/asset`;
+      const absoluteBlobPath = join(
+        this.storageRoot,
+        creatorId,
+        ...relativeBlobPath.split("/")
+      );
+
+      await mkdir(join(this.storageRoot, creatorId, "media", mediaId), {
+        recursive: true
+      });
+      await writeFile(absoluteBlobPath, buffer);
+
+      const record = {
+        media_id: mediaId,
+        creator_id: creatorId,
+        sha256,
+        byte_length: buffer.byteLength,
+        relative_blob_path: relativeBlobPath,
+        upstream_revision: row.current.upstream_revision,
+        mime_type: row.current.mime_type,
+        exported_at: new Date().toISOString(),
+        upstream_url: url
+      };
+      index.creator_id = creatorId;
+      index.media[mediaId] = record;
+      clearExportFailure(index, mediaId);
+      await this.exportIndex.save(index);
+
+      return {
+        media_id: mediaId,
+        creator_id: creatorId,
+        sha256,
+        byte_length: buffer.byteLength,
+        idempotent_skip: false
+      };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      const truncated =
+        message.length > 500 ? `${message.slice(0, 497)}...` : message;
+      normalizeExportIndex(index);
+      index.export_failures![mediaId] = {
+        message: truncated,
+        failed_at: new Date().toISOString()
+      };
+      index.creator_id = creatorId;
+      await this.exportIndex.save(index);
+      throw err instanceof Error ? err : new Error(message);
     }
-    const buffer = Buffer.from(await response.arrayBuffer());
-    const sha256 = createHash("sha256").update(buffer).digest("hex");
-    const relativeBlobPath = `media/${mediaId}/asset`;
-    const absoluteBlobPath = join(
-      this.storageRoot,
-      creatorId,
-      ...relativeBlobPath.split("/")
-    );
-
-    await mkdir(join(this.storageRoot, creatorId, "media", mediaId), {
-      recursive: true
-    });
-    await writeFile(absoluteBlobPath, buffer);
-
-    const record = {
-      media_id: mediaId,
-      creator_id: creatorId,
-      sha256,
-      byte_length: buffer.byteLength,
-      relative_blob_path: relativeBlobPath,
-      upstream_revision: row.current.upstream_revision,
-      mime_type: row.current.mime_type,
-      exported_at: new Date().toISOString(),
-      upstream_url: url
-    };
-    index.creator_id = creatorId;
-    index.media[mediaId] = record;
-    await this.exportIndex.save(index);
-
-    return {
-      media_id: mediaId,
-      creator_id: creatorId,
-      sha256,
-      byte_length: buffer.byteLength,
-      idempotent_skip: false
-    };
   }
 
   public async readBlob(creatorId: string, mediaId: string): Promise<Buffer> {

@@ -1,0 +1,550 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>PREVIEW WORKSHOP — Gallery Inspect (visitor / thumbnail click)</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,700&family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      :root {
+        --bg: #050605;
+        --panel: #0c0f0d;
+        --border: #2a322e;
+        --muted: #7a8f84;
+        --fg: #e8f0ea;
+        --accent: #00c46a;
+        --accent-dim: color-mix(in srgb, var(--accent) 35%, transparent);
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        background: var(--bg);
+        color: var(--fg);
+        font-family: "DM Sans", system-ui, sans-serif;
+        font-optical-sizing: auto;
+        padding: 1.25rem 1rem 2rem;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 1.25rem;
+      }
+      .workshop-banner {
+        max-width: 56rem;
+        width: 100%;
+        padding: 0.65rem 1rem;
+        border-radius: 0.5rem;
+        border: 1px solid var(--border);
+        background: linear-gradient(135deg, #0f1814 0%, #0a0d0b 100%);
+        font-size: 0.78rem;
+        color: var(--muted);
+        line-height: 1.5;
+      }
+      .workshop-banner strong {
+        color: var(--fg);
+      }
+      .workshop-banner code {
+        color: #b8e6c8;
+        font-size: 0.74rem;
+      }
+
+      /* —— Modal shell: flexes with viewport; inner grid adapts —— */
+      .modal-backdrop {
+        width: 100%;
+        max-width: min(96vw, 1200px);
+        min-height: min(88vh, 720px);
+        resize: horizontal;
+        overflow: auto;
+        min-width: 320px;
+        max-height: 90vh;
+        border-radius: 0.75rem;
+        border: 1px solid var(--border);
+        background: var(--panel);
+        box-shadow: 0 24px 80px rgba(0, 0, 0, 0.65), 0 0 0 1px color-mix(in srgb, var(--accent) 12%, transparent);
+        display: flex;
+        flex-direction: column;
+      }
+      #modal:focus,
+      #modal:focus-visible {
+        outline: none;
+      }
+      .resize-hint {
+        font-size: 0.65rem;
+        color: var(--muted);
+        text-align: center;
+        padding: 0.35rem;
+        border-bottom: 1px solid var(--border);
+        background: rgba(0, 0, 0, 0.25);
+      }
+
+      /* 3-column layout: thumbs | stage | copy */
+      .inspect-grid {
+        flex: 1;
+        display: grid;
+        grid-template-columns: minmax(6rem, 8rem) minmax(0, 1fr) minmax(18.5rem, 24rem);
+        grid-template-rows: 1fr;
+        min-height: 0;
+        min-height: min(70vh, 620px);
+      }
+      @media (max-width: 800px) {
+        .inspect-grid {
+          grid-template-columns: 1fr;
+          grid-template-rows: auto minmax(220px, 50vh) auto;
+        }
+        .col-thumbs {
+          flex-direction: row !important;
+          justify-content: center;
+          padding: 0.75rem 1rem !important;
+          border-right: none !important;
+          border-bottom: 1px solid var(--border);
+        }
+        .thumb-stack {
+          flex-direction: row !important;
+        }
+        .thumb-meta {
+          display: none;
+        }
+      }
+
+      .col-thumbs {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 0.85rem;
+        padding: 1rem 0.9rem;
+        border-right: 1px solid var(--border);
+        background: linear-gradient(180deg, #080a09 0%, #0c100e 100%);
+      }
+      .thumb-stack {
+        display: flex;
+        flex-direction: column;
+        gap: 0.5rem;
+        align-items: center;
+      }
+      .thumb {
+        width: 4.5rem;
+        height: 4.5rem;
+        border-radius: 0.4rem;
+        overflow: hidden;
+        border: 2px solid rgba(255, 255, 255, 0.12);
+        padding: 0;
+        cursor: pointer;
+        background: #1a221c;
+        transition: border-color 0.15s, box-shadow 0.15s;
+      }
+      .thumb img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        display: block;
+      }
+      .thumb.active {
+        border-color: var(--accent);
+        box-shadow: 0 0 0 1px var(--accent-dim);
+      }
+      .thumb-meta {
+        font-size: 0.65rem;
+        font-weight: 600;
+        letter-spacing: 0.06em;
+        color: var(--muted);
+        font-variant-numeric: tabular-nums;
+      }
+
+      /* Center stage: art dominates */
+      .col-stage {
+        position: relative;
+        min-width: 0;
+        min-height: 0;
+        background: radial-gradient(ellipse 80% 70% at 50% 45%, #121a16 0%, #050605 75%);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 0.5rem;
+      }
+      .stage-frame {
+        position: relative;
+        width: 100%;
+        height: 100%;
+        max-height: 100%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      /* Art box respects intrinsic ratio; grows up to available space */
+      .art-box {
+        max-width: 100%;
+        max-height: 100%;
+        width: auto;
+        height: auto;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      .art-box img {
+        max-width: min(100%, 82vw);
+        max-height: min(calc(78vh - 2.5rem), 680px);
+        width: auto;
+        height: auto;
+        object-fit: contain;
+        border-radius: 0.25rem;
+        box-shadow: 0 12px 48px rgba(0, 0, 0, 0.55);
+        margin-inline: auto;
+        display: block;
+      }
+      .nav-fab {
+        position: absolute;
+        top: 50%;
+        transform: translateY(-50%);
+        width: 3rem;
+        height: 3rem;
+        border-radius: 9999px;
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        background: rgba(0, 0, 0, 0.55);
+        color: var(--fg);
+        font-size: 1.15rem;
+        line-height: 1;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        backdrop-filter: blur(6px);
+        transition: background 0.15s, border-color 0.15s;
+        z-index: 2;
+      }
+      .nav-fab:hover {
+        background: rgba(0, 0, 0, 0.75);
+        border-color: var(--accent-dim);
+      }
+      .nav-fab.prev {
+        left: 0.75rem;
+      }
+      .nav-fab.next {
+        right: 0.75rem;
+      }
+      .slide-pill {
+        position: absolute;
+        bottom: 0.85rem;
+        left: 50%;
+        transform: translateX(-50%);
+        padding: 0.25rem 0.65rem;
+        border-radius: 9999px;
+        background: rgba(0, 0, 0, 0.72);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        font-size: 0.65rem;
+        font-weight: 600;
+        font-variant-numeric: tabular-nums;
+        letter-spacing: 0.04em;
+        color: var(--fg);
+        z-index: 2;
+      }
+
+      /* Right column */
+      .col-copy {
+        display: flex;
+        flex-direction: column;
+        min-height: 0;
+        padding: 1.25rem 1.15rem 1rem;
+        border-left: 1px solid var(--border);
+        background: #080a09;
+        gap: 0.75rem;
+      }
+      @media (max-width: 800px) {
+        .col-copy {
+          border-left: none;
+          border-top: 1px solid var(--border);
+        }
+      }
+      .col-copy h1 {
+        margin: 0;
+        font-family: "Fraunces", Georgia, serif;
+        font-size: clamp(1.15rem, 2.5vw, 1.55rem);
+        font-weight: 700;
+        line-height: 1.2;
+        letter-spacing: -0.02em;
+      }
+      .meta-line {
+        margin: 0;
+        font-size: 0.78rem;
+        color: var(--muted);
+        line-height: 1.45;
+      }
+      .desc-scroll {
+        flex: 1;
+        min-height: 5rem;
+        overflow-y: auto;
+        padding: 0.7rem 0.95rem;
+        border-radius: 0.45rem;
+        border: 1px solid var(--border);
+        background: rgba(0, 0, 0, 0.35);
+        font-size: 0.8rem;
+        line-height: 1.55;
+        color: color-mix(in srgb, var(--fg) 88%, var(--muted));
+      }
+      .desc-scroll p {
+        margin: 0 0 0.65rem;
+      }
+      .desc-scroll p:last-child {
+        margin-bottom: 0;
+      }
+      /* Read-only row tags: sub-script style (API: merged post + per-asset row tags) */
+      .row-tags {
+        margin-top: 0.5rem;
+        padding-top: 0.55rem;
+        border-top: 1px dashed rgba(122, 143, 132, 0.35);
+        font-size: 0.62rem;
+        line-height: 1.5;
+        color: var(--muted);
+      }
+      .row-tags .label {
+        display: block;
+        font-size: 0.55rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.14em;
+        color: #5c6b62;
+        margin-bottom: 0.35rem;
+      }
+      .row-tags .tags {
+        font-family: ui-monospace, "Cascadia Code", monospace;
+        color: #9fb5a8;
+        word-break: break-word;
+      }
+      .close-btn {
+        margin-top: auto;
+        width: 100%;
+        padding: 0.65rem 1rem;
+        border-radius: 0.4rem;
+        border: 1px solid var(--border);
+        background: rgba(255, 255, 255, 0.04);
+        color: var(--fg);
+        font-size: 0.8rem;
+        font-weight: 600;
+        cursor: pointer;
+        transition: border-color 0.15s, background 0.15s;
+      }
+      .close-btn:hover {
+        border-color: var(--accent-dim);
+        background: rgba(0, 196, 106, 0.08);
+      }
+
+      .demo-controls {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+        align-items: center;
+        justify-content: center;
+        font-size: 0.75rem;
+        color: var(--muted);
+      }
+      .demo-controls button {
+        padding: 0.35rem 0.65rem;
+        border-radius: 0.35rem;
+        border: 1px solid var(--border);
+        background: #121816;
+        color: var(--fg);
+        cursor: pointer;
+        font-size: 0.72rem;
+      }
+      .demo-controls button:hover {
+        border-color: var(--accent-dim);
+      }
+    </style>
+  </head>
+  <body>
+    <div class="workshop-banner">
+      <strong>PREVIEW WORKSHOP</strong> — Static HTML only (not wired to the Next app). Open from the dev server:
+      <code>/gallery-inspect-preview.html</code>. Drag the <strong>bottom-right corner</strong> of the modal to test horizontal
+      resize. Narrow the browser to see the stacked (mobile) layout. Row tags mirror
+      <code>GalleryItem.tag_ids</code> (post-level + per-asset overrides), read-only.
+    </div>
+
+    <div class="demo-controls" aria-label="Demo aspect ratios">
+      <span>Simulate main art ratio:</span>
+      <button type="button" data-ratio="portrait">Tall portrait</button>
+      <button type="button" data-ratio="landscape">Wide landscape</button>
+      <button type="button" data-ratio="square">Square</button>
+    </div>
+
+    <div class="modal-backdrop" id="modal" tabindex="-1">
+      <div class="resize-hint">Resize this panel ↔ (bottom-right handle) · layout reflows</div>
+      <div class="inspect-grid">
+        <aside class="col-thumbs" aria-label="Assets in this post">
+          <div class="thumb-stack" id="thumbs"></div>
+          <div class="thumb-meta" id="thumbCounter" aria-live="polite">1 / 3</div>
+        </aside>
+
+        <section class="col-stage" aria-roledescription="carousel" aria-label="Selected asset">
+          <button type="button" class="nav-fab prev" id="prev" aria-label="Previous asset">‹</button>
+          <button type="button" class="nav-fab next" id="next" aria-label="Next asset">›</button>
+          <div class="stage-frame">
+            <div class="art-box">
+              <img id="hero" src="" alt="" />
+            </div>
+          </div>
+          <div class="slide-pill" id="slidePill">1 / 3</div>
+        </section>
+
+        <aside class="col-copy">
+          <h1 id="postTitle">Test 6 – Cover + Media</h1>
+          <p class="meta-line" id="postDate">2026-03-31</p>
+          <p class="meta-line" id="postAccess">Access: Basic, Advanced</p>
+          <div class="desc-scroll" role="region" aria-label="Post description and row tags">
+            <p id="postDesc">
+              Paid Access starts here (This lady-picture is in the written description) not the post itself
+            </p>
+            <div class="row-tags">
+              <span class="label">Tags on this asset (read-only)</span>
+              <span class="tags" id="rowTags">cover · renata · strong_bad</span>
+            </div>
+          </div>
+          <button type="button" class="close-btn">Close</button>
+        </aside>
+      </div>
+    </div>
+
+    <p class="workshop-banner" style="text-align: center; max-width: 42rem">
+      Reference: <strong>left</strong> vertical thumbs + index, <strong>center</strong> dominant art with arrows + pill,
+      <strong>right</strong> title / meta / description + sub-tag line. Production target:
+      <code>VisitorGalleryView.tsx</code> → <code>VisitorPostModal</code>.
+    </p>
+
+    <script>
+      const ASSETS = [
+        {
+          thumb: "https://picsum.photos/seed/peanut/120/160",
+          heroPortrait: "https://picsum.photos/seed/peanut/600/900",
+          heroLandscape: "https://picsum.photos/seed/peanut/900/520",
+          heroSquare: "https://picsum.photos/seed/peanut/700/700",
+          tags: "cover · renata · strong_bad"
+        },
+        {
+          thumb: "https://picsum.photos/seed/stinko/120/160",
+          heroPortrait: "https://picsum.photos/seed/stinko/600/900",
+          heroLandscape: "https://picsum.photos/seed/stinko/900/520",
+          heroSquare: "https://picsum.photos/seed/stinko/700/700",
+          tags: "character · stinkoman"
+        },
+        {
+          thumb: "https://picsum.photos/seed/portrait/120/160",
+          heroPortrait: "https://picsum.photos/seed/portrait/640/960",
+          heroLandscape: "https://picsum.photos/seed/portrait/960/600",
+          heroSquare: "https://picsum.photos/seed/portrait/720/720",
+          tags: "portrait · study · mature"
+        }
+      ];
+
+      let index = 2;
+      let ratioMode = "portrait";
+
+      const thumbsEl = document.getElementById("thumbs");
+      const heroEl = document.getElementById("hero");
+      const rowTagsEl = document.getElementById("rowTags");
+      const thumbCounter = document.getElementById("thumbCounter");
+      const slidePill = document.getElementById("slidePill");
+
+      function heroUrl(i) {
+        const a = ASSETS[i];
+        if (ratioMode === "landscape") return a.heroLandscape;
+        if (ratioMode === "square") return a.heroSquare;
+        return a.heroPortrait;
+      }
+
+      function renderThumbs() {
+        thumbsEl.innerHTML = "";
+        ASSETS.forEach((a, i) => {
+          const b = document.createElement("button");
+          b.type = "button";
+          b.className = "thumb" + (i === index ? " active" : "");
+          b.setAttribute("aria-label", "Show asset " + (i + 1));
+          b.setAttribute("aria-current", i === index ? "true" : "false");
+          const img = document.createElement("img");
+          img.src = a.thumb;
+          img.alt = "";
+          b.appendChild(img);
+          b.addEventListener("click", () => {
+            index = i;
+            update();
+          });
+          thumbsEl.appendChild(b);
+        });
+      }
+
+      function update() {
+        renderThumbs();
+        heroEl.src = heroUrl(index);
+        rowTagsEl.textContent = ASSETS[index].tags;
+        const n = index + 1;
+        const t = ASSETS.length;
+        thumbCounter.textContent = n + " / " + t;
+        slidePill.textContent = n + " / " + t;
+      }
+
+      document.getElementById("prev").addEventListener("click", () => {
+        index = (index - 1 + ASSETS.length) % ASSETS.length;
+        update();
+      });
+      document.getElementById("next").addEventListener("click", () => {
+        index = (index + 1) % ASSETS.length;
+        update();
+      });
+
+      document.querySelectorAll(".demo-controls [data-ratio]").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          ratioMode = btn.getAttribute("data-ratio");
+          update();
+        });
+      });
+
+      const modalEl = document.getElementById("modal");
+      const prevBtn = document.getElementById("prev");
+      const nextBtn = document.getElementById("next");
+
+      function carouselKeyAction(e) {
+        const k = e.key;
+        if (k === "ArrowLeft" || k === "ArrowUp") return "prev";
+        if (k === "ArrowRight" || k === "ArrowDown") return "next";
+        return null;
+      }
+
+      /** Hero/stage is not focusable; focus the shell so ↑↓←→ control assets instead of scrolling the page/modal. */
+      modalEl.addEventListener(
+        "pointerdown",
+        (e) => {
+          if (e.button !== 0) return;
+          const el = e.target;
+          if (!(el instanceof Element)) return;
+          const keep = el.closest(
+            'button, a[href], input, textarea, select, [tabindex]:not([tabindex="-1"])'
+          );
+          if (keep && modalEl.contains(keep)) return;
+          modalEl.focus({ preventScroll: true });
+        },
+        true
+      );
+
+      /** Capture: run before scrollable ancestors handle ↑↓; preventDefault stops scrollbar/page scroll. */
+      document.addEventListener(
+        "keydown",
+        (e) => {
+          const action = carouselKeyAction(e);
+          if (!action) return;
+          const t = e.target;
+          if (!(t instanceof Node) || !modalEl.contains(t)) return;
+          e.preventDefault();
+          (action === "prev" ? prevBtn : nextBtn).click();
+        },
+        true
+      );
+
+      update();
+    </script>
+  </body>
+</html>

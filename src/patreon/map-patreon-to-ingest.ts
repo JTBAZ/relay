@@ -1,10 +1,13 @@
 import type { IngestCampaign, IngestPost, IngestTier, SyncBatchInput } from "../ingest/types.js";
 import type { JsonApiDocument, JsonApiResource } from "./jsonapi-types.js";
+import type { CampaignDisplaySnapshot } from "./creator-campaign-display-store.js";
 import { asDataArray, indexIncluded } from "./patreon-resource-api.js";
 import {
   RELAY_TIER_ALL_PATRONS,
   RELAY_TIER_PUBLIC
 } from "./relay-access-tiers.js";
+import { finalizePatreonPostMedia } from "./merge-ingest-media.js";
+import { normalizePatreonMediaUrl } from "./media-url-normalize.js";
 import { flattenProseMirrorDoc, normalizePatreonPostContent } from "./post-content.js";
 
 const IMG_IN_CONTENT_RE =
@@ -70,13 +73,28 @@ function tierLinksToIds(
 
 /**
  * Tier ids from a Patreon post resource: `attributes.tiers` (strings, numbers, or
- * JSON:API-style objects) and fallback to `relationships.tiers.data`.
+ * JSON:API-style objects) and `relationships.tiers.data`.
+ *
+ * Patreon’s www/cookie post payloads sometimes include a **sparse** `attributes.tiers`
+ * (e.g. a single lowest tier) while `relationships.tiers.data` lists every entitled tier
+ * for “all tiers” posts. We merge both so ingest matches the creator UI and patron checks
+ * see every gated tier id.
  */
 export function tierIdsFromPatreonPost(resource: JsonApiResource): string[] {
   const a = resource.attributes ?? {};
   const fromAttrs = normalizeTierRefArray(a.tiers);
-  if (fromAttrs.length > 0) return fromAttrs;
-  return tierLinksToIds(resource.relationships?.tiers?.data);
+  const fromRels = tierLinksToIds(resource.relationships?.tiers?.data);
+  if (fromRels.length === 0) return fromAttrs;
+  if (fromAttrs.length === 0) return fromRels;
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const id of [...fromRels, ...fromAttrs]) {
+    if (!seen.has(id)) {
+      seen.add(id);
+      out.push(id);
+    }
+  }
+  return out;
 }
 
 /** Patreon sometimes sends booleans as strings in JSON:API attributes. */
@@ -117,6 +135,31 @@ export function applyPatreonAccessToTierIds(
   const paid = patreonBoolAttr(attrs, "is_paid");
   if (paid === true) return [RELAY_TIER_ALL_PATRONS];
   if (paid === false) return [RELAY_TIER_PUBLIC];
+  return patreonTierIds;
+}
+
+/**
+ * Same rules as {@link applyPatreonAccessToTierIds} except for one case that matters
+ * on **www/cookie** payloads: creator sessions often send `is_paid: false` for every
+ * post. With empty `tiers` and no `is_public`, treating that as **public** would leak
+ * paid content. Prefer member-only until OAuth list/per-post enrichment corrects it.
+ */
+export function applyPatreonAccessToTierIdsForCookie(
+  patreonTierIds: string[],
+  attrs: Record<string, unknown>
+): string[] {
+  const pub = patreonBoolAttr(attrs, "is_public");
+  if (pub === true) {
+    return [RELAY_TIER_PUBLIC];
+  }
+  if (pub === false) {
+    if (patreonTierIds.length > 0) return patreonTierIds;
+    return [RELAY_TIER_ALL_PATRONS];
+  }
+  if (patreonTierIds.length > 0) return patreonTierIds;
+  const paid = patreonBoolAttr(attrs, "is_paid");
+  if (paid === true) return [RELAY_TIER_ALL_PATRONS];
+  if (paid === false) return [RELAY_TIER_ALL_PATRONS];
   return patreonTierIds;
 }
 
@@ -228,8 +271,9 @@ export function mapPatreonPostToIngest(resource: JsonApiResource): IngestPost {
   let mediaSeq = 0;
 
   const pushUrl = (url: string, idSuffix: string, revPrefix: string) => {
-    if (seenUrls.has(url)) return;
-    seenUrls.add(url);
+    const dedupeKey = normalizePatreonMediaUrl(url);
+    if (seenUrls.has(dedupeKey)) return;
+    seenUrls.add(dedupeKey);
     mediaSeq += 1;
     media.push({
       media_id: `patreon_${id}_${idSuffix}`,
@@ -259,7 +303,37 @@ export function mapPatreonPostToIngest(resource: JsonApiResource): IngestPost {
     tag_ids: [],
     tier_ids,
     upstream_revision,
-    media
+    media: finalizePatreonPostMedia(media)
+  };
+}
+
+/** Read Patreon campaign art + patron_count from OAuth campaigns list (fields must be requested on the request). */
+export function extractCampaignDisplayFromCampaignsDoc(
+  doc: JsonApiDocument,
+  campaignNumericId: string
+): Omit<CampaignDisplaySnapshot, "captured_at"> | null {
+  const list = asDataArray(doc.data);
+  const campaignRes =
+    list.find((r) => r.type === "campaign" && r.id === campaignNumericId) ?? null;
+  if (!campaignRes) return null;
+
+  const ca = campaignRes.attributes ?? {};
+  const imageUrl = strAttr(ca, "image_url").trim() || undefined;
+  const imageSmallUrl = strAttr(ca, "image_small_url").trim() || undefined;
+  const rawPc = ca.patron_count;
+  const patronCount =
+    typeof rawPc === "number" && Number.isFinite(rawPc) && rawPc >= 0
+      ? Math.floor(rawPc)
+      : undefined;
+  const vanityRaw = strAttr(ca, "vanity").trim().toLowerCase();
+  const patreon_name = vanityRaw || undefined;
+
+  return {
+    patreon_campaign_id: campaignNumericId,
+    ...(patreon_name ? { patreon_name } : {}),
+    ...(imageUrl ? { image_url: imageUrl } : {}),
+    ...(imageSmallUrl ? { image_small_url: imageSmallUrl } : {}),
+    ...(patronCount !== undefined ? { patron_count: patronCount } : {})
   };
 }
 

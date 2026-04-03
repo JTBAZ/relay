@@ -1,15 +1,21 @@
 import type { FilePatreonCookieStore } from "../auth/cookie-store.js";
 import type { ExportService } from "../export/export-service.js";
+import { enrichBatch } from "../ingest/auto-enrich.js";
 import type { IngestService } from "../ingest/ingest-service.js";
 import { SyncWatermarkStore } from "../ingest/sync-watermark-store.js";
 import type { ApplyBatchResult, IngestPost, SyncBatchInput } from "../ingest/types.js";
-import type { FilePatreonTokenStore } from "../auth/token-store.js";
+import type { FilePatreonTokenStore, PersistedPatreonTokens } from "../auth/token-store.js";
 import { scrapeByCookie } from "./cookie-scraper.js";
+import {
+  CreatorCampaignDisplayStore,
+  type CampaignDisplaySnapshot
+} from "./creator-campaign-display-store.js";
 import {
   applyPatreonAccessToTierIds,
   buildCampaignAndTiersFromCampaignsDoc,
   buildSyncBatchFromParts,
   diagnosePostResource,
+  extractCampaignDisplayFromCampaignsDoc,
   mapPatreonPostToIngest,
   pickDefaultCampaignId,
   tierIdsFromPatreonPost
@@ -26,6 +32,33 @@ import {
   postsPageUrl
 } from "./patreon-resource-api.js";
 import type { IdentityService } from "../identity/identity-service.js";
+import type {
+  LastMemberSyncHealth,
+  LastPostScrapeHealth,
+  PatreonSyncHealthStore
+} from "./patreon-sync-health-store.js";
+
+export type PatreonOAuthHealthSnapshot = {
+  credential_health_status: PersistedPatreonTokens["credential_health_status"];
+  access_token_expires_at: string;
+  access_token_expired: boolean;
+  /** True when token expires within the next 24 hours (and is not already expired). */
+  access_token_expires_soon: boolean;
+};
+
+function buildOauthHealthSnapshot(cred: PersistedPatreonTokens): PatreonOAuthHealthSnapshot {
+  const now = Date.now();
+  const expMs = Date.parse(cred.access_token_expires_at);
+  const expired = Number.isFinite(expMs) && expMs <= now;
+  const soon =
+    !expired && Number.isFinite(expMs) && expMs - now < 24 * 60 * 60 * 1000;
+  return {
+    credential_health_status: cred.credential_health_status,
+    access_token_expires_at: cred.access_token_expires_at,
+    access_token_expired: expired,
+    access_token_expires_soon: soon
+  };
+}
 
 function numericPostIdFromRelay(postId: string): string | null {
   const m = /^patreon_post_(\d+)$/.exec(postId);
@@ -35,6 +68,12 @@ function numericPostIdFromRelay(postId: string): string | null {
 function hasSyntheticTiersOnly(tierIds: string[]): boolean {
   return tierIds.length > 0 && tierIds.every((t) => t.startsWith("relay_tier_"));
 }
+
+type PerPostOAuthStats = {
+  targets: number;
+  filledBody: number;
+  filledTiers: number;
+};
 
 /**
  * Enriches cookie-scraped posts from OAuth single-post fetches.
@@ -47,13 +86,15 @@ async function enrichPostsFromOAuth(
   posts: IngestPost[],
   fetchOpts: PatreonFetchOptions,
   warnings: string[]
-): Promise<void> {
+): Promise<PerPostOAuthStats> {
   const needsEnrich = posts.filter((p) => {
     const noBody = !(p.description && p.description.trim());
     const unreliableTiers = p.tier_ids.length === 0 || hasSyntheticTiersOnly(p.tier_ids);
     return noBody || unreliableTiers;
   });
-  if (needsEnrich.length === 0) return;
+  if (needsEnrich.length === 0) {
+    return { targets: 0, filledBody: 0, filledTiers: 0 };
+  }
   warnings.push(
     `Cookie scrape left ${needsEnrich.length} post(s) needing body or tier enrichment; ` +
       "trying OAuth GET /api/oauth2/v2/posts/{id}."
@@ -97,6 +138,11 @@ async function enrichPostsFromOAuth(
       `OAuth enrichment: filled body=${filledBody}, tier_ids=${filledTiers} of ${needsEnrich.length} post(s).`
     );
   }
+  return {
+    targets: needsEnrich.length,
+    filledBody,
+    filledTiers
+  };
 }
 
 /**
@@ -104,20 +150,32 @@ async function enrichPostsFromOAuth(
  * `is_public` and `attributes.tiers`) to overwrite the unreliable tier_ids
  * that the cookie scraper produced. Runs in paginated batches — no per-post
  * HTTP requests needed.
+ *
+ * The `enriched` count in warnings is the number of posts whose `tier_ids`
+ * changed compared to the value before this step (cookie or per-post OAuth).
  */
+type OAuthListTierStats = {
+  postsUpdated: number;
+  pagesFetched: number;
+  /** True when at least one `fetchPostsPage` ran (posts had mappable Patreon ids). */
+  attempted: boolean;
+};
+
 async function enrichTiersFromCampaignPostsList(
   posts: IngestPost[],
   campaignId: string,
   fetchOpts: PatreonFetchOptions,
   maxPages: number,
   warnings: string[]
-): Promise<void> {
+): Promise<OAuthListTierStats> {
   const byNumId = new Map<string, IngestPost>();
   for (const p of posts) {
     const numId = numericPostIdFromRelay(p.post_id);
     if (numId) byNumId.set(numId, p);
   }
-  if (byNumId.size === 0) return;
+  if (byNumId.size === 0) {
+    return { postsUpdated: 0, pagesFetched: 0, attempted: false };
+  }
   let pages = 0;
   let enriched = 0;
   let nextUrl: string | null | undefined = null;
@@ -149,7 +207,18 @@ async function enrichTiersFromCampaignPostsList(
       `OAuth tier enrichment (campaign posts list): updated ${enriched} of ${posts.length} post(s) across ${pages} page(s).`
     );
   }
+  return { postsUpdated: enriched, pagesFetched: pages, attempted: true };
 }
+
+export type TierAccessSummary = {
+  media_source: "cookie" | "oauth";
+  oauth_list_pass: boolean;
+  oauth_list_posts_updated: number;
+  oauth_list_pages_fetched: number;
+  per_post_oauth_targets: number;
+  per_post_filled_tiers: number;
+  per_post_filled_body: number;
+};
 
 export type PatreonScrapeResult = {
   creator_id: string;
@@ -159,6 +228,9 @@ export type PatreonScrapeResult = {
   posts_fetched: number;
   media_source: "cookie" | "oauth";
   warnings: string[];
+  tier_access_summary: TierAccessSummary;
+  /** Patreon campaign avatar, banner URLs, and patron_count from OAuth campaigns doc. */
+  campaign_display?: CampaignDisplaySnapshot;
   apply_result?: ApplyBatchResult;
 };
 
@@ -184,6 +256,31 @@ export type MemberSyncResult = {
   warnings: string[];
 };
 
+export type PatreonSyncState = {
+  creator_id: string;
+  patreon_campaign_id: string;
+  /** Max `published_at` from the last applied sync batch (incremental cutoff). */
+  watermark_published_at: string | null;
+  /** Wall time when the watermark row was last written. */
+  watermark_updated_at: string | null;
+  has_cookie_session: boolean;
+  /** Newest `published_at` on the first OAuth posts page (only when `probe_upstream`). */
+  upstream_newest_published_at?: string | null;
+  /** True when a watermark exists and upstream has a strictly newer post (probe only). */
+  likely_has_newer_posts?: boolean;
+  oauth: PatreonOAuthHealthSnapshot;
+  last_post_scrape: LastPostScrapeHealth | null;
+  last_member_sync: LastMemberSyncHealth | null;
+  /** Last persisted campaign art + patron count from scrape (null if never synced or store unwired). */
+  campaign_display: CampaignDisplaySnapshot | null;
+};
+
+export type PatreonSyncStateOptions = {
+  campaign_id?: string;
+  /** One OAuth posts page to compare newest Patreon post vs watermark. */
+  probe_upstream?: boolean;
+};
+
 export class PatreonSyncService {
   private readonly tokenStore: FilePatreonTokenStore;
   private readonly cookieStore: FilePatreonCookieStore;
@@ -192,6 +289,8 @@ export class PatreonSyncService {
   private readonly exportService: ExportService | null;
   private readonly identityService: IdentityService | null;
   private readonly fetchImpl: typeof fetch;
+  private readonly syncHealthStore: PatreonSyncHealthStore | null;
+  private readonly campaignDisplayStore: CreatorCampaignDisplayStore | null;
 
   public constructor(
     tokenStore: FilePatreonTokenStore,
@@ -200,7 +299,9 @@ export class PatreonSyncService {
     watermarkStore: SyncWatermarkStore,
     fetchImpl?: typeof fetch,
     exportService?: ExportService,
-    identityService?: IdentityService
+    identityService?: IdentityService,
+    syncHealthStore?: PatreonSyncHealthStore | null,
+    campaignDisplayStore?: CreatorCampaignDisplayStore | null
   ) {
     this.tokenStore = tokenStore;
     this.cookieStore = cookieStore;
@@ -209,6 +310,89 @@ export class PatreonSyncService {
     this.exportService = exportService ?? null;
     this.identityService = identityService ?? null;
     this.fetchImpl = fetchImpl ?? fetch;
+    this.syncHealthStore = syncHealthStore ?? null;
+    this.campaignDisplayStore = campaignDisplayStore ?? null;
+  }
+
+  /**
+   * Read watermark and optionally probe Patreon's newest post time (first OAuth page).
+   */
+  public async getSyncState(
+    creatorId: string,
+    options: PatreonSyncStateOptions = {}
+  ): Promise<PatreonSyncState> {
+    const cred = await this.tokenStore.getByCreatorId(creatorId);
+    if (!cred) {
+      throw new Error(
+        "No Patreon tokens for this creator_id. Complete OAuth and POST /api/v1/auth/patreon/exchange first."
+      );
+    }
+    const fetchOpts = { access_token: cred.access_token, fetch_impl: this.fetchImpl };
+    const campaignsDoc = await fetchCampaignsWithTiers(fetchOpts);
+    let patreonCampaignId = options.campaign_id?.trim();
+    if (!patreonCampaignId) {
+      const only = pickDefaultCampaignId(campaignsDoc);
+      if (!only) {
+        throw new Error(
+          "Multiple Patreon campaigns found. Pass campaign_id (numeric id from the Patreon API / portal URL)."
+        );
+      }
+      patreonCampaignId = only;
+    }
+    const mapped = buildCampaignAndTiersFromCampaignsDoc(
+      campaignsDoc,
+      creatorId,
+      patreonCampaignId
+    );
+    if (!mapped) {
+      throw new Error(`Campaign ${patreonCampaignId} not found on Patreon for this token.`);
+    }
+
+    const row = await this.watermarkStore.getRow(creatorId, patreonCampaignId);
+    const sessionId = await this.cookieStore.getSessionId(creatorId);
+    const oauth = buildOauthHealthSnapshot(cred);
+    const healthRow = this.syncHealthStore
+      ? await this.syncHealthStore.getForCreator(creatorId)
+      : null;
+    const campaign_display = this.campaignDisplayStore
+      ? await this.campaignDisplayStore.get(creatorId)
+      : null;
+
+    const base: PatreonSyncState = {
+      creator_id: creatorId,
+      patreon_campaign_id: patreonCampaignId,
+      watermark_published_at: row?.last_synced_at ?? null,
+      watermark_updated_at: row?.updated_at ?? null,
+      has_cookie_session: Boolean(sessionId?.trim()),
+      oauth,
+      last_post_scrape: healthRow?.last_post_scrape ?? null,
+      last_member_sync: healthRow?.last_member_sync ?? null,
+      campaign_display
+    };
+
+    if (!options.probe_upstream) {
+      return base;
+    }
+
+    const doc = await fetchPostsPage(fetchOpts, patreonCampaignId, null);
+    const pagePosts = asDataArray(doc.data).filter((r) => r.type === "post");
+    let upstreamNewest: string | null = null;
+    for (const r of pagePosts) {
+      const p = mapPatreonPostToIngest(r);
+      if (!upstreamNewest || p.published_at > upstreamNewest) {
+        upstreamNewest = p.published_at;
+      }
+    }
+
+    const wm = base.watermark_published_at;
+    const likely =
+      Boolean(wm && upstreamNewest && upstreamNewest > wm);
+
+    return {
+      ...base,
+      upstream_newest_published_at: upstreamNewest,
+      likely_has_newer_posts: likely
+    };
   }
 
   public async scrapeOrSync(
@@ -247,6 +431,19 @@ export class PatreonSyncService {
       throw new Error(`Campaign ${patreonCampaignId} not found on Patreon for this token.`);
     }
 
+    let campaign_display: CampaignDisplaySnapshot | undefined;
+    const displayFields = extractCampaignDisplayFromCampaignsDoc(campaignsDoc, patreonCampaignId);
+    if (displayFields) {
+      campaign_display = { ...displayFields, captured_at: new Date().toISOString() };
+      if (this.campaignDisplayStore) {
+        try {
+          await this.campaignDisplayStore.upsert(creatorId, campaign_display);
+        } catch {
+          /* best-effort persistence */
+        }
+      }
+    }
+
     const { campaign, tiers } = mapped;
     const maxPages = Math.min(Math.max(options.max_post_pages ?? 20, 1), 100);
     const watermark = await this.watermarkStore.get(creatorId, patreonCampaignId);
@@ -260,7 +457,17 @@ export class PatreonSyncService {
     let posts: IngestPost[];
     let pages: number;
     let mediaSource: "cookie" | "oauth";
+    let perPostOAuth: PerPostOAuthStats = {
+      targets: 0,
+      filledBody: 0,
+      filledTiers: 0
+    };
 
+    // Cookie scrape tier/access pipeline (OAuth wins when both paths run):
+    // 1) Cookie post list — tier_ids / is_paid often unreliable for creators.
+    // 2) enrichPostsFromOAuth — per-post GET when description or tiers are empty/synthetic.
+    // 3) enrichTiersFromCampaignPostsList — runs for cookie and OAuth-only paths (same normalization).
+    // 4) buildSyncBatchFromParts → IngestService.runBatch → enrichBatch (expand relay_tier_all_patrons).
     if (sessionId) {
       const cookieResult = await scrapeByCookie({
         sessionId,
@@ -279,10 +486,7 @@ export class PatreonSyncService {
           `Cookie scrape: ${posts.length} posts, ${totalMedia} media items.`
         );
       }
-      await enrichPostsFromOAuth(posts, fetchOpts, warnings);
-      await enrichTiersFromCampaignPostsList(
-        posts, patreonCampaignId, fetchOpts, maxPages, warnings
-      );
+      perPostOAuth = await enrichPostsFromOAuth(posts, fetchOpts, warnings);
     } else {
       posts = [];
       pages = 0;
@@ -335,6 +539,31 @@ export class PatreonSyncService {
       );
     }
 
+    let listStats: OAuthListTierStats = {
+      postsUpdated: 0,
+      pagesFetched: 0,
+      attempted: false
+    };
+    if (posts.length > 0) {
+      listStats = await enrichTiersFromCampaignPostsList(
+        posts,
+        patreonCampaignId,
+        fetchOpts,
+        maxPages,
+        warnings
+      );
+    }
+
+    const tier_access_summary: TierAccessSummary = {
+      media_source: mediaSource,
+      oauth_list_pass: listStats.attempted,
+      oauth_list_posts_updated: listStats.postsUpdated,
+      oauth_list_pages_fetched: listStats.pagesFetched,
+      per_post_oauth_targets: perPostOAuth.targets,
+      per_post_filled_tiers: perPostOAuth.filledTiers,
+      per_post_filled_body: perPostOAuth.filledBody
+    };
+
     let postsForBatch = posts;
     if (options.force_refresh_post_access && postsForBatch.length > 0) {
       const stamp = `${Date.now()}`;
@@ -347,18 +576,27 @@ export class PatreonSyncService {
     const batch = buildSyncBatchFromParts(creatorId, campaign, tiers, postsForBatch);
 
     if (options.dry_run) {
+      const { batch: enrichedBatch, notes } = enrichBatch(batch);
+      if (notes.length > 0) {
+        warnings.push(...notes);
+      }
       return {
         creator_id: creatorId,
         patreon_campaign_id: patreonCampaignId,
-        batch,
+        batch: enrichedBatch,
         pages_fetched: pages,
         posts_fetched: posts.length,
         media_source: mediaSource,
-        warnings
+        warnings,
+        tier_access_summary,
+        ...(campaign_display ? { campaign_display } : {})
       };
     }
 
     const apply_result = await this.ingestService.runBatch(batch, traceId);
+    if (apply_result.ingest_notes?.length) {
+      warnings.push(...apply_result.ingest_notes);
+    }
     const newestPublishedAt = postsForBatch.length > 0
       ? postsForBatch.reduce(
           (latest, p) => (p.published_at > latest ? p.published_at : latest),
@@ -381,8 +619,10 @@ export class PatreonSyncService {
         try {
           await this.exportService.exportMedia(creatorId, mediaId);
           exported += 1;
-        } catch {
-          warnings.push(`Auto-export failed for ${mediaId}, skipping.`);
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : String(e);
+          const short = msg.length > 180 ? `${msg.slice(0, 177)}...` : msg;
+          warnings.push(`Auto-export failed for ${mediaId}: ${short}`);
         }
       }
       if (exported > 0) {
@@ -398,6 +638,8 @@ export class PatreonSyncService {
       posts_fetched: posts.length,
       media_source: mediaSource,
       warnings,
+      tier_access_summary,
+      ...(campaign_display ? { campaign_display } : {}),
       apply_result
     };
   }

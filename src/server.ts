@@ -15,6 +15,7 @@ import { validateIngestBatchBody } from "./ingest/validate-body.js";
 import { TokenEncryption } from "./lib/crypto.js";
 import { ExportService } from "./export/export-service.js";
 import { FileExportIndex } from "./export/export-index.js";
+import { DEFAULT_EXPORT_FETCH_RETRY_POLICY } from "./export/types.js";
 import {
   buildMediaManifest,
   buildPostMap,
@@ -26,10 +27,65 @@ import { FileCollectionsStore } from "./gallery/collections-store.js";
 import { postFitsAccessCeiling } from "./gallery/tier-access.js";
 import { FilePageLayoutStore } from "./gallery/layout-store.js";
 import { FileSavedFiltersStore } from "./gallery/saved-filters-store.js";
+import { FilePatronFavoritesStore } from "./gallery/patron-favorites-store.js";
+import { FilePatronCollectionsStore } from "./gallery/patron-collections-store.js";
+import { validatePatronFavoriteTarget } from "./gallery/patron-favorites-validate.js";
+import { validatePatronCollectionEntry } from "./gallery/patron-collections-validate.js";
 import { TriageService } from "./gallery/triage-service.js";
 import { resolveLayoutPosts } from "./gallery/layout-to-clone.js";
+import { patronMayFetchMediaExport } from "./gallery/patron-media-access.js";
 import { parseGalleryLimit, queryStringList } from "./gallery/parse-query.js";
-import type { PostVisibility, SavedFilterRecord } from "./gallery/types.js";
+import type {
+  PatronFavoriteTargetKind,
+  PostVisibility,
+  SavedFilterRecord
+} from "./gallery/types.js";
+import type { SessionToken } from "./identity/types.js";
+
+function normalizeGalleryVisibilityFilter(
+  raw: string | undefined
+): PostVisibility | "all" | undefined {
+  if (!raw) return undefined;
+  if (raw === "all") return "all";
+  if (raw === "flagged") return "review";
+  if (raw === "visible" || raw === "hidden" || raw === "review") return raw;
+  return undefined;
+}
+
+/**
+ * Read at request time: `main.ts` loads dotenv *after* this module is first imported, so a
+ * module-level `process.env` snapshot would always see `RELAY_DEV_VISITOR_TIER_SIM` unset.
+ */
+function devVisitorTierSimEnabled(): boolean {
+  return process.env.RELAY_DEV_VISITOR_TIER_SIM === "true";
+}
+
+/** When visitor catalog + dev flag + `dev_sim_patron`, redaction uses a fake session (tier_ids from `simulate_tier_ids`). */
+function resolveVisitorPatronSessionForRedaction(args: {
+  visitor: boolean;
+  creatorId: string;
+  devSimPatron: boolean;
+  simulateTierIds: string[];
+  bearerSession: SessionToken | null;
+}): SessionToken | null {
+  const { visitor, creatorId, devSimPatron, simulateTierIds, bearerSession } = args;
+  if (!visitor || !devVisitorTierSimEnabled() || !devSimPatron) {
+    return bearerSession;
+  }
+  return {
+    token: "relay_dev_tier_sim",
+    user_id: "relay_dev_tier_sim",
+    creator_id: creatorId,
+    tier_ids: simulateTierIds,
+    expires_at: "2099-01-01T00:00:00.000Z"
+  };
+}
+
+function normalizeGalleryVisibilityBody(vis: unknown): PostVisibility | null {
+  if (vis === "flagged") return "review";
+  if (vis === "visible" || vis === "hidden" || vis === "review") return vis;
+  return null;
+}
 import { FileAnalyticsStore } from "./analytics/analytics-store.js";
 import { ActionCenterService } from "./analytics/action-center-service.js";
 import { CloneService } from "./clone/clone-service.js";
@@ -41,7 +97,11 @@ import { PaymentService } from "./payments/payment-service.js";
 import { FilePaymentStore } from "./payments/payment-store.js";
 import { StripeAdapter, PayPalAdapter } from "./payments/provider-adapter.js";
 import type { TierProductMapping, BillingInterval, PaymentProvider } from "./payments/types.js";
+import { exchangePatreonPatronOAuth } from "./patreon/patreon-patron-oauth.js";
+import { CreatorCampaignDisplayStore } from "./patreon/creator-campaign-display-store.js";
+import { PatreonSyncHealthStore } from "./patreon/patreon-sync-health-store.js";
 import { PatreonSyncService } from "./patreon/patreon-sync-service.js";
+import { classifySyncError } from "./patreon/sync-error-copy.js";
 import { processPatreonWebhook } from "./webhooks/patreon-webhook.js";
 import { CampaignService } from "./migrate/campaign-service.js";
 import { FileMigrationStore } from "./migrate/migration-store.js";
@@ -65,10 +125,18 @@ export type AppConfig = {
   ingest_canonical_path?: string;
   ingest_dlq_path?: string;
   patreon_sync_watermark_path?: string;
+  /** Last post/member sync outcomes for creator-facing health (v1 local JSON). */
+  patreon_sync_health_path?: string;
+  /** Patreon campaign avatar, banner, patron_count snapshot (default `.relay-data/creator_campaign_display.json`). */
+  creator_campaign_display_path?: string;
   ingest_retry_policy?: { max_attempts: number; base_delay_ms: number };
   export_storage_root?: string;
   gallery_post_overrides_path?: string;
   gallery_saved_filters_path?: string;
+  /** Patron favorites (post + media targets); default `.relay-data/patron_favorites.json`. */
+  patron_favorites_store_path?: string;
+  /** Patron-owned snip collections; default `.relay-data/patron_collections.json`. */
+  patron_collections_store_path?: string;
   collections_store_path?: string;
   page_layout_store_path?: string;
   analytics_store_path?: string;
@@ -83,6 +151,18 @@ export type AppConfig = {
   paypal_client_id?: string;
   paypal_client_secret?: string;
   fetch_impl?: typeof fetch;
+  /**
+   * When true, `GET /api/v1/export/media/.../content` requires tier entitlement
+   * (or public post) matching `clone/tier-rules` + patron session.
+   * Default: env `RELAY_EXPORT_REQUIRE_TIER_ACCESS=1`, else false (Library thumbnails keep working).
+   */
+  export_require_tier_access?: boolean;
+  /** Overrides defaults in `DEFAULT_EXPORT_FETCH_RETRY_POLICY` (export download retries). */
+  export_fetch_retry_policy?: Partial<{
+    max_attempts: number;
+    base_delay_ms: number;
+    timeout_ms: number;
+  }>;
 };
 
 export type CreateAppResult = {
@@ -130,6 +210,20 @@ function validateRequiredFields(
   return missing;
 }
 
+function parseQueryTruthy(value: unknown): boolean {
+  if (value === true) {
+    return true;
+  }
+  if (Array.isArray(value)) {
+    return value.some((v) => parseQueryTruthy(v));
+  }
+  if (typeof value === "string") {
+    const s = value.trim().toLowerCase();
+    return s === "1" || s === "true" || s === "yes";
+  }
+  return false;
+}
+
 export function createApp(config: AppConfig): CreateAppResult {
   const encryption = new TokenEncryption(
     required(config.relay_token_encryption_key, "relay_token_encryption_key")
@@ -157,17 +251,28 @@ export function createApp(config: AppConfig): CreateAppResult {
   );
   const exportStorageRoot = config.export_storage_root ?? ".relay-data/exports";
   const exportIndex = new FileExportIndex(exportStorageRoot);
+  const exportFetchRetryPolicy = {
+    ...DEFAULT_EXPORT_FETCH_RETRY_POLICY,
+    ...config.export_fetch_retry_policy
+  };
   const exportService = new ExportService(
     canonicalStore,
     exportIndex,
     exportStorageRoot,
-    config.fetch_impl
+    config.fetch_impl,
+    exportFetchRetryPolicy
   );
   const galleryOverridesStore = new FileGalleryOverridesStore(
     config.gallery_post_overrides_path ?? ".relay-data/gallery_post_overrides.json"
   );
   const savedFiltersStore = new FileSavedFiltersStore(
     config.gallery_saved_filters_path ?? ".relay-data/gallery_saved_filters.json"
+  );
+  const patronFavoritesStore = new FilePatronFavoritesStore(
+    config.patron_favorites_store_path ?? ".relay-data/patron_favorites.json"
+  );
+  const patronCollectionsStore = new FilePatronCollectionsStore(
+    config.patron_collections_store_path ?? ".relay-data/patron_collections.json"
   );
   const collectionsStore = new FileCollectionsStore(
     config.collections_store_path ?? ".relay-data/collections.json"
@@ -197,6 +302,10 @@ export function createApp(config: AppConfig): CreateAppResult {
     config.identity_store_path ?? ".relay-data/identity.json"
   );
   const identityService = new IdentityService(identityStore);
+  const exportRequireTierAccess =
+    typeof config.export_require_tier_access === "boolean"
+      ? config.export_require_tier_access
+      : process.env.RELAY_EXPORT_REQUIRE_TIER_ACCESS === "1";
   const paymentStore = new FilePaymentStore(
     config.payment_store_path ?? ".relay-data/payments.json"
   );
@@ -236,6 +345,12 @@ export function createApp(config: AppConfig): CreateAppResult {
   const watermarkStore = new SyncWatermarkStore(
     config.patreon_sync_watermark_path ?? ".relay-data/patreon_sync_watermarks.json"
   );
+  const patreonSyncHealthStore = new PatreonSyncHealthStore(
+    config.patreon_sync_health_path ?? ".relay-data/patreon_sync_health.json"
+  );
+  const creatorCampaignDisplayStore = new CreatorCampaignDisplayStore(
+    config.creator_campaign_display_path ?? ".relay-data/creator_campaign_display.json"
+  );
 
   const patreonClient = new PatreonClient({
     client_id: required(config.patreon_client_id, "patreon_client_id"),
@@ -251,7 +366,9 @@ export function createApp(config: AppConfig): CreateAppResult {
     watermarkStore,
     config.fetch_impl,
     exportService,
-    identityService
+    identityService,
+    patreonSyncHealthStore,
+    creatorCampaignDisplayStore
   );
 
   const app = express();
@@ -259,7 +376,10 @@ export function createApp(config: AppConfig): CreateAppResult {
   app.use((req, res, next) => {
     res.setHeader("Access-Control-Allow-Origin", "*");
     res.setHeader("Access-Control-Allow-Methods", "GET,POST,PATCH,DELETE,OPTIONS");
-    res.setHeader("Access-Control-Allow-Headers", "Content-Type, X-Trace-Id");
+    res.setHeader(
+      "Access-Control-Allow-Headers",
+      "Content-Type, X-Trace-Id, Authorization"
+    );
     if (req.method === "OPTIONS") {
       return res.sendStatus(204);
     }
@@ -319,6 +439,67 @@ export function createApp(config: AppConfig): CreateAppResult {
     }
   });
 
+  /**
+   * Patron OAuth: exchange code with Patreon, GET /v2/identity, sync `tier_ids` like member
+   * sync (`patreon_tier_*`), issue Relay session. Does not store Patreon tokens in the
+   * creator credential file.
+   */
+  app.post("/api/v1/auth/patreon/patron/exchange", async (req: Request, res: Response) => {
+    const traceId = traceIdFrom(req);
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const details = validateRequiredFields(body, [
+      "creator_id",
+      "patreon_campaign_numeric_id",
+      "code",
+      "redirect_uri"
+    ]);
+    if (details.length > 0) {
+      return res
+        .status(400)
+        .json(errorEnvelope("VALIDATION_ERROR", "Invalid request payload.", traceId, details));
+    }
+    const campaignNumeric = String(body.patreon_campaign_numeric_id).trim();
+    if (!/^\d+$/.test(campaignNumeric)) {
+      return res.status(400).json(
+        errorEnvelope(
+          "VALIDATION_ERROR",
+          "patreon_campaign_numeric_id must be Patreon's numeric campaign id.",
+          traceId,
+          [{ field: "patreon_campaign_numeric_id", issue: "invalid" }]
+        )
+      );
+    }
+    const fetchImpl = config.fetch_impl ?? globalThis.fetch;
+    try {
+      const { user, session } = await exchangePatreonPatronOAuth({
+        code: body.code as string,
+        redirectUri: body.redirect_uri as string,
+        creatorId: body.creator_id as string,
+        patreonCampaignNumericId: campaignNumeric,
+        patreonClient,
+        identityService,
+        fetchImpl
+      });
+      return res.status(200).json(
+        successEnvelope(
+          {
+            token: session.token,
+            user_id: session.user_id,
+            tier_ids: session.tier_ids,
+            expires_at: session.expires_at,
+            auth_provider: user.auth_provider,
+            patreon_user_id: user.patreon_user_id
+          },
+          traceId
+        )
+      );
+    } catch (error) {
+      return res
+        .status(502)
+        .json(errorEnvelope("UPSTREAM_AUTH_ERROR", (error as Error).message, traceId));
+    }
+  });
+
   app.post("/api/v1/auth/patreon/refresh", async (req: Request, res: Response) => {
     const traceId = traceIdFrom(req);
     const body = (req.body ?? {}) as Record<string, unknown>;
@@ -338,6 +519,41 @@ export function createApp(config: AppConfig): CreateAppResult {
         : "UPSTREAM_AUTH_ERROR";
       const status = code === "NOT_FOUND" ? 404 : 502;
       return res.status(status).json(errorEnvelope(code, (error as Error).message, traceId));
+    }
+  });
+
+  app.get("/api/v1/patreon/sync-state", async (req: Request, res: Response) => {
+    const traceId = traceIdFrom(req);
+    const creatorId =
+      typeof req.query.creator_id === "string" ? req.query.creator_id.trim() : "";
+    if (!creatorId) {
+      return res.status(400).json(
+        errorEnvelope(
+          "VALIDATION_ERROR",
+          "Missing creator_id query parameter.",
+          traceId,
+          [{ field: "creator_id", issue: "required" }]
+        )
+      );
+    }
+    const campaignId =
+      typeof req.query.campaign_id === "string" ? req.query.campaign_id.trim() : undefined;
+    const probeUpstream =
+      req.query.probe_upstream === "true" || req.query.probe_upstream === "1";
+
+    try {
+      const state = await patreonSyncService.getSyncState(creatorId, {
+        campaign_id: campaignId || undefined,
+        probe_upstream: probeUpstream
+      });
+      return res.status(200).json(successEnvelope(state, traceId));
+    } catch (err: unknown) {
+      const msg = (err as Error).message;
+      const notFound =
+        msg.includes("No Patreon tokens") || msg.includes("Creator credentials not found");
+      return res
+        .status(notFound ? 404 : 502)
+        .json(errorEnvelope(notFound ? "NOT_FOUND" : "PATREON_SYNC_STATE_ERROR", msg, traceId));
     }
   });
 
@@ -385,6 +601,7 @@ export function createApp(config: AppConfig): CreateAppResult {
         creator_id: result.creator_id,
         patreon_campaign_id: result.patreon_campaign_id,
         media_source: result.media_source,
+        tier_access_summary: result.tier_access_summary,
         pages_fetched: result.pages_fetched,
         posts_fetched: result.posts_fetched,
         summary: {
@@ -397,12 +614,38 @@ export function createApp(config: AppConfig): CreateAppResult {
         sample_posts: samplePosts
       };
       if (result.apply_result) payload.apply_result = result.apply_result;
+      if (result.campaign_display) payload.campaign_display = result.campaign_display;
       if (includeBatch) payload.batch = batch;
+      try {
+        await patreonSyncHealthStore.recordPostScrapeSuccess({
+          creator_id: creatorId,
+          patreon_campaign_id: result.patreon_campaign_id,
+          posts_fetched: result.posts_fetched,
+          posts_written: result.apply_result?.posts_written,
+          warnings: result.warnings
+        });
+      } catch {
+        /* best-effort health persistence */
+      }
       return res.status(200).json(successEnvelope(payload, traceId));
     } catch (err: unknown) {
       const msg = (err as Error).message;
       const notFound =
         msg.includes("No Patreon tokens") || msg.includes("Creator credentials not found");
+      const classified = classifySyncError(msg);
+      try {
+        await patreonSyncHealthStore.recordPostScrapeFailure({
+          creator_id: creatorId,
+          patreon_campaign_id: campaignId,
+          error: {
+            code: classified.code,
+            message: msg.slice(0, 400),
+            hint: classified.hint
+          }
+        });
+      } catch {
+        /* best-effort */
+      }
       return res
         .status(notFound ? 404 : 502)
         .json(errorEnvelope(notFound ? "NOT_FOUND" : "PATREON_SCRAPE_ERROR", msg, traceId));
@@ -426,10 +669,35 @@ export function createApp(config: AppConfig): CreateAppResult {
           max_pages: typeof body.max_pages === "number" ? body.max_pages : undefined
         }
       );
+      try {
+        await patreonSyncHealthStore.recordMemberSyncSuccess({
+          creator_id: body.creator_id as string,
+          patreon_campaign_id: result.patreon_campaign_id,
+          members_synced: result.members_synced
+        });
+      } catch {
+        /* best-effort */
+      }
       return res.status(200).json(successEnvelope(result, traceId));
     } catch (err: unknown) {
       const msg = (err as Error).message;
       const notFound = msg.includes("No Patreon tokens");
+      const classified = classifySyncError(msg);
+      const mCampaign =
+        typeof body.campaign_id === "string" ? body.campaign_id.trim() : undefined;
+      try {
+        await patreonSyncHealthStore.recordMemberSyncFailure({
+          creator_id: body.creator_id as string,
+          patreon_campaign_id: mCampaign,
+          error: {
+            code: classified.code,
+            message: msg.slice(0, 400),
+            hint: classified.hint
+          }
+        });
+      } catch {
+        /* best-effort */
+      }
       return res
         .status(notFound ? 404 : 502)
         .json(errorEnvelope(notFound ? "NOT_FOUND" : "MEMBER_SYNC_ERROR", msg, traceId));
@@ -661,6 +929,22 @@ export function createApp(config: AppConfig): CreateAppResult {
           .status(404)
           .json(errorEnvelope("NOT_FOUND", "Exported media not found.", traceId));
       }
+      if (exportRequireTierAccess) {
+        const snapshot = await canonicalStore.load();
+        const bearer = req.header("authorization")?.replace(/^Bearer\s+/i, "").trim() ?? "";
+        const session = bearer ? await identityService.resolveSession(bearer) : null;
+        const gate = patronMayFetchMediaExport({
+          snapshot,
+          creatorId: req.params.creator_id,
+          mediaId: req.params.media_id,
+          session
+        });
+        if (!gate.allowed) {
+          return res
+            .status(403)
+            .json(errorEnvelope("FORBIDDEN", gate.reason, traceId));
+        }
+      }
       const bytes = await exportService.readBlob(req.params.creator_id, req.params.media_id);
       const mime = record.mime_type ?? "application/octet-stream";
       res.setHeader("content-type", mime);
@@ -695,13 +979,31 @@ export function createApp(config: AppConfig): CreateAppResult {
     const published_before =
       typeof req.query.published_before === "string" ? req.query.published_before : undefined;
     const cursor = typeof req.query.cursor === "string" ? req.query.cursor : undefined;
+    const visitor = parseQueryTruthy(req.query.visitor);
     const visibilityRaw = typeof req.query.visibility === "string" ? req.query.visibility : undefined;
-    const visibility = (visibilityRaw === "visible" || visibilityRaw === "hidden" || visibilityRaw === "flagged" || visibilityRaw === "all")
-      ? visibilityRaw
-      : undefined;
+    const visibility = visitor ? undefined : normalizeGalleryVisibilityFilter(visibilityRaw);
     const sortRaw = typeof req.query.sort === "string" ? req.query.sort : undefined;
     const sort = sortRaw === "visibility" || sortRaw === "published" ? sortRaw : undefined;
+    const displayRaw = typeof req.query.display === "string" ? req.query.display.trim() : undefined;
+    const display =
+      displayRaw === "post_primary" || displayRaw === "all_media" ? displayRaw : undefined;
+    const textOnlyRaw =
+      typeof req.query.text_only_posts === "string" ? req.query.text_only_posts.trim() : undefined;
+    const text_only_posts =
+      textOnlyRaw === "include" || textOnlyRaw === "exclude" ? textOnlyRaw : undefined;
     const limit = parseGalleryLimit(req);
+
+    const bearer = req.header("authorization")?.replace(/^Bearer\s+/i, "").trim() ?? "";
+    let patronSession = bearer ? await identityService.resolveSession(bearer) : null;
+    const devSimPatron = parseQueryTruthy(req.query.dev_sim_patron);
+    const simulate_tier_ids = queryStringList(req, "simulate_tier_ids");
+    patronSession = resolveVisitorPatronSessionForRedaction({
+      visitor,
+      creatorId,
+      devSimPatron,
+      simulateTierIds: simulate_tier_ids,
+      bearerSession: patronSession
+    });
 
     const result = await galleryService.list({
       creator_id: creatorId,
@@ -711,10 +1013,14 @@ export function createApp(config: AppConfig): CreateAppResult {
       media_type,
       published_after,
       published_before,
+      visitor_catalog: visitor,
       visibility,
       sort,
+      display,
+      text_only_posts,
       cursor,
-      limit
+      limit,
+      patron_session: patronSession
     });
     res.setHeader("Cache-Control", "private, no-store");
     return res.status(200).json(successEnvelope(result, traceId));
@@ -732,7 +1038,8 @@ export function createApp(config: AppConfig): CreateAppResult {
           ])
         );
     }
-    const facets = await galleryService.facets(creatorId);
+    const visitor = parseQueryTruthy(req.query.visitor);
+    const facets = await galleryService.facets(creatorId, { visitor_catalog: visitor });
     res.setHeader("Cache-Control", "private, no-store");
     return res.status(200).json(successEnvelope(facets, traceId));
   });
@@ -749,7 +1056,22 @@ export function createApp(config: AppConfig): CreateAppResult {
         .status(400)
         .json(errorEnvelope("VALIDATION_ERROR", "creator_id and post_id are required.", traceId, details));
     }
-    const detail = await galleryService.postDetail(creatorId, postId);
+    const visitor = parseQueryTruthy(req.query.visitor);
+    const bearer = req.header("authorization")?.replace(/^Bearer\s+/i, "").trim() ?? "";
+    let patronSession = bearer ? await identityService.resolveSession(bearer) : null;
+    const devSimPatron = parseQueryTruthy(req.query.dev_sim_patron);
+    const simulate_tier_ids = queryStringList(req, "simulate_tier_ids");
+    patronSession = resolveVisitorPatronSessionForRedaction({
+      visitor,
+      creatorId,
+      devSimPatron,
+      simulateTierIds: simulate_tier_ids,
+      bearerSession: patronSession
+    });
+    const detail = await galleryService.postDetail(creatorId, postId, {
+      visitor_catalog: visitor,
+      patron_session: patronSession
+    });
     if (!detail) {
       return res.status(404).json(errorEnvelope("NOT_FOUND", "Post not found.", traceId));
     }
@@ -757,18 +1079,418 @@ export function createApp(config: AppConfig): CreateAppResult {
     return res.status(200).json(successEnvelope(detail, traceId));
   });
 
+  function parsePatronFavoriteTargetKind(raw: unknown): PatronFavoriteTargetKind | null {
+    if (raw === "post" || raw === "media") {
+      return raw;
+    }
+    return null;
+  }
+
+  /** Bearer patron session or 401 response (caller returns). */
+  async function requirePatronBearerSession(
+    req: Request,
+    res: Response,
+    traceId: string
+  ): Promise<SessionToken | null> {
+    const bearer = req.header("authorization")?.replace(/^Bearer\s+/i, "").trim() ?? "";
+    if (!bearer) {
+      res
+        .status(401)
+        .json(errorEnvelope("AUTH_ERROR", "Bearer token required.", traceId));
+      return null;
+    }
+    const session = await identityService.resolveSession(bearer);
+    if (!session) {
+      res
+        .status(401)
+        .json(errorEnvelope("AUTH_ERROR", "Invalid or expired session.", traceId));
+      return null;
+    }
+    return session;
+  }
+
+  app.get("/api/v1/patron/favorites", async (req: Request, res: Response) => {
+    const traceId = traceIdFrom(req);
+    const creatorId = typeof req.query.creator_id === "string" ? req.query.creator_id.trim() : "";
+    if (!creatorId) {
+      return res
+        .status(400)
+        .json(
+          errorEnvelope("VALIDATION_ERROR", "creator_id is required.", traceId, [
+            { field: "creator_id", issue: "missing" }
+          ])
+        );
+    }
+    const session = await requirePatronBearerSession(req, res, traceId);
+    if (!session) {
+      return;
+    }
+    if (session.creator_id !== creatorId) {
+      return res
+        .status(403)
+        .json(errorEnvelope("FORBIDDEN", "Session is not scoped to this creator.", traceId));
+    }
+    const items = await patronFavoritesStore.listForUser(creatorId, session.user_id);
+    res.setHeader("Cache-Control", "private, no-store");
+    return res.status(200).json(successEnvelope({ items }, traceId));
+  });
+
+  app.put("/api/v1/patron/favorites", async (req: Request, res: Response) => {
+    const traceId = traceIdFrom(req);
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const details = validateRequiredFields(body, ["creator_id", "target_kind", "target_id"]);
+    if (details.length > 0) {
+      return res
+        .status(400)
+        .json(errorEnvelope("VALIDATION_ERROR", "Invalid request.", traceId, details));
+    }
+    const creatorId = String(body.creator_id).trim();
+    const targetId = String(body.target_id).trim();
+    const targetKind = parsePatronFavoriteTargetKind(body.target_kind);
+    if (!targetKind) {
+      return res.status(400).json(
+        errorEnvelope("VALIDATION_ERROR", "target_kind must be post or media.", traceId, [
+          { field: "target_kind", issue: "invalid" }
+        ])
+      );
+    }
+    if (!targetId) {
+      return res.status(400).json(
+        errorEnvelope("VALIDATION_ERROR", "target_id must be non-empty.", traceId, [
+          { field: "target_id", issue: "invalid" }
+        ])
+      );
+    }
+    const session = await requirePatronBearerSession(req, res, traceId);
+    if (!session) {
+      return;
+    }
+    if (session.creator_id !== creatorId) {
+      return res
+        .status(403)
+        .json(errorEnvelope("FORBIDDEN", "Session is not scoped to this creator.", traceId));
+    }
+    const snapshot = await canonicalStore.load();
+    const v = validatePatronFavoriteTarget(snapshot, creatorId, targetKind, targetId);
+    if (!v.ok) {
+      return res.status(400).json(
+        errorEnvelope("VALIDATION_ERROR", v.message, traceId, [{ field: "target_id", issue: "not_found" }])
+      );
+    }
+    const item = await patronFavoritesStore.add({
+      user_id: session.user_id,
+      creator_id: creatorId,
+      target_kind: targetKind,
+      target_id: targetId
+    });
+    res.setHeader("Cache-Control", "private, no-store");
+    return res.status(200).json(successEnvelope({ item }, traceId));
+  });
+
+  app.delete("/api/v1/patron/favorites", async (req: Request, res: Response) => {
+    const traceId = traceIdFrom(req);
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const qCreator =
+      typeof req.query.creator_id === "string" ? req.query.creator_id.trim() : "";
+    const qKind = parsePatronFavoriteTargetKind(req.query.target_kind);
+    const qTarget =
+      typeof req.query.target_id === "string" ? req.query.target_id.trim() : "";
+    const creatorId =
+      (typeof body.creator_id === "string" ? body.creator_id.trim() : "") || qCreator;
+    const targetKind = parsePatronFavoriteTargetKind(body.target_kind) ?? qKind;
+    const targetId =
+      (typeof body.target_id === "string" ? body.target_id.trim() : "") || qTarget;
+    if (!creatorId || !targetKind || !targetId) {
+      const miss: Array<{ field: string; issue: string }> = [];
+      if (!creatorId) {
+        miss.push({ field: "creator_id", issue: "missing" });
+      }
+      if (!targetKind) {
+        miss.push({ field: "target_kind", issue: "missing" });
+      }
+      if (!targetId) {
+        miss.push({ field: "target_id", issue: "missing" });
+      }
+      return res.status(400).json(
+        errorEnvelope(
+          "VALIDATION_ERROR",
+          "creator_id, target_kind, and target_id are required (body or query).",
+          traceId,
+          miss
+        )
+      );
+    }
+    const session = await requirePatronBearerSession(req, res, traceId);
+    if (!session) {
+      return;
+    }
+    if (session.creator_id !== creatorId) {
+      return res
+        .status(403)
+        .json(errorEnvelope("FORBIDDEN", "Session is not scoped to this creator.", traceId));
+    }
+    const removed = await patronFavoritesStore.remove(
+      creatorId,
+      session.user_id,
+      targetKind,
+      targetId
+    );
+    if (!removed) {
+      return res.status(404).json(errorEnvelope("NOT_FOUND", "Favorite not found.", traceId));
+    }
+    res.setHeader("Cache-Control", "private, no-store");
+    return res.status(200).json(successEnvelope({ deleted: true }, traceId));
+  });
+
+  app.get("/api/v1/patron/collections", async (req: Request, res: Response) => {
+    const traceId = traceIdFrom(req);
+    const creatorId = typeof req.query.creator_id === "string" ? req.query.creator_id.trim() : "";
+    if (!creatorId) {
+      return res
+        .status(400)
+        .json(
+          errorEnvelope("VALIDATION_ERROR", "creator_id is required.", traceId, [
+            { field: "creator_id", issue: "missing" }
+          ])
+        );
+    }
+    const session = await requirePatronBearerSession(req, res, traceId);
+    if (!session) {
+      return;
+    }
+    if (session.creator_id !== creatorId) {
+      return res
+        .status(403)
+        .json(errorEnvelope("FORBIDDEN", "Session is not scoped to this creator.", traceId));
+    }
+    const collections = await patronCollectionsStore.listCollectionsWithEntries(
+      creatorId,
+      session.user_id
+    );
+    res.setHeader("Cache-Control", "private, no-store");
+    return res.status(200).json(successEnvelope({ collections }, traceId));
+  });
+
+  app.post("/api/v1/patron/collections", async (req: Request, res: Response) => {
+    const traceId = traceIdFrom(req);
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const details = validateRequiredFields(body, ["creator_id", "title"]);
+    if (details.length > 0) {
+      return res
+        .status(400)
+        .json(errorEnvelope("VALIDATION_ERROR", "Invalid request.", traceId, details));
+    }
+    const creatorId = String(body.creator_id).trim();
+    const title = String(body.title);
+    const session = await requirePatronBearerSession(req, res, traceId);
+    if (!session) {
+      return;
+    }
+    if (session.creator_id !== creatorId) {
+      return res
+        .status(403)
+        .json(errorEnvelope("FORBIDDEN", "Session is not scoped to this creator.", traceId));
+    }
+    const created = await patronCollectionsStore.createCollection(
+      creatorId,
+      session.user_id,
+      title
+    );
+    res.setHeader("Cache-Control", "private, no-store");
+    return res.status(201).json(successEnvelope({ collection: created }, traceId));
+  });
+
+  app.patch("/api/v1/patron/collections/:collection_id", async (req: Request, res: Response) => {
+    const traceId = traceIdFrom(req);
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const details = validateRequiredFields(body, ["creator_id"]);
+    if (details.length > 0) {
+      return res
+        .status(400)
+        .json(errorEnvelope("VALIDATION_ERROR", "Invalid request.", traceId, details));
+    }
+    const creatorId = String(body.creator_id).trim();
+    const session = await requirePatronBearerSession(req, res, traceId);
+    if (!session) {
+      return;
+    }
+    if (session.creator_id !== creatorId) {
+      return res
+        .status(403)
+        .json(errorEnvelope("FORBIDDEN", "Session is not scoped to this creator.", traceId));
+    }
+    const patch: { title?: string; sort_order?: number } = {};
+    if (typeof body.title === "string") {
+      patch.title = body.title;
+    }
+    if (body.sort_order !== undefined && body.sort_order !== null) {
+      const n = Number(body.sort_order);
+      if (Number.isFinite(n)) {
+        patch.sort_order = n;
+      }
+    }
+    if (patch.title === undefined && patch.sort_order === undefined) {
+      return res.status(400).json(
+        errorEnvelope("VALIDATION_ERROR", "Provide title and/or sort_order.", traceId, [
+          { field: "body", issue: "empty_patch" }
+        ])
+      );
+    }
+    const updated = await patronCollectionsStore.updateCollection(
+      creatorId,
+      session.user_id,
+      req.params.collection_id,
+      patch
+    );
+    if (!updated) {
+      return res.status(404).json(errorEnvelope("NOT_FOUND", "Collection not found.", traceId));
+    }
+    res.setHeader("Cache-Control", "private, no-store");
+    return res.status(200).json(successEnvelope({ collection: updated }, traceId));
+  });
+
+  app.delete("/api/v1/patron/collections/:collection_id", async (req: Request, res: Response) => {
+    const traceId = traceIdFrom(req);
+    const creatorId =
+      typeof req.query.creator_id === "string" ? req.query.creator_id.trim() : "";
+    if (!creatorId) {
+      return res
+        .status(400)
+        .json(
+          errorEnvelope("VALIDATION_ERROR", "creator_id is required.", traceId, [
+            { field: "creator_id", issue: "missing" }
+          ])
+        );
+    }
+    const session = await requirePatronBearerSession(req, res, traceId);
+    if (!session) {
+      return;
+    }
+    if (session.creator_id !== creatorId) {
+      return res
+        .status(403)
+        .json(errorEnvelope("FORBIDDEN", "Session is not scoped to this creator.", traceId));
+    }
+    const ok = await patronCollectionsStore.deleteCollection(
+      creatorId,
+      session.user_id,
+      req.params.collection_id
+    );
+    if (!ok) {
+      return res.status(404).json(errorEnvelope("NOT_FOUND", "Collection not found.", traceId));
+    }
+    res.setHeader("Cache-Control", "private, no-store");
+    return res.status(200).json(successEnvelope({ deleted: true }, traceId));
+  });
+
+  app.post("/api/v1/patron/collections/:collection_id/entries", async (req: Request, res: Response) => {
+    const traceId = traceIdFrom(req);
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const details = validateRequiredFields(body, ["creator_id", "post_id", "media_id"]);
+    if (details.length > 0) {
+      return res
+        .status(400)
+        .json(errorEnvelope("VALIDATION_ERROR", "Invalid request.", traceId, details));
+    }
+    const creatorId = String(body.creator_id).trim();
+    const postId = String(body.post_id).trim();
+    const mediaId = String(body.media_id).trim();
+    const session = await requirePatronBearerSession(req, res, traceId);
+    if (!session) {
+      return;
+    }
+    if (session.creator_id !== creatorId) {
+      return res
+        .status(403)
+        .json(errorEnvelope("FORBIDDEN", "Session is not scoped to this creator.", traceId));
+    }
+    const snapshot = await canonicalStore.load();
+    const v = validatePatronCollectionEntry(snapshot, creatorId, postId, mediaId);
+    if (!v.ok) {
+      return res.status(400).json(
+        errorEnvelope("VALIDATION_ERROR", v.message, traceId, [
+          { field: "post_id", issue: v.code === "MEDIA_POST_MISMATCH" ? "mismatch" : "not_found" }
+        ])
+      );
+    }
+    try {
+      const entry = await patronCollectionsStore.addEntry(
+        creatorId,
+        session.user_id,
+        req.params.collection_id,
+        postId,
+        mediaId
+      );
+      res.setHeader("Cache-Control", "private, no-store");
+      return res.status(200).json(successEnvelope({ entry }, traceId));
+    } catch {
+      return res.status(404).json(errorEnvelope("NOT_FOUND", "Collection not found.", traceId));
+    }
+  });
+
+  app.delete("/api/v1/patron/collections/:collection_id/entries", async (req: Request, res: Response) => {
+    const traceId = traceIdFrom(req);
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const qCreator =
+      typeof req.query.creator_id === "string" ? req.query.creator_id.trim() : "";
+    const qPost = typeof req.query.post_id === "string" ? req.query.post_id.trim() : "";
+    const qMedia = typeof req.query.media_id === "string" ? req.query.media_id.trim() : "";
+    const creatorId =
+      (typeof body.creator_id === "string" ? body.creator_id.trim() : "") || qCreator;
+    const postId = (typeof body.post_id === "string" ? body.post_id.trim() : "") || qPost;
+    const mediaId = (typeof body.media_id === "string" ? body.media_id.trim() : "") || qMedia;
+    if (!creatorId || !postId || !mediaId) {
+      const miss: Array<{ field: string; issue: string }> = [];
+      if (!creatorId) {
+        miss.push({ field: "creator_id", issue: "missing" });
+      }
+      if (!postId) {
+        miss.push({ field: "post_id", issue: "missing" });
+      }
+      if (!mediaId) {
+        miss.push({ field: "media_id", issue: "missing" });
+      }
+      return res.status(400).json(
+        errorEnvelope(
+          "VALIDATION_ERROR",
+          "creator_id, post_id, and media_id are required (body or query).",
+          traceId,
+          miss
+        )
+      );
+    }
+    const session = await requirePatronBearerSession(req, res, traceId);
+    if (!session) {
+      return;
+    }
+    if (session.creator_id !== creatorId) {
+      return res
+        .status(403)
+        .json(errorEnvelope("FORBIDDEN", "Session is not scoped to this creator.", traceId));
+    }
+    const removed = await patronCollectionsStore.removeEntry(
+      creatorId,
+      session.user_id,
+      req.params.collection_id,
+      postId,
+      mediaId
+    );
+    if (!removed) {
+      return res.status(404).json(errorEnvelope("NOT_FOUND", "Entry not found.", traceId));
+    }
+    res.setHeader("Cache-Control", "private, no-store");
+    return res.status(200).json(successEnvelope({ deleted: true }, traceId));
+  });
+
+  /**
+   * Artist tag changes are persisted only in `gallery_post_overrides` (add/remove deltas).
+   * Patreon re-ingest updates `canonical.json` post `tag_ids`; effective tags = base + overrides
+   * (see `effectiveTags` in `gallery/query.ts`). Do not write tag deltas into canonical here.
+   */
   app.post("/api/v1/gallery/media/bulk-tags", async (req: Request, res: Response) => {
     const traceId = traceIdFrom(req);
     const body = (req.body ?? {}) as Record<string, unknown>;
     const baseDetails = validateRequiredFields(body, ["creator_id"]);
-    const postIdsRaw = body.post_ids;
-    if (!Array.isArray(postIdsRaw) || !postIdsRaw.every((x) => typeof x === "string")) {
-      return res.status(400).json(
-        errorEnvelope("VALIDATION_ERROR", "post_ids array required.", traceId, [
-          { field: "post_ids", issue: "invalid" }
-        ])
-      );
-    }
     if (baseDetails.length > 0) {
       return res
         .status(400)
@@ -783,6 +1505,52 @@ export function createApp(config: AppConfig): CreateAppResult {
       ? remRaw.filter((x): x is string => typeof x === "string")
       : [];
     const creatorId = body.creator_id as string;
+
+    const mtRaw = body.media_targets;
+    const media_targets: { post_id: string; media_id: string }[] = [];
+    if (Array.isArray(mtRaw)) {
+      for (const x of mtRaw) {
+        if (!x || typeof x !== "object") {
+          continue;
+        }
+        const o = x as Record<string, unknown>;
+        if (typeof o.post_id === "string" && typeof o.media_id === "string") {
+          media_targets.push({ post_id: o.post_id, media_id: o.media_id });
+        }
+      }
+    }
+
+    if (media_targets.length > 0) {
+      const validTargets = media_targets.filter(
+        (t) => t.media_id.trim().length > 0 && !t.media_id.startsWith("post_only_")
+      );
+      if (validTargets.length === 0) {
+        return res.status(400).json(
+          errorEnvelope(
+            "VALIDATION_ERROR",
+            "media_targets must include at least one real asset (not post_only_*).",
+            traceId,
+            [{ field: "media_targets", issue: "invalid" }]
+          )
+        );
+      }
+      await galleryOverridesStore.mergeBulkMediaTagDelta(creatorId, validTargets, {
+        add_tag_ids,
+        remove_tag_ids
+      });
+      return res.status(200).json(
+        successEnvelope({ updated_media_targets: validTargets.length }, traceId)
+      );
+    }
+
+    const postIdsRaw = body.post_ids;
+    if (!Array.isArray(postIdsRaw) || !postIdsRaw.every((x) => typeof x === "string")) {
+      return res.status(400).json(
+        errorEnvelope("VALIDATION_ERROR", "post_ids or media_targets required.", traceId, [
+          { field: "post_ids", issue: "invalid" }
+        ])
+      );
+    }
     const post_ids = [...new Set(postIdsRaw as string[])];
     for (const postId of post_ids) {
       await galleryOverridesStore.mergePostTagDelta(creatorId, postId, {
@@ -888,6 +1656,7 @@ export function createApp(config: AppConfig): CreateAppResult {
     return res.status(200).json(successEnvelope(result, traceId));
   });
 
+  /** Gallery visibility is stored in `gallery_post_overrides`, not canonical ingest rows. */
   app.post("/api/v1/gallery/visibility", async (req: Request, res: Response) => {
     const traceId = traceIdFrom(req);
     const body = (req.body ?? {}) as Record<string, unknown>;
@@ -943,10 +1712,10 @@ export function createApp(config: AppConfig): CreateAppResult {
         ])
       );
     }
-    const vis = body.visibility;
-    if (vis !== "visible" && vis !== "hidden" && vis !== "flagged") {
+    const vNorm = normalizeGalleryVisibilityBody(body.visibility);
+    if (!vNorm) {
       return res.status(400).json(
-        errorEnvelope("VALIDATION_ERROR", "visibility must be visible, hidden, or flagged.", traceId, [
+        errorEnvelope("VALIDATION_ERROR", "visibility must be visible, hidden, or review.", traceId, [
           { field: "visibility", issue: "invalid" }
         ])
       );
@@ -957,7 +1726,7 @@ export function createApp(config: AppConfig): CreateAppResult {
         .json(errorEnvelope("VALIDATION_ERROR", "Invalid request.", traceId, details));
     }
     const creatorId = body.creator_id as string;
-    const v = vis as PostVisibility;
+    const v = vNorm;
     if (postIdsRaw.length > 0) {
       await galleryOverridesStore.setVisibility(creatorId, postIdsRaw as string[], v);
     }
@@ -990,7 +1759,14 @@ export function createApp(config: AppConfig): CreateAppResult {
           { field: "creator_id", issue: "missing" }
         ]));
     }
-    const items = await collectionsStore.listForCreator(creatorId);
+    let items = await collectionsStore.listForCreator(creatorId);
+    if (parseQueryTruthy(req.query.visitor)) {
+      const allowed = await galleryService.visitorVisiblePostIdSet(creatorId);
+      items = items.map((col) => ({
+        ...col,
+        post_ids: col.post_ids.filter((pid) => allowed.has(pid))
+      }));
+    }
     return res.status(200).json(successEnvelope({ items }, traceId));
   });
 

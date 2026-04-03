@@ -1,11 +1,12 @@
 "use client";
 
+import { useState } from "react";
 import { RELAY_API_BASE, type GalleryItem, type PostVisibility } from "@/lib/relay-api";
 
 const visibilityBadge: Record<PostVisibility, { dot: string; label: string }> = {
   visible: { dot: "bg-green-500", label: "Visible" },
   hidden: { dot: "bg-gray-500", label: "Hidden" },
-  flagged: { dot: "bg-amber-500", label: "Flagged" }
+  review: { dot: "bg-amber-500", label: "Review" }
 };
 
 type Props = {
@@ -18,6 +19,8 @@ type Props = {
   onFocus: () => void;
   onInspect: () => void;
   onRestoreToWorkspace?: () => void;
+  creatorId?: string;
+  onExportRetryComplete?: () => void;
 };
 
 function accessChipLabel(tierId: string, tierTitleById: Record<string, string>): string {
@@ -36,9 +39,12 @@ export default function GalleryListRow({
   onSelect,
   onFocus,
   onInspect,
-  onRestoreToWorkspace
+  onRestoreToWorkspace,
+  creatorId,
+  onExportRetryComplete
 }: Props) {
   const badge = visibilityBadge[item.visibility] ?? visibilityBadge.visible;
+  const [exportRetryBusy, setExportRetryBusy] = useState(false);
 
   return (
     <div
@@ -68,7 +74,7 @@ export default function GalleryListRow({
           <img
             src={`${RELAY_API_BASE}${item.content_url_path}`}
             alt=""
-            className="w-full h-full object-cover"
+            className="h-full w-full object-cover object-center"
           />
         ) : item.has_export && item.mime_type?.startsWith("video/") ? (
           <svg className="w-7 h-7 text-[#8a7f72]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
@@ -84,6 +90,35 @@ export default function GalleryListRow({
           <span className="text-[8px] text-[#5c534a]">no thumb</span>
         )}
       </button>
+      {item.export_error && creatorId && !item.has_export && !item.media_id.startsWith("post_only_") ? (
+        <div className="flex shrink-0 flex-col items-stretch justify-center gap-1 px-1">
+          <span className="max-w-[4.5rem] truncate text-[8px] text-amber-200/90" title={item.export_error}>
+            Fetch failed
+          </span>
+          <button
+            type="button"
+            disabled={exportRetryBusy}
+            onClick={async (e) => {
+              e.stopPropagation();
+              if (!creatorId || exportRetryBusy) return;
+              setExportRetryBusy(true);
+              try {
+                const res = await fetch(`${RELAY_API_BASE}/api/v1/export/media`, {
+                  method: "POST",
+                  headers: { "content-type": "application/json" },
+                  body: JSON.stringify({ creator_id: creatorId, media_id: item.media_id })
+                });
+                if (res.ok) onExportRetryComplete?.();
+              } finally {
+                setExportRetryBusy(false);
+              }
+            }}
+            className="rounded border border-amber-500/40 bg-amber-500/10 px-1.5 py-0.5 text-[8px] text-amber-100 hover:bg-amber-500/20 disabled:opacity-50"
+          >
+            {exportRetryBusy ? "…" : "Retry"}
+          </button>
+        </div>
+      ) : null}
       <div className="flex-1 min-w-0 py-1">
         <div className="flex items-center gap-2">
           <span className={`w-2 h-2 rounded-full shrink-0 ${badge.dot}`} title={badge.label} />

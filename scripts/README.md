@@ -6,6 +6,16 @@ After adding functions to `Microsoft.PowerShell_profile.ps1` (see repo instructi
 
 - **`rr`** — runs `dev-restart.ps1` (must `cd` into repo first).
 - **`rscrape`** — `POST /api/v1/patreon/scrape` with `dry_run: false` (default `creator_id`: `dev_creator`). Override with `$env:RELAY_CREATOR_ID` / `$env:RELAY_API_URL`.
+- **`rds`** — **relay dry scrape**: `dry_run: true` + `include_batch: true`, then **tables** (summary, warnings, tiers, **media totals**, posts) instead of raw JSON. Script: `.\scripts\rds.ps1` (optional first arg = max post rows in the printed table, default `30`). Same `RELAY_API_URL` / `RELAY_CREATOR_ID` as `rscrape`. By default it sends **`max_post_pages: 100`** (API cap) and **`force_refresh_post_access: true`** so the sync **watermark does not hide** older posts (you see full campaign posts + cookie media when a session cookie is set). Override: `RELAY_DRY_SCRAPE_MAX_PAGES`, or `RELAY_DRY_SCRAPE_RESPECT_WATERMARK=1` to skip force-refresh for a faster incremental-style preview.
+
+**`rds` in any terminal:** PowerShell aliases cannot run scripts with arguments cleanly; use a **function** in `$PROFILE`:
+
+```powershell
+$RelayRepo = 'C:\Users\jorda\Documents\Coding Projects\Rescue'   # <-- your clone path
+function rds { Push-Location $RelayRepo; try { & (Join-Path $RelayRepo 'scripts\rds.ps1') @args } finally { Pop-Location } }
+```
+
+Then: `rds` or `rds 50` (more post rows). You must `cd` into the repo **or** use the `Push-Location` pattern above so the script’s repo-root check passes.
 
 Reload profile: `. $PROFILE`
 

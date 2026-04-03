@@ -9,22 +9,26 @@ type Props = {
   creatorId: string;
   activeCollectionId: string | null;
   onSelectCollection: (id: string | null) => void;
-  selectedPostIds: string[];
   onCollectionChange: () => void;
   /** Increment to force reload from API (e.g. after creating a collection elsewhere). */
   reloadToken?: number;
+  collectionEditorOpen: boolean;
+  onCollectionEditorOpenChange: (open: boolean) => void;
+  /** When false, hide the collection list (editor still mounts when open). */
+  showList?: boolean;
 };
 
 export default function CollectionsPanel({
   creatorId,
   activeCollectionId,
   onSelectCollection,
-  selectedPostIds,
   onCollectionChange,
-  reloadToken = 0
+  reloadToken = 0,
+  collectionEditorOpen,
+  onCollectionEditorOpenChange,
+  showList = true
 }: Props) {
   const [collections, setCollections] = useState<Collection[]>([]);
-  const [showEditor, setShowEditor] = useState(false);
 
   const loadCollections = useCallback(async () => {
     const u = new URLSearchParams();
@@ -45,7 +49,7 @@ export default function CollectionsPanel({
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ creator_id: creatorId, title, description: description || undefined })
     });
-    setShowEditor(false);
+    onCollectionEditorOpenChange(false);
     await loadCollections();
   };
 
@@ -58,109 +62,56 @@ export default function CollectionsPanel({
     onCollectionChange();
   };
 
-  const addSelectedToCollection = async (collectionId: string) => {
-    if (selectedPostIds.length === 0) return;
-    const res = await fetch(`${RELAY_API_BASE}/api/v1/gallery/collections/${collectionId}/posts`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ post_ids: selectedPostIds })
-    });
-    if (!res.ok) return;
-    await loadCollections();
-    onCollectionChange();
+  const pickCollection = (id: string) => {
+    onSelectCollection(activeCollectionId === id ? null : id);
   };
 
   return (
     <section className="space-y-2">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <h3 className="font-[family-name:var(--font-display)] text-lg text-[#f0e6d8]">
-          Collections
-        </h3>
-        <div className="flex flex-wrap items-center gap-1.5">
-          <Link
-            href="/designer"
-            className="text-[10px] px-2 py-0.5 rounded border border-[#4a3f36] text-[#c9bfb3] hover:border-[#e8a077] hover:text-[#e8a077]"
-            title="Arrange collections on your patron-facing page"
-          >
-            Arrange page
-          </Link>
-          <button
-            type="button"
-            onClick={() => setShowEditor(true)}
-            className="text-xs px-2 py-0.5 rounded bg-[#4a3728] hover:bg-[#5c4a38] text-[#ede5da]"
-          >
-            + New
-          </button>
-        </div>
-      </div>
-
-      <div className="flex flex-col gap-1 max-h-48 overflow-y-auto">
-        <button
-          type="button"
-          onClick={() => onSelectCollection(null)}
-          className={`text-left text-xs truncate px-2 py-1 rounded ${
-            activeCollectionId === null
-              ? "bg-[#2a221c] text-[#f0e6d8]"
-              : "text-[#c9bfb3] hover:text-[#f0e6d8]"
-          }`}
-        >
-          All Posts
-        </button>
-        {collections.map((col) => (
-          <div key={col.collection_id} className="flex items-center gap-1 group">
-            <button
-              type="button"
-              onClick={() => onSelectCollection(col.collection_id)}
-              className={`flex-1 text-left text-xs truncate px-2 py-1 rounded ${
-                activeCollectionId === col.collection_id
-                  ? "bg-[#2a221c] text-[#f0e6d8]"
-                  : "text-[#c9bfb3] hover:text-[#f0e6d8]"
-              }`}
-            >
-              {col.title}
-              <span className="ml-1 text-[#8a7f72]">({col.post_ids.length})</span>
-            </button>
-            <Link
-              href={`/designer?highlight=collection:${encodeURIComponent(col.collection_id)}`}
-              className="text-[10px] text-[#8a7f72] hover:text-[#e8a077] opacity-0 group-hover:opacity-100 px-0.5"
-              title="Jump to Designer section for this collection"
-            >
-              Page
-            </Link>
-            <button
-              type="button"
-              onClick={() => void deleteCollection(col.collection_id)}
-              className="text-[10px] text-[#8a7f72] hover:text-red-400 opacity-0 group-hover:opacity-100 px-1"
-              title="Delete collection"
-            >
-              ×
-            </button>
-          </div>
-        ))}
-      </div>
-
-      {selectedPostIds.length > 0 && collections.length > 0 ? (
-        <div className="pt-1">
-          <p className="text-[10px] text-[#8a7f72] mb-1">Add {selectedPostIds.length} selected to:</p>
-          <div className="flex flex-wrap gap-1">
+      {showList ? (
+        <>
+          <div className="flex max-h-48 flex-col gap-0.5 overflow-y-auto">
             {collections.map((col) => (
-              <button
-                key={col.collection_id}
-                type="button"
-                onClick={() => void addSelectedToCollection(col.collection_id)}
-                className="text-[10px] px-2 py-0.5 rounded border border-[#4a3f36] text-[#c9bfb3] hover:border-[#e8a077] hover:text-[#e8a077]"
-              >
-                {col.title}
-              </button>
+              <div key={col.collection_id} className="group flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => pickCollection(col.collection_id)}
+                  className={`min-w-0 flex-1 truncate rounded-r-md py-1.5 pl-2.5 pr-1 text-left text-xs transition-colors ${
+                    activeCollectionId === col.collection_id
+                      ? "border-l-2 border-l-[var(--lib-primary)] bg-[var(--lib-sidebar-accent)] text-[var(--lib-fg)]"
+                      : "border-l-2 border-l-transparent text-[var(--lib-fg-muted)] hover:bg-[var(--lib-sidebar-accent)]/50 hover:text-[var(--lib-fg)]"
+                  }`}
+                >
+                  <span className="truncate">{col.title}</span>
+                </button>
+                <span className="shrink-0 tabular-nums pr-1 text-[10px] text-[var(--lib-fg-muted)]">
+                  {col.post_ids.length}
+                </span>
+                <Link
+                  href={`/designer?highlight=collection:${encodeURIComponent(col.collection_id)}`}
+                  className="px-0.5 text-[10px] text-[var(--lib-fg-muted)] opacity-0 hover:text-[var(--lib-primary)] group-hover:opacity-100"
+                  title="Designer"
+                >
+                  Page
+                </Link>
+                <button
+                  type="button"
+                  onClick={() => void deleteCollection(col.collection_id)}
+                  className="px-1 text-[10px] text-[var(--lib-fg-muted)] opacity-0 hover:text-red-400 group-hover:opacity-100"
+                  title="Delete"
+                >
+                  ×
+                </button>
+              </div>
             ))}
           </div>
-        </div>
+        </>
       ) : null}
 
-      {showEditor ? (
+      {collectionEditorOpen ? (
         <CollectionEditor
           onSave={(title, desc) => void createCollection(title, desc)}
-          onCancel={() => setShowEditor(false)}
+          onCancel={() => onCollectionEditorOpenChange(false)}
         />
       ) : null}
     </section>

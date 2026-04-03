@@ -37,8 +37,10 @@ Relay is **two intentional products** that share one **access and content model*
 
 Use this roadmap as the execution sequence and use the reference docs for deeper implementation decisions:
 
+- **Coding agents / anyone touching Patreon ingest or gallery duplicate behavior:** read [AGENTS.md](AGENTS.md), [docs/patreon-ingest-canonical.md](docs/patreon-ingest-canonical.md), and [docs/relay-artist-metadata.md](docs/relay-artist-metadata.md) so canonical vs overrides stay aligned (artist tags/visibility survive re-ingest).
 - Library + Designer UX ideals, workflows, gaps, and phased UI backlog:
   - [docs/pattern-library.md](docs/pattern-library.md)
+- **Sync & access hardening (Slices 1–4, shipped):** [docs/part1-sync-hardening-ledger.md](docs/part1-sync-hardening-ledger.md) — export retries, tier alignment, watermark + re-sync UI, sync health; one ledger for APIs, env vars, and tests.
 - Standardized build contracts, quality gates, and traceability:
   - [builder-boost-pack/README.md](c:\Users\jorda\Documents\Coding Projects\Rescue\builder-boost-pack\README.md)
 - Analytics decisioning, action cards, data contracts, and execution APIs:
@@ -56,6 +58,8 @@ Quick routing:
 - Daily promo slot, Premium viewer tier, boost tokens, attribution -> [docs/monetization-discovery-premium-agent-prompt.md](docs/monetization-discovery-premium-agent-prompt.md).
 - Security, compliance, and outreach governance decisions -> Builder Boost Pack standards + Monetization Scheme and Infrastructure Plan.
 - Library and Designer sequencing before heavy patron-facing polish -> [docs/pattern-library.md](docs/pattern-library.md) (Part 3 builds on stable gallery and layout contracts).
+- Patreon sync/export hardening Slices 1–4 (what shipped, where to change code) -> [docs/part1-sync-hardening-ledger.md](docs/part1-sync-hardening-ledger.md).
+- Private smart tagging and similarity-assisted bulk apply -> **Ledger (Part 1, post-stabilization): Smart Tag Assistant** under [Part 1 Delivery Track: Gallery Export](#part-1-delivery-track-gallery-export).
 
 ## Product Boundaries
 
@@ -68,6 +72,7 @@ Includes:
 - Media normalization, tagging, and gallery search.
 - Exported content storage under creator-owned or creator-assigned storage.
 - Analytics for content performance and audience behavior.
+- Optional post-stabilization: **Smart Tag Assistant**—private inference plus similarity-assisted bulk tagging (see Ledger under Part 1 Delivery Track).
 
 Does not include:
 - Full Patreon replacement checkout flow.
@@ -149,6 +154,7 @@ Deliver time-to-value fast: connect Patreon, import content, launch searchable g
 ###    A: Onboarding and Auth
 
 - Implement Patreon OAuth with token refresh and rotation handling.
+- **Creator vs patron OAuth:** this workstream is the **creator** connection (encrypted token store, ingest/scrape, credential health). **Patron** “Log in with Patreon” for fans—automatic entitlement sync and session—is **Part 3, Workstream K** (“Patreon patron OAuth — end-to-end”); it uses the same Patreon OAuth **app** but a **different redirect URI** and **`/api/v1/auth/patreon/patron/exchange`**, and does **not** write patron tokens into the creator credential file.
 - Persist encrypted credentials with explicit credential health statuses.
 - Add onboarding progress states:
   - Connect Patreon
@@ -221,6 +227,49 @@ Builder reference:
 Exit gate:
 - Dashboard exposes at least 3 actionable insight cards per creator.
 - Insight generation job success rate at or above 99 percent.
+
+### Ledger (Part 1, post-stabilization): Smart Tag Assistant
+
+**Objective:** Enrich Relay’s search and curation beyond Patreon’s native metadata so creators can isolate character-specific or scenario-specific work **by typing** (universal search, facets, saved filters) instead of hunting carousels. Tags are **Relay-level** (taxonomy-backed), applied only after explicit artist confirmation, and flow through the same override/canonical pipeline as manual tags.
+
+**User flow (two stages, both confirmatory):**
+
+- **Stage A — Reference ingest:** In the artist dashboard, a private **processing zone** accepts one or more reference images the artist uploads. A **self-hosted** vision / multimodal model (e.g. CLIP-class) proposes descriptive tags—style, palette, tropes, and **hierarchical child tags** under a **Relay-defined taxonomy** (not unconstrained free text that poisons search).
+- **Stage B — Gallery mirror:** The system embeds accepted references and runs **similarity search only within that creator’s gallery** (exported or in-app media). The UI surfaces clusters (e.g. “this subject appears in 5 other works”) with **confidence scores**. The artist confirms **per tag** or **per batch** before tags are written—aligned with **post-scoped** bulk-tag semantics (see Workstream D and gallery APIs).
+
+```mermaid
+flowchart LR
+  upload[ReferenceUpload]
+  infer[PrivateInference]
+  suggest[TagSuggestions]
+  userPick[UserAcceptsTags]
+  embed[EmbedReferencePlusGallery]
+  match[SimilarityMatches]
+  apply[BulkTagApply]
+  upload --> infer --> suggest --> userPick
+  userPick --> embed --> match --> apply
+```
+
+**Product guardrails (non-negotiable):**
+
+- **No silent apply:** Model output never writes production tags without explicit user action.
+- **Viewer parity:** Accepted tags participate in the same read model as manual tags for Library, Designer preview, and future patron surfaces ([docs/pattern-library.md](docs/pattern-library.md); [docs/relay-artist-metadata.md](docs/relay-artist-metadata.md)).
+- **Tenant isolation:** Embeddings and vector indexes are **per creator** (or strictly partitioned); no cross-creator retrieval or training aggregation.
+- **Positioning:** Market as **private inference** and **no third-party multimodal API** for this feature; operational and contractual assurances—not “cryptographic” guarantees.
+
+**Technical dependencies (sequencing):**
+
+- **After** stable Patreon → canonical → gallery list/search ([docs/patreon-ingest-canonical.md](docs/patreon-ingest-canonical.md), Workstreams B and D).
+- **After or in parallel with** durable **queue-backed workers** (BullMQ + Redis per Architecture Baseline) and object storage for batch embedding jobs—not prescriptive of other language-specific queue frameworks.
+- **Inference:** Containerized, **private-network** hosting; MVP may use CPU or a **single GPU** before any Kubernetes GPU autoscale story.
+- **Vector storage:** Implementation choice between **pgvector** (colocated with Postgres) or a **dedicated vector database**—not locked to a specific vendor in v1.
+
+**Exit gates (ledger-level; detailed SLOs TBD in ops specs):**
+
+- Latency and batch-size targets defined before GA.
+- False positives bounded by **confidence thresholds + human confirmation**; immutable **audit trail** of model suggestion, user acceptance, and affected posts/media.
+
+**Monetization posture:** Candidate for premium tier or metered “power tools” ([monetization-scheme-infrastructure-plan.md](monetization-scheme-infrastructure-plan.md)); **not** required to ship core gallery MVP.
 
 ### Required Assets for Part 1
 
@@ -339,9 +388,27 @@ Turn Relay from a creator-centric tool into a **patron-valued surface**: one pla
 ### Workstream K: Patron Identity and Follow Graph
 
 - Patron registration, login, and session lifecycle (including optional link to provider identity where allowed).
-- **Patreon patron OAuth** lifecycle: token refresh, health status, and **revalidation** on login and on a schedule so subscription changes are picked up without manual reconnect.
+- **Patreon patron OAuth** lifecycle: **today**, each successful patron authorization drives a **login-time entitlement sync** (code exchange → Patreon identity → Relay `tier_ids` update → Relay session). **Next** (same workstream): optional persistence of patron refresh tokens, credential health, **revalidation** on a schedule, and provider webhooks so upgrade/downgrade/cancel converges without requiring a full re-link—aligned with Part 3 “continuous patron OAuth and entitlement refresh” above.
 - Follow model: creators on Relay, with initial suggestions from OAuth-derived relationships when available.
 - Privacy controls: unfollow, mute, data export and deletion aligned with regional privacy requirements.
+
+#### Patreon patron OAuth — end-to-end (implementation reference)
+
+This is the **automatic** path when a patron signs up or logs in with Patreon: no separate manual “register this user” step beyond completing OAuth and hitting Relay’s exchange. It **reuses the same access model** as creator-side member sync and clone/gallery checks: Relay session carries `tier_ids`; gated content uses intersection with post access rules (see Workstream G). It does **not** fork a second entitlement truth.
+
+| Step | Responsibility |
+| --- | --- |
+| 1. Start OAuth | Browser redirects to Patreon `oauth2/authorize` with the **same OAuth client** as creator connect, a **patron-specific redirect URI** registered in the Patreon app, and scopes: `identity`, `identity[email]`, `identity.memberships`. |
+| 2. State payload | Must include Relay **`creator_id`** (tenant) and Patreon **numeric campaign id** (same number as in `patreon_campaign_{id}` in canonical ingest) so Relay can filter the patron’s **memberships** to the correct campaign when `identity.memberships` returns multiple campaigns. |
+| 3. Callback | Authorization `code` returned to the patron redirect URI; server (or BFF) calls Relay—**not** the creator token store path. |
+| 4. Relay API | `POST /api/v1/auth/patreon/patron/exchange` with `code`, `redirect_uri`, `creator_id`, `patreon_campaign_numeric_id`. Relay exchanges the code for a **patron** access token, calls Patreon **`GET /api/oauth2/v2/identity`** with `include=memberships,memberships.currently_entitled_tiers` and explicit `fields[...]`, then derives **`patreon_tier_*`** ids from **`currently_entitled_tiers`** for **active patrons** only—**same id shape** as creator-triggered **member list sync** (`PatreonSyncService` / register-patreon fallback). |
+| 5. Identity store | **Upsert** patron user (`registerPatreonFallback` semantics): refresh `tier_ids` on every successful exchange so return visits pick up tier changes. |
+| 6. Session | Issue a normal Relay **session token** (same contract as `login` / `login-patreon`). Patron Patreon tokens are **not** persisted in the **creator** encrypted credential file; only the Relay session (and identity row) gate the product until refresh-token support is added. |
+| 7. Product UI | Production signup/login routes replace dev pages (`/patreon/patron/connect` → callback); store session per your app’s cookie or storage policy. |
+
+**Architectural fit:** Patreon remains **upstream** for patron billing and entitled tiers; Relay identity holds a **snapshot** for authorization and feed assembly (Workstream L). Canonical content and artist Library visibility remain the creator-controlled source for **what** can be shown; patron OAuth answers **whether** this user may see tier-gated material for that creator.
+
+**Code reference (current repo):** `src/patreon/patreon-user-identity.ts`, `src/patreon/patreon-patron-oauth.ts`, `POST /api/v1/auth/patreon/patron/exchange` in `src/server.ts`, dev UI under `web/app/patreon/patron/`.
 
 Exit gate:
 - Cross-tenant isolation tests pass for patron data and follow lists.
@@ -473,12 +540,13 @@ Builder reference:
 1. Part 1 foundation: OAuth, ingest, normalized data model.
 2. Part 1 value: export storage, gallery UX, analytics.
 3. Part 1 hardening: SLOs, observability, support runbooks.
-4. Part 2 foundation: replica schema, clone generation, access model.
-5. Part 2 migration: payment handoff, Re-Populate pipeline, deploy and rollback.
-6. Part 2 hardening: compliance automation, deliverability tuning, DR readiness.
-7. Part 3 foundation: patron identity, follow graph, feed assembly with strict entitlements.
-8. Part 3 growth: discovery and creator-opt-in promos, Browse ranking, patron engagement (comments, favorites, collections), pledge upgrade path, instrumentation, abuse controls.
-9. Part 3 optional monetization: premium viewer and disclosed boost surfaces after policy review and baseline engagement.
+4. Part 1 smart tagging: private inference, similarity suggestions, and confirmed bulk apply (tenant-scoped Smart Tag Assistant).
+5. Part 2 foundation: replica schema, clone generation, access model.
+6. Part 2 migration: payment handoff, Re-Populate pipeline, deploy and rollback.
+7. Part 2 hardening: compliance automation, deliverability tuning, DR readiness.
+8. Part 3 foundation: patron identity, follow graph, feed assembly with strict entitlements.
+9. Part 3 growth: discovery and creator-opt-in promos, Browse ranking, patron engagement (comments, favorites, collections), pledge upgrade path, instrumentation, abuse controls.
+10. Part 3 optional monetization: premium viewer and disclosed boost surfaces after policy review and baseline engagement.
 
 ## End State
 

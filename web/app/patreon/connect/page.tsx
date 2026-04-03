@@ -41,6 +41,13 @@ export default function PatreonConnectPage() {
         <Link href="/patreon/cookie" className="text-amber-400 underline decoration-amber-400/60 hover:text-amber-300">
           Session Cookie
         </Link>
+        {" · "}
+        <Link
+          href="/patreon/patron/connect"
+          className="text-amber-400 underline decoration-amber-400/60 hover:text-amber-300"
+        >
+          Patron login
+        </Link>
       </p>
       <h1 className="font-[family-name:var(--font-display)] text-2xl text-stone-50">
         Connect Patreon (dev)

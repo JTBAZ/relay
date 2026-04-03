@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { randomBytes } from "node:crypto";
 import request from "supertest";
 import { describe, expect, it, vi } from "vitest";
+import { RELAY_TIER_ALL_PATRONS, RELAY_TIER_PUBLIC } from "../src/patreon/relay-access-tiers.js";
 import { createApp } from "../src/server.js";
 
 const campaignsDoc = {
@@ -233,5 +234,176 @@ describe("Cookie scrape + OAuth post body backfill", () => {
           : (oauthUrl as Request).url;
     expect(urlStr).not.toContain("include=");
     expect(urlStr).toMatch(/\/api\/oauth2\/v2\/posts\/111(?:\?|$)/);
+
+    expect(dry.body.data.tier_access_summary).toMatchObject({
+      media_source: "cookie",
+      oauth_list_pass: true
+    });
+  });
+
+  it("cookie empty tiers + misleading is_paid false becomes tier-gated after OAuth (not public)", async () => {
+    const tempDir = await mkdtemp(join(tmpdir(), "relay-cookie-tier-"));
+
+    const ambiguousCookieList = {
+      data: [
+        {
+          type: "post",
+          id: "222",
+          attributes: {
+            title: "Paid-looking",
+            content: "<p>ok</p>",
+            published_at: "2026-03-15T18:00:00.000Z",
+            edited_at: "2026-03-15T18:00:00.000Z",
+            is_paid: false,
+            tiers: []
+          },
+          relationships: {
+            images: { data: [{ type: "media", id: "m2" }] }
+          }
+        }
+      ],
+      included: [
+        {
+          type: "media",
+          id: "m2",
+          attributes: { download_url: "https://cdn.example.com/b.png" }
+        }
+      ],
+      links: {}
+    };
+
+    const oauthListFor222 = {
+      data: [
+        {
+          type: "post",
+          id: "222",
+          attributes: {
+            title: "Paid-looking",
+            is_public: false,
+            is_paid: true,
+            tiers: [555],
+            published_at: "2026-03-15T18:00:00.000Z"
+          }
+        }
+      ],
+      links: {}
+    };
+
+    const oauthPost222 = {
+      data: {
+        type: "post",
+        id: "222",
+        attributes: {
+          title: "Paid-looking",
+          content: "<p>ok</p>",
+          published_at: "2026-03-15T18:00:00.000Z",
+          edited_at: "2026-03-15T18:00:00.000Z",
+          url: "https://www.patreon.com/posts/xxx",
+          is_public: false,
+          is_paid: true,
+          embed_url: "",
+          embed_data: null
+        },
+        relationships: {
+          tiers: { data: [{ type: "tier", id: "555" }] }
+        }
+      },
+      included: []
+    };
+
+    const fetchImpl: typeof fetch = vi.fn(async (input: RequestInfo | URL) => {
+      const url =
+        typeof input === "string"
+          ? input
+          : input instanceof URL
+            ? input.href
+            : input.url;
+      if (url.includes("patreon.com/api/oauth2/token")) {
+        return new Response(
+          JSON.stringify({
+            access_token: "tok",
+            refresh_token: "ref",
+            expires_in: 3600
+          }),
+          { status: 200, headers: { "content-type": "application/json" } }
+        );
+      }
+      if (url.includes("/api/oauth2/v2/campaigns?") && !url.includes("/posts")) {
+        return new Response(JSON.stringify(campaignsDoc), {
+          status: 200,
+          headers: { "content-type": "application/json" }
+        });
+      }
+      if (url.includes("/api/oauth2/v2/campaigns/") && url.includes("/posts")) {
+        return new Response(JSON.stringify(oauthListFor222), {
+          status: 200,
+          headers: { "content-type": "application/json" }
+        });
+      }
+      if (url.includes("/api/oauth2/v2/posts/222")) {
+        return new Response(JSON.stringify(oauthPost222), {
+          status: 200,
+          headers: { "content-type": "application/json" }
+        });
+      }
+      if (url.includes("/api/posts?") && url.includes("filter")) {
+        return new Response(JSON.stringify(ambiguousCookieList), {
+          status: 200,
+          headers: { "content-type": "application/json" }
+        });
+      }
+      if (url.includes("/api/posts/222?")) {
+        return new Response(
+          JSON.stringify({
+            data: {
+              type: "post",
+              id: "222",
+              attributes: {
+                title: "Paid-looking",
+                content: "<p>ok</p>",
+                published_at: "2026-03-15T18:00:00.000Z",
+                edited_at: "2026-03-15T18:00:00.000Z"
+              },
+              relationships: {}
+            },
+            included: []
+          }),
+          { status: 200, headers: { "content-type": "application/json" } }
+        );
+      }
+      return new Response(`unexpected ${url}`, { status: 500 });
+    }) as unknown as typeof fetch;
+
+    const { app } = createApp(testConfig(tempDir, fetchImpl));
+
+    await request(app).post("/api/v1/auth/patreon/exchange").send({
+      creator_id: "cr_ambig",
+      code: "code",
+      redirect_uri: "http://localhost/cb"
+    });
+
+    await request(app).post("/api/v1/patreon/cookie").send({
+      creator_id: "cr_ambig",
+      session_id: "sess_ambig"
+    });
+
+    const dry = await request(app).post("/api/v1/patreon/scrape").send({
+      creator_id: "cr_ambig",
+      campaign_id: "999",
+      dry_run: true,
+      include_batch: true,
+      max_post_pages: 1
+    });
+    expect(dry.status).toBe(200);
+    const batch = dry.body.data.batch as {
+      posts: Array<{ tier_ids: string[] }>;
+    };
+    expect(batch.posts).toHaveLength(1);
+    expect(batch.posts[0]!.tier_ids).toContain("patreon_tier_555");
+    expect(batch.posts[0]!.tier_ids).not.toContain(RELAY_TIER_PUBLIC);
+    expect(batch.posts[0]!.tier_ids).not.toEqual([RELAY_TIER_ALL_PATRONS]);
+
+    expect(dry.body.data.tier_access_summary.media_source).toBe("cookie");
+    expect(dry.body.data.tier_access_summary.oauth_list_pass).toBe(true);
   });
 });

@@ -4,6 +4,19 @@ Single source of truth for **product ideals**, **artist vs viewer workflows**, a
 
 **Governing principle:** harden the **Library** (find, tag, curate, collections) before investing heavily in **visitor-facing** polish. Designer, **public pages**, and **fan surfaces** should consume **stable data contracts** from Library work and a **single viewer entitlement pipeline**—otherwise they churn or desync.
 
+### Agents / builders: Patreon ingest (read before editing)
+
+**Do not** revert to legacy ingest: dropping duplicate **cover** rows in canonical storage, or adding URL `seenUrls` short-circuiting on the **cookie** path before `finalizePatreonPostMedia`. That breaks cover vs attachment reconciliation and `shadow_cover` / post-batch behavior.
+
+- **Canonical contract:** [docs/patreon-ingest-canonical.md](patreon-ingest-canonical.md)  
+- **Relay-only metadata (tags, visibility, collections, layout):** [docs/relay-artist-metadata.md](relay-artist-metadata.md)  
+- **Repo pointer:** [AGENTS.md](../AGENTS.md)  
+- **Recent handoff notes:** [docs/agent-handoff-library-v2.md](agent-handoff-library-v2.md)
+
+### Patreon sync & health (Library)
+
+The Library top bar exposes a **Patreon** control: load **sync state** (watermark, cookie session, optional upstream “newer posts” hint, OAuth health, last scrape/member sync), then confirm **fetch newer posts** (respects watermark) or **re-sync access for older posts** (`force_refresh_post_access`). A **Sync issue** pill can reflect OAuth or last-run failures. APIs, env vars, persistence paths, and tests live in **[part1-sync-hardening-ledger.md](part1-sync-hardening-ledger.md)** (Slices 3–4); tier/OAuth scrape semantics in Slice 2 of the same ledger.
+
 ---
 
 ## 1. Product ideals: three surfaces
@@ -50,11 +63,12 @@ Single source of truth for **product ideals**, **artist vs viewer workflows**, a
 | Universal search (`q`) | Sidebar Find Assets field | [`matchesFilters`](../src/gallery/query.ts) / [`itemMatchesFreeTextQuery`](../src/gallery/query.ts) |
 | Inspect + per-asset visibility | [`InspectModal.tsx`](../web/app/components/InspectModal.tsx) | [`buildGalleryVisibilityBody`](../web/lib/relay-api.ts) → `POST /api/v1/gallery/visibility` |
 | Bulk hide / workspace / flag | [`BulkActionBar.tsx`](../web/app/components/BulkActionBar.tsx) | Same body; **media_targets** for real media rows (see pattern *Visibility semantics* below) |
-| Bulk add tags | `applyBulkTags` in [`GalleryView.tsx`](../web/app/GalleryView.tsx) | `POST /api/v1/gallery/media/bulk-tags` — **post-scoped** via `post_ids` derived from selection |
+| Bulk add / remove tags | `applyBulkTagDelta` in [`GalleryView.tsx`](../web/app/GalleryView.tsx) + [`BulkActionBar.tsx`](../web/app/components/BulkActionBar.tsx) | `POST /api/v1/gallery/media/bulk-tags` with `add_tag_ids` and/or `remove_tag_ids` — **post-scoped** via `post_ids` derived from selection |
 | Hygiene | [`TriageDialog.tsx`](../web/app/components/TriageDialog.tsx) | Triage analyze + auto-flag APIs |
 | Collections | [`CollectionsPanel.tsx`](../web/app/components/CollectionsPanel.tsx), [`CollectionBuilderDrawer.tsx`](../web/app/components/CollectionBuilderDrawer.tsx), [`CollectionEditor.tsx`](../web/app/components/CollectionEditor.tsx) | Collections CRUD; [`Collection`](../web/lib/relay-api.ts) (`theme_tag_ids`, `access_ceiling_tier_id`, `cover_media_id`, add-posts validation) |
 | First-run onboarding | [`library-onboarding.ts`](../web/lib/library-onboarding.ts) + GalleryView | `localStorage` only (`relay.libraryOnboarding.v1`) |
 | Compose page layout | [`DesignerView.tsx`](../web/app/designer/DesignerView.tsx), [`LayoutPreview.tsx`](../web/app/designer/LayoutPreview.tsx) | `GET`/`PUT /api/v1/gallery/layout`; collections list for section sources |
+| Patreon → canonical ingest + duplicate rows | N/A (server pipeline) | [patreon-ingest-canonical.md](patreon-ingest-canonical.md); [`merge-ingest-media.ts`](../src/patreon/merge-ingest-media.ts), [`media-url-normalize.ts`](../src/patreon/media-url-normalize.ts), [`map-patreon-to-ingest.ts`](../src/patreon/map-patreon-to-ingest.ts), [`cookie-scraper.ts`](../src/patreon/cookie-scraper.ts); gallery [`query.ts`](../src/gallery/query.ts) (`shadow_cover`) |
 
 ```mermaid
 flowchart LR
@@ -227,6 +241,7 @@ flowchart LR
 | List + filter + search server-side | [`src/gallery/query.ts`](../src/gallery/query.ts), [`gallery-service.ts`](../src/gallery/gallery-service.ts) |
 | Overrides (visibility, tags) | [`src/gallery/types.ts`](../src/gallery/types.ts), [`overrides-store.ts`](../src/gallery/overrides-store.ts) |
 | Layout → clone helper | [`src/gallery/layout-to-clone.ts`](../src/gallery/layout-to-clone.ts) |
+| Patreon ingest contract (non-legacy) | [docs/patreon-ingest-canonical.md](patreon-ingest-canonical.md), [`src/patreon/merge-ingest-media.ts`](../src/patreon/merge-ingest-media.ts) |
 | HTTP routes | [`src/server.ts`](../src/server.ts) (`/api/v1/gallery/...`) |
 | Designer | [`web/app/designer/DesignerView.tsx`](../web/app/designer/DesignerView.tsx), [`LayoutPreview.tsx`](../web/app/designer/LayoutPreview.tsx) |
 | Fan (planned) | Patron app shell, feed/Browse APIs—see [road map.md](../road map.md) Part 3 |
@@ -252,7 +267,7 @@ Ordered so **Library contracts** stabilize before **visitor** investment.
 
 ## 8. Out of scope (named deferrals)
 
-- **AI auto-tagging** — future; not required for pattern compliance.
+- **AI auto-tagging (Smart Tag Assistant)** — deferred; full scope and guardrails live under [road map.md](../road%20map.md) → **Ledger (Part 1, post-stabilization): Smart Tag Assistant**. Not required for current pattern compliance.
 - **Full design-system extraction** — document tokens conceptually; implement in a dedicated UI pass.
 
 ---

@@ -1,18 +1,25 @@
 "use client";
 
-import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ElementType } from "react";
 import {
-  RELAY_API_BASE,
-  relayFetch,
-  type FacetsData,
-  type PostVisibility,
-  type TriageResult
-} from "@/lib/relay-api";
-import TriageDialog, { type TriageCategory } from "./TriageDialog";
+  ChevronRight,
+  Eye,
+  EyeOff,
+  FileText,
+  Layers,
+  Plus,
+  Repeat,
+  Search,
+  ShieldAlert
+} from "lucide-react";
+import type { FacetsData } from "@/lib/relay-api";
 import CollectionsPanel from "./CollectionsPanel";
-import Toast from "./Toast";
 import MediaTypeMultiSelect, { type MediaTypeValue } from "./MediaTypeMultiSelect";
+
+type VisibilityState = {
+  hidden: boolean;
+  mature: boolean;
+};
 
 type Props = {
   creatorId: string;
@@ -23,27 +30,63 @@ type Props = {
   onSetMediaTypes: (v: MediaTypeValue[]) => void;
   tagPick: string[];
   tierPick: string[];
-  visibilityFilter: PostVisibility | "all";
+  visibility: VisibilityState;
+  onSetVisibility: (next: VisibilityState) => void;
+  showTextOnlyPosts: boolean;
+  onSetShowTextOnlyPosts: (v: boolean) => void;
+  showShadowCovers: boolean;
+  onSetShowShadowCovers: (v: boolean) => void;
+  videoLoop: boolean;
+  onSetVideoLoop: (v: boolean) => void;
   onToggleTag: (t: string) => void;
   onToggleTier: (t: string) => void;
-  onSetVisibility: (v: PostVisibility | "all") => void;
-  bulkTags: string;
-  onBulkTagsChange: (v: string) => void;
-  onApplyBulkTags: () => void;
-  selectedCount: number;
-  selectedPostIds: string[];
+  /** Tier ids merged into the single "Free" Access chip (public + free follower). */
+  freePublicTierIds: string[];
+  onToggleFreePublicTierGroup: () => void;
   activeCollectionId: string | null;
   onSelectCollection: (id: string | null) => void;
-  onTriageComplete: () => void;
+  onCollectionChange: () => void;
   collectionsReloadToken?: number;
+  assetsInView: number;
+  collectionCount: number;
 };
 
-const visOptions: { value: PostVisibility | "all"; label: string }[] = [
-  { value: "visible", label: "Workspace" },
-  { value: "flagged", label: "Flagged" },
-  { value: "hidden", label: "Hidden" },
-  { value: "all", label: "All" }
-];
+function VisibilityToggle({
+  icon: Icon,
+  label,
+  checked,
+  onChange
+}: {
+  icon: ElementType;
+  label: string;
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+}) {
+  return (
+    <label className="group flex cursor-pointer items-center justify-between">
+      <div className="flex items-center gap-2">
+        <Icon className="h-3.5 w-3.5 text-[var(--lib-fg-muted)] transition-colors group-hover:text-[var(--lib-fg)]" />
+        <span className="text-xs text-[var(--lib-fg-muted)] transition-colors group-hover:text-[var(--lib-fg)]">
+          {label}
+        </span>
+      </div>
+      <button
+        type="button"
+        onClick={() => onChange(!checked)}
+        className={`relative h-5 w-9 rounded-full p-0.5 transition-colors ${
+          checked ? "bg-[var(--lib-primary)]" : "bg-[var(--lib-muted)]"
+        }`}
+        aria-pressed={checked}
+      >
+        <span
+          className={`block h-4 w-4 rounded-full bg-[var(--lib-fg)] transition-transform ${
+            checked ? "translate-x-4" : "translate-x-0"
+          }`}
+        />
+      </button>
+    </label>
+  );
+}
 
 export default function GallerySidebar({
   creatorId,
@@ -54,27 +97,29 @@ export default function GallerySidebar({
   onSetMediaTypes,
   tagPick,
   tierPick,
-  visibilityFilter,
+  visibility,
+  onSetVisibility,
+  showTextOnlyPosts,
+  onSetShowTextOnlyPosts,
+  showShadowCovers,
+  onSetShowShadowCovers,
+  videoLoop,
+  onSetVideoLoop,
   onToggleTag,
   onToggleTier,
-  onSetVisibility,
-  bulkTags,
-  onBulkTagsChange,
-  onApplyBulkTags,
-  selectedCount,
-  selectedPostIds,
+  freePublicTierIds,
+  onToggleFreePublicTierGroup,
   activeCollectionId,
   onSelectCollection,
-  onTriageComplete,
-  collectionsReloadToken = 0
+  onCollectionChange,
+  collectionsReloadToken = 0,
+  assetsInView,
+  collectionCount
 }: Props) {
-  const [triageResult, setTriageResult] = useState<TriageResult | null>(null);
-  const [triageApplying, setTriageApplying] = useState(false);
-  const [triageLoading, setTriageLoading] = useState(false);
-  const [triageError, setTriageError] = useState<string | null>(null);
-  const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [tagSearch, setTagSearch] = useState("");
   const [visibleTagCount, setVisibleTagCount] = useState(20);
+  const [collectionsOpen, setCollectionsOpen] = useState(true);
+  const [collectionEditorOpen, setCollectionEditorOpen] = useState(false);
 
   const filteredTags = useMemo(() => {
     const search = tagSearch.trim().toLowerCase();
@@ -85,116 +130,92 @@ export default function GallerySidebar({
   const displayedTags = filteredTags.slice(0, visibleTagCount);
   const remainingTagCount = Math.max(0, filteredTags.length - displayedTags.length);
 
-  const runAnalyze = async () => {
-    setTriageLoading(true);
-    setTriageError(null);
-    try {
-      const result = await relayFetch<TriageResult>("/api/v1/gallery/triage/analyze", {
-        method: "POST",
-        body: JSON.stringify({ creator_id: creatorId })
-      });
-      setTriageResult(result);
-    } catch (err) {
-      setTriageError(err instanceof Error ? err.message : "Triage failed");
-    } finally {
-      setTriageLoading(false);
-    }
-  };
-
-  const confirmAutoFlag = async (categories: TriageCategory[]) => {
-    if (!triageResult) return;
-    setTriageApplying(true);
-    setTriageError(null);
-    try {
-      const res = await fetch(`${RELAY_API_BASE}/api/v1/gallery/triage/auto-flag`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ creator_id: creatorId, categories })
-      });
-      if (!res.ok) {
-        const j = (await res.json().catch(() => null)) as { error?: { message?: string } } | null;
-        setTriageError(j?.error?.message ?? res.statusText);
-        return;
-      }
-
-      const parts: string[] = [];
-      if (categories.includes("text_only") && triageResult.text_only_post_ids.length > 0) {
-        parts.push(`${triageResult.text_only_post_ids.length} text-only posts flagged`);
-      }
-      if (categories.includes("duplicates")) {
-        const dupCount = triageResult.duplicate_groups.reduce((n, g) => n + g.duplicate_post_ids.length, 0);
-        if (dupCount > 0) parts.push(`${dupCount} duplicates flagged`);
-      }
-      if (categories.includes("small_media") && triageResult.small_media_ids.length > 0) {
-        parts.push(`${triageResult.small_media_ids.length} small media flagged`);
-      }
-      if (categories.includes("cover_images") && triageResult.cover_media_ids.length > 0) {
-        parts.push(`${triageResult.cover_media_ids.length} cover images flagged`);
-      }
-
-      setTriageResult(null);
-      setToastMessage(parts.length > 0 ? parts.join(", ") : "No changes applied");
-      onTriageComplete();
-    } finally {
-      setTriageApplying(false);
-    }
-  };
+  const freePublicSet = useMemo(() => new Set(freePublicTierIds), [freePublicTierIds]);
+  const otherAccessTiers = useMemo(
+    () => facets.tiers.filter((t) => !freePublicSet.has(t.tier_id)),
+    [facets.tiers, freePublicSet]
+  );
+  const freeChipSelected =
+    freePublicTierIds.length > 0 && freePublicTierIds.every((id) => tierPick.includes(id));
 
   return (
-    <>
-      <aside className="border-r border-[#3d342b] p-4 space-y-6 bg-[#161210] overflow-y-auto">
-        <section className="space-y-2">
-          <h3 className="font-[family-name:var(--font-display)] text-lg text-[#f0e6d8]">
-            1) Auto Cleaner
-          </h3>
-          <p className="text-[10px] text-[#8a7f72]">
-            Scan for text-only posts, duplicates, blank thumbnails, and cover images to clean up your library.
-          </p>
-          {triageError ? (
-            <p className="text-xs text-red-400">{triageError}</p>
-          ) : null}
-          <button
-            id="sidebar-run-auto-cleaner"
-            type="button"
-            onClick={() => void runAnalyze()}
-            disabled={triageLoading}
-            className="w-full text-xs py-1.5 bg-[#4a3728] hover:bg-[#5c4a38] rounded disabled:opacity-50"
-          >
-            {triageLoading ? "Scanning…" : "Run Auto Cleaner"}
-          </button>
-        </section>
-
-        <section className="space-y-2">
-          <h3 className="font-[family-name:var(--font-display)] text-lg text-[#f0e6d8] mb-2">
-            2) Find Assets
-          </h3>
+    <aside className="flex min-h-0 w-full shrink-0 flex-col border-b border-[var(--lib-border)] bg-[var(--lib-sidebar)] lg:w-64 lg:border-b-0 lg:border-r">
+      <div className="space-y-2 border-b border-[var(--lib-border)] p-3">
+        <div className="flex items-center gap-2 rounded-md border border-[color-mix(in_oklab,var(--lib-border)_85%,var(--lib-fg-muted)_15%)] bg-[color-mix(in_oklab,var(--lib-input)_88%,var(--lib-fg)_12%)] px-2.5 py-1.5 shadow-[inset_0_1px_0_color-mix(in_oklab,white_6%,transparent)] focus-within:border-[var(--lib-ring)] focus-within:shadow-[0_0_0_1px_color-mix(in_oklab,var(--lib-ring)_35%,transparent)]">
+          <Search
+            className="h-3.5 w-3.5 shrink-0 text-[color-mix(in_oklab,var(--lib-fg-muted)_65%,var(--lib-fg))]"
+            aria-hidden
+          />
           <input
             value={q}
             onChange={(e) => onSetQ(e.target.value)}
-            placeholder="Search title, tags, description, themes…"
-            className="w-full bg-[#2a221c] border border-[#4a3f36] px-2 py-1 rounded text-xs"
+            placeholder="Search assets..."
+            className="min-w-0 flex-1 bg-transparent text-xs text-[color-mix(in_oklab,var(--lib-fg)_92%,white)] placeholder:text-[color-mix(in_oklab,var(--lib-fg-muted)_45%,var(--lib-fg))] outline-none"
           />
-          <p className="text-[10px] text-[#8a7f72]">Media types</p>
-          <MediaTypeMultiSelect selected={mediaTypes} onChange={onSetMediaTypes} />
+        </div>
+        <MediaTypeMultiSelect selected={mediaTypes} onChange={onSetMediaTypes} />
+      </div>
+
+      <div className="flex-1 space-y-5 overflow-y-auto p-3">
+        <section>
+          <h3 className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-[var(--lib-fg-muted)]">
+            Access
+          </h3>
+          <div className="flex flex-wrap gap-1">
+            {freePublicTierIds.length > 0 ? (
+              <button
+                type="button"
+                onClick={onToggleFreePublicTierGroup}
+                title="Includes public posts"
+                className={`rounded border px-2 py-0.5 text-[11px] transition-colors ${
+                  freeChipSelected
+                    ? "border-[var(--lib-primary)] bg-[var(--lib-primary)] text-[var(--lib-primary-fg)]"
+                    : "border-[var(--lib-border)] bg-[var(--lib-sidebar-accent)] text-[var(--lib-fg)] hover:border-[var(--lib-fg-muted)]"
+                }`}
+              >
+                Free
+              </button>
+            ) : null}
+            {otherAccessTiers.map((tier) => (
+              <button
+                key={tier.tier_id}
+                type="button"
+                onClick={() => onToggleTier(tier.tier_id)}
+                className={`rounded border px-2 py-0.5 text-[11px] transition-colors ${
+                  tierPick.includes(tier.tier_id)
+                    ? "border-[var(--lib-primary)] bg-[var(--lib-primary)] text-[var(--lib-primary-fg)]"
+                    : "border-[var(--lib-border)] bg-[var(--lib-sidebar-accent)] text-[var(--lib-fg)] hover:border-[var(--lib-fg-muted)]"
+                }`}
+              >
+                {tier.title}
+              </button>
+            ))}
+          </div>
+        </section>
+
+        <section>
+          <h3 className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-[var(--lib-fg-muted)]">
+            Tags
+          </h3>
           <input
             value={tagSearch}
             onChange={(e) => {
               setTagSearch(e.target.value);
               setVisibleTagCount(20);
             }}
-            placeholder="Search tags..."
-            className="w-full bg-[#2a221c] border border-[#4a3f36] px-2 py-1 rounded text-xs"
+            placeholder="Filter tags..."
+            className="mb-2 w-full rounded-md border border-[var(--lib-border)] bg-[var(--lib-input)] px-2 py-1 text-xs text-[var(--lib-fg)]"
           />
-          <div className="flex flex-wrap gap-1.5">
+          <div className="flex flex-wrap gap-1">
             {displayedTags.map((tag) => (
               <button
                 key={tag}
                 type="button"
                 onClick={() => onToggleTag(tag)}
-                className={`text-xs px-2 py-0.5 rounded-full border ${
+                className={`rounded border px-2 py-0.5 text-[11px] transition-colors ${
                   tagPick.includes(tag)
-                    ? "bg-[#c45c2d] border-[#e8a077] text-white"
-                    : "border-[#5c4f44] text-[#c9bfb3]"
+                    ? "border-[var(--lib-primary)] bg-[var(--lib-primary)] text-[var(--lib-primary-fg)]"
+                    : "border-[var(--lib-border)] bg-[var(--lib-sidebar-accent)] text-[var(--lib-fg)] hover:border-[var(--lib-fg-muted)]"
                 }`}
               >
                 {tag}
@@ -205,124 +226,102 @@ export default function GallerySidebar({
             <button
               type="button"
               onClick={() => setVisibleTagCount((count) => count + 20)}
-              className="text-[10px] text-[#e8a077] hover:text-[#f0c4b8]"
+              className="mt-1 text-[10px] text-[var(--lib-primary)] hover:underline"
             >
-              Show {Math.min(remainingTagCount, 20)} more tags
+              Show {Math.min(remainingTagCount, 20)} more
             </button>
           ) : null}
         </section>
 
-        <section className="space-y-2">
-          <h3 className="font-[family-name:var(--font-display)] text-lg text-[#f0e6d8]">
-            3) Access Review
-          </h3>
-          <p className="text-[10px] text-[#8a7f72]">
-            Workspace is the default working set (visible items). Flagged collects auto-clean and manual flags for review.
-          </p>
-          <div className="flex flex-wrap gap-1.5">
-            {visOptions.map((opt) => (
-              <button
-                key={opt.value}
-                type="button"
-                onClick={() => onSetVisibility(opt.value)}
-                className={`text-xs px-2 py-0.5 rounded-full border ${
-                  visibilityFilter === opt.value
-                    ? "bg-[#c45c2d] border-[#e8a077] text-white"
-                    : "border-[#5c4f44] text-[#c9bfb3]"
-                }`}
-              >
-                {opt.label}
-              </button>
-            ))}
+        <section>
+          <div className="mb-1.5 flex items-center justify-between gap-2">
+            <button
+              type="button"
+              onClick={() => setCollectionsOpen((open) => !open)}
+              className="group flex min-w-0 flex-1 items-center gap-1 text-left text-[10px] font-semibold uppercase tracking-wider text-[var(--lib-fg-muted)] transition-colors hover:text-[var(--lib-fg)]"
+            >
+              <ChevronRight
+                className={`h-3 w-3 shrink-0 transition-transform ${collectionsOpen ? "rotate-90" : ""}`}
+              />
+              Collections
+            </button>
+            <button
+              type="button"
+              onClick={() => setCollectionEditorOpen(true)}
+              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-[var(--lib-fg-muted)] transition-colors hover:bg-[var(--lib-sidebar-accent)] hover:text-[var(--lib-fg)]"
+              aria-label="New collection"
+              title="New collection"
+            >
+              <Plus className="h-3.5 w-3.5" />
+            </button>
           </div>
-          {facets.tiers.length === 0 ? (
-            <p className="text-xs text-[#8a7f72]">No tiers found for current creator.</p>
-          ) : (
-            <div className="flex flex-wrap gap-1.5">
-              {facets.tiers.map((tier) => (
-                <button
-                  key={tier.tier_id}
-                  type="button"
-                  onClick={() => onToggleTier(tier.tier_id)}
-                  className={`text-xs px-2 py-0.5 rounded-full border ${
-                    tierPick.includes(tier.tier_id)
-                      ? "bg-[#2d6a5c] border-[#7fd4bc] text-white"
-                      : "border-[#5c4f44] text-[#c9bfb3]"
-                  }`}
-                >
-                  {tier.title}
-                </button>
-              ))}
-            </div>
-          )}
-        </section>
-
-        <section className="space-y-2">
-          <h3 className="font-[family-name:var(--font-display)] text-lg text-[#f0e6d8]">
-            4) Collections
-          </h3>
           <CollectionsPanel
             creatorId={creatorId}
             activeCollectionId={activeCollectionId}
             onSelectCollection={onSelectCollection}
-            selectedPostIds={selectedPostIds}
-            onCollectionChange={onTriageComplete}
+            onCollectionChange={onCollectionChange}
             reloadToken={collectionsReloadToken}
+            collectionEditorOpen={collectionEditorOpen}
+            onCollectionEditorOpenChange={setCollectionEditorOpen}
+            showList={collectionsOpen}
           />
         </section>
 
-        <section className="space-y-2 rounded-lg border border-[#3d342b] bg-[#1a1410]/60 p-3">
-          <h3 className="font-[family-name:var(--font-display)] text-sm text-[#f0e6d8]">
-            Visitor page
+        <section>
+          <h3 className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-[var(--lib-fg-muted)]">
+            Visibility
           </h3>
-          <p className="text-[10px] leading-relaxed text-[#8a7f72]">
-            Collections and tags power search here and can feed your published layout. What patrons see
-            still respects per-file visibility from this Library.
-          </p>
-          <Link
-            href="/designer"
-            className="inline-flex items-center rounded-md border border-[#5c4f44] bg-[#2a221c] px-3 py-1.5 text-xs font-medium text-[#e8a077] hover:border-[#e8a077] hover:text-[#f0c4b8] motion-safe:transition-colors"
-          >
-            Open Designer
-          </Link>
+          <div className="space-y-2">
+            <VisibilityToggle
+              icon={visibility.hidden ? EyeOff : Eye}
+              label="Hidden"
+              checked={visibility.hidden}
+              onChange={(checked) => onSetVisibility({ ...visibility, hidden: checked })}
+            />
+            <VisibilityToggle
+              icon={ShieldAlert}
+              label="Mature"
+              checked={visibility.mature}
+              onChange={(checked) => onSetVisibility({ ...visibility, mature: checked })}
+            />
+            <VisibilityToggle
+              icon={FileText}
+              label="Text-only posts"
+              checked={showTextOnlyPosts}
+              onChange={onSetShowTextOnlyPosts}
+            />
+            <VisibilityToggle
+              icon={Layers}
+              label="Duplicate Patreon covers"
+              checked={showShadowCovers}
+              onChange={onSetShowShadowCovers}
+            />
+          </div>
         </section>
 
-        <section className="space-y-2">
-          <h3 className="font-[family-name:var(--font-display)] text-lg text-[#f0e6d8]">
-            5) Tag Selected
+        <section>
+          <h3 className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-[var(--lib-fg-muted)]">
+            Playback
           </h3>
-          <p className="text-[10px] text-[#8a7f72]">
-            Add comma-separated tags to all selected posts.
-          </p>
-          <input
-            value={bulkTags}
-            onChange={(e) => onBulkTagsChange(e.target.value)}
-            placeholder="tag_a, tag_b"
-            className="w-full bg-[#2a221c] border border-[#4a3f36] px-2 py-1 rounded text-xs"
-          />
-          <button
-            type="button"
-            onClick={onApplyBulkTags}
-            disabled={selectedCount === 0 || !bulkTags.trim()}
-            className="w-full text-xs py-1.5 bg-[#8b3a1a] rounded disabled:opacity-50"
-          >
-            Apply Tags to {selectedCount} Selected
-          </button>
+          <div className="space-y-2">
+            <VisibilityToggle
+              icon={Repeat}
+              label="Loop videos"
+              checked={videoLoop}
+              onChange={onSetVideoLoop}
+            />
+          </div>
         </section>
-      </aside>
+      </div>
 
-      {triageResult ? (
-        <TriageDialog
-          result={triageResult}
-          onConfirm={(categories) => void confirmAutoFlag(categories)}
-          onCancel={() => setTriageResult(null)}
-          applying={triageApplying}
-        />
-      ) : null}
-
-      {toastMessage ? (
-        <Toast message={toastMessage} onDismiss={() => setToastMessage(null)} />
-      ) : null}
-    </>
+      <div className="border-t border-[var(--lib-border)] p-3">
+        <div className="flex items-center justify-between text-[10px] text-[var(--lib-fg-muted)]">
+          <span>
+            {assetsInView.toLocaleString()} across {collectionCount} collections
+          </span>
+          <span>1.2 TB</span>
+        </div>
+      </div>
+    </aside>
   );
 }

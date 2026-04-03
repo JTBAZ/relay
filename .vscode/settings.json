@@ -1,0 +1,13 @@
+{
+  "terminal.integrated.profiles.windows": {
+    "Rescue: Windows PowerShell": {
+      "path": "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
+      "icon": "terminal-powershell"
+    },
+    "Rescue: PowerShell 7": {
+      "path": "pwsh.exe",
+      "icon": "terminal-powershell"
+    }
+  },
+  "terminal.integrated.defaultProfile.windows": "Rescue: Windows PowerShell"
+}

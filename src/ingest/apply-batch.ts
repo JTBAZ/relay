@@ -120,6 +120,8 @@ export function applySyncBatchToSnapshot(
       upsertMediaForPost(snapshot, creatorId, p.post_id, m, result);
     }
 
+    // tag_ids: upstream (Patreon) only for this version. Relay-only tags live in
+    // gallery_post_overrides and are merged at read time (effectiveTags in gallery/query.ts).
     const versionRow = {
       version_seq: nextVersionSeq,
       upstream_revision: p.upstream_revision,

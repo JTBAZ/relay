@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   applyPatreonAccessToTierIds,
+  applyPatreonAccessToTierIdsForCookie,
   mapPatreonPostToIngest,
   patreonBoolAttr,
   tierIdsFromPatreonPost
@@ -50,6 +51,26 @@ describe("Patreon tier mapping", () => {
     expect(tierIdsFromPatreonPost(r)).toEqual(["patreon_tier_42"]);
   });
 
+  it("merges attributes.tiers with relationships when both exist (sparse attr list)", () => {
+    const r: JsonApiResource = {
+      type: "post",
+      id: "4",
+      attributes: { tiers: ["111"] },
+      relationships: {
+        tiers: {
+          data: [
+            { type: "tier", id: "111" },
+            { type: "tier", id: "222" }
+          ]
+        }
+      }
+    };
+    expect(tierIdsFromPatreonPost(r)).toEqual([
+      "patreon_tier_111",
+      "patreon_tier_222"
+    ]);
+  });
+
   it("patreonBoolAttr coerces string booleans", () => {
     expect(patreonBoolAttr({ is_public: "true" }, "is_public")).toBe(true);
     expect(patreonBoolAttr({ is_public: "False" }, "is_public")).toBe(false);
@@ -85,6 +106,21 @@ describe("Patreon tier mapping", () => {
       RELAY_TIER_PUBLIC
     ]);
     expect(applyPatreonAccessToTierIds([], {})).toEqual([]);
+  });
+
+  it("applyPatreonAccessToTierIdsForCookie does not treat empty tiers + is_paid false as public", () => {
+    expect(applyPatreonAccessToTierIds([], { is_paid: false })).toEqual([
+      RELAY_TIER_PUBLIC
+    ]);
+    expect(applyPatreonAccessToTierIdsForCookie([], { is_paid: false })).toEqual([
+      RELAY_TIER_ALL_PATRONS
+    ]);
+    expect(applyPatreonAccessToTierIdsForCookie([], { is_public: true })).toEqual([
+      RELAY_TIER_PUBLIC
+    ]);
+    expect(
+      applyPatreonAccessToTierIdsForCookie(["patreon_tier_1"], { is_paid: false })
+    ).toEqual(["patreon_tier_1"]);
   });
 
   it("mapPatreonPostToIngest wires tier extraction and is_public", () => {

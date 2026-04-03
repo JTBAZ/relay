@@ -37,10 +37,10 @@ export default function MediaTypeMultiSelect({ selected, onChange }: Props) {
           key={option.value}
           type="button"
           onClick={() => toggle(option.value)}
-          className={`text-xs px-2 py-0.5 rounded-full border ${
+          className={`rounded border px-2 py-0.5 text-[11px] transition-colors ${
             selected.includes(option.value)
-              ? "bg-[#2d6a5c] border-[#7fd4bc] text-white"
-              : "border-[#5c4f44] text-[#c9bfb3]"
+              ? "border-[var(--lib-primary)] bg-[var(--lib-primary)]/25 text-[var(--lib-fg)]"
+              : "border-[var(--lib-border)] bg-[var(--lib-sidebar-accent)] text-[var(--lib-fg-muted)] hover:text-[var(--lib-fg)]"
           }`}
         >
           {option.label}

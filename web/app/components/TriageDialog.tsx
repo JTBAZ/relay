@@ -61,7 +61,7 @@ export default function TriageDialog({ result, onConfirm, onCancel, applying }: 
     .filter((c) => selected.has(c.id))
     .reduce((n, c) => n + c.count, 0);
 
-  const nothingFound = result.total_flagged === 0;
+  const nothingFound = result.total_review_items === 0;
 
   return (
     <div
@@ -85,7 +85,7 @@ export default function TriageDialog({ result, onConfirm, onCancel, applying }: 
           </div>
         ) : (
           <div className="space-y-2">
-            <p className="text-xs text-[#8a7f72]">Select which issues to flag:</p>
+            <p className="text-xs text-[#8a7f72]">Select what to send to Review:</p>
             {categories.map((cat) => (
               <label
                 key={cat.id}
@@ -118,7 +118,7 @@ export default function TriageDialog({ result, onConfirm, onCancel, applying }: 
 
         {!nothingFound ? (
           <p className="text-xs text-[#8a7f72]">
-            {selectedCount} items will be flagged. In the default Workspace view they stay out of the main list—open Flagged to review or restore them.
+            {selectedCount} items will move to Review. They stay out of the main Workspace list until you open Review and restore or hide them.
           </p>
         ) : null}
 
@@ -138,7 +138,7 @@ export default function TriageDialog({ result, onConfirm, onCancel, applying }: 
               disabled={applying || selectedCount === 0}
               className="text-xs px-4 py-2 rounded bg-[#8b3a1a] text-white hover:bg-[#a5481e] disabled:opacity-50"
             >
-              {applying ? "Applying…" : `Flag ${selectedCount} Items`}
+              {applying ? "Applying…" : `Send ${selectedCount} to Review`}
             </button>
           ) : null}
         </div>

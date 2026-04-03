@@ -1,10 +1,11 @@
 import type { IngestPost } from "../ingest/types.js";
 import type { JsonApiDocument, JsonApiResource } from "./jsonapi-types.js";
 import {
-  applyPatreonAccessToTierIds,
+  applyPatreonAccessToTierIdsForCookie,
   diagnosePostResource,
   tierIdsFromPatreonPost
 } from "./map-patreon-to-ingest.js";
+import { finalizePatreonPostMedia } from "./merge-ingest-media.js";
 import { flattenProseMirrorDoc, normalizePatreonPostContent } from "./post-content.js";
 
 const SITE_URL = "https://www.patreon.com";
@@ -94,7 +95,7 @@ export function mapCookiePostToIngest(
   const upstream_revision = `patreon_cookie:${id}:${publishedAt}:${revTime}`;
 
   const baseTiers = tierIdsFromPatreonPost(resource);
-  const tier_ids = applyPatreonAccessToTierIds(baseTiers, a);
+  const tier_ids = applyPatreonAccessToTierIdsForCookie(baseTiers, a);
 
   const tagRel = resource.relationships?.user_defined_tags?.data;
   const tag_ids: string[] = [];
@@ -107,12 +108,10 @@ export function mapCookiePostToIngest(
   }
 
   const media: IngestPost["media"] = [];
-  const seenUrls = new Set<string>();
   let seq = 0;
 
   const pushUrl = (url: string, mediaId: string, mime?: string, role?: string) => {
-    if (!url || seenUrls.has(url)) return;
-    seenUrls.add(url);
+    if (!url) return;
     seq += 1;
     media.push({
       media_id: mediaId,
@@ -157,7 +156,7 @@ export function mapCookiePostToIngest(
     tag_ids,
     tier_ids,
     upstream_revision,
-    media
+    media: finalizePatreonPostMedia(media)
   };
 }
 

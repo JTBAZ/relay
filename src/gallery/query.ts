@@ -1,5 +1,7 @@
 import type { CanonicalSnapshot } from "../ingest/canonical-store.js";
 import type { CreatorExportIndex } from "../export/types.js";
+import type { MediaRow } from "../ingest/canonical-store.js";
+import { patreonPostMediaStableKey } from "../patreon/media-url-normalize.js";
 import type {
   Collection,
   GalleryItem,
@@ -47,6 +49,32 @@ function tagIsCoverChip(tag: string): boolean {
 }
 
 /** Tags per row: show the cover chip only on real cover assets (role or id pattern). */
+function applyMediaRowTagDelta(
+  rowTags: string[],
+  creatorId: string,
+  postId: string,
+  mediaId: string,
+  overrides: GalleryOverridesRoot
+): string[] {
+  if (mediaId.startsWith("post_only_")) {
+    return rowTags;
+  }
+  const mo = overrides.creators[creatorId]?.posts[postId]?.media?.[mediaId];
+  if (!mo) {
+    return rowTags;
+  }
+  const add = mo.add_tag_ids ?? [];
+  const rem = mo.remove_tag_ids ?? [];
+  if (add.length === 0 && rem.length === 0) {
+    return rowTags;
+  }
+  const next = new Set(rowTags.filter((t) => !rem.includes(t)));
+  for (const a of add) {
+    next.add(a);
+  }
+  return [...next];
+}
+
 function galleryRowTags(
   postLevelTags: string[],
   mediaRole: string | undefined,
@@ -199,7 +227,9 @@ export function buildGalleryItems(
         continue;
       }
       const hasExport = Boolean(exportIndex.media[mediaId]);
-      const tags = galleryRowTags(baseTags, m.current.role, mediaId, false);
+      const failRec = exportIndex.export_failures?.[mediaId];
+      const rowTags = galleryRowTags(baseTags, m.current.role, mediaId, false);
+      const tags = applyMediaRowTagDelta(rowTags, creatorId, postId, mediaId, overrides);
       items.push({
         media_id: mediaId,
         post_id: postId,
@@ -211,6 +241,10 @@ export function buildGalleryItems(
         mime_type: m.current.mime_type,
         media_role: m.current.role,
         has_export: hasExport,
+        export_status: hasExport ? "ready" : "missing",
+        ...(failRec?.message && !hasExport
+          ? { export_error: failRec.message }
+          : {}),
         content_url_path: `/api/v1/export/media/${encodeURIComponent(creatorId)}/${encodeURIComponent(mediaId)}/content`,
         visibility: resolveItemVisibility(creatorId, postId, mediaId, overrides),
         collection_ids: colIds,
@@ -227,10 +261,17 @@ export function buildGalleryItems(
         title: postRow.current.title,
         description: postRow.current.description,
         published_at: postRow.current.published_at,
-        tag_ids: galleryRowTags(baseTags, undefined, syntheticId, true),
+        tag_ids: applyMediaRowTagDelta(
+          galleryRowTags(baseTags, undefined, syntheticId, true),
+          creatorId,
+          postId,
+          syntheticId,
+          overrides
+        ),
         tier_ids: [...postRow.current.tier_ids],
         mime_type: undefined,
         has_export: false,
+        export_status: "missing",
         content_url_path: "",
         visibility: resolveItemVisibility(creatorId, postId, syntheticId, overrides),
         collection_ids: colIds,
@@ -239,7 +280,87 @@ export function buildGalleryItems(
     }
   }
 
+  markShadowCoverDuplicates(items, mediaMap);
   return items;
+}
+
+/**
+ * When cover + attachment share the same Patreon post-media hash, mark the cover row as
+ * `shadow_cover` so the Library can hide duplicate thumbnails without deleting data.
+ */
+function markShadowCoverDuplicates(
+  items: GalleryItem[],
+  mediaById: Record<string, MediaRow>
+): void {
+  const byPost = new Map<string, GalleryItem[]>();
+  for (const it of items) {
+    if (it.media_id.startsWith("post_only_")) continue;
+    const arr = byPost.get(it.post_id) ?? [];
+    arr.push(it);
+    byPost.set(it.post_id, arr);
+  }
+
+  for (const group of byPost.values()) {
+    if (group.length < 2) continue;
+    const keyToItems = new Map<string, GalleryItem[]>();
+    for (const it of group) {
+      const url = mediaById[it.media_id]?.current?.upstream_url;
+      const key = patreonPostMediaStableKey(url);
+      if (!key) continue;
+      const arr = keyToItems.get(key) ?? [];
+      arr.push(it);
+      keyToItems.set(key, arr);
+    }
+    for (const sameKey of keyToItems.values()) {
+      if (sameKey.length < 2) continue;
+      const covers = sameKey.filter((i) => isGalleryCoverAsset(i.media_role, i.media_id));
+      const nonCovers = sameKey.filter((i) => !isGalleryCoverAsset(i.media_role, i.media_id));
+      if (covers.length !== 1 || nonCovers.length < 1) continue;
+      covers[0]!.shadow_cover = true;
+    }
+  }
+}
+
+function pickPrimaryGalleryItem(group: GalleryItem[]): GalleryItem {
+  const primaryPool = group.filter((i) => !i.shadow_cover);
+  const pool = primaryPool.length > 0 ? primaryPool : group;
+  for (const it of pool) {
+    if (isGalleryCoverAsset(it.media_role, it.media_id)) return it;
+  }
+  for (const it of pool) {
+    if (it.has_export && it.mime_type?.startsWith("image/")) return it;
+  }
+  for (const it of pool) {
+    if (it.has_export) return it;
+  }
+  return pool[0]!;
+}
+
+/** One row per post, preserving first-seen post order from `items`. */
+export function galleryItemsPostPrimaryView(items: GalleryItem[]): GalleryItem[] {
+  const byPost = new Map<string, GalleryItem[]>();
+  const order: string[] = [];
+  for (const it of items) {
+    if (!byPost.has(it.post_id)) {
+      order.push(it.post_id);
+      byPost.set(it.post_id, []);
+    }
+    byPost.get(it.post_id)!.push(it);
+  }
+  return order.map((pid) => pickPrimaryGalleryItem(byPost.get(pid)!));
+}
+
+function groupItemsByPost(items: GalleryItem[]): { order: string[]; byPost: Map<string, GalleryItem[]> } {
+  const byPost = new Map<string, GalleryItem[]>();
+  const order: string[] = [];
+  for (const it of items) {
+    if (!byPost.has(it.post_id)) {
+      order.push(it.post_id);
+      byPost.set(it.post_id, []);
+    }
+    byPost.get(it.post_id)!.push(it);
+  }
+  return { order, byPost };
 }
 
 type CursorPayload = {
@@ -269,14 +390,17 @@ function decodeCursor(raw: string): CursorPayload | null {
   return null;
 }
 
-function matchesFilters(item: GalleryItem, p: GalleryListParams): boolean {
-  if (p.visibility && p.visibility !== "all") {
-    if (item.visibility !== p.visibility) {
+function matchesFiltersExceptFreeText(item: GalleryItem, p: GalleryListParams): boolean {
+  const textOnlyMode = p.text_only_posts ?? "exclude";
+  if (textOnlyMode !== "include" && item.media_id.startsWith("post_only_")) {
+    return false;
+  }
+  if (p.visitor_catalog) {
+    if (item.visibility === "hidden") {
       return false;
     }
-  }
-  if (p.q && p.q.trim()) {
-    if (!itemMatchesFreeTextQuery(item, p.q)) {
+  } else if (p.visibility && p.visibility !== "all") {
+    if (item.visibility !== p.visibility) {
       return false;
     }
   }
@@ -310,6 +434,86 @@ function matchesFilters(item: GalleryItem, p: GalleryListParams): boolean {
     }
   }
   return true;
+}
+
+function matchesFilters(item: GalleryItem, p: GalleryListParams): boolean {
+  if (!matchesFiltersExceptFreeText(item, p)) {
+    return false;
+  }
+  if (p.q && p.q.trim()) {
+    if (!itemMatchesFreeTextQuery(item, p.q)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function itemMatchesChildSpecificFreeText(item: GalleryItem, raw: string): boolean {
+  const tokens = raw
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((t) => t.toLowerCase());
+  if (tokens.length === 0) {
+    return false;
+  }
+  const mediaIdLower = item.media_id.toLowerCase();
+  for (const token of tokens) {
+    const inMediaId = mediaIdLower.includes(token);
+    const inTag = item.tag_ids.some((t) => t.toLowerCase().includes(token));
+    if (!inMediaId && !inTag) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function postIncludedForSearch(group: GalleryItem[], q: string, p: GalleryListParams): boolean {
+  const candidates = group.filter((i) => matchesFiltersExceptFreeText(i, p));
+  if (candidates.length === 0) {
+    return false;
+  }
+  return candidates.some((i) => itemMatchesFreeTextQuery(i, q));
+}
+
+function pickSearchFocusMediaItem(
+  group: GalleryItem[],
+  q: string,
+  p: GalleryListParams
+): GalleryItem {
+  const candidates = group.filter((i) => matchesFiltersExceptFreeText(i, p));
+  const matched = candidates.filter((i) => itemMatchesFreeTextQuery(i, q));
+  if (matched.length === 0) {
+    return pickPrimaryGalleryItem(candidates.length > 0 ? candidates : group);
+  }
+
+  const childMatched = matched.filter((i) => itemMatchesChildSpecificFreeText(i, q));
+  if (childMatched.length === 0) {
+    return pickPrimaryGalleryItem(candidates);
+  }
+
+  const nonShadow = childMatched.find((i) => !i.shadow_cover);
+  return nonShadow ?? pickPrimaryGalleryItem(candidates);
+}
+
+function galleryItemsPostPrimarySearchView(
+  items: GalleryItem[],
+  params: GalleryListParams
+): GalleryItem[] {
+  const q = params.q?.trim();
+  if (!q) {
+    return galleryItemsPostPrimaryView(items);
+  }
+  const { order, byPost } = groupItemsByPost(items);
+  const out: GalleryItem[] = [];
+  for (const pid of order) {
+    const group = byPost.get(pid)!;
+    if (!postIncludedForSearch(group, q, params)) {
+      continue;
+    }
+    out.push(pickSearchFocusMediaItem(group, q, params));
+  }
+  return out;
 }
 
 function sortKey(item: GalleryItem): [string, string, string] {
@@ -351,7 +555,10 @@ export function listGalleryItems(
   all: GalleryItem[],
   params: GalleryListParams
 ): GalleryListResult {
-  const filtered = all.filter((i) => matchesFilters(i, params));
+  const filtered =
+    params.display === "post_primary" && Boolean(params.q?.trim())
+      ? galleryItemsPostPrimarySearchView(all, params)
+      : all.filter((i) => matchesFilters(i, params));
   filtered.sort(cmpForMode(params.sort));
 
   let start = 0;
@@ -387,19 +594,24 @@ export function listGalleryItems(
 export function collectFacets(items: GalleryItem[]): {
   tag_ids: string[];
   tier_ids: string[];
+  tag_counts: Record<string, number>;
 } {
-  const tags = new Set<string>();
+  const tagCounts = new Map<string, number>();
   const tiers = new Set<string>();
   for (const i of items) {
     for (const t of i.tag_ids) {
-      tags.add(t);
+      tagCounts.set(t, (tagCounts.get(t) ?? 0) + 1);
     }
     for (const t of i.tier_ids) {
       tiers.add(t);
     }
   }
+  const tag_ids = [...tagCounts.entries()]
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .map(([t]) => t);
   return {
-    tag_ids: [...tags].sort(),
-    tier_ids: [...tiers].sort()
+    tag_ids,
+    tier_ids: [...tiers].sort(),
+    tag_counts: Object.fromEntries(tagCounts)
   };
 }

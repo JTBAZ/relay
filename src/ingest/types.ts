@@ -55,4 +55,6 @@ export type ApplyBatchResult = {
   media_upserted: number;
   tombstones_applied: number;
   events_emitted: number;
+  /** Human-readable lines from `enrichBatch` (e.g. tier normalization). */
+  ingest_notes?: string[];
 };
