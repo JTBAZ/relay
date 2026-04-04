@@ -477,7 +477,7 @@ export default function GalleryView() {
         }
       />
 
-      <div className="flex min-h-0 flex-1 overflow-hidden">
+      <div className="relative z-0 flex min-h-0 flex-1 overflow-hidden">
         <GallerySidebar
           creatorId={creatorId}
           facets={facets}

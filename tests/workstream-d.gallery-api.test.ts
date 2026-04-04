@@ -1,4 +1,4 @@
-import { mkdtemp } from "node:fs/promises";
+import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { randomBytes } from "node:crypto";
@@ -92,6 +92,9 @@ describe("Workstream D gallery API", () => {
     expect(facetsVisitor.status).toBe(200);
     expect(facetsVisitor.body.data.export_total_bytes).toBeUndefined();
     expect(facetsVisitor.body.data.export_media_count).toBeUndefined();
+    expect(facetsVisitor.body.data.visitor_hero).toEqual({});
+
+    expect(facets.body.data.visitor_hero).toBeUndefined();
 
     const bulk = await request(app).post("/api/v1/gallery/media/bulk-tags").send({
       creator_id: "cr1",
@@ -370,5 +373,56 @@ describe("Workstream D gallery API", () => {
       "/api/v1/gallery/items?creator_id=crL&visibility=review&limit=50"
     );
     expect(list.body.data.items.some((i: { post_id: string }) => i.post_id === "p1")).toBe(true);
+  });
+
+  it("visitor facets visitor_hero merges campaign display snapshot and relay display name", async () => {
+    const tempDir = await mkdtemp(join(tmpdir(), "relay-d-hero-"));
+    const displayPath = join(tempDir, "creator_campaign_display.json");
+    await writeFile(
+      displayPath,
+      JSON.stringify({
+        records: {
+          cr1: {
+            patreon_campaign_id: "99",
+            patreon_name: "myartist",
+            image_url: "https://cdn.example/banner.png",
+            image_small_url: "https://cdn.example/avatar.png",
+            captured_at: "2026-01-01T00:00:00.000Z"
+          }
+        }
+      }),
+      "utf8"
+    );
+    const { app } = createApp({
+      patreon_client_id: "c",
+      patreon_client_secret: "s",
+      relay_token_encryption_key: randomBytes(32).toString("base64"),
+      credential_store_path: join(tempDir, "patreon.json"),
+      ingest_canonical_path: join(tempDir, "canonical.json"),
+      ingest_dlq_path: join(tempDir, "dlq.json"),
+      export_storage_root: join(tempDir, "exports"),
+      gallery_post_overrides_path: join(tempDir, "gallery_overrides.json"),
+      gallery_saved_filters_path: join(tempDir, "saved_filters.json"),
+      analytics_store_path: join(tempDir, "analytics.json"),
+      clone_store_path: join(tempDir, "clone_sites.json"),
+      identity_store_path: join(tempDir, "identity.json"),
+      payment_store_path: join(tempDir, "payments.json"),
+      migration_store_path: join(tempDir, "migrations.json"),
+      deploy_store_path: join(tempDir, "deploys.json"),
+      creator_campaign_display_path: displayPath,
+      relay_creator_display_name: "Relay Studio",
+      fetch_impl: vi.fn(async () => new Response("{}", { status: 200 })) as unknown as typeof fetch
+    });
+
+    const facetsVisitor = await request(app).get(
+      "/api/v1/gallery/facets?creator_id=cr1&visitor=true"
+    );
+    expect(facetsVisitor.status).toBe(200);
+    expect(facetsVisitor.body.data.visitor_hero).toEqual({
+      relay_display_name: "Relay Studio",
+      patreon_name: "myartist",
+      banner_url: "https://cdn.example/banner.png",
+      avatar_url: "https://cdn.example/avatar.png"
+    });
   });
 });

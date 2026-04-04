@@ -1,6 +1,6 @@
 import archiver from "archiver";
 import { createHash } from "node:crypto";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { access, constants, mkdir, readFile, writeFile } from "node:fs/promises";
 import { join, relative, resolve } from "node:path";
 import type { Writable } from "node:stream";
 import type { FileCanonicalStore } from "../ingest/canonical-store.js";
@@ -206,6 +206,25 @@ export class ExportService {
   public async isLibraryZipEmpty(creatorId: string): Promise<boolean> {
     const index = await this.exportIndex.load(creatorId);
     return Object.keys(index.media ?? {}).length === 0;
+  }
+
+  /**
+   * `relative_blob_path` values in the export index that are not readable on disk.
+   * Stale index rows (e.g. files removed manually) cause archiver to fail mid-stream unless checked first.
+   */
+  public async listMissingLibraryZipBlobs(creatorId: string): Promise<string[]> {
+    const index = await this.exportIndex.load(creatorId);
+    const missing: string[] = [];
+    for (const rec of Object.values(index.media ?? {})) {
+      try {
+        const parts = pathSegmentsFromRelativeBlob(rec.relative_blob_path);
+        const abs = absoluteBlobPathUnderCreator(this.storageRoot, creatorId, parts);
+        await access(abs, constants.R_OK);
+      } catch {
+        missing.push(rec.relative_blob_path);
+      }
+    }
+    return missing;
   }
 
   /**

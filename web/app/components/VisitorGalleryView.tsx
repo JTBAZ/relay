@@ -40,13 +40,16 @@ import SnipToCollectionModal from "./SnipToCollectionModal";
 import { readGalleryVideoLoop, writeGalleryVideoLoop } from "@/lib/gallery-video-loop";
 
 const defaultCreatorId = process.env.NEXT_PUBLIC_RELAY_CREATOR_ID?.trim() || "creator_1";
-const displayName =
-  process.env.NEXT_PUBLIC_RELAY_VISITOR_DISPLAY_NAME?.trim() || "Creator";
-const tagline =
+/** Fallbacks when API `visitor_hero` is empty (static hosting / no campaign snapshot yet). */
+const envVisitorDisplayName =
+  process.env.NEXT_PUBLIC_RELAY_CREATOR_DISPLAY_NAME?.trim() ||
+  process.env.NEXT_PUBLIC_RELAY_VISITOR_DISPLAY_NAME?.trim() ||
+  "Creator";
+const envVisitorTagline =
   process.env.NEXT_PUBLIC_RELAY_VISITOR_TAGLINE?.trim() ||
   "Patreon archive — public gallery projection";
-const bannerUrl = process.env.NEXT_PUBLIC_RELAY_VISITOR_BANNER_URL?.trim() || "";
-const avatarUrl = process.env.NEXT_PUBLIC_RELAY_VISITOR_AVATAR_URL?.trim() || "";
+const envVisitorBannerUrl = process.env.NEXT_PUBLIC_RELAY_VISITOR_BANNER_URL?.trim() || "";
+const envVisitorAvatarUrl = process.env.NEXT_PUBLIC_RELAY_VISITOR_AVATAR_URL?.trim() || "";
 
 /** Stable empty set for logged-out snip state (avoids new Set() each render). */
 const EMPTY_SNIP_IDS = new Set<string>();
@@ -539,6 +542,16 @@ export default function VisitorGalleryView() {
     return readGalleryVideoLoop();
   });
 
+  const hero = useMemo(() => {
+    const vh = facets?.visitor_hero;
+    const bannerUrl = vh?.banner_url?.trim() || envVisitorBannerUrl;
+    const avatarUrl = vh?.avatar_url?.trim() || envVisitorAvatarUrl;
+    const displayName = vh?.relay_display_name?.trim() || envVisitorDisplayName;
+    const patreonSlug = vh?.patreon_name?.trim().toLowerCase();
+    const patreonProfileHref = patreonSlug ? `https://www.patreon.com/${patreonSlug}` : null;
+    return { bannerUrl, avatarUrl, displayName, patreonProfileHref, patreonSlug };
+  }, [facets]);
+
   const [postFavoriteKeys, setPostFavoriteKeys] = useState<Set<string>>(() => new Set());
   const [patronCollections, setPatronCollections] = useState<PatronCollectionWithEntries[]>([]);
   const [snippedMediaIds, setSnippedMediaIds] = useState<Set<string>>(() => new Set());
@@ -671,8 +684,11 @@ export default function VisitorGalleryView() {
         buildGalleryCollectionsQuery(creatorId, true)
       );
       setCollections(colRes.items.sort((a, b) => a.sort_order - b.sort_order));
-    } catch {
-      /* facets optional for empty state */
+    } catch (e) {
+      if (process.env.NODE_ENV === "development") {
+        // Facets failure hides visitor_hero (banner/avatar); items may still load from a cached tab.
+        console.warn("[VisitorGallery] facets/collections request failed:", e);
+      }
     }
   }, [creatorId]);
 
@@ -814,11 +830,12 @@ export default function VisitorGalleryView() {
     <div className="library-shell min-h-screen bg-[var(--lib-bg)] text-[var(--lib-fg)]">
       {/* Banner — optional URL; else cool green neutral wash */}
       <div className="relative h-[min(42vh,26rem)] w-full overflow-hidden bg-[var(--lib-muted)]">
-        {bannerUrl ? (
+        {hero.bannerUrl ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
-            src={bannerUrl}
+            src={hero.bannerUrl}
             alt=""
+            referrerPolicy="no-referrer"
             className="h-full w-full object-cover object-center"
           />
         ) : (
@@ -838,13 +855,14 @@ export default function VisitorGalleryView() {
         <div className="-mt-16 flex justify-center sm:-mt-[4.25rem] md:-mt-[4.75rem]">
           <div
             className="rounded-full border-[3px] border-[oklch(0.38_0.012_160)] bg-[oklch(0.2_0.01_160)] p-1 shadow-[0_14px_48px_rgba(0,0,0,0.5)] ring-[3px] ring-[oklch(0.28_0.01_160)] ring-offset-2 ring-offset-[var(--lib-bg)]"
-            aria-hidden={!avatarUrl}
+            aria-hidden={!hero.avatarUrl}
           >
-            {avatarUrl ? (
+            {hero.avatarUrl ? (
               // eslint-disable-next-line @next/next/no-img-element
               <img
-                src={avatarUrl}
+                src={hero.avatarUrl}
                 alt=""
+                referrerPolicy="no-referrer"
                 className="h-[7.25rem] w-[7.25rem] rounded-full object-cover sm:h-[8rem] sm:w-[8rem] md:h-[9rem] md:w-[9rem]"
               />
             ) : (
@@ -856,9 +874,22 @@ export default function VisitorGalleryView() {
           </div>
         </div>
         <h1 className="mt-5 font-[family-name:var(--font-display)] text-2xl font-medium tracking-tight text-[var(--lib-fg)] sm:text-3xl md:text-[2rem]">
-          {displayName}
+          {hero.displayName}
         </h1>
-        <p className="mt-2 max-w-lg text-sm leading-relaxed text-[var(--lib-fg-muted)]">{tagline}</p>
+        {hero.patreonProfileHref ? (
+          <a
+            href={hero.patreonProfileHref}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="mt-2 block max-w-lg truncate text-sm text-[var(--lib-fg-muted)] underline-offset-2 hover:text-[var(--lib-fg)] hover:underline"
+          >
+            patreon.com/{hero.patreonSlug}
+          </a>
+        ) : (
+          <p className="mt-2 max-w-lg text-sm leading-relaxed text-[var(--lib-fg-muted)]">
+            {envVisitorTagline}
+          </p>
+        )}
         <dl className="mt-5 flex flex-wrap justify-center gap-x-8 gap-y-2 text-xs sm:gap-x-10">
           <div>
             <dt className="uppercase tracking-[0.14em] text-[10px] text-[var(--lib-fg-muted)]">Posts</dt>

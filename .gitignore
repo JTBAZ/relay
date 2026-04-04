@@ -4,3 +4,4 @@ dist
 .relay-backups
 .env
 *.pem
+.cursor/

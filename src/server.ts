@@ -129,6 +129,11 @@ export type AppConfig = {
   patreon_sync_health_path?: string;
   /** Patreon campaign avatar, banner, patron_count snapshot (default `.relay-data/creator_campaign_display.json`). */
   creator_campaign_display_path?: string;
+  /**
+   * Public gallery hero title (same meaning as web `NEXT_PUBLIC_RELAY_CREATOR_DISPLAY_NAME`).
+   * Returned in `GET /api/v1/gallery/facets?visitor=true` as `visitor_hero.relay_display_name`.
+   */
+  relay_creator_display_name?: string;
   ingest_retry_policy?: { max_attempts: number; base_delay_ms: number };
   export_storage_root?: string;
   gallery_post_overrides_path?: string;
@@ -374,7 +379,10 @@ export function createApp(config: AppConfig): CreateAppResult {
   const app = express();
   app.use(express.json());
   app.use((req, res, next) => {
-    res.setHeader("Access-Control-Allow-Origin", "*");
+    // Echo Origin when present so cross-origin fetch() with Authorization works in strict
+    // browsers (wildcard is not allowed for credentialed-style requests in some cases).
+    const origin = req.header("Origin");
+    res.setHeader("Access-Control-Allow-Origin", origin?.trim() || "*");
     res.setHeader("Access-Control-Allow-Methods", "GET,POST,PATCH,DELETE,OPTIONS");
     res.setHeader(
       "Access-Control-Allow-Headers",
@@ -945,6 +953,17 @@ export function createApp(config: AppConfig): CreateAppResult {
             )
           );
       }
+      const missingBlobs = await exportService.listMissingLibraryZipBlobs(creatorId);
+      if (missingBlobs.length > 0) {
+        const examples = missingBlobs.slice(0, 5).join("; ");
+        return res.status(502).json(
+          errorEnvelope(
+            "EXPORT_ZIP_ERROR",
+            `Library ZIP skipped: ${missingBlobs.length} export file(s) missing on disk (stale export index vs. storage). Re-export or remove bad index rows. Examples: ${examples}`,
+            traceId
+          )
+        );
+      }
       const safeName = creatorId.replace(/[^\w.-]+/g, "_") || "library";
       res.setHeader("Content-Type", "application/zip");
       res.setHeader(
@@ -1084,8 +1103,22 @@ export function createApp(config: AppConfig): CreateAppResult {
     }
     const visitor = parseQueryTruthy(req.query.visitor);
     const facets = await galleryService.facets(creatorId, { visitor_catalog: visitor });
+    let payload: typeof facets & { visitor_hero?: Record<string, string> } = facets;
+    if (visitor) {
+      const snap = await creatorCampaignDisplayStore.get(creatorId);
+      const relayName = config.relay_creator_display_name?.trim();
+      payload = {
+        ...facets,
+        visitor_hero: {
+          ...(relayName ? { relay_display_name: relayName } : {}),
+          ...(snap?.patreon_name ? { patreon_name: snap.patreon_name } : {}),
+          ...(snap?.image_url ? { banner_url: snap.image_url } : {}),
+          ...(snap?.image_small_url ? { avatar_url: snap.image_small_url } : {})
+        }
+      };
+    }
     res.setHeader("Cache-Control", "private, no-store");
-    return res.status(200).json(successEnvelope(facets, traceId));
+    return res.status(200).json(successEnvelope(payload, traceId));
   });
 
   app.get("/api/v1/gallery/post-detail", async (req: Request, res: Response) => {

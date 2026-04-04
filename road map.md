@@ -45,6 +45,8 @@ Use this roadmap as the execution sequence and use the reference docs for deeper
   - [builder-boost-pack/README.md](c:\Users\jorda\Documents\Coding Projects\Rescue\builder-boost-pack\README.md)
 - Analytics decisioning, action cards, data contracts, and execution APIs:
   - [analytics-action-center-spec.md](c:\Users\jorda\Documents\Coding Projects\Rescue\analytics-action-center-spec.md)
+- **Long-term growth analytics loop** (first-party truth → optional omni-channel → diagnosis → coach → goals): strategy and phased vision in [docs/growth-analytics-features.md](docs/growth-analytics-features.md). **Near-term** delivery remains Workstream E and Action Center contracts.
+- **Third-party metrics when APIs are insufficient** (aggregators, optional extractors, Relay Link / first-party supplements): tiered strategy and compliance posture in [docs/third-party-metrics-sourcing.md](docs/third-party-metrics-sourcing.md). **Not** a substitute for first-party Relay telemetry.
 - Pricing model, COGS guardrails, hosting modes, and post-independence operations:
   - [monetization-scheme-infrastructure-plan.md](c:\Users\jorda\Documents\Coding Projects\Rescue\monetization-scheme-infrastructure-plan.md)
 - **Audience Premium, daily paywalled promos, and boost tokens** — strategic constraints and agent prompt for roadmap/plan edits:
@@ -60,6 +62,8 @@ Quick routing:
 - Library and Designer sequencing before heavy patron-facing polish -> [docs/pattern-library.md](docs/pattern-library.md) (Part 3 builds on stable gallery and layout contracts).
 - Patreon sync/export hardening Slices 1–4 (what shipped, where to change code) -> [docs/part1-sync-hardening-ledger.md](docs/part1-sync-hardening-ledger.md).
 - Private smart tagging and similarity-assisted bulk apply -> **Ledger (Part 1, post-stabilization): Smart Tag Assistant** under [Part 1 Delivery Track: Gallery Export](#part-1-delivery-track-gallery-export).
+- Growth analytics phases (hook → aggregation → loop) and short-term pointers -> [docs/growth-analytics-features.md](docs/growth-analytics-features.md).
+- External metrics sourcing (tiers, Relay Link idea, aggregator vs scraper guardrails) -> [docs/third-party-metrics-sourcing.md](docs/third-party-metrics-sourcing.md).
 
 ## Product Boundaries
 
@@ -72,6 +76,7 @@ Includes:
 - Media normalization, tagging, and gallery search.
 - Exported content storage under creator-owned or creator-assigned storage.
 - Analytics for content performance and audience behavior.
+- **Near-term:** Workstream E snapshots and Action Center–style insights per [analytics-action-center-spec.md](c:\Users\jorda\Documents\Coding Projects\Rescue\analytics-action-center-spec.md). **Long-term** measurement and growth-loop vision (optional omni-channel, coaching, goals): [docs/growth-analytics-features.md](docs/growth-analytics-features.md). **Optional** external data fills API gaps only under the tiered model in [docs/third-party-metrics-sourcing.md](docs/third-party-metrics-sourcing.md) (first-party and official OAuth first).
 - Optional post-stabilization: **Smart Tag Assistant**—private inference plus similarity-assisted bulk tagging (see Ledger under Part 1 Delivery Track).
 
 Does not include:
@@ -227,6 +232,8 @@ Builder reference:
 Exit gate:
 - Dashboard exposes at least 3 actionable insight cards per creator.
 - Insight generation job success rate at or above 99 percent.
+
+**Context — short term vs long term:** This workstream ships the **foundation** (snapshots, cards, contracts). A **six-phase growth arc** (first-party analytics hook, optional channel aggregation, diagnosis, AI-assisted strategy, draft-and-approve cross-post, goal-driven loop) is scoped for planning only in [docs/growth-analytics-features.md](docs/growth-analytics-features.md); promote slices to new ledgers when each phase has MVP + exit gates. When official APIs lack metrics, **do not** default to scrapers—follow the tiered sourcing and Relay-first rules in [docs/third-party-metrics-sourcing.md](docs/third-party-metrics-sourcing.md).
 
 ### Ledger (Part 1, post-stabilization): Smart Tag Assistant
 
@@ -538,7 +545,7 @@ Builder reference:
 ## Milestone Build Order
 
 1. Part 1 foundation: OAuth, ingest, normalized data model.
-2. Part 1 value: export storage, gallery UX, analytics.
+2. Part 1 value: export storage, gallery UX, analytics (long-term context: [docs/growth-analytics-features.md](docs/growth-analytics-features.md); external metrics strategy when APIs are thin: [docs/third-party-metrics-sourcing.md](docs/third-party-metrics-sourcing.md)).
 3. Part 1 hardening: SLOs, observability, support runbooks.
 4. Part 1 smart tagging: private inference, similarity suggestions, and confirmed bulk apply (tenant-scoped Smart Tag Assistant).
 5. Part 2 foundation: replica schema, clone generation, access model.

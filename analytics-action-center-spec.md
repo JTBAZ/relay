@@ -4,6 +4,8 @@
 
 For implementation governance, contracts, and quality gates, pair this spec with:
 
+- Long-term growth analytics phases (beyond v1 cards): [docs/growth-analytics-features.md](docs/growth-analytics-features.md)
+- Third-party / supplemental metrics when official APIs are insufficient: [docs/third-party-metrics-sourcing.md](docs/third-party-metrics-sourcing.md)
 - [builder-boost-pack/README.md](c:\Users\jorda\Documents\Coding Projects\Rescue\builder-boost-pack\README.md)
 - [builder-boost-pack/contracts/events.md](c:\Users\jorda\Documents\Coding Projects\Rescue\builder-boost-pack\contracts\events.md)
 - [builder-boost-pack/contracts/api.md](c:\Users\jorda\Documents\Coding Projects\Rescue\builder-boost-pack\contracts\api.md)

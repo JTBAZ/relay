@@ -13,11 +13,7 @@ import {
   Search,
   ShieldAlert
 } from "lucide-react";
-import {
-  RELAY_API_BASE,
-  relayPatronAuthHeaders,
-  type FacetsData
-} from "@/lib/relay-api";
+import { RELAY_API_BASE, type FacetsData } from "@/lib/relay-api";
 import CollectionsPanel from "./CollectionsPanel";
 import MediaTypeMultiSelect, { type MediaTypeValue } from "./MediaTypeMultiSelect";
 
@@ -149,45 +145,32 @@ export default function GallerySidebar({
     try {
       const u = new URLSearchParams();
       u.set("creator_id", creatorId);
-      const res = await fetch(
+      // Pre-flight: lightweight HEAD to verify the ZIP endpoint is reachable and has content.
+      const checkRes = await fetch(
         `${RELAY_API_BASE}/api/v1/export/library-zip?${u.toString()}`,
-        {
-          method: "GET",
-          headers: { ...relayPatronAuthHeaders() },
-          cache: "no-store"
-        }
+        { method: "HEAD" }
       );
-      if (!res.ok) {
-        const text = await res.text();
-        let msg = res.statusText || "Request failed";
-        if (text) {
-          try {
-            const j = JSON.parse(text) as { error?: { message?: string } };
-            if (typeof j.error?.message === "string" && j.error.message.trim()) {
-              msg = j.error.message.trim();
-            }
-          } catch {
-            const snippet = text.replace(/\s+/g, " ").trim().slice(0, 160);
-            if (snippet && !snippet.startsWith("<")) msg = snippet;
-          }
+      if (!checkRes.ok) {
+        if (checkRes.status === 404) {
+          throw new Error(
+            "No exported media yet. Run a Patreon sync first, then try again."
+          );
         }
-        if (res.status === 404 && msg === "Not Found") {
-          msg =
-            "No library ZIP (no exported files yet, or Relay API needs updating). Run a live Patreon sync, then try again.";
-        }
-        throw new Error(msg);
+        throw new Error(
+          `Relay API returned ${checkRes.status}. Is the API running?`
+        );
       }
-      const blob = await res.blob();
-      const href = URL.createObjectURL(blob);
+      // Trigger a native browser download via anchor click — bypasses fetch().blob()
+      // which fails on large responses proxied through Next.js dev server.
+      const downloadUrl = `${RELAY_API_BASE}/api/v1/export/library-zip?${u.toString()}`;
       const a = document.createElement("a");
-      a.href = href;
+      a.href = downloadUrl;
       const safe = creatorId.replace(/[^\w.-]+/g, "_") || "library";
       a.download = `relay-library-${safe}.zip`;
       a.rel = "noopener";
       document.body.appendChild(a);
       a.click();
       a.remove();
-      URL.revokeObjectURL(href);
     } catch (e) {
       setZipError(e instanceof Error ? e.message : String(e));
     } finally {

@@ -46,6 +46,38 @@ describe("library zip export", () => {
     expect(res.status).toBe(400);
   });
 
+  it("returns 502 JSON when export index references missing files on disk", async () => {
+    const tempDir = await mkdtemp(join(tmpdir(), "relay-zip-miss-"));
+    const { app } = testApp(tempDir);
+    const exportRoot = join(tempDir, "exports");
+    const creatorId = "cr_missing";
+
+    await mkdir(join(exportRoot, creatorId), { recursive: true });
+    const exportIndex = {
+      creator_id: creatorId,
+      media: {
+        m_ghost: {
+          media_id: "m_ghost",
+          creator_id: creatorId,
+          sha256: "abc",
+          byte_length: 1,
+          relative_blob_path: "media/m_ghost/nothing_here",
+          upstream_revision: "x",
+          exported_at: new Date().toISOString()
+        }
+      }
+    };
+    await writeFile(
+      join(exportRoot, creatorId, "export_index.json"),
+      JSON.stringify(exportIndex, null, 2),
+      "utf8"
+    );
+
+    const res = await request(app).get(`/api/v1/export/library-zip?creator_id=${creatorId}`);
+    expect(res.status).toBe(502);
+    expect(String(res.body?.error?.message ?? "")).toMatch(/missing on disk/i);
+  });
+
   it("streams a zip with manifests and exported blob paths", async () => {
     const tempDir = await mkdtemp(join(tmpdir(), "relay-zip-"));
     const { app } = testApp(tempDir);

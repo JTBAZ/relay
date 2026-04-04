@@ -84,6 +84,15 @@ export type GalleryListData = {
 };
 
 export type TierFacet = { tier_id: string; title: string; amount_cents?: number };
+
+/** Public gallery header: Relay display name + Patreon campaign art (from `creator_campaign_display` after sync). */
+export type VisitorHeroData = {
+  relay_display_name?: string;
+  patreon_name?: string;
+  banner_url?: string;
+  avatar_url?: string;
+};
+
 export type FacetsData = {
   tag_ids: string[];
   tier_ids: string[];
@@ -94,6 +103,8 @@ export type FacetsData = {
   export_total_bytes?: number;
   /** Present on creator Library facets only: number of exported media records. */
   export_media_count?: number;
+  /** Present when `GET .../facets?visitor=true`: hero imagery and names for the public gallery page. */
+  visitor_hero?: VisitorHeroData;
 };
 
 export type GalleryPostDetail = {
