@@ -1,11 +1,16 @@
 "use client";
 
+import { useCallback, useState } from "react";
+import { X } from "lucide-react";
 import {
-  RELAY_API_BASE,
   type GalleryItem,
   type GalleryPostDetail,
-  type PostVisibility
+  type PostVisibility,
+  type TierFacet
 } from "@/lib/relay-api";
+import { InspectAssetPreview } from "./inspect/inspect-asset-preview";
+import { InspectMetaSidebar } from "./inspect/inspect-meta-sidebar";
+import { InspectSmartTagPanel } from "./inspect/inspect-smart-tag-panel";
 
 type Props = {
   preview: GalleryItem;
@@ -24,7 +29,9 @@ export default function InspectModal({
   onVisibilityError,
   setItemVisibility
 }: Props) {
-  const accessTiers =
+  const [busy, setBusy] = useState(false);
+
+  const accessTiers: TierFacet[] =
     previewDetail && previewDetail.tiers.length > 0
       ? previewDetail.tiers
       : preview.tier_ids.map((tier_id) => ({
@@ -36,128 +43,68 @@ export default function InspectModal({
               : tier_id
         }));
 
-  const applyVis = async (visibility: PostVisibility) => {
-    try {
-      await setItemVisibility([preview], visibility);
-      onVisibilityApplied();
-    } catch (e) {
-      onVisibilityError?.(e instanceof Error ? e.message : String(e));
-    }
-  };
+  const applyVis = useCallback(
+    async (visibility: PostVisibility) => {
+      setBusy(true);
+      try {
+        await setItemVisibility([preview], visibility);
+        onVisibilityApplied();
+      } catch (e) {
+        onVisibilityError?.(
+          e instanceof Error ? e.message : String(e)
+        );
+      } finally {
+        setBusy(false);
+      }
+    },
+    [preview, setItemVisibility, onVisibilityApplied, onVisibilityError]
+  );
 
   return (
     <div
-      className="fixed inset-0 z-50 bg-black/85 flex items-center justify-center p-8"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-[2px]"
       role="dialog"
       aria-modal
+      aria-label={`Inspect: ${preview.title}`}
       onClick={onClose}
     >
       <div
-        className="max-w-[92vw] max-h-[90vh] overflow-auto grid lg:grid-cols-[minmax(360px,1fr)_340px] gap-4 items-start"
+        className="flex max-h-[92vh] w-full max-w-6xl flex-col overflow-hidden rounded-lg border border-[var(--lib-border)] bg-[var(--lib-card)] shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
-        {preview.has_export && preview.mime_type?.startsWith("image/") ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={`${RELAY_API_BASE}${preview.content_url_path}`}
-            alt={preview.title}
-            className="max-w-full max-h-[85vh] rounded shadow-2xl border border-[#3d342b]"
-          />
-        ) : preview.has_export && preview.mime_type?.startsWith("video/") ? (
-          <video
-            src={`${RELAY_API_BASE}${preview.content_url_path}`}
-            controls
-            className="max-w-full max-h-[85vh] rounded shadow-2xl border border-[#3d342b]"
-          />
-        ) : preview.has_export && preview.mime_type?.startsWith("audio/") ? (
-          <div className="flex flex-col items-center justify-center gap-4 p-8 rounded border border-[#3d342b] bg-[#1a1410]">
-            <svg className="w-16 h-16 text-[#8a7f72]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-              <path d="M9 18V5l12-2v13" /><circle cx="6" cy="18" r="3" /><circle cx="18" cy="16" r="3" />
-            </svg>
-            <audio
-              src={`${RELAY_API_BASE}${preview.content_url_path}`}
-              controls
-              className="w-full max-w-md"
-            />
+        <header className="flex shrink-0 items-center justify-between gap-3 border-b border-[var(--lib-border)] px-4 py-3">
+          <div className="min-w-0">
+            <p className="text-[10px] uppercase tracking-wider text-[var(--lib-fg-muted)]">Creator Library</p>
+            <p className="truncate text-sm font-medium text-[var(--lib-fg)]">{previewDetail?.title ?? preview.title}</p>
           </div>
-        ) : (
-          <div className="flex flex-col items-center justify-center gap-2 p-8 rounded border border-[#3d342b] bg-[#1a1410] text-[#8a7f72]">
-            <svg className="w-12 h-12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-              <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" /><polyline points="14 2 14 8 20 8" />
-            </svg>
-            <p className="text-sm">{preview.mime_type ?? "Unknown type"}</p>
-            <p className="text-[#f0e6d8]">{preview.title}</p>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-md p-2 text-[var(--lib-fg-muted)] hover:bg-[var(--lib-muted)] hover:text-[var(--lib-fg)]"
+            aria-label="Close"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </header>
+
+        <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
+          <div className="flex min-h-[220px] flex-1 items-center justify-center bg-[var(--lib-bg)] lg:min-h-0">
+            <InspectAssetPreview item={preview} />
           </div>
-        )}
-        <aside className="rounded border border-[#3d342b] bg-[#161210] p-4 text-sm text-[#d8cebf]">
-          <h3 className="font-[family-name:var(--font-display)] text-xl text-[#f5ebe0]">
-            {previewDetail?.title ?? preview.title}
-          </h3>
-          <p className="mt-1 text-xs text-[#8a7f72]">
-            {previewDetail?.published_at?.slice(0, 10) ?? preview.published_at.slice(0, 10)}
-          </p>
-          <p className="mt-2 text-xs text-[#8a7f72]">
-            {preview.mime_type ?? "text"} · {preview.media_id}
-          </p>
-          <div className="mt-3 flex flex-wrap gap-1">
-            {(previewDetail?.tag_ids ?? preview.tag_ids).map((t) => (
-              <span key={t} className="text-[10px] px-1.5 bg-[#2a221c] rounded">
-                {t}
-              </span>
-            ))}
-          </div>
-          <div className="mt-3">
-            <p className="text-xs uppercase tracking-wider text-[#8a7f72] mb-1">Patreon access</p>
-            {accessTiers.length > 0 ? (
-              <div className="flex flex-wrap gap-1">
-                {accessTiers.map((tier) => (
-                  <span
-                    key={tier.tier_id}
-                    className="text-[10px] px-1.5 rounded border border-[#6b5a3e] text-[#e8d4b0] bg-[#1a1510]"
-                  >
-                    {tier.title}
-                  </span>
-                ))}
-              </div>
-            ) : (
-              <p className="text-[11px] text-[#6b645c]">No tier data ingested for this post.</p>
-            )}
-          </div>
-          <div className="mt-4 flex flex-wrap gap-2">
-            <button
-              type="button"
-              onClick={() => void applyVis("visible")}
-              className="text-xs px-3 py-1.5 rounded bg-green-900/50 border border-green-700/60 text-[#ede5da] hover:bg-green-900/70"
-            >
-              To workspace
-            </button>
-            <button
-              type="button"
-              onClick={() => void applyVis("review")}
-              className="text-xs px-3 py-1.5 rounded bg-amber-900/40 border border-amber-700/60 text-[#ede5da] hover:bg-amber-900/60"
-            >
-              Review
-            </button>
-            <button
-              type="button"
-              onClick={() => void applyVis("hidden")}
-              className="text-xs px-3 py-1.5 rounded bg-gray-800/60 border border-[#4a3f36] text-[#ede5da] hover:bg-gray-800"
-            >
-              Hide
-            </button>
-          </div>
-          <div className="mt-4">
-            <p className="text-xs uppercase tracking-wider text-[#8a7f72] mb-1">Description</p>
-            {previewDetail?.description ? (
-              <div
-                className="prose prose-invert prose-sm max-w-none text-[#ede5da]"
-                dangerouslySetInnerHTML={{ __html: previewDetail.description }}
+
+          <aside className="flex w-full shrink-0 flex-col border-t border-[var(--lib-border)] lg:w-[360px] lg:border-l lg:border-t-0">
+            <div className="min-h-0 flex-1 overflow-y-auto">
+              <InspectMetaSidebar
+                preview={preview}
+                previewDetail={previewDetail}
+                accessTiers={accessTiers}
+                busy={busy}
+                onVisibility={applyVis}
               />
-            ) : (
-              <p className="text-[#8a7f72] text-sm italic">No text content for this post.</p>
-            )}
-          </div>
-        </aside>
+            </div>
+            <InspectSmartTagPanel />
+          </aside>
+        </div>
       </div>
     </div>
   );

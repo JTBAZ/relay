@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { DM_Sans, Fraunces } from "next/font/google";
 import "./globals.css";
-import AppNav from "./components/AppNav";
+import ConditionalAppNav from "./components/ConditionalAppNav";
 
 const display = Fraunces({
   subsets: ["latin"],
@@ -26,10 +26,10 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body
-        className={`${display.variable} ${body.variable} font-[family-name:var(--font-body)] antialiased`}
+        className={`${display.variable} ${body.variable} flex min-h-dvh flex-col font-[family-name:var(--font-body)] antialiased`}
       >
-        <AppNav />
-        {children}
+        <ConditionalAppNav />
+        <div className="flex min-h-0 flex-1 flex-col">{children}</div>
       </body>
     </html>
   );

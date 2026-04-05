@@ -827,7 +827,7 @@ export default function VisitorGalleryView() {
       : "rounded-full px-3 py-1.5 text-xs font-medium text-[var(--lib-fg-muted)] transition hover:text-[var(--lib-fg)]";
 
   return (
-    <div className="library-shell min-h-screen bg-[var(--lib-bg)] text-[var(--lib-fg)]">
+    <div className="library-shell flex min-h-0 flex-1 flex-col bg-[var(--lib-bg)] text-[var(--lib-fg)]">
       {/* Banner — optional URL; else cool green neutral wash */}
       <div className="relative h-[min(42vh,26rem)] w-full overflow-hidden bg-[var(--lib-muted)]">
         {hero.bannerUrl ? (

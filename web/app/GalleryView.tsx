@@ -7,6 +7,7 @@ import { galleryItemKey, groupGalleryItemsByPost } from "@/lib/gallery-group";
 import {
   RELAY_API_BASE,
   buildGalleryQuery,
+  buildGalleryVisibilityBody,
   fetchGalleryPostDetail,
   fetchPatreonSyncState,
   formatSyncHealthBanner,
@@ -17,15 +18,18 @@ import {
   type GalleryItem,
   type GalleryListData,
   type GalleryPostDetail,
-  type PatreonSyncStateData
+  type PatreonSyncStateData,
+  type PostVisibility
 } from "@/lib/relay-api";
 import GallerySidebar from "./components/GallerySidebar";
 import GalleryGrid from "./components/GalleryGrid";
 import BulkActionBar from "./components/BulkActionBar";
 import PostBatchModal from "./components/PostBatchModal";
+import InspectModal from "./components/InspectModal";
 import LibraryTopBar from "./components/LibraryTopBar";
 import PatreonSyncMenu from "./components/PatreonSyncMenu";
 import GalleryStatsDrawer from "./components/GalleryStatsDrawer";
+import { LibraryOverviewPanel } from "./components/shell/LibraryOverviewPanel";
 import type { MediaTypeValue } from "./components/MediaTypeMultiSelect";
 import { freePublicTierIdsFromFacets } from "@/lib/tier-access";
 import { readGalleryVideoLoop, writeGalleryVideoLoop } from "@/lib/gallery-video-loop";
@@ -254,6 +258,16 @@ export default function GalleryView() {
     setPostDetailLoading(false);
   }, []);
 
+  const [inspectModalOpen, setInspectModalOpen] = useState(false);
+  const [inspectPreview, setInspectPreview] = useState<GalleryItem | null>(null);
+  const [inspectDetail, setInspectDetail] = useState<GalleryPostDetail | null>(null);
+
+  const closeInspectModal = useCallback(() => {
+    setInspectModalOpen(false);
+    setInspectPreview(null);
+    setInspectDetail(null);
+  }, []);
+
   /** Replace selection with a single asset (carousel / inspect / fullscreen). */
   const isolateSelectionToItem = useCallback((item: GalleryItem) => {
     setSelectedKeys(new Set([galleryItemKey(item)]));
@@ -265,18 +279,6 @@ export default function GalleryView() {
         ae.blur();
       }
     });
-  }, []);
-
-  /** Post batch modal: one asset at a time; click again to clear. */
-  const selectAssetInPostModal = useCallback((item: GalleryItem) => {
-    const k = galleryItemKey(item);
-    setSelectedKeys((prev) => {
-      if (prev.size === 1 && prev.has(k)) {
-        return new Set();
-      }
-      return new Set([k]);
-    });
-    setFocusIndex(-1);
   }, []);
 
   const refreshList = useCallback(() => {
@@ -312,6 +314,23 @@ export default function GalleryView() {
     });
   }, [freePublicTierIds]);
 
+  const setInspectItemVisibility = useCallback(
+    async (items: GalleryItem[], visibility: PostVisibility) => {
+      const body = buildGalleryVisibilityBody(creatorId, items, visibility);
+      const res = await fetch(`${RELAY_API_BASE}/api/v1/gallery/visibility`, {
+        method: "POST",
+        cache: "no-store",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body)
+      });
+      if (!res.ok) {
+        const j = (await res.json().catch(() => null)) as { error?: { message?: string } } | null;
+        throw new Error(j?.error?.message ?? res.statusText);
+      }
+    },
+    [creatorId]
+  );
+
   const openInspectPost = useCallback(async () => {
     if (selectedItems.length === 0) return;
     const first = selectedItems[0]!;
@@ -323,6 +342,25 @@ export default function GalleryView() {
     const keySet = new Set(selectedItems.map(galleryItemKey));
     const keep =
       g.items.find((it) => keySet.has(galleryItemKey(it))) ?? g.items[0]!;
+
+    if (g.items.length === 1) {
+      closePostBatch();
+      setSelectedKeys(new Set([galleryItemKey(keep)]));
+      setInspectPreview(keep);
+      setInspectDetail(null);
+      setInspectModalOpen(true);
+      try {
+        const detail = await fetchGalleryPostDetail(creatorId, first.post_id);
+        setInspectDetail(detail);
+      } catch (error) {
+        const msg = error instanceof Error ? error.message : String(error);
+        setListError(msg);
+        closeInspectModal();
+      }
+      return;
+    }
+
+    closeInspectModal();
     setSelectedKeys(new Set([galleryItemKey(keep)]));
     setPostBatchPostId(first.post_id);
     setPostBatchOpen(true);
@@ -338,7 +376,13 @@ export default function GalleryView() {
     } finally {
       setPostDetailLoading(false);
     }
-  }, [selectedItems, postGroups, creatorId, closePostBatch]);
+  }, [
+    selectedItems,
+    postGroups,
+    creatorId,
+    closePostBatch,
+    closeInspectModal
+  ]);
 
   const toggleSelectGroup = useCallback((groupItems: GalleryItem[]) => {
     const keys = groupItems.map(galleryItemKey);
@@ -457,7 +501,7 @@ export default function GalleryView() {
       : undefined;
 
   return (
-    <div className="library-shell flex max-h-[calc(100dvh-2.5rem)] min-h-0 flex-col overflow-hidden bg-[var(--lib-bg)] text-[var(--lib-fg)]">
+    <div className="library-shell flex min-h-0 flex-1 flex-col overflow-hidden bg-[var(--lib-bg)] text-[var(--lib-fg)]">
       <LibraryTopBar
         syncStatus={derivedLibrarySyncStatus}
         syncIssueDetail={librarySyncIssueDetail}
@@ -522,6 +566,16 @@ export default function GalleryView() {
               {listError}
             </div>
           ) : null}
+
+          <LibraryOverviewPanel
+            counts={{
+              postCount: postGroups.length,
+              assetCount: displayItems.length,
+              collectionCount: collections.length,
+              exportMediaCount: facets.export_media_count ?? 0,
+              patronCount: syncHealth?.campaign_display?.patron_count ?? 0
+            }}
+          />
 
           <div className="relative flex h-10 shrink-0 items-center justify-between border-b border-[var(--lib-border)] px-4">
             <div className="flex items-center gap-3">
@@ -679,6 +733,24 @@ export default function GalleryView() {
             onError={(msg) => setListError(msg)}
           />
 
+          {inspectModalOpen && inspectPreview ? (
+            <InspectModal
+              preview={inspectPreview}
+              previewDetail={inspectDetail}
+              onClose={closeInspectModal}
+              onVisibilityApplied={() => {
+                refreshList();
+                void fetchFacets();
+                const pid = inspectPreview.post_id;
+                void fetchGalleryPostDetail(creatorId, pid)
+                  .then(setInspectDetail)
+                  .catch(() => {});
+              }}
+              onVisibilityError={(msg) => setListError(msg)}
+              setItemVisibility={setInspectItemVisibility}
+            />
+          ) : null}
+
           {postBatchOpen && postBatchItems.length > 0 ? (
             <PostBatchModal
               items={postBatchItems}
@@ -693,8 +765,9 @@ export default function GalleryView() {
               videoLoop={videoLoop}
               onClose={closePostBatch}
               onIsolateSelectionForAsset={isolateSelectionToItem}
-              onToggleSelect={selectAssetInPostModal}
               onFocusIndex={setFocusIndex}
+              setItemVisibility={setInspectItemVisibility}
+              onVisibilityError={(msg) => setListError(msg)}
               onPostMetadataUpdated={async () => {
                 await fetchFacets();
                 setCollectionsReloadToken((n) => n + 1);

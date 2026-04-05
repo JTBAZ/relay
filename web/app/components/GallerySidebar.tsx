@@ -16,6 +16,8 @@ import {
 import { RELAY_API_BASE, type FacetsData } from "@/lib/relay-api";
 import CollectionsPanel from "./CollectionsPanel";
 import MediaTypeMultiSelect, { type MediaTypeValue } from "./MediaTypeMultiSelect";
+import { SpacingScaleDemo } from "./shell/SpacingScaleDemo";
+import { TypeRampDemo } from "./shell/TypeRampDemo";
 
 function formatExportedBytes(bytes: number): string {
   if (!Number.isFinite(bytes) || bytes < 0) return "—";
@@ -370,6 +372,19 @@ export default function GallerySidebar({
           </div>
         </section>
       </div>
+
+      <details className="border-t border-[var(--lib-border)] bg-[var(--lib-sidebar)] px-3 py-2">
+        <summary className="cursor-pointer list-none text-[10px] font-semibold uppercase tracking-wider text-[var(--lib-fg-muted)] marker:hidden [&::-webkit-details-marker]:hidden">
+          <span className="flex items-center gap-1">
+            <span aria-hidden>▸</span>
+            Design tokens (spacing &amp; type)
+          </span>
+        </summary>
+        <div className="mt-3 space-y-4 pb-1">
+          <SpacingScaleDemo />
+          <TypeRampDemo />
+        </div>
+      </details>
 
       <div className="space-y-2 border-t border-[var(--lib-border)] p-3">
         <div className="flex items-center justify-between gap-2 text-[10px] text-[var(--lib-fg-muted)]">

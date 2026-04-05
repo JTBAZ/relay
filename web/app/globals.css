@@ -5,6 +5,8 @@
 :root {
   --background: #100c0a;
   --foreground: #ede5da;
+  /** Sticky offset below global AppNav (layout + designer headers). */
+  --relay-app-nav-height: 2.75rem;
 }
 
 body {
@@ -73,4 +75,40 @@ body {
     opacity: 1;
     transform: scale(1) translateY(0);
   }
+}
+
+/* Full-page auth / onboarding (v0 slices — scoped tokens; not shadcn/TW4) */
+.onboarding-shell,
+.login-shell {
+  --relay-bg: #0a0a0a;
+  --relay-surface-1: #111111;
+  --relay-surface-2: #1a1a1a;
+  --relay-border: #2a2a2a;
+  --relay-green-950: #0d1f17;
+  --relay-green-800: #1b4332;
+  --relay-green-600: #2d6a4f;
+  --relay-green-400: #40916c;
+  --relay-gold-500: #c5b358;
+  --relay-gold-400: #d4af37;
+  --relay-fg: #f9fafb;
+  --relay-fg-muted: #9ca3af;
+  --relay-gray-500: #6b7280;
+  --relay-destructive: #7f1d1d;
+  --relay-destructive-fg: #fca5a5;
+  --relay-error-bg: #1a0a0a;
+}
+
+@keyframes onboardingPanelIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.onboarding-panel-animate {
+  animation: onboardingPanelIn 0.3s ease-out;
 }

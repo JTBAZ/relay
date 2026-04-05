@@ -1,0 +1,26 @@
+{
+  "name": "project-tracker-automation",
+  "version": "1.0.0",
+  "description": "This folder documents the **ledger-first** workflow between **Airtable**, **v0.dev**, and **Cursor** for a **human-in-the-loop** first run.",
+  "type": "module",
+  "main": "index.js",
+  "directories": {
+    "doc": "docs"
+  },
+  "scripts": {
+    "ledger-to-v0": "node scripts/ledger-to-v0.mjs",
+    "ledger-to-v0:dry": "node scripts/ledger-to-v0.mjs --dry-run",
+    "ledger-pull-v0-copy-block": "node scripts/ledger-pull-v0-copy-block.mjs",
+    "v0-verify-key": "node scripts/v0-verify-key.mjs",
+    "v0-set-chat-privacy": "node scripts/v0-set-chat-privacy.mjs",
+    "v0-set-chat-privacy:all-private": "node scripts/v0-set-chat-privacy.mjs --all-private",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "dotenv": "^17.4.0",
+    "v0-sdk": "^0.16.4"
+  }
+}

@@ -7,6 +7,9 @@
     "build": "tsc -p tsconfig.json",
     "start": "node dist/src/main.js",
     "test": "vitest run",
+    "ledger-to-v0": "npm --prefix Automation run ledger-to-v0",
+    "ledger-to-v0:dry": "npm --prefix Automation run ledger-to-v0:dry",
+    "ledger-pull-v0-copy-block": "npm --prefix Automation run ledger-pull-v0-copy-block",
     "inspect:patreon-content": "node scripts/inspect-patreon-post-content.mjs",
     "probe:patreon-description": "node scripts/probe-patreon-post-description.mjs"
   },

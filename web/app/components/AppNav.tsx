@@ -12,27 +12,24 @@ const navItems = [
 
 export default function AppNav() {
   const pathname = usePathname();
-  const visitorShell = pathname.startsWith("/visitor");
+  /** Library home + subscriber surfaces share cool green chrome (design ledger: Relay shell). */
+  const primaryShell = pathname === "/" || pathname.startsWith("/visitor");
 
-  if (pathname === "/") {
-    return null;
-  }
-
-  /* Visitor matches `.library-shell` tokens; nav sits outside that wrapper so we use literals. */
-  const bar = visitorShell
+  /* Library / visitor: match `.library-shell` feel; designer keeps warm studio tokens. */
+  const bar = primaryShell
     ? "border-b border-[oklch(0.22_0.008_160)] bg-[oklch(0.16_0.008_160)]"
     : "border-b border-[#3d342b] bg-[#0d0a08]";
-  const brand = visitorShell ? "text-[#00aa6f]" : "text-[#e8a077]";
-  const linkActive = visitorShell
+  const brand = primaryShell ? "text-[#c5b358]" : "text-[#e8a077]";
+  const linkActive = primaryShell
     ? "border-[#00aa6f] text-[oklch(0.92_0.008_160)]"
     : "border-[#c45c2d] text-[#f0e6d8]";
-  const linkIdle = visitorShell
+  const linkIdle = primaryShell
     ? "border-transparent text-[oklch(0.55_0.008_160)] hover:text-[oklch(0.92_0.008_160)]"
     : "border-transparent text-[#8a7f72] hover:text-[#c9bfb3]";
 
   return (
     <nav
-      className={`flex items-center gap-0 px-6 py-0 ${bar} ${visitorShell ? "sticky top-0 z-50" : ""}`}
+      className={`flex h-[var(--relay-app-nav-height)] shrink-0 items-center gap-0 px-6 py-0 ${bar} sticky top-0 z-50`}
     >
       <span className={`mr-6 py-2 font-[family-name:var(--font-display)] text-sm ${brand}`}>
         Relay

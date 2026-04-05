@@ -11,6 +11,7 @@ import type {
   PostVisibility
 } from "@/lib/relay-api";
 import { accessChipLabel } from "./GalleryGridTile";
+import { InspectSmartTagPanel } from "./inspect/inspect-smart-tag-panel";
 
 const SEL = "#00aa6f";
 
@@ -86,6 +87,11 @@ type Props = {
   onTagsChanged: () => Promise<void>;
   onCollectionsChanged?: () => Promise<void>;
   onTagError: (message: string | null) => void;
+  /**
+   * When true, only editable tags + collections (for batch modal sidebar — visibility/tier/description
+   * come from InspectMetaSidebar).
+   */
+  tagsAndCollectionsOnly?: boolean;
 };
 
 export default function PostBatchPostDetails({
@@ -99,7 +105,8 @@ export default function PostBatchPostDetails({
   postId,
   onTagsChanged,
   onCollectionsChanged,
-  onTagError
+  onTagError,
+  tagsAndCollectionsOnly = false
 }: Props) {
   const primary = items[0]!;
   const [newTag, setNewTag] = useState("");
@@ -266,53 +273,75 @@ export default function PostBatchPostDetails({
   const suggestionListId = "post-batch-tag-suggestions";
 
   return (
-    <div className="mt-6 border-t border-[var(--lib-border)] pt-4">
-      <p
-        className="mb-3 cursor-help text-[0.65rem] font-semibold uppercase tracking-[0.12em] text-[var(--lib-fg)] sm:text-xs"
-        title="Metadata for this post: gallery visibility, access, tags, and Relay collections."
-      >
-        Post details
-      </p>
-      {postDetailLoading ? (
-        <p className="text-xs text-[var(--lib-fg-muted)] sm:text-sm">Loading details…</p>
+    <div
+      className={
+        tagsAndCollectionsOnly
+          ? "pt-2"
+          : "mt-6 border-t border-[var(--lib-border)] pt-4"
+      }
+    >
+      {!tagsAndCollectionsOnly ? (
+        <>
+          <p
+            className="mb-3 cursor-help text-[0.65rem] font-semibold uppercase tracking-[0.12em] text-[var(--lib-fg)] sm:text-xs"
+            title="Metadata for this post: gallery visibility, access, tags, and Relay collections."
+          >
+            Post details
+          </p>
+          {postDetailLoading ? (
+            <p className="text-xs text-[var(--lib-fg-muted)] sm:text-sm">Loading details…</p>
+          ) : null}
+
+          <SectionBlock title="Visibility" tooltip={TIP_VISIBILITY} hint={HINT_VISIBILITY}>
+            {uniqueVis.map((v) => {
+              const cfg = VIS_CHIP[v] ?? {
+                label: v,
+                className: "border-[var(--lib-border)] bg-[var(--lib-muted)] text-[var(--lib-fg-muted)]",
+                chipTitle: v
+              };
+              return (
+                <span
+                  key={v}
+                  title={cfg.chipTitle}
+                  className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-medium ${cfg.className}`}
+                >
+                  {cfg.label}
+                </span>
+              );
+            })}
+          </SectionBlock>
+
+          <SectionBlock title="Tier access" tooltip={TIP_TIER} hint={HINT_TIER}>
+            {tiers.length > 0 ? (
+              tiers.map((t) => (
+                <span
+                  key={t.tier_id}
+                  title={`Tier: ${t.title}. Patreon members at this level (or higher, per your campaign rules) can access this post.`}
+                  className="inline-flex items-center rounded-full border border-[var(--lib-border)] bg-[var(--lib-sidebar-accent)] px-2.5 py-1 text-xs text-[var(--lib-fg)]"
+                >
+                  {t.title}
+                </span>
+              ))
+            ) : (
+              <span className="text-xs text-[var(--lib-fg-muted)]" title={TIP_TIER}>
+                No tier data
+              </span>
+            )}
+          </SectionBlock>
+        </>
       ) : null}
 
-      <SectionBlock title="Visibility" tooltip={TIP_VISIBILITY} hint={HINT_VISIBILITY}>
-        {uniqueVis.map((v) => {
-          const cfg = VIS_CHIP[v] ?? {
-            label: v,
-            className: "border-[var(--lib-border)] bg-[var(--lib-muted)] text-[var(--lib-fg-muted)]",
-            chipTitle: v
-          };
-          return (
-            <span
-              key={v}
-              title={cfg.chipTitle}
-              className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-medium ${cfg.className}`}
-            >
-              {cfg.label}
-            </span>
-          );
-        })}
-      </SectionBlock>
-
-      <SectionBlock title="Tier access" tooltip={TIP_TIER} hint={HINT_TIER}>
-        {tiers.length > 0 ? (
-          tiers.map((t) => (
-            <span
-              key={t.tier_id}
-              title={`Tier: ${t.title}. Patreon members at this level (or higher, per your campaign rules) can access this post.`}
-              className="inline-flex items-center rounded-full border border-[var(--lib-border)] bg-[var(--lib-sidebar-accent)] px-2.5 py-1 text-xs text-[var(--lib-fg)]"
-            >
-              {t.title}
-            </span>
-          ))
-        ) : (
-          <span className="text-xs text-[var(--lib-fg-muted)]" title={TIP_TIER}>
-            No tier data
-          </span>
-        )}
-      </SectionBlock>
+      {tagsAndCollectionsOnly ? (
+        <p
+          className="mb-2 cursor-help text-[0.65rem] font-semibold uppercase tracking-[0.12em] text-[var(--lib-fg-muted)] sm:text-xs"
+          title="Post-level tags and Relay collections for this Patreon post."
+        >
+          Post tags &amp; collections
+        </p>
+      ) : null}
+      {tagsAndCollectionsOnly && postDetailLoading ? (
+        <p className="mb-2 text-xs text-[var(--lib-fg-muted)] sm:text-sm">Loading details…</p>
+      ) : null}
 
       <SectionBlock title="Tags" tooltip={TIP_TAGS} hint={HINT_TAGS}>
         {tagIds.map((tag) => (
@@ -481,6 +510,18 @@ export default function PostBatchPostDetails({
           ) : null}
         </div>
       </SectionBlock>
+
+      {!tagsAndCollectionsOnly ? (
+        <div className="mt-6 border-t border-[var(--lib-border)] pt-4">
+          <p
+            className="mb-2 cursor-help text-[0.65rem] font-semibold uppercase tracking-[0.12em] text-[var(--lib-fg-muted)] sm:text-xs"
+            title="Placeholder UI for future smart-tagging flows — not connected to Relay APIs."
+          >
+            Smart tagging (mock)
+          </p>
+          <InspectSmartTagPanel />
+        </div>
+      ) : null}
     </div>
   );
 }

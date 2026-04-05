@@ -187,7 +187,7 @@ export default function VisitorFavoritesPage() {
     postFavorites.length === 0 && legacyMediaFavorites.length === 0 && collections.every((c) => !c.entries.length);
 
   return (
-    <div className="library-shell min-h-screen bg-[var(--lib-bg)] text-[var(--lib-fg)]">
+    <div className="library-shell flex min-h-0 flex-1 flex-col bg-[var(--lib-bg)] text-[var(--lib-fg)]">
       <main className="mx-auto max-w-4xl px-4 py-10">
         <Link
           href="/visitor"

@@ -1,0 +1,60 @@
+Element/Page,User job / need,Priority,Dependencies,Data sources (Airtable/Azure/API),States / Empty / Error,Notes
+"Root layout + AppNav","Navigate between Library, Designer, visitor gallery",P0,"Routes stable","— / — / Next app routes","Hidden nav on /; two theme tokens","Slice patron shell later—avoid permanent one nav for all roles"
+"Library (GalleryView + sidebar)","Find, filter, search, curate assets",P0,"Gallery API, ingest, overrides merge","— / — / GET /api/v1/gallery/items, facets","Empty library; no search hits; API errors","Control room; viewer parity must inform defaults"
+Post batch UI,"See multi-asset posts without losing per-asset keys",P0,"Gallery query, batch components","— / — / Gallery API","Collapsed vs expanded","Pattern doc: scope clarity vs bulk actions"
+Inspect modal,"Per-asset visibility, metadata, fixes",P0,"Visibility API, overrides","— / — / POST /api/v1/gallery/visibility","Save failure","Bridge copy to what viewers see"
+Bulk action bar,"Hide/flag/tag many items",P0,"Bulk visibility + bulk-tags","— / — / gallery visibility, bulk-tags","Partial success","Tags post-scoped vs visibility media-scoped—educate in UI"
+Triage dialog,"Hygiene / auto-flag workflow",P1,"Triage APIs","— / — / Triage endpoints","No issues; analyze failed",
+"Collections panel + builder/editor","Organize posts into browseable groups",P0,"Collections CRUD, tier validation","— / — / Collections API","Empty collection; add-posts tier errors","Themes → search; ceiling tier for access"
+Patreon sync menu,"Fetch newer posts vs re-sync access; see health",P0,"sync-state, scrape, watermark store","— / — / GET /api/v1/patreon/sync-state, POST scrape","OAuth expired; cookie missing; scrape failed","Ledger Slices 3–4"
+Library sync pill / banner,Know if sync needs attention,P0,"Sync health, formatSyncHealthBanner","— / — / sync-state","Healthy vs issue","Patreon degradation messaging"
+Export retry on items,Recover failed media export,P0,"Export service, POST /api/v1/export/media","— / — / Export API","Failed export; retry in flight","Slice 1"
+Saved filters,Repeatable Library views,P1,"Saved-filters API","— / — / Gallery saved filters","None saved",
+Designer (DesignerView + preview),Compose public page layout,P0,"Layout API, gallery query for sections","— / — / GET/PUT /api/v1/gallery/layout","Empty sections; save errors","Stage—projection only"
+Hero + section editors,"Title, sections, theme",P0,"Layout schema","— / — / Layout API","Invalid section refs","Hero vs cover story still open"
+Publish preflight,Catch broken layout before go-live,P0,"Layout + gallery consistency","— / — / Combined reads","Warnings vs blocking","Parity warnings high risk if missing"
+"Visitor gallery + favorites",Preview public/saved consumption,P1,"Same read model as stage","— / — / Gallery API (visitor context)","Empty; tier gate","Must not fork entitlement semantics"
+"Patreon creator connect/callback",Link creator account for ingest,P0,"OAuth app, env, token store","— / — / Patreon OAuth","Invalid redirect; denied","Dev page evolution to prod"
+Patreon cookie page,Enable cookie-path scrape when needed,P0,"Cookie session store, tier mapping","— / — / Scrape API","Session invalid","Slice 2 alignment—never silent public mis-tier"
+"Patreon patron connect/callback","Fan login + entitlement sync",P0 (Part 3),"Patreon patron exchange, state payload","— / — / POST /api/v1/auth/patreon/patron/exchange","Wrong campaign in state; denied","Different redirect URI vs creator"
+"Email sign up / sign in / out",Account lifecycle (non-Patreon path),P1,"Auth backend, sessions","— / — / Relay auth API (TBD)","Session expired; wrong password","Standard SaaS"
+Password reset + verification,Recover access; verify email,P1,"Email provider","— / — / Auth + email","Token expired",
+MFA (protect high-risk actions),Optional,P2,"Auth, TOTP","— / — / Auth API","Locked out","Useful before mass migration send"
+Onboarding progress (4 steps),Know setup state,P0,"Import jobs, OAuth","— / — / Internal job + user state","In-progress import","Connect → Import → Organize → Publish"
+First-run Library tips,Learn bulk scope & Library→stage,P1,library-onboarding,"— / — / localStorage","Dismissed state","Pattern Phase A"
+Global 404 / error boundary,Recover from dead links / crashes,P0,"Next.js conventions","— / — / —","404; 500","Gap in repo today"
+"Rate limit + maintenance banners",Understand blocking / downtime,P1,"API headers, feature flags","— / — / Ops config","Throttled; read-only","Feed + scrape endpoints"
+Dashboard (what happened),See KPIs and trends,P1,"Events, snapshots","— / — / Analytics API + events.md contracts","No data yet; stale connector","Workstream E Ph1"
+Action Center,Turn metrics into actions,P1,Recommendation service,"— / — / GET /api/v1/action-center/*","No cards above threshold","Signal/diagnosis/rec/CTA/confidence"
+Card explanation + history,Trust and audit decisions,P1,"Explanation + history API","— / — / Action Center","Loading; failed eval","No black-box per spec"
+Connector management,Add/remove external channels,P2,OAuth per connector,"— / — / Per-connector APIs","Token revoked","One channel at a time (growth doc)"
+Relay Link + pixel admin,First-party attribution,P2,"Link redirect + event ingest","— / — / Relay telemetry API","Opt-in required","Tier 0 third-party doc"
+Third-party metric provenance,Know trust level of numbers,P1,Labeling in card schema,"— / — / Aggregator APIs","Stale; wrong tier","source/collected_at/method"
+"Goals / coaching loop (Phase 6)",Plan growth milestones,P3,"Historical lift models","— / — / Analytics + snapshots","Insufficient history","Growth doc"
+"Smart Tag: processing zone",Upload reference images,P3,"Object storage, inference worker","— / — / Upload + job APIs","Job failed","No silent apply"
+"Smart Tag: suggestions + clusters",Accept taxonomy tags; similarity batches,P3,Embeddings per tenant,"— / — / Internal inference","Low confidence","Viewer parity for accepted tags"
+Smart Tag: audit trail,Compliance / debug,P3,Immutable log store,"— / — / Audit API",—,"Ledger exit gate"
+Settings hub,"Profile, connections, danger zone",P1,"User + OAuth services","— / — / User API",—,"Consolidate scattered Patreon pages"
+Cookie/session explainer,Informed consent for scrape,P0,Legal copy,"— / — / —",—,"Trust + security expectations"
+"Billing: plan + payment + invoices",Pay for SaaS; manage renewal,P1,Stripe (typical),"— / — / Billing provider API","Payment failed","Plans A/B/C per monetization doc"
+"Usage meters (storage, egress, email)",Avoid surprise overage,P1,Metering service,"— / — / Usage API","Approaching limit","COGS alignment"
+BYOI vs managed indicator,Understand ops responsibility,P2,Deployment registry,"— / — / Tenant config",—,"Monetization plan"
+"Public OG/share metadata",Social preview of gallery,P1,"Published layout + CDN","— / — / Page meta + crawler",—,"Phase E pattern-library"
+Age / mature gate,Legal/safe access,P2,"Rating policy + entitlements","— / — / Policy API","Blocked","Adult caveats third-party doc"
+"Patron shell: feed",Catch up on followed creators,P0 (Part 3),"Feed API, entitlements","— / — / Feed assembly","Cold start; stale OAuth","Label discovery vs subscription"
+"Patron shell: Browse",Algorithmic discovery with caps,P0 (Part 3),"Rank + audit logs","— / — / Browse API","Empty pool","Transparency copy"
+Patron profiles + follows,Deep browse; graph,P0 (Part 3),Follow API,"— / — / Social graph",—,
+"Comments, favorites, patron collections",On-platform engagement,P1 (Part 3),Engagement API,"— / — / Part 3 schema","Moderation queue","Distinct from artist Library collections"
+Entitlement pending/downgrade UX,Understand access loss,P0 (Part 3),Patreon snapshot refresh,"— / — / Entitlement service","Pending verify","No parallel paywall truth"
+"Upgrade to Patreon / deep link",Get higher tier,P1 (Part 3),Patreon checkout,"— / — / Patreon","Return refresh",
+"Daily promo slot (opt-in paywalled)",Teaser with creator terms,P2 (Part 3),"Promo catalog + caps","— / — / Feed config","No eligible promo","Premium prompt doc"
+Premium viewer + boost token,More promo / visibility signal,P3 (Part 3),"Billing + ranking","— / — / Platform billing","Report ready","Disclosed platform fee"
+Creator promo opt-in UI,Control discovery exposure,P1 (Part 3),Content flags,"— / — / Creator settings","Revoked immediate","Workstream M"
+Tier → payment mapping wizard,Migrate billing,P0 (Part 2),"Stripe/PayPal + schema","— / — / Payment adapters","Preflight errors",
+Re-Populate campaign builder,Recover audience,P0 (Part 2),"Email infra, suppressions","— / — / Campaign API","Auto-pause on complaints","Consent + audit log"
+"Migration recipient preview + staged send",Safe rollout,P0 (Part 2),Deliverability,"— / — / Campaign + ESP",—,
+"Conversion + bounce dashboard",Measure migration,P1 (Part 2),Events,"— / — / Analytics",—,
+"Clone deploy preview + DNS checklist + rollback",Go-live confidence,P0 (Part 2),Deploy API (e.g. Vercel),"— / — / Deploy provider","Rollback UI","Workstream J"
+"Terms, Privacy, DPA summaries",Legal compliance,P0,Legal docs,"— / — / Static / CMS",—,
+Report abuse + preference center,Safety + email law,P1,"Ticketing / ESP","— / — / Support API",—,
+Health / status page,Trust during incidents,P2,Status provider,"— / — / Status API","Degraded","ping route exists; UX thin"

@@ -3,7 +3,7 @@ import DesignerView from "./DesignerView";
 
 function DesignerFallback() {
   return (
-    <div className="flex min-h-screen items-center justify-center bg-[#0a0807] text-sm text-[#8a7f72]">
+    <div className="flex min-h-0 flex-1 items-center justify-center bg-[#0a0807] text-sm text-[#8a7f72]">
       Loading designer…
     </div>
   );
@@ -11,8 +11,10 @@ function DesignerFallback() {
 
 export default function DesignerPage() {
   return (
-    <Suspense fallback={<DesignerFallback />}>
-      <DesignerView />
-    </Suspense>
+    <div className="flex min-h-0 flex-1 flex-col">
+      <Suspense fallback={<DesignerFallback />}>
+        <DesignerView />
+      </Suspense>
+    </div>
   );
 }

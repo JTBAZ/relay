@@ -197,8 +197,8 @@ export default function DesignerView() {
   const sortedSections = [...layout.sections].sort((a, b) => a.sort_order - b.sort_order);
 
   return (
-    <div className="flex min-h-screen flex-col bg-[#0a0807] text-[#ede5da]">
-      <header className="sticky top-0 z-30 flex flex-wrap items-center justify-between gap-3 border-b border-[#2a2420] bg-[#120e0c]/95 px-4 py-3 backdrop-blur-md sm:px-6">
+    <div className="flex min-h-0 flex-1 flex-col bg-[#0a0807] text-[#ede5da]">
+      <header className="sticky top-[var(--relay-app-nav-height)] z-30 flex flex-wrap items-center justify-between gap-3 border-b border-[#2a2420] bg-[#120e0c]/95 px-4 py-3 backdrop-blur-md sm:px-6">
         <div>
           <h2 className="font-[family-name:var(--font-display)] text-lg text-[#f0e6d8]">Designer</h2>
           <p className="mt-0.5 max-w-md text-[10px] leading-relaxed text-[#8a7f72]">

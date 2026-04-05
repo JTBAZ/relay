@@ -1,0 +1,16 @@
+Parameter Key,Value,Scope
+VIEWER_PARITY_PIPELINE,"Canonical ingest + artist overrides (visibility tags collections layout) + effective patron entitlement + layout rules; no second inventory",UI + API
+AUTHORING_DEFAULT,"Library may show workspace/all for editing; patron/public default to policy-aligned visibility",UI
+PATREON_UPSTREAM,"Patreon = billing + sync upstream; Relay = operational truth for experience; degradation explicit not silent wrong access",API + Content
+SYNC_FRAMING,"Best-effort freshness; sync status visible in Library—not zero-lag guarantee",Content + UI
+CONFIDENCE_THRESHOLD_ACTIONS,Hide or soften recommendations below configurable confidence,API + UI
+NO_BLACK_BOX_ACTIONS,"Cards require signal diagnosis rec CTA impact explainability",UI + API
+HIGH_RISK_HUMAN_GATE,Mass outreach/publish requires preview/review,UI + API
+THIRD_PARTY_PROVENANCE,"External metrics carry source collected_at method; never merge into entitlement/financial truth",UI + API
+DISCOVERY_LABELING,Feed/browse must label discovery vs subscription-sourced items,UI + API
+SMART_TAG_NO_SILENT_APPLY,Model output never writes tags without explicit confirm,UI + API
+TENANT_ISOLATION_VECTORS,Embeddings/indexes per creator only,API
+DAILY_PROMO_CAP,One promotional paywalled slot per user per day when promo product live,UI + API
+BOOST_BOUNDED_AUDITABLE,"Boost affects rank with caps decay audit log",UI + API
+COOKIE_CONSENT_PIXEL,Relay Link/pixel require opt-in + disclosure before GA,UI + Content
+ONBOARDING_STORAGE_VERSION,relay.libraryOnboarding.v1 migrate keys intentionally,UI
