@@ -114,6 +114,42 @@ body {
 }
 
 /* Site Designer (v0 copy block) — scoped tokens */
+/* Marketing landing (v0 export) — motion utilities */
+@keyframes relay-fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes relay-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.relay-animate-fade-up {
+  animation: relay-fade-up 0.6s ease both;
+}
+
+.relay-animate-fade-in {
+  animation: relay-fade-in 0.5s ease both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .relay-animate-fade-up,
+  .relay-animate-fade-in {
+    animation: none !important;
+  }
+}
+
 .designer-site-shell {
   --relay-bg: #0a0a0a;
   --relay-surface-1: #111111;

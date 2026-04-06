@@ -160,6 +160,15 @@ export function mapCookiePostToIngest(
   };
 }
 
+export class CookieSessionExpiredError extends Error {
+  readonly status: number;
+  constructor(status: number) {
+    super(`Patreon session rejected (HTTP ${status}). Re-enter session key.`);
+    this.name = "CookieSessionExpiredError";
+    this.status = status;
+  }
+}
+
 async function cookieFetch(
   url: string,
   sessionId: string,
@@ -173,7 +182,10 @@ async function cookieFetch(
   });
   const text = await res.text();
   if (!res.ok) {
-    throw new Error(`Patreon cookie API ${res.status}: ${text.slice(0, 500)}`);
+    if (res.status === 401 || res.status === 403) {
+      throw new CookieSessionExpiredError(res.status);
+    }
+    throw new Error(`Patreon cookie API ${res.status}: ${text.slice(0, 200)}`);
   }
   return JSON.parse(text) as JsonApiDocument;
 }
@@ -323,6 +335,9 @@ async function enrichPostFromDetailIfNeeded(
       included: merged
     };
   } catch (e) {
+    if (e instanceof CookieSessionExpiredError) {
+      throw e;
+    }
     warnings.push(
       `Post ${resource.id}: detail fetch failed (${(e as Error).message}).`
     );

@@ -11,7 +11,7 @@ Paste this into a **new** Cursor chat when you open the **Rescue** workspace (`C
 
 - **Base:** Project tracker — `applW4dOjVNHoWBM9`
 - **Ledger:** `tblDDAKjaaBBIBuPf` — **`Prompt Draft`**, **`Status`** (exact labels in `docs/LEDGER_SCHEMA.md`), **`Design page`** link, **`Queue Order`**, **`v0 Chat URL`**, etc.
-- **Design Pages** table: `tbliRw7EDiZBOLL2z` (~22 screens); inventory links via **Primary design page**.
+- **Design Pages** table: `tbliRw7EDiZBOLL2z` (~23 screens); inventory links via **Primary design page**.
 - **Secrets:** PAT + `V0_API_KEY` only in **`Automation/.env`** (or secret store), never in base cells.
 
 ## v0 bridge

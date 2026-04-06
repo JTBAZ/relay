@@ -8,17 +8,81 @@ export type PatreonCookieRecord = {
   stored_at: string;
 };
 
+export type CookieSessionLocalStatus = "none" | "ok" | "expired_local";
+
 type CookieStoreData = {
   records: Record<string, PatreonCookieRecord>;
+  /** Set when Patreon returns 401/403 during cookie scrape; cleared on upsert or voluntary delete. */
+  last_remote_rejections?: Record<string, { at: string }>;
+};
+
+export type FilePatreonCookieStoreOptions = {
+  /** Drop stored session after this many days (from `stored_at`). Default 90. */
+  maxAgeDays?: number;
 };
 
 export class FilePatreonCookieStore {
   private readonly filePath: string;
   private readonly encryption: TokenEncryption;
+  private readonly maxAgeMs: number;
 
-  public constructor(filePath: string, encryption: TokenEncryption) {
+  public constructor(
+    filePath: string,
+    encryption: TokenEncryption,
+    options?: FilePatreonCookieStoreOptions
+  ) {
     this.filePath = filePath;
     this.encryption = encryption;
+    const days = options?.maxAgeDays ?? 90;
+    this.maxAgeMs = Math.max(1, days) * 24 * 60 * 60 * 1000;
+  }
+
+  private isExpired(storedAt: string): boolean {
+    const t = Date.parse(storedAt);
+    if (!Number.isFinite(t)) return true;
+    return Date.now() - t > this.maxAgeMs;
+  }
+
+  /**
+   * Whether a row exists and is within TTL. Does not read/decrypt the session id.
+   * Use before `getSessionId` when you need to distinguish expired vs missing.
+   */
+  public async getCookieLocalStatus(creatorId: string): Promise<CookieSessionLocalStatus> {
+    const data = await this.readStore();
+    const record = data.records[creatorId];
+    if (!record) return "none";
+    if (this.isExpired(record.stored_at)) return "expired_local";
+    return "ok";
+  }
+
+  public async hasRemoteRejectionMarker(creatorId: string): Promise<boolean> {
+    const data = await this.readStore();
+    return Boolean(data.last_remote_rejections?.[creatorId]);
+  }
+
+  /** Drop rejection marker only (e.g. stale flag while a valid session exists). */
+  public async clearPatreonRejectedSession(creatorId: string): Promise<void> {
+    const data = await this.readStore();
+    if (!data.last_remote_rejections?.[creatorId]) return;
+    delete data.last_remote_rejections[creatorId];
+    await this.writeStore(data);
+  }
+
+  /** After Patreon rejects the session (401/403). Session row should already be dropped. */
+  public async markPatreonRejectedSession(creatorId: string): Promise<void> {
+    const data = await this.readStore();
+    if (!data.last_remote_rejections) data.last_remote_rejections = {};
+    data.last_remote_rejections[creatorId] = { at: new Date().toISOString() };
+    await this.writeStore(data);
+  }
+
+  /** Remove encrypted session only (e.g. TTL purge, or before setting rejection marker). */
+  public async dropSessionRecord(creatorId: string): Promise<boolean> {
+    const data = await this.readStore();
+    if (!data.records[creatorId]) return false;
+    delete data.records[creatorId];
+    await this.writeStore(data);
+    return true;
   }
 
   public async upsert(creatorId: string, sessionId: string): Promise<void> {
@@ -28,6 +92,9 @@ export class FilePatreonCookieStore {
       encrypted_session_id: this.encryption.encrypt(sessionId),
       stored_at: new Date().toISOString()
     };
+    if (data.last_remote_rejections?.[creatorId]) {
+      delete data.last_remote_rejections[creatorId];
+    }
     await this.writeStore(data);
   }
 
@@ -35,15 +102,24 @@ export class FilePatreonCookieStore {
     const data = await this.readStore();
     const record = data.records[creatorId];
     if (!record) return null;
+    if (this.isExpired(record.stored_at)) {
+      delete data.records[creatorId];
+      await this.writeStore(data);
+      return null;
+    }
     return this.encryption.decrypt(record.encrypted_session_id);
   }
 
+  /** Voluntary removal: session row and any rejection marker. */
   public async remove(creatorId: string): Promise<boolean> {
     const data = await this.readStore();
-    if (!data.records[creatorId]) return false;
+    const had = Boolean(data.records[creatorId] || data.last_remote_rejections?.[creatorId]);
     delete data.records[creatorId];
+    if (data.last_remote_rejections?.[creatorId]) {
+      delete data.last_remote_rejections[creatorId];
+    }
     await this.writeStore(data);
-    return true;
+    return had;
   }
 
   private async readStore(): Promise<CookieStoreData> {

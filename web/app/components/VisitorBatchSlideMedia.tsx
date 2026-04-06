@@ -20,6 +20,11 @@ import {
   VisitorTierGateOverlay,
   type VisitorTierGateOverlayVariant
 } from "@/app/components/visitor/VisitorTierGateOverlay";
+import {
+  VisitorPatronTileEngageCluster,
+  type VisitorPatronTileSnipProps,
+  type VisitorPatronTileStarProps
+} from "@/app/components/visitor/VisitorPatronTileEngage";
 
 function tierChipLabel(
   item: GalleryItem,
@@ -55,6 +60,8 @@ export type VisitorBatchSlideMediaProps = {
   patronMembershipUrl?: string | null;
   accentColor?: string;
   lockedOverlayVariant?: VisitorTierGateOverlayVariant;
+  visitorPatronStar?: VisitorPatronTileStarProps;
+  visitorPatronSnip?: VisitorPatronTileSnipProps;
 };
 
 /**
@@ -73,7 +80,9 @@ export function VisitorBatchSlideMedia({
   tierOrderIds = [],
   patronMembershipUrl = null,
   accentColor = "#00aa6f",
-  lockedOverlayVariant = "blurred"
+  lockedOverlayVariant = "blurred",
+  visitorPatronStar,
+  visitorPatronSnip
 }: VisitorBatchSlideMediaProps) {
   const n = items.length;
   const [carouselIdx, setCarouselIdx] = useState(0);
@@ -338,6 +347,14 @@ export function VisitorBatchSlideMedia({
           />
         </>
       )}
+
+      <VisitorPatronTileEngageCluster
+        postId={current.post_id}
+        currentMediaId={current.media_id}
+        visitorPatronStar={visitorPatronStar}
+        visitorPatronSnip={visitorPatronSnip}
+        className="absolute bottom-2 right-2 z-[25]"
+      />
     </div>
   );
 }

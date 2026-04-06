@@ -46,6 +46,24 @@ function oauthLine(oauth: PatreonOAuthHealthData): { className: string; text: st
   return { className: "text-[var(--lib-success)]", text: "OAuth healthy." };
 }
 
+function cookieSessionLine(
+  s: PatreonSyncStateData
+): { className: string; text: string } | null {
+  if (s.cookie_session_status === "expired_local") {
+    return {
+      className: "text-[var(--lib-warning)]",
+      text: "Session key expired — re-enter to restore full media sync."
+    };
+  }
+  if (s.cookie_session_status === "rejected_remote") {
+    return {
+      className: "text-[var(--lib-destructive)]",
+      text: "Session key was rejected by Patreon and removed. Re-enter to restore."
+    };
+  }
+  return null;
+}
+
 export default function PatreonSyncMenu({
   creatorId,
   campaignId,
@@ -196,6 +214,21 @@ export default function PatreonSyncMenu({
                   <p className="mt-0.5 text-[10px] text-[var(--lib-fg-muted)]">
                     Token expires {fmtIso(state.oauth.access_token_expires_at)}
                   </p>
+                  {(() => {
+                    const line = cookieSessionLine(state);
+                    if (!line) return null;
+                    return (
+                      <p className={`mt-2 text-xs font-medium ${line.className}`}>
+                        {line.text}{" "}
+                        <Link
+                          href="/creator/connect"
+                          className="font-normal text-[var(--lib-primary)] underline-offset-2 hover:underline"
+                        >
+                          Creator Connect
+                        </Link>
+                      </p>
+                    );
+                  })()}
                   <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[11px]">
                     <Link
                       href="/patreon/connect"

@@ -33,7 +33,7 @@ Existing planning tables are unchanged: **UI Planning - Inventory**, **UI Planni
 
 ### Design-only webpage list (v0 / visual scope)
 
-- **UI Planning — Design Pages** (`tbliRw7EDiZBOLL2z`): **22 screens** (e.g. Login, Settings & account, Creator library), each with **Roadmap Rank**, **Audience**, and **Design notes** (aesthetic intent only).
+- **UI Planning — Design Pages** (`tbliRw7EDiZBOLL2z`): **23 screens** (e.g. Front page, Login, Settings & account, Creator library), each with **Roadmap Rank**, **Audience**, and **Design notes** (aesthetic intent only).
 - **UI Planning — Inventory** now has **Primary design page** (link): every feature row maps to the screen it primarily skins. See [`docs/DESIGN_PAGES.md`](docs/DESIGN_PAGES.md).
 
 ## Doc index

@@ -1427,6 +1427,7 @@ export default function VisitorGalleryView() {
             tierFacets={facets?.tiers ?? []}
             membershipUrl={mergedProfile.patreonProfileHref}
             accentColor={pageLayout.theme.accent_color?.trim() || "#00aa6f"}
+            patronEngagement={visitorEngagement}
           />
         ) : loading ? (
           <p className="text-sm text-[var(--lib-fg-muted)]">Loading gallery…</p>

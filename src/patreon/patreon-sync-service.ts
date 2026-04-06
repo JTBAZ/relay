@@ -5,7 +5,7 @@ import type { IngestService } from "../ingest/ingest-service.js";
 import { SyncWatermarkStore } from "../ingest/sync-watermark-store.js";
 import type { ApplyBatchResult, IngestPost, SyncBatchInput } from "../ingest/types.js";
 import type { FilePatreonTokenStore, PersistedPatreonTokens } from "../auth/token-store.js";
-import { scrapeByCookie } from "./cookie-scraper.js";
+import { CookieSessionExpiredError, scrapeByCookie } from "./cookie-scraper.js";
 import {
   CreatorCampaignDisplayStore,
   type CampaignDisplaySnapshot
@@ -264,6 +264,8 @@ export type PatreonSyncState = {
   /** Wall time when the watermark row was last written. */
   watermark_updated_at: string | null;
   has_cookie_session: boolean;
+  /** Cookie session key lifecycle for UI (OAuth unaffected). */
+  cookie_session_status?: "ok" | "expired_local" | "rejected_remote";
   /** Newest `published_at` on the first OAuth posts page (only when `probe_upstream`). */
   upstream_newest_published_at?: string | null;
   /** True when a watermark exists and upstream has a strictly newer post (probe only). */
@@ -349,7 +351,13 @@ export class PatreonSyncService {
     }
 
     const row = await this.watermarkStore.getRow(creatorId, patreonCampaignId);
-    const sessionId = await this.cookieStore.getSessionId(creatorId);
+    const cookieLocal = await this.cookieStore.getCookieLocalStatus(creatorId);
+    if (cookieLocal === "expired_local") {
+      await this.cookieStore.dropSessionRecord(creatorId);
+    }
+    const sessionId =
+      cookieLocal === "ok" ? await this.cookieStore.getSessionId(creatorId) : null;
+    const remoteRejection = await this.cookieStore.hasRemoteRejectionMarker(creatorId);
     const oauth = buildOauthHealthSnapshot(cred);
     const healthRow = this.syncHealthStore
       ? await this.syncHealthStore.getForCreator(creatorId)
@@ -358,12 +366,26 @@ export class PatreonSyncService {
       ? await this.campaignDisplayStore.get(creatorId)
       : null;
 
+    const hasCookie = Boolean(sessionId?.trim());
+    if (hasCookie && remoteRejection) {
+      await this.cookieStore.clearPatreonRejectedSession(creatorId);
+    }
+    let cookie_session_status: PatreonSyncState["cookie_session_status"];
+    if (hasCookie) {
+      cookie_session_status = "ok";
+    } else if (cookieLocal === "expired_local") {
+      cookie_session_status = "expired_local";
+    } else if (remoteRejection) {
+      cookie_session_status = "rejected_remote";
+    }
+
     const base: PatreonSyncState = {
       creator_id: creatorId,
       patreon_campaign_id: patreonCampaignId,
       watermark_published_at: row?.last_synced_at ?? null,
       watermark_updated_at: row?.updated_at ?? null,
-      has_cookie_session: Boolean(sessionId?.trim()),
+      has_cookie_session: hasCookie,
+      ...(cookie_session_status ? { cookie_session_status } : {}),
       oauth,
       last_post_scrape: healthRow?.last_post_scrape ?? null,
       last_member_sync: healthRow?.last_member_sync ?? null,
@@ -393,6 +415,80 @@ export class PatreonSyncService {
       upstream_newest_published_at: upstreamNewest,
       likely_has_newer_posts: likely
     };
+  }
+
+  private async collectPostsViaOAuthOnly(opts: {
+    fetchOpts: PatreonFetchOptions;
+    patreonCampaignId: string;
+    maxPages: number;
+    stopBeforePublishedAt: string | null | undefined;
+    warnings: string[];
+    oauthFallback: "no_cookie" | "ttl_expired" | "cookie_rejected";
+  }): Promise<{ posts: IngestPost[]; pages: number }> {
+    const {
+      fetchOpts,
+      patreonCampaignId,
+      maxPages,
+      stopBeforePublishedAt,
+      warnings,
+      oauthFallback
+    } = opts;
+    const posts: IngestPost[] = [];
+    let pages = 0;
+    let nextUrl: string | null | undefined = null;
+    let reachedStopBefore = false;
+    do {
+      const doc = await fetchPostsPage(fetchOpts, patreonCampaignId, nextUrl);
+      pages += 1;
+      const pagePosts = asDataArray(doc.data).filter((r) => r.type === "post");
+      for (const r of pagePosts) {
+        const p = mapPatreonPostToIngest(r);
+        if (stopBeforePublishedAt && p.published_at <= stopBeforePublishedAt) {
+          reachedStopBefore = true;
+          break;
+        }
+        posts.push(p);
+        if (!p.description || p.tier_ids.length === 0) {
+          warnings.push(diagnosePostResource(r));
+        }
+        if (p.media.length === 0) {
+          const contentSnippet = typeof r.attributes?.content === "string"
+            ? r.attributes.content.slice(0, 200)
+            : String(r.attributes?.content ?? "(null)");
+          warnings.push(
+            `Post "${p.title}" (${p.post_id}): 0 media. ` +
+              `embed_url=${String(r.attributes?.embed_url ?? "(null)")}; ` +
+              `embed_data=${JSON.stringify(r.attributes?.embed_data ?? null).slice(0, 150)}; ` +
+              `content[0:200]=${contentSnippet}`
+          );
+        }
+      }
+      if (reachedStopBefore) {
+        nextUrl = undefined;
+        break;
+      }
+      nextUrl = doc.links?.next ?? undefined;
+      if (!nextUrl) {
+        const cursor = doc.meta?.pagination?.cursors?.next;
+        if (cursor) {
+          nextUrl =
+            postsPageUrl(patreonCampaignId) + `&page%5Bcursor%5D=${encodeURIComponent(cursor)}`;
+        }
+      }
+    } while (nextUrl && pages < maxPages);
+
+    if (oauthFallback === "no_cookie") {
+      warnings.push(
+        "No session cookie stored. Using OAuth API only (post images/attachments unavailable). " +
+          "POST /api/v1/patreon/cookie with your session_id to enable media scraping."
+      );
+    } else if (oauthFallback === "ttl_expired") {
+      warnings.push(
+        "Session key exceeded maximum storage age and was removed. Using OAuth API only (post images/attachments unavailable) until you re-enter your session key."
+      );
+    }
+
+    return { posts, pages };
   }
 
   public async scrapeOrSync(
@@ -453,15 +549,23 @@ export class PatreonSyncService {
     // for campaigns where all posts pre-date the last watermark.
     const stopBeforePublishedAt = options.force_refresh_post_access ? undefined : watermark;
 
-    const sessionId = await this.cookieStore.getSessionId(creatorId);
-    let posts: IngestPost[];
-    let pages: number;
-    let mediaSource: "cookie" | "oauth";
+    const cookieLocal = await this.cookieStore.getCookieLocalStatus(creatorId);
+    if (cookieLocal === "expired_local") {
+      await this.cookieStore.dropSessionRecord(creatorId);
+    }
+    const sessionId =
+      cookieLocal === "ok" ? await this.cookieStore.getSessionId(creatorId) : null;
+
+    let posts: IngestPost[] = [];
+    let pages = 0;
+    let mediaSource: "cookie" | "oauth" = "oauth";
     let perPostOAuth: PerPostOAuthStats = {
       targets: 0,
       filledBody: 0,
       filledTiers: 0
     };
+    let usedCookiePath = false;
+    let patreonRejectedCookie = false;
 
     // Cookie scrape tier/access pipeline (OAuth wins when both paths run):
     // 1) Cookie post list — tier_ids / is_paid often unreliable for creators.
@@ -469,74 +573,55 @@ export class PatreonSyncService {
     // 3) enrichTiersFromCampaignPostsList — runs for cookie and OAuth-only paths (same normalization).
     // 4) buildSyncBatchFromParts → IngestService.runBatch → enrichBatch (expand relay_tier_all_patrons).
     if (sessionId) {
-      const cookieResult = await scrapeByCookie({
-        sessionId,
-        campaignId: patreonCampaignId,
-        maxPages,
-        stopBeforePublishedAt: stopBeforePublishedAt ?? undefined,
-        fetchImpl: this.fetchImpl
-      });
-      posts = cookieResult.posts;
-      pages = cookieResult.pages_fetched;
-      mediaSource = "cookie";
-      warnings.push(...cookieResult.warnings);
-      if (posts.length > 0) {
-        const totalMedia = posts.reduce((n, p) => n + p.media.length, 0);
-        warnings.push(
-          `Cookie scrape: ${posts.length} posts, ${totalMedia} media items.`
-        );
+      try {
+        const cookieResult = await scrapeByCookie({
+          sessionId,
+          campaignId: patreonCampaignId,
+          maxPages,
+          stopBeforePublishedAt: stopBeforePublishedAt ?? undefined,
+          fetchImpl: this.fetchImpl
+        });
+        posts = cookieResult.posts;
+        pages = cookieResult.pages_fetched;
+        mediaSource = "cookie";
+        usedCookiePath = true;
+        warnings.push(...cookieResult.warnings);
+        if (posts.length > 0) {
+          const totalMedia = posts.reduce((n, p) => n + p.media.length, 0);
+          warnings.push(`Cookie scrape: ${posts.length} posts, ${totalMedia} media items.`);
+        }
+        perPostOAuth = await enrichPostsFromOAuth(posts, fetchOpts, warnings);
+      } catch (e) {
+        if (e instanceof CookieSessionExpiredError) {
+          await this.cookieStore.dropSessionRecord(creatorId);
+          await this.cookieStore.markPatreonRejectedSession(creatorId);
+          patreonRejectedCookie = true;
+          warnings.push(
+            "Session key rejected by Patreon — removed. Falling back to OAuth-only sync."
+          );
+        } else {
+          throw e;
+        }
       }
-      perPostOAuth = await enrichPostsFromOAuth(posts, fetchOpts, warnings);
-    } else {
-      posts = [];
-      pages = 0;
+    }
+
+    if (!usedCookiePath) {
+      const oauthFallback = patreonRejectedCookie
+        ? "cookie_rejected"
+        : cookieLocal === "expired_local"
+          ? "ttl_expired"
+          : "no_cookie";
+      const o = await this.collectPostsViaOAuthOnly({
+        fetchOpts,
+        patreonCampaignId,
+        maxPages,
+        stopBeforePublishedAt,
+        warnings,
+        oauthFallback
+      });
+      posts = o.posts;
+      pages = o.pages;
       mediaSource = "oauth";
-
-      let nextUrl: string | null | undefined = null;
-      let reachedStopBefore = false;
-      do {
-        const doc = await fetchPostsPage(fetchOpts, patreonCampaignId, nextUrl);
-        pages += 1;
-        const pagePosts = asDataArray(doc.data).filter((r) => r.type === "post");
-        for (const r of pagePosts) {
-          const p = mapPatreonPostToIngest(r);
-          if (stopBeforePublishedAt && p.published_at <= stopBeforePublishedAt) {
-            reachedStopBefore = true;
-            break;
-          }
-          posts.push(p);
-          if (!p.description || p.tier_ids.length === 0) {
-            warnings.push(diagnosePostResource(r));
-          }
-          if (p.media.length === 0) {
-            const contentSnippet = typeof r.attributes?.content === "string"
-              ? r.attributes.content.slice(0, 200)
-              : String(r.attributes?.content ?? "(null)");
-            warnings.push(
-              `Post "${p.title}" (${p.post_id}): 0 media. ` +
-              `embed_url=${String(r.attributes?.embed_url ?? "(null)")}; ` +
-              `embed_data=${JSON.stringify(r.attributes?.embed_data ?? null).slice(0, 150)}; ` +
-              `content[0:200]=${contentSnippet}`
-            );
-          }
-        }
-        if (reachedStopBefore) {
-          nextUrl = undefined;
-          break;
-        }
-        nextUrl = doc.links?.next ?? undefined;
-        if (!nextUrl) {
-          const cursor = doc.meta?.pagination?.cursors?.next;
-          if (cursor) {
-            nextUrl = postsPageUrl(patreonCampaignId) + `&page%5Bcursor%5D=${encodeURIComponent(cursor)}`;
-          }
-        }
-      } while (nextUrl && pages < maxPages);
-
-      warnings.push(
-        "No session cookie stored. Using OAuth API only (post images/attachments unavailable). " +
-        "POST /api/v1/patreon/cookie with your session_id to enable media scraping."
-      );
     }
 
     let listStats: OAuthListTierStats = {

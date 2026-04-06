@@ -622,6 +622,7 @@ export type PatreonSyncStateData = {
   watermark_published_at: string | null;
   watermark_updated_at: string | null;
   has_cookie_session: boolean;
+  cookie_session_status?: "ok" | "expired_local" | "rejected_remote";
   upstream_newest_published_at?: string | null;
   likely_has_newer_posts?: boolean;
   oauth: PatreonOAuthHealthData;
@@ -634,6 +635,8 @@ export type PatreonSyncStateData = {
 export function syncStateNeedsAttention(s: PatreonSyncStateData): boolean {
   if (s.oauth.credential_health_status === "refresh_failed") return true;
   if (s.oauth.access_token_expired) return true;
+  if (s.cookie_session_status === "expired_local") return true;
+  if (s.cookie_session_status === "rejected_remote") return true;
   if (s.last_post_scrape && !s.last_post_scrape.ok) return true;
   if (s.last_member_sync && !s.last_member_sync.ok) return true;
   return false;
@@ -646,6 +649,12 @@ export function formatSyncHealthBanner(s: PatreonSyncStateData): string | null {
   }
   if (s.oauth.credential_health_status === "refresh_failed") {
     return "Patreon token refresh failed — reconnect your creator account.";
+  }
+  if (s.cookie_session_status === "rejected_remote") {
+    return "Patreon session key was rejected — re-enter it on Creator Connect.";
+  }
+  if (s.cookie_session_status === "expired_local") {
+    return "Patreon session key expired — re-enter it on Creator Connect.";
   }
   if (s.last_post_scrape && !s.last_post_scrape.ok && s.last_post_scrape.error?.hint) {
     return s.last_post_scrape.error.hint;

@@ -20,6 +20,11 @@ import {
   VisitorTierGateOverlay,
   type VisitorTierGateOverlayVariant
 } from "@/app/components/visitor/VisitorTierGateOverlay";
+import {
+  VisitorPatronTileEngageCluster,
+  visitorPatronStarSnipFromEngagement,
+  type VisitorPatronEngagementCallbacks
+} from "@/app/components/visitor/VisitorPatronTileEngage";
 
 type Props = {
   layout: PageLayout;
@@ -36,6 +41,8 @@ type Props = {
   /** Site accent (matches designer); falls back in caller */
   accentColor?: string;
   lockedOverlayVariant?: VisitorTierGateOverlayVariant;
+  /** Visitor star (whole post) + snip (visible slide’s media); omit in designer-only contexts */
+  patronEngagement?: VisitorPatronEngagementCallbacks;
 };
 
 function tierBadgeLabel(
@@ -63,6 +70,7 @@ function SectionGroupTile({
   membershipUrl,
   accentColor,
   lockedOverlayVariant,
+  patronEngagement,
   imgClass = "aspect-square",
 }: {
   items: GalleryItem[];
@@ -74,6 +82,7 @@ function SectionGroupTile({
   membershipUrl?: string | null;
   accentColor: string;
   lockedOverlayVariant: VisitorTierGateOverlayVariant;
+  patronEngagement?: VisitorPatronEngagementCallbacks;
   imgClass?: string;
 }) {
   const n = items.length;
@@ -102,6 +111,10 @@ function SectionGroupTile({
     }
   }, [soloHovered, soloVideo, solo.media_id]);
 
+  const engage = patronEngagement
+    ? visitorPatronStarSnipFromEngagement(primary.post_id, patronEngagement)
+    : null;
+
   return (
     <div className="group relative overflow-hidden rounded-lg bg-current/[0.06] motion-safe:transition-[transform,box-shadow] motion-safe:duration-300 motion-safe:ease-out hover:z-[1] hover:-translate-y-0.5 hover:shadow-[0_12px_40px_-12px_rgba(0,0,0,0.55)]">
       {hasMulti ? (
@@ -117,7 +130,9 @@ function SectionGroupTile({
           patronMembershipUrl={membershipUrl}
           accentColor={accentColor}
           lockedOverlayVariant={lockedOverlayVariant}
-          onActivateItem={(item, _assetIndex) => onOpenItem(item)}
+          visitorPatronStar={engage?.visitorPatronStar}
+          visitorPatronSnip={engage?.visitorPatronSnip}
+          onActivateItem={(item) => onOpenItem(item)}
         />
       ) : (
         <div
@@ -176,6 +191,15 @@ function SectionGroupTile({
               {solo.title}
             </p>
           </div>
+          {engage ? (
+            <VisitorPatronTileEngageCluster
+              postId={solo.post_id}
+              currentMediaId={solo.media_id}
+              visitorPatronStar={engage.visitorPatronStar}
+              visitorPatronSnip={engage.visitorPatronSnip}
+              className="absolute bottom-2 right-2 z-[25]"
+            />
+          ) : null}
           <button
             type="button"
             onClick={() => onOpenItem(solo)}
@@ -261,7 +285,8 @@ export default function PatronLayoutSections({
   tierFacets,
   membershipUrl = null,
   accentColor = "#00aa6f",
-  lockedOverlayVariant = "blurred"
+  lockedOverlayVariant = "blurred",
+  patronEngagement
 }: Props) {
   const showTierBadges = layout.theme.show_tier_badges ?? true;
   const arrMode = layout.theme.gallery_arrangement ?? "chronological";
@@ -280,7 +305,8 @@ export default function PatronLayoutSections({
     tierOrderIds,
     membershipUrl,
     accentColor,
-    lockedOverlayVariant
+    lockedOverlayVariant,
+    patronEngagement
   };
 
   return (

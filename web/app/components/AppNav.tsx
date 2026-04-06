@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 const baseNavItems = [
+  { href: "/landing", label: "Landing Page" },
   { href: "/", label: "Library" },
   { href: "/visitor", label: "Gallery" },
   { href: "/visitor/favorites", label: "Saved" },
@@ -20,19 +21,32 @@ export default function AppNav() {
   const pathname = usePathname();
   /** Library home + subscriber surfaces + dev bench share cool green chrome (design ledger: Relay shell). */
   const primaryShell =
-    pathname === "/" || pathname.startsWith("/visitor") || pathname.startsWith("/dev/bench");
+    pathname === "/" ||
+    pathname.startsWith("/visitor") ||
+    pathname.startsWith("/dev/bench");
 
-  /* Library / visitor: match `.library-shell` feel; designer keeps warm studio tokens. */
+  /* Marketing landing + creator onboarding: match v0 canvas (#0A0A0A). */
+  const landingShell =
+    pathname === "/landing" ||
+    pathname.startsWith("/landing/") ||
+    pathname === "/creator/connect" ||
+    pathname.startsWith("/creator/connect/");
   const bar = primaryShell
     ? "border-b border-[oklch(0.22_0.008_160)] bg-[oklch(0.16_0.008_160)]"
-    : "border-b border-[#3d342b] bg-[#0d0a08]";
+    : landingShell
+      ? "border-b border-[#2a2a2a] bg-[#0a0a0a]"
+      : "border-b border-[#3d342b] bg-[#0d0a08]";
   const brand = primaryShell ? "text-[#c5b358]" : "text-[#e8a077]";
   const linkActive = primaryShell
     ? "border-[#00aa6f] text-[oklch(0.92_0.008_160)]"
-    : "border-[#c45c2d] text-[#f0e6d8]";
+    : landingShell
+      ? "border-[#2d6a4f] text-[#f9fafb]"
+      : "border-[#c45c2d] text-[#f0e6d8]";
   const linkIdle = primaryShell
     ? "border-transparent text-[oklch(0.55_0.008_160)] hover:text-[oklch(0.92_0.008_160)]"
-    : "border-transparent text-[#8a7f72] hover:text-[#c9bfb3]";
+    : landingShell
+      ? "border-transparent text-[#6b7280] hover:text-[#f9fafb]"
+      : "border-transparent text-[#8a7f72] hover:text-[#c9bfb3]";
 
   return (
     <nav
@@ -45,11 +59,16 @@ export default function AppNav() {
         const isActive =
           item.href === "/"
             ? pathname === "/"
-            : item.href === "/visitor"
-              ? pathname === "/visitor" || pathname === "/visitor/"
-              : item.href === "/dev/bench"
-                ? pathname === "/dev/bench" || pathname.startsWith("/dev/bench/")
-                : pathname.startsWith(item.href);
+            : item.href === "/landing"
+              ? pathname === "/landing" ||
+                pathname.startsWith("/landing/") ||
+                pathname === "/creator/connect" ||
+                pathname.startsWith("/creator/connect/")
+              : item.href === "/visitor"
+                ? pathname === "/visitor" || pathname === "/visitor/"
+                : item.href === "/dev/bench"
+                  ? pathname === "/dev/bench" || pathname.startsWith("/dev/bench/")
+                  : pathname.startsWith(item.href);
         return (
           <Link
             key={item.href}

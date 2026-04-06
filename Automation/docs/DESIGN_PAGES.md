@@ -7,30 +7,31 @@ Feature-level rows stay in **UI Planning — Inventory**. Screen-level rows for 
 - Sort **Design Pages** by **Roadmap Rank** for design sprints.
 - From **Inventory**, use **Primary design page** to see which screen skin a feature belongs to (many inventory rows → one page).
 
-## The 22 pages (names only)
+## The 23 pages (names only)
 
-1. App shell & navigation  
-2. Onboarding  
-3. Login  
-4. Creator library (home)  
-5. Collections  
-6. Asset detail  
-7. Site designer  
-8. Publish review  
-9. Live public site  
-10. Settings & account  
-11. Patreon & data sync  
-12. Billing & usage  
-13. Analytics dashboard  
-14. Action center  
-15. Migration hub  
-16. Patron — Home (feed)  
-17. Patron — Discover  
-18. Patron — Profile  
-19. Legal center  
-20. Help, safety & preferences  
-21. Error & maintenance states  
-22. Service status  
+1. Front page  
+2. App shell & navigation  
+3. Onboarding  
+4. Login  
+5. Creator library (home)  
+6. Collections  
+7. Asset detail  
+8. Site designer  
+9. Publish review  
+10. Live public site  
+11. Settings & account  
+12. Patreon & data sync  
+13. Billing & usage  
+14. Analytics dashboard  
+15. Action center  
+16. Migration hub  
+17. Patron — Home (feed)  
+18. Patron — Discover  
+19. Patron — Profile  
+20. Legal center  
+21. Help, safety & preferences  
+22. Error & maintenance states  
+23. Service status  
 
 ## What was excluded on purpose
 

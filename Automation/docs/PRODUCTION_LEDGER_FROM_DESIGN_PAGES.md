@@ -11,7 +11,7 @@ Each row in **UI Planning — Design Pages** now has a matching row in **Product
 | **Design page** | Link to the authoritative Design Pages record |
 | **UI Element** | All Inventory rows linked from that design page (IA / density hints only) |
 | **Queue Order** | `Roadmap Rank × 10` from Design Pages (gaps for insertions) |
-| **Effective Complexity** | Heuristic 3–10 by position in the 22-page sequence (later pages tend lower unless you override) |
+| **Effective Complexity** | Heuristic 3–10 by position in the 23-page sequence (later pages tend lower unless you override) |
 | **Status** | `Queued` |
 | **Recommended v0 Model** | `Use plan default` |
 | **Prompt Draft** | Attended-automation **core instructions** (status flow, v0 handoff, Cursor return) + **visual-only scope** + Design page notes + IA bullets + deliverable |
