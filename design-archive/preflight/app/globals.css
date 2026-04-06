@@ -1,0 +1,165 @@
+@import 'tailwindcss';
+@import 'tw-animate-css';
+
+@custom-variant dark (&:is(.dark *));
+
+/* Relay dark-first visual system */
+:root {
+  /* Relay neutrals */
+  --relay-bg:        #0A0A0A;
+  --relay-surface-1: #111111;
+  --relay-surface-2: #1A1A1A;
+  --relay-surface-3: #202020;
+  --relay-border:    #2A2A2A;
+  --relay-border-hi: #333333;
+
+  /* Relay greens (cold forest) */
+  --relay-green-950: #0D1F17;
+  --relay-green-800: #1B4332;
+  --relay-green-600: #2D6A4F;
+  --relay-green-400: #40916C;
+  --relay-green-200: #74C69D;
+
+  /* Relay gold (mark/logo only) */
+  --relay-gold-500:  #C5B358;
+  --relay-gold-400:  #D4AF37;
+
+  /* Relay text */
+  --relay-fg:        #F9FAFB;
+  --relay-fg-muted:  #9CA3AF;
+  --relay-fg-subtle: #6B7280;
+
+  /* Severity */
+  --relay-blocker:       #EF4444;
+  --relay-blocker-bg:    #1F0808;
+  --relay-blocker-border:#7F1D1D;
+  --relay-warning:       #F59E0B;
+  --relay-warning-bg:    #1A1200;
+  --relay-warning-border:#92400E;
+  --relay-pass:          #34D399;
+  --relay-pass-bg:       #021F14;
+  --relay-pass-border:   #065F46;
+  --relay-info:          #60A5FA;
+  --relay-info-bg:       #0A1628;
+  --relay-info-border:   #1E3A5F;
+
+  /* Shadcn token map — always dark */
+  --background:              var(--relay-bg);
+  --foreground:              var(--relay-fg);
+  --card:                    var(--relay-surface-2);
+  --card-foreground:         var(--relay-fg);
+  --popover:                 var(--relay-surface-2);
+  --popover-foreground:      var(--relay-fg);
+  --primary:                 var(--relay-green-600);
+  --primary-foreground:      #FFFFFF;
+  --secondary:               var(--relay-surface-3);
+  --secondary-foreground:    var(--relay-fg);
+  --muted:                   var(--relay-surface-1);
+  --muted-foreground:        var(--relay-fg-muted);
+  --accent:                  var(--relay-green-950);
+  --accent-foreground:       var(--relay-green-200);
+  --destructive:             var(--relay-blocker);
+  --destructive-foreground:  #FFFFFF;
+  --border:                  var(--relay-border);
+  --input:                   var(--relay-surface-2);
+  --ring:                    var(--relay-green-600);
+  --radius:                  0.5rem;
+
+  /* Charts */
+  --chart-1: var(--relay-green-400);
+  --chart-2: var(--relay-warning);
+  --chart-3: var(--relay-blocker);
+  --chart-4: var(--relay-info);
+  --chart-5: var(--relay-gold-500);
+
+  /* Sidebar */
+  --sidebar:                    var(--relay-surface-1);
+  --sidebar-foreground:         var(--relay-fg);
+  --sidebar-primary:            var(--relay-green-600);
+  --sidebar-primary-foreground: #FFFFFF;
+  --sidebar-accent:             var(--relay-surface-2);
+  --sidebar-accent-foreground:  var(--relay-fg);
+  --sidebar-border:             var(--relay-border);
+  --sidebar-ring:               var(--relay-green-600);
+}
+
+/* Relay is dark-first — dark class mirrors :root */
+.dark {
+  --background:              var(--relay-bg);
+  --foreground:              var(--relay-fg);
+  --card:                    var(--relay-surface-2);
+  --card-foreground:         var(--relay-fg);
+  --popover:                 var(--relay-surface-2);
+  --popover-foreground:      var(--relay-fg);
+  --primary:                 var(--relay-green-600);
+  --primary-foreground:      #FFFFFF;
+  --secondary:               var(--relay-surface-3);
+  --secondary-foreground:    var(--relay-fg);
+  --muted:                   var(--relay-surface-1);
+  --muted-foreground:        var(--relay-fg-muted);
+  --accent:                  var(--relay-green-950);
+  --accent-foreground:       var(--relay-green-200);
+  --destructive:             var(--relay-blocker);
+  --destructive-foreground:  #FFFFFF;
+  --border:                  var(--relay-border);
+  --input:                   var(--relay-surface-2);
+  --ring:                    var(--relay-green-600);
+  --sidebar:                    var(--relay-surface-1);
+  --sidebar-foreground:         var(--relay-fg);
+  --sidebar-primary:            var(--relay-green-600);
+  --sidebar-primary-foreground: #FFFFFF;
+  --sidebar-accent:             var(--relay-surface-2);
+  --sidebar-accent-foreground:  var(--relay-fg);
+  --sidebar-border:             var(--relay-border);
+  --sidebar-ring:               var(--relay-green-600);
+}
+
+@theme inline {
+  --font-sans: 'Geist', 'Geist Fallback';
+  --font-mono: 'Geist Mono', 'Geist Mono Fallback';
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+}

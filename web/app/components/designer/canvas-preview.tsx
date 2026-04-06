@@ -41,11 +41,7 @@ import {
   type PageLayout as ApiPageLayout,
   type Collection as ApiCollection,
 } from "@/lib/relay-api";
-import {
-  nextPaidTierAfterRank,
-  isFreePublicAccessTier,
-  RELAY_TIER_ALL_PATRONS,
-} from "@/lib/tier-access";
+import { nextPaidTierAfterRank } from "@/lib/tier-access";
 import { designerPageLayoutToApi } from "@/lib/designer-layout-bridge";
 import { sortGalleryItemsForArrangement } from "@/lib/gallery-item-sort";
 import {
@@ -105,15 +101,21 @@ function TierBadge({
   /** Creator tier title from Library facets when available */
   labelOverride?: string | null;
 }) {
-  if (!showBadges || tier === "public") return null;
-  const text = labelOverride?.trim() || TIER_LABEL[tier];
+  if (!showBadges) return null;
+  const label = labelOverride?.trim();
+  // "public" means no paid tier matched in facets — skip chip unless we have a concrete title
+  // (defense in depth if band mapping ever disagrees with `designerBadgeTitleFromFacets`).
+  if (tier === "public" && !label) return null;
+  const text = label || TIER_LABEL[tier];
+  const colorTier: TierKey = tier === "public" && label ? "supporter" : tier;
+  const stroke = TIER_COLOR[colorTier];
   return (
     <span
-      className="absolute top-2 right-2 text-xs px-1.5 py-0.5 rounded-full font-medium"
+      className="absolute top-2 right-2 z-[5] text-xs px-1.5 py-0.5 rounded-full font-medium"
       style={{
         background: "rgba(0,0,0,0.72)",
-        color: TIER_COLOR[tier],
-        border: `1px solid ${TIER_COLOR[tier]}`,
+        color: stroke,
+        border: `1px solid ${stroke}`,
         fontSize: "0.65rem",
       }}
     >
@@ -1039,15 +1041,12 @@ function HeroPreview({
   radius,
   fonts,
   patreonSlug,
-  heroMembershipTiers,
 }: {
   layout: PageLayout;
   radius: string;
   fonts: { heading: string; body: string };
   /** Lowercase Patreon vanity from campaign sync — shown when Show Patreon is on */
   patreonSlug: string | null;
-  /** Paid campaign tiers for decorative hero row (mirrors visitor profile) */
-  heroMembershipTiers: { id: string; title: string }[];
 }) {
   const { hero, theme, displayName, bio, avatarUrl } = layout;
   const slug = patreonSlug?.trim().toLowerCase() || null;
@@ -1153,24 +1152,6 @@ function HeroPreview({
           ) : null}
           {!belowAvatar && showPatreon ? patreonEl : null}
         </div>
-        {theme.showTierBadges && heroMembershipTiers.length > 0 ? (
-          <div className="flex max-w-lg flex-wrap justify-center gap-1.5">
-            {heroMembershipTiers.map((t) => (
-              <span
-                key={t.id}
-                className="rounded-full border px-2.5 py-0.5 text-[10px] font-medium"
-                style={{
-                  borderColor: "rgba(255,255,255,0.14)",
-                  background: "rgba(0,0,0,0.35)",
-                  color: "rgba(249,250,251,0.78)",
-                  fontFamily: fonts.body,
-                }}
-              >
-                {t.title}
-              </span>
-            ))}
-          </div>
-        ) : null}
       </div>
     </div>
   );
@@ -1458,18 +1439,6 @@ export function CanvasPreview({
     return out;
   }, [sectionItems, layout.theme.galleryArrangement, tierOrderIds]);
 
-  const heroMembershipTiers = useMemo(() => {
-    const tiers = facets?.tiers;
-    if (!tiers?.length) return [];
-    return [...tiers]
-      .filter(
-        (t) => !isFreePublicAccessTier(t) && t.tier_id !== RELAY_TIER_ALL_PATRONS
-      )
-      .sort((a, b) => (a.amount_cents ?? 0) - (b.amount_cents ?? 0))
-      .map((t) => ({ id: t.tier_id, title: t.title.trim() }))
-      .filter((x) => x.title.length > 0);
-  }, [facets?.tiers]);
-
   const bp = BREAKPOINTS.find((b) => b.key === breakpoint)!;
   const visibleSections = layout.sections.filter((s) => s.visible);
   const radius = RADIUS_MAP[layout.theme.radius] ?? "8px";
@@ -1621,7 +1590,6 @@ export function CanvasPreview({
               radius="0px"
               fonts={fonts}
               patreonSlug={patreonSlug}
-              heroMembershipTiers={heroMembershipTiers}
             />
 
             {/* Patron upgrade nudge — hidden when there is no higher paid tier to pitch */}

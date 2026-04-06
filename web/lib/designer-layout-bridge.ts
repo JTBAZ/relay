@@ -48,6 +48,7 @@ function themeAccentFromApi(scheme: ApiPageLayout["theme"]["color_scheme"]): The
 export function designerSectionLayoutToApiMode(layout: SectionLayout): LayoutMode {
   if (layout === "list") return "list";
   if (layout === "masonry") return "masonry";
+  if (layout === "featured") return "featured";
   return "grid";
 }
 
@@ -69,11 +70,16 @@ export function apiPageLayoutToDesigner(
   const avatarUrl = visitorHero?.avatar_url?.trim();
   const displayFromHero =
     visitorHero?.relay_display_name?.trim() || visitorHero?.patreon_name?.trim() || "";
-  const coverUrl = coverId
-    ? exportHeroCoverUrl(creatorId, coverId)
-    : bannerUrl
-      ? bannerUrl
-      : "";
+  const useCover =
+    typeof hero?.show_cover === "boolean"
+      ? hero.show_cover
+      : Boolean(coverId || bannerUrl);
+  const coverUrl =
+    useCover && coverId
+      ? exportHeroCoverUrl(creatorId, coverId)
+      : useCover && bannerUrl
+        ? bannerUrl
+        : "";
   const fallbackCollectionId = collections[0]?.collection_id ?? "";
 
   const librarySections: LibrarySection[] = sorted.map((sec) => {
@@ -89,6 +95,7 @@ export function apiPageLayoutToDesigner(
     let layout: SectionLayout = "grid";
     if (sec.layout === "masonry") layout = "masonry";
     else if (sec.layout === "list") layout = "list";
+    else if (sec.layout === "featured") layout = "featured";
 
     const gc = sec.columns;
     const gridColumns: 2 | 3 | 4 | undefined =
@@ -109,7 +116,6 @@ export function apiPageLayoutToDesigner(
 
   const headline = hero?.title?.trim() || displayFromHero || "Gallery";
   const useAvatar = Boolean(avatarUrl);
-  const useCover = Boolean(coverId || bannerUrl);
 
   const emptyLayout = sorted.length === 0;
   const showBioDefault = api.theme.show_bio ?? true;
@@ -243,6 +249,7 @@ export function designerPageLayoutToApi(
     hero: {
       title: mock.hero.headline,
       subtitle: mock.hero.subline.trim() ? mock.hero.subline : undefined,
+      show_cover: mock.hero.showCover,
       cover_media_id: mock.hero.showCover ? base.hero?.cover_media_id : undefined,
       bio: mock.bio.trim() ? mock.bio.trim() : undefined
     },

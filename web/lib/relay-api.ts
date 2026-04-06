@@ -52,12 +52,30 @@ export type GalleryItem = {
   /** Present when export failed after retries; use Retry in Library or re-sync Patreon. */
   export_error?: string;
   content_url_path: string;
+  /** Blurred still from API (`/preview`); kept when full export is tier-redacted. */
+  preview_url_path: string;
   visibility: PostVisibility;
   collection_ids: string[];
   collection_theme_tag_ids: string[];
   /** Duplicate Patreon cover (same asset as another row); UI may hide by default. */
   shadow_cover?: boolean;
 };
+
+/**
+ * Visitor / patron gallery list: `redactGalleryItemExportIfLocked` clears `content_url_path` when
+ * the session may not view the export; `preview_url_path` stays set for blurred teasers.
+ * Use this before showing tier chips on the tile.
+ */
+export function galleryItemExportVisibleToVisitor(item: GalleryItem): boolean {
+  return Boolean(item.has_export && item.content_url_path?.trim());
+}
+
+/** Absolute URL for visitor teaser image (tier-gated tiles), or null. */
+export function galleryItemPreviewSrc(item: GalleryItem): string | null {
+  const p = item.preview_url_path?.trim();
+  if (!p) return null;
+  return `${RELAY_API_BASE}${p}`;
+}
 
 export type Collection = {
   collection_id: string;
@@ -324,7 +342,7 @@ export type TriageResult = {
   total_review_items: number;
 };
 
-export type LayoutMode = "grid" | "masonry" | "list";
+export type LayoutMode = "grid" | "masonry" | "list" | "featured";
 
 export type PageSection = {
   section_id: string;
@@ -356,6 +374,8 @@ export type PageLayout = {
     title: string;
     subtitle?: string;
     cover_media_id?: string;
+    /** false = no hero cover strip (even if Patreon banner exists). Omitted = legacy behavior. */
+    show_cover?: boolean;
     bio?: string;
   };
   sections: PageSection[];

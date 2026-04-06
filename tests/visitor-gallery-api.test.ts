@@ -168,6 +168,57 @@ describe("Visitor gallery API", () => {
     expect(String(pub?.content_url_path ?? "")).toContain("/export/media/");
     expect(paid?.has_export).toBe(false);
     expect(paid?.content_url_path).toBe("");
+    expect(String(paid?.preview_url_path ?? "")).toContain("/preview");
+  });
+
+  it("GET export preview returns JPEG without patron session for non-hidden rows", async () => {
+    const tempDir = await mkdtemp(join(tmpdir(), "relay-visitor-preview-"));
+    const png = Buffer.from(
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
+      "base64"
+    );
+    const fetchImpl = vi.fn(async () => new Response(png, { status: 200 })) as unknown as typeof fetch;
+    const { app } = testApp(tempDir, fetchImpl);
+
+    await request(app)
+      .post("/api/v1/ingest/batches?process_sync=true")
+      .send({
+        creator_id: "cv_prev",
+        tiers: [
+          {
+            tier_id: "t_paid",
+            title: "Paid",
+            upstream_updated_at: "2026-03-30T12:00:00Z"
+          }
+        ],
+        posts: [
+          {
+            post_id: "p_paid",
+            title: "Paid only",
+            published_at: "2026-03-11T12:00:00Z",
+            tag_ids: [],
+            tier_ids: ["t_paid"],
+            upstream_revision: "b",
+            media: [
+              {
+                media_id: "m_paid",
+                mime_type: "image/png",
+                upstream_revision: "mz",
+                upstream_url: "https://cdn.example/paid.png"
+              }
+            ]
+          }
+        ]
+      });
+
+    await request(app).post("/api/v1/export/media").send({ creator_id: "cv_prev", media_id: "m_paid" });
+
+    const pr = await request(app).get(
+      "/api/v1/export/media/cv_prev/m_paid/preview"
+    );
+    expect(pr.status).toBe(200);
+    expect(String(pr.headers["content-type"] ?? "")).toContain("image/jpeg");
+    expect(pr.body.length).toBeGreaterThan(80);
   });
 
   it("visitor=true collections drop hidden posts from post_ids", async () => {

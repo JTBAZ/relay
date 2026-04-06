@@ -33,7 +33,9 @@ export function tierKeyForGalleryItem(
   if (n === 1) return "supporter";
 
   const t = maxR / (n - 1);
-  if (t < 0.26) return "public";
+  // Never use TierKey "public" once a paid Patreon tier id matched — that key is reserved
+  // for rows with no paid tier in `tierOrderIds`. "public" was incorrectly used for the
+  // cheapest paid band, which hid designer tier chips (TierBadge skips tier === "public").
   if (t < 0.51) return "supporter";
   if (t < 0.76) return "member";
   return "inner";

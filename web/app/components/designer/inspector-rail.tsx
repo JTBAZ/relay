@@ -380,7 +380,7 @@ function ThemePanel({
       ) : null}
       <ToggleRow
         label="Tier badges"
-        sublabel="Membership row on profile hero and chips on layout tiles"
+        sublabel="Top-right chip on gallery tiles the viewer can see (hidden on locked tiles)"
         value={theme.showTierBadges}
         onChange={(v) => onChange({ ...theme, showTierBadges: v })}
       />

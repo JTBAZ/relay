@@ -17,7 +17,8 @@
     "archiver": "^7.0.1",
     "dotenv": "^17.3.1",
     "express": "^4.21.2",
-    "patreon-dl": "^3.8.1"
+    "patreon-dl": "^3.8.1",
+    "sharp": "^0.34.2"
   },
   "devDependencies": {
     "@types/adm-zip": "^0.5.8",

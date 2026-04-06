@@ -16,6 +16,11 @@ export type GalleryItem = {
   /** Set when a failed export was recorded in `export_index.export_failures` (user can retry). */
   export_error?: string;
   content_url_path: string;
+  /**
+   * Visitor-safe raster teaser: small blurred still derived from export (images only).
+   * Tier-redacted rows keep this path while `content_url_path` is cleared.
+   */
+  preview_url_path: string;
   visibility: PostVisibility;
   collection_ids: string[];
   /** Theme tags from collections that include this post (for search / UI). */
@@ -159,7 +164,7 @@ export type CollectionsRoot = {
 
 // --- Page Layout ---
 
-export type LayoutMode = "grid" | "masonry" | "list";
+export type LayoutMode = "grid" | "masonry" | "list" | "featured";
 
 export type PageSection = {
   section_id: string;
@@ -197,6 +202,11 @@ export type PageLayout = {
     title: string;
     subtitle?: string;
     cover_media_id?: string;
+    /**
+     * When false, no full-width hero cover (designer + visitor), even if a Patreon campaign banner exists.
+     * Omitted = legacy: show cover when `cover_media_id` or synced banner is available.
+     */
+    show_cover?: boolean;
     /** Longer bio copy (separate from one-line subtitle) */
     bio?: string;
   };

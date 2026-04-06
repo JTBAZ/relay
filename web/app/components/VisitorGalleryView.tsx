@@ -6,11 +6,15 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ChevronLeft,
   ChevronRight,
+  FileText,
+  Image,
   Lock,
+  Music,
   Repeat,
   Search,
   Shuffle,
   Star,
+  Video,
   X
 } from "lucide-react";
 import { dedupeShadowCoverRows, groupGalleryItemsByPost } from "@/lib/gallery-group";
@@ -41,7 +45,10 @@ import PostBatchGridCell from "./PostBatchGridCell";
 import SnipIcon from "@/app/components/icons/SnipIcon";
 import SnipToCollectionModal from "./SnipToCollectionModal";
 import { readGalleryVideoLoop, writeGalleryVideoLoop } from "@/lib/gallery-video-loop";
-import { isFreePublicAccessTier, RELAY_TIER_ALL_PATRONS } from "@/lib/tier-access";
+import {
+  filterGalleryItemsForVisitorLayout,
+  type VisitorLayoutMediaKind
+} from "@/lib/visitor-layout-filter";
 
 const defaultCreatorId = process.env.NEXT_PUBLIC_RELAY_CREATOR_ID?.trim() || "creator_1";
 /** Fallbacks when API `visitor_hero` is empty (static hosting / no campaign snapshot yet). */
@@ -527,7 +534,6 @@ export default function VisitorGalleryView() {
   const [facets, setFacets] = useState<FacetsData | null>(null);
   const [collections, setCollections] = useState<Collection[]>([]);
   const [pageLayout, setPageLayout] = useState<PageLayout | null>(null);
-  const [profileBrowseMode, setProfileBrowseMode] = useState<"layout" | "classic">("classic");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [mode, setMode] = useState<BrowseMode>("chrono");
@@ -548,6 +554,12 @@ export default function VisitorGalleryView() {
     return readGalleryVideoLoop();
   });
 
+  /** Curated (Site Designer) section filters — client-side on `layoutSectionItems`. */
+  const [layoutMediaKinds, setLayoutMediaKinds] = useState<VisitorLayoutMediaKind[]>([]);
+  const [layoutMyTierOnly, setLayoutMyTierOnly] = useState(false);
+  /** When false, hide mature (`visibility === "review"`) rows. */
+  const [visitorMatureOn, setVisitorMatureOn] = useState(true);
+
   const [postFavoriteKeys, setPostFavoriteKeys] = useState<Set<string>>(() => new Set());
   const [patronCollections, setPatronCollections] = useState<PatronCollectionWithEntries[]>([]);
   const [snippedMediaIds, setSnippedMediaIds] = useState<Set<string>>(() => new Set());
@@ -562,15 +574,16 @@ export default function VisitorGalleryView() {
     const patreonSlug = vh?.patreon_name?.trim().toLowerCase();
     const patreonProfileHref = patreonSlug ? `https://www.patreon.com/${patreonSlug}` : null;
     const coverId = pageLayout?.hero?.cover_media_id?.trim();
-    const layoutCoverUrl = coverId
-      ? `${RELAY_API_BASE}/api/v1/export/media/${encodeURIComponent(creatorId)}/${encodeURIComponent(coverId)}/content`
-      : null;
+    const showHeroCover = pageLayout?.hero?.show_cover !== false;
+    const layoutCoverUrl =
+      showHeroCover && coverId
+        ? `${RELAY_API_BASE}/api/v1/export/media/${encodeURIComponent(creatorId)}/${encodeURIComponent(coverId)}/content`
+        : null;
     const title = pageLayout?.hero?.title?.trim() || displayName;
     const subTrim = pageLayout?.hero?.subtitle?.trim() ?? "";
     const bioTrim = pageLayout?.hero?.bio?.trim() ?? "";
     const showLayoutBio = pageLayout?.theme?.show_bio ?? true;
     const showPatreonLink = pageLayout?.theme?.show_patreon_link ?? true;
-    const showTierBadges = pageLayout?.theme?.show_tier_badges ?? true;
     const patreonLinkPosition =
       pageLayout?.theme?.patreon_link_position === "below_avatar"
         ? "below_avatar"
@@ -585,7 +598,7 @@ export default function VisitorGalleryView() {
       heroPrimary = subTrim;
     }
 
-    const finalBanner = layoutCoverUrl || bannerUrl;
+    const finalBanner = showHeroCover ? layoutCoverUrl || bannerUrl : null;
     return {
       bannerUrl,
       avatarUrl,
@@ -594,7 +607,6 @@ export default function VisitorGalleryView() {
       patreonSlug,
       title,
       showPatreonLink,
-      showTierBadges,
       patreonLinkPosition,
       heroPrimary,
       heroSecondary,
@@ -602,32 +614,7 @@ export default function VisitorGalleryView() {
     };
   }, [facets, pageLayout, creatorId]);
 
-  const heroMembershipTiers = useMemo(() => {
-    const tiers = facets?.tiers;
-    if (!tiers?.length) return [];
-    return [...tiers]
-      .filter(
-        (t) => !isFreePublicAccessTier(t) && t.tier_id !== RELAY_TIER_ALL_PATRONS
-      )
-      .sort((a, b) => (a.amount_cents ?? 0) - (b.amount_cents ?? 0))
-      .map((t) => ({ id: t.tier_id, title: t.title.trim() }))
-      .filter((x) => x.title.length > 0);
-  }, [facets?.tiers]);
-
   const hasLayoutSections = (pageLayout?.sections?.length ?? 0) > 0;
-
-  const layoutDefaultAppliedRef = useRef(false);
-  useEffect(() => {
-    if (!hasLayoutSections) {
-      setProfileBrowseMode("classic");
-      layoutDefaultAppliedRef.current = false;
-      return;
-    }
-    if (!layoutDefaultAppliedRef.current) {
-      setProfileBrowseMode("layout");
-      layoutDefaultAppliedRef.current = true;
-    }
-  }, [hasLayoutSections]);
 
   useEffect(() => {
     const read = () =>
@@ -844,6 +831,42 @@ export default function VisitorGalleryView() {
   /** One grid cell per post — same grouping as Library (`PostBatchGridCell`). */
   const postGroups = useMemo(() => groupGalleryItemsByPost(displayItems), [displayItems]);
 
+  const layoutMediaKindSet = useMemo(() => new Set(layoutMediaKinds), [layoutMediaKinds]);
+
+  const filteredLayoutSectionItems = useMemo(() => {
+    if (!hasLayoutSections || !pageLayout?.sections?.length) return layoutSectionItems;
+    const out: Record<string, GalleryItem[]> = {};
+    const opts = {
+      search: debouncedSearch,
+      mediaKinds: layoutMediaKindSet,
+      myTierOnly: layoutMyTierOnly,
+      matureOn: visitorMatureOn
+    };
+    for (const sec of pageLayout.sections) {
+      const sid = sec.section_id;
+      out[sid] = filterGalleryItemsForVisitorLayout(layoutSectionItems[sid] ?? [], opts);
+    }
+    return out;
+  }, [
+    hasLayoutSections,
+    pageLayout,
+    layoutSectionItems,
+    debouncedSearch,
+    layoutMediaKindSet,
+    layoutMyTierOnly,
+    visitorMatureOn
+  ]);
+
+  const curatedStats = useMemo(() => {
+    if (!hasLayoutSections || !pageLayout?.sections?.length) return null;
+    const all: GalleryItem[] = [];
+    for (const sec of pageLayout.sections) {
+      all.push(...(filteredLayoutSectionItems[sec.section_id] ?? []));
+    }
+    const posts = new Set(all.map((i) => i.post_id));
+    return { postCount: posts.size, assetCount: all.length };
+  }, [hasLayoutSections, pageLayout, filteredLayoutSectionItems]);
+
   const openModal = useCallback(
     async (item: GalleryItem) => {
       setModalItem(item);
@@ -884,6 +907,22 @@ export default function VisitorGalleryView() {
 
   const postCount = postGroups.length;
   const assetCount = displayItems.length;
+  const heroPostCount = curatedStats?.postCount ?? postCount;
+  const heroAssetCount = curatedStats?.assetCount ?? assetCount;
+
+  const hasLayoutCuratedFiltersActive =
+    debouncedSearch.trim().length > 0 ||
+    layoutMediaKinds.length > 0 ||
+    layoutMyTierOnly ||
+    !visitorMatureOn;
+
+  const clearCuratedFilters = () => {
+    setSearchInput("");
+    setDebouncedSearch("");
+    setLayoutMediaKinds([]);
+    setLayoutMyTierOnly(false);
+    setVisitorMatureOn(true);
+  };
   const tagVariety = facets?.tag_ids?.length ?? 0;
   const allTagIds = facets?.tag_ids ?? [];
   const tagOverflow = allTagIds.length > TAG_ROW_PREVIEW;
@@ -913,7 +952,7 @@ export default function VisitorGalleryView() {
       : "rounded-full px-3 py-1.5 text-xs font-medium text-[var(--lib-fg-muted)] transition hover:text-[var(--lib-fg)]";
 
   return (
-    <div className="library-shell flex min-h-0 flex-1 flex-col bg-[var(--lib-bg)] text-[var(--lib-fg)]">
+    <div className="library-shell flex min-h-0 min-w-0 flex-1 flex-col bg-[var(--lib-bg)] text-[var(--lib-fg)]">
       {/* Banner — optional URL; else cool green neutral wash */}
       <div className="relative h-[min(42vh,26rem)] w-full overflow-hidden bg-[var(--lib-muted)]">
         {mergedProfile.finalBanner ? (
@@ -1001,26 +1040,14 @@ export default function VisitorGalleryView() {
             patreon.com/{mergedProfile.patreonSlug}
           </a>
         ) : null}
-        {mergedProfile.showTierBadges && heroMembershipTiers.length > 0 ? (
-          <div className="mt-4 flex max-w-lg flex-wrap justify-center gap-1.5">
-            {heroMembershipTiers.map((t) => (
-              <span
-                key={t.id}
-                className="rounded-full border border-[var(--lib-border)] bg-[var(--lib-muted)]/80 px-2.5 py-0.5 text-[10px] font-medium text-[var(--lib-fg-muted)] sm:text-xs"
-              >
-                {t.title}
-              </span>
-            ))}
-          </div>
-        ) : null}
         <dl className="mt-5 flex flex-wrap justify-center gap-x-8 gap-y-2 text-xs sm:gap-x-10">
           <div>
             <dt className="uppercase tracking-[0.14em] text-[10px] text-[var(--lib-fg-muted)]">Posts</dt>
-            <dd className="mt-0.5 font-medium tabular-nums text-[var(--lib-fg)]">{postCount}</dd>
+            <dd className="mt-0.5 font-medium tabular-nums text-[var(--lib-fg)]">{heroPostCount}</dd>
           </div>
           <div>
             <dt className="uppercase tracking-[0.14em] text-[10px] text-[var(--lib-fg-muted)]">Assets</dt>
-            <dd className="mt-0.5 font-medium tabular-nums text-[var(--lib-fg)]">{assetCount}</dd>
+            <dd className="mt-0.5 font-medium tabular-nums text-[var(--lib-fg)]">{heroAssetCount}</dd>
           </div>
           <div>
             <dt className="uppercase tracking-[0.14em] text-[10px] text-[var(--lib-fg-muted)]">Tags</dt>
@@ -1028,88 +1055,192 @@ export default function VisitorGalleryView() {
           </div>
         </dl>
 
-        <nav
-          className="mt-6 flex flex-wrap items-center justify-center gap-2"
-          aria-label="Browse mode"
-        >
-          {hasLayoutSections ? (
-            <>
-              <button
-                type="button"
-                className={navPill(profileBrowseMode === "layout")}
-                onClick={() => setProfileBrowseMode("layout")}
-              >
-                Curated layout
-              </button>
-              <button
-                type="button"
-                className={navPill(profileBrowseMode === "classic")}
-                onClick={() => setProfileBrowseMode("classic")}
-              >
-                Full library
-              </button>
-            </>
-          ) : (
-            <>
-              {(
-                [
-                  ["chrono", "Chronological"],
-                  ["collections", "Collections"],
-                  ["shuffle", "Random walk"]
-                ] as const
-              ).map(([id, label]) => (
-                <button
-                  key={id}
-                  type="button"
-                  className={navPill(mode === id)}
-                  onClick={() => {
-                    setMode(id);
-                    if (id !== "collections") setActiveCollectionId(null);
-                  }}
-                >
-                  {label}
-                </button>
-              ))}
-              {mode === "shuffle" ? (
-                <button
-                  type="button"
-                  onClick={() => setShuffleNonce((n) => n + 1)}
-                  className="inline-flex items-center gap-1 rounded-full border border-[var(--lib-border)] px-2.5 py-1.5 text-xs text-[var(--lib-fg-muted)] transition hover:border-[color-mix(in_srgb,var(--lib-selection)_40%,var(--lib-border))] hover:text-[var(--lib-fg)]"
-                >
-                  <Shuffle className="h-3.5 w-3.5" aria-hidden />
-                  Reshuffle
-                </button>
-              ) : null}
-            </>
-          )}
-        </nav>
-
-        <p className="mt-3 text-[10px] text-[var(--lib-fg-muted)]/80">
-          {hasLayoutSections && profileBrowseMode === "layout"
-            ? "Curated sections follow your Site Designer layout. Switch to Full library for search and filters."
-            : "Subscriber view — search and filters match the library (titles, tags, descriptions)."}
-        </p>
-
-        <div className="mt-4 flex flex-wrap items-center justify-center gap-3">
-          <a
-            href="/patreon/patron/connect"
-            className="inline-flex rounded-full border border-[color-mix(in_srgb,var(--lib-selection)_35%,var(--lib-border))] px-4 py-2 text-[11px] font-medium text-[var(--lib-fg-muted)] transition hover:border-[color-mix(in_srgb,var(--lib-selection)_55%,var(--lib-border))] hover:text-[var(--lib-fg)]"
+        {!hasLayoutSections ? (
+          <nav
+            className="mt-6 flex flex-wrap items-center justify-center gap-2"
+            aria-label="Browse mode"
           >
-            Manage Patreon link
-          </a>
-          {patronAuthed ? (
+            {(
+              [
+                ["chrono", "Chronological"],
+                ["collections", "Collections"],
+                ["shuffle", "Random walk"]
+              ] as const
+            ).map(([id, label]) => (
+              <button
+                key={id}
+                type="button"
+                className={navPill(mode === id)}
+                onClick={() => {
+                  setMode(id);
+                  if (id !== "collections") setActiveCollectionId(null);
+                }}
+              >
+                {label}
+              </button>
+            ))}
+            {mode === "shuffle" ? (
+              <button
+                type="button"
+                onClick={() => setShuffleNonce((n) => n + 1)}
+                className="inline-flex items-center gap-1 rounded-full border border-[var(--lib-border)] px-2.5 py-1.5 text-xs text-[var(--lib-fg-muted)] transition hover:border-[color-mix(in_srgb,var(--lib-selection)_40%,var(--lib-border))] hover:text-[var(--lib-fg)]"
+              >
+                <Shuffle className="h-3.5 w-3.5" aria-hidden />
+                Reshuffle
+              </button>
+            ) : null}
+          </nav>
+        ) : null}
+
+        {!hasLayoutSections ? (
+          <p className="mt-3 text-[10px] text-[var(--lib-fg-muted)]/80">
+            Subscriber view — search and filters match the library (titles, tags, descriptions).
+          </p>
+        ) : null}
+
+        {patronAuthed ? (
+          <div className="mt-4 flex flex-wrap items-center justify-center gap-3">
             <Link
               href="/visitor/favorites"
               className="inline-flex rounded-full border border-[var(--lib-border)] px-4 py-2 text-[11px] font-medium text-[var(--lib-fg-muted)] transition hover:border-[color-mix(in_srgb,var(--lib-selection)_40%,var(--lib-border))] hover:text-[var(--lib-fg)]"
             >
               Saved
             </Link>
-          ) : null}
-        </div>
+          </div>
+        ) : null}
       </div>
 
-      {/* Sticky filter strip — hidden in curated layout mode (filters apply to full library only) */}
-      {profileBrowseMode === "classic" ? (
+      {/* Curated gallery: search + filters (client-side on section items) */}
+      {hasLayoutSections ? (
+        <section
+          className="mx-auto mt-10 w-full max-w-6xl px-4"
+          aria-label="Search and filter gallery"
+        >
+          <div className="relative w-full">
+            <Search
+              className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--lib-fg-muted)]"
+              strokeWidth={2}
+              aria-hidden
+            />
+            <input
+              type="search"
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
+              placeholder="Search assets…"
+              className="w-full rounded-lg border border-[var(--lib-border)] bg-[var(--lib-input)] py-2.5 pl-10 pr-9 text-sm text-[var(--lib-fg)] placeholder:text-[var(--lib-fg-muted)] focus:border-[color-mix(in_srgb,var(--lib-selection)_45%,var(--lib-border))] focus:outline-none focus:ring-1 focus:ring-[color-mix(in_srgb,var(--lib-selection)_35%,transparent)]"
+              aria-label="Search by title, tags, or description"
+            />
+            {searchInput ? (
+              <button
+                type="button"
+                onClick={() => {
+                  setSearchInput("");
+                  setDebouncedSearch("");
+                }}
+                className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 text-[var(--lib-fg-muted)] hover:bg-[var(--lib-muted)] hover:text-[var(--lib-fg)]"
+                aria-label="Clear search"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            ) : null}
+          </div>
+
+          <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex flex-wrap items-center gap-2">
+              {(
+                [
+                  ["image", "Image", Image],
+                  ["video", "Video", Video],
+                  ["audio", "Audio", Music],
+                  ["text", "Text", FileText]
+                ] as const
+              ).map(([kind, label, Icon]) => {
+                const active = layoutMediaKinds.includes(kind);
+                return (
+                  <button
+                    key={kind}
+                    type="button"
+                    onClick={() =>
+                      setLayoutMediaKinds((prev) =>
+                        prev.includes(kind) ? prev.filter((k) => k !== kind) : [...prev, kind]
+                      )
+                    }
+                    className={
+                      active
+                        ? "inline-flex items-center gap-1.5 rounded-full border border-[color-mix(in_srgb,var(--lib-selection)_50%,var(--lib-border))] bg-[color-mix(in_srgb,var(--lib-selection)_10%,var(--lib-muted))] px-3 py-1.5 text-[11px] font-medium text-[var(--lib-fg)]"
+                        : "inline-flex items-center gap-1.5 rounded-full border border-[var(--lib-border)] px-3 py-1.5 text-[11px] font-medium text-[var(--lib-fg-muted)] transition hover:border-[color-mix(in_srgb,var(--lib-selection)_35%,var(--lib-border))] hover:text-[var(--lib-fg)]"
+                    }
+                    aria-pressed={active}
+                  >
+                    <Icon className="h-3.5 w-3.5 shrink-0 opacity-90" aria-hidden />
+                    {label}
+                  </button>
+                );
+              })}
+            </div>
+            <div className="flex flex-wrap items-center gap-2 sm:justify-end">
+              <button
+                type="button"
+                onClick={() => setLayoutMyTierOnly((v) => !v)}
+                className={
+                  layoutMyTierOnly
+                    ? "rounded-full border border-[color-mix(in_srgb,var(--lib-selection)_45%,var(--lib-border))] bg-[color-mix(in_srgb,var(--lib-selection)_12%,var(--lib-muted))] px-3 py-2 text-[11px] font-medium text-[var(--lib-fg)]"
+                    : "rounded-full border border-[var(--lib-border)] px-3 py-2 text-[11px] font-medium text-[var(--lib-fg-muted)] transition hover:text-[var(--lib-fg)]"
+                }
+                aria-pressed={layoutMyTierOnly}
+              >
+                My tier
+              </button>
+              <button
+                type="button"
+                onClick={() => setVisitorMatureOn((v) => !v)}
+                className="rounded-full border border-[var(--lib-border)] px-3 py-2 text-[11px] font-medium text-[var(--lib-fg-muted)] transition hover:border-[color-mix(in_srgb,var(--lib-selection)_35%,var(--lib-border))] hover:text-[var(--lib-fg)]"
+                aria-pressed={visitorMatureOn}
+              >
+                Mature: {visitorMatureOn ? "On" : "Off"}
+              </button>
+            </div>
+          </div>
+
+          <p className="mt-2 text-left text-[10px] leading-relaxed text-[var(--lib-fg-muted)]">
+            <span aria-live="polite">
+              •{" "}
+              {[
+                layoutMyTierOnly ? "My tier only" : null,
+                visitorMatureOn ? "Mature: On" : "Mature: Off",
+                layoutMediaKinds.length > 0
+                  ? layoutMediaKinds
+                      .map((k) =>
+                        k === "image"
+                          ? "Image"
+                          : k === "video"
+                            ? "Video"
+                            : k === "audio"
+                              ? "Audio"
+                              : "Text"
+                      )
+                      .join(" · ")
+                  : null,
+                debouncedSearch.trim() ? `“${debouncedSearch.trim()}”` : null
+              ]
+                .filter(Boolean)
+                .join(" • ")}
+            </span>
+            {hasLayoutCuratedFiltersActive ? (
+              <button
+                type="button"
+                onClick={clearCuratedFilters}
+                className="ml-2 font-medium text-[color-mix(in_srgb,var(--lib-selection)_75%,var(--lib-fg-muted))] underline decoration-[var(--lib-border)] underline-offset-2 hover:text-[var(--lib-selection)]"
+              >
+                Reset
+              </button>
+            ) : null}
+          </p>
+        </section>
+      ) : null}
+
+      {/* Sticky filter strip — only when no Site Designer sections (full-library browse) */}
+      {!hasLayoutSections ? (
       <section className="sticky top-12 z-40 mx-auto mt-10 w-full max-w-6xl border-t border-b border-[color-mix(in_srgb,var(--lib-border)_85%,transparent)] bg-[color-mix(in_srgb,var(--lib-bg)_94%,transparent)] px-4 py-4 shadow-[0_8px_28px_-12px_rgba(0,0,0,0.45)] backdrop-blur-md supports-[backdrop-filter]:bg-[color-mix(in_srgb,var(--lib-bg)_82%,transparent)]">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:gap-6">
           <div className="relative w-full max-w-md shrink-0">
@@ -1284,16 +1415,18 @@ export default function VisitorGalleryView() {
       </section>
       ) : null}
 
-      <main className="mx-auto max-w-6xl px-4 py-8">
-        {profileBrowseMode === "layout" && hasLayoutSections && pageLayout ? (
+      <main className="mx-auto w-full min-w-0 max-w-6xl px-4 py-8">
+        {hasLayoutSections && pageLayout ? (
           <PatronLayoutSections
             layout={pageLayout}
-            sectionItems={layoutSectionItems}
+            sectionItems={filteredLayoutSectionItems}
             loading={layoutSectionsLoading}
             onOpenItem={(item) => void openModal(item)}
             tierOrderIds={layoutTierOrderIds}
             tierTitleById={tierTitleById}
             tierFacets={facets?.tiers ?? []}
+            membershipUrl={mergedProfile.patreonProfileHref}
+            accentColor={pageLayout.theme.accent_color?.trim() || "#00aa6f"}
           />
         ) : loading ? (
           <p className="text-sm text-[var(--lib-fg-muted)]">Loading gallery…</p>
@@ -1331,6 +1464,13 @@ export default function VisitorGalleryView() {
                   snippedMediaIds: visitorEngagement.snippedMediaIds,
                   onSnipRequest: visitorEngagement.onSnipRequest
                 }}
+                showTierBadges={pageLayout?.theme?.show_tier_badges ?? true}
+                tierFacets={facets?.tiers ?? []}
+                visitorTierOrderIds={layoutTierOrderIds}
+                visitorMembershipUrl={mergedProfile.patreonProfileHref}
+                visitorAccentColor={
+                  pageLayout?.theme?.accent_color?.trim() || "#00aa6f"
+                }
                 onFocusIndex={() => {}}
                 onInspect={(item) => void openModal(item)}
               />

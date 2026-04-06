@@ -17,7 +17,8 @@ type Props = {
 const layoutOptions: { value: LayoutMode; label: string }[] = [
   { value: "grid", label: "Grid" },
   { value: "masonry", label: "Masonry" },
-  { value: "list", label: "List" }
+  { value: "list", label: "List" },
+  { value: "featured", label: "Featured" }
 ];
 
 export default function SectionEditor({

@@ -33,7 +33,12 @@ import { validatePatronFavoriteTarget } from "./gallery/patron-favorites-validat
 import { validatePatronCollectionEntry } from "./gallery/patron-collections-validate.js";
 import { TriageService } from "./gallery/triage-service.js";
 import { resolveLayoutPosts } from "./gallery/layout-to-clone.js";
-import { patronMayFetchMediaExport } from "./gallery/patron-media-access.js";
+import {
+  findPostIdForExportedMedia,
+  patronMayFetchMediaExport
+} from "./gallery/patron-media-access.js";
+import { resolveGalleryItemVisibility } from "./gallery/query.js";
+import { buildVisitorPreviewImage } from "./export/visitor-preview.js";
 import { parseGalleryLimit, queryStringList } from "./gallery/parse-query.js";
 import type {
   PatronFavoriteTargetKind,
@@ -383,7 +388,10 @@ export function createApp(config: AppConfig): CreateAppResult {
     // browsers (wildcard is not allowed for credentialed-style requests in some cases).
     const origin = req.header("Origin");
     res.setHeader("Access-Control-Allow-Origin", origin?.trim() || "*");
-    res.setHeader("Access-Control-Allow-Methods", "GET,POST,PATCH,DELETE,OPTIONS");
+    res.setHeader(
+      "Access-Control-Allow-Methods",
+      "GET,HEAD,POST,PUT,PATCH,DELETE,OPTIONS"
+    );
     res.setHeader(
       "Access-Control-Allow-Headers",
       "Content-Type, X-Trace-Id, Authorization"
@@ -1014,6 +1022,52 @@ export function createApp(config: AppConfig): CreateAppResult {
       res.setHeader("cache-control", "public, max-age=3600");
       res.setHeader("etag", `"${record.sha256}"`);
       return res.status(200).send(bytes);
+    } catch (error) {
+      return res
+        .status(404)
+        .json(errorEnvelope("NOT_FOUND", (error as Error).message, traceId));
+    }
+  });
+
+  /** Blurred, resized still for visitor tier teasers — no patron tier check; denied when row is hidden. */
+  app.get("/api/v1/export/media/:creator_id/:media_id/preview", async (req, res) => {
+    const traceId = traceIdFrom(req);
+    try {
+      const creatorId = req.params.creator_id;
+      const mediaId = req.params.media_id;
+      const record = await exportService.getExportRecord(creatorId, mediaId);
+      if (!record) {
+        return res
+          .status(404)
+          .json(errorEnvelope("NOT_FOUND", "Exported media not found.", traceId));
+      }
+      const snapshot = await canonicalStore.load();
+      const overrides = await galleryOverridesStore.load();
+      const postId = findPostIdForExportedMedia(snapshot, creatorId, mediaId);
+      if (!postId) {
+        return res.status(404).json(errorEnvelope("NOT_FOUND", "Post not found.", traceId));
+      }
+      const vis = resolveGalleryItemVisibility(creatorId, postId, mediaId, overrides);
+      if (vis === "hidden") {
+        return res.status(404).json(errorEnvelope("NOT_FOUND", "Not found.", traceId));
+      }
+      const bytes = await exportService.readBlob(creatorId, mediaId);
+      const mime = record.mime_type ?? "application/octet-stream";
+      const preview = await buildVisitorPreviewImage(bytes, mime);
+      if (!preview) {
+        return res
+          .status(415)
+          .json(
+            errorEnvelope(
+              "PREVIEW_UNSUPPORTED",
+              "Preview not available for this media type or processing failed.",
+              traceId
+            )
+          );
+      }
+      res.setHeader("content-type", "image/jpeg");
+      res.setHeader("cache-control", "public, max-age=600");
+      return res.status(200).send(preview);
     } catch (error) {
       return res
         .status(404)
@@ -2040,7 +2094,7 @@ export function createApp(config: AppConfig): CreateAppResult {
     const section = await layoutStore.addSection(body.creator_id as string, {
       title: body.title as string,
       source: (body.source as never) ?? { type: "manual", post_ids: [] },
-      layout: (body.layout as "grid" | "masonry" | "list") ?? "grid",
+      layout: (body.layout as "grid" | "masonry" | "list" | "featured") ?? "grid",
       columns: typeof body.columns === "number" ? body.columns : undefined,
       max_items: typeof body.max_items === "number" ? body.max_items : undefined
     });

@@ -89,8 +89,10 @@ export default function LayoutPreview({
 
   const bg = schemeBg[layout.theme.color_scheme] ?? schemeBg.dark;
   const accent = layout.theme.accent_color ?? "#c45c2d";
+  const showHeroCover = layout.hero?.show_cover !== false;
   const heroCoverId = layout.hero?.cover_media_id?.trim();
-  const heroCoverUrl = heroCoverId ? exportContentUrl(creatorId, heroCoverId) : null;
+  const heroCoverUrl =
+    showHeroCover && heroCoverId ? exportContentUrl(creatorId, heroCoverId) : null;
   const narrow = previewWidth < 640;
 
   const tileMotion =

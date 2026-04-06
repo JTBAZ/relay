@@ -95,7 +95,7 @@ function galleryRowTags(
   return tags.filter((t) => !tagIsCoverChip(t));
 }
 
-function resolveItemVisibility(
+export function resolveGalleryItemVisibility(
   creatorId: string,
   postId: string,
   mediaId: string,
@@ -246,7 +246,11 @@ export function buildGalleryItems(
           ? { export_error: failRec.message }
           : {}),
         content_url_path: `/api/v1/export/media/${encodeURIComponent(creatorId)}/${encodeURIComponent(mediaId)}/content`,
-        visibility: resolveItemVisibility(creatorId, postId, mediaId, overrides),
+        preview_url_path:
+          hasExport && (m.current.mime_type?.startsWith("image/") ?? false)
+            ? `/api/v1/export/media/${encodeURIComponent(creatorId)}/${encodeURIComponent(mediaId)}/preview`
+            : "",
+        visibility: resolveGalleryItemVisibility(creatorId, postId, mediaId, overrides),
         collection_ids: colIds,
         collection_theme_tag_ids: themeTagList
       });
@@ -273,7 +277,8 @@ export function buildGalleryItems(
         has_export: false,
         export_status: "missing",
         content_url_path: "",
-        visibility: resolveItemVisibility(creatorId, postId, syntheticId, overrides),
+        preview_url_path: "",
+        visibility: resolveGalleryItemVisibility(creatorId, postId, syntheticId, overrides),
         collection_ids: colIds,
         collection_theme_tag_ids: themeTagList
       });

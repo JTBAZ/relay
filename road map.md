@@ -40,6 +40,7 @@ Use this roadmap as the execution sequence and use the reference docs for deeper
 - **Coding agents / anyone touching Patreon ingest or gallery duplicate behavior:** read [AGENTS.md](AGENTS.md), [docs/patreon-ingest-canonical.md](docs/patreon-ingest-canonical.md), and [docs/relay-artist-metadata.md](docs/relay-artist-metadata.md) so canonical vs overrides stay aligned (artist tags/visibility survive re-ingest).
 - Library + Designer UX ideals, workflows, gaps, and phased UI backlog:
   - [docs/pattern-library.md](docs/pattern-library.md)
+  - **Publish-preflight UI snapshot (not production):** [design-archive/preflight/PREFLIGHT.txt](design-archive/preflight/PREFLIGHT.txt) — reserved Next.js archive (`relay-preflight-archive`); see [builder reference under Workstream D](#workstream-d-gallery-experience). Search repo: `preflight`.
 - **Sync & access hardening (Slices 1–4, shipped):** [docs/part1-sync-hardening-ledger.md](docs/part1-sync-hardening-ledger.md) — export retries, tier alignment, watermark + re-sync UI, sync health; one ledger for APIs, env vars, and tests.
 - Standardized build contracts, quality gates, and traceability:
   - [builder-boost-pack/README.md](c:\Users\jorda\Documents\Coding Projects\Rescue\builder-boost-pack\README.md)
@@ -64,6 +65,7 @@ Quick routing:
 - Private smart tagging and similarity-assisted bulk apply -> **Ledger (Part 1, post-stabilization): Smart Tag Assistant** under [Part 1 Delivery Track: Gallery Export](#part-1-delivery-track-gallery-export).
 - Growth analytics phases (hook → aggregation → loop) and short-term pointers -> [docs/growth-analytics-features.md](docs/growth-analytics-features.md).
 - External metrics sourcing (tiers, Relay Link idea, aggregator vs scraper guardrails) -> [docs/third-party-metrics-sourcing.md](docs/third-party-metrics-sourcing.md).
+- Publish-preflight / Site Designer UI reference snapshot -> [design-archive/preflight/](design-archive/preflight/) (read `PREFLIGHT.txt` first).
 
 ## Product Boundaries
 
@@ -211,6 +213,12 @@ Exit gate:
 Exit gate:
 - Median time to locate a known asset under 5 seconds.
 - P95 gallery interaction latency under 300 ms for 10,000 items.
+
+**Builder reference — publish-preflight UI snapshot (repo):**
+
+- **Path:** [design-archive/preflight/](design-archive/preflight/) — Next.js **reserved archive** (package name **`relay-preflight-archive`** in that folder’s `package.json`). **Orientation:** [design-archive/preflight/PREFLIGHT.txt](design-archive/preflight/PREFLIGHT.txt).
+- **Not wired into production** [web/](web/); production Designer / Library app lives under `web/`. Renamed from `design-archive/relay-design-system` → **`design-archive/preflight`** so paths and repo search hit **`preflight`** immediately.
+- **When product enables Relay-native authoring** (creators making **their own posts on Relay**, beyond Patreon ingest and layout projection), treat this snapshot as **already-generated UI assets**—port, merge, or replace **deliberately** (preflight flows, checker patterns, component vocabulary) rather than starting from zero.
 
 ### Workstream E: Analytics Foundation
 
@@ -554,6 +562,16 @@ Builder reference:
 8. Part 3 foundation: patron identity, follow graph, feed assembly with strict entitlements.
 9. Part 3 growth: discovery and creator-opt-in promos, Browse ranking, patron engagement (comments, favorites, collections), pledge upgrade path, instrumentation, abuse controls.
 10. Part 3 optional monetization: premium viewer and disclosed boost surfaces after policy review and baseline engagement.
+
+### Publish-preflight archive vs milestone sequence
+
+This is **not** a separate numbered release step; it is **ahead-of-time UI** aligned with **Site Designer / publish** and future **native posts**.
+
+| When | Role of [design-archive/preflight/](design-archive/preflight/) |
+|------|----------------------------------------------------------------|
+| **Now** | Reference-only snapshot for publish-preflight and design-system patterns; **does not** ship in `web/` until explicitly ported. |
+| **Part 1–2 (ongoing)** | **Publish Gallery** / clone-adjacent UX can borrow patterns; track divergence in `web/` vs archive. |
+| **When scoped: Relay-native posts** | **Primary reuse target** — composer, validation, and “go live” flows can start from this generated asset set; still requires backend, entitlements, and [pattern-library.md](docs/pattern-library.md) **viewer parity**. |
 
 ## End State
 

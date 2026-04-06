@@ -2,10 +2,10 @@
 
 import { Lock } from "lucide-react";
 import { galleryItemKey } from "@/lib/gallery-group";
-import { RELAY_API_BASE, type GalleryItem } from "@/lib/relay-api";
+import { RELAY_API_BASE, galleryItemExportVisibleToVisitor, type GalleryItem } from "@/lib/relay-api";
 
 function thumbSrc(m: GalleryItem): string | null {
-  if (!m.has_export || !m.content_url_path) return null;
+  if (!galleryItemExportVisibleToVisitor(m)) return null;
   const mt = m.mime_type ?? "";
   if (mt.startsWith("image/") || mt.startsWith("video/")) {
     return `${RELAY_API_BASE}${m.content_url_path}`;
@@ -124,7 +124,7 @@ export function postCarouselMainVisual(item: GalleryItem): {
   isVideo: boolean;
   locked: boolean;
 } {
-  const locked = !item.has_export || !item.content_url_path;
+  const locked = !galleryItemExportVisibleToVisitor(item);
   const src = thumbSrc(item);
   return { src, isVideo: isVideo(item), locked };
 }
