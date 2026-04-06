@@ -90,7 +90,8 @@ npm run ledger-pull-v0-copy-block -- recXXXXXXXXXXXXXX
 ```
 
 - **First argument:** Production Ledger **record id** (Airtable). **`v0 Chat URL`** on that row must match a chat this **`V0_API_KEY`** can read (or pass **`--chat=<chatId>`** from the URL path).
-- **`COPY_BLOCK_MAX_CHARS`** — optional; default **95000** (safe under Airtable long-text limits). Longer exports are truncated with a notice.
+- **`COPY_BLOCK_MAX_CHARS`** — optional; default **95000**. If Airtable returns **422** for **`v0 Copy Block`**, lower this (e.g. **88000**) or use **`--write-file`** for the full export. Some bases/fields reject payloads near the nominal long-text limit.
+- **`--write-file=./exports/full.md`** — writes the **untruncated** copy block to disk (after **`Automation/exports/`** in **`.gitignore`**). Run the same command without the flag (or with a lower **`COPY_BLOCK_MAX_CHARS`**) to PATCH Airtable with a shorter cell.
 - Run **after** v0 generation has a **completed** version; if the API returns no files yet, use **`--dry-run`** or wait and retry.
 - Optional workflow: `ledger-to-v0` → integrate in v0 until satisfied → **`ledger-pull-v0-copy-block`** → Cursor reads **`v0 Copy Block`** from Airtable.
 

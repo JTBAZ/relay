@@ -174,16 +174,31 @@ export type PageSection = {
   sort_order: number;
 };
 
+/** Saved with page layout — controls section item ordering on profile + designer preview */
+export type GalleryArrangement = "chronological" | "tier";
+
 export type PageLayout = {
   creator_id: string;
   theme: {
     color_scheme: "dark" | "light" | "warm";
     accent_color?: string;
+    /** Designer: show bio paragraph under hero */
+    show_bio?: boolean;
+    /** Designer: tier chips on gallery tiles */
+    show_tier_badges?: boolean;
+    /** How items are ordered within each layout section */
+    gallery_arrangement?: GalleryArrangement;
+    /** Link to patreon.com/{slug} under hero when Patreon slug is known */
+    show_patreon_link?: boolean;
+    /** Where the Patreon URL appears in the profile hero */
+    patreon_link_position?: "below_avatar" | "below_bio";
   };
   hero?: {
     title: string;
     subtitle?: string;
     cover_media_id?: string;
+    /** Longer bio copy (separate from one-line subtitle) */
+    bio?: string;
   };
   sections: PageSection[];
   updated_at: string;

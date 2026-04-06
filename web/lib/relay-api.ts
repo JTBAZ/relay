@@ -339,16 +339,24 @@ export type PageSection = {
   sort_order: number;
 };
 
+export type GalleryArrangement = "chronological" | "tier";
+
 export type PageLayout = {
   creator_id: string;
   theme: {
     color_scheme: "dark" | "light" | "warm";
     accent_color?: string;
+    show_bio?: boolean;
+    show_tier_badges?: boolean;
+    gallery_arrangement?: GalleryArrangement;
+    show_patreon_link?: boolean;
+    patreon_link_position?: "below_avatar" | "below_bio";
   };
   hero?: {
     title: string;
     subtitle?: string;
     cover_media_id?: string;
+    bio?: string;
   };
   sections: PageSection[];
   updated_at: string;

@@ -3,17 +3,24 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
-const navItems = [
+const baseNavItems = [
   { href: "/", label: "Library" },
   { href: "/visitor", label: "Gallery" },
   { href: "/visitor/favorites", label: "Saved" },
   { href: "/designer", label: "Designer" }
-];
+] as const;
+
+const devBenchNav =
+  process.env.NODE_ENV === "development" ||
+  process.env.NEXT_PUBLIC_RELAY_SHOW_DEV_BENCH === "true"
+    ? [{ href: "/dev/bench", label: "Dev bench" }] as const
+    : [];
 
 export default function AppNav() {
   const pathname = usePathname();
-  /** Library home + subscriber surfaces share cool green chrome (design ledger: Relay shell). */
-  const primaryShell = pathname === "/" || pathname.startsWith("/visitor");
+  /** Library home + subscriber surfaces + dev bench share cool green chrome (design ledger: Relay shell). */
+  const primaryShell =
+    pathname === "/" || pathname.startsWith("/visitor") || pathname.startsWith("/dev/bench");
 
   /* Library / visitor: match `.library-shell` feel; designer keeps warm studio tokens. */
   const bar = primaryShell
@@ -34,13 +41,15 @@ export default function AppNav() {
       <span className={`mr-6 py-2 font-[family-name:var(--font-display)] text-sm ${brand}`}>
         Relay
       </span>
-      {navItems.map((item) => {
+      {[...baseNavItems, ...devBenchNav].map((item) => {
         const isActive =
           item.href === "/"
             ? pathname === "/"
             : item.href === "/visitor"
               ? pathname === "/visitor" || pathname === "/visitor/"
-              : pathname.startsWith(item.href);
+              : item.href === "/dev/bench"
+                ? pathname === "/dev/bench" || pathname.startsWith("/dev/bench/")
+                : pathname.startsWith(item.href);
         return (
           <Link
             key={item.href}

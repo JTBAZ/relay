@@ -13,7 +13,8 @@ import {
   Star,
   X
 } from "lucide-react";
-import { groupGalleryItemsByPost } from "@/lib/gallery-group";
+import { dedupeShadowCoverRows, groupGalleryItemsByPost } from "@/lib/gallery-group";
+import { useLayoutSectionItems } from "@/lib/use-layout-section-items";
 import {
   RELAY_API_BASE,
   addPatronFavorite,
@@ -32,12 +33,15 @@ import {
   type GalleryItem,
   type GalleryListData,
   type GalleryPostDetail,
+  type PageLayout,
   type PatronCollectionWithEntries
 } from "@/lib/relay-api";
+import PatronLayoutSections from "@/app/components/patron/PatronLayoutSections";
 import PostBatchGridCell from "./PostBatchGridCell";
 import SnipIcon from "@/app/components/icons/SnipIcon";
 import SnipToCollectionModal from "./SnipToCollectionModal";
 import { readGalleryVideoLoop, writeGalleryVideoLoop } from "@/lib/gallery-video-loop";
+import { isFreePublicAccessTier, RELAY_TIER_ALL_PATRONS } from "@/lib/tier-access";
 
 const defaultCreatorId = process.env.NEXT_PUBLIC_RELAY_CREATOR_ID?.trim() || "creator_1";
 /** Fallbacks when API `visitor_hero` is empty (static hosting / no campaign snapshot yet). */
@@ -522,6 +526,8 @@ export default function VisitorGalleryView() {
   const [items, setItems] = useState<GalleryItem[]>([]);
   const [facets, setFacets] = useState<FacetsData | null>(null);
   const [collections, setCollections] = useState<Collection[]>([]);
+  const [pageLayout, setPageLayout] = useState<PageLayout | null>(null);
+  const [profileBrowseMode, setProfileBrowseMode] = useState<"layout" | "classic">("classic");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [mode, setMode] = useState<BrowseMode>("chrono");
@@ -542,21 +548,86 @@ export default function VisitorGalleryView() {
     return readGalleryVideoLoop();
   });
 
-  const hero = useMemo(() => {
+  const [postFavoriteKeys, setPostFavoriteKeys] = useState<Set<string>>(() => new Set());
+  const [patronCollections, setPatronCollections] = useState<PatronCollectionWithEntries[]>([]);
+  const [snippedMediaIds, setSnippedMediaIds] = useState<Set<string>>(() => new Set());
+  const [snipTarget, setSnipTarget] = useState<{ postId: string; mediaId: string } | null>(null);
+  const [patronAuthed, setPatronAuthed] = useState(false);
+
+  const mergedProfile = useMemo(() => {
     const vh = facets?.visitor_hero;
     const bannerUrl = vh?.banner_url?.trim() || envVisitorBannerUrl;
     const avatarUrl = vh?.avatar_url?.trim() || envVisitorAvatarUrl;
     const displayName = vh?.relay_display_name?.trim() || envVisitorDisplayName;
     const patreonSlug = vh?.patreon_name?.trim().toLowerCase();
     const patreonProfileHref = patreonSlug ? `https://www.patreon.com/${patreonSlug}` : null;
-    return { bannerUrl, avatarUrl, displayName, patreonProfileHref, patreonSlug };
-  }, [facets]);
+    const coverId = pageLayout?.hero?.cover_media_id?.trim();
+    const layoutCoverUrl = coverId
+      ? `${RELAY_API_BASE}/api/v1/export/media/${encodeURIComponent(creatorId)}/${encodeURIComponent(coverId)}/content`
+      : null;
+    const title = pageLayout?.hero?.title?.trim() || displayName;
+    const subTrim = pageLayout?.hero?.subtitle?.trim() ?? "";
+    const bioTrim = pageLayout?.hero?.bio?.trim() ?? "";
+    const showLayoutBio = pageLayout?.theme?.show_bio ?? true;
+    const showPatreonLink = pageLayout?.theme?.show_patreon_link ?? true;
+    const showTierBadges = pageLayout?.theme?.show_tier_badges ?? true;
+    const patreonLinkPosition =
+      pageLayout?.theme?.patreon_link_position === "below_avatar"
+        ? "below_avatar"
+        : "below_bio";
 
-  const [postFavoriteKeys, setPostFavoriteKeys] = useState<Set<string>>(() => new Set());
-  const [patronCollections, setPatronCollections] = useState<PatronCollectionWithEntries[]>([]);
-  const [snippedMediaIds, setSnippedMediaIds] = useState<Set<string>>(() => new Set());
-  const [snipTarget, setSnipTarget] = useState<{ postId: string; mediaId: string } | null>(null);
-  const [patronAuthed, setPatronAuthed] = useState(false);
+    let heroPrimary: string | null = null;
+    let heroSecondary: string | null = null;
+    if (showLayoutBio && bioTrim) {
+      heroPrimary = bioTrim;
+      if (subTrim && subTrim !== bioTrim) heroSecondary = subTrim;
+    } else if (subTrim) {
+      heroPrimary = subTrim;
+    }
+
+    const finalBanner = layoutCoverUrl || bannerUrl;
+    return {
+      bannerUrl,
+      avatarUrl,
+      displayName,
+      patreonProfileHref,
+      patreonSlug,
+      title,
+      showPatreonLink,
+      showTierBadges,
+      patreonLinkPosition,
+      heroPrimary,
+      heroSecondary,
+      finalBanner
+    };
+  }, [facets, pageLayout, creatorId]);
+
+  const heroMembershipTiers = useMemo(() => {
+    const tiers = facets?.tiers;
+    if (!tiers?.length) return [];
+    return [...tiers]
+      .filter(
+        (t) => !isFreePublicAccessTier(t) && t.tier_id !== RELAY_TIER_ALL_PATRONS
+      )
+      .sort((a, b) => (a.amount_cents ?? 0) - (b.amount_cents ?? 0))
+      .map((t) => ({ id: t.tier_id, title: t.title.trim() }))
+      .filter((x) => x.title.length > 0);
+  }, [facets?.tiers]);
+
+  const hasLayoutSections = (pageLayout?.sections?.length ?? 0) > 0;
+
+  const layoutDefaultAppliedRef = useRef(false);
+  useEffect(() => {
+    if (!hasLayoutSections) {
+      setProfileBrowseMode("classic");
+      layoutDefaultAppliedRef.current = false;
+      return;
+    }
+    if (!layoutDefaultAppliedRef.current) {
+      setProfileBrowseMode("layout");
+      layoutDefaultAppliedRef.current = true;
+    }
+  }, [hasLayoutSections]);
 
   useEffect(() => {
     const read = () =>
@@ -671,23 +742,56 @@ export default function VisitorGalleryView() {
     return { dev_sim_patron: true, simulate_tier_ids: [tierSimKey] };
   }, [tierSimKey]);
 
+  const { sectionItems: layoutSectionItems, loading: layoutSectionsLoading } = useLayoutSectionItems(
+    pageLayout,
+    creatorId,
+    collections,
+    {
+      visitor: true,
+      ...(tierSimParams ?? {})
+    }
+  );
+
   useEffect(() => {
     const t = window.setTimeout(() => setDebouncedSearch(searchInput.trim()), SEARCH_DEBOUNCE_MS);
     return () => window.clearTimeout(t);
   }, [searchInput]);
 
   const loadMeta = useCallback(async () => {
+    const u = new URLSearchParams();
+    u.set("creator_id", creatorId);
     try {
-      const f = await relayFetch<FacetsData>(buildGalleryFacetsQuery(creatorId, true));
+      const [f, colRes, layoutRes] = await Promise.all([
+        relayFetch<FacetsData>(buildGalleryFacetsQuery(creatorId, true)),
+        relayFetch<{ items: Collection[] }>(buildGalleryCollectionsQuery(creatorId, true)),
+        relayFetch<PageLayout>(`/api/v1/gallery/layout?${u.toString()}`)
+      ]);
       setFacets(f);
-      const colRes = await relayFetch<{ items: Collection[] }>(
-        buildGalleryCollectionsQuery(creatorId, true)
-      );
       setCollections(colRes.items.sort((a, b) => a.sort_order - b.sort_order));
+      setPageLayout(layoutRes);
     } catch (e) {
       if (process.env.NODE_ENV === "development") {
-        // Facets failure hides visitor_hero (banner/avatar); items may still load from a cached tab.
-        console.warn("[VisitorGallery] facets/collections request failed:", e);
+        console.warn("[VisitorGallery] facets/collections/layout request failed:", e);
+      }
+      try {
+        const f = await relayFetch<FacetsData>(buildGalleryFacetsQuery(creatorId, true));
+        setFacets(f);
+      } catch {
+        /* ignore */
+      }
+      try {
+        const colRes = await relayFetch<{ items: Collection[] }>(
+          buildGalleryCollectionsQuery(creatorId, true)
+        );
+        setCollections(colRes.items.sort((a, b) => a.sort_order - b.sort_order));
+      } catch {
+        setCollections([]);
+      }
+      try {
+        const layoutRes = await relayFetch<PageLayout>(`/api/v1/gallery/layout?${u.toString()}`);
+        setPageLayout(layoutRes);
+      } catch {
+        setPageLayout(null);
       }
     }
   }, [creatorId]);
@@ -719,32 +823,7 @@ export default function VisitorGalleryView() {
     void loadItems();
   }, [loadItems]);
 
-  /**
-   * Drop duplicate cover rows (`shadow_cover`) while retaining at least one row per post.
-   * This avoids accidental empty posts when a post has only shadow-flagged rows.
-   */
-  const catalogRows = useMemo(() => {
-    const byPost = new Map<string, GalleryItem[]>();
-    const order: string[] = [];
-    for (const it of items) {
-      if (!byPost.has(it.post_id)) {
-        order.push(it.post_id);
-        byPost.set(it.post_id, []);
-      }
-      byPost.get(it.post_id)!.push(it);
-    }
-    const out: GalleryItem[] = [];
-    for (const pid of order) {
-      const group = byPost.get(pid)!;
-      const nonShadow = group.filter((i) => !i.shadow_cover);
-      if (nonShadow.length > 0) {
-        out.push(...nonShadow);
-      } else if (group[0]) {
-        out.push(group[0]);
-      }
-    }
-    return out;
-  }, [items]);
+  const catalogRows = useMemo(() => dedupeShadowCoverRows(items), [items]);
 
   const filteredByContent = useMemo(() => {
     if (contentFilter === "all") return catalogRows;
@@ -796,6 +875,13 @@ export default function VisitorGalleryView() {
     return m;
   }, [facets?.tiers]);
 
+  const layoutTierOrderIds = useMemo(() => {
+    if (!facets?.tiers?.length) return [];
+    return [...facets.tiers]
+      .sort((a, b) => (a.amount_cents ?? 0) - (b.amount_cents ?? 0))
+      .map((t) => t.tier_id);
+  }, [facets?.tiers]);
+
   const postCount = postGroups.length;
   const assetCount = displayItems.length;
   const tagVariety = facets?.tag_ids?.length ?? 0;
@@ -830,10 +916,10 @@ export default function VisitorGalleryView() {
     <div className="library-shell flex min-h-0 flex-1 flex-col bg-[var(--lib-bg)] text-[var(--lib-fg)]">
       {/* Banner — optional URL; else cool green neutral wash */}
       <div className="relative h-[min(42vh,26rem)] w-full overflow-hidden bg-[var(--lib-muted)]">
-        {hero.bannerUrl ? (
+        {mergedProfile.finalBanner ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
-            src={hero.bannerUrl}
+            src={mergedProfile.finalBanner}
             alt=""
             referrerPolicy="no-referrer"
             className="h-full w-full object-cover object-center"
@@ -855,12 +941,12 @@ export default function VisitorGalleryView() {
         <div className="-mt-16 flex justify-center sm:-mt-[4.25rem] md:-mt-[4.75rem]">
           <div
             className="rounded-full border-[3px] border-[oklch(0.38_0.012_160)] bg-[oklch(0.2_0.01_160)] p-1 shadow-[0_14px_48px_rgba(0,0,0,0.5)] ring-[3px] ring-[oklch(0.28_0.01_160)] ring-offset-2 ring-offset-[var(--lib-bg)]"
-            aria-hidden={!hero.avatarUrl}
+            aria-hidden={!mergedProfile.avatarUrl}
           >
-            {hero.avatarUrl ? (
+            {mergedProfile.avatarUrl ? (
               // eslint-disable-next-line @next/next/no-img-element
               <img
-                src={hero.avatarUrl}
+                src={mergedProfile.avatarUrl}
                 alt=""
                 referrerPolicy="no-referrer"
                 className="h-[7.25rem] w-[7.25rem] rounded-full object-cover sm:h-[8rem] sm:w-[8rem] md:h-[9rem] md:w-[9rem]"
@@ -873,23 +959,60 @@ export default function VisitorGalleryView() {
             )}
           </div>
         </div>
-        <h1 className="mt-5 font-[family-name:var(--font-display)] text-2xl font-medium tracking-tight text-[var(--lib-fg)] sm:text-3xl md:text-[2rem]">
-          {hero.displayName}
-        </h1>
-        {hero.patreonProfileHref ? (
+        {mergedProfile.patreonProfileHref &&
+        mergedProfile.showPatreonLink &&
+        mergedProfile.patreonLinkPosition === "below_avatar" ? (
           <a
-            href={hero.patreonProfileHref}
+            href={mergedProfile.patreonProfileHref}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="mt-3 block max-w-lg truncate text-sm text-[var(--lib-fg-muted)] underline-offset-2 hover:text-[var(--lib-fg)] hover:underline"
+          >
+            patreon.com/{mergedProfile.patreonSlug}
+          </a>
+        ) : null}
+        <h1 className="mt-5 font-[family-name:var(--font-display)] text-2xl font-medium tracking-tight text-[var(--lib-fg)] sm:text-3xl md:text-[2rem]">
+          {mergedProfile.title}
+        </h1>
+        {mergedProfile.heroPrimary ? (
+          <p className="mt-2 max-w-lg text-sm leading-relaxed text-[var(--lib-fg-muted)]">
+            {mergedProfile.heroPrimary}
+          </p>
+        ) : null}
+        {mergedProfile.heroSecondary ? (
+          <p className="mt-1.5 max-w-lg text-xs leading-relaxed text-[var(--lib-fg-muted)] sm:text-sm">
+            {mergedProfile.heroSecondary}
+          </p>
+        ) : null}
+        {!mergedProfile.heroPrimary && !mergedProfile.heroSecondary ? (
+          <p className="mt-2 max-w-lg text-sm leading-relaxed text-[var(--lib-fg-muted)]">
+            {envVisitorTagline}
+          </p>
+        ) : null}
+        {mergedProfile.patreonProfileHref &&
+        mergedProfile.showPatreonLink &&
+        mergedProfile.patreonLinkPosition === "below_bio" ? (
+          <a
+            href={mergedProfile.patreonProfileHref}
             target="_blank"
             rel="noopener noreferrer"
             className="mt-2 block max-w-lg truncate text-sm text-[var(--lib-fg-muted)] underline-offset-2 hover:text-[var(--lib-fg)] hover:underline"
           >
-            patreon.com/{hero.patreonSlug}
+            patreon.com/{mergedProfile.patreonSlug}
           </a>
-        ) : (
-          <p className="mt-2 max-w-lg text-sm leading-relaxed text-[var(--lib-fg-muted)]">
-            {envVisitorTagline}
-          </p>
-        )}
+        ) : null}
+        {mergedProfile.showTierBadges && heroMembershipTiers.length > 0 ? (
+          <div className="mt-4 flex max-w-lg flex-wrap justify-center gap-1.5">
+            {heroMembershipTiers.map((t) => (
+              <span
+                key={t.id}
+                className="rounded-full border border-[var(--lib-border)] bg-[var(--lib-muted)]/80 px-2.5 py-0.5 text-[10px] font-medium text-[var(--lib-fg-muted)] sm:text-xs"
+              >
+                {t.title}
+              </span>
+            ))}
+          </div>
+        ) : null}
         <dl className="mt-5 flex flex-wrap justify-center gap-x-8 gap-y-2 text-xs sm:gap-x-10">
           <div>
             <dt className="uppercase tracking-[0.14em] text-[10px] text-[var(--lib-fg-muted)]">Posts</dt>
@@ -909,34 +1032,62 @@ export default function VisitorGalleryView() {
           className="mt-6 flex flex-wrap items-center justify-center gap-2"
           aria-label="Browse mode"
         >
-          {(
-            [
-              ["chrono", "Chronological"],
-              ["collections", "Collections"],
-              ["shuffle", "Random walk"]
-            ] as const
-          ).map(([id, label]) => (
-            <button key={id} type="button" className={navPill(mode === id)} onClick={() => {
-              setMode(id);
-              if (id !== "collections") setActiveCollectionId(null);
-            }}>
-              {label}
-            </button>
-          ))}
-          {mode === "shuffle" ? (
-            <button
-              type="button"
-              onClick={() => setShuffleNonce((n) => n + 1)}
-              className="inline-flex items-center gap-1 rounded-full border border-[var(--lib-border)] px-2.5 py-1.5 text-xs text-[var(--lib-fg-muted)] transition hover:border-[color-mix(in_srgb,var(--lib-selection)_40%,var(--lib-border))] hover:text-[var(--lib-fg)]"
-            >
-              <Shuffle className="h-3.5 w-3.5" aria-hidden />
-              Reshuffle
-            </button>
-          ) : null}
+          {hasLayoutSections ? (
+            <>
+              <button
+                type="button"
+                className={navPill(profileBrowseMode === "layout")}
+                onClick={() => setProfileBrowseMode("layout")}
+              >
+                Curated layout
+              </button>
+              <button
+                type="button"
+                className={navPill(profileBrowseMode === "classic")}
+                onClick={() => setProfileBrowseMode("classic")}
+              >
+                Full library
+              </button>
+            </>
+          ) : (
+            <>
+              {(
+                [
+                  ["chrono", "Chronological"],
+                  ["collections", "Collections"],
+                  ["shuffle", "Random walk"]
+                ] as const
+              ).map(([id, label]) => (
+                <button
+                  key={id}
+                  type="button"
+                  className={navPill(mode === id)}
+                  onClick={() => {
+                    setMode(id);
+                    if (id !== "collections") setActiveCollectionId(null);
+                  }}
+                >
+                  {label}
+                </button>
+              ))}
+              {mode === "shuffle" ? (
+                <button
+                  type="button"
+                  onClick={() => setShuffleNonce((n) => n + 1)}
+                  className="inline-flex items-center gap-1 rounded-full border border-[var(--lib-border)] px-2.5 py-1.5 text-xs text-[var(--lib-fg-muted)] transition hover:border-[color-mix(in_srgb,var(--lib-selection)_40%,var(--lib-border))] hover:text-[var(--lib-fg)]"
+                >
+                  <Shuffle className="h-3.5 w-3.5" aria-hidden />
+                  Reshuffle
+                </button>
+              ) : null}
+            </>
+          )}
         </nav>
 
         <p className="mt-3 text-[10px] text-[var(--lib-fg-muted)]/80">
-          Subscriber view — search and filters match the library (titles, tags, descriptions).
+          {hasLayoutSections && profileBrowseMode === "layout"
+            ? "Curated sections follow your Site Designer layout. Switch to Full library for search and filters."
+            : "Subscriber view — search and filters match the library (titles, tags, descriptions)."}
         </p>
 
         <div className="mt-4 flex flex-wrap items-center justify-center gap-3">
@@ -957,7 +1108,8 @@ export default function VisitorGalleryView() {
         </div>
       </div>
 
-      {/* Sticky filter strip (below sticky AppNav on /visitor: top-12 ≈ nav height) */}
+      {/* Sticky filter strip — hidden in curated layout mode (filters apply to full library only) */}
+      {profileBrowseMode === "classic" ? (
       <section className="sticky top-12 z-40 mx-auto mt-10 w-full max-w-6xl border-t border-b border-[color-mix(in_srgb,var(--lib-border)_85%,transparent)] bg-[color-mix(in_srgb,var(--lib-bg)_94%,transparent)] px-4 py-4 shadow-[0_8px_28px_-12px_rgba(0,0,0,0.45)] backdrop-blur-md supports-[backdrop-filter]:bg-[color-mix(in_srgb,var(--lib-bg)_82%,transparent)]">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:gap-6">
           <div className="relative w-full max-w-md shrink-0">
@@ -1130,9 +1282,20 @@ export default function VisitorGalleryView() {
           </p>
         ) : null}
       </section>
+      ) : null}
 
       <main className="mx-auto max-w-6xl px-4 py-8">
-        {loading ? (
+        {profileBrowseMode === "layout" && hasLayoutSections && pageLayout ? (
+          <PatronLayoutSections
+            layout={pageLayout}
+            sectionItems={layoutSectionItems}
+            loading={layoutSectionsLoading}
+            onOpenItem={(item) => void openModal(item)}
+            tierOrderIds={layoutTierOrderIds}
+            tierTitleById={tierTitleById}
+            tierFacets={facets?.tiers ?? []}
+          />
+        ) : loading ? (
           <p className="text-sm text-[var(--lib-fg-muted)]">Loading gallery…</p>
         ) : error ? (
           <p className="text-sm text-[var(--lib-warning)]">{error}</p>

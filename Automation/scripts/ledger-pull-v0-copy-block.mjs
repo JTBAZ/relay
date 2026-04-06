@@ -5,11 +5,19 @@
  * Usage (from Automation/):
  *   node scripts/ledger-pull-v0-copy-block.mjs <Production_Ledger_record_id> [--dry-run]
  *   node scripts/ledger-pull-v0-copy-block.mjs --chat=<chatId> <record_id>
+ *   node scripts/ledger-pull-v0-copy-block.mjs --write-file=./exports/full.md <record_id>
+ *
+ * Airtable long-text cells reject very large payloads; default COPY_BLOCK_MAX_CHARS is 95k.
+ * Use --write-file to dump the **untruncated** export for integration when the blob is larger.
  */
+import { mkdirSync, writeFileSync } from 'node:fs'
+import { dirname } from 'node:path'
 import 'dotenv/config'
 import { createClient } from 'v0-sdk'
 import {
   chatIdFromWebUrl,
+  collectVersionFilesWithPoll,
+  composeCopyBlockText,
   copyBlockMaxCharsFromEnv,
   copyBlockPollMaxMsFromEnv,
   copyBlockPollMsFromEnv,
@@ -40,6 +48,8 @@ async function main() {
   const dryRun = argv.includes('--dry-run')
   const chatArg = argv.find((a) => a.startsWith('--chat='))
   const chatFromFlag = chatArg ? chatArg.slice('--chat='.length).trim() : ''
+  const writeArg = argv.find((a) => a.startsWith('--write-file='))
+  const writeFilePath = writeArg ? writeArg.slice('--write-file='.length).trim() : ''
   const positional = argv.filter((a) => !a.startsWith('--'))
 
   const maxChars = copyBlockMaxCharsFromEnv()
@@ -47,7 +57,8 @@ async function main() {
   if (!recordId) {
     console.error(
       'Usage: node scripts/ledger-pull-v0-copy-block.mjs <Production_Ledger_record_id> [--dry-run]\n' +
-        '       node scripts/ledger-pull-v0-copy-block.mjs --chat=<chatId> <record_id>',
+        '       node scripts/ledger-pull-v0-copy-block.mjs --chat=<chatId> <record_id>\n' +
+        '       node scripts/ledger-pull-v0-copy-block.mjs --write-file=./exports/full.md <record_id>',
     )
     process.exit(1)
   }
@@ -67,6 +78,20 @@ async function main() {
   if (pollMaxMs > 0) {
     console.log(`Polling for version files (${pollMs}ms interval, max ${pollMaxMs}ms)…`)
   }
+
+  if (writeFilePath && !dryRun) {
+    const collected = await collectVersionFilesWithPoll(v0, chatId, pollMs, pollMaxMs)
+    const fullText = composeCopyBlockText({
+      chatId,
+      collected,
+      maxChars: Number.MAX_SAFE_INTEGER,
+      generatorLabel: 'ledger-pull-v0-copy-block.mjs',
+    })
+    mkdirSync(dirname(writeFilePath), { recursive: true })
+    writeFileSync(writeFilePath, fullText, 'utf8')
+    console.log(`Full copy block (${fullText.length} chars) → ${writeFilePath}`)
+  }
+
   const result = await syncCopyBlockToAirtable({
     v0,
     baseId,
