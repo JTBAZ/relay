@@ -18,7 +18,7 @@ Use this matrix to map each roadmap workstream to implementation contracts, stan
 ## Build Mapping Notes
 
 - For recommendation logic and Action Center behavior, default to `analytics-action-center-spec.md`.
-- For pricing, hosting mode, and service boundaries (managed vs BYOI), default to `monetization-scheme-infrastructure-plan.md`.
+- For pricing, hosting mode, and service boundaries (managed vs BYOI), default to `monetization-scheme-infrastructure-plan.md`. For **published prices**, **fan tier SKUs**, **Skip payout rate**, **storefront take rate**, and **financial projections**, default to `docs/financial-atlas.md`.
 - For contract-level implementation, this pack's `contracts/` directory is the source of truth.
 
 ## Change Control

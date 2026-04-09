@@ -9,6 +9,7 @@ Use this pack with:
 - [road map.md](c:\Users\jorda\Documents\Coding Projects\Rescue\road map.md)
 - [analytics-action-center-spec.md](c:\Users\jorda\Documents\Coding Projects\Rescue\analytics-action-center-spec.md)
 - [monetization-scheme-infrastructure-plan.md](c:\Users\jorda\Documents\Coding Projects\Rescue\monetization-scheme-infrastructure-plan.md)
+- [docs/financial-atlas.md](c:\Users\jorda\Documents\Coding Projects\Rescue\docs\financial-atlas.md) — business model, tier table, Skip/Boost economics, financial projections
 
 ## Authority Order (When Documents Conflict)
 
@@ -16,7 +17,7 @@ Use this pack with:
 2. Security and compliance checklist (`standards/security-compliance-checklist.md`)
 3. Non-functional requirements (`standards/non-functional-requirements.md`)
 4. Roadmap and workstream sequence (`road map.md`)
-5. Product strategy/reference docs (`analytics-action-center-spec.md`, `monetization-scheme-infrastructure-plan.md`)
+5. Product strategy/reference docs (`analytics-action-center-spec.md`, `monetization-scheme-infrastructure-plan.md`, `docs/financial-atlas.md`)
 
 If a conflict is discovered, log it in your implementation notes and follow the higher authority document.
 

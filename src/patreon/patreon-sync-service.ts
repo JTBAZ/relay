@@ -731,8 +731,10 @@ export class PatreonSyncService {
 
   /**
    * Fetches campaign members from Patreon and upserts them into the identity
-   * store with their currently entitled tier ids. Requires `campaigns.members`
-   * scope on the OAuth token.
+   * store with their currently entitled tier ids.
+   * Requires creator token scopes `campaigns.members` and `campaigns.members[email]` for
+   * member email in `fields[member]` (see `PATREON_CREATOR_OAUTH_SCOPES` in
+   * `patreon-creator-oauth-scopes.ts` and the dev connect page authorize URL).
    */
   public async syncMembers(
     creatorId: string,

@@ -46,6 +46,27 @@ function oauthLine(oauth: PatreonOAuthHealthData): { className: string; text: st
   return { className: "text-[var(--lib-success)]", text: "OAuth healthy." };
 }
 
+function webhookRegistrationLine(
+  w: PatreonSyncStateData["webhook_registration"]
+): { className: string; text: string } | null {
+  if (!w) return null;
+  if (w.registration_status === "ok") {
+    return { className: "text-[var(--lib-success)]", text: "Patreon webhooks registered." };
+  }
+  if (w.registration_status === "skipped_no_public_url") {
+    return {
+      className: "text-[var(--lib-fg-muted)]",
+      text: "Webhooks skipped — set RELAY_PUBLIC_WEBHOOK_BASE_URL on the API host."
+    };
+  }
+  return {
+    className: "text-[var(--lib-destructive)]",
+    text: w.last_registration_error
+      ? `Webhook registration failed: ${w.last_registration_error}`
+      : "Webhook registration failed."
+  };
+}
+
 function cookieSessionLine(
   s: PatreonSyncStateData
 ): { className: string; text: string } | null {
@@ -311,6 +332,31 @@ export default function PatreonSyncMenu({
                       <p className="mt-1 text-[11px] text-[var(--lib-fg-muted)]">Not recorded yet.</p>
                     )}
                   </div>
+
+                  {(() => {
+                    const wh = webhookRegistrationLine(state.webhook_registration);
+                    if (!wh) {
+                      return (
+                        <div className="mt-2 border-t border-[var(--lib-border)] pt-2">
+                          <p className="text-[10px] font-semibold uppercase tracking-wide text-[var(--lib-fg-muted)]">
+                            Patreon webhooks
+                          </p>
+                          <p className="mt-1 text-[11px] text-[var(--lib-fg-muted)]">
+                            No registration data yet. Reconnect OAuth or POST{" "}
+                            <code className="rounded bg-[var(--lib-muted)] px-0.5">/api/v1/patreon/webhooks/register</code>.
+                          </p>
+                        </div>
+                      );
+                    }
+                    return (
+                      <div className="mt-2 border-t border-[var(--lib-border)] pt-2">
+                        <p className="text-[10px] font-semibold uppercase tracking-wide text-[var(--lib-fg-muted)]">
+                          Patreon webhooks
+                        </p>
+                        <p className={`mt-1 text-[11px] font-medium ${wh.className}`}>{wh.text}</p>
+                      </div>
+                    );
+                  })()}
                 </div>
               )}
 

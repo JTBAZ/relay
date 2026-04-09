@@ -23,6 +23,8 @@ function configFromEnv(): Parameters<typeof createApp>[0] {
     ingest_dlq_path: process.env.RELAY_INGEST_DLQ_PATH,
     patreon_sync_watermark_path: process.env.RELAY_PATREON_SYNC_WATERMARK_PATH,
     patreon_sync_health_path: process.env.RELAY_PATREON_SYNC_HEALTH_PATH,
+    public_webhook_base_url:
+      process.env.RELAY_PUBLIC_WEBHOOK_BASE_URL ?? process.env.PUBLIC_WEBHOOK_BASE_URL,
     creator_campaign_display_path: process.env.RELAY_CREATOR_CAMPAIGN_DISPLAY_PATH,
     relay_creator_display_name: process.env.RELAY_CREATOR_DISPLAY_NAME,
     export_storage_root: process.env.RELAY_EXPORT_STORAGE_ROOT,

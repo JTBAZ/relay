@@ -616,6 +616,14 @@ export type CampaignDisplayData = {
   captured_at: string;
 };
 
+export type WebhookRegistrationSummaryData = {
+  registration_status: "ok" | "failed" | "skipped_no_public_url";
+  uri_registered?: string;
+  triggers?: string[];
+  last_registration_error?: string;
+  updated_at?: string;
+};
+
 export type PatreonSyncStateData = {
   creator_id: string;
   patreon_campaign_id: string;
@@ -629,6 +637,8 @@ export type PatreonSyncStateData = {
   last_post_scrape: LastPostScrapeHealthData | null;
   last_member_sync: LastMemberSyncHealthData | null;
   campaign_display: CampaignDisplayData | null;
+  /** Patreon platform webhook registration (member/post delivery). */
+  webhook_registration?: WebhookRegistrationSummaryData | null;
 };
 
 /** True when the Library should show a sync-issue pill without opening the menu. */
@@ -639,6 +649,7 @@ export function syncStateNeedsAttention(s: PatreonSyncStateData): boolean {
   if (s.cookie_session_status === "rejected_remote") return true;
   if (s.last_post_scrape && !s.last_post_scrape.ok) return true;
   if (s.last_member_sync && !s.last_member_sync.ok) return true;
+  if (s.webhook_registration?.registration_status === "failed") return true;
   return false;
 }
 
@@ -661,6 +672,9 @@ export function formatSyncHealthBanner(s: PatreonSyncStateData): string | null {
   }
   if (s.last_member_sync && !s.last_member_sync.ok && s.last_member_sync.error?.hint) {
     return `Member sync: ${s.last_member_sync.error.hint}`;
+  }
+  if (s.webhook_registration?.registration_status === "failed" && s.webhook_registration.last_registration_error) {
+    return `Patreon webhook registration failed: ${s.webhook_registration.last_registration_error}`;
   }
   if (s.oauth.access_token_expires_soon) {
     return "Patreon token expires soon — refresh or reconnect.";

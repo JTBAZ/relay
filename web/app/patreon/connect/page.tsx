@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { PATREON_CREATOR_OAUTH_SCOPES } from "@/lib/patreon-creator-scopes";
 
 /**
  * Dev helper: builds Patreon’s authorize URL. Uses NEXT_PUBLIC_PATREON_CLIENT_ID
@@ -23,10 +24,7 @@ export default function PatreonConnectPage() {
     u.searchParams.set("response_type", "code");
     u.searchParams.set("client_id", clientId.trim());
     u.searchParams.set("redirect_uri", redirectUri);
-    u.searchParams.set(
-      "scope",
-      "identity campaigns campaigns.posts"
-    );
+    u.searchParams.set("scope", PATREON_CREATOR_OAUTH_SCOPES);
     u.searchParams.set("state", creatorId.trim() || "dev_creator");
     return u.toString();
   }, [clientId, redirectUri, creatorId]);
@@ -52,6 +50,12 @@ export default function PatreonConnectPage() {
       <h1 className="font-[family-name:var(--font-display)] text-2xl text-stone-50">
         Connect Patreon (dev)
       </h1>
+      <p className="text-sm text-stone-300">
+        Uses scopes{" "}
+        <code className="rounded bg-stone-800 px-1 text-stone-200">{PATREON_CREATOR_OAUTH_SCOPES}</code>
+        — includes <code className="rounded bg-stone-800 px-1">campaigns.members</code> so member sync
+        and emails work with the same creator token.
+      </p>
       <p className="text-sm text-stone-300">
         The <strong className="text-stone-100">Client ID</strong> here is public (same as in
         Patreon’s portal). Your <strong className="text-stone-100">Client Secret</strong> stays

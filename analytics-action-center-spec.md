@@ -4,6 +4,7 @@
 
 For implementation governance, contracts, and quality gates, pair this spec with:
 
+- Business model, tier pricing, and patron-side monetization when recommendations imply revenue: [docs/financial-atlas.md](docs/financial-atlas.md)
 - Long-term growth analytics phases (beyond v1 cards): [docs/growth-analytics-features.md](docs/growth-analytics-features.md)
 - Third-party / supplemental metrics when official APIs are insufficient: [docs/third-party-metrics-sourcing.md](docs/third-party-metrics-sourcing.md)
 - [builder-boost-pack/README.md](c:\Users\jorda\Documents\Coding Projects\Rescue\builder-boost-pack\README.md)

@@ -73,7 +73,12 @@ export async function fetchPostById(
   return patreonGet(singlePostUrl(postId), opts);
 }
 
-/** One page of members for a campaign (scope: campaigns.members). */
+/**
+ * One page of members for a campaign.
+ * Requires creator authorize scopes `campaigns.members`; add `campaigns.members[email]` when
+ * `fields[member]` includes `email` (see `PATREON_CREATOR_OAUTH_SCOPES` in
+ * `patreon-creator-oauth-scopes.ts`).
+ */
 export function membersPageUrl(campaignId: string, nextFullUrl?: string | null): string {
   if (nextFullUrl) return nextFullUrl;
   const params = new URLSearchParams();

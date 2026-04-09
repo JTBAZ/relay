@@ -1,6 +1,8 @@
 # Agent prompt: Discovery promo, Premium viewers, and boost tokens
 
-**Use this document** when you are asked to update `road map.md`, `monetization-scheme-infrastructure-plan.md`, `analytics-action-center-spec.md`, workstream traceability matrices, or implementation plans so that engineering milestones align with the product strategy below.
+**Use this document** when you are asked to update `road map.md`, `monetization-scheme-infrastructure-plan.md`, `docs/financial-atlas.md`, `analytics-action-center-spec.md`, workstream traceability matrices, or implementation plans so that engineering milestones align with the product strategy below.
+
+**Authoritative numbers** for Supporter/Curator pricing, Skip payout rate, Reload packs, and Promo Pool rules live in [docs/financial-atlas.md](financial-atlas.md). This agent prompt defines *constraints and mechanics*; update the atlas when those numbers change.
 
 Copy everything from **“Instructions for the coding agent”** through **“Milestone alignment”** into a task prompt, or reference this file path in the agent context.
 
@@ -116,6 +118,7 @@ When updating **Milestone Build Order** or Part 3 workstreams, preserve this **s
 ## File references (repo)
 
 - [road map.md](../road%20map.md) — Part 3, Workstreams M, N, O; Milestone Build Order.
+- [financial-atlas.md](financial-atlas.md) — tier pricing, Skip/Boost/Reload unit economics, storefront take rate, projections, ruled-out models.
 - [monetization-scheme-infrastructure-plan.md](../monetization-scheme-infrastructure-plan.md) — COGS, packaging, compliance cross-links.
 - [analytics-action-center-spec.md](../analytics-action-center-spec.md) — events, recommendations, reporting.
 

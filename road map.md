@@ -37,6 +37,7 @@ Relay is **two intentional products** that share one **access and content model*
 
 Use this roadmap as the execution sequence and use the reference docs for deeper implementation decisions:
 
+- **Managed agent swarms (Airtable queue + strict roles):** [docs/agents/README.md](docs/agents/README.md) and [docs/agents/BUILD_BRIEF.md](docs/agents/BUILD_BRIEF.md) — operational ground truth is the **Production Ledger** in Airtable (see [docs/agents/AIRTABLE_LEDGER.md](docs/agents/AIRTABLE_LEDGER.md)); this file is strategic narrative, not the live task queue by itself.
 - **Coding agents / anyone touching Patreon ingest or gallery duplicate behavior:** read [AGENTS.md](AGENTS.md), [docs/patreon-ingest-canonical.md](docs/patreon-ingest-canonical.md), and [docs/relay-artist-metadata.md](docs/relay-artist-metadata.md) so canonical vs overrides stay aligned (artist tags/visibility survive re-ingest).
 - Library + Designer UX ideals, workflows, gaps, and phased UI backlog:
   - [docs/pattern-library.md](docs/pattern-library.md)
@@ -50,6 +51,8 @@ Use this roadmap as the execution sequence and use the reference docs for deeper
 - **Third-party metrics when APIs are insufficient** (aggregators, optional extractors, Relay Link / first-party supplements): tiered strategy and compliance posture in [docs/third-party-metrics-sourcing.md](docs/third-party-metrics-sourcing.md). **Not** a substitute for first-party Relay telemetry.
 - Pricing model, COGS guardrails, hosting modes, and post-independence operations:
   - [monetization-scheme-infrastructure-plan.md](c:\Users\jorda\Documents\Coding Projects\Rescue\monetization-scheme-infrastructure-plan.md)
+- **Canonical business model, revenue streams, unit economics, projections, and ruled-out decisions:**
+  - [docs/financial-atlas.md](docs/financial-atlas.md)
 - **Audience Premium, daily paywalled promos, and boost tokens** — strategic constraints and agent prompt for roadmap/plan edits:
   - [docs/monetization-discovery-premium-agent-prompt.md](docs/monetization-discovery-premium-agent-prompt.md)
 
@@ -59,6 +62,7 @@ Quick routing:
 - Data sourcing, event contracts, and service boundaries -> Builder Boost Pack contracts + Analytics Action Center Spec.
 - Pathing for managed vs BYOI deployment and migration economics -> Monetization Scheme and Infrastructure Plan.
 - Daily promo slot, Premium viewer tier, boost tokens, attribution -> [docs/monetization-discovery-premium-agent-prompt.md](docs/monetization-discovery-premium-agent-prompt.md).
+- Pricing decisions, tier structure, payout rates, ruled-out models, market sizing, GTM pilot math -> [docs/financial-atlas.md](docs/financial-atlas.md).
 - Security, compliance, and outreach governance decisions -> Builder Boost Pack standards + Monetization Scheme and Infrastructure Plan.
 - Library and Designer sequencing before heavy patron-facing polish -> [docs/pattern-library.md](docs/pattern-library.md) (Part 3 builds on stable gallery and layout contracts).
 - Patreon sync/export hardening Slices 1–4 (what shipped, where to change code) -> [docs/part1-sync-hardening-ledger.md](docs/part1-sync-hardening-ledger.md).
@@ -465,6 +469,7 @@ Exit gate:
 - After baseline feed retention exists: optional **premium viewer** tier (cosmetics, denser discovery, or similar non-extractive perks).
 - Optional **boost** or signal products: paid visibility must be disclosed, auditable, and subordinate to creator opt-in and policy.
 - Revenue model stays aligned with [monetization-scheme-infrastructure-plan.md](c:\Users\jorda\Documents\Coding Projects\Rescue\monetization-scheme-infrastructure-plan.md): primary recurring revenue remains creator SaaS; audience revenue offsets patron-side COGS.
+- **Concrete pricing, Skip payouts, Boost cadence, and Promo Pool economics** (when implementing or copy-testing): [docs/financial-atlas.md](docs/financial-atlas.md).
 
 Exit gate:
 - Legal and product review for paid ranking or boosts completed before launch.

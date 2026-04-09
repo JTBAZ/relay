@@ -1,5 +1,6 @@
 import express, { Request, Response } from "express";
 import { randomUUID } from "node:crypto";
+import { dirname, join } from "node:path";
 import { PatreonAuthService } from "./auth/auth-service.js";
 import { FilePatreonCookieStore } from "./auth/cookie-store.js";
 import { PatreonClient } from "./auth/patreon-client.js";
@@ -107,7 +108,16 @@ import { CreatorCampaignDisplayStore } from "./patreon/creator-campaign-display-
 import { PatreonSyncHealthStore } from "./patreon/patreon-sync-health-store.js";
 import { PatreonSyncService } from "./patreon/patreon-sync-service.js";
 import { classifySyncError } from "./patreon/sync-error-copy.js";
-import { processPatreonWebhook } from "./webhooks/patreon-webhook.js";
+import { PatreonCampaignCreatorIndex } from "./patreon/patreon-campaign-creator-index.js";
+import { PatreonMemberSyncCoordinator } from "./patreon/patreon-member-sync-coordinator.js";
+import {
+  ensurePatreonPlatformWebhook,
+  resolvePublicWebhookBaseFromEnv
+} from "./patreon/patreon-webhook-registration.js";
+import { dispatchVerifiedPatreonPlatformPayload } from "./patreon/patreon-webhook-platform.js";
+import { PatreonWebhookMetadataStore } from "./patreon/patreon-webhook-metadata-store.js";
+import { verifyPatreonWebhookSignature } from "./patreon/patreon-webhook-signature.js";
+import { processPatreonWebhookStub } from "./webhooks/patreon-webhook.js";
 import { CampaignService } from "./migrate/campaign-service.js";
 import { FileMigrationStore } from "./migrate/migration-store.js";
 import type { TierMapping } from "./migrate/types.js";
@@ -132,6 +142,15 @@ export type AppConfig = {
   patreon_sync_watermark_path?: string;
   /** Last post/member sync outcomes for creator-facing health (v1 local JSON). */
   patreon_sync_health_path?: string;
+  /** `patreon_campaign_numeric_id` → Relay `creator_id` (webhook routing). Default `.relay-data/patreon_campaign_creator_index.json`. */
+  patreon_campaign_creator_index_path?: string;
+  /** Encrypted Patreon webhook secrets + opaque delivery tokens. Default `.relay-data/patreon_webhook_metadata.json`. */
+  patreon_webhook_metadata_path?: string;
+  /**
+   * Public base URL for registered webhook URIs (no trailing slash), e.g. `https://relay.example.com`.
+   * Falls back to `RELAY_PUBLIC_WEBHOOK_BASE_URL` / `PUBLIC_WEBHOOK_BASE_URL` when unset.
+   */
+  public_webhook_base_url?: string;
   /** Patreon campaign avatar, banner, patron_count snapshot (default `.relay-data/creator_campaign_display.json`). */
   creator_campaign_display_path?: string;
   /**
@@ -238,10 +257,15 @@ export function createApp(config: AppConfig): CreateAppResult {
   const encryption = new TokenEncryption(
     required(config.relay_token_encryption_key, "relay_token_encryption_key")
   );
-  const tokenStore = new FilePatreonTokenStore(
-    config.credential_store_path ?? ".relay-data/patreon_credentials.json",
-    encryption
-  );
+  const credentialStorePath = config.credential_store_path ?? ".relay-data/patreon_credentials.json";
+  const relayDataDir = dirname(credentialStorePath);
+  const patreonCampaignIndexPath =
+    config.patreon_campaign_creator_index_path ??
+    join(relayDataDir, "patreon_campaign_creator_index.json");
+  const patreonWebhookMetadataPath =
+    config.patreon_webhook_metadata_path ?? join(relayDataDir, "patreon_webhook_metadata.json");
+
+  const tokenStore = new FilePatreonTokenStore(credentialStorePath, encryption);
   const eventBus = new InMemoryEventBus();
   const canonicalStore = new FileCanonicalStore(
     config.ingest_canonical_path ?? ".relay-data/canonical.json"
@@ -358,6 +382,11 @@ export function createApp(config: AppConfig): CreateAppResult {
   const patreonSyncHealthStore = new PatreonSyncHealthStore(
     config.patreon_sync_health_path ?? ".relay-data/patreon_sync_health.json"
   );
+  const patreonCampaignCreatorIndex = new PatreonCampaignCreatorIndex(patreonCampaignIndexPath);
+  const patreonWebhookMetadataStore = new PatreonWebhookMetadataStore(
+    patreonWebhookMetadataPath,
+    encryption
+  );
   const creatorCampaignDisplayStore = new CreatorCampaignDisplayStore(
     config.creator_campaign_display_path ?? ".relay-data/creator_campaign_display.json"
   );
@@ -380,8 +409,95 @@ export function createApp(config: AppConfig): CreateAppResult {
     patreonSyncHealthStore,
     creatorCampaignDisplayStore
   );
+  const patreonMemberSyncCoordinator = new PatreonMemberSyncCoordinator(
+    patreonSyncService,
+    patreonSyncHealthStore,
+    60_000
+  );
+
+  const publicWebhookBaseResolved =
+    config.public_webhook_base_url?.trim() || resolvePublicWebhookBaseFromEnv();
 
   const app = express();
+
+  const patreonPlatformRawBody = express.raw({
+    type: (req) =>
+      String(req.headers["content-type"] ?? "")
+        .toLowerCase()
+        .includes("json"),
+    limit: "6mb"
+  });
+
+  app.post(
+    "/api/v1/webhooks/patreon/platform/:opaqueToken",
+    patreonPlatformRawBody,
+    async (req: Request, res: Response) => {
+      const traceId = traceIdFrom(req);
+      const opaque =
+        typeof req.params.opaqueToken === "string" ? req.params.opaqueToken.trim() : "";
+      if (!opaque) {
+        return res
+          .status(400)
+          .json(errorEnvelope("VALIDATION_ERROR", "Missing webhook token.", traceId));
+      }
+      const creatorId = await patreonWebhookMetadataStore.getCreatorIdForOpaqueToken(opaque);
+      if (!creatorId) {
+        return res
+          .status(404)
+          .json(errorEnvelope("NOT_FOUND", "Unknown webhook delivery token.", traceId));
+      }
+      const meta = await patreonWebhookMetadataStore.getByCreatorId(creatorId);
+      const secret = meta
+        ? patreonWebhookMetadataStore.decryptWebhookSecret(meta)
+        : null;
+      if (!secret) {
+        return res.status(503).json(
+          errorEnvelope(
+            "WEBHOOK_NOT_READY",
+            "Webhook is not registered or secret is missing. POST /api/v1/patreon/webhooks/register.",
+            traceId
+          )
+        );
+      }
+      const raw = req.body;
+      if (!Buffer.isBuffer(raw)) {
+        return res
+          .status(400)
+          .json(errorEnvelope("VALIDATION_ERROR", "Expected raw JSON body.", traceId));
+      }
+      const sig = req.header("x-patreon-signature");
+      if (!verifyPatreonWebhookSignature(raw, sig, secret)) {
+        return res
+          .status(401)
+          .json(errorEnvelope("UNAUTHORIZED", "Invalid Patreon webhook signature.", traceId));
+      }
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(raw.toString("utf8"));
+      } catch {
+        return res
+          .status(400)
+          .json(errorEnvelope("VALIDATION_ERROR", "Invalid JSON body.", traceId));
+      }
+      const eventHeader = req.header("x-patreon-event");
+      try {
+        await dispatchVerifiedPatreonPlatformPayload({
+          creatorId,
+          eventHeader,
+          parsedJson: parsed,
+          traceId,
+          syncService: patreonSyncService,
+          memberCoordinator: patreonMemberSyncCoordinator
+        });
+        return res.status(202).json(successEnvelope({ accepted: true }, traceId));
+      } catch (err: unknown) {
+        return res
+          .status(502)
+          .json(errorEnvelope("PATREON_WEBHOOK_ERROR", (err as Error).message, traceId));
+      }
+    }
+  );
+
   app.use(express.json());
   app.use((req, res, next) => {
     // Echo Origin when present so cross-origin fetch() with Authorization works in strict
@@ -447,6 +563,17 @@ export function createApp(config: AppConfig): CreateAppResult {
         body.redirect_uri as string,
         traceId
       );
+      const cid = body.creator_id as string;
+      void ensurePatreonPlatformWebhook({
+        creatorId: cid.trim(),
+        tokenStore,
+        webhookMetaStore: patreonWebhookMetadataStore,
+        campaignIndex: patreonCampaignCreatorIndex,
+        publicWebhookBaseUrl: publicWebhookBaseResolved,
+        fetchImpl: config.fetch_impl ?? globalThis.fetch
+      }).catch(() => {
+        /* registration is best-effort; status persisted on webhook meta store */
+      });
       return res.status(200).json(successEnvelope(result, traceId));
     } catch (error) {
       return res
@@ -562,7 +689,16 @@ export function createApp(config: AppConfig): CreateAppResult {
         campaign_id: campaignId || undefined,
         probe_upstream: probeUpstream
       });
-      return res.status(200).json(successEnvelope(state, traceId));
+      const whMeta = await patreonWebhookMetadataStore.getByCreatorId(creatorId);
+      return res.status(200).json(
+        successEnvelope(
+          {
+            ...state,
+            webhook_registration: patreonWebhookMetadataStore.getPublicSummary(whMeta)
+          },
+          traceId
+        )
+      );
     } catch (err: unknown) {
       const msg = (err as Error).message;
       const notFound =
@@ -643,6 +779,19 @@ export function createApp(config: AppConfig): CreateAppResult {
       } catch {
         /* best-effort health persistence */
       }
+      if (!dryRun) {
+        const idx = await patreonCampaignCreatorIndex.upsert(
+          result.patreon_campaign_id,
+          creatorId.trim()
+        );
+        if (!idx.ok) {
+          // eslint-disable-next-line no-console -- ops visibility for multi-tenant safety
+          console.warn(
+            `[patreon] campaign index collision: campaign=${result.patreon_campaign_id} ` +
+              `creator=${creatorId} existing_creator=${idx.existing_creator_id}`
+          );
+        }
+      }
       return res.status(200).json(successEnvelope(payload, traceId));
     } catch (err: unknown) {
       const msg = (err as Error).message;
@@ -694,6 +843,17 @@ export function createApp(config: AppConfig): CreateAppResult {
       } catch {
         /* best-effort */
       }
+      const idx = await patreonCampaignCreatorIndex.upsert(
+        result.patreon_campaign_id,
+        (body.creator_id as string).trim()
+      );
+      if (!idx.ok) {
+        // eslint-disable-next-line no-console -- ops visibility for multi-tenant safety
+        console.warn(
+          `[patreon] campaign index collision: campaign=${result.patreon_campaign_id} ` +
+            `creator=${body.creator_id} existing_creator=${idx.existing_creator_id}`
+        );
+      }
       return res.status(200).json(successEnvelope(result, traceId));
     } catch (err: unknown) {
       const msg = (err as Error).message;
@@ -720,11 +880,70 @@ export function createApp(config: AppConfig): CreateAppResult {
     }
   });
 
+  app.post("/api/v1/patreon/webhooks/register", async (req: Request, res: Response) => {
+    const traceId = traceIdFrom(req);
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const details = validateRequiredFields(body, ["creator_id"]);
+    if (details.length > 0) {
+      return res
+        .status(400)
+        .json(errorEnvelope("VALIDATION_ERROR", "Invalid request payload.", traceId, details));
+    }
+    const creatorId = (body.creator_id as string).trim();
+    try {
+      const result = await ensurePatreonPlatformWebhook({
+        creatorId,
+        tokenStore,
+        webhookMetaStore: patreonWebhookMetadataStore,
+        campaignIndex: patreonCampaignCreatorIndex,
+        publicWebhookBaseUrl: publicWebhookBaseResolved,
+        fetchImpl: config.fetch_impl ?? globalThis.fetch
+      });
+      if (!result.ok) {
+        if (result.reason === "no_public_base") {
+          return res.status(400).json(
+            errorEnvelope(
+              "CONFIG_ERROR",
+              "Set RELAY_PUBLIC_WEBHOOK_BASE_URL (or public_webhook_base_url) to your public Relay API origin.",
+              traceId
+            )
+          );
+        }
+        if (result.reason === "no_tokens") {
+          return res.status(404).json(errorEnvelope("NOT_FOUND", "No Patreon tokens for creator.", traceId));
+        }
+        if (result.reason === "multi_campaign") {
+          return res.status(409).json(
+            errorEnvelope(
+              "AMBIGUOUS_CAMPAIGN",
+              result.detail ??
+                "Multiple Patreon campaigns — set a default campaign before registering webhooks.",
+              traceId
+            )
+          );
+        }
+        return res.status(502).json(
+          errorEnvelope("PATREON_WEBHOOK_REGISTER_ERROR", result.detail ?? "Registration failed.", traceId)
+        );
+      }
+      return res.status(200).json(
+        successEnvelope(
+          { creator_id: creatorId, webhook_id: result.webhook_id, uri: result.uri },
+          traceId
+        )
+      );
+    } catch (err: unknown) {
+      return res
+        .status(502)
+        .json(errorEnvelope("PATREON_WEBHOOK_REGISTER_ERROR", (err as Error).message, traceId));
+    }
+  });
+
   app.post("/api/v1/webhooks/patreon", async (req: Request, res: Response) => {
     const traceId = traceIdFrom(req);
     const body = (req.body ?? {}) as Record<string, unknown>;
     try {
-      const result = await processPatreonWebhook(
+      const result = await processPatreonWebhookStub(
         {
           creator_id: typeof body.creator_id === "string" ? body.creator_id : undefined,
           campaign_id: typeof body.campaign_id === "string" ? body.campaign_id : undefined,

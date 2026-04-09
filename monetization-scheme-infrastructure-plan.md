@@ -4,6 +4,7 @@
 
 For build controls, compliance gates, and traceable execution, pair this plan with:
 
+- [docs/financial-atlas.md](docs/financial-atlas.md) — **canonical** tier table, Skip/Boost economics, storefront assumptions, projections, and ruled-out revenue models (this plan focuses on *infra COGS and packaging*; the atlas is *what we charge and pay*).
 - [builder-boost-pack/README.md](c:\Users\jorda\Documents\Coding Projects\Rescue\builder-boost-pack\README.md)
 - [builder-boost-pack/builder-decision-checklist.md](c:\Users\jorda\Documents\Coding Projects\Rescue\builder-boost-pack\builder-decision-checklist.md)
 - [builder-boost-pack/standards/security-compliance-checklist.md](c:\Users\jorda\Documents\Coding Projects\Rescue\builder-boost-pack\standards\security-compliance-checklist.md)
