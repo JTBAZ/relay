@@ -1,4 +1,4 @@
-import type { FilePatreonTokenStore } from "../auth/token-store.js";
+import type { PatreonTokenStore } from "../auth/token-store.js";
 import { pickDefaultCampaignId } from "./map-patreon-to-ingest.js";
 import type { PatreonCampaignCreatorIndex } from "./patreon-campaign-creator-index.js";
 import { createWebhook, listWebhooks } from "./patreon-webhook-api.js";
@@ -50,7 +50,7 @@ export type EnsureWebhookResult =
  */
 export async function ensurePatreonPlatformWebhook(args: {
   creatorId: string;
-  tokenStore: FilePatreonTokenStore;
+  tokenStore: PatreonTokenStore;
   webhookMetaStore: PatreonWebhookMetadataStore;
   campaignIndex: PatreonCampaignCreatorIndex;
   publicWebhookBaseUrl: string | undefined;

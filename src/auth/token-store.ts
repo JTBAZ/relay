@@ -27,7 +27,13 @@ export type PersistedPatreonTokens = {
   credential_health_status: CredentialHealthStatus;
 };
 
-export class FilePatreonTokenStore {
+/** Same surface as `FilePatreonTokenStore` / `DbPatreonTokenStore`. */
+export interface PatreonTokenStore {
+  upsert(tokens: PersistedPatreonTokens): Promise<void>;
+  getByCreatorId(creatorId: string): Promise<PersistedPatreonTokens | null>;
+}
+
+export class FilePatreonTokenStore implements PatreonTokenStore {
   private readonly filePath: string;
   private readonly tokenEncryption: TokenEncryption;
 

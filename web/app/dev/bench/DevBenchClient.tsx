@@ -19,6 +19,17 @@ const steps = [
     title: "Dev public profile",
     description: "Patron-facing gallery — curated layout + full library toggle, merged hero.",
   },
+  {
+    href: "/patron/feed",
+    title: "Supporter home (mock)",
+    description:
+      "Relay shell: following list (on-Relay vs Patreon-only), Discover, Library; optional live API via dev tools + env.",
+  },
+  {
+    href: "/patron/former-subscriptions",
+    title: "Former subscriptions (mock)",
+    description: "Ended pledges with Patreon re-subscribe links — fixtures only.",
+  },
 ] as const;
 
 export default function DevBenchClient() {

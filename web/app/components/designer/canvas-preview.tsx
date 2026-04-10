@@ -952,6 +952,7 @@ function PatronUpgradeNudge({
   accentColor: string;
   fonts: { heading: string; body: string };
 }) {
+  void facets;
   if (useFacets && tierOrderIds.length > 0) {
     const viewerLabel =
       viewerMaxRank < 0
@@ -1166,7 +1167,7 @@ const ACCENT_COLORS: Record<string, string> = {
 };
 
 /** Accent picker removed from Theme for now — preview uses fixed Relay green. */
-function resolveAccent(_theme: PageLayout["theme"]): string {
+function resolveAccent(): string {
   return ACCENT_COLORS.green;
 }
 
@@ -1442,7 +1443,7 @@ export function CanvasPreview({
   const bp = BREAKPOINTS.find((b) => b.key === breakpoint)!;
   const visibleSections = layout.sections.filter((s) => s.visible);
   const radius = RADIUS_MAP[layout.theme.radius] ?? "8px";
-  const accentColor = resolveAccent(layout.theme);
+  const accentColor = resolveAccent();
   const fonts = TYPOGRAPHY_FONTS[layout.theme.typography] ?? TYPOGRAPHY_FONTS.editorial;
 
   // Split announcements (full-bleed) from content sections (padded)

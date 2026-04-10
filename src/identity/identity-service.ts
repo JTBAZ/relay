@@ -1,14 +1,14 @@
 import { randomUUID } from "node:crypto";
-import type { FileIdentityStore } from "./identity-store.js";
+import type { IdentityStore } from "./identity-store.js";
 import { hashPassword, verifyPassword } from "./password.js";
 import type { SessionToken, UserAccount } from "./types.js";
 
 const SESSION_TTL_MS = 24 * 60 * 60 * 1000;
 
 export class IdentityService {
-  private readonly store: FileIdentityStore;
+  private readonly store: IdentityStore;
 
-  public constructor(store: FileIdentityStore) {
+  public constructor(store: IdentityStore) {
     this.store = store;
   }
 

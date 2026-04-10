@@ -37,8 +37,9 @@ Relay is **two intentional products** that share one **access and content model*
 
 Use this roadmap as the execution sequence and use the reference docs for deeper implementation decisions:
 
-- **Managed agent swarms (Airtable queue + strict roles):** [docs/agents/README.md](docs/agents/README.md) and [docs/agents/BUILD_BRIEF.md](docs/agents/BUILD_BRIEF.md) — operational ground truth is the **Production Ledger** in Airtable (see [docs/agents/AIRTABLE_LEDGER.md](docs/agents/AIRTABLE_LEDGER.md)); this file is strategic narrative, not the live task queue by itself.
+- **Managed agent swarms (Airtable queue + strict roles):** [.docs/anthropic/README.md](.docs/anthropic/README.md), [.docs/anthropic/BUILD_BRIEF.md](.docs/anthropic/BUILD_BRIEF.md), and **[.docs/anthropic/CURRENT_LEDGER_QUEUE.md](.docs/anthropic/CURRENT_LEDGER_QUEUE.md)** (live queued rows + record IDs) — operational ground truth is the **Production Ledger** in Airtable (see [.docs/anthropic/AIRTABLE_LEDGER.md](.docs/anthropic/AIRTABLE_LEDGER.md)); this file is strategic narrative, not the live task queue by itself.
 - **Coding agents / anyone touching Patreon ingest or gallery duplicate behavior:** read [AGENTS.md](AGENTS.md), [docs/patreon-ingest-canonical.md](docs/patreon-ingest-canonical.md), and [docs/relay-artist-metadata.md](docs/relay-artist-metadata.md) so canonical vs overrides stay aligned (artist tags/visibility survive re-ingest).
+- **Relational backend (PostgreSQL + Prisma target, migration from file-backed stores):** [docs/database/README.md](docs/database/README.md) — schema direction and `.relay-data/` cutover; **not** the Airtable Production Ledger (operational queue only).
 - Library + Designer UX ideals, workflows, gaps, and phased UI backlog:
   - [docs/pattern-library.md](docs/pattern-library.md)
   - **Publish-preflight UI snapshot (not production):** [design-archive/preflight/PREFLIGHT.txt](design-archive/preflight/PREFLIGHT.txt) — reserved Next.js archive (`relay-preflight-archive`); see [builder reference under Workstream D](#workstream-d-gallery-experience). Search repo: `preflight`.
@@ -124,7 +125,7 @@ Does not include (until explicitly scoped):
 
 - Backend: Node.js + TypeScript + NestJS.
 - Frontend: Next.js + React + Tailwind.
-- Database: PostgreSQL + Prisma.
+- Database: PostgreSQL + Prisma (engineering plans: [docs/database/README.md](docs/database/README.md)).
 - Queue and jobs: BullMQ + Redis.
 - Object storage: S3 or Cloudflare R2.
 - Observability: Sentry + structured logs (Pino).

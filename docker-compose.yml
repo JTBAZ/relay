@@ -1,0 +1,17 @@
+# Local Postgres for Rescue (Phase 1.1). Data persists in named volume `relay_pg_data`.
+# Start: docker compose up -d  (or .\scripts\db-up.ps1 from repo root)
+services:
+  postgres:
+    image: postgres:16-alpine
+    ports:
+      # Host 5433 avoids clashing with a local PostgreSQL service on Windows/macOS that already binds :5432.
+      - "5433:5432"
+    environment:
+      POSTGRES_USER: relay
+      POSTGRES_PASSWORD: relay
+      POSTGRES_DB: relay_dev
+    volumes:
+      - relay_pg_data:/var/lib/postgresql/data
+
+volumes:
+  relay_pg_data:

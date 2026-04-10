@@ -46,6 +46,18 @@ If **`rls` is not recognized**, the terminal may be running with `-NoProfile` (c
 
 PowerShell 7 (`pwsh`) loads a different profile path than Windows PowerShell (`powershell`). If you use `pwsh`, copy the same functions into `Documents\PowerShell\Microsoft.PowerShell_profile.ps1`.
 
+## `db-migrate.ps1`
+- **Use when:** you are authoring migrations locally (`prisma migrate dev`).
+- **Runs:** `npx prisma migrate dev` from the repo root; optional args pass through to Prisma (e.g. `--create-only --name my_change`).
+- **Command:** `powershell -ExecutionPolicy Bypass -File .\scripts\db-migrate.ps1`
+- **Prereq:** `DATABASE_URL` in root `.env`; Postgres running (`.\scripts\db-up.ps1`).
+
+## `db-up.ps1`
+- **Use when:** you need local Postgres before running the API (`npm start`) once Prisma uses `DATABASE_URL`.
+- **Runs:** `docker compose up -d` from the repo root, then `pg_isready` against the `postgres` service (defaults: user `relay`, DB `relay_dev`, host port `5433`).
+- **Command:** `powershell -ExecutionPolicy Bypass -File .\scripts\db-up.ps1`
+- **Prereq:** Docker Desktop (or Docker Engine) with Compose v2. Copy root `.env.example` → `.env` and set `DATABASE_URL` to match compose (see `.env.example`).
+
 ## `dev-restart.ps1`
 - **Use when:** backend/frontend terminals are stale and you want a quick restart.
 - **Runs:** stops repo node processes, opens backend `npm start`, opens web `npm run dev`.

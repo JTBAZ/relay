@@ -2,9 +2,9 @@
 
 **Purpose:** Define **expected user-visible behavior** so automated or managed QA agents can **pass/fail** checks without inferring intent from code alone.
 
-**Product intent:** **`docs/agents/PRODUCT_UX_NORTH_STAR.md`** — Artist Relay (library, curation, Designer) vs Fan Relay (feed, entitlements).
+**Product intent:** **`.docs/anthropic/PRODUCT_UX_NORTH_STAR.md`** — Artist Relay (library, curation, Designer) vs Fan Relay (feed, entitlements).
 
-**When tests cannot run without humans (keys, OAuth, Patreon):** **`docs/agents/FAIL_TO_HUMAN.md`** — do not loop.
+**When tests cannot run without humans (keys, OAuth, Patreon):** **`.docs/anthropic/FAIL_TO_HUMAN.md`** — do not loop.
 
 **Not a substitute for:** [`road map.md`](../../road%20map.md) (strategy), **`AGENTS.md`** (repo map), or deep specs (**`docs/pattern-library.md`**, **`analytics-action-center-spec.md`**). Use this doc for **holistic UI/UX** and **cross-route** rules.
 

@@ -41,7 +41,7 @@ import type {
   GalleryArrangement,
   PatreonLinkPosition,
 } from "@/lib/designer-mock";
-import { TIERS, LIBRARY_ALL_VISIBLE_SLUG } from "@/lib/designer-mock";
+import { LIBRARY_ALL_VISIBLE_SLUG } from "@/lib/designer-mock";
 
 // ─── Panel wrapper ─────────────────────────────────────────────────────────────
 

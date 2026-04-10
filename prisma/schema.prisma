@@ -1,0 +1,156 @@
+// Relay — PostgreSQL via Prisma (see root `.env.example` DATABASE_URL).
+// Identity slice (M2 Phase 2.1): `docs/database/relational-model.md`, `docs/database/integration-roadmap.md`.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// --- Identity & multi-tenancy (M2.1) — Campaign/Post/etc. arrive in M3 ---
+
+enum UserKind {
+  creator
+  patron
+  staff
+}
+
+enum ProviderKind {
+  patreon
+}
+
+enum OAuthPurpose {
+  creator_ingest
+  patron_entitlement
+}
+
+enum CredentialHealth {
+  healthy
+  degraded
+  invalid
+  revoked
+}
+
+/// Mirrors `UserAccount.auth_provider` in `src/identity/types.ts` (independent email/password vs Patreon-linked).
+enum IdentityAuthProvider {
+  independent
+  patreon
+}
+
+model Tenant {
+  id             String   @id @default(cuid())
+  /// Relay `creator_id` (e.g. ingest / gallery scope) — unique tenant for DbIdentityStore.
+  relayCreatorId String?  @unique @map("relay_creator_id")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  users    User[]
+  creators CreatorProfile[]
+
+  @@map("tenants")
+}
+
+model User {
+  id            String   @id @default(cuid())
+  tenantId      String   @map("tenant_id")
+  tenant        Tenant   @relation(fields: [tenantId], references: [id])
+  kind          UserKind
+  emailHash     String?  @map("email_hash")
+  /// Normalized email for `findByEmail` (lowercase); mirrors file `UserAccount.email` for lookup.
+  emailNorm     String?  @map("email_norm")
+  passwordHash  String?  @map("password_hash")
+  identityAuthProvider IdentityAuthProvider @map("identity_auth_provider")
+  patronPatreonUserId  String?  @map("patron_patreon_user_id")
+  tierIds       String[] @default([]) @map("tier_ids")
+  /// Backfill trace: stable id from `identity.json` / file store era (see integration-roadmap 2.3.x).
+  legacyFileId  String?  @map("legacy_file_id")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  sessions         Session[]
+  providerAccounts ProviderAccount[]
+  patronProfile    PatronProfile?
+  creatorProfile   CreatorProfile?
+
+  @@index([tenantId, kind])
+  @@index([tenantId, emailNorm])
+  @@map("users")
+}
+
+model Session {
+  id           String    @id @default(cuid())
+  userId       String    @map("user_id")
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// SHA-256 (or app-defined hash) of opaque token only — never store raw tokens (operations-and-security.md).
+  tokenHash    String    @unique @map("token_hash")
+  /// Backfill trace for file-backed sessions (integration-roadmap 2.3.x).
+  legacyFileId String?   @map("legacy_file_id")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  expiresAt    DateTime? @map("expires_at")
+  userAgent    String?   @map("user_agent")
+  ipInet       String?   @map("ip_inet")
+  revokedAt    DateTime? @map("revoked_at")
+
+  @@index([userId, expiresAt])
+  @@map("sessions")
+}
+
+model ProviderAccount {
+  id             String         @id @default(cuid())
+  userId         String         @map("user_id")
+  user           User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  provider       ProviderKind
+  providerUserId String         @map("provider_user_id")
+  displayName    String?        @map("display_name")
+  createdAt      DateTime       @default(now()) @map("created_at")
+
+  oauthCredential OAuthCredential?
+
+  @@unique([provider, providerUserId])
+  @@index([userId])
+  @@map("provider_accounts")
+}
+
+model OAuthCredential {
+  id                String            @id @default(cuid())
+  providerAccountId String            @unique @map("provider_account_id")
+  providerAccount   ProviderAccount   @relation(fields: [providerAccountId], references: [id], onDelete: Cascade)
+  purpose           OAuthPurpose
+  encryptedPayload  Bytes             @map("encrypted_payload")
+  keyId             String            @map("key_id")
+  healthStatus      CredentialHealth  @map("health_status")
+  lastSuccessAt     DateTime?         @map("last_success_at")
+  lastFailureAt     DateTime?         @map("last_failure_at")
+  lastFailureCode   String?           @map("last_failure_code")
+  expiresAtHint     DateTime?         @map("expires_at_hint")
+  createdAt         DateTime          @default(now()) @map("created_at")
+  updatedAt         DateTime          @updatedAt @map("updated_at")
+
+  @@map("oauth_credentials")
+}
+
+model CreatorProfile {
+  id                String   @id @default(cuid())
+  tenantId          String   @map("tenant_id")
+  tenant            Tenant   @relation(fields: [tenantId], references: [id])
+  userId            String   @unique @map("user_id")
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  patreonCampaignId String?  @unique @map("patreon_campaign_id")
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  @@index([tenantId])
+  @@map("creator_profiles")
+}
+
+model PatronProfile {
+  id        String   @id @default(cuid())
+  userId    String   @unique @map("user_id")
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  handle    String?
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("patron_profiles")
+}

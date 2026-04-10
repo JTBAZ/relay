@@ -1,6 +1,7 @@
 import { config as loadEnv } from "dotenv";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { prisma } from "./lib/db.js";
 import { createApp } from "./server.js";
 
 /** Repo root: `dist/src/main.js` → two levels up. */
@@ -88,7 +89,31 @@ if (!process.env.RELAY_TOKEN_ENCRYPTION_KEY?.trim()) {
 const port = Number(process.env.PORT ?? "8787");
 const { app } = createApp(configFromEnv());
 
-app.listen(port, () => {
+const server = app.listen(port, () => {
   // eslint-disable-next-line no-console -- CLI entrypoint
   console.log(`Relay API listening on http://127.0.0.1:${port}`);
 });
+
+function shutdown(signal: "SIGINT" | "SIGTERM") {
+  // eslint-disable-next-line no-console -- CLI entrypoint
+  console.log(`Relay: ${signal}, closing HTTP server…`);
+  server.close((err) => {
+    if (err) {
+      // eslint-disable-next-line no-console -- CLI entrypoint
+      console.error("Relay: HTTP server close error", err);
+    }
+    void prisma
+      .$disconnect()
+      .then(() => {
+        process.exit(err ? 1 : 0);
+      })
+      .catch((e: unknown) => {
+        // eslint-disable-next-line no-console -- CLI entrypoint
+        console.error("Relay: prisma.$disconnect error", e);
+        process.exit(1);
+      });
+  });
+}
+
+process.once("SIGINT", () => shutdown("SIGINT"));
+process.once("SIGTERM", () => shutdown("SIGTERM"));

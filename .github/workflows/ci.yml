@@ -1,0 +1,55 @@
+# Relay API — build, tests, and Prisma migrations against an ephemeral Postgres.
+#
+# Hosted / staging DB: use a deploy workflow (or replace the job `env` below) with
+#   env:
+#     DATABASE_URL: ${{ secrets.DATABASE_URL }}
+# Configure `DATABASE_URL` in the repo/environment secret store (never commit credentials).
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: relay
+          POSTGRES_PASSWORD: relay
+          POSTGRES_DB: relay_dev
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd "pg_isready -U relay -d relay_dev"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      # Ephemeral CI database (same shape as root `.env.example`). Aligns with docker-compose host port 5433.
+      DATABASE_URL: postgresql://relay:relay@127.0.0.1:5433/relay_dev
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Prisma generate
+        run: npm run db:generate
+
+      - name: Prisma migrate deploy
+        run: npx prisma migrate deploy
+
+      - name: Build
+        run: npm run build
+
+      - name: Test
+        run: npm test

@@ -118,6 +118,7 @@ import { dispatchVerifiedPatreonPlatformPayload } from "./patreon/patreon-webhoo
 import { PatreonWebhookMetadataStore } from "./patreon/patreon-webhook-metadata-store.js";
 import { verifyPatreonWebhookSignature } from "./patreon/patreon-webhook-signature.js";
 import { processPatreonWebhookStub } from "./webhooks/patreon-webhook.js";
+import { loadPatronRelayFeedBundleFromRepo } from "./patron/load-patron-relay-feed-bundle.js";
 import { CampaignService } from "./migrate/campaign-service.js";
 import { FileMigrationStore } from "./migrate/migration-store.js";
 import type { TierMapping } from "./migrate/types.js";
@@ -1458,6 +1459,26 @@ export function createApp(config: AppConfig): CreateAppResult {
     }
     return session;
   }
+
+  /**
+   * Patron home (fan Relay): feed + sidebar bundle. Requires Bearer session from patron OAuth.
+   * Payload is fixture-shaped JSON until DB-backed aggregation exists (`web/lib/patron-relay-feed-bundle.json`).
+   */
+  app.get("/api/v1/patron/relay_feed", async (req: Request, res: Response) => {
+    const traceId = traceIdFrom(req);
+    if (!(await requirePatronBearerSession(req, res, traceId))) {
+      return;
+    }
+    try {
+      const data = loadPatronRelayFeedBundleFromRepo();
+      res.setHeader("Cache-Control", "private, no-store");
+      return res.status(200).json(successEnvelope(data, traceId));
+    } catch (error) {
+      return res
+        .status(500)
+        .json(errorEnvelope("INTERNAL", (error as Error).message, traceId));
+    }
+  });
 
   app.get("/api/v1/patron/favorites", async (req: Request, res: Response) => {
     const traceId = traceIdFrom(req);

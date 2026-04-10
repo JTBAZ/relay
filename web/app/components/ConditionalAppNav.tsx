@@ -7,6 +7,7 @@ import AppNav from "./AppNav";
 export default function ConditionalAppNav() {
   const pathname = usePathname();
   if (
+    pathname.startsWith("/patron/") ||
     pathname === "/onboarding" ||
     pathname.startsWith("/onboarding/") ||
     pathname === "/login" ||

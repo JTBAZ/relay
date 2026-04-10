@@ -4,7 +4,10 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "db:generate": "prisma generate",
+    "db:migrate": "prisma migrate dev",
+    "db:push": "prisma db push",
+    "build": "prisma generate && tsc -p tsconfig.json",
     "start": "node dist/src/main.js",
     "test": "vitest run",
     "ledger-to-v0": "npm --prefix Automation run ledger-to-v0",
@@ -14,6 +17,7 @@
     "probe:patreon-description": "node scripts/probe-patreon-post-description.mjs"
   },
   "dependencies": {
+    "@prisma/client": "^7.7.0",
     "archiver": "^7.0.1",
     "dotenv": "^17.3.1",
     "express": "^4.21.2",
@@ -27,6 +31,7 @@
     "@types/node": "^22.14.0",
     "@types/supertest": "^6.0.3",
     "adm-zip": "^0.5.17",
+    "prisma": "^7.7.0",
     "supertest": "^7.1.1",
     "ts-node": "^10.9.2",
     "typescript": "^5.8.3",

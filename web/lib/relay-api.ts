@@ -9,6 +9,19 @@ export const RELAY_API_BASE = resolveRelayApiBase();
 
 type Envelope<T> = { data: T; meta: { trace_id: string } };
 
+/** Thrown when Relay API returns a non-2xx JSON envelope. */
+export class RelayApiError extends Error {
+  public override readonly name = "RelayApiError";
+
+  public constructor(
+    message: string,
+    public readonly status: number,
+    public readonly code?: string
+  ) {
+    super(message);
+  }
+}
+
 /** Bearer session when `relay_session_token` is in `localStorage` (client-only). */
 export function relayPatronAuthHeaders(): Record<string, string> {
   if (typeof window === "undefined") {
@@ -19,20 +32,44 @@ export function relayPatronAuthHeaders(): Record<string, string> {
 }
 
 export async function relayFetch<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${RELAY_API_BASE}${path}`, {
-    ...init,
-    headers: {
-      "content-type": "application/json",
-      ...relayPatronAuthHeaders(),
-      ...init?.headers
-    },
-    cache: "no-store"
-  });
-  const json = (await res.json()) as Envelope<T> & { error?: { message: string } };
-  if (!res.ok) {
-    throw new Error(json.error?.message ?? res.statusText);
+  let res: Response;
+  try {
+    res = await fetch(`${RELAY_API_BASE}${path}`, {
+      ...init,
+      headers: {
+        "content-type": "application/json",
+        ...relayPatronAuthHeaders(),
+        ...init?.headers
+      },
+      cache: "no-store"
+    });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    throw new RelayApiError(
+      msg.includes("fetch") ? "Network error — is the Relay API running?" : msg,
+      0,
+      "NETWORK"
+    );
   }
-  return json.data;
+
+  let json: unknown;
+  try {
+    json = await res.json();
+  } catch {
+    throw new RelayApiError(res.statusText || "Invalid response", res.status);
+  }
+
+  if (!res.ok) {
+    const err = json as { error?: { message?: string; code?: string } };
+    throw new RelayApiError(
+      err.error?.message ?? res.statusText,
+      res.status,
+      err.error?.code
+    );
+  }
+
+  const envelope = json as Envelope<T>;
+  return envelope.data;
 }
 
 export type PostVisibility = "visible" | "hidden" | "review";

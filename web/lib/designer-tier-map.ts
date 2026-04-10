@@ -145,6 +145,7 @@ export function previewLockState(
   viewerTier: TierKey,
   _facets: FacetsData | null          // kept for API compatibility, not used for lock state
 ): { locked: boolean; unlockLabel: string; badgeTitle: string | null } {
+  void _facets;
   if (paidTierOrderIds.length > 0) {
     if (item) {
       return {

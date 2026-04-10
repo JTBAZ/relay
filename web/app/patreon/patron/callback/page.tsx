@@ -4,13 +4,8 @@ import { Suspense, useEffect, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { decodePatronOAuthState } from "@/lib/patron-oauth-state";
+import { patronPatronOAuthRedirectUri } from "@/lib/patron-patron-redirect-uri";
 import { RELAY_API_BASE } from "@/lib/relay-api";
-
-function patronRedirectUriForExchange(): string {
-  const fromEnv = process.env.NEXT_PUBLIC_PATREON_PATRON_REDIRECT_URI?.trim();
-  if (fromEnv) return fromEnv;
-  return `${window.location.origin}/patreon/patron/callback`;
-}
 
 function CallbackInner() {
   const params = useSearchParams();
@@ -49,7 +44,7 @@ function CallbackInner() {
       return;
     }
 
-    const redirectUri = patronRedirectUriForExchange();
+    const redirectUri = patronPatronOAuthRedirectUri();
 
     (async () => {
       try {

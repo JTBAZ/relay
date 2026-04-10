@@ -4,7 +4,7 @@ import { enrichBatch } from "../ingest/auto-enrich.js";
 import type { IngestService } from "../ingest/ingest-service.js";
 import { SyncWatermarkStore } from "../ingest/sync-watermark-store.js";
 import type { ApplyBatchResult, IngestPost, SyncBatchInput } from "../ingest/types.js";
-import type { FilePatreonTokenStore, PersistedPatreonTokens } from "../auth/token-store.js";
+import type { PatreonTokenStore, PersistedPatreonTokens } from "../auth/token-store.js";
 import { CookieSessionExpiredError, scrapeByCookie } from "./cookie-scraper.js";
 import {
   CreatorCampaignDisplayStore,
@@ -284,7 +284,7 @@ export type PatreonSyncStateOptions = {
 };
 
 export class PatreonSyncService {
-  private readonly tokenStore: FilePatreonTokenStore;
+  private readonly tokenStore: PatreonTokenStore;
   private readonly cookieStore: FilePatreonCookieStore;
   private readonly ingestService: IngestService;
   private readonly watermarkStore: SyncWatermarkStore;
@@ -295,7 +295,7 @@ export class PatreonSyncService {
   private readonly campaignDisplayStore: CreatorCampaignDisplayStore | null;
 
   public constructor(
-    tokenStore: FilePatreonTokenStore,
+    tokenStore: PatreonTokenStore,
     cookieStore: FilePatreonCookieStore,
     ingestService: IngestService,
     watermarkStore: SyncWatermarkStore,

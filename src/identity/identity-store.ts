@@ -6,7 +6,21 @@ function emptyRoot(): IdentityStoreRoot {
   return { users: {}, sessions: {} };
 }
 
-export class FileIdentityStore {
+/** Same surface as `FileIdentityStore` / `DbIdentityStore` for dependency injection. */
+export interface IdentityStore {
+  load(): Promise<IdentityStoreRoot>;
+  save(root: IdentityStoreRoot): Promise<void>;
+  createUser(user: UserAccount): Promise<void>;
+  findByEmail(email: string, creatorId: string): Promise<UserAccount | null>;
+  findByPatreonId(patreonUserId: string, creatorId: string): Promise<UserAccount | null>;
+  getUser(userId: string): Promise<UserAccount | null>;
+  updateTiers(userId: string, tierIds: string[]): Promise<void>;
+  createSession(session: SessionToken): Promise<void>;
+  getSession(token: string): Promise<SessionToken | null>;
+  deleteSession(token: string): Promise<void>;
+}
+
+export class FileIdentityStore implements IdentityStore {
   private readonly filePath: string;
 
   public constructor(filePath: string) {

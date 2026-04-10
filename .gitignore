@@ -5,3 +5,7 @@ dist
 .env
 *.pem
 .cursor/
+
+# Prisma — commit prisma/schema.prisma + prisma/migrations/; ignore local-only env next to schema
+prisma/.env
+prisma/.env.*

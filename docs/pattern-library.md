@@ -46,6 +46,7 @@ The Library top bar exposes a **Patreon** control: load **sync state** (watermar
 - **Rule:** Any UI that answers “what does a **viewer** see?” (Designer preview, generated public gallery, **fan feed tile**, Browse card) must use the **same semantic pipeline**: canonical content + **artist overrides** (visibility, tags, collections) + **effective patron entitlement** (tier, subscription state) + layout rules where applicable.
 - **Not OK:** artist Library defaulting to `visibility=visible` while preview or fan APIs omit visibility and accidentally surface hidden/flagged rows.
 - **Authoring vs viewer:** The Library may offer “workspace / all” filters for **editing**; patron-facing queries default to **policy-aligned** filters unless explicitly building an admin-only path.
+- **Persistence target:** Today much state still lives under **`.relay-data/`** (JSON). The **authoritative relational model**, migration mapping, and security notes for PostgreSQL + Prisma live in **[docs/database/README.md](database/README.md)** — viewer and API semantics above stay the same; storage evolves underneath.
 
 ### UX copy guidelines (SoT vs stage)
 
