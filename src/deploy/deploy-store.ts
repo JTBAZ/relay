@@ -2,7 +2,16 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import type { Deployment, DeployStoreRoot } from "./types.js";
 
-export class FileDeployStore {
+/** File or DB — `DeployService` uses this contract only. */
+export interface DeployStore {
+  upsert(deployment: Deployment): Promise<void>;
+  get(deploymentId: string): Promise<Deployment | null>;
+  setActive(creatorId: string, deploymentId: string): Promise<void>;
+  getActive(creatorId: string): Promise<Deployment | null>;
+  listByCreator(creatorId: string): Promise<Deployment[]>;
+}
+
+export class FileDeployStore implements DeployStore {
   private readonly filePath: string;
 
   public constructor(filePath: string) {

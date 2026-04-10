@@ -1,15 +1,15 @@
 import type { CloneService } from "../clone/clone-service.js";
 import type { DeployAdapterInterface } from "./deploy-adapter.js";
-import type { FileDeployStore } from "./deploy-store.js";
+import type { DeployStore } from "./deploy-store.js";
 import type { Deployment, DeployProvider, DnsCheckResult } from "./types.js";
 
 export class DeployService {
-  private readonly store: FileDeployStore;
+  private readonly store: DeployStore;
   private readonly cloneService: CloneService;
   private readonly adapters: Map<string, DeployAdapterInterface>;
 
   public constructor(
-    store: FileDeployStore,
+    store: DeployStore,
     cloneService: CloneService,
     adapters: Map<string, DeployAdapterInterface>
   ) {

@@ -2,7 +2,13 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import type { CloneSiteModel, CloneSiteStoreRoot } from "./types.js";
 
-export class FileCloneSiteStore {
+/** File or DB implementation — `CloneService` depends on this contract only. */
+export interface CloneSiteStore {
+  upsert(model: CloneSiteModel): Promise<void>;
+  getByCreator(creatorId: string): Promise<CloneSiteModel | null>;
+}
+
+export class FileCloneSiteStore implements CloneSiteStore {
   private readonly filePath: string;
 
   public constructor(filePath: string) {

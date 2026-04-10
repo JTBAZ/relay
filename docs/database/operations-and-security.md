@@ -12,6 +12,18 @@
 
   Use **`MIGRATION_DIR_NAME`** exactly as the folder under `prisma/migrations/` (e.g. `20250410182900_baseline_init`). Use this when the migration **did not** complete successfully and you have undone its effects (or abandoned that attempt). For a migration that **succeeded** but should be treated as reverted in history only in exceptional cases, prefer restoring from backup or adding a corrective forward migration; `migrate resolve` is for fixing **migration history** vs reality after operator intervention.
 
+## Connection pooling (deployment)
+
+The Node process uses **`pg`** with Prisma’s connection pool (see `src/lib/db.ts`). For **serverless** or **very high** connection churn, add a pooler in front of Postgres:
+
+| Option | When to use |
+|--------|-------------|
+| **Built-in Prisma + `pg` pool** | Default for long-lived API processes (`npm start`); tune `DATABASE_URL` query params if your host documents them (e.g. `connection_limit`, `pool_timeout` — follow Prisma + driver docs for your version). |
+| **PgBouncer** (transaction or session mode) | Multiple app instances or serverless workers; **transaction mode** is common for Prisma if [documented constraints](https://www.prisma.io/docs/guides/performance-and-optimization/connection-management) are met. |
+| **Prisma Accelerate** | Managed connection pooling + caching; paid Prisma Data Platform. |
+
+**Rule of thumb:** one pool per deployable API service; avoid opening a new `PrismaClient` per request. Document the chosen approach in your runbook next to **`npx prisma migrate deploy`** (required on each release before traffic).
+
 ## Indexes (initial targets)
 
 - **Posts / timelines:** `(campaign_id, created_at DESC)` or `(creator_id, published_at DESC)` depending on final shape; support cursor pagination.
@@ -23,7 +35,7 @@
 ## Partitioning (scale)
 
 - **Discovery decision logs:** insert-heavy, audit-focused → monthly partitions on `created_at`.
-- **Analytics snapshots:** monthly partitions or hash by `creator_id` if volume demands.
+- **Analytics snapshots (`analytics_snapshots`):** insert volume is typically modest per creator; **no partition DDL is shipped in M6**. Revisit **monthly partitions on `period_start` or `generated_at`** (or hash by `creator_id`) when row counts or retention policy justify the operational overhead. Until then, the compound index `(creator_id, kind, period_start, period_end)` supports listing by creator and period. Document actual partition DDL in a forward migration when introduced (Prisma may require `@@ignore` + raw SQL for declarative partitioning).
 - **Event/outbox tables** (if used): time-based partitions for retention rolloff.
 
 Document actual partition DDL in migrations when introduced — Prisma may need `@@ignore` or raw SQL for declarative partitioning.

@@ -33,6 +33,21 @@ enum CredentialHealth {
   revoked
 }
 
+/// Part 3 K/L — how a `PatronEntitlementSnapshot` was produced (M9 stub).
+enum EntitlementSource {
+  oauth_exchange
+  scheduled_refresh
+  webhook
+  manual_support
+}
+
+/// Part 3 O — comment moderation (M9 stub).
+enum CommentModState {
+  visible
+  hidden
+  removed
+}
+
 /// Mirrors `UserAccount.auth_provider` in `src/identity/types.ts` (independent email/password vs Patreon-linked).
 enum IdentityAuthProvider {
   independent
@@ -72,6 +87,12 @@ model User {
   providerAccounts ProviderAccount[]
   patronProfile    PatronProfile?
   creatorProfile   CreatorProfile?
+  /// M9 Part 3 stubs — relations for patron network (open pipe; no app wiring yet).
+  patronFollows              PatronFollow[]
+  patronEntitlementSnapshots PatronEntitlementSnapshot[]
+  feedCursors                FeedCursor[]
+  notificationPreferences  NotificationPreference[]
+  patronOAuthCredential      PatronOAuthCredential?
 
   @@index([tenantId, kind])
   @@index([tenantId, emailNorm])
@@ -383,4 +404,424 @@ model PageLayout {
   updatedAt  DateTime @updatedAt @map("updated_at")
 
   @@map("page_layouts")
+}
+
+// --- Operations / DLQ (M5) — `ingest_dlq.json` + durable events (`InMemoryEventBus` replacement). ---
+
+/// Ingest dead-letter and future job runs (`DbDeadLetterQueue` uses `kind = ingest_dlq`).
+model JobRun {
+  id           String    @id @map("id")
+  kind         String
+  creatorId    String    @map("creator_id")
+  status       String
+  traceId      String    @map("trace_id")
+  payload      Json?
+  startedAt    DateTime? @map("started_at")
+  finishedAt   DateTime? @map("finished_at")
+  error        String?
+  attemptCount Int       @default(0) @map("attempt_count")
+  dlqBatch     Json?     @map("dlq_batch")
+
+  @@index([creatorId, status])
+  @@map("job_runs")
+}
+
+/// Durable outbox; dedupe on (event_name, tenant_id, primary_id, occurred_at) per `events.md`.
+model OutboxEvent {
+  id         String   @id @default(cuid())
+  eventId    String   @unique @map("event_id")
+  eventName  String   @map("event_name")
+  tenantId   String   @map("tenant_id")
+  primaryId  String   @map("primary_id")
+  occurredAt DateTime @map("occurred_at")
+  traceId    String   @map("trace_id")
+  producer   String
+  version    String
+  payload    Json
+
+  @@unique([eventName, tenantId, primaryId, occurredAt])
+  @@index([occurredAt])
+  @@map("outbox_events")
+}
+
+// --- Analytics & Action Center (M6) — replaces `.relay-data/analytics.json` when using DbAnalyticsStore. ---
+
+model AnalyticsSnapshotRow {
+  snapshotId  String   @id @map("snapshot_id")
+  creatorId   String   @map("creator_id")
+  kind        String   @default("canonical_rollup")
+  periodStart DateTime @map("period_start")
+  periodEnd   DateTime @map("period_end")
+  generatedAt DateTime @map("generated_at")
+  estimated   Boolean
+  label       String?
+  method      String?
+  payload     Json
+
+  @@index([creatorId, kind, periodStart, periodEnd])
+  @@map("analytics_snapshots")
+}
+
+model RecommendationRecord {
+  recommendationId  String   @id @map("recommendation_id")
+  creatorId         String   @map("creator_id")
+  tenantId          String?  @map("tenant_id")
+  cardType          String   @map("card_type")
+  title             String
+  signal            String
+  diagnosis         String
+  recommendationBody String  @map("recommendation_body")
+  confidenceScore   Float    @map("confidence_score")
+  expectedImpact    Json     @map("expected_impact")
+  reasonCodes       String[] @default([]) @map("reason_codes")
+  evidenceRefs      String[] @default([]) @map("evidence_refs")
+  status            String
+  createdAt         DateTime @map("created_at")
+  updatedAt         DateTime @map("updated_at")
+  notes             String?
+  dismissReasonCode String?  @map("dismiss_reason_code")
+
+  @@index([creatorId])
+  @@map("recommendation_records")
+}
+
+model AnalyticsActionExecution {
+  actionJobId       String   @id @map("action_job_id")
+  recommendationId  String   @map("recommendation_id")
+  creatorId         String   @map("creator_id")
+  actionType        String   @map("action_type")
+  options           Json
+  executionStatus   String   @map("execution_status")
+  createdAt         DateTime @map("created_at")
+
+  @@index([creatorId])
+  @@map("action_executions")
+}
+
+model AnalyticsOutcome {
+  id               String   @id @default(cuid())
+  recommendationId String   @map("recommendation_id")
+  creatorId        String   @map("creator_id")
+  evaluatedAt      DateTime @map("evaluated_at")
+  metric           String
+  predictedDelta   Float    @map("predicted_delta")
+  actualDelta      Float    @map("actual_delta")
+
+  @@index([creatorId, recommendationId])
+  @@map("recommendation_outcomes")
+}
+
+// --- Patron engagement (M7) — replaces `.relay-data/patron_favorites.json` + `patron_collections.json`. ---
+
+enum PatronFavoriteTargetKind {
+  post
+  media
+}
+
+/// Maps `PatronFavoriteRecord` / `patron_favorites.json`; stable scope is `(patron_user_id, creator_id, target_kind, target_id)`.
+model PatronFavorite {
+  id           String                 @id @default(cuid())
+  patronUserId String                 @map("patron_user_id")
+  creatorId    String                 @map("creator_id")
+  targetKind   PatronFavoriteTargetKind @map("target_kind")
+  targetId     String                 @map("target_id")
+  createdAt    DateTime               @map("created_at")
+
+  @@unique([patronUserId, creatorId, targetKind, targetId], map: "patron_favorite_scope_unique")
+  @@index([patronUserId, creatorId])
+  @@map("patron_favorites")
+}
+
+/// Patron-owned snip collection — `id` is stable `collection_id` from file (`pcol_*`).
+model PatronSavedCollection {
+  id        String   @id @map("id")
+  userId    String   @map("user_id")
+  creatorId String   @map("creator_id")
+  title     String
+  sortOrder Int      @map("sort_order")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  entries PatronSavedCollectionEntry[]
+
+  @@index([creatorId, userId])
+  @@map("patron_saved_collections")
+}
+
+/// Entry in a patron snip collection — `id` is stable `entry_id` from file (`pent_*`).
+model PatronSavedCollectionEntry {
+  id           String              @id @map("id")
+  collectionId String              @map("collection_id")
+  collection   PatronSavedCollection @relation(fields: [collectionId], references: [id], onDelete: Cascade)
+  userId       String              @map("user_id")
+  creatorId    String              @map("creator_id")
+  postId       String              @map("post_id")
+  mediaId      String              @map("media_id")
+  createdAt    DateTime            @map("created_at")
+
+  @@unique([userId, creatorId, collectionId, mediaId], map: "patron_saved_entry_media_unique")
+  @@index([collectionId])
+  @@index([creatorId, userId])
+  @@map("patron_saved_collection_entries")
+}
+
+// --- Part 2 backend (M8) — clone, payments, migrations, deploys (replaces `.relay-data/*.json`). ---
+
+/// One row per creator — full `CloneSiteModel` JSON (`clone_sites.json`).
+model CloneSite {
+  creatorId String @id @map("creator_id")
+  payload   Json
+
+  @@map("clone_sites")
+}
+
+/// Per-creator Stripe/PayPal mapping (`payments.json` configs map) — no raw provider secrets in columns.
+model CreatorPaymentConfig {
+  creatorId String   @id @map("creator_id")
+  payload   Json
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("payment_configs")
+}
+
+/// Append-only checkout results (`payments.json` checkouts array).
+model PaymentCheckout {
+  checkoutId   String   @id @map("checkout_id")
+  tierId       String   @map("tier_id")
+  provider     String
+  status       String
+  amountCents  Int      @map("amount_cents")
+  currency     String
+  dryRun       Boolean  @map("dry_run")
+  processedAt  DateTime @map("processed_at")
+  errorMessage String?  @map("error_message")
+
+  @@index([processedAt])
+  @@map("payment_checkouts")
+}
+
+/// Re-audience migration campaign payload (`migrations.json` campaigns map).
+model AudienceMigrationCampaign {
+  campaignId String   @id @map("campaign_id")
+  creatorId  String   @map("creator_id")
+  payload    Json
+  updatedAt  DateTime @default(now()) @updatedAt @map("updated_at")
+
+  @@index([creatorId])
+  @@map("migration_campaigns")
+}
+
+/// Append-only audit log (`migrations.json` audit_log) — insert only in application code.
+model MigrationAuditEntry {
+  id         String   @id @default(cuid())
+  ts         DateTime @map("timestamp")
+  campaignId String   @map("campaign_id")
+  creatorId  String   @map("creator_id")
+  action     String
+  detail     String
+
+  @@index([campaignId])
+  @@index([creatorId])
+  @@index([ts])
+  @@map("migration_audit_entries")
+}
+
+model MigrationSuppressionEntry {
+  id        String @id @default(cuid())
+  creatorId String @map("creator_id")
+  emailNorm String @map("email_norm")
+
+  @@unique([creatorId, emailNorm])
+  @@index([creatorId])
+  @@map("migration_suppression_entries")
+}
+
+model MigrationSignedLink {
+  token     String   @id
+  memberId  String   @map("member_id")
+  tierId    String   @map("tier_id")
+  url       String
+  expiresAt DateTime @map("expires_at")
+
+  @@index([expiresAt])
+  @@map("migration_signed_links")
+}
+
+model Deployment {
+  deploymentId    String    @id @map("deployment_id")
+  creatorId       String    @map("creator_id")
+  siteId          String    @map("site_id")
+  provider        String
+  status          String
+  domain          String?
+  previewUrl      String    @map("preview_url")
+  productionUrl   String?   @map("production_url")
+  dnsCheck        Json?     @map("dns_check")
+  createdAt       DateTime  @map("created_at")
+  approvedAt      DateTime? @map("approved_at")
+  launchedAt      DateTime? @map("launched_at")
+  rolledBackAt    DateTime? @map("rolled_back_at")
+  rollbackFromId  String?   @map("rollback_from_id")
+  buildDurationMs Int?      @map("build_duration_ms")
+
+  @@index([creatorId])
+  @@map("deployments")
+}
+
+model CreatorActiveDeployment {
+  creatorId    String @id @map("creator_id")
+  deploymentId String @map("deployment_id")
+
+  @@map("creator_active_deployments")
+}
+
+// --- Milestone 9 — future-ready stubs (schema only; no app wiring). See `docs/database/integration-roadmap.md` M9. ---
+
+/// Part 3 K — follow graph; `relay_creator_id` is ingest / gallery scope string (not `CreatorProfile.id`).
+model PatronFollow {
+  id             String   @id @default(cuid())
+  patronUserId   String   @map("patron_user_id")
+  relayCreatorId String   @map("relay_creator_id")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  patron User @relation(fields: [patronUserId], references: [id], onDelete: Cascade)
+
+  @@unique([patronUserId, relayCreatorId], map: "patron_follow_scope_unique")
+  @@index([relayCreatorId])
+  @@map("patron_follows")
+}
+
+model PatronEntitlementSnapshot {
+  id              String             @id @default(cuid())
+  patronUserId    String             @map("patron_user_id")
+  relayCreatorId  String             @map("relay_creator_id")
+  entitledTierIds String[]           @default([]) @map("entitled_tier_ids")
+  active          Boolean
+  source          EntitlementSource
+  asOf            DateTime           @map("as_of")
+  staleAfter      DateTime?          @map("stale_after")
+
+  patron User @relation(fields: [patronUserId], references: [id], onDelete: Cascade)
+
+  @@unique([patronUserId, relayCreatorId])
+  @@index([relayCreatorId])
+  @@map("patron_entitlement_snapshots")
+}
+
+/// Part 3 L — feed pagination cursors per patron.
+model FeedCursor {
+  id           String   @id @default(cuid())
+  patronUserId String   @map("patron_user_id")
+  cursorKey    String   @map("cursor_key")
+  cursorValue  String?  @map("cursor_value")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  patron User @relation(fields: [patronUserId], references: [id], onDelete: Cascade)
+
+  @@unique([patronUserId, cursorKey])
+  @@map("feed_cursors")
+}
+
+/// Part 3 K — notification / privacy preference rows.
+model NotificationPreference {
+  id             String   @id @default(cuid())
+  patronUserId   String   @map("patron_user_id")
+  relayCreatorId String   @map("relay_creator_id")
+  preferenceType String   @map("preference_type")
+  enabled        Boolean  @default(true)
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  patron User @relation(fields: [patronUserId], references: [id], onDelete: Cascade)
+
+  @@unique([patronUserId, relayCreatorId, preferenceType])
+  @@map("notification_preferences")
+}
+
+/// Optional patron OAuth token persistence (Part 3 K) — separate path from creator `OAuthCredential`.
+model PatronOAuthCredential {
+  id               String           @id @default(cuid())
+  userId           String           @unique @map("user_id")
+  encryptedPayload Bytes            @map("encrypted_payload")
+  keyId            String           @map("key_id")
+  healthStatus     CredentialHealth @map("health_status")
+  createdAt        DateTime         @default(now()) @map("created_at")
+  updatedAt        DateTime         @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("patron_oauth_credentials")
+}
+
+/// Part 3 O — comments (soft-delete via `deleted_at`).
+model Comment {
+  id             String          @id @default(cuid())
+  relayCreatorId String          @map("relay_creator_id")
+  postId         String          @map("post_id")
+  patronUserId   String          @map("patron_user_id")
+  body           String
+  createdAt      DateTime        @default(now()) @map("created_at")
+  deletedAt      DateTime?       @map("deleted_at")
+  modState       CommentModState @default(visible) @map("mod_state")
+
+  @@index([relayCreatorId, postId])
+  @@index([patronUserId])
+  @@map("relay_comments")
+}
+
+/// Part 3 L/M — ranking / discovery audit (partitioning deferred; index on `created_at` for time-range queries).
+model DiscoveryDecisionLog {
+  id             String   @id @default(cuid())
+  patronUserId   String?  @map("patron_user_id")
+  relayCreatorId String?  @map("relay_creator_id")
+  itemKey        String   @map("item_key")
+  rankScore      Float?   @map("rank_score")
+  reasonCodes    String[] @default([]) @map("reason_codes")
+  inputsJson     Json     @map("inputs_json")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  @@index([createdAt(sort: Desc)])
+  @@map("discovery_decision_logs")
+}
+
+/// Smart Tag Assistant — vector column is a `Bytes` placeholder until pgvector is enabled (see `relational-model.md`).
+model EmbeddingStub {
+  id           String   @id @default(cuid())
+  creatorId    String   @map("creator_id")
+  entityType   String   @map("entity_type")
+  entityId     String   @map("entity_id")
+  modelVersion String   @map("model_version")
+  embeddingBlob Bytes?  @map("embedding_blob")
+
+  @@unique([creatorId, entityType, entityId, modelVersion], map: "embedding_stub_scope_unique")
+  @@index([creatorId])
+  @@map("smart_tag_embeddings")
+}
+
+model TagSuggestion {
+  id         String    @id @default(cuid())
+  creatorId  String    @map("creator_id")
+  mediaId    String    @map("media_id")
+  tagId      String    @map("tag_id")
+  confidence Float
+  source     String
+  acceptedAt DateTime? @map("accepted_at")
+  rejectedAt DateTime? @map("rejected_at")
+  createdAt  DateTime  @default(now()) @map("created_at")
+
+  @@index([creatorId, mediaId])
+  @@map("tag_suggestions")
+}
+
+/// Narrow replacement target for `patreon_webhook_metadata.json` (encrypted secret + key id only).
+model WebhookEndpoint {
+  id                       String   @id @default(cuid())
+  relayCreatorId           String   @map("relay_creator_id")
+  patreonCampaignNumericId String?  @map("patreon_campaign_numeric_id")
+  encryptedSecret          Bytes    @map("encrypted_secret")
+  keyId                    String   @map("key_id")
+  createdAt                DateTime @default(now()) @map("created_at")
+  updatedAt                DateTime @updatedAt @map("updated_at")
+
+  @@index([relayCreatorId])
+  @@map("webhook_endpoints")
 }

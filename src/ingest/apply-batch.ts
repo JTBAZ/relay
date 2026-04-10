@@ -1,4 +1,4 @@
-import type { InMemoryEventBus } from "../events/event-bus.js";
+import type { RelayEventBus } from "../events/event-bus.js";
 import type { MediaRow, PostRow, CanonicalSnapshot } from "./canonical-store.js";
 import { ingestIdempotencyKey } from "./idempotency.js";
 import type { ApplyBatchResult, SyncBatchInput } from "./types.js";
@@ -22,7 +22,7 @@ export function applySyncBatchToSnapshot(
   batch: SyncBatchInput,
   jobId: string,
   traceId: string,
-  eventBus: InMemoryEventBus
+  eventBus: RelayEventBus
 ): ApplyBatchResult {
   const result: ApplyBatchResult = {
     job_id: jobId,

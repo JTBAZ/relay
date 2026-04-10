@@ -7,6 +7,17 @@ import type {
   SignedLink
 } from "./types.js";
 
+/** File or DB — `CampaignService` uses this contract only. */
+export interface MigrationStore {
+  upsertCampaign(campaign: MigrationCampaign): Promise<void>;
+  getCampaign(campaignId: string): Promise<MigrationCampaign | null>;
+  appendAudit(entry: AuditEntry): Promise<void>;
+  getSuppressionList(creatorId: string): Promise<string[]>;
+  addToSuppression(creatorId: string, emails: string[]): Promise<void>;
+  storeSignedLink(link: SignedLink): Promise<void>;
+  resolveSignedLink(token: string): Promise<SignedLink | null>;
+}
+
 function emptyRoot(): MigrationStoreRoot {
   return {
     campaigns: {},
@@ -16,7 +27,7 @@ function emptyRoot(): MigrationStoreRoot {
   };
 }
 
-export class FileMigrationStore {
+export class FileMigrationStore implements MigrationStore {
   private readonly filePath: string;
 
   public constructor(filePath: string) {

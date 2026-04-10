@@ -1,5 +1,8 @@
 # Local Postgres for Rescue (Phase 1.1). Data persists in named volume `relay_pg_data`.
 # Start: docker compose up -d  (or .\scripts\db-up.ps1 from repo root)
+#
+# Optional n8n (self-hosted): docker compose --profile n8n up -d
+# Docs: https://docs.n8n.io/hosting/installation/docker/
 services:
   postgres:
     image: postgres:16-alpine
@@ -13,5 +16,19 @@ services:
     volumes:
       - relay_pg_data:/var/lib/postgresql/data
 
+  n8n:
+    profiles: ["n8n"]
+    image: docker.n8n.io/n8nio/n8n
+    ports:
+      - "5678:5678"
+    environment:
+      GENERIC_TIMEZONE: ${N8N_TIMEZONE:-UTC}
+      TZ: ${N8N_TIMEZONE:-UTC}
+      N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS: "true"
+      N8N_RUNNERS_ENABLED: "true"
+    volumes:
+      - n8n_data:/home/node/.n8n
+
 volumes:
   relay_pg_data:
+  n8n_data:

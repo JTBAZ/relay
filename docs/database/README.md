@@ -29,11 +29,38 @@ Authoritative relational design and migration plans for Relay’s **runtime** da
 | [`operations-and-security.md`](operations-and-security.md) | Indexes, partitioning, RLS, encryption, analytics alignment, open product flags |
 | [`integration-roadmap.md`](integration-roadmap.md) | **Execution plan:** 10 milestones, phased work items, dependency order, parallel tracks, open-pipe stubs for future build structures |
 | [`staging-identity-verification.md`](staging-identity-verification.md) | Staging checks when `RELAY_DB_STORE_IDENTITY=1`; links to API smoke routes |
+| [`staging-canonical-verification.md`](staging-canonical-verification.md) | Staging checks when canonical ingest uses Postgres (`RELAY_DB_STORE_CANONICAL=1`) |
 | [`sub-agent-prompts.md`](sub-agent-prompts.md) | **Index** + Universal preamble; **19 standalone run files** in [`runs/`](runs/README.md) |
+
+### Enabling Postgres-backed analytics (M6)
+
+Turning on **`RELAY_DB_STORE_ANALYTICS=1`** is what switches the API from **`FileAnalyticsStore`** (`.relay-data` / `analytics.json`) to **`DbAnalyticsStore`**. It is **not** automatic when migrations exist; you must complete the cutover on each environment:
+
+1. **`DATABASE_URL`** set and reachable (repo root `.env`).
+2. **Apply migrations** so analytics tables exist: `npx prisma migrate deploy` (or `npm run db:migrate` in dev).
+3. **Backfill** existing file data into Postgres: `npm run backfill:analytics` (runs `build` then `scripts/backfill-analytics.mjs`).
+4. Set **`RELAY_DB_STORE_ANALYTICS=1`**, restart the API (`npm start` / your process manager).
+
+If the flag is on before migrate + backfill, behavior can be wrong or empty relative to the file you were using. See milestone **M6** in [`integration-roadmap.md`](integration-roadmap.md) and run prompt [`runs/run-15.md`](runs/run-15.md).
+
+### Enabling Postgres-backed Part 2 stores (M8)
+
+Clone sites, payments, audience migration jobs, and deploy records can stay on **JSON files** until you opt in. To use **Postgres** for any of those domains, set the matching flag(s) **only after** migrate + backfill on that environment:
+
+1. **`DATABASE_URL`** set and reachable.
+2. **`npx prisma migrate deploy`** (or `npm run db:migrate` in dev) so M8 tables exist on that database.
+3. **`npm run backfill:part2`** — copies Part 2 JSON under `.relay-data/` into Postgres (`scripts/backfill-part2.mjs` after `build`).
+4. Enable **only** the flags you need, then restart:
+   - **`RELAY_DB_STORE_CLONE`**
+   - **`RELAY_DB_STORE_PAYMENTS`**
+   - **`RELAY_DB_STORE_MIGRATION`**
+   - **`RELAY_DB_STORE_DEPLOY`**
+
+The four flags are **independent** (e.g. you can enable clone + deploy and leave payments on files). If you do not plan to cut over Part 2 yet, leave them unset; you may still run **`migrate deploy`** so the schema is ready when you flip switches. See milestone **M8** in [`integration-roadmap.md`](integration-roadmap.md) and [`runs/run-17.md`](runs/run-17.md).
 
 ## Repo reality
 
-The repo root has **`prisma/schema.prisma`**, **`prisma/migrations/`**, and **`prisma.config.ts`** (Prisma 7: DB URL is configured for the CLI in `prisma.config.ts`; see root `.env.example` **`DATABASE_URL`**). GitHub Actions **`.github/workflows/ci.yml`** runs **`prisma migrate deploy`** against an ephemeral Postgres. Application code still uses **file-backed** `.relay-data/` for much persistence (see `src/server.ts`) until domain models land. NPM scripts: **`npm run db:generate`**, **`npm run db:migrate`**, **`npm run db:push`**; **`npm run build`** runs **`prisma generate`** before `tsc`.
+The repo root has **`prisma/schema.prisma`**, **`prisma/migrations/`**, and **`prisma.config.ts`** (Prisma 7: DB URL is configured for the CLI in `prisma.config.ts`; see root `.env.example` **`DATABASE_URL`**). GitHub Actions **`.github/workflows/ci.yml`** runs **`prisma migrate deploy`** against an ephemeral Postgres, then **`npm run build`**, **`npm test`**, and **`node scripts/m10-token-log-scan.mjs`**; a separate **`web`** job runs **`npm ci`**, **`npm run lint`**, and **`npm run build`** under **`web/`** (M10 parity with **`npm run verify:m10`** minus duplicating backend steps). **`src/server.ts`** wires **`Db*Store`** implementations when the matching **`RELAY_DB_STORE_*`** flag is set (and `prisma` is passed in); otherwise the same routes use **file-backed** `.relay-data/` defaults. Schema includes **M9** future stubs (Part 3, Smart Tag placeholders, `WebhookEndpoint`). NPM scripts: **`npm run db:generate`**, **`npm run db:migrate`**, **`npm run db:push`**; **`npm run build`** runs **`prisma generate`** before `tsc`. **M10** release verification: **[`M10_VERIFICATION.md`](M10_VERIFICATION.md)** and **`npm run verify:m10`** at repo root.
 
 ## See also
 

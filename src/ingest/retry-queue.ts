@@ -1,4 +1,4 @@
-import type { FileDeadLetterQueue } from "./dlq.js";
+import type { DeadLetterQueue } from "./dlq.js";
 import type { SyncBatchInput } from "./types.js";
 
 export type IngestJob = {
@@ -22,13 +22,13 @@ export class IngestRetryQueue {
     traceId: string,
     jobId: string
   ) => Promise<void>;
-  private readonly dlq: FileDeadLetterQueue;
+  private readonly dlq: DeadLetterQueue;
   private readonly sleepFn: (ms: number) => Promise<void>;
 
   public constructor(
     policy: RetryPolicy,
     runBatch: (batch: SyncBatchInput, traceId: string, jobId: string) => Promise<void>,
-    dlq: FileDeadLetterQueue,
+    dlq: DeadLetterQueue,
     sleepFn?: (ms: number) => Promise<void>
   ) {
     this.policy = policy;

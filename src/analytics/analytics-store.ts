@@ -12,7 +12,34 @@ function emptyRoot(): AnalyticsStoreRoot {
   return { snapshots: {}, recommendations: {}, actions: [], outcomes: [] };
 }
 
-export class FileAnalyticsStore {
+/** File (`analytics.json`) or Postgres (`DbAnalyticsStore`) — same contract. */
+export interface AnalyticsStore {
+  load(): Promise<AnalyticsStoreRoot>;
+  save(root: AnalyticsStoreRoot): Promise<void>;
+  appendSnapshot(snap: AnalyticsSnapshot): Promise<void>;
+  latestSnapshot(creatorId: string): Promise<AnalyticsSnapshot | null>;
+  upsertRecommendations(cards: RecommendationCard[]): Promise<void>;
+  listCards(
+    creatorId: string,
+    filters?: {
+      impact_area?: string;
+      confidence_min?: number;
+      cursor?: string;
+      limit?: number;
+    }
+  ): Promise<{ items: RecommendationCard[]; next_cursor: string | null }>;
+  getCard(creatorId: string, recommendationId: string): Promise<RecommendationCard | null>;
+  updateCardStatus(
+    creatorId: string,
+    recommendationId: string,
+    status: RecommendationCard["status"],
+    extra?: Partial<Pick<RecommendationCard, "notes" | "dismiss_reason_code">>
+  ): Promise<RecommendationCard | null>;
+  appendAction(action: ActionExecution): Promise<void>;
+  appendOutcome(outcome: RecommendationOutcome): Promise<void>;
+}
+
+export class FileAnalyticsStore implements AnalyticsStore {
   private readonly filePath: string;
 
   public constructor(filePath: string) {

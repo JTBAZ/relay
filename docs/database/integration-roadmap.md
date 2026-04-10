@@ -260,7 +260,7 @@ Notation:
 |---|-----------|-------|
 | 6.2.1 | `DbAnalyticsStore` — `src/analytics/analytics-store-db.ts` — same interface as `FileAnalyticsStore` | |
 | 6.2.2 | Backfill existing analytics JSON into new tables | |
-| 6.2.3 | Wire behind `RELAY_DB_STORE_ANALYTICS=1` | |
+| 6.2.3 | Wire behind `RELAY_DB_STORE_ANALYTICS=1` | Ops: migrate deploy → `npm run backfill:analytics` → then set flag + restart (see `docs/database/README.md`) |
 | 6.2.4 | Confirm `ActionCenterService` and `SnapshotGenerator` work against DB store unchanged | |
 
 ---
@@ -309,7 +309,7 @@ Notation:
 | 8.2.2 | `DbPaymentStore` — `src/payments/payment-store-db.ts` | |
 | 8.2.3 | `DbMigrationStore` — `src/migrate/migration-store-db.ts` | Validate audit log is append-only at DB level (`deletedAt` guard or insert-only role) |
 | 8.2.4 | `DbDeployStore` — `src/deploy/deploy-store-db.ts` | |
-| 8.2.5 | Backfill all Part 2 stores; wire behind respective `RELAY_DB_STORE_*` flags | |
+| 8.2.5 | Backfill all Part 2 stores; wire behind respective `RELAY_DB_STORE_*` flags | Ops: per environment, `migrate deploy` → `npm run backfill:part2` → enable only needed flags (`CLONE`, `PAYMENTS`, `MIGRATION`, `DEPLOY`); see `docs/database/README.md` |
 
 ---
 

@@ -665,12 +665,14 @@ export function RelayApp({ initialDataSource }: RelayAppProps = {}) {
                   Settings
                 </span>
               </button>
-              <button 
+              <Link
+                href="/patron/profile"
                 style={{ transition: "all 400ms cubic-bezier(0.25, 0.1, 0.25, 1)" }}
                 className={[
                   "w-full flex items-center rounded-lg hover:bg-[#141414]",
                   isDiscover ? "lg:justify-center lg:px-0 lg:py-2 gap-3 px-3 py-2.5" : "gap-3 px-3 py-2.5",
                 ].join(" ")}
+                title="Your profile"
               >
                 <div
                   className="w-7 h-7 rounded-full overflow-hidden bg-[#2A2A2A] shrink-0"
@@ -698,7 +700,7 @@ export function RelayApp({ initialDataSource }: RelayAppProps = {}) {
                     @{viewer.handle}
                   </div>
                 </div>
-              </button>
+              </Link>
             </div>
           </div>
         </aside>

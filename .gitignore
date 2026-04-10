@@ -2,6 +2,9 @@ node_modules
 dist
 .relay-data
 .relay-backups
+# Manual JSON archives after DB cutover (keep README only in git)
+relay-data-archive/*
+!relay-data-archive/README.md
 .env
 *.pem
 .cursor/

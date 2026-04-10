@@ -63,6 +63,10 @@ export type AnalyticsSnapshot = {
   top_tags: Array<{ tag_id: string; count: number }>;
   tier_content_counts: Array<{ tier_id: string; posts: number }>;
   estimated: boolean;
+  /** Optional explainability label when metrics are estimated (Postgres `label`). */
+  label?: string;
+  /** Optional methodology note for Workstream E transparency (Postgres `method`). */
+  method?: string;
 };
 
 export type AnalyticsStoreRoot = {

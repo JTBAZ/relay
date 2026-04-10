@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
-import type { InMemoryEventBus } from "../events/event-bus.js";
+import type { RelayEventBus } from "../events/event-bus.js";
 import { generateSignedLink } from "./signed-links.js";
-import type { FileMigrationStore } from "./migration-store.js";
+import type { MigrationStore } from "./migration-store.js";
 import type {
   CampaignPreflightResult,
   MigrationCampaign,
@@ -14,10 +14,10 @@ const BOUNCE_PAUSE_THRESHOLD = 0.05;
 const COMPLAINT_PAUSE_THRESHOLD = 0.001;
 
 export class CampaignService {
-  private readonly store: FileMigrationStore;
-  private readonly eventBus: InMemoryEventBus;
+  private readonly store: MigrationStore;
+  private readonly eventBus: RelayEventBus;
 
-  public constructor(store: FileMigrationStore, eventBus: InMemoryEventBus) {
+  public constructor(store: MigrationStore, eventBus: RelayEventBus) {
     this.store = store;
     this.eventBus = eventBus;
   }

@@ -2,7 +2,29 @@
 
 ## Current state
 
-The Nest/Express backend wires many concerns to JSON files under `.relay-data/` (defaults shown in `src/server.ts`). Environment variables can override paths (see root `.env.example`).
+The Express backend can use **PostgreSQL + Prisma** per domain (`RELAY_DB_STORE_*` flags in `src/server.ts`) or **JSON files** under `.relay-data/` when a flag is off. Environment variables can override paths (see root `.env.example`).
+
+### Cutover status (engineering)
+
+| Domain | Postgres tables / store | `RELAY_DB_STORE_*` flag | Notes |
+|--------|---------------------------|-------------------------|--------|
+| Identity + sessions | `User`, `Session`, … / `DbIdentityStore` | `RELAY_DB_STORE_IDENTITY` | Backfill: `npm run backfill:identity` |
+| Canonical ingest | `Campaign`, `Post`, … / `DbCanonicalStore` | `RELAY_DB_STORE_CANONICAL` | Large migration; see staging doc |
+| Sync watermarks | `SyncCursor` / `DbSyncWatermarkStore` | `RELAY_DB_STORE_WATERMARK` | |
+| Sync health | `CreatorSyncState` / `DbPatreonSyncHealthStore` | `RELAY_DB_STORE_SYNC_HEALTH` | |
+| Gallery overrides | `PostOverride` / `DbGalleryOverridesStore` | `RELAY_DB_STORE_OVERRIDES` | |
+| Library collections | `LibraryCollection`, … / `DbCollectionsStore` | `RELAY_DB_STORE_COLLECTIONS` | |
+| Saved filters | `SavedFilter` / `DbSavedFiltersStore` | `RELAY_DB_STORE_SAVED_FILTERS` | |
+| Page layout | `PageLayout` / `DbPageLayoutStore` | `RELAY_DB_STORE_LAYOUT` | |
+| DLQ | `JobRun` / `DbDeadLetterQueue` | `RELAY_DB_STORE_DLQ` | |
+| Outbox / events | `OutboxEvent` / `DbEventBus` | `RELAY_DB_STORE_EVENTS` | |
+| Analytics | `AnalyticsSnapshotRow`, … / `DbAnalyticsStore` | `RELAY_DB_STORE_ANALYTICS` | |
+| Patron favorites + collections | `PatronFavorite`, … / `DbPatronFavoritesStore`, `DbPatronCollectionsStore` | `RELAY_DB_STORE_PATRON_ENGAGEMENT` | |
+| Clone / payments / migration / deploy | M8 tables / `DbCloneSiteStore`, etc. | `RELAY_DB_STORE_CLONE`, `PAYMENTS`, `MIGRATION`, `DEPLOY` | Four independent flags |
+| Creator OAuth token file | Still `FilePatreonTokenStore` | *(no `RELAY_DB_STORE_*` yet for token file)* | Uses `OAuthCredential` when identity DB is on |
+| Patreon cookies, campaign index, webhook metadata files | Files or future `WebhookEndpoint` (M9 stub) | — | Narrow tables exist for webhooks / routing where noted in schema |
+
+**M10 handoff:** After soak, operators may remove file fallbacks and flags per [`M10_VERIFICATION.md`](M10_VERIFICATION.md). Archive JSON: [`relay-data-archive/README.md`](../../relay-data-archive/README.md).
 
 ## File → relational mapping
 

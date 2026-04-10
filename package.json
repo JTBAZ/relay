@@ -10,6 +10,7 @@
     "build": "prisma generate && tsc -p tsconfig.json",
     "start": "node dist/src/main.js",
     "test": "vitest run",
+    "verify:m10": "npm run build && npm run test && node scripts/m10-token-log-scan.mjs && npm run lint --prefix web && npm run build --prefix web",
     "ledger-to-v0": "npm --prefix Automation run ledger-to-v0",
     "ledger-to-v0:dry": "npm --prefix Automation run ledger-to-v0:dry",
     "ledger-pull-v0-copy-block": "npm --prefix Automation run ledger-pull-v0-copy-block",
@@ -20,6 +21,9 @@
     "backfill:saved-filters": "npm run build && node scripts/backfill-saved-filters.mjs",
     "backfill:layout": "npm run build && node scripts/backfill-page-layout.mjs",
     "backfill:curation": "npm run build && node scripts/backfill-curation.mjs",
+    "backfill:analytics": "npm run build && node scripts/backfill-analytics.mjs",
+    "backfill:patron-engagement": "npm run build && node scripts/backfill-patron-engagement.mjs",
+    "backfill:part2": "npm run build && node scripts/backfill-part2.mjs",
     "inspect:patreon-content": "node scripts/inspect-patreon-post-content.mjs",
     "probe:patreon-description": "node scripts/probe-patreon-post-description.mjs"
   },

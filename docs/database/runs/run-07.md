@@ -28,7 +28,7 @@ After implementation:
 - Run the verification commands listed in the task.
 - Summarize files changed and any manual follow-up for the human.
 
-Airtable: update Relay Database Tracker → DB Integration Pipeline rows for this task's Step IDs: **In progress** while working; when verified, **always** set **Pipeline status** → **Complete** for each Step ID in this run and append a short completion summary to **Notes** (this table has no separate Integrator Notes field).
+Airtable: update Relay Database Tracker → DB Integration Pipeline rows for this task's Step IDs: Pipeline status In progress while working, Complete when done; append a short completion summary to **Notes** (this table has no separate Integrator Notes field).
 
 Goal: RELAY_DB_STORE_IDENTITY in server.ts; backfill identity.json; parity tests; staging checklist; production note.
 

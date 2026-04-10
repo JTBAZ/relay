@@ -1,4 +1,4 @@
-import { InMemoryEventBus } from "../events/event-bus.js";
+import type { RelayEventBus } from "../events/event-bus.js";
 import { PatreonClient } from "./patreon-client.js";
 import type { PatreonTokenStore } from "./token-store.js";
 
@@ -9,12 +9,12 @@ function addSecondsToNow(seconds: number): string {
 export class PatreonAuthService {
   private readonly patreonClient: PatreonClient;
   private readonly tokenStore: PatreonTokenStore;
-  private readonly eventBus: InMemoryEventBus;
+  private readonly eventBus: RelayEventBus;
 
   public constructor(
     patreonClient: PatreonClient,
     tokenStore: PatreonTokenStore,
-    eventBus: InMemoryEventBus
+    eventBus: RelayEventBus
   ) {
     this.patreonClient = patreonClient;
     this.tokenStore = tokenStore;

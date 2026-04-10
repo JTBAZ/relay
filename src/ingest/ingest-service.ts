@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { InMemoryEventBus } from "../events/event-bus.js";
+import type { RelayEventBus } from "../events/event-bus.js";
 import { applySyncBatchToSnapshot } from "./apply-batch.js";
 import { enrichBatch } from "./auto-enrich.js";
 import type { CanonicalStore } from "./canonical-store.js";
@@ -7,9 +7,9 @@ import type { ApplyBatchResult, SyncBatchInput } from "./types.js";
 
 export class IngestService {
   private readonly store: CanonicalStore;
-  private readonly eventBus: InMemoryEventBus;
+  private readonly eventBus: RelayEventBus;
 
-  public constructor(store: CanonicalStore, eventBus: InMemoryEventBus) {
+  public constructor(store: CanonicalStore, eventBus: RelayEventBus) {
     this.store = store;
     this.eventBus = eventBus;
   }

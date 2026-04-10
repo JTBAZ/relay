@@ -36,6 +36,8 @@ Follow src/analytics/types.ts and analytics-action-center-spec alignment.
 
 Verify: npm run test; npm run build; analytics API smoke.
 
+Human ops (turning on DB analytics): on each environment, `npx prisma migrate deploy` → `npm run backfill:analytics` → set `RELAY_DB_STORE_ANALYTICS=1` and restart. See `docs/database/README.md` (Enabling Postgres-backed analytics).
+
 Airtable: Complete 6.1.1–6.2.4 (note 6.1.6 is documentation-only if no partition DDL yet).
 ```
 

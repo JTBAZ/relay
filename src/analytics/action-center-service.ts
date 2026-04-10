@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
-import type { InMemoryEventBus } from "../events/event-bus.js";
+import type { RelayEventBus } from "../events/event-bus.js";
 import type { CanonicalStore } from "../ingest/canonical-store.js";
-import { FileAnalyticsStore } from "./analytics-store.js";
+import type { AnalyticsStore } from "./analytics-store.js";
 import { scoreRecommendations, type EngineConfig } from "./recommendation-engine.js";
 import { generateSnapshot } from "./snapshot-generator.js";
 import type {
@@ -11,15 +11,15 @@ import type {
 } from "./types.js";
 
 export class ActionCenterService {
-  private readonly analyticsStore: FileAnalyticsStore;
+  private readonly analyticsStore: AnalyticsStore;
   private readonly canonicalStore: CanonicalStore;
-  private readonly eventBus: InMemoryEventBus;
+  private readonly eventBus: RelayEventBus;
   private readonly engineConfig: EngineConfig;
 
   public constructor(
-    analyticsStore: FileAnalyticsStore,
+    analyticsStore: AnalyticsStore,
     canonicalStore: CanonicalStore,
-    eventBus: InMemoryEventBus,
+    eventBus: RelayEventBus,
     engineConfig?: EngineConfig
   ) {
     this.analyticsStore = analyticsStore;

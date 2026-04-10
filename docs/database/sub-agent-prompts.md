@@ -18,6 +18,12 @@ Use with the **Relay Database Tracker** Airtable base → **DB Integration Pipel
 
 **Parallel runs:** Only dispatch two agents on the same milestone if **`Parallel with`** in Airtable allows it (e.g. M2 vs M3 after M1). When in doubt, run **one agent at a time** in **Sort order**.
 
+**Turning on Postgres analytics (M6 / run 15):** `RELAY_DB_STORE_ANALYTICS=1` only after migrate + backfill on that environment — see [`README.md`](README.md) section **Enabling Postgres-backed analytics**.
+
+**Turning on Part 2 DB stores (M8 / run 17):** `migrate deploy` → `npm run backfill:part2` → enable only the Part 2 flags you need — see [`README.md`](README.md) section **Enabling Postgres-backed Part 2 stores**.
+
+**M10 verification (run 19):** repo root **`npm run verify:m10`** — see [`M10_VERIFICATION.md`](M10_VERIFICATION.md), [`runs/run-19.md`](runs/run-19.md).
+
 ---
 
 ## Universal preamble (duplicated in every `runs/run-NN.md`)

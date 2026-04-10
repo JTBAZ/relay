@@ -53,3 +53,26 @@ jobs:
 
       - name: Test
         run: npm test
+
+      - name: M10 token log scan (no secrets in console)
+        run: node scripts/m10-token-log-scan.mjs
+
+  web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install web dependencies
+        run: npm ci --prefix web
+
+      - name: Lint
+        run: npm run lint --prefix web
+
+      - name: Build
+        run: npm run build --prefix web

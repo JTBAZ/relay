@@ -34,6 +34,8 @@ Goal: CloneSite, PaymentConfig, CheckoutRecord, migration tables, Deployment; fo
 
 Verify: npm run test; npm run build; payment paths dry-run only — no live charges without human.
 
+Human ops (turning on DB Part 2 stores): on each environment, `npx prisma migrate deploy` → `npm run backfill:part2` → enable only the `RELAY_DB_STORE_*` flags you need (`CLONE`, `PAYMENTS`, `MIGRATION`, `DEPLOY` are independent) and restart. See `docs/database/README.md` (Enabling Postgres-backed Part 2 stores).
+
 Airtable: Complete 8.1.1–8.2.5.
 ```
 

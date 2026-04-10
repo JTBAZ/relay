@@ -12,7 +12,13 @@ export type DeadLetterRecord = {
   batch: SyncBatchInput;
 };
 
-export class FileDeadLetterQueue {
+/** File (`ingest_dlq.json`) or Postgres (`job_runs`) — see `dlq-db.ts`. */
+export interface DeadLetterQueue {
+  append(record: DeadLetterRecord): Promise<void>;
+  readAll(): Promise<DeadLetterRecord[]>;
+}
+
+export class FileDeadLetterQueue implements DeadLetterQueue {
   private readonly filePath: string;
 
   public constructor(filePath: string) {

@@ -11,9 +11,20 @@ export type RelayEventEnvelope<TPayload> = {
   payload: TPayload;
 };
 
-type StoredEvent = RelayEventEnvelope<Record<string, unknown>>;
+export type StoredEvent = RelayEventEnvelope<Record<string, unknown>>;
 
-export class InMemoryEventBus {
+export interface RelayEventBus {
+  publish<TPayload extends { primary_id: string }>(
+    eventName: string,
+    tenantId: string,
+    traceId: string,
+    payload: TPayload,
+    options?: { producer?: string }
+  ): RelayEventEnvelope<TPayload>;
+  getAll(): StoredEvent[];
+}
+
+export class InMemoryEventBus implements RelayEventBus {
   private readonly events: StoredEvent[] = [];
 
   public publish<TPayload extends { primary_id: string }>(

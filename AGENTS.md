@@ -29,6 +29,8 @@
 | Automation | `Automation/` | `ledger-to-v0`, Airtable docs, attended loop |
 | Relational DB (target) | `docs/database/` | PostgreSQL + Prisma direction, migration from `.relay-data/` — not the Airtable ledger |
 
+**Database integration (M10):** Verification checklist and human gates — [`docs/database/M10_VERIFICATION.md`](docs/database/M10_VERIFICATION.md). Per-domain cutover status — [`docs/database/migration-from-relay-data.md`](docs/database/migration-from-relay-data.md). Pooling + security — [`docs/database/operations-and-security.md`](docs/database/operations-and-security.md).
+
 **Strategic narrative:** [`road map.md`](road%20map.md). **Business / unit economics:** **`docs/financial-atlas.md`**.
 
 ---

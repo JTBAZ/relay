@@ -8,7 +8,7 @@
 
 **Not a substitute for:** [`road map.md`](../../road%20map.md) (strategy), **`AGENTS.md`** (repo map), or deep specs (**`docs/pattern-library.md`**, **`analytics-action-center-spec.md`**). Use this doc for **holistic UI/UX** and **cross-route** rules.
 
-**Automated checks today:** repo root **`npm run test`**, **`npm run build`**; **`web/`** **`npm run lint`**, **`npm run build`**. There is **no** default root **`npm run test:e2e`** — do not require Playwright unless the project adds it.
+**Automated checks today:** repo root **`npm run test`**, **`npm run build`**, **`node scripts/m10-token-log-scan.mjs`** (M10: no obvious token material in `console.*` under `src/`); **`web/`** **`npm run lint`**, **`npm run build`**. Full parity: root **`npm run verify:m10`**. There is **no** default root **`npm run test:e2e`** — do not require Playwright unless the project adds it.
 
 ---
 

@@ -405,6 +405,13 @@ model RecommendationRecord {
 
 **Smart Tag Assistant** (`road map.md`): add either `Unsupported("vector(1536)")` with raw SQL migrations or a dedicated `Embedding` table scoped by `(creator_id, entity_type, entity_id, model_version)`.
 
+**M9 stub (`EmbeddingStub` → `smart_tag_embeddings`):** Prisma ships a `Bytes` column `embedding_blob` so migrations apply on vanilla Postgres without the extension. To adopt **pgvector** in a target environment:
+
+1. Run `CREATE EXTENSION IF NOT EXISTS vector;` (requires sufficient DB privileges; on RDS use the `rds_superuser`-style role or a parameter-group allowlist for extensions).
+2. Follow with a **raw SQL** migration (or a Prisma migration that alters the column) to add or swap in `vector(1536)` for production similarity search.
+
+**Campaign → creator routing:** `CreatorProfile.patreon_campaign_id` is already unique in `prisma/schema.prisma`, which provides the index shape needed to replace `patreon_campaign_creator_index.json` lookups once webhook metadata moves to `WebhookEndpoint` rows.
+
 ### Part 2 (clone / payments)
 
 Replica tiers, payment providers, migration campaigns, and deploy records should stay in **bounded tables** (or separate Prisma schemas) so Part 3 patron features do not entangle with clone billing.

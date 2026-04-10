@@ -1,6 +1,6 @@
 import type { CloneService } from "../clone/clone-service.js";
 import { runPreflight } from "./preflight.js";
-import type { FilePaymentStore } from "./payment-store.js";
+import type { PaymentStore } from "./payment-store.js";
 import type { ProviderAdapter } from "./provider-adapter.js";
 import type {
   CheckoutResult,
@@ -10,12 +10,12 @@ import type {
 } from "./types.js";
 
 export class PaymentService {
-  private readonly paymentStore: FilePaymentStore;
+  private readonly paymentStore: PaymentStore;
   private readonly cloneService: CloneService;
   private readonly adapters: Map<string, ProviderAdapter>;
 
   public constructor(
-    paymentStore: FilePaymentStore,
+    paymentStore: PaymentStore,
     cloneService: CloneService,
     adapters: Map<string, ProviderAdapter>
   ) {

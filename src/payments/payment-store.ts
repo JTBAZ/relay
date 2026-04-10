@@ -2,7 +2,14 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import type { CheckoutResult, PaymentConfig, PaymentStoreRoot } from "./types.js";
 
-export class FilePaymentStore {
+/** File or DB — `PaymentService` uses this contract only. */
+export interface PaymentStore {
+  upsertConfig(config: PaymentConfig): Promise<void>;
+  getConfig(creatorId: string): Promise<PaymentConfig | null>;
+  appendCheckout(checkout: CheckoutResult): Promise<void>;
+}
+
+export class FilePaymentStore implements PaymentStore {
   private readonly filePath: string;
 
   public constructor(filePath: string) {
