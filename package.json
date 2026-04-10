@@ -13,15 +13,24 @@
     "ledger-to-v0": "npm --prefix Automation run ledger-to-v0",
     "ledger-to-v0:dry": "npm --prefix Automation run ledger-to-v0:dry",
     "ledger-pull-v0-copy-block": "npm --prefix Automation run ledger-pull-v0-copy-block",
+    "backfill:identity": "npm run build && node scripts/backfill-identity.mjs",
+    "backfill:canonical": "npm run build && node scripts/backfill-canonical.mjs",
+    "backfill:overrides": "npm run build && node scripts/backfill-gallery-overrides.mjs",
+    "backfill:collections": "npm run build && node scripts/backfill-collections.mjs",
+    "backfill:saved-filters": "npm run build && node scripts/backfill-saved-filters.mjs",
+    "backfill:layout": "npm run build && node scripts/backfill-page-layout.mjs",
+    "backfill:curation": "npm run build && node scripts/backfill-curation.mjs",
     "inspect:patreon-content": "node scripts/inspect-patreon-post-content.mjs",
     "probe:patreon-description": "node scripts/probe-patreon-post-description.mjs"
   },
   "dependencies": {
+    "@prisma/adapter-pg": "^7.7.0",
     "@prisma/client": "^7.7.0",
     "archiver": "^7.0.1",
     "dotenv": "^17.3.1",
     "express": "^4.21.2",
     "patreon-dl": "^3.8.1",
+    "pg": "^8.20.0",
     "sharp": "^0.34.2"
   },
   "devDependencies": {
@@ -29,6 +38,7 @@
     "@types/archiver": "^7.0.0",
     "@types/express": "^4.17.23",
     "@types/node": "^22.14.0",
+    "@types/pg": "^8.20.0",
     "@types/supertest": "^6.0.3",
     "adm-zip": "^0.5.17",
     "prisma": "^7.7.0",

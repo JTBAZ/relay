@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { access, constants, mkdir, readFile, writeFile } from "node:fs/promises";
 import { join, relative, resolve } from "node:path";
 import type { Writable } from "node:stream";
-import type { FileCanonicalStore } from "../ingest/canonical-store.js";
+import type { CanonicalStore } from "../ingest/canonical-store.js";
 import { FileExportIndex } from "./export-index.js";
 import {
   buildMediaManifest,
@@ -57,7 +57,7 @@ function absoluteBlobPathUnderCreator(
 const LIBRARY_ZIP_EMPTY_CODE = "LIBRARY_ZIP_EMPTY";
 
 export class ExportService {
-  private readonly canonicalStore: FileCanonicalStore;
+  private readonly canonicalStore: CanonicalStore;
   private readonly exportIndex: FileExportIndex;
   private readonly storageRoot: string;
   private readonly fetchImpl: typeof fetch;
@@ -65,7 +65,7 @@ export class ExportService {
   private readonly sleepFn: (ms: number) => Promise<void>;
 
   public constructor(
-    canonicalStore: FileCanonicalStore,
+    canonicalStore: CanonicalStore,
     exportIndex: FileExportIndex,
     storageRoot: string,
     fetchImpl?: typeof fetch,

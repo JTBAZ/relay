@@ -25,10 +25,12 @@ export type LastMemberSyncHealth = {
   error?: SyncHealthError;
 };
 
-type CreatorSyncHealth = {
+export type CreatorSyncHealthState = {
   last_post_scrape?: LastPostScrapeHealth;
   last_member_sync?: LastMemberSyncHealth;
 };
+
+type CreatorSyncHealth = CreatorSyncHealthState;
 
 type HealthRoot = {
   records: Record<string, CreatorSyncHealth>;
@@ -43,11 +45,43 @@ function truncateWarn(s: string): string {
   return `${t.slice(0, MAX_WARN_LEN - 1)}…`;
 }
 
-export class PatreonSyncHealthStore {
+/** Implemented by `PatreonSyncHealthStore` and `DbPatreonSyncHealthStore` (`patreon-sync-health-store-db.ts`). */
+export interface PatreonSyncHealthStoreAPI {
+  getForCreator(creatorId: string): Promise<CreatorSyncHealthState | null>;
+  recordPostScrapeSuccess(args: {
+    creator_id: string;
+    patreon_campaign_id: string;
+    posts_fetched: number;
+    posts_written?: number;
+    warnings: string[];
+  }): Promise<void>;
+  recordPostScrapeFailure(args: {
+    creator_id: string;
+    patreon_campaign_id?: string;
+    error: SyncHealthError;
+  }): Promise<void>;
+  recordMemberSyncSuccess(args: {
+    creator_id: string;
+    patreon_campaign_id?: string;
+    members_synced: number;
+  }): Promise<void>;
+  recordMemberSyncFailure(args: {
+    creator_id: string;
+    patreon_campaign_id?: string;
+    error: SyncHealthError;
+  }): Promise<void>;
+}
+
+export class PatreonSyncHealthStore implements PatreonSyncHealthStoreAPI {
   private readonly filePath: string;
 
   public constructor(filePath: string) {
     this.filePath = filePath;
+  }
+
+  public async getForCreator(creatorId: string): Promise<CreatorSyncHealthState | null> {
+    const root = await this.readRoot();
+    return root.records[creatorId] ?? null;
   }
 
   private async readRoot(): Promise<HealthRoot> {
@@ -62,11 +96,6 @@ export class PatreonSyncHealthStore {
   private async writeRoot(root: HealthRoot): Promise<void> {
     await mkdir(dirname(this.filePath), { recursive: true });
     await writeFile(this.filePath, JSON.stringify(root, null, 2), "utf8");
-  }
-
-  public async getForCreator(creatorId: string): Promise<CreatorSyncHealth | null> {
-    const root = await this.readRoot();
-    return root.records[creatorId] ?? null;
   }
 
   public async recordPostScrapeSuccess(args: {

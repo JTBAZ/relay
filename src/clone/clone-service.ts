@@ -1,16 +1,16 @@
-import type { FileCanonicalStore } from "../ingest/canonical-store.js";
+import type { CanonicalStore } from "../ingest/canonical-store.js";
 import type { FileExportIndex } from "../export/export-index.js";
 import { generateCloneSiteModel } from "./clone-generator.js";
 import type { FileCloneSiteStore } from "./clone-store.js";
 import type { ClonePreviewPage, CloneSiteModel } from "./types.js";
 
 export class CloneService {
-  private readonly canonical: FileCanonicalStore;
+  private readonly canonical: CanonicalStore;
   private readonly exportIndex: FileExportIndex;
   private readonly cloneStore: FileCloneSiteStore;
 
   public constructor(
-    canonical: FileCanonicalStore,
+    canonical: CanonicalStore,
     exportIndex: FileExportIndex,
     cloneStore: FileCloneSiteStore
   ) {

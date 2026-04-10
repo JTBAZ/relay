@@ -31,6 +31,8 @@ function configFromEnv(): Parameters<typeof createApp>[0] {
     export_storage_root: process.env.RELAY_EXPORT_STORAGE_ROOT,
     gallery_post_overrides_path: process.env.RELAY_GALLERY_POST_OVERRIDES_PATH,
     gallery_saved_filters_path: process.env.RELAY_GALLERY_SAVED_FILTERS_PATH,
+    collections_store_path: process.env.RELAY_COLLECTIONS_STORE_PATH,
+    page_layout_store_path: process.env.RELAY_PAGE_LAYOUT_STORE_PATH,
     patron_favorites_store_path: process.env.RELAY_PATRON_FAVORITES_PATH,
     patron_collections_store_path: process.env.RELAY_PATRON_COLLECTIONS_PATH,
     analytics_store_path: process.env.RELAY_ANALYTICS_STORE_PATH,
@@ -87,7 +89,7 @@ if (!process.env.RELAY_TOKEN_ENCRYPTION_KEY?.trim()) {
 }
 
 const port = Number(process.env.PORT ?? "8787");
-const { app } = createApp(configFromEnv());
+const { app } = createApp({ ...configFromEnv(), prisma });
 
 const server = app.listen(port, () => {
   // eslint-disable-next-line no-console -- CLI entrypoint

@@ -8,10 +8,12 @@ import { FilePatreonTokenStore } from "./auth/token-store.js";
 import { errorEnvelope, successEnvelope } from "./contracts/api.js";
 import { InMemoryEventBus } from "./events/event-bus.js";
 import { FileCanonicalStore } from "./ingest/canonical-store.js";
+import { DbCanonicalStore } from "./ingest/canonical-store-db.js";
 import { FileDeadLetterQueue } from "./ingest/dlq.js";
 import { IngestService } from "./ingest/ingest-service.js";
 import { IngestRetryQueue } from "./ingest/retry-queue.js";
 import { SyncWatermarkStore } from "./ingest/sync-watermark-store.js";
+import { DbSyncWatermarkStore } from "./ingest/sync-watermark-store-db.js";
 import { validateIngestBatchBody } from "./ingest/validate-body.js";
 import { TokenEncryption } from "./lib/crypto.js";
 import { ExportService } from "./export/export-service.js";
@@ -24,10 +26,17 @@ import {
 } from "./export/manifests.js";
 import { GalleryService } from "./gallery/gallery-service.js";
 import { FileGalleryOverridesStore } from "./gallery/overrides-store.js";
-import { FileCollectionsStore } from "./gallery/collections-store.js";
+import { DbGalleryOverridesStore } from "./gallery/overrides-store-db.js";
+import {
+  FileCollectionsStore,
+  type RelayCollectionsStore
+} from "./gallery/collections-store.js";
+import { DbCollectionsStore } from "./gallery/collections-store-db.js";
 import { postFitsAccessCeiling } from "./gallery/tier-access.js";
-import { FilePageLayoutStore } from "./gallery/layout-store.js";
+import { FilePageLayoutStore, type RelayPageLayoutStore } from "./gallery/layout-store.js";
+import { DbPageLayoutStore } from "./gallery/layout-store-db.js";
 import { FileSavedFiltersStore } from "./gallery/saved-filters-store.js";
+import { DbSavedFiltersStore } from "./gallery/saved-filters-store-db.js";
 import { FilePatronFavoritesStore } from "./gallery/patron-favorites-store.js";
 import { FilePatronCollectionsStore } from "./gallery/patron-collections-store.js";
 import { validatePatronFavoriteTarget } from "./gallery/patron-favorites-validate.js";
@@ -97,7 +106,9 @@ import { ActionCenterService } from "./analytics/action-center-service.js";
 import { CloneService } from "./clone/clone-service.js";
 import { FileCloneSiteStore } from "./clone/clone-store.js";
 import { IdentityService } from "./identity/identity-service.js";
+import { DbIdentityStore } from "./identity/identity-store-db.js";
 import { FileIdentityStore } from "./identity/identity-store.js";
+import type { PrismaClient } from "@prisma/client";
 import { checkPostAccess, filterAccessiblePosts } from "./identity/access-guard.js";
 import { PaymentService } from "./payments/payment-service.js";
 import { FilePaymentStore } from "./payments/payment-store.js";
@@ -106,6 +117,7 @@ import type { TierProductMapping, BillingInterval, PaymentProvider } from "./pay
 import { exchangePatreonPatronOAuth } from "./patreon/patreon-patron-oauth.js";
 import { CreatorCampaignDisplayStore } from "./patreon/creator-campaign-display-store.js";
 import { PatreonSyncHealthStore } from "./patreon/patreon-sync-health-store.js";
+import { DbPatreonSyncHealthStore } from "./patreon/patreon-sync-health-store-db.js";
 import { PatreonSyncService } from "./patreon/patreon-sync-service.js";
 import { classifySyncError } from "./patreon/sync-error-copy.js";
 import { PatreonCampaignCreatorIndex } from "./patreon/patreon-campaign-creator-index.js";
@@ -172,6 +184,48 @@ export type AppConfig = {
   analytics_store_path?: string;
   analytics_confidence_threshold?: number;
   clone_store_path?: string;
+  /**
+   * When true, use `DbIdentityStore` (Postgres) instead of `FileIdentityStore`.
+   * Default: env `RELAY_DB_STORE_IDENTITY` is `1` / `true` / `yes`.
+   * **Required** when the DB identity store is on: pass the shared `PrismaClient` from `src/lib/db.ts` (see `main.ts`).
+   */
+  relay_db_store_identity?: boolean;
+  /**
+   * When true, use `DbCanonicalStore` (Postgres) instead of `FileCanonicalStore` / `canonical.json`.
+   * Default: env `RELAY_DB_STORE_CANONICAL` is `1` / `true` / `yes`.
+   */
+  relay_db_store_canonical?: boolean;
+  /**
+   * When true, use `DbSyncWatermarkStore` (`sync_cursors`) instead of watermark JSON.
+   * Default: env `RELAY_DB_STORE_WATERMARK` is `1` / `true` / `yes`.
+   */
+  relay_db_store_watermark?: boolean;
+  /**
+   * When true, use `DbPatreonSyncHealthStore` (`creator_sync_states`) instead of sync health JSON.
+   * Default: env `RELAY_DB_STORE_SYNC_HEALTH` is `1` / `true` / `yes`.
+   */
+  relay_db_store_sync_health?: boolean;
+  /**
+   * When true, use `DbGalleryOverridesStore` (`post_overrides`) instead of gallery_post_overrides.json.
+   * Default: env `RELAY_DB_STORE_OVERRIDES` is `1` / `true` / `yes`.
+   */
+  relay_db_store_overrides?: boolean;
+  /**
+   * When true, use `DbCollectionsStore` instead of collections.json.
+   * Default: env `RELAY_DB_STORE_COLLECTIONS` is `1` / `true` / `yes`.
+   */
+  relay_db_store_collections?: boolean;
+  /**
+   * When true, use `DbSavedFiltersStore` instead of gallery_saved_filters.json.
+   * Default: env `RELAY_DB_STORE_SAVED_FILTERS` is `1` / `true` / `yes`.
+   */
+  relay_db_store_saved_filters?: boolean;
+  /**
+   * When true, use `DbPageLayoutStore` instead of page_layout.json.
+   * Default: env `RELAY_DB_STORE_LAYOUT` is `1` / `true` / `yes`.
+   */
+  relay_db_store_layout?: boolean;
+  prisma?: PrismaClient;
   identity_store_path?: string;
   payment_store_path?: string;
   migration_store_path?: string;
@@ -204,8 +258,8 @@ export type CreateAppResult = {
   exportService: ExportService;
   galleryService: GalleryService;
   triageService: TriageService;
-  collectionsStore: FileCollectionsStore;
-  layoutStore: FilePageLayoutStore;
+  collectionsStore: RelayCollectionsStore;
+  layoutStore: RelayPageLayoutStore;
   actionCenterService: ActionCenterService;
   cloneService: CloneService;
   identityService: IdentityService;
@@ -254,10 +308,96 @@ function parseQueryTruthy(value: unknown): boolean {
   return false;
 }
 
+/** Env flag: `1` / `true` / `yes` (case-insensitive). */
+function relayEnvTruthy(raw: string | undefined): boolean {
+  if (raw === undefined || raw.trim() === "") {
+    return false;
+  }
+  const s = raw.trim().toLowerCase();
+  return s === "1" || s === "true" || s === "yes";
+}
+
+function useDbIdentityStore(config: AppConfig): boolean {
+  if (typeof config.relay_db_store_identity === "boolean") {
+    return config.relay_db_store_identity;
+  }
+  return relayEnvTruthy(process.env.RELAY_DB_STORE_IDENTITY);
+}
+
+function useDbCanonicalStore(config: AppConfig): boolean {
+  if (typeof config.relay_db_store_canonical === "boolean") {
+    return config.relay_db_store_canonical;
+  }
+  return relayEnvTruthy(process.env.RELAY_DB_STORE_CANONICAL);
+}
+
+function useDbSyncWatermarkStore(config: AppConfig): boolean {
+  if (typeof config.relay_db_store_watermark === "boolean") {
+    return config.relay_db_store_watermark;
+  }
+  return relayEnvTruthy(process.env.RELAY_DB_STORE_WATERMARK);
+}
+
+function useDbPatreonSyncHealthStore(config: AppConfig): boolean {
+  if (typeof config.relay_db_store_sync_health === "boolean") {
+    return config.relay_db_store_sync_health;
+  }
+  return relayEnvTruthy(process.env.RELAY_DB_STORE_SYNC_HEALTH);
+}
+
+function useDbGalleryOverridesStore(config: AppConfig): boolean {
+  if (typeof config.relay_db_store_overrides === "boolean") {
+    return config.relay_db_store_overrides;
+  }
+  return relayEnvTruthy(process.env.RELAY_DB_STORE_OVERRIDES);
+}
+
+function useDbCollectionsStore(config: AppConfig): boolean {
+  if (typeof config.relay_db_store_collections === "boolean") {
+    return config.relay_db_store_collections;
+  }
+  return relayEnvTruthy(process.env.RELAY_DB_STORE_COLLECTIONS);
+}
+
+function useDbSavedFiltersStore(config: AppConfig): boolean {
+  if (typeof config.relay_db_store_saved_filters === "boolean") {
+    return config.relay_db_store_saved_filters;
+  }
+  return relayEnvTruthy(process.env.RELAY_DB_STORE_SAVED_FILTERS);
+}
+
+function useDbPageLayoutStore(config: AppConfig): boolean {
+  if (typeof config.relay_db_store_layout === "boolean") {
+    return config.relay_db_store_layout;
+  }
+  return relayEnvTruthy(process.env.RELAY_DB_STORE_LAYOUT);
+}
+
+function anyRelayDbStoreEnabled(config: AppConfig): boolean {
+  return (
+    useDbIdentityStore(config) ||
+    useDbCanonicalStore(config) ||
+    useDbSyncWatermarkStore(config) ||
+    useDbPatreonSyncHealthStore(config) ||
+    useDbGalleryOverridesStore(config) ||
+    useDbCollectionsStore(config) ||
+    useDbSavedFiltersStore(config) ||
+    useDbPageLayoutStore(config)
+  );
+}
+
 export function createApp(config: AppConfig): CreateAppResult {
   const encryption = new TokenEncryption(
     required(config.relay_token_encryption_key, "relay_token_encryption_key")
   );
+  if (anyRelayDbStoreEnabled(config) && !config.prisma) {
+    throw new Error(
+      "createApp: config.prisma is required when any database-backed Relay store is enabled " +
+        "(RELAY_DB_STORE_IDENTITY, RELAY_DB_STORE_CANONICAL, RELAY_DB_STORE_WATERMARK, RELAY_DB_STORE_SYNC_HEALTH, " +
+        "RELAY_DB_STORE_OVERRIDES, RELAY_DB_STORE_COLLECTIONS, RELAY_DB_STORE_SAVED_FILTERS, RELAY_DB_STORE_LAYOUT). " +
+        "Import `prisma` from `./lib/db.js` in `main.ts` and pass it on AppConfig."
+    );
+  }
   const credentialStorePath = config.credential_store_path ?? ".relay-data/patreon_credentials.json";
   const relayDataDir = dirname(credentialStorePath);
   const patreonCampaignIndexPath =
@@ -268,9 +408,9 @@ export function createApp(config: AppConfig): CreateAppResult {
 
   const tokenStore = new FilePatreonTokenStore(credentialStorePath, encryption);
   const eventBus = new InMemoryEventBus();
-  const canonicalStore = new FileCanonicalStore(
-    config.ingest_canonical_path ?? ".relay-data/canonical.json"
-  );
+  const canonicalStore = useDbCanonicalStore(config)
+    ? new DbCanonicalStore(config.prisma!)
+    : new FileCanonicalStore(config.ingest_canonical_path ?? ".relay-data/canonical.json");
   const dlq = new FileDeadLetterQueue(config.ingest_dlq_path ?? ".relay-data/ingest_dlq.json");
   const ingestService = new IngestService(canonicalStore, eventBus);
   const retryPolicy = config.ingest_retry_policy ?? {
@@ -297,24 +437,28 @@ export function createApp(config: AppConfig): CreateAppResult {
     config.fetch_impl,
     exportFetchRetryPolicy
   );
-  const galleryOverridesStore = new FileGalleryOverridesStore(
-    config.gallery_post_overrides_path ?? ".relay-data/gallery_post_overrides.json"
-  );
-  const savedFiltersStore = new FileSavedFiltersStore(
-    config.gallery_saved_filters_path ?? ".relay-data/gallery_saved_filters.json"
-  );
+  const galleryOverridesStore = useDbGalleryOverridesStore(config)
+    ? new DbGalleryOverridesStore(config.prisma!)
+    : new FileGalleryOverridesStore(
+        config.gallery_post_overrides_path ?? ".relay-data/gallery_post_overrides.json"
+      );
+  const savedFiltersStore = useDbSavedFiltersStore(config)
+    ? new DbSavedFiltersStore(config.prisma!)
+    : new FileSavedFiltersStore(
+        config.gallery_saved_filters_path ?? ".relay-data/gallery_saved_filters.json"
+      );
   const patronFavoritesStore = new FilePatronFavoritesStore(
     config.patron_favorites_store_path ?? ".relay-data/patron_favorites.json"
   );
   const patronCollectionsStore = new FilePatronCollectionsStore(
     config.patron_collections_store_path ?? ".relay-data/patron_collections.json"
   );
-  const collectionsStore = new FileCollectionsStore(
-    config.collections_store_path ?? ".relay-data/collections.json"
-  );
-  const layoutStore = new FilePageLayoutStore(
-    config.page_layout_store_path ?? ".relay-data/page_layout.json"
-  );
+  const collectionsStore = useDbCollectionsStore(config)
+    ? new DbCollectionsStore(config.prisma!)
+    : new FileCollectionsStore(config.collections_store_path ?? ".relay-data/collections.json");
+  const layoutStore = useDbPageLayoutStore(config)
+    ? new DbPageLayoutStore(config.prisma!)
+    : new FilePageLayoutStore(config.page_layout_store_path ?? ".relay-data/page_layout.json");
   const galleryService = new GalleryService(canonicalStore, exportIndex, galleryOverridesStore);
   galleryService.setCollections(collectionsStore);
   const triageService = new TriageService(canonicalStore, exportIndex);
@@ -333,9 +477,9 @@ export function createApp(config: AppConfig): CreateAppResult {
     config.clone_store_path ?? ".relay-data/clone_sites.json"
   );
   const cloneService = new CloneService(canonicalStore, exportIndex, cloneStore);
-  const identityStore = new FileIdentityStore(
-    config.identity_store_path ?? ".relay-data/identity.json"
-  );
+  const identityStore = useDbIdentityStore(config)
+    ? new DbIdentityStore(config.prisma!)
+    : new FileIdentityStore(config.identity_store_path ?? ".relay-data/identity.json");
   const identityService = new IdentityService(identityStore);
   const exportRequireTierAccess =
     typeof config.export_require_tier_access === "boolean"
@@ -377,12 +521,16 @@ export function createApp(config: AppConfig): CreateAppResult {
     config.cookie_store_path ?? ".relay-data/patreon_cookies.json",
     encryption
   );
-  const watermarkStore = new SyncWatermarkStore(
-    config.patreon_sync_watermark_path ?? ".relay-data/patreon_sync_watermarks.json"
-  );
-  const patreonSyncHealthStore = new PatreonSyncHealthStore(
-    config.patreon_sync_health_path ?? ".relay-data/patreon_sync_health.json"
-  );
+  const watermarkStore = useDbSyncWatermarkStore(config)
+    ? new DbSyncWatermarkStore(config.prisma!)
+    : new SyncWatermarkStore(
+        config.patreon_sync_watermark_path ?? ".relay-data/patreon_sync_watermarks.json"
+      );
+  const patreonSyncHealthStore = useDbPatreonSyncHealthStore(config)
+    ? new DbPatreonSyncHealthStore(config.prisma!)
+    : new PatreonSyncHealthStore(
+        config.patreon_sync_health_path ?? ".relay-data/patreon_sync_health.json"
+      );
   const patreonCampaignCreatorIndex = new PatreonCampaignCreatorIndex(patreonCampaignIndexPath);
   const patreonWebhookMetadataStore = new PatreonWebhookMetadataStore(
     patreonWebhookMetadataPath,

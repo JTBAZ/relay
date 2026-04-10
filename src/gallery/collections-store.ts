@@ -3,6 +3,39 @@ import { dirname } from "node:path";
 import { randomUUID } from "node:crypto";
 import type { Collection, CollectionsRoot } from "./types.js";
 
+/** Postgres / file implementations share this contract (see `collections-store-db.ts`). */
+export interface RelayCollectionsStore {
+  load(): Promise<CollectionsRoot>;
+  listForCreator(creatorId: string): Promise<Collection[]>;
+  getById(collectionId: string): Promise<Collection | null>;
+  create(
+    creatorId: string,
+    title: string,
+    description?: string,
+    extras?: {
+      access_ceiling_tier_id?: string;
+      theme_tag_ids?: string[];
+    }
+  ): Promise<Collection>;
+  update(
+    collectionId: string,
+    patch: Partial<
+      Pick<
+        Collection,
+        | "title"
+        | "description"
+        | "cover_media_id"
+        | "sort_order"
+        | "theme_tag_ids"
+      > & { access_ceiling_tier_id?: string | null }
+    >
+  ): Promise<Collection | null>;
+  delete(collectionId: string): Promise<boolean>;
+  addPosts(collectionId: string, postIds: string[]): Promise<Collection | null>;
+  removePosts(collectionId: string, postIds: string[]): Promise<Collection | null>;
+  reorder(creatorId: string, orderedIds: string[]): Promise<void>;
+}
+
 function emptyRoot(): CollectionsRoot {
   return { collections: [] };
 }
@@ -14,7 +47,7 @@ function normalizeCollection(c: Collection): Collection {
   };
 }
 
-export class FileCollectionsStore {
+export class FileCollectionsStore implements RelayCollectionsStore {
   private readonly filePath: string;
 
   public constructor(filePath: string) {

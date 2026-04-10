@@ -2,7 +2,7 @@ import type { FilePatreonCookieStore } from "../auth/cookie-store.js";
 import type { ExportService } from "../export/export-service.js";
 import { enrichBatch } from "../ingest/auto-enrich.js";
 import type { IngestService } from "../ingest/ingest-service.js";
-import { SyncWatermarkStore } from "../ingest/sync-watermark-store.js";
+import type { SyncWatermarkStoreAPI } from "../ingest/sync-watermark-store.js";
 import type { ApplyBatchResult, IngestPost, SyncBatchInput } from "../ingest/types.js";
 import type { PatreonTokenStore, PersistedPatreonTokens } from "../auth/token-store.js";
 import { CookieSessionExpiredError, scrapeByCookie } from "./cookie-scraper.js";
@@ -35,7 +35,7 @@ import type { IdentityService } from "../identity/identity-service.js";
 import type {
   LastMemberSyncHealth,
   LastPostScrapeHealth,
-  PatreonSyncHealthStore
+  PatreonSyncHealthStoreAPI
 } from "./patreon-sync-health-store.js";
 
 export type PatreonOAuthHealthSnapshot = {
@@ -287,22 +287,22 @@ export class PatreonSyncService {
   private readonly tokenStore: PatreonTokenStore;
   private readonly cookieStore: FilePatreonCookieStore;
   private readonly ingestService: IngestService;
-  private readonly watermarkStore: SyncWatermarkStore;
+  private readonly watermarkStore: SyncWatermarkStoreAPI;
   private readonly exportService: ExportService | null;
   private readonly identityService: IdentityService | null;
   private readonly fetchImpl: typeof fetch;
-  private readonly syncHealthStore: PatreonSyncHealthStore | null;
+  private readonly syncHealthStore: PatreonSyncHealthStoreAPI | null;
   private readonly campaignDisplayStore: CreatorCampaignDisplayStore | null;
 
   public constructor(
     tokenStore: PatreonTokenStore,
     cookieStore: FilePatreonCookieStore,
     ingestService: IngestService,
-    watermarkStore: SyncWatermarkStore,
+    watermarkStore: SyncWatermarkStoreAPI,
     fetchImpl?: typeof fetch,
     exportService?: ExportService,
     identityService?: IdentityService,
-    syncHealthStore?: PatreonSyncHealthStore | null,
+    syncHealthStore?: PatreonSyncHealthStoreAPI | null,
     campaignDisplayStore?: CreatorCampaignDisplayStore | null
   ) {
     this.tokenStore = tokenStore;

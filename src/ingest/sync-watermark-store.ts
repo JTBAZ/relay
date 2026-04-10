@@ -14,7 +14,14 @@ function keyFor(creatorId: string, campaignId: string): string {
   return `${creatorId}:${campaignId}`;
 }
 
-export class SyncWatermarkStore {
+/** Implemented by `SyncWatermarkStore` and `DbSyncWatermarkStore` (`sync-watermark-store-db.ts`). */
+export interface SyncWatermarkStoreAPI {
+  get(creatorId: string, campaignId: string): Promise<string | null>;
+  getRow(creatorId: string, campaignId: string): Promise<WatermarkRow | null>;
+  set(creatorId: string, campaignId: string, lastSyncedAt: string): Promise<void>;
+}
+
+export class SyncWatermarkStore implements SyncWatermarkStoreAPI {
   private readonly filePath: string;
 
   public constructor(filePath: string) {

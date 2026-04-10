@@ -1,5 +1,5 @@
 // Relay — PostgreSQL via Prisma (see root `.env.example` DATABASE_URL).
-// Identity slice (M2 Phase 2.1): `docs/database/relational-model.md`, `docs/database/integration-roadmap.md`.
+// M2: identity · M3: canonical · M4: creator curation (`docs/database/relational-model.md`).
 
 generator client {
   provider = "prisma-client-js"
@@ -9,7 +9,7 @@ datasource db {
   provider = "postgresql"
 }
 
-// --- Identity & multi-tenancy (M2.1) — Campaign/Post/etc. arrive in M3 ---
+// --- Identity & multi-tenancy (M2.1) ---
 
 enum UserKind {
   creator
@@ -153,4 +153,234 @@ model PatronProfile {
   updatedAt DateTime @updatedAt @map("updated_at")
 
   @@map("patron_profiles")
+}
+
+// --- Canonical ingest + gallery (M3 Phase 3.1) — string `creator_id` matches Relay ingest scope (see `canonical-store.ts`) ---
+
+enum PostUpstreamStatus {
+  active
+  deleted
+}
+
+enum MediaUpstreamStatus {
+  active
+  deleted
+}
+
+/// Patreon (or mapped) campaign row — `id` is stable `campaign_id` from `CampaignRow` / ingest.
+model Campaign {
+  id                String   @id
+  creatorId         String   @map("creator_id")
+  name              String
+  upstreamUpdatedAt DateTime @map("upstream_updated_at")
+  versionSeq        Int      @map("version_seq")
+
+  posts Post[]
+  tiers Tier[]
+
+  @@index([creatorId])
+  @@map("campaigns")
+}
+
+/// Access tier — `id` is a stable synthetic key (e.g. `${creator_id}::${relay_tier_id}`) because relay tier keys repeat across creators.
+model Tier {
+  id               String    @id @map("id")
+  creatorId        String    @map("creator_id")
+  /// File / API tier key (`TierRow.tier_id`), e.g. `patreon_tier_123`, `RELAY_TIER_PUBLIC`.
+  relayTierId      String    @map("relay_tier_id")
+  /// Opaque provider id for idempotency (Patreon tier id or same as `relay_tier_id` when unknown).
+  providerTierId   String    @map("provider_tier_id")
+  campaignId       String?   @map("campaign_id")
+  campaign         Campaign? @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+  title            String
+  amountCents      Int?      @map("amount_cents")
+  upstreamUpdatedAt DateTime @map("upstream_updated_at")
+  versionSeq       Int       @map("version_seq")
+
+  postTiers PostTier[]
+
+  @@unique([creatorId, providerTierId])
+  @@index([creatorId])
+  @@map("tiers")
+}
+
+/// Post — `id` is stable `post_id` from `PostRow` / ingest.
+model Post {
+  id               String             @id @map("id")
+  campaignId       String             @map("campaign_id")
+  campaign         Campaign           @relation(fields: [campaignId], references: [id], onDelete: Restrict)
+  creatorId        String             @map("creator_id")
+  /// Patreon/API post id for idempotency when distinct from Relay `post_id`.
+  providerPostId   String?            @map("provider_post_id")
+  upstreamStatus   PostUpstreamStatus @map("upstream_status")
+  /// Gallery / feed ordering — set from ingest (e.g. earliest `published_at` in versions).
+  createdAt        DateTime           @map("created_at")
+
+  versions  PostVersion[]
+  postTiers PostTier[]
+  mediaAssets MediaAsset[]
+
+  @@unique([campaignId, providerPostId])
+  @@index([campaignId, createdAt(sort: Desc)])
+  @@map("posts")
+}
+
+model PostVersion {
+  id               String   @id @default(cuid())
+  postId           String     @map("post_id")
+  post             Post       @relation(fields: [postId], references: [id], onDelete: Cascade)
+  versionSeq       Int        @map("version_seq")
+  upstreamRevision String     @map("upstream_revision")
+  title            String
+  description      String?
+  publishedAt      DateTime   @map("published_at")
+  tagIds           String[]   @default([]) @map("tag_ids")
+  tierIds          String[]   @default([]) @map("tier_ids")
+  mediaIds         String[]   @default([]) @map("media_ids")
+  ingestedAt       DateTime   @map("ingested_at")
+
+  @@unique([postId, versionSeq])
+  @@index([postId])
+  @@map("post_versions")
+}
+
+/// Media — `id` is stable `media_id` from `MediaRow`. `primary_post_id` indexes the canonical post link; `post_ids` mirrors file M:N.
+model MediaAsset {
+  id                      String             @id @map("id")
+  creatorId               String             @map("creator_id")
+  postIds                 String[]           @default([]) @map("post_ids")
+  primaryPostId           String             @map("primary_post_id")
+  post                    Post               @relation(fields: [primaryPostId], references: [id], onDelete: Cascade)
+  upstreamStatus          MediaUpstreamStatus @map("upstream_status")
+  currentVersionSeq       Int                @map("current_version_seq")
+  currentUpstreamRevision String             @map("current_upstream_revision")
+  currentMimeType         String?            @map("current_mime_type")
+  currentUpstreamUrl      String?            @map("current_upstream_url")
+  currentRole             String?            @map("current_role")
+  currentIngestedAt       DateTime           @map("current_ingested_at")
+  versionsJson            Json               @map("versions_json")
+
+  @@index([primaryPostId])
+  @@map("media_assets")
+}
+
+model PostTier {
+  postId String @map("post_id")
+  tierId String @map("tier_id")
+  post   Post   @relation(fields: [postId], references: [id], onDelete: Cascade)
+  tier   Tier   @relation(fields: [tierId], references: [id], onDelete: Cascade)
+
+  @@id([postId, tierId])
+  @@map("post_tiers")
+}
+
+/// Replaces file-backed `SyncWatermarkStore` (`last_synced_at` per creator + campaign).
+model SyncCursor {
+  creatorId    String   @map("creator_id")
+  campaignId   String   @map("campaign_id")
+  lastSyncedAt DateTime @map("last_synced_at")
+  updatedAt    DateTime @map("updated_at")
+
+  @@id([creatorId, campaignId])
+  @@map("sync_cursors")
+}
+
+/// Replaces file-backed `PatreonSyncHealthStore` (`last_post_scrape` / `last_member_sync` JSON blobs).
+model CreatorSyncState {
+  creatorId      String   @id @map("creator_id")
+  lastPostScrape Json?    @map("last_post_scrape")
+  lastMemberSync Json?    @map("last_member_sync")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  @@map("creator_sync_states")
+}
+
+/// Replaces `ingest_idempotency` map in `canonical.json` — `batch_key` is the SHA-256 hex from `ingestIdempotencyKey()`.
+model IngestIdempotencyKey {
+  id          String   @id @default(cuid())
+  creatorId   String   @map("creator_id")
+  batchKey    String   @map("batch_key")
+  firstSeenAt DateTime @map("first_seen_at")
+
+  @@unique([creatorId, batchKey])
+  @@index([creatorId])
+  @@map("ingest_idempotency_keys")
+}
+
+// --- Creator curation (M4 Phase 4.1) — Relay `creator_id` scope strings; no FK to `CreatorProfile` (see canonical pattern). ---
+
+enum GalleryVisibility {
+  visible
+  hidden
+  review
+}
+
+/// Replaces `gallery_post_overrides.json` — one row per (creator, post, media scope).
+model PostOverride {
+  id           String             @id @default(cuid())
+  creatorId    String             @map("creator_id")
+  postId       String             @map("post_id")
+  /// Empty string = post-level override; otherwise canonical `media_id` for per-asset rows.
+  mediaId      String             @default("") @map("media_id")
+  addTagIds    String[]           @default([]) @map("add_tag_ids")
+  removeTagIds String[]           @default([]) @map("remove_tag_ids")
+  visibility   GalleryVisibility?
+  updatedAt    DateTime           @updatedAt @map("updated_at")
+
+  @@unique([creatorId, postId, mediaId])
+  @@index([creatorId])
+  @@map("post_overrides")
+}
+
+/// Replaces artist `collections.json` Library rows — `id` is stable `collection_id` from file.
+model LibraryCollection {
+  id                  String   @id @map("id")
+  creatorId           String   @map("creator_id")
+  title               String
+  description         String?
+  coverMediaId        String?  @map("cover_media_id")
+  accessCeilingTierId String?  @map("access_ceiling_tier_id")
+  themeTagIds         String[] @default([]) @map("theme_tag_ids")
+  sortOrder           Int      @map("sort_order")
+  createdAt           DateTime @map("created_at")
+  updatedAt           DateTime @updatedAt @map("updated_at")
+
+  posts CollectionPost[]
+
+  @@index([creatorId])
+  @@map("library_collections")
+}
+
+model CollectionPost {
+  collectionId String @map("collection_id")
+  postId       String @map("post_id")
+  sortIndex    Int    @map("sort_index")
+
+  collection LibraryCollection @relation(fields: [collectionId], references: [id], onDelete: Cascade)
+
+  @@id([collectionId, postId])
+  @@index([collectionId])
+  @@map("collection_posts")
+}
+
+/// Replaces `gallery_saved_filters.json` — `id` is stable `filter_id` from file.
+model SavedFilter {
+  id        String   @id @map("id")
+  creatorId String   @map("creator_id")
+  name      String
+  query     Json
+  createdAt DateTime @map("created_at")
+
+  @@index([creatorId])
+  @@map("saved_filters")
+}
+
+/// Replaces `page_layout.json` — one row per Relay `creator_id`; full layout in JSON for round-trip.
+model PageLayout {
+  creatorId  String   @id @map("creator_id")
+  layoutJson Json     @map("layout_json")
+  version    Int      @default(1)
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  @@map("page_layouts")
 }

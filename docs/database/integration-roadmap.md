@@ -140,7 +140,7 @@ Notation:
 | # | Work item | Notes |
 |---|-----------|-------|
 | 2.3.1 | In `src/server.ts`, inject `DbIdentityStore` when `RELAY_DB_STORE_IDENTITY=1`, else keep `FileIdentityStore` | No consumer code changes |
-| 2.3.2 | Add backfill script `scripts/backfill-identity.ts` that reads `identity.json` and upserts into DB | One-time; idempotent; records `legacy_file_id` on each row |
+| 2.3.2 | Backfill via `scripts/backfill-identity.mjs` (implementation `src/identity/backfill-identity-from-file.ts`) reading `identity.json` and upserting into DB | One-time; idempotent; `npm run backfill:identity`; records `legacy_file_id` on each row |
 | 2.3.3 | Add parity test: run backfill, query DB, compare to file output for all users/sessions | Gate for cutover |
 | 2.3.4 | Set `RELAY_DB_STORE_IDENTITY=1` in staging; run acceptance tests per `docs/qa/UX_ACCEPTANCE_GUARDRAILS.md` | |
 | 2.3.5 | Enable in production; remove `FileIdentityStore` fallback after 2-week soak | |

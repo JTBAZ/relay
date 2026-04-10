@@ -3,6 +3,23 @@ import { dirname } from "node:path";
 import { randomUUID } from "node:crypto";
 import type { PageLayout, PageLayoutRoot, PageSection } from "./types.js";
 
+/** Postgres / file implementations share this contract (see `layout-store-db.ts`). */
+export interface RelayPageLayoutStore {
+  load(creatorId: string): Promise<PageLayout>;
+  save(creatorId: string, layout: PageLayout): Promise<void>;
+  addSection(
+    creatorId: string,
+    section: Omit<PageSection, "section_id" | "sort_order">
+  ): Promise<PageSection>;
+  updateSection(
+    creatorId: string,
+    sectionId: string,
+    patch: Partial<Omit<PageSection, "section_id">>
+  ): Promise<PageSection | null>;
+  removeSection(creatorId: string, sectionId: string): Promise<boolean>;
+  reorderSections(creatorId: string, orderedIds: string[]): Promise<void>;
+}
+
 function emptyRoot(): PageLayoutRoot {
   return { layouts: {} };
 }
@@ -16,7 +33,7 @@ function defaultLayout(creatorId: string): PageLayout {
   };
 }
 
-export class FilePageLayoutStore {
+export class FilePageLayoutStore implements RelayPageLayoutStore {
   private readonly filePath: string;
 
   public constructor(filePath: string) {

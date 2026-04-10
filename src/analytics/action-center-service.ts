@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { InMemoryEventBus } from "../events/event-bus.js";
-import type { FileCanonicalStore } from "../ingest/canonical-store.js";
+import type { CanonicalStore } from "../ingest/canonical-store.js";
 import { FileAnalyticsStore } from "./analytics-store.js";
 import { scoreRecommendations, type EngineConfig } from "./recommendation-engine.js";
 import { generateSnapshot } from "./snapshot-generator.js";
@@ -12,13 +12,13 @@ import type {
 
 export class ActionCenterService {
   private readonly analyticsStore: FileAnalyticsStore;
-  private readonly canonicalStore: FileCanonicalStore;
+  private readonly canonicalStore: CanonicalStore;
   private readonly eventBus: InMemoryEventBus;
   private readonly engineConfig: EngineConfig;
 
   public constructor(
     analyticsStore: FileAnalyticsStore,
-    canonicalStore: FileCanonicalStore,
+    canonicalStore: CanonicalStore,
     eventBus: InMemoryEventBus,
     engineConfig?: EngineConfig
   ) {

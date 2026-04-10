@@ -1,3 +1,4 @@
+import { PrismaPg } from "@prisma/adapter-pg";
 import { config as loadEnv } from "dotenv";
 import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -37,8 +38,23 @@ function prismaLogLevels(): ("query" | "info" | "warn" | "error")[] | undefined 
   return ["query", "warn", "error"];
 }
 
+function requireDatabaseUrl(): string {
+  const url = process.env.DATABASE_URL?.trim();
+  if (!url) {
+    throw new Error(
+      "DATABASE_URL is required for Prisma (repo root `.env`). Prisma ORM 7 uses `@prisma/adapter-pg`; see `.env.example`."
+    );
+  }
+  return url;
+}
+
+function createPrismaClient(): PrismaClient {
+  const adapter = new PrismaPg({ connectionString: requireDatabaseUrl() });
+  return new PrismaClient({ adapter, log: prismaLogLevels() });
+}
+
 /** Single PrismaClient per process; reuses `globalThis.__prisma` in dev to survive hot reload. */
-export const prisma = g.__prisma ?? new PrismaClient({ log: prismaLogLevels() });
+export const prisma = g.__prisma ?? createPrismaClient();
 
 if (process.env.NODE_ENV !== "production") {
   g.__prisma = prisma;

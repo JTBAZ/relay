@@ -76,7 +76,16 @@ function emptySnapshot(): CanonicalSnapshot {
   };
 }
 
-export class FileCanonicalStore {
+/** Implemented by `FileCanonicalStore` and `DbCanonicalStore` (`canonical-store-db.ts`). */
+export interface CanonicalStore {
+  load(): Promise<CanonicalSnapshot>;
+  save(snapshot: CanonicalSnapshot): Promise<void>;
+  mutate(
+    fn: (snapshot: CanonicalSnapshot) => void | Promise<void>
+  ): Promise<void>;
+}
+
+export class FileCanonicalStore implements CanonicalStore {
   private readonly filePath: string;
 
   public constructor(filePath: string) {

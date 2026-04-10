@@ -28,7 +28,8 @@ Authoritative relational design and migration plans for Relay’s **runtime** da
 | [`migration-from-relay-data.md`](migration-from-relay-data.md) | `.relay-data/` → tables mapping, dual-write / cutover |
 | [`operations-and-security.md`](operations-and-security.md) | Indexes, partitioning, RLS, encryption, analytics alignment, open product flags |
 | [`integration-roadmap.md`](integration-roadmap.md) | **Execution plan:** 10 milestones, phased work items, dependency order, parallel tracks, open-pipe stubs for future build structures |
-| [`sub-agent-prompts.md`](sub-agent-prompts.md) | **Copy-paste prompts** for sub-agents (19 runs aligned with Airtable Step IDs + Universal preamble) |
+| [`staging-identity-verification.md`](staging-identity-verification.md) | Staging checks when `RELAY_DB_STORE_IDENTITY=1`; links to API smoke routes |
+| [`sub-agent-prompts.md`](sub-agent-prompts.md) | **Index** + Universal preamble; **19 standalone run files** in [`runs/`](runs/README.md) |
 
 ## Repo reality
 
@@ -41,4 +42,4 @@ The repo root has **`prisma/schema.prisma`**, **`prisma/migrations/`**, and **`p
 
 ## Airtable — execution queue (optional)
 
-The **Relay Database Tracker** Airtable base holds a **DB Integration Pipeline** table: one row per step from [`integration-roadmap.md`](integration-roadmap.md), with **Sort order** (1…n), **Pipeline status** (`Queued` → `In progress` → `Complete`), **Depends on**, **Parallel with**, **Milestone**, and **Execution mode**. Sub-agents should sort by **Sort order**, respect dependencies, then update **Pipeline status** as they work. This is separate from the **Project tracker** Production Ledger (product/ledger tasks).
+The **Relay Database Tracker** Airtable base holds a **DB Integration Pipeline** table: one row per step from [`integration-roadmap.md`](integration-roadmap.md), with **Sort order** (1…n), **Pipeline status** (`Queued` → `In progress` → `Complete`), **Doc reference** (GitHub link to the run prompt `docs/database/runs/run-NN.md`), **Next run prompt** (link to the following run’s prompt; blank on M10 terminal steps), **Notes** (completion evidence — there is no separate Integrator Notes field on this table), **Depends on**, **Parallel with**, **Milestone**, and **Execution mode**. Sub-agents should sort by **Sort order**, respect dependencies, then update **Pipeline status** as they work. This is separate from the **Project tracker** Production Ledger (product/ledger tasks).

@@ -1,4 +1,4 @@
-import type { FileCanonicalStore } from "../ingest/canonical-store.js";
+import type { CanonicalStore } from "../ingest/canonical-store.js";
 import type { FileExportIndex } from "../export/export-index.js";
 import { evaluateTierRules } from "../clone/tier-rules.js";
 import type { SessionToken } from "../identity/types.js";
@@ -10,8 +10,8 @@ import {
   listGalleryItems
 } from "./query.js";
 import { redactGalleryItemExportIfLocked } from "./patron-media-access.js";
-import type { FileGalleryOverridesStore } from "./overrides-store.js";
-import type { FileCollectionsStore } from "./collections-store.js";
+import type { GalleryOverridesStore } from "./overrides-store.js";
+import type { RelayCollectionsStore } from "./collections-store.js";
 import type {
   GalleryListParams,
   GalleryListResult,
@@ -20,22 +20,22 @@ import type {
 } from "./types.js";
 
 export class GalleryService {
-  private readonly canonical: FileCanonicalStore;
+  private readonly canonical: CanonicalStore;
   private readonly exportIndex: FileExportIndex;
-  private readonly overrides: FileGalleryOverridesStore;
-  private collections: FileCollectionsStore | null = null;
+  private readonly overrides: GalleryOverridesStore;
+  private collections: RelayCollectionsStore | null = null;
 
   public constructor(
-    canonical: FileCanonicalStore,
+    canonical: CanonicalStore,
     exportIndex: FileExportIndex,
-    overrides: FileGalleryOverridesStore
+    overrides: GalleryOverridesStore
   ) {
     this.canonical = canonical;
     this.exportIndex = exportIndex;
     this.overrides = overrides;
   }
 
-  public setCollections(store: FileCollectionsStore): void {
+  public setCollections(store: RelayCollectionsStore): void {
     this.collections = store;
   }
 

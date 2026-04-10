@@ -63,11 +63,21 @@ export class DbIdentityStore implements IdentityStore {
         create: { relayCreatorId: user.creator_id },
         update: {}
       });
-      await tx.user.create({
-        data: {
+      await tx.user.upsert({
+        where: { id: user.user_id },
+        create: {
           id: user.user_id,
           tenantId: tenant.id,
           kind: UserKind.patron,
+          emailNorm: user.email.toLowerCase().trim(),
+          passwordHash: user.password_hash || null,
+          identityAuthProvider: mapAuthProvider(user.auth_provider),
+          patronPatreonUserId: user.patreon_user_id ?? null,
+          tierIds: user.tier_ids,
+          legacyFileId: user.user_id
+        },
+        update: {
+          tenantId: tenant.id,
           emailNorm: user.email.toLowerCase().trim(),
           passwordHash: user.password_hash || null,
           identityAuthProvider: mapAuthProvider(user.auth_provider),

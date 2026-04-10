@@ -3,7 +3,20 @@ import { dirname } from "node:path";
 import { randomUUID } from "node:crypto";
 import type { SavedFilterRecord, SavedFiltersRoot } from "./types.js";
 
-export class FileSavedFiltersStore {
+/** Postgres / file implementations share this contract (see `saved-filters-store-db.ts`). */
+export interface SavedFiltersStore {
+  load(): Promise<SavedFiltersRoot>;
+  save(root: SavedFiltersRoot): Promise<void>;
+  listForCreator(creatorId: string): Promise<SavedFilterRecord[]>;
+  create(
+    creatorId: string,
+    name: string,
+    query: SavedFilterRecord["query"]
+  ): Promise<SavedFilterRecord>;
+  delete(creatorId: string, filterId: string): Promise<boolean>;
+}
+
+export class FileSavedFiltersStore implements SavedFiltersStore {
   private readonly filePath: string;
 
   public constructor(filePath: string) {

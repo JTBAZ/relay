@@ -1,6 +1,6 @@
-import type { FileCanonicalStore } from "../ingest/canonical-store.js";
+import type { CanonicalStore } from "../ingest/canonical-store.js";
 import type { FileExportIndex } from "../export/export-index.js";
-import type { FileGalleryOverridesStore } from "./overrides-store.js";
+import type { GalleryOverridesStore } from "./overrides-store.js";
 
 export type TriageResult = {
   text_only_post_ids: string[];
@@ -195,11 +195,11 @@ export function buildDuplicateGroupsByTitleAndSha(
 }
 
 export class TriageService {
-  private readonly canonical: FileCanonicalStore;
+  private readonly canonical: CanonicalStore;
   private readonly exportIndex: FileExportIndex;
 
   public constructor(
-    canonical: FileCanonicalStore,
+    canonical: CanonicalStore,
     exportIndex: FileExportIndex
   ) {
     this.canonical = canonical;
@@ -256,7 +256,7 @@ export class TriageService {
 
   public async autoFlag(
     creatorId: string,
-    overrides: FileGalleryOverridesStore,
+    overrides: GalleryOverridesStore,
     categories?: string[]
   ): Promise<TriageResult> {
     const result = await this.analyze(creatorId);

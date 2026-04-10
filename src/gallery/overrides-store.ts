@@ -6,7 +6,29 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import type { GalleryOverridesRoot, MediaOverride, PostVisibility } from "./types.js";
 
-function compactMediaOverride(mo: MediaOverride): MediaOverride | null {
+/** Postgres / file implementations share this contract (see `overrides-store-db.ts`). */
+export interface GalleryOverridesStore {
+  load(): Promise<GalleryOverridesRoot>;
+  save(root: GalleryOverridesRoot): Promise<void>;
+  mergePostTagDelta(
+    creatorId: string,
+    postId: string,
+    delta: { add_tag_ids: string[]; remove_tag_ids: string[] }
+  ): Promise<void>;
+  mergeBulkMediaTagDelta(
+    creatorId: string,
+    targets: { post_id: string; media_id: string }[],
+    delta: { add_tag_ids: string[]; remove_tag_ids: string[] }
+  ): Promise<void>;
+  setVisibility(creatorId: string, postIds: string[], visibility: PostVisibility): Promise<void>;
+  setMediaVisibility(
+    creatorId: string,
+    entries: { post_id: string; media_id: string; visibility: PostVisibility }[]
+  ): Promise<void>;
+}
+
+/** Used by `overrides-store-db` when flattening per-asset rows. */
+export function compactMediaOverride(mo: MediaOverride): MediaOverride | null {
   const out: MediaOverride = {};
   if (mo.visibility !== undefined) {
     out.visibility = mo.visibility;
@@ -25,7 +47,7 @@ function emptyRoot(): GalleryOverridesRoot {
 }
 
 /** Legacy JSON used `flagged`; normalize to `review` on read. */
-function migrateLegacyVisibilityInPlace(root: GalleryOverridesRoot): void {
+export function migrateGalleryLegacyVisibilityInPlace(root: GalleryOverridesRoot): void {
   for (const c of Object.values(root.creators)) {
     for (const po of Object.values(c.posts)) {
       if ((po.visibility as string | undefined) === "flagged") {
@@ -42,7 +64,7 @@ function migrateLegacyVisibilityInPlace(root: GalleryOverridesRoot): void {
   }
 }
 
-export class FileGalleryOverridesStore {
+export class FileGalleryOverridesStore implements GalleryOverridesStore {
   private readonly filePath: string;
 
   public constructor(filePath: string) {
@@ -53,7 +75,7 @@ export class FileGalleryOverridesStore {
     try {
       const raw = await readFile(this.filePath, "utf8");
       const root = JSON.parse(raw) as GalleryOverridesRoot;
-      migrateLegacyVisibilityInPlace(root);
+      migrateGalleryLegacyVisibilityInPlace(root);
       return root;
     } catch {
       return emptyRoot();

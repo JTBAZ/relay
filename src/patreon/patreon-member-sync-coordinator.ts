@@ -1,4 +1,4 @@
-import type { PatreonSyncHealthStore } from "./patreon-sync-health-store.js";
+import type { PatreonSyncHealthStoreAPI } from "./patreon-sync-health-store.js";
 import type { PatreonSyncService } from "./patreon-sync-service.js";
 import { classifySyncError } from "./sync-error-copy.js";
 
@@ -11,7 +11,7 @@ export class PatreonMemberSyncCoordinator {
 
   public constructor(
     private readonly syncService: PatreonSyncService,
-    private readonly healthStore: PatreonSyncHealthStore,
+    private readonly healthStore: PatreonSyncHealthStoreAPI,
     debounceMs = 60_000
   ) {
     this.debounceMs = debounceMs;
