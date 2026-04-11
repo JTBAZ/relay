@@ -25,7 +25,8 @@
     "backfill:patron-engagement": "npm run build && node scripts/backfill-patron-engagement.mjs",
     "backfill:part2": "npm run build && node scripts/backfill-part2.mjs",
     "inspect:patreon-content": "node scripts/inspect-patreon-post-content.mjs",
-    "probe:patreon-description": "node scripts/probe-patreon-post-description.mjs"
+    "probe:patreon-description": "node scripts/probe-patreon-post-description.mjs",
+    "autopipeline": "node scripts/autopipeline-runner.mjs"
   },
   "dependencies": {
     "@prisma/adapter-pg": "^7.7.0",

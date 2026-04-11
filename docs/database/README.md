@@ -31,6 +31,8 @@ Authoritative relational design and migration plans for Relay’s **runtime** da
 | [`staging-identity-verification.md`](staging-identity-verification.md) | Staging checks when `RELAY_DB_STORE_IDENTITY=1`; links to API smoke routes |
 | [`staging-canonical-verification.md`](staging-canonical-verification.md) | Staging checks when canonical ingest uses Postgres (`RELAY_DB_STORE_CANONICAL=1`) |
 | [`sub-agent-prompts.md`](sub-agent-prompts.md) | **Index** + Universal preamble; **19 standalone run files** in [`runs/`](runs/README.md) |
+| [`AIRTABLE_DB_PIPELINE.md`](AIRTABLE_DB_PIPELINE.md) | **Canonical Airtable schema** for **Relay Database Tracker** → **DB Integration Pipeline** (fields, base/table IDs, **runs** batching) |
+| [`AIRTABLE_AUTOPIPELINE.md`](AIRTABLE_AUTOPIPELINE.md) | **Agent + delta + Cursor CLI** autosequencer (Tasks/Runs/System State, delta contract, local runner script) — **not** the DB integration base |
 
 ### Enabling Postgres-backed analytics (M6)
 
@@ -67,6 +69,6 @@ The repo root has **`prisma/schema.prisma`**, **`prisma/migrations/`**, and **`p
 - **[`AGENTS.md`](../../AGENTS.md)** — repo map entry for `docs/database/`
 - **[`docs/pattern-library.md`](../pattern-library.md)** — viewer parity and data contracts (same semantics as storage evolves)
 
-## Airtable — execution queue (optional)
+## Airtable — DB Integration Pipeline (optional)
 
-The **Relay Database Tracker** Airtable base holds a **DB Integration Pipeline** table: one row per step from [`integration-roadmap.md`](integration-roadmap.md), with **Sort order** (1…n), **Pipeline status** (`Queued` → `In progress` → `Complete`), **Doc reference** (GitHub link to the run prompt `docs/database/runs/run-NN.md`), **Next run prompt** (link to the following run’s prompt; blank on M10 terminal steps), **Notes** (completion evidence — there is no separate Integrator Notes field on this table), **Depends on**, **Parallel with**, **Milestone**, and **Execution mode**. Sub-agents should sort by **Sort order**, respect dependencies, then update **Pipeline status** as they work. This is separate from the **Project tracker** Production Ledger (product/ledger tasks).
+Roadmap execution is tracked in the **Relay Database Tracker** base (**DB Integration Pipeline** table): one row per roadmap step, with prompts batched into **19 runs** (`run-01.md` … `run-19.md`). Full field list, base/table IDs, and the **runs** formula (same `Doc reference` / `Next run prompt` for every step in a run) are in **[`AIRTABLE_DB_PIPELINE.md`](AIRTABLE_DB_PIPELINE.md)**. This is separate from the **Project tracker** Production Ledger (product/UI work).

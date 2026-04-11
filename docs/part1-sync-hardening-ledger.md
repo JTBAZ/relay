@@ -173,6 +173,33 @@ Reduce opaque failures: last scrape / member sync outcome, OAuth health and expi
 
 ---
 
+## Production Patreon webhooks (signed platform delivery)
+
+Use this as an ops and code pointer for **T-006** (not a duplicate of `Automation/` v0 ledger).
+
+### Behavior (code)
+
+- **Public base URL:** `RELAY_PUBLIC_WEBHOOK_BASE_URL` or `PUBLIC_WEBHOOK_BASE_URL` (see root `.env.example`). Required for `POST /api/v1/patreon/webhooks/register` and for best-effort registration after creator OAuth (`ensurePatreonPlatformWebhook` in `src/patreon/patreon-webhook-registration.ts`).
+- **Delivery URL:** `POST /api/v1/webhooks/patreon/platform/:opaqueToken` — raw JSON body, **HMAC-MD5** of the raw bytes in `X-Patreon-Signature` (`src/patreon/patreon-webhook-signature.ts`).
+- **Registration:** idempotent list/create against Patreon’s webhooks API; secrets stored encrypted in `patreon_webhook_metadata.json` (`PatreonWebhookMetadataStore`).
+- **Routing:** opaque token resolves `creator_id`; optional **campaign id** from the JSON:API payload is checked against `patreon_campaign_creator_index.json` — if the index maps that campaign to another creator, the handler returns **409** (`WEBHOOK_CAMPAIGN_MISMATCH`).
+- **Handlers:** post events → `scrapeOrSync`; member-family events → `PatreonMemberSyncCoordinator` debounce (default **60s**).
+
+### Ops checklist (stable URL in production)
+
+1. Terminate TLS on the public host that matches **exactly** the registered webhook URI (no mixed HTTP/HTTPS, no surprise redirects that change the path).
+2. Set **`RELAY_PUBLIC_WEBHOOK_BASE_URL`** to that origin **without a trailing slash**; redeploy, then call **`POST /api/v1/patreon/webhooks/register`** with `creator_id` (or complete OAuth so best-effort registration runs). Confirm `webhook_registration` on **`GET /api/v1/patreon/sync-state?creator_id=…`**.
+3. **Multi-campaign creators:** resolve default campaign first (registration refuses ambiguous campaigns per `pickDefaultCampaignId`).
+4. **Legacy stub:** `POST /api/v1/webhooks/patreon` accepts JSON **without** Patreon’s signature — intended for tests/manual triggers only; production traffic should use the **platform** route above.
+
+### Tests
+
+```bash
+npx vitest run patreon-webhook-signature patreon-webhook-payload-parse patreon-platform-webhook-route
+```
+
+---
+
 ## Verification (all four slices)
 
 ```bash

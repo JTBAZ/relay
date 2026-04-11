@@ -46,13 +46,14 @@ export function extractCampaignIdFromPatreonWebhookPayload(parsed: unknown): str
 export async function dispatchVerifiedPatreonPlatformPayload(args: {
   creatorId: string;
   eventHeader: string | undefined;
-  parsedJson: unknown;
+  /** From `extractCampaignIdFromPatreonWebhookPayload(parsed)` — computed once in the route after JSON parse. */
+  campaignId: string | null;
   traceId: string;
   syncService: PatreonSyncService;
   memberCoordinator: PatreonMemberSyncCoordinator;
 }): Promise<{ action: "post_sync" | "member_sync_scheduled" | "ignored" }> {
   const ev = args.eventHeader?.trim() ?? "";
-  const campaignId = extractCampaignIdFromPatreonWebhookPayload(args.parsedJson);
+  const campaignId = args.campaignId;
 
   if (isPatreonPostEventTrigger(ev)) {
     await scrapeOrSyncFromVerifiedPlatform(args.syncService, args.creatorId, args.traceId, {

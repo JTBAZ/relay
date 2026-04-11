@@ -55,7 +55,7 @@ Airtable: Complete 10.1.1–10.3.3.
 | **10.1.5** | [`scripts/m10-token-log-scan.mjs`](../../scripts/m10-token-log-scan.mjs) — included in **`npm run verify:m10`**. |
 | **10.2.x** | **Human-gated:** do not remove file fallbacks / `RELAY_DB_STORE_*` or archive `.relay-data` without owner — see [`M10_VERIFICATION.md`](../M10_VERIFICATION.md) §10.2. |
 | **10.3.x** | [`operations-and-security.md`](../operations-and-security.md), [`AGENTS.md`](../../../AGENTS.md), [`road map.md`](../../../road%20map.md), [`migration-from-relay-data.md`](../migration-from-relay-data.md). |
-| **Airtable** | Mark **10.1.1–10.3.3** Complete in **Relay Database Tracker → DB Integration Pipeline** (manual). |
+| **Airtable** | See [`M10_VERIFICATION.md`](../M10_VERIFICATION.md) **Airtable** section: **10.1 / 10.3** can Complete when verified; **10.2** only after §10.2 code + archive land (or leave Queued/Blocked with Notes if deferred). |
 
 ---
 

@@ -1,4 +1,4 @@
-import { mkdtemp } from "node:fs/promises";
+import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { randomBytes } from "node:crypto";
@@ -171,5 +171,69 @@ describe("Patreon scrape → ingest", () => {
       dry_run: true
     });
     expect(res.status).toBe(404);
+  });
+
+  it("calls Patreon token endpoint to refresh before scrape when access token expires soon", async () => {
+    const tempDir = await mkdtemp(join(tmpdir(), "relay-patreon-refresh-"));
+    const credentialStorePath = join(tempDir, "patreon.json");
+
+    const fetchImpl: typeof fetch = vi.fn(async (input: RequestInfo | URL) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      if (url.includes("patreon.com/api/oauth2/token")) {
+        return new Response(
+          JSON.stringify({
+            access_token: "tok",
+            refresh_token: "ref",
+            expires_in: 3600
+          }),
+          { status: 200, headers: { "content-type": "application/json" } }
+        );
+      }
+      if (url.includes("/campaigns?") && !url.includes("/posts")) {
+        return new Response(JSON.stringify(campaignsDoc), {
+          status: 200,
+          headers: { "content-type": "application/json" }
+        });
+      }
+      if (url.includes("/campaigns/999/posts")) {
+        return new Response(JSON.stringify(postsDoc), {
+          status: 200,
+          headers: { "content-type": "application/json" }
+        });
+      }
+      return new Response(`unexpected ${url}`, { status: 404 });
+    }) as unknown as typeof fetch;
+
+    const { app } = createApp({ ...testConfig(tempDir, fetchImpl), credential_store_path: credentialStorePath });
+
+    await request(app).post("/api/v1/auth/patreon/exchange").send({
+      creator_id: "cr_refresh",
+      code: "code",
+      redirect_uri: "http://localhost/cb"
+    });
+
+    const storeRaw = await readFile(credentialStorePath, "utf8");
+    const store = JSON.parse(storeRaw) as {
+      records: Record<string, { access_token_expires_at: string }>;
+    };
+    store.records.cr_refresh!.access_token_expires_at = new Date(
+      Date.now() + 5 * 60 * 1000
+    ).toISOString();
+    await writeFile(credentialStorePath, JSON.stringify(store, null, 2), "utf8");
+
+    vi.mocked(fetchImpl).mockClear();
+
+    const dry = await request(app).post("/api/v1/patreon/scrape").send({
+      creator_id: "cr_refresh",
+      campaign_id: "999",
+      dry_run: true
+    });
+    expect(dry.status).toBe(200);
+
+    const tokenCalls = vi.mocked(fetchImpl).mock.calls.filter(([u]) => {
+      const url = typeof u === "string" ? u : u instanceof URL ? u.href : (u as Request).url;
+      return url.includes("patreon.com/api/oauth2/token");
+    });
+    expect(tokenCalls.length).toBeGreaterThanOrEqual(1);
   });
 });

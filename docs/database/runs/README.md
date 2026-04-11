@@ -1,6 +1,6 @@
 # DB Integration Pipeline — run prompts
 
-Each file is a **standalone** prompt: **orientation** (table + Step IDs) + **Universal preamble** + **task body** + **handoff** to the next run.
+Each file is a **standalone** prompt: **orientation** (table + Step IDs) + **Universal preamble** + **task body** + **handoff** to the next run. **Airtable layout (runs batching, fields):** [`../AIRTABLE_DB_PIPELINE.md`](../AIRTABLE_DB_PIPELINE.md).
 
 | Run | File | Milestone (summary) |
 |-----|------|----------------------|

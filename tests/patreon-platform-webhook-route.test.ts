@@ -1,4 +1,4 @@
-import { mkdtemp } from "node:fs/promises";
+import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { randomBytes } from "node:crypto";
@@ -104,6 +104,68 @@ describe("POST /api/v1/webhooks/patreon/platform/:opaqueToken", () => {
         }
       );
       expect(res.status).toBe(202);
+    } finally {
+      await new Promise<void>((resolve, reject) => server.close((err) => (err ? reject(err) : resolve())));
+    }
+  });
+
+  it("returns 409 when payload campaign id maps to a different creator than the opaque token", async () => {
+    const tempDir = await mkdtemp(join(tmpdir(), "relay-pw-"));
+    const key = randomBytes(32).toString("base64");
+    const enc = new TokenEncryption(key);
+    const metaPath = join(tempDir, "patreon_webhook_metadata.json");
+    const store = new PatreonWebhookMetadataStore(metaPath, enc);
+    await store.recordRegistration({
+      creator_id: "creator_route_owner",
+      webhook_id: "wh3",
+      webhook_secret: "secret409",
+      uri: "https://example.com/hook",
+      triggers: ["posts:publish"],
+      status: "ok"
+    });
+    const rec = await store.getByCreatorId("creator_route_owner");
+    const opaque = rec!.opaque_delivery_token;
+    const secret = "secret409";
+    const json = JSON.stringify({
+      data: {
+        type: "member",
+        id: "m1",
+        relationships: {
+          campaign: { data: { type: "campaign", id: "12345" } }
+        }
+      }
+    });
+    const rawBody = Buffer.from(json, "utf8");
+    const sig = patreonWebhookMd5Hex(rawBody, secret);
+
+    await writeFile(
+      join(tempDir, "patreon_campaign_creator_index.json"),
+      JSON.stringify({ campaign_to_creator: { "12345": "other_creator" } }),
+      "utf8"
+    );
+
+    const { app } = createApp({ ...baseConfig(tempDir), relay_token_encryption_key: key });
+    // Use fetch + raw Buffer so the signed bytes match what verifyPatreonWebhookSignature sees
+    // (supertest can normalize JSON and break HMAC).
+    const server = createServer(app);
+    await new Promise<void>((resolve) => server.listen(0, resolve));
+    const addr = server.address();
+    if (!addr || typeof addr === "string") throw new Error("expected port");
+    const port = addr.port;
+    try {
+      const res = await fetch(
+        `http://127.0.0.1:${port}/api/v1/webhooks/patreon/platform/${opaque}`,
+        {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            "x-patreon-event": "members:update",
+            "x-patreon-signature": sig
+          },
+          body: rawBody
+        }
+      );
+      expect(res.status).toBe(409);
     } finally {
       await new Promise<void>((resolve, reject) => server.close((err) => (err ? reject(err) : resolve())));
     }

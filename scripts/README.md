@@ -81,3 +81,10 @@ PowerShell 7 (`pwsh`) loads a different profile path than Windows PowerShell (`p
 - **Use when:** rollback to a prior backup snapshot.
 - **Runs:** replaces current `.relay-data` with selected backup contents.
 - **Command:** `powershell -ExecutionPolicy Bypass -File .\scripts\maintenance-restore.ps1 -BackupName "<snapshot-folder>"`
+
+## `autopipeline-runner.mjs` + `run-airtable-autopipeline-task.ps1`
+- **Use when:** driving the **Airtable auto-pipeline** (Relay Patreon Milestones **Tasks** / **Runs** queue): sync **Delta In** to `docs/Airtable Drops/incoming/`, log **Runs**, advance **Status**, optionally enforce a single **Ready** task.
+- **Docs:** [`docs/database/AIRTABLE_AUTOPIPELINE.md`](../docs/database/AIRTABLE_AUTOPIPELINE.md) (Node runner section).
+- **Prereq:** Airtable PAT in `.env` — see `autopipeline-runner.mjs` header for accepted variable names (`AIRTABLE_PAT`, `AIRTABLE_AUTOPIPELINE_TOKEN`, etc.).
+- **Commands:** `npm run autopipeline -- status` · `npm run autopipeline -- prepare` · `npm run autopipeline -- complete --taskKey T-006 --exitCode 0 --deltaOutFile ./delta.md` · `npm run autopipeline -- run-until-t011 --dry-run` (Windows: loops agent until **T-011** barrier)
+- **Agent (PowerShell):** `.\scripts\run-airtable-autopipeline-task.ps1 -TaskKey "T-007"` (or `-SkipAgent` for bundle only).

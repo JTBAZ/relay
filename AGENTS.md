@@ -27,7 +27,7 @@
 | Backend / API | `src/` | `npm run test`, `npm run build`, `npm start` from repo root |
 | Web (Next.js) | `web/` | `npm run dev`, `npm run lint`, `npm run build` |
 | Automation | `Automation/` | `ledger-to-v0`, Airtable docs, attended loop |
-| Relational DB (target) | `docs/database/` | PostgreSQL + Prisma direction, migration from `.relay-data/` — not the Airtable ledger |
+| Relational DB (target) | `docs/database/` | PostgreSQL + Prisma direction, migration from `.relay-data/` — not the Airtable ledger; **DB Integration Pipeline** Airtable layout: [`docs/database/AIRTABLE_DB_PIPELINE.md`](docs/database/AIRTABLE_DB_PIPELINE.md) |
 
 **Database integration (M10):** Verification checklist and human gates — [`docs/database/M10_VERIFICATION.md`](docs/database/M10_VERIFICATION.md). Per-domain cutover status — [`docs/database/migration-from-relay-data.md`](docs/database/migration-from-relay-data.md). Pooling + security — [`docs/database/operations-and-security.md`](docs/database/operations-and-security.md).
 

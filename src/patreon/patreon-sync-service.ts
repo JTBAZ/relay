@@ -4,6 +4,7 @@ import { enrichBatch } from "../ingest/auto-enrich.js";
 import type { IngestService } from "../ingest/ingest-service.js";
 import type { SyncWatermarkStoreAPI } from "../ingest/sync-watermark-store.js";
 import type { ApplyBatchResult, IngestPost, SyncBatchInput } from "../ingest/types.js";
+import type { PatreonAuthService } from "../auth/auth-service.js";
 import type { PatreonTokenStore, PersistedPatreonTokens } from "../auth/token-store.js";
 import { CookieSessionExpiredError, scrapeByCookie } from "./cookie-scraper.js";
 import {
@@ -281,6 +282,8 @@ export type PatreonSyncStateOptions = {
   campaign_id?: string;
   /** One OAuth posts page to compare newest Patreon post vs watermark. */
   probe_upstream?: boolean;
+  /** Correlation id for OAuth refresh + events (optional; defaults for sync-state). */
+  traceId?: string;
 };
 
 export class PatreonSyncService {
@@ -288,6 +291,7 @@ export class PatreonSyncService {
   private readonly cookieStore: FilePatreonCookieStore;
   private readonly ingestService: IngestService;
   private readonly watermarkStore: SyncWatermarkStoreAPI;
+  private readonly authService: PatreonAuthService;
   private readonly exportService: ExportService | null;
   private readonly identityService: IdentityService | null;
   private readonly fetchImpl: typeof fetch;
@@ -299,6 +303,7 @@ export class PatreonSyncService {
     cookieStore: FilePatreonCookieStore,
     ingestService: IngestService,
     watermarkStore: SyncWatermarkStoreAPI,
+    authService: PatreonAuthService,
     fetchImpl?: typeof fetch,
     exportService?: ExportService,
     identityService?: IdentityService,
@@ -309,6 +314,7 @@ export class PatreonSyncService {
     this.cookieStore = cookieStore;
     this.ingestService = ingestService;
     this.watermarkStore = watermarkStore;
+    this.authService = authService;
     this.exportService = exportService ?? null;
     this.identityService = identityService ?? null;
     this.fetchImpl = fetchImpl ?? fetch;
@@ -323,6 +329,8 @@ export class PatreonSyncService {
     creatorId: string,
     options: PatreonSyncStateOptions = {}
   ): Promise<PatreonSyncState> {
+    const traceForRefresh = options.traceId?.trim() || "patreon_sync_state";
+    await this.authService.ensureFreshAccessForAutomation(creatorId, traceForRefresh);
     const cred = await this.tokenStore.getByCreatorId(creatorId);
     if (!cred) {
       throw new Error(
@@ -497,6 +505,7 @@ export class PatreonSyncService {
     options: PatreonSyncOptions = {}
   ): Promise<PatreonScrapeResult> {
     const warnings: string[] = [];
+    await this.authService.ensureFreshAccessForAutomation(creatorId, traceId);
     const cred = await this.tokenStore.getByCreatorId(creatorId);
     if (!cred) {
       throw new Error(
@@ -738,12 +747,14 @@ export class PatreonSyncService {
    */
   public async syncMembers(
     creatorId: string,
-    options: { campaign_id?: string; max_pages?: number } = {}
+    options: { campaign_id?: string; max_pages?: number; traceId?: string } = {}
   ): Promise<MemberSyncResult> {
     const warnings: string[] = [];
     if (!this.identityService) {
       throw new Error("IdentityService not wired — cannot sync members.");
     }
+    const traceForRefresh = options.traceId?.trim() || "patreon_sync_members";
+    await this.authService.ensureFreshAccessForAutomation(creatorId, traceForRefresh);
     const cred = await this.tokenStore.getByCreatorId(creatorId);
     if (!cred) {
       throw new Error("No Patreon tokens for this creator_id.");

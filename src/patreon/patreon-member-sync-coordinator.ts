@@ -42,7 +42,8 @@ export class PatreonMemberSyncCoordinator {
     try {
       const result = await this.syncService.syncMembers(creatorId, {
         ...(campaignId ? { campaign_id: campaignId } : {}),
-        max_pages: 100
+        max_pages: 100,
+        traceId: `patreon_webhook_member_sync:${creatorId}`
       });
       try {
         await this.healthStore.recordMemberSyncSuccess({

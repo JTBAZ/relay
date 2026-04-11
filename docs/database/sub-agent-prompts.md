@@ -1,6 +1,6 @@
 # Sub-agent prompts — DB Integration Pipeline
 
-Use with the **Relay Database Tracker** Airtable base → **DB Integration Pipeline** table (one row per step in [`integration-roadmap.md`](integration-roadmap.md)). This is **not** the **Project tracker** Production Ledger.
+Use with the **Relay Database Tracker** Airtable base → **DB Integration Pipeline** table (one row per step in [`integration-roadmap.md`](integration-roadmap.md)). This is **not** the **Project tracker** Production Ledger. **Schema + runs batching (canonical):** [`AIRTABLE_DB_PIPELINE.md`](AIRTABLE_DB_PIPELINE.md).
 
 **Run prompts (19 files):** each run is a standalone markdown file under [`runs/`](runs/README.md) with **orientation**, the **full Universal preamble**, the **task body**, **links** (GitHub), and a **Handoff** section pointing to the next run.
 

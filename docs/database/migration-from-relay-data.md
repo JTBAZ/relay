@@ -4,6 +4,12 @@
 
 The Express backend can use **PostgreSQL + Prisma** per domain (`RELAY_DB_STORE_*` flags in `src/server.ts`) or **JSON files** under `.relay-data/` when a flag is off. Environment variables can override paths (see root `.env.example`).
 
+### After M10.2 (target — DB-only path)
+
+When milestone **M10 phase 10.2** is executed ([`M10_VERIFICATION.md`](M10_VERIFICATION.md) §10.2): **`File*Store` fallbacks for migrated domains are removed** from `server.ts`, **`RELAY_DB_STORE_*` feature flags are removed**, runtime uses **Postgres only** for those stores (with `prisma` required), and **`.relay-data` is archived** (not casually deleted) per [`relay-data-archive/README.md`](../../relay-data-archive/README.md). The table below should then be updated so the **flag** column reads **removed (DB-only)** or similar for each domain that no longer has a file fallback — and this doc’s narrative should match production.
+
+**Prerequisite for that code change:** Vitest and any `createApp` integration tests must be updated to use **`prisma`** and Postgres-backed behavior (file-path fixtures alone are insufficient once `Db*Store` is the only path). Do not treat M10.2 as a documentation-only toggle.
+
 ### Cutover status (engineering)
 
 | Domain | Postgres tables / store | `RELAY_DB_STORE_*` flag | Notes |

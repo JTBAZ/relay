@@ -41,6 +41,18 @@
 
 ---
 
+## Airtable (Relay Database Tracker → DB Integration Pipeline)
+
+Use this table for **step IDs** `10.1.x`, `10.2.x`, `10.3.x` (same scope as [`runs/run-19.md`](runs/run-19.md)).
+
+| Phase | When to set **Pipeline status** = **Complete** |
+|-------|--------------------------------------------------|
+| **10.1** | Automated verification has been run on a real commit (local and/or CI): root `npm run build` / `npm run test`, `web` lint+build, optional `npm run verify:m10`, cross-tenant test, token-log scan — and any failures are fixed or waived in **Notes**. |
+| **10.3** | Operations/docs updates listed in §10.3 are merged (pooling note, CI migrate, `AGENTS.md` / `road map.md` DB narrative, `migration-from-relay-data.md` reflects current reality). |
+| **10.2** | **Only after** the repo actually does the cutover: no `File*Store` / `RELAY_DB_STORE_*` branches in `src/server.ts` for migrated domains (per §10.2), `.relay-data` copied per [`relay-data-archive/README.md`](../../relay-data-archive/README.md), and `migration-from-relay-data.md` status updated. If you are **deferring** 10.2 (soak, dummy data, test harness not ready), leave **10.2.x** rows **Queued** or **Blocked** and **Notes** with reason — do **not** mark Complete to match a finished Run 19 prompt alone. |
+
+**Expected mismatch:** Run **19** is one prompt covering **10.1–10.3**; **10.2** is **human-gated** and often finishes **later**. Queued 10.2 rows after 19 is “done” in chat are **normal** until §10.2 work ships.
+
 ## Deploy checklist (operators)
 
 1. `DATABASE_URL` from secrets.

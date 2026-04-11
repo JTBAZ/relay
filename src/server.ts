@@ -133,7 +133,10 @@ import {
   ensurePatreonPlatformWebhook,
   resolvePublicWebhookBaseFromEnv
 } from "./patreon/patreon-webhook-registration.js";
-import { dispatchVerifiedPatreonPlatformPayload } from "./patreon/patreon-webhook-platform.js";
+import {
+  dispatchVerifiedPatreonPlatformPayload,
+  extractCampaignIdFromPatreonWebhookPayload
+} from "./patreon/patreon-webhook-platform.js";
 import { PatreonWebhookMetadataStore } from "./patreon/patreon-webhook-metadata-store.js";
 import { verifyPatreonWebhookSignature } from "./patreon/patreon-webhook-signature.js";
 import { processPatreonWebhookStub } from "./webhooks/patreon-webhook.js";
@@ -675,6 +678,7 @@ export function createApp(config: AppConfig): CreateAppResult {
     cookieStore,
     ingestService,
     watermarkStore,
+    authService,
     config.fetch_impl,
     exportService,
     identityService,
@@ -752,11 +756,24 @@ export function createApp(config: AppConfig): CreateAppResult {
           .json(errorEnvelope("VALIDATION_ERROR", "Invalid JSON body.", traceId));
       }
       const eventHeader = req.header("x-patreon-event");
+      const campaignFromPayload = extractCampaignIdFromPatreonWebhookPayload(parsed);
+      if (campaignFromPayload) {
+        const mappedCreator = await patreonCampaignCreatorIndex.getCreatorId(campaignFromPayload);
+        if (mappedCreator && mappedCreator !== creatorId.trim()) {
+          return res.status(409).json(
+            errorEnvelope(
+              "WEBHOOK_CAMPAIGN_MISMATCH",
+              "Campaign in webhook payload does not match this delivery URL's creator.",
+              traceId
+            )
+          );
+        }
+      }
       try {
         await dispatchVerifiedPatreonPlatformPayload({
           creatorId,
           eventHeader,
-          parsedJson: parsed,
+          campaignId: campaignFromPayload,
           traceId,
           syncService: patreonSyncService,
           memberCoordinator: patreonMemberSyncCoordinator
@@ -959,7 +976,8 @@ export function createApp(config: AppConfig): CreateAppResult {
     try {
       const state = await patreonSyncService.getSyncState(creatorId, {
         campaign_id: campaignId || undefined,
-        probe_upstream: probeUpstream
+        probe_upstream: probeUpstream,
+        traceId
       });
       const whMeta = await patreonWebhookMetadataStore.getByCreatorId(creatorId);
       return res.status(200).json(
@@ -1103,7 +1121,8 @@ export function createApp(config: AppConfig): CreateAppResult {
         body.creator_id as string,
         {
           campaign_id: typeof body.campaign_id === "string" ? body.campaign_id.trim() : undefined,
-          max_pages: typeof body.max_pages === "number" ? body.max_pages : undefined
+          max_pages: typeof body.max_pages === "number" ? body.max_pages : undefined,
+          traceId
         }
       );
       try {
