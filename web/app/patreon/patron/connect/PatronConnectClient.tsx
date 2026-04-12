@@ -7,7 +7,7 @@ import { PATREON_PATRON_OAUTH_SCOPES } from "@/lib/patreon-patron-scopes";
 import { patronPatronOAuthRedirectUri } from "@/lib/patron-patron-redirect-uri";
 import { encodePatronOAuthState } from "@/lib/patron-oauth-state";
 
-function PatronConnectInner() {
+function PatronConnectInner({ initialClientId }: { initialClientId: string }) {
   const searchParams = useSearchParams();
 
   const [creatorId, setCreatorId] = useState(
@@ -23,7 +23,7 @@ function PatronConnectInner() {
     if (q) setCampaignNumericId(q);
   }, [searchParams]);
 
-  const clientId = process.env.NEXT_PUBLIC_PATREON_CLIENT_ID ?? "";
+  const clientId = initialClientId;
   const redirectUri = patronPatronOAuthRedirectUri();
 
   const authorizeUrl = useMemo(() => {
@@ -76,8 +76,10 @@ function PatronConnectInner() {
 
       {!clientId.trim() ? (
         <p className="rounded border border-amber-600/50 bg-amber-950/40 p-3 text-sm text-amber-100">
-          Set <code className="rounded bg-stone-900 px-1">NEXT_PUBLIC_PATREON_CLIENT_ID</code> in{" "}
-          <code className="rounded bg-stone-900 px-1">web/.env.local</code>.
+          Set <code className="rounded bg-stone-900 px-1">PATREON_CLIENT_ID</code> or{" "}
+          <code className="rounded bg-stone-900 px-1">NEXT_PUBLIC_PATREON_CLIENT_ID</code> in{" "}
+          <code className="rounded bg-stone-900 px-1">web/.env.local</code> (see{" "}
+          <code className="rounded bg-stone-900 px-1">web/.env.example</code>).
         </p>
       ) : !campaignNumericId.trim() ? (
         <p className="text-sm text-stone-400">
@@ -159,7 +161,7 @@ function PatronConnectInner() {
   );
 }
 
-export function PatronConnectClient() {
+export function PatronConnectClient({ initialClientId }: { initialClientId: string }) {
   return (
     <Suspense
       fallback={
@@ -168,7 +170,7 @@ export function PatronConnectClient() {
         </main>
       }
     >
-      <PatronConnectInner />
+      <PatronConnectInner initialClientId={initialClientId} />
     </Suspense>
   );
 }
