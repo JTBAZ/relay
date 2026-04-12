@@ -3,3 +3,6 @@
 # Avoid directory names with spaces: Nixpacks Next.js cache mounts break Docker RUN (shell splits paths).
 [variables]
 NIXPACKS_NODE_VERSION = "24"
+# Prisma 7 loads prisma.config.ts during `prisma generate`; `env("DATABASE_URL")` must be set at *build* time.
+# Not used to connect during generate — override with real URL in Coolify runtime env.
+DATABASE_URL = "postgresql://build:build@127.0.0.1:5432/relay_build?schema=public"
