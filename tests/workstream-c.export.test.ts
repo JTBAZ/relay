@@ -131,5 +131,18 @@ describe("Workstream C export storage and manifests", () => {
     );
     const parsed = JSON.parse(rawManifest) as { items: Array<{ sha256: string }> };
     expect(parsed.items[0].sha256).toBe(expectedHash);
+
+    const health = await request(app).get("/api/v1/health/export");
+    expect(health.status).toBe(200);
+    expect(health.body.data.metrics.export_media_attempts).toBeGreaterThanOrEqual(2);
+
+    const sample = await request(app).post("/api/v1/export/integrity-sample").send({
+      creator_id: "creator_1",
+      limit: 5
+    });
+    expect(sample.status).toBe(200);
+    expect(sample.body.data.checked).toBe(1);
+    expect(sample.body.data.matched).toBe(1);
+    expect(sample.body.data.mismatched).toEqual([]);
   });
 });

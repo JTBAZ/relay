@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 const baseNavItems = [
   { href: "/landing", label: "Landing Page" },
   { href: "/", label: "Library" },
+  { href: "/action-center", label: "Action Center" },
   { href: "/visitor", label: "Gallery" },
   { href: "/visitor/favorites", label: "Saved" },
   { href: "/designer", label: "Designer" }
@@ -22,6 +23,8 @@ export default function AppNav() {
   /** Library home + subscriber surfaces + dev bench share cool green chrome (design ledger: Relay shell). */
   const primaryShell =
     pathname === "/" ||
+    pathname === "/action-center" ||
+    pathname.startsWith("/action-center/") ||
     pathname.startsWith("/visitor") ||
     pathname.startsWith("/dev/bench");
 
@@ -64,6 +67,8 @@ export default function AppNav() {
                 pathname.startsWith("/landing/") ||
                 pathname === "/creator/connect" ||
                 pathname.startsWith("/creator/connect/")
+              : item.href === "/action-center"
+              ? pathname === "/action-center" || pathname.startsWith("/action-center/")
               : item.href === "/visitor"
                 ? pathname === "/visitor" || pathname === "/visitor/"
                 : item.href === "/dev/bench"

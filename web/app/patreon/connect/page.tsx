@@ -15,7 +15,7 @@ export default function PatreonConnectPage() {
 
   const clientId = process.env.NEXT_PUBLIC_PATREON_CLIENT_ID ?? "";
   const envRedirect = process.env.NEXT_PUBLIC_PATREON_REDIRECT_URI?.trim();
-  /** Prefer explicit env; otherwise current browser origin (correct for :3001, etc.). */
+  /** Prefer explicit env; otherwise current browser origin (default dev :3000; override env if using another port). */
   const redirectUri = envRedirect || (origin ? `${origin}/patreon/callback` : "");
 
   const authorizeUrl = useMemo(() => {

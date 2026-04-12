@@ -1,5 +1,5 @@
 import archiver from "archiver";
-import { createHash } from "node:crypto";
+import { createHash, randomInt } from "node:crypto";
 import { access, constants, mkdir, readFile, writeFile } from "node:fs/promises";
 import { join, relative, resolve } from "node:path";
 import type { Writable } from "node:stream";
@@ -195,6 +195,40 @@ export class ExportService {
     const bytes = await this.readBlob(creatorId, mediaId);
     const sha256 = createHash("sha256").update(bytes).digest("hex");
     return sha256 === rec.sha256 && bytes.byteLength === rec.byte_length;
+  }
+
+  /**
+   * Random subset of indexed media — re-hash on disk vs export_index (checksum sampling).
+   * `limit` capped at 50; uses Fisher–Yates shuffle.
+   */
+  public async sampleIntegrityChecks(
+    creatorId: string,
+    limit: number
+  ): Promise<{
+    checked: number;
+    matched: number;
+    mismatched: { media_id: string }[];
+  }> {
+    const index = await this.exportIndex.load(creatorId);
+    const ids = Object.keys(index.media ?? {});
+    if (ids.length === 0) {
+      return { checked: 0, matched: 0, mismatched: [] };
+    }
+    const cap = Math.min(Math.max(1, limit), 50, ids.length);
+    const shuffled = [...ids];
+    for (let i = shuffled.length - 1; i > 0; i--) {
+      const j = randomInt(0, i + 1);
+      [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+    }
+    const pick = shuffled.slice(0, cap);
+    const mismatched: { media_id: string }[] = [];
+    let matched = 0;
+    for (const mediaId of pick) {
+      const ok = await this.verifyIntegrity(creatorId, mediaId);
+      if (ok) matched += 1;
+      else mismatched.push({ media_id: mediaId });
+    }
+    return { checked: pick.length, matched, mismatched };
   }
 
   public async getExportRecord(creatorId: string, mediaId: string) {

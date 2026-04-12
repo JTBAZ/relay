@@ -4,7 +4,8 @@ import { dirname, join } from "node:path";
 import { PatreonAuthService } from "./auth/auth-service.js";
 import { FilePatreonCookieStore } from "./auth/cookie-store.js";
 import { PatreonClient } from "./auth/patreon-client.js";
-import { FilePatreonTokenStore } from "./auth/token-store.js";
+import { DbPatreonTokenStore } from "./auth/token-store-db.js";
+import { FilePatreonTokenStore, type PatreonTokenStore } from "./auth/token-store.js";
 import { errorEnvelope, successEnvelope } from "./contracts/api.js";
 import { DbEventBus } from "./events/event-bus-db.js";
 import { InMemoryEventBus, type RelayEventBus } from "./events/event-bus.js";
@@ -12,6 +13,8 @@ import { FileCanonicalStore } from "./ingest/canonical-store.js";
 import { DbCanonicalStore } from "./ingest/canonical-store-db.js";
 import { DbDeadLetterQueue } from "./ingest/dlq-db.js";
 import { FileDeadLetterQueue, type DeadLetterQueue } from "./ingest/dlq.js";
+import { evaluatePart1aGates } from "./auth/part1a-gate-metrics.js";
+import { evaluateIngestHealthGates } from "./ingest/ingest-health-metrics.js";
 import { IngestService } from "./ingest/ingest-service.js";
 import { IngestRetryQueue } from "./ingest/retry-queue.js";
 import { SyncWatermarkStore } from "./ingest/sync-watermark-store.js";
@@ -108,6 +111,24 @@ function normalizeGalleryVisibilityBody(vis: unknown): PostVisibility | null {
 import { DbAnalyticsStore } from "./analytics/analytics-store-db.js";
 import { FileAnalyticsStore } from "./analytics/analytics-store.js";
 import { ActionCenterService } from "./analytics/action-center-service.js";
+import {
+  evaluateInsightJobHealth,
+  recordAnalyticsGenerateAttempt,
+  recordAnalyticsGenerateFailure,
+  recordAnalyticsGenerateSuccess
+} from "./analytics/insight-job-metrics.js";
+import {
+  evaluateExportRetrievalHealth,
+  recordContentDeliveryFailure,
+  recordContentDeliverySuccess,
+  recordExportMediaAttempt,
+  recordExportMediaFailure,
+  recordExportMediaSuccess,
+  recordIntegritySampleResults,
+  recordPreviewDeliveryFailure,
+  recordPreviewDeliverySuccess,
+  recordVerifyResult
+} from "./export/export-retrieval-metrics.js";
 import { CloneService } from "./clone/clone-service.js";
 import { DbCloneSiteStore } from "./clone/clone-store-db.js";
 import { FileCloneSiteStore } from "./clone/clone-store.js";
@@ -123,7 +144,10 @@ import { StripeAdapter, PayPalAdapter } from "./payments/provider-adapter.js";
 import type { TierProductMapping, BillingInterval, PaymentProvider } from "./payments/types.js";
 import { exchangePatreonPatronOAuth } from "./patreon/patreon-patron-oauth.js";
 import { CreatorCampaignDisplayStore } from "./patreon/creator-campaign-display-store.js";
-import { PatreonSyncHealthStore } from "./patreon/patreon-sync-health-store.js";
+import {
+  type PatreonSyncHealthStoreAPI,
+  PatreonSyncHealthStore
+} from "./patreon/patreon-sync-health-store.js";
 import { DbPatreonSyncHealthStore } from "./patreon/patreon-sync-health-store-db.js";
 import { PatreonSyncService } from "./patreon/patreon-sync-service.js";
 import { classifySyncError } from "./patreon/sync-error-copy.js";
@@ -277,6 +301,12 @@ export type AppConfig = {
    * Default: env `RELAY_DB_STORE_DEPLOY` is `1` / `true` / `yes`.
    */
   relay_db_store_deploy?: boolean;
+  /**
+   * When true, use `DbPatreonTokenStore` (`OAuthCredential` / `ProviderAccount`) instead of
+   * `patreon_credentials.json`. Default: env `RELAY_DB_STORE_CREATOR_OAUTH` is `1` / `true` / `yes`.
+   * Requires `prisma` and applied migrations; enable after identity DB or run OAuth exchange to seed rows.
+   */
+  relay_db_store_creator_oauth?: boolean;
   prisma?: PrismaClient;
   identity_store_path?: string;
   payment_store_path?: string;
@@ -319,6 +349,9 @@ export type CreateAppResult = {
   campaignService: CampaignService;
   deployService: DeployService;
   patreonSyncService: PatreonSyncService;
+  tokenStore: PatreonTokenStore;
+  patreonSyncHealthStore: PatreonSyncHealthStoreAPI;
+  patreonCampaignCreatorIndex: PatreonCampaignCreatorIndex;
 };
 
 function required(value: string | undefined, key: string): string {
@@ -481,6 +514,13 @@ function useDbDeployStore(config: AppConfig): boolean {
   return relayEnvTruthy(process.env.RELAY_DB_STORE_DEPLOY);
 }
 
+function useDbCreatorOAuthStore(config: AppConfig): boolean {
+  if (typeof config.relay_db_store_creator_oauth === "boolean") {
+    return config.relay_db_store_creator_oauth;
+  }
+  return relayEnvTruthy(process.env.RELAY_DB_STORE_CREATOR_OAUTH);
+}
+
 function anyRelayDbStoreEnabled(config: AppConfig): boolean {
   return (
     useDbIdentityStore(config) ||
@@ -498,7 +538,8 @@ function anyRelayDbStoreEnabled(config: AppConfig): boolean {
     useDbCloneStore(config) ||
     useDbPaymentStore(config) ||
     useDbMigrationStore(config) ||
-    useDbDeployStore(config)
+    useDbDeployStore(config) ||
+    useDbCreatorOAuthStore(config)
   );
 }
 
@@ -512,7 +553,8 @@ export function createApp(config: AppConfig): CreateAppResult {
         "(RELAY_DB_STORE_IDENTITY, RELAY_DB_STORE_CANONICAL, RELAY_DB_STORE_WATERMARK, RELAY_DB_STORE_SYNC_HEALTH, " +
         "RELAY_DB_STORE_OVERRIDES, RELAY_DB_STORE_COLLECTIONS, RELAY_DB_STORE_SAVED_FILTERS, RELAY_DB_STORE_LAYOUT, " +
         "RELAY_DB_STORE_DLQ, RELAY_DB_STORE_EVENTS, RELAY_DB_STORE_ANALYTICS, RELAY_DB_STORE_PATRON_ENGAGEMENT, " +
-        "RELAY_DB_STORE_CLONE, RELAY_DB_STORE_PAYMENTS, RELAY_DB_STORE_MIGRATION, RELAY_DB_STORE_DEPLOY). " +
+        "RELAY_DB_STORE_CLONE, RELAY_DB_STORE_PAYMENTS, RELAY_DB_STORE_MIGRATION, RELAY_DB_STORE_DEPLOY, " +
+        "RELAY_DB_STORE_CREATOR_OAUTH). " +
         "Import `prisma` from `./lib/db.js` in `main.ts` and pass it on AppConfig."
     );
   }
@@ -524,7 +566,9 @@ export function createApp(config: AppConfig): CreateAppResult {
   const patreonWebhookMetadataPath =
     config.patreon_webhook_metadata_path ?? join(relayDataDir, "patreon_webhook_metadata.json");
 
-  const tokenStore = new FilePatreonTokenStore(credentialStorePath, encryption);
+  const tokenStore: PatreonTokenStore = useDbCreatorOAuthStore(config)
+    ? new DbPatreonTokenStore(config.prisma!, encryption)
+    : new FilePatreonTokenStore(credentialStorePath, encryption);
   const eventBus: RelayEventBus = useDbEventBus(config)
     ? new DbEventBus(config.prisma!)
     : new InMemoryEventBus();
@@ -816,8 +860,12 @@ export function createApp(config: AppConfig): CreateAppResult {
   <p>You are on the <strong>Express backend</strong> (this port). There is no page at <code>/</code> by default — opening this URL in a browser used to show &quot;Cannot GET /&quot;.</p>
   <ul>
     <li><a href="/api/v1/health">GET /api/v1/health</a> — JSON health check</li>
+    <li><a href="/api/v1/health/ingest">GET /api/v1/health/ingest</a> — ingest + DLQ metrics (Workstream B)</li>
+    <li><a href="/api/v1/health/part1a">GET /api/v1/health/part1a</a> — Part 1 A OAuth / token refresh gates</li>
+    <li><a href="/api/v1/health/analytics">GET /api/v1/health/analytics</a> — insight job counters (Workstream E)</li>
+    <li><a href="/api/v1/health/export">GET /api/v1/health/export</a> — export retrieval + integrity metrics (Workstream C)</li>
   </ul>
-  <p>The <strong>gallery / Patreon connect UI</strong> is the Next.js app: run <code>npm run dev</code> in the <code>web/</code> folder (e.g. <code>http://localhost:3001</code>).</p>
+  <p>The <strong>gallery / Patreon connect UI</strong> is the Next.js app: run <code>npm run dev</code> in the <code>web/</code> folder (default <code>http://localhost:3000</code>).</p>
   <p><code>NEXT_PUBLIC_RELAY_API_URL</code> in <code>web/.env.local</code> should point here (e.g. <code>http://127.0.0.1:8787</code>) with <strong>no trailing slash</strong>.</p>
 </body>
 </html>`);
@@ -829,6 +877,82 @@ export function createApp(config: AppConfig): CreateAppResult {
       successEnvelope(
         {
           status: "ok"
+        },
+        traceId
+      )
+    );
+  });
+
+  app.get("/api/v1/health/ingest", async (req: Request, res: Response) => {
+    const traceId = traceIdFrom(req);
+    try {
+      const pendingRetryJobs = ingestQueue.pendingCount();
+      const dlqRecordCount = await dlq.count();
+      const gates = await evaluateIngestHealthGates({
+        pendingRetryJobs,
+        dlqRecordCount
+      });
+      const status =
+        gates.alerts.length > 0 ? ("degraded" as const) : ("ok" as const);
+      return res.status(200).json(
+        successEnvelope(
+          {
+            status,
+            ...gates
+          },
+          traceId
+        )
+      );
+    } catch (err) {
+      return res.status(500).json(
+        errorEnvelope(
+          "INTERNAL_ERROR",
+          err instanceof Error ? err.message : String(err),
+          traceId
+        )
+      );
+    }
+  });
+
+  app.get("/api/v1/health/part1a", (req: Request, res: Response) => {
+    const traceId = traceIdFrom(req);
+    const gates = evaluatePart1aGates();
+    const status = gates.alerts.length > 0 ? ("degraded" as const) : ("ok" as const);
+    return res.status(200).json(
+      successEnvelope(
+        {
+          status,
+          ...gates
+        },
+        traceId
+      )
+    );
+  });
+
+  app.get("/api/v1/health/analytics", (req: Request, res: Response) => {
+    const traceId = traceIdFrom(req);
+    const gates = evaluateInsightJobHealth();
+    const status = gates.alerts.length > 0 ? ("degraded" as const) : ("ok" as const);
+    return res.status(200).json(
+      successEnvelope(
+        {
+          status,
+          ...gates
+        },
+        traceId
+      )
+    );
+  });
+
+  app.get("/api/v1/health/export", (req: Request, res: Response) => {
+    const traceId = traceIdFrom(req);
+    const gates = evaluateExportRetrievalHealth();
+    const status = gates.alerts.length > 0 ? ("degraded" as const) : ("ok" as const);
+    return res.status(200).json(
+      successEnvelope(
+        {
+          status,
+          ...gates
         },
         traceId
       )
@@ -1343,13 +1467,16 @@ export function createApp(config: AppConfig): CreateAppResult {
         .status(400)
         .json(errorEnvelope("VALIDATION_ERROR", "Invalid export request.", traceId, details));
     }
+    recordExportMediaAttempt();
     try {
       const result = await exportService.exportMedia(
         body.creator_id as string,
         body.media_id as string
       );
+      recordExportMediaSuccess();
       return res.status(200).json(successEnvelope(result, traceId));
     } catch (error) {
+      recordExportMediaFailure();
       const message = (error as Error).message;
       if (message.includes("not found") || message.includes("Not found")) {
         return res.status(404).json(errorEnvelope("NOT_FOUND", message, traceId));
@@ -1440,9 +1567,57 @@ export function createApp(config: AppConfig): CreateAppResult {
         body.creator_id as string,
         body.media_id as string
       );
+      recordVerifyResult(match);
       return res.status(200).json(successEnvelope({ match }, traceId));
     } catch {
+      recordVerifyResult(false);
       return res.status(200).json(successEnvelope({ match: false }, traceId));
+    }
+  });
+
+  app.post("/api/v1/export/integrity-sample", async (req: Request, res: Response) => {
+    const traceId = traceIdFrom(req);
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const details = validateRequiredFields(body, ["creator_id"]);
+    if (details.length > 0) {
+      return res
+        .status(400)
+        .json(errorEnvelope("VALIDATION_ERROR", "Invalid request.", traceId, details));
+    }
+    const creatorId = body.creator_id as string;
+    const limitRaw = body.limit;
+    const limit =
+      typeof limitRaw === "number"
+        ? limitRaw
+        : typeof limitRaw === "string"
+          ? Number.parseInt(limitRaw, 10)
+          : 10;
+    const capped = Math.min(Math.max(1, Number.isFinite(limit) ? limit : 10), 50);
+    try {
+      const sample = await exportService.sampleIntegrityChecks(creatorId, capped);
+      const fail = sample.mismatched.length;
+      const ok = sample.matched;
+      recordIntegritySampleResults(ok, fail);
+      return res.status(200).json(
+        successEnvelope(
+          {
+            creator_id: creatorId,
+            limit_requested: capped,
+            checked: sample.checked,
+            matched: sample.matched,
+            mismatched: sample.mismatched
+          },
+          traceId
+        )
+      );
+    } catch (err) {
+      return res.status(500).json(
+        errorEnvelope(
+          "INTEGRITY_SAMPLE_ERROR",
+          err instanceof Error ? err.message : String(err),
+          traceId
+        )
+      );
     }
   });
 
@@ -1506,6 +1681,7 @@ export function createApp(config: AppConfig): CreateAppResult {
     try {
       const record = await exportService.getExportRecord(req.params.creator_id, req.params.media_id);
       if (!record) {
+        recordContentDeliveryFailure();
         return res
           .status(404)
           .json(errorEnvelope("NOT_FOUND", "Exported media not found.", traceId));
@@ -1521,18 +1697,21 @@ export function createApp(config: AppConfig): CreateAppResult {
           session
         });
         if (!gate.allowed) {
+          recordContentDeliveryFailure();
           return res
             .status(403)
             .json(errorEnvelope("FORBIDDEN", gate.reason, traceId));
         }
       }
       const bytes = await exportService.readBlob(req.params.creator_id, req.params.media_id);
+      recordContentDeliverySuccess();
       const mime = record.mime_type ?? "application/octet-stream";
       res.setHeader("content-type", mime);
       res.setHeader("cache-control", "public, max-age=3600");
       res.setHeader("etag", `"${record.sha256}"`);
       return res.status(200).send(bytes);
     } catch (error) {
+      recordContentDeliveryFailure();
       return res
         .status(404)
         .json(errorEnvelope("NOT_FOUND", (error as Error).message, traceId));
@@ -1547,6 +1726,7 @@ export function createApp(config: AppConfig): CreateAppResult {
       const mediaId = req.params.media_id;
       const record = await exportService.getExportRecord(creatorId, mediaId);
       if (!record) {
+        recordPreviewDeliveryFailure();
         return res
           .status(404)
           .json(errorEnvelope("NOT_FOUND", "Exported media not found.", traceId));
@@ -1555,16 +1735,19 @@ export function createApp(config: AppConfig): CreateAppResult {
       const overrides = await galleryOverridesStore.load();
       const postId = findPostIdForExportedMedia(snapshot, creatorId, mediaId);
       if (!postId) {
+        recordPreviewDeliveryFailure();
         return res.status(404).json(errorEnvelope("NOT_FOUND", "Post not found.", traceId));
       }
       const vis = resolveGalleryItemVisibility(creatorId, postId, mediaId, overrides);
       if (vis === "hidden") {
+        recordPreviewDeliveryFailure();
         return res.status(404).json(errorEnvelope("NOT_FOUND", "Not found.", traceId));
       }
       const bytes = await exportService.readBlob(creatorId, mediaId);
       const mime = record.mime_type ?? "application/octet-stream";
       const preview = await buildVisitorPreviewImage(bytes, mime);
       if (!preview) {
+        recordPreviewDeliveryFailure();
         return res
           .status(415)
           .json(
@@ -1575,10 +1758,12 @@ export function createApp(config: AppConfig): CreateAppResult {
             )
           );
       }
+      recordPreviewDeliverySuccess();
       res.setHeader("content-type", "image/jpeg");
       res.setHeader("cache-control", "public, max-age=600");
       return res.status(200).send(preview);
     } catch (error) {
+      recordPreviewDeliveryFailure();
       return res
         .status(404)
         .json(errorEnvelope("NOT_FOUND", (error as Error).message, traceId));
@@ -2753,11 +2938,24 @@ export function createApp(config: AppConfig): CreateAppResult {
         .status(400)
         .json(errorEnvelope("VALIDATION_ERROR", "Invalid request.", traceId, details));
     }
-    const result = await actionCenterService.generateAndStore(
-      body.creator_id as string,
-      traceId
-    );
-    return res.status(200).json(successEnvelope(result, traceId));
+    recordAnalyticsGenerateAttempt();
+    try {
+      const result = await actionCenterService.generateAndStore(
+        body.creator_id as string,
+        traceId
+      );
+      recordAnalyticsGenerateSuccess();
+      return res.status(200).json(successEnvelope(result, traceId));
+    } catch (err) {
+      recordAnalyticsGenerateFailure();
+      return res.status(500).json(
+        errorEnvelope(
+          "ANALYTICS_GENERATE_ERROR",
+          err instanceof Error ? err.message : String(err),
+          traceId
+        )
+      );
+    }
   });
 
   app.get("/api/v1/action-center/cards", async (req: Request, res: Response) => {
@@ -3730,6 +3928,9 @@ export function createApp(config: AppConfig): CreateAppResult {
     paymentService,
     campaignService,
     deployService,
-    patreonSyncService
+    patreonSyncService,
+    tokenStore,
+    patreonSyncHealthStore,
+    patreonCampaignCreatorIndex
   };
 }

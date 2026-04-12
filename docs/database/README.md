@@ -60,6 +60,14 @@ Clone sites, payments, audience migration jobs, and deploy records can stay on *
 
 The four flags are **independent** (e.g. you can enable clone + deploy and leave payments on files). If you do not plan to cut over Part 2 yet, leave them unset; you may still run **`migrate deploy`** so the schema is ready when you flip switches. See milestone **M8** in [`integration-roadmap.md`](integration-roadmap.md) and [`runs/run-17.md`](runs/run-17.md).
 
+### Enabling Postgres-backed creator OAuth tokens (Part 1 A)
+
+Creator ingest tokens can stay in **`patreon_credentials.json`** until you opt in. **`RELAY_DB_STORE_CREATOR_OAUTH=1`** switches **`createApp`** to **`DbPatreonTokenStore`** (same encrypted payload semantics, stored on **`OAuthCredential`** / **`ProviderAccount`**). Before enabling:
+
+1. **`DATABASE_URL`** set and reachable; **`npx prisma migrate deploy`** (or `npm run db:migrate` in dev) so identity + credential tables exist.
+2. **`prisma`** is already passed from **`main.ts`** when `DATABASE_URL` is configured — no extra wiring beyond the flag.
+3. Prefer **`RELAY_DB_STORE_IDENTITY=1`** first, or plan to **re-run creator OAuth** after flipping the flag so rows exist (there is no dedicated `backfill:patreon_credentials` script in-repo).
+
 ## Repo reality
 
 The repo root has **`prisma/schema.prisma`**, **`prisma/migrations/`**, and **`prisma.config.ts`** (Prisma 7: DB URL is configured for the CLI in `prisma.config.ts`; see root `.env.example` **`DATABASE_URL`**). GitHub Actions **`.github/workflows/ci.yml`** runs **`prisma migrate deploy`** against an ephemeral Postgres, then **`npm run build`**, **`npm test`**, and **`node scripts/m10-token-log-scan.mjs`**; a separate **`web`** job runs **`npm ci`**, **`npm run lint`**, and **`npm run build`** under **`web/`** (M10 parity with **`npm run verify:m10`** minus duplicating backend steps). **`src/server.ts`** wires **`Db*Store`** implementations when the matching **`RELAY_DB_STORE_*`** flag is set (and `prisma` is passed in); otherwise the same routes use **file-backed** `.relay-data/` defaults. Schema includes **M9** future stubs (Part 3, Smart Tag placeholders, `WebhookEndpoint`). NPM scripts: **`npm run db:generate`**, **`npm run db:migrate`**, **`npm run db:push`**; **`npm run build`** runs **`prisma generate`** before `tsc`. **M10** release verification: **[`M10_VERIFICATION.md`](M10_VERIFICATION.md)** and **`npm run verify:m10`** at repo root.

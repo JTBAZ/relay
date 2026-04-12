@@ -150,4 +150,30 @@ export class DbPatreonTokenStore implements PatreonTokenStore {
       credential_health_status: toFileHealth(cred.healthStatus)
     };
   }
+
+  public async listCreatorIds(): Promise<string[]> {
+    const rows = await this.prisma.tenant.findMany({
+      where: {
+        relayCreatorId: { not: null },
+        users: {
+          some: {
+            kind: UserKind.creator,
+            providerAccounts: {
+              some: {
+                provider: ProviderKind.patreon,
+                oauthCredential: {
+                  is: { purpose: OAuthPurpose.creator_ingest }
+                }
+              }
+            }
+          }
+        }
+      },
+      select: { relayCreatorId: true }
+    });
+    const ids = rows
+      .map((r) => r.relayCreatorId)
+      .filter((id): id is string => typeof id === "string" && id.length > 0);
+    return [...new Set(ids)].sort();
+  }
 }

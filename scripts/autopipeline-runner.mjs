@@ -19,6 +19,9 @@
  *   node scripts/autopipeline-runner.mjs run-until-t011 [--dry-run] [--max-runs N]
  *
  * npm: npm run autopipeline -- status
+ * PowerShell: npm strips args after the first `--token` unless you add a second `--`:
+ *   npm run autopipeline -- -- run-until-t011 --dry-run
+ * Or use: npm run autopipeline:run-until-t011:dry
  */
 import { config } from "dotenv";
 import { spawn } from "node:child_process";
@@ -74,6 +77,8 @@ Commands:
 Options:
   --taskKey T-00N     For sync-in / complete
   --dry-run           For enforce-ready: print only; for run-until-t011: show first task only
+                      (from PowerShell via npm, use npm run autopipeline -- -- run-until-t011 --dry-run
+                      or npm run autopipeline:run-until-t011:dry)
   --exitCode N        For complete (default 0)
   --stdoutFile PATH   For complete: read agent stdout log
   --deltaOutFile PATH For complete: delta text for Done + next Task Delta In
@@ -466,7 +471,9 @@ function runPowershellAgent(taskKey) {
         "-File",
         ps1,
         "-TaskKey",
-        taskKey
+        taskKey,
+        "-RepoRoot",
+        ROOT
       ],
       { cwd: ROOT, env: process.env }
     );
@@ -577,7 +584,7 @@ async function cmdPrepare() {
   console.log(`
 Next: run agent (PowerShell), e.g.:
   cd "${ROOT.replace(/\\/g, "\\\\")}"
-  .\\\\scripts\\\\run-airtable-autopipeline-task.ps1 -TaskKey "${key}"
+  .\\\\scripts\\\\run-airtable-autopipeline-task.ps1 -TaskKey "${key}" -RepoRoot "${ROOT.replace(/\\/g, "\\\\")}"
 
 Then record the run:
   node scripts/autopipeline-runner.mjs complete --taskKey ${key} --exitCode %ERRORLEVEL% --stdoutFile agent-out.json --deltaOutFile path\\\\to\\\\delta.md

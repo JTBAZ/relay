@@ -1,11 +1,16 @@
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { FileDeadLetterQueue } from "../src/ingest/dlq.js";
+import { resetIngestHealthMetrics } from "../src/ingest/ingest-health-metrics.js";
 import { IngestRetryQueue } from "../src/ingest/retry-queue.js";
 
 describe("Workstream B retry and DLQ", () => {
+  beforeEach(() => {
+    resetIngestHealthMetrics();
+  });
+
   it("exhausts retries and records dead-letter entry", async () => {
     const tempDir = await mkdtemp(join(tmpdir(), "relay-b-dlq-"));
     const dlq = new FileDeadLetterQueue(join(tempDir, "dlq.json"));

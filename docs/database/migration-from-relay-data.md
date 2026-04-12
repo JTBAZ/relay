@@ -27,7 +27,7 @@ When milestone **M10 phase 10.2** is executed ([`M10_VERIFICATION.md`](M10_VERIF
 | Analytics | `AnalyticsSnapshotRow`, … / `DbAnalyticsStore` | `RELAY_DB_STORE_ANALYTICS` | |
 | Patron favorites + collections | `PatronFavorite`, … / `DbPatronFavoritesStore`, `DbPatronCollectionsStore` | `RELAY_DB_STORE_PATRON_ENGAGEMENT` | |
 | Clone / payments / migration / deploy | M8 tables / `DbCloneSiteStore`, etc. | `RELAY_DB_STORE_CLONE`, `PAYMENTS`, `MIGRATION`, `DEPLOY` | Four independent flags |
-| Creator OAuth token file | Still `FilePatreonTokenStore` | *(no `RELAY_DB_STORE_*` yet for token file)* | Uses `OAuthCredential` when identity DB is on |
+| Creator OAuth tokens (`patreon_credentials.json`) | `OAuthCredential` + `ProviderAccount` / `DbPatreonTokenStore` | `RELAY_DB_STORE_CREATOR_OAUTH` | Default file-backed; DB path creates tenant/user rows on first `upsert` |
 | Patreon cookies, campaign index, webhook metadata files | Files or future `WebhookEndpoint` (M9 stub) | — | Narrow tables exist for webhooks / routing where noted in schema |
 
 **M10 handoff:** After soak, operators may remove file fallbacks and flags per [`M10_VERIFICATION.md`](M10_VERIFICATION.md). Archive JSON: [`relay-data-archive/README.md`](../../relay-data-archive/README.md).

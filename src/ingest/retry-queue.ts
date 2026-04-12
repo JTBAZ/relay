@@ -1,4 +1,5 @@
 import type { DeadLetterQueue } from "./dlq.js";
+import { recordDlqAppend, recordRetryFailure } from "./ingest-health-metrics.js";
 import type { SyncBatchInput } from "./types.js";
 
 export type IngestJob = {
@@ -64,6 +65,7 @@ export class IngestRetryQueue {
       } catch (err) {
         attempt += 1;
         job.attempts = attempt;
+        recordRetryFailure();
         const message = err instanceof Error ? err.message : String(err);
         if (attempt >= this.policy.max_attempts) {
           await this.dlq.append({
@@ -75,6 +77,7 @@ export class IngestRetryQueue {
             failed_at: new Date().toISOString(),
             batch: job.batch
           });
+          recordDlqAppend();
           return;
         }
         const delay = Math.min(

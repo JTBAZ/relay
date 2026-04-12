@@ -31,6 +31,8 @@ export type PersistedPatreonTokens = {
 export interface PatreonTokenStore {
   upsert(tokens: PersistedPatreonTokens): Promise<void>;
   getByCreatorId(creatorId: string): Promise<PersistedPatreonTokens | null>;
+  /** Creator ids with stored Patreon OAuth (for unattended incremental sync). */
+  listCreatorIds(): Promise<string[]>;
 }
 
 export class FilePatreonTokenStore implements PatreonTokenStore {
@@ -71,6 +73,11 @@ export class FilePatreonTokenStore implements PatreonTokenStore {
       provider_user_id: record.provider_user_id,
       credential_health_status: record.credential_health_status
     };
+  }
+
+  public async listCreatorIds(): Promise<string[]> {
+    const data = await this.readStore();
+    return Object.keys(data.records).sort();
   }
 
   private async readStore(): Promise<TokenStoreData> {

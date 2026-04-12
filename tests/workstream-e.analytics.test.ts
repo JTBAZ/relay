@@ -59,6 +59,11 @@ describe("Workstream E analytics + action center", () => {
     expect(gen.status).toBe(200);
     expect(gen.body.data.recommendations_created).toBeGreaterThanOrEqual(1);
 
+    const health = await request(app).get("/api/v1/health/analytics");
+    expect(health.status).toBe(200);
+    expect(health.body.data.metrics.generate_attempts).toBeGreaterThanOrEqual(1);
+    expect(health.body.data.metrics.generate_successes).toBeGreaterThanOrEqual(1);
+
     const shown = eventBus.getAll().filter((e) => e.event_name === "recommendation_shown");
     expect(shown.length).toBeGreaterThanOrEqual(1);
     expect(shown[0].producer).toBe("recommendation-service");

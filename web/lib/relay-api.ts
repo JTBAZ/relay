@@ -818,3 +818,92 @@ export function formatPatreonSyncResult(data: PatreonScrapeResultData): string {
   }
   return lines.join(" ");
 }
+
+/** Workstream E — Action Center recommendation cards */
+export type ActionCenterCard = {
+  recommendation_id: string;
+  creator_id: string;
+  card_type: string;
+  title: string;
+  signal: string;
+  diagnosis: string;
+  recommendation: string;
+  confidence_score: number;
+  expected_impact: { metric: string; delta_range: [number, number]; horizon_days: number };
+  reason_codes: string[];
+  evidence_refs: string[];
+  status: string;
+  created_at: string;
+  updated_at: string;
+  notes?: string;
+};
+
+export type ActionCenterCardsData = {
+  items: ActionCenterCard[];
+  next_cursor: string | null;
+};
+
+export async function fetchActionCenterCards(creatorId: string): Promise<ActionCenterCardsData> {
+  const q = new URLSearchParams({ creator_id: creatorId });
+  return fetchRelayCreatorJson<ActionCenterCardsData>(
+    `/api/v1/action-center/cards?${q.toString()}`
+  );
+}
+
+export async function postAnalyticsGenerate(creatorId: string): Promise<{
+  snapshot_id: string;
+  recommendations_created: number;
+}> {
+  return fetchRelayCreatorJson(`/api/v1/analytics/generate`, {
+    method: "POST",
+    body: JSON.stringify({ creator_id: creatorId })
+  });
+}
+
+export async function postActionCenterAccept(
+  creatorId: string,
+  recommendationId: string,
+  notes?: string
+): Promise<{ recommendation_id: string; status: string }> {
+  return fetchRelayCreatorJson(
+    `/api/v1/action-center/cards/${encodeURIComponent(recommendationId)}/accept`,
+    {
+      method: "POST",
+      body: JSON.stringify({ creator_id: creatorId, notes })
+    }
+  );
+}
+
+export async function postActionCenterDismiss(
+  creatorId: string,
+  recommendationId: string,
+  reasonCode?: string
+): Promise<{ recommendation_id: string; status: string }> {
+  return fetchRelayCreatorJson(
+    `/api/v1/action-center/cards/${encodeURIComponent(recommendationId)}/dismiss`,
+    {
+      method: "POST",
+      body: JSON.stringify({
+        creator_id: creatorId,
+        reason_code: reasonCode ?? "dismissed_from_ui"
+      })
+    }
+  );
+}
+
+export type AnalyticsHealthData = {
+  status: "ok" | "degraded";
+  metrics: {
+    generate_attempts: number;
+    generate_successes: number;
+    generate_failures: number;
+    success_ratio: number | null;
+    failure_ratio: number | null;
+  };
+  alerts: string[];
+  documentation: string[];
+};
+
+export async function fetchAnalyticsHealth(): Promise<AnalyticsHealthData> {
+  return fetchRelayCreatorJson<AnalyticsHealthData>("/api/v1/health/analytics");
+}

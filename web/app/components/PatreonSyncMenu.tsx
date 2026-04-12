@@ -99,6 +99,8 @@ export default function PatreonSyncMenu({
   const [posting, setPosting] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
 
+  const panelId = "patreon-sync-menu-panel";
+
   const loadState = useCallback(async () => {
     setLoadingState(true);
     setStateError(null);
@@ -162,6 +164,9 @@ export default function PatreonSyncMenu({
     <div className="relative" ref={rootRef}>
       <button
         type="button"
+        aria-expanded={open}
+        aria-haspopup="dialog"
+        aria-controls={panelId}
         onClick={() => {
           setOpen((o) => !o);
           setActionError(null);
@@ -179,11 +184,16 @@ export default function PatreonSyncMenu({
 
       {open && (
         <div
+          id={panelId}
           className="absolute right-0 z-50 mt-1 w-[min(22rem,calc(100vw-2rem))] rounded-lg border border-[var(--lib-border)] bg-[var(--lib-card)] p-3 shadow-lg"
           role="dialog"
           aria-label="Patreon sync"
         >
-          <p className="text-[11px] font-semibold uppercase tracking-wide text-[var(--lib-fg-muted)]">
+          <p className="text-[11px] leading-snug text-[var(--lib-fg-muted)]">
+            Pulls from Patreon into your Library. What you curate here (visibility, collections)
+            controls what visitors see on your public page — layout is in Designer.
+          </p>
+          <p className="mt-3 text-[11px] font-semibold uppercase tracking-wide text-[var(--lib-fg-muted)]">
             Sync state
           </p>
           {loadingState && (
@@ -227,11 +237,16 @@ export default function PatreonSyncMenu({
                   <p className="text-[11px] font-semibold uppercase tracking-wide text-[var(--lib-fg-muted)]">
                     Connection
                   </p>
+                  {(() => {
+                    const oauth = oauthLine(state.oauth);
+                    return (
                   <p
-                    className={`mt-1.5 text-xs font-medium ${oauthLine(state.oauth).className}`}
+                    className={`mt-1.5 text-xs font-medium ${oauth.className}`}
                   >
-                    {oauthLine(state.oauth).text}
+                    {oauth.text}
                   </p>
+                    );
+                  })()}
                   <p className="mt-0.5 text-[10px] text-[var(--lib-fg-muted)]">
                     Token expires {fmtIso(state.oauth.access_token_expires_at)}
                   </p>

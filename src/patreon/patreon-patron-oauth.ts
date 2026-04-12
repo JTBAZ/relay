@@ -1,4 +1,9 @@
 import type { PatreonClient } from "../auth/patreon-client.js";
+import {
+  recordPatronOAuthAttempt,
+  recordPatronOAuthFailure,
+  recordPatronOAuthSuccess
+} from "../auth/part1a-gate-metrics.js";
 import type { IdentityService } from "../identity/identity-service.js";
 import type { SessionToken, UserAccount } from "../identity/types.js";
 import {
@@ -20,19 +25,27 @@ export async function exchangePatreonPatronOAuth(params: {
   identityService: IdentityService;
   fetchImpl: typeof fetch;
 }): Promise<{ user: UserAccount; session: SessionToken }> {
-  const tokenResponse = await params.patreonClient.exchangeCode(
-    params.code,
-    params.redirectUri
-  );
-  const doc = await fetchPatronIdentity(
-    tokenResponse.access_token,
-    params.fetchImpl
-  );
-  const sync = extractPatronSyncFromIdentity(doc, params.patreonCampaignNumericId);
-  return params.identityService.completePatreonPatronOAuth(
-    params.creatorId,
-    sync.patreon_user_id,
-    sync.email,
-    sync.tier_ids
-  );
+  recordPatronOAuthAttempt();
+  try {
+    const tokenResponse = await params.patreonClient.exchangeCode(
+      params.code,
+      params.redirectUri
+    );
+    const doc = await fetchPatronIdentity(
+      tokenResponse.access_token,
+      params.fetchImpl
+    );
+    const sync = extractPatronSyncFromIdentity(doc, params.patreonCampaignNumericId);
+    const out = await params.identityService.completePatreonPatronOAuth(
+      params.creatorId,
+      sync.patreon_user_id,
+      sync.email,
+      sync.tier_ids
+    );
+    recordPatronOAuthSuccess();
+    return out;
+  } catch (e) {
+    recordPatronOAuthFailure();
+    throw e;
+  }
 }

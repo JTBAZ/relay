@@ -1,0 +1,3 @@
+# Used when Coolify base directory is `web/` (root nixpacks.toml is not in context).
+[variables]
+NIXPACKS_NODE_VERSION = "24"

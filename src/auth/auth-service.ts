@@ -1,4 +1,12 @@
 import type { RelayEventBus } from "../events/event-bus.js";
+import {
+  recordCreatorOAuthExchangeAttempt,
+  recordCreatorOAuthExchangeFailure,
+  recordCreatorOAuthExchangeSuccess,
+  recordTokenRefreshAttempt,
+  recordTokenRefreshFailure,
+  recordTokenRefreshSuccess
+} from "./part1a-gate-metrics.js";
 import { PatreonClient } from "./patreon-client.js";
 import type { PatreonTokenStore, PersistedPatreonTokens } from "./token-store.js";
 
@@ -46,26 +54,34 @@ export class PatreonAuthService {
     redirectUri: string,
     traceId: string
   ): Promise<{ creator_id: string; credential_health_status: "healthy" }> {
-    const tokenResponse = await this.patreonClient.exchangeCode(code, redirectUri);
+    recordCreatorOAuthExchangeAttempt();
+    try {
+      const tokenResponse = await this.patreonClient.exchangeCode(code, redirectUri);
 
-    await this.tokenStore.upsert({
-      creator_id: creatorId,
-      access_token: tokenResponse.access_token,
-      refresh_token: tokenResponse.refresh_token,
-      access_token_expires_at: addSecondsToNow(tokenResponse.expires_in),
-      credential_health_status: "healthy"
-    });
+      await this.tokenStore.upsert({
+        creator_id: creatorId,
+        access_token: tokenResponse.access_token,
+        refresh_token: tokenResponse.refresh_token,
+        access_token_expires_at: addSecondsToNow(tokenResponse.expires_in),
+        credential_health_status: "healthy"
+      });
 
-    this.eventBus.publish("patreon_oauth_connected", creatorId, traceId, {
-      primary_id: creatorId,
-      creator_id: creatorId,
-      credential_health_status: "healthy"
-    });
+      this.eventBus.publish("patreon_oauth_connected", creatorId, traceId, {
+        primary_id: creatorId,
+        creator_id: creatorId,
+        credential_health_status: "healthy"
+      });
 
-    return {
-      creator_id: creatorId,
-      credential_health_status: "healthy"
-    };
+      recordCreatorOAuthExchangeSuccess();
+
+      return {
+        creator_id: creatorId,
+        credential_health_status: "healthy"
+      };
+    } catch (e) {
+      recordCreatorOAuthExchangeFailure();
+      throw e;
+    }
   }
 
   public async refreshAndRotate(
@@ -77,25 +93,34 @@ export class PatreonAuthService {
       throw new Error("Creator credentials not found.");
     }
 
-    const refreshed = await this.patreonClient.refreshToken(current.refresh_token);
-    await this.tokenStore.upsert({
-      creator_id: creatorId,
-      access_token: refreshed.access_token,
-      refresh_token: refreshed.refresh_token,
-      access_token_expires_at: addSecondsToNow(refreshed.expires_in),
-      credential_health_status: "healthy"
-    });
+    recordTokenRefreshAttempt();
+    try {
+      const refreshed = await this.patreonClient.refreshToken(current.refresh_token);
 
-    this.eventBus.publish("patreon_token_refreshed", creatorId, traceId, {
-      primary_id: creatorId,
-      creator_id: creatorId,
-      credential_health_status: "healthy"
-    });
+      await this.tokenStore.upsert({
+        creator_id: creatorId,
+        access_token: refreshed.access_token,
+        refresh_token: refreshed.refresh_token,
+        access_token_expires_at: addSecondsToNow(refreshed.expires_in),
+        credential_health_status: "healthy"
+      });
 
-    return {
-      creator_id: creatorId,
-      credential_health_status: "healthy"
-    };
+      this.eventBus.publish("patreon_token_refreshed", creatorId, traceId, {
+        primary_id: creatorId,
+        creator_id: creatorId,
+        credential_health_status: "healthy"
+      });
+
+      recordTokenRefreshSuccess();
+
+      return {
+        creator_id: creatorId,
+        credential_health_status: "healthy"
+      };
+    } catch (e) {
+      recordTokenRefreshFailure();
+      throw e;
+    }
   }
 
   /**

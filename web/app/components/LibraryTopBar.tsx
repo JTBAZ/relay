@@ -31,22 +31,28 @@ function SyncPill({ status }: { status: SyncStatus }) {
     synced: {
       label: "Synced",
       dot: "bg-[var(--lib-success)]",
-      box: "border-[var(--lib-success)]/35 bg-[var(--lib-success)]/12"
+      box: "border-[var(--lib-success)]/35 bg-[var(--lib-success)]/12",
+      title: "Patreon sync is up to date with your last scrape health."
     },
     syncing: {
       label: "Syncing",
       dot: "",
-      box: "border-[var(--lib-warning)]/35 bg-[var(--lib-warning)]/10"
+      box: "border-[var(--lib-warning)]/35 bg-[var(--lib-warning)]/10",
+      title: "A Patreon scrape or sync is in progress."
     },
     error: {
       label: "Sync issue",
       dot: "bg-[var(--lib-destructive)]",
-      box: "border-[var(--lib-destructive)]/35 bg-[var(--lib-destructive)]/10"
+      box: "border-[var(--lib-destructive)]/35 bg-[var(--lib-destructive)]/10",
+      title: "OAuth or last scrape needs attention — open the Patreon menu."
     }
   }[status];
 
   return (
     <div
+      role="status"
+      title={cfg.title}
+      aria-label={`Patreon sync: ${cfg.label}`}
       className={`flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[11px] font-semibold tracking-wide text-[var(--lib-fg)] ${cfg.box}`}
     >
       {status === "syncing" ? (
@@ -98,6 +104,10 @@ export default function LibraryTopBar({
                   <h1 className="truncate text-lg font-semibold tracking-tight text-[var(--lib-fg)] sm:text-xl">
                     {relayDisplayName}
                   </h1>
+                  <p className="mt-0.5 max-w-prose text-[10px] leading-snug text-[var(--lib-fg-muted)]">
+                    Library controls what visitors and subscribers see on Relay — curation, visibility,
+                    and collections apply before your public page and feeds.
+                  </p>
                   {patreonProfileHref ? (
                     <a
                       href={patreonProfileHref}

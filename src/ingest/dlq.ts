@@ -16,6 +16,8 @@ export type DeadLetterRecord = {
 export interface DeadLetterQueue {
   append(record: DeadLetterRecord): Promise<void>;
   readAll(): Promise<DeadLetterRecord[]>;
+  /** Current row count (cheap for DB; file backend reads JSON length). */
+  count(): Promise<number>;
 }
 
 export class FileDeadLetterQueue implements DeadLetterQueue {
@@ -45,5 +47,10 @@ export class FileDeadLetterQueue implements DeadLetterQueue {
     } catch {
       return [];
     }
+  }
+
+  public async count(): Promise<number> {
+    const rows = await this.readAll();
+    return rows.length;
   }
 }

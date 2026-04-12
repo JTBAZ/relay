@@ -268,11 +268,23 @@ export default function DesignerView() {
 
   if (!designerLayout || !apiLayout) {
     return (
-      <div className="flex h-64 flex-col items-center justify-center gap-3 text-[#8a7f72]">
-        <p>Loading designer…</p>
+      <div
+        className="flex min-h-[16rem] flex-col items-center justify-center gap-3 px-6 text-center"
+        style={{ color: "var(--relay-fg-muted)" }}
+      >
+        <p className="text-sm font-medium" style={{ color: "var(--relay-fg)" }}>
+          Loading designer…
+        </p>
+        <p className="max-w-sm text-[11px] leading-relaxed">
+          Preview uses the same gallery rules as the Library — hidden or flagged posts stay out of the
+          stage unless you change visibility there first.
+        </p>
         <p className="text-[10px]">
-          Make sure the API server is running (
-          <code className="text-[#ede5da]">npm run build &amp;&amp; npm start</code> in the API package).
+          If this hangs, ensure the API is running (
+          <code className="rounded px-1" style={{ background: "var(--relay-border)" }}>
+            npm run build &amp;&amp; npm start
+          </code>{" "}
+          at the repo root).
         </p>
       </div>
     );
@@ -298,17 +310,24 @@ export default function DesignerView() {
 
       {loadError ? (
         <div
-          className="mx-4 mt-2 rounded border px-3 py-2 text-sm"
+          className="mx-4 mt-2 rounded-md border px-3 py-2.5 text-sm"
           style={{
-            borderColor: "#7f1d1d",
-            background: "var(--relay-green-950)",
+            borderColor: "rgba(220, 38, 38, 0.45)",
+            background: "rgba(127, 29, 29, 0.2)",
             color: "var(--relay-fg-muted)"
           }}
+          role="alert"
         >
-          <strong className="mb-1 block text-xs uppercase tracking-wide" style={{ color: "#f87171" }}>
+          <strong
+            className="mb-1 block text-[10px] font-semibold uppercase tracking-wide"
+            style={{ color: "#f87171" }}
+          >
             Could not load layout
           </strong>
           {loadError}
+          <p className="mt-2 text-[11px]">
+            You can still edit a blank layout locally — save may fail until the API is reachable.
+          </p>
         </div>
       ) : null}
 

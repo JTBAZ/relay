@@ -61,15 +61,36 @@ function cadenceRescueCandidate(
   };
 }
 
+function seriesContinuationCandidate(snapshot: AnalyticsSnapshot): CandidateResult | null {
+  const top = snapshot.top_tags[0];
+  if (!top || top.count < 2) return null;
+  return {
+    card_type: "series_continuation",
+    title: `Series continuation: "${top.tag_id}" thread`,
+    signal: `${top.count} posts share this tag — strong serial signal`,
+    diagnosis:
+      "Audiences often follow recurring themes; a steady cadence on this thread protects engagement.",
+    recommendation: `Plan the next installment in this theme and cross-link from the last post.`,
+    confidence_score: Math.min(0.88, 0.45 + top.count * 0.08),
+    expected_impact: {
+      metric: "returning_viewer_rate",
+      delta_range: [0.01, 0.04],
+      horizon_days: 30
+    },
+    reason_codes: ["tag_series_density"],
+    evidence_refs: [snapshot.snapshot_id, `tag:${top.tag_id}`]
+  };
+}
+
 function tierUpgradeCandidate(
   snapshot: AnalyticsSnapshot
 ): CandidateResult | null {
-  if (snapshot.active_tiers < 2 || snapshot.total_posts < 10) return null;
+  if (snapshot.active_tiers < 1 || snapshot.total_posts < 3) return null;
   const topTier = snapshot.tier_content_counts
     .sort((a, b) => b.posts - a.posts)[0];
   if (!topTier) return null;
   const ratio = topTier.posts / snapshot.total_posts;
-  if (ratio < 0.6) return null;
+  if (ratio < 0.55) return null;
 
   return {
     card_type: "tier_upgrade_opportunity",
@@ -98,6 +119,9 @@ export function scoreRecommendations(
 
   const cadence = cadenceRescueCandidate(snapshot, canonical);
   if (cadence) candidates.push(cadence);
+
+  const series = seriesContinuationCandidate(snapshot);
+  if (series) candidates.push(series);
 
   const tierUp = tierUpgradeCandidate(snapshot);
   if (tierUp) candidates.push(tierUp);

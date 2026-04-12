@@ -75,4 +75,8 @@ export class DbDeadLetterQueue implements DeadLetterQueue {
       })
     );
   }
+
+  public async count(): Promise<number> {
+    return this.prisma.jobRun.count({ where: { kind: DLQ_KIND } });
+  }
 }

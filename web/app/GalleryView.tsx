@@ -33,6 +33,10 @@ import { LibraryOverviewPanel } from "./components/shell/LibraryOverviewPanel";
 import type { MediaTypeValue } from "./components/MediaTypeMultiSelect";
 import { freePublicTierIdsFromFacets } from "@/lib/tier-access";
 import { readGalleryVideoLoop, writeGalleryVideoLoop } from "@/lib/gallery-video-loop";
+import { useDebouncedValue } from "@/lib/use-debounced-value";
+
+/** Align with visitor gallery — avoids one `/gallery/items` request per keystroke. */
+const GALLERY_SEARCH_DEBOUNCE_MS = 320;
 
 const defaultCreatorId = process.env.NEXT_PUBLIC_RELAY_CREATOR_ID?.trim() || "creator_1";
 const patreonCampaignIdEnv = process.env.NEXT_PUBLIC_RELAY_PATREON_CAMPAIGN_ID?.trim() || undefined;
@@ -43,6 +47,7 @@ type VisibilityState = { hidden: boolean; mature: boolean };
 export default function GalleryView() {
   const creatorId = defaultCreatorId;
   const [q, setQ] = useState("");
+  const debouncedQ = useDebouncedValue(q, GALLERY_SEARCH_DEBOUNCE_MS);
   const [tagPick, setTagPick] = useState<string[]>([]);
   const [tierPick, setTierPick] = useState<string[]>([]);
   const [mediaTypes, setMediaTypes] = useState<MediaTypeValue[]>([]);
@@ -149,10 +154,10 @@ export default function GalleryView() {
       setLoading(true);
       setListError(null);
       try {
-        const wantsSearchFocus = Boolean(q.trim());
+        const wantsSearchFocus = Boolean(debouncedQ.trim());
         const path = buildGalleryQuery({
           creator_id: creatorId,
-          q: q || undefined,
+          q: debouncedQ || undefined,
           tag_ids: tagPick.length ? tagPick : undefined,
           tier_ids: tierPick.length ? tierPick : undefined,
           media_type: mediaTypeQuery,
@@ -176,16 +181,12 @@ export default function GalleryView() {
         setLoading(false);
       }
     },
-    [creatorId, mediaTypeQuery, q, showTextOnlyPosts, tagPick, tierPick]
+    [creatorId, debouncedQ, mediaTypeQuery, showTextOnlyPosts, tagPick, tierPick]
   );
 
   useEffect(() => {
-    void fetchFacets();
-  }, [fetchFacets]);
-
-  useEffect(() => {
-    void fetchCollections();
-  }, [fetchCollections, collectionsReloadToken]);
+    void Promise.all([fetchFacets(), fetchCollections()]);
+  }, [fetchFacets, fetchCollections, collectionsReloadToken]);
 
   useEffect(() => {
     void fetchPage(null, false);
@@ -217,6 +218,13 @@ export default function GalleryView() {
   ]);
 
   const postGroups = useMemo(() => groupGalleryItemsByPost(displayItems), [displayItems]);
+
+  const emptyLibrary = !loading && !listError && items.length === 0;
+  const emptyAfterFilters =
+    !loading &&
+    !listError &&
+    items.length > 0 &&
+    displayItems.length === 0;
 
   const selectedItems = useMemo(() => items.filter((item) => selectedKeys.has(galleryItemKey(item))), [items, selectedKeys]);
 
@@ -483,7 +491,8 @@ export default function GalleryView() {
     count: viewMode === "list" ? postGroups.length : 0,
     getScrollElement: () => listRef.current,
     estimateSize: () => 72,
-    overscan: 6
+    /** Extra rows above/below viewport — smoother scroll when many posts (list mode is the scale path). */
+    overscan: 10
   });
 
   const derivedLibrarySyncStatus =
@@ -510,7 +519,6 @@ export default function GalleryView() {
         patronCount={syncHealth?.campaign_display?.patron_count ?? 0}
         campaignImageSmallUrl={syncHealth?.campaign_display?.image_small_url}
         campaignBannerUrl={syncHealth?.campaign_display?.image_url}
-        revenueLabel="1235"
         trailingActions={
           <PatreonSyncMenu
             creatorId={creatorId}
@@ -562,8 +570,14 @@ export default function GalleryView() {
           onPointerDownCapture={onMainPointerDownCapture}
         >
           {listError ? (
-            <div className="mx-4 mt-2 rounded border border-red-800/50 bg-red-950/35 px-3 py-2 text-sm text-red-200">
-              {listError}
+            <div
+              className="mx-4 mt-2 rounded-md border border-[var(--lib-destructive)]/45 bg-[var(--lib-destructive)]/10 px-3 py-2.5 text-sm text-[var(--lib-fg)]"
+              role="alert"
+            >
+              <span className="block text-[10px] font-semibold uppercase tracking-wide text-[var(--lib-destructive)]">
+                Could not load library
+              </span>
+              <span className="mt-1 block text-[var(--lib-fg-muted)]">{listError}</span>
             </div>
           ) : null}
 
@@ -576,6 +590,30 @@ export default function GalleryView() {
               patronCount: syncHealth?.campaign_display?.patron_count ?? 0
             }}
           />
+
+          {emptyLibrary ? (
+            <div className="mx-4 mt-3 rounded-lg border border-dashed border-[var(--lib-border)] bg-[var(--lib-muted)]/25 px-4 py-8 text-center">
+              <p className="text-sm font-medium text-[var(--lib-fg)]">No posts in your library yet</p>
+              <p className="mx-auto mt-2 max-w-md text-xs leading-relaxed text-[var(--lib-fg-muted)]">
+                Connect Patreon (creator OAuth), then use <strong>Patreon → Live scrape</strong> to
+                pull posts into Relay. Nothing here is shown to visitors until you curate visibility
+                and layout.
+              </p>
+            </div>
+          ) : null}
+
+          {emptyAfterFilters ? (
+            <div className="mx-4 mt-3 rounded-lg border border-[var(--lib-border)] bg-[var(--lib-card)] px-4 py-6 text-center">
+              <p className="text-sm font-medium text-[var(--lib-fg)]">
+                {activeCollectionId ? "No assets in this collection for current filters" : "No assets match your filters"}
+              </p>
+              <p className="mx-auto mt-2 max-w-md text-xs text-[var(--lib-fg-muted)]">
+                {activeCollectionId
+                  ? "Try clearing the sidebar filters or pick another collection."
+                  : "Adjust Find Assets, tags, tiers, visibility toggles, or media types — or clear search."}
+              </p>
+            </div>
+          ) : null}
 
           <div className="relative flex h-10 shrink-0 items-center justify-between border-b border-[var(--lib-border)] px-4">
             <div className="flex items-center gap-3">

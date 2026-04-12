@@ -16,7 +16,7 @@ Every `File*Store` in `src/` follows the same pattern: `load → mutate in memor
 
 | Store class | File | Roadmap workstream |
 |-------------|------|--------------------|
-| `FilePatreonTokenStore` | `patreon_credentials.json` | Part 1 A (creator OAuth) |
+| `FilePatreonTokenStore` / `DbPatreonTokenStore` | `patreon_credentials.json` or Postgres (`RELAY_DB_STORE_CREATOR_OAUTH`) | Part 1 A (creator OAuth) |
 | `FileCanonicalStore` | `canonical.json` | Part 1 B (ingest) |
 | `SyncWatermarkStore` | `patreon_sync_watermarks.json` | Part 1 B |
 | `PatreonSyncHealthStore` | `patreon_sync_health.json` | Part 1 B |

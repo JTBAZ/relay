@@ -6,8 +6,9 @@ describe("DbDeadLetterQueue", () => {
   it("upserts ingest_dlq rows from DeadLetterRecord", async () => {
     const upsert = vi.fn().mockResolvedValue({});
     const findMany = vi.fn().mockResolvedValue([]);
+    const count = vi.fn().mockResolvedValue(0);
     const prisma = {
-      jobRun: { upsert, findMany }
+      jobRun: { upsert, findMany, count }
     };
     const q = new DbDeadLetterQueue(prisma as never);
     await q.append({
@@ -31,6 +32,8 @@ describe("DbDeadLetterQueue", () => {
     );
     await q.readAll();
     expect(findMany).toHaveBeenCalled();
+    await q.count();
+    expect(count).toHaveBeenCalled();
   });
 });
 

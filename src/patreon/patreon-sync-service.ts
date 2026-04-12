@@ -33,6 +33,7 @@ import {
   postsPageUrl
 } from "./patreon-resource-api.js";
 import type { IdentityService } from "../identity/identity-service.js";
+import { createExclusivePerKeyRunner } from "../lib/run-exclusive-per-key.js";
 import type {
   LastMemberSyncHealth,
   LastPostScrapeHealth,
@@ -297,6 +298,7 @@ export class PatreonSyncService {
   private readonly fetchImpl: typeof fetch;
   private readonly syncHealthStore: PatreonSyncHealthStoreAPI | null;
   private readonly campaignDisplayStore: CreatorCampaignDisplayStore | null;
+  private readonly runScrapeOrSyncExclusive = createExclusivePerKeyRunner();
 
   public constructor(
     tokenStore: PatreonTokenStore,
@@ -499,7 +501,22 @@ export class PatreonSyncService {
     return { posts, pages };
   }
 
-  public async scrapeOrSync(
+  /**
+   * Watermark-aware incremental sync. Serialized per `creator_id` so concurrent calls
+   * (webhooks + unattended worker) do not interleave ingest for the same creator.
+   */
+  public scrapeOrSync(
+    creatorId: string,
+    traceId: string,
+    options: PatreonSyncOptions = {}
+  ): Promise<PatreonScrapeResult> {
+    const id = creatorId.trim();
+    return this.runScrapeOrSyncExclusive(id, () =>
+      this.scrapeOrSyncImpl(id, traceId, options)
+    );
+  }
+
+  private async scrapeOrSyncImpl(
     creatorId: string,
     traceId: string,
     options: PatreonSyncOptions = {}

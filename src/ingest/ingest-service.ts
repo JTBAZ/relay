@@ -3,6 +3,7 @@ import type { RelayEventBus } from "../events/event-bus.js";
 import { applySyncBatchToSnapshot } from "./apply-batch.js";
 import { enrichBatch } from "./auto-enrich.js";
 import type { CanonicalStore } from "./canonical-store.js";
+import { recordIngestBatchResult } from "./ingest-health-metrics.js";
 import type { ApplyBatchResult, SyncBatchInput } from "./types.js";
 
 export class IngestService {
@@ -28,6 +29,7 @@ export class IngestService {
     if (notes.length > 0) {
       result = { ...result, ingest_notes: notes };
     }
+    recordIngestBatchResult(result);
     return result;
   }
 }

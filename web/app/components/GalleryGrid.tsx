@@ -1,5 +1,6 @@
 "use client";
 
+import { memo } from "react";
 import { galleryItemKey, type PostGalleryGroup } from "@/lib/gallery-group";
 import type { GalleryItem, TierFacet } from "@/lib/relay-api";
 import GalleryGridTile from "./GalleryGridTile";
@@ -33,7 +34,7 @@ type Props = {
   onExportRetryComplete?: () => void;
 };
 
-export default function GalleryGrid({
+function GalleryGrid({
   groups,
   tierTitleById,
   tierFacets = [],
@@ -72,3 +73,5 @@ export default function GalleryGrid({
     </div>
   );
 }
+
+export default memo(GalleryGrid);

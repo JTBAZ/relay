@@ -28,7 +28,8 @@ param(
   [Parameter(Mandatory = $true)]
   [string] $TaskKey,
 
-  [string] $RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path,
+  # Prefer passing from autopipeline-runner.mjs; default must not use $PSScriptRoot in param() — it can be empty when spawned with -File.
+  [string] $RepoRoot = "",
 
   [string] $Model = "composer-2",
 
@@ -36,6 +37,17 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+
+if ([string]::IsNullOrWhiteSpace($RepoRoot)) {
+  $scriptDir = $PSScriptRoot
+  if ([string]::IsNullOrWhiteSpace($scriptDir)) {
+    $scriptDir = Split-Path -Parent -LiteralPath $MyInvocation.MyCommand.Path
+  }
+  if ([string]::IsNullOrWhiteSpace($scriptDir)) {
+    throw "Could not resolve repository root: pass -RepoRoot or run from a context where the script path is known."
+  }
+  $RepoRoot = (Resolve-Path (Join-Path $scriptDir "..")).Path
+}
 
 function Get-AgentInvocation {
   if (Get-Command agent -ErrorAction SilentlyContinue) {

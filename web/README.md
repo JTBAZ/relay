@@ -2,7 +2,9 @@ This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-
 
 ## Getting Started
 
-First, run the development server:
+**Relay monorepo:** From the repository root, `npm run dev:stack` builds the Relay API, then runs the API and this Next dev server in one terminal (Ctrl+C stops both). Use that when the UI needs a local API.
+
+First, run the development server (from this `web/` folder):
 
 ```bash
 npm run dev

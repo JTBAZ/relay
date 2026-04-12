@@ -3,12 +3,17 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "engines": {
+    "node": "^20.19.0 || ^22.12.0 || >=24.0.0"
+  },
   "scripts": {
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",
     "db:push": "prisma db push",
     "build": "prisma generate && tsc -p tsconfig.json",
     "start": "node dist/src/main.js",
+    "dev:web": "npm run dev --prefix web",
+    "dev:stack": "npm run build && concurrently -k -n api,web -c blue,magenta \"npm run start\" \"npm run dev:web\"",
     "test": "vitest run",
     "verify:m10": "npm run build && npm run test && node scripts/m10-token-log-scan.mjs && npm run lint --prefix web && npm run build --prefix web",
     "ledger-to-v0": "npm --prefix Automation run ledger-to-v0",
@@ -26,7 +31,10 @@
     "backfill:part2": "npm run build && node scripts/backfill-part2.mjs",
     "inspect:patreon-content": "node scripts/inspect-patreon-post-content.mjs",
     "probe:patreon-description": "node scripts/probe-patreon-post-description.mjs",
-    "autopipeline": "node scripts/autopipeline-runner.mjs"
+    "autopipeline": "node scripts/autopipeline-runner.mjs",
+    "autosync:once": "npm run build && node dist/src/autosync-once.js",
+    "autopipeline:run-until-t011:dry": "node scripts/autopipeline-runner.mjs run-until-t011 --dry-run",
+    "autopipeline:enforce-ready:dry": "node scripts/autopipeline-runner.mjs enforce-ready --dry-run"
   },
   "dependencies": {
     "@prisma/adapter-pg": "^7.7.0",
@@ -46,6 +54,7 @@
     "@types/pg": "^8.20.0",
     "@types/supertest": "^6.0.3",
     "adm-zip": "^0.5.17",
+    "concurrently": "^9.2.1",
     "prisma": "^7.7.0",
     "supertest": "^7.1.1",
     "ts-node": "^10.9.2",
