@@ -711,8 +711,8 @@ export function createApp(config: AppConfig): CreateAppResult {
   );
 
   const patreonClient = new PatreonClient({
-    client_id: required(config.patreon_client_id, "patreon_client_id"),
-    client_secret: required(config.patreon_client_secret, "patreon_client_secret"),
+    client_id: required(config.patreon_client_id, "PATREON_CLIENT_ID"),
+    client_secret: required(config.patreon_client_secret, "PATREON_CLIENT_SECRET"),
     token_url: config.patreon_token_url ?? "https://www.patreon.com/api/oauth2/token",
     fetch_impl: config.fetch_impl
   });
