@@ -417,5 +417,5 @@ After M10.2 completes:
 - Smart Tag Assistant has typed table stubs ready for vector extension
 - Event bus is durable — events survive process restarts
 - Cross-tenant isolation is tested and documented
-- RLS + application-layer predicates are documented per `operations-and-security.md`
+- Application-layer tenant predicates are documented per `operations-and-security.md` (RLS optional — see § *Tenant isolation (MIG-50)*)
 - New builder context: "add feature X" means writing a `Db*Store`, a migration, and wiring it in `server.ts` — not designing from scratch

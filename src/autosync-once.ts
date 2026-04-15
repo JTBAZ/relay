@@ -32,7 +32,8 @@ async function main() {
     tokenStore,
     patreonSyncService,
     syncHealthStore: patreonSyncHealthStore,
-    campaignCreatorIndex: patreonCampaignCreatorIndex
+    campaignCreatorIndex: patreonCampaignCreatorIndex,
+    prisma
   });
   console.log(JSON.stringify(r, null, 2));
   await prisma.$disconnect();

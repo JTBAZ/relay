@@ -4,13 +4,14 @@ import { access, constants, mkdir, readFile, writeFile } from "node:fs/promises"
 import { join, relative, resolve } from "node:path";
 import type { Writable } from "node:stream";
 import type { CanonicalStore } from "../ingest/canonical-store.js";
+import { applyStorageKeyToCanonicalSnapshot } from "../ingest/media-storage-key.js";
 import { FileExportIndex } from "./export-index.js";
 import {
   buildMediaManifest,
   buildPostMap,
   buildTierMap
 } from "./manifests.js";
-import { fetchUpstreamWithRetries } from "./fetch-retry.js";
+import { fetchUpstreamWithRetries, type FetchUpstreamOptions } from "./fetch-retry.js";
 import type {
   CreatorExportIndex,
   ExportFetchRetryPolicy,
@@ -56,6 +57,24 @@ function absoluteBlobPathUnderCreator(
 
 const LIBRARY_ZIP_EMPTY_CODE = "LIBRARY_ZIP_EMPTY";
 
+/**
+ * Patreon media URLs often return 403 without the creator OAuth token; plain `fetch(url)` is not enough.
+ */
+export function upstreamUrlLooksLikePatreonHosted(urlStr: string): boolean {
+  try {
+    const u = new URL(urlStr);
+    const h = u.hostname.toLowerCase();
+    return (
+      h === "patreon.com" ||
+      h.endsWith(".patreon.com") ||
+      h === "patreonusercontent.com" ||
+      h.endsWith(".patreonusercontent.com")
+    );
+  } catch {
+    return false;
+  }
+}
+
 export class ExportService {
   private readonly canonicalStore: CanonicalStore;
   private readonly exportIndex: FileExportIndex;
@@ -63,6 +82,9 @@ export class ExportService {
   private readonly fetchImpl: typeof fetch;
   private readonly retryPolicy: ExportFetchRetryPolicy;
   private readonly sleepFn: (ms: number) => Promise<void>;
+  private readonly getCreatorPatreonAccessToken?: (
+    creatorId: string
+  ) => Promise<string | null>;
 
   public constructor(
     canonicalStore: CanonicalStore,
@@ -70,7 +92,8 @@ export class ExportService {
     storageRoot: string,
     fetchImpl?: typeof fetch,
     retryPolicy?: Partial<ExportFetchRetryPolicy>,
-    sleepFn?: (ms: number) => Promise<void>
+    sleepFn?: (ms: number) => Promise<void>,
+    getCreatorPatreonAccessToken?: (creatorId: string) => Promise<string | null>
   ) {
     this.canonicalStore = canonicalStore;
     this.exportIndex = exportIndex;
@@ -81,6 +104,7 @@ export class ExportService {
       ...retryPolicy
     };
     this.sleepFn = sleepFn ?? ((ms) => new Promise((r) => setTimeout(r, ms)));
+    this.getCreatorPatreonAccessToken = getCreatorPatreonAccessToken;
   }
 
   public async exportMedia(creatorId: string, mediaId: string): Promise<ExportOneResult> {
@@ -104,6 +128,18 @@ export class ExportService {
     ) {
       clearExportFailure(index, mediaId);
       await this.exportIndex.save(index);
+      try {
+        await this.canonicalStore.mutate(async (snapshot) => {
+          applyStorageKeyToCanonicalSnapshot(
+            snapshot,
+            creatorId,
+            mediaId,
+            existing.relative_blob_path
+          );
+        });
+      } catch {
+        /* best-effort: canonical may be file-backed or save may fail */
+      }
       return {
         media_id: mediaId,
         creator_id: creatorId,
@@ -114,11 +150,20 @@ export class ExportService {
     }
 
     try {
+      let fetchOpts: FetchUpstreamOptions | undefined;
+      if (upstreamUrlLooksLikePatreonHosted(url) && this.getCreatorPatreonAccessToken) {
+        const token = await this.getCreatorPatreonAccessToken(creatorId);
+        const t = token?.trim();
+        if (t) {
+          fetchOpts = { headers: { authorization: `Bearer ${t}` } };
+        }
+      }
       const response = await fetchUpstreamWithRetries(
         url,
         this.fetchImpl,
         this.retryPolicy,
-        this.sleepFn
+        this.sleepFn,
+        fetchOpts
       );
       const buffer = Buffer.from(await response.arrayBuffer());
       const sha256 = createHash("sha256").update(buffer).digest("hex");
@@ -149,6 +194,19 @@ export class ExportService {
       index.media[mediaId] = record;
       clearExportFailure(index, mediaId);
       await this.exportIndex.save(index);
+
+      try {
+        await this.canonicalStore.mutate(async (snapshot) => {
+          applyStorageKeyToCanonicalSnapshot(
+            snapshot,
+            creatorId,
+            mediaId,
+            record.relative_blob_path
+          );
+        });
+      } catch {
+        /* best-effort */
+      }
 
       return {
         media_id: mediaId,

@@ -1,5 +1,6 @@
 import { Suspense } from "react";
 import ActionCenterView from "./ActionCenterView";
+import { StudioRouteGuard } from "../components/studio/StudioRouteGuard";
 
 function Fallback() {
   return (
@@ -13,7 +14,9 @@ export default function ActionCenterPage() {
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <Suspense fallback={<Fallback />}>
-        <ActionCenterView />
+        <StudioRouteGuard>
+          <ActionCenterView />
+        </StudioRouteGuard>
       </Suspense>
     </div>
   );

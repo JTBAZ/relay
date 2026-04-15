@@ -7,7 +7,7 @@ describe("DbPatronFavoritesStore", () => {
   it("add uses findUnique + create; remove uses deleteMany", async () => {
     const findUnique = vi.fn().mockResolvedValue(null);
     const create = vi.fn().mockResolvedValue({
-      patronUserId: "u1",
+      patronMembershipId: "u1",
       creatorId: "c1",
       targetKind: PrismaFavoriteKind.media,
       targetId: "m1",

@@ -9,7 +9,9 @@
  * Optional probe-skip avoids redundant Patreon calls when caught up.
  */
 import { randomUUID } from "node:crypto";
+import type { PrismaClient } from "@prisma/client";
 import type { PatreonTokenStore } from "../auth/token-store.js";
+import { ensureCreatorProfilePatreonCampaignId } from "./campaign-tenant-resolve.js";
 import { PatreonCampaignCreatorIndex } from "./patreon-campaign-creator-index.js";
 import type { PatreonSyncHealthStoreAPI } from "./patreon-sync-health-store.js";
 import type { PatreonSyncService } from "./patreon-sync-service.js";
@@ -96,6 +98,8 @@ export type RunIncrementalAutosyncCycleOptions = {
   syncHealthStore?: PatreonSyncHealthStoreAPI;
   /** When set, campaign id is upserted for webhook routing (same as manual scrape). */
   campaignCreatorIndex?: PatreonCampaignCreatorIndex;
+  /** When set, `CreatorProfile.patreonCampaignId` is updated after a successful scrape (MIG-21). */
+  prisma?: PrismaClient;
   /** Overrides `RELAY_AUTOSYNC_MAX_POST_PAGES`. */
   maxPostPages?: number;
   /** Overrides `RELAY_AUTOSYNC_CONCURRENCY`. */
@@ -225,6 +229,17 @@ export async function runIncrementalAutosyncCycle(
         }
       }
 
+      if (opts.prisma) {
+        try {
+          await ensureCreatorProfilePatreonCampaignId(opts.prisma, {
+            relayCreatorId: creatorId.trim(),
+            patreonCampaignId: result.patreon_campaign_id
+          });
+        } catch {
+          /* best-effort */
+        }
+      }
+
       outcomes.push({ kind: "ok" });
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
@@ -270,6 +285,7 @@ export type StartIncrementalAutosyncWorkerOptions = {
   patreonSyncService: PatreonSyncService;
   syncHealthStore?: PatreonSyncHealthStoreAPI;
   campaignCreatorIndex?: PatreonCampaignCreatorIndex;
+  prisma?: PrismaClient;
   log?: (line: string) => void;
 };
 
@@ -367,7 +383,8 @@ export function startIncrementalAutosyncWorker(
         tokenStore: opts.tokenStore,
         patreonSyncService: opts.patreonSyncService,
         syncHealthStore: opts.syncHealthStore,
-        campaignCreatorIndex: opts.campaignCreatorIndex
+        campaignCreatorIndex: opts.campaignCreatorIndex,
+        prisma: opts.prisma
       });
       if (r.creators_failed > 0) {
         consecutiveFailureCycles += 1;

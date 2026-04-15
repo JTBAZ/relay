@@ -32,6 +32,7 @@ Authoritative relational design and migration plans for Relay’s **runtime** da
 | [`staging-canonical-verification.md`](staging-canonical-verification.md) | Staging checks when canonical ingest uses Postgres (`RELAY_DB_STORE_CANONICAL=1`) |
 | [`sub-agent-prompts.md`](sub-agent-prompts.md) | **Index** + Universal preamble; **19 standalone run files** in [`runs/`](runs/README.md) |
 | [`AIRTABLE_DB_PIPELINE.md`](AIRTABLE_DB_PIPELINE.md) | **Canonical Airtable schema** for **Relay Database Tracker** → **DB Integration Pipeline** (fields, base/table IDs, **runs** batching) |
+| [`../architecture/AIRTABLE_MULTI_TENANT_CHANGES.md`](../architecture/AIRTABLE_MULTI_TENANT_CHANGES.md) | **Multi Tenant Changes** (same base): table IDs, workflow; run prompts in [`../architecture/multi-tenant-runs/`](../architecture/multi-tenant-runs/README.md) |
 | [`AIRTABLE_AUTOPIPELINE.md`](AIRTABLE_AUTOPIPELINE.md) | **Agent + delta + Cursor CLI** autosequencer (Tasks/Runs/System State, delta contract, local runner script) — **not** the DB integration base |
 
 ### Enabling Postgres-backed analytics (M6)

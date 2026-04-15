@@ -20,6 +20,7 @@
     "ledger-to-v0:dry": "npm --prefix Automation run ledger-to-v0:dry",
     "ledger-pull-v0-copy-block": "npm --prefix Automation run ledger-pull-v0-copy-block",
     "backfill:identity": "npm run build && node scripts/backfill-identity.mjs",
+    "backfill:supabase-user-ids": "npm run build && node scripts/backfill-supabase-user-ids.mjs",
     "backfill:canonical": "npm run build && node scripts/backfill-canonical.mjs",
     "backfill:overrides": "npm run build && node scripts/backfill-gallery-overrides.mjs",
     "backfill:collections": "npm run build && node scripts/backfill-collections.mjs",
@@ -35,11 +36,16 @@
     "autosync:once": "npm run build && node dist/src/autosync-once.js",
     "autopipeline:run-until-t011:dry": "node scripts/autopipeline-runner.mjs run-until-t011 --dry-run",
     "autopipeline:enforce-ready:dry": "node scripts/autopipeline-runner.mjs enforce-ready --dry-run",
-    "claude:session-files": "node scripts/claude-session-files-download.mjs"
+    "claude:session-files": "node scripts/claude-session-files-download.mjs",
+    "r2:smoke": "npm run build && node scripts/r2-upload-smoke.mjs",
+    "validate:mt-env": "node scripts/validate-relay-mt-env.mjs --profile=relayapp",
+    "validate:mt-env:local": "node scripts/validate-relay-mt-env.mjs --profile=local"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1029.0",
     "@prisma/adapter-pg": "^7.7.0",
     "@prisma/client": "^7.7.0",
+    "@supabase/supabase-js": "^2.103.0",
     "archiver": "^7.0.1",
     "dotenv": "^17.3.1",
     "express": "^4.21.2",

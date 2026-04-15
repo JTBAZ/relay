@@ -56,11 +56,27 @@ If you are about to add URL dedupe inside `cookie-scraper.ts`’s `pushUrl`, or 
 
 ---
 
+## Sync batches — idempotent upsert (`applySyncBatchToSnapshot`)
+
+HTTP ingest (`POST /api/v1/ingest/batches`) applies Patreon-shaped **`SyncBatchInput`** to the canonical snapshot via **`applySyncBatchToSnapshot`** ([`src/ingest/apply-batch.ts`](../src/ingest/apply-batch.ts)). **Idempotency** is enforced with **SHA-256 keys** ([`src/ingest/idempotency.ts`](../src/ingest/idempotency.ts)) stored on `snapshot.ingest_idempotency`:
+
+| Key prefix | Distinguishes |
+|------------|----------------|
+| `ingest_campaign` | creator, `campaign_id`, `upstream_updated_at` |
+| `ingest_tier` | creator, `tier_id`, `upstream_updated_at` |
+| `ingest_post` | creator, `post_id`, `upstream_revision` |
+| `ingest_media_rev` | creator, `media_id`, `upstream_revision` (per media row) |
+
+Replaying the **same** campaign/tier/post revision **increments `idempotent_skips`** and **does not** append duplicate post versions, re-emit duplicate `post_published` for that revision, or re-count media rows already tied to that revision. New **`upstream_revision`** on a post (or new media revision) is required to append history. **MIG-32** — contract tests: [`tests/ingest-idempotency-apply-batch.test.ts`](../tests/ingest-idempotency-apply-batch.test.ts); HTTP slice: [`tests/workstream-b.ingest.test.ts`](../tests/workstream-b.ingest.test.ts).
+
+---
+
 ## Tests (read or run before changing ingest)
 
 | Area | Test file |
 |------|-----------|
 | URL normalize + URL merge | [`tests/patreon-media-url-normalize.test.ts`](../tests/patreon-media-url-normalize.test.ts) |
+| Sync batch idempotency (apply-batch) | [`tests/ingest-idempotency-apply-batch.test.ts`](../tests/ingest-idempotency-apply-batch.test.ts) |
 | `finalizePatreonPostMedia` / cover vs attachment | [`tests/patreon-ingest-cover-collapse.test.ts`](../tests/patreon-ingest-cover-collapse.test.ts) |
 | `shadow_cover` in gallery shaping | [`tests/shadow-cover-gallery.test.ts`](../tests/shadow-cover-gallery.test.ts) |
 | Cross-module integration slice | [`tests/library-refinement.integration.test.ts`](../tests/library-refinement.integration.test.ts) |

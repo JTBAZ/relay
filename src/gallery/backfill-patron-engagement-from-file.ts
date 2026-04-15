@@ -28,15 +28,15 @@ export async function backfillPatronEngagementFromFiles(args: {
     const targetKind = toPrismaKind(f.target_kind);
     await args.prisma.patronFavorite.upsert({
       where: {
-        patronUserId_creatorId_targetKind_targetId: {
-          patronUserId: f.user_id,
+        patronMembershipId_creatorId_targetKind_targetId: {
+          patronMembershipId: f.user_id,
           creatorId: f.creator_id,
           targetKind,
           targetId: f.target_id
         }
       },
       create: {
-        patronUserId: f.user_id,
+        patronMembershipId: f.user_id,
         creatorId: f.creator_id,
         targetKind,
         targetId: f.target_id,
@@ -53,7 +53,7 @@ export async function backfillPatronEngagementFromFiles(args: {
       where: { id: c.collection_id },
       create: {
         id: c.collection_id,
-        userId: c.user_id,
+        patronMembershipId: c.user_id,
         creatorId: c.creator_id,
         title: c.title,
         sortOrder: c.sort_order,
@@ -61,7 +61,7 @@ export async function backfillPatronEngagementFromFiles(args: {
         updatedAt: new Date(c.updated_at)
       },
       update: {
-        userId: c.user_id,
+        patronMembershipId: c.user_id,
         creatorId: c.creator_id,
         title: c.title,
         sortOrder: c.sort_order,
@@ -78,7 +78,7 @@ export async function backfillPatronEngagementFromFiles(args: {
       create: {
         id: e.entry_id,
         collectionId: e.collection_id,
-        userId: e.user_id,
+        patronMembershipId: e.user_id,
         creatorId: e.creator_id,
         postId: e.post_id,
         mediaId: e.media_id,
@@ -86,7 +86,7 @@ export async function backfillPatronEngagementFromFiles(args: {
       },
       update: {
         collectionId: e.collection_id,
-        userId: e.user_id,
+        patronMembershipId: e.user_id,
         creatorId: e.creator_id,
         postId: e.post_id,
         mediaId: e.media_id

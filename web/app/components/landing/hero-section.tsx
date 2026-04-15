@@ -5,6 +5,8 @@ import Link from "next/link";
 import { ArrowLeft, Zap, Users, ArrowRight } from "lucide-react";
 
 const STUB = {
+  /** Account + DB + Library first; Patreon OAuth is linked from /login or /patreon/connect after sign-in. */
+  creatorStart: "/login",
   creatorConnect: "/creator/connect",
   supporterSignIn: "/login"
 };
@@ -20,8 +22,10 @@ const PATHS = {
       "A real gallery fans can search, browse, and fall into — not a reverse-chronological feed.",
       "New audiences find you through Relay; existing fans stay closer."
     ],
-    ctaLabel: "Connect Patreon",
-    ctaHref: STUB.creatorConnect,
+    ctaLabel: "Create your studio",
+    ctaHref: STUB.creatorStart,
+    secondaryLabel: "Already signed in? Connect Patreon",
+    secondaryHref: STUB.creatorConnect,
     icon: <Zap size={16} />
   },
   supporter: {
@@ -36,6 +40,8 @@ const PATHS = {
     ],
     ctaLabel: "Connect Patreon to explore",
     ctaHref: STUB.supporterSignIn,
+    secondaryLabel: undefined,
+    secondaryHref: undefined,
     icon: <Users size={16} />
   }
 };
@@ -265,6 +271,21 @@ export function HeroSection() {
                   {path!.ctaLabel}
                   <ArrowRight size={15} />
                 </Link>
+                {path!.secondaryHref && path!.secondaryLabel ? (
+                  <Link
+                    href={path!.secondaryHref}
+                    className="text-center text-xs font-medium underline-offset-2 transition-colors"
+                    style={{ color: "#6B7280" }}
+                    onMouseEnter={(e) => {
+                      (e.currentTarget as HTMLElement).style.color = "#9CA3AF";
+                    }}
+                    onMouseLeave={(e) => {
+                      (e.currentTarget as HTMLElement).style.color = "#6B7280";
+                    }}
+                  >
+                    {path!.secondaryLabel}
+                  </Link>
+                ) : null}
               </div>
             </>
           )}

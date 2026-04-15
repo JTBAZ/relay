@@ -7,7 +7,7 @@ import type {
 
 function colRowToRecord(row: {
   id: string;
-  userId: string;
+  patronMembershipId: string;
   creatorId: string;
   title: string;
   sortOrder: number;
@@ -16,7 +16,7 @@ function colRowToRecord(row: {
 }): PatronCollectionRecord {
   return {
     collection_id: row.id,
-    user_id: row.userId,
+    user_id: row.patronMembershipId,
     creator_id: row.creatorId,
     title: row.title,
     sort_order: row.sortOrder,
@@ -28,7 +28,7 @@ function colRowToRecord(row: {
 function entryRowToRecord(row: {
   id: string;
   collectionId: string;
-  userId: string;
+  patronMembershipId: string;
   creatorId: string;
   postId: string;
   mediaId: string;
@@ -37,7 +37,7 @@ function entryRowToRecord(row: {
   return {
     entry_id: row.id,
     collection_id: row.collectionId,
-    user_id: row.userId,
+    user_id: row.patronMembershipId,
     creator_id: row.creatorId,
     post_id: row.postId,
     media_id: row.mediaId,
@@ -53,7 +53,7 @@ export class DbPatronCollectionsStore {
     userId: string
   ): Promise<Array<PatronCollectionRecord & { entries: PatronCollectionEntryRecord[] }>> {
     const cols = await this.prisma.patronSavedCollection.findMany({
-      where: { creatorId, userId },
+      where: { creatorId, patronMembershipId: userId },
       orderBy: [{ sortOrder: "asc" }, { title: "asc" }]
     });
     if (cols.length === 0) {
@@ -61,7 +61,7 @@ export class DbPatronCollectionsStore {
     }
     const ids = cols.map((c) => c.id);
     const entries = await this.prisma.patronSavedCollectionEntry.findMany({
-      where: { collectionId: { in: ids }, userId },
+      where: { collectionId: { in: ids }, patronMembershipId: userId },
       orderBy: { createdAt: "desc" }
     });
     const byCol = new Map<string, PatronCollectionEntryRecord[]>();
@@ -83,7 +83,7 @@ export class DbPatronCollectionsStore {
     title: string
   ): Promise<PatronCollectionRecord> {
     const maxAgg = await this.prisma.patronSavedCollection.aggregate({
-      where: { creatorId, userId },
+      where: { creatorId, patronMembershipId: userId },
       _max: { sortOrder: true }
     });
     const sortOrder = (maxAgg._max.sortOrder ?? -1) + 1;
@@ -91,7 +91,7 @@ export class DbPatronCollectionsStore {
     const row = await this.prisma.patronSavedCollection.create({
       data: {
         id: `pcol_${randomUUID()}`,
-        userId,
+        patronMembershipId: userId,
         creatorId,
         title: title.trim() || "Untitled",
         sortOrder,
@@ -109,7 +109,7 @@ export class DbPatronCollectionsStore {
     patch: { title?: string; sort_order?: number }
   ): Promise<PatronCollectionRecord | null> {
     const existing = await this.prisma.patronSavedCollection.findFirst({
-      where: { id: collectionId, creatorId, userId }
+      where: { id: collectionId, creatorId, patronMembershipId: userId }
     });
     if (!existing) {
       return null;
@@ -136,7 +136,7 @@ export class DbPatronCollectionsStore {
     collectionId: string
   ): Promise<boolean> {
     const res = await this.prisma.patronSavedCollection.deleteMany({
-      where: { id: collectionId, creatorId, userId }
+      where: { id: collectionId, creatorId, patronMembershipId: userId }
     });
     return res.count > 0;
   }
@@ -149,15 +149,15 @@ export class DbPatronCollectionsStore {
     mediaId: string
   ): Promise<PatronCollectionEntryRecord> {
     const col = await this.prisma.patronSavedCollection.findFirst({
-      where: { id: collectionId, creatorId, userId }
+      where: { id: collectionId, creatorId, patronMembershipId: userId }
     });
     if (!col) {
       throw new Error("Collection not found.");
     }
     const dup = await this.prisma.patronSavedCollectionEntry.findUnique({
       where: {
-        userId_creatorId_collectionId_mediaId: {
-          userId,
+        patronMembershipId_creatorId_collectionId_mediaId: {
+          patronMembershipId: userId,
           creatorId,
           collectionId,
           mediaId
@@ -172,7 +172,7 @@ export class DbPatronCollectionsStore {
       data: {
         id: `pent_${randomUUID()}`,
         collectionId,
-        userId,
+        patronMembershipId: userId,
         creatorId,
         postId,
         mediaId,
@@ -196,7 +196,7 @@ export class DbPatronCollectionsStore {
     const res = await this.prisma.patronSavedCollectionEntry.deleteMany({
       where: {
         collectionId,
-        userId,
+        patronMembershipId: userId,
         creatorId,
         postId,
         mediaId
@@ -204,7 +204,7 @@ export class DbPatronCollectionsStore {
     });
     if (res.count > 0) {
       await this.prisma.patronSavedCollection.updateMany({
-        where: { id: collectionId, userId, creatorId },
+        where: { id: collectionId, patronMembershipId: userId, creatorId },
         data: { updatedAt: new Date() }
       });
     }
@@ -216,7 +216,7 @@ export class DbPatronCollectionsStore {
     userId: string
   ): Promise<Set<string>> {
     const rows = await this.prisma.patronSavedCollectionEntry.findMany({
-      where: { creatorId, userId },
+      where: { creatorId, patronMembershipId: userId },
       select: { mediaId: true }
     });
     return new Set(rows.map((r) => r.mediaId));

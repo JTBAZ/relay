@@ -135,8 +135,10 @@ export default function PatreonSyncMenu({
     return () => document.removeEventListener("mousedown", onDoc);
   }, [open]);
 
-  /** Live ingest: respects sync watermark (no force_refresh_post_access). */
-  const runLiveScrape = async () => {
+  const runScrape = async (opts: {
+    force_refresh_post_access: boolean;
+    max_post_pages: number;
+  }) => {
     setActionError(null);
     setPosting(true);
     onSyncActivity?.("syncing");
@@ -145,8 +147,8 @@ export default function PatreonSyncMenu({
         creator_id: creatorId,
         campaign_id: campaignId?.trim() || undefined,
         dry_run: false,
-        force_refresh_post_access: false,
-        max_post_pages: 20
+        force_refresh_post_access: opts.force_refresh_post_access,
+        max_post_pages: opts.max_post_pages
       });
       setOpen(false);
       await onAfterScrape();
@@ -159,6 +161,17 @@ export default function PatreonSyncMenu({
       setPosting(false);
     }
   };
+
+  /** Incremental ingest: respects sync watermark. */
+  const runLiveScrape = () =>
+    void runScrape({ force_refresh_post_access: false, max_post_pages: 20 });
+
+  /**
+   * Full campaign pull: ignores watermark (same as `force_refresh_post_access` on the API).
+   * Use after empty DB / migration or to refresh tier access on older posts.
+   */
+  const runFullCampaignScrape = () =>
+    void runScrape({ force_refresh_post_access: true, max_post_pages: 100 });
 
   return (
     <div className="relative" ref={rootRef}>
@@ -380,7 +393,7 @@ export default function PatreonSyncMenu({
                   type="button"
                   disabled={Boolean(loadingState || stateError || posting)}
                   className="flex w-full items-center justify-center gap-2 rounded-md bg-[var(--lib-primary)] px-3 py-2.5 text-xs font-medium text-[var(--lib-primary-fg)] disabled:opacity-50"
-                  onClick={() => void runLiveScrape()}
+                  onClick={runLiveScrape}
                 >
                   {posting ? (
                     <Loader2 className="h-3.5 w-3.5 animate-spin shrink-0" aria-hidden />
@@ -390,6 +403,18 @@ export default function PatreonSyncMenu({
                 <p className="mt-2 text-[10px] leading-snug text-[var(--lib-fg-muted)]">
                   Pulls new posts from Patreon and applies them to your library. Respects your
                   saved sync watermark (only fetches posts newer than your last successful sync).
+                </p>
+                <button
+                  type="button"
+                  disabled={Boolean(loadingState || stateError || posting)}
+                  className="mt-2 flex w-full items-center justify-center gap-2 rounded-md border border-[var(--lib-border)] bg-[var(--lib-muted)]/30 px-3 py-2 text-xs font-medium text-[var(--lib-fg)] transition-colors hover:border-[var(--lib-primary)]/45 disabled:opacity-50"
+                  onClick={runFullCampaignScrape}
+                >
+                  Full re-scrape (whole campaign)
+                </button>
+                <p className="mt-1.5 text-[10px] leading-snug text-[var(--lib-fg-muted)]">
+                  Ignores the watermark and walks up to 100 pages of posts (API cap), then
+                  re-exports media. Use for a fresh library or when older posts are missing.
                 </p>
               </div>
           {actionError && (

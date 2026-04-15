@@ -1,15 +1,16 @@
 "use client";
 
-import { useState } from "react";
-import {
-  Sparkles,
-  Zap,
-  Youtube,
-  Twitter,
-  Instagram,
-  Music2
-} from "lucide-react";
+import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import { Loader2, Sparkles, Zap } from "lucide-react";
 import { cn } from "@/app/lib/cn";
+import { StudioSupabaseSignInPanel } from "@/app/components/studio/StudioSupabaseSignInPanel";
+import {
+  RELAY_CREATOR_ID_STORAGE_KEY,
+  buildPatreonCreatorAuthorizeUrl,
+  postCreatorWorkspace,
+  postPatreonCreatorPrepare,
+  RelayApiError,
+} from "@/lib/relay-api";
 
 export function StepWelcome() {
   return (
@@ -36,6 +37,18 @@ export function StepWelcome() {
           )
         )}
       </ul>
+    </div>
+  );
+}
+
+/** MT-036: Welcome copy plus Supabase sign-in → Relay session → workspace. */
+export function StepWelcomeWithStudio({ onSignedIn }: { onSignedIn?: () => void }) {
+  return (
+    <div className="flex flex-col gap-8">
+      <StepWelcome />
+      <Suspense fallback={<p className="text-center text-xs text-[var(--relay-fg-muted)]">Loading sign-in…</p>}>
+        <StudioSupabaseSignInPanel variant="onboarding" onSuccess={onSignedIn} />
+      </Suspense>
     </div>
   );
 }
@@ -117,97 +130,122 @@ export function StepProfile() {
   );
 }
 
-export function StepConnect() {
-  const [connected, setConnected] = useState<string[]>([]);
+const PatreonLogoIcon = () => (
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
+    <circle cx="14.5" cy="9.5" r="6.5" />
+    <rect x="3" y="3" width="3.5" height="18" rx="1" />
+  </svg>
+);
 
-  const platforms = [
-    { id: "youtube", label: "YouTube", icon: Youtube, hint: "Import subscriber count" },
-    { id: "twitter", label: "X / Twitter", icon: Twitter, hint: "Sync your audience" },
-    { id: "instagram", label: "Instagram", icon: Instagram, hint: "Pull follower data" },
-    { id: "tiktok", label: "TikTok", icon: Music2, hint: "Connect your reach" }
-  ];
+export function StepPatreonConnect() {
+  const [origin, setOrigin] = useState("");
+  const [creatorId, setCreatorId] = useState("");
+  const [hasSession, setHasSession] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const toggle = (id: string) =>
-    setConnected((prev) => (prev.includes(id) ? prev.filter((p) => p !== id) : [...prev, id]));
+  useEffect(() => {
+    setOrigin(window.location.origin);
+    setHasSession(Boolean(window.localStorage.getItem("relay_session_token")?.trim()));
+    setCreatorId(window.localStorage.getItem(RELAY_CREATOR_ID_STORAGE_KEY)?.trim() ?? "");
+  }, []);
+
+  const clientId = (
+    process.env.NEXT_PUBLIC_PATREON_CLIENT_ID ||
+    process.env.PATREON_CLIENT_ID ||
+    ""
+  ).trim();
+
+  const redirectUri = useMemo(() => {
+    const fromEnv = process.env.NEXT_PUBLIC_PATREON_REDIRECT_URI?.trim();
+    return fromEnv || (origin ? `${origin}/patreon/callback` : "");
+  }, [origin]);
+
+  const handleConnect = useCallback(async () => {
+    if (!clientId || !redirectUri) {
+      setError("Patreon Client ID or redirect URI is missing — check env config.");
+      return;
+    }
+    setError(null);
+    setBusy(true);
+
+    // Ensure workspace exists first
+    let cid = creatorId;
+    if (!cid || !hasSession) {
+      try {
+        const ws = await postCreatorWorkspace();
+        cid = ws.relay_creator_id;
+        window.localStorage.setItem(RELAY_CREATOR_ID_STORAGE_KEY, cid);
+        setCreatorId(cid);
+        setHasSession(true);
+      } catch (e) {
+        const msg = e instanceof RelayApiError ? e.message : e instanceof Error ? e.message : String(e);
+        setError(`Could not create workspace: ${msg}`);
+        setBusy(false);
+        return;
+      }
+    }
+
+    try {
+      const prep = await postPatreonCreatorPrepare(cid);
+      window.location.href = buildPatreonCreatorAuthorizeUrl(clientId, redirectUri, prep.state);
+    } catch (e) {
+      const msg = e instanceof RelayApiError ? e.message : e instanceof Error ? e.message : String(e);
+      setError(msg);
+      setBusy(false);
+    }
+  }, [clientId, redirectUri, creatorId, hasSession]);
+
+  const missingClientId = !clientId;
 
   return (
     <div className="flex flex-col gap-6">
       <div className="space-y-1">
         <h2 className="text-xl font-semibold tracking-tight text-[var(--relay-fg)]">
-          Connect your platforms
+          Connect Patreon
         </h2>
         <p className="text-sm leading-relaxed text-[var(--relay-fg-muted)]">
-          Linking platforms lets Relay surface your audience data in one place. All optional.
+          Link your Patreon account to sync your posts, patron list, and tiers into Relay.
         </p>
       </div>
 
-      <div className="space-y-2">
-        {platforms.map(({ id, label, icon: Icon, hint }) => {
-          const isConnected = connected.includes(id);
-          return (
-            <button
-              key={id}
-              type="button"
-              onClick={() => toggle(id)}
-              className={cn(
-                "flex w-full items-center gap-4 rounded-lg border px-4 py-3.5 text-left transition-all duration-150",
-                isConnected
-                  ? "border-[var(--relay-green-800)] bg-[var(--relay-green-950)]"
-                  : "border-[var(--relay-border)] bg-[var(--relay-surface-1)] hover:border-[var(--relay-border)]"
-              )}
-            >
-              <div
-                className={cn(
-                  "flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg",
-                  isConnected ? "bg-[var(--relay-green-800)]" : "bg-[var(--relay-surface-2)]"
-                )}
-              >
-                <Icon
-                  className={cn(
-                    "h-4 w-4",
-                    isConnected ? "text-[var(--relay-green-400)]" : "text-[var(--relay-fg-muted)]"
-                  )}
-                  strokeWidth={1.5}
-                />
-              </div>
-              <div className="min-w-0 flex-1">
-                <p
-                  className={cn(
-                    "text-sm font-medium",
-                    isConnected ? "text-[var(--relay-fg)]" : "text-[var(--relay-fg-muted)]"
-                  )}
-                >
-                  {label}
-                </p>
-                <p className="mt-0.5 text-xs text-[var(--relay-fg-muted)]">{hint}</p>
-              </div>
-              <div
-                className={cn(
-                  "flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full border-2 transition-all",
-                  isConnected
-                    ? "border-[var(--relay-green-600)] bg-[var(--relay-green-600)]"
-                    : "border-[var(--relay-border)]"
-                )}
-              >
-                {isConnected && (
-                  <svg className="h-2.5 w-2.5" viewBox="0 0 10 8" fill="none" aria-hidden>
-                    <path
-                      d="M1 4l3 3 5-6"
-                      stroke="#F9FAFB"
-                      strokeWidth="1.5"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    />
-                  </svg>
-                )}
-              </div>
-            </button>
-          );
-        })}
-      </div>
+      {missingClientId ? (
+        <p className="rounded-md border border-amber-900/50 bg-amber-950/40 px-3 py-2 text-xs text-amber-100">
+          Set <code className="rounded bg-black/30 px-1">NEXT_PUBLIC_PATREON_CLIENT_ID</code> in{" "}
+          <code className="rounded bg-black/30 px-1">web/.env.local</code> to enable Patreon OAuth.
+        </p>
+      ) : (
+        <button
+          type="button"
+          disabled={busy || !origin}
+          onClick={() => void handleConnect()}
+          className="flex w-full items-center justify-center gap-3 rounded-lg border border-[var(--relay-border)] bg-[var(--relay-surface-1)] px-4 py-4 text-sm font-medium text-[var(--relay-fg)] transition-all duration-150 hover:border-[var(--relay-green-600)] hover:bg-[var(--relay-green-950)] disabled:opacity-50"
+        >
+          {busy ? (
+            <>
+              <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+              Redirecting to Patreon…
+            </>
+          ) : (
+            <>
+              <span className="text-[#f96854]">
+                <PatreonLogoIcon />
+              </span>
+              Connect Patreon account
+            </>
+          )}
+        </button>
+      )}
+
+      {error && (
+        <p className="rounded-md border border-red-900/50 bg-red-950/40 px-3 py-2 text-xs text-red-200">
+          {error}
+        </p>
+      )}
 
       <p className="text-xs text-[var(--relay-fg-muted)]">
-        You can connect more platforms at any time from your settings.
+        You&apos;ll be redirected to Patreon to authorize access, then brought back here.
+        You can also skip this step and connect later from your dashboard.
       </p>
     </div>
   );

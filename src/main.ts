@@ -54,7 +54,8 @@ if (shouldStartPatreonIncrementalAutosync()) {
     tokenStore,
     patreonSyncService,
     syncHealthStore: patreonSyncHealthStore,
-    campaignCreatorIndex: patreonCampaignCreatorIndex
+    campaignCreatorIndex: patreonCampaignCreatorIndex,
+    prisma
   });
 }
 

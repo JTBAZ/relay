@@ -45,6 +45,8 @@ export type MediaVersionRow = {
   upstream_revision: string;
   mime_type?: string;
   upstream_url?: string;
+  /** Materialized blob key: export-relative path or future R2 object key (MIG-31). */
+  storage_key?: string;
   role?: string;
   ingested_at: string;
 };

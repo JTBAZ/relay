@@ -34,18 +34,18 @@ import type { MediaTypeValue } from "./components/MediaTypeMultiSelect";
 import { freePublicTierIdsFromFacets } from "@/lib/tier-access";
 import { readGalleryVideoLoop, writeGalleryVideoLoop } from "@/lib/gallery-video-loop";
 import { useDebouncedValue } from "@/lib/use-debounced-value";
+import { useStudioSession } from "@/lib/studio-session-context";
 
 /** Align with visitor gallery — avoids one `/gallery/items` request per keystroke. */
 const GALLERY_SEARCH_DEBOUNCE_MS = 320;
 
-const defaultCreatorId = process.env.NEXT_PUBLIC_RELAY_CREATOR_ID?.trim() || "creator_1";
 const patreonCampaignIdEnv = process.env.NEXT_PUBLIC_RELAY_PATREON_CAMPAIGN_ID?.trim() || undefined;
 
 type ViewMode = "dense" | "normal" | "list";
 type VisibilityState = { hidden: boolean; mature: boolean };
 
 export default function GalleryView() {
-  const creatorId = defaultCreatorId;
+  const { creatorId } = useStudioSession();
   const [q, setQ] = useState("");
   const debouncedQ = useDebouncedValue(q, GALLERY_SEARCH_DEBOUNCE_MS);
   const [tagPick, setTagPick] = useState<string[]>([]);

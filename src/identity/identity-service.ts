@@ -12,6 +12,58 @@ export class IdentityService {
     this.store = store;
   }
 
+  /** `DbIdentityStore` implements account-first email/password (MT-007). */
+  public supportsAccountScopedEmailAuth(): boolean {
+    return typeof this.store.registerAccountEmailPassword === "function";
+  }
+
+  /**
+   * Option B — create global `Account` + platform `TenantMembership` without a fan `creator_id`.
+   * Uses reserved platform tenant (`getPlatformRelayCreatorId` / `RELAY_PLATFORM_CREATOR_ID`).
+   */
+  public async registerAccount(email: string, password: string): Promise<UserAccount> {
+    if (!this.store.registerAccountEmailPassword) {
+      throw new Error(
+        "Account-scoped email/password auth requires RELAY_DB_STORE_IDENTITY with PostgreSQL."
+      );
+    }
+    return this.store.registerAccountEmailPassword(email, password);
+  }
+
+  public async loginAccount(email: string, password: string): Promise<SessionToken> {
+    if (!this.store.loginAccountEmailPassword) {
+      throw new Error(
+        "Account-scoped email/password auth requires RELAY_DB_STORE_IDENTITY with PostgreSQL."
+      );
+    }
+    const user = await this.store.loginAccountEmailPassword(email, password);
+    return this.createSessionForUser(user);
+  }
+
+  /** Opaque Bearer session for a verified `UserAccount` (e.g. immediately after `registerAccount`). */
+  public async issueSessionForUser(user: UserAccount): Promise<SessionToken> {
+    return this.createSessionForUser(user);
+  }
+
+  /** True when `DbIdentityStore.ensurePlatformPatronUserForAccount` exists (PostgreSQL identity). */
+  public supportsRelaySessionBridge(): boolean {
+    const s = this.store as { ensurePlatformPatronUserForAccount?: (id: string) => Promise<UserAccount> };
+    return typeof s.ensurePlatformPatronUserForAccount === "function";
+  }
+
+  /**
+   * MT-033: Opaque Relay patron session for a Prisma `Account` id (after Supabase JWT sync).
+   * Same token contract as `POST /api/v1/auth/login`.
+   */
+  public async issueRelaySessionForAccount(accountId: string): Promise<SessionToken> {
+    const s = this.store as { ensurePlatformPatronUserForAccount?: (id: string) => Promise<UserAccount> };
+    if (typeof s.ensurePlatformPatronUserForAccount !== "function") {
+      throw new Error("Relay session bridge requires RELAY_DB_STORE_IDENTITY with PostgreSQL.");
+    }
+    const user = await s.ensurePlatformPatronUserForAccount(accountId);
+    return this.issueSessionForUser(user);
+  }
+
   public async register(
     creatorId: string,
     email: string,
@@ -96,6 +148,7 @@ export class IdentityService {
   /**
    * After Patreon patron OAuth: upsert user + `tier_ids` from identity, then session.
    * Matches `registerPatreonFallback` + session issuance in one step.
+   * With **`DbIdentityStore`**, also materializes **`PatronEntitlementSnapshot`** (MIG-40).
    */
   public async completePatreonPatronOAuth(
     creatorId: string,

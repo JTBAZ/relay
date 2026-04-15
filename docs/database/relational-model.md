@@ -1,5 +1,7 @@
 # Relational model — Relay PostgreSQL target
 
+**Multi-tenant cloud target (Supabase Auth, entitlements, R2):** [`../architecture/multi-tenant-cloud-runtime.md`](../architecture/multi-tenant-cloud-runtime.md) · identity Option B: [`../architecture/multi-tenant-option-b.md`](../architecture/multi-tenant-option-b.md).
+
 ## Principles
 
 1. **Single content truth:** Canonical ingest + artist overrides merge at read time (`docs/patreon-ingest-canonical.md`, `docs/relay-artist-metadata.md`). The database must not allow patron-facing queries to fork a second inventory; they join **canonical + overrides + entitlements** per `docs/pattern-library.md` (viewer parity).

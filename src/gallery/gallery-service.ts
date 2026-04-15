@@ -58,10 +58,11 @@ export class GalleryService {
     }
     const result = listGalleryItems(all, params);
     if (params.visitor_catalog) {
-      const tierRules = evaluateTierRules(snapshot.tiers[params.creator_id] ?? {});
+      const tierMap = snapshot.tiers[params.creator_id] ?? {};
+      const tierRules = evaluateTierRules(tierMap);
       const session = params.patron_session ?? null;
       result.items = result.items.map((item) =>
-        redactGalleryItemExportIfLocked(item, params.creator_id, session, tierRules)
+        redactGalleryItemExportIfLocked(item, params.creator_id, session, tierRules, tierMap)
       );
     }
     return result;
@@ -146,10 +147,11 @@ export class GalleryService {
       }
     }
     if (options?.visitor_catalog) {
-      const tierRules = evaluateTierRules(snapshot.tiers[creatorId] ?? {});
+      const tierMap = snapshot.tiers[creatorId] ?? {};
+      const tierRules = evaluateTierRules(tierMap);
       const session = options.patron_session ?? null;
       media = media.map((item) =>
-        redactGalleryItemExportIfLocked(item, creatorId, session, tierRules)
+        redactGalleryItemExportIfLocked(item, creatorId, session, tierRules, tierMap)
       );
     }
     const tierMap = snapshot.tiers[creatorId] ?? {};

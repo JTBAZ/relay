@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { RelayLogo } from "@/app/components/auth/relay-logo";
 import { TrustMarks } from "@/app/components/auth/trust-marks";
-import { PatreonPanel } from "@/app/components/auth/patreon-panel";
+import { PatreonOAuthLinks } from "@/app/components/auth/patreon-oauth-links";
 import { EmailPanel } from "@/app/components/auth/email-panel";
 
 type AuthTab = "patreon" | "email";
@@ -37,7 +37,7 @@ export function AuthHub() {
               Access Relay
             </h1>
             <p className="text-xs" style={{ color: "#9CA3AF" }}>
-              Connect your Patreon or sign in with email.
+              Patreon OAuth links below; studio sign-in uses email on the dedicated page.
             </p>
           </div>
 
@@ -85,7 +85,7 @@ export function AuthHub() {
           </div>
 
           <div id="panel-patreon" role="tabpanel" aria-label="Patreon sign-in" hidden={tab !== "patreon"}>
-            {tab === "patreon" && <PatreonPanel />}
+            {tab === "patreon" && <PatreonOAuthLinks />}
           </div>
           <div id="panel-email" role="tabpanel" aria-label="Email sign-in" hidden={tab !== "email"}>
             {tab === "email" && <EmailPanel />}

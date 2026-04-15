@@ -18,6 +18,8 @@ export type IngestMediaItem = {
   mime_type?: string;
   upstream_url?: string;
   upstream_revision: string;
+  /** Optional object-storage key when ingest supplies it (e.g. future R2 backfill). */
+  storage_key?: string;
   role?: string;
 };
 

@@ -2,14 +2,15 @@ import { evaluateTierRules, resolvePostAccessLevel } from "../clone/tier-rules.j
 import type { ClonePostEntry, CloneTierRule } from "../clone/types.js";
 import { checkPostAccess } from "../identity/access-guard.js";
 import type { SessionToken } from "../identity/types.js";
-import type { CanonicalSnapshot } from "../ingest/canonical-store.js";
+import type { CanonicalSnapshot, TierRow } from "../ingest/canonical-store.js";
 import type { GalleryItem } from "./types.js";
 
 export function patronMayViewGalleryExport(
   item: GalleryItem,
   creatorId: string,
   session: SessionToken | null,
-  tierRules: CloneTierRule[]
+  tierRules: CloneTierRule[],
+  tierMap: Record<string, TierRow>
 ): boolean {
   const access = resolvePostAccessLevel(item.tier_ids, tierRules);
   const post: ClonePostEntry = {
@@ -21,16 +22,17 @@ export function patronMayViewGalleryExport(
     access,
     media: []
   };
-  return checkPostAccess(post, session, creatorId).allowed;
+  return checkPostAccess(post, session, creatorId, tierMap).allowed;
 }
 
 export function redactGalleryItemExportIfLocked(
   item: GalleryItem,
   creatorId: string,
   session: SessionToken | null,
-  tierRules: CloneTierRule[]
+  tierRules: CloneTierRule[],
+  tierMap: Record<string, TierRow>
 ): GalleryItem {
-  if (patronMayViewGalleryExport(item, creatorId, session, tierRules)) {
+  if (patronMayViewGalleryExport(item, creatorId, session, tierRules, tierMap)) {
     return item;
   }
   return {
@@ -86,6 +88,6 @@ export function patronMayFetchMediaExport(args: {
     access,
     media: []
   };
-  const check = checkPostAccess(clonePost, session, creatorId);
+  const check = checkPostAccess(clonePost, session, creatorId, tiers);
   return check.allowed ? { allowed: true } : { allowed: false, reason: check.reason };
 }

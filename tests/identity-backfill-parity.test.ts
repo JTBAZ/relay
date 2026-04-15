@@ -38,11 +38,14 @@ describe("backfillIdentityFromFile", () => {
     await writeFile(filePath, JSON.stringify(root, null, 2), "utf8");
 
     const tenantUpsert = vi.fn().mockResolvedValue({ id: "tenant1" });
-    const userUpsert = vi.fn().mockResolvedValue({});
+    const accountFindFirst = vi.fn().mockResolvedValue(null);
+    const accountCreate = vi.fn().mockResolvedValue({ id: "acc1" });
+    const tenantMembershipUpsert = vi.fn().mockResolvedValue({});
     const sessionUpsert = vi.fn().mockResolvedValue({});
     const tx = {
       tenant: { upsert: tenantUpsert },
-      user: { upsert: userUpsert },
+      account: { findFirst: accountFindFirst, create: accountCreate },
+      tenantMembership: { upsert: tenantMembershipUpsert },
       session: { upsert: sessionUpsert }
     };
     const prisma = {
@@ -55,7 +58,9 @@ describe("backfillIdentityFromFile", () => {
     expect(result.usersUpserted).toBe(1);
     expect(result.sessionsUpserted).toBe(1);
     expect(tenantUpsert).toHaveBeenCalled();
-    expect(userUpsert).toHaveBeenCalled();
+    expect(accountFindFirst).toHaveBeenCalled();
+    expect(accountCreate).toHaveBeenCalled();
+    expect(tenantMembershipUpsert).toHaveBeenCalled();
     expect(sessionUpsert).toHaveBeenCalled();
   });
 });
@@ -87,7 +92,9 @@ describe("RELAY_DB_STORE_IDENTITY wiring", () => {
 
   it("createApp builds when relay_db_store_identity and prisma are set", async () => {
     const dir = await mkdtemp(join(tmpdir(), "relay-id-app-"));
-    const fakePrisma = { user: { findMany: async () => [] } } as unknown as PrismaClient;
+    const fakePrisma = {
+      tenantMembership: { findMany: async () => [] }
+    } as unknown as PrismaClient;
     const { app } = createApp({
       patreon_client_id: "c",
       patreon_client_secret: "s",

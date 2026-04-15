@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import { DM_Sans, Fraunces } from "next/font/google";
 import "./globals.css";
 import ConditionalAppNav from "./components/ConditionalAppNav";
+import { StudioSessionRoot } from "./components/studio/studio-session-root";
+import { SupabaseHashRedirect } from "./components/SupabaseHashRedirect";
 
 const display = Fraunces({
   subsets: ["latin"],
@@ -28,8 +30,11 @@ export default function RootLayout({
       <body
         className={`${display.variable} ${body.variable} flex min-h-dvh flex-col font-[family-name:var(--font-body)] antialiased`}
       >
-        <ConditionalAppNav />
-        <div className="flex min-h-0 flex-1 flex-col">{children}</div>
+        <StudioSessionRoot>
+          <SupabaseHashRedirect />
+          <ConditionalAppNav />
+          <div className="flex min-h-0 flex-1 flex-col">{children}</div>
+        </StudioSessionRoot>
       </body>
     </html>
   );

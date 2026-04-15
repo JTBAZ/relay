@@ -2,6 +2,11 @@ import express, { Request, Response } from "express";
 import { randomUUID } from "node:crypto";
 import { dirname, join } from "node:path";
 import { PatreonAuthService } from "./auth/auth-service.js";
+import {
+  getPatreonOAuthStateSecret,
+  signCreatorPatreonOAuthState,
+  verifyCreatorPatreonOAuthState
+} from "./auth/patreon-creator-oauth-state.js";
 import { FilePatreonCookieStore } from "./auth/cookie-store.js";
 import { PatreonClient } from "./auth/patreon-client.js";
 import { DbPatreonTokenStore } from "./auth/token-store-db.js";
@@ -13,6 +18,8 @@ import { FileCanonicalStore } from "./ingest/canonical-store.js";
 import { DbCanonicalStore } from "./ingest/canonical-store-db.js";
 import { DbDeadLetterQueue } from "./ingest/dlq-db.js";
 import { FileDeadLetterQueue, type DeadLetterQueue } from "./ingest/dlq.js";
+import { recordSupabaseSyncOutcome } from "./health/auth-route-metrics.js";
+import { evaluatePlatformOperationsHealth } from "./health/platform-operations-metrics.js";
 import { evaluatePart1aGates } from "./auth/part1a-gate-metrics.js";
 import { evaluateIngestHealthGates } from "./ingest/ingest-health-metrics.js";
 import { IngestService } from "./ingest/ingest-service.js";
@@ -54,6 +61,8 @@ import {
   findPostIdForExportedMedia,
   patronMayFetchMediaExport
 } from "./gallery/patron-media-access.js";
+import { buildPatronEntitlementHealthPayload } from "./gallery/entitlement-degraded.js";
+import { evaluatePostPermission } from "./gallery/post-permission.js";
 import { resolveGalleryItemVisibility } from "./gallery/query.js";
 import { buildVisitorPreviewImage } from "./export/visitor-preview.js";
 import { parseGalleryLimit, queryStringList } from "./gallery/parse-query.js";
@@ -129,12 +138,32 @@ import {
   recordPreviewDeliverySuccess,
   recordVerifyResult
 } from "./export/export-retrieval-metrics.js";
+import { provisionCreatorWorkspace } from "./creator/provision-creator-workspace.js";
+import {
+  normalizePublicSlugCandidate,
+  validatePublicSlugFormat
+} from "./creator/public-slug.js";
 import { CloneService } from "./clone/clone-service.js";
 import { DbCloneSiteStore } from "./clone/clone-store-db.js";
 import { FileCloneSiteStore } from "./clone/clone-store.js";
+import {
+  assertCreatorRelayMutationAllowed,
+  relayCreatorSecretBypassesOAuthBind
+} from "./identity/creator-route-guard.js";
 import { IdentityService } from "./identity/identity-service.js";
 import { DbIdentityStore } from "./identity/identity-store-db.js";
 import { FileIdentityStore } from "./identity/identity-store.js";
+import { accountOwnsRelayCreatorId } from "./identity/account-creator-ownership.js";
+import {
+  getAccountIdForSession,
+  loadPatronAuthContext,
+  patronMayAccessCreator
+} from "./identity/patron-auth-context.js";
+import {
+  ensurePatronMembershipForSupabaseAccount,
+  upsertAccountForSupabaseUser
+} from "./identity/supabase-account.js";
+import { getSupabaseUserFromAccessToken } from "./lib/supabase-auth.js";
 import type { PrismaClient } from "@prisma/client";
 import { checkPostAccess, filterAccessiblePosts } from "./identity/access-guard.js";
 import { PaymentService } from "./payments/payment-service.js";
@@ -151,6 +180,8 @@ import {
 import { DbPatreonSyncHealthStore } from "./patreon/patreon-sync-health-store-db.js";
 import { PatreonSyncService } from "./patreon/patreon-sync-service.js";
 import { classifySyncError } from "./patreon/sync-error-copy.js";
+import { resolvePatreonWebhookCampaignOwnership } from "./patreon/campaign-tenant-resolve.js";
+import { syncCreatorProfilePatreonCampaignFromOAuthToken } from "./patreon/creator-oauth-campaign-sync.js";
 import { PatreonCampaignCreatorIndex } from "./patreon/patreon-campaign-creator-index.js";
 import { PatreonMemberSyncCoordinator } from "./patreon/patreon-member-sync-coordinator.js";
 import {
@@ -379,6 +410,13 @@ function validateRequiredFields(
   return missing;
 }
 
+function bearerAccessTokenFromRequest(req: Request): string | undefined {
+  const raw = req.header("authorization");
+  if (typeof raw !== "string") return undefined;
+  const m = /^Bearer\s+(\S+)/i.exec(raw.trim());
+  return m?.[1];
+}
+
 function parseQueryTruthy(value: unknown): boolean {
   if (value === true) {
     return true;
@@ -601,7 +639,13 @@ export function createApp(config: AppConfig): CreateAppResult {
     exportIndex,
     exportStorageRoot,
     config.fetch_impl,
-    exportFetchRetryPolicy
+    exportFetchRetryPolicy,
+    undefined,
+    async (creatorId: string) => {
+      const cred = await tokenStore.getByCreatorId(creatorId);
+      const t = cred?.access_token?.trim();
+      return t ? t : null;
+    }
   );
   const galleryOverridesStore = useDbGalleryOverridesStore(config)
     ? new DbGalleryOverridesStore(config.prisma!)
@@ -801,17 +845,22 @@ export function createApp(config: AppConfig): CreateAppResult {
       }
       const eventHeader = req.header("x-patreon-event");
       const campaignFromPayload = extractCampaignIdFromPatreonWebhookPayload(parsed);
-      if (campaignFromPayload) {
-        const mappedCreator = await patreonCampaignCreatorIndex.getCreatorId(campaignFromPayload);
-        if (mappedCreator && mappedCreator !== creatorId.trim()) {
-          return res.status(409).json(
-            errorEnvelope(
-              "WEBHOOK_CAMPAIGN_MISMATCH",
-              "Campaign in webhook payload does not match this delivery URL's creator.",
-              traceId
-            )
-          );
-        }
+      const ownership = await resolvePatreonWebhookCampaignOwnership({
+        creatorIdFromRoute: creatorId,
+        campaignNumericId: campaignFromPayload,
+        fileIndexGetCreatorId: (id) => patreonCampaignCreatorIndex.getCreatorId(id),
+        prisma: config.prisma
+      });
+      if (!ownership.ok) {
+        return res.status(409).json(
+          errorEnvelope(
+            "WEBHOOK_CAMPAIGN_MISMATCH",
+            ownership.reason === "creator_profile"
+              ? "Campaign in webhook payload does not match CreatorProfile ownership for this delivery URL."
+              : "Campaign in webhook payload does not match this delivery URL's creator.",
+            traceId
+          )
+        );
       }
       try {
         await dispatchVerifiedPatreonPlatformPayload({
@@ -864,6 +913,7 @@ export function createApp(config: AppConfig): CreateAppResult {
     <li><a href="/api/v1/health/part1a">GET /api/v1/health/part1a</a> — Part 1 A OAuth / token refresh gates</li>
     <li><a href="/api/v1/health/analytics">GET /api/v1/health/analytics</a> — insight job counters (Workstream E)</li>
     <li><a href="/api/v1/health/export">GET /api/v1/health/export</a> — export retrieval + integrity metrics (Workstream C)</li>
+    <li><a href="/api/v1/health/platform">GET /api/v1/health/platform</a> — DB, OAuth, patron snapshots, Supabase sync counters (MIG-51)</li>
   </ul>
   <p>The <strong>gallery / Patreon connect UI</strong> is the Next.js app: run <code>npm run dev</code> in the <code>web/</code> folder (default <code>http://localhost:3000</code>).</p>
   <p><code>NEXT_PUBLIC_RELAY_API_URL</code> in <code>web/.env.local</code> should point here (e.g. <code>http://127.0.0.1:8787</code>) with <strong>no trailing slash</strong>.</p>
@@ -959,6 +1009,101 @@ export function createApp(config: AppConfig): CreateAppResult {
     );
   });
 
+  /** MIG-51 — Operations scrape target: DB connections, OAuth health, patron snapshot age, auth route counters. */
+  app.get("/api/v1/health/platform", async (req: Request, res: Response) => {
+    const traceId = traceIdFrom(req);
+    try {
+      const payload = await evaluatePlatformOperationsHealth(config.prisma);
+      return res.status(200).json(successEnvelope(payload, traceId));
+    } catch (err) {
+      return res.status(500).json(
+        errorEnvelope(
+          "INTERNAL_ERROR",
+          err instanceof Error ? err.message : String(err),
+          traceId
+        )
+      );
+    }
+  });
+
+  /**
+   * MT-011 / MT-034 — Issue signed Patreon OAuth `state` for `creator_id` bound to the Bearer session’s `Account`.
+   * MT-034: `creator_id` must equal `Account.primaryRelayCreatorId` (provision via `POST /api/v1/creator/workspace`).
+   * Client passes `state` to Patreon authorize and back to `POST /api/v1/auth/patreon/exchange` when
+   * `RELAY_ENFORCE_CREATOR_OAUTH_BIND=1`.
+   */
+  app.post("/api/v1/auth/patreon/creator/prepare", async (req: Request, res: Response) => {
+    const traceId = traceIdFrom(req);
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const details = validateRequiredFields(body, ["creator_id"]);
+    if (details.length > 0) {
+      return res
+        .status(400)
+        .json(errorEnvelope("VALIDATION_ERROR", "Invalid request payload.", traceId, details));
+    }
+    if (!getPatreonOAuthStateSecret()) {
+      return res.status(503).json(
+        errorEnvelope(
+          "SERVICE_UNAVAILABLE",
+          "RELAY_PATREON_OAUTH_STATE_SECRET must be set (min 16 characters) to issue OAuth state.",
+          traceId
+        )
+      );
+    }
+    if (!config.prisma) {
+      return res.status(503).json(
+        errorEnvelope(
+          "SERVICE_UNAVAILABLE",
+          "Database required to bind OAuth state to an account.",
+          traceId
+        )
+      );
+    }
+    const session = await requirePatronBearerSession(req, res, traceId);
+    if (!session) {
+      return;
+    }
+    const accountId = await getAccountIdForSession(config.prisma, session);
+    if (!accountId) {
+      return res
+        .status(403)
+        .json(errorEnvelope("FORBIDDEN", "Session is not linked to an account.", traceId));
+    }
+    const creatorId = String(body.creator_id).trim();
+    const owns = await accountOwnsRelayCreatorId(config.prisma, accountId, creatorId);
+    if (!owns) {
+      return res.status(403).json(
+        errorEnvelope(
+          "FORBIDDEN",
+          "creator_id does not match this account's studio. Call POST /api/v1/creator/workspace first.",
+          traceId,
+          [{ field: "creator_id", issue: "not_owned" }]
+        )
+      );
+    }
+    try {
+      const { state, expiresAtIso } = signCreatorPatreonOAuthState({ accountId, creatorId });
+      return res.status(200).json(
+        successEnvelope(
+          {
+            state,
+            creator_id: creatorId,
+            expires_at: expiresAtIso
+          },
+          traceId
+        )
+      );
+    } catch (e) {
+      return res.status(503).json(
+        errorEnvelope(
+          "SERVICE_UNAVAILABLE",
+          e instanceof Error ? e.message : String(e),
+          traceId
+        )
+      );
+    }
+  });
+
   app.post("/api/v1/auth/patreon/exchange", async (req: Request, res: Response) => {
     const traceId = traceIdFrom(req);
     const body = (req.body ?? {}) as Record<string, unknown>;
@@ -969,16 +1114,93 @@ export function createApp(config: AppConfig): CreateAppResult {
         .json(errorEnvelope("VALIDATION_ERROR", "Invalid request payload.", traceId, details));
     }
 
+    const creatorId = String(body.creator_id).trim();
+
+    if (relayEnvTruthy(process.env.RELAY_ENFORCE_CREATOR_OAUTH_BIND)) {
+      if (!relayCreatorSecretBypassesOAuthBind(req)) {
+        if (!config.prisma) {
+          return res.status(503).json(
+            errorEnvelope(
+              "SERVICE_UNAVAILABLE",
+              "Database required when RELAY_ENFORCE_CREATOR_OAUTH_BIND is enabled.",
+              traceId
+            )
+          );
+        }
+        const session = await requirePatronBearerSession(req, res, traceId);
+        if (!session) {
+          return;
+        }
+        const accountId = await getAccountIdForSession(config.prisma, session);
+        if (!accountId) {
+          return res
+            .status(403)
+            .json(errorEnvelope("FORBIDDEN", "Session is not linked to an account.", traceId));
+        }
+        const stateRaw = typeof body.state === "string" ? body.state.trim() : "";
+        if (!stateRaw) {
+          return res.status(400).json(
+            errorEnvelope("VALIDATION_ERROR", "Invalid request payload.", traceId, [
+              { field: "state", issue: "missing" }
+            ])
+          );
+        }
+        const v = verifyCreatorPatreonOAuthState(stateRaw, accountId, creatorId);
+        if (!v.ok) {
+          return res.status(403).json(
+            errorEnvelope(
+              "FORBIDDEN",
+              `OAuth state verification failed (${v.reason}).`,
+              traceId
+            )
+          );
+        }
+        const ownsExchange = await accountOwnsRelayCreatorId(
+          config.prisma,
+          accountId,
+          creatorId
+        );
+        if (!ownsExchange) {
+          return res.status(403).json(
+            errorEnvelope(
+              "FORBIDDEN",
+              "creator_id does not match this account's studio.",
+              traceId,
+              [{ field: "creator_id", issue: "not_owned" }]
+            )
+          );
+        }
+      }
+    }
+
     try {
       const result = await authService.exchangeCodeAndPersist(
-        body.creator_id as string,
+        creatorId,
         body.code as string,
         body.redirect_uri as string,
         traceId
       );
-      const cid = body.creator_id as string;
+
+      let patreonCampaignId: string | null = null;
+      if (config.prisma && useDbCreatorOAuthStore(config)) {
+        const tokens = await tokenStore.getByCreatorId(creatorId);
+        if (tokens?.access_token) {
+          try {
+            const snap = await syncCreatorProfilePatreonCampaignFromOAuthToken({
+              prisma: config.prisma,
+              relayCreatorId: creatorId,
+              accessToken: tokens.access_token,
+              fetchImpl: config.fetch_impl ?? globalThis.fetch
+            });
+            patreonCampaignId = snap.patreonCampaignId;
+          } catch {
+            /* campaign discovery is best-effort */
+          }
+        }
+      }
+
       void ensurePatreonPlatformWebhook({
-        creatorId: cid.trim(),
+        creatorId: creatorId.trim(),
         tokenStore,
         webhookMetaStore: patreonWebhookMetadataStore,
         campaignIndex: patreonCampaignCreatorIndex,
@@ -987,7 +1209,11 @@ export function createApp(config: AppConfig): CreateAppResult {
       }).catch(() => {
         /* registration is best-effort; status persisted on webhook meta store */
       });
-      return res.status(200).json(successEnvelope(result, traceId));
+      const payload =
+        patreonCampaignId != null
+          ? { ...result, patreon_campaign_id: patreonCampaignId }
+          : result;
+      return res.status(200).json(successEnvelope(payload, traceId));
     } catch (error) {
       return res
         .status(502)
@@ -1142,6 +1368,18 @@ export function createApp(config: AppConfig): CreateAppResult {
         : undefined;
     const forceRefreshPostAccess = body.force_refresh_post_access === true;
 
+    if (
+      !(await assertCreatorRelayMutationAllowed(
+        req,
+        res,
+        traceId,
+        config.prisma,
+        creatorId.trim()
+      ))
+    ) {
+      return;
+    }
+
     try {
       const result = await patreonSyncService.scrapeOrSync(creatorId, traceId, {
         campaign_id: campaignId || undefined,
@@ -1240,6 +1478,18 @@ export function createApp(config: AppConfig): CreateAppResult {
         .status(400)
         .json(errorEnvelope("VALIDATION_ERROR", "Invalid request payload.", traceId, details));
     }
+    const syncCreatorId = (body.creator_id as string).trim();
+    if (
+      !(await assertCreatorRelayMutationAllowed(
+        req,
+        res,
+        traceId,
+        config.prisma,
+        syncCreatorId
+      ))
+    ) {
+      return;
+    }
     try {
       const result = await patreonSyncService.syncMembers(
         body.creator_id as string,
@@ -1305,6 +1555,17 @@ export function createApp(config: AppConfig): CreateAppResult {
         .json(errorEnvelope("VALIDATION_ERROR", "Invalid request payload.", traceId, details));
     }
     const creatorId = (body.creator_id as string).trim();
+    if (
+      !(await assertCreatorRelayMutationAllowed(
+        req,
+        res,
+        traceId,
+        config.prisma,
+        creatorId
+      ))
+    ) {
+      return;
+    }
     try {
       const result = await ensurePatreonPlatformWebhook({
         creatorId,
@@ -1438,6 +1699,18 @@ export function createApp(config: AppConfig): CreateAppResult {
         .json(errorEnvelope("VALIDATION_ERROR", "Invalid ingest batch.", traceId, parsed.details));
     }
 
+    if (
+      !(await assertCreatorRelayMutationAllowed(
+        req,
+        res,
+        traceId,
+        config.prisma,
+        parsed.batch.creator_id
+      ))
+    ) {
+      return;
+    }
+
     const processSync = String(req.query.process_sync) === "true";
     if (processSync) {
       const result = await ingestService.runBatch(parsed.batch, traceId);
@@ -1468,9 +1741,21 @@ export function createApp(config: AppConfig): CreateAppResult {
         .json(errorEnvelope("VALIDATION_ERROR", "Invalid export request.", traceId, details));
     }
     recordExportMediaAttempt();
+    const exportCreatorId = (body.creator_id as string).trim();
+    if (
+      !(await assertCreatorRelayMutationAllowed(
+        req,
+        res,
+        traceId,
+        config.prisma,
+        exportCreatorId
+      ))
+    ) {
+      return;
+    }
     try {
       const result = await exportService.exportMedia(
-        body.creator_id as string,
+        exportCreatorId,
         body.media_id as string
       );
       recordExportMediaSuccess();
@@ -1549,7 +1834,19 @@ export function createApp(config: AppConfig): CreateAppResult {
         .status(400)
         .json(errorEnvelope("VALIDATION_ERROR", "Invalid request.", traceId, details));
     }
-    const result = await exportService.materializeManifests(body.creator_id as string);
+    const matCreatorId = (body.creator_id as string).trim();
+    if (
+      !(await assertCreatorRelayMutationAllowed(
+        req,
+        res,
+        traceId,
+        config.prisma,
+        matCreatorId
+      ))
+    ) {
+      return;
+    }
+    const result = await exportService.materializeManifests(matCreatorId);
     return res.status(200).json(successEnvelope(result, traceId));
   });
 
@@ -1562,9 +1859,21 @@ export function createApp(config: AppConfig): CreateAppResult {
         .status(400)
         .json(errorEnvelope("VALIDATION_ERROR", "Invalid verify request.", traceId, details));
     }
+    const verifyCreatorId = (body.creator_id as string).trim();
+    if (
+      !(await assertCreatorRelayMutationAllowed(
+        req,
+        res,
+        traceId,
+        config.prisma,
+        verifyCreatorId
+      ))
+    ) {
+      return;
+    }
     try {
       const match = await exportService.verifyIntegrity(
-        body.creator_id as string,
+        verifyCreatorId,
         body.media_id as string
       );
       recordVerifyResult(match);
@@ -1585,6 +1894,17 @@ export function createApp(config: AppConfig): CreateAppResult {
         .json(errorEnvelope("VALIDATION_ERROR", "Invalid request.", traceId, details));
     }
     const creatorId = body.creator_id as string;
+    if (
+      !(await assertCreatorRelayMutationAllowed(
+        req,
+        res,
+        traceId,
+        config.prisma,
+        creatorId.trim()
+      ))
+    ) {
+      return;
+    }
     const limitRaw = body.limit;
     const limit =
       typeof limitRaw === "number"
@@ -1905,6 +2225,76 @@ export function createApp(config: AppConfig): CreateAppResult {
     return res.status(200).json(successEnvelope(detail, traceId));
   });
 
+  /** MIG-41 — Tier permission for a canonical post (Bearer session optional). */
+  app.get("/api/v1/patron/permission/post", async (req: Request, res: Response) => {
+    const traceId = traceIdFrom(req);
+    const creatorId = typeof req.query.creator_id === "string" ? req.query.creator_id.trim() : "";
+    const postId = typeof req.query.post_id === "string" ? req.query.post_id.trim() : "";
+    const details: { field: string; issue: string }[] = [];
+    if (!creatorId) details.push({ field: "creator_id", issue: "missing" });
+    if (!postId) details.push({ field: "post_id", issue: "missing" });
+    if (details.length > 0) {
+      return res
+        .status(400)
+        .json(errorEnvelope("VALIDATION_ERROR", "creator_id and post_id are required.", traceId, details));
+    }
+    const bearer = req.header("authorization")?.replace(/^Bearer\s+/i, "").trim() ?? "";
+    const session = bearer ? await identityService.resolveSession(bearer) : null;
+    const snapshot = await canonicalStore.load();
+    const perm = evaluatePostPermission({ snapshot, creatorId, postId, session });
+    if (!perm) {
+      return res.status(404).json(errorEnvelope("NOT_FOUND", "Post not found.", traceId));
+    }
+    res.setHeader("Cache-Control", "private, no-store");
+    return res.status(200).json(successEnvelope(perm, traceId));
+  });
+
+  /** MIG-42 — Patron entitlement freshness vs last DB snapshot (Bearer required). */
+  app.get("/api/v1/patron/entitlements/health", async (req: Request, res: Response) => {
+    const traceId = traceIdFrom(req);
+    const creatorId = typeof req.query.creator_id === "string" ? req.query.creator_id.trim() : "";
+    if (!creatorId) {
+      return res
+        .status(400)
+        .json(
+          errorEnvelope("VALIDATION_ERROR", "creator_id is required.", traceId, [
+            { field: "creator_id", issue: "missing" }
+          ])
+        );
+    }
+    const session = await requirePatronBearerSession(req, res, traceId);
+    if (!session) {
+      return;
+    }
+    if (!(await requirePatronForCreatorId(req, res, traceId, session, creatorId))) {
+      return;
+    }
+    const prisma = config.prisma;
+    if (!prisma) {
+      const payload = buildPatronEntitlementHealthPayload({ storage: "file", row: null });
+      res.setHeader("Cache-Control", "private, no-store");
+      return res.status(200).json(successEnvelope(payload, traceId));
+    }
+    const row = await prisma.patronEntitlementSnapshot.findUnique({
+      where: {
+        patronMembershipId_relayCreatorId: {
+          patronMembershipId: session.user_id,
+          relayCreatorId: creatorId
+        }
+      },
+      select: { asOf: true, staleAfter: true }
+    });
+    const payload = buildPatronEntitlementHealthPayload({
+      storage: "postgres",
+      row
+    });
+    if (payload.degraded) {
+      res.setHeader("X-Relay-Entitlement-Degraded", "1");
+    }
+    res.setHeader("Cache-Control", "private, no-store");
+    return res.status(200).json(successEnvelope(payload, traceId));
+  });
+
   function parsePatronFavoriteTargetKind(raw: unknown): PatronFavoriteTargetKind | null {
     if (raw === "post" || raw === "media") {
       return raw;
@@ -1912,7 +2302,10 @@ export function createApp(config: AppConfig): CreateAppResult {
     return null;
   }
 
-  /** Bearer patron session or 401 response (caller returns). */
+  /**
+   * Bearer **opaque** Relay session (Prisma `Session`) — not a Supabase JWT.
+   * Session strategy: `docs/architecture/multi-tenant-cloud-runtime.md` § Identity and sessions (MIG-13).
+   */
   async function requirePatronBearerSession(
     req: Request,
     res: Response,
@@ -1934,6 +2327,254 @@ export function createApp(config: AppConfig): CreateAppResult {
     }
     return session;
   }
+
+  /** MT-009 — multi-membership allowlist vs single `session.creator_id`. */
+  async function requirePatronForCreatorId(
+    req: Request,
+    res: Response,
+    traceId: string,
+    session: SessionToken,
+    creatorId: string
+  ): Promise<boolean> {
+    const ctx = await loadPatronAuthContext(config.prisma ?? null, session);
+    if (!patronMayAccessCreator(ctx, creatorId)) {
+      res
+        .status(403)
+        .json(
+          errorEnvelope(
+            "FORBIDDEN",
+            "Session is not entitled for this creator.",
+            traceId
+          )
+        );
+      return false;
+    }
+    return true;
+  }
+
+  /**
+   * MT-009 — Introspection: which `relay_creator_id` values this patron session may use.
+   * Requires Postgres (`RELAY_DB_STORE_IDENTITY`).
+   */
+  app.get("/api/v1/me/patron-auth", async (req: Request, res: Response) => {
+    const traceId = traceIdFrom(req);
+    const session = await requirePatronBearerSession(req, res, traceId);
+    if (!session) {
+      return;
+    }
+    if (!config.prisma) {
+      return res.status(503).json(
+        errorEnvelope(
+          "SERVICE_UNAVAILABLE",
+          "Database required for membership allowlist.",
+          traceId
+        )
+      );
+    }
+    const ctx = await loadPatronAuthContext(config.prisma, session);
+    res.setHeader("Cache-Control", "private, no-store");
+    return res.status(200).json(
+      successEnvelope(
+        {
+          account_id: ctx.accountId,
+          allowed_relay_creator_ids: [...ctx.allowedRelayCreatorIds],
+          session_membership_id: session.user_id,
+          session_creator_id: session.creator_id
+        },
+        traceId
+      )
+    );
+  });
+
+  /**
+   * MT-032 — Idempotent artist studio: `Tenant` + creator `User` + `CreatorProfile`; sets
+   * `Account.primaryRelayCreatorId`. Requires opaque Bearer session with `Account`-backed membership.
+   */
+  app.post("/api/v1/creator/workspace", async (req: Request, res: Response) => {
+    const traceId = traceIdFrom(req);
+    if (!config.prisma) {
+      return res.status(503).json(
+        errorEnvelope("SERVICE_UNAVAILABLE", "Database not configured.", traceId)
+      );
+    }
+    const session = await requirePatronBearerSession(req, res, traceId);
+    if (!session) {
+      return;
+    }
+    const accountId = await getAccountIdForSession(config.prisma, session);
+    if (!accountId) {
+      return res
+        .status(403)
+        .json(errorEnvelope("FORBIDDEN", "Session is not linked to an account.", traceId));
+    }
+    try {
+      const result = await provisionCreatorWorkspace(config.prisma, accountId);
+      return res.status(result.created ? 201 : 200).json(
+        successEnvelope(
+          {
+            relay_creator_id: result.relay_creator_id,
+            account_id: result.account_id,
+            created: result.created,
+            public_slug: result.public_slug
+          },
+          traceId
+        )
+      );
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (msg.includes("Account not found")) {
+        return res.status(404).json(errorEnvelope("NOT_FOUND", msg, traceId));
+      }
+      return res.status(500).json(errorEnvelope("INTERNAL_ERROR", msg, traceId));
+    }
+  });
+
+  /**
+   * Current studio's public URL slug (`/patron/c/{public_slug}`).
+   */
+  app.get("/api/v1/creator/public-slug", async (req: Request, res: Response) => {
+    const traceId = traceIdFrom(req);
+    if (!config.prisma) {
+      return res.status(503).json(
+        errorEnvelope("SERVICE_UNAVAILABLE", "Database not configured.", traceId)
+      );
+    }
+    const session = await requirePatronBearerSession(req, res, traceId);
+    if (!session) {
+      return;
+    }
+    const accountId = await getAccountIdForSession(config.prisma, session);
+    if (!accountId) {
+      return res
+        .status(403)
+        .json(errorEnvelope("FORBIDDEN", "Session is not linked to an account.", traceId));
+    }
+    const account = await config.prisma.account.findUnique({
+      where: { id: accountId },
+      select: { primaryRelayCreatorId: true }
+    });
+    const relayId = account?.primaryRelayCreatorId?.trim();
+    if (!relayId) {
+      return res.status(404).json(
+        errorEnvelope("NOT_FOUND", "No creator studio — call POST /api/v1/creator/workspace first.", traceId)
+      );
+    }
+    const prof = await config.prisma.creatorProfile.findFirst({
+      where: { tenant: { relayCreatorId: relayId } },
+      select: { publicSlug: true }
+    });
+    if (!prof) {
+      return res.status(404).json(errorEnvelope("NOT_FOUND", "Creator profile missing.", traceId));
+    }
+    res.setHeader("Cache-Control", "private, no-store");
+    return res.status(200).json(successEnvelope({ public_slug: prof.publicSlug }, traceId));
+  });
+
+  /**
+   * Change public slug (reserved words and uniqueness enforced).
+   */
+  app.patch("/api/v1/creator/public-slug", async (req: Request, res: Response) => {
+    const traceId = traceIdFrom(req);
+    if (!config.prisma) {
+      return res.status(503).json(
+        errorEnvelope("SERVICE_UNAVAILABLE", "Database not configured.", traceId)
+      );
+    }
+    const session = await requirePatronBearerSession(req, res, traceId);
+    if (!session) {
+      return;
+    }
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const raw =
+      typeof body.public_slug === "string"
+        ? body.public_slug.trim().toLowerCase()
+        : typeof body.slug === "string"
+          ? body.slug.trim().toLowerCase()
+          : "";
+    const v = validatePublicSlugFormat(raw);
+    if (!v.ok) {
+      return res.status(400).json(
+        errorEnvelope("VALIDATION_ERROR", v.message, traceId, [{ field: "public_slug", issue: "invalid" }])
+      );
+    }
+    const accountId = await getAccountIdForSession(config.prisma, session);
+    if (!accountId) {
+      return res
+        .status(403)
+        .json(errorEnvelope("FORBIDDEN", "Session is not linked to an account.", traceId));
+    }
+    const account = await config.prisma.account.findUnique({
+      where: { id: accountId },
+      select: { primaryRelayCreatorId: true }
+    });
+    const relayId = account?.primaryRelayCreatorId?.trim();
+    if (!relayId) {
+      return res.status(404).json(
+        errorEnvelope("NOT_FOUND", "No creator studio — call POST /api/v1/creator/workspace first.", traceId)
+      );
+    }
+    const prof = await config.prisma.creatorProfile.findFirst({
+      where: { tenant: { relayCreatorId: relayId } },
+      select: { id: true }
+    });
+    if (!prof) {
+      return res.status(404).json(errorEnvelope("NOT_FOUND", "Creator profile missing.", traceId));
+    }
+    const taken = await config.prisma.creatorProfile.findFirst({
+      where: { publicSlug: raw, NOT: { id: prof.id } },
+      select: { id: true }
+    });
+    if (taken) {
+      return res.status(409).json(
+        errorEnvelope("CONFLICT", "That slug is already taken.", traceId, [
+          { field: "public_slug", issue: "taken" }
+        ])
+      );
+    }
+    await config.prisma.creatorProfile.update({
+      where: { id: prof.id },
+      data: { publicSlug: raw }
+    });
+    res.setHeader("Cache-Control", "private, no-store");
+    return res.status(200).json(successEnvelope({ public_slug: raw }, traceId));
+  });
+
+  /**
+   * Resolve a public creator slug (no auth). Used by `/patron/c/[handle]` and share links.
+   */
+  app.get("/api/v1/public/creators/:slug", async (req: Request, res: Response) => {
+    const traceId = traceIdFrom(req);
+    if (!config.prisma) {
+      return res.status(503).json(
+        errorEnvelope("SERVICE_UNAVAILABLE", "Database not configured.", traceId)
+      );
+    }
+    const raw = typeof req.params.slug === "string" ? req.params.slug.trim() : "";
+    const slug = normalizePublicSlugCandidate(raw);
+    if (slug.length < 3) {
+      return res.status(404).json(errorEnvelope("NOT_FOUND", "Unknown creator.", traceId));
+    }
+    const prof = await config.prisma.creatorProfile.findUnique({
+      where: { publicSlug: slug },
+      select: {
+        publicSlug: true,
+        tenant: { select: { relayCreatorId: true } }
+      }
+    });
+    if (!prof?.tenant.relayCreatorId) {
+      return res.status(404).json(errorEnvelope("NOT_FOUND", "Unknown creator.", traceId));
+    }
+    res.setHeader("Cache-Control", "public, max-age=60, s-maxage=60");
+    return res.status(200).json(
+      successEnvelope(
+        {
+          public_slug: prof.publicSlug,
+          relay_creator_id: prof.tenant.relayCreatorId
+        },
+        traceId
+      )
+    );
+  });
 
   /**
    * Patron home (fan Relay): feed + sidebar bundle. Requires Bearer session from patron OAuth.
@@ -1971,10 +2612,8 @@ export function createApp(config: AppConfig): CreateAppResult {
     if (!session) {
       return;
     }
-    if (session.creator_id !== creatorId) {
-      return res
-        .status(403)
-        .json(errorEnvelope("FORBIDDEN", "Session is not scoped to this creator.", traceId));
+    if (!(await requirePatronForCreatorId(req, res, traceId, session, creatorId))) {
+      return;
     }
     const items = await patronFavoritesStore.listForUser(creatorId, session.user_id);
     res.setHeader("Cache-Control", "private, no-store");
@@ -2011,10 +2650,8 @@ export function createApp(config: AppConfig): CreateAppResult {
     if (!session) {
       return;
     }
-    if (session.creator_id !== creatorId) {
-      return res
-        .status(403)
-        .json(errorEnvelope("FORBIDDEN", "Session is not scoped to this creator.", traceId));
+    if (!(await requirePatronForCreatorId(req, res, traceId, session, creatorId))) {
+      return;
     }
     const snapshot = await canonicalStore.load();
     const v = validatePatronFavoriteTarget(snapshot, creatorId, targetKind, targetId);
@@ -2070,10 +2707,8 @@ export function createApp(config: AppConfig): CreateAppResult {
     if (!session) {
       return;
     }
-    if (session.creator_id !== creatorId) {
-      return res
-        .status(403)
-        .json(errorEnvelope("FORBIDDEN", "Session is not scoped to this creator.", traceId));
+    if (!(await requirePatronForCreatorId(req, res, traceId, session, creatorId))) {
+      return;
     }
     const removed = await patronFavoritesStore.remove(
       creatorId,
@@ -2104,10 +2739,8 @@ export function createApp(config: AppConfig): CreateAppResult {
     if (!session) {
       return;
     }
-    if (session.creator_id !== creatorId) {
-      return res
-        .status(403)
-        .json(errorEnvelope("FORBIDDEN", "Session is not scoped to this creator.", traceId));
+    if (!(await requirePatronForCreatorId(req, res, traceId, session, creatorId))) {
+      return;
     }
     const collections = await patronCollectionsStore.listCollectionsWithEntries(
       creatorId,
@@ -2132,10 +2765,8 @@ export function createApp(config: AppConfig): CreateAppResult {
     if (!session) {
       return;
     }
-    if (session.creator_id !== creatorId) {
-      return res
-        .status(403)
-        .json(errorEnvelope("FORBIDDEN", "Session is not scoped to this creator.", traceId));
+    if (!(await requirePatronForCreatorId(req, res, traceId, session, creatorId))) {
+      return;
     }
     const created = await patronCollectionsStore.createCollection(
       creatorId,
@@ -2160,10 +2791,8 @@ export function createApp(config: AppConfig): CreateAppResult {
     if (!session) {
       return;
     }
-    if (session.creator_id !== creatorId) {
-      return res
-        .status(403)
-        .json(errorEnvelope("FORBIDDEN", "Session is not scoped to this creator.", traceId));
+    if (!(await requirePatronForCreatorId(req, res, traceId, session, creatorId))) {
+      return;
     }
     const patch: { title?: string; sort_order?: number } = {};
     if (typeof body.title === "string") {
@@ -2212,10 +2841,8 @@ export function createApp(config: AppConfig): CreateAppResult {
     if (!session) {
       return;
     }
-    if (session.creator_id !== creatorId) {
-      return res
-        .status(403)
-        .json(errorEnvelope("FORBIDDEN", "Session is not scoped to this creator.", traceId));
+    if (!(await requirePatronForCreatorId(req, res, traceId, session, creatorId))) {
+      return;
     }
     const ok = await patronCollectionsStore.deleteCollection(
       creatorId,
@@ -2245,10 +2872,8 @@ export function createApp(config: AppConfig): CreateAppResult {
     if (!session) {
       return;
     }
-    if (session.creator_id !== creatorId) {
-      return res
-        .status(403)
-        .json(errorEnvelope("FORBIDDEN", "Session is not scoped to this creator.", traceId));
+    if (!(await requirePatronForCreatorId(req, res, traceId, session, creatorId))) {
+      return;
     }
     const snapshot = await canonicalStore.load();
     const v = validatePatronCollectionEntry(snapshot, creatorId, postId, mediaId);
@@ -2309,10 +2934,8 @@ export function createApp(config: AppConfig): CreateAppResult {
     if (!session) {
       return;
     }
-    if (session.creator_id !== creatorId) {
-      return res
-        .status(403)
-        .json(errorEnvelope("FORBIDDEN", "Session is not scoped to this creator.", traceId));
+    if (!(await requirePatronForCreatorId(req, res, traceId, session, creatorId))) {
+      return;
     }
     const removed = await patronCollectionsStore.removeEntry(
       creatorId,
@@ -2351,6 +2974,17 @@ export function createApp(config: AppConfig): CreateAppResult {
       ? remRaw.filter((x): x is string => typeof x === "string")
       : [];
     const creatorId = body.creator_id as string;
+    if (
+      !(await assertCreatorRelayMutationAllowed(
+        req,
+        res,
+        traceId,
+        config.prisma,
+        creatorId.trim()
+      ))
+    ) {
+      return;
+    }
 
     const mtRaw = body.media_targets;
     const media_targets: { post_id: string; media_id: string }[] = [];
@@ -2884,6 +3518,17 @@ export function createApp(config: AppConfig): CreateAppResult {
         .json(errorEnvelope("VALIDATION_ERROR", "Invalid request.", traceId, details));
     }
     const creatorId = body.creator_id as string;
+    if (
+      !(await assertCreatorRelayMutationAllowed(
+        req,
+        res,
+        traceId,
+        config.prisma,
+        creatorId.trim()
+      ))
+    ) {
+      return;
+    }
     const baseUrl = typeof body.base_url === "string" ? body.base_url : "https://example.com";
 
     try {
@@ -2938,10 +3583,22 @@ export function createApp(config: AppConfig): CreateAppResult {
         .status(400)
         .json(errorEnvelope("VALIDATION_ERROR", "Invalid request.", traceId, details));
     }
+    const analyticsCreatorId = (body.creator_id as string).trim();
+    if (
+      !(await assertCreatorRelayMutationAllowed(
+        req,
+        res,
+        traceId,
+        config.prisma,
+        analyticsCreatorId
+      ))
+    ) {
+      return;
+    }
     recordAnalyticsGenerateAttempt();
     try {
       const result = await actionCenterService.generateAndStore(
-        body.creator_id as string,
+        analyticsCreatorId,
         traceId
       );
       recordAnalyticsGenerateSuccess();
@@ -3153,11 +3810,23 @@ export function createApp(config: AppConfig): CreateAppResult {
         .status(400)
         .json(errorEnvelope("VALIDATION_ERROR", "Invalid request.", traceId, details));
     }
+    const cloneCreatorId = (body.creator_id as string).trim();
+    if (
+      !(await assertCreatorRelayMutationAllowed(
+        req,
+        res,
+        traceId,
+        config.prisma,
+        cloneCreatorId
+      ))
+    ) {
+      return;
+    }
     const baseUrl =
       typeof body.base_url === "string" && body.base_url.trim()
         ? body.base_url.trim()
         : "https://preview.relay.local";
-    const model = await cloneService.generate(body.creator_id as string, baseUrl);
+    const model = await cloneService.generate(cloneCreatorId, baseUrl);
     return res.status(200).json(
       successEnvelope(
         {
@@ -3235,21 +3904,157 @@ export function createApp(config: AppConfig): CreateAppResult {
     return res.status(200).json(successEnvelope(result, traceId));
   });
 
-  app.post("/api/v1/identity/register", async (req: Request, res: Response) => {
+  /**
+   * MT-007 — Preferred email/password signup for Option B (no `creator_id`).
+   * @see POST /api/v1/identity/register (legacy; may omit `creator_id` when DB identity is enabled)
+   */
+  app.post("/api/v1/auth/signup", async (req: Request, res: Response) => {
     const traceId = traceIdFrom(req);
     const body = (req.body ?? {}) as Record<string, unknown>;
-    const details = validateRequiredFields(body, ["creator_id", "email", "password"]);
+    const details = validateRequiredFields(body, ["email", "password"]);
     if (details.length > 0) {
       return res
         .status(400)
         .json(errorEnvelope("VALIDATION_ERROR", "Invalid request.", traceId, details));
     }
+    if (!identityService.supportsAccountScopedEmailAuth()) {
+      return res.status(503).json(
+        errorEnvelope(
+          "SERVICE_UNAVAILABLE",
+          "Account signup requires RELAY_DB_STORE_IDENTITY with PostgreSQL.",
+          traceId
+        )
+      );
+    }
+    try {
+      const user = await identityService.registerAccount(
+        body.email as string,
+        body.password as string
+      );
+      const session = await identityService.issueSessionForUser(user);
+      return res.status(201).json(
+        successEnvelope(
+          {
+            token: session.token,
+            user_id: user.user_id,
+            creator_id: user.creator_id,
+            email: user.email,
+            auth_provider: user.auth_provider,
+            tier_ids: user.tier_ids,
+            expires_at: session.expires_at
+          },
+          traceId
+        )
+      );
+    } catch (error) {
+      const msg = (error as Error).message;
+      const status = msg.includes("already exists") ? 409 : 400;
+      return res.status(status).json(
+        errorEnvelope(status === 409 ? "CONFLICT" : "VALIDATION_ERROR", msg, traceId)
+      );
+    }
+  });
+
+  /** MT-007 — Account-scoped login (same Bearer session contract as `POST /api/v1/identity/login`). */
+  app.post("/api/v1/auth/login", async (req: Request, res: Response) => {
+    const traceId = traceIdFrom(req);
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const details = validateRequiredFields(body, ["email", "password"]);
+    if (details.length > 0) {
+      return res
+        .status(400)
+        .json(errorEnvelope("VALIDATION_ERROR", "Invalid request.", traceId, details));
+    }
+    if (!identityService.supportsAccountScopedEmailAuth()) {
+      return res.status(503).json(
+        errorEnvelope(
+          "SERVICE_UNAVAILABLE",
+          "Account login requires RELAY_DB_STORE_IDENTITY with PostgreSQL.",
+          traceId
+        )
+      );
+    }
+    try {
+      const session = await identityService.loginAccount(
+        body.email as string,
+        body.password as string
+      );
+      return res.status(200).json(
+        successEnvelope(
+          {
+            token: session.token,
+            user_id: session.user_id,
+            creator_id: session.creator_id,
+            tier_ids: session.tier_ids,
+            expires_at: session.expires_at
+          },
+          traceId
+        )
+      );
+    } catch (error) {
+      return res
+        .status(401)
+        .json(errorEnvelope("AUTH_ERROR", (error as Error).message, traceId));
+    }
+  });
+
+  /**
+   * Legacy patron registration scoped to a creator. Prefer **`POST /api/v1/auth/signup`** for Option B
+   * first account (no `creator_id`). When `creator_id` is omitted and DB identity is enabled, behaves
+   * like `/api/v1/auth/signup` (MT-008).
+   */
+  app.post("/api/v1/identity/register", async (req: Request, res: Response) => {
+    const traceId = traceIdFrom(req);
+    res.setHeader("Deprecation", 'true; api="/api/v1/auth/signup"');
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const baseDetails = validateRequiredFields(body, ["email", "password"]);
+    if (baseDetails.length > 0) {
+      return res
+        .status(400)
+        .json(errorEnvelope("VALIDATION_ERROR", "Invalid request.", traceId, baseDetails));
+    }
     const tierIds = Array.isArray(body.tier_ids)
       ? (body.tier_ids as string[]).filter((x): x is string => typeof x === "string")
       : [];
+    const creatorRaw =
+      typeof body.creator_id === "string" ? body.creator_id.trim() : "";
+    if (!creatorRaw) {
+      if (!identityService.supportsAccountScopedEmailAuth()) {
+        return res.status(400).json(
+          errorEnvelope(
+            "VALIDATION_ERROR",
+            "creator_id is required unless RELAY_DB_STORE_IDENTITY is enabled (use POST /api/v1/auth/signup).",
+            traceId,
+            [{ field: "creator_id", issue: "missing" }]
+          )
+        );
+      }
+      try {
+        const user = await identityService.registerAccount(
+          body.email as string,
+          body.password as string
+        );
+        return res.status(201).json(
+          successEnvelope(
+            {
+              user_id: user.user_id,
+              creator_id: user.creator_id,
+              email: user.email,
+              auth_provider: user.auth_provider,
+              tier_ids: user.tier_ids
+            },
+            traceId
+          )
+        );
+      } catch (error) {
+        return res
+          .status(409)
+          .json(errorEnvelope("CONFLICT", (error as Error).message, traceId));
+      }
+    }
     try {
       const user = await identityService.register(
-        body.creator_id as string,
+        creatorRaw,
         body.email as string,
         body.password as string,
         tierIds
@@ -3311,24 +4116,46 @@ export function createApp(config: AppConfig): CreateAppResult {
 
   app.post("/api/v1/identity/login", async (req: Request, res: Response) => {
     const traceId = traceIdFrom(req);
+    res.setHeader("Deprecation", 'true; api="/api/v1/auth/login"');
     const body = (req.body ?? {}) as Record<string, unknown>;
-    const details = validateRequiredFields(body, ["creator_id", "email", "password"]);
-    if (details.length > 0) {
+    const baseDetails = validateRequiredFields(body, ["email", "password"]);
+    if (baseDetails.length > 0) {
       return res
         .status(400)
-        .json(errorEnvelope("VALIDATION_ERROR", "Invalid request.", traceId, details));
+        .json(errorEnvelope("VALIDATION_ERROR", "Invalid request.", traceId, baseDetails));
     }
+    const creatorRaw =
+      typeof body.creator_id === "string" ? body.creator_id.trim() : "";
     try {
-      const session = await identityService.login(
-        body.creator_id as string,
-        body.email as string,
-        body.password as string
-      );
+      let session: SessionToken;
+      if (creatorRaw) {
+        session = await identityService.login(
+          creatorRaw,
+          body.email as string,
+          body.password as string
+        );
+      } else {
+        if (!identityService.supportsAccountScopedEmailAuth()) {
+          return res.status(400).json(
+            errorEnvelope(
+              "VALIDATION_ERROR",
+              "creator_id is required unless RELAY_DB_STORE_IDENTITY is enabled (use POST /api/v1/auth/login).",
+              traceId,
+              [{ field: "creator_id", issue: "missing" }]
+            )
+          );
+        }
+        session = await identityService.loginAccount(
+          body.email as string,
+          body.password as string
+        );
+      }
       return res.status(200).json(
         successEnvelope(
           {
             token: session.token,
             user_id: session.user_id,
+            creator_id: session.creator_id,
             tier_ids: session.tier_ids,
             expires_at: session.expires_at
           },
@@ -3384,6 +4211,163 @@ export function createApp(config: AppConfig): CreateAppResult {
     }
     await identityService.logout(token);
     return res.status(200).json(successEnvelope({ logged_out: true }, traceId));
+  });
+
+  /**
+   * MIG-11: After Supabase Auth signup/sign-in, call with `Authorization: Bearer <access_token>`
+   * (or `{ "access_token" }` in JSON) to ensure a Prisma `Account` row with `supabaseUserId`.
+   * Optional `creator_id` + `tier_ids` attach patron `TenantMembership`.
+   * MIG-13: This route validates a **Supabase** JWT — not the opaque patron session used on `/api/v1/patron/*`.
+   */
+  app.post("/api/v1/auth/supabase/sync", async (req: Request, res: Response) => {
+    const traceId = traceIdFrom(req);
+    if (!config.prisma) {
+      return res
+        .status(503)
+        .json(errorEnvelope("SERVICE_UNAVAILABLE", "Database not configured.", traceId));
+    }
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const fromBody =
+      typeof body.access_token === "string" ? body.access_token.trim() : "";
+    const accessToken = fromBody || bearerAccessTokenFromRequest(req);
+    if (!accessToken) {
+      recordSupabaseSyncOutcome("other_error");
+      return res.status(400).json(
+        errorEnvelope("VALIDATION_ERROR", "Missing access_token or Authorization: Bearer.", traceId, [
+          { field: "access_token", issue: "missing" }
+        ])
+      );
+    }
+
+    const authResult = await getSupabaseUserFromAccessToken(accessToken);
+    if (!authResult.ok) {
+      recordSupabaseSyncOutcome("auth_error");
+      const code = authResult.error.includes("not configured") ? 503 : 401;
+      return res.status(code).json(
+        errorEnvelope(
+          code === 503 ? "SERVICE_UNAVAILABLE" : "AUTH_ERROR",
+          authResult.error,
+          traceId
+        )
+      );
+    }
+
+    const creatorId =
+      typeof body.creator_id === "string" ? body.creator_id.trim() : "";
+    const tierIds = Array.isArray(body.tier_ids)
+      ? (body.tier_ids as string[]).filter((x): x is string => typeof x === "string")
+      : [];
+
+    try {
+      const { account, created } = await upsertAccountForSupabaseUser(config.prisma, {
+        supabaseUserId: authResult.user.id,
+        email: authResult.user.email ?? null
+      });
+
+      let membership_id: string | undefined;
+      if (creatorId.length > 0) {
+        const m = await ensurePatronMembershipForSupabaseAccount(config.prisma, {
+          accountId: account.id,
+          creatorId,
+          tierIds
+        });
+        membership_id = m.membershipId;
+      }
+
+      recordSupabaseSyncOutcome("success");
+      return res.status(200).json(
+        successEnvelope(
+          {
+            account_id: account.id,
+            supabase_user_id: authResult.user.id,
+            email: account.emailNorm,
+            created,
+            ...(creatorId.length > 0 ? { membership_id, creator_id: creatorId } : {})
+          },
+          traceId
+        )
+      );
+    } catch (err) {
+      recordSupabaseSyncOutcome("other_error");
+      const msg = err instanceof Error ? err.message : String(err);
+      const status = msg.includes("another Supabase") ? 409 : 500;
+      return res.status(status).json(
+        errorEnvelope(status === 409 ? "CONFLICT" : "INTERNAL_ERROR", msg, traceId)
+      );
+    }
+  });
+
+  /**
+   * MT-033: Exchange Supabase access token for opaque Relay patron session (same contract as `POST /api/v1/auth/login`).
+   * Validates JWT, `upsertAccountForSupabaseUser`, ensures platform `TenantMembership`, returns `sess_*` token.
+   */
+  app.post("/api/v1/auth/supabase/relay-session", async (req: Request, res: Response) => {
+    const traceId = traceIdFrom(req);
+    if (!config.prisma) {
+      return res.status(503).json(
+        errorEnvelope("SERVICE_UNAVAILABLE", "Database not configured.", traceId)
+      );
+    }
+    if (!identityService.supportsRelaySessionBridge()) {
+      return res.status(503).json(
+        errorEnvelope(
+          "SERVICE_UNAVAILABLE",
+          "Relay session bridge requires RELAY_DB_STORE_IDENTITY with PostgreSQL.",
+          traceId
+        )
+      );
+    }
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const fromBody =
+      typeof body.access_token === "string" ? body.access_token.trim() : "";
+    const accessToken = fromBody || bearerAccessTokenFromRequest(req);
+    if (!accessToken) {
+      return res.status(400).json(
+        errorEnvelope("VALIDATION_ERROR", "Missing access_token or Authorization: Bearer.", traceId, [
+          { field: "access_token", issue: "missing" }
+        ])
+      );
+    }
+
+    const authResult = await getSupabaseUserFromAccessToken(accessToken);
+    if (!authResult.ok) {
+      const code = authResult.error.includes("not configured") ? 503 : 401;
+      return res.status(code).json(
+        errorEnvelope(
+          code === 503 ? "SERVICE_UNAVAILABLE" : "AUTH_ERROR",
+          authResult.error,
+          traceId
+        )
+      );
+    }
+
+    try {
+      const { account } = await upsertAccountForSupabaseUser(config.prisma, {
+        supabaseUserId: authResult.user.id,
+        email: authResult.user.email ?? null
+      });
+      const session = await identityService.issueRelaySessionForAccount(account.id);
+      return res.status(200).json(
+        successEnvelope(
+          {
+            token: session.token,
+            user_id: session.user_id,
+            creator_id: session.creator_id,
+            tier_ids: session.tier_ids,
+            expires_at: session.expires_at,
+            account_id: account.id,
+            email: account.emailNorm
+          },
+          traceId
+        )
+      );
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      const status = msg.includes("another Supabase") ? 409 : 500;
+      return res.status(status).json(
+        errorEnvelope(status === 409 ? "CONFLICT" : "INTERNAL_ERROR", msg, traceId)
+      );
+    }
   });
 
   app.get("/api/v1/clone/posts/:post_id", async (req: Request, res: Response) => {

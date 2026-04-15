@@ -18,6 +18,9 @@ export interface IdentityStore {
   createSession(session: SessionToken): Promise<void>;
   getSession(token: string): Promise<SessionToken | null>;
   deleteSession(token: string): Promise<void>;
+  /** Option B account-first signup (MT-007) — implemented by `DbIdentityStore` only. */
+  registerAccountEmailPassword?(email: string, password: string): Promise<UserAccount>;
+  loginAccountEmailPassword?(email: string, password: string): Promise<UserAccount>;
 }
 
 export class FileIdentityStore implements IdentityStore {

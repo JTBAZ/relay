@@ -1,5 +1,10 @@
 import GalleryView from "./GalleryView";
+import { StudioRouteGuard } from "./components/studio/StudioRouteGuard";
 
 export default function Home() {
-  return <GalleryView />;
+  return (
+    <StudioRouteGuard>
+      <GalleryView />
+    </StudioRouteGuard>
+  );
 }

@@ -159,4 +159,77 @@ describe("patronMayFetchMediaExport", () => {
     });
     expect(r).toEqual({ allowed: true });
   });
+
+  it("allows export when patron holds a higher pledge tier than the post minimum", () => {
+    const postId = "patreon_post_1";
+    const mediaId = "patreon_media_m1";
+    const snap: CanonicalSnapshot = {
+      ingest_idempotency: {},
+      campaigns: {},
+      tiers: {
+        [creatorId]: {
+          patreon_tier_low: {
+            ...tierRow("patreon_tier_low"),
+            amount_cents: 500
+          },
+          patreon_tier_high: {
+            ...tierRow("patreon_tier_high"),
+            amount_cents: 3000
+          }
+        }
+      },
+      posts: {
+        [creatorId]: {
+          [postId]: {
+            post_id: postId,
+            creator_id: creatorId,
+            upstream_status: "active",
+            current: {
+              version_seq: 1,
+              upstream_revision: "r1",
+              title: "Post",
+              published_at: now,
+              tag_ids: [],
+              tier_ids: ["patreon_tier_low"],
+              media_ids: [mediaId],
+              ingested_at: now
+            },
+            versions: []
+          }
+        }
+      },
+      media: {
+        [creatorId]: {
+          [mediaId]: {
+            media_id: mediaId,
+            creator_id: creatorId,
+            post_ids: [postId],
+            upstream_status: "active",
+            current: {
+              version_seq: 1,
+              upstream_revision: "r1",
+              mime_type: "image/png",
+              ingested_at: now
+            },
+            versions: []
+          }
+        }
+      }
+    };
+    const session: SessionToken = {
+      token: "t",
+      user_id: "u1",
+      creator_id: creatorId,
+      tier_ids: ["patreon_tier_high"],
+      expires_at: "2099-01-01T00:00:00.000Z"
+    };
+    expect(
+      patronMayFetchMediaExport({
+        snapshot: snap,
+        creatorId,
+        mediaId,
+        session
+      })
+    ).toEqual({ allowed: true });
+  });
 });

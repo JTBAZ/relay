@@ -1,32 +1,24 @@
 "use client";
 
-import { useState, type ComponentType } from "react";
+import { useState } from "react";
 import Link from "next/link";
 import { ArrowLeft, ArrowRight } from "lucide-react";
 import { cn } from "@/app/lib/cn";
 import { ProgressStepper, type OnboardingStep } from "./progress-stepper";
-import { StepWelcome, StepProfile, StepConnect, StepGoLive } from "./step-panels";
+import { StepWelcomeWithStudio, StepProfile, StepPatreonConnect, StepGoLive } from "./step-panels";
 
 const STEPS: OnboardingStep[] = [
-  { id: 1, label: "Welcome", description: "Introduction to Relay" },
+  { id: 1, label: "Account", description: "Create your Relay account" },
   { id: 2, label: "Profile", description: "Set up your creator identity" },
-  { id: 3, label: "Connect", description: "Link your platforms" },
-  { id: 4, label: "Go Live", description: "Launch your presence" }
+  { id: 3, label: "Patreon", description: "Connect your Patreon" },
+  { id: 4, label: "Done", description: "You're ready to go" }
 ];
-
-const STEP_COMPONENTS: Record<number, ComponentType> = {
-  1: StepWelcome,
-  2: StepProfile,
-  3: StepConnect,
-  4: StepGoLive
-};
 
 export function OnboardingWizard() {
   const [currentStep, setCurrentStep] = useState(1);
 
   const isFirst = currentStep === 1;
   const isLast = currentStep === STEPS.length;
-  const StepPanel = STEP_COMPONENTS[currentStep];
 
   const goNext = () => {
     if (!isLast) setCurrentStep((s) => s + 1);
@@ -35,6 +27,21 @@ export function OnboardingWizard() {
   const goBack = () => {
     if (!isFirst) setCurrentStep((s) => s - 1);
   };
+
+  function renderStep() {
+    switch (currentStep) {
+      case 1:
+        return <StepWelcomeWithStudio onSignedIn={goNext} />;
+      case 2:
+        return <StepProfile />;
+      case 3:
+        return <StepPatreonConnect />;
+      case 4:
+        return <StepGoLive />;
+      default:
+        return null;
+    }
+  }
 
   return (
     <div className="flex min-h-dvh flex-col bg-[var(--relay-bg)]">
@@ -72,7 +79,7 @@ export function OnboardingWizard() {
               "rounded-xl border border-[var(--relay-border)] bg-[var(--relay-surface-2)] p-8 shadow-[0_0_0_1px_rgba(255,255,255,0.03)] onboarding-panel-animate"
             )}
           >
-            <StepPanel />
+            {renderStep()}
           </div>
 
           <div className="flex items-center justify-between gap-4">
@@ -112,7 +119,7 @@ export function OnboardingWizard() {
                 href="/"
                 className="flex items-center gap-2 rounded-md bg-[var(--relay-green-600)] px-5 py-2.5 text-sm font-semibold text-[var(--relay-fg)] transition-all duration-150 hover:bg-[var(--relay-green-400)]"
               >
-                Go to Library
+                Go to Dashboard
               </Link>
             ) : (
               <button
@@ -120,7 +127,7 @@ export function OnboardingWizard() {
                 onClick={goNext}
                 className="flex items-center gap-2 rounded-md bg-[var(--relay-green-600)] px-5 py-2.5 text-sm font-semibold text-[var(--relay-fg)] transition-all duration-150 hover:bg-[var(--relay-green-400)]"
               >
-                Continue
+                {currentStep === 3 ? "Skip for now" : "Continue"}
                 <ArrowRight className="h-4 w-4" strokeWidth={1.5} />
               </button>
             )}

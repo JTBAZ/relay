@@ -1,5 +1,6 @@
 import type { ClonePostEntry, CloneSiteModel } from "../clone/types.js";
 import { canAccessPost } from "../clone/tier-rules.js";
+import type { TierRow } from "../ingest/canonical-store.js";
 import type { SessionToken } from "./types.js";
 
 export type AccessCheckResult =
@@ -9,7 +10,9 @@ export type AccessCheckResult =
 export function checkPostAccess(
   post: ClonePostEntry,
   session: SessionToken | null,
-  siteCreatorId: string
+  siteCreatorId: string,
+  /** When set (canonical ingest), enforces pledge ordering (“tier or higher”). */
+  tierCatalog?: Record<string, TierRow>
 ): AccessCheckResult {
   if (post.access.level === "public") {
     return { allowed: true };
@@ -23,7 +26,7 @@ export function checkPostAccess(
     return { allowed: false, reason: "Cross-tenant access denied." };
   }
 
-  const granted = canAccessPost(post.access, session.tier_ids);
+  const granted = canAccessPost(post.access, session.tier_ids, tierCatalog);
   if (!granted) {
     return {
       allowed: false,

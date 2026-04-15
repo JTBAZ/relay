@@ -11,10 +11,15 @@ datasource db {
 
 // --- Identity & multi-tenancy (M2.1) ---
 
+/// In-app role for rows in `users` (creator/staff). Patron authorization uses `TenantMembership` + `TenantRole`.
 enum UserKind {
   creator
-  patron
   staff
+}
+
+/// Per-tenant role for an `Account` (Option B — Multi Tenant Changes).
+enum TenantRole {
+  patron
 }
 
 enum ProviderKind {
@@ -60,71 +65,113 @@ model Tenant {
   relayCreatorId String?  @unique @map("relay_creator_id")
   createdAt      DateTime @default(now()) @map("created_at")
 
-  users    User[]
-  creators CreatorProfile[]
+  users          User[]
+  memberships    TenantMembership[]
+  creators       CreatorProfile[]
+  /// At most one `Account` may claim this tenant as its primary artist studio (MT-031).
+  primaryAccount Account?           @relation("AccountPrimaryStudio")
 
   @@map("tenants")
 }
 
-model User {
-  id            String   @id @default(cuid())
-  tenantId      String   @map("tenant_id")
-  tenant        Tenant   @relation(fields: [tenantId], references: [id])
-  kind          UserKind
-  emailHash     String?  @map("email_hash")
-  /// Normalized email for `findByEmail` (lowercase); mirrors file `UserAccount.email` for lookup.
-  emailNorm     String?  @map("email_norm")
-  passwordHash  String?  @map("password_hash")
-  identityAuthProvider IdentityAuthProvider @map("identity_auth_provider")
-  patronPatreonUserId  String?  @map("patron_patreon_user_id")
-  tierIds       String[] @default([]) @map("tier_ids")
+/// Global login identity — one person per row (Option B). Patrons are scoped per creator via `TenantMembership`.
+model Account {
+  id                    String               @id @default(cuid())
+  emailHash             String?              @map("email_hash")
+  /// Global normalized email (unique when set) — `DbIdentityStore.findByEmail` uses this + `TenantMembership`.
+  emailNorm             String?              @unique @map("email_norm")
+  passwordHash          String?              @map("password_hash")
+  identityAuthProvider  IdentityAuthProvider @map("identity_auth_provider")
+  /// Global Patreon user id when linked (unique when set).
+  patronPatreonUserId   String?              @unique @map("patron_patreon_user_id")
+  /// Supabase Auth `auth.users.id` (Pattern A, ADR 001). Null until linked (MIG-11+).
+  supabaseUserId        String?              @unique @map("supabase_user_id") @db.Uuid
+  /// Artist studio scope — matches `Tenant.relayCreatorId` when this account owns a creator workspace (MT-031). Null for patron-only accounts.
+  primaryRelayCreatorId String?              @unique @map("primary_relay_creator_id")
   /// Backfill trace: stable id from `identity.json` / file store era (see integration-roadmap 2.3.x).
-  legacyFileId  String?  @map("legacy_file_id")
-  createdAt     DateTime @default(now()) @map("created_at")
-  updatedAt     DateTime @updatedAt @map("updated_at")
+  legacyFileId          String?              @map("legacy_file_id")
+  createdAt             DateTime             @default(now()) @map("created_at")
+  updatedAt             DateTime             @updatedAt @map("updated_at")
 
-  sessions         Session[]
+  memberships           TenantMembership[]
+  patronOAuthCredential PatronOAuthCredential?
+  primaryStudio         Tenant?                @relation("AccountPrimaryStudio", fields: [primaryRelayCreatorId], references: [relayCreatorId], onDelete: SetNull, onUpdate: Cascade)
+
+  @@map("accounts")
+}
+
+/// Per-tenant membership for an `Account` (tier entitlements, patron sessions, etc.).
+model TenantMembership {
+  id           String     @id @default(cuid())
+  accountId    String     @map("account_id")
+  account      Account    @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  tenantId     String     @map("tenant_id")
+  tenant       Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  role         TenantRole @default(patron)
+  tierIds      String[]   @default([]) @map("tier_ids")
+  legacyFileId String?    @map("legacy_file_id")
+  createdAt    DateTime   @default(now()) @map("created_at")
+  updatedAt    DateTime   @updatedAt @map("updated_at")
+
+  sessions                    Session[]
+  patronProfile               PatronProfile?
+  patronFollows               PatronFollow[]
+  patronEntitlementSnapshots  PatronEntitlementSnapshot[]
+  patronCampaignAccessRecords PatronCampaignAccess[]
+  feedCursors                 FeedCursor[]
+  notificationPreferences     NotificationPreference[]
+
+  @@unique([accountId, tenantId])
+  @@index([tenantId])
+  @@map("tenant_memberships")
+}
+
+/// Creator/staff rows only — patron identity is `Account` + `TenantMembership`.
+model User {
+  id                   String               @id @default(cuid())
+  tenantId             String               @map("tenant_id")
+  tenant               Tenant               @relation(fields: [tenantId], references: [id])
+  kind                 UserKind
+  identityAuthProvider IdentityAuthProvider @map("identity_auth_provider")
+  tierIds              String[]             @default([]) @map("tier_ids")
+  /// Backfill trace for creator rows when applicable.
+  legacyFileId         String?              @map("legacy_file_id")
+  createdAt            DateTime             @default(now()) @map("created_at")
+  updatedAt            DateTime             @updatedAt @map("updated_at")
+
   providerAccounts ProviderAccount[]
-  patronProfile    PatronProfile?
   creatorProfile   CreatorProfile?
-  /// M9 Part 3 stubs — relations for patron network (open pipe; no app wiring yet).
-  patronFollows              PatronFollow[]
-  patronEntitlementSnapshots PatronEntitlementSnapshot[]
-  feedCursors                FeedCursor[]
-  notificationPreferences  NotificationPreference[]
-  patronOAuthCredential      PatronOAuthCredential?
 
   @@index([tenantId, kind])
-  @@index([tenantId, emailNorm])
   @@map("users")
 }
 
 model Session {
-  id           String    @id @default(cuid())
-  userId       String    @map("user_id")
-  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id                 String           @id @default(cuid())
+  tenantMembershipId String           @map("tenant_membership_id")
+  tenantMembership   TenantMembership @relation(fields: [tenantMembershipId], references: [id], onDelete: Cascade)
   /// SHA-256 (or app-defined hash) of opaque token only — never store raw tokens (operations-and-security.md).
-  tokenHash    String    @unique @map("token_hash")
+  tokenHash          String           @unique @map("token_hash")
   /// Backfill trace for file-backed sessions (integration-roadmap 2.3.x).
-  legacyFileId String?   @map("legacy_file_id")
-  createdAt    DateTime  @default(now()) @map("created_at")
-  expiresAt    DateTime? @map("expires_at")
-  userAgent    String?   @map("user_agent")
-  ipInet       String?   @map("ip_inet")
-  revokedAt    DateTime? @map("revoked_at")
+  legacyFileId       String?          @map("legacy_file_id")
+  createdAt          DateTime         @default(now()) @map("created_at")
+  expiresAt          DateTime?        @map("expires_at")
+  userAgent          String?          @map("user_agent")
+  ipInet             String?          @map("ip_inet")
+  revokedAt          DateTime?        @map("revoked_at")
 
-  @@index([userId, expiresAt])
+  @@index([tenantMembershipId, expiresAt])
   @@map("sessions")
 }
 
 model ProviderAccount {
-  id             String         @id @default(cuid())
-  userId         String         @map("user_id")
-  user           User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id             String       @id @default(cuid())
+  userId         String       @map("user_id")
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
   provider       ProviderKind
-  providerUserId String         @map("provider_user_id")
-  displayName    String?        @map("display_name")
-  createdAt      DateTime       @default(now()) @map("created_at")
+  providerUserId String       @map("provider_user_id")
+  displayName    String?      @map("display_name")
+  createdAt      DateTime     @default(now()) @map("created_at")
 
   oauthCredential OAuthCredential?
 
@@ -134,19 +181,19 @@ model ProviderAccount {
 }
 
 model OAuthCredential {
-  id                String            @id @default(cuid())
-  providerAccountId String            @unique @map("provider_account_id")
-  providerAccount   ProviderAccount   @relation(fields: [providerAccountId], references: [id], onDelete: Cascade)
+  id                String           @id @default(cuid())
+  providerAccountId String           @unique @map("provider_account_id")
+  providerAccount   ProviderAccount  @relation(fields: [providerAccountId], references: [id], onDelete: Cascade)
   purpose           OAuthPurpose
-  encryptedPayload  Bytes             @map("encrypted_payload")
-  keyId             String            @map("key_id")
-  healthStatus      CredentialHealth  @map("health_status")
-  lastSuccessAt     DateTime?         @map("last_success_at")
-  lastFailureAt     DateTime?         @map("last_failure_at")
-  lastFailureCode   String?           @map("last_failure_code")
-  expiresAtHint     DateTime?         @map("expires_at_hint")
-  createdAt         DateTime          @default(now()) @map("created_at")
-  updatedAt         DateTime          @updatedAt @map("updated_at")
+  encryptedPayload  Bytes            @map("encrypted_payload")
+  keyId             String           @map("key_id")
+  healthStatus      CredentialHealth @map("health_status")
+  lastSuccessAt     DateTime?        @map("last_success_at")
+  lastFailureAt     DateTime?        @map("last_failure_at")
+  lastFailureCode   String?          @map("last_failure_code")
+  expiresAtHint     DateTime?        @map("expires_at_hint")
+  createdAt         DateTime         @default(now()) @map("created_at")
+  updatedAt         DateTime         @updatedAt @map("updated_at")
 
   @@map("oauth_credentials")
 }
@@ -157,21 +204,25 @@ model CreatorProfile {
   tenant            Tenant   @relation(fields: [tenantId], references: [id])
   userId            String   @unique @map("user_id")
   user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// Public URL segment for `/patron/c/{public_slug}` — unique, lowercase, `[a-z0-9-]`.
+  publicSlug        String   @unique @map("public_slug")
+  /// Canonical Patreon `campaign_id` for this creator (ingest / webhooks / patron matching). See `docs/architecture/multi-tenant-option-b.md`.
   patreonCampaignId String?  @unique @map("patreon_campaign_id")
   createdAt         DateTime @default(now()) @map("created_at")
   updatedAt         DateTime @updatedAt @map("updated_at")
 
   @@index([tenantId])
+  @@index([patreonCampaignId])
   @@map("creator_profiles")
 }
 
 model PatronProfile {
-  id        String   @id @default(cuid())
-  userId    String   @unique @map("user_id")
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  handle    String?
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
+  id                 String           @id @default(cuid())
+  tenantMembershipId String           @unique @map("tenant_membership_id")
+  tenantMembership   TenantMembership @relation(fields: [tenantMembershipId], references: [id], onDelete: Cascade)
+  handle             String?
+  createdAt          DateTime         @default(now()) @map("created_at")
+  updatedAt          DateTime         @updatedAt @map("updated_at")
 
   @@map("patron_profiles")
 }
@@ -205,18 +256,18 @@ model Campaign {
 
 /// Access tier — `id` is a stable synthetic key (e.g. `${creator_id}::${relay_tier_id}`) because relay tier keys repeat across creators.
 model Tier {
-  id               String    @id @map("id")
-  creatorId        String    @map("creator_id")
+  id                String    @id @map("id")
+  creatorId         String    @map("creator_id")
   /// File / API tier key (`TierRow.tier_id`), e.g. `patreon_tier_123`, `RELAY_TIER_PUBLIC`.
-  relayTierId      String    @map("relay_tier_id")
+  relayTierId       String    @map("relay_tier_id")
   /// Opaque provider id for idempotency (Patreon tier id or same as `relay_tier_id` when unknown).
-  providerTierId   String    @map("provider_tier_id")
-  campaignId       String?   @map("campaign_id")
-  campaign         Campaign? @relation(fields: [campaignId], references: [id], onDelete: SetNull)
-  title            String
-  amountCents      Int?      @map("amount_cents")
-  upstreamUpdatedAt DateTime @map("upstream_updated_at")
-  versionSeq       Int       @map("version_seq")
+  providerTierId    String    @map("provider_tier_id")
+  campaignId        String?   @map("campaign_id")
+  campaign          Campaign? @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+  title             String
+  amountCents       Int?      @map("amount_cents")
+  upstreamUpdatedAt DateTime  @map("upstream_updated_at")
+  versionSeq        Int       @map("version_seq")
 
   postTiers PostTier[]
 
@@ -227,18 +278,18 @@ model Tier {
 
 /// Post — `id` is stable `post_id` from `PostRow` / ingest.
 model Post {
-  id               String             @id @map("id")
-  campaignId       String             @map("campaign_id")
-  campaign         Campaign           @relation(fields: [campaignId], references: [id], onDelete: Restrict)
-  creatorId        String             @map("creator_id")
+  id             String             @id @map("id")
+  campaignId     String             @map("campaign_id")
+  campaign       Campaign           @relation(fields: [campaignId], references: [id], onDelete: Restrict)
+  creatorId      String             @map("creator_id")
   /// Patreon/API post id for idempotency when distinct from Relay `post_id`.
-  providerPostId   String?            @map("provider_post_id")
-  upstreamStatus   PostUpstreamStatus @map("upstream_status")
+  providerPostId String?            @map("provider_post_id")
+  upstreamStatus PostUpstreamStatus @map("upstream_status")
   /// Gallery / feed ordering — set from ingest (e.g. earliest `published_at` in versions).
-  createdAt        DateTime           @map("created_at")
+  createdAt      DateTime           @map("created_at")
 
-  versions  PostVersion[]
-  postTiers PostTier[]
+  versions    PostVersion[]
+  postTiers   PostTier[]
   mediaAssets MediaAsset[]
 
   @@unique([campaignId, providerPostId])
@@ -248,17 +299,17 @@ model Post {
 
 model PostVersion {
   id               String   @id @default(cuid())
-  postId           String     @map("post_id")
-  post             Post       @relation(fields: [postId], references: [id], onDelete: Cascade)
-  versionSeq       Int        @map("version_seq")
-  upstreamRevision String     @map("upstream_revision")
+  postId           String   @map("post_id")
+  post             Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+  versionSeq       Int      @map("version_seq")
+  upstreamRevision String   @map("upstream_revision")
   title            String
   description      String?
-  publishedAt      DateTime   @map("published_at")
-  tagIds           String[]   @default([]) @map("tag_ids")
-  tierIds          String[]   @default([]) @map("tier_ids")
-  mediaIds         String[]   @default([]) @map("media_ids")
-  ingestedAt       DateTime   @map("ingested_at")
+  publishedAt      DateTime @map("published_at")
+  tagIds           String[] @default([]) @map("tag_ids")
+  tierIds          String[] @default([]) @map("tier_ids")
+  mediaIds         String[] @default([]) @map("media_ids")
+  ingestedAt       DateTime @map("ingested_at")
 
   @@unique([postId, versionSeq])
   @@index([postId])
@@ -267,19 +318,21 @@ model PostVersion {
 
 /// Media — `id` is stable `media_id` from `MediaRow`. `primary_post_id` indexes the canonical post link; `post_ids` mirrors file M:N.
 model MediaAsset {
-  id                      String             @id @map("id")
-  creatorId               String             @map("creator_id")
-  postIds                 String[]           @default([]) @map("post_ids")
-  primaryPostId           String             @map("primary_post_id")
-  post                    Post               @relation(fields: [primaryPostId], references: [id], onDelete: Cascade)
+  id                      String              @id @map("id")
+  creatorId               String              @map("creator_id")
+  postIds                 String[]            @default([]) @map("post_ids")
+  primaryPostId           String              @map("primary_post_id")
+  post                    Post                @relation(fields: [primaryPostId], references: [id], onDelete: Cascade)
   upstreamStatus          MediaUpstreamStatus @map("upstream_status")
-  currentVersionSeq       Int                @map("current_version_seq")
-  currentUpstreamRevision String             @map("current_upstream_revision")
-  currentMimeType         String?            @map("current_mime_type")
-  currentUpstreamUrl      String?            @map("current_upstream_url")
-  currentRole             String?            @map("current_role")
-  currentIngestedAt       DateTime           @map("current_ingested_at")
-  versionsJson            Json               @map("versions_json")
+  currentVersionSeq       Int                 @map("current_version_seq")
+  currentUpstreamRevision String              @map("current_upstream_revision")
+  currentMimeType         String?             @map("current_mime_type")
+  currentUpstreamUrl      String?             @map("current_upstream_url")
+  currentRole             String?             @map("current_role")
+  /// Object key under tenant storage (e.g. export `media/{id}/asset` or future R2 key). Not a public premium CDN URL.
+  currentStorageKey       String?             @map("current_storage_key")
+  currentIngestedAt       DateTime            @map("current_ingested_at")
+  versionsJson            Json                @map("versions_json")
 
   @@index([primaryPostId])
   @@map("media_assets")
@@ -463,36 +516,36 @@ model AnalyticsSnapshotRow {
 }
 
 model RecommendationRecord {
-  recommendationId  String   @id @map("recommendation_id")
-  creatorId         String   @map("creator_id")
-  tenantId          String?  @map("tenant_id")
-  cardType          String   @map("card_type")
-  title             String
-  signal            String
-  diagnosis         String
-  recommendationBody String  @map("recommendation_body")
-  confidenceScore   Float    @map("confidence_score")
-  expectedImpact    Json     @map("expected_impact")
-  reasonCodes       String[] @default([]) @map("reason_codes")
-  evidenceRefs      String[] @default([]) @map("evidence_refs")
-  status            String
-  createdAt         DateTime @map("created_at")
-  updatedAt         DateTime @map("updated_at")
-  notes             String?
-  dismissReasonCode String?  @map("dismiss_reason_code")
+  recommendationId   String   @id @map("recommendation_id")
+  creatorId          String   @map("creator_id")
+  tenantId           String?  @map("tenant_id")
+  cardType           String   @map("card_type")
+  title              String
+  signal             String
+  diagnosis          String
+  recommendationBody String   @map("recommendation_body")
+  confidenceScore    Float    @map("confidence_score")
+  expectedImpact     Json     @map("expected_impact")
+  reasonCodes        String[] @default([]) @map("reason_codes")
+  evidenceRefs       String[] @default([]) @map("evidence_refs")
+  status             String
+  createdAt          DateTime @map("created_at")
+  updatedAt          DateTime @map("updated_at")
+  notes              String?
+  dismissReasonCode  String?  @map("dismiss_reason_code")
 
   @@index([creatorId])
   @@map("recommendation_records")
 }
 
 model AnalyticsActionExecution {
-  actionJobId       String   @id @map("action_job_id")
-  recommendationId  String   @map("recommendation_id")
-  creatorId         String   @map("creator_id")
-  actionType        String   @map("action_type")
-  options           Json
-  executionStatus   String   @map("execution_status")
-  createdAt         DateTime @map("created_at")
+  actionJobId      String   @id @map("action_job_id")
+  recommendationId String   @map("recommendation_id")
+  creatorId        String   @map("creator_id")
+  actionType       String   @map("action_type")
+  options          Json
+  executionStatus  String   @map("execution_status")
+  createdAt        DateTime @map("created_at")
 
   @@index([creatorId])
   @@map("action_executions")
@@ -518,50 +571,50 @@ enum PatronFavoriteTargetKind {
   media
 }
 
-/// Maps `PatronFavoriteRecord` / `patron_favorites.json`; stable scope is `(patron_user_id, creator_id, target_kind, target_id)`.
+/// Maps `PatronFavoriteRecord` / `patron_favorites.json`; stable scope is `(patron_membership_id, creator_id, target_kind, target_id)`.
 model PatronFavorite {
-  id           String                 @id @default(cuid())
-  patronUserId String                 @map("patron_user_id")
-  creatorId    String                 @map("creator_id")
-  targetKind   PatronFavoriteTargetKind @map("target_kind")
-  targetId     String                 @map("target_id")
-  createdAt    DateTime               @map("created_at")
+  id                 String                   @id @default(cuid())
+  patronMembershipId String                   @map("patron_user_id")
+  creatorId          String                   @map("creator_id")
+  targetKind         PatronFavoriteTargetKind @map("target_kind")
+  targetId           String                   @map("target_id")
+  createdAt          DateTime                 @map("created_at")
 
-  @@unique([patronUserId, creatorId, targetKind, targetId], map: "patron_favorite_scope_unique")
-  @@index([patronUserId, creatorId])
+  @@unique([patronMembershipId, creatorId, targetKind, targetId], map: "patron_favorite_scope_unique")
+  @@index([patronMembershipId, creatorId])
   @@map("patron_favorites")
 }
 
 /// Patron-owned snip collection — `id` is stable `collection_id` from file (`pcol_*`).
 model PatronSavedCollection {
-  id        String   @id @map("id")
-  userId    String   @map("user_id")
-  creatorId String   @map("creator_id")
-  title     String
-  sortOrder Int      @map("sort_order")
-  createdAt DateTime @map("created_at")
-  updatedAt DateTime @map("updated_at")
+  id                 String   @id @map("id")
+  patronMembershipId String   @map("user_id")
+  creatorId          String   @map("creator_id")
+  title              String
+  sortOrder          Int      @map("sort_order")
+  createdAt          DateTime @map("created_at")
+  updatedAt          DateTime @map("updated_at")
 
   entries PatronSavedCollectionEntry[]
 
-  @@index([creatorId, userId])
+  @@index([creatorId, patronMembershipId])
   @@map("patron_saved_collections")
 }
 
 /// Entry in a patron snip collection — `id` is stable `entry_id` from file (`pent_*`).
 model PatronSavedCollectionEntry {
-  id           String              @id @map("id")
-  collectionId String              @map("collection_id")
-  collection   PatronSavedCollection @relation(fields: [collectionId], references: [id], onDelete: Cascade)
-  userId       String              @map("user_id")
-  creatorId    String              @map("creator_id")
-  postId       String              @map("post_id")
-  mediaId      String              @map("media_id")
-  createdAt    DateTime            @map("created_at")
+  id                 String                @id @map("id")
+  collectionId       String                @map("collection_id")
+  collection         PatronSavedCollection @relation(fields: [collectionId], references: [id], onDelete: Cascade)
+  patronMembershipId String                @map("user_id")
+  creatorId          String                @map("creator_id")
+  postId             String                @map("post_id")
+  mediaId            String                @map("media_id")
+  createdAt          DateTime              @map("created_at")
 
-  @@unique([userId, creatorId, collectionId, mediaId], map: "patron_saved_entry_media_unique")
+  @@unique([patronMembershipId, creatorId, collectionId, mediaId], map: "patron_saved_entry_media_unique")
   @@index([collectionId])
-  @@index([creatorId, userId])
+  @@index([creatorId, patronMembershipId])
   @@map("patron_saved_collection_entries")
 }
 
@@ -679,75 +732,92 @@ model CreatorActiveDeployment {
 
 /// Part 3 K — follow graph; `relay_creator_id` is ingest / gallery scope string (not `CreatorProfile.id`).
 model PatronFollow {
-  id             String   @id @default(cuid())
-  patronUserId   String   @map("patron_user_id")
-  relayCreatorId String   @map("relay_creator_id")
-  createdAt      DateTime @default(now()) @map("created_at")
+  id                 String   @id @default(cuid())
+  patronMembershipId String   @map("patron_user_id")
+  relayCreatorId     String   @map("relay_creator_id")
+  createdAt          DateTime @default(now()) @map("created_at")
 
-  patron User @relation(fields: [patronUserId], references: [id], onDelete: Cascade)
+  membership TenantMembership @relation(fields: [patronMembershipId], references: [id], onDelete: Cascade)
 
-  @@unique([patronUserId, relayCreatorId], map: "patron_follow_scope_unique")
+  @@unique([patronMembershipId, relayCreatorId], map: "patron_follow_scope_unique")
   @@index([relayCreatorId])
   @@map("patron_follows")
 }
 
 model PatronEntitlementSnapshot {
-  id              String             @id @default(cuid())
-  patronUserId    String             @map("patron_user_id")
-  relayCreatorId  String             @map("relay_creator_id")
-  entitledTierIds String[]           @default([]) @map("entitled_tier_ids")
-  active          Boolean
-  source          EntitlementSource
-  asOf            DateTime           @map("as_of")
-  staleAfter      DateTime?          @map("stale_after")
+  id                 String            @id @default(cuid())
+  patronMembershipId String            @map("patron_user_id")
+  relayCreatorId     String            @map("relay_creator_id")
+  /// Optional: upstream Patreon `campaign_id` when the snapshot is campaign-scoped (aligns with `CreatorProfile.patreonCampaignId` / `Campaign.id`).
+  campaignId         String?           @map("campaign_id")
+  entitledTierIds    String[]          @default([]) @map("entitled_tier_ids")
+  active             Boolean
+  source             EntitlementSource
+  asOf               DateTime          @map("as_of")
+  staleAfter         DateTime?         @map("stale_after")
 
-  patron User @relation(fields: [patronUserId], references: [id], onDelete: Cascade)
+  membership TenantMembership @relation(fields: [patronMembershipId], references: [id], onDelete: Cascade)
 
-  @@unique([patronUserId, relayCreatorId])
+  @@unique([patronMembershipId, relayCreatorId])
   @@index([relayCreatorId])
+  @@index([campaignId])
   @@map("patron_entitlement_snapshots")
+}
+
+/// Normalized campaign-level access rows (stub for future wiring; MT-005).
+model PatronCampaignAccess {
+  id                 String           @id @default(cuid())
+  tenantMembershipId String           @map("tenant_membership_id")
+  membership         TenantMembership @relation(fields: [tenantMembershipId], references: [id], onDelete: Cascade)
+  relayCreatorId     String           @map("relay_creator_id")
+  campaignId         String           @map("campaign_id")
+  createdAt          DateTime         @default(now()) @map("created_at")
+  updatedAt          DateTime         @updatedAt @map("updated_at")
+
+  @@unique([tenantMembershipId, relayCreatorId, campaignId])
+  @@index([relayCreatorId, campaignId])
+  @@map("patron_campaign_access")
 }
 
 /// Part 3 L — feed pagination cursors per patron.
 model FeedCursor {
-  id           String   @id @default(cuid())
-  patronUserId String   @map("patron_user_id")
-  cursorKey    String   @map("cursor_key")
-  cursorValue  String?  @map("cursor_value")
-  updatedAt    DateTime @updatedAt @map("updated_at")
+  id                 String   @id @default(cuid())
+  patronMembershipId String   @map("patron_user_id")
+  cursorKey          String   @map("cursor_key")
+  cursorValue        String?  @map("cursor_value")
+  updatedAt          DateTime @updatedAt @map("updated_at")
 
-  patron User @relation(fields: [patronUserId], references: [id], onDelete: Cascade)
+  membership TenantMembership @relation(fields: [patronMembershipId], references: [id], onDelete: Cascade)
 
-  @@unique([patronUserId, cursorKey])
+  @@unique([patronMembershipId, cursorKey])
   @@map("feed_cursors")
 }
 
 /// Part 3 K — notification / privacy preference rows.
 model NotificationPreference {
-  id             String   @id @default(cuid())
-  patronUserId   String   @map("patron_user_id")
-  relayCreatorId String   @map("relay_creator_id")
-  preferenceType String   @map("preference_type")
-  enabled        Boolean  @default(true)
-  updatedAt      DateTime @updatedAt @map("updated_at")
+  id                 String   @id @default(cuid())
+  patronMembershipId String   @map("patron_user_id")
+  relayCreatorId     String   @map("relay_creator_id")
+  preferenceType     String   @map("preference_type")
+  enabled            Boolean  @default(true)
+  updatedAt          DateTime @updatedAt @map("updated_at")
 
-  patron User @relation(fields: [patronUserId], references: [id], onDelete: Cascade)
+  membership TenantMembership @relation(fields: [patronMembershipId], references: [id], onDelete: Cascade)
 
-  @@unique([patronUserId, relayCreatorId, preferenceType])
+  @@unique([patronMembershipId, relayCreatorId, preferenceType])
   @@map("notification_preferences")
 }
 
-/// Optional patron OAuth token persistence (Part 3 K) — separate path from creator `OAuthCredential`.
+/// Optional patron OAuth token persistence (Part 3 K) — one row per `Account` (global Patreon link).
 model PatronOAuthCredential {
   id               String           @id @default(cuid())
-  userId           String           @unique @map("user_id")
+  accountId        String           @unique @map("account_id")
+  account          Account          @relation(fields: [accountId], references: [id], onDelete: Cascade)
   encryptedPayload Bytes            @map("encrypted_payload")
   keyId            String           @map("key_id")
   healthStatus     CredentialHealth @map("health_status")
   createdAt        DateTime         @default(now()) @map("created_at")
   updatedAt        DateTime         @updatedAt @map("updated_at")
-
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("patron_oauth_credentials")
 }
@@ -785,12 +855,12 @@ model DiscoveryDecisionLog {
 
 /// Smart Tag Assistant — vector column is a `Bytes` placeholder until pgvector is enabled (see `relational-model.md`).
 model EmbeddingStub {
-  id           String   @id @default(cuid())
-  creatorId    String   @map("creator_id")
-  entityType   String   @map("entity_type")
-  entityId     String   @map("entity_id")
-  modelVersion String   @map("model_version")
-  embeddingBlob Bytes?  @map("embedding_blob")
+  id            String @id @default(cuid())
+  creatorId     String @map("creator_id")
+  entityType    String @map("entity_type")
+  entityId      String @map("entity_id")
+  modelVersion  String @map("model_version")
+  embeddingBlob Bytes? @map("embedding_blob")
 
   @@unique([creatorId, entityType, entityId, modelVersion], map: "embedding_stub_scope_unique")
   @@index([creatorId])

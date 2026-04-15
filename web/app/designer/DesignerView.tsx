@@ -21,9 +21,7 @@ import {
 import { DesignerHeader } from "@/app/components/designer/designer-header";
 import { InspectorRail } from "@/app/components/designer/inspector-rail";
 import { CanvasPreview } from "@/app/components/designer/canvas-preview";
-
-const defaultCreatorId =
-  process.env.NEXT_PUBLIC_RELAY_CREATOR_ID?.trim() || "creator_1";
+import { useStudioSession } from "@/lib/studio-session-context";
 
 type PublishPreflight = {
   site_id: string;
@@ -72,7 +70,7 @@ function ResizeHandle({ onMouseDown }: { onMouseDown: React.MouseEventHandler })
 }
 
 export default function DesignerView() {
-  const [creatorId] = useState(defaultCreatorId);
+  const { creatorId } = useStudioSession();
   const [apiLayout, setApiLayout] = useState<ApiPageLayout | null>(null);
   const [collections, setCollections] = useState<ApiCollection[]>([]);
   const [designerLayout, setDesignerLayout] = useState<DesignerPageLayout | null>(null);

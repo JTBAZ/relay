@@ -2,7 +2,7 @@ import { readFile } from "node:fs/promises";
 import {
   IdentityAuthProvider,
   PrismaClient,
-  UserKind,
+  TenantRole,
   type Prisma
 } from "@prisma/client";
 import type {
@@ -18,7 +18,7 @@ function mapAuthProvider(a: AuthProvider): IdentityAuthProvider {
 }
 
 /**
- * Idempotent upsert from `identity.json` into Postgres (tenants, patron users, sessions with token hashes).
+ * Idempotent upsert from `identity.json` into Postgres (tenants, accounts, memberships, sessions with token hashes).
  * Intended for one-time migration; safe to re-run (same file → same rows).
  */
 export async function backfillIdentityFromFile(args: {
@@ -35,7 +35,7 @@ export async function backfillIdentityFromFile(args: {
 
   await args.prisma.$transaction(async (tx) => {
     for (const u of users) {
-      await upsertPatronUser(tx, u);
+      await upsertPatronMembership(tx, u);
       usersUpserted += 1;
     }
     for (const s of sessions) {
@@ -47,7 +47,7 @@ export async function backfillIdentityFromFile(args: {
   return { usersUpserted, sessionsUpserted };
 }
 
-async function upsertPatronUser(
+async function upsertPatronMembership(
   tx: Prisma.TransactionClient,
   user: UserAccount
 ): Promise<void> {
@@ -56,25 +56,53 @@ async function upsertPatronUser(
     create: { relayCreatorId: user.creator_id },
     update: {}
   });
-  await tx.user.upsert({
+  const emailNorm = user.email.toLowerCase().trim();
+
+  let account = await tx.account.findFirst({
+    where: {
+      OR: [
+        ...(emailNorm.length > 0 ? [{ emailNorm }] : []),
+        ...(user.patreon_user_id ? [{ patronPatreonUserId: user.patreon_user_id }] : [])
+      ]
+    }
+  });
+
+  if (!account) {
+    account = await tx.account.create({
+      data: {
+        emailNorm: emailNorm.length > 0 ? emailNorm : null,
+        passwordHash: user.password_hash || null,
+        identityAuthProvider: mapAuthProvider(user.auth_provider),
+        patronPatreonUserId: user.patreon_user_id ?? null,
+        legacyFileId: user.user_id
+      }
+    });
+  } else {
+    account = await tx.account.update({
+      where: { id: account.id },
+      data: {
+        emailNorm: emailNorm.length > 0 ? emailNorm : account.emailNorm,
+        passwordHash: user.password_hash || null,
+        identityAuthProvider: mapAuthProvider(user.auth_provider),
+        patronPatreonUserId: user.patreon_user_id ?? account.patronPatreonUserId,
+        legacyFileId: user.user_id
+      }
+    });
+  }
+
+  await tx.tenantMembership.upsert({
     where: { id: user.user_id },
     create: {
       id: user.user_id,
+      accountId: account.id,
       tenantId: tenant.id,
-      kind: UserKind.patron,
-      emailNorm: user.email.toLowerCase().trim(),
-      passwordHash: user.password_hash || null,
-      identityAuthProvider: mapAuthProvider(user.auth_provider),
-      patronPatreonUserId: user.patreon_user_id ?? null,
+      role: TenantRole.patron,
       tierIds: user.tier_ids,
       legacyFileId: user.user_id
     },
     update: {
+      accountId: account.id,
       tenantId: tenant.id,
-      emailNorm: user.email.toLowerCase().trim(),
-      passwordHash: user.password_hash || null,
-      identityAuthProvider: mapAuthProvider(user.auth_provider),
-      patronPatreonUserId: user.patreon_user_id ?? null,
       tierIds: user.tier_ids,
       legacyFileId: user.user_id
     }
@@ -86,13 +114,13 @@ async function upsertSession(tx: Prisma.TransactionClient, session: SessionToken
   await tx.session.upsert({
     where: { tokenHash },
     create: {
-      userId: session.user_id,
+      tenantMembershipId: session.user_id,
       tokenHash,
       expiresAt: new Date(session.expires_at),
       legacyFileId: `file:${session.user_id}`
     },
     update: {
-      userId: session.user_id,
+      tenantMembershipId: session.user_id,
       expiresAt: new Date(session.expires_at),
       legacyFileId: `file:${session.user_id}`
     }

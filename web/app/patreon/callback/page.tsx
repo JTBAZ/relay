@@ -2,8 +2,12 @@
 
 import { Suspense, useEffect, useState } from "react";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
-import { RELAY_API_BASE } from "@/lib/relay-api";
+import { useRouter, useSearchParams } from "next/navigation";
+import {
+  RELAY_API_BASE,
+  RELAY_CREATOR_ID_STORAGE_KEY,
+  isPreparedPatreonOAuthState
+} from "@/lib/relay-api";
 
 function redirectUriForExchange(): string {
   const fromEnv = process.env.NEXT_PUBLIC_PATREON_REDIRECT_URI?.trim();
@@ -12,6 +16,7 @@ function redirectUriForExchange(): string {
 }
 
 function CallbackInner() {
+  const router = useRouter();
   const params = useSearchParams();
   const code = params.get("code");
   const state = params.get("state");
@@ -42,13 +47,38 @@ function CallbackInner() {
 
     (async () => {
       try {
+        const prepared = isPreparedPatreonOAuthState(state);
+        const token = window.localStorage.getItem("relay_session_token")?.trim() ?? "";
+        const storedCreatorId =
+          window.localStorage.getItem(RELAY_CREATOR_ID_STORAGE_KEY)?.trim() ?? "";
+
+        let creatorId: string;
+        const headers: Record<string, string> = { "content-type": "application/json" };
+        if (prepared) {
+          if (!storedCreatorId) {
+            throw new Error(
+              "Missing relay_creator_id in localStorage — run Create workspace on /patreon/connect first."
+            );
+          }
+          if (!token) {
+            throw new Error(
+              "Missing relay_session_token — sign in before OAuth (same browser tab)."
+            );
+          }
+          creatorId = storedCreatorId;
+          headers.authorization = `Bearer ${token}`;
+        } else {
+          creatorId = state;
+        }
+
         const res = await fetch(`${RELAY_API_BASE}/api/v1/auth/patreon/exchange`, {
           method: "POST",
-          headers: { "content-type": "application/json" },
+          headers,
           body: JSON.stringify({
-            creator_id: state,
+            creator_id: creatorId,
             code,
-            redirect_uri: redirectUri
+            redirect_uri: redirectUri,
+            ...(prepared ? { state } : {})
           })
         });
         const json = (await res.json()) as {
@@ -63,6 +93,8 @@ function CallbackInner() {
         }
         setStatus("done");
         setMessage(JSON.stringify(json.data, null, 2));
+        // Patreon connected — redirect to creator dashboard
+        setTimeout(() => { if (!cancelled) router.push("/"); }, 1500);
       } catch (e) {
         if (!cancelled) {
           setStatus("error");
@@ -97,13 +129,10 @@ function CallbackInner() {
           {message}
         </pre>
       )}
-      {status === "done" && message && (
-        <>
-          <p className="text-sm text-emerald-300">Tokens stored (encrypted) on the API server.</p>
-          <pre className="overflow-x-auto rounded border border-stone-600 bg-stone-900/80 p-3 text-xs text-stone-200">
-            {message}
-          </pre>
-        </>
+      {status === "done" && (
+        <p className="text-sm text-emerald-300">
+          Patreon connected. Redirecting to your dashboard…
+        </p>
       )}
     </main>
   );

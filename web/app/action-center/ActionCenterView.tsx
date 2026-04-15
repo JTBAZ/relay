@@ -10,8 +10,8 @@ import {
   type ActionCenterCard,
   type AnalyticsHealthData
 } from "@/lib/relay-api";
-
-const defaultCreatorId = process.env.NEXT_PUBLIC_RELAY_CREATOR_ID?.trim() || "creator_1";
+import { useStudioSession } from "@/lib/studio-session-context";
+import { CreatorPublicUrlSettings } from "@/app/components/studio/CreatorPublicUrlSettings";
 
 function formatDeltaRange(metric: string, range: [number, number], horizon: number): string {
   const [a, b] = range;
@@ -20,7 +20,7 @@ function formatDeltaRange(metric: string, range: [number, number], horizon: numb
 }
 
 export default function ActionCenterView() {
-  const creatorId = defaultCreatorId;
+  const { creatorId } = useStudioSession();
   const [cards, setCards] = useState<ActionCenterCard[]>([]);
   const [health, setHealth] = useState<AnalyticsHealthData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -119,6 +119,10 @@ export default function ActionCenterView() {
         </div>
       </header>
 
+      <div className="mx-auto w-full max-w-4xl px-6 pt-4">
+        <CreatorPublicUrlSettings />
+      </div>
+
       {health && (
         <div className="mx-auto w-full max-w-4xl px-6 py-3 text-[11px] text-[var(--lib-fg-muted)]">
           <span
@@ -150,8 +154,10 @@ export default function ActionCenterView() {
       <div className="mx-auto flex w-full max-w-4xl flex-1 flex-col gap-4 px-6 py-6">
         {cards.length === 0 ? (
           <p className="text-sm text-[var(--lib-fg-muted)]">
-            No open cards. Run <strong>Refresh insights</strong> after ingesting posts, or check another creator via{" "}
-            <code className="rounded bg-[var(--lib-card)] px-1">NEXT_PUBLIC_RELAY_CREATOR_ID</code>.
+            No open cards. Run <strong>Refresh insights</strong> after ingesting posts, or sign in on{" "}
+            <code className="rounded bg-[var(--lib-card)] px-1">/login</code> to use your studio{" "}
+            <code className="rounded bg-[var(--lib-card)] px-1">relay_creator_id</code> (legacy dev fallback:{" "}
+            <code className="rounded bg-[var(--lib-card)] px-1">NEXT_PUBLIC_RELAY_CREATOR_ID</code>).
           </p>
         ) : (
           cards.map((card) => (

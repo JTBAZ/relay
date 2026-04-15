@@ -1,5 +1,6 @@
 import { Suspense } from "react";
 import DesignerView from "./DesignerView";
+import { StudioRouteGuard } from "../components/studio/StudioRouteGuard";
 
 function DesignerFallback() {
   return (
@@ -13,7 +14,9 @@ export default function DesignerPage() {
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <Suspense fallback={<DesignerFallback />}>
-        <DesignerView />
+        <StudioRouteGuard>
+          <DesignerView />
+        </StudioRouteGuard>
       </Suspense>
     </div>
   );

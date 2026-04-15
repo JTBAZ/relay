@@ -187,6 +187,7 @@ export class DbCanonicalStore implements CanonicalStore {
         upstream_revision: m.currentUpstreamRevision,
         mime_type: m.currentMimeType ?? undefined,
         upstream_url: m.currentUpstreamUrl ?? undefined,
+        storage_key: m.currentStorageKey ?? undefined,
         role: m.currentRole ?? undefined,
         ingested_at: m.currentIngestedAt.toISOString()
       };
@@ -316,6 +317,7 @@ export class DbCanonicalStore implements CanonicalStore {
               currentMimeType: m.current.mime_type ?? null,
               currentUpstreamUrl: m.current.upstream_url ?? null,
               currentRole: m.current.role ?? null,
+              currentStorageKey: m.current.storage_key ?? null,
               currentIngestedAt: new Date(m.current.ingested_at),
               versionsJson: m.versions as unknown as Prisma.InputJsonValue
             }

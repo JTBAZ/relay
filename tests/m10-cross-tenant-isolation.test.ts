@@ -15,7 +15,7 @@ describe("M10 cross-tenant isolation (DB store query scope)", () => {
     await store.listForUser("creator_aaa", "user_u1");
     expect(findMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { creatorId: "creator_aaa", patronUserId: "user_u1" }
+        where: { creatorId: "creator_aaa", patronMembershipId: "user_u1" }
       })
     );
   });
@@ -41,7 +41,7 @@ describe("M10 cross-tenant isolation (DB store query scope)", () => {
     await store.listCollectionsWithEntries("creator_ccc", "user_u2");
     expect(findManyCols).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { creatorId: "creator_ccc", userId: "user_u2" }
+        where: { creatorId: "creator_ccc", patronMembershipId: "user_u2" }
       })
     );
   });

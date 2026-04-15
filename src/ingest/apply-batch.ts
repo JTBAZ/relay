@@ -187,7 +187,14 @@ function upsertMediaForPost(
   snapshot: CanonicalSnapshot,
   creatorId: string,
   postId: string,
-  m: { media_id: string; mime_type?: string; upstream_url?: string; upstream_revision: string; role?: string },
+  m: {
+    media_id: string;
+    mime_type?: string;
+    upstream_url?: string;
+    upstream_revision: string;
+    storage_key?: string;
+    role?: string;
+  },
   result: ApplyBatchResult
 ): void {
   const mediaMap = ensureNested(snapshot.media, creatorId);
@@ -205,6 +212,7 @@ function upsertMediaForPost(
       upstream_revision: m.upstream_revision,
       mime_type: m.mime_type,
       upstream_url: m.upstream_url,
+      storage_key: m.storage_key,
       role: m.role,
       ingested_at: nowIso()
     };
@@ -245,6 +253,7 @@ function upsertMediaForPost(
     upstream_revision: m.upstream_revision,
     mime_type: m.mime_type ?? existing.current.mime_type,
     upstream_url: m.upstream_url ?? existing.current.upstream_url,
+    storage_key: m.storage_key ?? existing.current.storage_key,
     role: m.role ?? existing.current.role,
     ingested_at: nowIso()
   };

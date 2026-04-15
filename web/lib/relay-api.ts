@@ -1,3 +1,5 @@
+import { PATREON_CREATOR_OAUTH_SCOPES } from "./patreon-creator-scopes";
+
 /** No trailing slash — paths like `/api/v1/...` are appended below. */
 function resolveRelayApiBase(): string {
   const fromEnv = (process.env.NEXT_PUBLIC_RELAY_API_URL ?? "").trim();
@@ -19,6 +21,41 @@ export class RelayApiError extends Error {
     public readonly code?: string
   ) {
     super(message);
+  }
+}
+
+/**
+ * Reads the response body and parses JSON. Surfaces HTML (Express 404 pages, proxies) with a clear hint —
+ * common when `NEXT_PUBLIC_RELAY_API_URL` points at an old Relay deploy missing `/api/v1/auth/supabase/*`.
+ */
+export async function parseRelayResponseBody(res: Response, requestPath = ""): Promise<unknown> {
+  const text = await res.text();
+  const trim = text.trim();
+  if (!trim) {
+    throw new RelayApiError(
+      `Relay API returned an empty body (HTTP ${res.status}). Check NEXT_PUBLIC_RELAY_API_URL.`,
+      res.status,
+      "EMPTY_BODY"
+    );
+  }
+  if (trim.startsWith("<")) {
+    const target = `${RELAY_API_BASE}${requestPath}`;
+    throw new RelayApiError(
+      `Relay API returned HTML (HTTP ${res.status}) instead of JSON for ${target}. ` +
+        `The deployed API is likely outdated (missing POST /api/v1/auth/supabase/sync and related routes). ` +
+        `Redeploy the Relay server from this repo, or for local dev set NEXT_PUBLIC_RELAY_API_URL=http://127.0.0.1:8787 and run npm run build && npm start.`,
+      res.status,
+      "NON_JSON"
+    );
+  }
+  try {
+    return JSON.parse(trim) as unknown;
+  } catch {
+    throw new RelayApiError(
+      `Relay API returned invalid JSON (HTTP ${res.status}): ${trim.slice(0, 200)}`,
+      res.status,
+      "INVALID_JSON"
+    );
   }
 }
 
@@ -52,12 +89,7 @@ export async function relayFetch<T>(path: string, init?: RequestInit): Promise<T
     );
   }
 
-  let json: unknown;
-  try {
-    json = await res.json();
-  } catch {
-    throw new RelayApiError(res.statusText || "Invalid response", res.status);
-  }
+  const json = await parseRelayResponseBody(res, path);
 
   if (!res.ok) {
     const err = json as { error?: { message?: string; code?: string } };
@@ -70,6 +102,109 @@ export async function relayFetch<T>(path: string, init?: RequestInit): Promise<T
 
   const envelope = json as Envelope<T>;
   return envelope.data;
+}
+
+/** Browser storage for studio id after `POST /api/v1/creator/workspace` (MT-032 / MT-035). */
+export const RELAY_CREATOR_ID_STORAGE_KEY = "relay_creator_id";
+
+/** Browser storage for `/patron/c/{slug}` segment after workspace bootstrap. */
+export const RELAY_PUBLIC_SLUG_STORAGE_KEY = "relay_public_slug";
+
+/** True when `state` is the signed value from `POST /api/v1/auth/patreon/creator/prepare` (v1.HMAC). */
+export function isPreparedPatreonOAuthState(state: string | null | undefined): boolean {
+  return Boolean(state && state.startsWith("1.") && state.split(".").length === 3);
+}
+
+export type PatreonCreatorPrepareData = {
+  state: string;
+  creator_id: string;
+  expires_at: string;
+};
+
+/** MT-035: signed OAuth `state` — requires `relay_session_token` + owned `creator_id`. */
+export async function postPatreonCreatorPrepare(creatorId: string): Promise<PatreonCreatorPrepareData> {
+  return relayFetch<PatreonCreatorPrepareData>("/api/v1/auth/patreon/creator/prepare", {
+    method: "POST",
+    body: JSON.stringify({ creator_id: creatorId.trim() })
+  });
+}
+
+export type CreatorWorkspaceData = {
+  relay_creator_id: string;
+  account_id: string;
+  created: boolean;
+  public_slug: string;
+};
+
+export async function postCreatorWorkspace(): Promise<CreatorWorkspaceData> {
+  return relayFetch<CreatorWorkspaceData>("/api/v1/creator/workspace", {
+    method: "POST",
+    body: JSON.stringify({})
+  });
+}
+
+export async function fetchCreatorPublicSlug(): Promise<{ public_slug: string }> {
+  return relayFetch<{ public_slug: string }>("/api/v1/creator/public-slug");
+}
+
+export async function patchCreatorPublicSlug(public_slug: string): Promise<{ public_slug: string }> {
+  return relayFetch<{ public_slug: string }>("/api/v1/creator/public-slug", {
+    method: "PATCH",
+    body: JSON.stringify({ public_slug: public_slug.trim().toLowerCase() })
+  });
+}
+
+export type PublicCreatorResolution = {
+  public_slug: string;
+  relay_creator_id: string;
+};
+
+/** No auth — for public pages and share links. */
+export async function fetchPublicCreatorBySlug(
+  slug: string
+): Promise<PublicCreatorResolution | null> {
+  const trimmed = slug.trim();
+  if (trimmed.length < 2) {
+    return null;
+  }
+  let res: Response;
+  try {
+    res = await fetch(
+      `${RELAY_API_BASE}/api/v1/public/creators/${encodeURIComponent(trimmed)}`,
+      { cache: "no-store" }
+    );
+  } catch {
+    return null;
+  }
+  if (res.status === 404) {
+    return null;
+  }
+  if (!res.ok) {
+    return null;
+  }
+  try {
+    const json = (await parseRelayResponseBody(
+      res,
+      `/api/v1/public/creators/${encodeURIComponent(trimmed)}`
+    )) as Envelope<PublicCreatorResolution>;
+    return json.data ?? null;
+  } catch {
+    return null;
+  }
+}
+
+export function buildPatreonCreatorAuthorizeUrl(
+  clientId: string,
+  redirectUri: string,
+  oauthState: string
+): string {
+  const u = new URL("https://www.patreon.com/oauth2/authorize");
+  u.searchParams.set("response_type", "code");
+  u.searchParams.set("client_id", clientId.trim());
+  u.searchParams.set("redirect_uri", redirectUri);
+  u.searchParams.set("scope", PATREON_CREATOR_OAUTH_SCOPES);
+  u.searchParams.set("state", oauthState);
+  return u.toString();
 }
 
 export type PostVisibility = "visible" | "hidden" | "review";

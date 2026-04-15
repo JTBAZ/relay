@@ -4,7 +4,10 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { CanonicalSnapshot } from "../src/ingest/canonical-store.js";
 import { FileCanonicalStore } from "../src/ingest/canonical-store.js";
-import { ExportService } from "../src/export/export-service.js";
+import {
+  ExportService,
+  upstreamUrlLooksLikePatreonHosted
+} from "../src/export/export-service.js";
 import { FileExportIndex } from "../src/export/export-index.js";
 import {
   fetchUpstreamWithRetries,
@@ -14,6 +17,16 @@ import {
 import type { CreatorExportIndex } from "../src/export/types.js";
 import { buildGalleryItems } from "../src/gallery/query.js";
 import type { GalleryOverridesRoot } from "../src/gallery/types.js";
+
+describe("upstreamUrlLooksLikePatreonHosted", () => {
+  it("matches Patreon CDN hosts", () => {
+    expect(
+      upstreamUrlLooksLikePatreonHosted("https://c10.patreonusercontent.com/foo/bar")
+    ).toBe(true);
+    expect(upstreamUrlLooksLikePatreonHosted("https://www.patreon.com/file")).toBe(true);
+    expect(upstreamUrlLooksLikePatreonHosted("https://example.com/x")).toBe(false);
+  });
+});
 
 describe("export fetch retry helpers", () => {
   it("shouldRetryHttpStatus", () => {
@@ -30,6 +43,23 @@ describe("export fetch retry helpers", () => {
     const abort = new Error("The operation was aborted");
     abort.name = "AbortError";
     expect(isRetryableFetchError(abort)).toBe(true);
+  });
+
+  it("fetchUpstreamWithRetries forwards optional Authorization header", async () => {
+    let seen: RequestInit | undefined;
+    const fetchImpl = async (_url: string, init?: RequestInit) => {
+      seen = init;
+      return new Response(new Uint8Array([1]), { status: 200 });
+    };
+    await fetchUpstreamWithRetries(
+      "https://example.com/x",
+      fetchImpl as unknown as typeof fetch,
+      { max_attempts: 2, base_delay_ms: 1, timeout_ms: 5000 },
+      async () => {},
+      { headers: { authorization: "Bearer t" } }
+    );
+    const h = new Headers(seen?.headers as HeadersInit | undefined);
+    expect(h.get("authorization")).toBe("Bearer t");
   });
 
   it("fetchUpstreamWithRetries succeeds after transient failures", async () => {
@@ -121,6 +151,40 @@ describe("ExportService.exportMedia", () => {
       const raw = await readFile(join(exportRoot, "c1", "export_index.json"), "utf8");
       const idx = JSON.parse(raw) as CreatorExportIndex;
       expect(idx.export_failures?.m1?.message).toMatch(/403/);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("sends creator OAuth Bearer token for Patreon-hosted upstream URLs", async () => {
+    const root = await mkdtemp(join(tmpdir(), "relay-export-test-"));
+    try {
+      const snap = minimalSnapshot();
+      snap.media.c1!.m1!.current.upstream_url =
+        "https://c10.patreonusercontent.com/3/abc.jpeg";
+      const canonPath = join(root, "canonical.json");
+      await writeFile(canonPath, JSON.stringify(snap), "utf8");
+      const canonicalStore = new FileCanonicalStore(canonPath);
+      const exportRoot = join(root, "exports");
+      const exportIndex = new FileExportIndex(exportRoot);
+      let authHeader: string | null = null;
+      const fetchImpl = async (_url: string, init?: RequestInit) => {
+        authHeader = new Headers(init?.headers as HeadersInit | undefined).get(
+          "authorization"
+        );
+        return new Response(new Uint8Array([9]), { status: 200 });
+      };
+      const svc = new ExportService(
+        canonicalStore,
+        exportIndex,
+        exportRoot,
+        fetchImpl as unknown as typeof fetch,
+        { max_attempts: 2, base_delay_ms: 1, timeout_ms: 5000 },
+        undefined,
+        async () => "creator_oauth_token"
+      );
+      await svc.exportMedia("c1", "m1");
+      expect(authHeader).toBe("Bearer creator_oauth_token");
     } finally {
       await rm(root, { recursive: true, force: true });
     }

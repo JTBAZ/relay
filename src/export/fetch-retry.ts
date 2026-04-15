@@ -15,6 +15,11 @@ export function isRetryableFetchError(e: unknown): boolean {
   return false;
 }
 
+export type FetchUpstreamOptions = {
+  /** Merged into each attempt (e.g. `Authorization` for Patreon-hosted media). */
+  headers?: Record<string, string>;
+};
+
 /**
  * Fetch URL with bounded retries (transient HTTP + network/timeout only).
  */
@@ -22,13 +27,16 @@ export async function fetchUpstreamWithRetries(
   url: string,
   fetchImpl: typeof fetch,
   policy: ExportFetchRetryPolicy,
-  sleepFn: (ms: number) => Promise<void>
+  sleepFn: (ms: number) => Promise<void>,
+  options?: FetchUpstreamOptions
 ): Promise<Response> {
+  const headers = options?.headers;
   let lastMessage = "Download failed";
   for (let attempt = 1; attempt <= policy.max_attempts; attempt++) {
     try {
       const response = await fetchImpl(url, {
-        signal: AbortSignal.timeout(policy.timeout_ms)
+        signal: AbortSignal.timeout(policy.timeout_ms),
+        ...(headers && Object.keys(headers).length > 0 ? { headers } : {})
       });
       if (response.ok) {
         return response;

@@ -6,6 +6,7 @@ import {
   UserKind,
   IdentityAuthProvider
 } from "@prisma/client";
+import { allocateUniquePublicSlug } from "../creator/public-slug.js";
 import { TokenEncryption } from "../lib/crypto.js";
 import type {
   CredentialHealthStatus,
@@ -67,8 +68,9 @@ export class DbPatreonTokenStore implements PatreonTokenStore {
             tierIds: []
           }
         });
+        const publicSlug = await allocateUniquePublicSlug(tx, null);
         await tx.creatorProfile.create({
-          data: { tenantId: tenant.id, userId: creatorUser.id }
+          data: { tenantId: tenant.id, userId: creatorUser.id, publicSlug }
         });
       }
 

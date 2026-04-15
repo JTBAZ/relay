@@ -16,7 +16,7 @@
 | **`docs/qa/UX_ACCEPTANCE_GUARDRAILS.md`** | Pass/fail UX expectations. |
 | **`.cursor/rules/airtable-execution-control-plane.mdc`** | IDE mirror: read ledger before work, batching, MCP hygiene. |
 
-**MCP:** **`user-airtable`** — base **Project tracker** `applW4dOjVNHoWBM9`. Read MCP tool descriptors before calling. Always read **`Production Ledger`** state before claiming work; use **`Session Lock`**.
+**MCP:** **`user-airtable`** — base **Project tracker** `applW4dOjVNHoWBM9`. Read MCP tool descriptors before calling. Always read **`Production Ledger`** state before claiming work; use **`Session Lock`**. **`user-supabase`** — read-check migrations/tables/SQL against the linked Supabase project after Prisma or identity work when prudent (`.cursor/rules/supabase-mcp-read-check.mdc`); never paste secrets.
 
 ---
 
@@ -30,6 +30,8 @@
 | Relational DB (target) | `docs/database/` | PostgreSQL + Prisma direction, migration from `.relay-data/` — not the Airtable ledger; **DB Integration Pipeline** Airtable layout: [`docs/database/AIRTABLE_DB_PIPELINE.md`](docs/database/AIRTABLE_DB_PIPELINE.md) |
 
 **Database integration (M10):** Verification checklist and human gates — [`docs/database/M10_VERIFICATION.md`](docs/database/M10_VERIFICATION.md). Per-domain cutover status — [`docs/database/migration-from-relay-data.md`](docs/database/migration-from-relay-data.md). Pooling + security — [`docs/database/operations-and-security.md`](docs/database/operations-and-security.md).
+
+**Multi-tenant + cloud (Supabase target):** **Agent preamble for Airtable Multi Tenant Changes** — [`docs/architecture/MULTI_TENANT_AGENT_ORIENTATION.md`](docs/architecture/MULTI_TENANT_AGENT_ORIENTATION.md). Runtime schema — [`docs/architecture/multi-tenant-cloud-runtime.md`](docs/architecture/multi-tenant-cloud-runtime.md); migration work items — [`docs/architecture/supabase-migration-work-items.md`](docs/architecture/supabase-migration-work-items.md); identity Option B — [`docs/architecture/multi-tenant-option-b.md`](docs/architecture/multi-tenant-option-b.md).
 
 **Strategic narrative:** [`road map.md`](road%20map.md). **Business / unit economics:** **`docs/financial-atlas.md`**.
 
