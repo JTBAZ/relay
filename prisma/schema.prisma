@@ -885,13 +885,17 @@ model TagSuggestion {
 /// Narrow replacement target for `patreon_webhook_metadata.json` (encrypted secret + key id only).
 model WebhookEndpoint {
   id                       String   @id @default(cuid())
-  relayCreatorId           String   @map("relay_creator_id")
+  relayCreatorId           String   @unique @map("relay_creator_id")
   patreonCampaignNumericId String?  @map("patreon_campaign_numeric_id")
-  encryptedSecret          Bytes    @map("encrypted_secret")
-  keyId                    String   @map("key_id")
+  encryptedSecret          Bytes?   @map("encrypted_secret")
+  keyId                    String?  @map("key_id")
+  opaqueDeliveryToken      String?  @unique @map("opaque_delivery_token")
+  patreonWebhookId         String?  @map("patreon_webhook_id")
+  uriRegistered            String?  @map("uri_registered")
+  registrationStatus       String?  @map("registration_status")
+  triggers                 Json?    @map("webhook_triggers")
   createdAt                DateTime @default(now()) @map("created_at")
   updatedAt                DateTime @updatedAt @map("updated_at")
 
-  @@index([relayCreatorId])
   @@map("webhook_endpoints")
 }

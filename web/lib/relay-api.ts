@@ -825,6 +825,8 @@ export type PatreonSyncStateData = {
   campaign_display: CampaignDisplayData | null;
   /** Patreon platform webhook registration (member/post delivery). */
   webhook_registration?: WebhookRegistrationSummaryData | null;
+  /** From Relay API env: public webhook base URL configured (RELAY_PUBLIC_WEBHOOK_BASE_URL). */
+  public_webhook_base_configured?: boolean;
 };
 
 /** True when the Library should show a sync-issue pill without opening the menu. */
@@ -940,6 +942,22 @@ export async function postPatreonScrape(body: {
   return fetchRelayCreatorJson<PatreonScrapeResultData>("/api/v1/patreon/scrape", {
     method: "POST",
     body: JSON.stringify(body)
+  });
+}
+
+/** POST /api/v1/patreon/webhooks/register — requires Bearer session + creator scope. */
+export type RegisterPatreonWebhooksData = {
+  creator_id: string;
+  webhook_id: string;
+  uri: string;
+};
+
+export async function registerPatreonWebhooks(
+  creatorId: string
+): Promise<RegisterPatreonWebhooksData> {
+  return relayFetch<RegisterPatreonWebhooksData>("/api/v1/patreon/webhooks/register", {
+    method: "POST",
+    body: JSON.stringify({ creator_id: creatorId.trim() })
   });
 }
 

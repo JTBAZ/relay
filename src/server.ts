@@ -189,7 +189,8 @@ import { PatreonCampaignCreatorIndex } from "./patreon/patreon-campaign-creator-
 import { PatreonMemberSyncCoordinator } from "./patreon/patreon-member-sync-coordinator.js";
 import {
   ensurePatreonPlatformWebhook,
-  resolvePublicWebhookBaseFromEnv
+  resolvePublicWebhookBaseFromEnv,
+  type EnsureWebhookResult
 } from "./patreon/patreon-webhook-registration.js";
 import {
   dispatchVerifiedPatreonPlatformPayload,
@@ -208,6 +209,7 @@ import { DbDeployStore } from "./deploy/deploy-store-db.js";
 import { FileDeployStore } from "./deploy/deploy-store.js";
 import { VercelAdapter, NetlifyAdapter } from "./deploy/deploy-adapter.js";
 import type { DeployProvider } from "./deploy/types.js";
+import { registerPipelineParityRoutes } from "./dev/pipeline-parity-routes.js";
 
 export type AppConfig = {
   /** Patreon "Client ID" from the developer portal (register-clients). */
@@ -784,6 +786,14 @@ export function createApp(config: AppConfig): CreateAppResult {
 
   const publicWebhookBaseResolved =
     config.public_webhook_base_url?.trim() || resolvePublicWebhookBaseFromEnv();
+  const publicWebhookBaseConfigured = Boolean(publicWebhookBaseResolved?.trim());
+  if (!publicWebhookBaseConfigured) {
+    // eslint-disable-next-line no-console -- intentional startup visibility for production misconfiguration
+    console.warn(
+      "[relay] RELAY_PUBLIC_WEBHOOK_BASE_URL is not set — Patreon platform webhooks cannot be registered. " +
+        "Set RELAY_PUBLIC_WEBHOOK_BASE_URL (or PUBLIC_WEBHOOK_BASE_URL) to your public Relay API origin in production."
+    );
+  }
 
   const app = express();
 
@@ -895,7 +905,7 @@ export function createApp(config: AppConfig): CreateAppResult {
     );
     res.setHeader(
       "Access-Control-Allow-Headers",
-      "Content-Type, X-Trace-Id, Authorization"
+      "Content-Type, X-Trace-Id, Authorization, X-Relay-Pipeline-Parity-Secret"
     );
     if (req.method === "OPTIONS") {
       return res.sendStatus(204);
@@ -1185,9 +1195,13 @@ export function createApp(config: AppConfig): CreateAppResult {
       );
 
       let patreonCampaignId: string | null = null;
+      let campaignDiscoveryError: string | null = null;
+      let attemptedCampaignSync = false;
+
       if (config.prisma && useDbCreatorOAuthStore(config)) {
         const tokens = await tokenStore.getByCreatorId(creatorId);
         if (tokens?.access_token) {
+          attemptedCampaignSync = true;
           try {
             const snap = await syncCreatorProfilePatreonCampaignFromOAuthToken({
               prisma: config.prisma,
@@ -1196,26 +1210,54 @@ export function createApp(config: AppConfig): CreateAppResult {
               fetchImpl: config.fetch_impl ?? globalThis.fetch
             });
             patreonCampaignId = snap.patreonCampaignId;
-          } catch {
-            /* campaign discovery is best-effort */
+            if (snap.patreonCampaignId == null) {
+              campaignDiscoveryError =
+                "No single Patreon campaign resolved — choose a default campaign before webhooks can be registered.";
+            }
+          } catch (e) {
+            campaignDiscoveryError = e instanceof Error ? e.message : String(e);
           }
         }
       }
 
-      void ensurePatreonPlatformWebhook({
-        creatorId: creatorId.trim(),
-        tokenStore,
-        webhookMetaStore: patreonWebhookMetadataStore,
-        campaignIndex: patreonCampaignCreatorIndex,
-        publicWebhookBaseUrl: publicWebhookBaseResolved,
-        fetchImpl: config.fetch_impl ?? globalThis.fetch
-      }).catch(() => {
-        /* registration is best-effort; status persisted on webhook meta store */
-      });
-      const payload =
-        patreonCampaignId != null
-          ? { ...result, patreon_campaign_id: patreonCampaignId }
-          : result;
+      const shouldRunWebhookEnsure = !attemptedCampaignSync || patreonCampaignId != null;
+
+      let webhookResult: EnsureWebhookResult | null = null;
+      if (shouldRunWebhookEnsure) {
+        try {
+          webhookResult = await ensurePatreonPlatformWebhook({
+            creatorId: creatorId.trim(),
+            tokenStore,
+            webhookMetaStore: patreonWebhookMetadataStore,
+            campaignIndex: patreonCampaignCreatorIndex,
+            publicWebhookBaseUrl: publicWebhookBaseResolved,
+            fetchImpl: config.fetch_impl ?? globalThis.fetch,
+            prisma: config.prisma,
+            tokenEncryption: encryption
+          });
+        } catch {
+          webhookResult = null;
+        }
+      }
+
+      const payload = {
+        ...result,
+        ...(patreonCampaignId != null ? { patreon_campaign_id: patreonCampaignId } : {}),
+        ...(campaignDiscoveryError != null ? { campaign_discovery_error: campaignDiscoveryError } : {}),
+        webhook: webhookResult
+          ? webhookResult.ok
+            ? {
+                status: "ok" as const,
+                webhook_id: webhookResult.webhook_id,
+                uri: webhookResult.uri
+              }
+            : {
+                status: "failed" as const,
+                reason: webhookResult.reason,
+                detail: webhookResult.detail
+              }
+          : { status: "skipped" as const }
+      };
       return res.status(200).json(successEnvelope(payload, traceId));
     } catch (error) {
       return res
@@ -1342,7 +1384,8 @@ export function createApp(config: AppConfig): CreateAppResult {
         successEnvelope(
           {
             ...state,
-            webhook_registration: patreonWebhookMetadataStore.getPublicSummary(whMeta)
+            webhook_registration: patreonWebhookMetadataStore.getPublicSummary(whMeta),
+            public_webhook_base_configured: publicWebhookBaseConfigured
           },
           traceId
         )
@@ -1591,7 +1634,9 @@ export function createApp(config: AppConfig): CreateAppResult {
         webhookMetaStore: patreonWebhookMetadataStore,
         campaignIndex: patreonCampaignCreatorIndex,
         publicWebhookBaseUrl: publicWebhookBaseResolved,
-        fetchImpl: config.fetch_impl ?? globalThis.fetch
+        fetchImpl: config.fetch_impl ?? globalThis.fetch,
+        prisma: config.prisma,
+        tokenEncryption: encryption
       });
       if (!result.ok) {
         if (result.reason === "no_public_base") {
@@ -4947,6 +4992,17 @@ export function createApp(config: AppConfig): CreateAppResult {
       return res.status(200).json(successEnvelope(dep, traceId));
     }
   );
+
+  registerPipelineParityRoutes(app, {
+    config,
+    prisma: config.prisma,
+    patreonCampaignCreatorIndex,
+    credentialStorePath,
+    cookieStorePath: config.cookie_store_path ?? join(relayDataDir, "patreon_cookies.json"),
+    patreonWebhookMetadataPath,
+    patreonCampaignIndexPath,
+    ingestCanonicalPath: config.ingest_canonical_path ?? join(relayDataDir, "canonical.json")
+  });
 
   return {
     app,

@@ -5,6 +5,12 @@ import { useEffect, useState } from "react";
 
 const steps = [
   {
+    href: "/dev/pipeline-parity",
+    title: "Pipeline parity (truth matrix)",
+    description:
+      "Local operator view: Relay DB flags, sync-state, browser session — honest ok/degraded/na/unknown.",
+  },
+  {
     href: "/",
     title: "Dev Library",
     description: "Creator staging — collections, visibility, media. Same creator as below.",

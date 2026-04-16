@@ -1,4 +1,8 @@
+import type { PrismaClient } from "@prisma/client";
+import { Prisma } from "@prisma/client";
+import { RELAY_TOKEN_KEY_ID } from "../auth/token-store-db.js";
 import type { PatreonTokenStore } from "../auth/token-store.js";
+import type { TokenEncryption } from "../lib/crypto.js";
 import { pickDefaultCampaignId } from "./map-patreon-to-ingest.js";
 import type { PatreonCampaignCreatorIndex } from "./patreon-campaign-creator-index.js";
 import { createWebhook, listWebhooks } from "./patreon-webhook-api.js";
@@ -45,6 +49,52 @@ export type EnsureWebhookResult =
   | { ok: true; uri: string; webhook_id: string }
   | { ok: false; reason: "no_public_base" | "no_tokens" | "multi_campaign" | "api_error"; detail?: string };
 
+async function upsertWebhookEndpointDualWrite(args: {
+  prisma: PrismaClient;
+  tokenEncryption: TokenEncryption;
+  relayCreatorId: string;
+  patreonCampaignNumericId: string | null;
+  opaqueDeliveryToken: string;
+  registrationStatus: string;
+  patreonWebhookId?: string | null;
+  uriRegistered?: string | null;
+  triggers?: string[] | null;
+  webhookSecretPlain?: string | null;
+}): Promise<void> {
+  const encBytes =
+    args.webhookSecretPlain != null && args.webhookSecretPlain.length > 0
+      ? Buffer.from(args.tokenEncryption.encrypt(args.webhookSecretPlain), "utf8")
+      : null;
+  const triggersJson: Prisma.InputJsonValue | typeof Prisma.JsonNull =
+    args.triggers != null && args.triggers.length > 0
+      ? args.triggers
+      : Prisma.JsonNull;
+  await args.prisma.webhookEndpoint.upsert({
+    where: { relayCreatorId: args.relayCreatorId },
+    create: {
+      relayCreatorId: args.relayCreatorId,
+      patreonCampaignNumericId: args.patreonCampaignNumericId,
+      encryptedSecret: encBytes,
+      keyId: encBytes ? RELAY_TOKEN_KEY_ID : null,
+      opaqueDeliveryToken: args.opaqueDeliveryToken,
+      patreonWebhookId: args.patreonWebhookId ?? null,
+      uriRegistered: args.uriRegistered ?? null,
+      registrationStatus: args.registrationStatus,
+      triggers: triggersJson
+    },
+    update: {
+      patreonCampaignNumericId: args.patreonCampaignNumericId,
+      encryptedSecret: encBytes,
+      keyId: encBytes ? RELAY_TOKEN_KEY_ID : null,
+      opaqueDeliveryToken: args.opaqueDeliveryToken,
+      patreonWebhookId: args.patreonWebhookId ?? null,
+      uriRegistered: args.uriRegistered ?? null,
+      registrationStatus: args.registrationStatus,
+      triggers: triggersJson
+    }
+  });
+}
+
 /**
  * Idempotent: list webhooks; reuse matching URI or create. Persists secret + metadata.
  */
@@ -56,11 +106,28 @@ export async function ensurePatreonPlatformWebhook(args: {
   publicWebhookBaseUrl: string | undefined;
   fetchImpl: typeof fetch;
   log?: (msg: string) => void;
+  prisma?: PrismaClient;
+  /** Required for dual-write to `WebhookEndpoint` when `prisma` is set. */
+  tokenEncryption?: TokenEncryption;
 }): Promise<EnsureWebhookResult> {
   const log = args.log ?? (() => {});
   const baseRaw = args.publicWebhookBaseUrl?.trim();
   if (!baseRaw) {
     await args.webhookMetaStore.recordSkippedNoPublicUrl(args.creatorId);
+    if (args.prisma && args.tokenEncryption) {
+      const meta = await args.webhookMetaStore.getByCreatorId(args.creatorId);
+      const opaque = meta?.opaque_delivery_token;
+      if (opaque) {
+        await upsertWebhookEndpointDualWrite({
+          prisma: args.prisma,
+          tokenEncryption: args.tokenEncryption,
+          relayCreatorId: args.creatorId,
+          patreonCampaignNumericId: null,
+          opaqueDeliveryToken: opaque,
+          registrationStatus: "skipped_no_public_url"
+        });
+      }
+    }
     return { ok: false, reason: "no_public_base" };
   }
 
@@ -78,6 +145,20 @@ export async function ensurePatreonPlatformWebhook(args: {
       const detail =
         "Multiple Patreon campaigns — choose a default campaign before webhooks can be registered.";
       await args.webhookMetaStore.recordRegistrationFailure(args.creatorId, detail);
+      if (args.prisma && args.tokenEncryption) {
+        const meta = await args.webhookMetaStore.getByCreatorId(args.creatorId);
+        const opaque = meta?.opaque_delivery_token;
+        if (opaque) {
+          await upsertWebhookEndpointDualWrite({
+            prisma: args.prisma,
+            tokenEncryption: args.tokenEncryption,
+            relayCreatorId: args.creatorId,
+            patreonCampaignNumericId: null,
+            opaqueDeliveryToken: opaque,
+            registrationStatus: "failed"
+          });
+        }
+      }
       return { ok: false, reason: "multi_campaign", detail };
     }
 
@@ -118,6 +199,25 @@ export async function ensurePatreonPlatformWebhook(args: {
       status: "ok"
     });
 
+    if (args.prisma && args.tokenEncryption) {
+      const meta = await args.webhookMetaStore.getByCreatorId(args.creatorId);
+      const opaque = meta?.opaque_delivery_token;
+      if (opaque) {
+        await upsertWebhookEndpointDualWrite({
+          prisma: args.prisma,
+          tokenEncryption: args.tokenEncryption,
+          relayCreatorId: args.creatorId,
+          patreonCampaignNumericId: campaignId,
+          opaqueDeliveryToken: opaque,
+          registrationStatus: "ok",
+          patreonWebhookId: webhookId,
+          uriRegistered: uri,
+          triggers: [...PATREON_PLATFORM_WEBHOOK_TRIGGERS],
+          webhookSecretPlain: secret
+        });
+      }
+    }
+
     const idx = await args.campaignIndex.upsert(campaignId, args.creatorId);
     if (!idx.ok) {
       log(
@@ -129,6 +229,20 @@ export async function ensurePatreonPlatformWebhook(args: {
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     await args.webhookMetaStore.recordRegistrationFailure(args.creatorId, msg);
+    if (args.prisma && args.tokenEncryption) {
+      const meta = await args.webhookMetaStore.getByCreatorId(args.creatorId);
+      const opaque = meta?.opaque_delivery_token;
+      if (opaque) {
+        await upsertWebhookEndpointDualWrite({
+          prisma: args.prisma,
+          tokenEncryption: args.tokenEncryption,
+          relayCreatorId: args.creatorId,
+          patreonCampaignNumericId: null,
+          opaqueDeliveryToken: opaque,
+          registrationStatus: "failed"
+        });
+      }
+    }
     log(`ensurePatreonPlatformWebhook failed: ${msg}`);
     return { ok: false, reason: "api_error", detail: msg };
   }

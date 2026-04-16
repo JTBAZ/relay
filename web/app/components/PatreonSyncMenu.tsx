@@ -6,6 +6,7 @@ import { CloudDownload, Loader2 } from "lucide-react";
 import {
   fetchPatreonSyncState,
   postPatreonScrape,
+  registerPatreonWebhooks,
   type PatreonOAuthHealthData,
   type PatreonSyncStateData
 } from "@/lib/relay-api";
@@ -97,6 +98,9 @@ export default function PatreonSyncMenu({
   const [stateError, setStateError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [posting, setPosting] = useState(false);
+  const [registeringWebhooks, setRegisteringWebhooks] = useState(false);
+  const [webhookRegisterError, setWebhookRegisterError] = useState<string | null>(null);
+  const [webhookRegisterOk, setWebhookRegisterOk] = useState<string | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
 
   const panelId = "patreon-sync-menu-panel";
@@ -172,6 +176,54 @@ export default function PatreonSyncMenu({
    */
   const runFullCampaignScrape = () =>
     void runScrape({ force_refresh_post_access: true, max_post_pages: 100 });
+
+  const runRegisterWebhooks = async () => {
+    setWebhookRegisterError(null);
+    setWebhookRegisterOk(null);
+    setRegisteringWebhooks(true);
+    try {
+      const out = await registerPatreonWebhooks(creatorId);
+      setWebhookRegisterOk(`Registered — webhook ${out.webhook_id.slice(0, 8)}…`);
+      await loadState();
+    } catch (e) {
+      setWebhookRegisterError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setRegisteringWebhooks(false);
+    }
+  };
+
+  /** Register when we never recorded OK (missing row, failed, or skipped). */
+  const webhookNeedsRegister =
+    state != null &&
+    (state.webhook_registration == null ||
+      state.webhook_registration.registration_status !== "ok");
+
+  const webhookRegisterControls =
+    webhookNeedsRegister ? (
+      <div className="mt-2">
+        <button
+          type="button"
+          disabled={registeringWebhooks || Boolean(loadingState || stateError)}
+          className="w-full rounded-md border border-[var(--lib-primary)]/50 bg-[var(--lib-primary)]/15 px-2 py-1.5 text-[11px] font-medium text-[var(--lib-primary)] transition-colors hover:bg-[var(--lib-primary)]/25 disabled:opacity-50"
+          onClick={() => void runRegisterWebhooks()}
+        >
+          {registeringWebhooks ? (
+            <span className="inline-flex items-center justify-center gap-1.5">
+              <Loader2 className="h-3 w-3 animate-spin" aria-hidden />
+              Registering…
+            </span>
+          ) : (
+            "Register webhooks"
+          )}
+        </button>
+        {webhookRegisterOk && (
+          <p className="mt-1.5 text-[11px] text-[var(--lib-success)]">{webhookRegisterOk}</p>
+        )}
+        {webhookRegisterError && (
+          <p className="mt-1.5 text-[11px] text-[var(--lib-destructive)]">{webhookRegisterError}</p>
+        )}
+      </div>
+    ) : null;
 
   return (
     <div className="relative" ref={rootRef}>
@@ -370,9 +422,9 @@ export default function PatreonSyncMenu({
                             Patreon webhooks
                           </p>
                           <p className="mt-1 text-[11px] text-[var(--lib-fg-muted)]">
-                            No registration data yet. Reconnect OAuth or POST{" "}
-                            <code className="rounded bg-[var(--lib-muted)] px-0.5">/api/v1/patreon/webhooks/register</code>.
+                            No registration data yet. Reconnect creator OAuth or register below.
                           </p>
+                          {webhookRegisterControls}
                         </div>
                       );
                     }
@@ -382,6 +434,7 @@ export default function PatreonSyncMenu({
                           Patreon webhooks
                         </p>
                         <p className={`mt-1 text-[11px] font-medium ${wh.className}`}>{wh.text}</p>
+                        {webhookRegisterControls}
                       </div>
                     );
                   })()}
