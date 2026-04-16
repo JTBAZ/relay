@@ -52,6 +52,14 @@ export function StudioSupabaseSignInPanel({
           options: { emailRedirectTo: confirmUrl },
         });
         if (upErr) throw upErr;
+        // With "Confirm email" on, Supabase returns no error for an already-registered email (anti-enumeration).
+        // Real new signups have at least one identity; duplicates get an empty identities array.
+        if (data.user?.identities && data.user.identities.length === 0) {
+          setError(
+            "An account with this email already exists. Use Sign in, or reset your password from the login screen if needed."
+          );
+          return;
+        }
         const token = data.session?.access_token;
         if (!token) {
           // Email confirmation required — Supabase sent a link to confirmUrl
