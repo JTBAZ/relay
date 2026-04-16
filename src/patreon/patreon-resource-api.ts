@@ -43,10 +43,9 @@ export function postsPageUrl(campaignId: string, nextFullUrl?: string | null): s
   if (nextFullUrl) return nextFullUrl;
   const params = new URLSearchParams();
   params.set("page[count]", "25");
-  params.set(
-    "fields[post]",
-    "title,content,published_at,is_public,is_paid,tiers"
-  );
+  // OAuth v2: metadata + tier/access for enrichment. Post media (images/attachments) comes from
+  // the cookie session path (`cookie-scraper.ts` → www `/api/posts`), not this endpoint.
+  params.set("fields[post]", "title,content,published_at,is_public,is_paid,tiers");
   return `${API_ROOT}/campaigns/${encodeURIComponent(campaignId)}/posts?${params.toString()}`;
 }
 

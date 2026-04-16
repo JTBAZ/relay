@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Loader2 } from "lucide-react";
 import { getSupabaseBrowserClient } from "@/lib/supabase-browser";
 import { bootstrapStudioAfterSupabase } from "@/lib/relay-auth-bootstrap";
+import { resolvePostAuthPath } from "@/lib/post-login-redirect";
 import { emitStudioSessionUpdate } from "@/lib/studio-session-context";
 
 /**
@@ -37,9 +38,11 @@ export default function AuthConfirmPage() {
           if (exchErr) throw exchErr;
           const token = data.session?.access_token;
           if (!token) throw new Error("No session after code exchange.");
-          await bootstrapStudioAfterSupabase(token);
+          const boot = await bootstrapStudioAfterSupabase(token);
           emitStudioSessionUpdate();
-          router.replace("/");
+          router.replace(
+            boot.created ? "/onboarding?step=patreon" : resolvePostAuthPath("/")
+          );
           return;
         }
 
@@ -52,9 +55,11 @@ export default function AuthConfirmPage() {
           if (sessErr) throw sessErr;
           const token = data.session?.access_token;
           if (!token) throw new Error("No session found from email link.");
-          await bootstrapStudioAfterSupabase(token);
+          const boot = await bootstrapStudioAfterSupabase(token);
           emitStudioSessionUpdate();
-          router.replace("/");
+          router.replace(
+            boot.created ? "/onboarding?step=patreon" : resolvePostAuthPath("/")
+          );
           return;
         }
 

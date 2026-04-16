@@ -5,10 +5,10 @@ import Link from "next/link";
 import { ArrowLeft, Zap, Users, ArrowRight } from "lucide-react";
 
 const STUB = {
-  /** Account + DB + Library first; Patreon OAuth is linked from /login or /patreon/connect after sign-in. */
-  creatorStart: "/login",
-  creatorConnect: "/creator/connect",
-  supporterSignIn: "/login"
+  /** Creator: onboarding wizard; sign-in for returning users. Supporter: login with supporter tab. */
+  creatorStart: "/onboarding",
+  creatorSignIn: "/login",
+  supporterSignIn: "/login?role=supporter"
 };
 
 const PATHS = {
@@ -24,8 +24,8 @@ const PATHS = {
     ],
     ctaLabel: "Create your studio",
     ctaHref: STUB.creatorStart,
-    secondaryLabel: "Already signed in? Connect Patreon",
-    secondaryHref: STUB.creatorConnect,
+    secondaryLabel: "Already signed in? Sign in",
+    secondaryHref: STUB.creatorSignIn,
     icon: <Zap size={16} />
   },
   supporter: {

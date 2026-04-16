@@ -5,9 +5,11 @@ import { X, Bell, Book, LogOut } from "lucide-react";
 interface SettingsModalProps {
   isOpen: boolean;
   onClose: () => void;
+  /** Wired from RelayApp: revokes Relay session and redirects. */
+  onSignOut?: () => void | Promise<void>;
 }
 
-export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
+export function SettingsModal({ isOpen, onClose, onSignOut }: SettingsModalProps) {
   const [discoverSettings, setDiscoverSettings] = useState({
     showFollowedFirst: true,
     hideExplicit: false,
@@ -134,7 +136,12 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
           <div className="border-t border-[#1A1A1A]" />
 
           {/* Sign Out */}
-          <button className="w-full flex items-center gap-2 text-xs text-[#888888] hover:text-[#E0E0E0] transition-colors py-2">
+          <button
+            type="button"
+            disabled={!onSignOut}
+            onClick={() => void onSignOut?.()}
+            className="flex w-full items-center gap-2 py-2 text-xs text-[#888888] transition-colors hover:text-[#E0E0E0] disabled:cursor-not-allowed disabled:opacity-40"
+          >
             <LogOut size={12} />
             Sign out
           </button>

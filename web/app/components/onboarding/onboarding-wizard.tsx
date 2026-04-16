@@ -1,21 +1,29 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { ArrowLeft, ArrowRight } from "lucide-react";
 import { cn } from "@/app/lib/cn";
 import { ProgressStepper, type OnboardingStep } from "./progress-stepper";
-import { StepWelcomeWithStudio, StepProfile, StepPatreonConnect, StepGoLive } from "./step-panels";
+import { StepWelcomeWithStudio, StepPatreonConnect, StepGoLive } from "./step-panels";
 
 const STEPS: OnboardingStep[] = [
   { id: 1, label: "Account", description: "Create your Relay account" },
-  { id: 2, label: "Profile", description: "Set up your creator identity" },
-  { id: 3, label: "Patreon", description: "Connect your Patreon" },
-  { id: 4, label: "Done", description: "You're ready to go" }
+  { id: 2, label: "Patreon", description: "Connect your Patreon" },
+  { id: 3, label: "Done", description: "You're ready to go" }
 ];
 
 export function OnboardingWizard() {
+  const searchParams = useSearchParams();
   const [currentStep, setCurrentStep] = useState(1);
+
+  useEffect(() => {
+    const step = searchParams.get("step")?.trim();
+    if (step === "patreon") {
+      setCurrentStep(2);
+    }
+  }, [searchParams]);
 
   const isFirst = currentStep === 1;
   const isLast = currentStep === STEPS.length;
@@ -33,10 +41,8 @@ export function OnboardingWizard() {
       case 1:
         return <StepWelcomeWithStudio onSignedIn={goNext} />;
       case 2:
-        return <StepProfile />;
-      case 3:
         return <StepPatreonConnect />;
-      case 4:
+      case 3:
         return <StepGoLive />;
       default:
         return null;
@@ -119,7 +125,7 @@ export function OnboardingWizard() {
                 href="/"
                 className="flex items-center gap-2 rounded-md bg-[var(--relay-green-600)] px-5 py-2.5 text-sm font-semibold text-[var(--relay-fg)] transition-all duration-150 hover:bg-[var(--relay-green-400)]"
               >
-                Go to Dashboard
+                Go to your Library
               </Link>
             ) : (
               <button
@@ -127,7 +133,7 @@ export function OnboardingWizard() {
                 onClick={goNext}
                 className="flex items-center gap-2 rounded-md bg-[var(--relay-green-600)] px-5 py-2.5 text-sm font-semibold text-[var(--relay-fg)] transition-all duration-150 hover:bg-[var(--relay-green-400)]"
               >
-                {currentStep === 3 ? "Skip for now" : "Continue"}
+                {currentStep === 2 ? "Skip for now" : "Continue"}
                 <ArrowRight className="h-4 w-4" strokeWidth={1.5} />
               </button>
             )}

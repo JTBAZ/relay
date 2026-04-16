@@ -88,12 +88,61 @@ function mapVersionRow(v: PostVersionRow) {
 }
 
 /**
- * Postgres-backed canonical store. `save()` replaces **all** canonical rows (same as overwriting `canonical.json`).
+ * Ensures at most one row per `version_seq` before nested `PostVersion` creates.
+ * Last occurrence wins when duplicates exist (defensive; DB @@unique([postId, versionSeq]) otherwise fails).
+ */
+export function deduplicatePostVersionsForSave(versions: PostVersionRow[]): PostVersionRow[] {
+  const bySeq = new Map<number, PostVersionRow>();
+  for (const v of versions) {
+    bySeq.set(v.version_seq, v);
+  }
+  return [...bySeq.values()].sort((a, b) => a.version_seq - b.version_seq);
+}
+
+/**
+ * In a multi-tenant Postgres canonical store the Patreon campaign id (e.g. `patreon_campaign_15782831`)
+ * and post id (e.g. `patreon_post_12345`) are globally unique PKs shared across all creator entries.
+ * If two creator entries in the snapshot claim the same campaign/post id (e.g. a legacy `dev_creator`
+ * entry alongside a real creator), `save()` deduplicates by preferring the entry with the highest
+ * `version_seq` and logs a warning so the collision is visible in server output.
+ */
+
+/** Resolve winner when two creators claim the same global id. Higher version_seq wins. */
+function pickWinner<T extends { version_seq: number; creator_id: string }>(
+  existing: T,
+  challenger: T
+): T {
+  if (challenger.version_seq > existing.version_seq) return challenger;
+  if (challenger.version_seq === existing.version_seq && existing.creator_id === "dev_creator") {
+    return challenger;
+  }
+  return existing;
+}
+
+/**
+ * Postgres-backed canonical store. `saveForCreator()` replaces only the target
+ * creator's rows (non-destructive to other tenants). The global `save()` is
+ * preserved for backward compat but delegates to per-creator saves internally.
  */
 export class DbCanonicalStore implements CanonicalStore {
   public constructor(private readonly prisma: PrismaClient) {}
 
+  // ---------------------------------------------------------------------------
+  // Global load — gallery / admin reads all creators
+  // ---------------------------------------------------------------------------
   public async load(): Promise<CanonicalSnapshot> {
+    return this.loadImpl();
+  }
+
+  // ---------------------------------------------------------------------------
+  // Creator-scoped load — only rows belonging to `creatorId`
+  // ---------------------------------------------------------------------------
+  public async loadForCreator(creatorId: string): Promise<CanonicalSnapshot> {
+    return this.loadImpl(creatorId);
+  }
+
+  private async loadImpl(creatorId?: string): Promise<CanonicalSnapshot> {
+    const where = creatorId ? { creatorId } : undefined;
     const [
       campaigns,
       tiers,
@@ -102,12 +151,19 @@ export class DbCanonicalStore implements CanonicalStore {
       mediaRows,
       idemRows
     ] = await Promise.all([
-      this.prisma.campaign.findMany(),
-      this.prisma.tier.findMany(),
-      this.prisma.post.findMany(),
-      this.prisma.postVersion.findMany({ orderBy: { versionSeq: "asc" } }),
-      this.prisma.mediaAsset.findMany(),
-      this.prisma.ingestIdempotencyKey.findMany()
+      this.prisma.campaign.findMany({ where }),
+      this.prisma.tier.findMany({ where }),
+      this.prisma.post.findMany({ where }),
+      this.prisma.postVersion.findMany({
+        where: where
+          ? { post: { creatorId } }
+          : undefined,
+        orderBy: { versionSeq: "asc" }
+      }),
+      this.prisma.mediaAsset.findMany({ where }),
+      this.prisma.ingestIdempotencyKey.findMany({
+        where: creatorId ? { creatorId } : undefined
+      })
     ]);
 
     const snapshot = emptySnapshot();
@@ -206,46 +262,152 @@ export class DbCanonicalStore implements CanonicalStore {
     return snapshot;
   }
 
+  // ---------------------------------------------------------------------------
+  // Global save — delegates to per-creator saves for each creator in snapshot.
+  // Preserved for backward compat (gallery overrides, file-store migration).
+  // ---------------------------------------------------------------------------
   public async save(snapshot: CanonicalSnapshot): Promise<void> {
-    await this.prisma.$transaction(async (tx) => {
-      await tx.postTier.deleteMany();
-      await tx.mediaAsset.deleteMany();
-      await tx.postVersion.deleteMany();
-      await tx.post.deleteMany();
-      await tx.tier.deleteMany();
-      await tx.campaign.deleteMany();
-      await tx.ingestIdempotencyKey.deleteMany();
+    const creatorIds = new Set<string>();
+    for (const cid of Object.keys(snapshot.campaigns)) creatorIds.add(cid);
+    for (const cid of Object.keys(snapshot.tiers)) creatorIds.add(cid);
+    for (const cid of Object.keys(snapshot.posts)) creatorIds.add(cid);
+    for (const cid of Object.keys(snapshot.media)) creatorIds.add(cid);
+    for (const cid of creatorIds) {
+      await this.saveForCreator(cid, snapshot);
+    }
+  }
 
-      for (const [batchKey, meta] of Object.entries(snapshot.ingest_idempotency)) {
-        await tx.ingestIdempotencyKey.create({
-          data: {
-            creatorId: RELAY_IDEMPOTENCY_CREATOR_SENTINEL,
-            batchKey,
-            firstSeenAt: new Date(meta.first_seen_at)
-          }
+  // ---------------------------------------------------------------------------
+  // Creator-scoped save — only touches rows for `creatorId`
+  // ---------------------------------------------------------------------------
+  public async saveForCreator(creatorId: string, snapshot: CanonicalSnapshot): Promise<void> {
+    await this.prisma.$transaction(
+      async (tx) => {
+        // --- Phase 1: Delete this creator's existing rows (cascading order) ---
+        const creatorPostIds = await tx.post.findMany({
+          where: { creatorId },
+          select: { id: true }
         });
-      }
+        const postIdSet = creatorPostIds.map((p) => p.id);
 
-      for (const [_c, cmap] of Object.entries(snapshot.campaigns)) {
-        for (const row of Object.values(cmap) as CampaignRow[]) {
-          await tx.campaign.create({
-            data: {
+        if (postIdSet.length > 0) {
+          await tx.postTier.deleteMany({ where: { postId: { in: postIdSet } } });
+        }
+        await tx.mediaAsset.deleteMany({ where: { creatorId } });
+        if (postIdSet.length > 0) {
+          await tx.postVersion.deleteMany({ where: { postId: { in: postIdSet } } });
+        }
+        await tx.post.deleteMany({ where: { creatorId } });
+        await tx.tier.deleteMany({ where: { creatorId } });
+        await tx.campaign.deleteMany({ where: { creatorId } });
+        await tx.ingestIdempotencyKey.deleteMany({ where: { creatorId } });
+
+        // --- Phase 2: Collect incoming PKs and evict orphans from other creators ---
+        // When a Patreon account migrates between Relay workspaces, the same
+        // upstream campaign/post/media PKs must transfer ownership. Delete any
+        // rows with these PKs that belong to a *different* creator (cascade order).
+        const campaignMap = snapshot.campaigns[creatorId] ?? {};
+        const incomingCampaignIds = (Object.values(campaignMap) as CampaignRow[]).map((r) => r.campaign_id);
+
+        const postMap = snapshot.posts[creatorId] ?? {};
+        const incomingPostIds = (Object.values(postMap) as PostRow[]).map((r) => r.post_id);
+
+        const mediaMap = snapshot.media[creatorId] ?? {};
+        const incomingMediaIds = (Object.values(mediaMap) as MediaRow[]).map((r) => r.media_id);
+
+        const tierMap = snapshot.tiers[creatorId] ?? {};
+        const incomingTierIds = (Object.values(tierMap) as TierRow[]).map(
+          (r) => tierStableId(r.creator_id, r.tier_id)
+        );
+
+        if (incomingPostIds.length > 0) {
+          const orphanPosts = await tx.post.findMany({
+            where: { id: { in: incomingPostIds }, creatorId: { not: creatorId } },
+            select: { id: true, creatorId: true }
+          });
+          if (orphanPosts.length > 0) {
+            const orphanPostIds = orphanPosts.map((p) => p.id);
+            const orphanCreators = [...new Set(orphanPosts.map((p) => p.creatorId))];
+            // eslint-disable-next-line no-console -- ops visibility for workspace migration
+            console.warn(
+              `[canonical-store-db] workspace migration: reassigning ${orphanPosts.length} post(s) ` +
+                `from ${orphanCreators.join(", ")} → ${creatorId}`
+            );
+            await tx.postTier.deleteMany({ where: { postId: { in: orphanPostIds } } });
+            await tx.mediaAsset.deleteMany({ where: { primaryPostId: { in: orphanPostIds } } });
+            await tx.postVersion.deleteMany({ where: { postId: { in: orphanPostIds } } });
+            await tx.post.deleteMany({ where: { id: { in: orphanPostIds } } });
+          }
+        }
+
+        if (incomingMediaIds.length > 0) {
+          await tx.mediaAsset.deleteMany({
+            where: { id: { in: incomingMediaIds }, creatorId: { not: creatorId } }
+          });
+        }
+
+        if (incomingTierIds.length > 0) {
+          await tx.tier.deleteMany({
+            where: { id: { in: incomingTierIds }, creatorId: { not: creatorId } }
+          });
+        }
+
+        if (incomingCampaignIds.length > 0) {
+          const orphanCampaigns = await tx.campaign.findMany({
+            where: { id: { in: incomingCampaignIds }, creatorId: { not: creatorId } },
+            select: { id: true, creatorId: true }
+          });
+          if (orphanCampaigns.length > 0) {
+            const orphanCampIds = orphanCampaigns.map((c) => c.id);
+            // Cascade: any posts/tiers still referencing these orphan campaigns
+            const leftoverPosts = await tx.post.findMany({
+              where: { campaignId: { in: orphanCampIds } },
+              select: { id: true }
+            });
+            if (leftoverPosts.length > 0) {
+              const lpIds = leftoverPosts.map((p) => p.id);
+              await tx.postTier.deleteMany({ where: { postId: { in: lpIds } } });
+              await tx.mediaAsset.deleteMany({ where: { primaryPostId: { in: lpIds } } });
+              await tx.postVersion.deleteMany({ where: { postId: { in: lpIds } } });
+              await tx.post.deleteMany({ where: { id: { in: lpIds } } });
+            }
+            await tx.tier.deleteMany({ where: { campaignId: { in: orphanCampIds } } });
+            await tx.campaign.deleteMany({ where: { id: { in: orphanCampIds } } });
+          }
+        }
+
+        // --- Phase 3: Insert fresh data for this creator ---
+
+        const idemEntries = Object.entries(snapshot.ingest_idempotency);
+        if (idemEntries.length > 0) {
+          await tx.ingestIdempotencyKey.createMany({
+            skipDuplicates: true,
+            data: idemEntries.map(([batchKey, meta]) => ({
+              creatorId,
+              batchKey,
+              firstSeenAt: new Date(meta.first_seen_at)
+            }))
+          });
+        }
+
+        const campaignRows = Object.values(campaignMap) as CampaignRow[];
+        if (campaignRows.length > 0) {
+          await tx.campaign.createMany({
+            data: campaignRows.map((row) => ({
               id: row.campaign_id,
               creatorId: row.creator_id,
               name: row.name,
               upstreamUpdatedAt: new Date(row.upstream_updated_at),
               versionSeq: row.version_seq
-            }
+            }))
           });
         }
-      }
 
-      for (const [_c, tmap] of Object.entries(snapshot.tiers)) {
-        for (const row of Object.values(tmap) as TierRow[]) {
-          const id = tierStableId(row.creator_id, row.tier_id);
-          await tx.tier.create({
-            data: {
-              id,
+        const tierRows = Object.values(tierMap) as TierRow[];
+        if (tierRows.length > 0) {
+          await tx.tier.createMany({
+            data: tierRows.map((row) => ({
+              id: tierStableId(row.creator_id, row.tier_id),
               creatorId: row.creator_id,
               relayTierId: row.tier_id,
               providerTierId: row.tier_id,
@@ -254,16 +416,23 @@ export class DbCanonicalStore implements CanonicalStore {
               amountCents: row.amount_cents ?? null,
               upstreamUpdatedAt: new Date(row.upstream_updated_at),
               versionSeq: row.version_seq
-            }
+            }))
           });
         }
-      }
 
-      for (const [_c, pmap] of Object.entries(snapshot.posts)) {
-        for (const post of Object.values(pmap) as PostRow[]) {
-          const creatorId = post.creator_id;
+        const postEntries = Object.values(postMap) as PostRow[];
+        const postTierRows: Prisma.PostTierCreateManyInput[] = [];
+        for (const post of postEntries) {
           const campaignId = inferCampaignIdForPost(creatorId, post, snapshot);
-          const createdAt = earliestPublishedAt(post);
+          const versionsForDb = deduplicatePostVersionsForSave(post.versions);
+          if (versionsForDb.length < post.versions.length) {
+            // eslint-disable-next-line no-console -- ops visibility
+            console.warn(
+              `[canonical-store-db] post ${post.post_id}: deduplicated ` +
+                `${post.versions.length - versionsForDb.length} version(s) with colliding version_seq`
+            );
+          }
+          const createdAt = earliestPublishedAt({ ...post, versions: versionsForDb });
 
           await tx.post.create({
             data: {
@@ -277,61 +446,81 @@ export class DbCanonicalStore implements CanonicalStore {
                   : PostUpstreamStatus.active,
               createdAt,
               versions: {
-                create: post.versions.map((v) => mapVersionRow(v))
+                create: versionsForDb.map((v) => mapVersionRow(v))
               }
             }
           });
 
-          const tierIds = new Set(post.current.tier_ids);
+          const tierSource = versionsForDb[versionsForDb.length - 1] ?? post.current;
+          const tierIds = new Set(tierSource.tier_ids);
           for (const tid of tierIds) {
             const tierKey = tierStableId(creatorId, tid);
-            await tx.postTier.create({
-              data: {
-                postId: post.post_id,
-                tierId: tierKey
-              }
+            postTierRows.push({
+              postId: post.post_id,
+              tierId: tierKey
             });
           }
         }
-      }
+        if (postTierRows.length > 0) {
+          await tx.postTier.createMany({ data: postTierRows });
+        }
 
-      for (const [_c, mmap] of Object.entries(snapshot.media)) {
-        for (const m of Object.values(mmap) as MediaRow[]) {
-          const primary =
-            m.post_ids[0] ??
-            (() => {
-              throw new Error(`DbCanonicalStore.save: media ${m.media_id} has empty post_ids`);
-            })();
-          await tx.mediaAsset.create({
-            data: {
-              id: m.media_id,
-              creatorId: m.creator_id,
-              postIds: [...m.post_ids],
-              primaryPostId: primary,
-              upstreamStatus:
-                m.upstream_status === "deleted"
-                  ? MediaUpstreamStatus.deleted
-                  : MediaUpstreamStatus.active,
-              currentVersionSeq: m.current.version_seq,
-              currentUpstreamRevision: m.current.upstream_revision,
-              currentMimeType: m.current.mime_type ?? null,
-              currentUpstreamUrl: m.current.upstream_url ?? null,
-              currentRole: m.current.role ?? null,
-              currentStorageKey: m.current.storage_key ?? null,
-              currentIngestedAt: new Date(m.current.ingested_at),
-              versionsJson: m.versions as unknown as Prisma.InputJsonValue
-            }
+        const mediaEntries = Object.values(mediaMap) as MediaRow[];
+        if (mediaEntries.length > 0) {
+          await tx.mediaAsset.createMany({
+            data: mediaEntries.map((m) => {
+              const primary =
+                m.post_ids[0] ??
+                (() => {
+                  throw new Error(`DbCanonicalStore.saveForCreator: media ${m.media_id} has empty post_ids`);
+                })();
+              return {
+                id: m.media_id,
+                creatorId: m.creator_id,
+                postIds: [...m.post_ids],
+                primaryPostId: primary,
+                upstreamStatus:
+                  m.upstream_status === "deleted"
+                    ? MediaUpstreamStatus.deleted
+                    : MediaUpstreamStatus.active,
+                currentVersionSeq: m.current.version_seq,
+                currentUpstreamRevision: m.current.upstream_revision,
+                currentMimeType: m.current.mime_type ?? null,
+                currentUpstreamUrl: m.current.upstream_url ?? null,
+                currentRole: m.current.role ?? null,
+                currentStorageKey: m.current.storage_key ?? null,
+                currentIngestedAt: new Date(m.current.ingested_at),
+                versionsJson: m.versions as unknown as Prisma.InputJsonValue
+              };
+            })
           });
         }
-      }
-    });
+      },
+      { timeout: 30_000 }
+    );
   }
 
+  // ---------------------------------------------------------------------------
+  // Global mutate — loads everything, applies fn, saves everything
+  // ---------------------------------------------------------------------------
   public async mutate(
     fn: (snapshot: CanonicalSnapshot) => void | Promise<void>
   ): Promise<void> {
     const snapshot = await this.load();
     await fn(snapshot);
     await this.save(snapshot);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Creator-scoped mutate — loads only this creator, applies fn, saves only
+  // this creator's data back. Other creators are untouched.
+  // ---------------------------------------------------------------------------
+  public async mutateForCreator(
+    creatorId: string,
+    fn: (snapshot: CanonicalSnapshot) => void | Promise<void>
+  ): Promise<void> {
+    const snapshot = await this.loadForCreator(creatorId);
+    await fn(snapshot);
+    await this.saveForCreator(creatorId, snapshot);
   }
 }

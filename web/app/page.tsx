@@ -1,10 +1,5 @@
-import GalleryView from "./GalleryView";
-import { StudioRouteGuard } from "./components/studio/StudioRouteGuard";
+import HomePageClient from "./home-page-client";
 
 export default function Home() {
-  return (
-    <StudioRouteGuard>
-      <GalleryView />
-    </StudioRouteGuard>
-  );
+  return <HomePageClient />;
 }

@@ -21,9 +21,10 @@ export class IngestService {
     jobId?: string
   ): Promise<ApplyBatchResult> {
     const id = jobId ?? `job_${randomUUID()}`;
+    const creatorId = batch.creator_id;
     const { batch: enriched, notes } = enrichBatch(batch);
     let result!: ApplyBatchResult;
-    await this.store.mutate((snapshot) => {
+    await this.store.mutateForCreator(creatorId, (snapshot) => {
       result = applySyncBatchToSnapshot(snapshot, enriched, id, traceId, this.eventBus);
     });
     if (notes.length > 0) {

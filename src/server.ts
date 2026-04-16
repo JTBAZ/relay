@@ -151,7 +151,7 @@ import {
   relayCreatorSecretBypassesOAuthBind
 } from "./identity/creator-route-guard.js";
 import { IdentityService } from "./identity/identity-service.js";
-import { DbIdentityStore } from "./identity/identity-store-db.js";
+import { DbIdentityStore, PatreonAccountLinkConflictError } from "./identity/identity-store-db.js";
 import { FileIdentityStore } from "./identity/identity-store.js";
 import { accountOwnsRelayCreatorId } from "./identity/account-creator-ownership.js";
 import {
@@ -180,7 +180,10 @@ import {
 import { DbPatreonSyncHealthStore } from "./patreon/patreon-sync-health-store-db.js";
 import { PatreonSyncService } from "./patreon/patreon-sync-service.js";
 import { classifySyncError } from "./patreon/sync-error-copy.js";
-import { resolvePatreonWebhookCampaignOwnership } from "./patreon/campaign-tenant-resolve.js";
+import {
+  ensureCreatorProfilePatreonCampaignId,
+  resolvePatreonWebhookCampaignOwnership
+} from "./patreon/campaign-tenant-resolve.js";
 import { syncCreatorProfilePatreonCampaignFromOAuthToken } from "./patreon/creator-oauth-campaign-sync.js";
 import { PatreonCampaignCreatorIndex } from "./patreon/patreon-campaign-creator-index.js";
 import { PatreonMemberSyncCoordinator } from "./patreon/patreon-member-sync-coordinator.js";
@@ -1276,6 +1279,11 @@ export function createApp(config: AppConfig): CreateAppResult {
         )
       );
     } catch (error) {
+      if (error instanceof PatreonAccountLinkConflictError) {
+        return res
+          .status(409)
+          .json(errorEnvelope("CONFLICT", (error as Error).message, traceId));
+      }
       return res
         .status(502)
         .json(errorEnvelope("UPSTREAM_AUTH_ERROR", (error as Error).message, traceId));
@@ -1442,6 +1450,16 @@ export function createApp(config: AppConfig): CreateAppResult {
             `[patreon] campaign index collision: campaign=${result.patreon_campaign_id} ` +
               `creator=${creatorId} existing_creator=${idx.existing_creator_id}`
           );
+        }
+        if (config.prisma) {
+          try {
+            await ensureCreatorProfilePatreonCampaignId(config.prisma, {
+              relayCreatorId: creatorId.trim(),
+              patreonCampaignId: result.patreon_campaign_id
+            });
+          } catch {
+            /* best-effort — profile may not exist for file-only flows */
+          }
         }
       }
       return res.status(200).json(successEnvelope(payload, traceId));
@@ -2380,6 +2398,32 @@ export function createApp(config: AppConfig): CreateAppResult {
           allowed_relay_creator_ids: [...ctx.allowedRelayCreatorIds],
           session_membership_id: session.user_id,
           session_creator_id: session.creator_id
+        },
+        traceId
+      )
+    );
+  });
+
+  /**
+   * Current opaque Bearer session + linked `UserAccount` (email) for patron/creator Library clients.
+   */
+  app.get("/api/v1/me/session", async (req: Request, res: Response) => {
+    const traceId = traceIdFrom(req);
+    const session = await requirePatronBearerSession(req, res, traceId);
+    if (!session) {
+      return;
+    }
+    const user = await identityStore.getUser(session.user_id);
+    res.setHeader("Cache-Control", "private, no-store");
+    return res.status(200).json(
+      successEnvelope(
+        {
+          user_id: session.user_id,
+          creator_id: session.creator_id,
+          email: user?.email ?? null,
+          auth_provider: user?.auth_provider ?? null,
+          patreon_user_id: user?.patreon_user_id ?? null,
+          expires_at: session.expires_at
         },
         traceId
       )
@@ -4094,24 +4138,33 @@ export function createApp(config: AppConfig): CreateAppResult {
     const tierIds = Array.isArray(body.tier_ids)
       ? (body.tier_ids as string[]).filter((x): x is string => typeof x === "string")
       : [];
-    const user = await identityService.registerPatreonFallback(
-      body.creator_id as string,
-      body.patreon_user_id as string,
-      body.email as string,
-      tierIds
-    );
-    return res.status(201).json(
-      successEnvelope(
-        {
-          user_id: user.user_id,
-          creator_id: user.creator_id,
-          email: user.email,
-          auth_provider: user.auth_provider,
-          tier_ids: user.tier_ids
-        },
-        traceId
-      )
-    );
+    try {
+      const user = await identityService.registerPatreonFallback(
+        body.creator_id as string,
+        body.patreon_user_id as string,
+        body.email as string,
+        tierIds
+      );
+      return res.status(201).json(
+        successEnvelope(
+          {
+            user_id: user.user_id,
+            creator_id: user.creator_id,
+            email: user.email,
+            auth_provider: user.auth_provider,
+            tier_ids: user.tier_ids
+          },
+          traceId
+        )
+      );
+    } catch (error) {
+      if (error instanceof PatreonAccountLinkConflictError) {
+        return res
+          .status(409)
+          .json(errorEnvelope("CONFLICT", (error as Error).message, traceId));
+      }
+      throw error;
+    }
   });
 
   app.post("/api/v1/identity/login", async (req: Request, res: Response) => {

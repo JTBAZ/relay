@@ -21,6 +21,18 @@ function mapAuthProviderFromDb(a: IdentityAuthProvider): AuthProvider {
   return a === IdentityAuthProvider.independent ? "independent" : "patreon";
 }
 
+/** Same Patreon user id cannot be merged onto a different `Account` than the email row (see `createUser`). */
+export class PatreonAccountLinkConflictError extends Error {
+  public override readonly name = "PatreonAccountLinkConflictError";
+  constructor(message?: string) {
+    super(
+      message ??
+        "This Patreon account is already linked to a different Relay account. Sign in with the account that originally connected Patreon."
+    );
+    Object.setPrototypeOf(this, PatreonAccountLinkConflictError.prototype);
+  }
+}
+
 function membershipToAccount(
   m: TenantMembership & { account: Account; tenant: Tenant }
 ): UserAccount | null {
@@ -71,16 +83,25 @@ export class DbIdentityStore implements IdentityStore {
         update: {}
       });
 
-      let account = await tx.account.findFirst({
-        where: {
-          OR: [
-            ...(emailNorm.length > 0 ? [{ emailNorm }] : []),
-            ...(user.patreon_user_id
-              ? [{ patronPatreonUserId: user.patreon_user_id }]
-              : [])
-          ]
+      let account: Account | null = null;
+      if (user.patreon_user_id) {
+        const byPatreon = await tx.account.findUnique({
+          where: { patronPatreonUserId: user.patreon_user_id }
+        });
+        const byEmail =
+          emailNorm.length > 0
+            ? await tx.account.findUnique({ where: { emailNorm } })
+            : null;
+        if (byPatreon && byEmail && byPatreon.id !== byEmail.id) {
+          throw new PatreonAccountLinkConflictError();
         }
-      });
+        account = byPatreon ?? byEmail;
+      } else {
+        account =
+          emailNorm.length > 0
+            ? await tx.account.findUnique({ where: { emailNorm } })
+            : null;
+      }
 
       if (!account) {
         account = await tx.account.create({

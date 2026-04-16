@@ -85,6 +85,26 @@ export interface CanonicalStore {
   mutate(
     fn: (snapshot: CanonicalSnapshot) => void | Promise<void>
   ): Promise<void>;
+  /**
+   * Load only the rows belonging to `creatorId`. Returns a snapshot with only
+   * that creator's campaigns, tiers, posts, media, and idempotency keys.
+   * Falls back to global `load()` for stores that don't support scoping.
+   */
+  loadForCreator(creatorId: string): Promise<CanonicalSnapshot>;
+  /**
+   * Creator-scoped save: only deletes + re-inserts rows for the given
+   * `creatorId`, leaving other creators' data intact.
+   * Falls back to global `save()` for stores that don't support scoping.
+   */
+  saveForCreator(creatorId: string, snapshot: CanonicalSnapshot): Promise<void>;
+  /**
+   * Creator-scoped mutate: loads only this creator's data, applies the
+   * mutation, then saves only this creator's slice back to the store.
+   */
+  mutateForCreator(
+    creatorId: string,
+    fn: (snapshot: CanonicalSnapshot) => void | Promise<void>
+  ): Promise<void>;
 }
 
 export class FileCanonicalStore implements CanonicalStore {
@@ -114,5 +134,20 @@ export class FileCanonicalStore implements CanonicalStore {
     const snapshot = await this.load();
     await fn(snapshot);
     await this.save(snapshot);
+  }
+
+  public async loadForCreator(_creatorId: string): Promise<CanonicalSnapshot> {
+    return this.load();
+  }
+
+  public async saveForCreator(_creatorId: string, snapshot: CanonicalSnapshot): Promise<void> {
+    return this.save(snapshot);
+  }
+
+  public async mutateForCreator(
+    _creatorId: string,
+    fn: (snapshot: CanonicalSnapshot) => void | Promise<void>
+  ): Promise<void> {
+    return this.mutate(fn);
   }
 }

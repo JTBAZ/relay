@@ -1,14 +1,15 @@
 #Requires -Version 5.1
 <#
 .SYNOPSIS
-  Runs Cursor Agent CLI against a pregenerated prompt + optional delta-in file (Airtable auto-pipeline).
+  Runs Cursor Agent CLI against a pregenerated beat prompt + optional delta-in file (Airtable writing pipeline).
 
 .DESCRIPTION
-  See docs/database/AIRTABLE_AUTOPIPELINE.md. This script does NOT call the Airtable API unless you extend it;
-  it reads prompt/delta files from docs/Airtable Drops/.
+  See Story Blocks/docs/AIRTABLE_WRITING_PIPELINE.md. This script does NOT call the Airtable API unless you extend it;
+  it reads prompt/delta files from Story Blocks/Airtable Drops/ first, then legacy docs/Airtable Drops/.
+  Override pack root with env STORY_BLOCKS_DIR (absolute path) if the pack is not at <RepoRoot>/Story Blocks.
 
 .PARAMETER TaskKey
-  e.g. T-001 — selects docs/Airtable Drops/prompts/<TaskKey>-prompt.md
+  e.g. T-001 — selects Story Blocks/Airtable Drops/prompts/<TaskKey>-prompt.md (or legacy docs/Airtable Drops/prompts/)
 
 .PARAMETER RepoRoot
   Repository root (defaults to parent of scripts/)
@@ -19,10 +20,16 @@
 .PARAMETER Model
   Cursor Agent CLI model id (see agent --help). Default: composer-2 (Composer 2) for repeatable runs.
 
+.PARAMETER ToneFile
+  Optional path to a story tone/theme markdown file. When set, this file is used instead of the default
+  Story Blocks/Airtable Drops/story/TONE.md (see Story Blocks/docs/AIRTABLE_WRITING_TONE_THEMES.md).
+
 .EXAMPLE
   .\scripts\run-airtable-autopipeline-task.ps1 -TaskKey "T-001"
 .EXAMPLE
   .\scripts\run-airtable-autopipeline-task.ps1 -TaskKey "T-001" -Model "composer-2-fast"
+.EXAMPLE
+  .\scripts\run-airtable-autopipeline-task.ps1 -TaskKey "S01-CH01-B01" -ToneFile "C:\work\my-story\TONE-alt.md"
 #>
 param(
   [Parameter(Mandatory = $true)]
@@ -32,6 +39,8 @@ param(
   [string] $RepoRoot = "",
 
   [string] $Model = "composer-2",
+
+  [string] $ToneFile = "",
 
   [switch] $SkipAgent
 )
@@ -61,32 +70,71 @@ function Get-AgentInvocation {
 }
 
 $agentInfo = Get-AgentInvocation
-$promptFile = Join-Path $RepoRoot "docs\Airtable Drops\prompts\$TaskKey-prompt.md"
-$deltaInFile = Join-Path $RepoRoot "docs\Airtable Drops\incoming\$TaskKey-delta-in.md"
 
-if (-not (Test-Path $promptFile)) {
-  throw "Missing prompt file: $promptFile (create per AIRTABLE_AUTOPIPELINE.md)"
+$storyBlocksRoot = if (-not [string]::IsNullOrWhiteSpace($env:STORY_BLOCKS_DIR)) {
+  $env:STORY_BLOCKS_DIR
+} else {
+  Join-Path $RepoRoot "Story Blocks"
 }
 
-$deltaIn = if (Test-Path $deltaInFile) {
-  Get-Content $deltaInFile -Raw
+$promptPrimary = Join-Path $storyBlocksRoot "Airtable Drops\prompts\$TaskKey-prompt.md"
+$promptLegacy = Join-Path $RepoRoot "docs\Airtable Drops\prompts\$TaskKey-prompt.md"
+$promptFile = $null
+if (Test-Path -LiteralPath $promptPrimary) {
+  $promptFile = $promptPrimary
+} elseif (Test-Path -LiteralPath $promptLegacy) {
+  $promptFile = $promptLegacy
+}
+if (-not $promptFile) {
+  throw "Missing prompt file for TaskKey '$TaskKey'. Tried: $promptPrimary ; $promptLegacy (see Story Blocks/docs/AIRTABLE_WRITING_PIPELINE.md and Story Blocks/Airtable Drops/prompts/BEAT-TEMPLATE-prompt.md)"
+}
+
+$deltaPrimary = Join-Path $storyBlocksRoot "Airtable Drops\incoming\$TaskKey-delta-in.md"
+$deltaLegacy = Join-Path $RepoRoot "docs\Airtable Drops\incoming\$TaskKey-delta-in.md"
+$deltaIn = if (Test-Path -LiteralPath $deltaPrimary) {
+  Get-Content -LiteralPath $deltaPrimary -Raw
+} elseif (Test-Path -LiteralPath $deltaLegacy) {
+  Get-Content -LiteralPath $deltaLegacy -Raw
 } else {
   "(no delta-in file; optional)"
 }
 
 $promptBody = Get-Content $promptFile -Raw
 
+$defaultTonePrimary = Join-Path $storyBlocksRoot "Airtable Drops\story\TONE.md"
+$defaultToneLegacy = Join-Path $RepoRoot "docs\Airtable Drops\story\TONE.md"
+$toneResolved = ""
+if (-not [string]::IsNullOrWhiteSpace($ToneFile)) {
+  $toneResolved = $ToneFile
+} elseif (Test-Path -LiteralPath $defaultTonePrimary) {
+  $toneResolved = $defaultTonePrimary
+} else {
+  $toneResolved = $defaultToneLegacy
+}
+
+$toneSection = ""
+if (Test-Path -LiteralPath $toneResolved) {
+  $toneRaw = Get-Content -LiteralPath $toneResolved -Raw
+  if (-not [string]::IsNullOrWhiteSpace($toneRaw)) {
+    $toneSection = @"
+
+## Story tone & theme (artist control — optional file)
+$toneRaw
+
+"@
+  }
+}
+
 $bundle = @"
 ## Canonical prompt (from repo)
 $promptBody
-
-## Delta In (from previous task — delta only)
+$toneSection## Delta In (from previous beat — delta only)
 $deltaIn
 
 ## Instructions
-- Follow the prompt validation steps.
-- At the end, write Delta Out for the next task per docs/database/AIRTABLE_AUTOPIPELINE.md.
-- If work is off-script or blocked (login, scope), stop; the operator will set Stopped_OffScript / Off Script in Airtable.
+- Honor **Story tone & theme** above when present; then follow the beat prompt: scope, non-goals, **tone & theme** section, and **acceptance rubric** for this pass (outline, draft, line edit, continuity, etc.).
+- At the end, write **Delta Out** for the next beat per Story Blocks/docs/AIRTABLE_WRITING_PIPELINE.md (continuity, threads, voice, **tone/theme mix if changed**, risks, next-step hint).
+- If a **human gate** applies (sensitivity, major plot fork, voice/continuity break, or you cannot satisfy the rubric), stop; the operator sets **Stopped_OffScript** / **Off Script** in Airtable.
 "@
 
 if ($SkipAgent) {

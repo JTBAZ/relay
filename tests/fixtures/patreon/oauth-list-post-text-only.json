@@ -1,0 +1,17 @@
+{
+  "data": [
+    {
+      "type": "post",
+      "id": "154342894",
+      "attributes": {
+        "title": "Test 1 - Single, Free",
+        "published_at": "2026-04-01T12:00:00.000Z",
+        "content": "<p>test description </p>",
+        "is_public": true,
+        "is_paid": false,
+        "tiers": []
+      }
+    }
+  ],
+  "links": {}
+}

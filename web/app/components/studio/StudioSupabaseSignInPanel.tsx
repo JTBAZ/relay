@@ -1,11 +1,12 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Loader2 } from "lucide-react";
 import { getSupabaseBrowserClient } from "@/lib/supabase-browser";
 import { bootstrapStudioAfterSupabase } from "@/lib/relay-auth-bootstrap";
+import { resolvePostAuthPath } from "@/lib/post-login-redirect";
 import { emitStudioSessionUpdate } from "@/lib/studio-session-context";
 
 type Variant = "login" | "onboarding";
@@ -27,8 +28,12 @@ export function StudioSupabaseSignInPanel({
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /** Avoid hydration mismatch: server has no `window`; client may have Supabase env — defer warning until mounted. */
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
 
-  const supabaseConfigured = typeof window !== "undefined" && Boolean(getSupabaseBrowserClient());
+  const showSupabaseSetupWarning =
+    mounted && !getSupabaseBrowserClient();
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
@@ -71,7 +76,7 @@ export function StudioSupabaseSignInPanel({
         await bootstrapStudioAfterSupabase(token);
         emitStudioSessionUpdate();
         if (onSuccess) { onSuccess(); return; }
-        router.push(returnTo.startsWith("/") ? returnTo : "/");
+        router.push(resolvePostAuthPath(returnTo));
         return;
       }
       const { data, error: inErr } = await sb.auth.signInWithPassword({ email, password });
@@ -81,7 +86,7 @@ export function StudioSupabaseSignInPanel({
       await bootstrapStudioAfterSupabase(token);
       emitStudioSessionUpdate();
       if (onSuccess) { onSuccess(); return; }
-      router.push(returnTo.startsWith("/") ? returnTo : "/");
+      router.push(resolvePostAuthPath(returnTo));
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -113,7 +118,7 @@ export function StudioSupabaseSignInPanel({
         </p>
       </div>
 
-      {!supabaseConfigured && (
+      {showSupabaseSetupWarning && (
         <p className="mb-3 rounded-md border border-amber-900/50 bg-amber-950/40 px-3 py-2 text-xs text-amber-100">
           Add{" "}
           <code className="rounded bg-black/30 px-1">NEXT_PUBLIC_SUPABASE_STAGING_URL</code> and{" "}

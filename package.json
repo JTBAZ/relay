@@ -34,6 +34,7 @@
     "probe:patreon-description": "node scripts/probe-patreon-post-description.mjs",
     "autopipeline": "node scripts/autopipeline-runner.mjs",
     "autosync:once": "npm run build && node dist/src/autosync-once.js",
+    "autopipeline:run-until-barrier:dry": "node scripts/autopipeline-runner.mjs run-until-barrier --dry-run",
     "autopipeline:run-until-t011:dry": "node scripts/autopipeline-runner.mjs run-until-t011 --dry-run",
     "autopipeline:enforce-ready:dry": "node scripts/autopipeline-runner.mjs enforce-ready --dry-run",
     "claude:session-files": "node scripts/claude-session-files-download.mjs",

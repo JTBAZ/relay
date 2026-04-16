@@ -2,21 +2,21 @@
 
 import { Suspense, useEffect, useState } from "react";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { decodePatronOAuthState } from "@/lib/patron-oauth-state";
 import { patronPatronOAuthRedirectUri } from "@/lib/patron-patron-redirect-uri";
 import { RELAY_API_BASE } from "@/lib/relay-api";
 
 function CallbackInner() {
+  const router = useRouter();
   const params = useSearchParams();
   const code = params.get("code");
   const state = params.get("state");
   const oauthError = params.get("error");
   const oauthDesc = params.get("error_description");
 
-  const [status, setStatus] = useState<"idle" | "working" | "done" | "error">("idle");
+  const [status, setStatus] = useState<"idle" | "working" | "error">("idle");
   const [message, setMessage] = useState<string | null>(null);
-  const [sessionPreview, setSessionPreview] = useState<string | null>(null);
 
   useEffect(() => {
     if (oauthError) {
@@ -73,9 +73,6 @@ function CallbackInner() {
           setMessage(json.error?.message ?? `HTTP ${res.status}`);
           return;
         }
-        setStatus("done");
-        setMessage("Session issued. Store the token for API calls (Authorization: Bearer …).");
-        setSessionPreview(JSON.stringify(json.data, null, 2));
         try {
           if (json.data?.token && typeof localStorage !== "undefined") {
             localStorage.setItem("relay_session_token", json.data.token);
@@ -83,6 +80,8 @@ function CallbackInner() {
         } catch {
           /* ignore quota / private mode */
         }
+        router.replace("/patron/feed");
+        return;
       } catch (e) {
         if (!cancelled) {
           setStatus("error");
@@ -94,7 +93,7 @@ function CallbackInner() {
     return () => {
       cancelled = true;
     };
-  }, [code, state, oauthError, oauthDesc]);
+  }, [code, state, oauthError, oauthDesc, router]);
 
   return (
     <main className="mx-auto max-w-lg space-y-4 p-8 text-stone-200">
@@ -116,20 +115,6 @@ function CallbackInner() {
         <pre className="whitespace-pre-wrap rounded border border-red-500/40 bg-red-950/50 p-3 text-sm text-red-200">
           {message}
         </pre>
-      )}
-      {status === "done" && message && (
-        <>
-          <p className="text-sm text-emerald-300">{message}</p>
-          <p className="text-xs text-stone-400">
-            Token saved to <code className="rounded bg-stone-800 px-1">localStorage.relay_session_token</code>{" "}
-            when possible.
-          </p>
-          {sessionPreview && (
-            <pre className="overflow-x-auto rounded border border-stone-600 bg-stone-900/80 p-3 text-xs text-stone-200">
-              {sessionPreview}
-            </pre>
-          )}
-        </>
       )}
     </main>
   );

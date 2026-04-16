@@ -1,11 +1,13 @@
 "use client";
 
+import Link from "next/link";
 import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { Loader2, Sparkles, Zap } from "lucide-react";
 import { cn } from "@/app/lib/cn";
 import { StudioSupabaseSignInPanel } from "@/app/components/studio/StudioSupabaseSignInPanel";
 import {
   RELAY_CREATOR_ID_STORAGE_KEY,
+  RELAY_PUBLIC_SLUG_STORAGE_KEY,
   buildPatreonCreatorAuthorizeUrl,
   postCreatorWorkspace,
   postPatreonCreatorPrepare,
@@ -252,6 +254,15 @@ export function StepPatreonConnect() {
 }
 
 export function StepGoLive() {
+  const [publicProfilePath, setPublicProfilePath] = useState<string | null>(null);
+
+  useEffect(() => {
+    const slug = typeof window !== "undefined"
+      ? window.localStorage.getItem(RELAY_PUBLIC_SLUG_STORAGE_KEY)?.trim()
+      : null;
+    setPublicProfilePath(slug ? `/patron/c/${encodeURIComponent(slug)}` : null);
+  }, []);
+
   return (
     <div className="flex flex-col items-center gap-6 text-center">
       <div className="relative flex h-16 w-16 items-center justify-center rounded-2xl border border-[var(--relay-green-800)] bg-[var(--relay-green-950)]">
@@ -263,10 +274,21 @@ export function StepGoLive() {
           You&apos;re all set
         </h2>
         <p className="text-sm leading-relaxed text-[var(--relay-fg-muted)]">
-          Your Relay creator profile is ready. Head to your dashboard to publish your first drop or customize
-          your patron tiers.
+          Open your Library to sync Patreon and manage posts. When you&apos;re ready, share your public gallery
+          link with patrons.
         </p>
       </div>
+
+      {publicProfilePath ? (
+        <p className="max-w-sm text-xs text-[var(--relay-fg-muted)]">
+          <Link
+            href={publicProfilePath}
+            className="font-medium text-[var(--relay-green-400)] underline-offset-2 hover:underline"
+          >
+            Preview your public gallery
+          </Link>
+        </p>
+      ) : null}
 
       <div className="w-full max-w-xs space-y-2 text-left">
         {[

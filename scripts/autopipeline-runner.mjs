@@ -1,6 +1,6 @@
 /**
- * Airtable auto-pipeline orchestration (MVP scaffold).
- * Syncs Airtable Tasks ↔ docs/Airtable Drops/incoming/, appends Runs, advances Status,
+ * Airtable writing-pipeline orchestration (MVP scaffold).
+ * Syncs Airtable queue ↔ Story Blocks/Airtable Drops/incoming/ (or STORY_BLOCKS_DIR), appends Sessions (Runs), advances Status,
  * optionally enforces a single Ready row (winner = lowest Sort Order among eligible).
  *
  * Env (repo root .env):
@@ -9,6 +9,15 @@
  *   AIRTABLE_ACCESS_TOKEN, AIRTABLE_API_KEY (first set wins)
  *   AIRTABLE_AUTOPIPELINE_BASE_ID — default: Relay Patreon Milestones (see below)
  *   AIRTABLE_AUTOPIPELINE_TASKS_TABLE / _RUNS_TABLE / _SYSTEM_STATE_TABLE — override if you duplicate the base
+ *   STORY_BLOCKS_DIR — absolute path to Story Blocks pack if not at <repo>/Story Blocks (incoming/sync-in target)
+ *
+ * Field name overrides (when Airtable columns differ, e.g. Beat Key vs Task Key):
+ *   AUTOPIPELINE_FIELD_TASK_KEY, _TITLE, _SORT_ORDER, _STATUS, _PROMPT_PATH,
+ *   _DELTA_IN, _DELTA_OUT, _NEXT_TASK, _RETRY_COUNT, _MAX_RETRIES,
+ *   _OFF_SCRIPT, _OFF_SCRIPT_REASON, _AUTOMATION_ALLOWED,
+ *   _RUN_LABEL, _RUN_TASK, _RUN_STARTED_AT, _RUN_FINISHED_AT, _RUN_CLI_EXIT_CODE,
+ *   _RUN_PROMPT_SNAPSHOT, _RUN_OUTPUT_SUMMARY, _RUN_OUTCOME,
+ *   _SYSTEM_AUTOMATION_MASTER, _SYSTEM_CURRENT_TASK
  *
  * Usage:
  *   node scripts/autopipeline-runner.mjs status
@@ -16,12 +25,14 @@
  *   node scripts/autopipeline-runner.mjs enforce-ready [--dry-run]
  *   node scripts/autopipeline-runner.mjs complete --taskKey T-006 --exitCode 0 [--stdoutFile out.txt] [--deltaOutFile delta.md]
  *   node scripts/autopipeline-runner.mjs prepare   # sync-in for winner + print suggested agent command
- *   node scripts/autopipeline-runner.mjs run-until-t011 [--dry-run] [--max-runs N]
+ *   node scripts/autopipeline-runner.mjs run-until-barrier [--dry-run] [--max-runs N]
+ *
+ *   node scripts/autopipeline-runner.mjs run-until-t011  # deprecated alias → run-until-barrier
  *
  * npm: npm run autopipeline -- status
  * PowerShell: npm strips args after the first `--token` unless you add a second `--`:
- *   npm run autopipeline -- -- run-until-t011 --dry-run
- * Or use: npm run autopipeline:run-until-t011:dry
+ *   npm run autopipeline -- -- run-until-barrier --dry-run
+ * Or use: npm run autopipeline:run-until-barrier:dry
  */
 import { config } from "dotenv";
 import { spawn } from "node:child_process";
@@ -60,35 +71,93 @@ const TABLE_RUNS =
 const TABLE_SYSTEM =
   process.env.AIRTABLE_AUTOPIPELINE_SYSTEM_STATE_TABLE || "tbl7wVkvUIApZ16Cj";
 
-const INCOMING_DIR = join(ROOT, "docs", "Airtable Drops", "incoming");
-const PROMPTS_DIR = join(ROOT, "docs", "Airtable Drops", "prompts");
+const STORY_BLOCKS_ROOT = process.env.STORY_BLOCKS_DIR
+  ? process.env.STORY_BLOCKS_DIR
+  : join(ROOT, "Story Blocks");
+const INCOMING_DIR = join(STORY_BLOCKS_ROOT, "Airtable Drops", "incoming");
+
+/** @returns {Record<string, string>} */
+function resolveFields() {
+  return {
+    taskKey: process.env.AUTOPIPELINE_FIELD_TASK_KEY || "Task Key",
+    title: process.env.AUTOPIPELINE_FIELD_TITLE || "Title",
+    sortOrder: process.env.AUTOPIPELINE_FIELD_SORT_ORDER || "Sort Order",
+    status: process.env.AUTOPIPELINE_FIELD_STATUS || "Status",
+    promptPath: process.env.AUTOPIPELINE_FIELD_PROMPT_PATH || "Prompt Path",
+    deltaIn: process.env.AUTOPIPELINE_FIELD_DELTA_IN || "Delta In",
+    deltaOut: process.env.AUTOPIPELINE_FIELD_DELTA_OUT || "Delta Out",
+    nextTask: process.env.AUTOPIPELINE_FIELD_NEXT_TASK || "Next Task",
+    retryCount: process.env.AUTOPIPELINE_FIELD_RETRY_COUNT || "Retry Count",
+    maxRetries: process.env.AUTOPIPELINE_FIELD_MAX_RETRIES || "Max Retries",
+    offScript: process.env.AUTOPIPELINE_FIELD_OFF_SCRIPT || "Off Script",
+    offScriptReason:
+      process.env.AUTOPIPELINE_FIELD_OFF_SCRIPT_REASON || "Off Script Reason",
+    automationAllowed:
+      process.env.AUTOPIPELINE_FIELD_AUTOMATION_ALLOWED || "Automation Allowed",
+    runLabel: process.env.AUTOPIPELINE_FIELD_RUN_LABEL || "Label",
+    runTask: process.env.AUTOPIPELINE_FIELD_RUN_TASK || "Task",
+    runStartedAt: process.env.AUTOPIPELINE_FIELD_RUN_STARTED_AT || "Started At",
+    runFinishedAt:
+      process.env.AUTOPIPELINE_FIELD_RUN_FINISHED_AT || "Finished At",
+    runCliExitCode:
+      process.env.AUTOPIPELINE_FIELD_RUN_CLI_EXIT_CODE || "CLI Exit Code",
+    runPromptSnapshot:
+      process.env.AUTOPIPELINE_FIELD_RUN_PROMPT_SNAPSHOT || "Prompt Snapshot",
+    runOutputSummary:
+      process.env.AUTOPIPELINE_FIELD_RUN_OUTPUT_SUMMARY || "Output Summary",
+    runOutcome: process.env.AUTOPIPELINE_FIELD_RUN_OUTCOME || "Outcome",
+    systemAutomationMaster:
+      process.env.AUTOPIPELINE_FIELD_SYSTEM_AUTOMATION_MASTER ||
+      "Automation Master Enabled",
+    systemCurrentTask:
+      process.env.AUTOPIPELINE_FIELD_SYSTEM_CURRENT_TASK || "Current Task"
+  };
+}
+
+const F = resolveFields();
 
 function usage() {
-  console.log(`autopipeline-runner.mjs — Airtable ↔ files, Runs, Status (MVP)
+  console.log(`autopipeline-runner.mjs — Airtable ↔ files, Sessions (Runs), Status (MVP)
 
 Commands:
-  status              System State + eligible Ready tasks (winner = lowest Sort Order)
-  sync-in             Write Tasks.Delta In → incoming/<TaskKey>-delta-in.md (default: current winner)
+  status              System State + eligible Ready beats (winner = lowest Sort Order)
+  sync-in             Write queue Delta In → Story Blocks/Airtable Drops/incoming/<TaskKey>-delta-in.md
   enforce-ready       Demote extra Ready rows to Pending (keeps one winner)
-  complete            Log a run, update task, optional handoff to Next Task (--taskKey, --exitCode, …)
+  complete            Log a session, update beat, optional handoff to Next Task (--taskKey, --exitCode, …)
   prepare             sync-in for winner + print suggested PowerShell agent command
-  run-until-t011      Loop: lowest Ready task before barrier → agent → complete until T-011 (flag row)
+  run-until-barrier   Loop: lowest Ready beat before barrier → agent → complete
+  run-until-t011      Deprecated alias for run-until-barrier (same behavior)
 
 Options:
   --taskKey T-00N     For sync-in / complete
-  --dry-run           For enforce-ready: print only; for run-until-t011: show first task only
-                      (from PowerShell via npm, use npm run autopipeline -- -- run-until-t011 --dry-run
-                      or npm run autopipeline:run-until-t011:dry)
+  --dry-run           For enforce-ready: print only; for run-until-barrier: show first task only
+                      (from PowerShell via npm, use npm run autopipeline -- -- run-until-barrier --dry-run
+                      or npm run autopipeline:run-until-barrier:dry)
   --exitCode N        For complete (default 0)
   --stdoutFile PATH   For complete: read agent stdout log
-  --deltaOutFile PATH For complete: delta text for Done + next Task Delta In
-  --no-handoff        For complete: skip next-task promotion
-  --max-runs N        For run-until-t011: safety cap (default 25)
+  --deltaOutFile PATH For complete: delta text for Done + next beat Delta In
+  --no-handoff        For complete: skip next-beat promotion
+  --max-runs N        For run-until-barrier: safety cap (default 25)
+
+Barrier env (human-review row): AUTOPIPELINE_STOP_SORT_ORDER (default 11), AUTOPIPELINE_STOP_TASK_KEY (default T-011)
 `);
 }
 
 function sha12(s) {
   return createHash("sha256").update(s, "utf8").digest("hex").slice(0, 12);
+}
+
+/** Drop undefined/null so optional future fields do not break PATCH/POST. */
+function compactFields(obj) {
+  const out = {};
+  for (const [k, v] of Object.entries(obj)) {
+    if (v !== undefined && v !== null) out[k] = v;
+  }
+  return out;
+}
+
+function field(formulaName) {
+  return `{${formulaName}}`;
 }
 
 async function airtableFetch(path, init = {}) {
@@ -113,7 +182,7 @@ async function airtableFetch(path, init = {}) {
     let hint = "";
     if (res.status === 403 || res.status === 404) {
       hint =
-        `\n\n→ Fix: In Airtable → **Developer hub** → **Personal access tokens** → open this PAT → **Add base** and select **Relay Patreon Milestones** (or whatever base holds Tasks/Runs).` +
+        `\n\n→ Fix: In Airtable → **Developer hub** → **Personal access tokens** → open this PAT → **Add base** and select **Relay Patreon Milestones** (or whatever base holds the queue/Sessions).` +
         `\n   Enable scopes **data.records:read** and **data.records:write** for that base.` +
         `\n   If you duplicated the base, set **AIRTABLE_AUTOPIPELINE_BASE_ID** in \`.env\` to that base id (starts with **app**).` +
         `\n   Default base id in this script: **${BASE_ID}**.`;
@@ -124,16 +193,19 @@ async function airtableFetch(path, init = {}) {
 }
 
 async function listTasksReady() {
-  const filter = encodeURIComponent(`{Status}="Ready"`);
-  const path = `/${TABLE_TASKS}?filterByFormula=${filter}&sort[0][field]=Sort Order&sort[0][direction]=asc&pageSize=100`;
+  const filter = encodeURIComponent(
+    `${field(F.status)}="Ready"`
+  );
+  const sortField = encodeURIComponent(F.sortOrder);
+  const path = `/${TABLE_TASKS}?filterByFormula=${filter}&sort[0][field]=${sortField}&sort[0][direction]=asc&pageSize=100`;
   const data = await airtableFetch(path);
   return data.records || [];
 }
 
 function isEligibleTask(fields) {
-  if (fields["Status"] !== "Ready") return false;
-  if (fields["Off Script"] === true) return false;
-  if (fields["Automation Allowed"] === false) return false;
+  if (fields[F.status] !== "Ready") return false;
+  if (fields[F.offScript] === true) return false;
+  if (fields[F.automationAllowed] === false) return false;
   return true;
 }
 
@@ -142,24 +214,28 @@ function pickWinner(records) {
   if (eligible.length === 0) return null;
   eligible.sort(
     (a, b) =>
-      (Number(a.fields["Sort Order"]) || 999) -
-      (Number(b.fields["Sort Order"]) || 999)
+      (Number(a.fields[F.sortOrder]) || 999) -
+      (Number(b.fields[F.sortOrder]) || 999)
   );
   return eligible[0];
 }
 
-/** Stop `run-until-t011` before this Sort Order / Task Key (human-flagged row). */
+/** Stop `run-until-barrier` before this Sort Order / Task Key (human-flagged row). */
 const BARRIER_SORT_ORDER = Number(
-  process.env.AUTOPIPELINE_STOP_SORT_ORDER || "11"
+  process.env.AUTOPIPELINE_STOP_SORT_ORDER !== undefined
+    ? process.env.AUTOPIPELINE_STOP_SORT_ORDER
+    : "11"
 );
 const BARRIER_TASK_KEY =
-  process.env.AUTOPIPELINE_STOP_TASK_KEY || "T-011";
+  process.env.AUTOPIPELINE_STOP_TASK_KEY !== undefined
+    ? process.env.AUTOPIPELINE_STOP_TASK_KEY
+    : "T-011";
 
 function canAutomateBeforeBarrier(fields) {
   if (!isEligibleTask(fields)) return false;
-  const key = String(fields["Task Key"] || "");
-  const so = Number(fields["Sort Order"]);
-  if (key === BARRIER_TASK_KEY) return false;
+  const key = String(fields[F.taskKey] || "");
+  const so = Number(fields[F.sortOrder]);
+  if (BARRIER_TASK_KEY && key === BARRIER_TASK_KEY) return false;
   if (Number.isFinite(so) && so >= BARRIER_SORT_ORDER) return false;
   return true;
 }
@@ -171,8 +247,8 @@ function pickWinnerBeforeBarrier(records) {
   if (eligible.length === 0) return null;
   eligible.sort(
     (a, b) =>
-      (Number(a.fields["Sort Order"]) || 999) -
-      (Number(b.fields["Sort Order"]) || 999)
+      (Number(a.fields[F.sortOrder]) || 999) -
+      (Number(b.fields[F.sortOrder]) || 999)
   );
   return eligible[0];
 }
@@ -195,7 +271,8 @@ function extractDeltaFromAgentStdout(stdout) {
 }
 
 async function getTaskByKey(taskKey) {
-  const filter = encodeURIComponent(`{Task Key}="${taskKey.replace(/"/g, '\\"')}"`);
+  const safe = taskKey.replace(/"/g, '\\"');
+  const filter = encodeURIComponent(`${field(F.taskKey)}="${safe}"`);
   const path = `/${TABLE_TASKS}?filterByFormula=${filter}&maxRecords=1`;
   const data = await airtableFetch(path);
   const rec = data.records?.[0];
@@ -221,7 +298,7 @@ async function patchRecords(tableId, records) {
 async function createRun(fields) {
   const data = await airtableFetch(`/${TABLE_RUNS}`, {
     method: "POST",
-    body: JSON.stringify({ records: [{ fields }] })
+    body: JSON.stringify({ records: [{ fields: compactFields(fields) }] })
   });
   return data.records?.[0];
 }
@@ -248,29 +325,28 @@ async function cmdStatus() {
     console.log("\n[System State]", sys.id);
     console.log(
       "  Automation Master Enabled:",
-      f["Automation Master Enabled"] !== false
+      f[F.systemAutomationMaster] !== false
     );
-    if (f["Current Task"]?.length) console.log("  Current Task ids:", f["Current Task"]);
+    if (f[F.systemCurrentTask]?.length)
+      console.log("  Current Task ids:", f[F.systemCurrentTask]);
   } else {
     console.log("\n[System State] (no rows)");
   }
 
   console.log(`\n[Ready rows] ${ready.length} total`);
   for (const r of ready) {
-    const k = r.fields["Task Key"] || "?";
-    const so = r.fields["Sort Order"];
-    const el = isEligibleTask(r.fields) ? "eligible" : "skip (off-script or automation off)";
+    const k = r.fields[F.taskKey] || "?";
+    const so = r.fields[F.sortOrder];
+    const el = isEligibleTask(r.fields)
+      ? "eligible"
+      : "skip (off-script or automation off)";
     const mark = winner?.id === r.id ? " <-- winner" : "";
     console.log(`  ${k}  sort=${so}  ${el}${mark}`);
   }
   if (!winner) {
     console.log("\nNo eligible winner (no Ready, or all skipped).");
   } else {
-    console.log(
-      "\nWinner:",
-      winner.fields["Task Key"],
-      winner.id
-    );
+    console.log("\nWinner:", winner.fields[F.taskKey], winner.id);
   }
 }
 
@@ -305,17 +381,17 @@ async function cmdEnforceReady(dryRun) {
   }
   console.log(
     dryRun ? "[dry-run]" : "",
-    `Keeping winner ${winner.fields["Task Key"]}; demoting ${others.length} row(s) to Pending`
+    `Keeping winner ${winner.fields[F.taskKey]}; demoting ${others.length} row(s) to Pending`
   );
   if (dryRun) {
     for (const r of others) {
-      console.log("  would demote:", r.fields["Task Key"], r.id);
+      console.log("  would demote:", r.fields[F.taskKey], r.id);
     }
     return;
   }
   const updates = others.map((r) => ({
     id: r.id,
-    fields: { Status: "Pending" }
+    fields: { [F.status]: "Pending" }
   }));
   await patchRecords(TABLE_TASKS, updates);
   console.log("Done.");
@@ -330,7 +406,7 @@ async function doComplete({
 }) {
   const task = await getTaskByKey(taskKey);
   const tf = task.fields;
-  const promptPath = tf["Prompt Path"] || "";
+  const promptPath = tf[F.promptPath] || "";
   let promptSnap = promptPath;
   if (promptPath) {
     const abs = join(ROOT, promptPath.replace(/\//g, "\\"));
@@ -352,35 +428,35 @@ async function doComplete({
   const success = exitCode === 0;
   const outcome = success ? "success" : "error";
 
-  const runFields = {
-    Label: label,
-    Task: [task.id],
-    "Started At": started.toISOString(),
-    "Finished At": new Date().toISOString(),
-    "CLI Exit Code": exitCode,
-    "Prompt Snapshot": promptSnap.slice(0, 49000),
-    "Output Summary": summary || "(no output)",
-    Outcome: outcome
-  };
+  const runFields = compactFields({
+    [F.runLabel]: label,
+    [F.runTask]: [task.id],
+    [F.runStartedAt]: started.toISOString(),
+    [F.runFinishedAt]: new Date().toISOString(),
+    [F.runCliExitCode]: exitCode,
+    [F.runPromptSnapshot]: promptSnap.slice(0, 49000),
+    [F.runOutputSummary]: summary || "(no output)",
+    [F.runOutcome]: outcome
+  });
 
   const runRec = await createRun(runFields);
   console.log("Runs record:", runRec?.id);
 
-  const retry = Number(tf["Retry Count"] || 0);
-  const maxR = Number(tf["Max Retries"] ?? 2);
+  const retry = Number(tf[F.retryCount] || 0);
+  const maxR = Number(tf[F.maxRetries] ?? 2);
 
   if (success) {
     const nextPatch = {
       id: task.id,
       fields: {
-        Status: "Done",
-        "Delta Out": deltaOutText || tf["Delta Out"] || ""
+        [F.status]: "Done",
+        [F.deltaOut]: deltaOutText || tf[F.deltaOut] || ""
       }
     };
     await patchRecords(TABLE_TASKS, [nextPatch]);
 
     if (!noHandoff && deltaOutText) {
-      const nextIds = tf["Next Task"] || [];
+      const nextIds = tf[F.nextTask] || [];
       if (nextIds.length > 0) {
         const nextId = nextIds[0];
         const nextRec = await airtableFetch(`/${TABLE_TASKS}/${nextId}`);
@@ -389,12 +465,12 @@ async function doComplete({
           {
             id: nextId,
             fields: {
-              "Delta In": deltaOutText,
-              Status: "Ready"
+              [F.deltaIn]: deltaOutText,
+              [F.status]: "Ready"
             }
           }
         ]);
-        const nextKey = nf["Task Key"] || "T-???";
+        const nextKey = nf[F.taskKey] || "T-???";
         await mkdir(INCOMING_DIR, { recursive: true });
         const incPath = join(INCOMING_DIR, `${nextKey}-delta-in.md`);
         await writeFile(incPath, deltaOutText, "utf8");
@@ -410,8 +486,8 @@ async function doComplete({
       {
         id: task.id,
         fields: {
-          "Retry Count": newRetry,
-          Status: status
+          [F.retryCount]: newRetry,
+          [F.status]: status
         }
       }
     ]);
@@ -493,8 +569,8 @@ function runPowershellAgent(taskKey) {
 }
 
 async function syncInForRecord(rec) {
-  const key = rec.fields["Task Key"];
-  const delta = (rec.fields["Delta In"] || "").trim();
+  const key = rec.fields[F.taskKey];
+  const delta = (rec.fields[F.deltaIn] || "").trim();
   await mkdir(INCOMING_DIR, { recursive: true });
   const outPath = join(INCOMING_DIR, `${key}-delta-in.md`);
   const body =
@@ -503,7 +579,7 @@ async function syncInForRecord(rec) {
   console.log(`Wrote ${outPath} (${body.length} chars)`);
 }
 
-async function cmdRunUntilT011(argv) {
+async function cmdRunUntilBarrier(argv) {
   const dryRun = argv.has("--dry-run");
   const maxRuns = Math.min(
     100,
@@ -511,13 +587,13 @@ async function cmdRunUntilT011(argv) {
   );
 
   const sys = await getSystemState();
-  if (sys?.fields && sys.fields["Automation Master Enabled"] === false) {
+  if (sys?.fields && sys.fields[F.systemAutomationMaster] === false) {
     console.error("Automation Master Enabled is off; abort.");
     process.exit(1);
   }
 
   console.log(
-    `run-until-t011: barrier Sort Order >= ${BARRIER_SORT_ORDER} or Task Key ${BARRIER_TASK_KEY} (override via AUTOPIPELINE_STOP_* env)`
+    `run-until-barrier: stop at Sort Order >= ${BARRIER_SORT_ORDER} or Task Key === ${BARRIER_TASK_KEY || "(none)"} (override via AUTOPIPELINE_STOP_* env)`
   );
 
   for (let i = 0; i < maxRuns; i++) {
@@ -525,13 +601,13 @@ async function cmdRunUntilT011(argv) {
     const winner = pickWinnerBeforeBarrier(ready);
     if (!winner) {
       console.log(
-        "\nStopped: no eligible **Ready** task before barrier (promote the next row to Ready in Airtable, or all work before the flag is done)."
+        "\nStopped: no eligible **Ready** beat before barrier (promote the next row to Ready in Airtable, or all work before the barrier is done)."
       );
       return;
     }
 
-    const taskKey = winner.fields["Task Key"];
-    const sort = winner.fields["Sort Order"];
+    const taskKey = winner.fields[F.taskKey];
+    const sort = winner.fields[F.sortOrder];
     console.log(`\n--- Iteration ${i + 1}/${maxRuns}: ${taskKey} (sort=${sort}) ---`);
 
     if (dryRun) {
@@ -574,13 +650,13 @@ async function cmdRunUntilT011(argv) {
 
 async function cmdPrepare() {
   const sys = await getSystemState();
-  if (sys?.fields && sys.fields["Automation Master Enabled"] === false) {
+  if (sys?.fields && sys.fields[F.systemAutomationMaster] === false) {
     console.error("Automation Master Enabled is off; abort.");
     process.exit(1);
   }
   await cmdSyncIn(null);
   const winner = pickWinner(await listTasksReady());
-  const key = winner?.fields["Task Key"] || "T-???";
+  const key = winner?.fields[F.taskKey] || "T-???";
   console.log(`
 Next: run agent (PowerShell), e.g.:
   cd "${ROOT.replace(/\\/g, "\\\\")}"
@@ -616,6 +692,12 @@ async function main() {
   const raw = process.argv.slice(2);
   const { cmd, opts } = parseArgv(raw);
   const argv = opts;
+
+  if (cmd === "run-until-t011") {
+    console.warn(
+      "[deprecated] `run-until-t011` — use `run-until-barrier` (same behavior; see Story Blocks/docs/AIRTABLE_WRITING_PIPELINE.md)"
+    );
+  }
 
   if (
     !TOKEN &&
@@ -653,8 +735,9 @@ async function main() {
     case "prepare":
       await cmdPrepare();
       break;
+    case "run-until-barrier":
     case "run-until-t011":
-      await cmdRunUntilT011(argv);
+      await cmdRunUntilBarrier(argv);
       break;
     default:
       usage();

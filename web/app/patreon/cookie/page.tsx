@@ -6,8 +6,10 @@ import { RELAY_API_BASE } from "@/lib/relay-api";
 
 type Status = "idle" | "saving" | "saved" | "checking" | "error";
 
+const DEFAULT_CREATOR_ID = process.env.NEXT_PUBLIC_RELAY_CREATOR_ID ?? "dev_creator";
+
 export default function PatreonCookiePage() {
-  const [creatorId, setCreatorId] = useState("dev_creator");
+  const [creatorId, setCreatorId] = useState(DEFAULT_CREATOR_ID);
   const [sessionId, setSessionId] = useState("");
   const [status, setStatus] = useState<Status>("idle");
   const [hasCookie, setHasCookie] = useState<boolean | null>(null);

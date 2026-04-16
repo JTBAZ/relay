@@ -33,7 +33,8 @@ Authoritative relational design and migration plans for Relay’s **runtime** da
 | [`sub-agent-prompts.md`](sub-agent-prompts.md) | **Index** + Universal preamble; **19 standalone run files** in [`runs/`](runs/README.md) |
 | [`AIRTABLE_DB_PIPELINE.md`](AIRTABLE_DB_PIPELINE.md) | **Canonical Airtable schema** for **Relay Database Tracker** → **DB Integration Pipeline** (fields, base/table IDs, **runs** batching) |
 | [`../architecture/AIRTABLE_MULTI_TENANT_CHANGES.md`](../architecture/AIRTABLE_MULTI_TENANT_CHANGES.md) | **Multi Tenant Changes** (same base): table IDs, workflow; run prompts in [`../architecture/multi-tenant-runs/`](../architecture/multi-tenant-runs/README.md) |
-| [`AIRTABLE_AUTOPIPELINE.md`](AIRTABLE_AUTOPIPELINE.md) | **Agent + delta + Cursor CLI** autosequencer (Tasks/Runs/System State, delta contract, local runner script) — **not** the DB integration base |
+| **[`Story Blocks/docs/AIRTABLE_WRITING_PIPELINE.md`](../../Story Blocks/docs/AIRTABLE_WRITING_PIPELINE.md)** | **Creative-writing pipeline** (portable pack): beats, **Sessions** log, delta contract, local **`agent`** runner — stubs in this folder link here — **not** the DB integration base |
+| **[`Story Blocks/docs/AIRTABLE_WRITING_TONE_THEMES.md`](../../Story Blocks/docs/AIRTABLE_WRITING_TONE_THEMES.md)** | **Tone & theme:** ordered theme stack, weights, precedence, optional **`Story Blocks/Airtable Drops/story/TONE.md`** |
 
 ### Enabling Postgres-backed analytics (M6)
 

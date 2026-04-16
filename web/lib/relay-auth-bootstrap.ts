@@ -45,6 +45,8 @@ type RelaySessionPayload = {
 export async function bootstrapStudioAfterSupabase(accessToken: string): Promise<{
   relay_creator_id: string;
   account_id: string;
+  /** True when this call first provisioned the creator workspace (first-time studio). */
+  created: boolean;
 }> {
   await postRelayWithSupabaseJwt("/api/v1/auth/supabase/sync", accessToken, {});
   const relay = await postRelayWithSupabaseJwt<RelaySessionPayload>(
@@ -67,5 +69,9 @@ export async function bootstrapStudioAfterSupabase(accessToken: string): Promise
       window.localStorage.setItem(RELAY_PUBLIC_SLUG_STORAGE_KEY, slug);
     }
   }
-  return { relay_creator_id: ws.relay_creator_id.trim(), account_id: ws.account_id };
+  return {
+    relay_creator_id: ws.relay_creator_id.trim(),
+    account_id: ws.account_id,
+    created: Boolean(ws.created)
+  };
 }

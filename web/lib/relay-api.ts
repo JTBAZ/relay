@@ -104,6 +104,20 @@ export async function relayFetch<T>(path: string, init?: RequestInit): Promise<T
   return envelope.data;
 }
 
+/** `GET /api/v1/me/session` — opaque Bearer + optional linked `UserAccount`. */
+export type PatronSessionMe = {
+  user_id: string;
+  creator_id: string;
+  email: string | null;
+  auth_provider: "independent" | "patreon" | null;
+  patreon_user_id: string | null;
+  expires_at: string;
+};
+
+export function fetchPatronSessionMe(): Promise<PatronSessionMe> {
+  return relayFetch<PatronSessionMe>("/api/v1/me/session");
+}
+
 /** Browser storage for studio id after `POST /api/v1/creator/workspace` (MT-032 / MT-035). */
 export const RELAY_CREATOR_ID_STORAGE_KEY = "relay_creator_id";
 

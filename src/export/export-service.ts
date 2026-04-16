@@ -129,7 +129,7 @@ export class ExportService {
       clearExportFailure(index, mediaId);
       await this.exportIndex.save(index);
       try {
-        await this.canonicalStore.mutate(async (snapshot) => {
+        await this.canonicalStore.mutateForCreator(creatorId, async (snapshot) => {
           applyStorageKeyToCanonicalSnapshot(
             snapshot,
             creatorId,
@@ -196,7 +196,7 @@ export class ExportService {
       await this.exportIndex.save(index);
 
       try {
-        await this.canonicalStore.mutate(async (snapshot) => {
+        await this.canonicalStore.mutateForCreator(creatorId, async (snapshot) => {
           applyStorageKeyToCanonicalSnapshot(
             snapshot,
             creatorId,

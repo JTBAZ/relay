@@ -1,11 +1,13 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   useState,
   useMemo,
   useCallback,
   useEffect,
+  useRef,
   type MouseEvent,
   type ReactNode,
 } from "react";
@@ -22,6 +24,8 @@ import {
   Plus,
   ExternalLink,
   History,
+  ChevronDown,
+  LogOut,
 } from "lucide-react";
 import { DiscoverGrid } from "./discover-grid";
 import { FeedCard } from "./feed-card";
@@ -45,7 +49,12 @@ import {
   type PatronFeedDataSource,
 } from "@/lib/relay-fixtures";
 import { fetchPatronRelayFeed } from "@/lib/patron-feed-api";
-import { RelayApiError } from "@/lib/relay-api";
+import {
+  fetchPatronSessionMe,
+  type PatronSessionMe,
+  RelayApiError,
+} from "@/lib/relay-api";
+import { performRelayLogout } from "@/lib/relay-session-logout";
 
 export interface RelayAppProps {
   /**
@@ -58,6 +67,11 @@ export interface RelayAppProps {
 type AppView = "home" | "discover";
 
 type TransitionState = "idle" | "exiting" | "entering";
+
+function truncateMiddleId(s: string): string {
+  if (s.length <= 14) return s;
+  return `${s.slice(0, 8)}…${s.slice(-4)}`;
+}
 
 const DEMO_EMPTY_FOLLOWS = false;
 const DEMO_ERROR_BANNER = false;
@@ -319,6 +333,49 @@ export function RelayApp({ initialDataSource }: RelayAppProps = {}) {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+  const router = useRouter();
+  const accountMenuRef = useRef<HTMLDivElement>(null);
+  const [accountMenuOpen, setAccountMenuOpen] = useState(false);
+  const [sessionMe, setSessionMe] = useState<PatronSessionMe | null>(null);
+
+  const loadSessionMe = useCallback(() => {
+    if (typeof window === "undefined") return;
+    const token = window.localStorage.getItem("relay_session_token")?.trim();
+    if (!token) {
+      setSessionMe(null);
+      return;
+    }
+    void fetchPatronSessionMe()
+      .then(setSessionMe)
+      .catch(() => setSessionMe(null));
+  }, []);
+
+  useEffect(() => {
+    loadSessionMe();
+    window.addEventListener("relay-studio-session", loadSessionMe);
+    return () => window.removeEventListener("relay-studio-session", loadSessionMe);
+  }, [loadSessionMe]);
+
+  useEffect(() => {
+    if (!accountMenuOpen) return;
+    const onDocMouseDown = (e: globalThis.MouseEvent) => {
+      const el = accountMenuRef.current;
+      if (el && !el.contains(e.target as Node)) {
+        setAccountMenuOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", onDocMouseDown);
+    return () => document.removeEventListener("mousedown", onDocMouseDown);
+  }, [accountMenuOpen]);
+
+  useEffect(() => {
+    if (!accountMenuOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setAccountMenuOpen(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [accountMenuOpen]);
 
   const openCommand = () => setCommandOpen(true);
 
@@ -394,6 +451,14 @@ export function RelayApp({ initialDataSource }: RelayAppProps = {}) {
     const post = discoverItemToPost(item);
     setSelectedPost(post);
   };
+
+  const handleSignOut = useCallback(async () => {
+    setAccountMenuOpen(false);
+    setSettingsOpen(false);
+    setNotificationsOpen(false);
+    await performRelayLogout();
+    router.replace("/login?role=supporter");
+  }, [router]);
 
   const isDiscover = currentView === "discover";
   const viewer = effectiveBundle.currentViewer;
@@ -795,18 +860,56 @@ export function RelayApp({ initialDataSource }: RelayAppProps = {}) {
               >
                 <Settings size={17} aria-hidden="true" />
               </button>
-              
-              <div
-                className="w-8 h-8 rounded-full overflow-hidden bg-[#2A2A2A] border border-[#222222] shrink-0"
-                aria-hidden="true"
-              >
-                <img
-                  src={viewer.avatarUrl}
-                  alt=""
-                  className="w-full h-full object-cover"
-                  width={32}
-                  height={32}
-                />
+
+              <div className="relative shrink-0" ref={accountMenuRef}>
+                <button
+                  type="button"
+                  onClick={() => setAccountMenuOpen((o) => !o)}
+                  className="flex items-center gap-0.5 rounded-lg p-0.5 pr-1 text-[#4B5563] transition-colors hover:bg-[#111111] hover:text-[#9CA3AF]"
+                  aria-expanded={accountMenuOpen}
+                  aria-haspopup="menu"
+                  aria-label="Account menu"
+                >
+                  <span className="relative h-8 w-8 shrink-0 overflow-hidden rounded-full border border-[#222222] bg-[#2A2A2A]">
+                    <img
+                      src={viewer.avatarUrl}
+                      alt=""
+                      className="h-full w-full object-cover"
+                      width={32}
+                      height={32}
+                    />
+                  </span>
+                  <ChevronDown
+                    className={`h-4 w-4 shrink-0 transition-transform ${accountMenuOpen ? "rotate-180" : ""}`}
+                    aria-hidden
+                  />
+                </button>
+                {accountMenuOpen ? (
+                  <div
+                    className="absolute right-0 top-full z-50 mt-1 w-64 rounded-lg border border-[#222222] bg-[#141414] py-1 shadow-xl"
+                    role="menu"
+                  >
+                    <div className="border-b border-[#222222] px-3 py-2">
+                      <p className="truncate text-xs font-medium text-[#E0E0E0]">
+                        {sessionMe?.email?.trim() || "Patreon session"}
+                      </p>
+                      <p className="mt-0.5 font-mono text-[10px] text-[#555555]">
+                        {sessionMe
+                          ? `User ${truncateMiddleId(sessionMe.user_id)}`
+                          : "Sign in to see account details"}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={() => void handleSignOut()}
+                      className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-[#888888] transition-colors hover:bg-[#1f1f1f] hover:text-[#E0E0E0]"
+                    >
+                      <LogOut size={14} aria-hidden />
+                      Sign out
+                    </button>
+                  </div>
+                ) : null}
               </div>
             </div>
           </header>
@@ -922,7 +1025,11 @@ export function RelayApp({ initialDataSource }: RelayAppProps = {}) {
       </div>
 
       {/* Modals */}
-      <SettingsModal isOpen={settingsOpen} onClose={() => setSettingsOpen(false)} />
+      <SettingsModal
+        isOpen={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+        onSignOut={handleSignOut}
+      />
 
       {/* Gallery view modal */}
       {selectedPost && (
