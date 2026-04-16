@@ -9,18 +9,27 @@ import { join, relative } from "node:path";
 const ROOT = join(import.meta.dirname, "..");
 const SRC = join(ROOT, "src");
 
+/** Max chars between `console.*(` and the suspicious token — avoids matching across unrelated code in huge files. */
+const MAX_CONSOLE_ARG_WINDOW = 4096;
+
 const PATTERNS = [
   {
     name: "console + refresh_token",
-    re: /console\.(log|info|debug|warn|error)\s*\([\s\S]*?\brefresh_token\b/
+    re: new RegExp(
+      `console\\.(log|info|debug|warn|error)\\s*\\([\\s\\S]{0,${MAX_CONSOLE_ARG_WINDOW}}?\\brefresh_token\\b`
+    )
   },
   {
     name: "console + .access_token (value)",
-    re: /console\.(log|info|debug|warn|error)\s*\([\s\S]*?\.access_token\b/
+    re: new RegExp(
+      `console\\.(log|info|debug|warn|error)\\s*\\([\\s\\S]{0,${MAX_CONSOLE_ARG_WINDOW}}?\\.access_token\\b`
+    )
   },
   {
     name: "console + Bearer template",
-    re: /console\.(log|info|debug|warn|error)\s*\([\s\S]*?`[^`]*Bearer\s*\$\{/
+    re: new RegExp(
+      `console\\.(log|info|debug|warn|error)\\s*\\([\\s\\S]{0,${MAX_CONSOLE_ARG_WINDOW}}?\`[^\`]*Bearer\\s*\\\${`
+    )
   }
 ];
 
