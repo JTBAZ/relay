@@ -1,26 +1,48 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
-import { RELAY_API_BASE } from "@/lib/relay-api";
+import {
+  RELAY_API_BASE,
+  RELAY_CREATOR_ID_STORAGE_KEY,
+  relayPatronAuthHeaders
+} from "@/lib/relay-api";
 
 type Status = "idle" | "saving" | "saved" | "checking" | "error";
 
-const DEFAULT_CREATOR_ID = process.env.NEXT_PUBLIC_RELAY_CREATOR_ID ?? "dev_creator";
-
 export default function PatreonCookiePage() {
-  const [creatorId, setCreatorId] = useState(DEFAULT_CREATOR_ID);
+  // Hydrated from localStorage after `POST /api/v1/creator/workspace` (PatreonConnectClient).
+  // No build-time env default — the previous `NEXT_PUBLIC_RELAY_CREATOR_ID ?? "dev_creator"`
+  // baked the dev placeholder into the production bundle, causing the cookie to be stored
+  // under "dev_creator" while the scrape ran against the real creator id.
+  const [creatorId, setCreatorId] = useState("");
+  const [hydrated, setHydrated] = useState(false);
   const [sessionId, setSessionId] = useState("");
   const [status, setStatus] = useState<Status>("idle");
   const [hasCookie, setHasCookie] = useState<boolean | null>(null);
   const [message, setMessage] = useState<string | null>(null);
 
+  useEffect(() => {
+    const stored = window.localStorage.getItem(RELAY_CREATOR_ID_STORAGE_KEY)?.trim() ?? "";
+    setCreatorId(stored);
+    setHydrated(true);
+  }, []);
+
+  const trimmedCreatorId = creatorId.trim();
+  const creatorIdReady = trimmedCreatorId.length > 0;
+
   async function checkStatus() {
+    if (!creatorIdReady) {
+      setStatus("error");
+      setMessage("No relay_creator_id yet — connect via OAuth first.");
+      return;
+    }
     setStatus("checking");
     setMessage(null);
     try {
       const res = await fetch(
-        `${RELAY_API_BASE}/api/v1/patreon/cookie/status?creator_id=${encodeURIComponent(creatorId.trim())}`,
+        `${RELAY_API_BASE}/api/v1/patreon/cookie/status?creator_id=${encodeURIComponent(trimmedCreatorId)}`,
+        { headers: { ...relayPatronAuthHeaders() } }
       );
       const json = (await res.json()) as {
         data?: { has_cookie?: boolean };
@@ -40,6 +62,11 @@ export default function PatreonCookiePage() {
   }
 
   async function saveCookie() {
+    if (!creatorIdReady) {
+      setStatus("error");
+      setMessage("No relay_creator_id yet — connect via OAuth first.");
+      return;
+    }
     if (!sessionId.trim()) {
       setStatus("error");
       setMessage("Paste your session_id value first.");
@@ -50,9 +77,9 @@ export default function PatreonCookiePage() {
     try {
       const res = await fetch(`${RELAY_API_BASE}/api/v1/patreon/cookie`, {
         method: "POST",
-        headers: { "content-type": "application/json" },
+        headers: { "content-type": "application/json", ...relayPatronAuthHeaders() },
         body: JSON.stringify({
-          creator_id: creatorId.trim(),
+          creator_id: trimmedCreatorId,
           session_id: sessionId.trim()
         })
       });
@@ -76,13 +103,18 @@ export default function PatreonCookiePage() {
   }
 
   async function removeCookie() {
+    if (!creatorIdReady) {
+      setStatus("error");
+      setMessage("No relay_creator_id yet — connect via OAuth first.");
+      return;
+    }
     setStatus("saving");
     setMessage(null);
     try {
       const res = await fetch(`${RELAY_API_BASE}/api/v1/patreon/cookie`, {
         method: "DELETE",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ creator_id: creatorId.trim() })
+        headers: { "content-type": "application/json", ...relayPatronAuthHeaders() },
+        body: JSON.stringify({ creator_id: trimmedCreatorId })
       });
       const json = (await res.json()) as {
         data?: { removed?: boolean };
@@ -134,17 +166,36 @@ export default function PatreonCookiePage() {
       <label className="block space-y-1">
         <span className="text-sm font-medium text-stone-200">Relay creator_id</span>
         <input
-          className="w-full rounded border border-stone-600 bg-stone-100 px-3 py-2 text-stone-900 placeholder:text-stone-500"
+          className="w-full rounded border border-stone-600 bg-stone-100 px-3 py-2 font-mono text-sm text-stone-900 placeholder:text-stone-500"
           value={creatorId}
           onChange={(e) => setCreatorId(e.target.value)}
-          placeholder="dev_creator"
+          placeholder={hydrated ? "Connect via OAuth first to populate this" : "Loading…"}
         />
+        <span className="text-xs text-stone-400">
+          Auto-filled from your logged-in studio. Don&apos;t edit unless you know what you&apos;re
+          doing.
+        </span>
       </label>
+
+      {hydrated && !creatorIdReady && (
+        <div className="rounded border border-amber-500/40 bg-amber-950/40 p-3 text-sm text-amber-100">
+          No <code className="rounded bg-amber-900/40 px-1">relay_creator_id</code> in this
+          browser yet. Visit{" "}
+          <Link
+            href="/patreon/connect"
+            className="text-amber-300 underline hover:text-amber-200"
+          >
+            OAuth Connect
+          </Link>{" "}
+          first — clicking <em>Ensure workspace</em> there provisions your studio and stores the
+          id locally so this page can save the cookie under the correct key.
+        </div>
+      )}
 
       <div className="flex items-center gap-3">
         <button
           onClick={checkStatus}
-          disabled={status === "checking"}
+          disabled={status === "checking" || !creatorIdReady}
           className="rounded bg-stone-700 px-3 py-1.5 text-sm text-stone-200 hover:bg-stone-600 disabled:opacity-50"
         >
           {status === "checking" ? "Checking…" : "Check status"}
@@ -223,7 +274,7 @@ export default function PatreonCookiePage() {
       <div className="flex items-center gap-3">
         <button
           onClick={saveCookie}
-          disabled={status === "saving" || !sessionId.trim()}
+          disabled={status === "saving" || !sessionId.trim() || !creatorIdReady}
           className="rounded bg-amber-500 px-4 py-2 text-sm font-medium text-stone-950 hover:bg-amber-400 disabled:opacity-50"
         >
           {status === "saving" ? "Saving…" : "Save Cookie"}
@@ -231,7 +282,7 @@ export default function PatreonCookiePage() {
         {hasCookie && (
           <button
             onClick={removeCookie}
-            disabled={status === "saving"}
+            disabled={status === "saving" || !creatorIdReady}
             className="rounded bg-red-900/60 px-3 py-2 text-sm text-red-200 hover:bg-red-900 disabled:opacity-50"
           >
             Remove Cookie

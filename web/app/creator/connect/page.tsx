@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import {
   ArrowRight,
@@ -11,7 +11,11 @@ import {
   ShieldCheck,
   Zap
 } from "lucide-react";
-import { RELAY_API_BASE } from "@/lib/relay-api";
+import {
+  RELAY_API_BASE,
+  RELAY_CREATOR_ID_STORAGE_KEY,
+  relayPatronAuthHeaders
+} from "@/lib/relay-api";
 
 const PATREON_OAUTH_HREF = "/patreon/connect";
 
@@ -77,20 +81,37 @@ function DevStep({ n, children }: { n: number; children: React.ReactNode }) {
 
 /* ── Session key save form ──────────────────────────────────────── */
 function SessionKeyForm() {
-  const defaultCreatorId = process.env.NEXT_PUBLIC_RELAY_CREATOR_ID ?? "dev_creator";
+  // Hydrated from localStorage after Step 1 (PatreonConnectClient → POST /api/v1/creator/workspace).
+  // No build-time env default — the previous `NEXT_PUBLIC_RELAY_CREATOR_ID ?? "dev_creator"`
+  // baked the dev placeholder into the production bundle, causing the cookie to be stored
+  // under "dev_creator" while scrapes ran against the real creator id.
+  const [creatorId, setCreatorId] = useState("");
+  const [hydrated, setHydrated] = useState(false);
   const [sessionKey, setSessionKey] = useState("");
   const [status, setStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
+  useEffect(() => {
+    setCreatorId(window.localStorage.getItem(RELAY_CREATOR_ID_STORAGE_KEY)?.trim() ?? "");
+    setHydrated(true);
+  }, []);
+
+  const creatorIdReady = creatorId.length > 0;
+
   async function handleSave() {
+    if (!creatorIdReady) {
+      setStatus("error");
+      setErrorMsg("Complete Step 1 (Connect your account) first — no relay_creator_id stored.");
+      return;
+    }
     if (!sessionKey.trim()) return;
     setStatus("saving");
     setErrorMsg(null);
     try {
       const res = await fetch(`${RELAY_API_BASE}/api/v1/patreon/cookie`, {
         method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ creator_id: defaultCreatorId, session_id: sessionKey.trim() })
+        headers: { "content-type": "application/json", ...relayPatronAuthHeaders() },
+        body: JSON.stringify({ creator_id: creatorId, session_id: sessionKey.trim() })
       });
       const json = (await res.json()) as { error?: { message?: string } };
       if (!res.ok) {
@@ -127,6 +148,12 @@ function SessionKeyForm() {
 
   return (
     <div className="flex flex-col gap-3">
+      {hydrated && !creatorIdReady && (
+        <p className="text-xs" style={{ color: "#F59E0B" }}>
+          Complete Step 1 first — your <code>relay_creator_id</code> isn&apos;t stored in this
+          browser yet, so the session key can&apos;t be linked to your studio.
+        </p>
+      )}
       <div className="flex gap-2">
         <input
           type="password"
@@ -144,11 +171,11 @@ function SessionKeyForm() {
         <button
           type="button"
           onClick={handleSave}
-          disabled={!sessionKey.trim() || status === "saving"}
+          disabled={!sessionKey.trim() || status === "saving" || !creatorIdReady}
           className="rounded-xl px-5 py-2.5 text-sm font-semibold transition-colors duration-150 disabled:opacity-40"
           style={{ background: "#2D6A4F", color: "#F9FAFB" }}
           onMouseEnter={(e) => {
-            if (sessionKey.trim())
+            if (sessionKey.trim() && creatorIdReady)
               (e.currentTarget as HTMLElement).style.background = "#40916C";
           }}
           onMouseLeave={(e) => {

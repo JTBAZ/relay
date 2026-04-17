@@ -153,7 +153,10 @@ import {
 import { IdentityService } from "./identity/identity-service.js";
 import { DbIdentityStore, PatreonAccountLinkConflictError } from "./identity/identity-store-db.js";
 import { FileIdentityStore } from "./identity/identity-store.js";
-import { accountOwnsRelayCreatorId } from "./identity/account-creator-ownership.js";
+import {
+  accountOwnsRelayCreatorId,
+  relayCreatorIdExists
+} from "./identity/account-creator-ownership.js";
 import {
   getAccountIdForSession,
   loadPatronAuthContext,
@@ -1715,6 +1718,22 @@ export function createApp(config: AppConfig): CreateAppResult {
     }
     const creatorId = (body.creator_id as string).trim();
     const sessionId = (body.session_id as string).trim();
+    // When DB is configured, refuse to store a cookie under a `creator_id` that doesn't
+    // map to a real Tenant. This prevents the legacy `dev_creator` placeholder (and any
+    // other typos) from silently saving a cookie that the scrape will never look up.
+    if (config.prisma) {
+      const known = await relayCreatorIdExists(config.prisma, creatorId);
+      if (!known) {
+        return res.status(404).json(
+          errorEnvelope(
+            "UNKNOWN_CREATOR_ID",
+            "creator_id does not match any provisioned studio. Call POST /api/v1/creator/workspace first to provision your relay_creator_id, then retry.",
+            traceId,
+            [{ field: "creator_id", issue: "unknown" }]
+          )
+        );
+      }
+    }
     await cookieStore.upsert(creatorId, sessionId);
     return res.status(200).json(
       successEnvelope({ creator_id: creatorId, status: "stored" }, traceId)

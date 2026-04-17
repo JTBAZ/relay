@@ -10,6 +10,17 @@ import { createApp } from "./server.js";
 const projectRoot = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 loadEnv({ path: join(projectRoot, ".env") });
 
+/** Log async failures that would otherwise terminate the process (Node 22+ strict mode). */
+process.on("unhandledRejection", (reason: unknown) => {
+  // eslint-disable-next-line no-console -- fatal diagnostics
+  console.error("Relay: unhandledRejection", reason);
+});
+process.on("uncaughtException", (err: Error) => {
+  // eslint-disable-next-line no-console -- fatal diagnostics
+  console.error("Relay: uncaughtException", err);
+  process.exit(1);
+});
+
 function relayEnvTruthy(raw: string | undefined): boolean {
   if (!raw) return false;
   const v = raw.trim().toLowerCase();
