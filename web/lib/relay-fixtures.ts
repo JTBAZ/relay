@@ -6,6 +6,8 @@
 
 export type MediaType = "writing" | "photo" | "audio" | "video";
 export type FeedItemKind = "followed" | "discovery";
+/** Feed list presentation — `inlineMedia` shows hero + pins in the card (A/B vs `classic`). */
+export type FeedCardLayout = "classic" | "inlineMedia";
 export type TierLabel = "Free" | "Supporter" | "Studio";
 
 export interface Creator {
@@ -38,6 +40,8 @@ export interface FeedPost {
   mediaType: MediaType;
   coverImageUrl?: string;
   highResImageUrl?: string; // High-res version for gallery
+  /** Full gallery set — when multiple URLs, zoom shows a stacked deck (wheel to cycle). */
+  galleryImageUrls?: string[];
   publishedAt: string;
   readTimeLabel?: string;
   likeCount: number;
@@ -46,6 +50,8 @@ export interface FeedPost {
   mediaCount?: number;
   comments?: PositionalComment[];
   communityTags?: string[];
+  /** Defaults to `classic` (text + small thumb). */
+  feedCardLayout?: FeedCardLayout;
 }
 
 export interface CurrentViewer {
@@ -262,6 +268,13 @@ const MOCK_COMMENTS: PositionalComment[] = [
   },
 ];
 
+// ── Shared demo media (p1 classic vs p2 inline — same URLs for side-by-side compare) ──
+
+const DEMO_RELAY_GALLERY_IMAGES = [
+  "/patron-feed-preview.png",
+  "https://images.unsplash.com/photo-1604871000636-074fa5117945?w=900&q=80",
+] as const;
+
 // ── Feed posts (~75 % followed, ~25 % discovery) ──────────────────────────
 
 export const FEED_POSTS: FeedPost[] = [
@@ -275,8 +288,10 @@ export const FEED_POSTS: FeedPost[] = [
     description:
       "In this essay, I explore the paradox of creative silence in an age that demands constant visibility. How do we reconcile the need for quiet contemplation with the infrastructure of attention that sustains our work? Drawing on conversations with artists who have stepped back from public platforms, I trace the contours of a different kind of practice—one that treats withdrawal not as failure but as method.",
     mediaType: "writing",
+    feedCardLayout: "classic",
     coverImageUrl: "/patron-feed-preview.png",
     highResImageUrl: "/patron-feed-preview.png",
+    galleryImageUrls: [...DEMO_RELAY_GALLERY_IMAGES],
     publishedAt: "1 hour ago",
     readTimeLabel: "6 min read",
     likeCount: 214,
@@ -295,15 +310,17 @@ export const FEED_POSTS: FeedPost[] = [
     description:
       "This series was shot over six weeks in the Scottish Highlands during the darkest months of winter. I was drawn to the way light behaves at the threshold of dusk—that liminal moment when color drains from the landscape and everything becomes shape and silhouette. These fourteen frames are my attempt to hold onto that fleeting quality, to preserve the feeling of standing alone in a vast, quiet place as day surrenders to night.",
     mediaType: "photo",
-    coverImageUrl: "/placeholder.svg?height=200&width=360",
-    highResImageUrl: "/placeholder.svg?height=900&width=1400",
+    feedCardLayout: "inlineMedia",
+    coverImageUrl: "/patron-feed-preview.png",
+    highResImageUrl: "/patron-feed-preview.png",
+    galleryImageUrls: [...DEMO_RELAY_GALLERY_IMAGES],
     publishedAt: "3 hours ago",
     readTimeLabel: "14 photos",
     likeCount: 589,
     commentCount: 47,
     tierLabel: "Supporter",
     mediaCount: 14,
-    comments: MOCK_COMMENTS,
+    comments: MOCK_COMMENTS_PORTRAIT_PREVIEW,
     communityTags: ["landscape", "Scotland", "medium format", "winter", "golden hour"],
   },
   {
@@ -336,6 +353,7 @@ export const FEED_POSTS: FeedPost[] = [
     commentCount: 38,
     tierLabel: "Supporter",
     mediaCount: 40,
+    comments: MOCK_COMMENTS,
   },
   // ── Discovery buffer (~25 %) ────────────────────────────────────────────
   {

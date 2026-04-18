@@ -7,6 +7,7 @@ import SnipIcon from "@/app/components/icons/SnipIcon";
 import {
   RELAY_API_BASE,
   fetchGalleryPostDetail,
+  hasRelaySignedInCookie,
   listPatronCollections,
   listPatronFavorites,
   patronFavoriteKey,
@@ -52,7 +53,7 @@ export default function VisitorFavoritesPage() {
 
   useEffect(() => {
     const read = () =>
-      setPatronAuthed(Boolean(typeof window !== "undefined" && localStorage.getItem("relay_session_token")?.trim()));
+      setPatronAuthed(Boolean(typeof window !== "undefined" && hasRelaySignedInCookie()));
     read();
     window.addEventListener("focus", read);
     return () => window.removeEventListener("focus", read);
@@ -130,6 +131,7 @@ export default function VisitorFavoritesPage() {
     return () => {
       cancelled = true;
     };
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- postIdsFetchKey serializes postIdsNeeded for stable deps
   }, [creatorId, patronAuthed, postIdsFetchKey]);
 
   const postFavorites = useMemo(

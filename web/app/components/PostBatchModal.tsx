@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Search, X } from "lucide-react";
 import { galleryItemKey } from "@/lib/gallery-group";
 import {
-  RELAY_API_BASE,
+  relayFetch,
   type Collection,
   type FacetsData,
   type GalleryItem,
@@ -128,14 +128,11 @@ export default function PostBatchModal({
     if (!creatorId || exportRetryBusy) return;
     setExportRetryBusy(true);
     try {
-      const res = await fetch(`${RELAY_API_BASE}/api/v1/export/media`, {
+      await relayFetch<unknown>("/api/v1/export/media", {
         method: "POST",
-        headers: { "content-type": "application/json" },
         body: JSON.stringify({ creator_id: creatorId, media_id: focusedItem.media_id })
       });
-      if (res.ok) {
-        onMediaExportRetryComplete?.();
-      }
+      onMediaExportRetryComplete?.();
     } finally {
       setExportRetryBusy(false);
     }

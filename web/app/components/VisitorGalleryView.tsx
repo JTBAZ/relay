@@ -26,6 +26,7 @@ import {
   buildGalleryFacetsQuery,
   buildGalleryQuery,
   fetchGalleryPostDetail,
+  hasRelaySignedInCookie,
   listPatronCollections,
   listPatronFavorites,
   patronCollectionSnipMediaIdSet,
@@ -618,7 +619,7 @@ export default function VisitorGalleryView() {
 
   useEffect(() => {
     const read = () =>
-      setPatronAuthed(Boolean(typeof window !== "undefined" && localStorage.getItem("relay_session_token")?.trim()));
+      setPatronAuthed(Boolean(typeof window !== "undefined" && hasRelaySignedInCookie()));
     read();
     window.addEventListener("focus", read);
     return () => window.removeEventListener("focus", read);

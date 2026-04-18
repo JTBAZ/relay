@@ -90,6 +90,7 @@ export default function LibraryTopBar({
         <div className="group relative flex min-w-0 flex-1 items-center gap-3 rounded-lg px-2 py-1 hover:bg-[var(--lib-muted)]/40">
           <div className="flex min-w-0 flex-1 items-start gap-2.5">
             {campaignImageSmallUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element -- remote Patreon campaign asset URL
               <img
                 src={campaignImageSmallUrl}
                 alt=""

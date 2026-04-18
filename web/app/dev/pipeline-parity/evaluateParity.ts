@@ -266,7 +266,7 @@ export function evaluatePipelineParity(input: {
       label: "GET /api/v1/me/session creator_id ↔ selected studio",
       status: "not_applicable",
       severity_hint: 2,
-      summary: "No relay_session_token — not applicable for patron session scope check.",
+      summary: "No Relay session cookie — not applicable for patron session scope check.",
       prove: {},
       display: {}
     });

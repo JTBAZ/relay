@@ -1,3 +1,38 @@
 {
-  "extends": ["next/core-web-vitals", "next/typescript"]
+  "extends": ["next/core-web-vitals", "next/typescript"],
+  "rules": {
+    "no-restricted-syntax": [
+      "error",
+      {
+        "selector": "CallExpression[callee.name='fetch'] > Literal[value=/^\\/api\\//]",
+        "message": "Use relayFetch or relayRequest from @/lib/relay-api instead of raw fetch for same-origin /api/* paths."
+      },
+      {
+        "selector": "CallExpression[callee.property.name=/^(replace|push)$/][arguments.0.callee.property.name='get']",
+        "message": "Pass the result of searchParams.get() through resolvePostAuthPath() from @/lib/post-login-redirect before redirecting."
+      },
+      {
+        "selector": "CallExpression[callee.property.name='assign'][arguments.0.callee.property.name='get']",
+        "message": "Pass the result of searchParams.get() through resolvePostAuthPath() from @/lib/post-login-redirect before assigning location."
+      }
+    ]
+  },
+  "overrides": [
+    {
+      "files": [
+        "lib/relay-api.ts",
+        "lib/relay-session-logout.ts",
+        "app/api/relay/ping/route.ts"
+      ],
+      "rules": {
+        "no-restricted-syntax": "off"
+      }
+    },
+    {
+      "files": ["components/patron-mock/**/*.tsx"],
+      "rules": {
+        "@next/next/no-img-element": "off"
+      }
+    }
+  ]
 }

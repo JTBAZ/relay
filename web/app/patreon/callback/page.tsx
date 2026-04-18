@@ -4,9 +4,10 @@ import { Suspense, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
-  RELAY_API_BASE,
   RELAY_CREATOR_ID_STORAGE_KEY,
-  isPreparedPatreonOAuthState
+  hasRelaySignedInCookie,
+  isPreparedPatreonOAuthState,
+  relayFetch
 } from "@/lib/relay-api";
 
 function redirectUriForExchange(): string {
@@ -61,7 +62,6 @@ function CallbackInner() {
     (async () => {
       try {
         const prepared = isPreparedPatreonOAuthState(state);
-        const token = window.localStorage.getItem("relay_session_token")?.trim() ?? "";
         const storedCreatorId =
           window.localStorage.getItem(RELAY_CREATOR_ID_STORAGE_KEY)?.trim() ?? "";
 
@@ -73,18 +73,17 @@ function CallbackInner() {
               "Missing relay_creator_id in localStorage — run Create workspace on /patreon/connect first."
             );
           }
-          if (!token) {
+          if (!hasRelaySignedInCookie()) {
             throw new Error(
-              "Missing relay_session_token — sign in before OAuth (same browser tab)."
+              "Missing Relay session — sign in before OAuth (same browser tab)."
             );
           }
           creatorId = storedCreatorId;
-          headers.authorization = `Bearer ${token}`;
         } else {
           creatorId = state;
         }
 
-        const res = await fetch(`${RELAY_API_BASE}/api/v1/auth/patreon/exchange`, {
+        const data = await relayFetch<PatreonExchangeSuccessData>("/api/v1/auth/patreon/exchange", {
           method: "POST",
           headers,
           body: JSON.stringify({
@@ -94,21 +93,12 @@ function CallbackInner() {
             ...(prepared ? { state } : {})
           })
         });
-        const json = (await res.json()) as {
-          data?: PatreonExchangeSuccessData;
-          error?: { message?: string };
-        };
         if (cancelled) return;
-        if (!res.ok) {
-          setStatus("error");
-          setMessage(json.error?.message ?? `HTTP ${res.status}`);
-          return;
-        }
         setStatus("done");
-        setExchangeData(json.data ?? null);
+        setExchangeData(data ?? null);
         const hasWebhookUi =
-          json.data?.webhook != null ||
-          (json.data?.campaign_discovery_error != null && json.data.campaign_discovery_error.length > 0);
+          data?.webhook != null ||
+          (data?.campaign_discovery_error != null && data.campaign_discovery_error.length > 0);
         const delayMs = hasWebhookUi ? 2800 : 1500;
         setTimeout(() => {
           if (!cancelled) router.push("/");
@@ -124,6 +114,7 @@ function CallbackInner() {
     return () => {
       cancelled = true;
     };
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- router stable; effect keyed on OAuth params only
   }, [code, state, oauthError, oauthDesc]);
 
   return (

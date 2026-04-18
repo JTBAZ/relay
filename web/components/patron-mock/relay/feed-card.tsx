@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Heart,
   MessageCircle,
@@ -10,8 +10,12 @@ import {
   Video,
   UserPlus,
   Check,
+  Star,
+  Crosshair,
+  Loader,
 } from "lucide-react";
 import type { FeedPost } from "@/lib/relay-fixtures";
+import { GalleryMediaStack } from "./gallery-media-stack";
 
 const MEDIA_ICONS = {
   writing: FileText,
@@ -25,12 +29,83 @@ interface FeedCardProps {
   onClick?: () => void;
 }
 
+/** Matches gallery pin-preview: comment chrome → image surface, with timed hide */
+type PinPreviewPhase = "hidden" | "chrome" | "image";
+
 export function FeedCard({ post, onClick }: FeedCardProps) {
   const [liked, setLiked] = useState(false);
   const [followed, setFollowed] = useState(false);
+  const [inlineFavorite, setInlineFavorite] = useState(false);
 
   const isDiscovery = post.kind === "discovery";
   const MediaIcon = MEDIA_ICONS[post.mediaType] ?? FileText;
+  const layout = post.feedCardLayout ?? "classic";
+
+  const imageUrls = useMemo(() => {
+    if (post.galleryImageUrls && post.galleryImageUrls.length > 0) {
+      return post.galleryImageUrls;
+    }
+    const single =
+      post.highResImageUrl ||
+      post.coverImageUrl ||
+      "/placeholder.svg?height=800&width=1200";
+    return [single];
+  }, [post.galleryImageUrls, post.highResImageUrl, post.coverImageUrl]);
+
+  const cardComments = post.comments ?? [];
+
+  const [pinPreviewPhase, setPinPreviewPhase] = useState<PinPreviewPhase>("hidden");
+  const previewHideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pinPreviewBridgeRef = useRef(false);
+
+  const clearPreviewHideTimer = useCallback(() => {
+    if (previewHideTimerRef.current != null) {
+      clearTimeout(previewHideTimerRef.current);
+      previewHideTimerRef.current = null;
+    }
+  }, []);
+
+  useEffect(() => () => clearPreviewHideTimer(), [clearPreviewHideTimer]);
+
+  const onCommentChromeEnter = useCallback(() => {
+    clearPreviewHideTimer();
+    pinPreviewBridgeRef.current = true;
+    setPinPreviewPhase("chrome");
+  }, [clearPreviewHideTimer]);
+
+  const onCommentChromeLeave = useCallback(() => {
+    previewHideTimerRef.current = setTimeout(() => {
+      setPinPreviewPhase((prev) => {
+        if (prev === "chrome") {
+          pinPreviewBridgeRef.current = false;
+          return "hidden";
+        }
+        return prev;
+      });
+      previewHideTimerRef.current = null;
+    }, 220);
+  }, []);
+
+  const onImageSurfaceEnter = useCallback(() => {
+    clearPreviewHideTimer();
+    if (!pinPreviewBridgeRef.current) return;
+    setPinPreviewPhase("image");
+  }, [clearPreviewHideTimer]);
+
+  const onImageSurfaceLeave = useCallback(() => {
+    previewHideTimerRef.current = setTimeout(() => {
+      setPinPreviewPhase((prev) => {
+        if (prev === "image") {
+          pinPreviewBridgeRef.current = false;
+          return "hidden";
+        }
+        return prev;
+      });
+      previewHideTimerRef.current = null;
+    }, 100);
+  }, []);
+
+  const pinLayerVisible = pinPreviewPhase !== "hidden";
 
   return (
     <article
@@ -140,7 +215,83 @@ export function FeedCard({ post, onClick }: FeedCardProps) {
           </div>
         </div>
 
-        {/* Body: title + excerpt + optional thumbnail */}
+        {/* Inline hero + pins (A/B vs classic thumb) — opens same GalleryView on card click */}
+        {layout === "inlineMedia" && post.coverImageUrl ? (
+          <div className="-mx-5 mb-4 border-y border-[#1C1C1C] bg-[#0E0E0E]">
+            <GalleryMediaStack
+              imageUrls={imageUrls}
+              displayIndex={0}
+              visualStack={false}
+              pinLayerPointerEvents={
+                pinLayerVisible && cardComments.length > 0 ? "auto" : "none"
+              }
+              pinStopClickPropagation
+              title={post.title}
+              comments={cardComments}
+              pinLayerVisible={pinLayerVisible && cardComments.length > 0}
+              ghostPins={false}
+              cascadeEnter={(i) => i * 42}
+              cascadeExit={(i) => (cardComments.length - 1 - i) * 36}
+              surfaceClassName="relative flex w-full min-w-0 max-w-full flex-col items-center justify-center outline-none"
+              imgClassName="pointer-events-none h-auto w-auto max-h-[min(42vh,320px)] max-w-full object-contain"
+              onMouseEnter={onImageSurfaceEnter}
+              onMouseLeave={onImageSurfaceLeave}
+            />
+            {/* Condensed gallery chrome — rail hover bridges to image (pins readable via CommentPin tooltips) */}
+            <div
+              className="relative z-10 shrink-0 border-t border-[#1A1A1A] bg-[#0E0E0E] opacity-[0.38] transition-opacity duration-200 ease-out hover:opacity-100 focus-within:opacity-100"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex justify-center items-center gap-0.5 py-0.5">
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setInlineFavorite((v) => !v);
+                  }}
+                  className={[
+                    "flex items-center justify-center w-7 h-7 rounded-md transition-all",
+                    inlineFavorite
+                      ? "text-[#40916C] border border-[#2D6A4F] bg-[#0D1F17]"
+                      : "text-[#555555] border border-[#2A2A2A] bg-[#0E0E0E] hover:text-[#40916C] hover:border-[#2D6A4F]/50",
+                  ].join(" ")}
+                  aria-label={inlineFavorite ? "Remove from favorites" : "Add to favorites"}
+                  aria-pressed={inlineFavorite}
+                  title="Favorite"
+                >
+                  <Star size={12} fill={inlineFavorite ? "currentColor" : "none"} />
+                </button>
+                <button
+                  type="button"
+                  onClick={(e) => e.stopPropagation()}
+                  onMouseEnter={onCommentChromeEnter}
+                  onMouseLeave={onCommentChromeLeave}
+                  onFocus={onCommentChromeEnter}
+                  onBlur={onCommentChromeLeave}
+                  className="group flex items-center gap-1 px-2 py-1 bg-[#0E0E0E] border border-[#2A2A2A] rounded-md text-[#555555] text-[11px] leading-tight hover:text-[#40916C] hover:border-[#2D6A4F]/50 transition-all"
+                  aria-label="Preview pinned comments on image. Hover pins on the image to read. Click card for full gallery."
+                >
+                  <Crosshair size={11} className="group-hover:rotate-45 transition-transform shrink-0" />
+                  <span>Comment</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={(e) => e.stopPropagation()}
+                  className={[
+                    "flex items-center justify-center w-7 h-7 rounded-md transition-all",
+                    "text-[#555555] border border-[#2A2A2A] bg-[#0E0E0E] hover:text-[#40916C] hover:border-[#2D6A4F]/50",
+                  ].join(" ")}
+                  aria-label="Snip this image"
+                  title="Snip"
+                >
+                  <Loader size={12} />
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : null}
+
+        {/* Body: title + excerpt + optional thumbnail (classic only) */}
         <div className="flex gap-4">
           <div className="flex-1 min-w-0">
             <h2
@@ -158,7 +309,7 @@ export function FeedCard({ post, onClick }: FeedCardProps) {
             </p>
           </div>
 
-          {post.coverImageUrl && (
+          {layout === "classic" && post.coverImageUrl && (
             <div
               className={[
                 "shrink-0 rounded-md overflow-hidden bg-[#2A2A2A]",

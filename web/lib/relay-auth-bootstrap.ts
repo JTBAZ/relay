@@ -1,35 +1,23 @@
 import {
-  RELAY_API_BASE,
   RELAY_CREATOR_ID_STORAGE_KEY,
   RELAY_PUBLIC_SLUG_STORAGE_KEY,
-  parseRelayResponseBody,
   relayFetch,
   type CreatorWorkspaceData
 } from "./relay-api";
-
-type Envelope<T> = { data: T; meta?: { trace_id: string } };
+import { emitStudioSessionUpdate } from "./studio-session-context";
 
 async function postRelayWithSupabaseJwt<T>(
   path: string,
   accessToken: string,
   body: Record<string, unknown> = {}
 ): Promise<T> {
-  const res = await fetch(`${RELAY_API_BASE}${path}`, {
+  return relayFetch<T>(path, {
     method: "POST",
     headers: {
-      "content-type": "application/json",
       authorization: `Bearer ${accessToken.trim()}`
     },
-    body: JSON.stringify(body),
-    cache: "no-store"
+    body: JSON.stringify(body)
   });
-  const json = (await parseRelayResponseBody(res, path)) as Envelope<T> & {
-    error?: { message?: string };
-  };
-  if (!res.ok) {
-    throw new Error(json.error?.message ?? res.statusText);
-  }
-  return json.data;
 }
 
 type RelaySessionPayload = {
@@ -39,8 +27,8 @@ type RelaySessionPayload = {
 };
 
 /**
- * MT-036: After Supabase sign-in, sync Account, mint opaque Relay session, provision workspace,
- * persist `relay_session_token` + `relay_creator_id` in localStorage.
+ * MT-036: After Supabase sign-in, sync Account, mint opaque Relay session (HttpOnly cookie), provision workspace,
+ * persist `relay_creator_id` / public slug in localStorage (UI cache only).
  */
 export async function bootstrapStudioAfterSupabase(accessToken: string): Promise<{
   relay_creator_id: string;
@@ -54,13 +42,16 @@ export async function bootstrapStudioAfterSupabase(accessToken: string): Promise
     accessToken,
     {}
   );
-  if (typeof window !== "undefined") {
-    window.localStorage.setItem("relay_session_token", relay.token);
-  }
 
+  /** Prefer in-memory Bearer for this hop: `localhost:3000` → `127.0.0.1:8787` is cross-site, so
+   *  SameSite=Lax session cookies may not attach yet (align hostnames in `.env.local` for cookie-only dev). */
   const ws = await relayFetch<CreatorWorkspaceData>("/api/v1/creator/workspace", {
     method: "POST",
-    body: JSON.stringify({})
+    body: JSON.stringify({}),
+    headers:
+      typeof relay.token === "string" && relay.token.trim().length > 0
+        ? { authorization: `Bearer ${relay.token.trim()}` }
+        : undefined
   });
   if (typeof window !== "undefined") {
     window.localStorage.setItem(RELAY_CREATOR_ID_STORAGE_KEY, ws.relay_creator_id.trim());
@@ -69,6 +60,7 @@ export async function bootstrapStudioAfterSupabase(accessToken: string): Promise
       window.localStorage.setItem(RELAY_PUBLIC_SLUG_STORAGE_KEY, slug);
     }
   }
+  emitStudioSessionUpdate();
   return {
     relay_creator_id: ws.relay_creator_id.trim(),
     account_id: ws.account_id,

@@ -3,8 +3,8 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import {
-  RELAY_API_BASE,
   RELAY_CREATOR_ID_STORAGE_KEY,
+  relayFetch,
   relayPatronAuthHeaders
 } from "@/lib/relay-api";
 
@@ -40,20 +40,11 @@ export default function PatreonCookiePage() {
     setStatus("checking");
     setMessage(null);
     try {
-      const res = await fetch(
-        `${RELAY_API_BASE}/api/v1/patreon/cookie/status?creator_id=${encodeURIComponent(trimmedCreatorId)}`,
+      const data = await relayFetch<{ creator_id: string; has_cookie: boolean }>(
+        `/api/v1/patreon/cookie/status?creator_id=${encodeURIComponent(trimmedCreatorId)}`,
         { headers: { ...relayPatronAuthHeaders() } }
       );
-      const json = (await res.json()) as {
-        data?: { has_cookie?: boolean };
-        error?: { message?: string };
-      };
-      if (!res.ok) {
-        setStatus("error");
-        setMessage(json.error?.message ?? `HTTP ${res.status}`);
-        return;
-      }
-      setHasCookie(json.data?.has_cookie ?? false);
+      setHasCookie(data.has_cookie ?? false);
       setStatus("idle");
     } catch (e) {
       setStatus("error");
@@ -75,23 +66,14 @@ export default function PatreonCookiePage() {
     setStatus("saving");
     setMessage(null);
     try {
-      const res = await fetch(`${RELAY_API_BASE}/api/v1/patreon/cookie`, {
+      await relayFetch<unknown>("/api/v1/patreon/cookie", {
         method: "POST",
-        headers: { "content-type": "application/json", ...relayPatronAuthHeaders() },
+        headers: { ...relayPatronAuthHeaders() },
         body: JSON.stringify({
           creator_id: trimmedCreatorId,
           session_id: sessionId.trim()
         })
       });
-      const json = (await res.json()) as {
-        data?: { status?: string };
-        error?: { message?: string };
-      };
-      if (!res.ok) {
-        setStatus("error");
-        setMessage(json.error?.message ?? `HTTP ${res.status}`);
-        return;
-      }
       setStatus("saved");
       setHasCookie(true);
       setMessage("Cookie stored (encrypted). Run a scrape to fetch media.");
@@ -111,20 +93,11 @@ export default function PatreonCookiePage() {
     setStatus("saving");
     setMessage(null);
     try {
-      const res = await fetch(`${RELAY_API_BASE}/api/v1/patreon/cookie`, {
+      await relayFetch<unknown>("/api/v1/patreon/cookie", {
         method: "DELETE",
-        headers: { "content-type": "application/json", ...relayPatronAuthHeaders() },
+        headers: { ...relayPatronAuthHeaders() },
         body: JSON.stringify({ creator_id: trimmedCreatorId })
       });
-      const json = (await res.json()) as {
-        data?: { removed?: boolean };
-        error?: { message?: string };
-      };
-      if (!res.ok) {
-        setStatus("error");
-        setMessage(json.error?.message ?? `HTTP ${res.status}`);
-        return;
-      }
       setHasCookie(false);
       setStatus("idle");
       setMessage("Cookie removed.");

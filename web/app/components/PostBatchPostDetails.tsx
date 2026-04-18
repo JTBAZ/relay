@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ChevronDown, Plus } from "lucide-react";
-import { RELAY_API_BASE } from "@/lib/relay-api";
+import { relayFetch } from "@/lib/relay-api";
 import type {
   Collection,
   FacetsData,
@@ -172,9 +172,8 @@ export default function PostBatchPostDetails({
       setTagBusy(true);
       onTagError(null);
       try {
-        const res = await fetch(`${RELAY_API_BASE}/api/v1/gallery/media/bulk-tags`, {
+        await relayFetch<unknown>("/api/v1/gallery/media/bulk-tags", {
           method: "POST",
-          headers: { "content-type": "application/json" },
           body: JSON.stringify({
             creator_id: creatorId,
             post_ids: [postId],
@@ -182,10 +181,6 @@ export default function PostBatchPostDetails({
             remove_tag_ids: remove
           })
         });
-        if (!res.ok) {
-          const j = (await res.json().catch(() => null)) as { error?: { message?: string } } | null;
-          throw new Error(j?.error?.message ?? res.statusText);
-        }
         await onTagsChanged();
       } catch (e) {
         onTagError(e instanceof Error ? e.message : String(e));
@@ -201,15 +196,13 @@ export default function PostBatchPostDetails({
       setCollBusy(true);
       onTagError(null);
       try {
-        const res = await fetch(`${RELAY_API_BASE}/api/v1/gallery/collections/${collectionId}/posts`, {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ post_ids: [postId] })
-        });
-        if (!res.ok) {
-          const j = (await res.json().catch(() => null)) as { error?: { message?: string } } | null;
-          throw new Error(j?.error?.message ?? res.statusText);
-        }
+        await relayFetch<unknown>(
+          `/api/v1/gallery/collections/${collectionId}/posts`,
+          {
+            method: "POST",
+            body: JSON.stringify({ post_ids: [postId] })
+          }
+        );
         setAddCollectionOpen(false);
         setNewCollectionOpen(false);
         await refreshAfterCollection();
@@ -228,19 +221,11 @@ export default function PostBatchPostDetails({
     setCollBusy(true);
     onTagError(null);
     try {
-      const createRes = await fetch(`${RELAY_API_BASE}/api/v1/gallery/collections`, {
+      const created = await relayFetch<Collection>("/api/v1/gallery/collections", {
         method: "POST",
-        headers: { "content-type": "application/json" },
         body: JSON.stringify({ creator_id: creatorId, title })
       });
-      const json = (await createRes.json()) as {
-        data?: Collection;
-        error?: { message?: string };
-      };
-      if (!createRes.ok) {
-        throw new Error(json.error?.message ?? createRes.statusText);
-      }
-      const newId = json.data?.collection_id;
+      const newId = created.collection_id;
       if (!newId) throw new Error("Missing collection id from server.");
       setNewCollectionTitle("");
       setNewCollectionOpen(false);

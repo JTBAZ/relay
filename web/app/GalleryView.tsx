@@ -5,7 +5,6 @@ import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent } 
 import { ChevronDown, Grid3X3, LayoutGrid, List } from "lucide-react";
 import { galleryItemKey, groupGalleryItemsByPost } from "@/lib/gallery-group";
 import {
-  RELAY_API_BASE,
   buildGalleryQuery,
   buildGalleryVisibilityBody,
   fetchGalleryPostDetail,
@@ -325,16 +324,11 @@ export default function GalleryView() {
   const setInspectItemVisibility = useCallback(
     async (items: GalleryItem[], visibility: PostVisibility) => {
       const body = buildGalleryVisibilityBody(creatorId, items, visibility);
-      const res = await fetch(`${RELAY_API_BASE}/api/v1/gallery/visibility`, {
+      await relayFetch<unknown>("/api/v1/gallery/visibility", {
         method: "POST",
         cache: "no-store",
-        headers: { "content-type": "application/json" },
         body: JSON.stringify(body)
       });
-      if (!res.ok) {
-        const j = (await res.json().catch(() => null)) as { error?: { message?: string } } | null;
-        throw new Error(j?.error?.message ?? res.statusText);
-      }
     },
     [creatorId]
   );
@@ -472,15 +466,10 @@ export default function GalleryView() {
         body.post_ids = selectedPostIds;
       }
 
-      const res = await fetch(`${RELAY_API_BASE}/api/v1/gallery/media/bulk-tags`, {
+      await relayFetch<unknown>("/api/v1/gallery/media/bulk-tags", {
         method: "POST",
-        headers: { "content-type": "application/json" },
         body: JSON.stringify(body)
       });
-      if (!res.ok) {
-        const err = (await res.json().catch(() => null)) as { error?: { message?: string } } | null;
-        throw new Error(err?.error?.message ?? res.statusText);
-      }
       await fetchFacets();
       refreshList();
     },

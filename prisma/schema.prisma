@@ -287,6 +287,10 @@ model Post {
   upstreamStatus PostUpstreamStatus @map("upstream_status")
   /// Gallery / feed ordering — set from ingest (e.g. earliest `published_at` in versions).
   createdAt      DateTime           @map("created_at")
+  /// Tier 1 RLS — when true, post is readable without tier membership (anon + any logged-in user).
+  isPublic       Boolean            @default(false) @map("is_public")
+  /// Tier 1 RLS — patrons must have this tier id in `TenantMembership.tier_ids` when not public; null with `is_public` false = creator-only (draft).
+  requiredTierId String?            @map("required_tier_id")
 
   versions    PostVersion[]
   postTiers   PostTier[]

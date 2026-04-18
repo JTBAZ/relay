@@ -169,6 +169,30 @@ import {
 import { getSupabaseUserFromAccessToken } from "./lib/supabase-auth.js";
 import type { PrismaClient } from "@prisma/client";
 import { checkPostAccess, filterAccessiblePosts } from "./identity/access-guard.js";
+import {
+  clearActiveRoleCookie,
+  clearSessionCookie,
+  readSessionCookie,
+  setSessionCookie
+} from "./identity/session-cookie.js";
+import { setActiveRoleCookieForNewSession } from "./identity/set-active-role-cookie-for-session.js";
+import { resolveTenantBySlug } from "./identity/resolve-tenant.js";
+import {
+  applyRelayAccountRlsIfPresent,
+  requireAccount,
+  sendRelayAuthError
+} from "./identity/require-account.js";
+
+function relayCookieDualWriteJson(): boolean {
+  return process.env.RELAY_COOKIE_SESSION_DUAL_WRITE !== "0";
+}
+
+/** When dual-write is off, JSON responses omit `token` (cookie-only transport). */
+function applyDualWriteToken<T extends Record<string, unknown>>(payload: T & { token?: string }): T {
+  if (relayCookieDualWriteJson()) return payload;
+  const { token: _omit, ...rest } = payload;
+  return rest as T;
+}
 import { PaymentService } from "./payments/payment-service.js";
 import { DbPaymentStore } from "./payments/payment-store-db.js";
 import { FilePaymentStore } from "./payments/payment-store.js";
@@ -808,6 +832,7 @@ export function createApp(config: AppConfig): CreateAppResult {
     limit: "6mb"
   });
 
+  // PUBLIC: Patreon-signed platform webhook; authenticated by opaque URL token + x-patreon-signature (no session).
   app.post(
     "/api/v1/webhooks/patreon/platform/:opaqueToken",
     patreonPlatformRawBody,
@@ -898,10 +923,15 @@ export function createApp(config: AppConfig): CreateAppResult {
 
   app.use(express.json());
   app.use((req, res, next) => {
-    // Echo Origin when present so cross-origin fetch() with Authorization works in strict
-    // browsers (wildcard is not allowed for credentialed-style requests in some cases).
-    const origin = req.header("Origin");
-    res.setHeader("Access-Control-Allow-Origin", origin?.trim() || "*");
+    // Echo Origin when present. `fetch(..., { credentials: "include" })` (GR-T0-1 session cookies)
+    // requires a concrete Allow-Origin + Access-Control-Allow-Credentials — wildcard alone fails CORS.
+    const origin = req.header("Origin")?.trim();
+    if (origin) {
+      res.setHeader("Access-Control-Allow-Origin", origin);
+      res.setHeader("Access-Control-Allow-Credentials", "true");
+    } else {
+      res.setHeader("Access-Control-Allow-Origin", "*");
+    }
     res.setHeader(
       "Access-Control-Allow-Methods",
       "GET,HEAD,POST,PUT,PATCH,DELETE,OPTIONS"
@@ -1274,6 +1304,7 @@ export function createApp(config: AppConfig): CreateAppResult {
    * sync (`patreon_tier_*`), issue Relay session. Does not store Patreon tokens in the
    * creator credential file.
    */
+  // PUBLIC: Patreon OAuth redirect callback; issues session on success (no prior session required).
   app.post("/api/v1/auth/patreon/patron/exchange", async (req: Request, res: Response) => {
     const traceId = traceIdFrom(req);
     const body = (req.body ?? {}) as Record<string, unknown>;
@@ -1310,16 +1341,18 @@ export function createApp(config: AppConfig): CreateAppResult {
         identityService,
         fetchImpl
       });
+      setSessionCookie(res, session.token, { expiresAtIso: session.expires_at });
+      await setActiveRoleCookieForNewSession(res, config.prisma, session, session.expires_at);
       return res.status(200).json(
         successEnvelope(
-          {
+          applyDualWriteToken({
             token: session.token,
             user_id: session.user_id,
             tier_ids: session.tier_ids,
             expires_at: session.expires_at,
             auth_provider: user.auth_provider,
             patreon_user_id: user.patreon_user_id
-          },
+          }),
           traceId
         )
       );
@@ -2394,18 +2427,23 @@ export function createApp(config: AppConfig): CreateAppResult {
     traceId: string
   ): Promise<SessionToken | null> {
     const bearer = req.header("authorization")?.replace(/^Bearer\s+/i, "").trim() ?? "";
-    if (!bearer) {
+    const fromCookie = readSessionCookie(req)?.trim() ?? "";
+    const opaque = bearer || fromCookie;
+    if (!opaque) {
       res
         .status(401)
         .json(errorEnvelope("AUTH_ERROR", "Bearer token required.", traceId));
       return null;
     }
-    const session = await identityService.resolveSession(bearer);
+    const session = await identityService.resolveSession(opaque);
     if (!session) {
       res
         .status(401)
         .json(errorEnvelope("AUTH_ERROR", "Invalid or expired session.", traceId));
       return null;
+    }
+    if (config.prisma) {
+      await applyRelayAccountRlsIfPresent(config.prisma, session);
     }
     return session;
   }
@@ -2432,6 +2470,44 @@ export function createApp(config: AppConfig): CreateAppResult {
       return false;
     }
     return true;
+  }
+
+  /**
+   * Tier 1.1-FUP — When Postgres identity is enabled, require an Account-linked session whose
+   * `primaryRelayCreatorId` matches the route creator scope. File-backed integration tests skip
+   * enforcement (`config.prisma` unset).
+   */
+  async function requireAccountMatchesCreator(
+    req: Request,
+    res: Response,
+    traceId: string,
+    relayCreatorId: string
+  ): Promise<boolean> {
+    if (!config.prisma) {
+      return true;
+    }
+    try {
+      const { context } = await requireAccount(req, {
+        prisma: config.prisma,
+        identityService
+      });
+      const want = relayCreatorId.trim();
+      const got = context.primaryRelayCreatorId?.trim() ?? "";
+      if (!got || got !== want) {
+        res.status(403).json(
+          errorEnvelope(
+            "FORBIDDEN",
+            "creator_id does not match the authenticated creator account.",
+            traceId
+          )
+        );
+        return false;
+      }
+      return true;
+    } catch (err) {
+      if (sendRelayAuthError(res, err, traceId)) return false;
+      throw err;
+    }
   }
 
   /**
@@ -2658,26 +2734,16 @@ export function createApp(config: AppConfig): CreateAppResult {
       );
     }
     const raw = typeof req.params.slug === "string" ? req.params.slug.trim() : "";
-    const slug = normalizePublicSlugCandidate(raw);
-    if (slug.length < 3) {
-      return res.status(404).json(errorEnvelope("NOT_FOUND", "Unknown creator.", traceId));
-    }
-    const prof = await config.prisma.creatorProfile.findUnique({
-      where: { publicSlug: slug },
-      select: {
-        publicSlug: true,
-        tenant: { select: { relayCreatorId: true } }
-      }
-    });
-    if (!prof?.tenant.relayCreatorId) {
+    const resolved = await resolveTenantBySlug(raw, config.prisma);
+    if (!resolved) {
       return res.status(404).json(errorEnvelope("NOT_FOUND", "Unknown creator.", traceId));
     }
     res.setHeader("Cache-Control", "public, max-age=60, s-maxage=60");
     return res.status(200).json(
       successEnvelope(
         {
-          public_slug: prof.publicSlug,
-          relay_creator_id: prof.tenant.relayCreatorId
+          public_slug: resolved.publicSlug ?? "",
+          relay_creator_id: resolved.relayCreatorId
         },
         traceId
       )
@@ -3082,6 +3148,9 @@ export function createApp(config: AppConfig): CreateAppResult {
       ? remRaw.filter((x): x is string => typeof x === "string")
       : [];
     const creatorId = body.creator_id as string;
+    if (!(await requireAccountMatchesCreator(req, res, traceId, creatorId.trim()))) {
+      return;
+    }
     if (
       !(await assertCreatorRelayMutationAllowed(
         req,
@@ -3165,6 +3234,9 @@ export function createApp(config: AppConfig): CreateAppResult {
           ])
         );
     }
+    if (!(await requireAccountMatchesCreator(req, res, traceId, creatorId))) {
+      return;
+    }
     const items = await savedFiltersStore.listForCreator(creatorId);
     return res.status(200).json(successEnvelope({ items }, traceId));
   });
@@ -3181,8 +3253,12 @@ export function createApp(config: AppConfig): CreateAppResult {
     const query = (typeof body.query === "object" && body.query !== null
       ? body.query
       : {}) as SavedFilterRecord["query"];
+    const cid = body.creator_id as string;
+    if (!(await requireAccountMatchesCreator(req, res, traceId, cid))) {
+      return;
+    }
     const created = await savedFiltersStore.create(
-      body.creator_id as string,
+      cid,
       String(body.name),
       query
     );
@@ -3200,6 +3276,9 @@ export function createApp(config: AppConfig): CreateAppResult {
             { field: "creator_id", issue: "missing" }
           ])
         );
+    }
+    if (!(await requireAccountMatchesCreator(req, res, traceId, creatorId))) {
+      return;
     }
     const ok = await savedFiltersStore.delete(creatorId, req.params.filter_id);
     if (!ok) {
@@ -3219,7 +3298,11 @@ export function createApp(config: AppConfig): CreateAppResult {
         .status(400)
         .json(errorEnvelope("VALIDATION_ERROR", "Invalid request.", traceId, details));
     }
-    const result = await triageService.analyze(body.creator_id as string);
+    const triageCid = body.creator_id as string;
+    if (!(await requireAccountMatchesCreator(req, res, traceId, triageCid))) {
+      return;
+    }
+    const result = await triageService.analyze(triageCid);
     return res.status(200).json(successEnvelope(result, traceId));
   });
 
@@ -3236,8 +3319,12 @@ export function createApp(config: AppConfig): CreateAppResult {
     const categories = Array.isArray(categoriesRaw)
       ? categoriesRaw.filter((x): x is string => typeof x === "string")
       : undefined;
+    const autoCid = body.creator_id as string;
+    if (!(await requireAccountMatchesCreator(req, res, traceId, autoCid))) {
+      return;
+    }
     const result = await triageService.autoFlag(
-      body.creator_id as string,
+      autoCid,
       galleryOverridesStore,
       categories
     );
@@ -3314,6 +3401,9 @@ export function createApp(config: AppConfig): CreateAppResult {
         .json(errorEnvelope("VALIDATION_ERROR", "Invalid request.", traceId, details));
     }
     const creatorId = body.creator_id as string;
+    if (!(await requireAccountMatchesCreator(req, res, traceId, creatorId))) {
+      return;
+    }
     const v = vNorm;
     if (postIdsRaw.length > 0) {
       await galleryOverridesStore.setVisibility(creatorId, postIdsRaw as string[], v);
@@ -3347,6 +3437,12 @@ export function createApp(config: AppConfig): CreateAppResult {
           { field: "creator_id", issue: "missing" }
         ]));
     }
+    if (
+      !parseQueryTruthy(req.query.visitor) &&
+      !(await requireAccountMatchesCreator(req, res, traceId, creatorId))
+    ) {
+      return;
+    }
     let items = await collectionsStore.listForCreator(creatorId);
     if (parseQueryTruthy(req.query.visitor)) {
       const allowed = await galleryService.visitorVisiblePostIdSet(creatorId);
@@ -3367,6 +3463,10 @@ export function createApp(config: AppConfig): CreateAppResult {
         .status(400)
         .json(errorEnvelope("VALIDATION_ERROR", "Invalid request.", traceId, details));
     }
+    const collCid = body.creator_id as string;
+    if (!(await requireAccountMatchesCreator(req, res, traceId, collCid))) {
+      return;
+    }
     const extras: {
       access_ceiling_tier_id?: string;
       theme_tag_ids?: string[];
@@ -3382,7 +3482,7 @@ export function createApp(config: AppConfig): CreateAppResult {
       if (tags.length) extras.theme_tag_ids = tags;
     }
     const created = await collectionsStore.create(
-      body.creator_id as string,
+      collCid,
       body.title as string,
       typeof body.description === "string" ? body.description : undefined,
       Object.keys(extras).length > 0 ? extras : undefined
@@ -3392,6 +3492,13 @@ export function createApp(config: AppConfig): CreateAppResult {
 
   app.patch("/api/v1/gallery/collections/:collection_id", async (req: Request, res: Response) => {
     const traceId = traceIdFrom(req);
+    const existingCol = await collectionsStore.getById(req.params.collection_id);
+    if (!existingCol) {
+      return res.status(404).json(errorEnvelope("NOT_FOUND", "Collection not found.", traceId));
+    }
+    if (!(await requireAccountMatchesCreator(req, res, traceId, existingCol.creator_id))) {
+      return;
+    }
     const body = (req.body ?? {}) as Record<string, unknown>;
     const patch: Record<string, unknown> = {};
     if (typeof body.title === "string") patch.title = body.title;
@@ -3424,6 +3531,13 @@ export function createApp(config: AppConfig): CreateAppResult {
 
   app.delete("/api/v1/gallery/collections/:collection_id", async (req: Request, res: Response) => {
     const traceId = traceIdFrom(req);
+    const colDel = await collectionsStore.getById(req.params.collection_id);
+    if (!colDel) {
+      return res.status(404).json(errorEnvelope("NOT_FOUND", "Collection not found.", traceId));
+    }
+    if (!(await requireAccountMatchesCreator(req, res, traceId, colDel.creator_id))) {
+      return;
+    }
     const ok = await collectionsStore.delete(req.params.collection_id);
     if (!ok) {
       return res.status(404).json(errorEnvelope("NOT_FOUND", "Collection not found.", traceId));
@@ -3445,6 +3559,9 @@ export function createApp(config: AppConfig): CreateAppResult {
     const col = await collectionsStore.getById(req.params.collection_id);
     if (!col) {
       return res.status(404).json(errorEnvelope("NOT_FOUND", "Collection not found.", traceId));
+    }
+    if (!(await requireAccountMatchesCreator(req, res, traceId, col.creator_id))) {
+      return;
     }
     const snapshot = await canonicalStore.load();
     const ceiling = col.access_ceiling_tier_id;
@@ -3481,6 +3598,13 @@ export function createApp(config: AppConfig): CreateAppResult {
         ])
       );
     }
+    const colRm = await collectionsStore.getById(req.params.collection_id);
+    if (!colRm) {
+      return res.status(404).json(errorEnvelope("NOT_FOUND", "Collection not found.", traceId));
+    }
+    if (!(await requireAccountMatchesCreator(req, res, traceId, colRm.creator_id))) {
+      return;
+    }
     const updated = await collectionsStore.removePosts(req.params.collection_id, postIds as string[]);
     if (!updated) {
       return res.status(404).json(errorEnvelope("NOT_FOUND", "Collection not found.", traceId));
@@ -3505,7 +3629,11 @@ export function createApp(config: AppConfig): CreateAppResult {
         .status(400)
         .json(errorEnvelope("VALIDATION_ERROR", "Invalid request.", traceId, details));
     }
-    await collectionsStore.reorder(body.creator_id as string, ordered as string[]);
+    const reorderCid = body.creator_id as string;
+    if (!(await requireAccountMatchesCreator(req, res, traceId, reorderCid))) {
+      return;
+    }
+    await collectionsStore.reorder(reorderCid, ordered as string[]);
     return res.status(200).json(successEnvelope({ reordered: true }, traceId));
   });
 
@@ -3521,6 +3649,9 @@ export function createApp(config: AppConfig): CreateAppResult {
           { field: "creator_id", issue: "missing" }
         ]));
     }
+    if (!(await requireAccountMatchesCreator(req, res, traceId, creatorId))) {
+      return;
+    }
     const layout = await layoutStore.load(creatorId);
     return res.status(200).json(successEnvelope(layout, traceId));
   });
@@ -3534,8 +3665,12 @@ export function createApp(config: AppConfig): CreateAppResult {
         .status(400)
         .json(errorEnvelope("VALIDATION_ERROR", "Invalid request.", traceId, details));
     }
-    await layoutStore.save(body.creator_id as string, body as never);
-    const layout = await layoutStore.load(body.creator_id as string);
+    const layoutCid = body.creator_id as string;
+    if (!(await requireAccountMatchesCreator(req, res, traceId, layoutCid))) {
+      return;
+    }
+    await layoutStore.save(layoutCid, body as never);
+    const layout = await layoutStore.load(layoutCid);
     return res.status(200).json(successEnvelope(layout, traceId));
   });
 
@@ -3548,7 +3683,11 @@ export function createApp(config: AppConfig): CreateAppResult {
         .status(400)
         .json(errorEnvelope("VALIDATION_ERROR", "Invalid request.", traceId, details));
     }
-    const section = await layoutStore.addSection(body.creator_id as string, {
+    const secCid = body.creator_id as string;
+    if (!(await requireAccountMatchesCreator(req, res, traceId, secCid))) {
+      return;
+    }
+    const section = await layoutStore.addSection(secCid, {
       title: body.title as string,
       source: (body.source as never) ?? { type: "manual", post_ids: [] },
       layout: (body.layout as "grid" | "masonry" | "list" | "featured") ?? "grid",
@@ -3569,6 +3708,9 @@ export function createApp(config: AppConfig): CreateAppResult {
           { field: "creator_id", issue: "missing" }
         ]));
     }
+    if (!(await requireAccountMatchesCreator(req, res, traceId, creatorId))) {
+      return;
+    }
     const updated = await layoutStore.updateSection(creatorId, req.params.section_id, body as never);
     if (!updated) {
       return res.status(404).json(errorEnvelope("NOT_FOUND", "Section not found.", traceId));
@@ -3585,6 +3727,9 @@ export function createApp(config: AppConfig): CreateAppResult {
         .json(errorEnvelope("VALIDATION_ERROR", "creator_id is required.", traceId, [
           { field: "creator_id", issue: "missing" }
         ]));
+    }
+    if (!(await requireAccountMatchesCreator(req, res, traceId, creatorId))) {
+      return;
     }
     const ok = await layoutStore.removeSection(creatorId, req.params.section_id);
     if (!ok) {
@@ -3610,7 +3755,11 @@ export function createApp(config: AppConfig): CreateAppResult {
         .status(400)
         .json(errorEnvelope("VALIDATION_ERROR", "Invalid request.", traceId, details));
     }
-    await layoutStore.reorderSections(body.creator_id as string, ordered as string[]);
+    const layoutReorderCid = body.creator_id as string;
+    if (!(await requireAccountMatchesCreator(req, res, traceId, layoutReorderCid))) {
+      return;
+    }
+    await layoutStore.reorderSections(layoutReorderCid, ordered as string[]);
     return res.status(200).json(successEnvelope({ reordered: true }, traceId));
   });
 
@@ -3626,6 +3775,9 @@ export function createApp(config: AppConfig): CreateAppResult {
         .json(errorEnvelope("VALIDATION_ERROR", "Invalid request.", traceId, details));
     }
     const creatorId = body.creator_id as string;
+    if (!(await requireAccountMatchesCreator(req, res, traceId, creatorId.trim()))) {
+      return;
+    }
     if (
       !(await assertCreatorRelayMutationAllowed(
         req,
@@ -3692,6 +3844,9 @@ export function createApp(config: AppConfig): CreateAppResult {
         .json(errorEnvelope("VALIDATION_ERROR", "Invalid request.", traceId, details));
     }
     const analyticsCreatorId = (body.creator_id as string).trim();
+    if (!(await requireAccountMatchesCreator(req, res, traceId, analyticsCreatorId))) {
+      return;
+    }
     if (
       !(await assertCreatorRelayMutationAllowed(
         req,
@@ -3735,6 +3890,9 @@ export function createApp(config: AppConfig): CreateAppResult {
           ])
         );
     }
+    if (!(await requireAccountMatchesCreator(req, res, traceId, creatorId))) {
+      return;
+    }
     const impact_area =
       typeof req.query.impact_area === "string" ? req.query.impact_area : undefined;
     const confidence_min =
@@ -3765,8 +3923,12 @@ export function createApp(config: AppConfig): CreateAppResult {
           .status(400)
           .json(errorEnvelope("VALIDATION_ERROR", "Invalid request.", traceId, details));
       }
+      const accCid = body.creator_id as string;
+      if (!(await requireAccountMatchesCreator(req, res, traceId, accCid))) {
+        return;
+      }
       const card = await actionCenterService.accept(
-        body.creator_id as string,
+        accCid,
         req.params.recommendation_id,
         typeof body.notes === "string" ? body.notes : undefined,
         traceId
@@ -3799,12 +3961,16 @@ export function createApp(config: AppConfig): CreateAppResult {
           .status(400)
           .json(errorEnvelope("VALIDATION_ERROR", "Invalid request.", traceId, details));
       }
+      const execCid = body.creator_id as string;
+      if (!(await requireAccountMatchesCreator(req, res, traceId, execCid))) {
+        return;
+      }
       const options =
         typeof body.options === "object" && body.options !== null
           ? (body.options as Record<string, unknown>)
           : {};
       const action = await actionCenterService.execute(
-        body.creator_id as string,
+        execCid,
         req.params.recommendation_id,
         body.action_type as string,
         options,
@@ -3839,10 +4005,14 @@ export function createApp(config: AppConfig): CreateAppResult {
           .status(400)
           .json(errorEnvelope("VALIDATION_ERROR", "Invalid request.", traceId, details));
       }
+      const disCid = body.creator_id as string;
+      if (!(await requireAccountMatchesCreator(req, res, traceId, disCid))) {
+        return;
+      }
       const reasonCode =
         typeof body.reason_code === "string" ? body.reason_code : "no_reason";
       const card = await actionCenterService.dismiss(
-        body.creator_id as string,
+        disCid,
         req.params.recommendation_id,
         reasonCode,
         traceId
@@ -3879,6 +4049,9 @@ export function createApp(config: AppConfig): CreateAppResult {
             ])
           );
       }
+      if (!(await requireAccountMatchesCreator(req, res, traceId, creatorId))) {
+        return;
+      }
       const data = await actionCenterService.explain(
         creatorId,
         req.params.recommendation_id
@@ -3905,6 +4078,9 @@ export function createApp(config: AppConfig): CreateAppResult {
           ])
         );
     }
+    if (!(await requireAccountMatchesCreator(req, res, traceId, creatorId))) {
+      return;
+    }
     const summary = await actionCenterService.metricsSummary(creatorId);
     return res.status(200).json(successEnvelope(summary, traceId));
   });
@@ -3919,6 +4095,9 @@ export function createApp(config: AppConfig): CreateAppResult {
         .json(errorEnvelope("VALIDATION_ERROR", "Invalid request.", traceId, details));
     }
     const cloneCreatorId = (body.creator_id as string).trim();
+    if (!(await requireAccountMatchesCreator(req, res, traceId, cloneCreatorId))) {
+      return;
+    }
     if (
       !(await assertCreatorRelayMutationAllowed(
         req,
@@ -3964,6 +4143,9 @@ export function createApp(config: AppConfig): CreateAppResult {
           ])
         );
     }
+    if (!(await requireAccountMatchesCreator(req, res, traceId, creatorId))) {
+      return;
+    }
     const model = await cloneService.getLatest(creatorId);
     if (!model) {
       return res
@@ -3985,6 +4167,9 @@ export function createApp(config: AppConfig): CreateAppResult {
             { field: "creator_id", issue: "missing" }
           ])
         );
+    }
+    if (!(await requireAccountMatchesCreator(req, res, traceId, creatorId))) {
+      return;
     }
     const pages = await cloneService.previewPages(creatorId);
     if (!pages) {
@@ -4008,6 +4193,9 @@ export function createApp(config: AppConfig): CreateAppResult {
           ])
         );
     }
+    if (!(await requireAccountMatchesCreator(req, res, traceId, creatorId))) {
+      return;
+    }
     const result = await cloneService.parityCheck(creatorId);
     return res.status(200).json(successEnvelope(result, traceId));
   });
@@ -4016,6 +4204,7 @@ export function createApp(config: AppConfig): CreateAppResult {
    * MT-007 — Preferred email/password signup for Option B (no `creator_id`).
    * @see POST /api/v1/identity/register (legacy; may omit `creator_id` when DB identity is enabled)
    */
+  // PUBLIC: Email/password signup; issues session cookie when dual-write enabled.
   app.post("/api/v1/auth/signup", async (req: Request, res: Response) => {
     const traceId = traceIdFrom(req);
     const body = (req.body ?? {}) as Record<string, unknown>;
@@ -4040,9 +4229,11 @@ export function createApp(config: AppConfig): CreateAppResult {
         body.password as string
       );
       const session = await identityService.issueSessionForUser(user);
+      setSessionCookie(res, session.token, { expiresAtIso: session.expires_at });
+      await setActiveRoleCookieForNewSession(res, config.prisma, session, session.expires_at);
       return res.status(201).json(
         successEnvelope(
-          {
+          applyDualWriteToken({
             token: session.token,
             user_id: user.user_id,
             creator_id: user.creator_id,
@@ -4050,7 +4241,7 @@ export function createApp(config: AppConfig): CreateAppResult {
             auth_provider: user.auth_provider,
             tier_ids: user.tier_ids,
             expires_at: session.expires_at
-          },
+          }),
           traceId
         )
       );
@@ -4064,6 +4255,7 @@ export function createApp(config: AppConfig): CreateAppResult {
   });
 
   /** MT-007 — Account-scoped login (same Bearer session contract as `POST /api/v1/identity/login`). */
+  // PUBLIC: Email/password login; issues session cookie when dual-write enabled.
   app.post("/api/v1/auth/login", async (req: Request, res: Response) => {
     const traceId = traceIdFrom(req);
     const body = (req.body ?? {}) as Record<string, unknown>;
@@ -4087,15 +4279,17 @@ export function createApp(config: AppConfig): CreateAppResult {
         body.email as string,
         body.password as string
       );
+      setSessionCookie(res, session.token, { expiresAtIso: session.expires_at });
+      await setActiveRoleCookieForNewSession(res, config.prisma, session, session.expires_at);
       return res.status(200).json(
         successEnvelope(
-          {
+          applyDualWriteToken({
             token: session.token,
             user_id: session.user_id,
             creator_id: session.creator_id,
             tier_ids: session.tier_ids,
             expires_at: session.expires_at
-          },
+          }),
           traceId
         )
       );
@@ -4111,6 +4305,7 @@ export function createApp(config: AppConfig): CreateAppResult {
    * first account (no `creator_id`). When `creator_id` is omitted and DB identity is enabled, behaves
    * like `/api/v1/auth/signup` (MT-008).
    */
+  // PUBLIC: Patron registration / account bootstrap; issues session on success.
   app.post("/api/v1/identity/register", async (req: Request, res: Response) => {
     const traceId = traceIdFrom(req);
     res.setHeader("Deprecation", 'true; api="/api/v1/auth/signup"');
@@ -4142,15 +4337,20 @@ export function createApp(config: AppConfig): CreateAppResult {
           body.email as string,
           body.password as string
         );
+        const session = await identityService.issueSessionForUser(user);
+        setSessionCookie(res, session.token, { expiresAtIso: session.expires_at });
+        await setActiveRoleCookieForNewSession(res, config.prisma, session, session.expires_at);
         return res.status(201).json(
           successEnvelope(
-            {
+            applyDualWriteToken({
+              token: session.token,
               user_id: user.user_id,
               creator_id: user.creator_id,
               email: user.email,
               auth_provider: user.auth_provider,
-              tier_ids: user.tier_ids
-            },
+              tier_ids: user.tier_ids,
+              expires_at: session.expires_at
+            }),
             traceId
           )
         );
@@ -4167,15 +4367,20 @@ export function createApp(config: AppConfig): CreateAppResult {
         body.password as string,
         tierIds
       );
+      const session = await identityService.issueSessionForUser(user);
+      setSessionCookie(res, session.token, { expiresAtIso: session.expires_at });
+      await setActiveRoleCookieForNewSession(res, config.prisma, session, session.expires_at);
       return res.status(201).json(
         successEnvelope(
-          {
+          applyDualWriteToken({
+            token: session.token,
             user_id: user.user_id,
             creator_id: user.creator_id,
             email: user.email,
             auth_provider: user.auth_provider,
-            tier_ids: user.tier_ids
-          },
+            tier_ids: user.tier_ids,
+            expires_at: session.expires_at
+          }),
           traceId
         )
       );
@@ -4186,6 +4391,7 @@ export function createApp(config: AppConfig): CreateAppResult {
     }
   });
 
+  // PUBLIC: Legacy Patreon-id registration path (bootstrap; no prior session).
   app.post("/api/v1/identity/register-patreon", async (req: Request, res: Response) => {
     const traceId = traceIdFrom(req);
     const body = (req.body ?? {}) as Record<string, unknown>;
@@ -4267,15 +4473,17 @@ export function createApp(config: AppConfig): CreateAppResult {
           body.password as string
         );
       }
+      setSessionCookie(res, session.token, { expiresAtIso: session.expires_at });
+      await setActiveRoleCookieForNewSession(res, config.prisma, session, session.expires_at);
       return res.status(200).json(
         successEnvelope(
-          {
+          applyDualWriteToken({
             token: session.token,
             user_id: session.user_id,
             creator_id: session.creator_id,
             tier_ids: session.tier_ids,
             expires_at: session.expires_at
-          },
+          }),
           traceId
         )
       );
@@ -4300,14 +4508,16 @@ export function createApp(config: AppConfig): CreateAppResult {
         body.creator_id as string,
         body.patreon_user_id as string
       );
+      setSessionCookie(res, session.token, { expiresAtIso: session.expires_at });
+      await setActiveRoleCookieForNewSession(res, config.prisma, session, session.expires_at);
       return res.status(200).json(
         successEnvelope(
-          {
+          applyDualWriteToken({
             token: session.token,
             user_id: session.user_id,
             tier_ids: session.tier_ids,
             expires_at: session.expires_at
-          },
+          }),
           traceId
         )
       );
@@ -4318,15 +4528,34 @@ export function createApp(config: AppConfig): CreateAppResult {
     }
   });
 
+  // PUBLIC: Logout must be POST; GET is rejected so prefetch/link-preview cannot revoke sessions.
+  app.get("/api/v1/identity/logout", (req: Request, res: Response) => {
+    const traceId = traceIdFrom(req);
+    res.setHeader("Allow", "POST");
+    return res
+      .status(405)
+      .json(
+        errorEnvelope(
+          "METHOD_NOT_ALLOWED",
+          "Logout requires POST /api/v1/identity/logout.",
+          traceId
+        )
+      );
+  });
+
   app.post("/api/v1/identity/logout", async (req: Request, res: Response) => {
     const traceId = traceIdFrom(req);
-    const token = req.header("authorization")?.replace("Bearer ", "");
+    const bearer = req.header("authorization")?.replace(/^Bearer\s+/i, "").trim() ?? "";
+    const fromCookie = readSessionCookie(req)?.trim() ?? "";
+    const token = bearer || fromCookie;
     if (!token) {
       return res
         .status(400)
         .json(errorEnvelope("VALIDATION_ERROR", "Bearer token required.", traceId));
     }
     await identityService.logout(token);
+    clearSessionCookie(res);
+    clearActiveRoleCookie(res);
     return res.status(200).json(successEnvelope({ logged_out: true }, traceId));
   });
 
@@ -4464,9 +4693,11 @@ export function createApp(config: AppConfig): CreateAppResult {
         email: authResult.user.email ?? null
       });
       const session = await identityService.issueRelaySessionForAccount(account.id);
+      setSessionCookie(res, session.token, { expiresAtIso: session.expires_at });
+      await setActiveRoleCookieForNewSession(res, config.prisma, session, session.expires_at);
       return res.status(200).json(
         successEnvelope(
-          {
+          applyDualWriteToken({
             token: session.token,
             user_id: session.user_id,
             creator_id: session.creator_id,
@@ -4474,7 +4705,7 @@ export function createApp(config: AppConfig): CreateAppResult {
             expires_at: session.expires_at,
             account_id: account.id,
             email: account.emailNorm
-          },
+          }),
           traceId
         )
       );
@@ -4569,6 +4800,10 @@ export function createApp(config: AppConfig): CreateAppResult {
         .status(400)
         .json(errorEnvelope("VALIDATION_ERROR", "Invalid mapping.", traceId, details));
     }
+    const payMapCid = body.creator_id as string;
+    if (!(await requireAccountMatchesCreator(req, res, traceId, payMapCid))) {
+      return;
+    }
     const mapping: TierProductMapping = {
       tier_id: body.tier_id as string,
       provider: body.provider as PaymentProvider,
@@ -4583,7 +4818,7 @@ export function createApp(config: AppConfig): CreateAppResult {
         body.tax_behavior === "inclusive" ? "inclusive" : "exclusive"
     };
     const config = await paymentService.addMapping(
-      body.creator_id as string,
+      payMapCid,
       mapping
     );
     return res.status(200).json(
@@ -4611,6 +4846,9 @@ export function createApp(config: AppConfig): CreateAppResult {
           ])
         );
     }
+    if (!(await requireAccountMatchesCreator(req, res, traceId, creatorId))) {
+      return;
+    }
     const cfg = await paymentService.getConfig(creatorId);
     if (!cfg) {
       return res
@@ -4629,10 +4867,15 @@ export function createApp(config: AppConfig): CreateAppResult {
         .status(400)
         .json(errorEnvelope("VALIDATION_ERROR", "Invalid request.", traceId, details));
     }
-    const result = await paymentService.preflight(body.creator_id as string);
+    const preCid = body.creator_id as string;
+    if (!(await requireAccountMatchesCreator(req, res, traceId, preCid))) {
+      return;
+    }
+    const result = await paymentService.preflight(preCid);
     return res.status(200).json(successEnvelope(result, traceId));
   });
 
+  // PUBLIC: Checkout session for a patron (may be unauthenticated buyer; creator_id scopes the listing).
   app.post("/api/v1/payments/checkout", async (req: Request, res: Response) => {
     const traceId = traceIdFrom(req);
     const body = (req.body ?? {}) as Record<string, unknown>;
@@ -4684,9 +4927,13 @@ export function createApp(config: AppConfig): CreateAppResult {
         .status(400)
         .json(errorEnvelope("VALIDATION_ERROR", "Invalid request.", traceId, details));
     }
+    const liveCid = body.creator_id as string;
+    if (!(await requireAccountMatchesCreator(req, res, traceId, liveCid))) {
+      return;
+    }
     const live = body.live === true;
     const config = await paymentService.setLiveMode(
-      body.creator_id as string,
+      liveCid,
       live
     );
     if (!config) {
@@ -4712,6 +4959,10 @@ export function createApp(config: AppConfig): CreateAppResult {
         .status(400)
         .json(errorEnvelope("VALIDATION_ERROR", "Invalid request.", traceId, details));
     }
+    const migCreateCid = body.creator_id as string;
+    if (!(await requireAccountMatchesCreator(req, res, traceId, migCreateCid))) {
+      return;
+    }
     const tierMappings = Array.isArray(body.tier_mappings)
       ? (body.tier_mappings as TierMapping[])
       : [];
@@ -4723,7 +4974,7 @@ export function createApp(config: AppConfig): CreateAppResult {
         }>)
       : [];
     const campaign = await campaignService.create(
-      body.creator_id as string,
+      migCreateCid,
       tierMappings,
       recipients,
       body.message_subject as string,
@@ -4747,6 +4998,14 @@ export function createApp(config: AppConfig): CreateAppResult {
     "/api/v1/migrations/campaigns/:campaign_id/preflight",
     async (req: Request, res: Response) => {
       const traceId = traceIdFrom(req);
+      const preCamp = await campaignService.getCampaign(req.params.campaign_id);
+      if (preCamp) {
+        if (
+          !(await requireAccountMatchesCreator(req, res, traceId, preCamp.creator_id))
+        ) {
+          return;
+        }
+      }
       const result = await campaignService.preflight(req.params.campaign_id);
       return res.status(200).json(successEnvelope(result, traceId));
     }
@@ -4756,6 +5015,17 @@ export function createApp(config: AppConfig): CreateAppResult {
     "/api/v1/migrations/campaigns/:campaign_id/send",
     async (req: Request, res: Response) => {
       const traceId = traceIdFrom(req);
+      const sendCamp = await campaignService.getCampaign(req.params.campaign_id);
+      if (!sendCamp) {
+        return res
+          .status(404)
+          .json(errorEnvelope("NOT_FOUND", "Campaign not found.", traceId));
+      }
+      if (
+        !(await requireAccountMatchesCreator(req, res, traceId, sendCamp.creator_id))
+      ) {
+        return;
+      }
       const body = (req.body ?? {}) as Record<string, unknown>;
       const batchSize =
         typeof body.batch_size === "number" ? body.batch_size : 100;
@@ -4795,6 +5065,11 @@ export function createApp(config: AppConfig): CreateAppResult {
           .status(404)
           .json(errorEnvelope("NOT_FOUND", "Campaign not found.", traceId));
       }
+      if (
+        !(await requireAccountMatchesCreator(req, res, traceId, campaign.creator_id))
+      ) {
+        return;
+      }
       return res.status(200).json(
         successEnvelope(
           {
@@ -4819,6 +5094,17 @@ export function createApp(config: AppConfig): CreateAppResult {
     "/api/v1/migrations/campaigns/:campaign_id/preview",
     async (req: Request, res: Response) => {
       const traceId = traceIdFrom(req);
+      const prevCamp = await campaignService.getCampaign(req.params.campaign_id);
+      if (!prevCamp) {
+        return res
+          .status(404)
+          .json(errorEnvelope("NOT_FOUND", "Campaign not found.", traceId));
+      }
+      if (
+        !(await requireAccountMatchesCreator(req, res, traceId, prevCamp.creator_id))
+      ) {
+        return;
+      }
       const preview = await campaignService.getPreview(req.params.campaign_id);
       if (!preview) {
         return res
@@ -4838,10 +5124,14 @@ export function createApp(config: AppConfig): CreateAppResult {
         .status(400)
         .json(errorEnvelope("VALIDATION_ERROR", "Invalid request.", traceId, details));
     }
+    const supCid = body.creator_id as string;
+    if (!(await requireAccountMatchesCreator(req, res, traceId, supCid))) {
+      return;
+    }
     const emails = Array.isArray(body.emails)
       ? (body.emails as string[]).filter((x): x is string => typeof x === "string")
       : [];
-    await migrationStore.addToSuppression(body.creator_id as string, emails);
+    await migrationStore.addToSuppression(supCid, emails);
     return res
       .status(200)
       .json(successEnvelope({ added: emails.length }, traceId));
@@ -4915,6 +5205,9 @@ export function createApp(config: AppConfig): CreateAppResult {
     try {
       const body = (req.body ?? {}) as Record<string, unknown>;
       const creatorId = typeof body.creator_id === "string" ? body.creator_id : "";
+      if (!(await requireAccountMatchesCreator(req, res, traceId, creatorId))) {
+        return;
+      }
       const provider = (typeof body.provider === "string" ? body.provider : "vercel") as DeployProvider;
       const domain = typeof body.domain === "string" ? body.domain : undefined;
       const deployment = await deployService.buildAndPreview(creatorId, provider, domain);
@@ -4931,6 +5224,17 @@ export function createApp(config: AppConfig): CreateAppResult {
     async (req: Request, res: Response) => {
       const traceId = traceIdFrom(req);
       try {
+        const depDns = await deployService.getDeployment(req.params.deployment_id);
+        if (!depDns) {
+          return res
+            .status(404)
+            .json(errorEnvelope("NOT_FOUND", "Deployment not found.", traceId));
+        }
+        if (
+          !(await requireAccountMatchesCreator(req, res, traceId, depDns.creator_id))
+        ) {
+          return;
+        }
         const result = await deployService.checkDns(req.params.deployment_id);
         return res.status(200).json(successEnvelope(result, traceId));
       } catch (err: unknown) {
@@ -4946,6 +5250,17 @@ export function createApp(config: AppConfig): CreateAppResult {
     async (req: Request, res: Response) => {
       const traceId = traceIdFrom(req);
       try {
+        const depAp = await deployService.getDeployment(req.params.deployment_id);
+        if (!depAp) {
+          return res
+            .status(404)
+            .json(errorEnvelope("NOT_FOUND", "Deployment not found.", traceId));
+        }
+        if (
+          !(await requireAccountMatchesCreator(req, res, traceId, depAp.creator_id))
+        ) {
+          return;
+        }
         const deployment = await deployService.approve(req.params.deployment_id);
         return res.status(200).json(successEnvelope(deployment, traceId));
       } catch (err: unknown) {
@@ -4961,6 +5276,17 @@ export function createApp(config: AppConfig): CreateAppResult {
     async (req: Request, res: Response) => {
       const traceId = traceIdFrom(req);
       try {
+        const depLn = await deployService.getDeployment(req.params.deployment_id);
+        if (!depLn) {
+          return res
+            .status(404)
+            .json(errorEnvelope("NOT_FOUND", "Deployment not found.", traceId));
+        }
+        if (
+          !(await requireAccountMatchesCreator(req, res, traceId, depLn.creator_id))
+        ) {
+          return;
+        }
         const deployment = await deployService.launch(req.params.deployment_id);
         return res.status(200).json(successEnvelope(deployment, traceId));
       } catch (err: unknown) {
@@ -4976,6 +5302,9 @@ export function createApp(config: AppConfig): CreateAppResult {
     try {
       const body = (req.body ?? {}) as Record<string, unknown>;
       const creatorId = typeof body.creator_id === "string" ? body.creator_id : "";
+      if (!(await requireAccountMatchesCreator(req, res, traceId, creatorId))) {
+        return;
+      }
       const rolled = await deployService.rollback(creatorId);
       return res.status(200).json(successEnvelope(rolled, traceId));
     } catch (err: unknown) {
@@ -4987,6 +5316,11 @@ export function createApp(config: AppConfig): CreateAppResult {
 
   app.get("/api/v1/deploy/active/:creator_id", async (req: Request, res: Response) => {
     const traceId = traceIdFrom(req);
+    if (
+      !(await requireAccountMatchesCreator(req, res, traceId, req.params.creator_id))
+    ) {
+      return;
+    }
     const dep = await deployService.getActive(req.params.creator_id);
     if (!dep) {
       return res.status(404).json(errorEnvelope("NOT_FOUND", "No active deployment.", traceId));
@@ -4996,6 +5330,11 @@ export function createApp(config: AppConfig): CreateAppResult {
 
   app.get("/api/v1/deploy/list/:creator_id", async (req: Request, res: Response) => {
     const traceId = traceIdFrom(req);
+    if (
+      !(await requireAccountMatchesCreator(req, res, traceId, req.params.creator_id))
+    ) {
+      return;
+    }
     const list = await deployService.listDeployments(req.params.creator_id);
     return res.status(200).json(successEnvelope(list, traceId));
   });
@@ -5007,6 +5346,11 @@ export function createApp(config: AppConfig): CreateAppResult {
       const dep = await deployService.getDeployment(req.params.deployment_id);
       if (!dep) {
         return res.status(404).json(errorEnvelope("NOT_FOUND", "Deployment not found.", traceId));
+      }
+      if (
+        !(await requireAccountMatchesCreator(req, res, traceId, dep.creator_id))
+      ) {
+        return;
       }
       return res.status(200).json(successEnvelope(dep, traceId));
     }

@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Loader2 } from "lucide-react";
+import { AuthBootSplash } from "@/app/components/auth/AuthBootSplash";
 import { getSupabaseBrowserClient } from "@/lib/supabase-browser";
 import { bootstrapStudioAfterSupabase } from "@/lib/relay-auth-bootstrap";
 import { resolvePostAuthPath } from "@/lib/post-login-redirect";
@@ -78,29 +78,26 @@ export default function AuthConfirmPage() {
     })();
   }, [router]);
 
+  if (status === "working") {
+    return <AuthBootSplash message="Confirming your account…" />;
+  }
+
   return (
     <div
-      className="flex min-h-dvh flex-col items-center justify-center gap-4 px-4"
+      className="flex min-h-dvh flex-col items-center justify-center px-4"
       style={{ background: "#0A0A0A", color: "#F9FAFB" }}
     >
-      {status === "working" ? (
-        <>
-          <Loader2 className="h-8 w-8 animate-spin" style={{ color: "#40916C" }} aria-hidden />
-          <p className="text-sm" style={{ color: "#9CA3AF" }}>Confirming your account…</p>
-        </>
-      ) : (
-        <div className="w-full max-w-sm space-y-4 rounded-xl border p-6" style={{ background: "#111111", borderColor: "#2A2A2A" }}>
-          <h1 className="text-base font-semibold" style={{ color: "#F9FAFB" }}>Confirmation failed</h1>
-          <p className="text-sm" style={{ color: "#F87171" }}>{error}</p>
-          <a
-            href="/onboarding"
-            className="block rounded-lg py-2.5 text-center text-sm font-medium"
-            style={{ background: "#2D6A4F", color: "#F9FAFB" }}
-          >
-            Try signing up again
-          </a>
-        </div>
-      )}
+      <div className="w-full max-w-sm space-y-4 rounded-xl border p-6" style={{ background: "#111111", borderColor: "#2A2A2A" }}>
+        <h1 className="text-base font-semibold" style={{ color: "#F9FAFB" }}>Confirmation failed</h1>
+        <p className="text-sm" style={{ color: "#F87171" }}>{error}</p>
+        <a
+          href="/onboarding"
+          className="block rounded-lg py-2.5 text-center text-sm font-medium"
+          style={{ background: "#2D6A4F", color: "#F9FAFB" }}
+        >
+          Try signing up again
+        </a>
+      </div>
     </div>
   );
 }

@@ -2,10 +2,11 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  RELAY_API_BASE,
   RELAY_CREATOR_ID_STORAGE_KEY,
   fetchPatronSessionMe,
   fetchPatreonSyncState,
+  hasRelaySignedInCookie,
+  relayFetch,
   type PatreonSyncStateData
 } from "@/lib/relay-api";
 import { getSupabaseBrowserClient } from "@/lib/supabase-browser";
@@ -39,22 +40,13 @@ async function fetchParityEnvelope<T>(
   secret: string,
   signal?: AbortSignal
 ): Promise<T> {
-  const res = await fetch(`${RELAY_API_BASE}${path}`, {
+  return relayFetch<T>(path, {
     headers: {
-      "content-type": "application/json",
       "X-Relay-Pipeline-Parity-Secret": secret
     },
     cache: "no-store",
     signal
   });
-  const json = (await res.json()) as { data?: T; error?: { message?: string } };
-  if (!res.ok) {
-    throw new Error(json.error?.message ?? res.statusText);
-  }
-  if (!json.data) {
-    throw new Error("Invalid parity response");
-  }
-  return json.data;
 }
 
 function statusStyle(s: HonestStatus): string {
@@ -124,12 +116,9 @@ export default function PipelineParityClient() {
       typeof window !== "undefined"
         ? window.localStorage.getItem(RELAY_CREATOR_ID_STORAGE_KEY)?.trim() ?? null
         : null;
-    const token =
-      typeof window !== "undefined"
-        ? window.localStorage.getItem("relay_session_token")?.trim()
-        : null;
+    const signedIn = typeof window !== "undefined" ? hasRelaySignedInCookie() : false;
     let meSessionCreatorId: string | null = null;
-    if (token) {
+    if (signedIn) {
       try {
         const me = await fetchPatronSessionMe();
         meSessionCreatorId = me.creator_id ?? null;
@@ -140,7 +129,7 @@ export default function PipelineParityClient() {
     setBrowserState({
       supabaseUserId,
       relayCreatorId,
-      relaySessionPresent: Boolean(token),
+      relaySessionPresent: signedIn,
       meSessionCreatorId
     });
   }, []);

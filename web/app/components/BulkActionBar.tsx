@@ -17,6 +17,7 @@ import {
   RELAY_API_BASE,
   buildGalleryVisibilityBody,
   bucketItemsByVisibilityAfterAction,
+  relayFetch,
   type Collection,
   type GalleryItem,
   type PostVisibility,
@@ -106,16 +107,11 @@ export default function BulkActionBar({
 
   const postVisibilityUpdate = async (items: GalleryItem[], visibility: PostVisibility) => {
     const body = buildGalleryVisibilityBody(creatorId, items, visibility);
-    const res = await fetch(`${RELAY_API_BASE}/api/v1/gallery/visibility`, {
+    await relayFetch<unknown>("/api/v1/gallery/visibility", {
       method: "POST",
       cache: "no-store",
-      headers: { "content-type": "application/json" },
       body: JSON.stringify(body)
     });
-    if (!res.ok) {
-      const j = (await res.json().catch(() => null)) as { error?: { message?: string } } | null;
-      throw new Error(j?.error?.message ?? res.statusText);
-    }
   };
 
   const applyVisibilityAxis = async (action: VisibilityAxisAction) => {
@@ -159,19 +155,13 @@ export default function BulkActionBar({
     if (selectedPostIds.length === 0) return;
     setCollBusy(collectionId);
     try {
-      const res = await fetch(
-        `${RELAY_API_BASE}/api/v1/gallery/collections/${collectionId}/posts`,
+      await relayFetch<unknown>(
+        `/api/v1/gallery/collections/${collectionId}/posts`,
         {
           method: "POST",
-          headers: { "content-type": "application/json" },
           body: JSON.stringify({ post_ids: selectedPostIds })
         }
       );
-      if (!res.ok) {
-        const j = (await res.json().catch(() => null)) as { error?: { message?: string } } | null;
-        onError?.(j?.error?.message ?? res.statusText);
-        return;
-      }
       closePanel();
       onCollectionsReload();
       onListRefresh();

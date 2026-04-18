@@ -9,15 +9,21 @@ import {
   useState,
   type ReactNode
 } from "react";
-import { RELAY_CREATOR_ID_STORAGE_KEY } from "./relay-api";
+import { type ActiveRole, readActiveRoleFromDocumentCookie } from "./active-role";
+import { RELAY_CREATOR_ID_STORAGE_KEY, hasRelaySignedInCookie } from "./relay-api";
 
-function readLocalStorage(): { token: string | null; creatorId: string | null } {
+function readLocalStorage(): {
+  signedIn: boolean;
+  creatorId: string | null;
+  activeRole: ActiveRole | null;
+} {
   if (typeof window === "undefined") {
-    return { token: null, creatorId: null };
+    return { signedIn: false, creatorId: null, activeRole: null };
   }
-  const token = window.localStorage.getItem("relay_session_token")?.trim() || null;
+  const signedIn = hasRelaySignedInCookie();
   const creatorId = window.localStorage.getItem(RELAY_CREATOR_ID_STORAGE_KEY)?.trim() || null;
-  return { token, creatorId };
+  const activeRole = signedIn ? readActiveRoleFromDocumentCookie() : null;
+  return { signedIn, creatorId, activeRole };
 }
 
 /** Call after bootstrap or Patreon flows update localStorage in the same tab. */
@@ -31,6 +37,8 @@ type StudioSessionValue = {
   ready: boolean;
   /** Opaque Relay patron session (MT-033). */
   hasRelaySession: boolean;
+  /** UI lens from `relay_active_role` cookie (GR-T0-2); authz must not use this. */
+  activeRole: ActiveRole | null;
   /** Studio creator id when session + workspace row exist in storage. */
   storedRelayCreatorId: string | null;
   /**
@@ -45,27 +53,29 @@ const StudioSessionContext = createContext<StudioSessionValue | null>(null);
 const envFallbackCreatorId =
   (typeof process !== "undefined" && process.env.NEXT_PUBLIC_RELAY_CREATOR_ID?.trim()) || "creator_1";
 
-function resolveCreatorId(token: string | null, stored: string | null): string {
-  if (token && stored) return stored;
+function resolveCreatorId(signedIn: boolean, stored: string | null): string {
+  if (signedIn && stored) return stored;
   return envFallbackCreatorId;
 }
 
 export function StudioSessionProvider({ children }: { children: ReactNode }) {
   const [ready, setReady] = useState(false);
-  const [token, setToken] = useState<string | null>(null);
+  const [signedIn, setSignedIn] = useState(false);
   const [storedCreatorId, setStoredCreatorId] = useState<string | null>(null);
+  const [activeRole, setActiveRole] = useState<ActiveRole | null>(null);
 
   const refresh = useCallback(() => {
-    const { token: t, creatorId: c } = readLocalStorage();
-    setToken(t);
+    const { signedIn: s, creatorId: c, activeRole: ar } = readLocalStorage();
+    setSignedIn(s);
     setStoredCreatorId(c);
+    setActiveRole(ar);
   }, []);
 
   useEffect(() => {
     refresh();
     setReady(true);
     const onStorage = (e: StorageEvent) => {
-      if (e.key === "relay_session_token" || e.key === RELAY_CREATOR_ID_STORAGE_KEY) {
+      if (e.key === RELAY_CREATOR_ID_STORAGE_KEY) {
         refresh();
       }
     };
@@ -78,15 +88,16 @@ export function StudioSessionProvider({ children }: { children: ReactNode }) {
   }, [refresh]);
 
   const value = useMemo<StudioSessionValue>(() => {
-    const hasRelaySession = Boolean(token);
-    const creatorId = resolveCreatorId(token, storedCreatorId);
+    const hasRelaySession = signedIn;
+    const creatorId = resolveCreatorId(signedIn, storedCreatorId);
     return {
       ready,
       hasRelaySession,
+      activeRole,
       storedRelayCreatorId: storedCreatorId,
       creatorId
     };
-  }, [ready, token, storedCreatorId]);
+  }, [ready, signedIn, activeRole, storedCreatorId]);
 
   return (
     <StudioSessionContext.Provider value={value}>{children}</StudioSessionContext.Provider>

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import {
   X,
   Heart,
@@ -65,6 +65,8 @@ export function GalleryView({
   const [pinPreviewPhase, setPinPreviewPhase] = useState<PinPreviewPhase>("hidden");
   /** Full-screen art overlay; enter animation is Z+scale (toward viewer), not letterbox FLIP */
   const [mediaExpanded, setMediaExpanded] = useState(false);
+  /** Multi-image zoom: which slide is on top (wheel cycles). */
+  const [stackIndex, setStackIndex] = useState(0);
   const [isFavorited, setIsFavorited] = useState(false);
   const imageRef = useRef<HTMLDivElement>(null);
   const imageSurfaceRef = useRef<HTMLDivElement>(null);
@@ -85,6 +87,7 @@ export function GalleryView({
 
   useEffect(() => {
     setMediaExpanded(false);
+    setStackIndex(0);
   }, [post.id]);
 
   /** Expanded overlay is gallery-only; never keep enlarge state alongside comment mode */
@@ -99,6 +102,7 @@ export function GalleryView({
   }, []);
 
   const openExpanded = useCallback(() => {
+    setStackIndex(0);
     setMediaExpanded(true);
   }, []);
 
@@ -143,6 +147,19 @@ export function GalleryView({
     }, 100);
   }, []);
 
+  const imageUrls = useMemo(() => {
+    if (post.galleryImageUrls && post.galleryImageUrls.length > 0) {
+      return post.galleryImageUrls;
+    }
+    const single =
+      post.highResImageUrl ||
+      post.coverImageUrl ||
+      "/placeholder.svg?height=800&width=1200";
+    return [single];
+  }, [post.galleryImageUrls, post.highResImageUrl, post.coverImageUrl]);
+
+  const multiImage = imageUrls.length > 1;
+
   // Handle ESC key
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -164,6 +181,17 @@ export function GalleryView({
         }
       }
       if (viewMode === "gallery") {
+        if (
+          mediaExpanded &&
+          multiImage &&
+          (e.key === "ArrowUp" || e.key === "ArrowDown")
+        ) {
+          e.preventDefault();
+          const n = imageUrls.length;
+          const dir = e.key === "ArrowDown" ? 1 : -1;
+          setStackIndex((i) => ((i + dir) % n + n) % n);
+          return;
+        }
         if (e.key === "ArrowLeft" && hasPrev && onNavigate) {
           onNavigate("prev");
         }
@@ -174,7 +202,17 @@ export function GalleryView({
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [onClose, onNavigate, hasPrev, hasNext, viewMode, mediaExpanded, collapseExpanded]);
+  }, [
+    onClose,
+    onNavigate,
+    hasPrev,
+    hasNext,
+    viewMode,
+    mediaExpanded,
+    collapseExpanded,
+    multiImage,
+    imageUrls.length,
+  ]);
 
   // Focus comment input when placing pin
   useEffect(() => {
@@ -268,9 +306,6 @@ export function GalleryView({
     setCustomTag("");
   };
 
-  const imgSrc =
-    post.highResImageUrl || post.coverImageUrl || "/placeholder.svg?height=800&width=1200";
-
   /** Popover opens above the pin when the pin is low, so it is not clipped by overflow */
   const pendingPopoverOpensUp =
     pendingComment != null && pendingComment.position.y > 58;
@@ -335,36 +370,41 @@ export function GalleryView({
         </div>
       )}
 
-      {/* Main content */}
+      {/* Main content — scroll the card when image + chrome + copy exceed the viewport */}
       <div
         className={[
-          "relative z-10 w-full max-w-6xl max-h-[90vh] mx-4 flex flex-col transition-all duration-300 animate-[scaleIn_0.2s_ease-out]",
+          "relative z-10 mx-4 flex w-full max-w-6xl min-h-0 max-h-[90vh] flex-col overflow-x-hidden overscroll-contain transition-all duration-300 animate-[scaleIn_0.2s_ease-out]",
           viewMode === "comment"
-            ? "max-w-5xl overflow-visible"
-            : "overflow-hidden",
+            ? "max-w-5xl overflow-y-visible"
+            : "overflow-y-auto",
         ].join(" ")}
       >
         {/* Letterbox media — not painted while expanded overlay is shown (avoids duplicate img compositing) */}
         <div
           ref={imageRef}
           className={[
-            "relative z-0 isolate flex min-h-0 flex-1 flex-col justify-center rounded-t-xl group",
+            "relative z-0 isolate flex flex-col justify-center rounded-t-xl group",
+            /* Gallery: shrink-0 so the preview is never flex-squashed (was flex-1 + overflow-hidden clipping object-contain). Comment: keep flex-1 for pin canvas. */
             viewMode === "comment"
-              ? "cursor-crosshair overflow-visible bg-[#0A0A0A]"
-              : "overflow-hidden bg-[#0E0E0E]",
+              ? "min-h-0 flex-1 cursor-crosshair overflow-visible bg-[#0A0A0A]"
+              : "shrink-0 overflow-visible bg-[#0E0E0E]",
           ].join(" ")}
         >
           <div
             className={[
-              "flex max-h-[60vh] w-full min-h-0 flex-1 items-center justify-center",
-              viewMode === "comment" ? "overflow-visible" : "overflow-hidden",
+              "flex w-full shrink-0 items-center justify-center",
+              viewMode === "comment"
+                ? "min-h-0 flex-1 max-h-[60vh] overflow-visible"
+                : "max-h-[60vh] overflow-visible",
               viewMode === "gallery" && mediaExpanded ? "hidden" : "",
             ].join(" ")}
             aria-hidden={viewMode === "gallery" && mediaExpanded}
           >
             <GalleryMediaStack
               stackRef={imageSurfaceRef}
-              imageSrc={imgSrc}
+              imageUrls={imageUrls}
+              displayIndex={0}
+              visualStack={false}
               title={post.title}
               comments={comments}
               pinLayerVisible={pinLayerVisible}
@@ -372,10 +412,11 @@ export function GalleryView({
               cascadeEnter={(i) => i * 42}
               cascadeExit={(i) => (comments.length - 1 - i) * 36}
               surfaceClassName={[
-                "relative flex max-h-[60vh] w-full flex-col items-center justify-center outline-none",
+                "relative flex w-full max-w-full flex-col items-center justify-center outline-none",
+                viewMode === "comment" ? "max-h-[60vh]" : "",
                 viewMode === "gallery" ? "cursor-zoom-in" : "",
               ].join(" ")}
-              imgClassName="pointer-events-none max-h-[60vh] max-w-full object-contain"
+              imgClassName="pointer-events-none h-auto w-auto max-h-[60vh] max-w-full object-contain"
               onClick={handleMediaStackClick}
               onMouseEnter={viewMode === "gallery" ? onImageSurfaceEnter : undefined}
               onMouseLeave={viewMode === "gallery" ? onImageSurfaceLeave : undefined}
@@ -682,7 +723,11 @@ export function GalleryView({
             <div className="origin-center [transform-style:preserve-3d] motion-reduce:animate-none motion-reduce:opacity-100 motion-reduce:transform-none animate-[patron-art-pop-out_0.46s_cubic-bezier(0.22,1,0.36,1)_both]">
               <GalleryMediaStack
                 stackRef={expandedStackRef}
-                imageSrc={imgSrc}
+                imageUrls={imageUrls}
+                displayIndex={stackIndex}
+                onDisplayIndexChange={multiImage ? setStackIndex : undefined}
+                enableStackWheel={multiImage}
+                visualStack={multiImage}
                 title={post.title}
                 comments={comments}
                 pinLayerVisible={pinLayerVisible}
@@ -700,8 +745,18 @@ export function GalleryView({
                 }}
                 role="button"
                 tabIndex={0}
-                aria-label="Enlarged artwork — click to return to post"
+                aria-label={
+                  multiImage
+                    ? "Enlarged artwork — scroll or arrow keys to move between images; click to return to post"
+                    : "Enlarged artwork — click to return to post"
+                }
               />
+              {multiImage ? (
+                <p className="pointer-events-none mt-3 text-center text-xs text-white/70 tabular-nums">
+                  {stackIndex + 1} / {imageUrls.length}
+                  <span className="text-white/45"> · scroll or ↑↓</span>
+                </p>
+              ) : null}
             </div>
           </div>
         </div>

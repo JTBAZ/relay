@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { decodePatronOAuthState } from "@/lib/patron-oauth-state";
 import { patronPatronOAuthRedirectUri } from "@/lib/patron-patron-redirect-uri";
-import { RELAY_API_BASE } from "@/lib/relay-api";
+import { relayFetch } from "@/lib/relay-api";
 
 function CallbackInner() {
   const router = useRouter();
@@ -48,9 +48,13 @@ function CallbackInner() {
 
     (async () => {
       try {
-        const res = await fetch(`${RELAY_API_BASE}/api/v1/auth/patreon/patron/exchange`, {
+        await relayFetch<{
+          token?: string;
+          tier_ids?: string[];
+          expires_at?: string;
+          patreon_user_id?: string;
+        }>("/api/v1/auth/patreon/patron/exchange", {
           method: "POST",
-          headers: { "content-type": "application/json" },
           body: JSON.stringify({
             creator_id: payload.creator_id,
             patreon_campaign_numeric_id: payload.patreon_campaign_numeric_id,
@@ -58,28 +62,7 @@ function CallbackInner() {
             redirect_uri: redirectUri
           })
         });
-        const json = (await res.json()) as {
-          data?: {
-            token?: string;
-            tier_ids?: string[];
-            expires_at?: string;
-            patreon_user_id?: string;
-          };
-          error?: { message?: string };
-        };
         if (cancelled) return;
-        if (!res.ok) {
-          setStatus("error");
-          setMessage(json.error?.message ?? `HTTP ${res.status}`);
-          return;
-        }
-        try {
-          if (json.data?.token && typeof localStorage !== "undefined") {
-            localStorage.setItem("relay_session_token", json.data.token);
-          }
-        } catch {
-          /* ignore quota / private mode */
-        }
         router.replace("/patron/feed");
         return;
       } catch (e) {

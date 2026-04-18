@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
-import { RELAY_API_BASE, relayFetch, type Collection } from "@/lib/relay-api";
+import { relayFetch, type Collection } from "@/lib/relay-api";
 import CollectionEditor from "./CollectionEditor";
 
 type Props = {
@@ -44,9 +44,8 @@ export default function CollectionsPanel({
   }, [loadCollections, reloadToken]);
 
   const createCollection = async (title: string, description: string) => {
-    await fetch(`${RELAY_API_BASE}/api/v1/gallery/collections`, {
+    await relayFetch<unknown>("/api/v1/gallery/collections", {
       method: "POST",
-      headers: { "content-type": "application/json" },
       body: JSON.stringify({ creator_id: creatorId, title, description: description || undefined })
     });
     onCollectionEditorOpenChange(false);
@@ -54,7 +53,7 @@ export default function CollectionsPanel({
   };
 
   const deleteCollection = async (collectionId: string) => {
-    await fetch(`${RELAY_API_BASE}/api/v1/gallery/collections/${collectionId}`, {
+    await relayFetch<unknown>(`/api/v1/gallery/collections/${collectionId}`, {
       method: "DELETE"
     });
     if (activeCollectionId === collectionId) onSelectCollection(null);

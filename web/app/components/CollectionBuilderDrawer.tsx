@@ -146,36 +146,22 @@ export default function CollectionBuilderDrawer({
       if (ceilingTierId) body.access_ceiling_tier_id = ceilingTierId;
       if (themeTagIds.length) body.theme_tag_ids = themeTagIds;
 
-      const res = await fetch(`${RELAY_API_BASE}/api/v1/gallery/collections`, {
+      const col = await relayFetch<Collection>("/api/v1/gallery/collections", {
         method: "POST",
-        headers: { "content-type": "application/json" },
         body: JSON.stringify(body)
       });
-      const json = (await res.json()) as { data?: Collection; error?: { message?: string } };
-      if (!res.ok) {
-        throw new Error(json.error?.message ?? res.statusText);
-      }
-      const col = json.data;
       if (!col?.collection_id) throw new Error("Missing collection");
 
       const ids = Array.from(selectedPostIds);
       if (ids.length > 0) {
-        const addRes = await fetch(
-          `${RELAY_API_BASE}/api/v1/gallery/collections/${col.collection_id}/posts`,
+        const addData = await relayFetch<CollectionAddPostsResult>(
+          `/api/v1/gallery/collections/${encodeURIComponent(col.collection_id)}/posts`,
           {
             method: "POST",
-            headers: { "content-type": "application/json" },
             body: JSON.stringify({ post_ids: ids })
           }
         );
-        const addJson = (await addRes.json()) as {
-          data?: CollectionAddPostsResult;
-          error?: { message?: string };
-        };
-        if (!addRes.ok) {
-          throw new Error(addJson.error?.message ?? addRes.statusText);
-        }
-        const rejected = addJson.data?.rejected_post_ids ?? [];
+        const rejected = addData.rejected_post_ids ?? [];
         if (rejected.length > 0) {
           setError(
             `Some posts were skipped (tier ceiling): ${rejected.map((r) => r.post_id).join(", ")}`

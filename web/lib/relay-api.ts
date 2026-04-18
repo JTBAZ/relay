@@ -1,4 +1,11 @@
 import { PATREON_CREATOR_OAUTH_SCOPES } from "./patreon-creator-scopes";
+import {
+  RelayForbiddenError,
+  RelayServerError,
+  RelayUnauthorizedError
+} from "./relay-fetch-errors";
+
+export { RelayForbiddenError, RelayServerError, RelayUnauthorizedError };
 
 /** No trailing slash — paths like `/api/v1/...` are appended below. */
 function resolveRelayApiBase(): string {
@@ -59,26 +66,97 @@ export async function parseRelayResponseBody(res: Response, requestPath = ""): P
   }
 }
 
-/** Bearer session when `relay_session_token` is in `localStorage` (client-only). */
+/**
+ * Optional Bearer for non-browser callers that pass a token explicitly via `init.headers`.
+ * Browser flows rely on HttpOnly `relay_session` + `credentials: "include"` (see GR-T0-1).
+ */
 export function relayPatronAuthHeaders(): Record<string, string> {
-  if (typeof window === "undefined") {
-    return {};
-  }
-  const t = window.localStorage.getItem("relay_session_token")?.trim();
-  return t ? { authorization: `Bearer ${t}` } : {};
+  return {};
 }
 
-export async function relayFetch<T>(path: string, init?: RequestInit): Promise<T> {
+/** Non-HttpOnly companion cookie set with `relay_session` (GR-T0-1). */
+export function hasRelaySignedInCookie(): boolean {
+  if (typeof document === "undefined") return false;
+  return document.cookie.split(";").some((p) => p.trim().startsWith("relay_signed_in=1"));
+}
+
+function mergeRelayHeaders(init?: RequestInit): Headers {
+  const headers = new Headers(init?.headers);
+  if (!headers.has("Accept")) {
+    headers.set("Accept", "application/json");
+  }
+  const method = (init?.method ?? "GET").toUpperCase();
+  const hasBody = init?.body != null && method !== "GET" && method !== "HEAD";
+  if (hasBody && !headers.has("Content-Type")) {
+    headers.set("Content-Type", "application/json");
+  }
+  return headers;
+}
+
+async function handleRelayHttpErrors(res: Response): Promise<void> {
+  if (res.status === 401) {
+    const { performRelayLogout } = await import("./relay-session-logout");
+    await performRelayLogout();
+    if (typeof window !== "undefined") {
+      const onLogin =
+        window.location.pathname === "/login" ||
+        window.location.pathname.startsWith("/login/");
+      if (!onLogin) {
+        const { resolvePostAuthPath } = await import("./post-login-redirect");
+        const here = resolvePostAuthPath(
+          window.location.pathname + window.location.search
+        );
+        const dest = `/login?reason=expired&returnTo=${encodeURIComponent(here)}`;
+        window.location.assign(dest);
+      }
+    }
+    throw new RelayUnauthorizedError();
+  }
+  if (res.status === 403) {
+    const raw = await res.text();
+    let body: { error?: { message?: string; code?: string } } = {};
+    if (raw.trim()) {
+      try {
+        body = JSON.parse(raw) as typeof body;
+      } catch {
+        /* ignore */
+      }
+    }
+    throw new RelayForbiddenError(
+      body.error?.message ?? "You don't have access to this resource.",
+      body.error?.code
+    );
+  }
+  if (res.status >= 500) {
+    const raw = await res.text();
+    let body: { error?: { message?: string; code?: string } } = {};
+    if (raw.trim()) {
+      try {
+        body = JSON.parse(raw) as typeof body;
+      } catch {
+        /* ignore */
+      }
+    }
+    throw new RelayServerError(
+      res.status,
+      body.error?.message ?? res.statusText,
+      body.error?.code
+    );
+  }
+}
+
+/**
+ * Low-level Relay API request with shared 401/403/5xx handling.
+ * Use for non-JSON bodies (e.g. `HEAD`) — caller reads the returned `Response`.
+ */
+export async function relayRequest(path: string, init?: RequestInit): Promise<Response> {
   let res: Response;
   try {
     res = await fetch(`${RELAY_API_BASE}${path}`, {
       ...init,
-      headers: {
-        "content-type": "application/json",
-        ...relayPatronAuthHeaders(),
-        ...init?.headers
-      },
-      cache: "no-store"
+      headers: mergeRelayHeaders(init),
+      credentials: "include",
+      cache: init?.cache ?? "no-store"
     });
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
@@ -88,6 +166,29 @@ export async function relayFetch<T>(path: string, init?: RequestInit): Promise<T
       "NETWORK"
     );
   }
+  await handleRelayHttpErrors(res);
+  return res;
+}
+
+export async function relayFetch<T>(path: string, init?: RequestInit): Promise<T> {
+  let res: Response;
+  try {
+    res = await fetch(`${RELAY_API_BASE}${path}`, {
+      ...init,
+      headers: mergeRelayHeaders(init),
+      credentials: "include",
+      cache: init?.cache ?? "no-store"
+    });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    throw new RelayApiError(
+      msg.includes("fetch") ? "Network error — is the Relay API running?" : msg,
+      0,
+      "NETWORK"
+    );
+  }
+
+  await handleRelayHttpErrors(res);
 
   const json = await parseRelayResponseBody(res, path);
 
@@ -135,7 +236,7 @@ export type PatreonCreatorPrepareData = {
   expires_at: string;
 };
 
-/** MT-035: signed OAuth `state` — requires `relay_session_token` + owned `creator_id`. */
+/** MT-035: signed OAuth `state` — requires Relay session (cookie) + owned `creator_id`. */
 export async function postPatreonCreatorPrepare(creatorId: string): Promise<PatreonCreatorPrepareData> {
   return relayFetch<PatreonCreatorPrepareData>("/api/v1/auth/patreon/creator/prepare", {
     method: "POST",
@@ -181,26 +282,18 @@ export async function fetchPublicCreatorBySlug(
   if (trimmed.length < 2) {
     return null;
   }
-  let res: Response;
+  const path = `/api/v1/public/creators/${encodeURIComponent(trimmed)}`;
   try {
-    res = await fetch(
-      `${RELAY_API_BASE}/api/v1/public/creators/${encodeURIComponent(trimmed)}`,
-      { cache: "no-store" }
-    );
-  } catch {
-    return null;
-  }
-  if (res.status === 404) {
-    return null;
-  }
-  if (!res.ok) {
-    return null;
-  }
-  try {
-    const json = (await parseRelayResponseBody(
-      res,
-      `/api/v1/public/creators/${encodeURIComponent(trimmed)}`
-    )) as Envelope<PublicCreatorResolution>;
+    const res = await fetch(`${RELAY_API_BASE}${path}`, {
+      credentials: "include",
+      cache: "no-store",
+      headers: mergeRelayHeaders()
+    });
+    await handleRelayHttpErrors(res);
+    if (res.status === 404) {
+      return null;
+    }
+    const json = (await parseRelayResponseBody(res, path)) as Envelope<PublicCreatorResolution>;
     return json.data ?? null;
   } catch {
     return null;
@@ -902,22 +995,6 @@ export type PatreonScrapeResultData = {
   };
 };
 
-async function fetchRelayCreatorJson<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${RELAY_API_BASE}${path}`, {
-    ...init,
-    headers: {
-      "content-type": "application/json",
-      ...init?.headers
-    },
-    cache: "no-store"
-  });
-  const json = (await res.json()) as { data: T; error?: { message: string } };
-  if (!res.ok) {
-    throw new Error(json.error?.message ?? res.statusText);
-  }
-  return json.data;
-}
-
 export async function fetchPatreonSyncState(
   creatorId: string,
   opts?: { campaignId?: string; probeUpstream?: boolean }
@@ -929,7 +1006,7 @@ export async function fetchPatreonSyncState(
   if (opts?.probeUpstream) {
     q.set("probe_upstream", "true");
   }
-  return fetchRelayCreatorJson<PatreonSyncStateData>(`/api/v1/patreon/sync-state?${q}`);
+  return relayFetch<PatreonSyncStateData>(`/api/v1/patreon/sync-state?${q}`);
 }
 
 export async function postPatreonScrape(body: {
@@ -939,7 +1016,7 @@ export async function postPatreonScrape(body: {
   force_refresh_post_access?: boolean;
   max_post_pages?: number;
 }): Promise<PatreonScrapeResultData> {
-  return fetchRelayCreatorJson<PatreonScrapeResultData>("/api/v1/patreon/scrape", {
+  return relayFetch<PatreonScrapeResultData>("/api/v1/patreon/scrape", {
     method: "POST",
     body: JSON.stringify(body)
   });
@@ -1012,19 +1089,20 @@ export type ActionCenterCardsData = {
 
 export async function fetchActionCenterCards(creatorId: string): Promise<ActionCenterCardsData> {
   const q = new URLSearchParams({ creator_id: creatorId });
-  return fetchRelayCreatorJson<ActionCenterCardsData>(
-    `/api/v1/action-center/cards?${q.toString()}`
-  );
+  return relayFetch<ActionCenterCardsData>(`/api/v1/action-center/cards?${q.toString()}`);
 }
 
 export async function postAnalyticsGenerate(creatorId: string): Promise<{
   snapshot_id: string;
   recommendations_created: number;
 }> {
-  return fetchRelayCreatorJson(`/api/v1/analytics/generate`, {
-    method: "POST",
-    body: JSON.stringify({ creator_id: creatorId })
-  });
+  return relayFetch<{ snapshot_id: string; recommendations_created: number }>(
+    `/api/v1/analytics/generate`,
+    {
+      method: "POST",
+      body: JSON.stringify({ creator_id: creatorId })
+    }
+  );
 }
 
 export async function postActionCenterAccept(
@@ -1032,7 +1110,7 @@ export async function postActionCenterAccept(
   recommendationId: string,
   notes?: string
 ): Promise<{ recommendation_id: string; status: string }> {
-  return fetchRelayCreatorJson(
+  return relayFetch<{ recommendation_id: string; status: string }>(
     `/api/v1/action-center/cards/${encodeURIComponent(recommendationId)}/accept`,
     {
       method: "POST",
@@ -1046,7 +1124,7 @@ export async function postActionCenterDismiss(
   recommendationId: string,
   reasonCode?: string
 ): Promise<{ recommendation_id: string; status: string }> {
-  return fetchRelayCreatorJson(
+  return relayFetch<{ recommendation_id: string; status: string }>(
     `/api/v1/action-center/cards/${encodeURIComponent(recommendationId)}/dismiss`,
     {
       method: "POST",
@@ -1072,5 +1150,5 @@ export type AnalyticsHealthData = {
 };
 
 export async function fetchAnalyticsHealth(): Promise<AnalyticsHealthData> {
-  return fetchRelayCreatorJson<AnalyticsHealthData>("/api/v1/health/analytics");
+  return relayFetch<AnalyticsHealthData>("/api/v1/health/analytics");
 }

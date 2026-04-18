@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { RELAY_API_BASE, type GalleryItem, type PostVisibility } from "@/lib/relay-api";
+import { RELAY_API_BASE, relayFetch, type GalleryItem, type PostVisibility } from "@/lib/relay-api";
 
 const visibilityBadge: Record<PostVisibility, { dot: string; label: string }> = {
   visible: { dot: "bg-green-500", label: "Visible" },
@@ -103,12 +103,11 @@ export default function GalleryListRow({
               if (!creatorId || exportRetryBusy) return;
               setExportRetryBusy(true);
               try {
-                const res = await fetch(`${RELAY_API_BASE}/api/v1/export/media`, {
+                await relayFetch<unknown>("/api/v1/export/media", {
                   method: "POST",
-                  headers: { "content-type": "application/json" },
                   body: JSON.stringify({ creator_id: creatorId, media_id: item.media_id })
                 });
-                if (res.ok) onExportRetryComplete?.();
+                onExportRetryComplete?.();
               } finally {
                 setExportRetryBusy(false);
               }

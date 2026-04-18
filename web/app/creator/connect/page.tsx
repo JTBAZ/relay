@@ -12,8 +12,8 @@ import {
   Zap
 } from "lucide-react";
 import {
-  RELAY_API_BASE,
   RELAY_CREATOR_ID_STORAGE_KEY,
+  relayFetch,
   relayPatronAuthHeaders
 } from "@/lib/relay-api";
 
@@ -108,17 +108,11 @@ function SessionKeyForm() {
     setStatus("saving");
     setErrorMsg(null);
     try {
-      const res = await fetch(`${RELAY_API_BASE}/api/v1/patreon/cookie`, {
+      await relayFetch<unknown>("/api/v1/patreon/cookie", {
         method: "POST",
-        headers: { "content-type": "application/json", ...relayPatronAuthHeaders() },
+        headers: { ...relayPatronAuthHeaders() },
         body: JSON.stringify({ creator_id: creatorId, session_id: sessionKey.trim() })
       });
-      const json = (await res.json()) as { error?: { message?: string } };
-      if (!res.ok) {
-        setStatus("error");
-        setErrorMsg(json.error?.message ?? `HTTP ${res.status}`);
-        return;
-      }
       setStatus("saved");
       setSessionKey("");
     } catch (e) {

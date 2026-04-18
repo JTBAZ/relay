@@ -12,6 +12,8 @@ interface CommentPinProps {
   cascadeDelayMs?: number;
   /** When false, pin fades out (preview hiding) */
   layerVisible?: boolean;
+  /** e.g. feed card: keep pin hover tooltips without opening the post */
+  stopClickPropagation?: boolean;
 }
 
 export function CommentPin({
@@ -19,7 +21,8 @@ export function CommentPin({
   index,
   variant = "default",
   cascadeDelayMs = 0,
-  layerVisible = true
+  layerVisible = true,
+  stopClickPropagation = false,
 }: CommentPinProps) {
   const [isHovered, setIsHovered] = useState(false);
   const ghost = variant === "ghost";
@@ -41,6 +44,8 @@ export function CommentPin({
     >
       {/* Pin indicator - subtle by default, expands on hover */}
       <button
+        type="button"
+        onClick={stopClickPropagation ? (e) => e.stopPropagation() : undefined}
         className={[
           "rounded-full flex items-center justify-center font-semibold transition-all duration-200",
           "border shadow-lg",

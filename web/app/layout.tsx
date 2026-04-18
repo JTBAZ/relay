@@ -15,7 +15,15 @@ const body = DM_Sans({
   variable: "--font-body"
 });
 
+function siteOrigin(): URL {
+  const explicit = process.env.NEXT_PUBLIC_SITE_URL?.trim();
+  if (explicit) return new URL(explicit);
+  if (process.env.VERCEL_URL) return new URL(`https://${process.env.VERCEL_URL}`);
+  return new URL("http://localhost:3000");
+}
+
 export const metadata: Metadata = {
+  metadataBase: siteOrigin(),
   title: "Relay · Creator Editor",
   description: "Creator-owned media gallery and page designer"
 };

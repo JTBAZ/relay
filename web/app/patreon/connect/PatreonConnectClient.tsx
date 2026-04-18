@@ -8,6 +8,7 @@ import {
   RELAY_PUBLIC_SLUG_STORAGE_KEY,
   RelayApiError,
   buildPatreonCreatorAuthorizeUrl,
+  hasRelaySignedInCookie,
   postCreatorWorkspace,
   postPatreonCreatorPrepare
 } from "@/lib/relay-api";
@@ -32,8 +33,7 @@ export default function PatreonConnectClient({ initialClientId }: Props) {
 
   useEffect(() => {
     setOrigin(window.location.origin);
-    const t = window.localStorage.getItem("relay_session_token")?.trim();
-    setHasSession(Boolean(t));
+    setHasSession(hasRelaySignedInCookie());
     setStoredCreatorId(window.localStorage.getItem(RELAY_CREATOR_ID_STORAGE_KEY)?.trim() ?? "");
   }, []);
 
@@ -82,7 +82,7 @@ export default function PatreonConnectClient({ initialClientId }: Props) {
       return;
     }
     if (!hasSession) {
-      setError("Sign in and save a Relay session token (e.g. Auth hub or relay-session) first.");
+      setError("Sign in so the Relay session cookie is set (e.g. Auth hub or relay-session) first.");
       return;
     }
     if (!clientId.trim() || !redirectUri) {
@@ -141,7 +141,8 @@ export default function PatreonConnectClient({ initialClientId }: Props) {
           <p className="font-medium text-stone-100">Recommended flow (prepare + signed state)</p>
           <ul className="list-inside list-disc space-y-1 text-stone-400">
             <li>
-              Relay session in <code className="rounded bg-stone-800 px-1">localStorage.relay_session_token</code>{" "}
+              Relay session cookies <code className="rounded bg-stone-800 px-1">relay_session</code> /{" "}
+              <code className="rounded bg-stone-800 px-1">relay_signed_in</code>{" "}
               ({hasSession ? "present" : "missing — sign in via Auth hub or Supabase relay-session"})
             </li>
             <li>

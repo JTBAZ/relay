@@ -434,7 +434,7 @@ function VisitorMultiAssetSlideCell({
                 return (
                   <span
                     key={galleryItemKey(item)}
-                    className="block rounded-full transition-all duration-300 ease-[cubic-bezier(0.4,0,0.2,1)]"
+                    className="block rounded-full transition-all duration-300 [transition-timing-function:cubic-bezier(0.4,0,0.2,1)]"
                     style={{
                       width: idx === displayIdx ? "1rem" : "0.375rem",
                       height: "0.375rem",

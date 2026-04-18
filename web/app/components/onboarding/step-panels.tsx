@@ -9,6 +9,7 @@ import {
   RELAY_CREATOR_ID_STORAGE_KEY,
   RELAY_PUBLIC_SLUG_STORAGE_KEY,
   buildPatreonCreatorAuthorizeUrl,
+  hasRelaySignedInCookie,
   postCreatorWorkspace,
   postPatreonCreatorPrepare,
   RelayApiError,
@@ -148,7 +149,7 @@ export function StepPatreonConnect() {
 
   useEffect(() => {
     setOrigin(window.location.origin);
-    setHasSession(Boolean(window.localStorage.getItem("relay_session_token")?.trim()));
+    setHasSession(hasRelaySignedInCookie());
     setCreatorId(window.localStorage.getItem(RELAY_CREATOR_ID_STORAGE_KEY)?.trim() ?? "");
   }, []);
 

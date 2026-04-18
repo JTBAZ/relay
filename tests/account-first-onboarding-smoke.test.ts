@@ -135,6 +135,7 @@ function createChainPrismaStub(): PrismaClient {
     },
     tenantMembership: {
       findFirst: vi.fn(async () => null),
+      count: vi.fn(async () => (membershipId ? 1 : 0)),
       findUnique: vi.fn(
         async (args: {
           where: { id: string };

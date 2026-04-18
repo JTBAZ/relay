@@ -1102,6 +1102,7 @@ function HeroPreview({
         style={{ textAlign: "center" }}
       >
         {hero.showAvatar && (
+          // eslint-disable-next-line @next/next/no-img-element -- designer preview; dynamic blob/data URLs
           <img
             src={avatarUrl}
             alt={`${displayName} avatar`}

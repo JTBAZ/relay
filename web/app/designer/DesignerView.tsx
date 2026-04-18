@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  RELAY_API_BASE,
   relayFetch,
   buildGalleryFacetsQuery,
   type Collection as ApiCollection,
@@ -187,18 +186,10 @@ export default function DesignerView() {
     setSaving(true);
     try {
       const body = designerPageLayoutToApi(designerLayout, apiLayout);
-      const res = await fetch(`${RELAY_API_BASE}/api/v1/gallery/layout`, {
+      const next = await relayFetch<ApiPageLayout>(`/api/v1/gallery/layout`, {
         method: "PUT",
-        headers: { "content-type": "application/json" },
         body: JSON.stringify(body)
       });
-      const json = (await res.json()) as {
-        data?: ApiPageLayout;
-        error?: { message: string };
-      };
-      if (!res.ok) throw new Error(json.error?.message ?? res.statusText);
-      const next = json.data;
-      if (!next) throw new Error("Invalid layout response");
       setApiLayout(next);
       setDesignerLayout((prev) =>
         prev

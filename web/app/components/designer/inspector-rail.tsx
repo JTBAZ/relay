@@ -287,6 +287,7 @@ function ThemePanel({
   useEffect(() => {
     if (theme.lockedArtStyle !== "paywall") return;
     onChange({ ...theme, lockedArtStyle: "blurred" });
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- one-way guard; omit theme/onChange identity
   }, [theme.lockedArtStyle]);
 
   return (

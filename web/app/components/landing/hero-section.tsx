@@ -4,6 +4,19 @@ import { useState } from "react";
 import Link from "next/link";
 import { ArrowLeft, Zap, Users, ArrowRight } from "lucide-react";
 
+/** Collapsed modal — cool dark neutrals on black */
+const MODAL = {
+  shell: "#101012",
+  shellBorder: "#27272a",
+  row: "#18181b",
+  rowHover: "#1f1f23",
+  /** Selection rows — Relay color guide: green-600 / green-400 */
+  selectionBorder: "#2d6a4f",
+  selectionBorderHover: "#40916c",
+  /** Subscript — darker than prior sub; matches --relay-gray-500 */
+  sub: "#6b7280"
+} as const;
+
 const STUB = {
   /** Creator: onboarding wizard; sign-in for returning users. Supporter: login with supporter tab. */
   creatorStart: "/onboarding",
@@ -97,111 +110,95 @@ export function HeroSection() {
       </div>
 
       <div
-        className="relative z-10 flex flex-col items-center gap-6 transition-all duration-300"
-        style={{ width: "100%", maxWidth: isExpanded ? "640px" : "420px" }}
+        className="relative z-10 flex flex-col items-center gap-8 transition-all duration-300 sm:gap-10"
+        style={{ width: "100%", maxWidth: isExpanded ? "680px" : "min(100%, 560px)" }}
       >
         {!isExpanded && (
-          <div className="flex flex-col gap-1.5 text-center">
-            <h1
-              className="text-balance text-3xl font-semibold tracking-tight sm:text-4xl"
-              style={{ color: "#F9FAFB" }}
-            >
-              Where are you joining from?
-            </h1>
-            <p className="text-sm" style={{ color: "#4B5563" }}>
-              Relay works differently depending on your role.
-            </p>
-          </div>
+          <h1
+            className="max-w-[22ch] text-center font-[family-name:var(--font-body)] text-[clamp(1.65rem,5vw,2.85rem)] font-bold leading-[1.12] tracking-[-0.04em] sm:max-w-none sm:whitespace-nowrap"
+            style={{ color: "#FAFAFA" }}
+          >
+            How will you be using Relay?
+          </h1>
         )}
 
         <div
           className="w-full overflow-hidden rounded-2xl"
           style={{
-            background: "#141414",
-            border: "1px solid #252525",
-            boxShadow: "0 24px 72px rgba(0,0,0,0.7), 0 0 0 1px rgba(255,255,255,0.04)"
+            background: MODAL.shell,
+            border: `1px solid ${MODAL.shellBorder}`,
+            boxShadow:
+              "0 32px 80px rgba(0,0,0,0.55), inset 0 1px 0 rgba(255,255,255,0.04)"
           }}
         >
           {!isExpanded ? (
             <>
-              <WindowBar label="relay.app" />
-              <div className="flex flex-col gap-1.5 p-2.5">
+              <div className="flex flex-col gap-3 p-5 sm:gap-4 sm:p-8">
                 <button
                   type="button"
                   onClick={() => setSelected("creator")}
-                  className="group flex w-full items-center gap-3.5 rounded-xl px-4 py-3.5 text-left transition-all duration-150"
-                  style={{ background: "#1A1A1A" }}
+                  className="group flex w-full flex-col items-center gap-1.5 rounded-2xl border px-5 py-7 text-center transition-[background-color,border-color] duration-150 sm:py-8"
+                  style={{
+                    background: MODAL.row,
+                    borderColor: MODAL.selectionBorder
+                  }}
                   onMouseEnter={(e) => {
-                    (e.currentTarget as HTMLElement).style.background = "#1F2B23";
+                    const el = e.currentTarget as HTMLElement;
+                    el.style.background = MODAL.rowHover;
+                    el.style.borderColor = MODAL.selectionBorderHover;
                   }}
                   onMouseLeave={(e) => {
-                    (e.currentTarget as HTMLElement).style.background = "#1A1A1A";
+                    const el = e.currentTarget as HTMLElement;
+                    el.style.background = MODAL.row;
+                    el.style.borderColor = MODAL.selectionBorder;
                   }}
                 >
-                  <div
-                    className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl"
-                    style={{ background: "#0D1F17", color: "#40916C" }}
+                  <span
+                    className="font-[family-name:var(--font-body)] text-lg font-semibold tracking-tight sm:text-xl"
+                    style={{ color: "#FAFAFA" }}
                   >
-                    <Zap size={16} />
-                  </div>
-                  <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-                    <span className="text-sm font-semibold" style={{ color: "#F9FAFB" }}>
-                      I&apos;m a Creator
-                    </span>
-                    <span className="text-xs" style={{ color: "#6B7280" }}>
-                      Backup, gallery, and grow your audience
-                    </span>
-                  </div>
-                  <ArrowRight
-                    size={14}
-                    className="flex-shrink-0 opacity-0 transition-opacity duration-150 group-hover:opacity-100"
-                    style={{ color: "#40916C" }}
-                  />
+                    Creator
+                  </span>
+                  <span
+                    className="max-w-sm font-[family-name:var(--font-body)] text-sm italic leading-snug sm:text-[0.9375rem]"
+                    style={{ color: MODAL.sub }}
+                  >
+                    Backup gallery, Analytics, Grow your audience
+                  </span>
                 </button>
-
-                <div className="mx-3 h-px" style={{ background: "#1E1E1E" }} />
 
                 <button
                   type="button"
                   onClick={() => setSelected("supporter")}
-                  className="group flex w-full items-center gap-3.5 rounded-xl px-4 py-3.5 text-left transition-all duration-150"
-                  style={{ background: "#1A1A1A" }}
+                  className="group flex w-full flex-col items-center gap-1.5 rounded-2xl border px-5 py-7 text-center transition-[background-color,border-color] duration-150 sm:py-8"
+                  style={{
+                    background: MODAL.row,
+                    borderColor: MODAL.selectionBorder
+                  }}
                   onMouseEnter={(e) => {
-                    (e.currentTarget as HTMLElement).style.background = "#1F2B23";
+                    const el = e.currentTarget as HTMLElement;
+                    el.style.background = MODAL.rowHover;
+                    el.style.borderColor = MODAL.selectionBorderHover;
                   }}
                   onMouseLeave={(e) => {
-                    (e.currentTarget as HTMLElement).style.background = "#1A1A1A";
+                    const el = e.currentTarget as HTMLElement;
+                    el.style.background = MODAL.row;
+                    el.style.borderColor = MODAL.selectionBorder;
                   }}
                 >
-                  <div
-                    className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl"
-                    style={{ background: "#0D1F17", color: "#40916C" }}
+                  <span
+                    className="font-[family-name:var(--font-body)] text-lg font-semibold tracking-tight sm:text-xl"
+                    style={{ color: "#FAFAFA" }}
                   >
-                    <Users size={16} />
-                  </div>
-                  <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-                    <span className="text-sm font-semibold" style={{ color: "#F9FAFB" }}>
-                      I&apos;m a Supporter
-                    </span>
-                    <span className="text-xs" style={{ color: "#6B7280" }}>
-                      All your artists in one clean feed
-                    </span>
-                  </div>
-                  <ArrowRight
-                    size={14}
-                    className="flex-shrink-0 opacity-0 transition-opacity duration-150 group-hover:opacity-100"
-                    style={{ color: "#40916C" }}
-                  />
+                    Supporter
+                  </span>
+                  <span
+                    className="max-w-sm font-[family-name:var(--font-body)] text-sm italic leading-snug sm:text-[0.9375rem]"
+                    style={{ color: MODAL.sub }}
+                  >
+                    All your artists in one clean feed
+                  </span>
                 </button>
-              </div>
-
-              <div
-                className="flex items-center justify-center px-5 py-2.5"
-                style={{ borderTop: "1px solid #1E1E1E" }}
-              >
-                <span className="text-xs" style={{ color: "#374151" }}>
-                  You can always switch later.
-                </span>
               </div>
             </>
           ) : (

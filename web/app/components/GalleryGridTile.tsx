@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import { EyeOff, Play, Search } from "lucide-react";
 import {
   RELAY_API_BASE,
+  relayFetch,
   type GalleryItem,
   type PostVisibility,
   type TierFacet
@@ -230,14 +231,11 @@ export default function GalleryGridTile({
     if (!creatorId || items.length !== 1 || exportRetryBusy) return;
     setExportRetryBusy(true);
     try {
-      const res = await fetch(`${RELAY_API_BASE}/api/v1/export/media`, {
+      await relayFetch<unknown>("/api/v1/export/media", {
         method: "POST",
-        headers: { "content-type": "application/json" },
         body: JSON.stringify({ creator_id: creatorId, media_id: item.media_id })
       });
-      if (res.ok) {
-        onExportRetryComplete?.();
-      }
+      onExportRetryComplete?.();
     } finally {
       setExportRetryBusy(false);
     }

@@ -51,6 +51,7 @@ import {
 import { fetchPatronRelayFeed } from "@/lib/patron-feed-api";
 import {
   fetchPatronSessionMe,
+  hasRelaySignedInCookie,
   type PatronSessionMe,
   RelayApiError,
 } from "@/lib/relay-api";
@@ -340,8 +341,7 @@ export function RelayApp({ initialDataSource }: RelayAppProps = {}) {
 
   const loadSessionMe = useCallback(() => {
     if (typeof window === "undefined") return;
-    const token = window.localStorage.getItem("relay_session_token")?.trim();
-    if (!token) {
+    if (!hasRelaySignedInCookie()) {
       setSessionMe(null);
       return;
     }

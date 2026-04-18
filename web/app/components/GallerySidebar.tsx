@@ -13,7 +13,7 @@ import {
   Search,
   ShieldAlert
 } from "lucide-react";
-import { RELAY_API_BASE, type FacetsData } from "@/lib/relay-api";
+import { RELAY_API_BASE, relayRequest, type FacetsData } from "@/lib/relay-api";
 import CollectionsPanel from "./CollectionsPanel";
 import MediaTypeMultiSelect, { type MediaTypeValue } from "./MediaTypeMultiSelect";
 import { SpacingScaleDemo } from "./shell/SpacingScaleDemo";
@@ -148,8 +148,8 @@ export default function GallerySidebar({
       const u = new URLSearchParams();
       u.set("creator_id", creatorId);
       // Pre-flight: lightweight HEAD to verify the ZIP endpoint is reachable and has content.
-      const checkRes = await fetch(
-        `${RELAY_API_BASE}/api/v1/export/library-zip?${u.toString()}`,
+      const checkRes = await relayRequest(
+        `/api/v1/export/library-zip?${u.toString()}`,
         { method: "HEAD" }
       );
       if (!checkRes.ok) {
