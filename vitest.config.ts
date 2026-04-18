@@ -19,6 +19,12 @@ export default defineConfig({
   },
   test: {
     environment: "node",
+    /** `web/__tests__/*` imports `next/server`; root `npm test` must resolve `next` (see web/package.json). */
+    server: {
+      deps: {
+        inline: ["next"]
+      }
+    },
     include: [
       "tests/**/*.test.ts",
       "tests/**/*.test.tsx",
