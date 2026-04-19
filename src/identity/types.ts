@@ -1,5 +1,7 @@
 export type AuthProvider = "independent" | "patreon";
 
+export type SessionKindTs = "web" | "extension";
+
 export type UserAccount = {
   user_id: string;
   creator_id: string;
@@ -18,6 +20,9 @@ export type SessionToken = {
   creator_id: string;
   tier_ids: string[];
   expires_at: string;
+  kind?: SessionKindTs;
+  label?: string | null;
+  last_used_at?: string | null;
 };
 
 export type IdentityStoreRoot = {

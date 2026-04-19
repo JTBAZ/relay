@@ -5,6 +5,7 @@ import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { Loader2, Sparkles, Zap } from "lucide-react";
 import { cn } from "@/app/lib/cn";
 import { StudioSupabaseSignInPanel } from "@/app/components/studio/StudioSupabaseSignInPanel";
+import { InstallExtensionPrompt } from "@/app/components/InstallExtensionPrompt";
 import {
   RELAY_CREATOR_ID_STORAGE_KEY,
   RELAY_PUBLIC_SLUG_STORAGE_KEY,
@@ -245,6 +246,8 @@ export function StepPatreonConnect() {
           {error}
         </p>
       )}
+
+      <InstallExtensionPrompt variant="relay" />
 
       <p className="text-xs text-[var(--relay-fg-muted)]">
         You&apos;ll be redirected to Patreon to authorize access, then brought back here.

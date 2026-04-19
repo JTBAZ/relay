@@ -3,6 +3,13 @@ import { randomUUID } from "node:crypto";
 import { dirname, join } from "node:path";
 import { PatreonAuthService } from "./auth/auth-service.js";
 import {
+  getExtensionConsentSecret,
+  isExtensionConsentCodeConsumed,
+  markExtensionConsentCodeConsumed,
+  signExtensionConsentCode,
+  verifyExtensionConsentCode
+} from "./auth/extension-consent-code.js";
+import {
   getPatreonOAuthStateSecret,
   signCreatorPatreonOAuthState,
   verifyCreatorPatreonOAuthState
@@ -27,7 +34,13 @@ import { IngestRetryQueue } from "./ingest/retry-queue.js";
 import { SyncWatermarkStore } from "./ingest/sync-watermark-store.js";
 import { DbSyncWatermarkStore } from "./ingest/sync-watermark-store-db.js";
 import { validateIngestBatchBody } from "./ingest/validate-body.js";
+import { consentExchange, consentStart, cookieWrite } from "./middleware/rate-limits.js";
 import { TokenEncryption } from "./lib/crypto.js";
+import {
+  isBrowserExtensionOrigin,
+  parseRelayExtensionOrigins,
+  RELAY_EXTENSION_AUTH_API_PREFIX
+} from "./lib/relay-extension-origins.js";
 import { ExportService } from "./export/export-service.js";
 import { FileExportIndex } from "./export/export-index.js";
 import { DEFAULT_EXPORT_FETCH_RETRY_POLICY } from "./export/types.js";
@@ -71,6 +84,7 @@ import type {
   PostVisibility,
   SavedFilterRecord
 } from "./gallery/types.js";
+import { hashOpaqueSessionToken } from "./identity/session-token-hash.js";
 import type { SessionToken } from "./identity/types.js";
 
 function normalizeGalleryVisibilityFilter(
@@ -167,7 +181,7 @@ import {
   upsertAccountForSupabaseUser
 } from "./identity/supabase-account.js";
 import { getSupabaseUserFromAccessToken } from "./lib/supabase-auth.js";
-import type { PrismaClient } from "@prisma/client";
+import { SessionKind, type PrismaClient } from "@prisma/client";
 import { checkPostAccess, filterAccessiblePosts } from "./identity/access-guard.js";
 import {
   clearActiveRoleCookie,
@@ -923,23 +937,45 @@ export function createApp(config: AppConfig): CreateAppResult {
 
   app.use(express.json());
   app.use((req, res, next) => {
+    const origin = req.header("Origin")?.trim();
+    const path = req.path;
+    const corsMethods = "GET,HEAD,POST,PUT,PATCH,DELETE,OPTIONS";
+    const corsAllowHeaders =
+      "Content-Type, X-Trace-Id, Authorization, X-Relay-Pipeline-Parity-Secret";
+
+    // EXT-0E — `/api/v1/auth/extension/*` uses Bearer only; allowlist extension origins without credentials.
+    if (path.startsWith(RELAY_EXTENSION_AUTH_API_PREFIX)) {
+      const allow = parseRelayExtensionOrigins();
+      const extensionCorsOk =
+        Boolean(origin) &&
+        isBrowserExtensionOrigin(origin!) &&
+        allow.has(origin!);
+      if (req.method === "OPTIONS") {
+        if (!extensionCorsOk) {
+          return res.sendStatus(403);
+        }
+        res.setHeader("Access-Control-Allow-Origin", origin!);
+        res.setHeader("Access-Control-Allow-Methods", corsMethods);
+        res.setHeader("Access-Control-Allow-Headers", corsAllowHeaders);
+        return res.sendStatus(204);
+      }
+      if (extensionCorsOk) {
+        res.setHeader("Access-Control-Allow-Origin", origin!);
+      }
+      next();
+      return;
+    }
+
     // Echo Origin when present. `fetch(..., { credentials: "include" })` (GR-T0-1 session cookies)
     // requires a concrete Allow-Origin + Access-Control-Allow-Credentials — wildcard alone fails CORS.
-    const origin = req.header("Origin")?.trim();
     if (origin) {
       res.setHeader("Access-Control-Allow-Origin", origin);
       res.setHeader("Access-Control-Allow-Credentials", "true");
     } else {
       res.setHeader("Access-Control-Allow-Origin", "*");
     }
-    res.setHeader(
-      "Access-Control-Allow-Methods",
-      "GET,HEAD,POST,PUT,PATCH,DELETE,OPTIONS"
-    );
-    res.setHeader(
-      "Access-Control-Allow-Headers",
-      "Content-Type, X-Trace-Id, Authorization, X-Relay-Pipeline-Parity-Secret"
-    );
+    res.setHeader("Access-Control-Allow-Methods", corsMethods);
+    res.setHeader("Access-Control-Allow-Headers", corsAllowHeaders);
     if (req.method === "OPTIONS") {
       return res.sendStatus(204);
     }
@@ -1148,6 +1184,285 @@ export function createApp(config: AppConfig): CreateAppResult {
         )
       );
     }
+  });
+
+  app.post(
+    "/api/v1/auth/extension/consent/start",
+    async (req: Request, res: Response, next) => {
+      const traceId = traceIdFrom(req);
+      const body = (req.body ?? {}) as Record<string, unknown>;
+      const details = validateRequiredFields(body, ["installation_id"]);
+      if (details.length > 0) {
+        return res
+          .status(400)
+          .json(errorEnvelope("VALIDATION_ERROR", "Invalid request payload.", traceId, details));
+      }
+      if (!getExtensionConsentSecret()) {
+        return res.status(503).json(
+          errorEnvelope(
+            "SERVICE_UNAVAILABLE",
+            "RELAY_EXTENSION_CONSENT_SECRET must be set (min 16 characters) to issue extension consent codes.",
+            traceId
+          )
+        );
+      }
+      if (!config.prisma) {
+        return res.status(503).json(
+          errorEnvelope("SERVICE_UNAVAILABLE", "Database required for extension consent.", traceId)
+        );
+      }
+      const sessionStart = await requirePatronBearerSession(req, res, traceId);
+      if (!sessionStart) {
+        return;
+      }
+      const accountIdStart = await getAccountIdForSession(config.prisma, sessionStart);
+      if (!accountIdStart) {
+        return res
+          .status(403)
+          .json(errorEnvelope("FORBIDDEN", "Session is not linked to an account.", traceId));
+      }
+      const installationIdStart = String(body.installation_id).trim();
+      if (!installationIdStart) {
+        return res.status(400).json(
+          errorEnvelope("VALIDATION_ERROR", "installation_id is required.", traceId, [
+            { field: "installation_id", issue: "empty" }
+          ])
+        );
+      }
+      (req as Request & { relayRateLimitKey?: string }).relayRateLimitKey = accountIdStart;
+      res.locals.extensionConsentStart = {
+        traceId,
+        accountId: accountIdStart,
+        installationId: installationIdStart
+      };
+      next();
+    },
+    consentStart,
+    async (req: Request, res: Response) => {
+      const loc = res.locals.extensionConsentStart as
+        | { traceId: string; accountId: string; installationId: string }
+        | undefined;
+      if (!loc) {
+        const traceId = traceIdFrom(req);
+        return res
+          .status(500)
+          .json(errorEnvelope("INTERNAL_ERROR", "Missing extension consent context.", traceId));
+      }
+      const { traceId, accountId, installationId } = loc;
+      try {
+        const { consent_code, expires_at } = signExtensionConsentCode({
+          accountId,
+          installationId
+        });
+        return res.status(200).json(
+          successEnvelope({ consent_code, expires_at }, traceId)
+        );
+      } catch (e) {
+        return res.status(503).json(
+          errorEnvelope(
+            "SERVICE_UNAVAILABLE",
+            e instanceof Error ? e.message : String(e),
+            traceId
+          )
+        );
+      }
+    }
+  );
+
+  // PUBLIC: one-time consent code is the credential; rate-limited (EXT-0D).
+  app.post("/api/v1/auth/extension/consent/exchange", consentExchange, async (req: Request, res: Response) => {
+    const traceId = traceIdFrom(req);
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const details = validateRequiredFields(body, ["consent_code", "installation_id"]);
+    if (details.length > 0) {
+      return res
+        .status(400)
+        .json(errorEnvelope("VALIDATION_ERROR", "Invalid request payload.", traceId, details));
+    }
+    if (!getExtensionConsentSecret()) {
+      return res.status(503).json(
+        errorEnvelope(
+          "SERVICE_UNAVAILABLE",
+          "RELAY_EXTENSION_CONSENT_SECRET is not configured.",
+          traceId
+        )
+      );
+    }
+    if (!config.prisma) {
+      return res.status(503).json(
+        errorEnvelope(
+          "SERVICE_UNAVAILABLE",
+          "Database required for extension consent exchange.",
+          traceId
+        )
+      );
+    }
+    const consentCodeRaw = String(body.consent_code).trim();
+    const installationIdEx = String(body.installation_id).trim();
+    const verifiedEx = verifyExtensionConsentCode(consentCodeRaw);
+    if (!verifiedEx.ok) {
+      if (verifiedEx.reason === "expired") {
+        return res
+          .status(410)
+          .json(errorEnvelope("CONSENT_CODE_EXPIRED", "Consent code has expired.", traceId));
+      }
+      return res.status(400).json(
+        errorEnvelope("VALIDATION_ERROR", "Invalid consent code.", traceId, [
+          { field: "consent_code", issue: verifiedEx.reason }
+        ])
+      );
+    }
+    if (isExtensionConsentCodeConsumed(consentCodeRaw)) {
+      return res
+        .status(409)
+        .json(errorEnvelope("CONSENT_CODE_USED", "This consent code was already used.", traceId));
+    }
+    if (verifiedEx.installationId !== installationIdEx) {
+      return res.status(400).json(
+        errorEnvelope(
+          "VALIDATION_ERROR",
+          "installation_id does not match the consent code.",
+          traceId,
+          [{ field: "installation_id", issue: "mismatch" }]
+        )
+      );
+    }
+    const uaRaw = req.headers["user-agent"];
+    const ua = typeof uaRaw === "string" ? uaRaw.trim() : "";
+    const label = [installationIdEx, ua].filter(Boolean).join(" · ") || installationIdEx;
+    let sessionToken: SessionToken;
+    try {
+      sessionToken = await identityService.issueExtensionSessionForAccount(
+        verifiedEx.accountId,
+        label
+      );
+    } catch (e) {
+      return res.status(502).json(
+        errorEnvelope(
+          "EXTENSION_SESSION_ERROR",
+          e instanceof Error ? e.message : String(e),
+          traceId
+        )
+      );
+    }
+    markExtensionConsentCodeConsumed(consentCodeRaw);
+    const tokenRow = await config.prisma.session.findUnique({
+      where: { tokenHash: hashOpaqueSessionToken(sessionToken.token) },
+      select: { id: true }
+    });
+    if (!tokenRow?.id) {
+      return res.status(502).json(
+        errorEnvelope(
+          "EXTENSION_SESSION_ERROR",
+          "Could not resolve extension session id after issuance.",
+          traceId
+        )
+      );
+    }
+    const accountEx = await config.prisma.account.findUnique({
+      where: { id: verifiedEx.accountId },
+      select: { primaryRelayCreatorId: true }
+    });
+    return res.status(200).json(
+      successEnvelope(
+        {
+          token: sessionToken.token,
+          token_id: tokenRow.id,
+          expires_at: sessionToken.expires_at,
+          label: sessionToken.label ?? label,
+          account_id: verifiedEx.accountId,
+          relay_creator_id: accountEx?.primaryRelayCreatorId ?? null
+        },
+        traceId
+      )
+    );
+  });
+
+  app.get("/api/v1/auth/extension/grants", async (req: Request, res: Response) => {
+    const traceId = traceIdFrom(req);
+    if (!config.prisma) {
+      return res.status(503).json(
+        errorEnvelope("SERVICE_UNAVAILABLE", "Database required.", traceId)
+      );
+    }
+    const sessionGrants = await requirePatronBearerSession(req, res, traceId);
+    if (!sessionGrants) {
+      return;
+    }
+    const accountIdGrants = await getAccountIdForSession(config.prisma, sessionGrants);
+    if (!accountIdGrants) {
+      return res
+        .status(403)
+        .json(errorEnvelope("FORBIDDEN", "Session is not linked to an account.", traceId));
+    }
+    const rows = await config.prisma.session.findMany({
+      where: {
+        kind: SessionKind.extension,
+        revokedAt: null,
+        tenantMembership: { accountId: accountIdGrants },
+        expiresAt: { gt: new Date() }
+      },
+      select: {
+        id: true,
+        label: true,
+        expiresAt: true,
+        createdAt: true,
+        lastUsedAt: true
+      },
+      orderBy: { createdAt: "desc" }
+    });
+    return res.status(200).json(
+      successEnvelope(
+        {
+          grants: rows.map((r) => ({
+            token_id: r.id,
+            label: r.label,
+            expires_at: r.expiresAt?.toISOString() ?? null,
+            created_at: r.createdAt.toISOString(),
+            last_used_at: r.lastUsedAt?.toISOString() ?? null
+          }))
+        },
+        traceId
+      )
+    );
+  });
+
+  app.delete("/api/v1/auth/extension/grants/:tokenId", async (req: Request, res: Response) => {
+    const traceId = traceIdFrom(req);
+    if (!config.prisma) {
+      return res.status(503).json(
+        errorEnvelope("SERVICE_UNAVAILABLE", "Database required.", traceId)
+      );
+    }
+    const sessionRev = await requirePatronBearerSession(req, res, traceId);
+    if (!sessionRev) {
+      return;
+    }
+    const accountIdRev = await getAccountIdForSession(config.prisma, sessionRev);
+    if (!accountIdRev) {
+      return res
+        .status(403)
+        .json(errorEnvelope("FORBIDDEN", "Session is not linked to an account.", traceId));
+    }
+    const tokenId = String(req.params.tokenId ?? "").trim();
+    if (!tokenId) {
+      return res
+        .status(400)
+        .json(errorEnvelope("VALIDATION_ERROR", "tokenId is required.", traceId));
+    }
+    const del = await config.prisma.session.deleteMany({
+      where: {
+        id: tokenId,
+        kind: SessionKind.extension,
+        tenantMembership: { accountId: accountIdRev }
+      }
+    });
+    if (del.count === 0) {
+      return res.status(404).json(errorEnvelope("NOT_FOUND", "Extension grant not found.", traceId));
+    }
+    return res.status(200).json(
+      successEnvelope({ token_id: tokenId, revoked: true }, traceId)
+    );
   });
 
   app.post("/api/v1/auth/patreon/exchange", async (req: Request, res: Response) => {
@@ -1740,7 +2055,29 @@ export function createApp(config: AppConfig): CreateAppResult {
     }
   });
 
-  app.post("/api/v1/patreon/cookie", async (req: Request, res: Response) => {
+  app.post(
+    "/api/v1/patreon/cookie",
+    async (req: Request, res: Response, next) => {
+      const traceId = traceIdFrom(req);
+      const body = (req.body ?? {}) as Record<string, unknown>;
+      const creatorIdEarly =
+        typeof body.creator_id === "string" ? body.creator_id.trim() : "";
+      const sessionPost = await requirePatronBearerSession(req, res, traceId);
+      if (!sessionPost) {
+        return;
+      }
+      if (!(await requireAccountMatchesCreator(req, res, traceId, creatorIdEarly))) {
+        return;
+      }
+      const rateKey =
+        config.prisma != null
+          ? ((await getAccountIdForSession(config.prisma, sessionPost)) ?? sessionPost.user_id)
+          : sessionPost.user_id;
+      (req as Request & { relayRateLimitKey?: string }).relayRateLimitKey = rateKey;
+      next();
+    },
+    cookieWrite,
+    async (req: Request, res: Response) => {
     const traceId = traceIdFrom(req);
     const body = (req.body ?? {}) as Record<string, unknown>;
     const details = validateRequiredFields(body, ["creator_id", "session_id"]);
@@ -1771,9 +2108,32 @@ export function createApp(config: AppConfig): CreateAppResult {
     return res.status(200).json(
       successEnvelope({ creator_id: creatorId, status: "stored" }, traceId)
     );
-  });
+  }
+  );
 
-  app.delete("/api/v1/patreon/cookie", async (req: Request, res: Response) => {
+  app.delete(
+    "/api/v1/patreon/cookie",
+    async (req: Request, res: Response, next) => {
+      const traceId = traceIdFrom(req);
+      const body = (req.body ?? {}) as Record<string, unknown>;
+      const creatorIdEarlyDel =
+        typeof body.creator_id === "string" ? body.creator_id.trim() : "";
+      const sessionDel = await requirePatronBearerSession(req, res, traceId);
+      if (!sessionDel) {
+        return;
+      }
+      if (!(await requireAccountMatchesCreator(req, res, traceId, creatorIdEarlyDel))) {
+        return;
+      }
+      const rateKeyDel =
+        config.prisma != null
+          ? ((await getAccountIdForSession(config.prisma, sessionDel)) ?? sessionDel.user_id)
+          : sessionDel.user_id;
+      (req as Request & { relayRateLimitKey?: string }).relayRateLimitKey = rateKeyDel;
+      next();
+    },
+    cookieWrite,
+    async (req: Request, res: Response) => {
     const traceId = traceIdFrom(req);
     const body = (req.body ?? {}) as Record<string, unknown>;
     const details = validateRequiredFields(body, ["creator_id"]);
@@ -1787,11 +2147,19 @@ export function createApp(config: AppConfig): CreateAppResult {
     return res.status(200).json(
       successEnvelope({ creator_id: creatorId, removed }, traceId)
     );
-  });
+  }
+  );
 
   app.get("/api/v1/patreon/cookie/status", async (req: Request, res: Response) => {
     const traceId = traceIdFrom(req);
     const creatorId = typeof req.query.creator_id === "string" ? req.query.creator_id.trim() : "";
+    const sessionStatus = await requirePatronBearerSession(req, res, traceId);
+    if (!sessionStatus) {
+      return;
+    }
+    if (!(await requireAccountMatchesCreator(req, res, traceId, creatorId))) {
+      return;
+    }
     if (!creatorId) {
       return res
         .status(400)
@@ -2441,6 +2809,9 @@ export function createApp(config: AppConfig): CreateAppResult {
         .status(401)
         .json(errorEnvelope("AUTH_ERROR", "Invalid or expired session.", traceId));
       return null;
+    }
+    if (session.kind === "extension") {
+      void identityService.touchSessionExpiry(opaque).catch(() => {});
     }
     if (config.prisma) {
       await applyRelayAccountRlsIfPresent(config.prisma, session);

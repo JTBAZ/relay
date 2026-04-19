@@ -1,6 +1,7 @@
 import {
   IdentityAuthProvider,
   PrismaClient,
+  SessionKind,
   TenantRole,
   type Account,
   type Tenant,
@@ -11,6 +12,7 @@ import { hashPassword, verifyPassword } from "./password.js";
 import { getPlatformRelayCreatorId } from "./platform-tenant.js";
 import { hashOpaqueSessionToken } from "./session-token-hash.js";
 import { upsertPatronEntitlementSnapshotForOAuth } from "./patron-entitlement-snapshot.js";
+import { EXTENSION_SESSION_TTL_MS } from "./session-constants.js";
 import type { AuthProvider, IdentityStoreRoot, SessionToken, UserAccount } from "./types.js";
 
 function mapAuthProvider(a: AuthProvider): IdentityAuthProvider {
@@ -349,11 +351,17 @@ export class DbIdentityStore implements IdentityStore {
 
   public async createSession(session: SessionToken): Promise<void> {
     const hash = hashOpaqueSessionToken(session.token);
+    const kind =
+      session.kind === "extension" ? SessionKind.extension : SessionKind.web;
     await this.prisma.session.create({
       data: {
         tenantMembershipId: session.user_id,
         tokenHash: hash,
-        expiresAt: new Date(session.expires_at)
+        expiresAt: new Date(session.expires_at),
+        kind,
+        label: session.label ?? null,
+        lastUsedAt:
+          session.last_used_at != null ? new Date(session.last_used_at) : null
       }
     });
   }
@@ -378,12 +386,32 @@ export class DbIdentityStore implements IdentityStore {
       user_id: acc.user_id,
       creator_id: acc.creator_id,
       tier_ids: [...acc.tier_ids],
-      expires_at: row.expiresAt!.toISOString()
+      expires_at: row.expiresAt!.toISOString(),
+      kind: row.kind === SessionKind.extension ? "extension" : "web",
+      label: row.label ?? null,
+      last_used_at: row.lastUsedAt?.toISOString() ?? null
     };
   }
 
   public async deleteSession(token: string): Promise<void> {
     const hash = hashOpaqueSessionToken(token);
     await this.prisma.session.deleteMany({ where: { tokenHash: hash } });
+  }
+
+  public async touchSessionExpiry(token: string): Promise<void> {
+    const hash = hashOpaqueSessionToken(token);
+    const row = await this.prisma.session.findUnique({
+      where: { tokenHash: hash },
+      select: { id: true, kind: true }
+    });
+    if (!row || row.kind !== SessionKind.extension) return;
+    const now = new Date();
+    await this.prisma.session.update({
+      where: { id: row.id },
+      data: {
+        lastUsedAt: now,
+        expiresAt: new Date(now.getTime() + EXTENSION_SESSION_TTL_MS)
+      }
+    });
   }
 }

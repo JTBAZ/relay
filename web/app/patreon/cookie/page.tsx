@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { InstallExtensionPrompt } from "@/app/components/InstallExtensionPrompt";
 import {
   RELAY_CREATOR_ID_STORAGE_KEY,
   relayFetch,
@@ -123,159 +124,176 @@ export default function PatreonCookiePage() {
         >
           OAuth Connect
         </Link>
+        {" · "}
+        <Link
+          href="/settings/connected-extensions"
+          className="text-amber-400 underline decoration-amber-400/60 hover:text-amber-300"
+        >
+          Connected extensions
+        </Link>
       </p>
 
       <h1 className="font-[family-name:var(--font-display)] text-2xl text-stone-50">
         Patreon Session Cookie
       </h1>
 
-      <p className="text-sm text-stone-300">
-        Patreon&apos;s API does not expose post images through OAuth tokens. To download your own
-        images and attachments, provide your browser session cookie. This is stored{" "}
-        <strong className="text-stone-100">encrypted</strong> on the relay server and used only
-        to access <em>your</em> content.
-      </p>
-
-      <label className="block space-y-1">
-        <span className="text-sm font-medium text-stone-200">Relay creator_id</span>
-        <input
-          className="w-full rounded border border-stone-600 bg-stone-100 px-3 py-2 font-mono text-sm text-stone-900 placeholder:text-stone-500"
-          value={creatorId}
-          onChange={(e) => setCreatorId(e.target.value)}
-          placeholder={hydrated ? "Connect via OAuth first to populate this" : "Loading…"}
-        />
-        <span className="text-xs text-stone-400">
-          Auto-filled from your logged-in studio. Don&apos;t edit unless you know what you&apos;re
-          doing.
-        </span>
-      </label>
-
-      {hydrated && !creatorIdReady && (
-        <div className="rounded border border-amber-500/40 bg-amber-950/40 p-3 text-sm text-amber-100">
-          No <code className="rounded bg-amber-900/40 px-1">relay_creator_id</code> in this
-          browser yet. Visit{" "}
-          <Link
-            href="/patreon/connect"
-            className="text-amber-300 underline hover:text-amber-200"
-          >
-            OAuth Connect
-          </Link>{" "}
-          first — clicking <em>Ensure workspace</em> there provisions your studio and stores the
-          id locally so this page can save the cookie under the correct key.
-        </div>
-      )}
-
-      <div className="flex items-center gap-3">
-        <button
-          onClick={checkStatus}
-          disabled={status === "checking" || !creatorIdReady}
-          className="rounded bg-stone-700 px-3 py-1.5 text-sm text-stone-200 hover:bg-stone-600 disabled:opacity-50"
-        >
-          {status === "checking" ? "Checking…" : "Check status"}
-        </button>
-        {hasCookie !== null && (
-          <span className={`text-sm ${hasCookie ? "text-emerald-300" : "text-stone-400"}`}>
-            {hasCookie ? "Cookie stored" : "No cookie stored"}
-          </span>
-        )}
-      </div>
-
-      <hr className="border-stone-700" />
+      <InstallExtensionPrompt variant="cookie" />
 
       <details className="rounded border border-stone-700 bg-stone-900/60 p-4 text-sm text-stone-300">
         <summary className="cursor-pointer font-medium text-stone-100">
-          How to get your session_id
+          Advanced — manual paste
         </summary>
-        <ol className="mt-3 list-decimal space-y-2 pl-5">
-          <li>
-            Open{" "}
-            <a
-              href="https://www.patreon.com"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-amber-400 underline hover:text-amber-300"
+
+        <div className="mt-4 space-y-6">
+          <p className="text-sm text-stone-300">
+            Patreon&apos;s API does not expose post images through OAuth tokens. To download your own
+            images and attachments, provide your browser session cookie. This is stored{" "}
+            <strong className="text-stone-100">encrypted</strong> on the relay server and used only
+            to access <em>your</em> content.
+          </p>
+
+          <label className="block space-y-1">
+            <span className="text-sm font-medium text-stone-200">Relay creator_id</span>
+            <input
+              className="w-full rounded border border-stone-600 bg-stone-100 px-3 py-2 font-mono text-sm text-stone-900 placeholder:text-stone-500"
+              value={creatorId}
+              onChange={(e) => setCreatorId(e.target.value)}
+              placeholder={hydrated ? "Connect via OAuth first to populate this" : "Loading…"}
+            />
+            <span className="text-xs text-stone-400">
+              Auto-filled from your logged-in studio. Don&apos;t edit unless you know what you&apos;re
+              doing.
+            </span>
+          </label>
+
+          {hydrated && !creatorIdReady && (
+            <div className="rounded border border-amber-500/40 bg-amber-950/40 p-3 text-sm text-amber-100">
+              No <code className="rounded bg-amber-900/40 px-1">relay_creator_id</code> in this
+              browser yet. Visit{" "}
+              <Link
+                href="/patreon/connect"
+                className="text-amber-300 underline hover:text-amber-200"
+              >
+                OAuth Connect
+              </Link>{" "}
+              first — clicking <em>Ensure workspace</em> there provisions your studio and stores the
+              id locally so this page can save the cookie under the correct key.
+            </div>
+          )}
+
+          <div className="flex items-center gap-3">
+            <button
+              onClick={checkStatus}
+              disabled={status === "checking" || !creatorIdReady}
+              className="rounded bg-stone-700 px-3 py-1.5 text-sm text-stone-200 hover:bg-stone-600 disabled:opacity-50"
             >
-              patreon.com
-            </a>{" "}
-            and make sure you&apos;re logged in.
-          </li>
-          <li>
-            Open DevTools:{" "}
-            <kbd className="rounded bg-stone-800 px-1.5 py-0.5 font-mono text-xs text-stone-200">
-              F12
-            </kbd>{" "}
-            or{" "}
-            <kbd className="rounded bg-stone-800 px-1.5 py-0.5 font-mono text-xs text-stone-200">
-              Ctrl+Shift+I
-            </kbd>
-          </li>
-          <li>
-            Go to the <strong className="text-stone-100">Application</strong> tab →{" "}
-            <strong className="text-stone-100">Cookies</strong> →{" "}
-            <code className="rounded bg-stone-800 px-1 text-stone-200">
-              https://www.patreon.com
-            </code>
-          </li>
-          <li>
-            Find the cookie named{" "}
-            <code className="rounded bg-stone-800 px-1 text-amber-200">session_id</code> and
-            copy its <strong className="text-stone-100">Value</strong>.
-          </li>
-          <li>Paste it below and click &quot;Save Cookie&quot;.</li>
-        </ol>
-        <p className="mt-3 text-xs text-stone-400">
-          This cookie typically expires in ~30 days. You&apos;ll need to update it when it expires.
-          Your cookie is encrypted at rest and never leaves the relay server.
-        </p>
+              {status === "checking" ? "Checking…" : "Check status"}
+            </button>
+            {hasCookie !== null && (
+              <span className={`text-sm ${hasCookie ? "text-emerald-300" : "text-stone-400"}`}>
+                {hasCookie ? "Cookie stored" : "No cookie stored"}
+              </span>
+            )}
+          </div>
+
+          <hr className="border-stone-700" />
+
+          <details className="rounded border border-stone-700 bg-stone-950/40 p-3 text-sm text-stone-300">
+            <summary className="cursor-pointer font-medium text-stone-100">
+              How to get your session_id
+            </summary>
+            <ol className="mt-3 list-decimal space-y-2 pl-5">
+              <li>
+                Open{" "}
+                <a
+                  href="https://www.patreon.com"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-amber-400 underline hover:text-amber-300"
+                >
+                  patreon.com
+                </a>{" "}
+                and make sure you&apos;re logged in.
+              </li>
+              <li>
+                Open DevTools:{" "}
+                <kbd className="rounded bg-stone-800 px-1.5 py-0.5 font-mono text-xs text-stone-200">
+                  F12
+                </kbd>{" "}
+                or{" "}
+                <kbd className="rounded bg-stone-800 px-1.5 py-0.5 font-mono text-xs text-stone-200">
+                  Ctrl+Shift+I
+                </kbd>
+              </li>
+              <li>
+                Go to the <strong className="text-stone-100">Application</strong> tab →{" "}
+                <strong className="text-stone-100">Cookies</strong> →{" "}
+                <code className="rounded bg-stone-800 px-1 text-stone-200">
+                  https://www.patreon.com
+                </code>
+              </li>
+              <li>
+                Find the cookie named{" "}
+                <code className="rounded bg-stone-800 px-1 text-amber-200">session_id</code> and
+                copy its <strong className="text-stone-100">Value</strong>.
+              </li>
+              <li>Paste it below and click &quot;Save Cookie&quot;.</li>
+            </ol>
+            <p className="mt-3 text-xs text-stone-400">
+              This cookie typically expires in ~30 days. You&apos;ll need to update it when it expires.
+              Your cookie is encrypted at rest and never leaves the relay server.
+            </p>
+          </details>
+
+          <label className="block space-y-1">
+            <span className="text-sm font-medium text-stone-200">session_id value</span>
+            <textarea
+              className="w-full rounded border border-stone-600 bg-stone-100 px-3 py-2 font-mono text-sm text-stone-900 placeholder:text-stone-500"
+              rows={3}
+              value={sessionId}
+              onChange={(e) => setSessionId(e.target.value)}
+              placeholder="Paste your session_id cookie value here…"
+            />
+            <span className="text-xs text-stone-400">
+              This value is sent to your relay server and stored encrypted. It is never sent anywhere
+              else.
+            </span>
+          </label>
+
+          <div className="flex items-center gap-3">
+            <button
+              onClick={saveCookie}
+              disabled={status === "saving" || !sessionId.trim() || !creatorIdReady}
+              className="rounded bg-amber-500 px-4 py-2 text-sm font-medium text-stone-950 hover:bg-amber-400 disabled:opacity-50"
+            >
+              {status === "saving" ? "Saving…" : "Save Cookie"}
+            </button>
+            {hasCookie && (
+              <button
+                onClick={removeCookie}
+                disabled={status === "saving" || !creatorIdReady}
+                className="rounded bg-red-900/60 px-3 py-2 text-sm text-red-200 hover:bg-red-900 disabled:opacity-50"
+              >
+                Remove Cookie
+              </button>
+            )}
+          </div>
+
+          {status === "error" && message && (
+            <pre className="whitespace-pre-wrap rounded border border-red-500/40 bg-red-950/50 p-3 text-sm text-red-200">
+              {message}
+            </pre>
+          )}
+          {status === "saved" && message && (
+            <p className="rounded border border-emerald-500/30 bg-emerald-950/40 p-3 text-sm text-emerald-200">
+              {message}
+            </p>
+          )}
+          {status === "idle" && message && (
+            <p className="text-sm text-stone-400">{message}</p>
+          )}
+        </div>
       </details>
-
-      <label className="block space-y-1">
-        <span className="text-sm font-medium text-stone-200">session_id value</span>
-        <textarea
-          className="w-full rounded border border-stone-600 bg-stone-100 px-3 py-2 font-mono text-sm text-stone-900 placeholder:text-stone-500"
-          rows={3}
-          value={sessionId}
-          onChange={(e) => setSessionId(e.target.value)}
-          placeholder="Paste your session_id cookie value here…"
-        />
-        <span className="text-xs text-stone-400">
-          This value is sent to your relay server and stored encrypted. It is never sent anywhere
-          else.
-        </span>
-      </label>
-
-      <div className="flex items-center gap-3">
-        <button
-          onClick={saveCookie}
-          disabled={status === "saving" || !sessionId.trim() || !creatorIdReady}
-          className="rounded bg-amber-500 px-4 py-2 text-sm font-medium text-stone-950 hover:bg-amber-400 disabled:opacity-50"
-        >
-          {status === "saving" ? "Saving…" : "Save Cookie"}
-        </button>
-        {hasCookie && (
-          <button
-            onClick={removeCookie}
-            disabled={status === "saving" || !creatorIdReady}
-            className="rounded bg-red-900/60 px-3 py-2 text-sm text-red-200 hover:bg-red-900 disabled:opacity-50"
-          >
-            Remove Cookie
-          </button>
-        )}
-      </div>
-
-      {status === "error" && message && (
-        <pre className="whitespace-pre-wrap rounded border border-red-500/40 bg-red-950/50 p-3 text-sm text-red-200">
-          {message}
-        </pre>
-      )}
-      {status === "saved" && message && (
-        <p className="rounded border border-emerald-500/30 bg-emerald-950/40 p-3 text-sm text-emerald-200">
-          {message}
-        </p>
-      )}
-      {status === "idle" && message && (
-        <p className="text-sm text-stone-400">{message}</p>
-      )}
     </main>
   );
 }

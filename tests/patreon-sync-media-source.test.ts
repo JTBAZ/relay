@@ -207,16 +207,28 @@ describe("Patreon sync media_source (OAuth vs cookie)", () => {
 
     const { app } = createApp(testConfig(tempDir, fetchImpl));
 
+    const reg = await request(app).post("/api/v1/identity/register").send({
+      creator_id: "cr_cookie_media",
+      email: "cookie-media@example.com",
+      password: "password123",
+      tier_ids: []
+    });
+    expect(reg.status).toBe(201);
+    const bearerMedia = reg.body.data.token as string;
+
     await request(app).post("/api/v1/auth/patreon/exchange").send({
       creator_id: "cr_cookie_media",
       code: "code",
       redirect_uri: "http://localhost/cb"
     });
 
-    await request(app).post("/api/v1/patreon/cookie").send({
-      creator_id: "cr_cookie_media",
-      session_id: "sess_fixture"
-    });
+    await request(app)
+      .post("/api/v1/patreon/cookie")
+      .set("Authorization", `Bearer ${bearerMedia}`)
+      .send({
+        creator_id: "cr_cookie_media",
+        session_id: "sess_fixture"
+      });
 
     const dry = await request(app).post("/api/v1/patreon/scrape").send({
       creator_id: "cr_cookie_media",

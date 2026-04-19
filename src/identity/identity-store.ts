@@ -1,5 +1,6 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
+import { EXTENSION_SESSION_TTL_MS } from "./session-constants.js";
 import type { IdentityStoreRoot, SessionToken, UserAccount } from "./types.js";
 
 function emptyRoot(): IdentityStoreRoot {
@@ -18,6 +19,8 @@ export interface IdentityStore {
   createSession(session: SessionToken): Promise<void>;
   getSession(token: string): Promise<SessionToken | null>;
   deleteSession(token: string): Promise<void>;
+  /** Sliding TTL for `kind === "extension"` only; no-op for web. */
+  touchSessionExpiry(token: string): Promise<void>;
   /** Option B account-first signup (MT-007) — implemented by `DbIdentityStore` only. */
   registerAccountEmailPassword?(email: string, password: string): Promise<UserAccount>;
   loginAccountEmailPassword?(email: string, password: string): Promise<UserAccount>;
@@ -116,6 +119,16 @@ export class FileIdentityStore implements IdentityStore {
   public async deleteSession(token: string): Promise<void> {
     const root = await this.load();
     delete root.sessions[token];
+    await this.save(root);
+  }
+
+  public async touchSessionExpiry(token: string): Promise<void> {
+    const root = await this.load();
+    const s = root.sessions[token];
+    if (!s || s.kind !== "extension") return;
+    const now = Date.now();
+    s.last_used_at = new Date(now).toISOString();
+    s.expires_at = new Date(now + EXTENSION_SESSION_TTL_MS).toISOString();
     await this.save(root);
   }
 }

@@ -20,7 +20,9 @@ import {
 import { DesignerHeader } from "@/app/components/designer/designer-header";
 import { InspectorRail } from "@/app/components/designer/inspector-rail";
 import { CanvasPreview } from "@/app/components/designer/canvas-preview";
+import { InstallExtensionPrompt } from "@/app/components/InstallExtensionPrompt";
 import { useStudioSession } from "@/lib/studio-session-context";
+import { relayPatronAuthHeaders } from "@/lib/relay-api";
 
 type PublishPreflight = {
   site_id: string;
@@ -85,8 +87,33 @@ export default function DesignerView() {
   const MIN_INSPECTOR = 240;
   const MAX_INSPECTOR = 480;
   const dragging = useRef(false);
+  /** `null` = unknown or error; show install prompt only when definitively no cookie. */
+  const [patreonHasCookie, setPatreonHasCookie] = useState<boolean | null>(null);
 
   const designerCollections = apiCollectionsToDesigner(collections);
+
+  useEffect(() => {
+    const cid = creatorId?.trim();
+    if (!cid) {
+      setPatreonHasCookie(null);
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      try {
+        const data = await relayFetch<{ has_cookie: boolean }>(
+          `/api/v1/patreon/cookie/status?creator_id=${encodeURIComponent(cid)}`,
+          { headers: { ...relayPatronAuthHeaders() } }
+        );
+        if (!cancelled) setPatreonHasCookie(data.has_cookie ?? false);
+      } catch {
+        if (!cancelled) setPatreonHasCookie(null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [creatorId]);
 
   // Paid Patreon tiers only — excludes relay_tier_public, relay_tier_all_patrons,
   // and any $0 / "Public" / "Free" tier. Sorted cheapest→most expensive.
@@ -296,6 +323,12 @@ export default function DesignerView() {
         publishDisabled={dirty || publishing}
         onPublish={handlePublishConfirm}
       />
+
+      {creatorId.trim() && patreonHasCookie === false && (
+        <div className="shrink-0 px-4 pt-2">
+          <InstallExtensionPrompt variant="relay" compact />
+        </div>
+      )}
 
       {loadError ? (
         <div

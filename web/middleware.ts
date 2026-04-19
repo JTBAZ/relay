@@ -8,7 +8,10 @@ import { NextResponse, type NextRequest } from "next/server";
  * middleware cannot import that module (it pulls browser-only helpers). Change both if the rule changes.
  */
 
-/** Logged-out users are redirected to /login?returnTo=… */
+/**
+ * Logged-out users are redirected to /login?returnTo=…
+ * Public marketing and legal routes stay out of this list (e.g. `/legal/*`).
+ */
 const APP_ROUTES: RegExp[] = [
   /^\/designer(\/|$)/,
   /^\/action-center(\/|$)/,
@@ -16,7 +19,9 @@ const APP_ROUTES: RegExp[] = [
   /** All `/patron/*` except public creator profiles `/patron/c/[handle]`. */
   /^\/patron\/(?!c\/)/,
   /^\/dev\//,
-  /^\/creator\/connect(\/|$)/
+  /^\/creator\/connect(\/|$)/,
+  /^\/extension\/authorize(\/|$)/,
+  /^\/settings\/connected-extensions(\/|$)/
 ];
 
 /** Logged-in users are redirected away (marketing / auth entry). */

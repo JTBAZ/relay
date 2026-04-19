@@ -59,6 +59,12 @@ enum IdentityAuthProvider {
   patreon
 }
 
+/// Web (`relay_session` / Bearer) vs browser extension opaque grant (sliding 30d TTL).
+enum SessionKind {
+  web       @map("web")
+  extension @map("extension")
+}
+
 model Tenant {
   id             String   @id @default(cuid())
   /// Relay `creator_id` (e.g. ingest / gallery scope) — unique tenant for DbIdentityStore.
@@ -159,8 +165,13 @@ model Session {
   userAgent          String?          @map("user_agent")
   ipInet             String?          @map("ip_inet")
   revokedAt          DateTime?        @map("revoked_at")
+  kind               SessionKind      @default(web) @map("kind")
+  /// User-visible label (e.g. extension install + UA), set on extension issue.
+  label              String?          @map("label")
+  /// Sliding-window anchor for extension grants (`touchSessionExpiry`).
+  lastUsedAt         DateTime?        @map("last_used_at")
 
-  @@index([tenantMembershipId, expiresAt])
+  @@index([tenantMembershipId, kind, expiresAt])
   @@map("sessions")
 }
 

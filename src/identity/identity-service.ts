@@ -1,9 +1,8 @@
 import { randomUUID } from "node:crypto";
 import type { IdentityStore } from "./identity-store.js";
 import { hashPassword, verifyPassword } from "./password.js";
+import { EXTENSION_SESSION_TTL_MS, WEB_SESSION_TTL_MS } from "./session-constants.js";
 import type { SessionToken, UserAccount } from "./types.js";
-
-const SESSION_TTL_MS = 24 * 60 * 60 * 1000;
 
 export class IdentityService {
   private readonly store: IdentityStore;
@@ -62,6 +61,19 @@ export class IdentityService {
     }
     const user = await s.ensurePlatformPatronUserForAccount(accountId);
     return this.issueSessionForUser(user);
+  }
+
+  /** Extension grant after consent exchange — `Session.kind === extension`, sliding TTL. */
+  public async issueExtensionSessionForAccount(
+    accountId: string,
+    label: string
+  ): Promise<SessionToken> {
+    const s = this.store as { ensurePlatformPatronUserForAccount?: (id: string) => Promise<UserAccount> };
+    if (typeof s.ensurePlatformPatronUserForAccount !== "function") {
+      throw new Error("Extension session issuance requires RELAY_DB_STORE_IDENTITY with PostgreSQL.");
+    }
+    const user = await s.ensurePlatformPatronUserForAccount(accountId);
+    return this.issueExtensionSession(user, label);
   }
 
   public async register(
@@ -176,13 +188,42 @@ export class IdentityService {
     await this.store.deleteSession(token);
   }
 
+  /**
+   * Browser extension opaque grant after consent (Phase 0.C). Sliding 30d TTL via
+   * {@link touchSessionExpiry} on each successful resolution.
+   */
+  public async issueExtensionSession(
+    user: UserAccount,
+    label: string
+  ): Promise<SessionToken> {
+    const now = Date.now();
+    const session: SessionToken = {
+      token: `sess_${randomUUID()}`,
+      user_id: user.user_id,
+      creator_id: user.creator_id,
+      tier_ids: [...user.tier_ids],
+      expires_at: new Date(now + EXTENSION_SESSION_TTL_MS).toISOString(),
+      kind: "extension",
+      label: label.trim() || null,
+      last_used_at: new Date(now).toISOString()
+    };
+    await this.store.createSession(session);
+    return session;
+  }
+
+  /** Renew extension session window; no-op for web sessions. */
+  public async touchSessionExpiry(token: string): Promise<void> {
+    await this.store.touchSessionExpiry(token);
+  }
+
   private async createSessionForUser(user: UserAccount): Promise<SessionToken> {
     const session: SessionToken = {
       token: `sess_${randomUUID()}`,
       user_id: user.user_id,
       creator_id: user.creator_id,
       tier_ids: [...user.tier_ids],
-      expires_at: new Date(Date.now() + SESSION_TTL_MS).toISOString()
+      expires_at: new Date(Date.now() + WEB_SESSION_TTL_MS).toISOString(),
+      kind: "web"
     };
     await this.store.createSession(session);
     return session;

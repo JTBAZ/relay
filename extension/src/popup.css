@@ -1,0 +1,124 @@
+:root {
+  color-scheme: light dark;
+  --bg: #f4f4f5;
+  --fg: #18181b;
+  --muted: #71717a;
+  --border: #d4d4d8;
+  --accent: #b45309;
+  --accent-fg: #fff7ed;
+  --danger: #b91c1c;
+  --focus: #2563eb;
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #18181b;
+    --fg: #fafafa;
+    --muted: #a1a1aa;
+    --border: #3f3f46;
+    --accent: #d97706;
+    --accent-fg: #1c1917;
+    --danger: #f87171;
+    --focus: #60a5fa;
+  }
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  width: 320px;
+  min-height: 120px;
+  background: var(--bg);
+  color: var(--fg);
+}
+
+.relay-popup {
+  padding: 12px 14px 10px;
+}
+
+.relay-popup h1 {
+  margin: 0 0 10px;
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.relay-region p {
+  margin: 0 0 10px;
+}
+
+.relay-muted {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.relay-studio {
+  font-size: 0.85rem;
+  margin-bottom: 8px;
+  word-break: break-all;
+}
+
+.relay-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+button {
+  font: inherit;
+  cursor: pointer;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  padding: 8px 12px;
+  background: var(--bg);
+  color: var(--fg);
+}
+
+button:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.relay-btn-primary {
+  background: var(--accent);
+  color: var(--accent-fg);
+  border-color: transparent;
+  font-weight: 600;
+}
+
+.relay-btn-danger {
+  color: var(--danger);
+  border-color: var(--border);
+  background: transparent;
+}
+
+.relay-link {
+  background: none;
+  border: none;
+  padding: 6px 0;
+  text-align: left;
+  color: var(--accent);
+  text-decoration: underline;
+  font-size: 0.9rem;
+}
+
+.relay-footer {
+  margin-top: 14px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
+.relay-error {
+  color: var(--danger);
+  font-size: 0.9rem;
+}

@@ -192,16 +192,28 @@ describe("Cookie scrape + OAuth post body backfill", () => {
 
     const { app } = createApp(testConfig(tempDir, fetchImpl));
 
+    const reg = await request(app).post("/api/v1/identity/register").send({
+      creator_id: "cr_hybrid",
+      email: "hybrid-oauth@example.com",
+      password: "password123",
+      tier_ids: []
+    });
+    expect(reg.status).toBe(201);
+    const bearerHybrid = reg.body.data.token as string;
+
     await request(app).post("/api/v1/auth/patreon/exchange").send({
       creator_id: "cr_hybrid",
       code: "code",
       redirect_uri: "http://localhost/cb"
     });
 
-    await request(app).post("/api/v1/patreon/cookie").send({
-      creator_id: "cr_hybrid",
-      session_id: "sess_test"
-    });
+    await request(app)
+      .post("/api/v1/patreon/cookie")
+      .set("Authorization", `Bearer ${bearerHybrid}`)
+      .send({
+        creator_id: "cr_hybrid",
+        session_id: "sess_test"
+      });
 
     const dry = await request(app).post("/api/v1/patreon/scrape").send({
       creator_id: "cr_hybrid",
@@ -376,16 +388,28 @@ describe("Cookie scrape + OAuth post body backfill", () => {
 
     const { app } = createApp(testConfig(tempDir, fetchImpl));
 
+    const reg = await request(app).post("/api/v1/identity/register").send({
+      creator_id: "cr_ambig",
+      email: "ambig-oauth@example.com",
+      password: "password123",
+      tier_ids: []
+    });
+    expect(reg.status).toBe(201);
+    const bearerAmbig = reg.body.data.token as string;
+
     await request(app).post("/api/v1/auth/patreon/exchange").send({
       creator_id: "cr_ambig",
       code: "code",
       redirect_uri: "http://localhost/cb"
     });
 
-    await request(app).post("/api/v1/patreon/cookie").send({
-      creator_id: "cr_ambig",
-      session_id: "sess_ambig"
-    });
+    await request(app)
+      .post("/api/v1/patreon/cookie")
+      .set("Authorization", `Bearer ${bearerAmbig}`)
+      .send({
+        creator_id: "cr_ambig",
+        session_id: "sess_ambig"
+      });
 
     const dry = await request(app).post("/api/v1/patreon/scrape").send({
       creator_id: "cr_ambig",

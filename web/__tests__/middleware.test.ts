@@ -64,4 +64,24 @@ describe("middleware", () => {
     const res = middleware(makeReq("/api/v1/health"));
     expect(res.status).not.toBe(307);
   });
+
+  it("redirects unauthenticated user from /extension/authorize with returnTo preserving query", () => {
+    const res = middleware(
+      makeReq("/extension/authorize", {
+        search: "?ext_id=a&installation_id=b"
+      })
+    );
+    expect(res.status).toBe(307);
+    const loc = res.headers.get("location")!;
+    expect(loc).toContain("/login");
+    expect(loc).toContain(encodeURIComponent("/extension/authorize?ext_id=a&installation_id=b"));
+  });
+
+  it("redirects unauthenticated user from /settings/connected-extensions to /login?returnTo=", () => {
+    const res = middleware(makeReq("/settings/connected-extensions"));
+    expect(res.status).toBe(307);
+    const loc = res.headers.get("location")!;
+    expect(loc).toContain("/login");
+    expect(loc).toContain(encodeURIComponent("/settings/connected-extensions"));
+  });
 });
