@@ -34,7 +34,12 @@ import { IngestRetryQueue } from "./ingest/retry-queue.js";
 import { SyncWatermarkStore } from "./ingest/sync-watermark-store.js";
 import { DbSyncWatermarkStore } from "./ingest/sync-watermark-store-db.js";
 import { validateIngestBatchBody } from "./ingest/validate-body.js";
-import { consentExchange, consentStart, cookieWrite } from "./middleware/rate-limits.js";
+import {
+  consentExchange,
+  consentStart,
+  cookieWrite,
+  patronFollowMutate
+} from "./middleware/rate-limits.js";
 import { TokenEncryption } from "./lib/crypto.js";
 import {
   isBrowserExtensionOrigin,
@@ -177,11 +182,25 @@ import {
   patronMayAccessCreator
 } from "./identity/patron-auth-context.js";
 import {
+  checkPatreonLinkEmailGate,
+  getSessionEmailVerifiedForPatronLink
+} from "./identity/patreon-link-email-gate.js";
+import { invalidatePatronEntitlementSnapshotsForMemberships } from "./identity/patron-entitlement-snapshot.js";
+import {
+  addPatronFollowForMembership,
+  listPatronFollowsForMembership,
+  removePatronFollowForMembership
+} from "./patron/patron-follow-service.js";
+import {
+  getPatronProfileViewForMembership,
+  patchPatronProfileForMembership
+} from "./patron/patron-profile-service.js";
+import {
   ensurePatronMembershipForSupabaseAccount,
   upsertAccountForSupabaseUser
 } from "./identity/supabase-account.js";
 import { getSupabaseUserFromAccessToken } from "./lib/supabase-auth.js";
-import { SessionKind, type PrismaClient } from "@prisma/client";
+import { IdentityAuthProvider, SessionKind, TenantRole, type PrismaClient } from "@prisma/client";
 import { checkPostAccess, filterAccessiblePosts } from "./identity/access-guard.js";
 import {
   clearActiveRoleCookie,
@@ -212,7 +231,10 @@ import { DbPaymentStore } from "./payments/payment-store-db.js";
 import { FilePaymentStore } from "./payments/payment-store.js";
 import { StripeAdapter, PayPalAdapter } from "./payments/provider-adapter.js";
 import type { TierProductMapping, BillingInterval, PaymentProvider } from "./payments/types.js";
-import { exchangePatreonPatronOAuth } from "./patreon/patreon-patron-oauth.js";
+import {
+  exchangePatreonPatronOAuth,
+  exchangePatreonPatronOAuthUnified
+} from "./patreon/patreon-patron-oauth.js";
 import { CreatorCampaignDisplayStore } from "./patreon/creator-campaign-display-store.js";
 import {
   type PatreonSyncHealthStoreAPI,
@@ -240,6 +262,12 @@ import {
 import { PatreonWebhookMetadataStore } from "./patreon/patreon-webhook-metadata-store.js";
 import { verifyPatreonWebhookSignature } from "./patreon/patreon-webhook-signature.js";
 import { processPatreonWebhookStub } from "./webhooks/patreon-webhook.js";
+import {
+  assemblePatronFeed,
+  DEFAULT_LIMIT as PATRON_FEED_DEFAULT_LIMIT,
+  parseFilter as parsePatronFeedFilter,
+  MAX_LIMIT as PATRON_FEED_MAX_LIMIT
+} from "./patron/assemble-patron-feed.js";
 import { loadPatronRelayFeedBundleFromRepo } from "./patron/load-patron-relay-feed-bundle.js";
 import { CampaignService } from "./migrate/campaign-service.js";
 import { DbMigrationStore } from "./migrate/migration-store-db.js";
@@ -454,6 +482,28 @@ function validateRequiredFields(
     }
   }
   return missing;
+}
+
+/** Partial JSON body fields: absent → undefined; JSON `null` → null (clear); strings trimmed. */
+function readOptionalString(value: unknown): string | null | undefined {
+  if (value === undefined) return undefined;
+  if (value === null) return null;
+  if (typeof value === "string") return value.trim();
+  return undefined;
+}
+
+function readOptionalBoolean(value: unknown): boolean | undefined {
+  if (value === undefined || value === null) return undefined;
+  if (typeof value === "boolean") return value;
+  return undefined;
+}
+
+function readOptionalInt(value: unknown): number | undefined {
+  if (value === undefined || value === null) return undefined;
+  if (typeof value === "number" && Number.isFinite(value) && Number.isInteger(value)) {
+    return value;
+  }
+  return undefined;
 }
 
 function bearerAccessTokenFromRequest(req: Request): string | undefined {
@@ -1616,12 +1666,32 @@ export function createApp(config: AppConfig): CreateAppResult {
 
   /**
    * Patron OAuth: exchange code with Patreon, GET /v2/identity, sync `tier_ids` like member
-   * sync (`patreon_tier_*`), issue Relay session. Does not store Patreon tokens in the
-   * creator credential file.
+   * sync (`patreon_tier_*`), issue Relay session. When DB identity is enabled, persists
+   * tokens to `patron_oauth_credentials` for PE-H refresh.
+   *
+   * **Hard-deprecated (PE-A, 2026-04-20).** A Patreon login alone must never create a Relay
+   * `Account`; verified-email registration is required first. By default this route returns
+   * `403 RELAY_ACCOUNT_REQUIRED` and clients should drive users to `/login` then call
+   * `POST /api/v1/auth/patreon/patron/link` (session-first). Set
+   * `RELAY_PATREON_PATRON_ALLOW_LEGACY_EXCHANGE=1` ONLY for emergency rollback.
    */
-  // PUBLIC: Patreon OAuth redirect callback; issues session on success (no prior session required).
   app.post("/api/v1/auth/patreon/patron/exchange", async (req: Request, res: Response) => {
     const traceId = traceIdFrom(req);
+    res.setHeader(
+      "Deprecation",
+      'true; successor="/api/v1/auth/patreon/patron/link" for session-first multi-campaign Patreon link'
+    );
+
+    if (!relayEnvTruthy(process.env.RELAY_PATREON_PATRON_ALLOW_LEGACY_EXCHANGE)) {
+      return res.status(403).json(
+        errorEnvelope(
+          "RELAY_ACCOUNT_REQUIRED",
+          "Sign in to a verified Relay account first, then link Patreon via POST /api/v1/auth/patreon/patron/link.",
+          traceId
+        )
+      );
+    }
+
     const body = (req.body ?? {}) as Record<string, unknown>;
     const details = validateRequiredFields(body, [
       "creator_id",
@@ -1654,7 +1724,10 @@ export function createApp(config: AppConfig): CreateAppResult {
         patreonCampaignNumericId: campaignNumeric,
         patreonClient,
         identityService,
-        fetchImpl
+        fetchImpl,
+        ...(useDbIdentityStore(config) && config.prisma
+          ? { prisma: config.prisma, encryption }
+          : {})
       });
       setSessionCookie(res, session.token, { expiresAtIso: session.expires_at });
       await setActiveRoleCookieForNewSession(res, config.prisma, session, session.expires_at);
@@ -1681,6 +1754,183 @@ export function createApp(config: AppConfig): CreateAppResult {
         .status(502)
         .json(errorEnvelope("UPSTREAM_AUTH_ERROR", (error as Error).message, traceId));
     }
+  });
+
+  /**
+   * PE-A — Session-first unified Patreon link: same scopes as `/exchange`, but pulls full
+   * identity (`extractUnifiedPatreonIdentity`) and upserts all on-Relay memberships.
+   * Requires Bearer or `relay_session` cookie. Response includes `linked_relay_creator_ids`,
+   * `owned_relay_creator_id`, and `unmapped_patreon_campaign_ids` for the "Connect your Campaign" modal.
+   */
+  app.post("/api/v1/auth/patreon/patron/link", async (req: Request, res: Response) => {
+    const traceId = traceIdFrom(req);
+    const preSession = await requirePatronBearerSession(req, res, traceId);
+    if (!preSession) return;
+    if (!useDbIdentityStore(config) || !config.prisma) {
+      return res.status(503).json(
+        errorEnvelope(
+          "NOT_AVAILABLE",
+          "Unified Patreon link requires database-backed identity (RELAY_DB_STORE_IDENTITY).",
+          traceId
+        )
+      );
+    }
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const linkDetails = validateRequiredFields(body, ["code", "redirect_uri"]);
+    if (linkDetails.length > 0) {
+      return res
+        .status(400)
+        .json(errorEnvelope("VALIDATION_ERROR", "Invalid request payload.", traceId, linkDetails));
+    }
+    const linkAccountId = await getAccountIdForSession(config.prisma, preSession);
+    if (!linkAccountId) {
+      return res
+        .status(404)
+        .json(errorEnvelope("NOT_FOUND", "Account not found for session.", traceId));
+    }
+    const emailGate = await checkPatreonLinkEmailGate(config.prisma, linkAccountId);
+    if (!emailGate.ok) {
+      return res
+        .status(emailGate.httpStatus)
+        .json(errorEnvelope(emailGate.code, emailGate.message, traceId));
+    }
+    const fetchImpl = config.fetch_impl ?? globalThis.fetch;
+    try {
+      const result = await exchangePatreonPatronOAuthUnified({
+        code: body.code as string,
+        redirectUri: body.redirect_uri as string,
+        patreonClient,
+        identityService,
+        fetchImpl,
+        prisma: config.prisma,
+        encryption,
+        anchorMembershipId: preSession.user_id
+      });
+      setSessionCookie(res, result.session.token, {
+        expiresAtIso: result.session.expires_at
+      });
+      await setActiveRoleCookieForNewSession(
+        res,
+        config.prisma,
+        result.session,
+        result.session.expires_at
+      );
+      return res.status(200).json(
+        successEnvelope(
+          applyDualWriteToken({
+            token: result.session.token,
+            user_id: result.session.user_id,
+            tier_ids: result.session.tier_ids,
+            expires_at: result.session.expires_at,
+            auth_provider: result.user.auth_provider,
+            patreon_user_id: result.user.patreon_user_id,
+            linked_relay_creator_ids: result.linkedRelayCreatorIds,
+            paid_membership_relay_creator_ids: result.paidMembershipRelayCreatorIds,
+            declined_patron_relay_creator_ids: result.declinedPatronRelayCreatorIds,
+            former_patron_relay_creator_ids: result.formerPatronRelayCreatorIds,
+            free_follower_relay_creator_ids: result.freeFollowerRelayCreatorIds,
+            owned_relay_creator_id: result.ownedRelayCreatorId,
+            unmapped_patreon_campaign_ids: result.unmappedPatreonCampaignIds
+          }),
+          traceId
+        )
+      );
+    } catch (error) {
+      if (error instanceof PatreonAccountLinkConflictError) {
+        return res
+          .status(409)
+          .json(errorEnvelope("CONFLICT", (error as Error).message, traceId));
+      }
+      return res
+        .status(502)
+        .json(errorEnvelope("UPSTREAM_AUTH_ERROR", (error as Error).message, traceId));
+    }
+  });
+
+  /**
+   * PE-A — Unlink Patreon: drop encrypted refresh token, clear Patreon id on `Account`,
+   * clear patron tier rows, invalidate entitlement snapshots (immediate stale). Session stays.
+   */
+  app.delete("/api/v1/auth/patreon/patron/link", async (req: Request, res: Response) => {
+    const traceId = traceIdFrom(req);
+    const session = await requirePatronBearerSession(req, res, traceId);
+    if (!session) return;
+    if (!useDbIdentityStore(config) || !config.prisma) {
+      return res.status(503).json(
+        errorEnvelope(
+          "NOT_AVAILABLE",
+          "Patreon unlink requires database-backed identity (RELAY_DB_STORE_IDENTITY).",
+          traceId
+        )
+      );
+    }
+    const prisma = config.prisma;
+    const accountId = await getAccountIdForSession(prisma, session);
+    if (!accountId) {
+      return res
+        .status(404)
+        .json(errorEnvelope("NOT_FOUND", "Account not found for session.", traceId));
+    }
+
+    // Safety net: refuse to unlink Patreon when it is the account's only login method. With the
+    // PE-A policy (`/exchange` hard-deprecated, email-verify gate on `/link`) this should never
+    // fire for new accounts, but legacy Patreon-only accounts predate the gate. If the unlink
+    // proceeded, the user would lose all sign-in paths.
+    const accountLoginMethods = await prisma.account.findUnique({
+      where: { id: accountId },
+      select: { passwordHash: true, supabaseUserId: true }
+    });
+    if (
+      !accountLoginMethods?.passwordHash &&
+      !accountLoginMethods?.supabaseUserId
+    ) {
+      return res.status(409).json(
+        errorEnvelope(
+          "LAST_LOGIN_METHOD",
+          "Patreon is your only sign-in method. Add an email + password (or link a Supabase account) before disconnecting Patreon.",
+          traceId
+        )
+      );
+    }
+
+    const memberships = await prisma.tenantMembership.findMany({
+      where: { accountId },
+      select: { id: true }
+    });
+    const patronMembershipIds = memberships.map((m) => m.id);
+
+    const credResult = await prisma.patronOAuthCredential.deleteMany({
+      where: { accountId }
+    });
+
+    const snapshotCount = await invalidatePatronEntitlementSnapshotsForMemberships(
+      prisma,
+      patronMembershipIds
+    );
+
+    await prisma.tenantMembership.updateMany({
+      where: { accountId, role: TenantRole.patron },
+      data: { tierIds: [] }
+    });
+
+    await prisma.account.update({
+      where: { id: accountId },
+      data: {
+        patronPatreonUserId: null,
+        identityAuthProvider: IdentityAuthProvider.independent
+      }
+    });
+
+    return res.status(200).json(
+      successEnvelope(
+        {
+          unlinked: true,
+          patron_oauth_credential_deleted: credResult.count > 0,
+          entitlement_snapshots_invalidated: snapshotCount
+        },
+        traceId
+      )
+    );
   });
 
   app.post("/api/v1/auth/patreon/refresh", async (req: Request, res: Response) => {
@@ -2493,11 +2743,23 @@ export function createApp(config: AppConfig): CreateAppResult {
         const snapshot = await canonicalStore.load();
         const bearer = req.header("authorization")?.replace(/^Bearer\s+/i, "").trim() ?? "";
         const session = bearer ? await identityService.resolveSession(bearer) : null;
+        let isContentOwner = false;
+        if (config.prisma && session) {
+          const accountId = await getAccountIdForSession(config.prisma, session);
+          if (accountId) {
+            const acc = await config.prisma.account.findUnique({
+              where: { id: accountId },
+              select: { primaryRelayCreatorId: true }
+            });
+            isContentOwner = acc?.primaryRelayCreatorId === req.params.creator_id;
+          }
+        }
         const gate = patronMayFetchMediaExport({
           snapshot,
           creatorId: req.params.creator_id,
           mediaId: req.params.media_id,
-          session
+          session,
+          isContentOwner
         });
         if (!gate.allowed) {
           recordContentDeliveryFailure();
@@ -2724,7 +2986,22 @@ export function createApp(config: AppConfig): CreateAppResult {
     const bearer = req.header("authorization")?.replace(/^Bearer\s+/i, "").trim() ?? "";
     const session = bearer ? await identityService.resolveSession(bearer) : null;
     const snapshot = await canonicalStore.load();
-    const perm = evaluatePostPermission({ snapshot, creatorId, postId, session });
+    // Creators must see their own Library unblurred regardless of tier configuration.
+    // A creator's session.creator_id is '__relay_platform' (account-first), NOT the
+    // studio relay_creator_id, so `session.creator_id === creatorId` is unreliable.
+    // Use Account.primaryRelayCreatorId as the authoritative ownership signal.
+    let isContentOwner = false;
+    if (config.prisma && session) {
+      const accountId = await getAccountIdForSession(config.prisma, session);
+      if (accountId) {
+        const acc = await config.prisma.account.findUnique({
+          where: { id: accountId },
+          select: { primaryRelayCreatorId: true }
+        });
+        isContentOwner = acc?.primaryRelayCreatorId === creatorId;
+      }
+    }
+    const perm = evaluatePostPermission({ snapshot, creatorId, postId, session, isContentOwner });
     if (!perm) {
       return res.status(404).json(errorEnvelope("NOT_FOUND", "Post not found.", traceId));
     }
@@ -2925,6 +3202,10 @@ export function createApp(config: AppConfig): CreateAppResult {
       return;
     }
     const user = await identityStore.getUser(session.user_id);
+    const emailVerified =
+      config.prisma != null
+        ? await getSessionEmailVerifiedForPatronLink(config.prisma, session)
+        : true;
     res.setHeader("Cache-Control", "private, no-store");
     return res.status(200).json(
       successEnvelope(
@@ -2934,6 +3215,7 @@ export function createApp(config: AppConfig): CreateAppResult {
           email: user?.email ?? null,
           auth_provider: user?.auth_provider ?? null,
           patreon_user_id: user?.patreon_user_id ?? null,
+          email_verified: emailVerified,
           expires_at: session.expires_at
         },
         traceId
@@ -3123,14 +3405,56 @@ export function createApp(config: AppConfig): CreateAppResult {
 
   /**
    * Patron home (fan Relay): feed + sidebar bundle. Requires Bearer session from patron OAuth.
-   * Payload is fixture-shaped JSON until DB-backed aggregation exists (`web/lib/patron-relay-feed-bundle.json`).
+   * PE-B: when `RELAY_DB_STORE_IDENTITY` + Prisma are enabled, assembles from `PatronFollow` × `Post` ×
+   * `PatronEntitlementSnapshot` with tier checks; otherwise serves fixture JSON from the repo.
+   *
+   * Query: `cursor` (opaque), `limit` (default 30, max 100), `filter` (`all`|`following`|`free`|`photos`|`audio`|`writing`).
    */
-  app.get("/api/v1/patron/relay_feed", async (req: Request, res: Response) => {
-    const traceId = traceIdFrom(req);
-    if (!(await requirePatronBearerSession(req, res, traceId))) {
+  async function handlePatronFeedGet(req: Request, res: Response, traceId: string) {
+    const session = await requirePatronBearerSession(req, res, traceId);
+    if (!session) {
       return;
     }
     try {
+      if (useDbIdentityStore(config) && config.prisma) {
+        const user = await identityStore.getUser(session.user_id);
+        const rawLimit = req.query.limit;
+        const limitStr =
+          typeof rawLimit === "string"
+            ? rawLimit
+            : Array.isArray(rawLimit) && typeof rawLimit[0] === "string"
+              ? rawLimit[0]
+              : "";
+        const parsedLimit = Number.parseInt(String(limitStr), 10);
+        const limit =
+          Number.isFinite(parsedLimit) && parsedLimit > 0
+            ? Math.min(parsedLimit, PATRON_FEED_MAX_LIMIT)
+            : PATRON_FEED_DEFAULT_LIMIT;
+        const rawCursor = req.query.cursor;
+        const cursor =
+          typeof rawCursor === "string"
+            ? rawCursor
+            : Array.isArray(rawCursor) && typeof rawCursor[0] === "string"
+              ? rawCursor[0]
+              : undefined;
+        const rawFilter = req.query.filter;
+        const filterParam =
+          typeof rawFilter === "string"
+            ? rawFilter
+            : Array.isArray(rawFilter) && typeof rawFilter[0] === "string"
+              ? rawFilter[0]
+              : undefined;
+        const data = await assemblePatronFeed({
+          prisma: config.prisma,
+          patronMembershipId: session.user_id,
+          viewerEmail: user?.email ?? null,
+          limit,
+          cursor: cursor ?? null,
+          filter: parsePatronFeedFilter(filterParam)
+        });
+        res.setHeader("Cache-Control", "private, no-store");
+        return res.status(200).json(successEnvelope(data, traceId));
+      }
       const data = loadPatronRelayFeedBundleFromRepo();
       res.setHeader("Cache-Control", "private, no-store");
       return res.status(200).json(successEnvelope(data, traceId));
@@ -3139,7 +3463,245 @@ export function createApp(config: AppConfig): CreateAppResult {
         .status(500)
         .json(errorEnvelope("INTERNAL", (error as Error).message, traceId));
     }
+  }
+
+  app.get("/api/v1/patron/relay_feed", async (req: Request, res: Response) => {
+    const traceId = traceIdFrom(req);
+    return handlePatronFeedGet(req, res, traceId);
   });
+
+  app.get("/api/v1/patron/feed", async (req: Request, res: Response) => {
+    const traceId = traceIdFrom(req);
+    return handlePatronFeedGet(req, res, traceId);
+  });
+
+  /**
+   * PE-A — Patron supporter profile + onboarding step for the session membership (`session.user_id`).
+   */
+  app.get("/api/v1/patron/me", async (req: Request, res: Response) => {
+    const traceId = traceIdFrom(req);
+    const session = await requirePatronBearerSession(req, res, traceId);
+    if (!session) return;
+    if (!useDbIdentityStore(config) || !config.prisma) {
+      return res.status(503).json(
+        errorEnvelope(
+          "NOT_AVAILABLE",
+          "Patron profile API requires database-backed identity (RELAY_DB_STORE_IDENTITY).",
+          traceId
+        )
+      );
+    }
+    try {
+      const profile = await getPatronProfileViewForMembership(config.prisma, session.user_id);
+      res.setHeader("Cache-Control", "private, no-store");
+      return res.status(200).json(successEnvelope(profile, traceId));
+    } catch (error) {
+      return res
+        .status(500)
+        .json(errorEnvelope("INTERNAL", (error as Error).message, traceId));
+    }
+  });
+
+  app.patch("/api/v1/patron/me", async (req: Request, res: Response) => {
+    const traceId = traceIdFrom(req);
+    const session = await requirePatronBearerSession(req, res, traceId);
+    if (!session) return;
+    if (!useDbIdentityStore(config) || !config.prisma) {
+      return res.status(503).json(
+        errorEnvelope(
+          "NOT_AVAILABLE",
+          "Patron profile API requires database-backed identity (RELAY_DB_STORE_IDENTITY).",
+          traceId
+        )
+      );
+    }
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const patch = {
+      handle: readOptionalString(body.handle),
+      display_name: readOptionalString(body.display_name),
+      bio: readOptionalString(body.bio),
+      avatar_url: readOptionalString(body.avatar_url),
+      banner_url: readOptionalString(body.banner_url),
+      is_public: readOptionalBoolean(body.is_public),
+      onboarding_step: readOptionalInt(body.onboarding_step)
+    };
+    const hasAny = Object.values(patch).some((v) => v !== undefined);
+    if (!hasAny) {
+      return res
+        .status(400)
+        .json(errorEnvelope("VALIDATION_ERROR", "No updatable fields in body.", traceId));
+    }
+    try {
+      const result = await patchPatronProfileForMembership(config.prisma, session.user_id, patch);
+      if (!result.ok) {
+        const status = result.code === "CONFLICT" ? 409 : 400;
+        return res.status(status).json(errorEnvelope(result.code, result.message, traceId));
+      }
+      res.setHeader("Cache-Control", "private, no-store");
+      return res.status(200).json(successEnvelope(result.profile, traceId));
+    } catch (error) {
+      return res
+        .status(500)
+        .json(errorEnvelope("INTERNAL", (error as Error).message, traceId));
+    }
+  });
+
+  /**
+   * PE-C — Follow graph for the session membership (`session.user_id`): list Relay creators
+   * this patron follows (ingest / gallery `relay_creator_id`).
+   */
+  app.get("/api/v1/patron/follows", async (req: Request, res: Response) => {
+    const traceId = traceIdFrom(req);
+    const session = await requirePatronBearerSession(req, res, traceId);
+    if (!session) return;
+    if (!useDbIdentityStore(config) || !config.prisma) {
+      return res.status(503).json(
+        errorEnvelope(
+          "NOT_AVAILABLE",
+          "Patron follows API requires database-backed identity (RELAY_DB_STORE_IDENTITY).",
+          traceId
+        )
+      );
+    }
+    try {
+      const items = await listPatronFollowsForMembership(config.prisma, session.user_id);
+      res.setHeader("Cache-Control", "private, no-store");
+      return res.status(200).json(successEnvelope({ items }, traceId));
+    } catch (error) {
+      return res
+        .status(500)
+        .json(errorEnvelope("INTERNAL", (error as Error).message, traceId));
+    }
+  });
+
+  app.post(
+    "/api/v1/patron/follows",
+    async (req: Request, res: Response, next) => {
+      const traceId = traceIdFrom(req);
+      const session = await requirePatronBearerSession(req, res, traceId);
+      if (!session) return;
+      if (!useDbIdentityStore(config) || !config.prisma) {
+        return res.status(503).json(
+          errorEnvelope(
+            "NOT_AVAILABLE",
+            "Patron follows API requires database-backed identity (RELAY_DB_STORE_IDENTITY).",
+            traceId
+          )
+        );
+      }
+      const rateKey =
+        (await getAccountIdForSession(config.prisma, session)) ?? session.user_id;
+      (req as Request & { relayRateLimitKey?: string }).relayRateLimitKey = rateKey;
+      next();
+    },
+    patronFollowMutate,
+    async (req: Request, res: Response) => {
+      const traceId = traceIdFrom(req);
+      const body = (req.body ?? {}) as Record<string, unknown>;
+      const details = validateRequiredFields(body, ["relay_creator_id"]);
+      if (details.length > 0) {
+        return res
+          .status(400)
+          .json(errorEnvelope("VALIDATION_ERROR", "Invalid request.", traceId, details));
+      }
+      const relayCreatorId = String(body.relay_creator_id).trim();
+      if (!relayCreatorId) {
+        return res.status(400).json(
+          errorEnvelope("VALIDATION_ERROR", "relay_creator_id must be non-empty.", traceId, [
+            { field: "relay_creator_id", issue: "invalid" }
+          ])
+        );
+      }
+      const session = await requirePatronBearerSession(req, res, traceId);
+      if (!session) return;
+      const prisma = config.prisma;
+      if (!prisma) return;
+      try {
+        const result = await addPatronFollowForMembership(
+          prisma,
+          session.user_id,
+          relayCreatorId
+        );
+        if (!result) {
+          return res.status(404).json(
+            errorEnvelope(
+              "UNKNOWN_CREATOR_ID",
+              "relay_creator_id does not match any provisioned studio.",
+              traceId,
+              [{ field: "relay_creator_id", issue: "unknown" }]
+            )
+          );
+        }
+        res.setHeader("Cache-Control", "private, no-store");
+        return res.status(200).json(successEnvelope(result, traceId));
+      } catch (error) {
+        return res
+          .status(500)
+          .json(errorEnvelope("INTERNAL", (error as Error).message, traceId));
+      }
+    }
+  );
+
+  app.delete(
+    "/api/v1/patron/follows",
+    async (req: Request, res: Response, next) => {
+      const traceId = traceIdFrom(req);
+      const session = await requirePatronBearerSession(req, res, traceId);
+      if (!session) return;
+      if (!useDbIdentityStore(config) || !config.prisma) {
+        return res.status(503).json(
+          errorEnvelope(
+            "NOT_AVAILABLE",
+            "Patron follows API requires database-backed identity (RELAY_DB_STORE_IDENTITY).",
+            traceId
+          )
+        );
+      }
+      const rateKey =
+        (await getAccountIdForSession(config.prisma, session)) ?? session.user_id;
+      (req as Request & { relayRateLimitKey?: string }).relayRateLimitKey = rateKey;
+      next();
+    },
+    patronFollowMutate,
+    async (req: Request, res: Response) => {
+      const traceId = traceIdFrom(req);
+      const body = (req.body ?? {}) as Record<string, unknown>;
+      const q =
+        typeof req.query.relay_creator_id === "string" ? req.query.relay_creator_id.trim() : "";
+      const relayCreatorId =
+        (typeof body.relay_creator_id === "string" ? body.relay_creator_id.trim() : "") || q;
+      if (!relayCreatorId) {
+        return res.status(400).json(
+          errorEnvelope(
+            "VALIDATION_ERROR",
+            "relay_creator_id is required (body or query).",
+            traceId,
+            [{ field: "relay_creator_id", issue: "missing" }]
+          )
+        );
+      }
+      const session = await requirePatronBearerSession(req, res, traceId);
+      if (!session) return;
+      const prisma = config.prisma;
+      if (!prisma) return;
+      try {
+        const removed = await removePatronFollowForMembership(
+          prisma,
+          session.user_id,
+          relayCreatorId
+        );
+        if (!removed) {
+          return res.status(404).json(errorEnvelope("NOT_FOUND", "Follow not found.", traceId));
+        }
+        res.setHeader("Cache-Control", "private, no-store");
+        return res.status(200).json(successEnvelope({ deleted: true }, traceId));
+      } catch (error) {
+        return res
+          .status(500)
+          .json(errorEnvelope("INTERNAL", (error as Error).message, traceId));
+      }
+    }
+  );
 
   app.get("/api/v1/patron/favorites", async (req: Request, res: Response) => {
     const traceId = traceIdFrom(req);

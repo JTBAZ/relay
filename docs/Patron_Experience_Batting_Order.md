@@ -140,7 +140,7 @@ Below is the **recommended sequence**. Within a phase, follow top to bottom.
 
 | Order | Do this |
 |-------|--------|
-| 1 | **PE-A backend** through Patreon link + credential storage (unblocks everything else). |
+| 1 | **PE-A backend** — Patreon **`/link`** + **`patron_oauth_credentials` write** shipped; client routing + unlink + PE-H read remain (see §5). |
 | 2 | **PE-A skeletal** — verified email + connect Patreon CTA (no fancy v0 yet). |
 | 3 | **PE-B backend** then **PE-B skeletal** — real feed in the shell. |
 | 4 | **PE-C backend** then **PE-C skeletal** — real follows. |
@@ -151,7 +151,38 @@ Everything in P2+ follows §3 in order.
 
 ---
 
-## 5. What we intentionally do *not* front-load
+## 5. Dual-path login (email ↔ Patreon) — shipped vs remaining
+
+**Dual-path** means: a supporter can land as **email-first** (Supabase or native signup), then **link Patreon** in-session without re-creating identity — *or* arrive via **Patreon-only** legacy `/exchange` (single-creator handshake). Both converge on one `Account` + opaque session.
+
+### Shipped in repo (PE-A slice)
+
+| Item | Notes |
+|------|--------|
+| Unified Patreon scopes + identity | `campaigns` in `PATREON_PATRON_OAUTH_SCOPES`; `extractUnifiedPatreonIdentity`; `buildPatronIdentityRequestUrl` includes owned campaign + membership includes. |
+| Multi-creator membership upsert | `IdentityService.completeUnifiedPatreonPatronOAuth` + `DbIdentityStore.findRelayCreatorIdsByPatreonCampaignIds`. |
+| Session-first link API | `POST /api/v1/auth/patreon/patron/link` — requires Bearer or `relay_session` cookie; body `{ code, redirect_uri }`; anchors merge to the signed-in `Account`; returns `linked_relay_creator_ids`, `owned_relay_creator_id`, `unmapped_patreon_campaign_ids` for UI (e.g. “Connect your Campaign”). |
+| Token persistence | `src/auth/patron-oauth-credential-store.ts` — AES-GCM payload keyed like creator OAuth; `POST /api/v1/auth/patreon/patron/exchange` also persists when DB identity is on. |
+| Legacy exchange | Still works; `Deprecation` header points successors to `/link` for session-first flows. |
+
+### Remaining steps to a **functional** dual-path (end-to-end in product, not only API)
+
+These are the milestones still between “backend ready” and “users experience dual-path without dead ends.” Count: **6**.
+
+| # | Step | What “done” looks like |
+|---|------|------------------------|
+| 1 | **Web callback routing** | Patreon redirect handler POSTs to **`/link`** when a Relay session exists (cookie or Bearer); otherwise **`/exchange`** for anonymous / legacy single-creator onboarding. |
+| 2 | **“Connect your Campaign” UI** | Client reads `owned_relay_creator_id` and `unmapped_patreon_campaign_ids` from `/link` response; shows dismissible modal; same entry from Settings later. |
+| 3 | **Unlink + credential teardown** | `DELETE` (or documented unlink) clears `PatronOAuthCredential` and marks entitlements stale per roadmap — so “disconnect Patreon” is real. |
+| 4 | **PE-H read path** | Entitlement refresh worker loads encrypted refresh token from `patron_oauth_credentials` (today we only write). |
+| 5 | **Email verification gate (if product requires)** | Optional: block `/link` until Supabase email verified — only if you enforce verified email before Patreon attach. |
+| 6 | **E2E or QA checklist** | One scripted path: register → session → Patreon OAuth → `/link` → patron shell with expected `linked_*` / modal flags. **Agent checklist:** [`docs/qa/DUAL_PATH_PATRON_QA_CHECKLIST.md`](qa/DUAL_PATH_PATRON_QA_CHECKLIST.md). |
+
+Until **1–2** land, dual-path is **API-complete** but **not user-complete**. Until **3–4**, link is **session UX** without full operational lifecycle. **5** is policy-dependent. **6** is release confidence.
+
+---
+
+## 6. What we intentionally do *not* front-load
 
 - **Full v0 illustration/prompt passes** before the API contract is stable — wastes rework.
 - **PE-F v2 ranked Browse** — post-MVP (roadmap §6 F1).
@@ -160,4 +191,4 @@ Everything in P2+ follows §3 in order.
 ---
 
 **Document owner:** jorda (match roadmap)  
-**Status:** Working schedule — adjust dates in Airtable, not here.
+**Status:** Working schedule — **operational queue** lives in Airtable workspace **Batting Order**, base **Batting Order** (`apprid6UGT9E1KlkN`), table **PE Batting Order** — see [`docs/database/BATTING_ORDER_AIRTABLE.md`](database/BATTING_ORDER_AIRTABLE.md). Edit **Detail** / **Pipeline status** there when scope changes; keep this file as the narrative source of truth. §5 updated for PE-A Patreon link + credential slice (2026).

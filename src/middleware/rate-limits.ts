@@ -67,3 +67,22 @@ export const cookieWrite: RequestHandler = rateLimit({
   },
   ...sharedHeaders
 });
+
+/**
+ * PE-C — 120 mutations / 15 min per Account — follow/unfollow; prior middleware must set
+ * `relayRateLimitKey` (see POST/DELETE `/api/v1/patron/follows`).
+ */
+export const patronFollowMutate: RequestHandler = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 120,
+  keyGenerator: (req) => {
+    const key = (req as RequestWithRelayKey).relayRateLimitKey;
+    if (!key) {
+      throw new Error(
+        "patronFollowMutate rate limit: relayRateLimitKey must be set by prior middleware"
+      );
+    }
+    return key;
+  },
+  ...sharedHeaders
+});

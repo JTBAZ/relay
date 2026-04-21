@@ -6,6 +6,7 @@ import { useSearchParams } from "next/navigation";
 import { RelayLogo } from "@/app/components/auth/relay-logo";
 import { TrustMarks } from "@/app/components/auth/trust-marks";
 import { StudioSupabaseSignInPanel } from "@/app/components/studio/StudioSupabaseSignInPanel";
+import { SupporterSignInPanel } from "@/app/components/auth/SupporterSignInPanel";
 import { PatreonOAuthLinks } from "@/app/components/auth/patreon-oauth-links";
 
 type RoleTab = "creator" | "supporter";
@@ -112,25 +113,40 @@ function LoginPageInner() {
             </p>
           </>
         ) : (
-          <section aria-labelledby="supporter-heading" className="space-y-6 text-center">
-            <div className="space-y-2">
+          <section aria-labelledby="supporter-heading" className="space-y-5">
+            <div className="space-y-1 text-center">
               <h1 id="supporter-heading" className="font-sans text-lg font-semibold" style={{ color: "#F9FAFB" }}>
-                Connect as a supporter
+                Join as a supporter
               </h1>
               <p className="text-xs leading-relaxed" style={{ color: "#9CA3AF" }}>
-                Link your Patreon to browse creators you support in Relay — one clean feed, no extra subscription.
+                Create a verified Relay account, then connect your Patreon to access
+                your supporter feed — no extra subscription.
               </p>
             </div>
-            <Link
-              href="/patron/onboarding"
-              className="inline-flex w-full items-center justify-center rounded-lg py-3 text-sm font-semibold transition-colors"
-              style={{ background: "#2D6A4F", color: "#F9FAFB" }}
+
+            {/* Step 1: email + password account */}
+            <div className="space-y-1">
+              <p className="text-xs font-medium" style={{ color: "#6B7280" }}>
+                Step 1 — Create or sign in to your Relay account
+              </p>
+              <Suspense fallback={<p className="text-center text-xs text-[#6b7280]">Loading…</p>}>
+                <SupporterSignInPanel />
+              </Suspense>
+            </div>
+
+            {/* Step 2: shown as context — the connect page handles the actual OAuth */}
+            <div
+              className="rounded-xl border p-4 space-y-2"
+              style={{ background: "#111111", borderColor: "#2A2A2A" }}
             >
-              Connect with Patreon
-            </Link>
-            <p className="text-xs" style={{ color: "#6B7280" }}>
-              You&apos;ll finish on Patreon, then return to your supporter feed.
-            </p>
+              <p className="text-xs font-medium" style={{ color: "#6B7280" }}>
+                Step 2 — Link your Patreon (after sign-in)
+              </p>
+              <p className="text-xs leading-relaxed" style={{ color: "#9CA3AF" }}>
+                Once you&apos;re signed in you&apos;ll be taken to the Patreon connect
+                page. Your tiers and feed are synced automatically.
+              </p>
+            </div>
           </section>
         )}
 

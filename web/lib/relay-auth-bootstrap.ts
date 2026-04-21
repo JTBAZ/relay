@@ -6,6 +6,12 @@ import {
 } from "./relay-api";
 import { emitStudioSessionUpdate } from "./studio-session-context";
 
+export type SupporterBootstrapResult = {
+  account_id: string;
+  /** Opaque Relay session token (dual-write; cookie is also set by the API). */
+  token: string;
+};
+
 async function postRelayWithSupabaseJwt<T>(
   path: string,
   accessToken: string,
@@ -25,6 +31,24 @@ type RelaySessionPayload = {
   user_id: string;
   account_id: string;
 };
+
+/**
+ * PE-A Skeletal UI — Supporter path: sync Account + mint opaque Relay session cookie.
+ * Does NOT provision a creator workspace. Called after Supabase sign-in for supporter accounts.
+ * After this returns, the browser has a `relay_session` cookie and the caller should navigate
+ * to `/patreon/patron/connect` (first time) or `/patron/feed` (returning).
+ */
+export async function bootstrapSupporterAfterSupabase(
+  accessToken: string
+): Promise<SupporterBootstrapResult> {
+  await postRelayWithSupabaseJwt("/api/v1/auth/supabase/sync", accessToken, {});
+  const relay = await postRelayWithSupabaseJwt<RelaySessionPayload>(
+    "/api/v1/auth/supabase/relay-session",
+    accessToken,
+    {}
+  );
+  return { account_id: relay.account_id, token: relay.token };
+}
 
 /**
  * MT-036: After Supabase sign-in, sync Account, mint opaque Relay session (HttpOnly cookie), provision workspace,

@@ -24,6 +24,14 @@ export interface IdentityStore {
   /** Option B account-first signup (MT-007) — implemented by `DbIdentityStore` only. */
   registerAccountEmailPassword?(email: string, password: string): Promise<UserAccount>;
   loginAccountEmailPassword?(email: string, password: string): Promise<UserAccount>;
+  /**
+   * PE-A: resolve `patreonCampaignId → relayCreatorId` for the campaigns a unified
+   * Patreon OAuth identity touches (memberships + owned). Campaigns not on Relay
+   * are absent from the returned map. `DbIdentityStore` only.
+   */
+  findRelayCreatorIdsByPatreonCampaignIds?(
+    patreonCampaignIds: readonly string[]
+  ): Promise<Map<string, string>>;
 }
 
 export class FileIdentityStore implements IdentityStore {

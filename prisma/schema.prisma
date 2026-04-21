@@ -231,7 +231,18 @@ model PatronProfile {
   id                 String           @id @default(cuid())
   tenantMembershipId String           @unique @map("tenant_membership_id")
   tenantMembership   TenantMembership @relation(fields: [tenantMembershipId], references: [id], onDelete: Cascade)
+  /// Display / entry handle (mixed case allowed); uniqueness is on `handleNorm`.
   handle             String?
+  /// Lowercase normalized handle for uniqueness and `/p/[handle]` (D16).
+  handleNorm         String?          @unique @map("handle_norm")
+  displayName        String?          @map("display_name")
+  bio                String?
+  avatarUrl          String?          @map("avatar_url")
+  bannerUrl          String?          @map("banner_url")
+  /// Default false until the patron opts into a public presence (D16).
+  isPublic           Boolean          @default(false) @map("is_public")
+  /// Onboarding wizard progress 0–4 (PE-A skeleton).
+  onboardingStep     Int              @default(0) @map("onboarding_step")
   createdAt          DateTime         @default(now()) @map("created_at")
   updatedAt          DateTime         @updatedAt @map("updated_at")
 

@@ -34,6 +34,7 @@ import { EmptyState } from "./empty-state";
 import { ErrorBanner } from "./error-banner";
 import { CommandPalette } from "./command-palette";
 import { GalleryView } from "./gallery-view";
+import { ConnectCampaignModal } from "./connect-campaign-modal";
 import { SettingsModal } from "./settings-modal";
 import { NotificationsTray } from "./notifications-tray";
 import { FilterChips, type FeedFilter } from "./filter-chips";
@@ -41,6 +42,7 @@ import { PatronFeedDevTools } from "./patron-feed-dev-tools";
 import { RelayMarkIcon } from "./relay-mark-icon";
 import {
   getPatronFeedFixtureBundle,
+  mapPatronFollowApiItemToCreator,
   sortFollowedForSidebar,
   type Creator,
   type FeedPost,
@@ -48,8 +50,18 @@ import {
   type PatronFeedBundle,
   type PatronFeedDataSource,
 } from "@/lib/relay-fixtures";
-import { fetchPatronRelayFeed } from "@/lib/patron-feed-api";
+import { fetchPatronFollows } from "@/lib/patron-follows-api";
 import {
+  fetchPatronRelayFeedWithOptions,
+} from "@/lib/patron-feed-api";
+import {
+  clearPatronConnectCampaignStorage,
+  getSnapshotPatronConnectCampaign,
+  readAndConsumeSessionPatronConnectPrompt,
+  type PatronConnectCampaignPayload
+} from "@/lib/patron-connect-campaign-prompt";
+import {
+  deletePatronPatreonLink,
   fetchPatronSessionMe,
   hasRelaySignedInCookie,
   type PatronSessionMe,
@@ -60,7 +72,7 @@ import { performRelayLogout } from "@/lib/relay-session-logout";
 export interface RelayAppProps {
   /**
    * Default data source before dev-tool override.
-   * If omitted, uses `NEXT_PUBLIC_RELAY_PATRON_FEED_DEFAULT` or `fixtures`.
+   * If omitted, uses `NEXT_PUBLIC_RELAY_PATRON_FEED_DEFAULT` (`fixtures` forces mock; otherwise **live** API — PE-B).
    */
   initialDataSource?: PatronFeedDataSource;
 }
@@ -220,6 +232,12 @@ function filterPosts(posts: FeedPost[], filter: FeedFilter): FeedPost[] {
   }
 }
 
+/** Maps UI chip → `GET /api/v1/patron/feed?filter=` (omit for `all`). */
+function feedFilterToApiParam(filter: FeedFilter): string | undefined {
+  if (filter === "all") return undefined;
+  return filter;
+}
+
 function discoverItemToPost(item: DiscoverItem): FeedPost {
   return {
     id: item.id,
@@ -240,19 +258,26 @@ function discoverItemToPost(item: DiscoverItem): FeedPost {
 export function RelayApp({ initialDataSource }: RelayAppProps = {}) {
   const [dataSource, setDataSource] = useState<PatronFeedDataSource>(() => {
     if (initialDataSource) return initialDataSource;
-    return process.env.NEXT_PUBLIC_RELAY_PATRON_FEED_DEFAULT === "live"
-      ? "live"
-      : "fixtures";
+    const env = process.env.NEXT_PUBLIC_RELAY_PATRON_FEED_DEFAULT?.trim();
+    if (env === "fixtures") return "fixtures";
+    return "live";
   });
   const fixtureBundle = useMemo(() => getPatronFeedFixtureBundle(), []);
   const [liveBundle, setLiveBundle] = useState<PatronFeedBundle | null>(null);
   const [liveLoading, setLiveLoading] = useState(false);
+  const [liveLoadingMore, setLiveLoadingMore] = useState(false);
   const [liveFeedError, setLiveFeedError] = useState<{
     message: string;
     status: number;
     code?: string;
   } | null>(null);
   const [liveFetchGen, setLiveFetchGen] = useState(0);
+  const [activeFilter, setActiveFilter] = useState<FeedFilter>("all");
+
+  /** PE-C — sidebar source from `GET /api/v1/patron/follows` (null = not loaded yet). */
+  const [followsApiCreators, setFollowsApiCreators] = useState<Creator[] | null>(null);
+  const [followsApiUseFeedOnly, setFollowsApiUseFeedOnly] = useState(false);
+  const [followsApiLoading, setFollowsApiLoading] = useState(false);
 
   const effectiveBundle = useMemo((): PatronFeedBundle => {
     if (dataSource === "fixtures") return fixtureBundle;
@@ -260,20 +285,64 @@ export function RelayApp({ initialDataSource }: RelayAppProps = {}) {
     return emptyLiveShell(fixtureBundle);
   }, [dataSource, fixtureBundle, liveBundle]);
 
-  const sortedFollowed = useMemo(
-    () => sortFollowedForSidebar(effectiveBundle.followedCreators),
-    [effectiveBundle.followedCreators]
-  );
+  const sidebarFollowedList = useMemo(() => {
+    if (dataSource === "fixtures") {
+      return sortFollowedForSidebar(effectiveBundle.followedCreators);
+    }
+    if (followsApiUseFeedOnly || followsApiCreators === null) {
+      return sortFollowedForSidebar(effectiveBundle.followedCreators);
+    }
+    const feedMap = new Map(
+      effectiveBundle.followedCreators.map((c) => [c.id, c])
+    );
+    const merged = followsApiCreators.map((c) => feedMap.get(c.id) ?? c);
+    return sortFollowedForSidebar(merged);
+  }, [
+    dataSource,
+    effectiveBundle.followedCreators,
+    followsApiCreators,
+    followsApiUseFeedOnly
+  ]);
 
   const { onRelayFollowed, offRelayFollowed } = useMemo(() => {
     const on: Creator[] = [];
     const off: Creator[] = [];
-    for (const c of sortedFollowed) {
+    for (const c of sidebarFollowedList) {
       if (c.onRelay === false) off.push(c);
       else on.push(c);
     }
     return { onRelayFollowed: on, offRelayFollowed: off };
-  }, [sortedFollowed]);
+  }, [sidebarFollowedList]);
+
+  useEffect(() => {
+    if (dataSource !== "live") {
+      setFollowsApiCreators(null);
+      setFollowsApiUseFeedOnly(false);
+      setFollowsApiLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setFollowsApiLoading(true);
+    setFollowsApiUseFeedOnly(false);
+    void fetchPatronFollows()
+      .then((payload) => {
+        if (cancelled) return;
+        setFollowsApiCreators(
+          payload.items.map((item) => mapPatronFollowApiItemToCreator(item))
+        );
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setFollowsApiUseFeedOnly(true);
+        setFollowsApiCreators([]);
+      })
+      .finally(() => {
+        if (!cancelled) setFollowsApiLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [dataSource, liveFetchGen]);
 
   const retryLiveFeed = useCallback(() => {
     setLiveFeedError(null);
@@ -286,7 +355,8 @@ export function RelayApp({ initialDataSource }: RelayAppProps = {}) {
     let cancelled = false;
     setLiveLoading(true);
     setLiveFeedError(null);
-    void fetchPatronRelayFeed()
+    const filterParam = feedFilterToApiParam(activeFilter);
+    void fetchPatronRelayFeedWithOptions({ filter: filterParam ?? null, limit: 30 })
       .then((b) => {
         if (!cancelled) {
           setLiveBundle(b);
@@ -299,12 +369,12 @@ export function RelayApp({ initialDataSource }: RelayAppProps = {}) {
             let message = e.message;
             if (e.status === 401) {
               message =
-                "Sign in with Patreon to load your live feed. Mock fixtures still work offline.";
+                "Sign in to load your feed (Relay session required). Use mock fixtures while offline, or sign in at /login.";
             } else if (e.status === 403) {
               message =
                 "This session can’t load this feed. Try signing in again or use mock fixtures.";
             } else if (e.status >= 500) {
-              message = `Relay API error (${e.status}). Try again or use mock fixtures while the server is fixed.`;
+              message = `Relay API error (${e.status}). Try again or switch to mock fixtures in dev tools.`;
             } else if (e.status === 0 || e.code === "NETWORK") {
               message =
                 "Couldn’t reach the Relay API. Start the API (e.g. npm start at the repo root) or check NEXT_PUBLIC_RELAY_API_URL.";
@@ -324,20 +394,69 @@ export function RelayApp({ initialDataSource }: RelayAppProps = {}) {
     return () => {
       cancelled = true;
     };
-  }, [dataSource, liveFetchGen]);
+  }, [dataSource, liveFetchGen, activeFilter]);
+
+  const loadMoreLiveFeed = useCallback(() => {
+    if (dataSource !== "live" || !liveBundle?.next_cursor?.trim()) return;
+    const cursor = liveBundle.next_cursor.trim();
+    const filterParam = feedFilterToApiParam(activeFilter);
+    setLiveLoadingMore(true);
+    setLiveFeedError(null);
+    void fetchPatronRelayFeedWithOptions({
+      cursor,
+      filter: filterParam ?? null,
+      limit: 30
+    })
+      .then((more) => {
+        setLiveBundle((prev) => {
+          if (!prev) return more;
+          return {
+            ...more,
+            feedPosts: [...prev.feedPosts, ...more.feedPosts],
+            next_cursor: more.next_cursor ?? null
+          };
+        });
+      })
+      .catch((e: unknown) => {
+        if (e instanceof RelayApiError) {
+          setLiveFeedError({
+            message: e.message,
+            status: e.status,
+            code: e.code
+          });
+        } else {
+          setLiveFeedError({
+            message: e instanceof Error ? e.message : String(e),
+            status: 0
+          });
+        }
+      })
+      .finally(() => setLiveLoadingMore(false));
+  }, [dataSource, liveBundle?.next_cursor, activeFilter]);
 
   const [currentView, setCurrentView] = useState<AppView>("home");
   const [transitionState, setTransitionState] = useState<TransitionState>("idle");
-  const [activeFilter, setActiveFilter] = useState<FeedFilter>("all");
   const [commandOpen, setCommandOpen] = useState(false);
   const [selectedPost, setSelectedPost] = useState<FeedPost | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [connectCampaignOpen, setConnectCampaignOpen] = useState(false);
+  const [connectCampaignPayload, setConnectCampaignPayload] =
+    useState<PatronConnectCampaignPayload | null>(null);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const router = useRouter();
   const accountMenuRef = useRef<HTMLDivElement>(null);
   const [accountMenuOpen, setAccountMenuOpen] = useState(false);
   const [sessionMe, setSessionMe] = useState<PatronSessionMe | null>(null);
+
+  /** PE-A: Supabase email must be confirmed before session-first Patreon `/link` (when API reports false). */
+  const peAShowVerifyEmailBanner = Boolean(sessionMe && sessionMe.email_verified === false);
+  /** Signed in, email OK (or unknown), Patreon identity not linked yet — show connect CTA. */
+  const peAShowConnectPatreonBanner = Boolean(
+    sessionMe &&
+      sessionMe.email_verified !== false &&
+      !(sessionMe.patreon_user_id && sessionMe.patreon_user_id.trim().length > 0)
+  );
 
   const loadSessionMe = useCallback(() => {
     if (typeof window === "undefined") return;
@@ -355,6 +474,15 @@ export function RelayApp({ initialDataSource }: RelayAppProps = {}) {
     window.addEventListener("relay-studio-session", loadSessionMe);
     return () => window.removeEventListener("relay-studio-session", loadSessionMe);
   }, [loadSessionMe]);
+
+  /** Post–Patreon `/link` redirect: one-shot prompt from sessionStorage. */
+  useEffect(() => {
+    const p = readAndConsumeSessionPatronConnectPrompt();
+    if (p) {
+      setConnectCampaignPayload(p);
+      setConnectCampaignOpen(true);
+    }
+  }, []);
 
   useEffect(() => {
     if (!accountMenuOpen) return;
@@ -417,10 +545,11 @@ export function RelayApp({ initialDataSource }: RelayAppProps = {}) {
     return () => mq.removeEventListener("change", handler);
   }, []);
 
-  const filteredPosts = useMemo(
-    () => filterPosts(effectiveBundle.feedPosts, activeFilter),
-    [activeFilter, effectiveBundle.feedPosts]
-  );
+  /** Live feed: server applies `filter` query; fixtures keep client-side chip filtering. */
+  const filteredPosts = useMemo(() => {
+    if (dataSource === "live") return effectiveBundle.feedPosts;
+    return filterPosts(effectiveBundle.feedPosts, activeFilter);
+  }, [dataSource, activeFilter, effectiveBundle.feedPosts]);
 
   const enrichedPosts = useMemo(() => {
     let dividerInserted = false;
@@ -459,6 +588,25 @@ export function RelayApp({ initialDataSource }: RelayAppProps = {}) {
     await performRelayLogout();
     router.replace("/login?role=supporter");
   }, [router]);
+
+  const handleDisconnectPatreon = useCallback(async () => {
+    if (
+      !window.confirm(
+        "Disconnect Patreon? Relay will remove stored tokens and mark your tier access as stale until you link again."
+      )
+    ) {
+      return;
+    }
+    try {
+      await deletePatronPatreonLink();
+      clearPatronConnectCampaignStorage();
+      setConnectCampaignOpen(false);
+      setSettingsOpen(false);
+      loadSessionMe();
+    } catch (e) {
+      window.alert(e instanceof Error ? e.message : "Could not disconnect Patreon.");
+    }
+  }, [loadSessionMe]);
 
   const isDiscover = currentView === "discover";
   const viewer = effectiveBundle.currentViewer;
@@ -638,10 +786,28 @@ export function RelayApp({ initialDataSource }: RelayAppProps = {}) {
                   Following
                 </span>
                 <span className="text-[10px] text-[#3A3A3A]">
-                  {sortedFollowed.length}
+                  {sidebarFollowedList.length}
                 </span>
               </div>
               <ul className="space-y-0.5">
+                {dataSource === "live" &&
+                followsApiLoading &&
+                sidebarFollowedList.length === 0 ? (
+                  <li className="list-none px-3 py-1" aria-hidden="true">
+                    <div className="space-y-2">
+                      {[0, 1, 2].map((i) => (
+                        <div
+                          key={i}
+                          className="flex animate-pulse items-center gap-3 rounded-lg px-2 py-2"
+                        >
+                          <div className="h-6 w-6 shrink-0 rounded-full bg-[#1A1A1A]" />
+                          <div className="h-2.5 flex-1 rounded bg-[#1A1A1A]" />
+                          <div className="h-1.5 w-1.5 shrink-0 rounded-full bg-[#1A1A1A]" />
+                        </div>
+                      ))}
+                    </div>
+                  </li>
+                ) : null}
                 {onRelayFollowed.map((creator) => (
                   <li key={creator.id} className="px-1">
                     <FollowingCreatorRow creator={creator} />
@@ -711,7 +877,12 @@ export function RelayApp({ initialDataSource }: RelayAppProps = {}) {
                   Former subscriptions
                 </span>
               </Link>
-              <button 
+              <button
+                type="button"
+                onClick={() => {
+                  setSettingsOpen(true);
+                  setMobileSidebarOpen(false);
+                }}
                 style={{ transition: "all 400ms cubic-bezier(0.25, 0.1, 0.25, 1)" }}
                 className={[
                   "w-full flex items-center rounded-lg text-sm text-[#5A5A5A] hover:bg-[#141414] hover:text-[#9CA3AF]",
@@ -940,6 +1111,42 @@ export function RelayApp({ initialDataSource }: RelayAppProps = {}) {
             </div>
           )}
 
+          {/* PE-A skeletal: verified-email gate + connect Patreon before a linked identity exists */}
+          {currentView === "home" && peAShowVerifyEmailBanner ? (
+            <div
+              className="shrink-0 border-b border-amber-800/40 bg-amber-950/35 px-4 py-3 lg:px-5"
+              role="status"
+            >
+              <p className="text-sm text-amber-100/95">
+                <span className="font-medium text-amber-50">Verify your email</span> before linking
+                Patreon. Check your inbox for Relay&apos;s confirmation message, then return here.
+              </p>
+              <p className="mt-1 text-xs text-amber-200/80">
+                After verifying, refresh this page or sign out and back in if the banner stays.
+              </p>
+            </div>
+          ) : null}
+          {currentView === "home" && !peAShowVerifyEmailBanner && peAShowConnectPatreonBanner ? (
+            <div
+              className="shrink-0 border-b border-[#1B4332]/50 bg-[#0D1F17]/90 px-4 py-3 lg:px-5"
+              role="region"
+              aria-label="Connect Patreon"
+            >
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+                <p className="text-sm text-[#C8C8C8]">
+                  <span className="font-medium text-[#E5E7EB]">Connect Patreon</span> to sync the
+                  creators you support and load your feed.
+                </p>
+                <Link
+                  href="/patreon/patron/connect"
+                  className="inline-flex shrink-0 items-center justify-center rounded-lg bg-[#2D6A4F] px-4 py-2 text-sm font-medium text-[#F9FAFB] transition-colors hover:bg-[#40916C]"
+                >
+                  Continue to Patreon
+                </Link>
+              </div>
+            </div>
+          ) : null}
+
           {/* Scrollable content */}
           <main className="flex-1 overflow-y-auto" id="feed-main">
             <div
@@ -979,22 +1186,36 @@ export function RelayApp({ initialDataSource }: RelayAppProps = {}) {
                       <EmptyState onSearch={openCommand} />
                     ) : filteredPosts.length === 0 ? (
                       liveFeedError && activeFilter === "all" ? null : (
-                        <div className="flex flex-col items-center py-20 text-center">
+                        <div className="flex flex-col items-center gap-3 py-20 text-center max-w-md mx-auto">
                           <p className="text-sm text-[#5A5A5A]">
                             {activeFilter !== "all"
                               ? "No posts match this filter."
                               : dataSource === "live"
-                                ? "No posts yet."
+                                ? "No posts to show yet. Link Patreon and follow creators — posts from creators you follow appear here once they’re on Relay and you have access."
                                 : "No posts match this filter."}
                           </p>
+                          {dataSource === "live" && activeFilter === "all" ? (
+                            <p className="text-xs text-[#4B5563]">
+                              Tip: the feed lists creators you follow in Relay. Patreon memberships are synced on link;
+                              automatic follow-from-membership is coming next (PE-C).
+                            </p>
+                          ) : null}
                           {activeFilter !== "all" ? (
                             <button
                               type="button"
                               onClick={() => setActiveFilter("all")}
-                              className="mt-4 text-sm text-[#2D6A4F] hover:text-[#40916C] transition-colors duration-150"
+                              className="mt-2 text-sm text-[#2D6A4F] hover:text-[#40916C] transition-colors duration-150"
                             >
                               Show all posts
                             </button>
+                          ) : null}
+                          {dataSource === "live" && activeFilter === "all" ? (
+                            <Link
+                              href="/patreon/patron/connect"
+                              className="text-sm font-medium text-[#2D6A4F] hover:text-[#40916C] transition-colors"
+                            >
+                              Connect Patreon
+                            </Link>
                           ) : null}
                         </div>
                       )
@@ -1011,6 +1232,21 @@ export function RelayApp({ initialDataSource }: RelayAppProps = {}) {
                         </div>
                       ))
                     )}
+                    {dataSource === "live" &&
+                    liveBundle?.next_cursor &&
+                    !liveFeedError &&
+                    filteredPosts.length > 0 ? (
+                      <div className="flex justify-center pt-2 pb-8">
+                        <button
+                          type="button"
+                          onClick={() => void loadMoreLiveFeed()}
+                          disabled={liveLoadingMore}
+                          className="rounded-lg border border-[#2A2A2A] bg-[#111111] px-4 py-2.5 text-sm font-medium text-[#9CA3AF] transition-colors hover:border-[#333333] hover:text-[#E5E7EB] disabled:opacity-50"
+                        >
+                          {liveLoadingMore ? "Loading…" : "Load more"}
+                        </button>
+                      </div>
+                    ) : null}
                   </div>
                 </div>
               ) : (
@@ -1029,6 +1265,18 @@ export function RelayApp({ initialDataSource }: RelayAppProps = {}) {
         isOpen={settingsOpen}
         onClose={() => setSettingsOpen(false)}
         onSignOut={handleSignOut}
+        onPatreonCreatorConnection={() => {
+          setSettingsOpen(false);
+          setConnectCampaignPayload(getSnapshotPatronConnectCampaign());
+          setConnectCampaignOpen(true);
+        }}
+        onDisconnectPatreon={handleDisconnectPatreon}
+      />
+
+      <ConnectCampaignModal
+        isOpen={connectCampaignOpen}
+        payload={connectCampaignPayload}
+        onClose={() => setConnectCampaignOpen(false)}
       />
 
       {/* Gallery view modal */}

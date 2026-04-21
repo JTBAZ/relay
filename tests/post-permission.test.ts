@@ -133,4 +133,48 @@ describe("evaluatePostPermission (MIG-41)", () => {
       })
     ).toBeNull();
   });
+
+  it("allow — content owner (isContentOwner=true) always sees their own paid post at full res", () => {
+    const snapshot = snap(["patreon_tier_high"], {
+      patreon_tier_high: tier("patreon_tier_high", 3000)
+    });
+    // Jordan's session: creator_id = '__relay_platform' (account-first), NOT their studio id.
+    const creatorSession: SessionToken = {
+      token: "t",
+      user_id: "jordan_platform_membership",
+      creator_id: "__relay_platform",
+      tier_ids: [],
+      expires_at: "2099-01-01T00:00:00.000Z"
+    };
+    expect(
+      evaluatePostPermission({
+        snapshot,
+        creatorId,
+        postId: "post_p1",
+        session: creatorSession,
+        isContentOwner: true
+      })
+    ).toEqual({ outcome: "allow" });
+  });
+
+  it("deny — non-owner session on a different tenant with isContentOwner=false", () => {
+    const snapshot = snap(["patreon_tier_high"], {
+      patreon_tier_high: tier("patreon_tier_high", 3000)
+    });
+    const otherSession: SessionToken = {
+      token: "t",
+      user_id: "other",
+      creator_id: "some_other_creator",
+      tier_ids: ["patreon_tier_high"],
+      expires_at: "2099-01-01T00:00:00.000Z"
+    };
+    const r = evaluatePostPermission({
+      snapshot,
+      creatorId,
+      postId: "post_p1",
+      session: otherSession,
+      isContentOwner: false
+    });
+    expect(r).toMatchObject({ outcome: "deny" });
+  });
 });

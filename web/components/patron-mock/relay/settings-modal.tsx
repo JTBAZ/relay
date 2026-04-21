@@ -7,9 +7,19 @@ interface SettingsModalProps {
   onClose: () => void;
   /** Wired from RelayApp: revokes Relay session and redirects. */
   onSignOut?: () => void | Promise<void>;
+  /** Re-open “Connect your Patreon campaign” (uses last OAuth snapshot when available). */
+  onPatreonCreatorConnection?: () => void;
+  /** Disconnect Patreon (server clears tokens + stale entitlements). */
+  onDisconnectPatreon?: () => void | Promise<void>;
 }
 
-export function SettingsModal({ isOpen, onClose, onSignOut }: SettingsModalProps) {
+export function SettingsModal({
+  isOpen,
+  onClose,
+  onSignOut,
+  onPatreonCreatorConnection,
+  onDisconnectPatreon
+}: SettingsModalProps) {
   const [discoverSettings, setDiscoverSettings] = useState({
     showFollowedFirst: true,
     hideExplicit: false,
@@ -120,6 +130,24 @@ export function SettingsModal({ isOpen, onClose, onSignOut }: SettingsModalProps
               Account
             </h3>
             <div className="space-y-2 pl-6">
+              {onPatreonCreatorConnection ? (
+                <button
+                  type="button"
+                  className="w-full text-left text-xs text-[#888888] hover:text-[#40916C] transition-colors py-1.5"
+                  onClick={() => onPatreonCreatorConnection()}
+                >
+                  Patreon creator connection
+                </button>
+              ) : null}
+              {onDisconnectPatreon ? (
+                <button
+                  type="button"
+                  className="w-full text-left text-xs text-[#a87c7c] hover:text-[#c9a0a0] transition-colors py-1.5"
+                  onClick={() => void onDisconnectPatreon()}
+                >
+                  Disconnect Patreon
+                </button>
+              ) : null}
               <button className="w-full text-left text-xs text-[#888888] hover:text-[#40916C] transition-colors py-1.5">
                 Profile Settings
               </button>

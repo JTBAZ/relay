@@ -3,6 +3,7 @@ import { EntitlementSource } from "@prisma/client";
 import {
   DEFAULT_PATRON_ENTITLEMENT_STALE_MS,
   getPatronEntitlementStaleAfterMs,
+  invalidatePatronEntitlementSnapshotsForMemberships,
   upsertPatronEntitlementSnapshotForOAuth
 } from "../src/identity/patron-entitlement-snapshot.js";
 
@@ -85,5 +86,35 @@ describe("upsertPatronEntitlementSnapshotForOAuth", () => {
         update: expect.objectContaining({ active: false })
       })
     );
+  });
+});
+
+describe("invalidatePatronEntitlementSnapshotsForMemberships", () => {
+  it("updateMany with empty tier ids, inactive, stale, manual_support", async () => {
+    const updateMany = vi.fn().mockResolvedValue({ count: 2 });
+    const prisma = { patronEntitlementSnapshot: { updateMany } };
+    const now = new Date("2026-06-01T12:00:00.000Z");
+
+    const n = await invalidatePatronEntitlementSnapshotsForMemberships(prisma as never, ["a", "b"], now);
+
+    expect(n).toBe(2);
+    expect(updateMany).toHaveBeenCalledWith({
+      where: { patronMembershipId: { in: ["a", "b"] } },
+      data: expect.objectContaining({
+        entitledTierIds: [],
+        active: false,
+        staleAfter: now,
+        asOf: now,
+        source: EntitlementSource.manual_support
+      })
+    });
+  });
+
+  it("returns 0 when no membership ids", async () => {
+    const updateMany = vi.fn();
+    const prisma = { patronEntitlementSnapshot: { updateMany } };
+    const n = await invalidatePatronEntitlementSnapshotsForMemberships(prisma as never, []);
+    expect(n).toBe(0);
+    expect(updateMany).not.toHaveBeenCalled();
   });
 });

@@ -5,11 +5,15 @@ import type { SessionToken } from "../identity/types.js";
 import type { CanonicalSnapshot } from "../ingest/canonical-store.js";
 
 /**
- * MIG-41 — Permission surface for “Account + post” with tier ordering (see `canAccessPost` + tier catalog).
+ * MIG-41 — Permission surface for "Account + post" with tier ordering (see `canAccessPost` + tier catalog).
  *
  * - **allow** — session (or public post) can load full export / detail.
  * - **deny** — anonymous on non-public, wrong creator, or missing post.
- * - **locked_preview** — same creator session, but pledge tier does not satisfy the post gate (blur / teaser UX).
+ * - **locked_preview** — patron session on a tier-gated post they don't hold (blur / teaser UX).
+ *
+ * Callers that know the session belongs to the content owner (via `Account.primaryRelayCreatorId`)
+ * should pass `isContentOwner: true` to bypass the patron tier check — the creator must always
+ * see their own Library unblurred.
  */
 export type PostPermissionOutcome =
   | { outcome: "allow" }
@@ -21,11 +25,23 @@ export function evaluatePostPermission(args: {
   creatorId: string;
   postId: string;
   session: SessionToken | null;
+  /**
+   * Set to `true` when the caller has verified (via DB) that the session belongs to the
+   * content owner (Account.primaryRelayCreatorId === creatorId). Bypasses the patron tier
+   * check so the creator always sees their own Library at full resolution.
+   */
+  isContentOwner?: boolean;
 }): PostPermissionOutcome | null {
-  const { snapshot, creatorId, postId, session } = args;
+  const { snapshot, creatorId, postId, session, isContentOwner } = args;
   const row = snapshot.posts[creatorId]?.[postId];
   if (!row || row.upstream_status === "deleted") {
     return null;
+  }
+
+  // Content owner: always allow regardless of tier configuration. The creator's
+  // own Library must show full-resolution unblurred content.
+  if (isContentOwner && session) {
+    return { outcome: "allow" };
   }
 
   const tierMap = snapshot.tiers[creatorId] ?? {};

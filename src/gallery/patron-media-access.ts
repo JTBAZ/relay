@@ -66,8 +66,17 @@ export function patronMayFetchMediaExport(args: {
   creatorId: string;
   mediaId: string;
   session: SessionToken | null;
+  /** Set by route when DB confirms session.account.primaryRelayCreatorId === creatorId. */
+  isContentOwner?: boolean;
 }): { allowed: true } | { allowed: false; reason: string } {
-  const { snapshot, creatorId, mediaId, session } = args;
+  const { snapshot, creatorId, mediaId, session, isContentOwner } = args;
+
+  // Content owner: always allow — the creator must be able to load their own
+  // full-resolution exports even when RELAY_EXPORT_REQUIRE_TIER_ACCESS=1.
+  if (isContentOwner && session) {
+    return { allowed: true };
+  }
+
   const postId = findPostIdForExportedMedia(snapshot, creatorId, mediaId);
   if (!postId) {
     return { allowed: false, reason: "Media not found in catalog." };

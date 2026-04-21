@@ -12,6 +12,7 @@ It complements [`integration-roadmap.md`](integration-roadmap.md) (what to build
 |--------|------|
 | **Relay Database Tracker** → **DB Integration Pipeline** | Tracks **database integration** steps (`1.1.1`, `2.3.4`, …) from the roadmap. |
 | **Project tracker** → **Production Ledger** | Tracks **product/UI/ledger** work (v0, Relay features). **Do not** mix roadmap step IDs into Production Ledger or vice versa. |
+| **Batting Order** workspace → **PE Batting Order** table | Tracks **Patron Experience** schedule ([`Patron_Experience_Batting_Order.md`](../Patron_Experience_Batting_Order.md)); same **row-per-step + Run batching** idea as this pipeline — see [`BATTING_ORDER_AIRTABLE.md`](BATTING_ORDER_AIRTABLE.md). **Do not** mix DB step IDs (`1.1.1`) into Batting Order Step IDs (`BO-P1-01`). |
 
 ---
 

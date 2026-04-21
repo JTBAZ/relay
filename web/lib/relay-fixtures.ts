@@ -501,6 +501,29 @@ export function sortFollowedForSidebar(creators: Creator[]): Creator[] {
   });
 }
 
+/** PE-C — map `GET /api/v1/patron/follows` rows to sidebar {@link Creator} until feed enrichment arrives. */
+export function mapPatronFollowApiItemToCreator(item: {
+  relay_creator_id: string;
+  created_at: string;
+}): Creator {
+  const id = item.relay_creator_id.trim();
+  const short =
+    id.length > 14 ? `${id.slice(0, 8)}…${id.slice(-4)}` : id || "creator";
+  const handleBase = short.replace(/[^a-zA-Z0-9_]/g, "_").replace(/_+/g, "_");
+  return {
+    id,
+    handle: (handleBase || "creator").slice(0, 32),
+    displayName: short,
+    discipline: "",
+    avatarUrl: "/placeholder.svg?height=40&width=40",
+    isFollowed: true,
+    followerCount: 0,
+    postCount: 0,
+    onRelay: true,
+    patronTierLabel: "Free"
+  };
+}
+
 export interface FormerSubscriptionRow {
   id: string;
   creator: Creator;
@@ -727,13 +750,15 @@ export const NOTIFICATIONS: Notification[] = [
 
 export type PatronFeedDataSource = "fixtures" | "live";
 
-/** Shape returned by `GET /api/v1/patron/relay_feed` (see `patron-feed-api.ts`). */
+/** Shape returned by `GET /api/v1/patron/relay_feed` and `GET /api/v1/patron/feed` (see `patron-feed-api.ts`). */
 export interface PatronFeedBundle {
   feedPosts: FeedPost[];
   discoverItems: DiscoverItem[];
   currentViewer: CurrentViewer;
   followedCreators: Creator[];
   notifications: Notification[];
+  /** PE-B: present when the API returns paginated DB-backed results. */
+  next_cursor?: string | null;
 }
 
 export function getPatronFeedFixtureBundle(): PatronFeedBundle {

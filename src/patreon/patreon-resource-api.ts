@@ -33,7 +33,12 @@ export async function fetchCampaignsWithTiers(
     "fields[campaign]",
     "created_at,name,published_at,vanity,summary,creation_name,image_url,image_small_url,patron_count"
   );
-  params.set("fields[tier]", "title,created_at,edited_at,published");
+  // PE-C P1 — `amount_cents` is required for `paidUserTierIds` / `tierFloorCents` /
+  // `expandAllPatronsTierIds`. Without it the patron-feed gate cannot distinguish Free Tier
+  // members from paying patrons, and `relay_tier_all_patrons` posts can never expand to
+  // the explicit paid-tier list. Patreon docs list the field on Tier v2; matches the patron
+  // `/v2/identity` request (`patreon-user-identity.ts`) for consistency.
+  params.set("fields[tier]", "title,amount_cents,created_at,edited_at,published");
   const url = `${API_ROOT}/campaigns?${params.toString()}`;
   return patreonGet(url, opts);
 }
@@ -88,7 +93,8 @@ export function membersPageUrl(campaignId: string, nextFullUrl?: string | null):
     "full_name,email,patron_status,currently_entitled_amount_cents," +
       "lifetime_support_cents,pledge_relationship_start"
   );
-  params.set("fields[tier]", "title,created_at,edited_at,published");
+  // PE-C P1 — see `fetchCampaignsWithTiers` for rationale.
+  params.set("fields[tier]", "title,amount_cents,created_at,edited_at,published");
   params.set("fields[user]", "full_name,vanity,url");
   return `${API_ROOT}/campaigns/${encodeURIComponent(campaignId)}/members?${params.toString()}`;
 }

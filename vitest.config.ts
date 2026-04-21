@@ -11,7 +11,12 @@ export default defineConfig({
       react: path.resolve(root, "node_modules/react"),
       "react-dom": path.resolve(root, "node_modules/react-dom"),
       // web/lib imports resolve next from web/node_modules; vi.mock("next/navigation") does not apply.
-      "next/navigation": path.resolve(root, "tests/mocks/next-navigation.ts")
+      "next/navigation": path.resolve(root, "tests/mocks/next-navigation.ts"),
+      // Mirror Next.js' tsconfig path mapping (`web/tsconfig.json` → "@/*": ["./*"]) so
+      // tests that touch web/lib modules (which use `@/lib/*` imports) resolve correctly.
+      "@/lib": path.resolve(root, "web/lib"),
+      "@/components": path.resolve(root, "web/components"),
+      "@/app": path.resolve(root, "web/app")
     }
   },
   esbuild: {

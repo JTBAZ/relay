@@ -3,8 +3,18 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { randomBytes } from "node:crypto";
 import request from "supertest";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createApp } from "../src/server.js";
+
+// PE-A 2026-04-20: legacy /patron/exchange is hard-deprecated by default. These tests exercise
+// the legacy path explicitly via the rollback flag; a separate `describe` block below covers the
+// default 403 behavior.
+beforeEach(() => {
+  vi.stubEnv("RELAY_PATREON_PATRON_ALLOW_LEGACY_EXCHANGE", "1");
+});
+afterEach(() => {
+  vi.unstubAllEnvs();
+});
 
 const identityFixture = {
   data: {
@@ -134,5 +144,43 @@ describe("Patreon patron OAuth exchange", () => {
       });
 
     expect(res.status).toBe(400);
+  });
+});
+
+describe("Patreon patron OAuth exchange — hard-deprecation default", () => {
+  beforeEach(() => {
+    // Override the file-level stub so the route falls through to the deprecation guard.
+    vi.stubEnv("RELAY_PATREON_PATRON_ALLOW_LEGACY_EXCHANGE", "");
+  });
+
+  it("returns 403 RELAY_ACCOUNT_REQUIRED with Deprecation header even when the body is empty", async () => {
+    const tempDir = await mkdtemp(join(tmpdir(), "relay-patron-oauth-deprecated-"));
+    const encryptionKey = randomBytes(32).toString("base64");
+    const { app } = createApp({
+      patreon_client_id: "cid",
+      patreon_client_secret: "sec",
+      relay_token_encryption_key: encryptionKey,
+      credential_store_path: join(tempDir, "patreon_credentials.json"),
+      ingest_canonical_path: join(tempDir, "canonical.json"),
+      ingest_dlq_path: join(tempDir, "ingest_dlq.json"),
+      export_storage_root: join(tempDir, "exports"),
+      gallery_post_overrides_path: join(tempDir, "gallery_overrides.json"),
+      gallery_saved_filters_path: join(tempDir, "saved_filters.json"),
+      analytics_store_path: join(tempDir, "analytics.json"),
+      clone_store_path: join(tempDir, "clone_sites.json"),
+      identity_store_path: join(tempDir, "identity.json"),
+      payment_store_path: join(tempDir, "payments.json"),
+      migration_store_path: join(tempDir, "migrations.json"),
+      deploy_store_path: join(tempDir, "deploys.json"),
+      fetch_impl: vi.fn() as unknown as typeof fetch
+    });
+
+    const res = await request(app)
+      .post("/api/v1/auth/patreon/patron/exchange")
+      .send({});
+
+    expect(res.status).toBe(403);
+    expect(res.body.error?.code).toBe("RELAY_ACCOUNT_REQUIRED");
+    expect(res.headers["deprecation"]).toMatch(/successor=/);
   });
 });

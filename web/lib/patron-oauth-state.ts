@@ -1,3 +1,9 @@
+/**
+ * Legacy payload — used by `POST /api/v1/auth/patreon/patron/exchange` (hard-deprecated).
+ * The session-first `/link` path no longer needs campaign/creator in state; those fields
+ * are resolved from Patreon's identity API using the full `campaigns` scope. Kept for
+ * backward-compat decoding of old callbacks and the legacy rollback path.
+ */
 export type PatronOAuthStatePayload = {
   creator_id: string;
   patreon_campaign_numeric_id: string;
@@ -20,18 +26,50 @@ function base64UrlToBytes(s: string): Uint8Array {
   return out;
 }
 
+/** Legacy: encodes `creator_id` + `patreon_campaign_numeric_id`. Only for the deprecated `/exchange` path. */
 export function encodePatronOAuthState(p: PatronOAuthStatePayload): string {
   return bytesToBase64Url(new TextEncoder().encode(JSON.stringify(p)));
 }
 
-export function decodePatronOAuthState(state: string): PatronOAuthStatePayload {
+/**
+ * Session-first CSRF nonce: encodes a random token so Patreon echoes it back and
+ * the callback can verify the round-trip without needing `creator_id` or `campaign_numeric_id`.
+ * Uses `crypto.randomUUID` (available in modern browsers and Node ≥ 19).
+ */
+export function encodePatronOAuthNonce(): string {
+  const nonce =
+    typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+      ? crypto.randomUUID()
+      : Math.random().toString(36).slice(2);
+  return bytesToBase64Url(new TextEncoder().encode(JSON.stringify({ nonce })));
+}
+
+/**
+ * Decodes and validates OAuth `state` returned by Patreon.
+ * - If state is a **nonce** (session-first `/link` path): decodes without error; returns null.
+ * - If state is a **legacy payload** (`creator_id` + `patreon_campaign_numeric_id`): validates and returns them.
+ * - Throws on invalid base64url or unparseable JSON (tampered / corrupted state).
+ */
+export function decodePatronOAuthState(state: string): PatronOAuthStatePayload | null {
   let raw: string;
   try {
     raw = new TextDecoder().decode(base64UrlToBytes(state));
   } catch {
     throw new Error("Invalid OAuth state encoding.");
   }
-  const o = JSON.parse(raw) as Record<string, unknown>;
+  let o: Record<string, unknown>;
+  try {
+    o = JSON.parse(raw) as Record<string, unknown>;
+  } catch {
+    throw new Error("Invalid OAuth state (not JSON).");
+  }
+
+  // Nonce-only state from the session-first connect page — valid, no legacy fields.
+  if ("nonce" in o && !("creator_id" in o)) {
+    return null;
+  }
+
+  // Legacy payload: both fields required.
   const creator_id = typeof o.creator_id === "string" ? o.creator_id.trim() : "";
   const patreon_campaign_numeric_id =
     typeof o.patreon_campaign_numeric_id === "string"

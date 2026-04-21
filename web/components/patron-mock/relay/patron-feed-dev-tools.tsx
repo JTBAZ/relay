@@ -47,7 +47,7 @@ export function PatronFeedDevTools({
       ) : null}
       <p className="mt-1.5 text-[9px] leading-snug text-[#5A5A5A]">
         <span className="text-[#3A3A3A]">GET</span>{" "}
-        <code className="text-[8px] text-[#6B7280]">/api/v1/patron/relay_feed</code>
+        <code className="text-[8px] text-[#6B7280]">/api/v1/patron/feed</code>
       </p>
       <p className="mt-1 text-[9px] leading-snug text-[#5A5A5A]">
         API: <code className="text-[8px] text-[#6B7280]">{RELAY_API_BASE}</code>

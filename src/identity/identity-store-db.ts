@@ -128,10 +128,20 @@ export class DbIdentityStore implements IdentityStore {
         });
       }
 
+      // When an Account already existed (e.g. registered via email/Supabase before linking
+      // Patreon, or materialized by creator-side member sync), its TenantMembership for this
+      // tenant may have been created with a cuid id that differs from `user.user_id`. Upserting
+      // by `user.user_id` would find nothing and try to CREATE, hitting the
+      // @@unique([accountId, tenantId]) constraint. Look up by the natural compound key first.
+      const existingMembership = await tx.tenantMembership.findUnique({
+        where: { accountId_tenantId: { accountId: account.id, tenantId: tenant.id } }
+      });
+      const membershipId = existingMembership?.id ?? user.user_id;
+
       await tx.tenantMembership.upsert({
-        where: { id: user.user_id },
+        where: { id: membershipId },
         create: {
-          id: user.user_id,
+          id: membershipId,
           accountId: account.id,
           tenantId: tenant.id,
           role: TenantRole.patron,
@@ -146,9 +156,18 @@ export class DbIdentityStore implements IdentityStore {
         }
       });
 
+      // Sync the in-memory UserAccount with the actual DB membership id. Callers
+      // (e.g. `registerPatreonFallback` → `completeUnifiedPatreonPatronOAuth` →
+      // `createSessionForUser`, plus the PE-C `PatronFollow` seed) all use
+      // `user.user_id` as the `TenantMembership.id`, so when an existing membership
+      // wins the upsert, the returned `user_id` MUST be that membership's id —
+      // otherwise downstream FK references (snapshot, follow, session lookup)
+      // resolve to a phantom row.
+      user.user_id = membershipId;
+
       if (user.creator_id !== getPlatformRelayCreatorId()) {
         await upsertPatronEntitlementSnapshotForOAuth(tx, {
-          patronMembershipId: user.user_id,
+          patronMembershipId: membershipId,
           relayCreatorId: user.creator_id,
           entitledTierIds: user.tier_ids
         });
@@ -413,5 +432,31 @@ export class DbIdentityStore implements IdentityStore {
         expiresAt: new Date(now.getTime() + EXTENSION_SESSION_TTL_MS)
       }
     });
+  }
+
+  /**
+   * PE-A: resolve a batch of Patreon `campaign_id` values to their Relay
+   * `creator_id` strings via `CreatorProfile.patreonCampaignId → Tenant.relayCreatorId`.
+   * Campaigns whose creator is not on Relay are simply absent from the result.
+   */
+  public async findRelayCreatorIdsByPatreonCampaignIds(
+    patreonCampaignIds: readonly string[]
+  ): Promise<Map<string, string>> {
+    const out = new Map<string, string>();
+    const ids = [...new Set(patreonCampaignIds.filter((s) => s.length > 0))];
+    if (ids.length === 0) return out;
+    const rows = await this.prisma.creatorProfile.findMany({
+      where: { patreonCampaignId: { in: ids } },
+      select: {
+        patreonCampaignId: true,
+        tenant: { select: { relayCreatorId: true } }
+      }
+    });
+    for (const row of rows) {
+      const cid = row.patreonCampaignId;
+      const rid = row.tenant?.relayCreatorId;
+      if (cid && rid) out.set(cid, rid);
+    }
+    return out;
   }
 }

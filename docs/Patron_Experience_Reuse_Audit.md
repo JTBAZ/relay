@@ -82,6 +82,10 @@ Today there are two webhook entry points:
 
 ---
 
+**Update (PE-A slice):** `POST /api/v1/auth/patreon/patron/link` (session-first unified link), `patron_oauth_credentials` persistence via `src/auth/patron-oauth-credential-store.ts`, and `POST .../patron/exchange` token persistence when DB identity is enabled are **implemented**. Remaining dual-path milestones are listed in [`Patron_Experience_Batting_Order.md`](Patron_Experience_Batting_Order.md) §5.
+
+---
+
 ## 1. Workstream-by-workstream reuse map
 
 Each lane shows **what we already have**, **what we extend**, **what is genuinely new**, and **conflicts already noted in §0**.

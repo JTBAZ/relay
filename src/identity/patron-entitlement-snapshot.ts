@@ -74,3 +74,27 @@ export async function upsertPatronEntitlementSnapshotForOAuth(
     }
   });
 }
+
+/**
+ * After Patreon unlink: entitlement rows must not keep “fresh” Patreon-derived tiers.
+ * Marks all snapshots for the given memberships inactive, empty, and immediately stale.
+ */
+export async function invalidatePatronEntitlementSnapshotsForMemberships(
+  prisma: DbLike,
+  patronMembershipIds: string[],
+  now?: Date
+): Promise<number> {
+  if (patronMembershipIds.length === 0) return 0;
+  const t = now ?? new Date();
+  const result = await prisma.patronEntitlementSnapshot.updateMany({
+    where: { patronMembershipId: { in: patronMembershipIds } },
+    data: {
+      entitledTierIds: [],
+      active: false,
+      staleAfter: t,
+      asOf: t,
+      source: EntitlementSource.manual_support
+    }
+  });
+  return result.count;
+}

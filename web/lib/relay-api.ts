@@ -212,11 +212,71 @@ export type PatronSessionMe = {
   email: string | null;
   auth_provider: "independent" | "patreon" | null;
   patreon_user_id: string | null;
+  /** When false, session-first `POST .../patron/link` will reject until Supabase email is confirmed (PE-A gate). Omitted on older API builds. */
+  email_verified?: boolean;
   expires_at: string;
 };
 
 export function fetchPatronSessionMe(): Promise<PatronSessionMe> {
   return relayFetch<PatronSessionMe>("/api/v1/me/session");
+}
+
+export type DeletePatronPatreonLinkData = {
+  unlinked: boolean;
+  patron_oauth_credential_deleted: boolean;
+  entitlement_snapshots_invalidated: number;
+};
+
+/** `DELETE /api/v1/auth/patreon/patron/link` — drop patron OAuth credential + invalidate entitlement snapshots. */
+export function deletePatronPatreonLink(): Promise<DeletePatronPatreonLinkData> {
+  return relayFetch<DeletePatronPatreonLinkData>("/api/v1/auth/patreon/patron/link", {
+    method: "DELETE"
+  });
+}
+
+/**
+ * `GET /api/v1/me/session` when **401 means "not signed in"** — without the global 401 handler
+ * (logout + redirect to `/login`). Use for flows that must branch on session presence, e.g.
+ * Patreon OAuth callback: session → `POST .../patron/link`, anonymous → `.../patron/exchange`.
+ */
+export async function fetchPatronSessionIfPresent(): Promise<PatronSessionMe | null> {
+  const path = "/api/v1/me/session";
+  let res: Response;
+  try {
+    res = await fetch(`${RELAY_API_BASE}${path}`, {
+      method: "GET",
+      headers: mergeRelayHeaders(),
+      credentials: "include",
+      cache: "no-store"
+    });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    throw new RelayApiError(
+      msg.includes("fetch") ? "Network error — is the Relay API running?" : msg,
+      0,
+      "NETWORK"
+    );
+  }
+
+  if (res.status === 401) {
+    return null;
+  }
+
+  await handleRelayHttpErrors(res);
+
+  const json = await parseRelayResponseBody(res, path);
+
+  if (!res.ok) {
+    const err = json as { error?: { message?: string; code?: string } };
+    throw new RelayApiError(
+      err.error?.message ?? res.statusText,
+      res.status,
+      err.error?.code
+    );
+  }
+
+  const envelope = json as Envelope<PatronSessionMe>;
+  return envelope.data;
 }
 
 /** Browser storage for studio id after `POST /api/v1/creator/workspace` (MT-032 / MT-035). */
