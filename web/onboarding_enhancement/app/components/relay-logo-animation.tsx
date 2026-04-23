@@ -759,20 +759,17 @@ export default function RelayLogoAnimation({ palette = "gold" }: { palette?: Rel
         })}
 
         {/* ══ Chevron particles ════════════════════════════════════════════════ */}
-        {chevrons.map(c => (
-          <g key={`chev-${c.id}`}
-            transform={`translate(${c.x}, ${c.y}) rotate(${c.angleDeg}) scale(${c.scale})`}
-            opacity={brighter(c.fade * c.opacity)}
+        {chevrons.map((ch) => (
+          <g key={`chev-${ch.id}`}
+            transform={`translate(${ch.x}, ${ch.y}) rotate(${ch.angleDeg}) scale(${ch.scale})`}
+            opacity={brighter(ch.fade * ch.opacity)}
             filter="url(#chevron-glow)"
           >
             <polygon
               points={CHEVRON_PTS}
               fill="url(#chevron-grad)"
             />
-            {/* Tip accent */}
-            <circle cx={CH_TIP * 0.92} cy="0" r="0.9"
-              fill={c.white}
-            />
+            <circle cx={CH_TIP * 0.92} cy="0" r="0.9" fill={c.white} />
           </g>
         ))}
 

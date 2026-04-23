@@ -114,7 +114,7 @@ export default async function PublicPatronProfilePage({ params }: Props) {
           </h2>
           {profile.public_collections.length === 0 ? (
             <p className="text-xs text-[#666]">
-              @{profile.handle} hasn't shared any public collections yet.
+              @{profile.handle} hasn{"'"}t shared any public collections yet.
             </p>
           ) : (
             <ul className="grid grid-cols-1 gap-3 sm:grid-cols-2">

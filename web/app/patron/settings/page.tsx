@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { Suspense } from "react";
 import { PatronSettingsClient } from "./PatronSettingsClient";
 
 export const metadata: Metadata = {
@@ -23,5 +24,9 @@ export const metadata: Metadata = {
  * scopes to data-rights actions so the cognitive load stays low for high-risk choices.
  */
 export default function PatronSettingsPage() {
-  return <PatronSettingsClient />;
+  return (
+    <Suspense fallback={null}>
+      <PatronSettingsClient />
+    </Suspense>
+  );
 }

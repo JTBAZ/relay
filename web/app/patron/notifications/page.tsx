@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { Suspense } from "react";
 import { PatronNotificationsClient } from "./PatronNotificationsClient";
 
 export const metadata: Metadata = {
@@ -29,7 +30,9 @@ export default function PatronNotificationsPage() {
   return (
     <>
       <NotificationsHeaderLinks />
-      <PatronNotificationsClient />
+      <Suspense fallback={null}>
+        <PatronNotificationsClient />
+      </Suspense>
     </>
   );
 }

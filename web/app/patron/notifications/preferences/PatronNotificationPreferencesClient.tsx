@@ -128,7 +128,7 @@ function groupByCreator(items: NotificationPreferenceRecord[]): CreatorGroup[] {
     }
     group.byType.set(item.preferenceType, item);
   }
-  return [...map.values()].sort((a, b) =>
+  return Array.from(map.values()).sort((a, b) =>
     a.relayCreatorId.localeCompare(b.relayCreatorId)
   );
 }
@@ -286,7 +286,8 @@ function DefaultPolicyNote(): React.ReactElement {
     <div className="rounded-md border border-[#2A2A2A] bg-[#141414] p-3 text-[11px] text-[#888]">
       <Bell size={12} className="mr-1 inline text-[#40916C]" aria-hidden />
       All notification kinds are <span className="text-[#bbb]">on</span> by default. Toggle a
-      kind off to mute it for that creator scope; rows you've never touched stay on the default.
+      kind off to mute it for that creator scope; rows you{"'"}ve never touched stay on the
+      default.
     </div>
   );
 }
@@ -397,7 +398,7 @@ function ErrorState({
     <div className="mx-auto mt-8 flex max-w-md items-start gap-3 rounded-md border border-[#3a1414] bg-[#1f0808] p-4 text-xs text-[#d36a6a]">
       <AlertTriangle size={14} className="mt-0.5 shrink-0" aria-hidden />
       <div className="flex-1">
-        <div className="mb-1 font-medium">Couldn't load preferences</div>
+        <div className="mb-1 font-medium">Couldn{"'"}t load preferences</div>
         <div className="text-[11px] text-[#a06a6a]">{message}</div>
         <button
           onClick={onRetry}
@@ -416,7 +417,8 @@ function EmptyState(): React.ReactElement {
       <Check size={20} aria-hidden className="mx-auto mb-2 text-[#40916C]/60" />
       <div className="font-medium text-[#E0E0E0]">All defaults.</div>
       <div className="mt-1 text-[11px] text-[#666]">
-        You haven't muted anything yet — every notification kind is on for every creator. Toggle
+        You haven{"'"}t muted anything yet — every notification kind is on for every creator.
+        Toggle
         one off below to record a preference.
       </div>
       <p className="mt-3 text-[10px] text-[#555]">

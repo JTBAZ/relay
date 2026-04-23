@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { Suspense } from "react";
 import { PatronDiscoverClient } from "./PatronDiscoverClient";
 
 export const metadata: Metadata = {
@@ -23,5 +24,9 @@ export const metadata: Metadata = {
  * server layer; UI integration into the gallery management surface is a polish item).
  */
 export default function PatronDiscoverPage() {
-  return <PatronDiscoverClient />;
+  return (
+    <Suspense fallback={null}>
+      <PatronDiscoverClient />
+    </Suspense>
+  );
 }

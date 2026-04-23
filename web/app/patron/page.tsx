@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { Suspense } from "react";
 import { PatronStartClient } from "./PatronStartClient";
 
 export const metadata: Metadata = {
@@ -20,5 +21,9 @@ export const metadata: Metadata = {
  * without going through the full auth + Patreon flow.
  */
 export default function PatronStartPage() {
-  return <PatronStartClient />;
+  return (
+    <Suspense fallback={null}>
+      <PatronStartClient />
+    </Suspense>
+  );
 }

@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { Suspense } from "react";
 import { PatronNotificationPreferencesClient } from "./PatronNotificationPreferencesClient";
 
 export const metadata: Metadata = {
@@ -22,5 +23,9 @@ export const metadata: Metadata = {
  * The `?state=` dev switcher (mixed | empty | error) lets design / QA review without seeded data.
  */
 export default function PatronNotificationPreferencesPage() {
-  return <PatronNotificationPreferencesClient />;
+  return (
+    <Suspense fallback={null}>
+      <PatronNotificationPreferencesClient />
+    </Suspense>
+  );
 }

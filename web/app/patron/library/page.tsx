@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { Suspense } from "react";
 import { PatronLibraryClient } from "./PatronLibraryClient";
 
 export const metadata: Metadata = {
@@ -27,5 +28,9 @@ export const metadata: Metadata = {
  * without needing live data behind the gate.
  */
 export default function PatronLibraryPage() {
-  return <PatronLibraryClient />;
+  return (
+    <Suspense fallback={null}>
+      <PatronLibraryClient />
+    </Suspense>
+  );
 }

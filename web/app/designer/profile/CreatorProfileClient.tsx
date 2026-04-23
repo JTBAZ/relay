@@ -150,7 +150,7 @@ export default function CreatorProfileClient() {
 
   const urlSlugDiffersFromUsername = useMemo(() => {
     if (!identity?.username_norm?.trim() || !identity.public_slug) return false;
-    let s = identity.username_norm
+    const s = identity.username_norm
       .trim()
       .replace(/_/g, "-")
       .replace(/[^a-z0-9-]+/g, "-")

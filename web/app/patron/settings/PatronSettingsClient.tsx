@@ -200,7 +200,8 @@ function ExportSection({ devMode }: { devMode: boolean }): React.ReactElement {
         </p>
       ) : null}
       <p className="mt-2 text-[10px] text-[#555]">
-        OAuth tokens, password hashes, and other people's data about you are intentionally excluded.
+        OAuth tokens, password hashes, and other people{"'"}s data about you are intentionally
+        excluded.
       </p>
     </Section>
   );
@@ -254,7 +255,7 @@ function PerCreatorUnwindSection({
     >
       {follows.length === 0 ? (
         <p className="text-[11px] text-[#888]">
-          You don't have any creator memberships yet.
+          You don{"'"}t have any creator memberships yet.
         </p>
       ) : (
         <ul className="space-y-2">
@@ -523,7 +524,7 @@ function ErrorState({
     <div className="flex items-start gap-3 rounded-md border border-[#3a1414] bg-[#1f0808] p-4 text-xs text-[#d36a6a]">
       <AlertTriangle size={14} className="mt-0.5 shrink-0" aria-hidden />
       <div className="flex-1">
-        <div className="mb-1 font-medium">Couldn't load settings</div>
+        <div className="mb-1 font-medium">Couldn{"'"}t load settings</div>
         <div className="text-[11px] text-[#a06a6a]">{message}</div>
         <button
           onClick={onRetry}

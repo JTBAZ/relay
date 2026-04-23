@@ -373,7 +373,7 @@ function ErrorState({
     <div className="mx-auto mt-8 flex max-w-md items-start gap-3 rounded-md border border-[#3a1414] bg-[#1f0808] p-4 text-xs text-[#d36a6a]">
       <AlertTriangle size={14} className="mt-0.5 shrink-0" aria-hidden />
       <div className="flex-1">
-        <div className="mb-1 font-medium">Couldn't load Discover</div>
+        <div className="mb-1 font-medium">Couldn{"'"}t load Discover</div>
         <div className="text-[11px] text-[#a06a6a]">{message}</div>
         <button
           onClick={onRetry}
@@ -392,7 +392,9 @@ function EmptyState({ query }: { query: string }): React.ReactElement {
       <Compass size={20} aria-hidden className="mx-auto mb-2 text-[#40916C]/60" />
       {query ? (
         <>
-          <div className="font-medium text-[#E0E0E0]">No results for "{query}".</div>
+          <div className="font-medium text-[#E0E0E0]">
+            No results for &quot;{query}&quot;.
+          </div>
           <div className="mt-1 text-[11px] text-[#666]">
             Try fewer keywords, or clear the search to browse everything.
           </div>

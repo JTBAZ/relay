@@ -60,7 +60,7 @@ function makePrisma(opts: {
         }
         if (where && "publicSlug" in where && typeof (where as { publicSlug?: string }).publicSlug === "string") {
           const wanted = (where as { publicSlug: string }).publicSlug;
-          if (wanted === profile.publicSlug) {
+          if (profile && wanted === profile.publicSlug) {
             return { id: profile.id };
           }
           if (opts.slugHeldByOther && wanted === opts.slugHeldByOther) {
@@ -72,7 +72,7 @@ function makePrisma(opts: {
       }),
       update: vi.fn(async (_args: Record<string, unknown>) => {
         const data = (_args as { data: Record<string, unknown> }).data;
-        return { ...profile, ...data };
+        return { ...(profile ?? {}), ...data };
       })
     }
   } as unknown;
