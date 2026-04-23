@@ -278,7 +278,13 @@ import {
   upsertAccountForSupabaseUser
 } from "./identity/supabase-account.js";
 import { getSupabaseUserFromAccessToken } from "./lib/supabase-auth.js";
-import { IdentityAuthProvider, SessionKind, TenantRole, type PrismaClient } from "@prisma/client";
+import {
+  IdentityAuthProvider,
+  PublicSlugSource,
+  SessionKind,
+  TenantRole,
+  type PrismaClient
+} from "@prisma/client";
 import { checkPostAccess, filterAccessiblePosts } from "./identity/access-guard.js";
 import {
   clearActiveRoleCookie,
@@ -3487,13 +3493,17 @@ export function createApp(config: AppConfig): CreateAppResult {
     }
     const prof = await config.prisma.creatorProfile.findFirst({
       where: { tenant: { relayCreatorId: relayId } },
-      select: { publicSlug: true }
+      select: { publicSlug: true, slugSource: true }
     });
     if (!prof) {
       return res.status(404).json(errorEnvelope("NOT_FOUND", "Creator profile missing.", traceId));
     }
     res.setHeader("Cache-Control", "private, no-store");
-    return res.status(200).json(successEnvelope({ public_slug: prof.publicSlug }, traceId));
+    return res
+      .status(200)
+      .json(
+        successEnvelope({ public_slug: prof.publicSlug, slug_source: prof.slugSource }, traceId)
+      );
   });
 
   /**
@@ -3559,10 +3569,14 @@ export function createApp(config: AppConfig): CreateAppResult {
     }
     await config.prisma.creatorProfile.update({
       where: { id: prof.id },
-      data: { publicSlug: raw }
+      data: { publicSlug: raw, slugSource: PublicSlugSource.user_chosen }
     });
     res.setHeader("Cache-Control", "private, no-store");
-    return res.status(200).json(successEnvelope({ public_slug: raw }, traceId));
+    return res
+      .status(200)
+      .json(
+        successEnvelope({ public_slug: raw, slug_source: PublicSlugSource.user_chosen }, traceId)
+      );
   });
 
   // ── APD-S1: Creator profile identity ─────────────────────────────────

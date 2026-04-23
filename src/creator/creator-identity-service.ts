@@ -1,6 +1,15 @@
-import type { CreatorProfile, Prisma, PrismaClient } from "@prisma/client";
+import {
+  PublicSlugSource,
+  type CreatorProfile,
+  type Prisma,
+  type PrismaClient
+} from "@prisma/client";
 import type { CreatorCampaignDisplayStore } from "../patreon/creator-campaign-display-store.js";
-import { RESERVED_PUBLIC_SLUGS } from "./public-slug.js";
+import {
+  allocateUniquePublicSlugFromNormalizedBase,
+  normalizePublicSlugCandidate,
+  RESERVED_PUBLIC_SLUGS
+} from "./public-slug.js";
 
 const MAX_BIO = 280;
 const MAX_DISPLAY = 120;
@@ -24,6 +33,7 @@ const RESERVED_USERNAMES = new Set([
 
 export type CreatorIdentityView = {
   public_slug: string;
+  slug_source: PublicSlugSource;
   patreon_campaign_id: string | null;
   username: string | null;
   username_norm: string | null;
@@ -38,6 +48,7 @@ export type CreatorIdentityView = {
 function toView(row: CreatorProfile): CreatorIdentityView {
   return {
     public_slug: row.publicSlug,
+    slug_source: row.slugSource,
     patreon_campaign_id: row.patreonCampaignId,
     username: row.username,
     username_norm: row.usernameNorm,
@@ -249,6 +260,23 @@ export async function promoteSnapshotToProfile(
       if (!clash) {
         data.username = snap.patreon_name.trim().toLowerCase();
         data.usernameNorm = norm;
+      }
+    }
+  }
+
+  if (profile.slugSource === PublicSlugSource.allocated && snap.patreon_name?.trim()) {
+    const desired = normalizePublicSlugCandidate(snap.patreon_name.trim());
+    if (desired.length >= 3) {
+      const unique = await allocateUniquePublicSlugFromNormalizedBase(
+        prisma,
+        desired,
+        profile.id
+      );
+      if (unique) {
+        if (unique !== profile.publicSlug) {
+          data.publicSlug = unique;
+        }
+        data.slugSource = PublicSlugSource.patreon_default;
       }
     }
   }

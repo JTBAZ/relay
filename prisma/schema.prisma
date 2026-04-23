@@ -115,6 +115,13 @@ enum CommentReactionKind {
 }
 
 /// PE-C — audit row when patron creator-follows are seeded (OAuth or worker).
+/// How `CreatorProfile.publicSlug` was chosen (automation vs user).
+enum PublicSlugSource {
+  allocated
+  patreon_default
+  user_chosen
+}
+
 enum PatronFollowSeedSource {
   oauth_unified
   oauth_creator_scoped_exchange
@@ -288,7 +295,9 @@ model CreatorProfile {
   userId            String   @unique @map("user_id")
   user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   /// Public URL segment for `/patron/c/{public_slug}` — unique, lowercase, `[a-z0-9-]`.
-  publicSlug        String   @unique @map("public_slug")
+  publicSlug        String           @unique @map("public_slug")
+  /// Provenance for `publicSlug`: opaque default, Patreon campaign vanity, or explicit user edit.
+  slugSource        PublicSlugSource @default(allocated) @map("slug_source")
   /// Canonical Patreon `campaign_id` for this creator (ingest / webhooks / patron matching). See `docs/architecture/multi-tenant-option-b.md`.
   patreonCampaignId String?  @unique @map("patreon_campaign_id")
   /// Mutable public @handle (mixed case allowed); uniqueness is on `usernameNorm`.

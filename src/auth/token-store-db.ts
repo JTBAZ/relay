@@ -1,10 +1,11 @@
 import {
   CredentialHealth,
+  IdentityAuthProvider,
   OAuthPurpose,
   PrismaClient,
   ProviderKind,
-  UserKind,
-  IdentityAuthProvider
+  PublicSlugSource,
+  UserKind
 } from "@prisma/client";
 import { allocateUniquePublicSlug } from "../creator/public-slug.js";
 import { TokenEncryption } from "../lib/crypto.js";
@@ -70,7 +71,12 @@ export class DbPatreonTokenStore implements PatreonTokenStore {
         });
         const publicSlug = await allocateUniquePublicSlug(tx, null);
         await tx.creatorProfile.create({
-          data: { tenantId: tenant.id, userId: creatorUser.id, publicSlug }
+          data: {
+            tenantId: tenant.id,
+            userId: creatorUser.id,
+            publicSlug,
+            slugSource: PublicSlugSource.allocated
+          }
         });
       }
 

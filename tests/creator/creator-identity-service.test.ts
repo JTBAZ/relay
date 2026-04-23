@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { PublicSlugSource } from "@prisma/client";
 import {
   getCreatorIdentity,
   normalizeCreatorUsername,
@@ -13,6 +14,7 @@ function makeProfile(overrides: Record<string, unknown> = {}) {
     tenantId: "t1",
     userId: "u1",
     publicSlug: "test-creator",
+    slugSource: PublicSlugSource.user_chosen,
     patreonCampaignId: null,
     username: null,
     usernameNorm: null,
@@ -32,6 +34,8 @@ function makePrisma(opts: {
   profile?: ReturnType<typeof makeProfile> | null;
   clashOnUsername?: boolean;
   tenant?: { id: string } | null;
+  /** When set, `publicSlug` lookup returns another profile id (collision). */
+  slugHeldByOther?: string;
 } = {}) {
   const profile = opts.profile !== undefined ? opts.profile : makeProfile();
   const relayId = "primaryRelayCreatorId" in opts ? opts.primaryRelayCreatorId : "cr_123";
@@ -52,6 +56,16 @@ function makePrisma(opts: {
           return { id: "other_prof" };
         }
         if (where && "usernameNorm" in where) {
+          return null;
+        }
+        if (where && "publicSlug" in where && typeof (where as { publicSlug?: string }).publicSlug === "string") {
+          const wanted = (where as { publicSlug: string }).publicSlug;
+          if (wanted === profile.publicSlug) {
+            return { id: profile.id };
+          }
+          if (opts.slugHeldByOther && wanted === opts.slugHeldByOther) {
+            return { id: "other_prof" };
+          }
           return null;
         }
         return profile;
@@ -107,6 +121,7 @@ describe("getCreatorIdentity", () => {
     expect(result).not.toBeNull();
     expect(result!.needs_setup).toBe(true);
     expect(result!.public_slug).toBe("test-creator");
+    expect(result!.slug_source).toBe(PublicSlugSource.user_chosen);
   });
 
   it("returns needs_setup false when displayName + avatarUrl set", async () => {
@@ -289,5 +304,83 @@ describe("promoteSnapshotToProfile", () => {
     expect(data.avatarUrl).toBeUndefined();
     expect(data.username).toBeUndefined();
     expect(data.bannerUrl).toBe("https://cdn/large.jpg");
+    expect(data.publicSlug).toBeUndefined();
+    expect(data.slugSource).toBeUndefined();
+  });
+
+  it("sets public slug from patreon vanity when slugSource is allocated", async () => {
+    const prisma = makePrisma({
+      profile: makeProfile({
+        publicSlug: "studio",
+        slugSource: PublicSlugSource.allocated,
+        displayName: null,
+        avatarUrl: null,
+        bannerUrl: null,
+        username: null
+      })
+    });
+    const store = makeSnapshotStore({
+      patreon_campaign_id: "camp_1",
+      patreon_name: "coolartist",
+      image_small_url: "https://cdn/small.jpg",
+      captured_at: new Date().toISOString()
+    });
+    const result = await promoteSnapshotToProfile(prisma as never, store as never, "cr_123");
+    expect(result.promoted).toBe(true);
+    const updateCall = (prisma as { creatorProfile: { update: ReturnType<typeof vi.fn> } }).creatorProfile.update;
+    const data = updateCall.mock.calls[0][0].data;
+    expect(data.publicSlug).toBe("coolartist");
+    expect(data.slugSource).toBe(PublicSlugSource.patreon_default);
+  });
+
+  it("does not change public slug when slugSource is user_chosen", async () => {
+    const prisma = makePrisma({
+      profile: makeProfile({
+        publicSlug: "my-pick",
+        slugSource: PublicSlugSource.user_chosen,
+        displayName: null,
+        avatarUrl: null,
+        bannerUrl: null,
+        username: null
+      })
+    });
+    const store = makeSnapshotStore({
+      patreon_campaign_id: "camp_1",
+      patreon_name: "patreonvanity",
+      image_small_url: "https://cdn/small.jpg",
+      captured_at: new Date().toISOString()
+    });
+    const result = await promoteSnapshotToProfile(prisma as never, store as never, "cr_123");
+    expect(result.promoted).toBe(true);
+    const updateCall = (prisma as { creatorProfile: { update: ReturnType<typeof vi.fn> } }).creatorProfile.update;
+    const data = updateCall.mock.calls[0][0].data;
+    expect(data.publicSlug).toBeUndefined();
+    expect(data.slugSource).toBeUndefined();
+  });
+
+  it("appends suffix when patreon vanity slug is taken by another profile", async () => {
+    const prisma = makePrisma({
+      slugHeldByOther: "coolartist",
+      profile: makeProfile({
+        publicSlug: "studio",
+        slugSource: PublicSlugSource.allocated,
+        displayName: null,
+        avatarUrl: null,
+        bannerUrl: null,
+        username: null
+      })
+    });
+    const store = makeSnapshotStore({
+      patreon_campaign_id: "camp_1",
+      patreon_name: "coolartist",
+      image_small_url: "https://cdn/small.jpg",
+      captured_at: new Date().toISOString()
+    });
+    const result = await promoteSnapshotToProfile(prisma as never, store as never, "cr_123");
+    expect(result.promoted).toBe(true);
+    const updateCall = (prisma as { creatorProfile: { update: ReturnType<typeof vi.fn> } }).creatorProfile.update;
+    const data = updateCall.mock.calls[0][0].data;
+    expect(data.publicSlug).toMatch(/^coolartist-[a-f0-9]{4}$/);
+    expect(data.slugSource).toBe(PublicSlugSource.patreon_default);
   });
 });

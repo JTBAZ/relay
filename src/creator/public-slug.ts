@@ -94,6 +94,56 @@ export function validatePublicSlugFormat(
 
 type CreatorProfileDb = Pick<PrismaClient, "creatorProfile">;
 
+async function isPublicSlugOwnedOrFree(
+  tx: CreatorProfileDb,
+  candidate: string,
+  ownProfileId: string
+): Promise<boolean> {
+  const row = await tx.creatorProfile.findFirst({
+    where: { publicSlug: candidate },
+    select: { id: true }
+  });
+  return !row || row.id === ownProfileId;
+}
+
+/**
+ * Resolves a unique `public_slug` from an already-normalized base (e.g. Patreon campaign vanity).
+ * Returns null if the base fails format validation. On collision with another profile, appends
+ * `-{hex}` until unique (max attempts).
+ */
+export async function allocateUniquePublicSlugFromNormalizedBase(
+  tx: CreatorProfileDb,
+  normalizedBase: string,
+  ownProfileId: string
+): Promise<string | null> {
+  const v = validatePublicSlugFormat(normalizedBase);
+  if (!v.ok) {
+    return null;
+  }
+  if (await isPublicSlugOwnedOrFree(tx, normalizedBase, ownProfileId)) {
+    return normalizedBase;
+  }
+  for (let attempt = 0; attempt < 64; attempt++) {
+    const suffix = randomBytes(2).toString("hex");
+    let candidate = `${normalizedBase}-${suffix}`;
+    if (candidate.length > 32) {
+      const maxBaseLen = 32 - suffix.length - 1;
+      const truncated = normalizedBase
+        .slice(0, Math.max(3, maxBaseLen))
+        .replace(/-+$/g, "");
+      candidate = `${truncated}-${suffix}`;
+    }
+    const v2 = validatePublicSlugFormat(candidate);
+    if (!v2.ok) {
+      continue;
+    }
+    if (await isPublicSlugOwnedOrFree(tx, candidate, ownProfileId)) {
+      return candidate;
+    }
+  }
+  return null;
+}
+
 /**
  * Picks a unique `public_slug` starting from an email-derived base, appending short
  * random suffixes on collision (inside a transaction).

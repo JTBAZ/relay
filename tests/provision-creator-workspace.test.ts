@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import type { PrismaClient } from "@prisma/client";
+import { PublicSlugSource, type PrismaClient } from "@prisma/client";
 import { provisionCreatorWorkspace } from "../src/creator/provision-creator-workspace.js";
 
 describe("provisionCreatorWorkspace (MT-032)", () => {
@@ -70,14 +70,15 @@ describe("provisionCreatorWorkspace (MT-032)", () => {
     expect(r.created).toBe(true);
     expect(r.account_id).toBe("acc_1");
     expect(r.relay_creator_id).toMatch(/^cr_[a-f0-9]{32}$/);
-    expect(r.public_slug).toBe("artist");
+    expect(r.public_slug).toBe("studio");
     expect(tenantCreate).toHaveBeenCalledWith({
       data: { relayCreatorId: r.relay_creator_id }
     });
     expect(userCreate).toHaveBeenCalled();
     expect(profileCreate).toHaveBeenCalledWith({
       data: expect.objectContaining({
-        publicSlug: "artist"
+        publicSlug: "studio",
+        slugSource: PublicSlugSource.allocated
       })
     });
     expect(accountUpdate).toHaveBeenCalledWith(

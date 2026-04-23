@@ -27,10 +27,12 @@ import {
   RELAY_CREATOR_ID_STORAGE_KEY,
   RELAY_PUBLIC_SLUG_STORAGE_KEY,
   buildPatreonCreatorAuthorizeUrl,
+  fetchCreatorPublicSlug,
   fetchPatronSessionIfPresent,
   getCreatorProfile,
   hasRelaySignedInCookie,
   patchCreatorProfile,
+  patchCreatorPublicSlug,
   postCreatorWorkspace,
   postPatreonCreatorPrepare,
   RelayApiError,
@@ -899,32 +901,117 @@ export function StepCreatorProfileBasics({
 }
 
 /* ───────────────────────────────────────────────────────────────────────────
- * Step 4 — Creator finish (claim handle + extension prompt)
- *
- * NOTE: This is a presentational shell — the actual handle persistence is a
- * follow-up wiring task. For now the input is local-only so users can preview
- * their gallery URL.
+ * Step 4 — Creator finish (claim public URL slug + extension prompt)
+ * Persists via PATCH /api/v1/creator/public-slug (marks slug as user_chosen).
  * ─────────────────────────────────────────────────────────────────────────── */
+
+function sanitizePublicSlugDraft(raw: string): string {
+  let s = raw.toLowerCase().replace(/_/g, "-").replace(/[^a-z0-9-]+/g, "-");
+  s = s.replace(/-+/g, "-").replace(/^-|-$/g, "");
+  if (s.length > 32) {
+    s = s.slice(0, 32).replace(/-+$/g, "");
+  }
+  return s;
+}
 
 export function StepClaimHandleAndGo({
   onFinish,
 }: {
   onFinish?: () => void;
 }) {
-  const [recommended, setRecommended] = useState<string>("");
   const [handle, setHandle] = useState<string>("");
-  const [edited, setEdited] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [fromPatreonHint, setFromPatreonHint] = useState(false);
 
   useEffect(() => {
-    const slug =
-      typeof window !== "undefined"
-        ? window.localStorage.getItem(RELAY_PUBLIC_SLUG_STORAGE_KEY)?.trim() ?? ""
-        : "";
-    setRecommended(slug);
-    if (slug && !edited) setHandle(slug);
-  }, [edited]);
+    let cancelled = false;
+    void (async () => {
+      setError(null);
+      setLoading(true);
+      const ls =
+        typeof window !== "undefined"
+          ? window.localStorage.getItem(RELAY_PUBLIC_SLUG_STORAGE_KEY)?.trim() ?? ""
+          : "";
+      try {
+        let slugRes: { public_slug: string } | null = null;
+        try {
+          slugRes = await fetchCreatorPublicSlug();
+        } catch {
+          /* session or network — fall back to local hint */
+        }
+        let profile: CreatorProfileIdentity | null = null;
+        try {
+          profile = await getCreatorProfile();
+        } catch {
+          /* profile optional for URL prefill */
+        }
+        if (cancelled) return;
+        const fromProfile =
+          profile?.username_norm?.trim().replace(/_/g, "-").replace(/[^a-z0-9-]+/g, "-")
+            .replace(/-+/g, "-")
+            .replace(/^-|-$/g, "") ?? "";
+        const serverSlug = slugRes?.public_slug?.trim() ?? "";
+        const next =
+          serverSlug ||
+          (fromProfile.length >= 3 ? fromProfile : "") ||
+          ls;
+        setHandle(next);
+        setFromPatreonHint(
+          Boolean(profile?.username_norm?.trim()) && !serverSlug && !ls
+        );
+      } catch {
+        if (!cancelled) {
+          setHandle(ls);
+        }
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
-  const sanitized = handle.toLowerCase().replace(/[^a-z0-9_-]/g, "");
+  const sanitized = sanitizePublicSlugDraft(handle);
+  const slugOk = sanitized.length >= 3 && sanitized.length <= 32;
+  const previewPath =
+    sanitized && slugOk ? `/patron/c/${encodeURIComponent(sanitized)}` : null;
+  const previewAbsolute =
+    typeof window !== "undefined" && previewPath
+      ? `${window.location.origin}${previewPath}`
+      : previewPath;
+
+  const onSubmit = async () => {
+    setError(null);
+    if (!slugOk) {
+      setError("Use 3–32 characters: lowercase letters, numbers, and hyphens only.");
+      return;
+    }
+    setSaving(true);
+    try {
+      const r = await patchCreatorPublicSlug(sanitized);
+      if (typeof window !== "undefined" && r.public_slug?.trim()) {
+        window.localStorage.setItem(RELAY_PUBLIC_SLUG_STORAGE_KEY, r.public_slug.trim());
+      }
+      onFinish?.();
+    } catch (e) {
+      if (e instanceof RelayApiError) {
+        if (e.status === 409) {
+          setError("That URL is already taken. Try another.");
+        } else {
+          setError(e.message || "Could not save your URL.");
+        }
+      } else {
+        setError(e instanceof Error ? e.message : "Could not save your URL.");
+      }
+    } finally {
+      setSaving(false);
+    }
+  };
 
   return (
     <div className="flex flex-col gap-7">
@@ -938,7 +1025,9 @@ export function StepClaimHandleAndGo({
         </h2>
         <p className="text-sm leading-relaxed text-[var(--relay-fg-muted)]">
           This is where patrons will discover your work.
-          {recommended ? " We pulled a suggestion from your Patreon — feel free to edit." : ""}
+          {fromPatreonHint
+            ? " We suggested a path from your @username — edit if you like."
+            : ""}
         </p>
       </div>
 
@@ -951,28 +1040,38 @@ export function StepClaimHandleAndGo({
         </label>
         <div className="flex items-stretch overflow-hidden rounded-xl border border-[var(--relay-border)] bg-[var(--relay-surface-1)] transition-colors focus-within:border-[var(--relay-green-600)] focus-within:ring-1 focus-within:ring-[var(--relay-green-600)]/30">
           <span className="select-none border-r border-[var(--relay-border)] bg-[var(--relay-bg)] px-3 py-3 text-sm text-[var(--relay-fg-muted)]">
-            relay.so/
+            …/patron/c/
           </span>
           <input
             id="onboarding-handle"
             type="text"
             value={handle}
+            disabled={loading}
             onChange={(e) => {
-              setEdited(true);
               setHandle(e.target.value);
             }}
-            placeholder="yourhandle"
-            className="flex-1 bg-transparent px-3 py-3 text-sm text-[var(--relay-fg)] placeholder-[var(--relay-fg-muted)] focus:outline-none"
+            placeholder="your-handle"
+            aria-label="Public gallery URL slug"
+            className="flex-1 bg-transparent px-3 py-3 text-sm text-[var(--relay-fg)] placeholder-[var(--relay-fg-muted)] focus:outline-none disabled:opacity-60"
           />
         </div>
-        {sanitized && (
+        {loading ? (
+          <p className="flex items-center gap-2 text-xs text-[var(--relay-fg-muted)]">
+            <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
+            Loading your URL…
+          </p>
+        ) : null}
+        {previewAbsolute ? (
           <p className="text-xs text-[var(--relay-fg-muted)]">
             Preview:{" "}
-            <span className="text-[var(--relay-green-400)]">
-              relay.so/{sanitized}
-            </span>
+            <span className="text-[var(--relay-green-400)]">{previewAbsolute}</span>
           </p>
-        )}
+        ) : null}
+        {error ? (
+          <p className="text-xs font-medium text-red-400" role="alert">
+            {error}
+          </p>
+        ) : null}
       </div>
 
       <div className="space-y-2">
@@ -997,11 +1096,21 @@ export function StepClaimHandleAndGo({
 
       <button
         type="button"
-        onClick={onFinish}
-        className="flex w-full items-center justify-center gap-2 rounded-xl bg-[var(--relay-green-600)] px-5 py-3 text-sm font-semibold text-[var(--relay-fg)] transition-colors hover:bg-[var(--relay-green-400)]"
+        onClick={() => void onSubmit()}
+        disabled={loading || saving || !slugOk}
+        className="flex w-full items-center justify-center gap-2 rounded-xl bg-[var(--relay-green-600)] px-5 py-3 text-sm font-semibold text-[var(--relay-fg)] transition-colors hover:bg-[var(--relay-green-400)] disabled:cursor-not-allowed disabled:opacity-60"
       >
-        Take me to my gallery
-        <ArrowRight className="h-4 w-4" strokeWidth={2} />
+        {saving ? (
+          <>
+            <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+            Saving…
+          </>
+        ) : (
+          <>
+            Take me to my gallery
+            <ArrowRight className="h-4 w-4" strokeWidth={2} />
+          </>
+        )}
       </button>
     </div>
   );

@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ExternalLink, Loader2 } from "lucide-react";
 import {
@@ -147,6 +148,18 @@ export default function CreatorProfileClient() {
     return `${window.location.origin}/patron/c/${encodeURIComponent(identity.public_slug)}`;
   }, [identity]);
 
+  const urlSlugDiffersFromUsername = useMemo(() => {
+    if (!identity?.username_norm?.trim() || !identity.public_slug) return false;
+    let s = identity.username_norm
+      .trim()
+      .replace(/_/g, "-")
+      .replace(/[^a-z0-9-]+/g, "-")
+      .replace(/-+/g, "-")
+      .replace(/^-|-$/g, "");
+    if (s.length < 3 || s.length > 32) return false;
+    return s !== identity.public_slug;
+  }, [identity?.public_slug, identity?.username_norm]);
+
   if (loading) {
     return (
       <div className="flex min-h-0 flex-1 items-center justify-center bg-[var(--lib-bg)] text-sm text-[var(--lib-fg-muted)]">
@@ -198,6 +211,19 @@ export default function CreatorProfileClient() {
             View public page: {publicUrl.replace(/^https?:\/\//, "")}
             <ExternalLink className="h-3.5 w-3.5" aria-hidden />
           </a>
+        ) : null}
+        {urlSlugDiffersFromUsername ? (
+          <p className="mt-2 max-w-lg text-xs text-[var(--lib-fg-muted)]">
+            Your public gallery URL uses a different slug than your @username (URLs use hyphens; handles
+            may use underscores).{" "}
+            <Link
+              href="/action-center"
+              className="font-medium text-[#2D6A4F] underline-offset-4 hover:text-[#40916C] hover:underline"
+            >
+              Edit public URL in Action Center
+            </Link>
+            .
+          </p>
         ) : null}
       </header>
 

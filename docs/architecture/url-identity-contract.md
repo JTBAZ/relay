@@ -8,7 +8,16 @@ Relay uses three layers of identifiers for a creator workspace. This document lo
 |------------|--------|------------|----------|
 | `Tenant.id` (CUID) | Prisma | **Immutable** | Internal — FKs, RLS policies, joins |
 | `Tenant.relayCreatorId` (`cr_*`) | Application mint | **Immutable** | Cross-system correlation (Patreon ingest, logs, webhooks) |
-| `CreatorProfile.publicSlug` | User / signup | **Mutable** | URLs (`/patron/c/<slug>`), display |
+| `CreatorProfile.publicSlug` | Patreon vanity (default) / user | **Mutable** | URLs (`/patron/c/<slug>`), display |
+| `CreatorProfile.slugSource` (`PublicSlugSource`) | System | **Mutable** | Provenance: `allocated` (opaque placeholder), `patreon_default` (from campaign vanity in display snapshot), `user_chosen` (PATCH onboarding or Action Center). Automations **must not** overwrite `publicSlug` when `slugSource === user_chosen`. |
+
+### Default slug lifecycle (2026-04)
+
+1. **Workspace provision** — `public_slug` is an opaque unique value (`allocateUniquePublicSlug(..., null)`); `slug_source = allocated`.
+2. **Patreon campaign snapshot** — On first snapshot with `patreon_name` (campaign vanity), `promoteSnapshotToProfile` may replace the slug with a normalized unique vanity **only if** `slug_source` is still `allocated`, then sets `patreon_default`.
+3. **Explicit edit** — `PATCH /api/v1/creator/public-slug` sets `slug_source = user_chosen` (even if the slug string is unchanged).
+
+`@username` on `CreatorProfile` is separate (underscores allowed); it is not required to match `public_slug`.
 
 ## Contract
 

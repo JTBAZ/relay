@@ -5,6 +5,7 @@ import {
   IdentityAuthProvider,
   OAuthPurpose,
   ProviderKind,
+  PublicSlugSource,
   UserKind
 } from "@prisma/client";
 import { DbPatreonTokenStore, RELAY_TOKEN_KEY_ID } from "../src/auth/token-store-db.js";
@@ -82,7 +83,8 @@ describe("DbPatreonTokenStore", () => {
       data: expect.objectContaining({
         tenantId: "tenant_1",
         userId: "user_1",
-        publicSlug: expect.stringMatching(/^[a-z0-9]+(-[a-z0-9]+)*$/)
+        publicSlug: expect.stringMatching(/^[a-z0-9]+(-[a-z0-9]+)*$/),
+        slugSource: PublicSlugSource.allocated
       })
     });
 

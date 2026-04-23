@@ -19,6 +19,10 @@
 
 **MCP:** **`user-airtable`** — base **Project tracker** `applW4dOjVNHoWBM9`. Read MCP tool descriptors before calling. Always read **`Production Ledger`** state before claiming work; use **`Session Lock`**. **`user-supabase`** — read-check migrations/tables/SQL against the linked Supabase project after Prisma or identity work when prudent (`.cursor/rules/supabase-mcp-read-check.mdc`); never paste secrets.
 
+**Relay-native posts plan (Batting Order):** base **Batting Order** `apprid6UGT9E1KlkN`. **Status** (single-select: **Queued** default, **Done**) exists on:
+- **`RN - Epics`** `tbl925QBL3fvXCFid` — set an epic to **Done** when all of its work under that epic is complete.
+- **`RN - Work items`** `tblwwrxy7KYK04udR` — set each work item to **Done** when that item’s acceptance criteria are met (update via Airtable MCP `update_records` or the Airtable UI).
+
 ---
 
 ## Repo map (quick)

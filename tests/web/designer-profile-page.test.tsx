@@ -34,6 +34,7 @@ import CreatorProfileClient from "../../web/app/designer/profile/CreatorProfileC
 
 const baseIdentity = {
   public_slug: "my-studio",
+  slug_source: "user_chosen" as const,
   patreon_campaign_id: null,
   username: "studio_handle",
   username_norm: "studio_handle",
@@ -75,6 +76,18 @@ describe("<CreatorProfileClient />", () => {
       "Illustration"
     );
     expect(screen.getByRole("link", { name: /view public page/i })).toBeTruthy();
+  });
+
+  it("links to Action Center when public slug differs from @username URL form", async () => {
+    getCreatorProfile.mockResolvedValue({
+      ...baseIdentity,
+      public_slug: "my-studio",
+      username_norm: "other_handle"
+    });
+    render(<CreatorProfileClient />);
+    await waitFor(() => expect(getCreatorProfile).toHaveBeenCalledTimes(1));
+    const ac = await screen.findByRole("link", { name: /edit public url in action center/i });
+    expect(ac.getAttribute("href")).toBe("/action-center");
   });
 
   it("Save is disabled when nothing changed; PATCH only sends dirty fields", async () => {

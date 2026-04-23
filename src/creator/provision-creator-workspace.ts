@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import {
   IdentityAuthProvider,
   PrismaClient,
+  PublicSlugSource,
   UserKind
 } from "@prisma/client";
 import { allocateUniquePublicSlug } from "./public-slug.js";
@@ -21,7 +22,8 @@ function newRelayCreatorId(): string {
 
 /**
  * Idempotent: ensures the account has an artist studio (`Tenant` + creator `User` + `CreatorProfile`)
- * and `Account.primaryRelayCreatorId` (MT-032). Assigns a unique `public_slug` from the account email.
+ * and `Account.primaryRelayCreatorId` (MT-032). Assigns an opaque unique `public_slug` (`slugSource`
+ * allocated); Patreon campaign vanity is applied later in `promoteSnapshotToProfile`.
  */
 export async function provisionCreatorWorkspace(
   prisma: PrismaClient,
@@ -72,7 +74,7 @@ export async function provisionCreatorWorkspace(
           }
 
           const relayId = newRelayCreatorId();
-          const publicSlug = await allocateUniquePublicSlug(tx, acc.emailNorm);
+          const publicSlug = await allocateUniquePublicSlug(tx, null);
           const tenant = await tx.tenant.create({
             data: { relayCreatorId: relayId }
           });
@@ -85,7 +87,12 @@ export async function provisionCreatorWorkspace(
             }
           });
           await tx.creatorProfile.create({
-            data: { tenantId: tenant.id, userId: creatorUser.id, publicSlug }
+            data: {
+              tenantId: tenant.id,
+              userId: creatorUser.id,
+              publicSlug,
+              slugSource: PublicSlugSource.allocated
+            }
           });
           await tx.account.update({
             where: { id: accountId },

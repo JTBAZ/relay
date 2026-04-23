@@ -66,6 +66,7 @@ import { StepCreatorProfileBasics } from "../../web/app/components/onboarding/st
 
 const baseIdentity = {
   public_slug: "my-studio",
+  slug_source: "allocated" as const,
   patreon_campaign_id: null,
   username: null,
   username_norm: null,

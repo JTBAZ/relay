@@ -515,15 +515,28 @@ export async function postCreatorWorkspace(): Promise<CreatorWorkspaceData> {
   });
 }
 
-export async function fetchCreatorPublicSlug(): Promise<{ public_slug: string }> {
-  return relayFetch<{ public_slug: string }>("/api/v1/creator/public-slug");
+export type PublicSlugSourceValue = "allocated" | "patreon_default" | "user_chosen";
+
+export async function fetchCreatorPublicSlug(): Promise<{
+  public_slug: string;
+  slug_source: PublicSlugSourceValue;
+}> {
+  return relayFetch<{ public_slug: string; slug_source: PublicSlugSourceValue }>(
+    "/api/v1/creator/public-slug"
+  );
 }
 
-export async function patchCreatorPublicSlug(public_slug: string): Promise<{ public_slug: string }> {
-  return relayFetch<{ public_slug: string }>("/api/v1/creator/public-slug", {
-    method: "PATCH",
-    body: JSON.stringify({ public_slug: public_slug.trim().toLowerCase() })
-  });
+export async function patchCreatorPublicSlug(public_slug: string): Promise<{
+  public_slug: string;
+  slug_source: PublicSlugSourceValue;
+}> {
+  return relayFetch<{ public_slug: string; slug_source: PublicSlugSourceValue }>(
+    "/api/v1/creator/public-slug",
+    {
+      method: "PATCH",
+      body: JSON.stringify({ public_slug: public_slug.trim().toLowerCase() })
+    }
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -533,6 +546,7 @@ export async function patchCreatorPublicSlug(public_slug: string): Promise<{ pub
 
 export type CreatorProfileIdentity = {
   public_slug: string;
+  slug_source: PublicSlugSourceValue;
   patreon_campaign_id: string | null;
   username: string | null;
   username_norm: string | null;
