@@ -28,6 +28,8 @@ describe("DbIdentityStore.createUser — existing TenantMembership for (account,
       role: "patron"
     };
     const tenantMembershipUpsert = vi.fn().mockResolvedValue(existingMembership);
+    /** PE-H: `upsertPatronEntitlementSnapshot` reads prior row before upsert (tier-change events). */
+    const snapshotFindUnique = vi.fn().mockResolvedValue(null);
     const snapshotUpsert = vi.fn().mockResolvedValue({});
     const creatorProfileFindFirst = vi.fn().mockResolvedValue(null);
 
@@ -64,7 +66,7 @@ describe("DbIdentityStore.createUser — existing TenantMembership for (account,
           ),
         upsert: tenantMembershipUpsert
       },
-      patronEntitlementSnapshot: { upsert: snapshotUpsert },
+      patronEntitlementSnapshot: { findUnique: snapshotFindUnique, upsert: snapshotUpsert },
       creatorProfile: { findFirst: creatorProfileFindFirst }
     };
 
