@@ -46,11 +46,79 @@ enum EntitlementSource {
   manual_support
 }
 
-/// Part 3 O — comment moderation (M9 stub).
+/// Part 3 O — comment moderation (M9 stub). PE-E (BO-P2-03) keeps the same three states; auto-mod transitions "visible -> hidden" without removing.
 enum CommentModState {
   visible
   hidden
   removed
+}
+
+/// PE-E (D12) — who is allowed to see a comment when the post itself is visible to the viewer.
+/// Tier requirement on the comment is layered on TOP of this via Comment.requiredTierId (NOT replacing post-level gating).
+enum CommentVisibility {
+  everyone
+  patrons_only
+}
+
+/// PE-E — surface a comment-driven content report points at.
+enum ContentReportTargetKind {
+  comment
+  post
+  account
+}
+
+/// PE-E — lifecycle for ContentReport rows.
+enum ContentReportStatus {
+  open
+  dismissed
+  actioned
+}
+
+/// PE-E — actor that produced a ModerationAction row.
+enum ModerationActorKind {
+  creator
+  admin
+  system_auto_mod
+  patron_self
+}
+
+/// PE-E — what surface a ModerationAction was applied to.
+enum ModerationTargetKind {
+  comment
+  post
+  account
+}
+
+/// PE-E — kinds of moderation actions logged. Append-only audit trail; reversible actions log a paired entry rather than mutating the original log row.
+enum ModerationActionKind {
+  comment_hide
+  comment_unhide
+  comment_remove
+  comment_restore
+  comment_pin
+  comment_unpin
+  comment_tag_revoke
+  comment_tag_unrevoke
+  account_block
+  account_unblock
+  report_dismiss
+  report_action
+  auto_mod_flag
+}
+
+/// PE-E (D12) — types of reactions on a comment (small fixed set; expand cautiously to keep aggregation cheap).
+enum CommentReactionKind {
+  like
+  heart
+  insightful
+  laugh
+}
+
+/// PE-C — audit row when patron creator-follows are seeded (OAuth or worker).
+enum PatronFollowSeedSource {
+  oauth_unified
+  oauth_creator_scoped_exchange
+  initial_follow_worker
 }
 
 /// Mirrors `UserAccount.auth_provider` in `src/identity/types.ts` (independent email/password vs Patreon-linked).
@@ -102,6 +170,8 @@ model Account {
   memberships           TenantMembership[]
   patronOAuthCredential PatronOAuthCredential?
   primaryStudio         Tenant?                @relation("AccountPrimaryStudio", fields: [primaryRelayCreatorId], references: [relayCreatorId], onDelete: SetNull, onUpdate: Cascade)
+  followsOutgoing       AccountFollow[]        @relation("AccountFollowsOutgoing")
+  followsIncoming       AccountFollow[]        @relation("AccountFollowsIncoming")
 
   @@map("accounts")
 }
@@ -126,6 +196,8 @@ model TenantMembership {
   patronCampaignAccessRecords PatronCampaignAccess[]
   feedCursors                 FeedCursor[]
   notificationPreferences     NotificationPreference[]
+  notifications               Notification[]
+  patronFollowSeeds           PatronFollowSeed[]
 
   @@unique([accountId, tenantId])
   @@index([tenantId])
@@ -219,6 +291,17 @@ model CreatorProfile {
   publicSlug        String   @unique @map("public_slug")
   /// Canonical Patreon `campaign_id` for this creator (ingest / webhooks / patron matching). See `docs/architecture/multi-tenant-option-b.md`.
   patreonCampaignId String?  @unique @map("patreon_campaign_id")
+  /// Mutable public @handle (mixed case allowed); uniqueness is on `usernameNorm`.
+  username          String?
+  /// Lowercase normalized username for uniqueness; mirrors `PatronProfile.handleNorm` pattern.
+  usernameNorm      String?  @unique @map("username_norm")
+  displayName       String?  @map("display_name")
+  avatarUrl         String?  @map("avatar_url")
+  bannerUrl         String?  @map("banner_url")
+  /// Short bio, capped at 280 chars by the service layer.
+  bio               String?
+  /// Free-text creative discipline (e.g. "Digital Illustrator"), rendered in feed cards.
+  discipline        String?
   createdAt         DateTime @default(now()) @map("created_at")
   updatedAt         DateTime @updatedAt @map("updated_at")
 
@@ -416,19 +499,28 @@ enum GalleryVisibility {
 }
 
 /// Replaces `gallery_post_overrides.json` — one row per (creator, post, media scope).
+///
+/// PE-F (BO-P3-01) — `discoveryEligible` opts the post into `GET /api/v1/patron/discover`.
+/// Only meaningful on post-level rows (mediaId=""); per-media rows ignore the flag because
+/// discovery surfaces whole posts, not individual assets. Default false: opt-in only, no
+/// surprise public exposure when the override row is created for some other reason.
 model PostOverride {
-  id           String             @id @default(cuid())
-  creatorId    String             @map("creator_id")
-  postId       String             @map("post_id")
+  id                 String             @id @default(cuid())
+  creatorId          String             @map("creator_id")
+  postId             String             @map("post_id")
   /// Empty string = post-level override; otherwise canonical `media_id` for per-asset rows.
-  mediaId      String             @default("") @map("media_id")
-  addTagIds    String[]           @default([]) @map("add_tag_ids")
-  removeTagIds String[]           @default([]) @map("remove_tag_ids")
-  visibility   GalleryVisibility?
-  updatedAt    DateTime           @updatedAt @map("updated_at")
+  mediaId            String             @default("") @map("media_id")
+  addTagIds          String[]           @default([]) @map("add_tag_ids")
+  removeTagIds       String[]           @default([]) @map("remove_tag_ids")
+  visibility         GalleryVisibility?
+  /// PE-F discovery v1 — when true (and Post.isPublic=true), surfaced in /patron/discover.
+  /// Only honored on post-level rows.
+  discoveryEligible  Boolean            @default(false) @map("discovery_eligible")
+  updatedAt          DateTime           @updatedAt @map("updated_at")
 
   @@unique([creatorId, postId, mediaId])
   @@index([creatorId])
+  @@index([discoveryEligible])
   @@map("post_overrides")
 }
 
@@ -605,6 +697,10 @@ model PatronFavorite {
   targetKind         PatronFavoriteTargetKind @map("target_kind")
   targetId           String                   @map("target_id")
   createdAt          DateTime                 @map("created_at")
+  /// PE-D / D29: tier ids the favoriter was entitled to **at favorite time** — historical
+  /// reference only. Access decisions at render time are LIVE re-checks against the viewer's
+  /// current `PatronEntitlementSnapshot`. Never consult this column for gate decisions.
+  snapshotTierIds    String[]                 @default([]) @map("snapshot_tier_ids")
 
   @@unique([patronMembershipId, creatorId, targetKind, targetId], map: "patron_favorite_scope_unique")
   @@index([patronMembershipId, creatorId])
@@ -620,6 +716,9 @@ model PatronSavedCollection {
   sortOrder          Int      @map("sort_order")
   createdAt          DateTime @map("created_at")
   updatedAt          DateTime @map("updated_at")
+  /// PE-D / D11: when true, the collection appears on the patron's public profile.
+  /// Defaults to false to preserve existing private behavior.
+  isPublic           Boolean  @default(false) @map("is_public")
 
   entries PatronSavedCollectionEntry[]
 
@@ -637,6 +736,10 @@ model PatronSavedCollectionEntry {
   postId             String                @map("post_id")
   mediaId            String                @map("media_id")
   createdAt          DateTime              @map("created_at")
+  /// PE-D / D29: tier ids the patron was entitled to **at save time** — historical
+  /// reference only. Access decisions at render time are LIVE re-checks against the viewer's
+  /// current `PatronEntitlementSnapshot`. Never consult this column for gate decisions.
+  snapshotTierIds    String[]              @default([]) @map("snapshot_tier_ids")
 
   @@unique([patronMembershipId, creatorId, collectionId, mediaId], map: "patron_saved_entry_media_unique")
   @@index([collectionId])
@@ -770,6 +873,33 @@ model PatronFollow {
   @@map("patron_follows")
 }
 
+/// PE-C (C3) — supporter follows another Relay `Account` (not creator-scoped `PatronFollow`).
+model AccountFollow {
+  id                String   @id @default(cuid())
+  followerAccountId String   @map("follower_account_id")
+  follower          Account  @relation("AccountFollowsOutgoing", fields: [followerAccountId], references: [id], onDelete: Cascade)
+  followedAccountId String   @map("followed_account_id")
+  followed          Account  @relation("AccountFollowsIncoming", fields: [followedAccountId], references: [id], onDelete: Cascade)
+  createdAt         DateTime @default(now()) @map("created_at")
+
+  @@unique([followerAccountId, followedAccountId], map: "account_follow_pair_unique")
+  @@index([followedAccountId])
+  @@map("account_follows")
+}
+
+/// PE-C — one row per idempotent PatronFollow seed batch (OAuth or worker).
+model PatronFollowSeed {
+  id                   String               @id @default(cuid())
+  patronMembershipId   String               @map("patron_user_id")
+  membership           TenantMembership     @relation(fields: [patronMembershipId], references: [id], onDelete: Cascade)
+  source               PatronFollowSeedSource @map("source")
+  relayCreatorIdsCount Int                  @map("relay_creator_ids_count")
+  createdAt            DateTime             @default(now()) @map("created_at")
+
+  @@index([patronMembershipId])
+  @@map("patron_follow_seeds")
+}
+
 model PatronEntitlementSnapshot {
   id                 String            @id @default(cuid())
   patronMembershipId String            @map("patron_user_id")
@@ -834,6 +964,121 @@ model NotificationPreference {
   @@map("notification_preferences")
 }
 
+/// PE-G (BO-P3-03) — kinds of notification a patron can receive.
+///
+/// v1 set covers the events for which producers exist (or are added in this lane). Adding a
+/// new kind is additive: extend this enum + extend `outbox-to-notification mapper` and the
+/// existing fan-out keeps working.
+enum NotificationKind {
+  comment_replied
+  comment_liked
+  new_follower
+  tier_changed
+  new_post_followed
+  mention
+}
+
+/// PE-G (BO-P3-03) — durable per-recipient notification rows.
+///
+/// Producers emit `OutboxEvent`s; the delivery worker reads new events, calls the mapper to
+/// resolve the recipient set + payload, and writes one `Notification` row per recipient. A
+/// recipient's notification feed is a `findMany` against this table ordered by `createdAt DESC`.
+///
+/// Clustering: when `clusterKey` is set, repeated events (e.g. multiple likes on the same
+/// comment) are coalesced into the SAME row -- the worker increments `clusterCount` and bumps
+/// `updatedAt` rather than writing a new row. The original `payloadJson` shape decides how the
+/// UI renders "5 people liked your comment" vs the singleton case.
+///
+/// Read state: `readAt` null = unread. The mark-read endpoint is the only writer; the worker
+/// never touches `readAt`.
+model Notification {
+  id                  String           @id @default(cuid())
+  /// TenantMembership.id for the recipient. Indexed; the patron feed query filters on this.
+  recipientMembershipId String         @map("recipient_membership_id")
+  /// Optional creator scope -- when set, filters / preferences operate per-creator.
+  relayCreatorId      String           @default("") @map("relay_creator_id")
+  kind                NotificationKind
+  /// Free-form, kind-shaped payload. Examples:
+  ///   tier_changed:     { prior_tier_ids, next_tier_ids, active }
+  ///   comment_liked:    { post_id, comment_id, latest_actor_account_id }
+  ///   comment_replied:  { post_id, comment_id, parent_comment_id, reply_account_id }
+  ///   new_follower:     { follower_account_id }
+  payloadJson         Json             @map("payload_json")
+  /// Optional dedupe key for clustering. NULL = never coalesce. Same key + same recipient + an
+  /// existing unread row inside CLUSTER_WINDOW_MS = increment count; new row otherwise.
+  clusterKey          String?          @map("cluster_key")
+  /// How many underlying events have been folded into this row (>= 1). Always 1 for un-clustered.
+  clusterCount        Int              @default(1) @map("cluster_count")
+  /// FK-style trace back to the OutboxEvent that produced this notification (most-recent for clusters).
+  sourceEventId       String?          @map("source_event_id")
+  /// Read state. Null = unread.
+  readAt              DateTime?        @map("read_at")
+  createdAt           DateTime         @default(now()) @map("created_at")
+  updatedAt           DateTime         @updatedAt @map("updated_at")
+
+  membership          TenantMembership @relation(fields: [recipientMembershipId], references: [id], onDelete: Cascade)
+
+  @@index([recipientMembershipId, readAt, createdAt(sort: Desc)])
+  @@index([recipientMembershipId, clusterKey])
+  @@map("notifications")
+}
+
+/// PE-G (BO-P3-03) — single-row cursor table; tracks the timestamp up to which the
+/// notification delivery worker has processed `OutboxEvent` rows. Re-reading from the cursor
+/// on restart keeps delivery exactly-once-ish (we still rely on the OutboxEvent dedupe key
+/// AND clusterKey de-duplication so a re-process is safe).
+///
+/// Single-row pattern: id is fixed to "default"; multi-instance deploys can swap to a Redis
+/// lock + cursor (BullMQ leader election) without schema changes.
+model NotificationDeliveryCursor {
+  id              String   @id @default("default")
+  lastOccurredAt  DateTime @map("last_occurred_at")
+  lastEventId     String?  @map("last_event_id")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  @@map("notification_delivery_cursor")
+}
+
+/// PE-J (BO-P4-02) — patron-initiated account deletion lifecycle.
+///
+/// status:
+///   - pending   : delete request accepted; sweeper picks it up at scheduledFor.
+///   - executed  : sweeper has run the cascade + soft-FK purge.
+///   - cancelled : patron cancelled before scheduledFor (or admin override).
+///
+/// We intentionally allow only ONE active pending row per account at a time (uniqueness
+/// enforced at the service layer + a partial index could be added later via raw SQL when
+/// concurrent abuse becomes a concern).
+enum AccountDeletionStatus {
+  pending
+  executed
+  cancelled
+}
+
+model AccountDeletion {
+  id            String                @id @default(cuid())
+  accountId     String                @map("account_id")
+  status        AccountDeletionStatus @default(pending)
+  /// When the patron initiated the request.
+  requestedAt   DateTime              @default(now()) @map("requested_at")
+  /// Wall-clock when the sweeper is allowed to execute. Default = requestedAt + 7 days.
+  scheduledFor  DateTime              @map("scheduled_for")
+  /// Set when status transitions to executed.
+  executedAt    DateTime?             @map("executed_at")
+  /// Set when status transitions to cancelled.
+  cancelledAt   DateTime?             @map("cancelled_at")
+  /// Optional patron-supplied reason; surfaced in moderator analytics, not in audit logs.
+  reason        String?
+  /// Best-effort source IP for fraud triage. Null when middleware doesn't surface it.
+  requesterIp   String?               @map("requester_ip")
+  createdAt     DateTime              @default(now()) @map("created_at")
+  updatedAt     DateTime              @updatedAt @map("updated_at")
+
+  @@index([accountId])
+  @@index([status, scheduledFor])
+  @@map("account_deletions")
+}
+
 /// Optional patron OAuth token persistence (Part 3 K) — one row per `Account` (global Patreon link).
 model PatronOAuthCredential {
   id               String           @id @default(cuid())
@@ -848,20 +1093,129 @@ model PatronOAuthCredential {
   @@map("patron_oauth_credentials")
 }
 
-/// Part 3 O — comments (soft-delete via `deleted_at`).
+/// Part 3 O + PE-E (BO-P2-03) — comments (soft-delete via `deleted_at`).
+///
+/// PE-E additive fields (D12, D26, D27, D28):
+/// - mediaId / anchorX / anchorY: D26 coordinate-pinned comments. mediaId null = post-level. AnchorX/Y are
+///   percentage coordinates (0.0 - 100.0) on the rendered media's natural box.
+/// - parentCommentId: simple threading; one level deep is enough for V1 but the FK self-relation supports deeper nesting later.
+/// - editedAt + EDIT_WINDOW_MS (15 min) enforced at the service layer in src/patron/comment-service.ts.
+/// - creatorPinnedAt: D12 creator pin (top-of-thread). Distinct from coordinate pinning (anchorX/Y) -- those are author-supplied, this is creator-curated.
+/// - requiredTierId + visibility: D12 tier-gated comments layered ON TOP of post-level gating (never widen access).
+/// - tagIds: D27 patron-supplied tags. Mirror to TagSuggestion(source = "patron_comment") via src/patron/comment-tag-service.ts so they flow into effectiveTags() automatically.
+/// - tagsRevokedByOwner: granular per-comment per-tag owner revocation (subset of tagIds). When the LAST suggestion backing a (media, tag) is revoked, the post's PostOverride.removeTagIds gains the tag.
+/// - autoModFlagsJson: snapshot of the auto-mod ruleset hits at create time, for transparency and post-hoc tuning.
 model Comment {
-  id             String          @id @default(cuid())
-  relayCreatorId String          @map("relay_creator_id")
-  postId         String          @map("post_id")
-  patronUserId   String          @map("patron_user_id")
-  body           String
-  createdAt      DateTime        @default(now()) @map("created_at")
-  deletedAt      DateTime?       @map("deleted_at")
-  modState       CommentModState @default(visible) @map("mod_state")
+  id                  String            @id @default(cuid())
+  relayCreatorId      String            @map("relay_creator_id")
+  postId              String            @map("post_id")
+  /// D26 — null = post-level comment; non-null = coordinate-pinned to a specific MediaAsset.
+  mediaId             String?           @map("media_id")
+  /// D26 — percentage X coordinate (0-100) on the rendered media's natural box. Required when mediaId is set.
+  anchorX             Decimal?          @map("anchor_x") @db.Decimal(5, 2)
+  /// D26 — percentage Y coordinate (0-100). Required when mediaId is set.
+  anchorY             Decimal?          @map("anchor_y") @db.Decimal(5, 2)
+  patronUserId        String            @map("patron_user_id")
+  body                String
+  /// D12 - simple threading; null = top-level. Self-relation; parent delete cascades to children (matches typical comment UX).
+  parentCommentId     String?           @map("parent_comment_id")
+  parent              Comment?          @relation("CommentReplies", fields: [parentCommentId], references: [id], onDelete: Cascade)
+  replies             Comment[]         @relation("CommentReplies")
+  /// D27 - patron-supplied tags shared with artist namespace.
+  tagIds              String[]          @default([]) @map("tag_ids")
+  /// D27 - granular per-comment owner revocation. Subset of tagIds. See SEARCH_AND_TAGS_SHARED_KERNEL.md §4.3.
+  tagsRevokedByOwner  String[]          @default([]) @map("tags_revoked_by_owner")
+  /// D12 - creator pin to top of thread. Distinct from coordinate pinning. Null = unpinned.
+  creatorPinnedAt     DateTime?         @map("creator_pinned_at")
+  /// D12 - optional tier gate; when set, viewer must have this tier id in current TenantMembership.tierIds.
+  requiredTierId      String?           @map("required_tier_id")
+  /// D12 - audience scope (defaults to everyone == post audience).
+  visibility          CommentVisibility @default(everyone)
+  /// D22 - auto-mod hits captured at create-time; stored as { rule_id, snippet, severity }[] for explainability.
+  autoModFlagsJson    Json?             @map("auto_mod_flags_json")
+  createdAt           DateTime          @default(now()) @map("created_at")
+  /// Last edit timestamp; null = never edited.
+  editedAt            DateTime?         @map("edited_at")
+  deletedAt           DateTime?         @map("deleted_at")
+  modState            CommentModState   @default(visible) @map("mod_state")
+
+  reactions           CommentReaction[]
 
   @@index([relayCreatorId, postId])
+  @@index([relayCreatorId, postId, mediaId])
   @@index([patronUserId])
+  @@index([parentCommentId])
   @@map("relay_comments")
+}
+
+/// PE-E (D12) — one row per (comment, account, kind). Toggle on/off; aggregate counts at read time.
+model CommentReaction {
+  id            String              @id @default(cuid())
+  commentId     String              @map("comment_id")
+  comment       Comment             @relation(fields: [commentId], references: [id], onDelete: Cascade)
+  accountId     String              @map("account_id")
+  kind          CommentReactionKind
+  createdAt     DateTime            @default(now()) @map("created_at")
+
+  @@unique([commentId, accountId, kind])
+  @@index([commentId])
+  @@index([accountId])
+  @@map("comment_reactions")
+}
+
+/// PE-E — patron-submitted reports on comments / posts / accounts; resolved by creator/admin via ModerationAction.
+model ContentReport {
+  id                  String                  @id @default(cuid())
+  reporterAccountId   String                  @map("reporter_account_id")
+  /// Scope: usually the relay_creator_id whose surface this is about (creator's queue). For account reports this can be empty when scope is platform-wide.
+  relayCreatorId      String                  @default("") @map("relay_creator_id")
+  targetKind          ContentReportTargetKind @map("target_kind")
+  targetId            String                  @map("target_id")
+  reasonCode          String                  @map("reason_code")
+  body                String?
+  status              ContentReportStatus     @default(open)
+  resolvedByAccountId String?                 @map("resolved_by_account_id")
+  resolvedAt          DateTime?               @map("resolved_at")
+  createdAt           DateTime                @default(now()) @map("created_at")
+
+  @@index([relayCreatorId, status, createdAt])
+  @@index([targetKind, targetId])
+  @@index([reporterAccountId])
+  @@map("content_reports")
+}
+
+/// PE-E — append-only moderation audit log. Reversible actions log a paired entry (e.g. comment_hide -> comment_unhide).
+model ModerationAction {
+  id                String                @id @default(cuid())
+  /// Scope; "" allowed for platform-wide actions.
+  relayCreatorId    String                @default("") @map("relay_creator_id")
+  actorKind         ModerationActorKind   @map("actor_kind")
+  /// Null when actorKind = system_auto_mod.
+  actorAccountId    String?               @map("actor_account_id")
+  kind              ModerationActionKind
+  targetKind        ModerationTargetKind  @map("target_kind")
+  targetId          String                @map("target_id")
+  /// Free-form payload for kind-specific data: { tagId } for comment_tag_revoke, { reportId } for report_*, etc.
+  payloadJson       Json?                 @map("payload_json")
+  createdAt         DateTime              @default(now()) @map("created_at")
+
+  @@index([relayCreatorId, createdAt])
+  @@index([targetKind, targetId])
+  @@index([actorAccountId])
+  @@map("moderation_actions")
+}
+
+/// PE-E (D14) — account-level block. Future-only semantics: hides content authored AFTER createdAt; historical content unaffected.
+model AccountBlock {
+  id                 String   @id @default(cuid())
+  blockerAccountId   String   @map("blocker_account_id")
+  blockedAccountId   String   @map("blocked_account_id")
+  createdAt          DateTime @default(now()) @map("created_at")
+
+  @@unique([blockerAccountId, blockedAccountId])
+  @@index([blockerAccountId])
+  @@index([blockedAccountId])
+  @@map("account_blocks")
 }
 
 /// Part 3 L/M — ranking / discovery audit (partitioning deferred; index on `created_at` for time-range queries).

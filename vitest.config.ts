@@ -12,6 +12,9 @@ export default defineConfig({
       "react-dom": path.resolve(root, "node_modules/react-dom"),
       // web/lib imports resolve next from web/node_modules; vi.mock("next/navigation") does not apply.
       "next/navigation": path.resolve(root, "tests/mocks/next-navigation.ts"),
+      // Same story for next/link: bare RTL render lacks the AppRouter context provider, so
+      // we ship a plain <a> stub. Tests asserting client-side routing should mock useRouter.
+      "next/link": path.resolve(root, "tests/mocks/next-link.tsx"),
       // Mirror Next.js' tsconfig path mapping (`web/tsconfig.json` → "@/*": ["./*"]) so
       // tests that touch web/lib modules (which use `@/lib/*` imports) resolve correctly.
       "@/lib": path.resolve(root, "web/lib"),

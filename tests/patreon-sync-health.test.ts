@@ -93,6 +93,12 @@ function mockFetch(): typeof fetch {
         { status: 200, headers: { "content-type": "application/json" } }
       );
     }
+    if (url.includes("oauth2/v2/identity")) {
+      return new Response(
+        JSON.stringify({ data: { type: "user", id: "vitest_patreon_user" } }),
+        { status: 200, headers: { "content-type": "application/json" } }
+      );
+    }
     if (url.includes("/campaigns?") && !url.includes("/posts")) {
       return new Response(JSON.stringify(campaignsDoc), {
         status: 200,
@@ -116,9 +122,23 @@ describe("classifySyncError", () => {
     expect(r.hint).toMatch(/Connect your Patreon/i);
   });
 
-  it("maps ambiguous campaigns", () => {
+  it("maps ambiguous campaigns (legacy copy)", () => {
     const r = classifySyncError("Multiple Patreon campaigns found. Pass campaign_id.");
     expect(r.code).toBe("campaign_ambiguous");
+  });
+
+  it("maps ambiguous campaigns (list with ids)", () => {
+    const r = classifySyncError(
+      "Multiple Patreon campaigns (2: 111, 222). Pass campaign_id (numeric id from the Patreon creator dashboard URL), or set NEXT_PUBLIC_RELAY_PATREON_CAMPAIGN_ID."
+    );
+    expect(r.code).toBe("campaign_ambiguous");
+  });
+
+  it("maps zero campaigns from Patreon token", () => {
+    const r = classifySyncError(
+      "Patreon returned no creator campaigns for this OAuth token. Use a creator account with the correct scopes, reconnect Patreon from the studio, or pass campaign_id."
+    );
+    expect(r.code).toBe("no_creator_campaigns");
   });
 
   it("maps network-ish failures", () => {

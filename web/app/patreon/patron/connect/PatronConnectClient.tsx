@@ -8,12 +8,16 @@ import { patronPatronOAuthRedirectUri } from "@/lib/patron-patron-redirect-uri";
 import { encodePatronOAuthNonce } from "@/lib/patron-oauth-state";
 import { fetchPatronSessionIfPresent } from "@/lib/relay-api";
 
-type SessionGateState = "checking" | "signed_in" | "needs_signin";
+/** PE-A: session required; Supabase patrons must have confirmed email before OAuth (matches POST /link gate). */
+type SessionGateState =
+  | "checking"
+  | "needs_signin"
+  | "needs_verify_email"
+  | "ready";
 
 function PatronConnectInner({ initialClientId }: { initialClientId: string }) {
   const router = useRouter();
 
-  // PE-A: Patreon link requires a signed-in Relay account. No session → bounce to /login.
   const [sessionGate, setSessionGate] = useState<SessionGateState>("checking");
   useEffect(() => {
     let cancelled = false;
@@ -21,12 +25,16 @@ function PatronConnectInner({ initialClientId }: { initialClientId: string }) {
       try {
         const me = await fetchPatronSessionIfPresent();
         if (cancelled) return;
-        if (me) {
-          setSessionGate("signed_in");
-        } else {
+        if (!me) {
           setSessionGate("needs_signin");
           router.replace("/login?role=supporter&returnTo=%2Fpatreon%2Fpatron%2Fconnect");
+          return;
         }
+        if (me.email_verified === false) {
+          setSessionGate("needs_verify_email");
+          return;
+        }
+        setSessionGate("ready");
       } catch {
         if (!cancelled) setSessionGate("needs_signin");
       }
@@ -64,12 +72,16 @@ function PatronConnectInner({ initialClientId }: { initialClientId: string }) {
         Authorize Relay to read your Patreon memberships. Relay syncs the creators you support
         and your tier access — no extra subscription required.
       </p>
+      <p className="text-xs text-stone-500">
+        Supporters with a Supabase sign-in must verify their email before Patreon connect (onboarding
+        and this page).
+      </p>
 
       {sessionGate === "checking" ? (
         <p className="text-sm text-stone-400">Checking your Relay session…</p>
       ) : sessionGate === "needs_signin" ? (
         <p className="rounded border border-amber-600/50 bg-amber-950/40 p-3 text-sm text-amber-100">
-          You need a verified Relay account before linking Patreon. Redirecting to{" "}
+          You need a Relay account before linking Patreon. Redirecting to{" "}
           <Link
             href="/login?role=supporter&returnTo=%2Fpatreon%2Fpatron%2Fconnect"
             className="underline decoration-amber-300/70 hover:text-amber-50"
@@ -78,6 +90,20 @@ function PatronConnectInner({ initialClientId }: { initialClientId: string }) {
           </Link>
           …
         </p>
+      ) : sessionGate === "needs_verify_email" ? (
+        <div
+          className="space-y-3 rounded border border-amber-700/50 bg-amber-950/40 p-4 text-sm text-amber-100"
+          role="status"
+        >
+          <p>
+            <span className="font-semibold text-amber-50">Confirm your email first.</span> Relay
+            won&apos;t start Patreon linking until your inbox is verified — same rule as the
+            supporter feed. Check your email for the confirmation link, then return here.
+          </p>
+          <p className="text-xs text-amber-200/85">
+            After confirming, refresh this page or sign out and back in if this message stays.
+          </p>
+        </div>
       ) : !clientId.trim() ? (
         <p className="rounded border border-amber-600/50 bg-amber-950/40 p-3 text-sm text-amber-100">
           Set <code className="rounded bg-stone-900 px-1">PATREON_CLIENT_ID</code> in{" "}

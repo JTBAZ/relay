@@ -102,6 +102,12 @@ function mockFetch(): typeof fetch {
         { status: 200, headers: { "content-type": "application/json" } }
       );
     }
+    if (url.includes("oauth2/v2/identity")) {
+      return new Response(
+        JSON.stringify({ data: { type: "user", id: "vitest_patreon_user" } }),
+        { status: 200, headers: { "content-type": "application/json" } }
+      );
+    }
     if (url.includes("/campaigns?") && !url.includes("/posts")) {
       return new Response(JSON.stringify(campaignsDoc), {
         status: 200,

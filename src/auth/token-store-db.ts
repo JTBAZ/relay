@@ -74,26 +74,61 @@ export class DbPatreonTokenStore implements PatreonTokenStore {
         });
       }
 
-      let pa = await tx.providerAccount.findUnique({
+      let pa = await tx.providerAccount.findFirst({
         where: {
-          provider_providerUserId: {
-            provider: ProviderKind.patreon,
-            providerUserId: pid
+          userId: creatorUser.id,
+          provider: ProviderKind.patreon,
+          oauthCredential: {
+            is: { purpose: OAuthPurpose.creator_ingest }
           }
         }
       });
+
       if (!pa) {
-        pa = await tx.providerAccount.create({
-          data: {
-            userId: creatorUser.id,
-            provider: ProviderKind.patreon,
-            providerUserId: pid
+        pa = await tx.providerAccount.findUnique({
+          where: {
+            provider_providerUserId: {
+              provider: ProviderKind.patreon,
+              providerUserId: pid
+            }
           }
         });
-      } else if (pa.userId !== creatorUser.id) {
+        if (!pa) {
+          pa = await tx.providerAccount.create({
+            data: {
+              userId: creatorUser.id,
+              provider: ProviderKind.patreon,
+              providerUserId: pid
+            }
+          });
+        } else if (pa.userId !== creatorUser.id) {
+          await tx.providerAccount.update({
+            where: { id: pa.id },
+            data: { userId: creatorUser.id }
+          });
+        }
+      } else if (
+        pa.providerUserId.startsWith("relay_creator:") &&
+        tokens.provider_user_id?.trim() &&
+        !tokens.provider_user_id.trim().startsWith("relay_creator:")
+      ) {
+        const nextPid = tokens.provider_user_id.trim();
+        const clash = await tx.providerAccount.findFirst({
+          where: {
+            provider: ProviderKind.patreon,
+            providerUserId: nextPid,
+            NOT: { id: pa.id }
+          }
+        });
+        if (clash) {
+          throw new Error(
+            "This Patreon login is already connected to a different Relay studio. " +
+              "Use the same Patreon account you used for this studio, or ask support if you need to move the link."
+          );
+        }
         await tx.providerAccount.update({
           where: { id: pa.id },
-          data: { userId: creatorUser.id }
+          data: { providerUserId: nextPid }
         });
       }
 

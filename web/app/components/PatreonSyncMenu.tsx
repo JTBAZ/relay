@@ -192,38 +192,40 @@ export default function PatreonSyncMenu({
     }
   };
 
-  /** Register when we never recorded OK (missing row, failed, or skipped). */
-  const webhookNeedsRegister =
-    state != null &&
-    (state.webhook_registration == null ||
-      state.webhook_registration.registration_status !== "ok");
+  /**
+   * Always show the register/re-register button so the user can sync webhooks after
+   * re-connecting OAuth. When status is already "ok", label it "Re-register".
+   */
+  const webhookRegistered =
+    state?.webhook_registration?.registration_status === "ok";
 
-  const webhookRegisterControls =
-    webhookNeedsRegister ? (
-      <div className="mt-2">
-        <button
-          type="button"
-          disabled={registeringWebhooks || Boolean(loadingState || stateError)}
-          className="w-full rounded-md border border-[var(--lib-primary)]/50 bg-[var(--lib-primary)]/15 px-2 py-1.5 text-[11px] font-medium text-[var(--lib-primary)] transition-colors hover:bg-[var(--lib-primary)]/25 disabled:opacity-50"
-          onClick={() => void runRegisterWebhooks()}
-        >
-          {registeringWebhooks ? (
-            <span className="inline-flex items-center justify-center gap-1.5">
-              <Loader2 className="h-3 w-3 animate-spin" aria-hidden />
-              Registering…
-            </span>
-          ) : (
-            "Register webhooks"
-          )}
-        </button>
-        {webhookRegisterOk && (
-          <p className="mt-1.5 text-[11px] text-[var(--lib-success)]">{webhookRegisterOk}</p>
+  const webhookRegisterControls = state != null ? (
+    <div className="mt-2">
+      <button
+        type="button"
+        disabled={registeringWebhooks || Boolean(loadingState || stateError)}
+        className="w-full rounded-md border border-[var(--lib-primary)]/50 bg-[var(--lib-primary)]/15 px-2 py-1.5 text-[11px] font-medium text-[var(--lib-primary)] transition-colors hover:bg-[var(--lib-primary)]/25 disabled:opacity-50"
+        onClick={() => void runRegisterWebhooks()}
+      >
+        {registeringWebhooks ? (
+          <span className="inline-flex items-center justify-center gap-1.5">
+            <Loader2 className="h-3 w-3 animate-spin" aria-hidden />
+            Registering…
+          </span>
+        ) : webhookRegistered ? (
+          "Re-register webhooks"
+        ) : (
+          "Register webhooks"
         )}
-        {webhookRegisterError && (
-          <p className="mt-1.5 text-[11px] text-[var(--lib-destructive)]">{webhookRegisterError}</p>
-        )}
-      </div>
-    ) : null;
+      </button>
+      {webhookRegisterOk && (
+        <p className="mt-1.5 text-[11px] text-[var(--lib-success)]">{webhookRegisterOk}</p>
+      )}
+      {webhookRegisterError && (
+        <p className="mt-1.5 text-[11px] text-[var(--lib-destructive)]">{webhookRegisterError}</p>
+      )}
+    </div>
+  ) : null;
 
   return (
     <div className="relative" ref={rootRef}>
@@ -415,25 +417,29 @@ export default function PatreonSyncMenu({
 
                   {(() => {
                     const wh = webhookRegistrationLine(state.webhook_registration);
-                    if (!wh) {
-                      return (
-                        <div className="mt-2 border-t border-[var(--lib-border)] pt-2">
-                          <p className="text-[10px] font-semibold uppercase tracking-wide text-[var(--lib-fg-muted)]">
-                            Patreon webhooks
-                          </p>
-                          <p className="mt-1 text-[11px] text-[var(--lib-fg-muted)]">
-                            No registration data yet. Reconnect creator OAuth or register below.
-                          </p>
-                          {webhookRegisterControls}
-                        </div>
-                      );
-                    }
+                    const whUpdatedAt = state.webhook_registration?.updated_at;
                     return (
                       <div className="mt-2 border-t border-[var(--lib-border)] pt-2">
                         <p className="text-[10px] font-semibold uppercase tracking-wide text-[var(--lib-fg-muted)]">
                           Patreon webhooks
                         </p>
-                        <p className={`mt-1 text-[11px] font-medium ${wh.className}`}>{wh.text}</p>
+                        {wh ? (
+                          <p className={`mt-1 text-[11px] font-medium ${wh.className}`}>{wh.text}</p>
+                        ) : (
+                          <p className="mt-1 text-[11px] text-[var(--lib-fg-muted)]">
+                            No registration data yet. Register below to receive real-time Patreon events.
+                          </p>
+                        )}
+                        {whUpdatedAt && (
+                          <p className="mt-0.5 text-[10px] text-[var(--lib-fg-muted)]">
+                            Last registered {fmtIso(whUpdatedAt)}
+                          </p>
+                        )}
+                        {webhookRegistered && (
+                          <p className="mt-1 text-[10px] text-[var(--lib-warning)]/90">
+                            After reconnecting Patreon OAuth, re-register webhooks so Patreon delivers events to the new token.
+                          </p>
+                        )}
                         {webhookRegisterControls}
                       </div>
                     );
@@ -468,6 +474,9 @@ export default function PatreonSyncMenu({
                 <p className="mt-1.5 text-[10px] leading-snug text-[var(--lib-fg-muted)]">
                   Ignores the watermark and walks up to 100 pages of posts (API cap), then
                   re-exports media. Use for a fresh library or when older posts are missing.
+                </p>
+                <p className="mt-2 rounded-md border border-[var(--lib-warning)]/30 bg-[var(--lib-warning)]/8 px-2 py-1.5 text-[10px] leading-snug text-[var(--lib-fg-muted)]">
+                  <strong className="text-[var(--lib-fg)]">Blurry images?</strong> Patreon bakes a blur into cover thumbnails for patron-only posts. Run a full re-scrape after reconnecting your Patreon session cookie — if images remain blurred, the CDN URL Patreon is generating contains the blur transform and the post may need to be re-uploaded on Patreon.
                 </p>
               </div>
           {actionError && (

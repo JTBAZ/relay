@@ -3,8 +3,9 @@ import type { PatronFeedBundle } from "@/lib/relay-fixtures";
 
 /**
  * Patron home feed + sidebar payload from `GET /api/v1/patron/relay_feed` (alias: `GET /api/v1/patron/feed`).
- * With DB identity + Prisma, the server assembles from follows, posts, and entitlement snapshots (PE-B);
- * otherwise it serves fixture-shaped JSON from `web/lib/patron-relay-feed-bundle.json`.
+ * With DB identity + Prisma (`RELAY_DB_STORE_IDENTITY`), the server assembles from follows, posts,
+ * and entitlement snapshots (PE-B). Without that, the same routes serve static fixture JSON from
+ * `web/lib/patron-relay-feed-bundle.json` — there is no separate patron-feed fixture env flag.
  * The live sidebar also calls `GET /api/v1/patron/follows` (PE-C; see `patron-follows-api.ts`) for ordering and faster load.
  *
  * Optional query params (PE-B): `cursor`, `limit`, `filter` — pass via {@link fetchPatronRelayFeedWithOptions}.
@@ -46,8 +47,8 @@ export async function fetchPatronRelayFeedWithOptions(
  * Exported for {@link fetchPatronRelayFeed} tests.
  */
 export function absolutizeMediaUrls(bundle: PatronFeedBundle): PatronFeedBundle {
-  const fix = (u: string | undefined): string | undefined => {
-    if (!u) return u;
+  const fix = (u: string | null | undefined): string | undefined => {
+    if (u == null || !u) return undefined;
     if (u.startsWith("/api/")) return `${RELAY_API_BASE}${u}`;
     return u;
   };
@@ -57,6 +58,7 @@ export function absolutizeMediaUrls(bundle: PatronFeedBundle): PatronFeedBundle 
       ...p,
       coverImageUrl: fix(p.coverImageUrl),
       highResImageUrl: fix(p.highResImageUrl),
+      posterImageUrl: fix(p.posterImageUrl),
       galleryImageUrls: p.galleryImageUrls?.map((u) => fix(u) ?? u)
     }))
   };

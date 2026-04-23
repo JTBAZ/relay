@@ -14,6 +14,13 @@ export default function ConditionalAppNav() {
   if (
     /** Patron routes (feed, onboarding, etc.) — full-page patron chrome */
     pathname.startsWith("/patron/") ||
+    /**
+     * Patron Patreon OAuth bridge pages (`/patreon/patron/connect`,
+     * `/patreon/patron/callback`). These are public-facing patron flows and must
+     * not inherit the studio AppNav. They mount `<PatronTopNav />` via
+     * `web/app/patreon/patron/layout.tsx` instead.
+     */
+    pathname.startsWith("/patreon/patron/") ||
     pathname === "/onboarding" ||
     pathname.startsWith("/onboarding/") ||
     pathname === "/login" ||

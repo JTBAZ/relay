@@ -59,6 +59,7 @@ export class FilePatronFavoritesStore {
     }
     const full: PatronFavoriteRecord = {
       ...record,
+      snapshot_tier_ids: record.snapshot_tier_ids ?? [],
       created_at: new Date().toISOString()
     };
     root.favorites.push(full);

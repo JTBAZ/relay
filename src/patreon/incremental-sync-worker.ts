@@ -11,7 +11,10 @@
 import { randomUUID } from "node:crypto";
 import type { PrismaClient } from "@prisma/client";
 import type { PatreonTokenStore } from "../auth/token-store.js";
-import { ensureCreatorProfilePatreonCampaignId } from "./campaign-tenant-resolve.js";
+import {
+  ensureCreatorProfilePatreonCampaignId,
+  getCreatorProfilePatreonCampaignIdForRelayCreatorDb
+} from "./campaign-tenant-resolve.js";
 import { PatreonCampaignCreatorIndex } from "./patreon-campaign-creator-index.js";
 import type { PatreonSyncHealthStoreAPI } from "./patreon-sync-health-store.js";
 import type { PatreonSyncService } from "./patreon-sync-service.js";
@@ -179,11 +182,16 @@ export async function runIncrementalAutosyncCycle(
     }
     const traceId = `autosync:${randomUUID()}`;
     try {
+      const fallbackCampaignId = opts.prisma
+        ? (await getCreatorProfilePatreonCampaignIdForRelayCreatorDb(opts.prisma, creatorId)) ??
+          undefined
+        : undefined;
       let campaignIdForSync: string | undefined;
       if (probeSkipWhenCaughtUp) {
         const state = await opts.patreonSyncService.getSyncState(creatorId, {
           traceId,
-          probe_upstream: true
+          probe_upstream: true,
+          fallback_campaign_id: fallbackCampaignId
         });
         campaignIdForSync = state.patreon_campaign_id;
         if (state.watermark_published_at && state.likely_has_newer_posts === false) {
@@ -194,6 +202,7 @@ export async function runIncrementalAutosyncCycle(
 
       const result = await opts.patreonSyncService.scrapeOrSync(creatorId, traceId, {
         campaign_id: campaignIdForSync,
+        fallback_campaign_id: fallbackCampaignId,
         max_post_pages: maxPostPages
       });
 

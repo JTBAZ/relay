@@ -12,7 +12,15 @@ import {
   Loader,
 } from "lucide-react";
 import type { FeedPost, PositionalComment } from "@/lib/relay-fixtures";
+import {
+  isPatronFeedVideoPost,
+  patronFeedPlaybackSrc,
+  patronFeedPosterSrc
+} from "@/lib/patron-feed-media";
 import { GalleryMediaStack } from "./gallery-media-stack";
+import { PatronFeedVideo } from "./patron-feed-playback";
+import { CommentThreadPanel } from "./comment-thread-panel";
+import { useLiveComments, type LiveCommentsScope } from "./use-live-comments";
 
 interface GalleryViewProps {
   post: FeedPost;
@@ -20,6 +28,13 @@ interface GalleryViewProps {
   onNavigate?: (direction: "prev" | "next") => void;
   hasPrev?: boolean;
   hasNext?: boolean;
+  /**
+   * PE-E (BO-P2-04) — when set, comments load from the live API and submit/edit/delete/react/mod
+   * actions hit the PE-E endpoints. When null/undefined, today's fixture-driven local-state path
+   * is preserved unchanged. Pass null from any caller that doesn't need live wiring (mock pages,
+   * design previews) so this surface remains zero-risk.
+   */
+  liveCommentsScope?: LiveCommentsScope | null;
 }
 
 type ViewMode = "gallery" | "comment";
@@ -50,12 +65,20 @@ export function GalleryView({
   onNavigate,
   hasPrev = false,
   hasNext = false,
+  liveCommentsScope = null,
 }: GalleryViewProps) {
   const [liked, setLiked] = useState(false);
   const [viewMode, setViewMode] = useState<ViewMode>("gallery");
-  const [comments, setComments] = useState<PositionalComment[]>(
+  const live = useLiveComments(liveCommentsScope);
+  const [fixtureComments, setFixtureComments] = useState<PositionalComment[]>(
     post.comments || []
   );
+  // When live wiring is on, the rendered pin layer + count come from the API; otherwise the
+  // fixture-driven local list is the source of truth. This flag is the single switch every
+  // downstream branch reads so the two modes never interleave by accident.
+  const isLive = liveCommentsScope !== null;
+  const comments: PositionalComment[] = isLive ? live.positional : fixtureComments;
+  const setComments = setFixtureComments;
   const [pendingComment, setPendingComment] = useState<PendingComment | null>(
     null
   );
@@ -88,6 +111,9 @@ export function GalleryView({
   useEffect(() => {
     setMediaExpanded(false);
     setStackIndex(0);
+    setViewMode("gallery");
+    setPinPreviewPhase("hidden");
+    pinPreviewBridgeRef.current = false;
   }, [post.id]);
 
   /** Expanded overlay is gallery-only; never keep enlarge state alongside comment mode */
@@ -147,7 +173,14 @@ export function GalleryView({
     }, 100);
   }, []);
 
+  const isVideoPost = isPatronFeedVideoPost(post);
+  const playbackSrc = patronFeedPlaybackSrc(post);
+  const posterSrc = patronFeedPosterSrc(post);
+
   const imageUrls = useMemo(() => {
+    if (isPatronFeedVideoPost(post)) {
+      return [];
+    }
     if (post.galleryImageUrls && post.galleryImageUrls.length > 0) {
       return post.galleryImageUrls;
     }
@@ -156,7 +189,13 @@ export function GalleryView({
       post.coverImageUrl ||
       "/placeholder.svg?height=800&width=1200";
     return [single];
-  }, [post.galleryImageUrls, post.highResImageUrl, post.coverImageUrl]);
+  }, [
+    post.galleryImageUrls,
+    post.highResImageUrl,
+    post.coverImageUrl,
+    post.mediaType,
+    post.primaryMimeType
+  ]);
 
   const multiImage = imageUrls.length > 1;
 
@@ -248,24 +287,46 @@ export function GalleryView({
     [collapseExpanded]
   );
 
-  const handleCommentSubmit = () => {
+  const handleCommentSubmit = async () => {
     if (!pendingComment || !commentText.trim()) return;
 
-    const newComment: PositionalComment = {
-      id: `cm-${Date.now()}`,
-      author: {
-        id: "v1",
-        displayName: "You",
-        handle: "you",
-        avatarUrl: "/placeholder.svg?height=32&width=32",
-      },
-      text: commentText.trim(),
-      position: pendingComment.position,
-      createdAt: "Just now",
-      tags: pendingTags.length > 0 ? pendingTags : undefined,
-    };
+    if (isLive) {
+      // Live wiring: post to PE-E backend; refresh handled by the hook. We treat
+      // post-level vs media-anchored as both anchored here because the existing composer
+      // always captures coordinates -- post-level (mediaId=null) is reserved for the
+      // future "thread reply" surface.
+      try {
+        await live.submit({
+          body: commentText.trim(),
+          // No media-asset selector in skeletal-UI scope; treat the whole post as the
+          // anchor surface. PE-L / PE-K can introduce per-asset targeting.
+          mediaId: null,
+          anchorX: pendingComment.position.x,
+          anchorY: pendingComment.position.y,
+          tagIds: pendingTags
+        });
+      } catch (err) {
+        // Surface the error inline; auto-mod hidden state still creates the row, so a
+        // thrown error is a true failure (validation / network / 5xx).
+        console.error("[live comments] submit failed", err);
+      }
+    } else {
+      const newComment: PositionalComment = {
+        id: `cm-${Date.now()}`,
+        author: {
+          id: "v1",
+          displayName: "You",
+          handle: "you",
+          avatarUrl: "/placeholder.svg?height=32&width=32",
+        },
+        text: commentText.trim(),
+        position: pendingComment.position,
+        createdAt: "Just now",
+        tags: pendingTags.length > 0 ? pendingTags : undefined,
+      };
+      setComments((prev) => [...prev, newComment]);
+    }
 
-    setComments((prev) => [...prev, newComment]);
     setPendingComment(null);
     setCommentText("");
     setPendingTags([]);
@@ -288,6 +349,7 @@ export function GalleryView({
   };
 
   const enterCommentMode = () => {
+    if (isVideoPost) return;
     clearPreviewHideTimer();
     pinPreviewBridgeRef.current = false;
     setPinPreviewPhase("hidden");
@@ -328,6 +390,17 @@ export function GalleryView({
             : undefined
         }
       />
+
+      {/* PE-E live thread panel — only renders when wired to the live API. Fixture flow keeps
+          the polished pin-tooltip UX intact; live flow gets the panel for non-anchored content,
+          reactions, and per-role mod actions that the tooltip doesn't expose. */}
+      {isLive && liveCommentsScope ? (
+        <CommentThreadPanel
+          live={live}
+          viewerAccountId={liveCommentsScope.viewerAccountId}
+          isCreatorOwner={liveCommentsScope.isCreatorOwner}
+        />
+      ) : null}
 
       {/* Close button */}
       <button
@@ -400,6 +473,40 @@ export function GalleryView({
             ].join(" ")}
             aria-hidden={viewMode === "gallery" && mediaExpanded}
           >
+            {isVideoPost ? (
+              <div
+                ref={imageSurfaceRef}
+                className={[
+                  "relative flex w-full max-w-full flex-col items-center justify-center outline-none",
+                  viewMode === "gallery" ? "cursor-zoom-in" : "",
+                ].join(" ")}
+                onClick={handleMediaStackClick}
+                onMouseEnter={viewMode === "gallery" ? onImageSurfaceEnter : undefined}
+                onMouseLeave={viewMode === "gallery" ? onImageSurfaceLeave : undefined}
+                onKeyDown={
+                  viewMode === "gallery"
+                    ? (e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          openExpanded();
+                        }
+                      }
+                    : undefined
+                }
+                role={viewMode === "gallery" ? "button" : undefined}
+                tabIndex={viewMode === "gallery" ? 0 : undefined}
+                aria-label={viewMode === "gallery" ? "Click to enlarge video" : undefined}
+              >
+                <PatronFeedVideo
+                  src={playbackSrc}
+                  poster={posterSrc}
+                  controls={false}
+                  muted
+                  preload="metadata"
+                  className="pointer-events-none h-auto w-auto max-h-[60vh] max-w-full object-contain"
+                />
+              </div>
+            ) : (
             <GalleryMediaStack
               stackRef={imageSurfaceRef}
               imageUrls={imageUrls}
@@ -557,6 +664,7 @@ export function GalleryView({
               </div>
             )}
             </GalleryMediaStack>
+            )}
           </div>
         </div>
 
@@ -590,12 +698,19 @@ export function GalleryView({
             {/* Pin a comment button - center (hover shows pin preview on image) */}
             <button
               type="button"
+              disabled={isVideoPost}
+              title={isVideoPost ? "Pinned comments apply to images only" : undefined}
               onClick={enterCommentMode}
               onMouseEnter={onCommentButtonEnter}
               onMouseLeave={onCommentButtonLeave}
               onFocus={onCommentButtonEnter}
               onBlur={onCommentButtonLeave}
-              className="group flex items-center gap-1.5 px-3 py-1.5 bg-[#0E0E0E] border border-[#2A2A2A] rounded-lg text-[#555555] text-xs hover:text-[#40916C] hover:border-[#2D6A4F]/50 transition-all"
+              className={[
+                "group flex items-center gap-1.5 px-3 py-1.5 bg-[#0E0E0E] border border-[#2A2A2A] rounded-lg text-xs transition-all",
+                isVideoPost
+                  ? "cursor-not-allowed opacity-40 text-[#555555]"
+                  : "text-[#555555] hover:text-[#40916C] hover:border-[#2D6A4F]/50",
+              ].join(" ")}
               aria-label="Leave a pinned comment on this image. Hover to preview pins on the image."
             >
               <Crosshair size={12} className="group-hover:rotate-45 transition-transform" />
@@ -721,42 +836,71 @@ export function GalleryView({
             onClick={(e) => e.stopPropagation()}
           >
             <div className="origin-center [transform-style:preserve-3d] motion-reduce:animate-none motion-reduce:opacity-100 motion-reduce:transform-none animate-[patron-art-pop-out_0.46s_cubic-bezier(0.22,1,0.36,1)_both]">
-              <GalleryMediaStack
-                stackRef={expandedStackRef}
-                imageUrls={imageUrls}
-                displayIndex={stackIndex}
-                onDisplayIndexChange={multiImage ? setStackIndex : undefined}
-                enableStackWheel={multiImage}
-                visualStack={multiImage}
-                title={post.title}
-                comments={comments}
-                pinLayerVisible={pinLayerVisible}
-                ghostPins={false}
-                cascadeEnter={(i) => i * 42}
-                cascadeExit={(i) => (comments.length - 1 - i) * 36}
-                surfaceClassName="relative mx-auto flex w-max max-w-full flex-col items-center justify-center outline-none"
-                imgClassName="pointer-events-none max-h-[min(92vh,900px)] max-w-[min(96vw,1200px)] object-contain"
-                onClick={handleExpandedStackClick}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" || e.key === " ") {
-                    e.preventDefault();
-                    collapseExpanded();
-                  }
-                }}
-                role="button"
-                tabIndex={0}
-                aria-label={
-                  multiImage
-                    ? "Enlarged artwork — scroll or arrow keys to move between images; click to return to post"
-                    : "Enlarged artwork — click to return to post"
-                }
-              />
-              {multiImage ? (
-                <p className="pointer-events-none mt-3 text-center text-xs text-white/70 tabular-nums">
-                  {stackIndex + 1} / {imageUrls.length}
-                  <span className="text-white/45"> · scroll or ↑↓</span>
-                </p>
-              ) : null}
+              {isVideoPost ? (
+                <div
+                  ref={expandedStackRef}
+                  className="relative mx-auto flex w-max max-w-full flex-col items-center justify-center outline-none"
+                  onClick={handleExpandedStackClick}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      collapseExpanded();
+                    }
+                  }}
+                  role="button"
+                  tabIndex={0}
+                  aria-label="Enlarged video — click outside the player or press Enter to return to post"
+                >
+                  <PatronFeedVideo
+                    src={playbackSrc}
+                    poster={posterSrc}
+                    controls
+                    muted={false}
+                    preload="metadata"
+                    className="max-h-[min(92vh,900px)] max-w-[min(96vw,1200px)] object-contain"
+                    onClick={(e) => e.stopPropagation()}
+                  />
+                </div>
+              ) : (
+                <>
+                  <GalleryMediaStack
+                    stackRef={expandedStackRef}
+                    imageUrls={imageUrls}
+                    displayIndex={stackIndex}
+                    onDisplayIndexChange={multiImage ? setStackIndex : undefined}
+                    enableStackWheel={multiImage}
+                    visualStack={multiImage}
+                    title={post.title}
+                    comments={comments}
+                    pinLayerVisible={pinLayerVisible}
+                    ghostPins={false}
+                    cascadeEnter={(i) => i * 42}
+                    cascadeExit={(i) => (comments.length - 1 - i) * 36}
+                    surfaceClassName="relative mx-auto flex w-max max-w-full flex-col items-center justify-center outline-none"
+                    imgClassName="pointer-events-none max-h-[min(92vh,900px)] max-w-[min(96vw,1200px)] object-contain"
+                    onClick={handleExpandedStackClick}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        collapseExpanded();
+                      }
+                    }}
+                    role="button"
+                    tabIndex={0}
+                    aria-label={
+                      multiImage
+                        ? "Enlarged artwork — scroll or arrow keys to move between images; click to return to post"
+                        : "Enlarged artwork — click to return to post"
+                    }
+                  />
+                  {multiImage ? (
+                    <p className="pointer-events-none mt-3 text-center text-xs text-white/70 tabular-nums">
+                      {stackIndex + 1} / {imageUrls.length}
+                      <span className="text-white/45"> · scroll or ↑↓</span>
+                    </p>
+                  ) : null}
+                </>
+              )}
             </div>
           </div>
         </div>

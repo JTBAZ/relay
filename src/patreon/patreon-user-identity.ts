@@ -359,3 +359,32 @@ export function extractUnifiedPatreonIdentity(
 
   return { patreon_user_id, email, owned_campaign_id, memberships };
 }
+
+/**
+ * Minimal GET `/v2/identity` — only needs `data.id` (Patreon user id). Used after creator OAuth
+ * token exchange to ensure the same Patreon user reconnects; requires `identity` (or equivalent)
+ * on the granted scopes.
+ */
+export async function fetchPatreonOAuthIdentityUserId(
+  accessToken: string,
+  fetchImpl: typeof fetch = fetch
+): Promise<string> {
+  const params = new URLSearchParams();
+  params.set("fields[user]", "full_name");
+  const url = `${PATREON_IDENTITY_URL}?${params.toString()}`;
+  const res = await fetchImpl(url, {
+    headers: { Authorization: `Bearer ${accessToken}`, Accept: "application/json" }
+  });
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(
+      `Patreon identity request failed (${res.status}): ${body.slice(0, 500)}`
+    );
+  }
+  const doc = (await res.json()) as PatreonIdentityDocument;
+  const data = doc.data;
+  if (!data || data.type !== "user" || !data.id) {
+    throw new Error("Invalid Patreon identity response: missing user id.");
+  }
+  return data.id;
+}

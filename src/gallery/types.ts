@@ -102,6 +102,12 @@ export type PostOverride = {
   /** Tags to strip from effective list even if Patreon keeps sending them in canonical. */
   remove_tag_ids: string[];
   visibility?: PostVisibility;
+  /**
+   * PE-F (BO-P3-01) — when true (and the underlying post is public), surfaced in
+   * `GET /api/v1/patron/discover`. Default false on read; only present in the file/db row when
+   * the creator has explicitly opted in. Per-media rows ignore this flag.
+   */
+  discovery_eligible?: boolean;
   /** Per-asset visibility; wins over post-level for that media row in the gallery. */
   media?: Record<string, MediaOverride>;
 };
@@ -228,6 +234,12 @@ export type PatronFavoriteRecord = {
   target_kind: PatronFavoriteTargetKind;
   target_id: string;
   created_at: string;
+  /**
+   * PE-D / D29: tier ids the patron was entitled to AT favorite time. Forensic only —
+   * never consulted for gate decisions; viewer access is re-checked live at render time.
+   * Optional on the wire for backward compat with file-store callers that pre-date PE-D.
+   */
+  snapshot_tier_ids?: string[];
 };
 
 export type PatronFavoritesRoot = {
@@ -244,6 +256,11 @@ export type PatronCollectionRecord = {
   sort_order: number;
   created_at: string;
   updated_at: string;
+  /**
+   * PE-D / D11: when true, the collection is exposed on the patron's public profile.
+   * Optional on the wire for backward compat with file-store callers that pre-date PE-D.
+   */
+  is_public?: boolean;
 };
 
 export type PatronCollectionEntryRecord = {
@@ -254,9 +271,48 @@ export type PatronCollectionEntryRecord = {
   post_id: string;
   media_id: string;
   created_at: string;
+  /**
+   * PE-D / D29: tier ids the patron was entitled to AT save time. Forensic only —
+   * never consulted for gate decisions; viewer access is re-checked live at render time.
+   * Optional on the wire for backward compat with file-store callers that pre-date PE-D.
+   */
+  snapshot_tier_ids?: string[];
 };
 
 export type PatronCollectionsRoot = {
   collections: PatronCollectionRecord[];
   entries: PatronCollectionEntryRecord[];
+};
+
+/**
+ * PE-D / D29 — viewer-aware render contract. Computed LIVE at every render against the viewer's
+ * current `PatronEntitlementSnapshot` for the source creator. The 'unlockable' slot is reserved
+ * for PE-L (tip-to-unlock) and stays dormant until that lane ships, but is part of the API shape
+ * from day one to avoid a second response-shape migration later.
+ *
+ * - 'visible'    — viewer's current entitlement covers the post's required tiers (or post is free).
+ * - 'preview'    — post permits a free preview slice and viewer lacks full access (reserved; PE-D
+ *                  emits 'visible' for free posts and 'locked' otherwise until PE-L lands).
+ * - 'unlockable' — viewer can pay a one-off tip to unlock viewing for a bounded window (PE-L; dormant).
+ * - 'locked'     — viewer cannot view and has no tip path; show blurred teaser + upgrade CTA.
+ */
+export type ViewerEntitlementState = "visible" | "preview" | "unlockable" | "locked";
+
+export type ViewerEntitlementDecision = {
+  state: ViewerEntitlementState;
+  /** Tier ids required to fully view the source post (empty = free / no tier required). */
+  required_tier_ids: string[];
+  /**
+   * Optional debug breadcrumb: which kind of snapshot we consulted. Helpful in QA and metrics
+   * but never surfaced to end users.
+   */
+  source: "free_post" | "active_snapshot" | "missing_snapshot" | "inactive_snapshot";
+};
+
+export type PatronFavoriteWithViewerEntitlement = PatronFavoriteRecord & {
+  viewer_entitlement: ViewerEntitlementDecision;
+};
+
+export type PatronCollectionEntryWithViewerEntitlement = PatronCollectionEntryRecord & {
+  viewer_entitlement: ViewerEntitlementDecision;
 };

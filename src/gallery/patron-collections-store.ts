@@ -85,7 +85,7 @@ export class FilePatronCollectionsStore {
     creatorId: string,
     userId: string,
     collectionId: string,
-    patch: { title?: string; sort_order?: number }
+    patch: { title?: string; sort_order?: number; is_public?: boolean }
   ): Promise<PatronCollectionRecord | null> {
     const root = await this.load();
     const c = root.collections.find(
@@ -100,6 +100,9 @@ export class FilePatronCollectionsStore {
     }
     if (typeof patch.sort_order === "number" && Number.isFinite(patch.sort_order)) {
       c.sort_order = patch.sort_order;
+    }
+    if (typeof patch.is_public === "boolean") {
+      c.is_public = patch.is_public;
     }
     c.updated_at = new Date().toISOString();
     await this.save(root);
@@ -134,7 +137,8 @@ export class FilePatronCollectionsStore {
     userId: string,
     collectionId: string,
     postId: string,
-    mediaId: string
+    mediaId: string,
+    options?: { snapshot_tier_ids?: readonly string[] }
   ): Promise<PatronCollectionEntryRecord> {
     const root = await this.load();
     const col = root.collections.find(
@@ -160,7 +164,8 @@ export class FilePatronCollectionsStore {
       creator_id: creatorId,
       post_id: postId,
       media_id: mediaId,
-      created_at: new Date().toISOString()
+      created_at: new Date().toISOString(),
+      snapshot_tier_ids: [...(options?.snapshot_tier_ids ?? [])]
     };
     root.entries.push(entry);
     col.updated_at = new Date().toISOString();

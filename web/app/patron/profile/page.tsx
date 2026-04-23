@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ProfilePage } from "@/components/patron-mock/relay/profile-page";
+import { ProfilePage } from "@/components/patron/relay/profile-page";
 
 export default function PatronProfilePage() {
   return (

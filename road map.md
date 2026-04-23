@@ -166,7 +166,7 @@ Deliver time-to-value fast: connect Patreon, import content, launch searchable g
 ###    A: Onboarding and Auth
 
 - Implement Patreon OAuth with token refresh and rotation handling.
-- **Creator vs patron OAuth:** this workstream is the **creator** connection (encrypted token store, ingest/scrape, credential health). **Patron** “Log in with Patreon” for fans—automatic entitlement sync and session—is **Part 3, Workstream K** (“Patreon patron OAuth — end-to-end”); it uses the same Patreon OAuth **app** but a **different redirect URI** and **`/api/v1/auth/patreon/patron/exchange`**, and does **not** write patron tokens into the creator credential file.
+- **Creator vs patron OAuth:** this workstream is the **creator** connection (encrypted token store, ingest/scrape, credential health). **Patron** Patreon link for fans—after **Relay sign-up/sign-in**—is **Part 3, Workstream K**; it uses the same Patreon OAuth **app** but a **different redirect URI** and **`POST /api/v1/auth/patreon/patron/link`** (session required). Legacy **`/api/v1/auth/patreon/patron/exchange`** is rollback-only (off by default). Patron tokens are **not** written into the creator credential file.
 - Persist encrypted credentials with explicit credential health statuses.
 - Add onboarding progress states:
   - Connect Patreon
@@ -407,28 +407,30 @@ Turn Relay from a creator-centric tool into a **patron-valued surface**: one pla
 
 ### Workstream K: Patron Identity and Follow Graph
 
-- Patron registration, login, and session lifecycle (including optional link to provider identity where allowed).
-- **Patreon patron OAuth** lifecycle: **today**, each successful patron authorization drives a **login-time entitlement sync** (code exchange → Patreon identity → Relay `tier_ids` update → Relay session). **Next** (same workstream): optional persistence of patron refresh tokens, credential health, **revalidation** on a schedule, and provider webhooks so upgrade/downgrade/cancel converges without requiring a full re-link—aligned with Part 3 “continuous patron OAuth and entitlement refresh” above.
+- Patron registration, login, and session lifecycle. **Universal policy:** patrons **always** have a Relay account before Patreon attach; Patreon does not create the account by itself.
+- **Patreon patron link** lifecycle: **today**, a signed-in patron completes OAuth → **`POST /api/v1/auth/patreon/patron/link`** → Patreon identity → Relay membership / `tier_ids` / session update + encrypted **`PatronOAuthCredential`**. **Next** (same workstream): credential health, **revalidation** on a schedule, and provider webhooks so upgrade/downgrade/cancel converges without requiring a full re-link.
 - Follow model: creators on Relay, with initial suggestions from OAuth-derived relationships when available.
 - Privacy controls: unfollow, mute, data export and deletion aligned with regional privacy requirements.
 
 #### Patreon patron OAuth — end-to-end (implementation reference)
 
-This is the **automatic** path when a patron signs up or logs in with Patreon: no separate manual “register this user” step beyond completing OAuth and hitting Relay’s exchange. It **reuses the same access model** as creator-side member sync and clone/gallery checks: Relay session carries `tier_ids`; gated content uses intersection with post access rules (see Workstream G). It does **not** fork a second entitlement truth.
+This is the path after a patron **already has** a Relay session: completing Patreon OAuth and calling Relay’s **`/patron/link`** attaches Patreon to that account. It **reuses the same access model** as creator-side member sync: Relay session carries `tier_ids`; gated content uses intersection with post access rules (Workstream G). It does **not** fork a second entitlement truth.
 
 | Step | Responsibility |
 | --- | --- |
-| 1. Start OAuth | Browser redirects to Patreon `oauth2/authorize` with the **same OAuth client** as creator connect, a **patron-specific redirect URI** registered in the Patreon app, and scopes: `identity`, `identity[email]`, `identity.memberships`. |
-| 2. State payload | Must include Relay **`creator_id`** (tenant) and Patreon **numeric campaign id** (same number as in `patreon_campaign_{id}` in canonical ingest) so Relay can filter the patron’s **memberships** to the correct campaign when `identity.memberships` returns multiple campaigns. |
-| 3. Callback | Authorization `code` returned to the patron redirect URI; server (or BFF) calls Relay—**not** the creator token store path. |
-| 4. Relay API | `POST /api/v1/auth/patreon/patron/exchange` with `code`, `redirect_uri`, `creator_id`, `patreon_campaign_numeric_id`. Relay exchanges the code for a **patron** access token, calls Patreon **`GET /api/oauth2/v2/identity`** with `include=memberships,memberships.currently_entitled_tiers` and explicit `fields[...]`, then derives **`patreon_tier_*`** ids from **`currently_entitled_tiers`** for **active patrons** only—**same id shape** as creator-triggered **member list sync** (`PatreonSyncService` / register-patreon fallback). |
-| 5. Identity store | **Upsert** patron user (`registerPatreonFallback` semantics): refresh `tier_ids` on every successful exchange so return visits pick up tier changes. |
-| 6. Session | Issue a normal Relay **session token** (same contract as `login` / `login-patreon`). Patron Patreon tokens are **not** persisted in the **creator** encrypted credential file; only the Relay session (and identity row) gate the product until refresh-token support is added. |
-| 7. Product UI | Production signup/login routes replace dev pages (`/patreon/patron/connect` → callback); store session per your app’s cookie or storage policy. |
+| 1. Relay session | Patron signs up / signs in (e.g. Supabase or native) so `relay_session` (or Bearer) exists **before** Patreon OAuth. |
+| 2. Start OAuth | Browser redirects to Patreon `oauth2/authorize` with the **same OAuth client** as creator connect, a **patron-specific redirect URI**, and unified scopes (including `campaigns` / memberships) per `PATREON_PATRON_OAUTH_SCOPES`. |
+| 3. Callback | Authorization `code` returned to the patron redirect URI; web app calls **`POST /api/v1/auth/patreon/patron/link`** with `{ code, redirect_uri }` — **not** the creator token store path. Unsigned users are sent to **`/login`** first. |
+| 4. Relay API (`/patron/link`) | Exchanges the code for patron tokens, calls Patreon **`GET /api/oauth2/v2/identity`**, runs **`extractUnifiedPatreonIdentity`**, upserts on-Relay memberships and tier ids — **same tier id shape** as creator-triggered member sync. Persists **`PatronOAuthCredential`** (encrypted refresh). |
+| 5. Identity store | **Upsert** memberships / `tier_ids` on every successful link so return visits and refresh jobs pick up tier changes. |
+| 6. Session | Rotate or refresh Relay **session token** as implemented; patron Patreon tokens live in **`patron_oauth_credentials`**, not the creator credential file. |
+| 7. Product UI | `/patreon/patron/connect` → callback → `/patron/feed` (or shell); “Connect your Campaign” modal from `/link` response fields when applicable. |
+
+**Rollback only:** `POST /api/v1/auth/patreon/patron/exchange` (body includes `creator_id`, `patreon_campaign_numeric_id`, …) when `RELAY_PATRON_PATRON_ALLOW_LEGACY_EXCHANGE=1` — **not** default product behavior.
 
 **Architectural fit:** Patreon remains **upstream** for patron billing and entitled tiers; Relay identity holds a **snapshot** for authorization and feed assembly (Workstream L). Canonical content and artist Library visibility remain the creator-controlled source for **what** can be shown; patron OAuth answers **whether** this user may see tier-gated material for that creator.
 
-**Code reference (current repo):** `src/patreon/patreon-user-identity.ts`, `src/patreon/patreon-patron-oauth.ts`, `POST /api/v1/auth/patreon/patron/exchange` in `src/server.ts`, dev UI under `web/app/patreon/patron/`.
+**Code reference (current repo):** `src/patreon/patreon-user-identity.ts`, `src/patreon/patreon-patron-oauth.ts`, `POST /api/v1/auth/patreon/patron/link` (and deprecated `.../patron/exchange`) in `src/server.ts`, web UI under `web/app/patreon/patron/`.
 
 Exit gate:
 - Cross-tenant isolation tests pass for patron data and follow lists.

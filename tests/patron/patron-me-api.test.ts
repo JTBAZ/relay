@@ -69,6 +69,12 @@ describe("GET/PATCH /api/v1/patron/me", () => {
     const follows = await request(app).get("/api/v1/patron/follows").set("Authorization", `Bearer ${token}`);
     expect(follows.status).toBe(503);
     expect(follows.body.error.code).toBe("NOT_AVAILABLE");
+
+    const acctFollows = await request(app)
+      .get("/api/v1/patron/account-follows")
+      .set("Authorization", `Bearer ${token}`);
+    expect(acctFollows.status).toBe(503);
+    expect(acctFollows.body.error.code).toBe("NOT_AVAILABLE");
   });
 });
 
@@ -77,6 +83,15 @@ describe("GET /api/v1/patron/follows", () => {
     const tempDir = await mkdtemp(join(tmpdir(), "relay-patron-follows-"));
     const { app } = fileIdentityApp(tempDir);
     const res = await request(app).get("/api/v1/patron/follows");
+    expect(res.status).toBe(401);
+  });
+});
+
+describe("GET /api/v1/patron/account-follows", () => {
+  it("401 without Bearer", async () => {
+    const tempDir = await mkdtemp(join(tmpdir(), "relay-patron-acct-follows-"));
+    const { app } = fileIdentityApp(tempDir);
+    const res = await request(app).get("/api/v1/patron/account-follows");
     expect(res.status).toBe(401);
   });
 });

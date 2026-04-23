@@ -38,8 +38,70 @@ import {
   consentExchange,
   consentStart,
   cookieWrite,
-  patronFollowMutate
+  creatorProfileMutate,
+  patronBlockMutate,
+  patronCollectionMutate,
+  patronCommentMutate,
+  patronFollowMutate,
+  patronProfileMutate,
+  patronReactionMutate,
+  patronReportMutate
 } from "./middleware/rate-limits.js";
+import { InMemoryIdempotencyStore } from "./middleware/idempotency-store.js";
+import { buildIdempotencyMiddleware } from "./middleware/idempotency-middleware.js";
+import { buildDiscoverPage } from "./patron/discover-service.js";
+import {
+  listNotifications,
+  markAllRead,
+  markRead,
+  unreadCount
+} from "./patron/notification-service.js";
+import {
+  listPreferences,
+  setPreference
+} from "./patron/notification-prefs-service.js";
+import { buildPatronExportBundle } from "./patron/data-export-service.js";
+import { deleteCreatorRelationship } from "./patron/creator-relationship-delete-service.js";
+import {
+  cancelDeletion,
+  getPendingDeletion,
+  requestDeletion
+} from "./patron/account-deletion-service.js";
+import { getPublicPatronProfileByHandle } from "./patron/public-patron-profile-service.js";
+import {
+  CommentEditWindowClosedError,
+  CommentForbiddenError,
+  CommentNotFoundError,
+  CommentValidationError,
+  createComment,
+  listComments,
+  patchComment,
+  setCreatorPinned,
+  setModState,
+  softDeleteComment
+} from "./patron/comment-service.js";
+import { revokeCommentTag, unrevokeCommentTag } from "./patron/comment-tag-service.js";
+import {
+  aggregateReactions,
+  toggleCommentReaction
+} from "./patron/comment-reaction-service.js";
+import {
+  ContentReportValidationError,
+  createContentReport,
+  listContentReports,
+  resolveContentReport
+} from "./patron/content-report-service.js";
+import {
+  blockAccount,
+  loadBlocksFor,
+  unblockAccount
+} from "./patron/account-block-service.js";
+import { recordModerationAction } from "./patron/moderation-action-log.js";
+import {
+  getCreatorIdentity,
+  patchCreatorIdentity,
+  promoteSnapshotToProfile
+} from "./creator/creator-identity-service.js";
 import { TokenEncryption } from "./lib/crypto.js";
 import {
   isBrowserExtensionOrigin,
@@ -73,6 +135,12 @@ import { FilePatronCollectionsStore } from "./gallery/patron-collections-store.j
 import { DbPatronCollectionsStore } from "./gallery/patron-collections-store-db.js";
 import { validatePatronFavoriteTarget } from "./gallery/patron-favorites-validate.js";
 import { validatePatronCollectionEntry } from "./gallery/patron-collections-validate.js";
+import {
+  computeViewerEntitlementsForPostsBulk,
+  resolveCurrentEntitledTierIdsForAccount,
+  targetKey as viewerEntitlementTargetKey,
+  type ViewerEntitlementSourceTarget
+} from "./patron/viewer-entitlement.js";
 import { TriageService } from "./gallery/triage-service.js";
 import { resolveLayoutPosts } from "./gallery/layout-to-clone.js";
 import {
@@ -85,7 +153,12 @@ import { resolveGalleryItemVisibility } from "./gallery/query.js";
 import { buildVisitorPreviewImage } from "./export/visitor-preview.js";
 import { parseGalleryLimit, queryStringList } from "./gallery/parse-query.js";
 import type {
+  PatronCollectionEntryRecord,
+  PatronCollectionEntryWithViewerEntitlement,
+  PatronCollectionRecord,
+  PatronFavoriteRecord,
   PatronFavoriteTargetKind,
+  PatronFavoriteWithViewerEntitlement,
   PostVisibility,
   SavedFilterRecord
 } from "./gallery/types.js";
@@ -187,6 +260,11 @@ import {
 } from "./identity/patreon-link-email-gate.js";
 import { invalidatePatronEntitlementSnapshotsForMemberships } from "./identity/patron-entitlement-snapshot.js";
 import {
+  addAccountFollowForAccount,
+  listAccountFollowsForAccount,
+  removeAccountFollowForAccount
+} from "./patron/account-follow-service.js";
+import {
   addPatronFollowForMembership,
   listPatronFollowsForMembership,
   removePatronFollowForMembership
@@ -209,10 +287,14 @@ import {
   setSessionCookie
 } from "./identity/session-cookie.js";
 import { setActiveRoleCookieForNewSession } from "./identity/set-active-role-cookie-for-session.js";
+import { resolveAvailableRolesForAccount } from "./identity/active-role-available.js";
+import { setActiveRoleCookie } from "./identity/session-cookie.js";
+import type { ActiveRole } from "./identity/active-role-default.js";
 import { resolveTenantBySlug } from "./identity/resolve-tenant.js";
 import {
   applyRelayAccountRlsIfPresent,
   requireAccount,
+  requireAccountWithRole,
   sendRelayAuthError
 } from "./identity/require-account.js";
 
@@ -245,6 +327,7 @@ import { PatreonSyncService } from "./patreon/patreon-sync-service.js";
 import { classifySyncError } from "./patreon/sync-error-copy.js";
 import {
   ensureCreatorProfilePatreonCampaignId,
+  getCreatorProfilePatreonCampaignIdForRelayCreatorDb,
   resolvePatreonWebhookCampaignOwnership
 } from "./patreon/campaign-tenant-resolve.js";
 import { syncCreatorProfilePatreonCampaignFromOAuthToken } from "./patreon/creator-oauth-campaign-sync.js";
@@ -457,6 +540,9 @@ export type CreateAppResult = {
   tokenStore: PatreonTokenStore;
   patreonSyncHealthStore: PatreonSyncHealthStoreAPI;
   patreonCampaignCreatorIndex: PatreonCampaignCreatorIndex;
+  /** Same instance used for cookie + patron OAuth crypto (PE-H workers). */
+  encryption: TokenEncryption;
+  patreonClient: PatreonClient;
 };
 
 function required(value: string | undefined, key: string): string {
@@ -766,6 +852,12 @@ export function createApp(config: AppConfig): CreateAppResult {
   const collectionsStore = useDbCollectionsStore(config)
     ? new DbCollectionsStore(config.prisma!)
     : new FileCollectionsStore(config.collections_store_path ?? ".relay-data/collections.json");
+  // PE-K (BO-P2-05) — Idempotency-Key store. Single in-memory instance shared across all
+  // mutating route middleware via per-route scopes. Multi-node future swaps in a Redis-backed
+  // implementation behind the same interface (see src/middleware/idempotency-store.ts header).
+  const idempotencyStore = new InMemoryIdempotencyStore();
+  const buildIdem = (scope: string) =>
+    buildIdempotencyMiddleware({ store: idempotencyStore, scope });
   const layoutStore = useDbPageLayoutStore(config)
     ? new DbPageLayoutStore(config.prisma!)
     : new FilePageLayoutStore(config.page_layout_store_path ?? ".relay-data/page_layout.json");
@@ -856,7 +948,12 @@ export function createApp(config: AppConfig): CreateAppResult {
     token_url: config.patreon_token_url ?? "https://www.patreon.com/api/oauth2/token",
     fetch_impl: config.fetch_impl
   });
-  const authService = new PatreonAuthService(patreonClient, tokenStore, eventBus);
+  const authService = new PatreonAuthService(
+    patreonClient,
+    tokenStore,
+    eventBus,
+    config.fetch_impl ?? globalThis.fetch
+  );
   const patreonSyncService = new PatreonSyncService(
     tokenStore,
     cookieStore,
@@ -1612,6 +1709,7 @@ export function createApp(config: AppConfig): CreateAppResult {
               campaignDiscoveryError =
                 "No single Patreon campaign resolved — choose a default campaign before webhooks can be registered.";
             }
+            promoteSnapshotToProfile(config.prisma!, creatorCampaignDisplayStore, creatorId).catch(() => {});
           } catch (e) {
             campaignDiscoveryError = e instanceof Error ? e.message : String(e);
           }
@@ -1975,8 +2073,16 @@ export function createApp(config: AppConfig): CreateAppResult {
       req.query.probe_upstream === "true" || req.query.probe_upstream === "1";
 
     try {
+      const fallbackCampaignId =
+        !campaignId && config.prisma
+          ? (await getCreatorProfilePatreonCampaignIdForRelayCreatorDb(
+              config.prisma,
+              creatorId
+            )) ?? undefined
+          : undefined;
       const state = await patreonSyncService.getSyncState(creatorId, {
         campaign_id: campaignId || undefined,
+        fallback_campaign_id: fallbackCampaignId,
         probe_upstream: probeUpstream,
         traceId
       });
@@ -2033,8 +2139,16 @@ export function createApp(config: AppConfig): CreateAppResult {
     }
 
     try {
+      const fallbackCampaignId =
+        !campaignId && config.prisma
+          ? (await getCreatorProfilePatreonCampaignIdForRelayCreatorDb(
+              config.prisma,
+              creatorId.trim()
+            )) ?? undefined
+          : undefined;
       const result = await patreonSyncService.scrapeOrSync(creatorId, traceId, {
         campaign_id: campaignId || undefined,
+        fallback_campaign_id: fallbackCampaignId,
         dry_run: dryRun,
         max_post_pages: maxPostPages,
         force_refresh_post_access: forceRefreshPostAccess
@@ -3206,6 +3320,21 @@ export function createApp(config: AppConfig): CreateAppResult {
       config.prisma != null
         ? await getSessionEmailVerifiedForPatronLink(config.prisma, session)
         : true;
+    // PE-I (BO-P4-01) — enrich with role-switcher data: which roles the account is allowed to
+    // occupy + which one is currently active per the relay_active_role cookie. UI lens only.
+    let activeRole: ActiveRole | null = null;
+    let availableRoles: ActiveRole[] = [];
+    if (config.prisma) {
+      const accountId = await getAccountIdForSession(config.prisma, session);
+      if (accountId) {
+        const resolved = await resolveAvailableRolesForAccount(config.prisma, accountId);
+        availableRoles = resolved.roles;
+      }
+    }
+    const cookieRole = req.header("cookie")?.match(/(?:^|;\s*)relay_active_role=(creator|supporter)/);
+    if (cookieRole) {
+      activeRole = cookieRole[1] as ActiveRole;
+    }
     res.setHeader("Cache-Control", "private, no-store");
     return res.status(200).json(
       successEnvelope(
@@ -3216,8 +3345,68 @@ export function createApp(config: AppConfig): CreateAppResult {
           auth_provider: user?.auth_provider ?? null,
           patreon_user_id: user?.patreon_user_id ?? null,
           email_verified: emailVerified,
-          expires_at: session.expires_at
+          expires_at: session.expires_at,
+          active_role: activeRole,
+          available_roles: availableRoles
         },
+        traceId
+      )
+    );
+  });
+
+  /**
+   * PE-I (BO-P4-01) — flip the `relay_active_role` UI lens cookie at runtime.
+   *
+   * NOT an authz boundary -- every protected route already evaluates the caller's actual
+   * permissions independently. This endpoint just lets the UI choose which shell to render
+   * (studio vs patron) and where to redirect after the switch.
+   *
+   * Rejects roles the caller's account doesn't legitimately occupy (resolveAvailableRolesForAccount).
+   * That keeps a confused client from setting role=creator on a patron-only account and showing
+   * an empty studio shell.
+   */
+  app.post("/api/v1/me/active-role", async (req: Request, res: Response) => {
+    const traceId = traceIdFrom(req);
+    const session = await requirePatronBearerSession(req, res, traceId);
+    if (!session) return;
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const requested =
+      typeof body.role === "string" ? body.role.trim() : "";
+    if (requested !== "creator" && requested !== "supporter") {
+      return res.status(400).json(
+        errorEnvelope("VALIDATION_ERROR", "role must be 'creator' or 'supporter'.", traceId, [
+          { field: "role", issue: "invalid" }
+        ])
+      );
+    }
+    if (!config.prisma) {
+      // File-backed identity has no membership graph; we can't validate the role. Set
+      // optimistically and rely on the per-route guards downstream.
+      setActiveRoleCookie(res, requested, { expiresAtIso: session.expires_at });
+      res.setHeader("Cache-Control", "private, no-store");
+      return res.status(200).json(
+        successEnvelope({ active_role: requested, available_roles: ["creator", "supporter"] }, traceId)
+      );
+    }
+    const accountId = await getAccountIdForSession(config.prisma, session);
+    if (!accountId) {
+      return res.status(403).json(errorEnvelope("FORBIDDEN", "Account required.", traceId));
+    }
+    const resolved = await resolveAvailableRolesForAccount(config.prisma, accountId);
+    if (!resolved.roles.includes(requested)) {
+      return res.status(403).json(
+        errorEnvelope(
+          "FORBIDDEN",
+          `Account cannot occupy role '${requested}'. Available: ${resolved.roles.join(", ") || "(none)"}.`,
+          traceId
+        )
+      );
+    }
+    setActiveRoleCookie(res, requested, { expiresAtIso: session.expires_at });
+    res.setHeader("Cache-Control", "private, no-store");
+    return res.status(200).json(
+      successEnvelope(
+        { active_role: requested, available_roles: resolved.roles },
         traceId
       )
     );
@@ -3376,6 +3565,97 @@ export function createApp(config: AppConfig): CreateAppResult {
     return res.status(200).json(successEnvelope({ public_slug: raw }, traceId));
   });
 
+  // ── APD-S1: Creator profile identity ─────────────────────────────────
+
+  app.get("/api/v1/creator/profile", async (req: Request, res: Response) => {
+    const traceId = traceIdFrom(req);
+    if (!config.prisma) {
+      return res.status(503).json(
+        errorEnvelope("SERVICE_UNAVAILABLE", "Database not configured.", traceId)
+      );
+    }
+    try {
+      const { context } = await requireAccountWithRole(req, { prisma: config.prisma, identityService }, "creator");
+      const profile = await getCreatorIdentity(config.prisma, context.accountId);
+      if (!profile) {
+        return res.status(404).json(
+          errorEnvelope("NOT_FOUND", "No creator profile found.", traceId)
+        );
+      }
+      if (profile.needs_setup) {
+        await promoteSnapshotToProfile(config.prisma, creatorCampaignDisplayStore, context.primaryRelayCreatorId!);
+        const refreshed = await getCreatorIdentity(config.prisma, context.accountId);
+        if (refreshed) {
+          res.setHeader("Cache-Control", "private, no-store");
+          return res.status(200).json(successEnvelope(refreshed, traceId));
+        }
+      }
+      res.setHeader("Cache-Control", "private, no-store");
+      return res.status(200).json(successEnvelope(profile, traceId));
+    } catch (err) {
+      if (sendRelayAuthError(res, err, traceId)) return;
+      return res.status(500).json(errorEnvelope("INTERNAL", (err as Error).message, traceId));
+    }
+  });
+
+  app.patch(
+    "/api/v1/creator/profile",
+    async (req: Request, res: Response, next) => {
+      const traceId = traceIdFrom(req);
+      if (!config.prisma) {
+        return res.status(503).json(
+          errorEnvelope("SERVICE_UNAVAILABLE", "Database not configured.", traceId)
+        );
+      }
+      try {
+        const { context } = await requireAccountWithRole(req, { prisma: config.prisma, identityService }, "creator");
+        (req as Request & { relayRateLimitKey?: string }).relayRateLimitKey = context.accountId;
+        next();
+      } catch (err) {
+        if (sendRelayAuthError(res, err, traceId)) return;
+        return res.status(500).json(errorEnvelope("INTERNAL", (err as Error).message, traceId));
+      }
+    },
+    creatorProfileMutate,
+    buildIdem("creator-profile-patch"),
+    async (req: Request, res: Response) => {
+      const traceId = traceIdFrom(req);
+      if (!config.prisma) {
+        return res.status(503).json(
+          errorEnvelope("SERVICE_UNAVAILABLE", "Database not configured.", traceId)
+        );
+      }
+      try {
+        const { context } = await requireAccountWithRole(req, { prisma: config.prisma, identityService }, "creator");
+        const body = (req.body ?? {}) as Record<string, unknown>;
+        const patch = {
+          username: readOptionalString(body.username),
+          display_name: readOptionalString(body.display_name),
+          bio: readOptionalString(body.bio),
+          avatar_url: readOptionalString(body.avatar_url),
+          banner_url: readOptionalString(body.banner_url),
+          discipline: readOptionalString(body.discipline)
+        };
+        const hasAny = Object.values(patch).some((v) => v !== undefined);
+        if (!hasAny) {
+          return res
+            .status(400)
+            .json(errorEnvelope("VALIDATION_ERROR", "No updatable fields in body.", traceId));
+        }
+        const result = await patchCreatorIdentity(config.prisma, context.accountId, patch);
+        if (!result.ok) {
+          const status = result.code === "CONFLICT" ? 409 : result.code === "NOT_FOUND" ? 404 : 400;
+          return res.status(status).json(errorEnvelope(result.code, result.message, traceId));
+        }
+        res.setHeader("Cache-Control", "private, no-store");
+        return res.status(200).json(successEnvelope(result.profile, traceId));
+      } catch (err) {
+        if (sendRelayAuthError(res, err, traceId)) return;
+        return res.status(500).json(errorEnvelope("INTERNAL", (err as Error).message, traceId));
+      }
+    }
+  );
+
   /**
    * Resolve a public creator slug (no auth). Used by `/patron/c/[handle]` and share links.
    */
@@ -3391,16 +3671,60 @@ export function createApp(config: AppConfig): CreateAppResult {
     if (!resolved) {
       return res.status(404).json(errorEnvelope("NOT_FOUND", "Unknown creator.", traceId));
     }
+    const profile = await config.prisma.creatorProfile.findFirst({
+      where: { tenant: { relayCreatorId: resolved.relayCreatorId } },
+      select: {
+        username: true,
+        displayName: true,
+        avatarUrl: true,
+        bannerUrl: true,
+        bio: true,
+        discipline: true
+      }
+    });
     res.setHeader("Cache-Control", "public, max-age=60, s-maxage=60");
     return res.status(200).json(
       successEnvelope(
         {
           public_slug: resolved.publicSlug ?? "",
-          relay_creator_id: resolved.relayCreatorId
+          relay_creator_id: resolved.relayCreatorId,
+          username: profile?.username ?? null,
+          display_name: profile?.displayName ?? null,
+          avatar_url: profile?.avatarUrl ?? null,
+          banner_url: profile?.bannerUrl ?? null,
+          bio: profile?.bio ?? null,
+          discipline: profile?.discipline ?? null
         },
         traceId
       )
     );
+  });
+
+  /**
+   * PE-K Rest (BO-P4-04) — public patron profile lookup for `/p/[handle]`.
+   *
+   * No auth required. Returns the same null-shaped 404 for both "private profile" and "no
+   * such handle" responses to prevent enumeration. Cache-Control allows brief CDN caching;
+   * matches the public creator slug pattern.
+   *
+   * Out of scope for v1: rate limiting (low traffic surface, public CDN absorbs scrapers),
+   * follow-from-here action (PE-C account-follows already has its own endpoint), entitlement-
+   * gated content (this is a profile, not a feed).
+   */
+  app.get("/api/v1/public/patrons/:handle", async (req: Request, res: Response) => {
+    const traceId = traceIdFrom(req);
+    if (!config.prisma) {
+      return res.status(503).json(
+        errorEnvelope("SERVICE_UNAVAILABLE", "Database not configured.", traceId)
+      );
+    }
+    const raw = typeof req.params.handle === "string" ? req.params.handle : "";
+    const profile = await getPublicPatronProfileByHandle(config.prisma, raw);
+    if (!profile) {
+      return res.status(404).json(errorEnvelope("NOT_FOUND", "Profile not found.", traceId));
+    }
+    res.setHeader("Cache-Control", "public, max-age=60, s-maxage=60");
+    return res.status(200).json(successEnvelope(profile, traceId));
   });
 
   /**
@@ -3455,6 +3779,7 @@ export function createApp(config: AppConfig): CreateAppResult {
         res.setHeader("Cache-Control", "private, no-store");
         return res.status(200).json(successEnvelope(data, traceId));
       }
+      // Non-DB identity: static fixture (web/lib/patron-relay-feed-bundle.json). No env toggle.
       const data = loadPatronRelayFeedBundleFromRepo();
       res.setHeader("Cache-Control", "private, no-store");
       return res.status(200).json(successEnvelope(data, traceId));
@@ -3502,7 +3827,21 @@ export function createApp(config: AppConfig): CreateAppResult {
     }
   });
 
-  app.patch("/api/v1/patron/me", async (req: Request, res: Response) => {
+  app.patch(
+    "/api/v1/patron/me",
+    async (req: Request, res: Response, next) => {
+      const traceId = traceIdFrom(req);
+      const session = await requirePatronBearerSession(req, res, traceId);
+      if (!session) return;
+      const rateKey =
+        (config.prisma ? await getAccountIdForSession(config.prisma, session) : null) ??
+        session.user_id;
+      (req as Request & { relayRateLimitKey?: string }).relayRateLimitKey = rateKey;
+      next();
+    },
+    patronProfileMutate,
+    buildIdem("patron-me-patch"),
+    async (req: Request, res: Response) => {
     const traceId = traceIdFrom(req);
     const session = await requirePatronBearerSession(req, res, traceId);
     if (!session) return;
@@ -3544,7 +3883,8 @@ export function createApp(config: AppConfig): CreateAppResult {
         .status(500)
         .json(errorEnvelope("INTERNAL", (error as Error).message, traceId));
     }
-  });
+    }
+  );
 
   /**
    * PE-C — Follow graph for the session membership (`session.user_id`): list Relay creators
@@ -3595,6 +3935,7 @@ export function createApp(config: AppConfig): CreateAppResult {
       next();
     },
     patronFollowMutate,
+    buildIdem("patron-follow-add"),
     async (req: Request, res: Response) => {
       const traceId = traceIdFrom(req);
       const body = (req.body ?? {}) as Record<string, unknown>;
@@ -3703,6 +4044,396 @@ export function createApp(config: AppConfig): CreateAppResult {
     }
   );
 
+  /**
+   * PE-C (C3) — Account-level follows: other Relay supporters this patron account follows.
+   */
+  app.get("/api/v1/patron/account-follows", async (req: Request, res: Response) => {
+    const traceId = traceIdFrom(req);
+    const session = await requirePatronBearerSession(req, res, traceId);
+    if (!session) return;
+    if (!useDbIdentityStore(config) || !config.prisma) {
+      return res.status(503).json(
+        errorEnvelope(
+          "NOT_AVAILABLE",
+          "Patron account-follows API requires database-backed identity (RELAY_DB_STORE_IDENTITY).",
+          traceId
+        )
+      );
+    }
+    const accountId = await getAccountIdForSession(config.prisma, session);
+    if (!accountId) {
+      return res.status(503).json(
+        errorEnvelope(
+          "NOT_AVAILABLE",
+          "Could not resolve Relay account for this session.",
+          traceId
+        )
+      );
+    }
+    try {
+      const items = await listAccountFollowsForAccount(config.prisma, accountId);
+      res.setHeader("Cache-Control", "private, no-store");
+      return res.status(200).json(successEnvelope({ items }, traceId));
+    } catch (error) {
+      return res
+        .status(500)
+        .json(errorEnvelope("INTERNAL", (error as Error).message, traceId));
+    }
+  });
+
+  app.post(
+    "/api/v1/patron/account-follows",
+    async (req: Request, res: Response, next) => {
+      const traceId = traceIdFrom(req);
+      const session = await requirePatronBearerSession(req, res, traceId);
+      if (!session) return;
+      if (!useDbIdentityStore(config) || !config.prisma) {
+        return res.status(503).json(
+          errorEnvelope(
+            "NOT_AVAILABLE",
+            "Patron account-follows API requires database-backed identity (RELAY_DB_STORE_IDENTITY).",
+            traceId
+          )
+        );
+      }
+      const accountId = await getAccountIdForSession(config.prisma, session);
+      if (!accountId) {
+        return res.status(503).json(
+          errorEnvelope(
+            "NOT_AVAILABLE",
+            "Could not resolve Relay account for this session.",
+            traceId
+          )
+        );
+      }
+      (req as Request & { relayRateLimitKey?: string }).relayRateLimitKey = accountId;
+      next();
+    },
+    patronFollowMutate,
+    buildIdem("patron-account-follow-add"),
+    async (req: Request, res: Response) => {
+      const traceId = traceIdFrom(req);
+      const body = (req.body ?? {}) as Record<string, unknown>;
+      const details = validateRequiredFields(body, ["followed_account_id"]);
+      if (details.length > 0) {
+        return res
+          .status(400)
+          .json(errorEnvelope("VALIDATION_ERROR", "Invalid request.", traceId, details));
+      }
+      const followedAccountId = String(body.followed_account_id).trim();
+      if (!followedAccountId) {
+        return res.status(400).json(
+          errorEnvelope(
+            "VALIDATION_ERROR",
+            "followed_account_id must be non-empty.",
+            traceId,
+            [{ field: "followed_account_id", issue: "invalid" }]
+          )
+        );
+      }
+      const session = await requirePatronBearerSession(req, res, traceId);
+      if (!session) return;
+      const prisma = config.prisma;
+      if (!prisma) return;
+      const accountId = await getAccountIdForSession(prisma, session);
+      if (!accountId) {
+        return res.status(503).json(
+          errorEnvelope(
+            "NOT_AVAILABLE",
+            "Could not resolve Relay account for this session.",
+            traceId
+          )
+        );
+      }
+      if (followedAccountId === accountId) {
+        return res.status(400).json(
+          errorEnvelope(
+            "VALIDATION_ERROR",
+            "Cannot follow your own account.",
+            traceId,
+            [{ field: "followed_account_id", issue: "self_follow" }]
+          )
+        );
+      }
+      try {
+        const result = await addAccountFollowForAccount(prisma, accountId, followedAccountId);
+        if (!result) {
+          return res.status(404).json(
+            errorEnvelope(
+              "UNKNOWN_ACCOUNT_ID",
+              "followed_account_id does not match any Relay account.",
+              traceId,
+              [{ field: "followed_account_id", issue: "unknown" }]
+            )
+          );
+        }
+        res.setHeader("Cache-Control", "private, no-store");
+        return res.status(200).json(successEnvelope(result, traceId));
+      } catch (error) {
+        return res
+          .status(500)
+          .json(errorEnvelope("INTERNAL", (error as Error).message, traceId));
+      }
+    }
+  );
+
+  app.delete(
+    "/api/v1/patron/account-follows",
+    async (req: Request, res: Response, next) => {
+      const traceId = traceIdFrom(req);
+      const session = await requirePatronBearerSession(req, res, traceId);
+      if (!session) return;
+      if (!useDbIdentityStore(config) || !config.prisma) {
+        return res.status(503).json(
+          errorEnvelope(
+            "NOT_AVAILABLE",
+            "Patron account-follows API requires database-backed identity (RELAY_DB_STORE_IDENTITY).",
+            traceId
+          )
+        );
+      }
+      const accountId = await getAccountIdForSession(config.prisma, session);
+      if (!accountId) {
+        return res.status(503).json(
+          errorEnvelope(
+            "NOT_AVAILABLE",
+            "Could not resolve Relay account for this session.",
+            traceId
+          )
+        );
+      }
+      (req as Request & { relayRateLimitKey?: string }).relayRateLimitKey = accountId;
+      next();
+    },
+    patronFollowMutate,
+    async (req: Request, res: Response) => {
+      const traceId = traceIdFrom(req);
+      const body = (req.body ?? {}) as Record<string, unknown>;
+      const q =
+        typeof req.query.followed_account_id === "string"
+          ? req.query.followed_account_id.trim()
+          : "";
+      const followedAccountId =
+        (typeof body.followed_account_id === "string" ? body.followed_account_id.trim() : "") || q;
+      if (!followedAccountId) {
+        return res.status(400).json(
+          errorEnvelope(
+            "VALIDATION_ERROR",
+            "followed_account_id is required (body or query).",
+            traceId,
+            [{ field: "followed_account_id", issue: "missing" }]
+          )
+        );
+      }
+      const session = await requirePatronBearerSession(req, res, traceId);
+      if (!session) return;
+      const prisma = config.prisma;
+      if (!prisma) return;
+      const accountId = await getAccountIdForSession(prisma, session);
+      if (!accountId) {
+        return res.status(503).json(
+          errorEnvelope(
+            "NOT_AVAILABLE",
+            "Could not resolve Relay account for this session.",
+            traceId
+          )
+        );
+      }
+      try {
+        const removed = await removeAccountFollowForAccount(prisma, accountId, followedAccountId);
+        if (!removed) {
+          return res.status(404).json(errorEnvelope("NOT_FOUND", "Follow not found.", traceId));
+        }
+        res.setHeader("Cache-Control", "private, no-store");
+        return res.status(200).json(successEnvelope({ deleted: true }, traceId));
+      } catch (error) {
+        return res
+          .status(500)
+          .json(errorEnvelope("INTERNAL", (error as Error).message, traceId));
+      }
+    }
+  );
+
+  // -----------------------------------------------------------------------------
+  // PE-D / BO-P2-01 — viewer-aware enrichment helpers (live re-check, no freeze).
+  // -----------------------------------------------------------------------------
+
+  /**
+   * Resolve the patron's CURRENT entitled tier ids for a creator. Used to write a forensic
+   * `snapshot_tier_ids` value at favorite/save time. NEVER consulted at render time.
+   */
+  async function captureForensicSnapshotTierIds(
+    session: SessionToken,
+    creatorId: string
+  ): Promise<string[]> {
+    if (!config.prisma) {
+      // File-backed identity has no PatronEntitlementSnapshot rows; fall back to the session's
+      // tier_ids as a best-effort forensic record.
+      return [...(session.tier_ids ?? [])];
+    }
+    try {
+      const accountId = await getAccountIdForSession(config.prisma, session);
+      return await resolveCurrentEntitledTierIdsForAccount(
+        config.prisma,
+        accountId,
+        creatorId
+      );
+    } catch {
+      return [];
+    }
+  }
+
+  /**
+   * Resolve favorite rows to (source_creator_id, source_post_id) targets for the live entitlement
+   * re-check. Post-kind favorites map directly; media-kind favorites are resolved to their
+   * `MediaAsset.primaryPostId` (one DB query).
+   */
+  async function resolveFavoriteTargets(
+    items: ReadonlyArray<{
+      creator_id: string;
+      target_kind: string;
+      target_id: string;
+    }>
+  ): Promise<Map<string, ViewerEntitlementSourceTarget>> {
+    const out = new Map<string, ViewerEntitlementSourceTarget>();
+    if (items.length === 0) {
+      return out;
+    }
+
+    const postRows: Array<{ idx: number; target: ViewerEntitlementSourceTarget }> = [];
+    const mediaIds: string[] = [];
+    const mediaIdxByCreator: Array<{ idx: number; creator: string; media: string }> = [];
+
+    items.forEach((it, idx) => {
+      if (it.target_kind === "post") {
+        postRows.push({
+          idx,
+          target: { source_creator_id: it.creator_id, source_post_id: it.target_id }
+        });
+      } else if (it.target_kind === "media") {
+        mediaIds.push(it.target_id);
+        mediaIdxByCreator.push({ idx, creator: it.creator_id, media: it.target_id });
+      }
+    });
+
+    for (const r of postRows) {
+      out.set(`${r.idx}`, r.target);
+    }
+
+    if (mediaIds.length > 0 && config.prisma) {
+      const mediaRows = await config.prisma.mediaAsset.findMany({
+        where: { id: { in: [...new Set(mediaIds)] } },
+        select: { id: true, creatorId: true, primaryPostId: true }
+      });
+      const mediaByKey = new Map<string, string>();
+      for (const m of mediaRows) {
+        mediaByKey.set(`${m.creatorId}\0${m.id}`, m.primaryPostId);
+      }
+      for (const r of mediaIdxByCreator) {
+        const postId = mediaByKey.get(`${r.creator}\0${r.media}`);
+        if (postId) {
+          out.set(`${r.idx}`, {
+            source_creator_id: r.creator,
+            source_post_id: postId
+          });
+        }
+      }
+    }
+
+    return out;
+  }
+
+  async function enrichFavoritesWithViewerEntitlement(
+    items: ReadonlyArray<PatronFavoriteRecord>,
+    session: SessionToken
+  ): Promise<PatronFavoriteWithViewerEntitlement[]> {
+    if (items.length === 0 || !config.prisma) {
+      // File-backed path skips live re-check (no PatronEntitlementSnapshot rows). UI fallback
+      // remains the per-route gate already in place.
+      return items.map((it) => ({
+        ...it,
+        viewer_entitlement: {
+          state: "visible",
+          required_tier_ids: [],
+          source: "free_post"
+        }
+      }));
+    }
+    const accountId = await getAccountIdForSession(config.prisma, session);
+    const targets = await resolveFavoriteTargets(items);
+    const decisions = await computeViewerEntitlementsForPostsBulk({
+      prisma: config.prisma,
+      viewer_account_id: accountId,
+      targets: [...targets.values()]
+    });
+    return items.map((it, idx) => {
+      const t = targets.get(`${idx}`);
+      const decision = t ? decisions.get(viewerEntitlementTargetKey(t)) : undefined;
+      return {
+        ...it,
+        viewer_entitlement: decision ?? {
+          state: "locked",
+          required_tier_ids: [],
+          source: "missing_snapshot"
+        }
+      };
+    });
+  }
+
+  async function enrichCollectionsWithViewerEntitlement(
+    collections: ReadonlyArray<PatronCollectionRecord & { entries: PatronCollectionEntryRecord[] }>,
+    session: SessionToken
+  ): Promise<
+    Array<
+      PatronCollectionRecord & {
+        entries: PatronCollectionEntryWithViewerEntitlement[];
+      }
+    >
+  > {
+    if (collections.length === 0 || !config.prisma) {
+      return collections.map((c) => ({
+        ...c,
+        entries: c.entries.map((e) => ({
+          ...e,
+          viewer_entitlement: {
+            state: "visible",
+            required_tier_ids: [],
+            source: "free_post"
+          }
+        }))
+      }));
+    }
+    const accountId = await getAccountIdForSession(config.prisma, session);
+    const targets: ViewerEntitlementSourceTarget[] = [];
+    for (const c of collections) {
+      for (const e of c.entries) {
+        targets.push({ source_creator_id: e.creator_id, source_post_id: e.post_id });
+      }
+    }
+    const decisions = await computeViewerEntitlementsForPostsBulk({
+      prisma: config.prisma,
+      viewer_account_id: accountId,
+      targets
+    });
+    return collections.map((c) => ({
+      ...c,
+      entries: c.entries.map((e) => ({
+        ...e,
+        viewer_entitlement:
+          decisions.get(
+            viewerEntitlementTargetKey({
+              source_creator_id: e.creator_id,
+              source_post_id: e.post_id
+            })
+          ) ?? {
+            state: "locked",
+            required_tier_ids: [],
+            source: "missing_snapshot"
+          }
+      }))
+    }));
+  }
+
   app.get("/api/v1/patron/favorites", async (req: Request, res: Response) => {
     const traceId = traceIdFrom(req);
     const creatorId = typeof req.query.creator_id === "string" ? req.query.creator_id.trim() : "";
@@ -3723,11 +4454,26 @@ export function createApp(config: AppConfig): CreateAppResult {
       return;
     }
     const items = await patronFavoritesStore.listForUser(creatorId, session.user_id);
+    const enriched = await enrichFavoritesWithViewerEntitlement(items, session);
     res.setHeader("Cache-Control", "private, no-store");
-    return res.status(200).json(successEnvelope({ items }, traceId));
+    return res.status(200).json(successEnvelope({ items: enriched }, traceId));
   });
 
-  app.put("/api/v1/patron/favorites", async (req: Request, res: Response) => {
+  app.put(
+    "/api/v1/patron/favorites",
+    async (req: Request, res: Response, next) => {
+      const traceId = traceIdFrom(req);
+      const session = await requirePatronBearerSession(req, res, traceId);
+      if (!session) return;
+      const rateKey =
+        (config.prisma ? await getAccountIdForSession(config.prisma, session) : null) ??
+        session.user_id;
+      (req as Request & { relayRateLimitKey?: string }).relayRateLimitKey = rateKey;
+      next();
+    },
+    patronCollectionMutate,
+    buildIdem("patron-favorites-add"),
+    async (req: Request, res: Response) => {
     const traceId = traceIdFrom(req);
     const body = (req.body ?? {}) as Record<string, unknown>;
     const details = validateRequiredFields(body, ["creator_id", "target_kind", "target_id"]);
@@ -3767,17 +4513,36 @@ export function createApp(config: AppConfig): CreateAppResult {
         errorEnvelope("VALIDATION_ERROR", v.message, traceId, [{ field: "target_id", issue: "not_found" }])
       );
     }
+    // PE-D / D29 — capture forensic snapshot of which tiers the favoriter is entitled to RIGHT
+    // NOW. This is metadata only; viewer access at render time is always re-checked live against
+    // the viewer's current `PatronEntitlementSnapshot`, never against this column.
+    const snapshotTierIds = await captureForensicSnapshotTierIds(session, creatorId);
     const item = await patronFavoritesStore.add({
       user_id: session.user_id,
       creator_id: creatorId,
       target_kind: targetKind,
-      target_id: targetId
+      target_id: targetId,
+      snapshot_tier_ids: snapshotTierIds
     });
     res.setHeader("Cache-Control", "private, no-store");
     return res.status(200).json(successEnvelope({ item }, traceId));
-  });
+    }
+  );
 
-  app.delete("/api/v1/patron/favorites", async (req: Request, res: Response) => {
+  app.delete(
+    "/api/v1/patron/favorites",
+    async (req: Request, res: Response, next) => {
+      const traceId = traceIdFrom(req);
+      const session = await requirePatronBearerSession(req, res, traceId);
+      if (!session) return;
+      const rateKey =
+        (config.prisma ? await getAccountIdForSession(config.prisma, session) : null) ??
+        session.user_id;
+      (req as Request & { relayRateLimitKey?: string }).relayRateLimitKey = rateKey;
+      next();
+    },
+    patronCollectionMutate,
+    async (req: Request, res: Response) => {
     const traceId = traceIdFrom(req);
     const body = (req.body ?? {}) as Record<string, unknown>;
     const qCreator =
@@ -3828,7 +4593,8 @@ export function createApp(config: AppConfig): CreateAppResult {
     }
     res.setHeader("Cache-Control", "private, no-store");
     return res.status(200).json(successEnvelope({ deleted: true }, traceId));
-  });
+    }
+  );
 
   app.get("/api/v1/patron/collections", async (req: Request, res: Response) => {
     const traceId = traceIdFrom(req);
@@ -3853,11 +4619,26 @@ export function createApp(config: AppConfig): CreateAppResult {
       creatorId,
       session.user_id
     );
+    const enriched = await enrichCollectionsWithViewerEntitlement(collections, session);
     res.setHeader("Cache-Control", "private, no-store");
-    return res.status(200).json(successEnvelope({ collections }, traceId));
+    return res.status(200).json(successEnvelope({ collections: enriched }, traceId));
   });
 
-  app.post("/api/v1/patron/collections", async (req: Request, res: Response) => {
+  app.post(
+    "/api/v1/patron/collections",
+    async (req: Request, res: Response, next) => {
+      const traceId = traceIdFrom(req);
+      const session = await requirePatronBearerSession(req, res, traceId);
+      if (!session) return;
+      const rateKey =
+        (config.prisma ? await getAccountIdForSession(config.prisma, session) : null) ??
+        session.user_id;
+      (req as Request & { relayRateLimitKey?: string }).relayRateLimitKey = rateKey;
+      next();
+    },
+    patronCollectionMutate,
+    buildIdem("patron-collections-create"),
+    async (req: Request, res: Response) => {
     const traceId = traceIdFrom(req);
     const body = (req.body ?? {}) as Record<string, unknown>;
     const details = validateRequiredFields(body, ["creator_id", "title"]);
@@ -3882,9 +4663,23 @@ export function createApp(config: AppConfig): CreateAppResult {
     );
     res.setHeader("Cache-Control", "private, no-store");
     return res.status(201).json(successEnvelope({ collection: created }, traceId));
-  });
+    }
+  );
 
-  app.patch("/api/v1/patron/collections/:collection_id", async (req: Request, res: Response) => {
+  app.patch(
+    "/api/v1/patron/collections/:collection_id",
+    async (req: Request, res: Response, next) => {
+      const traceId = traceIdFrom(req);
+      const session = await requirePatronBearerSession(req, res, traceId);
+      if (!session) return;
+      const rateKey =
+        (config.prisma ? await getAccountIdForSession(config.prisma, session) : null) ??
+        session.user_id;
+      (req as Request & { relayRateLimitKey?: string }).relayRateLimitKey = rateKey;
+      next();
+    },
+    patronCollectionMutate,
+    async (req: Request, res: Response) => {
     const traceId = traceIdFrom(req);
     const body = (req.body ?? {}) as Record<string, unknown>;
     const details = validateRequiredFields(body, ["creator_id"]);
@@ -3901,7 +4696,7 @@ export function createApp(config: AppConfig): CreateAppResult {
     if (!(await requirePatronForCreatorId(req, res, traceId, session, creatorId))) {
       return;
     }
-    const patch: { title?: string; sort_order?: number } = {};
+    const patch: { title?: string; sort_order?: number; is_public?: boolean } = {};
     if (typeof body.title === "string") {
       patch.title = body.title;
     }
@@ -3911,9 +4706,16 @@ export function createApp(config: AppConfig): CreateAppResult {
         patch.sort_order = n;
       }
     }
-    if (patch.title === undefined && patch.sort_order === undefined) {
+    if (typeof body.is_public === "boolean") {
+      patch.is_public = body.is_public;
+    }
+    if (
+      patch.title === undefined &&
+      patch.sort_order === undefined &&
+      patch.is_public === undefined
+    ) {
       return res.status(400).json(
-        errorEnvelope("VALIDATION_ERROR", "Provide title and/or sort_order.", traceId, [
+        errorEnvelope("VALIDATION_ERROR", "Provide title, sort_order, and/or is_public.", traceId, [
           { field: "body", issue: "empty_patch" }
         ])
       );
@@ -3929,9 +4731,23 @@ export function createApp(config: AppConfig): CreateAppResult {
     }
     res.setHeader("Cache-Control", "private, no-store");
     return res.status(200).json(successEnvelope({ collection: updated }, traceId));
-  });
+    }
+  );
 
-  app.delete("/api/v1/patron/collections/:collection_id", async (req: Request, res: Response) => {
+  app.delete(
+    "/api/v1/patron/collections/:collection_id",
+    async (req: Request, res: Response, next) => {
+      const traceId = traceIdFrom(req);
+      const session = await requirePatronBearerSession(req, res, traceId);
+      if (!session) return;
+      const rateKey =
+        (config.prisma ? await getAccountIdForSession(config.prisma, session) : null) ??
+        session.user_id;
+      (req as Request & { relayRateLimitKey?: string }).relayRateLimitKey = rateKey;
+      next();
+    },
+    patronCollectionMutate,
+    async (req: Request, res: Response) => {
     const traceId = traceIdFrom(req);
     const creatorId =
       typeof req.query.creator_id === "string" ? req.query.creator_id.trim() : "";
@@ -3961,9 +4777,24 @@ export function createApp(config: AppConfig): CreateAppResult {
     }
     res.setHeader("Cache-Control", "private, no-store");
     return res.status(200).json(successEnvelope({ deleted: true }, traceId));
-  });
+    }
+  );
 
-  app.post("/api/v1/patron/collections/:collection_id/entries", async (req: Request, res: Response) => {
+  app.post(
+    "/api/v1/patron/collections/:collection_id/entries",
+    async (req: Request, res: Response, next) => {
+      const traceId = traceIdFrom(req);
+      const session = await requirePatronBearerSession(req, res, traceId);
+      if (!session) return;
+      const rateKey =
+        (config.prisma ? await getAccountIdForSession(config.prisma, session) : null) ??
+        session.user_id;
+      (req as Request & { relayRateLimitKey?: string }).relayRateLimitKey = rateKey;
+      next();
+    },
+    patronCollectionMutate,
+    buildIdem("patron-collection-entry-add"),
+    async (req: Request, res: Response) => {
     const traceId = traceIdFrom(req);
     const body = (req.body ?? {}) as Record<string, unknown>;
     const details = validateRequiredFields(body, ["creator_id", "post_id", "media_id"]);
@@ -3992,21 +4823,39 @@ export function createApp(config: AppConfig): CreateAppResult {
       );
     }
     try {
+      // PE-D / D29 — capture forensic snapshot tier ids at save time. Same contract as PUT
+      // /favorites: this is metadata, never consulted at render time.
+      const snapshotTierIds = await captureForensicSnapshotTierIds(session, creatorId);
       const entry = await patronCollectionsStore.addEntry(
         creatorId,
         session.user_id,
         req.params.collection_id,
         postId,
-        mediaId
+        mediaId,
+        { snapshot_tier_ids: snapshotTierIds }
       );
       res.setHeader("Cache-Control", "private, no-store");
       return res.status(200).json(successEnvelope({ entry }, traceId));
     } catch {
       return res.status(404).json(errorEnvelope("NOT_FOUND", "Collection not found.", traceId));
     }
-  });
+    }
+  );
 
-  app.delete("/api/v1/patron/collections/:collection_id/entries", async (req: Request, res: Response) => {
+  app.delete(
+    "/api/v1/patron/collections/:collection_id/entries",
+    async (req: Request, res: Response, next) => {
+      const traceId = traceIdFrom(req);
+      const session = await requirePatronBearerSession(req, res, traceId);
+      if (!session) return;
+      const rateKey =
+        (config.prisma ? await getAccountIdForSession(config.prisma, session) : null) ??
+        session.user_id;
+      (req as Request & { relayRateLimitKey?: string }).relayRateLimitKey = rateKey;
+      next();
+    },
+    patronCollectionMutate,
+    async (req: Request, res: Response) => {
     const traceId = traceIdFrom(req);
     const body = (req.body ?? {}) as Record<string, unknown>;
     const qCreator =
@@ -4056,6 +4905,1162 @@ export function createApp(config: AppConfig): CreateAppResult {
     }
     res.setHeader("Cache-Control", "private, no-store");
     return res.status(200).json(successEnvelope({ deleted: true }, traceId));
+    }
+  );
+
+  // ---------------------------------------------------------------------------
+  // PE-D / BO-P2-01 — cross-creator favorites & collections (live re-check, D29).
+  // No `creator_id` filter; returns every favorite/collection the supporter has across every
+  // creator they patron, joined through `Account → TenantMembership`. Each row carries a
+  // `viewer_entitlement` decision computed live against the viewer's current snapshot.
+  // ---------------------------------------------------------------------------
+
+  app.get("/api/v1/patron/favorites/all", async (req: Request, res: Response) => {
+    const traceId = traceIdFrom(req);
+    const session = await requirePatronBearerSession(req, res, traceId);
+    if (!session) {
+      return;
+    }
+    if (!config.prisma) {
+      // File-backed identity has no Account/TenantMembership graph; return empty rather than
+      // pretending to support cross-creator queries.
+      res.setHeader("Cache-Control", "private, no-store");
+      return res.status(200).json(successEnvelope({ items: [] }, traceId));
+    }
+    const accountId = await getAccountIdForSession(config.prisma, session);
+    if (!accountId) {
+      res.setHeader("Cache-Control", "private, no-store");
+      return res.status(200).json(successEnvelope({ items: [] }, traceId));
+    }
+    if (!(patronFavoritesStore instanceof DbPatronFavoritesStore)) {
+      res.setHeader("Cache-Control", "private, no-store");
+      return res.status(200).json(successEnvelope({ items: [] }, traceId));
+    }
+    const items = await patronFavoritesStore.listAllForAccount(accountId);
+    const enriched = await enrichFavoritesWithViewerEntitlement(items, session);
+    res.setHeader("Cache-Control", "private, no-store");
+    return res.status(200).json(successEnvelope({ items: enriched }, traceId));
+  });
+
+  app.get("/api/v1/patron/collections/all", async (req: Request, res: Response) => {
+    const traceId = traceIdFrom(req);
+    const session = await requirePatronBearerSession(req, res, traceId);
+    if (!session) {
+      return;
+    }
+    if (!config.prisma) {
+      res.setHeader("Cache-Control", "private, no-store");
+      return res.status(200).json(successEnvelope({ collections: [] }, traceId));
+    }
+    const accountId = await getAccountIdForSession(config.prisma, session);
+    if (!accountId) {
+      res.setHeader("Cache-Control", "private, no-store");
+      return res.status(200).json(successEnvelope({ collections: [] }, traceId));
+    }
+    if (!(patronCollectionsStore instanceof DbPatronCollectionsStore)) {
+      res.setHeader("Cache-Control", "private, no-store");
+      return res.status(200).json(successEnvelope({ collections: [] }, traceId));
+    }
+    const collections = await patronCollectionsStore.listAllCollectionsWithEntriesForAccount(
+      accountId
+    );
+    const enriched = await enrichCollectionsWithViewerEntitlement(collections, session);
+    res.setHeader("Cache-Control", "private, no-store");
+    return res.status(200).json(successEnvelope({ collections: enriched }, traceId));
+  });
+
+  // ---------------------------------------------------------------------------
+  // PE-E (BO-P2-03) — comments + moderation. Service layer in src/patron/comment-*.ts.
+  // ---------------------------------------------------------------------------
+
+  /** Internal helper: respond 503 when DB-backed identity isn't enabled. */
+  function ensurePeEDbReady(res: Response, traceId: string): boolean {
+    if (!useDbIdentityStore(config) || !config.prisma) {
+      res
+        .status(503)
+        .json(
+          errorEnvelope(
+            "NOT_AVAILABLE",
+            "Comments / moderation API requires database-backed identity (RELAY_DB_STORE_IDENTITY).",
+            traceId
+          )
+        );
+      return false;
+    }
+    return true;
+  }
+
+  /** Internal helper: is the calling session the studio owner of this relay_creator_id? */
+  async function sessionOwnsCreator(
+    session: SessionToken,
+    relayCreatorId: string
+  ): Promise<boolean> {
+    if (!config.prisma) return false;
+    const accountId = await getAccountIdForSession(config.prisma, session);
+    if (!accountId) return false;
+    const acc = await config.prisma.account.findUnique({
+      where: { id: accountId },
+      select: { primaryRelayCreatorId: true }
+    });
+    return acc?.primaryRelayCreatorId === relayCreatorId;
+  }
+
+  /**
+   * Translate CommentService errors into the standard envelope. Returns `true` if a response
+   * was sent. Keeps every route handler thin and consistent.
+   */
+  function handleCommentError(res: Response, traceId: string, err: unknown): boolean {
+    if (err instanceof CommentValidationError) {
+      res
+        .status(400)
+        .json(
+          errorEnvelope("VALIDATION_ERROR", err.message, traceId, [
+            { field: err.field, issue: err.issue }
+          ])
+        );
+      return true;
+    }
+    if (err instanceof CommentNotFoundError) {
+      res.status(404).json(errorEnvelope("NOT_FOUND", err.message, traceId));
+      return true;
+    }
+    if (err instanceof CommentEditWindowClosedError) {
+      res.status(409).json(errorEnvelope("EDIT_WINDOW_CLOSED", err.message, traceId));
+      return true;
+    }
+    if (err instanceof CommentForbiddenError) {
+      res.status(403).json(errorEnvelope("FORBIDDEN", err.message, traceId));
+      return true;
+    }
+    if (err instanceof ContentReportValidationError) {
+      res
+        .status(400)
+        .json(
+          errorEnvelope("VALIDATION_ERROR", err.message, traceId, [
+            { field: err.field, issue: err.issue }
+          ])
+        );
+      return true;
+    }
+    return false;
+  }
+
+  /** GET — list visible comments on a post, optionally filtered to one media asset. */
+  app.get("/api/v1/patron/posts/:post_id/comments", async (req: Request, res: Response) => {
+    const traceId = traceIdFrom(req);
+    if (!ensurePeEDbReady(res, traceId)) return;
+    const prisma = config.prisma!;
+    const postId = String(req.params.post_id ?? "").trim();
+    const creatorId =
+      typeof req.query.creator_id === "string" ? req.query.creator_id.trim() : "";
+    if (!postId || !creatorId) {
+      return res.status(400).json(
+        errorEnvelope("VALIDATION_ERROR", "post_id and creator_id are required.", traceId, [
+          { field: "post_id", issue: postId ? "ok" : "missing" },
+          { field: "creator_id", issue: creatorId ? "ok" : "missing" }
+        ])
+      );
+    }
+    const session = await requirePatronBearerSession(req, res, traceId);
+    if (!session) return;
+    if (!(await requirePatronForCreatorId(req, res, traceId, session, creatorId))) return;
+    const mediaId =
+      typeof req.query.media_id === "string" && req.query.media_id.trim().length > 0
+        ? req.query.media_id.trim()
+        : undefined;
+    const accountId = await getAccountIdForSession(prisma, session);
+    const isOwner = await sessionOwnsCreator(session, creatorId);
+    // Viewer's tier ids on this creator scope -- used for `requiredTierId` filtering.
+    let viewerTierIds: string[] = [];
+    if (accountId) {
+      const tenant = await prisma.tenant.findUnique({
+        where: { relayCreatorId: creatorId },
+        select: { id: true }
+      });
+      if (tenant) {
+        const membership = await prisma.tenantMembership.findUnique({
+          where: { accountId_tenantId: { accountId, tenantId: tenant.id } },
+          select: { tierIds: true }
+        });
+        if (membership) viewerTierIds = membership.tierIds;
+      }
+    }
+    const blockEdges = accountId ? await loadBlocksFor(prisma, accountId) : [];
+    try {
+      const items = await listComments(prisma, {
+        relayCreatorId: creatorId,
+        postId,
+        options: {
+          mediaId,
+          includeModerated: isOwner,
+          viewerTierIds,
+          blockEdges
+        }
+      });
+      const reactions = await aggregateReactions(prisma, {
+        commentIds: items.map((c) => c.id),
+        viewerAccountId: accountId
+      });
+      const enriched = items.map((c) => ({
+        ...c,
+        reactions: reactions.get(c.id) ?? []
+      }));
+      res.setHeader("Cache-Control", "private, no-store");
+      return res.status(200).json(successEnvelope({ items: enriched }, traceId));
+    } catch (error) {
+      if (handleCommentError(res, traceId, error)) return;
+      return res.status(500).json(errorEnvelope("INTERNAL", (error as Error).message, traceId));
+    }
+  });
+
+  /** POST — create a comment under a post (body / mediaId / anchor / parent / tags). */
+  app.post(
+    "/api/v1/patron/posts/:post_id/comments",
+    async (req: Request, res: Response, next) => {
+      const traceId = traceIdFrom(req);
+      if (!ensurePeEDbReady(res, traceId)) return;
+      const session = await requirePatronBearerSession(req, res, traceId);
+      if (!session) return;
+      const rateKey =
+        (await getAccountIdForSession(config.prisma!, session)) ?? session.user_id;
+      (req as Request & { relayRateLimitKey?: string }).relayRateLimitKey = rateKey;
+      next();
+    },
+    patronCommentMutate,
+    buildIdem("patron-comment-create"),
+    async (req: Request, res: Response) => {
+      const traceId = traceIdFrom(req);
+      const prisma = config.prisma!;
+      const postId = String(req.params.post_id ?? "").trim();
+      const body = (req.body ?? {}) as Record<string, unknown>;
+      const details = validateRequiredFields(body, ["creator_id", "body"]);
+      if (details.length > 0 || !postId) {
+        return res.status(400).json(
+          errorEnvelope("VALIDATION_ERROR", "Invalid request.", traceId, [
+            ...details,
+            ...(postId ? [] : [{ field: "post_id", issue: "missing" }])
+          ])
+        );
+      }
+      const creatorId = String(body.creator_id).trim();
+      const session = await requirePatronBearerSession(req, res, traceId);
+      if (!session) return;
+      if (!(await requirePatronForCreatorId(req, res, traceId, session, creatorId))) return;
+      try {
+        const result = await createComment(prisma, galleryOverridesStore, {
+          relayCreatorId: creatorId,
+          postId,
+          patronUserId: session.user_id,
+          body: String(body.body),
+          mediaId: typeof body.media_id === "string" ? body.media_id : null,
+          anchorX: typeof body.anchor_x === "number" ? body.anchor_x : null,
+          anchorY: typeof body.anchor_y === "number" ? body.anchor_y : null,
+          parentCommentId:
+            typeof body.parent_comment_id === "string" ? body.parent_comment_id : null,
+          tagIds: Array.isArray(body.tag_ids)
+            ? body.tag_ids.filter((t: unknown): t is string => typeof t === "string")
+            : [],
+          requiredTierId:
+            typeof body.required_tier_id === "string" ? body.required_tier_id : null,
+          visibility:
+            body.visibility === "patrons_only" ? "patrons_only" : "everyone"
+        });
+        if (result.autoModFlags.some((f) => f.severity === "block")) {
+          await recordModerationAction(prisma, {
+            relayCreatorId: creatorId,
+            actorKind: "system_auto_mod",
+            kind: "auto_mod_flag",
+            targetKind: "comment",
+            targetId: result.record.id,
+            payload: { flags: result.autoModFlags }
+          });
+        }
+        res.setHeader("Cache-Control", "private, no-store");
+        return res
+          .status(201)
+          .json(successEnvelope({ item: result.record, auto_mod_flags: result.autoModFlags }, traceId));
+      } catch (error) {
+        if (handleCommentError(res, traceId, error)) return;
+        return res.status(500).json(errorEnvelope("INTERNAL", (error as Error).message, traceId));
+      }
+    }
+  );
+
+  /** PATCH — edit own comment within 15-min window, OR creator pin/unpin/hide/unhide. */
+  app.patch(
+    "/api/v1/patron/comments/:comment_id",
+    async (req: Request, res: Response, next) => {
+      const traceId = traceIdFrom(req);
+      if (!ensurePeEDbReady(res, traceId)) return;
+      const session = await requirePatronBearerSession(req, res, traceId);
+      if (!session) return;
+      const rateKey =
+        (await getAccountIdForSession(config.prisma!, session)) ?? session.user_id;
+      (req as Request & { relayRateLimitKey?: string }).relayRateLimitKey = rateKey;
+      next();
+    },
+    patronCommentMutate,
+    async (req: Request, res: Response) => {
+      const traceId = traceIdFrom(req);
+      const prisma = config.prisma!;
+      const commentId = String(req.params.comment_id ?? "").trim();
+      const session = await requirePatronBearerSession(req, res, traceId);
+      if (!session) return;
+      const body = (req.body ?? {}) as Record<string, unknown>;
+      const existing = await prisma.comment.findUnique({ where: { id: commentId } });
+      if (!existing) {
+        return res.status(404).json(errorEnvelope("NOT_FOUND", "Comment not found.", traceId));
+      }
+      const isOwner = await sessionOwnsCreator(session, existing.relayCreatorId);
+      try {
+        // Creator-only ops: pin/unpin, hide/unhide -- all guarded by isOwner.
+        if (typeof body.creator_pinned === "boolean") {
+          if (!isOwner) throw new CommentForbiddenError("creator pin requires creator session");
+          const updated = await setCreatorPinned(prisma, {
+            commentId,
+            pinned: body.creator_pinned
+          });
+          await recordModerationAction(prisma, {
+            relayCreatorId: existing.relayCreatorId,
+            actorKind: "creator",
+            actorAccountId: (await getAccountIdForSession(prisma, session)) ?? null,
+            kind: body.creator_pinned ? "comment_pin" : "comment_unpin",
+            targetKind: "comment",
+            targetId: commentId
+          });
+          return res.status(200).json(successEnvelope({ item: updated }, traceId));
+        }
+        if (typeof body.mod_state === "string") {
+          if (!isOwner) throw new CommentForbiddenError("mod state change requires creator session");
+          const next = body.mod_state;
+          if (next !== "visible" && next !== "hidden" && next !== "removed") {
+            throw new CommentValidationError("mod_state", "must be visible, hidden, or removed");
+          }
+          const updated = await setModState(prisma, { commentId, modState: next });
+          const kind =
+            next === "visible"
+              ? "comment_unhide"
+              : next === "hidden"
+                ? "comment_hide"
+                : "comment_remove";
+          await recordModerationAction(prisma, {
+            relayCreatorId: existing.relayCreatorId,
+            actorKind: "creator",
+            actorAccountId: (await getAccountIdForSession(prisma, session)) ?? null,
+            kind,
+            targetKind: "comment",
+            targetId: commentId
+          });
+          return res.status(200).json(successEnvelope({ item: updated }, traceId));
+        }
+        // Author edit path.
+        const updated = await patchComment(prisma, galleryOverridesStore, {
+          commentId,
+          actorUserId: session.user_id,
+          patch: {
+            body: typeof body.body === "string" ? body.body : undefined,
+            tagIds: Array.isArray(body.tag_ids)
+              ? body.tag_ids.filter((t: unknown): t is string => typeof t === "string")
+              : undefined
+          }
+        });
+        return res.status(200).json(successEnvelope({ item: updated }, traceId));
+      } catch (error) {
+        if (handleCommentError(res, traceId, error)) return;
+        return res.status(500).json(errorEnvelope("INTERNAL", (error as Error).message, traceId));
+      }
+    }
+  );
+
+  /** DELETE — soft-delete (author always; creator with isCreator=true). */
+  app.delete(
+    "/api/v1/patron/comments/:comment_id",
+    async (req: Request, res: Response, next) => {
+      const traceId = traceIdFrom(req);
+      if (!ensurePeEDbReady(res, traceId)) return;
+      const session = await requirePatronBearerSession(req, res, traceId);
+      if (!session) return;
+      const rateKey =
+        (await getAccountIdForSession(config.prisma!, session)) ?? session.user_id;
+      (req as Request & { relayRateLimitKey?: string }).relayRateLimitKey = rateKey;
+      next();
+    },
+    patronCommentMutate,
+    async (req: Request, res: Response) => {
+      const traceId = traceIdFrom(req);
+      const prisma = config.prisma!;
+      const commentId = String(req.params.comment_id ?? "").trim();
+      const session = await requirePatronBearerSession(req, res, traceId);
+      if (!session) return;
+      const existing = await prisma.comment.findUnique({ where: { id: commentId } });
+      if (!existing) {
+        return res.status(404).json(errorEnvelope("NOT_FOUND", "Comment not found.", traceId));
+      }
+      const isOwner = await sessionOwnsCreator(session, existing.relayCreatorId);
+      try {
+        const updated = await softDeleteComment(prisma, galleryOverridesStore, {
+          commentId,
+          actorUserId: session.user_id,
+          isCreator: isOwner
+        });
+        if (isOwner) {
+          await recordModerationAction(prisma, {
+            relayCreatorId: existing.relayCreatorId,
+            actorKind: "creator",
+            actorAccountId: (await getAccountIdForSession(prisma, session)) ?? null,
+            kind: "comment_remove",
+            targetKind: "comment",
+            targetId: commentId
+          });
+        }
+        return res.status(200).json(successEnvelope({ item: updated }, traceId));
+      } catch (error) {
+        if (handleCommentError(res, traceId, error)) return;
+        return res.status(500).json(errorEnvelope("INTERNAL", (error as Error).message, traceId));
+      }
+    }
+  );
+
+  /** POST — toggle a reaction. Returns { active: boolean }. */
+  app.post(
+    "/api/v1/patron/comments/:comment_id/reactions",
+    async (req: Request, res: Response, next) => {
+      const traceId = traceIdFrom(req);
+      if (!ensurePeEDbReady(res, traceId)) return;
+      const session = await requirePatronBearerSession(req, res, traceId);
+      if (!session) return;
+      const rateKey =
+        (await getAccountIdForSession(config.prisma!, session)) ?? session.user_id;
+      (req as Request & { relayRateLimitKey?: string }).relayRateLimitKey = rateKey;
+      next();
+    },
+    patronReactionMutate,
+    async (req: Request, res: Response) => {
+      const traceId = traceIdFrom(req);
+      const prisma = config.prisma!;
+      const commentId = String(req.params.comment_id ?? "").trim();
+      const body = (req.body ?? {}) as Record<string, unknown>;
+      const kindRaw = typeof body.kind === "string" ? body.kind : "";
+      if (!["like", "heart", "insightful", "laugh"].includes(kindRaw)) {
+        return res
+          .status(400)
+          .json(
+            errorEnvelope("VALIDATION_ERROR", "kind must be a valid CommentReactionKind.", traceId, [
+              { field: "kind", issue: "invalid" }
+            ])
+          );
+      }
+      const session = await requirePatronBearerSession(req, res, traceId);
+      if (!session) return;
+      const accountId = await getAccountIdForSession(prisma, session);
+      if (!accountId) {
+        return res.status(403).json(errorEnvelope("FORBIDDEN", "Account required.", traceId));
+      }
+      const result = await toggleCommentReaction(prisma, {
+        commentId,
+        accountId,
+        kind: kindRaw as "like" | "heart" | "insightful" | "laugh"
+      });
+      res.setHeader("Cache-Control", "private, no-store");
+      return res.status(200).json(successEnvelope(result, traceId));
+    }
+  );
+
+  /** POST — creator-only per-comment per-tag revocation (D27). */
+  app.post(
+    "/api/v1/patron/comments/:comment_id/revoke-tag",
+    async (req: Request, res: Response, next) => {
+      const traceId = traceIdFrom(req);
+      if (!ensurePeEDbReady(res, traceId)) return;
+      const session = await requirePatronBearerSession(req, res, traceId);
+      if (!session) return;
+      const rateKey =
+        (await getAccountIdForSession(config.prisma!, session)) ?? session.user_id;
+      (req as Request & { relayRateLimitKey?: string }).relayRateLimitKey = rateKey;
+      next();
+    },
+    patronCommentMutate,
+    async (req: Request, res: Response) => {
+      const traceId = traceIdFrom(req);
+      const prisma = config.prisma!;
+      const commentId = String(req.params.comment_id ?? "").trim();
+      const body = (req.body ?? {}) as Record<string, unknown>;
+      const tagId = typeof body.tag_id === "string" ? body.tag_id.trim().toLowerCase() : "";
+      const unrevoke = body.unrevoke === true;
+      if (!commentId || !tagId) {
+        return res.status(400).json(
+          errorEnvelope("VALIDATION_ERROR", "comment_id + tag_id required.", traceId, [
+            { field: "tag_id", issue: tagId ? "ok" : "missing" }
+          ])
+        );
+      }
+      const session = await requirePatronBearerSession(req, res, traceId);
+      if (!session) return;
+      const existing = await prisma.comment.findUnique({ where: { id: commentId } });
+      if (!existing) {
+        return res.status(404).json(errorEnvelope("NOT_FOUND", "Comment not found.", traceId));
+      }
+      if (!(await sessionOwnsCreator(session, existing.relayCreatorId))) {
+        return res
+          .status(403)
+          .json(errorEnvelope("FORBIDDEN", "Tag revocation requires creator session.", traceId));
+      }
+      try {
+        if (unrevoke) {
+          await unrevokeCommentTag(prisma, galleryOverridesStore, commentId, tagId);
+        } else {
+          await revokeCommentTag(prisma, galleryOverridesStore, commentId, tagId);
+        }
+        await recordModerationAction(prisma, {
+          relayCreatorId: existing.relayCreatorId,
+          actorKind: "creator",
+          actorAccountId: (await getAccountIdForSession(prisma, session)) ?? null,
+          kind: unrevoke ? "comment_tag_unrevoke" : "comment_tag_revoke",
+          targetKind: "comment",
+          targetId: commentId,
+          payload: { tagId }
+        });
+        res.setHeader("Cache-Control", "private, no-store");
+        return res.status(200).json(successEnvelope({ tag_id: tagId, unrevoked: unrevoke }, traceId));
+      } catch (error) {
+        if (handleCommentError(res, traceId, error)) return;
+        return res.status(500).json(errorEnvelope("INTERNAL", (error as Error).message, traceId));
+      }
+    }
+  );
+
+  /** POST — patron submits a content report. */
+  app.post(
+    "/api/v1/patron/reports",
+    async (req: Request, res: Response, next) => {
+      const traceId = traceIdFrom(req);
+      if (!ensurePeEDbReady(res, traceId)) return;
+      const session = await requirePatronBearerSession(req, res, traceId);
+      if (!session) return;
+      const rateKey =
+        (await getAccountIdForSession(config.prisma!, session)) ?? session.user_id;
+      (req as Request & { relayRateLimitKey?: string }).relayRateLimitKey = rateKey;
+      next();
+    },
+    patronReportMutate,
+    buildIdem("patron-report-create"),
+    async (req: Request, res: Response) => {
+      const traceId = traceIdFrom(req);
+      const prisma = config.prisma!;
+      const body = (req.body ?? {}) as Record<string, unknown>;
+      const targetKind = body.target_kind;
+      if (targetKind !== "comment" && targetKind !== "post" && targetKind !== "account") {
+        return res.status(400).json(
+          errorEnvelope("VALIDATION_ERROR", "target_kind invalid.", traceId, [
+            { field: "target_kind", issue: "invalid" }
+          ])
+        );
+      }
+      const session = await requirePatronBearerSession(req, res, traceId);
+      if (!session) return;
+      const accountId = await getAccountIdForSession(prisma, session);
+      if (!accountId) {
+        return res.status(403).json(errorEnvelope("FORBIDDEN", "Account required.", traceId));
+      }
+      try {
+        const created = await createContentReport(prisma, {
+          reporterAccountId: accountId,
+          relayCreatorId:
+            typeof body.relay_creator_id === "string" ? body.relay_creator_id.trim() : "",
+          targetKind,
+          targetId: typeof body.target_id === "string" ? body.target_id : "",
+          reasonCode: typeof body.reason_code === "string" ? body.reason_code : "",
+          body: typeof body.body === "string" ? body.body : null
+        });
+        res.setHeader("Cache-Control", "private, no-store");
+        return res.status(201).json(successEnvelope(created, traceId));
+      } catch (error) {
+        if (handleCommentError(res, traceId, error)) return;
+        return res.status(500).json(errorEnvelope("INTERNAL", (error as Error).message, traceId));
+      }
+    }
+  );
+
+  /** GET — creator moderation queue. Owner-only. */
+  app.get("/api/v1/creator/moderation/reports", async (req: Request, res: Response) => {
+    const traceId = traceIdFrom(req);
+    if (!ensurePeEDbReady(res, traceId)) return;
+    const prisma = config.prisma!;
+    const session = await requirePatronBearerSession(req, res, traceId);
+    if (!session) return;
+    const creatorId =
+      typeof req.query.relay_creator_id === "string" ? req.query.relay_creator_id.trim() : "";
+    if (!creatorId) {
+      return res
+        .status(400)
+        .json(
+          errorEnvelope("VALIDATION_ERROR", "relay_creator_id is required.", traceId, [
+            { field: "relay_creator_id", issue: "missing" }
+          ])
+        );
+    }
+    if (!(await sessionOwnsCreator(session, creatorId))) {
+      return res
+        .status(403)
+        .json(errorEnvelope("FORBIDDEN", "Caller does not own this creator scope.", traceId));
+    }
+    const status =
+      req.query.status === "open" ||
+      req.query.status === "actioned" ||
+      req.query.status === "dismissed"
+        ? (req.query.status as "open" | "actioned" | "dismissed")
+        : undefined;
+    const cursor = typeof req.query.cursor === "string" ? req.query.cursor : undefined;
+    const result = await listContentReports(prisma, { relayCreatorId: creatorId, status, cursor });
+    res.setHeader("Cache-Control", "private, no-store");
+    return res.status(200).json(successEnvelope(result, traceId));
+  });
+
+  /** POST — resolve a report (actioned / dismissed). Owner-only. */
+  app.post(
+    "/api/v1/creator/moderation/reports/:report_id/resolve",
+    async (req: Request, res: Response) => {
+      const traceId = traceIdFrom(req);
+      if (!ensurePeEDbReady(res, traceId)) return;
+      const prisma = config.prisma!;
+      const reportId = String(req.params.report_id ?? "").trim();
+      const session = await requirePatronBearerSession(req, res, traceId);
+      if (!session) return;
+      const accountId = await getAccountIdForSession(prisma, session);
+      if (!accountId) {
+        return res.status(403).json(errorEnvelope("FORBIDDEN", "Account required.", traceId));
+      }
+      const report = await prisma.contentReport.findUnique({ where: { id: reportId } });
+      if (!report) {
+        return res.status(404).json(errorEnvelope("NOT_FOUND", "Report not found.", traceId));
+      }
+      if (!(await sessionOwnsCreator(session, report.relayCreatorId))) {
+        return res
+          .status(403)
+          .json(errorEnvelope("FORBIDDEN", "Caller does not own this creator scope.", traceId));
+      }
+      const body = (req.body ?? {}) as Record<string, unknown>;
+      const outcome = body.outcome === "actioned" ? "actioned" : "dismissed";
+      try {
+        await resolveContentReport(prisma, {
+          reportId,
+          resolverAccountId: accountId,
+          outcome
+        });
+        return res.status(200).json(successEnvelope({ resolved: true, outcome }, traceId));
+      } catch (error) {
+        if (handleCommentError(res, traceId, error)) return;
+        return res.status(500).json(errorEnvelope("INTERNAL", (error as Error).message, traceId));
+      }
+    }
+  );
+
+  /** POST / DELETE — account-level block (D14, future-only semantics). */
+  app.post(
+    "/api/v1/patron/blocks",
+    async (req: Request, res: Response, next) => {
+      const traceId = traceIdFrom(req);
+      if (!ensurePeEDbReady(res, traceId)) return;
+      const session = await requirePatronBearerSession(req, res, traceId);
+      if (!session) return;
+      const rateKey =
+        (await getAccountIdForSession(config.prisma!, session)) ?? session.user_id;
+      (req as Request & { relayRateLimitKey?: string }).relayRateLimitKey = rateKey;
+      next();
+    },
+    patronBlockMutate,
+    buildIdem("patron-block-create"),
+    async (req: Request, res: Response) => {
+      const traceId = traceIdFrom(req);
+      const prisma = config.prisma!;
+      const body = (req.body ?? {}) as Record<string, unknown>;
+      const target =
+        typeof body.blocked_account_id === "string" ? body.blocked_account_id.trim() : "";
+      if (!target) {
+        return res.status(400).json(
+          errorEnvelope("VALIDATION_ERROR", "blocked_account_id is required.", traceId, [
+            { field: "blocked_account_id", issue: "missing" }
+          ])
+        );
+      }
+      const session = await requirePatronBearerSession(req, res, traceId);
+      if (!session) return;
+      const blockerAccountId = await getAccountIdForSession(prisma, session);
+      if (!blockerAccountId) {
+        return res.status(403).json(errorEnvelope("FORBIDDEN", "Account required.", traceId));
+      }
+      const result = await blockAccount(prisma, {
+        blockerAccountId,
+        blockedAccountId: target
+      });
+      res.setHeader("Cache-Control", "private, no-store");
+      return res.status(200).json(successEnvelope(result, traceId));
+    }
+  );
+
+  app.delete(
+    "/api/v1/patron/blocks/:account_id",
+    async (req: Request, res: Response, next) => {
+      const traceId = traceIdFrom(req);
+      if (!ensurePeEDbReady(res, traceId)) return;
+      const session = await requirePatronBearerSession(req, res, traceId);
+      if (!session) return;
+      const rateKey =
+        (await getAccountIdForSession(config.prisma!, session)) ?? session.user_id;
+      (req as Request & { relayRateLimitKey?: string }).relayRateLimitKey = rateKey;
+      next();
+    },
+    patronBlockMutate,
+    async (req: Request, res: Response) => {
+      const traceId = traceIdFrom(req);
+      const prisma = config.prisma!;
+      const target = String(req.params.account_id ?? "").trim();
+      const session = await requirePatronBearerSession(req, res, traceId);
+      if (!session) return;
+      const blockerAccountId = await getAccountIdForSession(prisma, session);
+      if (!blockerAccountId) {
+        return res.status(403).json(errorEnvelope("FORBIDDEN", "Account required.", traceId));
+      }
+      const result = await unblockAccount(prisma, {
+        blockerAccountId,
+        blockedAccountId: target
+      });
+      res.setHeader("Cache-Control", "private, no-store");
+      return res.status(200).json(successEnvelope(result, traceId));
+    }
+  );
+
+  // ---------------------------------------------------------------------------
+  // PE-F (BO-P3-01) — Discovery v1.
+  // GET /api/v1/patron/discover  — open to any patron session; cross-creator recency feed
+  //                                 of posts opted in via PostOverride.discoveryEligible.
+  // PATCH /api/v1/gallery/posts/:post_id/discovery — owner-only opt-in/out.
+  // ---------------------------------------------------------------------------
+
+  app.get("/api/v1/patron/discover", async (req: Request, res: Response) => {
+    const traceId = traceIdFrom(req);
+    const session = await requirePatronBearerSession(req, res, traceId);
+    if (!session) return;
+    const q = typeof req.query.q === "string" ? req.query.q : undefined;
+    const cursor = typeof req.query.cursor === "string" ? req.query.cursor : undefined;
+    const limitRaw = typeof req.query.limit === "string" ? Number(req.query.limit) : undefined;
+    const capRaw =
+      typeof req.query.creator_cap === "string" ? Number(req.query.creator_cap) : undefined;
+    // Resolve viewer's primary creator scope so we can exclude their own posts from Discover.
+    let viewerCreatorId: string | null = null;
+    if (config.prisma) {
+      const accountId = await getAccountIdForSession(config.prisma, session);
+      if (accountId) {
+        const acc = await config.prisma.account.findUnique({
+          where: { id: accountId },
+          select: { primaryRelayCreatorId: true }
+        });
+        viewerCreatorId = acc?.primaryRelayCreatorId ?? null;
+      }
+    }
+    try {
+      const [snapshot, overrides] = await Promise.all([
+        canonicalStore.load(),
+        galleryOverridesStore.load()
+      ]);
+      const page = buildDiscoverPage(snapshot, overrides, {
+        q,
+        cursor,
+        limit: limitRaw,
+        creator_cap: capRaw,
+        viewer_relay_creator_id: viewerCreatorId
+      });
+      res.setHeader("Cache-Control", "private, no-store");
+      return res.status(200).json(successEnvelope(page, traceId));
+    } catch (error) {
+      return res.status(500).json(errorEnvelope("INTERNAL", (error as Error).message, traceId));
+    }
+  });
+
+  /**
+   * PE-F (BO-P3-01) — Studio surface for opting a post in/out of `/patron/discover`.
+   * Owner-only. Validates the caller's `Account.primaryRelayCreatorId` matches the requested
+   * creator scope before mutating the override row.
+   */
+  app.patch(
+    "/api/v1/gallery/posts/:post_id/discovery",
+    async (req: Request, res: Response) => {
+      const traceId = traceIdFrom(req);
+      const session = await requirePatronBearerSession(req, res, traceId);
+      if (!session) return;
+      const postId = String(req.params.post_id ?? "").trim();
+      const body = (req.body ?? {}) as Record<string, unknown>;
+      const creatorId =
+        typeof body.creator_id === "string" ? body.creator_id.trim() : "";
+      const eligible = body.eligible === true;
+      if (!postId || !creatorId || typeof body.eligible !== "boolean") {
+        return res.status(400).json(
+          errorEnvelope("VALIDATION_ERROR", "post_id, creator_id, and eligible are required.", traceId, [
+            { field: "post_id", issue: postId ? "ok" : "missing" },
+            { field: "creator_id", issue: creatorId ? "ok" : "missing" },
+            { field: "eligible", issue: typeof body.eligible === "boolean" ? "ok" : "invalid" }
+          ])
+        );
+      }
+      // Owner-only: caller's primaryRelayCreatorId must match the requested scope.
+      if (config.prisma) {
+        const accountId = await getAccountIdForSession(config.prisma, session);
+        if (!accountId) {
+          return res.status(403).json(errorEnvelope("FORBIDDEN", "Account required.", traceId));
+        }
+        const acc = await config.prisma.account.findUnique({
+          where: { id: accountId },
+          select: { primaryRelayCreatorId: true }
+        });
+        if (acc?.primaryRelayCreatorId !== creatorId) {
+          return res
+            .status(403)
+            .json(errorEnvelope("FORBIDDEN", "Caller does not own this creator scope.", traceId));
+        }
+      }
+      // Validate the post exists in the canonical snapshot for this creator -- prevents
+      // accidental override rows for unknown post ids.
+      const snapshot = await canonicalStore.load();
+      const post = snapshot.posts[creatorId]?.[postId];
+      if (!post || post.upstream_status !== "active") {
+        return res.status(404).json(errorEnvelope("NOT_FOUND", "Post not found.", traceId));
+      }
+      // Soft warning surfaced in the response: opting in a tier-gated post has no v1 effect.
+      const tierGated = post.current.tier_ids.length > 0;
+      try {
+        await galleryOverridesStore.setDiscoveryEligible(creatorId, postId, eligible);
+        res.setHeader("Cache-Control", "private, no-store");
+        return res.status(200).json(
+          successEnvelope(
+            {
+              creator_id: creatorId,
+              post_id: postId,
+              eligible,
+              warning: tierGated
+                ? "Tier-gated posts are not surfaced in Discover v1; opt-in is recorded but has no effect until tier-gated discovery ships."
+                : null
+            },
+            traceId
+          )
+        );
+      } catch (error) {
+        return res.status(500).json(errorEnvelope("INTERNAL", (error as Error).message, traceId));
+      }
+    }
+  );
+
+  // ---------------------------------------------------------------------------
+  // PE-G (BO-P3-03) — Notifications.
+  // GET    /api/v1/patron/notifications              — list (cursor-paged; ?unread_only=, ?limit=, ?cursor=)
+  // GET    /api/v1/patron/notifications/unread-count — count badge
+  // POST   /api/v1/patron/notifications/mark-read    — { notification_ids: [], all_unread?: bool }
+  // GET    /api/v1/patron/notifications/preferences  — list (?relay_creator_id= optional filter)
+  // PATCH  /api/v1/patron/notifications/preferences  — { relay_creator_id, preference_type, enabled }
+  // ---------------------------------------------------------------------------
+
+  app.get("/api/v1/patron/notifications", async (req: Request, res: Response) => {
+    const traceId = traceIdFrom(req);
+    if (!ensurePeEDbReady(res, traceId)) return;
+    const session = await requirePatronBearerSession(req, res, traceId);
+    if (!session) return;
+    const unreadOnly = req.query.unread_only === "true" || req.query.unread_only === "1";
+    const limitRaw =
+      typeof req.query.limit === "string" ? Number(req.query.limit) : undefined;
+    const cursor = typeof req.query.cursor === "string" ? req.query.cursor : undefined;
+    const relayCreatorIdFilter =
+      typeof req.query.relay_creator_id === "string"
+        ? req.query.relay_creator_id.trim()
+        : undefined;
+    try {
+      const page = await listNotifications(config.prisma!, {
+        recipientMembershipId: session.user_id,
+        unreadOnly,
+        limit: limitRaw,
+        cursor,
+        relayCreatorId: relayCreatorIdFilter
+      });
+      res.setHeader("Cache-Control", "private, no-store");
+      return res.status(200).json(successEnvelope(page, traceId));
+    } catch (error) {
+      return res
+        .status(500)
+        .json(errorEnvelope("INTERNAL", (error as Error).message, traceId));
+    }
+  });
+
+  app.get(
+    "/api/v1/patron/notifications/unread-count",
+    async (req: Request, res: Response) => {
+      const traceId = traceIdFrom(req);
+      if (!ensurePeEDbReady(res, traceId)) return;
+      const session = await requirePatronBearerSession(req, res, traceId);
+      if (!session) return;
+      const count = await unreadCount(config.prisma!, session.user_id);
+      res.setHeader("Cache-Control", "private, no-store");
+      return res.status(200).json(successEnvelope({ unread_count: count }, traceId));
+    }
+  );
+
+  app.post(
+    "/api/v1/patron/notifications/mark-read",
+    async (req: Request, res: Response) => {
+      const traceId = traceIdFrom(req);
+      if (!ensurePeEDbReady(res, traceId)) return;
+      const session = await requirePatronBearerSession(req, res, traceId);
+      if (!session) return;
+      const body = (req.body ?? {}) as Record<string, unknown>;
+      const allUnread = body.all_unread === true;
+      const ids = Array.isArray(body.notification_ids)
+        ? body.notification_ids.filter((v): v is string => typeof v === "string")
+        : [];
+      try {
+        const result = allUnread
+          ? await markAllRead(config.prisma!, session.user_id)
+          : await markRead(config.prisma!, {
+              recipientMembershipId: session.user_id,
+              notificationIds: ids
+            });
+        res.setHeader("Cache-Control", "private, no-store");
+        return res.status(200).json(successEnvelope(result, traceId));
+      } catch (error) {
+        return res
+          .status(500)
+          .json(errorEnvelope("INTERNAL", (error as Error).message, traceId));
+      }
+    }
+  );
+
+  app.get(
+    "/api/v1/patron/notifications/preferences",
+    async (req: Request, res: Response) => {
+      const traceId = traceIdFrom(req);
+      if (!ensurePeEDbReady(res, traceId)) return;
+      const session = await requirePatronBearerSession(req, res, traceId);
+      if (!session) return;
+      const relayCreatorId =
+        typeof req.query.relay_creator_id === "string"
+          ? req.query.relay_creator_id.trim()
+          : undefined;
+      const items = await listPreferences(config.prisma!, {
+        membershipId: session.user_id,
+        relayCreatorId
+      });
+      res.setHeader("Cache-Control", "private, no-store");
+      return res.status(200).json(successEnvelope({ items }, traceId));
+    }
+  );
+
+  app.patch(
+    "/api/v1/patron/notifications/preferences",
+    async (req: Request, res: Response) => {
+      const traceId = traceIdFrom(req);
+      if (!ensurePeEDbReady(res, traceId)) return;
+      const session = await requirePatronBearerSession(req, res, traceId);
+      if (!session) return;
+      const body = (req.body ?? {}) as Record<string, unknown>;
+      const relayCreatorId =
+        typeof body.relay_creator_id === "string" ? body.relay_creator_id.trim() : "";
+      const preferenceType =
+        typeof body.preference_type === "string" ? body.preference_type.trim() : "";
+      const enabled = body.enabled;
+      if (!preferenceType || typeof enabled !== "boolean") {
+        return res.status(400).json(
+          errorEnvelope("VALIDATION_ERROR", "preference_type + enabled (boolean) required.", traceId, [
+            { field: "preference_type", issue: preferenceType ? "ok" : "missing" },
+            { field: "enabled", issue: typeof enabled === "boolean" ? "ok" : "invalid" }
+          ])
+        );
+      }
+      try {
+        const result = await setPreference(config.prisma!, {
+          membershipId: session.user_id,
+          relayCreatorId,
+          preferenceType,
+          enabled
+        });
+        res.setHeader("Cache-Control", "private, no-store");
+        return res.status(200).json(successEnvelope(result, traceId));
+      } catch (error) {
+        return res
+          .status(500)
+          .json(errorEnvelope("INTERNAL", (error as Error).message, traceId));
+      }
+    }
+  );
+
+  // ---------------------------------------------------------------------------
+  // PE-J (BO-P4-02) — Data export + per-creator unwind + account deletion lifecycle.
+  //
+  // GET    /api/v1/patron/me/export                    — JSON bundle of everything we hold for you
+  // DELETE /api/v1/patron/memberships/:relay_creator_id — drop one creator relationship
+  // GET    /api/v1/patron/me/delete                    — current pending deletion (or null)
+  // POST   /api/v1/patron/me/delete                    — schedule deletion (with grace)
+  // DELETE /api/v1/patron/me/delete                    — cancel pending deletion
+  //
+  // All routes require a DB-backed identity (ensurePeEDbReady) so the cascade + soft-FK
+  // purges have a real Account row to operate on. File-backed integration tests fall through
+  // with a 503.
+  // ---------------------------------------------------------------------------
+
+  /** Helper: resolve account id from session, return 403 envelope if not available. */
+  async function requireAccountIdForSession(
+    req: Request,
+    res: Response,
+    traceId: string,
+    session: SessionToken
+  ): Promise<string | null> {
+    if (!config.prisma) return null;
+    const accountId = await getAccountIdForSession(config.prisma, session);
+    if (!accountId) {
+      res.status(403).json(errorEnvelope("FORBIDDEN", "Account required.", traceId));
+      return null;
+    }
+    return accountId;
+  }
+
+  app.get("/api/v1/patron/me/export", async (req: Request, res: Response) => {
+    const traceId = traceIdFrom(req);
+    if (!ensurePeEDbReady(res, traceId)) return;
+    const session = await requirePatronBearerSession(req, res, traceId);
+    if (!session) return;
+    const accountId = await requireAccountIdForSession(req, res, traceId, session);
+    if (!accountId) return;
+    try {
+      const bundle = await buildPatronExportBundle(config.prisma!, accountId);
+      res.setHeader("Cache-Control", "private, no-store");
+      res.setHeader("Content-Type", "application/json; charset=utf-8");
+      res.setHeader(
+        "Content-Disposition",
+        `attachment; filename="relay-account-${accountId}-${new Date().toISOString().slice(0, 10)}.json"`
+      );
+      // Bypass envelope on this one route -- the bundle IS the response, and download tooling
+      // (curl -O, browser save-as) shouldn't have to unwrap a meta layer.
+      return res.status(200).send(JSON.stringify(bundle, null, 2));
+    } catch (error) {
+      return res
+        .status(500)
+        .json(errorEnvelope("INTERNAL", (error as Error).message, traceId));
+    }
+  });
+
+  app.delete(
+    "/api/v1/patron/memberships/:relay_creator_id",
+    async (req: Request, res: Response) => {
+      const traceId = traceIdFrom(req);
+      if (!ensurePeEDbReady(res, traceId)) return;
+      const session = await requirePatronBearerSession(req, res, traceId);
+      if (!session) return;
+      const accountId = await requireAccountIdForSession(req, res, traceId, session);
+      if (!accountId) return;
+      const relayCreatorId = String(req.params.relay_creator_id ?? "").trim();
+      if (!relayCreatorId) {
+        return res.status(400).json(
+          errorEnvelope("VALIDATION_ERROR", "relay_creator_id is required.", traceId, [
+            { field: "relay_creator_id", issue: "missing" }
+          ])
+        );
+      }
+      try {
+        const counts = await deleteCreatorRelationship(config.prisma!, {
+          accountId,
+          relayCreatorId
+        });
+        res.setHeader("Cache-Control", "private, no-store");
+        return res.status(200).json(successEnvelope({ counts }, traceId));
+      } catch (error) {
+        return res
+          .status(500)
+          .json(errorEnvelope("INTERNAL", (error as Error).message, traceId));
+      }
+    }
+  );
+
+  app.get("/api/v1/patron/me/delete", async (req: Request, res: Response) => {
+    const traceId = traceIdFrom(req);
+    if (!ensurePeEDbReady(res, traceId)) return;
+    const session = await requirePatronBearerSession(req, res, traceId);
+    if (!session) return;
+    const accountId = await requireAccountIdForSession(req, res, traceId, session);
+    if (!accountId) return;
+    const pending = await getPendingDeletion(config.prisma!, accountId);
+    res.setHeader("Cache-Control", "private, no-store");
+    return res.status(200).json(
+      successEnvelope(
+        {
+          pending_deletion: pending
+            ? {
+                id: pending.id,
+                requested_at: pending.requestedAt.toISOString(),
+                scheduled_for: pending.scheduledFor.toISOString(),
+                reason: pending.reason
+              }
+            : null
+        },
+        traceId
+      )
+    );
+  });
+
+  app.post("/api/v1/patron/me/delete", async (req: Request, res: Response) => {
+    const traceId = traceIdFrom(req);
+    if (!ensurePeEDbReady(res, traceId)) return;
+    const session = await requirePatronBearerSession(req, res, traceId);
+    if (!session) return;
+    const accountId = await requireAccountIdForSession(req, res, traceId, session);
+    if (!accountId) return;
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const reason = typeof body.reason === "string" ? body.reason.trim().slice(0, 500) : null;
+    const requesterIp =
+      (typeof req.header("x-forwarded-for") === "string"
+        ? req.header("x-forwarded-for")!.split(",")[0]?.trim()
+        : null) ??
+      req.socket?.remoteAddress ??
+      null;
+    try {
+      const result = await requestDeletion(config.prisma!, {
+        accountId,
+        reason,
+        requesterIp
+      });
+      res.setHeader("Cache-Control", "private, no-store");
+      return res.status(result.created ? 201 : 200).json(
+        successEnvelope(
+          {
+            created: result.created,
+            id: result.record.id,
+            requested_at: result.record.requestedAt.toISOString(),
+            scheduled_for: result.record.scheduledFor.toISOString(),
+            reason: result.record.reason
+          },
+          traceId
+        )
+      );
+    } catch (error) {
+      return res
+        .status(500)
+        .json(errorEnvelope("INTERNAL", (error as Error).message, traceId));
+    }
+  });
+
+  app.delete("/api/v1/patron/me/delete", async (req: Request, res: Response) => {
+    const traceId = traceIdFrom(req);
+    if (!ensurePeEDbReady(res, traceId)) return;
+    const session = await requirePatronBearerSession(req, res, traceId);
+    if (!session) return;
+    const accountId = await requireAccountIdForSession(req, res, traceId, session);
+    if (!accountId) return;
+    const cancelled = await cancelDeletion(config.prisma!, accountId);
+    res.setHeader("Cache-Control", "private, no-store");
+    return res.status(200).json(
+      successEnvelope(
+        {
+          cancelled: cancelled !== null,
+          id: cancelled?.id ?? null,
+          cancelled_at: cancelled?.cancelledAt?.toISOString() ?? null
+        },
+        traceId
+      )
+    );
   });
 
   /**
@@ -6320,6 +8325,8 @@ export function createApp(config: AppConfig): CreateAppResult {
     patreonSyncService,
     tokenStore,
     patreonSyncHealthStore,
-    patreonCampaignCreatorIndex
+    patreonCampaignCreatorIndex,
+    encryption,
+    patreonClient
   };
 }

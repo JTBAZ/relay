@@ -12,7 +12,7 @@ import { emitStudioSessionUpdate } from "@/lib/studio-session-context";
  * Supabase email confirmation callback.
  * Handles both PKCE (?code=...) and implicit (#access_token=...) flows.
  * Supabase Dashboard → Auth → URL Configuration → set Site URL and add this as a redirect URL:
- *   http://localhost:3000/auth/confirm   (dev)
+ *   http://127.0.0.1:3000/auth/confirm   (dev — use one origin; see docs/qa/DEV_LOCAL_ORIGIN.md)
  *   https://relayapp.me/auth/confirm     (production)
  */
 export default function AuthConfirmPage() {

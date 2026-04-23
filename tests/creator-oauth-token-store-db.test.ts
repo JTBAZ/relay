@@ -27,6 +27,7 @@ describe("DbPatreonTokenStore", () => {
     const userCreate = vi.fn().mockResolvedValue({ id: "user_1" });
     const creatorProfileFindUnique = vi.fn().mockResolvedValue(null);
     const creatorProfileCreate = vi.fn().mockResolvedValue({});
+    const providerFindFirst = vi.fn().mockResolvedValue(null);
     const providerFindUnique = vi.fn().mockResolvedValue(null);
     const providerCreate = vi.fn().mockResolvedValue({ id: "pa_1" });
     const providerUpdate = vi.fn();
@@ -39,6 +40,7 @@ describe("DbPatreonTokenStore", () => {
           user: { findFirst: userFindFirst, create: userCreate },
           creatorProfile: { create: creatorProfileCreate, findUnique: creatorProfileFindUnique },
           providerAccount: {
+            findFirst: providerFindFirst,
             findUnique: providerFindUnique,
             create: providerCreate,
             update: providerUpdate

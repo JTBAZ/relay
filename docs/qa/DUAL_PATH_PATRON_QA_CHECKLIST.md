@@ -4,7 +4,9 @@
 
 **Source spec:** [`Patron_Experience_Batting_Order.md`](../Patron_Experience_Batting_Order.md) §5.
 
-**Policy update — 2026-04-20 (PE-A):** A Patreon login alone may **never** create a Relay account. The legacy anonymous `POST /api/v1/auth/patreon/patron/exchange` route is **hard-deprecated** (returns `403 RELAY_ACCOUNT_REQUIRED` by default; bypass only via `RELAY_PATREON_PATRON_ALLOW_LEGACY_EXCHANGE=1`). All patron Patreon links flow through `POST /api/v1/auth/patreon/patron/link` with a verified Relay session. The verified-email gate (`RELAY_PATREON_LINK_REQUIRE_VERIFIED_EMAIL=1`) is **on by default**.
+**Universal policy:** Supporters **always** sign up and sign in to Relay **before** Patreon can be linked. There is no supported product path that attaches Patreon without a Relay `Account` to anchor identity, credentials, and entitlements.
+
+**Policy update — 2026-04-20 (PE-A):** A Patreon login alone may **never** create a Relay account. The legacy anonymous `POST /api/v1/auth/patreon/patron/exchange` route is **hard-deprecated** (returns `403 RELAY_ACCOUNT_REQUIRED` by default; bypass only via `RELAY_PATREON_PATRON_ALLOW_LEGACY_EXCHANGE=1`). All patron Patreon links flow through `POST /api/v1/auth/patreon/patron/link` with an existing Relay session. The verified-email gate (`RELAY_PATREON_LINK_REQUIRE_VERIFIED_EMAIL=1`) is **on by default**.
 
 **When blocked (OAuth secrets, Patreon sandbox, human account):** stop and record **BLOCKED — needs human** with reason; do not loop on failed Patreon redirects.
 

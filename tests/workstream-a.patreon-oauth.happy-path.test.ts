@@ -12,18 +12,33 @@ describe("Workstream A happy path", () => {
     const credentialStorePath = join(tempDir, "patreon_credentials.json");
     const encryptionKey = randomBytes(32).toString("base64");
 
-    const fetchImpl: typeof fetch = vi.fn(async () => {
-      return new Response(
-        JSON.stringify({
-          access_token: "access_abc",
-          refresh_token: "refresh_abc",
-          expires_in: 3600
-        }),
-        {
-          status: 200,
-          headers: { "content-type": "application/json" }
-        }
-      );
+    const fetchImpl: typeof fetch = vi.fn(async (input: RequestInfo | URL) => {
+      const url =
+        typeof input === "string"
+          ? input
+          : input instanceof URL
+            ? input.href
+            : input.url;
+      if (url.includes("example.com/oauth/token")) {
+        return new Response(
+          JSON.stringify({
+            access_token: "access_abc",
+            refresh_token: "refresh_abc",
+            expires_in: 3600
+          }),
+          {
+            status: 200,
+            headers: { "content-type": "application/json" }
+          }
+        );
+      }
+      if (url.includes("oauth2/v2/identity")) {
+        return new Response(
+          JSON.stringify({ data: { type: "user", id: "ws_a_patreon_user" } }),
+          { status: 200, headers: { "content-type": "application/json" } }
+        );
+      }
+      return new Response(`unexpected ${url}`, { status: 404 });
     }) as unknown as typeof fetch;
 
     const { app } = createApp({
@@ -71,11 +86,13 @@ describe("Workstream A happy path", () => {
           encrypted_access_token: string;
           encrypted_refresh_token: string;
           credential_health_status: string;
+          provider_user_id?: string;
         }
       >;
     };
 
     expect(persisted.records.creator_123).toBeDefined();
+    expect(persisted.records.creator_123.provider_user_id).toBe("ws_a_patreon_user");
     expect(persisted.records.creator_123.credential_health_status).toBe("healthy");
     expect(persisted.records.creator_123.encrypted_access_token).not.toContain("access_abc");
     expect(persisted.records.creator_123.encrypted_refresh_token).not.toContain("refresh_abc");

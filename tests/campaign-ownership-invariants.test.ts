@@ -95,10 +95,11 @@ describe("ensureCreatorProfilePatreonCampaignId", () => {
         update
       }
     };
-    await ensureCreatorProfilePatreonCampaignId(prisma as never, {
+    const out = await ensureCreatorProfilePatreonCampaignId(prisma as never, {
       relayCreatorId: "cr_x",
       patreonCampaignId: "777"
     });
+    expect(out).toEqual({ kind: "written", profileId: "cp1" });
     expect(update).toHaveBeenCalledWith({
       where: { id: "cp1" },
       data: { patreonCampaignId: "777" }
@@ -119,9 +120,14 @@ describe("ensureCreatorProfilePatreonCampaignId", () => {
         update
       }
     };
-    await ensureCreatorProfilePatreonCampaignId(prisma as never, {
+    const out = await ensureCreatorProfilePatreonCampaignId(prisma as never, {
       relayCreatorId: "cr_x",
       patreonCampaignId: "222"
+    });
+    expect(out).toEqual({
+      kind: "conflict",
+      existingCampaignId: "111",
+      attemptedCampaignId: "222"
     });
     expect(update).not.toHaveBeenCalled();
   });

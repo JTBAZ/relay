@@ -23,7 +23,7 @@ If the base is duplicated, confirm **Base ID** in the Airtable URL or API before
 | Tracker | Role |
 |---------|------|
 | **Relay Database Tracker** (`AIRTABLE_DB_PIPELINE.md`) | Postgres / Prisma **integration** steps (`1.1.1`, run-NN.md). |
-| **Batting Order** (this base) | **Patron Experience** product schedule — PE lanes, P1–P4 execution order, dual-path checklist. **Do not** mix DB step IDs here. |
+| **Batting Order** (this base) | **Patron Experience** product schedule — PE lanes, P1–P4 execution order, Relay-account-first Patreon link policy + QA checklist. **Do not** mix DB step IDs here. |
 
 ---
 

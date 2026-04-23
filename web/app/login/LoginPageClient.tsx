@@ -143,8 +143,8 @@ function LoginPageInner() {
                 Step 2 — Link your Patreon (after sign-in)
               </p>
               <p className="text-xs leading-relaxed" style={{ color: "#9CA3AF" }}>
-                Once you&apos;re signed in you&apos;ll be taken to the Patreon connect
-                page. Your tiers and feed are synced automatically.
+                Once you&apos;re signed in and your email is verified, you&apos;ll be taken
+                to the Patreon connect page. Your tiers and feed are synced automatically.
               </p>
             </div>
           </section>

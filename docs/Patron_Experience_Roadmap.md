@@ -4,7 +4,7 @@
 >
 > **Companions:** strategic narrative in [`road map.md`](../road%20map.md) Part 3, identity & multi-tenant in [`docs/architecture/multi-tenant-option-b.md`](architecture/multi-tenant-option-b.md), patron OAuth-as-it-exists in [`road map.md`](../road%20map.md) Workstream K table, schema in [`prisma/schema.prisma`](../prisma/schema.prisma).
 >
-> **This doc replaces** the implicit "we'll wire it up later" status of `/api/v1/patron/relay_feed` (currently a fixture-JSON read) and turns Part 3 Workstreams **K, L, M, O** into concrete buildable slices. Workstream **N** (audience monetization) remains deferred per roadmap policy.
+> **This doc** tracks Part 3 Workstreams **K, L, M, O** as concrete slices. Patron feed: DB-backed `assemblePatronFeed` when `RELAY_DB_STORE_IDENTITY` is on; static JSON fixture when the API runs without DB identity (not a separate env flag). Workstream **N** (audience monetization) remains deferred per roadmap policy.
 
 ---
 
@@ -14,14 +14,14 @@
 
 | Domain | Status | Code reference |
 |---|---|---|
-| Patron Patreon OAuth (login + on-login tier sync) | **Working** end-to-end | `src/patreon/patreon-patron-oauth.ts`, `POST /api/v1/auth/patreon/patron/exchange`, `web/app/patreon/patron/connect`, `web/app/patreon/patron/callback` |
+| Patron Patreon link (after Relay sign-in + tier sync on link) | **Working** end-to-end | `src/patreon/patreon-patron-oauth.ts`, `POST /api/v1/auth/patreon/patron/link` (session required); legacy `POST .../patron/exchange` rollback-only; `web/app/patreon/patron/connect`, `web/app/patreon/patron/callback` |
 | Multi-tenant identity (Account + TenantMembership) | **Working** (Option B, MT-031) | `prisma/schema.prisma` (Account, TenantMembership), `src/identity/patron-auth-context.ts` |
 | `PatronEntitlementSnapshot` materialized on OAuth | **Working** (`source = oauth_exchange`, `staleAfter` 6h default) | `src/identity/patron-entitlement-snapshot.ts` |
 | Per-creator favorites + collections (file & DB stores, validated) | **Working** API + DB | `src/gallery/patron-favorites-store*.ts`, `src/gallery/patron-collections-store*.ts`, `/api/v1/patron/favorites`, `/api/v1/patron/collections*` |
 | Patron permission/entitlement health endpoints | **Working** | `/api/v1/patron/permission/post`, `/api/v1/patron/entitlements/health` |
 | Patron cross-tenant introspection | **Working** | `/api/v1/me/patron-auth` |
-| `/login?role=supporter` tab | **Working**, Patreon-only path | `web/app/login/LoginPageClient.tsx` |
-| Patron shell UI (feed/sidebar/discover/gallery/command-palette/profile) | **Working** with fixtures, has `live` toggle | `web/components/patron-mock/relay/relay-app.tsx`, `web/lib/patron-feed-api.ts` |
+| `/login?role=supporter` tab | **Working** — Relay sign-in first; Patreon is linked afterward, not as sole account creation | `web/app/login/LoginPageClient.tsx` |
+| Patron shell UI (feed/sidebar/discover/gallery/command-palette/profile) | **Working** — `live` uses `GET /api/v1/patron/feed`; mock uses fixtures | `web/components/patron-mock/relay/relay-app.tsx`, `web/lib/patron-feed-api.ts` |
 | `relay_active_role` cookie + `defaultActiveRoleForAccount` | **Working** | `src/identity/active-role-default.ts`, `src/identity/set-active-role-cookie-for-session.ts` |
 | Patreon `members:*` webhook event detection | **Detection only** | `src/webhooks/patreon-webhook.ts` |
 | Schema stubs for full patron domain | **Schema-only** (no app wiring) | `PatronFollow`, `FeedCursor`, `NotificationPreference`, `PatronOAuthCredential`, `Comment`, `DiscoveryDecisionLog` |
@@ -30,7 +30,7 @@
 
 | Gap | Today | Required |
 |---|---|---|
-| **Real feed assembly** | `GET /api/v1/patron/relay_feed` reads `web/lib/patron-relay-feed-bundle.json` fixture | DB join: `PatronFollow` × `Post` × `PostOverride` × `PatronEntitlementSnapshot`, paginated via `FeedCursor` |
+| **Feed assembly (remaining polish)** | DB path **shipped** (`assemblePatronFeed`, cursors, filters); fixture only if API has no DB identity | P95, cache policy, deeper degraded-edge cases per `entitlement-degraded.ts` |
 | **Follow graph endpoints** | Schema only (`PatronFollow` is creator-scoped) | Routes for follow/unfollow/list **and** generalize to follow other Accounts (supporters) |
 | **Initial follow seeding from Patreon memberships** | Manual/none | Job that auto-creates `PatronFollow` rows for entitled creators present on Relay |
 | **Webhook → patron entitlement refresh** | Member events detected, not wired to snapshots | `members:create/update/delete` enqueues snapshot refresh for affected `(creator, patron_user_id)` |
@@ -80,6 +80,61 @@ These are the answers from the two scoping rounds. Treat as authoritative unless
 | D23 | **Weekly digest emails** | Never (per current product stance). In-app notifications tray is the answer for "what's new". |
 | D24 | **Tier-change in-app notifications** | Yes — surface as in-app notification (no email) whenever entitlement refresh detects an upgrade, downgrade, or cancel. Wording differentiates ("You now have Tier 2 access to X" vs "Your Tier 2 access to X ended"). |
 | D25 | **Comment-like notification cadence** | Cluster per-comment **and** per-time-window: roll up all likes on the same comment within a 1h sliding window into a single notification ("5 people liked your comment"). Window resets after notification is delivered. |
+| D26 | **Comment anchoring** | Comments are **literally coordinate-pinned** to a `MediaAsset`. Schema carries optional `mediaId` + decimal `anchorX` / `anchorY` (0–100 percent). Comments without a `mediaId` are post-level (no pin). UI contract is the existing `PositionalComment` shape in `web/lib/relay-fixtures.ts` and `web/components/patron-mock/relay/comment-pin.tsx`. |
+| D27 | **Comments carry tags** | Patrons may attach tags to comments. Tags **share the same tag namespace** as artist post tags and are **functionally identical** (search, facets, recommendation graph) until revoked. Owner of the post can revoke a single tag (`Comment.tagsRevokedByOwnerAt` + the existing `add_tag_ids` / `remove_tag_ids` override pipeline). Patron-supplied tags are mirrored into `TagSuggestion` rows with `source = "patron_comment"` so confidence accumulates per `(media, tag)`. |
+| D28 | **Community-tag visibility tiers** | (a) **MVP — P2:** community tags display in a collapsible "Community tags" surface visually distinct from artist chips; collapsed by default; functional in search/algos as soon as added; revocable per tag by owner. (b) **Polish — later:** per-creator setting "Allow community tags to display publicly" — when off, tags still feed algorithms privately. (c) **Aspirational — PE-N era or later:** booru-style upvote / contributor reputation; promote high-confidence tags to a "Verified community" lane. |
+| D29 | **Collected piece visibility = live recheck** | A previously-saved post/media is re-evaluated against the **viewer's current entitlement snapshot** at render time. If the viewer's tier lapses, the saved item blurs / locks. **No frozen-snapshot grant.** Encourages retention. Replaces earlier plan to use `PatronSavedCollectionEntry.snapshotTierId` as a permanent gate; that field becomes historical metadata only (`snapshotTierIds: String[]`, "you had access via tier X when you saved this") and is not consulted for access decisions. |
+| D30 | **Tip-to-unlock contract** | Per-(account, post) **time-boxed access** with **no downloads**. New model `MediaUnlock { accountId, postId, grantedAt, expiresAt, paymentRef }`. Redaction layer must support a fourth viewer-entitlement state `unlockable`. Time window TBD per artist (default likely 7–14 days). Tip-unlock never grants export rights. |
+| D31 | **Tip-Post derivation = eager spin-off** | When an artist designates a single `MediaAsset` within a multi-piece Post as a "Tip Post," the system **immediately materializes a derived Post** wrapping just that asset (its own stable `post_id`, links back to source post via `derivedFromPostId`). Predictable IDs, single tip-unlock surface, easier analytics. Whole-post promo is the same primitive without spin-off. |
+| D32 | **Magnet Folder query language** | Boolean filters: `tag` AND/OR/NOT, time window, artist set (include / exclude / "creators I do/don't already support"), tier or price cap (`free` / `<$N`). Same parser powers Discover (PE-F) and Magnet Folders (PE-N). Eventually expandable from "find me posts" to "find me whole campaigns." |
+| D33 | **Magnet Folder semantics = push** | Folder evaluator **materializes entries** into a per-folder, per-user list (`MagnetFolderEntry { folderId, postId, mediaId?, matchedAt, isUnreadAt? }`) so the UI can show unread badges and a stable scrollable feed. Stateless re-query (pull) was rejected — push gives DAU-return mechanics. |
+| D34 | **Similarity scoring is hidden infra; "more like this" is the user-visible surface** | Co-collection edges accumulate behind the scenes (`MediaSimilarityEdge`, `ArtistSimilarityEdge`). The graph is **never shown to users** as a network or score. The only consumer surface is a `GET /patron/similar?to=...` endpoint feeding a "More like this…" carousel on post / collection pages. |
+| D35 | **Search engine is the canonical kernel** | The library tag-search engine in `src/gallery/query.ts` (free-text AND-tokens across title/tags/description/theme tags/ids; faceting; filter set; cursor pagination) is the **single canonical search engine**. PE-F (Discover) and PE-N (Magnet Folders) **wrap or extract from it** — they do not re-implement. Documented in [`docs/architecture/SEARCH_AND_TAGS_SHARED_KERNEL.md`](architecture/SEARCH_AND_TAGS_SHARED_KERNEL.md). |
+| D36 | **Comments stay visible behind a Tip-to-unlock blur** | When a post is in `viewerEntitlement: 'unlockable'` (D30 / PE-L), the **comment thread + tags render in full alongside the blurred media** — no auth gate on the comment list for unlockable posts. Rationale: it kills the "black box" feel that suppresses tip conversion; visible chatter + community tags act as social proof and let a curious viewer judge whether the asset is worth the tip. A `'locked'` post (no unlock path at all) keeps comments hidden as today. **Consequences for PE-E listing logic:** `GET /patron/posts/:post_id/comments` must accept the unlockable-but-not-entitled case as a permitted read path, gated by a live re-check of the post's viewer-entitlement decision rather than the existing tier-membership check alone. Tier-gated comments (`Comment.requiredTierId` set, D12) remain hidden in this state — only `visibility = everyone` comments leak through the blur. **Status:** schema slot reserved, runtime read-gate **not yet implemented** (PE-L is stretch); add the carve-out at the same time `MediaUnlock` lands so the contract ships atomically. |
+
+---
+
+## 2.5 Cross-cutting product primitives (vision-locked)
+
+These five primitives are referenced by multiple workstreams. They are written here once so the workstream sections (§4) can cite them by name without re-deriving the contract.
+
+### 2.5.1 Comments are coordinate-pinned, tag-bearing, owner-revocable
+
+- **Anchor.** `Comment.mediaId?` (nullable — null = post-level), plus `Comment.anchorX?` / `Comment.anchorY?` (decimal 0–100 percent of the rendered media's natural box). UI contract = the existing `PositionalComment` shape.
+- **Tags.** `Comment.tagIds: String[]` and a mirror `TagSuggestion` row per `(media, tag, source = "patron_comment")` so confidence accumulates across patrons.
+- **Two distinct "pin" concepts** (must not collide):
+    - **Coordinate pin** = `anchorX` / `anchorY` set on a comment. The dot-on-the-art UX.
+    - **Sticky / featured** = `Comment.creatorPinnedAt?` set by the creator. The "pin to top of thread" UX.
+- **Revocation.** `Comment.tagsRevokedByOwnerAt?` strips the comment's tag contributions from search/algos but leaves the comment body. Reuses the same `add_tag_ids` / `remove_tag_ids` override pipeline already proven in `effectiveTags` / `applyMediaRowTagDelta`.
+- **Edge cases:** patron unsubs → comment + tag persist (metadata is contributed once); comment deleted → tag contribution revokes (no orphan tags pointing at a deleted comment).
+
+### 2.5.2 Collected pieces use live entitlement re-check (no snapshot freeze)
+
+- The save / collection action records **what existed when** (post id, media id, `snapshotTierIds[]` for historical reference) but **all access decisions** at render time go through the viewer's current `PatronEntitlementSnapshot` against the source post's `tier_ids`.
+- Lapsed tier → collected item renders as `blurred` (or `unlockable` once tip-to-unlock ships) with the existing upgrade-CTA pattern.
+- This keeps PE-D's render shape: `viewerEntitlement: 'visible' | 'preview' | 'unlockable' | 'locked'`. The `unlockable` slot is reserved from day one even though it's dormant until PE-L ships.
+
+### 2.5.3 Tip-to-unlock = time-boxed access, no downloads, eager Post-derivation
+
+- New model `MediaUnlock { accountId, postId, grantedAt, expiresAt, paymentRef }`. One row per active grant.
+- The redaction layer (`patronMayFetchMediaExport` + `redactGalleryItemExportIfLocked`) gains a third state: `entitled` / `unlockable` / `not_entitled`. Tip-unlocked patrons get viewing access but the export route still **denies download** (no asset transfer to client storage).
+- An artist's "Tip Post" designation creates a derived Post via the eager spin-off pattern (D31) — even when the source is a single MediaAsset inside a larger comic. The derived Post owns its own promo lifecycle, analytics, and unlock receipts without disturbing the parent post.
+- Expiry worker (BullMQ) sweeps `MediaUnlock.expiresAt < now()` and emits `tip_unlock.expired` events for PE-G.
+
+### 2.5.4 Similarity graph is hidden infra; "more like this" is the visible product
+
+- Worker (consumes `outbox_events`): on `patron_collection.entry_added`, increment `MediaSimilarityEdge { mediaA, mediaB, weight, lastBumpedAt }` and `ArtistSimilarityEdge { creatorA, creatorB, weight, lastBumpedAt }` for each pair already in the same collection.
+- Decay: weights decay logarithmically over time so stale signals don't dominate.
+- **No user-facing graph or score**. The only consumer is `GET /patron/similar?to={postId|mediaId}` returning a recency-bounded, fairness-capped list of related items, used by a "More like this…" carousel. Recommendation engine code reads from this graph; UI never reveals weights.
+
+### 2.5.5 Magnet Folders = boolean-filter saved searches with push entries
+
+- Boolean grammar (D32): `tag:foxes AND NOT tag:nsfw price:<5 from:not_already_supporting after:2026-01-01`. Same parser as PE-F Discover.
+- Models: `MagnetFolder { ownerAccountId, name, criteriaJson, isPremiumGated, lastEvaluatedAt }`, `MagnetFolderEntry { folderId, postId, mediaId?, matchedAt, isUnreadAt? }`.
+- Evaluator: cron + reactive on new posts (consumes `post.published` outbox events). Backfill on folder creation runs the criteria once over the existing catalog.
+- Premium gate (per `isPremiumGated`) — exact entitlement check TBD when monetization lands.
+- Notification: emits `magnet_folder.matched` per new entry; PE-G clusters per-folder per-day to avoid spam.
+- Eventually extends from "find me matching posts" to "find me matching whole campaigns" — the criteria parser reused for creator-discovery.
 
 ---
 
@@ -93,8 +148,11 @@ These are the answers from the two scoping rounds. Treat as authoritative unless
 |---|---|---|
 | **Generalize follow target** | `PatronFollow` → drop dependency on `relay_creator_id` only; add discriminated `subjectKind` (`creator` \| `supporter`) and either `subjectAccountId` (for supporter follows) or keep `relayCreatorId` (for creator follows). Or introduce a sibling `AccountFollow` model and keep `PatronFollow` for creator-follows — **recommended** to preserve existing index patterns. | D5 |
 | **Add supporter profile fields** | `PatronProfile` → add `handleNorm` `@unique`, `displayName`, `bio`, `avatarUrl`, `isPublic` (`Boolean @default(true)`), `bannerUrl?`. | D11 |
-| **Cross-creator favorites/collections** | `PatronFavorite`, `PatronSavedCollection(Entry)` → keep `creatorId` as a denorm for index/RLS but allow store layer to query across creators. Add `PatronSavedCollection.isPublic`, `PatronSavedCollectionEntry.snapshotTierId` (so we know the gate even if creator deletes the post later). | D9, D10 |
-| **Comment visibility & threading** | `Comment` → add `visibility` enum (`follow_only` \| `tier_only` \| `public`), `requiredTierId?`, `parentCommentId?` (self-relation), `pinnedAt?`, `editedAt?`. | D7 |
+| **Cross-creator favorites/collections** | `PatronFavorite`, `PatronSavedCollection(Entry)` → keep `creatorId` as a denorm for index/RLS but allow store layer to query across creators. Add `PatronSavedCollection.isPublic`. **Replace** earlier plan for `PatronSavedCollectionEntry.snapshotTierId` (frozen-grant) with `PatronSavedCollectionEntry.snapshotTierIds: String[]` (historical reference only — access decisions are live re-check per D29). Same change applies to `PatronFavorite`. | D9, D10, D29 |
+| **Comments are coordinate-pinned, tag-bearing** | `Comment` → add `visibility` enum (`follow_only` \| `tier_only` \| `public`), `requiredTierId?`, `parentCommentId?` (self-relation), `creatorPinnedAt?` (renamed from earlier `pinnedAt?` to disambiguate from coordinate pin), `editedAt?`, **`mediaId?`** (FK → `MediaAsset`, null = post-level), **`anchorX?` / `anchorY?`** (`Decimal @db.Decimal(5,2)` 0–100), **`tagIds: String[]`**, **`tagsRevokedByOwnerAt?`**. Patron-supplied tags mirror into `TagSuggestion` rows with `source = "patron_comment"`. | D7, D26, D27 |
+| **Tip-to-unlock (P3+ stretch lane PE-L)** | New `MediaUnlock { id, accountId, postId, grantedAt, expiresAt, paymentRef, createdAt, @@unique([accountId, postId, expiresAt]) }`. New `Post.derivedFromPostId?` (FK self) for the eager spin-off pattern. | D30, D31 |
+| **Similarity graph (stretch lane PE-M)** | New `MediaSimilarityEdge { mediaA, mediaB, weight, lastBumpedAt, @@id([mediaA, mediaB]) }` and `ArtistSimilarityEdge` parallel. Hidden infra — never exposed in viewer responses. | D33 |
+| **Magnet Folders (stretch lane PE-N)** | New `MagnetFolder { id, ownerAccountId, name, criteriaJson, isPremiumGated, lastEvaluatedAt, createdAt }` and `MagnetFolderEntry { folderId, postId, mediaId?, matchedAt, isUnreadAt? }`. | D32 |
 | **Comment likes** | New `CommentReaction` (commentId, accountId, createdAt; `@@unique([commentId, accountId])`). | D12 (`comment_liked`) |
 | **Notifications storage** | New `Notification` (id, recipientAccountId, eventType, payloadJson, createdAt, readAt?, dismissedAt?, clusterKey?). Plus extend `NotificationPreference` with the v1 event types as a Postgres enum or string-validated set. | D12 |
 | **Reports & moderation queue** | New `ContentReport` (id, reporterAccountId, targetKind=`comment`/`post`/`profile`, targetId, reason, status, createdAt, resolvedAt?, resolutionNote?). New `ModerationAction` (id, actorKind=`creator`/`relay_admin`/`automod`, action=`hide`/`delete`/`warn`/`ban`, targetKind/Id, createdAt, note?). | D8 |
@@ -176,12 +234,12 @@ This is layered defense: webhook covers the 99% case in real-time; worker covers
 
 ### PE-B — Real DB-backed feed assembly
 
-- Replace `loadPatronRelayFeedBundleFromRepo` with `assemblePatronFeed(accountId, cursor, filter)`
-- Query: `PatronFollow` for `accountId` × `Post` (filter by `creator_id IN follows`) × `PostOverride` (visibility) × entitlement-aware tier filter using `PatronEntitlementSnapshot`. Order by `Post.createdAt DESC`, paginate via `FeedCursor`.
-- Filters: `all`, `following`, `free`, `photos`, `audio`, `writing` (matches existing UI chips)
-- Cache: per-cursor 60s with `private, no-store` upstream
-- Fallback: when entitlement snapshot stale **and** Patreon unreachable, mark items `degraded` (existing `entitlement-degraded.ts` pattern)
-- Acceptance: feed renders real posts, zero unauthorized tier content (security test), P95 < 500ms for patron with 50 follows
+- **Shipped:** `assemblePatronFeed` in `src/patron/assemble-patron-feed.ts`; `GET /api/v1/patron/feed` + `relay_feed` (see `handlePatronFeedGet`). `loadPatronRelayFeedBundleFromRepo` remains **only** when DB identity store is off (no `RELAY_PATRON_FEED_FIXTURE` env).
+- Query: `PatronFollow` × `Post` × `PostOverride` × `PatronEntitlementSnapshot`, ordered and paginated via `FeedCursor`.
+- Filters: `all`, `following`, `free`, `photos`, `audio`, `writing` (server `filter` query param; UI chips).
+- Cache: `private, no-store` on feed responses today; optional future per-cursor TTL.
+- Fallback: entitlement stale / degraded contract via existing `entitlement-degraded.ts` patterns.
+- **Remaining acceptance tuning:** P95 targets, security regression suite, any extra degraded UX.
 
 ### PE-C — Follow graph (creators + supporters)
 
@@ -193,20 +251,28 @@ This is layered defense: webhook covers the 99% case in real-time; worker covers
 
 ### PE-D — Cross-creator favorites & collections + viewer-aware render
 
+> **Cross-cutting primitive:** D29 (live re-check, not snapshot freeze). See §2.5.2.
+
 - Store-layer: drop `creator_id` query partitioning constraint while keeping it as a denorm. Add `listAllForUser(accountId)` methods.
-- Add `PatronSavedCollection.isPublic`
-- New render contract: every favorite/collection-entry response includes `viewerEntitlement: 'visible' | 'blurred' | 'hidden'` computed against the **viewer's** entitlement snapshot for the source creator
-- UI: when `blurred`, show teaser + tier badge + "Upgrade on Patreon" deep link
-- Validation: `validatePatronFavoriteTarget` extends to confirm the favoriter had access **at time of favoriting** (snapshot stored on entry)
-- Acceptance: Supporter A collects a Tier-3 post from Creator X. Supporter B (viewing A's profile) is a Tier-1 patron of X — sees a blurred placeholder with upgrade CTA. Supporter C (no relationship to X) sees the same blurred placeholder.
+- Add `PatronSavedCollection.isPublic`. Replace planned `snapshotTierId` (single, gate-freezing) with `snapshotTierIds: String[]` — historical reference only.
+- New render contract: every favorite/collection-entry response includes `viewerEntitlement: 'visible' | 'preview' | 'unlockable' | 'locked'` computed **live** against the **viewer's current** `PatronEntitlementSnapshot` for the source creator. The `unlockable` slot is dormant until PE-L (tip-to-unlock) ships but is reserved in the API shape from day one.
+- UI: when `locked`, show teaser + tier badge + "Upgrade on Patreon" deep link. When `unlockable` (post-PE-L), show "Tip to unlock" CTA. `preview` covers free-tier glimpses where the post explicitly allows it.
+- Validation: `validatePatronFavoriteTarget` confirms the favoriter has access at favorite-time (snapshot stored as `snapshotTierIds[]` for forensics) but **does not gate** future viewing — that's the live recheck's job.
+- Acceptance: Supporter A collects a Tier-3 post from Creator X. Two months later A's Tier-3 lapses → A's own collection view of that piece blurs with upgrade CTA. Supporter B (Tier-1 patron of X) sees the same blurred placeholder. Supporter C (no relationship to X) sees the same blurred placeholder. After A re-pledges Tier-3, the same collected entry returns to `visible` without any user action.
 
 ### PE-E — Comments + moderation + reactions
 
-- Schema delta per §3.1
+> **Cross-cutting primitives:** D26 (coordinate-pinned), D27 (tag-bearing), D28 (community-tag visibility tiers). See §2.5.1.
+
+- Schema delta per §3.1 — including `mediaId?`, `anchorX?` / `anchorY?`, `tagIds: String[]`, `tagsRevokedByOwnerAt?`, and `creatorPinnedAt?` (renamed from `pinnedAt?` to disambiguate from coordinate pin).
+- **Coordinate pinning (D26)**: composer captures click coordinates relative to the rendered media's natural box and stores as `(anchorX, anchorY)` in 0–100 percent decimals. Renderer is the existing `<CommentPin />` in `web/components/patron-mock/relay/comment-pin.tsx`; live wire replaces fixture data.
+- **Comment tags (D27)**: composer accepts a tag chip input. On `POST /posts/:postId/comments`, every tag is also written to a `TagSuggestion` row with `source = "patron_comment"` and `confidence` derived from distinct contributor count for the same `(media, tag)` pair. These rows feed the same search facets as artist-supplied tags.
+- **Community tag UI (D28 — MVP slice)**: separate "Community tags" surface on the post / media detail view, collapsed by default, visually distinguished from artist chips. Functional in search and recommendation graph from the moment they're added (no waiting for upvotes).
+- **Owner revocation**: artist control on their own posts to strike a single tag from a single comment → sets `tagsRevokedByOwnerAt` and removes the contribution from `effectiveTags` via the existing `add_tag_ids` / `remove_tag_ids` override pipeline. Comment body remains unless deleted.
 - **Auto-mod (D22, hand-rolled v1)**: per-Account rate limits 5/min and 50/day, length cap (configurable, default 2000 chars), URL count cap (default 2), word block-list, URL-domain block-list. All limits + lists in env/config. No external API calls. 429 with `Retry-After` on rate trip.
 - Visibility enforcement at query time (use viewer's entitlement context)
 - Threading: 1 level of replies (`parentCommentId`), no infinite nesting in v1
-- Pin (creator on their post)
+- Pin (creator on their post → `creatorPinnedAt`)
 - **Edit window (D15)**: own comments editable for 15 minutes from `createdAt`. After window, edit endpoint returns 403 — only delete remains. Every successful edit sets `editedAt` and is shown with an "edited" marker in the UI.
 - Soft-delete via `modState`
 - Likes: `CommentReaction` table + endpoints
@@ -214,6 +280,7 @@ This is layered defense: webhook covers the 99% case in real-time; worker covers
 - **Appeals (D17)**: none in v1. Moderation-action notice (in-app + email) includes a `support@` mailto for disputes. No formal appeal endpoint; revisit if support volume warrants.
 - **Block (D14, future-only)**: `AccountBlock` filters new comments and new follow attempts from blocker→blocked. Historical comments by the blocked user remain visible to preserve thread context. The blocked user's existing follow of the blocker is dropped; new follow attempts return 403. Documented clearly in the block confirmation UI so users aren't surprised.
 - UI: comment composer + thread renderer in `gallery-view.tsx`; counts on `feed-card.tsx`
+- **Comments-behind-blur for Tip-to-unlock (D36, deferred to PE-L):** the comment list endpoint is currently gated by the standard tier check. When PE-L lands, the listing handler must also accept the unlockable-but-not-entitled state and return `visibility = everyone` comments + their tags. This is intentionally **not** wired in PE-E — the schema is ready, but the runtime carve-out depends on `MediaUnlock` existing so a viewer-entitlement decision can resolve to `'unlockable'`. Tracking via D36; see PE-L acceptance criteria.
 - Acceptance: creator can hide a comment on their post; Relay admin can ban an Account; blocking another supporter prevents their new comments and follows but leaves their old comments visible; rate-limit 429 surfaces gracefully; comment edited within 15 min shows "edited" marker; comment edit attempted at 16 min returns 403.
 
 ### PE-F — Discovery v1 (opt-in grid) → v2 (ranked Browse)
@@ -267,6 +334,42 @@ This is layered defense: webhook covers the 99% case in real-time; worker covers
 - `/p/[handle]` public route + SEO basics
 - Empty/error/loading states audited per `docs/qa/UX_ACCEPTANCE_GUARDRAILS.md`
 
+### PE-L — Tip-to-unlock (stretch)
+
+> **Cross-cutting primitive:** D30, D31. See §2.5.3. Phase: Stretch (post-P4).
+
+- Schema: `MediaUnlock` + `Post.derivedFromPostId?` (§3.1).
+- Artist-side: studio UI lets a creator mark up to N (e.g. 10) MediaAssets as "Promo / Tip-to-unlock." On mark, system eagerly creates a derived Post wrapping just that asset, copying tags / visibility, and links via `derivedFromPostId`. Whole-post tip-promo skips spin-off and operates directly on the source post.
+- Patron-side: locked card with `viewerEntitlement: 'unlockable'` shows tip price + "Tip to unlock for N days" CTA. On payment success, insert `MediaUnlock` and surface as `visible` (no download).
+- Redaction: `redactGalleryItemExportIfLocked` extends to honor `MediaUnlock` as a viewing-only grant; `patronMayFetchMediaExport` keeps returning `403` for tip-unlocked media (no asset transfer).
+- Worker: BullMQ repeatable sweep `MediaUnlock.expiresAt < now()` → mark expired, emit `tip_unlock.expired` outbox event for PE-G.
+- **Comments-behind-blur (D36):** when this lane lands, also patch PE-E's `GET /api/v1/patron/posts/:post_id/comments` so it allows the comment fetch when the post is in `viewerEntitlement: 'unlockable'` even if the caller fails the normal tier check. Comments + community tags are part of the tip-conversion surface, not gated content. Tier-gated comments (`Comment.requiredTierId`) still stay hidden. Without this carve-out the unlockable card looks like a black box and tip conversion suffers.
+- Acceptance: artist marks a Tier-3 single page as a Tip Post → derived Post appears in the catalog; an unsubscribed patron can pay the tip, view the page for the configured window, **cannot** download the export, and loses access cleanly when the window expires. Before paying, the patron sees the blurred asset **alongside the live comment thread + community tags** (D36).
+
+### PE-M — Similarity / "more like this" (stretch)
+
+> **Cross-cutting primitive:** D33. See §2.5.4. Phase: Stretch (post-P4).
+
+- Schema: `MediaSimilarityEdge`, `ArtistSimilarityEdge` (§3.1).
+- Worker: subscribe to `patron_collection.entry_added` outbox events. For each new entry, increment edge weights for every other media currently in the same collection; do the same at the artist level.
+- Decay: nightly job applies logarithmic decay to `weight` based on `lastBumpedAt` so cold edges fade.
+- API: `GET /patron/similar?to={postId|mediaId}&limit=` → recency-bounded, fairness-capped list (no creator dominates a single response). Pure read endpoint, viewer-entitlement-aware (filters out items the viewer cannot even preview).
+- UI: "More like this…" carousel on post detail and on collection detail. **No graph, no scores, no user-facing weight UI** — just a list of related items.
+- Acceptance: when 50+ patrons have collected piece A and piece B together, `GET /patron/similar?to=A` returns B near the top; entitlement filters apply; UI never exposes the underlying weight.
+
+### PE-N — Magnet Folders (stretch, premium)
+
+> **Cross-cutting primitive:** D32, D33. See §2.5.5. Phase: Stretch (post-P4).
+
+- Schema: `MagnetFolder`, `MagnetFolderEntry` (§3.1).
+- Premium gate: `MagnetFolder.isPremiumGated = true` is a hard requirement until monetization details land; gate at API layer with a feature-flag fallthrough for internal testing.
+- Criteria parser: shared with PE-F Discover. Boolean grammar per D32 (`tag` AND/OR/NOT, time window, artist set, tier or price cap).
+- Evaluator: (a) BullMQ repeatable cron — every N minutes, re-evaluate folders whose `lastEvaluatedAt` is stale; (b) reactive — subscribe to `post.published` outbox events and run new posts against active folders for sub-minute push.
+- Backfill: on folder creation, run criteria once over the existing eligible catalog so the folder isn't empty.
+- UI: dedicated `/patron/magnets` route (premium-gated). Each folder is a feed-like surface with unread badges (`isUnreadAt` per entry) so DAU has reason to return.
+- Notification: emits `magnet_folder.matched` per new entry; PE-G clusters per-folder per-day to avoid spam.
+- Acceptance: a premium patron creates a folder `tag:foxes AND price:<5 AND from:not_already_supporting`; backfill seeds the folder; a new matching post published 10 minutes later appears in the folder within 60s with an unread badge; a clustered "3 new matches in 'Cheap fox content'" notification arrives.
+
 ---
 
 ## 5. Phasing — Option A (chosen)
@@ -284,6 +387,7 @@ Each phase ships a complete, releasable layer. Easier to QA, lower regression ri
 | **P3 — Discovery v1 + Notifications** | PE-F (v1), PE-G | 4–6 | Opt-in discover grid is live. Notification system covers all v1 events. |
 | **P4 — Polish, dual-role, privacy** | PE-I, PE-J, PE-K (rest) | 3–5 | Dual-role shell production-ready; data export + deletion shipped; UX guardrails pass. |
 | **P5 (post-MVP)** | PE-F (v2 ranked Browse), audience monetization (Workstream N) | TBD | Defer until baseline DAU + engagement telemetry justify. |
+| **Stretch (post-P4 / opportunistic)** | PE-L (Tip-to-unlock), PE-M (Similarity infra + "more like this"), PE-N (Magnet Folders, premium) | TBD | Schema slots reserved in P2 (see §3.1) so the engagement layer doesn't have to be re-cut. Picked up after P4 stabilizes — or earlier if a single lane unlocks an obvious revenue / retention win. |
 
 **Pro:** Each phase is shippable to pilot users. P1 alone unlocks the majority of "the page actually works with real data" value. **Con:** Longer total wall-clock until full feature parity with the mock UI; some intermediate states (P1 with no comments) feel incomplete.
 

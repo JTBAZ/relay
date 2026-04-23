@@ -432,6 +432,32 @@ export function pickDefaultCampaignId(doc: JsonApiDocument): string | null {
   return null;
 }
 
+/** Campaign resource ids from Patreon's GET /api/oauth2/v2/campaigns top-level `data`. */
+export function campaignIdsFromCampaignsDoc(doc: JsonApiDocument): string[] {
+  const list = asDataArray(doc.data);
+  return list.filter((r) => r.type === "campaign").map((r) => String(r.id));
+}
+
+/**
+ * Error when `pickDefaultCampaignId` fails: distinguishes **zero** campaigns (wrong token / patron-only)
+ * from **multiple** campaigns (true ambiguity). Previously both surfaced as “multiple campaigns.”
+ */
+export function patreonCampaignListResolutionErrorMessage(doc: JsonApiDocument): string {
+  const ids = campaignIdsFromCampaignsDoc(doc);
+  if (ids.length === 0) {
+    return (
+      "Patreon returned no creator campaigns for this OAuth token. " +
+      "Use a creator account with the correct scopes, reconnect Patreon from the studio, or pass campaign_id."
+    );
+  }
+  const preview = ids.slice(0, 5).join(", ");
+  const ellipsis = ids.length > 5 ? ", …" : "";
+  return (
+    `Multiple Patreon campaigns (${ids.length}: ${preview}${ellipsis}). ` +
+    "Pass campaign_id (numeric id from the Patreon creator dashboard URL), or set NEXT_PUBLIC_RELAY_PATREON_CAMPAIGN_ID."
+  );
+}
+
 export function buildSyncBatchFromParts(
   creatorId: string,
   campaign: IngestCampaign,

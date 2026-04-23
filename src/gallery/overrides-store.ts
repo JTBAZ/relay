@@ -25,6 +25,15 @@ export interface GalleryOverridesStore {
     creatorId: string,
     entries: { post_id: string; media_id: string; visibility: PostVisibility }[]
   ): Promise<void>;
+  /**
+   * PE-F (BO-P3-01) — opt a post in/out of `/patron/discover`. Always applied at the
+   * post-level row (mediaId=""); per-media rows ignore the flag.
+   */
+  setDiscoveryEligible(
+    creatorId: string,
+    postId: string,
+    eligible: boolean
+  ): Promise<void>;
 }
 
 /** Used by `overrides-store-db` when flattening per-asset rows. */
@@ -221,6 +230,28 @@ export class FileGalleryOverridesStore implements GalleryOverridesStore {
       existing.media = media;
       root.creators[creatorId].posts[postId] = existing;
     }
+    await this.save(root);
+  }
+
+  public async setDiscoveryEligible(
+    creatorId: string,
+    postId: string,
+    eligible: boolean
+  ): Promise<void> {
+    const root = await this.load();
+    if (!root.creators[creatorId]) {
+      root.creators[creatorId] = { posts: {} };
+    }
+    const existing = root.creators[creatorId].posts[postId] ?? {
+      add_tag_ids: [],
+      remove_tag_ids: []
+    };
+    if (eligible) {
+      existing.discovery_eligible = true;
+    } else {
+      delete existing.discovery_eligible;
+    }
+    root.creators[creatorId].posts[postId] = existing;
     await this.save(root);
   }
 }

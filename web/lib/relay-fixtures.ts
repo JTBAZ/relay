@@ -38,8 +38,13 @@ export interface FeedPost {
   excerpt: string;
   description?: string; // Full description for gallery view
   mediaType: MediaType;
+  /** Primary asset MIME from API (`MediaAsset.current_mime_type`); distinguishes GIF vs raster, video, etc. */
+  primaryMimeType?: string | null;
+  /** Optional video poster (future / ingest); absolutized like other `/api/` paths. */
+  posterImageUrl?: string | null;
+  /** Card thumbnail: unblurred `/content` for images; omitted for video without poster. */
   coverImageUrl?: string;
-  highResImageUrl?: string; // High-res version for gallery
+  highResImageUrl?: string; // Playback URL: full export `/content`
   /** Full gallery set — when multiple URLs, zoom shows a stacked deck (wheel to cycle). */
   galleryImageUrls?: string[];
   publishedAt: string;

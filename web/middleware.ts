@@ -44,6 +44,85 @@ function isAppRoute(path: string): boolean {
   return APP_ROUTES.some((re) => re.test(path));
 }
 
+/**
+ * Narrow dev-only carve-out: `/patron/library?state=...` is the BO-P2-02 skeletal-UI
+ * design fixture entry point. When the patron-feed dev tools flag is on, allow
+ * unauthenticated viewing so designers/QA can inspect the gated states without a session.
+ * Production builds never set this flag, so the route stays auth-gated.
+ */
+function isPatronLibraryDevFixture(path: string, search: URLSearchParams): boolean {
+  if (path !== "/patron/library") return false;
+  if (!search.has("state")) return false;
+  const flag =
+    (process.env.NEXT_PUBLIC_RELAY_PATRON_FEED_DEV_TOOLS ?? "")
+      .toString()
+      .toLowerCase();
+  return flag === "true";
+}
+
+/**
+ * PE-E (BO-P2-04) — sibling carve-out for `/patron/feed?state=...`. Lets designers/QA review
+ * the live-wired comment surface (mixed thread, empty, error, moderating, auto-mod-blocked)
+ * without an authenticated session. Same flag-gated pattern as the library fixture.
+ */
+function isPatronFeedDevFixture(path: string, search: URLSearchParams): boolean {
+  if (path !== "/patron/feed") return false;
+  if (!search.has("state")) return false;
+  const flag =
+    (process.env.NEXT_PUBLIC_RELAY_PATRON_FEED_DEV_TOOLS ?? "")
+      .toString()
+      .toLowerCase();
+  return flag === "true";
+}
+
+/**
+ * PE-F (BO-P3-02) — sibling carve-out for `/patron/discover?state=...`. Same flag-gated
+ * pattern; lets design/QA review the Discover grid states (mixed / empty / error / searched)
+ * without seeded backend rows.
+ */
+function isPatronDiscoverDevFixture(path: string, search: URLSearchParams): boolean {
+  if (path !== "/patron/discover") return false;
+  if (!search.has("state")) return false;
+  const flag =
+    (process.env.NEXT_PUBLIC_RELAY_PATRON_FEED_DEV_TOOLS ?? "")
+      .toString()
+      .toLowerCase();
+  return flag === "true";
+}
+
+/**
+ * PE-G (BO-P3-04) — sibling carve-out for `/patron/notifications?state=...` and
+ * `/patron/notifications/preferences?state=...`. Same flag-gated pattern; covers both the
+ * inbox and the preferences settings page.
+ */
+function isPatronNotificationsDevFixture(path: string, search: URLSearchParams): boolean {
+  if (path !== "/patron/notifications" && path !== "/patron/notifications/preferences") {
+    return false;
+  }
+  if (!search.has("state")) return false;
+  const flag =
+    (process.env.NEXT_PUBLIC_RELAY_PATRON_FEED_DEV_TOOLS ?? "")
+      .toString()
+      .toLowerCase();
+  return flag === "true";
+}
+
+/**
+ * PE-J (BO-P4-03) — sibling carve-out for `/patron/settings?state=...`. Same flag-gated
+ * pattern; lets design / QA review the settings page states (mixed / empty / error /
+ * pending-deletion) without seeded backend rows. Destructive actions in the dev preview
+ * mutate the local fixture only.
+ */
+function isPatronSettingsDevFixture(path: string, search: URLSearchParams): boolean {
+  if (path !== "/patron/settings") return false;
+  if (!search.has("state")) return false;
+  const flag =
+    (process.env.NEXT_PUBLIC_RELAY_PATRON_FEED_DEV_TOOLS ?? "")
+      .toString()
+      .toLowerCase();
+  return flag === "true";
+}
+
 function isAuthEntryRoute(path: string): boolean {
   return AUTH_ENTRY_ROUTES.some((re) => re.test(path));
 }
@@ -62,7 +141,15 @@ export function middleware(req: NextRequest) {
 
   const signedIn = Boolean(req.cookies.get("relay_session")?.value);
 
-  if (!signedIn && isAppRoute(path)) {
+  if (
+    !signedIn &&
+    isAppRoute(path) &&
+    !isPatronLibraryDevFixture(path, url.searchParams) &&
+    !isPatronFeedDevFixture(path, url.searchParams) &&
+    !isPatronDiscoverDevFixture(path, url.searchParams) &&
+    !isPatronNotificationsDevFixture(path, url.searchParams) &&
+    !isPatronSettingsDevFixture(path, url.searchParams)
+  ) {
     const dest = new URL("/login", req.url);
     dest.searchParams.set("returnTo", path + url.search);
     return NextResponse.redirect(dest);

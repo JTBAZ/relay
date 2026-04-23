@@ -10,6 +10,7 @@ export type ClassifiedSyncError = {
     | "refresh_failed"
     | "patreon_unreachable"
     | "campaign_ambiguous"
+    | "no_creator_campaigns"
     | "campaign_not_found"
     | "member_sync_unwired"
     | "unknown";
@@ -30,10 +31,21 @@ export function classifySyncError(message: string): ClassifiedSyncError {
     };
   }
 
-  if (m.includes("Multiple Patreon campaigns found") || m.includes("Pass campaign_id")) {
+  if (m.includes("Patreon returned no creator campaigns")) {
+    return {
+      code: "no_creator_campaigns",
+      hint:
+        "This token does not list any creator campaigns on Patreon. Reconnect with a creator account and the right scopes, or pass campaign_id if Relay already stores it."
+    };
+  }
+
+  if (
+    m.includes("Multiple Patreon campaigns found") ||
+    m.includes("Multiple Patreon campaigns (")
+  ) {
     return {
       code: "campaign_ambiguous",
-      hint: "Set your Patreon campaign id in the sync request or in NEXT_PUBLIC_RELAY_PATREON_CAMPAIGN_ID when you have more than one campaign."
+      hint: "Set campaign_id (or NEXT_PUBLIC_RELAY_PATREON_CAMPAIGN_ID) when Patreon returns more than one campaign, or use the campaign stored on your Relay studio profile."
     };
   }
 

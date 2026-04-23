@@ -1,5 +1,8 @@
 import type { PrismaClient } from "@prisma/client";
-import { ensureCreatorProfilePatreonCampaignId } from "./campaign-tenant-resolve.js";
+import {
+  ensureCreatorProfilePatreonCampaignId,
+  getRelayCreatorIdForPatreonCampaignDb
+} from "./campaign-tenant-resolve.js";
 import { pickDefaultCampaignId } from "./map-patreon-to-ingest.js";
 import { fetchCampaignsWithTiers } from "./patreon-resource-api.js";
 
@@ -21,9 +24,29 @@ export async function syncCreatorProfilePatreonCampaignFromOAuthToken(args: {
   if (!campaignId) {
     return { patreonCampaignId: null };
   }
-  await ensureCreatorProfilePatreonCampaignId(args.prisma, {
+
+  const boundCreator = await getRelayCreatorIdForPatreonCampaignDb(
+    args.prisma,
+    campaignId
+  );
+  if (boundCreator && boundCreator !== args.relayCreatorId.trim()) {
+    throw new Error(
+      "That Patreon campaign is already registered to a different Relay studio. " +
+        "Confirm you’re signed into the Patreon account that owns this campaign, or open the Relay workspace for that studio. " +
+        `(Patreon campaign: ${campaignId}.)`
+    );
+  }
+
+  const ensured = await ensureCreatorProfilePatreonCampaignId(args.prisma, {
     relayCreatorId: args.relayCreatorId,
     patreonCampaignId: campaignId
   });
+  if (ensured.kind === "conflict") {
+    throw new Error(
+      "This would have overwritten the campaign already registered to this studio. " +
+        "Make sure you’re logged into the correct Patreon creator account—the one that matches the campaign you already saved—then try again. " +
+        "If the saved campaign is wrong, update it in your studio settings or contact support before reconnecting."
+    );
+  }
   return { patreonCampaignId: campaignId };
 }

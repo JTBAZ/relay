@@ -3,6 +3,7 @@ import {
   buildPatronIdentityRequestUrl,
   extractPatronSyncFromIdentity,
   extractUnifiedPatreonIdentity,
+  fetchPatreonOAuthIdentityUserId,
   PATREON_PATRON_OAUTH_SCOPES,
   tierIdsFromIdentityDoc,
   type PatreonIdentityDocument
@@ -417,5 +418,19 @@ describe("extractUnifiedPatreonIdentity", () => {
     expect(() =>
       extractUnifiedPatreonIdentity({ data: null, included: [] } as PatreonIdentityDocument)
     ).toThrow(/missing user resource/);
+  });
+});
+
+describe("fetchPatreonOAuthIdentityUserId", () => {
+  it("returns data.id from a minimal identity response", async () => {
+    const fetchImpl: typeof fetch = async (input) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      expect(url).toContain("oauth2/v2/identity");
+      return new Response(
+        JSON.stringify({ data: { type: "user", id: "pid_42" } }),
+        { status: 200, headers: { "content-type": "application/json" } }
+      );
+    };
+    await expect(fetchPatreonOAuthIdentityUserId("token", fetchImpl)).resolves.toBe("pid_42");
   });
 });

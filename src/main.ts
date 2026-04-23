@@ -3,6 +3,13 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { prisma } from "./lib/db.js";
 import { startIncrementalAutosyncWorker } from "./patreon/incremental-sync-worker.js";
+import {
+  patronEntitlementStaleRefreshBatchFromEnv,
+  patronEntitlementStaleRefreshIntervalFromEnv,
+  startPatronEntitlementStaleRefreshWorker
+} from "./patron/patron-entitlement-stale-worker.js";
+import { startNotificationDeliveryWorker } from "./patron/notification-delivery-worker.js";
+import { startAccountDeletionWorker } from "./patron/account-deletion-worker.js";
 import { relayServerConfigFromEnv } from "./relay-server-env.js";
 import { createApp } from "./server.js";
 
@@ -48,14 +55,19 @@ if (!process.env.RELAY_TOKEN_ENCRYPTION_KEY?.trim()) {
 }
 
 const port = Number(process.env.PORT ?? "8787");
+const serverConfig = relayServerConfigFromEnv();
+const fetchImpl = serverConfig.fetch_impl ?? globalThis.fetch;
+
 const {
   app,
   tokenStore,
   patreonSyncService,
   patreonSyncHealthStore,
-  patreonCampaignCreatorIndex
+  patreonCampaignCreatorIndex,
+  encryption,
+  patreonClient
 } = createApp({
-  ...relayServerConfigFromEnv(),
+  ...serverConfig,
   prisma
 });
 
@@ -70,6 +82,40 @@ if (shouldStartPatreonIncrementalAutosync()) {
   });
 }
 
+const patronStaleRefreshMs = patronEntitlementStaleRefreshIntervalFromEnv();
+let stopPatronStaleRefresh: (() => void) | undefined;
+if (patronStaleRefreshMs > 0 && prisma) {
+  stopPatronStaleRefresh = startPatronEntitlementStaleRefreshWorker({
+    prisma,
+    encryption,
+    patreonClient,
+    fetchImpl,
+    intervalMs: patronStaleRefreshMs,
+    batchSize: patronEntitlementStaleRefreshBatchFromEnv()
+  });
+}
+
+// PE-G (BO-P3-03) — notification delivery loop. Reads OutboxEvent rows, fan-outs to per-
+// recipient Notification rows. Disable with RELAY_NOTIFICATION_DELIVERY_MS=0; defaults to
+// 5s otherwise. Multi-node deploys swap this for a BullMQ-backed runner once Redis lands
+// (interface-compatible; same processOnce body).
+const notificationRunner = prisma
+  ? startNotificationDeliveryWorker(prisma, (msg, ctx) => {
+      // eslint-disable-next-line no-console -- background diagnostic
+      console.warn(`Relay: ${msg}`, ctx ?? {});
+    })
+  : null;
+
+// PE-J (BO-P4-02) — account deletion sweeper. Periodically executes pending deletions whose
+// grace period (default 7 days, RELAY_ACCOUNT_DELETION_GRACE_DAYS) has elapsed. Disable
+// with RELAY_ACCOUNT_DELETION_SWEEP_MS=0; defaults to 1h otherwise.
+const accountDeletionRunner = prisma
+  ? startAccountDeletionWorker(prisma, (msg, ctx) => {
+      // eslint-disable-next-line no-console -- background diagnostic
+      console.warn(`Relay: ${msg}`, ctx ?? {});
+    })
+  : null;
+
 const server = app.listen(port, () => {
   // eslint-disable-next-line no-console -- CLI entrypoint
   console.log(`Relay API listening on http://127.0.0.1:${port}`);
@@ -77,6 +123,9 @@ const server = app.listen(port, () => {
 
 function shutdown(signal: "SIGINT" | "SIGTERM") {
   stopAutosync?.();
+  stopPatronStaleRefresh?.();
+  void notificationRunner?.stop();
+  void accountDeletionRunner?.stop();
   // eslint-disable-next-line no-console -- CLI entrypoint
   console.log(`Relay: ${signal}, closing HTTP server…`);
   server.close((err) => {

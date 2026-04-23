@@ -16,6 +16,11 @@ function resolveRelayApiBase(): string {
 }
 export const RELAY_API_BASE = resolveRelayApiBase();
 
+/**
+ * Patron feed media: `<video crossOrigin="anonymous" src={RELAY_API_BASE + "/content"}>` may not send
+ * the same cookies as `fetch` with `credentials: "include"` in all browsers. If `/content` 403s in
+ * prod for `<video>`/`<img>`, add a same-origin proxy route or signed short-lived URLs.
+ */
 type Envelope<T> = { data: T; meta: { trace_id: string } };
 
 /** Thrown when Relay API returns a non-2xx JSON envelope. */
@@ -215,10 +220,198 @@ export type PatronSessionMe = {
   /** When false, session-first `POST .../patron/link` will reject until Supabase email is confirmed (PE-A gate). Omitted on older API builds. */
   email_verified?: boolean;
   expires_at: string;
+  /**
+   * PE-I (BO-P4-01) — UI lens role from the `relay_active_role` cookie. Never an authz signal.
+   * Omitted on older API builds.
+   */
+  active_role?: ActiveRole | null;
+  /**
+   * PE-I (BO-P4-01) — roles the account is allowed to occupy (creator / supporter / both).
+   * Drives the role switcher visibility: hide when length <= 1. Omitted on older API builds.
+   */
+  available_roles?: ActiveRole[];
 };
+
+export type ActiveRole = "creator" | "supporter";
 
 export function fetchPatronSessionMe(): Promise<PatronSessionMe> {
   return relayFetch<PatronSessionMe>("/api/v1/me/session");
+}
+
+// ---------------------------------------------------------------------------
+// PE-K Rest (BO-P4-04) — public patron profile lookup for /p/[handle].
+// Backend service: src/patron/public-patron-profile-service.ts; route GET /api/v1/public/patrons/:handle.
+// ---------------------------------------------------------------------------
+
+export type PublicPatronProfile = {
+  handle: string;
+  display_name: string | null;
+  bio: string | null;
+  avatar_url: string | null;
+  banner_url: string | null;
+  public_collections: Array<{
+    id: string;
+    title: string;
+    entry_count: number;
+    created_at: string;
+  }>;
+};
+
+/**
+ * GET /api/v1/public/patrons/:handle — no auth required.
+ *
+ * Returns null on 404 (handle missing OR profile is private). Throws on transport / 5xx so
+ * Next.js page render code can decide whether to re-throw or call notFound() based on the
+ * shape (null vs throw).
+ */
+export async function fetchPublicPatronProfileByHandle(
+  handle: string
+): Promise<PublicPatronProfile | null> {
+  try {
+    return await relayFetch<PublicPatronProfile>(
+      `/api/v1/public/patrons/${encodeURIComponent(handle)}`
+    );
+  } catch (err) {
+    if (err instanceof RelayApiError && err.status === 404) {
+      return null;
+    }
+    throw err;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// PE-J (BO-P4-03) — Data export + per-creator unwind + account deletion lifecycle.
+// Backend: src/patron/{data-export,creator-relationship-delete,account-deletion}-service.ts
+// ---------------------------------------------------------------------------
+
+/**
+ * Trigger a browser download of the patron data bundle. Returns a `Blob` so callers can
+ * decide whether to save-as / display / hash. The backend route bypasses the standard
+ * envelope and serves `application/json` with a `Content-Disposition: attachment` header.
+ */
+export async function downloadPatronAccountExport(): Promise<{
+  blob: Blob;
+  filename: string;
+}> {
+  const path = "/api/v1/patron/me/export";
+  const res = await fetch(`${RELAY_API_BASE}${path}`, {
+    credentials: "include",
+    cache: "no-store"
+  });
+  if (!res.ok) {
+    throw new RelayApiError(
+      `Account export failed (HTTP ${res.status}).`,
+      res.status,
+      "EXPORT_FAILED"
+    );
+  }
+  const disposition = res.headers.get("content-disposition") ?? "";
+  const match = disposition.match(/filename="?([^";]+)"?/);
+  const filename =
+    match?.[1] ?? `relay-account-${new Date().toISOString().slice(0, 10)}.json`;
+  const blob = await res.blob();
+  return { blob, filename };
+}
+
+export type CreatorRelationshipDeletionCounts = {
+  favorites: number;
+  collections: number;
+  collectionEntries: number;
+  comments: number;
+  commentReactions: number;
+  contentReports: number;
+  notificationPreferences: number;
+  notifications: number;
+  memberships: number;
+};
+
+/**
+ * DELETE /api/v1/patron/memberships/:relay_creator_id — purge ONE creator relationship
+ * (favorites, collections, comments, reactions on that creator's posts, reports filed in
+ * that scope, notifications, notification prefs, finally the membership row + cascades).
+ */
+export async function deleteCreatorRelationship(
+  relayCreatorId: string
+): Promise<{ counts: CreatorRelationshipDeletionCounts }> {
+  return relayFetch<{ counts: CreatorRelationshipDeletionCounts }>(
+    `/api/v1/patron/memberships/${encodeURIComponent(relayCreatorId)}`,
+    { method: "DELETE" }
+  );
+}
+
+export type PendingDeletion = {
+  id: string;
+  requested_at: string;
+  scheduled_for: string;
+  reason: string | null;
+};
+
+/** GET /api/v1/patron/me/delete — current pending deletion (or null). */
+export async function getPendingPatronAccountDeletion(): Promise<{
+  pending_deletion: PendingDeletion | null;
+}> {
+  return relayFetch<{ pending_deletion: PendingDeletion | null }>(
+    `/api/v1/patron/me/delete`
+  );
+}
+
+/** POST /api/v1/patron/me/delete — schedule a deletion (idempotent). */
+export async function requestPatronAccountDeletion(args: { reason?: string } = {}): Promise<{
+  created: boolean;
+  id: string;
+  requested_at: string;
+  scheduled_for: string;
+  reason: string | null;
+}> {
+  return relayFetch<{
+    created: boolean;
+    id: string;
+    requested_at: string;
+    scheduled_for: string;
+    reason: string | null;
+  }>(`/api/v1/patron/me/delete`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ reason: args.reason ?? null })
+  });
+}
+
+/** DELETE /api/v1/patron/me/delete — cancel pending (idempotent). */
+export async function cancelPatronAccountDeletion(): Promise<{
+  cancelled: boolean;
+  id: string | null;
+  cancelled_at: string | null;
+}> {
+  return relayFetch<{
+    cancelled: boolean;
+    id: string | null;
+    cancelled_at: string | null;
+  }>(`/api/v1/patron/me/delete`, { method: "DELETE" });
+}
+
+/**
+ * PE-I (BO-P4-01) — POST /api/v1/me/active-role.
+ *
+ * Flips the `relay_active_role` UI cookie at runtime. Server validates that the requested
+ * role is in the caller's `available_roles`; rejects with 403 otherwise. Returns the
+ * persisted state so callers can update local context without a follow-up GET.
+ *
+ * Recommended caller pattern: after success, push the user to the role's natural landing
+ * page (`/designer` for creator, `/patron/feed` for supporter) and re-fetch any
+ * shell-scoped session state.
+ */
+export async function setActiveRole(role: ActiveRole): Promise<{
+  active_role: ActiveRole;
+  available_roles: ActiveRole[];
+}> {
+  return relayFetch<{ active_role: ActiveRole; available_roles: ActiveRole[] }>(
+    `/api/v1/me/active-role`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ role })
+    }
+  );
 }
 
 export type DeletePatronPatreonLinkData = {
@@ -236,8 +429,12 @@ export function deletePatronPatreonLink(): Promise<DeletePatronPatreonLinkData> 
 
 /**
  * `GET /api/v1/me/session` when **401 means "not signed in"** — without the global 401 handler
- * (logout + redirect to `/login`). Use for flows that must branch on session presence, e.g.
- * Patreon OAuth callback: session → `POST .../patron/link`, anonymous → `.../patron/exchange`.
+ * (logout + redirect to `/login`). Use for flows that must branch on session presence.
+ *
+ * **Patron Patreon (universal policy):** We only link Patreon to an existing Relay account.
+ * With a session → `POST .../patron/link`. Without a session → the web callback redirects to
+ * sign-in first; we do **not** call `.../patron/exchange` on the default path. Legacy
+ * `POST .../patron/exchange` exists for emergency rollback only (`RELAY_PATRON_PATRON_ALLOW_LEGACY_EXCHANGE`).
  */
 export async function fetchPatronSessionIfPresent(): Promise<PatronSessionMe | null> {
   const path = "/api/v1/me/session";
@@ -326,6 +523,46 @@ export async function patchCreatorPublicSlug(public_slug: string): Promise<{ pub
   return relayFetch<{ public_slug: string }>("/api/v1/creator/public-slug", {
     method: "PATCH",
     body: JSON.stringify({ public_slug: public_slug.trim().toLowerCase() })
+  });
+}
+
+// ---------------------------------------------------------------------------
+// APD-S1 / APD-S4 — creator public identity (display_name, username, avatar, etc).
+// Backend service: src/creator/creator-identity-service.ts.
+// ---------------------------------------------------------------------------
+
+export type CreatorProfileIdentity = {
+  public_slug: string;
+  patreon_campaign_id: string | null;
+  username: string | null;
+  username_norm: string | null;
+  display_name: string | null;
+  avatar_url: string | null;
+  banner_url: string | null;
+  bio: string | null;
+  discipline: string | null;
+  needs_setup: boolean;
+};
+
+export type CreatorProfileIdentityPatch = {
+  username?: string | null;
+  display_name?: string | null;
+  avatar_url?: string | null;
+  banner_url?: string | null;
+  bio?: string | null;
+  discipline?: string | null;
+};
+
+export async function getCreatorProfile(): Promise<CreatorProfileIdentity> {
+  return relayFetch<CreatorProfileIdentity>("/api/v1/creator/profile");
+}
+
+export async function patchCreatorProfile(
+  patch: CreatorProfileIdentityPatch
+): Promise<CreatorProfileIdentity> {
+  return relayFetch<CreatorProfileIdentity>("/api/v1/creator/profile", {
+    method: "PATCH",
+    body: JSON.stringify(patch)
   });
 }
 
@@ -501,9 +738,43 @@ export type PatronFavoriteRecord = {
   target_kind: PatronFavoriteTargetKind;
   target_id: string;
   created_at: string;
+  /** PE-D / D29 forensic; never used for gate decisions (see viewer_entitlement). */
+  snapshot_tier_ids?: string[];
+};
+
+/**
+ * PE-D / D29 — viewer-aware render contract returned by GET /favorites + /collections.
+ * Always reflects the viewer's CURRENT entitlement (live re-check), not save-time state.
+ *
+ * - 'visible'    — viewer can fully view (free post or tier match).
+ * - 'preview'    — partial reveal allowed (reserved for PE-L).
+ * - 'unlockable' — viewer can pay a tip to unlock a viewing window (reserved for PE-L).
+ * - 'locked'     — viewer cannot view; show blurred teaser + upgrade CTA.
+ */
+export type ViewerEntitlementState =
+  | "visible"
+  | "preview"
+  | "unlockable"
+  | "locked";
+
+export type ViewerEntitlementDecision = {
+  state: ViewerEntitlementState;
+  required_tier_ids: string[];
+  source:
+    | "free_post"
+    | "active_snapshot"
+    | "missing_snapshot"
+    | "inactive_snapshot";
+};
+
+export type PatronFavoriteWithViewerEntitlement = PatronFavoriteRecord & {
+  viewer_entitlement: ViewerEntitlementDecision;
 };
 
 export type PatronFavoritesListData = { items: PatronFavoriteRecord[] };
+export type PatronFavoritesEnrichedListData = {
+  items: PatronFavoriteWithViewerEntitlement[];
+};
 
 export function patronFavoriteKey(kind: PatronFavoriteTargetKind, id: string): string {
   return `${kind}:${id}`;
@@ -517,6 +788,19 @@ export async function listPatronFavorites(creatorId: string): Promise<PatronFavo
   const u = new URLSearchParams();
   u.set("creator_id", creatorId);
   const data = await relayFetch<PatronFavoritesListData>(`/api/v1/patron/favorites?${u.toString()}`);
+  return data.items;
+}
+
+/**
+ * PE-D — cross-creator favorites listing with live viewer_entitlement attached to each row.
+ * Backend route: GET /api/v1/patron/favorites/all (account-scoped, no creator_id filter).
+ */
+export async function listAllPatronFavoritesEnriched(): Promise<
+  PatronFavoriteWithViewerEntitlement[]
+> {
+  const data = await relayFetch<PatronFavoritesEnrichedListData>(
+    `/api/v1/patron/favorites/all`
+  );
   return data.items;
 }
 
@@ -559,6 +843,8 @@ export type PatronCollectionRecord = {
   sort_order: number;
   created_at: string;
   updated_at: string;
+  /** PE-D / D11 — when true, exposed on the patron's public profile. */
+  is_public?: boolean;
 };
 
 export type PatronCollectionEntryRecord = {
@@ -569,13 +855,27 @@ export type PatronCollectionEntryRecord = {
   post_id: string;
   media_id: string;
   created_at: string;
+  /** PE-D / D29 forensic; never used for gate decisions. */
+  snapshot_tier_ids?: string[];
 };
+
+export type PatronCollectionEntryWithViewerEntitlement =
+  PatronCollectionEntryRecord & {
+    viewer_entitlement: ViewerEntitlementDecision;
+  };
 
 export type PatronCollectionWithEntries = PatronCollectionRecord & {
   entries: PatronCollectionEntryRecord[];
 };
 
+export type PatronCollectionWithEnrichedEntries = PatronCollectionRecord & {
+  entries: PatronCollectionEntryWithViewerEntitlement[];
+};
+
 export type PatronCollectionsListData = { collections: PatronCollectionWithEntries[] };
+export type PatronCollectionsEnrichedListData = {
+  collections: PatronCollectionWithEnrichedEntries[];
+};
 
 export async function listPatronCollections(
   creatorId: string
@@ -584,6 +884,19 @@ export async function listPatronCollections(
   u.set("creator_id", creatorId);
   const data = await relayFetch<PatronCollectionsListData>(
     `/api/v1/patron/collections?${u.toString()}`
+  );
+  return data.collections;
+}
+
+/**
+ * PE-D — cross-creator collections listing with live viewer_entitlement attached to each entry.
+ * Backend route: GET /api/v1/patron/collections/all (account-scoped, no creator_id filter).
+ */
+export async function listAllPatronCollectionsEnriched(): Promise<
+  PatronCollectionWithEnrichedEntries[]
+> {
+  const data = await relayFetch<PatronCollectionsEnrichedListData>(
+    `/api/v1/patron/collections/all`
   );
   return data.collections;
 }
@@ -1211,4 +1524,482 @@ export type AnalyticsHealthData = {
 
 export async function fetchAnalyticsHealth(): Promise<AnalyticsHealthData> {
   return relayFetch<AnalyticsHealthData>("/api/v1/health/analytics");
+}
+
+// ---------------------------------------------------------------------------
+// PE-E (BO-P2-04) — Comments + reactions + reports + blocks API client.
+// Backend services in src/patron/comment-*.ts; routes in src/server.ts.
+// ---------------------------------------------------------------------------
+
+export type CommentReactionKind = "like" | "heart" | "insightful" | "laugh";
+export type CommentVisibility = "everyone" | "patrons_only";
+export type CommentModState = "visible" | "hidden" | "removed";
+export type ContentReportTargetKind = "comment" | "post" | "account";
+export type ContentReportStatus = "open" | "actioned" | "dismissed";
+export type AutoModSeverity = "info" | "warn" | "block";
+
+export type AutoModFlag = {
+  rule_id: string;
+  severity: AutoModSeverity;
+  snippet: string;
+  meta?: Record<string, string | number | boolean>;
+};
+
+export type CommentReactionAggregate = {
+  kind: CommentReactionKind;
+  count: number;
+  /** Whether the calling viewer has this reaction toggled on. */
+  viewerReacted: boolean;
+};
+
+/**
+ * Live shape returned by GET /api/v1/patron/posts/:post_id/comments. Mirrors
+ * `CommentRecord` in src/patron/comment-types.ts plus a `reactions` aggregate the
+ * server attaches at list time.
+ */
+export type PatronCommentRecord = {
+  id: string;
+  relayCreatorId: string;
+  postId: string;
+  mediaId: string | null;
+  /** 0-100 percentage; null when post-level. */
+  anchorX: number | null;
+  anchorY: number | null;
+  patronUserId: string;
+  body: string;
+  parentCommentId: string | null;
+  tagIds: string[];
+  /** Subset of tagIds the post owner has revoked from this specific comment. */
+  tagsRevokedByOwner: string[];
+  creatorPinnedAt: string | null;
+  requiredTierId: string | null;
+  visibility: CommentVisibility;
+  autoModFlagsJson: AutoModFlag[] | null;
+  createdAt: string;
+  editedAt: string | null;
+  deletedAt: string | null;
+  modState: CommentModState;
+  reactions: CommentReactionAggregate[];
+};
+
+export type CreateCommentInput = {
+  relayCreatorId: string;
+  postId: string;
+  body: string;
+  mediaId?: string | null;
+  /** Required when mediaId is set; 0-100 percentage. */
+  anchorX?: number | null;
+  anchorY?: number | null;
+  parentCommentId?: string | null;
+  tagIds?: string[];
+  requiredTierId?: string | null;
+  visibility?: CommentVisibility;
+};
+
+export type CreateCommentResult = {
+  item: PatronCommentRecord;
+  /** Server-side auto-mod hits at create time. UI surfaces these to the author. */
+  auto_mod_flags: AutoModFlag[];
+};
+
+export type PatchCommentInput = {
+  /** Author edit (within 15-min window): body and/or tag_ids. */
+  body?: string;
+  tagIds?: string[];
+  /** Creator pin/unpin (creator session only). */
+  creatorPinned?: boolean;
+  /** Creator hide/unhide/remove (creator session only). */
+  modState?: CommentModState;
+};
+
+/** GET /api/v1/patron/posts/:post_id/comments?creator_id=...&media_id=... */
+export async function listPostComments(args: {
+  relayCreatorId: string;
+  postId: string;
+  mediaId?: string;
+}): Promise<PatronCommentRecord[]> {
+  const params = new URLSearchParams({ creator_id: args.relayCreatorId });
+  if (args.mediaId) params.set("media_id", args.mediaId);
+  const data = await relayFetch<{ items: PatronCommentRecord[] }>(
+    `/api/v1/patron/posts/${encodeURIComponent(args.postId)}/comments?${params.toString()}`
+  );
+  return data.items;
+}
+
+/** POST /api/v1/patron/posts/:post_id/comments */
+export async function createComment(input: CreateCommentInput): Promise<CreateCommentResult> {
+  return relayFetch<CreateCommentResult>(
+    `/api/v1/patron/posts/${encodeURIComponent(input.postId)}/comments`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        creator_id: input.relayCreatorId,
+        body: input.body,
+        media_id: input.mediaId ?? null,
+        anchor_x: input.anchorX ?? null,
+        anchor_y: input.anchorY ?? null,
+        parent_comment_id: input.parentCommentId ?? null,
+        tag_ids: input.tagIds ?? [],
+        required_tier_id: input.requiredTierId ?? null,
+        visibility: input.visibility ?? "everyone"
+      })
+    }
+  );
+}
+
+/**
+ * PATCH /api/v1/patron/comments/:comment_id
+ *
+ * Routes either to the author-edit path (body / tag_ids) or the creator path
+ * (creator_pinned, mod_state). Server enforces ownership + 15-min edit window.
+ */
+export async function patchComment(
+  commentId: string,
+  patch: PatchCommentInput
+): Promise<PatronCommentRecord> {
+  const body: Record<string, unknown> = {};
+  if (patch.body !== undefined) body.body = patch.body;
+  if (patch.tagIds !== undefined) body.tag_ids = patch.tagIds;
+  if (patch.creatorPinned !== undefined) body.creator_pinned = patch.creatorPinned;
+  if (patch.modState !== undefined) body.mod_state = patch.modState;
+  const data = await relayFetch<{ item: PatronCommentRecord }>(
+    `/api/v1/patron/comments/${encodeURIComponent(commentId)}`,
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body)
+    }
+  );
+  return data.item;
+}
+
+/** DELETE /api/v1/patron/comments/:comment_id (author or creator). */
+export async function deleteComment(commentId: string): Promise<PatronCommentRecord> {
+  const data = await relayFetch<{ item: PatronCommentRecord }>(
+    `/api/v1/patron/comments/${encodeURIComponent(commentId)}`,
+    { method: "DELETE" }
+  );
+  return data.item;
+}
+
+/** POST /api/v1/patron/comments/:comment_id/reactions — toggles, returns active state. */
+export async function toggleCommentReaction(
+  commentId: string,
+  kind: CommentReactionKind
+): Promise<{ active: boolean }> {
+  return relayFetch<{ active: boolean }>(
+    `/api/v1/patron/comments/${encodeURIComponent(commentId)}/reactions`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ kind })
+    }
+  );
+}
+
+/** POST /api/v1/patron/comments/:comment_id/revoke-tag (creator-only; supports unrevoke). */
+export async function revokeCommentTag(
+  commentId: string,
+  tagId: string,
+  options?: { unrevoke?: boolean }
+): Promise<{ tag_id: string; unrevoked: boolean }> {
+  return relayFetch<{ tag_id: string; unrevoked: boolean }>(
+    `/api/v1/patron/comments/${encodeURIComponent(commentId)}/revoke-tag`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ tag_id: tagId, unrevoke: options?.unrevoke === true })
+    }
+  );
+}
+
+export type CreateContentReportInput = {
+  targetKind: ContentReportTargetKind;
+  targetId: string;
+  reasonCode: string;
+  body?: string | null;
+  /** Creator scope; usually inferred from the target context. Empty for platform-wide. */
+  relayCreatorId?: string;
+};
+
+/** POST /api/v1/patron/reports */
+export async function createContentReport(
+  input: CreateContentReportInput
+): Promise<{ id: string }> {
+  return relayFetch<{ id: string }>(`/api/v1/patron/reports`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      target_kind: input.targetKind,
+      target_id: input.targetId,
+      reason_code: input.reasonCode,
+      body: input.body ?? null,
+      relay_creator_id: input.relayCreatorId ?? ""
+    })
+  });
+}
+
+export type ContentReportRecord = {
+  id: string;
+  reporterAccountId: string;
+  targetKind: ContentReportTargetKind;
+  targetId: string;
+  reasonCode: string;
+  body: string | null;
+  status: ContentReportStatus;
+  createdAt: string;
+};
+
+/** GET /api/v1/creator/moderation/reports — owner-only. */
+export async function listContentReports(args: {
+  relayCreatorId: string;
+  status?: ContentReportStatus;
+  cursor?: string;
+}): Promise<{ items: ContentReportRecord[]; nextCursor?: string }> {
+  const params = new URLSearchParams({ relay_creator_id: args.relayCreatorId });
+  if (args.status) params.set("status", args.status);
+  if (args.cursor) params.set("cursor", args.cursor);
+  return relayFetch<{ items: ContentReportRecord[]; nextCursor?: string }>(
+    `/api/v1/creator/moderation/reports?${params.toString()}`
+  );
+}
+
+/** POST /api/v1/creator/moderation/reports/:report_id/resolve — owner-only. */
+export async function resolveContentReport(
+  reportId: string,
+  outcome: "actioned" | "dismissed"
+): Promise<{ resolved: boolean; outcome: "actioned" | "dismissed" }> {
+  return relayFetch<{ resolved: boolean; outcome: "actioned" | "dismissed" }>(
+    `/api/v1/creator/moderation/reports/${encodeURIComponent(reportId)}/resolve`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ outcome })
+    }
+  );
+}
+
+/** POST /api/v1/patron/blocks — D14 future-only semantics. */
+export async function blockAccount(
+  blockedAccountId: string
+): Promise<{ created: boolean }> {
+  return relayFetch<{ created: boolean }>(`/api/v1/patron/blocks`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ blocked_account_id: blockedAccountId })
+  });
+}
+
+/** DELETE /api/v1/patron/blocks/:account_id */
+export async function unblockAccount(
+  blockedAccountId: string
+): Promise<{ removed: boolean }> {
+  return relayFetch<{ removed: boolean }>(
+    `/api/v1/patron/blocks/${encodeURIComponent(blockedAccountId)}`,
+    { method: "DELETE" }
+  );
+}
+
+// ---------------------------------------------------------------------------
+// PE-F (BO-P3-02) — Discovery v1 API client.
+// Backend service: src/patron/discover-service.ts; routes in src/server.ts.
+// ---------------------------------------------------------------------------
+
+/**
+ * Mirror of `DiscoverItem` from src/patron/discover-service.ts. The wire format is the same
+ * shape; we keep field names snake_case to match the envelope rather than renaming on the
+ * client.
+ */
+export type DiscoverItem = {
+  creator_id: string;
+  post_id: string;
+  title: string;
+  description?: string;
+  published_at: string;
+  tag_ids: string[];
+  cover_media_id?: string;
+};
+
+export type DiscoverPageResult = {
+  items: DiscoverItem[];
+  next_cursor: string | null;
+};
+
+/**
+ * GET /api/v1/patron/discover — recency-DESC cross-creator feed of opted-in free posts.
+ *
+ * - `q` is a free-text query (AND tokens; reuses the canonical search kernel server-side).
+ * - `cursor` is the opaque token returned in the previous page's `next_cursor`.
+ * - `limit` is clamped server-side; safe to omit and accept the default.
+ * - `creatorCap` overrides the per-creator fairness cap (default 2). Useful for design states.
+ */
+export async function listDiscoverFeed(args: {
+  q?: string;
+  cursor?: string;
+  limit?: number;
+  creatorCap?: number;
+} = {}): Promise<DiscoverPageResult> {
+  const params = new URLSearchParams();
+  if (args.q) params.set("q", args.q);
+  if (args.cursor) params.set("cursor", args.cursor);
+  if (typeof args.limit === "number") params.set("limit", String(args.limit));
+  if (typeof args.creatorCap === "number") params.set("creator_cap", String(args.creatorCap));
+  const query = params.toString();
+  return relayFetch<DiscoverPageResult>(
+    `/api/v1/patron/discover${query ? `?${query}` : ""}`
+  );
+}
+
+/**
+ * PATCH /api/v1/gallery/posts/:post_id/discovery — owner-only opt-in/out for Discover.
+ * The server returns a `warning` string when toggling on a tier-gated post (no v1 effect).
+ */
+export async function setPostDiscoveryEligibility(args: {
+  postId: string;
+  creatorId: string;
+  eligible: boolean;
+}): Promise<{
+  creator_id: string;
+  post_id: string;
+  eligible: boolean;
+  warning: string | null;
+}> {
+  return relayFetch<{
+    creator_id: string;
+    post_id: string;
+    eligible: boolean;
+    warning: string | null;
+  }>(`/api/v1/gallery/posts/${encodeURIComponent(args.postId)}/discovery`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ creator_id: args.creatorId, eligible: args.eligible })
+  });
+}
+
+// ---------------------------------------------------------------------------
+// PE-G (BO-P3-04) — Notifications + preferences API client.
+// Backend: src/patron/notification-* + routes in src/server.ts.
+// ---------------------------------------------------------------------------
+
+export type NotificationKind =
+  | "comment_replied"
+  | "comment_liked"
+  | "new_follower"
+  | "tier_changed"
+  | "new_post_followed"
+  | "mention";
+
+export type NotificationRecord = {
+  id: string;
+  recipientMembershipId: string;
+  relayCreatorId: string;
+  kind: NotificationKind;
+  /** Kind-shaped; see backend mapper for canonical fields per kind. */
+  payload: Record<string, unknown>;
+  clusterKey: string | null;
+  clusterCount: number;
+  sourceEventId: string | null;
+  /** ISO string when read; null = unread. */
+  readAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type NotificationsListResult = {
+  items: NotificationRecord[];
+  nextCursor: string | null;
+};
+
+/** GET /api/v1/patron/notifications */
+export async function listPatronNotifications(args: {
+  unreadOnly?: boolean;
+  limit?: number;
+  cursor?: string;
+  /** Optional creator-scope filter; matches the row's relayCreatorId exactly. */
+  relayCreatorId?: string;
+} = {}): Promise<NotificationsListResult> {
+  const params = new URLSearchParams();
+  if (args.unreadOnly) params.set("unread_only", "true");
+  if (typeof args.limit === "number") params.set("limit", String(args.limit));
+  if (args.cursor) params.set("cursor", args.cursor);
+  if (args.relayCreatorId !== undefined) {
+    params.set("relay_creator_id", args.relayCreatorId);
+  }
+  const query = params.toString();
+  return relayFetch<NotificationsListResult>(
+    `/api/v1/patron/notifications${query ? `?${query}` : ""}`
+  );
+}
+
+/** GET /api/v1/patron/notifications/unread-count */
+export async function getPatronNotificationUnreadCount(): Promise<{ unread_count: number }> {
+  return relayFetch<{ unread_count: number }>(
+    `/api/v1/patron/notifications/unread-count`
+  );
+}
+
+/**
+ * POST /api/v1/patron/notifications/mark-read
+ *
+ * Two modes:
+ *   - { notificationIds: [...] } -> mark only those (MUST belong to the caller)
+ *   - { allUnread: true }        -> mark every unread row for the caller
+ */
+export async function markPatronNotificationsRead(args: {
+  notificationIds?: string[];
+  allUnread?: boolean;
+}): Promise<{ updatedCount: number }> {
+  return relayFetch<{ updatedCount: number }>(
+    `/api/v1/patron/notifications/mark-read`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        notification_ids: args.notificationIds ?? [],
+        all_unread: args.allUnread === true
+      })
+    }
+  );
+}
+
+export type NotificationPreferenceRecord = {
+  preferenceType: string;
+  relayCreatorId: string;
+  enabled: boolean;
+  updatedAt: string | null;
+};
+
+/** GET /api/v1/patron/notifications/preferences */
+export async function listPatronNotificationPreferences(args: {
+  relayCreatorId?: string;
+} = {}): Promise<{ items: NotificationPreferenceRecord[] }> {
+  const params = new URLSearchParams();
+  if (args.relayCreatorId !== undefined) {
+    params.set("relay_creator_id", args.relayCreatorId);
+  }
+  const query = params.toString();
+  return relayFetch<{ items: NotificationPreferenceRecord[] }>(
+    `/api/v1/patron/notifications/preferences${query ? `?${query}` : ""}`
+  );
+}
+
+/** PATCH /api/v1/patron/notifications/preferences */
+export async function setPatronNotificationPreference(args: {
+  relayCreatorId: string;
+  preferenceType: string;
+  enabled: boolean;
+}): Promise<NotificationPreferenceRecord> {
+  return relayFetch<NotificationPreferenceRecord>(
+    `/api/v1/patron/notifications/preferences`,
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        relay_creator_id: args.relayCreatorId,
+        preference_type: args.preferenceType,
+        enabled: args.enabled
+      })
+    }
+  );
 }

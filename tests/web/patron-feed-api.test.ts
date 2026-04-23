@@ -49,13 +49,15 @@ describe("absolutizeMediaUrls", () => {
   it("rewrites Relay export paths to absolute URLs against RELAY_API_BASE", () => {
     const out = absolutizeMediaUrls(
       bundleWithPost({
-        coverImageUrl: "/api/v1/export/media/rc1/m1/preview",
-        highResImageUrl: "/api/v1/export/media/rc1/m1/content"
+        coverImageUrl: "/api/v1/export/media/rc1/m1/content",
+        highResImageUrl: "/api/v1/export/media/rc1/m1/content",
+        posterImageUrl: "/api/v1/export/media/rc1/m1/poster.jpg"
       })
     );
     const post = out.feedPosts[0]!;
-    expect(post.coverImageUrl).toBe(`${RELAY_API_BASE}/api/v1/export/media/rc1/m1/preview`);
+    expect(post.coverImageUrl).toBe(`${RELAY_API_BASE}/api/v1/export/media/rc1/m1/content`);
     expect(post.highResImageUrl).toBe(`${RELAY_API_BASE}/api/v1/export/media/rc1/m1/content`);
+    expect(post.posterImageUrl).toBe(`${RELAY_API_BASE}/api/v1/export/media/rc1/m1/poster.jpg`);
   });
 
   it("leaves placeholders and already-absolute URLs untouched", () => {

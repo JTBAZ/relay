@@ -17,22 +17,22 @@ interface ProgressStepperProps {
 export function ProgressStepper({ steps, currentStep }: ProgressStepperProps) {
   return (
     <nav aria-label="Onboarding progress" className="w-full">
-      <ol className="flex w-full items-center gap-0">
+      <ol className="flex w-full items-start gap-0">
         {steps.map((step, index) => {
           const isCompleted = currentStep > step.id;
           const isActive = currentStep === step.id;
           const isLast = index === steps.length - 1;
 
           return (
-            <li key={step.id} className={cn("flex items-center", !isLast && "flex-1")}>
+            <li key={step.id} className={cn("flex items-start", !isLast && "flex-1")}>
               <div className="flex flex-col items-center gap-2">
                 <div
                   className={cn(
-                    "flex h-8 w-8 items-center justify-center rounded-full border text-xs font-semibold transition-all duration-300",
+                    "flex h-9 w-9 items-center justify-center rounded-full border text-xs font-semibold transition-all duration-300",
                     isCompleted &&
                       "border-[var(--relay-green-600)] bg-[var(--relay-green-600)] text-[var(--relay-fg)]",
                     isActive &&
-                      "border-[var(--relay-green-600)] bg-[var(--relay-surface-2)] text-[var(--relay-green-400)] ring-2 ring-[var(--relay-green-600)]/20",
+                      "border-[var(--relay-green-400)] bg-[var(--relay-surface-2)] text-[var(--relay-green-400)] ring-4 ring-[var(--relay-green-600)]/15",
                     !isCompleted &&
                       !isActive &&
                       "border-[var(--relay-border)] bg-[var(--relay-surface-2)] text-[var(--relay-fg-muted)]"
@@ -48,17 +48,24 @@ export function ProgressStepper({ steps, currentStep }: ProgressStepperProps) {
                 <div className="hidden flex-col items-center text-center sm:flex">
                   <span
                     className={cn(
-                      "text-xs font-medium leading-tight",
-                      isActive ? "text-[var(--relay-fg)]" : "text-[var(--relay-fg-muted)]"
+                      "text-xs font-semibold leading-tight",
+                      isActive
+                        ? "text-[var(--relay-fg)]"
+                        : isCompleted
+                          ? "text-[var(--relay-green-400)]"
+                          : "text-[var(--relay-fg-muted)]"
                     )}
                   >
                     {step.label}
+                  </span>
+                  <span className="mt-0.5 max-w-[8rem] text-[10px] leading-snug text-[var(--relay-fg-muted)]">
+                    {step.description}
                   </span>
                 </div>
               </div>
 
               {!isLast && (
-                <div className="mx-3 mt-[-16px] flex-1">
+                <div className="mx-3 mt-[18px] flex-1">
                   <div className="relative h-px w-full overflow-hidden bg-[var(--relay-border)]">
                     <div
                       className={cn(

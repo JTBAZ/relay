@@ -198,8 +198,25 @@ function CallbackInner() {
           owned_relay_creator_id: linkData.owned_relay_creator_id ?? null,
           unmapped_patreon_campaign_ids: linkData.unmapped_patreon_campaign_ids ?? []
         });
-        if (cancelled) return;
-        router.replace("/patron/feed");
+        // Intentionally NOT gated on `cancelled`. In React StrictMode (dev) the first mount's
+        // cleanup sets `cancelled = true`, while the second mount early-returns on the
+        // `inFlightForCode` ref guard without setting up its own state. If we gated the
+        // navigation on `cancelled`, the original promise would resolve, see
+        // `cancelled === true`, and silently bail -- leaving the page stuck on
+        // "Completing Patreon sign-in…" even though the link API succeeded server-side.
+        //
+        // We use `window.location.assign` rather than `router.replace` for two reasons:
+        //   1. It is independent of the React component tree, so it always fires even after
+        //      a synthetic StrictMode unmount.
+        //   2. A hard navigation is the right semantics here -- the link flow updates Relay
+        //      session cookies, role, and notification state. We want every consumer
+        //      (PatronTopNav unread badge, role switcher, RelayApp shell) to mount fresh
+        //      against the post-link cookie set, not against stale React state.
+        if (typeof window !== "undefined") {
+          window.location.assign("/patron/feed");
+        } else {
+          router.replace("/patron/feed");
+        }
         return;
       } catch (e) {
         if (!cancelled) {

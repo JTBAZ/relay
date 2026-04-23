@@ -18,6 +18,7 @@ import {
   diagnosePostResource,
   extractCampaignDisplayFromCampaignsDoc,
   mapPatreonPostToIngest,
+  patreonCampaignListResolutionErrorMessage,
   pickDefaultCampaignId,
   tierIdsFromPatreonPost
 } from "./map-patreon-to-ingest.js";
@@ -239,6 +240,8 @@ export type PatreonScrapeResult = {
 export type PatreonSyncOptions = {
   /** Numeric Patreon campaign id from API. If omitted, uses the only campaign when exactly one exists. */
   campaign_id?: string;
+  /** Same as {@link PatreonSyncStateOptions.fallback_campaign_id}. */
+  fallback_campaign_id?: string;
   /** Max post list pages (25 posts per page). */
   max_post_pages?: number;
   /** If true, do not write to canonical store. */
@@ -281,6 +284,12 @@ export type PatreonSyncState = {
 
 export type PatreonSyncStateOptions = {
   campaign_id?: string;
+  /**
+   * When omitted and Patreon's GET /campaigns returns 0 or 2+ campaigns, use this
+   * (`CreatorProfile.patreonCampaignId` from Relay DB) so the Library does not require
+   * `NEXT_PUBLIC_RELAY_PATREON_CAMPAIGN_ID`.
+   */
+  fallback_campaign_id?: string;
   /** One OAuth posts page to compare newest Patreon post vs watermark. */
   probe_upstream?: boolean;
   /** Correlation id for OAuth refresh + events (optional; defaults for sync-state). */
@@ -341,13 +350,12 @@ export class PatreonSyncService {
     }
     const fetchOpts = { access_token: cred.access_token, fetch_impl: this.fetchImpl };
     const campaignsDoc = await fetchCampaignsWithTiers(fetchOpts);
-    let patreonCampaignId = options.campaign_id?.trim();
+    let patreonCampaignId =
+      options.campaign_id?.trim() || options.fallback_campaign_id?.trim();
     if (!patreonCampaignId) {
       const only = pickDefaultCampaignId(campaignsDoc);
       if (!only) {
-        throw new Error(
-          "Multiple Patreon campaigns found. Pass campaign_id (numeric id from the Patreon API / portal URL)."
-        );
+        throw new Error(patreonCampaignListResolutionErrorMessage(campaignsDoc));
       }
       patreonCampaignId = only;
     }
@@ -533,13 +541,12 @@ export class PatreonSyncService {
     const fetchOpts = { access_token: cred.access_token, fetch_impl: this.fetchImpl };
 
     const campaignsDoc = await fetchCampaignsWithTiers(fetchOpts);
-    let patreonCampaignId = options.campaign_id?.trim();
+    let patreonCampaignId =
+      options.campaign_id?.trim() || options.fallback_campaign_id?.trim();
     if (!patreonCampaignId) {
       const only = pickDefaultCampaignId(campaignsDoc);
       if (!only) {
-        throw new Error(
-          "Multiple Patreon campaigns found. Pass campaign_id (numeric id from the Patreon API / portal URL)."
-        );
+        throw new Error(patreonCampaignListResolutionErrorMessage(campaignsDoc));
       }
       patreonCampaignId = only;
     }
@@ -764,7 +771,12 @@ export class PatreonSyncService {
    */
   public async syncMembers(
     creatorId: string,
-    options: { campaign_id?: string; max_pages?: number; traceId?: string } = {}
+    options: {
+      campaign_id?: string;
+      fallback_campaign_id?: string;
+      max_pages?: number;
+      traceId?: string;
+    } = {}
   ): Promise<MemberSyncResult> {
     const warnings: string[] = [];
     if (!this.identityService) {
@@ -781,11 +793,11 @@ export class PatreonSyncService {
       fetch_impl: this.fetchImpl
     };
     const campaignsDoc = await fetchCampaignsWithTiers(fetchOpts);
-    let campaignId = options.campaign_id?.trim();
+    let campaignId = options.campaign_id?.trim() || options.fallback_campaign_id?.trim();
     if (!campaignId) {
       const only = pickDefaultCampaignId(campaignsDoc);
       if (!only) {
-        throw new Error("Multiple campaigns found. Pass campaign_id.");
+        throw new Error(patreonCampaignListResolutionErrorMessage(campaignsDoc));
       }
       campaignId = only;
     }

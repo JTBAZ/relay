@@ -1,4 +1,4 @@
-import type { PrismaClient } from "@prisma/client";
+import { PatronFollowSeedSource, type PrismaClient } from "@prisma/client";
 import type { PatreonClient, PatreonTokenResponse } from "../auth/patreon-client.js";
 import { upsertPatronOAuthCredentialForMembership } from "../auth/patron-oauth-credential-store.js";
 import {
@@ -10,10 +10,8 @@ import type { TokenEncryption } from "../lib/crypto.js";
 import { PatreonAccountLinkConflictError } from "../identity/identity-store-db.js";
 import type { IdentityService } from "../identity/identity-service.js";
 import type { SessionToken, UserAccount } from "../identity/types.js";
-import {
-  relayCreatorIdsForFollowSeed,
-  upsertPatronFollowsForMembership
-} from "../patron/patron-follow-service.js";
+import { relayCreatorIdsForFollowSeed } from "../patron/patron-follow-service.js";
+import { runPatronInitialFollowSeed } from "../patron/patron-initial-follow-seed.js";
 import {
   extractPatronSyncFromIdentity,
   extractUnifiedPatreonIdentity,
@@ -62,9 +60,12 @@ export async function exchangePatreonPatronOAuth(params: {
       tokenResponse
     );
     if (params.prisma) {
-      await upsertPatronFollowsForMembership(params.prisma, out.user.user_id, [
-        params.creatorId.trim()
-      ]);
+      await runPatronInitialFollowSeed({
+        prisma: params.prisma,
+        patronMembershipId: out.user.user_id,
+        relayCreatorIds: [params.creatorId.trim()],
+        source: PatronFollowSeedSource.oauth_creator_scoped_exchange
+      });
     }
     recordPatronOAuthSuccess();
     return out;
@@ -170,11 +171,12 @@ export async function exchangePatreonPatronOAuthUnified(params: {
         ownedRelayCreatorId: out.ownedRelayCreatorId
       });
       if (toSeed.length > 0) {
-        await upsertPatronFollowsForMembership(
-          params.prisma,
-          out.session.user_id,
-          toSeed
-        );
+        await runPatronInitialFollowSeed({
+          prisma: params.prisma,
+          patronMembershipId: out.user.user_id,
+          relayCreatorIds: toSeed,
+          source: PatronFollowSeedSource.oauth_unified
+        });
       }
     }
     recordPatronOAuthSuccess();

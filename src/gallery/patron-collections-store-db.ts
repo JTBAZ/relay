@@ -13,6 +13,7 @@ function colRowToRecord(row: {
   sortOrder: number;
   createdAt: Date;
   updatedAt: Date;
+  isPublic?: boolean;
 }): PatronCollectionRecord {
   return {
     collection_id: row.id,
@@ -21,7 +22,8 @@ function colRowToRecord(row: {
     title: row.title,
     sort_order: row.sortOrder,
     created_at: row.createdAt.toISOString(),
-    updated_at: row.updatedAt.toISOString()
+    updated_at: row.updatedAt.toISOString(),
+    is_public: row.isPublic ?? false
   };
 }
 
@@ -33,6 +35,7 @@ function entryRowToRecord(row: {
   postId: string;
   mediaId: string;
   createdAt: Date;
+  snapshotTierIds?: string[];
 }): PatronCollectionEntryRecord {
   return {
     entry_id: row.id,
@@ -41,7 +44,8 @@ function entryRowToRecord(row: {
     creator_id: row.creatorId,
     post_id: row.postId,
     media_id: row.mediaId,
-    created_at: row.createdAt.toISOString()
+    created_at: row.createdAt.toISOString(),
+    snapshot_tier_ids: row.snapshotTierIds ?? []
   };
 }
 
@@ -62,6 +66,50 @@ export class DbPatronCollectionsStore {
     const ids = cols.map((c) => c.id);
     const entries = await this.prisma.patronSavedCollectionEntry.findMany({
       where: { collectionId: { in: ids }, patronMembershipId: userId },
+      orderBy: { createdAt: "desc" }
+    });
+    const byCol = new Map<string, PatronCollectionEntryRecord[]>();
+    for (const e of entries) {
+      const rec = entryRowToRecord(e);
+      const list = byCol.get(e.collectionId) ?? [];
+      list.push(rec);
+      byCol.set(e.collectionId, list);
+    }
+    return cols.map((c) => ({
+      ...colRowToRecord(c),
+      entries: byCol.get(c.id) ?? []
+    }));
+  }
+
+  /**
+   * PE-D / D29 — cross-creator collection listing for a single Account. Resolves every patron
+   * `TenantMembership` for the account and fans the collection + entries query across all of
+   * them. Same shape as `listCollectionsWithEntries` so list/render code stays uniform.
+   *
+   * Implemented as a 2-step query (memberships → collections) to avoid adding a Prisma
+   * relation column to `PatronSavedCollection` — keeps the schema delta strictly additive.
+   */
+  public async listAllCollectionsWithEntriesForAccount(
+    accountId: string
+  ): Promise<Array<PatronCollectionRecord & { entries: PatronCollectionEntryRecord[] }>> {
+    const memberships = await this.prisma.tenantMembership.findMany({
+      where: { accountId },
+      select: { id: true }
+    });
+    if (memberships.length === 0) {
+      return [];
+    }
+    const membershipIds = memberships.map((m) => m.id);
+    const cols = await this.prisma.patronSavedCollection.findMany({
+      where: { patronMembershipId: { in: membershipIds } },
+      orderBy: [{ sortOrder: "asc" }, { title: "asc" }]
+    });
+    if (cols.length === 0) {
+      return [];
+    }
+    const ids = cols.map((c) => c.id);
+    const entries = await this.prisma.patronSavedCollectionEntry.findMany({
+      where: { collectionId: { in: ids } },
       orderBy: { createdAt: "desc" }
     });
     const byCol = new Map<string, PatronCollectionEntryRecord[]>();
@@ -106,7 +154,7 @@ export class DbPatronCollectionsStore {
     creatorId: string,
     userId: string,
     collectionId: string,
-    patch: { title?: string; sort_order?: number }
+    patch: { title?: string; sort_order?: number; is_public?: boolean }
   ): Promise<PatronCollectionRecord | null> {
     const existing = await this.prisma.patronSavedCollection.findFirst({
       where: { id: collectionId, creatorId, patronMembershipId: userId }
@@ -114,7 +162,12 @@ export class DbPatronCollectionsStore {
     if (!existing) {
       return null;
     }
-    const data: { title?: string; sortOrder?: number; updatedAt: Date } = {
+    const data: {
+      title?: string;
+      sortOrder?: number;
+      isPublic?: boolean;
+      updatedAt: Date;
+    } = {
       updatedAt: new Date()
     };
     if (typeof patch.title === "string") {
@@ -122,6 +175,9 @@ export class DbPatronCollectionsStore {
     }
     if (typeof patch.sort_order === "number" && Number.isFinite(patch.sort_order)) {
       data.sortOrder = patch.sort_order;
+    }
+    if (typeof patch.is_public === "boolean") {
+      data.isPublic = patch.is_public;
     }
     const row = await this.prisma.patronSavedCollection.update({
       where: { id: collectionId },
@@ -146,7 +202,8 @@ export class DbPatronCollectionsStore {
     userId: string,
     collectionId: string,
     postId: string,
-    mediaId: string
+    mediaId: string,
+    options?: { snapshot_tier_ids?: readonly string[] }
   ): Promise<PatronCollectionEntryRecord> {
     const col = await this.prisma.patronSavedCollection.findFirst({
       where: { id: collectionId, creatorId, patronMembershipId: userId }
@@ -176,7 +233,9 @@ export class DbPatronCollectionsStore {
         creatorId,
         postId,
         mediaId,
-        createdAt: now
+        createdAt: now,
+        // Forensic snapshot at save time — never consulted for live access decisions (D29).
+        snapshotTierIds: [...(options?.snapshot_tier_ids ?? [])]
       }
     });
     await this.prisma.patronSavedCollection.update({

@@ -26,6 +26,10 @@ export type PatronFeedPostJson = {
   excerpt: string;
   description?: string;
   mediaType: "writing" | "photo" | "audio" | "video";
+  /** Primary asset MIME from export row (`MediaAsset.current_mime_type`). Drives GIF/video vs still UI. */
+  primaryMimeType?: string | null;
+  /** Optional still for video card/modal `poster` when ingest provides one (future). */
+  posterImageUrl?: string | null;
   coverImageUrl?: string;
   highResImageUrl?: string;
   galleryImageUrls?: string[];

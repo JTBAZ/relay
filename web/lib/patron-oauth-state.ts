@@ -1,8 +1,12 @@
 /**
- * Legacy payload — used by `POST /api/v1/auth/patreon/patron/exchange` (hard-deprecated).
- * The session-first `/link` path no longer needs campaign/creator in state; those fields
- * are resolved from Patreon's identity API using the full `campaigns` scope. Kept for
- * backward-compat decoding of old callbacks and the legacy rollback path.
+ * Legacy payload — used only by `POST /api/v1/auth/patreon/patron/exchange` when
+ * `RELAY_PATRON_PATRON_ALLOW_LEGACY_EXCHANGE=1` (emergency rollback). Product flows require
+ * a Relay session first and use `POST .../patron/link`; we do not attach Patreon without an
+ * `Account` to attach to.
+ *
+ * The session-first `/link` path does not need campaign/creator in state; those fields are
+ * resolved from Patreon's identity API using the full `campaigns` scope. Kept for
+ * backward-compat decoding of old callbacks and the rollback path.
  */
 export type PatronOAuthStatePayload = {
   creator_id: string;

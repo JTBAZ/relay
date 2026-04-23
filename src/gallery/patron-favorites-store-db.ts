@@ -19,13 +19,15 @@ function rowToRecord(row: {
   targetKind: PrismaFavoriteKind;
   targetId: string;
   createdAt: Date;
+  snapshotTierIds?: string[];
 }): PatronFavoriteRecord {
   return {
     user_id: row.patronMembershipId,
     creator_id: row.creatorId,
     target_kind: fromPrismaKind(row.targetKind),
     target_id: row.targetId,
-    created_at: row.createdAt.toISOString()
+    created_at: row.createdAt.toISOString(),
+    snapshot_tier_ids: row.snapshotTierIds ?? []
   };
 }
 
@@ -38,6 +40,29 @@ export class DbPatronFavoritesStore {
   ): Promise<PatronFavoriteRecord[]> {
     const rows = await this.prisma.patronFavorite.findMany({
       where: { creatorId, patronMembershipId: userId },
+      orderBy: { createdAt: "asc" }
+    });
+    return rows.map(rowToRecord);
+  }
+
+  /**
+   * PE-D / D29 — cross-creator favorites listing for a single Account. Resolves every patron
+   * `TenantMembership` for the account, then fans the favorites query across all of them in
+   * one round trip. Sorted oldest → newest like `listForUser`.
+   *
+   * Implemented as a 2-step query (memberships, then favorites) to avoid adding a Prisma
+   * relation column to `PatronFavorite` — kept this PR's schema delta strictly additive.
+   */
+  public async listAllForAccount(accountId: string): Promise<PatronFavoriteRecord[]> {
+    const memberships = await this.prisma.tenantMembership.findMany({
+      where: { accountId },
+      select: { id: true }
+    });
+    if (memberships.length === 0) {
+      return [];
+    }
+    const rows = await this.prisma.patronFavorite.findMany({
+      where: { patronMembershipId: { in: memberships.map((m) => m.id) } },
       orderBy: { createdAt: "asc" }
     });
     return rows.map(rowToRecord);
@@ -65,7 +90,10 @@ export class DbPatronFavoritesStore {
         creatorId: record.creator_id,
         targetKind,
         targetId: record.target_id,
-        createdAt: new Date()
+        createdAt: new Date(),
+        // Forensic snapshot — caller-provided current entitlement at favorite time. Empty
+        // array is meaningful ("they had no entitlement when they favorited").
+        snapshotTierIds: record.snapshot_tier_ids ?? []
       }
     });
     return rowToRecord(row);

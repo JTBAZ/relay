@@ -51,6 +51,16 @@ export async function resolvePatreonWebhookCampaignOwnership(args: {
   return { ok: true };
 }
 
+/** Outcome of {@link ensureCreatorProfilePatreonCampaignId} — surfaces silent skips for ops logging. */
+export type EnsureCreatorProfilePatreonCampaignIdResult =
+  | { kind: "noop" }
+  | { kind: "no_profile" }
+  | { kind: "no_tenant" }
+  | { kind: "invalid_args" }
+  | { kind: "skipped_same" }
+  | { kind: "written"; profileId: string }
+  | { kind: "conflict"; existingCampaignId: string; attemptedCampaignId: string };
+
 /**
  * After a successful sync, persist `CreatorProfile.patreonCampaignId` so webhooks can enforce DB ownership.
  * Skips if no profile row (e.g. file-only OAuth). Does not overwrite a conflicting non-null campaign id.
@@ -58,31 +68,64 @@ export async function resolvePatreonWebhookCampaignOwnership(args: {
 export async function ensureCreatorProfilePatreonCampaignId(
   prisma: PrismaClient,
   args: { relayCreatorId: string; patreonCampaignId: string }
-): Promise<void> {
+): Promise<EnsureCreatorProfilePatreonCampaignIdResult> {
   const rid = args.relayCreatorId.trim();
   const pcid = args.patreonCampaignId.trim();
-  if (!rid || !pcid) return;
+  if (!rid || !pcid) return { kind: "invalid_args" };
 
   const tenant = await prisma.tenant.findUnique({
     where: { relayCreatorId: rid },
     select: { id: true }
   });
-  if (!tenant) return;
+  if (!tenant) return { kind: "no_tenant" };
 
   const profile = await prisma.creatorProfile.findFirst({
     where: { tenantId: tenant.id },
     select: { id: true, patreonCampaignId: true }
   });
-  if (!profile) return;
+  if (!profile) return { kind: "no_profile" };
 
   const existing = profile.patreonCampaignId?.trim();
   if (existing && existing !== pcid) {
-    return;
+    // eslint-disable-next-line no-console -- multi-tenant binding safety visibility
+    console.warn(
+      `[patreon_campaign] profile conflict relay_creator_id=${rid} ` +
+        `existing_patreon_campaign_id=${existing} attempted=${pcid}`
+    );
+    return {
+      kind: "conflict",
+      existingCampaignId: existing,
+      attemptedCampaignId: pcid
+    };
   }
-  if (existing === pcid) return;
+  if (existing === pcid) return { kind: "skipped_same" };
 
   await prisma.creatorProfile.update({
     where: { id: profile.id },
     data: { patreonCampaignId: pcid }
   });
+  return { kind: "written", profileId: profile.id };
+}
+
+/**
+ * Reverse of campaign → creator: the canonical Patreon numeric id stored on the studio profile,
+ * used when GET /campaigns cannot disambiguate (0 or 2+ rows) but Relay already knows the id.
+ */
+export async function getCreatorProfilePatreonCampaignIdForRelayCreatorDb(
+  prisma: PrismaClient,
+  relayCreatorId: string
+): Promise<string | null> {
+  const rid = relayCreatorId.trim();
+  if (!rid) return null;
+  const tenant = await prisma.tenant.findUnique({
+    where: { relayCreatorId: rid },
+    select: { id: true }
+  });
+  if (!tenant) return null;
+  const profile = await prisma.creatorProfile.findFirst({
+    where: { tenantId: tenant.id },
+    select: { patreonCampaignId: true }
+  });
+  const p = profile?.patreonCampaignId?.trim();
+  return p && p.length > 0 ? p : null;
 }

@@ -55,6 +55,11 @@ function rootFromRows(rows: Awaited<ReturnType<PrismaClient["postOverride"]["fin
       } else {
         delete slot.visibility;
       }
+      if (r.discoveryEligible) {
+        slot.discovery_eligible = true;
+      } else {
+        delete slot.discovery_eligible;
+      }
     } else {
       const media = { ...(slot.media ?? {}) };
       const mo: MediaOverride = {};
@@ -95,7 +100,8 @@ function flattenRoot(root: GalleryOverridesRoot): Prisma.PostOverrideCreateManyI
         mediaId: "",
         addTagIds: po.add_tag_ids ?? [],
         removeTagIds: po.remove_tag_ids ?? [],
-        visibility: po.visibility !== undefined ? postVisibilityToEnum(po.visibility) : null
+        visibility: po.visibility !== undefined ? postVisibilityToEnum(po.visibility) : null,
+        discoveryEligible: po.discovery_eligible === true
       });
       for (const [mediaId, mo] of Object.entries(po.media ?? {})) {
         const compact = compactMediaOverride(mo);
@@ -270,5 +276,33 @@ export class DbGalleryOverridesStore implements GalleryOverridesStore {
       root.creators[creatorId].posts[postId] = existing;
     }
     await this.save(root);
+  }
+
+  public async setDiscoveryEligible(
+    creatorId: string,
+    postId: string,
+    eligible: boolean
+  ): Promise<void> {
+    // Direct upsert -- avoids the load+save round trip and keeps the discovery flag write
+    // atomic so concurrent tag/visibility edits don't clobber it.
+    await this.prisma.postOverride.upsert({
+      where: {
+        creatorId_postId_mediaId: {
+          creatorId,
+          postId,
+          mediaId: ""
+        }
+      },
+      create: {
+        creatorId,
+        postId,
+        mediaId: "",
+        addTagIds: [],
+        removeTagIds: [],
+        visibility: null,
+        discoveryEligible: eligible
+      },
+      update: { discoveryEligible: eligible }
+    });
   }
 }

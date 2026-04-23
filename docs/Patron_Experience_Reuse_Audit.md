@@ -3,6 +3,8 @@
 > Companion to [`Patron_Experience_Roadmap.md`](Patron_Experience_Roadmap.md) and [`Patron_Experience_Batting_Order.md`](Patron_Experience_Batting_Order.md).
 > **Purpose:** Before any P1 backend row is started, every Backend Tasks row should be annotated against this doc so we don’t **re-implement, double-write, or overwrite** existing infrastructure.
 
+**Universal policy (patron Patreon):** Supporters **always** have a Relay `Account` and session **before** Patreon attach. There is no product path that creates Relay identity from Patreon alone. Canonical API: `POST /api/v1/auth/patreon/patron/link`. Legacy `POST .../patron/exchange` is rollback-only. See [`Patron_Experience_Batting_Order.md`](Patron_Experience_Batting_Order.md) §5 and [`docs/qa/DUAL_PATH_PATRON_QA_CHECKLIST.md`](qa/DUAL_PATH_PATRON_QA_CHECKLIST.md).
+
 Legend used throughout:
 
 - **REUSE** — code/model exists, call it as-is.
@@ -35,15 +37,11 @@ The roadmap (PE-A) says *“re-use existing Supabase auth path used by `/login` 
 
 ### C2 — Patreon link surface: keep `/exchange` or rename to `/link`
 
-`POST /api/v1/auth/patreon/patron/exchange` exists and works today. Roadmap §3.2 proposes a new `POST /auth/patreon/patron/link` whose only behavioral difference is **identity from session, not from OAuth result**, and whose only state difference is **persists `PatronOAuthCredential`**.
+**Resolved in product:** `POST /api/v1/auth/patreon/patron/link` is the **only** supported attach surface; session is required. `POST /api/v1/auth/patreon/patron/exchange` remains **hard-deprecated** by default (rollback env only).
 
-**Recommendation:** Don’t add a parallel route. **Mutate `/exchange` in place** to:
+Historically, `/exchange` existed for anonymous exchange. **Current implementation:** `/link` calls `exchangePatreonPatronOAuthUnified` with session anchor; `/exchange` is gated off unless `RELAY_PATREON_PATRON_ALLOW_LEGACY_EXCHANGE=1`. Patrons **cannot** attach Patreon without a Relay account ([`Patron_Experience_Batting_Order.md`](Patron_Experience_Batting_Order.md) §5).
 
-- Optionally accept session identity (when present, use session’s `accountId`; otherwise fall back to today’s OAuth-derived behavior for backward compat with the existing patron Patreon connect page).
-- Always persist `PatronOAuthCredential` going forward.
-- Add `POST /api/v1/auth/patreon/patron/link` as a **thin alias** that requires session and rejects anonymous calls — this is the P1 documented surface; old `/exchange` stays for one release as deprecated. Both routes call the same internal helper.
-
-**Backend Tasks impact:** the “new endpoint” row becomes **“refactor `exchangePatreonPatronOAuth` to take optional `accountId`; new `/link` is a 30-line wrapper.”**
+**Original recommendation (superseded):** mutate `/exchange` in place and add `/link` as a thin alias — **done**, with product policy tightened to **Relay account required first** (no anonymous attach).
 
 ### C3 — `PatronFollow` widening vs sibling `AccountFollow`
 
@@ -100,9 +98,9 @@ Each lane shows **what we already have**, **what we extend**, **what is genuinel
 | Email verification | **C1 → REUSE Supabase** (recommended) | `POST /api/v1/auth/supabase/sync`, `upsertAccountForSupabaseUser` | drops EmailVerificationWorker / D18 provider rows entirely |
 | Native `emailVerified` flag | **NEW only if C1 → native** | would require `Account.emailVerified` migration | **don’t build under C1 = Supabase** |
 | Supabase → opaque session bridge | **REUSE** | `IdentityService.issueRelaySessionForAccount`, `DbIdentityStore.ensurePlatformPatronUserForAccount` | already MT-033 wired |
-| Patreon link path | **C2 → EXTEND** | `exchangePatreonPatronOAuth` + `POST /api/v1/auth/patreon/patron/exchange` | accept optional session-derived `accountId`; always write credential |
+| Patreon link path | **C2 → SHIPPED** | `exchangePatreonPatronOAuthUnified` + `POST /api/v1/auth/patreon/patron/link` | session required; credential write on link; legacy `/patron/exchange` rollback-only |
 | Patreon-account merge logic | **REUSE** | `DbIdentityStore.createUser` lines 88–129, `PatreonAccountLinkConflictError` | already handles by-email + by-patreon merge |
-| `PatronOAuthCredential` write path | **NEW** | schema row exists; no writer yet | must reuse the same encryption helper as creator `OAuthCredential` (see §2) |
+| `PatronOAuthCredential` write path | **SHIPPED** | `src/auth/patron-oauth-credential-store.ts` | same encryption helper as creator `OAuthCredential` |
 | Handle auto-generation (`user_<hash>`) | **EXTEND** | `PatronProfile.handle` exists | add `handleNorm`, `displayName`, `bio`, `avatarUrl`, `isPublic` migration |
 | Reserved-words handle policy (D16) | **NEW** | small validator | |
 | Onboarding wizard backend | **NEW** | trivial (just stepper state) | UI lane |
@@ -112,12 +110,12 @@ Each lane shows **what we already have**, **what we extend**, **what is genuinel
 
 | Item | Verdict | Path / model | Note |
 |------|---------|------|------|
-| Fixture endpoint to retire | **EXTEND in place** | `GET /api/v1/patron/relay_feed` + `loadPatronRelayFeedBundleFromRepo` | rename to `/patron/feed`, keep fixture path behind a dev flag for local UI work |
-| `assemblePatronFeed` | **NEW** | needs `PatronFollow` × `Post` × `PostOverride` × snapshot join | |
+| Fixture fallback (non-DB API) | **SHIPPED** | `loadPatronRelayFeedBundleFromRepo` | Used when **no** DB identity store — not gated by `RELAY_PATRON_FEED_FIXTURE` (that name was planning-only). |
+| `assemblePatronFeed` | **SHIPPED** | `src/patron/assemble-patron-feed.ts` | `PatronFollow` × `Post` × overrides × snapshot when Prisma + `RELAY_DB_STORE_IDENTITY`. |
 | `FeedCursor` storage | **REUSE schema** | already in `prisma/schema.prisma` | no migration |
 | Tier filtering | **REUSE** | `patronMayFetchMediaExport` + `checkPostAccess` (`access-guard.ts`) + `PatronEntitlementSnapshot` | call as the canonical gate |
 | Degraded contract | **REUSE** | `entitlement-degraded.ts`, `buildPatronEntitlementHealthPayload`, `RELAY_PATRON_ENTITLEMENT_STALE_AFTER_MS` env | |
-| Filter chips (Following/Free/Photos/Audio/Writing) | **NEW** server-side | client-side filter exists today; move to query | |
+| Filter chips (Following/Free/Photos/Audio/Writing) | **SHIPPED** server-side | `GET /api/v1/patron/feed?filter=` | |
 | `Post` / `PostVersion` / `MediaAsset` model | **REUSE** | shipping | |
 | `PostOverride.visibility` filter | **REUSE** | `overrides-store-db.ts` | |
 
@@ -263,8 +261,8 @@ Concrete examples to apply now (PE-A and PE-H Backend Tasks rows in queue order)
 - **PE-A PatronOAuthCredential write path** → `NEW: src/auth/patron-oauth-credential-store.ts. REUSE: encryption helper from src/auth/token-store-db.ts (creator OAuthCredential pattern). Schema row already exists.`
 - **PE-A handle policy** → `EXTEND: prisma/schema.prisma::PatronProfile — add handleNorm, displayName, bio, avatarUrl, isPublic, bannerUrl. NEW: handle validator with reserved-words list.`
 - **PE-A onboarding wizard** → `NEW: skeleton state only (steps 1–4). UI lane carries the surface.`
-- **PE-B replace fixture endpoint** → `EXTEND: src/server.ts GET /api/v1/patron/relay_feed → /api/v1/patron/feed. Keep loadPatronRelayFeedBundleFromRepo behind RELAY_PATRON_FEED_FIXTURE=1 for local dev.`
-- **PE-B assemblePatronFeed** → `NEW: src/patron/assemble-patron-feed.ts. REUSE: PatronEntitlementSnapshot, PatronFollow, Post + overrides; tier gate via src/identity/access-guard.ts.`
+- **PE-B replace fixture endpoint** → `SHIPPED: GET /api/v1/patron/feed` + `relay_feed` share `handlePatronFeedGet`. `assemblePatronFeed` when DB identity on; `loadPatronRelayFeedBundleFromRepo` when off (no `RELAY_PATRON_FEED_FIXTURE` env — non-DB mode = fixture).`
+- **PE-B assemblePatronFeed** → `SHIPPED: src/patron/assemble-patron-feed.ts. REUSE: PatronEntitlementSnapshot, PatronFollow, Post + overrides; tier gate via src/identity/access-guard.ts.`
 - **PE-C PatronFollow APIs** → `REUSE schema (shipped). NEW: API + sidebar query. Rate limits via src/middleware/rate-limits.ts.`
 - **PE-C AccountFollow** → `NEW (sibling model, per C3 — do NOT widen PatronFollow).`
 - **PE-C initial follow seeder** → `NEW worker. REUSE: CreatorProfile.patreonCampaignId for the join.`

@@ -1,4 +1,5 @@
 import type { RelayEventBus } from "../events/event-bus.js";
+import { fetchPatreonOAuthIdentityUserId } from "../patreon/patreon-user-identity.js";
 import {
   recordCreatorOAuthExchangeAttempt,
   recordCreatorOAuthExchangeFailure,
@@ -37,15 +38,18 @@ export class PatreonAuthService {
   private readonly patreonClient: PatreonClient;
   private readonly tokenStore: PatreonTokenStore;
   private readonly eventBus: RelayEventBus;
+  private readonly fetchImpl: typeof fetch;
 
   public constructor(
     patreonClient: PatreonClient,
     tokenStore: PatreonTokenStore,
-    eventBus: RelayEventBus
+    eventBus: RelayEventBus,
+    fetchImpl: typeof fetch = globalThis.fetch
   ) {
     this.patreonClient = patreonClient;
     this.tokenStore = tokenStore;
     this.eventBus = eventBus;
+    this.fetchImpl = fetchImpl;
   }
 
   public async exchangeCodeAndPersist(
@@ -58,12 +62,27 @@ export class PatreonAuthService {
     try {
       const tokenResponse = await this.patreonClient.exchangeCode(code, redirectUri);
 
+      const patreonUserId = await fetchPatreonOAuthIdentityUserId(
+        tokenResponse.access_token,
+        this.fetchImpl
+      );
+
+      const previous = await this.tokenStore.getByCreatorId(creatorId);
+      const prevPid = previous?.provider_user_id?.trim();
+      if (prevPid && prevPid !== patreonUserId) {
+        throw new Error(
+          "The Patreon account you used doesn’t match the one already connected to this studio. " +
+            "Double-check you’re logged into the correct Patreon account, then try again."
+        );
+      }
+
       await this.tokenStore.upsert({
         creator_id: creatorId,
         access_token: tokenResponse.access_token,
         refresh_token: tokenResponse.refresh_token,
         access_token_expires_at: addSecondsToNow(tokenResponse.expires_in),
-        credential_health_status: "healthy"
+        credential_health_status: "healthy",
+        provider_user_id: patreonUserId
       });
 
       this.eventBus.publish("patreon_oauth_connected", creatorId, traceId, {

@@ -1,4 +1,4 @@
-import type { PrismaClient, Tier } from "@prisma/client";
+import type { CreatorProfile, PrismaClient, Tier } from "@prisma/client";
 import { MediaUpstreamStatus, PostUpstreamStatus } from "@prisma/client";
 import type { TierRow } from "../ingest/canonical-store.js";
 import {
@@ -94,6 +94,26 @@ function excerptFromDescription(raw: string | null | undefined, title: string): 
   return s.length > 220 ? `${s.slice(0, 217)}…` : s;
 }
 
+const CREATOR_AVATAR_PLACEHOLDER = "/placeholder.svg?height=40&width=40";
+
+function creatorIdentityFromProfile(
+  cp: CreatorProfile | undefined,
+  relayCreatorId: string
+): { handle: string; displayName: string; discipline: string; avatarUrl: string } {
+  const handle =
+    cp?.username?.trim() ||
+    cp?.publicSlug?.trim() ||
+    relayCreatorId.slice(0, 12);
+  const displayName =
+    cp?.displayName?.trim() ||
+    cp?.username?.trim() ||
+    cp?.publicSlug?.trim() ||
+    "Creator";
+  const avatarUrl = cp?.avatarUrl?.trim() || CREATOR_AVATAR_PLACEHOLDER;
+  const discipline = cp?.discipline?.trim() || "";
+  return { handle, displayName, discipline, avatarUrl };
+}
+
 function parseFilter(raw: string | null | undefined): PatronFeedFilter {
   const f = raw?.trim().toLowerCase();
   if (
@@ -187,9 +207,8 @@ export async function assemblePatronFeed(args: AssemblePatronFeedArgs): Promise<
     description: string | null;
     tierIds: string[];
     mediaType: "writing" | "photo" | "audio" | "video";
-    /** Path to the small JPEG preview served by Relay, or null when no exported blob exists. */
-    coverPreviewPath: string | null;
-    /** Path to the full original blob served by Relay, or null when no exported blob exists. */
+    primaryMimeType: string | null;
+    /** Full export blob (`/content`); patron feed avoids blurred `/preview` for entitled rows. */
     coverContentPath: string | null;
     isPublicPost: boolean;
   };
@@ -225,9 +244,6 @@ export async function assemblePatronFeed(args: AssemblePatronFeedArgs): Promise<
     // an export blob has actually been materialized; without it, the export endpoints would
     // 404 and we'd render a broken-image icon — fall back to a placeholder instead.
     const hasExportedBlob = Boolean(media?.id && media.currentStorageKey);
-    const coverPreviewPath = hasExportedBlob
-      ? `/api/v1/export/media/${encodeURIComponent(post.creatorId)}/${encodeURIComponent(media!.id)}/preview`
-      : null;
     const coverContentPath = hasExportedBlob
       ? `/api/v1/export/media/${encodeURIComponent(post.creatorId)}/${encodeURIComponent(media!.id)}/content`
       : null;
@@ -240,7 +256,7 @@ export async function assemblePatronFeed(args: AssemblePatronFeedArgs): Promise<
       description: v.description ?? null,
       tierIds: v.tierIds,
       mediaType: mimeToMediaType(mime),
-      coverPreviewPath,
+      primaryMimeType: mime ?? null,
       coverContentPath,
       isPublicPost: post.isPublic
     });
@@ -311,7 +327,10 @@ export async function assemblePatronFeed(args: AssemblePatronFeedArgs): Promise<
   const followedCreators = followedIds.map((relayCreatorId) => {
     const prof = profileByCreator.get(relayCreatorId);
     const snap = snapByCreator.get(relayCreatorId);
-    const slug = prof?.publicSlug?.trim() || relayCreatorId.slice(0, 12);
+    const { handle, displayName, discipline, avatarUrl } = creatorIdentityFromProfile(
+      prof,
+      relayCreatorId
+    );
     const tierIds = snap?.entitledTierIds ?? [];
     // PE-C P0 — Free Tier members and free followers both show as "Free" in the sidebar
     // (Patreon Free Tier members do not unlock paid posts, so labelling them as Supporter
@@ -322,10 +341,10 @@ export async function assemblePatronFeed(args: AssemblePatronFeedArgs): Promise<
       paid.length === 0 ? "Free" : "Supporter";
     return {
       id: relayCreatorId,
-      handle: slug,
-      displayName: prof ? slug : relayCreatorId,
-      discipline: "",
-      avatarUrl: "/placeholder.svg?height=40&width=40",
+      handle,
+      displayName,
+      discipline,
+      avatarUrl,
       isFollowed: true,
       followerCount: 0,
       postCount: 0,
@@ -336,7 +355,10 @@ export async function assemblePatronFeed(args: AssemblePatronFeedArgs): Promise<
 
   const feedPosts = page.map((c) => {
     const prof = profileByCreator.get(c.creatorId);
-    const slug = prof?.publicSlug?.trim() || c.creatorId.slice(0, 12);
+    const { handle, displayName, discipline, avatarUrl } = creatorIdentityFromProfile(
+      prof,
+      c.creatorId
+    );
     const tierCatalog = tiersByCreator.get(c.creatorId) ?? {};
     const tierRules = evaluateTierRules(tierCatalog);
     const postAccess = resolvePostAccessLevel(c.tierIds, tierRules);
@@ -346,10 +368,10 @@ export async function assemblePatronFeed(args: AssemblePatronFeedArgs): Promise<
 
     const creator = {
       id: c.creatorId,
-      handle: slug,
-      displayName: slug,
-      discipline: "",
-      avatarUrl: "/placeholder.svg?height=40&width=40",
+      handle,
+      displayName,
+      discipline,
+      avatarUrl,
       isFollowed: true,
       followerCount: 0,
       postCount: 0,
@@ -358,8 +380,19 @@ export async function assemblePatronFeed(args: AssemblePatronFeedArgs): Promise<
     };
 
     const placeholder = "/placeholder.svg?height=600&width=1200";
-    const coverImageUrl = c.coverPreviewPath ?? placeholder;
-    const highResImageUrl = c.coverContentPath ?? c.coverPreviewPath ?? placeholder;
+    const content = c.coverContentPath;
+    const mimeLower = (c.primaryMimeType ?? "").toLowerCase();
+    let coverImageUrl: string | undefined;
+    if (!content) {
+      coverImageUrl = placeholder;
+    } else if (mimeLower.startsWith("image/")) {
+      coverImageUrl = content;
+    } else if (mimeLower.startsWith("video/")) {
+      coverImageUrl = undefined;
+    } else {
+      coverImageUrl = placeholder;
+    }
+    const highResImageUrl = content ?? placeholder;
 
     return {
       id: c.postId,
@@ -369,6 +402,7 @@ export async function assemblePatronFeed(args: AssemblePatronFeedArgs): Promise<
       excerpt: excerptFromDescription(c.description, c.title),
       description: c.description ?? undefined,
       mediaType: c.mediaType,
+      primaryMimeType: c.primaryMimeType,
       coverImageUrl,
       highResImageUrl,
       publishedAt: c.publishedAt.toISOString(),

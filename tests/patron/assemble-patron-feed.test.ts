@@ -74,7 +74,7 @@ describe("assemblePatronFeed", () => {
     };
   }
 
-  it("emits Relay export paths (preview + content) instead of Patreon CDN URLs when an export blob exists", async () => {
+  it("emits unblurred /content for image card thumb + playback (no visitor /preview)", async () => {
     const prisma = buildPrismaWithOnePost({
       mediaId: "media_xyz",
       storageKey: "media/media_xyz/asset"
@@ -86,8 +86,9 @@ describe("assemblePatronFeed", () => {
     });
     expect(bundle.feedPosts).toHaveLength(1);
     const post = bundle.feedPosts[0]!;
+    expect(post.primaryMimeType).toBe("image/png");
     expect(post.coverImageUrl).toBe(
-      "/api/v1/export/media/rc_relaytest/media_xyz/preview"
+      "/api/v1/export/media/rc_relaytest/media_xyz/content"
     );
     expect(post.highResImageUrl).toBe(
       "/api/v1/export/media/rc_relaytest/media_xyz/content"
@@ -96,6 +97,59 @@ describe("assemblePatronFeed", () => {
     // would 403/404 because Patreon CDN gates by Patreon session cookie.
     expect(post.coverImageUrl).not.toContain("patreon.example");
     expect(post.highResImageUrl).not.toContain("patreon.example");
+  });
+
+  it("omits coverImageUrl for video (UI uses poster or video thumb)", async () => {
+    const post = {
+      id: "post_vid",
+      creatorId: "rc_relaytest",
+      isPublic: true,
+      versions: [
+        {
+          versionSeq: 1,
+          publishedAt: new Date("2026-04-11T20:18:50.000Z"),
+          title: "Clip",
+          description: "Clip",
+          tierIds: []
+        }
+      ],
+      mediaAssets: [
+        {
+          id: "media_v1",
+          currentMimeType: "video/mp4",
+          currentUpstreamUrl: "https://patreon.example/v.mp4",
+          currentStorageKey: "media/media_v1/asset"
+        }
+      ]
+    };
+    const prisma = {
+      patronFollow: {
+        findMany: vi.fn().mockResolvedValue([
+          { relayCreatorId: "rc_relaytest", createdAt: new Date() }
+        ])
+      },
+      patronEntitlementSnapshot: { findMany: vi.fn().mockResolvedValue([]) },
+      tier: { findMany: vi.fn().mockResolvedValue([]) },
+      creatorProfile: {
+        findMany: vi.fn().mockResolvedValue([
+          { tenant: { relayCreatorId: "rc_relaytest" }, publicSlug: "slug" }
+        ])
+      },
+      post: { findMany: vi.fn().mockResolvedValue([post]) },
+      patronProfile: { findUnique: vi.fn().mockResolvedValue(null) }
+    };
+    const bundle = await assemblePatronFeed({
+      prisma: prisma as never,
+      patronMembershipId: "mem1",
+      viewerEmail: "a@b.com"
+    });
+    const fp = bundle.feedPosts[0]!;
+    expect(fp.mediaType).toBe("video");
+    expect(fp.primaryMimeType).toBe("video/mp4");
+    expect(fp.coverImageUrl).toBeUndefined();
+    expect(fp.highResImageUrl).toBe(
+      "/api/v1/export/media/rc_relaytest/media_v1/content"
+    );
   });
 
   it("falls back to placeholder when export blob hasn't been materialized yet", async () => {
@@ -304,5 +358,91 @@ describe("assemblePatronFeed", () => {
     });
     expect(bundle.feedPosts.map((p) => p.id)).toEqual(["p_all"]);
     expect(bundle.followedCreators[0]!.patronTierLabel).toBe("Supporter");
+  });
+
+  it("uses CreatorProfile identity fields for feed cards and sidebar (APD-S2)", async () => {
+    const prisma = buildPrismaWithOnePost({
+      mediaId: null,
+      storageKey: null
+    });
+    prisma.creatorProfile.findMany = vi.fn().mockResolvedValue([
+      {
+        tenant: { relayCreatorId: "rc_relaytest" },
+        publicSlug: "jordanmtaylor93",
+        username: "Studio_Handle",
+        usernameNorm: "studio_handle",
+        displayName: "Studio Display",
+        avatarUrl: "https://cdn.example/avatar.jpg",
+        bannerUrl: null,
+        bio: "Short bio",
+        discipline: "Illustration",
+        patreonCampaignId: null,
+        id: "cp1",
+        tenantId: "t1",
+        userId: "u1",
+        createdAt: new Date(),
+        updatedAt: new Date()
+      }
+    ]);
+
+    const bundle = await assemblePatronFeed({
+      prisma: prisma as never,
+      patronMembershipId: "mem1",
+      viewerEmail: "a@b.com"
+    });
+
+    const fc = bundle.followedCreators[0]!;
+    expect(fc.handle).toBe("Studio_Handle");
+    expect(fc.displayName).toBe("Studio Display");
+    expect(fc.avatarUrl).toBe("https://cdn.example/avatar.jpg");
+    expect(fc.discipline).toBe("Illustration");
+
+    const post = bundle.feedPosts[0]!.creator;
+    expect(post.handle).toBe("Studio_Handle");
+    expect(post.displayName).toBe("Studio Display");
+    expect(post.avatarUrl).toBe("https://cdn.example/avatar.jpg");
+    expect(post.discipline).toBe("Illustration");
+  });
+
+  it("falls back to publicSlug then placeholder when identity fields are null", async () => {
+    const prisma = buildPrismaWithOnePost({
+      mediaId: null,
+      storageKey: null
+    });
+    prisma.creatorProfile.findMany = vi.fn().mockResolvedValue([
+      {
+        tenant: { relayCreatorId: "rc_relaytest" },
+        publicSlug: "onlyslug",
+        username: null,
+        usernameNorm: null,
+        displayName: null,
+        avatarUrl: null,
+        bannerUrl: null,
+        bio: null,
+        discipline: null,
+        patreonCampaignId: null,
+        id: "cp1",
+        tenantId: "t1",
+        userId: "u1",
+        createdAt: new Date(),
+        updatedAt: new Date()
+      }
+    ]);
+
+    const bundle = await assemblePatronFeed({
+      prisma: prisma as never,
+      patronMembershipId: "mem1",
+      viewerEmail: "a@b.com"
+    });
+
+    const fc = bundle.followedCreators[0]!;
+    expect(fc.handle).toBe("onlyslug");
+    expect(fc.displayName).toBe("onlyslug");
+    expect(fc.avatarUrl).toMatch(/^\/placeholder\.svg/);
+    expect(fc.discipline).toBe("");
+
+    const post = bundle.feedPosts[0]!.creator;
+    expect(post.handle).toBe("onlyslug");
+    expect(post.displayName).toBe("onlyslug");
   });
 });

@@ -158,14 +158,21 @@ export default function GalleryGridTile({
 }: Props) {
   const item = items[0];
   const multi = items.length > 1;
-  const [carouselIdx, setCarouselIdx] = useState(0);
+
+  /**
+   * Default carousel to the first non-shadow-cover item so that when Patreon serves a blurred
+   * cover URL ({"b":70,...} CDN transform) and the attachment is the real full image, we show
+   * the attachment first. Falls back to 0 if all items are shadow covers.
+   */
+  const defaultCarouselIdx = Math.max(0, items.findIndex((it) => !it.shadow_cover));
+  const [carouselIdx, setCarouselIdx] = useState(defaultCarouselIdx);
   const [exportRetryBusy, setExportRetryBusy] = useState(false);
   const selectCheckboxRef = useRef<HTMLInputElement>(null);
   const postIdForFx = item?.post_id ?? "";
 
   useEffect(() => {
-    setCarouselIdx(0);
-  }, [postIdForFx]);
+    setCarouselIdx(Math.max(0, items.findIndex((it) => !it.shadow_cover)));
+  }, [postIdForFx]);  // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     setCarouselIdx((i) => Math.min(i, Math.max(0, items.length - 1)));

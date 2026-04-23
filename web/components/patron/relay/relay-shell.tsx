@@ -16,6 +16,7 @@ import {
 import { CURRENT_VIEWER, FOLLOWED_CREATORS } from "@/lib/relay-fixtures";
 import { FilterChips, type FeedFilter } from "./filter-chips";
 import { RelayMarkIcon } from "./relay-mark-icon";
+import { RoleSwitcher } from "@/app/components/RoleSwitcher";
 
 interface RelayShellProps {
   activeFilter: FeedFilter;
@@ -62,8 +63,11 @@ export function RelayShell({
     return () => mq.removeEventListener("change", handler);
   }, []);
 
+  // PE-K nav unification (BO-P4-05): the patron layout mounts a 48px (3rem) sticky top
+  // nav above this shell. Subtract that from the viewport height so the shell still fills
+  // the visible area without overflowing.
   return (
-    <div className="flex h-screen overflow-hidden bg-[#0A0A0A]">
+    <div className="flex h-[calc(100vh-3rem)] overflow-hidden bg-[#0A0A0A]">
       {/* ── Mobile overlay ───────────────────────────────────────────── */}
       {sidebarOpen && (
         <div
@@ -269,6 +273,10 @@ export function RelayShell({
 
           {/* Right controls */}
           <div className="flex items-center gap-1 shrink-0">
+            {/* PE-I role switcher: hidden when only one role is available. */}
+            <div className="mr-1 hidden md:block">
+              <RoleSwitcher variant="patron" />
+            </div>
             <button
               className="relative p-2 text-[#4B5563] hover:text-[#9CA3AF] transition-colors duration-150 rounded-lg hover:bg-[#111111]"
               aria-label={`Notifications (${CURRENT_VIEWER.notificationCount} unread)`}
