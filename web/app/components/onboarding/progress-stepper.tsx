@@ -1,6 +1,6 @@
 "use client";
 
-import { Check } from "lucide-react";
+import { Check, Zap } from "lucide-react";
 import { cn } from "@/app/lib/cn";
 
 export interface OnboardingStep {
@@ -28,31 +28,34 @@ export function ProgressStepper({ steps, currentStep }: ProgressStepperProps) {
               <div className="flex flex-col items-center gap-2">
                 <div
                   className={cn(
-                    "flex h-9 w-9 items-center justify-center rounded-full border text-xs font-semibold transition-all duration-300",
+                    "relative flex h-9 w-9 items-center justify-center rounded-full border text-xs font-semibold transition-all duration-300",
                     isCompleted &&
-                      "border-[var(--relay-green-600)] bg-[var(--relay-green-600)] text-[var(--relay-fg)]",
+                      "border-[var(--relay-electric)] bg-[var(--relay-electric)] text-[var(--relay-bg)]",
                     isActive &&
-                      "border-[var(--relay-green-400)] bg-[var(--relay-surface-2)] text-[var(--relay-green-400)] ring-4 ring-[var(--relay-green-600)]/15",
+                      "relay-pulse-glow border-[var(--relay-electric)] bg-[var(--relay-green-950)] text-[var(--relay-green-400)]",
                     !isCompleted &&
                       !isActive &&
-                      "border-[var(--relay-border)] bg-[var(--relay-surface-2)] text-[var(--relay-fg-muted)]"
+                      "border-[var(--relay-border)] bg-[var(--relay-surface-1)] text-[var(--relay-fg-muted)]"
                   )}
                   aria-current={isActive ? "step" : undefined}
                 >
                   {isCompleted ? (
                     <Check className="h-4 w-4" strokeWidth={2.5} />
+                  ) : isActive ? (
+                    <Zap className="h-4 w-4 fill-current" strokeWidth={0} />
                   ) : (
                     <span>{step.id}</span>
                   )}
                 </div>
+
                 <div className="hidden flex-col items-center text-center sm:flex">
                   <span
                     className={cn(
-                      "text-xs font-semibold leading-tight",
+                      "text-xs font-semibold leading-tight transition-colors duration-200",
                       isActive
-                        ? "text-[var(--relay-fg)]"
+                        ? "text-[var(--relay-green-400)]"
                         : isCompleted
-                          ? "text-[var(--relay-green-400)]"
+                          ? "text-[var(--relay-electric)]"
                           : "text-[var(--relay-fg-muted)]"
                     )}
                   >
@@ -66,13 +69,25 @@ export function ProgressStepper({ steps, currentStep }: ProgressStepperProps) {
 
               {!isLast && (
                 <div className="mx-3 mt-[18px] flex-1">
-                  <div className="relative h-px w-full overflow-hidden bg-[var(--relay-border)]">
+                  <div className="relative h-px w-full overflow-hidden rounded-full bg-[var(--relay-border)]">
                     <div
                       className={cn(
-                        "absolute inset-y-0 left-0 bg-[var(--relay-green-600)] transition-all duration-500",
-                        isCompleted ? "w-full" : "w-0"
+                        "absolute inset-y-0 left-0 transition-all duration-700",
+                        isCompleted
+                          ? "relay-connector-charged w-full bg-[var(--relay-electric)]"
+                          : "w-0 bg-[var(--relay-electric)]"
                       )}
                     />
+                    {isActive && (
+                      <div
+                        className="relay-scan-line pointer-events-none absolute inset-x-0 h-full"
+                        style={{
+                          background:
+                            "linear-gradient(to right, transparent, var(--relay-electric), transparent)",
+                        }}
+                        aria-hidden
+                      />
+                    )}
                   </div>
                 </div>
               )}

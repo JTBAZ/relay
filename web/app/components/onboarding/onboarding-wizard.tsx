@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, startTransition } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
@@ -86,8 +86,9 @@ export function OnboardingWizard({
       if (next.step) {
         params.set("step", String(next.step));
       }
-      router.replace(`/onboarding${params.size ? `?${params.toString()}` : ""}`, {
-        scroll: false,
+      const href = `/onboarding${params.size ? `?${params.toString()}` : ""}`;
+      startTransition(() => {
+        router.replace(href, { scroll: false });
       });
     },
     [router, searchParams]
@@ -132,17 +133,17 @@ export function OnboardingWizard({
 
   return (
     <div className="flex min-h-dvh flex-col bg-[var(--relay-bg)]">
-      <header className="flex items-center justify-between border-b border-[var(--relay-border)] px-6 py-4">
+      <header className="relay-header flex items-center justify-between border-b border-[var(--relay-electric)]/10 px-6 py-4">
         <Link
           href="/landing"
           aria-label="Relay home"
-          className="rounded-md outline-none ring-[var(--relay-green-600)]/40 transition-opacity hover:opacity-90 focus-visible:ring-2"
+          className="rounded-lg outline-none ring-[var(--relay-green-600)]/40 transition-opacity hover:opacity-90 focus-visible:ring-2"
         >
           <RelayWordmark size="md" />
         </Link>
         <div className="flex items-center gap-4 text-xs text-[var(--relay-fg-muted)]">
           {showStepper && (
-            <span className="hidden sm:inline">
+            <span className="hidden tabular-nums sm:inline">
               Step {currentStep} of {steps.length}
             </span>
           )}
@@ -171,9 +172,7 @@ export function OnboardingWizard({
 
             <div
               key={`${path}-${currentStep}`}
-              className={cn(
-                "onboarding-panel-animate rounded-2xl border border-[var(--relay-border)] bg-[var(--relay-surface-2)] p-7 sm:p-8 shadow-[0_0_0_1px_rgba(255,255,255,0.03)]"
-              )}
+              className="onboarding-panel-animate rounded-2xl border border-[var(--relay-electric)]/15 bg-[var(--relay-surface-2)] p-7 shadow-[0_0_0_1px_rgba(34,197,94,0.04),0_8px_32px_-8px_rgba(0,0,0,0.6)] sm:p-8"
             >
               {renderStep({
                 path,
@@ -187,21 +186,20 @@ export function OnboardingWizard({
               <button
                 type="button"
                 onClick={goBack}
-                className="flex items-center gap-2 rounded-lg border border-[var(--relay-border)] px-3.5 py-2 text-xs font-medium text-[var(--relay-fg-muted)] transition-all duration-150 hover:border-[var(--relay-green-600)]/50 hover:text-[var(--relay-fg)]"
+                className="flex items-center gap-2 rounded-xl border border-[var(--relay-border)] px-3.5 py-2 text-xs font-medium text-[var(--relay-fg-muted)] transition-all duration-150 hover:border-[var(--relay-electric)]/40 hover:text-[var(--relay-fg)]"
               >
                 <ArrowLeft className="h-3.5 w-3.5" strokeWidth={1.75} />
                 {currentStep === 1 ? "Switch path" : "Back"}
               </button>
 
-              <div className="flex items-center gap-1.5 sm:hidden">
+              <div className="flex items-center gap-1.5 sm:hidden" aria-hidden>
                 {steps.map((s) => (
                   <span
                     key={s.id}
-                    aria-hidden
                     className={cn(
-                      "h-1.5 rounded-full transition-all",
+                      "h-1.5 rounded-full transition-all duration-300",
                       currentStep === s.id
-                        ? "w-4 bg-[var(--relay-green-400)]"
+                        ? "w-5 bg-[var(--relay-electric)]"
                         : currentStep > s.id
                           ? "w-1.5 bg-[var(--relay-green-800)]"
                           : "w-1.5 bg-[var(--relay-border)]"
@@ -218,11 +216,11 @@ export function OnboardingWizard({
         )}
       </main>
 
-      <footer className="flex items-center justify-between border-t border-[var(--relay-border)] px-6 py-4">
+      <footer className="flex items-center justify-between border-t border-[var(--relay-electric)]/10 px-6 py-4">
         <p className="text-xs text-[var(--relay-fg-muted)]">
           Need help?{" "}
           <a
-            href="mailto:support@relay.example"
+            href="mailto:support@relay.so"
             className="text-[var(--relay-green-400)] underline-offset-2 hover:underline"
           >
             Contact support

@@ -96,12 +96,19 @@ body {
   --relay-destructive: #7f1d1d;
   --relay-destructive-fg: #fca5a5;
   --relay-error-bg: #1a0a0a;
+  --relay-electric: #00aa6f;
+  --relay-glow: rgba(0, 170, 111, 0.14);
+  --relay-glow-strong: rgba(0, 170, 111, 0.26);
+}
+
+.onboarding-shell {
+  --relay-bg: #000000;
 }
 
 @keyframes onboardingPanelIn {
   from {
     opacity: 0;
-    transform: translateY(8px);
+    transform: translateY(12px);
   }
   to {
     opacity: 1;
@@ -110,7 +117,100 @@ body {
 }
 
 .onboarding-panel-animate {
-  animation: onboardingPanelIn 0.3s ease-out;
+  animation: onboardingPanelIn 0.4s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+/* Onboarding (ported): progress shimmer, path picker glow, CTA sheen */
+@keyframes relay-pulse-glow-kf {
+  0%,
+  100% {
+    box-shadow:
+      0 0 0 0 var(--relay-glow-strong),
+      0 0 0 4px var(--relay-glow);
+  }
+  50% {
+    box-shadow:
+      0 0 0 6px var(--relay-glow-strong),
+      0 0 0 12px var(--relay-glow);
+  }
+}
+
+.relay-pulse-glow {
+  animation: relay-pulse-glow-kf 2s ease-in-out infinite;
+}
+
+@keyframes relay-shimmer-kf {
+  0% {
+    background-position: -200% center;
+  }
+  100% {
+    background-position: 200% center;
+  }
+}
+
+.relay-shimmer {
+  background-size: 200% auto;
+  animation: relay-shimmer-kf 2.4s linear infinite;
+}
+
+.relay-header {
+  background: rgba(0, 0, 0, 0.92);
+}
+
+.relay-hero-glow {
+  background: radial-gradient(circle, rgba(0, 170, 111, 0.08) 0%, transparent 70%);
+}
+
+.relay-artsy-gold-wash {
+  background: radial-gradient(
+    circle,
+    rgba(0, 170, 111, 0.1) 0%,
+    rgba(0, 170, 111, 0.03) 45%,
+    transparent 70%
+  );
+}
+
+.relay-btn-shimmer-layer {
+  background: linear-gradient(
+    105deg,
+    transparent 0%,
+    rgba(0, 170, 111, 0.1) 50%,
+    transparent 60%
+  );
+}
+
+@keyframes relay-connector-charge-kf {
+  from {
+    opacity: 0.4;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.relay-connector-charged {
+  animation: relay-connector-charge-kf 0.6s ease-out forwards;
+}
+
+@keyframes relay-scan-line-kf {
+  0% {
+    transform: translateY(-100%);
+    opacity: 0;
+  }
+  10% {
+    opacity: 0.6;
+  }
+  90% {
+    opacity: 0.6;
+  }
+  100% {
+    transform: translateY(100%);
+    opacity: 0;
+  }
+}
+
+.relay-scan-line {
+  animation: relay-scan-line-kf 3s ease-in-out infinite;
 }
 
 /* Site Designer (v0 copy block) — scoped tokens */
@@ -147,6 +247,14 @@ body {
   .relay-animate-fade-up,
   .relay-animate-fade-in {
     animation: none !important;
+  }
+
+  .onboarding-panel-animate,
+  .relay-pulse-glow,
+  .relay-shimmer,
+  .relay-connector-charged,
+  .relay-scan-line {
+    animation: none;
   }
 }
 
