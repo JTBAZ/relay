@@ -98,19 +98,32 @@ type MockTx = Record<string, Record<string, ReturnType<typeof vi.fn>>>;
 
 function createMockTx(): MockTx {
   return {
-    postTier: { deleteMany: vi.fn().mockResolvedValue({}), createMany: vi.fn().mockResolvedValue({}) },
+    postTier: {
+      deleteMany: vi.fn().mockResolvedValue({}),
+      count: vi.fn().mockResolvedValue(0),
+      createMany: vi.fn().mockResolvedValue({})
+    },
     mediaAsset: { deleteMany: vi.fn().mockResolvedValue({}), createMany: vi.fn().mockResolvedValue({}) },
     postVersion: { deleteMany: vi.fn().mockResolvedValue({}) },
     post: {
       deleteMany: vi.fn().mockResolvedValue({}),
       findMany: vi.fn().mockResolvedValue([]),
+      count: vi.fn().mockResolvedValue(0),
       create: vi.fn().mockResolvedValue({})
     },
-    tier: { deleteMany: vi.fn().mockResolvedValue({}), createMany: vi.fn().mockResolvedValue({}) },
+    tier: {
+      deleteMany: vi.fn().mockResolvedValue({}),
+      createMany: vi.fn().mockResolvedValue({}),
+      findMany: vi.fn().mockResolvedValue([]),
+      upsert: vi.fn().mockResolvedValue({}),
+      delete: vi.fn().mockResolvedValue({})
+    },
     campaign: {
       deleteMany: vi.fn().mockResolvedValue({}),
       createMany: vi.fn().mockResolvedValue({}),
-      findMany: vi.fn().mockResolvedValue([])
+      findMany: vi.fn().mockResolvedValue([]),
+      upsert: vi.fn().mockResolvedValue({}),
+      delete: vi.fn().mockResolvedValue({})
     },
     ingestIdempotencyKey: { deleteMany: vi.fn().mockResolvedValue({}), createMany: vi.fn().mockResolvedValue({}) }
   };
@@ -144,43 +157,42 @@ describe("DbCanonicalStore creator-scoped operations", () => {
     };
   }
 
-  it("saveForCreator only deletes rows for the target creator", async () => {
+  it("saveForCreator does not blast-delete campaign/tier by creatorId; first-save stomps nothing (T-2.2)", async () => {
     const prisma = makePrisma();
     const store = new DbCanonicalStore(prisma as never);
     const snap = creatorSnapshot("creator_A", "campaign_A");
 
     await store.saveForCreator("creator_A", snap);
 
-    const campaignDelete = captured.find((c) => c.table === "campaign");
-    expect(campaignDelete).toBeDefined();
-    expect(campaignDelete!.where).toEqual({ creatorId: "creator_A" });
+    const campaignByCreator = captured.find(
+      (c) => c.table === "campaign" && (c.where as { creatorId?: string })?.creatorId === "creator_A"
+    );
+    expect(campaignByCreator).toBeUndefined();
 
-    const tierDelete = captured.find((c) => c.table === "tier");
-    expect(tierDelete).toBeDefined();
-    expect(tierDelete!.where).toEqual({ creatorId: "creator_A" });
+    const tierByCreator = captured.find(
+      (c) => c.table === "tier" && (c.where as { creatorId?: string })?.creatorId === "creator_A"
+    );
+    expect(tierByCreator).toBeUndefined();
 
-    const postDelete = captured.find((c) => c.table === "post");
-    expect(postDelete).toBeDefined();
-    expect(postDelete!.where).toEqual({ creatorId: "creator_A" });
-
-    const mediaDelete = captured.find((c) => c.table === "mediaAsset");
-    expect(mediaDelete).toBeDefined();
-    expect(mediaDelete!.where).toEqual({ creatorId: "creator_A" });
+    expect(captured.filter((c) => c.table === "post").length).toBe(0);
+    for (const m of captured.filter((c) => c.table === "mediaAsset")) {
+      // Must not use legacy creator-wide "all Patreon post media" delete (T-2.2); only id-scoped deletes.
+      expect(m.where).toHaveProperty("id");
+    }
   });
 
-  it("saveForCreator inserts the correct campaign and post data", async () => {
+  it("saveForCreator upserts the correct campaign and post data", async () => {
     const prisma = makePrisma();
     const store = new DbCanonicalStore(prisma as never);
     const snap = creatorSnapshot("creator_B", "campaign_B");
 
     await store.saveForCreator("creator_B", snap);
 
-    const campaignCreate = tx.campaign.createMany;
-    expect(campaignCreate).toHaveBeenCalledTimes(1);
-    const campaignData = campaignCreate.mock.calls[0]![0] as { data: { id: string; creatorId: string }[] };
-    expect(campaignData.data).toHaveLength(1);
-    expect(campaignData.data[0]!.id).toBe("campaign_B");
-    expect(campaignData.data[0]!.creatorId).toBe("creator_B");
+    const campaignUpsert = tx.campaign.upsert;
+    expect(campaignUpsert).toHaveBeenCalledTimes(1);
+    const cArg = campaignUpsert.mock.calls[0]![0] as { create: { id: string; creatorId: string } };
+    expect(cArg.create.id).toBe("campaign_B");
+    expect(cArg.create.creatorId).toBe("creator_B");
 
     const postCreate = tx.post.create;
     expect(postCreate).toHaveBeenCalledTimes(1);
@@ -222,10 +234,10 @@ describe("DbCanonicalStore creator-scoped operations", () => {
 
     expect(prisma.$transaction).toHaveBeenCalledTimes(2);
 
-    const campaignDeletes = captured.filter((c) => c.table === "campaign");
-    expect(campaignDeletes).toHaveLength(2);
-    const deletedCreators = campaignDeletes.map((c) => (c.where as { creatorId: string }).creatorId).sort();
-    expect(deletedCreators).toEqual(["creator_A", "creator_B"]);
+    const campaignScopedDeletes = captured.filter(
+      (c) => c.table === "campaign" && (c.where as { creatorId?: string })?.creatorId
+    );
+    expect(campaignScopedDeletes).toHaveLength(0);
   });
 
   it("saveForCreator handles empty snapshot gracefully", async () => {
@@ -241,10 +253,46 @@ describe("DbCanonicalStore creator-scoped operations", () => {
 
     await store.saveForCreator("creator_X", empty);
 
-    expect(tx.campaign.createMany).not.toHaveBeenCalled();
-    expect(tx.tier.createMany).not.toHaveBeenCalled();
+    expect(tx.campaign.upsert).not.toHaveBeenCalled();
+    expect(tx.tier.upsert).not.toHaveBeenCalled();
     expect(tx.post.create).not.toHaveBeenCalled();
     expect(tx.mediaAsset.createMany).not.toHaveBeenCalled();
+  });
+
+  it("saveForCreator scopes deletes to PATREON and only creates PATREON posts from snapshot (T-2.1)", async () => {
+    const prisma = makePrisma();
+    const store = new DbCanonicalStore(prisma as never);
+    const v = versionRow();
+    const relayPost: PostRow = {
+      post_id: "relay_post_1",
+      creator_id: "creator_R",
+      current: v,
+      versions: [v],
+      upstream_status: "active",
+      source: "RELAY"
+    };
+    const snap: CanonicalSnapshot = {
+      ingest_idempotency: {},
+      campaigns: { creator_R: { camp_R: campaign("creator_R", "camp_R") } },
+      tiers: { creator_R: { relay_tier_public: tier("creator_R", "relay_tier_public", "camp_R") } },
+      posts: {
+        creator_R: {
+          relay_post_1: relayPost,
+          patreon_post_1: post("creator_R", "patreon_post_1")
+        }
+      },
+      media: {}
+    };
+
+    await store.saveForCreator("creator_R", snap);
+
+    // No patreon post rows in DB yet — no stomp delete; relay post is not in the PATREON findMany list.
+    expect(captured.filter((c) => c.table === "post").length).toBe(0);
+
+    expect(tx.post.create).toHaveBeenCalledTimes(1);
+    const postArg = tx.post.create.mock.calls[0]![0] as { data: { id: string; source: string } };
+    expect(postArg.data.id).toBe("patreon_post_1");
+    expect(postArg.data.source).toBe("PATREON");
   });
 });
 
@@ -394,9 +442,9 @@ describe("DbCanonicalStore.mutateForCreator", () => {
     const campaignLoad = loadCalls.find((c) => c.model === "campaign");
     expect((campaignLoad!.args as { where: { creatorId: string } }).where.creatorId).toBe("creator_Z");
 
-    const campaignDelete = saveCalls.find((c) => c.table === "campaign");
-    expect(campaignDelete).toBeDefined();
-    expect(campaignDelete!.where).toEqual({ creatorId: "creator_Z" });
+    const idemDelete = saveCalls.find((c) => c.table === "ingestIdempotencyKey");
+    expect(idemDelete).toBeDefined();
+    expect(idemDelete!.where).toEqual({ creatorId: "creator_Z" });
   });
 });
 
@@ -537,11 +585,12 @@ describe("PK conflict resolution (workspace migration)", () => {
     const deleteCalls: { table: string; where: unknown }[] = [];
     const tx = createMockTx();
 
-    // Pre-existing campaign under creator_old that conflicts with incoming
-    tx.campaign.findMany = vi.fn().mockResolvedValue([
-      { id: "patreon_campaign_123", creatorId: "creator_old" }
-    ]);
-    // No leftover posts under orphan campaign
+    // 1) No campaigns for creator_new. 2) Pre-existing campaign under creator_old (migration path).
+    tx.campaign.findMany = vi
+      .fn()
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([{ id: "patreon_campaign_123", creatorId: "creator_old" }]);
+    // No local patreon posts; no cross-tenant orphan post query hits
     tx.post.findMany = vi.fn().mockResolvedValue([]);
 
     for (const [table, methods] of Object.entries(tx)) {
@@ -660,13 +709,15 @@ describe("PK conflict resolution (workspace migration)", () => {
     const deleted: { table: string; where: unknown }[] = [];
     const tx = createMockTx();
 
-    // Orphan campaign exists under old creator
+    // 1) DB campaigns for new_creator (orphan cleanup) — none. 2) Migration: campaign on another creator.
     tx.campaign.findMany = vi.fn()
-      .mockResolvedValueOnce([{ id: "camp_shared", creatorId: "old_creator" }]);
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([{ id: "camp_shared", creatorId: "old_creator" }])
+      .mockResolvedValue([]);
 
     // Orphan posts exist under old creator
     tx.post.findMany = vi.fn()
-      .mockResolvedValueOnce([])  // phase 1: current creator's posts
+      .mockResolvedValueOnce([])  // existing patreon posts for new_creator
       .mockResolvedValueOnce([    // phase 2: orphan posts
         { id: "post_shared_1", creatorId: "old_creator" },
         { id: "post_shared_2", creatorId: "old_creator" }
@@ -692,6 +743,14 @@ describe("PK conflict resolution (workspace migration)", () => {
         });
       }
     }
+    tx.campaign.upsert = vi.fn().mockImplementation(async (args?: { create?: unknown }) => {
+      inserted.push({ table: "campaign", data: args?.create });
+      return {};
+    });
+    tx.tier.upsert = vi.fn().mockImplementation(async (args?: { create?: unknown }) => {
+      inserted.push({ table: "tier", data: args?.create });
+      return {};
+    });
     tx.post.create = vi.fn().mockImplementation(async (args?: { data?: unknown }) => {
       inserted.push({ table: "post", data: args?.data });
       return {};
@@ -723,10 +782,10 @@ describe("PK conflict resolution (workspace migration)", () => {
 
       await store.saveForCreator("new_creator", snap);
 
-      // Campaign should be inserted under new_creator
+      // Campaign should be upserted under new_creator
       const campaignInsert = inserted.find((i) => i.table === "campaign");
       expect(campaignInsert).toBeDefined();
-      const campData = (campaignInsert!.data as { creatorId: string }[])[0]!;
+      const campData = campaignInsert!.data as { creatorId: string };
       expect(campData.creatorId).toBe("new_creator");
 
       // Posts should be inserted under new_creator

@@ -6,8 +6,9 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Loader2 } from "lucide-react";
 import { getSupabaseBrowserClient } from "@/lib/supabase-browser";
 import { bootstrapStudioAfterSupabase } from "@/lib/relay-auth-bootstrap";
-import { resolvePostAuthPath } from "@/lib/post-login-redirect";
+import { resolveCreatorPostAuthDestination } from "@/lib/creator-post-login-redirect";
 import { emitStudioSessionUpdate } from "@/lib/studio-session-context";
+import { getWebAppOrigin } from "@/lib/site-origin";
 
 type Variant = "login" | "onboarding";
 
@@ -28,6 +29,7 @@ export function StudioSupabaseSignInPanel({
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [info, setInfo] = useState<string | null>(null);
   /** Avoid hydration mismatch: server has no `window`; client may have Supabase env — defer warning until mounted. */
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
@@ -38,6 +40,7 @@ export function StudioSupabaseSignInPanel({
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
     setError(null);
+    setInfo(null);
     const sb = getSupabaseBrowserClient();
     if (!sb) {
       setError("Supabase is not configured. Set NEXT_PUBLIC_SUPABASE_STAGING_URL and ANON key in web/.env.local.");
@@ -50,7 +53,13 @@ export function StudioSupabaseSignInPanel({
     setBusy(true);
     try {
       if (mode === "sign-up") {
-        const confirmUrl = `${window.location.origin}/auth/confirm`;
+        const confirmUrl = `${getWebAppOrigin()}/auth/confirm?intent=creator`;
+        try {
+          sessionStorage.setItem("relay_auth_confirm_intent", "creator");
+          localStorage.setItem("relay_auth_confirm_intent", "creator");
+        } catch {
+          /* ignore */
+        }
         const { data, error: upErr } = await sb.auth.signUp({
           email,
           password,
@@ -68,25 +77,25 @@ export function StudioSupabaseSignInPanel({
         const token = data.session?.access_token;
         if (!token) {
           // Email confirmation required — Supabase sent a link to confirmUrl
-          setError(
+          setInfo(
             "Check your email for a confirmation link. Click it to activate your account and be signed in automatically."
           );
           return;
         }
-        await bootstrapStudioAfterSupabase(token);
+        const boot = await bootstrapStudioAfterSupabase(token);
         emitStudioSessionUpdate();
         if (onSuccess) { onSuccess(); return; }
-        router.push(resolvePostAuthPath(returnTo));
+        router.push(await resolveCreatorPostAuthDestination(boot, returnTo));
         return;
       }
       const { data, error: inErr } = await sb.auth.signInWithPassword({ email, password });
       if (inErr) throw inErr;
       const token = data.session?.access_token;
       if (!token) throw new Error("No access token from Supabase.");
-      await bootstrapStudioAfterSupabase(token);
+      const boot = await bootstrapStudioAfterSupabase(token);
       emitStudioSessionUpdate();
       if (onSuccess) { onSuccess(); return; }
-      router.push(resolvePostAuthPath(returnTo));
+      router.push(await resolveCreatorPostAuthDestination(boot, returnTo));
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -146,6 +155,7 @@ export function StudioSupabaseSignInPanel({
             onClick={() => {
               setMode(m);
               setError(null);
+              setInfo(null);
             }}
             className="flex-1 rounded-md py-2 text-xs font-medium transition-colors"
             style={
@@ -178,6 +188,11 @@ export function StudioSupabaseSignInPanel({
           placeholder="Password"
           className="w-full rounded-lg border border-[#2A2A2A] bg-[#0d0d0d] px-3 py-2.5 text-sm text-[#F9FAFB] placeholder:text-[#6B7280] focus:border-[#2D6A4F] focus:outline-none"
         />
+        {info && (
+          <p className="text-xs text-emerald-200/90" role="status">
+            {info}
+          </p>
+        )}
         {error && (
           <p className="text-xs text-red-300" role="alert">
             {error}

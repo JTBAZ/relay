@@ -10,9 +10,13 @@ import {
   fetchGalleryPostDetail,
   fetchPatreonSyncState,
   formatSyncHealthBanner,
+  getCreatorPatronTierSummary,
+  getCreatorProfile,
   relayFetch,
   syncStateNeedsAttention,
   type Collection,
+  type CreatorPatronTierSummary,
+  type CreatorProfileIdentity,
   type FacetsData,
   type GalleryItem,
   type GalleryListData,
@@ -25,7 +29,7 @@ import GalleryGrid from "./components/GalleryGrid";
 import BulkActionBar from "./components/BulkActionBar";
 import PostBatchModal from "./components/PostBatchModal";
 import InspectModal from "./components/InspectModal";
-import LibraryTopBar from "./components/LibraryTopBar";
+import LibraryTopBar, { type PatronTierDashboardRow } from "./components/LibraryTopBar";
 import PatreonSyncMenu from "./components/PatreonSyncMenu";
 import GalleryStatsDrawer from "./components/GalleryStatsDrawer";
 import { LibraryOverviewPanel } from "./components/shell/LibraryOverviewPanel";
@@ -90,6 +94,8 @@ export default function GalleryView() {
     "idle"
   );
   const [syncHealth, setSyncHealth] = useState<PatreonSyncStateData | null>(null);
+  const [creatorProfile, setCreatorProfile] = useState<CreatorProfileIdentity | null>(null);
+  const [patronTierSummary, setPatronTierSummary] = useState<CreatorPatronTierSummary | null>(null);
   const prevLibrarySyncPhase = useRef(librarySyncPhase);
 
   const refreshSyncHealth = useCallback(async () => {
@@ -108,12 +114,47 @@ export default function GalleryView() {
     void refreshSyncHealth();
   }, [refreshSyncHealth]);
 
+  const loadCreatorProfile = useCallback(async () => {
+    if (!creatorId?.trim()) {
+      setCreatorProfile(null);
+      return;
+    }
+    try {
+      const profile = await getCreatorProfile();
+      setCreatorProfile(profile);
+    } catch {
+      setCreatorProfile(null);
+    }
+  }, [creatorId]);
+
+  useEffect(() => {
+    void loadCreatorProfile();
+  }, [loadCreatorProfile]);
+
+  const loadPatronTierSummary = useCallback(async () => {
+    if (!creatorId?.trim()) {
+      setPatronTierSummary(null);
+      return;
+    }
+    try {
+      const summary = await getCreatorPatronTierSummary();
+      setPatronTierSummary(summary);
+    } catch {
+      setPatronTierSummary(null);
+    }
+  }, [creatorId]);
+
+  useEffect(() => {
+    void loadPatronTierSummary();
+  }, [loadPatronTierSummary]);
+
   useEffect(() => {
     if (prevLibrarySyncPhase.current === "syncing" && librarySyncPhase !== "syncing") {
       void refreshSyncHealth();
+      void loadPatronTierSummary();
     }
     prevLibrarySyncPhase.current = librarySyncPhase;
-  }, [librarySyncPhase, refreshSyncHealth]);
+  }, [librarySyncPhase, refreshSyncHealth, loadPatronTierSummary]);
 
   const tierTitleById = useMemo(() => {
     const map: Record<string, string> = {};
@@ -295,7 +336,9 @@ export default function GalleryView() {
   const afterPatreonScrape = useCallback(async () => {
     await fetchFacets();
     refreshList();
-  }, [fetchFacets, refreshList]);
+    void loadCreatorProfile();
+    void loadPatronTierSummary();
+  }, [fetchFacets, refreshList, loadCreatorProfile, loadPatronTierSummary]);
 
   const persistViewMode = (mode: ViewMode) => {
     setViewMode(mode);
@@ -498,16 +541,62 @@ export default function GalleryView() {
       ? formatSyncHealthBanner(syncHealth) ?? undefined
       : undefined;
 
+  /** Relay creator profile (`/api/v1/creator/profile`) merged with Patreon sync snapshot (`campaign_display`). */
+  const libraryDisplayName = useMemo(() => {
+    const profile = creatorProfile;
+    const fromRelay = profile?.display_name?.trim() || profile?.username?.trim();
+    if (fromRelay) return fromRelay;
+    const fromEnv = process.env.NEXT_PUBLIC_RELAY_CREATOR_DISPLAY_NAME?.trim();
+    if (fromEnv) return fromEnv;
+    const vanity = syncHealth?.campaign_display?.patreon_name?.trim();
+    if (vanity) return vanity;
+    const slug = profile?.public_slug?.trim();
+    if (slug) return slug.replace(/-/g, " ");
+    return undefined;
+  }, [creatorProfile, syncHealth]);
+
+  const patreonVanitySlug = useMemo(() => {
+    const fromCampaign = syncHealth?.campaign_display?.patreon_name?.trim().toLowerCase();
+    if (fromCampaign) return fromCampaign;
+    const profile = creatorProfile;
+    return profile?.username_norm?.trim().toLowerCase() || profile?.username?.trim().toLowerCase() || undefined;
+  }, [syncHealth, creatorProfile]);
+
+  const campaignAvatarUrl = syncHealth?.campaign_display?.image_small_url || creatorProfile?.avatar_url || undefined;
+  const campaignBannerRemote = syncHealth?.campaign_display?.image_url || creatorProfile?.banner_url || undefined;
+  const headerPatronCount = patronTierSummary?.total_patrons ?? syncHealth?.campaign_display?.patron_count ?? 0;
+  const patronTierRows = useMemo<PatronTierDashboardRow[]>(() => {
+    if (!patronTierSummary) return [];
+    const rows: PatronTierDashboardRow[] = [
+      {
+        tierId: "free",
+        label: "Free",
+        count: patronTierSummary.free_patrons,
+        amountCents: 0
+      }
+    ];
+    for (const tier of patronTierSummary.tiers) {
+      rows.push({
+        tierId: tier.tier_id,
+        label: tier.title,
+        count: tier.patron_count,
+        amountCents: tier.amount_cents
+      });
+    }
+    return rows;
+  }, [patronTierSummary]);
+
   return (
     <div className="library-shell flex min-h-0 flex-1 flex-col overflow-hidden bg-[var(--lib-bg)] text-[var(--lib-fg)]">
       <LibraryTopBar
         syncStatus={derivedLibrarySyncStatus}
         syncIssueDetail={librarySyncIssueDetail}
-        creatorDisplayName={process.env.NEXT_PUBLIC_RELAY_CREATOR_DISPLAY_NAME}
-        patreonName={syncHealth?.campaign_display?.patreon_name}
-        patronCount={syncHealth?.campaign_display?.patron_count ?? 0}
-        campaignImageSmallUrl={syncHealth?.campaign_display?.image_small_url}
-        campaignBannerUrl={syncHealth?.campaign_display?.image_url}
+        creatorDisplayName={libraryDisplayName}
+        patreonName={patreonVanitySlug}
+        patronCount={headerPatronCount}
+        campaignImageSmallUrl={campaignAvatarUrl}
+        campaignBannerUrl={campaignBannerRemote}
+        patronTierRows={patronTierRows}
         trailingActions={
           <PatreonSyncMenu
             creatorId={creatorId}
@@ -518,7 +607,7 @@ export default function GalleryView() {
         }
       />
 
-      <div className="relative z-0 flex min-h-0 flex-1 overflow-hidden">
+      <div className="relative z-0 flex min-h-0 flex-1 flex-col overflow-hidden lg:flex-row">
         <GallerySidebar
           creatorId={creatorId}
           facets={facets}

@@ -19,6 +19,7 @@ import { PatreonClient } from "./auth/patreon-client.js";
 import { DbPatreonTokenStore } from "./auth/token-store-db.js";
 import { FilePatreonTokenStore, type PatreonTokenStore } from "./auth/token-store.js";
 import { errorEnvelope, successEnvelope } from "./contracts/api.js";
+import { RELAY_TIER_ALL_PATRONS, RELAY_TIER_PUBLIC } from "./patreon/relay-access-tiers.js";
 import { DbEventBus } from "./events/event-bus-db.js";
 import { InMemoryEventBus, type RelayEventBus } from "./events/event-bus.js";
 import { FileCanonicalStore } from "./ingest/canonical-store.js";
@@ -34,6 +35,10 @@ import { IngestRetryQueue } from "./ingest/retry-queue.js";
 import { SyncWatermarkStore } from "./ingest/sync-watermark-store.js";
 import { DbSyncWatermarkStore } from "./ingest/sync-watermark-store-db.js";
 import { validateIngestBatchBody } from "./ingest/validate-body.js";
+import {
+  createRelayPostTransaction,
+  RelayCreatePostError
+} from "./relay/create-relay-post.js";
 import {
   consentExchange,
   consentStart,
@@ -278,11 +283,25 @@ import {
   upsertAccountForSupabaseUser
 } from "./identity/supabase-account.js";
 import { getSupabaseUserFromAccessToken } from "./lib/supabase-auth.js";
+import { getR2ClientConfigFromEnv } from "./storage/r2-config.js";
+import {
+  buildRelayR2ObjectKey,
+  getAllowedMimePrefixesFromEnv,
+  getPresignExpiresSec,
+  getRelayUploadMaxBytes,
+  headR2ObjectContentLength,
+  isMimeTypeAllowed,
+  presignR2Put
+} from "./storage/relay-upload-r2.js";
 import {
   IdentityAuthProvider,
+  MediaIngestOrigin,
+  MediaUpstreamStatus,
+  PostSource,
   PublicSlugSource,
   SessionKind,
   TenantRole,
+  type Prisma,
   type PrismaClient
 } from "@prisma/client";
 import { checkPostAccess, filterAccessiblePosts } from "./identity/access-guard.js";
@@ -833,7 +852,8 @@ export function createApp(config: AppConfig): CreateAppResult {
       const cred = await tokenStore.getByCreatorId(creatorId);
       const t = cred?.access_token?.trim();
       return t ? t : null;
-    }
+    },
+    config.prisma
   );
   const galleryOverridesStore = useDbGalleryOverridesStore(config)
     ? new DbGalleryOverridesStore(config.prisma!)
@@ -2852,13 +2872,17 @@ export function createApp(config: AppConfig): CreateAppResult {
   app.get("/api/v1/export/media/:creator_id/:media_id/content", async (req, res) => {
     const traceId = traceIdFrom(req);
     try {
-      const record = await exportService.getExportRecord(req.params.creator_id, req.params.media_id);
-      if (!record) {
+      const content = await exportService.getExportContent(
+        req.params.creator_id,
+        req.params.media_id
+      );
+      if (!content) {
         recordContentDeliveryFailure();
         return res
           .status(404)
           .json(errorEnvelope("NOT_FOUND", "Exported media not found.", traceId));
       }
+      const { record, buffer: bytes } = content;
       if (exportRequireTierAccess) {
         const snapshot = await canonicalStore.load();
         const bearer = req.header("authorization")?.replace(/^Bearer\s+/i, "").trim() ?? "";
@@ -2888,7 +2912,6 @@ export function createApp(config: AppConfig): CreateAppResult {
             .json(errorEnvelope("FORBIDDEN", gate.reason, traceId));
         }
       }
-      const bytes = await exportService.readBlob(req.params.creator_id, req.params.media_id);
       recordContentDeliverySuccess();
       const mime = record.mime_type ?? "application/octet-stream";
       res.setHeader("content-type", mime);
@@ -2909,13 +2932,14 @@ export function createApp(config: AppConfig): CreateAppResult {
     try {
       const creatorId = req.params.creator_id;
       const mediaId = req.params.media_id;
-      const record = await exportService.getExportRecord(creatorId, mediaId);
-      if (!record) {
+      const content = await exportService.getExportContent(creatorId, mediaId);
+      if (!content) {
         recordPreviewDeliveryFailure();
         return res
           .status(404)
           .json(errorEnvelope("NOT_FOUND", "Exported media not found.", traceId));
       }
+      const { record, buffer: bytes } = content;
       const snapshot = await canonicalStore.load();
       const overrides = await galleryOverridesStore.load();
       const postId = findPostIdForExportedMedia(snapshot, creatorId, mediaId);
@@ -2928,7 +2952,6 @@ export function createApp(config: AppConfig): CreateAppResult {
         recordPreviewDeliveryFailure();
         return res.status(404).json(errorEnvelope("NOT_FOUND", "Not found.", traceId));
       }
-      const bytes = await exportService.readBlob(creatorId, mediaId);
       const mime = record.mime_type ?? "application/octet-stream";
       const preview = await buildVisitorPreviewImage(bytes, mime);
       if (!preview) {
@@ -3421,6 +3444,9 @@ export function createApp(config: AppConfig): CreateAppResult {
   /**
    * MT-032 — Idempotent artist studio: `Tenant` + creator `User` + `CreatorProfile`; sets
    * `Account.primaryRelayCreatorId`. Requires opaque Bearer session with `Account`-backed membership.
+   * First-time provision (no studio yet) requires JSON body `{ "confirm_creator_intent": true }` so
+   * supporter sessions cannot accidentally create a studio; idempotent calls when a studio exists
+   * may omit the flag.
    */
   app.post("/api/v1/creator/workspace", async (req: Request, res: Response) => {
     const traceId = traceIdFrom(req);
@@ -3438,6 +3464,26 @@ export function createApp(config: AppConfig): CreateAppResult {
       return res
         .status(403)
         .json(errorEnvelope("FORBIDDEN", "Session is not linked to an account.", traceId));
+    }
+    const accountRow = await config.prisma.account.findUnique({
+      where: { id: accountId },
+      select: { primaryRelayCreatorId: true }
+    });
+    if (!accountRow) {
+      return res.status(404).json(errorEnvelope("NOT_FOUND", "Account not found.", traceId));
+    }
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    if (!accountRow.primaryRelayCreatorId) {
+      if (body.confirm_creator_intent !== true) {
+        return res.status(403).json(
+          errorEnvelope(
+            "FORBIDDEN",
+            "Creator workspace provisioning requires request body { confirm_creator_intent: true }. " +
+              "This guard prevents supporter-only accounts from accidentally receiving a studio.",
+            traceId
+          )
+        );
+      }
     }
     try {
       const result = await provisionCreatorWorkspace(config.prisma, accountId);
@@ -3504,6 +3550,420 @@ export function createApp(config: AppConfig): CreateAppResult {
       .json(
         successEnvelope({ public_slug: prof.publicSlug, slug_source: prof.slugSource }, traceId)
       );
+  });
+
+  /**
+   * T-4.2 — Relay-native post: `Post` + `PostVersion` + `PostTier` + media link in one transaction.
+   * Schema: `docs/api/relay-native-posts.md`
+   */
+  app.post("/api/v1/relay/posts", async (req: Request, res: Response) => {
+    const traceId = traceIdFrom(req);
+    if (!config.prisma) {
+      return res
+        .status(503)
+        .json(errorEnvelope("SERVICE_UNAVAILABLE", "Database not configured.", traceId));
+    }
+    const session = await requirePatronBearerSession(req, res, traceId);
+    if (!session) {
+      return;
+    }
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const creatorId = typeof body.creator_id === "string" ? body.creator_id.trim() : "";
+    if (!creatorId) {
+      return res
+        .status(400)
+        .json(errorEnvelope("VALIDATION_ERROR", "creator_id is required.", traceId));
+    }
+    if (!(await requireAccountMatchesCreator(req, res, traceId, creatorId))) {
+      return;
+    }
+    if (
+      !(await assertCreatorRelayMutationAllowed(
+        req,
+        res,
+        traceId,
+        config.prisma,
+        creatorId
+      ))
+    ) {
+      return;
+    }
+    const titleRaw = body.title;
+    const title = typeof titleRaw === "string" ? titleRaw : "";
+    const description =
+      body.description === null || body.description === undefined
+        ? null
+        : typeof body.description === "string"
+          ? body.description
+          : null;
+    const isPublic = body.is_public === true;
+    const isPublicFalse = body.is_public === false;
+    if (!isPublic && !isPublicFalse) {
+      return res
+        .status(400)
+        .json(errorEnvelope("VALIDATION_ERROR", "is_public must be a boolean.", traceId));
+    }
+    const requiredTierId =
+      typeof body.required_tier_id === "string" && body.required_tier_id.trim()
+        ? body.required_tier_id.trim()
+        : null;
+    const tierIds = Array.isArray(body.tier_ids) ? (body.tier_ids as unknown[]) : [];
+    const tagIds = Array.isArray(body.tag_ids) ? (body.tag_ids as unknown[]) : [];
+    const mediaIds = Array.isArray(body.media_ids) ? (body.media_ids as unknown[]) : [];
+    const publish = body.publish === true;
+    const publishFalse = body.publish === false;
+    if (!publish && !publishFalse) {
+      return res
+        .status(400)
+        .json(errorEnvelope("VALIDATION_ERROR", "publish must be a boolean.", traceId));
+    }
+    const publishedAtInput =
+      typeof body.published_at === "string" && body.published_at.trim()
+        ? body.published_at.trim()
+        : null;
+    const campaignId =
+      typeof body.campaign_id === "string" && body.campaign_id.trim()
+        ? body.campaign_id.trim()
+        : null;
+    if (!tierIds.every((t) => typeof t === "string" && t.trim())) {
+      return res
+        .status(400)
+        .json(errorEnvelope("VALIDATION_ERROR", "tier_ids must be an array of strings.", traceId));
+    }
+    if (!tagIds.every((t) => typeof t === "string" && t.trim())) {
+      return res
+        .status(400)
+        .json(errorEnvelope("VALIDATION_ERROR", "tag_ids must be an array of strings.", traceId));
+    }
+    if (!mediaIds.every((t) => typeof t === "string" && t.trim())) {
+      return res
+        .status(400)
+        .json(errorEnvelope("VALIDATION_ERROR", "media_ids must be an array of strings.", traceId));
+    }
+    const postId = `relay_p_${randomUUID()}`;
+    try {
+      const out = await createRelayPostTransaction(config.prisma, postId, {
+        creatorId,
+        campaignId,
+        title,
+        description,
+        isPublic,
+        requiredTierId,
+        tierIds: tierIds as string[],
+        tagIds: tagIds as string[],
+        mediaIds: mediaIds as string[],
+        publish,
+        publishedAtInput
+      });
+      res.setHeader("Cache-Control", "private, no-store");
+      return res.status(201).json(
+        successEnvelope(
+          {
+            post: { ...out.post, source: "RELAY" as const },
+            version: {
+              id: out.version.id,
+              version_seq: out.version.versionSeq,
+              upstream_revision: out.version.upstreamRevision,
+              title: out.version.title,
+              description: out.version.description,
+              published_at: out.version.publishedAt.toISOString(),
+              tag_ids: out.version.tagIds,
+              tier_ids: out.version.tierIds,
+              media_ids: out.version.mediaIds
+            }
+          },
+          traceId
+        )
+      );
+    } catch (e) {
+      if (e instanceof RelayCreatePostError) {
+        return res
+          .status(e.statusCode)
+          .json(errorEnvelope(e.code, e.message, traceId));
+      }
+      throw e;
+    }
+  });
+
+  /**
+   * T-3.2 — Presigned R2 `PUT` for creator uploads; `MediaAsset` created with `ingestOrigin=RELAY_UPLOAD`
+   * and `currentStorageKey` set on commit. See `docs/architecture/adr/002-r2-creator-uploads-presigned-vs-server.md`.
+   */
+  app.post("/api/v1/relay/upload/init", async (req: Request, res: Response) => {
+    const traceId = traceIdFrom(req);
+    if (!config.prisma) {
+      return res
+        .status(503)
+        .json(errorEnvelope("SERVICE_UNAVAILABLE", "Database not configured.", traceId));
+    }
+    const session = await requirePatronBearerSession(req, res, traceId);
+    if (!session) {
+      return;
+    }
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const creatorId = typeof body.creator_id === "string" ? body.creator_id.trim() : "";
+    const contentType = typeof body.content_type === "string" ? body.content_type.trim() : "";
+    const byteSize = typeof body.byte_size === "number" && Number.isFinite(body.byte_size) ? body.byte_size : -1;
+    const postIdOpt = typeof body.post_id === "string" ? body.post_id.trim() : undefined;
+    if (!creatorId || !contentType || byteSize < 0) {
+      return res
+        .status(400)
+        .json(
+          errorEnvelope("VALIDATION_ERROR", "creator_id, content_type, byte_size (number) are required.", traceId)
+        );
+    }
+    if (!(await requireAccountMatchesCreator(req, res, traceId, creatorId))) {
+      return;
+    }
+    if (
+      !(await assertCreatorRelayMutationAllowed(
+        req,
+        res,
+        traceId,
+        config.prisma,
+        creatorId
+      ))
+    ) {
+      return;
+    }
+    if (!isMimeTypeAllowed(contentType, getAllowedMimePrefixesFromEnv())) {
+      return res
+        .status(400)
+        .json(
+          errorEnvelope("VALIDATION_ERROR", "content_type is not in the allowlist for uploads.", traceId)
+        );
+    }
+    if (byteSize > getRelayUploadMaxBytes()) {
+      return res
+        .status(400)
+        .json(
+          errorEnvelope("VALIDATION_ERROR", "byte_size exceeds configured maximum.", traceId)
+        );
+    }
+    const r2 = getR2ClientConfigFromEnv();
+    if (!r2) {
+      return res
+        .status(503)
+        .json(
+          errorEnvelope("SERVICE_UNAVAILABLE", "Object storage (R2) is not configured. See .env.example.", traceId)
+        );
+    }
+    let primaryPostId: string | null = null;
+    let postIds: string[] = [];
+    if (postIdOpt) {
+      const post = await config.prisma.post.findFirst({
+        where: { id: postIdOpt, creatorId, source: PostSource.RELAY }
+      });
+      if (!post) {
+        return res
+          .status(400)
+          .json(
+            errorEnvelope(
+              "VALIDATION_ERROR",
+              "post_id not found, not owned by this creator, or not a Relay (RELAY) post.",
+              traceId
+            )
+          );
+      }
+      primaryPostId = post.id;
+      postIds = [post.id];
+    }
+    const mediaId = `relay_m_${randomUUID()}`;
+    const key = buildRelayR2ObjectKey(creatorId, mediaId);
+    const now = new Date();
+    const nowIso = now.toISOString();
+    const pendingVersion = {
+      version_seq: 1,
+      upstream_revision: "relay:upload:pending",
+      ingested_at: nowIso
+    };
+    await config.prisma.mediaAsset.create({
+      data: {
+        id: mediaId,
+        creatorId,
+        postIds,
+        primaryPostId,
+        upstreamStatus: MediaUpstreamStatus.active,
+        currentVersionSeq: 1,
+        currentUpstreamRevision: "relay:upload:pending",
+        currentMimeType: null,
+        currentUpstreamUrl: null,
+        currentRole: null,
+        currentStorageKey: null,
+        currentIngestedAt: now,
+        versionsJson: [pendingVersion] as unknown as Prisma.InputJsonValue,
+        ingestOrigin: MediaIngestOrigin.RELAY_UPLOAD
+      }
+    });
+    const exp = getPresignExpiresSec();
+    const uploadUrl = await presignR2Put(r2, key, contentType, exp);
+    res.setHeader("Cache-Control", "private, no-store");
+    return res.status(201).json(
+      successEnvelope(
+        {
+          media_id: mediaId,
+          storage_key: key,
+          byte_size: byteSize,
+          upload: { method: "PUT" as const, url: uploadUrl, headers: { "Content-Type": contentType } },
+          expires_in_sec: exp
+        },
+        traceId
+      )
+    );
+  });
+
+  app.post("/api/v1/relay/upload/commit", async (req: Request, res: Response) => {
+    const traceId = traceIdFrom(req);
+    if (!config.prisma) {
+      return res
+        .status(503)
+        .json(errorEnvelope("SERVICE_UNAVAILABLE", "Database not configured.", traceId));
+    }
+    const session = await requirePatronBearerSession(req, res, traceId);
+    if (!session) {
+      return;
+    }
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const creatorId = typeof body.creator_id === "string" ? body.creator_id.trim() : "";
+    const mediaId = typeof body.media_id === "string" ? body.media_id.trim() : "";
+    const contentType = typeof body.content_type === "string" ? body.content_type.trim() : "";
+    const byteSize = typeof body.byte_size === "number" && Number.isFinite(body.byte_size) ? body.byte_size : -1;
+    const postIdOpt = typeof body.post_id === "string" ? body.post_id.trim() : undefined;
+    if (!creatorId || !mediaId || !contentType || byteSize < 0) {
+      return res
+        .status(400)
+        .json(
+          errorEnvelope(
+            "VALIDATION_ERROR",
+            "creator_id, media_id, content_type, byte_size (number) are required.",
+            traceId
+          )
+        );
+    }
+    if (!(await requireAccountMatchesCreator(req, res, traceId, creatorId))) {
+      return;
+    }
+    if (
+      !(await assertCreatorRelayMutationAllowed(
+        req,
+        res,
+        traceId,
+        config.prisma,
+        creatorId
+      ))
+    ) {
+      return;
+    }
+    if (!isMimeTypeAllowed(contentType, getAllowedMimePrefixesFromEnv())) {
+      return res
+        .status(400)
+        .json(
+          errorEnvelope("VALIDATION_ERROR", "content_type is not in the allowlist for uploads.", traceId)
+        );
+    }
+    const r2 = getR2ClientConfigFromEnv();
+    if (!r2) {
+      return res
+        .status(503)
+        .json(
+          errorEnvelope("SERVICE_UNAVAILABLE", "Object storage (R2) is not configured. See .env.example.", traceId)
+        );
+    }
+    const key = buildRelayR2ObjectKey(creatorId, mediaId);
+    const row = await config.prisma.mediaAsset.findFirst({
+      where: { id: mediaId, creatorId, ingestOrigin: MediaIngestOrigin.RELAY_UPLOAD }
+    });
+    if (!row) {
+      return res
+        .status(404)
+        .json(errorEnvelope("NOT_FOUND", "Unknown media_id for this creator.", traceId));
+    }
+    if (row.currentStorageKey) {
+      return res
+        .status(409)
+        .json(errorEnvelope("CONFLICT", "This media was already committed.", traceId));
+    }
+    let head: { contentLength: number; contentType: string | undefined; etag: string | undefined };
+    try {
+      head = await headR2ObjectContentLength(r2, key);
+    } catch {
+      return res
+        .status(400)
+        .json(
+          errorEnvelope(
+            "VALIDATION_ERROR",
+            "Object not found in storage at the expected key. Complete the PUT to the presigned URL first.",
+            traceId
+          )
+        );
+    }
+    if (head.contentLength > 0 && head.contentLength !== byteSize) {
+      return res
+        .status(400)
+        .json(
+          errorEnvelope(
+            "VALIDATION_ERROR",
+            `byte_size does not match stored object (expected ${head.contentLength} bytes, got ${byteSize}).`,
+            traceId
+          )
+        );
+    }
+    let primaryPostId: string | null = row.primaryPostId;
+    const postIds = [...row.postIds];
+    if (postIdOpt) {
+      const post = await config.prisma.post.findFirst({
+        where: { id: postIdOpt, creatorId, source: PostSource.RELAY }
+      });
+      if (!post) {
+        return res
+          .status(400)
+          .json(
+            errorEnvelope(
+              "VALIDATION_ERROR",
+              "post_id not found, not owned by this creator, or not a Relay (RELAY) post.",
+              traceId
+            )
+          );
+      }
+      primaryPostId = post.id;
+      if (!postIds.includes(post.id)) {
+        postIds.push(post.id);
+      }
+    }
+    const now = new Date();
+    const v = {
+      version_seq: 1,
+      upstream_revision: "relay:upload:committed",
+      mime_type: contentType,
+      storage_key: key,
+      r2_etag: head.etag != null ? String(head.etag) : undefined,
+      ingested_at: now.toISOString()
+    };
+    await config.prisma.mediaAsset.update({
+      where: { id: mediaId },
+      data: {
+        primaryPostId,
+        postIds,
+        currentStorageKey: key,
+        currentMimeType: contentType,
+        currentUpstreamUrl: null,
+        currentUpstreamRevision: "relay:upload:committed",
+        currentIngestedAt: now,
+        versionsJson: [v] as unknown as Prisma.InputJsonValue
+      }
+    });
+    res.setHeader("Cache-Control", "private, no-store");
+    return res.status(200).json(
+      successEnvelope(
+        {
+          media_id: mediaId,
+          storage_key: key,
+          content_length: head.contentLength,
+          etag: head.etag ?? null
+        },
+        traceId
+      )
+    );
   });
 
   /**
@@ -3606,6 +4066,92 @@ export function createApp(config: AppConfig): CreateAppResult {
       }
       res.setHeader("Cache-Control", "private, no-store");
       return res.status(200).json(successEnvelope(profile, traceId));
+    } catch (err) {
+      if (sendRelayAuthError(res, err, traceId)) return;
+      return res.status(500).json(errorEnvelope("INTERNAL", (err as Error).message, traceId));
+    }
+  });
+
+  app.get("/api/v1/creator/patron-tier-summary", async (req: Request, res: Response) => {
+    const traceId = traceIdFrom(req);
+    if (!config.prisma) {
+      return res.status(503).json(
+        errorEnvelope("SERVICE_UNAVAILABLE", "Database not configured.", traceId)
+      );
+    }
+    try {
+      const { context } = await requireAccountWithRole(req, { prisma: config.prisma, identityService }, "creator");
+      const relayCreatorId = context.primaryRelayCreatorId?.trim();
+      if (!relayCreatorId) {
+        return res.status(404).json(
+          errorEnvelope("NOT_FOUND", "No creator studio — call POST /api/v1/creator/workspace first.", traceId)
+        );
+      }
+
+      const tenant = await config.prisma.tenant.findUnique({
+        where: { relayCreatorId },
+        select: { id: true }
+      });
+      if (!tenant) {
+        return res.status(404).json(errorEnvelope("NOT_FOUND", "Creator tenant missing.", traceId));
+      }
+
+      const [memberships, tiers] = await Promise.all([
+        config.prisma.tenantMembership.findMany({
+          where: { tenantId: tenant.id, role: "patron" },
+          select: { tierIds: true }
+        }),
+        config.prisma.tier.findMany({
+          where: { creatorId: relayCreatorId },
+          select: { id: true, relayTierId: true, title: true, amountCents: true },
+          orderBy: [{ amountCents: "asc" }, { title: "asc" }]
+        })
+      ]);
+
+      const pseudoTierIds = new Set([RELAY_TIER_PUBLIC, RELAY_TIER_ALL_PATRONS]);
+      const isRealPaidTier = (tier: { relayTierId: string; title: string; amountCents: number | null }) => {
+        const title = tier.title.trim().toLowerCase();
+        if (pseudoTierIds.has(tier.relayTierId)) return false;
+        if (title === "public" || title === "free" || title === "all patrons") return false;
+        return (tier.amountCents ?? 0) > 0;
+      };
+      const realPaidTierIds = new Set(
+        tiers.filter(isRealPaidTier).flatMap((tier) => [tier.relayTierId, tier.id])
+      );
+
+      const countsByTierId = new Map<string, number>();
+      let freeCount = 0;
+      for (const membership of memberships) {
+        const tierIds = membership.tierIds.filter((tierId) => realPaidTierIds.has(tierId.trim()));
+        if (tierIds.length === 0) {
+          freeCount += 1;
+          continue;
+        }
+        for (const tierId of new Set(tierIds)) {
+          countsByTierId.set(tierId, (countsByTierId.get(tierId) ?? 0) + 1);
+        }
+      }
+
+      const tierRows = tiers
+        .filter(isRealPaidTier)
+        .map((tier) => ({
+          tier_id: tier.relayTierId,
+          title: tier.title,
+          amount_cents: tier.amountCents,
+          patron_count: countsByTierId.get(tier.relayTierId) ?? countsByTierId.get(tier.id) ?? 0
+        }));
+
+      res.setHeader("Cache-Control", "private, no-store");
+      return res.status(200).json(
+        successEnvelope(
+          {
+            total_patrons: memberships.length,
+            free_patrons: freeCount,
+            tiers: tierRows
+          },
+          traceId
+        )
+      );
     } catch (err) {
       if (sendRelayAuthError(res, err, traceId)) return;
       return res.status(500).json(errorEnvelope("INTERNAL", (err as Error).message, traceId));
@@ -4339,13 +4885,13 @@ export function createApp(config: AppConfig): CreateAppResult {
         where: { id: { in: [...new Set(mediaIds)] } },
         select: { id: true, creatorId: true, primaryPostId: true }
       });
-      const mediaByKey = new Map<string, string>();
+      const mediaByKey = new Map<string, string | null>();
       for (const m of mediaRows) {
         mediaByKey.set(`${m.creatorId}\0${m.id}`, m.primaryPostId);
       }
       for (const r of mediaIdxByCreator) {
         const postId = mediaByKey.get(`${r.creator}\0${r.media}`);
-        if (postId) {
+        if (postId && postId.length > 0) {
           out.set(`${r.idx}`, {
             source_creator_id: r.creator,
             source_post_id: postId

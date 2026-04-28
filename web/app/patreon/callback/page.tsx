@@ -9,11 +9,13 @@ import {
   isPreparedPatreonOAuthState,
   relayFetch
 } from "@/lib/relay-api";
+import { getWebAppOrigin } from "@/lib/site-origin";
 
 function redirectUriForExchange(): string {
   const fromEnv = process.env.NEXT_PUBLIC_PATREON_REDIRECT_URI?.trim();
   if (fromEnv) return fromEnv;
-  return `${window.location.origin}/patreon/callback`;
+  const o = getWebAppOrigin();
+  return o ? `${o}/patreon/callback` : `${window.location.origin}/patreon/callback`;
 }
 
 /** Subset of `POST /api/v1/auth/patreon/exchange` success `data` used by this page. */

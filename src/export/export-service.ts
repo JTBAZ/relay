@@ -1,10 +1,13 @@
 import archiver from "archiver";
+import type { PrismaClient } from "@prisma/client";
 import { createHash, randomInt } from "node:crypto";
 import { access, constants, mkdir, readFile, writeFile } from "node:fs/promises";
 import { join, relative, resolve } from "node:path";
 import type { Writable } from "node:stream";
 import type { CanonicalStore } from "../ingest/canonical-store.js";
 import { applyStorageKeyToCanonicalSnapshot } from "../ingest/media-storage-key.js";
+import { getR2ClientConfigFromEnv } from "../storage/r2-config.js";
+import { getR2ObjectBuffer } from "../storage/relay-upload-r2.js";
 import { FileExportIndex } from "./export-index.js";
 import {
   buildMediaManifest,
@@ -15,6 +18,7 @@ import { fetchUpstreamWithRetries, type FetchUpstreamOptions } from "./fetch-ret
 import type {
   CreatorExportIndex,
   ExportFetchRetryPolicy,
+  ExportMediaRecord,
   ExportOneResult
 } from "./types.js";
 import { DEFAULT_EXPORT_FETCH_RETRY_POLICY } from "./types.js";
@@ -57,6 +61,20 @@ function absoluteBlobPathUnderCreator(
 
 const LIBRARY_ZIP_EMPTY_CODE = "LIBRARY_ZIP_EMPTY";
 
+/** R2 object keys for Relay uploads (ADR 002). */
+function isRelayR2StorageKey(key: string): boolean {
+  return key.startsWith("relay/");
+}
+
+type MediaAssetExportSelect = {
+  id: string;
+  creatorId: string;
+  currentStorageKey: string | null;
+  currentMimeType: string | null;
+  currentUpstreamUrl: string | null;
+  currentUpstreamRevision: string;
+};
+
 /**
  * Patreon media URLs often return 403 without the creator OAuth token; plain `fetch(url)` is not enough.
  */
@@ -85,6 +103,7 @@ export class ExportService {
   private readonly getCreatorPatreonAccessToken?: (
     creatorId: string
   ) => Promise<string | null>;
+  private readonly prisma: PrismaClient | undefined;
 
   public constructor(
     canonicalStore: CanonicalStore,
@@ -93,7 +112,8 @@ export class ExportService {
     fetchImpl?: typeof fetch,
     retryPolicy?: Partial<ExportFetchRetryPolicy>,
     sleepFn?: (ms: number) => Promise<void>,
-    getCreatorPatreonAccessToken?: (creatorId: string) => Promise<string | null>
+    getCreatorPatreonAccessToken?: (creatorId: string) => Promise<string | null>,
+    prisma?: PrismaClient
   ) {
     this.canonicalStore = canonicalStore;
     this.exportIndex = exportIndex;
@@ -105,6 +125,7 @@ export class ExportService {
     };
     this.sleepFn = sleepFn ?? ((ms) => new Promise((r) => setTimeout(r, ms)));
     this.getCreatorPatreonAccessToken = getCreatorPatreonAccessToken;
+    this.prisma = prisma;
   }
 
   public async exportMedia(creatorId: string, mediaId: string): Promise<ExportOneResult> {
@@ -230,18 +251,23 @@ export class ExportService {
     }
   }
 
+  /**
+   * Single resolution pass for `GET /api/v1/export/media/.../content` and `/preview` — avoids two R2 GETs
+   * when the handler needs both metadata and bytes.
+   */
+  public async getExportContent(
+    creatorId: string,
+    mediaId: string
+  ): Promise<{ record: ExportMediaRecord; buffer: Buffer } | null> {
+    return this.loadExportRecordAndBuffer(creatorId, mediaId);
+  }
+
   public async readBlob(creatorId: string, mediaId: string): Promise<Buffer> {
-    const index = await this.exportIndex.load(creatorId);
-    const rec = index.media[mediaId];
-    if (!rec) {
+    const out = await this.loadExportRecordAndBuffer(creatorId, mediaId);
+    if (!out) {
       throw new Error(`No export record for media ${mediaId}`);
     }
-    const absolutePath = join(
-      this.storageRoot,
-      creatorId,
-      ...rec.relative_blob_path.split("/")
-    );
-    return readFile(absolutePath);
+    return out.buffer;
   }
 
   public async verifyIntegrity(creatorId: string, mediaId: string): Promise<boolean> {
@@ -289,9 +315,147 @@ export class ExportService {
     return { checked: pick.length, matched, mismatched };
   }
 
-  public async getExportRecord(creatorId: string, mediaId: string) {
+  public async getExportRecord(
+    creatorId: string,
+    mediaId: string
+  ): Promise<ExportMediaRecord | null> {
+    const out = await this.loadExportRecordAndBuffer(creatorId, mediaId);
+    return out?.record ?? null;
+  }
+
+  private async loadMediaRowAndIndex(
+    creatorId: string,
+    mediaId: string
+  ): Promise<{
+    fromIndex: ExportMediaRecord | null;
+    row: MediaAssetExportSelect | null;
+  }> {
     const index = await this.exportIndex.load(creatorId);
-    return index.media[mediaId] ?? null;
+    const fromIndex = index.media[mediaId] ?? null;
+    if (!this.prisma) {
+      return { fromIndex, row: null };
+    }
+    const row = await this.prisma.mediaAsset.findFirst({
+      where: { id: mediaId, creatorId },
+      select: {
+        id: true,
+        creatorId: true,
+        currentStorageKey: true,
+        currentMimeType: true,
+        currentUpstreamUrl: true,
+        currentUpstreamRevision: true
+      }
+    });
+    return { fromIndex, row };
+  }
+
+  private buildExportRecordForUpstream(
+    row: MediaAssetExportSelect,
+    creatorId: string,
+    mediaId: string,
+    buffer: Buffer
+  ): ExportMediaRecord {
+    const url = row.currentUpstreamUrl!.trim();
+    return {
+      media_id: mediaId,
+      creator_id: creatorId,
+      sha256: createHash("sha256").update(buffer).digest("hex"),
+      byte_length: buffer.byteLength,
+      relative_blob_path: `__upstream__/${mediaId}/asset`,
+      upstream_revision: row.currentUpstreamRevision,
+      mime_type: row.currentMimeType ?? undefined,
+      exported_at: new Date().toISOString(),
+      upstream_url: url
+    };
+  }
+
+  private async loadExportRecordAndBuffer(
+    creatorId: string,
+    mediaId: string
+  ): Promise<{ record: ExportMediaRecord; buffer: Buffer } | null> {
+    const { fromIndex, row } = await this.loadMediaRowAndIndex(creatorId, mediaId);
+    if (row?.currentStorageKey?.trim()) {
+      const key = row.currentStorageKey.trim();
+      if (fromIndex && fromIndex.relative_blob_path === key) {
+        const parts = fromIndex.relative_blob_path.split("/");
+        const absolutePath = join(this.storageRoot, creatorId, ...parts);
+        const buffer = await readFile(absolutePath);
+        return { record: fromIndex, buffer };
+      }
+      if (isRelayR2StorageKey(key)) {
+        const r2 = getR2ClientConfigFromEnv();
+        if (!r2) {
+          throw new Error(
+            "Object storage (R2) is not configured but media has an R2 storage key."
+          );
+        }
+        const buffer = await getR2ObjectBuffer(r2, key);
+        const record: ExportMediaRecord = {
+          media_id: mediaId,
+          creator_id: creatorId,
+          sha256: createHash("sha256").update(buffer).digest("hex"),
+          byte_length: buffer.byteLength,
+          relative_blob_path: key,
+          upstream_revision: row.currentUpstreamRevision,
+          mime_type: row.currentMimeType ?? fromIndex?.mime_type ?? "application/octet-stream",
+          exported_at: fromIndex?.exported_at ?? new Date().toISOString(),
+          upstream_url: fromIndex?.upstream_url
+        };
+        return { record, buffer };
+      }
+      const parts = pathSegmentsFromRelativeBlob(key);
+      const abs = absoluteBlobPathUnderCreator(this.storageRoot, creatorId, parts);
+      const buffer = await readFile(abs);
+      const record: ExportMediaRecord = {
+        media_id: mediaId,
+        creator_id: creatorId,
+        sha256: createHash("sha256").update(buffer).digest("hex"),
+        byte_length: buffer.byteLength,
+        relative_blob_path: key,
+        upstream_revision: row.currentUpstreamRevision,
+        mime_type: row.currentMimeType ?? fromIndex?.mime_type ?? "application/octet-stream",
+        exported_at: new Date().toISOString(),
+        upstream_url: fromIndex?.upstream_url
+      };
+      return { record, buffer };
+    }
+    if (fromIndex) {
+      const absolutePath = join(
+        this.storageRoot,
+        creatorId,
+        ...fromIndex.relative_blob_path.split("/")
+      );
+      const buffer = await readFile(absolutePath);
+      return { record: fromIndex, buffer };
+    }
+    const url = row?.currentUpstreamUrl?.trim();
+    if (url && row) {
+      const buffer = await this.fetchUpstreamMediaBuffer(creatorId, url);
+      return {
+        record: this.buildExportRecordForUpstream(row, creatorId, mediaId, buffer),
+        buffer
+      };
+    }
+    return null;
+  }
+
+  private async fetchUpstreamMediaBuffer(creatorId: string, url: string): Promise<Buffer> {
+    let fetchOpts: FetchUpstreamOptions | undefined;
+    if (upstreamUrlLooksLikePatreonHosted(url) && this.getCreatorPatreonAccessToken) {
+      const token = await this.getCreatorPatreonAccessToken(creatorId);
+      const t = token?.trim();
+      if (t) {
+        fetchOpts = { headers: { authorization: `Bearer ${t}` } };
+      }
+    }
+    const response = await fetchUpstreamWithRetries(
+      url,
+      this.fetchImpl,
+      this.retryPolicy,
+      this.sleepFn,
+      fetchOpts
+    );
+    return Buffer.from(await response.arrayBuffer());
   }
 
   /** True when there is nothing to put in `GET /api/v1/export/library-zip`. */

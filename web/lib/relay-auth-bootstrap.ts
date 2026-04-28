@@ -2,6 +2,7 @@ import {
   RELAY_CREATOR_ID_STORAGE_KEY,
   RELAY_PUBLIC_SLUG_STORAGE_KEY,
   relayFetch,
+  setActiveRole,
   type CreatorWorkspaceData
 } from "./relay-api";
 import { emitStudioSessionUpdate } from "./studio-session-context";
@@ -37,6 +38,10 @@ type RelaySessionPayload = {
  * Does NOT provision a creator workspace. Called after Supabase sign-in for supporter accounts.
  * After this returns, the browser has a `relay_session` cookie and the caller should navigate
  * to `/patreon/patron/connect` (first time) or `/patron/feed` (returning).
+ *
+ * Clears stale `relay_creator_id` from localStorage so the Library doesn't accidentally load
+ * another creator's data if the user navigates to `/` (which falls through to GalleryView
+ * when a creator id is present).
  */
 export async function bootstrapSupporterAfterSupabase(
   accessToken: string
@@ -47,6 +52,12 @@ export async function bootstrapSupporterAfterSupabase(
     accessToken,
     {}
   );
+  if (typeof window !== "undefined") {
+    window.localStorage.removeItem(RELAY_CREATOR_ID_STORAGE_KEY);
+    window.localStorage.removeItem(RELAY_PUBLIC_SLUG_STORAGE_KEY);
+  }
+  await setActiveRole("supporter");
+  emitStudioSessionUpdate();
   return { account_id: relay.account_id, token: relay.token };
 }
 
@@ -71,7 +82,7 @@ export async function bootstrapStudioAfterSupabase(accessToken: string): Promise
    *  SameSite=Lax session cookies may not attach yet (align hostnames in `.env.local` for cookie-only dev). */
   const ws = await relayFetch<CreatorWorkspaceData>("/api/v1/creator/workspace", {
     method: "POST",
-    body: JSON.stringify({}),
+    body: JSON.stringify({ confirm_creator_intent: true }),
     headers:
       typeof relay.token === "string" && relay.token.trim().length > 0
         ? { authorization: `Bearer ${relay.token.trim()}` }
@@ -84,6 +95,7 @@ export async function bootstrapStudioAfterSupabase(accessToken: string): Promise
       window.localStorage.setItem(RELAY_PUBLIC_SLUG_STORAGE_KEY, slug);
     }
   }
+  await setActiveRole("creator");
   emitStudioSessionUpdate();
   return {
     relay_creator_id: ws.relay_creator_id.trim(),

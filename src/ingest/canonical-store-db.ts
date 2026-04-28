@@ -1,5 +1,7 @@
 import {
+  MediaIngestOrigin,
   MediaUpstreamStatus,
+  PostSource,
   PostUpstreamStatus,
   Prisma,
   type PrismaClient
@@ -14,6 +16,11 @@ import type {
   PostVersionRow,
   TierRow
 } from "./canonical-store.js";
+
+/** Snapshot rows the Patreon sync replaces; Relay-native posts are preserved (see T-2.1). */
+function isPatreonSnapshotPost(p: PostRow): boolean {
+  return p.source !== "RELAY";
+}
 
 /**
  * `ingest_idempotency` in `canonical.json` is keyed only by SHA-256 hex; the DB row also
@@ -99,6 +106,24 @@ export function deduplicatePostVersionsForSave(versions: PostVersionRow[]): Post
   return [...bySeq.values()].sort((a, b) => a.version_seq - b.version_seq);
 }
 
+/** Fingerprint of Patreon `Post` version history for T-2.2 (skip re-write on unchanged re-ingest). */
+function versionListFingerprint(versions: { versionSeq: number; upstreamRevision: string }[]): string {
+  return versions.map((v) => `${v.versionSeq}:${v.upstreamRevision}`).join("\u001f");
+}
+
+function patreonVersionFingerprintFromSnapshot(versions: PostVersionRow[]): string {
+  return versionListFingerprint(
+    deduplicatePostVersionsForSave(versions).map((v) => ({
+      versionSeq: v.version_seq,
+      upstreamRevision: v.upstream_revision
+    }))
+  );
+}
+
+function snapshotToUpstreamStatus(post: PostRow): PostUpstreamStatus {
+  return post.upstream_status === "deleted" ? PostUpstreamStatus.deleted : PostUpstreamStatus.active;
+}
+
 /**
  * In a multi-tenant Postgres canonical store the Patreon campaign id (e.g. `patreon_campaign_15782831`)
  * and post id (e.g. `patreon_post_12345`) are globally unique PKs shared across all creator entries.
@@ -120,9 +145,9 @@ function pickWinner<T extends { version_seq: number; creator_id: string }>(
 }
 
 /**
- * Postgres-backed canonical store. `saveForCreator()` replaces only the target
- * creator's rows (non-destructive to other tenants). The global `save()` is
- * preserved for backward compat but delegates to per-creator saves internally.
+ * Postgres-backed canonical store. `saveForCreator()` replaces Patreon-sourced
+ * post/media rows for the target creator; `Post.source=RELAY` is left intact (T-2.1).
+ * The global `save()` is preserved for backward compat but delegates to per-creator saves internally.
  */
 export class DbCanonicalStore implements CanonicalStore {
   public constructor(private readonly prisma: PrismaClient) {}
@@ -230,7 +255,8 @@ export class DbCanonicalStore implements CanonicalStore {
         creator_id: p.creatorId,
         current,
         versions: sorted,
-        upstream_status: p.upstreamStatus === PostUpstreamStatus.deleted ? "deleted" : "active"
+        upstream_status: p.upstreamStatus === PostUpstreamStatus.deleted ? "deleted" : "active",
+        source: p.source === PostSource.RELAY ? "RELAY" : "PATREON"
       };
       const byCreator = (snapshot.posts[p.creatorId] ??= {});
       byCreator[p.id] = postRow;
@@ -283,46 +309,90 @@ export class DbCanonicalStore implements CanonicalStore {
   public async saveForCreator(creatorId: string, snapshot: CanonicalSnapshot): Promise<void> {
     await this.prisma.$transaction(
       async (tx) => {
-        // --- Phase 1: Delete this creator's existing rows (cascading order) ---
-        const creatorPostIds = await tx.post.findMany({
-          where: { creatorId },
-          select: { id: true }
-        });
-        const postIdSet = creatorPostIds.map((p) => p.id);
+        const campaignMap = snapshot.campaigns[creatorId] ?? {};
+        const postMap = snapshot.posts[creatorId] ?? {};
+        const mediaMap = snapshot.media[creatorId] ?? {};
+        const tierMap = snapshot.tiers[creatorId] ?? {};
+        const postEntries = (Object.values(postMap) as PostRow[]).filter(isPatreonSnapshotPost);
+        const snapTierIds = new Set(
+          (Object.values(tierMap) as TierRow[]).map((r) => tierStableId(r.creator_id, r.tier_id))
+        );
+        const snapCampaignIds = new Set(Object.keys(campaignMap));
 
-        if (postIdSet.length > 0) {
-          await tx.postTier.deleteMany({ where: { postId: { in: postIdSet } } });
+        // --- T-2.2: fingerprint unchanged Patreon posts so a no-op re-ingest skips delete+reinsert. ---
+        const existingPatreon = await tx.post.findMany({
+          where: { creatorId, source: PostSource.PATREON },
+          include: { versions: { orderBy: { versionSeq: "asc" } } }
+        });
+        const existingById = new Map(existingPatreon.map((p) => [p.id, p]));
+        const preservePostIds = new Set<string>();
+        for (const post of postEntries) {
+          const dbP = existingById.get(post.post_id);
+          if (!dbP) {
+            continue;
+          }
+          if (snapshotToUpstreamStatus(post) !== dbP.upstreamStatus) {
+            continue;
+          }
+          if (inferCampaignIdForPost(creatorId, post, snapshot) !== dbP.campaignId) {
+            continue;
+          }
+          const wantFp = patreonVersionFingerprintFromSnapshot(post.versions);
+          const haveFp = versionListFingerprint(
+            (dbP.versions ?? []).map((v) => ({ versionSeq: v.versionSeq, upstreamRevision: v.upstreamRevision }))
+          );
+          if (wantFp === haveFp) {
+            preservePostIds.add(post.post_id);
+          }
         }
-        await tx.mediaAsset.deleteMany({ where: { creatorId } });
-        if (postIdSet.length > 0) {
-          await tx.postVersion.deleteMany({ where: { postId: { in: postIdSet } } });
+        const stompPostIds: string[] = existingPatreon
+          .map((p) => p.id)
+          .filter((id) => !preservePostIds.has(id));
+        if (stompPostIds.length > 0) {
+          await tx.postTier.deleteMany({ where: { postId: { in: stompPostIds } } });
+          await tx.mediaAsset.deleteMany({ where: { primaryPostId: { in: stompPostIds } } });
+          await tx.postVersion.deleteMany({ where: { postId: { in: stompPostIds } } });
+          await tx.post.deleteMany({ where: { id: { in: stompPostIds } } });
         }
-        await tx.post.deleteMany({ where: { creatorId } });
-        await tx.tier.deleteMany({ where: { creatorId } });
-        await tx.campaign.deleteMany({ where: { creatorId } });
         await tx.ingestIdempotencyKey.deleteMany({ where: { creatorId } });
 
-        // --- Phase 2: Collect incoming PKs and evict orphans from other creators ---
-        // When a Patreon account migrates between Relay workspaces, the same
-        // upstream campaign/post/media PKs must transfer ownership. Delete any
-        // rows with these PKs that belong to a *different* creator (cascade order).
-        const campaignMap = snapshot.campaigns[creatorId] ?? {};
+        // Orphaned campaigns/tiers for this creator: not in the incoming snapshot, no remaining posts.
+        const dbOurCampaigns = await tx.campaign.findMany({ where: { creatorId }, select: { id: true } });
+        for (const c of dbOurCampaigns) {
+          if (snapCampaignIds.has(c.id)) {
+            continue;
+          }
+          const n = await tx.post.count({ where: { campaignId: c.id } });
+          if (n === 0) {
+            await tx.campaign.delete({ where: { id: c.id } });
+          }
+        }
+        const dbOurTiers = await tx.tier.findMany({ where: { creatorId }, select: { id: true } });
+        for (const t of dbOurTiers) {
+          if (snapTierIds.has(t.id)) {
+            continue;
+          }
+          const n = await tx.postTier.count({ where: { tierId: t.id } });
+          if (n === 0) {
+            await tx.tier.delete({ where: { id: t.id } });
+          }
+        }
+
+        // --- Cross-tenant reassign: same upstream PKs must land on the saving creator. ---
         const incomingCampaignIds = (Object.values(campaignMap) as CampaignRow[]).map((r) => r.campaign_id);
-
-        const postMap = snapshot.posts[creatorId] ?? {};
         const incomingPostIds = (Object.values(postMap) as PostRow[]).map((r) => r.post_id);
-
-        const mediaMap = snapshot.media[creatorId] ?? {};
         const incomingMediaIds = (Object.values(mediaMap) as MediaRow[]).map((r) => r.media_id);
-
-        const tierMap = snapshot.tiers[creatorId] ?? {};
         const incomingTierIds = (Object.values(tierMap) as TierRow[]).map(
           (r) => tierStableId(r.creator_id, r.tier_id)
         );
 
         if (incomingPostIds.length > 0) {
           const orphanPosts = await tx.post.findMany({
-            where: { id: { in: incomingPostIds }, creatorId: { not: creatorId } },
+            where: {
+              id: { in: incomingPostIds },
+              creatorId: { not: creatorId },
+              source: PostSource.PATREON
+            },
             select: { id: true, creatorId: true }
           });
           if (orphanPosts.length > 0) {
@@ -342,7 +412,11 @@ export class DbCanonicalStore implements CanonicalStore {
 
         if (incomingMediaIds.length > 0) {
           await tx.mediaAsset.deleteMany({
-            where: { id: { in: incomingMediaIds }, creatorId: { not: creatorId } }
+            where: {
+              id: { in: incomingMediaIds },
+              creatorId: { not: creatorId },
+              post: { source: PostSource.PATREON }
+            }
           });
         }
 
@@ -359,9 +433,8 @@ export class DbCanonicalStore implements CanonicalStore {
           });
           if (orphanCampaigns.length > 0) {
             const orphanCampIds = orphanCampaigns.map((c) => c.id);
-            // Cascade: any posts/tiers still referencing these orphan campaigns
             const leftoverPosts = await tx.post.findMany({
-              where: { campaignId: { in: orphanCampIds } },
+              where: { campaignId: { in: orphanCampIds }, source: PostSource.PATREON },
               select: { id: true }
             });
             if (leftoverPosts.length > 0) {
@@ -376,8 +449,7 @@ export class DbCanonicalStore implements CanonicalStore {
           }
         }
 
-        // --- Phase 3: Insert fresh data for this creator ---
-
+        // --- Idempotency + upsert campaigns/tiers, then (re)insert changed Patreon posts + media. ---
         const idemEntries = Object.entries(snapshot.ingest_idempotency);
         if (idemEntries.length > 0) {
           await tx.ingestIdempotencyKey.createMany({
@@ -391,23 +463,31 @@ export class DbCanonicalStore implements CanonicalStore {
         }
 
         const campaignRows = Object.values(campaignMap) as CampaignRow[];
-        if (campaignRows.length > 0) {
-          await tx.campaign.createMany({
-            data: campaignRows.map((row) => ({
+        for (const row of campaignRows) {
+          await tx.campaign.upsert({
+            where: { id: row.campaign_id },
+            create: {
               id: row.campaign_id,
               creatorId: row.creator_id,
               name: row.name,
               upstreamUpdatedAt: new Date(row.upstream_updated_at),
               versionSeq: row.version_seq
-            }))
+            },
+            update: {
+              name: row.name,
+              upstreamUpdatedAt: new Date(row.upstream_updated_at),
+              versionSeq: row.version_seq
+            }
           });
         }
 
         const tierRows = Object.values(tierMap) as TierRow[];
-        if (tierRows.length > 0) {
-          await tx.tier.createMany({
-            data: tierRows.map((row) => ({
-              id: tierStableId(row.creator_id, row.tier_id),
+        for (const row of tierRows) {
+          const id = tierStableId(row.creator_id, row.tier_id);
+          await tx.tier.upsert({
+            where: { id },
+            create: {
+              id,
               creatorId: row.creator_id,
               relayTierId: row.tier_id,
               providerTierId: row.tier_id,
@@ -416,13 +496,25 @@ export class DbCanonicalStore implements CanonicalStore {
               amountCents: row.amount_cents ?? null,
               upstreamUpdatedAt: new Date(row.upstream_updated_at),
               versionSeq: row.version_seq
-            }))
+            },
+            update: {
+              title: row.title,
+              amountCents: row.amount_cents ?? null,
+              campaignId: row.campaign_id ?? null,
+              upstreamUpdatedAt: new Date(row.upstream_updated_at),
+              versionSeq: row.version_seq
+            }
           });
         }
 
-        const postEntries = Object.values(postMap) as PostRow[];
+        const postIdsToMaterialize = new Set(
+          postEntries.filter((p) => !preservePostIds.has(p.post_id)).map((p) => p.post_id)
+        );
         const postTierRows: Prisma.PostTierCreateManyInput[] = [];
         for (const post of postEntries) {
+          if (preservePostIds.has(post.post_id)) {
+            continue;
+          }
           const campaignId = inferCampaignIdForPost(creatorId, post, snapshot);
           const versionsForDb = deduplicatePostVersionsForSave(post.versions);
           if (versionsForDb.length < post.versions.length) {
@@ -439,7 +531,8 @@ export class DbCanonicalStore implements CanonicalStore {
               id: post.post_id,
               campaignId,
               creatorId,
-              providerPostId: null,
+              providerPostId: post.post_id,
+              source: PostSource.PATREON,
               upstreamStatus:
                 post.upstream_status === "deleted"
                   ? PostUpstreamStatus.deleted
@@ -465,7 +558,11 @@ export class DbCanonicalStore implements CanonicalStore {
           await tx.postTier.createMany({ data: postTierRows });
         }
 
-        const mediaEntries = Object.values(mediaMap) as MediaRow[];
+        const mediaEntriesAll = Object.values(mediaMap) as MediaRow[];
+        const mediaEntries = mediaEntriesAll.filter((m) => {
+          const primary = m.post_ids[0];
+          return Boolean(primary) && postIdsToMaterialize.has(primary);
+        });
         if (mediaEntries.length > 0) {
           await tx.mediaAsset.createMany({
             data: mediaEntries.map((m) => {
@@ -490,7 +587,8 @@ export class DbCanonicalStore implements CanonicalStore {
                 currentRole: m.current.role ?? null,
                 currentStorageKey: m.current.storage_key ?? null,
                 currentIngestedAt: new Date(m.current.ingested_at),
-                versionsJson: m.versions as unknown as Prisma.InputJsonValue
+                versionsJson: m.versions as unknown as Prisma.InputJsonValue,
+                ingestOrigin: MediaIngestOrigin.PATREON
               };
             })
           });

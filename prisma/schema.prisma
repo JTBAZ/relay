@@ -353,6 +353,18 @@ enum MediaUpstreamStatus {
   deleted
 }
 
+/// Origin of a `Post` row: mirrored from Patreon vs created in Relay.
+enum PostSource {
+  PATREON
+  RELAY
+}
+
+/// How a `MediaAsset` was first ingested: Patreon pipeline vs direct Relay upload (T-1.3).
+enum MediaIngestOrigin {
+  PATREON
+  RELAY_UPLOAD
+}
+
 /// Patreon (or mapped) campaign row — `id` is stable `campaign_id` from `CampaignRow` / ingest.
 model Campaign {
   id                String   @id
@@ -396,7 +408,9 @@ model Post {
   campaignId     String             @map("campaign_id")
   campaign       Campaign           @relation(fields: [campaignId], references: [id], onDelete: Restrict)
   creatorId      String             @map("creator_id")
-  /// Patreon/API post id for idempotency when distinct from Relay `post_id`.
+  /// Opaque idempotency key from upstream when known. **PATREON** ingest sets this to the same
+  /// value as `id` (stable `post_id` in snapshot, e.g. `patreon_post_…`) so `@@unique([campaignId, providerPostId])` applies.
+  /// **RELAY** native posts: keep `null`; uniqueness is the primary key `id` (e.g. cuid). PG allows many `(campaign_id, null)` rows.
   providerPostId String?            @map("provider_post_id")
   upstreamStatus PostUpstreamStatus @map("upstream_status")
   /// Gallery / feed ordering — set from ingest (e.g. earliest `published_at` in versions).
@@ -405,6 +419,8 @@ model Post {
   isPublic       Boolean            @default(false) @map("is_public")
   /// Tier 1 RLS — patrons must have this tier id in `TenantMembership.tier_ids` when not public; null with `is_public` false = creator-only (draft).
   requiredTierId String?            @map("required_tier_id")
+  /// Patreon sync only mutates `PATREON`; Relay-native posts use `RELAY` and are out of sync blast radius.
+  source         PostSource         @default(PATREON) @map("source")
 
   versions    PostVersion[]
   postTiers   PostTier[]
@@ -412,6 +428,7 @@ model Post {
 
   @@unique([campaignId, providerPostId])
   @@index([campaignId, createdAt(sort: Desc)])
+  @@index([creatorId, source])
   @@map("posts")
 }
 
@@ -439,8 +456,9 @@ model MediaAsset {
   id                      String              @id @map("id")
   creatorId               String              @map("creator_id")
   postIds                 String[]            @default([]) @map("post_ids")
-  primaryPostId           String              @map("primary_post_id")
-  post                    Post                @relation(fields: [primaryPostId], references: [id], onDelete: Cascade)
+  /// Set after attach to a `Post` (Patreon ingest or Relay publish). Null while upload-only (T-3.2) or if post was deleted.
+  primaryPostId           String?             @map("primary_post_id")
+  post                    Post?               @relation(fields: [primaryPostId], references: [id], onDelete: SetNull, onUpdate: Cascade)
   upstreamStatus          MediaUpstreamStatus @map("upstream_status")
   currentVersionSeq       Int                 @map("current_version_seq")
   currentUpstreamRevision String              @map("current_upstream_revision")
@@ -451,6 +469,8 @@ model MediaAsset {
   currentStorageKey       String?             @map("current_storage_key")
   currentIngestedAt       DateTime            @map("current_ingested_at")
   versionsJson            Json                @map("versions_json")
+  /// Patreon sync / export path vs future direct upload; default PATREON for legacy rows.
+  ingestOrigin            MediaIngestOrigin   @default(PATREON) @map("ingest_origin")
 
   @@index([primaryPostId])
   @@map("media_assets")

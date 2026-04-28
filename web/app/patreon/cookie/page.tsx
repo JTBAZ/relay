@@ -152,20 +152,6 @@ export default function PatreonCookiePage() {
             to access <em>your</em> content.
           </p>
 
-          <label className="block space-y-1">
-            <span className="text-sm font-medium text-stone-200">Relay creator_id</span>
-            <input
-              className="w-full rounded border border-stone-600 bg-stone-100 px-3 py-2 font-mono text-sm text-stone-900 placeholder:text-stone-500"
-              value={creatorId}
-              onChange={(e) => setCreatorId(e.target.value)}
-              placeholder={hydrated ? "Connect via OAuth first to populate this" : "Loading…"}
-            />
-            <span className="text-xs text-stone-400">
-              Auto-filled from your logged-in studio. Don&apos;t edit unless you know what you&apos;re
-              doing.
-            </span>
-          </label>
-
           {hydrated && !creatorIdReady && (
             <div className="rounded border border-amber-500/40 bg-amber-950/40 p-3 text-sm text-amber-100">
               No <code className="rounded bg-amber-900/40 px-1">relay_creator_id</code> in this

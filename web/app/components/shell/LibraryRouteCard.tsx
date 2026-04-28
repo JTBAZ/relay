@@ -9,31 +9,26 @@ type Props = {
   icon?: LucideIcon;
 };
 
-/** v0 RouteCard pattern — navigates within Relay (Next 14). */
+/** Compact Library action button — navigates within Relay (Next 14). */
 export function LibraryRouteCard({ href, title, description, badge, icon: Icon }: Props) {
   return (
     <Link
       href={href}
-      className="group flex items-start gap-3 rounded-lg border border-[var(--lib-border)] bg-[var(--lib-card)] px-4 py-3 transition-colors hover:border-[color-mix(in_srgb,var(--lib-selection)_40%,var(--lib-border))] hover:bg-[color-mix(in_srgb,var(--lib-selection)_8%,var(--lib-card))]"
+      aria-label={`${title}: ${description}`}
+      title={description}
+      className="group inline-flex items-center gap-2 rounded-full border border-[color-mix(in_srgb,var(--lib-selection)_38%,var(--lib-border))] bg-[color-mix(in_srgb,var(--lib-selection)_14%,#050807)] px-3.5 py-2 text-sm font-semibold text-[var(--lib-fg)] shadow-[0_0_0_1px_rgba(255,255,255,0.04),0_8px_24px_-18px_var(--lib-selection)] transition-colors hover:border-[var(--lib-selection)] hover:bg-[color-mix(in_srgb,var(--lib-selection)_22%,#050807)] hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--lib-selection)]/60"
     >
       {Icon ? (
-        <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-[var(--lib-muted)] transition-colors group-hover:bg-[color-mix(in_srgb,var(--lib-selection)_15%,var(--lib-muted))]">
-          <Icon className="h-4 w-4 text-[var(--lib-fg-muted)] transition-colors group-hover:text-[var(--lib-selection)]" />
+        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[color-mix(in_srgb,var(--lib-selection)_24%,#020403)] ring-1 ring-[color-mix(in_srgb,var(--lib-selection)_40%,transparent)] transition-colors group-hover:bg-[color-mix(in_srgb,var(--lib-selection)_34%,#020403)]">
+          <Icon className="h-3.5 w-3.5 text-[var(--lib-selection)] transition-colors group-hover:text-white" />
         </span>
       ) : null}
-      <div className="min-w-0 flex-1 space-y-0.5">
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="text-sm font-semibold text-[var(--lib-fg)] transition-colors group-hover:text-[var(--lib-selection)]">
-            {title}
-          </span>
-          {badge ? (
-            <span className="rounded-full bg-[color-mix(in_srgb,var(--lib-selection)_18%,transparent)] px-2 py-0.5 text-[10px] font-semibold tracking-wide text-[var(--lib-selection)]">
-              {badge}
-            </span>
-          ) : null}
-        </div>
-        <p className="text-xs leading-relaxed text-[var(--lib-fg-muted)]">{description}</p>
-      </div>
+      <span>{title}</span>
+      {badge ? (
+        <span className="rounded-full bg-[color-mix(in_srgb,var(--lib-selection)_28%,transparent)] px-2 py-0.5 text-[10px] font-semibold tracking-wide text-[var(--lib-selection)] ring-1 ring-[color-mix(in_srgb,var(--lib-selection)_30%,transparent)]">
+          {badge}
+        </span>
+      ) : null}
     </Link>
   );
 }

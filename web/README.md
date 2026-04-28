@@ -16,7 +16,7 @@ pnpm dev
 bun dev
 ```
 
-Open [http://127.0.0.1:3000](http://127.0.0.1:3000) with your browser (same host family as `NEXT_PUBLIC_RELAY_API_URL` in `.env.example`; do not mix with `localhost` — see `docs/qa/DEV_LOCAL_ORIGIN.md`).
+Open [http://localhost:3000](http://localhost:3000) with your browser (same host family as `NEXT_PUBLIC_RELAY_API_URL` in `.env.example`; do not mix with `127.0.0.1` — see `docs/qa/DEV_LOCAL_ORIGIN.md`).
 
 You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
 

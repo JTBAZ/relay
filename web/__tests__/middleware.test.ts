@@ -41,8 +41,16 @@ describe("middleware", () => {
     expect(new URL(loc).pathname).toBe("/");
   });
 
-  it("does not redirect on / (public)", () => {
-    expect(middleware(makeReq("/")).status).not.toBe(307);
+  it("redirects unauthenticated user from / and /landing to /onboarding", () => {
+    const home = middleware(makeReq("/"));
+    expect(home.status).toBe(307);
+    expect(new URL(home.headers.get("location")!).pathname).toBe("/onboarding");
+    const landing = middleware(makeReq("/landing"));
+    expect(landing.status).toBe(307);
+    expect(new URL(landing.headers.get("location")!).pathname).toBe("/onboarding");
+  });
+
+  it("does not redirect signed-in user on /", () => {
     expect(middleware(makeReq("/", { signedIn: true })).status).not.toBe(307);
   });
 

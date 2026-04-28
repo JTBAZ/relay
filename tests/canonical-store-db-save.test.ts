@@ -38,19 +38,32 @@ describe("deduplicatePostVersionsForSave", () => {
 function mockTx() {
   const postCreate = vi.fn().mockResolvedValue({});
   const tx = {
-    postTier: { deleteMany: vi.fn().mockResolvedValue({}), createMany: vi.fn().mockResolvedValue({}) },
+    postTier: {
+      deleteMany: vi.fn().mockResolvedValue({}),
+      count: vi.fn().mockResolvedValue(0),
+      createMany: vi.fn().mockResolvedValue({})
+    },
     mediaAsset: { deleteMany: vi.fn().mockResolvedValue({}), createMany: vi.fn().mockResolvedValue({}) },
     postVersion: { deleteMany: vi.fn().mockResolvedValue({}) },
     post: {
       deleteMany: vi.fn().mockResolvedValue({}),
       findMany: vi.fn().mockResolvedValue([]),
+      count: vi.fn().mockResolvedValue(0),
       create: postCreate
     },
-    tier: { deleteMany: vi.fn().mockResolvedValue({}), createMany: vi.fn().mockResolvedValue({}) },
+    tier: {
+      deleteMany: vi.fn().mockResolvedValue({}),
+      createMany: vi.fn().mockResolvedValue({}),
+      findMany: vi.fn().mockResolvedValue([]),
+      upsert: vi.fn().mockResolvedValue({}),
+      delete: vi.fn().mockResolvedValue({})
+    },
     campaign: {
       deleteMany: vi.fn().mockResolvedValue({}),
       createMany: vi.fn().mockResolvedValue({}),
-      findMany: vi.fn().mockResolvedValue([])
+      findMany: vi.fn().mockResolvedValue([]),
+      upsert: vi.fn().mockResolvedValue({}),
+      delete: vi.fn().mockResolvedValue({})
     },
     ingestIdempotencyKey: { deleteMany: vi.fn().mockResolvedValue({}), createMany: vi.fn().mockResolvedValue({}) }
   };

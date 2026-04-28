@@ -139,7 +139,8 @@ export function applySyncBatchToSnapshot(
       creator_id: creatorId,
       current: versionRow,
       versions: existingPost ? [...existingPost.versions, versionRow] : [versionRow],
-      upstream_status: "active"
+      upstream_status: "active",
+      source: "PATREON"
     };
     posts[p.post_id] = postRow;
     result.posts_written += 1;

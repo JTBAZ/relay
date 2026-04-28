@@ -12,7 +12,8 @@ export function SupabaseHashRedirect() {
   useEffect(() => {
     const hash = window.location.hash;
     if (hash && (hash.includes("access_token") || hash.includes("error_code") || hash.includes("type=signup"))) {
-      router.replace(`/auth/confirm${hash}`);
+      const q = window.location.search;
+      router.replace(q ? `/auth/confirm${q}${hash}` : `/auth/confirm${hash}`);
     }
   }, [router]);
   return null;

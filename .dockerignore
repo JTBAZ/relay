@@ -52,7 +52,7 @@ web/coverage
 
 # ── Docker & CI (prevent recursive context) ───────────────
 docker-compose.yml
-Dockerfile
+# Do not list Dockerfile here — remote builds (e.g. Coolify) need it in the context.
 
 # ── OS / editor junk ─────────────────────────────────────
 .DS_Store

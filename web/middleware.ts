@@ -24,12 +24,8 @@ const APP_ROUTES: RegExp[] = [
   /^\/settings\/connected-extensions(\/|$)/
 ];
 
-/** Logged-in users are redirected away (marketing / auth entry). */
-const AUTH_ENTRY_ROUTES: RegExp[] = [
-  /^\/login(\/|$)/,
-  /^\/onboarding(\/|$)/,
-  /^\/landing(\/|$)/
-];
+/** Logged-in users are redirected away from marketing / auth entry (not onboarding — setup continues while signed in). */
+const AUTH_ENTRY_ROUTES: RegExp[] = [/^\/login(\/|$)/, /^\/landing(\/|$)/];
 
 /** Same logic as `resolvePostAuthPath` in `web/lib/post-login-redirect.ts`. */
 function safeReturnTo(raw: string | null): string {
@@ -140,6 +136,11 @@ export function middleware(req: NextRequest) {
   }
 
   const signedIn = Boolean(req.cookies.get("relay_session")?.value);
+
+  /** Logged-out visitors to the marketing home or legacy landing should start at onboarding. */
+  if (!signedIn && (path === "/" || path === "/landing")) {
+    return NextResponse.redirect(new URL("/onboarding", req.url));
+  }
 
   if (
     !signedIn &&

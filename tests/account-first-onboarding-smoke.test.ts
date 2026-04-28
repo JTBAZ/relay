@@ -230,6 +230,38 @@ describe("MT-037 account-first onboarding smoke (sync → relay-session → work
     process.env.RELAY_PATREON_OAUTH_STATE_SECRET = prevSecret;
   });
 
+  it("rejects studio provision without confirm_creator_intent when account has no primaryRelayCreatorId", async () => {
+    const tempDir = await mkdtemp(join(tmpdir(), "relay-mt037-403-"));
+    const supaId = "11111111-1111-1111-1111-111111111111";
+    mockGetSupabaseUser.mockResolvedValue({
+      ok: true,
+      user: { id: supaId, email: "chain@example.com" }
+    });
+
+    const prisma = createChainPrismaStub();
+    const { app } = createApp(baseConfig(tempDir, prisma));
+
+    const sync = await request(app)
+      .post("/api/v1/auth/supabase/sync")
+      .set("Authorization", "Bearer supa_jwt")
+      .send({});
+    expect(sync.status).toBe(200);
+
+    const relay = await request(app)
+      .post("/api/v1/auth/supabase/relay-session")
+      .set("Authorization", "Bearer supa_jwt")
+      .send({});
+    expect(relay.status).toBe(200);
+    const opaque = relay.body.data.token as string;
+
+    const blocked = await request(app)
+      .post("/api/v1/creator/workspace")
+      .set("Authorization", `Bearer ${opaque}`)
+      .send({});
+    expect(blocked.status).toBe(403);
+    expect(blocked.body.error?.code).toBe("FORBIDDEN");
+  });
+
   it("chains API steps and returns signed OAuth state for the provisioned studio creator", async () => {
     const tempDir = await mkdtemp(join(tmpdir(), "relay-mt037-"));
     const supaId = "11111111-1111-1111-1111-111111111111";
@@ -259,7 +291,7 @@ describe("MT-037 account-first onboarding smoke (sync → relay-session → work
     const ws = await request(app)
       .post("/api/v1/creator/workspace")
       .set("Authorization", `Bearer ${opaque}`)
-      .send({});
+      .send({ confirm_creator_intent: true });
     expect(ws.status).toBe(201);
     const relayCreatorId = ws.body.data.relay_creator_id as string;
     expect(relayCreatorId).toMatch(/^cr_/);

@@ -12,6 +12,7 @@ import {
   postCreatorWorkspace,
   postPatreonCreatorPrepare
 } from "@/lib/relay-api";
+import { getWebAppOrigin } from "@/lib/site-origin";
 
 type Props = {
   /** From Server Component: {@link resolvePatreonOAuthClientId} */
@@ -32,7 +33,7 @@ export default function PatreonConnectClient({ initialClientId }: Props) {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    setOrigin(window.location.origin);
+    setOrigin(getWebAppOrigin());
     setHasSession(hasRelaySignedInCookie());
     setStoredCreatorId(window.localStorage.getItem(RELAY_CREATOR_ID_STORAGE_KEY)?.trim() ?? "");
   }, []);

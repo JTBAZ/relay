@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://relay.local/schemas/relay-posts.response.json",
+  "title": "RelayCreatePostResponseData",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["post", "version"],
+  "properties": {
+    "post": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "creator_id",
+        "campaign_id",
+        "source",
+        "is_public",
+        "required_tier_id"
+      ],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "creator_id": { "type": "string" },
+        "campaign_id": { "type": "string" },
+        "source": { "type": "string", "const": "RELAY" },
+        "is_public": { "type": "boolean" },
+        "required_tier_id": { "type": ["string", "null"] }
+      }
+    },
+    "version": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "version_seq",
+        "upstream_revision",
+        "title",
+        "description",
+        "published_at",
+        "tag_ids",
+        "tier_ids",
+        "media_ids"
+      ],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "version_seq": { "type": "integer", "minimum": 1 },
+        "upstream_revision": { "type": "string" },
+        "title": { "type": "string" },
+        "description": { "type": ["string", "null"] },
+        "published_at": { "type": "string", "format": "date-time" },
+        "tag_ids": { "type": "array", "items": { "type": "string" } },
+        "tier_ids": { "type": "array", "items": { "type": "string" } },
+        "media_ids": { "type": "array", "items": { "type": "string" } }
+      }
+    }
+  }
+}

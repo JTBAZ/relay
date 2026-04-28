@@ -1,6 +1,9 @@
 # Coolify / Railway / Nixpacks — Node must satisfy Prisma 7 (see package.json engines).
 # Plain "22" can resolve to 22.11.x and fails prisma preinstall.
 # Avoid directory names with spaces: Nixpacks Next.js cache mounts break Docker RUN (shell splits paths).
+#
+# If deploy fails on "RUN nix-env ..." / unpacking nixpkgs (exit 255, ~30s, or OOM on small VPS),
+# switch the service to a Dockerfile build: use the repo root `Dockerfile` in Coolify instead of Nixpacks.
 [variables]
 NIXPACKS_NODE_VERSION = "24"
 # Prisma 7 loads prisma.config.ts during `prisma generate`; `env("DATABASE_URL")` must be set at *build* time.

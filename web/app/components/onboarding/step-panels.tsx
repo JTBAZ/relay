@@ -39,6 +39,7 @@ import {
   RelayApiError,
   type CreatorProfileIdentity,
 } from "@/lib/relay-api";
+import { getWebAppOrigin } from "@/lib/site-origin";
 import RelayUnifiedLogoV0 from "@/app/components/relay-unified-logo-v0";
 
 export type OnboardingPath = "creator" | "supporter";
@@ -542,7 +543,7 @@ export function StepConnectPatreonCreator({
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    setOrigin(window.location.origin);
+    setOrigin(getWebAppOrigin());
     setHasSession(hasRelaySignedInCookie());
     setCreatorId(
       window.localStorage.getItem(RELAY_CREATOR_ID_STORAGE_KEY)?.trim() ?? ""
@@ -1193,7 +1194,7 @@ export function StepClaimHandleAndGo({
     sanitized && slugOk ? `/patron/c/${encodeURIComponent(sanitized)}` : null;
   const previewAbsolute =
     typeof window !== "undefined" && previewPath
-      ? `${window.location.origin}${previewPath}`
+      ? `${getWebAppOrigin() || window.location.origin}${previewPath}`
       : previewPath;
 
   const onSubmit = async () => {

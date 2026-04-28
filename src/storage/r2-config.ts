@@ -1,5 +1,6 @@
 /**
  * Cloudflare R2 — S3-compatible API configuration from env (MIG-30).
+ * Upload pattern (presigned vs server-proxied), key layout, and limits: `docs/architecture/adr/002-r2-creator-uploads-presigned-vs-server.md` (T-3.1).
  * @see https://developers.cloudflare.com/r2/api/s3/api/
  */
 

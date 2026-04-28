@@ -10,6 +10,7 @@ import {
   type CreatorProfileIdentity,
   type CreatorProfileIdentityPatch,
 } from "@/lib/relay-api";
+import { getWebAppOrigin } from "@/lib/site-origin";
 
 const BIO_LIMIT = 280;
 const DISPLAY_NAME_LIMIT = 120;
@@ -145,7 +146,8 @@ export default function CreatorProfileClient() {
     if (typeof window === "undefined") {
       return `/patron/c/${encodeURIComponent(identity.public_slug)}`;
     }
-    return `${window.location.origin}/patron/c/${encodeURIComponent(identity.public_slug)}`;
+    const o = getWebAppOrigin() || window.location.origin;
+    return `${o}/patron/c/${encodeURIComponent(identity.public_slug)}`;
   }, [identity]);
 
   const urlSlugDiffersFromUsername = useMemo(() => {

@@ -1,0 +1,93 @@
+# Fragment — merge into a root OpenAPI 3.1 spec or use as reference for T-4.2.
+# Human-readable: docs/api/relay-native-posts.md
+
+paths:
+  /api/v1/relay/posts:
+    post:
+      operationId: relayCreatePost
+      summary: Create a Relay-native post (M3, T-4.1 schema / T-4.2 implementation)
+      tags: [Relay, Creator]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RelayCreatePostRequest"
+      responses:
+        "201":
+          description: Post and first PostVersion created
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok, data]
+                properties:
+                  ok: { const: true }
+                  data:
+                    $ref: "#/components/schemas/RelayCreatePostResponseData"
+        "400":
+          description: Validation or campaign/tier/media reference error
+        "403":
+          description: Not allowed for this account/creator
+        "503":
+          description: Service unavailable (e.g. DB not configured)
+
+components:
+  schemas:
+    RelayCreatePostRequest:
+      type: object
+      required: [creator_id, title, is_public, tier_ids, publish]
+      properties:
+        creator_id: { type: string }
+        campaign_id: { type: string, nullable: true }
+        title: { type: string, minLength: 1 }
+        description: { type: string, nullable: true }
+        is_public: { type: boolean }
+        required_tier_id: { type: string, nullable: true }
+        tier_ids:
+          type: array
+          items: { type: string }
+        tag_ids:
+          type: array
+          items: { type: string }
+        media_ids:
+          type: array
+          items: { type: string }
+        publish: { type: boolean }
+        published_at: { type: string, format: date-time, nullable: true }
+    RelayCreatePostResponseData:
+      type: object
+      required: [post, version]
+      properties:
+        post:
+          type: object
+          required: [id, creator_id, campaign_id, source, is_public, required_tier_id]
+          properties:
+            id: { type: string }
+            creator_id: { type: string }
+            campaign_id: { type: string }
+            source: { type: string, enum: [RELAY] }
+            is_public: { type: boolean }
+            required_tier_id: { type: string, nullable: true }
+        version:
+          type: object
+          required:
+            - id
+            - version_seq
+            - upstream_revision
+            - title
+            - description
+            - published_at
+            - tag_ids
+            - tier_ids
+            - media_ids
+          properties:
+            id: { type: string }
+            version_seq: { type: integer, minimum: 1 }
+            upstream_revision: { type: string }
+            title: { type: string }
+            description: { type: string, nullable: true }
+            published_at: { type: string, format: date-time }
+            tag_ids: { type: array, items: { type: string } }
+            tier_ids: { type: array, items: { type: string } }
+            media_ids: { type: array, items: { type: string } }

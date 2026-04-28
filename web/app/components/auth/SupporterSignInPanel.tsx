@@ -5,22 +5,22 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Loader2 } from "lucide-react";
 import { getSupabaseBrowserClient } from "@/lib/supabase-browser";
 import { bootstrapSupporterAfterSupabase } from "@/lib/relay-auth-bootstrap";
-import { resolvePostAuthPath } from "@/lib/post-login-redirect";
+import { resolveSupporterPostAuthDestination } from "@/lib/supporter-post-login-redirect";
+import { getWebAppOrigin } from "@/lib/site-origin";
 
 /**
  * PE-A Skeletal UI — Supporter sign-in / sign-up panel.
  *
  * Mirrors the Studio panel but:
  * - Uses `bootstrapSupporterAfterSupabase` (sync + relay-session, no creator workspace).
- * - Default post-login destination is `/patreon/patron/connect` so first-time supporters
- *   land on the Patreon link step; `returnTo` overrides this (e.g. when the callback
- *   bounces them back here after a session-less OAuth attempt).
+ * - After session bootstrap: linked Patreon → `/patron/feed`; else `/patreon/patron/connect`.
+ *   Non-default `returnTo` in the query still wins (deep links).
  * - Copy is supporter-flavoured ("supporter account", "Continue to feed").
  */
 export function SupporterSignInPanel() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const returnTo = searchParams.get("returnTo")?.trim() || "/patreon/patron/connect";
+  const returnToParam = searchParams.get("returnTo");
 
   const [mode, setMode] = useState<"sign-in" | "sign-up">("sign-in");
   const [email, setEmail] = useState("");
@@ -47,7 +47,13 @@ export function SupporterSignInPanel() {
     setBusy(true);
     try {
       if (mode === "sign-up") {
-        const confirmUrl = `${window.location.origin}/auth/confirm`;
+        const confirmUrl = `${getWebAppOrigin()}/auth/confirm?intent=supporter`;
+        try {
+          sessionStorage.setItem("relay_auth_confirm_intent", "supporter");
+          localStorage.setItem("relay_auth_confirm_intent", "supporter");
+        } catch {
+          /* ignore */
+        }
         const { data, error: upErr } = await sb.auth.signUp({
           email,
           password,
@@ -70,7 +76,7 @@ export function SupporterSignInPanel() {
           return;
         }
         await bootstrapSupporterAfterSupabase(token);
-        router.push(resolvePostAuthPath(returnTo));
+        router.push(await resolveSupporterPostAuthDestination(returnToParam));
         return;
       }
 
@@ -79,7 +85,7 @@ export function SupporterSignInPanel() {
       const token = data.session?.access_token;
       if (!token) throw new Error("No access token from Supabase.");
       await bootstrapSupporterAfterSupabase(token);
-      router.push(resolvePostAuthPath(returnTo));
+      router.push(await resolveSupporterPostAuthDestination(returnToParam));
     } catch (err) {
       setMessage({ kind: "error", text: err instanceof Error ? err.message : String(err) });
     } finally {
@@ -158,7 +164,7 @@ export function SupporterSignInPanel() {
           <p
             className="text-xs leading-relaxed"
             role="alert"
-            style={{ color: message.kind === "error" ? "#fca5a5" : "#86efac" }}
+            style={{ color: message.kind === "error" ? "#fca5a5" : "#a7f3d0" }}
           >
             {message.text}
           </p>

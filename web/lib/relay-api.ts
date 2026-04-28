@@ -511,7 +511,7 @@ export type CreatorWorkspaceData = {
 export async function postCreatorWorkspace(): Promise<CreatorWorkspaceData> {
   return relayFetch<CreatorWorkspaceData>("/api/v1/creator/workspace", {
     method: "POST",
-    body: JSON.stringify({})
+    body: JSON.stringify({ confirm_creator_intent: true })
   });
 }
 
@@ -569,6 +569,21 @@ export type CreatorProfileIdentityPatch = {
 
 export async function getCreatorProfile(): Promise<CreatorProfileIdentity> {
   return relayFetch<CreatorProfileIdentity>("/api/v1/creator/profile");
+}
+
+export type CreatorPatronTierSummary = {
+  total_patrons: number;
+  free_patrons: number;
+  tiers: Array<{
+    tier_id: string;
+    title: string;
+    amount_cents: number | null;
+    patron_count: number;
+  }>;
+};
+
+export async function getCreatorPatronTierSummary(): Promise<CreatorPatronTierSummary> {
+  return relayFetch<CreatorPatronTierSummary>("/api/v1/creator/patron-tier-summary");
 }
 
 export async function patchCreatorProfile(
@@ -1161,6 +1176,173 @@ export function buildGalleryFacetsQuery(creatorId: string, visitor?: boolean): s
   u.set("creator_id", creatorId);
   if (visitor) u.set("visitor", "true");
   return `/api/v1/gallery/facets?${u.toString()}`;
+}
+
+/**
+ * T-6.2 — Load the creator tier catalog (stable `TierFacet.tier_id` values) for Relay-native compose.
+ * These ids are the `tier_ids` array in `POST /api/v1/relay/posts` (Prisma `Tier.id`).
+ */
+export async function fetchCreatorGalleryFacets(creatorId: string): Promise<FacetsData> {
+  return relayFetch<FacetsData>(buildGalleryFacetsQuery(creatorId));
+}
+
+// ---------------------------------------------------------------------------
+// T-3.2 / T-4.2 / T-6.3 — Relay-native presigned upload + create post
+// ---------------------------------------------------------------------------
+
+/** `POST /api/v1/relay/upload/init` — presigned R2 `PUT` (browser uses `putRelayNativeUpload`, not `relayFetch`). */
+export type RelayNativeUploadInitData = {
+  media_id: string;
+  storage_key: string;
+  byte_size: number;
+  upload: { method: "PUT"; url: string; headers: { "Content-Type": string } };
+  expires_in_sec: number;
+};
+
+export async function relayNativeUploadInit(args: {
+  creator_id: string;
+  content_type: string;
+  byte_size: number;
+  post_id?: string;
+}): Promise<RelayNativeUploadInitData> {
+  const body: Record<string, unknown> = {
+    creator_id: args.creator_id,
+    content_type: args.content_type,
+    byte_size: args.byte_size
+  };
+  if (args.post_id) {
+    body.post_id = args.post_id;
+  }
+  return relayFetch<RelayNativeUploadInitData>("/api/v1/relay/upload/init", {
+    method: "POST",
+    body: JSON.stringify(body)
+  });
+}
+
+/**
+ * `PUT` object bytes to the presigned R2 URL. Must not use `relayFetch` (cross-origin, no session cookie on R2).
+ * Use the `Content-Type` from `init.upload.headers` (must match the presign).
+ */
+export async function putRelayNativeUpload(
+  presignedUrl: string,
+  fileBody: Blob,
+  contentType: string
+): Promise<void> {
+  let res: Response;
+  try {
+    res = await fetch(presignedUrl, {
+      method: "PUT",
+      body: fileBody,
+      headers: { "Content-Type": contentType }
+    });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    throw new RelayApiError(
+      `Upload failed (network). If this is a CORS error, add your web origin to the R2 bucket CORS config. ${msg}`,
+      0,
+      "NETWORK"
+    );
+  }
+  if (!res.ok) {
+    const t = await res.text().catch(() => "");
+    throw new RelayApiError(
+      `Object storage rejected the upload (HTTP ${res.status}). ${t.slice(0, 240)}`,
+      res.status,
+      "UPLOAD_PUT_FAILED"
+    );
+  }
+}
+
+export type RelayNativeUploadCommitData = {
+  media_id: string;
+  storage_key: string;
+  content_length: number;
+  etag: string | null;
+};
+
+export async function relayNativeUploadCommit(args: {
+  creator_id: string;
+  media_id: string;
+  content_type: string;
+  byte_size: number;
+  post_id?: string;
+}): Promise<RelayNativeUploadCommitData> {
+  const body: Record<string, unknown> = {
+    creator_id: args.creator_id,
+    media_id: args.media_id,
+    content_type: args.content_type,
+    byte_size: args.byte_size
+  };
+  if (args.post_id) {
+    body.post_id = args.post_id;
+  }
+  return relayFetch<RelayNativeUploadCommitData>("/api/v1/relay/upload/commit", {
+    method: "POST",
+    body: JSON.stringify(body)
+  });
+}
+
+export type RelayNativeCreatePostParams = {
+  creator_id: string;
+  title: string;
+  description?: string | null;
+  is_public: boolean;
+  required_tier_id?: string | null;
+  tier_ids: string[];
+  tag_ids?: string[];
+  media_ids: string[];
+  publish: boolean;
+  published_at?: string | null;
+  campaign_id?: string | null;
+};
+
+export type RelayNativeCreatePostData = {
+  post: {
+    id: string;
+    campaignId: string;
+    creatorId: string;
+    source: "RELAY";
+    isPublic: boolean;
+    requiredTierId: string | null;
+  };
+  /** API uses snake_case on `version` (see `src/server.ts` relay/posts handler). */
+  version: {
+    id: string;
+    version_seq: number;
+    upstream_revision: string;
+    title: string;
+    description: string | null;
+    published_at: string;
+    tag_ids: string[];
+    tier_ids: string[];
+    media_ids: string[];
+  };
+};
+
+export async function relayNativeCreatePost(
+  params: RelayNativeCreatePostParams
+): Promise<RelayNativeCreatePostData> {
+  const body: Record<string, unknown> = {
+    creator_id: params.creator_id,
+    title: params.title,
+    description: params.description ?? null,
+    is_public: params.is_public,
+    required_tier_id: params.required_tier_id ?? null,
+    tier_ids: params.tier_ids,
+    tag_ids: params.tag_ids ?? [],
+    media_ids: params.media_ids,
+    publish: params.publish
+  };
+  if (params.published_at) {
+    body.published_at = params.published_at;
+  }
+  if (params.campaign_id) {
+    body.campaign_id = params.campaign_id;
+  }
+  return relayFetch<RelayNativeCreatePostData>("/api/v1/relay/posts", {
+    method: "POST",
+    body: JSON.stringify(body)
+  });
 }
 
 export function buildGalleryCollectionsQuery(creatorId: string, visitor?: boolean): string {

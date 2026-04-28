@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://relay.local/schemas/relay-posts.request.json",
+  "title": "RelayCreatePostRequest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "creator_id",
+    "title",
+    "is_public",
+    "tier_ids",
+    "publish"
+  ],
+  "properties": {
+    "creator_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Relay creator id; must match the authenticated account's primaryRelayCreatorId"
+    },
+    "campaign_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Optional Campaign.id; if omitted, server resolves per docs/api/relay-native-posts.md"
+    },
+    "title": { "type": "string", "minLength": 1, "maxLength": 2000 },
+    "description": { "type": ["string", "null"] },
+    "is_public": { "type": "boolean" },
+    "required_tier_id": { "type": ["string", "null"] },
+    "tier_ids": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+    "tag_ids": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+    "media_ids": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+    "publish": { "type": "boolean" },
+    "published_at": { "type": "string", "format": "date-time" }
+  }
+}

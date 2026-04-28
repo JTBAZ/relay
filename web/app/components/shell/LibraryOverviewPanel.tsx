@@ -2,17 +2,11 @@
 
 import {
   BarChart3,
-  BookOpen,
-  Heart,
   LayoutGrid,
   Library,
-  LogIn,
-  Palette,
-  Sparkles,
   Users
 } from "lucide-react";
 import { LibraryStatCard } from "./LibraryStatCard";
-import { LibraryRouteCard } from "./LibraryRouteCard";
 
 export type LibraryOverviewCounts = {
   postCount: number;
@@ -81,65 +75,6 @@ export function LibraryOverviewPanel({ counts }: Props) {
             />
           </div>
         </section>
-
-        <div className="grid gap-4 lg:grid-cols-2">
-          <section aria-label="Creator surfaces">
-            <h3 className="mb-2 flex items-center gap-2 border-b border-[var(--lib-border)] pb-1 text-[10px] font-semibold uppercase tracking-widest text-[var(--lib-fg-muted)]">
-              <span className="h-2 w-0.5 rounded-full bg-[var(--lib-selection)]" aria-hidden />
-              Creator
-            </h3>
-            <div className="flex flex-col gap-2">
-              <LibraryRouteCard
-                href="/"
-                title="Library"
-                description="Curate posts, tiers, tags, collections, and export-ready media."
-                badge="Home"
-                icon={Library}
-              />
-              <LibraryRouteCard
-                href="/designer"
-                title="Designer"
-                description="Shape the public gallery hero, sections, and visitor layout."
-                icon={Palette}
-              />
-              <LibraryRouteCard
-                href="/onboarding"
-                title="Creator onboarding"
-                description="Multi-step first-run wizard (visual mock; no backend)."
-                badge="Mock"
-                icon={Sparkles}
-              />
-              <LibraryRouteCard
-                href="/login"
-                title="Sign in hub"
-                description="Patreon creator/patron paths + email auth (visual mock; no backend)."
-                badge="Mock"
-                icon={LogIn}
-              />
-            </div>
-          </section>
-
-          <section aria-label="Patron surfaces">
-            <h3 className="mb-2 flex items-center gap-2 border-b border-[var(--lib-border)] pb-1 text-[10px] font-semibold uppercase tracking-widest text-[var(--lib-fg-muted)]">
-              <span className="h-2 w-0.5 rounded-full bg-[var(--lib-selection)]" aria-hidden />
-              Patron & public
-            </h3>
-            <div className="flex flex-col gap-2">
-              <LibraryRouteCard
-                href="/visitor"
-                title="Public gallery"
-                description="Subscriber-style browse of published, policy-aligned content."
-                icon={BookOpen}
-              />
-              <LibraryRouteCard
-                href="/visitor/favorites"
-                title="Saved"
-                description="Starred posts and snip collections for signed-in patrons."
-                icon={Heart}
-              />
-            </div>
-          </section>
-        </div>
       </div>
     </details>
   );

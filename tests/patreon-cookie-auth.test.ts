@@ -328,7 +328,7 @@ describe("Patreon cookie API auth (EXT-0A)", () => {
       const ws = await request(app)
         .post("/api/v1/creator/workspace")
         .set("Authorization", `Bearer ${opaque}`)
-        .send({});
+        .send({ confirm_creator_intent: true });
       expect(ws.status).toBe(201);
 
       const wrong = await request(app)

@@ -6,6 +6,7 @@ import {
   fetchCreatorPublicSlug,
   patchCreatorPublicSlug
 } from "@/lib/relay-api";
+import { getWebAppOrigin } from "@/lib/site-origin";
 
 export function CreatorPublicUrlSettings() {
   const [slug, setSlug] = useState<string | null>(null);
@@ -61,12 +62,14 @@ export function CreatorPublicUrlSettings() {
     );
   }
 
+  const localOrigin = typeof window !== "undefined" ? getWebAppOrigin() : null;
   const href =
-    slug && typeof window !== "undefined"
-      ? `${window.location.origin}/patron/c/${encodeURIComponent(slug)}`
+    slug && localOrigin
+      ? `${localOrigin}/patron/c/${encodeURIComponent(slug)}`
       : null;
-  const pathPrefix =
-    typeof window !== "undefined" ? `${window.location.host}/patron/c/` : "/patron/c/";
+  const pathPrefix = localOrigin
+    ? `${new URL(localOrigin).host}/patron/c/`
+    : "/patron/c/";
 
   return (
     <div className="rounded-xl border border-[var(--lib-border)] bg-[var(--lib-card)] px-4 py-4">

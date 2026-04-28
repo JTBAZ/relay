@@ -4,16 +4,59 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AuthBootSplash } from "@/app/components/auth/AuthBootSplash";
 import { getSupabaseBrowserClient } from "@/lib/supabase-browser";
-import { bootstrapStudioAfterSupabase } from "@/lib/relay-auth-bootstrap";
-import { resolvePostAuthPath } from "@/lib/post-login-redirect";
+import {
+  bootstrapStudioAfterSupabase,
+  bootstrapSupporterAfterSupabase
+} from "@/lib/relay-auth-bootstrap";
+import { resolveCreatorPostAuthDestination } from "@/lib/creator-post-login-redirect";
+import { resolveSupporterPostAuthDestination } from "@/lib/supporter-post-login-redirect";
 import { emitStudioSessionUpdate } from "@/lib/studio-session-context";
+
+const CONFIRM_INTENT_KEY = "relay_auth_confirm_intent";
+
+type ConfirmIntent = "creator" | "supporter";
+
+/**
+ * PKCE/implicit: prefer `?intent=supporter|creator` (set by sign-up emailRedirectTo). Then
+ * localStorage (set at sign-up; survives opening the link in a new tab). Then sessionStorage
+ * (same-tab dev). Default **supporter** so we never auto-provision a studio without an explicit
+ * creator handoff.
+ */
+function resolveEmailConfirmIntent(): ConfirmIntent {
+  if (typeof window === "undefined") return "supporter";
+  const q = new URLSearchParams(window.location.search).get("intent")?.toLowerCase();
+  if (q === "creator" || q === "supporter") {
+    return q;
+  }
+  try {
+    const ls = localStorage.getItem(CONFIRM_INTENT_KEY);
+    if (ls === "creator" || ls === "supporter") {
+      localStorage.removeItem(CONFIRM_INTENT_KEY);
+      return ls;
+    }
+  } catch {
+    /* private mode or disabled */
+  }
+  try {
+    const s = sessionStorage.getItem(CONFIRM_INTENT_KEY);
+    if (s === "creator" || s === "supporter") {
+      sessionStorage.removeItem(CONFIRM_INTENT_KEY);
+      return s;
+    }
+  } catch {
+    /* private mode or disabled */
+  }
+  return "supporter";
+}
 
 /**
  * Supabase email confirmation callback.
  * Handles both PKCE (?code=...) and implicit (#access_token=...) flows.
- * Supabase Dashboard → Auth → URL Configuration → set Site URL and add this as a redirect URL:
- *   http://127.0.0.1:3000/auth/confirm   (dev — use one origin; see docs/qa/DEV_LOCAL_ORIGIN.md)
- *   https://relayapp.me/auth/confirm     (production)
+ * Supabase Dashboard → Auth → URL Configuration → set Site URL and add redirect URL patterns, e.g.:
+ *   http://localhost:3000/auth/confirm?intent=supporter
+ *   http://localhost:3000/auth/confirm?intent=creator
+ *   https://relayapp.me/auth/confirm?intent=*
+ * (dev — one origin; see docs/qa/DEV_LOCAL_ORIGIN.md)
  */
 export default function AuthConfirmPage() {
   const router = useRouter();
@@ -30,6 +73,8 @@ export default function AuthConfirmPage() {
 
     (async () => {
       try {
+        const intent = resolveEmailConfirmIntent();
+
         // PKCE flow: ?code=...
         const params = new URLSearchParams(window.location.search);
         const code = params.get("code");
@@ -38,11 +83,15 @@ export default function AuthConfirmPage() {
           if (exchErr) throw exchErr;
           const token = data.session?.access_token;
           if (!token) throw new Error("No session after code exchange.");
-          const boot = await bootstrapStudioAfterSupabase(token);
-          emitStudioSessionUpdate();
-          router.replace(
-            boot.created ? "/onboarding?step=patreon" : resolvePostAuthPath("/")
-          );
+          if (intent === "creator") {
+            const boot = await bootstrapStudioAfterSupabase(token);
+            emitStudioSessionUpdate();
+            router.replace(await resolveCreatorPostAuthDestination(boot, null));
+          } else {
+            await bootstrapSupporterAfterSupabase(token);
+            emitStudioSessionUpdate();
+            router.replace(await resolveSupporterPostAuthDestination(null));
+          }
           return;
         }
 
@@ -55,11 +104,15 @@ export default function AuthConfirmPage() {
           if (sessErr) throw sessErr;
           const token = data.session?.access_token;
           if (!token) throw new Error("No session found from email link.");
-          const boot = await bootstrapStudioAfterSupabase(token);
-          emitStudioSessionUpdate();
-          router.replace(
-            boot.created ? "/onboarding?step=patreon" : resolvePostAuthPath("/")
-          );
+          if (intent === "creator") {
+            const boot = await bootstrapStudioAfterSupabase(token);
+            emitStudioSessionUpdate();
+            router.replace(await resolveCreatorPostAuthDestination(boot, null));
+          } else {
+            await bootstrapSupporterAfterSupabase(token);
+            emitStudioSessionUpdate();
+            router.replace(await resolveSupporterPostAuthDestination(null));
+          }
           return;
         }
 
