@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import { Search, X } from "lucide-react";
 import { galleryItemKey } from "@/lib/gallery-group";
 import {
@@ -9,13 +10,19 @@ import {
   type FacetsData,
   type GalleryItem,
   type GalleryPostDetail,
-  type PostVisibility,
   type TierFacet
 } from "@/lib/relay-api";
 import PostBatchPostDetails from "./PostBatchPostDetails";
 import { InspectAssetPreview } from "./inspect/inspect-asset-preview";
 import { InspectMetaSidebar } from "./inspect/inspect-meta-sidebar";
-import { InspectSmartTagPanel } from "./inspect/inspect-smart-tag-panel";
+import {
+  AudiencePreviewControls,
+  PostAudiencePreviewCard,
+  audienceCanView,
+  buildAudienceOptions,
+  type AudiencePreviewPreference,
+  type PreviewStyle
+} from "./inspect/post-audience-preview";
 import PostAssetCarouselStrip from "./PostAssetCarouselStrip";
 
 const SEL = "#00aa6f";
@@ -39,8 +46,6 @@ type Props = {
   onPostMetadataUpdated: () => Promise<void>;
   /** After manual export retry from the focused asset; refresh list so `has_export` updates. */
   onMediaExportRetryComplete?: () => void;
-  setItemVisibility: (items: GalleryItem[], visibility: PostVisibility) => Promise<void>;
-  onVisibilityError?: (message: string) => void;
 };
 
 export default function PostBatchModal({
@@ -58,10 +63,9 @@ export default function PostBatchModal({
   onIsolateSelectionForAsset,
   onFocusIndex,
   onPostMetadataUpdated,
-  onMediaExportRetryComplete,
-  setItemVisibility,
-  onVisibilityError
+  onMediaExportRetryComplete
 }: Props) {
+  const [mounted, setMounted] = useState(false);
   const primary = items[0]!;
   const title = postDetail?.title ?? primary.title;
 
@@ -69,8 +73,11 @@ export default function PostBatchModal({
   const [showShadowCovers, setShowShadowCovers] = useState(false);
   const [fullscreenItem, setFullscreenItem] = useState<GalleryItem | null>(null);
   const [focusAssetIndex, setFocusAssetIndex] = useState(0);
-  const [visibilityBusy, setVisibilityBusy] = useState(false);
   const [exportRetryBusy, setExportRetryBusy] = useState(false);
+  const [activeAudienceId, setActiveAudienceId] = useState("free");
+  const [previewStyle, setPreviewStyle] = useState<PreviewStyle>("default");
+  const [ctaText, setCtaText] = useState("Unlock this post");
+  const [audiencePreferences, setAudiencePreferences] = useState<Record<string, AudiencePreviewPreference>>({});
 
   const openAssetFullscreen = useCallback(
     (item: GalleryItem) => {
@@ -109,20 +116,32 @@ export default function PostBatchModal({
     }));
   }, [postDetail, focusedItem.tier_ids]);
 
-  const applyVis = useCallback(
-    async (visibility: PostVisibility) => {
-      setVisibilityBusy(true);
-      try {
-        await setItemVisibility([focusedItem], visibility);
-        await onPostMetadataUpdated();
-      } catch (e) {
-        onVisibilityError?.(e instanceof Error ? e.message : String(e));
-      } finally {
-        setVisibilityBusy(false);
+  const audienceOptions = useMemo(() => buildAudienceOptions(accessTiers), [accessTiers]);
+  const activeAudience = audienceOptions.find((option) => option.id === activeAudienceId) ?? audienceOptions[0]!;
+  const activeAudienceCanView = audienceCanView(focusedItem, activeAudience.id, audienceOptions);
+
+  const changeAudience = useCallback(
+    (id: string) => {
+      setActiveAudienceId(id);
+      const preference = audiencePreferences[id];
+      if (preference) {
+        setPreviewStyle(preference.previewStyle);
+        setCtaText(preference.ctaText);
       }
     },
-    [focusedItem, setItemVisibility, onPostMetadataUpdated, onVisibilityError]
+    [audiencePreferences]
   );
+
+  const saveAudiencePreference = useCallback(() => {
+    setAudiencePreferences((current) => ({
+      ...current,
+      [activeAudience.id]: {
+        previewStyle,
+        ctaText,
+        locked: true
+      }
+    }));
+  }, [activeAudience.id, ctaText, previewStyle]);
 
   const runExportRetry = useCallback(async () => {
     if (!creatorId || exportRetryBusy) return;
@@ -137,6 +156,10 @@ export default function PostBatchModal({
       setExportRetryBusy(false);
     }
   }, [creatorId, exportRetryBusy, focusedItem.media_id, onMediaExportRetryComplete]);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   useEffect(() => {
     setTagActionError(null);
@@ -172,10 +195,10 @@ export default function PostBatchModal({
   const showExportFail =
     !focusedItem.has_export && Boolean(focusedItem.export_error) && Boolean(creatorId);
 
-  return (
+  const modal = (
     <>
       <div
-        className="fixed inset-0 z-40 flex items-center justify-center bg-black/80 p-4 backdrop-blur-[2px]"
+        className="library-shell fixed inset-0 z-[100] flex items-center justify-center bg-black/80 p-4 text-[var(--lib-fg)] backdrop-blur-[2px]"
         role="dialog"
         aria-modal
         aria-labelledby="post-batch-modal-title"
@@ -228,7 +251,7 @@ export default function PostBatchModal({
 
           <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
             <div className="relative flex min-h-[220px] flex-1 flex-col bg-[var(--lib-bg)] lg:min-h-0">
-              <div className="relative flex min-h-0 flex-1 items-center justify-center p-3">
+              <div className="relative flex min-h-0 flex-1">
                 {fullscreenEligible ? (
                   <button
                     type="button"
@@ -241,9 +264,14 @@ export default function PostBatchModal({
                     <Search className="h-4 w-4" strokeWidth={2} aria-hidden />
                   </button>
                 ) : null}
-                <div className="flex h-full min-h-[200px] w-full max-w-full items-center justify-center lg:min-h-0">
-                  <InspectAssetPreview item={focusedItem} videoLoop={videoLoop} />
-                </div>
+                <PostAudiencePreviewCard
+                  item={focusedItem}
+                  postDetail={postDetail}
+                  audience={activeAudience}
+                  canView={activeAudienceCanView}
+                  previewStyle={previewStyle}
+                  ctaText={ctaText}
+                />
               </div>
 
               {showExportFail ? (
@@ -288,12 +316,25 @@ export default function PostBatchModal({
 
             <aside className="flex w-full shrink-0 flex-col border-t border-[var(--lib-border)] lg:w-[360px] lg:border-l lg:border-t-0">
               <div className="min-h-0 flex-1 overflow-y-auto">
+                <AudiencePreviewControls
+                  item={focusedItem}
+                  audienceOptions={audienceOptions}
+                  activeAudienceId={activeAudience.id}
+                  onAudienceChange={changeAudience}
+                  previewStyle={previewStyle}
+                  onPreviewStyleChange={setPreviewStyle}
+                  ctaText={ctaText}
+                  onCtaTextChange={setCtaText}
+                  savedPreferences={audiencePreferences}
+                  onSavePreference={saveAudiencePreference}
+                />
                 <InspectMetaSidebar
                   preview={focusedItem}
                   previewDetail={postDetail}
                   accessTiers={accessTiers}
-                  busy={visibilityBusy}
-                  onVisibility={applyVis}
+                  creatorId={creatorId}
+                  postId={primary.post_id}
+                  onPresentationUpdated={onPostMetadataUpdated}
                 />
 
                 <div className="border-t border-[var(--lib-border)] px-4 py-4">
@@ -328,7 +369,6 @@ export default function PostBatchModal({
                   />
                 </div>
               </div>
-              <InspectSmartTagPanel />
             </aside>
           </div>
         </div>
@@ -336,7 +376,7 @@ export default function PostBatchModal({
 
       {fullscreenItem ? (
         <div
-          className="fixed inset-0 z-[60] flex flex-col items-center justify-center p-4 sm:p-8"
+          className="library-shell fixed inset-0 z-[110] flex flex-col items-center justify-center p-4 text-[var(--lib-fg)] sm:p-8"
           role="dialog"
           aria-modal
           aria-label="Fullscreen media"
@@ -369,4 +409,6 @@ export default function PostBatchModal({
       ) : null}
     </>
   );
+
+  return mounted ? createPortal(modal, document.body) : null;
 }

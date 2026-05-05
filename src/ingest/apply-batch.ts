@@ -17,6 +17,7 @@ function nowIso(): string {
   return new Date().toISOString();
 }
 
+/** Mutates canonical snapshot JSON only — never touches Relay `PostPresentation`; Postgres ingest mirrors this via `DbCanonicalStore` (presentation backup on stomp + read-time merge). */
 export function applySyncBatchToSnapshot(
   snapshot: CanonicalSnapshot,
   batch: SyncBatchInput,

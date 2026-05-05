@@ -123,6 +123,22 @@ export type RelayCreatePostRow = {
 };
 
 /**
+ * Media that was stored in tenant R2 by Relay (browser presigned upload) or the Discord ingest bridge.
+ * Both require `currentStorageKey` before attaching to a native Relay post.
+ */
+export function isMediaEligibleForRelayNativePost(
+  m: Pick<MediaAsset, "ingestOrigin" | "currentStorageKey">
+): boolean {
+  if (!m.currentStorageKey?.trim()) {
+    return false;
+  }
+  return (
+    m.ingestOrigin === MediaIngestOrigin.RELAY_UPLOAD ||
+    m.ingestOrigin === MediaIngestOrigin.DISCORD
+  );
+}
+
+/**
  * T-4.2 — create `Post` + `PostVersion` + `PostTier` + link `MediaAsset` in a single transaction.
  */
 export async function createRelayPostTransaction(
@@ -197,10 +213,10 @@ export async function createRelayPostTransaction(
         400
       );
     }
-    if (m.ingestOrigin !== MediaIngestOrigin.RELAY_UPLOAD || !m.currentStorageKey) {
+    if (!isMediaEligibleForRelayNativePost(m)) {
       throw new RelayCreatePostError(
         "INVALID_MEDIA_REF",
-        `media_id is not a committed Relay upload: ${mid}`,
+        `media_id is not a committed Relay upload or Discord capture in storage: ${mid}`,
         400
       );
     }

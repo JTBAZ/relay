@@ -2,7 +2,7 @@
 
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent } from "react";
-import { ChevronDown, Grid3X3, LayoutGrid, List } from "lucide-react";
+import { ChevronDown, Grid3X3, LayoutGrid, List, SlidersHorizontal } from "lucide-react";
 import { galleryItemKey, groupGalleryItemsByPost } from "@/lib/gallery-group";
 import {
   buildGalleryQuery,
@@ -10,12 +10,14 @@ import {
   fetchGalleryPostDetail,
   fetchPatreonSyncState,
   formatSyncHealthBanner,
-  getCreatorPatronTierSummary,
   getCreatorProfile,
   relayFetch,
+  relayNativeCreatePost,
+  relayNativeUploadCommit,
+  relayNativeUploadInit,
+  putRelayNativeUpload,
   syncStateNeedsAttention,
   type Collection,
-  type CreatorPatronTierSummary,
   type CreatorProfileIdentity,
   type FacetsData,
   type GalleryItem,
@@ -26,13 +28,19 @@ import {
 } from "@/lib/relay-api";
 import GallerySidebar from "./components/GallerySidebar";
 import GalleryGrid from "./components/GalleryGrid";
-import BulkActionBar from "./components/BulkActionBar";
 import PostBatchModal from "./components/PostBatchModal";
 import InspectModal from "./components/InspectModal";
-import LibraryTopBar, { type PatronTierDashboardRow } from "./components/LibraryTopBar";
+import LibraryTopBar from "./components/LibraryTopBar";
 import PatreonSyncMenu from "./components/PatreonSyncMenu";
 import GalleryStatsDrawer from "./components/GalleryStatsDrawer";
-import { LibraryOverviewPanel } from "./components/shell/LibraryOverviewPanel";
+import LibraryPowerPanel, { type LibraryMode } from "./components/LibraryPowerPanel";
+import LibraryImportBay from "./components/LibraryImportBay";
+import type { ImportBinItem } from "./components/LibraryImportBay";
+import LibraryCreatePostModal, {
+  LIBRARY_CREATE_POST_PUBLIC_TIER,
+  type PostDraft
+} from "./components/LibraryCreatePostModal";
+import LibrarySectionEyebrow from "./components/LibrarySectionEyebrow";
 import type { MediaTypeValue } from "./components/MediaTypeMultiSelect";
 import { freePublicTierIdsFromFacets } from "@/lib/tier-access";
 import { readGalleryVideoLoop, writeGalleryVideoLoop } from "@/lib/gallery-video-loop";
@@ -43,6 +51,51 @@ import { useStudioSession } from "@/lib/studio-session-context";
 const GALLERY_SEARCH_DEBOUNCE_MS = 320;
 
 const patreonCampaignIdEnv = process.env.NEXT_PUBLIC_RELAY_PATREON_CAMPAIGN_ID?.trim() || undefined;
+
+function guessRelayUploadContentType(file: File): string {
+  if (file.type && file.type !== "application/octet-stream") {
+    return file.type;
+  }
+  const n = file.name.toLowerCase();
+  if (n.endsWith(".mp4")) return "video/mp4";
+  if (n.endsWith(".webm")) return "video/webm";
+  if (n.endsWith(".mov")) return "video/quicktime";
+  if (n.endsWith(".png")) return "image/png";
+  if (n.endsWith(".jpg") || n.endsWith(".jpeg")) return "image/jpeg";
+  if (n.endsWith(".mp3")) return "audio/mpeg";
+  if (n.endsWith(".m4a")) return "audio/mp4";
+  return "application/octet-stream";
+}
+
+async function uploadImportBinDataUrlToRelay(creatorId: string, item: ImportBinItem): Promise<string> {
+  if (!item.src?.startsWith("data:")) {
+    throw new Error("Upload item is missing an inline data URL.");
+  }
+  const blob = await fetch(item.src).then((r) => r.blob());
+  const file = new File([blob], item.filename || "upload.bin", {
+    type: item.mimeType || blob.type || "application/octet-stream"
+  });
+  const contentType = guessRelayUploadContentType(file);
+  if (contentType === "application/octet-stream") {
+    throw new Error(
+      `Could not determine media type for “${item.filename}”. Use a recognizable extension (.png, .jpg, .mp4, …).`
+    );
+  }
+  const init = await relayNativeUploadInit({
+    creator_id: creatorId.trim(),
+    content_type: contentType,
+    byte_size: file.size
+  });
+  const putCt = init.upload.headers["Content-Type"] ?? contentType;
+  await putRelayNativeUpload(init.upload.url, file, putCt);
+  await relayNativeUploadCommit({
+    creator_id: creatorId.trim(),
+    media_id: init.media_id,
+    content_type: contentType,
+    byte_size: file.size
+  });
+  return init.media_id;
+}
 
 type ViewMode = "dense" | "normal" | "list";
 type VisibilityState = { hidden: boolean; mature: boolean };
@@ -73,8 +126,17 @@ export default function GalleryView() {
   });
   const [collections, setCollections] = useState<Collection[]>([]);
   const [collectionsReloadToken, setCollectionsReloadToken] = useState(0);
+  const libraryCreatePostCollections = useMemo(
+    () => collections.map((c) => ({ collection_id: c.collection_id, title: c.title })),
+    [collections]
+  );
   const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set());
+  const [collectionAddTargetId, setCollectionAddTargetId] = useState<string | null>(null);
+  const [collectionAddBusy, setCollectionAddBusy] = useState(false);
+  const [collectionAddError, setCollectionAddError] = useState<string | null>(null);
   const [, setFocusIndex] = useState(-1);
+  const [libraryMode, setLibraryMode] = useState<LibraryMode>("media");
+  const [powerPanelOpen, setPowerPanelOpen] = useState(false);
   const [viewMode, setViewMode] = useState<ViewMode>(() => {
     if (typeof window === "undefined") return "dense";
     const v = window.localStorage.getItem("relay.galleryViewMode");
@@ -95,8 +157,23 @@ export default function GalleryView() {
   );
   const [syncHealth, setSyncHealth] = useState<PatreonSyncStateData | null>(null);
   const [creatorProfile, setCreatorProfile] = useState<CreatorProfileIdentity | null>(null);
-  const [patronTierSummary, setPatronTierSummary] = useState<CreatorPatronTierSummary | null>(null);
   const prevLibrarySyncPhase = useRef(librarySyncPhase);
+
+  /**
+   * Fullscreen-feel for creator library: keep viewport scroll enabled but hide
+   * browser scrollbar chrome so width never jitters while interacting in-page.
+   */
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    const html = document.documentElement;
+    const body = document.body;
+    html.classList.add("library-viewport-scroll-hidden");
+    body.classList.add("library-viewport-scroll-hidden");
+    return () => {
+      html.classList.remove("library-viewport-scroll-hidden");
+      body.classList.remove("library-viewport-scroll-hidden");
+    };
+  }, []);
 
   const refreshSyncHealth = useCallback(async () => {
     try {
@@ -131,30 +208,12 @@ export default function GalleryView() {
     void loadCreatorProfile();
   }, [loadCreatorProfile]);
 
-  const loadPatronTierSummary = useCallback(async () => {
-    if (!creatorId?.trim()) {
-      setPatronTierSummary(null);
-      return;
-    }
-    try {
-      const summary = await getCreatorPatronTierSummary();
-      setPatronTierSummary(summary);
-    } catch {
-      setPatronTierSummary(null);
-    }
-  }, [creatorId]);
-
-  useEffect(() => {
-    void loadPatronTierSummary();
-  }, [loadPatronTierSummary]);
-
   useEffect(() => {
     if (prevLibrarySyncPhase.current === "syncing" && librarySyncPhase !== "syncing") {
       void refreshSyncHealth();
-      void loadPatronTierSummary();
     }
     prevLibrarySyncPhase.current = librarySyncPhase;
-  }, [librarySyncPhase, refreshSyncHealth, loadPatronTierSummary]);
+  }, [librarySyncPhase, refreshSyncHealth]);
 
   const tierTitleById = useMemo(() => {
     const map: Record<string, string> = {};
@@ -268,6 +327,12 @@ export default function GalleryView() {
 
   const selectedItems = useMemo(() => items.filter((item) => selectedKeys.has(galleryItemKey(item))), [items, selectedKeys]);
 
+  const selectedPostMediaItems = useMemo(() => {
+    const postId = selectedItems[0]?.post_id;
+    if (!postId) return [];
+    return postGroups.find((group) => group.post_id === postId)?.items ?? [];
+  }, [postGroups, selectedItems]);
+
   const selectedPostIds = useMemo(
     () =>
       Array.from(
@@ -278,6 +343,25 @@ export default function GalleryView() {
         )
       ),
     [selectedItems]
+  );
+
+  const collectionAddTarget = useMemo(
+    () => collections.find((collection) => collection.collection_id === collectionAddTargetId) ?? null,
+    [collectionAddTargetId, collections]
+  );
+
+  const collectionAddPostIds = useMemo(() => {
+    if (!collectionAddTarget) return [];
+    return selectedPostIds.filter((postId) => !collectionAddTarget.post_ids.includes(postId));
+  }, [collectionAddTarget, selectedPostIds]);
+
+  const requestAddSelectionToCollection = useCallback(
+    (collectionId: string) => {
+      if (selectedPostIds.length === 0) return;
+      setCollectionAddTargetId(collectionId);
+      setCollectionAddError(null);
+    },
+    [selectedPostIds.length]
   );
 
   const [postBatchOpen, setPostBatchOpen] = useState(false);
@@ -316,6 +400,14 @@ export default function GalleryView() {
     setInspectDetail(null);
   }, []);
 
+  const [libraryCreatePostOpen, setLibraryCreatePostOpen] = useState(false);
+  const [libraryCreatePostMedia, setLibraryCreatePostMedia] = useState<ImportBinItem[]>([]);
+
+  const handleImportBayAddToNewPost = useCallback((items: ImportBinItem[]) => {
+    setLibraryCreatePostMedia(items);
+    setLibraryCreatePostOpen(true);
+  }, []);
+
   /** Replace selection with a single asset (carousel / inspect / fullscreen). */
   const isolateSelectionToItem = useCallback((item: GalleryItem) => {
     setSelectedKeys(new Set([galleryItemKey(item)]));
@@ -333,12 +425,117 @@ export default function GalleryView() {
     void fetchPage(null, false);
   }, [fetchPage]);
 
+  const handleLibraryCreatePostPublish = useCallback(
+    async (draft: PostDraft) => {
+      if (!creatorId.trim()) {
+        setListError("Missing creator session.");
+        return false;
+      }
+      if (!draft.title.trim()) {
+        setListError("Add a title before publishing.");
+        return false;
+      }
+      const blocked = draft.media.filter(
+        (m) =>
+          m.source === "url" || (m.source === "upload" && typeof m.src === "string" && !m.src.startsWith("data:"))
+      );
+      if (blocked.length > 0) {
+        setListError(
+          "Remove URL-only staged items (paste upload or Discord capture only). URLs can’t be published from this dialog yet."
+        );
+        return false;
+      }
+
+      const discordIds = draft.media.filter((m) => m.source === "discord").map((m) => m.id);
+      const uploadItems = draft.media.filter(
+        (m) => m.source === "upload" && typeof m.src === "string" && m.src.startsWith("data:")
+      );
+      if (discordIds.length === 0 && uploadItems.length === 0) {
+        setListError("Add at least one Discord-staged asset or an uploaded file.");
+        return false;
+      }
+
+      const isPublic = draft.tierId === LIBRARY_CREATE_POST_PUBLIC_TIER;
+      const tierIds = isPublic ? [] : [draft.tierId];
+      if (!isPublic && tierIds.length === 0) {
+        setListError("Select a tier, or choose Everyone for a public post.");
+        return false;
+      }
+
+      try {
+        setListError(null);
+        const uploadedIds: string[] = [];
+        for (const row of uploadItems) {
+          uploadedIds.push(await uploadImportBinDataUrlToRelay(creatorId, row));
+        }
+        const mediaIds = [...discordIds, ...uploadedIds];
+        const created = await relayNativeCreatePost({
+          creator_id: creatorId.trim(),
+          title: draft.title.trim(),
+          description: null,
+          is_public: isPublic,
+          required_tier_id: null,
+          tier_ids: tierIds,
+          tag_ids: draft.tags,
+          media_ids: mediaIds,
+          publish: true
+        });
+        const newPostId = created.post.id;
+        let collectionNotice: string | null = null;
+        for (const cid of draft.collectionIds) {
+          try {
+            await relayFetch<unknown>(
+              `/api/v1/gallery/collections/${encodeURIComponent(cid)}/posts`,
+              {
+                method: "POST",
+                body: JSON.stringify({ post_ids: [newPostId] })
+              }
+            );
+          } catch (ce) {
+            collectionNotice =
+              `Post published (${newPostId}), but adding it to a collection failed: ${ce instanceof Error ? ce.message : String(ce)}`;
+          }
+        }
+        setLibraryCreatePostOpen(false);
+        void fetchFacets();
+        setCollectionsReloadToken((n) => n + 1);
+        refreshList();
+        if (collectionNotice) setListError(collectionNotice);
+      } catch (e) {
+        setListError(e instanceof Error ? e.message : String(e));
+        return false;
+      }
+    },
+    [creatorId, fetchFacets, refreshList]
+  );
+
+  const confirmAddSelectionToCollection = useCallback(async () => {
+    if (!collectionAddTarget || collectionAddPostIds.length === 0) return;
+    setCollectionAddBusy(true);
+    setCollectionAddError(null);
+    try {
+      await relayFetch<unknown>(
+        `/api/v1/gallery/collections/${encodeURIComponent(collectionAddTarget.collection_id)}/posts`,
+        {
+          method: "POST",
+          body: JSON.stringify({ post_ids: collectionAddPostIds })
+        }
+      );
+      setCollectionAddTargetId(null);
+      setCollectionsReloadToken((n) => n + 1);
+      refreshList();
+    } catch (error) {
+      setCollectionAddError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setCollectionAddBusy(false);
+    }
+  }, [collectionAddPostIds, collectionAddTarget, refreshList]);
+
   const afterPatreonScrape = useCallback(async () => {
     await fetchFacets();
     refreshList();
     void loadCreatorProfile();
-    void loadPatronTierSummary();
-  }, [fetchFacets, refreshList, loadCreatorProfile, loadPatronTierSummary]);
+  }, [fetchFacets, refreshList, loadCreatorProfile]);
 
   const persistViewMode = (mode: ViewMode) => {
     setViewMode(mode);
@@ -432,6 +629,7 @@ export default function GalleryView() {
   const toggleSelectGroup = useCallback((groupItems: GalleryItem[]) => {
     const keys = groupItems.map(galleryItemKey);
     let clearedFocus = false;
+    let shouldOpenPowerPanel = false;
     setSelectedKeys((prev) => {
       const allSelected = keys.length > 0 && keys.every((k) => prev.has(k));
       const next = new Set(prev);
@@ -440,9 +638,11 @@ export default function GalleryView() {
         clearedFocus = true;
       } else {
         for (const k of keys) next.add(k);
+        shouldOpenPowerPanel = true;
       }
       return next;
     });
+    if (shouldOpenPowerPanel) setPowerPanelOpen(true);
     if (clearedFocus) {
       // After deselect, avoid the grid tile stealing focus; blur after the click completes.
       queueMicrotask(() => {
@@ -465,10 +665,13 @@ export default function GalleryView() {
     const path = e.nativeEvent.composedPath();
     for (const n of path) {
       if (!(n instanceof Element)) continue;
+      if (n.closest?.("[data-library-import-bay]")) return;
       if (n.hasAttribute("data-gallery-tile")) return;
       if (n.hasAttribute("data-bulk-action-bar")) return;
       if (n.getAttribute("role") === "dialog") return;
-      if (n.hasAttribute("data-gallery-stats-drawer")) return;
+      if (n.closest?.("[data-gallery-stats-drawer]")) return;
+      if (n.closest?.("[data-library-active-posts]")) return;
+      if (n.closest?.("[data-library-toolbar]")) return;
     }
     let cleared = false;
     setSelectedKeys((prev) => {
@@ -564,39 +767,15 @@ export default function GalleryView() {
 
   const campaignAvatarUrl = syncHealth?.campaign_display?.image_small_url || creatorProfile?.avatar_url || undefined;
   const campaignBannerRemote = syncHealth?.campaign_display?.image_url || creatorProfile?.banner_url || undefined;
-  const headerPatronCount = patronTierSummary?.total_patrons ?? syncHealth?.campaign_display?.patron_count ?? 0;
-  const patronTierRows = useMemo<PatronTierDashboardRow[]>(() => {
-    if (!patronTierSummary) return [];
-    const rows: PatronTierDashboardRow[] = [
-      {
-        tierId: "free",
-        label: "Free",
-        count: patronTierSummary.free_patrons,
-        amountCents: 0
-      }
-    ];
-    for (const tier of patronTierSummary.tiers) {
-      rows.push({
-        tierId: tier.tier_id,
-        label: tier.title,
-        count: tier.patron_count,
-        amountCents: tier.amount_cents
-      });
-    }
-    return rows;
-  }, [patronTierSummary]);
-
   return (
-    <div className="library-shell flex min-h-0 flex-1 flex-col overflow-hidden bg-[var(--lib-bg)] text-[var(--lib-fg)]">
+    <div className="library-shell library-hide-scrollbars flex min-h-0 flex-1 flex-col overflow-hidden bg-[var(--lib-bg)] text-[var(--lib-fg)]">
       <LibraryTopBar
         syncStatus={derivedLibrarySyncStatus}
         syncIssueDetail={librarySyncIssueDetail}
         creatorDisplayName={libraryDisplayName}
         patreonName={patreonVanitySlug}
-        patronCount={headerPatronCount}
         campaignImageSmallUrl={campaignAvatarUrl}
         campaignBannerUrl={campaignBannerRemote}
-        patronTierRows={patronTierRows}
         trailingActions={
           <PatreonSyncMenu
             creatorId={creatorId}
@@ -608,6 +787,15 @@ export default function GalleryView() {
       />
 
       <div className="relative z-0 flex min-h-0 flex-1 flex-col overflow-hidden lg:flex-row">
+        {powerPanelOpen ? (
+          <div
+            role="presentation"
+            tabIndex={-1}
+            className="absolute inset-0 z-[82] bg-black/[0.55]"
+            onClick={() => setPowerPanelOpen(false)}
+          />
+        ) : null}
+
         <GallerySidebar
           creatorId={creatorId}
           facets={facets}
@@ -632,21 +820,80 @@ export default function GalleryView() {
           onToggleTier={toggleTier}
           freePublicTierIds={freePublicTierIds}
           onToggleFreePublicTierGroup={toggleFreePublicTierGroup}
+          collections={collections}
           activeCollectionId={activeCollectionId}
           onSelectCollection={setActiveCollectionId}
-          onCollectionChange={() => {
-            setCollectionsReloadToken((n) => n + 1);
-            refreshList();
-          }}
-          collectionsReloadToken={collectionsReloadToken}
+          selectedPostCount={selectedPostIds.length}
+          onRequestAddSelectionToCollection={requestAddSelectionToCollection}
           assetsInView={displayItems.length}
           collectionCount={collections.length}
         />
+
+        {collectionAddTarget ? (
+          <div
+            className="fixed inset-0 z-[80] flex items-center justify-center bg-black/70 p-4"
+            role="dialog"
+            aria-modal
+            aria-label="Add selections to collection"
+            onClick={() => {
+              if (!collectionAddBusy) setCollectionAddTargetId(null);
+            }}
+          >
+            <div
+              className="w-full max-w-sm rounded-2xl border border-[var(--lib-border)] bg-[var(--lib-card)] p-4 shadow-2xl"
+              onClick={(event) => event.stopPropagation()}
+            >
+              <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[var(--lib-fg-muted)]">
+                Collections
+              </p>
+              <h2 className="mt-1 text-base font-semibold text-[var(--lib-fg)]">
+                Add selections to Collection?
+              </h2>
+              <p className="mt-2 text-xs leading-5 text-[var(--lib-fg-muted)]">
+                Add {collectionAddPostIds.length} selected post
+                {collectionAddPostIds.length === 1 ? "" : "s"} to{" "}
+                <span className="font-medium text-[var(--lib-fg)]">{collectionAddTarget.title}</span>.
+                {selectedPostIds.length - collectionAddPostIds.length > 0
+                  ? ` ${selectedPostIds.length - collectionAddPostIds.length} already in this collection will be skipped.`
+                  : ""}
+              </p>
+              {collectionAddError ? (
+                <p className="mt-3 rounded-lg border border-red-800/50 bg-red-950/40 px-3 py-2 text-xs text-red-200">
+                  {collectionAddError}
+                </p>
+              ) : null}
+              <div className="mt-4 flex justify-end gap-2">
+                <button
+                  type="button"
+                  disabled={collectionAddBusy}
+                  onClick={() => setCollectionAddTargetId(null)}
+                  className="rounded-lg border border-[var(--lib-border)] px-3 py-2 text-xs text-[var(--lib-fg-muted)] hover:text-[var(--lib-fg)] disabled:opacity-50"
+                >
+                  No
+                </button>
+                <button
+                  type="button"
+                  disabled={collectionAddBusy || collectionAddPostIds.length === 0}
+                  onClick={() => void confirmAddSelectionToCollection()}
+                  className="rounded-lg border border-[var(--lib-primary)]/55 bg-[var(--lib-primary)]/20 px-3 py-2 text-xs font-medium text-[var(--lib-fg)] hover:border-[var(--lib-primary)] disabled:opacity-50"
+                >
+                  {collectionAddBusy ? "Adding..." : "Yes, add"}
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : null}
 
         <main
           className="relative flex min-h-0 min-w-0 flex-1 flex-col"
           onPointerDownCapture={onMainPointerDownCapture}
         >
+          <LibraryImportBay
+            creatorId={creatorId}
+            onError={setListError}
+            onAddToNewPost={handleImportBayAddToNewPost}
+          />
+
           {listError ? (
             <div
               className="mx-4 mt-2 rounded-md border border-[var(--lib-destructive)]/45 bg-[var(--lib-destructive)]/10 px-3 py-2.5 text-sm text-[var(--lib-fg)]"
@@ -658,16 +905,6 @@ export default function GalleryView() {
               <span className="mt-1 block text-[var(--lib-fg-muted)]">{listError}</span>
             </div>
           ) : null}
-
-          <LibraryOverviewPanel
-            counts={{
-              postCount: postGroups.length,
-              assetCount: displayItems.length,
-              collectionCount: collections.length,
-              exportMediaCount: facets.export_media_count ?? 0,
-              patronCount: syncHealth?.campaign_display?.patron_count ?? 0
-            }}
-          />
 
           {emptyLibrary ? (
             <div className="mx-4 mt-3 rounded-lg border border-dashed border-[var(--lib-border)] bg-[var(--lib-muted)]/25 px-4 py-8 text-center">
@@ -693,7 +930,21 @@ export default function GalleryView() {
             </div>
           ) : null}
 
-          <div className="relative flex h-10 shrink-0 items-center justify-between border-b border-[var(--lib-border)] px-4">
+          {!emptyLibrary ? (
+            <>
+          <div
+            data-library-active-posts
+            className="shrink-0 border-b border-white/[0.06] bg-black px-4 pb-2 pt-6 text-center lg:pt-8"
+          >
+            <LibrarySectionEyebrow label="Published content" />
+
+            <h2 className="mt-2 text-2xl font-bold tracking-tight text-white sm:text-3xl">Active Posts</h2>
+          </div>
+
+          <div
+            data-library-toolbar
+            className="relative z-10 flex h-10 shrink-0 items-center justify-between border-b border-white/[0.06] bg-black px-4"
+          >
             <div className="flex items-center gap-3">
               <button
                 ref={statsButtonRef}
@@ -716,6 +967,19 @@ export default function GalleryView() {
             </div>
 
             <div className="flex items-center gap-1">
+              <button
+                type="button"
+                onClick={() => setPowerPanelOpen((open) => !open)}
+                aria-expanded={powerPanelOpen}
+                className={`flex h-7 items-center gap-1.5 rounded-md border px-2 text-xs font-medium transition-colors ${
+                  powerPanelOpen
+                    ? "border-[var(--lib-primary)]/50 bg-[var(--lib-primary)]/15 text-[var(--lib-fg)]"
+                    : "border-transparent text-[var(--lib-fg-muted)] hover:border-[var(--lib-border)] hover:bg-[var(--lib-muted)] hover:text-[var(--lib-fg)]"
+                }`}
+              >
+                <SlidersHorizontal className="h-3.5 w-3.5" aria-hidden />
+                <span className="hidden sm:inline">Power</span>
+              </button>
               <button
                 type="button"
                 className={`flex h-7 w-7 items-center justify-center rounded ${
@@ -756,7 +1020,7 @@ export default function GalleryView() {
           </div>
 
           {viewMode === "list" ? (
-            <div ref={listRef} className="min-h-0 flex-1 overflow-auto bg-[var(--lib-grid-bg)]">
+            <div ref={listRef} className="min-h-0 flex-1 overflow-auto bg-black">
               <div style={{ height: `${rowVirtualizer.getTotalSize()}px`, position: "relative", width: "100%" }}>
                 {rowVirtualizer.getVirtualItems().map((virtualRow) => {
                   const group = postGroups[virtualRow.index];
@@ -805,7 +1069,7 @@ export default function GalleryView() {
               </div>
             </div>
           ) : (
-            <div className="min-h-0 flex-1 overflow-auto bg-[var(--lib-grid-bg)]">
+            <div className="min-h-0 flex-1 overflow-auto bg-black pb-10">
               <GalleryGrid
                 groups={postGroups}
                 tierTitleById={tierTitleById}
@@ -822,7 +1086,7 @@ export default function GalleryView() {
           )}
 
           {nextCursor ? (
-            <div className="flex shrink-0 justify-center border-t border-[var(--lib-border)] py-1">
+            <div className="flex shrink-0 justify-center border-t border-white/[0.06] bg-black py-3">
               <button
                 type="button"
                 disabled={loading}
@@ -834,36 +1098,27 @@ export default function GalleryView() {
             </div>
           ) : null}
 
-          <BulkActionBar
-            selectedCount={selectedKeys.size}
-            creatorId={creatorId}
-            selectedItems={selectedItems}
-            selectedPostIds={selectedPostIds}
-            collections={collections}
-            onClearSelection={() => setSelectedKeys(new Set())}
-            onListRefresh={refreshList}
-            onCollectionsReload={() => setCollectionsReloadToken((n) => n + 1)}
-            onApplyBulkTagDelta={applyBulkTagDelta}
-            suggestedTags={facets.tag_ids}
-            onInspectPost={() => void openInspectPost()}
-            onError={(msg) => setListError(msg)}
-          />
+            </>
+          ) : null}
 
           {inspectModalOpen && inspectPreview ? (
             <InspectModal
               preview={inspectPreview}
               previewDetail={inspectDetail}
-              onClose={closeInspectModal}
-              onVisibilityApplied={() => {
+              creatorId={creatorId}
+              onPresentationUpdated={async () => {
+                await fetchFacets();
                 refreshList();
-                void fetchFacets();
-                const pid = inspectPreview.post_id;
-                void fetchGalleryPostDetail(creatorId, pid)
-                  .then(setInspectDetail)
-                  .catch(() => {});
+                if (inspectPreview) {
+                  try {
+                    const detail = await fetchGalleryPostDetail(creatorId, inspectPreview.post_id);
+                    setInspectDetail(detail);
+                  } catch {
+                    /* ignore refresh errors */
+                  }
+                }
               }}
-              onVisibilityError={(msg) => setListError(msg)}
-              setItemVisibility={setInspectItemVisibility}
+              onClose={closeInspectModal}
             />
           ) : null}
 
@@ -882,8 +1137,6 @@ export default function GalleryView() {
               onClose={closePostBatch}
               onIsolateSelectionForAsset={isolateSelectionToItem}
               onFocusIndex={setFocusIndex}
-              setItemVisibility={setInspectItemVisibility}
-              onVisibilityError={(msg) => setListError(msg)}
               onPostMetadataUpdated={async () => {
                 await fetchFacets();
                 setCollectionsReloadToken((n) => n + 1);
@@ -908,7 +1161,44 @@ export default function GalleryView() {
             />
           ) : null}
         </main>
+
+        <LibraryPowerPanel
+          isOpen={powerPanelOpen}
+          onClose={() => setPowerPanelOpen(false)}
+          mode={libraryMode}
+          onModeChange={setLibraryMode}
+          selectedItems={selectedItems}
+          selectedPostMediaItems={selectedPostMediaItems}
+          onSelectMediaItem={(item) => {
+            setSelectedKeys(new Set([galleryItemKey(item)]));
+            setFocusIndex(-1);
+          }}
+          selectedPostIds={selectedPostIds}
+          collections={collections}
+          activeCollectionId={activeCollectionId}
+          facets={facets}
+          tierTitleById={tierTitleById}
+          creatorId={creatorId}
+          onClearSelection={() => setSelectedKeys(new Set())}
+          onListRefresh={refreshList}
+          onCollectionsReload={() => setCollectionsReloadToken((n) => n + 1)}
+          onSelectCollection={setActiveCollectionId}
+          onInspectPost={() => void openInspectPost()}
+          onApplyBulkTagDelta={applyBulkTagDelta}
+          setItemVisibility={setInspectItemVisibility}
+          onError={(msg) => setListError(msg)}
+        />
       </div>
+
+      <LibraryCreatePostModal
+        open={libraryCreatePostOpen}
+        initialMedia={libraryCreatePostMedia}
+        tierFacets={facets.tiers}
+        collections={libraryCreatePostCollections}
+        tagSuggestions={facets.tag_ids}
+        onClose={() => setLibraryCreatePostOpen(false)}
+        onPublish={handleLibraryCreatePostPublish}
+      />
     </div>
   );
 }

@@ -4,8 +4,17 @@ import { Lock } from "lucide-react";
 import { galleryItemKey } from "@/lib/gallery-group";
 import { RELAY_API_BASE, galleryItemExportVisibleToVisitor, type GalleryItem } from "@/lib/relay-api";
 
+/** READY = playable in Relay export path; otherwise show neutral preparing / failed UI (not tier lock). */
+export function relayPipelineReady(m: GalleryItem): boolean {
+  return m.processing_status === "READY";
+}
+
+export function relayMediaPlaceholderLabel(m: GalleryItem): string {
+  return m.processing_status === "FAILED" ? "Media unavailable" : "Preparing media";
+}
+
 function thumbSrc(m: GalleryItem): string | null {
-  if (!galleryItemExportVisibleToVisitor(m)) return null;
+  if (!relayPipelineReady(m) || !galleryItemExportVisibleToVisitor(m)) return null;
   const mt = m.mime_type ?? "";
   if (mt.startsWith("image/") || mt.startsWith("video/")) {
     return `${RELAY_API_BASE}${m.content_url_path}`;
@@ -52,6 +61,7 @@ export default function PostAssetCarouselStrip({
   const buttons = items.map((m, i) => {
     const src = thumbSrc(m);
     const v = isVideo(m);
+    const processing = !relayPipelineReady(m);
     const active = i === activeIndex;
     return (
       <button
@@ -71,7 +81,11 @@ export default function PostAssetCarouselStrip({
             : "border-white/18 opacity-90 hover:border-white/32 hover:opacity-100"
         }`}
       >
-        {src && v ? (
+        {processing ? (
+          <span className="flex h-full w-full items-center justify-center px-1 text-center">
+            <span className="text-[8px] font-medium leading-snug text-white/65">{relayMediaPlaceholderLabel(m)}</span>
+          </span>
+        ) : src && v ? (
           <video
             className="pointer-events-none h-full w-full object-cover object-center"
             src={src}
@@ -123,8 +137,11 @@ export function postCarouselMainVisual(item: GalleryItem): {
   src: string | null;
   isVideo: boolean;
   locked: boolean;
+  /** Relay upload / DB pipeline not READY — show neutral “preparing” UI, not a tier lock */
+  relayProcessing: boolean;
 } {
-  const locked = !galleryItemExportVisibleToVisitor(item);
+  const relayProcessing = !relayPipelineReady(item);
+  const locked = !relayProcessing && !galleryItemExportVisibleToVisitor(item);
   const src = thumbSrc(item);
-  return { src, isVideo: isVideo(item), locked };
+  return { src, isVideo: isVideo(item), locked, relayProcessing };
 }

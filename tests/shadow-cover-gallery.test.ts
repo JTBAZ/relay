@@ -10,6 +10,63 @@ const coverUrl =
   "https://c10.patreonusercontent.com/4/patreon-media/p/post/154428469/8df316d8ed50446e8fcb14e907b363e1/eyJ3IjoxMDgwfQ%3D%3D/1.jpg?token-hash=b";
 
 describe("shadow_cover gallery flags", () => {
+  it("treats committed Relay storage-key media as export-ready without export-index rows", () => {
+    const snapshot: CanonicalSnapshot = {
+      ingest_idempotency: {},
+      campaigns: {},
+      tiers: {},
+      posts: {
+        c1: {
+          p1: {
+            post_id: "p1",
+            creator_id: "c1",
+            upstream_status: "active",
+            current: {
+              version_seq: 1,
+              upstream_revision: "r",
+              title: "Relay enriched post",
+              published_at: "2026-03-31T17:02:44.000+00:00",
+              tag_ids: [],
+              tier_ids: [],
+              media_ids: ["relay_m_1"],
+              ingested_at: "2026-01-01T00:00:00.000Z"
+            },
+            versions: []
+          }
+        }
+      },
+      media: {
+        c1: {
+          relay_m_1: {
+            media_id: "relay_m_1",
+            creator_id: "c1",
+            post_ids: ["p1"],
+            upstream_status: "active",
+            current: {
+              version_seq: 1,
+              upstream_revision: "relay:upload:committed",
+              mime_type: "video/mp4",
+              storage_key: "relay/tenants/c1/media/relay_m_1/asset",
+              ingested_at: "2026-01-01T00:00:00.000Z"
+            },
+            versions: []
+          }
+        }
+      }
+    };
+
+    const exportIndex: CreatorExportIndex = { creator_id: "c1", media: {} };
+    const overrides: GalleryOverridesRoot = { creators: {} };
+
+    const items = buildGalleryItems("c1", snapshot, exportIndex, overrides, []);
+    expect(items[0]).toMatchObject({
+      media_id: "relay_m_1",
+      has_export: true,
+      export_status: "ready",
+      content_url_path: "/api/v1/export/media/c1/relay_m_1/content"
+    });
+  });
+
   it("marks duplicate Patreon cover and prefers primary attachment for post_primary", () => {
     const snapshot: CanonicalSnapshot = {
       ingest_idempotency: {},

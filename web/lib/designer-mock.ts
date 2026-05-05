@@ -45,6 +45,8 @@ export interface HeroConfig {
   showCover: boolean;
   /** Stub cover image URL — replace with real blob URL */
   coverUrl: string;
+  /** Relay `PageLayout.hero.cover_media_id` — saved with gallery layout (not Patreon campaign banner) */
+  coverMediaId?: string;
 }
 
 // ─── Section types ─────────────────────────────────────────────────────────────
@@ -195,7 +197,7 @@ export const MOCK_PAGE_LAYOUT: PageLayout = {
   creatorSlug:    "ada-cross",
   displayName:    "Ada Cross",
   bio:            "Documentary photographer. Long-form storytelling on access, land, and light.",
-  avatarUrl:      "https://i.pravatar.cc/128?img=47",
+  avatarUrl:      "",
   lastPublishedAt: "2025-01-14T11:22:00Z",
   published:      true,
 
@@ -217,7 +219,7 @@ export const MOCK_PAGE_LAYOUT: PageLayout = {
     subline:    "Documentary photography. Land, access, light.",
     showAvatar: true,
     showCover:  true,
-    coverUrl:   "https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=1400&q=80",
+    coverUrl:   "",
   },
 
   sections: [
@@ -280,19 +282,19 @@ export const MOCK_PAGE_LAYOUT: PageLayout = {
           id:       "item-1",
           title:    "High Plains — Limited Print",
           price:    "$120",
-          imageUrl: "https://images.unsplash.com/photo-1519681393784-d120267933ba?w=400&q=70",
+          imageUrl: "",
         },
         {
           id:       "item-2",
           title:    "Access Series Zine",
           price:    "$28",
-          imageUrl: "https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?w=400&q=70",
+          imageUrl: "",
         },
         {
           id:       "item-3",
           title:    "Lightroom Preset Pack",
           price:    "$18",
-          imageUrl: "https://images.unsplash.com/photo-1476514525535-07fb3b4ae5f1?w=400&q=70",
+          imageUrl: "",
         },
       ],
     },
@@ -321,17 +323,4 @@ export const MOCK_PAGE_LAYOUT: PageLayout = {
     },
   ],
 };
-
-// ─── Stub image grid for section previews ────────────────────────────────────
-
-export const STUB_IMAGES = [
-  "https://images.unsplash.com/photo-1519681393784-d120267933ba?w=400&q=70",
-  "https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?w=400&q=70",
-  "https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=400&q=70",
-  "https://images.unsplash.com/photo-1476514525535-07fb3b4ae5f1?w=400&q=70",
-  "https://images.unsplash.com/photo-1501854140801-50d01698950b?w=400&q=70",
-  "https://images.unsplash.com/photo-1500534314209-a25ddb2bd429?w=400&q=70",
-  "https://images.unsplash.com/photo-1441974231531-c6227db76b6e?w=400&q=70",
-  "https://images.unsplash.com/photo-1518173946687-a4c8892bbd9f?w=400&q=70",
-];
 

@@ -18,7 +18,8 @@ When milestone **M10 phase 10.2** is executed ([`M10_VERIFICATION.md`](M10_VERIF
 | Canonical ingest | `Campaign`, `Post`, … / `DbCanonicalStore` | `RELAY_DB_STORE_CANONICAL` | Large migration; see staging doc |
 | Sync watermarks | `SyncCursor` / `DbSyncWatermarkStore` | `RELAY_DB_STORE_WATERMARK` | |
 | Sync health | `CreatorSyncState` / `DbPatreonSyncHealthStore` | `RELAY_DB_STORE_SYNC_HEALTH` | |
-| Gallery overrides | `PostOverride` / `DbGalleryOverridesStore` | `RELAY_DB_STORE_OVERRIDES` | |
+| Gallery overrides | `PostOverride` / `DbGalleryOverridesStore` | `RELAY_DB_STORE_OVERRIDES` | Tags, visibility, discovery — distinct from ingest |
+| Presentation overlays (`post_presentations`) | `PostPresentation` (no legacy JSON file) | — | Postgres-only Relay UI overlays; merged at read time with Patreon-ingested posts per `docs/relay-artist-metadata.md`; not part of canonical snapshot |
 | Library collections | `LibraryCollection`, … / `DbCollectionsStore` | `RELAY_DB_STORE_COLLECTIONS` | |
 | Saved filters | `SavedFilter` / `DbSavedFiltersStore` | `RELAY_DB_STORE_SAVED_FILTERS` | |
 | Page layout | `PageLayout` / `DbPageLayoutStore` | `RELAY_DB_STORE_LAYOUT` | |
@@ -38,6 +39,7 @@ When milestone **M10 phase 10.2** is executed ([`M10_VERIFICATION.md`](M10_VERIF
 |--------------------------------|---------------------------|--------|
 | `canonical.json` | `Campaign`, `Post`, `PostVersion`, `MediaAsset`, `Tier`, `PostTier`, tags (M:N or arrays) | Preserve stable IDs used by APIs and tests; ingest stays idempotent |
 | `gallery_post_overrides.json` | `PostOverride` | **Do not** merge overrides into canonical rows at rest — `docs/relay-artist-metadata.md` |
+| _(none — Relay presentation overlays)_ | `PostPresentation` | No legacy file; titles/order/tier previews are creator mutations against Postgres |
 | `collections.json` | `LibraryCollection` + join tables | Artist-side Library collections |
 | `page_layout.json` | `PageLayout` | Designer JSON; optional history table if you version layouts |
 | `gallery_saved_filters.json` | `SavedFilter` (per creator) | — |

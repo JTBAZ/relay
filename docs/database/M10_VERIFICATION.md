@@ -8,6 +8,8 @@
 
 ## 10.1 — Automated verification (run locally / CI)
 
+**Relay presentation (Batting Order RP6 / `PostPresentation`):** merge-at-read paths (`src/gallery/effective-presentation.ts`), `PATCH /api/v1/gallery/posts/:post_id/presentation`, and pinned `media_id` validation on patron comments ride the same **`npm run test`** harness — no standalone script beyond CI coverage for those flows.
+
 | Step | Command | Notes |
 |------|---------|--------|
 | **10.1.1** | Root: `npm run build` and `npm run test` | Required on every PR; zero regressions. |

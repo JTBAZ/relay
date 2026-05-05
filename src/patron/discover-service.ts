@@ -155,6 +155,7 @@ function matchesQuery(item: DiscoverItem, raw: string): boolean {
     tag_ids: item.tag_ids,
     tier_ids: [],
     has_export: false,
+    processing_status: "READY",
     export_status: "missing",
     content_url_path: "",
     preview_url_path: "",

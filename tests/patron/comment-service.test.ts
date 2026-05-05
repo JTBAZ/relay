@@ -56,6 +56,27 @@ describe("createComment", () => {
     ).rejects.toBeInstanceOf(CommentValidationError);
   });
 
+  it("rejects media_id not attached to post", async () => {
+    const prisma = {
+      mediaAsset: {
+        findMany: vi.fn().mockResolvedValue([
+          { id: "m1", primaryPostId: "other_post", postIds: [] }
+        ])
+      }
+    } as never;
+    await expect(
+      createComment(prisma, overridesStub(), {
+        relayCreatorId: "c",
+        postId: "p",
+        patronUserId: "u",
+        body: "ok",
+        mediaId: "m1",
+        anchorX: 10,
+        anchorY: 20
+      })
+    ).rejects.toBeInstanceOf(CommentValidationError);
+  });
+
   it("creates a comment with auto-mod hidden state when body has banned token", async () => {
     const created = {
       id: "cmt1",
@@ -150,6 +171,25 @@ describe("patchComment", () => {
 });
 
 describe("listComments", () => {
+  it("narrows to post-level threads when postLevelOnly is set", async () => {
+    const findMany = vi.fn().mockResolvedValue([]);
+    const prisma = { comment: { findMany } } as never;
+    await listComments(prisma, {
+      relayCreatorId: "c",
+      postId: "p",
+      options: { postLevelOnly: true }
+    });
+    expect(findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          relayCreatorId: "c",
+          postId: "p",
+          mediaId: null
+        })
+      })
+    );
+  });
+
   it("filters out comments authored AFTER a block edge timestamp (D14 future-only)", async () => {
     const now = Date.now();
     const beforeBlock = new Date(now - 10_000);

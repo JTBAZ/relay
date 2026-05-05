@@ -89,6 +89,13 @@ describe("PE-E API client (web/lib/relay-api.ts)", () => {
       const url = vi.mocked(fetch).mock.calls[0]?.[0] as string;
       expect(url).not.toContain("media_id=");
     });
+
+    it("adds post_level_only=1 when requested", async () => {
+      vi.mocked(fetch).mockResolvedValue(jsonResponse(envelope({ items: [] })));
+      await listPostComments({ relayCreatorId: "c", postId: "p", postLevelOnly: true });
+      const url = vi.mocked(fetch).mock.calls[0]?.[0] as string;
+      expect(url).toContain("post_level_only=1");
+    });
   });
 
   describe("createComment", () => {

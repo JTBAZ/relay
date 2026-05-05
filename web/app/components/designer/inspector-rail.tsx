@@ -1,10 +1,9 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
-  Palette,
-  LayoutTemplate,
-  Layers,
+  Sparkles,
+  Rows3,
   ChevronDown,
   ChevronUp,
   GripVertical,
@@ -15,20 +14,17 @@ import {
   Lock,
   CornerDownRight,
   ShoppingBag,
-  Megaphone,
-  Users,
   X,
   Link2,
   Mail,
   Trophy,
   Brush,
   Bell,
+  Loader2
 } from "lucide-react";
 import type {
   PageLayout,
-  ThemeConfig,
   HeroConfig,
-  ThemeRadius,
   SectionLayout,
   Collection,
   AnySection,
@@ -36,12 +32,32 @@ import type {
   ShopSection,
   EngagementSection,
   AnnouncementBanner,
-  TypographyStyle,
   EngagementBlockType,
-  GalleryArrangement,
-  PatreonLinkPosition,
+  PatreonLinkPosition
 } from "@/lib/designer-mock";
 import { LIBRARY_ALL_VISIBLE_SLUG } from "@/lib/designer-mock";
+import {
+  patchCreatorProfile,
+  putRelayNativeUpload,
+  relayNativeUploadCommit,
+  relayNativeUploadInit,
+  RELAY_API_BASE
+} from "@/lib/relay-api";
+
+function guessHeroMediaContentType(file: File): string {
+  if (file.type && file.type !== "application/octet-stream") {
+    return file.type;
+  }
+  const n = file.name.toLowerCase();
+  if (n.endsWith(".webp")) return "image/webp";
+  if (n.endsWith(".png")) return "image/png";
+  if (n.endsWith(".jpg") || n.endsWith(".jpeg")) return "image/jpeg";
+  return "application/octet-stream";
+}
+
+function designerExportMediaUrl(creatorId: string, mediaId: string): string {
+  return `${RELAY_API_BASE}/api/v1/export/media/${encodeURIComponent(creatorId)}/${encodeURIComponent(mediaId)}/content`;
+}
 
 // ─── Panel wrapper ─────────────────────────────────────────────────────────────
 
@@ -270,120 +286,100 @@ function BioTextarea({
   );
 }
 
-// ─── Theme panel ──────────────────────────────────────────────────────────────
+function libraryBlockRole(section: LibrarySection): string {
+  if (section.filterQuery !== undefined) {
+    const q = section.filterQuery;
+    const keys = Object.keys(q);
+    if (keys.length === 1 && q.sort === "published") return "Newest";
+    if (keys.length === 0) return section.layout === "featured" ? "Featured" : "All work";
+    return "Filtered";
+  }
+  return section.layout === "featured" ? "Featured" : "Collection";
+}
 
-function ThemePanel({
-  theme,
-  bio,
-  onChange,
-  onBioChange,
+// ─── Hero (profile cues) ─────────────────────────────────────────────────────
+
+function HeroPanelShell({
+  layout,
+  creatorId,
+  onLayoutChange,
+  onDesignerAvatarSynced,
 }: {
-  theme: ThemeConfig;
-  /** Persisted on the layout as `hero.bio` — shown under the headline when Show bio is on */
-  bio: string;
-  onChange: (t: ThemeConfig) => void;
-  onBioChange: (v: string) => void;
+  layout: PageLayout;
+  creatorId: string;
+  onLayoutChange: (p: PageLayout) => void;
+  onDesignerAvatarSynced?: (avatarExportUrl: string) => void;
 }) {
   useEffect(() => {
-    if (theme.lockedArtStyle !== "paywall") return;
-    onChange({ ...theme, lockedArtStyle: "blurred" });
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- one-way guard; omit theme/onChange identity
-  }, [theme.lockedArtStyle]);
+    if (layout.theme.lockedArtStyle !== "paywall") return;
+    onLayoutChange({
+      ...layout,
+      theme: { ...layout.theme, lockedArtStyle: "blurred" },
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- one-way guard
+  }, [layout.theme.lockedArtStyle]);
 
   return (
     <>
-      <FieldRow label="Typography">
-        <PillSelect<TypographyStyle>
-          options={[
-            { value: "editorial", label: "Editorial" },
-            { value: "minimal",   label: "Minimal"   },
-            { value: "warm",      label: "Warm"       },
-            { value: "mono",      label: "Mono"       },
-          ]}
-          value={theme.typography}
-          onChange={(v) => onChange({ ...theme, typography: v })}
-        />
-      </FieldRow>
-
-      <FieldRow label="Corner radius">
-        <PillSelect<ThemeRadius>
-          options={[
-            { value: "none", label: "Square"  },
-            { value: "sm",   label: "Subtle"  },
-            { value: "md",   label: "Rounded" },
-            { value: "lg",   label: "Soft"    },
-          ]}
-          value={theme.radius}
-          onChange={(v) => onChange({ ...theme, radius: v })}
-        />
-      </FieldRow>
-
-      <FieldRow label="Locked content style">
-        <PillSelect<"blurred" | "locked">
-          options={[
-            { value: "blurred", label: "Blurred" },
-            { value: "locked", label: "Locked" },
-          ]}
-          value={theme.lockedArtStyle === "paywall" ? "blurred" : theme.lockedArtStyle}
-          onChange={(v) => onChange({ ...theme, lockedArtStyle: v })}
-        />
-      </FieldRow>
-
-      <FieldRow
-        label="Gallery arrangement"
-        sublabel="Order of items in each Library section (saved with your layout)"
-      >
-        <PillSelect<GalleryArrangement>
-          options={[
-            { value: "chronological", label: "Newest first" },
-            { value: "tier", label: "By tier" },
-          ]}
-          value={theme.galleryArrangement}
-          onChange={(v) => onChange({ ...theme, galleryArrangement: v })}
-        />
-      </FieldRow>
-
+      <HeroPanel
+        hero={layout.hero}
+        creatorId={creatorId}
+        avatarUrl={layout.avatarUrl}
+        onChange={(h) => onLayoutChange({ ...layout, hero: h })}
+        onAvatarExportUrl={(url) => {
+          onLayoutChange({ ...layout, avatarUrl: url });
+          onDesignerAvatarSynced?.(url);
+        }}
+      />
       <ToggleRow
         label="Show bio"
-        sublabel="Appears beneath hero, uses body typography"
-        value={theme.showBio}
-        onChange={(v) => onChange({ ...theme, showBio: v })}
+        sublabel="Saved with your Relay layout (sync does not overwrite Patreon copy here)"
+        value={layout.theme.showBio}
+        onChange={(v) =>
+          onLayoutChange({ ...layout, theme: { ...layout.theme, showBio: v } })
+        }
       />
-      {theme.showBio ? (
-        <FieldRow label="Bio" sublabel="Saved to your site layout (not Patreon)">
+      {layout.theme.showBio ? (
+        <FieldRow label="Bio">
           <BioTextarea
-            value={bio}
-            onChange={onBioChange}
+            value={layout.bio}
+            onChange={(bio) => onLayoutChange({ ...layout, bio })}
             placeholder="A few lines about you or your work…"
           />
         </FieldRow>
       ) : null}
       <ToggleRow
         label="Show Patreon link"
-        sublabel="Uses patreon.com slug from your Library when synced"
-        value={theme.showPatreonLink}
-        onChange={(v) => onChange({ ...theme, showPatreonLink: v })}
+        sublabel="Uses your Library campaign slug when synced"
+        value={layout.theme.showPatreonLink}
+        onChange={(v) =>
+          onLayoutChange({ ...layout, theme: { ...layout.theme, showPatreonLink: v } })
+        }
       />
-      {theme.showPatreonLink ? (
-        <FieldRow
-          label="Patreon link placement"
-          sublabel="Where the link appears on your public profile hero"
-        >
+      {layout.theme.showPatreonLink ? (
+        <FieldRow label="Primary CTA placement" sublabel="Where the patron link sits on your hero">
           <PillSelect<PatreonLinkPosition>
             options={[
-              { value: "below_avatar", label: "Below profile photo" },
+              { value: "below_avatar", label: "Below avatar" },
               { value: "below_bio", label: "Below bio" },
             ]}
-            value={theme.patreonLinkPosition ?? "below_bio"}
-            onChange={(v) => onChange({ ...theme, patreonLinkPosition: v })}
+            value={layout.theme.patreonLinkPosition ?? "below_bio"}
+            onChange={(v) =>
+              onLayoutChange({
+                ...layout,
+                theme: { ...layout.theme, patreonLinkPosition: v },
+              })
+            }
           />
         </FieldRow>
       ) : null}
       <ToggleRow
         label="Tier badges"
-        sublabel="Top-right chip on gallery tiles the viewer can see (hidden on locked tiles)"
-        value={theme.showTierBadges}
-        onChange={(v) => onChange({ ...theme, showTierBadges: v })}
+        sublabel="Shows access level on unlocked tiles — locked previews stay blurred or gated"
+        value={layout.theme.showTierBadges}
+        onChange={(v) =>
+          onLayoutChange({ ...layout, theme: { ...layout.theme, showTierBadges: v } })
+        }
       />
     </>
   );
@@ -393,13 +389,108 @@ function ThemePanel({
 
 function HeroPanel({
   hero,
+  creatorId,
+  avatarUrl: _avatarUrl,
   onChange,
+  onAvatarExportUrl,
 }: {
   hero: HeroConfig;
+  creatorId: string;
+  avatarUrl: string;
   onChange: (h: HeroConfig) => void;
+  onAvatarExportUrl: (exportUrl: string) => void;
 }) {
+  void _avatarUrl;
+  const coverInputRef = useRef<HTMLInputElement>(null);
+  const avatarInputRef = useRef<HTMLInputElement>(null);
+  const [coverBusy, setCoverBusy] = useState(false);
+  const [avatarBusy, setAvatarBusy] = useState(false);
+  const [assetErr, setAssetErr] = useState<string | null>(null);
+
+  async function runRelayImageUpload(file: File): Promise<string> {
+    const cid = creatorId.trim();
+    if (!cid) throw new Error("Missing creator session.");
+    const contentType = guessHeroMediaContentType(file);
+    if (contentType === "application/octet-stream") {
+      throw new Error("Use a .jpg, .png, or .webp image.");
+    }
+    const init = await relayNativeUploadInit({
+      creator_id: cid,
+      content_type: contentType,
+      byte_size: file.size,
+    });
+    const ct = init.upload.headers["Content-Type"] ?? contentType;
+    await putRelayNativeUpload(init.upload.url, file, ct);
+    await relayNativeUploadCommit({
+      creator_id: cid,
+      media_id: init.media_id,
+      content_type: contentType,
+      byte_size: file.size,
+    });
+    return init.media_id;
+  }
+
   return (
     <>
+      <input
+        ref={coverInputRef}
+        type="file"
+        accept="image/jpeg,image/png,image/webp"
+        className="hidden"
+        aria-hidden="true"
+        onChange={async (e) => {
+          const file = e.target.files?.[0];
+          e.target.value = "";
+          if (!file) return;
+          setAssetErr(null);
+          setCoverBusy(true);
+          try {
+            const mediaId = await runRelayImageUpload(file);
+            const exportUrl = designerExportMediaUrl(creatorId.trim(), mediaId);
+            onChange({
+              ...hero,
+              coverMediaId: mediaId,
+              coverUrl: exportUrl,
+              showCover: true,
+            });
+          } catch (err) {
+            setAssetErr(err instanceof Error ? err.message : String(err));
+          } finally {
+            setCoverBusy(false);
+          }
+        }}
+      />
+      <input
+        ref={avatarInputRef}
+        type="file"
+        accept="image/jpeg,image/png,image/webp"
+        className="hidden"
+        aria-hidden="true"
+        onChange={async (e) => {
+          const file = e.target.files?.[0];
+          e.target.value = "";
+          if (!file) return;
+          setAssetErr(null);
+          setAvatarBusy(true);
+          try {
+            const mediaId = await runRelayImageUpload(file);
+            const exportUrl = designerExportMediaUrl(creatorId.trim(), mediaId);
+            await patchCreatorProfile({ avatar_url: exportUrl });
+            onAvatarExportUrl(exportUrl);
+          } catch (err) {
+            setAssetErr(err instanceof Error ? err.message : String(err));
+          } finally {
+            setAvatarBusy(false);
+          }
+        }}
+      />
+
+      {assetErr ? (
+        <p className="text-[10px] leading-snug" style={{ color: "#f87171" }}>
+          {assetErr}
+        </p>
+      ) : null}
+
       <FieldRow label="Headline">
         <InlineInput
           value={hero.headline}
@@ -419,9 +510,31 @@ function HeroPanel({
         value={hero.showAvatar}
         onChange={(v) => onChange({ ...hero, showAvatar: v })}
       />
+      {hero.showAvatar ? (
+        <div
+          className="flex items-center justify-between gap-2 px-2.5 py-2 rounded-md text-xs"
+          style={{
+            background: "var(--relay-surface-2)",
+            border: "1px solid var(--relay-border)",
+            color: "var(--relay-fg-muted)",
+          }}
+        >
+          <span className="truncate max-w-[10rem]">Profile photo</span>
+          <button
+            type="button"
+            disabled={avatarBusy || !creatorId.trim()}
+            onClick={() => avatarInputRef.current?.click()}
+            className="flex items-center gap-1 shrink-0 text-xs transition-colors disabled:opacity-40"
+            style={{ color: "var(--relay-green-400)" }}
+          >
+            {avatarBusy ? <Loader2 size={10} className="animate-spin" /> : <Pencil size={10} />}
+            Change
+          </button>
+        </div>
+      ) : null}
       <ToggleRow
         label="Cover image"
-        sublabel="Full-width background behind hero"
+        sublabel="Relay site hero banner — saved on gallery layout (separate from Patreon sync)"
         value={hero.showCover}
         onChange={(v) => onChange({ ...hero, showCover: v })}
       />
@@ -435,12 +548,19 @@ function HeroPanel({
             color: "var(--relay-fg-muted)",
           }}
         >
-          <span className="truncate">cover.jpg</span>
+          <span className="truncate max-w-[10rem]">
+            {hero.coverMediaId?.trim()
+              ? `Cover · ${hero.coverMediaId.slice(0, 10)}…`
+              : "Synced / default banner"}
+          </span>
           <button
-            className="flex items-center gap-1 shrink-0 text-xs transition-colors"
+            type="button"
+            disabled={coverBusy || !creatorId.trim()}
+            onClick={() => coverInputRef.current?.click()}
+            className="flex items-center gap-1 shrink-0 text-xs transition-colors disabled:opacity-40"
             style={{ color: "var(--relay-green-400)" }}
           >
-            <Pencil size={10} />
+            {coverBusy ? <Loader2 size={10} className="animate-spin" /> : <Pencil size={10} />}
             Change
           </button>
         </div>
@@ -472,6 +592,68 @@ const ENGAGEMENT_ICONS: Record<EngagementBlockType, React.ReactNode> = {
   links:      <Link2 size={11} />,
 };
 
+const BLOCK_COLOR = {
+  collection: "#60a5fa",
+  announcement: "#f87171"
+} as const;
+
+type ComposerBlockKind = "collection" | "announcement";
+type PendingBlockPlacement = { kind: ComposerBlockKind; insertIndex: number };
+
+const DESIGNER_BLOCK_MIME = "application/x-relay-designer-block";
+
+function dragBlockPayload(kind: ComposerBlockKind) {
+  return JSON.stringify({ source: "designer-block-palette", kind });
+}
+
+function BlockTypeButton({
+  label,
+  description,
+  kind,
+  color,
+  selected,
+  onClick,
+  onDragStart,
+}: {
+  label: string;
+  description: string;
+  kind: ComposerBlockKind;
+  color: string;
+  selected: boolean;
+  onClick: () => void;
+  onDragStart: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      draggable
+      onClick={onClick}
+      onDragStart={(e) => {
+        onDragStart();
+        e.dataTransfer.effectAllowed = "copy";
+        e.dataTransfer.setData(DESIGNER_BLOCK_MIME, dragBlockPayload(kind));
+      }}
+      className="group rounded-lg border px-2.5 py-2 text-left transition-colors"
+      style={{
+        borderColor: selected ? color : `${color}66`,
+        background: selected ? `${color}1a` : "var(--relay-bg)",
+      }}
+      title="Drag this block type into the minimap"
+    >
+      <span className="flex items-center gap-2">
+        <span className="h-3 w-3 shrink-0 rounded-sm" style={{ background: color }} />
+        <span className="min-w-0 truncate text-xs font-medium" style={{ color: "var(--relay-fg)" }}>
+          {label}
+        </span>
+      </span>
+      <span className="mt-1 block text-[10px] leading-snug" style={{ color: "var(--relay-fg-subtle)" }}>
+        {description}
+      </span>
+    </button>
+  );
+}
+
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function SectionKindChip({ kind }: { kind: AnySection["kind"] }) {
   const meta: Record<AnySection["kind"], { label: string; color: string }> = {
     library:      { label: "Library",      color: "var(--relay-fg-subtle)" },
@@ -497,6 +679,7 @@ function SectionKindChip({ kind }: { kind: AnySection["kind"] }) {
 
 // ─── Library section row ───────────────────────────────────────────────────────
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function LibrarySectionRow({
   section,
   collection,
@@ -540,26 +723,29 @@ function LibrarySectionRow({
           >
             {section.label}
           </span>
-          <SectionKindChip kind="library" />
+          <span
+            className="text-[0.6rem] font-semibold uppercase tracking-wide shrink-0 px-1.5 py-0.5 rounded"
+            style={{
+              color: "var(--relay-green-400)",
+              border: "1px solid var(--relay-green-800)",
+              background: "rgba(20,83,45,0.18)",
+            }}
+          >
+            {libraryBlockRole(section)}
+          </span>
           {section.filterQuery !== undefined ? (
-            <span
-              className="text-xs shrink-0"
-              style={{ color: "var(--relay-green-400)" }}
-            >
-              All visible work
+            <span className="text-[10px] shrink-0 truncate max-w-[8rem]" style={{ color: "var(--relay-fg-subtle)" }}>
+              Library catalog
             </span>
           ) : (
             collection && (
               <span
-                className="text-xs shrink-0"
+                className="text-xs shrink-0 truncate max-w-[10rem]"
                 style={{
-                  color:
-                    TIER_COLOR[collection.tier] ?? "var(--relay-fg-subtle)",
+                  color: TIER_COLOR[collection.tier] ?? "var(--relay-fg-subtle)",
                 }}
               >
-                {collection.tier !== "public" && (
-                  <Lock size={9} className="inline mr-0.5" />
-                )}
+                {collection.tier !== "public" && <Lock size={9} className="inline mr-0.5" />}
                 {collection.label}
               </span>
             )
@@ -731,6 +917,7 @@ function LibrarySectionRow({
 
 // ─── Shop section row ──────────────────────────────────────────────────────────
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function ShopSectionRow({
   section,
   onChange,
@@ -883,6 +1070,7 @@ function ShopSectionRow({
 
 // ─── Engagement section row ────────────────────────────────────────────────────
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function EngagementSectionRow({
   section,
   onChange,
@@ -1096,6 +1284,7 @@ function EngagementSectionRow({
 
 // ─── Announcement section row ─────────────────────────────────────────────────
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function AnnouncementRow({
   section,
   onChange,
@@ -1273,338 +1462,193 @@ function AnnouncementRow({
   );
 }
 
-// ─── Unified any-section row ──────────────────────────────────────────────────
-
-function AnySectionRow({
-  section,
-  collections,
-  onChange,
-  onRemove,
-}: {
-  section: AnySection;
-  collections: Collection[];
-  onChange: (s: AnySection) => void;
-  onRemove: () => void;
-}) {
-  if (section.kind === "library") {
-    return (
-      <LibrarySectionRow
-        section={section}
-        collection={collections.find(
-          (c) => c.slug === section.collectionSlug
-        )}
-        collections={collections}
-        onChange={onChange as (s: LibrarySection) => void}
-        onRemove={onRemove}
-      />
-    );
-  }
-  if (section.kind === "shop") {
-    return (
-      <ShopSectionRow
-        section={section}
-        onChange={onChange as (s: ShopSection) => void}
-        onRemove={onRemove}
-      />
-    );
-  }
-  if (section.kind === "engagement") {
-    return (
-      <EngagementSectionRow
-        section={section}
-        onChange={onChange as (s: EngagementSection) => void}
-        onRemove={onRemove}
-      />
-    );
-  }
-  if (section.kind === "announcement") {
-    return (
-      <AnnouncementRow
-        section={section}
-        onChange={onChange as (s: AnnouncementBanner) => void}
-        onRemove={onRemove}
-      />
-    );
-  }
-  return null;
-}
-
-// ─── Add section picker ───────────────────────────────────────────────────────
-
-type AddableKind =
-  | "library"
-  | "library_catalog"
-  | "shop"
-  | "engagement"
-  | "announcement";
-
-const ADD_OPTIONS: {
-  kind: AddableKind;
-  label: string;
-  description: string;
-  icon: React.ReactNode;
-  color: string;
-}[] = [
-  {
-    kind: "library",
-    label: "Library section",
-    description: "Gallery grid sourced from one Library collection",
-    icon: <Layers size={14} />,
-    color: "var(--relay-green-400)",
-  },
-  {
-    kind: "library_catalog",
-    label: "All visible work",
-    description:
-      "Single section showing your full visible catalog (not tied to one collection)",
-    icon: <Layers size={14} />,
-    color: "#34d399",
-  },
-  {
-    kind: "shop",
-    label: "Shop",
-    description: "Storefront row — link to prints, zines, or digital downloads",
-    icon: <ShoppingBag size={14} />,
-    color: "#f59e0b",
-  },
-  {
-    kind: "engagement",
-    label: "Engagement block",
-    description: "Newsletter, commission news, contests, or social links",
-    icon: <Users size={14} />,
-    color: "#60a5fa",
-  },
-  {
-    kind: "announcement",
-    label: "Announcement banner",
-    description: "Ribbon-style banner for sales or new releases — auto-expires",
-    icon: <Megaphone size={14} />,
-    color: "#f87171",
-  },
-];
-
-function AddSectionPicker({
-  collections,
-  onAdd,
-}: {
-  collections: Collection[];
-  onAdd: (s: AnySection) => void;
-}) {
-  const [open, setOpen] = useState(false);
-
-  function createSection(kind: AddableKind): AnySection {
-    const id = `sec_${crypto.randomUUID()}`;
-    if (kind === "library") {
-      return {
-        kind: "library",
-        id,
-        label: "New section",
-        collectionSlug: collections[0]?.slug ?? "recent-work",
-        layout: "grid",
-        itemLimit: 12,
-        gridColumns: 3,
-        visible: true,
-      };
-    }
-    if (kind === "library_catalog") {
-      return {
-        kind: "library",
-        id,
-        label: "Work",
-        collectionSlug: collections[0]?.slug ?? "",
-        filterQuery: {},
-        layout: "grid",
-        itemLimit: 24,
-        gridColumns: 3,
-        visible: true,
-      };
-    }
-    if (kind === "shop") {
-      return {
-        kind: "shop",
-        id,
-        label: "Shop",
-        visible: true,
-        gridCols: 3,
-        items: [],
-      };
-    }
-    if (kind === "engagement") {
-      return {
-        kind: "engagement",
-        id,
-        label: "Engagement",
-        visible: true,
-        blockType: "newsletter",
-        heading: "Stay connected",
-        body: "",
-      };
-    }
-    return {
-      kind: "announcement",
-      id,
-      label: "Announcement",
-      visible: true,
-      message: "New release — check it out!",
-      expiresAt: null,
-      style: "promo",
-    };
-  }
-
-  return (
-    <div className="relative">
-      <button
-        onClick={() => setOpen((p) => !p)}
-        className="flex items-center justify-center gap-1.5 w-full text-xs py-2 rounded-md transition-colors"
-        style={{
-          color: "var(--relay-green-400)",
-          border: "1px dashed var(--relay-green-800)",
-          background: "transparent",
-        }}
-        onMouseEnter={(e) =>
-          ((e.currentTarget as HTMLElement).style.background =
-            "var(--relay-green-950)")
-        }
-        onMouseLeave={(e) =>
-          ((e.currentTarget as HTMLElement).style.background = "transparent")
-        }
-      >
-        <Plus size={13} />
-        Add section
-      </button>
-
-      {open && (
-        <div
-          className="absolute top-full left-0 right-0 mt-1.5 z-[200] flex max-h-[min(60vh,360px)] flex-col overflow-y-auto rounded-lg"
-          style={{
-            background: "var(--relay-surface-1)",
-            border: "1px solid var(--relay-border)",
-            boxShadow: "0 12px 32px rgba(0,0,0,0.45)",
-          }}
-        >
-          <div
-            className="flex items-center justify-between px-3 py-2 shrink-0"
-            style={{ borderBottom: "1px solid var(--relay-border)" }}
-          >
-            <span
-              className="text-xs font-semibold"
-              style={{ color: "var(--relay-fg-muted)" }}
-            >
-              Add section
-            </span>
-            <button
-              onClick={() => setOpen(false)}
-              style={{ color: "var(--relay-fg-subtle)" }}
-            >
-              <X size={13} />
-            </button>
-          </div>
-          {ADD_OPTIONS.map((opt) => (
-            <button
-              key={opt.kind}
-              onClick={() => {
-                onAdd(createSection(opt.kind));
-                setOpen(false);
-              }}
-              className="flex items-start gap-3 px-3 py-2.5 text-left transition-colors"
-              style={{ borderBottom: "1px solid var(--relay-border)" }}
-              onMouseEnter={(e) =>
-                ((e.currentTarget as HTMLElement).style.background =
-                  "var(--relay-surface-2)")
-              }
-              onMouseLeave={(e) =>
-                ((e.currentTarget as HTMLElement).style.background =
-                  "transparent")
-              }
-            >
-              <span
-                className="shrink-0 mt-0.5"
-                style={{ color: opt.color }}
-              >
-                {opt.icon}
-              </span>
-              <div className="flex flex-col gap-0.5">
-                <span
-                  className="text-xs font-medium"
-                  style={{ color: "var(--relay-fg)" }}
-                >
-                  {opt.label}
-                </span>
-                <span
-                  className="text-xs leading-relaxed"
-                  style={{ color: "var(--relay-fg-subtle)" }}
-                >
-                  {opt.description}
-                </span>
-              </div>
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
 // ─── Sections panel ───────────────────────────────────────────────────────────
 
 function SectionsPanel({
   sections,
   collections,
+  pendingBlockPlacement,
+  onPendingBlockPlacementChange,
   onChange,
 }: {
   sections: AnySection[];
   collections: Collection[];
+  pendingBlockPlacement: PendingBlockPlacement | null;
+  onPendingBlockPlacementChange: (placement: PendingBlockPlacement | null) => void;
   onChange: (sections: AnySection[]) => void;
 }) {
-  function updateSection(id: string, updated: AnySection) {
-    onChange(sections.map((s) => (s.id === id ? updated : s)));
-  }
+  const [blockKind, setBlockKind] = useState<ComposerBlockKind>("collection");
+  const [collectionSlug, setCollectionSlug] = useState(collections[0]?.slug ?? "");
+  const [announcementLabel, setAnnouncementLabel] = useState("Announcement");
+  const [announcementMessage, setAnnouncementMessage] = useState("");
 
-  function removeSection(id: string) {
-    onChange(sections.filter((s) => s.id !== id));
+  useEffect(() => {
+    if (collectionSlug || collections.length === 0) return;
+    setCollectionSlug(collections[0]?.slug ?? "");
+  }, [collectionSlug, collections]);
+
+  useEffect(() => {
+    if (!pendingBlockPlacement) return;
+    setBlockKind(pendingBlockPlacement.kind);
+  }, [pendingBlockPlacement]);
+
+  const selectedCollection = collections.find((c) => c.slug === collectionSlug);
+  const canCreate =
+    Boolean(pendingBlockPlacement) &&
+    (blockKind === "collection" ? Boolean(selectedCollection) : announcementMessage.trim().length > 0);
+
+  function createBlock() {
+    if (!canCreate || !pendingBlockPlacement) return;
+    const insertIndex = Math.max(0, Math.min(pendingBlockPlacement.insertIndex, sections.length));
+    if (blockKind === "collection" && selectedCollection) {
+      const next = [...sections];
+      next.splice(insertIndex, 0, {
+        kind: "library",
+        id: `sec_${crypto.randomUUID()}`,
+        label: selectedCollection.label,
+        collectionSlug: selectedCollection.slug,
+        layout: "grid",
+        itemLimit: 16,
+        gridColumns: 3,
+        visible: true,
+      });
+      onChange(next);
+      onPendingBlockPlacementChange(null);
+      return;
+    }
+
+    const next = [...sections];
+    next.splice(insertIndex, 0, {
+      kind: "announcement",
+      id: `sec_${crypto.randomUUID()}`,
+      label: announcementLabel.trim() || "Announcement",
+      visible: true,
+      message: announcementMessage.trim(),
+      expiresAt: null,
+      style: "info",
+    });
+    onChange(next);
+    onPendingBlockPlacementChange(null);
+    setAnnouncementMessage("");
   }
 
   return (
-    <>
+    <div className="flex flex-col gap-3">
       <div
-        className="flex items-start gap-2 px-2.5 py-2 rounded-md text-xs leading-relaxed"
-        style={{
-          background: "var(--relay-green-950)",
-          border: "1px solid var(--relay-green-800)",
-          color: "var(--relay-fg-muted)",
-        }}
+        className="rounded-lg border p-3"
+        style={{ borderColor: "var(--relay-border)", background: "var(--relay-bg)" }}
       >
-        <span
-          style={{ color: "var(--relay-green-400)", marginTop: "1px" }}
-        >
-          <Layers size={12} />
-        </span>
-        <span>
-          Library sections can show one collection or{" "}
-          <strong style={{ color: "var(--relay-fg-muted)", fontWeight: 600 }}>
-            all visible work
-          </strong>{" "}
-          (same catalog visitors see). Visibility and access tiers are set in Library — not here.
-        </span>
-      </div>
-
-      <div className="flex flex-col gap-2">
-        {sections.map((section) => (
-          <AnySectionRow
-            key={section.id}
-            section={section}
-            collections={collections}
-            onChange={(s) => updateSection(section.id, s)}
-            onRemove={() => removeSection(section.id)}
+        <p className="text-xs font-medium" style={{ color: "var(--relay-fg)" }}>
+          1. Drag media type into map
+        </p>
+        <p className="mt-1 text-[10px] leading-snug" style={{ color: "var(--relay-fg-subtle)" }}>
+          Drop a Collection or Post where it should land. The minimap will mark the pending slot.
+        </p>
+        <div className="mt-3 grid grid-cols-2 gap-2">
+          <BlockTypeButton
+            label="Collection"
+            description="A saved Library collection"
+            kind="collection"
+            color={BLOCK_COLOR.collection}
+            selected={blockKind === "collection"}
+            onClick={() => setBlockKind("collection")}
+            onDragStart={() => setBlockKind("collection")}
           />
-        ))}
+          <BlockTypeButton
+            label="Post"
+            description="Text / announcement block"
+            kind="announcement"
+            color={BLOCK_COLOR.announcement}
+            selected={blockKind === "announcement"}
+            onClick={() => setBlockKind("announcement")}
+            onDragStart={() => setBlockKind("announcement")}
+          />
+        </div>
       </div>
 
-      <AddSectionPicker
-        collections={collections}
-        onAdd={(s) => onChange([...sections, s])}
-      />
-    </>
+      <div
+        className="rounded-lg border p-3"
+        style={{ borderColor: "var(--relay-border)", background: "var(--relay-bg)" }}
+      >
+        <p className="text-xs font-medium" style={{ color: "var(--relay-fg)" }}>
+          2. Fill out menu
+        </p>
+        <p className="mt-1 text-[10px] leading-snug" style={{ color: "var(--relay-fg-subtle)" }}>
+          {pendingBlockPlacement
+            ? `Pending ${pendingBlockPlacement.kind === "collection" ? "Collection" : "Post"} at position ${pendingBlockPlacement.insertIndex + 1}.`
+            : "Drag a block type into the minimap before creating."}
+        </p>
+        <div className="mt-3 flex flex-col gap-3">
+          {blockKind === "collection" ? (
+            <FieldRow label="Collection">
+              <select
+                value={collectionSlug}
+                onChange={(e) => setCollectionSlug(e.target.value)}
+                className="w-full text-xs px-2.5 py-1.5 rounded-md"
+                style={{
+                  background: "var(--relay-surface-2)",
+                  border: "1px solid var(--relay-border)",
+                  color: "var(--relay-fg)",
+                  outline: "none",
+                }}
+              >
+                {collections.length === 0 ? (
+                  <option value="">No collections yet</option>
+                ) : (
+                  collections.map((collection) => (
+                    <option key={collection.slug} value={collection.slug}>
+                      {collection.label} ({collection.itemCount})
+                    </option>
+                  ))
+                )}
+              </select>
+            </FieldRow>
+          ) : (
+            <>
+              <FieldRow label="Post label">
+                <InlineInput
+                  value={announcementLabel}
+                  onChange={setAnnouncementLabel}
+                  placeholder="Announcement"
+                />
+              </FieldRow>
+              <FieldRow label="Text">
+                <BioTextarea
+                  value={announcementMessage}
+                  onChange={setAnnouncementMessage}
+                  placeholder="Write the message that should appear in this block…"
+                />
+              </FieldRow>
+            </>
+          )}
+        </div>
+      </div>
+
+      <div
+        className="rounded-lg border p-3"
+        style={{ borderColor: "var(--relay-border)", background: "var(--relay-bg)" }}
+      >
+        <p className="text-xs font-medium" style={{ color: "var(--relay-fg)" }}>
+          3. Create in indicated position
+        </p>
+        <p className="mt-1 text-[10px] leading-snug" style={{ color: "var(--relay-fg-subtle)" }}>
+          Create inserts the finished block directly into the pending minimap slot.
+        </p>
+        <button
+          type="button"
+          disabled={!canCreate}
+          onClick={createBlock}
+          className="mt-3 flex w-full items-center justify-center gap-1.5 rounded-md px-3 py-2 text-xs font-medium transition-colors disabled:opacity-40"
+          style={{
+            color: "white",
+            background: canCreate ? "var(--relay-green-600)" : "var(--relay-border)",
+          }}
+        >
+          <Plus size={13} />
+          Create
+        </button>
+      </div>
+    </div>
   );
 }
 
@@ -1613,19 +1657,25 @@ function SectionsPanel({
 interface InspectorRailProps {
   layout: PageLayout;
   collections: Collection[];
+  creatorId: string;
+  pendingBlockPlacement: PendingBlockPlacement | null;
+  onPendingBlockPlacementChange: (placement: PendingBlockPlacement | null) => void;
   onLayoutChange: (updated: PageLayout) => void;
+  onDesignerAvatarSynced?: (avatarExportUrl: string) => void;
 }
 
 export function InspectorRail({
   layout,
   collections,
+  creatorId,
+  pendingBlockPlacement,
+  onPendingBlockPlacementChange,
   onLayoutChange,
+  onDesignerAvatarSynced,
 }: InspectorRailProps) {
-  const [openPanel, setOpenPanel] = useState<"theme" | "hero" | "sections" | null>(
-    null
-  );
+  const [openPanel, setOpenPanel] = useState<"hero" | "arrange" | null>("hero");
 
-  function toggle(id: "theme" | "hero" | "sections") {
+  function toggle(id: "hero" | "arrange") {
     setOpenPanel((prev) => (prev === id ? null : id));
   }
 
@@ -1644,49 +1694,41 @@ export function InspectorRail({
         className="px-4 py-3 shrink-0"
         style={{ borderBottom: "1px solid var(--relay-border)" }}
       >
-        <p className="text-xs" style={{ color: "var(--relay-fg-subtle)" }}>
-          Inspector
+        <p className="text-xs font-medium" style={{ color: "var(--relay-fg)" }}>
+          Profile builder
+        </p>
+        <p className="mt-1 text-[10px] leading-snug" style={{ color: "var(--relay-fg-subtle)" }}>
+          Hero settings and draggable media blocks
         </p>
       </div>
 
       <PanelSection
-        id="theme"
-        label="Theme"
-        icon={<Palette size={14} />}
-        open={openPanel === "theme"}
-        onToggle={() => toggle("theme")}
-      >
-        <ThemePanel
-          theme={layout.theme}
-          bio={layout.bio}
-          onChange={(t) => onLayoutChange({ ...layout, theme: t })}
-          onBioChange={(bio) => onLayoutChange({ ...layout, bio })}
-        />
-      </PanelSection>
-
-      <PanelSection
         id="hero"
         label="Hero"
-        icon={<LayoutTemplate size={14} />}
+        icon={<Sparkles size={14} />}
         open={openPanel === "hero"}
         onToggle={() => toggle("hero")}
       >
-        <HeroPanel
-          hero={layout.hero}
-          onChange={(h) => onLayoutChange({ ...layout, hero: h })}
+        <HeroPanelShell
+          layout={layout}
+          creatorId={creatorId}
+          onLayoutChange={onLayoutChange}
+          onDesignerAvatarSynced={onDesignerAvatarSynced}
         />
       </PanelSection>
 
       <PanelSection
-        id="sections"
-        label="Sections"
-        icon={<Layers size={14} />}
-        open={openPanel === "sections"}
-        onToggle={() => toggle("sections")}
+        id="arrange"
+        label="Arrange"
+        icon={<Rows3 size={14} />}
+        open={openPanel === "arrange"}
+        onToggle={() => toggle("arrange")}
       >
         <SectionsPanel
           sections={layout.sections}
           collections={collections}
+          pendingBlockPlacement={pendingBlockPlacement}
+          onPendingBlockPlacementChange={onPendingBlockPlacementChange}
           onChange={(sections) => onLayoutChange({ ...layout, sections })}
         />
       </PanelSection>

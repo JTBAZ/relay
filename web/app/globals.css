@@ -56,6 +56,32 @@ body {
   background: oklch(0.35 0.008 160);
 }
 
+/* Creator library: keep scroll behavior, hide chrome by default. */
+.library-shell.library-hide-scrollbars,
+.library-shell.library-hide-scrollbars * {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.library-shell.library-hide-scrollbars::-webkit-scrollbar,
+.library-shell.library-hide-scrollbars *::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none;
+}
+
+/* Applied to html/body while /library is mounted. Scroll remains enabled. */
+.library-viewport-scroll-hidden {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.library-viewport-scroll-hidden::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none;
+}
+
 @layer utilities {
   .text-balance {
     text-wrap: balance;

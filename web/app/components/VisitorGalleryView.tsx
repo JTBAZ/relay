@@ -50,6 +50,7 @@ import {
   filterGalleryItemsForVisitorLayout,
   type VisitorLayoutMediaKind
 } from "@/lib/visitor-layout-filter";
+import { useStudioSession } from "@/lib/studio-session-context";
 
 const defaultCreatorId = process.env.NEXT_PUBLIC_RELAY_CREATOR_ID?.trim() || "creator_1";
 /** Fallbacks when API `visitor_hero` is empty (static hosting / no campaign snapshot yet). */
@@ -500,6 +501,7 @@ async function fetchAllVisitorItems(
     q?: string;
     tag_ids?: string[];
     tier_ids?: string[];
+    visitor?: boolean;
     dev_sim_patron?: boolean;
     simulate_tier_ids?: string[];
   }
@@ -510,7 +512,7 @@ async function fetchAllVisitorItems(
   for (;;) {
     const path = buildGalleryQuery({
       creator_id: creatorId,
-      visitor: true,
+      visitor: opts.visitor ?? true,
       display: wantsSearchFocus ? "post_primary" : "all_media",
       q: opts.q?.trim() || undefined,
       tag_ids: opts.tag_ids?.length ? opts.tag_ids : undefined,
@@ -530,7 +532,10 @@ async function fetchAllVisitorItems(
 
 export default function VisitorGalleryView() {
   const router = useRouter();
+  const { creatorId: studioCreatorId } = useStudioSession();
   const creatorId = defaultCreatorId;
+  const creatorIsViewingOwnGallery =
+    studioCreatorId.trim().length > 0 && studioCreatorId.trim() === creatorId.trim();
   const [items, setItems] = useState<GalleryItem[]>([]);
   const [facets, setFacets] = useState<FacetsData | null>(null);
   const [collections, setCollections] = useState<Collection[]>([]);
@@ -725,17 +730,18 @@ export default function VisitorGalleryView() {
     dev_sim_patron?: boolean;
     simulate_tier_ids?: string[];
   } | null => {
+    if (creatorIsViewingOwnGallery) return null;
     if (!tierSimKey) return null;
     if (tierSimKey === "anon") return { dev_sim_patron: true, simulate_tier_ids: [] };
     return { dev_sim_patron: true, simulate_tier_ids: [tierSimKey] };
-  }, [tierSimKey]);
+  }, [creatorIsViewingOwnGallery, tierSimKey]);
 
   const { sectionItems: layoutSectionItems, loading: layoutSectionsLoading } = useLayoutSectionItems(
     pageLayout,
     creatorId,
     collections,
     {
-      visitor: true,
+      visitor: !creatorIsViewingOwnGallery,
       ...(tierSimParams ?? {})
     }
   );
@@ -750,8 +756,10 @@ export default function VisitorGalleryView() {
     u.set("creator_id", creatorId);
     try {
       const [f, colRes, layoutRes] = await Promise.all([
-        relayFetch<FacetsData>(buildGalleryFacetsQuery(creatorId, true)),
-        relayFetch<{ items: Collection[] }>(buildGalleryCollectionsQuery(creatorId, true)),
+        relayFetch<FacetsData>(buildGalleryFacetsQuery(creatorId, !creatorIsViewingOwnGallery)),
+        relayFetch<{ items: Collection[] }>(
+          buildGalleryCollectionsQuery(creatorId, !creatorIsViewingOwnGallery)
+        ),
         relayFetch<PageLayout>(`/api/v1/gallery/layout?${u.toString()}`)
       ]);
       setFacets(f);
@@ -762,14 +770,16 @@ export default function VisitorGalleryView() {
         console.warn("[VisitorGallery] facets/collections/layout request failed:", e);
       }
       try {
-        const f = await relayFetch<FacetsData>(buildGalleryFacetsQuery(creatorId, true));
+        const f = await relayFetch<FacetsData>(
+          buildGalleryFacetsQuery(creatorId, !creatorIsViewingOwnGallery)
+        );
         setFacets(f);
       } catch {
         /* ignore */
       }
       try {
         const colRes = await relayFetch<{ items: Collection[] }>(
-          buildGalleryCollectionsQuery(creatorId, true)
+          buildGalleryCollectionsQuery(creatorId, !creatorIsViewingOwnGallery)
         );
         setCollections(colRes.items.sort((a, b) => a.sort_order - b.sort_order));
       } catch {
@@ -782,13 +792,14 @@ export default function VisitorGalleryView() {
         setPageLayout(null);
       }
     }
-  }, [creatorId]);
+  }, [creatorId, creatorIsViewingOwnGallery]);
 
   const loadItems = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
       const list = await fetchAllVisitorItems(creatorId, {
+        visitor: !creatorIsViewingOwnGallery,
         q: debouncedSearch || undefined,
         tag_ids: tagPick.length ? tagPick : undefined,
         tier_ids: tierPick.length ? tierPick : undefined,
@@ -801,7 +812,7 @@ export default function VisitorGalleryView() {
     } finally {
       setLoading(false);
     }
-  }, [creatorId, debouncedSearch, tagPick, tierPick, tierSimParams]);
+  }, [creatorId, creatorIsViewingOwnGallery, debouncedSearch, tagPick, tierPick, tierSimParams]);
 
   useEffect(() => {
     void loadMeta();
@@ -874,7 +885,7 @@ export default function VisitorGalleryView() {
       setModalDetail(null);
       try {
         const d = await fetchGalleryPostDetail(creatorId, item.post_id, {
-          visitor: true,
+          visitor: !creatorIsViewingOwnGallery,
           ...(tierSimParams ?? {})
         });
         setModalDetail(d);
@@ -882,7 +893,7 @@ export default function VisitorGalleryView() {
         setModalDetail(null);
       }
     },
-    [creatorId, tierSimParams]
+    [creatorId, creatorIsViewingOwnGallery, tierSimParams]
   );
 
   const toggleTag = (id: string) => {

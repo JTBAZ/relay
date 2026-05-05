@@ -1,7 +1,7 @@
 "use client";
 
-import { useId, useState, type FormEvent } from "react";
-import { Loader2, Upload } from "lucide-react";
+import { useEffect, useId, useState, type FormEvent } from "react";
+import { Loader2, Upload, X } from "lucide-react";
 import {
   putRelayNativeUpload,
   relayNativeCreatePost,
@@ -29,12 +29,25 @@ export type CreatorRelayPostComposerProps = {
   creatorId: string;
   /** Shown as secondary text under success (e.g. link to Library). */
   successHint?: string;
+  /**
+   * Pre-selected `media_ids` (e.g. Discord-staged assets from `?media_ids=` on `/new-post`).
+   * User can remove chips before publish; optional file upload is merged into the same post.
+   */
+  initialMediaIds?: string[];
 };
+
+function dedupeIds(ids: string[]): string[] {
+  return Array.from(new Set(ids.map((s) => s.trim()).filter(Boolean)));
+}
 
 /**
  * T-6.3 — presigned R2 upload (`init` → `PUT` → `commit`) then `POST /api/v1/relay/posts` with `media_ids`.
  */
-export function CreatorRelayPostComposer({ creatorId, successHint }: CreatorRelayPostComposerProps) {
+export function CreatorRelayPostComposer({
+  creatorId,
+  successHint,
+  initialMediaIds
+}: CreatorRelayPostComposerProps) {
   const formId = useId();
   const titleId = `${formId}-title`;
   const descId = `${formId}-desc`;
@@ -47,45 +60,77 @@ export function CreatorRelayPostComposer({ creatorId, successHint }: CreatorRela
   const [isPublic, setIsPublic] = useState(true);
   const [tierIds, setTierIds] = useState<string[]>([]);
   const [file, setFile] = useState<File | null>(null);
+  const [stagedMediaIds, setStagedMediaIds] = useState<string[]>(() => dedupeIds(initialMediaIds ?? []));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lastPostId, setLastPostId] = useState<string | null>(null);
 
+  useEffect(() => {
+    setStagedMediaIds(dedupeIds(initialMediaIds ?? []));
+  }, [initialMediaIds]);
+
+  const hasUploadFile = file != null && file.size > 0;
+  const hasMedia = hasUploadFile || stagedMediaIds.length > 0;
   const canSubmit =
-    Boolean(creatorId.trim()) && title.trim().length > 0 && file != null && file.size > 0 && !busy;
+    Boolean(creatorId.trim()) && title.trim().length > 0 && hasMedia && !busy;
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
     setError(null);
     setLastPostId(null);
-    if (!file || !creatorId.trim()) {
+    if (!creatorId.trim()) {
+      return;
+    }
+    if (!hasMedia) {
+      setError("Choose a file to upload or keep at least one staged Discord asset.");
       return;
     }
     if (!isPublic && tierIds.length === 0) {
       setError("For a members-only post, select at least one access tier, or make the post public.");
       return;
     }
-    const contentType = guessContentType(file);
-    if (contentType === "application/octet-stream") {
-      setError("Could not determine the file’s media type. Try a .mp4 or other common extension.");
+
+    let mediaIds = [...stagedMediaIds];
+
+    if (hasUploadFile && file) {
+      const contentType = guessContentType(file);
+      if (contentType === "application/octet-stream") {
+        setError("Could not determine the file’s media type. Try a .mp4 or other common extension.");
+        return;
+      }
+      setBusy(true);
+      try {
+        const init = await relayNativeUploadInit({
+          creator_id: creatorId.trim(),
+          content_type: contentType,
+          byte_size: file.size
+        });
+        const ct = init.upload.headers["Content-Type"] ?? contentType;
+        await putRelayNativeUpload(init.upload.url, file, ct);
+        await relayNativeUploadCommit({
+          creator_id: creatorId.trim(),
+          media_id: init.media_id,
+          content_type: contentType,
+          byte_size: file.size
+        });
+        mediaIds.push(init.media_id);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : String(err));
+        setBusy(false);
+        return;
+      }
+    } else {
+      setBusy(true);
+    }
+
+    mediaIds = dedupeIds(mediaIds);
+    if (mediaIds.length === 0) {
+      setError("No media to publish.");
+      setBusy(false);
       return;
     }
 
-    setBusy(true);
     try {
-      const init = await relayNativeUploadInit({
-        creator_id: creatorId.trim(),
-        content_type: contentType,
-        byte_size: file.size
-      });
-      const ct = init.upload.headers["Content-Type"] ?? contentType;
-      await putRelayNativeUpload(init.upload.url, file, ct);
-      await relayNativeUploadCommit({
-        creator_id: creatorId.trim(),
-        media_id: init.media_id,
-        content_type: contentType,
-        byte_size: file.size
-      });
       const created = await relayNativeCreatePost({
         creator_id: creatorId.trim(),
         title: title.trim(),
@@ -94,10 +139,12 @@ export function CreatorRelayPostComposer({ creatorId, successHint }: CreatorRela
         required_tier_id: null,
         tier_ids: isPublic ? [] : tierIds,
         tag_ids: [],
-        media_ids: [init.media_id],
+        media_ids: mediaIds,
         publish: true
       });
       setLastPostId(created.post.id);
+      setFile(null);
+      setStagedMediaIds([]);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -163,8 +210,29 @@ export function CreatorRelayPostComposer({ creatorId, successHint }: CreatorRela
         </div>
         <div>
           <label htmlFor={fileId} className="text-[11px] font-medium text-[var(--lib-fg-muted)]">
-            Media file
+            Media file {stagedMediaIds.length > 0 ? <span className="font-normal">(optional)</span> : null}
           </label>
+          {stagedMediaIds.length > 0 ? (
+            <div className="mt-1 flex flex-wrap gap-1.5">
+              {stagedMediaIds.map((id) => (
+                <span
+                  key={id}
+                  className="inline-flex max-w-full items-center gap-1 rounded border border-[var(--lib-border)] bg-[var(--lib-muted)]/40 pl-2 pr-1 py-0.5 font-mono text-[10px] text-[var(--lib-fg)]"
+                >
+                  <span className="truncate">{id}</span>
+                  <button
+                    type="button"
+                    className="shrink-0 rounded p-0.5 text-[var(--lib-fg-muted)] hover:bg-[var(--lib-border)]/60 hover:text-[var(--lib-fg)]"
+                    onClick={() => setStagedMediaIds((prev) => prev.filter((x) => x !== id))}
+                    disabled={busy}
+                    aria-label={`Remove staged media ${id}`}
+                  >
+                    <X className="h-3 w-3" aria-hidden />
+                  </button>
+                </span>
+              ))}
+            </div>
+          ) : null}
           <div className="mt-1 flex items-center gap-2">
             <label
               htmlFor={fileId}
@@ -234,9 +302,19 @@ export function CreatorRelayPostComposer({ creatorId, successHint }: CreatorRela
           className="inline-flex h-9 items-center gap-1.5 rounded-md border border-[var(--lib-primary)]/60 bg-[var(--lib-primary)]/20 px-4 text-xs font-semibold text-[var(--lib-fg)] enabled:hover:bg-[var(--lib-primary)]/30 disabled:cursor-not-allowed disabled:opacity-50"
         >
           {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden /> : null}
-          {busy ? "Uploading…" : "Upload & publish"}
+          {busy
+            ? stagedMediaIds.length > 0 && !hasUploadFile
+              ? "Publishing…"
+              : "Working…"
+            : stagedMediaIds.length > 0 && !hasUploadFile
+              ? "Publish"
+              : "Upload & publish"}
         </button>
-        <span className="text-[10px] text-[var(--lib-fg-muted)]">Flow: init → PUT to R2 → commit → create post</span>
+        <span className="text-[10px] text-[var(--lib-fg-muted)]">
+          {stagedMediaIds.length > 0 && !hasUploadFile
+            ? `Publishing ${stagedMediaIds.length} staged asset(s).`
+            : "Flow: init → PUT to R2 → commit → create post"}
+        </span>
       </div>
     </form>
   );

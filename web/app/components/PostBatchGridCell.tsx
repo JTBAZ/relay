@@ -20,7 +20,10 @@ import {
   type VisitorTierGateOverlayVariant
 } from "@/app/components/visitor/VisitorTierGateOverlay";
 import { mediaTypeLabel, visDot } from "./GalleryGridTile";
-import PostAssetCarouselStrip, { postCarouselMainVisual } from "./PostAssetCarouselStrip";
+import PostAssetCarouselStrip, {
+  postCarouselMainVisual,
+  relayMediaPlaceholderLabel
+} from "./PostAssetCarouselStrip";
 import { useGalleryMultiVideoHoverSync } from "@/lib/gallery-tile-video";
 
 type Props = {
@@ -679,7 +682,13 @@ export default function PostBatchGridCell({
         {multi ? (
           <>
             <div className="absolute inset-0 overflow-hidden bg-[var(--lib-muted)]">
-              {main.src && main.isVideo ? (
+              {main.relayProcessing ? (
+                <div className="flex h-full w-full flex-col items-center justify-center px-3 text-center">
+                  <span className="text-[9px] font-medium uppercase leading-snug text-[var(--lib-fg-muted)]">
+                    {relayMediaPlaceholderLabel(current)}
+                  </span>
+                </div>
+              ) : main.src && main.isVideo ? (
                 <video
                   ref={tileVideoRef}
                   className="h-full w-full object-cover object-center"

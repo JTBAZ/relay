@@ -1,5 +1,6 @@
 import {
   MediaIngestOrigin,
+  MediaProcessingStatus,
   MediaUpstreamStatus,
   PostSource,
   PostUpstreamStatus,
@@ -10,6 +11,7 @@ import type {
   CampaignRow,
   CanonicalSnapshot,
   CanonicalStore,
+  MediaProcessingState,
   MediaRow,
   MediaVersionRow,
   PostRow,
@@ -279,7 +281,8 @@ export class DbCanonicalStore implements CanonicalStore {
         post_ids: [...m.postIds],
         upstream_status: m.upstreamStatus === MediaUpstreamStatus.deleted ? "deleted" : "active",
         current,
-        versions: Array.isArray(versions) ? versions : []
+        versions: Array.isArray(versions) ? versions : [],
+        processing_status: m.processingStatus as MediaProcessingState
       };
       const byCreator = (snapshot.media[m.creatorId] ??= {});
       byCreator[m.id] = row;
@@ -305,6 +308,11 @@ export class DbCanonicalStore implements CanonicalStore {
 
   // ---------------------------------------------------------------------------
   // Creator-scoped save — only touches rows for `creatorId`
+  //
+  // Relay presentation (`post_presentations`) is NEVER written from ingest payload.
+  // When Patreon snapshot rows are stomped (`post.deleteMany`), FK CASCADE would drop overlays;
+  // we snapshot/restorePresentation rows **before** deletes for posts we are about to recreate
+  // (`postIdsToMaterialize`). See `.cursor/rules/patreon-origin-relay-bedrock.mdc`.
   // ---------------------------------------------------------------------------
   public async saveForCreator(creatorId: string, snapshot: CanonicalSnapshot): Promise<void> {
     await this.prisma.$transaction(
@@ -348,9 +356,18 @@ export class DbCanonicalStore implements CanonicalStore {
         const stompPostIds: string[] = existingPatreon
           .map((p) => p.id)
           .filter((id) => !preservePostIds.has(id));
+        const relayPresentationBackup =
+          stompPostIds.length > 0
+            ? await tx.postPresentation.findMany({ where: { postId: { in: stompPostIds } } })
+            : [];
         if (stompPostIds.length > 0) {
           await tx.postTier.deleteMany({ where: { postId: { in: stompPostIds } } });
-          await tx.mediaAsset.deleteMany({ where: { primaryPostId: { in: stompPostIds } } });
+          await tx.mediaAsset.deleteMany({
+            where: {
+              primaryPostId: { in: stompPostIds },
+              ingestOrigin: MediaIngestOrigin.PATREON
+            }
+          });
           await tx.postVersion.deleteMany({ where: { postId: { in: stompPostIds } } });
           await tx.post.deleteMany({ where: { id: { in: stompPostIds } } });
         }
@@ -404,7 +421,12 @@ export class DbCanonicalStore implements CanonicalStore {
                 `from ${orphanCreators.join(", ")} → ${creatorId}`
             );
             await tx.postTier.deleteMany({ where: { postId: { in: orphanPostIds } } });
-            await tx.mediaAsset.deleteMany({ where: { primaryPostId: { in: orphanPostIds } } });
+            await tx.mediaAsset.deleteMany({
+              where: {
+                primaryPostId: { in: orphanPostIds },
+                ingestOrigin: MediaIngestOrigin.PATREON
+              }
+            });
             await tx.postVersion.deleteMany({ where: { postId: { in: orphanPostIds } } });
             await tx.post.deleteMany({ where: { id: { in: orphanPostIds } } });
           }
@@ -440,7 +462,12 @@ export class DbCanonicalStore implements CanonicalStore {
             if (leftoverPosts.length > 0) {
               const lpIds = leftoverPosts.map((p) => p.id);
               await tx.postTier.deleteMany({ where: { postId: { in: lpIds } } });
-              await tx.mediaAsset.deleteMany({ where: { primaryPostId: { in: lpIds } } });
+              await tx.mediaAsset.deleteMany({
+                where: {
+                  primaryPostId: { in: lpIds },
+                  ingestOrigin: MediaIngestOrigin.PATREON
+                }
+              });
               await tx.postVersion.deleteMany({ where: { postId: { in: lpIds } } });
               await tx.post.deleteMany({ where: { id: { in: lpIds } } });
             }
@@ -558,6 +585,29 @@ export class DbCanonicalStore implements CanonicalStore {
           await tx.postTier.createMany({ data: postTierRows });
         }
 
+        if (relayPresentationBackup.length > 0) {
+          for (const pr of relayPresentationBackup) {
+            if (!postIdsToMaterialize.has(pr.postId)) {
+              continue;
+            }
+            await tx.postPresentation.create({
+              data: {
+                id: pr.id,
+                creatorId: pr.creatorId,
+                postId: pr.postId,
+                relayTitle: pr.relayTitle,
+                relayDescription: pr.relayDescription,
+                mediaOrder: pr.mediaOrder,
+                tierPreviewSettings:
+                  pr.tierPreviewSettings === null || pr.tierPreviewSettings === undefined
+                    ? undefined
+                    : (pr.tierPreviewSettings as Prisma.InputJsonValue),
+                updatedAt: pr.updatedAt
+              }
+            });
+          }
+        }
+
         const mediaEntriesAll = Object.values(mediaMap) as MediaRow[];
         const mediaEntries = mediaEntriesAll.filter((m) => {
           const primary = m.post_ids[0];
@@ -588,7 +638,9 @@ export class DbCanonicalStore implements CanonicalStore {
                 currentStorageKey: m.current.storage_key ?? null,
                 currentIngestedAt: new Date(m.current.ingested_at),
                 versionsJson: m.versions as unknown as Prisma.InputJsonValue,
-                ingestOrigin: MediaIngestOrigin.PATREON
+                ingestOrigin: MediaIngestOrigin.PATREON,
+                processingStatus: MediaProcessingStatus.READY,
+                processingError: null
               };
             })
           });

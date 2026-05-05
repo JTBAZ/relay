@@ -53,6 +53,13 @@ export type MediaVersionRow = {
   ingested_at: string;
 };
 
+/** Same variants as Prisma `MediaProcessingStatus`; omitted in file-backed snapshots → treat as READY. */
+export type MediaProcessingState =
+  | "PENDING_UPLOAD"
+  | "UPLOADED"
+  | "READY"
+  | "FAILED";
+
 export type MediaRow = {
   media_id: string;
   creator_id: string;
@@ -60,6 +67,8 @@ export type MediaRow = {
   upstream_status: "active" | "deleted";
   current: MediaVersionRow;
   versions: MediaVersionRow[];
+  /** DB-backed Relay pipeline visibility; omit for legacy JSON snapshots. */
+  processing_status?: MediaProcessingState;
 };
 
 export type CanonicalSnapshot = {

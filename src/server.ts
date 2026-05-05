@@ -40,6 +40,26 @@ import {
   RelayCreatePostError
 } from "./relay/create-relay-post.js";
 import {
+  applyRelayUploadCommitUpdate,
+  markMediaAssetProcessingFailed
+} from "./relay/relay-native-upload-finalize.js";
+import {
+  executeDiscordIngest,
+  parseDiscordIngestPayload
+} from "./discord/discord-ingest.js";
+import {
+  getDiscordIngestHmacSecret,
+  RELAY_DISCORD_SIGNATURE_HEADER,
+  verifyDiscordIngestHmac
+} from "./discord/discord-ingest-hmac.js";
+import {
+  DISCORD_LINK_CODE_TTL_MS,
+  generateDiscordLinkPlainCode,
+  hashDiscordLinkCode,
+  normalizeDiscordLinkCodeInput
+} from "./discord/discord-link-code.js";
+import { executeDiscordBind, parseDiscordBindPayload } from "./discord/discord-bind.js";
+import {
   consentExchange,
   consentStart,
   cookieWrite,
@@ -122,6 +142,12 @@ import {
   buildTierMap
 } from "./export/manifests.js";
 import { GalleryService } from "./gallery/gallery-service.js";
+import {
+  derivePresentationUpsertFragments,
+  presentationPatchTouches,
+  validateMediaIdsBelongToPost
+} from "./gallery/post-presentation-mutate.js";
+import { loadPostPresentationOverlaysFromDb } from "./gallery/post-presentation-load.js";
 import { FileGalleryOverridesStore } from "./gallery/overrides-store.js";
 import { DbGalleryOverridesStore } from "./gallery/overrides-store-db.js";
 import {
@@ -214,6 +240,40 @@ function normalizeGalleryVisibilityBody(vis: unknown): PostVisibility | null {
   if (vis === "visible" || vis === "hidden" || vis === "review") return vis;
   return null;
 }
+
+function parseSingleByteRange(
+  rangeHeader: string | undefined,
+  byteLength: number
+): { start: number; end: number } | "invalid" | null {
+  if (!rangeHeader) return null;
+  if (byteLength <= 0) return "invalid";
+  const match = /^bytes=(\d*)-(\d*)$/.exec(rangeHeader.trim());
+  if (!match) return "invalid";
+  const [, startRaw, endRaw] = match;
+  if (!startRaw && !endRaw) return "invalid";
+
+  if (!startRaw) {
+    const suffixLength = Number.parseInt(endRaw!, 10);
+    if (!Number.isFinite(suffixLength) || suffixLength <= 0) return "invalid";
+    return {
+      start: Math.max(byteLength - suffixLength, 0),
+      end: byteLength - 1
+    };
+  }
+
+  const start = Number.parseInt(startRaw, 10);
+  const end = endRaw ? Number.parseInt(endRaw, 10) : byteLength - 1;
+  if (
+    !Number.isFinite(start) ||
+    !Number.isFinite(end) ||
+    start < 0 ||
+    end < start ||
+    start >= byteLength
+  ) {
+    return "invalid";
+  }
+  return { start, end: Math.min(end, byteLength - 1) };
+}
 import { DbAnalyticsStore } from "./analytics/analytics-store-db.js";
 import { FileAnalyticsStore } from "./analytics/analytics-store.js";
 import { ActionCenterService } from "./analytics/action-center-service.js";
@@ -296,12 +356,13 @@ import {
 import {
   IdentityAuthProvider,
   MediaIngestOrigin,
+  MediaProcessingStatus,
   MediaUpstreamStatus,
   PostSource,
+  Prisma,
   PublicSlugSource,
   SessionKind,
   TenantRole,
-  type Prisma,
   type PrismaClient
 } from "@prisma/client";
 import { checkPostAccess, filterAccessiblePosts } from "./identity/access-guard.js";
@@ -887,7 +948,11 @@ export function createApp(config: AppConfig): CreateAppResult {
   const layoutStore = useDbPageLayoutStore(config)
     ? new DbPageLayoutStore(config.prisma!)
     : new FilePageLayoutStore(config.page_layout_store_path ?? ".relay-data/page_layout.json");
-  const galleryService = new GalleryService(canonicalStore, exportIndex, galleryOverridesStore);
+  const galleryService = new GalleryService(canonicalStore, exportIndex, galleryOverridesStore, {
+    loadPostPresentations: config.prisma
+      ? (creatorId) => loadPostPresentationOverlaysFromDb(config.prisma!, creatorId)
+      : undefined
+  });
   galleryService.setCollections(collectionsStore);
   const triageService = new TriageService(canonicalStore, exportIndex);
   const analyticsStore = useDbAnalyticsStore(config)
@@ -1108,13 +1173,187 @@ export function createApp(config: AppConfig): CreateAppResult {
     }
   );
 
+  const discordIngestRawBody = express.raw({
+    type: (req) =>
+      String(req.headers["content-type"] ?? "")
+        .toLowerCase()
+        .includes("json"),
+    limit: "6mb"
+  });
+
+  /**
+   * Internal: Discord bridge bot → HMAC-signed JSON. Resolves studio via `DiscordChannelBinding`,
+   * downloads attachments, server-side PUT to R2, `MediaAsset` + `DiscordMediaIngestKey`.
+   */
+  app.post("/api/v1/internal/discord/ingest", discordIngestRawBody, async (req: Request, res: Response) => {
+    const traceId = traceIdFrom(req);
+    if (!config.prisma) {
+      return res
+        .status(503)
+        .json(errorEnvelope("SERVICE_UNAVAILABLE", "Database not configured.", traceId));
+    }
+    if (!getDiscordIngestHmacSecret()) {
+      return res
+        .status(503)
+        .json(
+          errorEnvelope(
+            "SERVICE_UNAVAILABLE",
+            "Discord ingest is not configured (RELAY_DISCORD_INGEST_HMAC_SECRET).",
+            traceId
+          )
+        );
+    }
+    const raw = req.body;
+    if (!Buffer.isBuffer(raw)) {
+      return res
+        .status(400)
+        .json(errorEnvelope("VALIDATION_ERROR", "Expected raw JSON body.", traceId));
+    }
+    const sig =
+      req.header(RELAY_DISCORD_SIGNATURE_HEADER) ??
+      req.header("x-relay-discord-signature") ??
+      "";
+    if (!verifyDiscordIngestHmac(raw, sig)) {
+      return res
+        .status(401)
+        .json(errorEnvelope("UNAUTHORIZED", "Invalid Discord ingest HMAC signature.", traceId));
+    }
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(raw.toString("utf8"));
+    } catch {
+      return res
+        .status(400)
+        .json(errorEnvelope("VALIDATION_ERROR", "Invalid JSON body.", traceId));
+    }
+    const payload = parseDiscordIngestPayload(parsed);
+    if (!payload) {
+      return res
+        .status(400)
+        .json(
+          errorEnvelope(
+            "VALIDATION_ERROR",
+            "Invalid ingest payload (discord_guild_id, discord_channel_id, discord_message_id, attachments[] required).",
+            traceId
+          )
+        );
+    }
+    if (payload.attachments.length === 0) {
+      return res
+        .status(400)
+        .json(errorEnvelope("VALIDATION_ERROR", "attachments must be non-empty.", traceId));
+    }
+    const r2 = getR2ClientConfigFromEnv();
+    if (!r2) {
+      return res
+        .status(503)
+        .json(
+          errorEnvelope("SERVICE_UNAVAILABLE", "Object storage (R2) is not configured. See .env.example.", traceId)
+        );
+    }
+    const fetchImpl = config.fetch_impl ?? globalThis.fetch;
+    const out = await executeDiscordIngest(config.prisma, r2, payload, fetchImpl);
+    if ("error" in out) {
+      return res
+        .status(404)
+        .json(
+          errorEnvelope(
+            "NOT_FOUND",
+            "No Discord channel binding for this guild and channel. Link the studio first.",
+            traceId
+          )
+        );
+    }
+    res.setHeader("Cache-Control", "private, no-store");
+    return res.status(200).json(
+      successEnvelope(
+        {
+          relay_creator_id: out.relay_creator_id,
+          results: out.results
+        },
+        traceId
+      )
+    );
+  });
+
+  /**
+   * Internal: Discord bridge exchanges a minted link code for `DiscordChannelBinding`.
+   * Same HMAC contract as `/api/v1/internal/discord/ingest`.
+   */
+  app.post("/api/v1/internal/discord/bind", discordIngestRawBody, async (req: Request, res: Response) => {
+    const traceId = traceIdFrom(req);
+    if (!config.prisma) {
+      return res
+        .status(503)
+        .json(errorEnvelope("SERVICE_UNAVAILABLE", "Database not configured.", traceId));
+    }
+    if (!getDiscordIngestHmacSecret()) {
+      return res
+        .status(503)
+        .json(
+          errorEnvelope(
+            "SERVICE_UNAVAILABLE",
+            "Discord bind is not configured (RELAY_DISCORD_INGEST_HMAC_SECRET).",
+            traceId
+          )
+        );
+    }
+    const raw = req.body;
+    if (!Buffer.isBuffer(raw)) {
+      return res
+        .status(400)
+        .json(errorEnvelope("VALIDATION_ERROR", "Expected raw JSON body.", traceId));
+    }
+    const sig =
+      req.header(RELAY_DISCORD_SIGNATURE_HEADER) ??
+      req.header("x-relay-discord-signature") ??
+      "";
+    if (!verifyDiscordIngestHmac(raw, sig)) {
+      return res
+        .status(401)
+        .json(errorEnvelope("UNAUTHORIZED", "Invalid Discord bind HMAC signature.", traceId));
+    }
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(raw.toString("utf8"));
+    } catch {
+      return res
+        .status(400)
+        .json(errorEnvelope("VALIDATION_ERROR", "Invalid JSON body.", traceId));
+    }
+    const payload = parseDiscordBindPayload(parsed);
+    if (!payload) {
+      return res
+        .status(400)
+        .json(
+          errorEnvelope(
+            "VALIDATION_ERROR",
+            "Body requires code, discord_guild_id, discord_channel_id.",
+            traceId
+          )
+        );
+    }
+    const out = await executeDiscordBind(config.prisma, payload);
+    if (!out.ok) {
+      const status = out.reason === "expired" ? 410 : 400;
+      return res.status(status).json(errorEnvelope("VALIDATION_ERROR", out.message, traceId));
+    }
+    res.setHeader("Cache-Control", "private, no-store");
+    return res.status(200).json(
+      successEnvelope(
+        { relay_creator_id: out.relay_creator_id, discord_guild_id: payload.discord_guild_id, discord_channel_id: payload.discord_channel_id },
+        traceId
+      )
+    );
+  });
+
   app.use(express.json());
   app.use((req, res, next) => {
     const origin = req.header("Origin")?.trim();
     const path = req.path;
     const corsMethods = "GET,HEAD,POST,PUT,PATCH,DELETE,OPTIONS";
     const corsAllowHeaders =
-      "Content-Type, X-Trace-Id, Authorization, X-Relay-Pipeline-Parity-Secret";
+      "Content-Type, X-Trace-Id, Authorization, X-Relay-Pipeline-Parity-Secret, X-Relay-Discord-Signature";
 
     // EXT-0E — `/api/v1/auth/extension/*` uses Bearer only; allowlist extension origins without credentials.
     if (path.startsWith(RELAY_EXTENSION_AUTH_API_PREFIX)) {
@@ -2914,9 +3153,25 @@ export function createApp(config: AppConfig): CreateAppResult {
       }
       recordContentDeliverySuccess();
       const mime = record.mime_type ?? "application/octet-stream";
+      const range = parseSingleByteRange(req.header("range"), bytes.byteLength);
+      res.setHeader("accept-ranges", "bytes");
       res.setHeader("content-type", mime);
       res.setHeader("cache-control", "public, max-age=3600");
       res.setHeader("etag", `"${record.sha256}"`);
+      if (range === "invalid") {
+        res.setHeader("content-range", `bytes */${bytes.byteLength}`);
+        return res.status(416).end();
+      }
+      if (range) {
+        const chunk = bytes.subarray(range.start, range.end + 1);
+        res.setHeader("content-length", String(chunk.byteLength));
+        res.setHeader(
+          "content-range",
+          `bytes ${range.start}-${range.end}/${bytes.byteLength}`
+        );
+        return res.status(206).send(chunk);
+      }
+      res.setHeader("content-length", String(bytes.byteLength));
       return res.status(200).send(bytes);
     } catch (error) {
       recordContentDeliveryFailure();
@@ -3751,22 +4006,22 @@ export function createApp(config: AppConfig): CreateAppResult {
     let primaryPostId: string | null = null;
     let postIds: string[] = [];
     if (postIdOpt) {
-      const post = await config.prisma.post.findFirst({
-        where: { id: postIdOpt, creatorId, source: PostSource.RELAY }
+      const ownedPost = await config.prisma.post.findFirst({
+        where: { id: postIdOpt, creatorId }
       });
-      if (!post) {
+      if (!ownedPost) {
         return res
           .status(400)
           .json(
             errorEnvelope(
               "VALIDATION_ERROR",
-              "post_id not found, not owned by this creator, or not a Relay (RELAY) post.",
+              "post_id not found for this creator.",
               traceId
             )
           );
       }
-      primaryPostId = post.id;
-      postIds = [post.id];
+      primaryPostId = ownedPost.id;
+      postIds = [ownedPost.id];
     }
     const mediaId = `relay_m_${randomUUID()}`;
     const key = buildRelayR2ObjectKey(creatorId, mediaId);
@@ -3792,7 +4047,9 @@ export function createApp(config: AppConfig): CreateAppResult {
         currentStorageKey: null,
         currentIngestedAt: now,
         versionsJson: [pendingVersion] as unknown as Prisma.InputJsonValue,
-        ingestOrigin: MediaIngestOrigin.RELAY_UPLOAD
+        ingestOrigin: MediaIngestOrigin.RELAY_UPLOAD,
+        processingStatus: MediaProcessingStatus.PENDING_UPLOAD,
+        processingError: null
       }
     });
     const exp = getPresignExpiresSec();
@@ -3887,83 +4144,230 @@ export function createApp(config: AppConfig): CreateAppResult {
     try {
       head = await headR2ObjectContentLength(r2, key);
     } catch {
-      return res
-        .status(400)
-        .json(
-          errorEnvelope(
-            "VALIDATION_ERROR",
-            "Object not found in storage at the expected key. Complete the PUT to the presigned URL first.",
-            traceId
-          )
-        );
+      const msgHead =
+        "Object not found in storage at the expected key. Complete the PUT to the presigned URL first.";
+      await markMediaAssetProcessingFailed(config.prisma, mediaId, msgHead);
+      return res.status(400).json(errorEnvelope("VALIDATION_ERROR", msgHead, traceId));
     }
-    if (head.contentLength > 0 && head.contentLength !== byteSize) {
-      return res
-        .status(400)
-        .json(
-          errorEnvelope(
-            "VALIDATION_ERROR",
-            `byte_size does not match stored object (expected ${head.contentLength} bytes, got ${byteSize}).`,
-            traceId
-          )
-        );
-    }
-    let primaryPostId: string | null = row.primaryPostId;
-    const postIds = [...row.postIds];
-    if (postIdOpt) {
-      const post = await config.prisma.post.findFirst({
-        where: { id: postIdOpt, creatorId, source: PostSource.RELAY }
-      });
-      if (!post) {
-        return res
-          .status(400)
-          .json(
-            errorEnvelope(
-              "VALIDATION_ERROR",
-              "post_id not found, not owned by this creator, or not a Relay (RELAY) post.",
-              traceId
-            )
-          );
-      }
-      primaryPostId = post.id;
-      if (!postIds.includes(post.id)) {
-        postIds.push(post.id);
-      }
-    }
-    const now = new Date();
-    const v = {
-      version_seq: 1,
-      upstream_revision: "relay:upload:committed",
-      mime_type: contentType,
-      storage_key: key,
-      r2_etag: head.etag != null ? String(head.etag) : undefined,
-      ingested_at: now.toISOString()
-    };
-    await config.prisma.mediaAsset.update({
-      where: { id: mediaId },
-      data: {
-        primaryPostId,
-        postIds,
-        currentStorageKey: key,
-        currentMimeType: contentType,
-        currentUpstreamUrl: null,
-        currentUpstreamRevision: "relay:upload:committed",
-        currentIngestedAt: now,
-        versionsJson: [v] as unknown as Prisma.InputJsonValue
-      }
+
+    const finalized = await applyRelayUploadCommitUpdate(config.prisma, {
+      mediaId,
+      creatorId,
+      key,
+      contentType,
+      byteSize,
+      postIdOpt,
+      head,
+      row
     });
+
+    if (!finalized.ok) {
+      return res
+        .status(finalized.httpStatus)
+        .json(errorEnvelope("VALIDATION_ERROR", finalized.message, traceId));
+    }
+
     res.setHeader("Cache-Control", "private, no-store");
     return res.status(200).json(
       successEnvelope(
         {
           media_id: mediaId,
           storage_key: key,
-          content_length: head.contentLength,
-          etag: head.etag ?? null
+          content_length: finalized.payload.content_length,
+          etag: finalized.payload.etag
         },
         traceId
       )
     );
+  });
+
+  /**
+   * Mint a short-lived code for `/relay-link` in Discord (hashed at rest).
+   */
+  app.post("/api/v1/relay/discord/link-codes", async (req: Request, res: Response) => {
+    const traceId = traceIdFrom(req);
+    if (!config.prisma) {
+      return res
+        .status(503)
+        .json(errorEnvelope("SERVICE_UNAVAILABLE", "Database not configured.", traceId));
+    }
+    const session = await requirePatronBearerSession(req, res, traceId);
+    if (!session) {
+      return;
+    }
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const creatorId = typeof body.creator_id === "string" ? body.creator_id.trim() : "";
+    if (!creatorId) {
+      return res
+        .status(400)
+        .json(errorEnvelope("VALIDATION_ERROR", "creator_id is required.", traceId));
+    }
+    if (!(await requireAccountMatchesCreator(req, res, traceId, creatorId))) {
+      return;
+    }
+    if (
+      !(await assertCreatorRelayMutationAllowed(req, res, traceId, config.prisma, creatorId))
+    ) {
+      return;
+    }
+    const accountId = await getAccountIdForSession(config.prisma, session);
+    if (!accountId) {
+      return res
+        .status(403)
+        .json(errorEnvelope("FORBIDDEN", "Session is not linked to an account.", traceId));
+    }
+    const plain = generateDiscordLinkPlainCode();
+    const codeHash = hashDiscordLinkCode(normalizeDiscordLinkCodeInput(plain));
+    const expiresAt = new Date(Date.now() + DISCORD_LINK_CODE_TTL_MS);
+    await config.prisma.discordLinkToken.create({
+      data: {
+        codeHash,
+        relayCreatorId: creatorId,
+        accountId,
+        expiresAt
+      }
+    });
+    res.setHeader("Cache-Control", "private, no-store");
+    return res.status(201).json(
+      successEnvelope({ code: plain, expires_at: expiresAt.toISOString() }, traceId)
+    );
+  });
+
+  /** Discord channel binding status for the studio. */
+  app.get("/api/v1/relay/discord/connection", async (req: Request, res: Response) => {
+    const traceId = traceIdFrom(req);
+    if (!config.prisma) {
+      return res
+        .status(503)
+        .json(errorEnvelope("SERVICE_UNAVAILABLE", "Database not configured.", traceId));
+    }
+    const session = await requirePatronBearerSession(req, res, traceId);
+    if (!session) {
+      return;
+    }
+    const creatorId =
+      typeof req.query.creator_id === "string" ? req.query.creator_id.trim() : "";
+    if (!creatorId) {
+      return res
+        .status(400)
+        .json(errorEnvelope("VALIDATION_ERROR", "creator_id query parameter is required.", traceId));
+    }
+    if (!(await requireAccountMatchesCreator(req, res, traceId, creatorId))) {
+      return;
+    }
+    const binding = await config.prisma.discordChannelBinding.findUnique({
+      where: { relayCreatorId: creatorId }
+    });
+    res.setHeader("Cache-Control", "private, no-store");
+    return res.status(200).json(
+      successEnvelope(
+        {
+          linked: Boolean(binding),
+          discord_guild_id: binding?.discordGuildId ?? null,
+          discord_channel_id: binding?.discordChannelId ?? null,
+          updated_at: binding?.updatedAt.toISOString() ?? null
+        },
+        traceId
+      )
+    );
+  });
+
+  /** Discord-captured media not yet attached to a Relay post. */
+  app.get("/api/v1/relay/discord/staging", async (req: Request, res: Response) => {
+    const traceId = traceIdFrom(req);
+    if (!config.prisma) {
+      return res
+        .status(503)
+        .json(errorEnvelope("SERVICE_UNAVAILABLE", "Database not configured.", traceId));
+    }
+    const session = await requirePatronBearerSession(req, res, traceId);
+    if (!session) {
+      return;
+    }
+    const creatorId =
+      typeof req.query.creator_id === "string" ? req.query.creator_id.trim() : "";
+    if (!creatorId) {
+      return res
+        .status(400)
+        .json(errorEnvelope("VALIDATION_ERROR", "creator_id query parameter is required.", traceId));
+    }
+    if (!(await requireAccountMatchesCreator(req, res, traceId, creatorId))) {
+      return;
+    }
+    const rows = await config.prisma.mediaAsset.findMany({
+      where: {
+        creatorId,
+        ingestOrigin: MediaIngestOrigin.DISCORD,
+        primaryPostId: null,
+        processingStatus: MediaProcessingStatus.READY
+      },
+      orderBy: { currentIngestedAt: "desc" },
+      take: 100,
+      select: {
+        id: true,
+        currentMimeType: true,
+        currentIngestedAt: true,
+        discordCaptureJson: true
+      }
+    });
+    const items = rows.map((r) => ({
+      media_id: r.id,
+      mime_type: r.currentMimeType,
+      ingested_at: r.currentIngestedAt.toISOString(),
+      content_url_path: `/api/v1/export/media/${encodeURIComponent(creatorId)}/${encodeURIComponent(r.id)}/content`,
+      discord_capture: r.discordCaptureJson
+    }));
+    res.setHeader("Cache-Control", "private, no-store");
+    return res.status(200).json(successEnvelope({ items }, traceId));
+  });
+
+  /** Remove a staged Discord capture before it is published (deletes DB + R2 key in future; v1 DB row + ingest key cascade). */
+  app.delete("/api/v1/relay/discord/staging/:mediaId", async (req: Request, res: Response) => {
+    const traceId = traceIdFrom(req);
+    if (!config.prisma) {
+      return res
+        .status(503)
+        .json(errorEnvelope("SERVICE_UNAVAILABLE", "Database not configured.", traceId));
+    }
+    const session = await requirePatronBearerSession(req, res, traceId);
+    if (!session) {
+      return;
+    }
+    const mediaId =
+      typeof req.params.mediaId === "string" ? req.params.mediaId.trim() : "";
+    const creatorId =
+      typeof req.query.creator_id === "string" ? req.query.creator_id.trim() : "";
+    if (!mediaId || !creatorId) {
+      return res
+        .status(400)
+        .json(
+          errorEnvelope(
+            "VALIDATION_ERROR",
+            "mediaId path and creator_id query parameter are required.",
+            traceId
+          )
+        );
+    }
+    if (!(await requireAccountMatchesCreator(req, res, traceId, creatorId))) {
+      return;
+    }
+    const row = await config.prisma.mediaAsset.findFirst({
+      where: {
+        id: mediaId,
+        creatorId,
+        ingestOrigin: MediaIngestOrigin.DISCORD,
+        primaryPostId: null
+      },
+      select: { id: true }
+    });
+    if (!row) {
+      return res
+        .status(404)
+        .json(errorEnvelope("NOT_FOUND", "Staged media not found for this studio.", traceId));
+    }
+    await config.prisma.mediaAsset.delete({ where: { id: mediaId } });
+    res.setHeader("Cache-Control", "private, no-store");
+    return res.status(200).json(successEnvelope({ deleted: true, media_id: mediaId }, traceId));
   });
 
   /**
@@ -5628,6 +6032,27 @@ export function createApp(config: AppConfig): CreateAppResult {
       typeof req.query.media_id === "string" && req.query.media_id.trim().length > 0
         ? req.query.media_id.trim()
         : undefined;
+    const postLevelOnly =
+      req.query.post_level_only === "1" || req.query.post_level_only === "true";
+    if (postLevelOnly && mediaId) {
+      return res.status(400).json(
+        errorEnvelope("VALIDATION_ERROR", "Use either media_id or post_level_only, not both.", traceId, [
+          { field: "query", issue: "invalid" }
+        ])
+      );
+    }
+    if (mediaId) {
+      const att = await validateMediaIdsBelongToPost(prisma, creatorId, postId, [mediaId]);
+      if (!att.ok) {
+        return res
+          .status(400)
+          .json(
+            errorEnvelope("VALIDATION_ERROR", att.message, traceId, [
+              { field: "media_id", issue: "invalid" }
+            ])
+          );
+      }
+    }
     const accountId = await getAccountIdForSession(prisma, session);
     const isOwner = await sessionOwnsCreator(session, creatorId);
     // Viewer's tier ids on this creator scope -- used for `requiredTierId` filtering.
@@ -5652,6 +6077,7 @@ export function createApp(config: AppConfig): CreateAppResult {
         postId,
         options: {
           mediaId,
+          postLevelOnly,
           includeModerated: isOwner,
           viewerTierIds,
           blockEdges
@@ -5712,7 +6138,10 @@ export function createApp(config: AppConfig): CreateAppResult {
           postId,
           patronUserId: session.user_id,
           body: String(body.body),
-          mediaId: typeof body.media_id === "string" ? body.media_id : null,
+          mediaId:
+            typeof body.media_id === "string" && body.media_id.trim().length > 0
+              ? body.media_id.trim()
+              : null,
           anchorX: typeof body.anchor_x === "number" ? body.anchor_x : null,
           anchorY: typeof body.anchor_y === "number" ? body.anchor_y : null,
           parentCommentId:
@@ -6718,6 +7147,130 @@ export function createApp(config: AppConfig): CreateAppResult {
       .json(
         successEnvelope({ updated_post_count: post_ids.length }, traceId)
       );
+  });
+
+  /**
+   * BO-RPB-04 — Relay `PostPresentation` upsert (titles, descriptions, media order, tier preview JSON).
+   * Does not touch canonical ingest; auth parity with `gallery/media/bulk-tags` (+ MT-010 secret / tenant guard).
+   */
+  app.patch("/api/v1/gallery/posts/:post_id/presentation", async (req: Request, res: Response) => {
+    const traceId = traceIdFrom(req);
+    if (!config.prisma) {
+      return res
+        .status(503)
+        .json(errorEnvelope("SERVICE_UNAVAILABLE", "Database not configured.", traceId));
+    }
+    const prisma = config.prisma;
+    const session = await requirePatronBearerSession(req, res, traceId);
+    if (!session) return;
+    const postId = String(req.params.post_id ?? "").trim();
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const creatorId = typeof body.creator_id === "string" ? body.creator_id.trim() : "";
+    if (!postId || !creatorId) {
+      return res.status(400).json(
+        errorEnvelope("VALIDATION_ERROR", "post_id and creator_id are required.", traceId, [
+          { field: "post_id", issue: postId ? "ok" : "missing" },
+          { field: "creator_id", issue: creatorId ? "ok" : "missing" }
+        ])
+      );
+    }
+    if (!(await requireAccountMatchesCreator(req, res, traceId, creatorId))) {
+      return;
+    }
+    if (
+      !(await assertCreatorRelayMutationAllowed(req, res, traceId, prisma, creatorId))
+    ) {
+      return;
+    }
+    const touched = presentationPatchTouches(body);
+    if (touched.size === 0) {
+      return res.status(400).json(
+        errorEnvelope("VALIDATION_ERROR", "Provide at least one of relay_title, relay_description, media_order, tier_preview_settings.", traceId, [
+          { field: "body", issue: "empty_patch" }
+        ])
+      );
+    }
+    let fragments: ReturnType<typeof derivePresentationUpsertFragments>;
+    try {
+      fragments = derivePresentationUpsertFragments(body, touched);
+    } catch (err) {
+      const label =
+        err instanceof Error && typeof err.message === "string" && err.message.startsWith("VALIDATION:")
+          ? err.message.slice("VALIDATION:".length)
+          : "unknown";
+      const detail =
+        label === "media_order_dupes"
+          ? "media_order must not contain duplicate ids."
+          : "Invalid patch field types.";
+      return res.status(400).json(
+        errorEnvelope("VALIDATION_ERROR", detail, traceId, [{ field: label || "body", issue: "invalid" }])
+      );
+    }
+    if (fragments.mediaOrder !== undefined) {
+      const mediaOk = await validateMediaIdsBelongToPost(
+        prisma,
+        creatorId,
+        postId,
+        fragments.mediaOrder
+      );
+      if (!mediaOk.ok) {
+        return res
+          .status(400)
+          .json(errorEnvelope("VALIDATION_ERROR", mediaOk.message, traceId, [{ field: "media_order", issue: "invalid" }]));
+      }
+    }
+    const owned = await prisma.post.findFirst({
+      where: { id: postId, creatorId },
+      select: { id: true }
+    });
+    if (!owned) {
+      return res.status(404).json(errorEnvelope("NOT_FOUND", "Post not found.", traceId));
+    }
+    const createPayload: Prisma.PostPresentationUncheckedCreateInput = {
+      creatorId,
+      postId,
+      relayTitle: fragments.relayTitle ?? null,
+      relayDescription: fragments.relayDescription ?? null,
+      mediaOrder: fragments.mediaOrder ?? [],
+      ...(fragments.tierPreviewSettings !== undefined
+        ? {
+            tierPreviewSettings:
+              fragments.tierPreviewSettings === null
+                ? Prisma.DbNull
+                : fragments.tierPreviewSettings
+          }
+        : {})
+    };
+    const updatePayload: Prisma.PostPresentationUncheckedUpdateInput = {};
+    if (fragments.relayTitle !== undefined) updatePayload.relayTitle = fragments.relayTitle;
+    if (fragments.relayDescription !== undefined)
+      updatePayload.relayDescription = fragments.relayDescription;
+    if (fragments.mediaOrder !== undefined) updatePayload.mediaOrder = fragments.mediaOrder;
+    if (fragments.tierPreviewSettings !== undefined) {
+      updatePayload.tierPreviewSettings =
+        fragments.tierPreviewSettings === null ? Prisma.DbNull : fragments.tierPreviewSettings;
+    }
+    const row = await prisma.postPresentation.upsert({
+      where: { postId },
+      create: createPayload,
+      update: updatePayload
+    });
+    res.setHeader("Cache-Control", "private, no-store");
+    return res.status(200).json(
+      successEnvelope(
+        {
+          presentation: {
+            post_id: row.postId,
+            relay_title: row.relayTitle,
+            relay_description: row.relayDescription,
+            media_order: row.mediaOrder,
+            tier_preview_settings: row.tierPreviewSettings ?? null,
+            updated_at: row.updatedAt.toISOString()
+          }
+        },
+        traceId
+      )
+    );
   });
 
   app.get("/api/v1/gallery/saved-filters", async (req: Request, res: Response) => {

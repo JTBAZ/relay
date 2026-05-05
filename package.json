@@ -42,7 +42,9 @@
     "validate:mt-env": "node scripts/validate-relay-mt-env.mjs --profile=relayapp",
     "validate:mt-env:local": "node scripts/validate-relay-mt-env.mjs --profile=local",
     "parity:check": "node scripts/pipeline-parity-check.mjs",
-    "parity:secret": "node scripts/generate-pipeline-parity-secret.mjs"
+    "parity:secret": "node scripts/generate-pipeline-parity-secret.mjs",
+    "discord-bot:build": "npm run build --prefix discord-bot",
+    "discord-bot:start": "npm run start --prefix discord-bot"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1029.0",

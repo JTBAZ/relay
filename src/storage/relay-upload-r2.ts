@@ -102,3 +102,21 @@ export async function getR2ObjectBuffer(cfg: R2ClientConfig, key: string): Promi
   }
   return Buffer.from(await out.Body.transformToByteArray());
 }
+
+/** Server-side PUT (Discord ingest bridge, workers). Browser uploads use presigned URLs instead. */
+export async function putR2ObjectBuffer(
+  cfg: R2ClientConfig,
+  key: string,
+  body: Buffer,
+  contentType: string
+): Promise<void> {
+  const client = createR2S3Client(cfg);
+  await client.send(
+    new PutObjectCommand({
+      Bucket: cfg.bucket,
+      Key: key,
+      Body: body,
+      ContentType: contentType
+    })
+  );
+}

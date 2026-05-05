@@ -4,7 +4,8 @@ import {
   type PageSection as ApiPageSection,
   type Collection as ApiCollection,
   type LayoutMode,
-  type VisitorHeroData
+  type VisitorHeroData,
+  type FacetsData
 } from "@/lib/relay-api";
 import type {
   PageLayout as DesignerPageLayout,
@@ -22,6 +23,21 @@ function exportHeroCoverUrl(creatorId: string, mediaId: string): string {
 export const DEFAULT_DESIGNER_SUBLINE = "Documentary photography. Land, access, light.";
 export const DEFAULT_DESIGNER_BIO =
   "Documentary photographer. Long-form storytelling on access, land, and light.";
+
+/** Paid Patreon tiers (cheapest→expensive), excludes public/free sentinels — mirrors Designer canvas tier picker. */
+export function paidTierIdsFromFacets(facets: FacetsData | null | undefined): string[] {
+  if (!facets?.tiers?.length) return [];
+  return [...facets.tiers]
+    .filter((t) => {
+      if (t.tier_id === "relay_tier_public" || t.tier_id === "relay_tier_all_patrons") return false;
+      if (typeof t.amount_cents === "number" && t.amount_cents === 0) return false;
+      const n = t.title.trim().toLowerCase();
+      if (n === "public" || n === "free") return false;
+      return true;
+    })
+    .sort((a, b) => (a.amount_cents ?? 0) - (b.amount_cents ?? 0))
+    .map((t) => t.tier_id);
+}
 
 function tierFromCollection(c: ApiCollection): import("@/lib/designer-mock").TierKey {
   if (!c.access_ceiling_tier_id?.trim()) return "public";
@@ -130,7 +146,7 @@ export function apiPageLayoutToDesigner(
     creatorSlug: creatorId,
     displayName: hero?.title?.trim() || displayFromHero || creatorId,
     bio: bioText,
-    avatarUrl: avatarUrl || "https://i.pravatar.cc/128?img=47",
+    avatarUrl: avatarUrl || "",
     theme: {
       accent: themeAccentFromApi(api.theme.color_scheme),
       accentCustom: api.theme.accent_color ?? "#40916C",
@@ -149,7 +165,8 @@ export function apiPageLayoutToDesigner(
       subline: sublineText,
       showAvatar: useAvatar,
       showCover: useCover,
-      coverUrl
+      coverUrl,
+      ...(coverId ? { coverMediaId: coverId } : {})
     },
     sections: librarySections,
     lastPublishedAt: null,
@@ -157,27 +174,39 @@ export function apiPageLayoutToDesigner(
   };
 }
 
+export type SeedDesignerLayoutOptions = {
+  /** When non-empty, default gallery arrangement uses tier ordering for a tier-ladder-ready profile. */
+  paidTierIds?: string[];
+};
+
 /**
- * When the API has no sections yet, add one Library section that shows the full visible catalog
- * (filter query `{}`). Hero/display fields should already come from `apiPageLayoutToDesigner` + visitor hero.
+ * When the API has no sections yet, seed the minimap with one simple chronological gallery.
+ * Collections and tier galleries are creator-driven blocks the user can drag in afterwards.
  */
 export function seedEmptyDesignerLayout(
   d: DesignerPageLayout,
-  collections: ApiCollection[]
+  collections: ApiCollection[],
+  options?: SeedDesignerLayoutOptions
 ): DesignerPageLayout {
-  const secId = `sec_${crypto.randomUUID()}`;
-  const firstCol = collections[0]?.collection_id ?? "";
+  void options;
+  const fallbackSlug = [...collections].sort((a, b) => a.sort_order - b.sort_order)[0]?.collection_id ?? "";
+
   return {
     ...d,
+    theme: {
+      ...d.theme,
+      galleryArrangement: "chronological"
+    },
     sections: [
       {
         kind: "library",
-        id: secId,
-        label: "Work",
-        collectionSlug: firstCol,
+        id: `sec_${crypto.randomUUID()}`,
+        label: "Chronological Gallery",
+        collectionSlug: fallbackSlug,
         filterQuery: {},
         layout: "grid",
-        itemLimit: 24,
+        itemLimit: 36,
+        gridColumns: 3,
         visible: true
       }
     ]
@@ -192,6 +221,14 @@ export function mergeDesignerAfterSave(
   const proto = prev.sections.filter((s) => s.kind !== "library");
   return {
     ...fromApi,
+    theme: {
+      ...fromApi.theme,
+      showTierBadges: fromApi.theme.showTierBadges ?? prev.theme.showTierBadges,
+      showBio: fromApi.theme.showBio ?? prev.theme.showBio,
+      showPatreonLink: fromApi.theme.showPatreonLink ?? prev.theme.showPatreonLink,
+      patreonLinkPosition: fromApi.theme.patreonLinkPosition ?? prev.theme.patreonLinkPosition,
+      galleryArrangement: fromApi.theme.galleryArrangement ?? prev.theme.galleryArrangement
+    },
     sections: [...fromApi.sections, ...proto]
   };
 }
@@ -250,7 +287,9 @@ export function designerPageLayoutToApi(
       title: mock.hero.headline,
       subtitle: mock.hero.subline.trim() ? mock.hero.subline : undefined,
       show_cover: mock.hero.showCover,
-      cover_media_id: mock.hero.showCover ? base.hero?.cover_media_id : undefined,
+      cover_media_id: mock.hero.showCover
+        ? (mock.hero.coverMediaId?.trim() || base.hero?.cover_media_id)
+        : undefined,
       bio: mock.bio.trim() ? mock.bio.trim() : undefined
     },
     sections: apiSections

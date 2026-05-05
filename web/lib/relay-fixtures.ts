@@ -277,7 +277,7 @@ const MOCK_COMMENTS: PositionalComment[] = [
 
 const DEMO_RELAY_GALLERY_IMAGES = [
   "/patron-feed-preview.png",
-  "https://images.unsplash.com/photo-1604871000636-074fa5117945?w=900&q=80",
+  "/patron-feed-preview.png",
 ] as const;
 
 // ── Feed posts (~75 % followed, ~25 % discovery) ──────────────────────────

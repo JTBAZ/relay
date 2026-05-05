@@ -11,6 +11,8 @@ import type {
   GallerySortMode,
   PostVisibility
 } from "./types.js";
+import { mergePostPresentation } from "./effective-presentation.js";
+import type { PostPresentationOverlay } from "./effective-presentation.js";
 
 /** Post-level tags after gallery override add/remove deltas (matches list rows). */
 export function effectiveTags(
@@ -177,7 +179,11 @@ export function buildGalleryItems(
   snapshot: CanonicalSnapshot,
   exportIndex: CreatorExportIndex,
   overrides: GalleryOverridesRoot,
-  collections: Collection[] = []
+  collections: Collection[] = [],
+  /** When set (e.g. from `PostPresentation` rows), merges title/description/order at read time. */
+  presentationByPostId?: Readonly<
+    Partial<Record<string, PostPresentationOverlay | null | undefined>>
+  >
 ): GalleryItem[] {
   const posts = snapshot.posts[creatorId] ?? {};
   const mediaMap = snapshot.media[creatorId] ?? {};
@@ -210,37 +216,44 @@ export function buildGalleryItems(
     if (postRow.upstream_status === "deleted") {
       continue;
     }
-    const baseTags = effectiveTags(
-      postRow.current.tag_ids,
-      creatorId,
-      postId,
-      overrides
+    const overlay = presentationByPostId?.[postId];
+    const merged = mergePostPresentation(
+      {
+        title: postRow.current.title,
+        description: postRow.current.description,
+        media_ids: postRow.current.media_ids
+      },
+      overlay ?? undefined
     );
+
+    const baseTags = effectiveTags(postRow.current.tag_ids, creatorId, postId, overrides);
+
 
     const colIds = postCollectionMap.get(postId) ?? [];
     const themeTagList = [...(postThemeTags.get(postId) ?? [])];
 
     let addedMedia = false;
-    for (const mediaId of postRow.current.media_ids) {
+    for (const mediaId of merged.media_ids_ordered) {
       const m = mediaMap[mediaId];
       if (!m || m.upstream_status === "deleted") {
         continue;
       }
-      const hasExport = Boolean(exportIndex.media[mediaId]);
+      const hasExport = Boolean(exportIndex.media[mediaId] || m.current.storage_key);
       const failRec = exportIndex.export_failures?.[mediaId];
       const rowTags = galleryRowTags(baseTags, m.current.role, mediaId, false);
       const tags = applyMediaRowTagDelta(rowTags, creatorId, postId, mediaId, overrides);
       items.push({
         media_id: mediaId,
         post_id: postId,
-        title: postRow.current.title,
-        description: postRow.current.description,
+        title: merged.title,
+        description: merged.description,
         published_at: postRow.current.published_at,
         tag_ids: tags,
         tier_ids: [...postRow.current.tier_ids],
         mime_type: m.current.mime_type,
         media_role: m.current.role,
         has_export: hasExport,
+        processing_status: m.processing_status ?? "READY",
         export_status: hasExport ? "ready" : "missing",
         ...(failRec?.message && !hasExport
           ? { export_error: failRec.message }
@@ -262,8 +275,8 @@ export function buildGalleryItems(
       items.push({
         media_id: syntheticId,
         post_id: postId,
-        title: postRow.current.title,
-        description: postRow.current.description,
+        title: merged.title,
+        description: merged.description,
         published_at: postRow.current.published_at,
         tag_ids: applyMediaRowTagDelta(
           galleryRowTags(baseTags, undefined, syntheticId, true),
@@ -275,6 +288,7 @@ export function buildGalleryItems(
         tier_ids: [...postRow.current.tier_ids],
         mime_type: undefined,
         has_export: false,
+        processing_status: "READY",
         export_status: "missing",
         content_url_path: "",
         preview_url_path: "",

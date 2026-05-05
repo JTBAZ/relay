@@ -1,3 +1,7 @@
+import type { MediaProcessingState } from "../ingest/canonical-store.js";
+
+export type { MediaProcessingState };
+
 export type PostVisibility = "visible" | "hidden" | "review";
 
 export type GalleryItem = {
@@ -11,6 +15,8 @@ export type GalleryItem = {
   mime_type?: string;
   media_role?: string;
   has_export: boolean;
+  /** Relay upload pipeline (DB); legacy/file snapshots omit → consumers default to READY. */
+  processing_status: MediaProcessingState;
   /** `ready` = blob in export index; `missing` = not yet exported or failed. */
   export_status: "ready" | "missing";
   /** Set when a failed export was recorded in `export_index.export_failures` (user can retry). */
@@ -46,6 +52,8 @@ export type GalleryPostDetail = {
   tag_ids: string[];
   tiers: GalleryTierFacet[];
   media: GalleryItem[];
+  /** Relay Inspect tier previews + CTA JSON when `PostPresentation.tierPreviewSettings` exists. */
+  tier_preview_settings?: unknown;
 };
 
 export type GallerySortMode = "published" | "visibility";

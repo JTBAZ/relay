@@ -2,7 +2,6 @@
 
 import { useCallback, useMemo, useState, type ElementType } from "react";
 import {
-  ChevronRight,
   Download,
   Eye,
   EyeOff,
@@ -13,11 +12,8 @@ import {
   Search,
   ShieldAlert
 } from "lucide-react";
-import { RELAY_API_BASE, relayRequest, type FacetsData } from "@/lib/relay-api";
-import CollectionsPanel from "./CollectionsPanel";
+import { RELAY_API_BASE, relayRequest, type Collection, type FacetsData } from "@/lib/relay-api";
 import MediaTypeMultiSelect, { type MediaTypeValue } from "./MediaTypeMultiSelect";
-import { SpacingScaleDemo } from "./shell/SpacingScaleDemo";
-import { TypeRampDemo } from "./shell/TypeRampDemo";
 
 function formatExportedBytes(bytes: number): string {
   if (!Number.isFinite(bytes) || bytes < 0) return "—";
@@ -61,10 +57,11 @@ type Props = {
   /** Tier ids merged into the single "Free" Access chip (public + free follower). */
   freePublicTierIds: string[];
   onToggleFreePublicTierGroup: () => void;
+  collections: Collection[];
   activeCollectionId: string | null;
   onSelectCollection: (id: string | null) => void;
-  onCollectionChange: () => void;
-  collectionsReloadToken?: number;
+  selectedPostCount: number;
+  onRequestAddSelectionToCollection: (collectionId: string) => void;
   assetsInView: number;
   collectionCount: number;
 };
@@ -127,17 +124,16 @@ export default function GallerySidebar({
   onToggleTier,
   freePublicTierIds,
   onToggleFreePublicTierGroup,
+  collections,
   activeCollectionId,
   onSelectCollection,
-  onCollectionChange,
-  collectionsReloadToken = 0,
+  selectedPostCount,
+  onRequestAddSelectionToCollection,
   assetsInView,
   collectionCount
 }: Props) {
   const [tagSearch, setTagSearch] = useState("");
   const [visibleTagCount, setVisibleTagCount] = useState(20);
-  const [collectionsOpen, setCollectionsOpen] = useState(true);
-  const [collectionEditorOpen, setCollectionEditorOpen] = useState(false);
   const [zipLoading, setZipLoading] = useState(false);
   const [zipError, setZipError] = useState<string | null>(null);
 
@@ -199,7 +195,7 @@ export default function GallerySidebar({
 
   return (
     <aside className="flex min-h-0 w-full shrink-0 flex-col border-b border-[var(--lib-border)] bg-[var(--lib-sidebar)] lg:w-64 lg:border-b-0 lg:border-r">
-      <div className="space-y-2 border-b border-[var(--lib-border)] p-3">
+      <div className="space-y-2 border-b border-[var(--lib-border)] px-3 pb-3 pt-0">
         <div className="flex items-center gap-2 rounded-md border border-[color-mix(in_oklab,var(--lib-border)_85%,var(--lib-fg-muted)_15%)] bg-[color-mix(in_oklab,var(--lib-input)_88%,var(--lib-fg)_12%)] px-2.5 py-1.5 shadow-[inset_0_1px_0_color-mix(in_oklab,white_6%,transparent)] focus-within:border-[var(--lib-ring)] focus-within:shadow-[0_0_0_1px_color-mix(in_oklab,var(--lib-ring)_35%,transparent)]">
           <Search
             className="h-3.5 w-3.5 shrink-0 text-[color-mix(in_oklab,var(--lib-fg-muted)_65%,var(--lib-fg))]"
@@ -293,37 +289,66 @@ export default function GallerySidebar({
         </section>
 
         <section>
-          <div className="mb-1.5 flex items-center justify-between gap-2">
-            <button
-              type="button"
-              onClick={() => setCollectionsOpen((open) => !open)}
-              className="group flex min-w-0 flex-1 items-center gap-1 text-left text-[10px] font-semibold uppercase tracking-wider text-[var(--lib-fg-muted)] transition-colors hover:text-[var(--lib-fg)]"
-            >
-              <ChevronRight
-                className={`h-3 w-3 shrink-0 transition-transform ${collectionsOpen ? "rotate-90" : ""}`}
-              />
+          <div className="mb-2 flex items-center justify-between gap-2">
+            <h3 className="text-[10px] font-semibold uppercase tracking-wider text-[var(--lib-fg-muted)]">
               Collections
-            </button>
-            <button
-              type="button"
-              onClick={() => setCollectionEditorOpen(true)}
-              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-[var(--lib-fg-muted)] transition-colors hover:bg-[var(--lib-sidebar-accent)] hover:text-[var(--lib-fg)]"
-              aria-label="New collection"
-              title="New collection"
-            >
-              <Plus className="h-3.5 w-3.5" />
-            </button>
+            </h3>
+            {activeCollectionId !== null ? (
+              <button
+                type="button"
+                onClick={() => onSelectCollection(null)}
+                className="rounded-full px-2 py-0.5 text-[10px] text-[var(--lib-fg-muted)] hover:bg-[var(--lib-sidebar-accent)] hover:text-[var(--lib-fg)]"
+              >
+                Clear
+              </button>
+            ) : null}
           </div>
-          <CollectionsPanel
-            creatorId={creatorId}
-            activeCollectionId={activeCollectionId}
-            onSelectCollection={onSelectCollection}
-            onCollectionChange={onCollectionChange}
-            reloadToken={collectionsReloadToken}
-            collectionEditorOpen={collectionEditorOpen}
-            onCollectionEditorOpenChange={setCollectionEditorOpen}
-            showList={collectionsOpen}
-          />
+          <div className="space-y-1">
+            {collections.slice(0, 8).map((collection) => (
+              <div
+                key={collection.collection_id}
+                className={`flex w-full items-center justify-between gap-2 rounded-md border px-2 py-1.5 text-left text-xs transition-colors ${
+                  activeCollectionId === collection.collection_id
+                    ? "border-[var(--lib-primary)] bg-[var(--lib-primary)] text-[var(--lib-primary-fg)]"
+                    : "border-[var(--lib-border)] bg-[var(--lib-sidebar-accent)] text-[var(--lib-fg)] hover:border-[var(--lib-fg-muted)]"
+                }`}
+              >
+                <button
+                  type="button"
+                  onClick={() =>
+                    onSelectCollection(
+                      activeCollectionId === collection.collection_id
+                        ? null
+                        : collection.collection_id
+                    )
+                  }
+                  className="min-w-0 flex-1 text-left"
+                >
+                  <span className="block truncate">{collection.title}</span>
+                </button>
+                <span className="shrink-0 text-[10px] tabular-nums opacity-75">{collection.post_ids.length}</span>
+                <button
+                  type="button"
+                  disabled={selectedPostCount === 0}
+                  onClick={() => onRequestAddSelectionToCollection(collection.collection_id)}
+                  title={
+                    selectedPostCount === 0
+                      ? "Select gallery work first"
+                      : `Add ${selectedPostCount} selected post${selectedPostCount === 1 ? "" : "s"}`
+                  }
+                  aria-label={`Add selected work to ${collection.title}`}
+                  className="ml-0.5 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded border border-current/20 opacity-70 transition-opacity hover:opacity-100 disabled:cursor-not-allowed disabled:opacity-30"
+                >
+                  <Plus className="h-3 w-3" aria-hidden />
+                </button>
+              </div>
+            ))}
+            {collections.length > 8 ? (
+              <p className="pt-1 text-[10px] leading-snug text-[var(--lib-fg-muted)]">
+                {collections.length - 8} more in Arrange.
+              </p>
+            ) : null}
+          </div>
         </section>
 
         <section>
@@ -372,19 +397,6 @@ export default function GallerySidebar({
           </div>
         </section>
       </div>
-
-      <details className="border-t border-[var(--lib-border)] bg-[var(--lib-sidebar)] px-3 py-2">
-        <summary className="cursor-pointer list-none text-[10px] font-semibold uppercase tracking-wider text-[var(--lib-fg-muted)] marker:hidden [&::-webkit-details-marker]:hidden">
-          <span className="flex items-center gap-1">
-            <span aria-hidden>▸</span>
-            Design tokens (spacing &amp; type)
-          </span>
-        </summary>
-        <div className="mt-3 space-y-4 pb-1">
-          <SpacingScaleDemo />
-          <TypeRampDemo />
-        </div>
-      </details>
 
       <div className="space-y-2 border-t border-[var(--lib-border)] p-3">
         <div className="flex items-center justify-between gap-2 text-[10px] text-[var(--lib-fg-muted)]">

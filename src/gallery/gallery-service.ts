@@ -18,21 +18,30 @@ import type {
   GalleryPostDetail,
   GalleryTierFacet
 } from "./types.js";
+import { mergePostPresentation } from "./effective-presentation.js";
+import type { PostPresentationOverlay } from "./effective-presentation.js";
+
+export type LoadPostPresentationOverlays = (
+  creatorId: string
+) => Promise<Readonly<Record<string, PostPresentationOverlay>>>;
 
 export class GalleryService {
   private readonly canonical: CanonicalStore;
   private readonly exportIndex: FileExportIndex;
   private readonly overrides: GalleryOverridesStore;
   private collections: RelayCollectionsStore | null = null;
+  private readonly loadPostPresentations?: LoadPostPresentationOverlays;
 
   public constructor(
     canonical: CanonicalStore,
     exportIndex: FileExportIndex,
-    overrides: GalleryOverridesStore
+    overrides: GalleryOverridesStore,
+    options?: { loadPostPresentations?: LoadPostPresentationOverlays }
   ) {
     this.canonical = canonical;
     this.exportIndex = exportIndex;
     this.overrides = overrides;
+    this.loadPostPresentations = options?.loadPostPresentations;
   }
 
   public setCollections(store: RelayCollectionsStore): void {
@@ -44,6 +53,13 @@ export class GalleryService {
     return this.collections.listForCreator(creatorId);
   }
 
+  private async presentationByPostId(creatorId: string): Promise<
+    Readonly<Partial<Record<string, PostPresentationOverlay>>> | undefined
+  > {
+    if (!this.loadPostPresentations) return undefined;
+    return this.loadPostPresentations(creatorId);
+  }
+
   public async list(
     params: GalleryListParams & { patron_session?: SessionToken | null }
   ): Promise<GalleryListResult> {
@@ -51,7 +67,8 @@ export class GalleryService {
     const index = await this.exportIndex.load(params.creator_id);
     const ov = await this.overrides.load();
     const cols = await this.loadCollections(params.creator_id);
-    let all = buildGalleryItems(params.creator_id, snapshot, index, ov, cols);
+    const pres = await this.presentationByPostId(params.creator_id);
+    let all = buildGalleryItems(params.creator_id, snapshot, index, ov, cols, pres);
     const wantsSearchFocus = params.display === "post_primary" && Boolean(params.q?.trim());
     if (params.display === "post_primary" && !wantsSearchFocus) {
       all = galleryItemsPostPrimaryView(all);
@@ -85,7 +102,8 @@ export class GalleryService {
     const index = await this.exportIndex.load(creatorId);
     const ov = await this.overrides.load();
     const cols = await this.loadCollections(creatorId);
-    let all = buildGalleryItems(creatorId, snapshot, index, ov, cols);
+    const pres = await this.presentationByPostId(creatorId);
+    let all = buildGalleryItems(creatorId, snapshot, index, ov, cols, pres);
     if (options?.visitor_catalog) {
       all = all.filter((i) => i.visibility !== "hidden");
     }
@@ -138,7 +156,8 @@ export class GalleryService {
     const index = await this.exportIndex.load(creatorId);
     const ov = await this.overrides.load();
     const cols = await this.loadCollections(creatorId);
-    const all = buildGalleryItems(creatorId, snapshot, index, ov, cols);
+    const pres = await this.presentationByPostId(creatorId);
+    const all = buildGalleryItems(creatorId, snapshot, index, ov, cols, pres);
     let media = all.filter((item) => item.post_id === postId);
     if (options?.visitor_catalog) {
       media = media.filter((m) => m.visibility !== "hidden");
@@ -166,14 +185,28 @@ export class GalleryService {
       }
       return facet;
     });
+
+    const overlay = pres?.[postId];
+    const merged = mergePostPresentation(
+      {
+        title: post.current.title,
+        description: post.current.description,
+        media_ids: post.current.media_ids
+      },
+      overlay ?? undefined
+    );
+
     return {
       post_id: postId,
-      title: post.current.title,
-      description: post.current.description,
+      title: merged.title,
+      description: merged.description,
       published_at: post.current.published_at,
       tag_ids: effectiveTags(post.current.tag_ids, creatorId, postId, ov),
       tiers,
-      media
+      media,
+      ...("tier_preview_settings" in merged
+        ? { tier_preview_settings: merged.tier_preview_settings }
+        : {})
     };
   }
 
@@ -183,7 +216,8 @@ export class GalleryService {
     const index = await this.exportIndex.load(creatorId);
     const ov = await this.overrides.load();
     const cols = await this.loadCollections(creatorId);
-    const all = buildGalleryItems(creatorId, snapshot, index, ov, cols);
+    const pres = await this.presentationByPostId(creatorId);
+    const all = buildGalleryItems(creatorId, snapshot, index, ov, cols, pres);
     const set = new Set<string>();
     for (const it of all) {
       if (it.visibility !== "hidden") {

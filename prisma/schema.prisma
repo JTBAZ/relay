@@ -179,6 +179,8 @@ model Account {
   primaryStudio         Tenant?                @relation("AccountPrimaryStudio", fields: [primaryRelayCreatorId], references: [relayCreatorId], onDelete: SetNull, onUpdate: Cascade)
   followsOutgoing       AccountFollow[]        @relation("AccountFollowsOutgoing")
   followsIncoming       AccountFollow[]        @relation("AccountFollowsIncoming")
+  discordLinkTokens     DiscordLinkToken[]
+  discordBindingsLinked DiscordChannelBinding[] @relation("DiscordChannelBindingLinker")
 
   @@map("accounts")
 }
@@ -359,10 +361,19 @@ enum PostSource {
   RELAY
 }
 
-/// How a `MediaAsset` was first ingested: Patreon pipeline vs direct Relay upload (T-1.3).
+/// How a `MediaAsset` was first ingested: Patreon pipeline vs direct Relay upload (T-1.3) vs Discord capture.
 enum MediaIngestOrigin {
   PATREON
   RELAY_UPLOAD
+  DISCORD
+}
+
+/// Relay direct-upload pipeline visibility (creator UI); Patreon-ingested rows stay READY.
+enum MediaProcessingStatus {
+  PENDING_UPLOAD
+  UPLOADED
+  READY
+  FAILED
 }
 
 /// Patreon (or mapped) campaign row — `id` is stable `campaign_id` from `CampaignRow` / ingest.
@@ -422,9 +433,12 @@ model Post {
   /// Patreon sync only mutates `PATREON`; Relay-native posts use `RELAY` and are out of sync blast radius.
   source         PostSource         @default(PATREON) @map("source")
 
-  versions    PostVersion[]
-  postTiers   PostTier[]
-  mediaAssets MediaAsset[]
+  versions       PostVersion[]
+  postTiers      PostTier[]
+  mediaAssets    MediaAsset[]
+  /// Creator-controlled presentation overlays (titles, descriptions, ordering, tier previews).
+  /// Merged at read time with append-only ingest (`PostVersion`); ingest must not mutate this row.
+  presentation   PostPresentation?
 
   @@unique([campaignId, providerPostId])
   @@index([campaignId, createdAt(sort: Desc)])
@@ -470,9 +484,17 @@ model MediaAsset {
   currentIngestedAt       DateTime            @map("current_ingested_at")
   versionsJson            Json                @map("versions_json")
   /// Patreon sync / export path vs future direct upload; default PATREON for legacy rows.
-  ingestOrigin            MediaIngestOrigin   @default(PATREON) @map("ingest_origin")
+  ingestOrigin            MediaIngestOrigin       @default(PATREON) @map("ingest_origin")
+  processingStatus        MediaProcessingStatus    @default(READY) @map("processing_status")
+  processingError         String?                 @map("processing_error")
+  /// Discord-only: message/channel/attachment snowflakes and caption snapshot (see Phase 1 Discord capture).
+  discordCaptureJson      Json?                   @map("discord_capture_json")
+  /// Coordinate-pinned comments referencing this asset (`Comment.media_id`).
+  commentPins             Comment[]
+  discordIngestReceipt    DiscordMediaIngestKey?
 
   @@index([primaryPostId])
+  @@index([creatorId, ingestOrigin])
   @@map("media_assets")
 }
 
@@ -551,6 +573,30 @@ model PostOverride {
   @@index([creatorId])
   @@index([discoveryEligible])
   @@map("post_overrides")
+}
+
+/// Relay-controlled presentation overlays for gallery / Inspect surfaces — **not** ingested snapshots.
+///
+/// Patreon ingest remains append-only on `PostVersion`; this row merges at read time with latest version
+/// (see `docs/relay-artist-metadata.md`). `PostOverride` stays dedicated to tags, visibility, and discovery flags.
+///
+/// At most one row per `Post`; `creator_id` matches `Post.creator_id` and is indexed for scoped APIs.
+model PostPresentation {
+  id                  String   @id @default(cuid())
+  creatorId           String   @map("creator_id")
+  postId              String   @unique @map("post_id")
+  post                Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+  relayTitle          String?  @map("relay_title")
+  relayDescription    String?  @map("relay_description") @db.Text
+  /// Canonical `media_id` order overlay; empty ⇒ inherit ingest order from applicable `PostVersion.mediaIds`.
+  mediaOrder          String[] @default([]) @map("media_order")
+  /// Inspect-style tier preview / CTA JSON keyed by `relay_tier_id` (structure owned by merge + API layers).
+  tierPreviewSettings Json?    @map("tier_preview_settings")
+  updatedAt           DateTime @updatedAt @map("updated_at")
+
+  @@index([creatorId])
+  @@index([creatorId, postId])
+  @@map("post_presentations")
 }
 
 /// Replaces artist `collections.json` Library rows — `id` is stable `collection_id` from file.
@@ -1138,8 +1184,9 @@ model Comment {
   id                  String            @id @default(cuid())
   relayCreatorId      String            @map("relay_creator_id")
   postId              String            @map("post_id")
-  /// D26 — null = post-level comment; non-null = coordinate-pinned to a specific MediaAsset.
+  /// D26 — null = post-level comment; non-null = coordinate-pinned (`MediaAsset.id`). FK `onDelete: SetNull` keeps the row if media is removed upstream (coordinates may be stale until edited).
   mediaId             String?           @map("media_id")
+  mediaAsset          MediaAsset?       @relation(fields: [mediaId], references: [id], onDelete: SetNull, onUpdate: Cascade)
   /// D26 — percentage X coordinate (0-100) on the rendered media's natural box. Required when mediaId is set.
   anchorX             Decimal?          @map("anchor_x") @db.Decimal(5, 2)
   /// D26 — percentage Y coordinate (0-100). Required when mediaId is set.
@@ -1289,6 +1336,53 @@ model TagSuggestion {
 
   @@index([creatorId, mediaId])
   @@map("tag_suggestions")
+}
+
+// --- Discord channel capture → staging (Phase 1) ---
+
+/// One watched Discord channel per Relay studio (`relay_creator_id` = ingest / gallery scope string).
+model DiscordChannelBinding {
+  id                String   @id @default(cuid())
+  relayCreatorId    String   @unique @map("relay_creator_id")
+  discordGuildId    String   @map("discord_guild_id")
+  discordChannelId  String   @map("discord_channel_id")
+  linkedByAccountId String?  @map("linked_by_account_id")
+  linkedBy          Account? @relation("DiscordChannelBindingLinker", fields: [linkedByAccountId], references: [id], onDelete: SetNull)
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  @@index([discordGuildId, discordChannelId])
+  @@map("discord_channel_bindings")
+}
+
+/// Short-lived minted codes for in-Discord `/relay-link`-style handshake; store **hash** only (never plaintext).
+model DiscordLinkToken {
+  id             String    @id @default(cuid())
+  codeHash       String    @unique @map("code_hash")
+  relayCreatorId String    @map("relay_creator_id")
+  accountId      String    @map("account_id")
+  account        Account   @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  expiresAt      DateTime  @map("expires_at")
+  consumedAt     DateTime? @map("consumed_at")
+  createdAt      DateTime  @default(now()) @map("created_at")
+
+  @@index([relayCreatorId, expiresAt])
+  @@map("discord_link_tokens")
+}
+
+/// Idempotent Discord attachment → `MediaAsset` mapping (retry-safe ingest).
+model DiscordMediaIngestKey {
+  id                  String     @id @default(cuid())
+  discordGuildId      String     @map("discord_guild_id")
+  discordChannelId    String     @map("discord_channel_id")
+  discordMessageId    String     @map("discord_message_id")
+  discordAttachmentId String     @map("discord_attachment_id")
+  mediaAssetId        String     @unique @map("media_asset_id")
+  mediaAsset          MediaAsset @relation(fields: [mediaAssetId], references: [id], onDelete: Cascade)
+  createdAt           DateTime   @default(now()) @map("created_at")
+
+  @@unique([discordGuildId, discordChannelId, discordMessageId, discordAttachmentId], map: "discord_ingest_key_quad_uq")
+  @@map("discord_media_ingest_keys")
 }
 
 /// Narrow replacement target for `patreon_webhook_metadata.json` (encrypted secret + key id only).

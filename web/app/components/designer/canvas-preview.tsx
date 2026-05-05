@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import {
   Monitor,
   Tablet,
@@ -19,6 +19,7 @@ import {
   ExternalLink,
   X,
   ArrowUpRight,
+  GripVertical,
 } from "lucide-react";
 import type {
   PageLayout,
@@ -33,7 +34,7 @@ import type {
   LockedArtStyle,
   TypographyStyle,
 } from "@/lib/designer-mock";
-import { STUB_IMAGES, TIERS } from "@/lib/designer-mock";
+import { TIERS } from "@/lib/designer-mock";
 import {
   RELAY_API_BASE,
   type FacetsData,
@@ -50,11 +51,11 @@ import {
 } from "@/lib/designer-tier-map";
 import { useLayoutSectionItems } from "@/lib/use-layout-section-items";
 
-function galleryThumbUrl(item: GalleryItem | undefined, fallbackIndex: number): string {
+function galleryThumbUrl(item: GalleryItem | undefined): string | undefined {
   if (item?.has_export && item.content_url_path?.trim()) {
     return `${RELAY_API_BASE}${item.content_url_path}`;
   }
-  return STUB_IMAGES[fallbackIndex % STUB_IMAGES.length];
+  return undefined;
 }
 
 // ─── Breakpoint definitions ───────────────────────────────────────────────────
@@ -103,9 +104,6 @@ function TierBadge({
 }) {
   if (!showBadges) return null;
   const label = labelOverride?.trim();
-  // "public" means no paid tier matched in facets — skip chip unless we have a concrete title
-  // (defense in depth if band mapping ever disagrees with `designerBadgeTitleFromFacets`).
-  if (tier === "public" && !label) return null;
   const text = label || TIER_LABEL[tier];
   const colorTier: TierKey = tier === "public" && label ? "supporter" : tier;
   const stroke = TIER_COLOR[colorTier];
@@ -262,6 +260,7 @@ function LockedOverlay({
 
 function GridItem({
   index,
+  mediaId,
   tier,
   locked,
   unlockLabel,
@@ -271,8 +270,11 @@ function GridItem({
   lockedStyle,
   accentColor,
   imageUrl,
+  selected,
+  onSelect,
 }: {
   index: number;
+  mediaId?: string;
   tier: TierKey;
   locked: boolean;
   unlockLabel: string;
@@ -283,18 +285,46 @@ function GridItem({
   accentColor: string;
   /** Resolved Library thumbnail; falls back to design stubs when missing */
   imageUrl?: string;
+  selected?: boolean;
+  onSelect?: (event: React.MouseEvent) => void;
 }) {
-  const bg = imageUrl ?? STUB_IMAGES[index % STUB_IMAGES.length];
+  const selectable = Boolean(mediaId && onSelect);
 
   return (
-    <div
-      className="relative overflow-hidden bg-center bg-cover aspect-square"
+    <button
+      type="button"
+      onClick={selectable ? onSelect : undefined}
+      className="relative overflow-hidden bg-center bg-cover aspect-square text-left"
       style={{
-        backgroundImage: `url(${bg})`,
+        backgroundImage: imageUrl ? `url(${imageUrl})` : undefined,
+        backgroundColor: imageUrl ? undefined : "var(--relay-surface-2)",
         borderRadius: radius,
-        border: "1px solid var(--relay-border)",
+        border: selected ? `2px solid ${accentColor}` : "1px solid var(--relay-border)",
+        boxShadow: selected ? `0 0 0 2px ${accentColor}44` : "none",
+        cursor: selectable ? "pointer" : "default",
       }}
+      title={selectable ? "Click to select. Shift-click to select variants." : undefined}
     >
+      {selectable ? (
+        <span
+          className="absolute left-2 top-2 z-10 flex h-5 w-5 items-center justify-center rounded-full border text-[10px] font-semibold"
+          style={{
+            borderColor: selected ? accentColor : "rgba(255,255,255,0.4)",
+            background: selected ? accentColor : "rgba(0,0,0,0.55)",
+            color: selected ? "black" : "rgba(255,255,255,0.8)",
+          }}
+        >
+          {selected ? "✓" : index + 1}
+        </span>
+      ) : null}
+      {!imageUrl ? (
+        <div
+          className="absolute inset-0 flex items-center justify-center text-[10px]"
+          style={{ color: "var(--relay-fg-subtle)" }}
+        >
+          No media
+        </div>
+      ) : null}
       {locked ? (
         <LockedOverlay
           style={lockedStyle}
@@ -309,7 +339,7 @@ function GridItem({
           labelOverride={badgeTitle}
         />
       )}
-    </div>
+    </button>
   );
 }
 
@@ -326,6 +356,8 @@ function SectionPreview({
   accentColor,
   fonts,
   galleryItems,
+  selectedMediaIds,
+  onMediaSelect,
   tierOrderIds,
   tierTitleById,
   facets,
@@ -342,6 +374,8 @@ function SectionPreview({
   fonts: { heading: string; body: string };
   /** Loaded from Library via layout API; may be empty while loading */
   galleryItems: GalleryItem[];
+  selectedMediaIds: Set<string>;
+  onMediaSelect: (sectionId: string, mediaId: string, event: React.MouseEvent) => void;
   tierOrderIds: string[];
   tierTitleById: Record<string, string>;
   facets: FacetsData | null;
@@ -353,11 +387,11 @@ function SectionPreview({
     if (it) return tierKeyForGalleryItem(it, tierOrderIds);
     return fallbackTier;
   }
-  const count = Math.min(section.itemLimit, 36);
+  const count = Math.min(section.itemLimit, 36, galleryItems.length);
   const gridCols = section.gridColumns ?? 3;
   const gridClass = GRID_COLS_CLASS[gridCols];
 
-  const thumb = (i: number) => galleryThumbUrl(galleryItems[i], i);
+  const thumb = (i: number) => galleryThumbUrl(galleryItems[i]);
 
   function lockAt(i: number) {
     return previewLockState(
@@ -379,16 +413,29 @@ function SectionPreview({
   };
 
   const renderLayout = (layout: SectionLayout) => {
+    if (count === 0) {
+      return (
+        <div
+          className="rounded-lg border border-dashed px-4 py-8 text-center text-xs"
+          style={{ borderColor: "var(--relay-border)", color: "var(--relay-fg-subtle)" }}
+        >
+          No media in this block yet.
+        </div>
+      );
+    }
+
     switch (layout) {
       case "grid":
         return (
           <div className={`grid ${gridClass} gap-1.5`}>
             {Array.from({ length: count }).map((_, i) => {
               const pl = lockAt(i);
+              const item = galleryItems[i];
               return (
               <GridItem
-                key={galleryItems[i]?.media_id ?? `cell-${i}`}
+                key={item?.media_id ?? `cell-${i}`}
                 index={i}
+                mediaId={item?.media_id}
                 tier={cellTier(i)}
                 locked={pl.locked}
                 unlockLabel={pl.unlockLabel}
@@ -398,6 +445,8 @@ function SectionPreview({
                 lockedStyle={lockedStyle}
                 accentColor={accentColor}
                 imageUrl={thumb(i)}
+                selected={item ? selectedMediaIds.has(item.media_id) : false}
+                onSelect={item ? (event) => onMediaSelect(section.id, item.media_id, event) : undefined}
               />
             );
             })}
@@ -410,17 +459,46 @@ function SectionPreview({
             {Array.from({ length: count }).map((_, i) => {
               const ct = cellTier(i);
               const pl = lockAt(i);
+              const imageUrl = thumb(i);
+              const item = galleryItems[i];
+              const selected = item ? selectedMediaIds.has(item.media_id) : false;
               return (
-              <div
-                key={galleryItems[i]?.media_id ?? `m-${i}`}
+              <button
+                type="button"
+                key={item?.media_id ?? `m-${i}`}
+                onClick={item ? (event) => onMediaSelect(section.id, item.media_id, event) : undefined}
                 className="relative overflow-hidden bg-center bg-cover"
                 style={{
-                  backgroundImage: `url(${thumb(i)})`,
+                  backgroundImage: imageUrl ? `url(${imageUrl})` : undefined,
+                  backgroundColor: imageUrl ? undefined : "var(--relay-surface-2)",
                   borderRadius: radius,
-                  border: "1px solid var(--relay-border)",
+                  border: selected ? `2px solid ${accentColor}` : "1px solid var(--relay-border)",
                   aspectRatio: i % 3 === 0 ? "3/4" : "4/3",
+                  boxShadow: selected ? `0 0 0 2px ${accentColor}44` : "none",
+                  cursor: item ? "pointer" : "default",
                 }}
+                title={item ? "Click to select. Shift-click to select variants." : undefined}
               >
+                {item ? (
+                  <span
+                    className="absolute left-2 top-2 z-10 flex h-5 w-5 items-center justify-center rounded-full border text-[10px] font-semibold"
+                    style={{
+                      borderColor: selected ? accentColor : "rgba(255,255,255,0.4)",
+                      background: selected ? accentColor : "rgba(0,0,0,0.55)",
+                      color: selected ? "black" : "rgba(255,255,255,0.8)",
+                    }}
+                  >
+                    {selected ? "✓" : i + 1}
+                  </span>
+                ) : null}
+                {!imageUrl ? (
+                  <div
+                    className="absolute inset-0 flex items-center justify-center text-[10px]"
+                    style={{ color: "var(--relay-fg-subtle)" }}
+                  >
+                    No media
+                  </div>
+                ) : null}
                 {pl.locked ? (
                   <LockedOverlay
                     style={lockedStyle}
@@ -435,7 +513,7 @@ function SectionPreview({
                     labelOverride={pl.badgeTitle}
                   />
                 )}
-              </div>
+              </button>
             );
             })}
           </div>
@@ -447,19 +525,27 @@ function SectionPreview({
             {Array.from({ length: count }).map((_, i) => {
               const ct = cellTier(i);
               const pl = lockAt(i);
+              const imageUrl = thumb(i);
+              const item = galleryItems[i];
+              const selected = item ? selectedMediaIds.has(item.media_id) : false;
               return (
-                <div
-                  key={i}
-                  className="flex items-center gap-3 relative overflow-hidden"
+                <button
+                  type="button"
+                  key={item?.media_id ?? i}
+                  onClick={item ? (event) => onMediaSelect(section.id, item.media_id, event) : undefined}
+                  className="flex items-center gap-3 relative overflow-hidden text-left"
                   style={{
-                    borderBottom: "1px solid var(--relay-border)",
+                    borderBottom: selected ? `1px solid ${accentColor}` : "1px solid var(--relay-border)",
                     paddingBottom: "8px",
+                    cursor: item ? "pointer" : "default",
                   }}
+                  title={item ? "Click to select. Shift-click to select variants." : undefined}
                 >
                   <div
                     className="w-14 h-10 shrink-0 bg-center bg-cover relative overflow-hidden"
                     style={{
-                      backgroundImage: `url(${thumb(i)})`,
+                      backgroundImage: imageUrl ? `url(${imageUrl})` : undefined,
+                      backgroundColor: imageUrl ? undefined : "var(--relay-surface-2)",
                       borderRadius: radius,
                     }}
                   >
@@ -508,7 +594,7 @@ function SectionPreview({
                       <LockedOverlayUpgradeButton accentColor={accentColor} />
                     </div>
                   )}
-                </div>
+                </button>
               );
             })}
           </div>
@@ -518,17 +604,27 @@ function SectionPreview({
         const subCount = Math.max(0, count - 1);
         const h0 = lockAt(0);
         const ct0 = cellTier(0);
+        const heroImage = thumb(0);
         return (
           <div className="flex flex-col gap-1.5">
             <div
               className="relative w-full overflow-hidden bg-center bg-cover"
               style={{
-                backgroundImage: `url(${thumb(0)})`,
+                backgroundImage: heroImage ? `url(${heroImage})` : undefined,
+                backgroundColor: heroImage ? undefined : "var(--relay-surface-2)",
                 borderRadius: radius,
                 aspectRatio: "16/9",
                 border: "1px solid var(--relay-border)",
               }}
             >
+              {!heroImage ? (
+                <div
+                  className="absolute inset-0 flex items-center justify-center text-xs"
+                  style={{ color: "var(--relay-fg-subtle)" }}
+                >
+                  No media
+                </div>
+              ) : null}
               <div
                 className="absolute inset-0"
                 style={{
@@ -571,10 +667,12 @@ function SectionPreview({
               {Array.from({ length: subCount }).map((_, i) => {
                 const idx = i + 1;
                 const pl = lockAt(idx);
+                const item = galleryItems[idx];
                 return (
                 <GridItem
-                  key={galleryItems[idx]?.media_id ?? `f-${i}`}
+                  key={item?.media_id ?? `f-${i}`}
                   index={idx}
+                  mediaId={item?.media_id}
                   tier={cellTier(idx)}
                   locked={pl.locked}
                   unlockLabel={pl.unlockLabel}
@@ -584,6 +682,8 @@ function SectionPreview({
                   lockedStyle={lockedStyle}
                   accentColor={accentColor}
                   imageUrl={thumb(idx)}
+                  selected={item ? selectedMediaIds.has(item.media_id) : false}
+                  onSelect={item ? (event) => onMediaSelect(section.id, item.media_id, event) : undefined}
                 />
               );
               })}
@@ -1311,6 +1411,8 @@ function SectionDispatch({
   accentColor,
   fonts,
   sectionItems,
+  selectedMediaIds,
+  onMediaSelect,
   tierOrderIds,
   tierTitleById,
   facets,
@@ -1325,6 +1427,8 @@ function SectionDispatch({
   accentColor: string;
   fonts: { heading: string; body: string };
   sectionItems: Record<string, GalleryItem[]>;
+  selectedMediaIds: Set<string>;
+  onMediaSelect: (sectionId: string, mediaId: string, event: React.MouseEvent) => void;
   tierOrderIds: string[];
   tierTitleById: Record<string, string>;
   facets: FacetsData | null;
@@ -1356,6 +1460,8 @@ function SectionDispatch({
         accentColor={accentColor}
         fonts={fonts}
         galleryItems={sectionItems[section.id] ?? []}
+        selectedMediaIds={selectedMediaIds}
+        onMediaSelect={onMediaSelect}
         tierOrderIds={tierOrderIds}
         tierTitleById={tierTitleById}
         facets={facets}
@@ -1385,11 +1491,556 @@ function SectionDispatch({
   return null;
 }
 
+function minimapSectionKind(section: AnySection): string {
+  if (section.kind === "library") {
+    if (section.filterQuery !== undefined) {
+      if (section.label.toLowerCase().includes("tier")) return "Tier Gallery";
+      const keys = Object.keys(section.filterQuery);
+      if (keys.length === 1 && section.filterQuery.sort === "published") return "Newest";
+      return keys.length === 0 ? "Chronological" : "Filtered";
+    }
+    return section.layout === "featured" ? "Featured" : "Collection";
+  }
+  if (section.kind === "shop") return "Shop";
+  if (section.kind === "engagement") return "Engage";
+  return "Banner";
+}
+
+function minimapAccent(section: AnySection): string {
+  if (section.kind === "library") {
+    if (section.filterQuery !== undefined && section.label.toLowerCase().includes("tier")) {
+      return "var(--relay-gold-500)";
+    }
+    return section.filterQuery === undefined ? "#60a5fa" : "var(--relay-green-400)";
+  }
+  if (section.kind === "shop") return "#f59e0b";
+  if (section.kind === "engagement") return "#60a5fa";
+  return "#f87171";
+}
+
+function minimapMeta(section: AnySection, collections: Collection[]): string {
+  if (section.kind === "library") {
+    if (section.filterQuery !== undefined) return "Library catalog";
+    return collections.find((c) => c.slug === section.collectionSlug)?.label ?? "Collection";
+  }
+  if (section.kind === "shop") return `${section.items.length} items`;
+  if (section.kind === "engagement") return section.blockType;
+  return section.style;
+}
+
+function reorderSections(sections: AnySection[], draggedId: string, targetId: string): AnySection[] {
+  if (draggedId === targetId) return sections;
+  const from = sections.findIndex((s) => s.id === draggedId);
+  const to = sections.findIndex((s) => s.id === targetId);
+  if (from < 0 || to < 0) return sections;
+  const next = [...sections];
+  const [moved] = next.splice(from, 1);
+  if (!moved) return sections;
+  next.splice(to, 0, moved);
+  return next;
+}
+
+const DESIGNER_BLOCK_MIME = "application/x-relay-designer-block";
+
+type DesignerBlockPayload =
+  | { source: "designer-block-palette"; kind: "announcement" }
+  | { source: "designer-block-palette"; kind: "collection" };
+
+type PresentationStyle = "grid" | "masonry" | "showcase";
+type PendingBlockPlacement = { kind: DesignerBlockPayload["kind"]; insertIndex: number };
+
+function parseDesignerBlockPayload(raw: string): DesignerBlockPayload | null {
+  if (!raw.trim()) return null;
+  try {
+    const parsed = JSON.parse(raw) as Partial<DesignerBlockPayload>;
+    if (parsed.source !== "designer-block-palette" || typeof parsed.kind !== "string") return null;
+    return parsed as DesignerBlockPayload;
+  } catch {
+    return null;
+  }
+}
+
+function isCatalogSection(section: AnySection): section is LibrarySection {
+  return section.kind === "library" && section.filterQuery !== undefined;
+}
+
+function presentationStyleForLayout(layout: PageLayout): PresentationStyle {
+  const firstLibrary = layout.sections.find((section): section is LibrarySection => section.kind === "library");
+  if (!firstLibrary) return "grid";
+  if (firstLibrary.layout === "featured") return "showcase";
+  if (firstLibrary.layout === "masonry") return "masonry";
+  return "grid";
+}
+
+function applyPresentationStyle(layout: PageLayout, style: PresentationStyle): PageLayout {
+  return {
+    ...layout,
+    sections: layout.sections.map((section, index) => {
+      if (section.kind !== "library") return section;
+      if (style === "showcase") {
+        return {
+          ...section,
+          layout: index === 0 ? "featured" : "grid",
+          gridColumns: index === 0 ? 2 : 3,
+          itemLimit: index === 0 ? Math.max(section.itemLimit, 12) : section.itemLimit,
+        };
+      }
+      if (style === "masonry") {
+        return {
+          ...section,
+          layout: "masonry",
+          gridColumns: 2,
+          itemLimit: Math.min(section.itemLimit, 24),
+        };
+      }
+      return {
+        ...section,
+        layout: "grid",
+        gridColumns: 3,
+        itemLimit: Math.max(section.itemLimit, 24),
+      };
+    }),
+  };
+}
+
+function applyGalleryOrder(layout: PageLayout, mode: "chronological" | "tier"): PageLayout {
+  return {
+    ...layout,
+    theme: {
+      ...layout.theme,
+      galleryArrangement: mode,
+    },
+    sections: layout.sections.map((section) => {
+      if (!isCatalogSection(section)) return section;
+      return {
+        ...section,
+        label: mode === "tier" ? "Tier Gallery" : "Chronological Gallery",
+      };
+    }),
+  };
+}
+
+function DesignerMinimap({
+  layout,
+  collections,
+  activeSectionId,
+  pendingBlockPlacement,
+  onFocus,
+  onLayoutChange,
+  onPendingBlockDrop,
+}: {
+  layout: PageLayout;
+  collections: Collection[];
+  activeSectionId: string | null;
+  pendingBlockPlacement: PendingBlockPlacement | null;
+  onFocus: (id: string) => void;
+  onLayoutChange: (layout: PageLayout) => void;
+  onPendingBlockDrop: (placement: PendingBlockPlacement) => void;
+}) {
+  const sections = layout.sections;
+  const [draggedId, setDraggedId] = useState<string | null>(null);
+  const [dropId, setDropId] = useState<string | null>(null);
+  const presentationStyle = presentationStyleForLayout(layout);
+
+  function handleDrop(e: React.DragEvent, targetSectionId: string | null) {
+    e.preventDefault();
+    const targetIndex = targetSectionId
+      ? sections.findIndex((section) => section.id === targetSectionId)
+      : sections.length;
+    const insertIndex = targetIndex >= 0 ? targetIndex : sections.length;
+    const palettePayload = parseDesignerBlockPayload(e.dataTransfer.getData(DESIGNER_BLOCK_MIME));
+    if (palettePayload) {
+      onPendingBlockDrop({ kind: palettePayload.kind, insertIndex });
+    } else {
+      const id = e.dataTransfer.getData("text/plain") || draggedId;
+      if (id && targetSectionId) {
+        onLayoutChange({ ...layout, sections: reorderSections(sections, id, targetSectionId) });
+      }
+    }
+    setDraggedId(null);
+    setDropId(null);
+  }
+
+  function renderPendingCard(insertIndex: number) {
+    if (!pendingBlockPlacement || pendingBlockPlacement.insertIndex !== insertIndex) return null;
+    const isCollection = pendingBlockPlacement.kind === "collection";
+    const accent = isCollection ? "#60a5fa" : "#f87171";
+    return (
+      <div
+        className="rounded-xl border border-dashed p-2 text-left"
+        style={{
+          borderColor: accent,
+          background: `${accent}1a`,
+          boxShadow: `0 0 0 1px ${accent}55`,
+        }}
+      >
+        <div className="mb-2 flex items-center justify-between gap-2">
+          <span
+            className="inline-flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide"
+            style={{ borderColor: `${accent}66`, color: accent }}
+          >
+            <GripVertical size={10} />
+            Pending {isCollection ? "Collection" : "Post"}
+          </span>
+          <span className="text-[10px]" style={{ color: "var(--relay-fg-subtle)" }}>
+            {insertIndex + 1}
+          </span>
+        </div>
+        <p className="text-xs font-medium" style={{ color: "var(--relay-fg)" }}>
+          Fill out menu, then Create
+        </p>
+        <p className="mt-0.5 text-[10px]" style={{ color: "var(--relay-fg-subtle)" }}>
+          This block will insert here.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div
+      className="hidden w-56 shrink-0 flex-col border-r px-3 py-3 lg:flex"
+      style={{
+        borderColor: "var(--relay-border)",
+        background: "var(--relay-surface-1)",
+      }}
+    >
+      <div className="mb-2 flex items-center justify-between gap-3">
+        <div>
+          <p className="text-xs font-medium" style={{ color: "var(--relay-fg)" }}>
+            Profile minimap
+          </p>
+          <p className="text-[10px]" style={{ color: "var(--relay-fg-subtle)" }}>
+            Click to jump. Drag blocks to rearrange the page.
+          </p>
+        </div>
+        <span className="shrink-0 text-[10px]" style={{ color: "var(--relay-fg-subtle)" }}>
+          {sections.filter((s) => s.visible).length}/{sections.length} visible
+        </span>
+      </div>
+
+      <div className="mb-3 flex flex-wrap gap-1.5">
+        {([
+          ["chronological", "Chronological"],
+          ["tier", "Tier based"],
+        ] as const).map(([value, label]) => {
+          const active = layout.theme.galleryArrangement === value;
+          return (
+            <button
+              key={value}
+              type="button"
+              onClick={() => onLayoutChange(applyGalleryOrder(layout, value))}
+              className="rounded-full border px-2.5 py-1 text-[10px] font-medium transition-colors"
+              style={{
+                borderColor: active ? "var(--relay-gold-500)" : "var(--relay-border)",
+                background: active ? "rgba(217,119,6,0.14)" : "var(--relay-bg)",
+                color: active ? "var(--relay-gold-500)" : "var(--relay-fg-subtle)",
+              }}
+            >
+              {label}
+            </button>
+          );
+        })}
+      </div>
+
+      <div className="mb-3 flex flex-wrap gap-1.5">
+        {([
+          ["grid", "Grid"],
+          ["masonry", "Masonry"],
+          ["showcase", "Showcase"],
+        ] as const).map(([value, label]) => {
+          const active = presentationStyle === value;
+          return (
+            <button
+              key={value}
+              type="button"
+              onClick={() => onLayoutChange(applyPresentationStyle(layout, value))}
+              className="rounded-full border px-2.5 py-1 text-[10px] font-medium transition-colors"
+              style={{
+                borderColor: active ? "var(--relay-green-600)" : "var(--relay-border)",
+                background: active ? "var(--relay-green-950)" : "var(--relay-bg)",
+                color: active ? "var(--relay-green-400)" : "var(--relay-fg-subtle)",
+              }}
+            >
+              {label}
+            </button>
+          );
+        })}
+      </div>
+
+      <div
+        className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto pr-1"
+        onDragOver={(e) => e.preventDefault()}
+        onDrop={(e) => handleDrop(e, null)}
+      >
+        {sections.length === 0 ? (
+          pendingBlockPlacement ? (
+            renderPendingCard(0)
+          ) : (
+          <div
+            className="rounded-lg border border-dashed px-3 py-4 text-center text-xs"
+            style={{ borderColor: "var(--relay-border)", color: "var(--relay-fg-subtle)" }}
+          >
+            Drag a block type here, then fill out the menu to create it.
+          </div>
+          )
+        ) : (
+          sections.map((section, index) => {
+            const active = activeSectionId === section.id;
+            const dropping = dropId === section.id && draggedId !== section.id;
+            const accent = minimapAccent(section);
+            const dims = !section.visible;
+            return (
+              <Fragment key={section.id}>
+                {renderPendingCard(index)}
+                <button
+                type="button"
+                draggable
+                onClick={() => onFocus(section.id)}
+                onDragStart={(e) => {
+                  setDraggedId(section.id);
+                  e.dataTransfer.effectAllowed = "move";
+                  e.dataTransfer.setData("text/plain", section.id);
+                }}
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  setDropId(section.id);
+                }}
+                onDragLeave={() => setDropId((current) => (current === section.id ? null : current))}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  handleDrop(e, section.id);
+                }}
+                onDragEnd={() => {
+                  setDraggedId(null);
+                  setDropId(null);
+                }}
+                className="group relative rounded-xl border p-2 text-left transition-all"
+                style={{
+                  borderColor: active || dropping ? accent : "var(--relay-border)",
+                  background: active
+                    ? "var(--relay-green-950)"
+                    : dropping
+                      ? "rgba(255,255,255,0.08)"
+                      : "var(--relay-bg)",
+                  opacity: dims ? 0.48 : 1,
+                  boxShadow: active ? `0 0 0 1px ${accent}` : "none",
+                }}
+                title={`Jump to ${section.label}`}
+              >
+                <div className="mb-2 flex items-center justify-between gap-2">
+                  <span
+                    className="inline-flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide"
+                    style={{ borderColor: `${accent}66`, color: accent }}
+                  >
+                    <GripVertical size={10} />
+                    {minimapSectionKind(section)}
+                  </span>
+                  <span className="text-[10px]" style={{ color: "var(--relay-fg-subtle)" }}>
+                    {index + 1}
+                  </span>
+                </div>
+                <div className="mb-2 grid grid-cols-4 gap-1">
+                  {Array.from({ length: 8 }).map((_, i) => (
+                    <span
+                      key={i}
+                      className="block rounded-sm"
+                      style={{
+                        height: i % 5 === 0 ? 18 : 12,
+                        background: i % 3 === 0 ? `${accent}55` : "var(--relay-surface-2)",
+                        border: "1px solid var(--relay-border)",
+                      }}
+                    />
+                  ))}
+                </div>
+                <p className="truncate text-xs font-medium" style={{ color: "var(--relay-fg)" }}>
+                  {section.label}
+                </p>
+                <p className="truncate text-[10px]" style={{ color: "var(--relay-fg-subtle)" }}>
+                  {dims ? "Hidden · " : ""}
+                  {minimapMeta(section, collections)}
+                </p>
+                </button>
+              </Fragment>
+            );
+          })
+        )}
+        {sections.length > 0 ? renderPendingCard(sections.length) : null}
+      </div>
+    </div>
+  );
+}
+
 // ─── Canvas Preview ───────────────────────────────────────────────────────────
+
+function sectionPresentation(section: AnySection): PresentationStyle {
+  if (section.kind !== "library") return "grid";
+  if (section.layout === "featured") return "showcase";
+  if (section.layout === "masonry") return "masonry";
+  return "grid";
+}
+
+function presentationPatch(section: LibrarySection, style: PresentationStyle): LibrarySection {
+  if (style === "showcase") {
+    return {
+      ...section,
+      layout: "featured",
+      gridColumns: 2,
+      itemLimit: Math.max(section.itemLimit, 12),
+    };
+  }
+  if (style === "masonry") {
+    return {
+      ...section,
+      layout: "masonry",
+      gridColumns: 2,
+      itemLimit: Math.min(section.itemLimit, 24),
+    };
+  }
+  return {
+    ...section,
+    layout: "grid",
+    gridColumns: 3,
+    itemLimit: Math.max(section.itemLimit, 24),
+  };
+}
+
+function SectionCanvasFrame({
+  section,
+  active,
+  selectedMediaCount,
+  children,
+  onSelect,
+  onSetPresentation,
+  onMove,
+  onToggleVisible,
+}: {
+  section: AnySection;
+  active: boolean;
+  selectedMediaCount: number;
+  children: React.ReactNode;
+  onSelect: () => void;
+  onSetPresentation: (style: PresentationStyle) => void;
+  onMove: (delta: -1 | 1) => void;
+  onToggleVisible: () => void;
+}) {
+  const isLibrary = section.kind === "library";
+  const style = sectionPresentation(section);
+  return (
+    <div
+      data-designer-section-id={section.id}
+      className="group relative scroll-mt-16 rounded-xl transition-all"
+      style={{
+        outline: active ? "2px solid var(--relay-green-500)" : "1px solid transparent",
+        outlineOffset: active ? "8px" : "4px",
+      }}
+      onClick={(event) => {
+        event.stopPropagation();
+        onSelect();
+      }}
+    >
+      {active ? (
+        <div
+          className="absolute -top-12 left-0 right-0 z-20 flex flex-wrap items-center justify-between gap-2 rounded-lg border px-2 py-1.5 shadow-[0_8px_24px_rgba(0,0,0,0.35)]"
+          style={{
+            background: "rgba(0,0,0,0.82)",
+            borderColor: "var(--relay-green-700)",
+            color: "var(--relay-fg-muted)",
+          }}
+        >
+          <div className="flex min-w-0 items-center gap-2">
+            <span className="max-w-[10rem] truncate text-[10px] font-semibold uppercase tracking-wide">
+              Editing {section.label}
+            </span>
+            {selectedMediaCount > 1 ? (
+              <button
+                type="button"
+                className="rounded-full border px-2 py-1 text-[10px] font-medium"
+                style={{
+                  borderColor: "var(--relay-gold-500)",
+                  color: "var(--relay-gold-500)",
+                  background: "rgba(217,119,6,0.14)",
+                }}
+                title="Variant stacks need backend support before this can persist."
+              >
+                Stack {selectedMediaCount} selected
+              </button>
+            ) : null}
+          </div>
+          <div className="flex flex-wrap items-center gap-1">
+            {isLibrary
+              ? ([
+                  ["grid", "Grid"],
+                  ["masonry", "Masonry"],
+                  ["showcase", "Showcase"],
+                ] as const).map(([value, label]) => {
+                  const isActive = style === value;
+                  return (
+                    <button
+                      key={value}
+                      type="button"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        onSetPresentation(value);
+                      }}
+                      className="rounded-full border px-2 py-1 text-[10px] font-medium"
+                      style={{
+                        borderColor: isActive ? "var(--relay-green-600)" : "var(--relay-border)",
+                        background: isActive ? "var(--relay-green-950)" : "transparent",
+                        color: isActive ? "var(--relay-green-400)" : "var(--relay-fg-subtle)",
+                      }}
+                    >
+                      {label}
+                    </button>
+                  );
+                })
+              : null}
+            <button
+              type="button"
+              onClick={(event) => {
+                event.stopPropagation();
+                onMove(-1);
+              }}
+              className="rounded-full border px-2 py-1 text-[10px]"
+              style={{ borderColor: "var(--relay-border)", color: "var(--relay-fg-subtle)" }}
+            >
+              Up
+            </button>
+            <button
+              type="button"
+              onClick={(event) => {
+                event.stopPropagation();
+                onMove(1);
+              }}
+              className="rounded-full border px-2 py-1 text-[10px]"
+              style={{ borderColor: "var(--relay-border)", color: "var(--relay-fg-subtle)" }}
+            >
+              Down
+            </button>
+            <button
+              type="button"
+              onClick={(event) => {
+                event.stopPropagation();
+                onToggleVisible();
+              }}
+              className="rounded-full border px-2 py-1 text-[10px]"
+              style={{ borderColor: "var(--relay-border)", color: "var(--relay-fg-subtle)" }}
+            >
+              Hide
+            </button>
+          </div>
+        </div>
+      ) : null}
+      {children}
+    </div>
+  );
+}
 
 interface CanvasPreviewProps {
   layout: PageLayout;
   collections: Collection[];
+  onLayoutChange: (updated: PageLayout) => void;
+  pendingBlockPlacement: PendingBlockPlacement | null;
+  onPendingBlockDrop: (placement: PendingBlockPlacement) => void;
   creatorId: string;
   apiLayout: ApiPageLayout;
   apiCollections: ApiCollection[];
@@ -1406,6 +2057,9 @@ interface CanvasPreviewProps {
 export function CanvasPreview({
   layout,
   collections,
+  onLayoutChange,
+  pendingBlockPlacement,
+  onPendingBlockDrop,
   creatorId,
   apiLayout,
   apiCollections,
@@ -1414,11 +2068,21 @@ export function CanvasPreview({
   facets,
   patreonSlug,
 }: CanvasPreviewProps) {
+  const scrollRootRef = useRef<HTMLDivElement>(null);
   const [breakpoint, setBreakpoint] = useState<BpKey>("desktop");
-  const [viewerTier, setViewerTier] = useState<TierKey>("public");
+  const [viewerTier, setViewerTier] = useState<TierKey>("inner");
   const [viewerMaxRank, setViewerMaxRank] = useState(-1);
+  const [activeSectionId, setActiveSectionId] = useState<string | null>(null);
+  const [selectedMediaSectionId, setSelectedMediaSectionId] = useState<string | null>(null);
+  const [selectedMediaIds, setSelectedMediaIds] = useState<Set<string>>(() => new Set());
+  const viewerTouchedRef = useRef(false);
 
   const useFacets = tierOrderIds.length > 0;
+
+  useEffect(() => {
+    if (viewerTouchedRef.current || tierOrderIds.length === 0) return;
+    setViewerMaxRank(tierOrderIds.length - 1);
+  }, [tierOrderIds]);
 
   const previewLayout = useMemo(
     () => designerPageLayoutToApi(layout, apiLayout),
@@ -1454,6 +2118,62 @@ export function CanvasPreview({
   const contentSections = visibleSections.filter(
     (s) => s.kind !== "announcement"
   );
+
+  const focusSection = (sectionId: string) => {
+    setActiveSectionId(sectionId);
+    const el = scrollRootRef.current?.querySelector<HTMLElement>(
+      `[data-designer-section-id="${CSS.escape(sectionId)}"]`
+    );
+    el?.scrollIntoView({ block: "start", behavior: "smooth" });
+  };
+
+  const selectSection = (sectionId: string) => {
+    setActiveSectionId(sectionId);
+    if (selectedMediaSectionId !== sectionId) {
+      setSelectedMediaSectionId(null);
+      setSelectedMediaIds(new Set());
+    }
+  };
+
+  const handleMediaSelect = (sectionId: string, mediaId: string, event: React.MouseEvent) => {
+    event.stopPropagation();
+    setActiveSectionId(sectionId);
+    setSelectedMediaSectionId(sectionId);
+    setSelectedMediaIds((current) => {
+      if (!event.shiftKey || selectedMediaSectionId !== sectionId) {
+        return new Set([mediaId]);
+      }
+      const next = new Set(current);
+      if (next.has(mediaId)) next.delete(mediaId);
+      else next.add(mediaId);
+      return next;
+    });
+  };
+
+  const updateSection = (sectionId: string, updater: (section: AnySection) => AnySection) => {
+    onLayoutChange({
+      ...layout,
+      sections: layout.sections.map((section) => (section.id === sectionId ? updater(section) : section)),
+    });
+  };
+
+  const setSectionPresentation = (sectionId: string, style: PresentationStyle) => {
+    updateSection(sectionId, (section) => {
+      if (section.kind !== "library") return section;
+      return presentationPatch(section, style);
+    });
+  };
+
+  const moveSection = (sectionId: string, delta: -1 | 1) => {
+    const currentIndex = layout.sections.findIndex((section) => section.id === sectionId);
+    const nextIndex = currentIndex + delta;
+    if (currentIndex < 0 || nextIndex < 0 || nextIndex >= layout.sections.length) return;
+    const sections = [...layout.sections];
+    const [moved] = sections.splice(currentIndex, 1);
+    if (!moved) return;
+    sections.splice(nextIndex, 0, moved);
+    onLayoutChange({ ...layout, sections });
+  };
 
   return (
     <div
@@ -1533,9 +2253,30 @@ export function CanvasPreview({
         </div>
       </div>
 
+      <p
+        className="shrink-0 border-b px-4 py-2 text-[10px] leading-snug"
+        style={{
+          borderColor: "var(--relay-border)",
+          color: "var(--relay-fg-subtle)",
+          background: "var(--relay-bg)",
+        }}
+      >
+        Canvas mirrors your synced Library presentation — Spotlight + sections here reshape how that catalog reads.
+        Audience simulation uses the sticky bar below.
+      </p>
+
       {/* Canvas scroll area — sticky “Viewing as” floats at top center of workspace */}
-      <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
-        <div className="flex-1 overflow-y-auto overflow-x-hidden">
+      <div className="relative flex min-h-0 flex-1 overflow-hidden">
+        <DesignerMinimap
+          layout={layout}
+          collections={collections}
+          activeSectionId={activeSectionId}
+          pendingBlockPlacement={pendingBlockPlacement}
+          onFocus={focusSection}
+          onLayoutChange={onLayoutChange}
+          onPendingBlockDrop={onPendingBlockDrop}
+        />
+        <div ref={scrollRootRef} className="flex-1 overflow-y-auto overflow-x-hidden">
           <div
             className="sticky top-0 z-30 flex justify-center px-3 pt-2 pb-2 pointer-events-none"
           >
@@ -1557,10 +2298,19 @@ export function CanvasPreview({
                   tierOrderIds={tierOrderIds}
                   tierTitleById={tierTitleById}
                   viewerMaxRank={viewerMaxRank}
-                  onChange={setViewerMaxRank}
+                  onChange={(rank) => {
+                    viewerTouchedRef.current = true;
+                    setViewerMaxRank(rank);
+                  }}
                 />
               ) : (
-                <LegacyTierSwitcher value={viewerTier} onChange={setViewerTier} />
+                <LegacyTierSwitcher
+                  value={viewerTier}
+                  onChange={(tier) => {
+                    viewerTouchedRef.current = true;
+                    setViewerTier(tier);
+                  }}
+                />
               )}
             </div>
           </div>
@@ -1583,7 +2333,18 @@ export function CanvasPreview({
           >
             {/* Announcement banners — full bleed, above hero */}
             {announcementSections.map((ann) => (
-              <AnnouncementPreview key={ann.id} section={ann} fonts={fonts} />
+              <SectionCanvasFrame
+                key={ann.id}
+                section={ann}
+                active={activeSectionId === ann.id}
+                selectedMediaCount={0}
+                onSelect={() => selectSection(ann.id)}
+                onSetPresentation={() => undefined}
+                onMove={(delta) => moveSection(ann.id, delta)}
+                onToggleVisible={() => updateSection(ann.id, (section) => ({ ...section, visible: false }))}
+              >
+                <AnnouncementPreview section={ann} fonts={fonts} />
+              </SectionCanvasFrame>
             ))}
 
             {/* Hero */}
@@ -1610,22 +2371,34 @@ export function CanvasPreview({
             {contentSections.length > 0 ? (
               <div className="flex flex-col gap-10 px-6 mt-8">
                 {contentSections.map((section) => (
-                  <SectionDispatch
+                  <SectionCanvasFrame
                     key={section.id}
                     section={section}
-                    collections={collections}
-                    showBadges={layout.theme.showTierBadges}
-                    radius={radius}
-                    viewerTier={viewerTier}
-                    viewerMaxRank={useFacets ? viewerMaxRank : -1}
-                    lockedStyle={layout.theme.lockedArtStyle}
-                    accentColor={accentColor}
-                    fonts={fonts}
-                    sectionItems={sortedSectionItems}
-                    tierOrderIds={tierOrderIds}
-                    tierTitleById={tierTitleById}
-                    facets={facets}
-                  />
+                    active={activeSectionId === section.id}
+                    selectedMediaCount={selectedMediaSectionId === section.id ? selectedMediaIds.size : 0}
+                    onSelect={() => selectSection(section.id)}
+                    onSetPresentation={(style) => setSectionPresentation(section.id, style)}
+                    onMove={(delta) => moveSection(section.id, delta)}
+                    onToggleVisible={() => updateSection(section.id, (current) => ({ ...current, visible: false }))}
+                  >
+                    <SectionDispatch
+                      section={section}
+                      collections={collections}
+                      showBadges={layout.theme.showTierBadges}
+                      radius={radius}
+                      viewerTier={viewerTier}
+                      viewerMaxRank={useFacets ? viewerMaxRank : -1}
+                      lockedStyle={layout.theme.lockedArtStyle}
+                      accentColor={accentColor}
+                      fonts={fonts}
+                      sectionItems={sortedSectionItems}
+                      selectedMediaIds={selectedMediaSectionId === section.id ? selectedMediaIds : new Set()}
+                      onMediaSelect={handleMediaSelect}
+                      tierOrderIds={tierOrderIds}
+                      tierTitleById={tierTitleById}
+                      facets={facets}
+                    />
+                  </SectionCanvasFrame>
                 ))}
               </div>
             ) : (

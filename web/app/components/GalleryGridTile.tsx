@@ -14,9 +14,19 @@ import {
   pickPrimaryAccessTierIdForChip,
   sortTierIdsForAccessChip
 } from "@/lib/tier-access";
-import PostAssetCarouselStrip, { postCarouselMainVisual } from "./PostAssetCarouselStrip";
+import {
+  postCarouselMainVisual,
+  relayPipelineReady
+} from "./PostAssetCarouselStrip";
 
 const SEL = "#00aa6f";
+
+function libraryPlaceholderLabel(item: GalleryItem): string {
+  if (item.processing_status === "FAILED") return "Media unavailable";
+  if (!item.has_export) return "Not yet exported";
+  if (!relayPipelineReady(item)) return "Preparing media";
+  return "No preview";
+}
 
 /** Footer height for library grid — fixed so every tile stays the same size. */
 const LIB_META_H = "h-20";
@@ -75,19 +85,19 @@ function LibraryUniformMeta({
   }
 
   const chipLow =
-    "max-w-[5rem] shrink-0 truncate rounded bg-white/[0.06] px-1 py-0.5 text-[9px] leading-none text-white/[0.28]";
+    "max-w-[5rem] shrink-0 truncate rounded-md bg-white/[0.08] px-1.5 py-0.5 text-[9px] leading-none text-white/40";
 
   return (
     <div
-      className={`flex ${LIB_META_H} shrink-0 flex-col justify-between border-t border-white/[0.06] bg-[#080a09] px-2 py-1.5`}
+      className={`flex ${LIB_META_H} shrink-0 flex-col justify-between border-t border-white/[0.08] bg-[#0a0c0b] px-2.5 py-2`}
     >
-      <div className="flex min-h-0 items-center gap-1.5">
+      <div className="flex min-h-0 items-center gap-2">
         <p className="min-w-0 flex-1 truncate text-left text-xs font-semibold leading-tight text-[var(--lib-fg)]">
           {item.title}
         </p>
         {tierLabel ? (
           <span
-            className="max-w-[40%] shrink-0 truncate rounded-md bg-white/[0.1] px-1.5 py-0.5 text-[9px] font-medium leading-none text-white/75"
+            className="max-w-[40%] shrink-0 truncate rounded-md bg-[var(--lib-primary)]/15 px-1.5 py-0.5 text-[9px] font-medium leading-none text-[var(--lib-primary)]"
             title={tierLabel}
           >
             {tierLabel}
@@ -98,9 +108,9 @@ function LibraryUniformMeta({
       </div>
 
       {/* Reserved for resolution / file size when API provides it */}
-      <div className="h-3.5 shrink-0" aria-hidden />
+      <div className="h-3 shrink-0" aria-hidden />
 
-      <div className="flex min-h-0 items-center gap-1 overflow-hidden">
+      <div className="flex min-h-0 items-center gap-1.5 overflow-hidden">
         {chips.length === 0 ? (
           <span className="text-[9px] text-white/[0.12]">&nbsp;</span>
         ) : (
@@ -167,7 +177,13 @@ export default function GalleryGridTile({
   const defaultCarouselIdx = Math.max(0, items.findIndex((it) => !it.shadow_cover));
   const [carouselIdx, setCarouselIdx] = useState(defaultCarouselIdx);
   const [exportRetryBusy, setExportRetryBusy] = useState(false);
+  const [hovered, setHovered] = useState(false);
+  const [hotspotActive, setHotspotActive] = useState(false);
+  /** Tile root: wheel events originate on children (fullscreen overlay etc.); non-passive listener must sit here. */
+  const tileRef = useRef<HTMLDivElement | null>(null);
+  const hotspotActiveRef = useRef(false);
   const selectCheckboxRef = useRef<HTMLInputElement>(null);
+  const scrollAccumRef = useRef(0);
   const postIdForFx = item?.post_id ?? "";
 
   useEffect(() => {
@@ -185,22 +201,20 @@ export default function GalleryGridTile({
     }
   }, [partiallySelected]);
 
-  if (!item) return null;
-
   const current = items[Math.min(carouselIdx, items.length - 1)]!;
 
   const uniformLibrary = !largePreview && !compact;
-
-  const dot = visDot[current.visibility] ?? visDot.visible;
-  const isVideo =
+  const showVideoPlayOverlay =
     Boolean(current.mime_type?.startsWith("video/")) &&
     current.has_export &&
+    relayPipelineReady(current) &&
     (multi || items.length === 1);
+  const dot = visDot[current.visibility] ?? visDot.visible;
   const borderRing = selected
-    ? "border-2"
+    ? "border-2 shadow-lg shadow-[#00aa6f]/10"
     : partiallySelected
       ? "border-2 border-dashed border-[color-mix(in_srgb,#00aa6f_55%,var(--lib-border))]"
-      : "border border-[var(--lib-border)] hover:border-[#00aa6f]/50";
+      : "border border-[var(--lib-border)] hover:border-[#00aa6f]/40 hover:shadow-md hover:shadow-black/20";
   const borderColorStyle: CSSProperties | undefined = selected ? { borderColor: SEL } : undefined;
   /** Keyboard only — mouse clicks must not look like selection (see thumb `onMouseDown`). */
   const keyboardFocusRingClass =
@@ -224,6 +238,7 @@ export default function GalleryGridTile({
     Boolean(onImageFullscreen) &&
     items.length === 1 &&
     item.has_export &&
+    relayPipelineReady(item) &&
     (item.mime_type?.startsWith("image/") || item.mime_type?.startsWith("video/"));
 
   const thumbShell = uniformLibrary
@@ -248,15 +263,54 @@ export default function GalleryGridTile({
     }
   };
 
+  /**
+   * Native wheel on tile root (non-passive) so preventDefault applies to events bubbling from
+   * thumb children while hotspot hover is active.
+   */
+  useEffect(() => {
+    const el = tileRef.current;
+    if (!el) return;
+
+    const onNativeWheel = (event: WheelEvent) => {
+      if (!hotspotActiveRef.current || !multi) return;
+      event.preventDefault();
+      event.stopPropagation();
+
+      scrollAccumRef.current += event.deltaY || event.deltaX;
+      if (Math.abs(scrollAccumRef.current) < 50) return;
+      const direction = scrollAccumRef.current > 0 ? 1 : -1;
+      scrollAccumRef.current = 0;
+      setCarouselIdx((index) => {
+        const next = index + direction;
+        if (next < 0 || next >= items.length) return index;
+        onIsolateAssetSelection?.(items[next]!);
+        return next;
+      });
+    };
+
+    el.addEventListener("wheel", onNativeWheel, { passive: false });
+    return () => {
+      el.removeEventListener("wheel", onNativeWheel);
+    };
+  }, [items, multi, onIsolateAssetSelection]);
+
   return (
     <div
+      ref={tileRef}
       data-gallery-tile
       role="listitem"
-      className={`group flex h-full min-h-0 w-full min-w-0 flex-col overflow-hidden rounded-xl bg-[var(--lib-tile)] outline-none transition-[box-shadow,border-color] ${borderRing} ${keyboardFocusRingClass}`}
+      className={`group flex h-full min-h-0 w-full min-w-0 flex-col overflow-hidden rounded-2xl bg-[var(--lib-tile)] outline-none transition-all duration-200 ${borderRing} ${keyboardFocusRingClass} ${
+        hovered ? "z-10 scale-[1.028] shadow-xl shadow-black/40" : "z-0 scale-100"
+      }`}
       style={borderColorStyle}
       tabIndex={0}
       onClick={() => onToggleSelect(items)}
       onFocus={() => onFocusIndex(flatIndex)}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => {
+        setHovered(false);
+        scrollAccumRef.current = 0;
+      }}
       onKeyDown={(e) => {
         if (e.key === "Enter" || e.key === " ") {
           e.preventDefault();
@@ -265,7 +319,18 @@ export default function GalleryGridTile({
       }}
     >
       <div className={thumbShell}>
-        {items.length === 1 && item.has_export && item.mime_type?.startsWith("image/") ? (
+        {items.length === 1 && !relayPipelineReady(item) ? (
+          <div
+            className="pointer-events-none absolute inset-0 z-[5] flex items-center justify-center bg-[var(--lib-muted)]/95 px-4 text-center"
+            role="status"
+          >
+            <span
+              className={`text-[var(--lib-fg-muted)] ${largePreview ? "text-sm" : compact ? "text-[10px]" : "text-xs"} font-medium leading-snug`}
+            >
+              {libraryPlaceholderLabel(item)}
+            </span>
+          </div>
+        ) : items.length === 1 && item.has_export && item.mime_type?.startsWith("image/") ? (
           <button
             type="button"
             className="absolute inset-0 block h-full w-full"
@@ -330,57 +395,127 @@ export default function GalleryGridTile({
           </button>
         ) : multi ? (
           <>
-            <div className="absolute inset-0 overflow-hidden bg-[var(--lib-muted)]">
-              {(() => {
-                const main = postCarouselMainVisual(current);
-                if (main.src && main.isVideo) {
-                  return (
-                    <video
-                      className="block h-full w-full object-cover object-center"
-                      src={main.src}
-                      muted
-                      playsInline
-                      preload="metadata"
-                      aria-hidden
-                    />
-                  );
-                }
-                if (main.src) {
-                  return (
-                    /* eslint-disable-next-line @next/next/no-img-element -- relay-served export URLs */
-                    <img
-                      src={main.src}
-                      alt=""
-                      className="block h-full w-full object-cover object-center"
-                    />
-                  );
-                }
-                return (
-                  <div className="flex h-full w-full flex-col items-center justify-center gap-1 p-2 text-center">
-                    <span className="text-[10px] uppercase tracking-wider text-[var(--lib-fg-muted)]">
-                      {mediaTypeLabel(current.mime_type, current.media_id)}
-                    </span>
-                  </div>
-                );
-              })()}
-            </div>
-            <div className="pointer-events-none absolute inset-x-0 bottom-0 z-[15]">
-              <div className="pointer-events-auto border-t border-white/[0.12] bg-gradient-to-t from-black/92 via-black/78 to-transparent px-2 pb-1.5 pt-2">
-                <PostAssetCarouselStrip
-                  items={items}
-                  activeIndex={carouselIdx}
-                  onSelect={(i) => {
-                    setCarouselIdx(i);
-                    onIsolateAssetSelection?.(items[i]!);
-                  }}
-                  activeBorderClass="border-[#00aa6f]"
-                  center
+            {items.length >= 3 ? (
+              <div aria-hidden className="pointer-events-none absolute inset-x-0 bottom-0 top-0 z-[0]">
+                <div className="absolute inset-y-2 -right-1.5 left-4 rounded-xl border border-white/[0.07] bg-[var(--lib-muted)] opacity-50" />
+                <div className="absolute inset-y-1 -right-0.5 left-2 rounded-xl border border-white/[0.10] bg-[var(--lib-tile)] opacity-75" />
+              </div>
+            ) : items.length === 2 ? (
+              <div aria-hidden className="pointer-events-none absolute inset-x-0 bottom-0 top-0 z-[0]">
+                <div className="absolute inset-y-1 -right-0.5 left-2 rounded-xl border border-white/[0.10] bg-[var(--lib-tile)] opacity-75" />
+              </div>
+            ) : null}
+
+            <div
+              className="absolute bottom-2.5 right-2.5 z-[20]"
+              onMouseEnter={() => {
+                hotspotActiveRef.current = true;
+                setHotspotActive(true);
+              }}
+              onMouseLeave={() => {
+                hotspotActiveRef.current = false;
+                setHotspotActive(false);
+                scrollAccumRef.current = 0;
+              }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div
+                aria-label={`${items.length} assets - hover and scroll to browse`}
+                className={`flex items-center gap-1 rounded-full border px-1.5 py-0.5 backdrop-blur-md transition-all duration-200 ${
+                  hotspotActive
+                    ? "border-[#00aa6f]/60 bg-black/80 shadow-lg shadow-black/40"
+                    : "border-white/10 bg-black/40"
+                }`}
+              >
+                <span
+                  className={`h-1 w-1 rounded-full transition-colors duration-200 ${
+                    hotspotActive ? "bg-[#00aa6f]" : "bg-white/30"
+                  }`}
+                  aria-hidden
                 />
+                <span
+                  className={`text-[9px] font-medium leading-none tabular-nums transition-colors duration-200 ${
+                    hotspotActive ? "text-white/80" : "text-white/30"
+                  }`}
+                >
+                  {items.length}
+                </span>
+              </div>
+
+              <div
+                className={`absolute bottom-full right-0 mb-1.5 transition-all duration-200 ${
+                  hotspotActive ? "pointer-events-auto translate-y-0 opacity-100" : "pointer-events-none translate-y-1 opacity-0"
+                }`}
+              >
+                <div className="flex items-center gap-1 rounded-full border border-white/10 bg-black/75 px-2 py-1.5 shadow-lg shadow-black/40 backdrop-blur-md">
+                  {items.map((media, index) => (
+                    <button
+                      key={`${media.media_id}:${index}`}
+                      type="button"
+                      aria-label={`Asset ${index + 1}`}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setCarouselIdx(index);
+                        onIsolateAssetSelection?.(items[index]!);
+                      }}
+                      className={`rounded-full transition-all duration-150 ${
+                        index === carouselIdx
+                          ? "h-2 w-2 bg-[#00aa6f] shadow-sm shadow-[#00aa6f]/40"
+                          : "h-1.5 w-1.5 bg-white/30 hover:bg-white/60"
+                      }`}
+                    />
+                  ))}
+                </div>
               </div>
             </div>
+
+            <div className="absolute inset-0 z-[1] overflow-hidden rounded-xl">
+              {items.map((media, index) => {
+                const main = postCarouselMainVisual(media);
+                const active = index === carouselIdx;
+                return (
+                  <div
+                    key={`${media.media_id}:${index}`}
+                    aria-hidden={!active}
+                    className="absolute inset-0 transition-all duration-300 ease-out"
+                    style={{
+                      opacity: active ? 1 : 0,
+                      transform: active ? "translateX(0)" : `translateX(${index < carouselIdx ? "-8%" : "8%"})`
+                    }}
+                  >
+                    {main.relayProcessing ? (
+                      <div className="flex h-full w-full items-center justify-center bg-[var(--lib-muted)] px-4 text-center">
+                        <span className="text-[11px] font-medium leading-tight text-[var(--lib-fg-muted)]">
+                          {libraryPlaceholderLabel(media)}
+                        </span>
+                      </div>
+                    ) : main.src && main.isVideo ? (
+                      <video
+                        className="block h-full w-full object-cover object-center"
+                        src={main.src}
+                        muted
+                        playsInline
+                        preload="metadata"
+                        aria-hidden
+                      />
+                    ) : main.src ? (
+                      /* eslint-disable-next-line @next/next/no-img-element -- relay-served export URLs */
+                      <img src={main.src} alt="" className="block h-full w-full object-cover object-center" />
+                    ) : (
+                      <div className="flex h-full w-full items-center justify-center bg-[var(--lib-muted)]">
+                        <span className="text-[10px] uppercase tracking-wider text-[var(--lib-fg-muted)]">
+                          {mediaTypeLabel(media.mime_type, media.media_id)}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+
             <button
               type="button"
-              className="absolute inset-0 bottom-14 z-[1] cursor-pointer"
+              className="absolute inset-0 z-[2] cursor-pointer"
               aria-label={selectLabel}
               onMouseDown={skipMouseFocus}
               onClick={(e) => {
@@ -475,10 +610,10 @@ export default function GalleryGridTile({
           </label>
         ) : null}
 
-        {isVideo ? (
+        {showVideoPlayOverlay ? (
           <div
             className={`pointer-events-none absolute flex items-center justify-center ${
-              multi ? "left-0 right-0 top-0 bottom-[3.75rem]" : "inset-0"
+              multi ? "bottom-[3.75rem] left-0 right-0 top-0" : "inset-0"
             }`}
           >
             <span className="flex h-10 w-10 items-center justify-center rounded-full bg-black/55 backdrop-blur-sm">
@@ -490,7 +625,7 @@ export default function GalleryGridTile({
         {current.visibility === "hidden" ? (
           <div
             className={`pointer-events-none absolute left-0 right-0 flex items-center justify-center bg-black/35 ${
-              multi ? "top-0 bottom-14" : "inset-0"
+              multi ? "bottom-14 top-0" : "inset-0"
             }`}
           >
             <EyeOff className="h-8 w-8 text-[var(--lib-fg)]/85" aria-hidden />

@@ -79,8 +79,10 @@ export interface CommentRecord {
 }
 
 export interface ListCommentsOptions {
-  /** When set, only return comments coordinate-anchored to this media id. */
+  /** When set, only return comments coordinate-anchored to this media id (non-null media_id rows). */
   mediaId?: string;
+  /** When true, only return post-level rows (`media_id` IS NULL). Mutually exclusive with {@link mediaId} — enforced in HTTP handlers. */
+  postLevelOnly?: boolean;
   /** When true, include hidden / removed comments (creator-only call sites). */
   includeModerated?: boolean;
   /**

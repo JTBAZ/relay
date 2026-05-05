@@ -1,35 +1,43 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import { X } from "lucide-react";
 import {
   type GalleryItem,
   type GalleryPostDetail,
-  type PostVisibility,
   type TierFacet
 } from "@/lib/relay-api";
-import { InspectAssetPreview } from "./inspect/inspect-asset-preview";
 import { InspectMetaSidebar } from "./inspect/inspect-meta-sidebar";
-import { InspectSmartTagPanel } from "./inspect/inspect-smart-tag-panel";
+import {
+  AudiencePreviewControls,
+  PostAudiencePreviewCard,
+  audienceCanView,
+  buildAudienceOptions,
+  type AudiencePreviewPreference,
+  type PreviewStyle
+} from "./inspect/post-audience-preview";
 
 type Props = {
   preview: GalleryItem;
   previewDetail: GalleryPostDetail | null;
+  creatorId: string;
+  onPresentationUpdated: () => Promise<void>;
   onClose: () => void;
-  onVisibilityApplied: () => void;
-  onVisibilityError?: (message: string) => void;
-  setItemVisibility: (items: GalleryItem[], visibility: PostVisibility) => Promise<void>;
 };
 
 export default function InspectModal({
   preview,
   previewDetail,
-  onClose,
-  onVisibilityApplied,
-  onVisibilityError,
-  setItemVisibility
+  creatorId,
+  onPresentationUpdated,
+  onClose
 }: Props) {
-  const [busy, setBusy] = useState(false);
+  const [mounted, setMounted] = useState(false);
+  const [activeAudienceId, setActiveAudienceId] = useState("free");
+  const [previewStyle, setPreviewStyle] = useState<PreviewStyle>("default");
+  const [ctaText, setCtaText] = useState("Unlock this post");
+  const [audiencePreferences, setAudiencePreferences] = useState<Record<string, AudiencePreviewPreference>>({});
 
   const accessTiers: TierFacet[] =
     previewDetail && previewDetail.tiers.length > 0
@@ -43,26 +51,40 @@ export default function InspectModal({
               : tier_id
         }));
 
-  const applyVis = useCallback(
-    async (visibility: PostVisibility) => {
-      setBusy(true);
-      try {
-        await setItemVisibility([preview], visibility);
-        onVisibilityApplied();
-      } catch (e) {
-        onVisibilityError?.(
-          e instanceof Error ? e.message : String(e)
-        );
-      } finally {
-        setBusy(false);
+  const audienceOptions = useMemo(() => buildAudienceOptions(accessTiers), [accessTiers]);
+  const activeAudience = audienceOptions.find((option) => option.id === activeAudienceId) ?? audienceOptions[0]!;
+  const activeAudienceCanView = audienceCanView(preview, activeAudience.id, audienceOptions);
+
+  const changeAudience = useCallback(
+    (id: string) => {
+      setActiveAudienceId(id);
+      const preference = audiencePreferences[id];
+      if (preference) {
+        setPreviewStyle(preference.previewStyle);
+        setCtaText(preference.ctaText);
       }
     },
-    [preview, setItemVisibility, onVisibilityApplied, onVisibilityError]
+    [audiencePreferences]
   );
 
-  return (
+  const saveAudiencePreference = useCallback(() => {
+    setAudiencePreferences((current) => ({
+      ...current,
+      [activeAudience.id]: {
+        previewStyle,
+        ctaText,
+        locked: true
+      }
+    }));
+  }, [activeAudience.id, ctaText, previewStyle]);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  const modal = (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-[2px]"
+      className="library-shell fixed inset-0 z-[100] flex items-center justify-center bg-black/80 p-4 text-[var(--lib-fg)] backdrop-blur-[2px]"
       role="dialog"
       aria-modal
       aria-label={`Inspect: ${preview.title}`}
@@ -88,24 +110,45 @@ export default function InspectModal({
         </header>
 
         <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
-          <div className="flex min-h-[220px] flex-1 items-center justify-center bg-[var(--lib-bg)] lg:min-h-0">
-            <InspectAssetPreview item={preview} />
+          <div className="flex min-h-[360px] flex-1 bg-[var(--lib-bg)] lg:min-h-0">
+            <PostAudiencePreviewCard
+              item={preview}
+              postDetail={previewDetail}
+              audience={activeAudience}
+              canView={activeAudienceCanView}
+              previewStyle={previewStyle}
+              ctaText={ctaText}
+            />
           </div>
 
           <aside className="flex w-full shrink-0 flex-col border-t border-[var(--lib-border)] lg:w-[360px] lg:border-l lg:border-t-0">
             <div className="min-h-0 flex-1 overflow-y-auto">
+              <AudiencePreviewControls
+                item={preview}
+                audienceOptions={audienceOptions}
+                activeAudienceId={activeAudience.id}
+                onAudienceChange={changeAudience}
+                previewStyle={previewStyle}
+                onPreviewStyleChange={setPreviewStyle}
+                ctaText={ctaText}
+                onCtaTextChange={setCtaText}
+                savedPreferences={audiencePreferences}
+                onSavePreference={saveAudiencePreference}
+              />
               <InspectMetaSidebar
                 preview={preview}
                 previewDetail={previewDetail}
                 accessTiers={accessTiers}
-                busy={busy}
-                onVisibility={applyVis}
+                creatorId={creatorId}
+                postId={preview.post_id}
+                onPresentationUpdated={onPresentationUpdated}
               />
             </div>
-            <InspectSmartTagPanel />
           </aside>
         </div>
       </div>
     </div>
   );
+
+  return mounted ? createPortal(modal, document.body) : null;
 }

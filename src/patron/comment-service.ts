@@ -19,6 +19,7 @@
 import type { PrismaClient } from "@prisma/client";
 import { Prisma } from "@prisma/client";
 
+import { validateMediaIdsBelongToPost } from "../gallery/post-presentation-mutate.js";
 import { evaluateCommentAutoMod } from "./comment-auto-mod.js";
 import {
   POST_LEVEL_MEDIA_ID,
@@ -159,6 +160,17 @@ export async function createComment(
     }
     if (parent.relayCreatorId !== input.relayCreatorId || parent.postId !== input.postId) {
       throw new CommentValidationError("parent_comment_id", "parent in different scope");
+    }
+  }
+  if (mediaId !== null) {
+    const attached = await validateMediaIdsBelongToPost(
+      prisma,
+      input.relayCreatorId,
+      input.postId,
+      [mediaId]
+    );
+    if (!attached.ok) {
+      throw new CommentValidationError("media_id", attached.message);
     }
   }
   const autoMod = evaluateCommentAutoMod(body);
@@ -379,7 +391,9 @@ export async function listComments(
   if (!opts.includeModerated) {
     where.modState = "visible";
   }
-  if (opts.mediaId !== undefined) {
+  if (opts.postLevelOnly) {
+    where.mediaId = null;
+  } else if (opts.mediaId !== undefined) {
     where.mediaId = opts.mediaId;
   }
   const rows = await prisma.comment.findMany({

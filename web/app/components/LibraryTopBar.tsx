@@ -1,17 +1,10 @@
 "use client";
 
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { type ReactNode } from "react";
 import Link from "next/link";
-import { Check, Eye, PenLine, RefreshCw, Users } from "lucide-react";
+import { Check, Eye, PenLine, RefreshCw } from "lucide-react";
 
 type SyncStatus = "synced" | "syncing" | "error";
-
-export type PatronTierDashboardRow = {
-  tierId: string;
-  label: string;
-  count: number;
-  amountCents?: number | null;
-};
 
 type Props = {
   /** Relay chosen display name (account setup); always the main title — not the Patreon URL slug. */
@@ -21,16 +14,12 @@ type Props = {
   syncStatus?: SyncStatus;
   /** One-line detail under the title row when sync needs attention (from GET sync-state health). */
   syncIssueDetail?: string;
-  /** From Patreon campaign snapshot after sync (GET sync-state `campaign_display`). */
-  patronCount?: number;
   /** Patreon campaign profile image URL (`image_small_url`). */
   campaignImageSmallUrl?: string;
   /** Patreon campaign banner URL (`image_url`); small badge beside the name row, whole image visible (letterboxed). */
   campaignBannerUrl?: string;
   /** Monthly revenue placeholder (e.g. display dollars when wired) */
   revenueLabel?: string;
-  /** Compact patron distribution for the Library header dashboard. */
-  patronTierRows?: PatronTierDashboardRow[];
   /** e.g. Patreon sync menu — rendered before Preview / Apply */
   trailingActions?: ReactNode;
 };
@@ -74,125 +63,14 @@ function SyncPill({ status }: { status: SyncStatus }) {
   );
 }
 
-function formatTierAmount(amountCents?: number | null): string {
-  if (amountCents === null || amountCents === undefined) return "Free";
-  if (amountCents <= 0) return "Free";
-  return `$${(amountCents / 100).toLocaleString(undefined, {
-    minimumFractionDigits: amountCents % 100 === 0 ? 0 : 2,
-    maximumFractionDigits: 2
-  })}`;
-}
-
-function PatronTierDashboard({
-  rows
-}: {
-  rows: PatronTierDashboardRow[];
-}) {
-  const normalizedRows = useMemo(() => {
-    let sawFree = false;
-    return rows.filter((row) => {
-      const label = row.label.trim();
-      const normalizedLabel = label.toLowerCase();
-      const normalizedId = row.tierId.trim().toLowerCase();
-      const isFree = normalizedId === "free" || normalizedLabel === "free";
-      const isPseudoTier =
-        normalizedId === "relay_tier_public" ||
-        normalizedId === "relay_tier_all_patrons" ||
-        normalizedLabel === "public" ||
-        normalizedLabel === "all patrons";
-
-      if (!label || isPseudoTier) return false;
-      if (isFree) {
-        if (sawFree) return false;
-        sawFree = true;
-        return true;
-      }
-      return (row.amountCents ?? 0) > 0;
-    });
-  }, [rows]);
-  const rowIds = useMemo(() => normalizedRows.map((row) => row.tierId), [normalizedRows]);
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set(rowIds));
-
-  useEffect(() => {
-    setSelectedIds(new Set(rowIds));
-  }, [rowIds]);
-
-  if (normalizedRows.length === 0) {
-    return null;
-  }
-
-  const selectedCount = normalizedRows.reduce(
-    (sum, row) => (selectedIds.has(row.tierId) ? sum + row.count : sum),
-    0
-  );
-  const freeCount = normalizedRows.find((row) => row.tierId === "free")?.count ?? 0;
-
-  const toggleTier = (tierId: string) => {
-    setSelectedIds((current) => {
-      const next = new Set(current);
-      if (next.has(tierId)) {
-        next.delete(tierId);
-      } else {
-        next.add(tierId);
-      }
-      return next;
-    });
-  };
-
-  return (
-    <section
-      aria-label="Patron tier dashboard"
-      className="hidden w-fit max-w-[min(42rem,calc(100vw-33rem))] shrink-0 items-center gap-3 rounded-2xl border border-[var(--lib-border)] bg-[color-mix(in_srgb,var(--lib-muted)_36%,transparent)] px-3 py-2 xl:inline-flex"
-    >
-      <div className="min-w-[7rem]">
-        <p className="text-[10px] font-medium uppercase tracking-wide text-[var(--lib-fg-muted)]">Active Patrons</p>
-        <div className="mt-0.5 flex items-baseline gap-2">
-          <span className="text-lg font-semibold tabular-nums leading-none text-[var(--lib-fg)]">
-            {selectedCount.toLocaleString()}
-          </span>
-          <span className="max-w-[9rem] truncate text-xs text-[var(--lib-fg-muted)]" title="Selected tier mix">
-            selected
-          </span>
-        </div>
-        <p className="mt-0.5 text-[10px] text-[var(--lib-primary)]">
-          Free members: {freeCount.toLocaleString()}
-        </p>
-      </div>
-
-      <div className="flex min-w-0 max-w-[31rem] items-center gap-1.5 overflow-x-auto">
-        {normalizedRows.slice(0, 8).map((row) => (
-          <button
-            key={row.tierId}
-            type="button"
-            onClick={() => toggleTier(row.tierId)}
-            aria-pressed={selectedIds.has(row.tierId)}
-            title={`${row.label}: ${row.count.toLocaleString()} patrons (${formatTierAmount(row.amountCents)})`}
-            className={[
-              "shrink-0 rounded-full border px-2.5 py-1 text-[10px] transition-colors",
-              selectedIds.has(row.tierId)
-                ? "border-[var(--lib-primary)]/55 bg-[var(--lib-primary)]/15 text-[var(--lib-fg)]"
-                : "border-[var(--lib-border)] bg-[var(--lib-card)] text-[var(--lib-fg-muted)] hover:text-[var(--lib-fg)]"
-            ].join(" ")}
-          >
-            <span className="max-w-20 truncate align-bottom">{row.label}</span>{" "}
-            <span className="tabular-nums">{row.count.toLocaleString()}</span>
-          </button>
-        ))}
-      </div>
-    </section>
-  );
-}
-
 export default function LibraryTopBar({
   creatorDisplayName,
   patreonName,
   syncStatus = "synced",
   syncIssueDetail,
-  patronCount = 0,
   campaignImageSmallUrl,
   campaignBannerUrl,
   revenueLabel = "—",
-  patronTierRows = [],
   trailingActions
 }: Props) {
   const relayDisplayName =
@@ -256,10 +134,6 @@ export default function LibraryTopBar({
                       patreon.com/{patreonSlug}
                     </a>
                   ) : null}
-                  <span className="flex items-center gap-1 tabular-nums">
-                    <Users className="h-3 w-3 shrink-0" aria-hidden />
-                    {patronCount.toLocaleString()}
-                  </span>
                   <span className="tabular-nums text-[var(--lib-primary)]">{`$${revenueLabel}/mo`}</span>
                 </div>
                 {syncIssueDetail?.trim() && syncStatus === "error" ? (
@@ -273,8 +147,6 @@ export default function LibraryTopBar({
               </div>
             </div>
           </div>
-
-          <PatronTierDashboard rows={patronTierRows} />
         </div>
 
         <div className="relative flex shrink-0 flex-wrap items-center justify-end gap-2">

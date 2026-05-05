@@ -26,6 +26,7 @@
     "node_modules",
     "lib/__tests__/**",
     "__tests__/**",
-    "onboarding_enhancement/**"
+    "onboarding_enhancement/**",
+    "b_i0ofEW9bMcy/**"
   ]
 }

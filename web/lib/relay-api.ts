@@ -642,6 +642,13 @@ export function buildPatreonCreatorAuthorizeUrl(
 
 export type PostVisibility = "visible" | "hidden" | "review";
 
+/** Matches server `GalleryItem`; Prisma-backed Relay upload pipeline visibility. */
+export type MediaProcessingState =
+  | "PENDING_UPLOAD"
+  | "UPLOADED"
+  | "READY"
+  | "FAILED";
+
 export type GalleryItem = {
   media_id: string;
   post_id: string;
@@ -653,6 +660,7 @@ export type GalleryItem = {
   mime_type?: string;
   media_role?: string;
   has_export: boolean;
+  processing_status: MediaProcessingState;
   export_status: "ready" | "missing";
   /** Present when export failed after retries; use Retry in Library or re-sync Patreon. */
   export_error?: string;
@@ -1345,6 +1353,71 @@ export async function relayNativeCreatePost(
   });
 }
 
+// ---------------------------------------------------------------------------
+// Discord capture (staging) — link codes, binding status, staged media list
+// ---------------------------------------------------------------------------
+
+export type DiscordLinkCodeData = {
+  code: string;
+  expires_at: string;
+};
+
+/** `POST /api/v1/relay/discord/link-codes` — mint a short-lived plain code for the bot `/relay-link` flow. */
+export async function mintDiscordLinkCode(creatorId: string): Promise<DiscordLinkCodeData> {
+  return relayFetch<DiscordLinkCodeData>("/api/v1/relay/discord/link-codes", {
+    method: "POST",
+    body: JSON.stringify({ creator_id: creatorId })
+  });
+}
+
+export type DiscordConnectionData = {
+  linked: boolean;
+  discord_guild_id: string | null;
+  discord_channel_id: string | null;
+  updated_at: string | null;
+};
+
+export async function fetchDiscordConnection(creatorId: string): Promise<DiscordConnectionData> {
+  const q = new URLSearchParams();
+  q.set("creator_id", creatorId);
+  return relayFetch<DiscordConnectionData>(`/api/v1/relay/discord/connection?${q.toString()}`);
+}
+
+export type DiscordStagingItem = {
+  media_id: string;
+  mime_type: string | null;
+  ingested_at: string;
+  content_url_path?: string;
+  discord_capture: unknown;
+};
+
+export type DiscordStagingListData = {
+  items: DiscordStagingItem[];
+};
+
+export async function fetchDiscordStaging(creatorId: string): Promise<DiscordStagingListData> {
+  const q = new URLSearchParams();
+  q.set("creator_id", creatorId);
+  return relayFetch<DiscordStagingListData>(`/api/v1/relay/discord/staging?${q.toString()}`);
+}
+
+export type DiscordStagingDeleteData = {
+  deleted: boolean;
+  media_id: string;
+};
+
+export async function deleteDiscordStagingMedia(
+  creatorId: string,
+  mediaId: string
+): Promise<DiscordStagingDeleteData> {
+  const q = new URLSearchParams();
+  q.set("creator_id", creatorId);
+  return relayFetch<DiscordStagingDeleteData>(
+    `/api/v1/relay/discord/staging/${encodeURIComponent(mediaId)}?${q.toString()}`,
+    { method: "DELETE" }
+  );
+}
+
 export function buildGalleryCollectionsQuery(creatorId: string, visitor?: boolean): string {
   const u = new URLSearchParams();
   u.set("creator_id", creatorId);
@@ -1808,18 +1881,58 @@ export type PatchCommentInput = {
   modState?: CommentModState;
 };
 
-/** GET /api/v1/patron/posts/:post_id/comments?creator_id=...&media_id=... */
+/** GET /api/v1/patron/posts/:post_id/comments?creator_id=...&media_id=...&post_level_only=... */
 export async function listPostComments(args: {
   relayCreatorId: string;
   postId: string;
   mediaId?: string;
+  /** Only post-level comments (`media_id` null). Mutually exclusive with `mediaId`. */
+  postLevelOnly?: boolean;
 }): Promise<PatronCommentRecord[]> {
   const params = new URLSearchParams({ creator_id: args.relayCreatorId });
   if (args.mediaId) params.set("media_id", args.mediaId);
+  if (args.postLevelOnly) params.set("post_level_only", "1");
   const data = await relayFetch<{ items: PatronCommentRecord[] }>(
     `/api/v1/patron/posts/${encodeURIComponent(args.postId)}/comments?${params.toString()}`
   );
   return data.items;
+}
+
+/** BO-RPB-06 — `PostPresentation` overlay (titles, descriptions, media order). Server requires Postgres (`config.prisma`); no separate `RELAY_DB_STORE_*` flag. */
+export type PostPresentationRecord = {
+  post_id: string;
+  relay_title: string | null;
+  relay_description: string | null;
+  media_order: string[];
+  tier_preview_settings: unknown | null;
+  updated_at: string;
+};
+
+/** PATCH `/api/v1/gallery/posts/:post_id/presentation` — include at least one overlay field beside `relayCreatorId` / `postId`. */
+export type PatchPostPresentationInput = {
+  relayCreatorId: string;
+  postId: string;
+  relay_title?: string | null;
+  relay_description?: string | null;
+  media_order?: string[];
+  tier_preview_settings?: unknown | null;
+};
+
+export async function patchPostPresentation(
+  input: PatchPostPresentationInput
+): Promise<{ presentation: PostPresentationRecord }> {
+  const body: Record<string, unknown> = { creator_id: input.relayCreatorId };
+  if (input.relay_title !== undefined) body.relay_title = input.relay_title;
+  if (input.relay_description !== undefined) body.relay_description = input.relay_description;
+  if (input.media_order !== undefined) body.media_order = input.media_order;
+  if (input.tier_preview_settings !== undefined) body.tier_preview_settings = input.tier_preview_settings;
+  return relayFetch<{ presentation: PostPresentationRecord }>(
+    `/api/v1/gallery/posts/${encodeURIComponent(input.postId)}/presentation`,
+    {
+      method: "PATCH",
+      body: JSON.stringify(body)
+    }
+  );
 }
 
 /** POST /api/v1/patron/posts/:post_id/comments */

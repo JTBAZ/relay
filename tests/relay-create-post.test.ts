@@ -6,9 +6,11 @@ import request from "supertest";
 import { describe, expect, it, vi } from "vitest";
 import { createApp } from "../src/server.js";
 import {
+  isMediaEligibleForRelayNativePost,
   RelayCreatePostError,
   resolveCampaignIdForRelayPost
 } from "../src/relay/create-relay-post.js";
+import { MediaIngestOrigin } from "@prisma/client";
 
 function baseConfig(temp: string) {
   return {
@@ -101,6 +103,47 @@ describe("resolveCampaignIdForRelayPost", () => {
     await expect(resolveCampaignIdForRelayPost(prisma, "cr", null)).rejects.toMatchObject({
       code: "CAMPAIGN_AMBIGUOUS"
     });
+  });
+});
+
+describe("isMediaEligibleForRelayNativePost", () => {
+  it("allows RELAY_UPLOAD with storage key", () => {
+    expect(
+      isMediaEligibleForRelayNativePost({
+        ingestOrigin: MediaIngestOrigin.RELAY_UPLOAD,
+        currentStorageKey: "relay/tenants/x/media/m/a"
+      })
+    ).toBe(true);
+  });
+
+  it("allows DISCORD with storage key", () => {
+    expect(
+      isMediaEligibleForRelayNativePost({
+        ingestOrigin: MediaIngestOrigin.DISCORD,
+        currentStorageKey: "relay/tenants/x/media/m/a"
+      })
+    ).toBe(true);
+  });
+
+  it("rejects PATREON and missing key", () => {
+    expect(
+      isMediaEligibleForRelayNativePost({
+        ingestOrigin: MediaIngestOrigin.PATREON,
+        currentStorageKey: "relay/tenants/x/media/m/a"
+      })
+    ).toBe(false);
+    expect(
+      isMediaEligibleForRelayNativePost({
+        ingestOrigin: MediaIngestOrigin.RELAY_UPLOAD,
+        currentStorageKey: null
+      })
+    ).toBe(false);
+    expect(
+      isMediaEligibleForRelayNativePost({
+        ingestOrigin: MediaIngestOrigin.DISCORD,
+        currentStorageKey: "  "
+      })
+    ).toBe(false);
   });
 });
 

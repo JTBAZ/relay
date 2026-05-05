@@ -15,7 +15,7 @@ const here = dirname(fileURLToPath(import.meta.url));
 const serverPath = join(here, "..", "..", "src", "server.ts");
 
 const AUTH_PATTERN =
-  /requirePatronBearerSession|requireAccount\s*\(|requireAccountWithRole\s*\(|requireAccountMatchesCreator|assertCreatorRelayMutationAllowed|identityService\.resolveSession|readSessionCookie\s*\(|getSupabaseUserFromAccessToken|checkPostAccess|evaluatePostPermission/;
+  /requirePatronBearerSession|requireAccount\s*\(|requireAccountWithRole\s*\(|requireAccountMatchesCreator|assertCreatorRelayMutationAllowed|identityService\.resolveSession|readSessionCookie\s*\(|getSupabaseUserFromAccessToken|checkPostAccess|evaluatePostPermission|verifyDiscordIngestHmac/;
 
 /** Intentionally unauthenticated or OAuth-only; not creator session–scoped. */
 const LEGACY_CREATOR_SCOPED = new Set([

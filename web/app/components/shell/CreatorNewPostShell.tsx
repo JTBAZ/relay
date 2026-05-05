@@ -9,13 +9,15 @@ type Props = {
   creatorId?: string;
   /** When true (e.g. `/new-post` page), show a link back to Library. */
   showBackLink?: boolean;
+  /** Pre-fill composer with staged media ids (e.g. `?media_ids=` from Discord flow). */
+  initialMediaIds?: string[];
 };
 
 /**
  * T-6.1 / T-6.3 — In-page shell for Relay-native compose (presigned upload + `POST /api/v1/relay/posts`).
  * Primary placement: Creator Library (`/`) directly under `LibraryTopBar`.
  */
-export function CreatorNewPostShell({ creatorId, showBackLink }: Props) {
+export function CreatorNewPostShell({ creatorId, showBackLink, initialMediaIds }: Props) {
   return (
     <section
       data-relay-creator-id={creatorId ?? ""}
@@ -38,8 +40,8 @@ export function CreatorNewPostShell({ creatorId, showBackLink }: Props) {
             </span>
           </div>
           <p className="mt-1 max-w-prose text-xs leading-relaxed text-[var(--lib-fg-muted)]">
-            Upload media (R2), then publish a native Relay post. The Library grid updates after a refresh or
-            navigation.
+            Upload media to R2 or publish staged Discord captures, then ship a native Relay post. The Library
+            grid updates after a refresh or navigation.
           </p>
         </div>
         <div className="flex shrink-0 flex-wrap items-center gap-2 sm:pt-0.5">
@@ -67,7 +69,10 @@ export function CreatorNewPostShell({ creatorId, showBackLink }: Props) {
         role="region"
         aria-label="Relay compose"
       >
-        <CreatorRelayPostComposer creatorId={creatorId ?? ""} />
+        <CreatorRelayPostComposer
+          creatorId={creatorId ?? ""}
+          initialMediaIds={initialMediaIds}
+        />
         <p className="mt-4 border-t border-[var(--lib-border)]/60 pt-3 text-center text-[11px] text-[var(--lib-fg-muted)]/90">
           Patreon-mirrored posts use the post card menu; this path is for new Relay uploads only.
         </p>
