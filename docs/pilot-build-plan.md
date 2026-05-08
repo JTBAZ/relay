@@ -4,6 +4,8 @@
 **Last updated:** 2026-05-08  
 **Audience:** agentic coding runs, Airtable (Phases → Runs → Work items), human pilot owners  
 
+**Pilot cohort & success metrics:** 2026-05-08 — [canonical definition & outcomes](#pilot-cohort-success-metrics).
+
 **Primary references:**
 
 - Strategic narrative & workstreams: [road map.md](../road%20map.md)
@@ -11,6 +13,22 @@
 - Machine dependency graph (regenerate): `node scripts/relay-dependency-audit.mjs` → [relay_audit.json](../relay_audit.json), [audit/dependency_report.md](../audit/dependency_report.md)
 - Sync hardening context: [docs/part1-sync-hardening-ledger.md](part1-sync-hardening-ledger.md)
 - DB verification: [docs/database/M10_VERIFICATION.md](database/M10_VERIFICATION.md)
+
+<a id="pilot-cohort-success-metrics"></a>
+
+## Pilot cohort & success metrics
+
+*P0-base-001 — canonical store for cohort definition and measurable pilot outcomes (Airtable **Pilot Build Plan** points here).*
+
+**Definition.** The Relay pilot is a bounded (~two-month) production exercise with a small cohort of Patreon-backed creators and their patrons. It proves end-to-end value for **Part 1** (creator OAuth, ingest, Library, Designer and public projection, export/R2, creator-visible sync health, and the **P5a** analytics / action-center MVP) and a **thin Part 3** patron feed (Relay account + Patreon link, honest entitlement and degradation UX), without blocking on Part 2 clone campaigns, Stripe live checkout, or audience monetization features deferred in this doc.
+
+**Measurable outcomes (pilot scale; adjust targets with product sign-off):**
+
+1. **Creators onboarded:** At least **5** creators complete Patreon creator OAuth, reach a published public layout, and do so without routine engineering intervention for the documented happy path (scaled from full-road-map “10 creators” per P9 exit checklist).
+2. **Patrons active:** At least **25** patron Relay accounts link Patreon OAuth and use the unified feed shell (empty/degraded states are acceptable if documented; fraud or blocking bugs are not).
+3. **Sync trust surfaced:** Library (or equivalent) shows Patreon sync health (green/yellow/red or equivalent) with operator-facing copy; creators can tell when import/sync is degraded (P5).
+4. **Security baseline:** No **new** P1-class security regressions during the pilot window (cross-tenant access, patron mutating creator assets, broken signed-URL assumptions—see P8 items).
+5. **Build & test bar:** Repo **`npm run build`**, **`npm run test`**, **`web`** lint + build per [AGENTS.md](../AGENTS.md) / `.docs/anthropic/BUILD_BRIEF.md`; add **`verify:pilot`** when P9-test-001 lands—pilot promotion branch stays green on that script.
 
 ---
 
