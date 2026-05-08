@@ -9,7 +9,7 @@
 - **Ghost dependencies**: root `package.json` — unused in **any** scanned file; `web/package.json` — unused in `web/**` only. `@types/*` listed under tooling (types-only).
 - **Full graph**: `relay_audit.json` → `graph.edges` (all directed import edges) and `graph.importersByModule` (reverse map).
 
-Generated: 2026-05-08T16:59:03.629Z (repo root).
+Generated: 2026-05-08T17:21:10.846Z (repo root).
 ## Active modules (core tree from `src/main.ts`)
 Reachable files: **1** (static relative/`@/` graph only).
 <details><summary>Expand file list</summary>
@@ -744,11 +744,6 @@ Count: **0**
   },
   {
     "name": "express-rate-limit",
-    "kind": "dependency",
-    "reason": "No matching import in scanned files for this workspace (after path filter)"
-  },
-  {
-    "name": "patreon-dl",
     "kind": "dependency",
     "reason": "No matching import in scanned files for this workspace (after path filter)"
   },

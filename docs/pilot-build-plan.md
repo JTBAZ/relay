@@ -148,6 +148,7 @@ Agents paste into `.env` / deployment; pilot owner verifies before cohort:
 - **Wiring:** None.
 - **Retrofit:** Lockfile update.
 - **Tests:** CI green.
+- **Logged (2026-05-08):** Removed from root `package.json` `dependencies`; `rg` shows no imports under `src/` or `scripts/` (only docs/audit/lockfile). Third-party mention retained in [docs/cookie-auth-legal-rationale.md](cookie-auth-legal-rationale.md).
 
 ### P0-base-005 — Verify `happy-dom` usage
 
@@ -156,6 +157,7 @@ Agents paste into `.env` / deployment; pilot owner verifies before cohort:
 - **Exit:** Same pattern as P0-base-004 for [package.json](../package.json) `happy-dom`.
 - **Code:** `rg happy-dom` in vitest config and tests; keep if Vitest env uses it; else remove.
 - **Tests:** `npm run test`.
+- **Logged (2026-05-08):** Kept in `devDependencies`; Vitest uses per-file `@vitest-environment happy-dom` in `tests/web/*.test.ts(x)` (DOM hooks and RTL).
 
 ### P0-base-006 — Record Express vs NestJS technical debt
 
