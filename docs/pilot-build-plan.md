@@ -182,6 +182,7 @@ Agents paste into `.env` / deployment; pilot owner verifies before cohort:
 - **Owner:** qa
 - **Exit:** Documented PASS/FAIL with commit SHA; failures become new work items.
 - **Tests:** CI or manual log attached.
+- **Logged (2026-05-08):** **PASS** — `npm run build`, `npm run test` (root Vitest). **Code revision:** `80156e9110c78ac01f3936ee0899fe4d4d2be628` on `chore/pilot-plan-baseline` (tip immediately before the doc-only commit that adds this line; markdown-only delta does not affect compile/test).
 
 ### P0-base-009 — Cross-check `web/tsconfig.json` exclude list vs repo
 
@@ -191,6 +192,17 @@ Agents paste into `.env` / deployment; pilot owner verifies before cohort:
 - **Code:** [web/tsconfig.json](../web/tsconfig.json) (`onboarding_enhancement`, `b_i0ofEW9bMcy`, etc.).
 - **Retrofit:** None; feeds P3-web-002 decision.
 - **Tests:** N/A.
+- **Logged (2026-05-08):** See **Web `tsconfig` exclude inventory** below.
+
+#### Web `tsconfig` exclude inventory (P0-base-009)
+
+| `exclude` glob | Present under `web/`? | Role / label | Owner |
+| --- | --- | --- | --- |
+| `node_modules` | Yes (after `npm install` in `web/`) | Standard; dependencies not typechecked | — |
+| `lib/__tests__/**` | Yes (`web/lib/__tests__/`) | Keep test-only TS out of Next project compilation; root **Vitest** still runs these via root `vitest.config.ts` | frontend |
+| `__tests__/**` | Yes (`web/__tests__/`) | Same pattern for app-level tests | frontend |
+| `onboarding_enhancement/**` | Yes | Separate legacy/sandbox Next app; **quarantine** — not part of canonical `web/app` (decision under P3-web-002) | frontend |
+| `b_i0ofEW9bMcy/**` | Yes | v0 / duplicate tree; **quarantine** — same as P3-web-002 | frontend |
 
 ### ADR: HTTP framework (Express vs NestJS)
 
