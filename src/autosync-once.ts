@@ -1,12 +1,15 @@
 /**
- * One-shot unattended incremental sync (same logic as the background worker).
- * Run after `npm run build`: `node dist/src/autosync-once.js`
+ * @fileoverview CLI entry: runs a single incremental Patreon autosync cycle (same coordinator as the in-process worker).
+ * @description Loads `.env` from the repo root, builds the app via `createApp` + `relayServerConfigFromEnv`, then invokes `runIncrementalAutosyncOnce`. Exits non-zero when any creator fails.
+ * @see {@link ./jsdoc-core-entities.ts} Domain typedefs (`Artist`, `SyncStatus`)
+ * @see prisma/schema.prisma `CreatorProfile`, `Tenant`, token / sync health models consumed by the sync stack
+ * @todo Brittle: assumes `dist` layout and cwd-relative `.env`; failures surface as process exit only.
  */
 import { config as loadEnv } from "dotenv";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { prisma } from "./lib/db.js";
-import { runIncrementalAutosyncCycle } from "./patreon/incremental-sync-worker.js";
+import { runIncrementalAutosyncOnce } from "./patreon/incremental-sync-worker.js";
 import { relayServerConfigFromEnv } from "./relay-server-env.js";
 import { createApp } from "./server.js";
 
@@ -18,6 +21,11 @@ if (!process.env.RELAY_TOKEN_ENCRYPTION_KEY?.trim()) {
   process.exit(1);
 }
 
+/**
+ * Builds services from env, runs one autosync cycle, prints JSON summary, disconnects Prisma.
+ * @async
+ * @throws {Error} From `createApp`, Patreon HTTP, or Prisma when sync or disconnect fails.
+ */
 async function main() {
   const {
     patreonSyncService,
@@ -28,7 +36,7 @@ async function main() {
     ...relayServerConfigFromEnv(),
     prisma
   });
-  const r = await runIncrementalAutosyncCycle({
+  const r = await runIncrementalAutosyncOnce({
     tokenStore,
     patreonSyncService,
     syncHealthStore: patreonSyncHealthStore,

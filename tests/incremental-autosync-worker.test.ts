@@ -1,5 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
-import { runIncrementalAutosyncCycle } from "../src/patreon/incremental-sync-worker.js";
+import {
+  runIncrementalAutosyncCycle,
+  runIncrementalAutosyncOnce
+} from "../src/patreon/incremental-sync-worker.js";
 import type { PatreonSyncService } from "../src/patreon/patreon-sync-service.js";
 import type { PatreonTokenStore } from "../src/auth/token-store.js";
 
@@ -140,5 +143,44 @@ describe("runIncrementalAutosyncCycle", () => {
 
     expect(scrapeOrSync).not.toHaveBeenCalled();
     expect(getSyncState).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("runIncrementalAutosyncOnce", () => {
+  it("is the same function as runIncrementalAutosyncCycle (backward-compatible alias)", () => {
+    expect(runIncrementalAutosyncOnce).toBe(runIncrementalAutosyncCycle);
+  });
+
+  it("when creatorId is set, does not use listCreatorIds length and syncs only that creator", async () => {
+    const scrapeOrSync = vi.fn().mockResolvedValue({
+      patreon_campaign_id: "camp",
+      posts_fetched: 0,
+      warnings: [],
+      apply_result: { posts_written: 0 }
+    });
+    const getSyncState = vi.fn().mockResolvedValue({
+      patreon_campaign_id: "camp",
+      watermark_published_at: null,
+      likely_has_newer_posts: false
+    });
+    const sync = { scrapeOrSync, getSyncState } as unknown as PatreonSyncService;
+    const listCreatorIds = vi.fn().mockResolvedValue(["c1", "c2", "c3"]);
+    const tokenStore = {
+      listCreatorIds,
+      getByCreatorId: vi.fn()
+    } as unknown as PatreonTokenStore;
+
+    const r = await runIncrementalAutosyncOnce({
+      tokenStore,
+      patreonSyncService: sync,
+      creatorId: "  only_me ",
+      concurrency: 1,
+      maxPostPages: 5
+    });
+
+    expect(listCreatorIds).not.toHaveBeenCalled();
+    expect(r.creators_attempted).toBe(1);
+    expect(scrapeOrSync).toHaveBeenCalledTimes(1);
+    expect(scrapeOrSync.mock.calls[0]![0]).toBe("only_me");
   });
 });

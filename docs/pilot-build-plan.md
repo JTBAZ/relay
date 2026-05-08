@@ -335,6 +335,7 @@ Canonical descriptions live in [.env.example](../.env.example). **Pilot** column
 - **Code:** Refactor [src/patreon/incremental-sync-worker.ts](../src/patreon/incremental-sync-worker.ts) without behavior change.
 - **Retrofit:** [src/main.ts](../src/main.ts) still calls `startIncrementalAutosyncWorker` when flag `memory`.
 - **Tests:** Existing tests if any; add one unit test calling `runIncrementalAutosyncOnce` with mocks.
+- **Logged (2026-05-08):** `runIncrementalAutosyncOnce` is the canonical pass; `runIncrementalAutosyncCycle` = alias; optional `creatorId` on [RunIncrementalAutosyncCycleOptions](../src/patreon/incremental-sync-worker.ts) for targeted BullMQ jobs; [tests/incremental-autosync-worker.test.ts](../tests/incremental-autosync-worker.test.ts); [src/autosync-once.ts](../src/autosync-once.ts) calls `runIncrementalAutosyncOnce`.
 
 ### P1-queue-005 — Extract unit of work: patron entitlement stale refresh
 
