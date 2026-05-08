@@ -315,6 +315,7 @@ Canonical descriptions live in [.env.example](../.env.example). **Pilot** column
 - **Exit:** `package.json` lists `bullmq`, `ioredis` (if not transitive); lockfile updated.
 - **Code:** `npm install bullmq ioredis` (versions pinned per repo policy).
 - **Tests:** `npm run build` passes.
+- **Logged (2026-05-08):** Root [package.json](../package.json) + [package-lock.json](../package-lock.json); direct deps `bullmq`, `ioredis`; `npm run build` OK.
 
 ### P1-queue-003 — Define queue names and job payload types
 
