@@ -85,7 +85,7 @@ Import: one Airtable row per work item ID; link **Depends on** as a linked recor
 | Tenant isolation / RLS / `M10` gates for Supabase-backed pilot | **P8** |
 | CI matrix & pilot-scale exit criteria vs full roadmap SLOs | **P9** |
 | Audit script false positives: import-like strings in error messages (e.g. [src/patron/load-patron-relay-feed-bundle.ts](../src/patron/load-patron-relay-feed-bundle.ts)) | **P0** |
-| Optional ghost deps: `patreon-dl`, `happy-dom` — verify CLI-only or remove | **P0** |
+| Optional ghost deps: `patreon-dl` (removed 2026-05-08); `happy-dom` retained for Vitest DOM tests | **P0** (done) |
 
 ---
 
