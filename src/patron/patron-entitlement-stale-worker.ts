@@ -1,4 +1,10 @@
 /**
+ * @fileoverview Patron experience module patron-entitlement-stale-worker.ts — see exported symbols.
+ * @see {@link ../jsdoc-core-entities.ts}
+ * @see prisma/schema.prisma Account, TenantMembership, and related patron tables
+ * @security-audit-required Patron PII or entitlement paths — audit responses and logs.
+ */
+/**
  * PE-H — Interval worker: refresh patron entitlement snapshots past `staleAfter` using stored
  * Patreon OAuth (no BullMQ; same operational pattern as `incremental-sync-worker`).
  */
@@ -15,6 +21,20 @@ export type PatronEntitlementStaleCycleResult = {
   failed: number;
 };
 
+export type RunPatronEntitlementStaleRefreshOnceArgs = {
+  prisma: PrismaClient;
+  encryption: TokenEncryption;
+  patreonClient: PatreonClient;
+  fetchImpl: typeof fetch;
+  batchSize: number;
+  now?: Date;
+  /**
+   * When set, only consider this `PatronEntitlementSnapshot.patronMembershipId` (BullMQ targeted job).
+   * Still requires `staleAfter < now` to match batch semantics.
+   */
+  patronMembershipId?: string;
+};
+
 function parsePositiveInt(raw: string | undefined, fallback: number): number {
   if (raw === undefined || raw.trim() === "") return fallback;
   const n = Number(raw);
@@ -22,18 +42,18 @@ function parsePositiveInt(raw: string | undefined, fallback: number): number {
   return Math.floor(n);
 }
 
-export async function runPatronEntitlementStaleRefreshCycle(args: {
-  prisma: PrismaClient;
-  encryption: TokenEncryption;
-  patreonClient: PatreonClient;
-  fetchImpl: typeof fetch;
-  batchSize: number;
-  now?: Date;
-}): Promise<PatronEntitlementStaleCycleResult> {
+/**
+ * One batch: load stale entitlement snapshots (optional single membership), refresh each via Patreon OAuth.
+ */
+export async function runPatronEntitlementStaleRefreshOnce(
+  args: RunPatronEntitlementStaleRefreshOnceArgs
+): Promise<PatronEntitlementStaleCycleResult> {
   const now = args.now ?? new Date();
+  const targeted = args.patronMembershipId?.trim();
   const rows = await args.prisma.patronEntitlementSnapshot.findMany({
     where: {
-      staleAfter: { lt: now }
+      staleAfter: { lt: now },
+      ...(targeted ? { patronMembershipId: targeted } : {})
     },
     take: args.batchSize,
     orderBy: { staleAfter: "asc" }
@@ -73,6 +93,11 @@ export async function runPatronEntitlementStaleRefreshCycle(args: {
 }
 
 /**
+ * @deprecated Use {@link runPatronEntitlementStaleRefreshOnce}; retained for existing imports.
+ */
+export const runPatronEntitlementStaleRefreshCycle = runPatronEntitlementStaleRefreshOnce;
+
+/**
  * @param intervalMs Minimum 60_000. When 0 or env unset at call site, do not start.
  */
 export function startPatronEntitlementStaleRefreshWorker(args: {
@@ -89,7 +114,7 @@ export function startPatronEntitlementStaleRefreshWorker(args: {
 
   const tick = (): void => {
     if (stopped) return;
-    void runPatronEntitlementStaleRefreshCycle({
+    void runPatronEntitlementStaleRefreshOnce({
       prisma: args.prisma,
       encryption: args.encryption,
       patreonClient: args.patreonClient,

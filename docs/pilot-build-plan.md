@@ -343,6 +343,7 @@ Canonical descriptions live in [.env.example](../.env.example). **Pilot** column
 - **Owner:** backend
 - **Exit:** Same pattern for [src/patron/patron-entitlement-stale-worker.ts](../src/patron/patron-entitlement-stale-worker.ts).
 - **Tests:** Mock Prisma + Patreon client.
+- **Logged (2026-05-08):** `runPatronEntitlementStaleRefreshOnce`; `runPatronEntitlementStaleRefreshCycle` = alias; optional `patronMembershipId` on [RunPatronEntitlementStaleRefreshOnceArgs](../src/patron/patron-entitlement-stale-worker.ts); [tests/patron/patron-entitlement-stale-worker.test.ts](../tests/patron/patron-entitlement-stale-worker.test.ts).
 
 ### P1-queue-006 — Extract unit of work: notification delivery tick
 

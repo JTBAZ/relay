@@ -1,5 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
-import { runPatronEntitlementStaleRefreshCycle } from "../../src/patron/patron-entitlement-stale-worker.js";
+import {
+  runPatronEntitlementStaleRefreshCycle,
+  runPatronEntitlementStaleRefreshOnce
+} from "../../src/patron/patron-entitlement-stale-worker.js";
 
 vi.mock("../../src/patron/patron-entitlement-refresh.js", () => ({
   refreshPatronEntitlementSnapshotFromPatreon: vi.fn().mockResolvedValue({ ok: true })
@@ -27,6 +30,32 @@ describe("runPatronEntitlementStaleRefreshCycle", () => {
     });
     expect(findMany).toHaveBeenCalledWith({
       where: { staleAfter: { lt: now } },
+      take: 10,
+      orderBy: { staleAfter: "asc" }
+    });
+  });
+});
+
+describe("runPatronEntitlementStaleRefreshOnce", () => {
+  it("matches runPatronEntitlementStaleRefreshCycle (backward-compatible alias)", () => {
+    expect(runPatronEntitlementStaleRefreshOnce).toBe(runPatronEntitlementStaleRefreshCycle);
+  });
+
+  it("when patronMembershipId is set, narrows findMany", async () => {
+    const findMany = vi.fn().mockResolvedValue([]);
+    const prisma = { patronEntitlementSnapshot: { findMany } };
+    const now = new Date("2026-01-01T00:00:00.000Z");
+    await runPatronEntitlementStaleRefreshOnce({
+      prisma: prisma as never,
+      encryption: {} as never,
+      patreonClient: {} as never,
+      fetchImpl: fetch,
+      batchSize: 10,
+      now,
+      patronMembershipId: "  pm-target "
+    });
+    expect(findMany).toHaveBeenCalledWith({
+      where: { staleAfter: { lt: now }, patronMembershipId: "pm-target" },
       take: 10,
       orderBy: { staleAfter: "asc" }
     });
