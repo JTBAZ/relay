@@ -379,6 +379,7 @@ Canonical descriptions live in [.env.example](../.env.example). **Pilot** column
 - **Wiring:** [src/main.ts](../src/main.ts) branches before starting workers.
 - **Retrofit:** None for default.
 - **Tests:** Unit tests for parse.
+- **Logged (2026-05-08):** [src/jobs/relay-job-backend.ts](../src/jobs/relay-job-backend.ts); [src/jobs/register-workers.ts](../src/jobs/register-workers.ts); [src/main.ts](../src/main.ts) branches + shutdown closes BullMQ; [.env.example](../.env.example); [tests/relay-job-backend.test.ts](../tests/relay-job-backend.test.ts). **Note:** P1-queue-010 may dedupe/refine shared Redis connection + job options.
 
 ### P1-queue-010 — BullMQ Queue + Worker registration module
 
