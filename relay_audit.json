@@ -1,0 +1,1437 @@
+{
+  "generatedAt": "2026-05-08T16:59:03.629Z",
+  "entryPoints": {
+    "primary_runtime": "src/main.ts",
+    "server_companion": "src/server.ts",
+    "scripts_not_traced": [
+      "src/autosync-once.ts",
+      "src/backfill-part2-from-files.ts",
+      "(many package.json script entrypoints under scripts/*.mjs)"
+    ],
+    "web_framework": "Next.js app router — segment files under web/app are not central-imported"
+  },
+  "coreTreeFromMain": {
+    "fileCount": 1,
+    "files": [
+      "src/main.ts"
+    ]
+  },
+  "graph": {
+    "nodeCount": 925,
+    "edgeCount": 0,
+    "edges": [],
+    "importersByModule": {}
+  },
+  "islandFiles": [
+    "discord-bot/src/bot.ts",
+    "discord-bot/src/config.ts",
+    "discord-bot/src/hmac.ts",
+    "discord-bot/src/register-commands.ts",
+    "discord-bot/src/relay.ts",
+    "src/analytics/action-center-service.ts",
+    "src/analytics/analytics-store-db.ts",
+    "src/analytics/analytics-store.ts",
+    "src/analytics/backfill-analytics-from-file.ts",
+    "src/analytics/insight-job-metrics.ts",
+    "src/analytics/recommendation-engine.ts",
+    "src/analytics/snapshot-generator.ts",
+    "src/analytics/types.ts",
+    "src/auth/auth-service.ts",
+    "src/auth/cookie-store.ts",
+    "src/auth/extension-consent-code.ts",
+    "src/auth/part1a-gate-metrics.ts",
+    "src/auth/patreon-client.ts",
+    "src/auth/patreon-creator-oauth-state.ts",
+    "src/auth/patron-oauth-credential-store.ts",
+    "src/auth/token-store-db.ts",
+    "src/auth/token-store.ts",
+    "src/clone/clone-generator.ts",
+    "src/clone/clone-service.ts",
+    "src/clone/clone-store-db.ts",
+    "src/clone/clone-store.ts",
+    "src/clone/slug.ts",
+    "src/clone/tier-rules.ts",
+    "src/clone/types.ts",
+    "src/contracts/api.ts",
+    "src/creator/creator-identity-service.ts",
+    "src/creator/provision-creator-workspace.ts",
+    "src/creator/public-slug.ts",
+    "src/deploy/deploy-adapter.ts",
+    "src/deploy/deploy-service.ts",
+    "src/deploy/deploy-store-db.ts",
+    "src/deploy/deploy-store.ts",
+    "src/deploy/types.ts",
+    "src/dev/pipeline-parity-routes.ts",
+    "src/dev/relay-runtime-manifest.ts",
+    "src/discord/discord-bind.ts",
+    "src/discord/discord-ingest-hmac.ts",
+    "src/discord/discord-ingest.ts",
+    "src/discord/discord-link-code.ts",
+    "src/events/event-bus-db.ts",
+    "src/events/event-bus.ts",
+    "src/export/export-index.ts",
+    "src/export/export-retrieval-metrics.ts",
+    "src/export/export-service.ts",
+    "src/export/fetch-retry.ts",
+    "src/export/grid-thumbnail.ts",
+    "src/export/manifests.ts",
+    "src/export/types.ts",
+    "src/export/visitor-preview.ts",
+    "src/gallery/backfill-collections-from-file.ts",
+    "src/gallery/backfill-layout-from-file.ts",
+    "src/gallery/backfill-overrides-from-file.ts",
+    "src/gallery/backfill-patron-engagement-from-file.ts",
+    "src/gallery/backfill-saved-filters-from-file.ts",
+    "src/gallery/collections-store-db.ts",
+    "src/gallery/collections-store.ts",
+    "src/gallery/effective-presentation.ts",
+    "src/gallery/entitlement-degraded.ts",
+    "src/gallery/gallery-service.ts",
+    "src/gallery/layout-store-db.ts",
+    "src/gallery/layout-store.ts",
+    "src/gallery/layout-to-clone.ts",
+    "src/gallery/media-sha-dedupe.ts",
+    "src/gallery/overrides-store-db.ts",
+    "src/gallery/overrides-store.ts",
+    "src/gallery/parse-query.ts",
+    "src/gallery/patron-collections-store-db.ts",
+    "src/gallery/patron-collections-store.ts",
+    "src/gallery/patron-collections-validate.ts",
+    "src/gallery/patron-favorites-store-db.ts",
+    "src/gallery/patron-favorites-store.ts",
+    "src/gallery/patron-favorites-validate.ts",
+    "src/gallery/patron-media-access.ts",
+    "src/gallery/post-permission.ts",
+    "src/gallery/post-presentation-load.ts",
+    "src/gallery/post-presentation-mutate.ts",
+    "src/gallery/query.ts",
+    "src/gallery/saved-filters-store-db.ts",
+    "src/gallery/saved-filters-store.ts",
+    "src/gallery/tier-access.ts",
+    "src/gallery/triage-service.ts",
+    "src/gallery/types.ts",
+    "src/health/auth-route-metrics.ts",
+    "src/health/platform-operations-metrics.ts",
+    "src/identity/access-guard.ts",
+    "src/identity/account-context.ts",
+    "src/identity/account-creator-ownership.ts",
+    "src/identity/active-role-available.ts",
+    "src/identity/active-role-default.ts",
+    "src/identity/backfill-identity-from-file.ts",
+    "src/identity/backfill-supabase-user-ids.ts",
+    "src/identity/creator-route-guard.ts",
+    "src/identity/identity-service.ts",
+    "src/identity/identity-store-db.ts",
+    "src/identity/identity-store.ts",
+    "src/identity/password.ts",
+    "src/identity/patreon-link-email-gate.ts",
+    "src/identity/patron-auth-context.ts",
+    "src/identity/patron-entitlement-snapshot.ts",
+    "src/identity/platform-tenant.ts",
+    "src/identity/relay-auth-error.ts",
+    "src/identity/require-account.ts",
+    "src/identity/resolve-tenant.ts",
+    "src/identity/session-constants.ts",
+    "src/identity/session-cookie.ts",
+    "src/identity/session-token-hash.ts",
+    "src/identity/set-active-role-cookie-for-session.ts",
+    "src/identity/supabase-account.ts",
+    "src/identity/types.ts",
+    "src/ingest/apply-batch.ts",
+    "src/ingest/auto-enrich.ts",
+    "src/ingest/backfill-canonical-from-file.ts",
+    "src/ingest/canonical-store-db.ts",
+    "src/ingest/canonical-store.ts",
+    "src/ingest/dlq-db.ts",
+    "src/ingest/dlq.ts",
+    "src/ingest/idempotency.ts",
+    "src/ingest/ingest-health-metrics.ts",
+    "src/ingest/ingest-service.ts",
+    "src/ingest/media-storage-key.ts",
+    "src/ingest/retry-queue.ts",
+    "src/ingest/sync-watermark-store-db.ts",
+    "src/ingest/sync-watermark-store.ts",
+    "src/ingest/types.ts",
+    "src/ingest/validate-body.ts",
+    "src/jsdoc-core-entities.ts",
+    "src/lib/crypto.ts",
+    "src/lib/db.ts",
+    "src/lib/per-key-async-chain.ts",
+    "src/lib/relay-extension-origins.ts",
+    "src/lib/run-exclusive-per-key.ts",
+    "src/lib/supabase-admin.ts",
+    "src/lib/supabase-auth.ts",
+    "src/lib/supabase-rls-context.ts",
+    "src/middleware/idempotency-middleware.ts",
+    "src/middleware/idempotency-store.ts",
+    "src/middleware/rate-limits.ts",
+    "src/migrate/campaign-service.ts",
+    "src/migrate/migration-store-db.ts",
+    "src/migrate/migration-store.ts",
+    "src/migrate/signed-links.ts",
+    "src/migrate/types.ts",
+    "src/patreon/campaign-tenant-resolve.ts",
+    "src/patreon/cookie-scraper.ts",
+    "src/patreon/creator-campaign-display-store.ts",
+    "src/patreon/creator-oauth-campaign-sync.ts",
+    "src/patreon/expand-all-patrons-tiers.ts",
+    "src/patreon/incremental-autosync-worker.ts",
+    "src/patreon/incremental-sync-worker.ts",
+    "src/patreon/jsonapi-types.ts",
+    "src/patreon/map-patreon-to-ingest.ts",
+    "src/patreon/media-url-normalize.ts",
+    "src/patreon/merge-ingest-media.ts",
+    "src/patreon/patreon-campaign-creator-index.ts",
+    "src/patreon/patreon-creator-oauth-scopes.ts",
+    "src/patreon/patreon-member-sync-coordinator.ts",
+    "src/patreon/patreon-patron-oauth.ts",
+    "src/patreon/patreon-resource-api.ts",
+    "src/patreon/patreon-sync-health-store-db.ts",
+    "src/patreon/patreon-sync-health-store.ts",
+    "src/patreon/patreon-sync-service.ts",
+    "src/patreon/patreon-user-identity.ts",
+    "src/patreon/patreon-webhook-api.ts",
+    "src/patreon/patreon-webhook-metadata-store.ts",
+    "src/patreon/patreon-webhook-platform.ts",
+    "src/patreon/patreon-webhook-registration.ts",
+    "src/patreon/patreon-webhook-signature.ts",
+    "src/patreon/patron-oauth-refresh.ts",
+    "src/patreon/post-content.ts",
+    "src/patreon/relay-access-tiers.ts",
+    "src/patreon/sync-error-copy.ts",
+    "src/patron/account-block-service.ts",
+    "src/patron/account-deletion-service.ts",
+    "src/patron/account-deletion-worker.ts",
+    "src/patron/account-follow-service.ts",
+    "src/patron/assemble-patron-feed.ts",
+    "src/patron/comment-auto-mod.ts",
+    "src/patron/comment-reaction-service.ts",
+    "src/patron/comment-service.ts",
+    "src/patron/comment-tag-service.ts",
+    "src/patron/comment-types.ts",
+    "src/patron/content-report-service.ts",
+    "src/patron/creator-relationship-delete-service.ts",
+    "src/patron/data-export-service.ts",
+    "src/patron/discover-service.ts",
+    "src/patron/load-patron-relay-feed-bundle.ts",
+    "src/patron/moderation-action-log.ts",
+    "src/patron/notification-delivery-worker.ts",
+    "src/patron/notification-event-emit.ts",
+    "src/patron/notification-mapper.ts",
+    "src/patron/notification-prefs-service.ts",
+    "src/patron/notification-service.ts",
+    "src/patron/patron-entitlement-refresh.ts",
+    "src/patron/patron-entitlement-stale-worker.ts",
+    "src/patron/patron-feed-types.ts",
+    "src/patron/patron-follow-service.ts",
+    "src/patron/patron-handle-policy.ts",
+    "src/patron/patron-initial-follow-seed.ts",
+    "src/patron/patron-profile-service.ts",
+    "src/patron/public-patron-profile-service.ts",
+    "src/patron/viewer-entitlement.ts",
+    "src/payments/payment-service.ts",
+    "src/payments/payment-store-db.ts",
+    "src/payments/payment-store.ts",
+    "src/payments/preflight.ts",
+    "src/payments/provider-adapter.ts",
+    "src/payments/types.ts",
+    "src/relay-app-config-from-env.ts",
+    "src/relay-server-env.ts",
+    "src/relay/create-relay-post.ts",
+    "src/relay/relay-native-upload-finalize.ts",
+    "src/storage/media-delivery-policy.ts",
+    "src/storage/media-storage-purge-service.ts",
+    "src/storage/media-storage-purge-worker.ts",
+    "src/storage/r2-config.ts",
+    "src/storage/r2-s3-client.ts",
+    "src/storage/r2-smoke-upload.ts",
+    "src/storage/relay-upload-r2.ts",
+    "src/webhooks/patreon-webhook.ts",
+    "web/app/GalleryView.tsx",
+    "web/app/action-center/ActionCenterView.tsx",
+    "web/app/components/AppNav.tsx",
+    "web/app/components/BulkActionBar.tsx",
+    "web/app/components/CollectionBuilderDrawer.tsx",
+    "web/app/components/CollectionEditor.tsx",
+    "web/app/components/CollectionsPanel.tsx",
+    "web/app/components/ConditionalAppNav.tsx",
+    "web/app/components/ConfirmDestructiveDialog.tsx",
+    "web/app/components/DiscordCapturesBin.tsx",
+    "web/app/components/GalleryGrid.tsx",
+    "web/app/components/GalleryGridTile.tsx",
+    "web/app/components/GalleryListRow.tsx",
+    "web/app/components/GallerySidebar.tsx",
+    "web/app/components/GalleryStatsDrawer.tsx",
+    "web/app/components/InspectModal.tsx",
+    "web/app/components/InstallExtensionPrompt.tsx",
+    "web/app/components/LibraryCreatePostModal.tsx",
+    "web/app/components/LibraryImportBay.tsx",
+    "web/app/components/LibraryPowerPanel.tsx",
+    "web/app/components/LibrarySectionEyebrow.tsx",
+    "web/app/components/LibraryTopBar.tsx",
+    "web/app/components/MediaTypeMultiSelect.tsx",
+    "web/app/components/PatreonSyncMenu.tsx",
+    "web/app/components/PostAssetCarouselStrip.tsx",
+    "web/app/components/PostBatchGridCell.tsx",
+    "web/app/components/PostBatchModal.tsx",
+    "web/app/components/PostBatchPostDetails.tsx",
+    "web/app/components/RoleSwitcher.tsx",
+    "web/app/components/SnipToCollectionModal.tsx",
+    "web/app/components/SupabaseHashRedirect.tsx",
+    "web/app/components/Toast.tsx",
+    "web/app/components/TriageDialog.tsx",
+    "web/app/components/VisitorBatchSlideMedia.tsx",
+    "web/app/components/VisitorGalleryView.tsx",
+    "web/app/components/auth/AuthBootSplash.tsx",
+    "web/app/components/auth/BootSplashOr.tsx",
+    "web/app/components/auth/SupporterSignInPanel.tsx",
+    "web/app/components/auth/auth-hub.tsx",
+    "web/app/components/auth/email-panel.tsx",
+    "web/app/components/auth/patreon-oauth-links.tsx",
+    "web/app/components/auth/relay-logo.tsx",
+    "web/app/components/auth/trust-marks.tsx",
+    "web/app/components/collections/collect-from-subscriptions.tsx",
+    "web/app/components/collections/collection-editor-rail.tsx",
+    "web/app/components/collections/collections-browser.tsx",
+    "web/app/components/collections/collections-page-client.tsx",
+    "web/app/components/collections/relay-nav.tsx",
+    "web/app/components/designer/canvas-preview.tsx",
+    "web/app/components/designer/designer-header.tsx",
+    "web/app/components/designer/inspector-rail.tsx",
+    "web/app/components/icons/SnipIcon.tsx",
+    "web/app/components/inspect/inspect-asset-preview.tsx",
+    "web/app/components/inspect/inspect-meta-sidebar.tsx",
+    "web/app/components/inspect/inspect-smart-tag-panel.tsx",
+    "web/app/components/inspect/post-audience-preview.tsx",
+    "web/app/components/landing/hero-section.tsx",
+    "web/app/components/landing/landing-page-shell.tsx",
+    "web/app/components/landing/relay-logo-animation.tsx",
+    "web/app/components/landing/site-footer.tsx",
+    "web/app/components/landing/site-nav.tsx",
+    "web/app/components/landing/social-proof.tsx",
+    "web/app/components/landing/value-story.tsx",
+    "web/app/components/landing/wordmark.tsx",
+    "web/app/components/onboarding/onboarding-wizard.tsx",
+    "web/app/components/onboarding/progress-stepper.tsx",
+    "web/app/components/onboarding/step-panels.tsx",
+    "web/app/components/patron/PatronLayoutSections.tsx",
+    "web/app/components/public-profile/CreatorPublicHero.tsx",
+    "web/app/components/relay-logo-animation.tsx",
+    "web/app/components/relay-unified-logo-v0.tsx",
+    "web/app/components/shell/CreatorNewPostShell.tsx",
+    "web/app/components/shell/CreatorRelayPostComposer.tsx",
+    "web/app/components/shell/CreatorTierCatalogMultiselect.tsx",
+    "web/app/components/shell/LibraryOverviewPanel.tsx",
+    "web/app/components/shell/LibraryRouteCard.tsx",
+    "web/app/components/shell/LibraryStatCard.tsx",
+    "web/app/components/shell/SpacingScaleDemo.tsx",
+    "web/app/components/shell/TypeRampDemo.tsx",
+    "web/app/components/studio/CreatorPublicUrlSettings.tsx",
+    "web/app/components/studio/DiscordCaptureCard.tsx",
+    "web/app/components/studio/StudioRouteGuard.tsx",
+    "web/app/components/studio/StudioSupabaseSignInPanel.tsx",
+    "web/app/components/studio/studio-session-root.tsx",
+    "web/app/components/visitor/VisitorPatronTileEngage.tsx",
+    "web/app/components/visitor/VisitorTierGateOverlay.tsx",
+    "web/app/designer/DesignerPreviewToolbar.tsx",
+    "web/app/designer/DesignerView.tsx",
+    "web/app/designer/HeroEditor.tsx",
+    "web/app/designer/LayoutPreview.tsx",
+    "web/app/designer/SectionEditor.tsx",
+    "web/app/designer/ThemePicker.tsx",
+    "web/app/designer/profile/CreatorProfileClient.tsx",
+    "web/app/dev/bench/DevBenchClient.tsx",
+    "web/app/dev/pipeline-parity/PipelineParityClient.tsx",
+    "web/app/dev/pipeline-parity/evaluateParity.ts",
+    "web/app/extension/authorize/AuthorizeClient.tsx",
+    "web/app/home-page-client.tsx",
+    "web/app/lib/cn.ts",
+    "web/app/login/LoginPageClient.tsx",
+    "web/app/new-post/new-post-page-client.tsx",
+    "web/app/patreon/connect/PatreonConnectClient.tsx",
+    "web/app/patreon/patron/connect/PatronConnectClient.tsx",
+    "web/app/patron/PatronStartClient.tsx",
+    "web/app/patron/PatronTopNav.tsx",
+    "web/app/patron/discover/PatronDiscoverClient.tsx",
+    "web/app/patron/feed/PatronFeedDevPreviewClient.tsx",
+    "web/app/patron/library/PatronLibraryClient.tsx",
+    "web/app/patron/notifications/PatronNotificationsClient.tsx",
+    "web/app/patron/notifications/preferences/PatronNotificationPreferencesClient.tsx",
+    "web/app/patron/onboarding/PatronOnboardingClient.tsx",
+    "web/app/patron/settings/PatronSettingsClient.tsx",
+    "web/app/settings/connected-extensions/ConnectedExtensionsClient.tsx",
+    "web/app/settings/connected-extensions/RevokeButton.tsx",
+    "web/app/studio/moderation/reports/ReportsQueueClient.tsx",
+    "web/b_i0ofEW9bMcy/components/action-center/community-section.tsx",
+    "web/b_i0ofEW9bMcy/components/action-center/gallery-section.tsx",
+    "web/b_i0ofEW9bMcy/components/action-center/growth-section.tsx",
+    "web/b_i0ofEW9bMcy/components/action-center/nav-bar.tsx",
+    "web/b_i0ofEW9bMcy/components/library/CollectionBuilderDrawer.tsx",
+    "web/b_i0ofEW9bMcy/components/library/CreatePostModal.tsx",
+    "web/b_i0ofEW9bMcy/components/library/GalleryGrid.tsx",
+    "web/b_i0ofEW9bMcy/components/library/GalleryGridTile.tsx",
+    "web/b_i0ofEW9bMcy/components/library/GallerySidebar.tsx",
+    "web/b_i0ofEW9bMcy/components/library/ImportBin.tsx",
+    "web/b_i0ofEW9bMcy/components/library/LibraryPowerPanel.tsx",
+    "web/b_i0ofEW9bMcy/components/library/LibraryTopBar.tsx",
+    "web/b_i0ofEW9bMcy/components/library/MediaTypeMultiSelect.tsx",
+    "web/b_i0ofEW9bMcy/components/library/PostAssetCarouselStrip.tsx",
+    "web/b_i0ofEW9bMcy/components/library/inspect/inspect-asset-preview.tsx",
+    "web/b_i0ofEW9bMcy/components/profile-editor/batch-action-bar.tsx",
+    "web/b_i0ofEW9bMcy/components/profile-editor/curate-gallery-drawer.tsx",
+    "web/b_i0ofEW9bMcy/components/profile-editor/customizer-panel.tsx",
+    "web/b_i0ofEW9bMcy/components/profile-editor/editor-sidebar.tsx",
+    "web/b_i0ofEW9bMcy/components/profile-editor/gallery-section.tsx",
+    "web/b_i0ofEW9bMcy/components/profile-editor/hero-section.tsx",
+    "web/b_i0ofEW9bMcy/components/profile-editor/media-card.tsx",
+    "web/b_i0ofEW9bMcy/components/profile-editor/profile-canvas.tsx",
+    "web/b_i0ofEW9bMcy/components/profile-editor/section-wrapper.tsx",
+    "web/b_i0ofEW9bMcy/components/profile-editor/update-card.tsx",
+    "web/b_i0ofEW9bMcy/components/profile-editor/update-composer.tsx",
+    "web/b_i0ofEW9bMcy/components/profile-editor/variant-stack-card.tsx",
+    "web/b_i0ofEW9bMcy/components/theme-provider.tsx",
+    "web/b_i0ofEW9bMcy/components/ui/accordion.tsx",
+    "web/b_i0ofEW9bMcy/components/ui/alert-dialog.tsx",
+    "web/b_i0ofEW9bMcy/components/ui/alert.tsx",
+    "web/b_i0ofEW9bMcy/components/ui/aspect-ratio.tsx",
+    "web/b_i0ofEW9bMcy/components/ui/avatar.tsx",
+    "web/b_i0ofEW9bMcy/components/ui/badge.tsx",
+    "web/b_i0ofEW9bMcy/components/ui/breadcrumb.tsx",
+    "web/b_i0ofEW9bMcy/components/ui/button-group.tsx",
+    "web/b_i0ofEW9bMcy/components/ui/button.tsx",
+    "web/b_i0ofEW9bMcy/components/ui/calendar.tsx",
+    "web/b_i0ofEW9bMcy/components/ui/card.tsx",
+    "web/b_i0ofEW9bMcy/components/ui/carousel.tsx",
+    "web/b_i0ofEW9bMcy/components/ui/chart.tsx",
+    "web/b_i0ofEW9bMcy/components/ui/checkbox.tsx",
+    "web/b_i0ofEW9bMcy/components/ui/collapsible.tsx",
+    "web/b_i0ofEW9bMcy/components/ui/command.tsx",
+    "web/b_i0ofEW9bMcy/components/ui/context-menu.tsx",
+    "web/b_i0ofEW9bMcy/components/ui/dialog.tsx",
+    "web/b_i0ofEW9bMcy/components/ui/drawer.tsx",
+    "web/b_i0ofEW9bMcy/components/ui/dropdown-menu.tsx",
+    "web/b_i0ofEW9bMcy/components/ui/empty.tsx",
+    "web/b_i0ofEW9bMcy/components/ui/field.tsx",
+    "web/b_i0ofEW9bMcy/components/ui/form.tsx",
+    "web/b_i0ofEW9bMcy/components/ui/hover-card.tsx",
+    "web/b_i0ofEW9bMcy/components/ui/input-group.tsx",
+    "web/b_i0ofEW9bMcy/components/ui/input-otp.tsx",
+    "web/b_i0ofEW9bMcy/components/ui/input.tsx",
+    "web/b_i0ofEW9bMcy/components/ui/item.tsx",
+    "web/b_i0ofEW9bMcy/components/ui/kbd.tsx",
+    "web/b_i0ofEW9bMcy/components/ui/label.tsx",
+    "web/b_i0ofEW9bMcy/components/ui/menubar.tsx",
+    "web/b_i0ofEW9bMcy/components/ui/navigation-menu.tsx",
+    "web/b_i0ofEW9bMcy/components/ui/pagination.tsx",
+    "web/b_i0ofEW9bMcy/components/ui/popover.tsx",
+    "web/b_i0ofEW9bMcy/components/ui/progress.tsx",
+    "web/b_i0ofEW9bMcy/components/ui/radio-group.tsx",
+    "web/b_i0ofEW9bMcy/components/ui/resizable.tsx",
+    "web/b_i0ofEW9bMcy/components/ui/scroll-area.tsx",
+    "web/b_i0ofEW9bMcy/components/ui/select.tsx",
+    "web/b_i0ofEW9bMcy/components/ui/separator.tsx",
+    "web/b_i0ofEW9bMcy/components/ui/sheet.tsx",
+    "web/b_i0ofEW9bMcy/components/ui/sidebar.tsx",
+    "web/b_i0ofEW9bMcy/components/ui/skeleton.tsx",
+    "web/b_i0ofEW9bMcy/components/ui/slider.tsx",
+    "web/b_i0ofEW9bMcy/components/ui/sonner.tsx",
+    "web/b_i0ofEW9bMcy/components/ui/spinner.tsx",
+    "web/b_i0ofEW9bMcy/components/ui/switch.tsx",
+    "web/b_i0ofEW9bMcy/components/ui/table.tsx",
+    "web/b_i0ofEW9bMcy/components/ui/tabs.tsx",
+    "web/b_i0ofEW9bMcy/components/ui/textarea.tsx",
+    "web/b_i0ofEW9bMcy/components/ui/toast.tsx",
+    "web/b_i0ofEW9bMcy/components/ui/toaster.tsx",
+    "web/b_i0ofEW9bMcy/components/ui/toggle-group.tsx",
+    "web/b_i0ofEW9bMcy/components/ui/toggle.tsx",
+    "web/b_i0ofEW9bMcy/components/ui/tooltip.tsx",
+    "web/b_i0ofEW9bMcy/components/ui/use-mobile.tsx",
+    "web/b_i0ofEW9bMcy/components/ui/use-toast.ts",
+    "web/b_i0ofEW9bMcy/hooks/use-mobile.ts",
+    "web/b_i0ofEW9bMcy/hooks/use-toast.ts",
+    "web/b_i0ofEW9bMcy/lib/gallery-group.ts",
+    "web/b_i0ofEW9bMcy/lib/profile-theme.ts",
+    "web/b_i0ofEW9bMcy/lib/relay-api.ts",
+    "web/b_i0ofEW9bMcy/lib/tier-access.ts",
+    "web/b_i0ofEW9bMcy/lib/utils.ts",
+    "web/components/patron-mock/theme-provider.tsx",
+    "web/components/patron-mock/ui/accordion.tsx",
+    "web/components/patron-mock/ui/alert-dialog.tsx",
+    "web/components/patron-mock/ui/alert.tsx",
+    "web/components/patron-mock/ui/aspect-ratio.tsx",
+    "web/components/patron-mock/ui/avatar.tsx",
+    "web/components/patron-mock/ui/badge.tsx",
+    "web/components/patron-mock/ui/breadcrumb.tsx",
+    "web/components/patron-mock/ui/button-group.tsx",
+    "web/components/patron-mock/ui/button.tsx",
+    "web/components/patron-mock/ui/calendar.tsx",
+    "web/components/patron-mock/ui/card.tsx",
+    "web/components/patron-mock/ui/carousel.tsx",
+    "web/components/patron-mock/ui/chart.tsx",
+    "web/components/patron-mock/ui/checkbox.tsx",
+    "web/components/patron-mock/ui/collapsible.tsx",
+    "web/components/patron-mock/ui/command.tsx",
+    "web/components/patron-mock/ui/context-menu.tsx",
+    "web/components/patron-mock/ui/dialog.tsx",
+    "web/components/patron-mock/ui/drawer.tsx",
+    "web/components/patron-mock/ui/dropdown-menu.tsx",
+    "web/components/patron-mock/ui/empty.tsx",
+    "web/components/patron-mock/ui/field.tsx",
+    "web/components/patron-mock/ui/form.tsx",
+    "web/components/patron-mock/ui/hover-card.tsx",
+    "web/components/patron-mock/ui/input-group.tsx",
+    "web/components/patron-mock/ui/input-otp.tsx",
+    "web/components/patron-mock/ui/input.tsx",
+    "web/components/patron-mock/ui/item.tsx",
+    "web/components/patron-mock/ui/kbd.tsx",
+    "web/components/patron-mock/ui/label.tsx",
+    "web/components/patron-mock/ui/menubar.tsx",
+    "web/components/patron-mock/ui/navigation-menu.tsx",
+    "web/components/patron-mock/ui/pagination.tsx",
+    "web/components/patron-mock/ui/popover.tsx",
+    "web/components/patron-mock/ui/progress.tsx",
+    "web/components/patron-mock/ui/radio-group.tsx",
+    "web/components/patron-mock/ui/resizable.tsx",
+    "web/components/patron-mock/ui/scroll-area.tsx",
+    "web/components/patron-mock/ui/select.tsx",
+    "web/components/patron-mock/ui/separator.tsx",
+    "web/components/patron-mock/ui/sheet.tsx",
+    "web/components/patron-mock/ui/sidebar.tsx",
+    "web/components/patron-mock/ui/skeleton.tsx",
+    "web/components/patron-mock/ui/slider.tsx",
+    "web/components/patron-mock/ui/sonner.tsx",
+    "web/components/patron-mock/ui/spinner.tsx",
+    "web/components/patron-mock/ui/switch.tsx",
+    "web/components/patron-mock/ui/table.tsx",
+    "web/components/patron-mock/ui/tabs.tsx",
+    "web/components/patron-mock/ui/textarea.tsx",
+    "web/components/patron-mock/ui/toast.tsx",
+    "web/components/patron-mock/ui/toaster.tsx",
+    "web/components/patron-mock/ui/toggle-group.tsx",
+    "web/components/patron-mock/ui/toggle.tsx",
+    "web/components/patron-mock/ui/tooltip.tsx",
+    "web/components/patron-mock/ui/use-mobile.tsx",
+    "web/components/patron/relay/command-palette.tsx",
+    "web/components/patron/relay/comment-pin.tsx",
+    "web/components/patron/relay/comment-thread-panel.tsx",
+    "web/components/patron/relay/connect-campaign-modal.tsx",
+    "web/components/patron/relay/discover-grid.tsx",
+    "web/components/patron/relay/empty-state.tsx",
+    "web/components/patron/relay/error-banner.tsx",
+    "web/components/patron/relay/feed-card.tsx",
+    "web/components/patron/relay/feed-section-divider.tsx",
+    "web/components/patron/relay/filter-chips.tsx",
+    "web/components/patron/relay/gallery-media-stack.tsx",
+    "web/components/patron/relay/gallery-view.tsx",
+    "web/components/patron/relay/library-modal.tsx",
+    "web/components/patron/relay/notifications-tray.tsx",
+    "web/components/patron/relay/patron-feed-dev-tools.tsx",
+    "web/components/patron/relay/patron-feed-playback.tsx",
+    "web/components/patron/relay/patron-home-client.tsx",
+    "web/components/patron/relay/profile-page.tsx",
+    "web/components/patron/relay/relay-app.tsx",
+    "web/components/patron/relay/relay-mark-icon.tsx",
+    "web/components/patron/relay/relay-shell.tsx",
+    "web/components/patron/relay/settings-modal.tsx",
+    "web/components/patron/relay/use-live-comments.ts",
+    "web/hooks/use-mobile.ts",
+    "web/hooks/use-toast.ts",
+    "web/lib/active-role.ts",
+    "web/lib/collections-data.ts",
+    "web/lib/creator-post-login-redirect.ts",
+    "web/lib/designer-layout-bridge.ts",
+    "web/lib/designer-mock.ts",
+    "web/lib/designer-presentation-presets.ts",
+    "web/lib/designer-profile-theme-bridge.ts",
+    "web/lib/designer-tier-map.ts",
+    "web/lib/extension-store-urls.ts",
+    "web/lib/gallery-group.ts",
+    "web/lib/gallery-item-sort.ts",
+    "web/lib/gallery-tile-video.ts",
+    "web/lib/gallery-video-loop.ts",
+    "web/lib/guess-relay-upload-content-type.ts",
+    "web/lib/library-create-post-media.ts",
+    "web/lib/library-onboarding.ts",
+    "web/lib/patreon-creator-scopes.ts",
+    "web/lib/patreon-patron-scopes.ts",
+    "web/lib/patron-connect-campaign-prompt.ts",
+    "web/lib/patron-feed-api.ts",
+    "web/lib/patron-feed-media.ts",
+    "web/lib/patron-follows-api.ts",
+    "web/lib/patron-oauth-state.ts",
+    "web/lib/patron-patron-redirect-uri.ts",
+    "web/lib/post-login-redirect.ts",
+    "web/lib/public-profile-hero.ts",
+    "web/lib/relay-api.ts",
+    "web/lib/relay-auth-bootstrap.ts",
+    "web/lib/relay-extension-ids.ts",
+    "web/lib/relay-fetch-errors.ts",
+    "web/lib/relay-fixtures.ts",
+    "web/lib/relay-session-logout.ts",
+    "web/lib/resolve-patreon-oauth-client-id.ts",
+    "web/lib/site-origin.ts",
+    "web/lib/studio-session-context.tsx",
+    "web/lib/supabase-browser.ts",
+    "web/lib/supporter-post-login-redirect.ts",
+    "web/lib/tier-access.ts",
+    "web/lib/use-debounced-value.ts",
+    "web/lib/use-layout-section-items.ts",
+    "web/lib/use-require-logged-in.ts",
+    "web/lib/use-require-logged-out.ts",
+    "web/lib/utils.ts",
+    "web/lib/visitor-layout-filter.ts",
+    "web/lib/visitor-tier-gate.ts",
+    "web/onboarding_enhancement/app/components/InstallExtensionPrompt.tsx",
+    "web/onboarding_enhancement/app/components/auth/SupporterSignInPanel.tsx",
+    "web/onboarding_enhancement/app/components/onboarding/onboarding-wizard.tsx",
+    "web/onboarding_enhancement/app/components/onboarding/progress-stepper.tsx",
+    "web/onboarding_enhancement/app/components/onboarding/step-panels.tsx",
+    "web/onboarding_enhancement/app/components/relay-logo-animation.tsx",
+    "web/onboarding_enhancement/app/components/relay-unified-logo-v0.tsx",
+    "web/onboarding_enhancement/app/components/studio/StudioSupabaseSignInPanel.tsx",
+    "web/onboarding_enhancement/app/lib/cn.ts",
+    "web/onboarding_enhancement/components/theme-provider.tsx",
+    "web/onboarding_enhancement/components/ui/accordion.tsx",
+    "web/onboarding_enhancement/components/ui/alert-dialog.tsx",
+    "web/onboarding_enhancement/components/ui/alert.tsx",
+    "web/onboarding_enhancement/components/ui/aspect-ratio.tsx",
+    "web/onboarding_enhancement/components/ui/avatar.tsx",
+    "web/onboarding_enhancement/components/ui/badge.tsx",
+    "web/onboarding_enhancement/components/ui/breadcrumb.tsx",
+    "web/onboarding_enhancement/components/ui/button-group.tsx",
+    "web/onboarding_enhancement/components/ui/button.tsx",
+    "web/onboarding_enhancement/components/ui/calendar.tsx",
+    "web/onboarding_enhancement/components/ui/card.tsx",
+    "web/onboarding_enhancement/components/ui/carousel.tsx",
+    "web/onboarding_enhancement/components/ui/chart.tsx",
+    "web/onboarding_enhancement/components/ui/checkbox.tsx",
+    "web/onboarding_enhancement/components/ui/collapsible.tsx",
+    "web/onboarding_enhancement/components/ui/command.tsx",
+    "web/onboarding_enhancement/components/ui/context-menu.tsx",
+    "web/onboarding_enhancement/components/ui/dialog.tsx",
+    "web/onboarding_enhancement/components/ui/drawer.tsx",
+    "web/onboarding_enhancement/components/ui/dropdown-menu.tsx",
+    "web/onboarding_enhancement/components/ui/empty.tsx",
+    "web/onboarding_enhancement/components/ui/field.tsx",
+    "web/onboarding_enhancement/components/ui/form.tsx",
+    "web/onboarding_enhancement/components/ui/hover-card.tsx",
+    "web/onboarding_enhancement/components/ui/input-group.tsx",
+    "web/onboarding_enhancement/components/ui/input-otp.tsx",
+    "web/onboarding_enhancement/components/ui/input.tsx",
+    "web/onboarding_enhancement/components/ui/item.tsx",
+    "web/onboarding_enhancement/components/ui/kbd.tsx",
+    "web/onboarding_enhancement/components/ui/label.tsx",
+    "web/onboarding_enhancement/components/ui/menubar.tsx",
+    "web/onboarding_enhancement/components/ui/navigation-menu.tsx",
+    "web/onboarding_enhancement/components/ui/pagination.tsx",
+    "web/onboarding_enhancement/components/ui/popover.tsx",
+    "web/onboarding_enhancement/components/ui/progress.tsx",
+    "web/onboarding_enhancement/components/ui/radio-group.tsx",
+    "web/onboarding_enhancement/components/ui/resizable.tsx",
+    "web/onboarding_enhancement/components/ui/scroll-area.tsx",
+    "web/onboarding_enhancement/components/ui/select.tsx",
+    "web/onboarding_enhancement/components/ui/separator.tsx",
+    "web/onboarding_enhancement/components/ui/sheet.tsx",
+    "web/onboarding_enhancement/components/ui/sidebar.tsx",
+    "web/onboarding_enhancement/components/ui/skeleton.tsx",
+    "web/onboarding_enhancement/components/ui/slider.tsx",
+    "web/onboarding_enhancement/components/ui/sonner.tsx",
+    "web/onboarding_enhancement/components/ui/spinner.tsx",
+    "web/onboarding_enhancement/components/ui/switch.tsx",
+    "web/onboarding_enhancement/components/ui/table.tsx",
+    "web/onboarding_enhancement/components/ui/tabs.tsx",
+    "web/onboarding_enhancement/components/ui/textarea.tsx",
+    "web/onboarding_enhancement/components/ui/toast.tsx",
+    "web/onboarding_enhancement/components/ui/toaster.tsx",
+    "web/onboarding_enhancement/components/ui/toggle-group.tsx",
+    "web/onboarding_enhancement/components/ui/toggle.tsx",
+    "web/onboarding_enhancement/components/ui/tooltip.tsx",
+    "web/onboarding_enhancement/components/ui/use-mobile.tsx",
+    "web/onboarding_enhancement/components/ui/use-toast.ts",
+    "web/onboarding_enhancement/hooks/use-mobile.ts",
+    "web/onboarding_enhancement/hooks/use-toast.ts",
+    "web/onboarding_enhancement/lib/patreon-patron-scopes.ts",
+    "web/onboarding_enhancement/lib/patron-oauth-state.ts",
+    "web/onboarding_enhancement/lib/patron-patron-redirect-uri.ts",
+    "web/onboarding_enhancement/lib/relay-api.ts",
+    "web/onboarding_enhancement/lib/resolve-patreon-oauth-client-id.ts",
+    "web/onboarding_enhancement/lib/utils.ts"
+  ],
+  "islandCount": 633,
+  "brokenImports": [],
+  "assets": {
+    "web/public/apple-icon.png": {
+      "status": "referenced",
+      "referencedBy": [
+        "web/b_i0ofEW9bMcy/app/layout.tsx",
+        "web/onboarding_enhancement/app/layout.tsx"
+      ]
+    },
+    "web/public/gallery-inspect-preview.html": {
+      "status": "ghost_asset",
+      "referencedBy": []
+    },
+    "web/public/icon-dark-32x32.png": {
+      "status": "referenced",
+      "referencedBy": [
+        "web/b_i0ofEW9bMcy/app/layout.tsx",
+        "web/onboarding_enhancement/app/layout.tsx"
+      ]
+    },
+    "web/public/icon-light-32x32.png": {
+      "status": "referenced",
+      "referencedBy": [
+        "web/b_i0ofEW9bMcy/app/layout.tsx",
+        "web/onboarding_enhancement/app/layout.tsx"
+      ]
+    },
+    "web/public/icon.svg": {
+      "status": "referenced",
+      "referencedBy": [
+        "web/b_i0ofEW9bMcy/app/layout.tsx",
+        "web/onboarding_enhancement/app/layout.tsx"
+      ]
+    },
+    "web/public/patron-feed-preview.png": {
+      "status": "referenced",
+      "referencedBy": [
+        "web/lib/patron-relay-feed-bundle.json",
+        "web/lib/relay-fixtures.ts"
+      ]
+    },
+    "web/public/placeholder-logo.png": {
+      "status": "ghost_asset",
+      "referencedBy": []
+    },
+    "web/public/placeholder-logo.svg": {
+      "status": "ghost_asset",
+      "referencedBy": []
+    },
+    "web/public/placeholder-user.jpg": {
+      "status": "ghost_asset",
+      "referencedBy": []
+    },
+    "web/public/placeholder.jpg": {
+      "status": "ghost_asset",
+      "referencedBy": []
+    },
+    "web/public/placeholder.svg": {
+      "status": "dynamically_referenced",
+      "referencedBy": [
+        "src/patron/assemble-patron-feed.ts",
+        "web/components/patron/relay/feed-card.tsx",
+        "web/components/patron/relay/gallery-media-stack.tsx",
+        "web/components/patron/relay/gallery-view.tsx",
+        "web/components/patron/relay/use-live-comments.ts",
+        "web/lib/patron-feed-api.ts",
+        "web/lib/patron-feed-media.ts",
+        "web/lib/patron-relay-feed-bundle.json",
+        "web/lib/relay-fixtures.ts",
+        "tests/web/patron-feed-api.test.ts"
+      ],
+      "note": "Template literal near 'placeholder.svg' in src/patron/assemble-patron-feed.ts — verify dynamic URL; Do not treat folder as unused."
+    },
+    "web/public/post-batch-expand-preview.html": {
+      "status": "ghost_asset",
+      "referencedBy": []
+    },
+    "web/public/single-post-grid-tile-preview.html": {
+      "status": "ghost_asset",
+      "referencedBy": []
+    },
+    "design-archive/preflight/public/apple-icon.png": {
+      "status": "referenced",
+      "referencedBy": [
+        "web/b_i0ofEW9bMcy/app/layout.tsx",
+        "web/onboarding_enhancement/app/layout.tsx"
+      ]
+    },
+    "design-archive/preflight/public/icon-dark-32x32.png": {
+      "status": "referenced",
+      "referencedBy": [
+        "web/b_i0ofEW9bMcy/app/layout.tsx",
+        "web/onboarding_enhancement/app/layout.tsx"
+      ]
+    },
+    "design-archive/preflight/public/icon-light-32x32.png": {
+      "status": "referenced",
+      "referencedBy": [
+        "web/b_i0ofEW9bMcy/app/layout.tsx",
+        "web/onboarding_enhancement/app/layout.tsx"
+      ]
+    },
+    "design-archive/preflight/public/icon.svg": {
+      "status": "referenced",
+      "referencedBy": [
+        "web/b_i0ofEW9bMcy/app/layout.tsx",
+        "web/onboarding_enhancement/app/layout.tsx"
+      ]
+    },
+    "design-archive/preflight/public/placeholder-logo.png": {
+      "status": "ghost_asset",
+      "referencedBy": []
+    },
+    "design-archive/preflight/public/placeholder-logo.svg": {
+      "status": "ghost_asset",
+      "referencedBy": []
+    },
+    "design-archive/preflight/public/placeholder-user.jpg": {
+      "status": "ghost_asset",
+      "referencedBy": []
+    },
+    "design-archive/preflight/public/placeholder.jpg": {
+      "status": "ghost_asset",
+      "referencedBy": []
+    },
+    "design-archive/preflight/public/placeholder.svg": {
+      "status": "dynamically_referenced",
+      "referencedBy": [
+        "src/patron/assemble-patron-feed.ts",
+        "web/components/patron/relay/feed-card.tsx",
+        "web/components/patron/relay/gallery-media-stack.tsx",
+        "web/components/patron/relay/gallery-view.tsx",
+        "web/components/patron/relay/use-live-comments.ts",
+        "web/lib/patron-feed-api.ts",
+        "web/lib/patron-feed-media.ts",
+        "web/lib/patron-relay-feed-bundle.json",
+        "web/lib/relay-fixtures.ts",
+        "tests/web/patron-feed-api.test.ts"
+      ],
+      "note": "Template literal near 'placeholder.svg' in src/patron/assemble-patron-feed.ts — verify dynamic URL; Do not treat folder as unused."
+    },
+    "ui-control-room-prototype/public/apple-icon.png": {
+      "status": "referenced",
+      "referencedBy": [
+        "web/b_i0ofEW9bMcy/app/layout.tsx",
+        "web/onboarding_enhancement/app/layout.tsx"
+      ]
+    },
+    "ui-control-room-prototype/public/icon-dark-32x32.png": {
+      "status": "referenced",
+      "referencedBy": [
+        "web/b_i0ofEW9bMcy/app/layout.tsx",
+        "web/onboarding_enhancement/app/layout.tsx"
+      ]
+    },
+    "ui-control-room-prototype/public/icon-light-32x32.png": {
+      "status": "referenced",
+      "referencedBy": [
+        "web/b_i0ofEW9bMcy/app/layout.tsx",
+        "web/onboarding_enhancement/app/layout.tsx"
+      ]
+    },
+    "ui-control-room-prototype/public/icon.svg": {
+      "status": "referenced",
+      "referencedBy": [
+        "web/b_i0ofEW9bMcy/app/layout.tsx",
+        "web/onboarding_enhancement/app/layout.tsx"
+      ]
+    },
+    "ui-control-room-prototype/public/placeholder-logo.png": {
+      "status": "ghost_asset",
+      "referencedBy": []
+    },
+    "ui-control-room-prototype/public/placeholder-logo.svg": {
+      "status": "ghost_asset",
+      "referencedBy": []
+    },
+    "ui-control-room-prototype/public/placeholder-user.jpg": {
+      "status": "ghost_asset",
+      "referencedBy": []
+    },
+    "ui-control-room-prototype/public/placeholder.jpg": {
+      "status": "ghost_asset",
+      "referencedBy": []
+    },
+    "ui-control-room-prototype/public/placeholder.svg": {
+      "status": "dynamically_referenced",
+      "referencedBy": [
+        "src/patron/assemble-patron-feed.ts",
+        "web/components/patron/relay/feed-card.tsx",
+        "web/components/patron/relay/gallery-media-stack.tsx",
+        "web/components/patron/relay/gallery-view.tsx",
+        "web/components/patron/relay/use-live-comments.ts",
+        "web/lib/patron-feed-api.ts",
+        "web/lib/patron-feed-media.ts",
+        "web/lib/patron-relay-feed-bundle.json",
+        "web/lib/relay-fixtures.ts",
+        "tests/web/patron-feed-api.test.ts"
+      ],
+      "note": "Template literal near 'placeholder.svg' in src/patron/assemble-patron-feed.ts — verify dynamic URL; Do not treat folder as unused."
+    }
+  },
+  "dynamicTemplateLiteralHints": [
+    "scripts/autopipeline-runner.mjs",
+    "scripts/backfill-creator-profile-from-snapshot.mjs",
+    "scripts/inspect-patreon-post-content.mjs",
+    "scripts/pipeline-parity-check.mjs",
+    "scripts/probe-patreon-post-description.mjs",
+    "scripts/relay-dependency-audit.mjs",
+    "src/analytics/recommendation-engine.ts",
+    "src/analytics/snapshot-generator.ts",
+    "src/auth/auth-service.ts",
+    "src/clone/clone-generator.ts",
+    "src/clone/clone-service.ts",
+    "src/creator/provision-creator-workspace.ts",
+    "src/creator/public-slug.ts",
+    "src/discord/discord-ingest.ts",
+    "src/export/export-service.ts",
+    "src/gallery/collections-store.ts",
+    "src/gallery/layout-to-clone.ts",
+    "src/gallery/overrides-store-db.ts",
+    "src/gallery/overrides-store.ts",
+    "src/gallery/patron-collections-store-db.ts",
+    "src/gallery/patron-collections-store.ts",
+    "src/gallery/patron-favorites-store.ts",
+    "src/gallery/query.ts",
+    "src/gallery/saved-filters-store.ts",
+    "src/identity/identity-service.ts",
+    "src/identity/session-cookie.ts",
+    "src/ingest/canonical-store-db.ts",
+    "src/ingest/ingest-service.ts",
+    "src/ingest/sync-watermark-store.ts",
+    "src/migrate/campaign-service.ts",
+    "src/migrate/signed-links.ts",
+    "src/patreon/cookie-scraper.ts",
+    "src/patreon/incremental-sync-worker.ts",
+    "src/patreon/patreon-member-sync-coordinator.ts",
+    "src/patreon/patreon-resource-api.ts",
+    "src/patreon/patreon-sync-service.ts",
+    "src/patreon/patreon-webhook-registration.ts",
+    "src/patron/assemble-patron-feed.ts",
+    "src/patron/viewer-entitlement.ts",
+    "src/relay/relay-native-upload-finalize.ts",
+    "src/server.ts",
+    "src/storage/relay-upload-r2.ts",
+    "tests/account-first-onboarding-smoke.test.ts",
+    "tests/creator-scoped-canonical-store.test.ts",
+    "tests/extension-consent-flow.test.ts",
+    "tests/gallery-collections-access.test.ts",
+    "tests/gallery-post-primary-search.test.ts",
+    "tests/gallery-universal-search.test.ts",
+    "tests/library-zip-export.test.ts",
+    "tests/patreon-platform-webhook-route.test.ts",
+    "tests/patron-collections-api.test.ts",
+    "tests/patron/discover-service.test.ts",
+    "tests/patron/viewer-entitlement.test.ts",
+    "tests/visitor-gallery-api.test.ts",
+    "tests/workstream-d.gallery-api.test.ts",
+    "tests/workstream-e.analytics.test.ts",
+    "tests/workstream-i.migration.test.ts",
+    "tests/workstream-j.deploy.test.ts",
+    "web/app/GalleryView.tsx",
+    "web/app/action-center/ActionCenterView.tsx",
+    "web/app/components/AppNav.tsx",
+    "web/app/components/BulkActionBar.tsx",
+    "web/app/components/CollectionBuilderDrawer.tsx",
+    "web/app/components/CollectionsPanel.tsx",
+    "web/app/components/DiscordCapturesBin.tsx",
+    "web/app/components/GallerySidebar.tsx",
+    "web/app/components/LibraryImportBay.tsx",
+    "web/app/components/LibraryTopBar.tsx",
+    "web/app/components/PatreonSyncMenu.tsx",
+    "web/app/components/PostBatchGridCell.tsx",
+    "web/app/components/PostBatchPostDetails.tsx",
+    "web/app/components/SupabaseHashRedirect.tsx",
+    "web/app/components/VisitorGalleryView.tsx",
+    "web/app/components/designer/canvas-preview.tsx",
+    "web/app/components/designer/inspector-rail.tsx",
+    "web/app/components/onboarding/onboarding-wizard.tsx",
+    "web/app/components/onboarding/step-panels.tsx",
+    "web/app/components/shell/CreatorRelayPostComposer.tsx",
+    "web/app/components/studio/CreatorPublicUrlSettings.tsx",
+    "web/app/components/studio/DiscordCaptureCard.tsx",
+    "web/app/components/studio/StudioRouteGuard.tsx",
+    "web/app/components/visitor/VisitorPatronTileEngage.tsx",
+    "web/app/designer/DesignerView.tsx",
+    "web/app/designer/LayoutPreview.tsx",
+    "web/app/designer/profile/CreatorProfileClient.tsx",
+    "web/app/dev/pipeline-parity/PipelineParityClient.tsx",
+    "web/app/p/[handle]/page.tsx",
+    "web/app/patreon/cookie/page.tsx",
+    "web/app/patreon/patron/callback/page.tsx",
+    "web/app/patron/PatronStartClient.tsx",
+    "web/app/patron/discover/PatronDiscoverClient.tsx",
+    "web/app/patron/library/PatronLibraryClient.tsx",
+    "web/app/patron/notifications/preferences/PatronNotificationPreferencesClient.tsx",
+    "web/app/settings/connected-extensions/RevokeButton.tsx",
+    "web/b_i0ofEW9bMcy/components/library/CollectionBuilderDrawer.tsx",
+    "web/b_i0ofEW9bMcy/components/library/GallerySidebar.tsx",
+    "web/b_i0ofEW9bMcy/components/library/ImportBin.tsx",
+    "web/b_i0ofEW9bMcy/components/library/LibraryTopBar.tsx",
+    "web/b_i0ofEW9bMcy/components/library/PostAssetCarouselStrip.tsx",
+    "web/components/patron/relay/profile-page.tsx",
+    "web/components/patron/relay/relay-app.tsx",
+    "web/components/patron/relay/use-live-comments.ts",
+    "web/lib/designer-layout-bridge.ts",
+    "web/lib/patron-feed-api.ts",
+    "web/lib/post-login-redirect.ts",
+    "web/lib/public-profile-hero.ts",
+    "web/lib/relay-api.ts",
+    "web/lib/use-layout-section-items.ts",
+    "web/lib/use-require-logged-in.ts",
+    "web/onboarding_enhancement/app/components/onboarding/onboarding-wizard.tsx"
+  ],
+  "ghostDependencies": {
+    "root": [
+      {
+        "name": "@aws-sdk/client-s3",
+        "kind": "dependency",
+        "reason": "No matching import in scanned files for this workspace (after path filter)"
+      },
+      {
+        "name": "@aws-sdk/s3-request-presigner",
+        "kind": "dependency",
+        "reason": "No matching import in scanned files for this workspace (after path filter)"
+      },
+      {
+        "name": "@prisma/adapter-pg",
+        "kind": "dependency",
+        "reason": "No matching import in scanned files for this workspace (after path filter)"
+      },
+      {
+        "name": "@prisma/client",
+        "kind": "dependency",
+        "reason": "No matching import in scanned files for this workspace (after path filter)"
+      },
+      {
+        "name": "@supabase/supabase-js",
+        "kind": "dependency",
+        "reason": "No matching import in scanned files for this workspace (after path filter)"
+      },
+      {
+        "name": "archiver",
+        "kind": "dependency",
+        "reason": "No matching import in scanned files for this workspace (after path filter)"
+      },
+      {
+        "name": "dotenv",
+        "kind": "dependency",
+        "reason": "No matching import in scanned files for this workspace (after path filter)"
+      },
+      {
+        "name": "express",
+        "kind": "dependency",
+        "reason": "No matching import in scanned files for this workspace (after path filter)"
+      },
+      {
+        "name": "express-rate-limit",
+        "kind": "dependency",
+        "reason": "No matching import in scanned files for this workspace (after path filter)"
+      },
+      {
+        "name": "patreon-dl",
+        "kind": "dependency",
+        "reason": "No matching import in scanned files for this workspace (after path filter)"
+      },
+      {
+        "name": "pg",
+        "kind": "dependency",
+        "reason": "No matching import in scanned files for this workspace (after path filter)"
+      },
+      {
+        "name": "sharp",
+        "kind": "dependency",
+        "reason": "No matching import in scanned files for this workspace (after path filter)"
+      },
+      {
+        "name": "@anthropic-ai/sdk",
+        "kind": "devDependency",
+        "reason": "No matching import in scanned files for this workspace (after path filter)"
+      },
+      {
+        "name": "@testing-library/react",
+        "kind": "devDependency",
+        "reason": "No matching import in scanned files for this workspace (after path filter)"
+      },
+      {
+        "name": "adm-zip",
+        "kind": "devDependency",
+        "reason": "No matching import in scanned files for this workspace (after path filter)"
+      },
+      {
+        "name": "happy-dom",
+        "kind": "devDependency",
+        "reason": "No matching import in scanned files for this workspace (after path filter)"
+      },
+      {
+        "name": "lucide-react",
+        "kind": "devDependency",
+        "reason": "No matching import in scanned files for this workspace (after path filter)"
+      },
+      {
+        "name": "next",
+        "kind": "devDependency",
+        "reason": "No matching import in scanned files for this workspace (after path filter)"
+      },
+      {
+        "name": "react",
+        "kind": "devDependency",
+        "reason": "No matching import in scanned files for this workspace (after path filter)"
+      },
+      {
+        "name": "react-dom",
+        "kind": "devDependency",
+        "reason": "No matching import in scanned files for this workspace (after path filter)"
+      },
+      {
+        "name": "supertest",
+        "kind": "devDependency",
+        "reason": "No matching import in scanned files for this workspace (after path filter)"
+      }
+    ],
+    "web": [
+      {
+        "name": "@hookform/resolvers",
+        "kind": "dependency",
+        "reason": "No matching import in scanned files for this workspace (after path filter)"
+      },
+      {
+        "name": "@radix-ui/react-accordion",
+        "kind": "dependency",
+        "reason": "No matching import in scanned files for this workspace (after path filter)"
+      },
+      {
+        "name": "@radix-ui/react-alert-dialog",
+        "kind": "dependency",
+        "reason": "No matching import in scanned files for this workspace (after path filter)"
+      },
+      {
+        "name": "@radix-ui/react-aspect-ratio",
+        "kind": "dependency",
+        "reason": "No matching import in scanned files for this workspace (after path filter)"
+      },
+      {
+        "name": "@radix-ui/react-avatar",
+        "kind": "dependency",
+        "reason": "No matching import in scanned files for this workspace (after path filter)"
+      },
+      {
+        "name": "@radix-ui/react-checkbox",
+        "kind": "dependency",
+        "reason": "No matching import in scanned files for this workspace (after path filter)"
+      },
+      {
+        "name": "@radix-ui/react-collapsible",
+        "kind": "dependency",
+        "reason": "No matching import in scanned files for this workspace (after path filter)"
+      },
+      {
+        "name": "@radix-ui/react-context-menu",
+        "kind": "dependency",
+        "reason": "No matching import in scanned files for this workspace (after path filter)"
+      },
+      {
+        "name": "@radix-ui/react-dialog",
+        "kind": "dependency",
+        "reason": "No matching import in scanned files for this workspace (after path filter)"
+      },
+      {
+        "name": "@radix-ui/react-dropdown-menu",
+        "kind": "dependency",
+        "reason": "No matching import in scanned files for this workspace (after path filter)"
+      },
+      {
+        "name": "@radix-ui/react-hover-card",
+        "kind": "dependency",
+        "reason": "No matching import in scanned files for this workspace (after path filter)"
+      },
+      {
+        "name": "@radix-ui/react-label",
+        "kind": "dependency",
+        "reason": "No matching import in scanned files for this workspace (after path filter)"
+      },
+      {
+        "name": "@radix-ui/react-menubar",
+        "kind": "dependency",
+        "reason": "No matching import in scanned files for this workspace (after path filter)"
+      },
+      {
+        "name": "@radix-ui/react-navigation-menu",
+        "kind": "dependency",
+        "reason": "No matching import in scanned files for this workspace (after path filter)"
+      },
+      {
+        "name": "@radix-ui/react-popover",
+        "kind": "dependency",
+        "reason": "No matching import in scanned files for this workspace (after path filter)"
+      },
+      {
+        "name": "@radix-ui/react-progress",
+        "kind": "dependency",
+        "reason": "No matching import in scanned files for this workspace (after path filter)"
+      },
+      {
+        "name": "@radix-ui/react-radio-group",
+        "kind": "dependency",
+        "reason": "No matching import in scanned files for this workspace (after path filter)"
+      },
+      {
+        "name": "@radix-ui/react-scroll-area",
+        "kind": "dependency",
+        "reason": "No matching import in scanned files for this workspace (after path filter)"
+      },
+      {
+        "name": "@radix-ui/react-select",
+        "kind": "dependency",
+        "reason": "No matching import in scanned files for this workspace (after path filter)"
+      },
+      {
+        "name": "@radix-ui/react-separator",
+        "kind": "dependency",
+        "reason": "No matching import in scanned files for this workspace (after path filter)"
+      },
+      {
+        "name": "@radix-ui/react-slider",
+        "kind": "dependency",
+        "reason": "No matching import in scanned files for this workspace (after path filter)"
+      },
+      {
+        "name": "@radix-ui/react-slot",
+        "kind": "dependency",
+        "reason": "No matching import in scanned files for this workspace (after path filter)"
+      },
+      {
+        "name": "@radix-ui/react-switch",
+        "kind": "dependency",
+        "reason": "No matching import in scanned files for this workspace (after path filter)"
+      },
+      {
+        "name": "@radix-ui/react-tabs",
+        "kind": "dependency",
+        "reason": "No matching import in scanned files for this workspace (after path filter)"
+      },
+      {
+        "name": "@radix-ui/react-toast",
+        "kind": "dependency",
+        "reason": "No matching import in scanned files for this workspace (after path filter)"
+      },
+      {
+        "name": "@radix-ui/react-toggle",
+        "kind": "dependency",
+        "reason": "No matching import in scanned files for this workspace (after path filter)"
+      },
+      {
+        "name": "@radix-ui/react-toggle-group",
+        "kind": "dependency",
+        "reason": "No matching import in scanned files for this workspace (after path filter)"
+      },
+      {
+        "name": "@radix-ui/react-tooltip",
+        "kind": "dependency",
+        "reason": "No matching import in scanned files for this workspace (after path filter)"
+      },
+      {
+        "name": "@supabase/supabase-js",
+        "kind": "dependency",
+        "reason": "No matching import in scanned files for this workspace (after path filter)"
+      },
+      {
+        "name": "@tanstack/react-virtual",
+        "kind": "dependency",
+        "reason": "No matching import in scanned files for this workspace (after path filter)"
+      },
+      {
+        "name": "class-variance-authority",
+        "kind": "dependency",
+        "reason": "No matching import in scanned files for this workspace (after path filter)"
+      },
+      {
+        "name": "clsx",
+        "kind": "dependency",
+        "reason": "No matching import in scanned files for this workspace (after path filter)"
+      },
+      {
+        "name": "cmdk",
+        "kind": "dependency",
+        "reason": "No matching import in scanned files for this workspace (after path filter)"
+      },
+      {
+        "name": "date-fns",
+        "kind": "dependency",
+        "reason": "No matching import in scanned files for this workspace (after path filter)"
+      },
+      {
+        "name": "embla-carousel-react",
+        "kind": "dependency",
+        "reason": "No matching import in scanned files for this workspace (after path filter)"
+      },
+      {
+        "name": "input-otp",
+        "kind": "dependency",
+        "reason": "No matching import in scanned files for this workspace (after path filter)"
+      },
+      {
+        "name": "lucide-react",
+        "kind": "dependency",
+        "reason": "No matching import in scanned files for this workspace (after path filter)"
+      },
+      {
+        "name": "next",
+        "kind": "dependency",
+        "reason": "No matching import in scanned files for this workspace (after path filter)"
+      },
+      {
+        "name": "next-themes",
+        "kind": "dependency",
+        "reason": "No matching import in scanned files for this workspace (after path filter)"
+      },
+      {
+        "name": "react",
+        "kind": "dependency",
+        "reason": "No matching import in scanned files for this workspace (after path filter)"
+      },
+      {
+        "name": "react-day-picker",
+        "kind": "dependency",
+        "reason": "No matching import in scanned files for this workspace (after path filter)"
+      },
+      {
+        "name": "react-dom",
+        "kind": "dependency",
+        "reason": "No matching import in scanned files for this workspace (after path filter)"
+      },
+      {
+        "name": "react-hook-form",
+        "kind": "dependency",
+        "reason": "No matching import in scanned files for this workspace (after path filter)"
+      },
+      {
+        "name": "react-resizable-panels",
+        "kind": "dependency",
+        "reason": "No matching import in scanned files for this workspace (after path filter)"
+      },
+      {
+        "name": "recharts",
+        "kind": "dependency",
+        "reason": "No matching import in scanned files for this workspace (after path filter)"
+      },
+      {
+        "name": "sonner",
+        "kind": "dependency",
+        "reason": "No matching import in scanned files for this workspace (after path filter)"
+      },
+      {
+        "name": "tailwind-merge",
+        "kind": "dependency",
+        "reason": "No matching import in scanned files for this workspace (after path filter)"
+      },
+      {
+        "name": "tailwindcss-animate",
+        "kind": "dependency",
+        "reason": "No matching import in scanned files for this workspace (after path filter)"
+      },
+      {
+        "name": "vaul",
+        "kind": "dependency",
+        "reason": "No matching import in scanned files for this workspace (after path filter)"
+      },
+      {
+        "name": "zod",
+        "kind": "dependency",
+        "reason": "No matching import in scanned files for this workspace (after path filter)"
+      },
+      {
+        "name": "eslint-config-next",
+        "kind": "devDependency",
+        "reason": "No matching import in scanned files for this workspace (after path filter)"
+      }
+    ]
+  },
+  "toolingOnlyDependencies": {
+    "root": [
+      {
+        "name": "@types/adm-zip",
+        "kind": "typescriptAmbientTypes"
+      },
+      {
+        "name": "@types/archiver",
+        "kind": "typescriptAmbientTypes"
+      },
+      {
+        "name": "@types/express",
+        "kind": "typescriptAmbientTypes"
+      },
+      {
+        "name": "@types/node",
+        "kind": "typescriptAmbientTypes"
+      },
+      {
+        "name": "@types/pg",
+        "kind": "typescriptAmbientTypes"
+      },
+      {
+        "name": "@types/react",
+        "kind": "typescriptAmbientTypes"
+      },
+      {
+        "name": "@types/react-dom",
+        "kind": "typescriptAmbientTypes"
+      },
+      {
+        "name": "@types/supertest",
+        "kind": "typescriptAmbientTypes"
+      },
+      {
+        "name": "concurrently",
+        "kind": "range"
+      },
+      {
+        "name": "prisma",
+        "kind": "range"
+      },
+      {
+        "name": "ts-node",
+        "kind": "range"
+      },
+      {
+        "name": "typescript",
+        "kind": "range"
+      },
+      {
+        "name": "vitest",
+        "kind": "range"
+      }
+    ],
+    "web": [
+      {
+        "name": "@types/node",
+        "kind": "typescriptAmbientTypes"
+      },
+      {
+        "name": "@types/react",
+        "kind": "typescriptAmbientTypes"
+      },
+      {
+        "name": "@types/react-dom",
+        "kind": "typescriptAmbientTypes"
+      },
+      {
+        "name": "eslint",
+        "kind": "range"
+      },
+      {
+        "name": "postcss",
+        "kind": "range"
+      },
+      {
+        "name": "tailwindcss",
+        "kind": "range"
+      },
+      {
+        "name": "typescript",
+        "kind": "range"
+      }
+    ]
+  },
+  "packageUseSummary": {
+    "root_used_sample": [],
+    "web_used_sample": []
+  },
+  "notes": [
+    "Island = no incoming relative/@ alias imports in scanned code; Next route files excluded.",
+    "Broken imports = relative/@ specifier that did not resolve to an existing file on disk.",
+    "Assets only scanned under web/public and a few prototype public folders.",
+    "Ghost dependency = package not seen in any import/require in scanned files; tooling packages listed separately."
+  ]
+}
