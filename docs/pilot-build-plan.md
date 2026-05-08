@@ -368,6 +368,7 @@ Canonical descriptions live in [.env.example](../.env.example). **Pilot** column
 - **Owner:** backend
 - **Exit:** [src/storage/media-storage-purge-worker.ts](../src/storage/media-storage-purge-worker.ts) refactored.
 - **Tests:** Mock queue + R2.
+- **Logged (2026-05-08):** [processMediaStoragePurgeSweepOnce](../src/storage/media-storage-purge-worker.ts); [processMediaStoragePurgeBatch](../src/storage/media-storage-purge-service.ts) optional `purgeQueueRowId`; [tests/media-storage-purge-worker.test.ts](../tests/media-storage-purge-worker.test.ts), [tests/media-storage-purge-service.test.ts](../tests/media-storage-purge-service.test.ts).
 
 ### P1-queue-009 — Implement `RELAY_JOB_BACKEND` flag
 
