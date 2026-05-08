@@ -1,5 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { InProcessAccountDeletionRunner } from "../../src/patron/account-deletion-worker.js";
+import {
+  InProcessAccountDeletionRunner,
+  processAccountDeletionSweepOnce
+} from "../../src/patron/account-deletion-worker.js";
 
 vi.mock("../../src/patron/account-deletion-service.js", () => ({
   listDueDeletions: vi.fn(),
@@ -117,5 +120,38 @@ describe("InProcessAccountDeletionRunner.processOnce", () => {
       "account-deletion-sweep: row failed",
       expect.objectContaining({ deletionId: "del-bad" })
     );
+  });
+});
+
+describe("processAccountDeletionSweepOnce", () => {
+  beforeEach(() => {
+    vi.mocked(listDueDeletions).mockReset();
+    vi.mocked(executeDeletion).mockReset();
+  });
+
+  it("returns zeros when nothing is due", async () => {
+    vi.mocked(listDueDeletions).mockResolvedValue([]);
+    const r = await processAccountDeletionSweepOnce({} as never);
+    expect(r).toEqual({ scanned: 0, executed: 0, failed: 0 });
+    expect(listDueDeletions).toHaveBeenCalledWith(expect.anything(), {
+      limit: 25,
+      accountDeletionId: undefined,
+      now: undefined
+    });
+  });
+
+  it("forwards accountDeletionId, batchSize, and now to listDueDeletions", async () => {
+    vi.mocked(listDueDeletions).mockResolvedValue([]);
+    const now = new Date("2026-06-01T00:00:00.000Z");
+    await processAccountDeletionSweepOnce({} as never, {
+      accountDeletionId: " del-1 ",
+      batchSize: 7,
+      now
+    });
+    expect(listDueDeletions).toHaveBeenCalledWith(expect.anything(), {
+      limit: 7,
+      accountDeletionId: " del-1 ",
+      now
+    });
   });
 });

@@ -1,10 +1,17 @@
 /**
+ * @fileoverview Patron experience module account-deletion-worker.ts — see exported symbols.
+ * @see {@link ../jsdoc-core-entities.ts}
+ * @see prisma/schema.prisma Account, TenantMembership, and related patron tables
+ * @security-audit-required Patron PII or entitlement paths — audit responses and logs.
+ */
+/**
  * PE-J (BO-P4-02) — account deletion sweeper.
  *
  * Periodically scans `AccountDeletion` rows whose grace has elapsed and runs the
  * `executeDeletion` purge. Same interface-based shape as the notification delivery worker:
  *   - InProcessAccountDeletionRunner ships now (single-node, setInterval loop)
- *   - Future BullMQ runner is a one-line DI swap when Redis lands -- same processOnce body,
+ *   - Future BullMQ runner is a one-line DI swap when Redis lands -- same
+ *     {@link processAccountDeletionSweepOnce} body,
  *     same idempotency story (the `pending` -> `executed` flip is atomic in the service).
  *
  * The sweep cadence is intentionally slow (default 1h). The grace period is measured in days
@@ -37,6 +44,52 @@ export interface InProcessRunnerOptions {
   pollIntervalMs?: number;
   batchSize?: number;
   log?: (msg: string, ctx?: Record<string, unknown>) => void;
+}
+
+export type ProcessAccountDeletionSweepOnceOptions = {
+  batchSize?: number;
+  log?: (msg: string, ctx?: Record<string, unknown>) => void;
+  /** Run only this `AccountDeletion.id` when due (`pending` and past `scheduledFor`). */
+  accountDeletionId?: string;
+  now?: Date;
+};
+
+/**
+ * One PE-J sweep batch: due rows → `executeDeletion` per row. For BullMQ or the in-process runner.
+ */
+export async function processAccountDeletionSweepOnce(
+  prisma: PrismaClient,
+  opts?: ProcessAccountDeletionSweepOnceOptions
+): Promise<AccountDeletionStats> {
+  const batchSize = opts?.batchSize ?? DEFAULT_BATCH_SIZE;
+  const log = opts?.log ?? (() => undefined);
+
+  const due = await listDueDeletions(prisma, {
+    limit: batchSize,
+    accountDeletionId: opts?.accountDeletionId,
+    now: opts?.now
+  });
+  if (due.length === 0) {
+    return { scanned: 0, executed: 0, failed: 0 };
+  }
+  let executed = 0;
+  let failed = 0;
+  for (const row of due) {
+    try {
+      const result = await executeDeletion(prisma, row.id);
+      if (result && result.record.status === "executed") {
+        executed += 1;
+      }
+    } catch (err) {
+      failed += 1;
+      log("account-deletion-sweep: row failed", {
+        deletionId: row.id,
+        accountId: row.accountId,
+        error: err instanceof Error ? err.message : String(err)
+      });
+    }
+  }
+  return { scanned: due.length, executed, failed };
 }
 
 export class InProcessAccountDeletionRunner implements AccountDeletionRunner {
@@ -94,31 +147,10 @@ export class InProcessAccountDeletionRunner implements AccountDeletionRunner {
   }
 
   public async processOnce(): Promise<AccountDeletionStats> {
-    const due = await listDueDeletions(this.prisma, { limit: this.batchSize });
-    if (due.length === 0) {
-      return { scanned: 0, executed: 0, failed: 0 };
-    }
-    let executed = 0;
-    let failed = 0;
-    for (const row of due) {
-      try {
-        const result = await executeDeletion(this.prisma, row.id);
-        if (result && result.record.status === "executed") {
-          executed += 1;
-        }
-      } catch (err) {
-        failed += 1;
-        // One bad row must not stall the whole batch -- cancelled / executed rows are skipped
-        // by the listDueDeletions filter on the next tick, and a transient DB error here just
-        // means we'll retry that account next sweep.
-        this.log("account-deletion-sweep: row failed", {
-          deletionId: row.id,
-          accountId: row.accountId,
-          error: err instanceof Error ? err.message : String(err)
-        });
-      }
-    }
-    return { scanned: due.length, executed, failed };
+    return processAccountDeletionSweepOnce(this.prisma, {
+      batchSize: this.batchSize,
+      log: this.log
+    });
   }
 }
 

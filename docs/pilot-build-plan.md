@@ -360,6 +360,7 @@ Canonical descriptions live in [.env.example](../.env.example). **Pilot** column
 - **Owner:** backend
 - **Exit:** [src/patron/account-deletion-worker.ts](../src/patron/account-deletion-worker.ts) refactored.
 - **Tests:** Mock DB.
+- **Logged (2026-05-08):** [processAccountDeletionSweepOnce](../src/patron/account-deletion-worker.ts); [listDueDeletions](../src/patron/account-deletion-service.ts) accepts optional `accountDeletionId`; [tests/patron/account-deletion-worker.test.ts](../tests/patron/account-deletion-worker.test.ts).
 
 ### P1-queue-008 — Extract unit of work: media storage purge sweep
 

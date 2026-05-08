@@ -1,4 +1,10 @@
 /**
+ * @fileoverview Patron experience module account-deletion-service.ts — see exported symbols.
+ * @see {@link ../jsdoc-core-entities.ts}
+ * @see prisma/schema.prisma Account, TenantMembership, and related patron tables
+ * @security-audit-required Patron PII or entitlement paths — audit responses and logs.
+ */
+/**
  * PE-J (BO-P4-02) — account deletion lifecycle.
  *
  * Three operations:
@@ -332,10 +338,22 @@ export async function executeDeletion(
  */
 export async function listDueDeletions(
   prisma: PrismaClient,
-  args: { now?: Date; limit?: number } = {}
+  args: { now?: Date; limit?: number; accountDeletionId?: string } = {}
 ): Promise<{ id: string; accountId: string }[]> {
   const cutoff = args.now ?? new Date();
   const limit = args.limit ?? 50;
+  const targeted = args.accountDeletionId?.trim();
+  if (targeted) {
+    const row = await prisma.accountDeletion.findFirst({
+      where: {
+        id: targeted,
+        status: "pending",
+        scheduledFor: { lte: cutoff }
+      },
+      select: { id: true, accountId: true }
+    });
+    return row ? [row] : [];
+  }
   return prisma.accountDeletion.findMany({
     where: { status: "pending", scheduledFor: { lte: cutoff } },
     select: { id: true, accountId: true },
