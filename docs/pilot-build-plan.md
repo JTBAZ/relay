@@ -325,6 +325,7 @@ Canonical descriptions live in [.env.example](../.env.example). **Pilot** column
 - **Code:** TypeScript interfaces for each job `data` (min: `{ traceId?: string }` + worker-specific ids).
 - **Wiring:** Imported by producers and consumers only.
 - **Tests:** Typecheck.
+- **Logged (2026-05-08):** [src/jobs/queue-names.ts](../src/jobs/queue-names.ts) — `RELAY_JOB_QUEUE_NAMES`, `RelayJobQueueName`, `ALL_RELAY_JOB_QUEUE_NAMES`, payload types + `RelayJobPayloadByQueue`.
 
 ### P1-queue-004 — Extract “unit of work” from incremental autosync worker
 
