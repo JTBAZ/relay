@@ -9,6 +9,10 @@ relay-data-archive/*
 *.pem
 .cursor/
 
+# Pilot plan → Airtable import artifacts (regenerate from docs/pilot-build-plan.md)
+.tmp-pilot-items.json
+.airtable-pilot-batches/
+
 # Prisma — commit prisma/schema.prisma + prisma/migrations/; ignore local-only env next to schema
 prisma/.env
 prisma/.env.*
