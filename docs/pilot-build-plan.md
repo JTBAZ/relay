@@ -166,6 +166,7 @@ Agents paste into `.env` / deployment; pilot owner verifies before cohort:
 - **Exit:** ADR-style subsection added **below this Phase** (2–5 bullets): why Express remains for pilot; when Nest evaluation happens.
 - **Code:** Markdown only in this file (append “ADR: HTTP framework”).
 - **Tests:** N/A.
+- **Logged (2026-05-08):** Subsection **ADR: HTTP framework (Express vs NestJS)** at end of Phase P0 (after P0-base-009).
 
 ### P0-base-007 — Pilot feature flag matrix
 
@@ -173,6 +174,7 @@ Agents paste into `.env` / deployment; pilot owner verifies before cohort:
 - **Owner:** devops
 - **Exit:** Table-as-list in Airtable or here: flag name, default, pilot value, owner.
 - **Code:** Enumerate `RELAY_*` from [.env.example](../.env.example) relevant to pilot; mark required vs optional.
+- **Logged (2026-05-08):** Subsection **Pilot feature flag matrix** at end of Phase P0 (after P0-base-009).
 
 ### P0-base-008 — Smoke: `npm run build` + `npm run test` on clean clone
 
@@ -189,6 +191,77 @@ Agents paste into `.env` / deployment; pilot owner verifies before cohort:
 - **Code:** [web/tsconfig.json](../web/tsconfig.json) (`onboarding_enhancement`, `b_i0ofEW9bMcy`, etc.).
 - **Retrofit:** None; feeds P3-web-002 decision.
 - **Tests:** N/A.
+
+### ADR: HTTP framework (Express vs NestJS)
+
+- **Context:** Strategic docs mention NestJS; the shipping API is **Express** (`src/server.ts`, boot from `src/main.ts`) with existing Prisma, Patreon, Supabase, and gallery/patron routes under test.
+- **Decision (pilot):** Stay on **Express** for the full pilot window. A Nest migration would be multi-sprint, high-risk, and adds no pilot-facing capability by itself.
+- **Deferral:** Revisit Nest (or another structured server framework) **after pilot exit**, if the team standardizes on Nest for new services, splits the monolith, or hits maintainability limits with Express routing.
+- **Until then:** Prefer **routers + shared middleware** and small modules; do **not** introduce a second HTTP framework in-process.
+
+### Pilot feature flag matrix (`RELAY_*` and pilot-critical env)
+
+Canonical descriptions live in [.env.example](../.env.example). **Pilot** column is the **recommended** posture for the cohort host; override with product / security sign-off.
+
+**Core (required for a real pilot host)**
+
+| Variable | Typical default | Pilot | Owner |
+| --- | --- | --- | --- |
+| `DATABASE_URL` | local Docker example in `.env.example` | Supabase **pooler** URI for the pilot project (see [M10_VERIFICATION.md](database/M10_VERIFICATION.md)) | devops |
+| `PATREON_CLIENT_ID` / `PATREON_CLIENT_SECRET` | empty | Set from Patreon developer portal | devops |
+| `RELAY_TOKEN_ENCRYPTION_KEY` | empty | Set (32-byte base64); required for token encryption | devops |
+| `SUPABASE_URL` / `SUPABASE_ANON_KEY` / `SUPABASE_SERVICE_ROLE_KEY` | commented | Set when Supabase Auth + RLS path is active (same project as `DATABASE_URL`) | devops |
+
+**Postgres-backed stores (`RELAY_DB_STORE_*`)**
+
+| Variable | Typical default | Pilot | Owner |
+| --- | --- | --- | --- |
+| `RELAY_DB_STORE_IDENTITY` | off | **On (`1`)** when identity is migrated; prerequisite for most DB paths | devops |
+| `RELAY_DB_STORE_CREATOR_OAUTH` | off | **On** after OAuth credential migration when using DB token store | devops |
+| `RELAY_DB_STORE_CANONICAL`, `RELAY_DB_STORE_WATERMARK`, `RELAY_DB_STORE_SYNC_HEALTH`, `RELAY_DB_STORE_OVERRIDES`, `RELAY_DB_STORE_COLLECTIONS`, `RELAY_DB_STORE_SAVED_FILTERS`, `RELAY_DB_STORE_LAYOUT`, `RELAY_DB_STORE_DLQ`, `RELAY_DB_STORE_EVENTS` | off each | **On** per store only after `prisma migrate deploy` + documented backfill for that store | devops |
+| `RELAY_DB_STORE_ANALYTICS`, `RELAY_DB_STORE_PATRON_ENGAGEMENT` | off | **On** when analytics / engagement migrations applied and backfilled | devops |
+| `RELAY_DB_STORE_CLONE`, `RELAY_DB_STORE_PAYMENTS`, `RELAY_DB_STORE_MIGRATION`, `RELAY_DB_STORE_DEPLOY` | off | **Off** unless Part 2 surfaces are in scope for this pilot | devops |
+
+**Session, gates, OAuth hardening**
+
+| Variable | Typical default | Pilot | Owner |
+| --- | --- | --- | --- |
+| `RELAY_COOKIE_DOMAIN` / `RELAY_COOKIE_SECURE` / `RELAY_SESSION_TTL_SECONDS` / `RELAY_COOKIE_SESSION_DUAL_WRITE` | commented / prod-oriented | Set per host: secure cookies in staging/prod; localhost omits domain | devops |
+| `RELAY_CREATOR_ROUTE_SECRET` / `RELAY_ENFORCE_CREATOR_TENANT` | empty / `0` | Align with tenant/enforcement policy ([operations-and-security.md](database/operations-and-security.md)) | devops + backend |
+| `RELAY_PATREON_OAUTH_STATE_SECRET`, `RELAY_EXTENSION_CONSENT_SECRET`, `RELAY_EXTENSION_ORIGINS` | empty | Set when creator OAuth / extension consent routes are live | devops |
+| `RELAY_ENFORCE_CREATOR_OAUTH_BIND` | `0` | Product chooses; tighten for production | product + backend |
+| `RELAY_PATREON_LINK_REQUIRE_VERIFIED_EMAIL` | `1` in example | Keep **on** unless compliance/product waives | product + backend |
+
+**Patron freshness / workers (intervals in ms; `0` often disables)**
+
+| Variable | Typical default | Pilot | Owner |
+| --- | --- | --- | --- |
+| `RELAY_PATRON_ENTITLEMENT_STALE_AFTER_MS` | 6h | Default or product-tuned | backend |
+| `RELAY_PATRON_ENTITLEMENT_REFRESH_MS` / `RELAY_PATRON_ENTITLEMENT_REFRESH_BATCH` | 300000 / 20 | Enable for pilot if patron tier freshness is required | devops |
+| `RELAY_AUTOSYNC_ENABLED` or `RELAY_PATREON_INCREMENTAL_AUTOSYNC_MS` | unset / commented | Set one path so incremental sync runs in production (≥10000 ms); see `.env.example` aliases | devops |
+| `RELAY_AUTOSYNC_*` tuning (concurrency, pages, backoff, jitter) | various | Tune for cohort size; document non-default values in runbook | devops |
+| `RELAY_NOTIFICATION_DELIVERY_MS` | default poll in worker | Set explicitly; use `0` only if notifications disabled | devops |
+| `RELAY_ACCOUNT_DELETION_SWEEP_MS` / `RELAY_ACCOUNT_DELETION_GRACE_DAYS` | 1h sweep / 7d grace | Defaults usually fine; document if changed | devops |
+| `RELAY_MEDIA_STORAGE_PURGE_SWEEP_MS` / `RELAY_MEDIA_STORAGE_PURGE_DELAY_MS` / `RELAY_MEDIA_STORAGE_PURGE_BATCH` | 1h / 0 / 25 | Enable when R2 purge queue is live | devops |
+
+*Worker envs in the last block are read by `src/main.ts` and worker modules; extend root `.env.example` when gaps confuse operators.*
+
+**R2 / uploads / Discord / export / health tuning**
+
+| Variable | Typical default | Pilot | Owner |
+| --- | --- | --- | --- |
+| `R2_*` presign / bucket | empty | Required when serving Relay-native uploads or export to R2 | devops |
+| `RELAY_UPLOAD_MAX_BYTES` / `RELAY_UPLOAD_ALLOWED_MIME_PREFIXES` | 500 MiB / video,audio,image | Enforce pilot limits | devops + product |
+| `RELAY_DISCORD_INGEST_HMAC_SECRET` (+ optional bot token) | empty | Set if Discord capture bridge is in scope | devops |
+| `RELAY_PUBLIC_WEBHOOK_BASE_URL`, `RELAY_CREATOR_DISPLAY_NAME` | empty | Set for webhook + display consistency with web | devops |
+| `RELAY_EXPORT_REQUIRE_TIER_ACCESS`, `RELAY_EXPORT_*` retry | see example | Defaults unless export SLO requires tuning | backend |
+| `RELAY_INGEST_*`, `RELAY_PART1A_*`, `RELAY_INSIGHT_JOB_*`, `RELAY_EXPORT_HEALTH_*` | see example | Enable thresholds when health routes are used in on-call | devops |
+
+**Post P1 (jobs)**
+
+| Variable | Typical default | Pilot | Owner |
+| --- | --- | --- | --- |
+| `REDIS_URL` | not in example yet | Set when `RELAY_JOB_BACKEND=bullmq` (see Phase P1) | devops |
 
 **Phase P0 — v0 Mandatory Assets (delta):** _None._
 
