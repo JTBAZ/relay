@@ -273,7 +273,7 @@ Canonical descriptions live in [.env.example](../.env.example). **Pilot** column
 
 | Variable | Typical default | Pilot | Owner |
 | --- | --- | --- | --- |
-| `REDIS_URL` | not in example yet | Set when `RELAY_JOB_BACKEND=bullmq` (see Phase P1) | devops |
+| `REDIS_URL` | see [.env.example](../.env.example) | Set when `RELAY_JOB_BACKEND=bullmq` (Phase P1); parsed by [src/lib/redis.ts](../src/lib/redis.ts) | devops |
 
 **Phase P0 — v0 Mandatory Assets (delta):** _None._
 
@@ -306,6 +306,7 @@ Canonical descriptions live in [.env.example](../.env.example). **Pilot** column
 - **Wiring:** Read URL in worker process only (or shared bootstrap).
 - **Retrofit:** None.
 - **Tests:** Unit: mock URL parse; optional integration behind `SKIP_REDIS_IT=0`.
+- **Logged (2026-05-08):** [.env.example](../.env.example) Redis block; [src/lib/redis.ts](../src/lib/redis.ts) (`parseRedisUrl`, `getRedisConnectionOptions`, `getRedisConnectionOptionsIfConfigured`); [tests/redis-connection.test.ts](../tests/redis-connection.test.ts) (unit + `SKIP_REDIS_IT=0` TCP/TLS probe). Staging: run worker host with Redis reachable and `REDIS_URL` set — same probe or `redis-cli -u "$REDIS_URL" ping`.
 
 ### P1-queue-002 — Add BullMQ dependencies
 
