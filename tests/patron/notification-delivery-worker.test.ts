@@ -1,5 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
-import { InProcessNotificationDeliveryRunner } from "../../src/patron/notification-delivery-worker.js";
+import {
+  InProcessNotificationDeliveryRunner,
+  processNotificationOutboxOnce
+} from "../../src/patron/notification-delivery-worker.js";
 import { PEG_EVENT_NAMES } from "../../src/patron/notification-mapper.js";
 
 /**
@@ -19,6 +22,7 @@ interface OutboxRow {
 
 function buildPrismaStub(rows: OutboxRow[], existingNotifications: unknown[] = []) {
   const findManyOutbox = vi.fn().mockResolvedValue(rows);
+  const findFirstOutbox = vi.fn().mockResolvedValue(null);
   const findFirstNotification = vi.fn().mockResolvedValue(null); // no clustering
   const findFirstSourceMatch = vi.fn().mockResolvedValue(null); // not yet delivered
   const createNotification = vi.fn().mockImplementation(async (args: { data: unknown }) => ({
@@ -47,7 +51,7 @@ function buildPrismaStub(rows: OutboxRow[], existingNotifications: unknown[] = [
   });
 
   const prisma = {
-    outboxEvent: { findMany: findManyOutbox },
+    outboxEvent: { findMany: findManyOutbox, findFirst: findFirstOutbox },
     notification: {
       create: createNotification,
       findFirst: notificationFindFirst,
@@ -65,6 +69,7 @@ function buildPrismaStub(rows: OutboxRow[], existingNotifications: unknown[] = [
   return {
     prisma,
     findManyOutbox,
+    findFirstOutbox,
     createNotification,
     cursorUpdate,
     findUniqueComment,
@@ -187,5 +192,17 @@ describe("InProcessNotificationDeliveryRunner.processOnce", () => {
     );
     expect(hasGtBranch).toBe(true);
     expect(hasTieBreaker).toBe(true);
+  });
+});
+
+describe("processNotificationOutboxOnce", () => {
+  it("idempotent with empty outbox (zero stats, no cursor update)", async () => {
+    const stubs = buildPrismaStub([]);
+    const a = await processNotificationOutboxOnce(stubs.prisma as never);
+    const b = await processNotificationOutboxOnce(stubs.prisma as never);
+    expect(a).toEqual({ scanned: 0, written: 0, cursorAdvancedTo: null });
+    expect(b).toEqual(a);
+    expect(stubs.cursorUpdate).not.toHaveBeenCalled();
+    expect(stubs.findManyOutbox).toHaveBeenCalledTimes(2);
   });
 });

@@ -352,6 +352,7 @@ Canonical descriptions live in [.env.example](../.env.example). **Pilot** column
 - **Exit:** `processNotificationOutboxOnce(prisma)` (or existing internal) invokable from processor; reference PE-G comment in [src/main.ts](../src/main.ts).
 - **Code:** [src/patron/notification-delivery-worker.ts](../src/patron/notification-delivery-worker.ts).
 - **Tests:** Cover idempotent tick with empty outbox.
+- **Logged (2026-05-08):** [processNotificationOutboxOnce](../src/patron/notification-delivery-worker.ts) + `ProcessNotificationOutboxOnceOptions` (`outboxEventId` for targeted BullMQ jobs; cursor advance only when strictly after cursor); `InProcessNotificationDeliveryRunner.processOnce` delegates; [tests/patron/notification-delivery-worker.test.ts](../tests/patron/notification-delivery-worker.test.ts).
 
 ### P1-queue-007 — Extract unit of work: account deletion sweep
 
