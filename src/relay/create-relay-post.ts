@@ -1,3 +1,9 @@
+/**
+ * @fileoverview Relay-native post creation (T-4.2): campaign/tier resolution and transactional `Post` + `PostVersion` persistence.
+ * @description API tier references may be Prisma `Tier.id` or `Tier.relayTierId`. **`PostTier.tierId`** FKs use **`Tier.id`**; **`PostVersion.tierIds`** and **`Post.requiredTierId`** persist canonical **`relayTierId`** for entitlements / RLS.
+ * @see {@link ../jsdoc-core-entities.ts}
+ * @see prisma/schema.prisma `Post`, `PostVersion`, `PostTier`, `Campaign`, `Tier`, `MediaAsset`, `CreatorProfile`
+ */
 import type { PrismaClient } from "@prisma/client";
 import {
   MediaIngestOrigin,
@@ -6,6 +12,7 @@ import {
   type MediaAsset
 } from "@prisma/client";
 
+/** Accepted fields when creating a native Relay post (service / HTTP adapter maps into this). */
 export type RelayCreatePostInput = {
   creatorId: string;
   /** When null, resolve via `CreatorProfile.patreonCampaignId` / single-campaign heuristics. */
@@ -23,6 +30,10 @@ export type RelayCreatePostInput = {
 
 const DRAFT_PUBLISHED_AT = new Date(0);
 
+/**
+ * Structured validation / resolution failure for relay-native post flows (HTTP status carried in `statusCode`).
+ * @extends Error
+ */
 export class RelayCreatePostError extends Error {
   public readonly code: string;
   public readonly statusCode: number;
@@ -36,6 +47,9 @@ export class RelayCreatePostError extends Error {
 
 /**
  * T-4.1 — resolve `Campaign.id` for `Post.campaignId` (FK).
+ * @async
+ * @throws {RelayCreatePostError} When the requested campaign is missing or ambiguous vs profile / Patreon-sync state.
+ * @throws {Error} Unexpected Prisma client failures.
  * @see docs/api/relay-native-posts.md
  */
 export async function resolveCampaignIdForRelayPost(
@@ -100,6 +114,84 @@ function validateTitle(title: string): void {
   }
 }
 
+/** Prisma `Tier.id` plus canonical `relayTierId` for snapshot / entitlement gates. */
+export type ResolvedRelayPostTier = {
+  id: string;
+  relayTierId: string;
+};
+
+/**
+ * Resolve a tier reference from `POST /relay/posts` to Prisma `Tier.id` and `relayTierId`.
+ * Accepts primary key (`Tier.id`) or a single matching `Tier.relayTierId` for the creator
+ * (safety net when clients send facet / ingest-style keys).
+ *
+ * Use **`id`** for `PostTier` / FK joins; use **`relayTierId`** for `PostVersion.tierIds`
+ * and `Post.requiredTierId`.
+ * @async
+ * @throws {RelayCreatePostError} On missing tier, ambiguous `relayTierId`, or campaign mismatch.
+ * @throws {Error} Prisma read failures.
+ */
+export async function resolveRelayPostTier(
+  prisma: PrismaClient,
+  creatorId: string,
+  tierKey: string,
+  campaignId: string
+): Promise<ResolvedRelayPostTier> {
+  const byId = await prisma.tier.findFirst({
+    where: { id: tierKey, creatorId },
+    select: { id: true, relayTierId: true, campaignId: true }
+  });
+  let row = byId;
+  if (!row) {
+    const byRelay = await prisma.tier.findMany({
+      where: { relayTierId: tierKey, creatorId },
+      select: { id: true, relayTierId: true, campaignId: true }
+    });
+    if (byRelay.length === 1) {
+      row = byRelay[0]!;
+    } else if (byRelay.length > 1) {
+      throw new RelayCreatePostError(
+        "INVALID_TIER_REF",
+        `Ambiguous tier reference for this creator (matches multiple tiers): ${tierKey}`,
+        400
+      );
+    }
+  }
+  if (!row) {
+    throw new RelayCreatePostError(
+      "INVALID_TIER_REF",
+      `Tier not found for this creator: ${tierKey}`,
+      400
+    );
+  }
+  if (row.campaignId !== campaignId) {
+    throw new RelayCreatePostError(
+      "INVALID_TIER_REF",
+      `Tier does not belong to the resolved campaign: ${tierKey}`,
+      400
+    );
+  }
+  return { id: row.id, relayTierId: row.relayTierId };
+}
+
+/**
+ * Same lookup as {@link resolveRelayPostTier}; returns Prisma `Tier.id` only
+ * (`PostTier.tierId`, internal FK resolution). Persisted gate fields use
+ * {@link resolveRelayPostTier}'s **`relayTierId`**.
+ * @async
+ * @throws {RelayCreatePostError} Delegated from {@link resolveRelayPostTier}.
+ */
+export async function resolveRelayPostTierKey(
+  prisma: PrismaClient,
+  creatorId: string,
+  tierKey: string,
+  campaignId: string
+): Promise<string> {
+  const r = await resolveRelayPostTier(prisma, creatorId, tierKey, campaignId);
+  return r.id;
+}
+
+/** Transactional row snapshot returned from {@link createRelayPostTransaction} (post head + v1 version). */
 export type RelayCreatePostRow = {
   post: {
     id: string;
@@ -107,6 +199,7 @@ export type RelayCreatePostRow = {
     creatorId: string;
     source: "RELAY";
     isPublic: boolean;
+    /** Canonical `relayTierId` when gated; null when public. */
     requiredTierId: string | null;
   };
   version: {
@@ -117,6 +210,7 @@ export type RelayCreatePostRow = {
     description: string | null;
     publishedAt: Date;
     tagIds: string[];
+    /** Canonical `relayTierId` values (not Prisma `Tier.id`). */
     tierIds: string[];
     mediaIds: string[];
   };
@@ -140,6 +234,9 @@ export function isMediaEligibleForRelayNativePost(
 
 /**
  * T-4.2 — create `Post` + `PostVersion` + `PostTier` + link `MediaAsset` in a single transaction.
+ * @async
+ * @throws {RelayCreatePostError} Validation and reference resolution failures surfaced to HTTP as 4xx.
+ * @throws {Error} Prisma transaction errors, internal invariant breaks.
  */
 export async function createRelayPostTransaction(
   prisma: PrismaClient,
@@ -162,43 +259,28 @@ export async function createRelayPostTransaction(
       400
     );
   }
+  const versionTierRelayIds: string[] = [];
+  const junctionTierPrismaIds: string[] = [];
+  const seenTierPk = new Set<string>();
   for (const tid of uniqueTierKeys) {
-    const t = await prisma.tier.findFirst({
-      where: { id: tid, creatorId: input.creatorId }
-    });
-    if (!t) {
-      throw new RelayCreatePostError(
-        "INVALID_TIER_REF",
-        `Tier not found for this creator: ${tid}`,
-        400
-      );
-    }
-    if (t.campaignId !== campaignId) {
-      throw new RelayCreatePostError(
-        "INVALID_TIER_REF",
-        `Tier does not belong to the resolved campaign: ${tid}`,
-        400
-      );
+    const resolved = await resolveRelayPostTier(
+      prisma,
+      input.creatorId,
+      tid,
+      campaignId
+    );
+    if (!seenTierPk.has(resolved.id)) {
+      seenTierPk.add(resolved.id);
+      versionTierRelayIds.push(resolved.relayTierId);
+      junctionTierPrismaIds.push(resolved.id);
     }
   }
+
+  let resolvedRequiredRelayTierId: string | null = null;
   if (input.requiredTierId?.trim()) {
-    const t = await prisma.tier.findFirst({
-      where: { id: input.requiredTierId.trim(), creatorId: input.creatorId }
-    });
-    if (!t) {
-      throw new RelayCreatePostError(
-        "INVALID_TIER_REF",
-        "required_tier_id not found for this creator.",
-        400
-      );
-    }
-    if (t.campaignId !== campaignId) {
-      throw new RelayCreatePostError(
-        "INVALID_TIER_REF",
-        "required_tier_id does not belong to the resolved campaign.",
-        400
-      );
-    }
+    resolvedRequiredRelayTierId = (
+      await resolveRelayPostTier(prisma, input.creatorId, input.requiredTierId.trim(), campaignId)
+    ).relayTierId;
   }
 
   const mediaIdList = [...new Set(input.mediaIds.map((s) => s.trim()).filter(Boolean))];
@@ -252,7 +334,7 @@ export async function createRelayPostTransaction(
           upstreamStatus: PostUpstreamStatus.active,
           createdAt: now,
           isPublic: input.isPublic,
-          requiredTierId: input.isPublic ? null : input.requiredTierId?.trim() || null,
+          requiredTierId: input.isPublic ? null : resolvedRequiredRelayTierId,
           versions: {
             create: {
               versionSeq: 1,
@@ -261,7 +343,7 @@ export async function createRelayPostTransaction(
               description: input.description?.trim() ? input.description : null,
               publishedAt,
               tagIds: [...new Set((input.tagIds ?? []).map((t) => t.trim()).filter(Boolean))],
-              tierIds: uniqueTierKeys,
+              tierIds: versionTierRelayIds,
               mediaIds: mediaIdList,
               ingestedAt: now
             }
@@ -273,10 +355,10 @@ export async function createRelayPostTransaction(
       if (!v0) {
         throw new Error("Relay post version missing after create");
       }
-      for (const tid of uniqueTierKeys) {
+      for (const tierPk of junctionTierPrismaIds) {
         await tx.postTier.upsert({
-          where: { postId_tierId: { postId, tierId: tid } },
-          create: { postId, tierId: tid },
+          where: { postId_tierId: { postId, tierId: tierPk } },
+          create: { postId, tierId: tierPk },
           update: {}
         });
       }

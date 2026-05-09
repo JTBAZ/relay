@@ -1,3 +1,9 @@
+/**
+ * @fileoverview Application service: payment config CRUD, preflight, checkout orchestration, and live-mode toggles.
+ * @description Delegates persistence to `PaymentStore` and clone tier truth to `CloneService`.
+ * @see {@link ../jsdoc-core-entities.ts}
+ * @see prisma/schema.prisma `CreatorPaymentConfig`, `PaymentCheckout` when using `DbPaymentStore`
+ */
 import type { CloneService } from "../clone/clone-service.js";
 import { runPreflight } from "./preflight.js";
 import type { PaymentStore } from "./payment-store.js";
@@ -9,11 +15,17 @@ import type {
   TierProductMapping
 } from "./types.js";
 
+/** Coordinates payment configuration and checkout with provider adapters. */
 export class PaymentService {
   private readonly paymentStore: PaymentStore;
   private readonly cloneService: CloneService;
   private readonly adapters: Map<string, ProviderAdapter>;
 
+  /**
+   * @param paymentStore Backing store (file or DB).
+   * @param cloneService Source of tier rules for preflight.
+   * @param adapters Provider registry (`stripe`, `paypal`, …).
+   */
   public constructor(
     paymentStore: PaymentStore,
     cloneService: CloneService,
@@ -24,14 +36,29 @@ export class PaymentService {
     this.adapters = adapters;
   }
 
+  /**
+   * Upserts a creator payment configuration.
+   * @async
+   * @throws {Error} On store I/O or Prisma errors from the underlying `PaymentStore`.
+   */
   public async saveConfig(config: PaymentConfig): Promise<void> {
     await this.paymentStore.upsertConfig(config);
   }
 
+  /**
+   * Loads payment config for a creator.
+   * @async
+   * @throws {Error} On persistence read failures.
+   */
   public async getConfig(creatorId: string): Promise<PaymentConfig | null> {
     return this.paymentStore.getConfig(creatorId);
   }
 
+  /**
+   * Runs {@link runPreflight} against the latest clone site tiers.
+   * @async
+   * @throws {Error} When clone or payment store reads fail.
+   */
   public async preflight(creatorId: string): Promise<PreflightResult> {
     const config = await this.paymentStore.getConfig(creatorId);
     if (!config) {
@@ -55,6 +82,11 @@ export class PaymentService {
     return runPreflight(config, cloneTiers, this.adapters);
   }
 
+  /**
+   * Executes checkout: resolves mapping and adapter, then appends checkout result to store.
+   * @async
+   * @throws {Error} Missing config/mapping/provider, blocked live checkout, or downstream adapter/store errors.
+   */
   public async checkout(
     creatorId: string,
     tierId: string,
@@ -92,6 +124,11 @@ export class PaymentService {
     return result;
   }
 
+  /**
+   * Adds or replaces a tier mapping on the creator’s config (creates shell config if absent).
+   * @async
+   * @throws {Error} On persistence errors.
+   */
   public async addMapping(
     creatorId: string,
     mapping: TierProductMapping
@@ -119,6 +156,11 @@ export class PaymentService {
     return config;
   }
 
+  /**
+   * Toggles `live_mode` for a creator (no-op returns null when config missing).
+   * @async
+   * @throws {Error} On persistence errors.
+   */
   public async setLiveMode(
     creatorId: string,
     live: boolean

@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import {
   Monitor,
   Tablet,
@@ -37,6 +37,7 @@ import type {
 import { TIERS } from "@/lib/designer-mock";
 import {
   RELAY_API_BASE,
+  galleryItemImageGridSrc,
   type FacetsData,
   type GalleryItem,
   type PageLayout as ApiPageLayout,
@@ -44,14 +45,18 @@ import {
 } from "@/lib/relay-api";
 import { nextPaidTierAfterRank } from "@/lib/tier-access";
 import { designerPageLayoutToApi } from "@/lib/designer-layout-bridge";
-import { sortGalleryItemsForArrangement } from "@/lib/gallery-item-sort";
 import {
   previewLockState,
   tierKeyForGalleryItem,
 } from "@/lib/designer-tier-map";
-import { useLayoutSectionItems } from "@/lib/use-layout-section-items";
+import { useLayoutSectionItems, type LayoutSectionVisitorOptions } from "@/lib/use-layout-section-items";
+import { buildPublicProfileHeroModel } from "@/lib/public-profile-hero";
+import CreatorPublicHero from "@/app/components/public-profile/CreatorPublicHero";
+import PatronLayoutSections from "@/app/components/patron/PatronLayoutSections";
 
 function galleryThumbUrl(item: GalleryItem | undefined): string | undefined {
+  const grid = item ? galleryItemImageGridSrc(item) : null;
+  if (grid) return grid;
   if (item?.has_export && item.content_url_path?.trim()) {
     return `${RELAY_API_BASE}${item.content_url_path}`;
   }
@@ -294,9 +299,8 @@ function GridItem({
     <button
       type="button"
       onClick={selectable ? onSelect : undefined}
-      className="relative overflow-hidden bg-center bg-cover aspect-square text-left"
+      className="relative aspect-square overflow-hidden text-left"
       style={{
-        backgroundImage: imageUrl ? `url(${imageUrl})` : undefined,
         backgroundColor: imageUrl ? undefined : "var(--relay-surface-2)",
         borderRadius: radius,
         border: selected ? `2px solid ${accentColor}` : "1px solid var(--relay-border)",
@@ -305,6 +309,14 @@ function GridItem({
       }}
       title={selectable ? "Click to select. Shift-click to select variants." : undefined}
     >
+      {imageUrl ? (
+        /* eslint-disable-next-line @next/next/no-img-element */
+        <img
+          src={imageUrl}
+          alt=""
+          className="pointer-events-none absolute inset-0 h-full w-full object-cover object-center"
+        />
+      ) : null}
       {selectable ? (
         <span
           className="absolute left-2 top-2 z-10 flex h-5 w-5 items-center justify-center rounded-full border text-[10px] font-semibold"
@@ -467,9 +479,8 @@ function SectionPreview({
                 type="button"
                 key={item?.media_id ?? `m-${i}`}
                 onClick={item ? (event) => onMediaSelect(section.id, item.media_id, event) : undefined}
-                className="relative overflow-hidden bg-center bg-cover"
+                className="relative overflow-hidden"
                 style={{
-                  backgroundImage: imageUrl ? `url(${imageUrl})` : undefined,
                   backgroundColor: imageUrl ? undefined : "var(--relay-surface-2)",
                   borderRadius: radius,
                   border: selected ? `2px solid ${accentColor}` : "1px solid var(--relay-border)",
@@ -479,6 +490,14 @@ function SectionPreview({
                 }}
                 title={item ? "Click to select. Shift-click to select variants." : undefined}
               >
+                {imageUrl ? (
+                  /* eslint-disable-next-line @next/next/no-img-element */
+                  <img
+                    src={imageUrl}
+                    alt=""
+                    className="pointer-events-none absolute inset-0 h-full w-full object-cover object-center"
+                  />
+                ) : null}
                 {item ? (
                   <span
                     className="absolute left-2 top-2 z-10 flex h-5 w-5 items-center justify-center rounded-full border text-[10px] font-semibold"
@@ -542,13 +561,20 @@ function SectionPreview({
                   title={item ? "Click to select. Shift-click to select variants." : undefined}
                 >
                   <div
-                    className="w-14 h-10 shrink-0 bg-center bg-cover relative overflow-hidden"
+                    className="relative h-10 w-14 shrink-0 overflow-hidden"
                     style={{
-                      backgroundImage: imageUrl ? `url(${imageUrl})` : undefined,
                       backgroundColor: imageUrl ? undefined : "var(--relay-surface-2)",
                       borderRadius: radius,
                     }}
                   >
+                    {imageUrl ? (
+                      /* eslint-disable-next-line @next/next/no-img-element */
+                      <img
+                        src={imageUrl}
+                        alt=""
+                        className="pointer-events-none absolute inset-0 h-full w-full object-cover object-center"
+                      />
+                    ) : null}
                     {pl.locked && lockedStyle === "blurred" && (
                       <div
                         className="absolute inset-0"
@@ -608,15 +634,22 @@ function SectionPreview({
         return (
           <div className="flex flex-col gap-1.5">
             <div
-              className="relative w-full overflow-hidden bg-center bg-cover"
+              className="relative w-full overflow-hidden"
               style={{
-                backgroundImage: heroImage ? `url(${heroImage})` : undefined,
                 backgroundColor: heroImage ? undefined : "var(--relay-surface-2)",
                 borderRadius: radius,
                 aspectRatio: "16/9",
                 border: "1px solid var(--relay-border)",
               }}
             >
+              {heroImage ? (
+                /* eslint-disable-next-line @next/next/no-img-element */
+                <img
+                  src={heroImage}
+                  alt=""
+                  className="pointer-events-none absolute inset-0 h-full w-full object-cover object-center"
+                />
+              ) : null}
               {!heroImage ? (
                 <div
                   className="absolute inset-0 flex items-center justify-center text-xs"
@@ -801,10 +834,14 @@ function ShopPreview({
                 borderRadius: radius,
               }}
             >
-              <div
-                className="w-full aspect-square bg-center bg-cover"
-                style={{ backgroundImage: `url(${item.imageUrl})` }}
-              />
+              <div className="relative aspect-square w-full overflow-hidden">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={item.imageUrl}
+                  alt=""
+                  className="pointer-events-none absolute inset-0 h-full w-full object-cover object-center"
+                />
+              </div>
               <div className="px-2 pb-2 flex flex-col gap-1">
                 <span
                   className="text-xs font-medium leading-snug text-pretty"
@@ -1131,130 +1168,6 @@ function PatronUpgradeNudge({
       >
         Upgrade
       </button>
-    </div>
-  );
-}
-
-// ─── Hero preview ─────────────────────────────────────────────────────────────
-
-function HeroPreview({
-  layout,
-  radius,
-  fonts,
-  patreonSlug,
-}: {
-  layout: PageLayout;
-  radius: string;
-  fonts: { heading: string; body: string };
-  /** Lowercase Patreon vanity from campaign sync — shown when Show Patreon is on */
-  patreonSlug: string | null;
-}) {
-  const { hero, theme, displayName, bio, avatarUrl } = layout;
-  const slug = patreonSlug?.trim().toLowerCase() || null;
-  const showPatreon = Boolean(theme.showPatreonLink && slug);
-  const belowAvatar = (theme.patreonLinkPosition ?? "below_bio") === "below_avatar";
-
-  const bioTrim = bio.trim();
-  const subTrim = hero.subline.trim();
-  let primaryText: string | null = null;
-  let secondaryText: string | null = null;
-  if (theme.showBio && bioTrim) {
-    primaryText = bioTrim;
-    if (subTrim && subTrim !== bioTrim) secondaryText = subTrim;
-  } else if (subTrim) {
-    primaryText = subTrim;
-  }
-
-  const patreonEl = showPatreon ? (
-    <a
-      href={`https://www.patreon.com/${encodeURIComponent(slug!)}`}
-      target="_blank"
-      rel="noopener noreferrer"
-      className="inline-flex items-center justify-center gap-1.5 text-xs font-medium transition-opacity hover:opacity-90"
-      style={{ color: "var(--relay-green-400)", fontFamily: fonts.body }}
-    >
-      <ExternalLink size={12} />
-      patreon.com/{slug}
-    </a>
-  ) : null;
-
-  return (
-    <div
-      className="relative flex flex-col items-center justify-end overflow-hidden"
-      style={{ minHeight: "min(52vh, 380px)", borderRadius: radius }}
-    >
-      {hero.showCover && (
-        <div
-          className="absolute inset-0 bg-center bg-cover"
-          style={{ backgroundImage: `url(${hero.coverUrl})` }}
-        />
-      )}
-      <div
-        className="absolute inset-0"
-        style={{
-          background: hero.showCover
-            ? "linear-gradient(to bottom, rgba(0,0,0,0.2) 0%, rgba(0,0,0,0.82) 100%)"
-            : "var(--relay-surface-2)",
-        }}
-      />
-      <div
-        className="relative z-10 w-full flex flex-col items-center gap-4 px-6 pb-10 pt-8"
-        style={{ textAlign: "center" }}
-      >
-        {hero.showAvatar && (
-          // eslint-disable-next-line @next/next/no-img-element -- designer preview; dynamic blob/data URLs
-          <img
-            src={avatarUrl}
-            alt={`${displayName} avatar`}
-            className="rounded-full object-cover shrink-0 shadow-[0_12px_40px_rgba(0,0,0,0.45)] ring-2 ring-white/25"
-            style={{
-              width: "96px",
-              height: "96px",
-            }}
-          />
-        )}
-        {belowAvatar && showPatreon ? (
-          <div className="flex w-full justify-center">{patreonEl}</div>
-        ) : null}
-        <div className="flex w-full max-w-lg flex-col items-center gap-2">
-          <h1
-            className="font-bold text-balance tracking-tight"
-            style={{
-              color: "var(--relay-fg)",
-              fontSize: "clamp(1.5rem, 2.8vw, 2rem)",
-              lineHeight: 1.15,
-              fontFamily: fonts.heading,
-            }}
-          >
-            {hero.headline}
-          </h1>
-          {primaryText ? (
-            <p
-              className="text-pretty text-[0.95rem] font-medium"
-              style={{
-                color: "rgba(249,250,251,0.88)",
-                lineHeight: 1.45,
-                fontFamily: fonts.body,
-              }}
-            >
-              {primaryText}
-            </p>
-          ) : null}
-          {secondaryText ? (
-            <p
-              className="text-pretty text-[0.8125rem]"
-              style={{
-                color: "rgba(249,250,251,0.65)",
-                lineHeight: 1.45,
-                fontFamily: fonts.body,
-              }}
-            >
-              {secondaryText}
-            </p>
-          ) : null}
-          {!belowAvatar && showPatreon ? patreonEl : null}
-        </div>
-      </div>
     </div>
   );
 }
@@ -2089,21 +2002,35 @@ export function CanvasPreview({
     [layout, apiLayout]
   );
 
-  const { sectionItems } = useLayoutSectionItems(
+  const publicHeroModel = useMemo(
+    () =>
+      buildPublicProfileHeroModel({
+        pageLayout: previewLayout,
+        visitorHero: facets?.visitor_hero,
+        creatorId,
+        patreonVanitySlug: patreonSlug
+      }),
+    [previewLayout, facets?.visitor_hero, creatorId, patreonSlug]
+  );
+
+  const layoutVisitorOptions = useMemo((): LayoutSectionVisitorOptions => {
+    const base = { visitor: true as const };
+    if (!useFacets || tierOrderIds.length === 0) {
+      return { ...base, dev_sim_patron: true, simulate_tier_ids: [] };
+    }
+    if (viewerMaxRank < 0) {
+      return { ...base, dev_sim_patron: true, simulate_tier_ids: [] };
+    }
+    const tid = tierOrderIds[viewerMaxRank];
+    return { ...base, dev_sim_patron: true, simulate_tier_ids: tid ? [tid] : [] };
+  }, [useFacets, tierOrderIds, viewerMaxRank]);
+
+  const { sectionItems, loading: layoutSectionsLoading } = useLayoutSectionItems(
     previewLayout,
     creatorId,
     apiCollections,
-    { visitor: false }
+    layoutVisitorOptions
   );
-
-  const sortedSectionItems = useMemo(() => {
-    const mode = layout.theme.galleryArrangement ?? "chronological";
-    const out: Record<string, GalleryItem[]> = {};
-    for (const [id, items] of Object.entries(sectionItems)) {
-      out[id] = sortGalleryItemsForArrangement(items, mode, tierOrderIds);
-    }
-    return out;
-  }, [sectionItems, layout.theme.galleryArrangement, tierOrderIds]);
 
   const bp = BREAKPOINTS.find((b) => b.key === breakpoint)!;
   const visibleSections = layout.sections.filter((s) => s.visible);
@@ -2117,6 +2044,58 @@ export function CanvasPreview({
   ) as AnnouncementBanner[];
   const contentSections = visibleSections.filter(
     (s) => s.kind !== "announcement"
+  );
+
+  const allLibrarySectionsInOrder = useMemo(
+    () => layout.sections.filter((s): s is LibrarySection => s.kind === "library"),
+    [layout.sections]
+  );
+
+  const firstLibrarySection = useMemo(
+    () => contentSections.find((s): s is LibrarySection => s.kind === "library"),
+    [contentSections]
+  );
+
+  const mockByApiId = useMemo(() => {
+    const sortedApi = [...previewLayout.sections].sort((a, b) => a.sort_order - b.sort_order);
+    const m = new Map<string, LibrarySection>();
+    sortedApi.forEach((apiSec, i) => {
+      const mock = allLibrarySectionsInOrder[i];
+      if (mock) m.set(apiSec.section_id, mock);
+    });
+    return m;
+  }, [previewLayout.sections, allLibrarySectionsInOrder]);
+
+  const visibleMockLibraryIdSet = useMemo(
+    () =>
+      new Set(
+        visibleSections
+          .filter((s): s is LibrarySection => s.kind === "library")
+          .map((s) => s.id)
+      ),
+    [visibleSections]
+  );
+
+  const patronCanvasLayout = useMemo(() => {
+    const sorted = [...previewLayout.sections].sort((a, b) => a.sort_order - b.sort_order);
+    const sections = sorted.filter((sec) => {
+      const mock = mockByApiId.get(sec.section_id);
+      return mock && visibleMockLibraryIdSet.has(mock.id);
+    });
+    return { ...previewLayout, sections };
+  }, [previewLayout, mockByApiId, visibleMockLibraryIdSet]);
+
+  const patronLibShellStyle = useMemo(
+    (): CSSProperties => ({
+      ["--lib-fg" as string]: "var(--relay-fg)",
+      ["--lib-fg-muted" as string]: "var(--relay-fg-muted)",
+      ["--lib-border" as string]: "var(--relay-border)",
+      ["--lib-card" as string]: "var(--relay-surface-1)",
+      ["--lib-muted" as string]: "var(--relay-surface-2)",
+      ["--lib-selection" as string]: "var(--relay-green-400)",
+      ["--lib-bg" as string]: "var(--relay-bg)"
+    }),
+    []
   );
 
   const focusSection = (sectionId: string) => {
@@ -2148,6 +2127,20 @@ export function CanvasPreview({
       else next.add(mediaId);
       return next;
     });
+  };
+
+  const handleOpenPatronItem = (item: GalleryItem) => {
+    let mockSectionId: string | null = null;
+    for (const sec of patronCanvasLayout.sections) {
+      if ((sectionItems[sec.section_id] ?? []).some((it) => it.media_id === item.media_id)) {
+        mockSectionId = mockByApiId.get(sec.section_id)?.id ?? null;
+        if (mockSectionId) break;
+      }
+    }
+    if (!mockSectionId) return;
+    setActiveSectionId(mockSectionId);
+    setSelectedMediaSectionId(mockSectionId);
+    setSelectedMediaIds(new Set([item.media_id]));
   };
 
   const updateSection = (sectionId: string, updater: (section: AnySection) => AnySection) => {
@@ -2348,12 +2341,7 @@ export function CanvasPreview({
             ))}
 
             {/* Hero */}
-            <HeroPreview
-              layout={layout}
-              radius="0px"
-              fonts={fonts}
-              patreonSlug={patreonSlug}
-            />
+            <CreatorPublicHero model={publicHeroModel} radius="0px" fonts={fonts} />
 
             {/* Patron upgrade nudge — hidden when there is no higher paid tier to pitch */}
             <PatronUpgradeNudge
@@ -2367,39 +2355,131 @@ export function CanvasPreview({
               fonts={fonts}
             />
 
-            {/* Content sections */}
+            {/* Content sections — curated library uses same `PatronLayoutSections` as /patron/c */}
             {contentSections.length > 0 ? (
               <div className="flex flex-col gap-10 px-6 mt-8">
-                {contentSections.map((section) => (
-                  <SectionCanvasFrame
-                    key={section.id}
-                    section={section}
-                    active={activeSectionId === section.id}
-                    selectedMediaCount={selectedMediaSectionId === section.id ? selectedMediaIds.size : 0}
-                    onSelect={() => selectSection(section.id)}
-                    onSetPresentation={(style) => setSectionPresentation(section.id, style)}
-                    onMove={(delta) => moveSection(section.id, delta)}
-                    onToggleVisible={() => updateSection(section.id, (current) => ({ ...current, visible: false }))}
-                  >
-                    <SectionDispatch
+                {contentSections.map((section) => {
+                  if (section.kind === "library") {
+                    if (!firstLibrarySection || section.id !== firstLibrarySection.id) {
+                      return null;
+                    }
+                    if (previewLayout.sections.length === 0) {
+                      return (
+                        <div
+                          key="patron-curated-empty"
+                          className="rounded-lg border px-4 py-6 text-center text-sm"
+                          style={{
+                            borderColor: "var(--relay-border)",
+                            color: "var(--relay-fg-subtle)"
+                          }}
+                        >
+                          Add a library block to mirror your published gallery layout here.
+                        </div>
+                      );
+                    }
+                    if (patronCanvasLayout.sections.length === 0) {
+                      return (
+                        <div
+                          key="patron-curated-all-hidden"
+                          className="rounded-lg border px-4 py-6 text-center text-sm"
+                          style={{
+                            borderColor: "var(--relay-border)",
+                            color: "var(--relay-fg-subtle)"
+                          }}
+                        >
+                          All library sections are hidden — show one in the Inspector to preview it
+                          here.
+                        </div>
+                      );
+                    }
+                    return (
+                      <div key="patron-curated" className="min-w-0" style={patronLibShellStyle}>
+                        <PatronLayoutSections
+                          layout={patronCanvasLayout}
+                          sectionItems={sectionItems}
+                          loading={layoutSectionsLoading}
+                          onOpenItem={handleOpenPatronItem}
+                          tierOrderIds={tierOrderIds}
+                          tierTitleById={tierTitleById}
+                          tierFacets={facets?.tiers ?? []}
+                          membershipUrl={publicHeroModel.patreonProfileHref}
+                          accentColor={
+                            patronCanvasLayout.theme.accent_color?.trim() ||
+                            publicHeroModel.accentColor
+                          }
+                          renderDesignerSectionChrome={({ apiSectionId, children }) => {
+                            const mockSec = mockByApiId.get(apiSectionId);
+                            if (!mockSec) {
+                              return <div className="mb-10 last:mb-0">{children}</div>;
+                            }
+                            return (
+                              <div className="mb-10 last:mb-0">
+                                <SectionCanvasFrame
+                                  section={mockSec}
+                                  active={activeSectionId === mockSec.id}
+                                  selectedMediaCount={
+                                    selectedMediaSectionId === mockSec.id
+                                      ? selectedMediaIds.size
+                                      : 0
+                                  }
+                                  onSelect={() => selectSection(mockSec.id)}
+                                  onSetPresentation={(style) =>
+                                    setSectionPresentation(mockSec.id, style)
+                                  }
+                                  onMove={(delta) => moveSection(mockSec.id, delta)}
+                                  onToggleVisible={() =>
+                                    updateSection(mockSec.id, (current) => ({
+                                      ...current,
+                                      visible: false
+                                    }))
+                                  }
+                                >
+                                  {children}
+                                </SectionCanvasFrame>
+                              </div>
+                            );
+                          }}
+                        />
+                      </div>
+                    );
+                  }
+                  return (
+                    <SectionCanvasFrame
+                      key={section.id}
                       section={section}
-                      collections={collections}
-                      showBadges={layout.theme.showTierBadges}
-                      radius={radius}
-                      viewerTier={viewerTier}
-                      viewerMaxRank={useFacets ? viewerMaxRank : -1}
-                      lockedStyle={layout.theme.lockedArtStyle}
-                      accentColor={accentColor}
-                      fonts={fonts}
-                      sectionItems={sortedSectionItems}
-                      selectedMediaIds={selectedMediaSectionId === section.id ? selectedMediaIds : new Set()}
-                      onMediaSelect={handleMediaSelect}
-                      tierOrderIds={tierOrderIds}
-                      tierTitleById={tierTitleById}
-                      facets={facets}
-                    />
-                  </SectionCanvasFrame>
-                ))}
+                      active={activeSectionId === section.id}
+                      selectedMediaCount={
+                        selectedMediaSectionId === section.id ? selectedMediaIds.size : 0
+                      }
+                      onSelect={() => selectSection(section.id)}
+                      onSetPresentation={(style) => setSectionPresentation(section.id, style)}
+                      onMove={(delta) => moveSection(section.id, delta)}
+                      onToggleVisible={() =>
+                        updateSection(section.id, (current) => ({ ...current, visible: false }))
+                      }
+                    >
+                      <SectionDispatch
+                        section={section}
+                        collections={collections}
+                        showBadges={layout.theme.showTierBadges}
+                        radius={radius}
+                        viewerTier={viewerTier}
+                        viewerMaxRank={useFacets ? viewerMaxRank : -1}
+                        lockedStyle={layout.theme.lockedArtStyle}
+                        accentColor={accentColor}
+                        fonts={fonts}
+                        sectionItems={sectionItems}
+                        selectedMediaIds={
+                          selectedMediaSectionId === section.id ? selectedMediaIds : new Set()
+                        }
+                        onMediaSelect={handleMediaSelect}
+                        tierOrderIds={tierOrderIds}
+                        tierTitleById={tierTitleById}
+                        facets={facets}
+                      />
+                    </SectionCanvasFrame>
+                  );
+                })}
               </div>
             ) : (
               <div

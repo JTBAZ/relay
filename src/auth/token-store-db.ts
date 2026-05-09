@@ -1,3 +1,11 @@
+/**
+ * @fileoverview Prisma-backed `PatreonTokenStore` with tenant/user bootstrap and encrypted `OAuthCredential` rows.
+ * @description Maps creator-scoped tokens onto `Tenant`, `User`, `ProviderAccount`, `OAuthCredential` (creator ingest purpose).
+ * @see ./token-store.js
+ * @see ../creator/public-slug.js allocateUniquePublicSlug
+ * @see prisma/schema.prisma Tenant, User, ProviderAccount, OAuthCredential, CreatorProfile
+ */
+
 import {
   CredentialHealth,
   IdentityAuthProvider,
@@ -15,7 +23,7 @@ import type {
   PersistedPatreonTokens
 } from "./token-store.js";
 
-/** Stored in `OAuthCredential.keyId` — matches env name used with `TokenEncryption` (rotation label). */
+/** @description Stored in `OAuthCredential.keyId` — matches env name used with `TokenEncryption` (rotation label). */
 export const RELAY_TOKEN_KEY_ID = "RELAY_TOKEN_ENCRYPTION_KEY";
 
 type EncryptedPayloadJson = {
@@ -32,12 +40,27 @@ function toFileHealth(h: CredentialHealth): CredentialHealthStatus {
   return h === CredentialHealth.healthy ? "healthy" : "refresh_failed";
 }
 
+/**
+ * @description Prisma implementation that upserts encrypted Patreon tokens and ensures related identity rows exist.
+ * @security-audit-required Writes OAuth secrets and mutates `Tenant`/`User`/`ProviderAccount`; routes must enforce authenticated creator scope.
+ */
 export class DbPatreonTokenStore implements PatreonTokenStore {
+  /**
+   * @description Constructs store with shared Prisma client and encryption helper.
+   * @param prisma Prisma client.
+   * @param encryption AES-GCM helper for token fields.
+   */
   public constructor(
     private readonly prisma: PrismaClient,
     private readonly encryption: TokenEncryption
   ) {}
 
+  /**
+   * @description Transactionally ensures tenant + creator user + Patreon provider account exist, then upserts `OAuthCredential`.
+   * @param tokens Plaintext tokens for the creator.
+   * @async
+   * @throws {Error} Unique constraint clashes on `providerAccount`, transaction failures, or decryption/encryption errors from upstream callers.
+   */
   public async upsert(tokens: PersistedPatreonTokens): Promise<void> {
     const enc = this.encryption;
     const payload: EncryptedPayloadJson = {
@@ -157,6 +180,13 @@ export class DbPatreonTokenStore implements PatreonTokenStore {
     });
   }
 
+  /**
+   * @description Loads latest creator-ingest credential for a Relay `relayCreatorId` and decrypts payload JSON.
+   * @param creatorId Relay legacy creator id string.
+   * @returns Decrypted tokens or `null` when missing/unparseable payload.
+   * @async
+   * @throws {Error} Prisma query failures; decryption errors may surface as exceptions from `TokenEncryption`.
+   */
   public async getByCreatorId(
     creatorId: string
   ): Promise<PersistedPatreonTokens | null> {
@@ -194,6 +224,12 @@ export class DbPatreonTokenStore implements PatreonTokenStore {
     };
   }
 
+  /**
+   * @description Returns distinct `relayCreatorId` values for tenants that have Patreon creator-ingest credentials.
+   * @returns Sorted creator ids suitable for sync schedulers.
+   * @async
+   * @throws {Error} Prisma `findMany` failures.
+   */
   public async listCreatorIds(): Promise<string[]> {
     const rows = await this.prisma.tenant.findMany({
       where: {

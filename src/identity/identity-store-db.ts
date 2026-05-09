@@ -1,3 +1,9 @@
+/**
+ * @fileoverview Prisma implementation of `IdentityStore` (accounts, patron memberships, hashed sessions).
+ * @description Patreon merge rules, platform tenant bootstrap, entitlement snapshots on tier changes, and campaign→creator resolution for unified OAuth.
+ * @see src/jsdoc-core-entities.ts
+ */
+
 import {
   IdentityAuthProvider,
   PrismaClient,
@@ -23,7 +29,9 @@ function mapAuthProviderFromDb(a: IdentityAuthProvider): AuthProvider {
   return a === IdentityAuthProvider.independent ? "independent" : "patreon";
 }
 
-/** Same Patreon user id cannot be merged onto a different `Account` than the email row (see `createUser`). */
+/**
+ * @description Thrown when Patreon user id cannot be merged without splitting two `Account` rows.
+ */
 export class PatreonAccountLinkConflictError extends Error {
   public override readonly name = "PatreonAccountLinkConflictError";
   constructor(message?: string) {
@@ -54,6 +62,10 @@ function membershipToAccount(
   };
 }
 
+/**
+ * @description Postgres-backed identity store implementing {@link IdentityStore}.
+ * @see ./identity-store.js
+ */
 export class DbIdentityStore implements IdentityStore {
   public constructor(private readonly prisma: PrismaClient) {}
 

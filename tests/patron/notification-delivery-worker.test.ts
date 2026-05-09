@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   InProcessNotificationDeliveryRunner,
+  notificationDeliveryRepeatEveryMsFromEnv,
   processNotificationOutboxOnce
 } from "../../src/patron/notification-delivery-worker.js";
 import { PEG_EVENT_NAMES } from "../../src/patron/notification-mapper.js";
@@ -192,6 +193,24 @@ describe("InProcessNotificationDeliveryRunner.processOnce", () => {
     );
     expect(hasGtBranch).toBe(true);
     expect(hasTieBreaker).toBe(true);
+  });
+});
+
+describe("notificationDeliveryRepeatEveryMsFromEnv", () => {
+  it("returns null when disabled with 0", () => {
+    expect(
+      notificationDeliveryRepeatEveryMsFromEnv({
+        RELAY_NOTIFICATION_DELIVERY_MS: "0"
+      })
+    ).toBe(null);
+  });
+
+  it("applies poll floor like in-process runner", () => {
+    expect(
+      notificationDeliveryRepeatEveryMsFromEnv({
+        RELAY_NOTIFICATION_DELIVERY_MS: "100"
+      })
+    ).toBe(250);
   });
 });
 

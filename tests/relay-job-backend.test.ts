@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { relayJobBackendFromEnv } from "../src/jobs/relay-job-backend.js";
+import {
+  relayJobBackendFromEnv,
+  relaySplitWorkerProcessFromEnv
+} from "../src/jobs/relay-job-backend.js";
 
 describe("relayJobBackendFromEnv", () => {
   it('defaults to memory when unset', () => {
@@ -27,5 +30,23 @@ describe("relayJobBackendFromEnv", () => {
     expect(() =>
       relayJobBackendFromEnv({ RELAY_JOB_BACKEND: "kafka" })
     ).toThrow(/RELAY_JOB_BACKEND/);
+  });
+});
+
+describe("relaySplitWorkerProcessFromEnv", () => {
+  it("is false when unset", () => {
+    expect(relaySplitWorkerProcessFromEnv({})).toBe(false);
+  });
+
+  it("accepts truthy strings", () => {
+    expect(relaySplitWorkerProcessFromEnv({ RELAY_SPLIT_WORKER_PROCESS: "1" })).toBe(
+      true
+    );
+    expect(relaySplitWorkerProcessFromEnv({ RELAY_SPLIT_WORKER_PROCESS: "true" })).toBe(
+      true
+    );
+    expect(relaySplitWorkerProcessFromEnv({ RELAY_SPLIT_WORKER_PROCESS: "yes" })).toBe(
+      true
+    );
   });
 });

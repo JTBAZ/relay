@@ -1,12 +1,14 @@
+/**
+ * @fileoverview Express rate-limit presets for consent, cookies, patron/creator mutations.
+ * @description In-memory per-process counters; swap store for Redis in multi-node deploys.
+ * @see AGENTS.md
+ */
+
 import { randomUUID } from "node:crypto";
 import type { Request, RequestHandler, Response } from "express";
 import rateLimit from "express-rate-limit";
 import { errorEnvelope } from "../contracts/api.js";
-
-/*
- * In-memory limiter — counters are per-process. For multi-node deploys, swap
- * the store for `rate-limit-redis` and wire REDIS_URL. See AGENTS.md.
- */
+import { getRegisteredUsagePrisma, scheduleRateLimit429ForRequest } from "../usage/usage-events.js";
 
 function traceIdFromRateLimit(req: Request): string {
   const headerValue = req.header("x-trace-id");
@@ -16,6 +18,7 @@ function traceIdFromRateLimit(req: Request): string {
 type RequestWithRelayKey = Request & { relayRateLimitKey?: string };
 
 function relayRateLimitJsonHandler(req: Request, res: Response): void {
+  scheduleRateLimit429ForRequest(getRegisteredUsagePrisma() ?? null, req);
   const traceId = traceIdFromRateLimit(req);
   res
     .status(429)

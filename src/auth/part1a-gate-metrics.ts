@@ -1,4 +1,8 @@
 /**
+ * @fileoverview In-process counters for Part 1A OAuth exit gates on the road map narrative.
+ */
+
+/**
  * In-process telemetry for Part 1 A exit gates (road map): creator/patron OAuth completion,
  * token refresh outcomes. Counters reset on process restart — pair with log shipping or an
  * external TSDB for calendar-day SLOs.
@@ -17,11 +21,13 @@ const state = {
   token_refresh_failure: 0
 };
 
+/** @description Snapshot including derived uptime metadata for dashboards. */
 export type Part1aGateMetricsSnapshot = typeof state & {
   uptime_ms: number;
   boot_iso: string;
 };
 
+/** @description Resets telemetry counters — tests only. */
 export function resetPart1aGateMetricsForTests(): void {
   state.creator_oauth_attempts = 0;
   state.creator_oauth_success = 0;
@@ -34,42 +40,55 @@ export function resetPart1aGateMetricsForTests(): void {
   state.token_refresh_failure = 0;
 }
 
+/** @description Records an attempted creator Patreon OAuth code exchange. */
 export function recordCreatorOAuthExchangeAttempt(): void {
   state.creator_oauth_attempts += 1;
 }
 
+/** @description Records a completed creator OAuth exchange. */
 export function recordCreatorOAuthExchangeSuccess(): void {
   state.creator_oauth_success += 1;
 }
 
+/** @description Records a failed creator OAuth exchange attempt. */
 export function recordCreatorOAuthExchangeFailure(): void {
   state.creator_oauth_failure += 1;
 }
 
+/** @description Records patron OAuth attempt initiation. */
 export function recordPatronOAuthAttempt(): void {
   state.patron_oauth_attempts += 1;
 }
 
+/** @description Records patron OAuth completion. */
 export function recordPatronOAuthSuccess(): void {
   state.patron_oauth_success += 1;
 }
 
+/** @description Records patron OAuth failure. */
 export function recordPatronOAuthFailure(): void {
   state.patron_oauth_failure += 1;
 }
 
+/** @description Records proactive or reactive token refresh attempt. */
 export function recordTokenRefreshAttempt(): void {
   state.token_refresh_attempts += 1;
 }
 
+/** @description Records successful token refresh. */
 export function recordTokenRefreshSuccess(): void {
   state.token_refresh_success += 1;
 }
 
+/** @description Records refresh failure (Patreon or persistence). */
 export function recordTokenRefreshFailure(): void {
   state.token_refresh_failure += 1;
 }
 
+/**
+ * @description Returns raw counters plus boot metadata for health endpoints.
+ * @returns Snapshot including uptime since process start.
+ */
 export function getPart1aGateMetricsSnapshot(): Part1aGateMetricsSnapshot {
   return {
     ...state,
@@ -92,6 +111,7 @@ function envFloat(name: string, fallback: number): number {
   return Number.isFinite(n) ? n : fallback;
 }
 
+/** @description Aggregated evaluation with ratios, alerts, and operator documentation strings. */
 export type Part1aGateEvaluation = {
   metrics: Part1aGateMetricsSnapshot;
   /** `success / attempts` for creator `POST .../auth/patreon/exchange`. Null if no attempts. */
@@ -105,7 +125,8 @@ export type Part1aGateEvaluation = {
 };
 
 /**
- * Optional env-driven alerts. See `.env.example` (Part 1 A gates).
+ * @description Optional env-driven alerts. See `.env.example` (Part 1 A gates).
+ * @returns Metrics snapshot, derived ratios, alert strings, and documentation guidance.
  */
 export function evaluatePart1aGates(): Part1aGateEvaluation {
   const metrics = getPart1aGateMetricsSnapshot();

@@ -1,11 +1,21 @@
+/**
+ * @fileoverview Optional export-SHA dedupe for canonical `media_ids` ordering within a post.
+ * @description Prefers non-cover assets when collapsing duplicates (batch reconciliation helper).
+ * @see ../export/types.js `CreatorExportIndex`
+ */
+
 import type { CreatorExportIndex } from "../export/types.js";
 
 /**
- * Within a single post's `media_ids`, drop duplicates that share the same export `sha256`.
- * Prefer keeping a **non-cover** row when one exists; otherwise smallest `media_id` lexicographically.
+ * @description Within a single post's `media_ids`, drop duplicates that share the same export `sha256`. Prefer keeping a **non-cover** row when one exists; otherwise smallest `media_id` lexicographically.
  *
  * Rows without an export SHA are left unchanged (cannot be clustered).
  * Intended for optional batch/export reconciliation — not enabled on every gallery list by default.
+ * @param mediaIds Ordered media ids from canonical.
+ * @param exportIndex Export metadata index.
+ * @param roleByMediaId Resolver for media role (cover vs attachment).
+ * @returns Filtered id list preserving relative order of kept ids.
+ * @todo Caller must ensure `roleByMediaId` stays consistent with canonical to avoid wrong winner picks.
  */
 export function collapseDuplicateMediaIdsBySha(
   mediaIds: string[],

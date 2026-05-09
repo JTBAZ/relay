@@ -1,9 +1,18 @@
+/**
+ * @fileoverview Postgres-backed saved gallery filters (`saved_filters`).
+ * @see ./saved-filters-store.ts JSON twin
+ * @see prisma/schema.prisma `SavedFilter`
+ */
+
 import { randomUUID } from "node:crypto";
 import type { Prisma } from "@prisma/client";
 import type { PrismaClient } from "@prisma/client";
 import type { SavedFiltersStore } from "./saved-filters-store.js";
 import type { SavedFilterRecord, SavedFiltersRoot } from "./types.js";
 
+/**
+ * @description Maps Prisma row to wire {@link SavedFilterRecord}.
+ */
 function toRecord(row: {
   id: string;
   creatorId: string;
@@ -20,6 +29,10 @@ function toRecord(row: {
   };
 }
 
+/**
+ * @description Prisma implementation with destructive full replace on `save()` (parity with JSON overwrite).
+ * @throws Prisma failures propagate from bulk deletes/creates.
+ */
 export class DbSavedFiltersStore implements SavedFiltersStore {
   public constructor(private readonly prisma: PrismaClient) {}
 

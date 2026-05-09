@@ -1,10 +1,9 @@
 /**
- * Normalize Patreon (and generic HTTP) media URLs for **deduplication keys** only.
- * First-seen raw `upstream_url` should still be stored on ingest rows for download.
- *
- * Limitations: Signed/tokenized URLs that differ only by auth token are not collapsed
- * (stripping token would break fetches). We only drop common **sizing / transform**
- * query params on Patreon CDN hosts so `?w=800` vs `?w=400` map to the same key.
+ * @fileoverview URL normalization helpers for Patreon CDN media deduplication keys and stable asset fingerprints.
+ * @description First-seen raw `upstream_url` should still be stored on ingest rows for download; these helpers only derive comparison keys.
+ * @see {@link ../jsdoc-core-entities.ts}
+ * @see prisma/schema.prisma `MediaAsset` upstream / storage fields via ingest
+ * @todo Brittle: Signed URLs differing only by auth token are not collapsed (would break fetches).
  */
 
 const PATREON_CDN_HOST_RE = /(^|\.)patreonusercontent\.com$/i;
@@ -22,6 +21,10 @@ const SIZING_PARAM_NAMES = new Set([
   "auto"
 ]);
 
+/**
+ * Strips hash, normalizes host case, and drops sizing query params on Patreon CDN hosts.
+ * @param url Raw media URL.
+ */
 export function normalizePatreonMediaUrl(url: string): string {
   const trimmed = url.trim();
   if (!trimmed) return trimmed;
@@ -56,12 +59,17 @@ export function normalizePatreonMediaUrl(url: string): string {
  */
 const PATREON_POST_ASSET_PATH_RE = /\/p\/post\/(\d+)\/([0-9a-f]{32})\//i;
 
+/**
+ * Derives `postNum:contentHash` key when URL matches Patreon post asset path pattern.
+ * @param url Media URL or undefined.
+ * @returns Lowercase hash tuple or `null` when pattern does not match.
+ */
 export function patreonPostMediaStableKey(url: string | undefined): string | null {
   if (!url?.trim()) return null;
   try {
     const pathname = new URL(url.trim()).pathname;
     const m = pathname.match(PATREON_POST_ASSET_PATH_RE);
-    if (!m?.[1] || !m[2]) return null;
+    if (!m?.[1] || !m?.[2]) return null;
     return `${m[1]}:${m[2].toLowerCase()}`;
   } catch {
     return null;

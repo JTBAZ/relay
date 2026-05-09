@@ -1,20 +1,33 @@
 /**
- * MIG-42 — When Patreon’s API is unavailable, Relay continues to enforce access from the last
- * materialized snapshot (`PatronEntitlementSnapshot` + session tier ids). Clients use
- * **`degraded`** + **`messaging`** to explain that data may be stale until refresh succeeds.
+ * @fileoverview Patreon entitlement snapshot freshness messaging for degraded patron UX (MIG-42).
+ * @description Builds wire payloads explaining stale vs fresh `PatronEntitlementSnapshot` rows.
+ * @see prisma/schema.prisma Patron entitlement snapshot storage (conceptual)
+ * @see src/jsdoc-core-entities.ts SyncStatus mapping notes
  */
 
+/**
+ * @description User-facing copy when tier data may be stale due to Patreon/API outage windows.
+ */
 export const PATRON_ENTITLEMENT_STALE_MESSAGING =
   "Tier access reflects Relay’s last successful Patreon-linked entitlement snapshot. If Patreon is unreachable, Relay keeps using that snapshot until it becomes stale—then refresh when the API is healthy.";
 
+/**
+ * @description Copy used when snapshot is within freshness window.
+ */
 export const PATRON_ENTITLEMENT_FRESH_MESSAGING =
   "Entitlement snapshot is within its freshness window (see stale_after).";
 
+/**
+ * @description Normalized health row for API wiring.
+ */
 export type PatronEntitlementHealthRow = {
   as_of: string;
   stale_after: string | null;
 };
 
+/**
+ * @description Client payload combining snapshot metadata + degraded flags + messaging.
+ */
 export type PatronEntitlementHealthPayload = {
   patron_entitlement: PatronEntitlementHealthRow | null;
   storage: "postgres" | "file";
@@ -23,6 +36,13 @@ export type PatronEntitlementHealthPayload = {
   messaging: string;
 };
 
+/**
+ * @description Computes patron entitlement health view from storage mode + optional DB row.
+ * @param args.storage Persistence backend discriminator.
+ * @param args.row Snapshot timestamps or null.
+ * @param args.now Clock injection for tests.
+ * @returns Payload for HTTP serializers.
+ */
 export function buildPatronEntitlementHealthPayload(args: {
   storage: "postgres" | "file";
   row: { asOf: Date; staleAfter: Date | null } | null;

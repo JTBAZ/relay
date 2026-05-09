@@ -8,7 +8,9 @@ import { createApp } from "../src/server.js";
 import {
   isMediaEligibleForRelayNativePost,
   RelayCreatePostError,
-  resolveCampaignIdForRelayPost
+  resolveCampaignIdForRelayPost,
+  resolveRelayPostTier,
+  resolveRelayPostTierKey
 } from "../src/relay/create-relay-post.js";
 import { MediaIngestOrigin } from "@prisma/client";
 
@@ -144,6 +146,101 @@ describe("isMediaEligibleForRelayNativePost", () => {
         currentStorageKey: "  "
       })
     ).toBe(false);
+  });
+});
+
+describe("resolveRelayPostTier", () => {
+  it("returns id and relayTierId when input is Tier.id", async () => {
+    const prisma = prismaStub({
+      tier: {
+        findFirst: vi.fn().mockResolvedValue({
+          id: "cr::pat_1",
+          relayTierId: "pat_1",
+          campaignId: "camp"
+        }),
+        findMany: vi.fn()
+      }
+    });
+    const r = await resolveRelayPostTier(prisma, "cr", "cr::pat_1", "camp");
+    expect(r).toEqual({ id: "cr::pat_1", relayTierId: "pat_1" });
+    expect(prisma.tier.findMany).not.toHaveBeenCalled();
+  });
+
+  it("returns id and relayTierId when input matches relayTierId", async () => {
+    const prisma = prismaStub({
+      tier: {
+        findFirst: vi.fn().mockResolvedValue(null),
+        findMany: vi.fn().mockResolvedValue([
+          { id: "cr::patreon_tier_99", relayTierId: "patreon_tier_99", campaignId: "camp" }
+        ])
+      }
+    });
+    const r = await resolveRelayPostTier(prisma, "cr", "patreon_tier_99", "camp");
+    expect(r).toEqual({ id: "cr::patreon_tier_99", relayTierId: "patreon_tier_99" });
+  });
+});
+
+describe("resolveRelayPostTierKey", () => {
+  it("returns Tier.id when input is already the primary key", async () => {
+    const prisma = prismaStub({
+      tier: {
+        findFirst: vi.fn().mockResolvedValue({
+          id: "cr::pat_1",
+          relayTierId: "pat_1",
+          campaignId: "camp"
+        }),
+        findMany: vi.fn()
+      }
+    });
+    const id = await resolveRelayPostTierKey(prisma, "cr", "cr::pat_1", "camp");
+    expect(id).toBe("cr::pat_1");
+    expect(prisma.tier.findMany).not.toHaveBeenCalled();
+  });
+
+  it("resolves relayTierId to Tier.id when pk lookup misses", async () => {
+    const prisma = prismaStub({
+      tier: {
+        findFirst: vi.fn().mockResolvedValue(null),
+        findMany: vi.fn().mockResolvedValue([
+          { id: "cr::patreon_tier_99", relayTierId: "patreon_tier_99", campaignId: "camp" }
+        ])
+      }
+    });
+    const id = await resolveRelayPostTierKey(prisma, "cr", "patreon_tier_99", "camp");
+    expect(id).toBe("cr::patreon_tier_99");
+  });
+
+  it("throws when multiple tiers share the relayTierId match", async () => {
+    const prisma = prismaStub({
+      tier: {
+        findFirst: vi.fn().mockResolvedValue(null),
+        findMany: vi
+          .fn()
+          .mockResolvedValue([
+            { id: "cr::a", relayTierId: "ambiguous_relay", campaignId: "camp" },
+            { id: "cr::b", relayTierId: "ambiguous_relay", campaignId: "camp" }
+          ])
+      }
+    });
+    await expect(
+      resolveRelayPostTierKey(prisma, "cr", "ambiguous_relay", "camp")
+    ).rejects.toMatchObject({ code: "INVALID_TIER_REF" });
+  });
+
+  it("throws when campaign mismatches", async () => {
+    const prisma = prismaStub({
+      tier: {
+        findFirst: vi.fn().mockResolvedValue({
+          id: "cr::x",
+          relayTierId: "x",
+          campaignId: "other_camp"
+        }),
+        findMany: vi.fn()
+      }
+    });
+    await expect(resolveRelayPostTierKey(prisma, "cr", "cr::x", "camp")).rejects.toMatchObject({
+      code: "INVALID_TIER_REF"
+    });
   });
 });
 

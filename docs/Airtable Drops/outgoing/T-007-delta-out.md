@@ -2,8 +2,7 @@
 
 ## 1. Delta
 
-- **Worker (canonical):** `src/patreon/incremental-sync-worker.ts` — `runIncrementalAutosyncCycle` (watermark-aware `scrapeOrSync`, optional upstream probe skip, bounded parallelism across creators, per-creator serialization via `PatreonSyncService.scrapeOrSync` + `createExclusivePerKeyRunner`), `startIncrementalAutosyncWorker` (interval loop, overlap guard).
-- **Import alias:** `src/patreon/incremental-autosync-worker.ts` re-exports the same module.
+- **Worker (canonical):** `src/patreon/incremental-sync-worker.ts` — `runIncrementalAutosyncCycle` (watermark-aware `scrapeOrSync`, optional upstream probe skip, bounded parallelism across creators, per-creator serialization via `PatreonSyncService.scrapeOrSync` + `createExclusivePerKeyRunner`), `startIncrementalAutosyncWorker` (interval loop, overlap guard). Import this module only (historical `incremental-autosync-worker.ts` shim removed in P1-queue-018).
 - **Enable autosync:** `src/main.ts` starts the worker when **`RELAY_AUTOSYNC_ENABLED`** *or* **`RELAY_PATREON_INCREMENTAL_AUTOSYNC_MS`** ≥ 10000 (no need for both).
 - **Interval / boot behavior:** `RELAY_PATREON_INCREMENTAL_AUTOSYNC_MS` (min 10s) overrides `RELAY_AUTOSYNC_INTERVAL_MS` when set. If the Patreon-prefixed interval is set, first tick on boot is controlled by **`RELAY_PATREON_INCREMENTAL_AUTOSYNC_RUN_ON_START`** (unset defaults to **no** immediate run); legacy **`RELAY_AUTOSYNC_SKIP_INITIAL_RUN`** applies when the Patreon interval is **not** set.
 - **Env aliases:** `RELAY_PATREON_INCREMENTAL_AUTOSYNC_MAX_POST_PAGES`, `RELAY_PATREON_INCREMENTAL_AUTOSYNC_PROBE_SKIP` mirror `RELAY_AUTOSYNC_*` (see root `.env.example`).

@@ -1,12 +1,18 @@
 /**
- * Gallery post/media overrides: Relay-controlled layer that survives Patreon re-ingest.
- * Canonical ingest does not read or write this file. See docs/relay-artist-metadata.md.
+ * @fileoverview Gallery post/media overrides — Relay-controlled layer that survives Patreon re-ingest.
+ * @description Canonical ingest does not read or write this file. File + Postgres implementations share {@link GalleryOverridesStore}.
+ * @see prisma/schema.prisma `PostOverride` rows via {@link DbGalleryOverridesStore}
+ * @external docs/relay-artist-metadata.md Operational semantics (referenced historically)
+ * @see src/jsdoc-core-entities.ts Artist/Gallery/SyncStatus mapping notes
  */
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import type { GalleryOverridesRoot, MediaOverride, PostVisibility } from "./types.js";
 
-/** Postgres / file implementations share this contract (see `overrides-store-db.ts`). */
+/**
+ * @description Async contract for persisting gallery overrides (tags, visibility, discover eligibility).
+ * @see ./overrides-store-db.ts Postgres implementation
+ */
 export interface GalleryOverridesStore {
   load(): Promise<GalleryOverridesRoot>;
   save(root: GalleryOverridesRoot): Promise<void>;
@@ -36,7 +42,11 @@ export interface GalleryOverridesStore {
   ): Promise<void>;
 }
 
-/** Used by `overrides-store-db` when flattening per-asset rows. */
+/**
+ * @description Drops empty fields from a {@link MediaOverride} for compact persistence rows.
+ * @param mo Incoming delta object.
+ * @returns Compact override or null when empty.
+ */
 export function compactMediaOverride(mo: MediaOverride): MediaOverride | null {
   const out: MediaOverride = {};
   if (mo.visibility !== undefined) {
@@ -55,7 +65,10 @@ function emptyRoot(): GalleryOverridesRoot {
   return { creators: {} };
 }
 
-/** Legacy JSON used `flagged`; normalize to `review` on read. */
+/**
+ * @description Normalizes legacy `flagged` visibility strings to `review` in-place for backwards-compatible reads.
+ * @param root Overrides root document mutably normalized.
+ */
 export function migrateGalleryLegacyVisibilityInPlace(root: GalleryOverridesRoot): void {
   for (const c of Object.values(root.creators)) {
     for (const po of Object.values(c.posts)) {
@@ -73,6 +86,10 @@ export function migrateGalleryLegacyVisibilityInPlace(root: GalleryOverridesRoot
   }
 }
 
+/**
+ * @description JSON-backed overrides store under a single file path.
+ * @security-audit-required Mutations trust caller-supplied `creatorId`; routes must enforce creator authorization.
+ */
 export class FileGalleryOverridesStore implements GalleryOverridesStore {
   private readonly filePath: string;
 

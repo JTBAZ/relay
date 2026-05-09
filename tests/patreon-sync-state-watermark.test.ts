@@ -149,6 +149,13 @@ describe("GET /api/v1/patreon/sync-state", () => {
     expect(res.body.data.oauth?.credential_health_status).toBe("healthy");
     expect(res.body.data.last_post_scrape).toBeNull();
     expect(res.body.data.last_member_sync).toBeNull();
+    expect(res.body.data.sync_health).toMatchObject({
+      status: "unknown",
+      last_success_at: null,
+      last_error: null,
+      campaign_id: null,
+      message_key: "sync_health.unknown"
+    });
 
     const postsCalls = vi.mocked(fetchImpl).mock.calls.filter(([u]) => {
       const url = typeof u === "string" ? u : u instanceof URL ? u.href : (u as Request).url;
@@ -194,6 +201,10 @@ describe("GET /api/v1/patreon/sync-state", () => {
     expect(res.body.data.oauth?.access_token_expired).toBe(false);
     expect(res.body.data.last_post_scrape).toBeNull();
     expect(res.body.data.campaign_display).toBeNull();
+    expect(res.body.data.sync_health).toMatchObject({
+      status: "unknown",
+      message_key: "sync_health.unknown"
+    });
   });
 
   it("returns 400 without creator_id", async () => {

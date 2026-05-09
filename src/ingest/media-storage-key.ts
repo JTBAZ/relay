@@ -1,8 +1,17 @@
+/**
+ * @fileoverview Mutates canonical snapshot media rows with materialized `storage_key` (MIG-31).
+ * @description Used when upstream supplies or backfills object storage keys on a media version.
+ * @see ./canonical-store.js
+ */
+
 import type { CanonicalSnapshot } from "./canonical-store.js";
 
 /**
- * Attach a materialized **`storage_key`** (export-relative path or future R2 object key) to the
- * current media version in a canonical snapshot (MIG-31).
+ * @param {CanonicalSnapshot} snapshot
+ * @param {string} creatorId
+ * @param {string} mediaId
+ * @param {string} storageKey
+ * @returns {boolean} False when media row missing.
  */
 export function applyStorageKeyToCanonicalSnapshot(
   snapshot: CanonicalSnapshot,

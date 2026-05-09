@@ -1,3 +1,9 @@
+/**
+ * @fileoverview Finalizes Relay browser uploads after R2 `HEAD`: validates declared size vs object, upgrades `MediaAsset` to READY, optionally binds to a post’s latest version.
+ * @description Shared between `POST /api/v1/relay/upload/commit` and internal upload flows. Mutations are Prisma-only (no Patreon).
+ * @see {@link ../jsdoc-core-entities.ts}
+ * @see prisma/schema.prisma `MediaAsset`, `Post`, `PostVersion`
+ */
 import {
   MediaProcessingStatus,
   Prisma,
@@ -8,6 +14,11 @@ import {
 /** Truncate for `MediaAsset.processing_error` column safety. */
 const MAX_PROC_ERR = 2000;
 
+/**
+ * Marks a media row failed with a truncated operator-facing error (swallows Prisma errors).
+ * @async
+ * @throws Never — errors are absorbed for best-effort diagnostics.
+ */
 export async function markMediaAssetProcessingFailed(
   prisma: PrismaClient,
   mediaId: string,
@@ -28,11 +39,13 @@ export async function markMediaAssetProcessingFailed(
   }
 }
 
+/** Result of `HeadObject` / R2 head used during commit validation. */
 export type RelayUploadCommitHead = {
   contentLength: number;
   etag: string | undefined;
 };
 
+/** Arguments for {@link applyRelayUploadCommitUpdate} after presigned PUT + head. */
 export type ApplyRelayUploadCommitParams = {
   mediaId: string;
   creatorId: string;
@@ -46,8 +59,11 @@ export type ApplyRelayUploadCommitParams = {
 };
 
 /**
- * T-3.2 — after a successful R2 head, validate size and persist `MediaAsset` READY
- * (+ optional `PostVersion.mediaIds` bump). Shared with `POST /api/v1/relay/upload/commit`.
+ * T-3.2 — after a successful R2 head, validate size and persist `MediaAsset` READY (+ optional `PostVersion.mediaIds` bump).
+ * @async
+ * @throws {Error} Prisma failures on success path (update/create version) propagate to caller.
+ * @param prisma Connected Prisma client.
+ * @param params Commit context including existing `MediaAsset` row snapshot.
  */
 export async function applyRelayUploadCommitUpdate(
   prisma: PrismaClient,

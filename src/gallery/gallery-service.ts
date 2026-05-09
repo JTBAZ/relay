@@ -1,3 +1,10 @@
+/**
+ * @fileoverview Orchestrates canonical snapshot + overrides + collections + presentation overlays into gallery API shapes.
+ * @description Async façade over {@link ./query.js} builders with optional patron redaction.
+ * @see ./types.js Wire DTOs
+ * @see src/jsdoc-core-entities.ts Artist/Gallery/SyncStatus mapping notes
+ */
+
 import type { CanonicalStore } from "../ingest/canonical-store.js";
 import type { FileExportIndex } from "../export/export-index.js";
 import { evaluateTierRules } from "../clone/tier-rules.js";
@@ -21,10 +28,17 @@ import type {
 import { mergePostPresentation } from "./effective-presentation.js";
 import type { PostPresentationOverlay } from "./effective-presentation.js";
 
+/**
+ * @description Injected loader for DB-backed {@link PostPresentation} merges (`creatorId` scoped).
+ */
 export type LoadPostPresentationOverlays = (
   creatorId: string
 ) => Promise<Readonly<Record<string, PostPresentationOverlay>>>;
 
+/**
+ * @description Gallery read model service (list, facets, post detail, visitor-visible ids).
+ * @security-audit-required All entrypoints take caller-supplied `creatorId`; HTTP layer must authorize tenant/creator alignment before use.
+ */
 export class GalleryService {
   private readonly canonical: CanonicalStore;
   private readonly exportIndex: FileExportIndex;
@@ -32,6 +46,13 @@ export class GalleryService {
   private collections: RelayCollectionsStore | null = null;
   private readonly loadPostPresentations?: LoadPostPresentationOverlays;
 
+  /**
+   * @description Constructs service with canonical/export/overrides stores and optional presentation loader.
+   * @param canonical Canonical snapshot store.
+   * @param exportIndex Export index accessor.
+   * @param overrides Gallery overrides store.
+   * @param options Optional `loadPostPresentations` for DB merge.
+   */
   public constructor(
     canonical: CanonicalStore,
     exportIndex: FileExportIndex,
@@ -44,6 +65,10 @@ export class GalleryService {
     this.loadPostPresentations = options?.loadPostPresentations;
   }
 
+  /**
+   * @description Attaches collections store for theme tags / membership in gallery rows.
+   * @param store Collections implementation.
+   */
   public setCollections(store: RelayCollectionsStore): void {
     this.collections = store;
   }
@@ -60,6 +85,13 @@ export class GalleryService {
     return this.loadPostPresentations(creatorId);
   }
 
+  /**
+   * @description Paginated gallery list with filters; optionally redacts exports for visitor catalog mode.
+   * @param params List params plus optional `patron_session` for visitor redaction.
+   * @returns Sliced items + cursor.
+   * @async
+   * @throws Propagates failures from canonical/export/overrides/collections/presentation loaders.
+   */
   public async list(
     params: GalleryListParams & { patron_session?: SessionToken | null }
   ): Promise<GalleryListResult> {
@@ -85,6 +117,14 @@ export class GalleryService {
     return result;
   }
 
+  /**
+   * @description Aggregate tag/tier facets (and export stats when not visitor catalog).
+   * @param creatorId Creator id.
+   * @param options When `visitor_catalog`, omits export byte totals.
+   * @returns Facet payload for UI filters.
+   * @async
+   * @throws Propagates backing store failures.
+   */
   public async facets(
     creatorId: string,
     options?: { visitor_catalog?: boolean }
@@ -143,6 +183,15 @@ export class GalleryService {
     };
   }
 
+  /**
+   * @description Single-post gallery detail with merged presentation and optional patron redaction.
+   * @param creatorId Creator id.
+   * @param postId Post id.
+   * @param options Visitor catalog + patron session options.
+   * @returns Detail DTO or null when missing/hidden for visitors.
+   * @async
+   * @throws Propagates backing store failures.
+   */
   public async postDetail(
     creatorId: string,
     postId: string,
@@ -210,7 +259,13 @@ export class GalleryService {
     };
   }
 
-  /** Post ids that have at least one non-hidden gallery row (visitor-safe catalog). */
+  /**
+   * @description Post ids that have at least one non-hidden gallery row (visitor-safe catalog seed).
+   * @param creatorId Creator id.
+   * @returns Set of post ids.
+   * @async
+   * @throws Propagates backing store failures.
+   */
   public async visitorVisiblePostIdSet(creatorId: string): Promise<Set<string>> {
     const snapshot = await this.canonical.load();
     const index = await this.exportIndex.load(creatorId);

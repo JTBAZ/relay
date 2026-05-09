@@ -18,6 +18,8 @@ type Props = {
   campaignId?: string;
   onAfterScrape: () => void | Promise<void>;
   onSyncActivity?: (phase: SyncPhase) => void;
+  /** Increment (e.g. from SyncHealthBanner) to open the menu and refresh sync state. */
+  detailsSignal?: number;
 };
 
 function fmtIso(iso: string | null | undefined): string {
@@ -90,7 +92,8 @@ export default function PatreonSyncMenu({
   creatorId,
   campaignId,
   onAfterScrape,
-  onSyncActivity
+  onSyncActivity,
+  detailsSignal
 }: Props) {
   const [open, setOpen] = useState(false);
   const [loadingState, setLoadingState] = useState(false);
@@ -121,6 +124,16 @@ export default function PatreonSyncMenu({
       setLoadingState(false);
     }
   }, [creatorId, campaignId]);
+
+  const prevDetailsSignal = useRef(0);
+  useEffect(() => {
+    const sig = typeof detailsSignal === "number" ? detailsSignal : 0;
+    if (sig <= prevDetailsSignal.current) return;
+    prevDetailsSignal.current = sig;
+    setOpen(true);
+    setActionError(null);
+    void loadState();
+  }, [detailsSignal, loadState]);
 
   useEffect(() => {
     if (!open) return;

@@ -1,3 +1,9 @@
+/**
+ * @fileoverview Maps Patreon JSON:API resources into Relay `IngestPost`, tier lists, campaign batches, and sync inputs.
+ * @description Pure transforms (+ media finalize) used by `PatreonSyncService` and tests; no network I/O.
+ * @see {@link ../jsdoc-core-entities.ts}
+ * @see prisma/schema.prisma Ingest persistence targets `Post`, `Tier`, `Campaign`, `MediaAsset`
+ */
 import type { IngestCampaign, IngestPost, IngestTier, SyncBatchInput } from "../ingest/types.js";
 import type { JsonApiDocument, JsonApiResource } from "./jsonapi-types.js";
 import type { CampaignDisplaySnapshot } from "./creator-campaign-display-store.js";

@@ -1,7 +1,17 @@
+/**
+ * @fileoverview Public slug allocation and validation for `CreatorProfile.publicSlug`.
+ * @description Reserved word guardrails, normalization, and collision-aware allocation helpers for Prisma transactions.
+ * @see prisma/schema.prisma CreatorProfile
+ * @see src/jsdoc-core-entities.ts Artist.slug
+ */
+
 import { randomBytes } from "node:crypto";
 import type { PrismaClient } from "@prisma/client";
 
-/** Routes and product names that must not be used as public creator slugs. */
+/**
+ * Routes and product names that must not be used as public creator slugs.
+ * @description Reserved segments blocked from `publicSlug` to avoid routing collisions.
+ */
 export const RESERVED_PUBLIC_SLUGS = new Set([
   "about",
   "account",
@@ -45,8 +55,14 @@ export const RESERVED_PUBLIC_SLUGS = new Set([
   "www"
 ]);
 
+/** @description Regex validating final slug shape after normalization. */
 const SLUG_RE = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 
+/**
+ * @description Sanitizes slug candidates for public profile URLs.
+ * @param raw User or campaign derived string.
+ * @returns Normalized slug fragment.
+ */
 export function normalizePublicSlugCandidate(raw: string): string {
   let s = raw.toLowerCase().trim();
   const at = s.indexOf("@");
@@ -64,7 +80,11 @@ export function normalizePublicSlugCandidate(raw: string): string {
   return s;
 }
 
-/** Default slug from signup email local-part (before @ and +tag). */
+/**
+ * @description Derives default slug text from an email local-part using {@link normalizePublicSlugCandidate}.
+ * @param email Email address or null/undefined.
+ * @returns Candidate slug or fallback `studio`.
+ */
 export function defaultPublicSlugFromEmail(email: string | null | undefined): string {
   if (!email?.trim()) {
     return "studio";
@@ -73,6 +93,11 @@ export function defaultPublicSlugFromEmail(email: string | null | undefined): st
   return n.length >= 3 ? n : "studio";
 }
 
+/**
+ * @description Validates length, charset, and reserved list for slug publish.
+ * @param slug Raw slug string.
+ * @returns Success or human-readable validation error.
+ */
 export function validatePublicSlugFormat(
   slug: string
 ): { ok: true } | { ok: false; message: string } {
@@ -110,6 +135,13 @@ async function isPublicSlugOwnedOrFree(
  * Resolves a unique `public_slug` from an already-normalized base (e.g. Patreon campaign vanity).
  * Returns null if the base fails format validation. On collision with another profile, appends
  * `-{hex}` until unique (max attempts).
+ * @description Allocates unique slug from vanity base with suffix attempts inside `tx`.
+ * @param tx Prisma interface exposing `creatorProfile`.
+ * @param normalizedBase Already normalized slug candidate.
+ * @param ownProfileId Profile row id allowed to keep existing claim on `normalizedBase`.
+ * @returns Unique slug or `null` when validation fails or attempts exhausted.
+ * @async
+ * @throws {Error} Prisma query failures propagate.
  */
 export async function allocateUniquePublicSlugFromNormalizedBase(
   tx: CreatorProfileDb,
@@ -147,6 +179,12 @@ export async function allocateUniquePublicSlugFromNormalizedBase(
 /**
  * Picks a unique `public_slug` starting from an email-derived base, appending short
  * random suffixes on collision (inside a transaction).
+ * @description Entry point for first-time slug allocation from email-derived base.
+ * @param tx Prisma client/tx with `creatorProfile` access.
+ * @param email Optional email seed.
+ * @returns Allocated unique slug.
+ * @async
+ * @throws {Error} When uniqueness cannot be achieved after attempts.
  */
 export async function allocateUniquePublicSlug(
   tx: CreatorProfileDb,

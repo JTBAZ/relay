@@ -1,11 +1,24 @@
+/**
+ * @fileoverview Bounded HTTP fetch helper for Patreon/upstream media export with exponential backoff.
+ * @description Classifies retryable status codes and transient network errors for `ExportService`.
+ */
+
 import type { ExportFetchRetryPolicy } from "./types.js";
 
+/**
+ * @description Returns whether an HTTP status warrants another attempt.
+ * @param status HTTP status code.
+ */
 export function shouldRetryHttpStatus(status: number): boolean {
   if (status === 429 || status === 408) return true;
   if (status >= 500 && status <= 599) return true;
   return false;
 }
 
+/**
+ * @description Heuristic for network-layer failures that may succeed on retry.
+ * @param e Unknown thrown error.
+ */
 export function isRetryableFetchError(e: unknown): boolean {
   if (e instanceof TypeError) return true;
   if (e instanceof Error) {
@@ -15,6 +28,7 @@ export function isRetryableFetchError(e: unknown): boolean {
   return false;
 }
 
+/** @description Optional headers merged into each upstream attempt (e.g. Patreon Bearer). */
 export type FetchUpstreamOptions = {
   /** Merged into each attempt (e.g. `Authorization` for Patreon-hosted media). */
   headers?: Record<string, string>;
@@ -22,6 +36,15 @@ export type FetchUpstreamOptions = {
 
 /**
  * Fetch URL with bounded retries (transient HTTP + network/timeout only).
+ * @description Applies `AbortSignal.timeout`, exponential delays via `sleepFn`, and throws when exhausted.
+ * @param url Upstream URL.
+ * @param fetchImpl Injectable `fetch`.
+ * @param policy Attempt/timeout limits.
+ * @param sleepFn Delay between attempts.
+ * @param options Optional outgoing headers.
+ * @returns Final `Response` when `ok`.
+ * @async
+ * @throws {Error} Non-retryable HTTP status, network errors after retries, or timeout failures.
  */
 export async function fetchUpstreamWithRetries(
   url: string,

@@ -1,4 +1,10 @@
 /**
+ * @fileoverview Patron experience module notification-service.ts — see exported symbols.
+ * @see {@link ../jsdoc-core-entities.ts}
+ * @see prisma/schema.prisma Account, TenantMembership, and related patron tables
+ * @security-audit-required Patron PII or entitlement paths — audit responses and logs.
+ */
+/**
  * PE-G (BO-P3-03) — notification storage + read API.
  *
  * Owns the per-recipient `Notification` rows (writer side via `createOrCluster` called by the
@@ -9,6 +15,9 @@
  *     count + bump updatedAt + replace the latest payload.
  *   - Otherwise => new row.
  *   - clusterKey null => never coalesce (used for high-signal kinds like `tier_changed`).
+ *
+ * Non-clustered inserts use a partial unique index on `(source_event_id, recipient_membership_id)`
+ * when `cluster_key` is null; `P2002` is treated as idempotent return of the existing row.
  *
  * The worker is the only writer. The HTTP layer reads + flips read state.
  */
@@ -102,17 +111,41 @@ export async function createOrClusterNotification(
       return rowToRecord(updated);
     }
   }
-  const created = await prisma.notification.create({
-    data: {
-      recipientMembershipId: input.recipientMembershipId,
-      relayCreatorId: input.relayCreatorId ?? "",
-      kind: input.kind,
-      payloadJson: input.payload as Prisma.InputJsonValue,
-      clusterKey: input.clusterKey ?? null,
-      sourceEventId: input.sourceEventId ?? null
+  try {
+    const created = await prisma.notification.create({
+      data: {
+        recipientMembershipId: input.recipientMembershipId,
+        relayCreatorId: input.relayCreatorId ?? "",
+        kind: input.kind,
+        payloadJson: input.payload as Prisma.InputJsonValue,
+        clusterKey: input.clusterKey ?? null,
+        sourceEventId: input.sourceEventId ?? null
+      }
+    });
+    return rowToRecord(created);
+  } catch (e) {
+    const p2002 =
+      typeof e === "object" &&
+      e !== null &&
+      "code" in e &&
+      (e as { code: string }).code === "P2002";
+    if (
+      p2002 &&
+      !input.clusterKey &&
+      input.sourceEventId != null &&
+      input.sourceEventId !== ""
+    ) {
+      const raced = await prisma.notification.findFirst({
+        where: {
+          sourceEventId: input.sourceEventId,
+          recipientMembershipId: input.recipientMembershipId,
+          clusterKey: null
+        }
+      });
+      if (raced) return rowToRecord(raced);
     }
-  });
-  return rowToRecord(created);
+    throw e;
+  }
 }
 
 export interface ListNotificationsOptions {

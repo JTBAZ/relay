@@ -1,5 +1,16 @@
+/**
+ * @fileoverview Request body validation for `SyncBatchInput` JSON.
+ * @description Lenient defaults for optional timestamps; returns field-scoped error details.
+ * @see ./types.js
+ */
+
 import type { IngestMediaItem, SyncBatchInput } from "./types.js";
 
+/**
+ * @description Validates unknown POST body into `SyncBatchInput` or structured errors.
+ * @param {unknown} body
+ * @returns {{ ok: true; batch: SyncBatchInput } | { ok: false; details: Array<{ field: string; issue: string }> }}
+ */
 export function validateIngestBatchBody(body: unknown): {
   ok: true;
   batch: SyncBatchInput;

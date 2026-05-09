@@ -1,3 +1,10 @@
+/**
+ * @fileoverview Post–creator OAuth hook: pick default Patreon campaign from token and persist `CreatorProfile.patreonCampaignId`.
+ * @description Uses same single-campaign heuristic as sync; rejects cross-studio campaign binding.
+ * @see {@link ../jsdoc-core-entities.ts}
+ * @see prisma/schema.prisma `CreatorProfile`, `Tenant`
+ */
+
 import type { PrismaClient } from "@prisma/client";
 import {
   ensureCreatorProfilePatreonCampaignId,
@@ -9,6 +16,8 @@ import { fetchCampaignsWithTiers } from "./patreon-resource-api.js";
 /**
  * After creator ingest OAuth, list campaigns with the new access token and persist
  * `CreatorProfile.patreonCampaignId` when Patreon returns exactly one campaign (same heuristic as sync).
+ * @async
+ * @throws {Error} Cross-studio campaign conflict, profile write conflict, or Patreon HTTP failures.
  */
 export async function syncCreatorProfilePatreonCampaignFromOAuthToken(args: {
   prisma: PrismaClient;

@@ -1,3 +1,9 @@
+/**
+ * @fileoverview In-memory retry queue with exponential backoff and DLQ handoff.
+ * @description Used when apply paths may transiently fail; records health metrics on retries.
+ * @see ./dlq.js
+ */
+
 import type { DeadLetterQueue } from "./dlq.js";
 import { recordDlqAppend, recordRetryFailure } from "./ingest-health-metrics.js";
 import type { SyncBatchInput } from "./types.js";
@@ -15,6 +21,9 @@ export type RetryPolicy = {
   base_delay_ms: number;
 };
 
+/**
+ * @description Bounded retry runner that appends to DLQ after `max_attempts`.
+ */
 export class IngestRetryQueue {
   private readonly pending: IngestJob[] = [];
   private readonly policy: RetryPolicy;

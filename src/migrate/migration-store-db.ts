@@ -1,3 +1,9 @@
+/**
+ * @fileoverview Prisma-backed migration store (`audienceMigrationCampaign`, audit, suppression, links).
+ * @description Production persistence for `CampaignService` operations.
+ * @see ./migration-store.js
+ */
+
 import type { Prisma } from "@prisma/client";
 import type { PrismaClient } from "@prisma/client";
 import type { MigrationStore } from "./migration-store.js";
@@ -7,6 +13,9 @@ import type {
   SignedLink
 } from "./types.js";
 
+/**
+ * @description Prisma implementation of {@link MigrationStore}.
+ */
 export class DbMigrationStore implements MigrationStore {
   public constructor(private readonly prisma: PrismaClient) {}
 

@@ -26,6 +26,7 @@ import {
   buildGalleryFacetsQuery,
   buildGalleryQuery,
   fetchGalleryPostDetail,
+  fetchPublicCreatorGalleryLayout,
   hasRelaySignedInCookie,
   listPatronCollections,
   listPatronFavorites,
@@ -42,6 +43,8 @@ import {
   type PatronCollectionWithEntries
 } from "@/lib/relay-api";
 import PatronLayoutSections from "@/app/components/patron/PatronLayoutSections";
+import CreatorPublicHero from "@/app/components/public-profile/CreatorPublicHero";
+import { buildPublicProfileHeroModel } from "@/lib/public-profile-hero";
 import PostBatchGridCell from "./PostBatchGridCell";
 import SnipIcon from "@/app/components/icons/SnipIcon";
 import SnipToCollectionModal from "./SnipToCollectionModal";
@@ -530,16 +533,35 @@ async function fetchAllVisitorItems(
   return acc;
 }
 
-export default function VisitorGalleryView() {
+export type VisitorGalleryViewProps = {
+  /** Overrides `NEXT_PUBLIC_RELAY_CREATOR_ID` (e.g. public `/patron/c/[slug]` page). */
+  relayCreatorId?: string;
+  /**
+   * Public URL slug for this creator — used to load published layout for strangers via
+   * `GET /api/v1/public/creators/:slug/gallery-layout`. Optional on `/visitor` (may use env fallback).
+   */
+  publicSlug?: string;
+};
+
+const envVisitorPublicSlug = process.env.NEXT_PUBLIC_RELAY_VISITOR_PUBLIC_SLUG?.trim() || "";
+
+export default function VisitorGalleryView(props: VisitorGalleryViewProps = {}) {
+  const { relayCreatorId: relayCreatorIdProp, publicSlug: publicSlugProp } = props;
   const router = useRouter();
   const { creatorId: studioCreatorId } = useStudioSession();
-  const creatorId = defaultCreatorId;
+  const creatorId = relayCreatorIdProp?.trim() || defaultCreatorId;
+  const publicSlugForLayout = useMemo(
+    () => (publicSlugProp?.trim() || envVisitorPublicSlug),
+    [publicSlugProp]
+  );
   const creatorIsViewingOwnGallery =
     studioCreatorId.trim().length > 0 && studioCreatorId.trim() === creatorId.trim();
   const [items, setItems] = useState<GalleryItem[]>([]);
   const [facets, setFacets] = useState<FacetsData | null>(null);
   const [collections, setCollections] = useState<Collection[]>([]);
   const [pageLayout, setPageLayout] = useState<PageLayout | null>(null);
+  /** Stranger path: false = slug resolved but gallery not published yet; null = owner or unknown / no slug. */
+  const [visitorPublicGalleryPublished, setVisitorPublicGalleryPublished] = useState<boolean | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [mode, setMode] = useState<BrowseMode>("chrono");
@@ -572,53 +594,19 @@ export default function VisitorGalleryView() {
   const [snipTarget, setSnipTarget] = useState<{ postId: string; mediaId: string } | null>(null);
   const [patronAuthed, setPatronAuthed] = useState(false);
 
-  const mergedProfile = useMemo(() => {
-    const vh = facets?.visitor_hero;
-    const bannerUrl = vh?.banner_url?.trim() || envVisitorBannerUrl;
-    const avatarUrl = vh?.avatar_url?.trim() || envVisitorAvatarUrl;
-    const displayName = vh?.relay_display_name?.trim() || envVisitorDisplayName;
-    const patreonSlug = vh?.patreon_name?.trim().toLowerCase();
-    const patreonProfileHref = patreonSlug ? `https://www.patreon.com/${patreonSlug}` : null;
-    const coverId = pageLayout?.hero?.cover_media_id?.trim();
-    const showHeroCover = pageLayout?.hero?.show_cover !== false;
-    const layoutCoverUrl =
-      showHeroCover && coverId
-        ? `${RELAY_API_BASE}/api/v1/export/media/${encodeURIComponent(creatorId)}/${encodeURIComponent(coverId)}/content`
-        : null;
-    const title = pageLayout?.hero?.title?.trim() || displayName;
-    const subTrim = pageLayout?.hero?.subtitle?.trim() ?? "";
-    const bioTrim = pageLayout?.hero?.bio?.trim() ?? "";
-    const showLayoutBio = pageLayout?.theme?.show_bio ?? true;
-    const showPatreonLink = pageLayout?.theme?.show_patreon_link ?? true;
-    const patreonLinkPosition =
-      pageLayout?.theme?.patreon_link_position === "below_avatar"
-        ? "below_avatar"
-        : "below_bio";
-
-    let heroPrimary: string | null = null;
-    let heroSecondary: string | null = null;
-    if (showLayoutBio && bioTrim) {
-      heroPrimary = bioTrim;
-      if (subTrim && subTrim !== bioTrim) heroSecondary = subTrim;
-    } else if (subTrim) {
-      heroPrimary = subTrim;
-    }
-
-    const finalBanner = showHeroCover ? layoutCoverUrl || bannerUrl : null;
-    return {
-      bannerUrl,
-      avatarUrl,
-      displayName,
-      patreonProfileHref,
-      patreonSlug,
-      title,
-      showPatreonLink,
-      patreonLinkPosition,
-      heroPrimary,
-      heroSecondary,
-      finalBanner
-    };
-  }, [facets, pageLayout, creatorId]);
+  const publicHeroModel = useMemo(
+    () =>
+      buildPublicProfileHeroModel({
+        pageLayout,
+        visitorHero: facets?.visitor_hero,
+        creatorId,
+        patreonBannerFallback: envVisitorBannerUrl || undefined,
+        avatarUrlFallback: envVisitorAvatarUrl || undefined,
+        displayNameFallback: envVisitorDisplayName || undefined,
+        taglineWhenHeroTextEmpty: envVisitorTagline || undefined
+      }),
+    [facets?.visitor_hero, pageLayout, creatorId]
+  );
 
   const hasLayoutSections = (pageLayout?.sections?.length ?? 0) > 0;
 
@@ -754,45 +742,76 @@ export default function VisitorGalleryView() {
   const loadMeta = useCallback(async () => {
     const u = new URLSearchParams();
     u.set("creator_id", creatorId);
+    const visitorMode = !creatorIsViewingOwnGallery;
     try {
-      const [f, colRes, layoutRes] = await Promise.all([
-        relayFetch<FacetsData>(buildGalleryFacetsQuery(creatorId, !creatorIsViewingOwnGallery)),
+      const [f, colRes] = await Promise.all([
+        relayFetch<FacetsData>(buildGalleryFacetsQuery(creatorId, visitorMode)),
         relayFetch<{ items: Collection[] }>(
-          buildGalleryCollectionsQuery(creatorId, !creatorIsViewingOwnGallery)
-        ),
-        relayFetch<PageLayout>(`/api/v1/gallery/layout?${u.toString()}`)
+          buildGalleryCollectionsQuery(creatorId, visitorMode)
+        )
       ]);
       setFacets(f);
       setCollections(colRes.items.sort((a, b) => a.sort_order - b.sort_order));
+
+      let layoutRes: PageLayout | null = null;
+      let publicPublished: boolean | null = null;
+
+      if (creatorIsViewingOwnGallery) {
+        layoutRes = await relayFetch<PageLayout>(`/api/v1/gallery/layout?${u.toString()}`);
+        publicPublished = null;
+      } else {
+        const slug = publicSlugForLayout.trim();
+        if (slug.length > 0) {
+          const pub = await fetchPublicCreatorGalleryLayout(slug);
+          if (pub?.published) {
+            layoutRes = pub.layout;
+            publicPublished = true;
+          } else if (pub && !pub.published) {
+            layoutRes = null;
+            publicPublished = false;
+          } else {
+            layoutRes = null;
+            publicPublished = null;
+          }
+        } else {
+          layoutRes = null;
+          publicPublished = null;
+        }
+      }
       setPageLayout(layoutRes);
+      setVisitorPublicGalleryPublished(publicPublished);
     } catch (e) {
       if (process.env.NODE_ENV === "development") {
         console.warn("[VisitorGallery] facets/collections/layout request failed:", e);
       }
       try {
-        const f = await relayFetch<FacetsData>(
-          buildGalleryFacetsQuery(creatorId, !creatorIsViewingOwnGallery)
-        );
+        const f = await relayFetch<FacetsData>(buildGalleryFacetsQuery(creatorId, visitorMode));
         setFacets(f);
       } catch {
         /* ignore */
       }
       try {
         const colRes = await relayFetch<{ items: Collection[] }>(
-          buildGalleryCollectionsQuery(creatorId, !creatorIsViewingOwnGallery)
+          buildGalleryCollectionsQuery(creatorId, visitorMode)
         );
         setCollections(colRes.items.sort((a, b) => a.sort_order - b.sort_order));
       } catch {
         setCollections([]);
       }
-      try {
-        const layoutRes = await relayFetch<PageLayout>(`/api/v1/gallery/layout?${u.toString()}`);
-        setPageLayout(layoutRes);
-      } catch {
+      if (creatorIsViewingOwnGallery) {
+        try {
+          const layoutRes = await relayFetch<PageLayout>(`/api/v1/gallery/layout?${u.toString()}`);
+          setPageLayout(layoutRes);
+        } catch {
+          setPageLayout(null);
+        }
+        setVisitorPublicGalleryPublished(null);
+      } else {
         setPageLayout(null);
+        setVisitorPublicGalleryPublished(null);
       }
     }
-  }, [creatorId, creatorIsViewingOwnGallery]);
+  }, [creatorId, creatorIsViewingOwnGallery, publicSlugForLayout]);
 
   const loadItems = useCallback(async () => {
     setLoading(true);
@@ -965,94 +984,27 @@ export default function VisitorGalleryView() {
 
   return (
     <div className="library-shell flex min-h-0 min-w-0 flex-1 flex-col bg-[var(--lib-bg)] text-[var(--lib-fg)]">
-      {/* Banner — optional URL; else cool green neutral wash */}
-      <div className="relative h-[min(42vh,26rem)] w-full overflow-hidden bg-[var(--lib-muted)]">
-        {mergedProfile.finalBanner ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={mergedProfile.finalBanner}
-            alt=""
-            referrerPolicy="no-referrer"
-            className="h-full w-full object-cover object-center"
-          />
-        ) : (
-          <div
-            className="h-full w-full bg-gradient-to-b from-[color-mix(in_srgb,var(--lib-primary)_18%,var(--lib-muted))] via-[var(--lib-muted)] to-[var(--lib-bg)]"
-            aria-hidden
-          />
-        )}
+      {visitorPublicGalleryPublished === false ? (
         <div
-          className="pointer-events-none absolute inset-0 bg-gradient-to-t from-[var(--lib-bg)] via-[color-mix(in_srgb,var(--lib-bg)_45%,transparent)] to-transparent"
-          aria-hidden
+          role="status"
+          className="border-b border-[var(--lib-border)] bg-[color-mix(in_srgb,var(--lib-muted)_88%,transparent)] px-4 py-3 text-center text-sm text-[var(--lib-fg-muted)]"
+        >
+          This creator has not published their public gallery yet. Library content below may still be
+          visible according to tier and visibility rules.
+        </div>
+      ) : null}
+      {/* WYSIWYG shell: same `CreatorPublicHero` + `--relay-*` tokens as Site Designer preview */}
+      <div className="public-profile-wysiwyg-shell w-full">
+        <CreatorPublicHero
+          model={publicHeroModel}
+          radius="0px"
+          fonts={{ heading: "var(--font-display)", body: "var(--font-body)" }}
         />
       </div>
 
-      {/* Centered profile block */}
-      <div className="relative mx-auto flex max-w-2xl flex-col items-center px-4 text-center">
-        <div className="-mt-16 flex justify-center sm:-mt-[4.25rem] md:-mt-[4.75rem]">
-          <div
-            className="rounded-full border-[3px] border-[oklch(0.38_0.012_160)] bg-[oklch(0.2_0.01_160)] p-1 shadow-[0_14px_48px_rgba(0,0,0,0.5)] ring-[3px] ring-[oklch(0.28_0.01_160)] ring-offset-2 ring-offset-[var(--lib-bg)]"
-            aria-hidden={!mergedProfile.avatarUrl}
-          >
-            {mergedProfile.avatarUrl ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={mergedProfile.avatarUrl}
-                alt=""
-                referrerPolicy="no-referrer"
-                className="h-[7.25rem] w-[7.25rem] rounded-full object-cover sm:h-[8rem] sm:w-[8rem] md:h-[9rem] md:w-[9rem]"
-              />
-            ) : (
-              <div
-                className="h-[7.25rem] w-[7.25rem] rounded-full bg-[oklch(0.26_0.008_160)] sm:h-[8rem] sm:w-[8rem] md:h-[9rem] md:w-[9rem]"
-                aria-hidden
-              />
-            )}
-          </div>
-        </div>
-        {mergedProfile.patreonProfileHref &&
-        mergedProfile.showPatreonLink &&
-        mergedProfile.patreonLinkPosition === "below_avatar" ? (
-          <a
-            href={mergedProfile.patreonProfileHref}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="mt-3 block max-w-lg truncate text-sm text-[var(--lib-fg-muted)] underline-offset-2 hover:text-[var(--lib-fg)] hover:underline"
-          >
-            patreon.com/{mergedProfile.patreonSlug}
-          </a>
-        ) : null}
-        <h1 className="mt-5 font-[family-name:var(--font-display)] text-2xl font-medium tracking-tight text-[var(--lib-fg)] sm:text-3xl md:text-[2rem]">
-          {mergedProfile.title}
-        </h1>
-        {mergedProfile.heroPrimary ? (
-          <p className="mt-2 max-w-lg text-sm leading-relaxed text-[var(--lib-fg-muted)]">
-            {mergedProfile.heroPrimary}
-          </p>
-        ) : null}
-        {mergedProfile.heroSecondary ? (
-          <p className="mt-1.5 max-w-lg text-xs leading-relaxed text-[var(--lib-fg-muted)] sm:text-sm">
-            {mergedProfile.heroSecondary}
-          </p>
-        ) : null}
-        {!mergedProfile.heroPrimary && !mergedProfile.heroSecondary ? (
-          <p className="mt-2 max-w-lg text-sm leading-relaxed text-[var(--lib-fg-muted)]">
-            {envVisitorTagline}
-          </p>
-        ) : null}
-        {mergedProfile.patreonProfileHref &&
-        mergedProfile.showPatreonLink &&
-        mergedProfile.patreonLinkPosition === "below_bio" ? (
-          <a
-            href={mergedProfile.patreonProfileHref}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="mt-2 block max-w-lg truncate text-sm text-[var(--lib-fg-muted)] underline-offset-2 hover:text-[var(--lib-fg)] hover:underline"
-          >
-            patreon.com/{mergedProfile.patreonSlug}
-          </a>
-        ) : null}
-        <dl className="mt-5 flex flex-wrap justify-center gap-x-8 gap-y-2 text-xs sm:gap-x-10">
+      {/* Stats + browse chrome (out of shared hero) */}
+      <div className="relative mx-auto flex max-w-2xl flex-col items-center px-4 pt-6 text-center">
+        <dl className="flex flex-wrap justify-center gap-x-8 gap-y-2 text-xs sm:gap-x-10">
           <div>
             <dt className="uppercase tracking-[0.14em] text-[10px] text-[var(--lib-fg-muted)]">Posts</dt>
             <dd className="mt-0.5 font-medium tabular-nums text-[var(--lib-fg)]">{heroPostCount}</dd>
@@ -1437,7 +1389,7 @@ export default function VisitorGalleryView() {
             tierOrderIds={layoutTierOrderIds}
             tierTitleById={tierTitleById}
             tierFacets={facets?.tiers ?? []}
-            membershipUrl={mergedProfile.patreonProfileHref}
+            membershipUrl={publicHeroModel.patreonProfileHref}
             accentColor={pageLayout.theme.accent_color?.trim() || "#00aa6f"}
             patronEngagement={visitorEngagement}
           />
@@ -1480,7 +1432,7 @@ export default function VisitorGalleryView() {
                 showTierBadges={pageLayout?.theme?.show_tier_badges ?? true}
                 tierFacets={facets?.tiers ?? []}
                 visitorTierOrderIds={layoutTierOrderIds}
-                visitorMembershipUrl={mergedProfile.patreonProfileHref}
+                visitorMembershipUrl={publicHeroModel.patreonProfileHref}
                 visitorAccentColor={
                   pageLayout?.theme?.accent_color?.trim() || "#00aa6f"
                 }

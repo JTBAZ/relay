@@ -7,6 +7,7 @@ import { galleryItemKey } from "@/lib/gallery-group";
 import {
   RELAY_API_BASE,
   galleryItemExportVisibleToVisitor,
+  galleryItemImageGridSrc,
   galleryItemPreviewSrc,
   type GalleryItem,
   type TierFacet
@@ -90,7 +91,7 @@ function StackLayer({
           {item.has_export && item.mime_type?.startsWith("image/") ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img
-              src={`${RELAY_API_BASE}${item.content_url_path}`}
+              src={galleryItemImageGridSrc(item) ?? `${RELAY_API_BASE}${item.content_url_path}`}
               alt=""
               className="h-full w-full object-cover object-center"
             />
@@ -313,9 +314,12 @@ function VisitorMultiAssetSlideCell({
               const locked = !galleryItemExportVisibleToVisitor(item);
               const isActive = idx === displayIdx;
               const isVideo = Boolean(item.mime_type?.startsWith("video/"));
-              const src = item.content_url_path
-                ? `${RELAY_API_BASE}${item.content_url_path}`
-                : "";
+              const src = isVideo
+                ? item.content_url_path
+                  ? `${RELAY_API_BASE}${item.content_url_path}`
+                  : ""
+                : galleryItemImageGridSrc(item) ??
+                  (item.content_url_path ? `${RELAY_API_BASE}${item.content_url_path}` : "");
 
               const transition =
                 "transform 0.4s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.4s cubic-bezier(0.4, 0, 0.2, 1)";

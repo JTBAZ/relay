@@ -87,7 +87,9 @@ export function FeedCard({ post, onClick, liveCommentCountScope = null }: FeedCa
 
   const displayedCommentCount = liveCommentCount ?? post.commentCount;
 
-  const isDiscovery = post.kind === "discovery";
+  const feedSource =
+    post.feed_item_source ?? (post.kind === "discovery" ? "discover" : "subscribed");
+  const isDiscover = feedSource === "discover";
   const MediaIcon = MEDIA_ICONS[post.mediaType] ?? FileText;
   const layout = post.feedCardLayout ?? "classic";
   const isVideoPost = isPatronFeedVideoPost(post);
@@ -172,12 +174,12 @@ export function FeedCard({ post, onClick, liveCommentCountScope = null }: FeedCa
       onClick={onClick}
       className={[
         "group relative rounded-lg border transition-colors duration-150 overflow-hidden",
-        isDiscovery
+        isDiscover
           ? "bg-[#131313] border-[#232323] border-l-2 border-l-[#1B4332]"
           : "bg-[#161616] border-[#242424] hover:border-[#2E2E2E]",
         onClick ? "cursor-pointer" : "",
       ].join(" ")}
-      aria-label={`${isDiscovery ? "Discover: " : ""}${post.title} by ${post.creator.displayName}`}
+      aria-label={`${isDiscover ? "Discover: " : "Subscribed: "}${post.title} by ${post.creator.displayName}`}
       role={onClick ? "button" : undefined}
       tabIndex={onClick ? 0 : undefined}
       onKeyDown={onClick ? (e) => {
@@ -187,11 +189,11 @@ export function FeedCard({ post, onClick, liveCommentCountScope = null }: FeedCa
         }
       } : undefined}
     >
-      {/* Discovery label strip */}
-      {isDiscovery && (
+      {/* Source label — public vs membership-gated (P6-patron-003) */}
+      {isDiscover && (
         <div className="flex items-center gap-2 px-5 pt-4">
           <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold tracking-widest uppercase border border-[#2D6A4F]/50 text-[#40916C] bg-[#0D1F17]/60">
-            Free to read
+            Discover
           </span>
         </div>
       )}
@@ -218,13 +220,13 @@ export function FeedCard({ post, onClick, liveCommentCountScope = null }: FeedCa
                 <span className="text-sm font-semibold text-[#F0F0F0] leading-tight">
                   {post.creator.displayName}
                 </span>
-                {!isDiscovery && (
+                {!isDiscover && (
                   <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-[#0D1F17] text-[#40916C] border border-[#1B4332]/70 shrink-0">
                     <span
                       className="w-1 h-1 rounded-full bg-[#2D6A4F] inline-block"
                       aria-hidden="true"
                     />
-                    Following
+                    Subscribed
                   </span>
                 )}
               </div>
@@ -244,7 +246,7 @@ export function FeedCard({ post, onClick, liveCommentCountScope = null }: FeedCa
 
           {/* Right: follow CTA (discovery only) + timestamp */}
           <div className="flex items-center gap-2 shrink-0">
-            {isDiscovery && (
+            {isDiscover && (
               <button
                 onClick={(e) => {
                   e.stopPropagation();
@@ -377,7 +379,7 @@ export function FeedCard({ post, onClick, liveCommentCountScope = null }: FeedCa
             <h2
               className={[
                 "font-semibold leading-snug mb-2 text-balance",
-                isDiscovery
+                isDiscover
                   ? "text-base text-[#C8C8C8]"
                   : "text-[17px] text-[#F0F0F0]",
               ].join(" ")}
@@ -393,7 +395,7 @@ export function FeedCard({ post, onClick, liveCommentCountScope = null }: FeedCa
             <div
               className={[
                 "shrink-0 rounded-md overflow-hidden bg-[#2A2A2A]",
-                isDiscovery ? "w-[108px] h-[72px]" : "w-[124px] h-[80px]",
+                isDiscover ? "w-[108px] h-[72px]" : "w-[124px] h-[80px]",
               ].join(" ")}
               aria-hidden="true"
             >

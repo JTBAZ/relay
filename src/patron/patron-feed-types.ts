@@ -1,8 +1,16 @@
 /**
+ * @fileoverview Patron experience module patron-feed-types.ts — see exported symbols.
+ * @see {@link ../jsdoc-core-entities.ts}
+ * @see prisma/schema.prisma Account, TenantMembership, and related patron tables
+ */
+/**
  * PE-B — JSON shape for `GET /api/v1/patron/relay_feed` / `GET /api/v1/patron/feed`
  * (aligned with `web/lib/relay-fixtures.ts` `PatronFeedBundle`).
  */
 export type PatronFeedTierLabel = "Free" | "Supporter" | "Studio";
+
+/** P6-patron-003 — honest feed labeling (membership-gated vs public). */
+export type PatronFeedItemSource = "subscribed" | "discover";
 
 export type PatronFeedCreatorJson = {
   id: string;
@@ -21,6 +29,8 @@ export type PatronFeedCreatorJson = {
 export type PatronFeedPostJson = {
   id: string;
   kind: "followed" | "discovery";
+  /** P6-patron-003 — drives “Subscribed” vs “Discover” badges in the patron feed UI. */
+  feed_item_source: PatronFeedItemSource;
   creator: PatronFeedCreatorJson;
   title: string;
   excerpt: string;
@@ -61,4 +71,14 @@ export type PatronFeedBundleJson = {
   notifications: unknown[];
   /** Opaque cursor for the next page (PE-B pagination). */
   next_cursor?: string | null;
+  /**
+   * P6-patron-004 — true when any followed creator has a missing or stale `PatronEntitlementSnapshot`
+   * (Postgres identity path only).
+   */
+  entitlement_degraded: boolean;
+  /**
+   * Earliest `stale_after` among snapshots that are past due (ISO-8601), or null when degraded only
+   * because a snapshot is missing.
+   */
+  entitlement_stale_since: string | null;
 };

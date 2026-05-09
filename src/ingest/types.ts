@@ -1,3 +1,9 @@
+/**
+ * @fileoverview Ingest API wire types: campaigns, tiers, posts, tombstones, batch results.
+ * @description Shapes for Patreon sync batches and `IngestService.runBatch` metrics.
+ * @see src/jsdoc-core-entities.ts (`PatreonJsonApiDocument`, `SyncStatus` concepts)
+ */
+
 export type IngestCampaign = {
   campaign_id: string;
   name: string;

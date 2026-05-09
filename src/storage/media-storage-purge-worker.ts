@@ -122,6 +122,17 @@ export class InProcessMediaStoragePurgeRunner implements MediaStoragePurgeRunner
   }
 }
 
+export function mediaStoragePurgeSweepRepeatEveryMsFromEnv(
+  env: NodeJS.ProcessEnv = process.env
+): number | null {
+  const raw = (env.RELAY_MEDIA_STORAGE_PURGE_SWEEP_MS ?? "").trim();
+  const parsed = raw === "" ? DEFAULT_SWEEP_INTERVAL_MS : Number(raw);
+  if (!Number.isFinite(parsed) || parsed === 0) {
+    return null;
+  }
+  return Math.max(MIN_SWEEP_INTERVAL_MS, Math.floor(parsed));
+}
+
 /**
  * Honors `RELAY_MEDIA_STORAGE_PURGE_SWEEP_MS` (empty = 1h, 0 = disabled). R2 must be configured
  * or each tick becomes a no-op (rows stay queued).
@@ -133,14 +144,13 @@ export function startMediaStoragePurgeWorker(
   prisma: PrismaClient,
   log?: (msg: string, ctx?: Record<string, unknown>) => void
 ): MediaStoragePurgeRunner | null {
-  const raw = (process.env.RELAY_MEDIA_STORAGE_PURGE_SWEEP_MS ?? "").trim();
-  const parsed = raw === "" ? DEFAULT_SWEEP_INTERVAL_MS : Number(raw);
-  if (!Number.isFinite(parsed) || parsed === 0) {
+  const every = mediaStoragePurgeSweepRepeatEveryMsFromEnv();
+  if (every === null) {
     return null;
   }
   const runner = new InProcessMediaStoragePurgeRunner({
     prisma,
-    pollIntervalMs: parsed,
+    pollIntervalMs: every,
     log
   });
   runner.start();

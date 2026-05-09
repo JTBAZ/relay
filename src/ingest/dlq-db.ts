@@ -1,3 +1,9 @@
+/**
+ * @fileoverview Postgres-backed ingest DLQ via `job_runs` (`kind = ingest_dlq`).
+ * @description Upserts by `job_id` for idempotent failure recording.
+ * @see ./dlq.js
+ */
+
 import type { Prisma } from "@prisma/client";
 import type { PrismaClient } from "@prisma/client";
 import type { DeadLetterQueue, DeadLetterRecord } from "./dlq.js";

@@ -96,6 +96,47 @@ describe("createOrClusterNotification", () => {
       }
     });
   });
+
+  it("returns existing row on unique violation for non-clustered + sourceEventId (P2002)", async () => {
+    const existing = record({ id: "n-winner", sourceEventId: "outbox-row-1" });
+    const create = vi.fn().mockRejectedValue({ code: "P2002" });
+    const findFirst = vi.fn().mockResolvedValue(existing);
+    const prisma = {
+      notification: { create, findFirst, update: vi.fn() }
+    } as never;
+    const out = await createOrClusterNotification(prisma, {
+      recipientMembershipId: "m1",
+      kind: "tier_changed",
+      payload: { x: 1 },
+      clusterKey: null,
+      sourceEventId: "outbox-row-1"
+    });
+    expect(out.id).toBe("n-winner");
+    expect(create).toHaveBeenCalledOnce();
+    expect(findFirst).toHaveBeenCalledWith({
+      where: {
+        sourceEventId: "outbox-row-1",
+        recipientMembershipId: "m1",
+        clusterKey: null
+      }
+    });
+  });
+
+  it("rethrows P2002 when no matching row (unexpected constraint target)", async () => {
+    const create = vi.fn().mockRejectedValue({ code: "P2002" });
+    const findFirst = vi.fn().mockResolvedValue(null);
+    const prisma = {
+      notification: { create, findFirst, update: vi.fn() }
+    } as never;
+    await expect(
+      createOrClusterNotification(prisma, {
+        recipientMembershipId: "m1",
+        kind: "tier_changed",
+        payload: {},
+        sourceEventId: "src1"
+      })
+    ).rejects.toEqual({ code: "P2002" });
+  });
 });
 
 describe("listNotifications + markRead + markAllRead + unreadCount", () => {

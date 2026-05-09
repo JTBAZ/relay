@@ -31,6 +31,8 @@ When milestone **M10 phase 10.2** is executed ([`M10_VERIFICATION.md`](M10_VERIF
 | Creator OAuth tokens (`patreon_credentials.json`) | `OAuthCredential` + `ProviderAccount` / `DbPatreonTokenStore` | `RELAY_DB_STORE_CREATOR_OAUTH` | Default file-backed; DB path creates tenant/user rows on first `upsert` |
 | Patreon cookies, campaign index, webhook metadata files | Files or future `WebhookEndpoint` (M9 stub) | — | Narrow tables exist for webhooks / routing where noted in schema |
 
+**P5a pilot (append-only membership, Patreon Insights CSV, Relay engagement):** design note [`p5a-analytics-pilot-schema.md`](p5a-analytics-pilot-schema.md); tables are not in the flag matrix until migrations ship (**P5a-db-002**).
+
 **M10 handoff:** After soak, operators may remove file fallbacks and flags per [`M10_VERIFICATION.md`](M10_VERIFICATION.md). Archive JSON: [`relay-data-archive/README.md`](../../relay-data-archive/README.md).
 
 ## File → relational mapping

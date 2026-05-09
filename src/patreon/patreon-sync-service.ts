@@ -1,3 +1,10 @@
+/**
+ * @fileoverview Patreon → Relay ingest coordinator: OAuth token refresh, optional cookie scrape, post sync with watermarks, member roster sync, health snapshots.
+ * @description Serializes `scrapeOrSync` per creator id. Touches Patreon JSON:API, file stores, `IngestService`, optional `IdentityService` (member PII).
+ * @see {@link ../jsdoc-core-entities.ts}
+ * @see prisma/schema.prisma `Post`, `MediaAsset`, `Tier`, `Campaign`, identity tables via `IdentityService`
+ */
+import type { PrismaClient } from "@prisma/client";
 import type { FilePatreonCookieStore } from "../auth/cookie-store.js";
 import type { ExportService } from "../export/export-service.js";
 import { enrichBatch } from "../ingest/auto-enrich.js";
@@ -40,7 +47,15 @@ import type {
   LastPostScrapeHealth,
   PatreonSyncHealthStoreAPI
 } from "./patreon-sync-health-store.js";
+import {
+  appendMembershipLedgerEvents,
+  loadCreatorTierAmountMap,
+  maxTierFloorFromMap,
+  parsePledgeRelationshipStart,
+  planMembershipLedgerEvents
+} from "./membership-ledger-sync.js";
 
+/** Creator OAuth token health slice for Library / sync-state consumers. */
 export type PatreonOAuthHealthSnapshot = {
   credential_health_status: PersistedPatreonTokens["credential_health_status"];
   access_token_expires_at: string;
@@ -213,6 +228,7 @@ async function enrichTiersFromCampaignPostsList(
   return { postsUpdated: enriched, pagesFetched: pages, attempted: true };
 }
 
+/** Statistics on tier/body enrichment passes (cookie + OAuth list + per-post GET). */
 export type TierAccessSummary = {
   media_source: "cookie" | "oauth";
   oauth_list_pass: boolean;
@@ -223,6 +239,7 @@ export type TierAccessSummary = {
   per_post_filled_body: number;
 };
 
+/** Successful scrape pipeline output before/after optional ingest apply. */
 export type PatreonScrapeResult = {
   creator_id: string;
   patreon_campaign_id: string;
@@ -237,6 +254,7 @@ export type PatreonScrapeResult = {
   apply_result?: ApplyBatchResult;
 };
 
+/** Options for {@link PatreonSyncService.scrapeOrSync}. */
 export type PatreonSyncOptions = {
   /** Numeric Patreon campaign id from API. If omitted, uses the only campaign when exactly one exists. */
   campaign_id?: string;
@@ -253,6 +271,7 @@ export type PatreonSyncOptions = {
   force_refresh_post_access?: boolean;
 };
 
+/** Result summary for {@link PatreonSyncService.syncMembers}. */
 export type MemberSyncResult = {
   creator_id: string;
   patreon_campaign_id: string;
@@ -261,6 +280,7 @@ export type MemberSyncResult = {
   warnings: string[];
 };
 
+/** Library-facing sync snapshot: watermarks, cookie session, OAuth health, last health rows. */
 export type PatreonSyncState = {
   creator_id: string;
   patreon_campaign_id: string;
@@ -282,6 +302,7 @@ export type PatreonSyncState = {
   campaign_display: CampaignDisplaySnapshot | null;
 };
 
+/** Options for {@link PatreonSyncService.getSyncState}. */
 export type PatreonSyncStateOptions = {
   campaign_id?: string;
   /**
@@ -296,6 +317,10 @@ export type PatreonSyncStateOptions = {
   traceId?: string;
 };
 
+/**
+ * Facade for creator Patreon connectivity: posts ingest, member sync, sync-state reads.
+ * @security-audit-required Member sync paths process patron email/name from Patreon — flow through `IdentityService` only.
+ */
 export class PatreonSyncService {
   private readonly tokenStore: PatreonTokenStore;
   private readonly cookieStore: FilePatreonCookieStore;
@@ -307,6 +332,7 @@ export class PatreonSyncService {
   private readonly fetchImpl: typeof fetch;
   private readonly syncHealthStore: PatreonSyncHealthStoreAPI | null;
   private readonly campaignDisplayStore: CreatorCampaignDisplayStore | null;
+  private readonly prisma: PrismaClient | null;
   private readonly runScrapeOrSyncExclusive = createExclusivePerKeyRunner();
 
   public constructor(
@@ -319,7 +345,8 @@ export class PatreonSyncService {
     exportService?: ExportService,
     identityService?: IdentityService,
     syncHealthStore?: PatreonSyncHealthStoreAPI | null,
-    campaignDisplayStore?: CreatorCampaignDisplayStore | null
+    campaignDisplayStore?: CreatorCampaignDisplayStore | null,
+    prisma?: PrismaClient | null
   ) {
     this.tokenStore = tokenStore;
     this.cookieStore = cookieStore;
@@ -331,10 +358,13 @@ export class PatreonSyncService {
     this.fetchImpl = fetchImpl ?? fetch;
     this.syncHealthStore = syncHealthStore ?? null;
     this.campaignDisplayStore = campaignDisplayStore ?? null;
+    this.prisma = prisma ?? null;
   }
 
   /**
    * Read watermark and optionally probe Patreon's newest post time (first OAuth page).
+   * @async
+   * @throws {Error} Missing tokens, campaign resolution failures, or Patreon HTTP errors.
    */
   public async getSyncState(
     creatorId: string,
@@ -512,6 +542,8 @@ export class PatreonSyncService {
   /**
    * Watermark-aware incremental sync. Serialized per `creator_id` so concurrent calls
    * (webhooks + unattended worker) do not interleave ingest for the same creator.
+   * @async Note: returns `Promise` while method is not marked `async` (exclusive runner wrapper).
+   * @throws {Error} Patreon HTTP, ingest, token, or campaign resolution failures from `scrapeOrSyncImpl`.
    */
   public scrapeOrSync(
     creatorId: string,
@@ -768,6 +800,9 @@ export class PatreonSyncService {
    * Requires creator token scopes `campaigns.members` and `campaigns.members[email]` for
    * member email in `fields[member]` (see `PATREON_CREATOR_OAUTH_SCOPES` in
    * `patreon-creator-oauth-scopes.ts` and the dev connect page authorize URL).
+   * @async
+   * @throws {Error} When `IdentityService` unwired, tokens missing, or Patreon/DB failures.
+   * @security-audit-required Processes patron email/name — must stay within `IdentityService` retention rules.
    */
   public async syncMembers(
     creatorId: string,
@@ -802,6 +837,11 @@ export class PatreonSyncService {
       campaignId = only;
     }
     const maxPages = Math.min(Math.max(options.max_pages ?? 20, 1), 100);
+    const batchStartedAt = new Date();
+    const tierAmountMap =
+      this.prisma != null
+        ? await loadCreatorTierAmountMap(this.prisma, creatorId)
+        : null;
     let pages = 0;
     let synced = 0;
     let nextUrl: string | null | undefined = null;
@@ -812,8 +852,12 @@ export class PatreonSyncService {
       const members = asDataArray(doc.data).filter((r) => r.type === "member");
       for (const m of members) {
         const a = m.attributes ?? {};
-        const status = typeof a.patron_status === "string" ? a.patron_status : "";
-        if (status !== "active_patron") continue;
+        const patronStatusRaw = a.patron_status;
+        const status =
+          typeof patronStatusRaw === "string" ? patronStatusRaw : "";
+        const isActive = status === "active_patron";
+        const memberResourceId =
+          typeof m.id === "string" && m.id.trim() ? m.id.trim() : "";
         const tierLinks = m.relationships?.currently_entitled_tiers?.data;
         const tierIds: string[] = [];
         if (Array.isArray(tierLinks)) {
@@ -828,8 +872,7 @@ export class PatreonSyncService {
           userLink && !Array.isArray(userLink) && userLink.type === "user"
             ? userLink.id
             : undefined;
-        if (!patreonUserId) continue;
-        const userRes = included.get(`user:${patreonUserId}`);
+        if (!patreonUserId || !memberResourceId) continue;
         const email =
           typeof a.email === "string" && a.email.includes("@")
             ? a.email
@@ -837,19 +880,90 @@ export class PatreonSyncService {
         const fullName =
           typeof a.full_name === "string"
             ? a.full_name
-            : (userRes?.attributes?.full_name as string | undefined) ?? "";
-        try {
-          await this.identityService!.registerPatreonFallback(
-            creatorId,
-            patreonUserId,
-            email,
-            tierIds
-          );
-          synced += 1;
-        } catch (e) {
-          warnings.push(
-            `Member ${patreonUserId} (${fullName}): ${(e as Error).message.slice(0, 200)}`
-          );
+            : (included.get(`user:${patreonUserId}`)?.attributes?.full_name as
+                | string
+                | undefined) ?? "";
+
+        const prior = await this.identityService!.getPatronAccountByPatreonUserId(
+          creatorId,
+          patreonUserId
+        );
+        const priorTierIds = prior?.tier_ids ?? [];
+        const priorExisted = prior != null;
+        const priorFloor =
+          tierAmountMap != null
+            ? maxTierFloorFromMap(tierAmountMap, priorTierIds)
+            : 0;
+
+        const entitledRaw = a.currently_entitled_amount_cents;
+        const entitledAmountCents =
+          typeof entitledRaw === "number" && Number.isFinite(entitledRaw)
+            ? Math.trunc(entitledRaw)
+            : null;
+        const pledgeStart = parsePledgeRelationshipStart(
+          a.pledge_relationship_start
+        );
+
+        if (isActive) {
+          try {
+            await this.identityService!.registerPatreonFallback(
+              creatorId,
+              patreonUserId,
+              email,
+              tierIds
+            );
+            synced += 1;
+          } catch (e) {
+            warnings.push(
+              `Member ${patreonUserId} (${fullName}): ${(e as Error).message.slice(0, 200)}`
+            );
+            continue;
+          }
+          if (this.prisma && tierIds.length > 0) {
+            const planned = planMembershipLedgerEvents({
+              creatorId,
+              patreonMemberResourceId: memberResourceId,
+              patronStatus: status || null,
+              newTierIds: tierIds,
+              entitledAmountCents,
+              pledgeRelationshipStart: pledgeStart,
+              priorExisted,
+              priorTierIds,
+              priorTierFloorCents: priorFloor,
+              batchStartedAt
+            });
+            await appendMembershipLedgerEvents(this.prisma, planned);
+          }
+        } else if (priorTierIds.length > 0) {
+          try {
+            await this.identityService!.registerPatreonFallback(
+              creatorId,
+              patreonUserId,
+              email,
+              []
+            );
+          } catch (e) {
+            warnings.push(
+              `Member ${patreonUserId} (${fullName}): ${(e as Error).message.slice(0, 200)}`
+            );
+            continue;
+          }
+          if (this.prisma) {
+            const planned = planMembershipLedgerEvents({
+              creatorId,
+              patreonMemberResourceId: memberResourceId,
+              patronStatus:
+                typeof patronStatusRaw === "string" ? patronStatusRaw : null,
+              newTierIds: [],
+              entitledAmountCents,
+              pledgeRelationshipStart: pledgeStart,
+              priorExisted,
+              priorTierIds,
+              priorTierFloorCents: priorFloor,
+              batchStartedAt
+            });
+            await appendMembershipLedgerEvents(this.prisma, planned);
+          }
         }
       }
       nextUrl = doc.links?.next ?? undefined;

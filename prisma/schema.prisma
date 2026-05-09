@@ -151,8 +151,26 @@ model Tenant {
   creators       CreatorProfile[]
   /// At most one `Account` may claim this tenant as its primary artist studio (MT-031).
   primaryAccount Account?           @relation("AccountPrimaryStudio")
+  /// M1-lite / P7 — append-only usage metering (`docs/database/usage-events-rollups.md`).
+  usageEvents    UsageEvent[]
 
   @@map("tenants")
+}
+
+/// P7 M1-lite — append-only per-tenant (or unattributed) usage events for metering and rollups.
+model UsageEvent {
+  id         String   @id @default(cuid())
+  tenantId   String?  @map("tenant_id")
+  tenant     Tenant?  @relation(fields: [tenantId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  metric     String
+  /// Whole units (e.g. bytes transferred, or 1 for discrete events). See `meta` for detail.
+  quantity   BigInt   @default(1) @map("quantity")
+  meta       Json?    @map("meta")
+  occurredAt DateTime @default(now()) @map("occurred_at")
+
+  @@index([tenantId, occurredAt])
+  @@index([metric, occurredAt])
+  @@map("usage_events")
 }
 
 /// Global login identity — one person per row (Option B). Patrons are scoped per creator via `TenantMembership`.
@@ -176,9 +194,9 @@ model Account {
 
   memberships           TenantMembership[]
   patronOAuthCredential PatronOAuthCredential?
-  primaryStudio         Tenant?                @relation("AccountPrimaryStudio", fields: [primaryRelayCreatorId], references: [relayCreatorId], onDelete: SetNull, onUpdate: Cascade)
-  followsOutgoing       AccountFollow[]        @relation("AccountFollowsOutgoing")
-  followsIncoming       AccountFollow[]        @relation("AccountFollowsIncoming")
+  primaryStudio         Tenant?                 @relation("AccountPrimaryStudio", fields: [primaryRelayCreatorId], references: [relayCreatorId], onDelete: SetNull, onUpdate: Cascade)
+  followsOutgoing       AccountFollow[]         @relation("AccountFollowsOutgoing")
+  followsIncoming       AccountFollow[]         @relation("AccountFollowsIncoming")
   discordLinkTokens     DiscordLinkToken[]
   discordBindingsLinked DiscordChannelBinding[] @relation("DiscordChannelBindingLinker")
 
@@ -291,30 +309,30 @@ model OAuthCredential {
 }
 
 model CreatorProfile {
-  id                String   @id @default(cuid())
-  tenantId          String   @map("tenant_id")
-  tenant            Tenant   @relation(fields: [tenantId], references: [id])
-  userId            String   @unique @map("user_id")
-  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id                String           @id @default(cuid())
+  tenantId          String           @map("tenant_id")
+  tenant            Tenant           @relation(fields: [tenantId], references: [id])
+  userId            String           @unique @map("user_id")
+  user              User             @relation(fields: [userId], references: [id], onDelete: Cascade)
   /// Public URL segment for `/patron/c/{public_slug}` — unique, lowercase, `[a-z0-9-]`.
   publicSlug        String           @unique @map("public_slug")
   /// Provenance for `publicSlug`: opaque default, Patreon campaign vanity, or explicit user edit.
   slugSource        PublicSlugSource @default(allocated) @map("slug_source")
   /// Canonical Patreon `campaign_id` for this creator (ingest / webhooks / patron matching). See `docs/architecture/multi-tenant-option-b.md`.
-  patreonCampaignId String?  @unique @map("patreon_campaign_id")
+  patreonCampaignId String?          @unique @map("patreon_campaign_id")
   /// Mutable public @handle (mixed case allowed); uniqueness is on `usernameNorm`.
   username          String?
   /// Lowercase normalized username for uniqueness; mirrors `PatronProfile.handleNorm` pattern.
-  usernameNorm      String?  @unique @map("username_norm")
-  displayName       String?  @map("display_name")
-  avatarUrl         String?  @map("avatar_url")
-  bannerUrl         String?  @map("banner_url")
+  usernameNorm      String?          @unique @map("username_norm")
+  displayName       String?          @map("display_name")
+  avatarUrl         String?          @map("avatar_url")
+  bannerUrl         String?          @map("banner_url")
   /// Short bio, capped at 280 chars by the service layer.
   bio               String?
   /// Free-text creative discipline (e.g. "Digital Illustrator"), rendered in feed cards.
   discipline        String?
-  createdAt         DateTime @default(now()) @map("created_at")
-  updatedAt         DateTime @updatedAt @map("updated_at")
+  createdAt         DateTime         @default(now()) @map("created_at")
+  updatedAt         DateTime         @updatedAt @map("updated_at")
 
   @@index([tenantId])
   @@index([patreonCampaignId])
@@ -433,12 +451,15 @@ model Post {
   /// Patreon sync only mutates `PATREON`; Relay-native posts use `RELAY` and are out of sync blast radius.
   source         PostSource         @default(PATREON) @map("source")
 
-  versions       PostVersion[]
-  postTiers      PostTier[]
-  mediaAssets    MediaAsset[]
+  versions     PostVersion[]
+  postTiers    PostTier[]
+  mediaAssets  MediaAsset[]
   /// Creator-controlled presentation overlays (titles, descriptions, ordering, tier previews).
   /// Merged at read time with append-only ingest (`PostVersion`); ingest must not mutate this row.
-  presentation   PostPresentation?
+  presentation PostPresentation?
+  /// P5a — Patreon Insights CSV rows linked when `patreon_post_id` matches `id` or `provider_post_id`.
+  patreonInsightsPostMetrics PatreonInsightsPostMetric[]
+  relayEngagementEvents      RelayEngagementEvent[]
 
   @@unique([campaignId, providerPostId])
   @@index([campaignId, createdAt(sort: Desc)])
@@ -467,31 +488,32 @@ model PostVersion {
 
 /// Media — `id` is stable `media_id` from `MediaRow`. `primary_post_id` indexes the canonical post link; `post_ids` mirrors file M:N.
 model MediaAsset {
-  id                      String              @id @map("id")
-  creatorId               String              @map("creator_id")
-  postIds                 String[]            @default([]) @map("post_ids")
+  id                      String                 @id @map("id")
+  creatorId               String                 @map("creator_id")
+  postIds                 String[]               @default([]) @map("post_ids")
   /// Set after attach to a `Post` (Patreon ingest or Relay publish). Null while upload-only (T-3.2) or if post was deleted.
-  primaryPostId           String?             @map("primary_post_id")
-  post                    Post?               @relation(fields: [primaryPostId], references: [id], onDelete: SetNull, onUpdate: Cascade)
-  upstreamStatus          MediaUpstreamStatus @map("upstream_status")
-  currentVersionSeq       Int                 @map("current_version_seq")
-  currentUpstreamRevision String              @map("current_upstream_revision")
-  currentMimeType         String?             @map("current_mime_type")
-  currentUpstreamUrl      String?             @map("current_upstream_url")
-  currentRole             String?             @map("current_role")
+  primaryPostId           String?                @map("primary_post_id")
+  post                    Post?                  @relation(fields: [primaryPostId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  upstreamStatus          MediaUpstreamStatus    @map("upstream_status")
+  currentVersionSeq       Int                    @map("current_version_seq")
+  currentUpstreamRevision String                 @map("current_upstream_revision")
+  currentMimeType         String?                @map("current_mime_type")
+  currentUpstreamUrl      String?                @map("current_upstream_url")
+  currentRole             String?                @map("current_role")
   /// Object key under tenant storage (e.g. export `media/{id}/asset` or future R2 key). Not a public premium CDN URL.
-  currentStorageKey       String?             @map("current_storage_key")
-  currentIngestedAt       DateTime            @map("current_ingested_at")
-  versionsJson            Json                @map("versions_json")
+  currentStorageKey       String?                @map("current_storage_key")
+  currentIngestedAt       DateTime               @map("current_ingested_at")
+  versionsJson            Json                   @map("versions_json")
   /// Patreon sync / export path vs future direct upload; default PATREON for legacy rows.
-  ingestOrigin            MediaIngestOrigin       @default(PATREON) @map("ingest_origin")
-  processingStatus        MediaProcessingStatus    @default(READY) @map("processing_status")
-  processingError         String?                 @map("processing_error")
+  ingestOrigin            MediaIngestOrigin      @default(PATREON) @map("ingest_origin")
+  processingStatus        MediaProcessingStatus  @default(READY) @map("processing_status")
+  processingError         String?                @map("processing_error")
   /// Discord-only: message/channel/attachment snowflakes and caption snapshot (see Phase 1 Discord capture).
-  discordCaptureJson      Json?                   @map("discord_capture_json")
+  discordCaptureJson      Json?                  @map("discord_capture_json")
   /// Coordinate-pinned comments referencing this asset (`Comment.media_id`).
   commentPins             Comment[]
   discordIngestReceipt    DiscordMediaIngestKey?
+  relayEngagementEvents   RelayEngagementEvent[]
 
   @@index([primaryPostId])
   @@index([creatorId, ingestOrigin])
@@ -529,6 +551,29 @@ model CreatorSyncState {
   @@map("creator_sync_states")
 }
 
+/// P4-onb-001 — Part 1-A creator funnel: Connect Patreon → Import → Organize → Publish (persisted step + optional JSON metadata).
+enum CreatorOnboardingStep {
+  /// Patreon linked; backfill default for existing creators before finer-grained transitions ship.
+  connected
+  /// Initial import path entered (e.g. after creator OAuth success — P4-onb-004).
+  import_started
+  /// Library / organize phase acknowledged (P4-onb-005).
+  organized
+  /// Public gallery has been published at least once.
+  published
+}
+
+/// One row per Relay `creator_id` (ingest scope; aligns with `Campaign.creatorId` / `CreatorSyncState`).
+model CreatorOnboardingState {
+  creatorId String                @id @map("creator_id")
+  step      CreatorOnboardingStep @default(connected) @map("step")
+  /// Small JSON only (flags, timestamps); no PII — service layer enforces shape.
+  metadata  Json?                 @map("metadata")
+  updatedAt DateTime              @updatedAt @map("updated_at")
+
+  @@map("creator_onboarding_states")
+}
+
 /// Replaces `ingest_idempotency` map in `canonical.json` — `batch_key` is the SHA-256 hex from `ingestIdempotencyKey()`.
 model IngestIdempotencyKey {
   id          String   @id @default(cuid())
@@ -556,18 +601,18 @@ enum GalleryVisibility {
 /// discovery surfaces whole posts, not individual assets. Default false: opt-in only, no
 /// surprise public exposure when the override row is created for some other reason.
 model PostOverride {
-  id                 String             @id @default(cuid())
-  creatorId          String             @map("creator_id")
-  postId             String             @map("post_id")
+  id                String             @id @default(cuid())
+  creatorId         String             @map("creator_id")
+  postId            String             @map("post_id")
   /// Empty string = post-level override; otherwise canonical `media_id` for per-asset rows.
-  mediaId            String             @default("") @map("media_id")
-  addTagIds          String[]           @default([]) @map("add_tag_ids")
-  removeTagIds       String[]           @default([]) @map("remove_tag_ids")
-  visibility         GalleryVisibility?
+  mediaId           String             @default("") @map("media_id")
+  addTagIds         String[]           @default([]) @map("add_tag_ids")
+  removeTagIds      String[]           @default([]) @map("remove_tag_ids")
+  visibility        GalleryVisibility?
   /// PE-F discovery v1 — when true (and Post.isPublic=true), surfaced in /patron/discover.
   /// Only honored on post-level rows.
-  discoveryEligible  Boolean            @default(false) @map("discovery_eligible")
-  updatedAt          DateTime           @updatedAt @map("updated_at")
+  discoveryEligible Boolean            @default(false) @map("discovery_eligible")
+  updatedAt         DateTime           @updatedAt @map("updated_at")
 
   @@unique([creatorId, postId, mediaId])
   @@index([creatorId])
@@ -644,10 +689,12 @@ model SavedFilter {
 
 /// Replaces `page_layout.json` — one row per Relay `creator_id`; full layout in JSON for round-trip.
 model PageLayout {
-  creatorId  String   @id @map("creator_id")
-  layoutJson Json     @map("layout_json")
-  version    Int      @default(1)
-  updatedAt  DateTime @updatedAt @map("updated_at")
+  creatorId   String    @id @map("creator_id")
+  layoutJson  Json      @map("layout_json")
+  version     Int       @default(1)
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+  /// When set, the creator's public gallery is live (`null` = draft-only until first publish).
+  publishedAt DateTime? @map("published_at")
 
   @@map("page_layouts")
 }
@@ -706,6 +753,97 @@ model AnalyticsSnapshotRow {
 
   @@index([creatorId, kind, periodStart, periodEnd])
   @@map("analytics_snapshots")
+}
+
+// --- P5a pilot analytics (DDL P5a-db-002) — event ledger, Insights import, first-party engagement. ---
+
+enum CreatorMembershipEventType {
+  join
+  upgrade
+  downgrade
+  cancel
+  rejoin
+}
+
+enum CreatorMembershipEventSource {
+  sync
+  webhook
+  backfill
+}
+
+enum RelayEngagementEventType {
+  gallery_view
+  reveal_interaction
+  profile_view
+}
+
+/// Append-only Patreon membership lifecycle (opaque `patreon_member_id` only).
+/// **Idempotency (P5a-db-003):** at most one row per `(creator_id, patreon_member_id, event_type, occurred_at)` so sync/webhook replays cannot double-insert the same logical event. If upstream ever collides within the same `TIMESTAMP(3)` bucket, introduce a separate `dedupe_key` column + unique instead.
+model CreatorMembershipEvent {
+  id              String                     @id @default(cuid())
+  creatorId       String                     @map("creator_id")
+  patreonMemberId String                     @map("patreon_member_id")
+  eventType       CreatorMembershipEventType @map("event_type")
+  occurredAt      DateTime                   @map("occurred_at")
+  tierId          String?                    @map("tier_id")
+  amountCents     Int?                       @map("amount_cents")
+  source          CreatorMembershipEventSource
+  payload         Json?
+
+  @@unique([creatorId, patreonMemberId, eventType, occurredAt])
+  @@index([creatorId, occurredAt])
+  @@map("creator_membership_events")
+}
+
+/// Header for one Patreon Insights CSV upload; idempotent per `(creator_id, file_hash)`.
+model PatreonInsightsImport {
+  id          String                      @id @default(cuid())
+  creatorId   String                      @map("creator_id")
+  fileHash    String                      @map("file_hash")
+  uploadedAt  DateTime                    @default(now()) @map("uploaded_at")
+  label       String?
+  postMetrics PatreonInsightsPostMetric[]
+
+  @@unique([creatorId, fileHash])
+  @@index([creatorId])
+  @@map("patreon_insights_imports")
+}
+
+/// Per-post metrics from one import (child of `PatreonInsightsImport`).
+model PatreonInsightsPostMetric {
+  id            String                @id @default(cuid())
+  importId      String                @map("import_id")
+  import        PatreonInsightsImport @relation(fields: [importId], references: [id], onDelete: Cascade)
+  creatorId     String                @map("creator_id")
+  patreonPostId String                @map("patreon_post_id")
+  impressions   Int?
+  /// CSV "Seen" column.
+  seen          Int?                  @map("seen")
+  likes         Int?
+  comments      Int?                  @map("comments")
+  asOf          DateTime?             @map("as_of")
+  postId        String?               @map("post_id")
+  post          Post?                 @relation(fields: [postId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+
+  @@index([importId])
+  @@index([creatorId, patreonPostId])
+  @@map("patreon_insights_post_metrics")
+}
+
+/// First-party Relay engagement (no Patreon user PII; optional opaque `session_key` only).
+model RelayEngagementEvent {
+  id         String                   @id @default(cuid())
+  creatorId  String                   @map("creator_id")
+  eventType  RelayEngagementEventType @map("event_type")
+  occurredAt DateTime                 @map("occurred_at")
+  postId     String?                  @map("post_id")
+  post       Post?                    @relation(fields: [postId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  mediaId    String?                  @map("media_id")
+  media      MediaAsset?              @relation(fields: [mediaId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  sessionKey String?                  @map("session_key")
+
+  @@index([creatorId, occurredAt])
+  @@map("relay_engagement_events")
 }
 
 model RecommendationRecord {
@@ -964,12 +1102,12 @@ model AccountFollow {
 
 /// PE-C — one row per idempotent PatronFollow seed batch (OAuth or worker).
 model PatronFollowSeed {
-  id                   String               @id @default(cuid())
-  patronMembershipId   String               @map("patron_user_id")
-  membership           TenantMembership     @relation(fields: [patronMembershipId], references: [id], onDelete: Cascade)
+  id                   String                 @id @default(cuid())
+  patronMembershipId   String                 @map("patron_user_id")
+  membership           TenantMembership       @relation(fields: [patronMembershipId], references: [id], onDelete: Cascade)
   source               PatronFollowSeedSource @map("source")
-  relayCreatorIdsCount Int                  @map("relay_creator_ids_count")
-  createdAt            DateTime             @default(now()) @map("created_at")
+  relayCreatorIdsCount Int                    @map("relay_creator_ids_count")
+  createdAt            DateTime               @default(now()) @map("created_at")
 
   @@index([patronMembershipId])
   @@map("patron_follow_seeds")
@@ -1067,31 +1205,34 @@ enum NotificationKind {
 /// Read state: `readAt` null = unread. The mark-read endpoint is the only writer; the worker
 /// never touches `readAt`.
 model Notification {
-  id                  String           @id @default(cuid())
+  id                    String           @id @default(cuid())
   /// TenantMembership.id for the recipient. Indexed; the patron feed query filters on this.
-  recipientMembershipId String         @map("recipient_membership_id")
+  recipientMembershipId String           @map("recipient_membership_id")
   /// Optional creator scope -- when set, filters / preferences operate per-creator.
-  relayCreatorId      String           @default("") @map("relay_creator_id")
-  kind                NotificationKind
+  relayCreatorId        String           @default("") @map("relay_creator_id")
+  kind                  NotificationKind
   /// Free-form, kind-shaped payload. Examples:
   ///   tier_changed:     { prior_tier_ids, next_tier_ids, active }
   ///   comment_liked:    { post_id, comment_id, latest_actor_account_id }
   ///   comment_replied:  { post_id, comment_id, parent_comment_id, reply_account_id }
   ///   new_follower:     { follower_account_id }
-  payloadJson         Json             @map("payload_json")
+  payloadJson           Json             @map("payload_json")
   /// Optional dedupe key for clustering. NULL = never coalesce. Same key + same recipient + an
   /// existing unread row inside CLUSTER_WINDOW_MS = increment count; new row otherwise.
-  clusterKey          String?          @map("cluster_key")
+  clusterKey            String?          @map("cluster_key")
   /// How many underlying events have been folded into this row (>= 1). Always 1 for un-clustered.
-  clusterCount        Int              @default(1) @map("cluster_count")
+  clusterCount          Int              @default(1) @map("cluster_count")
   /// FK-style trace back to the OutboxEvent that produced this notification (most-recent for clusters).
-  sourceEventId       String?          @map("source_event_id")
+  /// When `cluster_key` is null, Postgres enforces uniqueness on (`source_event_id`, `recipient_membership_id`)
+  /// so concurrent delivery ticks cannot insert duplicate rows for the same outbox event + recipient
+  /// (see migration `20260508160000_notifications_nonclustered_source_recipient_unique`).
+  sourceEventId         String?          @map("source_event_id")
   /// Read state. Null = unread.
-  readAt              DateTime?        @map("read_at")
-  createdAt           DateTime         @default(now()) @map("created_at")
-  updatedAt           DateTime         @updatedAt @map("updated_at")
+  readAt                DateTime?        @map("read_at")
+  createdAt             DateTime         @default(now()) @map("created_at")
+  updatedAt             DateTime         @updatedAt @map("updated_at")
 
-  membership          TenantMembership @relation(fields: [recipientMembershipId], references: [id], onDelete: Cascade)
+  membership TenantMembership @relation(fields: [recipientMembershipId], references: [id], onDelete: Cascade)
 
   @@index([recipientMembershipId, readAt, createdAt(sort: Desc)])
   @@index([recipientMembershipId, clusterKey])
@@ -1106,10 +1247,10 @@ model Notification {
 /// Single-row pattern: id is fixed to "default"; multi-instance deploys can swap to a Redis
 /// lock + cursor (BullMQ leader election) without schema changes.
 model NotificationDeliveryCursor {
-  id              String   @id @default("default")
-  lastOccurredAt  DateTime @map("last_occurred_at")
-  lastEventId     String?  @map("last_event_id")
-  updatedAt       DateTime @updatedAt @map("updated_at")
+  id             String   @id @default("default")
+  lastOccurredAt DateTime @map("last_occurred_at")
+  lastEventId    String?  @map("last_event_id")
+  updatedAt      DateTime @updatedAt @map("updated_at")
 
   @@map("notification_delivery_cursor")
 }
@@ -1131,23 +1272,23 @@ enum AccountDeletionStatus {
 }
 
 model AccountDeletion {
-  id            String                @id @default(cuid())
-  accountId     String                @map("account_id")
-  status        AccountDeletionStatus @default(pending)
+  id           String                @id @default(cuid())
+  accountId    String                @map("account_id")
+  status       AccountDeletionStatus @default(pending)
   /// When the patron initiated the request.
-  requestedAt   DateTime              @default(now()) @map("requested_at")
+  requestedAt  DateTime              @default(now()) @map("requested_at")
   /// Wall-clock when the sweeper is allowed to execute. Default = requestedAt + 7 days.
-  scheduledFor  DateTime              @map("scheduled_for")
+  scheduledFor DateTime              @map("scheduled_for")
   /// Set when status transitions to executed.
-  executedAt    DateTime?             @map("executed_at")
+  executedAt   DateTime?             @map("executed_at")
   /// Set when status transitions to cancelled.
-  cancelledAt   DateTime?             @map("cancelled_at")
+  cancelledAt  DateTime?             @map("cancelled_at")
   /// Optional patron-supplied reason; surfaced in moderator analytics, not in audit logs.
-  reason        String?
+  reason       String?
   /// Best-effort source IP for fraud triage. Null when middleware doesn't surface it.
-  requesterIp   String?               @map("requester_ip")
-  createdAt     DateTime              @default(now()) @map("created_at")
-  updatedAt     DateTime              @updatedAt @map("updated_at")
+  requesterIp  String?               @map("requester_ip")
+  createdAt    DateTime              @default(now()) @map("created_at")
+  updatedAt    DateTime              @updatedAt @map("updated_at")
 
   @@index([accountId])
   @@index([status, scheduledFor])
@@ -1181,41 +1322,41 @@ model PatronOAuthCredential {
 /// - tagsRevokedByOwner: granular per-comment per-tag owner revocation (subset of tagIds). When the LAST suggestion backing a (media, tag) is revoked, the post's PostOverride.removeTagIds gains the tag.
 /// - autoModFlagsJson: snapshot of the auto-mod ruleset hits at create time, for transparency and post-hoc tuning.
 model Comment {
-  id                  String            @id @default(cuid())
-  relayCreatorId      String            @map("relay_creator_id")
-  postId              String            @map("post_id")
+  id                 String            @id @default(cuid())
+  relayCreatorId     String            @map("relay_creator_id")
+  postId             String            @map("post_id")
   /// D26 — null = post-level comment; non-null = coordinate-pinned (`MediaAsset.id`). FK `onDelete: SetNull` keeps the row if media is removed upstream (coordinates may be stale until edited).
-  mediaId             String?           @map("media_id")
-  mediaAsset          MediaAsset?       @relation(fields: [mediaId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  mediaId            String?           @map("media_id")
+  mediaAsset         MediaAsset?       @relation(fields: [mediaId], references: [id], onDelete: SetNull, onUpdate: Cascade)
   /// D26 — percentage X coordinate (0-100) on the rendered media's natural box. Required when mediaId is set.
-  anchorX             Decimal?          @map("anchor_x") @db.Decimal(5, 2)
+  anchorX            Decimal?          @map("anchor_x") @db.Decimal(5, 2)
   /// D26 — percentage Y coordinate (0-100). Required when mediaId is set.
-  anchorY             Decimal?          @map("anchor_y") @db.Decimal(5, 2)
-  patronUserId        String            @map("patron_user_id")
-  body                String
+  anchorY            Decimal?          @map("anchor_y") @db.Decimal(5, 2)
+  patronUserId       String            @map("patron_user_id")
+  body               String
   /// D12 - simple threading; null = top-level. Self-relation; parent delete cascades to children (matches typical comment UX).
-  parentCommentId     String?           @map("parent_comment_id")
-  parent              Comment?          @relation("CommentReplies", fields: [parentCommentId], references: [id], onDelete: Cascade)
-  replies             Comment[]         @relation("CommentReplies")
+  parentCommentId    String?           @map("parent_comment_id")
+  parent             Comment?          @relation("CommentReplies", fields: [parentCommentId], references: [id], onDelete: Cascade)
+  replies            Comment[]         @relation("CommentReplies")
   /// D27 - patron-supplied tags shared with artist namespace.
-  tagIds              String[]          @default([]) @map("tag_ids")
+  tagIds             String[]          @default([]) @map("tag_ids")
   /// D27 - granular per-comment owner revocation. Subset of tagIds. See SEARCH_AND_TAGS_SHARED_KERNEL.md §4.3.
-  tagsRevokedByOwner  String[]          @default([]) @map("tags_revoked_by_owner")
+  tagsRevokedByOwner String[]          @default([]) @map("tags_revoked_by_owner")
   /// D12 - creator pin to top of thread. Distinct from coordinate pinning. Null = unpinned.
-  creatorPinnedAt     DateTime?         @map("creator_pinned_at")
+  creatorPinnedAt    DateTime?         @map("creator_pinned_at")
   /// D12 - optional tier gate; when set, viewer must have this tier id in current TenantMembership.tierIds.
-  requiredTierId      String?           @map("required_tier_id")
+  requiredTierId     String?           @map("required_tier_id")
   /// D12 - audience scope (defaults to everyone == post audience).
-  visibility          CommentVisibility @default(everyone)
+  visibility         CommentVisibility @default(everyone)
   /// D22 - auto-mod hits captured at create-time; stored as { rule_id, snippet, severity }[] for explainability.
-  autoModFlagsJson    Json?             @map("auto_mod_flags_json")
-  createdAt           DateTime          @default(now()) @map("created_at")
+  autoModFlagsJson   Json?             @map("auto_mod_flags_json")
+  createdAt          DateTime          @default(now()) @map("created_at")
   /// Last edit timestamp; null = never edited.
-  editedAt            DateTime?         @map("edited_at")
-  deletedAt           DateTime?         @map("deleted_at")
-  modState            CommentModState   @default(visible) @map("mod_state")
+  editedAt           DateTime?         @map("edited_at")
+  deletedAt          DateTime?         @map("deleted_at")
+  modState           CommentModState   @default(visible) @map("mod_state")
 
-  reactions           CommentReaction[]
+  reactions CommentReaction[]
 
   @@index([relayCreatorId, postId])
   @@index([relayCreatorId, postId, mediaId])
@@ -1226,12 +1367,12 @@ model Comment {
 
 /// PE-E (D12) — one row per (comment, account, kind). Toggle on/off; aggregate counts at read time.
 model CommentReaction {
-  id            String              @id @default(cuid())
-  commentId     String              @map("comment_id")
-  comment       Comment             @relation(fields: [commentId], references: [id], onDelete: Cascade)
-  accountId     String              @map("account_id")
-  kind          CommentReactionKind
-  createdAt     DateTime            @default(now()) @map("created_at")
+  id        String              @id @default(cuid())
+  commentId String              @map("comment_id")
+  comment   Comment             @relation(fields: [commentId], references: [id], onDelete: Cascade)
+  accountId String              @map("account_id")
+  kind      CommentReactionKind
+  createdAt DateTime            @default(now()) @map("created_at")
 
   @@unique([commentId, accountId, kind])
   @@index([commentId])
@@ -1262,18 +1403,18 @@ model ContentReport {
 
 /// PE-E — append-only moderation audit log. Reversible actions log a paired entry (e.g. comment_hide -> comment_unhide).
 model ModerationAction {
-  id                String                @id @default(cuid())
+  id             String               @id @default(cuid())
   /// Scope; "" allowed for platform-wide actions.
-  relayCreatorId    String                @default("") @map("relay_creator_id")
-  actorKind         ModerationActorKind   @map("actor_kind")
+  relayCreatorId String               @default("") @map("relay_creator_id")
+  actorKind      ModerationActorKind  @map("actor_kind")
   /// Null when actorKind = system_auto_mod.
-  actorAccountId    String?               @map("actor_account_id")
-  kind              ModerationActionKind
-  targetKind        ModerationTargetKind  @map("target_kind")
-  targetId          String                @map("target_id")
+  actorAccountId String?              @map("actor_account_id")
+  kind           ModerationActionKind
+  targetKind     ModerationTargetKind @map("target_kind")
+  targetId       String               @map("target_id")
   /// Free-form payload for kind-specific data: { tagId } for comment_tag_revoke, { reportId } for report_*, etc.
-  payloadJson       Json?                 @map("payload_json")
-  createdAt         DateTime              @default(now()) @map("created_at")
+  payloadJson    Json?                @map("payload_json")
+  createdAt      DateTime             @default(now()) @map("created_at")
 
   @@index([relayCreatorId, createdAt])
   @@index([targetKind, targetId])
@@ -1283,10 +1424,10 @@ model ModerationAction {
 
 /// PE-E (D14) — account-level block. Future-only semantics: hides content authored AFTER createdAt; historical content unaffected.
 model AccountBlock {
-  id                 String   @id @default(cuid())
-  blockerAccountId   String   @map("blocker_account_id")
-  blockedAccountId   String   @map("blocked_account_id")
-  createdAt          DateTime @default(now()) @map("created_at")
+  id               String   @id @default(cuid())
+  blockerAccountId String   @map("blocker_account_id")
+  blockedAccountId String   @map("blocked_account_id")
+  createdAt        DateTime @default(now()) @map("created_at")
 
   @@unique([blockerAccountId, blockedAccountId])
   @@index([blockerAccountId])
@@ -1383,6 +1524,23 @@ model DiscordMediaIngestKey {
 
   @@unique([discordGuildId, discordChannelId, discordMessageId, discordAttachmentId], map: "discord_ingest_key_quad_uq")
   @@map("discord_media_ingest_keys")
+}
+
+/// Deferred R2 object deletion (e.g. Discord staging discard after `MediaAsset` row is removed).
+model MediaStoragePurgeQueue {
+  id            String   @id @default(cuid())
+  storageKey    String   @map("storage_key")
+  creatorId     String   @map("creator_id")
+  formerMediaId String?  @map("former_media_id")
+  reason        String
+  eligibleAt    DateTime @map("eligible_at")
+  createdAt     DateTime @default(now()) @map("created_at")
+  attempts      Int      @default(0)
+  lastError     String?  @map("last_error")
+
+  @@index([eligibleAt])
+  @@index([createdAt])
+  @@map("media_storage_purge_queue")
 }
 
 /// Narrow replacement target for `patreon_webhook_metadata.json` (encrypted secret + key id only).

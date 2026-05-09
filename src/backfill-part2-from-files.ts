@@ -1,3 +1,9 @@
+/**
+ * @fileoverview One-shot backfill: migrates Part 2 JSON snapshots (clone sites, payments, migrations, deploys) into Postgres via Prisma.
+ * @description Upserts through store abstractions; `migration_audit_entries` may grow append-only duplicates on re-run — other domains are idempotent upserts.
+ * @see {@link ./jsdoc-core-entities.ts}
+ * @see prisma/schema.prisma `CloneSite`, `CreatorPaymentConfig`, `PaymentCheckout`, migration / deploy models used by the Db* stores
+ */
 import type { PrismaClient } from "@prisma/client";
 import { DbCloneSiteStore } from "./clone/clone-store-db.js";
 import { FileCloneSiteStore } from "./clone/clone-store.js";
@@ -9,8 +15,16 @@ import { DbPaymentStore } from "./payments/payment-store-db.js";
 import { FilePaymentStore } from "./payments/payment-store.js";
 
 /**
- * One-shot migration from Part 2 JSON files into Postgres.
- * Re-running may duplicate `migration_audit_entries` rows (append-only); other tables are upserted.
+ * Migrates Part 2 JSON files into Postgres (clone, payments, migrations, deploys).
+ * @async
+ * @throws {Error} On filesystem read failures or Prisma persistence errors.
+ * @todo Brittle: re-run semantics for append-only audit rows — operators should treat counts as non-idempotent for that stream.
+ * @param args.prisma Connected Prisma client (caller owns lifecycle).
+ * @param args.clonePath Path to clone sites JSON root.
+ * @param args.paymentsPath Path to payments JSON root.
+ * @param args.migrationsPath Path to migrations JSON root.
+ * @param args.deploysPath Path to deploys JSON root.
+ * @returns Aggregate counts of upserted entities.
  */
 export async function backfillPart2FromFiles(args: {
   prisma: PrismaClient;

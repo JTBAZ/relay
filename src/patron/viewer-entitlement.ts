@@ -1,4 +1,10 @@
 /**
+ * @fileoverview Patron experience module viewer-entitlement.ts — see exported symbols.
+ * @see {@link ../jsdoc-core-entities.ts}
+ * @see prisma/schema.prisma Account, TenantMembership, and related patron tables
+ * @security-audit-required Patron PII or entitlement paths — audit responses and logs.
+ */
+/**
  * PE-D / D29 — viewer-aware entitlement re-check.
  *
  * Decides what the **current viewer** is entitled to see for a given source post, by combining:

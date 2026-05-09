@@ -32,6 +32,8 @@ import { FeedCard } from "./feed-card";
 import { FeedSectionDivider } from "./feed-section-divider";
 import { EmptyState } from "./empty-state";
 import { ErrorBanner } from "./error-banner";
+import { PatronEntitlementStaleBanner } from "./patron-entitlement-stale-banner";
+import { PatronEmptyFeedState } from "./patron-empty-feed-state";
 import { CommandPalette } from "./command-palette";
 import { GalleryView } from "./gallery-view";
 import { ConnectCampaignModal } from "./connect-campaign-modal";
@@ -206,6 +208,8 @@ function emptyLiveShell(fixture: PatronFeedBundle): PatronFeedBundle {
     currentViewer: fixture.currentViewer,
     followedCreators: [],
     notifications: [],
+    entitlement_degraded: false,
+    entitlement_stale_since: null
   };
 }
 
@@ -242,6 +246,7 @@ function discoverItemToPost(item: DiscoverItem): FeedPost {
   return {
     id: item.id,
     kind: "discovery",
+    feed_item_source: "discover",
     creator: item.creator,
     title: item.title,
     excerpt: `A ${item.mediaType} by ${item.creator.displayName}`,
@@ -1177,6 +1182,13 @@ export function RelayApp({ initialDataSource }: RelayAppProps = {}) {
                         }
                       />
                     ) : null}
+                    {dataSource === "live" &&
+                    !liveFeedError &&
+                    effectiveBundle.entitlement_degraded ? (
+                      <PatronEntitlementStaleBanner
+                        staleSinceIso={effectiveBundle.entitlement_stale_since ?? null}
+                      />
+                    ) : null}
 
                     {liveLoading && dataSource === "live" ? (
                       <div className="flex flex-col items-center py-24 text-center">
@@ -1185,39 +1197,23 @@ export function RelayApp({ initialDataSource }: RelayAppProps = {}) {
                     ) : DEMO_EMPTY_FOLLOWS ? (
                       <EmptyState onSearch={openCommand} />
                     ) : filteredPosts.length === 0 ? (
-                      liveFeedError && activeFilter === "all" ? null : (
-                        <div className="flex flex-col items-center gap-3 py-20 text-center max-w-md mx-auto">
-                          <p className="text-sm text-[#5A5A5A]">
-                            {activeFilter !== "all"
-                              ? "No posts match this filter."
-                              : dataSource === "live"
-                                ? "No posts to show yet. Link Patreon and follow creators — posts from creators you follow appear here once they’re on Relay and you have access."
-                                : "No posts match this filter."}
-                          </p>
-                          {dataSource === "live" && activeFilter === "all" ? (
-                            <p className="text-xs text-[#4B5563]">
-                              Tip: the feed lists creators you follow in Relay. Patreon memberships are synced on link;
-                              automatic follow-from-membership is coming next (PE-C).
-                            </p>
-                          ) : null}
-                          {activeFilter !== "all" ? (
-                            <button
-                              type="button"
-                              onClick={() => setActiveFilter("all")}
-                              className="mt-2 text-sm text-[#2D6A4F] hover:text-[#40916C] transition-colors duration-150"
-                            >
-                              Show all posts
-                            </button>
-                          ) : null}
-                          {dataSource === "live" && activeFilter === "all" ? (
-                            <Link
-                              href="/patreon/patron/connect"
-                              className="text-sm font-medium text-[#2D6A4F] hover:text-[#40916C] transition-colors"
-                            >
-                              Connect Patreon
-                            </Link>
-                          ) : null}
-                        </div>
+                      liveFeedError && activeFilter === "all" ? null : activeFilter !== "all" ? (
+                        <PatronEmptyFeedState
+                          variant="filter_mismatch"
+                          onShowAll={() => setActiveFilter("all")}
+                        />
+                      ) : dataSource === "live" ? (
+                        <PatronEmptyFeedState
+                          variant={
+                            peAShowConnectPatreonBanner
+                              ? "live_oauth"
+                              : effectiveBundle.followedCreators.length === 0
+                                ? "live_no_follows"
+                                : "live_no_posts"
+                          }
+                        />
+                      ) : (
+                        <PatronEmptyFeedState variant="fixtures_empty" />
                       )
                     ) : (
                       enrichedPosts.map(({ post, showDivider }) => (
@@ -1228,7 +1224,25 @@ export function RelayApp({ initialDataSource }: RelayAppProps = {}) {
                               sublabel="Creators you don't follow yet"
                             />
                           )}
-                          <FeedCard post={post} onClick={() => setSelectedPost(post)} />
+                          <FeedCard
+                            post={post}
+                            onClick={
+                              dataSource === "live"
+                                ? () =>
+                                    router.push(
+                                      `/patron/feed/post/${encodeURIComponent(post.creator.id)}/${encodeURIComponent(post.id)}`
+                                    )
+                                : () => setSelectedPost(post)
+                            }
+                            liveCommentCountScope={
+                              dataSource === "live"
+                                ? {
+                                    relayCreatorId: post.creator.id,
+                                    postId: post.id,
+                                  }
+                                : null
+                            }
+                          />
                         </div>
                       ))
                     )}

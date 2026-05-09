@@ -1,14 +1,31 @@
+/**
+ * @fileoverview Application service wiring canonical ingest, export index, and clone persistence.
+ * @description Regenerates clone models and offers preview/parity helpers for operators.
+ * @see ./clone-generator.js
+ * @see ./clone-store.js
+ * @see ../export/export-index.js FileExportIndex
+ */
+
 import type { CanonicalStore } from "../ingest/canonical-store.js";
 import type { FileExportIndex } from "../export/export-index.js";
 import { generateCloneSiteModel } from "./clone-generator.js";
 import type { CloneSiteStore } from "./clone-store.js";
 import type { ClonePreviewPage, CloneSiteModel } from "./types.js";
 
+/**
+ * @description Coordinates clone regeneration and read paths.
+ * @security-audit-required All methods are `creatorId`-scoped; HTTP must verify the caller owns the creator/tenant.
+ */
 export class CloneService {
   private readonly canonical: CanonicalStore;
   private readonly exportIndex: FileExportIndex;
   private readonly cloneStore: CloneSiteStore;
 
+  /**
+   * @param canonical Canonical ingest store.
+   * @param exportIndex Per-creator export manifest reader.
+   * @param cloneStore File or DB-backed clone persistence.
+   */
   public constructor(
     canonical: CanonicalStore,
     exportIndex: FileExportIndex,
@@ -19,6 +36,14 @@ export class CloneService {
     this.cloneStore = cloneStore;
   }
 
+  /**
+   * @description Loads canonical + export index, builds model, persists, returns model.
+   * @param creatorId Creator scope.
+   * @param baseUrl Public base URL for links.
+   * @returns Freshly generated `CloneSiteModel`.
+   * @async
+   * @throws {Error} On canonical/export/clone store failures.
+   */
   public async generate(
     creatorId: string,
     baseUrl: string
@@ -30,10 +55,24 @@ export class CloneService {
     return model;
   }
 
+  /**
+   * @description Loads persisted clone snapshot when present.
+   * @param creatorId Creator scope.
+   * @returns Stored model or `null`.
+   * @async
+   * @throws {Error} Persistence read failures propagate.
+   */
   public async getLatest(creatorId: string): Promise<CloneSiteModel | null> {
     return this.cloneStore.getByCreator(creatorId);
   }
 
+  /**
+   * @description Maps stored posts into lightweight URLs for previews.
+   * @param creatorId Creator scope.
+   * @returns Preview rows or `null` when no clone exists.
+   * @async
+   * @throws {Error} On store read failure.
+   */
   public async previewPages(
     creatorId: string
   ): Promise<ClonePreviewPage[] | null> {
@@ -48,6 +87,13 @@ export class CloneService {
     }));
   }
 
+  /**
+   * @description Compares canonical active posts against clone snapshot for QA metrics.
+   * @param creatorId Creator scope.
+   * @returns Counts and missing post identifiers.
+   * @async
+   * @throws {Error} On canonical or clone load failure.
+   */
   public async parityCheck(
     creatorId: string
   ): Promise<{

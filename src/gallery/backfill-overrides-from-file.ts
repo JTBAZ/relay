@@ -1,9 +1,18 @@
+/**
+ * @fileoverview Migration: gallery overrides JSON → `post_overrides` rows.
+ */
+
 import type { PrismaClient } from "@prisma/client";
 import { FileGalleryOverridesStore } from "./overrides-store.js";
 import { DbGalleryOverridesStore } from "./overrides-store-db.js";
 
 /**
- * Full-replace: `gallery_post_overrides.json` → `post_overrides` via `DbGalleryOverridesStore.save`.
+ * @description Full-replace: `gallery_post_overrides.json` → `post_overrides` via {@link DbGalleryOverridesStore.save}.
+ * @param args.prisma Prisma client.
+ * @param args.filePath Overrides JSON path.
+ * @returns Creator count + flattened row hint for logs.
+ * @async
+ * @throws Propagates file + DB transaction failures.
  */
 export async function backfillGalleryOverridesFromFile(args: {
   prisma: PrismaClient;

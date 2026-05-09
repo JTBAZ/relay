@@ -284,7 +284,8 @@ body {
   }
 }
 
-.designer-site-shell {
+.designer-site-shell,
+.public-profile-wysiwyg-shell {
   --relay-bg: #0a0a0a;
   --relay-surface-1: #111111;
   --relay-surface-2: #1a1a1a;

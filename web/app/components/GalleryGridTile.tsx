@@ -3,9 +3,11 @@
 import type { CSSProperties, MouseEvent as ReactMouseEvent } from "react";
 import { useEffect, useRef, useState } from "react";
 import { EyeOff, Play, Search } from "lucide-react";
+import { galleryItemKey } from "@/lib/gallery-group";
 import {
   RELAY_API_BASE,
   relayFetch,
+  galleryItemImageGridSrc,
   type GalleryItem,
   type PostVisibility,
   type TierFacet
@@ -300,7 +302,8 @@ export default function GalleryGridTile({
       data-gallery-tile
       role="listitem"
       className={`group flex h-full min-h-0 w-full min-w-0 flex-col overflow-hidden rounded-2xl bg-[var(--lib-tile)] outline-none transition-all duration-200 ${borderRing} ${keyboardFocusRingClass} ${
-        hovered ? "z-10 scale-[1.028] shadow-xl shadow-black/40" : "z-0 scale-100"
+        // Avoid idle `transform` — Chromium often treats composited GIF/WebP animations as paused or flat when ancestors have a transform stack.
+        hovered ? "z-10 scale-[1.028] shadow-xl shadow-black/40" : "z-0"
       }`}
       style={borderColorStyle}
       tabIndex={0}
@@ -348,7 +351,7 @@ export default function GalleryGridTile({
           >
             {/* eslint-disable-next-line @next/next/no-img-element -- relay-served export URLs */}
             <img
-              src={`${RELAY_API_BASE}${item.content_url_path}`}
+              src={galleryItemImageGridSrc(item) ?? `${RELAY_API_BASE}${item.content_url_path}`}
               alt=""
               className="block h-full w-full object-cover object-center"
             />
@@ -470,19 +473,12 @@ export default function GalleryGridTile({
             </div>
 
             <div className="absolute inset-0 z-[1] overflow-hidden rounded-xl">
-              {items.map((media, index) => {
+              {(() => {
+                const media = items[Math.min(carouselIdx, items.length - 1)];
+                if (!media) return null;
                 const main = postCarouselMainVisual(media);
-                const active = index === carouselIdx;
                 return (
-                  <div
-                    key={`${media.media_id}:${index}`}
-                    aria-hidden={!active}
-                    className="absolute inset-0 transition-all duration-300 ease-out"
-                    style={{
-                      opacity: active ? 1 : 0,
-                      transform: active ? "translateX(0)" : `translateX(${index < carouselIdx ? "-8%" : "8%"})`
-                    }}
-                  >
+                  <div key={galleryItemKey(media)} className="absolute inset-0">
                     {main.relayProcessing ? (
                       <div className="flex h-full w-full items-center justify-center bg-[var(--lib-muted)] px-4 text-center">
                         <span className="text-[11px] font-medium leading-tight text-[var(--lib-fg-muted)]">
@@ -510,7 +506,7 @@ export default function GalleryGridTile({
                     )}
                   </div>
                 );
-              })}
+              })()}
             </div>
 
             <button

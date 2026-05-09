@@ -1,4 +1,10 @@
 /**
+ * @fileoverview Patron experience module content-report-service.ts — see exported symbols.
+ * @see {@link ../jsdoc-core-entities.ts}
+ * @see prisma/schema.prisma Account, TenantMembership, and related patron tables
+ * @security-audit-required Patron PII or entitlement paths — audit responses and logs.
+ */
+/**
  * PE-E — patron-submitted reports on a comment, post, or account. The creator (or future
  * platform admin) resolves the queue from the studio moderation surface; resolution writes a
  * paired ModerationAction row.

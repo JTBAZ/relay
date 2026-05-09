@@ -2,7 +2,12 @@
 
 import { Lock } from "lucide-react";
 import { galleryItemKey } from "@/lib/gallery-group";
-import { RELAY_API_BASE, galleryItemExportVisibleToVisitor, type GalleryItem } from "@/lib/relay-api";
+import {
+  RELAY_API_BASE,
+  galleryItemExportVisibleToVisitor,
+  galleryItemImageGridSrc,
+  type GalleryItem
+} from "@/lib/relay-api";
 
 /** READY = playable in Relay export path; otherwise show neutral preparing / failed UI (not tier lock). */
 export function relayPipelineReady(m: GalleryItem): boolean {
@@ -16,7 +21,10 @@ export function relayMediaPlaceholderLabel(m: GalleryItem): string {
 function thumbSrc(m: GalleryItem): string | null {
   if (!relayPipelineReady(m) || !galleryItemExportVisibleToVisitor(m)) return null;
   const mt = m.mime_type ?? "";
-  if (mt.startsWith("image/") || mt.startsWith("video/")) {
+  if (mt.startsWith("image/")) {
+    return galleryItemImageGridSrc(m) ?? `${RELAY_API_BASE}${m.content_url_path}`;
+  }
+  if (mt.startsWith("video/")) {
     return `${RELAY_API_BASE}${m.content_url_path}`;
   }
   return null;

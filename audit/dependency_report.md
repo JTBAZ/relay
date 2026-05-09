@@ -9,7 +9,7 @@
 - **Ghost dependencies**: root `package.json` — unused in **any** scanned file; `web/package.json` — unused in `web/**` only. `@types/*` listed under tooling (types-only).
 - **Full graph**: `relay_audit.json` → `graph.edges` (all directed import edges) and `graph.importersByModule` (reverse map).
 
-Generated: 2026-05-08T17:21:10.846Z (repo root).
+Generated: 2026-05-08T20:56:18.253Z (repo root).
 ## Active modules (core tree from `src/main.ts`)
 Reachable files: **1** (static relative/`@/` graph only).
 <details><summary>Expand file list</summary>
@@ -21,7 +21,7 @@ src/main.ts
 
 ## Dead code (island files)
 Files with **zero incoming** local/`@/` imports, excluding tests, configs, `src/main.ts`, Next segment entries, etc.
-Count: **633**
+Count: **646**
 <details><summary>Expand</summary>
 
 ```text
@@ -155,11 +155,23 @@ src/ingest/sync-watermark-store-db.ts
 src/ingest/sync-watermark-store.ts
 src/ingest/types.ts
 src/ingest/validate-body.ts
+src/jobs/bullmq-shared.ts
+src/jobs/bullmq-shutdown.ts
+src/jobs/queue-names.ts
+src/jobs/register-workers.ts
+src/jobs/relay-job-backend.ts
+src/jobs/relay-job-trace.ts
+src/jobs/schedule-bullmq-repeat.ts
 src/jsdoc-core-entities.ts
 src/lib/crypto.ts
 src/lib/db.ts
+src/lib/http-access-log-policy.ts
+src/lib/logger.ts
 src/lib/per-key-async-chain.ts
+src/lib/pii-scrub.ts
+src/lib/redis.ts
 src/lib/relay-extension-origins.ts
+src/lib/relay-sentry.ts
 src/lib/run-exclusive-per-key.ts
 src/lib/supabase-admin.ts
 src/lib/supabase-auth.ts
@@ -177,7 +189,6 @@ src/patreon/cookie-scraper.ts
 src/patreon/creator-campaign-display-store.ts
 src/patreon/creator-oauth-campaign-sync.ts
 src/patreon/expand-all-patrons-tiers.ts
-src/patreon/incremental-autosync-worker.ts
 src/patreon/incremental-sync-worker.ts
 src/patreon/jsonapi-types.ts
 src/patreon/map-patreon-to-ingest.ts
@@ -249,6 +260,7 @@ src/storage/r2-s3-client.ts
 src/storage/r2-smoke-upload.ts
 src/storage/relay-upload-r2.ts
 src/webhooks/patreon-webhook.ts
+src/worker.ts
 web/app/GalleryView.tsx
 web/app/action-center/ActionCenterView.tsx
 web/app/components/AppNav.tsx
@@ -536,6 +548,7 @@ web/components/patron/relay/relay-mark-icon.tsx
 web/components/patron/relay/relay-shell.tsx
 web/components/patron/relay/settings-modal.tsx
 web/components/patron/relay/use-live-comments.ts
+web/components/quarantine-import-allowlist.ts
 web/hooks/use-mobile.ts
 web/hooks/use-toast.ts
 web/lib/active-role.ts
@@ -662,25 +675,14 @@ web/onboarding_enhancement/lib/utils.ts
 </details>
 
 ## Ghost assets
-**Likely unreferenced:** 15 · **Possibly dynamic:** 3
+**Likely unreferenced:** 4 · **Possibly dynamic:** 3
 <details><summary>Ghost asset paths</summary>
 
 ```text
-web/public/gallery-inspect-preview.html
-web/public/placeholder-logo.png
-web/public/placeholder-logo.svg
-web/public/placeholder-user.jpg
-web/public/placeholder.jpg
-web/public/post-batch-expand-preview.html
-web/public/single-post-grid-tile-preview.html
 design-archive/preflight/public/placeholder-logo.png
 design-archive/preflight/public/placeholder-logo.svg
-design-archive/preflight/public/placeholder-user.jpg
-design-archive/preflight/public/placeholder.jpg
 ui-control-room-prototype/public/placeholder-logo.png
 ui-control-room-prototype/public/placeholder-logo.svg
-ui-control-room-prototype/public/placeholder-user.jpg
-ui-control-room-prototype/public/placeholder.jpg
 ```
 </details>
 <details><summary>Dynamic / template hints (files containing `${...}` near paths)</summary>
@@ -723,12 +725,22 @@ Count: **0**
     "reason": "No matching import in scanned files for this workspace (after path filter)"
   },
   {
+    "name": "@sentry/node",
+    "kind": "dependency",
+    "reason": "No matching import in scanned files for this workspace (after path filter)"
+  },
+  {
     "name": "@supabase/supabase-js",
     "kind": "dependency",
     "reason": "No matching import in scanned files for this workspace (after path filter)"
   },
   {
     "name": "archiver",
+    "kind": "dependency",
+    "reason": "No matching import in scanned files for this workspace (after path filter)"
+  },
+  {
+    "name": "bullmq",
     "kind": "dependency",
     "reason": "No matching import in scanned files for this workspace (after path filter)"
   },
@@ -748,7 +760,22 @@ Count: **0**
     "reason": "No matching import in scanned files for this workspace (after path filter)"
   },
   {
+    "name": "ioredis",
+    "kind": "dependency",
+    "reason": "No matching import in scanned files for this workspace (after path filter)"
+  },
+  {
     "name": "pg",
+    "kind": "dependency",
+    "reason": "No matching import in scanned files for this workspace (after path filter)"
+  },
+  {
+    "name": "pino",
+    "kind": "dependency",
+    "reason": "No matching import in scanned files for this workspace (after path filter)"
+  },
+  {
+    "name": "pino-std-serializers",
     "kind": "dependency",
     "reason": "No matching import in scanned files for this workspace (after path filter)"
   },
@@ -784,6 +811,11 @@ Count: **0**
   },
   {
     "name": "next",
+    "kind": "devDependency",
+    "reason": "No matching import in scanned files for this workspace (after path filter)"
+  },
+  {
+    "name": "pino-pretty",
     "kind": "devDependency",
     "reason": "No matching import in scanned files for this workspace (after path filter)"
   },

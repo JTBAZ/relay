@@ -1,8 +1,11 @@
 /**
- * Map upstream / handler error text to stable codes and creator-facing hints.
- * Avoid echoing secrets; keep messages short.
+ * @fileoverview Maps raw Patreon/sync exception strings into stable machine codes plus short patron-safe hints (no secrets).
+ * @description Used by HTTP/UI layers — keep hints operational, not exhaustive.
+ * @see {@link ../jsdoc-core-entities.ts}
+ * @todo Brittle: string `includes` heuristics; refine as Patreon messages evolve.
  */
 
+/** Classified upstream failure bucket + user-facing remediation hint. */
 export type ClassifiedSyncError = {
   code:
     | "no_tokens"
@@ -17,6 +20,10 @@ export type ClassifiedSyncError = {
   hint: string;
 };
 
+/**
+ * @param message Free-text error from sync stack (logs, exceptions).
+ * @returns Stable classification for telemetry and UX.
+ */
 export function classifySyncError(message: string): ClassifiedSyncError {
   const m = message.trim();
 

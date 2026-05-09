@@ -1,19 +1,33 @@
 /**
- * @fileoverview Process entrypoint: loads env, wires Prisma-backed `createApp`, and starts HTTP + background workers.
- * @description Configures background jobs via `RELAY_JOB_BACKEND` (`memory` = in-process timers, `bullmq` = Redis workers). When `memory`, starts Patreon incremental autosync, patron entitlement refresh, notification delivery, account deletion sweep, and media purge workers when enabled. Exits if `RELAY_TOKEN_ENCRYPTION_KEY` is missing; `bullmq` requires `REDIS_URL`.
+ * @fileoverview Process entrypoint: loads env, wires Prisma-backed `createApp`, and starts HTTP + background workers when they run in-process.
+ * @description Configures background jobs via `RELAY_JOB_BACKEND` (`memory` = in-process timers, `bullmq` = Redis workers + API-registered BullMQ repeat producers). When `RELAY_SPLIT_WORKER_PROCESS=1`, background work is omitted here — use `npm run worker`. When `memory` and in-process, starts Patreon incremental autosync, patron entitlement refresh, notification delivery, account deletion sweep, and media purge workers when enabled. Exits if `RELAY_TOKEN_ENCRYPTION_KEY` is missing; `bullmq` requires `REDIS_URL`.
  * @see src/server.ts `createApp` — primary Express app and route wiring
  * @see src/lib/db.ts Shared `PrismaClient` singleton
  * @see src/jsdoc-core-entities.ts Canonical `Artist`, `Gallery`, `SyncStatus` typedefs
- * @todo Consider structured shutdown (drain HTTP + wait for in-flight idempotent jobs) before `prisma.$disconnect`.
+ * @todo Bounded in-flight HTTP drain; BullMQ worker close uses `RELAY_BULLMQ_WORKER_CLOSE_GRACE_MS`.
  */
 
 import { config as loadEnv } from "dotenv";
+import type { Server } from "node:http";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { Redis } from "ioredis";
 import { prisma } from "./lib/db.js";
-import { relayJobBackendFromEnv } from "./jobs/relay-job-backend.js";
+import {
+  relayJobBackendFromEnv,
+  relaySplitWorkerProcessFromEnv
+} from "./jobs/relay-job-backend.js";
+import { relayBullMqIoredisOptions } from "./jobs/bullmq-shared.js";
+import {
+  awaitRelayBullMqWorkersClose,
+  type RelayBullMqWorkersClose
+} from "./jobs/bullmq-shutdown.js";
 import { registerRelayBullMqWorkers } from "./jobs/register-workers.js";
-import { startIncrementalAutosyncWorker } from "./patreon/incremental-sync-worker.js";
+import { registerRelayBullMqRepeatSchedulers } from "./jobs/schedule-bullmq-repeat.js";
+import {
+  shouldScheduleIncrementalAutosyncFromEnv,
+  startIncrementalAutosyncWorker
+} from "./patreon/incremental-sync-worker.js";
 import {
   patronEntitlementStaleRefreshBatchFromEnv,
   patronEntitlementStaleRefreshIntervalFromEnv,
@@ -22,6 +36,11 @@ import {
 import { startNotificationDeliveryWorker } from "./patron/notification-delivery-worker.js";
 import { startAccountDeletionWorker } from "./patron/account-deletion-worker.js";
 import { startMediaStoragePurgeWorker } from "./storage/media-storage-purge-worker.js";
+import { createLogger } from "./lib/logger.js";
+import {
+  captureRelaySentryException,
+  initRelaySentry
+} from "./lib/relay-sentry.js";
 import { relayServerConfigFromEnv } from "./relay-server-env.js";
 import { createApp } from "./server.js";
 
@@ -31,55 +50,39 @@ import { createApp } from "./server.js";
  */
 const projectRoot = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 loadEnv({ path: join(projectRoot, ".env") });
+initRelaySentry();
+
+const log = createLogger({ name: "relay-api" });
 
 /**
  * @description Log async failures that would otherwise terminate the process (Node 22+ strict mode).
  * @param {unknown} reason Rejection reason forwarded to stderr.
  */
 process.on("unhandledRejection", (reason: unknown) => {
-  // eslint-disable-next-line no-console -- fatal diagnostics
-  console.error("Relay: unhandledRejection", reason);
+  log.error({ err: reason }, "Relay: unhandledRejection");
+  captureRelaySentryException(reason);
 });
 /**
  * @description Fatal guard: log and exit non-zero on uncaught synchronous exceptions.
  * @param {Error} err Uncaught exception instance.
  */
 process.on("uncaughtException", (err: Error) => {
-  // eslint-disable-next-line no-console -- fatal diagnostics
-  console.error("Relay: uncaughtException", err);
+  log.fatal({ err }, "Relay: uncaughtException");
+  captureRelaySentryException(err);
   process.exit(1);
 });
-
-/**
- * @description Interprets common truthy env string values (`1`, `true`, `yes`, case-insensitive).
- * @param {string | undefined} raw Environment variable value or undefined.
- * @returns {boolean} True when the value is considered enabled.
- */
-function relayEnvTruthy(raw: string | undefined): boolean {
-  if (!raw) return false;
-  const v = raw.trim().toLowerCase();
-  return v === "1" || v === "true" || v === "yes";
-}
-
-/**
- * @description Background incremental autosync when `RELAY_AUTOSYNC_ENABLED` or `RELAY_PATREON_INCREMENTAL_AUTOSYNC_MS` (≥ 10s).
- * @returns {boolean} Whether to start the Patreon incremental autosync worker.
- * @see src/patreon/incremental-sync-worker.ts Worker implementation and failure modes
- */
-function shouldStartPatreonIncrementalAutosync(): boolean {
-  if (relayEnvTruthy(process.env.RELAY_AUTOSYNC_ENABLED)) return true;
-  const raw = process.env.RELAY_PATREON_INCREMENTAL_AUTOSYNC_MS?.trim();
-  if (!raw) return false;
-  const n = Number(raw);
-  return Number.isFinite(n) && n >= 10_000;
-}
 
 /** `memory` (default) uses in-process timers; `bullmq` uses Redis workers (see `RELAY_JOB_BACKEND` in `.env.example`). */
 const jobBackend = relayJobBackendFromEnv();
 
+/**
+ * Dual-process pilot: API (`npm start`) only; workers run via `npm run worker` when `RELAY_SPLIT_WORKER_PROCESS=1`.
+ */
+const splitWorkerProcess = relaySplitWorkerProcessFromEnv();
+const startInProcessBackgroundWork = !splitWorkerProcess;
+
 if (!process.env.RELAY_TOKEN_ENCRYPTION_KEY?.trim()) {
-  // eslint-disable-next-line no-console -- CLI entrypoint
-  console.error(
+  log.error(
     `Relay: missing RELAY_TOKEN_ENCRYPTION_KEY.\n` +
       `  Add it to: ${join(projectRoot, ".env")}\n` +
       `  Generate:  node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"\n` +
@@ -127,7 +130,11 @@ const {
  * @description Stop handle for Patreon incremental autosync loop; undefined when not started.
  */
 let stopAutosync: (() => void) | undefined;
-if (jobBackend === "memory" && shouldStartPatreonIncrementalAutosync()) {
+if (
+  jobBackend === "memory" &&
+  startInProcessBackgroundWork &&
+  shouldScheduleIncrementalAutosyncFromEnv()
+) {
   stopAutosync = startIncrementalAutosyncWorker({
     tokenStore,
     patreonSyncService,
@@ -146,7 +153,12 @@ const patronStaleRefreshMs = patronEntitlementStaleRefreshIntervalFromEnv();
  * @description Stop handle for patron entitlement refresh worker.
  */
 let stopPatronStaleRefresh: (() => void) | undefined;
-if (jobBackend === "memory" && patronStaleRefreshMs > 0 && prisma) {
+if (
+  jobBackend === "memory" &&
+  startInProcessBackgroundWork &&
+  patronStaleRefreshMs > 0 &&
+  prisma
+) {
   stopPatronStaleRefresh = startPatronEntitlementStaleRefreshWorker({
     prisma,
     encryption,
@@ -169,10 +181,9 @@ if (jobBackend === "memory" && patronStaleRefreshMs > 0 && prisma) {
  * @security-audit-required Delivers user-targeted notifications; ensure recipient scoping matches `user_id` / tenant in store queries.
  */
 const notificationRunner =
-  jobBackend === "memory" && prisma
+  jobBackend === "memory" && startInProcessBackgroundWork && prisma
   ? startNotificationDeliveryWorker(prisma, (msg, ctx) => {
-      // eslint-disable-next-line no-console -- background diagnostic
-      console.warn(`Relay: ${msg}`, ctx ?? {});
+      log.warn({ ...(ctx ?? {}), relayMsg: msg }, "Relay");
     })
   : null;
 
@@ -187,10 +198,9 @@ const notificationRunner =
  * @see src/patron/account-deletion-worker.ts
  */
 const accountDeletionRunner =
-  jobBackend === "memory" && prisma
+  jobBackend === "memory" && startInProcessBackgroundWork && prisma
   ? startAccountDeletionWorker(prisma, (msg, ctx) => {
-      // eslint-disable-next-line no-console -- background diagnostic
-      console.warn(`Relay: ${msg}`, ctx ?? {});
+      log.warn({ ...(ctx ?? {}), relayMsg: msg }, "Relay");
     })
   : null;
 
@@ -202,84 +212,157 @@ const accountDeletionRunner =
  * @see prisma/schema.prisma Media purge queue / `MediaAsset` relations
  */
 const mediaStoragePurgeRunner =
-  jobBackend === "memory" && prisma
+  jobBackend === "memory" && startInProcessBackgroundWork && prisma
   ? startMediaStoragePurgeWorker(prisma, (msg, ctx) => {
-      // eslint-disable-next-line no-console -- background diagnostic
-      console.warn(`Relay: ${msg}`, ctx ?? {});
+      log.warn({ ...(ctx ?? {}), relayMsg: msg }, "Relay");
     })
   : null;
 
-/** BullMQ worker close handles when `RELAY_JOB_BACKEND=bullmq`. */
-let closeBullMqWorkers: (() => Promise<void>) | undefined;
-if (jobBackend === "bullmq") {
-  closeBullMqWorkers = registerRelayBullMqWorkers({
-    prisma,
-    tokenStore,
-    patreonSyncService,
-    syncHealthStore: patreonSyncHealthStore,
-    campaignCreatorIndex: patreonCampaignCreatorIndex,
-    encryption,
-    patreonClient,
-    fetchImpl,
-    log: (msg, ctx) => {
-      // eslint-disable-next-line no-console -- background diagnostic
-      console.warn(`Relay: ${msg}`, ctx ?? {});
+/** BullMQ: shared Redis for repeat schedulers + in-process workers; quit on shutdown. */
+let bullMqSharedRedis: Redis | undefined;
+/** Repeatable job producers (`Queue`); API process only. */
+let closeBullMqSchedulers: (() => Promise<void>) | undefined;
+/** BullMQ worker closer when workers run in this process. */
+let closeBullMqWorkers: RelayBullMqWorkersClose | undefined;
+
+/** @description Bound HTTP server for Express `app`. */
+let server: Server;
+
+async function startHttpServer() {
+  if (jobBackend === "bullmq") {
+    bullMqSharedRedis = new Redis(relayBullMqIoredisOptions());
+    try {
+      closeBullMqSchedulers = await registerRelayBullMqRepeatSchedulers({
+        redis: bullMqSharedRedis,
+        prisma,
+        log: (msg, ctx) => {
+          log.warn({ ...(ctx ?? {}), relayMsg: msg }, "Relay");
+        }
+      });
+    } catch (e) {
+      log.error({ err: e }, "Relay: BullMQ repeatable scheduler registration failed");
+      process.exit(1);
     }
+    if (startInProcessBackgroundWork) {
+      closeBullMqWorkers = registerRelayBullMqWorkers({
+        prisma,
+        tokenStore,
+        patreonSyncService,
+        syncHealthStore: patreonSyncHealthStore,
+        campaignCreatorIndex: patreonCampaignCreatorIndex,
+        encryption,
+        patreonClient,
+        fetchImpl,
+        redisConnection: bullMqSharedRedis,
+        log: (msg, ctx) => {
+          log.warn({ ...(ctx ?? {}), relayMsg: msg }, "Relay");
+        }
+      });
+    }
+    log.warn(
+      "Relay: RELAY_JOB_BACKEND=bullmq — API registered BullMQ repeat schedules; in-process timers remain off."
+    );
+  }
+
+  server = app.listen(port, () => {
+    log.info({ port }, "Relay API listening");
   });
-  // eslint-disable-next-line no-console -- CLI entrypoint
-  console.warn(
-    "Relay: RELAY_JOB_BACKEND=bullmq — in-process job timers are off; enqueue work or add repeatable jobs (P1-queue-012)."
+}
+
+void startHttpServer().catch((e: unknown) => {
+  log.error({ err: e }, "Relay: HTTP server failed to start");
+  process.exit(1);
+});
+if (splitWorkerProcess) {
+  log.warn(
+    jobBackend === "bullmq"
+      ? "Relay: RELAY_SPLIT_WORKER_PROCESS=1 — BullMQ workers are not started in this process; run `npm run worker` alongside `npm start`."
+      : "Relay: RELAY_SPLIT_WORKER_PROCESS=1 — background timers are not started in this process; run `npm run worker` alongside `npm start`."
   );
 }
 
 /**
- * @description Bound HTTP server for Express `app`.
- * @const server
- * @throws {Error} When listen fails (port in use, etc.).
- */
-const server = app.listen(port, () => {
-  // eslint-disable-next-line no-console -- CLI entrypoint
-  console.log(`Relay API listening on http://127.0.0.1:${port}`);
-});
-
-/**
- * @description Graceful shutdown: stop workers, close HTTP, disconnect Prisma.
+ * @description Graceful shutdown: stop in-process timers, await delivery runners, close HTTP, drain BullMQ workers (grace + force), close scheduler queues, quit shared Redis, disconnect Prisma.
  * @param {"SIGINT" | "SIGTERM"} signal OS signal being handled.
- * @async Side-effects: stops background timers; `prisma.$disconnect()` on exit path.
- * @throws {Error} Does not throw; logs Prisma disconnect failures and exits `1`.
- * @todo Add bounded wait for in-flight HTTP requests before `server.close`.
  */
+let relayShutdownStarted = false;
+
+function relayBgLog(msg: string, ctx?: Record<string, unknown>) {
+  log.warn({ ...(ctx ?? {}), relayMsg: msg }, "Relay");
+}
+
+async function awaitMemoryDeliveryRunnersStopped(): Promise<void> {
+  const pending = [
+    notificationRunner?.stop(),
+    accountDeletionRunner?.stop(),
+    mediaStoragePurgeRunner?.stop()
+  ].filter((p): p is Promise<void> => p !== undefined);
+  await Promise.all(pending);
+}
+
+function closeHttpServer(): Promise<void> {
+  return new Promise((resolve, reject) => {
+    server.close((err) => {
+      if (err) reject(err);
+      else resolve();
+    });
+  });
+}
+
 function shutdown(signal: "SIGINT" | "SIGTERM") {
+  if (relayShutdownStarted) return;
+  relayShutdownStarted = true;
+
   stopAutosync?.();
   stopPatronStaleRefresh?.();
-  void notificationRunner?.stop();
-  void accountDeletionRunner?.stop();
-  void mediaStoragePurgeRunner?.stop();
+
   void (async () => {
+    let httpCloseErr: Error | undefined;
+
     try {
-      await closeBullMqWorkers?.();
+      await awaitMemoryDeliveryRunnersStopped();
     } catch (e) {
-      // eslint-disable-next-line no-console -- CLI entrypoint
-      console.error("Relay: BullMQ worker close error", e);
+      log.error({ err: e }, "Relay: in-process runner stop error");
     }
-    // eslint-disable-next-line no-console -- CLI entrypoint
-    console.log(`Relay: ${signal}, closing HTTP server…`);
-    server.close((err) => {
-      if (err) {
-        // eslint-disable-next-line no-console -- CLI entrypoint
-        console.error("Relay: HTTP server close error", err);
+
+    log.info({ signal }, "Relay: closing HTTP server");
+    try {
+      await closeHttpServer();
+    } catch (e) {
+      httpCloseErr = e instanceof Error ? e : new Error(String(e));
+      log.error({ err: e }, "Relay: HTTP server close error");
+    }
+
+    try {
+      await awaitRelayBullMqWorkersClose(closeBullMqWorkers, relayBgLog);
+    } catch (e) {
+      log.error({ err: e }, "Relay: BullMQ worker close error");
+    }
+
+    try {
+      await closeBullMqSchedulers?.();
+    } catch (e) {
+      log.error({ err: e }, "Relay: BullMQ scheduler close error");
+    }
+
+    if (bullMqSharedRedis) {
+      try {
+        await bullMqSharedRedis.quit();
+      } catch (e) {
+        log.error({ err: e }, "Relay: shared Redis quit error");
       }
-      void prisma
-        .$disconnect()
-        .then(() => {
-          process.exit(err ? 1 : 0);
-        })
-        .catch((e: unknown) => {
-          // eslint-disable-next-line no-console -- CLI entrypoint
-          console.error("Relay: prisma.$disconnect error", e);
-          process.exit(1);
-        });
-    });
+    }
+
+    let prismaErr: unknown;
+    try {
+      await prisma.$disconnect();
+    } catch (e) {
+      prismaErr = e;
+      log.error({ err: e }, "Relay: prisma.$disconnect error");
+    }
+
+    const code = httpCloseErr || prismaErr ? 1 : 0;
+    process.exit(code);
   })();
 }
 

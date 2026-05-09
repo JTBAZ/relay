@@ -49,15 +49,28 @@ import {
   buildGalleryFacetsQuery,
   buildGalleryQuery,
   RELAY_API_BASE,
+  describeCreatorGalleryPublishBlock,
+  fetchCreatorOnboarding,
   getCreatorProfile,
+  publishCreatorGalleryLayout,
   relayFetch,
+  RelayApiError,
   type Collection as ApiCollection,
+  type CreatorOnboardingData,
   type CreatorProfileIdentity,
   type FacetsData,
   type GalleryItem,
   type GalleryListData,
+  type PageLayout,
   type VisitorHeroData,
 } from "@/lib/relay-api";
+import {
+  buildPageLayoutFromDesignerState,
+  isDesignerSpotlightSection,
+  pickDesignerSpotlightSection,
+  profileThemePatchFromPageLayout,
+  type DesignerProfileThemeInput,
+} from "@/lib/designer-profile-theme-bridge";
 import { dedupeShadowCoverRows } from "@/lib/gallery-group";
 import { RELAY_TIER_ALL_PATRONS, RELAY_TIER_PUBLIC } from "@/lib/tier-access";
 import { useStudioSession } from "@/lib/studio-session-context";
@@ -305,7 +318,16 @@ function liveMediaFromGalleryItem(
       : mime.startsWith("image/")
         ? "image"
         : "media";
-  const thumbPath = item.content_url_path?.trim() || item.preview_url_path?.trim();
+  const thumbPath =
+    item.mime_type?.toLowerCase() === "image/gif"
+      ? item.content_url_path?.trim() ||
+        item.thumb_url_path?.trim() ||
+        item.preview_url_path?.trim()
+      : item.mime_type?.startsWith("image/")
+        ? item.thumb_url_path?.trim() ||
+          item.content_url_path?.trim() ||
+          item.preview_url_path?.trim()
+        : item.content_url_path?.trim() || item.preview_url_path?.trim();
 
   return {
     id: item.media_id,
@@ -742,20 +764,24 @@ function MediaCard({
       )}
       onClick={onClick}
       style={{
-        aspectRatio: media.aspectRatio,
-        backgroundImage: media.thumbUrl ? `url(${media.thumbUrl})` : undefined,
-        backgroundSize: "cover",
-        backgroundPosition: "center",
+        aspectRatio: media.aspectRatio
       }}
     >
-      {!media.thumbUrl ? (
+      {media.thumbUrl ? (
+        // eslint-disable-next-line @next/next/no-img-element -- Relay export / thumb URLs; CSS backgrounds do not play animated WebP reliably in Chromium.
+        <img
+          src={media.thumbUrl}
+          alt=""
+          className="pointer-events-none absolute inset-0 h-full w-full object-cover object-center"
+        />
+      ) : (
         <>
           <div className="absolute inset-0 bg-gradient-to-br from-[#25282d] via-[#171717] to-[#232323]">
             <div className="absolute inset-0 bg-[radial-gradient(circle_at_30%_40%,rgba(255,255,255,0.12),transparent_60%)] opacity-30" />
           </div>
           <span className="absolute inset-0 flex items-center justify-center font-mono text-xs text-[#5f5f5f]">{media.id}</span>
         </>
-      ) : null}
+      )}
       {isSelected ? (
         <div className="absolute right-2 top-2 z-10 flex h-5 w-5 items-center justify-center rounded-full bg-[#7c3aed]">
           <Check className="h-3 w-3 text-white" />
@@ -1004,11 +1030,13 @@ function GallerySection({
                   isSelected ? "border-[var(--designer-accent)] bg-[var(--designer-accent-soft)]" : "border-[#242424] bg-[#171717] hover:bg-[#242424]"
                 )}
               >
-                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded border border-[#242424] bg-[#242424]">
+                <div className="relative flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded border border-[#242424] bg-[#242424]">
                   {media.thumbUrl ? (
-                    <div
-                      className="h-full w-full rounded bg-cover bg-center"
-                      style={{ backgroundImage: `url(${media.thumbUrl})` }}
+                    /* eslint-disable-next-line @next/next/no-img-element */
+                    <img
+                      src={media.thumbUrl}
+                      alt=""
+                      className="h-full w-full object-cover object-center"
                     />
                   ) : (
                     <span className="font-mono text-[10px] text-[#6f6f6f]">{id}</span>
@@ -1323,12 +1351,16 @@ function ProfileCanvas({
             viewMode={viewMode}
             selectedMedia={selectedMedia}
             toggleMediaSelection={toggleMediaSelection}
-            mediaIds={section.id === "featured" ? featuredMediaIds(theme.featured, mediaCatalog, collections) : section.itemIds}
+            mediaIds={
+              isDesignerSpotlightSection(section, theme.sections)
+                ? featuredMediaIds(theme.featured, mediaCatalog, collections)
+                : section.itemIds
+            }
             mediaCatalog={mediaCatalog}
             enableHoverEffects={theme.enableHoverEffects}
             enableAnimations={theme.enableAnimations}
             showVariantStack={section.id === "gallery"}
-            spotlightGallery={section.id === "featured"}
+            spotlightGallery={isDesignerSpotlightSection(section, theme.sections)}
             onLayoutChange={(layout) => {
               onThemeChange({
                 sections: theme.sections.map((current) => current.id === section.id ? { ...current, layout } : current),
@@ -1732,7 +1764,8 @@ function FeaturedPanel({
   mediaCatalog: Record<string, DesignerMedia>;
 }) {
   const previewIds = featuredMediaIds(theme.featured, mediaCatalog, collections);
-  const featuredSection = theme.sections.find((section) => section.id === "featured");
+  const spotlightSec = pickDesignerSpotlightSection(theme.sections);
+  const featuredSection = spotlightSec ?? theme.sections.find((section) => section.id === "featured");
 
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center px-4 pt-20">
@@ -1764,7 +1797,7 @@ function FeaturedPanel({
             onLayoutChange={(layout) => {
               onChange({
                 sections: theme.sections.map((section) =>
-                  section.id === "featured" ? { ...section, layout } : section
+                  isDesignerSpotlightSection(section, theme.sections) ? { ...section, layout } : section
                 ),
               });
             }}
@@ -2113,6 +2146,20 @@ function UpdateComposer({
   );
 }
 
+function themeToLayoutInput(theme: ProfileTheme): DesignerProfileThemeInput {
+  return {
+    heroStyle: theme.heroStyle,
+    showBio: theme.showBio,
+    showSocials: theme.showSocials,
+    showTierBadges: theme.showTierBadges,
+    accentColor: theme.accentColor,
+    customAccent: theme.customAccent,
+    defaultLayout: theme.defaultLayout,
+    sections: theme.sections,
+    featured: theme.featured,
+  };
+}
+
 export default function DesignerView() {
   const { creatorId } = useStudioSession();
   const [viewMode, setViewMode] = useState<ViewMode>("creator");
@@ -2131,6 +2178,14 @@ export default function DesignerView() {
   const [libraryRefreshNonce, setLibraryRefreshNonce] = useState(0);
   const [libraryLoading, setLibraryLoading] = useState(false);
   const [libraryError, setLibraryError] = useState<string | null>(null);
+  const [persistedLayout, setPersistedLayout] = useState<PageLayout | null>(null);
+  const [layoutActionError, setLayoutActionError] = useState<string | null>(null);
+  const [layoutActionBusy, setLayoutActionBusy] = useState(false);
+  const [onboardingForPublish, setOnboardingForPublish] = useState<CreatorOnboardingData | null>(null);
+  /** `pending` until GET returns; `skipped` when API missing or no creator (do not client-gate). */
+  const [onboardingGateStatus, setOnboardingGateStatus] = useState<"pending" | "ok" | "skipped">(
+    "pending"
+  );
   const accent = theme.accentColor === "custom" ? theme.customAccent : ACCENT_COLORS[theme.accentColor];
 
   useEffect(() => {
@@ -2183,19 +2238,46 @@ export default function DesignerView() {
         const tierTitleById = Object.fromEntries(
           nextFacets.tiers.map((tier) => [tier.tier_id, tier.title])
         );
-        setMediaCatalog(
-          Object.fromEntries(
-            nextItems.map((item) => [
-              item.media_id,
-              liveMediaFromGalleryItem(item, tierOrderIds, tierTitleById),
-            ])
-          )
+        const catalogForLayout: Record<string, DesignerMedia> = Object.fromEntries(
+          nextItems.map((item) => [
+            item.media_id,
+            liveMediaFromGalleryItem(item, tierOrderIds, tierTitleById),
+          ])
         );
+        setMediaCatalog(catalogForLayout);
         setTheme((current) => ({
           ...current,
           sections: sectionsFromLiveLibrary(nextCollections, nextItems),
         }));
         setLibraryError(null);
+
+        try {
+          const saved = await relayFetch<PageLayout>(
+            `/api/v1/gallery/layout?creator_id=${encodeURIComponent(creatorId)}`
+          );
+          if (cancelled) return;
+          setPersistedLayout(saved);
+          if (saved.sections?.length) {
+            const patch = profileThemePatchFromPageLayout(saved, catalogForLayout, nextCollections);
+            setTheme((previous) => ({
+              ...previous,
+              heroStyle: patch.heroStyle,
+              showBio: patch.showBio,
+              showSocials: patch.showSocials,
+              showTierBadges: patch.showTierBadges,
+              accentColor: patch.accentColor,
+              customAccent: patch.customAccent,
+              defaultLayout: patch.defaultLayout as ProfileTheme["defaultLayout"],
+              featured: patch.featured,
+              sections: patch.sections.map((s) => ({
+                ...s,
+                layout: s.layout as GalleryLayout,
+              })),
+            }));
+          }
+        } catch {
+          if (!cancelled) setPersistedLayout(null);
+        }
       } else if (nextItems.length === 0) {
         setMediaCatalog(FALLBACK_MEDIA);
         setTheme((current) => ({
@@ -2203,6 +2285,34 @@ export default function DesignerView() {
           sections: nextCollections.length > 0 ? sectionsFromCollections(nextCollections) : DEFAULT_SECTIONS,
         }));
         setLibraryError("No library media found yet. Showing starter preview content.");
+
+        try {
+          const saved = await relayFetch<PageLayout>(
+            `/api/v1/gallery/layout?creator_id=${encodeURIComponent(creatorId)}`
+          );
+          if (cancelled) return;
+          setPersistedLayout(saved);
+          if (saved.sections?.length) {
+            const patch = profileThemePatchFromPageLayout(saved, FALLBACK_MEDIA, nextCollections);
+            setTheme((previous) => ({
+              ...previous,
+              heroStyle: patch.heroStyle,
+              showBio: patch.showBio,
+              showSocials: patch.showSocials,
+              showTierBadges: patch.showTierBadges,
+              accentColor: patch.accentColor,
+              customAccent: patch.customAccent,
+              defaultLayout: patch.defaultLayout as ProfileTheme["defaultLayout"],
+              featured: patch.featured,
+              sections: patch.sections.map((s) => ({
+                ...s,
+                layout: s.layout as GalleryLayout,
+              })),
+            }));
+          }
+        } catch {
+          if (!cancelled) setPersistedLayout(null);
+        }
       }
       setLibraryLoading(false);
     })();
@@ -2210,6 +2320,43 @@ export default function DesignerView() {
       cancelled = true;
     };
   }, [creatorId, libraryRefreshNonce]);
+
+  useEffect(() => {
+    if (!creatorId.trim()) {
+      setOnboardingForPublish(null);
+      setOnboardingGateStatus("skipped");
+      return;
+    }
+    let cancelled = false;
+    setOnboardingGateStatus("pending");
+    void (async () => {
+      try {
+        const d = await fetchCreatorOnboarding();
+        if (!cancelled) {
+          setOnboardingForPublish(d);
+          setOnboardingGateStatus("ok");
+        }
+      } catch {
+        if (!cancelled) {
+          setOnboardingForPublish(null);
+          setOnboardingGateStatus("skipped");
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [creatorId]);
+
+  const publishBlockedReason = useMemo(() => {
+    if (onboardingGateStatus === "pending") {
+      return "Checking whether you can publish…";
+    }
+    if (onboardingGateStatus !== "ok") {
+      return null;
+    }
+    return describeCreatorGalleryPublishBlock(onboardingForPublish);
+  }, [onboardingForPublish, onboardingGateStatus]);
 
   const toggleMediaSelection = useCallback((id: string, shiftKey: boolean) => {
     setSelectedMedia((previous) => {
@@ -2241,6 +2388,75 @@ export default function DesignerView() {
     setTheme((previous) => ({ ...previous, ...patch }));
   }, []);
 
+  const reloadPersistedLayout = useCallback(async () => {
+    const u = new URLSearchParams();
+    u.set("creator_id", creatorId.trim());
+    const next = await relayFetch<PageLayout>(`/api/v1/gallery/layout?${u.toString()}`);
+    setPersistedLayout(next);
+    return next;
+  }, [creatorId]);
+
+  const handleSaveLayoutDraft = useCallback(async () => {
+    if (!creatorId.trim()) return;
+    setLayoutActionBusy(true);
+    setLayoutActionError(null);
+    try {
+      const payload = buildPageLayoutFromDesignerState({
+        creatorId,
+        theme: themeToLayoutInput(theme),
+        hero,
+        mediaCatalog,
+        collections,
+        previousLayout: persistedLayout,
+      });
+      await relayFetch<PageLayout>("/api/v1/gallery/layout", {
+        method: "PUT",
+        body: JSON.stringify(payload),
+      });
+      await reloadPersistedLayout();
+    } catch (e) {
+      setLayoutActionError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setLayoutActionBusy(false);
+    }
+  }, [creatorId, theme, hero, mediaCatalog, collections, persistedLayout, reloadPersistedLayout]);
+
+  const handlePublishSiteGallery = useCallback(async () => {
+    if (!creatorId.trim()) return;
+    setLayoutActionBusy(true);
+    setLayoutActionError(null);
+    try {
+      const payload = buildPageLayoutFromDesignerState({
+        creatorId,
+        theme: themeToLayoutInput(theme),
+        hero,
+        mediaCatalog,
+        collections,
+        previousLayout: persistedLayout,
+      });
+      await relayFetch<PageLayout>("/api/v1/gallery/layout", {
+        method: "PUT",
+        body: JSON.stringify(payload),
+      });
+      await publishCreatorGalleryLayout(creatorId.trim());
+      await reloadPersistedLayout();
+    } catch (e) {
+      if (e instanceof RelayApiError && e.status === 400) {
+        if (e.code === "ONBOARDING_INCOMPLETE") {
+          setLayoutActionError("Finish studio setup in Library before publishing.");
+        } else if (e.code === "SYNC_POST_SCRAPE_FAILED") {
+          setLayoutActionError("Fix Patreon sync in Library, then publish again.");
+        } else {
+          setLayoutActionError(e.message);
+        }
+      } else {
+        setLayoutActionError(e instanceof Error ? e.message : String(e));
+      }
+    } finally {
+      setLayoutActionBusy(false);
+    }
+  }, [creatorId, theme, hero, mediaCatalog, collections, persistedLayout, reloadPersistedLayout]);
+
   const shellStyle = useMemo(
     () => ({
       "--designer-accent": accent,
@@ -2248,6 +2464,12 @@ export default function DesignerView() {
     }) as React.CSSProperties,
     [accent]
   );
+
+  const publishGalleryDisabled =
+    layoutActionBusy ||
+    libraryLoading ||
+    !creatorId.trim() ||
+    Boolean(publishBlockedReason);
 
   return (
     <div
@@ -2263,8 +2485,8 @@ export default function DesignerView() {
 
       <main className="ml-16 flex-1 overflow-auto bg-[#050505]">
         <div className="mx-auto max-w-4xl px-6 py-8">
-          <div className="mb-6 flex items-center justify-between">
-            <div className="flex items-center gap-2">
+          <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+            <div className="flex flex-wrap items-center gap-2">
               {(["public", "tier", "creator"] as ViewMode[]).map((mode) => (
                 <button
                   type="button"
@@ -2279,9 +2501,50 @@ export default function DesignerView() {
                 </button>
               ))}
             </div>
-            <div className="text-right">
-              <span className="block text-xs text-[#6f6f6f]">Preview as</span>
-              <span className="mt-1 block text-[10px] text-[#6f6f6f]">
+            <div className="flex w-full min-w-0 flex-col items-stretch gap-2 sm:max-w-md sm:items-end">
+              <div className="flex flex-wrap items-center justify-end gap-2">
+                <button
+                  type="button"
+                  disabled={layoutActionBusy || libraryLoading || !creatorId.trim()}
+                  onClick={() => void handleSaveLayoutDraft()}
+                  className={cx(
+                    "rounded-full border border-[#353535] px-3 py-1.5 text-xs font-medium text-[#e5e5e5] transition hover:border-[#525252] hover:bg-[#171717]",
+                    (layoutActionBusy || libraryLoading || !creatorId.trim()) && "cursor-not-allowed opacity-50"
+                  )}
+                >
+                  Save draft
+                </button>
+                <span
+                  className={publishBlockedReason ? "inline-flex cursor-help" : "inline-flex"}
+                  title={publishBlockedReason ?? undefined}
+                >
+                  <button
+                    type="button"
+                    disabled={publishGalleryDisabled}
+                    onClick={() => void handlePublishSiteGallery()}
+                    className={cx(
+                      "rounded-full px-3 py-1.5 text-xs font-medium text-black transition",
+                      publishGalleryDisabled
+                        ? "cursor-not-allowed bg-[#3f3f3f] text-[#9a9a9a]"
+                        : "bg-[var(--designer-accent)] hover:opacity-95"
+                    )}
+                  >
+                    Publish gallery
+                  </button>
+                </span>
+              </div>
+              <span className="text-right text-[10px] text-[#8a8a8a]">
+                {persistedLayout?.published_at
+                  ? `Public gallery live · ${persistedLayout.published_at.slice(0, 10)}`
+                  : "Public gallery not live yet · publish to show on /patron/c/…"}
+              </span>
+              {layoutActionError ? (
+                <p role="alert" className="text-right text-[10px] text-red-400">
+                  {layoutActionError}
+                </p>
+              ) : null}
+              <span className="text-right text-xs text-[#6f6f6f]">Preview as</span>
+              <span className="text-right text-[10px] text-[#6f6f6f]">
                 {libraryLoading
                   ? "Syncing Library..."
                   : libraryError ?? `${Object.keys(mediaCatalog).length} Library items loaded with tier gates`}

@@ -50,6 +50,8 @@ type Props = {
   onApplyBulkTagDelta: (delta: { add: string[]; remove: string[]; perAsset?: boolean }) => Promise<void>;
   setItemVisibility: (items: GalleryItem[], visibility: PostVisibility) => Promise<void>;
   onError?: (message: string) => void;
+  /** P5-sync-004 — matches API 423 when Patreon sync rollup is failed/degraded. */
+  studioWriteBlocked?: boolean;
 };
 
 const MODES: Array<{ id: LibraryMode; label: string }> = [
@@ -115,7 +117,8 @@ export default function LibraryPowerPanel({
   onInspectPost,
   onApplyBulkTagDelta,
   setItemVisibility,
-  onError
+  onError,
+  studioWriteBlocked = false
 }: Props) {
   const [tagDraft, setTagDraft] = useState("");
   const [mediaEditorOpen, setMediaEditorOpen] = useState(false);
@@ -159,6 +162,7 @@ export default function LibraryPowerPanel({
   }, [selectedCollections.length, selectedItem]);
 
   const applyVisibility = async (visibility: PostVisibility) => {
+    if (studioWriteBlocked) return;
     if (selectedItems.length === 0) return;
     setBusy(`visibility:${visibility}`);
     try {
@@ -172,6 +176,7 @@ export default function LibraryPowerPanel({
   };
 
   const applyTags = async () => {
+    if (studioWriteBlocked) return;
     const add = Array.from(new Set(tagDraft.split(",").map((tag) => tag.trim()).filter(Boolean)));
     if (add.length === 0) return;
     setBusy("tags");
@@ -298,6 +303,11 @@ export default function LibraryPowerPanel({
         {mode === "media" ? (
           <section className="space-y-3">
             <PanelHeading icon={Images} title="Media" />
+            {studioWriteBlocked ? (
+              <p className="rounded-xl border border-[var(--lib-warning)]/35 bg-[var(--lib-warning)]/10 px-3 py-2 text-[11px] text-[var(--lib-fg)]">
+                Patreon sync must be healthy before editing — use the sync banner or Patreon menu.
+              </p>
+            ) : null}
             <div className="rounded-xl border border-[var(--lib-border)] bg-[var(--lib-bg)] p-3">
               <p className="text-[10px] font-semibold uppercase tracking-wide text-[var(--lib-fg-muted)]">
                 Attached media
@@ -327,7 +337,7 @@ export default function LibraryPowerPanel({
             </div>
             <button
               type="button"
-              disabled={selectedItems.length === 0}
+              disabled={selectedItems.length === 0 || studioWriteBlocked}
               onClick={() => setMediaEditorOpen(true)}
               className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-[color-mix(in_srgb,var(--lib-primary)_45%,var(--lib-border))] bg-[color-mix(in_srgb,var(--lib-primary)_14%,var(--lib-card))] px-3 py-2 text-xs font-medium text-[var(--lib-fg)] hover:border-[var(--lib-primary)] disabled:opacity-45"
             >
@@ -357,16 +367,21 @@ export default function LibraryPowerPanel({
         {mode === "placement" ? (
           <section className="space-y-3">
             <PanelHeading icon={ShieldCheck} title="Placement" />
+            {studioWriteBlocked ? (
+              <p className="rounded-xl border border-[var(--lib-warning)]/35 bg-[var(--lib-warning)]/10 px-3 py-2 text-[11px] text-[var(--lib-fg)]">
+                Editing is paused until Patreon sync is healthy.
+              </p>
+            ) : null}
             <div className="grid grid-cols-2 gap-2">
               <InfoTile label="Visibility" value={selectedItem?.visibility ?? "No selection"} />
               <InfoTile label="Access" value={selectedAccess(selectedItem, realTiers, tierTitleById)} />
             </div>
             <div className="grid grid-cols-3 gap-2">
-              <AccessButton icon={Eye} label="Visible" busy={busy === "visibility:visible"} onClick={() => void applyVisibility("visible")} />
-              <AccessButton icon={EyeOff} label="Hidden" busy={busy === "visibility:hidden"} onClick={() => void applyVisibility("hidden")} />
-              <AccessButton icon={ShieldAlert} label="Review" busy={busy === "visibility:review"} onClick={() => void applyVisibility("review")} />
+              <AccessButton icon={Eye} label="Visible" disabled={studioWriteBlocked} busy={busy === "visibility:visible"} onClick={() => void applyVisibility("visible")} />
+              <AccessButton icon={EyeOff} label="Hidden" disabled={studioWriteBlocked} busy={busy === "visibility:hidden"} onClick={() => void applyVisibility("hidden")} />
+              <AccessButton icon={ShieldAlert} label="Review" disabled={studioWriteBlocked} busy={busy === "visibility:review"} onClick={() => void applyVisibility("review")} />
             </div>
-            <TagEditor value={tagDraft} onChange={setTagDraft} onSubmit={applyTags} busy={busy === "tags"} currentTags={selectedItem?.tag_ids ?? []} />
+            <TagEditor value={tagDraft} onChange={setTagDraft} onSubmit={applyTags} busy={busy === "tags"} currentTags={selectedItem?.tag_ids ?? []} disabled={studioWriteBlocked} />
             <div className="rounded-xl border border-[var(--lib-border)] bg-[var(--lib-bg)] p-3">
               <p className="text-[10px] font-semibold uppercase tracking-wide text-[var(--lib-fg-muted)]">Collections it lives in</p>
               <div className="mt-2 flex flex-wrap gap-1.5">
@@ -619,13 +634,15 @@ function TagEditor({
   onChange,
   onSubmit,
   busy,
-  currentTags
+  currentTags,
+  disabled = false
 }: {
   value: string;
   onChange: (value: string) => void;
   onSubmit: () => void;
   busy: boolean;
   currentTags: string[];
+  disabled?: boolean;
 }) {
   return (
     <div className="rounded-xl border border-[var(--lib-border)] bg-[var(--lib-bg)] p-3">
@@ -647,12 +664,13 @@ function TagEditor({
       <input
         value={value}
         onChange={(event) => onChange(event.target.value)}
+        disabled={disabled}
         placeholder="tag_a, tag_b"
-        className="mt-2 w-full rounded-lg border border-[var(--lib-border)] bg-[var(--lib-input)] px-2.5 py-2 text-xs text-[var(--lib-fg)] outline-none placeholder:text-[var(--lib-fg-muted)] focus:border-[var(--lib-primary)]"
+        className="mt-2 w-full rounded-lg border border-[var(--lib-border)] bg-[var(--lib-input)] px-2.5 py-2 text-xs text-[var(--lib-fg)] outline-none placeholder:text-[var(--lib-fg-muted)] focus:border-[var(--lib-primary)] disabled:opacity-45"
       />
       <button
         type="button"
-        disabled={!value.trim() || busy}
+        disabled={disabled || !value.trim() || busy}
         onClick={onSubmit}
         className="mt-2 rounded-lg border border-[var(--lib-border)] bg-[var(--lib-card)] px-3 py-1.5 text-xs text-[var(--lib-fg)] hover:border-[var(--lib-primary)]/50 disabled:opacity-45"
       >
@@ -666,17 +684,19 @@ function AccessButton({
   icon: Icon,
   label,
   busy,
+  disabled = false,
   onClick
 }: {
   icon: typeof Eye;
   label: string;
   busy: boolean;
+  disabled?: boolean;
   onClick: () => void;
 }) {
   return (
     <button
       type="button"
-      disabled={busy}
+      disabled={busy || disabled}
       onClick={onClick}
       className="inline-flex items-center gap-2 rounded-xl border border-[var(--lib-border)] bg-[var(--lib-card)] px-3 py-2 text-xs text-[var(--lib-fg)] hover:border-[var(--lib-primary)]/50 disabled:opacity-45"
     >

@@ -1,5 +1,8 @@
 /**
- * Patreon per-post media merge rules and legacy pitfalls: docs/patreon-ingest-canonical.md
+ * @fileoverview Patreon per-post media merge rules: URL dedupe, cover vs attachment preference, asset-key duplicate covers.
+ * @description See `docs/patreon-ingest-canonical.md` for legacy pitfalls; gallery `shadow_cover` behavior lives in `query.ts`.
+ * @see {@link ../jsdoc-core-entities.ts}
+ * @see prisma/schema.prisma `MediaAsset` ingest snapshots
  */
 import type { IngestMediaItem } from "../ingest/types.js";
 import { normalizePatreonMediaUrl, patreonPostMediaStableKey } from "./media-url-normalize.js";
@@ -15,6 +18,7 @@ function pickPreferredIngestMedia(a: IngestMediaItem, b: IngestMediaItem): Inges
 /**
  * Collapse rows that share the same normalized URL (e.g. cover + attachment).
  * Preserves first-seen order; when merging, prefers `role: "cover"` for the survivor.
+ * @param media Raw media rows for one post.
  */
 export function mergeIngestMediaByNormalizedUrl(media: IngestMediaItem[]): IngestMediaItem[] {
   type Acc = { winner: IngestMediaItem; minIndex: number };
@@ -54,6 +58,7 @@ function isIngestCoverItem(m: IngestMediaItem): boolean {
  * Removes Patreon **cover** rows when another item in the post shares the same
  * `patreonPostMediaStableKey` (same underlying asset, different URL transforms).
  * Keeps attachment / main rows so canonical storage matches “what the post shows.”
+ * @param media Post media list after initial merge.
  */
 export function collapseDuplicatePatreonCoverByAssetKey(media: IngestMediaItem[]): IngestMediaItem[] {
   const byKey = new Map<string, IngestMediaItem[]>();
@@ -84,6 +89,7 @@ export function collapseDuplicatePatreonCoverByAssetKey(media: IngestMediaItem[]
  * Duplicate Patreon cover rows (same asset as attachment, different signed URL) are **not**
  * dropped here so canonical storage retains both; gallery marks `shadow_cover` and hides
  * duplicates unless the UI toggle is on (see `markShadowCoverDuplicates` in `query.ts`).
+ * @param media Post media list.
  */
 export function finalizePatreonPostMedia(media: IngestMediaItem[]): IngestMediaItem[] {
   return mergeIngestMediaByNormalizedUrl(media);

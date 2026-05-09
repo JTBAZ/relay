@@ -1,7 +1,12 @@
 /**
- * Chains async work by key so that for a given key, jobs run one after another
- * (even if callers invoke in parallel). Different keys run independently.
- * Used to align webhook-triggered scrapes with unattended incremental sync.
+ * @fileoverview Per-key async serialization: parallel calls for the same key run sequentially.
+ * @description Used to align webhook-triggered scrapes with incremental sync (Patreon campaign key).
+ * @see src/patreon/incremental-sync-worker.ts Potential consumer of exclusive runners
+ */
+
+/**
+ * @description Factory returning a runner that chains promises per trimmed string key.
+ * @returns {<T>(key: string, fn: () => Promise<T>) => Promise<T>} Exclusive runner function.
  */
 export function createExclusivePerKeyRunner(): <T>(
   key: string,

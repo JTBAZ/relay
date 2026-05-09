@@ -1,3 +1,14 @@
+/**
+ * @fileoverview Express application factory (`createApp`) and the full Relay HTTP API route surface.
+ * @description Selects file- versus database-backed stores from `AppConfig`, wires Patreon ingest, gallery, patron social, payments, webhooks, and export routes. Module intentionally monolithic; most business logic delegates to `src/*` services.
+ * @see src/main.ts Process entry that calls `createApp` and listens for HTTP
+ * @see src/lib/db.ts Shared Prisma client when DB stores are enabled
+ * @see src/jsdoc-core-entities.ts Canonical `Artist`, `Gallery`, `SyncStatus` typedefs for Supabase mapping
+ * @todo Split route registration into domain routers; unify error envelopes on anonymous handlers (high brittleness in this file).
+ * @security-audit-required Numerous endpoints handle PII and entitlements; each must tie mutations to authenticated `user_id` and tenant/creator scope — verify in a dedicated security pass.
+ */
+
+import type { Logger } from "pino";
 import express, { Request, Response } from "express";
 import { randomUUID } from "node:crypto";
 import { dirname, join } from "node:path";
@@ -60,6 +71,11 @@ import {
 } from "./discord/discord-link-code.js";
 import { executeDiscordBind, parseDiscordBindPayload } from "./discord/discord-bind.js";
 import {
+  MEDIA_STORAGE_PURGE_REASON_DISCORD_STAGING,
+  MEDIA_STORAGE_PURGE_REASON_LIBRARY_STAGING,
+  enqueueMediaStoragePurge
+} from "./storage/media-storage-purge-service.js";
+import {
   consentExchange,
   consentStart,
   cookieWrite,
@@ -72,6 +88,11 @@ import {
   patronReactionMutate,
   patronReportMutate
 } from "./middleware/rate-limits.js";
+import {
+  registerUsageMeteringPrisma,
+  scheduleExportMediaBytes,
+  scheduleLibraryZipUsage
+} from "./usage/usage-events.js";
 import { InMemoryIdempotencyStore } from "./middleware/idempotency-store.js";
 import { buildIdempotencyMiddleware } from "./middleware/idempotency-middleware.js";
 import { buildDiscoverPage } from "./patron/discover-service.js";
@@ -127,6 +148,14 @@ import {
   patchCreatorIdentity,
   promoteSnapshotToProfile
 } from "./creator/creator-identity-service.js";
+import {
+  ensureCreatorOnboardingAtLeastImportStarted,
+  getCreatorOnboardingForStudio,
+  getLayoutPublishBlock,
+  OnboardingTransitionError,
+  patchCreatorOnboarding,
+  type PatchCreatorOnboardingInput
+} from "./creator/onboarding-service.js";
 import { TokenEncryption } from "./lib/crypto.js";
 import {
   isBrowserExtensionOrigin,
@@ -181,6 +210,7 @@ import {
 import { buildPatronEntitlementHealthPayload } from "./gallery/entitlement-degraded.js";
 import { evaluatePostPermission } from "./gallery/post-permission.js";
 import { resolveGalleryItemVisibility } from "./gallery/query.js";
+import { buildGridThumbnailImage, GRID_THUMB_ETAG_TOKEN } from "./export/grid-thumbnail.js";
 import { buildVisitorPreviewImage } from "./export/visitor-preview.js";
 import { parseGalleryLimit, queryStringList } from "./gallery/parse-query.js";
 import type {
@@ -196,6 +226,11 @@ import type {
 import { hashOpaqueSessionToken } from "./identity/session-token-hash.js";
 import type { SessionToken } from "./identity/types.js";
 
+/**
+ * @description Maps raw query-string visibility tokens to internal `PostVisibility` or `all`.
+ * @param {string|undefined} raw Untrusted query parameter fragment.
+ * @returns {PostVisibility|"all"|undefined} Normalized filter or undefined when unknown.
+ */
 function normalizeGalleryVisibilityFilter(
   raw: string | undefined
 ): PostVisibility | "all" | undefined {
@@ -207,14 +242,19 @@ function normalizeGalleryVisibilityFilter(
 }
 
 /**
- * Read at request time: `main.ts` loads dotenv *after* this module is first imported, so a
- * module-level `process.env` snapshot would always see `RELAY_DEV_VISITOR_TIER_SIM` unset.
+ * @description Read at request time: `main.ts` loads dotenv after this module may be imported, so a module-level `process.env` snapshot would miss `RELAY_DEV_VISITOR_TIER_SIM`.
+ * @returns {boolean} True when dev tier simulation is enabled.
  */
 function devVisitorTierSimEnabled(): boolean {
   return process.env.RELAY_DEV_VISITOR_TIER_SIM === "true";
 }
 
-/** When visitor catalog + dev flag + `dev_sim_patron`, redaction uses a fake session (tier_ids from `simulate_tier_ids`). */
+/**
+ * @description When visitor catalog + dev flag + `dev_sim_patron`, redaction uses a fake session (`tier_ids` from `simulate_tier_ids`).
+ * @param {{ visitor: boolean, creatorId: string, devSimPatron: boolean, simulateTierIds: string[], bearerSession: SessionToken | null }} args
+ * @returns {SessionToken|null} Synthetic or original bearer session.
+ * @security-audit-required Dev-only impersonation; must never be enabled in production configs.
+ */
 function resolveVisitorPatronSessionForRedaction(args: {
   visitor: boolean;
   creatorId: string;
@@ -235,12 +275,24 @@ function resolveVisitorPatronSessionForRedaction(args: {
   };
 }
 
+/**
+ * @description Coerces JSON body visibility values; maps legacy `flagged` to `review`.
+ * @param {unknown} vis Parsed JSON field.
+ * @returns {PostVisibility|null} Valid enum member or null.
+ */
 function normalizeGalleryVisibilityBody(vis: unknown): PostVisibility | null {
   if (vis === "flagged") return "review";
   if (vis === "visible" || vis === "hidden" || vis === "review") return vis;
   return null;
 }
 
+/**
+ * @description Parses a single `Range: bytes=...` header for partial content responses.
+ * @param {string|undefined} rangeHeader Raw `Range` header value.
+ * @param {number} byteLength Total body length in bytes.
+ * @returns {{start:number,end:number}|"invalid"|null} Inclusive byte range, invalid syntax, or absent header.
+ * @todo Reject multi-range requests explicitly if proxies may emit them.
+ */
 function parseSingleByteRange(
   rangeHeader: string | undefined,
   byteLength: number
@@ -277,6 +329,16 @@ function parseSingleByteRange(
 import { DbAnalyticsStore } from "./analytics/analytics-store-db.js";
 import { FileAnalyticsStore } from "./analytics/analytics-store.js";
 import { ActionCenterService } from "./analytics/action-center-service.js";
+import { getCreatorMembershipCohortRetention } from "./analytics/creator-membership-cohorts.js";
+import { getCreatorMembershipKpis } from "./analytics/creator-membership-kpis.js";
+import { getCreatorTierStickiness } from "./analytics/creator-tier-stickiness.js";
+import {
+  ingestPatreonInsightsCsv,
+  readPatreonInsightsMultipart
+} from "./analytics/patreon-insights-csv.js";
+import { getCreatorPostPerformance } from "./analytics/creator-post-performance.js";
+import { getCreatorUsagePreview } from "./usage/usage-preview-service.js";
+import { enqueueRelayEngagementEvent } from "./analytics/relay-engagement-event.js";
 import {
   evaluateInsightJobHealth,
   recordAnalyticsGenerateAttempt,
@@ -384,11 +446,20 @@ import {
   sendRelayAuthError
 } from "./identity/require-account.js";
 
+/**
+ * @description When false (`RELAY_COOKIE_SESSION_DUAL_WRITE=0`), API JSON omits session token fields (cookie-only transport).
+ * @returns {boolean} Whether dual-write of token in JSON is enabled.
+ */
 function relayCookieDualWriteJson(): boolean {
   return process.env.RELAY_COOKIE_SESSION_DUAL_WRITE !== "0";
 }
 
-/** When dual-write is off, JSON responses omit `token` (cookie-only transport). */
+/**
+ * @description Strips `token` from JSON payloads when dual-write is disabled.
+ * @template T
+ * @param {T & { token?: string }} payload Success body possibly containing session token.
+ * @returns {T} Payload with `token` removed when cookie-only mode is active.
+ */
 function applyDualWriteToken<T extends Record<string, unknown>>(payload: T & { token?: string }): T {
   if (relayCookieDualWriteJson()) return payload;
   const { token: _omit, ...rest } = payload;
@@ -409,7 +480,9 @@ import {
   PatreonSyncHealthStore
 } from "./patreon/patreon-sync-health-store.js";
 import { DbPatreonSyncHealthStore } from "./patreon/patreon-sync-health-store-db.js";
+import { assertCreatorSyncWritable } from "./patreon/creator-sync-writable.js";
 import { PatreonSyncService } from "./patreon/patreon-sync-service.js";
+import { creatorSyncHealthStateToWebDto } from "./patreon/sync-health-web-dto.js";
 import { classifySyncError } from "./patreon/sync-error-copy.js";
 import {
   ensureCreatorProfilePatreonCampaignId,
@@ -448,7 +521,15 @@ import { FileDeployStore } from "./deploy/deploy-store.js";
 import { VercelAdapter, NetlifyAdapter } from "./deploy/deploy-adapter.js";
 import type { DeployProvider } from "./deploy/types.js";
 import { registerPipelineParityRoutes } from "./dev/pipeline-parity-routes.js";
+import { attachRelaySentryExpressErrorHandler } from "./lib/relay-sentry.js";
+import { resolveHttpAccessLogEmit } from "./lib/http-access-log-policy.js";
+import { createLogger } from "./lib/logger.js";
 
+/**
+ * @description Strongly typed configuration for `createApp`: OAuth credentials, filesystem paths, DB-backed store feature flags, and behavioral toggles.
+ * @typedef {Object} AppConfig
+ * @see src/relay-server-env.ts Env parsing companion
+ */
 export type AppConfig = {
   /** Patreon "Client ID" from the developer portal (register-clients). */
   patreon_client_id?: string;
@@ -603,8 +684,14 @@ export type AppConfig = {
     base_delay_ms: number;
     timeout_ms: number;
   }>;
+  /** Override HTTP request logger (tests); default `createLogger({ name: "relay-http" })`. */
+  http_request_logger?: Logger;
 };
 
+/**
+ * @description Service graph returned from `createApp` for tests and `main.ts` worker wiring.
+ * @typedef {Object} CreateAppResult
+ */
 export type CreateAppResult = {
   app: express.Application;
   eventBus: RelayEventBus;
@@ -631,6 +718,13 @@ export type CreateAppResult = {
   patreonClient: PatreonClient;
 };
 
+/**
+ * @description Asserts a required string config value is present.
+ * @param {string|undefined} value Config field value (may be undefined).
+ * @param {string} key Human-readable key name for error messages.
+ * @returns {string} Trimmed non-empty string (same as input when truthy).
+ * @throws {Error} When value is falsy or empty after coercion expectations in caller.
+ */
 function required(value: string | undefined, key: string): string {
   if (!value) {
     throw new Error(`Missing required config: ${key}`);
@@ -638,11 +732,31 @@ function required(value: string | undefined, key: string): string {
   return value;
 }
 
-function traceIdFrom(req: Request): string {
-  const headerValue = req.header("x-trace-id");
-  return headerValue ?? `trace_${randomUUID()}`;
+type RelayRequest = Request & { relayTraceId?: string };
+
+function ensureRelayTraceId(req: Request): string {
+  const r = req as RelayRequest;
+  if (r.relayTraceId) return r.relayTraceId;
+  const headerValue = req.header("x-trace-id")?.trim();
+  r.relayTraceId = headerValue || `trace_${randomUUID()}`;
+  return r.relayTraceId;
 }
 
+/**
+ * @description Reads or mints the stable per-request trace id (`X-Trace-Id` / global middleware).
+ * @param {Request} req Express request (`x-trace-id` header optional until middleware runs).
+ * @returns {string} Client-provided trace id or server-generated `trace_<uuid>`.
+ */
+function traceIdFrom(req: Request): string {
+  return ensureRelayTraceId(req);
+}
+
+/**
+ * @description Validates that string fields exist and are non-empty in a JSON object.
+ * @param {Record<string, unknown>} payload Parsed request body.
+ * @param {string[]} fields Field names that must be non-empty strings.
+ * @returns {Array<{field:string,issue:string}>} Empty when all fields valid.
+ */
 function validateRequiredFields(
   payload: Record<string, unknown>,
   fields: string[]
@@ -656,7 +770,11 @@ function validateRequiredFields(
   return missing;
 }
 
-/** Partial JSON body fields: absent → undefined; JSON `null` → null (clear); strings trimmed. */
+/**
+ * @description Partial JSON body fields: absent → undefined; JSON `null` → null (clear); strings trimmed.
+ * @param {unknown} value JSON field value.
+ * @returns {string|null|undefined} Normalized optional string semantics.
+ */
 function readOptionalString(value: unknown): string | null | undefined {
   if (value === undefined) return undefined;
   if (value === null) return null;
@@ -664,12 +782,22 @@ function readOptionalString(value: unknown): string | null | undefined {
   return undefined;
 }
 
+/**
+ * @description Parses an optional strict boolean JSON field (no type coercion from string).
+ * @param {unknown} value JSON field value.
+ * @returns {boolean|undefined} Boolean when provided and correct type; otherwise undefined.
+ */
 function readOptionalBoolean(value: unknown): boolean | undefined {
   if (value === undefined || value === null) return undefined;
   if (typeof value === "boolean") return value;
   return undefined;
 }
 
+/**
+ * @description Parses an optional JSON integer (finite, integral `number` only).
+ * @param {unknown} value JSON field value.
+ * @returns {number|undefined} Integer or undefined.
+ */
 function readOptionalInt(value: unknown): number | undefined {
   if (value === undefined || value === null) return undefined;
   if (typeof value === "number" && Number.isFinite(value) && Number.isInteger(value)) {
@@ -678,6 +806,12 @@ function readOptionalInt(value: unknown): number | undefined {
   return undefined;
 }
 
+/**
+ * @description Extracts a bearer access token from `Authorization` header (RFC-style).
+ * @param {Request} req Express request.
+ * @returns {string|undefined} Token string without `Bearer ` prefix, or undefined.
+ * @security-audit-required Token parsing; downstream must bind token to `user_id` / Supabase subject before data access.
+ */
 function bearerAccessTokenFromRequest(req: Request): string | undefined {
   const raw = req.header("authorization");
   if (typeof raw !== "string") return undefined;
@@ -685,6 +819,11 @@ function bearerAccessTokenFromRequest(req: Request): string | undefined {
   return m?.[1];
 }
 
+/**
+ * @description Coerces query-string or JSON values to boolean (recursive for arrays).
+ * @param {unknown} value Parsed query param (`string`, `boolean`, or array of either).
+ * @returns {boolean} True when any fragment matches `1`/`true`/`yes`.
+ */
 function parseQueryTruthy(value: unknown): boolean {
   if (value === true) {
     return true;
@@ -699,7 +838,11 @@ function parseQueryTruthy(value: unknown): boolean {
   return false;
 }
 
-/** Env flag: `1` / `true` / `yes` (case-insensitive). */
+/**
+ * @description Env flag: `1` / `true` / `yes` (case-insensitive); mirrors `main.ts` helper with empty-string guard.
+ * @param {string|undefined} raw Environment variable value.
+ * @returns {boolean} True when enabled.
+ */
 function relayEnvTruthy(raw: string | undefined): boolean {
   if (raw === undefined || raw.trim() === "") {
     return false;
@@ -708,6 +851,13 @@ function relayEnvTruthy(raw: string | undefined): boolean {
   return s === "1" || s === "true" || s === "yes";
 }
 
+/**
+ * @description Whether `DbIdentityStore` (Postgres) should back identity instead of JSON file store.
+ * @param {AppConfig} config App configuration (explicit flag wins over env).
+ * @returns {boolean} True when DB identity store is selected.
+ * @see prisma/schema.prisma Identity-related models
+ * @see env `RELAY_DB_STORE_IDENTITY`
+ */
 function useDbIdentityStore(config: AppConfig): boolean {
   if (typeof config.relay_db_store_identity === "boolean") {
     return config.relay_db_store_identity;
@@ -715,6 +865,13 @@ function useDbIdentityStore(config: AppConfig): boolean {
   return relayEnvTruthy(process.env.RELAY_DB_STORE_IDENTITY);
 }
 
+/**
+ * @description Whether canonical ingest data is read/written via `DbCanonicalStore`.
+ * @param {AppConfig} config
+ * @returns {boolean}
+ * @see prisma/schema.prisma Canonical / ingest tables
+ * @see env `RELAY_DB_STORE_CANONICAL`
+ */
 function useDbCanonicalStore(config: AppConfig): boolean {
   if (typeof config.relay_db_store_canonical === "boolean") {
     return config.relay_db_store_canonical;
@@ -722,6 +879,13 @@ function useDbCanonicalStore(config: AppConfig): boolean {
   return relayEnvTruthy(process.env.RELAY_DB_STORE_CANONICAL);
 }
 
+/**
+ * @description Whether Patreon sync watermarks use `DbSyncWatermarkStore` vs file.
+ * @param {AppConfig} config
+ * @returns {boolean}
+ * @see src/jsdoc-core-entities.ts `SyncStatus` conceptual mapping
+ * @see env `RELAY_DB_STORE_WATERMARK`
+ */
 function useDbSyncWatermarkStore(config: AppConfig): boolean {
   if (typeof config.relay_db_store_watermark === "boolean") {
     return config.relay_db_store_watermark;
@@ -729,6 +893,12 @@ function useDbSyncWatermarkStore(config: AppConfig): boolean {
   return relayEnvTruthy(process.env.RELAY_DB_STORE_WATERMARK);
 }
 
+/**
+ * @description Whether creator sync health snapshots use DB vs JSON (`creator_sync_states`).
+ * @param {AppConfig} config
+ * @returns {boolean}
+ * @see env `RELAY_DB_STORE_SYNC_HEALTH`
+ */
 function useDbPatreonSyncHealthStore(config: AppConfig): boolean {
   if (typeof config.relay_db_store_sync_health === "boolean") {
     return config.relay_db_store_sync_health;
@@ -736,6 +906,12 @@ function useDbPatreonSyncHealthStore(config: AppConfig): boolean {
   return relayEnvTruthy(process.env.RELAY_DB_STORE_SYNC_HEALTH);
 }
 
+/**
+ * @description Whether post visibility overrides use `post_overrides` table.
+ * @param {AppConfig} config
+ * @returns {boolean}
+ * @see env `RELAY_DB_STORE_OVERRIDES`
+ */
 function useDbGalleryOverridesStore(config: AppConfig): boolean {
   if (typeof config.relay_db_store_overrides === "boolean") {
     return config.relay_db_store_overrides;
@@ -743,6 +919,12 @@ function useDbGalleryOverridesStore(config: AppConfig): boolean {
   return relayEnvTruthy(process.env.RELAY_DB_STORE_OVERRIDES);
 }
 
+/**
+ * @description Whether gallery collections use DB vs JSON file.
+ * @param {AppConfig} config
+ * @returns {boolean}
+ * @see env `RELAY_DB_STORE_COLLECTIONS`
+ */
 function useDbCollectionsStore(config: AppConfig): boolean {
   if (typeof config.relay_db_store_collections === "boolean") {
     return config.relay_db_store_collections;
@@ -750,6 +932,12 @@ function useDbCollectionsStore(config: AppConfig): boolean {
   return relayEnvTruthy(process.env.RELAY_DB_STORE_COLLECTIONS);
 }
 
+/**
+ * @description Whether saved gallery filters use DB vs JSON file.
+ * @param {AppConfig} config
+ * @returns {boolean}
+ * @see env `RELAY_DB_STORE_SAVED_FILTERS`
+ */
 function useDbSavedFiltersStore(config: AppConfig): boolean {
   if (typeof config.relay_db_store_saved_filters === "boolean") {
     return config.relay_db_store_saved_filters;
@@ -757,6 +945,13 @@ function useDbSavedFiltersStore(config: AppConfig): boolean {
   return relayEnvTruthy(process.env.RELAY_DB_STORE_SAVED_FILTERS);
 }
 
+/**
+ * @description Whether page layout documents use DB vs JSON (`page_layout` path).
+ * @param {AppConfig} config
+ * @returns {boolean}
+ * @see src/jsdoc-core-entities.ts `Gallery.layout_json` alignment
+ * @see env `RELAY_DB_STORE_LAYOUT`
+ */
 function useDbPageLayoutStore(config: AppConfig): boolean {
   if (typeof config.relay_db_store_layout === "boolean") {
     return config.relay_db_store_layout;
@@ -764,6 +959,12 @@ function useDbPageLayoutStore(config: AppConfig): boolean {
   return relayEnvTruthy(process.env.RELAY_DB_STORE_LAYOUT);
 }
 
+/**
+ * @description Whether ingest DLQ uses `job_runs` / DB implementation.
+ * @param {AppConfig} config
+ * @returns {boolean}
+ * @see env `RELAY_DB_STORE_DLQ`
+ */
 function useDbDlqStore(config: AppConfig): boolean {
   if (typeof config.relay_db_store_dlq === "boolean") {
     return config.relay_db_store_dlq;
@@ -771,6 +972,12 @@ function useDbDlqStore(config: AppConfig): boolean {
   return relayEnvTruthy(process.env.RELAY_DB_STORE_DLQ);
 }
 
+/**
+ * @description Whether durable outbox (`outbox_events`) backs the event bus buffer.
+ * @param {AppConfig} config
+ * @returns {boolean}
+ * @see env `RELAY_DB_STORE_EVENTS`
+ */
 function useDbEventBus(config: AppConfig): boolean {
   if (typeof config.relay_db_store_events === "boolean") {
     return config.relay_db_store_events;
@@ -778,6 +985,12 @@ function useDbEventBus(config: AppConfig): boolean {
   return relayEnvTruthy(process.env.RELAY_DB_STORE_EVENTS);
 }
 
+/**
+ * @description Whether analytics snapshots use DB vs `analytics.json`.
+ * @param {AppConfig} config
+ * @returns {boolean}
+ * @see env `RELAY_DB_STORE_ANALYTICS`
+ */
 function useDbAnalyticsStore(config: AppConfig): boolean {
   if (typeof config.relay_db_store_analytics === "boolean") {
     return config.relay_db_store_analytics;
@@ -785,6 +998,13 @@ function useDbAnalyticsStore(config: AppConfig): boolean {
   return relayEnvTruthy(process.env.RELAY_DB_STORE_ANALYTICS);
 }
 
+/**
+ * @description Whether patron favorites/collections engagement stores use DB vs JSON files.
+ * @param {AppConfig} config
+ * @returns {boolean}
+ * @see env `RELAY_DB_STORE_PATRON_ENGAGEMENT`
+ * @security-audit-required Patron-owned data; RLS must scope by `user_id` / membership when on Supabase.
+ */
 function useDbPatronEngagementStore(config: AppConfig): boolean {
   if (typeof config.relay_db_store_patron_engagement === "boolean") {
     return config.relay_db_store_patron_engagement;
@@ -792,6 +1012,12 @@ function useDbPatronEngagementStore(config: AppConfig): boolean {
   return relayEnvTruthy(process.env.RELAY_DB_STORE_PATRON_ENGAGEMENT);
 }
 
+/**
+ * @description Whether static site clone metadata uses DB vs JSON.
+ * @param {AppConfig} config
+ * @returns {boolean}
+ * @see env `RELAY_DB_STORE_CLONE`
+ */
 function useDbCloneStore(config: AppConfig): boolean {
   if (typeof config.relay_db_store_clone === "boolean") {
     return config.relay_db_store_clone;
@@ -799,6 +1025,12 @@ function useDbCloneStore(config: AppConfig): boolean {
   return relayEnvTruthy(process.env.RELAY_DB_STORE_CLONE);
 }
 
+/**
+ * @description Whether payment provider linking uses DB vs `payments.json`.
+ * @param {AppConfig} config
+ * @returns {boolean}
+ * @see env `RELAY_DB_STORE_PAYMENTS`
+ */
 function useDbPaymentStore(config: AppConfig): boolean {
   if (typeof config.relay_db_store_payments === "boolean") {
     return config.relay_db_store_payments;
@@ -806,6 +1038,12 @@ function useDbPaymentStore(config: AppConfig): boolean {
   return relayEnvTruthy(process.env.RELAY_DB_STORE_PAYMENTS);
 }
 
+/**
+ * @description Whether campaign migration records use DB vs file.
+ * @param {AppConfig} config
+ * @returns {boolean}
+ * @see env `RELAY_DB_STORE_MIGRATION`
+ */
 function useDbMigrationStore(config: AppConfig): boolean {
   if (typeof config.relay_db_store_migration === "boolean") {
     return config.relay_db_store_migration;
@@ -813,6 +1051,12 @@ function useDbMigrationStore(config: AppConfig): boolean {
   return relayEnvTruthy(process.env.RELAY_DB_STORE_MIGRATION);
 }
 
+/**
+ * @description Whether deploy run history uses DB vs file.
+ * @param {AppConfig} config
+ * @returns {boolean}
+ * @see env `RELAY_DB_STORE_DEPLOY`
+ */
 function useDbDeployStore(config: AppConfig): boolean {
   if (typeof config.relay_db_store_deploy === "boolean") {
     return config.relay_db_store_deploy;
@@ -820,6 +1064,12 @@ function useDbDeployStore(config: AppConfig): boolean {
   return relayEnvTruthy(process.env.RELAY_DB_STORE_DEPLOY);
 }
 
+/**
+ * @description Whether creator OAuth credentials use `DbPatreonTokenStore` (Prisma) vs JSON credentials file.
+ * @param {AppConfig} config
+ * @returns {boolean}
+ * @see env `RELAY_DB_STORE_CREATOR_OAUTH`
+ */
 function useDbCreatorOAuthStore(config: AppConfig): boolean {
   if (typeof config.relay_db_store_creator_oauth === "boolean") {
     return config.relay_db_store_creator_oauth;
@@ -827,6 +1077,12 @@ function useDbCreatorOAuthStore(config: AppConfig): boolean {
   return relayEnvTruthy(process.env.RELAY_DB_STORE_CREATOR_OAUTH);
 }
 
+/**
+ * @description True if any Relay persistence flag selects a DB-backed implementation (requires `config.prisma`).
+ * @param {AppConfig} config
+ * @returns {boolean}
+ * @throws {Error} Indirectly via `createApp` when true but `prisma` absent.
+ */
 function anyRelayDbStoreEnabled(config: AppConfig): boolean {
   return (
     useDbIdentityStore(config) ||
@@ -849,6 +1105,149 @@ function anyRelayDbStoreEnabled(config: AppConfig): boolean {
   );
 }
 
+/**
+ * @description Unattached READY media listed by `GET /api/v1/relay/library/staging` (Discord + direct Relay upload).
+ * @const {import("@prisma/client").MediaIngestOrigin[]} RELAY_LIBRARY_STAGING_INGEST_ORIGINS
+ * @see prisma/schema.prisma `MediaAsset` ingestOrigin / processingStatus
+ */
+const RELAY_LIBRARY_STAGING_INGEST_ORIGINS: MediaIngestOrigin[] = [
+  MediaIngestOrigin.DISCORD,
+  MediaIngestOrigin.RELAY_UPLOAD
+];
+
+/**
+ * @async
+ * @description Loads recent staging `MediaAsset` rows for library UI (non-attached, READY).
+ * @param {PrismaClient} prisma Database client.
+ * @param {string} creatorId Owning creator id (must match authenticated creator).
+ * @param {MediaIngestOrigin[]} ingestOrigins Allowed source origins filter.
+ * @returns {Promise<object[]>} Selected columns for list mapping (max 100).
+ * @throws {Error} On Prisma query failure (connection, RLS, etc.).
+ * @security-audit-required Must only be called after creator auth proves `creatorId` ownership / `tenant_id`.
+ */
+async function findRelayLibraryStagingRows(
+  prisma: PrismaClient,
+  creatorId: string,
+  ingestOrigins: MediaIngestOrigin[]
+) {
+  return prisma.mediaAsset.findMany({
+    where: {
+      creatorId,
+      ingestOrigin: { in: ingestOrigins },
+      primaryPostId: null,
+      processingStatus: MediaProcessingStatus.READY
+    },
+    orderBy: { currentIngestedAt: "desc" },
+    take: 100,
+    select: {
+      id: true,
+      currentMimeType: true,
+      currentIngestedAt: true,
+      discordCaptureJson: true,
+      ingestOrigin: true
+    }
+  });
+}
+
+/**
+ * @description Maps DB rows to API list shape for Discord-originated staging assets.
+ * @param {string} creatorId Creator id for URL path encoding.
+ * @param {Awaited<ReturnType<typeof findRelayLibraryStagingRows>>} rows Staging query rows.
+ * @returns {object[]} Client list DTOs.
+ */
+function mapDiscordStagingListItems(
+  creatorId: string,
+  rows: Awaited<ReturnType<typeof findRelayLibraryStagingRows>>
+) {
+  return rows.map((r) => ({
+    media_id: r.id,
+    mime_type: r.currentMimeType,
+    ingested_at: r.currentIngestedAt.toISOString(),
+    content_url_path: `/api/v1/export/media/${encodeURIComponent(creatorId)}/${encodeURIComponent(r.id)}/content`,
+    thumb_url_path: r.currentMimeType?.startsWith("image/")
+      ? `/api/v1/export/media/${encodeURIComponent(creatorId)}/${encodeURIComponent(r.id)}/thumb`
+      : "",
+    discord_capture: r.discordCaptureJson
+  }));
+}
+
+/**
+ * @description Maps staging rows for combined library list including `ingest_origin` discriminator.
+ * @param {string} creatorId Creator id for URL path encoding.
+ * @param {Awaited<ReturnType<typeof findRelayLibraryStagingRows>>} rows Staging query rows.
+ * @returns {object[]} Client list DTOs.
+ */
+function mapRelayLibraryStagingListItems(
+  creatorId: string,
+  rows: Awaited<ReturnType<typeof findRelayLibraryStagingRows>>
+) {
+  return rows.map((r) => ({
+    media_id: r.id,
+    mime_type: r.currentMimeType,
+    ingested_at: r.currentIngestedAt.toISOString(),
+    content_url_path: `/api/v1/export/media/${encodeURIComponent(creatorId)}/${encodeURIComponent(r.id)}/content`,
+    thumb_url_path: r.currentMimeType?.startsWith("image/")
+      ? `/api/v1/export/media/${encodeURIComponent(creatorId)}/${encodeURIComponent(r.id)}/thumb`
+      : "",
+    ingest_origin: r.ingestOrigin,
+    discord_capture: r.ingestOrigin === MediaIngestOrigin.DISCORD ? r.discordCaptureJson : null
+  }));
+}
+
+/**
+ * @async
+ * @description Deletes staged media when caller proves creator + ingest-origin constraints; enqueues R2 purge when a storage key exists.
+ * @param {PrismaClient} prisma Database client (transactional).
+ * @param {string} mediaId Target media asset id.
+ * @param {string} creatorId Owning creator id.
+ * @param {MediaIngestOrigin[]} allowedOrigins Deletable origins whitelist.
+ * @param {string} purgeReason Audit label passed to purge queue.
+ * @returns {Promise<boolean>} False when no matching row (no-op).
+ * @throws {Error} On transaction failure or enqueue errors bubbling from Prisma layer.
+ * @see src/storage/media-storage-purge-service.ts `enqueueMediaStoragePurge`
+ * @security-audit-required Destructive; verify route always passes authenticated creator matching `creatorId`.
+ */
+async function deleteRelayStagedMediaForOrigins(
+  prisma: PrismaClient,
+  mediaId: string,
+  creatorId: string,
+  allowedOrigins: MediaIngestOrigin[],
+  purgeReason: string
+): Promise<boolean> {
+  const row = await prisma.mediaAsset.findFirst({
+    where: {
+      id: mediaId,
+      creatorId,
+      ingestOrigin: { in: allowedOrigins },
+      primaryPostId: null
+    },
+    select: { id: true, currentStorageKey: true }
+  });
+  if (!row) return false;
+  await prisma.$transaction(async (tx) => {
+    const key = row.currentStorageKey?.trim();
+    if (key) {
+      await enqueueMediaStoragePurge(tx, {
+        storageKey: key,
+        creatorId,
+        formerMediaId: row.id,
+        reason: purgeReason
+      });
+    }
+    await tx.mediaAsset.delete({ where: { id: mediaId } });
+  });
+  return true;
+}
+
+/**
+ * @description Wires Relay services, persistence implementations, and all Express routes from `AppConfig`.
+ * @param {AppConfig} config Patreon keys, store flags, optional `prisma`, path roots, and feature toggles.
+ * @returns {CreateAppResult} Express `app` plus service handles consumed by `main.ts` and tests.
+ * @throws {Error} When token encryption key missing; when any DB store flag is true but `config.prisma` undefined; service constructors may throw on invalid paths.
+ * @see src/main.ts Entry wiring and worker startup
+ * @see src/jsdoc-core-entities.ts Domain typedefs
+ * @todo Further modularize route registration to reduce static analysis / coverage gaps in this factory.
+ */
 export function createApp(config: AppConfig): CreateAppResult {
   const encryption = new TokenEncryption(
     required(config.relay_token_encryption_key, "relay_token_encryption_key")
@@ -864,6 +1263,7 @@ export function createApp(config: AppConfig): CreateAppResult {
         "Import `prisma` from `./lib/db.js` in `main.ts` and pass it on AppConfig."
     );
   }
+  registerUsageMeteringPrisma(() => config.prisma);
   const credentialStorePath = config.credential_store_path ?? ".relay-data/patreon_credentials.json";
   const relayDataDir = dirname(credentialStorePath);
   const patreonCampaignIndexPath =
@@ -1055,7 +1455,8 @@ export function createApp(config: AppConfig): CreateAppResult {
     exportService,
     identityService,
     patreonSyncHealthStore,
-    creatorCampaignDisplayStore
+    creatorCampaignDisplayStore,
+    config.prisma ?? null
   );
   const patreonMemberSyncCoordinator = new PatreonMemberSyncCoordinator(
     patreonSyncService,
@@ -1063,18 +1464,52 @@ export function createApp(config: AppConfig): CreateAppResult {
     60_000
   );
 
+  const guardStudioSyncWritable = (res: Response, traceId: string, creatorId: string) =>
+    assertCreatorSyncWritable(res, traceId, patreonSyncHealthStore, creatorId);
+
+  const serverLog = createLogger({ name: "relay-server" });
+
   const publicWebhookBaseResolved =
     config.public_webhook_base_url?.trim() || resolvePublicWebhookBaseFromEnv();
   const publicWebhookBaseConfigured = Boolean(publicWebhookBaseResolved?.trim());
   if (!publicWebhookBaseConfigured) {
-    // eslint-disable-next-line no-console -- intentional startup visibility for production misconfiguration
-    console.warn(
+    serverLog.warn(
       "[relay] RELAY_PUBLIC_WEBHOOK_BASE_URL is not set — Patreon platform webhooks cannot be registered. " +
         "Set RELAY_PUBLIC_WEBHOOK_BASE_URL (or PUBLIC_WEBHOOK_BASE_URL) to your public Relay API origin in production."
     );
   }
 
+  const httpRequestLogger = config.http_request_logger ?? createLogger({ name: "relay-http" });
+
   const app = express();
+
+  app.use((req, res, next) => {
+    const traceId = ensureRelayTraceId(req);
+    res.setHeader("X-Trace-Id", traceId);
+    const started = performance.now();
+    res.on("finish", () => {
+      const pathOnly = (req.originalUrl ?? req.url).split("?")[0] ?? "";
+      const row = {
+        traceId,
+        method: req.method,
+        path: pathOnly,
+        status: res.statusCode,
+        durationMs: Math.round(performance.now() - started)
+      };
+      const emit = resolveHttpAccessLogEmit({
+        pathOnly,
+        nodeEnv: process.env.NODE_ENV,
+        sampleRateEnv: process.env.RELAY_LOG_SAMPLE_RATE,
+        random: Math.random
+      });
+      if (emit === "info") {
+        httpRequestLogger.info(row, "http_request");
+      } else if (emit === "trace") {
+        httpRequestLogger.trace(row, "http_request");
+      }
+    });
+    next();
+  });
 
   const patreonPlatformRawBody = express.raw({
     type: (req) =>
@@ -1954,6 +2389,17 @@ export function createApp(config: AppConfig): CreateAppResult {
         traceId
       );
 
+      if (config.prisma) {
+        try {
+          await ensureCreatorOnboardingAtLeastImportStarted(config.prisma, creatorId);
+        } catch (err) {
+          serverLog.warn(
+            { err, traceId, creatorId },
+            "ensureCreatorOnboardingAtLeastImportStarted failed after Patreon OAuth (non-fatal)"
+          );
+        }
+      }
+
       let patreonCampaignId: string | null = null;
       let campaignDiscoveryError: string | null = null;
       let attemptedCampaignSync = false;
@@ -2352,10 +2798,15 @@ export function createApp(config: AppConfig): CreateAppResult {
         traceId
       });
       const whMeta = await patreonWebhookMetadataStore.getByCreatorId(creatorId);
+      const sync_health = creatorSyncHealthStateToWebDto({
+        last_post_scrape: state.last_post_scrape ?? undefined,
+        last_member_sync: state.last_member_sync ?? undefined
+      });
       return res.status(200).json(
         successEnvelope(
           {
             ...state,
+            sync_health,
             webhook_registration: patreonWebhookMetadataStore.getPublicSummary(whMeta),
             public_webhook_base_configured: publicWebhookBaseConfigured
           },
@@ -2468,10 +2919,13 @@ export function createApp(config: AppConfig): CreateAppResult {
           creatorId.trim()
         );
         if (!idx.ok) {
-          // eslint-disable-next-line no-console -- ops visibility for multi-tenant safety
-          console.warn(
-            `[patreon] campaign index collision: campaign=${result.patreon_campaign_id} ` +
-              `creator=${creatorId} existing_creator=${idx.existing_creator_id}`
+          serverLog.warn(
+            {
+              patreonCampaignId: result.patreon_campaign_id,
+              relayCreatorId: creatorId.trim(),
+              existingCreatorId: idx.existing_creator_id
+            },
+            "patreon campaign index collision"
           );
         }
         if (config.prisma) {
@@ -2554,10 +3008,13 @@ export function createApp(config: AppConfig): CreateAppResult {
         (body.creator_id as string).trim()
       );
       if (!idx.ok) {
-        // eslint-disable-next-line no-console -- ops visibility for multi-tenant safety
-        console.warn(
-          `[patreon] campaign index collision: campaign=${result.patreon_campaign_id} ` +
-            `creator=${body.creator_id} existing_creator=${idx.existing_creator_id}`
+        serverLog.warn(
+          {
+            patreonCampaignId: result.patreon_campaign_id,
+            relayCreatorId: String(body.creator_id).trim(),
+            existingCreatorId: idx.existing_creator_id
+          },
+          "patreon campaign index collision"
         );
       }
       return res.status(200).json(successEnvelope(result, traceId));
@@ -3097,6 +3554,7 @@ export function createApp(config: AppConfig): CreateAppResult {
       );
       res.setHeader("Cache-Control", "private, no-store");
       await exportService.pipeLibraryZip(creatorId, res);
+      scheduleLibraryZipUsage(config.prisma, creatorId, res.statusCode);
     } catch (err: unknown) {
       const e = err as Error & { code?: string };
       if (!res.headersSent) {
@@ -3164,6 +3622,13 @@ export function createApp(config: AppConfig): CreateAppResult {
       }
       if (range) {
         const chunk = bytes.subarray(range.start, range.end + 1);
+        scheduleExportMediaBytes(
+          config.prisma,
+          req.params.creator_id,
+          "content",
+          chunk.byteLength,
+          { media_id: req.params.media_id, ranged: true }
+        );
         res.setHeader("content-length", String(chunk.byteLength));
         res.setHeader(
           "content-range",
@@ -3171,8 +3636,97 @@ export function createApp(config: AppConfig): CreateAppResult {
         );
         return res.status(206).send(chunk);
       }
+      scheduleExportMediaBytes(
+        config.prisma,
+        req.params.creator_id,
+        "content",
+        bytes.byteLength,
+        { media_id: req.params.media_id }
+      );
       res.setHeader("content-length", String(bytes.byteLength));
       return res.status(200).send(bytes);
+    } catch (error) {
+      recordContentDeliveryFailure();
+      return res
+        .status(404)
+        .json(errorEnvelope("NOT_FOUND", (error as Error).message, traceId));
+    }
+  });
+
+  /**
+   * WebP thumbnail for library/grid (images only). Tier gate matches `/content` when
+   * `RELAY_EXPORT_REQUIRE_TIER_ACCESS=1`.
+   */
+  app.get("/api/v1/export/media/:creator_id/:media_id/thumb", async (req, res) => {
+    const traceId = traceIdFrom(req);
+    try {
+      const content = await exportService.getExportContent(
+        req.params.creator_id,
+        req.params.media_id
+      );
+      if (!content) {
+        recordContentDeliveryFailure();
+        return res
+          .status(404)
+          .json(errorEnvelope("NOT_FOUND", "Exported media not found.", traceId));
+      }
+      const { record, buffer: bytes } = content;
+      if (exportRequireTierAccess) {
+        const snapshot = await canonicalStore.load();
+        const bearer = req.header("authorization")?.replace(/^Bearer\s+/i, "").trim() ?? "";
+        const session = bearer ? await identityService.resolveSession(bearer) : null;
+        let isContentOwner = false;
+        if (config.prisma && session) {
+          const accountId = await getAccountIdForSession(config.prisma, session);
+          if (accountId) {
+            const acc = await config.prisma.account.findUnique({
+              where: { id: accountId },
+              select: { primaryRelayCreatorId: true }
+            });
+            isContentOwner = acc?.primaryRelayCreatorId === req.params.creator_id;
+          }
+        }
+        const gate = patronMayFetchMediaExport({
+          snapshot,
+          creatorId: req.params.creator_id,
+          mediaId: req.params.media_id,
+          session,
+          isContentOwner
+        });
+        if (!gate.allowed) {
+          recordContentDeliveryFailure();
+          return res
+            .status(403)
+            .json(errorEnvelope("FORBIDDEN", gate.reason, traceId));
+        }
+      }
+      const mime = record.mime_type ?? "application/octet-stream";
+      const thumb = await buildGridThumbnailImage(bytes, mime);
+      if (!thumb) {
+        recordContentDeliveryFailure();
+        return res
+          .status(415)
+          .json(
+            errorEnvelope(
+              "THUMB_UNSUPPORTED",
+              "Thumbnail not available for this media type or processing failed.",
+              traceId
+            )
+          );
+      }
+      recordContentDeliverySuccess();
+      res.setHeader("content-type", "image/webp");
+      res.setHeader("cache-control", "public, max-age=86400");
+      res.setHeader("etag", `"${record.sha256}-${GRID_THUMB_ETAG_TOKEN}"`);
+      res.setHeader("content-length", String(thumb.byteLength));
+      scheduleExportMediaBytes(
+        config.prisma,
+        req.params.creator_id,
+        "thumb",
+        thumb.byteLength,
+        { media_id: req.params.media_id }
+      );
+      return res.status(200).send(thumb);
     } catch (error) {
       recordContentDeliveryFailure();
       return res
@@ -3222,9 +3776,16 @@ export function createApp(config: AppConfig): CreateAppResult {
           );
       }
       recordPreviewDeliverySuccess();
-      res.setHeader("content-type", "image/jpeg");
+      res.setHeader("content-type", preview.contentType);
       res.setHeader("cache-control", "public, max-age=600");
-      return res.status(200).send(preview);
+      scheduleExportMediaBytes(
+        config.prisma,
+        creatorId,
+        "preview",
+        preview.buffer.byteLength,
+        { media_id: mediaId }
+      );
+      return res.status(200).send(preview.buffer);
     } catch (error) {
       recordPreviewDeliveryFailure();
       return res
@@ -3297,6 +3858,12 @@ export function createApp(config: AppConfig): CreateAppResult {
       limit,
       patron_session: patronSession
     });
+    if (visitor && !cursor) {
+      enqueueRelayEngagementEvent(config, {
+        creatorId,
+        eventType: "gallery_view"
+      });
+    }
     res.setHeader("Cache-Control", "private, no-store");
     return res.status(200).json(successEnvelope(result, traceId));
   });
@@ -3317,6 +3884,7 @@ export function createApp(config: AppConfig): CreateAppResult {
     const facets = await galleryService.facets(creatorId, { visitor_catalog: visitor });
     let payload: typeof facets & { visitor_hero?: Record<string, string> } = facets;
     if (visitor) {
+      enqueueRelayEngagementEvent(config, { creatorId, eventType: "profile_view" });
       const snap = await creatorCampaignDisplayStore.get(creatorId);
       const relayName = config.relay_creator_display_name?.trim();
       payload = {
@@ -3363,6 +3931,13 @@ export function createApp(config: AppConfig): CreateAppResult {
     });
     if (!detail) {
       return res.status(404).json(errorEnvelope("NOT_FOUND", "Post not found.", traceId));
+    }
+    if (visitor) {
+      enqueueRelayEngagementEvent(config, {
+        creatorId,
+        eventType: "gallery_view",
+        postId
+      });
     }
     res.setHeader("Cache-Control", "private, no-store");
     return res.status(200).json(successEnvelope(detail, traceId));
@@ -3808,6 +4383,69 @@ export function createApp(config: AppConfig): CreateAppResult {
   });
 
   /**
+   * Tier rows for compose UX: each `tier_id` is the Prisma primary key expected by `POST /api/v1/relay/posts`.
+   * Excludes ingest-only synthetic tiers (`relay_tier_public`, `relay_tier_all_patrons`); open-web audience
+   * is `is_public: true` with empty `tier_ids`, not a selected tier row.
+   */
+  app.get("/api/v1/relay/compose-tiers", async (req: Request, res: Response) => {
+    const traceId = traceIdFrom(req);
+    if (!config.prisma) {
+      return res
+        .status(503)
+        .json(errorEnvelope("SERVICE_UNAVAILABLE", "Database not configured.", traceId));
+    }
+    const session = await requirePatronBearerSession(req, res, traceId);
+    if (!session) {
+      return;
+    }
+    const creatorId =
+      typeof req.query.creator_id === "string" ? req.query.creator_id.trim() : "";
+    if (!creatorId) {
+      return res
+        .status(400)
+        .json(
+          errorEnvelope("VALIDATION_ERROR", "creator_id query parameter is required.", traceId)
+        );
+    }
+    if (!(await requireAccountMatchesCreator(req, res, traceId, creatorId))) {
+      return;
+    }
+    if (
+      !(await assertCreatorRelayMutationAllowed(
+        req,
+        res,
+        traceId,
+        config.prisma,
+        creatorId
+      ))
+    ) {
+      return;
+    }
+    const rows = await config.prisma.tier.findMany({
+      where: {
+        creatorId,
+        relayTierId: { notIn: [RELAY_TIER_ALL_PATRONS, RELAY_TIER_PUBLIC] }
+      },
+      orderBy: [{ amountCents: "asc" }, { title: "asc" }],
+      select: {
+        id: true,
+        relayTierId: true,
+        title: true,
+        amountCents: true,
+        campaignId: true
+      }
+    });
+    const tiers = rows.map((r) => ({
+      tier_id: r.id,
+      relay_tier_id: r.relayTierId,
+      title: r.title,
+      amount_cents: r.amountCents
+    }));
+    res.setHeader("Cache-Control", "private, no-store");
+    return res.status(200).json(successEnvelope({ tiers }, traceId));
+  });
+
+  /**
    * T-4.2 — Relay-native post: `Post` + `PostVersion` + `PostTier` + media link in one transaction.
    * Schema: `docs/api/relay-native-posts.md`
    */
@@ -3841,6 +4479,9 @@ export function createApp(config: AppConfig): CreateAppResult {
         creatorId
       ))
     ) {
+      return;
+    }
+    if (!(await guardStudioSyncWritable(res, traceId, creatorId))) {
       return;
     }
     const titleRaw = body.title;
@@ -3981,6 +4622,9 @@ export function createApp(config: AppConfig): CreateAppResult {
     ) {
       return;
     }
+    if (!(await guardStudioSyncWritable(res, traceId, creatorId))) {
+      return;
+    }
     if (!isMimeTypeAllowed(contentType, getAllowedMimePrefixesFromEnv())) {
       return res
         .status(400)
@@ -4111,6 +4755,9 @@ export function createApp(config: AppConfig): CreateAppResult {
     ) {
       return;
     }
+    if (!(await guardStudioSyncWritable(res, traceId, creatorId))) {
+      return;
+    }
     if (!isMimeTypeAllowed(contentType, getAllowedMimePrefixesFromEnv())) {
       return res
         .status(400)
@@ -4210,6 +4857,9 @@ export function createApp(config: AppConfig): CreateAppResult {
     ) {
       return;
     }
+    if (!(await guardStudioSyncWritable(res, traceId, creatorId))) {
+      return;
+    }
     const accountId = await getAccountIdForSession(config.prisma, session);
     if (!accountId) {
       return res
@@ -4272,6 +4922,92 @@ export function createApp(config: AppConfig): CreateAppResult {
     );
   });
 
+  /**
+   * Unified Library staging: Discord captures + direct Relay uploads not yet attached to a post (`primaryPostId` null, READY).
+   */
+  app.get("/api/v1/relay/library/staging", async (req: Request, res: Response) => {
+    const traceId = traceIdFrom(req);
+    if (!config.prisma) {
+      return res
+        .status(503)
+        .json(errorEnvelope("SERVICE_UNAVAILABLE", "Database not configured.", traceId));
+    }
+    const session = await requirePatronBearerSession(req, res, traceId);
+    if (!session) {
+      return;
+    }
+    const creatorId =
+      typeof req.query.creator_id === "string" ? req.query.creator_id.trim() : "";
+    if (!creatorId) {
+      return res
+        .status(400)
+        .json(errorEnvelope("VALIDATION_ERROR", "creator_id query parameter is required.", traceId));
+    }
+    if (!(await requireAccountMatchesCreator(req, res, traceId, creatorId))) {
+      return;
+    }
+    const rows = await findRelayLibraryStagingRows(
+      config.prisma,
+      creatorId,
+      RELAY_LIBRARY_STAGING_INGEST_ORIGINS
+    );
+    const items = mapRelayLibraryStagingListItems(creatorId, rows);
+    res.setHeader("Cache-Control", "private, no-store");
+    return res.status(200).json(successEnvelope({ items }, traceId));
+  });
+
+  /**
+   * Discard staged Library media (Discord or Relay upload) before publish.
+   * Enqueues `currentStorageKey` for async R2 delete when set; removes `MediaAsset`.
+   */
+  app.delete("/api/v1/relay/library/staging/:mediaId", async (req: Request, res: Response) => {
+    const traceId = traceIdFrom(req);
+    if (!config.prisma) {
+      return res
+        .status(503)
+        .json(errorEnvelope("SERVICE_UNAVAILABLE", "Database not configured.", traceId));
+    }
+    const session = await requirePatronBearerSession(req, res, traceId);
+    if (!session) {
+      return;
+    }
+    const mediaId =
+      typeof req.params.mediaId === "string" ? req.params.mediaId.trim() : "";
+    const creatorId =
+      typeof req.query.creator_id === "string" ? req.query.creator_id.trim() : "";
+    if (!mediaId || !creatorId) {
+      return res
+        .status(400)
+        .json(
+          errorEnvelope(
+            "VALIDATION_ERROR",
+            "mediaId path and creator_id query parameter are required.",
+            traceId
+          )
+        );
+    }
+    if (!(await requireAccountMatchesCreator(req, res, traceId, creatorId))) {
+      return;
+    }
+    if (!(await guardStudioSyncWritable(res, traceId, creatorId))) {
+      return;
+    }
+    const deleted = await deleteRelayStagedMediaForOrigins(
+      config.prisma,
+      mediaId,
+      creatorId,
+      RELAY_LIBRARY_STAGING_INGEST_ORIGINS,
+      MEDIA_STORAGE_PURGE_REASON_LIBRARY_STAGING
+    );
+    if (!deleted) {
+      return res
+        .status(404)
+        .json(errorEnvelope("NOT_FOUND", "Staged media not found for this studio.", traceId));
+    }
+    res.setHeader("Cache-Control", "private, no-store");
+    return res.status(200).json(successEnvelope({ deleted: true, media_id: mediaId }, traceId));
+  });
+
   /** Discord-captured media not yet attached to a Relay post. */
   app.get("/api/v1/relay/discord/staging", async (req: Request, res: Response) => {
     const traceId = traceIdFrom(req);
@@ -4294,34 +5030,19 @@ export function createApp(config: AppConfig): CreateAppResult {
     if (!(await requireAccountMatchesCreator(req, res, traceId, creatorId))) {
       return;
     }
-    const rows = await config.prisma.mediaAsset.findMany({
-      where: {
-        creatorId,
-        ingestOrigin: MediaIngestOrigin.DISCORD,
-        primaryPostId: null,
-        processingStatus: MediaProcessingStatus.READY
-      },
-      orderBy: { currentIngestedAt: "desc" },
-      take: 100,
-      select: {
-        id: true,
-        currentMimeType: true,
-        currentIngestedAt: true,
-        discordCaptureJson: true
-      }
-    });
-    const items = rows.map((r) => ({
-      media_id: r.id,
-      mime_type: r.currentMimeType,
-      ingested_at: r.currentIngestedAt.toISOString(),
-      content_url_path: `/api/v1/export/media/${encodeURIComponent(creatorId)}/${encodeURIComponent(r.id)}/content`,
-      discord_capture: r.discordCaptureJson
-    }));
+    const rows = await findRelayLibraryStagingRows(config.prisma, creatorId, [
+      MediaIngestOrigin.DISCORD
+    ]);
+    const items = mapDiscordStagingListItems(creatorId, rows);
     res.setHeader("Cache-Control", "private, no-store");
     return res.status(200).json(successEnvelope({ items }, traceId));
   });
 
-  /** Remove a staged Discord capture before it is published (deletes DB + R2 key in future; v1 DB row + ingest key cascade). */
+  /**
+   * Remove a staged Discord capture before it is published.
+   * Enqueues `currentStorageKey` for async R2 delete (`media_storage_purge_queue` + sweeper);
+   * removes `MediaAsset` (cascades `discord_media_ingest_keys`).
+   */
   app.delete("/api/v1/relay/discord/staging/:mediaId", async (req: Request, res: Response) => {
     const traceId = traceIdFrom(req);
     if (!config.prisma) {
@@ -4351,21 +5072,21 @@ export function createApp(config: AppConfig): CreateAppResult {
     if (!(await requireAccountMatchesCreator(req, res, traceId, creatorId))) {
       return;
     }
-    const row = await config.prisma.mediaAsset.findFirst({
-      where: {
-        id: mediaId,
-        creatorId,
-        ingestOrigin: MediaIngestOrigin.DISCORD,
-        primaryPostId: null
-      },
-      select: { id: true }
-    });
-    if (!row) {
+    if (!(await guardStudioSyncWritable(res, traceId, creatorId))) {
+      return;
+    }
+    const deleted = await deleteRelayStagedMediaForOrigins(
+      config.prisma,
+      mediaId,
+      creatorId,
+      [MediaIngestOrigin.DISCORD],
+      MEDIA_STORAGE_PURGE_REASON_DISCORD_STAGING
+    );
+    if (!deleted) {
       return res
         .status(404)
         .json(errorEnvelope("NOT_FOUND", "Staged media not found for this studio.", traceId));
     }
-    await config.prisma.mediaAsset.delete({ where: { id: mediaId } });
     res.setHeader("Cache-Control", "private, no-store");
     return res.status(200).json(successEnvelope({ deleted: true, media_id: mediaId }, traceId));
   });
@@ -4444,6 +5165,104 @@ export function createApp(config: AppConfig): CreateAppResult {
   });
 
   // ── APD-S1: Creator profile identity ─────────────────────────────────
+
+  app.get("/api/v1/creator/onboarding", async (req: Request, res: Response) => {
+    const traceId = traceIdFrom(req);
+    if (!config.prisma) {
+      return res.status(503).json(
+        errorEnvelope("SERVICE_UNAVAILABLE", "Database not configured.", traceId)
+      );
+    }
+    try {
+      const { context } = await requireAccountWithRole(
+        req,
+        { prisma: config.prisma, identityService },
+        "creator"
+      );
+      const relayCreatorId = context.primaryRelayCreatorId?.trim();
+      if (!relayCreatorId) {
+        return res.status(404).json(
+          errorEnvelope(
+            "NOT_FOUND",
+            "No creator studio — call POST /api/v1/creator/workspace first.",
+            traceId
+          )
+        );
+      }
+      const payload = await getCreatorOnboardingForStudio(config.prisma, relayCreatorId);
+      res.setHeader("Cache-Control", "private, no-store");
+      return res.status(200).json(successEnvelope(payload, traceId));
+    } catch (err) {
+      if (sendRelayAuthError(res, err, traceId)) return;
+      return res.status(500).json(errorEnvelope("INTERNAL", (err as Error).message, traceId));
+    }
+  });
+
+  app.patch("/api/v1/creator/onboarding", async (req: Request, res: Response) => {
+    const traceId = traceIdFrom(req);
+    if (!config.prisma) {
+      return res.status(503).json(
+        errorEnvelope("SERVICE_UNAVAILABLE", "Database not configured.", traceId)
+      );
+    }
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const hasStepKey = typeof body.step === "string";
+    const hasMetadataKey = "metadata" in body;
+    if (!hasStepKey && !hasMetadataKey) {
+      return res.status(400).json(
+        errorEnvelope(
+          "VALIDATION_ERROR",
+          "Request body must include `step` (string) and/or `metadata`.",
+          traceId,
+          [{ field: "body", issue: "empty" }]
+        )
+      );
+    }
+    try {
+      const { context } = await requireAccountWithRole(
+        req,
+        { prisma: config.prisma, identityService },
+        "creator"
+      );
+      const relayCreatorId = context.primaryRelayCreatorId?.trim();
+      if (!relayCreatorId) {
+        return res.status(404).json(
+          errorEnvelope(
+            "NOT_FOUND",
+            "No creator studio — call POST /api/v1/creator/workspace first.",
+            traceId
+          )
+        );
+      }
+      const patch: PatchCreatorOnboardingInput = {};
+      if (hasStepKey) {
+        patch.step = body.step as PatchCreatorOnboardingInput["step"];
+      }
+      if (hasMetadataKey) {
+        patch.metadata =
+          body.metadata === null
+            ? null
+            : (body.metadata as Prisma.InputJsonValue);
+      }
+      const payload = await patchCreatorOnboarding(config.prisma, relayCreatorId, patch);
+      res.setHeader("Cache-Control", "private, no-store");
+      return res.status(200).json(successEnvelope(payload, traceId));
+    } catch (err) {
+      if (sendRelayAuthError(res, err, traceId)) return;
+      if (err instanceof OnboardingTransitionError) {
+        const invalid = err.reason === "invalid_step";
+        return res
+          .status(invalid ? 400 : 409)
+          .json(
+            errorEnvelope(invalid ? "VALIDATION_ERROR" : "CONFLICT", err.message, traceId)
+          );
+      }
+      if (err instanceof Error && err.message.includes("PATCH body must include")) {
+        return res.status(400).json(errorEnvelope("VALIDATION_ERROR", err.message, traceId));
+      }
+      return res.status(500).json(errorEnvelope("INTERNAL", (err as Error).message, traceId));
+    }
+  });
 
   app.get("/api/v1/creator/profile", async (req: Request, res: Response) => {
     const traceId = traceIdFrom(req);
@@ -4562,6 +5381,386 @@ export function createApp(config: AppConfig): CreateAppResult {
     }
   });
 
+  /**
+   * P5a-ins-003 — Membership summary for the authenticated creator studio (ledger + live roster).
+   */
+  app.get("/api/v1/creator/analytics/membership-summary", async (req: Request, res: Response) => {
+    const traceId = traceIdFrom(req);
+    if (!config.prisma) {
+      return res.status(503).json(
+        errorEnvelope("SERVICE_UNAVAILABLE", "Database not configured.", traceId)
+      );
+    }
+    try {
+      const { context } = await requireAccountWithRole(
+        req,
+        { prisma: config.prisma, identityService },
+        "creator"
+      );
+      const relayCreatorId = context.primaryRelayCreatorId?.trim();
+      if (!relayCreatorId) {
+        return res.status(404).json(
+          errorEnvelope(
+            "NOT_FOUND",
+            "No creator studio — call POST /api/v1/creator/workspace first.",
+            traceId
+          )
+        );
+      }
+      const rawDays =
+        typeof req.query.days === "string" ? Number.parseInt(req.query.days, 10) : 30;
+      const days = Math.min(Math.max(Number.isFinite(rawDays) ? rawDays : 30, 1), 366);
+
+      const payload = await getCreatorMembershipKpis(config.prisma, relayCreatorId, days);
+      if (!payload) {
+        return res
+          .status(404)
+          .json(errorEnvelope("NOT_FOUND", "Creator tenant missing.", traceId));
+      }
+
+      res.setHeader("Cache-Control", "private, no-store");
+      return res.status(200).json(
+        successEnvelope(
+          {
+            ...payload,
+            note:
+              "Event counts reflect rows written when Patreon member sync runs. Upgrade/downgrade times follow the sync batch clock unless Patreon provides pledge start."
+          },
+          traceId
+        )
+      );
+    } catch (err) {
+      if (sendRelayAuthError(res, err, traceId)) return;
+      return res.status(500).json(errorEnvelope("INTERNAL", (err as Error).message, traceId));
+    }
+  });
+
+  /**
+   * P5a-ins-004 — Cohort retention grid (join month × months since join → retained %).
+   */
+  app.get("/api/v1/creator/analytics/membership-cohorts", async (req: Request, res: Response) => {
+    const traceId = traceIdFrom(req);
+    if (!config.prisma) {
+      return res.status(503).json(
+        errorEnvelope("SERVICE_UNAVAILABLE", "Database not configured.", traceId)
+      );
+    }
+    try {
+      const { context } = await requireAccountWithRole(
+        req,
+        { prisma: config.prisma, identityService },
+        "creator"
+      );
+      const relayCreatorId = context.primaryRelayCreatorId?.trim();
+      if (!relayCreatorId) {
+        return res.status(404).json(
+          errorEnvelope(
+            "NOT_FOUND",
+            "No creator studio — call POST /api/v1/creator/workspace first.",
+            traceId
+          )
+        );
+      }
+      const rawCohortCap =
+        typeof req.query.cohort_months === "string"
+          ? Number.parseInt(req.query.cohort_months, 10)
+          : 12;
+      const rawOffsetCap =
+        typeof req.query.max_offset === "string"
+          ? Number.parseInt(req.query.max_offset, 10)
+          : 12;
+      const cohortMonths = Math.min(
+        Math.max(Number.isFinite(rawCohortCap) ? rawCohortCap : 12, 1),
+        36
+      );
+      const maxOffset = Math.min(
+        Math.max(Number.isFinite(rawOffsetCap) ? rawOffsetCap : 12, 1),
+        24
+      );
+
+      const payload = await getCreatorMembershipCohortRetention(
+        config.prisma,
+        relayCreatorId,
+        cohortMonths,
+        maxOffset
+      );
+      if (!payload) {
+        return res
+          .status(404)
+          .json(errorEnvelope("NOT_FOUND", "Creator tenant missing.", traceId));
+      }
+
+      res.setHeader("Cache-Control", "private, no-store");
+      return res.status(200).json(successEnvelope(payload, traceId));
+    } catch (err) {
+      if (sendRelayAuthError(res, err, traceId)) return;
+      return res.status(500).json(errorEnvelope("INTERNAL", (err as Error).message, traceId));
+    }
+  });
+
+  /**
+   * P5a-ins-005 — Per-tier median tenure (current stint) + churn proxy from membership ledger replay.
+   */
+  app.get("/api/v1/creator/analytics/tier-stickiness", async (req: Request, res: Response) => {
+    const traceId = traceIdFrom(req);
+    if (!config.prisma) {
+      return res.status(503).json(
+        errorEnvelope("SERVICE_UNAVAILABLE", "Database not configured.", traceId)
+      );
+    }
+    try {
+      const { context } = await requireAccountWithRole(
+        req,
+        { prisma: config.prisma, identityService },
+        "creator"
+      );
+      const relayCreatorId = context.primaryRelayCreatorId?.trim();
+      if (!relayCreatorId) {
+        return res.status(404).json(
+          errorEnvelope(
+            "NOT_FOUND",
+            "No creator studio — call POST /api/v1/creator/workspace first.",
+            traceId
+          )
+        );
+      }
+      const rawDays =
+        typeof req.query.days === "string" ? Number.parseInt(req.query.days, 10) : 30;
+      const days = Math.min(Math.max(Number.isFinite(rawDays) ? rawDays : 30, 1), 366);
+
+      const payload = await getCreatorTierStickiness(config.prisma, relayCreatorId, days);
+      if (!payload) {
+        return res
+          .status(404)
+          .json(errorEnvelope("NOT_FOUND", "Creator tenant missing.", traceId));
+      }
+
+      res.setHeader("Cache-Control", "private, no-store");
+      return res.status(200).json(successEnvelope(payload, traceId));
+    } catch (err) {
+      if (sendRelayAuthError(res, err, traceId)) return;
+      return res.status(500).json(errorEnvelope("INTERNAL", (err as Error).message, traceId));
+    }
+  });
+
+  /**
+   * P5a-ins-006 — Multipart CSV upload: Patreon Insights post metrics; idempotent on SHA-256 of file bytes.
+   */
+  app.post("/api/v1/creator/analytics/patreon-insights-csv", async (req: Request, res: Response) => {
+    const traceId = traceIdFrom(req);
+    if (!config.prisma) {
+      return res.status(503).json(
+        errorEnvelope("SERVICE_UNAVAILABLE", "Database not configured.", traceId)
+      );
+    }
+    try {
+      const { context } = await requireAccountWithRole(
+        req,
+        { prisma: config.prisma, identityService },
+        "creator"
+      );
+      const relayCreatorId = context.primaryRelayCreatorId?.trim();
+      if (!relayCreatorId) {
+        return res.status(404).json(
+          errorEnvelope(
+            "NOT_FOUND",
+            "No creator studio — call POST /api/v1/creator/workspace first.",
+            traceId
+          )
+        );
+      }
+
+      const tenant = await config.prisma.tenant.findUnique({
+        where: { relayCreatorId },
+        select: { id: true }
+      });
+      if (!tenant) {
+        return res
+          .status(404)
+          .json(errorEnvelope("NOT_FOUND", "Creator tenant missing.", traceId));
+      }
+
+      const multipart = await readPatreonInsightsMultipart(req);
+      if (!multipart.ok) {
+        if (multipart.code === "NOT_MULTIPART") {
+          return res
+            .status(415)
+            .json(errorEnvelope("UNSUPPORTED_MEDIA_TYPE", multipart.message, traceId));
+        }
+        if (multipart.code === "FILE_TOO_LARGE") {
+          return res
+            .status(413)
+            .json(errorEnvelope("PAYLOAD_TOO_LARGE", multipart.message, traceId));
+        }
+        return res
+          .status(400)
+          .json(errorEnvelope("VALIDATION_ERROR", multipart.message, traceId));
+      }
+
+      let asOf: Date | null = null;
+      if (typeof req.query.as_of === "string" && req.query.as_of.trim()) {
+        const d = new Date(req.query.as_of.trim());
+        if (!Number.isFinite(d.getTime())) {
+          return res
+            .status(400)
+            .json(errorEnvelope("VALIDATION_ERROR", "Invalid as_of — use an ISO-8601 date/time.", traceId));
+        }
+        asOf = d;
+      }
+
+      const result = await ingestPatreonInsightsCsv(
+        config.prisma,
+        relayCreatorId,
+        multipart.buffer,
+        { label: multipart.label ?? null, asOf }
+      );
+
+      if (!result.ok) {
+        return res.status(400).json(
+          errorEnvelope(
+            "VALIDATION_ERROR",
+            result.errors.join(" "),
+            traceId,
+            result.errors.map((e) => ({ field: "csv", issue: e }))
+          )
+        );
+      }
+
+      res.setHeader("Cache-Control", "private, no-store");
+      return res.status(200).json(
+        successEnvelope(
+          {
+            import_id: result.import_id,
+            file_hash: result.file_hash,
+            rows_written: result.rows_written,
+            already_imported: result.already_imported,
+            filename: multipart.filename ?? null
+          },
+          traceId
+        )
+      );
+    } catch (err) {
+      if (sendRelayAuthError(res, err, traceId)) return;
+      return res.status(500).json(errorEnvelope("INTERNAL", (err as Error).message, traceId));
+    }
+  });
+
+  /**
+   * P5a-ins-007 — Post performance: Patreon Insights metrics joined to Relay `Post` + version metadata; reports linkage gaps.
+   */
+  app.get("/api/v1/creator/analytics/post-performance", async (req: Request, res: Response) => {
+    const traceId = traceIdFrom(req);
+    if (!config.prisma) {
+      return res.status(503).json(
+        errorEnvelope("SERVICE_UNAVAILABLE", "Database not configured.", traceId)
+      );
+    }
+    try {
+      const { context } = await requireAccountWithRole(
+        req,
+        { prisma: config.prisma, identityService },
+        "creator"
+      );
+      const relayCreatorId = context.primaryRelayCreatorId?.trim();
+      if (!relayCreatorId) {
+        return res.status(404).json(
+          errorEnvelope(
+            "NOT_FOUND",
+            "No creator studio — call POST /api/v1/creator/workspace first.",
+            traceId
+          )
+        );
+      }
+
+      const importId =
+        typeof req.query.import_id === "string" && req.query.import_id.trim()
+          ? req.query.import_id.trim()
+          : undefined;
+      const rawMetricsLimit =
+        typeof req.query.metrics_limit === "string"
+          ? Number.parseInt(req.query.metrics_limit, 10)
+          : undefined;
+      const rawRelayLimit =
+        typeof req.query.relay_only_limit === "string"
+          ? Number.parseInt(req.query.relay_only_limit, 10)
+          : undefined;
+      const includeRelayRaw = req.query.include_relay_only;
+      const includeRelayOnly =
+        includeRelayRaw === undefined ||
+        includeRelayRaw === "1" ||
+        includeRelayRaw === "true";
+
+      const out = await getCreatorPostPerformance(config.prisma, relayCreatorId, {
+        importId,
+        metricsLimit: Number.isFinite(rawMetricsLimit) ? rawMetricsLimit : undefined,
+        relayOnlyLimit: Number.isFinite(rawRelayLimit) ? rawRelayLimit : undefined,
+        includeRelayOnly
+      });
+
+      if (!out.ok) {
+        if (out.code === "NO_TENANT") {
+          return res
+            .status(404)
+            .json(errorEnvelope("NOT_FOUND", "Creator tenant missing.", traceId));
+        }
+        return res
+          .status(404)
+          .json(errorEnvelope("NOT_FOUND", "Insights import not found for this studio.", traceId));
+      }
+
+      res.setHeader("Cache-Control", "private, no-store");
+      return res.status(200).json(successEnvelope(out.report, traceId));
+    } catch (err) {
+      if (sendRelayAuthError(res, err, traceId)) return;
+      return res.status(500).json(errorEnvelope("INTERNAL", (err as Error).message, traceId));
+    }
+  });
+
+  /**
+   * P7 v0 / A14 — M1-lite usage preview for the studio (aggregated `usage_events`, non-binding).
+   */
+  app.get("/api/v1/creator/analytics/usage-preview", async (req: Request, res: Response) => {
+    const traceId = traceIdFrom(req);
+    if (!config.prisma) {
+      return res.status(503).json(
+        errorEnvelope("SERVICE_UNAVAILABLE", "Database not configured.", traceId)
+      );
+    }
+    try {
+      const { context } = await requireAccountWithRole(
+        req,
+        { prisma: config.prisma, identityService },
+        "creator"
+      );
+      const relayCreatorId = context.primaryRelayCreatorId?.trim();
+      if (!relayCreatorId) {
+        return res.status(404).json(
+          errorEnvelope(
+            "NOT_FOUND",
+            "No creator studio — call POST /api/v1/creator/workspace first.",
+            traceId
+          )
+        );
+      }
+      const rawDays =
+        typeof req.query.days === "string" ? Number.parseInt(req.query.days, 10) : 30;
+      const days = Math.min(Math.max(Number.isFinite(rawDays) ? rawDays : 30, 1), 366);
+
+      const payload = await getCreatorUsagePreview(config.prisma, relayCreatorId, days);
+      if (!payload) {
+        return res
+          .status(404)
+          .json(errorEnvelope("NOT_FOUND", "Creator tenant missing.", traceId));
+      }
+
+      res.setHeader("Cache-Control", "private, no-store");
+      return res.status(200).json(successEnvelope(payload, traceId));
+    } catch (err) {
+      if (sendRelayAuthError(res, err, traceId)) return;
+      return res.status(500).json(errorEnvelope("INTERNAL", (err as Error).message, traceId));
+    }
+  });
+
   app.patch(
     "/api/v1/creator/profile",
     async (req: Request, res: Response, next) => {
@@ -4620,6 +5819,7 @@ export function createApp(config: AppConfig): CreateAppResult {
     }
   );
 
+  // PUBLIC: Resolve creator identity + profile card by public slug (no auth; `/patron/c`, share links).
   /**
    * Resolve a public creator slug (no auth). Used by `/patron/c/[handle]` and share links.
    */
@@ -4658,6 +5858,56 @@ export function createApp(config: AppConfig): CreateAppResult {
           banner_url: profile?.bannerUrl ?? null,
           bio: profile?.bio ?? null,
           discipline: profile?.discipline ?? null
+        },
+        traceId
+      )
+    );
+  });
+
+  // PUBLIC: Creator gallery layout by public slug — no auth (visitor / patron/c/[handle] surfaces).
+  /**
+   * Public gallery layout for a creator slug (no auth). Unknown slug → 404.
+   * When the gallery was never published, `published` is false and `layout` is null.
+   */
+  app.get("/api/v1/public/creators/:slug/gallery-layout", async (req: Request, res: Response) => {
+    const traceId = traceIdFrom(req);
+    if (!config.prisma) {
+      return res.status(503).json(
+        errorEnvelope("SERVICE_UNAVAILABLE", "Database not configured.", traceId)
+      );
+    }
+    const raw = typeof req.params.slug === "string" ? req.params.slug.trim() : "";
+    const resolved = await resolveTenantBySlug(raw, config.prisma);
+    if (!resolved) {
+      return res.status(404).json(errorEnvelope("NOT_FOUND", "Unknown creator.", traceId));
+    }
+    const row = await config.prisma.pageLayout.findUnique({
+      where: { creatorId: resolved.relayCreatorId },
+      select: { publishedAt: true }
+    });
+    if (!row?.publishedAt) {
+      res.setHeader("Cache-Control", "private, no-store");
+      return res.status(200).json(
+        successEnvelope(
+          {
+            published: false,
+            relay_creator_id: resolved.relayCreatorId,
+            public_slug: resolved.publicSlug ?? "",
+            layout: null
+          },
+          traceId
+        )
+      );
+    }
+    const layout = await layoutStore.load(resolved.relayCreatorId);
+    res.setHeader("Cache-Control", "public, max-age=60, s-maxage=60");
+    return res.status(200).json(
+      successEnvelope(
+        {
+          published: true,
+          relay_creator_id: resolved.relayCreatorId,
+          public_slug: resolved.publicSlug ?? "",
+          layout
         },
         traceId
       )
@@ -6707,6 +7957,9 @@ export function createApp(config: AppConfig): CreateAppResult {
             .json(errorEnvelope("FORBIDDEN", "Caller does not own this creator scope.", traceId));
         }
       }
+      if (!(await guardStudioSyncWritable(res, traceId, creatorId))) {
+        return;
+      }
       // Validate the post exists in the canonical snapshot for this creator -- prevents
       // accidental override rows for unknown post ids.
       const snapshot = await canonicalStore.load();
@@ -7089,6 +8342,9 @@ export function createApp(config: AppConfig): CreateAppResult {
     ) {
       return;
     }
+    if (!(await guardStudioSyncWritable(res, traceId, creatorId.trim()))) {
+      return;
+    }
 
     const mtRaw = body.media_targets;
     const media_targets: { post_id: string; media_id: string }[] = [];
@@ -7180,6 +8436,9 @@ export function createApp(config: AppConfig): CreateAppResult {
     if (
       !(await assertCreatorRelayMutationAllowed(req, res, traceId, prisma, creatorId))
     ) {
+      return;
+    }
+    if (!(await guardStudioSyncWritable(res, traceId, creatorId))) {
       return;
     }
     const touched = presentationPatchTouches(body);
@@ -7308,6 +8567,9 @@ export function createApp(config: AppConfig): CreateAppResult {
     if (!(await requireAccountMatchesCreator(req, res, traceId, cid))) {
       return;
     }
+    if (!(await guardStudioSyncWritable(res, traceId, cid))) {
+      return;
+    }
     const created = await savedFiltersStore.create(
       cid,
       String(body.name),
@@ -7329,6 +8591,9 @@ export function createApp(config: AppConfig): CreateAppResult {
         );
     }
     if (!(await requireAccountMatchesCreator(req, res, traceId, creatorId))) {
+      return;
+    }
+    if (!(await guardStudioSyncWritable(res, traceId, creatorId))) {
       return;
     }
     const ok = await savedFiltersStore.delete(creatorId, req.params.filter_id);
@@ -7353,6 +8618,9 @@ export function createApp(config: AppConfig): CreateAppResult {
     if (!(await requireAccountMatchesCreator(req, res, traceId, triageCid))) {
       return;
     }
+    if (!(await guardStudioSyncWritable(res, traceId, triageCid))) {
+      return;
+    }
     const result = await triageService.analyze(triageCid);
     return res.status(200).json(successEnvelope(result, traceId));
   });
@@ -7372,6 +8640,9 @@ export function createApp(config: AppConfig): CreateAppResult {
       : undefined;
     const autoCid = body.creator_id as string;
     if (!(await requireAccountMatchesCreator(req, res, traceId, autoCid))) {
+      return;
+    }
+    if (!(await guardStudioSyncWritable(res, traceId, autoCid))) {
       return;
     }
     const result = await triageService.autoFlag(
@@ -7455,6 +8726,9 @@ export function createApp(config: AppConfig): CreateAppResult {
     if (!(await requireAccountMatchesCreator(req, res, traceId, creatorId))) {
       return;
     }
+    if (!(await guardStudioSyncWritable(res, traceId, creatorId))) {
+      return;
+    }
     const v = vNorm;
     if (postIdsRaw.length > 0) {
       await galleryOverridesStore.setVisibility(creatorId, postIdsRaw as string[], v);
@@ -7518,6 +8792,9 @@ export function createApp(config: AppConfig): CreateAppResult {
     if (!(await requireAccountMatchesCreator(req, res, traceId, collCid))) {
       return;
     }
+    if (!(await guardStudioSyncWritable(res, traceId, collCid))) {
+      return;
+    }
     const extras: {
       access_ceiling_tier_id?: string;
       theme_tag_ids?: string[];
@@ -7548,6 +8825,9 @@ export function createApp(config: AppConfig): CreateAppResult {
       return res.status(404).json(errorEnvelope("NOT_FOUND", "Collection not found.", traceId));
     }
     if (!(await requireAccountMatchesCreator(req, res, traceId, existingCol.creator_id))) {
+      return;
+    }
+    if (!(await guardStudioSyncWritable(res, traceId, existingCol.creator_id))) {
       return;
     }
     const body = (req.body ?? {}) as Record<string, unknown>;
@@ -7589,6 +8869,9 @@ export function createApp(config: AppConfig): CreateAppResult {
     if (!(await requireAccountMatchesCreator(req, res, traceId, colDel.creator_id))) {
       return;
     }
+    if (!(await guardStudioSyncWritable(res, traceId, colDel.creator_id))) {
+      return;
+    }
     const ok = await collectionsStore.delete(req.params.collection_id);
     if (!ok) {
       return res.status(404).json(errorEnvelope("NOT_FOUND", "Collection not found.", traceId));
@@ -7612,6 +8895,9 @@ export function createApp(config: AppConfig): CreateAppResult {
       return res.status(404).json(errorEnvelope("NOT_FOUND", "Collection not found.", traceId));
     }
     if (!(await requireAccountMatchesCreator(req, res, traceId, col.creator_id))) {
+      return;
+    }
+    if (!(await guardStudioSyncWritable(res, traceId, col.creator_id))) {
       return;
     }
     const snapshot = await canonicalStore.load();
@@ -7656,6 +8942,9 @@ export function createApp(config: AppConfig): CreateAppResult {
     if (!(await requireAccountMatchesCreator(req, res, traceId, colRm.creator_id))) {
       return;
     }
+    if (!(await guardStudioSyncWritable(res, traceId, colRm.creator_id))) {
+      return;
+    }
     const updated = await collectionsStore.removePosts(req.params.collection_id, postIds as string[]);
     if (!updated) {
       return res.status(404).json(errorEnvelope("NOT_FOUND", "Collection not found.", traceId));
@@ -7682,6 +8971,9 @@ export function createApp(config: AppConfig): CreateAppResult {
     }
     const reorderCid = body.creator_id as string;
     if (!(await requireAccountMatchesCreator(req, res, traceId, reorderCid))) {
+      return;
+    }
+    if (!(await guardStudioSyncWritable(res, traceId, reorderCid))) {
       return;
     }
     await collectionsStore.reorder(reorderCid, ordered as string[]);
@@ -7720,8 +9012,47 @@ export function createApp(config: AppConfig): CreateAppResult {
     if (!(await requireAccountMatchesCreator(req, res, traceId, layoutCid))) {
       return;
     }
+    if (!(await guardStudioSyncWritable(res, traceId, layoutCid))) {
+      return;
+    }
     await layoutStore.save(layoutCid, body as never);
     const layout = await layoutStore.load(layoutCid);
+    return res.status(200).json(successEnvelope(layout, traceId));
+  });
+
+  app.post("/api/v1/gallery/layout/publish", async (req: Request, res: Response) => {
+    const traceId = traceIdFrom(req);
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const details = validateRequiredFields(body, ["creator_id"]);
+    if (details.length > 0) {
+      return res
+        .status(400)
+        .json(errorEnvelope("VALIDATION_ERROR", "Invalid request.", traceId, details));
+    }
+    const layoutCid = body.creator_id as string;
+    if (!(await requireAccountMatchesCreator(req, res, traceId, layoutCid))) {
+      return;
+    }
+    if (!(await guardStudioSyncWritable(res, traceId, layoutCid))) {
+      return;
+    }
+    if (config.prisma) {
+      const block = await getLayoutPublishBlock(config.prisma, layoutCid);
+      if (block) {
+        const msg =
+          block.code === "ONBOARDING_INCOMPLETE"
+            ? `Complete onboarding before publishing (current step: ${block.current_step}).`
+            : `Patreon post sync failed — fix sync health before publishing.${
+                block.message ? ` (${block.message})` : ""
+              }`;
+        const details =
+          block.code === "ONBOARDING_INCOMPLETE"
+            ? [{ field: "onboarding_step", issue: block.current_step }]
+            : [{ field: "sync", issue: "last_post_scrape_failed" }];
+        return res.status(400).json(errorEnvelope(block.code, msg, traceId, details));
+      }
+    }
+    const layout = await layoutStore.publish(layoutCid);
     return res.status(200).json(successEnvelope(layout, traceId));
   });
 
@@ -7736,6 +9067,9 @@ export function createApp(config: AppConfig): CreateAppResult {
     }
     const secCid = body.creator_id as string;
     if (!(await requireAccountMatchesCreator(req, res, traceId, secCid))) {
+      return;
+    }
+    if (!(await guardStudioSyncWritable(res, traceId, secCid))) {
       return;
     }
     const section = await layoutStore.addSection(secCid, {
@@ -7762,6 +9096,9 @@ export function createApp(config: AppConfig): CreateAppResult {
     if (!(await requireAccountMatchesCreator(req, res, traceId, creatorId))) {
       return;
     }
+    if (!(await guardStudioSyncWritable(res, traceId, creatorId))) {
+      return;
+    }
     const updated = await layoutStore.updateSection(creatorId, req.params.section_id, body as never);
     if (!updated) {
       return res.status(404).json(errorEnvelope("NOT_FOUND", "Section not found.", traceId));
@@ -7780,6 +9117,9 @@ export function createApp(config: AppConfig): CreateAppResult {
         ]));
     }
     if (!(await requireAccountMatchesCreator(req, res, traceId, creatorId))) {
+      return;
+    }
+    if (!(await guardStudioSyncWritable(res, traceId, creatorId))) {
       return;
     }
     const ok = await layoutStore.removeSection(creatorId, req.params.section_id);
@@ -7810,6 +9150,9 @@ export function createApp(config: AppConfig): CreateAppResult {
     if (!(await requireAccountMatchesCreator(req, res, traceId, layoutReorderCid))) {
       return;
     }
+    if (!(await guardStudioSyncWritable(res, traceId, layoutReorderCid))) {
+      return;
+    }
     await layoutStore.reorderSections(layoutReorderCid, ordered as string[]);
     return res.status(200).json(successEnvelope({ reordered: true }, traceId));
   });
@@ -7838,6 +9181,9 @@ export function createApp(config: AppConfig): CreateAppResult {
         creatorId.trim()
       ))
     ) {
+      return;
+    }
+    if (!(await guardStudioSyncWritable(res, traceId, creatorId.trim()))) {
       return;
     }
     const baseUrl = typeof body.base_url === "string" ? body.base_url : "https://example.com";
@@ -8158,6 +9504,9 @@ export function createApp(config: AppConfig): CreateAppResult {
         cloneCreatorId
       ))
     ) {
+      return;
+    }
+    if (!(await guardStudioSyncWritable(res, traceId, cloneCreatorId))) {
       return;
     }
     const baseUrl =
@@ -9417,6 +10766,8 @@ export function createApp(config: AppConfig): CreateAppResult {
     patreonCampaignIndexPath,
     ingestCanonicalPath: config.ingest_canonical_path ?? join(relayDataDir, "canonical.json")
   });
+
+  attachRelaySentryExpressErrorHandler(app);
 
   return {
     app,

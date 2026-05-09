@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   RELAY_API_BASE,
   buildGalleryQuery,
+  galleryItemImageGridSrc,
   relayFetch,
   type Collection,
   type CollectionAddPostsResult,
@@ -312,7 +313,7 @@ export default function CollectionBuilderDrawer({
                       {row.has_export && row.mime_type?.startsWith("image/") ? (
                         // eslint-disable-next-line @next/next/no-img-element
                         <img
-                          src={`${RELAY_API_BASE}${row.content_url_path}`}
+                          src={galleryItemImageGridSrc(row) ?? `${RELAY_API_BASE}${row.content_url_path}`}
                           alt=""
                           className="h-full w-full object-cover"
                         />

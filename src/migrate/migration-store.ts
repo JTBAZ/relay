@@ -1,3 +1,9 @@
+/**
+ * @fileoverview File-backed audience migration store (campaigns, suppression, signed links).
+ * @description JSON persistence implementing `MigrationStore` for `CampaignService`.
+ * @see ./migration-store-db.js
+ */
+
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import type {
@@ -27,6 +33,9 @@ function emptyRoot(): MigrationStoreRoot {
   };
 }
 
+/**
+ * @description JSON file `MigrationStore` (campaigns, suppression list, signed links, audit tail).
+ */
 export class FileMigrationStore implements MigrationStore {
   private readonly filePath: string;
 

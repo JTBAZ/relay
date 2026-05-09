@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { RELAY_API_BASE, relayFetch, type GalleryItem, type PostVisibility } from "@/lib/relay-api";
+import { RELAY_API_BASE, relayFetch, galleryItemImageGridSrc, type GalleryItem, type PostVisibility } from "@/lib/relay-api";
 
 const visibilityBadge: Record<PostVisibility, { dot: string; label: string }> = {
   visible: { dot: "bg-green-500", label: "Visible" },
@@ -72,7 +72,7 @@ export default function GalleryListRow({
         {item.has_export && item.mime_type?.startsWith("image/") ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
-            src={`${RELAY_API_BASE}${item.content_url_path}`}
+            src={galleryItemImageGridSrc(item) ?? `${RELAY_API_BASE}${item.content_url_path}`}
             alt=""
             className="h-full w-full object-cover object-center"
           />

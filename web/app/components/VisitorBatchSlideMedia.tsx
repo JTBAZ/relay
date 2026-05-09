@@ -6,6 +6,7 @@ import { galleryItemKey } from "@/lib/gallery-group";
 import {
   RELAY_API_BASE,
   galleryItemExportVisibleToVisitor,
+  galleryItemImageGridSrc,
   galleryItemPreviewSrc,
   type GalleryItem,
   type TierFacet
@@ -172,7 +173,12 @@ export function VisitorBatchSlideMedia({
             const locked = !galleryItemExportVisibleToVisitor(item);
             const isActive = idx === displayIdx;
             const isVideo = Boolean(item.mime_type?.startsWith("video/"));
-            const src = item.content_url_path ? `${RELAY_API_BASE}${item.content_url_path}` : "";
+            const src = isVideo
+              ? item.content_url_path
+                ? `${RELAY_API_BASE}${item.content_url_path}`
+                : ""
+              : galleryItemImageGridSrc(item) ??
+                (item.content_url_path ? `${RELAY_API_BASE}${item.content_url_path}` : "");
 
               if (locked) {
                 return visitorMediaTierGateLocked(item) ? (

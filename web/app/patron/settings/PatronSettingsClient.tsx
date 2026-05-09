@@ -145,7 +145,7 @@ export function PatronSettingsClient(): React.ReactElement {
               devMode={devState !== null}
               onPendingChange={setPending}
             />
-            <NotificationPrefsLink />
+            <NotificationPreferencesStubSection />
           </>
         ) : null}
       </main>
@@ -444,19 +444,58 @@ function AccountDeletionSection({
   );
 }
 
-function NotificationPrefsLink(): React.ReactElement {
+function NotificationPreferencesStubSection(): React.ReactElement {
+  const [quietMode, setQuietMode] = useState(false);
+
   return (
     <Section
       icon={<Bell size={16} className="text-[#40916C]" aria-hidden />}
-      title="Notification preferences"
-      description="Per-creator + per-type toggles for what arrives in your notifications inbox."
+      title="Notifications"
+      description="Choose how Relay reaches you. Per-type preferences can be changed on the next page. A simple “quiet mode” switch is in progress for the pilot — the toggle below does not save to the server yet."
     >
-      <Link
-        href="/patron/notifications/preferences"
-        className="inline-flex items-center gap-2 rounded border border-[#2A2A2A] bg-[#141414] px-3 py-1.5 text-[12px] text-[#bbb] hover:border-[#3A3A3A] hover:text-white"
-      >
-        <Bell size={12} aria-hidden /> Open preferences
-      </Link>
+      <div className="space-y-3">
+        <div className="flex items-center justify-between gap-4 rounded border border-[#2A2A2A] bg-[#0E0E0E] px-3 py-2.5">
+          <div>
+            <div className="text-[12px] font-medium text-[#E5E7EB]">Quiet mode (pilot placeholder)</div>
+            <div className="mt-0.5 text-[10px] text-[#888]">
+              When on, we intend to pause non-essential alerts. Not wired to the backend in this
+              pilot — resets if you refresh.
+            </div>
+          </div>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={quietMode}
+            aria-label="Quiet mode (pilot placeholder, not saved)"
+            onClick={() => setQuietMode((v) => !v)}
+            className={[
+              "relative h-7 w-12 shrink-0 rounded-full border transition-colors",
+              quietMode
+                ? "border-[#2D6A4F] bg-[#1B4332]"
+                : "border-[#333] bg-[#1A1A1A]",
+            ].join(" ")}
+          >
+            <span
+              className={[
+                "absolute top-0.5 h-6 w-6 rounded-full bg-white shadow transition-transform",
+                quietMode ? "left-5" : "left-0.5",
+              ].join(" ")}
+              aria-hidden
+            />
+          </button>
+        </div>
+        <p className="text-[10px] text-[#666]">
+          <span className="font-medium text-[#888]">Pilot note:</span> only the detailed preferences
+          page talks to Relay&apos;s API today. This switch is here so layout and copy can be reviewed
+          before the global mute endpoint ships.
+        </p>
+        <Link
+          href="/patron/notifications/preferences"
+          className="inline-flex items-center gap-2 rounded border border-[#2A2A2A] bg-[#141414] px-3 py-1.5 text-[12px] text-[#bbb] hover:border-[#3A3A3A] hover:text-white"
+        >
+          <Bell size={12} aria-hidden /> Open detailed preferences
+        </Link>
+      </div>
     </Section>
   );
 }

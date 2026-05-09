@@ -25,8 +25,15 @@
     "title": { "type": "string", "minLength": 1, "maxLength": 2000 },
     "description": { "type": ["string", "null"] },
     "is_public": { "type": "boolean" },
-    "required_tier_id": { "type": ["string", "null"] },
-    "tier_ids": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+    "required_tier_id": {
+      "type": ["string", "null"],
+      "description": "Optional gate tier. Request values may be Prisma Tier.id (e.g. from GET /api/v1/relay/compose-tiers tier_id) or Tier.relayTierId for this creator; server resolves to one Tier in the post campaign. Persisted Post.requiredTierId is relay_tier_id space (see response schema)."
+    },
+    "tier_ids": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "description": "Access tiers for the first version. Each item may be Prisma Tier.id (typical: compose-tiers tier_id) or relayTierId; server resolves per docs/api/relay-native-posts.md. Open-web posts use is_public true with an empty array."
+    },
     "tag_ids": { "type": "array", "items": { "type": "string", "minLength": 1 } },
     "media_ids": { "type": "array", "items": { "type": "string", "minLength": 1 } },
     "publish": { "type": "boolean" },

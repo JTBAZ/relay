@@ -12,7 +12,8 @@ export default function ConditionalAppNav() {
   const { ready, hasRelaySession } = useStudioSession();
 
   if (
-    /** Patron routes (feed, onboarding, etc.) — full-page patron chrome */
+    /** Patron routes (landing `/patron`, feed, onboarding, etc.) — no studio AppNav */
+    pathname === "/patron" ||
     pathname.startsWith("/patron/") ||
     /**
      * Patron Patreon OAuth bridge pages (`/patreon/patron/connect`,

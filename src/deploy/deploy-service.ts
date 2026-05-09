@@ -1,13 +1,29 @@
+/**
+ * @fileoverview Orchestrates clone-backed preview builds, DNS checks, approvals, launches, and rollbacks.
+ * @description Delegates provider operations to `DeployAdapterInterface` implementations and persists via `DeployStore`.
+ * @see ../clone/clone-service.js
+ * @see ./deploy-store.js
+ */
+
 import type { CloneService } from "../clone/clone-service.js";
 import type { DeployAdapterInterface } from "./deploy-adapter.js";
 import type { DeployStore } from "./deploy-store.js";
 import type { Deployment, DeployProvider, DnsCheckResult } from "./types.js";
 
+/**
+ * @description Application façade over deploy storage and third-party adapters (simulated or real).
+ * @security-audit-required All entrypoints are creator-scoped; HTTP must verify operator authorization.
+ */
 export class DeployService {
   private readonly store: DeployStore;
   private readonly cloneService: CloneService;
   private readonly adapters: Map<string, DeployAdapterInterface>;
 
+  /**
+   * @param store Deployment persistence.
+   * @param cloneService Source of latest clone site graph.
+   * @param adapters Map of provider key → adapter implementation.
+   */
   public constructor(
     store: DeployStore,
     cloneService: CloneService,
@@ -18,6 +34,15 @@ export class DeployService {
     this.adapters = adapters;
   }
 
+  /**
+   * @description Loads latest clone site, requests provider preview deployment, persists record.
+   * @param creatorId Creator scope.
+   * @param provider Target host.
+   * @param domain Optional custom domain hint.
+   * @returns New deployment in `preview` state.
+   * @async
+   * @throws {Error} Missing clone site, missing adapter, or adapter/store failures.
+   */
   public async buildAndPreview(
     creatorId: string,
     provider: DeployProvider,
@@ -43,6 +68,13 @@ export class DeployService {
     return deployment;
   }
 
+  /**
+   * @description Runs provider DNS probe, mutates deployment `dns_check`, persists.
+   * @param deploymentId Target deployment id.
+   * @returns DNS evaluation payload.
+   * @async
+   * @throws {Error} Deployment missing, adapter missing, or `checkDns` failure.
+   */
   public async checkDns(
     deploymentId: string
   ): Promise<DnsCheckResult> {
@@ -66,6 +98,13 @@ export class DeployService {
     return result;
   }
 
+  /**
+   * @description Marks a preview deployment approved for launch.
+   * @param deploymentId Deployment id.
+   * @returns Updated deployment.
+   * @async
+   * @throws {Error} Invalid state transitions or missing row.
+   */
   public async approve(deploymentId: string): Promise<Deployment> {
     const dep = await this.store.get(deploymentId);
     if (!dep) throw new Error("Deployment not found.");
@@ -78,6 +117,13 @@ export class DeployService {
     return dep;
   }
 
+  /**
+   * @description Promotes approved deployment via adapter and pins active pointer.
+   * @param deploymentId Deployment id.
+   * @returns Live deployment envelope from adapter.
+   * @async
+   * @throws {Error} State/adapter/store failures.
+   */
   public async launch(deploymentId: string): Promise<Deployment> {
     const dep = await this.store.get(deploymentId);
     if (!dep) throw new Error("Deployment not found.");
@@ -94,6 +140,13 @@ export class DeployService {
     return promoted;
   }
 
+  /**
+   * @description Rolls back active deployment and optionally revives prior live revision (best-effort).
+   * @param creatorId Creator scope.
+   * @returns Rolled back deployment envelope from adapter.
+   * @async
+   * @throws {Error} When no active deployment or adapter unavailable.
+   */
   public async rollback(creatorId: string): Promise<Deployment> {
     const active = await this.store.getActive(creatorId);
     if (!active) throw new Error("No active deployment to roll back.");
@@ -122,14 +175,30 @@ export class DeployService {
     return rolledBack;
   }
 
+  /**
+   * @description Loads deployment by id.
+   * @param deploymentId Deployment id.
+   * @async
+   * @throws {Error} Store read failures propagate.
+   */
   public async getDeployment(deploymentId: string): Promise<Deployment | null> {
     return this.store.get(deploymentId);
   }
 
+  /**
+   * @description Resolves active deployment for creator.
+   * @param creatorId Creator scope.
+   * @async
+   */
   public async getActive(creatorId: string): Promise<Deployment | null> {
     return this.store.getActive(creatorId);
   }
 
+  /**
+   * @description Lists deployments for creator via store.
+   * @param creatorId Creator scope.
+   * @async
+   */
   public async listDeployments(creatorId: string): Promise<Deployment[]> {
     return this.store.listByCreator(creatorId);
   }

@@ -135,8 +135,10 @@ export function startPatronEntitlementStaleRefreshWorker(args: {
   };
 }
 
-export function patronEntitlementStaleRefreshIntervalFromEnv(): number {
-  const raw = process.env.RELAY_PATRON_ENTITLEMENT_REFRESH_MS?.trim();
+export function patronEntitlementStaleRefreshIntervalFromEnv(
+  env: NodeJS.ProcessEnv = process.env
+): number {
+  const raw = env.RELAY_PATRON_ENTITLEMENT_REFRESH_MS?.trim();
   if (!raw) return 0;
   const n = Number(raw);
   if (!Number.isFinite(n) || n < 60_000) return 0;

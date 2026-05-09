@@ -1,8 +1,15 @@
+/**
+ * @fileoverview Maps `process.env` into `AppConfig` for the Relay HTTP server and CLI tools.
+ * @description Reads paths, Patreon OAuth client settings, Stripe/PayPal secrets, export retry policy, and analytics thresholds. Omits validation — missing values surface when consumers run.
+ * @see {@link ./jsdoc-core-entities.ts}
+ * @see prisma/schema.prisma Indirect: config drives which file/DB stores and payment rows are touched at runtime
+ * @security-audit-required Env contains live API secrets (`patreon_client_secret`, `stripe_secret_key`, `paypal_client_secret`, `relay_token_encryption_key`); never log return value.
+ */
 import type { AppConfig } from "./server.js";
 
 /**
- * Loads `AppConfig` from `process.env` (see repo root `.env.example`).
- * Shared by `main.ts` and one-shot tools (e.g. `autosync-once.ts`).
+ * Constructs `AppConfig` from environment variables (see root `.env.example`).
+ * @returns Populated config object; absent env vars are passed through as `undefined` where typed optional.
  */
 export function relayServerConfigFromEnv(): AppConfig {
   return {

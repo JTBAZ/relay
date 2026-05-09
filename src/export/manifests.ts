@@ -1,6 +1,14 @@
+/**
+ * @fileoverview JSON manifest builders for export zip / library metadata (media/post/tier projections).
+ * @description Pure transforms from `CanonicalSnapshot` + `CreatorExportIndex`.
+ * @see ../ingest/canonical-store.js
+ * @see ./types.js CreatorExportIndex
+ */
+
 import type { CanonicalSnapshot } from "../ingest/canonical-store.js";
 import type { CreatorExportIndex } from "./types.js";
 
+/** @description Serialized manifest of exported media blobs and canonical post associations. */
 export type MediaManifestJson = {
   creator_id: string;
   generated_at: string;
@@ -16,6 +24,7 @@ export type MediaManifestJson = {
   }>;
 };
 
+/** @description Canonical post fields flattened for static export consumers. */
 export type PostMapJson = {
   creator_id: string;
   generated_at: string;
@@ -33,6 +42,7 @@ export type PostMapJson = {
   >;
 };
 
+/** @description Canonical tier catalog subset for export tooling. */
 export type TierMapJson = {
   creator_id: string;
   generated_at: string;
@@ -46,6 +56,12 @@ export type TierMapJson = {
   >;
 };
 
+/**
+ * @description Media inventory entries joined with export index rows.
+ * @param creatorId Creator scope.
+ * @param snapshot Canonical ingest snapshot.
+ * @param exportIndex Export metadata for stored blobs.
+ */
 export function buildMediaManifest(
   creatorId: string,
   snapshot: CanonicalSnapshot,
@@ -76,6 +92,11 @@ export function buildMediaManifest(
   };
 }
 
+/**
+ * @description Post metadata map for downstream static hosting.
+ * @param creatorId Creator scope.
+ * @param snapshot Canonical ingest snapshot.
+ */
 export function buildPostMap(creatorId: string, snapshot: CanonicalSnapshot): PostMapJson {
   const posts = snapshot.posts[creatorId] ?? {};
   const out: PostMapJson["posts"] = {};
@@ -97,6 +118,11 @@ export function buildPostMap(creatorId: string, snapshot: CanonicalSnapshot): Po
   };
 }
 
+/**
+ * @description Tier catalog JSON for export bundles.
+ * @param creatorId Creator scope.
+ * @param snapshot Canonical ingest snapshot.
+ */
 export function buildTierMap(creatorId: string, snapshot: CanonicalSnapshot): TierMapJson {
   const tiers = snapshot.tiers[creatorId] ?? {};
   const out: TierMapJson["tiers"] = {};

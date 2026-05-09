@@ -1,4 +1,10 @@
 /**
+ * @fileoverview Patron experience module notification-mapper.ts — see exported symbols.
+ * @see {@link ../jsdoc-core-entities.ts}
+ * @see prisma/schema.prisma Account, TenantMembership, and related patron tables
+ * @security-audit-required Patron PII or entitlement paths — audit responses and logs.
+ */
+/**
  * PE-G (BO-P3-03) — `OutboxEvent` -> `Notification` mapping.
  *
  * The mapper is a pure(ish) dispatcher: take a single OutboxEvent row, return zero or more

@@ -24,14 +24,24 @@
  *     on OutboxEvent + the cluster-key dedupe in `createOrClusterNotification`. Redis adoption
  *     also unlocks distributed leader election so multi-node deploys don't double-fan-out.
  *
- * # Idempotency story
+ * # Idempotency story (P1-queue-015)
  *
- * If the worker crashes between writing notifications and bumping the cursor, the next run
- * processes the same events again. Cluster-key dedupe folds the duplicate into the same
- * notification row (count increments by 1 -> wrong count by 1). For tier_changed (no cluster
- * key) we additionally check `sourceEventId` before creating to avoid double-write. This keeps
- * the at-least-once-with-soft-dedupe semantics acceptable for v1; exact-once needs Redis +
- * BullMQ `removeOnComplete: { age: ... }` semantics.
+ * **Outbox:** `OutboxEvent` is deduped by `(event_name, tenant_id, primary_id, occurred_at)` — one durable
+ * event row per logical change.
+ *
+ * **Delivery:** The cursor is at-least-once; the same event can be processed twice after a crash or if two
+ * workers overlap. Mitigations:
+ *   - **Non-clustered** kinds (`cluster_key` null, e.g. `tier_changed`): `alreadyDelivered` checks
+ *     `source_event_id` before insert. A **partial unique index** on `(source_event_id, recipient_membership_id)`
+ *     where `cluster_key` is null closes the TOCTOU race: the second insert fails with `P2002` and
+ *     `createOrClusterNotification` returns the existing row.
+ *   - **Clustered** kinds: `createOrClusterNotification` uses a read-then-write window; duplicate rows are
+ *     still theoretically possible under concurrent ticks with identical cluster keys. In-process delivery
+ *     skips overlapping ticks (`inFlight`); BullMQ should run bounded concurrency. Exact clustering under
+ *     multi-worker contention is a follow-up (transactional upsert / advisory lock).
+ *
+ * Re-processing a clustered event may increment `cluster_count` more than once; that remains acceptable
+ * soft-dedupe for v1 compared to duplicate **tier_changed** rows.
  *
  * # Cursor advance
  *
@@ -375,16 +385,28 @@ export function startNotificationDeliveryWorker(
   prisma: PrismaClient,
   log?: (msg: string, ctx?: Record<string, unknown>) => void
 ): NotificationDeliveryRunner | null {
-  const raw = (process.env.RELAY_NOTIFICATION_DELIVERY_MS ?? "").trim();
-  const parsed = raw === "" ? DEFAULT_NOTIFICATION_DELIVERY_MS : Number(raw);
-  if (!Number.isFinite(parsed) || parsed === 0) {
-    return null;
-  }
+  const every = notificationDeliveryRepeatEveryMsFromEnv();
+  if (every === null) return null;
   const runner = new InProcessNotificationDeliveryRunner({
     prisma,
-    pollIntervalMs: parsed,
+    pollIntervalMs: every,
     log
   });
   runner.start();
   return runner;
+}
+
+/**
+ * Effective notification poll interval for BullMQ `repeat.every`, or `null` when delivery is disabled (`RELAY_NOTIFICATION_DELIVERY_MS=0`).
+ * Mirrors [startNotificationDeliveryWorker](#startNotificationDeliveryWorker) / env floor.
+ */
+export function notificationDeliveryRepeatEveryMsFromEnv(
+  env: NodeJS.ProcessEnv = process.env
+): number | null {
+  const raw = (env.RELAY_NOTIFICATION_DELIVERY_MS ?? "").trim();
+  const parsed = raw === "" ? DEFAULT_NOTIFICATION_DELIVERY_MS : Number(raw);
+  if (!Number.isFinite(parsed) || parsed === 0) {
+    return null;
+  }
+  return Math.max(MIN_NOTIFICATION_DELIVERY_MS, Math.floor(parsed));
 }

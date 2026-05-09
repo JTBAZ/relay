@@ -1,9 +1,19 @@
+/**
+ * @fileoverview Gate Patreon link behind Supabase email verification when configured.
+ * @description Uses optional admin client for `getUserById`; lenient read path for session status.
+ * @see ../lib/supabase-admin.js
+ * @security-audit-required Service role env is required only when enforcement is on.
+ */
+
 import type { PrismaClient } from "@prisma/client";
 import { createSupabaseAdminClient, getSupabaseAdminEnv } from "../lib/supabase-admin.js";
 import { getAccountIdForSession } from "./patron-auth-context.js";
 import type { SessionToken } from "./types.js";
 
-/** When true, `POST .../patron/patron/link` requires Supabase email confirmed for Supabase-linked accounts. */
+/**
+ * @description Reads `RELAY_PATREON_LINK_REQUIRE_VERIFIED_EMAIL`.
+ * @returns {boolean}
+ */
 export function patreonLinkRequiresVerifiedEmail(): boolean {
   const v = process.env.RELAY_PATREON_LINK_REQUIRE_VERIFIED_EMAIL?.trim().toLowerCase();
   return v === "true" || v === "1";
@@ -25,8 +35,12 @@ type AdminDeps = {
 };
 
 /**
- * If {@link patreonLinkRequiresVerifiedEmail} is off, always allows.
- * If on: only enforces when `Account.supabaseUserId` is set; native-email accounts skip.
+ * @description If {@link patreonLinkRequiresVerifiedEmail} is off, always allows; when on, enforces for Supabase-linked accounts via admin API.
+ * @param {import("@prisma/client").PrismaClient} prisma
+ * @param {string} accountId
+ * @param {AdminDeps} [deps]
+ * @returns {Promise<PatreonLinkEmailGateResult>}
+ * @async
  */
 export async function checkPatreonLinkEmailGate(
   prisma: PrismaClient,
@@ -88,9 +102,11 @@ export async function checkPatreonLinkEmailGate(
 }
 
 /**
- * For `GET /api/v1/me/session` — whether this session may use session-first Patreon `/link`
- * from an email perspective (Supabase confirmed when enforcement is on).
- * Returns `true` when enforcement is off, account is non-Supabase, admin is unavailable, or lookup fails (lenient read path).
+ * @description Lenient read path for `/api/v1/me/session` Patreon link eligibility.
+ * @param {import("@prisma/client").PrismaClient} prisma
+ * @param {import("./types.js").SessionToken} session
+ * @returns {Promise<boolean>}
+ * @async
  */
 export async function getSessionEmailVerifiedForPatronLink(
   prisma: PrismaClient,

@@ -1,3 +1,11 @@
+/**
+ * @fileoverview Pure builder from canonical ingest + export availability into a `CloneSiteModel`.
+ * @description Applies tier rules and slugify for static site synthesis.
+ * @see ../ingest/canonical-store.js
+ * @see ../export/types.js CreatorExportIndex
+ * @see ./tier-rules.js
+ */
+
 import { randomUUID } from "node:crypto";
 import type { CanonicalSnapshot } from "../ingest/canonical-store.js";
 import type { CreatorExportIndex } from "../export/types.js";
@@ -5,6 +13,14 @@ import { evaluateTierRules, resolvePostAccessLevel } from "./tier-rules.js";
 import { slugify } from "./slug.js";
 import type { CloneMediaRef, ClonePostEntry, CloneSiteModel } from "./types.js";
 
+/**
+ * @description Materializes posts, media refs, tier rules, and counters for one creator.
+ * @param creatorId Creator scope.
+ * @param canonical Full canonical snapshot.
+ * @param exportIndex Media ids with successful exports.
+ * @param baseUrl Public base URL for link generation (trailing slashes trimmed in output).
+ * @returns New `CloneSiteModel` with fresh `site_id`.
+ */
 export function generateCloneSiteModel(
   creatorId: string,
   canonical: CanonicalSnapshot,

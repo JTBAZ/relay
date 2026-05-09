@@ -31,3 +31,5 @@ Error classification for failed runs uses **`src/patreon/sync-error-copy.ts`** (
 ## UI
 
 The Library **Patreon** menu shows connection health, last scrape, and last member sync, with links to **Creator OAuth** and the **cookie** page. The top bar can show a **Sync issue** pill when OAuth is unhealthy, tokens are expired, or the last scrape/member sync failed.
+
+**Pilot copy deck (message keys):** [copy/sync-health.md](copy/sync-health.md).

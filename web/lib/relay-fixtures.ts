@@ -6,6 +6,7 @@
 
 export type MediaType = "writing" | "photo" | "audio" | "video";
 export type FeedItemKind = "followed" | "discovery";
+export type PatronFeedItemSource = "subscribed" | "discover";
 /** Feed list presentation — `inlineMedia` shows hero + pins in the card (A/B vs `classic`). */
 export type FeedCardLayout = "classic" | "inlineMedia";
 export type TierLabel = "Free" | "Supporter" | "Studio";
@@ -33,6 +34,8 @@ export interface Creator {
 export interface FeedPost {
   id: string;
   kind: FeedItemKind;
+  /** P6-patron-003 — from API (`GET /api/v1/patron/feed`). Falls back to `kind` in the UI when missing. */
+  feed_item_source?: PatronFeedItemSource;
   creator: Creator;
   title: string;
   excerpt: string;
@@ -764,15 +767,24 @@ export interface PatronFeedBundle {
   notifications: Notification[];
   /** PE-B: present when the API returns paginated DB-backed results. */
   next_cursor?: string | null;
+  /** P6-patron-004 — missing or expired entitlement snapshots for followed creators (DB feed only). */
+  entitlement_degraded: boolean;
+  /** Earliest overdue `stale_after` among snapshots (ISO), or null when only a snapshot is missing. */
+  entitlement_stale_since: string | null;
 }
 
 export function getPatronFeedFixtureBundle(): PatronFeedBundle {
   return {
-    feedPosts: FEED_POSTS,
+    feedPosts: FEED_POSTS.map((p) => ({
+      ...p,
+      feed_item_source: p.kind === "discovery" ? "discover" : "subscribed"
+    })),
     discoverItems: DISCOVER_ITEMS,
     currentViewer: CURRENT_VIEWER,
     followedCreators: sortFollowedForSidebar(FOLLOWED_CREATORS),
     notifications: NOTIFICATIONS,
+    entitlement_degraded: false,
+    entitlement_stale_since: null
   };
 }
 

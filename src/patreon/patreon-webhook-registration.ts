@@ -1,3 +1,11 @@
+/**
+ * @fileoverview Registers Patreon platform webhooks (members + posts) with opaque Relay delivery URLs and metadata persistence.
+ * @description Lists/creates via Patreon API, stores secrets in `PatreonWebhookMetadataStore`, binds campaigns via Prisma token reads.
+ * @async Patreon + Prisma throughout.
+ * @throws {Error} OAuth, campaign resolution, or webhook API failures.
+ * @see {@link ../jsdoc-core-entities.ts}
+ * @see prisma/schema.prisma `PatronOAuthCredential` / creator tokens indirect; metadata is file-backed
+ */
 import type { PrismaClient } from "@prisma/client";
 import { Prisma } from "@prisma/client";
 import { RELAY_TOKEN_KEY_ID } from "../auth/token-store-db.js";

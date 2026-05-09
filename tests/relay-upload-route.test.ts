@@ -58,6 +58,21 @@ describe("Relay upload (T-3.2)", () => {
     expect(res.status).toBe(503);
   });
 
+  it("returns 503 on /relay/upload/commit when prisma is not configured", async () => {
+    const tempDir = await mkdtemp(join(tmpdir(), "relay-up-"));
+    const { app } = createApp(baseConfig(tempDir));
+    const res = await request(app)
+      .post("/api/v1/relay/upload/commit")
+      .set("Authorization", "Bearer test_sess")
+      .send({
+        creator_id: "c",
+        media_id: "relay_m_x",
+        content_type: "image/png",
+        byte_size: 1
+      });
+    expect(res.status).toBe(503);
+  });
+
   it("returns 401 without session on PATCH /gallery/posts/:post_id/presentation", async () => {
     const tempDir = await mkdtemp(join(tmpdir(), "relay-up-"));
     const { app } = createApp(baseConfig(tempDir, {} as PrismaClient));

@@ -1,3 +1,11 @@
+/**
+ * @fileoverview Builds and filters gallery rows from canonical snapshots, overrides, collections, and presentation overlays.
+ * @description Pure/filter helpers plus cursor pagination for Library APIs ({@link GalleryItem}, {@link GalleryListParams}).
+ * @see ./types.js Wire shapes
+ * @see prisma/schema.prisma Persisted presentation/overrides (via loaders)
+ * @see src/jsdoc-core-entities.ts Artist/Gallery/SyncStatus mapping notes
+ */
+
 import type { CanonicalSnapshot } from "../ingest/canonical-store.js";
 import type { CreatorExportIndex } from "../export/types.js";
 import type { MediaRow } from "../ingest/canonical-store.js";
@@ -14,7 +22,15 @@ import type {
 import { mergePostPresentation } from "./effective-presentation.js";
 import type { PostPresentationOverlay } from "./effective-presentation.js";
 
-/** Post-level tags after gallery override add/remove deltas (matches list rows). */
+/**
+ * @description Computes post-level tags after applying gallery override add/remove deltas (matches list rows).
+ * @param base Canonical tag ids from ingest.
+ * @param creatorId Creator partition inside overrides root.
+ * @param postId Post id key inside overrides.
+ * @param overrides Loaded overrides aggregate.
+ * @returns New array of effective tag ids.
+ * @security-audit-required Overrides root must correspond to the same creator catalog as `base`.
+ */
 export function effectiveTags(
   base: string[],
   creatorId: string,
@@ -97,6 +113,15 @@ function galleryRowTags(
   return tags.filter((t) => !tagIsCoverChip(t));
 }
 
+/**
+ * @description Effective visibility for one gallery row with per-media override precedence over post-level defaults.
+ * @param creatorId Creator partition.
+ * @param postId Post id.
+ * @param mediaId Media id or synthetic `post_only_*` id.
+ * @param overrides Overrides aggregate.
+ * @returns Resolved visibility literal.
+ * @security-audit-required Overrides must be scoped to authorized creator context.
+ */
 export function resolveGalleryItemVisibility(
   creatorId: string,
   postId: string,
@@ -117,7 +142,9 @@ export function resolveGalleryItemVisibility(
 const MAX_DESC_SEARCH_CHARS = 16_000;
 
 /**
- * Strip HTML for substring search: tags removed, common entities simplified, whitespace collapsed.
+ * @description Strip HTML for substring search: tags removed, common entities simplified, whitespace collapsed.
+ * @param html Raw HTML or undefined from post bodies.
+ * @returns Plaintext suitable for token scans (bounded downstream).
  */
 export function stripHtmlForSearch(html: string | undefined): string {
   if (!html?.trim()) {
@@ -140,9 +167,10 @@ export function stripHtmlForSearch(html: string | undefined): string {
 }
 
 /**
- * Universal Find Assets `q`: whitespace tokens, AND across tokens; each token matches if it appears
- * (case-insensitive substring) in title, any row tag, stripped description (first MAX_DESC_SEARCH_CHARS),
- * any collection theme tag, or post_id / media_id.
+ * @description Universal Find Assets `q`: whitespace tokens, AND across tokens; each token matches if it appears (case-insensitive substring) in title, row tags, stripped description (first MAX_DESC_SEARCH_CHARS), collection theme tags, or ids.
+ * @param item Fully-built gallery row.
+ * @param raw User query string.
+ * @returns Whether every token matched somewhere.
  */
 export function itemMatchesFreeTextQuery(item: GalleryItem, raw: string): boolean {
   const tokens = raw
@@ -174,6 +202,18 @@ export function itemMatchesFreeTextQuery(item: GalleryItem, raw: string): boolea
   return true;
 }
 
+/**
+ * @description Materializes {@link GalleryItem} rows for one creator from canonical snapshot + export index + overrides + optional presentation overlays.
+ * @param creatorId Creator partition key for snapshot maps.
+ * @param snapshot Canonical ingest snapshot.
+ * @param exportIndex Blob/export metadata index.
+ * @param overrides Gallery overrides root.
+ * @param collections Collections affecting membership/theme-tag facets (default empty).
+ * @param presentationByPostId When set (e.g. from `PostPresentation` rows), merges title/description/order at read time.
+ * @returns Unfiltered flat media rows (including synthetic `post_only_*` when media-less posts exist).
+ * @security-audit-required Caller must ensure all inputs describe the same authorized creator scope.
+ * @todo Cursor encode/decode assumes stable ordering keys—keep aligned with {@link listGalleryItems} sort modes.
+ */
 export function buildGalleryItems(
   creatorId: string,
   snapshot: CanonicalSnapshot,
@@ -263,6 +303,10 @@ export function buildGalleryItems(
           hasExport && (m.current.mime_type?.startsWith("image/") ?? false)
             ? `/api/v1/export/media/${encodeURIComponent(creatorId)}/${encodeURIComponent(mediaId)}/preview`
             : "",
+        thumb_url_path:
+          hasExport && (m.current.mime_type?.startsWith("image/") ?? false)
+            ? `/api/v1/export/media/${encodeURIComponent(creatorId)}/${encodeURIComponent(mediaId)}/thumb`
+            : "",
         visibility: resolveGalleryItemVisibility(creatorId, postId, mediaId, overrides),
         collection_ids: colIds,
         collection_theme_tag_ids: themeTagList
@@ -292,6 +336,7 @@ export function buildGalleryItems(
         export_status: "missing",
         content_url_path: "",
         preview_url_path: "",
+        thumb_url_path: "",
         visibility: resolveGalleryItemVisibility(creatorId, postId, syntheticId, overrides),
         collection_ids: colIds,
         collection_theme_tag_ids: themeTagList
@@ -355,7 +400,11 @@ function pickPrimaryGalleryItem(group: GalleryItem[]): GalleryItem {
   return pool[0]!;
 }
 
-/** One row per post, preserving first-seen post order from `items`. */
+/**
+ * @description Collapses to one row per post using primary/heuristic picking while preserving first-seen post order from `items`.
+ * @param items Full multi-media expansion.
+ * @returns Subset with single representative row per `post_id`.
+ */
 export function galleryItemsPostPrimaryView(items: GalleryItem[]): GalleryItem[] {
   const byPost = new Map<string, GalleryItem[]>();
   const order: string[] = [];
@@ -570,6 +619,13 @@ function cmpForMode(mode: GallerySortMode | undefined): (a: GalleryItem, b: Gall
   return mode === "visibility" ? cmpVisibilityThenPublished : cmpPublishedDesc;
 }
 
+/**
+ * @description Applies filters, optional post-primary search collapsing, sort mode, and opaque cursor pagination.
+ * @param all Full item list for creator (already built).
+ * @param params {@link GalleryListParams} filter + pagination envelope.
+ * @returns Page slice plus `next_cursor` when more results likely.
+ * @security-audit-required `params.creator_id` must match the catalog used to build `all`; mismatches leak cross-creator rows if lists are merged incorrectly upstream.
+ */
 export function listGalleryItems(
   all: GalleryItem[],
   params: GalleryListParams
@@ -610,6 +666,11 @@ export function listGalleryItems(
   return { items: slice, next_cursor };
 }
 
+/**
+ * @description Aggregates distinct tag/tier ids with tag occurrence counts from an item list (facet chips).
+ * @param items Gallery rows (typically already filtered for creator context).
+ * @returns Sorted tag ids by popularity, sorted tier ids, and raw counts map.
+ */
 export function collectFacets(items: GalleryItem[]): {
   tag_ids: string[];
   tier_ids: string[];

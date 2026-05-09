@@ -1,4 +1,5 @@
 import { PATREON_CREATOR_OAUTH_SCOPES } from "./patreon-creator-scopes";
+import { resolveRelayApiBaseFromEnv } from "./relay-api-env";
 import {
   RelayForbiddenError,
   RelayServerError,
@@ -9,10 +10,7 @@ export { RelayForbiddenError, RelayServerError, RelayUnauthorizedError };
 
 /** No trailing slash — paths like `/api/v1/...` are appended below. */
 function resolveRelayApiBase(): string {
-  const fromEnv = (process.env.NEXT_PUBLIC_RELAY_API_URL ?? "").trim();
-  const raw = fromEnv.length > 0 ? fromEnv : "http://127.0.0.1:8787";
-  const trimmed = raw.replace(/\/+$/, "");
-  return trimmed.length > 0 ? trimmed : "http://127.0.0.1:8787";
+  return resolveRelayApiBaseFromEnv(process.env.NEXT_PUBLIC_RELAY_API_URL);
 }
 export const RELAY_API_BASE = resolveRelayApiBase();
 
@@ -595,6 +593,314 @@ export async function patchCreatorProfile(
   });
 }
 
+// ---------------------------------------------------------------------------
+// P4-onb — creator onboarding funnel (studio)
+// ---------------------------------------------------------------------------
+
+export type CreatorOnboardingStep = "connected" | "import_started" | "organized" | "published";
+
+/** Same sequence as backend `CREATOR_ONBOARDING_STEP_ORDER` (linear funnel). */
+export const CREATOR_ONBOARDING_STEP_ORDER: readonly CreatorOnboardingStep[] = [
+  "connected",
+  "import_started",
+  "organized",
+  "published"
+] as const;
+
+export type CreatorOnboardingImportProgress = {
+  last_post_scrape_finished_at: string | null;
+  last_post_scrape_ok: boolean | null;
+  last_post_scrape_posts_written: number | null;
+};
+
+export type CreatorOnboardingData = {
+  creator_id: string;
+  step: CreatorOnboardingStep;
+  metadata: unknown | null;
+  updated_at: string;
+  import_progress: CreatorOnboardingImportProgress | null;
+};
+
+export async function fetchCreatorOnboarding(): Promise<CreatorOnboardingData> {
+  return relayFetch<CreatorOnboardingData>("/api/v1/creator/onboarding");
+}
+
+export async function patchCreatorOnboarding(patch: {
+  step?: CreatorOnboardingStep;
+  metadata?: unknown | null;
+}): Promise<CreatorOnboardingData> {
+  return relayFetch<CreatorOnboardingData>("/api/v1/creator/onboarding", {
+    method: "PATCH",
+    body: JSON.stringify(patch)
+  });
+}
+
+// ---------------------------------------------------------------------------
+// P5a — creator analytics (membership ledger, cohorts, tier stickiness, Insights CSV).
+// ---------------------------------------------------------------------------
+
+export type CreatorMembershipSummaryData = {
+  window: { days: number; start: string; end: string };
+  active_paying_members: number;
+  free_patrons: number;
+  total_patrons: number;
+  events_in_window: {
+    join: number;
+    rejoin: number;
+    upgrade: number;
+    downgrade: number;
+    cancel: number;
+  };
+  adds_in_window: number;
+  cancels_in_window: number;
+  net_growth_events: number;
+  tier_breakdown: Array<{
+    tier_id: string;
+    title: string;
+    amount_cents: number | null;
+    patron_count: number;
+  }>;
+  estimated_from_sync: boolean;
+  note?: string;
+};
+
+export async function fetchCreatorMembershipSummary(
+  params?: { days?: number }
+): Promise<CreatorMembershipSummaryData> {
+  const d = params?.days;
+  const q =
+    typeof d === "number" && Number.isFinite(d)
+      ? `?days=${Math.min(Math.max(Math.floor(d), 1), 366)}`
+      : "";
+  return relayFetch<CreatorMembershipSummaryData>(
+    `/api/v1/creator/analytics/membership-summary${q}`
+  );
+}
+
+export type CreatorMembershipCohortsData = {
+  as_of: string;
+  max_months_since_join: number;
+  cohort_months_included: number;
+  cohorts: Array<{
+    cohort_month: string;
+    cohort_size: number;
+    retention: Array<{
+      months_since_join: number;
+      retained_count: number;
+      cohort_size: number;
+      retained_pct: number;
+    }>;
+  }>;
+  note: string;
+};
+
+export async function fetchCreatorMembershipCohorts(
+  params?: { cohortMonths?: number; maxOffset?: number }
+): Promise<CreatorMembershipCohortsData> {
+  const u = new URLSearchParams();
+  if (params?.cohortMonths != null) {
+    u.set("cohort_months", String(params.cohortMonths));
+  }
+  if (params?.maxOffset != null) {
+    u.set("max_offset", String(params.maxOffset));
+  }
+  const qs = u.toString();
+  return relayFetch<CreatorMembershipCohortsData>(
+    `/api/v1/creator/analytics/membership-cohorts${qs ? `?${qs}` : ""}`
+  );
+}
+
+export type CreatorTierStickinessData = {
+  as_of: string;
+  window_days: number;
+  tiers: Array<{
+    tier_id: string;
+    title: string;
+    amount_cents: number | null;
+    member_count: number;
+    median_tenure_days: number | null;
+    churn_proxy: number;
+    cancel_events_in_window: number;
+  }>;
+  estimated_from_sync: boolean;
+  note: string;
+};
+
+export async function fetchCreatorTierStickiness(
+  params?: { days?: number }
+): Promise<CreatorTierStickinessData> {
+  const d = params?.days;
+  const q =
+    typeof d === "number" && Number.isFinite(d)
+      ? `?days=${Math.min(Math.max(Math.floor(d), 1), 366)}`
+      : "";
+  return relayFetch<CreatorTierStickinessData>(
+    `/api/v1/creator/analytics/tier-stickiness${q}`
+  );
+}
+
+export type CreatorPostPerformanceData = {
+  as_of: string;
+  import_id: string | null;
+  import_uploaded_at: string | null;
+  import_label: string | null;
+  rows: Array<{
+    patreon_post_id: string;
+    post_id: string | null;
+    insights: {
+      impressions: number | null;
+      seen: number | null;
+      likes: number | null;
+      comments: number | null;
+      as_of: string | null;
+    } | null;
+    relay: {
+      title: string | null;
+      published_at: string | null;
+      source: string;
+      upstream_status: string;
+      is_public: boolean;
+    } | null;
+    gap: "none" | "metrics_without_relay" | "relay_without_metrics";
+  }>;
+  relay_only_count: number;
+  relay_only_truncated: boolean;
+  note: string;
+};
+
+export async function fetchCreatorPostPerformance(
+  params?: {
+    importId?: string;
+    metricsLimit?: number;
+    relayOnlyLimit?: number;
+    includeRelayOnly?: boolean;
+  }
+): Promise<CreatorPostPerformanceData> {
+  const u = new URLSearchParams();
+  if (params?.importId) {
+    u.set("import_id", params.importId);
+  }
+  if (params?.metricsLimit != null) {
+    u.set("metrics_limit", String(params.metricsLimit));
+  }
+  if (params?.relayOnlyLimit != null) {
+    u.set("relay_only_limit", String(params.relayOnlyLimit));
+  }
+  if (params?.includeRelayOnly === false) {
+    u.set("include_relay_only", "0");
+  }
+  const qs = u.toString();
+  return relayFetch<CreatorPostPerformanceData>(
+    `/api/v1/creator/analytics/post-performance${qs ? `?${qs}` : ""}`
+  );
+}
+
+export type CreatorUsagePreviewBar = {
+  metric: string;
+  label: string;
+  quantity: string;
+  kind: "bytes" | "count";
+};
+
+export type CreatorUsagePreviewData = {
+  window: { days: number; start: string; end: string };
+  bars: CreatorUsagePreviewBar[];
+  disclaimer: string;
+};
+
+export async function fetchCreatorUsagePreview(
+  params?: { days?: number }
+): Promise<CreatorUsagePreviewData> {
+  const d = params?.days;
+  const q =
+    typeof d === "number" && Number.isFinite(d)
+      ? `?days=${Math.min(Math.max(Math.floor(d), 1), 366)}`
+      : "";
+  return relayFetch<CreatorUsagePreviewData>(
+    `/api/v1/creator/analytics/usage-preview${q}`
+  );
+}
+
+export type PatreonInsightsCsvUploadResult = {
+  import_id: string;
+  file_hash: string;
+  rows_written: number;
+  already_imported: boolean;
+  filename: string | null;
+};
+
+/**
+ * Multipart upload — must not set `Content-Type` (browser sets boundary).
+ */
+export async function uploadPatreonInsightsCsv(
+  file: File,
+  options?: { label?: string; asOf?: string }
+): Promise<PatreonInsightsCsvUploadResult> {
+  const u = new URLSearchParams();
+  if (options?.asOf?.trim()) {
+    u.set("as_of", options.asOf.trim());
+  }
+  const path = `/api/v1/creator/analytics/patreon-insights-csv${u.toString() ? `?${u}` : ""}`;
+  const form = new FormData();
+  form.append("file", file);
+  if (options?.label?.trim()) {
+    form.append("label", options.label.trim());
+  }
+
+  let res: Response;
+  try {
+    res = await fetch(`${RELAY_API_BASE}${path}`, {
+      method: "POST",
+      credentials: "include",
+      headers: { Accept: "application/json" },
+      body: form
+    });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    throw new RelayApiError(
+      msg.includes("fetch") ? "Network error — is the Relay API running?" : msg,
+      0,
+      "NETWORK"
+    );
+  }
+
+  await handleRelayHttpErrors(res);
+  const json = await parseRelayResponseBody(res, path);
+  if (!res.ok) {
+    const err = json as { error?: { message?: string; code?: string } };
+    throw new RelayApiError(
+      err.error?.message ?? res.statusText,
+      res.status,
+      err.error?.code
+    );
+  }
+  const envelope = json as Envelope<PatreonInsightsCsvUploadResult>;
+  return envelope.data;
+}
+
+/**
+ * P4-onb-008 — Human copy when gallery publish would fail per `getLayoutPublishBlock` (onboarding DTO only).
+ * Returns `null` when publish is allowed from the client’s perspective.
+ */
+export function describeCreatorGalleryPublishBlock(
+  onboarding: CreatorOnboardingData | null
+): string | null {
+  if (!onboarding) return null;
+  if (onboarding.step !== "published") {
+    const byStep: Record<CreatorOnboardingStep, string> = {
+      connected: "Connect Patreon and finish setup in Library first.",
+      import_started: "Finish importing (run sync from Library), then continue setup there.",
+      organized: 'In Library, tap “Mark ready to publish”.',
+      published: ""
+    };
+    return byStep[onboarding.step] || "Finish studio setup in Library before publishing.";
+  }
+  if (onboarding.import_progress?.last_post_scrape_ok === false) {
+    return "Patreon import failed on the last run. Fix sync from Library, then publish.";
+  }
+  return null;
+}
+
 export type PublicCreatorResolution = {
   public_slug: string;
   relay_creator_id: string;
@@ -667,6 +973,8 @@ export type GalleryItem = {
   content_url_path: string;
   /** Blurred still from API (`/preview`); kept when full export is tier-redacted. */
   preview_url_path: string;
+  /** WebP grid thumbnail (`/thumb`, images only); cleared with `content_url_path` when tier-redacted. */
+  thumb_url_path: string;
   visibility: PostVisibility;
   collection_ids: string[];
   collection_theme_tag_ids: string[];
@@ -675,12 +983,32 @@ export type GalleryItem = {
 };
 
 /**
- * Visitor / patron gallery list: `redactGalleryItemExportIfLocked` clears `content_url_path` when
- * the session may not view the export; `preview_url_path` stays set for blurred teasers.
+ * Visitor / patron gallery list: `redactGalleryItemExportIfLocked` clears `content_url_path` and
+ * `thumb_url_path` when the session may not view the export; `preview_url_path` stays set for blurred teasers.
  * Use this before showing tier chips on the tile.
  */
 export function galleryItemExportVisibleToVisitor(item: GalleryItem): boolean {
   return Boolean(item.has_export && item.content_url_path?.trim());
+}
+
+/**
+ * Absolute URL for grid/list image tiles: `/thumb` (WebP) when available, else `/content`.
+ * For `image/gif`, uses `/content` first so tiles play the native animated GIF at full export resolution.
+ */
+export function galleryItemImageGridSrc(item: GalleryItem): string | null {
+  if (!item.has_export || !item.mime_type?.startsWith("image/")) return null;
+  if ((item.mime_type ?? "").toLowerCase() === "image/gif") {
+    const full = item.content_url_path?.trim();
+    if (full) return `${RELAY_API_BASE}${full}`;
+    const thumb = item.thumb_url_path?.trim();
+    if (thumb) return `${RELAY_API_BASE}${thumb}`;
+    return null;
+  }
+  const thumb = item.thumb_url_path?.trim();
+  if (thumb) return `${RELAY_API_BASE}${thumb}`;
+  const full = item.content_url_path?.trim();
+  if (full) return `${RELAY_API_BASE}${full}`;
+  return null;
 }
 
 /** Absolute URL for visitor teaser image (tier-gated tiles), or null. */
@@ -714,7 +1042,13 @@ export type GalleryListData = {
   next_cursor: string | null;
 };
 
-export type TierFacet = { tier_id: string; title: string; amount_cents?: number };
+export type TierFacet = {
+  tier_id: string;
+  title: string;
+  amount_cents?: number;
+  /** Present on `GET /api/v1/relay/compose-tiers` rows; Patreon/Relay tier key for display. */
+  relay_tier_id?: string;
+};
 
 /** Public gallery header: Relay display name + Patreon campaign art (from `creator_campaign_display` after sync). */
 export type VisitorHeroData = {
@@ -1069,7 +1403,58 @@ export type PageLayout = {
   };
   sections: PageSection[];
   updated_at: string;
+  /** When set, the creator has published their public gallery at least once (ISO). */
+  published_at?: string;
 };
+
+/** Result of `GET /api/v1/public/creators/:slug/gallery-layout`. */
+export type PublicCreatorGalleryLayoutPayload =
+  | {
+      published: true;
+      relay_creator_id: string;
+      public_slug: string;
+      layout: PageLayout;
+    }
+  | {
+      published: false;
+      relay_creator_id: string;
+      public_slug: string;
+      layout: null;
+    };
+
+/** Authenticated creator — marks the public gallery as live (same session + creator_id as PUT layout). */
+export function publishCreatorGalleryLayout(creatorId: string): Promise<PageLayout> {
+  return relayFetch<PageLayout>("/api/v1/gallery/layout/publish", {
+    method: "POST",
+    body: JSON.stringify({ creator_id: creatorId.trim() })
+  });
+}
+
+/** No auth — public gallery layout for `/patron/c/[slug]` when published. Unknown slug → null. */
+export async function fetchPublicCreatorGalleryLayout(
+  slug: string
+): Promise<PublicCreatorGalleryLayoutPayload | null> {
+  const trimmed = slug.trim();
+  if (trimmed.length < 2) {
+    return null;
+  }
+  const path = `/api/v1/public/creators/${encodeURIComponent(trimmed)}/gallery-layout`;
+  try {
+    const res = await fetch(`${RELAY_API_BASE}${path}`, {
+      credentials: "include",
+      cache: "no-store",
+      headers: mergeRelayHeaders()
+    });
+    await handleRelayHttpErrors(res);
+    if (res.status === 404) {
+      return null;
+    }
+    const json = (await parseRelayResponseBody(res, path)) as Envelope<PublicCreatorGalleryLayoutPayload>;
+    return json.data ?? null;
+  } catch {
+    return null;
+  }
+}
 
 export type GallerySortMode = "published" | "visibility";
 
@@ -1187,11 +1572,38 @@ export function buildGalleryFacetsQuery(creatorId: string, visitor?: boolean): s
 }
 
 /**
- * T-6.2 — Load the creator tier catalog (stable `TierFacet.tier_id` values) for Relay-native compose.
- * These ids are the `tier_ids` array in `POST /api/v1/relay/posts` (Prisma `Tier.id`).
+ * Creator Library facets: tag/tier dimensions for filtering the gallery grid.
+ * `TierFacet.tier_id` values are **relay tier keys** (`patreon_tier_*`, `relay_tier_*`, …) — the same
+ * keys that appear on `GalleryItem.tier_ids`. They are **not** Prisma `Tier.id` (`creator_id::…` keys).
+ *
+ * For Relay-native compose (`POST /api/v1/relay/posts` **request** `tier_ids`), use {@link fetchRelayComposeTiers}
+ * (Prisma id on each row). **`201` `version.tier_ids`** are **relay** keys — see {@link relayNativeCreatePost}.
  */
 export async function fetchCreatorGalleryFacets(creatorId: string): Promise<FacetsData> {
   return relayFetch<FacetsData>(buildGalleryFacetsQuery(creatorId));
+}
+
+/**
+ * One row from `GET /api/v1/relay/compose-tiers`.
+ * **`tier_id`** is Prisma `Tier.id` — send in `POST /relay/posts` `tier_ids` as-is.
+ * **`relay_tier_id`** is the canonical key persisted on `PostVersion.tierIds` and returned on **201** `version.tier_ids`.
+ */
+export type RelayComposeTierRow = {
+  tier_id: string;
+  relay_tier_id: string;
+  title: string;
+  amount_cents: number | null;
+};
+
+/** `GET /api/v1/relay/compose-tiers` — session + studio scope; excludes synthetic public/all-patrons rows. Use `tier_id` (Prisma) in `POST /relay/posts` bodies; **`201` `version.tier_ids`** remain relay-key space. */
+export async function fetchRelayComposeTiers(
+  creatorId: string
+): Promise<{ tiers: RelayComposeTierRow[] }> {
+  const q = new URLSearchParams();
+  q.set("creator_id", creatorId.trim());
+  return relayFetch<{ tiers: RelayComposeTierRow[] }>(
+    `/api/v1/relay/compose-tiers?${q.toString()}`
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -1295,7 +1707,9 @@ export type RelayNativeCreatePostParams = {
   title: string;
   description?: string | null;
   is_public: boolean;
+  /** Same resolution as server: Prisma `Tier.id` (e.g. from compose-tiers) or `relayTierId`. */
   required_tier_id?: string | null;
+  /** Typically Prisma `Tier.id` from {@link fetchRelayComposeTiers}; relay keys also accepted. */
   tier_ids: string[];
   tag_ids?: string[];
   media_ids: string[];
@@ -1311,6 +1725,7 @@ export type RelayNativeCreatePostData = {
     creatorId: string;
     source: "RELAY";
     isPublic: boolean;
+    /** Canonical `relay_tier_id` when gated (not Prisma `Tier.id`). */
     requiredTierId: string | null;
   };
   /** API uses snake_case on `version` (see `src/server.ts` relay/posts handler). */
@@ -1322,11 +1737,13 @@ export type RelayNativeCreatePostData = {
     description: string | null;
     published_at: string;
     tag_ids: string[];
+    /** Persisted `relay_tier_id` values — same namespace as gallery facets / entitlement. */
     tier_ids: string[];
     media_ids: string[];
   };
 };
 
+/** `POST /api/v1/relay/posts` — request may send compose `Tier.id`; **response** `version.tier_ids` are relay keys. */
 export async function relayNativeCreatePost(
   params: RelayNativeCreatePostParams
 ): Promise<RelayNativeCreatePostData> {
@@ -1388,34 +1805,73 @@ export type DiscordStagingItem = {
   mime_type: string | null;
   ingested_at: string;
   content_url_path?: string;
+  /** Image WebP thumb (`/thumb`); empty for non-images. */
+  thumb_url_path?: string;
   discord_capture: unknown;
 };
 
-export type DiscordStagingListData = {
-  items: DiscordStagingItem[];
+// ---------------------------------------------------------------------------
+// Library staging (Discord + Relay upload) — GET/DELETE `/api/v1/relay/library/staging`
+// ---------------------------------------------------------------------------
+
+/** Values of `ingest_origin` on unified staging items (see Prisma `MediaIngestOrigin`). */
+export type RelayLibraryStagingIngestOrigin = "DISCORD" | "RELAY_UPLOAD";
+
+export type RelayLibraryStagingItem = {
+  media_id: string;
+  mime_type: string | null;
+  ingested_at: string;
+  content_url_path?: string;
+  /** Image WebP thumb (`/thumb`); empty for non-images. */
+  thumb_url_path?: string;
+  ingest_origin: RelayLibraryStagingIngestOrigin;
+  /** Discord attachment metadata; `null` when `ingest_origin` is `RELAY_UPLOAD`. */
+  discord_capture: unknown | null;
 };
 
-export async function fetchDiscordStaging(creatorId: string): Promise<DiscordStagingListData> {
+export type RelayLibraryStagingListData = {
+  items: RelayLibraryStagingItem[];
+};
+
+/** Unified staged media: Discord captures and committed direct Relay uploads (`primaryPostId` unset, READY). */
+export async function fetchRelayLibraryStaging(
+  creatorId: string
+): Promise<RelayLibraryStagingListData> {
   const q = new URLSearchParams();
   q.set("creator_id", creatorId);
-  return relayFetch<DiscordStagingListData>(`/api/v1/relay/discord/staging?${q.toString()}`);
+  return relayFetch<RelayLibraryStagingListData>(`/api/v1/relay/library/staging?${q.toString()}`);
 }
 
-export type DiscordStagingDeleteData = {
+export type RelayLibraryStagingDeleteData = {
   deleted: boolean;
   media_id: string;
 };
 
-export async function deleteDiscordStagingMedia(
+/** Discard unified staged media; enqueues R2 purge when the asset has a storage key. */
+export async function deleteRelayLibraryStagingMedia(
   creatorId: string,
   mediaId: string
-): Promise<DiscordStagingDeleteData> {
+): Promise<RelayLibraryStagingDeleteData> {
   const q = new URLSearchParams();
   q.set("creator_id", creatorId);
-  return relayFetch<DiscordStagingDeleteData>(
-    `/api/v1/relay/discord/staging/${encodeURIComponent(mediaId)}?${q.toString()}`,
+  return relayFetch<RelayLibraryStagingDeleteData>(
+    `/api/v1/relay/library/staging/${encodeURIComponent(mediaId)}?${q.toString()}`,
     { method: "DELETE" }
   );
+}
+
+/** Discord captures from unified Library staging (Studio / Discord-only surfaces). */
+export function discordStagingItemsFromUnifiedLibrary(list: RelayLibraryStagingListData): DiscordStagingItem[] {
+  return list.items
+    .filter((i) => i.ingest_origin === "DISCORD")
+    .map((i) => ({
+      media_id: i.media_id,
+      mime_type: i.mime_type,
+      ingested_at: i.ingested_at,
+      content_url_path: i.content_url_path,
+      thumb_url_path: i.thumb_url_path,
+      discord_capture: i.discord_capture
+    }));
 }
 
 export function buildGalleryCollectionsQuery(creatorId: string, visitor?: boolean): string {
@@ -1526,6 +1982,19 @@ export type LastMemberSyncHealthData = {
   error?: SyncHealthErrorData;
 };
 
+/** Rollup from `GET /api/v1/patreon/sync-state` (`sync_health`); matches server `SyncHealthWebDto`. */
+export type SyncHealthWebLastErrorData = SyncHealthErrorData & {
+  source: "post_scrape" | "member_sync";
+};
+
+export type SyncHealthWebDto = {
+  status: "unknown" | "healthy" | "degraded" | "failed";
+  last_success_at: string | null;
+  last_error: SyncHealthWebLastErrorData | null;
+  campaign_id: string | null;
+  message_key: string;
+};
+
 /** Patreon OAuth campaign snapshot (avatar, banner, patron count). */
 export type CampaignDisplayData = {
   patreon_campaign_id: string;
@@ -1557,6 +2026,8 @@ export type PatreonSyncStateData = {
   oauth: PatreonOAuthHealthData;
   last_post_scrape: LastPostScrapeHealthData | null;
   last_member_sync: LastMemberSyncHealthData | null;
+  /** Normalized rollup for banners / gates (P5-sync-002). */
+  sync_health: SyncHealthWebDto;
   campaign_display: CampaignDisplayData | null;
   /** Patreon platform webhook registration (member/post delivery). */
   webhook_registration?: WebhookRegistrationSummaryData | null;
@@ -1574,6 +2045,12 @@ export function syncStateNeedsAttention(s: PatreonSyncStateData): boolean {
   if (s.last_member_sync && !s.last_member_sync.ok) return true;
   if (s.webhook_registration?.registration_status === "failed") return true;
   return false;
+}
+
+/** True when Patreon sync rollup blocks studio mutations (matches API **423 SYNC_DEGRADED**). */
+export function syncHealthBlocksStudioWrites(s: PatreonSyncStateData): boolean {
+  const st = s.sync_health?.status;
+  return st === "failed" || st === "degraded";
 }
 
 /** One-line summary for the top bar when something needs attention. */
@@ -1603,6 +2080,37 @@ export function formatSyncHealthBanner(s: PatreonSyncStateData): string | null {
     return "Patreon token expires soon — refresh or reconnect.";
   }
   return null;
+}
+
+/** True when the Library should show the P5-sync-003 rollup banner (not shown for `healthy`). */
+export function shouldShowSyncHealthBanner(s: PatreonSyncStateData): boolean {
+  const st = s.sync_health?.status;
+  return st === "failed" || st === "degraded" || st === "unknown";
+}
+
+/** Copy for the rollup banner: OAuth/cookie/webhook/scrape hints first, then `sync_health.message_key` fallbacks. */
+export function formatSyncHealthRollupBanner(s: PatreonSyncStateData): string {
+  const fromLegacy = formatSyncHealthBanner(s);
+  if (fromLegacy) return fromLegacy;
+  const key = s.sync_health?.message_key;
+  if (key === "sync_health.post_scrape_warnings") {
+    return "Patreon import finished with warnings — open details for more.";
+  }
+  if (key === "sync_health.member_sync_failed") {
+    const hint = s.last_member_sync?.error?.hint;
+    return hint ? `Member sync: ${hint}` : "Member sync failed — open details for more.";
+  }
+  if (key === "sync_health.post_scrape_failed") {
+    const hint = s.last_post_scrape?.error?.hint;
+    return hint ?? "Patreon import failed — open details for more.";
+  }
+  if (key === "sync_health.unknown") {
+    return "Patreon sync health not recorded yet — run Patreon sync when ready.";
+  }
+  if (key === "sync_health.healthy") {
+    return "Patreon sync is healthy.";
+  }
+  return "Review Patreon sync in the menu.";
 }
 
 export type TierAccessSummaryData = {

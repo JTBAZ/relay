@@ -1,6 +1,14 @@
+/**
+ * @fileoverview Validates and maps HTTP payloads for `PostPresentation` upserts.
+ * @see prisma/schema.prisma `PostPresentation`, `MediaAsset`
+ * @see ./post-presentation-load.js Read path
+ */
+
 import type { Prisma, PrismaClient } from "@prisma/client";
 
-/** Result shape for PATCH /gallery/posts/:post_id/presentation handlers. */
+/**
+ * @description Normalized PATCH body fragment for presentation handlers.
+ */
 export type PostPresentationUpsertPayload = {
   relayTitle?: string | null;
   relayDescription?: string | null;
@@ -9,8 +17,15 @@ export type PostPresentationUpsertPayload = {
 };
 
 /**
- * Validates that every media id belongs to `creatorId` and is attached to `postId`
- * (`primary_post_id` or `post_ids` contains the post).
+ * @description Ensures every media id belongs to `creatorId` and is linked to `postId`.
+ * @param prisma Prisma client.
+ * @param creatorId Owning creator id.
+ * @param postId Post id for linkage check.
+ * @param mediaOrder Ordered media ids from client.
+ * @returns Validation outcome.
+ * @async
+ * @throws Rejects on unexpected Prisma failures outside validation paths.
+ * @security-audit-required Must only run after route proves session may mutate this creator/post pair.
  */
 export async function validateMediaIdsBelongToPost(
   prisma: PrismaClient,
@@ -44,8 +59,11 @@ export async function validateMediaIdsBelongToPost(
 }
 
 /**
- * Map JSON body keys to prisma payload fragments. Only include keys listed in `touched`.
- * Use `relay_title_sentinel` pattern: caller passes which top-level keys were present.
+ * @description Maps JSON body keys to Prisma-facing fragments; only keys in `touched` are considered present.
+ * @param body Raw request body object.
+ * @param touched Set of field names explicitly sent by client.
+ * @returns Payload suitable for upsert.
+ * @throws {Error} Validation tokens `VALIDATION:*` when shape invalid.
  */
 export function derivePresentationUpsertFragments(
   body: Record<string, unknown>,
@@ -101,6 +119,11 @@ export function derivePresentationUpsertFragments(
   return out;
 }
 
+/**
+ * @description Detects which presentation patch keys appear on `body` via `hasOwnProperty`.
+ * @param body Raw body object.
+ * @returns Set of touched canonical keys.
+ */
 export function presentationPatchTouches(body: Record<string, unknown>): Set<string> {
   const keys = [
     "relay_title",

@@ -1,8 +1,16 @@
+/**
+ * @fileoverview Patreon campaign id ↔ Relay studio (`Tenant.relayCreatorId`) binding checks and `CreatorProfile` campaign writes.
+ * @description Used by signed webhooks and OAuth flows to prevent cross-tenant campaign hijack.
+ * @see {@link ../jsdoc-core-entities.ts}
+ * @see prisma/schema.prisma `Tenant`, `CreatorProfile`
+ */
 import type { PrismaClient } from "@prisma/client";
 
 /**
  * Resolve Patreon numeric `campaign_id` → Relay `creator_id` via `CreatorProfile.patreonCampaignId`
  * and `Tenant.relayCreatorId` (relational ownership).
+ * @async
+ * @throws {Error} Prisma read failures.
  */
 export async function getRelayCreatorIdForPatreonCampaignDb(
   prisma: PrismaClient,
@@ -18,6 +26,7 @@ export async function getRelayCreatorIdForPatreonCampaignDb(
   return typeof id === "string" && id.length > 0 ? id : null;
 }
 
+/** Webhook campaign binding check outcome. */
 export type WebhookCampaignOwnershipResult =
   | { ok: true }
   | { ok: false; reason: "file_index" | "creator_profile" };
@@ -25,6 +34,8 @@ export type WebhookCampaignOwnershipResult =
 /**
  * MIG-21 — Ensure webhook payload `campaign_id` belongs to the same Relay creator as the opaque
  * delivery URL: check file index first (operational map), then `CreatorProfile` when Prisma is available.
+ * @async
+ * @throws {Error} From `fileIndexGetCreatorId` or Prisma when wired.
  */
 export async function resolvePatreonWebhookCampaignOwnership(args: {
   creatorIdFromRoute: string;
@@ -64,6 +75,8 @@ export type EnsureCreatorProfilePatreonCampaignIdResult =
 /**
  * After a successful sync, persist `CreatorProfile.patreonCampaignId` so webhooks can enforce DB ownership.
  * Skips if no profile row (e.g. file-only OAuth). Does not overwrite a conflicting non-null campaign id.
+ * @async
+ * @throws {Error} Prisma update failures on success path.
  */
 export async function ensureCreatorProfilePatreonCampaignId(
   prisma: PrismaClient,
@@ -110,6 +123,8 @@ export async function ensureCreatorProfilePatreonCampaignId(
 /**
  * Reverse of campaign → creator: the canonical Patreon numeric id stored on the studio profile,
  * used when GET /campaigns cannot disambiguate (0 or 2+ rows) but Relay already knows the id.
+ * @async
+ * @throws {Error} Prisma read failures.
  */
 export async function getCreatorProfilePatreonCampaignIdForRelayCreatorDb(
   prisma: PrismaClient,

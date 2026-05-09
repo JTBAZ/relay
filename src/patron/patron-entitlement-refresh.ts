@@ -1,3 +1,9 @@
+/**
+ * @fileoverview Patron experience module patron-entitlement-refresh.ts — see exported symbols.
+ * @see {@link ../jsdoc-core-entities.ts}
+ * @see prisma/schema.prisma Account, TenantMembership, and related patron tables
+ * @security-audit-required Patron PII or entitlement paths — audit responses and logs.
+ */
 import { EntitlementSource, type PrismaClient } from "@prisma/client";
 import type { PatreonClient } from "../auth/patreon-client.js";
 import { getPatronOAuthTokensForAccount } from "../auth/patron-oauth-credential-store.js";

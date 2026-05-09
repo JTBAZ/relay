@@ -7,15 +7,19 @@ import { galleryItemKey, groupGalleryItemsByPost } from "@/lib/gallery-group";
 import {
   buildGalleryQuery,
   buildGalleryVisibilityBody,
+  fetchCreatorOnboarding,
   fetchGalleryPostDetail,
   fetchPatreonSyncState,
+  fetchRelayComposeTiers,
   formatSyncHealthBanner,
   getCreatorProfile,
+  patchCreatorOnboarding,
   relayFetch,
   relayNativeCreatePost,
   relayNativeUploadCommit,
   relayNativeUploadInit,
   putRelayNativeUpload,
+  syncHealthBlocksStudioWrites,
   syncStateNeedsAttention,
   type Collection,
   type CreatorProfileIdentity,
@@ -24,7 +28,8 @@ import {
   type GalleryListData,
   type GalleryPostDetail,
   type PatreonSyncStateData,
-  type PostVisibility
+  type PostVisibility,
+  type TierFacet
 } from "@/lib/relay-api";
 import GallerySidebar from "./components/GallerySidebar";
 import GalleryGrid from "./components/GalleryGrid";
@@ -32,6 +37,7 @@ import PostBatchModal from "./components/PostBatchModal";
 import InspectModal from "./components/InspectModal";
 import LibraryTopBar from "./components/LibraryTopBar";
 import PatreonSyncMenu from "./components/PatreonSyncMenu";
+import SyncHealthBanner from "./components/SyncHealthBanner";
 import GalleryStatsDrawer from "./components/GalleryStatsDrawer";
 import LibraryPowerPanel, { type LibraryMode } from "./components/LibraryPowerPanel";
 import LibraryImportBay from "./components/LibraryImportBay";
@@ -41,8 +47,15 @@ import LibraryCreatePostModal, {
   type PostDraft
 } from "./components/LibraryCreatePostModal";
 import LibrarySectionEyebrow from "./components/LibrarySectionEyebrow";
+import CreatorOnboardingStepper from "./components/studio/CreatorOnboardingStepper";
 import type { MediaTypeValue } from "./components/MediaTypeMultiSelect";
 import { freePublicTierIdsFromFacets } from "@/lib/tier-access";
+import { guessRelayUploadContentType } from "@/lib/guess-relay-upload-content-type";
+import {
+  isImportBinServerMedia,
+  isLibraryPublishBlockedRow,
+  libraryPublishDataUrlUploads
+} from "@/lib/library-create-post-media";
 import { readGalleryVideoLoop, writeGalleryVideoLoop } from "@/lib/gallery-video-loop";
 import { useDebouncedValue } from "@/lib/use-debounced-value";
 import { useStudioSession } from "@/lib/studio-session-context";
@@ -50,22 +63,12 @@ import { useStudioSession } from "@/lib/studio-session-context";
 /** Align with visitor gallery — avoids one `/gallery/items` request per keystroke. */
 const GALLERY_SEARCH_DEBOUNCE_MS = 320;
 
-const patreonCampaignIdEnv = process.env.NEXT_PUBLIC_RELAY_PATREON_CAMPAIGN_ID?.trim() || undefined;
-
-function guessRelayUploadContentType(file: File): string {
-  if (file.type && file.type !== "application/octet-stream") {
-    return file.type;
-  }
-  const n = file.name.toLowerCase();
-  if (n.endsWith(".mp4")) return "video/mp4";
-  if (n.endsWith(".webm")) return "video/webm";
-  if (n.endsWith(".mov")) return "video/quicktime";
-  if (n.endsWith(".png")) return "image/png";
-  if (n.endsWith(".jpg") || n.endsWith(".jpeg")) return "image/jpeg";
-  if (n.endsWith(".mp3")) return "audio/mpeg";
-  if (n.endsWith(".m4a")) return "audio/mp4";
-  return "application/octet-stream";
+/** P4-onb-005: one-time auto “organize” ack per creator+device after Library load. */
+function libraryOrganizeAckStorageKey(creatorId: string): string {
+  return `relay.library.organize_ack.v1:${creatorId.trim()}`;
 }
+
+const patreonCampaignIdEnv = process.env.NEXT_PUBLIC_RELAY_PATREON_CAMPAIGN_ID?.trim() || undefined;
 
 async function uploadImportBinDataUrlToRelay(creatorId: string, item: ImportBinItem): Promise<string> {
   if (!item.src?.startsWith("data:")) {
@@ -124,6 +127,10 @@ export default function GalleryView() {
     export_total_bytes: 0,
     export_media_count: 0
   });
+  /** Prisma tier ids for Library create-post modal / `POST /relay/posts` (not gallery facet relay keys). */
+  const [libraryComposeTierFacets, setLibraryComposeTierFacets] = useState<TierFacet[]>([]);
+  const [libraryComposeTiersLoading, setLibraryComposeTiersLoading] = useState(false);
+  const [libraryComposeTiersError, setLibraryComposeTiersError] = useState<string | null>(null);
   const [collections, setCollections] = useState<Collection[]>([]);
   const [collectionsReloadToken, setCollectionsReloadToken] = useState(0);
   const libraryCreatePostCollections = useMemo(
@@ -156,7 +163,9 @@ export default function GalleryView() {
     "idle"
   );
   const [syncHealth, setSyncHealth] = useState<PatreonSyncStateData | null>(null);
+  const [patreonDetailsSignal, setPatreonDetailsSignal] = useState(0);
   const [creatorProfile, setCreatorProfile] = useState<CreatorProfileIdentity | null>(null);
+  const [onboardingStepperReloadKey, setOnboardingStepperReloadKey] = useState(0);
   const prevLibrarySyncPhase = useRef(librarySyncPhase);
 
   /**
@@ -208,6 +217,59 @@ export default function GalleryView() {
     void loadCreatorProfile();
   }, [loadCreatorProfile]);
 
+  /**
+   * First successful Library visit after import: advance onboarding `import_started` → `organized` (P4-onb-005).
+   * Uses PATCH (same as explicit ack). Skips when DB unavailable (503) or step is not `import_started`.
+   */
+  useEffect(() => {
+    const id = creatorId?.trim();
+    if (!id) return;
+
+    let cancelled = false;
+    if (typeof window !== "undefined") {
+      try {
+        if (window.localStorage.getItem(libraryOrganizeAckStorageKey(id)) === "1") {
+          return;
+        }
+      } catch {
+        /* ignore quota / private mode */
+      }
+    }
+
+    void (async () => {
+      try {
+        const onboarding = await fetchCreatorOnboarding();
+        if (cancelled) return;
+        if (onboarding.step === "organized" || onboarding.step === "published") {
+          try {
+            window.localStorage.setItem(libraryOrganizeAckStorageKey(id), "1");
+          } catch {
+            /* ignore */
+          }
+          return;
+        }
+        if (onboarding.step !== "import_started") {
+          return;
+        }
+        await patchCreatorOnboarding({ step: "organized" });
+        if (!cancelled) {
+          try {
+            window.localStorage.setItem(libraryOrganizeAckStorageKey(id), "1");
+          } catch {
+            /* ignore */
+          }
+          setOnboardingStepperReloadKey((k) => k + 1);
+        }
+      } catch {
+        /* 401/403/404/503 — not fatal for Library */
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [creatorId]);
+
   useEffect(() => {
     if (prevLibrarySyncPhase.current === "syncing" && librarySyncPhase !== "syncing") {
       void refreshSyncHealth();
@@ -248,6 +310,33 @@ export default function GalleryView() {
     });
   }, [creatorId]);
 
+  const fetchLibraryComposeTiers = useCallback(async () => {
+    if (!creatorId?.trim()) {
+      setLibraryComposeTierFacets([]);
+      setLibraryComposeTiersError(null);
+      setLibraryComposeTiersLoading(false);
+      return;
+    }
+    setLibraryComposeTiersLoading(true);
+    setLibraryComposeTiersError(null);
+    try {
+      const { tiers } = await fetchRelayComposeTiers(creatorId.trim());
+      setLibraryComposeTierFacets(
+        tiers.map((t) => ({
+          tier_id: t.tier_id,
+          title: t.title,
+          relay_tier_id: t.relay_tier_id,
+          ...(t.amount_cents != null ? { amount_cents: t.amount_cents } : {})
+        }))
+      );
+    } catch (e) {
+      setLibraryComposeTierFacets([]);
+      setLibraryComposeTiersError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setLibraryComposeTiersLoading(false);
+    }
+  }, [creatorId]);
+
   const fetchPage = useCallback(
     async (cursor: string | null, append: boolean) => {
       setLoading(true);
@@ -286,6 +375,10 @@ export default function GalleryView() {
   useEffect(() => {
     void Promise.all([fetchFacets(), fetchCollections()]);
   }, [fetchFacets, fetchCollections, collectionsReloadToken]);
+
+  useEffect(() => {
+    void fetchLibraryComposeTiers();
+  }, [fetchLibraryComposeTiers]);
 
   useEffect(() => {
     void fetchPage(null, false);
@@ -403,6 +496,12 @@ export default function GalleryView() {
   const [libraryCreatePostOpen, setLibraryCreatePostOpen] = useState(false);
   const [libraryCreatePostMedia, setLibraryCreatePostMedia] = useState<ImportBinItem[]>([]);
 
+  useEffect(() => {
+    if (libraryCreatePostOpen && creatorId?.trim()) {
+      void fetchLibraryComposeTiers();
+    }
+  }, [libraryCreatePostOpen, creatorId, fetchLibraryComposeTiers]);
+
   const handleImportBayAddToNewPost = useCallback((items: ImportBinItem[]) => {
     setLibraryCreatePostMedia(items);
     setLibraryCreatePostOpen(true);
@@ -435,23 +534,18 @@ export default function GalleryView() {
         setListError("Add a title before publishing.");
         return false;
       }
-      const blocked = draft.media.filter(
-        (m) =>
-          m.source === "url" || (m.source === "upload" && typeof m.src === "string" && !m.src.startsWith("data:"))
-      );
+      const blocked = draft.media.filter(isLibraryPublishBlockedRow);
       if (blocked.length > 0) {
         setListError(
-          "Remove URL-only staged items (paste upload or Discord capture only). URLs can’t be published from this dialog yet."
+          "Remove URL-only previews or invalid upload rows. Use Discord captures, Import Bay uploads, or add files in this dialog."
         );
         return false;
       }
 
-      const discordIds = draft.media.filter((m) => m.source === "discord").map((m) => m.id);
-      const uploadItems = draft.media.filter(
-        (m) => m.source === "upload" && typeof m.src === "string" && m.src.startsWith("data:")
-      );
-      if (discordIds.length === 0 && uploadItems.length === 0) {
-        setListError("Add at least one Discord-staged asset or an uploaded file.");
+      const serverMediaIds = draft.media.filter(isImportBinServerMedia).map((m) => m.id);
+      const uploadItems = libraryPublishDataUrlUploads(draft.media);
+      if (serverMediaIds.length === 0 && uploadItems.length === 0) {
+        setListError("Add at least one media asset (staged capture/upload or file in this dialog).");
         return false;
       }
 
@@ -468,7 +562,14 @@ export default function GalleryView() {
         for (const row of uploadItems) {
           uploadedIds.push(await uploadImportBinDataUrlToRelay(creatorId, row));
         }
-        const mediaIds = [...discordIds, ...uploadedIds];
+        const seen = new Set<string>();
+        const mediaIds: string[] = [];
+        for (const id of [...serverMediaIds, ...uploadedIds]) {
+          if (!seen.has(id)) {
+            seen.add(id);
+            mediaIds.push(id);
+          }
+        }
         const created = await relayNativeCreatePost({
           creator_id: creatorId.trim(),
           title: draft.title.trim(),
@@ -498,6 +599,7 @@ export default function GalleryView() {
         }
         setLibraryCreatePostOpen(false);
         void fetchFacets();
+        void fetchLibraryComposeTiers();
         setCollectionsReloadToken((n) => n + 1);
         refreshList();
         if (collectionNotice) setListError(collectionNotice);
@@ -506,7 +608,7 @@ export default function GalleryView() {
         return false;
       }
     },
-    [creatorId, fetchFacets, refreshList]
+    [creatorId, fetchFacets, fetchLibraryComposeTiers, refreshList]
   );
 
   const confirmAddSelectionToCollection = useCallback(async () => {
@@ -533,9 +635,10 @@ export default function GalleryView() {
 
   const afterPatreonScrape = useCallback(async () => {
     await fetchFacets();
+    void fetchLibraryComposeTiers();
     refreshList();
     void loadCreatorProfile();
-  }, [fetchFacets, refreshList, loadCreatorProfile]);
+  }, [fetchFacets, fetchLibraryComposeTiers, refreshList, loadCreatorProfile]);
 
   const persistViewMode = (mode: ViewMode) => {
     setViewMode(mode);
@@ -767,6 +870,10 @@ export default function GalleryView() {
 
   const campaignAvatarUrl = syncHealth?.campaign_display?.image_small_url || creatorProfile?.avatar_url || undefined;
   const campaignBannerRemote = syncHealth?.campaign_display?.image_url || creatorProfile?.banner_url || undefined;
+  const studioWriteBlocked = useMemo(
+    () => (syncHealth ? syncHealthBlocksStudioWrites(syncHealth) : false),
+    [syncHealth]
+  );
   return (
     <div className="library-shell library-hide-scrollbars flex min-h-0 flex-1 flex-col overflow-hidden bg-[var(--lib-bg)] text-[var(--lib-fg)]">
       <LibraryTopBar
@@ -780,10 +887,21 @@ export default function GalleryView() {
           <PatreonSyncMenu
             creatorId={creatorId}
             campaignId={patreonCampaignIdEnv}
+            detailsSignal={patreonDetailsSignal}
             onAfterScrape={afterPatreonScrape}
             onSyncActivity={setLibrarySyncPhase}
           />
         }
+      />
+
+      <SyncHealthBanner
+        syncState={syncHealth}
+        onViewDetails={() => setPatreonDetailsSignal((n) => n + 1)}
+      />
+
+      <CreatorOnboardingStepper
+        creatorId={creatorId}
+        reloadKey={onboardingStepperReloadKey}
       />
 
       <div className="relative z-0 flex min-h-0 flex-1 flex-col overflow-hidden lg:flex-row">
@@ -1187,13 +1305,16 @@ export default function GalleryView() {
           onApplyBulkTagDelta={applyBulkTagDelta}
           setItemVisibility={setInspectItemVisibility}
           onError={(msg) => setListError(msg)}
+          studioWriteBlocked={studioWriteBlocked}
         />
       </div>
 
       <LibraryCreatePostModal
         open={libraryCreatePostOpen}
         initialMedia={libraryCreatePostMedia}
-        tierFacets={facets.tiers}
+        tierFacets={libraryComposeTierFacets}
+        composeTiersLoading={libraryComposeTiersLoading}
+        composeTiersError={libraryComposeTiersError}
         collections={libraryCreatePostCollections}
         tagSuggestions={facets.tag_ids}
         onClose={() => setLibraryCreatePostOpen(false)}

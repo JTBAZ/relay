@@ -32,6 +32,7 @@ import {
   buildGalleryQuery,
   fetchActionCenterCards,
   fetchAnalyticsHealth,
+  galleryItemImageGridSrc,
   postActionCenterAccept,
   postActionCenterDismiss,
   postAnalyticsGenerate,
@@ -391,6 +392,8 @@ function dedupeGalleryPosts(items: GalleryItem[]): GalleryItem[] {
 }
 
 function galleryImageSrc(item: GalleryItem): string | null {
+  const grid = galleryItemImageGridSrc(item);
+  if (grid) return grid;
   const path = item.content_url_path || item.preview_url_path;
   return path ? `${RELAY_API_BASE}${path}` : null;
 }

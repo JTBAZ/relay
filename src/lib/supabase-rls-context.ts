@@ -1,17 +1,22 @@
 import type { PrismaClient } from "@prisma/client";
 
+/**
+ * @fileoverview Postgres `set_config('relay.account_id', ...)` helpers for Supabase-compatible RLS.
+ * @description Transaction-local session variables consumed by `auth_account_id()` in policies.
+ * @see prisma/migrations RLS policy definitions using `relay.account_id`
+ * @todo Add integration tests proving mismatch between JWT and `account_id` fails closed.
+ */
+
 type RlsContextClient = Pick<PrismaClient, "$executeRawUnsafe">;
 
 /**
- * Tier 0.3 — set the per-request RLS context for Postgres (`relay.account_id`).
- *
- * Call at the start of every request handler that reads or writes tenant-scoped
- * tables when using a code path that relies on `auth_account_id()` in RLS. The
- * third argument to `set_config` is `true` (transaction-local), so the setting
- * is safe with PgBouncer transaction-mode pooling.
- *
- * Prefer running queries inside `prisma.$transaction` after this call so the
- * setting applies to the same connection/transaction.
+ * @async
+ * @description Sets the per-request RLS context for Postgres (`relay.account_id`).
+ * @param {RlsContextClient} client Prisma (or compatible) client with `$executeRawUnsafe`.
+ * @param {string} accountId Relay account uuid string bound to the authenticated user.
+ * @returns {Promise<void>}
+ * @throws {Error} When raw SQL execution fails (connection, permissions, invalid id encoding).
+ * @security-audit-required Must match authenticated session; calling code must not allow cross-tenant `accountId` injection.
  */
 export async function setSupabaseRlsContext(
   client: RlsContextClient,
@@ -24,8 +29,11 @@ export async function setSupabaseRlsContext(
 }
 
 /**
- * Clear account context for routes that must run with no account (e.g. anonymous
- * public reads). Setting an empty value makes `auth_account_id()` return NULL.
+ * @async
+ * @description Clears account context for anonymous/public reads where RLS must see NULL `auth_account_id()`.
+ * @param {RlsContextClient} client Prisma client.
+ * @returns {Promise<void>}
+ * @throws {Error} On SQL execution failure.
  */
 export async function clearSupabaseRlsContext(
   client: RlsContextClient

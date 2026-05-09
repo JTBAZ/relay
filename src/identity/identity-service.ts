@@ -1,3 +1,10 @@
+/**
+ * @fileoverview High-level patron/creator identity orchestration over an `IdentityStore`.
+ * @description Registration, login, Patreon OAuth completion paths, opaque sessions, and extension grants; bridges to `DbIdentityStore` when PostgreSQL identity is enabled.
+ * @see src/jsdoc-core-entities.ts
+ * @see ./identity-store-db.js
+ */
+
 import { randomUUID } from "node:crypto";
 import type { IdentityStore } from "./identity-store.js";
 import { hashPassword, verifyPassword } from "./password.js";
@@ -24,6 +31,10 @@ const MEMBERSHIP_SESSION_PRIORITY: Record<PatreonMembershipCategory, number> = {
   free_follower: 1
 };
 
+/**
+ * @description Facade for file-backed vs Prisma-backed identity; injected `IdentityStore` carries persistence.
+ * @see ./identity-store.js
+ */
 export class IdentityService {
   private readonly store: IdentityStore;
 
@@ -146,6 +157,14 @@ export class IdentityService {
     };
     await this.store.createUser(user);
     return user;
+  }
+
+  /** Snapshot before member sync — used for P5a membership ledger deltas. */
+  public async getPatronAccountByPatreonUserId(
+    creatorId: string,
+    patreonUserId: string
+  ): Promise<UserAccount | null> {
+    return this.store.findByPatreonId(patreonUserId, creatorId);
   }
 
   public async login(

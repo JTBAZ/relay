@@ -1,3 +1,11 @@
+/**
+ * @fileoverview Creator-facing identity reads/patches and Patreon snapshot promotion into `CreatorProfile`.
+ * @description Validation helpers for usernames; Prisma persistence for profile fields and slugs.
+ * @see ../patreon/creator-campaign-display-store.js
+ * @see prisma/schema.prisma CreatorProfile
+ * @see src/jsdoc-core-entities.ts Artist
+ */
+
 import {
   PublicSlugSource,
   type CreatorProfile,
@@ -31,6 +39,10 @@ const RESERVED_USERNAMES = new Set([
   "undefined"
 ]);
 
+/**
+ * @description Read model for Relay creator profile cards (slug, Patreon ids, persona fields).
+ * @security-audit-required Exposes patron-facing persona data; callers must scope by authorized account id.
+ */
 export type CreatorIdentityView = {
   public_slug: string;
   slug_source: PublicSlugSource;
@@ -61,10 +73,18 @@ function toView(row: CreatorProfile): CreatorIdentityView {
   };
 }
 
+/**
+ * @description Normalizes inbound username candidates to lowercase alphanumeric + underscore form.
+ * @param raw Raw username text.
+ */
 export function normalizeCreatorUsername(raw: string): string {
   return raw.trim().toLowerCase().replace(/[^a-z0-9_]/g, "");
 }
 
+/**
+ * @description Validates normalized username constraints and reserved word list.
+ * @param norm Already normalized username.
+ */
 export function validateCreatorUsernameFormat(
   norm: string
 ): { ok: true } | { ok: false; message: string } {
@@ -95,6 +115,15 @@ async function findCreatorProfileForAccount(
   });
 }
 
+/**
+ * @description Loads identity view derived from creator profile linked via `account.primaryRelayCreatorId`.
+ * @param prisma Shared Prisma client.
+ * @param accountId Caller account scope.
+ * @returns View or `null` when no linked studio exists.
+ * @async
+ * @throws {Error} Prisma failures propagate.
+ * @security-audit-required Caller must own `accountId`.
+ */
 export async function getCreatorIdentity(
   prisma: PrismaClient,
   accountId: string
@@ -104,6 +133,7 @@ export async function getCreatorIdentity(
   return toView(row);
 }
 
+/** @description Writable subset for `patchCreatorIdentity`. */
 export type PatchCreatorIdentityInput = {
   username?: string | null;
   display_name?: string | null;
@@ -113,10 +143,20 @@ export type PatchCreatorIdentityInput = {
   discipline?: string | null;
 };
 
+/** @description Result union for patched identity mutations. */
 export type PatchCreatorIdentityResult =
   | { ok: true; profile: CreatorIdentityView }
   | { ok: false; message: string; code: "VALIDATION_ERROR" | "CONFLICT" | "NOT_FOUND" };
 
+/**
+ * @description Applies validated field patches to creator profile backing the account's primary studio.
+ * @param prisma Prisma client.
+ * @param accountId Owning Relay account id.
+ * @param patch Partial profile updates (null clears where allowed).
+ * @returns Success with updated view or typed failure envelope.
+ * @async
+ * @throws {Error} Unexpected Prisma errors beyond handled conflict/validation branches.
+ */
 export async function patchCreatorIdentity(
   prisma: PrismaClient,
   accountId: string,
@@ -218,6 +258,13 @@ export async function patchCreatorIdentity(
  * Idempotent: when `CreatorProfile` identity fields are null, fill them
  * from the `CampaignDisplaySnapshot` captured during Patreon OAuth/sync.
  * Never overwrites creator-authored edits.
+ * @description Fills nullable profile identity fields using Patreon-backed snapshot when safe.
+ * @param prisma Shared Prisma client.
+ * @param snapshotStore Cached campaign display rows from OAuth/sync pipeline.
+ * @param relayCreatorId Relay legacy creator identifier.
+ * @returns Whether any profile mutation occurred.
+ * @async
+ * @throws {Error} Database failures propagate.
  */
 export async function promoteSnapshotToProfile(
   prisma: PrismaClient,

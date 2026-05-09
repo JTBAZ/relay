@@ -43,6 +43,8 @@ type TierOption = {
   id: string;
   label: string;
   priceCents: number;
+  /** Display helper from compose row (`relay_tier_id`); optional when catalog uses facet-shaped rows. */
+  relayKey?: string;
 };
 
 type TierPreviewMode = "full" | "blur" | "locked";
@@ -57,16 +59,22 @@ type TierPreviewConfig = {
 function buildTierCatalog(tierFacets: TierFacet[]): TierOption[] {
   const publicOpt: TierOption = {
     id: LIBRARY_CREATE_POST_PUBLIC_TIER,
-    label: "Everyone",
+    label: "Public",
     priceCents: 0
   };
-  const sorted = [...tierFacets].sort((a, b) =>
-    (a.title ?? a.tier_id).localeCompare(b.title ?? b.tier_id, undefined, { sensitivity: "base" })
-  );
+  const sorted = [...tierFacets].sort((a, b) => {
+    const ac = a.amount_cents ?? 0;
+    const bc = b.amount_cents ?? 0;
+    if (ac !== bc) return ac - bc;
+    return (a.title ?? a.tier_id).localeCompare(b.title ?? b.tier_id, undefined, {
+      sensitivity: "base"
+    });
+  });
   const rest: TierOption[] = sorted.map((t) => ({
     id: t.tier_id,
     label: (t.title ?? t.tier_id).trim() || t.tier_id,
-    priceCents: t.amount_cents ?? 0
+    priceCents: t.amount_cents ?? 0,
+    relayKey: t.relay_tier_id?.trim() || undefined
   }));
   return [publicOpt, ...rest];
 }
@@ -84,6 +92,17 @@ function accessTierIcon(t: TierOption): ElementType {
   if (t.id === LIBRARY_CREATE_POST_PUBLIC_TIER) return Globe;
   if (t.priceCents === 0) return Users;
   return Lock;
+}
+
+/** Table / summary: public row is not a “$0/mo” tier. */
+function accessTierPriceLabel(t: TierOption): string {
+  if (t.id === LIBRARY_CREATE_POST_PUBLIC_TIER) return "—";
+  return priceFmt(t.priceCents);
+}
+
+function previewPriceLabel(t: TierOption): string {
+  if (t.id === LIBRARY_CREATE_POST_PUBLIC_TIER) return "Open web";
+  return priceFmt(t.priceCents);
 }
 
 function mediaBadgeLabel(mimeType: string) {
@@ -141,7 +160,7 @@ function TierPreviewRow({
     <div className="flex items-start gap-3 border-b border-[var(--lib-border)] py-2 last:border-0">
       <div className="w-28 shrink-0 pt-0.5">
         <p className="text-[11px] font-semibold text-[var(--lib-fg)]">{tier.label}</p>
-        <p className="text-[9px] text-[var(--lib-fg-muted)]">{priceFmt(tier.priceCents)}</p>
+        <p className="text-[9px] text-[var(--lib-fg-muted)]">{previewPriceLabel(tier)}</p>
       </div>
 
       <div className="flex gap-1">
@@ -202,8 +221,16 @@ function TierPreviewRow({
 type Props = {
   open: boolean;
   initialMedia: ImportBinItem[];
-  /** Patreon / Relay tier catalog from `GET …/gallery/facets`. */
+  /**
+   * Rows shaped like gallery facets; for **Library** this should be `GET /relay/compose-tiers` mapped to `TierFacet`:
+   * `tier_id` = Prisma id for **`POST /relay/posts`**, `relay_tier_id` = canonical relay key (also what **201** returns in `version.tier_ids`).
+   * **Not** gallery-facet-only relay keys unless the caller maps compose ids that way.
+   */
   tierFacets: TierFacet[];
+  /** While true, Access Tier table shows a loading state (membership rows may still be fetching). */
+  composeTiersLoading?: boolean;
+  /** When compose-tiers fails; Public remains selectable. */
+  composeTiersError?: string | null;
   /** Creator library collections (`collection_id` + `title`). */
   collections: Pick<Collection, "collection_id" | "title">[];
   /** Existing tag ids from facets — powers suggestions; user can still type new tags. */
@@ -217,12 +244,15 @@ export default function LibraryCreatePostModal({
   open,
   initialMedia,
   tierFacets,
+  composeTiersLoading = false,
+  composeTiersError = null,
   collections,
   tagSuggestions = [],
   onClose,
   onPublish
 }: Props) {
   const tagListId = useId();
+  const accessTierGroupId = useId();
   const tierCatalog = useMemo(() => buildTierCatalog(tierFacets), [tierFacets]);
   const [title, setTitle] = useState("");
   const [tagInput, setTagInput] = useState("");
@@ -340,7 +370,7 @@ export default function LibraryCreatePostModal({
   const selectedTier =
     tierCatalog.find((t) => t.id === tierId) ?? tierCatalog[0] ?? ({
       id: LIBRARY_CREATE_POST_PUBLIC_TIER,
-      label: "Everyone",
+      label: "Public",
       priceCents: 0
     } satisfies TierOption);
 
@@ -500,32 +530,95 @@ export default function LibraryCreatePostModal({
 
           <section>
             <label className="mb-2 block text-[10px] font-semibold uppercase tracking-widest text-[var(--lib-fg-muted)]">
-              Access Tier
+              Access tier
             </label>
-            <div className="grid max-h-[min(40vh,420px)] grid-cols-2 gap-2 overflow-y-auto pr-1">
-              {tierCatalog.map((tierRow) => {
-                const active = tierId === tierRow.id;
-                const Icon = accessTierIcon(tierRow);
-                return (
-                  <button
-                    key={tierRow.id}
-                    type="button"
-                    onClick={() => setTierId(tierRow.id)}
-                    className={`flex min-h-[3.5rem] items-center gap-2 rounded-xl border px-3 py-2.5 text-left transition-all duration-100 ${
-                      active
-                        ? "border-[var(--lib-primary)] bg-[color-mix(in_srgb,var(--lib-primary)_12%,transparent)] text-[var(--lib-fg)]"
-                        : "border-[var(--lib-border)] bg-[var(--lib-muted)] text-[var(--lib-fg-muted)] hover:border-[color-mix(in_srgb,var(--lib-primary)_30%,var(--lib-border))] hover:text-[var(--lib-fg)]"
-                    }`}
-                  >
-                    <Icon size={13} className={active ? "text-[var(--lib-primary)]" : "text-[var(--lib-fg-muted)]"} />
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-[12px] font-semibold leading-none">{tierRow.label}</p>
-                      <p className="mt-0.5 text-[10px] text-[var(--lib-fg-muted)]">{priceFmt(tierRow.priceCents)}</p>
-                    </div>
-                    {active ? <div className="h-2 w-2 shrink-0 rounded-full bg-[var(--lib-primary)]" /> : null}
-                  </button>
-                );
-              })}
+            <p className="mb-2 text-[10px] leading-relaxed text-[var(--lib-fg-muted)]">
+              From your synced membership catalog (compose-tiers). <strong className="font-medium text-[var(--lib-fg)]">Public</strong> is
+              open web (<code className="text-[9px]">is_public</code>, no patron gate). Patreon <strong className="font-medium text-[var(--lib-fg)]">Free</strong> and
+              paid tiers appear as separate rows after sync.
+            </p>
+            {composeTiersError ? (
+              <p className="mb-2 rounded-md border border-amber-500/40 bg-amber-500/10 px-2 py-1.5 text-[10px] text-amber-200" role="alert">
+                Could not load membership tiers: {composeTiersError}. You can still publish as Public.
+              </p>
+            ) : null}
+            <div className="overflow-hidden rounded-lg border border-[var(--lib-border)]">
+              {composeTiersLoading ? (
+                <p className="border-b border-[var(--lib-border)] px-3 py-1.5 text-[10px] text-[var(--lib-fg-muted)]" role="status">
+                  Refreshing membership tiers…
+                </p>
+              ) : null}
+              <div className="max-h-[min(40vh,360px)] overflow-auto">
+                <table className="w-full border-collapse text-left text-[12px] text-[var(--lib-fg)]">
+                    <thead className="sticky top-0 z-[1] border-b border-[var(--lib-border)] bg-[color-mix(in_srgb,var(--lib-card)_92%,var(--lib-muted))] backdrop-blur-sm">
+                      <tr>
+                        <th className="w-9 px-2 py-2" scope="col">
+                          <span className="sr-only">Select</span>
+                        </th>
+                        <th className="px-2 py-2 text-[10px] font-semibold uppercase tracking-wider text-[var(--lib-fg-muted)]">
+                          Tier
+                        </th>
+                        <th className="w-[5.5rem] px-2 py-2 text-[10px] font-semibold uppercase tracking-wider text-[var(--lib-fg-muted)]">
+                          Price
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-[var(--lib-border)]">
+                      {tierCatalog.map((tierRow) => {
+                        const active = tierId === tierRow.id;
+                        const Icon = accessTierIcon(tierRow);
+                        const cellRadioId = `${accessTierGroupId}-${tierRow.id}`;
+                        return (
+                          <tr
+                            key={tierRow.id}
+                            className={`cursor-pointer transition-colors ${
+                              active ? "bg-[color-mix(in_srgb,var(--lib-primary)_14%,transparent)]" : "hover:bg-[var(--lib-muted)]/35"
+                            }`}
+                            onClick={() => setTierId(tierRow.id)}
+                          >
+                            <td className="px-2 py-2 align-middle">
+                              <input
+                                id={cellRadioId}
+                                type="radio"
+                                name={accessTierGroupId}
+                                className="h-3.5 w-3.5 accent-[var(--lib-primary)]"
+                                checked={active}
+                                onChange={() => setTierId(tierRow.id)}
+                              />
+                            </td>
+                            <td className="px-2 py-2 align-middle">
+                              <label htmlFor={cellRadioId} className="flex cursor-pointer items-start gap-2">
+                                <Icon
+                                  size={14}
+                                  className={active ? "mt-0.5 shrink-0 text-[var(--lib-primary)]" : "mt-0.5 shrink-0 text-[var(--lib-fg-muted)]"}
+                                  aria-hidden
+                                />
+                                <span className="min-w-0">
+                                  <span className="block font-semibold leading-tight">{tierRow.label}</span>
+                                  {tierRow.id === LIBRARY_CREATE_POST_PUBLIC_TIER ? (
+                                    <span className="mt-0.5 block text-[10px] leading-snug text-[var(--lib-fg-muted)]">
+                                      Anyone — no Patreon tier required
+                                    </span>
+                                  ) : tierRow.relayKey ? (
+                                    <span className="mt-0.5 block font-mono text-[9px] text-[var(--lib-fg-muted)]">{tierRow.relayKey}</span>
+                                  ) : null}
+                                </span>
+                              </label>
+                            </td>
+                            <td className="px-2 py-2 align-middle tabular-nums text-[11px] text-[var(--lib-fg-muted)]">
+                              {accessTierPriceLabel(tierRow)}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              {!composeTiersLoading && tierFacets.length === 0 && !composeTiersError ? (
+                <p className="border-t border-[var(--lib-border)] px-3 py-2 text-[10px] leading-relaxed text-[var(--lib-fg-muted)]">
+                  No membership tiers in database yet. Run a Patreon sync from the library menu to load Free and paid tiers.
+                </p>
+              ) : null}
             </div>
           </section>
 

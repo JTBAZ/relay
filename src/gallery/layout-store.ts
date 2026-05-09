@@ -1,12 +1,25 @@
+/**
+ * @fileoverview File-backed persistence for creator page layouts (designer / public profile sections).
+ * @description Implements {@link RelayPageLayoutStore} using JSON on disk; pairs with {@link DbPageLayoutStore}.
+ * @see ./layout-store-db.ts Postgres implementation
+ * @see prisma/schema.prisma `PageLayout` model
+ * @see src/jsdoc-core-entities.ts Artist/Gallery/SyncStatus mapping notes
+ */
+
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import { randomUUID } from "node:crypto";
 import type { PageLayout, PageLayoutRoot, PageSection } from "./types.js";
 
-/** Postgres / file implementations share this contract (see `layout-store-db.ts`). */
+/**
+ * @description Contract for loading/saving {@link PageLayout} documents and mutating sections.
+ * @see ./layout-store-db.ts Db-backed implementation
+ */
 export interface RelayPageLayoutStore {
   load(creatorId: string): Promise<PageLayout>;
   save(creatorId: string, layout: PageLayout): Promise<void>;
+  /** Mark the gallery as published on the public surface (idempotent: updates publish timestamp). */
+  publish(creatorId: string): Promise<PageLayout>;
   addSection(
     creatorId: string,
     section: Omit<PageSection, "section_id" | "sort_order">
@@ -20,10 +33,16 @@ export interface RelayPageLayoutStore {
   reorderSections(creatorId: string, orderedIds: string[]): Promise<void>;
 }
 
+/**
+ * @description Default empty root document for JSON backing store.
+ */
 function emptyRoot(): PageLayoutRoot {
   return { layouts: {} };
 }
 
+/**
+ * @description Minimal layout scaffold when no saved row exists for the creator.
+ */
 function defaultLayout(creatorId: string): PageLayout {
   return {
     creator_id: creatorId,
@@ -33,6 +52,10 @@ function defaultLayout(creatorId: string): PageLayout {
   };
 }
 
+/**
+ * @description JSON file implementation of {@link RelayPageLayoutStore}.
+ * @security-audit-required `creatorId` is caller-supplied partition key only—routes must authorize creator ownership before writes.
+ */
 export class FilePageLayoutStore implements RelayPageLayoutStore {
   private readonly filePath: string;
 
@@ -64,6 +87,13 @@ export class FilePageLayoutStore implements RelayPageLayoutStore {
     layout.updated_at = new Date().toISOString();
     root.layouts[creatorId] = layout;
     await this.saveRoot(root);
+  }
+
+  public async publish(creatorId: string): Promise<PageLayout> {
+    const layout = await this.load(creatorId);
+    layout.published_at = new Date().toISOString();
+    await this.save(creatorId, layout);
+    return layout;
   }
 
   public async addSection(

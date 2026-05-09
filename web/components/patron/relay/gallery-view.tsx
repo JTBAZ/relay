@@ -1,6 +1,13 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import {
+  useState,
+  useEffect,
+  useRef,
+  useCallback,
+  useMemo,
+  type ReactNode,
+} from "react";
 import {
   X,
   Heart,
@@ -35,6 +42,8 @@ interface GalleryViewProps {
    * design previews) so this surface remains zero-risk.
    */
   liveCommentsScope?: LiveCommentsScope | null;
+  /** P6-patron-007 — tier / access chips above the post body (deep-link detail). */
+  entitlementStrip?: ReactNode | null;
 }
 
 type ViewMode = "gallery" | "comment";
@@ -66,6 +75,7 @@ export function GalleryView({
   hasPrev = false,
   hasNext = false,
   liveCommentsScope = null,
+  entitlementStrip = null,
 }: GalleryViewProps) {
   const [liked, setLiked] = useState(false);
   const [viewMode, setViewMode] = useState<ViewMode>("gallery");
@@ -737,6 +747,11 @@ export function GalleryView({
         {/* Info panel */}
         {viewMode === "gallery" && (
           <div className="relative z-10 shrink-0 rounded-b-xl border-t border-[#1A1A1A] bg-[#0E0E0E] p-5">
+            {entitlementStrip ? (
+              <div className="mb-4 rounded-lg border border-[#1F1F1F] bg-[#0A0A0A] px-3 py-2.5">
+                {entitlementStrip}
+              </div>
+            ) : null}
             {/* Artist info row */}
             <div className="flex items-start justify-between gap-4 mb-4">
               <div className="flex items-center gap-3">

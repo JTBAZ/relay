@@ -1,7 +1,20 @@
+/**
+ * @fileoverview Builds an `AnalyticsSnapshot` from canonical ingest rows for a single creator.
+ * @description Pure computation over `CanonicalSnapshot` maps; does not persist.
+ * @see ../ingest/canonical-store.js
+ * @see ./types.js
+ */
+
 import { randomUUID } from "node:crypto";
 import type { CanonicalSnapshot } from "../ingest/canonical-store.js";
 import type { AnalyticsSnapshot } from "./types.js";
 
+/**
+ * @description Aggregates posts, media, tiers, tags, and 30-day cadence into a snapshot envelope.
+ * @param creatorId Creator key used to index canonical maps.
+ * @param canonical Full canonical bundle from ingest.
+ * @returns Ephemeral snapshot with fresh `snapshot_id`.
+ */
 export function generateSnapshot(
   creatorId: string,
   canonical: CanonicalSnapshot

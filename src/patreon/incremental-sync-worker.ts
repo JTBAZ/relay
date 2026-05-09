@@ -1,6 +1,6 @@
 /**
  * @fileoverview T-007 / T-008 — incremental autosync worker: scheduled fallback watermark-aware `scrapeOrSync` per creator.
- * @description Interval worker complements Patreon webhooks; `runIncrementalAutosyncOnce` batches creators (alias: `runIncrementalAutosyncCycle`). Idempotent ingest via existing watermarks.
+ * @description Interval worker complements Patreon webhooks; `runIncrementalAutosyncOnce` batches creators (alias: `runIncrementalAutosyncCycle`). Idempotent ingest via existing watermarks. **Single entry module** — the old `incremental-autosync-worker.ts` re-export shim was removed (P1-queue-018); import this file only.
  * @see {@link ../jsdoc-core-entities.ts}
  * @see prisma/schema.prisma `CreatorProfile`, ingest posts/media tiers via `PatreonSyncService`
  *
@@ -321,19 +321,43 @@ export type StartIncrementalAutosyncWorkerOptions = {
 };
 
 /**
+ * Whether incremental autosync would be enabled (shared with [src/main.ts](../main.ts) / BullMQ repeat on the API).
+ */
+export function shouldScheduleIncrementalAutosyncFromEnv(
+  env: NodeJS.ProcessEnv = process.env
+): boolean {
+  if (envTruthy(env.RELAY_AUTOSYNC_ENABLED)) return true;
+  const raw = env.RELAY_PATREON_INCREMENTAL_AUTOSYNC_MS?.trim();
+  if (!raw) return false;
+  const n = Number(raw);
+  return Number.isFinite(n) && n >= 10_000;
+}
+
+/**
+ * Fixed BullMQ `repeat.every` ms matching {@link parseAutosyncIntervalMs} base cadence (no jitter/backoff).
+ * `null` when autosync would not run for this env.
+ */
+export function incrementalAutosyncRepeatEveryMsFromEnv(
+  env: NodeJS.ProcessEnv = process.env
+): number | null {
+  if (!shouldScheduleIncrementalAutosyncFromEnv(env)) return null;
+  return parseAutosyncIntervalMs(env);
+}
+
+/**
  * Background **fallback cadence** (webhook safety net). Set `RELAY_AUTOSYNC_ENABLED=1` or
  * `RELAY_PATREON_INCREMENTAL_AUTOSYNC_MS` and tune interval via env.
  * Returns a disposer (clear timers).
  */
-function parseAutosyncIntervalMs(): number {
-  const raw = process.env.RELAY_PATREON_INCREMENTAL_AUTOSYNC_MS?.trim();
+function parseAutosyncIntervalMs(env: NodeJS.ProcessEnv = process.env): number {
+  const raw = env.RELAY_PATREON_INCREMENTAL_AUTOSYNC_MS?.trim();
   if (raw) {
     const n = Number(raw);
     if (Number.isFinite(n) && n >= 10_000) return n;
   }
   return Math.max(
     60_000,
-    parsePositiveInt(process.env.RELAY_AUTOSYNC_INTERVAL_MS, 900_000)
+    parsePositiveInt(env.RELAY_AUTOSYNC_INTERVAL_MS, 900_000)
   );
 }
 
@@ -378,7 +402,7 @@ export function startIncrementalAutosyncWorker(
   opts: StartIncrementalAutosyncWorkerOptions
 ): () => void {
   const log = opts.log ?? ((line: string) => console.log(line));
-  const baseIntervalMs = parseAutosyncIntervalMs();
+  const baseIntervalMs = parseAutosyncIntervalMs(process.env);
   const runOnStart = resolveAutosyncRunOnStart();
   const backoffEnabled = parseAutosyncFallbackBackoffEnabled();
   const maxBackoffMultiplier = parseAutosyncBackoffMaxMultiplier();

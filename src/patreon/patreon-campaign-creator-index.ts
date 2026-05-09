@@ -1,3 +1,9 @@
+/**
+ * @fileoverview Persisted operational map Patreon numeric `campaign_id` → Relay `creator_id`.
+ * @description Routes signed Patreon webhooks before Prisma-backed profile rows exist.
+ * @see {@link ../jsdoc-core-entities.ts}
+ * @see prisma/schema.prisma Supersedable by `CreatorProfile.patreonCampaignId` when DB authoritative
+ */
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 
@@ -9,6 +15,7 @@ type IndexRoot = {
 /**
  * Persisted map `patreon_campaign_numeric_id` → `creator_id`.
  * Used to route Patreon webhook payloads when only the campaign id is known.
+ * @todo Brittle: file index can diverge from Postgres — reconcile via sync / profile writes.
  */
 export class PatreonCampaignCreatorIndex {
   private readonly filePath: string;
@@ -31,6 +38,7 @@ export class PatreonCampaignCreatorIndex {
     await writeFile(this.filePath, JSON.stringify(root, null, 2), "utf8");
   }
 
+  /** @async @throws {Error} Disk / JSON failures. */
   public async getCreatorId(campaignNumericId: string): Promise<string | null> {
     const id = campaignNumericId.trim();
     if (!id) return null;
@@ -39,7 +47,9 @@ export class PatreonCampaignCreatorIndex {
   }
 
   /**
-   * Refuse overwrite when another creator already owns this Patreon campaign id.
+   * Writes mapping unless another creator already owns id (collision-safe).
+   * @async
+   * @throws {Error} Disk failures.
    */
   public async upsert(
     campaignNumericId: string,

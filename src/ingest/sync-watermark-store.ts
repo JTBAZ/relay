@@ -1,3 +1,9 @@
+/**
+ * @fileoverview File-backed Patreon sync watermarks (`last_synced_at` per creator/campaign).
+ * @description JSON persistence; mirrored by `DbSyncWatermarkStore` in Postgres.
+ * @see ./sync-watermark-store-db.js
+ */
+
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 
@@ -21,6 +27,9 @@ export interface SyncWatermarkStoreAPI {
   set(creatorId: string, campaignId: string, lastSyncedAt: string): Promise<void>;
 }
 
+/**
+ * @description File-backed per-creator+campaign watermark timestamps.
+ */
 export class SyncWatermarkStore implements SyncWatermarkStoreAPI {
   private readonly filePath: string;
 

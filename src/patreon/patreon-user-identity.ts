@@ -1,4 +1,13 @@
 /**
+ * @fileoverview Patreon `/v2/identity` URL builder, fetcher, and parsers for patron tier + membership projections.
+ * @description Uses user access tokens (not creator tokens). Field lists must match Patreon v2 sparse payload rules.
+ * @async `fetchPatronIdentity`, `fetchPatreonOAuthIdentityUserId`.
+ * @throws {Error} Non-2xx Patreon responses in fetch helpers.
+ * @see {@link ../jsdoc-core-entities.ts}
+ * @see {@link https://docs.patreon.com/#get-api-oauth2-v2-identity}
+ * @security-audit-required Identity documents include email and name when requested — do not log raw JSON.
+ */
+/**
  * Patreon OAuth **patron** (resource owner) identity — request/response shape for site handshake.
  *
  * Call with the **user** access_token (Authorization: Bearer …), not the creator token.

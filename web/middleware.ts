@@ -15,6 +15,7 @@ import { NextResponse, type NextRequest } from "next/server";
 const APP_ROUTES: RegExp[] = [
   /^\/designer(\/|$)/,
   /^\/action-center(\/|$)/,
+  /^\/analytics(\/|$)/,
   /^\/collections(\/|$)/,
   /** All `/patron/*` except public creator profiles `/patron/c/[handle]`. */
   /^\/patron\/(?!c\/)/,

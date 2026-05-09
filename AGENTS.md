@@ -16,6 +16,7 @@
 | **`docs/qa/UX_ACCEPTANCE_GUARDRAILS.md`** | Pass/fail UX expectations. |
 | **`docs/qa/HTTP_VERB_HYGIENE.md`** | GETs are side-effect-free; mutations use POST/PUT/PATCH/DELETE (logout is POST only). |
 | **`.cursor/rules/airtable-execution-control-plane.mdc`** | IDE mirror: read ledger before work, batching, MCP hygiene. |
+| **`docs/pilot-build-plan.md`** | Pilot execution: Phases P0–P9, Airtable-style work items, v0 asset register, exit checklist. |
 
 **MCP:** **`user-airtable`** — base **Project tracker** `applW4dOjVNHoWBM9`. Read MCP tool descriptors before calling. Always read **`Production Ledger`** state before claiming work; use **`Session Lock`**. **`user-supabase`** — read-check migrations/tables/SQL against the linked Supabase project after Prisma or identity work when prudent (`.cursor/rules/supabase-mcp-read-check.mdc`); never paste secrets.
 

@@ -1,4 +1,10 @@
 /**
+ * @fileoverview Patron experience module public-patron-profile-service.ts — see exported symbols.
+ * @see {@link ../jsdoc-core-entities.ts}
+ * @see prisma/schema.prisma Account, TenantMembership, and related patron tables
+ * @security-audit-required Patron PII or entitlement paths — audit responses and logs.
+ */
+/**
  * PE-K Rest (BO-P4-04) — public patron profile lookup.
  *
  * Resolves a `/p/[handle]` request into a public-safe payload. The lookup is keyed on

@@ -15,6 +15,20 @@ Read **[PRODUCT_UX_NORTH_STAR.md](../.docs/anthropic/PRODUCT_UX_NORTH_STAR.md)**
 
 ---
 
+## Canonical web (implement here only)
+
+Product UI ships from the **main Next tree** under **`web/`**:
+
+- **Routes:** authoritative list in [`docs/web-route-inventory.md`](web-route-inventory.md) — treat that as the route map for polish and regression thinking.
+- **App & components:** [`web/app`](../web/app), [`web/components`](../web/components), [`web/lib`](../web/lib) (plus shared styles under `web/app`).
+- **Quarantined snapshots:** [`web/b_i0ofEW9bMcy`](../web/b_i0ofEW9bMcy/) and [`web/onboarding_enhancement`](../web/onboarding_enhancement/) are **not** production targets — reference-only; see [`docs/web-quarantine-trees.md`](web-quarantine-trees.md) and ESLint `no-restricted-imports` in [`web/.eslintrc.json`](../web/.eslintrc.json).
+- **Imports / UI kit:** no barrel imports from `@/components/ui`; per-file paths only — [`docs/web-components-ui-policy.md`](web-components-ui-policy.md).
+- **Local API URL for dev:** minimal copy pattern in [`web/.env.local.example`](../web/.env.local.example); full env catalog in [`web/.env.example`](../web/.env.example).
+- **i18n (pilot):** Ship **en-US** only — user-facing copy and new strings stay in English; do **not** add locale files or `next-intl` for pilot scope (not in `web` dependencies today).
+- **Component dev tooling:** **No Storybook** for pilot — avoid a parallel shadcn/component tree; validate in real routes, [`web/app/dev/bench/`](../web/app/dev/bench/) (served at `/dev/bench`), and `npm run dev` / `npm run build` under `web/`.
+
+---
+
 ## Stack and global UI
 
 - **Framework:** Next.js (App Router), React, TypeScript under **`web/`**.

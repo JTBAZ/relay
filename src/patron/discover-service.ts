@@ -1,4 +1,10 @@
 /**
+ * @fileoverview Patron experience module discover-service.ts — see exported symbols.
+ * @see {@link ../jsdoc-core-entities.ts}
+ * @see prisma/schema.prisma Account, TenantMembership, and related patron tables
+ * @security-audit-required Patron PII or entitlement paths — audit responses and logs.
+ */
+/**
  * PE-F (BO-P3-01) — Discovery service.
  *
  * Cross-creator discovery feed. Produces the rows that back `GET /api/v1/patron/discover`.
@@ -6,9 +12,9 @@
  * # v1 contract (per Patron_Experience_Roadmap.md PE-F § v1)
  *
  * - Creator opts a post in via `PostOverride.discoveryEligible = true` (post-level row only).
- * - Visibility gate: post must currently have NO tier requirements (`current.tier_ids` empty),
- *   matching the "free post" definition. Tier-gated discovery is a future revenue conversation
- *   and intentionally NOT exposed in v1.
+ * - Visibility gate: post must be non–tier-gated for v1 — `current.tier_ids` empty (truly public /
+ *   ungated in Relay), or exactly `["relay_tier_public"]` (Patreon-ingested “public” marker).
+ *   Multi-tier or paid-tier-gated posts stay out of Discover v1.
  * - Recency-DESC ordering by `published_at`.
  * - Fairness cap: a single creator can contribute at most `creatorCap` posts per response
  *   (default 2). Beyond the cap, that creator's older eligible posts are dropped from this page
@@ -28,6 +34,7 @@
 import type { CanonicalSnapshot, PostRow } from "../ingest/canonical-store.js";
 import { itemMatchesFreeTextQuery, stripHtmlForSearch } from "../gallery/query.js";
 import type { GalleryItem, GalleryOverridesRoot } from "../gallery/types.js";
+import { RELAY_TIER_PUBLIC } from "../patreon/relay-access-tiers.js";
 
 /** Default fairness cap: max posts per single creator in one response page. */
 export const DEFAULT_CREATOR_CAP = 2;
@@ -93,9 +100,14 @@ function decodeCursor(
   }
 }
 
+function passesDiscoverV1TierGate(tierIds: string[]): boolean {
+  if (tierIds.length === 0) return true;
+  return tierIds.length === 1 && tierIds[0] === RELAY_TIER_PUBLIC;
+}
+
 /**
- * Pull every (creator, post) that opts into Discover and currently has no tier gate. Returned
- * in deterministic creator-then-published order so the cursor can advance predictably.
+ * Pull every (creator, post) that opts into Discover and passes the v1 tier visibility gate.
+ * Returned in deterministic creator-then-published order so the cursor can advance predictably.
  */
 function collectEligible(
   snapshot: CanonicalSnapshot,
@@ -110,9 +122,7 @@ function collectEligible(
       if (postRow.upstream_status !== "active") continue;
       const eligible = creatorOverride[postId]?.discovery_eligible === true;
       if (!eligible) continue;
-      // v1 visibility gate: currently free (no tier requirements). Tier-gated discovery is
-      // explicitly out-of-scope for v1.
-      if (postRow.current.tier_ids.length > 0) continue;
+      if (!passesDiscoverV1TierGate(postRow.current.tier_ids)) continue;
       out.push(toDiscoverItem(creatorId, postRow));
     }
   }
@@ -159,6 +169,7 @@ function matchesQuery(item: DiscoverItem, raw: string): boolean {
     export_status: "missing",
     content_url_path: "",
     preview_url_path: "",
+    thumb_url_path: "",
     visibility: "visible",
     collection_ids: [],
     collection_theme_tag_ids: []

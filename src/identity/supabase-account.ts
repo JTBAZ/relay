@@ -1,3 +1,9 @@
+/**
+ * @fileoverview Supabase Auth ↔ Prisma `Account` linking (Pattern A: `supabaseUserId`).
+ * @description Idempotent upserts and patron membership ensures for Option B / MT-033 flows.
+ * @see src/jsdoc-core-entities.ts
+ */
+
 import { randomUUID } from "node:crypto";
 import {
   IdentityAuthProvider,
@@ -12,9 +18,12 @@ export type UpsertSupabaseAccountResult = {
 };
 
 /**
- * Idempotent: ensure `Account` row for Supabase Auth user (Pattern A — `supabaseUserId`).
- * - Match by `supabaseUserId` first.
- * - Else link by `emailNorm` if an account exists without a conflicting `supabaseUserId`.
+ * @description Ensures an `Account` row exists for a Supabase Auth user; merges by `supabaseUserId` or `emailNorm` when safe.
+ * @param {import("@prisma/client").PrismaClient} prisma
+ * @param {{ supabaseUserId: string; email: string | null | undefined }} args
+ * @returns {Promise<UpsertSupabaseAccountResult>}
+ * @async
+ * @throws {Error} When email is already linked to a different Supabase user.
  */
 export async function upsertAccountForSupabaseUser(
   prisma: PrismaClient,
@@ -68,7 +77,12 @@ export async function upsertAccountForSupabaseUser(
 }
 
 /**
- * Ensure patron `TenantMembership` for an account + creator (optional follow-up after Supabase sync).
+ * @description Ensures a patron `TenantMembership` exists for `accountId` under the tenant for `creatorId`.
+ * @param {import("@prisma/client").PrismaClient} prisma
+ * @param {{ accountId: string; creatorId: string; tierIds: string[] }} args
+ * @returns {Promise<{ membershipId: string }>}
+ * @async
+ * @throws Errors from Prisma on constraint violations.
  */
 export async function ensurePatronMembershipForSupabaseAccount(
   prisma: PrismaClient,

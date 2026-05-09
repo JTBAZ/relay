@@ -5,6 +5,15 @@ import {
 } from "@prisma/client";
 import { getSupabaseSyncRouteMetrics } from "./auth-route-metrics.js";
 
+/**
+ * @fileoverview Compound platform health rollup: DB connectivity, OAuth health, patron snapshots, auth routes.
+ * @description Consumed by `GET /api/v1/health/platform` for degraded/ok signaling.
+ * @see prisma/schema.prisma OAuthCredential, PatronOAuthCredential, PatronEntitlementSnapshot
+ */
+
+/**
+ * @description JSON payload returned by platform health evaluation combining DB, OAuth, patron snapshot, and auth-route counters.
+ */
 export type PlatformOperationsHealth = {
   status: "ok" | "degraded" | "limited";
   database: {
@@ -37,6 +46,11 @@ const DOCS = [
 
 /**
  * Aggregates DB connectivity, OAuth credential health, patron snapshot staleness, and Supabase sync counters.
+ * @description Issues raw SQL for connection counts when Prisma is configured.
+ * @param prisma Optional Prisma client — limited health returned when undefined.
+ * @returns Structured health payload with alerts list.
+ * @async
+ * @throws {Error} Should not throw; connectivity errors become `alerts` entries.
  */
 export async function evaluatePlatformOperationsHealth(
   prisma: PrismaClient | undefined

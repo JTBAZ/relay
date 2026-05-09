@@ -1,3 +1,10 @@
+/**
+ * @fileoverview Prisma persistence for canonical ingest snapshots (posts, media, tiers, campaigns).
+ * @description `saveForCreator` replaces Patreon-sourced rows while preserving Relay-native posts (T-2.1).
+ * @see ./canonical-store.js
+ * @see src/jsdoc-core-entities.ts
+ */
+
 import {
   MediaIngestOrigin,
   MediaProcessingStatus,
@@ -147,9 +154,8 @@ function pickWinner<T extends { version_seq: number; creator_id: string }>(
 }
 
 /**
- * Postgres-backed canonical store. `saveForCreator()` replaces Patreon-sourced
- * post/media rows for the target creator; `Post.source=RELAY` is left intact (T-2.1).
- * The global `save()` is preserved for backward compat but delegates to per-creator saves internally.
+ * @description Postgres implementation: `saveForCreator()` replaces Patreon-sourced post/media rows; `Post.source=RELAY` remains intact (T-2.1). Global `save()` delegates to per-creator saves for backward compatibility.
+ * @see ./canonical-store.js
  */
 export class DbCanonicalStore implements CanonicalStore {
   public constructor(private readonly prisma: PrismaClient) {}

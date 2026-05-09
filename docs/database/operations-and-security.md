@@ -65,6 +65,8 @@ Document actual partition DDL in migrations when introduced — Prisma may need 
 
 **Row Level Security (RLS) is intentionally not enabled** on Relay application tables for this deployment model. Isolation is enforced in **application code** (explicit `tenant_id` / `creator_id` / patron scoping in services) plus tests such as **`tests/m10-cross-tenant-isolation.test.ts`**, and by keeping **`DATABASE_URL`** out of client bundles.
 
+**If you enable RLS on Supabase** (Data API, compliance, or defense in depth), follow **[`supabase-rls-rollout-plan.md`](supabase-rls-rollout-plan.md)** for role checks, policy sketches, and related tables — avoid placeholder `USING (true)` policies.
+
 **Revisit RLS** if you later expose **`public`** data to the **anon** / **authenticated** roles (Data API), attach **Realtime** to app tables, or add **Edge Functions** that use a non–superuser role subject to JWT claims — in those cases, add policies (often duplicating app rules) and document the **Prisma** database role vs migration role.
 
 **Optional hardening (not required for MIG-50):** A restricted PostgreSQL role with only needed DML on selected tables, or session-variable RLS, if compliance demands defense-in-depth beyond the API.

@@ -1,4 +1,10 @@
 /**
+ * @fileoverview Patron experience module creator-relationship-delete-service.ts — see exported symbols.
+ * @see {@link ../jsdoc-core-entities.ts}
+ * @see prisma/schema.prisma Account, TenantMembership, and related patron tables
+ * @security-audit-required Patron PII or entitlement paths — audit responses and logs.
+ */
+/**
  * PE-J (BO-P4-02) — per-creator relationship delete.
  *
  * Drops every patron-side artifact tying ONE Account to ONE creator scope, without touching

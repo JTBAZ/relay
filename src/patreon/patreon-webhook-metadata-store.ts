@@ -1,3 +1,11 @@
+/**
+ * @fileoverview JSON file persistence for patron-facing Patreon webhook metadata (opaque URL tokens, encrypted HMAC secrets, registration status).
+ * @description Complements relational data — delivery routing uses opaque tokens before DB profile is authoritative.
+ * @async All public methods perform disk I/O.
+ * @throws {Error} Read/write failures.
+ * @see {@link ../jsdoc-core-entities.ts}
+ * @security-audit-required Encrypts/decrypts webhook secrets; never log plaintext secrets or tokens.
+ */
 import { randomBytes } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";

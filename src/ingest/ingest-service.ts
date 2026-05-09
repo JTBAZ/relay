@@ -1,3 +1,10 @@
+/**
+ * @fileoverview Orchestrates enriched ingest batches against a `CanonicalStore` + event bus.
+ * @description Single entry for `runBatch` with health metric recording.
+ * @see ./apply-batch.js
+ * @see ./canonical-store.js
+ */
+
 import { randomUUID } from "node:crypto";
 import type { RelayEventBus } from "../events/event-bus.js";
 import { applySyncBatchToSnapshot } from "./apply-batch.js";
@@ -15,6 +22,14 @@ export class IngestService {
     this.eventBus = eventBus;
   }
 
+  /**
+   * @description Applies one sync batch with optional stable `jobId`.
+   * @param {import("./types.js").SyncBatchInput} batch
+   * @param {string} traceId
+   * @param {string} [jobId]
+   * @returns {Promise<import("./types.js").ApplyBatchResult>}
+   * @async
+   */
   public async runBatch(
     batch: SyncBatchInput,
     traceId: string,

@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useId, useMemo, useState } from "react";
-import { fetchCreatorGalleryFacets, type FacetsData, type TierFacet } from "@/lib/relay-api";
+import { fetchRelayComposeTiers, type TierFacet } from "@/lib/relay-api";
 
 export type CreatorTierCatalogMultiselectProps = {
   creatorId: string;
@@ -13,12 +13,17 @@ export type CreatorTierCatalogMultiselectProps = {
 };
 
 function sortTiers(tiers: TierFacet[]): TierFacet[] {
-  return [...tiers].sort((a, b) => a.title.localeCompare(b.title, undefined, { sensitivity: "base" }));
+  return [...tiers].sort((a, b) => {
+    const ac = a.amount_cents ?? 0;
+    const bc = b.amount_cents ?? 0;
+    if (ac !== bc) return ac - bc;
+    return a.title.localeCompare(b.title, undefined, { sensitivity: "base" });
+  });
 }
 
 /**
- * T-6.2 — Multiselect of catalog tiers for Relay-native post `tier_ids`.
- * Uses `GET /api/v1/gallery/facets`; each option value is stable `TierFacet.tier_id` (server `Tier.id`).
+ * Multiselect of tiers for Relay-native `POST /api/v1/relay/posts` `tier_ids`.
+ * Uses `GET /api/v1/relay/compose-tiers`; each option value is Prisma `Tier.id`.
  */
 export function CreatorTierCatalogMultiselect({
   creatorId,
@@ -28,13 +33,13 @@ export function CreatorTierCatalogMultiselect({
   "aria-labelledby": ariaLabelledBy
 }: CreatorTierCatalogMultiselectProps) {
   const baseId = useId();
-  const [data, setData] = useState<FacetsData | null>(null);
+  const [tiers, setTiers] = useState<TierFacet[] | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!creatorId.trim() || disabled) {
-      setData(null);
+      setTiers(null);
       setError(null);
       return;
     }
@@ -43,14 +48,20 @@ export function CreatorTierCatalogMultiselect({
     setError(null);
     void (async () => {
       try {
-        const f = await fetchCreatorGalleryFacets(creatorId.trim());
+        const { tiers: rows } = await fetchRelayComposeTiers(creatorId.trim());
         if (!cancelled) {
-          setData(f);
+          setTiers(
+            rows.map((r) => ({
+              tier_id: r.tier_id,
+              title: r.title,
+              ...(r.amount_cents != null ? { amount_cents: r.amount_cents } : {})
+            }))
+          );
         }
       } catch (e) {
         if (!cancelled) {
           setError(e instanceof Error ? e.message : String(e));
-          setData(null);
+          setTiers(null);
         }
       } finally {
         if (!cancelled) {
@@ -63,7 +74,7 @@ export function CreatorTierCatalogMultiselect({
     };
   }, [creatorId, disabled]);
 
-  const sorted = useMemo(() => (data ? sortTiers(data.tiers) : []), [data]);
+  const sorted = useMemo(() => (tiers ? sortTiers(tiers) : []), [tiers]);
 
   const toggle = useCallback(
     (tierId: string) => {

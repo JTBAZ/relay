@@ -4,9 +4,10 @@ import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { Copy, Loader2, MessageCircle, Trash2 } from "lucide-react";
 import {
-  deleteDiscordStagingMedia,
+  deleteRelayLibraryStagingMedia,
+  discordStagingItemsFromUnifiedLibrary,
   fetchDiscordConnection,
-  fetchDiscordStaging,
+  fetchRelayLibraryStaging,
   mintDiscordLinkCode,
   RelayApiError,
   type DiscordConnectionData,
@@ -52,12 +53,12 @@ export function DiscordCaptureCard() {
     setLoadError(null);
     setLoadingMeta(true);
     try {
-      const [conn, list] = await Promise.all([
+      const [conn, unified] = await Promise.all([
         fetchDiscordConnection(creatorId.trim()),
-        fetchDiscordStaging(creatorId.trim())
+        fetchRelayLibraryStaging(creatorId.trim())
       ]);
       setConnection(conn);
-      setStaging(list.items);
+      setStaging(discordStagingItemsFromUnifiedLibrary(unified));
     } catch (e) {
       setLoadError(e instanceof RelayApiError ? e.message : String(e));
     } finally {
@@ -98,7 +99,7 @@ export function DiscordCaptureCard() {
     setDeletingId(mediaId);
     setLoadError(null);
     try {
-      await deleteDiscordStagingMedia(creatorId.trim(), mediaId);
+      await deleteRelayLibraryStagingMedia(creatorId.trim(), mediaId);
       setStaging((prev) => prev.filter((x) => x.media_id !== mediaId));
     } catch (e) {
       setLoadError(e instanceof RelayApiError ? e.message : String(e));

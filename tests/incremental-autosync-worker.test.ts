@@ -1,7 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  incrementalAutosyncRepeatEveryMsFromEnv,
   runIncrementalAutosyncCycle,
-  runIncrementalAutosyncOnce
+  runIncrementalAutosyncOnce,
+  shouldScheduleIncrementalAutosyncFromEnv
 } from "../src/patreon/incremental-sync-worker.js";
 import type { PatreonSyncService } from "../src/patreon/patreon-sync-service.js";
 import type { PatreonTokenStore } from "../src/auth/token-store.js";
@@ -182,5 +184,34 @@ describe("runIncrementalAutosyncOnce", () => {
     expect(r.creators_attempted).toBe(1);
     expect(scrapeOrSync).toHaveBeenCalledTimes(1);
     expect(scrapeOrSync.mock.calls[0]![0]).toBe("only_me");
+  });
+});
+
+describe("shouldScheduleIncrementalAutosyncFromEnv / incrementalAutosyncRepeatEveryMsFromEnv", () => {
+  it("enables schedule when RELAY_AUTOSYNC_ENABLED=1", () => {
+    expect(
+      shouldScheduleIncrementalAutosyncFromEnv({ RELAY_AUTOSYNC_ENABLED: "1" })
+    ).toBe(true);
+  });
+
+  it("disables when no env signal", () => {
+    expect(shouldScheduleIncrementalAutosyncFromEnv({})).toBe(false);
+    expect(incrementalAutosyncRepeatEveryMsFromEnv({})).toBe(null);
+  });
+
+  it("repeat every uses Patreon MS when >= 10s", () => {
+    expect(
+      incrementalAutosyncRepeatEveryMsFromEnv({
+        RELAY_PATREON_INCREMENTAL_AUTOSYNC_MS: "120000"
+      })
+    ).toBe(120_000);
+  });
+
+  it("when enabled via flag only, uses autosync interval fallback", () => {
+    expect(
+      incrementalAutosyncRepeatEveryMsFromEnv({
+        RELAY_AUTOSYNC_ENABLED: "1"
+      })
+    ).toBe(900_000);
   });
 });

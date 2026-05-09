@@ -1,3 +1,7 @@
+/**
+ * @fileoverview Migration: `collections.json` + canonical snapshot → `library_collections` + links.
+ */
+
 import type { PrismaClient } from "@prisma/client";
 import { readFile } from "node:fs/promises";
 import type { CanonicalSnapshot } from "../ingest/canonical-store.js";
@@ -12,8 +16,14 @@ function postsForCreator(snapshot: CanonicalSnapshot, creatorId: string): Set<st
 }
 
 /**
- * Full-replace: `collections.json` → `library_collections` + `collection_posts`.
- * Drops `post_id` entries that do not exist in the canonical snapshot for that creator (ingest truth).
+ * @description Full-replace: `collections.json` → `library_collections` + `collection_posts`. Drops post ids absent from canonical snapshot (ingest truth).
+ * @param args.prisma Prisma client.
+ * @param args.collectionsPath Collections JSON path.
+ * @param args.canonicalPath Canonical snapshot JSON path.
+ * @returns Write statistics including dropped ids count.
+ * @async
+ * @throws Propagates file read / JSON parse / transaction failures.
+ * @see prisma/schema.prisma `LibraryCollection`
  */
 export async function backfillCollectionsFromFile(args: {
   prisma: PrismaClient;

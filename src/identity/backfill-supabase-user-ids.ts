@@ -1,3 +1,9 @@
+/**
+ * @fileoverview MIG-12 — backfill `Account.supabaseUserId` from Supabase Auth email map.
+ * @description Paginates `auth.admin.listUsers`, matches `emailNorm`, optional dry run.
+ * @see src/jsdoc-core-entities.ts
+ */
+
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { PrismaClient } from "@prisma/client";
 
@@ -9,8 +15,11 @@ function normEmail(email: string | null | undefined): string | null {
 }
 
 /**
- * Paginates through all Auth users and builds a map: normalized email → `auth.users.id`.
- * If multiple users share the same email (unexpected), the last one wins and earlier ids are reported in `duplicateEmailWarnings`.
+ * @description Paginates all Auth users and builds normalized email → user id map.
+ * @param {import("@supabase/supabase-js").SupabaseClient} supabase Admin client (service role).
+ * @returns {Promise<{ emailToUserId: Map<string, string>; duplicateEmailWarnings: string[]; totalAuthUsers: number }>}
+ * @async
+ * @throws {Error} When `listUsers` returns an error.
  */
 export async function loadAuthUsersEmailMap(supabase: SupabaseClient): Promise<{
   emailToUserId: Map<string, string>;
@@ -63,8 +72,11 @@ export type BackfillSupabaseUserIdsResult = {
 };
 
 /**
- * MIG-12: set `Account.supabaseUserId` for rows that have `emailNorm` matching an Auth user, using admin `listUsers`.
- * Idempotent: safe to re-run; skips rows that already have `supabaseUserId`.
+ * @description Sets `supabaseUserId` on accounts with null link where `emailNorm` matches Auth.
+ * @param {{ prisma: import("@prisma/client").PrismaClient; supabase: SupabaseClient; dryRun?: boolean }} args
+ * @returns {Promise<BackfillSupabaseUserIdsResult>}
+ * @async
+ * @throws Prisma update errors are collected in `errors` unless unexpected.
  */
 export async function backfillAccountSupabaseUserIds(args: {
   prisma: PrismaClient;

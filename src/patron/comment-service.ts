@@ -1,4 +1,10 @@
 /**
+ * @fileoverview Patron experience module comment-service.ts — see exported symbols.
+ * @see {@link ../jsdoc-core-entities.ts}
+ * @see prisma/schema.prisma Account, TenantMembership, and related patron tables
+ * @security-audit-required Patron PII or entitlement paths — audit responses and logs.
+ */
+/**
  * PE-E (BO-P2-03) — comment lifecycle service.
  *
  * Responsibilities:

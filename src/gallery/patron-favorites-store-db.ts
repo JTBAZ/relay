@@ -1,3 +1,10 @@
+/**
+ * @fileoverview Postgres-backed patron favorites (`patron_favorites`).
+ * @description Uses patron membership id as wire `user_id` column analogue.
+ * @see ./patron-favorites-store.ts Legacy JSON implementation
+ * @see prisma/schema.prisma `PatronFavorite`, `TenantMembership`
+ */
+
 import type { PrismaClient } from "@prisma/client";
 import { PatronFavoriteTargetKind as PrismaFavoriteKind } from "@prisma/client";
 import type {
@@ -5,14 +12,23 @@ import type {
   PatronFavoriteTargetKind
 } from "./types.js";
 
+/**
+ * @description Maps TS favorite kind to Prisma enum.
+ */
 function toPrismaKind(kind: PatronFavoriteTargetKind): PrismaFavoriteKind {
   return kind === "post" ? PrismaFavoriteKind.post : PrismaFavoriteKind.media;
 }
 
+/**
+ * @description Maps Prisma enum to TS literal union.
+ */
 function fromPrismaKind(kind: PrismaFavoriteKind): PatronFavoriteTargetKind {
   return kind === PrismaFavoriteKind.post ? "post" : "media";
 }
 
+/**
+ * @description Converts DB row to {@link PatronFavoriteRecord} wire shape.
+ */
 function rowToRecord(row: {
   patronMembershipId: string;
   creatorId: string;
@@ -31,6 +47,11 @@ function rowToRecord(row: {
   };
 }
 
+/**
+ * @description Prisma favorites CRUD helpers.
+ * @async Relevant methods reject on DB failures.
+ * @security-audit-required Cross-account listing (`listAllForAccount`) requires verified `accountId`; row ops must pair membership+creator correctly.
+ */
 export class DbPatronFavoritesStore {
   public constructor(private readonly prisma: PrismaClient) {}
 

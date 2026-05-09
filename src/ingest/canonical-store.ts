@@ -1,3 +1,10 @@
+/**
+ * @fileoverview Canonical snapshot row types + file-backed `CanonicalStore`.
+ * @description Nested maps per `creator_id` for campaigns/tiers/posts/media and ingest idempotency keys.
+ * @see ./canonical-store-db.js
+ * @see src/jsdoc-core-entities.ts
+ */
+
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 
@@ -118,6 +125,9 @@ export interface CanonicalStore {
   ): Promise<void>;
 }
 
+/**
+ * @description Loads/saves `canonical.json` and implements global mutate (no per-creator slice in file mode).
+ */
 export class FileCanonicalStore implements CanonicalStore {
   private readonly filePath: string;
 

@@ -1,3 +1,10 @@
+/**
+ * @fileoverview Post-level permission triage for gallery/detail surfaces (allow / deny / locked preview).
+ * @description MIG-41 — maps canonical post + session to UX-facing outcomes.
+ * @see ../identity/access-guard.js Tier/session checks
+ * @see src/jsdoc-core-entities.ts Artist/Gallery/SyncStatus mapping notes
+ */
+
 import { evaluateTierRules, resolvePostAccessLevel } from "../clone/tier-rules.js";
 import type { ClonePostEntry } from "../clone/types.js";
 import { checkPostAccess } from "../identity/access-guard.js";
@@ -5,7 +12,7 @@ import type { SessionToken } from "../identity/types.js";
 import type { CanonicalSnapshot } from "../ingest/canonical-store.js";
 
 /**
- * MIG-41 — Permission surface for "Account + post" with tier ordering (see `canAccessPost` + tier catalog).
+ * @description Permission surface for account + post with tier ordering.
  *
  * - **allow** — session (or public post) can load full export / detail.
  * - **deny** — anonymous on non-public, wrong creator, or missing post.
@@ -20,6 +27,16 @@ export type PostPermissionOutcome =
   | { outcome: "deny"; reason: string }
   | { outcome: "locked_preview"; reason: string };
 
+/**
+ * @description Evaluates gallery/post permission from canonical snapshot + session (returns `null` when post missing/deleted).
+ * @param args.snapshot Canonical snapshot.
+ * @param args.creatorId Content creator id.
+ * @param args.postId Target post id.
+ * @param args.session Patron session or null.
+ * @param args.isContentOwner Creator bypass flag when DB-verified.
+ * @returns Outcome union or null when post absent.
+ * @security-audit-required `isContentOwner` must reflect verified DB binding; wrong flag exposes paid content.
+ */
 export function evaluatePostPermission(args: {
   snapshot: CanonicalSnapshot;
   creatorId: string;

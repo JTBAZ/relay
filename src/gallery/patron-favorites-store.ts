@@ -1,11 +1,25 @@
+/**
+ * @fileoverview File-backed patron favorites (Relay-only; not mirrored to Patreon).
+ * @description Stores `{ favorites: [...] }` JSON; DB twin uses membership ids as `user_id` wire field.
+ * @see ./patron-favorites-store-db.ts Postgres paths
+ * @see prisma/schema.prisma `PatronFavorite`
+ * @see src/jsdoc-core-entities.ts Patron-facing engagement concepts
+ */
+
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import type { PatronFavoriteRecord, PatronFavoritesRoot, PatronFavoriteTargetKind } from "./types.js";
 
+/**
+ * @description Empty favorites aggregate root.
+ */
 function emptyRoot(): PatronFavoritesRoot {
   return { favorites: [] };
 }
 
+/**
+ * @description Dedup key builder for favorite tuples.
+ */
 function favoriteKey(
   userId: string,
   creatorId: string,
@@ -15,6 +29,10 @@ function favoriteKey(
   return `${userId}\0${creatorId}\0${kind}\0${targetId}`;
 }
 
+/**
+ * @description JSON persistence for patron favorites list operations.
+ * @security-audit-required `userId`/`creatorId` must correspond to verified patron membership rows when mirrored to DB.
+ */
 export class FilePatronFavoritesStore {
   private readonly filePath: string;
 

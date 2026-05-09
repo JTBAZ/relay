@@ -1,3 +1,11 @@
+/**
+ * @fileoverview Postgres-backed gallery overrides (`post_overrides` aggregate flattened rows).
+ * @description `save()` replaces all rows transactionally—parity with overwriting legacy JSON root files.
+ * @see ./overrides-store.ts File-backed twin + migrations helpers
+ * @see prisma/schema.prisma `PostOverride`
+ * @security-audit-required Global `load`/`save` without tenant filter—admin/migration callers only unless RLS enforced at DB.
+ */
+
 import { GalleryVisibility, type Prisma, type PrismaClient } from "@prisma/client";
 import {
   compactMediaOverride,
@@ -123,7 +131,9 @@ function flattenRoot(root: GalleryOverridesRoot): Prisma.PostOverrideCreateManyI
 }
 
 /**
- * Postgres-backed gallery overrides. `save()` replaces **all** override rows (same as overwriting the JSON file).
+ * @description Prisma implementation of {@link GalleryOverridesStore}.
+ * @todo `load()` scans entire table—consider creator-scoped APIs before huge multi-tenant volume.
+ * @throws {Error} Prisma errors propagate from transactions and upserts.
  */
 export class DbGalleryOverridesStore implements GalleryOverridesStore {
   public constructor(private readonly prisma: PrismaClient) {}

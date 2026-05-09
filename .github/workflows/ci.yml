@@ -1,5 +1,9 @@
 # Relay API — build, tests, and Prisma migrations against an ephemeral Postgres.
 #
+# P9-test-001 — Green jobs together cover `npm run verify:pilot` (build + test + web lint + web build)
+# plus migrate deploy, M10 token-log scan, and Redis job tests. See docs/pilot-exit-checklist.md
+# § "CI vs local verify:pilot".
+#
 # Hosted / staging DB: use a deploy workflow (or replace the job `env` below) with
 #   env:
 #     DATABASE_URL: ${{ secrets.DATABASE_URL }}
@@ -56,6 +60,36 @@ jobs:
 
       - name: M10 token log scan (no secrets in console)
         run: node scripts/m10-token-log-scan.mjs
+
+  # BullMQ + ioredis integration (P1-queue-017): TCP probe, repeat scheduler, one-shot job + traceId.
+  redis-jobs:
+    runs-on: ubuntu-latest
+    env:
+      SKIP_REDIS_IT: "0"
+      REDIS_URL: redis://127.0.0.1:6379
+    services:
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 3s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Job integration tests (Redis)
+        run: npm run test:jobs
 
   web:
     runs-on: ubuntu-latest

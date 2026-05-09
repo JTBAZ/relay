@@ -1,4 +1,9 @@
 /**
+ * @fileoverview Patron experience module comment-types.ts — see exported symbols.
+ * @see {@link ../jsdoc-core-entities.ts}
+ * @see prisma/schema.prisma Account, TenantMembership, and related patron tables
+ */
+/**
  * PE-E (BO-P2-03) — shared types for the comment / moderation services. Kept in a tiny
  * leaf module so test stubs (`InMemoryGalleryOverridesStore`) can import only this without
  * pulling the prisma client.

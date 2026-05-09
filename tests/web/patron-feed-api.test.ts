@@ -41,7 +41,9 @@ function bundleWithPost(post: Partial<FeedPost>): PatronFeedBundle {
       notificationCount: 0
     },
     followedCreators: [],
-    notifications: []
+    notifications: [],
+    entitlement_degraded: false,
+    entitlement_stale_since: null
   };
 }
 

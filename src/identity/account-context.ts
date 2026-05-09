@@ -1,4 +1,11 @@
 /**
+ * @fileoverview Tier 1.1 account projection from an opaque session + RLS context wiring.
+ * @description `AccountContext` capability hints; `requireAccount` sets `relay.account_id` for Postgres RLS.
+ * @see ../lib/supabase-rls-context.js
+ * @see src/jsdoc-core-entities.ts
+ */
+
+/**
  * Tier 1.1 — resolved Relay account for an authenticated opaque session.
  * Authz for data access remains RLS + handlers; this is identity + capability hints.
  */
@@ -13,13 +20,18 @@ export type AccountContext = {
   hasSupporterMemberships: boolean;
 };
 
+/**
+ * @returns {boolean} True when `primaryRelayCreatorId` is set.
+ */
 export function canActAsCreator(ctx: AccountContext): boolean {
   return Boolean(ctx.primaryRelayCreatorId);
 }
 
 /**
- * Fast-fail for handlers that need any patron-side membership.
- * Fine-grained tenant entitlements are enforced in RLS (Tier 1.2+).
+ * @description Fast-fail for handlers needing any patron-side membership; fine-grained entitlements use RLS.
+ * @param {AccountContext} ctx
+ * @param {string} _tenantId Reserved for future tenant-scoped checks.
+ * @returns {boolean}
  */
 export function canActAsSupporterFor(ctx: AccountContext, _tenantId: string): boolean {
   return ctx.hasSupporterMemberships;

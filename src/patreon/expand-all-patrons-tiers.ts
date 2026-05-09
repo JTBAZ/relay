@@ -1,9 +1,16 @@
+/**
+ * @fileoverview Expands synthetic `relay_tier_all_patrons` gate into concrete `patreon_tier_*` ids using campaign tier catalogs.
+ * @description Used during ingest / sync so posts gated to “all patrons” become explicit tier lists for Relay entitlements.
+ * @see {@link ../jsdoc-core-entities.ts}
+ * @see prisma/schema.prisma `Tier.relayTierId`, ingest `IngestTier` shapes
+ */
 import type { IngestTier } from "../ingest/types.js";
 import { RELAY_TIER_ALL_PATRONS } from "./relay-access-tiers.js";
 
 /**
  * Patreon tier ids present on the campaign (excludes synthetic relay_* ids).
  * Sorted for stable `tier_ids` on posts after expanding `relay_tier_all_patrons`.
+ * @param tiers Campaign tier rows from ingest snapshot.
  */
 export function listCampaignPatreonTierIds(tiers: IngestTier[] | undefined): string[] {
   if (!tiers?.length) return [];
@@ -25,6 +32,7 @@ function isPaidPatreonTierRow(t: IngestTier): boolean {
  * Sorted by pledge floor descending, then `tier_id` for stability.
  * Free / $0 Patreon tiers are excluded so `relay_tier_all_patrons` expansion does not
  * attach a "Free" tier id to paid-only posts.
+ * @param tiers Campaign tier rows.
  */
 export function listCampaignPaidPatreonTierIds(tiers: IngestTier[] | undefined): string[] {
   if (!tiers?.length) return [];
@@ -47,6 +55,8 @@ export function hasCampaignPatreonTierRows(tiers: IngestTier[] | undefined): boo
  * When Patreon encodes "all paid tiers" as `relay_tier_all_patrons` with no explicit
  * tier list, replace with the full set of known `patreon_tier_*` ids from the campaign.
  * Idempotent: already-concrete lists are unchanged.
+ * @param tierIds Post-level tier id list (possibly synthetic).
+ * @param patreonTierIds Concrete paid Patreon tier ids from {@link listCampaignPaidPatreonTierIds}.
  */
 export function expandAllPatronsTierIds(
   tierIds: string[],

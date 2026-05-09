@@ -13,8 +13,9 @@ import {
   Trash2
 } from "lucide-react";
 import {
-  deleteDiscordStagingMedia,
-  fetchDiscordStaging,
+  deleteRelayLibraryStagingMedia,
+  discordStagingItemsFromUnifiedLibrary,
+  fetchRelayLibraryStaging,
   RELAY_API_BASE,
   RelayApiError,
   type DiscordStagingItem
@@ -94,7 +95,13 @@ function DiscordCaptureTile({
   onDelete: (mediaId: string) => void;
 }) {
   const kind = itemKind(item.mime_type);
-  const src = absoluteRelayUrl(item.content_url_path);
+  const src = absoluteRelayUrl(
+    kind === "image"
+      ? (item.mime_type?.toLowerCase() === "image/gif"
+          ? item.content_url_path || item.thumb_url_path
+          : item.thumb_url_path || item.content_url_path)
+      : item.content_url_path
+  );
   const caption = itemCaption(item.discord_capture);
 
   return (
@@ -191,9 +198,10 @@ export function DiscordCapturesBin({
     setLoading(true);
     setError(null);
     try {
-      const list = await fetchDiscordStaging(creatorId.trim());
-      setItems(list.items);
-      setSelectedIds((prev) => new Set(list.items.filter((item) => prev.has(item.media_id)).map((item) => item.media_id)));
+      const list = await fetchRelayLibraryStaging(creatorId.trim());
+      const discordOnly = discordStagingItemsFromUnifiedLibrary(list);
+      setItems(discordOnly);
+      setSelectedIds((prev) => new Set(discordOnly.filter((item) => prev.has(item.media_id)).map((item) => item.media_id)));
     } catch (e) {
       const msg = e instanceof RelayApiError ? e.message : String(e);
       setError(msg);
@@ -224,7 +232,7 @@ export function DiscordCapturesBin({
     setDeletingId(mediaId);
     setError(null);
     try {
-      await deleteDiscordStagingMedia(creatorId.trim(), mediaId);
+      await deleteRelayLibraryStagingMedia(creatorId.trim(), mediaId);
       setItems((prev) => prev.filter((item) => item.media_id !== mediaId));
       setSelectedIds((prev) => {
         const next = new Set(prev);

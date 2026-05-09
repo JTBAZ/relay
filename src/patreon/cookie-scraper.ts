@@ -1,3 +1,12 @@
+/**
+ * @fileoverview Authenticated scrape of creator post HTML via `session_id` cookie against Patreon www APIs.
+ * @description Fills media where OAuth cannot; throws `CookieSessionExpiredError` on auth failure.
+ * @async Network calls throughout.
+ * @throws {CookieSessionExpiredError} When Patreon rejects the session.
+ * @throws {Error} Other fetch / parse failures.
+ * @see {@link ../jsdoc-core-entities.ts}
+ * @see prisma/schema.prisma Ingest output models via `PatreonSyncService` / `IngestService`
+ */
 import type { IngestPost } from "../ingest/types.js";
 import type { JsonApiDocument, JsonApiResource } from "./jsonapi-types.js";
 import {

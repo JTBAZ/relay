@@ -1,3 +1,9 @@
+/**
+ * @fileoverview Patron experience module patron-profile-service.ts — see exported symbols.
+ * @see {@link ../jsdoc-core-entities.ts}
+ * @see prisma/schema.prisma Account, TenantMembership, and related patron tables
+ * @security-audit-required Patron PII or entitlement paths — audit responses and logs.
+ */
 import type { PatronProfile, Prisma, PrismaClient } from "@prisma/client";
 import {
   generateAutoPatronHandle,

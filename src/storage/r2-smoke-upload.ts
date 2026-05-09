@@ -1,3 +1,9 @@
+/**
+ * @fileoverview Operational smoke test: PUT then DELETE a tiny object in R2 to verify credentials and reachability.
+ * @description Object key pattern: `relay-smoke/<iso-timestamp>.txt`. Safe for CI when env is scoped to a dev bucket.
+ * @see {@link ../jsdoc-core-entities.ts}
+ * @see ./r2-config.js
+ */
 import { DeleteObjectCommand, PutObjectCommand } from "@aws-sdk/client-s3";
 import type { R2ClientConfig } from "./r2-config.js";
 import { getR2ClientConfigFromEnv } from "./r2-config.js";
@@ -5,7 +11,9 @@ import { createR2S3Client } from "./r2-s3-client.js";
 
 /**
  * PUT a tiny object then DELETE it — verifies bucket credentials and API reachability.
- * Object key: `relay-smoke/<iso-timestamp>.txt`
+ * @async
+ * @throws {Error} When env incomplete or S3/R2 API errors on PUT.
+ * @param cfg Optional override; defaults to {@link getR2ClientConfigFromEnv}.
  */
 export async function r2UploadSmokeTest(
   cfg: R2ClientConfig | null = getR2ClientConfigFromEnv()

@@ -1,3 +1,9 @@
+/**
+ * @fileoverview Postgres-backed patron saved collections + entries (snips feature).
+ * @see ./patron-collections-store.ts JSON twin
+ * @see prisma/schema.prisma `PatronSavedCollection`, `PatronSavedCollectionEntry`
+ */
+
 import { randomUUID } from "node:crypto";
 import type { PrismaClient } from "@prisma/client";
 import type {
@@ -5,6 +11,9 @@ import type {
   PatronCollectionRecord
 } from "./types.js";
 
+/**
+ * @description Maps patron saved collection row to wire {@link PatronCollectionRecord}.
+ */
 function colRowToRecord(row: {
   id: string;
   patronMembershipId: string;
@@ -27,6 +36,9 @@ function colRowToRecord(row: {
   };
 }
 
+/**
+ * @description Maps patron saved collection entry row to wire {@link PatronCollectionEntryRecord}.
+ */
 function entryRowToRecord(row: {
   id: string;
   collectionId: string;
@@ -49,6 +61,12 @@ function entryRowToRecord(row: {
   };
 }
 
+/**
+ * @description Prisma implementation for patron snips stores.
+ * @async Methods reject on DB errors.
+ * @throws {"Collection not found."} From {@link addEntry} when collection guard fails.
+ * @security-audit-required Account-wide listing requires trusted `accountId`; per-row ops must align membership ids with session.
+ */
 export class DbPatronCollectionsStore {
   public constructor(private readonly prisma: PrismaClient) {}
 

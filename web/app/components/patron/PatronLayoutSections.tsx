@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import {
   RELAY_API_BASE,
   galleryItemExportVisibleToVisitor,
@@ -43,6 +43,14 @@ type Props = {
   lockedOverlayVariant?: VisitorTierGateOverlayVariant;
   /** Visitor star (whole post) + snip (visible slide’s media); omit in designer-only contexts */
   patronEngagement?: VisitorPatronEngagementCallbacks;
+  /**
+   * Site Designer canvas: wrap each API section body (title + grid) for selection chrome.
+   * When set, the outer `<section>` wrapper is omitted — use `children` only inside your frame.
+   */
+  renderDesignerSectionChrome?: (ctx: {
+    apiSectionId: string;
+    children: React.ReactNode;
+  }) => React.ReactNode;
 };
 
 function tierBadgeLabel(
@@ -286,7 +294,8 @@ export default function PatronLayoutSections({
   membershipUrl = null,
   accentColor = "#00aa6f",
   lockedOverlayVariant = "blurred",
-  patronEngagement
+  patronEngagement,
+  renderDesignerSectionChrome
 }: Props) {
   const showTierBadges = layout.theme.show_tier_badges ?? true;
   const arrMode = layout.theme.gallery_arrangement ?? "chronological";
@@ -319,8 +328,8 @@ export default function PatronLayoutSections({
         const displayGroups = sec.max_items ? groups.slice(0, sec.max_items) : groups;
         const cols = Math.max(1, Math.min(sec.columns ?? 3, 3));
 
-        return (
-          <section key={sec.section_id} className="mb-10 last:mb-0">
+        const sectionBody = (
+          <>
             <div className="mb-4 flex items-end gap-3 border-b border-[var(--lib-border)] pb-3">
               <h2
                 className="font-[family-name:var(--font-display)] text-xl font-medium tracking-tight text-[var(--lib-fg)] md:text-2xl"
@@ -343,7 +352,6 @@ export default function PatronLayoutSections({
               </div>
             ) : sec.layout === "featured" ? (
               <div className="flex flex-col gap-3 md:gap-4">
-                {/* Lead post — 16:9 full-width */}
                 {displayGroups[0] ? (
                   <SectionGroupTile
                     key={displayGroups[0].post_id}
@@ -352,7 +360,6 @@ export default function PatronLayoutSections({
                     {...sectionGroupProps}
                   />
                 ) : null}
-                {/* Remaining posts — square grid */}
                 {displayGroups.length > 1 ? (
                   <div
                     className="w-full min-w-0 gap-3 md:gap-4"
@@ -373,7 +380,6 @@ export default function PatronLayoutSections({
                 ) : null}
               </div>
             ) : (
-              /* Grid and masonry layouts */
               <div
                 className="w-full min-w-0 gap-3 md:gap-4"
                 style={{
@@ -395,6 +401,20 @@ export default function PatronLayoutSections({
                 ))}
               </div>
             )}
+          </>
+        );
+
+        if (renderDesignerSectionChrome) {
+          return (
+            <Fragment key={sec.section_id}>
+              {renderDesignerSectionChrome({ apiSectionId: sec.section_id, children: sectionBody })}
+            </Fragment>
+          );
+        }
+
+        return (
+          <section key={sec.section_id} className="mb-10 last:mb-0">
+            {sectionBody}
           </section>
         );
       })}

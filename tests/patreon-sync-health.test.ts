@@ -187,6 +187,13 @@ describe("Patreon sync health persistence + GET sync-state", () => {
     expect(state.body.data.campaign_display?.patron_count).toBe(7);
     expect(state.body.data.campaign_display?.patreon_name).toBe("healthcreator");
     expect(state.body.data.campaign_display?.captured_at).toBeTruthy();
+    expect(state.body.data.sync_health).toMatchObject({
+      status: "degraded",
+      campaign_id: "999",
+      last_error: null,
+      message_key: "sync_health.post_scrape_warnings"
+    });
+    expect(state.body.data.sync_health.last_success_at).toBeTruthy();
   });
 
   it("records scrape failure and sync-state surfaces classified hint", async () => {

@@ -1,5 +1,7 @@
 import { RELAY_API_BASE, relayFetch } from "@/lib/relay-api";
-import type { PatronFeedBundle } from "@/lib/relay-fixtures";
+import type { PatronFeedBundle, PatronFeedItemSource } from "@/lib/relay-fixtures";
+
+export type { PatronFeedItemSource };
 
 /**
  * Patron home feed + sidebar payload from `GET /api/v1/patron/relay_feed` (alias: `GET /api/v1/patron/feed`).

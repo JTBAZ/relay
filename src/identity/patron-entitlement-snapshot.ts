@@ -1,3 +1,9 @@
+/**
+ * @fileoverview Patreon-derived patron entitlement snapshots and PE-H tier-change outbox events.
+ * @description Materializes `PatronEntitlementSnapshot`, emits `patron_entitlement.tier_changed` on transitions, and supports OAuth vs operational `source` attribution.
+ * @see src/jsdoc-core-entities.ts
+ */
+
 import { randomUUID } from "node:crypto";
 import { EntitlementSource, type Prisma, type PrismaClient } from "@prisma/client";
 
@@ -11,6 +17,10 @@ function sortedTiersFingerprint(ids: readonly string[]): string {
   return [...ids].sort((a, b) => a.localeCompare(b)).join("|");
 }
 
+/**
+ * @description Reads `RELAY_PATRON_ENTITLEMENT_STALE_AFTER_MS` or returns default stale window.
+ * @returns {number}
+ */
 export function getPatronEntitlementStaleAfterMs(): number {
   const raw = process.env.RELAY_PATRON_ENTITLEMENT_STALE_AFTER_MS?.trim();
   if (!raw) return DEFAULT_PATRON_ENTITLEMENT_STALE_MS;
@@ -36,9 +46,14 @@ async function resolveCampaignId(
 }
 
 /**
- * Materialize or refresh **`PatronEntitlementSnapshot`** with caller-chosen `source`
+ * @description Materialize or refresh **`PatronEntitlementSnapshot`** with caller-chosen `source`
  * (`oauth_exchange`, `scheduled_refresh`, `webhook`, …). PE-H workers and webhooks must use
  * this (not {@link upsertPatronEntitlementSnapshotForOAuth}) so `/entitlements/health` metrics stay honest.
+ * @param {import("@prisma/client").PrismaClient | import("@prisma/client").Prisma.TransactionClient} prisma
+ * @param {object} args
+ * @returns {Promise<void>}
+ * @async
+ * @throws Prisma errors on upsert/outbox failures (outbox dedupe swallows P2002).
  */
 export async function upsertPatronEntitlementSnapshot(
   prisma: DbLike,
@@ -176,7 +191,11 @@ async function emitPatronEntitlementTierChangedEvent(
 }
 
 /**
- * MIG-40 / BO-CONF-C4 — OAuth and same-flow tier updates: thin wrapper with `source = oauth_exchange`.
+ * @description MIG-40 / BO-CONF-C4 — OAuth path: `source = oauth_exchange`.
+ * @param {import("@prisma/client").PrismaClient | import("@prisma/client").Prisma.TransactionClient} prisma
+ * @param {object} args
+ * @returns {Promise<void>}
+ * @async
  */
 export async function upsertPatronEntitlementSnapshotForOAuth(
   prisma: DbLike,
@@ -195,8 +214,12 @@ export async function upsertPatronEntitlementSnapshotForOAuth(
 }
 
 /**
- * After Patreon unlink: entitlement rows must not keep “fresh” Patreon-derived tiers.
- * Marks all snapshots for the given memberships inactive, empty, and immediately stale.
+ * @description After Patreon unlink: mark snapshots inactive, empty tiers, and immediate stale.
+ * @param {import("@prisma/client").PrismaClient | import("@prisma/client").Prisma.TransactionClient} prisma
+ * @param {string[]} patronMembershipIds
+ * @param {Date} [now]
+ * @returns {Promise<number>} Row update count.
+ * @async
  */
 export async function invalidatePatronEntitlementSnapshotsForMemberships(
   prisma: DbLike,

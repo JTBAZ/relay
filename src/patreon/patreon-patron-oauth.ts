@@ -1,3 +1,12 @@
+/**
+ * @fileoverview Patron OAuth code exchange, identity hydration, Relay session issuance, optional credential + follow seed persistence.
+ * @description Bridges Patreon patron tokens into `TenantMembership` tier snapshots and encrypted `PatronOAuthCredential` rows.
+ * @async External Patreon HTTP and Prisma mutations.
+ * @throws {Error} Token exchange, identity fetch, identity service conflicts (`PatreonAccountLinkConflictError`).
+ * @see {@link ../jsdoc-core-entities.ts}
+ * @see prisma/schema.prisma `PatronOAuthCredential`, `TenantMembership`, `PatronFollowSeed`
+ * @security-audit-required Handles patron emails / names from Patreon identity — treat as PII at rest.
+ */
 import { PatronFollowSeedSource, type PrismaClient } from "@prisma/client";
 import type { PatreonClient, PatreonTokenResponse } from "../auth/patreon-client.js";
 import { upsertPatronOAuthCredentialForMembership } from "../auth/patron-oauth-credential-store.js";

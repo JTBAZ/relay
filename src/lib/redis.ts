@@ -1,6 +1,8 @@
 /**
  * Parse `REDIS_URL` into options compatible with ioredis / BullMQ `ConnectionOptions`.
  * No runtime dependency on `ioredis` here — P1-queue-002 adds the client library.
+ *
+ * **Production:** `rediss://` enables TLS (`tls: {}` for ioredis). See pilot build plan Phase P1 runbook — Production checklist.
  */
 
 export type RedisConnectionOptions = {

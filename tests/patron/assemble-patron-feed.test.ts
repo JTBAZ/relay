@@ -1,6 +1,28 @@
 import { describe, expect, it, vi } from "vitest";
 import { assemblePatronFeed } from "../../src/patron/assemble-patron-feed.js";
 
+function healthyEntitlementSnapshot(args: {
+  relayCreatorId: string;
+  patronMembershipId: string;
+  entitledTierIds?: string[];
+  staleAfter?: Date | null;
+}) {
+  const {
+    relayCreatorId,
+    patronMembershipId,
+    entitledTierIds = [],
+    staleAfter = new Date("2099-01-01T00:00:00.000Z")
+  } = args;
+  return {
+    patronMembershipId,
+    relayCreatorId,
+    entitledTierIds,
+    active: true,
+    asOf: new Date("2026-01-01T00:00:00.000Z"),
+    staleAfter
+  };
+}
+
 describe("assemblePatronFeed", () => {
   it("returns empty feed when there are no follows", async () => {
     const prisma = {
@@ -23,6 +45,8 @@ describe("assemblePatronFeed", () => {
     expect(bundle.discoverItems).toEqual([]);
     expect(bundle.notifications).toEqual([]);
     expect(bundle.currentViewer.handle).toBe("a");
+    expect(bundle.entitlement_degraded).toBe(false);
+    expect(bundle.entitlement_stale_since).toBeNull();
     expect(prisma.post.findMany).not.toHaveBeenCalled();
   });
 
@@ -62,7 +86,17 @@ describe("assemblePatronFeed", () => {
           { relayCreatorId: "rc_relaytest", createdAt: new Date() }
         ])
       },
-      patronEntitlementSnapshot: { findMany: vi.fn().mockResolvedValue([]) },
+      patronEntitlementSnapshot: {
+        findMany: vi
+          .fn()
+          .mockResolvedValue([
+            healthyEntitlementSnapshot({
+              relayCreatorId: "rc_relaytest",
+              patronMembershipId: "mem1",
+              entitledTierIds: []
+            })
+          ])
+      },
       tier: { findMany: vi.fn().mockResolvedValue([]) },
       creatorProfile: {
         findMany: vi.fn().mockResolvedValue([
@@ -97,6 +131,8 @@ describe("assemblePatronFeed", () => {
     // would 403/404 because Patreon CDN gates by Patreon session cookie.
     expect(post.coverImageUrl).not.toContain("patreon.example");
     expect(post.highResImageUrl).not.toContain("patreon.example");
+    expect(post.feed_item_source).toBe("discover");
+    expect(post.kind).toBe("discovery");
   });
 
   it("omits coverImageUrl for video (UI uses poster or video thumb)", async () => {
@@ -128,7 +164,17 @@ describe("assemblePatronFeed", () => {
           { relayCreatorId: "rc_relaytest", createdAt: new Date() }
         ])
       },
-      patronEntitlementSnapshot: { findMany: vi.fn().mockResolvedValue([]) },
+      patronEntitlementSnapshot: {
+        findMany: vi
+          .fn()
+          .mockResolvedValue([
+            healthyEntitlementSnapshot({
+              relayCreatorId: "rc_relaytest",
+              patronMembershipId: "mem1",
+              entitledTierIds: []
+            })
+          ])
+      },
       tier: { findMany: vi.fn().mockResolvedValue([]) },
       creatorProfile: {
         findMany: vi.fn().mockResolvedValue([
@@ -240,7 +286,9 @@ describe("assemblePatronFeed", () => {
             patronMembershipId: "mem1",
             relayCreatorId: "rc_relaytest",
             entitledTierIds: ["patreon_tier_free"],
-            active: true
+            active: true,
+            asOf: now,
+            staleAfter: new Date("2099-01-01T00:00:00.000Z")
           }
         ])
       },
@@ -287,6 +335,9 @@ describe("assemblePatronFeed", () => {
     expect(ids).toContain("p_public");
     expect(ids).not.toContain("p_all"); // member_only blocked
     expect(ids).not.toContain("p_advanced"); // tier_gated blocked
+    const pub = bundle.feedPosts.find((p) => p.id === "p_public");
+    expect(pub?.feed_item_source).toBe("subscribed");
+    expect(pub?.kind).toBe("followed");
     expect(bundle.followedCreators).toHaveLength(1);
     expect(bundle.followedCreators[0]!.patronTierLabel).toBe("Free");
   });
@@ -307,7 +358,9 @@ describe("assemblePatronFeed", () => {
             patronMembershipId: "mem1",
             relayCreatorId: "rc_relaytest",
             entitledTierIds: ["patreon_tier_advanced"],
-            active: true
+            active: true,
+            asOf: now,
+            staleAfter: new Date("2099-01-01T00:00:00.000Z")
           }
         ])
       },
@@ -357,6 +410,8 @@ describe("assemblePatronFeed", () => {
       viewerEmail: "supporter@example.com"
     });
     expect(bundle.feedPosts.map((p) => p.id)).toEqual(["p_all"]);
+    expect(bundle.feedPosts[0]!.feed_item_source).toBe("subscribed");
+    expect(bundle.feedPosts[0]!.kind).toBe("followed");
     expect(bundle.followedCreators[0]!.patronTierLabel).toBe("Supporter");
   });
 
@@ -444,5 +499,59 @@ describe("assemblePatronFeed", () => {
     const post = bundle.feedPosts[0]!.creator;
     expect(post.handle).toBe("onlyslug");
     expect(post.displayName).toBe("onlyslug");
+  });
+
+  it("P6-patron-004: marks entitlement_degraded with null stale_since when a follow has no snapshot", async () => {
+    const prisma = buildPrismaWithOnePost({
+      mediaId: "media_xyz",
+      storageKey: "media/media_xyz/asset"
+    });
+    prisma.patronEntitlementSnapshot.findMany = vi.fn().mockResolvedValue([]);
+    const bundle = await assemblePatronFeed({
+      prisma: prisma as never,
+      patronMembershipId: "mem1",
+      viewerEmail: "a@b.com"
+    });
+    expect(bundle.entitlement_degraded).toBe(true);
+    expect(bundle.entitlement_stale_since).toBeNull();
+  });
+
+  it("P6-patron-004: sets entitlement_stale_since to earliest overdue stale_after", async () => {
+    const past = new Date("2020-06-01T12:00:00.000Z");
+    const newerStale = new Date("2021-01-01T00:00:00.000Z");
+    const prisma = buildPrismaWithOnePost({
+      mediaId: "media_xyz",
+      storageKey: "media/media_xyz/asset"
+    });
+    prisma.patronFollow.findMany = vi.fn().mockResolvedValue([
+      { relayCreatorId: "rc_a", createdAt: new Date() },
+      { relayCreatorId: "rc_b", createdAt: new Date() }
+    ]);
+    prisma.patronEntitlementSnapshot.findMany = vi.fn().mockResolvedValue([
+      healthyEntitlementSnapshot({
+        relayCreatorId: "rc_a",
+        patronMembershipId: "mem1",
+        entitledTierIds: [],
+        staleAfter: newerStale
+      }),
+      healthyEntitlementSnapshot({
+        relayCreatorId: "rc_b",
+        patronMembershipId: "mem1",
+        entitledTierIds: [],
+        staleAfter: past
+      })
+    ]);
+    prisma.creatorProfile.findMany = vi.fn().mockResolvedValue([
+      { tenant: { relayCreatorId: "rc_a" }, publicSlug: "a" },
+      { tenant: { relayCreatorId: "rc_b" }, publicSlug: "b" }
+    ]);
+    prisma.post.findMany = vi.fn().mockResolvedValue([]);
+    const bundle = await assemblePatronFeed({
+      prisma: prisma as never,
+      patronMembershipId: "mem1",
+      viewerEmail: "a@b.com"
+    });
+    expect(bundle.entitlement_degraded).toBe(true);
+    expect(bundle.entitlement_stale_since).toBe(past.toISOString());
   });
 });

@@ -1,3 +1,9 @@
+/**
+ * @fileoverview Patron experience module assemble-patron-feed.ts — see exported symbols.
+ * @see {@link ../jsdoc-core-entities.ts}
+ * @see prisma/schema.prisma Account, TenantMembership, and related patron tables
+ * @security-audit-required Patron PII or entitlement paths — audit responses and logs.
+ */
 import type { CreatorProfile, PrismaClient, Tier } from "@prisma/client";
 import { MediaUpstreamStatus, PostUpstreamStatus } from "@prisma/client";
 import type { TierRow } from "../ingest/canonical-store.js";
@@ -305,6 +311,31 @@ export async function assemblePatronFeed(args: AssemblePatronFeedArgs): Promise<
     nextCursor = encodeCursor({ publishedAt: tail.publishedAt, id: tail.postId });
   }
 
+  const now = new Date();
+  let entitlement_degraded = false;
+  let entitlement_stale_since: string | null = null;
+  if (followedIds.length > 0) {
+    let earliestStaleMs: number | null = null;
+    for (const rid of followedIds) {
+      const s = snapByCreator.get(rid);
+      if (!s) {
+        entitlement_degraded = true;
+        continue;
+      }
+      const sa = s.staleAfter;
+      if (sa != null && sa.getTime() < now.getTime()) {
+        entitlement_degraded = true;
+        const m = sa.getTime();
+        if (earliestStaleMs == null || m < earliestStaleMs) {
+          earliestStaleMs = m;
+        }
+      }
+    }
+    if (earliestStaleMs != null) {
+      entitlement_stale_since = new Date(earliestStaleMs).toISOString();
+    }
+  }
+
   const patronProfile = await prisma.patronProfile.findUnique({
     where: { tenantMembershipId: patronMembershipId },
     select: {
@@ -366,6 +397,9 @@ export async function assemblePatronFeed(args: AssemblePatronFeedArgs): Promise<
       ? "Free"
       : accessLevelToTierLabel(postAccess.level, postAccess.tier_ids);
 
+    const feed_item_source = c.isPublicPost ? ("discover" as const) : ("subscribed" as const);
+    const kind = c.isPublicPost ? ("discovery" as const) : ("followed" as const);
+
     const creator = {
       id: c.creatorId,
       handle,
@@ -396,7 +430,8 @@ export async function assemblePatronFeed(args: AssemblePatronFeedArgs): Promise<
 
     return {
       id: c.postId,
-      kind: "followed" as const,
+      kind,
+      feed_item_source,
       creator,
       title: c.title,
       excerpt: excerptFromDescription(c.description, c.title),
@@ -426,7 +461,9 @@ export async function assemblePatronFeed(args: AssemblePatronFeedArgs): Promise<
     },
     followedCreators,
     notifications: [],
-    next_cursor: nextCursor
+    next_cursor: nextCursor,
+    entitlement_degraded,
+    entitlement_stale_since
   };
 }
 

@@ -7,7 +7,7 @@ import "./feed/patron-mock.css";
 import { PatronTopNav } from "./PatronTopNav";
 
 /**
- * Patron route layout.
+ * Patron route layout (P6-patron-002 — dedicated supporter shell, not studio / designer chrome).
  *
  * The shared `<PatronTopNav />` mounts on every authenticated patron page so navigation
  * flows seamlessly between feed / library / discover / inbox / settings / profile.

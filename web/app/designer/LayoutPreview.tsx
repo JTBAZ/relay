@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import {
   RELAY_API_BASE,
   buildGalleryQuery,
+  galleryItemImageGridSrc,
   galleryParamsFromLayoutFilterQuery,
   relayFetch,
   type Collection,
@@ -172,7 +173,7 @@ export default function LayoutPreview({
                         {it.has_export && it.mime_type?.startsWith("image/") ? (
                           // eslint-disable-next-line @next/next/no-img-element
                           <img
-                            src={`${RELAY_API_BASE}${it.content_url_path}`}
+                            src={galleryItemImageGridSrc(it) ?? `${RELAY_API_BASE}${it.content_url_path}`}
                             alt=""
                             className="h-12 w-12 shrink-0 rounded-md object-cover"
                           />
@@ -205,7 +206,7 @@ export default function LayoutPreview({
                           {it.has_export && it.mime_type?.startsWith("image/") ? (
                             // eslint-disable-next-line @next/next/no-img-element
                             <img
-                              src={`${RELAY_API_BASE}${it.content_url_path}`}
+                              src={galleryItemImageGridSrc(it) ?? `${RELAY_API_BASE}${it.content_url_path}`}
                               alt=""
                               className={`w-full object-cover motion-safe:transition-transform motion-safe:duration-500 motion-safe:ease-out group-hover:scale-[1.03] ${sec.layout === "masonry" ? "max-h-80 min-h-[10rem]" : "aspect-square"}`}
                             />

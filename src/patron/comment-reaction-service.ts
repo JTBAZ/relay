@@ -1,4 +1,9 @@
 /**
+ * @fileoverview Patron experience module comment-reaction-service.ts — see exported symbols.
+ * @see {@link ../jsdoc-core-entities.ts}
+ * @see prisma/schema.prisma Account, TenantMembership, and related patron tables
+ */
+/**
  * PE-E (D12) — toggle reactions on a comment. One row per (comment, account, kind).
  *
  * Aggregation is read-time `groupBy(kind)` — we don't denormalize counts onto Comment.

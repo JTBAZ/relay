@@ -1,3 +1,12 @@
+/**
+ * @fileoverview Creator media export orchestration: Patreon/R2/upstream fetch, index updates, manifests, ZIP streaming.
+ * @description Combines canonical ingest, export indexes, filesystem layout, Cloudflare R2, and Sharp-driven integrity checks.
+ * @see ../ingest/canonical-store.js
+ * @see ./export-index.js
+ * @see ../storage/relay-upload-r2.js
+ * @see prisma/schema.prisma MediaAsset (referenced when optional DB paths used)
+ */
+
 import archiver from "archiver";
 import type { PrismaClient } from "@prisma/client";
 import { createHash, randomInt } from "node:crypto";
@@ -77,6 +86,9 @@ type MediaAssetExportSelect = {
 
 /**
  * Patreon media URLs often return 403 without the creator OAuth token; plain `fetch(url)` is not enough.
+ * @description Hostname heuristic to decide when to attach Patreon OAuth headers during export fetch.
+ * @param urlStr Absolute URL string.
+ * @returns `true` when host appears to be Patreon-controlled.
  */
 export function upstreamUrlLooksLikePatreonHosted(urlStr: string): boolean {
   try {
@@ -93,6 +105,10 @@ export function upstreamUrlLooksLikePatreonHosted(urlStr: string): boolean {
   }
 }
 
+/**
+ * @description Stateful export worker bound to canonical snapshot, filesystem roots, fetch, Prisma/R2 helpers.
+ * @security-audit-required Downloads and stores creator-owned media blobs; callers must enforce `creatorId` authorization on every route.
+ */
 export class ExportService {
   private readonly canonicalStore: CanonicalStore;
   private readonly exportIndex: FileExportIndex;
@@ -105,6 +121,17 @@ export class ExportService {
   ) => Promise<string | null>;
   private readonly prisma: PrismaClient | undefined;
 
+  /**
+   * @description Binds canonical + export index + storage roots and optional Patreon token resolver / Prisma for R2/upstream paths.
+   * @param canonicalStore Source of media metadata.
+   * @param exportIndex Per-creator JSON index reader/writer.
+   * @param storageRoot Local blob root.
+   * @param fetchImpl Injectable `fetch` for tests.
+   * @param retryPolicy Partial override of default HTTP retry policy for upstream downloads.
+   * @param sleepFn Delay function between retries.
+   * @param getCreatorPatreonAccessToken Optional resolver for Patreon-hosted URLs.
+   * @param prisma Optional DB for `MediaAsset` storage key / upstream fallbacks.
+   */
   public constructor(
     canonicalStore: CanonicalStore,
     exportIndex: FileExportIndex,
@@ -128,6 +155,14 @@ export class ExportService {
     this.prisma = prisma;
   }
 
+  /**
+   * @description Downloads (or reuses) upstream asset bytes, persists under `storageRoot`, updates export index and canonical storage hints.
+   * @param creatorId Owning creator id.
+   * @param mediaId Media id to export.
+   * @returns Summary with checksum and whether this was an idempotent skip.
+   * @async
+   * @throws {Error} Missing media, upstream fetch failures after retries, filesystem errors, or OAuth token resolution failures.
+   */
   public async exportMedia(creatorId: string, mediaId: string): Promise<ExportOneResult> {
     const snapshot = await this.canonicalStore.load();
     const mediaMap = snapshot.media[creatorId];
@@ -254,6 +289,12 @@ export class ExportService {
   /**
    * Single resolution pass for `GET /api/v1/export/media/.../content` and `/preview` — avoids two R2 GETs
    * when the handler needs both metadata and bytes.
+   * @description Loads `ExportMediaRecord` plus bytes via index, disk, R2, or upstream fetch.
+   * @param creatorId Creator scope.
+   * @param mediaId Media id.
+   * @returns Record + buffer or `null` when unavailable.
+   * @async
+   * @throws {Error} R2 misconfiguration, path traversal issues, or unreadable files.
    */
   public async getExportContent(
     creatorId: string,
@@ -262,6 +303,14 @@ export class ExportService {
     return this.loadExportRecordAndBuffer(creatorId, mediaId);
   }
 
+  /**
+   * @description Returns raw blob bytes for exported media, throwing when missing.
+   * @param creatorId Creator scope.
+   * @param mediaId Media id.
+   * @returns File/R2/upstream buffer bytes.
+   * @async
+   * @throws {Error} When `loadExportRecordAndBuffer` returns null.
+   */
   public async readBlob(creatorId: string, mediaId: string): Promise<Buffer> {
     const out = await this.loadExportRecordAndBuffer(creatorId, mediaId);
     if (!out) {
@@ -270,6 +319,14 @@ export class ExportService {
     return out.buffer;
   }
 
+  /**
+   * @description Re-hashes on-disk bytes and compares to export index metadata.
+   * @param creatorId Creator scope.
+   * @param mediaId Media id.
+   * @returns `true` when record exists and hashes/lengths match.
+   * @async
+   * @throws {Error} Delegates to `readBlob` on failures.
+   */
   public async verifyIntegrity(creatorId: string, mediaId: string): Promise<boolean> {
     const index = await this.exportIndex.load(creatorId);
     const rec = index.media[mediaId];
@@ -284,6 +341,12 @@ export class ExportService {
   /**
    * Random subset of indexed media — re-hash on disk vs export_index (checksum sampling).
    * `limit` capped at 50; uses Fisher–Yates shuffle.
+   * @description Statistical integrity sampling for Workstream C health checks.
+   * @param creatorId Creator scope.
+   * @param limit Requested sample count (capped).
+   * @returns Checked count, match count, mismatched ids.
+   * @async
+   * @throws {Error} On index/load failures from `verifyIntegrity`.
    */
   public async sampleIntegrityChecks(
     creatorId: string,
@@ -315,6 +378,12 @@ export class ExportService {
     return { checked: pick.length, matched, mismatched };
   }
 
+  /**
+   * @description Returns export index record for media when resolvable (may synthesize from DB/R2/upstream).
+   * @param creatorId Creator scope.
+   * @param mediaId Media id.
+   * @async
+   */
   public async getExportRecord(
     creatorId: string,
     mediaId: string
@@ -458,7 +527,13 @@ export class ExportService {
     return Buffer.from(await response.arrayBuffer());
   }
 
-  /** True when there is nothing to put in `GET /api/v1/export/library-zip`. */
+  /**
+   * True when there is nothing to put in `GET /api/v1/export/library-zip`.
+   * @description Detects empty export index for zip generation guardrails.
+   * @param creatorId Creator scope.
+   * @async
+   * @throws {Error} On index load failure.
+   */
   public async isLibraryZipEmpty(creatorId: string): Promise<boolean> {
     const index = await this.exportIndex.load(creatorId);
     return Object.keys(index.media ?? {}).length === 0;
@@ -467,6 +542,10 @@ export class ExportService {
   /**
    * `relative_blob_path` values in the export index that are not readable on disk.
    * Stale index rows (e.g. files removed manually) cause archiver to fail mid-stream unless checked first.
+   * @description Pre-flight list of missing blob paths for zip endpoints.
+   * @param creatorId Creator scope.
+   * @returns Paths that failed `access`.
+   * @async
    */
   public async listMissingLibraryZipBlobs(creatorId: string): Promise<string[]> {
     const index = await this.exportIndex.load(creatorId);
@@ -486,6 +565,11 @@ export class ExportService {
   /**
    * Stream a zip of all exported blobs (paths from `relative_blob_path`) plus manifests JSON.
    * Caller must set `Content-Type` / `Content-Disposition` on `dest` before calling, after `isLibraryZipEmpty` is false.
+   * @description Archives indexed blobs and manifest JSON snapshots into `dest` stream.
+   * @param creatorId Creator scope.
+   * @param dest Writable HTTP response stream (or fs stream).
+   * @async
+   * @throws {Error} ENOENT/`archive` errors, empty index error tagged `LIBRARY_ZIP_EMPTY`, or finalize failures.
    */
   public async pipeLibraryZip(creatorId: string, dest: Writable): Promise<void> {
     const index = await this.exportIndex.load(creatorId);
@@ -534,6 +618,13 @@ export class ExportService {
     await finished;
   }
 
+  /**
+   * @description Writes `media-manifest`, `post-map`, and `tier-map` JSON files under the creator manifests directory.
+   * @param creatorId Creator scope.
+   * @returns Relative POSIX paths for written files.
+   * @async
+   * @throws {Error} On canonical/index load or `writeFile` failure.
+   */
   public async materializeManifests(creatorId: string): Promise<{
     relative_paths: string[];
   }> {

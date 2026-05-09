@@ -1,8 +1,17 @@
+/**
+ * @fileoverview Postgres-backed library collections and membership (`library_collections`, `collection_posts`).
+ * @see ./collections-store.ts File-backed reference implementation
+ * @see prisma/schema.prisma Related models
+ */
+
 import { randomUUID } from "node:crypto";
 import type { PrismaClient } from "@prisma/client";
 import type { RelayCollectionsStore } from "./collections-store.js";
 import type { Collection, CollectionsRoot } from "./types.js";
 
+/**
+ * @description Maps DB row + join rows into wire {@link Collection} shape.
+ */
 function normalizeCollection(c: Collection): Collection {
   return {
     ...c,
@@ -10,6 +19,9 @@ function normalizeCollection(c: Collection): Collection {
   };
 }
 
+/**
+ * @description Converts Prisma `library_collection` row plus ordered membership rows into API {@link Collection}.
+ */
 function toCollection(
   row: {
     id: string;
@@ -41,6 +53,11 @@ function toCollection(
   });
 }
 
+/**
+ * @description Prisma {@link RelayCollectionsStore}; uses transactions for membership churn.
+ * @throws Prisma errors propagate on constraint violations (caller maps to HTTP).
+ * @todo `load()` returns every creator—reserve for migrations/admin unless paginated.
+ */
 export class DbCollectionsStore implements RelayCollectionsStore {
   public constructor(private readonly prisma: PrismaClient) {}
 

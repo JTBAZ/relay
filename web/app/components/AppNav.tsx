@@ -5,6 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import {
   Activity,
+  BarChart2,
   FlaskConical,
   Home,
   Images,
@@ -24,6 +25,7 @@ const baseNavItems: ReadonlyArray<{
   { href: "/", label: "Library", Icon: Home },
   { href: "/designer", label: "Designer", Icon: Palette },
   { href: "/designer/profile", label: "Profile", Icon: User },
+  { href: "/analytics", label: "Analytics", Icon: BarChart2 },
   { href: "/action-center", label: "Action Center", Icon: Activity },
   { href: "/visitor", label: "Gallery", Icon: Images }
 ] as const;
@@ -126,6 +128,8 @@ export default function AppNav() {
               ? pathname === "/"
               : item.href === "/action-center"
                 ? pathname === "/action-center" || pathname.startsWith("/action-center/")
+                : item.href === "/analytics"
+                  ? pathname === "/analytics" || pathname.startsWith("/analytics/")
                 : item.href === "/visitor"
                   ? pathname === "/visitor" || pathname === "/visitor/"
                   : item.href === "/new-post"

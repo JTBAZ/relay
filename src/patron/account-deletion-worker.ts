@@ -154,6 +154,17 @@ export class InProcessAccountDeletionRunner implements AccountDeletionRunner {
   }
 }
 
+export function accountDeletionSweepRepeatEveryMsFromEnv(
+  env: NodeJS.ProcessEnv = process.env
+): number | null {
+  const raw = (env.RELAY_ACCOUNT_DELETION_SWEEP_MS ?? "").trim();
+  const parsed = raw === "" ? DEFAULT_SWEEP_INTERVAL_MS : Number(raw);
+  if (!Number.isFinite(parsed) || parsed === 0) {
+    return null;
+  }
+  return Math.max(MIN_SWEEP_INTERVAL_MS, Math.floor(parsed));
+}
+
 /**
  * Bootstrap helper. Honors `RELAY_ACCOUNT_DELETION_SWEEP_MS` (=0 disables; default 1h with the
  * floor applied). Returns null when the worker is disabled so callers can skip the stop hook.
@@ -162,14 +173,13 @@ export function startAccountDeletionWorker(
   prisma: PrismaClient,
   log?: (msg: string, ctx?: Record<string, unknown>) => void
 ): AccountDeletionRunner | null {
-  const raw = (process.env.RELAY_ACCOUNT_DELETION_SWEEP_MS ?? "").trim();
-  const parsed = raw === "" ? DEFAULT_SWEEP_INTERVAL_MS : Number(raw);
-  if (!Number.isFinite(parsed) || parsed === 0) {
+  const every = accountDeletionSweepRepeatEveryMsFromEnv();
+  if (every === null) {
     return null;
   }
   const runner = new InProcessAccountDeletionRunner({
     prisma,
-    pollIntervalMs: parsed,
+    pollIntervalMs: every,
     log
   });
   runner.start();
