@@ -186,6 +186,20 @@ Each portal on `/insights` links to `.../audience#...` or `.../content#...` with
 
 ---
 
+## Optional consolidated hub (3 columns)
+
+Some flows may use **one screen** (instead of only the 4-portal landing) with three high-level bands—see mockup `docs/analytics/insights-hub-3section-performance-growth-audience.png`.
+
+| Section | Question | Maps to (from trees above) |
+|---------|----------|----------------------------|
+| **Performance** (tall portrait, left) | How is my gallery doing? | Tree A (cadence, themes, tier mix of content) + Relay engagement slice + Patreon post table under **Reach** |
+| **Growth** (top right, landscape) | Am I reaching new people? | Financial / subscription signals (when available), tips, joins or net adds as “new people,” **promotional** one-liner (e.g. top post / campaign pulse)—may pull from **Reach** overview + membership movement headline |
+| **Audience** (bottom right, landscape) | How’s my community doing? | Tree B (movement detail, tier population, stickiness) + Tree C (cohort retention) + soft **churn watch** copy (aggregate only) |
+
+The **4-portal landing** can still deep-link into anchors on this layout or into separate `/insights/audience` and `/insights/content` pages; product choice is whether this 3-section view is the default “hub” or a drill-down from portals.
+
+---
+
 ## Related docs
 
 - `docs/analytics/ANALYTICS_READINESS.md` — Backend coverage  

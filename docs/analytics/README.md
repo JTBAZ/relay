@@ -37,7 +37,8 @@ This folder contains the **complete design & implementation guide** for the Rela
 | Asset | Type | Purpose |
 |-------|------|---------|
 | **[analytics-dashboard-mockup.png](../../assets/analytics-dashboard-mockup.png)** | PNG mockup | Desktop hub layout example with 3 sample cards |
-| **[insights-page1-landscape-4up.png](insights-page1-landscape-4up.png)** | PNG mockup | **Page 1 — General Insights** (current): **landscape** 4-up grid—Gallery, Audience, Retention, unified **Reach**; equal rounded cards, Relay dark language |
+| **[insights-hub-3section-performance-growth-audience.png](insights-hub-3section-performance-growth-audience.png)** | PNG mockup | **3-section hub:** tall **Performance** (gallery) left · **Growth** (financial + promo) top-right · **Audience** (retention, movement, stickiness) bottom-right |
+| **[insights-page1-landscape-4up.png](insights-page1-landscape-4up.png)** | PNG mockup | **Page 1 — General Insights** (portal landing): **landscape** 4-up grid—Gallery, Audience, Retention, unified **Reach** |
 | **[insights-page1-general-landing.png](insights-page1-general-landing.png)** | PNG mockup | Earlier draft: 5-portrait layout (superseded for landing layout) |
 
 ---
