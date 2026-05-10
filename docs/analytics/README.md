@@ -26,11 +26,19 @@ This folder contains the **complete design & implementation guide** for the Rela
 | **[DASHBOARD_QUICK_REFERENCE.md](DASHBOARD_QUICK_REFERENCE.md)** | TL;DR design cheat sheet, grid specs, color codes, breakpoints, micro-interactions, anti-patterns | 350 lines | All implementers |
 | **[UX_DESIGN_SUMMARY.md](UX_DESIGN_SUMMARY.md)** | Executive overview of design system, philosophy, core principles, responsive variants, accessibility | 400 lines | Everyone |
 
+### **Information architecture**
+
+| Document | Purpose | Audience |
+|----------|---------|----------|
+| **[INSIGHTS_IA_TREE.md](INSIGHTS_IA_TREE.md)** | Multi-page split, landing portals, primary→tertiary drill-down; **unified Reach** portal for Patreon + Relay + future socials | Product, frontend |
+
 ### **Visual Reference**
 
 | Asset | Type | Purpose |
 |-------|------|---------|
 | **[analytics-dashboard-mockup.png](../../assets/analytics-dashboard-mockup.png)** | PNG mockup | Desktop hub layout example with 3 sample cards |
+| **[insights-page1-landscape-4up.png](insights-page1-landscape-4up.png)** | PNG mockup | **Page 1 — General Insights** (current): **landscape** 4-up grid—Gallery, Audience, Retention, unified **Reach**; equal rounded cards, Relay dark language |
+| **[insights-page1-general-landing.png](insights-page1-general-landing.png)** | PNG mockup | Earlier draft: 5-portrait layout (superseded for landing layout) |
 
 ---
 
