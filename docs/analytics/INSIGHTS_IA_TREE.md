@@ -193,6 +193,7 @@ Some flows may use **one screen** (instead of only the 4-portal landing) with th
 - **Dense reference** (all widgets): `docs/analytics/insights-hub-3section-performance-growth-audience.png`
 - **Trimmed Performance** (same layout, fewer blocks in left column—no Reveals, no tier “who sees what” bar, no top-tag strip): `docs/analytics/insights-hub-3section-performance-trimmed.png`
 - **Streamlined snapshot** (minimal first paint): `docs/analytics/insights-hub-3section-minimal-sleek.png`
+- **Growth fundamentals (7d)** — Performance / Growth / Audience aligned to short-term decisions (cadence, new patrons, net, top converting post, est. revenue, churn %, gallery vs prior week, profile views, churn-decay watch): `docs/analytics/insights-hub-growth-fundamentals-7d.png`
 
 | Section | Question | Maps to (from trees above) |
 |---------|----------|----------------------------|

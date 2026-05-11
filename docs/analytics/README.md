@@ -37,6 +37,7 @@ This folder contains the **complete design & implementation guide** for the Rela
 | Asset | Type | Purpose |
 |-------|------|---------|
 | **[analytics-dashboard-mockup.png](../../assets/analytics-dashboard-mockup.png)** | PNG mockup | Desktop hub layout example with 3 sample cards |
+| **[insights-hub-growth-fundamentals-7d.png](insights-hub-growth-fundamentals-7d.png)** | PNG mockup | **Growth fundamentals (7d):** Performance = cadence + new patrons + net + top converting post; Growth = est. revenue + churn rate; Audience = gallery trend + profile views + churn-decay watch — no impression table |
 | **[insights-hub-3section-minimal-sleek.png](insights-hub-3section-minimal-sleek.png)** | PNG mockup | **Streamlined 3-section hub:** same Performance / Growth / Audience split, **minimal** copy—few headline numbers, no dense tables |
 | **[insights-hub-3section-performance-trimmed.png](insights-hub-3section-performance-trimmed.png)** | PNG mockup | **3-section hub (trimmed):** same as dense but **Performance** omits Reveals, Who sees what, and top-theme (#Sketch) strip—jumps from pulse cards to Patreon post table |
 | **[insights-hub-3section-performance-growth-audience.png](insights-hub-3section-performance-growth-audience.png)** | PNG mockup | **3-section hub (dense):** full Performance widgets—reference; prefer **trimmed** or **minimal** for less noise |
