@@ -38,7 +38,8 @@ This folder contains the **complete design & implementation guide** for the Rela
 |-------|------|---------|
 | **[analytics-dashboard-mockup.png](../../assets/analytics-dashboard-mockup.png)** | PNG mockup | Desktop hub layout example with 3 sample cards |
 | **[insights-hub-3section-minimal-sleek.png](insights-hub-3section-minimal-sleek.png)** | PNG mockup | **Streamlined 3-section hub:** same Performance / Growth / Audience split, **minimal** copy—few headline numbers, no dense tables |
-| **[insights-hub-3section-performance-growth-audience.png](insights-hub-3section-performance-growth-audience.png)** | PNG mockup | **3-section hub (dense):** full widgets—use for drill-down reference, not first-load density |
+| **[insights-hub-3section-performance-trimmed.png](insights-hub-3section-performance-trimmed.png)** | PNG mockup | **3-section hub (trimmed):** same as dense but **Performance** omits Reveals, Who sees what, and top-theme (#Sketch) strip—jumps from pulse cards to Patreon post table |
+| **[insights-hub-3section-performance-growth-audience.png](insights-hub-3section-performance-growth-audience.png)** | PNG mockup | **3-section hub (dense):** full Performance widgets—reference; prefer **trimmed** or **minimal** for less noise |
 | **[insights-page1-landscape-4up.png](insights-page1-landscape-4up.png)** | PNG mockup | **Page 1 — General Insights** (portal landing): **landscape** 4-up grid—Gallery, Audience, Retention, unified **Reach** |
 | **[insights-page1-general-landing.png](insights-page1-general-landing.png)** | PNG mockup | Earlier draft: 5-portrait layout (superseded for landing layout) |
 

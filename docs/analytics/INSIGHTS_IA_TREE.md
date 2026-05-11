@@ -191,6 +191,7 @@ Each portal on `/insights` links to `.../audience#...` or `.../content#...` with
 Some flows may use **one screen** (instead of only the 4-portal landing) with three high-level bands—see mockups:
 
 - **Dense reference** (all widgets): `docs/analytics/insights-hub-3section-performance-growth-audience.png`
+- **Trimmed Performance** (same layout, fewer blocks in left column—no Reveals, no tier “who sees what” bar, no top-tag strip): `docs/analytics/insights-hub-3section-performance-trimmed.png`
 - **Streamlined snapshot** (minimal first paint): `docs/analytics/insights-hub-3section-minimal-sleek.png`
 
 | Section | Question | Maps to (from trees above) |
