@@ -32,6 +32,7 @@ This folder contains the **complete design & implementation guide** for the Rela
 |----------|---------|----------|
 | **[INSIGHTS_IA_TREE.md](INSIGHTS_IA_TREE.md)** | Multi-page split, landing portals, primary→tertiary drill-down; **unified Reach** portal for Patreon + Relay + future socials | Product, frontend |
 | **[V0_INSIGHTS_DASHBOARD_PROMPT.md](V0_INSIGHTS_DASHBOARD_PROMPT.md)** | **Copy-paste v0 prompt** — Relay-themed 7d dashboard, three zones, primary KPIs, carousel/kebab/drawer for secondary stats, per-zone **Action** buttons (e.g. New post) | Design, v0 |
+| **[insights-hub-v0-prompt-visual-mockup.png](insights-hub-v0-prompt-visual-mockup.png)** | PNG mockup | **Rendered from v0 prompt spec:** Performance / Growth / Audience + kebabs + **More detail** carousel + all primary CTAs |
 
 
 ### **Visual Reference**

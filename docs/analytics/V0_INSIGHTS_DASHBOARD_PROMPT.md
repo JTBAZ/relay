@@ -136,6 +136,7 @@ Build this as a **single responsive page** with the Relay dark theme and actions
 
 ## Repo reference (for you, not v0)
 
+- **Visual mockup generated from this spec:** `docs/analytics/insights-hub-v0-prompt-visual-mockup.png` (bento + kebabs + “More detail” carousel strip + action buttons).  
 - Metric set aligned with: `docs/analytics/insights-hub-growth-fundamentals-7d.png` and growth-fundamentals discussion in repo.  
 - IA context: `docs/analytics/INSIGHTS_IA_TREE.md`  
 - Live web fonts in product: see `web/app/layout.tsx` for **Fraunces** + **DM Sans** if matching production exactly.
