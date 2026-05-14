@@ -24,6 +24,7 @@ enum TenantRole {
 
 enum ProviderKind {
   patreon
+  subscribestar
 }
 
 enum OAuthPurpose {
@@ -320,6 +321,8 @@ model CreatorProfile {
   slugSource        PublicSlugSource @default(allocated) @map("slug_source")
   /// Canonical Patreon `campaign_id` for this creator (ingest / webhooks / patron matching). See `docs/architecture/multi-tenant-option-b.md`.
   patreonCampaignId String?          @unique @map("patreon_campaign_id")
+  /// Canonical SubscribeStar creator/profile id for creator-side ingest and patron matching.
+  subscribestarProfileId String?     @unique @map("subscribestar_profile_id")
   /// Mutable public @handle (mixed case allowed); uniqueness is on `usernameNorm`.
   username          String?
   /// Lowercase normalized username for uniqueness; mirrors `PatronProfile.handleNorm` pattern.
@@ -336,6 +339,7 @@ model CreatorProfile {
 
   @@index([tenantId])
   @@index([patreonCampaignId])
+  @@index([subscribestarProfileId])
   @@map("creator_profiles")
 }
 
@@ -376,12 +380,14 @@ enum MediaUpstreamStatus {
 /// Origin of a `Post` row: mirrored from Patreon vs created in Relay.
 enum PostSource {
   PATREON
+  SUBSCRIBESTAR
   RELAY
 }
 
-/// How a `MediaAsset` was first ingested: Patreon pipeline vs direct Relay upload (T-1.3) vs Discord capture.
+/// How a `MediaAsset` was first ingested: upstream sync vs direct Relay upload vs Discord capture.
 enum MediaIngestOrigin {
   PATREON
+  SUBSCRIBESTAR
   RELAY_UPLOAD
   DISCORD
 }
@@ -417,6 +423,8 @@ model Tier {
   relayTierId       String    @map("relay_tier_id")
   /// Opaque provider id for idempotency (Patreon tier id or same as `relay_tier_id` when unknown).
   providerTierId    String    @map("provider_tier_id")
+  /// When this row is a `relay_manual_tier_*` folder, optional canonical provider-access key uploads must match (`patreon_tier_*` / `substar_tier_*`).
+  manualUploadAccessRelayTierId String? @map("manual_upload_access_relay_tier_id")
   campaignId        String?   @map("campaign_id")
   campaign          Campaign? @relation(fields: [campaignId], references: [id], onDelete: SetNull)
   title             String
@@ -514,6 +522,8 @@ model MediaAsset {
   commentPins             Comment[]
   discordIngestReceipt    DiscordMediaIngestKey?
   relayEngagementEvents   RelayEngagementEvent[]
+  /// Manual Import: staged uploads carry intended provider access (`v:1`) before compose/publish (`primaryPostId` null).
+  manualImportStagingJson Json? @map("manual_import_staging_json")
 
   @@index([primaryPostId])
   @@index([creatorId, ingestOrigin])
@@ -549,6 +559,18 @@ model CreatorSyncState {
   updatedAt      DateTime @updatedAt @map("updated_at")
 
   @@map("creator_sync_states")
+}
+
+/// Provider-scoped sync snapshots keep Patreon and SubscribeStar health independent.
+model CreatorProviderSyncState {
+  creatorId      String       @map("creator_id")
+  provider       ProviderKind
+  lastPostSync   Json?        @map("last_post_sync")
+  lastMemberSync Json?        @map("last_member_sync")
+  updatedAt      DateTime     @updatedAt @map("updated_at")
+
+  @@id([creatorId, provider])
+  @@map("creator_provider_sync_states")
 }
 
 /// P4-onb-001 — Part 1-A creator funnel: Connect Patreon → Import → Organize → Publish (persisted step + optional JSON metadata).

@@ -71,6 +71,11 @@ export function relayServerConfigFromEnv(): AppConfig {
         if (Number.isFinite(n) && n >= 1000) partial.timeout_ms = n;
       }
       return Object.keys(partial).length > 0 ? partial : undefined;
-    })()
+    })(),
+    subscribestar_api_origin: process.env.SUBSCRIBESTAR_API_ORIGIN,
+    subscribestar_creator_client_id:
+      process.env.SUBSCRIBESTAR_RELAY_CREATOR_CLIENT_ID ?? process.env.SUBSCRIBESTAR_CREATOR_CLIENT_ID,
+    subscribestar_creator_client_secret:
+      process.env.SUBSCRIBESTAR_RELAY_CREATOR_SECRET ?? process.env.SUBSCRIBESTAR_CREATOR_CLIENT_SECRET
   };
 }

@@ -56,6 +56,8 @@ export type ApplyRelayUploadCommitParams = {
   postIdOpt?: string;
   head: RelayUploadCommitHead;
   row: MediaAsset;
+  /** When set, persists Manual Import staging intent on the media row; omit entirely to skip the JSON column update. */
+  manualImportStagingJson?: Prisma.InputJsonValue;
 };
 
 /**
@@ -72,7 +74,8 @@ export async function applyRelayUploadCommitUpdate(
   | { ok: true; payload: { content_length: number; etag: string | null } }
   | { ok: false; httpStatus: 400; message: string }
 > {
-  const { mediaId, creatorId, key, contentType, byteSize, postIdOpt, head, row } = params;
+  const { mediaId, creatorId, key, contentType, byteSize, postIdOpt, head, row, manualImportStagingJson } =
+    params;
 
   if (head.contentLength > 0 && head.contentLength !== byteSize) {
     const msgSize = `byte_size does not match stored object (expected ${head.contentLength} bytes, got ${byteSize}).`;
@@ -117,7 +120,8 @@ export async function applyRelayUploadCommitUpdate(
       currentIngestedAt: now,
       versionsJson: [v] as unknown as Prisma.InputJsonValue,
       processingStatus: MediaProcessingStatus.READY,
-      processingError: null
+      processingError: null,
+      ...(manualImportStagingJson !== undefined ? { manualImportStagingJson } : {})
     }
   });
 

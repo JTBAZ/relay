@@ -67,6 +67,13 @@ function absoluteRelayUrl(path: string | undefined): string | null {
   return `${RELAY_API_BASE}${p.startsWith("/") ? p : `/${p}`}`;
 }
 
+function manualImportStagingLabel(staging: unknown): string | null {
+  if (!staging || typeof staging !== "object") return null;
+  const o = staging as Record<string, unknown>;
+  if (typeof o.bin_title !== "string" || !o.bin_title.trim()) return null;
+  return o.bin_title.trim();
+}
+
 function unifiedStagingToBinItem(item: RelayLibraryStagingItem): ImportBinItem {
   const isDiscord = item.ingest_origin === "DISCORD";
   const cap = isDiscord ? itemCaption(item.discord_capture) : "";
@@ -78,11 +85,17 @@ function unifiedStagingToBinItem(item: RelayLibraryStagingItem): ImportBinItem {
       : item.mime_type?.startsWith("image/") && item.thumb_url_path?.trim()
         ? item.thumb_url_path
         : item.content_url_path;
+
+  const manualLabel =
+    item.ingest_origin === "RELAY_UPLOAD" ? manualImportStagingLabel(item.manual_import_staging) : null;
+  const relayUploadTitle = manualLabel
+    ? `Upload · ${manualLabel}`
+    : `Upload · ${fallbackName}`;
   return {
     id: item.media_id,
     src: absoluteRelayUrl(pathForThumb),
     mimeType: item.mime_type || "application/octet-stream",
-    filename: isDiscord ? cap || fallbackName : `Upload · ${fallbackName}`,
+    filename: isDiscord ? cap || fallbackName : relayUploadTitle,
     timestamp: new Date(item.ingested_at),
     source: isDiscord ? "discord" : "upload",
     serverStaged: true

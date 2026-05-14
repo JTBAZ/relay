@@ -13,13 +13,15 @@ import {
   type MediaStoragePurgeJobData,
   type NotificationDeliveryJobData,
   type PatreonIncrementalAutosyncJobData,
-  type PatronEntitlementStaleRefreshJobData
+  type PatronEntitlementStaleRefreshJobData,
+  type SubscribeStarGraphqlPostsIngestJobData
 } from "./queue-names.js";
 import { incrementalAutosyncRepeatEveryMsFromEnv } from "../patreon/incremental-sync-worker.js";
 import { patronEntitlementStaleRefreshIntervalFromEnv } from "../patron/patron-entitlement-stale-worker.js";
 import { notificationDeliveryRepeatEveryMsFromEnv } from "../patron/notification-delivery-worker.js";
 import { accountDeletionSweepRepeatEveryMsFromEnv } from "../patron/account-deletion-worker.js";
 import { mediaStoragePurgeSweepRepeatEveryMsFromEnv } from "../storage/media-storage-purge-worker.js";
+import { subscribeStarGraphqlIngestAutosyncRepeatEveryMsFromEnv } from "../subscribestar/subscribestar-graphql-ingest-autosync.js";
 
 const REPEAT_JOB_NAME = "relay-tick";
 
@@ -83,6 +85,16 @@ export async function registerRelayBullMqRepeatSchedulers(
       openQueue(RELAY_JOB_QUEUE_NAMES.PATREON_INCREMENTAL_AUTOSYNC),
       autosyncEvery,
       {} as PatreonIncrementalAutosyncJobData,
+      log
+    );
+  }
+
+  const subStarSsEvery = subscribeStarGraphqlIngestAutosyncRepeatEveryMsFromEnv(env);
+  if (subStarSsEvery !== null) {
+    await replaceRepeatEvery(
+      openQueue(RELAY_JOB_QUEUE_NAMES.SUBSCRIBESTAR_GRAPHQL_POSTS_INGEST),
+      subStarSsEvery,
+      {} as SubscribeStarGraphqlPostsIngestJobData,
       log
     );
   }

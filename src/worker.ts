@@ -31,6 +31,10 @@ import {
 import { startNotificationDeliveryWorker } from "./patron/notification-delivery-worker.js";
 import { startAccountDeletionWorker } from "./patron/account-deletion-worker.js";
 import { startMediaStoragePurgeWorker } from "./storage/media-storage-purge-worker.js";
+import {
+  subscribeStarGraphqlIngestAutosyncRepeatEveryMsFromEnv,
+  startSubscribeStarGraphqlIngestAutosyncTimer
+} from "./subscribestar/subscribestar-graphql-ingest-autosync.js";
 import { createLogger } from "./lib/logger.js";
 import {
   captureRelaySentryException,
@@ -101,7 +105,10 @@ export async function runRelayWorkerProcess(
     patreonSyncHealthStore,
     patreonCampaignCreatorIndex,
     encryption,
-    patreonClient
+    patreonClient,
+    ingestService,
+    subscribeStarCreatorAuthService,
+    subscribeStarGraphqlIngestUrl
   } = createApp({
     ...serverConfig,
     prisma
@@ -115,6 +122,27 @@ export async function runRelayWorkerProcess(
       syncHealthStore: patreonSyncHealthStore,
       campaignCreatorIndex: patreonCampaignCreatorIndex,
       prisma
+    });
+  }
+
+  let stopSubscribeStarGraphqlAutosync: (() => void) | undefined;
+  const subRepeatMsWorker = subscribeStarGraphqlIngestAutosyncRepeatEveryMsFromEnv();
+  if (
+    jobBackend === "memory" &&
+    subRepeatMsWorker !== null &&
+    subscribeStarCreatorAuthService &&
+    subscribeStarGraphqlIngestUrl?.trim()
+  ) {
+    stopSubscribeStarGraphqlAutosync = startSubscribeStarGraphqlIngestAutosyncTimer({
+      intervalMs: subRepeatMsWorker,
+      prisma,
+      authService: subscribeStarCreatorAuthService,
+      graphqlUrl: subscribeStarGraphqlIngestUrl.trim(),
+      ingestService,
+      fetchImpl,
+      log: (msg, ctx) => {
+        log.warn({ ...(ctx ?? {}), relayMsg: msg }, "Relay worker");
+      }
     });
   }
 
@@ -163,6 +191,9 @@ export async function runRelayWorkerProcess(
       encryption,
       patreonClient,
       fetchImpl,
+      ingestService,
+      subscribeStarCreatorAuthService,
+      subscribeStarGraphqlIngestUrl,
       log: (msg, ctx) => {
         log.warn({ ...(ctx ?? {}), relayMsg: msg }, "Relay worker");
       }
@@ -193,6 +224,7 @@ export async function runRelayWorkerProcess(
     shuttingDown = true;
     let hadError = false;
     stopAutosync?.();
+    stopSubscribeStarGraphqlAutosync?.();
     stopPatronStaleRefresh?.();
 
     try {

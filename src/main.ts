@@ -36,6 +36,10 @@ import {
 import { startNotificationDeliveryWorker } from "./patron/notification-delivery-worker.js";
 import { startAccountDeletionWorker } from "./patron/account-deletion-worker.js";
 import { startMediaStoragePurgeWorker } from "./storage/media-storage-purge-worker.js";
+import {
+  subscribeStarGraphqlIngestAutosyncRepeatEveryMsFromEnv,
+  startSubscribeStarGraphqlIngestAutosyncTimer
+} from "./subscribestar/subscribestar-graphql-ingest-autosync.js";
 import { createLogger } from "./lib/logger.js";
 import {
   captureRelaySentryException,
@@ -120,7 +124,10 @@ const {
   patreonSyncHealthStore,
   patreonCampaignCreatorIndex,
   encryption,
-  patreonClient
+  patreonClient,
+  ingestService,
+  subscribeStarCreatorAuthService,
+  subscribeStarGraphqlIngestUrl
 } = createApp({
   ...serverConfig,
   prisma
@@ -130,6 +137,8 @@ const {
  * @description Stop handle for Patreon incremental autosync loop; undefined when not started.
  */
 let stopAutosync: (() => void) | undefined;
+/** SubscribeStar GraphQL → ingest autosync (`RELAY_JOB_BACKEND=memory`). */
+let stopSubscribeStarGraphqlAutosync: (() => void) | undefined;
 if (
   jobBackend === "memory" &&
   startInProcessBackgroundWork &&
@@ -141,6 +150,27 @@ if (
     syncHealthStore: patreonSyncHealthStore,
     campaignCreatorIndex: patreonCampaignCreatorIndex,
     prisma
+  });
+}
+
+const subRepeatMs = subscribeStarGraphqlIngestAutosyncRepeatEveryMsFromEnv();
+if (
+  jobBackend === "memory" &&
+  startInProcessBackgroundWork &&
+  subRepeatMs !== null &&
+  subscribeStarCreatorAuthService &&
+  subscribeStarGraphqlIngestUrl?.trim()
+) {
+  stopSubscribeStarGraphqlAutosync = startSubscribeStarGraphqlIngestAutosyncTimer({
+    intervalMs: subRepeatMs,
+    prisma,
+    authService: subscribeStarCreatorAuthService,
+    graphqlUrl: subscribeStarGraphqlIngestUrl.trim(),
+    ingestService,
+    fetchImpl,
+    log: (msg, ctx) => {
+      log.warn({ ...(ctx ?? {}), relayMsg: msg }, "Relay");
+    }
   });
 }
 
@@ -253,6 +283,9 @@ async function startHttpServer() {
         encryption,
         patreonClient,
         fetchImpl,
+        ingestService,
+        subscribeStarCreatorAuthService,
+        subscribeStarGraphqlIngestUrl,
         redisConnection: bullMqSharedRedis,
         log: (msg, ctx) => {
           log.warn({ ...(ctx ?? {}), relayMsg: msg }, "Relay");
@@ -314,6 +347,7 @@ function shutdown(signal: "SIGINT" | "SIGTERM") {
   relayShutdownStarted = true;
 
   stopAutosync?.();
+  stopSubscribeStarGraphqlAutosync?.();
   stopPatronStaleRefresh?.();
 
   void (async () => {

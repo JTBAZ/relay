@@ -29,6 +29,13 @@ import { FilePatreonCookieStore } from "./auth/cookie-store.js";
 import { PatreonClient } from "./auth/patreon-client.js";
 import { DbPatreonTokenStore } from "./auth/token-store-db.js";
 import { FilePatreonTokenStore, type PatreonTokenStore } from "./auth/token-store.js";
+import { DbSubscribeStarCreatorTokenStore } from "./auth/subscribestar-token-store-db.js";
+import { SubscribeStarCreatorAuthService } from "./auth/subscribestar-auth-service.js";
+import {
+  getSubscribeStarOAuthStateSecret,
+  signCreatorSubscribeStarOAuthState,
+  verifyCreatorSubscribeStarOAuthState
+} from "./auth/subscribestar-creator-oauth-state.js";
 import { errorEnvelope, successEnvelope } from "./contracts/api.js";
 import { RELAY_TIER_ALL_PATRONS, RELAY_TIER_PUBLIC } from "./patreon/relay-access-tiers.js";
 import { DbEventBus } from "./events/event-bus-db.js";
@@ -46,10 +53,22 @@ import { IngestRetryQueue } from "./ingest/retry-queue.js";
 import { SyncWatermarkStore } from "./ingest/sync-watermark-store.js";
 import { DbSyncWatermarkStore } from "./ingest/sync-watermark-store-db.js";
 import { validateIngestBatchBody } from "./ingest/validate-body.js";
+import { buildSubscribeStarSyncBatch } from "./subscribestar/map-subscribestar-to-ingest.js";
+import { validateSubscribeStarIngestWire } from "./subscribestar/validate-subscribestar-ingest-wire.js";
+import { recordSubscribeStarLastPostSync } from "./subscribestar/record-subscribestar-provider-sync.js";
+import { runSubscribeStarPostsGraphqlPagedIngest } from "./subscribestar/run-subscribestar-posts-graphql-ingest.js";
 import {
   createRelayPostTransaction,
   RelayCreatePostError
 } from "./relay/create-relay-post.js";
+import {
+  getManualImportSetup,
+  MANUAL_RELAY_CAMPAIGN_PREFIX,
+  ManualImportCatalogError,
+  upsertManualTierBins,
+  type ManualImportBinInput
+} from "./relay/manual-import-catalog.js";
+import { resolveManualImportUploadStagingPayload } from "./relay/manual-import-staging-access.js";
 import {
   applyRelayUploadCommitUpdate,
   markMediaAssetProcessingFailed
@@ -484,6 +503,7 @@ import { assertCreatorSyncWritable } from "./patreon/creator-sync-writable.js";
 import { PatreonSyncService } from "./patreon/patreon-sync-service.js";
 import { creatorSyncHealthStateToWebDto } from "./patreon/sync-health-web-dto.js";
 import { classifySyncError } from "./patreon/sync-error-copy.js";
+import { SubscribeStarOAuthClient } from "./subscribestar/subscribestar-client.js";
 import {
   ensureCreatorProfilePatreonCampaignId,
   getCreatorProfilePatreonCampaignIdForRelayCreatorDb,
@@ -537,6 +557,15 @@ export type AppConfig = {
   patreon_client_secret?: string;
   /** Defaults to https://www.patreon.com/api/oauth2/token */
   patreon_token_url?: string;
+  /**
+   * SubscribeStar API origin (OAuth + GraphQL), no trailing slash. Default reads `SUBSCRIBESTAR_API_ORIGIN`
+   * in `createApp` when omitted (`https://subscribestar.adult`).
+   */
+  subscribestar_api_origin?: string;
+  /** SubscribeStar OAuth app Client ID — creator ingest app. */
+  subscribestar_creator_client_id?: string;
+  /** SubscribeStar OAuth app Client Secret — creator ingest app. */
+  subscribestar_creator_client_secret?: string;
   /** Base64 AES-256 key used to encrypt Patreon tokens at rest (generate e.g. openssl rand -base64 32). */
   relay_token_encryption_key?: string;
   credential_store_path?: string;
@@ -716,6 +745,11 @@ export type CreateAppResult = {
   /** Same instance used for cookie + patron OAuth crypto (PE-H workers). */
   encryption: TokenEncryption;
   patreonClient: PatreonClient;
+  /** Present when `SUBSCRIBESTAR_INGEST_ENABLED` + DB OAuth + client env are configured. */
+  subscribeStarCreatorAuthService?: SubscribeStarCreatorAuthService;
+  subscribeStarCreatorOAuthClient?: SubscribeStarOAuthClient;
+  /** GraphQL ingest URL `${SUBSCRIBESTAR_API_ORIGIN}/api/graphql/v1` when creator OAuth wiring is active. */
+  subscribeStarGraphqlIngestUrl?: string;
 };
 
 /**
@@ -768,6 +802,22 @@ function validateRequiredFields(
     }
   }
   return missing;
+}
+
+/**
+ * When `SUBSCRIBESTAR_CREATOR_REDIRECT_URI` is set, exchanged `redirect_uri` must match exactly (mitigate misuse).
+ */
+function subscribeStarCreatorRedirectMismatch(
+  redirectUri: string
+): string | undefined {
+  const expected =
+    process.env.SUBSCRIBESTAR_CREATOR_REDIRECT_URI?.trim() ||
+    process.env.SUBSCRIBESTAR_RELAY_CREATOR_REDIRECT_URI?.trim();
+  if (!expected) return undefined;
+  if (redirectUri.trim() !== expected) {
+    return "redirect_uri must match SUBSCRIBESTAR_CREATOR_REDIRECT_URI.";
+  }
+  return undefined;
 }
 
 /**
@@ -1144,7 +1194,8 @@ async function findRelayLibraryStagingRows(
       currentMimeType: true,
       currentIngestedAt: true,
       discordCaptureJson: true,
-      ingestOrigin: true
+      ingestOrigin: true,
+      manualImportStagingJson: true
     }
   });
 }
@@ -1190,8 +1241,28 @@ function mapRelayLibraryStagingListItems(
       ? `/api/v1/export/media/${encodeURIComponent(creatorId)}/${encodeURIComponent(r.id)}/thumb`
       : "",
     ingest_origin: r.ingestOrigin,
-    discord_capture: r.ingestOrigin === MediaIngestOrigin.DISCORD ? r.discordCaptureJson : null
+    discord_capture: r.ingestOrigin === MediaIngestOrigin.DISCORD ? r.discordCaptureJson : null,
+    manual_import_staging: r.manualImportStagingJson
   }));
+}
+
+function manualImportStagingRecord(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const record = value as Record<string, unknown>;
+  return typeof record.bin_prisma_tier_id === "string" && typeof record.bin_title === "string"
+    ? record
+    : null;
+}
+
+function isManualImportLibraryCommitted(value: unknown): boolean {
+  const record = manualImportStagingRecord(value);
+  if (!record) return true;
+  return typeof record.committed_to_library_at === "string" && record.committed_to_library_at.trim().length > 0;
+}
+
+function isManualImportBinPending(value: unknown): boolean {
+  const record = manualImportStagingRecord(value);
+  return Boolean(record && !isManualImportLibraryCommitted(record));
 }
 
 /**
@@ -1477,6 +1548,56 @@ export function createApp(config: AppConfig): CreateAppResult {
       "[relay] RELAY_PUBLIC_WEBHOOK_BASE_URL is not set — Patreon platform webhooks cannot be registered. " +
         "Set RELAY_PUBLIC_WEBHOOK_BASE_URL (or PUBLIC_WEBHOOK_BASE_URL) to your public Relay API origin in production."
     );
+  }
+
+  const subscribeStarIngestEnvEnabled = relayEnvTruthy(process.env.SUBSCRIBESTAR_INGEST_ENABLED);
+
+  let subscribeStarCreatorOAuthClient: SubscribeStarOAuthClient | undefined;
+  let subscribeStarCreatorAuthService: SubscribeStarCreatorAuthService | undefined;
+  let subscribeStarGraphqlIngestUrl: string | undefined;
+
+  if (
+    subscribeStarIngestEnvEnabled &&
+    useDbCreatorOAuthStore(config) &&
+    config.prisma
+  ) {
+    const subOriginTrim = (
+      config.subscribestar_api_origin?.trim() ||
+      process.env.SUBSCRIBESTAR_API_ORIGIN?.trim() ||
+      "https://subscribestar.adult"
+    ).replace(/\/$/, "");
+    const creatorCid =
+      config.subscribestar_creator_client_id?.trim() ||
+      process.env.SUBSCRIBESTAR_RELAY_CREATOR_CLIENT_ID?.trim() ||
+      process.env.SUBSCRIBESTAR_CREATOR_CLIENT_ID?.trim();
+    const creatorSecret =
+      config.subscribestar_creator_client_secret?.trim() ||
+      process.env.SUBSCRIBESTAR_RELAY_CREATOR_SECRET?.trim() ||
+      process.env.SUBSCRIBESTAR_CREATOR_CLIENT_SECRET?.trim();
+    const fetchImplSs = config.fetch_impl ?? globalThis.fetch;
+    if (creatorCid && creatorSecret) {
+      subscribeStarCreatorOAuthClient = new SubscribeStarOAuthClient({
+        client_id: creatorCid,
+        client_secret: creatorSecret,
+        token_url: `${subOriginTrim}/oauth2/token`,
+        fetch_impl: fetchImplSs
+      });
+      const ssTokenStore = new DbSubscribeStarCreatorTokenStore(config.prisma, encryption);
+      subscribeStarGraphqlIngestUrl = `${subOriginTrim}/api/graphql/v1`;
+      subscribeStarCreatorAuthService = new SubscribeStarCreatorAuthService(
+        subscribeStarCreatorOAuthClient,
+        ssTokenStore,
+        eventBus,
+        fetchImplSs,
+        subscribeStarGraphqlIngestUrl,
+        config.prisma
+      );
+    } else {
+      serverLog.warn(
+        "[relay] SUBSCRIBESTAR_INGEST_ENABLED is set but creator OAuth env is incomplete " +
+          "(SUBSCRIBESTAR_RELAY_CREATOR_CLIENT_ID + SUBSCRIBESTAR_RELAY_CREATOR_SECRET, or *_CREATOR_CLIENT_* aliases)."
+      );
+    }
   }
 
   const httpRequestLogger = config.http_request_logger ?? createLogger({ name: "relay-http" });
@@ -2474,6 +2595,226 @@ export function createApp(config: AppConfig): CreateAppResult {
   });
 
   /**
+   * SubscribeStar creator OAuth: signed `state` when `RELAY_ENFORCE_CREATOR_OAUTH_BIND=1`.
+   * Requires `RELAY_SUBSCRIBESTAR_OAUTH_STATE_SECRET` (min 16 chars).
+   */
+  app.post("/api/v1/auth/subscribestar/creator/prepare", async (req: Request, res: Response) => {
+    const traceId = traceIdFrom(req);
+    if (!relayEnvTruthy(process.env.SUBSCRIBESTAR_INGEST_ENABLED)) {
+      return res
+        .status(404)
+        .json(errorEnvelope("NOT_FOUND", "SubscribeStar ingest is disabled.", traceId));
+    }
+    if (!subscribeStarCreatorAuthService || !config.prisma) {
+      return res.status(503).json(
+        errorEnvelope(
+          "SERVICE_UNAVAILABLE",
+          "SubscribeStar creator OAuth is not configured (enable SUBSCRIBESTAR_INGEST_ENABLED, OAuth client env, RELAY_DB_STORE_CREATOR_OAUTH).",
+          traceId
+        )
+      );
+    }
+    const ssBody = (req.body ?? {}) as Record<string, unknown>;
+    const ssDetails = validateRequiredFields(ssBody, ["creator_id"]);
+    if (ssDetails.length > 0) {
+      return res
+        .status(400)
+        .json(errorEnvelope("VALIDATION_ERROR", "Invalid request payload.", traceId, ssDetails));
+    }
+    if (!getSubscribeStarOAuthStateSecret()) {
+      return res.status(503).json(
+        errorEnvelope(
+          "SERVICE_UNAVAILABLE",
+          "RELAY_SUBSCRIBESTAR_OAUTH_STATE_SECRET must be set (min 16 characters) to issue OAuth state.",
+          traceId
+        )
+      );
+    }
+    const ssSession = await requirePatronBearerSession(req, res, traceId);
+    if (!ssSession) {
+      return;
+    }
+    const ssAccountId = await getAccountIdForSession(config.prisma, ssSession);
+    if (!ssAccountId) {
+      return res
+        .status(403)
+        .json(errorEnvelope("FORBIDDEN", "Session is not linked to an account.", traceId));
+    }
+    const ssCreatorId = String(ssBody.creator_id).trim();
+    const ssOwns = await accountOwnsRelayCreatorId(config.prisma, ssAccountId, ssCreatorId);
+    if (!ssOwns) {
+      return res.status(403).json(
+        errorEnvelope(
+          "FORBIDDEN",
+          "creator_id does not match this account's studio. Call POST /api/v1/creator/workspace first.",
+          traceId,
+          [{ field: "creator_id", issue: "not_owned" }]
+        )
+      );
+    }
+    try {
+      const { state: ssState, expiresAtIso: ssExpires } = signCreatorSubscribeStarOAuthState({
+        accountId: ssAccountId,
+        creatorId: ssCreatorId
+      });
+      return res.status(200).json(
+        successEnvelope(
+          {
+            state: ssState,
+            creator_id: ssCreatorId,
+            expires_at: ssExpires
+          },
+          traceId
+        )
+      );
+    } catch (e) {
+      return res.status(503).json(
+        errorEnvelope(
+          "SERVICE_UNAVAILABLE",
+          e instanceof Error ? e.message : String(e),
+          traceId
+        )
+      );
+    }
+  });
+
+  app.post("/api/v1/auth/subscribestar/creator/exchange", async (req: Request, res: Response) => {
+    const traceId = traceIdFrom(req);
+    if (!relayEnvTruthy(process.env.SUBSCRIBESTAR_INGEST_ENABLED)) {
+      return res
+        .status(404)
+        .json(errorEnvelope("NOT_FOUND", "SubscribeStar ingest is disabled.", traceId));
+    }
+    if (!subscribeStarCreatorAuthService || !config.prisma) {
+      return res.status(503).json(
+        errorEnvelope(
+          "SERVICE_UNAVAILABLE",
+          "SubscribeStar creator OAuth is not configured.",
+          traceId
+        )
+      );
+    }
+    const sseBody = (req.body ?? {}) as Record<string, unknown>;
+    const sseDetails = validateRequiredFields(sseBody, ["creator_id", "code", "redirect_uri"]);
+    if (sseDetails.length > 0) {
+      return res
+        .status(400)
+        .json(errorEnvelope("VALIDATION_ERROR", "Invalid request payload.", traceId, sseDetails));
+    }
+    const sseRedirectUri = String(sseBody.redirect_uri ?? "").trim();
+    const sseRdErr = subscribeStarCreatorRedirectMismatch(sseRedirectUri);
+    if (sseRdErr) {
+      return res.status(400).json(
+        errorEnvelope("VALIDATION_ERROR", sseRdErr, traceId, [{ field: "redirect_uri", issue: "invalid" }])
+      );
+    }
+
+    const sseCreatorId = String(sseBody.creator_id).trim();
+
+    if (relayEnvTruthy(process.env.RELAY_ENFORCE_CREATOR_OAUTH_BIND)) {
+      if (!relayCreatorSecretBypassesOAuthBind(req)) {
+        const sseSession = await requirePatronBearerSession(req, res, traceId);
+        if (!sseSession) {
+          return;
+        }
+        const sseAccountId = await getAccountIdForSession(config.prisma!, sseSession);
+        if (!sseAccountId) {
+          return res
+            .status(403)
+            .json(errorEnvelope("FORBIDDEN", "Session is not linked to an account.", traceId));
+        }
+        const sseStateRaw = typeof sseBody.state === "string" ? sseBody.state.trim() : "";
+        if (!sseStateRaw) {
+          return res.status(400).json(
+            errorEnvelope("VALIDATION_ERROR", "Invalid request payload.", traceId, [
+              { field: "state", issue: "missing" }
+            ])
+          );
+        }
+        const sseVerify = verifyCreatorSubscribeStarOAuthState(sseStateRaw, sseAccountId, sseCreatorId);
+        if (!sseVerify.ok) {
+          return res.status(403).json(
+            errorEnvelope(
+              "FORBIDDEN",
+              `OAuth state verification failed (${sseVerify.reason}).`,
+              traceId
+            )
+          );
+        }
+        const sseOwnsExchange = await accountOwnsRelayCreatorId(
+          config.prisma!,
+          sseAccountId,
+          sseCreatorId
+        );
+        if (!sseOwnsExchange) {
+          return res.status(403).json(
+            errorEnvelope(
+              "FORBIDDEN",
+              "creator_id does not match this account's studio.",
+              traceId,
+              [{ field: "creator_id", issue: "not_owned" }]
+            )
+          );
+        }
+      }
+    }
+
+    try {
+      const sseResult = await subscribeStarCreatorAuthService.exchangeCodeAndPersist(
+        sseCreatorId,
+        sseBody.code as string,
+        sseRedirectUri,
+        traceId
+      );
+      try {
+        await ensureCreatorOnboardingAtLeastImportStarted(config.prisma!, sseCreatorId);
+      } catch (sseOnbErr) {
+        serverLog.warn(
+          { err: sseOnbErr, traceId, creatorId: sseCreatorId },
+          "ensureCreatorOnboardingAtLeastImportStarted failed after SubscribeStar OAuth (non-fatal)"
+        );
+      }
+      return res.status(200).json(successEnvelope(sseResult, traceId));
+    } catch (sseErr) {
+      return res
+        .status(502)
+        .json(errorEnvelope("UPSTREAM_AUTH_ERROR", (sseErr as Error).message, traceId));
+    }
+  });
+
+  app.post("/api/v1/auth/subscribestar/creator/refresh", async (req: Request, res: Response) => {
+    const traceId = traceIdFrom(req);
+    if (!relayEnvTruthy(process.env.SUBSCRIBESTAR_INGEST_ENABLED)) {
+      return res
+        .status(404)
+        .json(errorEnvelope("NOT_FOUND", "SubscribeStar ingest is disabled.", traceId));
+    }
+    if (!subscribeStarCreatorAuthService) {
+      return res.status(503).json(
+        errorEnvelope("SERVICE_UNAVAILABLE", "SubscribeStar creator OAuth is not configured.", traceId)
+      );
+    }
+    const ssrBody = (req.body ?? {}) as Record<string, unknown>;
+    const ssrDetails = validateRequiredFields(ssrBody, ["creator_id"]);
+    if (ssrDetails.length > 0) {
+      return res
+        .status(400)
+        .json(errorEnvelope("VALIDATION_ERROR", "Invalid request payload.", traceId, ssrDetails));
+    }
+    try {
+      const ssrResult = await subscribeStarCreatorAuthService.refreshAndRotate(
+        ssrBody.creator_id as string,
+        traceId
+      );
+      return res.status(200).json(successEnvelope(ssrResult, traceId));
+    } catch (ssrErr) {
+      const code = (ssrErr as Error).message.includes("not found") ? "NOT_FOUND" : "UPSTREAM_AUTH_ERROR";
+      const status = code === "NOT_FOUND" ? 404 : 502;
+      return res.status(status).json(errorEnvelope(code, (ssrErr as Error).message, traceId));
+    }
+  });
+
+  /**
    * Patron OAuth: exchange code with Patreon, GET /v2/identity, sync `tier_ids` like member
    * sync (`patreon_tier_*`), issue Relay session. When DB identity is enabled, persists
    * tokens to `patron_oauth_credentials` for PE-H refresh.
@@ -3298,6 +3639,222 @@ export function createApp(config: AppConfig): CreateAppResult {
     return res
       .status(202)
       .json(successEnvelope({ job_id: jobId, status: "queued" }, traceId));
+  });
+
+  /**
+   * SubscribeStar exploratory ingest: validates Explorer-shaped wire JSON, maps to `SyncBatchInput`,
+   * then queues or runs sync ingest (same `process_sync` semantics as POST /api/v1/ingest/batches).
+   * When `RELAY_DB_STORE_*` canonical + Prisma are enabled, persists `CreatorProviderSyncState.lastPostSync`
+   * on synchronous success (best-effort).
+   */
+  app.post("/api/v1/subscribestar/creator/ingest/batch", async (req: Request, res: Response) => {
+    const traceId = traceIdFrom(req);
+    if (!relayEnvTruthy(process.env.SUBSCRIBESTAR_INGEST_ENABLED)) {
+      return res
+        .status(404)
+        .json(errorEnvelope("NOT_FOUND", "SubscribeStar ingest is disabled.", traceId));
+    }
+    const wireParsed = validateSubscribeStarIngestWire(req.body);
+    if (!wireParsed.ok) {
+      return res.status(400).json(
+        errorEnvelope(
+          "VALIDATION_ERROR",
+          "Invalid SubscribeStar ingest payload.",
+          traceId,
+          wireParsed.details
+        )
+      );
+    }
+    const batchMapped = buildSubscribeStarSyncBatch(wireParsed.wire);
+    const ingestParsed = validateIngestBatchBody(batchMapped);
+    if (!ingestParsed.ok) {
+      return res.status(400).json(
+        errorEnvelope(
+          "VALIDATION_ERROR",
+          "Invalid mapped ingest batch.",
+          traceId,
+          ingestParsed.details
+        )
+      );
+    }
+
+    if (
+      !(await assertCreatorRelayMutationAllowed(
+        req,
+        res,
+        traceId,
+        config.prisma,
+        ingestParsed.batch.creator_id
+      ))
+    ) {
+      return;
+    }
+
+    const processSync = String(req.query.process_sync) === "true";
+    if (!processSync) {
+      const jobId = `job_${randomUUID()}`;
+      ingestQueue.enqueue({
+        id: jobId,
+        creator_id: ingestParsed.batch.creator_id,
+        trace_id: traceId,
+        batch: ingestParsed.batch,
+        attempts: 0
+      });
+      void ingestQueue.drain();
+      return res
+        .status(202)
+        .json(successEnvelope({ job_id: jobId, status: "queued" }, traceId));
+    }
+
+    try {
+      const ingestResult = await ingestService.runBatch(ingestParsed.batch, traceId);
+      if (config.prisma) {
+        try {
+          await recordSubscribeStarLastPostSync(
+            config.prisma,
+            ingestParsed.batch.creator_id,
+            ingestResult,
+            traceId
+          );
+        } catch (recErr) {
+          serverLog.warn(
+            {
+              err: recErr,
+              traceId,
+              creatorId: ingestParsed.batch.creator_id
+            },
+            "recordSubscribeStarLastPostSync failed after ingest (non-fatal)"
+          );
+        }
+      }
+      return res.status(200).json(successEnvelope(ingestResult, traceId));
+    } catch (ingestErr) {
+      return res
+        .status(502)
+        .json(errorEnvelope("INGEST_ERROR", (ingestErr as Error).message, traceId));
+    }
+  });
+
+  /**
+   * SubscribeStar GraphQL posts sync: env-configured `postsPage` query + creator OAuth → paged wire → ingest `runBatch`.
+   * Body: `{ creator_id, max_pages? }` (max_pages 1–50, default `SUBSCRIBESTAR_SYNC_POSTS_MAX_PAGES` or 25).
+   */
+  app.post("/api/v1/subscribestar/creator/sync/posts", async (req: Request, res: Response) => {
+    const traceId = traceIdFrom(req);
+    if (!relayEnvTruthy(process.env.SUBSCRIBESTAR_INGEST_ENABLED)) {
+      return res
+        .status(404)
+        .json(errorEnvelope("NOT_FOUND", "SubscribeStar ingest is disabled.", traceId));
+    }
+    if (!subscribeStarCreatorAuthService || !subscribeStarGraphqlIngestUrl) {
+      return res.status(503).json(
+        errorEnvelope(
+          "SERVICE_UNAVAILABLE",
+          "SubscribeStar creator OAuth service is not initialized.",
+          traceId
+        )
+      );
+    }
+
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const creatorId = typeof body.creator_id === "string" ? body.creator_id.trim() : "";
+    if (!creatorId) {
+      return res.status(400).json(
+        errorEnvelope(
+          "VALIDATION_ERROR",
+          "Missing creator_id.",
+          traceId,
+          [{ field: "creator_id", issue: "missing" }]
+        )
+      );
+    }
+
+    const defaultMaxRaw = Number(process.env.SUBSCRIBESTAR_SYNC_POSTS_MAX_PAGES ?? "25");
+    const fallbackMax =
+      Number.isFinite(defaultMaxRaw) && defaultMaxRaw >= 1 ? Math.min(50, Math.floor(defaultMaxRaw)) : 25;
+    const maxRaw = body.max_pages;
+    const requested =
+      typeof maxRaw === "number"
+        ? maxRaw
+        : typeof maxRaw === "string"
+          ? Number(maxRaw)
+          : fallbackMax;
+    const max_pages =
+      Number.isFinite(requested) && requested >= 1 ? Math.min(50, Math.floor(requested)) : fallbackMax;
+
+    if (
+      !(await assertCreatorRelayMutationAllowed(
+        req,
+        res,
+        traceId,
+        config.prisma,
+        creatorId
+      ))
+    ) {
+      return;
+    }
+
+    const fetchImplSs = config.fetch_impl ?? globalThis.fetch;
+
+    try {
+      const outcome = await runSubscribeStarPostsGraphqlPagedIngest({
+        creator_id: creatorId,
+        traceId,
+        max_pages,
+        deps: {
+          graphqlUrl: subscribeStarGraphqlIngestUrl,
+          fetchImpl: fetchImplSs,
+          getAccessToken: () =>
+            subscribeStarCreatorAuthService.resolveAccessTokenForGraphqlApi(creatorId, traceId),
+          runBatch: (batch, tid) => ingestService.runBatch(batch, tid)
+        }
+      });
+
+      const lastApply =
+        outcome.ok === true ? outcome.last_apply_result : outcome.last_apply_result;
+      if (config.prisma && lastApply) {
+        try {
+          await recordSubscribeStarLastPostSync(config.prisma, creatorId, lastApply, traceId);
+        } catch (recErr) {
+          serverLog.warn(
+            {
+              err: recErr,
+              traceId,
+              creatorId
+            },
+            "recordSubscribeStarLastPostSync failed after graphql sync (non-fatal)"
+          );
+        }
+      }
+
+      if (!outcome.ok) {
+        return res.status(502).json(
+          errorEnvelope("SUBSCRIBESTAR_GRAPHQL_SYNC_ERROR", outcome.issue, traceId, [
+            { field: "pages_fetched", issue: String(outcome.pages_fetched) },
+            { field: "batches_ingested", issue: String(outcome.batches_ingested) }
+          ])
+        );
+      }
+
+      return res.status(200).json(
+        successEnvelope(
+          {
+            creator_id: creatorId,
+            pages_fetched: outcome.pages_fetched,
+            batches_ingested: outcome.batches_ingested,
+            ended_reason: outcome.ended_reason,
+            last_cursor: outcome.last_cursor,
+            last_apply_result: outcome.last_apply_result
+          },
+          traceId
+        )
+      );
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      return res
+        .status(502)
+        .json(errorEnvelope("SUBSCRIBESTAR_GRAPHQL_SYNC_ERROR", msg, traceId));
+    }
   });
 
   app.post("/api/v1/export/media", async (req: Request, res: Response) => {
@@ -4383,6 +4940,133 @@ export function createApp(config: AppConfig): CreateAppResult {
   });
 
   /**
+   * Manual Relay Import setup: inspect Relay-owned access bins plus provider-synced suggestions.
+   * Provider rows are never rewritten here; POST only upserts `relay_manual_tier_*` bins.
+   */
+  app.get("/api/v1/relay/manual-import/setup", async (req: Request, res: Response) => {
+    const traceId = traceIdFrom(req);
+    if (!config.prisma) {
+      return res
+        .status(503)
+        .json(errorEnvelope("SERVICE_UNAVAILABLE", "Database not configured.", traceId));
+    }
+    const session = await requirePatronBearerSession(req, res, traceId);
+    if (!session) {
+      return;
+    }
+    const creatorId =
+      typeof req.query.creator_id === "string" ? req.query.creator_id.trim() : "";
+    if (!creatorId) {
+      return res
+        .status(400)
+        .json(
+          errorEnvelope("VALIDATION_ERROR", "creator_id query parameter is required.", traceId)
+        );
+    }
+    if (!(await requireAccountMatchesCreator(req, res, traceId, creatorId))) {
+      return;
+    }
+    if (
+      !(await assertCreatorRelayMutationAllowed(
+        req,
+        res,
+        traceId,
+        config.prisma,
+        creatorId
+      ))
+    ) {
+      return;
+    }
+    const data = await getManualImportSetup(
+      config.prisma,
+      creatorId,
+      Boolean(getR2ClientConfigFromEnv())
+    );
+    res.setHeader("Cache-Control", "private, no-store");
+    return res.status(200).json(successEnvelope(data, traceId));
+  });
+
+  app.post("/api/v1/relay/manual-import/setup", async (req: Request, res: Response) => {
+    const traceId = traceIdFrom(req);
+    if (!config.prisma) {
+      return res
+        .status(503)
+        .json(errorEnvelope("SERVICE_UNAVAILABLE", "Database not configured.", traceId));
+    }
+    const session = await requirePatronBearerSession(req, res, traceId);
+    if (!session) {
+      return;
+    }
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const creatorId = typeof body.creator_id === "string" ? body.creator_id.trim() : "";
+    if (!creatorId) {
+      return res
+        .status(400)
+        .json(errorEnvelope("VALIDATION_ERROR", "creator_id is required.", traceId));
+    }
+    if (!(await requireAccountMatchesCreator(req, res, traceId, creatorId))) {
+      return;
+    }
+    if (
+      !(await assertCreatorRelayMutationAllowed(
+        req,
+        res,
+        traceId,
+        config.prisma,
+        creatorId
+      ))
+    ) {
+      return;
+    }
+    // Manual import setup is the fallback when provider sync is degraded, so do not hard-block on
+    // Patreon sync health here.
+    const binsRaw = Array.isArray(body.bins) ? body.bins : [];
+    const bins: ManualImportBinInput[] = binsRaw.map((row) => {
+      const r = row && typeof row === "object" ? (row as Record<string, unknown>) : {};
+      const amountCents =
+        r.amount_cents === null || r.amount_cents === undefined
+          ? null
+          : typeof r.amount_cents === "number"
+            ? r.amount_cents
+            : Number.NaN;
+      const parsed: ManualImportBinInput = {
+        name: typeof r.name === "string" ? r.name : "",
+        amountCents,
+        sourceHint: typeof r.source_hint === "string" ? r.source_hint : null
+      };
+      if (Object.prototype.hasOwnProperty.call(r, "linked_provider_relay_tier_id")) {
+        const lp = r.linked_provider_relay_tier_id;
+        parsed.linked_provider_relay_tier_id =
+          lp === null ? null : typeof lp === "string" ? lp.trim() || null : null;
+      }
+      return parsed;
+    });
+    try {
+      const manualBins = await upsertManualTierBins(config.prisma, creatorId, bins);
+      const setup = await getManualImportSetup(
+        config.prisma,
+        creatorId,
+        Boolean(getR2ClientConfigFromEnv())
+      );
+      res.setHeader("Cache-Control", "private, no-store");
+      return res.status(200).json(
+        successEnvelope(
+          {
+            ...setup,
+            manual_bins: manualBins
+          },
+          traceId
+        )
+      );
+    } catch (e) {
+      if (e instanceof ManualImportCatalogError) {
+        return res.status(e.statusCode).json(errorEnvelope(e.code, e.message, traceId));
+      }
+      throw e;
+    }
+  });
+
+  /**
    * Tier rows for compose UX: each `tier_id` is the Prisma primary key expected by `POST /api/v1/relay/posts`.
    * Excludes ingest-only synthetic tiers (`relay_tier_public`, `relay_tier_all_patrons`); open-web audience
    * is `is_public: true` with empty `tier_ids`, not a selected tier row.
@@ -4481,7 +5165,14 @@ export function createApp(config: AppConfig): CreateAppResult {
     ) {
       return;
     }
-    if (!(await guardStudioSyncWritable(res, traceId, creatorId))) {
+    const campaignId =
+      typeof body.campaign_id === "string" && body.campaign_id.trim()
+        ? body.campaign_id.trim()
+        : null;
+    const isManualCampaignRequest = Boolean(
+      campaignId?.startsWith(MANUAL_RELAY_CAMPAIGN_PREFIX)
+    );
+    if (!isManualCampaignRequest && !(await guardStudioSyncWritable(res, traceId, creatorId))) {
       return;
     }
     const titleRaw = body.title;
@@ -4516,10 +5207,6 @@ export function createApp(config: AppConfig): CreateAppResult {
     const publishedAtInput =
       typeof body.published_at === "string" && body.published_at.trim()
         ? body.published_at.trim()
-        : null;
-    const campaignId =
-      typeof body.campaign_id === "string" && body.campaign_id.trim()
-        ? body.campaign_id.trim()
         : null;
     if (!tierIds.every((t) => typeof t === "string" && t.trim())) {
       return res
@@ -4622,9 +5309,10 @@ export function createApp(config: AppConfig): CreateAppResult {
     ) {
       return;
     }
-    if (!(await guardStudioSyncWritable(res, traceId, creatorId))) {
-      return;
-    }
+    /**
+     * Omit Patreon **`guardStudioSyncWritable`** — presigned uploads (Library + Manual Import)
+     * must succeed when ingest sync rollup is degraded.
+     */
     if (!isMimeTypeAllowed(contentType, getAllowedMimePrefixesFromEnv())) {
       return res
         .status(400)
@@ -4730,6 +5418,10 @@ export function createApp(config: AppConfig): CreateAppResult {
     const contentType = typeof body.content_type === "string" ? body.content_type.trim() : "";
     const byteSize = typeof body.byte_size === "number" && Number.isFinite(body.byte_size) ? body.byte_size : -1;
     const postIdOpt = typeof body.post_id === "string" ? body.post_id.trim() : undefined;
+    const manualImportBinTierId =
+      typeof body.manual_import_bin_tier_id === "string"
+        ? body.manual_import_bin_tier_id.trim()
+        : "";
     if (!creatorId || !mediaId || !contentType || byteSize < 0) {
       return res
         .status(400)
@@ -4755,9 +5447,9 @@ export function createApp(config: AppConfig): CreateAppResult {
     ) {
       return;
     }
-    if (!(await guardStudioSyncWritable(res, traceId, creatorId))) {
-      return;
-    }
+    /**
+     * Omit Patreon **`guardStudioSyncWritable`** — uploads commit even when ingest sync rollup is degraded.
+     */
     if (!isMimeTypeAllowed(contentType, getAllowedMimePrefixesFromEnv())) {
       return res
         .status(400)
@@ -4797,6 +5489,21 @@ export function createApp(config: AppConfig): CreateAppResult {
       return res.status(400).json(errorEnvelope("VALIDATION_ERROR", msgHead, traceId));
     }
 
+    let manualImportStagingJson: Prisma.InputJsonValue | undefined;
+    if (manualImportBinTierId) {
+      const resolved = await resolveManualImportUploadStagingPayload(
+        config.prisma,
+        creatorId,
+        manualImportBinTierId
+      );
+      if (!resolved.ok) {
+        return res
+          .status(400)
+          .json(errorEnvelope("VALIDATION_ERROR", resolved.message, traceId));
+      }
+      manualImportStagingJson = resolved.payload as unknown as Prisma.InputJsonValue;
+    }
+
     const finalized = await applyRelayUploadCommitUpdate(config.prisma, {
       mediaId,
       creatorId,
@@ -4805,7 +5512,8 @@ export function createApp(config: AppConfig): CreateAppResult {
       byteSize,
       postIdOpt,
       head,
-      row
+      row,
+      manualImportStagingJson
     });
 
     if (!finalized.ok) {
@@ -4923,6 +5631,108 @@ export function createApp(config: AppConfig): CreateAppResult {
   });
 
   /**
+   * Manual Import bin-local staging: Relay uploads held inside access bins before creator commits them to Library.
+   */
+  app.get("/api/v1/relay/manual-import/staging", async (req: Request, res: Response) => {
+    const traceId = traceIdFrom(req);
+    if (!config.prisma) {
+      return res
+        .status(503)
+        .json(errorEnvelope("SERVICE_UNAVAILABLE", "Database not configured.", traceId));
+    }
+    const session = await requirePatronBearerSession(req, res, traceId);
+    if (!session) {
+      return;
+    }
+    const creatorId =
+      typeof req.query.creator_id === "string" ? req.query.creator_id.trim() : "";
+    if (!creatorId) {
+      return res
+        .status(400)
+        .json(errorEnvelope("VALIDATION_ERROR", "creator_id query parameter is required.", traceId));
+    }
+    if (!(await requireAccountMatchesCreator(req, res, traceId, creatorId))) {
+      return;
+    }
+    const rows = await findRelayLibraryStagingRows(
+      config.prisma,
+      creatorId,
+      [MediaIngestOrigin.RELAY_UPLOAD]
+    );
+    const pendingRows = rows.filter((row) => isManualImportBinPending(row.manualImportStagingJson));
+    const items = mapRelayLibraryStagingListItems(creatorId, pendingRows);
+    res.setHeader("Cache-Control", "private, no-store");
+    return res.status(200).json(successEnvelope({ items }, traceId));
+  });
+
+  app.post("/api/v1/relay/manual-import/commit-to-library", async (req: Request, res: Response) => {
+    const traceId = traceIdFrom(req);
+    if (!config.prisma) {
+      return res
+        .status(503)
+        .json(errorEnvelope("SERVICE_UNAVAILABLE", "Database not configured.", traceId));
+    }
+    const session = await requirePatronBearerSession(req, res, traceId);
+    if (!session) {
+      return;
+    }
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const creatorId = typeof body.creator_id === "string" ? body.creator_id.trim() : "";
+    if (!creatorId) {
+      return res
+        .status(400)
+        .json(errorEnvelope("VALIDATION_ERROR", "creator_id is required.", traceId));
+    }
+    if (!(await requireAccountMatchesCreator(req, res, traceId, creatorId))) {
+      return;
+    }
+    if (
+      !(await assertCreatorRelayMutationAllowed(
+        req,
+        res,
+        traceId,
+        config.prisma,
+        creatorId
+      ))
+    ) {
+      return;
+    }
+
+    const rows = await findRelayLibraryStagingRows(
+      config.prisma,
+      creatorId,
+      [MediaIngestOrigin.RELAY_UPLOAD]
+    );
+    const pendingRows = rows.filter((row) => isManualImportBinPending(row.manualImportStagingJson));
+    const committedAt = new Date().toISOString();
+    for (const row of pendingRows) {
+      const record = manualImportStagingRecord(row.manualImportStagingJson);
+      if (!record) continue;
+      await config.prisma.mediaAsset.update({
+        where: { id: row.id },
+        data: {
+          manualImportStagingJson: {
+            ...record,
+            committed_to_library_at: committedAt
+          } as Prisma.InputJsonValue
+        }
+      });
+    }
+
+    res.setHeader("Cache-Control", "private, no-store");
+    return res.status(200).json(
+      successEnvelope(
+        {
+          committed_count: pendingRows.length,
+          committed_at: committedAt,
+          media_ids: pendingRows.map((row) => row.id)
+        },
+        traceId
+      )
+    );
+  });
+
+  /**
    * Unified Library staging: Discord captures + direct Relay uploads not yet attached to a post (`primaryPostId` null, READY).
    */
   app.get("/api/v1/relay/library/staging", async (req: Request, res: Response) => {
@@ -4951,7 +5761,8 @@ export function createApp(config: AppConfig): CreateAppResult {
       creatorId,
       RELAY_LIBRARY_STAGING_INGEST_ORIGINS
     );
-    const items = mapRelayLibraryStagingListItems(creatorId, rows);
+    const libraryRows = rows.filter((row) => isManualImportLibraryCommitted(row.manualImportStagingJson));
+    const items = mapRelayLibraryStagingListItems(creatorId, libraryRows);
     res.setHeader("Cache-Control", "private, no-store");
     return res.status(200).json(successEnvelope({ items }, traceId));
   });
@@ -10791,6 +11602,9 @@ export function createApp(config: AppConfig): CreateAppResult {
     patreonSyncHealthStore,
     patreonCampaignCreatorIndex,
     encryption,
-    patreonClient
+    patreonClient,
+    subscribeStarCreatorAuthService,
+    subscribeStarCreatorOAuthClient,
+    subscribeStarGraphqlIngestUrl
   };
 }

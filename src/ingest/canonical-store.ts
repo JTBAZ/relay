@@ -45,8 +45,8 @@ export type PostRow = {
   current: PostVersionRow;
   versions: PostVersionRow[];
   upstream_status: "active" | "deleted";
-  /// DB round-trip: omit or PATREON = mirrored from Patreon; RELAY = native (skipped on Patreon saveForCreator).
-  source?: "PATREON" | "RELAY";
+  /// DB round-trip: omit or PATREON = mirrored ingest; RELAY = native (skipped by mirrored save lanes); SUBSCRIBESTAR = SubscribeStar ingest.
+  source?: "PATREON" | "RELAY" | "SUBSCRIBESTAR";
 };
 
 export type MediaVersionRow = {

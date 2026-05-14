@@ -194,6 +194,7 @@ export class DbPatreonTokenStore implements PatreonTokenStore {
       where: {
         purpose: OAuthPurpose.creator_ingest,
         providerAccount: {
+          provider: ProviderKind.patreon,
           user: {
             kind: UserKind.creator,
             tenant: { relayCreatorId: creatorId }

@@ -6,6 +6,7 @@ import request from "supertest";
 import { describe, expect, it, vi } from "vitest";
 import { createApp } from "../src/server.js";
 import {
+  createRelayPostTransaction,
   isMediaEligibleForRelayNativePost,
   RelayCreatePostError,
   resolveCampaignIdForRelayPost,
@@ -249,6 +250,112 @@ describe("RelayCreatePostError", () => {
     const e = new RelayCreatePostError("INVALID_TIER_REF", "bad", 400);
     expect(e.code).toBe("INVALID_TIER_REF");
     expect(e.statusCode).toBe(400);
+  });
+});
+
+describe("createRelayPostTransaction manual campaign", () => {
+  it("publishes a gated Relay post against explicit manual campaign and manual tier", async () => {
+    const manualCampaignId = "relay_manual_campaign_creator_1";
+    const manualTierPk = "creator_1::relay_manual_tier_basic";
+    const manualRelayTierId = "relay_manual_tier_basic";
+    const media = {
+      id: "relay_m_1",
+      creatorId: "creator_1",
+      ingestOrigin: MediaIngestOrigin.RELAY_UPLOAD,
+      currentStorageKey: "relay/tenants/creator_1/media/relay_m_1/original",
+      postIds: [],
+      primaryPostId: null
+    };
+    const postCreate = vi.fn().mockResolvedValue({
+      id: "relay_p_1",
+      campaignId: manualCampaignId,
+      creatorId: "creator_1",
+      isPublic: false,
+      requiredTierId: manualRelayTierId,
+      versions: [
+        {
+          id: "pv_1",
+          versionSeq: 1,
+          upstreamRevision: "relay:v1:test",
+          title: "Manual drop",
+          description: null,
+          publishedAt: new Date("2026-05-13T00:00:00.000Z"),
+          tagIds: ["archive"],
+          tierIds: [manualRelayTierId],
+          mediaIds: ["relay_m_1"]
+        }
+      ]
+    });
+    const postTierUpsert = vi.fn().mockResolvedValue({});
+    const mediaUpdate = vi.fn().mockResolvedValue({});
+    const prisma = prismaStub({
+      campaign: {
+        findFirst: vi.fn().mockResolvedValue({ id: manualCampaignId, creatorId: "creator_1" })
+      },
+      tier: {
+        findFirst: vi.fn().mockImplementation(({ where }: { where: { id: string } }) =>
+          where.id === manualTierPk
+            ? { id: manualTierPk, relayTierId: manualRelayTierId, campaignId: manualCampaignId }
+            : null
+        ),
+        findMany: vi.fn()
+      },
+      mediaAsset: {
+        findFirst: vi.fn().mockResolvedValue(media)
+      },
+      $transaction: vi.fn().mockImplementation(async (fn: any) =>
+        fn({
+          post: { create: postCreate },
+          postTier: { upsert: postTierUpsert },
+          mediaAsset: {
+            findUniqueOrThrow: vi.fn().mockResolvedValue(media),
+            update: mediaUpdate
+          }
+        })
+      )
+    });
+
+    const out = await createRelayPostTransaction(prisma, "relay_p_1", {
+      creatorId: "creator_1",
+      campaignId: manualCampaignId,
+      title: "Manual drop",
+      description: null,
+      isPublic: false,
+      requiredTierId: manualTierPk,
+      tierIds: [manualTierPk],
+      tagIds: ["archive"],
+      mediaIds: ["relay_m_1"],
+      publish: true,
+      publishedAtInput: "2026-05-13T00:00:00.000Z"
+    });
+
+    expect(out.post.campaignId).toBe(manualCampaignId);
+    expect(out.post.requiredTierId).toBe(manualRelayTierId);
+    expect(out.version.tierIds).toEqual([manualRelayTierId]);
+    expect(postCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          campaignId: manualCampaignId,
+          requiredTierId: manualRelayTierId,
+          versions: expect.objectContaining({
+            create: expect.objectContaining({
+              tierIds: [manualRelayTierId],
+              mediaIds: ["relay_m_1"]
+            })
+          })
+        })
+      })
+    );
+    expect(postTierUpsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { postId_tierId: { postId: "relay_p_1", tierId: manualTierPk } }
+      })
+    );
+    expect(mediaUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ postIds: ["relay_p_1"], primaryPostId: "relay_p_1" })
+      })
+    );
   });
 });
 

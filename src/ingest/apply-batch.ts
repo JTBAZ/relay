@@ -9,6 +9,7 @@ import type { RelayEventBus } from "../events/event-bus.js";
 import type { MediaRow, PostRow, CanonicalSnapshot } from "./canonical-store.js";
 import { ingestIdempotencyKey } from "./idempotency.js";
 import type { ApplyBatchResult, SyncBatchInput } from "./types.js";
+import { mirrorSnapshotSourceForIngestPostId } from "./mirror-post-source.js";
 
 function ensureNested<T extends Record<string, Record<string, unknown>>>(
   root: T,
@@ -156,7 +157,10 @@ export function applySyncBatchToSnapshot(
       current: versionRow,
       versions: existingPost ? [...existingPost.versions, versionRow] : [versionRow],
       upstream_status: "active",
-      source: "PATREON"
+      source:
+        mirrorSnapshotSourceForIngestPostId(p.post_id) === "SUBSCRIBESTAR"
+          ? "SUBSCRIBESTAR"
+          : "PATREON"
     };
     posts[p.post_id] = postRow;
     result.posts_written += 1;

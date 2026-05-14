@@ -11,6 +11,7 @@
     "db:migrate": "prisma migrate dev",
     "db:push": "prisma db push",
     "build": "prisma generate && tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
     "start": "node dist/src/main.js",
     "worker": "node dist/src/worker.js",
     "dev:web": "npm run dev --prefix web",

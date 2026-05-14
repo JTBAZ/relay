@@ -200,6 +200,19 @@ npx vitest run patreon-webhook-signature patreon-webhook-payload-parse patreon-p
 
 ---
 
+## SubscribeStar creator ingest (flagged)
+
+**Gate:** Hosted ingest stays behind **`SUBSCRIBESTAR_INGEST_ENABLED`** on the Relay API until product clears SubscribeStar’s published API constraints (see repo root `.env.example`).
+
+### Docs and routes
+
+- **Field mapping:** [subscribestar-ingest-mapping.md](integrations/subscribestar-ingest-mapping.md)
+- **GraphQL hypotheses → wire + paged ingest:** [`subscribestar-graphql-response-to-wire.ts`](../src/subscribestar/subscribestar-graphql-response-to-wire.ts), [`subscribestar-ingest-queries.ts`](../src/subscribestar/subscribestar-ingest-queries.ts), [`subscribestar-graphql-ingest-fetch.ts`](../src/subscribestar/subscribestar-graphql-ingest-fetch.ts), runner [`run-subscribestar-posts-graphql-ingest.ts`](../src/subscribestar/run-subscribestar-posts-graphql-ingest.ts).
+- **REST:** `POST /api/v1/auth/subscribestar/creator/prepare`, `POST /api/v1/auth/subscribestar/creator/exchange`, `POST /api/v1/subscribestar/creator/ingest/batch` (manual wire ingest), **`POST /api/v1/subscribestar/creator/sync/posts`** (GraphQL fetch + ingest; requires env posts query — same ingest gate).
+- **Next.js onboarding:** `/subscribestar/creator/connect` and `/subscribestar/creator/callback` — same prepare + signed `state` pattern as Patreon creator connect ([`web/app/patreon/connect`](../web/app/patreon/connect)).
+
+---
+
 ## Verification (all four slices)
 
 ```bash

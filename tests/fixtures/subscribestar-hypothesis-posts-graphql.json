@@ -1,0 +1,36 @@
+{
+  "data": {
+    "contentProviderProfile": {
+      "id": "404",
+      "name": "Demo Star Page",
+      "updatedAt": "2026-01-01T00:00:00.000Z",
+      "plans": [
+        { "id": "10", "title": "Basic", "amount_cents": 500, "updatedAt": "2026-01-01T00:00:00.000Z" }
+      ],
+      "postsConnection": {
+        "pageInfo": {
+          "hasNextPage": false,
+          "endCursor": null
+        },
+        "edges": [
+          {
+            "node": {
+              "id": "9001",
+              "title": "Hello",
+              "publishedAt": "2026-01-02T12:00:00.000Z",
+              "updatedAt": "2026-01-02T13:00:00.000Z",
+              "plans": [{ "id": "10" }],
+              "media": [
+                {
+                  "id": "500",
+                  "url": "https://cdn.example/img.jpg",
+                  "contentType": "image/jpeg"
+                }
+              ]
+            }
+          }
+        ]
+      }
+    }
+  }
+}

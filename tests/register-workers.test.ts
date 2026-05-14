@@ -6,6 +6,7 @@ import type { PatreonClient } from "../src/auth/patreon-client.js";
 import type { PatreonTokenStore } from "../src/auth/token-store.js";
 import type { TokenEncryption } from "../src/lib/crypto.js";
 import type { PatreonSyncService } from "../src/patreon/patreon-sync-service.js";
+import type { IngestService } from "../src/ingest/ingest-service.js";
 import { registerRelayBullMqWorkers } from "../src/jobs/register-workers.js";
 import { RELAY_JOB_QUEUE_NAMES } from "../src/jobs/queue-names.js";
 
@@ -62,6 +63,7 @@ describe("registerRelayBullMqWorkers", () => {
       patreonSyncService: {} as PatreonSyncService,
       encryption: {} as TokenEncryption,
       patreonClient: {} as PatreonClient,
+      ingestService: {} as IngestService,
       fetchImpl: globalThis.fetch,
       env,
       ...overrides

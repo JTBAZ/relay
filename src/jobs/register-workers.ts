@@ -5,6 +5,8 @@ import { Redis } from "ioredis";
 import type { PatreonTokenStore } from "../auth/token-store.js";
 import type { TokenEncryption } from "../lib/crypto.js";
 import type { PatreonClient } from "../auth/patreon-client.js";
+import type { SubscribeStarCreatorAuthService } from "../auth/subscribestar-auth-service.js";
+import type { IngestService } from "../ingest/ingest-service.js";
 import { runIncrementalAutosyncOnce } from "../patreon/incremental-sync-worker.js";
 import {
   patronEntitlementStaleRefreshBatchFromEnv,
@@ -16,6 +18,7 @@ import { processMediaStoragePurgeSweepOnce } from "../storage/media-storage-purg
 import type { PatreonCampaignCreatorIndex } from "../patreon/patreon-campaign-creator-index.js";
 import type { PatreonSyncHealthStoreAPI } from "../patreon/patreon-sync-health-store.js";
 import type { PatreonSyncService } from "../patreon/patreon-sync-service.js";
+import { runSubscribeStarGraphqlIngestAutosyncOnce } from "../subscribestar/subscribestar-graphql-ingest-autosync.js";
 import {
   relayBullMqConcurrencyForQueue,
   relayBullMqIoredisOptions,
@@ -30,7 +33,8 @@ import {
   type PatreonIncrementalAutosyncJobData,
   type PatronEntitlementStaleRefreshJobData,
   type RelayJobQueueName,
-  type RelayJobTraceFields
+  type RelayJobTraceFields,
+  type SubscribeStarGraphqlPostsIngestJobData
 } from "./queue-names.js";
 import { relayJobTraceIdForProcessing } from "./relay-job-trace.js";
 import type { RelayBullMqWorkersClose } from "./bullmq-shutdown.js";
@@ -44,6 +48,10 @@ export type RegisterRelayBullMqWorkersDeps = {
   encryption: TokenEncryption;
   patreonClient: PatreonClient;
   fetchImpl: typeof fetch;
+  /** Canonical ingest (SubscribeStar GraphQL worker). */
+  ingestService: IngestService;
+  subscribeStarCreatorAuthService?: SubscribeStarCreatorAuthService;
+  subscribeStarGraphqlIngestUrl?: string;
   log?: (msg: string, ctx?: Record<string, unknown>) => void;
   /**
    * When set, all workers share this client; shutdown will not call `quit` (caller owns lifecycle).
@@ -188,6 +196,35 @@ export function registerRelayBullMqWorkers(
       mk(RELAY_JOB_QUEUE_NAMES.PATREON_INCREMENTAL_AUTOSYNC)
     )
   );
+
+  const subAuth = deps.subscribeStarCreatorAuthService;
+  const subUrl = deps.subscribeStarGraphqlIngestUrl?.trim();
+  if (subAuth && subUrl) {
+    workers.push(
+      new Worker<SubscribeStarGraphqlPostsIngestJobData>(
+        RELAY_JOB_QUEUE_NAMES.SUBSCRIBESTAR_GRAPHQL_POSTS_INGEST,
+        async (job) => {
+          await runRelayBullMqJob(
+            log,
+            RELAY_JOB_QUEUE_NAMES.SUBSCRIBESTAR_GRAPHQL_POSTS_INGEST,
+            job,
+            async () => {
+              await runSubscribeStarGraphqlIngestAutosyncOnce({
+                prisma: deps.prisma,
+                authService: subAuth,
+                graphqlUrl: subUrl,
+                ingestService: deps.ingestService,
+                fetchImpl: deps.fetchImpl,
+                creatorId: job.data?.creatorId,
+                log
+              });
+            }
+          );
+        },
+        mk(RELAY_JOB_QUEUE_NAMES.SUBSCRIBESTAR_GRAPHQL_POSTS_INGEST)
+      )
+    );
+  }
 
   if (deps.prisma) {
     const prisma = deps.prisma;

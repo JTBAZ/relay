@@ -1,4 +1,5 @@
 import { PATREON_CREATOR_OAUTH_SCOPES } from "./patreon-creator-scopes";
+import { SUBSCRIBESTAR_CREATOR_OAUTH_SCOPES } from "./subscribestar-creator-scopes";
 import { resolveRelayApiBaseFromEnv } from "./relay-api-env";
 import {
   RelayForbiddenError,
@@ -499,6 +500,81 @@ export async function postPatreonCreatorPrepare(creatorId: string): Promise<Patr
   });
 }
 
+/** Same HMAC `state` shape as Patreon prepare (`1.<payload>.<sig>`). */
+export function isPreparedSubscribeStarOAuthState(state: string | null | undefined): boolean {
+  return Boolean(state && state.startsWith("1.") && state.split(".").length === 3);
+}
+
+export type SubscribeStarCreatorPrepareData = {
+  state: string;
+  creator_id: string;
+  expires_at: string;
+};
+
+export async function postSubscribeStarCreatorPrepare(
+  creatorId: string
+): Promise<SubscribeStarCreatorPrepareData> {
+  return relayFetch<SubscribeStarCreatorPrepareData>(
+    "/api/v1/auth/subscribestar/creator/prepare",
+    {
+      method: "POST",
+      body: JSON.stringify({ creator_id: creatorId.trim() })
+    }
+  );
+}
+
+export type SubscribeStarCreatorExchangeData = {
+  creator_id: string;
+  credential_health_status: string;
+  subscribestar_profile_id: string;
+};
+
+export async function postSubscribeStarCreatorExchange(body: {
+  creator_id: string;
+  code: string;
+  redirect_uri: string;
+  state?: string;
+}): Promise<SubscribeStarCreatorExchangeData> {
+  return relayFetch<SubscribeStarCreatorExchangeData>(
+    "/api/v1/auth/subscribestar/creator/exchange",
+    {
+      method: "POST",
+      body: JSON.stringify({
+        creator_id: body.creator_id.trim(),
+        code: body.code,
+        redirect_uri: body.redirect_uri,
+        ...(body.state ? { state: body.state } : {})
+      })
+    }
+  );
+}
+
+/** `POST /api/v1/subscribestar/creator/sync/posts` — GraphQL posts ingest (session + creator mutation authz). */
+export type SubscribeStarCreatorSyncPostsData = {
+  creator_id: string;
+  pages_fetched: number;
+  batches_ingested: number;
+  ended_reason: string;
+  last_cursor: string | null;
+  last_apply_result: unknown;
+};
+
+export async function postSubscribeStarCreatorSyncPosts(body: {
+  creator_id: string;
+  max_pages?: number;
+}): Promise<SubscribeStarCreatorSyncPostsData> {
+  return relayFetch<SubscribeStarCreatorSyncPostsData>(
+    "/api/v1/subscribestar/creator/sync/posts",
+    {
+      method: "POST",
+      body: JSON.stringify({
+        creator_id: body.creator_id.trim(),
+        ...(body.max_pages != null ? { max_pages: body.max_pages } : {})
+      })
+    }
+  );
+}
+
 export type CreatorWorkspaceData = {
   relay_creator_id: string;
   account_id: string;
@@ -942,6 +1018,28 @@ export function buildPatreonCreatorAuthorizeUrl(
   u.searchParams.set("client_id", clientId.trim());
   u.searchParams.set("redirect_uri", redirectUri);
   u.searchParams.set("scope", PATREON_CREATOR_OAUTH_SCOPES);
+  u.searchParams.set("state", oauthState);
+  return u.toString();
+}
+
+/** Authorize host for SubscribeStar (`.adult` vs `.com` must match OAuth app). */
+export function resolveSubscribeStarAuthorizeBaseUrl(): string {
+  return (
+    process.env.NEXT_PUBLIC_SUBSCRIBESTAR_API_ORIGIN?.trim() || "https://subscribestar.adult"
+  ).replace(/\/$/, "");
+}
+
+export function buildSubscribeStarCreatorAuthorizeUrl(
+  clientId: string,
+  redirectUri: string,
+  oauthState: string
+): string {
+  const base = resolveSubscribeStarAuthorizeBaseUrl();
+  const u = new URL(`${base}/oauth2/authorize`);
+  u.searchParams.set("response_type", "code");
+  u.searchParams.set("client_id", clientId.trim());
+  u.searchParams.set("redirect_uri", redirectUri);
+  u.searchParams.set("scope", SUBSCRIBESTAR_CREATOR_OAUTH_SCOPES);
   u.searchParams.set("state", oauthState);
   return u.toString();
 }
@@ -1606,6 +1704,55 @@ export async function fetchRelayComposeTiers(
   );
 }
 
+export type ManualImportTierRow = RelayComposeTierRow & {
+  source: "manual" | "synced";
+  upload_enabled: boolean;
+  provider: "patreon" | "subscribestar" | null;
+  provider_tier_relay_id: string | null;
+  linked_provider_relay_tier_id: string | null;
+};
+
+export type ManualImportSetupData = {
+  manual_campaign: {
+    campaign_id: string;
+    name: string;
+    ready: boolean;
+  };
+  manual_bins: ManualImportTierRow[];
+  synced_tiers: ManualImportTierRow[];
+  suggestions: ManualImportTierRow[];
+  upload: {
+    r2_configured: boolean;
+  };
+};
+
+export type ManualImportBinInput = {
+  name: string;
+  amount_cents?: number | null;
+  source_hint?: string | null;
+  linked_provider_relay_tier_id?: string | null;
+};
+
+export async function fetchManualImportSetup(
+  creatorId: string
+): Promise<ManualImportSetupData> {
+  const q = new URLSearchParams();
+  q.set("creator_id", creatorId.trim());
+  return relayFetch<ManualImportSetupData>(
+    `/api/v1/relay/manual-import/setup?${q.toString()}`
+  );
+}
+
+export async function postManualImportSetup(params: {
+  creator_id: string;
+  bins: ManualImportBinInput[];
+}): Promise<ManualImportSetupData> {
+  return relayFetch<ManualImportSetupData>("/api/v1/relay/manual-import/setup", {
+    method: "POST",
+    body: JSON.stringify(params)
+  });
+}
+
 // ---------------------------------------------------------------------------
 // T-3.2 / T-4.2 / T-6.3 — Relay-native presigned upload + create post
 // ---------------------------------------------------------------------------
@@ -1686,6 +1833,8 @@ export async function relayNativeUploadCommit(args: {
   content_type: string;
   byte_size: number;
   post_id?: string;
+  /** Prisma Tier.id (`tier_id`) of the Relay manual folder uploads are staged against. Requires provider link on that folder. */
+  manual_import_bin_tier_id?: string;
 }): Promise<RelayNativeUploadCommitData> {
   const body: Record<string, unknown> = {
     creator_id: args.creator_id,
@@ -1695,6 +1844,9 @@ export async function relayNativeUploadCommit(args: {
   };
   if (args.post_id) {
     body.post_id = args.post_id;
+  }
+  if (args.manual_import_bin_tier_id) {
+    body.manual_import_bin_tier_id = args.manual_import_bin_tier_id;
   }
   return relayFetch<RelayNativeUploadCommitData>("/api/v1/relay/upload/commit", {
     method: "POST",
@@ -1827,10 +1979,18 @@ export type RelayLibraryStagingItem = {
   ingest_origin: RelayLibraryStagingIngestOrigin;
   /** Discord attachment metadata; `null` when `ingest_origin` is `RELAY_UPLOAD`. */
   discord_capture: unknown | null;
+  /** Manual Relay Import staged access envelope (`v`) when uploads were scoped to an access bin before compose. */
+  manual_import_staging?: unknown | null;
 };
 
 export type RelayLibraryStagingListData = {
   items: RelayLibraryStagingItem[];
+};
+
+export type ManualImportCommitToLibraryData = {
+  committed_count: number;
+  committed_at: string;
+  media_ids: string[];
 };
 
 /** Unified staged media: Discord captures and committed direct Relay uploads (`primaryPostId` unset, READY). */
@@ -1840,6 +2000,30 @@ export async function fetchRelayLibraryStaging(
   const q = new URLSearchParams();
   q.set("creator_id", creatorId);
   return relayFetch<RelayLibraryStagingListData>(`/api/v1/relay/library/staging?${q.toString()}`);
+}
+
+/** Manual Import bin-local uploads that have not yet been committed into the Library Import Bay. */
+export async function fetchManualImportStaging(
+  creatorId: string
+): Promise<RelayLibraryStagingListData> {
+  const q = new URLSearchParams();
+  q.set("creator_id", creatorId);
+  return relayFetch<RelayLibraryStagingListData>(
+    `/api/v1/relay/manual-import/staging?${q.toString()}`
+  );
+}
+
+/** Move all pending Manual Import bin uploads into the Library Import Bay. */
+export async function commitManualImportStagingToLibrary(
+  creatorId: string
+): Promise<ManualImportCommitToLibraryData> {
+  return relayFetch<ManualImportCommitToLibraryData>(
+    "/api/v1/relay/manual-import/commit-to-library",
+    {
+      method: "POST",
+      body: JSON.stringify({ creator_id: creatorId.trim() })
+    }
+  );
 }
 
 export type RelayLibraryStagingDeleteData = {

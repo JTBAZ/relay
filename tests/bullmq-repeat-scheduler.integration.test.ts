@@ -42,5 +42,39 @@ describe.skipIf(!runRedisIt)(
         await redis.quit();
       }
     });
+
+    it("creates relay-tick repeatable for SubscribeStar GraphQL ingest at RELAY_SUBSCRIBESTAR_GRAPHQL_INGEST_MS", async () => {
+      const url = process.env.REDIS_URL!.trim();
+      const env = {
+        ...process.env,
+        REDIS_URL: url,
+        RELAY_JOB_BACKEND: "bullmq",
+        SUBSCRIBESTAR_INGEST_ENABLED: "1",
+        SUBSCRIBESTAR_INGEST_POSTS_GRAPHQL_QUERY: "{ __typename }",
+        RELAY_SUBSCRIBESTAR_GRAPHQL_INGEST_MS: "650000"
+      };
+      const redis = new Redis(relayBullMqIoredisOptions(env));
+      const closeSchedulers = await registerRelayBullMqRepeatSchedulers({
+        redis,
+        prisma: null,
+        env
+      });
+      const q = new Queue(RELAY_JOB_QUEUE_NAMES.SUBSCRIBESTAR_GRAPHQL_POSTS_INGEST, {
+        connection: redis
+      });
+      try {
+        const reps = await q.getRepeatableJobs();
+        const tick = reps.find((r) => r.name === "relay-tick");
+        expect(tick).toBeDefined();
+        expect(Number(tick?.every)).toBe(650_000);
+        for (const r of await q.getRepeatableJobs()) {
+          await q.removeRepeatableByKey(r.key);
+        }
+      } finally {
+        await q.close();
+        await closeSchedulers();
+        await redis.quit();
+      }
+    });
   }
 );

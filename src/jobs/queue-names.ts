@@ -6,6 +6,7 @@
 /** Stable queue name literals (BullMQ `Queue`/`Worker` name). */
 export const RELAY_JOB_QUEUE_NAMES = {
   PATREON_INCREMENTAL_AUTOSYNC: "patreon_incremental_autosync",
+  SUBSCRIBESTAR_GRAPHQL_POSTS_INGEST: "subscribestar_graphql_posts_ingest",
   PATRON_ENTITLEMENT_STALE_REFRESH: "patron_entitlement_stale_refresh",
   NOTIFICATION_DELIVERY: "notification_delivery",
   ACCOUNT_DELETION_SWEEP: "account_deletion_sweep",
@@ -18,6 +19,7 @@ export type RelayJobQueueName =
 /** All queues in registration order (repeatable schedulers, dashboards). */
 export const ALL_RELAY_JOB_QUEUE_NAMES: readonly RelayJobQueueName[] = [
   RELAY_JOB_QUEUE_NAMES.PATREON_INCREMENTAL_AUTOSYNC,
+  RELAY_JOB_QUEUE_NAMES.SUBSCRIBESTAR_GRAPHQL_POSTS_INGEST,
   RELAY_JOB_QUEUE_NAMES.PATRON_ENTITLEMENT_STALE_REFRESH,
   RELAY_JOB_QUEUE_NAMES.NOTIFICATION_DELIVERY,
   RELAY_JOB_QUEUE_NAMES.ACCOUNT_DELETION_SWEEP,
@@ -35,6 +37,12 @@ export type RelayJobTraceFields = {
 
 /** Scheduled incremental Patreon autosync cycle (see incremental-sync-worker). */
 export type PatreonIncrementalAutosyncJobData = RelayJobTraceFields & {
+  /** Optional: restrict cycle to one Relay creator id (ops / replay). */
+  creatorId?: string;
+};
+
+/** SubscribeStar GraphQL posts → ingest autosync cycle (see subscribestar-graphql-ingest-autosync). */
+export type SubscribeStarGraphqlPostsIngestJobData = RelayJobTraceFields & {
   /** Optional: restrict cycle to one Relay creator id (ops / replay). */
   creatorId?: string;
 };
@@ -66,6 +74,7 @@ export type MediaStoragePurgeJobData = RelayJobTraceFields & {
 /** Maps queue name → default job payload shape for typing `Job<T>` / processors. */
 export type RelayJobPayloadByQueue = {
   [RELAY_JOB_QUEUE_NAMES.PATREON_INCREMENTAL_AUTOSYNC]: PatreonIncrementalAutosyncJobData;
+  [RELAY_JOB_QUEUE_NAMES.SUBSCRIBESTAR_GRAPHQL_POSTS_INGEST]: SubscribeStarGraphqlPostsIngestJobData;
   [RELAY_JOB_QUEUE_NAMES.PATRON_ENTITLEMENT_STALE_REFRESH]: PatronEntitlementStaleRefreshJobData;
   [RELAY_JOB_QUEUE_NAMES.NOTIFICATION_DELIVERY]: NotificationDeliveryJobData;
   [RELAY_JOB_QUEUE_NAMES.ACCOUNT_DELETION_SWEEP]: AccountDeletionSweepJobData;
