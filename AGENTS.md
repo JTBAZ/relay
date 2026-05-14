@@ -51,3 +51,41 @@ See **`Automation/README.md`** and **`Automation/docs/`**. MCP and scripts targe
 **Chat handoff / summary:** **`Automation/docs/CURSOR_HANDOFF.md`**
 
 **Cursor project rules:** **`.cursor/rules/`** (`.mdc` files with frontmatter).
+
+---
+
+## Cursor Cloud specific instructions
+
+### Services overview
+
+| Service | Path | Dev command | Port |
+|---------|------|-------------|------|
+| Backend API (Express + Prisma) | repo root `src/` | `npm run build && npm start` | 8787 |
+| Web (Next.js 14) | `web/` | `cd web && npm run dev` | 3000 |
+| PostgreSQL 16 | `docker-compose.yml` | `docker compose up -d` | 5433→5432 |
+
+Convenience: `npm run dev:stack` builds the API then runs both API + web concurrently.
+
+### Running services
+
+1. **PostgreSQL** must be running before the API starts: `docker compose up -d` (repo root). Docker must be installed and running (`sudo dockerd` if needed in container environments; use `fuse-overlayfs` storage driver and `iptables-legacy` in nested-container setups).
+2. **Root `.env`** must exist with at minimum `DATABASE_URL`, `RELAY_TOKEN_ENCRYPTION_KEY`, `PATREON_CLIENT_ID`, `PATREON_CLIENT_SECRET`. See `.env.example` for documentation. Generate the encryption key: `node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"`.
+3. **Prisma**: after `npm install`, run `npx prisma generate` then `npx prisma migrate deploy` to apply all migrations to the local DB.
+4. **Build API**: `npm run build` (runs `prisma generate` + `tsc`).
+5. **Start API**: `npm start` (serves on port 8787).
+6. **Web**: `cd web && npm install && npm run dev` (serves on port 3000). Requires `web/.env.local` — copy from `web/.env.example`, set `NEXT_PUBLIC_RELAY_API_URL=http://127.0.0.1:8787`.
+
+### Testing
+
+- **Backend tests**: `npm run test` (Vitest, 99 test files / 320 tests). No running services required — tests mock external deps.
+- **Web lint**: `cd web && npm run lint` (ESLint via Next.js). Warnings about `<img>` vs `<Image>` are pre-existing and not errors.
+- **Web build**: `cd web && npm run build`. Succeeds with warnings only.
+- **Full verification**: `npm run verify:m10` runs build + test + lint + web build in sequence.
+
+### Gotchas
+
+- The root and `web/` have **separate** `package.json` / `node_modules` — run `npm install` in both locations.
+- PostgreSQL listens on **host port 5433** (not 5432) to avoid conflicts; `DATABASE_URL` must use port 5433.
+- The API **exits immediately** if `RELAY_TOKEN_ENCRYPTION_KEY` is missing or invalid.
+- Pages like `/` (Studio) and `/designer` require a valid Supabase Auth session or `NEXT_PUBLIC_RELAY_STUDIO_AUTH_DISABLED=1` + API data to render fully. The `/visitor`, `/login`, and `/patreon/connect` pages work without external services.
+- The API can partially run without Postgres using JSON file stores in `.relay-data/`, but Prisma client generation always requires a valid `DATABASE_URL` (even a dummy one works for `prisma generate`).
