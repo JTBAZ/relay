@@ -127,7 +127,9 @@ const {
   patreonClient,
   ingestService,
   subscribeStarCreatorAuthService,
-  subscribeStarGraphqlIngestUrl
+  subscribeStarGraphqlIngestUrl,
+  subscribeStarPatronOAuthClient,
+  subscribeStarPatronGraphqlUrl
 } = createApp({
   ...serverConfig,
   prisma
@@ -195,7 +197,9 @@ if (
     patreonClient,
     fetchImpl,
     intervalMs: patronStaleRefreshMs,
-    batchSize: patronEntitlementStaleRefreshBatchFromEnv()
+    batchSize: patronEntitlementStaleRefreshBatchFromEnv(),
+    subscribeStarPatronOAuthClient,
+    subscribeStarPatronGraphqlUrl
   });
 }
 
@@ -286,6 +290,8 @@ async function startHttpServer() {
         ingestService,
         subscribeStarCreatorAuthService,
         subscribeStarGraphqlIngestUrl,
+        subscribeStarPatronOAuthClient,
+        subscribeStarPatronGraphqlUrl,
         redisConnection: bullMqSharedRedis,
         log: (msg, ctx) => {
           log.warn({ ...(ctx ?? {}), relayMsg: msg }, "Relay");

@@ -18,6 +18,11 @@ export type SubscribeStarPostsGraphqlMapOk = {
   wire: SubscribeStarIngestBatchWire;
   end_cursor: string | null;
   has_next_page: boolean;
+  /**
+   * Top-level GraphQL `data` keys not part of the content-provider profile root (e.g. supplemental
+   * subscriptions/payments operations merged by ingest fetch).
+   */
+  supplemental_graphql_data?: Record<string, unknown>;
 };
 
 export type SubscribeStarPostsGraphqlMapErr = {
@@ -69,6 +74,30 @@ function connectionEdgesNodes(pc: Record<string, unknown>): {
     }
   }
   return { nodes, pageInfo: asRecord(pc.pageInfo ?? pc.page_info) };
+}
+
+/**
+ * Which `data.{key}` holds the posts/profile document — mirrors selection order in the mapper.
+ */
+export function resolveSubscribeStarCppDataRootKey(
+  dataRec: Record<string, unknown>
+): "contentProviderProfile" | "content_provider_profile" | "starProfile" | null {
+  const p1 = dataRec.contentProviderProfile;
+  if (p1 !== null && p1 !== undefined && asRecord(p1)) return "contentProviderProfile";
+  const p2 = dataRec.content_provider_profile;
+  if (p2 !== null && p2 !== undefined && asRecord(p2)) return "content_provider_profile";
+  const p3 = dataRec.starProfile;
+  if (p3 !== null && p3 !== undefined && asRecord(p3)) return "starProfile";
+  return null;
+}
+
+/** Returns shallow copy of `data` without the content-provider root key (supplemental ops only). */
+export function extractSubscribeStarSupplementalGraphqlData(
+  dataRec: Record<string, unknown>,
+  cppRootKey: string
+): Record<string, unknown> | undefined {
+  const { [cppRootKey]: _omit, ...rest } = dataRec;
+  return Object.keys(rest).length > 0 ? rest : undefined;
 }
 
 function unwrapPostsFromProfile(cpp: Record<string, unknown>): {
@@ -266,10 +295,9 @@ export function mapSubscribeStarPostsGraphqlResponseToIngestWire(input: {
   const data = root ? root.data : null;
   const dataRec = data === null || data === undefined ? null : asRecord(data);
 
-  const cppRaw =
-    dataRec &&
-    (asRecord(dataRec.contentProviderProfile ?? dataRec.content_provider_profile ?? dataRec.starProfile));
-  if (!cppRaw) {
+  const cppRootKey = dataRec ? resolveSubscribeStarCppDataRootKey(dataRec) : null;
+  const cppRaw = cppRootKey && dataRec ? asRecord(dataRec[cppRootKey]) : null;
+  if (!cppRaw || !dataRec || !cppRootKey) {
     const issues = ["missing_content_provider_profile_root"];
     if (gqlErrors.length > 0) issues.push(`graphql:${gqlErrors.join(" | ")}`);
     return { ok: false, issues };
@@ -300,9 +328,18 @@ export function mapSubscribeStarPostsGraphqlResponseToIngestWire(input: {
   }
 
   if (posts.length === 0) {
-    const issues = ["no_posts_in_response"];
-    if (gqlErrors.length > 0) issues.push(`graphql:${gqlErrors.join(" | ")}`);
-    return { ok: false, issues };
+    const issues: string[] = [];
+    if (tiers.length === 0) {
+      issues.push("no_posts_in_response");
+    }
+    if (gqlErrors.length > 0) {
+      issues.push(`graphql:${gqlErrors.join(" | ")}`);
+    }
+    if (tiers.length === 0 || gqlErrors.length > 0) {
+      if (issues.length === 0) issues.push("no_posts_in_response");
+      return { ok: false, issues };
+    }
+    /* tiers > 0 and no GraphQL errors: catalog bootstrap without post rows */
   }
 
   let has_next_page = false;
@@ -331,5 +368,13 @@ export function mapSubscribeStarPostsGraphqlResponseToIngestWire(input: {
     posts
   };
 
-  return { ok: true, wire, end_cursor, has_next_page };
+  const supplemental_graphql_data = extractSubscribeStarSupplementalGraphqlData(dataRec, cppRootKey);
+
+  return {
+    ok: true,
+    wire,
+    end_cursor,
+    has_next_page,
+    ...(supplemental_graphql_data ? { supplemental_graphql_data } : {})
+  };
 }

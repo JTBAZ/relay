@@ -4,6 +4,7 @@ import {
   DEFAULT_PATRON_ENTITLEMENT_STALE_MS,
   getPatronEntitlementStaleAfterMs,
   invalidatePatronEntitlementSnapshotsForMemberships,
+  mergeEntitledTierIdsCrossProvider,
   upsertPatronEntitlementSnapshot,
   upsertPatronEntitlementSnapshotForOAuth
 } from "../src/identity/patron-entitlement-snapshot.js";
@@ -20,6 +21,26 @@ describe("getPatronEntitlementStaleAfterMs", () => {
   it("reads RELAY_PATRON_ENTITLEMENT_STALE_AFTER_MS when valid", () => {
     vi.stubEnv("RELAY_PATRON_ENTITLEMENT_STALE_AFTER_MS", "3600000");
     expect(getPatronEntitlementStaleAfterMs()).toBe(3_600_000);
+  });
+});
+
+describe("mergeEntitledTierIdsCrossProvider", () => {
+  it("keeps prior substar tiers when incoming Patreon refresh replaces patreon tiers", () => {
+    const merged = mergeEntitledTierIdsCrossProvider(
+      ["patreon_tier_old", "substar_tier_keep", "relay_tier_x"],
+      ["patreon_tier_new"],
+      "patreon"
+    );
+    expect(merged.sort()).toEqual(["patreon_tier_new", "relay_tier_x", "substar_tier_keep"].sort());
+  });
+
+  it("keeps prior patreon tiers when SubscribeStar refresh updates substar tiers", () => {
+    const merged = mergeEntitledTierIdsCrossProvider(
+      ["patreon_tier_a", "substar_tier_old"],
+      ["substar_tier_new"],
+      "subscribestar"
+    );
+    expect(merged.sort()).toEqual(["patreon_tier_a", "substar_tier_new"].sort());
   });
 });
 
@@ -156,7 +177,7 @@ describe("upsertPatronEntitlementSnapshotForOAuth", () => {
   it("upserts with oauth_exchange, asOf, staleAfter, and optional campaign from CreatorProfile", async () => {
     const upsert = vi.fn().mockResolvedValue({});
     const findUnique = vi.fn().mockResolvedValue(null);
-    const findFirst = vi.fn().mockResolvedValue({ patreonCampaignId: "999" });
+    const findFirst = vi.fn().mockResolvedValue({ patreonCampaignId: "999", subscribestarProfileId: null });
     const outboxCreate = vi.fn().mockResolvedValue({});
     const prisma = {
       patronEntitlementSnapshot: { upsert, findUnique },
@@ -174,7 +195,7 @@ describe("upsertPatronEntitlementSnapshotForOAuth", () => {
 
     expect(findFirst).toHaveBeenCalledWith({
       where: { tenant: { relayCreatorId: "creator_a" } },
-      select: { patreonCampaignId: true }
+      select: { patreonCampaignId: true, subscribestarProfileId: true }
     });
     expect(upsert).toHaveBeenCalledWith({
       where: {

@@ -10,6 +10,7 @@ import {
 } from "react";
 import {
   ArrowRight,
+  CheckCircle2,
   Loader2,
   Palette,
   Heart,
@@ -22,6 +23,7 @@ import { StudioSupabaseSignInPanel } from "@/app/components/studio/StudioSupabas
 import { SupporterSignInPanel } from "@/app/components/auth/SupporterSignInPanel";
 import { InstallExtensionPrompt } from "@/app/components/InstallExtensionPrompt";
 import { PATREON_PATRON_OAUTH_SCOPES } from "@/lib/patreon-patron-scopes";
+import { setPendingOAuthCallbackTarget } from "@/lib/oauth-pending-callback";
 import { patronPatronOAuthRedirectUri } from "@/lib/patron-patron-redirect-uri";
 import { encodePatronOAuthNonce } from "@/lib/patron-oauth-state";
 import {
@@ -30,16 +32,22 @@ import {
   buildPatreonCreatorAuthorizeUrl,
   fetchCreatorPublicSlug,
   fetchPatronSessionIfPresent,
+  fetchRelayComposeTiers,
+  getCreatorPatronTierSummary,
   getCreatorProfile,
   hasRelaySignedInCookie,
   patchCreatorProfile,
   patchCreatorPublicSlug,
   postCreatorWorkspace,
   postPatreonCreatorPrepare,
+  postSubscribeStarCreatorPrepare,
   RelayApiError,
+  buildSubscribeStarCreatorAuthorizeUrl,
   type CreatorProfileIdentity,
+  type CreatorWorkspaceData,
 } from "@/lib/relay-api";
 import { getWebAppOrigin } from "@/lib/site-origin";
+import { isSubscribeStarCreatorConnectUiEnabled } from "@/lib/subscribestar-connect-ui";
 import RelayUnifiedLogoV0 from "@/app/components/relay-unified-logo-v0";
 
 export type OnboardingPath = "creator" | "supporter";
@@ -372,11 +380,14 @@ export function RoadmapPreview({
   path: OnboardingPath;
   currentStep: number;
 }) {
+  const step2ConnectLabel = isSubscribeStarCreatorConnectUiEnabled()
+    ? "Connect platform"
+    : "Connect Patreon";
   const items =
     path === "creator"
       ? [
           { n: 1, label: "Create your account" },
-          { n: 2, label: "Connect Patreon" },
+          { n: 2, label: step2ConnectLabel },
           { n: 3, label: "Set up your profile" },
           { n: 4, label: "Claim your gallery URL" },
         ]
@@ -533,13 +544,16 @@ const PatreonLogoIcon = () => (
 
 export function StepConnectPatreonCreator({
   onSkip,
+  initialSubscribeStarClientId = ""
 }: {
   onSkip?: () => void;
+  initialSubscribeStarClientId?: string;
 }) {
+  const showSubscribeStar = isSubscribeStarCreatorConnectUiEnabled();
   const [origin, setOrigin] = useState("");
   const [creatorId, setCreatorId] = useState("");
   const [hasSession, setHasSession] = useState(false);
-  const [busy, setBusy] = useState(false);
+  const [busy, setBusy] = useState<false | "patreon" | "subscribestar">(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -556,27 +570,35 @@ export function StepConnectPatreonCreator({
     ""
   ).trim();
 
+  const subscribeStarClientId = initialSubscribeStarClientId.trim();
+
   const redirectUri = useMemo(() => {
     const fromEnv = process.env.NEXT_PUBLIC_PATREON_REDIRECT_URI?.trim();
     return fromEnv || (origin ? `${origin}/patreon/callback` : "");
   }, [origin]);
 
-  const handleConnect = useCallback(async () => {
-    if (!clientId || !redirectUri) {
-      setError("Patreon Client ID or redirect URI is missing — check env config.");
-      return;
-    }
-    setError(null);
-    setBusy(true);
+  const subscribeStarRedirectUri = useMemo(() => {
+    const fromEnv = process.env.NEXT_PUBLIC_SUBSCRIBESTAR_CREATOR_REDIRECT_URI?.trim();
+    return fromEnv || (origin ? `${origin}/subscribestar/creator/callback` : "");
+  }, [origin]);
 
+  const applyWorkspace = useCallback((ws: CreatorWorkspaceData) => {
+    window.localStorage.setItem(RELAY_CREATOR_ID_STORAGE_KEY, ws.relay_creator_id);
+    const slug = ws.public_slug?.trim();
+    if (slug) {
+      window.localStorage.setItem(RELAY_PUBLIC_SLUG_STORAGE_KEY, slug);
+    }
+    setCreatorId(ws.relay_creator_id);
+    setHasSession(true);
+  }, []);
+
+  const ensureWorkspace = useCallback(async (): Promise<string | null> => {
     let cid = creatorId;
     if (!cid || !hasSession) {
       try {
         const ws = await postCreatorWorkspace();
+        applyWorkspace(ws);
         cid = ws.relay_creator_id;
-        window.localStorage.setItem(RELAY_CREATOR_ID_STORAGE_KEY, cid);
-        setCreatorId(cid);
-        setHasSession(true);
       } catch (e) {
         const msg =
           e instanceof RelayApiError
@@ -585,13 +607,29 @@ export function StepConnectPatreonCreator({
               ? e.message
               : String(e);
         setError(`Could not create workspace: ${msg}`);
-        setBusy(false);
-        return;
+        return null;
       }
+    }
+    return cid;
+  }, [applyWorkspace, creatorId, hasSession]);
+
+  const handleConnectPatreon = useCallback(async () => {
+    if (!clientId || !redirectUri) {
+      setError("Patreon Client ID or redirect URI is missing — check env config.");
+      return;
+    }
+    setError(null);
+    setBusy("patreon");
+
+    const cid = await ensureWorkspace();
+    if (!cid) {
+      setBusy(false);
+      return;
     }
 
     try {
       const prep = await postPatreonCreatorPrepare(cid);
+      setPendingOAuthCallbackTarget("patreon-creator");
       window.location.href = buildPatreonCreatorAuthorizeUrl(
         clientId,
         redirectUri,
@@ -602,59 +640,136 @@ export function StepConnectPatreonCreator({
         e instanceof RelayApiError
           ? e.message
           : e instanceof Error
-            ? e.message
-            : String(e);
+          ? e.message
+          : String(e);
       setError(msg);
       setBusy(false);
     }
-  }, [clientId, redirectUri, creatorId, hasSession]);
+  }, [clientId, redirectUri, ensureWorkspace]);
+
+  const handleConnectSubscribeStar = useCallback(async () => {
+    if (!subscribeStarClientId || !subscribeStarRedirectUri) {
+      setError(
+        "SubscribeStar client ID or redirect URI is missing — check env config (e.g. NEXT_PUBLIC_SUBSCRIBESTAR_CREATOR_CLIENT_ID)."
+      );
+      return;
+    }
+    setError(null);
+    setBusy("subscribestar");
+
+    const cid = await ensureWorkspace();
+    if (!cid) {
+      setBusy(false);
+      return;
+    }
+
+    try {
+      const prep = await postSubscribeStarCreatorPrepare(cid);
+      setPendingOAuthCallbackTarget("subscribestar-creator");
+      window.location.href = buildSubscribeStarCreatorAuthorizeUrl(
+        subscribeStarClientId,
+        subscribeStarRedirectUri,
+        prep.state
+      );
+    } catch (e) {
+      const msg =
+        e instanceof RelayApiError
+          ? e.message
+          : e instanceof Error
+          ? e.message
+          : String(e);
+      setError(msg);
+      setBusy(false);
+    }
+  }, [subscribeStarClientId, subscribeStarRedirectUri, ensureWorkspace]);
 
   const missingClientId = !clientId;
+  const missingSubscribeStarConfig =
+    showSubscribeStar && (!subscribeStarClientId || !subscribeStarRedirectUri);
+  const blocked = busy !== false || !origin;
+
+  const title = showSubscribeStar ? "Connect your platform" : "Connect your Patreon";
+  const subhead = showSubscribeStar
+    ? "Choose Patreon or SubscribeStar. Authorize Relay so we can verify you own the account and import your posts into your gallery."
+    : "Authorize Relay to import your posts so we can stream your art straight into your gallery.";
 
   return (
-    <PatreonStepShell
-      step={2}
-      of={4}
-      title="Connect your Patreon"
-      subhead="Authorize Relay to import your posts so we can stream your art straight into your gallery."
-    >
-      {missingClientId ? (
-        <div className="rounded-xl border border-amber-900/40 bg-amber-950/30 px-4 py-3 text-xs text-amber-200/90">
-          Set{" "}
-          <code className="rounded bg-black/30 px-1">
-            NEXT_PUBLIC_PATREON_CLIENT_ID
-          </code>{" "}
-          in{" "}
-          <code className="rounded bg-black/30 px-1">web/.env.local</code> to
-          enable Patreon OAuth.
-        </div>
-      ) : (
-        <button
-          type="button"
-          disabled={busy || !origin}
-          onClick={() => void handleConnect()}
-          className="group relative flex w-full items-center justify-center gap-3 overflow-hidden rounded-xl border border-[var(--relay-electric)]/30 bg-[var(--relay-electric)]/8 px-4 py-4 text-sm font-semibold text-[var(--relay-fg)] transition-all duration-200 hover:border-[var(--relay-electric)]/60 hover:bg-[var(--relay-electric)]/15 hover:shadow-[0_0_24px_0_var(--relay-glow)] disabled:opacity-50"
-        >
-          {/* shimmer layer */}
-          <span
-            className="relay-shimmer relay-btn-shimmer-layer pointer-events-none absolute inset-0 opacity-0 transition-opacity duration-300 group-hover:opacity-100"
-            aria-hidden
-          />
-          {busy ? (
-            <>
-              <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
-              Redirecting to Patreon…
-            </>
+    <PatreonStepShell step={2} of={4} title={title} subhead={subhead}>
+      <div className="flex flex-col gap-3">
+        {missingClientId ? (
+          <div className="rounded-xl border border-amber-900/40 bg-amber-950/30 px-4 py-3 text-xs text-amber-200/90">
+            Set{" "}
+            <code className="rounded bg-black/30 px-1">
+              NEXT_PUBLIC_PATREON_CLIENT_ID
+            </code>{" "}
+            in{" "}
+            <code className="rounded bg-black/30 px-1">web/.env.local</code> to
+            enable Patreon OAuth.
+          </div>
+        ) : (
+          <button
+            type="button"
+            disabled={blocked}
+            onClick={() => void handleConnectPatreon()}
+            className="group relative flex w-full items-center justify-center gap-3 overflow-hidden rounded-xl border border-[var(--relay-electric)]/30 bg-[var(--relay-electric)]/8 px-4 py-4 text-sm font-semibold text-[var(--relay-fg)] transition-all duration-200 hover:border-[var(--relay-electric)]/60 hover:bg-[var(--relay-electric)]/15 hover:shadow-[0_0_24px_0_var(--relay-glow)] disabled:opacity-50"
+          >
+            <span
+              className="relay-shimmer relay-btn-shimmer-layer pointer-events-none absolute inset-0 opacity-0 transition-opacity duration-300 group-hover:opacity-100"
+              aria-hidden
+            />
+            {busy === "patreon" ? (
+              <>
+                <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+                Redirecting to Patreon…
+              </>
+            ) : (
+              <>
+                <span className="text-[#f96854]">
+                  <PatreonLogoIcon />
+                </span>
+                Continue with Patreon
+              </>
+            )}
+          </button>
+        )}
+
+        {showSubscribeStar ? (
+          missingSubscribeStarConfig ? (
+            <div className="rounded-xl border border-amber-900/40 bg-amber-950/30 px-4 py-3 text-xs text-amber-200/90">
+              Set{" "}
+              <code className="rounded bg-black/30 px-1">
+                NEXT_PUBLIC_SUBSCRIBESTAR_CREATOR_CLIENT_ID
+              </code>{" "}
+              (and redirect URI if needed) in{" "}
+              <code className="rounded bg-black/30 px-1">web/.env.local</code> to
+              enable SubscribeStar OAuth.
+            </div>
           ) : (
-            <>
-              <span className="text-[#f96854]">
-                <PatreonLogoIcon />
-              </span>
-              Continue with Patreon
-            </>
-          )}
-        </button>
-      )}
+            <button
+              type="button"
+              disabled={blocked}
+              onClick={() => void handleConnectSubscribeStar()}
+              className="group relative flex w-full items-center justify-center gap-3 overflow-hidden rounded-xl border border-amber-400/35 bg-amber-500/10 px-4 py-4 text-sm font-semibold text-amber-200 transition-all duration-200 hover:border-amber-400/55 hover:bg-amber-500/18 disabled:opacity-50"
+            >
+              <span
+                className="relay-shimmer relay-btn-shimmer-layer pointer-events-none absolute inset-0 opacity-0 transition-opacity duration-300 group-hover:opacity-100"
+                aria-hidden
+              />
+              {busy === "subscribestar" ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+                  Redirecting to SubscribeStar…
+                </>
+              ) : (
+                <>
+                  <Sparkles className="h-4 w-4 text-amber-300" strokeWidth={2} aria-hidden />
+                  Continue with SubscribeStar
+                </>
+              )}
+            </button>
+          )
+        ) : null}
+      </div>
 
       {error && (
         <div className="rounded-xl border border-red-900/40 bg-red-950/30 px-4 py-3 text-xs text-red-200/90">
@@ -663,7 +778,9 @@ export function StepConnectPatreonCreator({
       )}
 
       <p className="text-xs leading-relaxed text-[var(--relay-fg-muted)]">
-        We&apos;ll bounce you to Patreon to authorize, then bring you right back to finish setting up.
+        {showSubscribeStar
+          ? "We'll send you to Patreon or SubscribeStar to authorize, then bring you back here to finish setup."
+          : "We'll bounce you to Patreon to authorize, then bring you right back to finish setting up."}
       </p>
 
       {onSkip && (
@@ -1113,7 +1230,7 @@ export function StepCreatorProfileBasics({
 }
 
 /* ───────────────────────────────────────────────────────────────────────────
- * Step 4 — Creator finish (claim public URL slug + extension prompt)
+ * Step 4 — Creator finish (claim public URL slug; connection snapshot; manual import; optional extension).
  * Persists via PATCH /api/v1/creator/public-slug (marks slug as user_chosen).
  * ─────────────────────────────────────────────────────────────────────────── */
 
@@ -1126,6 +1243,15 @@ function sanitizePublicSlugDraft(raw: string): string {
   return s;
 }
 
+/** When true, creator onboarding step 4 shows `InstallExtensionPrompt`. Default off pre–store launch. */
+function isRelayExtensionOnboardingPromptEnabled(): boolean {
+  const v =
+    typeof process.env.NEXT_PUBLIC_RELAY_EXTENSION_ONBOARDING_PROMPT === "string"
+      ? process.env.NEXT_PUBLIC_RELAY_EXTENSION_ONBOARDING_PROMPT.trim().toLowerCase()
+      : "";
+  return v === "1" || v === "true" || v === "yes";
+}
+
 export function StepClaimHandleAndGo({
   onFinish,
 }: {
@@ -1136,17 +1262,31 @@ export function StepClaimHandleAndGo({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [fromPatreonHint, setFromPatreonHint] = useState(false);
+  const [snapshotStatus, setSnapshotStatus] = useState<
+    "loading" | "profile_error" | "ready"
+  >("loading");
+  const [studioIdInBrowser, setStudioIdInBrowser] = useState("");
+  const [snapPatreon, setSnapPatreon] = useState(false);
+  const [snapSubstar, setSnapSubstar] = useState(false);
+  const [snapTierCount, setSnapTierCount] = useState<number | null>(null);
+  const [snapPatronLine, setSnapPatronLine] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
     void (async () => {
       setError(null);
       setLoading(true);
+      setSnapshotStatus("loading");
       const ls =
         typeof window !== "undefined"
           ? window.localStorage.getItem(RELAY_PUBLIC_SLUG_STORAGE_KEY)?.trim() ?? ""
           : "";
+      const creatorIdLs =
+        typeof window !== "undefined"
+          ? window.localStorage.getItem(RELAY_CREATOR_ID_STORAGE_KEY)?.trim() ?? ""
+          : "";
       try {
+        setStudioIdInBrowser(creatorIdLs);
         let slugRes: { public_slug: string } | null = null;
         try {
           slugRes = await fetchCreatorPublicSlug();
@@ -1154,12 +1294,42 @@ export function StepClaimHandleAndGo({
           /* session or network — fall back to local hint */
         }
         let profile: CreatorProfileIdentity | null = null;
+        let profileFetchError = false;
         try {
           profile = await getCreatorProfile();
         } catch {
-          /* profile optional for URL prefill */
+          profileFetchError = true;
+          profile = null;
         }
         if (cancelled) return;
+
+        const hasPa = Boolean(profile?.patreon_campaign_id?.trim());
+        const hasSs = Boolean(profile?.subscribestar_profile_id?.trim());
+        setSnapPatreon(hasPa);
+        setSnapSubstar(hasSs);
+
+        let tiersN: number | null = null;
+        if (creatorIdLs) {
+          try {
+            const { tiers } = await fetchRelayComposeTiers(creatorIdLs);
+            tiersN = tiers.length;
+          } catch {
+            tiersN = null;
+          }
+        }
+        setSnapTierCount(tiersN);
+
+        let patronLine: string | null = null;
+        if (hasPa) {
+          try {
+            const s = await getCreatorPatronTierSummary();
+            patronLine = `${s.total_patrons} patron${s.total_patrons === 1 ? "" : "s"} in your synced membership snapshot`;
+          } catch {
+            patronLine = null;
+          }
+        }
+        setSnapPatronLine(patronLine);
+
         const fromProfile =
           profile?.username_norm?.trim().replace(/_/g, "-").replace(/[^a-z0-9-]+/g, "-")
             .replace(/-+/g, "-")
@@ -1173,9 +1343,11 @@ export function StepClaimHandleAndGo({
         setFromPatreonHint(
           Boolean(profile?.username_norm?.trim()) && !serverSlug && !ls
         );
+        setSnapshotStatus(profileFetchError ? "profile_error" : "ready");
       } catch {
         if (!cancelled) {
           setHandle(ls);
+          setSnapshotStatus("profile_error");
         }
       } finally {
         if (!cancelled) {
@@ -1288,25 +1460,172 @@ export function StepClaimHandleAndGo({
         ) : null}
       </div>
 
+
+      {/* Live snapshot — Patreon / Substar linkage + tiers / patron counts */}
       <div className="space-y-2">
         <span className="text-xs font-medium uppercase tracking-wider text-[var(--relay-fg-muted)]">
-          Pull in your gallery (optional)
+          What Relay sees
         </span>
-        <InstallExtensionPrompt
-          variant="relay"
-          title="Recommended — install the Relay browser extension"
-        />
-        <p className="text-xs leading-relaxed text-[var(--relay-fg-muted)]">
-          Prefer to do it manually?{" "}
-          <Link
-            href="/patreon/cookie"
-            className="font-medium text-[var(--relay-green-400)] underline-offset-4 hover:underline"
-          >
-            Walk through the cookie steps
-          </Link>{" "}
-          — about 60 seconds.
-        </p>
+        <div
+          className={cn(
+            "rounded-xl border border-[var(--relay-border)] bg-[var(--relay-surface-1)] p-4",
+            snapshotStatus === "loading" && "opacity-70"
+          )}
+          aria-busy={snapshotStatus === "loading"}
+        >
+          {snapshotStatus === "loading" ? (
+            <p className="flex items-center gap-2 text-sm text-[var(--relay-fg-muted)]">
+              <Loader2 className="h-4 w-4 animate-spin shrink-0" aria-hidden />
+              Checking your connected platforms and tiers…
+            </p>
+          ) : (
+            <>
+              <p className="text-sm font-semibold text-[var(--relay-fg)]">
+                {snapshotStatus === "profile_error" ? (
+                  <>Couldn&apos;t load your studio profile</>
+                ) : !snapPatreon && !snapSubstar ? (
+                  <>No membership platform linked to this Relay profile yet</>
+                ) : (
+                  <>You&apos;re connected — here&apos;s what Relay sees</>
+                )}
+              </p>
+              {snapshotStatus === "profile_error" ? (
+                <p className="mt-2 text-sm leading-relaxed text-[var(--relay-fg-muted)]">
+                  Your session may have expired, or the Relay API may be unreachable from this page.
+                  Refresh, sign in again, then revisit step 4 — the URL form above may still work once
+                  profile loads.
+                </p>
+              ) : null}
+              {snapshotStatus === "ready" && !snapPatreon && !snapSubstar && studioIdInBrowser ? (
+                <p className="mt-2 text-xs leading-relaxed text-[var(--relay-fg-muted)]">
+                  SubscribeStar / Patreon OAuth writes to the studio id in{" "}
+                  <strong className="font-medium text-[var(--relay-fg)]">this browser</strong> (
+                  <code className="rounded bg-black/25 px-1 font-mono text-[11px]">
+                    {studioIdInBrowser}
+                  </code>
+                  ). This card reads the studio linked to{" "}
+                  <strong className="font-medium text-[var(--relay-fg)]">your logged-in account</strong>
+                  . If those differ, reconnect from step 2 or run{" "}
+                  <strong className="font-medium text-[var(--relay-fg)]">create workspace</strong> again
+                  while signed in so the account and browser id match — then check{" "}
+                  <code className="rounded bg-black/25 px-1">CreatorProfile.subscribestarProfileId</code> /{" "}
+                  <code className="rounded bg-black/25 px-1">patreonCampaignId</code> in the DB for that
+                  relay id.
+                </p>
+              ) : null}
+              <ul className="mt-3 space-y-2.5 text-sm text-[var(--relay-fg-muted)]">
+                {snapPatreon ? (
+                  <li className="flex gap-2.5">
+                    <CheckCircle2
+                      className="mt-0.5 h-4 w-4 shrink-0 text-[var(--relay-green-500)]"
+                      strokeWidth={2}
+                      aria-hidden
+                    />
+                    <span>
+                      <span className="text-[var(--relay-fg)]">Patreon</span> is linked to this
+                      studio.
+                      {snapPatronLine ? ` ${snapPatronLine}.` : ""}
+                    </span>
+                  </li>
+                ) : null}
+                {snapSubstar ? (
+                  <li className="flex gap-2.5">
+                    <CheckCircle2
+                      className="mt-0.5 h-4 w-4 shrink-0 text-[var(--relay-green-500)]"
+                      strokeWidth={2}
+                      aria-hidden
+                    />
+                    <span>
+                      <span className="text-[var(--relay-fg)]">SubscribeStar</span> creator profile is
+                      linked to this studio.
+                    </span>
+                  </li>
+                ) : null}
+                {snapshotStatus === "ready" && !snapPatreon && !snapSubstar ? (
+                  <li className="rounded-lg border border-amber-600/35 bg-amber-950/25 px-3 py-2 text-amber-100/95">
+                    We don&apos;t see a membership platform on this studio yet. If you skipped connect
+                    in step 2, finish that in Settings, then revisit this screen.
+                  </li>
+                ) : null}
+                {snapTierCount !== null && snapTierCount > 0 ? (
+                  <li className="flex gap-2.5">
+                    <CheckCircle2
+                      className="mt-0.5 h-4 w-4 shrink-0 text-[var(--relay-green-500)]"
+                      strokeWidth={2}
+                      aria-hidden
+                    />
+                    <span>
+                      <span className="font-medium text-[var(--relay-fg)]">{snapTierCount}</span>{" "}
+                      membership tiers are available for posts and entitlements.
+                    </span>
+                  </li>
+                ) : snapPatreon || snapSubstar ? (
+                  <li className="flex gap-2.5">
+                    <span
+                      className="mt-0.5 h-4 w-4 shrink-0 rounded-full border-2 border-amber-400/55 bg-amber-500/10"
+                      aria-hidden
+                    />
+                    <span className="text-amber-100/90">
+                      Tier list is still empty or syncing. You can finish this URL now and pull catalog
+                      from the Library — or jump into manual import below.
+                    </span>
+                  </li>
+                ) : null}
+              </ul>
+            </>
+          )}
+        </div>
       </div>
+
+      {/* Manual catalog path — prominent (extension not required) */}
+      <div className="space-y-2">
+        <span className="text-xs font-medium uppercase tracking-wider text-[var(--relay-fg-muted)]">
+          Bring in artwork &amp; tiers
+        </span>
+        <div className="rounded-xl border border-[var(--relay-electric)]/30 bg-[var(--relay-electric)]/8 p-4">
+          <p className="text-sm font-semibold text-[var(--relay-fg)]">Manual import (no extension)</p>
+          <p className="mt-1 text-sm leading-relaxed text-[var(--relay-fg-muted)]">
+            Upload packs, attach tiers to your plans, and stage media — works today without any browser
+            extension.
+          </p>
+          <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+            <Link
+              href="/manual-import"
+              className="inline-flex items-center justify-center gap-2 rounded-xl bg-[var(--relay-green-600)] px-4 py-2.5 text-sm font-semibold text-[var(--relay-fg)] transition-colors hover:bg-[var(--relay-green-400)]"
+            >
+              Open manual import
+              <ArrowRight className="h-4 w-4" strokeWidth={2} />
+            </Link>
+            {snapPatreon ? (
+              <Link
+                href="/patreon/cookie"
+                className="inline-flex items-center justify-center rounded-xl border border-[var(--relay-border)] bg-[var(--relay-surface-2)] px-4 py-2.5 text-sm font-medium text-[var(--relay-fg)] transition-colors hover:border-[var(--relay-electric)]/40 hover:bg-[var(--relay-surface-1)]"
+              >
+                Connect Patreon session (cookie walkthrough)
+              </Link>
+            ) : null}
+          </div>
+        </div>
+      </div>
+
+      {isRelayExtensionOnboardingPromptEnabled() ? (
+        <div className="space-y-2">
+          <span className="text-xs font-medium uppercase tracking-wider text-[var(--relay-fg-muted)]">
+            Browser extension (optional)
+          </span>
+          <InstallExtensionPrompt variant="relay" title="Relay browser extension" />
+        </div>
+      ) : (
+        <p className="text-xs leading-relaxed text-[var(--relay-fg-muted)]">
+          One-click imports via our browser extension are{" "}
+          <span className="text-[var(--relay-fg)]">not shown here yet</span> — use manual import above.
+          When store builds are ready, set{" "}
+          <code className="rounded bg-black/25 px-1">NEXT_PUBLIC_RELAY_EXTENSION_ONBOARDING_PROMPT=1</code>{" "}
+          in{" "}
+          <code className="rounded bg-black/25 px-1">web/.env.local</code> to surface install links on
+          this step.
+        </p>
+      )}
 
       <button
         type="button"

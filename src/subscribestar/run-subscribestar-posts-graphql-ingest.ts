@@ -36,6 +36,14 @@ export type RunSubscribeStarPostsGraphqlIngestDeps = {
   fetchImpl: typeof fetch;
   getAccessToken: () => Promise<string>;
   runBatch: (batch: SyncBatchInput, traceId: string) => Promise<ApplyBatchResult>;
+  /**
+   * When ingest returns supplemental GraphQL `data` keys, persist them on `CreatorProfile` (non-blocking).
+   */
+  persistSubscribeStarProviderSnapshot?: (input: {
+    creator_id: string;
+    snapshot: Record<string, unknown>;
+    trace_id: string;
+  }) => Promise<void>;
 };
 
 /**
@@ -137,6 +145,18 @@ export async function runSubscribeStarPostsGraphqlPagedIngest(input: {
         issue: `ingest_run:${msg}`,
         ...(lastApply ? { last_apply_result: lastApply } : {})
       };
+    }
+
+    if (mapped.supplemental_graphql_data && input.deps.persistSubscribeStarProviderSnapshot) {
+      try {
+        await input.deps.persistSubscribeStarProviderSnapshot({
+          creator_id: creatorId,
+          snapshot: mapped.supplemental_graphql_data,
+          trace_id: input.traceId
+        });
+      } catch {
+        /* best-effort */
+      }
     }
 
     batchesIngested += 1;

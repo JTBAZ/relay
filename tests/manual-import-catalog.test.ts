@@ -184,4 +184,52 @@ describe("manual import catalog", () => {
     expect(setup.suggestions).toEqual(setup.synced_tiers);
     expect(setup.upload.r2_configured).toBe(true);
   });
+
+  it("tags Patreon and SubscribeStar synced tiers with distinct provider labels (studio parity)", async () => {
+    const manualCampaign = manualRelayCampaignId("cr_2a63611e8b5844bdbb1395c214c6b312");
+    const prisma = prismaStub({
+      campaign: {
+        findFirst: vi.fn().mockResolvedValue({ id: manualCampaign, name: "Manual Relay Import" })
+      },
+      tier: {
+        findMany: vi.fn().mockResolvedValue([
+          {
+            id: "p1",
+            relayTierId: "patreon_tier_24098755",
+            providerTierId: "patreon_tier_24098755",
+            manualUploadAccessRelayTierId: null,
+            title: "Backstage Pass",
+            amountCents: 1000,
+            campaignId: "patreon_campaign_x"
+          },
+          {
+            id: "s1",
+            relayTierId: "substar_tier_81099",
+            providerTierId: "substar_tier_81099",
+            manualUploadAccessRelayTierId: null,
+            title: "Gallery Seat",
+            amountCents: 500,
+            campaignId: "substar_campaign_81015"
+          }
+        ])
+      }
+    });
+
+    const setup = await getManualImportSetup(
+      prisma,
+      "cr_2a63611e8b5844bdbb1395c214c6b312",
+      true
+    );
+
+    expect(setup.synced_tiers).toHaveLength(2);
+    const patreon = setup.synced_tiers.find((t) => t.relay_tier_id.startsWith("patreon_tier_"));
+    const sub = setup.synced_tiers.find((t) => t.relay_tier_id.startsWith("substar_tier_"));
+    expect(patreon?.provider).toBe("patreon");
+    expect(patreon?.title).toBe("Backstage Pass");
+    expect(patreon?.amount_cents).toBe(1000);
+    expect(sub?.provider).toBe("subscribestar");
+    expect(sub?.title).toBe("Gallery Seat");
+    expect(sub?.amount_cents).toBe(500);
+    expect(sub?.upload_enabled).toBe(true);
+  });
 });

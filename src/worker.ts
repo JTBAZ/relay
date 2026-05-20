@@ -108,7 +108,9 @@ export async function runRelayWorkerProcess(
     patreonClient,
     ingestService,
     subscribeStarCreatorAuthService,
-    subscribeStarGraphqlIngestUrl
+    subscribeStarGraphqlIngestUrl,
+    subscribeStarPatronOAuthClient,
+    subscribeStarPatronGraphqlUrl
   } = createApp({
     ...serverConfig,
     prisma
@@ -155,7 +157,9 @@ export async function runRelayWorkerProcess(
       patreonClient,
       fetchImpl,
       intervalMs: patronStaleRefreshMs,
-      batchSize: patronEntitlementStaleRefreshBatchFromEnv()
+      batchSize: patronEntitlementStaleRefreshBatchFromEnv(),
+      subscribeStarPatronOAuthClient,
+      subscribeStarPatronGraphqlUrl
     });
   }
 
@@ -194,6 +198,8 @@ export async function runRelayWorkerProcess(
       ingestService,
       subscribeStarCreatorAuthService,
       subscribeStarGraphqlIngestUrl,
+      subscribeStarPatronOAuthClient,
+      subscribeStarPatronGraphqlUrl,
       log: (msg, ctx) => {
         log.warn({ ...(ctx ?? {}), relayMsg: msg }, "Relay worker");
       }

@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 import { cn } from "@/app/lib/cn";
+import { isSubscribeStarCreatorConnectUiEnabled } from "@/lib/subscribestar-connect-ui";
 import { ProgressStepper, type OnboardingStep } from "./progress-stepper";
 import {
   PathPicker,
@@ -22,6 +23,13 @@ import {
 const CREATOR_STEPS: OnboardingStep[] = [
   { id: 1, label: "Account", description: "Create your Relay account" },
   { id: 2, label: "Patreon", description: "Connect your Patreon" },
+  { id: 3, label: "Profile", description: "Set your name + avatar" },
+  { id: 4, label: "Gallery", description: "Claim your URL" },
+];
+
+const CREATOR_STEPS_WITH_SUBSCRIBESTAR: OnboardingStep[] = [
+  { id: 1, label: "Account", description: "Create your Relay account" },
+  { id: 2, label: "Platform", description: "Patreon or SubscribeStar" },
   { id: 3, label: "Profile", description: "Set your name + avatar" },
   { id: 4, label: "Gallery", description: "Claim your URL" },
 ];
@@ -46,8 +54,10 @@ function clampStep(value: number, max: number): WizardStep {
 
 export function OnboardingWizard({
   initialPatronClientId,
+  initialSubscribeStarClientId,
 }: {
   initialPatronClientId: string;
+  initialSubscribeStarClientId: string;
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -55,8 +65,12 @@ export function OnboardingWizard({
   const [path, setPath] = useState<OnboardingPath | null>(null);
   const [currentStep, setCurrentStep] = useState<WizardStep>(1);
 
-  const stepsForPath = (p: OnboardingPath | null): OnboardingStep[] =>
-    p === "supporter" ? SUPPORTER_STEPS : CREATOR_STEPS;
+  const stepsForPath = (p: OnboardingPath | null): OnboardingStep[] => {
+    if (p === "supporter") return SUPPORTER_STEPS;
+    return isSubscribeStarCreatorConnectUiEnabled()
+      ? CREATOR_STEPS_WITH_SUBSCRIBESTAR
+      : CREATOR_STEPS;
+  };
 
   // Hydrate state from URL on mount + when params change.
   useEffect(() => {
@@ -178,6 +192,7 @@ export function OnboardingWizard({
                 path,
                 currentStep,
                 initialPatronClientId,
+                initialSubscribeStarClientId,
                 onAdvance: goNext,
               })}
             </div>
@@ -238,11 +253,13 @@ function renderStep({
   path,
   currentStep,
   initialPatronClientId,
+  initialSubscribeStarClientId,
   onAdvance,
 }: {
   path: OnboardingPath;
   currentStep: WizardStep;
   initialPatronClientId: string;
+  initialSubscribeStarClientId: string;
   onAdvance: () => void;
 }) {
   if (currentStep === 1) {
@@ -250,7 +267,10 @@ function renderStep({
   }
   if (currentStep === 2) {
     return path === "creator" ? (
-      <StepConnectPatreonCreator onSkip={onAdvance} />
+      <StepConnectPatreonCreator
+        onSkip={onAdvance}
+        initialSubscribeStarClientId={initialSubscribeStarClientId}
+      />
     ) : (
       <StepConnectPatreonSupporter initialClientId={initialPatronClientId} />
     );

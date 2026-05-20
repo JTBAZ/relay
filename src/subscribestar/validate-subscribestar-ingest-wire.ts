@@ -35,51 +35,57 @@ export function validateSubscribeStarIngestWire(body: unknown): {
       details.push({ field: "campaign.name", issue: "missing" });
     }
   }
-  if (!Array.isArray(raw.posts)) {
+  let postsValidated: unknown[] = [];
+  const postsRaw = raw.posts;
+  if (postsRaw !== undefined && !Array.isArray(postsRaw)) {
     details.push({ field: "posts", issue: "invalid" });
-  } else if (raw.posts.length === 0) {
-    details.push({ field: "posts", issue: "empty" });
   } else {
-    raw.posts.forEach((p, i) => {
-      if (!p || typeof p !== "object") {
-        details.push({ field: `posts[${i}]`, issue: "invalid" });
-        return;
-      }
-      const o = p as Record<string, unknown>;
-      for (const f of [
-        "external_post_id",
-        "title",
-        "published_at",
-        "upstream_revision"
-      ] as const) {
-        if (typeof o[f] !== "string" || !String(o[f]).trim()) {
-          details.push({ field: `posts[${i}].${f}`, issue: "missing" });
+    postsValidated = postsRaw === undefined ? [] : postsRaw;
+    const tiersPresent = Array.isArray(raw.tiers) && raw.tiers.length > 0;
+    if (postsValidated.length === 0 && !tiersPresent) {
+      details.push({ field: "posts", issue: "empty" });
+    } else if (postsValidated.length > 0) {
+      postsValidated.forEach((p, i) => {
+        if (!p || typeof p !== "object") {
+          details.push({ field: `posts[${i}]`, issue: "invalid" });
+          return;
         }
-      }
-      if (o.media !== undefined && !Array.isArray(o.media)) {
-        details.push({ field: `posts[${i}].media`, issue: "invalid" });
-      } else if (Array.isArray(o.media)) {
-        o.media.forEach((m, j) => {
-          if (!m || typeof m !== "object") {
-            details.push({ field: `posts[${i}].media[${j}]`, issue: "invalid" });
-            return;
+        const o = p as Record<string, unknown>;
+        for (const f of [
+          "external_post_id",
+          "title",
+          "published_at",
+          "upstream_revision"
+        ] as const) {
+          if (typeof o[f] !== "string" || !String(o[f]).trim()) {
+            details.push({ field: `posts[${i}].${f}`, issue: "missing" });
           }
-          const mo = m as Record<string, unknown>;
-          if (typeof mo.external_media_id !== "string" || !String(mo.external_media_id).trim()) {
-            details.push({
-              field: `posts[${i}].media[${j}].external_media_id`,
-              issue: "missing"
-            });
-          }
-          if (typeof mo.upstream_revision !== "string" || !String(mo.upstream_revision).trim()) {
-            details.push({
-              field: `posts[${i}].media[${j}].upstream_revision`,
-              issue: "missing"
-            });
-          }
-        });
-      }
-    });
+        }
+        if (o.media !== undefined && !Array.isArray(o.media)) {
+          details.push({ field: `posts[${i}].media`, issue: "invalid" });
+        } else if (Array.isArray(o.media)) {
+          o.media.forEach((m, j) => {
+            if (!m || typeof m !== "object") {
+              details.push({ field: `posts[${i}].media[${j}]`, issue: "invalid" });
+              return;
+            }
+            const mo = m as Record<string, unknown>;
+            if (typeof mo.external_media_id !== "string" || !String(mo.external_media_id).trim()) {
+              details.push({
+                field: `posts[${i}].media[${j}].external_media_id`,
+                issue: "missing"
+              });
+            }
+            if (typeof mo.upstream_revision !== "string" || !String(mo.upstream_revision).trim()) {
+              details.push({
+                field: `posts[${i}].media[${j}].upstream_revision`,
+                issue: "missing"
+              });
+            }
+          });
+        }
+      });
+    }
   }
 
   if (raw.tiers !== undefined) {
@@ -129,7 +135,7 @@ export function validateSubscribeStarIngestWire(body: unknown): {
         })
       : undefined;
 
-  const postsWire: SubscribeStarIngestPostWire[] = (raw.posts as unknown[]).map((p) => {
+  const postsWire: SubscribeStarIngestPostWire[] = postsValidated.map((p) => {
     const o = p as Record<string, unknown>;
     const mediaRaw = Array.isArray(o.media) ? o.media : [];
     const media = mediaRaw.map((m) => {

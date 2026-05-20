@@ -6,6 +6,7 @@ import { randomUUID } from "node:crypto";
 import type { PrismaClient } from "@prisma/client";
 import type { SubscribeStarCreatorAuthService } from "../auth/subscribestar-auth-service.js";
 import type { IngestService } from "../ingest/ingest-service.js";
+import { persistSubscribeStarProviderSnapshot } from "./persist-subscribestar-provider-snapshot.js";
 import { recordSubscribeStarLastPostSync } from "./record-subscribestar-provider-sync.js";
 import { runSubscribeStarPostsGraphqlPagedIngest } from "./run-subscribestar-posts-graphql-ingest.js";
 import { subscribeStarPostsPageGraphqlQueryFromEnv } from "./subscribestar-ingest-queries.js";
@@ -80,7 +81,14 @@ export async function runSubscribeStarGraphqlIngestAutosyncOnce(
           fetchImpl: deps.fetchImpl,
           getAccessToken: () =>
             deps.authService.resolveAccessTokenForGraphqlApi(cid, traceId),
-          runBatch: (batch, tid) => deps.ingestService.runBatch(batch, tid)
+          runBatch: (batch, tid) => deps.ingestService.runBatch(batch, tid),
+          ...(deps.prisma
+            ? {
+                persistSubscribeStarProviderSnapshot: async (p) => {
+                  await persistSubscribeStarProviderSnapshot(deps.prisma!, p.creator_id, p.snapshot);
+                }
+              }
+            : {})
         }
       });
 

@@ -47,6 +47,8 @@ export type CreatorIdentityView = {
   public_slug: string;
   slug_source: PublicSlugSource;
   patreon_campaign_id: string | null;
+  /** Set after SubscribeStar creator OAuth exchange when profile id is persisted. */
+  subscribestar_profile_id: string | null;
   username: string | null;
   username_norm: string | null;
   display_name: string | null;
@@ -55,6 +57,9 @@ export type CreatorIdentityView = {
   bio: string | null;
   discipline: string | null;
   needs_setup: boolean;
+  /** Opaque JSON from last SubscribeStar supplemental GraphQL sync (subscriptions/payments roots). */
+  subscribestar_provider_snapshot: Prisma.JsonValue | null;
+  subscribestar_provider_snapshot_at: string | null;
 };
 
 function toView(row: CreatorProfile): CreatorIdentityView {
@@ -62,6 +67,7 @@ function toView(row: CreatorProfile): CreatorIdentityView {
     public_slug: row.publicSlug,
     slug_source: row.slugSource,
     patreon_campaign_id: row.patreonCampaignId,
+    subscribestar_profile_id: row.subscribestarProfileId,
     username: row.username,
     username_norm: row.usernameNorm,
     display_name: row.displayName,
@@ -69,7 +75,9 @@ function toView(row: CreatorProfile): CreatorIdentityView {
     banner_url: row.bannerUrl,
     bio: row.bio,
     discipline: row.discipline,
-    needs_setup: !row.displayName || !row.avatarUrl
+    needs_setup: !row.displayName || !row.avatarUrl,
+    subscribestar_provider_snapshot: row.subscribestarProviderSnapshot ?? null,
+    subscribestar_provider_snapshot_at: row.subscribestarProviderSnapshotAt?.toISOString() ?? null
   };
 }
 

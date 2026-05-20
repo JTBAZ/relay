@@ -17,6 +17,43 @@ function sortedTiersFingerprint(ids: readonly string[]): string {
   return [...ids].sort((a, b) => a.localeCompare(b)).join("|");
 }
 
+const PATREON_TIER_PREFIX = "patreon_tier_";
+const SUBSTAR_TIER_PREFIX = "substar_tier_";
+
+/**
+ * When refreshing from Patreon vs SubscribeStar independently, merge incoming API tier ids with
+ * the other provider's ids already on the snapshot plus shared non-provider-prefixed relay ids.
+ */
+export function mergeEntitledTierIdsCrossProvider(
+  priorTiers: readonly string[] | null | undefined,
+  incomingTiers: readonly string[],
+  incomingProvider: "patreon" | "subscribestar"
+): string[] {
+  const prior = priorTiers ?? [];
+  const dedupe = (ids: readonly string[]): string[] => {
+    const seen = new Set<string>();
+    const out: string[] = [];
+    for (const s of ids) {
+      const t = s.trim();
+      if (!t || seen.has(t)) continue;
+      seen.add(t);
+      out.push(t);
+    }
+    return out;
+  };
+
+  const priorPatreon = prior.filter((t) => t.startsWith(PATREON_TIER_PREFIX));
+  const priorSubstar = prior.filter((t) => t.startsWith(SUBSTAR_TIER_PREFIX));
+  const other = prior.filter(
+    (t) => !t.startsWith(PATREON_TIER_PREFIX) && !t.startsWith(SUBSTAR_TIER_PREFIX)
+  );
+
+  if (incomingProvider === "patreon") {
+    return dedupe([...incomingTiers, ...priorSubstar, ...other]);
+  }
+  return dedupe([...incomingTiers, ...priorPatreon, ...other]);
+}
+
 /**
  * @description Reads `RELAY_PATRON_ENTITLEMENT_STALE_AFTER_MS` or returns default stale window.
  * @returns {number}
@@ -40,9 +77,23 @@ async function resolveCampaignId(
   }
   const cp = await prisma.creatorProfile.findFirst({
     where: { tenant: { relayCreatorId } },
-    select: { patreonCampaignId: true }
+    select: { patreonCampaignId: true, subscribestarProfileId: true }
   });
-  return cp?.patreonCampaignId ?? null;
+  if (cp?.patreonCampaignId?.trim()) {
+    return cp.patreonCampaignId.trim();
+  }
+  if (cp?.subscribestarProfileId?.trim()) {
+    const campaign = await prisma.campaign.findFirst({
+      where: {
+        creatorId: relayCreatorId,
+        id: { startsWith: "substar_campaign_" }
+      },
+      select: { id: true },
+      orderBy: { upstreamUpdatedAt: "desc" }
+    });
+    if (campaign?.id) return campaign.id;
+  }
+  return null;
 }
 
 /**
@@ -67,12 +118,16 @@ export async function upsertPatronEntitlementSnapshot(
     now?: Date;
     /** Optional trace id for the emitted `patron_entitlement.tier_changed` event (PE-H). */
     traceId?: string;
+    /**
+     * When set, replaces the corresponding other-provider prefix tiers on the prior snapshot with
+     * `entitledTierIds` from this call (union + dedupe). Omit for full replace (legacy behaviour).
+     */
+    crossProviderMergeSource?: "patreon" | "subscribestar";
   }
 ): Promise<void> {
   const now = args.now ?? new Date();
   const staleAfter = new Date(now.getTime() + getPatronEntitlementStaleAfterMs());
   const campaignId = await resolveCampaignId(prisma, args.relayCreatorId, args.campaignId);
-  const tiers = [...args.entitledTierIds];
 
   const prior = await prisma.patronEntitlementSnapshot.findUnique({
     where: {
@@ -83,6 +138,15 @@ export async function upsertPatronEntitlementSnapshot(
     },
     select: { entitledTierIds: true, active: true }
   });
+
+  const tiers =
+    args.crossProviderMergeSource !== undefined
+      ? mergeEntitledTierIdsCrossProvider(
+          prior?.entitledTierIds,
+          args.entitledTierIds,
+          args.crossProviderMergeSource
+        )
+      : [...args.entitledTierIds];
 
   await prisma.patronEntitlementSnapshot.upsert({
     where: {
@@ -209,7 +273,8 @@ export async function upsertPatronEntitlementSnapshotForOAuth(
 ): Promise<void> {
   await upsertPatronEntitlementSnapshot(prisma, {
     ...args,
-    source: EntitlementSource.oauth_exchange
+    source: EntitlementSource.oauth_exchange,
+    crossProviderMergeSource: "patreon"
   });
 }
 

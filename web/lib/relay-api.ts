@@ -622,6 +622,12 @@ export type CreatorProfileIdentity = {
   public_slug: string;
   slug_source: PublicSlugSourceValue;
   patreon_campaign_id: string | null;
+  /** Present when SubscribeStar creator OAuth linked this studio. */
+  subscribestar_profile_id: string | null;
+  /** Last merged supplemental SubscribeStar GraphQL `data` from ingest (subscriptions/payments roots), or null. */
+  subscribestar_provider_snapshot: unknown | null;
+  /** ISO time when `subscribestar_provider_snapshot` was last written. */
+  subscribestar_provider_snapshot_at: string | null;
   username: string | null;
   username_norm: string | null;
   display_name: string | null;

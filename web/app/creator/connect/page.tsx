@@ -9,8 +9,10 @@ import {
   Monitor,
   RefreshCw,
   ShieldCheck,
+  Sparkles,
   Zap
 } from "lucide-react";
+import { isSubscribeStarCreatorConnectUiEnabled } from "@/lib/subscribestar-connect-ui";
 import {
   RELAY_CREATOR_ID_STORAGE_KEY,
   relayFetch,
@@ -18,6 +20,7 @@ import {
 } from "@/lib/relay-api";
 
 const PATREON_OAUTH_HREF = "/patreon/connect";
+const SUBSCRIBESTAR_OAUTH_HREF = "/subscribestar/creator/connect";
 
 /* Pre-defined outside JSX — avoids JSX inside array literals (SWC parser issue). */
 const OAUTH_BENEFITS = [
@@ -190,6 +193,7 @@ function SessionKeyForm() {
 
 /* ── Page ───────────────────────────────────────────────────────── */
 export default function CreatorConnectPage() {
+  const showSubscribeStar = isSubscribeStarCreatorConnectUiEnabled();
   return (
     <div
       className="flex min-h-0 flex-1 flex-col items-center px-5 py-12"
@@ -240,18 +244,58 @@ export default function CreatorConnectPage() {
             className="text-balance text-3xl font-semibold leading-snug tracking-tight sm:text-4xl"
             style={{ color: "#F9FAFB" }}
           >
-            Connect your Patreon
+            {showSubscribeStar ? "Connect your creator account" : "Connect your Patreon"}
           </h1>
           <p className="max-w-lg text-sm leading-relaxed" style={{ color: "#9CA3AF" }}>
-            Two steps bring your full archive — posts, media, tiers, paywalls — onto your own Relay server.
+            {showSubscribeStar
+              ? "Link the platform where you run memberships. Patreon supports full sync + optional session key; SubscribeStar starts with OAuth plus manual import until GraphQL ingest is validated."
+              : "Two steps bring your full archive — posts, media, tiers, paywalls — onto your own Relay server."}
           </p>
         </div>
 
+        {showSubscribeStar ? (
+          <div className="mb-8 flex flex-col gap-3 sm:flex-row">
+            <Link
+              href={PATREON_OAUTH_HREF}
+              className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl px-5 py-3.5 text-sm font-semibold transition-colors duration-150"
+              style={{ background: "#2D6A4F", color: "#F9FAFB" }}
+              onMouseEnter={(e) => ((e.currentTarget as HTMLElement).style.background = "#40916C")}
+              onMouseLeave={(e) => ((e.currentTarget as HTMLElement).style.background = "#2D6A4F")}
+            >
+              Connect Patreon
+              <ArrowRight size={15} />
+            </Link>
+            <Link
+              href={SUBSCRIBESTAR_OAUTH_HREF}
+              className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl border px-5 py-3.5 text-sm font-semibold transition-colors duration-150"
+              style={{
+                background: "rgba(245, 158, 11, 0.08)",
+                borderColor: "rgba(245, 158, 11, 0.35)",
+                color: "#FBBF24"
+              }}
+              onMouseEnter={(e) => {
+                (e.currentTarget as HTMLElement).style.background = "rgba(245, 158, 11, 0.15)";
+              }}
+              onMouseLeave={(e) => {
+                (e.currentTarget as HTMLElement).style.background = "rgba(245, 158, 11, 0.08)";
+              }}
+            >
+              <Sparkles size={15} aria-hidden />
+              Connect SubscribeStar
+            </Link>
+          </div>
+        ) : null}
+
         {/* Steps */}
         <div className="flex flex-col gap-4">
+          {showSubscribeStar ? (
+            <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: "#6B7280" }}>
+              Patreon — full archive sync
+            </p>
+          ) : null}
 
           {/* ── Step 1: OAuth ─────────────────────────────── */}
-          <StepCard n="1" label="Connect your account">
+          <StepCard n="1" label="Connect your Patreon account">
             <div className="flex flex-col gap-5">
               <div className="flex flex-col gap-4">
                 {OAUTH_BENEFITS.map(({ icon: Icon, label }) => (
@@ -273,7 +317,7 @@ export default function CreatorConnectPage() {
                 onMouseEnter={(e) => ((e.currentTarget as HTMLElement).style.background = "#40916C")}
                 onMouseLeave={(e) => ((e.currentTarget as HTMLElement).style.background = "#2D6A4F")}
               >
-                Continue to Patreon
+                Continue to Patreon OAuth
                 <ArrowRight size={15} />
               </Link>
             </div>

@@ -1,4 +1,4 @@
-import { describe, expect, it, afterEach } from "vitest";
+import { describe, expect, it, afterEach, vi } from "vitest";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
@@ -132,5 +132,35 @@ describe("runSubscribeStarPostsGraphqlPagedIngest", () => {
     expect(r.pages_fetched).toBe(2);
     expect(r.batches_ingested).toBe(2);
     expect(r.ended_reason).toBe("no_next_page");
+  });
+
+  it("calls persistSubscribeStarProviderSnapshot when supplemental data is present", async () => {
+    process.env.SUBSCRIBESTAR_INGEST_POSTS_GRAPHQL_QUERY = `query { contentProviderProfile { id } }`;
+    const raw = loadFixture("subscribestar-hypothesis-posts-graphql.json") as Record<string, unknown>;
+    const data = { ...(raw as { data: Record<string, unknown> }).data };
+    data.extraRoot = { payments: [1] };
+    const fetchMock: typeof fetch = async () =>
+      new Response(JSON.stringify({ data }), { status: 200, headers: { "content-type": "application/json" } });
+
+    const persist = vi.fn(async () => {});
+    const r = await runSubscribeStarPostsGraphqlPagedIngest({
+      creator_id: "cr_snap",
+      traceId: "t_snap",
+      max_pages: 1,
+      deps: {
+        graphqlUrl: "https://subscribestar.adult/api/graphql/v1",
+        fetchImpl: fetchMock,
+        getAccessToken: async () => "access",
+        runBatch: async () => stubApply,
+        persistSubscribeStarProviderSnapshot: persist
+      }
+    });
+
+    expect(r.ok).toBe(true);
+    expect(persist).toHaveBeenCalledWith({
+      creator_id: "cr_snap",
+      trace_id: "t_snap",
+      snapshot: { extraRoot: { payments: [1] } }
+    });
   });
 });

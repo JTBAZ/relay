@@ -16,6 +16,7 @@ function makeProfile(overrides: Record<string, unknown> = {}) {
     publicSlug: "test-creator",
     slugSource: PublicSlugSource.user_chosen,
     patreonCampaignId: null,
+    subscribestarProfileId: null,
     username: null,
     usernameNorm: null,
     displayName: null,
@@ -25,6 +26,8 @@ function makeProfile(overrides: Record<string, unknown> = {}) {
     discipline: null,
     createdAt: new Date(),
     updatedAt: new Date(),
+    subscribestarProviderSnapshot: null,
+    subscribestarProviderSnapshotAt: null,
     ...overrides
   };
 }
@@ -130,6 +133,31 @@ describe("getCreatorIdentity", () => {
     });
     const result = await getCreatorIdentity(prisma as never, "acc_1");
     expect(result!.needs_setup).toBe(false);
+  });
+
+  it("exposes patreon_campaign_id and subscribestar_profile_id from the backing row", async () => {
+    const prisma = makePrisma({
+      profile: makeProfile({
+        patreonCampaignId: "15782831",
+        subscribestarProfileId: "ss_profile_404"
+      })
+    });
+    const result = await getCreatorIdentity(prisma as never, "acc_1");
+    expect(result).not.toBeNull();
+    expect(result!.patreon_campaign_id).toBe("15782831");
+    expect(result!.subscribestar_profile_id).toBe("ss_profile_404");
+  });
+
+  it("exposes subscribestar_provider_snapshot when stored", async () => {
+    const prisma = makePrisma({
+      profile: makeProfile({
+        subscribestarProviderSnapshot: { subscriptionMetrics: { n: 3 } },
+        subscribestarProviderSnapshotAt: new Date("2026-05-01T12:00:00.000Z")
+      })
+    });
+    const result = await getCreatorIdentity(prisma as never, "acc_1");
+    expect(result!.subscribestar_provider_snapshot).toEqual({ subscriptionMetrics: { n: 3 } });
+    expect(result!.subscribestar_provider_snapshot_at).toBe("2026-05-01T12:00:00.000Z");
   });
 });
 

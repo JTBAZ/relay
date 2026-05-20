@@ -14,6 +14,7 @@ import {
   postSubscribeStarCreatorSyncPosts,
 } from "@/lib/relay-api";
 import { getWebAppOrigin } from "@/lib/site-origin";
+import { setPendingOAuthCallbackTarget } from "@/lib/oauth-pending-callback";
 
 type Props = {
   initialClientId: string;
@@ -88,6 +89,7 @@ export default function SubscribeStarCreatorConnectClient({ initialClientId }: P
     setBusy("prepare");
     try {
       const prep = await postSubscribeStarCreatorPrepare(cid);
+      setPendingOAuthCallbackTarget("subscribestar-creator");
       window.location.href = buildSubscribeStarCreatorAuthorizeUrl(
         clientId,
         redirectUri,

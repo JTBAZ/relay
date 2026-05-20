@@ -6,6 +6,7 @@ import type { PatreonTokenStore } from "../auth/token-store.js";
 import type { TokenEncryption } from "../lib/crypto.js";
 import type { PatreonClient } from "../auth/patreon-client.js";
 import type { SubscribeStarCreatorAuthService } from "../auth/subscribestar-auth-service.js";
+import type { SubscribeStarOAuthClient } from "../subscribestar/subscribestar-client.js";
 import type { IngestService } from "../ingest/ingest-service.js";
 import { runIncrementalAutosyncOnce } from "../patreon/incremental-sync-worker.js";
 import {
@@ -52,6 +53,9 @@ export type RegisterRelayBullMqWorkersDeps = {
   ingestService: IngestService;
   subscribeStarCreatorAuthService?: SubscribeStarCreatorAuthService;
   subscribeStarGraphqlIngestUrl?: string;
+  /** Patron subscriber OAuth + GraphQL URL for entitlement stale refresh (optional). */
+  subscribeStarPatronOAuthClient?: SubscribeStarOAuthClient;
+  subscribeStarPatronGraphqlUrl?: string;
   log?: (msg: string, ctx?: Record<string, unknown>) => void;
   /**
    * When set, all workers share this client; shutdown will not call `quit` (caller owns lifecycle).
@@ -243,7 +247,9 @@ export function registerRelayBullMqWorkers(
                 patreonClient: deps.patreonClient,
                 fetchImpl: deps.fetchImpl,
                 batchSize: patronEntitlementStaleRefreshBatchFromEnv(),
-                patronMembershipId: job.data?.patronMembershipId
+                patronMembershipId: job.data?.patronMembershipId,
+                subscribeStarPatronOAuthClient: deps.subscribeStarPatronOAuthClient,
+                subscribeStarPatronGraphqlUrl: deps.subscribeStarPatronGraphqlUrl
               });
             }
           );

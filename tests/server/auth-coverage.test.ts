@@ -29,7 +29,9 @@ const LEGACY_CREATOR_SCOPED = new Set([
   "/api/v1/migrations/campaigns/:campaign_id/bounce",
   "/api/v1/migrations/campaigns/:campaign_id/complaint",
   "/api/v1/migrations/campaigns/:campaign_id/click",
-  "/api/v1/migrations/campaigns/:campaign_id/resubscribe"
+  "/api/v1/migrations/campaigns/:campaign_id/resubscribe",
+  // Creator session gates SubscribeStar token via stored OAuth + creator_id body (see route).
+  "/api/v1/auth/subscribestar/creator/refresh"
 ]);
 
 describe("server /api/v1 auth coverage markers", () => {

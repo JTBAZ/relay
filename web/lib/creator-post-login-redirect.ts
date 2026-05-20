@@ -21,7 +21,7 @@ export async function resolveCreatorPostAuthDestination(
   }
 
   const profile = await getCreatorProfile();
-  if (!profile.patreon_campaign_id) {
+  if (!profile.patreon_campaign_id && !profile.subscribestar_profile_id) {
     return CREATOR_STEP_PATREON;
   }
   if (profile.needs_setup) {

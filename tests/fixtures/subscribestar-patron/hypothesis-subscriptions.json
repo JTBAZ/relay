@@ -1,0 +1,23 @@
+{
+  "note": "Hypothesis shape for patron subscription listing — validate in SubscribeStar GraphQL Explorer. Maps to substar_tier_{plan.id}.",
+  "data": {
+    "viewer": {
+      "subscriptions": {
+        "edges": [
+          {
+            "node": {
+              "id": "sub_hypothesis_1",
+              "status": "active",
+              "subscribeable": {
+                "id": "887766"
+              },
+              "plan": {
+                "id": "501"
+              }
+            }
+          }
+        ]
+      }
+    }
+  }
+}

@@ -32,6 +32,7 @@
  *       patronEntitlementSnapshots, patronCampaignAccess, feedCursors,
  *       notificationPreferences, notifications, patronFollowSeeds)
  *     - PatronOAuthCredential (1:1 on accountId)
+ *     - PatronSubscribestarOAuthCredential (1:1 on accountId)
  *     - AccountFollow (both follower + followed sides)
  *     - AccountBlock (both blocker + blocked sides)
  *     - Tenant.primaryAccount (set to null via SetNull -- account loses claim, tenant survives)

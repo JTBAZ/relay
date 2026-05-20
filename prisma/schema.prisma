@@ -195,6 +195,8 @@ model Account {
 
   memberships           TenantMembership[]
   patronOAuthCredential PatronOAuthCredential?
+  /// SubscribeStar subscriber OAuth — distinct from Patreon `PatronOAuthCredential` so both links can coexist.
+  patronSubscribestarOAuthCredential PatronSubscribestarOAuthCredential?
   primaryStudio         Tenant?                 @relation("AccountPrimaryStudio", fields: [primaryRelayCreatorId], references: [relayCreatorId], onDelete: SetNull, onUpdate: Cascade)
   followsOutgoing       AccountFollow[]         @relation("AccountFollowsOutgoing")
   followsIncoming       AccountFollow[]         @relation("AccountFollowsIncoming")
@@ -323,6 +325,9 @@ model CreatorProfile {
   patreonCampaignId String?          @unique @map("patreon_campaign_id")
   /// Canonical SubscribeStar creator/profile id for creator-side ingest and patron matching.
   subscribestarProfileId String?     @unique @map("subscribestar_profile_id")
+  /// Opaque JSON: merged supplemental SubscribeStar GraphQL `data` roots (e.g. subscriptions/payments operations) from last ingest.
+  subscribestarProviderSnapshot   Json?     @map("subscribestar_provider_snapshot")
+  subscribestarProviderSnapshotAt DateTime? @map("subscribestar_provider_snapshot_at")
   /// Mutable public @handle (mixed case allowed); uniqueness is on `usernameNorm`.
   username          String?
   /// Lowercase normalized username for uniqueness; mirrors `PatronProfile.handleNorm` pattern.
@@ -1329,6 +1334,20 @@ model PatronOAuthCredential {
   updatedAt        DateTime         @updatedAt @map("updated_at")
 
   @@map("patron_oauth_credentials")
+}
+
+/// Patron SubscribeStar subscriber OAuth tokens (separate app registration / scopes from creator ingest).
+model PatronSubscribestarOAuthCredential {
+  id               String           @id @default(cuid())
+  accountId        String           @unique @map("account_id")
+  account          Account          @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  encryptedPayload Bytes            @map("encrypted_payload")
+  keyId            String           @map("key_id")
+  healthStatus     CredentialHealth @map("health_status")
+  createdAt        DateTime         @default(now()) @map("created_at")
+  updatedAt        DateTime         @updatedAt @map("updated_at")
+
+  @@map("patron_subscribestar_oauth_credentials")
 }
 
 /// Part 3 O + PE-E (BO-P2-03) — comments (soft-delete via `deleted_at`).

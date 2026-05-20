@@ -56,7 +56,9 @@ import { validateIngestBatchBody } from "./ingest/validate-body.js";
 import { buildSubscribeStarSyncBatch } from "./subscribestar/map-subscribestar-to-ingest.js";
 import { validateSubscribeStarIngestWire } from "./subscribestar/validate-subscribestar-ingest-wire.js";
 import { recordSubscribeStarLastPostSync } from "./subscribestar/record-subscribestar-provider-sync.js";
+import { persistSubscribeStarProviderSnapshot } from "./subscribestar/persist-subscribestar-provider-snapshot.js";
 import { runSubscribeStarPostsGraphqlPagedIngest } from "./subscribestar/run-subscribestar-posts-graphql-ingest.js";
+import { linkSubscribeStarPatronWithCode } from "./subscribestar/subscribestar-patron-entitlement-sync.js";
 import {
   createRelayPostTransaction,
   RelayCreatePostError
@@ -750,6 +752,10 @@ export type CreateAppResult = {
   subscribeStarCreatorOAuthClient?: SubscribeStarOAuthClient;
   /** GraphQL ingest URL `${SUBSCRIBESTAR_API_ORIGIN}/api/graphql/v1` when creator OAuth wiring is active. */
   subscribeStarGraphqlIngestUrl?: string;
+  /** Subscriber OAuth client when `SUBSCRIBESTAR_*` client env resolves (may share creator app). */
+  subscribeStarPatronOAuthClient?: SubscribeStarOAuthClient;
+  /** Same GraphQL endpoint patrons use with subscriber-scoped bearer tokens. */
+  subscribeStarPatronGraphqlUrl?: string;
 };
 
 /**
@@ -1556,6 +1562,9 @@ export function createApp(config: AppConfig): CreateAppResult {
   let subscribeStarCreatorAuthService: SubscribeStarCreatorAuthService | undefined;
   let subscribeStarGraphqlIngestUrl: string | undefined;
 
+  let subscribeStarPatronOAuthClient: SubscribeStarOAuthClient | undefined;
+  let subscribeStarPatronGraphqlUrl: string | undefined;
+
   if (
     subscribeStarIngestEnvEnabled &&
     useDbCreatorOAuthStore(config) &&
@@ -1597,6 +1606,32 @@ export function createApp(config: AppConfig): CreateAppResult {
         "[relay] SUBSCRIBESTAR_INGEST_ENABLED is set but creator OAuth env is incomplete " +
           "(SUBSCRIBESTAR_RELAY_CREATOR_CLIENT_ID + SUBSCRIBESTAR_RELAY_CREATOR_SECRET, or *_CREATOR_CLIENT_* aliases)."
       );
+    }
+  }
+
+  {
+    const subOriginPatron = (
+      config.subscribestar_api_origin?.trim() ||
+      process.env.SUBSCRIBESTAR_API_ORIGIN?.trim() ||
+      "https://subscribestar.adult"
+    ).replace(/\/$/, "");
+    const patronCid =
+      process.env.SUBSCRIBESTAR_PATRON_CLIENT_ID?.trim() ||
+      process.env.SUBSCRIBESTAR_RELAY_CREATOR_CLIENT_ID?.trim() ||
+      process.env.SUBSCRIBESTAR_CREATOR_CLIENT_ID?.trim();
+    const patronSecret =
+      process.env.SUBSCRIBESTAR_PATRON_CLIENT_SECRET?.trim() ||
+      process.env.SUBSCRIBESTAR_RELAY_CREATOR_SECRET?.trim() ||
+      process.env.SUBSCRIBESTAR_CREATOR_CLIENT_SECRET?.trim();
+    const fetchPatron = config.fetch_impl ?? globalThis.fetch;
+    if (config.prisma && patronCid && patronSecret) {
+      subscribeStarPatronOAuthClient = new SubscribeStarOAuthClient({
+        client_id: patronCid,
+        client_secret: patronSecret,
+        token_url: `${subOriginPatron}/oauth2/token`,
+        fetch_impl: fetchPatron
+      });
+      subscribeStarPatronGraphqlUrl = `${subOriginPatron}/api/graphql/v1`;
     }
   }
 
@@ -3083,6 +3118,89 @@ export function createApp(config: AppConfig): CreateAppResult {
     );
   });
 
+  /**
+   * SubscribeStar subscriber OAuth — merge `substar_tier_*` ids into the patron entitlement snapshot for one creator.
+   * Requires `SUBSCRIBESTAR_PATRON_SUBSCRIPTIONS_GRAPHQL_QUERY` (validated in Explorer) plus creator `subscribestarProfileId`.
+   */
+  app.post("/api/v1/auth/subscribestar/patron/link", async (req: Request, res: Response) => {
+    const traceId = traceIdFrom(req);
+    const session = await requirePatronBearerSession(req, res, traceId);
+    if (!session) return;
+    if (!useDbIdentityStore(config) || !config.prisma) {
+      return res.status(503).json(
+        errorEnvelope(
+          "NOT_AVAILABLE",
+          "SubscribeStar patron link requires database-backed identity (RELAY_DB_STORE_IDENTITY).",
+          traceId
+        )
+      );
+    }
+    if (!subscribeStarPatronOAuthClient || !subscribeStarPatronGraphqlUrl?.trim()) {
+      return res.status(503).json(
+        errorEnvelope(
+          "NOT_AVAILABLE",
+          "SubscribeStar patron OAuth is not configured. Set SUBSCRIBESTAR_PATRON_CLIENT_ID and SUBSCRIBESTAR_PATRON_CLIENT_SECRET (or reuse creator SUBSCRIBESTAR_* client env).",
+          traceId
+        )
+      );
+    }
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const details = validateRequiredFields(body, ["code", "redirect_uri", "relay_creator_id"]);
+    if (details.length > 0) {
+      return res
+        .status(400)
+        .json(errorEnvelope("VALIDATION_ERROR", "Invalid request payload.", traceId, details));
+    }
+    const prisma = config.prisma;
+    const accountId = await getAccountIdForSession(prisma, session);
+    if (!accountId) {
+      return res.status(404).json(errorEnvelope("NOT_FOUND", "Account not found for session.", traceId));
+    }
+    const relayCreatorId = String(body.relay_creator_id).trim();
+    try {
+      const result = await linkSubscribeStarPatronWithCode({
+        prisma,
+        encryption,
+        fetchImpl: config.fetch_impl ?? globalThis.fetch,
+        graphqlUrl: subscribeStarPatronGraphqlUrl.trim(),
+        oauthClient: subscribeStarPatronOAuthClient,
+        code: String(body.code),
+        redirectUri: String(body.redirect_uri),
+        accountId,
+        relayCreatorId
+      });
+      return res
+        .status(200)
+        .json(successEnvelope({ linked: true, tier_ids: result.tier_ids }, traceId));
+    } catch (error) {
+      return res
+        .status(502)
+        .json(errorEnvelope("UPSTREAM_AUTH_ERROR", (error as Error).message, traceId));
+    }
+  });
+
+  app.delete("/api/v1/auth/subscribestar/patron/link", async (req: Request, res: Response) => {
+    const traceId = traceIdFrom(req);
+    const session = await requirePatronBearerSession(req, res, traceId);
+    if (!session) return;
+    if (!config.prisma) {
+      return res.status(503).json(
+        errorEnvelope("NOT_AVAILABLE", "SubscribeStar unlink requires database-backed identity.", traceId)
+      );
+    }
+    const prisma = config.prisma;
+    const accountId = await getAccountIdForSession(prisma, session);
+    if (!accountId) {
+      return res.status(404).json(errorEnvelope("NOT_FOUND", "Account not found for session.", traceId));
+    }
+    const del = await prisma.patronSubscribestarOAuthCredential.deleteMany({
+      where: { accountId }
+    });
+    return res.status(200).json(
+      successEnvelope({ unsubscribestar_patron_oauth_deleted: del.count > 0 }, traceId)
+    );
+  });
+
   app.post("/api/v1/auth/patreon/refresh", async (req: Request, res: Response) => {
     const traceId = traceIdFrom(req);
     const body = (req.body ?? {}) as Record<string, unknown>;
@@ -3806,7 +3924,14 @@ export function createApp(config: AppConfig): CreateAppResult {
           fetchImpl: fetchImplSs,
           getAccessToken: () =>
             subscribeStarCreatorAuthService.resolveAccessTokenForGraphqlApi(creatorId, traceId),
-          runBatch: (batch, tid) => ingestService.runBatch(batch, tid)
+          runBatch: (batch, tid) => ingestService.runBatch(batch, tid),
+          ...(config.prisma
+            ? {
+                persistSubscribeStarProviderSnapshot: async (p) => {
+                  await persistSubscribeStarProviderSnapshot(config.prisma!, p.creator_id, p.snapshot);
+                }
+              }
+            : {})
         }
       });
 
@@ -11605,6 +11730,8 @@ export function createApp(config: AppConfig): CreateAppResult {
     patreonClient,
     subscribeStarCreatorAuthService,
     subscribeStarCreatorOAuthClient,
-    subscribeStarGraphqlIngestUrl
+    subscribeStarGraphqlIngestUrl,
+    subscribeStarPatronOAuthClient,
+    subscribeStarPatronGraphqlUrl
   };
 }

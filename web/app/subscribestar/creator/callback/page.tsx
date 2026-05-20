@@ -2,14 +2,16 @@
 
 import { Suspense, useEffect, useState } from "react";
 import Link from "next/link";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import {
   RELAY_CREATOR_ID_STORAGE_KEY,
   hasRelaySignedInCookie,
   isPreparedSubscribeStarOAuthState,
-  postSubscribeStarCreatorExchange
+  postSubscribeStarCreatorExchange,
+  postSubscribeStarCreatorSyncPosts
 } from "@/lib/relay-api";
 import { getWebAppOrigin } from "@/lib/site-origin";
+import { clearPendingOAuthCallbackTarget } from "@/lib/oauth-pending-callback";
 
 function redirectUriForExchange(): string {
   const fromEnv = process.env.NEXT_PUBLIC_SUBSCRIBESTAR_CREATOR_REDIRECT_URI?.trim();
@@ -21,7 +23,6 @@ function redirectUriForExchange(): string {
 }
 
 function CallbackInner() {
-  const router = useRouter();
   const params = useSearchParams();
   const code = params.get("code");
   const state = params.get("state");
@@ -48,6 +49,7 @@ function CallbackInner() {
 
     let cancelled = false;
     setStatus("working");
+    clearPendingOAuthCallbackTarget();
 
     (async () => {
       try {
@@ -81,9 +83,16 @@ function CallbackInner() {
         if (cancelled) return;
         setStatus("done");
         setProfileId(data?.subscribestar_profile_id ?? null);
+        try {
+          await postSubscribeStarCreatorSyncPosts({ creator_id: creatorId, max_pages: 1 });
+        } catch (syncErr) {
+          console.warn("[SubscribeStar OAuth] Tier/catalog sync skipped or failed:", syncErr);
+        }
+        if (cancelled) return;
+        const next = "/onboarding?path=creator&step=3";
         setTimeout(() => {
-          if (!cancelled) router.push("/");
-        }, 1800);
+          if (!cancelled) window.location.replace(next);
+        }, 400);
       } catch (e) {
         if (!cancelled) {
           setStatus("error");
@@ -95,7 +104,7 @@ function CallbackInner() {
     return () => {
       cancelled = true;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- router stable; effect keyed on OAuth params only
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- effect keyed on OAuth params only
   }, [code, state, oauthError, oauthDesc]);
 
   return (

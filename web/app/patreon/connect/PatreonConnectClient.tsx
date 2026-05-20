@@ -13,6 +13,7 @@ import {
   postPatreonCreatorPrepare
 } from "@/lib/relay-api";
 import { getWebAppOrigin } from "@/lib/site-origin";
+import { setPendingOAuthCallbackTarget } from "@/lib/oauth-pending-callback";
 
 type Props = {
   /** From Server Component: {@link resolvePatreonOAuthClientId} */
@@ -93,6 +94,7 @@ export default function PatreonConnectClient({ initialClientId }: Props) {
     setBusy("prepare");
     try {
       const prep = await postPatreonCreatorPrepare(cid);
+      setPendingOAuthCallbackTarget("patreon-creator");
       window.location.href = buildPatreonCreatorAuthorizeUrl(clientId, redirectUri, prep.state);
     } catch (e) {
       const msg =

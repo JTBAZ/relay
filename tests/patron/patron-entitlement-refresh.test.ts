@@ -90,7 +90,8 @@ describe("refreshPatronEntitlementSnapshotFromPatreon", () => {
       relayCreatorId: "creator_x",
       entitledTierIds: ["patreon_tier_1"],
       source: EntitlementSource.scheduled_refresh,
-      campaignId: null
+      campaignId: null,
+      crossProviderMergeSource: "patreon"
     });
     expect(hoisted.refreshPatronOAuthTokensWithStoredRefreshToken).not.toHaveBeenCalled();
   });
@@ -202,7 +203,8 @@ describe("refreshPatronEntitlementSnapshotIfStale (PE-H pre-action)", () => {
       relayCreatorId: "creator_x",
       entitledTierIds: ["patreon_tier_2"],
       source: EntitlementSource.webhook,
-      campaignId: "99"
+      campaignId: "99",
+      crossProviderMergeSource: "patreon"
     });
   });
 

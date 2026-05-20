@@ -52,6 +52,17 @@ function priceLabel(cents: number | null | undefined): string {
   return `$${(cents / 100).toFixed(2)}/mo`;
 }
 
+/** Dropdown + lists: same fields as Patreon rows (title, cents, relay_tier_id), with an explicit provider tag. */
+function syncedTierOptionLabel(t: ManualImportTierRow): string {
+  const tag =
+    t.provider === "patreon"
+      ? "Patreon"
+      : t.provider === "subscribestar"
+        ? "SubscribeStar"
+        : "Provider";
+  return `${tag} · ${t.title} (${t.relay_tier_id})`;
+}
+
 function setupToDrafts(setup: ManualImportSetupData | null): BinDraft[] {
   const source = setup?.manual_bins.length
     ? setup.manual_bins
@@ -113,6 +124,10 @@ function ProviderContextCard({
   loading: boolean;
 }) {
   const syncedCount = setup?.synced_tiers.length ?? 0;
+  const patreonSynced =
+    setup?.synced_tiers.filter((t) => t.provider === "patreon").length ?? 0;
+  const subscribeStarSynced =
+    setup?.synced_tiers.filter((t) => t.provider === "subscribestar").length ?? 0;
   return (
     <section className="rounded-2xl border border-[var(--lib-border)] bg-[var(--lib-card)] p-4">
       <div className="flex items-start gap-3">
@@ -140,6 +155,11 @@ function ProviderContextCard({
                 ? "Checking connected providers..."
                 : `${syncedCount} synced tier suggestion${syncedCount === 1 ? "" : "s"}`}
             </span>
+            {!loading && syncedCount > 0 ? (
+              <span className="rounded-full border border-[var(--lib-border)] bg-[var(--lib-muted)] px-3 py-1 text-[var(--lib-fg-muted)]">
+                Patreon {patreonSynced} · SubscribeStar {subscribeStarSynced}
+              </span>
+            ) : null}
             <span className="rounded-full border border-[var(--lib-border)] bg-[var(--lib-muted)] px-3 py-1 text-[var(--lib-fg-muted)]">
               Library compose happens after commit
             </span>
@@ -252,7 +272,7 @@ function TierBinBuilder({
                 <option value="">Not linked yet - uploads locked</option>
                 {linkOptions.map((t) => (
                   <option key={t.relay_tier_id} value={t.relay_tier_id}>
-                    {t.title} ({t.relay_tier_id})
+                    {syncedTierOptionLabel(t)}
                   </option>
                 ))}
               </select>
@@ -458,7 +478,14 @@ function SavedBinWorkspace({
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
                   <div className="text-xs uppercase tracking-[0.18em] text-[var(--lib-fg-muted)]">Bin</div>
-                  <div className="text-lg font-semibold text-[var(--lib-fg)]">{bin.title}</div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <div className="text-lg font-semibold text-[var(--lib-fg)]">{bin.title}</div>
+                    {bin.provider ? (
+                      <span className="rounded-full border border-[var(--lib-border)] bg-[var(--lib-card)] px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-[var(--lib-fg-muted)]">
+                        {bin.provider === "patreon" ? "Patreon" : "SubscribeStar"}
+                      </span>
+                    ) : null}
+                  </div>
                   <div className="mt-1 text-xs text-[var(--lib-fg-muted)]">
                     {priceLabel(bin.amount_cents)} -{" "}
                     {bin.upload_enabled ? (

@@ -10,6 +10,7 @@ import {
   relayFetch
 } from "@/lib/relay-api";
 import { getWebAppOrigin } from "@/lib/site-origin";
+import { clearPendingOAuthCallbackTarget } from "@/lib/oauth-pending-callback";
 
 function redirectUriForExchange(): string {
   const fromEnv = process.env.NEXT_PUBLIC_PATREON_REDIRECT_URI?.trim();
@@ -58,6 +59,7 @@ function CallbackInner() {
 
     let cancelled = false;
     setStatus("working");
+    clearPendingOAuthCallbackTarget();
 
     const redirectUri = redirectUriForExchange();
 

@@ -72,4 +72,30 @@ describe("map-subscribestar-to-ingest", () => {
       mime_type: "image/jpeg"
     });
   });
+
+  it("maps a real studio creator_id + profile-shaped campaign id to canonical ingest ids", () => {
+    const batch = buildSubscribeStarSyncBatch({
+      creator_id: "cr_2a63611e8b5844bdbb1395c214c6b312",
+      now_iso: "2026-05-14T12:00:00.000Z",
+      campaign: { external_campaign_id: "81015", name: "Studio" },
+      tiers: [
+        { external_tier_id: "501", title: "Gallery Seat", amount_cents: 500 },
+        { external_tier_id: "502", title: "Backstage Pass", amount_cents: 1000 }
+      ],
+      posts: [
+        {
+          external_post_id: "9001",
+          title: "Post",
+          published_at: "2026-05-14T12:00:00.000Z",
+          upstream_revision: "1",
+          tier_external_ids: ["501"],
+          media: [{ external_media_id: "1", upstream_revision: "1" }]
+        }
+      ]
+    });
+
+    expect(batch.creator_id).toBe("cr_2a63611e8b5844bdbb1395c214c6b312");
+    expect(batch.campaigns![0]?.campaign_id).toBe("substar_campaign_81015");
+    expect(batch.tiers?.map((x) => x.tier_id)).toEqual(["substar_tier_501", "substar_tier_502"]);
+  });
 });
