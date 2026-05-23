@@ -64,6 +64,7 @@ export function CreatorRelayPostComposer({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lastPostId, setLastPostId] = useState<string | null>(null);
+  const [composeCampaignId, setComposeCampaignId] = useState<string | undefined>(undefined);
 
   useEffect(() => {
     setStagedMediaIds(dedupeIds(initialMediaIds ?? []));
@@ -140,7 +141,8 @@ export function CreatorRelayPostComposer({
         tier_ids: isPublic ? [] : tierIds,
         tag_ids: [],
         media_ids: mediaIds,
-        publish: true
+        publish: true,
+        ...(composeCampaignId ? { campaign_id: composeCampaignId } : {})
       });
       setLastPostId(created.post.id);
       setFile(null);
@@ -290,6 +292,8 @@ export function CreatorRelayPostComposer({
           creatorId={creatorId}
           value={tierIds}
           onChange={setTierIds}
+          isPublic={isPublic}
+          onCampaignChange={setComposeCampaignId}
           disabled={busy}
           aria-labelledby={tierSectionId}
         />

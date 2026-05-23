@@ -15,7 +15,7 @@
  * dark-on-#0A0A0A palette; tighter typography pass + animation polish is a later item.
  */
 
-import { useState } from "react";
+import React, { useState } from "react";
 import {
   AlertTriangle,
   Eye,
@@ -46,6 +46,12 @@ interface CommentThreadPanelProps {
   isCreatorOwner: boolean;
   /** Optional close handler when used as an overlay. */
   onClose?: () => void;
+  /** Post-level composer — primary path for live comments (esp. writing / placeholder media). */
+  onCompose?: (body: string) => Promise<void>;
+  composeBusy?: boolean;
+  composeError?: string | null;
+  composeHint?: string | null;
+  composerRef?: React.Ref<HTMLTextAreaElement>;
 }
 
 const REACTION_META: { kind: CommentReactionKind; Icon: typeof ThumbsUp; label: string }[] = [
@@ -66,14 +72,21 @@ export function CommentThreadPanel({
   live,
   viewerAccountId,
   isCreatorOwner,
-  onClose
+  onClose,
+  onCompose,
+  composeBusy = false,
+  composeError = null,
+  composeHint = null,
+  composerRef
 }: CommentThreadPanelProps) {
+  const canCompose = Boolean(onCompose && viewerAccountId);
+
   return (
     <aside
       aria-label="Comment thread"
-      className="absolute right-4 top-4 bottom-4 z-30 w-[360px] max-w-[40vw] overflow-y-auto rounded-lg border border-[#2A2A2A] bg-[#0F0F0F] p-3 shadow-2xl"
+      className="absolute right-4 top-4 bottom-4 z-30 flex w-[360px] max-w-[40vw] flex-col rounded-lg border border-[#2A2A2A] bg-[#0F0F0F] p-3 shadow-2xl"
     >
-      <div className="mb-2 flex items-center justify-between">
+      <div className="mb-2 flex shrink-0 items-center justify-between">
         <h2 className="flex items-center gap-1.5 text-xs uppercase tracking-wide text-[#888]">
           <MessageCircle size={12} aria-hidden /> Thread
           <span className="rounded-full border border-[#2A2A2A] px-1.5 text-[10px] text-[#666]">
@@ -124,7 +137,7 @@ export function CommentThreadPanel({
         <ThreadStatus message="No comments yet — be the first to leave one." />
       ) : null}
 
-      <ul className="space-y-2">
+      <ul className="min-h-0 flex-1 space-y-2 overflow-y-auto pr-0.5">
         {live.records.map((record) => (
           <CommentRow
             key={record.id}
@@ -135,9 +148,86 @@ export function CommentThreadPanel({
           />
         ))}
       </ul>
+
+      {onCompose ? (
+        <ThreadComposer
+          ref={composerRef}
+          canCompose={canCompose}
+          busy={composeBusy}
+          errorMessage={composeError}
+          hint={composeHint}
+          onSubmit={onCompose}
+        />
+      ) : null}
     </aside>
   );
 }
+
+interface ThreadComposerProps {
+  canCompose: boolean;
+  busy: boolean;
+  errorMessage: string | null;
+  hint: string | null;
+  onSubmit: (body: string) => Promise<void>;
+}
+
+const ThreadComposer = React.forwardRef<HTMLTextAreaElement, ThreadComposerProps>(
+  function ThreadComposer({ canCompose, busy, errorMessage, hint, onSubmit }, ref) {
+    const [body, setBody] = useState("");
+
+    const handleSubmit = async () => {
+      const trimmed = body.trim();
+      if (!trimmed || !canCompose || busy) return;
+      await onSubmit(trimmed);
+      setBody("");
+    };
+
+    return (
+      <div className="mt-2 shrink-0 border-t border-[#1F1F1F] pt-2">
+        {hint ? (
+          <p className="mb-1.5 text-[10px] leading-snug text-[#666]">{hint}</p>
+        ) : null}
+        {!canCompose ? (
+          <p className="text-[10px] text-[#555]">Sign in to leave a comment.</p>
+        ) : (
+          <>
+            <textarea
+              ref={ref}
+              value={body}
+              onChange={(e) => setBody(e.target.value)}
+              placeholder="Write a comment…"
+              rows={3}
+              disabled={busy}
+              aria-label="Write a comment"
+              className="w-full resize-none rounded border border-[#242424] bg-[#1A1A1A] px-2 py-1.5 text-[12px] text-[#E0E0E0] placeholder:text-[#444] focus:border-[#2D6A4F] focus:outline-none disabled:opacity-60"
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+                  e.preventDefault();
+                  void handleSubmit();
+                }
+              }}
+            />
+            {errorMessage ? (
+              <p role="alert" className="mt-1 text-[10px] text-[#d36a6a]">
+                {errorMessage}
+              </p>
+            ) : null}
+            <div className="mt-1.5 flex justify-end">
+              <button
+                type="button"
+                onClick={() => void handleSubmit()}
+                disabled={!body.trim() || busy}
+                className="rounded bg-[#2D6A4F] px-2.5 py-1 text-[10px] font-medium text-white hover:bg-[#40916C] disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {busy ? "Posting…" : "Post comment"}
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+    );
+  }
+);
 
 function ThreadStatus({
   message,

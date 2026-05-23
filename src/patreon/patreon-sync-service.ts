@@ -54,6 +54,13 @@ import {
   parsePledgeRelationshipStart,
   planMembershipLedgerEvents
 } from "./membership-ledger-sync.js";
+import {
+  syncPostAccessFromOAuth,
+  type SyncPostAccessFromOAuthOptions,
+  type SyncPostAccessFromOAuthResult
+} from "./sync-post-access-from-oauth.js";
+
+export type { SyncPostAccessFromOAuthOptions, SyncPostAccessFromOAuthResult };
 
 /** Creator OAuth token health slice for Library / sync-state consumers. */
 export type PatreonOAuthHealthSnapshot = {
@@ -792,6 +799,31 @@ export class PatreonSyncService {
       ...(campaign_display ? { campaign_display } : {}),
       apply_result
     };
+  }
+
+  /**
+   * OAuth-only tier/access refresh: paginates Patreon post metadata, diffs against Relay DB,
+   * patches only changed gates — no cookie scrape, full ingest, or media export.
+   * @async
+   * @throws {Error} When Prisma unwired, tokens missing, or Patreon failures.
+   */
+  public async syncPostAccess(
+    creatorId: string,
+    traceId: string,
+    options: SyncPostAccessFromOAuthOptions = {}
+  ): Promise<SyncPostAccessFromOAuthResult> {
+    if (!this.prisma) {
+      throw new Error("Database not wired — cannot sync post access.");
+    }
+    return syncPostAccessFromOAuth({
+      creatorId,
+      traceId,
+      prisma: this.prisma,
+      authService: this.authService,
+      tokenStore: this.tokenStore,
+      fetchImpl: this.fetchImpl,
+      options
+    });
   }
 
   /**

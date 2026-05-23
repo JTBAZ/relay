@@ -3,9 +3,13 @@
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { CloudDownload, Loader2 } from "lucide-react";
+import { patreonScrapePreset, PATREON_SYNC_POST_ACCESS_MAX_PAGES } from "@/lib/patreon-scrape-presets";
 import {
   fetchPatreonSyncState,
+  formatSyncHealthRollupBanner,
   postPatreonScrape,
+  postPatreonSyncMembers,
+  postPatreonSyncPostAccess,
   registerPatreonWebhooks,
   type PatreonOAuthHealthData,
   type PatreonSyncStateData
@@ -47,6 +51,31 @@ function oauthLine(oauth: PatreonOAuthHealthData): { className: string; text: st
     return { className: "text-[var(--lib-warning)]", text: "Token expires soon." };
   }
   return { className: "text-[var(--lib-success)]", text: "OAuth healthy." };
+}
+
+function syncHealthLine(
+  s: PatreonSyncStateData
+): { className: string; text: string } {
+  const sh = s.sync_health;
+  if (sh.status === "healthy") {
+    return { className: "text-[var(--lib-success)]", text: "Sync health: healthy." };
+  }
+  if (sh.status === "degraded") {
+    return {
+      className: "text-[var(--lib-warning)]",
+      text: formatSyncHealthRollupBanner(s)
+    };
+  }
+  if (sh.status === "failed") {
+    return {
+      className: "text-[var(--lib-destructive)]",
+      text: formatSyncHealthRollupBanner(s)
+    };
+  }
+  return {
+    className: "text-[var(--lib-fg-muted)]",
+    text: "Sync health not recorded yet — check for new posts when ready."
+  };
 }
 
 function webhookRegistrationLine(
@@ -104,6 +133,9 @@ export default function PatreonSyncMenu({
   const [registeringWebhooks, setRegisteringWebhooks] = useState(false);
   const [webhookRegisterError, setWebhookRegisterError] = useState<string | null>(null);
   const [webhookRegisterOk, setWebhookRegisterOk] = useState<string | null>(null);
+  const [syncingMembers, setSyncingMembers] = useState(false);
+  const [memberSyncError, setMemberSyncError] = useState<string | null>(null);
+  const [memberSyncOk, setMemberSyncOk] = useState<string | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
 
   const panelId = "patreon-sync-menu-panel";
@@ -179,16 +211,41 @@ export default function PatreonSyncMenu({
     }
   };
 
-  /** Incremental ingest: respects sync watermark. */
-  const runLiveScrape = () =>
-    void runScrape({ force_refresh_post_access: false, max_post_pages: 20 });
+  const runLiveScrape = () => void runScrape(patreonScrapePreset("live"));
 
-  /**
-   * Full campaign pull: ignores watermark (same as `force_refresh_post_access` on the API).
-   * Use after empty DB / migration or to refresh tier access on older posts.
-   */
-  const runFullCampaignScrape = () =>
-    void runScrape({ force_refresh_post_access: true, max_post_pages: 100 });
+  const runFullRescrape = () => {
+    if (
+      !window.confirm(
+        "This may take several minutes and re-process your whole Patreon catalog. Continue?"
+      )
+    ) {
+      return;
+    }
+    void runScrape(patreonScrapePreset("full_rescrape"));
+  };
+
+  /** OAuth metadata diff — tier gates only, no media scrape or full ingest. */
+  const runTierAccessResync = async () => {
+    setActionError(null);
+    setPosting(true);
+    onSyncActivity?.("syncing");
+    try {
+      await postPatreonSyncPostAccess({
+        creator_id: creatorId,
+        campaign_id: campaignId?.trim() || undefined,
+        max_post_pages: PATREON_SYNC_POST_ACCESS_MAX_PAGES
+      });
+      setOpen(false);
+      await onAfterScrape();
+      onSyncActivity?.("idle");
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      setActionError(msg);
+      onSyncActivity?.("error");
+    } finally {
+      setPosting(false);
+    }
+  };
 
   const runRegisterWebhooks = async () => {
     setWebhookRegisterError(null);
@@ -202,6 +259,28 @@ export default function PatreonSyncMenu({
       setWebhookRegisterError(e instanceof Error ? e.message : String(e));
     } finally {
       setRegisteringWebhooks(false);
+    }
+  };
+
+  const runSyncMembers = async () => {
+    setMemberSyncError(null);
+    setMemberSyncOk(null);
+    setSyncingMembers(true);
+    onSyncActivity?.("syncing");
+    try {
+      const out = await postPatreonSyncMembers({
+        creator_id: creatorId,
+        campaign_id: campaignId?.trim() || undefined
+      });
+      setMemberSyncOk(`Synced ${out.members_synced} member(s).`);
+      await loadState();
+      onSyncActivity?.("idle");
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      setMemberSyncError(msg);
+      onSyncActivity?.("error");
+    } finally {
+      setSyncingMembers(false);
     }
   };
 
@@ -305,8 +384,8 @@ export default function PatreonSyncMenu({
                   </div>
                   {state.likely_has_newer_posts && (
                     <p className="rounded-md border border-[var(--lib-warning)]/40 bg-[var(--lib-warning)]/10 px-2 py-1.5 text-[11px] text-[var(--lib-fg)]">
-                      Patreon may have posts newer than your last sync — run{" "}
-                      <strong>Live scrape</strong> below.
+                      Patreon may have posts newer than your last sync — use{" "}
+                      <strong>Check for new posts</strong> below.
                     </p>
                   )}
                 </dl>
@@ -317,6 +396,23 @@ export default function PatreonSyncMenu({
                   <p className="text-[11px] font-semibold uppercase tracking-wide text-[var(--lib-fg-muted)]">
                     Connection
                   </p>
+                  {(() => {
+                    const sh = syncHealthLine(state);
+                    return (
+                      <p className={`mt-1.5 text-xs font-medium ${sh.className}`}>{sh.text}</p>
+                    );
+                  })()}
+                  {state.sync_health.last_success_at && (
+                    <p className="mt-0.5 text-[10px] text-[var(--lib-fg-muted)]">
+                      Last successful sync {fmtIso(state.sync_health.last_success_at)}
+                    </p>
+                  )}
+                  {state.public_webhook_base_configured === false && (
+                    <p className="mt-1.5 text-[11px] text-[var(--lib-warning)]/95">
+                      API host has no public webhook URL — set RELAY_PUBLIC_WEBHOOK_BASE_URL on the
+                      Relay API, then register webhooks below.
+                    </p>
+                  )}
                   {(() => {
                     const oauth = oauthLine(state.oauth);
                     return (
@@ -426,6 +522,37 @@ export default function PatreonSyncMenu({
                     ) : (
                       <p className="mt-1 text-[11px] text-[var(--lib-fg-muted)]">Not recorded yet.</p>
                     )}
+                    <div className="mt-2">
+                      <button
+                        type="button"
+                        disabled={Boolean(
+                          loadingState || stateError || syncingMembers || posting
+                        )}
+                        className="w-full rounded-md border border-[var(--lib-primary)]/50 bg-[var(--lib-primary)]/15 px-2 py-1.5 text-[11px] font-medium text-[var(--lib-primary)] transition-colors hover:bg-[var(--lib-primary)]/25 disabled:opacity-50"
+                        onClick={() => void runSyncMembers()}
+                      >
+                        {syncingMembers ? (
+                          <span className="inline-flex items-center justify-center gap-1.5">
+                            <Loader2 className="h-3 w-3 animate-spin" aria-hidden />
+                            Updating patron list…
+                          </span>
+                        ) : (
+                          "Update patron list"
+                        )}
+                      </button>
+                      <p className="mt-1.5 text-[10px] leading-snug text-[var(--lib-fg-muted)]">
+                        Refreshes who is pledged on Patreon (for your stats). Does not change what
+                        fans see in their feeds.
+                      </p>
+                      {memberSyncOk && (
+                        <p className="mt-1.5 text-[11px] text-[var(--lib-success)]">{memberSyncOk}</p>
+                      )}
+                      {memberSyncError && (
+                        <p className="mt-1.5 text-[11px] text-[var(--lib-destructive)]">
+                          {memberSyncError}
+                        </p>
+                      )}
+                    </div>
                   </div>
 
                   {(() => {
@@ -461,35 +588,60 @@ export default function PatreonSyncMenu({
               )}
 
               <div className="mt-3 border-t border-[var(--lib-border)] pt-3">
+                <p className="text-[10px] font-semibold uppercase tracking-wide text-[var(--lib-fg-muted)]">
+                  Keep my gallery up to date
+                </p>
                 <button
                   type="button"
                   disabled={Boolean(loadingState || stateError || posting)}
-                  className="flex w-full items-center justify-center gap-2 rounded-md bg-[var(--lib-primary)] px-3 py-2.5 text-xs font-medium text-[var(--lib-primary-fg)] disabled:opacity-50"
+                  className="mt-2 flex w-full items-center justify-center gap-2 rounded-md bg-[var(--lib-primary)] px-3 py-2.5 text-xs font-medium text-[var(--lib-primary-fg)] disabled:opacity-50"
                   onClick={runLiveScrape}
                 >
                   {posting ? (
                     <Loader2 className="h-3.5 w-3.5 animate-spin shrink-0" aria-hidden />
                   ) : null}
-                  Live scrape
+                  Check for new posts
                 </button>
-                <p className="mt-2 text-[10px] leading-snug text-[var(--lib-fg-muted)]">
-                  Pulls new posts from Patreon and applies them to your library. Respects your
-                  saved sync watermark (only fetches posts newer than your last successful sync).
+                <p className="mt-1.5 text-[10px] leading-snug text-[var(--lib-fg-muted)]">
+                  Pull in anything published on Patreon since your last sync.
+                </p>
+
+                <p className="mt-3 text-[10px] font-semibold uppercase tracking-wide text-[var(--lib-fg-muted)]">
+                  When access looks wrong
+                </p>
+                <button
+                  type="button"
+                  disabled={Boolean(loadingState || stateError || posting)}
+                  className="mt-2 flex w-full items-center justify-center gap-2 rounded-md border border-[var(--lib-primary)]/40 bg-[var(--lib-primary)]/10 px-3 py-2 text-xs font-medium text-[var(--lib-primary)] transition-colors hover:bg-[var(--lib-primary)]/20 disabled:opacity-50"
+                  onClick={runTierAccessResync}
+                >
+                  Update Tier Access
+                </button>
+                <p className="mt-1.5 text-[10px] leading-snug text-[var(--lib-fg-muted)]">
+                  Compares Patreon tier settings via OAuth and updates only posts whose access changed — no media re-download.
+                </p>
+
+                <p className="mt-3 text-[10px] font-semibold uppercase tracking-wide text-[var(--lib-fg-muted)]">
+                  When a lot looks broken
                 </p>
                 <button
                   type="button"
                   disabled={Boolean(loadingState || stateError || posting)}
                   className="mt-2 flex w-full items-center justify-center gap-2 rounded-md border border-[var(--lib-border)] bg-[var(--lib-muted)]/30 px-3 py-2 text-xs font-medium text-[var(--lib-fg)] transition-colors hover:border-[var(--lib-primary)]/45 disabled:opacity-50"
-                  onClick={runFullCampaignScrape}
+                  onClick={runFullRescrape}
                 >
-                  Full re-scrape (whole campaign)
+                  Refresh everything from Patreon
                 </button>
                 <p className="mt-1.5 text-[10px] leading-snug text-[var(--lib-fg-muted)]">
-                  Ignores the watermark and walks up to 100 pages of posts (API cap), then
-                  re-exports media. Use for a fresh library or when older posts are missing.
+                  Re-download your full library. Use if something looks very wrong. (Slower.)
                 </p>
                 <p className="mt-2 rounded-md border border-[var(--lib-warning)]/30 bg-[var(--lib-warning)]/8 px-2 py-1.5 text-[10px] leading-snug text-[var(--lib-fg-muted)]">
-                  <strong className="text-[var(--lib-fg)]">Blurry images?</strong> Patreon bakes a blur into cover thumbnails for patron-only posts. Run a full re-scrape after reconnecting your Patreon session cookie — if images remain blurred, the CDN URL Patreon is generating contains the blur transform and the post may need to be re-uploaded on Patreon.
+                  <strong className="text-[var(--lib-fg)]">Blurry images?</strong> Patreon bakes a
+                  blur into cover thumbnails for patron-only posts. Try{" "}
+                  <strong className="text-[var(--lib-fg)]">Refresh everything from Patreon</strong>{" "}
+                  after reconnecting your Patreon session cookie — if images remain blurred, the CDN
+                  URL Patreon is generating contains the blur transform and the post may need to be
+                  re-uploaded on Patreon.
                 </p>
               </div>
           {actionError && (

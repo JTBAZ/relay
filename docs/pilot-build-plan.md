@@ -59,6 +59,7 @@ Import: one Airtable row per work item ID; link **Depends on** as a linked recor
 
 **Explicitly deferred (do not block pilot closure):**
 
+- **SubscribeStar** creator/patron connect and ingest during pilot — gated by `RELAY_PILOT_PATREON_ONLY` / `NEXT_PUBLIC_RELAY_PILOT_PATREON_ONLY` ([`docs/pilot-patreon-only-scope.md`](pilot-patreon-only-scope.md), work item **PILOT-001**)
 - Smart Tag Assistant (road map Part 1 ledger)
 - Full **Part 2** Clone / Re-Populate / email migration campaigns / Stripe live checkout for independence
 - **Workstream N** audience monetization (premium/boost)
@@ -94,7 +95,7 @@ Import: one Airtable row per work item ID; link **Depends on** as a linked recor
 Agents paste into `.env` / deployment; pilot owner verifies before cohort:
 
 - `DATABASE_URL`, `RELAY_TOKEN_ENCRYPTION_KEY`, Patreon OAuth client IDs/secrets and redirect URIs for **creator** and **patron** flows.
-- `RELAY_DB_STORE_*` flags aligned with [docs/database/migration-from-relay-data.md](database/migration-from-relay-data.md) for pilot tenant.
+- `RELAY_DB_STORE_*` flags aligned with [docs/database/migration-from-relay-data.md](database/migration-from-relay-data.md) and [docs/pilot-db-cutover.md](pilot-db-cutover.md) (**PILOT-002**).
 - Supabase: `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY` when identity path active.
 - R2 / S3: bucket keys for media and purge worker.
 - **Post P1:** `REDIS_URL` when `RELAY_JOB_BACKEND=bullmq`.

@@ -138,9 +138,11 @@ describe("DbPatreonTokenStore", () => {
     expect(out?.refresh_token).toBe("r");
     expect(findFirst).toHaveBeenCalledWith(
       expect.objectContaining({
+        orderBy: { updatedAt: "desc" },
         where: {
           purpose: OAuthPurpose.creator_ingest,
           providerAccount: {
+            provider: "patreon",
             user: {
               kind: UserKind.creator,
               tenant: { relayCreatorId: "creator_y" }

@@ -59,10 +59,13 @@ import { recordSubscribeStarLastPostSync } from "./subscribestar/record-subscrib
 import { persistSubscribeStarProviderSnapshot } from "./subscribestar/persist-subscribestar-provider-snapshot.js";
 import { runSubscribeStarPostsGraphqlPagedIngest } from "./subscribestar/run-subscribestar-posts-graphql-ingest.js";
 import { linkSubscribeStarPatronWithCode } from "./subscribestar/subscribestar-patron-entitlement-sync.js";
+import { isPilotPatreonOnlyScope } from "./pilot/pilot-patreon-only-scope.js";
 import {
   createRelayPostTransaction,
-  RelayCreatePostError
+  RelayCreatePostError,
+  resolveRelayPostTier
 } from "./relay/create-relay-post.js";
+import { updatePostAudienceTierGate } from "./relay/update-post-audience-tier-gate.js";
 import {
   getManualImportSetup,
   MANUAL_RELAY_CAMPAIGN_PREFIX,
@@ -173,10 +176,20 @@ import {
   ensureCreatorOnboardingAtLeastImportStarted,
   getCreatorOnboardingForStudio,
   getLayoutPublishBlock,
+  OnboardingPublishBlockedError,
   OnboardingTransitionError,
   patchCreatorOnboarding,
   type PatchCreatorOnboardingInput
 } from "./creator/onboarding-service.js";
+import {
+  assertPilotUxOnboardingWalkthroughAccount,
+  isPilotUxDevWalkthroughApiEnabled,
+  pilotUxOnboardingWalkthroughPatronTierSummary,
+  PILOT_UX_ONBOARDING_RELAY_CREATOR_ID,
+  PilotUxWalkthroughForbiddenError,
+  resetPilotUxOnboardingWalkthrough,
+  simulatePilotUxPatreonConnect
+} from "./pilot-ux/pilot-ux-onboarding-walkthrough.js";
 import { TokenEncryption } from "./lib/crypto.js";
 import {
   isBrowserExtensionOrigin,
@@ -230,6 +243,7 @@ import {
 } from "./gallery/patron-media-access.js";
 import { buildPatronEntitlementHealthPayload } from "./gallery/entitlement-degraded.js";
 import { evaluatePostPermission } from "./gallery/post-permission.js";
+import { isPostHiddenFromPatronSurfaces } from "./gallery/hidden-post-ids.js";
 import { resolveGalleryItemVisibility } from "./gallery/query.js";
 import { buildGridThumbnailImage, GRID_THUMB_ETAG_TOKEN } from "./export/grid-thumbnail.js";
 import { buildVisitorPreviewImage } from "./export/visitor-preview.js";
@@ -2635,6 +2649,11 @@ export function createApp(config: AppConfig): CreateAppResult {
    */
   app.post("/api/v1/auth/subscribestar/creator/prepare", async (req: Request, res: Response) => {
     const traceId = traceIdFrom(req);
+    if (isPilotPatreonOnlyScope()) {
+      return res
+        .status(404)
+        .json(errorEnvelope("NOT_FOUND", "SubscribeStar is outside Patreon-only pilot scope.", traceId));
+    }
     if (!relayEnvTruthy(process.env.SUBSCRIBESTAR_INGEST_ENABLED)) {
       return res
         .status(404)
@@ -2715,6 +2734,11 @@ export function createApp(config: AppConfig): CreateAppResult {
 
   app.post("/api/v1/auth/subscribestar/creator/exchange", async (req: Request, res: Response) => {
     const traceId = traceIdFrom(req);
+    if (isPilotPatreonOnlyScope()) {
+      return res
+        .status(404)
+        .json(errorEnvelope("NOT_FOUND", "SubscribeStar is outside Patreon-only pilot scope.", traceId));
+    }
     if (!relayEnvTruthy(process.env.SUBSCRIBESTAR_INGEST_ENABLED)) {
       return res
         .status(404)
@@ -2819,6 +2843,11 @@ export function createApp(config: AppConfig): CreateAppResult {
 
   app.post("/api/v1/auth/subscribestar/creator/refresh", async (req: Request, res: Response) => {
     const traceId = traceIdFrom(req);
+    if (isPilotPatreonOnlyScope()) {
+      return res
+        .status(404)
+        .json(errorEnvelope("NOT_FOUND", "SubscribeStar is outside Patreon-only pilot scope.", traceId));
+    }
     if (!relayEnvTruthy(process.env.SUBSCRIBESTAR_INGEST_ENABLED)) {
       return res
         .status(404)
@@ -3124,6 +3153,11 @@ export function createApp(config: AppConfig): CreateAppResult {
    */
   app.post("/api/v1/auth/subscribestar/patron/link", async (req: Request, res: Response) => {
     const traceId = traceIdFrom(req);
+    if (isPilotPatreonOnlyScope()) {
+      return res
+        .status(404)
+        .json(errorEnvelope("NOT_FOUND", "SubscribeStar is outside Patreon-only pilot scope.", traceId));
+    }
     const session = await requirePatronBearerSession(req, res, traceId);
     if (!session) return;
     if (!useDbIdentityStore(config) || !config.prisma) {
@@ -3181,6 +3215,11 @@ export function createApp(config: AppConfig): CreateAppResult {
 
   app.delete("/api/v1/auth/subscribestar/patron/link", async (req: Request, res: Response) => {
     const traceId = traceIdFrom(req);
+    if (isPilotPatreonOnlyScope()) {
+      return res
+        .status(404)
+        .json(errorEnvelope("NOT_FOUND", "SubscribeStar is outside Patreon-only pilot scope.", traceId));
+    }
     const session = await requirePatronBearerSession(req, res, traceId);
     if (!session) return;
     if (!config.prisma) {
@@ -3502,6 +3541,64 @@ export function createApp(config: AppConfig): CreateAppResult {
     }
   });
 
+  app.post("/api/v1/patreon/sync-post-access", async (req: Request, res: Response) => {
+    const traceId = traceIdFrom(req);
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const details = validateRequiredFields(body, ["creator_id"]);
+    if (details.length > 0) {
+      return res
+        .status(400)
+        .json(errorEnvelope("VALIDATION_ERROR", "Invalid request payload.", traceId, details));
+    }
+    const accessCreatorId = (body.creator_id as string).trim();
+    if (
+      !(await assertCreatorRelayMutationAllowed(
+        req,
+        res,
+        traceId,
+        config.prisma,
+        accessCreatorId
+      ))
+    ) {
+      return;
+    }
+    if (!config.prisma) {
+      return res
+        .status(503)
+        .json(
+          errorEnvelope(
+            "DB_UNAVAILABLE",
+            "Database not wired — cannot sync post access.",
+            traceId
+          )
+        );
+    }
+    try {
+      const fallbackCampaignId =
+        typeof body.campaign_id !== "string" || !body.campaign_id.trim()
+          ? (await getCreatorProfilePatreonCampaignIdForRelayCreatorDb(
+              config.prisma,
+              accessCreatorId
+            )) ?? undefined
+          : undefined;
+      const result = await patreonSyncService.syncPostAccess(accessCreatorId, traceId, {
+        campaign_id: typeof body.campaign_id === "string" ? body.campaign_id.trim() : undefined,
+        fallback_campaign_id: fallbackCampaignId,
+        max_post_pages:
+          typeof body.max_post_pages === "number" && Number.isFinite(body.max_post_pages)
+            ? body.max_post_pages
+            : undefined
+      });
+      return res.status(200).json(successEnvelope(result, traceId));
+    } catch (err: unknown) {
+      const msg = (err as Error).message;
+      const notFound = msg.includes("No Patreon tokens");
+      return res
+        .status(notFound ? 404 : 502)
+        .json(errorEnvelope(notFound ? "NOT_FOUND" : "POST_ACCESS_SYNC_ERROR", msg, traceId));
+    }
+  });
+
   app.post("/api/v1/patreon/webhooks/register", async (req: Request, res: Response) => {
     const traceId = traceIdFrom(req);
     const body = (req.body ?? {}) as Record<string, unknown>;
@@ -3767,6 +3864,11 @@ export function createApp(config: AppConfig): CreateAppResult {
    */
   app.post("/api/v1/subscribestar/creator/ingest/batch", async (req: Request, res: Response) => {
     const traceId = traceIdFrom(req);
+    if (isPilotPatreonOnlyScope()) {
+      return res
+        .status(404)
+        .json(errorEnvelope("NOT_FOUND", "SubscribeStar is outside Patreon-only pilot scope.", traceId));
+    }
     if (!relayEnvTruthy(process.env.SUBSCRIBESTAR_INGEST_ENABLED)) {
       return res
         .status(404)
@@ -3859,6 +3961,11 @@ export function createApp(config: AppConfig): CreateAppResult {
    */
   app.post("/api/v1/subscribestar/creator/sync/posts", async (req: Request, res: Response) => {
     const traceId = traceIdFrom(req);
+    if (isPilotPatreonOnlyScope()) {
+      return res
+        .status(404)
+        .json(errorEnvelope("NOT_FOUND", "SubscribeStar is outside Patreon-only pilot scope.", traceId));
+    }
     if (!relayEnvTruthy(process.env.SUBSCRIBESTAR_INGEST_ENABLED)) {
       return res
         .status(404)
@@ -4656,7 +4763,27 @@ export function createApp(config: AppConfig): CreateAppResult {
         isContentOwner = acc?.primaryRelayCreatorId === creatorId;
       }
     }
-    const perm = evaluatePostPermission({ snapshot, creatorId, postId, session, isContentOwner });
+    const overrides = await galleryOverridesStore.load();
+    const postRow = snapshot.posts[creatorId]?.[postId];
+    const hiddenFromPatron = postRow
+      ? isPostHiddenFromPatronSurfaces({
+          overrides,
+          creatorId,
+          postId,
+          activeMediaIds: postRow.current.media_ids ?? []
+        })
+      : false;
+    const relayPostVisibility = hiddenFromPatron
+      ? "hidden"
+      : (overrides.creators[creatorId]?.posts[postId]?.visibility ?? null);
+    const perm = evaluatePostPermission({
+      snapshot,
+      creatorId,
+      postId,
+      session,
+      isContentOwner,
+      relayPostVisibility
+    });
     if (!perm) {
       return res.status(404).json(errorEnvelope("NOT_FOUND", "Post not found.", traceId));
     }
@@ -5248,7 +5375,8 @@ export function createApp(config: AppConfig): CreateAppResult {
       tier_id: r.id,
       relay_tier_id: r.relayTierId,
       title: r.title,
-      amount_cents: r.amountCents
+      amount_cents: r.amountCents,
+      campaign_id: r.campaignId
     }));
     res.setHeader("Cache-Control", "private, no-store");
     return res.status(200).json(successEnvelope({ tiers }, traceId));
@@ -6193,12 +6321,99 @@ export function createApp(config: AppConfig): CreateAppResult {
             errorEnvelope(invalid ? "VALIDATION_ERROR" : "CONFLICT", err.message, traceId)
           );
       }
+      if (err instanceof OnboardingPublishBlockedError) {
+        const block = err.block;
+        const details =
+          block.code === "SYNC_DEGRADED"
+            ? [
+                { field: "sync_health.status", issue: block.sync_health_status },
+                { field: "sync_health.message_key", issue: block.message_key }
+              ]
+            : [{ field: "sync", issue: "last_post_scrape_failed" }];
+        return res.status(409).json(errorEnvelope(block.code, err.message, traceId, details));
+      }
       if (err instanceof Error && err.message.includes("PATCH body must include")) {
         return res.status(400).json(errorEnvelope("VALIDATION_ERROR", err.message, traceId));
       }
       return res.status(500).json(errorEnvelope("INTERNAL", (err as Error).message, traceId));
     }
   });
+
+  /** PUX — repeatable creator onboarding walkthrough (dev-only; single seeded account). */
+  app.post("/api/v1/pilot-ux/dev/onboarding-walkthrough/reset", async (req: Request, res: Response) => {
+    const traceId = traceIdFrom(req);
+    if (!isPilotUxDevWalkthroughApiEnabled()) {
+      return res.status(404).json(errorEnvelope("NOT_FOUND", "Not found.", traceId));
+    }
+    if (!config.prisma) {
+      return res.status(503).json(
+        errorEnvelope("SERVICE_UNAVAILABLE", "Database not configured.", traceId)
+      );
+    }
+    const session = await requirePatronBearerSession(req, res, traceId);
+    if (!session) {
+      return;
+    }
+    const accountId = await getAccountIdForSession(config.prisma, session);
+    if (!accountId) {
+      return res
+        .status(403)
+        .json(errorEnvelope("FORBIDDEN", "Session is not linked to an account.", traceId));
+    }
+    try {
+      const { relayCreatorId } = await assertPilotUxOnboardingWalkthroughAccount(
+        config.prisma,
+        accountId
+      );
+      await resetPilotUxOnboardingWalkthrough(config.prisma, relayCreatorId);
+      return res.status(200).json(successEnvelope({ ok: true, relay_creator_id: relayCreatorId }, traceId));
+    } catch (err) {
+      if (err instanceof PilotUxWalkthroughForbiddenError) {
+        return res.status(403).json(errorEnvelope("FORBIDDEN", err.message, traceId));
+      }
+      return res.status(500).json(errorEnvelope("INTERNAL", (err as Error).message, traceId));
+    }
+  });
+
+  app.post(
+    "/api/v1/pilot-ux/dev/onboarding-walkthrough/simulate-patreon-connect",
+    async (req: Request, res: Response) => {
+      const traceId = traceIdFrom(req);
+      if (!isPilotUxDevWalkthroughApiEnabled()) {
+        return res.status(404).json(errorEnvelope("NOT_FOUND", "Not found.", traceId));
+      }
+      if (!config.prisma) {
+        return res.status(503).json(
+          errorEnvelope("SERVICE_UNAVAILABLE", "Database not configured.", traceId)
+        );
+      }
+      const session = await requirePatronBearerSession(req, res, traceId);
+      if (!session) {
+        return;
+      }
+      const accountId = await getAccountIdForSession(config.prisma, session);
+      if (!accountId) {
+        return res
+          .status(403)
+          .json(errorEnvelope("FORBIDDEN", "Session is not linked to an account.", traceId));
+      }
+      try {
+        const { relayCreatorId } = await assertPilotUxOnboardingWalkthroughAccount(
+          config.prisma,
+          accountId
+        );
+        await simulatePilotUxPatreonConnect(config.prisma, relayCreatorId);
+        return res
+          .status(200)
+          .json(successEnvelope({ ok: true, relay_creator_id: relayCreatorId }, traceId));
+      } catch (err) {
+        if (err instanceof PilotUxWalkthroughForbiddenError) {
+          return res.status(403).json(errorEnvelope("FORBIDDEN", err.message, traceId));
+        }
+        return res.status(500).json(errorEnvelope("INTERNAL", (err as Error).message, traceId));
+      }
+    }
+  );
 
   app.get("/api/v1/creator/profile", async (req: Request, res: Response) => {
     const traceId = traceIdFrom(req);
@@ -6245,6 +6460,22 @@ export function createApp(config: AppConfig): CreateAppResult {
         return res.status(404).json(
           errorEnvelope("NOT_FOUND", "No creator studio — call POST /api/v1/creator/workspace first.", traceId)
         );
+      }
+
+      if (
+        relayCreatorId === PILOT_UX_ONBOARDING_RELAY_CREATOR_ID &&
+        isPilotUxDevWalkthroughApiEnabled()
+      ) {
+        const walkthroughProfile = await config.prisma.creatorProfile.findFirst({
+          where: { tenant: { relayCreatorId } },
+          select: { patreonCampaignId: true }
+        });
+        if (walkthroughProfile?.patreonCampaignId?.trim()) {
+          res.setHeader("Cache-Control", "private, no-store");
+          return res.status(200).json(
+            successEnvelope(pilotUxOnboardingWalkthroughPatronTierSummary(), traceId)
+          );
+        }
       }
 
       const tenant = await config.prisma.tenant.findUnique({
@@ -9468,6 +9699,118 @@ export function createApp(config: AppConfig): CreateAppResult {
     );
   });
 
+  /**
+   * Creator-owned audience tier gate on canonical post/version rows (not `PostPresentation`).
+   * Accepts Prisma `Tier.id` or `relayTierId` in `tier_ids`; persists canonical relay keys on the version.
+   */
+  app.patch("/api/v1/gallery/posts/:post_id/audience-access", async (req: Request, res: Response) => {
+    const traceId = traceIdFrom(req);
+    if (!config.prisma) {
+      return res
+        .status(503)
+        .json(errorEnvelope("SERVICE_UNAVAILABLE", "Database not configured.", traceId));
+    }
+    const prisma = config.prisma;
+    const session = await requirePatronBearerSession(req, res, traceId);
+    if (!session) return;
+    const postId = String(req.params.post_id ?? "").trim();
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const creatorId = typeof body.creator_id === "string" ? body.creator_id.trim() : "";
+    if (!postId || !creatorId) {
+      return res.status(400).json(
+        errorEnvelope("VALIDATION_ERROR", "post_id and creator_id are required.", traceId, [
+          { field: "post_id", issue: postId ? "ok" : "missing" },
+          { field: "creator_id", issue: creatorId ? "ok" : "missing" }
+        ])
+      );
+    }
+    if (!(await requireAccountMatchesCreator(req, res, traceId, creatorId))) {
+      return;
+    }
+    if (
+      !(await assertCreatorRelayMutationAllowed(req, res, traceId, prisma, creatorId))
+    ) {
+      return;
+    }
+    if (!(await guardStudioSyncWritable(res, traceId, creatorId))) {
+      return;
+    }
+    const isPublic = body.is_public === true;
+    const isPublicFalse = body.is_public === false;
+    const tierIdsRaw = Array.isArray(body.tier_ids) ? (body.tier_ids as unknown[]) : [];
+    const tierKeys = tierIdsRaw
+      .filter((x): x is string => typeof x === "string" && x.trim().length > 0)
+      .map((x) => x.trim());
+    if (!isPublic && !isPublicFalse && tierKeys.length === 0) {
+      return res.status(400).json(
+        errorEnvelope(
+          "VALIDATION_ERROR",
+          "Provide is_public and/or tier_ids.",
+          traceId,
+          [{ field: "body", issue: "empty_patch" }]
+        )
+      );
+    }
+    const gated = isPublicFalse || (!isPublic && tierKeys.length > 0);
+    if (gated && tierKeys.length === 0) {
+      return res.status(400).json(
+        errorEnvelope(
+          "VALIDATION_ERROR",
+          "tier_ids is required when is_public is false.",
+          traceId,
+          [{ field: "tier_ids", issue: "missing" }]
+        )
+      );
+    }
+    const owned = await prisma.post.findFirst({
+      where: { id: postId, creatorId },
+      select: { id: true, campaignId: true, source: true }
+    });
+    if (!owned) {
+      return res.status(404).json(errorEnvelope("NOT_FOUND", "Post not found.", traceId));
+    }
+    const versionTierRelayIds: string[] = [];
+    if (!isPublic && tierKeys.length > 0) {
+      try {
+        for (const key of tierKeys) {
+          const resolved = await resolveRelayPostTier(
+            prisma,
+            creatorId,
+            key,
+            owned.campaignId
+          );
+          versionTierRelayIds.push(resolved.relayTierId);
+        }
+      } catch (e) {
+        if (e instanceof RelayCreatePostError) {
+          return res
+            .status(e.statusCode)
+            .json(errorEnvelope(e.code, e.message, traceId, [{ field: "tier_ids", issue: "invalid" }]));
+        }
+        throw e;
+      }
+    }
+    const uniqueRelayTierIds = [...new Set(versionTierRelayIds)];
+    const out = await updatePostAudienceTierGate(prisma, {
+      creatorId,
+      postId,
+      tierIds: uniqueRelayTierIds,
+      isPublic: isPublic || uniqueRelayTierIds.length === 0
+    });
+    res.setHeader("Cache-Control", "private, no-store");
+    return res.status(200).json(
+      successEnvelope(
+        {
+          post_id: out.postId,
+          is_public: out.isPublic,
+          tier_ids: out.tierIds,
+          source: owned.source
+        },
+        traceId
+      )
+    );
+  });
+
   app.get("/api/v1/gallery/saved-filters", async (req: Request, res: Response) => {
     const traceId = traceIdFrom(req);
     const creatorId = typeof req.query.creator_id === "string" ? req.query.creator_id.trim() : "";
@@ -9978,14 +10321,24 @@ export function createApp(config: AppConfig): CreateAppResult {
         const msg =
           block.code === "ONBOARDING_INCOMPLETE"
             ? `Complete onboarding before publishing (current step: ${block.current_step}).`
-            : `Patreon post sync failed — fix sync health before publishing.${
-                block.message ? ` (${block.message})` : ""
-              }`;
+            : block.code === "SYNC_DEGRADED"
+              ? block.sync_health_status === "failed"
+                ? "Patreon sync failed — fix sync health before publishing."
+                : "Patreon sync is degraded — resolve sync warnings before publishing."
+              : `Patreon post sync failed — fix sync health before publishing.${
+                  block.message ? ` (${block.message})` : ""
+                }`;
         const details =
           block.code === "ONBOARDING_INCOMPLETE"
             ? [{ field: "onboarding_step", issue: block.current_step }]
-            : [{ field: "sync", issue: "last_post_scrape_failed" }];
-        return res.status(400).json(errorEnvelope(block.code, msg, traceId, details));
+            : block.code === "SYNC_DEGRADED"
+              ? [
+                  { field: "sync_health.status", issue: block.sync_health_status },
+                  { field: "sync_health.message_key", issue: block.message_key }
+                ]
+              : [{ field: "sync", issue: "last_post_scrape_failed" }];
+        const status = block.code === "SYNC_DEGRADED" ? 409 : 400;
+        return res.status(status).json(errorEnvelope(block.code, msg, traceId, details));
       }
     }
     const layout = await layoutStore.publish(layoutCid);

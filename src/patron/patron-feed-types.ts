@@ -7,7 +7,8 @@
  * PE-B — JSON shape for `GET /api/v1/patron/relay_feed` / `GET /api/v1/patron/feed`
  * (aligned with `web/lib/relay-fixtures.ts` `PatronFeedBundle`).
  */
-export type PatronFeedTierLabel = "Free" | "Supporter" | "Studio";
+/** `Tier.title` from the normalized catalog (e.g. Supporter, Studio, Backstage). */
+export type PatronFeedTierLabel = string;
 
 /** P6-patron-003 — honest feed labeling (membership-gated vs public). */
 export type PatronFeedItemSource = "subscribed" | "discover";
@@ -29,7 +30,7 @@ export type PatronFeedCreatorJson = {
 export type PatronFeedPostJson = {
   id: string;
   kind: "followed" | "discovery";
-  /** P6-patron-003 — drives “Subscribed” vs “Discover” badges in the patron feed UI. */
+  /** P6-patron-003 — drives patron tier vs “Discover” badges in the patron feed UI. */
   feed_item_source: PatronFeedItemSource;
   creator: PatronFeedCreatorJson;
   title: string;
@@ -54,6 +55,16 @@ export type PatronFeedPostJson = {
   feedCardLayout?: "classic" | "inlineMedia";
 };
 
+/** Safe teaser metadata for followed-creator posts the patron cannot access. */
+export type PatronFeedLockedPostJson = {
+  id: string;
+  creator: PatronFeedCreatorJson;
+  title: string;
+  mediaType: "writing" | "photo" | "audio" | "video";
+  publishedAt: string;
+  tierLabel: PatronFeedTierLabel;
+};
+
 export type PatronFeedCurrentViewerJson = {
   id: string;
   displayName: string;
@@ -65,6 +76,7 @@ export type PatronFeedCurrentViewerJson = {
 
 export type PatronFeedBundleJson = {
   feedPosts: PatronFeedPostJson[];
+  lockedPosts: PatronFeedLockedPostJson[];
   discoverItems: unknown[];
   currentViewer: PatronFeedCurrentViewerJson;
   followedCreators: PatronFeedCreatorJson[];

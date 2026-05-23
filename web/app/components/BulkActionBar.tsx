@@ -1,18 +1,21 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ChevronDown,
   Download,
   Eye,
-  EyeOff,
   FileText,
   FolderPlus,
-  ShieldAlert,
-  ShieldCheck,
+  Layers3,
+  Plus,
   Tag,
   X
 } from "lucide-react";
+import {
+  accessTiersFromGalleryItem,
+  AudienceAccessTierSelect
+} from "./audience-access-tier-select";
 import {
   RELAY_API_BASE,
   buildGalleryVisibilityBody,
@@ -23,8 +26,12 @@ import {
   type PostVisibility,
   type VisibilityAxisAction
 } from "@/lib/relay-api";
+import {
+  PILOT_PERMISSION_BULK_VISIBILITY_HINT,
+  PILOT_PERMISSION_HEADLINE
+} from "@/lib/pilot-permission-copy";
 
-type Panel = "none" | "tags" | "visibility" | "collection";
+type Panel = "none" | "tags" | "visibility" | "audience" | "collection";
 
 const SEL = "#00aa6f";
 
@@ -34,6 +41,7 @@ type Props = {
   selectedItems: GalleryItem[];
   selectedPostIds: string[];
   collections: Collection[];
+  tierTitleById?: Record<string, string>;
   onClearSelection: () => void;
   onListRefresh: () => void;
   onCollectionsReload: () => void;
@@ -48,7 +56,98 @@ type Props = {
   /** Open post inspector (e.g. PostBatchModal) for the current selection. */
   onInspectPost: () => void;
   onError?: (message: string) => void;
+  /** P5-sync-004 — matches API 423 when Patreon sync rollup is failed/degraded. */
+  studioWriteBlocked?: boolean;
 };
+
+function patreonAccessLabel(item: GalleryItem | null, tierTitleById: Record<string, string>): string {
+  if (!item) return "—";
+  if (item.tier_ids.length === 0) return "No tier gate";
+  return item.tier_ids
+    .map((id) => tierTitleById[id]?.trim() || id.replace(/^patreon_tier_/, ""))
+    .slice(0, 2)
+    .join(", ");
+}
+
+function relayVisibilityLabel(item: GalleryItem | null): string {
+  if (!item) return "—";
+  if (item.visibility === "hidden") return "Hidden";
+  if (item.visibility === "review") return "Adult (18+)";
+  return "General";
+}
+
+type ToggleTriState = "off" | "on" | "mixed";
+
+function visibilityTriState(
+  items: GalleryItem[],
+  match: (v: PostVisibility) => boolean
+): ToggleTriState {
+  if (items.length === 0) return "off";
+  const hits = items.filter((i) => match(i.visibility)).length;
+  if (hits === 0) return "off";
+  if (hits === items.length) return "on";
+  return "mixed";
+}
+
+type VisibilitySwitchProps = {
+  label: string;
+  helper: string;
+  state: ToggleTriState;
+  disabled?: boolean;
+  busy?: boolean;
+  title?: string;
+  onToggle: (nextOn: boolean) => void;
+};
+
+function VisibilitySwitch({
+  label,
+  helper,
+  state,
+  disabled = false,
+  busy = false,
+  title,
+  onToggle
+}: VisibilitySwitchProps) {
+  const on = state === "on";
+  const mixed = state === "mixed";
+  return (
+    <div
+      className="flex items-center justify-between gap-3 px-3 py-2.5"
+      title={title}
+    >
+      <div className="min-w-0 flex-1">
+        <p className="text-xs font-medium text-[var(--lib-fg)]">{label}</p>
+        <p className="text-[9px] leading-snug text-[var(--lib-fg-muted)]">{helper}</p>
+        {mixed ? (
+          <p className="mt-0.5 text-[9px] text-amber-400/90">Mixed — click to set all off, then on again if needed</p>
+        ) : null}
+      </div>
+      <button
+        type="button"
+        role="switch"
+        aria-checked={mixed ? "mixed" : on}
+        aria-label={label}
+        disabled={disabled || busy}
+        onClick={() => onToggle(mixed ? false : !on)}
+        className={[
+          "relative inline-flex h-5 w-9 shrink-0 items-center rounded-full border border-transparent transition-colors",
+          "focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color-mix(in_srgb,var(--lib-selection)_55%,transparent)]",
+          "disabled:cursor-not-allowed disabled:opacity-45",
+          on || mixed ? "" : "bg-[var(--lib-muted)]"
+        ].join(" ")}
+        style={on || mixed ? { backgroundColor: SEL } : undefined}
+      >
+        <span
+          className={[
+            "pointer-events-none block h-4 w-4 rounded-full bg-white shadow-sm transition-transform",
+            on ? "translate-x-[1.125rem]" : mixed ? "translate-x-[0.5625rem]" : "translate-x-0.5"
+          ].join(" ")}
+          aria-hidden
+        />
+      </button>
+    </div>
+  );
+}
 
 export default function BulkActionBar({
   selectedCount,
@@ -56,24 +155,28 @@ export default function BulkActionBar({
   selectedItems,
   selectedPostIds,
   collections,
+  tierTitleById = {},
   onClearSelection,
   onListRefresh,
   onCollectionsReload,
   onApplyBulkTagDelta,
   suggestedTags = [],
   onInspectPost,
-  onError
+  onError,
+  studioWriteBlocked = false
 }: Props) {
   const [panel, setPanel] = useState<Panel>("none");
   const [tagAddDraft, setTagAddDraft] = useState("");
   const [tagRemoveDraft, setTagRemoveDraft] = useState("");
   /** Which tag field Quick pick writes to; follows focus, default Add. */
   const [tagFieldFocus, setTagFieldFocus] = useState<"add" | "remove">("add");
-  const [tagRemoveExpanded, setTagRemoveExpanded] = useState(false);
+  const [tagAdvancedExpanded, setTagAdvancedExpanded] = useState(false);
   /** When set, bulk tag API uses `media_targets` (per-asset overrides) instead of post-level tags. */
   const [tagPerAsset, setTagPerAsset] = useState(false);
   const [tagBusy, setTagBusy] = useState(false);
   const [collBusy, setCollBusy] = useState<string | null>(null);
+  const [newCollectionOpen, setNewCollectionOpen] = useState(false);
+  const [newCollectionTitle, setNewCollectionTitle] = useState("");
   const [visBusy, setVisBusy] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
 
@@ -100,9 +203,28 @@ export default function BulkActionBar({
   useEffect(() => {
     if (panel === "tags") {
       setTagFieldFocus("add");
-      setTagRemoveExpanded(false);
+      setTagAdvancedExpanded(false);
       setTagPerAsset(false);
     }
+  }, [panel]);
+
+  useEffect(() => {
+    if (panel === "audience" && selectedPostIds.length !== 1) {
+      closePanel();
+    }
+  }, [panel, selectedPostIds.length, closePanel]);
+
+  useEffect(() => {
+    if (panel !== "collection") {
+      setNewCollectionOpen(false);
+      setNewCollectionTitle("");
+    }
+  }, [panel]);
+
+  useEffect(() => {
+    if (panel === "collection") onCollectionsReload();
+    // Refresh list when the panel opens; parent callback is stable enough to omit from deps.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- avoid reload loop on every parent render
   }, [panel]);
 
   const postVisibilityUpdate = async (items: GalleryItem[], visibility: PostVisibility) => {
@@ -115,6 +237,7 @@ export default function BulkActionBar({
   };
 
   const applyVisibilityAxis = async (action: VisibilityAxisAction) => {
+    if (studioWriteBlocked) return;
     setVisBusy(true);
     try {
       const buckets = bucketItemsByVisibilityAfterAction(selectedItems, action);
@@ -122,14 +245,28 @@ export default function BulkActionBar({
         if (group.length === 0) continue;
         await postVisibilityUpdate(group, vis);
       }
-      closePanel();
-      onClearSelection();
       onListRefresh();
     } catch (e) {
       onError?.(e instanceof Error ? e.message : String(e));
     } finally {
       setVisBusy(false);
     }
+  };
+
+  const hiddenState = useMemo(
+    () => visibilityTriState(selectedItems, (v) => v === "hidden"),
+    [selectedItems]
+  );
+  const matureState = useMemo(
+    () => visibilityTriState(selectedItems, (v) => v === "review"),
+    [selectedItems]
+  );
+  const allHidden = hiddenState === "on";
+  const onHiddenToggle = (nextOn: boolean) => {
+    void applyVisibilityAxis(nextOn ? "set_hidden" : "set_visible");
+  };
+  const onMatureToggle = (nextOn: boolean) => {
+    void applyVisibilityAxis(nextOn ? "set_mature" : "set_general");
   };
 
   const onExport = () => {
@@ -151,20 +288,45 @@ export default function BulkActionBar({
     }
   };
 
-  const addToCollection = async (collectionId: string) => {
+  const addPostsToCollection = async (collectionId: string) => {
     if (selectedPostIds.length === 0) return;
     setCollBusy(collectionId);
     try {
       await relayFetch<unknown>(
-        `/api/v1/gallery/collections/${collectionId}/posts`,
+        `/api/v1/gallery/collections/${encodeURIComponent(collectionId)}/posts`,
         {
           method: "POST",
           body: JSON.stringify({ post_ids: selectedPostIds })
         }
       );
+      setNewCollectionOpen(false);
+      setNewCollectionTitle("");
       closePanel();
       onCollectionsReload();
       onListRefresh();
+    } catch (e) {
+      onError?.(e instanceof Error ? e.message : String(e));
+    } finally {
+      setCollBusy(null);
+    }
+  };
+
+  const createCollectionAndAdd = async () => {
+    const title = newCollectionTitle.trim();
+    if (!title || selectedPostIds.length === 0) return;
+    setCollBusy("new");
+    try {
+      const created = await relayFetch<Collection>("/api/v1/gallery/collections", {
+        method: "POST",
+        body: JSON.stringify({ creator_id: creatorId, title })
+      });
+      const newId = created.collection_id;
+      if (!newId) throw new Error("Missing collection id from server.");
+      setNewCollectionTitle("");
+      setNewCollectionOpen(false);
+      await addPostsToCollection(newId);
+    } catch (e) {
+      onError?.(e instanceof Error ? e.message : String(e));
     } finally {
       setCollBusy(null);
     }
@@ -174,6 +336,7 @@ export default function BulkActionBar({
     Array.from(new Set(raw.split(",").map((t) => t.trim()).filter(Boolean)));
 
   const submitTags = async () => {
+    if (studioWriteBlocked) return;
     const add = parseTagList(tagAddDraft);
     const remove = parseTagList(tagRemoveDraft);
     if (add.length === 0 && remove.length === 0) return;
@@ -204,10 +367,12 @@ export default function BulkActionBar({
 
   if (selectedCount === 0) return null;
 
+  const singleItem = selectedPostIds.length === 1 ? (selectedItems[0] ?? null) : null;
+  const singlePostAudience = singleItem
+    ? accessTiersFromGalleryItem(singleItem, tierTitleById)
+    : [];
+  const audienceSinglePostOnly = selectedPostIds.length !== 1;
   const toggle = (next: Panel) => setPanel((p) => (p === next ? "none" : next));
-
-  const visRow =
-    "flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left text-xs font-medium text-[var(--lib-fg)] transition-colors hover:bg-[var(--lib-muted)] disabled:opacity-45";
 
   return (
     <div
@@ -220,98 +385,104 @@ export default function BulkActionBar({
             className="mb-2 w-full max-w-md rounded-xl border border-[var(--lib-border)] bg-[var(--lib-card)] p-3 shadow-2xl"
             style={{ boxShadow: `0 0 0 1px color-mix(in srgb, ${SEL} 22%, transparent)` }}
           >
-            <label className="flex cursor-pointer items-start gap-2 text-[10px] text-[var(--lib-fg)]">
-              <input
-                type="checkbox"
-                checked={tagPerAsset}
-                onChange={(e) => setTagPerAsset(e.target.checked)}
-                className="mt-0.5 rounded border-[var(--lib-border)]"
-              />
-              <span>
-                <span className="font-medium">Selected assets only</span>
-                <span className="block text-[var(--lib-fg-muted)]">
-                  {tagPerAsset
-                    ? "Tags apply to each chosen row only (good for character / prop labels inside one post). Default off = whole post."
-                    : "Turn on to tag individual files without adding tags to siblings in the same post."}
-                </span>
-              </span>
-            </label>
-            {!tagPerAsset ? (
-              <p className="mt-2 text-[10px] text-[var(--lib-fg-muted)]">
-                Applies to every post that has selected media (post-level overrides).
+            {studioWriteBlocked ? (
+              <p className="mb-2 rounded-lg border border-[var(--lib-warning)]/35 bg-[var(--lib-warning)]/10 px-2.5 py-2 text-[10px] text-[var(--lib-fg)]">
+                Patreon sync must be healthy before editing tags.
               </p>
             ) : null}
-            <p className="mt-3 text-[10px] font-semibold uppercase tracking-wider text-[var(--lib-fg-muted)]">
-              Add tags
+            <p className="text-[10px] leading-snug text-[var(--lib-fg-muted)]">
+              Tags apply to the whole post for each selected item.
             </p>
-            <input
-              value={tagAddDraft}
-              onChange={(e) => setTagAddDraft(e.target.value)}
-              onFocus={() => setTagFieldFocus("add")}
-              placeholder="tag_a, tag_b"
-              className="mt-1 w-full rounded-lg border border-[var(--lib-border)] bg-[var(--lib-input)] px-2.5 py-2 text-xs text-[var(--lib-fg)] placeholder:text-[var(--lib-fg-muted)]"
-              onKeyDown={(e) => {
-                if (e.key === "Enter") void submitTags();
-              }}
-            />
+            <div className="mt-3 flex gap-2">
+              <input
+                value={tagAddDraft}
+                onChange={(e) => setTagAddDraft(e.target.value)}
+                onFocus={() => setTagFieldFocus("add")}
+                disabled={studioWriteBlocked}
+                placeholder="Add tags (comma-separated)"
+                aria-label="Add tags"
+                className="min-w-0 flex-1 rounded-lg border border-[var(--lib-border)] bg-[var(--lib-input)] px-2.5 py-2 text-xs text-[var(--lib-fg)] placeholder:text-[var(--lib-fg-muted)] disabled:opacity-45"
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") void submitTags();
+                }}
+              />
+              <button
+                type="button"
+                disabled={
+                  studioWriteBlocked ||
+                  tagBusy ||
+                  (parseTagList(tagAddDraft).length === 0 && parseTagList(tagRemoveDraft).length === 0)
+                }
+                onClick={() => void submitTags()}
+                className="shrink-0 rounded-lg px-3 py-2 text-xs font-semibold text-neutral-950 disabled:opacity-45"
+                style={{ backgroundColor: SEL }}
+              >
+                {tagBusy ? "…" : "Apply"}
+              </button>
+            </div>
             {suggestedTags.length > 0 ? (
-              <div className="mt-3 space-y-1.5">
-                <p className="text-[10px] font-semibold uppercase tracking-wider text-[var(--lib-fg-muted)]">
-                  Quick pick
-                </p>
-                <p className="text-[9px] leading-snug text-[var(--lib-fg-muted)]">
-                  Fills the field you last focused (defaults to Add). Click a chip to replace its text.
-                </p>
-                <div className="flex flex-wrap gap-1">
-                  {suggestedTags.slice(0, 24).map((tag) => (
-                    <button
-                      key={tag}
-                      type="button"
-                      title={`Use “${tag}” in the ${tagFieldFocus === "add" ? "Add" : "Remove"} field`}
-                      onClick={() => applyQuickPickTag(tag)}
-                      className="rounded border border-[var(--lib-border)] bg-[var(--lib-sidebar-accent)] px-2 py-0.5 text-[10px] text-[var(--lib-fg)] hover:border-[color-mix(in_srgb,var(--lib-selection)_45%,var(--lib-border))]"
-                    >
-                      {tag}
-                    </button>
-                  ))}
-                </div>
+              <div className="mt-2.5 flex flex-wrap gap-1">
+                {suggestedTags.slice(0, 24).map((tag) => (
+                  <button
+                    key={tag}
+                    type="button"
+                    title={`Add “${tag}”`}
+                    onClick={() => applyQuickPickTag(tag)}
+                    className="rounded border border-[var(--lib-border)] bg-[var(--lib-sidebar-accent)] px-2 py-0.5 text-[10px] text-[var(--lib-fg)] hover:border-[color-mix(in_srgb,var(--lib-selection)_45%,var(--lib-border))]"
+                  >
+                    {tag}
+                  </button>
+                ))}
               </div>
             ) : null}
             <div className="mt-3">
               <button
                 type="button"
-                aria-expanded={tagRemoveExpanded}
-                onClick={() => setTagRemoveExpanded((o) => !o)}
+                aria-expanded={tagAdvancedExpanded}
+                onClick={() => setTagAdvancedExpanded((o) => !o)}
                 className="flex items-center gap-1 text-[10px] font-medium text-[var(--lib-fg-muted)] transition-colors hover:text-[var(--lib-fg)]"
               >
-                More
+                Advanced
                 <ChevronDown
-                  className={`h-3.5 w-3.5 shrink-0 transition-transform ${tagRemoveExpanded ? "rotate-180" : ""}`}
+                  className={`h-3.5 w-3.5 shrink-0 transition-transform ${tagAdvancedExpanded ? "rotate-180" : ""}`}
                   aria-hidden
                 />
               </button>
-              {tagRemoveExpanded ? (
-                <div className="mt-2 rounded-lg border border-[var(--lib-border)] bg-[var(--lib-muted)]/35 p-2.5">
-                  <p className="text-[10px] font-semibold uppercase tracking-wider text-[var(--lib-fg-muted)]">
-                    Remove tags
-                  </p>
-                  <input
-                    value={tagRemoveDraft}
-                    onChange={(e) => setTagRemoveDraft(e.target.value)}
-                    onFocus={() => setTagFieldFocus("remove")}
-                    placeholder="tag_a, tag_b"
-                    className="mt-1 w-full rounded-lg border border-[var(--lib-border)] bg-[var(--lib-input)] px-2.5 py-2 text-xs text-[var(--lib-fg)] placeholder:text-[var(--lib-fg-muted)]"
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") void submitTags();
-                    }}
-                  />
-                  <p className="mt-2 text-[9px] leading-snug text-[var(--lib-fg-muted)]">
-                    If the same tag is in both Add and Remove, remove wins for this request.
-                  </p>
+              {tagAdvancedExpanded ? (
+                <div className="mt-2 space-y-3 rounded-lg border border-[var(--lib-border)] bg-[var(--lib-muted)]/35 p-2.5">
+                  <label className="flex cursor-pointer items-start gap-2 text-[10px] text-[var(--lib-fg)]">
+                    <input
+                      type="checkbox"
+                      checked={tagPerAsset}
+                      onChange={(e) => setTagPerAsset(e.target.checked)}
+                      className="mt-0.5 rounded border-[var(--lib-border)]"
+                    />
+                    <span className="font-medium">Selected assets only</span>
+                  </label>
+                  {tagPerAsset ? (
+                    <p className="text-[9px] leading-snug text-[var(--lib-fg-muted)]">
+                      Tags apply only to the selected files — other media in the same post stay
+                      unchanged.
+                    </p>
+                  ) : null}
+                  <div>
+                    <p className="text-[10px] font-medium text-[var(--lib-fg-muted)]">Remove tags</p>
+                    <input
+                      value={tagRemoveDraft}
+                      onChange={(e) => setTagRemoveDraft(e.target.value)}
+                      onFocus={() => setTagFieldFocus("remove")}
+                      placeholder="tag_a, tag_b"
+                      aria-label="Remove tags"
+                      className="mt-1 w-full rounded-lg border border-[var(--lib-border)] bg-[var(--lib-input)] px-2.5 py-2 text-xs text-[var(--lib-fg)] placeholder:text-[var(--lib-fg-muted)]"
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") void submitTags();
+                      }}
+                    />
+                  </div>
                 </div>
               ) : null}
             </div>
-            <div className="mt-3 flex justify-end gap-2">
+            <div className="mt-3 flex justify-end">
               <button
                 type="button"
                 onClick={() => {
@@ -323,99 +494,184 @@ export default function BulkActionBar({
               >
                 Cancel
               </button>
-              <button
-                type="button"
-                disabled={
-                  tagBusy ||
-                  (parseTagList(tagAddDraft).length === 0 && parseTagList(tagRemoveDraft).length === 0)
-                }
-                onClick={() => void submitTags()}
-                className="rounded-lg px-3 py-1.5 text-xs font-semibold text-neutral-950 disabled:opacity-45"
-                style={{ backgroundColor: SEL }}
-              >
-                {tagBusy ? "…" : "Apply"}
-              </button>
             </div>
           </div>
         ) : null}
 
         {panel === "visibility" ? (
           <div
-            className="mb-2 w-[min(100%,16rem)] overflow-hidden rounded-xl border border-[var(--lib-border)] bg-[var(--lib-card)] py-1 shadow-2xl"
+            className="mb-2 w-[min(100%,20rem)] overflow-hidden rounded-xl border border-[var(--lib-border)] bg-[var(--lib-card)] py-1 shadow-2xl"
             style={{ boxShadow: `0 0 0 1px color-mix(in srgb, ${SEL} 22%, transparent)` }}
-            role="menu"
-            aria-label="Visibility actions"
+            aria-label="Relay visibility"
           >
-            <button
-              type="button"
-              role="menuitem"
-              disabled={visBusy}
-              onClick={() => void applyVisibilityAxis("set_visible")}
-              className={visRow}
-            >
-              <Eye className="h-4 w-4 shrink-0" style={{ color: SEL }} aria-hidden />
-              Set Visible
-            </button>
-            <button
-              type="button"
-              role="menuitem"
-              disabled={visBusy}
-              onClick={() => void applyVisibilityAxis("set_hidden")}
-              className={visRow}
-            >
-              <EyeOff className="h-4 w-4 shrink-0 text-[var(--lib-fg-muted)]" aria-hidden />
-              Set Hidden
-            </button>
-            <div className="my-1 h-px bg-[var(--lib-border)]" role="separator" />
-            <button
-              type="button"
-              role="menuitem"
-              disabled={visBusy}
-              onClick={() => void applyVisibilityAxis("set_mature")}
-              className={visRow}
-            >
-              <ShieldAlert className="h-4 w-4 shrink-0 text-amber-400" aria-hidden />
-              Set Mature
-            </button>
-            <button
-              type="button"
-              role="menuitem"
-              disabled={visBusy}
-              onClick={() => void applyVisibilityAxis("set_general")}
-              className={visRow}
-            >
-              <ShieldCheck className="h-4 w-4 shrink-0 text-[var(--lib-fg-muted)]" aria-hidden />
-              Set General
-            </button>
+            <p className="px-3 pb-0.5 pt-2 text-[10px] font-semibold uppercase tracking-wider text-[var(--lib-fg-muted)]">
+              Visibility
+            </p>
+            <p className="px-3 pb-1 text-[10px] font-medium leading-snug text-[var(--lib-fg)]">
+              {PILOT_PERMISSION_HEADLINE}
+            </p>
+            <p className="px-3 pb-2 text-[9px] leading-snug text-[var(--lib-fg-muted)]">
+              {PILOT_PERMISSION_BULK_VISIBILITY_HINT} Changes save immediately.
+            </p>
+            {studioWriteBlocked ? (
+              <p className="mx-2 mb-2 rounded-lg border border-[var(--lib-warning)]/35 bg-[var(--lib-warning)]/10 px-2.5 py-2 text-[10px] text-[var(--lib-fg)]">
+                Patreon sync must be healthy before changing visibility.
+              </p>
+            ) : null}
+            <VisibilitySwitch
+              label="Hidden"
+              helper="Not shown to anyone on Relay"
+              state={hiddenState}
+              busy={visBusy}
+              disabled={studioWriteBlocked}
+              title={
+                selectedCount > 1
+                  ? "Applies to all selected posts and assets"
+                  : "Off = visible to entitled patrons (tier gate still applies)"
+              }
+              onToggle={onHiddenToggle}
+            />
+            <div className="mx-3 h-px bg-[var(--lib-border)]" role="separator" />
+            <VisibilitySwitch
+              label="Adult (18+)"
+              helper="Mature content rating on Relay"
+              state={matureState}
+              busy={visBusy}
+              disabled={studioWriteBlocked || allHidden}
+              title={
+                allHidden
+                  ? "Unhide first — hidden posts cannot be rated while off-gallery"
+                  : selectedCount > 1
+                    ? "Applies to all selected; hidden rows stay hidden"
+                    : "Off = general audience rating"
+              }
+              onToggle={onMatureToggle}
+            />
+            <p className="border-t border-[var(--lib-border)] px-3 py-2 text-[9px] leading-snug text-[var(--lib-fg-muted)]">
+              <span className="font-medium text-[var(--lib-fg)]">General</span> — turn Adult off. Patrons
+              still need the right tier when not hidden.
+            </p>
+          </div>
+        ) : null}
+
+        {panel === "audience" && singleItem ? (
+          <div
+            className="mb-2 w-[min(100%,20rem)] rounded-xl border border-[var(--lib-border)] bg-[var(--lib-card)] p-3 shadow-2xl"
+            style={{ boxShadow: `0 0 0 1px color-mix(in srgb, ${SEL} 22%, transparent)` }}
+          >
+            <p className="pb-1 text-[10px] font-semibold uppercase tracking-wider text-[var(--lib-fg-muted)]">
+              Audience access
+            </p>
+            <p className="pb-2 text-[9px] leading-snug text-[var(--lib-fg-muted)]">
+              Sets who can unlock this post on Relay — same as Inspection.
+            </p>
+            {studioWriteBlocked ? (
+              <p className="mb-2 rounded-lg border border-[var(--lib-warning)]/35 bg-[var(--lib-warning)]/10 px-2.5 py-2 text-[10px] text-[var(--lib-fg)]">
+                Patreon sync must be healthy before changing audience access.
+              </p>
+            ) : null}
+            <AudienceAccessTierSelect
+              creatorId={creatorId}
+              postId={singleItem.post_id}
+              accessTiers={singlePostAudience}
+              disabled={studioWriteBlocked}
+              compact
+              onSaved={async () => {
+                onListRefresh();
+              }}
+            />
           </div>
         ) : null}
 
         {panel === "collection" ? (
-          <div className="mb-2 max-h-52 w-full max-w-sm overflow-y-auto rounded-xl border border-[var(--lib-border)] bg-[var(--lib-card)] p-2 shadow-2xl">
-            <p className="px-2 pb-1 text-[10px] font-semibold uppercase tracking-wider text-[var(--lib-fg-muted)]">
-              Add posts to collection
-            </p>
-            {collections.length === 0 ? (
-              <p className="px-2 py-3 text-xs text-[var(--lib-fg-muted)]">No collections yet.</p>
-            ) : (
-              <ul className="space-y-0.5">
-                {collections.map((c) => (
-                  <li key={c.collection_id}>
-                    <button
-                      type="button"
-                      disabled={collBusy !== null}
-                      onClick={() => void addToCollection(c.collection_id)}
-                      className="flex w-full items-center justify-between rounded-lg px-2 py-2 text-left text-xs text-[var(--lib-fg)] hover:bg-[var(--lib-sidebar-accent)] disabled:opacity-50"
-                    >
-                      <span className="truncate">{c.title}</span>
-                      <span className="shrink-0 tabular-nums text-[10px] text-[var(--lib-fg-muted)]">
-                        {collBusy === c.collection_id ? "…" : `${c.post_ids.length}`}
-                      </span>
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            )}
+          <div
+            className="mb-2 w-full max-w-sm overflow-hidden rounded-xl border border-[var(--lib-border)] bg-[var(--lib-card)] shadow-2xl"
+            style={{ boxShadow: `0 0 0 1px color-mix(in srgb, ${SEL} 22%, transparent)` }}
+            aria-label="Add to collection"
+          >
+            <div className="border-b border-[var(--lib-border)] px-3 py-2">
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-[var(--lib-fg-muted)]">
+                Add to collection
+              </p>
+              <p className="mt-0.5 text-[10px] leading-snug text-[var(--lib-fg-muted)]">
+                {selectedPostIds.length} post{selectedPostIds.length === 1 ? "" : "s"} selected
+              </p>
+            </div>
+            <div className="max-h-40 overflow-y-auto py-1">
+              {collections.length === 0 ? (
+                <p className="px-3 py-2 text-[11px] text-[var(--lib-fg-muted)]">
+                  No collections yet — create one below.
+                </p>
+              ) : (
+                <ul className="space-y-0.5 px-1">
+                  {collections.map((c) => (
+                    <li key={c.collection_id}>
+                      <button
+                        type="button"
+                        disabled={collBusy !== null}
+                        onClick={() => void addPostsToCollection(c.collection_id)}
+                        className="flex w-full items-center justify-between gap-2 rounded-lg px-2 py-2 text-left text-xs text-[var(--lib-fg)] hover:bg-[var(--lib-sidebar-accent)] disabled:opacity-50"
+                      >
+                        <span className="min-w-0 truncate font-medium">{c.title}</span>
+                        <span className="shrink-0 text-[10px] text-[var(--lib-fg-muted)]">
+                          {collBusy === c.collection_id ? (
+                            "Adding…"
+                          ) : (
+                            <>
+                              <span className="sr-only">Add to </span>
+                              Add · {c.post_ids.length}
+                            </>
+                          )}
+                        </span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+            <div className="border-t border-[var(--lib-border)]">
+              <button
+                type="button"
+                disabled={collBusy !== null}
+                onClick={() => setNewCollectionOpen((v) => !v)}
+                className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-xs font-medium text-[var(--lib-fg)] hover:bg-[var(--lib-muted)] disabled:opacity-50"
+              >
+                <Plus className="h-3.5 w-3.5 shrink-0" style={{ color: SEL }} aria-hidden />
+                New Collection
+              </button>
+              {newCollectionOpen ? (
+                <div className="border-t border-[var(--lib-border)] bg-[var(--lib-muted)]/40 px-3 py-3">
+                  <label className="sr-only" htmlFor="bulk-new-coll-title">
+                    New collection name
+                  </label>
+                  <input
+                    id="bulk-new-coll-title"
+                    value={newCollectionTitle}
+                    onChange={(e) => setNewCollectionTitle(e.target.value)}
+                    placeholder="Collection name"
+                    disabled={collBusy !== null}
+                    className="mb-2 w-full rounded-lg border border-[var(--lib-border)] bg-[var(--lib-input)] px-2.5 py-2 text-xs text-[var(--lib-fg)] placeholder:text-[var(--lib-fg-muted)] focus:border-[var(--lib-ring)] focus:outline-none disabled:opacity-45"
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        void createCollectionAndAdd();
+                      }
+                    }}
+                  />
+                  <button
+                    type="button"
+                    disabled={collBusy !== null || !newCollectionTitle.trim() || selectedPostIds.length === 0}
+                    onClick={() => void createCollectionAndAdd()}
+                    className="w-full rounded-lg py-2 text-xs font-semibold text-neutral-950 disabled:opacity-40"
+                    style={{ backgroundColor: SEL }}
+                  >
+                    {collBusy === "new"
+                      ? "Creating…"
+                      : `Create & add ${selectedPostIds.length} post${selectedPostIds.length === 1 ? "" : "s"}`}
+                  </button>
+                </div>
+              ) : null}
+            </div>
           </div>
         ) : null}
 
@@ -471,6 +727,30 @@ export default function BulkActionBar({
           </button>
           <button
             type="button"
+            disabled={audienceSinglePostOnly || studioWriteBlocked}
+            title={
+              audienceSinglePostOnly
+                ? "Select one post"
+                : studioWriteBlocked
+                  ? "Patreon sync must be healthy before changing audience access"
+                  : "Change who can unlock this post on Relay"
+            }
+            onClick={() => {
+              if (audienceSinglePostOnly || studioWriteBlocked) return;
+              toggle("audience");
+            }}
+            className={`flex h-8 shrink-0 items-center gap-1.5 rounded-full px-2.5 text-xs font-medium sm:px-3 disabled:cursor-not-allowed disabled:opacity-45 ${
+              panel === "audience"
+                ? "text-neutral-950"
+                : "text-[var(--lib-fg-muted)] hover:bg-[var(--lib-muted)] hover:text-[var(--lib-fg)]"
+            }`}
+            style={panel === "audience" ? { backgroundColor: SEL } : undefined}
+          >
+            <Layers3 className="h-3.5 w-3.5" />
+            <span className="hidden sm:inline">Audience</span>
+          </button>
+          <button
+            type="button"
             onClick={() => toggle("collection")}
             className={`flex h-8 shrink-0 items-center gap-1.5 rounded-full px-2.5 text-xs font-medium sm:px-3 ${
               panel === "collection"
@@ -491,17 +771,37 @@ export default function BulkActionBar({
             <span className="hidden sm:inline">Export</span>
           </button>
 
+          {singleItem ? (
+            <>
+              <span className="mx-0.5 hidden h-5 w-px bg-[var(--lib-border)] md:inline" aria-hidden />
+              <div
+                className="hidden min-w-0 flex-col items-start gap-0.5 md:flex"
+                title={`${PILOT_PERMISSION_HEADLINE} · Relay: ${relayVisibilityLabel(singleItem)} · Patreon access (read-only): ${patreonAccessLabel(singleItem, tierTitleById)}`}
+              >
+                <span className="max-w-[11rem] truncate text-[9px] font-medium text-[var(--lib-fg)]">
+                  {PILOT_PERMISSION_HEADLINE}
+                </span>
+                <span className="max-w-[9rem] truncate text-[9px] font-medium uppercase tracking-wide text-[var(--lib-fg-muted)]">
+                  Relay: {relayVisibilityLabel(singleItem)}
+                </span>
+                <span className="max-w-[9rem] truncate text-[9px] text-[var(--lib-fg-muted)]">
+                  Patreon (read-only): {patreonAccessLabel(singleItem, tierTitleById)}
+                </span>
+              </div>
+            </>
+          ) : null}
+
           <span className="mx-0.5 hidden h-5 w-px bg-[var(--lib-border)] sm:inline" aria-hidden />
 
           <button
             type="button"
             onClick={onInspectPost}
             className="ml-auto flex h-8 shrink-0 items-center justify-center gap-1.5 rounded-full px-2.5 text-xs font-medium text-[var(--lib-fg-muted)] hover:bg-[var(--lib-muted)] hover:text-[var(--lib-fg)] sm:ml-0 sm:px-3"
-            aria-label="Inspect post"
-            title="Open full post (first selected asset’s post)"
+            aria-label="Open post details"
+            title="Open full post details (visibility, tags, tiers)"
           >
             <FileText className="h-3.5 w-3.5" />
-            <span className="hidden sm:inline">Inspect Post</span>
+            <span className="hidden sm:inline">Details</span>
           </button>
         </div>
       </div>

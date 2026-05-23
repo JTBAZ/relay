@@ -56,3 +56,44 @@
 ## 4. Session report
 
 When guardrails fail, record: **route**, **persona**, **expected vs actual**, **command run** (e.g. `npm run lint` in `web/`), and whether **FAIL_TO_HUMAN** applies.
+
+---
+
+## 5. Permission overrides (PILOT-012 / ADR 004)
+
+**Product intent:** Relay **presentation** (hide / review / tags) is separate from Patreon **tier gates**. Overrides can narrow what patrons see; they must never widen paywall access.
+
+| Rule | Expected behavior | Fail when |
+|------|-------------------|-----------|
+| **Headline copy** | Creator Library surfaces show **Relay visibility ≠ Patreon access** (bulk visibility, inspect sidebar, batch details, sidebar filters). | Headline missing or implies tier changes from hide/review. |
+| **Hidden excludes patrons** | Tier-entitled patron cannot load a creator-hidden post in `/patron/feed`, visitor gallery, post detail, or permission API. | Hidden post appears in any patron surface. |
+| **Hidden excludes upsell** | Creator-hidden posts do not appear in the bottom **What you missed** locked carousel. | Hidden post shows as locked upsell stub. |
+| **Override schema** | `PostOverride` has no tier-id fields; visibility PATCH does not write audience tier. | Tier ids stored or mutated via overrides. |
+| **Creator library** | Creator still sees hidden posts in Library (optional filter toggle); gray/hidden indicator OK. | Creator cannot manage hidden state or sees patron-only denial in Library. |
+
+### Automated verification
+
+```bash
+npm run build
+npx vitest run tests/pilot-permission-architecture.test.ts
+npx vitest run tests/post-permission.test.ts
+npx vitest run tests/pilot-permission-signoff.test.ts
+npx vitest run tests/pilot-012-permission-guardrails.test.ts
+npx vitest run tests/patron/assemble-patron-feed.test.ts
+```
+
+With `DATABASE_URL` set, also run Gate F:
+
+```bash
+npx vitest run tests/pilot-ux-permission-parity.test.ts -t "PUX-006"
+```
+
+### Manual spot-check (Gate F)
+
+See [`docs/pilot-ux-dev-login.md`](../pilot-ux-dev-login.md) — **Gate F — hidden post patron exclusion (PUX-006)**:
+
+1. **Dev Ava** → Library → hide an entitled post via bulk **Relay visibility**.
+2. **Dev Riley** → `/patron/feed` — post absent; direct post URL → **404**; permission → **deny** with “Post hidden by creator.”
+3. **Dev Ava** → unhide before leaving Library dirty.
+
+**Pass:** patron exclusion holds; creator copy clearly separates visibility from tier access.

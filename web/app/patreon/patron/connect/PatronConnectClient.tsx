@@ -1,12 +1,21 @@
 "use client";
 
 import { Suspense, useEffect, useMemo, useState } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { MailCheck, Plug, ShieldAlert } from "lucide-react";
 import { PATREON_PATRON_OAUTH_SCOPES } from "@/lib/patreon-patron-scopes";
 import { patronPatronOAuthRedirectUri } from "@/lib/patron-patron-redirect-uri";
 import { encodePatronOAuthNonce } from "@/lib/patron-oauth-state";
 import { fetchPatronSessionIfPresent } from "@/lib/relay-api";
+import {
+  PatronFlowCard,
+  PatronFlowLoading,
+  PatronFlowNotice,
+  PatronFlowPrimaryButton,
+  PatronFlowSecondaryLink,
+  PatronFlowShell,
+  patronFlowColors
+} from "@/components/patron/patron-flow-ui";
 
 /** PE-A: session required; Supabase patrons must have confirmed email before OAuth (matches POST /link gate). */
 type SessionGateState =
@@ -39,14 +48,16 @@ function PatronConnectInner({ initialClientId }: { initialClientId: string }) {
         if (!cancelled) setSessionGate("needs_signin");
       }
     })();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [router]);
 
   const clientId = initialClientId;
   const redirectUri = patronPatronOAuthRedirectUri();
+  const showDevRedirect =
+    process.env.NODE_ENV === "development" && Boolean(redirectUri?.trim());
 
-  // Nonce-based state: no creator_id or campaign_numeric_id needed for the session-first /link path.
-  // The API pulls all memberships from Patreon's identity API using the campaigns scope.
   const authorizeUrl = useMemo(() => {
     if (!clientId.trim() || !redirectUri) return "";
     const u = new URL("https://www.patreon.com/oauth2/authorize");
@@ -59,88 +70,99 @@ function PatronConnectInner({ initialClientId }: { initialClientId: string }) {
   }, [clientId, redirectUri]);
 
   return (
-    <main className="mx-auto max-w-lg space-y-6 p-8 text-stone-200">
-      <p>
-        <Link href="/" className="text-amber-400 underline decoration-amber-400/60 hover:text-amber-300">
-          ← Gallery
-        </Link>
-      </p>
-      <h1 className="font-[family-name:var(--font-display)] text-2xl text-stone-50">
-        Connect your Patreon
-      </h1>
-      <p className="text-sm text-stone-300">
-        Authorize Relay to read your Patreon memberships. Relay syncs the creators you support
-        and your tier access — no extra subscription required.
-      </p>
-      <p className="text-xs text-stone-500">
-        Supporters with a Supabase sign-in must verify their email before Patreon connect (onboarding
-        and this page).
-      </p>
-
+    <PatronFlowShell
+      title="Connect your Patreon"
+      subtitle="Authorize Relay to read your memberships and tier access — no extra subscription required."
+      backHref="/patron"
+      backLabel="Supporter home"
+    >
       {sessionGate === "checking" ? (
-        <p className="text-sm text-stone-400">Checking your Relay session…</p>
+        <PatronFlowLoading label="Checking your Relay session…" />
       ) : sessionGate === "needs_signin" ? (
-        <p className="rounded border border-amber-600/50 bg-amber-950/40 p-3 text-sm text-amber-100">
-          You need a Relay account before linking Patreon. Redirecting to{" "}
-          <Link
-            href="/login?role=supporter&returnTo=%2Fpatreon%2Fpatron%2Fconnect"
-            className="underline decoration-amber-300/70 hover:text-amber-50"
-          >
-            sign-in
-          </Link>
-          …
-        </p>
+        <PatronFlowCard
+          icon={<ShieldAlert size={18} aria-hidden />}
+          iconColor={patronFlowColors.warn}
+          title="Sign in first"
+          body={
+            <p>
+              You need a Relay supporter account before linking Patreon. Redirecting to sign-in…
+            </p>
+          }
+        >
+          <PatronFlowPrimaryButton href="/login?role=supporter&returnTo=%2Fpatreon%2Fpatron%2Fconnect">
+            Sign in to continue
+          </PatronFlowPrimaryButton>
+        </PatronFlowCard>
       ) : sessionGate === "needs_verify_email" ? (
-        <div
-          className="space-y-3 rounded border border-amber-700/50 bg-amber-950/40 p-4 text-sm text-amber-100"
-          role="status"
+        <PatronFlowCard
+          icon={<MailCheck size={18} aria-hidden />}
+          iconColor={patronFlowColors.warn}
+          title="Verify your email"
+          body={
+            <>
+              <p>
+                Confirm your inbox before Patreon linking — same rule as the supporter feed. Check
+                your email for the confirmation link, then return here.
+              </p>
+              <p className="mt-2 text-xs" style={{ color: patronFlowColors.subtle }}>
+                After confirming, refresh this page or sign out and back in if this message stays.
+              </p>
+            </>
+          }
         >
-          <p>
-            <span className="font-semibold text-amber-50">Confirm your email first.</span> Relay
-            won&apos;t start Patreon linking until your inbox is verified — same rule as the
-            supporter feed. Check your email for the confirmation link, then return here.
-          </p>
-          <p className="text-xs text-amber-200/85">
-            After confirming, refresh this page or sign out and back in if this message stays.
-          </p>
-        </div>
+          <PatronFlowPrimaryButton href="/patron">I verified — refresh</PatronFlowPrimaryButton>
+          <PatronFlowSecondaryLink href="/login?role=supporter">
+            Sign in with a different account
+          </PatronFlowSecondaryLink>
+        </PatronFlowCard>
       ) : !clientId.trim() ? (
-        <p className="rounded border border-amber-600/50 bg-amber-950/40 p-3 text-sm text-amber-100">
-          Set <code className="rounded bg-stone-900 px-1">PATREON_CLIENT_ID</code> in{" "}
-          <code className="rounded bg-stone-900 px-1">web/.env.local</code>.
-        </p>
+        <PatronFlowNotice tone="warn">
+          Set{" "}
+          <code className="rounded px-1" style={{ background: patronFlowColors.pageBg }}>
+            PATREON_CLIENT_ID
+          </code>{" "}
+          in{" "}
+          <code className="rounded px-1" style={{ background: patronFlowColors.pageBg }}>
+            web/.env.local
+          </code>{" "}
+          to enable Patreon connect.
+        </PatronFlowNotice>
       ) : !redirectUri ? (
-        <p className="text-sm text-stone-400">Preparing link…</p>
+        <PatronFlowLoading label="Preparing Patreon link…" />
       ) : (
-        <a
-          href={authorizeUrl}
-          className="inline-flex w-full items-center justify-center rounded-lg bg-amber-500 px-4 py-3 text-sm font-semibold text-stone-950 hover:bg-amber-400 transition-colors"
+        <PatronFlowCard
+          icon={<Plug size={18} aria-hidden />}
+          iconColor={patronFlowColors.accentHover}
+          title="Link your memberships"
+          body={
+            <p>
+              Relay syncs the creators you support and your current tier access so your feed shows
+              the right posts.
+            </p>
+          }
         >
-          Continue with Patreon
-        </a>
+          <PatronFlowPrimaryButton href={authorizeUrl}>Continue with Patreon</PatronFlowPrimaryButton>
+          <PatronFlowSecondaryLink href="/patron/feed">
+            Skip for now (limited preview)
+          </PatronFlowSecondaryLink>
+        </PatronFlowCard>
       )}
 
-      <p className="text-xs text-stone-500">
-        Redirect URI:{" "}
-        {redirectUri ? (
-          <code className="break-all rounded bg-stone-800 px-1 text-amber-200">{redirectUri}</code>
-        ) : (
-          <span className="text-amber-300">…</span>
-        )}
-      </p>
-    </main>
+      {showDevRedirect ? (
+        <p className="text-center text-[10px] leading-snug" style={{ color: patronFlowColors.subtle }}>
+          Dev redirect:{" "}
+          <code className="break-all rounded px-1" style={{ background: patronFlowColors.cardBg }}>
+            {redirectUri}
+          </code>
+        </p>
+      ) : null}
+    </PatronFlowShell>
   );
 }
 
 export function PatronConnectClient({ initialClientId }: { initialClientId: string }) {
   return (
-    <Suspense
-      fallback={
-        <main className="mx-auto max-w-lg p-8 text-stone-400">
-          <p className="text-sm">Loading…</p>
-        </main>
-      }
-    >
+    <Suspense fallback={<PatronFlowShell title="Connect your Patreon"><PatronFlowLoading /></PatronFlowShell>}>
       <PatronConnectInner initialClientId={initialClientId} />
     </Suspense>
   );

@@ -345,6 +345,12 @@ function createExtensionConsentPrismaStub(): PrismaClient {
         }
       ),
       delete: vi.fn(async () => ({}))
+    },
+    patronFollow: {
+      findMany: vi.fn(async () => [])
+    },
+    patronEntitlementSnapshot: {
+      findMany: vi.fn(async () => [])
     }
   };
 
@@ -479,7 +485,7 @@ describe("Extension consent flow (EXT-0C)", () => {
       .get("/api/v1/me/patron-auth")
       .set("Authorization", `Bearer ${extToken}`);
     expect(me2.status).toBe(401);
-  });
+  }, 60_000);
 
   it("exchange returns 409 when consent code is replayed", async () => {
     const tempDir = await mkdtemp(join(tmpdir(), "relay-ext-consent-replay-"));

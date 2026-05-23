@@ -52,11 +52,42 @@ export async function loadPatronAuthContext(
     where: { accountId: m.accountId, role: TenantRole.patron },
     include: { tenant: true }
   });
-  const ids = rows
-    .map((r) => r.tenant.relayCreatorId)
-    .filter((id): id is string => Boolean(id && id.length > 0));
+  const allowed = new Set<string>();
+  for (const r of rows) {
+    const id = r.tenant.relayCreatorId?.trim();
+    if (id) allowed.add(id);
+  }
 
-  const allowedRelayCreatorIds = ids.length > 0 ? ids : [session.creator_id];
+  // Option B: patrons usually have one platform `TenantMembership`; creator scope comes from
+  // follows + entitlement snapshots (same signals as assemblePatronFeed), and studio owners
+  // from `Account.primaryRelayCreatorId` (see post-detail / permission routes).
+  const [follows, snapshots, account] = await Promise.all([
+    prisma.patronFollow.findMany({
+      where: { patronMembershipId: session.user_id },
+      select: { relayCreatorId: true }
+    }),
+    prisma.patronEntitlementSnapshot.findMany({
+      where: { patronMembershipId: session.user_id },
+      select: { relayCreatorId: true }
+    }),
+    prisma.account.findUnique({
+      where: { id: m.accountId },
+      select: { primaryRelayCreatorId: true }
+    })
+  ]);
+  for (const f of follows) {
+    const id = f.relayCreatorId?.trim();
+    if (id) allowed.add(id);
+  }
+  for (const s of snapshots) {
+    const id = s.relayCreatorId?.trim();
+    if (id) allowed.add(id);
+  }
+  const studioId = account?.primaryRelayCreatorId?.trim();
+  if (studioId) allowed.add(studioId);
+
+  const allowedRelayCreatorIds =
+    allowed.size > 0 ? [...allowed] : [session.creator_id];
 
   return {
     session,

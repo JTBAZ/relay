@@ -31,6 +31,36 @@ const MEDIA_ICONS = {
   video: Video,
 } as const;
 
+function normalizeTierLabel(label: string): string {
+  return label.trim().toLowerCase();
+}
+
+/** Patron's subscription tier for creator header chip (PILOT-003 catalog title). */
+function patronSubscriptionChipLabel(creator: FeedPost["creator"]): string {
+  const raw = creator.patronTierLabel?.trim();
+  if (raw) return raw;
+  return "Supporter";
+}
+
+/** Hide footer post-tier badge when it duplicates the patron subscription chip. */
+function shouldShowFooterTierBadge(args: {
+  isDiscover: boolean;
+  patronChipLabel: string;
+  postTierLabel: string;
+}): boolean {
+  const postTier = normalizeTierLabel(args.postTierLabel);
+  if (args.isDiscover) return true;
+  if (postTier === "free") return true;
+  return normalizeTierLabel(args.patronChipLabel) !== postTier;
+}
+
+function patronChipClassName(label: string): string {
+  if (normalizeTierLabel(label) === "free") {
+    return "inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-[#0D1F17] text-[#2D6A4F] border border-[#1B4332]/50 shrink-0";
+  }
+  return "inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-[#0D1F17] text-[#40916C] border border-[#1B4332]/70 shrink-0";
+}
+
 interface FeedCardProps {
   post: FeedPost;
   onClick?: () => void;
@@ -169,6 +199,16 @@ export function FeedCard({ post, onClick, liveCommentCountScope = null }: FeedCa
 
   const pinLayerVisible = pinPreviewPhase !== "hidden";
 
+  const patronChipLabel = !isDiscover ? patronSubscriptionChipLabel(post.creator) : null;
+  const showFooterTierBadge =
+    patronChipLabel != null
+      ? shouldShowFooterTierBadge({
+          isDiscover,
+          patronChipLabel,
+          postTierLabel: post.tierLabel,
+        })
+      : true;
+
   return (
     <article
       onClick={onClick}
@@ -179,7 +219,7 @@ export function FeedCard({ post, onClick, liveCommentCountScope = null }: FeedCa
           : "bg-[#161616] border-[#242424] hover:border-[#2E2E2E]",
         onClick ? "cursor-pointer" : "",
       ].join(" ")}
-      aria-label={`${isDiscover ? "Discover: " : "Subscribed: "}${post.title} by ${post.creator.displayName}`}
+      aria-label={`${isDiscover ? "Discover: " : `${patronChipLabel ?? "Following"}: `}${post.title} by ${post.creator.displayName}`}
       role={onClick ? "button" : undefined}
       tabIndex={onClick ? 0 : undefined}
       onKeyDown={onClick ? (e) => {
@@ -220,15 +260,18 @@ export function FeedCard({ post, onClick, liveCommentCountScope = null }: FeedCa
                 <span className="text-sm font-semibold text-[#F0F0F0] leading-tight">
                   {post.creator.displayName}
                 </span>
-                {!isDiscover && (
-                  <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-[#0D1F17] text-[#40916C] border border-[#1B4332]/70 shrink-0">
+                {!isDiscover && patronChipLabel ? (
+                  <span
+                    className={patronChipClassName(patronChipLabel)}
+                    aria-label={`Your tier: ${patronChipLabel}`}
+                  >
                     <span
                       className="w-1 h-1 rounded-full bg-[#2D6A4F] inline-block"
                       aria-hidden="true"
                     />
-                    Subscribed
+                    {patronChipLabel}
                   </span>
-                )}
+                ) : null}
               </div>
               <div className="flex items-center gap-1.5 mt-0.5">
                 <span className="text-xs text-[#555555]">
@@ -473,20 +516,22 @@ export function FeedCard({ post, onClick, liveCommentCountScope = null }: FeedCa
             {displayedCommentCount}
           </button>
 
-          {/* Tier badge */}
-          <div className="ml-auto">
-            <span
-              className={[
-                "text-[10px] px-2 py-0.5 rounded-full uppercase tracking-wider font-semibold",
-                post.tierLabel === "Free"
-                  ? "bg-[#0D1F17] text-[#2D6A4F] border border-[#1B4332]/50"
-                  : "text-[#3A3A3A] border border-[#222222]",
-              ].join(" ")}
-              aria-label={`Tier: ${post.tierLabel}`}
-            >
-              {post.tierLabel}
-            </span>
-          </div>
+          {/* Tier badge — post access level; omitted when same as patron subscription chip */}
+          {showFooterTierBadge ? (
+            <div className="ml-auto">
+              <span
+                className={[
+                  "text-[10px] px-2 py-0.5 rounded-full uppercase tracking-wider font-semibold",
+                  post.tierLabel.trim().toLowerCase() === "free"
+                    ? "bg-[#0D1F17] text-[#2D6A4F] border border-[#1B4332]/50"
+                    : "text-[#3A3A3A] border border-[#222222]",
+                ].join(" ")}
+                aria-label={`Tier: ${post.tierLabel}`}
+              >
+                {post.tierLabel}
+              </span>
+            </div>
+          ) : null}
         </div>
       </div>
     </article>

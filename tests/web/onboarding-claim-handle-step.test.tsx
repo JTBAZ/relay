@@ -6,6 +6,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const fetchCreatorPublicSlug = vi.fn();
 const patchCreatorPublicSlug = vi.fn();
 const getCreatorProfile = vi.fn();
+const getCreatorPatronTierSummary = vi.fn();
+const fetchRelayComposeTiers = vi.fn();
 
 vi.mock("@/lib/relay-api", async () => {
   class StubRelayApiError extends Error {
@@ -22,9 +24,15 @@ vi.mock("@/lib/relay-api", async () => {
     fetchCreatorPublicSlug: (...args: unknown[]) => fetchCreatorPublicSlug(...args),
     patchCreatorPublicSlug: (...args: unknown[]) => patchCreatorPublicSlug(...args),
     getCreatorProfile: (...args: unknown[]) => getCreatorProfile(...args),
+    getCreatorPatronTierSummary: (...args: unknown[]) => getCreatorPatronTierSummary(...args),
+    fetchRelayComposeTiers: (...args: unknown[]) => fetchRelayComposeTiers(...args),
     RelayApiError: StubRelayApiError,
     RELAY_CREATOR_ID_STORAGE_KEY: "relay_creator_id",
     RELAY_PUBLIC_SLUG_STORAGE_KEY: "relay_public_slug",
+    RELAY_API_BASE: "http://localhost:8787",
+    putRelayNativeUpload: vi.fn(),
+    relayNativeUploadCommit: vi.fn(),
+    relayNativeUploadInit: vi.fn(),
     buildPatreonCreatorAuthorizeUrl: vi.fn(),
     fetchPatronSessionIfPresent: vi.fn(),
     hasRelaySignedInCookie: vi.fn(),
@@ -57,13 +65,14 @@ vi.mock("@/lib/patron-oauth-state", () => ({
 }));
 
 import { StepClaimHandleAndGo } from "../../web/app/components/onboarding/step-panels";
-import { RelayApiError } from "@/lib/relay-api";
 
 describe("<StepClaimHandleAndGo />", () => {
   beforeEach(() => {
     fetchCreatorPublicSlug.mockReset();
     patchCreatorPublicSlug.mockReset();
     getCreatorProfile.mockReset();
+    getCreatorPatronTierSummary.mockReset();
+    fetchRelayComposeTiers.mockReset();
     window.localStorage.clear();
   });
   afterEach(() => {
@@ -71,7 +80,7 @@ describe("<StepClaimHandleAndGo />", () => {
     vi.restoreAllMocks();
   });
 
-  it("pre-fills from public slug API and saves via patch", async () => {
+  it("shows import choices without gallery URL", async () => {
     fetchCreatorPublicSlug.mockResolvedValue({
       public_slug: "studio",
       slug_source: "allocated"
@@ -89,51 +98,99 @@ describe("<StepClaimHandleAndGo />", () => {
       discipline: null,
       needs_setup: true
     });
-    patchCreatorPublicSlug.mockResolvedValue({
-      public_slug: "my-vanity",
-      slug_source: "user_chosen"
-    });
-    const onFinish = vi.fn();
-
-    render(<StepClaimHandleAndGo onFinish={onFinish} />);
+    render(<StepClaimHandleAndGo />);
 
     await waitFor(() => {
-      const el = document.getElementById("onboarding-handle") as HTMLInputElement;
-      expect(el?.value).toBe("studio");
+      expect(screen.getByText(/What Relay sees/i)).toBeTruthy();
     });
 
-    const input = document.getElementById("onboarding-handle") as HTMLInputElement;
-    fireEvent.change(input, { target: { value: "my-vanity" } });
-
-    fireEvent.click(screen.getByRole("button", { name: /take me to my gallery/i }));
-
-    await waitFor(() => {
-      expect(patchCreatorPublicSlug).toHaveBeenCalledWith("my-vanity");
-    });
-    expect(window.localStorage.getItem("relay_public_slug")).toBe("my-vanity");
-    expect(onFinish).toHaveBeenCalled();
+    expect(screen.queryByText(/Gallery URL/i)).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /import your media/i }));
+    expect(await screen.findByText(/Media Sync/i)).toBeTruthy();
+    expect(screen.getByText(/Manual Import/i)).toBeTruthy();
+    expect(patchCreatorPublicSlug).not.toHaveBeenCalled();
   });
 
-  it("shows conflict message on 409", async () => {
-    fetchCreatorPublicSlug.mockResolvedValue({
-      public_slug: "one",
-      slug_source: "user_chosen"
+  it("shows patron snapshot and detected signals when Patreon is connected", async () => {
+    window.localStorage.setItem("relay_creator_id", "rcx_pilot_dev_onboarding");
+    fetchRelayComposeTiers.mockResolvedValue({
+      tiers: [
+        { tier_id: "t1", title: "Supporter", amount_cents: 500 },
+        { tier_id: "t2", title: "Studio", amount_cents: 1500 }
+      ]
     });
-    getCreatorProfile.mockResolvedValue(null);
-    patchCreatorPublicSlug.mockRejectedValue(new RelayApiError("taken", 409));
+    getCreatorPatronTierSummary.mockResolvedValue({
+      total_patrons: 127,
+      free_patrons: 12,
+      tiers: [
+        {
+          tier_id: "t1",
+          title: "Supporter",
+          amount_cents: 500,
+          patron_count: 89
+        },
+        {
+          tier_id: "t2",
+          title: "Studio",
+          amount_cents: 1500,
+          patron_count: 38
+        }
+      ]
+    });
+    getCreatorProfile.mockResolvedValue({
+      public_slug: "dev-onboarding",
+      slug_source: "allocated",
+      patreon_campaign_id: "pilot_patreon_campaign_onboarding",
+      username: "studio",
+      username_norm: "studio",
+      display_name: "Studio",
+      avatar_url: null,
+      banner_url: null,
+      bio: null,
+      discipline: null,
+      needs_setup: false
+    });
 
     render(<StepClaimHandleAndGo />);
 
     await waitFor(() => {
-      const el = document.getElementById("onboarding-handle") as HTMLInputElement;
-      expect(el?.value).toBe("one");
+      expect(screen.getByText(/Tiers Detected: Supporter \(\$5\), Studio \(\$15\)/i)).toBeTruthy();
+    });
+    expect(screen.getByText(/127 patrons in your synced membership snapshot/i)).toBeTruthy();
+    expect(screen.getByText(/\$1,015\/mo detected/i)).toBeTruthy();
+    expect(screen.getAllByText("Detected")).toHaveLength(3);
+  });
+
+  it("shows pending media signal when connected", async () => {
+    fetchCreatorPublicSlug.mockResolvedValue({
+      public_slug: "one",
+      slug_source: "user_chosen"
+    });
+    getCreatorProfile.mockResolvedValue({
+      public_slug: "one",
+      slug_source: "user_chosen",
+      patreon_campaign_id: "campaign_1",
+      username: "one",
+      username_norm: "one",
+      display_name: "One",
+      avatar_url: null,
+      banner_url: null,
+      bio: null,
+      discipline: null,
+      needs_setup: false
+    });
+    fetchRelayComposeTiers.mockResolvedValue({ tiers: [{ tier_id: "t1", title: "Supporter", amount_cents: 500 }] });
+    getCreatorPatronTierSummary.mockResolvedValue({
+      total_patrons: 0,
+      free_patrons: 0,
+      tiers: []
     });
 
-    fireEvent.click(screen.getByRole("button", { name: /take me to my gallery/i }));
+    render(<StepClaimHandleAndGo />);
 
     await waitFor(() => {
-      const alert = screen.getByRole("alert");
-      expect(alert.textContent ?? "").toMatch(/already taken/i);
+      expect(screen.getByText("Media")).toBeTruthy();
     });
+    expect(screen.getByText(/Not connected yet/i)).toBeTruthy();
   });
 });

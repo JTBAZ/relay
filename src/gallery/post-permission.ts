@@ -1,6 +1,8 @@
 /**
  * @fileoverview Post-level permission triage for gallery/detail surfaces (allow / deny / locked preview).
  * @description MIG-41 — maps canonical post + session to UX-facing outcomes.
+ * Evaluation order: content owner → Layer C hidden → Layer A×B tier gate (ADR 004).
+ * @see docs/architecture/adr/004-pilot-three-layer-permissions.md
  * @see ../identity/access-guard.js Tier/session checks
  * @see src/jsdoc-core-entities.ts Artist/Gallery/SyncStatus mapping notes
  */
@@ -10,6 +12,7 @@ import type { ClonePostEntry } from "../clone/types.js";
 import { checkPostAccess } from "../identity/access-guard.js";
 import type { SessionToken } from "../identity/types.js";
 import type { CanonicalSnapshot } from "../ingest/canonical-store.js";
+import type { PostVisibility } from "./types.js";
 
 /**
  * @description Permission surface for account + post with tier ordering.
@@ -48,8 +51,10 @@ export function evaluatePostPermission(args: {
    * check so the creator always sees their own Library at full resolution.
    */
   isContentOwner?: boolean;
+  /** Relay gallery override visibility (post-level); hidden excludes patrons even when tier-entitled. */
+  relayPostVisibility?: PostVisibility | null;
 }): PostPermissionOutcome | null {
-  const { snapshot, creatorId, postId, session, isContentOwner } = args;
+  const { snapshot, creatorId, postId, session, isContentOwner, relayPostVisibility } = args;
   const row = snapshot.posts[creatorId]?.[postId];
   if (!row || row.upstream_status === "deleted") {
     return null;
@@ -59,6 +64,10 @@ export function evaluatePostPermission(args: {
   // own Library must show full-resolution unblurred content.
   if (isContentOwner && session) {
     return { outcome: "allow" };
+  }
+
+  if (relayPostVisibility === "hidden") {
+    return { outcome: "deny", reason: "Post hidden by creator." };
   }
 
   const tierMap = snapshot.tiers[creatorId] ?? {};

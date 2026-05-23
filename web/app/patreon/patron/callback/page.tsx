@@ -3,6 +3,7 @@
 import { Suspense, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
+import { Loader2, ShieldAlert } from "lucide-react";
 import { decodePatronOAuthState } from "@/lib/patron-oauth-state";
 import { patronPatronOAuthRedirectUri } from "@/lib/patron-patron-redirect-uri";
 import { stashPatronConnectCampaignPrompt } from "@/lib/patron-connect-campaign-prompt";
@@ -11,6 +12,13 @@ import {
   relayFetch,
   RelayApiError
 } from "@/lib/relay-api";
+import {
+  PatronFlowCard,
+  PatronFlowNotice,
+  PatronFlowPrimaryButton,
+  PatronFlowShell,
+  patronFlowColors
+} from "@/components/patron/patron-flow-ui";
 
 /**
  * Patreon authorization codes are **single-use** and short-lived (~10 min). The first POST
@@ -41,7 +49,6 @@ function markCodeConsumed(code: string): void {
   try {
     const set = readConsumedCodes();
     set.add(code);
-    // Cap at the last 10 codes — sessionStorage clears on tab close anyway.
     const arr: string[] = [];
     set.forEach((v) => arr.push(v));
     const trimmed = arr.slice(-10);
@@ -56,21 +63,11 @@ function isCodeAlreadyConsumed(code: string): boolean {
 }
 
 const ALREADY_USED_MESSAGE =
-  "This Patreon link has already been used or expired. Click \u201CPatron connect\u201D to start over.";
+  "This Patreon link has already been used or expired. Start connect again from the button below.";
 
-/**
- * Patreon's `/oauth2/token` returns 401 for any of: expired code, already-used code, wrong
- * `redirect_uri`, or revoked client credentials. The Relay API surfaces those as a 502
- * `UPSTREAM_AUTH_ERROR` whose message includes the literal "status 401" string from
- * `PatreonClient.requestToken`. Convert that into a user-actionable hint instead of the
- * raw upstream error.
- */
 function friendlyMessageForCallbackError(error: unknown): string {
   if (error instanceof RelayApiError) {
-    if (
-      error.code === "UPSTREAM_AUTH_ERROR" &&
-      /status\s*401/i.test(error.message)
-    ) {
+    if (error.code === "UPSTREAM_AUTH_ERROR" && /status\s*401/i.test(error.message)) {
       return ALREADY_USED_MESSAGE;
     }
     return error.message;
@@ -84,21 +81,15 @@ function friendlyMessageForCallbackError(error: unknown): string {
   return String(error);
 }
 
-/** Subset of `POST /api/v1/auth/patreon/patron/link` success `data` (session-first path). */
 type PatronLinkSuccessData = {
   token?: string;
   tier_ids?: string[];
   expires_at?: string;
   patreon_user_id?: string;
-  /** Every Relay creator linked on this round-trip (paid + declined + former + free follower). */
   linked_relay_creator_ids?: string[];
-  /** Currently paying patron of these Relay creators. */
   paid_membership_relay_creator_ids?: string[];
-  /** Recent payment failure — pending resolution. */
   declined_patron_relay_creator_ids?: string[];
-  /** Cancelled patron — eligible for revival offer UX. */
   former_patron_relay_creator_ids?: string[];
-  /** Followed without pledging — primary free-to-paid funnel signal. */
   free_follower_relay_creator_ids?: string[];
   owned_relay_creator_id?: string | null;
   unmapped_patreon_campaign_ids?: string[];
@@ -114,25 +105,17 @@ function CallbackInner() {
 
   const [status, setStatus] = useState<"idle" | "working" | "error" | "needs_signin">("idle");
   const [message, setMessage] = useState<string | null>(null);
-
-  /**
-   * Effect-level guard against React StrictMode's intentional double-invocation in dev.
-   * `useRef` survives the synthetic remount; `sessionStorage` survives a real page reload.
-   * Both are needed.
-   */
   const inFlightForCode = useRef<string | null>(null);
 
   useEffect(() => {
     if (oauthError) {
       setStatus("error");
-      setMessage(
-        `${oauthError}${oauthDesc ? `: ${decodeURIComponent(oauthDesc)}` : ""}`
-      );
+      setMessage(`${oauthError}${oauthDesc ? `: ${decodeURIComponent(oauthDesc)}` : ""}`);
       return;
     }
     if (!code || !state) {
       setStatus("error");
-      setMessage("Missing code or state. Start from /patreon/patron/connect.");
+      setMessage("Missing authorization details. Start from the Patreon connect page.");
       return;
     }
 
@@ -142,7 +125,6 @@ function CallbackInner() {
       return;
     }
     if (inFlightForCode.current === code) {
-      // StrictMode remount fired while the first POST is still pending — let it finish.
       return;
     }
     inFlightForCode.current = code;
@@ -150,9 +132,6 @@ function CallbackInner() {
     let cancelled = false;
     setStatus("working");
 
-    // Validate state (CSRF check — Patreon echoes it back).
-    // `decodePatronOAuthState` returns null for nonce-style states (session-first connect page)
-    // and a legacy payload for old-format states, or throws on corruption/tampering.
     try {
       decodePatronOAuthState(state);
     } catch (e) {
@@ -167,24 +146,17 @@ function CallbackInner() {
       try {
         const existingSession = await fetchPatronSessionIfPresent();
         if (!existingSession) {
-          // PE-A policy: a Patreon login alone may never create a Relay account. Send the user
-          // to /login first, preserving the OAuth code in returnTo so they can re-arrive at the
-          // callback once signed in. Patreon authorization codes are short-lived (minutes), so
-          // worst case the user just reruns /patreon/patron/connect after signing in.
           if (cancelled) return;
           setStatus("needs_signin");
           setMessage(
             "You need a verified Relay account before linking Patreon. Redirecting to sign-in…"
           );
-          const here = "/patreon/patron/connect";
-          router.replace(`/login?role=supporter&returnTo=${encodeURIComponent(here)}`);
+          router.replace(
+            `/login?role=supporter&returnTo=${encodeURIComponent("/patreon/patron/connect")}`
+          );
           return;
         }
 
-        // Mark the code as consumed BEFORE the POST. The server forwards the code to Patreon's
-        // /oauth2/token endpoint, which is single-use — even if the *response* is a 5xx (e.g.
-        // a downstream FK error), Patreon has already invalidated the code, and a refresh-driven
-        // retry would 401 against Patreon. The marker ensures we never re-POST a dead code.
         markCodeConsumed(code);
 
         const linkData = await relayFetch<PatronLinkSuccessData>(
@@ -198,20 +170,6 @@ function CallbackInner() {
           owned_relay_creator_id: linkData.owned_relay_creator_id ?? null,
           unmapped_patreon_campaign_ids: linkData.unmapped_patreon_campaign_ids ?? []
         });
-        // Intentionally NOT gated on `cancelled`. In React StrictMode (dev) the first mount's
-        // cleanup sets `cancelled = true`, while the second mount early-returns on the
-        // `inFlightForCode` ref guard without setting up its own state. If we gated the
-        // navigation on `cancelled`, the original promise would resolve, see
-        // `cancelled === true`, and silently bail -- leaving the page stuck on
-        // "Completing Patreon sign-in…" even though the link API succeeded server-side.
-        //
-        // We use `window.location.assign` rather than `router.replace` for two reasons:
-        //   1. It is independent of the React component tree, so it always fires even after
-        //      a synthetic StrictMode unmount.
-        //   2. A hard navigation is the right semantics here -- the link flow updates Relay
-        //      session cookies, role, and notification state. We want every consumer
-        //      (PatronTopNav unread badge, role switcher, RelayApp shell) to mount fresh
-        //      against the post-link cookie set, not against stale React state.
         if (typeof window !== "undefined") {
           window.location.assign("/patron/feed");
         } else {
@@ -220,9 +178,8 @@ function CallbackInner() {
         return;
       } catch (e) {
         if (!cancelled) {
-          const friendly = friendlyMessageForCallbackError(e);
           setStatus("error");
-          setMessage(friendly);
+          setMessage(friendlyMessageForCallbackError(e));
         }
       }
     })();
@@ -233,42 +190,48 @@ function CallbackInner() {
   }, [code, state, oauthError, oauthDesc, router]);
 
   return (
-    <main className="mx-auto max-w-lg space-y-4 p-8 text-stone-200">
-      <p>
-        <Link
-          href="/patreon/patron/connect"
-          className="text-amber-400 underline decoration-amber-400/60 hover:text-amber-300"
+    <PatronFlowShell
+      title="Linking Patreon"
+      subtitle="Hang tight — we're syncing your memberships with Relay."
+      backHref="/patreon/patron/connect"
+      backLabel="Patron connect"
+      footer={null}
+    >
+      {status === "working" ? (
+        <PatronFlowCard
+          icon={<Loader2 size={18} className="animate-spin" aria-hidden />}
+          iconColor={patronFlowColors.accentHover}
+          title="Completing Patreon sign-in"
+          body={<p>This usually takes a few seconds.</p>}
+        />
+      ) : null}
+
+      {status === "needs_signin" ? (
+        <PatronFlowNotice tone="warn">{message}</PatronFlowNotice>
+      ) : null}
+
+      {status === "error" ? (
+        <PatronFlowCard
+          icon={<ShieldAlert size={18} aria-hidden />}
+          iconColor={patronFlowColors.error}
+          title="Couldn't finish linking"
+          body={
+            <p className="whitespace-pre-wrap break-words">{message ?? "Something went wrong."}</p>
+          }
         >
-          ← Patron connect
-        </Link>
-      </p>
-      <h1 className="font-[family-name:var(--font-display)] text-2xl text-stone-50">
-        Patreon patron callback
-      </h1>
-      {status === "working" && (
-        <p className="text-stone-300">Completing Patreon sign-in…</p>
-      )}
-      {status === "needs_signin" && (
-        <p className="rounded border border-amber-500/40 bg-amber-950/40 p-3 text-sm text-amber-100">
-          {message}
-        </p>
-      )}
-      {status === "error" && (
-        <div className="space-y-3">
-          <pre className="whitespace-pre-wrap rounded border border-red-500/40 bg-red-950/50 p-3 text-sm text-red-200">
-            {message}
-          </pre>
-          {message === ALREADY_USED_MESSAGE && (
-            <Link
-              href="/patreon/patron/connect"
-              className="inline-block rounded border border-amber-500/50 bg-amber-950/30 px-3 py-1.5 text-sm text-amber-100 hover:border-amber-400 hover:text-amber-50"
-            >
-              Restart Patreon connect
-            </Link>
-          )}
-        </div>
-      )}
-    </main>
+          <PatronFlowPrimaryButton href="/patreon/patron/connect">
+            {message === ALREADY_USED_MESSAGE ? "Restart Patreon connect" : "Try again"}
+          </PatronFlowPrimaryButton>
+          <Link
+            href="/patron/feed"
+            className="block text-center text-xs underline-offset-2 hover:underline"
+            style={{ color: patronFlowColors.muted }}
+          >
+            Back to feed
+          </Link>
+        </PatronFlowCard>
+      ) : null}
+    </PatronFlowShell>
   );
 }
 
@@ -276,9 +239,12 @@ export default function PatreonPatronCallbackPage() {
   return (
     <Suspense
       fallback={
-        <main className="p-8 text-stone-300">
-          <p>Loading…</p>
-        </main>
+        <PatronFlowShell title="Linking Patreon">
+          <PatronFlowCard
+            icon={<Loader2 size={18} className="animate-spin" aria-hidden />}
+            title="Loading…"
+          />
+        </PatronFlowShell>
       }
     >
       <CallbackInner />

@@ -35,6 +35,7 @@ import {
   type PatronSessionMe
 } from "@/lib/relay-api";
 import { RoleSwitcher } from "@/app/components/RoleSwitcher";
+import { RelayMarkIcon } from "@/components/patron/relay/relay-mark-icon";
 
 const NAV_ITEMS: ReadonlyArray<{
   href: string;
@@ -107,10 +108,11 @@ export function PatronTopNav(): React.ReactElement | null {
     >
       <Link
         href="/patron/feed"
-        className="mr-3 shrink-0 select-none font-bold tracking-tight text-[16px] text-[#C5B358] transition-colors hover:text-[#d4c47a]"
+        className="mr-3 inline-flex shrink-0 select-none items-center gap-1.5 font-bold tracking-tight text-[16px] text-[#40916C] transition-colors hover:text-[#9bf0c4]"
         aria-label="Relay home"
       >
-        Relay
+        <RelayMarkIcon size={18} className="shrink-0" />
+        <span>Relay</span>
       </Link>
 
       <ul className="flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto">

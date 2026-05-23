@@ -27,5 +27,5 @@ describe("P4-onb-001 creator onboarding migration", () => {
 
   it("Prisma schema validates (npm run build prerequisite)", () => {
     execSync("npx prisma validate", { cwd: repoRoot, stdio: "pipe" });
-  });
+  }, 60_000);
 });

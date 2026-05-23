@@ -14,6 +14,10 @@ import {
 } from "lucide-react";
 import { RELAY_API_BASE, relayRequest, type Collection, type FacetsData } from "@/lib/relay-api";
 import MediaTypeMultiSelect, { type MediaTypeValue } from "./MediaTypeMultiSelect";
+import {
+  PILOT_PERMISSION_HEADLINE,
+  PILOT_PERMISSION_SIDEBAR_FILTER_HINT
+} from "@/lib/pilot-permission-copy";
 
 function formatExportedBytes(bytes: number): string {
   if (!Number.isFinite(bytes) || bytes < 0) return "—";
@@ -352,9 +356,15 @@ export default function GallerySidebar({
         </section>
 
         <section>
-          <h3 className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-[var(--lib-fg-muted)]">
-            Visibility
+          <h3 className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-[var(--lib-fg-muted)]">
+            Library filters
           </h3>
+          <p className="mb-2 text-[9px] font-medium leading-snug text-[var(--lib-fg)]">
+            {PILOT_PERMISSION_HEADLINE}
+          </p>
+          <p className="mb-2 text-[9px] leading-snug text-[var(--lib-fg-muted)]">
+            {PILOT_PERMISSION_SIDEBAR_FILTER_HINT}
+          </p>
           <div className="space-y-2">
             <VisibilityToggle
               icon={visibility.hidden ? EyeOff : Eye}

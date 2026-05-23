@@ -1,4 +1,5 @@
-import type { GalleryPostDetail } from "@/lib/relay-api";
+import type { GalleryPostDetail, TierFacet } from "@/lib/relay-api";
+import { pickPrimaryAccessTierIdForChip } from "@/lib/tier-access";
 import { RELAY_API_BASE } from "@/lib/relay-api";
 import type { Creator, FeedPost } from "@/lib/relay-fixtures";
 
@@ -15,8 +16,14 @@ function stripHtml(s: string): string {
 
 function tierLabelFromDetail(detail: GalleryPostDetail): FeedPost["tierLabel"] {
   if (detail.tiers.length === 0) return "Free";
-  const paid = detail.tiers.some((t) => (t.amount_cents ?? 0) > 0);
-  return paid ? "Supporter" : "Free";
+  const tierIds = detail.tiers.map((t) => t.tier_id);
+  const chipId = pickPrimaryAccessTierIdForChip(tierIds, detail.tiers as TierFacet[]);
+  if (!chipId) return "Free";
+  const row = detail.tiers.find((t) => t.tier_id === chipId);
+  const title = row?.title?.trim();
+  if (title) return title;
+  if (chipId.startsWith("patreon_tier_")) return chipId.slice("patreon_tier_".length);
+  return chipId;
 }
 
 /**

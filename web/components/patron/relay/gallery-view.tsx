@@ -105,6 +105,9 @@ export function GalleryView({
   const imageSurfaceRef = useRef<HTMLDivElement>(null);
   const expandedStackRef = useRef<HTMLDivElement>(null);
   const commentInputRef = useRef<HTMLTextAreaElement>(null);
+  const threadComposerRef = useRef<HTMLTextAreaElement>(null);
+  const [composeBusy, setComposeBusy] = useState(false);
+  const [composeError, setComposeError] = useState<string | null>(null);
   const previewHideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   /** True after Comment is hovered until preview fully ends (image leave or button→hidden timeout). */
   const pinPreviewBridgeRef = useRef(false);
@@ -209,6 +212,40 @@ export function GalleryView({
 
   const multiImage = imageUrls.length > 1;
 
+  const hasRealImageMedia = useMemo(() => {
+    if (isVideoPost) return true;
+    return imageUrls.some((u) => u && !u.includes("/placeholder.svg"));
+  }, [imageUrls, isVideoPost]);
+
+  const prefersThreadComposer =
+    isLive && (post.mediaType === "writing" || !hasRealImageMedia);
+
+  const focusThreadComposer = useCallback(() => {
+    threadComposerRef.current?.focus();
+    threadComposerRef.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  }, []);
+
+  const handleThreadCompose = useCallback(
+    async (body: string) => {
+      if (!isLive) return;
+      setComposeError(null);
+      setComposeBusy(true);
+      try {
+        await live.submit({
+          body,
+          mediaId: null,
+          anchorX: null,
+          anchorY: null
+        });
+      } catch (err) {
+        setComposeError(err instanceof Error ? err.message : String(err));
+      } finally {
+        setComposeBusy(false);
+      }
+    },
+    [isLive, live]
+  );
+
   // Handle ESC key
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -301,25 +338,23 @@ export function GalleryView({
     if (!pendingComment || !commentText.trim()) return;
 
     if (isLive) {
-      // Live wiring: post to PE-E backend; refresh handled by the hook. We treat
-      // post-level vs media-anchored as both anchored here because the existing composer
-      // always captures coordinates -- post-level (mediaId=null) is reserved for the
-      // future "thread reply" surface.
+      setComposeError(null);
+      setComposeBusy(true);
       try {
         await live.submit({
           body: commentText.trim(),
-          // No media-asset selector in skeletal-UI scope; treat the whole post as the
-          // anchor surface. PE-L / PE-K can introduce per-asset targeting.
           mediaId: null,
           anchorX: pendingComment.position.x,
           anchorY: pendingComment.position.y,
           tagIds: pendingTags
         });
       } catch (err) {
-        // Surface the error inline; auto-mod hidden state still creates the row, so a
-        // thrown error is a true failure (validation / network / 5xx).
-        console.error("[live comments] submit failed", err);
+        const msg = err instanceof Error ? err.message : String(err);
+        setComposeError(msg);
+        setComposeBusy(false);
+        return;
       }
+      setComposeBusy(false);
     } else {
       const newComment: PositionalComment = {
         id: `cm-${Date.now()}`,
@@ -360,6 +395,10 @@ export function GalleryView({
 
   const enterCommentMode = () => {
     if (isVideoPost) return;
+    if (prefersThreadComposer) {
+      focusThreadComposer();
+      return;
+    }
     clearPreviewHideTimer();
     pinPreviewBridgeRef.current = false;
     setPinPreviewPhase("hidden");
@@ -409,6 +448,15 @@ export function GalleryView({
           live={live}
           viewerAccountId={liveCommentsScope.viewerAccountId}
           isCreatorOwner={liveCommentsScope.isCreatorOwner}
+          onCompose={handleThreadCompose}
+          composeBusy={composeBusy}
+          composeError={composeError}
+          composeHint={
+            prefersThreadComposer
+              ? "This post has no image to pin on — add your comment here."
+              : "Post-level comment, or use Comment below the image to pin on the artwork."
+          }
+          composerRef={threadComposerRef}
         />
       ) : null}
 
@@ -446,7 +494,7 @@ export function GalleryView({
       )}
 
       {/* Comment mode instruction banner */}
-      {viewMode === "comment" && !pendingComment && (
+      {viewMode === "comment" && !pendingComment && !prefersThreadComposer && (
         <div className="absolute top-4 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 px-4 py-2.5 rounded-full bg-[#1B4332] border border-[#2D6A4F] text-[#40916C] text-sm font-medium shadow-lg">
           <Crosshair size={14} />
           Click anywhere on the image to leave a comment
@@ -469,7 +517,10 @@ export function GalleryView({
             "relative z-0 isolate flex flex-col justify-center rounded-t-xl group",
             /* Gallery: shrink-0 so the preview is never flex-squashed (was flex-1 + overflow-hidden clipping object-contain). Comment: keep flex-1 for pin canvas. */
             viewMode === "comment"
-              ? "min-h-0 flex-1 cursor-crosshair overflow-visible bg-[#0A0A0A]"
+              ? [
+                  "min-h-0 flex-1 cursor-crosshair overflow-visible bg-[#0A0A0A]",
+                  prefersThreadComposer ? "min-h-[120px]" : "",
+                ].join(" ")
               : "shrink-0 overflow-visible bg-[#0E0E0E]",
           ].join(" ")}
         >
@@ -709,22 +760,48 @@ export function GalleryView({
             <button
               type="button"
               disabled={isVideoPost}
-              title={isVideoPost ? "Pinned comments apply to images only" : undefined}
+              title={
+                isVideoPost
+                  ? "Pinned comments apply to images only"
+                  : prefersThreadComposer
+                    ? "Add a comment in the thread panel"
+                    : undefined
+              }
               onClick={enterCommentMode}
-              onMouseEnter={onCommentButtonEnter}
-              onMouseLeave={onCommentButtonLeave}
-              onFocus={onCommentButtonEnter}
-              onBlur={onCommentButtonLeave}
+              onMouseEnter={
+                viewMode === "gallery" && !prefersThreadComposer
+                  ? onCommentButtonEnter
+                  : undefined
+              }
+              onMouseLeave={
+                viewMode === "gallery" && !prefersThreadComposer
+                  ? onCommentButtonLeave
+                  : undefined
+              }
+              onFocus={
+                viewMode === "gallery" && !prefersThreadComposer
+                  ? onCommentButtonEnter
+                  : undefined
+              }
+              onBlur={
+                viewMode === "gallery" && !prefersThreadComposer
+                  ? onCommentButtonLeave
+                  : undefined
+              }
               className={[
                 "group flex items-center gap-1.5 px-3 py-1.5 bg-[#0E0E0E] border border-[#2A2A2A] rounded-lg text-xs transition-all",
                 isVideoPost
                   ? "cursor-not-allowed opacity-40 text-[#555555]"
                   : "text-[#555555] hover:text-[#40916C] hover:border-[#2D6A4F]/50",
               ].join(" ")}
-              aria-label="Leave a pinned comment on this image. Hover to preview pins on the image."
+              aria-label={
+                prefersThreadComposer
+                  ? "Add a comment in the thread panel on the right"
+                  : "Leave a pinned comment on this image. Hover to preview pins on the image."
+              }
             >
               <Crosshair size={12} className="group-hover:rotate-45 transition-transform" />
-              Comment
+              {prefersThreadComposer ? "Comment in thread" : "Comment"}
               {comments.length > 0 && (
                 <span className="opacity-60">({comments.length})</span>
               )}

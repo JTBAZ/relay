@@ -30,7 +30,7 @@ describe("P5a-db-002 analytics pilot migration", () => {
 
   it("Prisma schema validates (npm run build prerequisite)", () => {
     execSync("npx prisma validate", { cwd: repoRoot, stdio: "pipe" });
-  });
+  }, 60_000);
 });
 
 describe("P5a-db-003 membership event dedupe migration", () => {

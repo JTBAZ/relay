@@ -1,0 +1,311 @@
+"use client";
+
+import { useEffect, useMemo, useState, type ReactNode } from "react";
+import Link from "next/link";
+import { Check, Eye, PenLine, RefreshCw, Users } from "lucide-react";
+
+type SyncStatus = "synced" | "syncing" | "error";
+
+export type PatronTierDashboardRow = {
+  tierId: string;
+  label: string;
+  count: number;
+  amountCents?: number | null;
+};
+
+type Props = {
+  /** Relay chosen display name (account setup); always the main title — not the Patreon URL slug. */
+  creatorDisplayName?: string;
+  /** Patreon campaign vanity (lowercase). When set, a `patreon.com/…` link is shown under the title. */
+  patreonName?: string;
+  syncStatus?: SyncStatus;
+  /** One-line detail under the title row when sync needs attention (from GET sync-state health). */
+  syncIssueDetail?: string;
+  /** From Patreon campaign snapshot after sync (GET sync-state `campaign_display`). */
+  patronCount?: number;
+  /** Patreon campaign profile image URL (`image_small_url`). */
+  campaignImageSmallUrl?: string;
+  /** Patreon campaign banner URL (`image_url`); small badge beside the name row, whole image visible (letterboxed). */
+  campaignBannerUrl?: string;
+  /** Monthly revenue placeholder (e.g. display dollars when wired) */
+  revenueLabel?: string;
+  /** Compact patron distribution for the Library header dashboard. */
+  patronTierRows?: PatronTierDashboardRow[];
+  /** e.g. Patreon sync menu — rendered before Preview / Apply */
+  trailingActions?: ReactNode;
+};
+
+function SyncPill({ status }: { status: SyncStatus }) {
+  const cfg = {
+    synced: {
+      label: "Synced",
+      dot: "bg-[var(--lib-success)]",
+      box: "border-[var(--lib-success)]/35 bg-[var(--lib-success)]/12",
+      title: "Patreon sync is up to date with your last scrape health."
+    },
+    syncing: {
+      label: "Syncing",
+      dot: "",
+      box: "border-[var(--lib-warning)]/35 bg-[var(--lib-warning)]/10",
+      title: "A Patreon scrape or sync is in progress."
+    },
+    error: {
+      label: "Sync issue",
+      dot: "bg-[var(--lib-destructive)]",
+      box: "border-[var(--lib-destructive)]/35 bg-[var(--lib-destructive)]/10",
+      title: "OAuth or last scrape needs attention — open the Patreon menu."
+    }
+  }[status];
+
+  return (
+    <div
+      role="status"
+      title={cfg.title}
+      aria-label={`Patreon sync: ${cfg.label}`}
+      className={`flex items-center gap-1 rounded-full border px-1.5 py-0 text-[10px] font-medium tracking-wide text-[var(--lib-fg)] ${cfg.box}`}
+    >
+      {status === "syncing" ? (
+        <RefreshCw className="h-2.5 w-2.5 animate-spin text-[var(--lib-warning)]" aria-hidden />
+      ) : (
+        <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${cfg.dot}`} aria-hidden />
+      )}
+      {cfg.label}
+    </div>
+  );
+}
+
+function formatTierAmount(amountCents?: number | null): string {
+  if (amountCents === null || amountCents === undefined) return "Free";
+  if (amountCents <= 0) return "Free";
+  return `$${(amountCents / 100).toLocaleString(undefined, {
+    minimumFractionDigits: amountCents % 100 === 0 ? 0 : 2,
+    maximumFractionDigits: 2
+  })}`;
+}
+
+function PatronTierDashboard({
+  rows
+}: {
+  rows: PatronTierDashboardRow[];
+}) {
+  const normalizedRows = useMemo(() => {
+    let sawFree = false;
+    return rows.filter((row) => {
+      const label = row.label.trim();
+      const normalizedLabel = label.toLowerCase();
+      const normalizedId = row.tierId.trim().toLowerCase();
+      const isFree = normalizedId === "free" || normalizedLabel === "free";
+      const isPseudoTier =
+        normalizedId === "relay_tier_public" ||
+        normalizedId === "relay_tier_all_patrons" ||
+        normalizedLabel === "public" ||
+        normalizedLabel === "all patrons";
+
+      if (!label || isPseudoTier) return false;
+      if (isFree) {
+        if (sawFree) return false;
+        sawFree = true;
+        return true;
+      }
+      return (row.amountCents ?? 0) > 0;
+    });
+  }, [rows]);
+  const rowIds = useMemo(() => normalizedRows.map((row) => row.tierId), [normalizedRows]);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set(rowIds));
+
+  useEffect(() => {
+    setSelectedIds(new Set(rowIds));
+  }, [rowIds]);
+
+  if (normalizedRows.length === 0) {
+    return null;
+  }
+
+  const selectedCount = normalizedRows.reduce(
+    (sum, row) => (selectedIds.has(row.tierId) ? sum + row.count : sum),
+    0
+  );
+  const freeCount = normalizedRows.find((row) => row.tierId === "free")?.count ?? 0;
+
+  const toggleTier = (tierId: string) => {
+    setSelectedIds((current) => {
+      const next = new Set(current);
+      if (next.has(tierId)) {
+        next.delete(tierId);
+      } else {
+        next.add(tierId);
+      }
+      return next;
+    });
+  };
+
+  return (
+    <section
+      aria-label="Patron tier dashboard"
+      className="hidden w-fit max-w-[min(42rem,calc(100vw-33rem))] shrink-0 items-center gap-3 rounded-2xl border border-[var(--lib-border)] bg-[color-mix(in_srgb,var(--lib-muted)_36%,transparent)] px-3 py-2 xl:inline-flex"
+    >
+      <div className="min-w-[7rem]">
+        <p className="text-[10px] font-medium uppercase tracking-wide text-[var(--lib-fg-muted)]">Active Patrons</p>
+        <div className="mt-0.5 flex items-baseline gap-2">
+          <span className="text-lg font-semibold tabular-nums leading-none text-[var(--lib-fg)]">
+            {selectedCount.toLocaleString()}
+          </span>
+          <span className="max-w-[9rem] truncate text-xs text-[var(--lib-fg-muted)]" title="Selected tier mix">
+            selected
+          </span>
+        </div>
+        <p className="mt-0.5 text-[10px] text-[var(--lib-primary)]">
+          Free members: {freeCount.toLocaleString()}
+        </p>
+      </div>
+
+      <div className="flex min-w-0 max-w-[31rem] items-center gap-1.5 overflow-x-auto">
+        {normalizedRows.slice(0, 8).map((row) => (
+          <button
+            key={row.tierId}
+            type="button"
+            onClick={() => toggleTier(row.tierId)}
+            aria-pressed={selectedIds.has(row.tierId)}
+            title={`${row.label}: ${row.count.toLocaleString()} patrons (${formatTierAmount(row.amountCents)})`}
+            className={[
+              "shrink-0 rounded-full border px-2.5 py-1 text-[10px] transition-colors",
+              selectedIds.has(row.tierId)
+                ? "border-[var(--lib-primary)]/55 bg-[var(--lib-primary)]/15 text-[var(--lib-fg)]"
+                : "border-[var(--lib-border)] bg-[var(--lib-card)] text-[var(--lib-fg-muted)] hover:text-[var(--lib-fg)]"
+            ].join(" ")}
+          >
+            <span className="max-w-20 truncate align-bottom">{row.label}</span>{" "}
+            <span className="tabular-nums">{row.count.toLocaleString()}</span>
+          </button>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+export default function LibraryTopBar({
+  creatorDisplayName,
+  patreonName,
+  syncStatus = "synced",
+  syncIssueDetail,
+  patronCount = 0,
+  campaignImageSmallUrl,
+  campaignBannerUrl,
+  revenueLabel = "—",
+  patronTierRows = [],
+  trailingActions
+}: Props) {
+  const relayDisplayName =
+    creatorDisplayName?.trim() ||
+    process.env.NEXT_PUBLIC_RELAY_CREATOR_DISPLAY_NAME?.trim() ||
+    "Your studio";
+
+  const patreonSlug = patreonName?.trim().toLowerCase();
+  const patreonProfileHref = patreonSlug ? `https://www.patreon.com/${patreonSlug}` : null;
+
+  return (
+    <header className="relative z-40 shrink-0 border-b border-[var(--lib-border)] bg-[var(--lib-bg)]">
+      <div className="flex min-h-[3.5rem] flex-wrap items-center justify-between gap-4 px-4 py-2.5">
+        <div className="flex min-w-0 flex-wrap items-start gap-3">
+          <div className="relative flex w-full shrink-0 items-center gap-3 rounded-xl border border-[var(--lib-border)] bg-[var(--lib-card)] px-3 py-2 lg:w-[14rem]">
+            {campaignBannerUrl ? (
+              <div
+                className="absolute inset-y-1 right-1 hidden w-20 overflow-hidden rounded-xl opacity-20 sm:block"
+                title="Patreon campaign banner"
+                aria-hidden
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element -- remote Patreon campaign asset */}
+                <img
+                  src={campaignBannerUrl}
+                  alt=""
+                  className="h-full w-full object-cover"
+                  decoding="async"
+                />
+                <div className="absolute inset-0 bg-gradient-to-r from-[var(--lib-muted)] via-[var(--lib-muted)]/75 to-transparent" />
+              </div>
+            ) : null}
+            <div className="relative z-10 flex min-w-0 items-center gap-2.5">
+              {campaignImageSmallUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element -- remote Patreon campaign asset URL
+                <img
+                  src={campaignImageSmallUrl}
+                  alt=""
+                  width={36}
+                  height={36}
+                  className="h-10 w-10 shrink-0 rounded-full border border-[color-mix(in_srgb,var(--lib-selection)_35%,var(--lib-border))] bg-[var(--lib-muted)] object-cover"
+                />
+              ) : (
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-[color-mix(in_srgb,var(--lib-selection)_35%,var(--lib-border))] bg-[var(--lib-muted)] text-sm font-semibold text-[var(--lib-selection)]">
+                  {relayDisplayName.slice(0, 1).toUpperCase()}
+                </div>
+              )}
+              <div className="min-w-0">
+                <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+                  <h1 className="max-w-[11rem] truncate text-sm font-semibold tracking-tight text-[var(--lib-fg)] lg:max-w-[7rem]">
+                    {relayDisplayName}
+                  </h1>
+                </div>
+                <div className="mt-0.5 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 text-[10px] text-[var(--lib-fg-muted)]">
+                  {patreonProfileHref ? (
+                    <a
+                      href={patreonProfileHref}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="max-w-[12rem] truncate underline-offset-2 hover:text-[var(--lib-fg)] hover:underline lg:max-w-[8.5rem]"
+                    >
+                      patreon.com/{patreonSlug}
+                    </a>
+                  ) : null}
+                  <span className="flex items-center gap-1 tabular-nums">
+                    <Users className="h-3 w-3 shrink-0" aria-hidden />
+                    {patronCount.toLocaleString()}
+                  </span>
+                  <span className="tabular-nums text-[var(--lib-primary)]">{`$${revenueLabel}/mo`}</span>
+                </div>
+                {syncIssueDetail?.trim() && syncStatus === "error" ? (
+                  <p
+                    className="mt-1 max-w-[20rem] truncate text-[10px] leading-snug text-[var(--lib-destructive)]"
+                    title={syncIssueDetail.trim()}
+                  >
+                    {syncIssueDetail.trim()}
+                  </p>
+                ) : null}
+              </div>
+            </div>
+          </div>
+
+          <PatronTierDashboard rows={patronTierRows} />
+        </div>
+
+        <div className="relative flex shrink-0 flex-wrap items-center justify-end gap-2">
+          <SyncPill status={syncStatus} />
+          {trailingActions}
+          <Link
+            href="/new-post"
+            className="inline-flex h-8 items-center gap-2 rounded-lg border border-[var(--lib-border)] bg-[var(--lib-card)] px-3 text-xs font-medium text-[var(--lib-fg)] transition-colors hover:border-[var(--lib-primary)]/50"
+            title="New Relay post — compose (shell)"
+          >
+            <PenLine className="h-3.5 w-3.5 text-[var(--lib-primary)]" aria-hidden />
+            New post
+          </Link>
+          <Link
+            href="/designer"
+            className="inline-flex h-8 items-center gap-2 rounded-lg border border-[var(--lib-border)] bg-[var(--lib-card)] px-3 text-xs font-medium text-[var(--lib-fg)] transition-colors hover:border-[var(--lib-primary)]/50"
+          >
+            <Eye className="h-3.5 w-3.5 text-[var(--lib-primary)]" aria-hidden />
+            Preview
+          </Link>
+          <button
+            type="button"
+            className="inline-flex h-8 items-center gap-2 rounded-lg bg-[var(--lib-primary)] px-4 text-xs font-semibold text-[var(--lib-primary-fg)] opacity-60"
+            disabled
+            title="Publish to patron page — coming soon"
+          >
+            <Check className="h-3.5 w-3.5" aria-hidden />
+            Apply
+          </button>
+        </div>
+      </div>
+    </header>
+  );
+}

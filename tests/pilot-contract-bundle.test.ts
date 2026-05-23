@@ -83,6 +83,7 @@ describe("P9 pilot API contract — patron feed bundle", () => {
     expect(bundle).toEqual(
       expect.objectContaining({
         feedPosts: [],
+        lockedPosts: [],
         followedCreators: [],
         discoverItems: [],
         notifications: [],

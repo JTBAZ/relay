@@ -1,36 +1,39 @@
 "use client";
 
 export function RelayLogo({ size = "md" }: { size?: "sm" | "md" | "lg" }) {
-  const sizes = {
-    sm: { mark: 20, text: "text-lg" },
-    md: { mark: 26, text: "text-2xl" },
-    lg: { mark: 32, text: "text-3xl" }
-  };
-  const s = sizes[size];
+  const iconSize = size === "sm" ? 20 : size === "lg" ? 32 : 26;
+  const textClass = size === "sm" ? "text-base" : size === "lg" ? "text-2xl" : "text-xl";
 
   return (
     <div className="flex items-center gap-2.5">
       <svg
-        width={s.mark}
-        height={s.mark}
-        viewBox="0 0 26 26"
+        width={iconSize}
+        height={iconSize}
+        viewBox="0 0 32 32"
         fill="none"
         aria-hidden="true"
+        className="flex-shrink-0"
       >
-        <circle cx="13" cy="13" r="4" fill="#C5B358" />
-        <circle cx="13" cy="13" r="7" stroke="#C5B358" strokeWidth="1" strokeOpacity="0.35" fill="none" />
-        <line x1="13" y1="0" x2="13" y2="6" stroke="#C5B358" strokeWidth="1.2" strokeOpacity="0.5" />
-        <line x1="13" y1="20" x2="13" y2="26" stroke="#C5B358" strokeWidth="1.2" strokeOpacity="0.5" />
-        <line x1="0" y1="13" x2="6" y2="13" stroke="#C5B358" strokeWidth="1.2" strokeOpacity="0.5" />
-        <line x1="20" y1="13" x2="26" y2="13" stroke="#C5B358" strokeWidth="1.2" strokeOpacity="0.5" />
-        <circle cx="13" cy="0" r="1.5" fill="#C5B358" fillOpacity="0.5" />
-        <circle cx="13" cy="26" r="1.5" fill="#C5B358" fillOpacity="0.5" />
-        <circle cx="0" cy="13" r="1.5" fill="#C5B358" fillOpacity="0.5" />
-        <circle cx="26" cy="13" r="1.5" fill="#C5B358" fillOpacity="0.5" />
+        <circle cx="16" cy="16" r="14" stroke="var(--relay-gold-500, #c5b358)" strokeWidth="1.5" fill="none" />
+        <circle cx="16" cy="16" r="2.5" fill="var(--relay-gold-500, #c5b358)" />
+        <circle cx="8" cy="10" r="2" fill="var(--relay-gold-500, #c5b358)" />
+        <circle cx="24" cy="10" r="2" fill="var(--relay-gold-500, #c5b358)" />
+        <circle cx="16" cy="25" r="2" fill="var(--relay-gold-500, #c5b358)" />
+        <line x1="16" y1="16" x2="8" y2="10" stroke="var(--relay-gold-500, #c5b358)" strokeWidth="1.5" strokeLinecap="round" />
+        <line x1="16" y1="16" x2="24" y2="10" stroke="var(--relay-gold-500, #c5b358)" strokeWidth="1.5" strokeLinecap="round" />
+        <line x1="16" y1="16" x2="16" y2="25" stroke="var(--relay-gold-500, #c5b358)" strokeWidth="1.5" strokeLinecap="round" />
+        <polyline
+          points="13,21 14.5,18 15.5,22 17,19 18,21"
+          stroke="var(--relay-gold-500, #c5b358)"
+          strokeWidth="1"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          fill="none"
+        />
       </svg>
       <span
-        className={`${s.text} font-semibold tracking-tight`}
-        style={{ color: "#C5B358", letterSpacing: "-0.02em" }}
+        className={`${textClass} font-bold leading-none tracking-tight`}
+        style={{ color: "var(--relay-gold-500, #c5b358)" }}
       >
         Relay
       </span>

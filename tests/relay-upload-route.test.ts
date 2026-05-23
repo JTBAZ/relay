@@ -81,4 +81,22 @@ describe("Relay upload (T-3.2)", () => {
       .send({ creator_id: "c", relay_title: "x" });
     expect(res.status).toBe(401);
   });
+
+  it("returns 503 without prisma on PATCH /gallery/posts/:post_id/audience-access", async () => {
+    const tempDir = await mkdtemp(join(tmpdir(), "relay-up-"));
+    const { app } = createApp(baseConfig(tempDir));
+    const res = await request(app)
+      .patch("/api/v1/gallery/posts/p1/audience-access")
+      .send({ creator_id: "c", is_public: true });
+    expect(res.status).toBe(503);
+  });
+
+  it("returns 401 without session on PATCH /gallery/posts/:post_id/audience-access", async () => {
+    const tempDir = await mkdtemp(join(tmpdir(), "relay-up-"));
+    const { app } = createApp(baseConfig(tempDir, {} as PrismaClient));
+    const res = await request(app)
+      .patch("/api/v1/gallery/posts/p1/audience-access")
+      .send({ creator_id: "c", is_public: false, tier_ids: ["t1"] });
+    expect(res.status).toBe(401);
+  });
 });

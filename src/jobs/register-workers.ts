@@ -151,7 +151,7 @@ async function runRelayBullMqJob(
 /**
  * Registers one BullMQ `Worker` per Relay job queue (PE-G, PE-H, PE-J, autosync, media purge).
  * Uses one shared ioredis instance; BullMQ opens dedicated blocking connections as needed.
- * Repeatable producers land in P1-queue-012.
+ * Repeatable producers: {@link registerRelayBullMqRepeatSchedulers} in `schedule-bullmq-repeat.ts` (P1-queue-012; API process only).
  *
  * **Stalled jobs:** every worker uses {@link relayBullMqWorkerStallRecoveryOptions} (`stalledInterval`
  * default 30s, `maxStalledCount` default 1 — BullMQ v5 defaults). If the Node event loop is blocked longer

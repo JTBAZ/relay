@@ -19,6 +19,7 @@ import {
   relayNativeUploadCommit,
   relayNativeUploadInit,
   putRelayNativeUpload,
+  resolveRelayComposeCampaignId,
   syncHealthBlocksStudioWrites,
   syncStateNeedsAttention,
   type Collection,
@@ -33,6 +34,7 @@ import {
 } from "@/lib/relay-api";
 import GallerySidebar from "./components/GallerySidebar";
 import GalleryGrid from "./components/GalleryGrid";
+import BulkActionBar from "./components/BulkActionBar";
 import PostBatchModal from "./components/PostBatchModal";
 import InspectModal from "./components/InspectModal";
 import LibraryTopBar from "./components/LibraryTopBar";
@@ -326,6 +328,7 @@ export default function GalleryView() {
           tier_id: t.tier_id,
           title: t.title,
           relay_tier_id: t.relay_tier_id,
+          campaign_id: t.campaign_id,
           ...(t.amount_cents != null ? { amount_cents: t.amount_cents } : {})
         }))
       );
@@ -570,6 +573,11 @@ export default function GalleryView() {
             mediaIds.push(id);
           }
         }
+        const campaignId = resolveRelayComposeCampaignId(
+          libraryComposeTierFacets,
+          isPublic ? null : draft.tierId,
+          isPublic
+        );
         const created = await relayNativeCreatePost({
           creator_id: creatorId.trim(),
           title: draft.title.trim(),
@@ -579,7 +587,8 @@ export default function GalleryView() {
           tier_ids: tierIds,
           tag_ids: draft.tags,
           media_ids: mediaIds,
-          publish: true
+          publish: true,
+          ...(campaignId ? { campaign_id: campaignId } : {})
         });
         const newPostId = created.post.id;
         let collectionNotice: string | null = null;
@@ -608,7 +617,7 @@ export default function GalleryView() {
         return false;
       }
     },
-    [creatorId, fetchFacets, fetchLibraryComposeTiers, refreshList]
+    [creatorId, fetchFacets, fetchLibraryComposeTiers, libraryComposeTierFacets, refreshList]
   );
 
   const confirmAddSelectionToCollection = useCallback(async () => {
@@ -638,6 +647,7 @@ export default function GalleryView() {
     void fetchLibraryComposeTiers();
     refreshList();
     void loadCreatorProfile();
+    setOnboardingStepperReloadKey((k) => k + 1);
   }, [fetchFacets, fetchLibraryComposeTiers, refreshList, loadCreatorProfile]);
 
   const persistViewMode = (mode: ViewMode) => {
@@ -732,7 +742,6 @@ export default function GalleryView() {
   const toggleSelectGroup = useCallback((groupItems: GalleryItem[]) => {
     const keys = groupItems.map(galleryItemKey);
     let clearedFocus = false;
-    let shouldOpenPowerPanel = false;
     setSelectedKeys((prev) => {
       const allSelected = keys.length > 0 && keys.every((k) => prev.has(k));
       const next = new Set(prev);
@@ -741,11 +750,9 @@ export default function GalleryView() {
         clearedFocus = true;
       } else {
         for (const k of keys) next.add(k);
-        shouldOpenPowerPanel = true;
       }
       return next;
     });
-    if (shouldOpenPowerPanel) setPowerPanelOpen(true);
     if (clearedFocus) {
       // After deselect, avoid the grid tile stealing focus; blur after the click completes.
       queueMicrotask(() => {
@@ -1028,9 +1035,9 @@ export default function GalleryView() {
             <div className="mx-4 mt-3 rounded-lg border border-dashed border-[var(--lib-border)] bg-[var(--lib-muted)]/25 px-4 py-8 text-center">
               <p className="text-sm font-medium text-[var(--lib-fg)]">No posts in your library yet</p>
               <p className="mx-auto mt-2 max-w-md text-xs leading-relaxed text-[var(--lib-fg-muted)]">
-                Connect Patreon (creator OAuth), then use <strong>Patreon → Live scrape</strong> to
-                pull posts into Relay. Nothing here is shown to visitors until you curate visibility
-                and layout.
+                Connect Patreon (creator OAuth), then use{" "}
+                <strong>Patreon → Check for new posts</strong> to pull posts into Relay. Nothing here
+                is shown to visitors until you curate visibility and layout.
               </p>
             </div>
           ) : null}
@@ -1276,6 +1283,25 @@ export default function GalleryView() {
                     .catch(() => {});
                 }
               }}
+            />
+          ) : null}
+
+          {selectedKeys.size > 0 ? (
+            <BulkActionBar
+              selectedCount={selectedKeys.size}
+              creatorId={creatorId}
+              selectedItems={selectedItems}
+              selectedPostIds={selectedPostIds}
+              collections={collections}
+              tierTitleById={tierTitleById}
+              suggestedTags={facets.tag_ids}
+              onClearSelection={() => setSelectedKeys(new Set())}
+              onListRefresh={refreshList}
+              onCollectionsReload={() => setCollectionsReloadToken((n) => n + 1)}
+              onApplyBulkTagDelta={applyBulkTagDelta}
+              onInspectPost={() => void openInspectPost()}
+              onError={(msg) => setListError(msg)}
+              studioWriteBlocked={studioWriteBlocked}
             />
           ) : null}
         </main>

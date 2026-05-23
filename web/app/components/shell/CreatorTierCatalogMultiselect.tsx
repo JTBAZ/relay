@@ -1,13 +1,17 @@
 "use client";
 
 import { useCallback, useEffect, useId, useMemo, useState } from "react";
-import { fetchRelayComposeTiers, type TierFacet } from "@/lib/relay-api";
+import { fetchRelayComposeTiers, resolveRelayComposeCampaignId, type TierFacet } from "@/lib/relay-api";
 
 export type CreatorTierCatalogMultiselectProps = {
   creatorId: string;
   value: string[];
   onChange: (tierIds: string[]) => void;
   disabled?: boolean;
+  /** When true, resolve campaign from the full catalog (public posts). */
+  isPublic?: boolean;
+  /** Fires when compose tiers imply an unambiguous `campaign_id` for create-post. */
+  onCampaignChange?: (campaignId: string | undefined) => void;
   /** Optional: associate with a heading for a11y */
   "aria-labelledby"?: string;
 };
@@ -30,6 +34,8 @@ export function CreatorTierCatalogMultiselect({
   value,
   onChange,
   disabled = false,
+  isPublic = false,
+  onCampaignChange,
   "aria-labelledby": ariaLabelledBy
 }: CreatorTierCatalogMultiselectProps) {
   const baseId = useId();
@@ -54,6 +60,8 @@ export function CreatorTierCatalogMultiselect({
             rows.map((r) => ({
               tier_id: r.tier_id,
               title: r.title,
+              relay_tier_id: r.relay_tier_id,
+              campaign_id: r.campaign_id,
               ...(r.amount_cents != null ? { amount_cents: r.amount_cents } : {})
             }))
           );
@@ -75,6 +83,13 @@ export function CreatorTierCatalogMultiselect({
   }, [creatorId, disabled]);
 
   const sorted = useMemo(() => (tiers ? sortTiers(tiers) : []), [tiers]);
+
+  useEffect(() => {
+    if (!onCampaignChange || !tiers) {
+      return;
+    }
+    onCampaignChange(resolveRelayComposeCampaignId(tiers, value, isPublic));
+  }, [tiers, value, isPublic, onCampaignChange]);
 
   const toggle = useCallback(
     (tierId: string) => {

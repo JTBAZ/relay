@@ -27,11 +27,13 @@ Together, green CI implies the same checks as `verify:pilot` **plus** migrate de
 
 | Gate (full roadmap idea) | Full-scale example | **Pilot target (N)** | Evidence / link | Met? |
 |-------------------------|-------------------|----------------------|-----------------|------|
-| Creators complete OAuth without support | 10 | **5** | e.g. Airtable / support log | ☐ |
-| Media in library (ingest + export) | 5k assets | **500** | Metrics or DB count | ☐ |
-| Patron sessions / feed reads | (your metric) | **(your N)** | Dashboard or logs | ☐ |
+| Creators complete OAuth without support | 10 | **5** | e.g. Airtable / support log | ☐ product |
+| Patron sessions / feed reads | (your metric) | **25** | Dashboard or logs | ☐ product |
 | Critical Sev-1 bugs open | 0 | **0** | Issue tracker | ☐ |
-| `verify:pilot` green on release candidate | required | **required** | CI / local log | ☐ |
+| `verify:pilot` green on release candidate | required | **required** | CI / local log | ☑ engineering (2026-05-23) |
+| UX gates A–J (PUX + PILOT-011…016) | required | **required** | `docs/pilot-ux-dev-login.md` | ☑ automated (2026-05-23) |
+| Browser matrix spot-check | Chrome blocking | **required** | `docs/pilot-browser-matrix.md` | ☐ QA/product |
+| Prod `RELAY_DB_STORE_*` + RLS | required | **required** | `scripts/pilot-env-check.mjs` | ☐ staging |
 
 Replace rows with the gates your team actually tracks; keep **pilot N** explicit so nobody confuses pilot with production SLOs.
 

@@ -1,9 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import { BarChart3, ChevronDown, Lock, MousePointerClick, Save, Sparkles, Users } from "lucide-react";
+import { BarChart3, ChevronDown, Lock, MousePointerClick, Save, Sparkles, UploadCloud, Users } from "lucide-react";
 import type { GalleryItem, GalleryPostDetail, TierFacet } from "@/lib/relay-api";
 import { InspectAssetPreview } from "./inspect-asset-preview";
+import { InspectAddMediaControl, InspectPostDescription } from "./inspect-preview-actions";
 
 export type PreviewStyle = "default" | "partial-unblur" | "free-cta" | "partial-unlock";
 export type AudiencePreviewPreference = {
@@ -96,7 +97,10 @@ export function PostAudiencePreviewCard({
   audience,
   canView,
   previewStyle,
-  ctaText
+  ctaText,
+  creatorId,
+  postId,
+  onPresentationUpdated
 }: {
   item: GalleryItem;
   postDetail: GalleryPostDetail | null;
@@ -104,8 +108,10 @@ export function PostAudiencePreviewCard({
   canView: boolean;
   previewStyle: PreviewStyle;
   ctaText: string;
+  creatorId: string;
+  postId: string;
+  onPresentationUpdated: () => Promise<void>;
 }) {
-  const description = stripHtml(postDetail?.description || item.description || "");
   const lockedTreatment =
     previewStyle === "partial-unblur"
       ? "Preview is partially unblurred for this audience."
@@ -139,6 +145,13 @@ export function PostAudiencePreviewCard({
         </div>
 
         <div className="relative bg-black/35">
+          <div className="absolute right-3 top-3 z-10">
+            <InspectAddMediaControl
+              creatorId={creatorId}
+              postId={postId}
+              onPresentationUpdated={onPresentationUpdated}
+            />
+          </div>
           <div className={canView ? "" : previewStyle === "partial-unblur" ? "blur-[2px]" : "blur-md opacity-75"}>
             <div className="flex min-h-[17rem] items-center justify-center p-3">
               <InspectAssetPreview item={item} />
@@ -162,9 +175,13 @@ export function PostAudiencePreviewCard({
         </div>
 
         <div className="space-y-3 px-4 py-4">
-          <p className="text-xs leading-5 text-[var(--lib-fg-muted)]">
-            {description || "No post copy has been synced for this preview yet."}
-          </p>
+          <InspectPostDescription
+            preview={item}
+            previewDetail={postDetail}
+            creatorId={creatorId}
+            postId={postId}
+            onPresentationUpdated={onPresentationUpdated}
+          />
           <div className="flex flex-wrap gap-1.5">
             {(postDetail?.tag_ids ?? item.tag_ids).slice(0, 5).map((tag) => (
               <span key={tag} className="rounded-full bg-[var(--lib-muted)] px-2 py-1 text-[10px] text-[var(--lib-fg-muted)]">
@@ -344,6 +361,22 @@ export function AudiencePreviewControls({
                 />
               </label>
             </div>
+
+            <div className="flex items-center justify-between gap-2 rounded-lg border border-[var(--lib-border)] bg-[var(--lib-card)] px-2.5 py-2">
+              <div className="min-w-0">
+                <p className="text-[10px] font-medium text-[var(--lib-fg)]">Custom preview asset</p>
+                <p className="text-[9px] leading-3 text-[var(--lib-fg-muted)]">
+                  Relay image or clip for locked previews
+                </p>
+              </div>
+              <button
+                type="button"
+                className="inline-flex shrink-0 items-center gap-1 rounded-full border border-[var(--lib-border)] px-2 py-1 text-[10px] font-medium text-[var(--lib-fg)] hover:border-[var(--lib-primary)]/45"
+              >
+                <UploadCloud className="h-3 w-3 text-[var(--lib-primary)]" aria-hidden />
+                Choose preview
+              </button>
+            </div>
           </div>
           </div>
         </div>
@@ -382,10 +415,6 @@ function mockMetrics(postId: string, audienceId: string, index: number): Metrics
     discoveryTips: Math.max(3, Math.round(base * (0.025 + index * 0.012))),
     conversions: Math.max(1, Math.round(base * (0.006 + index * 0.003)))
   };
-}
-
-function stripHtml(value: string): string {
-  return value.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
 }
 
 function normalizeTierLabel(value: string): string {

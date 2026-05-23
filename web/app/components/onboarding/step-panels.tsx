@@ -10,7 +10,8 @@ import {
 } from "react";
 import {
   ArrowRight,
-  CheckCircle2,
+  Camera,
+  X,
   Loader2,
   Palette,
   Heart,
@@ -27,10 +28,10 @@ import { setPendingOAuthCallbackTarget } from "@/lib/oauth-pending-callback";
 import { patronPatronOAuthRedirectUri } from "@/lib/patron-patron-redirect-uri";
 import { encodePatronOAuthNonce } from "@/lib/patron-oauth-state";
 import {
+  RELAY_API_BASE,
   RELAY_CREATOR_ID_STORAGE_KEY,
   RELAY_PUBLIC_SLUG_STORAGE_KEY,
   buildPatreonCreatorAuthorizeUrl,
-  fetchCreatorPublicSlug,
   fetchPatronSessionIfPresent,
   fetchRelayComposeTiers,
   getCreatorPatronTierSummary,
@@ -38,16 +39,22 @@ import {
   hasRelaySignedInCookie,
   patchCreatorProfile,
   patchCreatorPublicSlug,
+  putRelayNativeUpload,
   postCreatorWorkspace,
   postPatreonCreatorPrepare,
-  postSubscribeStarCreatorPrepare,
+  postPilotUxSimulatePatreonConnect,
+  relayNativeUploadCommit,
+  relayNativeUploadInit,
   RelayApiError,
-  buildSubscribeStarCreatorAuthorizeUrl,
   type CreatorProfileIdentity,
   type CreatorWorkspaceData,
+  type RelayComposeTierRow,
 } from "@/lib/relay-api";
 import { getWebAppOrigin } from "@/lib/site-origin";
-import { isSubscribeStarCreatorConnectUiEnabled } from "@/lib/subscribestar-connect-ui";
+import {
+  PILOT_UX_ONBOARDING_RELAY_CREATOR_ID,
+  pilotUxDevLoginEnabled
+} from "@/lib/pilot-ux-dev-accounts";
 import RelayUnifiedLogoV0 from "@/app/components/relay-unified-logo-v0";
 
 export type OnboardingPath = "creator" | "supporter";
@@ -380,16 +387,14 @@ export function RoadmapPreview({
   path: OnboardingPath;
   currentStep: number;
 }) {
-  const step2ConnectLabel = isSubscribeStarCreatorConnectUiEnabled()
-    ? "Connect platform"
-    : "Connect Patreon";
+  const step2ConnectLabel = "Connect Patreon";
   const items =
     path === "creator"
       ? [
           { n: 1, label: "Create your account" },
           { n: 2, label: step2ConnectLabel },
-          { n: 3, label: "Set up your profile" },
-          { n: 4, label: "Claim your gallery URL" },
+          { n: 3, label: "Profile + URL" },
+          { n: 4, label: "Import your art" },
         ]
       : [
           { n: 1, label: "Create your account" },
@@ -543,17 +548,14 @@ const PatreonLogoIcon = () => (
 );
 
 export function StepConnectPatreonCreator({
-  onSkip,
-  initialSubscribeStarClientId = ""
+  onConnected
 }: {
-  onSkip?: () => void;
-  initialSubscribeStarClientId?: string;
+  onConnected?: () => void;
 }) {
-  const showSubscribeStar = isSubscribeStarCreatorConnectUiEnabled();
   const [origin, setOrigin] = useState("");
   const [creatorId, setCreatorId] = useState("");
   const [hasSession, setHasSession] = useState(false);
-  const [busy, setBusy] = useState<false | "patreon" | "subscribestar">(false);
+  const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -570,16 +572,9 @@ export function StepConnectPatreonCreator({
     ""
   ).trim();
 
-  const subscribeStarClientId = initialSubscribeStarClientId.trim();
-
   const redirectUri = useMemo(() => {
     const fromEnv = process.env.NEXT_PUBLIC_PATREON_REDIRECT_URI?.trim();
     return fromEnv || (origin ? `${origin}/patreon/callback` : "");
-  }, [origin]);
-
-  const subscribeStarRedirectUri = useMemo(() => {
-    const fromEnv = process.env.NEXT_PUBLIC_SUBSCRIBESTAR_CREATOR_REDIRECT_URI?.trim();
-    return fromEnv || (origin ? `${origin}/subscribestar/creator/callback` : "");
   }, [origin]);
 
   const applyWorkspace = useCallback((ws: CreatorWorkspaceData) => {
@@ -619,7 +614,7 @@ export function StepConnectPatreonCreator({
       return;
     }
     setError(null);
-    setBusy("patreon");
+    setBusy(true);
 
     const cid = await ensureWorkspace();
     if (!cid) {
@@ -647,54 +642,42 @@ export function StepConnectPatreonCreator({
     }
   }, [clientId, redirectUri, ensureWorkspace]);
 
-  const handleConnectSubscribeStar = useCallback(async () => {
-    if (!subscribeStarClientId || !subscribeStarRedirectUri) {
-      setError(
-        "SubscribeStar client ID or redirect URI is missing — check env config (e.g. NEXT_PUBLIC_SUBSCRIBESTAR_CREATOR_CLIENT_ID)."
-      );
-      return;
-    }
-    setError(null);
-    setBusy("subscribestar");
+  const walkthroughDev =
+    pilotUxDevLoginEnabled() && creatorId === PILOT_UX_ONBOARDING_RELAY_CREATOR_ID;
 
+  const handleSimulatePatreon = useCallback(async () => {
+    setError(null);
+    setBusy(true);
     const cid = await ensureWorkspace();
     if (!cid) {
       setBusy(false);
       return;
     }
-
     try {
-      const prep = await postSubscribeStarCreatorPrepare(cid);
-      setPendingOAuthCallbackTarget("subscribestar-creator");
-      window.location.href = buildSubscribeStarCreatorAuthorizeUrl(
-        subscribeStarClientId,
-        subscribeStarRedirectUri,
-        prep.state
-      );
+      await postPilotUxSimulatePatreonConnect();
+      onConnected?.();
     } catch (e) {
       const msg =
         e instanceof RelayApiError
           ? e.message
           : e instanceof Error
-          ? e.message
-          : String(e);
+            ? e.message
+            : String(e);
       setError(msg);
       setBusy(false);
     }
-  }, [subscribeStarClientId, subscribeStarRedirectUri, ensureWorkspace]);
+  }, [ensureWorkspace, onConnected]);
 
   const missingClientId = !clientId;
-  const missingSubscribeStarConfig =
-    showSubscribeStar && (!subscribeStarClientId || !subscribeStarRedirectUri);
-  const blocked = busy !== false || !origin;
-
-  const title = showSubscribeStar ? "Connect your platform" : "Connect your Patreon";
-  const subhead = showSubscribeStar
-    ? "Choose Patreon or SubscribeStar. Authorize Relay so we can verify you own the account and import your posts into your gallery."
-    : "Authorize Relay to import your posts so we can stream your art straight into your gallery.";
+  const blocked = busy || !origin;
 
   return (
-    <PatreonStepShell step={2} of={4} title={title} subhead={subhead}>
+    <PatreonStepShell
+      step={2}
+      of={4}
+      title="Connect your Patreon"
+      subhead="Authorize Relay to import your posts so we can stream your art straight into your gallery."
+    >
       <div className="flex flex-col gap-3">
         {missingClientId ? (
           <div className="rounded-xl border border-amber-900/40 bg-amber-950/30 px-4 py-3 text-xs text-amber-200/90">
@@ -717,7 +700,7 @@ export function StepConnectPatreonCreator({
               className="relay-shimmer relay-btn-shimmer-layer pointer-events-none absolute inset-0 opacity-0 transition-opacity duration-300 group-hover:opacity-100"
               aria-hidden
             />
-            {busy === "patreon" ? (
+            {busy ? (
               <>
                 <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
                 Redirecting to Patreon…
@@ -733,41 +716,22 @@ export function StepConnectPatreonCreator({
           </button>
         )}
 
-        {showSubscribeStar ? (
-          missingSubscribeStarConfig ? (
-            <div className="rounded-xl border border-amber-900/40 bg-amber-950/30 px-4 py-3 text-xs text-amber-200/90">
-              Set{" "}
-              <code className="rounded bg-black/30 px-1">
-                NEXT_PUBLIC_SUBSCRIBESTAR_CREATOR_CLIENT_ID
-              </code>{" "}
-              (and redirect URI if needed) in{" "}
-              <code className="rounded bg-black/30 px-1">web/.env.local</code> to
-              enable SubscribeStar OAuth.
-            </div>
-          ) : (
-            <button
-              type="button"
-              disabled={blocked}
-              onClick={() => void handleConnectSubscribeStar()}
-              className="group relative flex w-full items-center justify-center gap-3 overflow-hidden rounded-xl border border-amber-400/35 bg-amber-500/10 px-4 py-4 text-sm font-semibold text-amber-200 transition-all duration-200 hover:border-amber-400/55 hover:bg-amber-500/18 disabled:opacity-50"
-            >
-              <span
-                className="relay-shimmer relay-btn-shimmer-layer pointer-events-none absolute inset-0 opacity-0 transition-opacity duration-300 group-hover:opacity-100"
-                aria-hidden
-              />
-              {busy === "subscribestar" ? (
-                <>
-                  <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
-                  Redirecting to SubscribeStar…
-                </>
-              ) : (
-                <>
-                  <Sparkles className="h-4 w-4 text-amber-300" strokeWidth={2} aria-hidden />
-                  Continue with SubscribeStar
-                </>
-              )}
-            </button>
-          )
+        {walkthroughDev ? (
+          <button
+            type="button"
+            disabled={blocked}
+            onClick={() => void handleSimulatePatreon()}
+            className="flex w-full items-center justify-center gap-2 rounded-xl border border-[#52B788]/40 bg-[#52B788]/10 px-4 py-3 text-sm font-medium text-[#D1FAE5] transition-colors hover:border-[#52B788]/60 hover:bg-[#52B788]/15 disabled:opacity-50"
+          >
+            {busy ? (
+              <>
+                <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+                Simulating Patreon connect…
+              </>
+            ) : (
+              <>Simulate Patreon connect (dev)</>
+            )}
+          </button>
         ) : null}
       </div>
 
@@ -778,20 +742,9 @@ export function StepConnectPatreonCreator({
       )}
 
       <p className="text-xs leading-relaxed text-[var(--relay-fg-muted)]">
-        {showSubscribeStar
-          ? "We'll send you to Patreon or SubscribeStar to authorize, then bring you back here to finish setup."
-          : "We'll bounce you to Patreon to authorize, then bring you right back to finish setting up."}
+        We&apos;ll bounce you to Patreon to authorize, then bring you right back to finish setting up.
       </p>
 
-      {onSkip && (
-        <button
-          type="button"
-          onClick={onSkip}
-          className="mx-auto text-xs text-[var(--relay-fg-muted)] underline-offset-4 hover:text-[var(--relay-fg)] hover:underline"
-        >
-          Skip for now — I&apos;ll connect later
-        </button>
-      )}
     </PatreonStepShell>
   );
 }
@@ -959,11 +912,12 @@ export function StepCreatorProfileBasics({
 }) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [avatarUploading, setAvatarUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [identity, setIdentity] = useState<CreatorProfileIdentity | null>(null);
-  const [displayName, setDisplayName] = useState("");
-  const [username, setUsername] = useState("");
+  const [creatorName, setCreatorName] = useState("");
   const [avatarUrl, setAvatarUrl] = useState("");
+  const [avatarPreviewUrl, setAvatarPreviewUrl] = useState("");
   const [bio, setBio] = useState("");
 
   useEffect(() => {
@@ -973,14 +927,12 @@ export function StepCreatorProfileBasics({
         const prof = await getCreatorProfile();
         if (cancelled) return;
         setIdentity(prof);
-        setDisplayName(prof.display_name ?? "");
-        setUsername(prof.username ?? "");
+        setCreatorName(prof.display_name?.trim() || prof.username?.trim() || "");
         setAvatarUrl(prof.avatar_url ?? "");
         setBio(prof.bio ?? "");
       } catch (e) {
         if (cancelled) return;
-        // 401/404 are fine — user may not have a creator workspace yet; just
-        // start with empty fields and let them skip.
+        // 401/404 are fine — user may not have a creator workspace yet.
         if (!(e instanceof RelayApiError) || (e.status !== 401 && e.status !== 404)) {
           setError(e instanceof Error ? e.message : String(e));
         }
@@ -993,6 +945,15 @@ export function StepCreatorProfileBasics({
     };
   }, []);
 
+  const trimmedCreatorName = creatorName.trim();
+  const derivedUsername = normalizeOnboardingUsername(trimmedCreatorName);
+  const publicSlugDraft = sanitizePublicSlugDraft(derivedUsername);
+  const creatorNameOk = trimmedCreatorName.length > 0;
+  const derivedUsernameOk = /^[a-z0-9_]{3,32}$/.test(derivedUsername);
+  const bioCount = bio.length;
+  const bioOver = bioCount > PROFILE_BIO_LIMIT;
+  const canSave = creatorNameOk && derivedUsernameOk && !bioOver && !avatarUploading;
+
   const isDirty = (field: keyof CreatorProfileIdentity, current: string): boolean => {
     const original = (identity?.[field] as string | null) ?? "";
     return current.trim() !== original.trim();
@@ -1000,11 +961,13 @@ export function StepCreatorProfileBasics({
 
   const buildPatch = () => {
     const patch: Record<string, string | null> = {};
-    if (isDirty("display_name", displayName)) {
-      patch.display_name = displayName.trim() || null;
+    const currentUsername =
+      identity?.username_norm?.trim() || identity?.username?.trim().toLowerCase() || "";
+    if (trimmedCreatorName !== (identity?.display_name ?? "").trim()) {
+      patch.display_name = trimmedCreatorName || null;
     }
-    if (isDirty("username", username)) {
-      patch.username = username.trim() || null;
+    if (derivedUsername && derivedUsername !== currentUsername) {
+      patch.username = derivedUsername;
     }
     if (isDirty("avatar_url", avatarUrl)) {
       patch.avatar_url = avatarUrl.trim() || null;
@@ -1015,21 +978,80 @@ export function StepCreatorProfileBasics({
     return patch;
   };
 
-  const handleSave = async () => {
-    const patch = buildPatch();
-    if (Object.keys(patch).length === 0) {
-      onAdvance?.();
+  const handleAvatarUpload = async (file: File | null | undefined) => {
+    if (!file) return;
+    if (!file.type.startsWith("image/")) {
+      setError("Choose an image file for your avatar.");
       return;
     }
+    const creatorId =
+      typeof window !== "undefined"
+        ? window.localStorage.getItem(RELAY_CREATOR_ID_STORAGE_KEY)?.trim() ?? ""
+        : "";
+    if (!creatorId) {
+      setError("Create your studio workspace before uploading an avatar.");
+      return;
+    }
+
+    const localPreview = URL.createObjectURL(file);
+    setAvatarPreviewUrl(localPreview);
+    setAvatarUploading(true);
+    setError(null);
+    try {
+      const contentType = file.type || "image/png";
+      const init = await relayNativeUploadInit({
+        creator_id: creatorId,
+        content_type: contentType,
+        byte_size: file.size
+      });
+      await putRelayNativeUpload(init.upload.url, file, contentType);
+      await relayNativeUploadCommit({
+        creator_id: creatorId,
+        media_id: init.media_id,
+        content_type: contentType,
+        byte_size: file.size
+      });
+      const nextUrl = `${RELAY_API_BASE}/api/v1/export/media/${encodeURIComponent(
+        creatorId
+      )}/${encodeURIComponent(init.media_id)}/content`;
+      setAvatarUrl(nextUrl);
+      setAvatarPreviewUrl(nextUrl);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not upload avatar.");
+    } finally {
+      setAvatarUploading(false);
+    }
+  };
+
+  const handleSave = async () => {
+    if (!creatorNameOk) {
+      setError("Add your creator name to continue.");
+      return;
+    }
+    if (!derivedUsernameOk) {
+      setError(
+        "Your name needs at least 3 letters or numbers so Relay can create your @handle and gallery URL."
+      );
+      return;
+    }
+    const patch = buildPatch();
     setSaving(true);
     setError(null);
     try {
-      await patchCreatorProfile(patch);
+      if (Object.keys(patch).length > 0) {
+        await patchCreatorProfile(patch);
+      }
+      const r = await patchCreatorPublicSlug(publicSlugDraft);
+      if (typeof window !== "undefined" && r.public_slug?.trim()) {
+        window.localStorage.setItem(RELAY_PUBLIC_SLUG_STORAGE_KEY, r.public_slug.trim());
+      }
       onAdvance?.();
     } catch (e) {
       const msg =
         e instanceof RelayApiError
-          ? e.message
+          ? e.status === 409
+            ? "That handle is already taken. Try a different name."
+            : e.message
           : e instanceof Error
             ? e.message
             : String(e);
@@ -1037,10 +1059,6 @@ export function StepCreatorProfileBasics({
       setSaving(false);
     }
   };
-
-  const sanitizedUsername = username.toLowerCase().replace(/[^a-z0-9_]/g, "");
-  const bioCount = bio.length;
-  const bioOver = bioCount > PROFILE_BIO_LIMIT;
 
   return (
     <div className="flex flex-col gap-7">
@@ -1052,12 +1070,12 @@ export function StepCreatorProfileBasics({
           icon={<Palette className="h-3 w-3" strokeWidth={2} />}
         />
         <h2 className="text-2xl font-semibold tracking-tight text-[var(--relay-fg)]">
-          Set up your profile
+          Build your Relay identity
         </h2>
         <p className="text-sm leading-relaxed text-[var(--relay-fg-muted)]">
           {identity
-            ? "We pulled what we could from Patreon — adjust whatever you want, or keep going and edit later."
-            : "Add a display name, handle, and avatar so patrons recognize you."}
+            ? "We pulled what we could from Patreon. Confirm your creator name and avatar."
+            : "Add the name patrons will see. Relay creates your @handle and gallery URL from it."}
         </p>
       </div>
 
@@ -1070,50 +1088,32 @@ export function StepCreatorProfileBasics({
         <div className="flex flex-col gap-5">
           <div className="space-y-1.5">
             <label
-              htmlFor="onboarding-display-name"
+              htmlFor="onboarding-creator-name"
               className="text-xs font-medium uppercase tracking-wider text-[var(--relay-fg-muted)]"
             >
-              Display name
+              Creator name <span className="text-[var(--relay-green-400)]">*</span>
             </label>
             <input
-              id="onboarding-display-name"
+              id="onboarding-creator-name"
               type="text"
-              value={displayName}
-              onChange={(e) => setDisplayName(e.target.value)}
+              value={creatorName}
+              onChange={(e) => setCreatorName(e.target.value)}
               placeholder="Your studio or artist name"
               className="w-full rounded-xl border border-[var(--relay-border)] bg-[var(--relay-surface-1)] px-3 py-3 text-sm text-[var(--relay-fg)] placeholder-[var(--relay-fg-muted)] outline-none ring-[var(--relay-green-600)]/30 focus:ring-2"
               maxLength={120}
             />
-          </div>
-
-          <div className="space-y-1.5">
-            <label
-              htmlFor="onboarding-username"
-              className="text-xs font-medium uppercase tracking-wider text-[var(--relay-fg-muted)]"
-            >
-              Username
-            </label>
-            <div className="flex items-stretch overflow-hidden rounded-xl border border-[var(--relay-border)] bg-[var(--relay-surface-1)] focus-within:ring-2 focus-within:ring-[var(--relay-green-600)]/30">
-              <span className="select-none border-r border-[var(--relay-border)] bg-[var(--relay-bg)] px-3 py-3 text-sm text-[var(--relay-fg-muted)]">
-                @
-              </span>
-              <input
-                id="onboarding-username"
-                type="text"
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-                placeholder="cool_artist_42"
-                className="flex-1 bg-transparent px-3 py-3 text-sm text-[var(--relay-fg)] placeholder-[var(--relay-fg-muted)] focus:outline-none"
-                spellCheck={false}
-                autoCapitalize="off"
-                autoCorrect="off"
-              />
-            </div>
-            {sanitizedUsername && sanitizedUsername !== username.toLowerCase() ? (
+            {derivedUsernameOk ? (
               <p className="text-xs text-[var(--relay-fg-muted)]">
-                Will be saved as{" "}
-                <span className="text-[var(--relay-green-400)]">@{sanitizedUsername}</span>{" "}
-                (lowercase, letters / numbers / underscores only).
+                Patrons will see{" "}
+                <span className="font-medium text-[var(--relay-fg)]">{trimmedCreatorName}</span>
+                {" · "}
+                <span className="text-[var(--relay-green-400)]">@{derivedUsername}</span>
+                {" · "}
+                <span className="text-[var(--relay-green-400)]">/patron/c/{publicSlugDraft}</span>
+              </p>
+            ) : trimmedCreatorName ? (
+              <p className="text-xs text-[var(--relay-fg-muted)]">
+                Add at least 3 letters or numbers so Relay can create your @handle.
               </p>
             ) : null}
           </div>
@@ -1123,13 +1123,13 @@ export function StepCreatorProfileBasics({
               htmlFor="onboarding-avatar"
               className="text-xs font-medium uppercase tracking-wider text-[var(--relay-fg-muted)]"
             >
-              Avatar URL
+              Avatar image
             </label>
             <div className="flex items-center gap-3">
-              {avatarUrl.trim() ? (
+              {(avatarPreviewUrl || avatarUrl).trim() ? (
                 /* eslint-disable-next-line @next/next/no-img-element */
                 <img
-                  src={avatarUrl.trim()}
+                  src={(avatarPreviewUrl || avatarUrl).trim()}
                   alt="Avatar preview"
                   className="h-12 w-12 shrink-0 rounded-full border border-[var(--relay-border)] object-cover"
                   onError={(e) => {
@@ -1144,19 +1144,38 @@ export function StepCreatorProfileBasics({
                   ?
                 </div>
               )}
-              <input
-                id="onboarding-avatar"
-                type="url"
-                value={avatarUrl}
-                onChange={(e) => setAvatarUrl(e.target.value)}
-                placeholder="https://…"
-                className="min-w-0 flex-1 rounded-xl border border-[var(--relay-border)] bg-[var(--relay-surface-1)] px-3 py-3 text-sm text-[var(--relay-fg)] placeholder-[var(--relay-fg-muted)] outline-none ring-[var(--relay-green-600)]/30 focus:ring-2"
-                spellCheck={false}
-              />
+              <div className="flex min-w-0 flex-1 flex-col gap-2">
+                <label
+                  htmlFor="onboarding-avatar-file"
+                  className="inline-flex cursor-pointer items-center justify-center gap-2 rounded-xl border border-[var(--relay-border)] bg-[var(--relay-surface-1)] px-3 py-3 text-sm font-medium text-[var(--relay-fg)] transition-colors hover:border-[var(--relay-electric)]/40"
+                >
+                  {avatarUploading ? (
+                    <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+                  ) : (
+                    <Camera className="h-4 w-4" strokeWidth={1.8} aria-hidden />
+                  )}
+                  {avatarUploading ? "Uploading avatar…" : "Upload avatar"}
+                </label>
+                <input
+                  id="onboarding-avatar-file"
+                  type="file"
+                  accept="image/*"
+                  className="sr-only"
+                  onChange={(e) => void handleAvatarUpload(e.target.files?.[0])}
+                />
+                <input
+                  id="onboarding-avatar"
+                  type="url"
+                  value={avatarUrl}
+                  onChange={(e) => setAvatarUrl(e.target.value)}
+                  placeholder="Or paste an image URL"
+                  className="min-w-0 rounded-xl border border-[var(--relay-border)] bg-[var(--relay-surface-1)] px-3 py-2.5 text-xs text-[var(--relay-fg)] placeholder-[var(--relay-fg-muted)] outline-none ring-[var(--relay-green-600)]/30 focus:ring-2"
+                  spellCheck={false}
+                />
+              </div>
             </div>
             <p className="text-xs text-[var(--relay-fg-muted)]">
-              Upload support is coming soon — for now, paste any image URL (Patreon, your
-              site, etc).
+              If Patreon provides an avatar, Relay uses it automatically. You can replace it here.
             </p>
           </div>
 
@@ -1165,7 +1184,7 @@ export function StepCreatorProfileBasics({
               htmlFor="onboarding-bio"
               className="text-xs font-medium uppercase tracking-wider text-[var(--relay-fg-muted)]"
             >
-              Short bio (optional)
+              Short bio
             </label>
             <textarea
               id="onboarding-bio"
@@ -1198,18 +1217,11 @@ export function StepCreatorProfileBasics({
         </div>
       )}
 
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <button
-          type="button"
-          onClick={() => onAdvance?.()}
-          className="text-xs font-medium text-[var(--relay-fg-muted)] underline-offset-4 transition-colors hover:text-[var(--relay-fg)] hover:underline"
-        >
-          Skip for now
-        </button>
+      <div className="flex flex-col gap-2">
         <button
           type="button"
           onClick={() => void handleSave()}
-          disabled={loading || saving || bioOver}
+          disabled={loading || saving || !canSave}
           className="flex items-center justify-center gap-2 rounded-xl bg-[var(--relay-green-600)] px-5 py-3 text-sm font-semibold text-[var(--relay-fg)] transition-colors hover:bg-[var(--relay-green-400)] disabled:cursor-not-allowed disabled:opacity-60"
         >
           {saving ? (
@@ -1224,15 +1236,37 @@ export function StepCreatorProfileBasics({
             </>
           )}
         </button>
+        <p className="text-center text-[11px] text-[var(--relay-fg-muted)]">
+          Your @handle and gallery URL come from this name. Personalize your username later in profile
+          settings.
+        </p>
       </div>
     </div>
   );
 }
 
 /* ───────────────────────────────────────────────────────────────────────────
- * Step 4 — Creator finish (claim public URL slug; connection snapshot; manual import; optional extension).
- * Persists via PATCH /api/v1/creator/public-slug (marks slug as user_chosen).
+ * Step 4 — Creator import handoff (detected platform signals + import choices).
+ * Step 3 derives the public URL from the creator name.
  * ─────────────────────────────────────────────────────────────────────────── */
+
+function formatOnboardingTierDetail(tiers: RelayComposeTierRow[]): string {
+  if (tiers.length === 0) {
+    return "Tier bins are waiting for import. Relay will use them to organize your media.";
+  }
+  const parts = tiers.map((tier) => {
+    const title = tier.title.trim() || "Tier";
+    const dollars = (tier.amount_cents ?? 0) / 100;
+    const price =
+      Number.isInteger(dollars) ? `$${dollars}` : `$${dollars.toFixed(2)}`;
+    return `${title} (${price})`;
+  });
+  return `Tiers Detected: ${parts.join(", ")}`;
+}
+
+function normalizeOnboardingUsername(raw: string): string {
+  return raw.trim().toLowerCase().replace(/[^a-z0-9_]/g, "");
+}
 
 function sanitizePublicSlugDraft(raw: string): string {
   let s = raw.toLowerCase().replace(/_/g, "-").replace(/[^a-z0-9-]+/g, "-");
@@ -1252,16 +1286,10 @@ function isRelayExtensionOnboardingPromptEnabled(): boolean {
   return v === "1" || v === "true" || v === "yes";
 }
 
-export function StepClaimHandleAndGo({
-  onFinish,
-}: {
-  onFinish?: () => void;
-}) {
-  const [handle, setHandle] = useState<string>("");
+export function StepClaimHandleAndGo() {
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [fromPatreonHint, setFromPatreonHint] = useState(false);
+  const [importModalOpen, setImportModalOpen] = useState(false);
   const [snapshotStatus, setSnapshotStatus] = useState<
     "loading" | "profile_error" | "ready"
   >("loading");
@@ -1269,7 +1297,11 @@ export function StepClaimHandleAndGo({
   const [snapPatreon, setSnapPatreon] = useState(false);
   const [snapSubstar, setSnapSubstar] = useState(false);
   const [snapTierCount, setSnapTierCount] = useState<number | null>(null);
+  const [snapTierDetail, setSnapTierDetail] = useState<string>(
+    "Tier bins are waiting for import. Relay will use them to organize your media."
+  );
   const [snapPatronLine, setSnapPatronLine] = useState<string | null>(null);
+  const [snapRevenueLine, setSnapRevenueLine] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -1277,22 +1309,12 @@ export function StepClaimHandleAndGo({
       setError(null);
       setLoading(true);
       setSnapshotStatus("loading");
-      const ls =
-        typeof window !== "undefined"
-          ? window.localStorage.getItem(RELAY_PUBLIC_SLUG_STORAGE_KEY)?.trim() ?? ""
-          : "";
       const creatorIdLs =
         typeof window !== "undefined"
           ? window.localStorage.getItem(RELAY_CREATOR_ID_STORAGE_KEY)?.trim() ?? ""
           : "";
       try {
         setStudioIdInBrowser(creatorIdLs);
-        let slugRes: { public_slug: string } | null = null;
-        try {
-          slugRes = await fetchCreatorPublicSlug();
-        } catch {
-          /* session or network — fall back to local hint */
-        }
         let profile: CreatorProfileIdentity | null = null;
         let profileFetchError = false;
         try {
@@ -1309,15 +1331,19 @@ export function StepClaimHandleAndGo({
         setSnapSubstar(hasSs);
 
         let tiersN: number | null = null;
+        let tierDetail =
+          "Tier bins are waiting for import. Relay will use them to organize your media.";
         if (creatorIdLs) {
           try {
             const { tiers } = await fetchRelayComposeTiers(creatorIdLs);
             tiersN = tiers.length;
+            tierDetail = formatOnboardingTierDetail(tiers);
           } catch {
             tiersN = null;
           }
         }
         setSnapTierCount(tiersN);
+        setSnapTierDetail(tierDetail);
 
         let patronLine: string | null = null;
         if (hasPa) {
@@ -1328,25 +1354,30 @@ export function StepClaimHandleAndGo({
             patronLine = null;
           }
         }
+        let revenueLine: string | null = null;
+        if (hasPa) {
+          try {
+            const s = await getCreatorPatronTierSummary();
+            const monthlyCents = s.tiers.reduce(
+              (sum, tier) => sum + (tier.amount_cents ?? 0) * tier.patron_count,
+              0
+            );
+            revenueLine =
+              monthlyCents > 0
+                ? `$${(monthlyCents / 100).toLocaleString(undefined, {
+                    maximumFractionDigits: 0
+                  })}/mo detected`
+                : "No active paid revenue detected yet";
+          } catch {
+            revenueLine = null;
+          }
+        }
         setSnapPatronLine(patronLine);
+        setSnapRevenueLine(revenueLine);
 
-        const fromProfile =
-          profile?.username_norm?.trim().replace(/_/g, "-").replace(/[^a-z0-9-]+/g, "-")
-            .replace(/-+/g, "-")
-            .replace(/^-|-$/g, "") ?? "";
-        const serverSlug = slugRes?.public_slug?.trim() ?? "";
-        const next =
-          serverSlug ||
-          (fromProfile.length >= 3 ? fromProfile : "") ||
-          ls;
-        setHandle(next);
-        setFromPatreonHint(
-          Boolean(profile?.username_norm?.trim()) && !serverSlug && !ls
-        );
         setSnapshotStatus(profileFetchError ? "profile_error" : "ready");
       } catch {
         if (!cancelled) {
-          setHandle(ls);
           setSnapshotStatus("profile_error");
         }
       } finally {
@@ -1360,43 +1391,6 @@ export function StepClaimHandleAndGo({
     };
   }, []);
 
-  const sanitized = sanitizePublicSlugDraft(handle);
-  const slugOk = sanitized.length >= 3 && sanitized.length <= 32;
-  const previewPath =
-    sanitized && slugOk ? `/patron/c/${encodeURIComponent(sanitized)}` : null;
-  const previewAbsolute =
-    typeof window !== "undefined" && previewPath
-      ? `${getWebAppOrigin() || window.location.origin}${previewPath}`
-      : previewPath;
-
-  const onSubmit = async () => {
-    setError(null);
-    if (!slugOk) {
-      setError("Use 3–32 characters: lowercase letters, numbers, and hyphens only.");
-      return;
-    }
-    setSaving(true);
-    try {
-      const r = await patchCreatorPublicSlug(sanitized);
-      if (typeof window !== "undefined" && r.public_slug?.trim()) {
-        window.localStorage.setItem(RELAY_PUBLIC_SLUG_STORAGE_KEY, r.public_slug.trim());
-      }
-      onFinish?.();
-    } catch (e) {
-      if (e instanceof RelayApiError) {
-        if (e.status === 409) {
-          setError("That URL is already taken. Try another.");
-        } else {
-          setError(e.message || "Could not save your URL.");
-        }
-      } else {
-        setError(e instanceof Error ? e.message : "Could not save your URL.");
-      }
-    } finally {
-      setSaving(false);
-    }
-  };
-
   return (
     <div className="flex flex-col gap-7">
       <div className="space-y-2">
@@ -1407,68 +1401,17 @@ export function StepClaimHandleAndGo({
           icon={<Zap className="h-3 w-3" strokeWidth={2} />}
         />
         <h2 className="text-2xl font-semibold tracking-tight text-[var(--relay-fg)]">
-          Claim your gallery URL
+          What Relay sees
         </h2>
         <p className="text-sm leading-relaxed text-[var(--relay-fg-muted)]">
-          This is where patrons will discover your work.
-          {fromPatreonHint
-            ? " We suggested a path from your @username — edit if you like."
-            : ""}
+          Your profile is live. Here is the signal Relay can act on before you import your media.
         </p>
       </div>
 
-      <div className="space-y-1.5">
-        <label
-          htmlFor="onboarding-handle"
-          className="text-xs font-medium uppercase tracking-wider text-[var(--relay-fg-muted)]"
-        >
-          Your gallery URL
-        </label>
-        <div className="flex items-stretch overflow-hidden rounded-xl border border-[var(--relay-border)] bg-[var(--relay-surface-1)] transition-colors focus-within:border-[var(--relay-green-600)] focus-within:ring-1 focus-within:ring-[var(--relay-green-600)]/30">
-          <span className="select-none border-r border-[var(--relay-border)] bg-[var(--relay-bg)] px-3 py-3 text-sm text-[var(--relay-fg-muted)]">
-            …/patron/c/
-          </span>
-          <input
-            id="onboarding-handle"
-            type="text"
-            value={handle}
-            disabled={loading}
-            onChange={(e) => {
-              setHandle(e.target.value);
-            }}
-            placeholder="your-handle"
-            aria-label="Public gallery URL slug"
-            className="flex-1 bg-transparent px-3 py-3 text-sm text-[var(--relay-fg)] placeholder-[var(--relay-fg-muted)] focus:outline-none disabled:opacity-60"
-          />
-        </div>
-        {loading ? (
-          <p className="flex items-center gap-2 text-xs text-[var(--relay-fg-muted)]">
-            <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
-            Loading your URL…
-          </p>
-        ) : null}
-        {previewAbsolute ? (
-          <p className="text-xs text-[var(--relay-fg-muted)]">
-            Preview:{" "}
-            <span className="text-[var(--relay-green-400)]">{previewAbsolute}</span>
-          </p>
-        ) : null}
-        {error ? (
-          <p className="text-xs font-medium text-red-400" role="alert">
-            {error}
-          </p>
-        ) : null}
-      </div>
-
-
-      {/* Live snapshot — Patreon / Substar linkage + tiers / patron counts */}
       <div className="space-y-2">
-        <span className="text-xs font-medium uppercase tracking-wider text-[var(--relay-fg-muted)]">
-          What Relay sees
-        </span>
         <div
           className={cn(
-            "rounded-xl border border-[var(--relay-border)] bg-[var(--relay-surface-1)] p-4",
+            "rounded-2xl border border-[var(--relay-border)] bg-[var(--relay-surface-1)] p-3",
             snapshotStatus === "loading" && "opacity-70"
           )}
           aria-busy={snapshotStatus === "loading"}
@@ -1479,172 +1422,174 @@ export function StepClaimHandleAndGo({
               Checking your connected platforms and tiers…
             </p>
           ) : (
-            <>
-              <p className="text-sm font-semibold text-[var(--relay-fg)]">
-                {snapshotStatus === "profile_error" ? (
-                  <>Couldn&apos;t load your studio profile</>
-                ) : !snapPatreon && !snapSubstar ? (
-                  <>No membership platform linked to this Relay profile yet</>
-                ) : (
-                  <>You&apos;re connected — here&apos;s what Relay sees</>
-                )}
-              </p>
+            <div className="space-y-2">
               {snapshotStatus === "profile_error" ? (
-                <p className="mt-2 text-sm leading-relaxed text-[var(--relay-fg-muted)]">
+                <p className="rounded-xl border border-red-900/40 bg-red-950/30 px-3 py-2 text-sm leading-relaxed text-red-100">
                   Your session may have expired, or the Relay API may be unreachable from this page.
-                  Refresh, sign in again, then revisit step 4 — the URL form above may still work once
-                  profile loads.
+                  Refresh, sign in again, then revisit step 4.
                 </p>
               ) : null}
-              {snapshotStatus === "ready" && !snapPatreon && !snapSubstar && studioIdInBrowser ? (
-                <p className="mt-2 text-xs leading-relaxed text-[var(--relay-fg-muted)]">
-                  SubscribeStar / Patreon OAuth writes to the studio id in{" "}
-                  <strong className="font-medium text-[var(--relay-fg)]">this browser</strong> (
-                  <code className="rounded bg-black/25 px-1 font-mono text-[11px]">
-                    {studioIdInBrowser}
-                  </code>
-                  ). This card reads the studio linked to{" "}
-                  <strong className="font-medium text-[var(--relay-fg)]">your logged-in account</strong>
-                  . If those differ, reconnect from step 2 or run{" "}
-                  <strong className="font-medium text-[var(--relay-fg)]">create workspace</strong> again
-                  while signed in so the account and browser id match — then check{" "}
-                  <code className="rounded bg-black/25 px-1">CreatorProfile.subscribestarProfileId</code> /{" "}
-                  <code className="rounded bg-black/25 px-1">patreonCampaignId</code> in the DB for that
-                  relay id.
-                </p>
-              ) : null}
-              <ul className="mt-3 space-y-2.5 text-sm text-[var(--relay-fg-muted)]">
-                {snapPatreon ? (
-                  <li className="flex gap-2.5">
-                    <CheckCircle2
-                      className="mt-0.5 h-4 w-4 shrink-0 text-[var(--relay-green-500)]"
-                      strokeWidth={2}
-                      aria-hidden
-                    />
-                    <span>
-                      <span className="text-[var(--relay-fg)]">Patreon</span> is linked to this
-                      studio.
-                      {snapPatronLine ? ` ${snapPatronLine}.` : ""}
-                    </span>
-                  </li>
-                ) : null}
-                {snapSubstar ? (
-                  <li className="flex gap-2.5">
-                    <CheckCircle2
-                      className="mt-0.5 h-4 w-4 shrink-0 text-[var(--relay-green-500)]"
-                      strokeWidth={2}
-                      aria-hidden
-                    />
-                    <span>
-                      <span className="text-[var(--relay-fg)]">SubscribeStar</span> creator profile is
-                      linked to this studio.
-                    </span>
-                  </li>
-                ) : null}
-                {snapshotStatus === "ready" && !snapPatreon && !snapSubstar ? (
-                  <li className="rounded-lg border border-amber-600/35 bg-amber-950/25 px-3 py-2 text-amber-100/95">
-                    We don&apos;t see a membership platform on this studio yet. If you skipped connect
-                    in step 2, finish that in Settings, then revisit this screen.
-                  </li>
-                ) : null}
-                {snapTierCount !== null && snapTierCount > 0 ? (
-                  <li className="flex gap-2.5">
-                    <CheckCircle2
-                      className="mt-0.5 h-4 w-4 shrink-0 text-[var(--relay-green-500)]"
-                      strokeWidth={2}
-                      aria-hidden
-                    />
-                    <span>
-                      <span className="font-medium text-[var(--relay-fg)]">{snapTierCount}</span>{" "}
-                      membership tiers are available for posts and entitlements.
-                    </span>
-                  </li>
-                ) : snapPatreon || snapSubstar ? (
-                  <li className="flex gap-2.5">
-                    <span
-                      className="mt-0.5 h-4 w-4 shrink-0 rounded-full border-2 border-amber-400/55 bg-amber-500/10"
-                      aria-hidden
-                    />
-                    <span className="text-amber-100/90">
-                      Tier list is still empty or syncing. You can finish this URL now and pull catalog
-                      from the Library — or jump into manual import below.
-                    </span>
-                  </li>
-                ) : null}
-              </ul>
-            </>
+              <RelaySignalDot
+                label="Tiers"
+                status={snapTierCount !== null && snapTierCount > 0 ? "ready" : "pending"}
+                detail={snapTierDetail}
+              />
+              <RelaySignalDot
+                label="Patrons"
+                status={snapPatronLine ? "ready" : snapPatreon || snapSubstar ? "pending" : "missing"}
+                detail={
+                  snapPatronLine ??
+                  (snapPatreon || snapSubstar
+                    ? "Membership platform connected; patron snapshot has not synced yet."
+                    : `No membership platform linked to this studio yet${studioIdInBrowser ? "." : "."}`)
+                }
+              />
+              <RelaySignalDot
+                label="Revenue"
+                status={snapRevenueLine?.startsWith("$") ? "ready" : "pending"}
+                detail={snapRevenueLine ?? "Revenue appears after tier and patron snapshots sync."}
+              />
+              <RelaySignalDot
+                label="Media"
+                status="pending"
+                detail="Not connected yet. Import your media next so Relay can match art to tier access."
+              />
+            </div>
           )}
         </div>
       </div>
 
-      {/* Manual catalog path — prominent (extension not required) */}
-      <div className="space-y-2">
-        <span className="text-xs font-medium uppercase tracking-wider text-[var(--relay-fg-muted)]">
-          Bring in artwork &amp; tiers
-        </span>
-        <div className="rounded-xl border border-[var(--relay-electric)]/30 bg-[var(--relay-electric)]/8 p-4">
-          <p className="text-sm font-semibold text-[var(--relay-fg)]">Manual import (no extension)</p>
-          <p className="mt-1 text-sm leading-relaxed text-[var(--relay-fg-muted)]">
-            Upload packs, attach tiers to your plans, and stage media — works today without any browser
-            extension.
-          </p>
-          <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:flex-wrap">
-            <Link
-              href="/manual-import"
-              className="inline-flex items-center justify-center gap-2 rounded-xl bg-[var(--relay-green-600)] px-4 py-2.5 text-sm font-semibold text-[var(--relay-fg)] transition-colors hover:bg-[var(--relay-green-400)]"
-            >
-              Open manual import
-              <ArrowRight className="h-4 w-4" strokeWidth={2} />
-            </Link>
-            {snapPatreon ? (
-              <Link
-                href="/patreon/cookie"
-                className="inline-flex items-center justify-center rounded-xl border border-[var(--relay-border)] bg-[var(--relay-surface-2)] px-4 py-2.5 text-sm font-medium text-[var(--relay-fg)] transition-colors hover:border-[var(--relay-electric)]/40 hover:bg-[var(--relay-surface-1)]"
-              >
-                Connect Patreon session (cookie walkthrough)
-              </Link>
-            ) : null}
-          </div>
-        </div>
-      </div>
-
-      {isRelayExtensionOnboardingPromptEnabled() ? (
-        <div className="space-y-2">
-          <span className="text-xs font-medium uppercase tracking-wider text-[var(--relay-fg-muted)]">
-            Browser extension (optional)
-          </span>
-          <InstallExtensionPrompt variant="relay" title="Relay browser extension" />
-        </div>
-      ) : (
-        <p className="text-xs leading-relaxed text-[var(--relay-fg-muted)]">
-          One-click imports via our browser extension are{" "}
-          <span className="text-[var(--relay-fg)]">not shown here yet</span> — use manual import above.
-          When store builds are ready, set{" "}
-          <code className="rounded bg-black/25 px-1">NEXT_PUBLIC_RELAY_EXTENSION_ONBOARDING_PROMPT=1</code>{" "}
-          in{" "}
-          <code className="rounded bg-black/25 px-1">web/.env.local</code> to surface install links on
-          this step.
-        </p>
-      )}
-
       <button
         type="button"
-        onClick={() => void onSubmit()}
-        disabled={loading || saving || !slugOk}
+        onClick={() => setImportModalOpen(true)}
+        disabled={loading}
         className="flex w-full items-center justify-center gap-2 rounded-xl bg-[var(--relay-green-600)] px-5 py-3 text-sm font-semibold text-[var(--relay-fg)] transition-colors hover:bg-[var(--relay-green-400)] disabled:cursor-not-allowed disabled:opacity-60"
       >
-        {saving ? (
-          <>
-            <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
-            Saving…
-          </>
-        ) : (
-          <>
-            Take me to my gallery
-            <ArrowRight className="h-4 w-4" strokeWidth={2} />
-          </>
-        )}
+        Import your Media
+        <ArrowRight className="h-4 w-4" strokeWidth={2} />
       </button>
+
+      {isRelayExtensionOnboardingPromptEnabled() ? (
+        <InstallExtensionPrompt variant="relay" title="Relay browser extension" />
+      ) : null}
+
+      {error ? (
+        <p className="text-xs font-medium text-red-400" role="alert">
+          {error}
+        </p>
+      ) : null}
+
+      {importModalOpen ? (
+        <ImportMediaChoiceModal
+          onClose={() => setImportModalOpen(false)}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+function RelaySignalDot({
+  label,
+  status,
+  detail
+}: {
+  label: string;
+  status: "ready" | "pending" | "missing";
+  detail: string;
+}) {
+  const dotClass =
+    status === "ready"
+      ? "border-[var(--relay-green-400)] bg-[var(--relay-green-400)]"
+      : status === "pending"
+        ? "border-amber-300 bg-amber-400/30"
+        : "border-[var(--relay-border)] bg-[var(--relay-surface-2)]";
+  return (
+    <details className="group rounded-xl border border-[var(--relay-border)] bg-[var(--relay-bg)]/45 px-3 py-2.5">
+      <summary className="flex cursor-pointer list-none items-center justify-between gap-3">
+        <span className="flex items-center gap-3">
+          <span
+            className={cn("h-2.5 w-2.5 rounded-full border", dotClass)}
+            aria-hidden
+          />
+          <span className="text-sm font-semibold text-[var(--relay-fg)]">{label}</span>
+        </span>
+        <span className="text-[10px] uppercase tracking-[0.2em] text-[var(--relay-fg-muted)]">
+          {status === "ready" ? "Detected" : status === "pending" ? "Next" : "Open"}
+        </span>
+      </summary>
+      <p className="mt-2 pl-5 text-xs leading-relaxed text-[var(--relay-fg-muted)]">
+        {detail}
+      </p>
+    </details>
+  );
+}
+
+function ImportMediaChoiceModal({
+  onClose
+}: {
+  onClose: () => void;
+}) {
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4 backdrop-blur-sm"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="import-media-title"
+    >
+      <div className="w-full max-w-lg rounded-3xl border border-[var(--relay-electric)]/20 bg-[var(--relay-surface-2)] p-6 shadow-2xl">
+        <div className="flex items-start justify-between gap-4">
+          <div className="space-y-2">
+            <p className="text-[10px] font-bold uppercase tracking-[0.3em] text-[var(--relay-green-400)]">
+              Import your art
+            </p>
+            <h3
+              id="import-media-title"
+              className="text-xl font-semibold tracking-tight text-[var(--relay-fg)]"
+            >
+              Choose how Relay pulls your media
+            </h3>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-full border border-[var(--relay-border)] p-2 text-[var(--relay-fg-muted)] transition-colors hover:text-[var(--relay-fg)]"
+            aria-label="Close import options"
+          >
+            <X className="h-4 w-4" aria-hidden />
+          </button>
+        </div>
+
+        <div className="mt-6 grid gap-3">
+          <Link
+            href="/patreon/cookie"
+            className="group rounded-2xl border border-[var(--relay-green-500)]/40 bg-[var(--relay-green-600)]/15 p-4 transition-colors hover:border-[var(--relay-green-400)] hover:bg-[var(--relay-green-600)]/25"
+          >
+            <span className="flex items-center justify-between gap-3">
+              <span className="text-base font-semibold text-[var(--relay-fg)]">
+                Media Sync
+              </span>
+              <span className="rounded-full bg-[var(--relay-green-600)] px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.18em] text-[var(--relay-fg)]">
+                Recommended
+              </span>
+            </span>
+            <span className="mt-2 block text-sm leading-relaxed text-[var(--relay-fg-muted)]">
+              Pull your media automatically from Patreon. (Requires login cookie)
+            </span>
+          </Link>
+
+          <Link
+            href="/manual-import"
+            className="rounded-2xl border border-[var(--relay-border)] bg-[var(--relay-surface-1)] p-4 transition-colors hover:border-[var(--relay-electric)]/40"
+          >
+            <span className="text-base font-semibold text-[var(--relay-fg)]">
+              Manual Import
+            </span>
+            <span className="mt-2 block text-sm leading-relaxed text-[var(--relay-fg-muted)]">
+              More privacy. Upload art directly into your tiers manually.
+            </span>
+          </Link>
+        </div>
+      </div>
     </div>
   );
 }

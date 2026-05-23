@@ -33,6 +33,8 @@
     "backfill:curation": "npm run build && node scripts/backfill-curation.mjs",
     "backfill:analytics": "npm run build && node scripts/backfill-analytics.mjs",
     "backfill:patron-engagement": "npm run build && node scripts/backfill-patron-engagement.mjs",
+    "seed:pilot-ux": "npm run build && node scripts/seed-pilot-ux-dev-accounts.mjs",
+    "pilot:env-check": "npm run build && node scripts/pilot-env-check.mjs",
     "backfill:part2": "npm run build && node scripts/backfill-part2.mjs",
     "inspect:patreon-content": "node scripts/inspect-patreon-post-content.mjs",
     "probe:patreon-description": "node scripts/probe-patreon-post-description.mjs",

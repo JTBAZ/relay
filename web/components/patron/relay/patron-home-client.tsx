@@ -49,8 +49,12 @@ export function PatronHomeClient() {
   // Pre-compute where the discovery section break should appear
   const enrichedPosts = useMemo(() => {
     let dividerInserted = false;
+    let sawSubscribed = false;
     return filteredPosts.map((post) => {
-      const showDivider = post.kind === "discovery" && !dividerInserted;
+      const isDiscover = post.kind === "discovery";
+      if (!isDiscover) sawSubscribed = true;
+      const showDivider =
+        isDiscover && sawSubscribed && !dividerInserted;
       if (showDivider) dividerInserted = true;
       return { post, showDivider };
     });

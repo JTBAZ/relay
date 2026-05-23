@@ -5,6 +5,13 @@
 import type { CreatorOnboardingStep, PrismaClient } from "@prisma/client";
 import { Prisma } from "@prisma/client";
 
+import { syncHealthStatusBlocksStudioWrites } from "../patreon/creator-sync-writable.js";
+import type { CreatorSyncHealthState } from "../patreon/patreon-sync-health-store.js";
+import {
+  creatorSyncHealthStateToWebDto,
+  type SyncHealthWebDto
+} from "../patreon/sync-health-web-dto.js";
+
 /** Linear funnel: UI may only advance one step at a time via PATCH (P4-onb-003). */
 export const CREATOR_ONBOARDING_STEP_ORDER: readonly CreatorOnboardingStep[] = [
   "connected",
@@ -57,10 +64,54 @@ export async function ensureCreatorOnboardingAtLeastImportStarted(
   });
 }
 
-/** P4-onb-006 — reasons layout publish may be blocked when Prisma is configured. */
+/** P4-onb-006 / PILOT-009b — reasons layout publish may be blocked when Prisma is configured. */
 export type LayoutPublishBlock =
   | { code: "ONBOARDING_INCOMPLETE"; current_step: CreatorOnboardingStep }
-  | { code: "SYNC_POST_SCRAPE_FAILED"; message?: string };
+  | { code: "SYNC_POST_SCRAPE_FAILED"; message?: string }
+  | {
+      code: "SYNC_DEGRADED";
+      sync_health_status: SyncHealthWebDto["status"];
+      message_key: string;
+    };
+
+function syncHealthStateFromSyncRow(row: {
+  lastPostScrape: unknown;
+  lastMemberSync: unknown;
+} | null): CreatorSyncHealthState | null {
+  if (!row) return null;
+  const out: CreatorSyncHealthState = {};
+  if (row.lastPostScrape != null) {
+    out.last_post_scrape = row.lastPostScrape as CreatorSyncHealthState["last_post_scrape"];
+  }
+  if (row.lastMemberSync != null) {
+    out.last_member_sync = row.lastMemberSync as CreatorSyncHealthState["last_member_sync"];
+  }
+  return out;
+}
+
+async function readSyncHealthDto(
+  prisma: PrismaClient,
+  creatorId: string
+): Promise<SyncHealthWebDto> {
+  const syncRow = await prisma.creatorSyncState.findUnique({
+    where: { creatorId },
+    select: { lastPostScrape: true, lastMemberSync: true }
+  });
+  return creatorSyncHealthStateToWebDto(syncHealthStateFromSyncRow(syncRow));
+}
+
+type SyncHealthPublishBlock = Exclude<LayoutPublishBlock, { code: "ONBOARDING_INCOMPLETE" }>;
+
+function syncHealthPublishBlock(dto: SyncHealthWebDto): SyncHealthPublishBlock | null {
+  if (!syncHealthStatusBlocksStudioWrites(dto.status)) {
+    return null;
+  }
+  return {
+    code: "SYNC_DEGRADED",
+    sync_health_status: dto.status,
+    message_key: dto.message_key
+  };
+}
 
 /**
  * When an onboarding row exists, layout publish requires step `published`. Legacy creators (no row) are not blocked by onboarding.
@@ -83,27 +134,26 @@ export async function getLayoutPublishBlock(
     return { code: "ONBOARDING_INCOMPLETE", current_step: onboarding.step };
   }
 
-  const syncRow = await prisma.creatorSyncState.findUnique({
-    where: { creatorId },
-    select: { lastPostScrape: true }
-  });
-  const scrape = syncRow?.lastPostScrape;
-  if (scrape != null && typeof scrape === "object" && !Array.isArray(scrape)) {
-    const ok = (scrape as Record<string, unknown>).ok;
-    if (ok === false) {
-      const err = (scrape as Record<string, unknown>).error;
-      let message: string | undefined;
-      if (err != null && typeof err === "object" && !Array.isArray(err)) {
-        const m = (err as Record<string, unknown>).message;
-        if (typeof m === "string" && m.trim()) {
-          message = m;
-        }
-      }
-      return { code: "SYNC_POST_SCRAPE_FAILED", message };
-    }
+  const syncHealth = await readSyncHealthDto(prisma, creatorId);
+  const degraded = syncHealthPublishBlock(syncHealth);
+  if (degraded) {
+    return degraded;
   }
 
   return null;
+}
+
+/** Blocks advancing onboarding to `published` when sync rollup is degraded or failed. */
+export async function getOnboardingPublishAdvanceBlock(
+  prisma: PrismaClient,
+  relayCreatorId: string
+): Promise<SyncHealthPublishBlock | null> {
+  const creatorId = relayCreatorId.trim();
+  if (!creatorId) {
+    return null;
+  }
+  const syncHealth = await readSyncHealthDto(prisma, creatorId);
+  return syncHealthPublishBlock(syncHealth);
 }
 
 export class OnboardingTransitionError extends Error {
@@ -115,6 +165,26 @@ export class OnboardingTransitionError extends Error {
   ) {
     super(message);
   }
+}
+
+export class OnboardingPublishBlockedError extends Error {
+  public override readonly name = "OnboardingPublishBlockedError";
+
+  public constructor(public readonly block: SyncHealthPublishBlock) {
+    super(onboardingPublishBlockMessage(block));
+  }
+}
+
+export function onboardingPublishBlockMessage(block: SyncHealthPublishBlock): string {
+  if (block.code === "SYNC_POST_SCRAPE_FAILED") {
+    return `Patreon post sync failed — fix sync health before publishing.${
+      block.message ? ` (${block.message})` : ""
+    }`;
+  }
+  if (block.sync_health_status === "failed") {
+    return "Patreon sync failed — open the sync menu in Library and fix import health before going live.";
+  }
+  return "Patreon sync is degraded — resolve sync warnings in Library before going live.";
 }
 
 /**
@@ -196,6 +266,13 @@ export async function patchCreatorOnboarding(
   const targetStep = hasStep ? patch.step! : row.step;
   assertCreatorOnboardingTransition(row.step, targetStep);
 
+  if (hasStep && targetStep === "published") {
+    const block = await getOnboardingPublishAdvanceBlock(prisma, creatorId);
+    if (block) {
+      throw new OnboardingPublishBlockedError(block);
+    }
+  }
+
   const data: {
     step?: CreatorOnboardingStep;
     metadata?: Prisma.NullableJsonNullValueInput | Prisma.InputJsonValue;
@@ -216,16 +293,18 @@ export async function patchCreatorOnboarding(
 
   const syncState = await prisma.creatorSyncState.findUnique({
     where: { creatorId },
-    select: { lastPostScrape: true }
+    select: { lastPostScrape: true, lastMemberSync: true }
   });
   const importProgress = parseLastPostScrape(syncState?.lastPostScrape ?? null);
+  const sync_health = creatorSyncHealthStateToWebDto(syncHealthStateFromSyncRow(syncState));
 
   return {
     creator_id: creatorId,
     step: updated.step,
     metadata: updated.metadata ?? null,
     updated_at: updated.updatedAt.toISOString(),
-    import_progress: importProgress
+    import_progress: importProgress,
+    sync_health
   };
 }
 
@@ -242,6 +321,7 @@ export type CreatorOnboardingReadModel = {
   metadata: unknown | null;
   updated_at: string;
   import_progress: CreatorOnboardingImportProgress | null;
+  sync_health: SyncHealthWebDto;
 };
 
 function parseLastPostScrape(blob: unknown): CreatorOnboardingImportProgress | null {
@@ -288,7 +368,7 @@ export async function getCreatorOnboardingForStudio(
     }),
     prisma.creatorSyncState.findUnique({
       where: { creatorId },
-      select: { lastPostScrape: true }
+      select: { lastPostScrape: true, lastMemberSync: true }
     })
   ]);
 
@@ -300,12 +380,14 @@ export async function getCreatorOnboardingForStudio(
     }));
 
   const importProgress = parseLastPostScrape(syncState?.lastPostScrape ?? null);
+  const sync_health = creatorSyncHealthStateToWebDto(syncHealthStateFromSyncRow(syncState));
 
   return {
     creator_id: creatorId,
     step: row.step,
     metadata: row.metadata ?? null,
     updated_at: row.updatedAt.toISOString(),
-    import_progress: importProgress
+    import_progress: importProgress,
+    sync_health
   };
 }

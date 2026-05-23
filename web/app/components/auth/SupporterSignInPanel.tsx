@@ -95,16 +95,15 @@ export function SupporterSignInPanel() {
 
   return (
     <div
-      className="rounded-xl border p-5"
-      style={{ background: "#111111", borderColor: "#2A2A2A" }}
+      className="rounded-2xl border p-6 shadow-[0_8px_32px_-8px_rgba(0,0,0,0.6)]"
+      style={{ background: "var(--relay-surface-1)", borderColor: "var(--relay-border)" }}
     >
       <div className="mb-4 space-y-1">
-        <h3 className="text-sm font-semibold" style={{ color: "#F9FAFB" }}>
-          Relay supporter account
+        <h3 className="text-sm font-semibold" style={{ color: "var(--relay-fg)" }}>
+          Supporter account
         </h3>
-        <p className="text-xs leading-relaxed" style={{ color: "#9CA3AF" }}>
-          Creates a verified account in our database. After sign-in you&apos;ll link your Patreon
-          to access your supporter feed.
+        <p className="text-xs leading-relaxed" style={{ color: "var(--relay-fg-muted)" }}>
+          Use the email connected to your Relay account.
         </p>
       </div>
 
@@ -117,8 +116,8 @@ export function SupporterSignInPanel() {
       )}
 
       <div
-        className="mb-3 flex gap-0.5 rounded-lg p-0.5"
-        style={{ background: "#111111", border: "1px solid #2A2A2A" }}
+        className="mb-3 flex gap-0.5 rounded-xl p-1"
+        style={{ background: "var(--relay-bg)", border: "1px solid var(--relay-border)" }}
         role="tablist"
       >
         {(["sign-in", "sign-up"] as const).map((m) => (
@@ -128,11 +127,11 @@ export function SupporterSignInPanel() {
             role="tab"
             aria-selected={mode === m}
             onClick={() => { setMode(m); setMessage(null); }}
-            className="flex-1 rounded-md py-2 text-xs font-medium transition-colors"
+            className="flex-1 rounded-lg py-2 text-xs font-medium transition-colors"
             style={
               mode === m
-                ? { background: "#1A1A1A", color: "#F9FAFB", border: "1px solid #2A2A2A" }
-                : { color: "#9CA3AF", border: "1px solid transparent" }
+                ? { background: "var(--relay-surface-2)", color: "var(--relay-fg)", border: "1px solid var(--relay-border)" }
+                : { color: "var(--relay-fg-muted)", border: "1px solid transparent" }
             }
           >
             {m === "sign-in" ? "Sign in" : "Create account"}
@@ -148,7 +147,7 @@ export function SupporterSignInPanel() {
           value={email}
           onChange={(e) => setEmail(e.target.value)}
           placeholder="Email"
-          className="w-full rounded-lg border border-[#2A2A2A] bg-[#0d0d0d] px-3 py-2.5 text-sm text-[#F9FAFB] placeholder:text-[#6B7280] focus:border-[#2D6A4F] focus:outline-none"
+          className="w-full rounded-xl border border-[var(--relay-border)] bg-[var(--relay-bg)] px-3 py-2.5 text-sm text-[var(--relay-fg)] placeholder:text-[var(--relay-gray-500)] focus:border-[var(--relay-green-600)] focus:outline-none"
         />
         <input
           type="password"
@@ -157,7 +156,7 @@ export function SupporterSignInPanel() {
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           placeholder="Password"
-          className="w-full rounded-lg border border-[#2A2A2A] bg-[#0d0d0d] px-3 py-2.5 text-sm text-[#F9FAFB] placeholder:text-[#6B7280] focus:border-[#2D6A4F] focus:outline-none"
+          className="w-full rounded-xl border border-[var(--relay-border)] bg-[var(--relay-bg)] px-3 py-2.5 text-sm text-[var(--relay-fg)] placeholder:text-[var(--relay-gray-500)] focus:border-[var(--relay-green-600)] focus:outline-none"
         />
 
         {message && (
@@ -173,8 +172,8 @@ export function SupporterSignInPanel() {
         <button
           type="submit"
           disabled={busy}
-          className="flex w-full items-center justify-center gap-2 rounded-lg py-2.5 text-sm font-medium text-[#F9FAFB] transition-colors disabled:opacity-50"
-          style={{ background: "#2D6A4F" }}
+          className="flex w-full items-center justify-center gap-2 rounded-xl py-2.5 text-sm font-medium text-[var(--relay-fg)] transition-colors disabled:opacity-50"
+          style={{ background: "var(--relay-green-600)" }}
         >
           {busy ? (
             <>
@@ -184,7 +183,7 @@ export function SupporterSignInPanel() {
           ) : mode === "sign-in" ? (
             "Continue to feed"
           ) : (
-            "Create supporter account"
+            "Create account"
           )}
         </button>
       </form>

@@ -1,0 +1,185 @@
+@import 'tailwindcss';
+@import 'tw-animate-css';
+
+@custom-variant dark (&:is(.dark *));
+
+:root {
+  /* ── Base — deep cinematic black ── */
+  --background:       oklch(0.08 0.005 260);
+  --foreground:       oklch(0.94 0.005 260);
+
+  /* ── Surfaces — rich layered grays ── */
+  --surface-0:        oklch(0.08 0.005 260);  /* page bg */
+  --surface-1:        oklch(0.12 0.008 260);  /* card */
+  --surface-2:        oklch(0.16 0.008 260);  /* raised */
+  --surface-3:        oklch(0.20 0.008 260);  /* hover */
+  --surface-4:        oklch(0.24 0.008 260);  /* active */
+  --surface-canvas:   oklch(0.10 0.006 260);  /* editor canvas */
+
+  /* ── Borders — soft ── */
+  --border:           oklch(0.22 0.01 260);
+  --border-mid:       oklch(0.28 0.01 260);
+  --border-strong:    oklch(0.36 0.01 260);
+
+  /* ── Text — high contrast but warm ── */
+  --text-hi:          oklch(0.96 0 0);
+  --text-mid:         oklch(0.75 0.01 260);
+  --text-lo:          oklch(0.55 0.01 260);
+  --text-mute:        oklch(0.40 0.01 260);
+
+  /* ── Accent — emerald for selections/CTAs ── */
+  --accent:           oklch(0.68 0.18 155);
+  --accent-soft:      oklch(0.68 0.18 155 / 0.12);
+  --accent-border:    oklch(0.68 0.18 155 / 0.50);
+
+  /* ── Selection — violet for edit mode outlines ── */
+  --select:           oklch(0.70 0.18 280);
+  --select-soft:      oklch(0.70 0.18 280 / 0.12);
+  --select-border:    oklch(0.70 0.18 280 / 0.60);
+
+  /* ── Gold — warm highlight ── */
+  --gold:             oklch(0.82 0.14 75);
+  --gold-soft:        oklch(0.82 0.14 75 / 0.12);
+
+  /* ── Semantic ── */
+  --primary:          var(--accent);
+  --primary-foreground: oklch(0.10 0.01 168);
+  --secondary:        var(--surface-2);
+  --secondary-foreground: var(--text-mid);
+  --muted:            var(--surface-1);
+  --muted-foreground: var(--text-lo);
+  --destructive:      oklch(0.65 0.20 25);
+  --destructive-soft: oklch(0.65 0.20 25 / 0.12);
+  --ok:               oklch(0.72 0.16 155);
+  --ok-soft:          oklch(0.72 0.16 155 / 0.12);
+  --warn:             oklch(0.80 0.14 70);
+  --warn-soft:        oklch(0.80 0.14 70 / 0.12);
+  --ring:             var(--accent);
+  --radius:           0.75rem;
+}
+
+@theme inline {
+  --font-sans: 'Geist', 'Geist Fallback', system-ui, sans-serif;
+  --font-mono: 'Geist Mono', 'Geist Mono Fallback', ui-monospace, monospace;
+
+  --color-background:   var(--background);
+  --color-foreground:   var(--foreground);
+  --color-primary:      var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary:    var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted:        var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent:       var(--accent);
+  --color-accent-foreground: var(--primary-foreground);
+  --color-destructive:  var(--destructive);
+  --color-border:       var(--border);
+  --color-ring:         var(--ring);
+
+  --radius-sm:  calc(var(--radius) - 4px);
+  --radius-md:  var(--radius);
+  --radius-lg:  calc(var(--radius) + 6px);
+  --radius-xl:  calc(var(--radius) + 12px);
+  --radius-full: 9999px;
+
+  /* Custom surface tokens */
+  --color-surface-0:      var(--surface-0);
+  --color-surface-1:      var(--surface-1);
+  --color-surface-2:      var(--surface-2);
+  --color-surface-3:      var(--surface-3);
+  --color-surface-4:      var(--surface-4);
+  --color-border-mid:     var(--border-mid);
+  --color-border-strong:  var(--border-strong);
+  --color-text-hi:        var(--text-hi);
+  --color-text-mid:       var(--text-mid);
+  --color-text-lo:        var(--text-lo);
+  --color-text-mute:      var(--text-mute);
+  --color-gold:           var(--gold);
+  --color-gold-soft:      var(--gold-soft);
+  --color-ok:             var(--ok);
+  --color-ok-soft:        var(--ok-soft);
+  --color-warn:           var(--warn);
+  --color-warn-soft:      var(--warn-soft);
+  --color-destructive-soft: var(--destructive-soft);
+  --color-accent-soft:    var(--accent-soft);
+  --color-accent-border:  var(--accent-border);
+  --color-select:         var(--select);
+  --color-select-soft:    var(--select-soft);
+  --color-select-border:  var(--select-border);
+  --color-surface-canvas: var(--surface-canvas);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+  }
+
+  /* ── Library Theme — map to design tokens ── */
+  :root {
+    --lib-bg:             var(--surface-0);
+    --lib-card:           var(--surface-1);
+    --lib-sidebar:        var(--surface-0);
+    --lib-sidebar-accent: var(--surface-2);
+    --lib-tile:           var(--surface-1);
+    --lib-input:          var(--surface-2);
+    --lib-muted:          var(--surface-2);
+    --lib-border:         var(--border);
+    --lib-fg:             var(--text-hi);
+    --lib-fg-mute:        var(--text-lo);
+    --lib-fg-muted:       var(--text-mute);
+    --lib-primary:        var(--accent);
+    --lib-primary-fg:     var(--primary-foreground);
+    --lib-selection:      var(--select);
+    --lib-destructive:    var(--destructive);
+    --lib-destructive-soft: var(--destructive-soft);
+  }
+}
+
+/* Tooltip — friendlier */
+[data-tooltip] {
+  position: relative;
+}
+[data-tooltip]::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+  white-space: nowrap;
+  max-width: 220px;
+  white-space: normal;
+  text-align: center;
+  background: var(--surface-3);
+  color: var(--text-hi);
+  font-size: 12px;
+  font-weight: 500;
+  padding: 8px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--border-mid);
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.15s;
+  z-index: 50;
+  box-shadow: 0 4px 12px oklch(0 0 0 / 0.3);
+}
+[data-tooltip]:hover::after {
+  opacity: 1;
+}
+
+/* Drawer slide-in */
+@keyframes drawer-in {
+  from { opacity: 0; transform: translateX(24px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+.drawer-open {
+  animation: drawer-in 0.25s ease-out forwards;
+}
+
+/* Smooth scrollbar */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border-mid); border-radius: 6px; }
+::-webkit-scrollbar-thumb:hover { background: var(--border-strong); }

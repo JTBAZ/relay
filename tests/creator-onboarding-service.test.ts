@@ -4,6 +4,8 @@ import {
   ensureCreatorOnboardingAtLeastImportStarted,
   getCreatorOnboardingForStudio,
   getLayoutPublishBlock,
+  getOnboardingPublishAdvanceBlock,
+  OnboardingPublishBlockedError,
   patchCreatorOnboarding
 } from "../src/creator/onboarding-service.js";
 
@@ -21,7 +23,8 @@ describe("getCreatorOnboardingForStudio", () => {
         finished_at: "2026-05-08T11:00:00.000Z",
         ok: true,
         apply_result: { posts_written: 12 }
-      }
+      },
+      lastMemberSync: null
     });
     const prisma = {
       creatorOnboardingState: { findUnique: onboardingFind, create },
@@ -39,6 +42,13 @@ describe("getCreatorOnboardingForStudio", () => {
         last_post_scrape_finished_at: "2026-05-08T11:00:00.000Z",
         last_post_scrape_ok: true,
         last_post_scrape_posts_written: 12
+      },
+      sync_health: {
+        status: "healthy",
+        last_success_at: "2026-05-08T11:00:00.000Z",
+        last_error: null,
+        campaign_id: null,
+        message_key: "sync_health.healthy"
       }
     });
     expect(create).not.toHaveBeenCalled();
@@ -61,6 +71,7 @@ describe("getCreatorOnboardingForStudio", () => {
     const out = await getCreatorOnboardingForStudio(prisma, "cr_new");
     expect(out.step).toBe("connected");
     expect(out.import_progress).toBeNull();
+    expect(out.sync_health.status).toBe("unknown");
     expect(create).toHaveBeenCalledWith({
       data: { creatorId: "cr_new", step: "connected" },
       select: { step: true, metadata: true, updatedAt: true }
@@ -200,7 +211,7 @@ describe("getLayoutPublishBlock", () => {
     expect(await getLayoutPublishBlock(prisma, "cr_ok")).toBeNull();
   });
 
-  it("blocks when last post scrape ok is false", async () => {
+  it("blocks when last post scrape ok is false (sync_health failed rollup)", async () => {
     const prisma = {
       creatorOnboardingState: {
         findUnique: vi.fn().mockResolvedValue({ step: "published" as CreatorOnboardingStep })
@@ -211,15 +222,91 @@ describe("getLayoutPublishBlock", () => {
             finished_at: "2026-01-01",
             ok: false,
             error: { code: "x", message: "bad", hint: "" }
-          }
+          },
+          lastMemberSync: null
         })
       }
     } as unknown as PrismaClient;
 
     expect(await getLayoutPublishBlock(prisma, "cr_bad")).toEqual({
-      code: "SYNC_POST_SCRAPE_FAILED",
-      message: "bad"
+      code: "SYNC_DEGRADED",
+      sync_health_status: "failed",
+      message_key: "sync_health.post_scrape_failed"
     });
+  });
+
+  it("blocks when member sync failed rollup is degraded", async () => {
+    const prisma = {
+      creatorOnboardingState: {
+        findUnique: vi.fn().mockResolvedValue({ step: "published" as CreatorOnboardingStep })
+      },
+      creatorSyncState: {
+        findUnique: vi.fn().mockResolvedValue({
+          lastPostScrape: {
+            finished_at: "2026-01-01",
+            ok: true,
+            patreon_campaign_id: "camp_1"
+          },
+          lastMemberSync: {
+            finished_at: "2026-01-02",
+            ok: false,
+            error: { code: "m", message: "member bad", hint: "retry member sync" }
+          }
+        })
+      }
+    } as unknown as PrismaClient;
+
+    expect(await getLayoutPublishBlock(prisma, "cr_member_bad")).toEqual({
+      code: "SYNC_DEGRADED",
+      sync_health_status: "degraded",
+      message_key: "sync_health.member_sync_failed"
+    });
+  });
+});
+
+describe("getOnboardingPublishAdvanceBlock", () => {
+  it("returns null when sync health is healthy", async () => {
+    const prisma = {
+      creatorSyncState: {
+        findUnique: vi.fn().mockResolvedValue({
+          lastPostScrape: { finished_at: "2026-01-01", ok: true },
+          lastMemberSync: null
+        })
+      }
+    } as unknown as PrismaClient;
+    expect(await getOnboardingPublishAdvanceBlock(prisma, "cr_ok")).toBeNull();
+  });
+});
+
+describe("patchCreatorOnboarding publish gate", () => {
+  it("rejects advance to published when sync_health is failed", async () => {
+    const t0 = new Date("2026-05-08T11:00:00.000Z");
+    const prisma = {
+      creatorOnboardingState: {
+        findUnique: vi.fn().mockResolvedValue({
+          step: "organized" as CreatorOnboardingStep,
+          metadata: null,
+          updatedAt: t0
+        }),
+        create: vi.fn(),
+        update: vi.fn()
+      },
+      creatorSyncState: {
+        findUnique: vi.fn().mockResolvedValue({
+          lastPostScrape: {
+            finished_at: "2026-01-01",
+            ok: false,
+            error: { code: "x", message: "bad", hint: "" }
+          },
+          lastMemberSync: null
+        })
+      }
+    } as unknown as PrismaClient;
+
+    await expect(
+      patchCreatorOnboarding(prisma, "cr_x", { step: "published" })
+    ).rejects.toBeInstanceOf(OnboardingPublishBlockedError);
+    expect(prisma.creatorOnboardingState.update).not.toHaveBeenCalled();
   });
 });
 

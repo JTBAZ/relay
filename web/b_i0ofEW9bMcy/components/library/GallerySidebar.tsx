@@ -1,0 +1,438 @@
+"use client";
+
+import { useCallback, useMemo, useState, type ElementType } from "react";
+import {
+  Download,
+  Eye,
+  EyeOff,
+  FileText,
+  Layers,
+  Plus,
+  Repeat,
+  Search,
+  ShieldAlert
+} from "lucide-react";
+import { RELAY_API_BASE, relayRequest, type Collection, type FacetsData } from "@/lib/relay-api";
+import MediaTypeMultiSelect, { type MediaTypeValue } from "./MediaTypeMultiSelect";
+
+function formatExportedBytes(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes < 0) return "—";
+  if (bytes === 0) return "0 B";
+  const units = ["B", "KB", "MB", "GB", "TB"];
+  let v = bytes;
+  let i = 0;
+  while (v >= 1024 && i < units.length - 1) {
+    v /= 1024;
+    i += 1;
+  }
+  const rounded =
+    i === 0 ? String(Math.round(v)) : v >= 10 ? String(Math.round(v)) : v.toFixed(1);
+  return `${rounded} ${units[i]}`;
+}
+
+type VisibilityState = {
+  hidden: boolean;
+  mature: boolean;
+};
+
+type Props = {
+  creatorId: string;
+  facets: FacetsData;
+  q: string;
+  onSetQ: (v: string) => void;
+  mediaTypes: MediaTypeValue[];
+  onSetMediaTypes: (v: MediaTypeValue[]) => void;
+  tagPick: string[];
+  tierPick: string[];
+  visibility: VisibilityState;
+  onSetVisibility: (next: VisibilityState) => void;
+  showTextOnlyPosts: boolean;
+  onSetShowTextOnlyPosts: (v: boolean) => void;
+  showShadowCovers: boolean;
+  onSetShowShadowCovers: (v: boolean) => void;
+  videoLoop: boolean;
+  onSetVideoLoop: (v: boolean) => void;
+  onToggleTag: (t: string) => void;
+  onToggleTier: (t: string) => void;
+  /** Tier ids merged into the single "Free" Access chip (public + free follower). */
+  freePublicTierIds: string[];
+  onToggleFreePublicTierGroup: () => void;
+  collections: Collection[];
+  activeCollectionId: string | null;
+  onSelectCollection: (id: string | null) => void;
+  selectedPostCount: number;
+  onRequestAddSelectionToCollection: (collectionId: string) => void;
+  assetsInView: number;
+  collectionCount: number;
+};
+
+function VisibilityToggle({
+  icon: Icon,
+  label,
+  checked,
+  onChange
+}: {
+  icon: ElementType;
+  label: string;
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+}) {
+  return (
+    <label className="group flex cursor-pointer items-center justify-between rounded-lg px-1 py-0.5 transition-colors hover:bg-[var(--lib-sidebar-accent)]">
+      <div className="flex items-center gap-2.5">
+        <Icon className="h-4 w-4 text-[var(--lib-fg-muted)] transition-colors group-hover:text-[var(--lib-fg)]" />
+        <span className="text-xs font-medium text-[var(--lib-fg-muted)] transition-colors group-hover:text-[var(--lib-fg)]">
+          {label}
+        </span>
+      </div>
+      <button
+        type="button"
+        onClick={() => onChange(!checked)}
+        className={`relative h-5 w-9 rounded-full p-0.5 transition-colors ${
+          checked ? "bg-[var(--lib-primary)]" : "bg-[var(--lib-muted)]"
+        }`}
+        aria-pressed={checked}
+      >
+        <span
+          className={`block h-4 w-4 rounded-full bg-white shadow-sm transition-transform ${
+            checked ? "translate-x-4" : "translate-x-0"
+          }`}
+        />
+      </button>
+    </label>
+  );
+}
+
+export default function GallerySidebar({
+  creatorId,
+  facets,
+  q,
+  onSetQ,
+  mediaTypes,
+  onSetMediaTypes,
+  tagPick,
+  tierPick,
+  visibility,
+  onSetVisibility,
+  showTextOnlyPosts,
+  onSetShowTextOnlyPosts,
+  showShadowCovers,
+  onSetShowShadowCovers,
+  videoLoop,
+  onSetVideoLoop,
+  onToggleTag,
+  onToggleTier,
+  freePublicTierIds,
+  onToggleFreePublicTierGroup,
+  collections,
+  activeCollectionId,
+  onSelectCollection,
+  selectedPostCount,
+  onRequestAddSelectionToCollection,
+  assetsInView,
+  collectionCount
+}: Props) {
+  const [tagSearch, setTagSearch] = useState("");
+  const [visibleTagCount, setVisibleTagCount] = useState(20);
+  const [zipLoading, setZipLoading] = useState(false);
+  const [zipError, setZipError] = useState<string | null>(null);
+
+  const downloadLibraryZip = useCallback(async () => {
+    setZipError(null);
+    setZipLoading(true);
+    try {
+      const u = new URLSearchParams();
+      u.set("creator_id", creatorId);
+      // Pre-flight: lightweight HEAD to verify the ZIP endpoint is reachable and has content.
+      const checkRes = await relayRequest(
+        `/api/v1/export/library-zip?${u.toString()}`,
+        { method: "HEAD" }
+      );
+      if (!checkRes.ok) {
+        if (checkRes.status === 404) {
+          throw new Error(
+            "No exported media yet. Run a Patreon sync first, then try again."
+          );
+        }
+        throw new Error(
+          `Relay API returned ${checkRes.status}. Is the API running?`
+        );
+      }
+      // Trigger a native browser download via anchor click — bypasses fetch().blob()
+      // which fails on large responses proxied through Next.js dev server.
+      const downloadUrl = `${RELAY_API_BASE}/api/v1/export/library-zip?${u.toString()}`;
+      const a = document.createElement("a");
+      a.href = downloadUrl;
+      const safe = creatorId.replace(/[^\w.-]+/g, "_") || "library";
+      a.download = `relay-library-${safe}.zip`;
+      a.rel = "noopener";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+    } catch (e) {
+      setZipError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setZipLoading(false);
+    }
+  }, [creatorId]);
+
+  const filteredTags = useMemo(() => {
+    const search = tagSearch.trim().toLowerCase();
+    if (!search) return facets.tag_ids;
+    return facets.tag_ids.filter((tag) => tag.toLowerCase().includes(search));
+  }, [facets.tag_ids, tagSearch]);
+
+  const displayedTags = filteredTags.slice(0, visibleTagCount);
+  const remainingTagCount = Math.max(0, filteredTags.length - displayedTags.length);
+
+  const freePublicSet = useMemo(() => new Set(freePublicTierIds), [freePublicTierIds]);
+  const otherAccessTiers = useMemo(
+    () => facets.tiers.filter((t) => !freePublicSet.has(t.tier_id)),
+    [facets.tiers, freePublicSet]
+  );
+  const freeChipSelected =
+    freePublicTierIds.length > 0 && freePublicTierIds.every((id) => tierPick.includes(id));
+
+  return (
+    <aside className="flex min-h-0 w-full shrink-0 flex-col border-b border-[var(--lib-border)] bg-[var(--lib-sidebar)] lg:w-60 lg:border-b-0 lg:border-r">
+      {/* Search + media type filter */}
+      <div className="space-y-3 border-b border-[var(--lib-border)] p-4">
+        <div className="flex items-center gap-2.5 rounded-xl border border-[var(--lib-border)] bg-[var(--lib-input)] px-3 py-2 transition-colors focus-within:border-[var(--lib-primary)]/50">
+          <Search
+            className="h-4 w-4 shrink-0 text-[var(--lib-fg-muted)]"
+            aria-hidden
+          />
+          <input
+            value={q}
+            onChange={(e) => onSetQ(e.target.value)}
+            placeholder="Search assets..."
+            className="min-w-0 flex-1 bg-transparent text-sm text-[var(--lib-fg)] placeholder:text-[var(--lib-fg-muted)] outline-none"
+          />
+        </div>
+        <MediaTypeMultiSelect selected={mediaTypes} onChange={onSetMediaTypes} />
+      </div>
+
+      <div className="flex-1 space-y-6 overflow-y-auto p-4">
+        <section>
+          <h3 className="mb-3 text-[11px] font-medium uppercase tracking-wide text-[var(--lib-fg-muted)]">
+            Access
+          </h3>
+          <div className="flex flex-wrap gap-1.5">
+            {freePublicTierIds.length > 0 ? (
+              <button
+                type="button"
+                onClick={onToggleFreePublicTierGroup}
+                title="Includes public posts"
+                className={`rounded-lg border px-2.5 py-1 text-xs font-medium transition-colors ${
+                  freeChipSelected
+                    ? "border-[var(--lib-primary)] bg-[var(--lib-primary)] text-[var(--lib-primary-fg)]"
+                    : "border-[var(--lib-border)] bg-[var(--lib-sidebar-accent)] text-[var(--lib-fg)] hover:border-[var(--lib-primary)]/50"
+                }`}
+              >
+                Free
+              </button>
+            ) : null}
+            {otherAccessTiers.map((tier) => (
+              <button
+                key={tier.tier_id}
+                type="button"
+                onClick={() => onToggleTier(tier.tier_id)}
+                className={`rounded-lg border px-2.5 py-1 text-xs font-medium transition-colors ${
+                  tierPick.includes(tier.tier_id)
+                    ? "border-[var(--lib-primary)] bg-[var(--lib-primary)] text-[var(--lib-primary-fg)]"
+                    : "border-[var(--lib-border)] bg-[var(--lib-sidebar-accent)] text-[var(--lib-fg)] hover:border-[var(--lib-primary)]/50"
+                }`}
+              >
+                {tier.title}
+              </button>
+            ))}
+          </div>
+        </section>
+
+        <section>
+          <h3 className="mb-3 text-[11px] font-medium uppercase tracking-wide text-[var(--lib-fg-muted)]">
+            Tags
+          </h3>
+          <input
+            value={tagSearch}
+            onChange={(e) => {
+              setTagSearch(e.target.value);
+              setVisibleTagCount(20);
+            }}
+            placeholder="Filter tags..."
+            className="mb-3 w-full rounded-lg border border-[var(--lib-border)] bg-[var(--lib-input)] px-2.5 py-1.5 text-xs text-[var(--lib-fg)] placeholder:text-[var(--lib-fg-muted)] outline-none focus:border-[var(--lib-primary)]/50"
+          />
+          <div className="flex flex-wrap gap-1.5">
+            {displayedTags.map((tag) => (
+              <button
+                key={tag}
+                type="button"
+                onClick={() => onToggleTag(tag)}
+                className={`rounded-lg border px-2.5 py-1 text-xs font-medium transition-colors ${
+                  tagPick.includes(tag)
+                    ? "border-[var(--lib-primary)] bg-[var(--lib-primary)] text-[var(--lib-primary-fg)]"
+                    : "border-[var(--lib-border)] bg-[var(--lib-sidebar-accent)] text-[var(--lib-fg)] hover:border-[var(--lib-primary)]/50"
+                }`}
+              >
+                {tag}
+              </button>
+            ))}
+          </div>
+          {remainingTagCount > 0 ? (
+            <button
+              type="button"
+              onClick={() => setVisibleTagCount((count) => count + 20)}
+              className="mt-2 text-[11px] font-medium text-[var(--lib-primary)] hover:underline"
+            >
+              Show {Math.min(remainingTagCount, 20)} more
+            </button>
+          ) : null}
+        </section>
+
+        <section>
+          <div className="mb-3 flex items-center justify-between gap-2">
+            <h3 className="text-[11px] font-medium uppercase tracking-wide text-[var(--lib-fg-muted)]">
+              Collections
+            </h3>
+            {activeCollectionId !== null ? (
+              <button
+                type="button"
+                onClick={() => onSelectCollection(null)}
+                className="rounded-lg px-2 py-0.5 text-[11px] font-medium text-[var(--lib-fg-muted)] hover:bg-[var(--lib-sidebar-accent)] hover:text-[var(--lib-fg)]"
+              >
+                Clear
+              </button>
+            ) : null}
+          </div>
+          <div className="space-y-1.5">
+            {collections.slice(0, 8).map((collection) => (
+              <div
+                key={collection.collection_id}
+                className={`flex w-full items-center justify-between gap-2 rounded-xl border px-3 py-2 text-left text-xs transition-colors ${
+                  activeCollectionId === collection.collection_id
+                    ? "border-[var(--lib-primary)] bg-[var(--lib-primary)] text-[var(--lib-primary-fg)]"
+                    : "border-[var(--lib-border)] bg-[var(--lib-sidebar-accent)] text-[var(--lib-fg)] hover:border-[var(--lib-primary)]/50"
+                }`}
+              >
+                <button
+                  type="button"
+                  onClick={() =>
+                    onSelectCollection(
+                      activeCollectionId === collection.collection_id
+                        ? null
+                        : collection.collection_id
+                    )
+                  }
+                  className="min-w-0 flex-1 text-left font-medium"
+                >
+                  <span className="block truncate">{collection.title}</span>
+                </button>
+                <span className="shrink-0 text-[10px] tabular-nums opacity-60">{collection.post_ids.length}</span>
+                <button
+                  type="button"
+                  disabled={selectedPostCount === 0}
+                  onClick={() => onRequestAddSelectionToCollection(collection.collection_id)}
+                  title={
+                    selectedPostCount === 0
+                      ? "Select gallery work first"
+                      : `Add ${selectedPostCount} selected post${selectedPostCount === 1 ? "" : "s"}`
+                  }
+                  aria-label={`Add selected work to ${collection.title}`}
+                  className="ml-0.5 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-lg border border-current/20 opacity-70 transition-opacity hover:opacity-100 disabled:cursor-not-allowed disabled:opacity-30"
+                >
+                  <Plus className="h-3 w-3" aria-hidden />
+                </button>
+              </div>
+            ))}
+            {collections.length > 8 ? (
+              <p className="pt-2 text-[11px] leading-snug text-[var(--lib-fg-muted)]">
+                {collections.length - 8} more in Arrange.
+              </p>
+            ) : null}
+          </div>
+        </section>
+
+        <section>
+          <h3 className="mb-3 text-[11px] font-medium uppercase tracking-wide text-[var(--lib-fg-muted)]">
+            Visibility
+          </h3>
+          <div className="space-y-2.5">
+            <VisibilityToggle
+              icon={visibility.hidden ? EyeOff : Eye}
+              label="Hidden"
+              checked={visibility.hidden}
+              onChange={(checked) => onSetVisibility({ ...visibility, hidden: checked })}
+            />
+            <VisibilityToggle
+              icon={ShieldAlert}
+              label="Mature"
+              checked={visibility.mature}
+              onChange={(checked) => onSetVisibility({ ...visibility, mature: checked })}
+            />
+            <VisibilityToggle
+              icon={FileText}
+              label="Text-only posts"
+              checked={showTextOnlyPosts}
+              onChange={onSetShowTextOnlyPosts}
+            />
+            <VisibilityToggle
+              icon={Layers}
+              label="Duplicate Patreon covers"
+              checked={showShadowCovers}
+              onChange={onSetShowShadowCovers}
+            />
+          </div>
+        </section>
+
+        <section>
+          <h3 className="mb-3 text-[11px] font-medium uppercase tracking-wide text-[var(--lib-fg-muted)]">
+            Playback
+          </h3>
+          <div className="space-y-2.5">
+            <VisibilityToggle
+              icon={Repeat}
+              label="Loop videos"
+              checked={videoLoop}
+              onChange={onSetVideoLoop}
+            />
+          </div>
+        </section>
+      </div>
+
+      {/* Footer stats and ZIP download */}
+      <div className="space-y-3 border-t border-[var(--lib-border)] p-4">
+        <div className="flex items-center justify-between gap-2 text-[11px] text-[var(--lib-fg-muted)]">
+          <span className="min-w-0">
+            {assetsInView.toLocaleString()} across {collectionCount} collections
+          </span>
+          <span
+            className="shrink-0 tabular-nums"
+            title="Total size of exported files stored by Relay (not unexported or Patreon-only URLs)."
+          >
+            {formatExportedBytes(facets.export_total_bytes ?? 0)}
+          </span>
+        </div>
+        <button
+          type="button"
+          onClick={() => void downloadLibraryZip()}
+          disabled={zipLoading}
+          title="ZIP includes only files in Relay export storage (after a live sync or successful per-item export), plus JSON manifests."
+          className="flex w-full items-center justify-center gap-2 rounded-xl border border-[var(--lib-border)] bg-[var(--lib-input)] px-3 py-2 text-xs font-medium text-[var(--lib-fg)] transition-colors hover:border-[var(--lib-primary)]/50 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          <Download className="h-3.5 w-3.5 shrink-0 text-[var(--lib-primary)]" aria-hidden />
+          {zipLoading ? "Preparing ZIP…" : "Download library ZIP"}
+        </button>
+        {(facets.export_media_count ?? 0) === 0 && !zipError ? (
+          <p className="text-[11px] leading-relaxed text-[var(--lib-fg-muted)]">
+            0 exported files — run a{" "}
+            <strong className="font-medium text-[var(--lib-fg)]">live</strong> Patreon sync (not dry run)
+            so media is saved under export storage, then download works.
+          </p>
+        ) : null}
+        {zipError ? (
+          <p className="text-[11px] leading-relaxed text-[var(--lib-destructive)]">{zipError}</p>
+        ) : null}
+      </div>
+    </aside>
+  );
+}

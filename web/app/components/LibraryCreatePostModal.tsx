@@ -25,8 +25,9 @@ import {
 import type { ImportBinItem } from "./LibraryImportBay";
 import type { Collection, TierFacet } from "@/lib/relay-api";
 
-/** Sentinel: post is public (`is_public`); not a `Tier.id`. */
-export const LIBRARY_CREATE_POST_PUBLIC_TIER = "__library_is_public__";
+import { LIBRARY_CREATE_POST_PUBLIC_TIER } from "@/lib/audience-access-tier-diff";
+
+export { LIBRARY_CREATE_POST_PUBLIC_TIER };
 
 /** Library modal compose draft (UI state; Discord ids flow to `/new-post?media_ids=`). */
 export type PostDraft = {

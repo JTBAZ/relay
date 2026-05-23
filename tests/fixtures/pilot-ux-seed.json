@@ -1,0 +1,166 @@
+{
+  "version": 1,
+  "devPasswordEnv": "RELAY_PILOT_UX_DEV_PASSWORD",
+  "defaultDevPassword": "pilot-ux-dev-only",
+  "accounts": {
+    "creatorAva": {
+      "legacyFileId": "creator_dev_ava",
+      "email": "creator_dev_ava@pilot.relay.test",
+      "displayName": "Dev Ava",
+      "publicSlug": "dev-ava",
+      "discipline": "Illustrator (pilot)"
+    },
+    "creatorMilo": {
+      "legacyFileId": "creator_dev_milo",
+      "email": "creator_dev_milo@pilot.relay.test",
+      "displayName": "Dev Milo",
+      "publicSlug": "dev-milo",
+      "discipline": "Filmmaker (pilot)"
+    },
+    "creatorOnboarding": {
+      "legacyFileId": "creator_dev_onboarding",
+      "email": "creator_dev_onboarding@pilot.relay.test",
+      "displayName": "Dev Onboarding",
+      "publicSlug": "dev-onboarding"
+    },
+    "patronRiley": {
+      "legacyFileId": "patron_dev_riley",
+      "email": "patron_dev_riley@pilot.relay.test",
+      "displayName": "Dev Riley",
+      "handle": "patron_dev_riley"
+    }
+  },
+  "creators": [
+    {
+      "relayCreatorId": "rcx_pilot_dev_ava",
+      "accountKey": "creatorAva",
+      "campaignId": "pilot_campaign_ava",
+      "campaignName": "Pilot UX — Ava",
+      "patreonCampaignId": "pilot_patreon_campaign_ava",
+      "tiers": [
+        {
+          "relayTierId": "patreon_tier_ava_supporter",
+          "title": "Supporter",
+          "amountCents": 500
+        },
+        {
+          "relayTierId": "patreon_tier_ava_studio",
+          "title": "Studio",
+          "amountCents": 1500
+        }
+      ],
+      "posts": [
+        {
+          "postId": "pilot_post_ava_intro",
+          "title": "Public intro",
+          "description": "Welcome — no tier required.",
+          "isPublic": true,
+          "tierIds": [],
+          "mediaType": "writing",
+          "mediaId": "pilot_media_ava_intro"
+        },
+        {
+          "postId": "pilot_post_ava_supporter_set",
+          "title": "Supporter photo set",
+          "description": "Gated to Supporter tier.",
+          "isPublic": false,
+          "tierIds": ["patreon_tier_ava_supporter"],
+          "mediaType": "photo",
+          "mediaId": "pilot_media_ava_supporter"
+        },
+        {
+          "postId": "pilot_post_ava_studio_archive",
+          "title": "Studio archive",
+          "description": "Gated to Studio tier.",
+          "isPublic": false,
+          "tierIds": ["patreon_tier_ava_studio"],
+          "mediaType": "photo",
+          "mediaId": "pilot_media_ava_studio"
+        }
+      ]
+    },
+    {
+      "relayCreatorId": "rcx_pilot_dev_milo",
+      "accountKey": "creatorMilo",
+      "campaignId": "pilot_campaign_milo",
+      "campaignName": "Pilot UX — Milo",
+      "patreonCampaignId": "pilot_patreon_campaign_milo",
+      "tiers": [
+        {
+          "relayTierId": "patreon_tier_milo_supporter",
+          "title": "Supporter",
+          "amountCents": 700
+        },
+        {
+          "relayTierId": "patreon_tier_milo_backstage",
+          "title": "Backstage",
+          "amountCents": 2000
+        }
+      ],
+      "posts": [
+        {
+          "postId": "pilot_post_milo_sketch",
+          "title": "Public sketch",
+          "description": "Free sketch drop.",
+          "isPublic": true,
+          "tierIds": [],
+          "mediaType": "photo",
+          "mediaId": "pilot_media_milo_sketch"
+        },
+        {
+          "postId": "pilot_post_milo_supporter_video",
+          "title": "Supporter video",
+          "description": "Supporter-only process clip.",
+          "isPublic": false,
+          "tierIds": ["patreon_tier_milo_supporter"],
+          "mediaType": "video",
+          "mediaId": "pilot_media_milo_video"
+        },
+        {
+          "postId": "pilot_post_milo_backstage_notes",
+          "title": "Backstage notes",
+          "description": "Backstage tier notes.",
+          "isPublic": false,
+          "tierIds": ["patreon_tier_milo_backstage"],
+          "mediaType": "writing",
+          "mediaId": "pilot_media_milo_backstage"
+        }
+      ]
+    },
+    {
+      "relayCreatorId": "rcx_pilot_dev_onboarding",
+      "accountKey": "creatorOnboarding",
+      "campaignId": "pilot_campaign_onboarding",
+      "campaignName": "Pilot UX — Onboarding walkthrough",
+      "patreonCampaignId": "pilot_patreon_campaign_onboarding",
+      "onboardingWalkthrough": true,
+      "tiers": [
+        {
+          "relayTierId": "patreon_tier_onboarding_supporter",
+          "title": "Supporter",
+          "amountCents": 500
+        },
+        {
+          "relayTierId": "patreon_tier_onboarding_studio",
+          "title": "Studio",
+          "amountCents": 1500
+        }
+      ],
+      "posts": []
+    }
+  ],
+  "patron": {
+    "accountKey": "patronRiley",
+    "followRelayCreatorIds": ["rcx_pilot_dev_ava", "rcx_pilot_dev_milo"],
+    "entitlements": [
+      {
+        "relayCreatorId": "rcx_pilot_dev_ava",
+        "entitledTierIds": ["patreon_tier_ava_supporter"]
+      },
+      {
+        "relayCreatorId": "rcx_pilot_dev_milo",
+        "entitledTierIds": ["patreon_tier_milo_backstage"]
+      }
+    ]
+  }
+}

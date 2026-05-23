@@ -1,4 +1,5 @@
 import { PATREON_CREATOR_OAUTH_SCOPES } from "./patreon-creator-scopes";
+import { pilotUxDevBearerHeaders } from "./pilot-ux-session";
 import { SUBSCRIBESTAR_CREATOR_OAUTH_SCOPES } from "./subscribestar-creator-scopes";
 import { resolveRelayApiBaseFromEnv } from "./relay-api-env";
 import {
@@ -93,6 +94,12 @@ function mergeRelayHeaders(init?: RequestInit): Headers {
   const hasBody = init?.body != null && method !== "GET" && method !== "HEAD";
   if (hasBody && !headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
+  }
+  if (!headers.has("authorization")) {
+    const pilot = pilotUxDevBearerHeaders();
+    if (pilot?.authorization) {
+      headers.set("authorization", pilot.authorization);
+    }
   }
   return headers;
 }
@@ -701,6 +708,7 @@ export type CreatorOnboardingData = {
   metadata: unknown | null;
   updated_at: string;
   import_progress: CreatorOnboardingImportProgress | null;
+  sync_health: SyncHealthWebDto;
 };
 
 export async function fetchCreatorOnboarding(): Promise<CreatorOnboardingData> {
@@ -961,7 +969,23 @@ export async function uploadPatreonInsightsCsv(
 }
 
 /**
- * P4-onb-008 — Human copy when gallery publish would fail per `getLayoutPublishBlock` (onboarding DTO only).
+ * PILOT-009b — Human copy when sync_health rollup blocks publish / go-live.
+ */
+export function describeSyncHealthPublishBlock(
+  syncHealth: SyncHealthWebDto | null | undefined
+): string | null {
+  if (!syncHealth) return null;
+  if (syncHealth.status === "failed") {
+    return "Patreon sync failed — open the sync menu in Library and fix import health before publishing.";
+  }
+  if (syncHealth.status === "degraded") {
+    return "Patreon sync is degraded — resolve sync warnings in Library before publishing.";
+  }
+  return null;
+}
+
+/**
+ * P4-onb-008 / PILOT-009b — Human copy when gallery publish would fail per onboarding + sync_health.
  * Returns `null` when publish is allowed from the client’s perspective.
  */
 export function describeCreatorGalleryPublishBlock(
@@ -977,6 +1001,8 @@ export function describeCreatorGalleryPublishBlock(
     };
     return byStep[onboarding.step] || "Finish studio setup in Library before publishing.";
   }
+  const syncBlock = describeSyncHealthPublishBlock(onboarding.sync_health);
+  if (syncBlock) return syncBlock;
   if (onboarding.import_progress?.last_post_scrape_ok === false) {
     return "Patreon import failed on the last run. Fix sync from Library, then publish.";
   }
@@ -1152,6 +1178,8 @@ export type TierFacet = {
   amount_cents?: number;
   /** Present on `GET /api/v1/relay/compose-tiers` rows; Patreon/Relay tier key for display. */
   relay_tier_id?: string;
+  /** Present on compose-tiers rows; send as `campaign_id` on `POST /relay/posts`. */
+  campaign_id?: string | null;
 };
 
 /** Public gallery header: Relay display name + Patreon campaign art (from `creator_campaign_display` after sync). */
@@ -1697,7 +1725,41 @@ export type RelayComposeTierRow = {
   relay_tier_id: string;
   title: string;
   amount_cents: number | null;
+  /** `Campaign.id` for this tier — pass through on `POST /relay/posts` as `campaign_id`. */
+  campaign_id: string | null;
 };
+
+/**
+ * Resolve `campaign_id` for Relay-native compose from loaded compose-tier rows.
+ * Gated posts use the selected tier(s)' campaign when unambiguous; public posts use a single catalog campaign when present.
+ */
+export function resolveRelayComposeCampaignId(
+  tiers: Pick<RelayComposeTierRow | TierFacet, "tier_id" | "campaign_id">[],
+  selectedTierIdOrIds: string | null | string[],
+  isPublic: boolean
+): string | undefined {
+  if (!isPublic) {
+    const ids = Array.isArray(selectedTierIdOrIds)
+      ? selectedTierIdOrIds
+      : selectedTierIdOrIds
+        ? [selectedTierIdOrIds]
+        : [];
+    if (ids.length === 0) {
+      return undefined;
+    }
+    const campaignIds = ids
+      .map((id) => tiers.find((t) => t.tier_id === id)?.campaign_id?.trim())
+      .filter((id): id is string => Boolean(id));
+    const unique = Array.from(new Set(campaignIds));
+    return unique.length === 1 ? unique[0] : undefined;
+  }
+  const unique = Array.from(
+    new Set(
+      tiers.map((t) => t.campaign_id?.trim()).filter((id): id is string => Boolean(id))
+    )
+  );
+  return unique.length === 1 ? unique[0] : undefined;
+}
 
 /** `GET /api/v1/relay/compose-tiers` — session + studio scope; excludes synthetic public/all-patrons rows. Use `tier_id` (Prisma) in `POST /relay/posts` bodies; **`201` `version.tier_ids`** remain relay-key space. */
 export async function fetchRelayComposeTiers(
@@ -2378,6 +2440,72 @@ export async function registerPatreonWebhooks(
   });
 }
 
+/** POST /api/v1/patreon/sync-members — requires Bearer session + creator scope. */
+export type PatreonMemberSyncResultData = {
+  creator_id: string;
+  patreon_campaign_id: string;
+  members_synced: number;
+  pages_fetched: number;
+  warnings: string[];
+};
+
+export async function postPatreonSyncMembers(body: {
+  creator_id: string;
+  campaign_id?: string;
+  max_pages?: number;
+}): Promise<PatreonMemberSyncResultData> {
+  return relayFetch<PatreonMemberSyncResultData>("/api/v1/patreon/sync-members", {
+    method: "POST",
+    body: JSON.stringify(body)
+  });
+}
+
+/** POST /api/v1/patreon/sync-post-access — OAuth tier gate diff (no media scrape). */
+export type PatreonSyncPostAccessResultData = {
+  creator_id: string;
+  patreon_campaign_id: string;
+  pages_fetched: number;
+  oauth_posts_seen: number;
+  relay_posts_matched: number;
+  posts_updated: number;
+  posts_unchanged: number;
+  warnings: string[];
+};
+
+export async function postPatreonSyncPostAccess(body: {
+  creator_id: string;
+  campaign_id?: string;
+  max_post_pages?: number;
+}): Promise<PatreonSyncPostAccessResultData> {
+  return relayFetch<PatreonSyncPostAccessResultData>("/api/v1/patreon/sync-post-access", {
+    method: "POST",
+    body: JSON.stringify(body)
+  });
+}
+
+/** PUX — rewind the faux onboarding creator to Patreon-disconnected signup state. */
+export async function postPilotUxOnboardingWalkthroughReset(): Promise<{ ok: true }> {
+  const auth = pilotUxDevBearerHeaders();
+  return relayFetch<{ ok: true }>("/api/v1/pilot-ux/dev/onboarding-walkthrough/reset", {
+    method: "POST",
+    body: JSON.stringify({}),
+    headers: auth
+  });
+}
+
+/** PUX — fake Patreon creator connect for the onboarding walkthrough account (no OAuth). */
+export async function postPilotUxSimulatePatreonConnect(): Promise<{ ok: true }> {
+  const auth = pilotUxDevBearerHeaders();
+  return relayFetch<{ ok: true }>(
+    "/api/v1/pilot-ux/dev/onboarding-walkthrough/simulate-patreon-connect",
+    {
+      method: "POST",
+      body: JSON.stringify({}),
+      headers: auth
+    }
+  );
+}
+
 /** Short user-facing summary after a live scrape (media path + tier OAuth stats). */
 export function formatPatreonSyncResult(data: PatreonScrapeResultData): string {
   const tas = data.tier_access_summary;
@@ -2631,6 +2759,40 @@ export async function patchPostPresentation(
       body: JSON.stringify(body)
     }
   );
+}
+
+export type PatchPostAudienceAccessInput = {
+  relayCreatorId: string;
+  postId: string;
+  is_public: boolean;
+  /** Prisma `Tier.id` or `relayTierId` from compose-tiers / gallery facets. */
+  tier_ids?: string[];
+};
+
+export type PostAudienceAccessRecord = {
+  post_id: string;
+  is_public: boolean;
+  tier_ids: string[];
+  source?: string;
+};
+
+/** PATCH `/api/v1/gallery/posts/:post_id/audience-access` — canonical tier gate (not presentation overlay). */
+export async function patchPostAudienceAccess(
+  input: PatchPostAudienceAccessInput
+): Promise<{ audience: PostAudienceAccessRecord }> {
+  const body: Record<string, unknown> = {
+    creator_id: input.relayCreatorId,
+    is_public: input.is_public
+  };
+  if (input.tier_ids !== undefined) body.tier_ids = input.tier_ids;
+  const data = await relayFetch<PostAudienceAccessRecord>(
+    `/api/v1/gallery/posts/${encodeURIComponent(input.postId)}/audience-access`,
+    {
+      method: "PATCH",
+      body: JSON.stringify(body)
+    }
+  );
+  return { audience: data };
 }
 
 /** POST /api/v1/patron/posts/:post_id/comments */

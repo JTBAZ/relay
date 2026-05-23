@@ -30,7 +30,7 @@
 
 | Area | Path | Notes |
 |------|------|--------|
-| Backend / API | `src/` | `npm run test`, `npm run build`, `npm start` from repo root |
+| Backend / API | `src/` | `npm run test`, `npm run build`, `npm start` from repo root (default port **8787**) |
 | Web (Next.js) | `web/` | `npm run dev`, `npm run lint`, `npm run build` |
 | Automation | `Automation/` | `ledger-to-v0`, Airtable docs, attended loop |
 | Relational DB (target) | `docs/database/` | PostgreSQL + Prisma direction, migration from `.relay-data/` — not the Airtable ledger; **DB Integration Pipeline** Airtable layout: [`docs/database/AIRTABLE_DB_PIPELINE.md`](docs/database/AIRTABLE_DB_PIPELINE.md) |

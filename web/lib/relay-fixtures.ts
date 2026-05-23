@@ -9,7 +9,8 @@ export type FeedItemKind = "followed" | "discovery";
 export type PatronFeedItemSource = "subscribed" | "discover";
 /** Feed list presentation — `inlineMedia` shows hero + pins in the card (A/B vs `classic`). */
 export type FeedCardLayout = "classic" | "inlineMedia";
-export type TierLabel = "Free" | "Supporter" | "Studio";
+/** Patron feed / sidebar badge — `Tier.title` from API when live; fixtures may use shorthand. */
+export type TierLabel = string;
 
 export interface Creator {
   id: string;
@@ -60,6 +61,15 @@ export interface FeedPost {
   communityTags?: string[];
   /** Defaults to `classic` (text + small thumb). */
   feedCardLayout?: FeedCardLayout;
+}
+
+export interface LockedFeedPost {
+  id: string;
+  creator: Creator;
+  title: string;
+  mediaType: MediaType;
+  publishedAt: string;
+  tierLabel: TierLabel;
 }
 
 export interface CurrentViewer {
@@ -761,6 +771,7 @@ export type PatronFeedDataSource = "fixtures" | "live";
 /** Shape returned by `GET /api/v1/patron/relay_feed` and `GET /api/v1/patron/feed` (see `patron-feed-api.ts`). */
 export interface PatronFeedBundle {
   feedPosts: FeedPost[];
+  lockedPosts?: LockedFeedPost[];
   discoverItems: DiscoverItem[];
   currentViewer: CurrentViewer;
   followedCreators: Creator[];
@@ -779,6 +790,32 @@ export function getPatronFeedFixtureBundle(): PatronFeedBundle {
       ...p,
       feed_item_source: p.kind === "discovery" ? "discover" : "subscribed"
     })),
+    lockedPosts: [
+      {
+        id: "locked_mara_contact_sheet",
+        creator: CREATORS.mara,
+        title: "Contact sheet: Lisbon night market",
+        mediaType: "photo",
+        publishedAt: "2 days ago",
+        tierLabel: "Studio"
+      },
+      {
+        id: "locked_james_breakdown",
+        creator: CREATORS.james,
+        title: "Track breakdown: low-end texture pass",
+        mediaType: "audio",
+        publishedAt: "4 days ago",
+        tierLabel: "Producer"
+      },
+      {
+        id: "locked_elena_notes",
+        creator: CREATORS.elena,
+        title: "Notebook: the economics of attention",
+        mediaType: "writing",
+        publishedAt: "Last week",
+        tierLabel: "Studio"
+      }
+    ],
     discoverItems: DISCOVER_ITEMS,
     currentViewer: CURRENT_VIEWER,
     followedCreators: sortFollowedForSidebar(FOLLOWED_CREATORS),

@@ -12,20 +12,26 @@ import type {
 } from "@/lib/relay-api";
 import { accessChipLabel } from "./GalleryGridTile";
 import { InspectSmartTagPanel } from "./inspect/inspect-smart-tag-panel";
+import {
+  PILOT_PERMISSION_HEADLINE,
+  PILOT_PERMISSION_POST_TIER_HINT,
+  PILOT_PERMISSION_POST_VISIBILITY_HINT,
+  PILOT_PERMISSION_VISIBILITY_HINT
+} from "@/lib/pilot-permission-copy";
 
 const SEL = "#00aa6f";
 
 const TIP_VISIBILITY =
-  "Whether this post appears in your Relay gallery list (visible / hidden) or only when Mature is enabled (18+). Not the same as Patreon’s public page.";
+  "Whether this post appears in your Relay gallery list (visible / hidden) or only when Mature is enabled (18+). Not Patreon tier access.";
 const TIP_TIER =
-  "Which membership tiers can access this content on Patreon. Separate from gallery visibility in Relay.";
+  "Which membership tiers can access this content on Patreon. Separate from Relay gallery visibility.";
 const TIP_TAGS =
   "Labels used for search and filters in Relay. You can add Relay-only tags here without changing Patreon.";
 const TIP_COLLECTIONS =
   "Named groups in Relay. Add this post to a collection or create one — membership is per post, not synced from Patreon.";
 
-const HINT_VISIBILITY = "Gallery list visibility in Relay — not Patreon’s public visibility.";
-const HINT_TIER = "Patreon tier access — who is allowed to see this post.";
+const HINT_VISIBILITY = PILOT_PERMISSION_POST_VISIBILITY_HINT;
+const HINT_TIER = PILOT_PERMISSION_POST_TIER_HINT;
 const HINT_TAGS = "Improves search; Relay-only tags are OK.";
 const HINT_COLLECTIONS = "Collections that already include this post. Use Add to attach more.";
 
@@ -268,11 +274,13 @@ export default function PostBatchPostDetails({
       {!tagsAndCollectionsOnly ? (
         <>
           <p
-            className="mb-3 cursor-help text-[0.65rem] font-semibold uppercase tracking-[0.12em] text-[var(--lib-fg)] sm:text-xs"
+            className="mb-1 cursor-help text-[0.65rem] font-semibold uppercase tracking-[0.12em] text-[var(--lib-fg)] sm:text-xs"
             title="Metadata for this post: gallery visibility, access, tags, and Relay collections."
           >
             Post details
           </p>
+          <p className="mb-3 text-[11px] font-medium leading-snug text-[var(--lib-fg)]">{PILOT_PERMISSION_HEADLINE}</p>
+          <p className="mb-3 text-[10px] leading-snug text-[var(--lib-fg-muted)]">{PILOT_PERMISSION_VISIBILITY_HINT}</p>
           {postDetailLoading ? (
             <p className="text-xs text-[var(--lib-fg-muted)] sm:text-sm">Loading details…</p>
           ) : null}

@@ -42,6 +42,7 @@ import { NotificationsTray } from "./notifications-tray";
 import { FilterChips, type FeedFilter } from "./filter-chips";
 import { PatronFeedDevTools } from "./patron-feed-dev-tools";
 import { RelayMarkIcon } from "./relay-mark-icon";
+import { WhatYouMissedCarousel } from "./what-you-missed-carousel";
 import {
   getPatronFeedFixtureBundle,
   mapPatronFollowApiItemToCreator,
@@ -204,6 +205,7 @@ function FollowingCreatorRow({ creator }: { creator: Creator }) {
 function emptyLiveShell(fixture: PatronFeedBundle): PatronFeedBundle {
   return {
     feedPosts: [],
+    lockedPosts: [],
     discoverItems: [],
     currentViewer: fixture.currentViewer,
     followedCreators: [],
@@ -558,8 +560,12 @@ export function RelayApp({ initialDataSource }: RelayAppProps = {}) {
 
   const enrichedPosts = useMemo(() => {
     let dividerInserted = false;
+    let sawSubscribed = false;
     return filteredPosts.map((post) => {
-      const showDivider = post.kind === "discovery" && !dividerInserted;
+      const isDiscover = post.kind === "discovery";
+      if (!isDiscover) sawSubscribed = true;
+      const showDivider =
+        isDiscover && sawSubscribed && !dividerInserted;
       if (showDivider) dividerInserted = true;
       return { post, showDivider };
     });
@@ -1260,6 +1266,9 @@ export function RelayApp({ initialDataSource }: RelayAppProps = {}) {
                           {liveLoadingMore ? "Loading…" : "Load more"}
                         </button>
                       </div>
+                    ) : null}
+                    {!liveLoading && !liveFeedError ? (
+                      <WhatYouMissedCarousel posts={effectiveBundle.lockedPosts ?? []} />
                     ) : null}
                   </div>
                 </div>

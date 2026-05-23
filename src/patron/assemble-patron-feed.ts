@@ -9,16 +9,21 @@ import { MediaUpstreamStatus, PostUpstreamStatus } from "@prisma/client";
 import type { TierRow } from "../ingest/canonical-store.js";
 import {
   evaluateTierRules,
-  paidUserTierIds,
   resolvePostAccessLevel,
   canAccessPost
 } from "../clone/tier-rules.js";
-import type { AccessLevel } from "../clone/types.js";
-import type { PatronFeedBundleJson, PatronFeedTierLabel } from "./patron-feed-types.js";
+import type { PatronFeedBundleJson } from "./patron-feed-types.js";
+import { loadHiddenPostIdsByCreator } from "../gallery/hidden-post-ids.js";
+import {
+  resolvePatronEntitlementDisplayLabel,
+  resolvePostTierDisplayLabel
+} from "../gallery/tier-display-label.js";
 
 const MAX_POSTS_SCAN = 800;
 const DEFAULT_LIMIT = 30;
 const MAX_LIMIT = 100;
+const LOCKED_POSTS_LIMIT = 10;
+const LOCKED_POSTS_RECENT_MS = 30 * 24 * 60 * 60 * 1000;
 
 export type PatronFeedFilter =
   | "all"
@@ -84,16 +89,6 @@ function mimeToMediaType(mime: string | null | undefined): "writing" | "photo" |
   return "writing";
 }
 
-function accessLevelToTierLabel(
-  level: AccessLevel,
-  tierIds: string[]
-): PatronFeedTierLabel {
-  if (level === "public") return "Free";
-  const joined = tierIds.join(" ").toLowerCase();
-  if (joined.includes("studio")) return "Studio";
-  return "Supporter";
-}
-
 function excerptFromDescription(raw: string | null | undefined, title: string): string {
   const s = (raw ?? "").replace(/\s+/g, " ").trim();
   if (!s) return title;
@@ -139,6 +134,7 @@ function parseFilter(raw: string | null | undefined): PatronFeedFilter {
  */
 export async function assemblePatronFeed(args: AssemblePatronFeedArgs): Promise<PatronFeedBundleJson> {
   const { prisma, patronMembershipId, viewerEmail } = args;
+  const now = new Date();
   const limit = Math.min(
     Math.max(1, args.limit ?? DEFAULT_LIMIT),
     MAX_LIMIT
@@ -181,6 +177,11 @@ export async function assemblePatronFeed(args: AssemblePatronFeedArgs): Promise<
       .map((p) => [p.tenant.relayCreatorId as string, p])
   );
 
+  const hiddenPostIdsByCreator =
+    followedIds.length === 0
+      ? new Map<string, Set<string>>()
+      : await loadHiddenPostIdsByCreator(prisma, followedIds);
+
   const postsRaw =
     followedIds.length === 0
       ? []
@@ -220,10 +221,14 @@ export async function assemblePatronFeed(args: AssemblePatronFeedArgs): Promise<
   };
 
   const candidates: Row[] = [];
+  const lockedCandidates: Row[] = [];
 
   for (const post of postsRaw) {
     const v = post.versions[0];
     if (!v) continue;
+    if (hiddenPostIdsByCreator.get(post.creatorId)?.has(post.id)) {
+      continue;
+    }
     const snap = snapByCreator.get(post.creatorId);
     const entitled = snap?.entitledTierIds ?? [];
     const tierCatalog = tiersByCreator.get(post.creatorId) ?? {};
@@ -237,6 +242,25 @@ export async function assemblePatronFeed(args: AssemblePatronFeedArgs): Promise<
     const allowed =
       post.isPublic || canAccessPost(postAccess, entitled, tierCatalog);
     if (!allowed) {
+      const stale = !snap || (snap.staleAfter != null && snap.staleAfter.getTime() < now.getTime());
+      const publishedRecently =
+        v.publishedAt.getTime() >= now.getTime() - LOCKED_POSTS_RECENT_MS;
+      if (!stale && publishedRecently) {
+        const media = post.mediaAssets[0];
+        const mime = media?.currentMimeType;
+        lockedCandidates.push({
+          postId: post.id,
+          creatorId: post.creatorId,
+          publishedAt: v.publishedAt,
+          title: v.title,
+          description: null,
+          tierIds: v.tierIds,
+          mediaType: mimeToMediaType(mime),
+          primaryMimeType: mime ?? null,
+          coverContentPath: null,
+          isPublicPost: post.isPublic
+        });
+      }
       continue;
     }
 
@@ -269,6 +293,13 @@ export async function assemblePatronFeed(args: AssemblePatronFeedArgs): Promise<
   }
 
   candidates.sort((a, b) => {
+    const ar = { publishedAt: a.publishedAt, id: a.postId };
+    const br = { publishedAt: b.publishedAt, id: b.postId };
+    if (isNewer(ar, br)) return -1;
+    if (isNewer(br, ar)) return 1;
+    return 0;
+  });
+  lockedCandidates.sort((a, b) => {
     const ar = { publishedAt: a.publishedAt, id: a.postId };
     const br = { publishedAt: b.publishedAt, id: b.postId };
     if (isNewer(ar, br)) return -1;
@@ -311,7 +342,6 @@ export async function assemblePatronFeed(args: AssemblePatronFeedArgs): Promise<
     nextCursor = encodeCursor({ publishedAt: tail.publishedAt, id: tail.postId });
   }
 
-  const now = new Date();
   let entitlement_degraded = false;
   let entitlement_stale_since: string | null = null;
   if (followedIds.length > 0) {
@@ -367,9 +397,7 @@ export async function assemblePatronFeed(args: AssemblePatronFeedArgs): Promise<
     // (Patreon Free Tier members do not unlock paid posts, so labelling them as Supporter
     // would mis-signal access). A future "Free member" badge (Roadmap P3) can split these.
     const catalog = tiersByCreator.get(relayCreatorId) ?? {};
-    const paid = paidUserTierIds(tierIds, catalog);
-    const tierLabel: PatronFeedTierLabel =
-      paid.length === 0 ? "Free" : "Supporter";
+    const tierLabel = resolvePatronEntitlementDisplayLabel(tierIds, catalog);
     return {
       id: relayCreatorId,
       handle,
@@ -391,14 +419,19 @@ export async function assemblePatronFeed(args: AssemblePatronFeedArgs): Promise<
       c.creatorId
     );
     const tierCatalog = tiersByCreator.get(c.creatorId) ?? {};
-    const tierRules = evaluateTierRules(tierCatalog);
-    const postAccess = resolvePostAccessLevel(c.tierIds, tierRules);
-    const tierLabel: PatronFeedTierLabel = c.isPublicPost
-      ? "Free"
-      : accessLevelToTierLabel(postAccess.level, postAccess.tier_ids);
+    const snap = snapByCreator.get(c.creatorId);
+    const patronTierLabel = resolvePatronEntitlementDisplayLabel(
+      snap?.entitledTierIds ?? [],
+      tierCatalog
+    );
+    const tierLabel = resolvePostTierDisplayLabel({
+      tierIds: c.tierIds,
+      tierCatalog,
+      isPublicPost: c.isPublicPost
+    });
 
-    const feed_item_source = c.isPublicPost ? ("discover" as const) : ("subscribed" as const);
-    const kind = c.isPublicPost ? ("discovery" as const) : ("followed" as const);
+    const feed_item_source = "subscribed" as const;
+    const kind = "followed" as const;
 
     const creator = {
       id: c.creatorId,
@@ -410,7 +443,7 @@ export async function assemblePatronFeed(args: AssemblePatronFeedArgs): Promise<
       followerCount: 0,
       postCount: 0,
       onRelay: true as const,
-      patronTierLabel: tierLabel
+      patronTierLabel
     };
 
     const placeholder = "/placeholder.svg?height=600&width=1200";
@@ -448,8 +481,48 @@ export async function assemblePatronFeed(args: AssemblePatronFeedArgs): Promise<
     };
   });
 
+  const lockedPosts = lockedCandidates.slice(0, LOCKED_POSTS_LIMIT).map((c) => {
+    const prof = profileByCreator.get(c.creatorId);
+    const { handle, displayName, discipline, avatarUrl } = creatorIdentityFromProfile(
+      prof,
+      c.creatorId
+    );
+    const tierCatalog = tiersByCreator.get(c.creatorId) ?? {};
+    const snap = snapByCreator.get(c.creatorId);
+    const patronTierLabel = resolvePatronEntitlementDisplayLabel(
+      snap?.entitledTierIds ?? [],
+      tierCatalog
+    );
+    const tierLabel = resolvePostTierDisplayLabel({
+      tierIds: c.tierIds,
+      tierCatalog,
+      isPublicPost: c.isPublicPost
+    });
+
+    return {
+      id: c.postId,
+      creator: {
+        id: c.creatorId,
+        handle,
+        displayName,
+        discipline,
+        avatarUrl,
+        isFollowed: true,
+        followerCount: 0,
+        postCount: 0,
+        onRelay: true as const,
+        patronTierLabel
+      },
+      title: c.title,
+      mediaType: c.mediaType,
+      publishedAt: c.publishedAt.toISOString(),
+      tierLabel
+    };
+  });
+
   return {
     feedPosts,
+    lockedPosts,
     discoverItems: [],
     currentViewer: {
       id: patronMembershipId,

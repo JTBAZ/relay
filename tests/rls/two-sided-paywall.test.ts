@@ -42,12 +42,17 @@ async function withRlsFixture<T>(
   });
 }
 
-async function countPostsVisible(tx: {
-  $queryRaw: typeof prisma.$queryRaw;
-}): Promise<number> {
-  const rows = await tx.$queryRaw<[{ c: bigint }]>`
-    SELECT count(*)::bigint AS c FROM posts
-  `;
+async function countPostsVisible(
+  tx: { $queryRaw: typeof prisma.$queryRaw },
+  creatorId?: string
+): Promise<number> {
+  const rows = creatorId
+    ? await tx.$queryRaw<[{ c: bigint }]>`
+        SELECT count(*)::bigint AS c FROM posts WHERE creator_id = ${creatorId}
+      `
+    : await tx.$queryRaw<[{ c: bigint }]>`
+        SELECT count(*)::bigint AS c FROM posts
+      `;
   return Number(rows[0]?.c ?? 0);
 }
 
@@ -209,7 +214,7 @@ describe.skipIf(!hasDatabaseUrl)("Tier 1.2 — two-sided RLS paywall", () => {
   });
 
   it("creator_self (A): all three posts visible", async () => {
-    const n = await withRlsFixture(P.accA, (tx) => countPostsVisible(tx));
+    const n = await withRlsFixture(P.accA, (tx) => countPostsVisible(tx, P.cr1));
     expect(n).toBe(3);
   });
 

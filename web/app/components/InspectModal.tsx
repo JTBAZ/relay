@@ -118,6 +118,9 @@ export default function InspectModal({
               canView={activeAudienceCanView}
               previewStyle={previewStyle}
               ctaText={ctaText}
+              creatorId={creatorId}
+              postId={preview.post_id}
+              onPresentationUpdated={onPresentationUpdated}
             />
           </div>
 

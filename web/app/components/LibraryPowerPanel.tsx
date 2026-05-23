@@ -25,6 +25,10 @@ import {
 } from "@/lib/relay-api";
 import { InspectAssetPreview } from "./inspect/inspect-asset-preview";
 import { accessChipLabel } from "./GalleryGridTile";
+import {
+  PILOT_PERMISSION_HEADLINE,
+  PILOT_PERMISSION_VISIBILITY_HINT
+} from "@/lib/pilot-permission-copy";
 
 export type LibraryMode = "media" | "placement" | "engagement" | "financials";
 
@@ -373,9 +377,15 @@ export default function LibraryPowerPanel({
               </p>
             ) : null}
             <div className="grid grid-cols-2 gap-2">
-              <InfoTile label="Visibility" value={selectedItem?.visibility ?? "No selection"} />
-              <InfoTile label="Access" value={selectedAccess(selectedItem, realTiers, tierTitleById)} />
+              <InfoTile label="Relay visibility" value={selectedItem?.visibility ?? "No selection"} />
+              <InfoTile
+                label="Patreon access (read-only)"
+                value={selectedAccess(selectedItem, realTiers, tierTitleById)}
+                truncate
+              />
             </div>
+            <p className="text-[10px] font-medium leading-4 text-[var(--lib-fg)]">{PILOT_PERMISSION_HEADLINE}</p>
+            <p className="text-[10px] leading-4 text-[var(--lib-fg-muted)]">{PILOT_PERMISSION_VISIBILITY_HINT}</p>
             <div className="grid grid-cols-3 gap-2">
               <AccessButton icon={Eye} label="Visible" disabled={studioWriteBlocked} busy={busy === "visibility:visible"} onClick={() => void applyVisibility("visible")} />
               <AccessButton icon={EyeOff} label="Hidden" disabled={studioWriteBlocked} busy={busy === "visibility:hidden"} onClick={() => void applyVisibility("hidden")} />

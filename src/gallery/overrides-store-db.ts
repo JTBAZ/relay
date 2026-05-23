@@ -98,6 +98,13 @@ function rootFromRows(rows: Awaited<ReturnType<PrismaClient["postOverride"]["fin
   return root;
 }
 
+/** Build an overrides aggregate from scoped `postOverride` rows (creator-filtered reads). */
+export function galleryOverridesRootFromRows(
+  rows: Awaited<ReturnType<PrismaClient["postOverride"]["findMany"]>>
+): GalleryOverridesRoot {
+  return rootFromRows(rows);
+}
+
 function flattenRoot(root: GalleryOverridesRoot): Prisma.PostOverrideCreateManyInput[] {
   const out: Prisma.PostOverrideCreateManyInput[] = [];
   for (const [creatorId, c] of Object.entries(root.creators)) {

@@ -271,6 +271,9 @@ export default function PostBatchModal({
                   canView={activeAudienceCanView}
                   previewStyle={previewStyle}
                   ctaText={ctaText}
+                  creatorId={creatorId}
+                  postId={primary.post_id}
+                  onPresentationUpdated={onPostMetadataUpdated}
                 />
               </div>
 

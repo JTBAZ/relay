@@ -5,6 +5,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Check, Loader2 } from "lucide-react";
 import {
   CREATOR_ONBOARDING_STEP_ORDER,
+  describeSyncHealthPublishBlock,
   fetchCreatorOnboarding,
   patchCreatorOnboarding,
   RelayApiError,
@@ -112,6 +113,7 @@ export default function CreatorOnboardingStepper({
   }
 
   const currentIdx = stepIndex(data.step);
+  const publishAdvanceBlocked = describeSyncHealthPublishBlock(data.sync_health);
 
   if (data.step === "published") {
     return (
@@ -192,6 +194,31 @@ export default function CreatorOnboardingStepper({
               </Link>
               .
             </>
+          ) : data.step === "import_started" ? (
+            <>
+              {STEP_COPY.import_started.hint}
+              {data.import_progress?.last_post_scrape_finished_at ? (
+                <>
+                  {" "}
+                  Last sync{" "}
+                  {new Date(data.import_progress.last_post_scrape_finished_at).toLocaleString(undefined, {
+                    dateStyle: "medium",
+                    timeStyle: "short"
+                  })}
+                  .
+                  {data.import_progress.last_post_scrape_ok === false ? (
+                    <span className="text-[var(--lib-warning)]"> Last run failed — try again.</span>
+                  ) : data.import_progress.last_post_scrape_posts_written != null ? (
+                    <>
+                      {" "}
+                      Wrote {data.import_progress.last_post_scrape_posts_written} post(s).
+                    </>
+                  ) : null}
+                </>
+              ) : (
+                <> Use the Patreon menu above → Check for new posts.</>
+              )}
+            </>
           ) : (
             STEP_COPY[data.step].hint ?? null
           )}
@@ -199,6 +226,12 @@ export default function CreatorOnboardingStepper({
 
         {data.step === "organized" ? (
           <div className="flex flex-col items-stretch gap-1 sm:items-end">
+            {publishAdvanceBlocked ? (
+              <p className="max-w-md text-xs leading-relaxed text-[var(--lib-warning)]" role="status">
+                {publishAdvanceBlocked}{" "}
+                Open the Patreon menu above to review sync health.
+              </p>
+            ) : null}
             {advanceError ? (
               <p className="text-xs text-red-400" role="alert">
                 {advanceError}
@@ -206,7 +239,7 @@ export default function CreatorOnboardingStepper({
             ) : null}
             <button
               type="button"
-              disabled={advanceBusy}
+              disabled={advanceBusy || Boolean(publishAdvanceBlocked)}
               onClick={() => void onMarkReadyToPublish()}
               className="rounded-lg bg-[var(--lib-primary)] px-3 py-1.5 text-xs font-semibold text-[var(--lib-bg)] disabled:opacity-50"
             >
