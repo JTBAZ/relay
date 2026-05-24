@@ -13,6 +13,7 @@
     "build": "prisma generate && tsc -p tsconfig.json",
     "start": "node dist/src/main.js",
     "dev:web": "npm run dev --prefix web",
+    "dev:profile-ui": "npm run dev --prefix relay-profile-tsx",
     "dev:stack": "npm run build && concurrently -k -n api,web -c blue,magenta \"npm run start\" \"npm run dev:web\"",
     "test": "vitest run",
     "verify:m10": "npm run build && npm run test && node scripts/m10-token-log-scan.mjs && npm run lint --prefix web && npm run build --prefix web",
