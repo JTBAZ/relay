@@ -73,7 +73,7 @@ export function PatronEmptyFeedState(props: PatronEmptyFeedStateProps) {
           After you connect, follow creators on Relay to see them here.
         </p>
         <Link
-          href="/patreon/patron/connect"
+          href="/connect/patreon/patron/connect"
           className="text-sm font-medium text-[#2D6A4F] hover:text-[#40916C] transition-colors"
         >
           Continue to Patreon
@@ -98,7 +98,7 @@ export function PatronEmptyFeedState(props: PatronEmptyFeedStateProps) {
           someone.
         </p>
         <Link
-          href="/patron/discover"
+          href="/discover"
           className="text-sm font-medium text-[#2D6A4F] hover:text-[#40916C] transition-colors"
         >
           Go to Discover
@@ -120,7 +120,7 @@ export function PatronEmptyFeedState(props: PatronEmptyFeedStateProps) {
         If something looks wrong, reconnect Patreon from settings to refresh your tier access.
       </p>
       <Link
-        href="/patreon/patron/connect"
+        href="/connect/patreon/patron/connect"
         className="text-sm font-medium text-[#2D6A4F] hover:text-[#40916C] transition-colors"
       >
         Reconnect Patreon

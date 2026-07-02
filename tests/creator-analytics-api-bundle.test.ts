@@ -116,6 +116,161 @@ describe("P5a-ins-012 — creator analytics API bundle (CI)", () => {
     });
   });
 
+  describe("GET /api/v1/creator/analytics/unified-performance", () => {
+    it("returns 503 when database is not configured", async () => {
+      const tempDir = await mkdtemp(join(tmpdir(), "p5a-bundle-unified-"));
+      const { app } = createApp(bundleBaseConfig(tempDir));
+      const res = await request(app).get("/api/v1/creator/analytics/unified-performance");
+      expect(res.status).toBe(503);
+      expect(res.body.error?.code).toBe("SERVICE_UNAVAILABLE");
+    });
+
+    it("returns 401 when Prisma is set but the caller is not authenticated", async () => {
+      const tempDir = await mkdtemp(join(tmpdir(), "p5a-bundle-unified-auth-"));
+      const { app } = createApp(bundleBaseConfig(tempDir, {} as PrismaClient));
+      const res = await request(app).get("/api/v1/creator/analytics/unified-performance");
+      expect(res.status).toBe(401);
+    });
+  });
+
+  describe("GET /api/v1/creator/analytics/performance/overview", () => {
+    it("returns 503 when database is not configured", async () => {
+      const tempDir = await mkdtemp(join(tmpdir(), "p5a-bundle-perf-overview-"));
+      const { app } = createApp(bundleBaseConfig(tempDir));
+      const res = await request(app).get("/api/v1/creator/analytics/performance/overview");
+      expect(res.status).toBe(503);
+    });
+
+    it("returns 401 when Prisma is set but the caller is not authenticated", async () => {
+      const tempDir = await mkdtemp(join(tmpdir(), "p5a-bundle-perf-overview-auth-"));
+      const { app } = createApp(bundleBaseConfig(tempDir, {} as PrismaClient));
+      const res = await request(app).get("/api/v1/creator/analytics/performance/overview");
+      expect(res.status).toBe(401);
+    });
+  });
+
+  describe("GET /api/v1/creator/analytics/performance/works/:creative_work_id", () => {
+    it("returns 503 when database is not configured", async () => {
+      const tempDir = await mkdtemp(join(tmpdir(), "p5a-bundle-perf-work-503-"));
+      const { app } = createApp(bundleBaseConfig(tempDir));
+      const res = await request(app).get("/api/v1/creator/analytics/performance/works/cw_test");
+      expect(res.status).toBe(503);
+      expect(res.body.error?.code).toBe("SERVICE_UNAVAILABLE");
+    });
+
+    it("returns 401 when Prisma is set but the caller is not authenticated", async () => {
+      const tempDir = await mkdtemp(join(tmpdir(), "p5a-bundle-perf-work-auth-"));
+      const { app } = createApp(bundleBaseConfig(tempDir, {} as PrismaClient));
+      const res = await request(app).get("/api/v1/creator/analytics/performance/works/cw_test");
+      expect(res.status).toBe(401);
+    });
+  });
+
+  describe("GET /api/v1/creator/analytics/performance/works/:creative_work_id/instances", () => {
+    it("returns 503 when database is not configured", async () => {
+      const tempDir = await mkdtemp(join(tmpdir(), "p5a-bundle-perf-work-instances-503-"));
+      const { app } = createApp(bundleBaseConfig(tempDir));
+      const res = await request(app).get(
+        "/api/v1/creator/analytics/performance/works/cw_test/instances"
+      );
+      expect(res.status).toBe(503);
+      expect(res.body.error?.code).toBe("SERVICE_UNAVAILABLE");
+    });
+
+    it("returns 401 when Prisma is set but the caller is not authenticated", async () => {
+      const tempDir = await mkdtemp(join(tmpdir(), "p5a-bundle-perf-work-instances-auth-"));
+      const { app } = createApp(bundleBaseConfig(tempDir, {} as PrismaClient));
+      const res = await request(app).get(
+        "/api/v1/creator/analytics/performance/works/cw_test/instances"
+      );
+      expect(res.status).toBe(401);
+    });
+  });
+
+  describe("GET /api/v1/creator/analytics/performance/insight-actions", () => {
+    it("returns 401 when Prisma is set but the caller is not authenticated", async () => {
+      const tempDir = await mkdtemp(join(tmpdir(), "p5a-bundle-insight-actions-auth-"));
+      const { app } = createApp(bundleBaseConfig(tempDir, {} as PrismaClient));
+      const res = await request(app).get("/api/v1/creator/analytics/performance/insight-actions");
+      expect(res.status).toBe(401);
+    });
+  });
+
+  describe("GET /api/v1/creator/analytics/performance/goals", () => {
+    it("returns 401 when Prisma is set but the caller is not authenticated", async () => {
+      const tempDir = await mkdtemp(join(tmpdir(), "p5a-bundle-performance-goals-auth-"));
+      const { app } = createApp(bundleBaseConfig(tempDir, {} as PrismaClient));
+      const res = await request(app).get("/api/v1/creator/analytics/performance/goals");
+      expect(res.status).toBe(401);
+    });
+  });
+
+  describe("GET /api/v1/creator/analytics/platform-adapters", () => {
+    it("returns 401 when Prisma is set but the caller is not authenticated", async () => {
+      const tempDir = await mkdtemp(join(tmpdir(), "p5a-bundle-platform-adapters-auth-"));
+      const { app } = createApp(bundleBaseConfig(tempDir, {} as PrismaClient));
+      const res = await request(app).get("/api/v1/creator/analytics/platform-adapters");
+      expect(res.status).toBe(401);
+    });
+  });
+
+  describe("POST /api/v1/creator/analytics/platform-instances/link", () => {
+    it("returns 401 when Prisma is set but the caller is not authenticated", async () => {
+      const tempDir = await mkdtemp(join(tmpdir(), "p5a-bundle-platform-link-auth-"));
+      const { app } = createApp(bundleBaseConfig(tempDir, {} as PrismaClient));
+      const res = await request(app)
+        .post("/api/v1/creator/analytics/platform-instances/link")
+        .send({
+          post_id: "post_a",
+          destination: "x",
+          external_url: "https://x.com/handle/status/1"
+        });
+      expect(res.status).toBe(401);
+    });
+  });
+
+  describe("POST /api/v1/creator/analytics/platform-instances/:platform_instance_id/refresh", () => {
+    it("returns 503 when database is not configured", async () => {
+      const tempDir = await mkdtemp(join(tmpdir(), "p5a-bundle-pi-refresh-503-"));
+      const { app } = createApp(bundleBaseConfig(tempDir));
+      const res = await request(app).post(
+        "/api/v1/creator/analytics/platform-instances/pi_attempt_1/refresh"
+      );
+      expect(res.status).toBe(503);
+    });
+
+    it("returns 401 when Prisma is set but the caller is not authenticated", async () => {
+      const tempDir = await mkdtemp(join(tmpdir(), "p5a-bundle-pi-refresh-auth-"));
+      const { app } = createApp(bundleBaseConfig(tempDir, {} as PrismaClient));
+      const res = await request(app).post(
+        "/api/v1/creator/analytics/platform-instances/pi_attempt_1/refresh"
+      );
+      expect(res.status).toBe(401);
+    });
+  });
+
+  describe("GET /api/v1/creator/analytics/creative-works/bundle-suggestions", () => {
+    it("returns 401 when Prisma is set but the caller is not authenticated", async () => {
+      const tempDir = await mkdtemp(join(tmpdir(), "p5a-bundle-suggest-auth-"));
+      const { app } = createApp(bundleBaseConfig(tempDir, {} as PrismaClient));
+      const res = await request(app).get(
+        "/api/v1/creator/analytics/creative-works/bundle-suggestions"
+      );
+      expect(res.status).toBe(401);
+    });
+  });
+
+  describe("POST /api/v1/creator/analytics/creative-works/bundle-suggestions/confirm", () => {
+    it("returns 401 when Prisma is set but the caller is not authenticated", async () => {
+      const tempDir = await mkdtemp(join(tmpdir(), "p5a-bundle-merge-auth-"));
+      const { app } = createApp(bundleBaseConfig(tempDir, {} as PrismaClient));
+      const res = await request(app)
+        .post("/api/v1/creator/analytics/creative-works/bundle-suggestions/confirm")
+        .send({ source_post_id: "post_a", target_creative_work_id: "cw_b" });
+      expect(res.status).toBe(401);
+    });
+  });
+
   describe("POST /api/v1/creator/analytics/patreon-insights-csv", () => {
     it("parses the committed Patreon Insights sample fixture", () => {
       const csv = readFileSync(PATREON_INSIGHTS_FIXTURE, "utf8");

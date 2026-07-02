@@ -11,6 +11,7 @@ import type {
   PatronFavoriteRecord,
   PatronFavoriteTargetKind
 } from "./types.js";
+import { emitPatronFavoriteAddedEvent } from "../patron/notification-event-emit.js";
 
 /**
  * @description Maps TS favorite kind to Prisma enum.
@@ -117,6 +118,20 @@ export class DbPatronFavoritesStore {
         snapshotTierIds: record.snapshot_tier_ids ?? []
       }
     });
+    const membership = await this.prisma.tenantMembership.findUnique({
+      where: { id: record.user_id },
+      select: { accountId: true }
+    });
+    if (membership?.accountId) {
+      await emitPatronFavoriteAddedEvent(this.prisma, {
+        relayCreatorId: record.creator_id,
+        targetKind: record.target_kind,
+        targetId: record.target_id,
+        postId: record.target_kind === "post" ? record.target_id : null,
+        actorAccountId: membership.accountId,
+        actorMembershipId: record.user_id
+      });
+    }
     return rowToRecord(row);
   }
 

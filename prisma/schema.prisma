@@ -188,6 +188,10 @@ model Account {
   supabaseUserId        String?              @unique @map("supabase_user_id") @db.Uuid
   /// Artist studio scope — matches `Tenant.relayCreatorId` when this account owns a creator workspace (MT-031). Null for patron-only accounts.
   primaryRelayCreatorId String?              @unique @map("primary_relay_creator_id")
+  /// Canonical public Relay username. This is the account's one @mention alias across creator and supporter surfaces.
+  username              String?
+  /// Lowercase normalized Relay username for global uniqueness.
+  usernameNorm          String?              @unique @map("username_norm")
   /// Backfill trace: stable id from `identity.json` / file store era (see integration-roadmap 2.3.x).
   legacyFileId          String?              @map("legacy_file_id")
   createdAt             DateTime             @default(now()) @map("created_at")
@@ -202,6 +206,7 @@ model Account {
   followsIncoming       AccountFollow[]         @relation("AccountFollowsIncoming")
   discordLinkTokens     DiscordLinkToken[]
   discordBindingsLinked DiscordChannelBinding[] @relation("DiscordChannelBindingLinker")
+  creatorNotifications    Notification[]          @relation("CreatorNotificationRecipient")
 
   @@map("accounts")
 }
@@ -228,6 +233,7 @@ model TenantMembership {
   notificationPreferences     NotificationPreference[]
   notifications               Notification[]
   patronFollowSeeds           PatronFollowSeed[]
+  notificationDigestRuns      NotificationDigestRun[]
 
   @@unique([accountId, tenantId])
   @@index([tenantId])
@@ -364,10 +370,48 @@ model PatronProfile {
   isPublic           Boolean          @default(false) @map("is_public")
   /// Onboarding wizard progress 0–4 (PE-A skeleton).
   onboardingStep     Int              @default(0) @map("onboarding_step")
+  /// When true, creator update alerts batch into a digest instead of instant pings.
+  notificationDigestEnabled Boolean   @default(true) @map("notification_digest_enabled")
+  /// Digest cadence slug: weekly | monthly.
+  notificationDigestCadence String    @default("weekly") @map("notification_digest_cadence")
+  /// Browse window slug: morning | midday | evening | late_night.
+  notificationDigestSlot    String?   @map("notification_digest_slot")
+  /// IANA timezone for browse-window scheduling (e.g. America/New_York). Null → UTC.
+  notificationDigestTimezone String?  @map("notification_digest_timezone")
+  /// When true, patron feed/search/notifications omit posts rated Adult (18+).
+  hideMatureContent  Boolean          @default(false) @map("hide_mature_content")
   createdAt          DateTime         @default(now()) @map("created_at")
   updatedAt          DateTime         @updatedAt @map("updated_at")
 
   @@map("patron_profiles")
+}
+
+/// PE-G digest — idempotent email batch record per patron + digest period.
+enum NotificationDigestRunStatus {
+  sent
+  skipped
+  failed
+}
+
+model NotificationDigestRun {
+  id                   String                       @id @default(cuid())
+  patronMembershipId   String                       @map("patron_membership_id")
+  membership           TenantMembership             @relation(fields: [patronMembershipId], references: [id], onDelete: Cascade)
+  cadence              String
+  slot                 String
+  periodStart          DateTime                     @map("period_start")
+  periodEnd            DateTime                     @map("period_end")
+  status               NotificationDigestRunStatus
+  itemCount            Int                          @default(0) @map("item_count")
+  payloadJson          Json                         @default("{}") @map("payload_json")
+  providerMessageId    String?                      @map("provider_message_id")
+  errorMessage         String?                      @map("error_message")
+  sentAt               DateTime?                    @map("sent_at")
+  createdAt            DateTime                     @default(now()) @map("created_at")
+
+  @@unique([patronMembershipId, cadence, periodStart])
+  @@index([patronMembershipId, sentAt(sort: Desc)])
+  @@map("notification_digest_runs")
 }
 
 // --- Canonical ingest + gallery (M3 Phase 3.1) — string `creator_id` matches Relay ingest scope (see `canonical-store.ts`) ---
@@ -473,6 +517,10 @@ model Post {
   /// P5a — Patreon Insights CSV rows linked when `patreon_post_id` matches `id` or `provider_post_id`.
   patreonInsightsPostMetrics PatreonInsightsPostMetric[]
   relayEngagementEvents      RelayEngagementEvent[]
+  distributionPlans          PostDistributionPlan[]
+  externalPostMetricSnapshots ExternalPostMetricSnapshot[]
+  creativeWorkMember         CreativeWorkMember?
+  platformInstances          PlatformInstance[]
 
   @@unique([campaignId, providerPostId])
   @@index([campaignId, createdAt(sort: Desc)])
@@ -529,9 +577,13 @@ model MediaAsset {
   relayEngagementEvents   RelayEngagementEvent[]
   /// Manual Import: staged uploads carry intended provider access (`v:1`) before compose/publish (`primaryPostId` null).
   manualImportStagingJson Json? @map("manual_import_staging_json")
+  /// Autopost WI-2 — reserved by an active studio draft (excluded from staging bin).
+  autopostDraftId         String?        @map("autopost_draft_id")
+  autopostDraft           AutopostDraft? @relation(fields: [autopostDraftId], references: [id], onDelete: SetNull, onUpdate: Cascade)
 
   @@index([primaryPostId])
   @@index([creatorId, ingestOrigin])
+  @@index([autopostDraftId])
   @@map("media_assets")
 }
 
@@ -619,6 +671,402 @@ enum GalleryVisibility {
   visible
   hidden
   review
+}
+
+/// Creator Step 5 review picks either a full post or a single media asset.
+enum CreatorPromoSlotTargetKind {
+  post
+  media
+}
+
+/// Step 5 "Review Library" picks (1-5 ranked promo entries) for a creator studio.
+model CreatorPromoSlot {
+  id         String                    @id @default(cuid())
+  creatorId  String                    @map("creator_id")
+  slotRank   Int                       @map("slot_rank")
+  targetKind CreatorPromoSlotTargetKind @map("target_kind")
+  targetId   String                    @map("target_id")
+  label      String?
+  metadata   Json?                     @map("metadata")
+  createdAt  DateTime                  @default(now()) @map("created_at")
+  updatedAt  DateTime                  @updatedAt @map("updated_at")
+
+  @@unique([creatorId, slotRank])
+  @@index([creatorId])
+  @@map("creator_promo_slots")
+}
+
+/// Autopost WI-3 — saved voice/tone for AI draft generation (one default profile per creator).
+model CreatorStyleProfile {
+  id          String   @id @default(cuid())
+  creatorId   String   @map("creator_id")
+  label       String   @default("Default")
+  isDefault   Boolean  @default(true) @map("is_default")
+  /// none | friendly | professional | warm | playful | formal
+  tonePreset  String   @default("friendly") @map("tone_preset")
+  /// Optional artist-authored details or raw wording for the LLM to clean up.
+  userPrompt  String?  @map("user_prompt") @db.Text
+  /// Resolved voice script stored for audit/replay (preset sample + user prompt).
+  voiceScript String   @default("") @map("voice_script") @db.Text
+  settings    Json     @default("{}")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  autopostDrafts AutopostDraft[]
+
+  @@unique([creatorId, label])
+  @@index([creatorId, isDefault])
+  @@map("creator_style_profiles")
+}
+
+/// Autopost WI-2 — creator-only preview workspace before Relay publish.
+model AutopostDraft {
+  id               String   @id @default(cuid())
+  creatorId        String   @map("creator_id")
+  /// nudged | drafting | previewing | published | discarded
+  status           String   @default("drafting")
+  mediaIds         String[] @default([]) @map("media_ids")
+  title            String?
+  bodyText         String?  @map("body_text") @db.Text
+  styleProfileId   String?  @map("style_profile_id")
+  styleProfile     CreatorStyleProfile? @relation(fields: [styleProfileId], references: [id], onDelete: SetNull)
+  enhancements     Json     @default("{}")
+  /// Cross-post destinations already attempted (for discard warning). e.g. { "patreon": "2026-06-28T…" }
+  distributionLog  Json     @default("{}") @map("distribution_log")
+  publishedPostId  String?  @map("published_post_id")
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  reservedMedia       MediaAsset[]
+  distributionPlans   PostDistributionPlan[]
+
+  @@index([creatorId, status])
+  @@map("autopost_drafts")
+}
+
+/// Post-level distribution plan — platform relay strategy after canonical Relay publish.
+model PostDistributionPlan {
+  id               String   @id @default(cuid())
+  creatorId        String   @map("creator_id")
+  postId           String   @map("post_id")
+  post             Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+  sourceDraftId    String?  @map("source_draft_id")
+  sourceDraft      AutopostDraft? @relation(fields: [sourceDraftId], references: [id], onDelete: SetNull)
+  /// active | completed | archived
+  status           String   @default("active")
+  /// none | requested | completed | skipped | failed
+  assistantMode    String   @default("none") @map("assistant_mode")
+  assistantContext Json     @default("{}") @map("assistant_context")
+  assistantPlan    Json     @default("{}") @map("assistant_plan")
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  variants PostDistributionVariant[]
+
+  @@index([creatorId, status])
+  @@index([postId, status])
+  @@map("post_distribution_plans")
+}
+
+/// Platform-specific variant for a distribution plan.
+model PostDistributionVariant {
+  id               String   @id @default(cuid())
+  planId           String   @map("plan_id")
+  plan             PostDistributionPlan @relation(fields: [planId], references: [id], onDelete: Cascade)
+  postId           String   @map("post_id")
+  creatorId        String   @map("creator_id")
+  /// patreon | x | deviantart | bluesky
+  destination      String
+  /// draft | approved | handed_off | fill_failed | posted | failed | skipped
+  status           String   @default("draft")
+  assistantEnabled Boolean  @default(false) @map("assistant_enabled")
+  title            String?
+  bodyText         String?  @map("body_text") @db.Text
+  postText         String?  @map("post_text") @db.Text
+  tags             String[] @default([])
+  locale           String?
+  scheduledFor     DateTime? @map("scheduled_for")
+  platformFields   Json     @default("{}") @map("platform_fields")
+  advice           Json     @default("{}")
+  approvedAt       DateTime? @map("approved_at")
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  attempts PostDistributionAttempt[]
+
+  @@unique([planId, destination])
+  @@index([postId, destination])
+  @@index([creatorId, status])
+  @@map("post_distribution_variants")
+}
+
+/// Handoff attempt for a distribution variant (extension or API publish).
+model PostDistributionAttempt {
+  id                      String   @id @default(cuid())
+  variantId               String   @map("variant_id")
+  variant                 PostDistributionVariant @relation(fields: [variantId], references: [id], onDelete: Cascade)
+  postId                  String   @map("post_id")
+  creatorId               String   @map("creator_id")
+  destination             String
+  /// started | package_fetched | tab_opened | injected | fill_succeeded | fill_partial | fill_failed | posted | abandoned | failed
+  status                  String   @default("started")
+  extensionInstallationId String?  @map("extension_installation_id")
+  extensionTabId          Int?     @map("extension_tab_id")
+  fillResult              Json     @default("{}") @map("fill_result")
+  externalUrl             String?  @map("external_url")
+  externalId              String?  @map("external_id")
+  errorCode               String?  @map("error_code")
+  errorDetail             String?  @map("error_detail") @db.Text
+  startedAt               DateTime @default(now()) @map("started_at")
+  completedAt             DateTime? @map("completed_at")
+  createdAt               DateTime @default(now()) @map("created_at")
+  updatedAt               DateTime @updatedAt @map("updated_at")
+
+  metricSnapshots ExternalPostMetricSnapshot[]
+  platformInstance  PlatformInstance?
+
+  @@index([variantId, status])
+  @@index([postId, destination])
+  @@index([creatorId, status])
+  @@map("post_distribution_attempts")
+}
+
+/// Time-series engagement captured from an external post URL (Slice 2).
+model ExternalPostMetricSnapshot {
+  id                 String   @id @default(cuid())
+  attemptId          String   @map("attempt_id")
+  attempt            PostDistributionAttempt @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+  platformInstanceId String?  @map("platform_instance_id")
+  platformInstance   PlatformInstance? @relation(fields: [platformInstanceId], references: [id], onDelete: SetNull)
+  postId             String   @map("post_id")
+  post        Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+  creatorId   String   @map("creator_id")
+  destination String
+  externalUrl String   @map("external_url")
+  externalId  String?  @map("external_id")
+  /// views | likes | favorites | comments | reposts | quotes | bookmarks | impressions | …
+  metricType  String   @map("metric_type")
+  value       Int?
+  raw         Json     @default("{}")
+  /// extension_dom | public_scrape | platform_api | manual | third_party
+  source      String
+  capturedAt  DateTime @default(now()) @map("captured_at")
+
+  @@index([attemptId, metricType, capturedAt])
+  @@index([platformInstanceId, metricType, capturedAt])
+  @@index([postId, destination, metricType, capturedAt])
+  @@index([creatorId, capturedAt])
+  @@map("external_post_metric_snapshots")
+}
+
+/// Slice 2d — daily rollup of external post metrics for creator-level analytics.
+model ExternalPostMetricDaily {
+  id             String   @id @default(cuid())
+  creatorId      String   @map("creator_id")
+  postId         String   @map("post_id")
+  destination    String
+  metricType     String   @map("metric_type")
+  day            DateTime @db.Date @map("day")
+  value          Int      @default(0)
+  deltaFromPrior Int?     @map("delta_from_prior")
+  /// extension_dom | public_scrape | platform_api | manual | third_party
+  source         String
+  computedAt     DateTime @default(now()) @map("computed_at")
+
+  @@unique([creatorId, postId, destination, metricType, day])
+  @@index([creatorId, day])
+  @@index([postId, metricType, day])
+  @@map("external_post_metric_daily")
+}
+
+/// Performance intelligence — Work/Bundle (one creative work across variants/platforms).
+/// @see docs/analytics/PERFORMANCE_INTELLIGENCE_VOCABULARY.md
+enum CreativeWorkVariantRole {
+  full
+  teaser
+  promo
+  repost
+  standalone
+}
+
+model CreativeWork {
+  id                     String   @id
+  creatorId              String   @map("creator_id")
+  title                  String
+  description            String?  @db.Text
+  /// Analytics campaign label (not Patreon `Campaign`).
+  analyticsCampaignLabel String?  @map("analytics_campaign_label")
+  tags                   String[] @default([])
+  /// True when auto-created 1:1 for a single Relay Post (legacy backfill or default on create).
+  isDefaultBundle        Boolean  @default(false) @map("is_default_bundle")
+  createdAt              DateTime @default(now()) @map("created_at")
+  updatedAt              DateTime @updatedAt @map("updated_at")
+
+  members CreativeWorkMember[]
+  incomingBundleSuggestions CreativeWorkBundleSuggestionDismissal[] @relation("DismissedTargetWork")
+
+  @@index([creatorId, createdAt(sort: Desc)])
+  @@index([creatorId, analyticsCampaignLabel])
+  @@map("creative_works")
+}
+
+/// Links a Relay Post to a Work/Bundle with a variant role (full, teaser, etc.).
+model CreativeWorkMember {
+  id             String                  @id
+  creativeWorkId String                  @map("creative_work_id")
+  creativeWork   CreativeWork            @relation(fields: [creativeWorkId], references: [id], onDelete: Cascade)
+  postId         String                  @unique @map("post_id")
+  post           Post                    @relation(fields: [postId], references: [id], onDelete: Cascade)
+  creatorId      String                  @map("creator_id")
+  variantRole    CreativeWorkVariantRole @default(standalone) @map("variant_role")
+  sortOrder      Int                     @default(0) @map("sort_order")
+  linkedAt       DateTime                @default(now()) @map("linked_at")
+
+  @@index([creativeWorkId, sortOrder])
+  @@index([creatorId])
+  @@map("creative_work_members")
+}
+
+/// User-dismissed Work/Bundle merge suggestion (never auto-merge).
+model CreativeWorkBundleSuggestionDismissal {
+  id                   String       @id @default(cuid())
+  creatorId            String       @map("creator_id")
+  sourcePostId         String       @map("source_post_id")
+  targetCreativeWorkId String       @map("target_creative_work_id")
+  targetCreativeWork   CreativeWork @relation("DismissedTargetWork", fields: [targetCreativeWorkId], references: [id], onDelete: Cascade)
+  dismissedAt          DateTime     @default(now()) @map("dismissed_at")
+
+  @@unique([creatorId, sourcePostId, targetCreativeWorkId])
+  @@index([creatorId, dismissedAt(sort: Desc)])
+  @@map("creative_work_bundle_suggestion_dismissals")
+}
+
+/// Performance intelligence Phase 8 — targeted metric goals (work, campaign, platform, creator).
+enum PerformanceGoalScope {
+  creator
+  work
+  campaign
+  platform
+}
+
+enum PerformanceGoalMetric {
+  reach
+  likes
+  comments
+}
+
+model CreatorPerformanceGoal {
+  id          String                 @id @default(cuid())
+  creatorId   String                 @map("creator_id")
+  scope       PerformanceGoalScope
+  /// Work id, analytics campaign label, destination slug, or null for creator-wide.
+  scopeRef    String?                @map("scope_ref")
+  metric      PerformanceGoalMetric
+  targetValue Int                    @map("target_value")
+  /// Measurement window: 7d | 30d | 90d
+  range       String                 @default("30d")
+  label       String?
+  enabled     Boolean                @default(true)
+  createdAt   DateTime               @default(now()) @map("created_at")
+  updatedAt   DateTime               @updatedAt @map("updated_at")
+
+  @@index([creatorId, enabled])
+  @@index([creatorId, scope, scopeRef])
+  @@map("creator_performance_goals")
+}
+
+/// Performance intelligence — one published/linkable presence on a destination.
+/// @see docs/analytics/PLATFORM_INSTANCE_SCHEMA.md
+enum PlatformInstanceLinkSource {
+  autopost_success
+  manual_url_confirm
+  api_identity
+  csv_import
+  suggested_merge
+  inferred_only
+  relay_native
+}
+
+enum PlatformInstanceStatus {
+  active
+  unlinked
+  stale
+}
+
+model PlatformInstance {
+  id              String                     @id
+  creatorId       String                     @map("creator_id")
+  postId          String                     @map("post_id")
+  post            Post                       @relation(fields: [postId], references: [id], onDelete: Cascade)
+  destination     String
+  externalUrl     String?                    @map("external_url")
+  externalId      String?                    @map("external_id")
+  attemptId       String?                    @unique @map("attempt_id")
+  attempt         PostDistributionAttempt?   @relation(fields: [attemptId], references: [id], onDelete: SetNull)
+  linkSource      PlatformInstanceLinkSource @map("link_source")
+  status          PlatformInstanceStatus     @default(active)
+  /// conservative | manual_only | disabled — refresh scheduling hint for Phase 4.
+  refreshPolicy   String                     @default("conservative") @map("refresh_policy")
+  linkedAt        DateTime                   @default(now()) @map("linked_at")
+  lastRefreshedAt DateTime?                  @map("last_refreshed_at")
+  /// Last creator-initiated refresh request (cooldown anchor for manual refresh).
+  lastManualRefreshRequestedAt DateTime?     @map("last_manual_refresh_requested_at")
+  createdAt       DateTime                   @default(now()) @map("created_at")
+  updatedAt       DateTime                   @updatedAt @map("updated_at")
+
+  metricSnapshots ExternalPostMetricSnapshot[]
+
+  @@unique([postId, destination])
+  @@index([creatorId, destination])
+  @@index([creatorId, status])
+  @@index([externalUrl])
+  @@map("platform_instances")
+}
+
+/// WI-5 — creator monthly Relay-native posting goal.
+model CreatorPostingGoal {
+  creatorId          String   @id @map("creator_id")
+  /// Required during creator onboarding. Default is intentionally gentle: 1 Relay-native post/month.
+  monthlyPostTarget  Int      @default(1) @map("monthly_post_target")
+  /// Optional: suggest one extra post when the goal is already met and staged media is available.
+  bonusNudgesEnabled Boolean  @default(false) @map("bonus_nudges_enabled")
+  /// IANA timezone for calendar-month windows. Default UTC until browser/profile timezone is available.
+  timezone           String   @default("UTC")
+  enabled            Boolean  @default(true)
+  createdAt          DateTime @default(now()) @map("created_at")
+  updatedAt          DateTime @updatedAt @map("updated_at")
+
+  @@map("creator_posting_goals")
+}
+
+/// WI-5 — one active/snoozed/skipped nudge per creator/month/type.
+model CreatorPostingNudge {
+  id           String    @id @default(cuid())
+  creatorId    String    @map("creator_id")
+  /// Creator-local month key, e.g. "2026-06".
+  periodKey    String    @map("period_key")
+  /// "posting_goal" | "bonus_post" (kept as string for forward compatibility).
+  nudgeType    String    @default("posting_goal") @map("nudge_type")
+  /// "active" | "snoozed" | "skipped" | "resolved".
+  status       String    @default("active")
+  snoozedUntil DateTime? @map("snoozed_until")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+
+  @@unique([creatorId, periodKey, nudgeType])
+  @@index([status, snoozedUntil])
+  @@map("creator_posting_nudges")
+}
+
+/// WI-8 — encrypted Bluesky app password for server-side cross-post publish.
+model CreatorBlueskyCredential {
+  creatorId            String   @id @map("creator_id")
+  handle               String
+  encryptedAppPassword Bytes    @map("encrypted_app_password")
+  createdAt            DateTime @default(now()) @map("created_at")
+  updatedAt            DateTime @updatedAt @map("updated_at")
+
+  @@map("creator_bluesky_credentials")
 }
 
 /// Replaces `gallery_post_overrides.json` — one row per (creator, post, media scope).
@@ -871,6 +1319,106 @@ model RelayEngagementEvent {
 
   @@index([creatorId, occurredAt])
   @@map("relay_engagement_events")
+}
+
+/// PMD-041 — cross-tenant first-party telemetry (page_view, session_start, feed_open, …).
+model PlatformTelemetryEvent {
+  id         String   @id @default(cuid())
+  eventName  String   @map("event_name")
+  version    String   @default("1.0")
+  producer   String?
+  occurredAt DateTime @map("occurred_at")
+  ingestedAt DateTime @default(now()) @map("ingested_at")
+  sessionKey String?  @map("session_key")
+  actorKey   String?  @map("actor_key")
+  creatorId  String?  @map("creator_id")
+  payload    Json     @default("{}")
+  traceId    String?  @map("trace_id")
+
+  @@index([eventName, occurredAt])
+  @@index([occurredAt])
+  @@index([creatorId, occurredAt])
+  @@map("platform_telemetry_events")
+}
+
+/// PMD-050 — idempotent daily rollup storage for operator dashboard metrics.
+model PlatformMetricDailyRollup {
+  id              String   @id @default(cuid())
+  metricKey       String   @map("metric_key")
+  dayUtc          DateTime @map("day_utc") @db.Date
+  scope           String
+  /// Empty string denotes platform/system-wide rollups.
+  scopeId         String   @default("") @map("scope_id")
+  value           Decimal  @db.Decimal(24, 6)
+  dimensions      Json     @default("{}")
+  sourceFreshness Json     @default("{}") @map("source_freshness")
+  generatedAt     DateTime @default(now()) @map("generated_at")
+
+  @@unique([metricKey, dayUtc, scope, scopeId])
+  @@index([metricKey, dayUtc])
+  @@index([dayUtc])
+  @@index([scope, scopeId, dayUtc])
+  @@map("platform_metric_daily_rollups")
+}
+
+/// PMD-060 — append-only Relay-native and labeled upstream revenue telemetry for operator rollups.
+enum PlatformRevenueSourceLabel {
+  relay_native
+  patreon_upstream
+  external_estimate
+}
+
+enum PlatformRevenueEventKind {
+  checkout_started
+  checkout_completed
+  checkout_failed
+  subscription_created
+  subscription_upgraded
+  subscription_downgraded
+  subscription_canceled
+  refund_issued
+  payout_settled
+}
+
+model PlatformRevenueEvent {
+  id              String                     @id @default(cuid())
+  eventKind       PlatformRevenueEventKind   @map("event_kind")
+  sourceLabel     PlatformRevenueSourceLabel @map("source_label")
+  provider        String?
+  occurredAt      DateTime                   @map("occurred_at")
+  ingestedAt      DateTime                   @default(now()) @map("ingested_at")
+  creatorId       String?                    @map("creator_id")
+  checkoutId      String?                    @map("checkout_id")
+  subscriptionId  String?                    @map("subscription_id")
+  amountCents     Int?                       @map("amount_cents")
+  netAmountCents  Int?                       @map("net_amount_cents")
+  currency        String                     @default("USD")
+  status          String?
+  payload         Json                       @default("{}")
+  traceId         String?                    @map("trace_id")
+
+  @@index([eventKind, occurredAt])
+  @@index([sourceLabel, occurredAt])
+  @@index([creatorId, occurredAt])
+  @@index([occurredAt])
+  @@map("platform_revenue_events")
+}
+
+/// PMD-071 — append-only audit trail for privileged platform metrics API access.
+model PlatformOperatorAccessAudit {
+  id        String   @id @default(cuid())
+  action    String
+  outcome   String
+  reason    String
+  accountId String?  @map("account_id")
+  traceId   String?  @map("trace_id")
+  route     String?
+  method    String?
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([createdAt(sort: Desc)])
+  @@index([accountId, createdAt])
+  @@map("platform_operator_access_audits")
 }
 
 model RecommendationRecord {
@@ -1216,6 +1764,14 @@ enum NotificationKind {
   tier_changed
   new_post_followed
   mention
+  /// Creator inbox — top-level comment on the creator's post.
+  post_commented
+  /// Creator inbox — patron starred a post or media item.
+  post_favorited
+  /// Creator inbox — patron saved post/media to a snip collection.
+  post_collected
+  /// Creator inbox — patron entitlement became active (new or returning subscriber).
+  new_subscriber
 }
 
 /// PE-G (BO-P3-03) — durable per-recipient notification rows.
@@ -1232,37 +1788,45 @@ enum NotificationKind {
 /// Read state: `readAt` null = unread. The mark-read endpoint is the only writer; the worker
 /// never touches `readAt`.
 model Notification {
-  id                    String           @id @default(cuid())
-  /// TenantMembership.id for the recipient. Indexed; the patron feed query filters on this.
-  recipientMembershipId String           @map("recipient_membership_id")
+  id                         String           @id @default(cuid())
+  /// Patron recipient lane — `TenantMembership.id`. Exactly one of membership or creator account must be set.
+  recipientMembershipId      String?          @map("recipient_membership_id")
+  /// Creator recipient lane — `Account.id` for the studio owner. Mutually exclusive with membership.
+  recipientCreatorAccountId  String?          @map("recipient_creator_account_id")
   /// Optional creator scope -- when set, filters / preferences operate per-creator.
-  relayCreatorId        String           @default("") @map("relay_creator_id")
-  kind                  NotificationKind
+  relayCreatorId             String           @default("") @map("relay_creator_id")
+  kind                       NotificationKind
   /// Free-form, kind-shaped payload. Examples:
   ///   tier_changed:     { prior_tier_ids, next_tier_ids, active }
   ///   comment_liked:    { post_id, comment_id, latest_actor_account_id }
   ///   comment_replied:  { post_id, comment_id, parent_comment_id, reply_account_id }
   ///   new_follower:     { follower_account_id }
-  payloadJson           Json             @map("payload_json")
+  ///   post_commented:   { post_id, comment_id, author_membership_id }
+  ///   post_favorited:   { post_id?, target_kind, target_id, actor_account_id }
+  ///   post_collected:   { post_id, media_id, collection_id, actor_membership_id }
+  ///   new_subscriber:   { patron_membership_id, next_tier_ids }
+  payloadJson                Json             @map("payload_json")
   /// Optional dedupe key for clustering. NULL = never coalesce. Same key + same recipient + an
   /// existing unread row inside CLUSTER_WINDOW_MS = increment count; new row otherwise.
-  clusterKey            String?          @map("cluster_key")
+  clusterKey                 String?          @map("cluster_key")
   /// How many underlying events have been folded into this row (>= 1). Always 1 for un-clustered.
-  clusterCount          Int              @default(1) @map("cluster_count")
+  clusterCount               Int              @default(1) @map("cluster_count")
   /// FK-style trace back to the OutboxEvent that produced this notification (most-recent for clusters).
-  /// When `cluster_key` is null, Postgres enforces uniqueness on (`source_event_id`, `recipient_membership_id`)
-  /// so concurrent delivery ticks cannot insert duplicate rows for the same outbox event + recipient
-  /// (see migration `20260508160000_notifications_nonclustered_source_recipient_unique`).
-  sourceEventId         String?          @map("source_event_id")
+  /// When `cluster_key` is null, Postgres enforces partial unique indexes per recipient lane
+  /// (see migration `20260528180000_creator_notification_recipients`).
+  sourceEventId              String?          @map("source_event_id")
   /// Read state. Null = unread.
-  readAt                DateTime?        @map("read_at")
-  createdAt             DateTime         @default(now()) @map("created_at")
-  updatedAt             DateTime         @updatedAt @map("updated_at")
+  readAt                     DateTime?        @map("read_at")
+  createdAt                  DateTime         @default(now()) @map("created_at")
+  updatedAt                  DateTime         @updatedAt @map("updated_at")
 
-  membership TenantMembership @relation(fields: [recipientMembershipId], references: [id], onDelete: Cascade)
+  membership      TenantMembership? @relation(fields: [recipientMembershipId], references: [id], onDelete: Cascade)
+  creatorAccount  Account?          @relation("CreatorNotificationRecipient", fields: [recipientCreatorAccountId], references: [id], onDelete: Cascade)
 
   @@index([recipientMembershipId, readAt, createdAt(sort: Desc)])
   @@index([recipientMembershipId, clusterKey])
+  @@index([recipientCreatorAccountId, readAt, createdAt(sort: Desc)])
+  @@index([recipientCreatorAccountId, clusterKey])
   @@map("notifications")
 }
 

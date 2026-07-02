@@ -26,7 +26,7 @@
 
 | Rule | Expected behavior |
 |------|-------------------|
-| **Creator vs patron OAuth** | Creator flows use creator connect/callback; patron flows use patron connect/callback — do not swap routes (**`web/app/patreon/`**, **`web/app/patreon/patron/`**). |
+| **Creator vs patron OAuth** | Creator flows use creator connect/callback; patron flows use patron connect/callback — do not swap routes (**`web/app/patreon/`**, **`web/app/connect/patreon/patron/`**). |
 | **Callback handling** | OAuth callbacks should surface errors readably; silent failure on token exchange → **fail** for QA unless spec says otherwise. |
 
 ---
@@ -39,7 +39,7 @@
 | **`/designer`** | Available when scoped for Site Designer work; no crash on load in dev. | — |
 | **`/visitor`** | Fan-appropriate entry per pattern library; no crash on load. | Show other users’ private data without entitlement. |
 | **`/patreon/connect`**, **`/patreon/callback`** | Clear states for connect vs error vs success. | Infinite redirect loops (**fail**). |
-| **`/patreon/patron/connect`**, **`/patreon/patron/callback`** | Same clarity as creator flows, patron-specific copy where required. | — |
+| **`/connect/patreon/patron/connect`**, **`/connect/patreon/patron/callback`** | Same clarity as creator flows, patron-specific copy where required. | — |
 | **`/dev/bench`** | Dev-only tooling — must not be required for production acceptance unless a ledger row says so. | — |
 
 ---

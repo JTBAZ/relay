@@ -12,6 +12,14 @@ This folder contains the **complete design & implementation guide** for the Rela
 
 | Document | Purpose | Length | Audience |
 |----------|---------|--------|----------|
+| **[PERFORMANCE_INTELLIGENCE_VOCABULARY.md](PERFORMANCE_INTELLIGENCE_VOCABULARY.md)** | **Phase 0 glossary** — Work/Bundle, variant roles, platform instances, metric source/confidence/freshness, bundling, drill-down views | ~350 lines | Product, backend, frontend, agents |
+| **[CREATIVE_WORK_SCHEMA.md](CREATIVE_WORK_SCHEMA.md)** | Phase 1 Work/Bundle schema, backfill, and service hooks | ~80 lines | Backend, agents |
+| **[PLATFORM_INSTANCE_SCHEMA.md](PLATFORM_INSTANCE_SCHEMA.md)** | Phase 2 Platform Instance identity, snapshot linkage, distribution hooks | ~90 lines | Backend, agents |
+| **[UNIFIED_READ_V2.md](UNIFIED_READ_V2.md)** | Phase 3 scoped performance read endpoints (overview, campaigns, tags, works, posts, instances) | ~100 lines | Backend, frontend, agents |
+| **[STUDIO_PACKAGING_DATA.md](STUDIO_PACKAGING_DATA.md)** | Phase 10a studio packaging APIs — role breakdown, instances list, gallery preload, cross-post gaps | ~120 lines | Backend, frontend, v0 |
+| **[STUDIO_HERO_UNFOLD_V0_PROMPT.md](STUDIO_HERO_UNFOLD_V0_PROMPT.md)** | **Copy-paste v0 prompt** — Phase 10b hero-unfold prototype: radial platform cards, blank cross-post cards, 5-segment action bar, merged Relay View toggle | ~200 lines | Design, v0 |
+| **[SAFE_REFRESH.md](SAFE_REFRESH.md)** | Phase 4 manual refresh APIs, cooldowns, conservative BullMQ sweep | ~90 lines | Backend, frontend, agents |
+| **[SUGGESTED_BUNDLING.md](SUGGESTED_BUNDLING.md)** | Phase 5 suggested merge/split with user confirmation | ~90 lines | Backend, frontend, agents |
 | **[ANALYTICS_READINESS.md](ANALYTICS_READINESS.md)** | Full infrastructure audit + 8 novel insights with formulas, complexity ratings, pre-compute strategies, 4-phase roadmap | 1400 lines | Engineers, Product |
 | **[IMPLEMENTATION_PRIORITIES.md](IMPLEMENTATION_PRIORITIES.md)** | Executive summary, recommended build order (Tier 1–3 insights), 4–6 week timeline, key decisions, SLOs | 400 lines | Tech leads, Product |
 | **[DATA_FLOWS_REFERENCE.md](DATA_FLOWS_REFERENCE.md)** | Quick-ref SQL recipes, query performance SLOs, indexing strategy, refresh schedules, data quality checks | 450 lines | Backend engineers |
@@ -265,3 +273,5 @@ A: Post-pilot. Colors in the spec adapt; currently light mode only.
 **Last Updated:** May 10, 2026  
 **Status:** Ready for pilot implementation  
 **Owner:** Product + Engineering team
+
+**Cross-platform performance intelligence (2026-07):** See [PERFORMANCE_INTELLIGENCE_VOCABULARY.md](PERFORMANCE_INTELLIGENCE_VOCABULARY.md) for Work/Bundle analytics vocabulary after Slice 2d.

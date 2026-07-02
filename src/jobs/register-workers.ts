@@ -14,8 +14,19 @@ import {
   runPatronEntitlementStaleRefreshOnce
 } from "../patron/patron-entitlement-stale-worker.js";
 import { processNotificationOutboxOnce } from "../patron/notification-delivery-worker.js";
+import { processNotificationDigestOnce } from "../patron/notification-digest-worker.js";
 import { processAccountDeletionSweepOnce } from "../patron/account-deletion-worker.js";
 import { processMediaStoragePurgeSweepOnce } from "../storage/media-storage-purge-worker.js";
+import {
+  platformMetricDailyRollupLookbackDaysFromEnv,
+  runPlatformMetricDailyRollupOnce
+} from "../platform-metrics/platform-metric-daily-rollup-job.js";
+import {
+  externalMetricDailyRollupLookbackDaysFromEnv,
+  runExternalMetricDailyRollupOnce
+} from "../analytics/external-metric-rollup-job.js";
+import { runPlatformInstanceRefreshSweepOnce } from "../analytics/platform-instance-refresh-sweep-job.js";
+import { runPostingGoalNudgeOnce } from "../autopost/posting-goal-nudge-worker.js";
 import type { PatreonCampaignCreatorIndex } from "../patreon/patreon-campaign-creator-index.js";
 import type { PatreonSyncHealthStoreAPI } from "../patreon/patreon-sync-health-store.js";
 import type { PatreonSyncService } from "../patreon/patreon-sync-service.js";
@@ -31,8 +42,13 @@ import {
   type AccountDeletionSweepJobData,
   type MediaStoragePurgeJobData,
   type NotificationDeliveryJobData,
+  type NotificationDigestJobData,
   type PatreonIncrementalAutosyncJobData,
   type PatronEntitlementStaleRefreshJobData,
+  type PlatformMetricDailyRollupJobData,
+  type ExternalMetricDailyRollupJobData,
+  type PlatformInstanceRefreshSweepJobData,
+  type PostingGoalNudgeJobData,
   type RelayJobQueueName,
   type RelayJobTraceFields,
   type SubscribeStarGraphqlPostsIngestJobData
@@ -278,6 +294,25 @@ export function registerRelayBullMqWorkers(
     );
 
     workers.push(
+      new Worker<NotificationDigestJobData>(
+        RELAY_JOB_QUEUE_NAMES.NOTIFICATION_DIGEST,
+        async (job) => {
+          await runRelayBullMqJob(
+            log,
+            RELAY_JOB_QUEUE_NAMES.NOTIFICATION_DIGEST,
+            job,
+            async () => {
+              await processNotificationDigestOnce(prisma, {
+                batchSize: job.data?.patronMembershipId ? 1 : undefined
+              });
+            }
+          );
+        },
+        mk(RELAY_JOB_QUEUE_NAMES.NOTIFICATION_DIGEST)
+      )
+    );
+
+    workers.push(
       new Worker<AccountDeletionSweepJobData>(
         RELAY_JOB_QUEUE_NAMES.ACCOUNT_DELETION_SWEEP,
         async (job) => {
@@ -312,6 +347,89 @@ export function registerRelayBullMqWorkers(
           );
         },
         mk(RELAY_JOB_QUEUE_NAMES.MEDIA_STORAGE_PURGE)
+      )
+    );
+
+    workers.push(
+      new Worker<PlatformMetricDailyRollupJobData>(
+        RELAY_JOB_QUEUE_NAMES.PLATFORM_METRIC_DAILY_ROLLUP,
+        async (job) => {
+          await runRelayBullMqJob(
+            log,
+            RELAY_JOB_QUEUE_NAMES.PLATFORM_METRIC_DAILY_ROLLUP,
+            job,
+            async () => {
+              await runPlatformMetricDailyRollupOnce({
+                prisma,
+                dayUtc: job.data?.dayUtc as `${number}-${number}-${number}` | undefined,
+                lookbackDays: platformMetricDailyRollupLookbackDaysFromEnv(env)
+              });
+            }
+          );
+        },
+        mk(RELAY_JOB_QUEUE_NAMES.PLATFORM_METRIC_DAILY_ROLLUP)
+      )
+    );
+
+    workers.push(
+      new Worker<ExternalMetricDailyRollupJobData>(
+        RELAY_JOB_QUEUE_NAMES.EXTERNAL_METRIC_DAILY_ROLLUP,
+        async (job) => {
+          await runRelayBullMqJob(
+            log,
+            RELAY_JOB_QUEUE_NAMES.EXTERNAL_METRIC_DAILY_ROLLUP,
+            job,
+            async () => {
+              await runExternalMetricDailyRollupOnce({
+                prisma,
+                creatorId: job.data?.creatorId,
+                lookbackDays: externalMetricDailyRollupLookbackDaysFromEnv(env)
+              });
+            }
+          );
+        },
+        mk(RELAY_JOB_QUEUE_NAMES.EXTERNAL_METRIC_DAILY_ROLLUP)
+      )
+    );
+
+    workers.push(
+      new Worker<PlatformInstanceRefreshSweepJobData>(
+        RELAY_JOB_QUEUE_NAMES.PLATFORM_INSTANCE_REFRESH_SWEEP,
+        async (job) => {
+          await runRelayBullMqJob(
+            log,
+            RELAY_JOB_QUEUE_NAMES.PLATFORM_INSTANCE_REFRESH_SWEEP,
+            job,
+            async () => {
+              await runPlatformInstanceRefreshSweepOnce({
+                prisma,
+                creatorId: job.data?.creatorId,
+                env
+              });
+            }
+          );
+        },
+        mk(RELAY_JOB_QUEUE_NAMES.PLATFORM_INSTANCE_REFRESH_SWEEP)
+      )
+    );
+
+    workers.push(
+      new Worker<PostingGoalNudgeJobData>(
+        RELAY_JOB_QUEUE_NAMES.POSTING_GOAL_NUDGE,
+        async (job) => {
+          await runRelayBullMqJob(
+            log,
+            RELAY_JOB_QUEUE_NAMES.POSTING_GOAL_NUDGE,
+            job,
+            async () => {
+              await runPostingGoalNudgeOnce(prisma, {
+                creatorId: job.data?.creatorId,
+                log
+              });
+            }
+          );
+        },
+        mk(RELAY_JOB_QUEUE_NAMES.POSTING_GOAL_NUDGE)
       )
     );
   }

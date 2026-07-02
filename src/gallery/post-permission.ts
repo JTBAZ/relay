@@ -53,8 +53,20 @@ export function evaluatePostPermission(args: {
   isContentOwner?: boolean;
   /** Relay gallery override visibility (post-level); hidden excludes patrons even when tier-entitled. */
   relayPostVisibility?: PostVisibility | null;
+  /** When true and post is Adult (18+), patron viewers are denied. */
+  hideMatureContent?: boolean;
+  isPostMature?: boolean;
 }): PostPermissionOutcome | null {
-  const { snapshot, creatorId, postId, session, isContentOwner, relayPostVisibility } = args;
+  const {
+    snapshot,
+    creatorId,
+    postId,
+    session,
+    isContentOwner,
+    relayPostVisibility,
+    hideMatureContent,
+    isPostMature
+  } = args;
   const row = snapshot.posts[creatorId]?.[postId];
   if (!row || row.upstream_status === "deleted") {
     return null;
@@ -68,6 +80,10 @@ export function evaluatePostPermission(args: {
 
   if (relayPostVisibility === "hidden") {
     return { outcome: "deny", reason: "Post hidden by creator." };
+  }
+
+  if (hideMatureContent && isPostMature) {
+    return { outcome: "deny", reason: "18+ content hidden by your settings." };
   }
 
   const tierMap = snapshot.tiers[creatorId] ?? {};

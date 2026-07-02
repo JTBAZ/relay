@@ -5,6 +5,7 @@
  */
 
 import type { IngestMediaItem, SyncBatchInput } from "./types.js";
+import { sanitizeOptionalPostDescriptionHtml } from "../security/sanitize-post-html.js";
 
 /**
  * @description Validates unknown POST body into `SyncBatchInput` or structured errors.
@@ -179,9 +180,10 @@ export function validateIngestBatchBody(body: unknown): {
       batch.posts.push({
         post_id: String(o.post_id).trim(),
         title: String(o.title).trim(),
-        description: typeof o.description === "string" && o.description.trim()
-          ? o.description.trim()
-          : undefined,
+        description:
+          typeof o.description === "string"
+            ? sanitizeOptionalPostDescriptionHtml(o.description.trim())
+            : undefined,
         published_at: String(o.published_at).trim(),
         tag_ids: tagIds,
         tier_ids: tierIds,

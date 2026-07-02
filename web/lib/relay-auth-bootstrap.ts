@@ -34,14 +34,47 @@ type RelaySessionPayload = {
 };
 
 /**
+ * Unified onboarding bootstrap — sync Account + mint opaque Relay session cookie.
+ * Does NOT provision a creator workspace. Used by both creator and supporter onboarding
+ * paths at step 1, so both produce an identical base Account at sign-up regardless of which
+ * path card the user chose. Creator workspace is deferred to the Patreon connect step (step 3).
+ *
+ * Sets `relay_active_role` to `intent` so the onboarding shell routes correctly on refresh,
+ * but this is a UI lens only (GR-T0-2 invariant) — no authz signal.
+ *
+ * Clears any stale `relay_creator_id` / public slug from localStorage so the Gallery doesn't
+ * load another creator's data if the user navigates to `/`.
+ */
+export async function bootstrapAccountAfterSupabase(
+  accessToken: string,
+  intent: "creator" | "supporter"
+): Promise<SupporterBootstrapResult> {
+  await postRelayWithSupabaseJwt("/api/v1/auth/supabase/sync", accessToken, {});
+  const relay = await postRelayWithSupabaseJwt<RelaySessionPayload>(
+    "/api/v1/auth/supabase/relay-session",
+    accessToken,
+    {}
+  );
+  if (typeof window !== "undefined") {
+    window.localStorage.removeItem(RELAY_CREATOR_ID_STORAGE_KEY);
+    window.localStorage.removeItem(RELAY_PUBLIC_SLUG_STORAGE_KEY);
+  }
+  await setActiveRole(intent);
+  emitStudioSessionUpdate();
+  return { account_id: relay.account_id, token: relay.token };
+}
+
+/**
  * PE-A Skeletal UI — Supporter path: sync Account + mint opaque Relay session cookie.
  * Does NOT provision a creator workspace. Called after Supabase sign-in for supporter accounts.
  * After this returns, the browser has a `relay_session` cookie and the caller should navigate
- * to `/patreon/patron/connect` (first time) or `/patron/feed` (returning).
+ * to `/connect/patreon/patron/connect` (first time) or `/feed` (returning).
  *
  * Clears stale `relay_creator_id` from localStorage so the Library doesn't accidentally load
  * another creator's data if the user navigates to `/` (which falls through to GalleryView
  * when a creator id is present).
+ *
+ * Used by the /login page for returning supporters. New onboarding uses bootstrapAccountAfterSupabase.
  */
 export async function bootstrapSupporterAfterSupabase(
   accessToken: string
@@ -64,6 +97,9 @@ export async function bootstrapSupporterAfterSupabase(
 /**
  * MT-036: After Supabase sign-in, sync Account, mint opaque Relay session (HttpOnly cookie), provision workspace,
  * persist `relay_creator_id` / public slug in localStorage (UI cache only).
+ *
+ * Used by the /login page for returning creators. New onboarding uses bootstrapAccountAfterSupabase
+ * (which defers workspace provisioning to the Patreon connect step).
  */
 export async function bootstrapStudioAfterSupabase(accessToken: string): Promise<{
   relay_creator_id: string;

@@ -14,7 +14,12 @@ describe("DbPatronFavoritesStore", () => {
       createdAt: new Date("2026-01-01T00:00:00.000Z")
     });
     const deleteMany = vi.fn().mockResolvedValue({ count: 1 });
-    const prisma = { patronFavorite: { findUnique, create, deleteMany } };
+    const prisma = {
+      patronFavorite: { findUnique, create, deleteMany },
+      // store.add looks up the membership accountId to emit a forensic event after saving.
+      tenantMembership: { findUnique: vi.fn().mockResolvedValue(null) },
+      outboxEvent: { create: vi.fn() }
+    };
     const store = new DbPatronFavoritesStore(prisma as never);
 
     const rec = await store.add({

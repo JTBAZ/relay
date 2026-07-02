@@ -70,9 +70,9 @@ function absoluteBlobPathUnderCreator(
 
 const LIBRARY_ZIP_EMPTY_CODE = "LIBRARY_ZIP_EMPTY";
 
-/** R2 object keys for Relay uploads (ADR 002). */
-function isRelayR2StorageKey(key: string): boolean {
-  return key.startsWith("relay/");
+/** Object keys stored in R2 (Relay uploads + pilot UX dev fixtures). */
+function isR2BackedStorageKey(key: string): boolean {
+  return key.startsWith("relay/") || key.startsWith("pilot-ux/");
 }
 
 type MediaAssetExportSelect = {
@@ -451,7 +451,7 @@ export class ExportService {
         const buffer = await readFile(absolutePath);
         return { record: fromIndex, buffer };
       }
-      if (isRelayR2StorageKey(key)) {
+      if (isR2BackedStorageKey(key)) {
         const r2 = getR2ClientConfigFromEnv();
         if (!r2) {
           throw new Error(

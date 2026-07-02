@@ -160,36 +160,50 @@ export class DbGalleryOverridesStore implements GalleryOverridesStore {
     });
   }
 
+  /**
+   * Row-scoped atomic merge (PILOT-012 Gate F): the legacy implementation did a
+   * full-table `load()` → mutate → `save()` (global `deleteMany({})` + recreate),
+   * so any two concurrent override writes raced and the loser's rows — including
+   * `visibility=hidden` — were silently dropped. All mutators now upsert only
+   * their own row and only their own fields (same pattern as
+   * {@link DbGalleryOverridesStore.setDiscoveryEligible}).
+   */
   public async mergePostTagDelta(
     creatorId: string,
     postId: string,
     delta: { add_tag_ids: string[]; remove_tag_ids: string[] }
   ): Promise<void> {
-    const root = await this.load();
-    if (!root.creators[creatorId]) {
-      root.creators[creatorId] = { posts: {} };
-    }
-    const existing = root.creators[creatorId].posts[postId] ?? {
-      add_tag_ids: [],
-      remove_tag_ids: []
-    };
-    const addSet = new Set(existing.add_tag_ids);
-    const remSet = new Set(existing.remove_tag_ids);
-    for (const t of delta.add_tag_ids) {
-      addSet.add(t);
-      remSet.delete(t);
-    }
-    for (const t of delta.remove_tag_ids) {
-      remSet.add(t);
-      addSet.delete(t);
-    }
-    root.creators[creatorId].posts[postId] = {
-      add_tag_ids: [...addSet],
-      remove_tag_ids: [...remSet],
-      ...(existing.visibility !== undefined ? { visibility: existing.visibility } : {}),
-      ...(existing.media && Object.keys(existing.media).length > 0 ? { media: existing.media } : {})
-    };
-    await this.save(root);
+    await this.prisma.$transaction(async (tx) => {
+      const row = await tx.postOverride.findUnique({
+        where: { creatorId_postId_mediaId: { creatorId, postId, mediaId: "" } }
+      });
+      const addSet = new Set(row?.addTagIds ?? []);
+      const remSet = new Set(row?.removeTagIds ?? []);
+      for (const t of delta.add_tag_ids) {
+        addSet.add(t);
+        remSet.delete(t);
+      }
+      for (const t of delta.remove_tag_ids) {
+        remSet.add(t);
+        addSet.delete(t);
+      }
+      await tx.postOverride.upsert({
+        where: { creatorId_postId_mediaId: { creatorId, postId, mediaId: "" } },
+        create: {
+          creatorId,
+          postId,
+          mediaId: "",
+          addTagIds: [...addSet],
+          removeTagIds: [...remSet],
+          visibility: null,
+          discoveryEligible: false
+        },
+        update: {
+          addTagIds: [...addSet],
+          removeTagIds: [...remSet]
+        }
+      });
+    });
   }
 
   public async mergeBulkMediaTagDelta(
@@ -200,75 +214,84 @@ export class DbGalleryOverridesStore implements GalleryOverridesStore {
     if (targets.length === 0) {
       return;
     }
-    const root = await this.load();
-    if (!root.creators[creatorId]) {
-      root.creators[creatorId] = { posts: {} };
-    }
     const seen = new Set<string>();
-    for (const { post_id: pid, media_id: mediaId } of targets) {
-      if (!mediaId || mediaId.startsWith("post_only_")) {
-        continue;
+    await this.prisma.$transaction(async (tx) => {
+      for (const { post_id: postId, media_id: mediaId } of targets) {
+        if (!mediaId || mediaId.startsWith("post_only_")) {
+          continue;
+        }
+        const key = `${postId}\0${mediaId}`;
+        if (seen.has(key)) {
+          continue;
+        }
+        seen.add(key);
+        const row = await tx.postOverride.findUnique({
+          where: { creatorId_postId_mediaId: { creatorId, postId, mediaId } }
+        });
+        const addSet = new Set(row?.addTagIds ?? []);
+        const remSet = new Set(row?.removeTagIds ?? []);
+        for (const t of delta.add_tag_ids) {
+          addSet.add(t);
+          remSet.delete(t);
+        }
+        for (const t of delta.remove_tag_ids) {
+          remSet.add(t);
+          addSet.delete(t);
+        }
+        const emptied =
+          addSet.size === 0 && remSet.size === 0 && (row == null || row.visibility === null);
+        if (emptied) {
+          if (row) {
+            await tx.postOverride.delete({
+              where: { creatorId_postId_mediaId: { creatorId, postId, mediaId } }
+            });
+          }
+          continue;
+        }
+        await tx.postOverride.upsert({
+          where: { creatorId_postId_mediaId: { creatorId, postId, mediaId } },
+          create: {
+            creatorId,
+            postId,
+            mediaId,
+            addTagIds: [...addSet],
+            removeTagIds: [...remSet],
+            visibility: null
+          },
+          update: {
+            addTagIds: [...addSet],
+            removeTagIds: [...remSet]
+          }
+        });
       }
-      const key = `${pid}\0${mediaId}`;
-      if (seen.has(key)) {
-        continue;
-      }
-      seen.add(key);
-      if (!root.creators[creatorId].posts[pid]) {
-        root.creators[creatorId].posts[pid] = { add_tag_ids: [], remove_tag_ids: [] };
-      }
-      const existing = root.creators[creatorId].posts[pid];
-      const media = { ...(existing.media ?? {}) };
-      const prev = media[mediaId] ?? {};
-      const addSet = new Set(prev.add_tag_ids ?? []);
-      const remSet = new Set(prev.remove_tag_ids ?? []);
-      for (const t of delta.add_tag_ids) {
-        addSet.add(t);
-        remSet.delete(t);
-      }
-      for (const t of delta.remove_tag_ids) {
-        remSet.add(t);
-        addSet.delete(t);
-      }
-      const next: MediaOverride = {
-        ...(prev.visibility !== undefined ? { visibility: prev.visibility } : {}),
-        ...(addSet.size > 0 ? { add_tag_ids: [...addSet] } : {}),
-        ...(remSet.size > 0 ? { remove_tag_ids: [...remSet] } : {})
-      };
-      const compact = compactMediaOverride(next);
-      if (compact) {
-        media[mediaId] = compact;
-      } else {
-        delete media[mediaId];
-      }
-      if (Object.keys(media).length === 0) {
-        delete existing.media;
-      } else {
-        existing.media = media;
-      }
-      root.creators[creatorId].posts[pid] = existing;
-    }
-    await this.save(root);
+    });
   }
 
+  /**
+   * Atomic per-row visibility upsert. Touches only the `visibility` column so
+   * concurrent tag merges on the same row cannot drop a hide (Gate F).
+   */
   public async setVisibility(
     creatorId: string,
     postIds: string[],
     visibility: PostVisibility
   ): Promise<void> {
-    const root = await this.load();
-    if (!root.creators[creatorId]) {
-      root.creators[creatorId] = { posts: {} };
-    }
+    const v = postVisibilityToEnum(visibility);
     for (const postId of postIds) {
-      const existing = root.creators[creatorId].posts[postId] ?? {
-        add_tag_ids: [],
-        remove_tag_ids: []
-      };
-      existing.visibility = visibility;
-      root.creators[creatorId].posts[postId] = existing;
+      await this.prisma.postOverride.upsert({
+        where: { creatorId_postId_mediaId: { creatorId, postId, mediaId: "" } },
+        create: {
+          creatorId,
+          postId,
+          mediaId: "",
+          addTagIds: [],
+          removeTagIds: [],
+          visibility: v,
+          discoveryEligible: false
+        },
+        update: { visibility: v }
+      });
     }
-    await this.save(root);
   }
 
   public async setMediaVisibility(
@@ -278,21 +301,21 @@ export class DbGalleryOverridesStore implements GalleryOverridesStore {
     if (entries.length === 0) {
       return;
     }
-    const root = await this.load();
-    if (!root.creators[creatorId]) {
-      root.creators[creatorId] = { posts: {} };
-    }
     for (const { post_id: postId, media_id: mediaId, visibility } of entries) {
-      const existing = root.creators[creatorId].posts[postId] ?? {
-        add_tag_ids: [],
-        remove_tag_ids: []
-      };
-      const media = { ...(existing.media ?? {}) };
-      media[mediaId] = { ...(media[mediaId] ?? {}), visibility };
-      existing.media = media;
-      root.creators[creatorId].posts[postId] = existing;
+      const v = postVisibilityToEnum(visibility);
+      await this.prisma.postOverride.upsert({
+        where: { creatorId_postId_mediaId: { creatorId, postId, mediaId } },
+        create: {
+          creatorId,
+          postId,
+          mediaId,
+          addTagIds: [],
+          removeTagIds: [],
+          visibility: v
+        },
+        update: { visibility: v }
+      });
     }
-    await this.save(root);
   }
 
   public async setDiscoveryEligible(

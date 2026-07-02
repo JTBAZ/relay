@@ -6,6 +6,7 @@
  */
 
 import type { Prisma } from "@prisma/client";
+import { sanitizeOptionalPostDescriptionHtml } from "../security/sanitize-post-html.js";
 
 /**
  * @description Relay-only presentation overlay for a post (mirrors `PostPresentation` without Prisma types). Loaded from DB and merged at read time with canonical / `PostVersion` snapshot data.
@@ -93,9 +94,11 @@ export function mergePostPresentation(
     hasTierPreview = true;
   }
 
+  const sanitizedDescription = sanitizeOptionalPostDescriptionHtml(description);
+
   return {
     title,
-    ...(description !== undefined ? { description } : {}),
+    ...(sanitizedDescription !== undefined ? { description: sanitizedDescription } : {}),
     media_ids_ordered,
     ...(hasTierPreview ? { tier_preview_settings } : {})
   };

@@ -32,8 +32,8 @@ import {
 import { emitStudioSessionUpdate } from "@/lib/studio-session-context";
 
 const LANDING_BY_ROLE: Record<ActiveRole, string> = {
-  creator: "/designer",
-  supporter: "/patron/feed"
+  creator: "/studio",
+  supporter: "/feed"
 };
 
 const LABEL_BY_ROLE: Record<ActiveRole, string> = {
@@ -62,7 +62,9 @@ export function RoleSwitcher({
   const [error, setError] = useState<string | null>(null);
 
   const refreshMe = useCallback(() => {
-    void fetchPatronSessionIfPresent().then((m) => setMe(m ?? null));
+    void fetchPatronSessionIfPresent()
+      .then((m) => setMe(m ?? null))
+      .catch(() => setMe(null));
   }, []);
 
   useEffect(() => {

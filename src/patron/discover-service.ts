@@ -33,6 +33,7 @@
 
 import type { CanonicalSnapshot, PostRow } from "../ingest/canonical-store.js";
 import { itemMatchesFreeTextQuery, stripHtmlForSearch } from "../gallery/query.js";
+import { isPostMatureFromPatronSurfaces } from "../gallery/mature-post-ids.js";
 import type { GalleryItem, GalleryOverridesRoot } from "../gallery/types.js";
 import { RELAY_TIER_PUBLIC } from "../patreon/relay-access-tiers.js";
 
@@ -71,6 +72,8 @@ export interface DiscoverListParams {
    * themselves on the Discover surface. Pass null/undefined for anonymous-like behavior.
    */
   viewer_relay_creator_id?: string | null;
+  /** When true, omit Adult (18+) posts from the page. */
+  hide_mature_content?: boolean;
 }
 
 /** Encode/decode opaque cursor: base64({ published_at, post_id, creator_id }). */
@@ -112,7 +115,8 @@ function passesDiscoverV1TierGate(tierIds: string[]): boolean {
 function collectEligible(
   snapshot: CanonicalSnapshot,
   overrides: GalleryOverridesRoot,
-  excludeCreatorId: string | null | undefined
+  excludeCreatorId: string | null | undefined,
+  hideMatureContent: boolean
 ): DiscoverItem[] {
   const out: DiscoverItem[] = [];
   for (const [creatorId, posts] of Object.entries(snapshot.posts)) {
@@ -123,6 +127,17 @@ function collectEligible(
       const eligible = creatorOverride[postId]?.discovery_eligible === true;
       if (!eligible) continue;
       if (!passesDiscoverV1TierGate(postRow.current.tier_ids)) continue;
+      if (
+        hideMatureContent &&
+        isPostMatureFromPatronSurfaces({
+          overrides,
+          creatorId,
+          postId,
+          activeMediaIds: postRow.current.media_ids ?? []
+        })
+      ) {
+        continue;
+      }
       out.push(toDiscoverItem(creatorId, postRow));
     }
   }
@@ -231,7 +246,12 @@ export function buildDiscoverPage(
   const cap = params.creator_cap ?? DEFAULT_CREATOR_CAP;
 
   // 1. collect eligible candidates
-  const candidates = collectEligible(snapshot, overrides, params.viewer_relay_creator_id ?? null);
+  const candidates = collectEligible(
+    snapshot,
+    overrides,
+    params.viewer_relay_creator_id ?? null,
+    params.hide_mature_content === true
+  );
 
   // 2. filter by free-text query (kernel reuse)
   const filtered = params.q ? candidates.filter((it) => matchesQuery(it, params.q!)) : candidates;

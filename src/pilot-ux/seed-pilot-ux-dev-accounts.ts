@@ -1,5 +1,5 @@
 /**
- * PUX-000 — deterministic Postgres seed for two faux creators + one faux patron.
+ * PUX-000 — deterministic Postgres seed for faux creators + patrons.
  * No Patreon OAuth/API calls. Idempotent upserts into canonical Prisma tables.
  */
 import {
@@ -38,6 +38,7 @@ export type SeedPilotUxDevAccountsResult = {
   specPath: string;
   creators: Array<{ relayCreatorId: string; accountId: string }>;
   patron: { accountId: string; membershipId: string };
+  patronOnboarding?: { accountId: string; membershipId: string };
   counts: {
     tiers: number;
     posts: number;
@@ -83,6 +84,8 @@ async function upsertCreatorStudio(
       where: { id: account.id },
       data: {
         emailNorm,
+        username: acctSpec.publicSlug ?? creator.accountKey,
+        usernameNorm: (acctSpec.publicSlug ?? creator.accountKey).toLowerCase(),
         legacyFileId: acctSpec.legacyFileId,
         passwordHash: hashPassword(password),
         identityAuthProvider: IdentityAuthProvider.independent,
@@ -93,6 +96,8 @@ async function upsertCreatorStudio(
     account = await tx.account.create({
       data: {
         emailNorm,
+        username: acctSpec.publicSlug ?? creator.accountKey,
+        usernameNorm: (acctSpec.publicSlug ?? creator.accountKey).toLowerCase(),
         legacyFileId: acctSpec.legacyFileId,
         passwordHash: hashPassword(password),
         identityAuthProvider: IdentityAuthProvider.independent,
@@ -123,6 +128,8 @@ async function upsertCreatorStudio(
       userId: user.id,
       publicSlug: isWalkthrough ? PILOT_UX_ONBOARDING_PUBLIC_SLUG : profileSlug,
       slugSource: PublicSlugSource.allocated,
+      username: isWalkthrough ? null : profileSlug,
+      usernameNorm: isWalkthrough ? null : profileSlug.toLowerCase(),
       displayName: isWalkthrough ? null : acctSpec.displayName,
       discipline: isWalkthrough ? null : (acctSpec.discipline ?? null),
       patreonCampaignId: isWalkthrough ? null : creator.patreonCampaignId
@@ -143,6 +150,8 @@ async function upsertCreatorStudio(
         }
       : {
           displayName: acctSpec.displayName,
+          username: profileSlug,
+          usernameNorm: profileSlug.toLowerCase(),
           discipline: acctSpec.discipline ?? null,
           patreonCampaignId: creator.patreonCampaignId
         }
@@ -294,11 +303,14 @@ async function upsertCreatorStudio(
 async function upsertPatron(
   tx: Parameters<Parameters<PrismaClient["$transaction"]>[0]>[0],
   spec: PilotUxSeedSpec,
-  password: string
+  password: string,
+  options?: { accountKey?: string; seedGraph?: boolean }
 ): Promise<{ accountId: string; membershipId: string }> {
-  const acctSpec = spec.accounts[spec.patron.accountKey];
+  const accountKey = options?.accountKey?.trim() || spec.patron.accountKey;
+  const seedGraph = options?.seedGraph ?? accountKey === spec.patron.accountKey;
+  const acctSpec = spec.accounts[accountKey];
   if (!acctSpec) {
-    throw new Error(`Missing patron account spec`);
+    throw new Error(`Missing patron account spec for ${accountKey}`);
   }
   const emailNorm = acctSpec.email.toLowerCase().trim();
   const platformCreatorId = getPlatformRelayCreatorId();
@@ -320,6 +332,8 @@ async function upsertPatron(
       where: { id: account.id },
       data: {
         emailNorm,
+        username: acctSpec.handle ?? acctSpec.legacyFileId,
+        usernameNorm: (acctSpec.handle ?? acctSpec.legacyFileId).toLowerCase(),
         legacyFileId: acctSpec.legacyFileId,
         passwordHash: hashPassword(password),
         identityAuthProvider: IdentityAuthProvider.independent,
@@ -330,6 +344,8 @@ async function upsertPatron(
     account = await tx.account.create({
       data: {
         emailNorm,
+        username: acctSpec.handle ?? acctSpec.legacyFileId,
+        usernameNorm: (acctSpec.handle ?? acctSpec.legacyFileId).toLowerCase(),
         legacyFileId: acctSpec.legacyFileId,
         passwordHash: hashPassword(password),
         identityAuthProvider: IdentityAuthProvider.independent
@@ -366,47 +382,53 @@ async function upsertPatron(
     }
   });
 
-  const existingSeed = await tx.patronFollowSeed.findFirst({
-    where: {
-      patronMembershipId: membership.id,
-      source: PatronFollowSeedSource.initial_follow_worker
-    }
-  });
-  if (!existingSeed) {
-    await runPatronInitialFollowSeed({
-      prisma: tx as unknown as PrismaClient,
-      patronMembershipId: membership.id,
-      relayCreatorIds: spec.patron.followRelayCreatorIds,
-      source: PatronFollowSeedSource.initial_follow_worker
-    });
-  } else {
-    await upsertPatronFollowsForMembership(
-      tx as unknown as PrismaClient,
-      membership.id,
-      spec.patron.followRelayCreatorIds
-    );
-  }
-
-  for (const ent of spec.patron.entitlements) {
-    await upsertPatronEntitlementSnapshot(tx, {
-      patronMembershipId: membership.id,
-      relayCreatorId: ent.relayCreatorId,
-      entitledTierIds: [...ent.entitledTierIds],
-      source: EntitlementSource.manual_support,
-      campaignId:
-        spec.creators.find((c) => c.relayCreatorId === ent.relayCreatorId)?.patreonCampaignId ??
-        null,
-      now: SEED_NOW
-    });
-    await tx.patronEntitlementSnapshot.update({
+  if (seedGraph) {
+    const existingSeed = await tx.patronFollowSeed.findFirst({
       where: {
-        patronMembershipId_relayCreatorId: {
-          patronMembershipId: membership.id,
-          relayCreatorId: ent.relayCreatorId
-        }
-      },
-      data: { staleAfter: PILOT_UX_DEV_ENTITLEMENT_STALE_AFTER }
+        patronMembershipId: membership.id,
+        source: PatronFollowSeedSource.initial_follow_worker
+      }
     });
+    if (!existingSeed) {
+      await runPatronInitialFollowSeed({
+        prisma: tx as unknown as PrismaClient,
+        patronMembershipId: membership.id,
+        relayCreatorIds: spec.patron.followRelayCreatorIds,
+        source: PatronFollowSeedSource.initial_follow_worker
+      });
+    } else {
+      await upsertPatronFollowsForMembership(
+        tx as unknown as PrismaClient,
+        membership.id,
+        spec.patron.followRelayCreatorIds
+      );
+    }
+
+    for (const ent of spec.patron.entitlements) {
+      await upsertPatronEntitlementSnapshot(tx, {
+        patronMembershipId: membership.id,
+        relayCreatorId: ent.relayCreatorId,
+        entitledTierIds: [...ent.entitledTierIds],
+        source: EntitlementSource.manual_support,
+        campaignId:
+          spec.creators.find((c) => c.relayCreatorId === ent.relayCreatorId)?.patreonCampaignId ??
+          null,
+        now: SEED_NOW
+      });
+      await tx.patronEntitlementSnapshot.update({
+        where: {
+          patronMembershipId_relayCreatorId: {
+            patronMembershipId: membership.id,
+            relayCreatorId: ent.relayCreatorId
+          }
+        },
+        data: { staleAfter: PILOT_UX_DEV_ENTITLEMENT_STALE_AFTER }
+      });
+    }
+  } else {
+    await tx.patronFollow.deleteMany({ where: { patronMembershipId: membership.id } });
+    await tx.patronFollowSeed.deleteMany({ where: { patronMembershipId: membership.id } });
+    await tx.patronEntitlementSnapshot.deleteMany({ where: { patronMembershipId: membership.id } });
   }
 
   return { accountId: account.id, membershipId: membership.id };
@@ -467,6 +489,7 @@ export async function seedPilotUxDevAccounts(
   let postCount = 0;
   let mediaCount = 0;
   let patron!: { accountId: string; membershipId: string };
+  let patronOnboarding: { accountId: string; membershipId: string } | undefined;
 
   const resolvedSpecPath = specPath?.trim() || defaultPilotUxSeedFixturePath();
 
@@ -482,7 +505,17 @@ export async function seedPilotUxDevAccounts(
         postCount += creator.posts.length;
         mediaCount += creator.posts.length;
       }
-      patron = await upsertPatron(tx, spec, password);
+      patron = await upsertPatron(tx, spec, password, {
+        accountKey: spec.patron.accountKey,
+        seedGraph: true
+      });
+      const patronOnboardingKey = spec.patronOnboarding?.accountKey?.trim();
+      if (patronOnboardingKey) {
+        patronOnboarding = await upsertPatron(tx, spec, password, {
+          accountKey: patronOnboardingKey,
+          seedGraph: false
+        });
+      }
       await purgeExtraneousPilotDevCatalogPosts(tx, spec);
     },
     { maxWait: 15_000, timeout: 120_000 }
@@ -499,6 +532,7 @@ export async function seedPilotUxDevAccounts(
     specPath: resolvedSpecPath,
     creators,
     patron,
+    patronOnboarding,
     counts: {
       tiers: tierCount,
       posts: postCount,

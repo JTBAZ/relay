@@ -3,13 +3,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ChevronDown,
+  Check,
   Download,
   Eye,
   FileText,
   FolderPlus,
   Layers3,
   Plus,
+  Share2,
   Tag,
+  Trash2,
   X
 } from "lucide-react";
 import {
@@ -20,8 +23,12 @@ import {
   RELAY_API_BASE,
   buildGalleryVisibilityBody,
   bucketItemsByVisibilityAfterAction,
+  completeDistributionAttempt,
+  fetchPostDistributionSummary,
   relayFetch,
+  relayNativeDeletePost,
   type Collection,
+  type DistributionSummaryWire,
   type GalleryItem,
   type PostVisibility,
   type VisibilityAxisAction
@@ -30,10 +37,47 @@ import {
   PILOT_PERMISSION_BULK_VISIBILITY_HINT,
   PILOT_PERMISSION_HEADLINE
 } from "@/lib/pilot-permission-copy";
+import { subscribeRelayDistributionRefresh } from "@/lib/relay-distribution-refresh";
 
 type Panel = "none" | "tags" | "visibility" | "audience" | "collection";
 
 const SEL = "#00aa6f";
+
+const DISTRIBUTION_DEST_LABEL: Record<string, string> = {
+  patreon: "Patreon",
+  x: "X",
+  deviantart: "DeviantArt",
+  bluesky: "Bluesky"
+};
+
+function distributionStatusBadge(
+  row: DistributionSummaryWire["destinations"][number]
+): { label: string; className: string; href?: string; confirmable?: boolean } {
+  if (row.attempt_status === "posted" || row.external_url) {
+    return {
+      label: "posted",
+      className: "border-emerald-500/40 bg-emerald-500/10 text-emerald-200",
+      href: row.external_url ?? undefined
+    };
+  }
+  if (row.attempt_status?.startsWith("fill_")) {
+    return {
+      label: "sent",
+      className: "border-amber-500/40 bg-amber-500/10 text-amber-200",
+      confirmable: Boolean(row.attempt_id?.trim())
+    };
+  }
+  if (row.variant_status) {
+    return {
+      label: "draft",
+      className: "border-amber-500/40 bg-amber-500/10 text-amber-200"
+    };
+  }
+  return {
+    label: "not distributed",
+    className: "border-[var(--lib-border)] bg-[var(--lib-muted)]/50 text-[var(--lib-fg-muted)]"
+  };
+}
 
 type Props = {
   selectedCount: number;
@@ -58,6 +102,8 @@ type Props = {
   onError?: (message: string) => void;
   /** P5-sync-004 — matches API 423 when Patreon sync rollup is failed/degraded. */
   studioWriteBlocked?: boolean;
+  /** Open cross-post distribution sheet for a single selected post. */
+  onCrossPost?: (postId: string) => void;
 };
 
 function patreonAccessLabel(item: GalleryItem | null, tierTitleById: Record<string, string>): string {
@@ -163,7 +209,8 @@ export default function BulkActionBar({
   suggestedTags = [],
   onInspectPost,
   onError,
-  studioWriteBlocked = false
+  studioWriteBlocked = false,
+  onCrossPost
 }: Props) {
   const [panel, setPanel] = useState<Panel>("none");
   const [tagAddDraft, setTagAddDraft] = useState("");
@@ -178,9 +225,126 @@ export default function BulkActionBar({
   const [newCollectionOpen, setNewCollectionOpen] = useState(false);
   const [newCollectionTitle, setNewCollectionTitle] = useState("");
   const [visBusy, setVisBusy] = useState(false);
+  const [deleteBusy, setDeleteBusy] = useState(false);
+  const [distributionSummary, setDistributionSummary] = useState<DistributionSummaryWire | null>(
+    null
+  );
+  const [distributionLoading, setDistributionLoading] = useState(false);
+  const [confirmingAttemptId, setConfirmingAttemptId] = useState<string | null>(null);
+  const [expandedConfirmAttemptId, setExpandedConfirmAttemptId] = useState<string | null>(null);
+  const [confirmUrlDraft, setConfirmUrlDraft] = useState("");
   const rootRef = useRef<HTMLDivElement>(null);
 
   const closePanel = useCallback(() => setPanel("none"), []);
+
+  /**
+   * Relay-native posts get `relay_p_` ids on create (`POST /api/v1/relay/posts`).
+   * Progressive disclosure only — the DELETE route itself rejects non-RELAY posts.
+   */
+  const allSelectedAreRelayNative =
+    selectedPostIds.length > 0 && selectedPostIds.every((id) => id.startsWith("relay_p_"));
+
+  const deleteSelectedRelayPosts = useCallback(async () => {
+    if (studioWriteBlocked || deleteBusy || !allSelectedAreRelayNative) return;
+    const n = selectedPostIds.length;
+    const ok = window.confirm(
+      n === 1
+        ? "Delete this Relay post? It will disappear from your Library and patron feeds. Media files are kept."
+        : `Delete ${n} Relay posts? They will disappear from your Library and patron feeds. Media files are kept.`
+    );
+    if (!ok) return;
+    setDeleteBusy(true);
+    try {
+      for (const postId of selectedPostIds) {
+        await relayNativeDeletePost(postId, creatorId);
+      }
+      closePanel();
+      onClearSelection();
+      onListRefresh();
+    } catch (e) {
+      onError?.(e instanceof Error ? e.message : String(e));
+    } finally {
+      setDeleteBusy(false);
+    }
+  }, [
+    studioWriteBlocked,
+    deleteBusy,
+    allSelectedAreRelayNative,
+    selectedPostIds,
+    creatorId,
+    closePanel,
+    onClearSelection,
+    onListRefresh,
+    onError
+  ]);
+
+  const audiencePostId = selectedPostIds.length === 1 ? selectedPostIds[0] : null;
+
+  useEffect(() => {
+    if (panel !== "audience" || !audiencePostId) {
+      setDistributionSummary(null);
+      return;
+    }
+
+    let cancelled = false;
+    const loadSummary = () => {
+      setDistributionLoading(true);
+      void fetchPostDistributionSummary(audiencePostId)
+        .then(({ summary }) => {
+          if (!cancelled) setDistributionSummary(summary);
+        })
+        .catch(() => {
+          if (!cancelled) setDistributionSummary(null);
+        })
+        .finally(() => {
+          if (!cancelled) setDistributionLoading(false);
+        });
+    };
+
+    loadSummary();
+    const unsubscribe = subscribeRelayDistributionRefresh(() => {
+      if (!cancelled) loadSummary();
+    });
+
+    return () => {
+      cancelled = true;
+      unsubscribe();
+    };
+  }, [audiencePostId, panel]);
+
+  const crossPostSinglePostOnly = selectedPostIds.length !== 1;
+
+  const triggerCrossPost = useCallback(
+    (postId: string) => {
+      closePanel();
+      onCrossPost?.(postId);
+    },
+    [closePanel, onCrossPost]
+  );
+
+  const confirmDistributionPosted = useCallback(
+    async (attemptId: string, url?: string) => {
+      if (!audiencePostId || confirmingAttemptId) return;
+      setConfirmingAttemptId(attemptId);
+      try {
+        const trimmedUrl = url?.trim() || null;
+        await completeDistributionAttempt(attemptId, {
+          status: "posted",
+          ...(trimmedUrl ? { external_url: trimmedUrl } : {})
+        });
+        const { summary } = await fetchPostDistributionSummary(audiencePostId);
+        setDistributionSummary(summary);
+        onListRefresh();
+        setExpandedConfirmAttemptId(null);
+        setConfirmUrlDraft("");
+      } catch (e) {
+        onError?.(e instanceof Error ? e.message : String(e));
+      } finally {
+        setConfirmingAttemptId(null);
+      }
+    },
+    [audiencePostId, confirmingAttemptId, onError, onListRefresh]
+  );
 
   useEffect(() => {
     if (panel === "none") return;
@@ -547,10 +711,6 @@ export default function BulkActionBar({
               }
               onToggle={onMatureToggle}
             />
-            <p className="border-t border-[var(--lib-border)] px-3 py-2 text-[9px] leading-snug text-[var(--lib-fg-muted)]">
-              <span className="font-medium text-[var(--lib-fg)]">General</span> — turn Adult off. Patrons
-              still need the right tier when not hidden.
-            </p>
           </div>
         ) : null}
 
@@ -580,6 +740,121 @@ export default function BulkActionBar({
                 onListRefresh();
               }}
             />
+            <div className="mt-3 border-t border-[var(--lib-border)] pt-3">
+              <p className="pb-1 text-[10px] font-semibold uppercase tracking-wider text-[var(--lib-fg-muted)]">
+                Distribution
+              </p>
+              {distributionLoading ? (
+                <p className="text-[10px] text-[var(--lib-fg-muted)]">Loading distribution status…</p>
+              ) : distributionSummary ? (
+                <ul className="space-y-1.5">
+                  {distributionSummary.destinations.map((row) => {
+                    const badge = distributionStatusBadge(row);
+                    const isExpanded = expandedConfirmAttemptId === row.attempt_id;
+                    return (
+                      <li key={row.destination} className="text-[10px]">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="min-w-0 truncate text-[var(--lib-fg)]">
+                            {DISTRIBUTION_DEST_LABEL[row.destination] ?? row.destination}
+                          </span>
+                          <div className="flex shrink-0 items-center gap-1">
+                            {badge.confirmable && row.attempt_id && !isExpanded ? (
+                              <button
+                                type="button"
+                                disabled={confirmingAttemptId === row.attempt_id}
+                                title="Mark as posted on this platform"
+                                aria-label={`Confirm ${DISTRIBUTION_DEST_LABEL[row.destination] ?? row.destination} posted`}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setExpandedConfirmAttemptId(row.attempt_id!);
+                                  setConfirmUrlDraft("");
+                                }}
+                                className="flex h-5 w-5 items-center justify-center rounded-md border border-emerald-500/40 bg-emerald-500/10 text-emerald-200 transition-colors hover:bg-emerald-500/20 disabled:cursor-not-allowed disabled:opacity-50"
+                              >
+                                <Check className="h-3 w-3" aria-hidden />
+                              </button>
+                            ) : null}
+                            {badge.href ? (
+                              <a
+                                href={badge.href}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className={`rounded-md border px-1.5 py-0.5 font-medium capitalize ${badge.className}`}
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                {badge.label} ↗
+                              </a>
+                            ) : (
+                              <span
+                                className={`rounded-md border px-1.5 py-0.5 font-medium capitalize ${badge.className}`}
+                              >
+                                {badge.label}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                        {isExpanded ? (
+                          <div className="mt-1.5 flex items-center gap-1.5">
+                            <input
+                              autoFocus
+                              value={confirmUrlDraft}
+                              onChange={(e) => setConfirmUrlDraft(e.target.value)}
+                              onClick={(e) => e.stopPropagation()}
+                              onKeyDown={(e) => {
+                                e.stopPropagation();
+                                if (e.key === "Enter") {
+                                  void confirmDistributionPosted(row.attempt_id!, confirmUrlDraft);
+                                }
+                                if (e.key === "Escape") {
+                                  setExpandedConfirmAttemptId(null);
+                                  setConfirmUrlDraft("");
+                                }
+                              }}
+                              placeholder="Paste post URL (optional)"
+                              className="min-w-0 flex-1 rounded border border-[var(--lib-border)] bg-transparent px-1.5 py-1 text-[10px] text-[var(--lib-fg)]"
+                            />
+                            <button
+                              type="button"
+                              disabled={confirmingAttemptId === row.attempt_id}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                void confirmDistributionPosted(row.attempt_id!, confirmUrlDraft);
+                              }}
+                              className="shrink-0 rounded-md border border-emerald-500/40 bg-emerald-500/10 px-1.5 py-1 font-medium text-emerald-200 disabled:opacity-50"
+                            >
+                              {confirmingAttemptId === row.attempt_id ? "…" : "Confirm"}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setExpandedConfirmAttemptId(null);
+                                setConfirmUrlDraft("");
+                              }}
+                              className="shrink-0 text-[var(--lib-fg-muted)] underline"
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        ) : null}
+                      </li>
+                    );
+                  })}
+                </ul>
+              ) : (
+                <p className="text-[10px] text-[var(--lib-fg-muted)]">No distribution data yet.</p>
+              )}
+              {onCrossPost ? (
+                <button
+                  type="button"
+                  disabled={crossPostSinglePostOnly}
+                  onClick={() => triggerCrossPost(singleItem.post_id)}
+                  className="mt-2 text-[10px] font-medium text-[var(--lib-primary)] hover:underline disabled:cursor-not-allowed disabled:opacity-45"
+                >
+                  Cross-post to more platforms
+                </button>
+              ) : null}
+            </div>
           </div>
         ) : null}
 
@@ -751,6 +1026,19 @@ export default function BulkActionBar({
           </button>
           <button
             type="button"
+            disabled={crossPostSinglePostOnly}
+            title={crossPostSinglePostOnly ? "Select one post" : "Cross-post to connected platforms"}
+            onClick={() => {
+              if (crossPostSinglePostOnly || !selectedPostIds[0]) return;
+              triggerCrossPost(selectedPostIds[0]);
+            }}
+            className="flex h-8 shrink-0 items-center gap-1.5 rounded-full px-2.5 text-xs font-medium sm:px-3 disabled:cursor-not-allowed disabled:opacity-45 text-[var(--lib-fg-muted)] hover:bg-[var(--lib-muted)] hover:text-[var(--lib-fg)]"
+          >
+            <Share2 className="h-3.5 w-3.5" />
+            <span className="hidden sm:inline">Cross-post</span>
+          </button>
+          <button
+            type="button"
             onClick={() => toggle("collection")}
             className={`flex h-8 shrink-0 items-center gap-1.5 rounded-full px-2.5 text-xs font-medium sm:px-3 ${
               panel === "collection"
@@ -770,6 +1058,23 @@ export default function BulkActionBar({
             <Download className="h-3.5 w-3.5" />
             <span className="hidden sm:inline">Export</span>
           </button>
+
+          {allSelectedAreRelayNative ? (
+            <button
+              type="button"
+              onClick={() => void deleteSelectedRelayPosts()}
+              disabled={studioWriteBlocked || deleteBusy}
+              title={
+                selectedPostIds.length === 1
+                  ? "Delete Relay post"
+                  : `Delete ${selectedPostIds.length} Relay posts`
+              }
+              className="flex h-8 shrink-0 items-center gap-1.5 rounded-full px-2.5 text-xs font-medium text-[var(--lib-destructive)] hover:bg-[var(--lib-destructive)]/10 disabled:cursor-not-allowed disabled:opacity-45 sm:px-3"
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+              <span className="hidden sm:inline">{deleteBusy ? "Deleting…" : "Delete"}</span>
+            </button>
+          ) : null}
 
           {singleItem ? (
             <>

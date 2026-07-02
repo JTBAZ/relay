@@ -268,4 +268,26 @@ describe("buildDiscoverPage", () => {
     const result = buildDiscoverPage(snap, ov, { cursor: "not-a-real-cursor" });
     expect(result.items.map((i) => i.post_id)).toEqual(["p1"]);
   });
+
+  it("excludes mature posts when hide_mature_content is true", () => {
+    const snap = snapshot([
+      postRow({ postId: "p_mature", creatorId: "c1", publishedAt: "2026-04-22T00:00:00Z" })
+    ]);
+    const ov: GalleryOverridesRoot = {
+      creators: {
+        c1: {
+          posts: {
+            p_mature: {
+              add_tag_ids: [],
+              remove_tag_ids: [],
+              discovery_eligible: true,
+              visibility: "review"
+            }
+          }
+        }
+      }
+    };
+    expect(buildDiscoverPage(snap, ov, {}).items).toHaveLength(1);
+    expect(buildDiscoverPage(snap, ov, { hide_mature_content: true }).items).toHaveLength(0);
+  });
 });

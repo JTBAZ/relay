@@ -6,15 +6,21 @@ import request from "supertest";
 import { describe, expect, it, vi } from "vitest";
 import { PublicSlugSource } from "@prisma/client";
 import { createApp } from "../src/server.js";
+import { FileExportIndex } from "../src/export/export-index.js";
 import {
   PILOT_UX_ONBOARDING_LEGACY_FILE_ID,
   PILOT_UX_ONBOARDING_PATREON_CAMPAIGN_ID,
   PILOT_UX_ONBOARDING_PUBLIC_SLUG,
   PILOT_UX_ONBOARDING_RELAY_CREATOR_ID,
+  PILOT_UX_PATRON_ONBOARDING_LEGACY_FILE_ID,
+  PILOT_UX_PATRON_ONBOARDING_HANDLE,
   PilotUxWalkthroughForbiddenError,
+  resetPilotUxPatronOnboardingWalkthrough,
   resetPilotUxOnboardingWalkthrough,
+  pilotUxOnboardingWalkthroughPatronTierSummary,
   simulatePilotUxPatreonConnect,
-  pilotUxOnboardingWalkthroughPatronTierSummary
+  simulatePilotUxMediaImport,
+  PILOT_UX_ONBOARDING_WALKTHROUGH_MEDIA_POSTS
 } from "../src/pilot-ux/pilot-ux-onboarding-walkthrough.js";
 import { loadPilotUxSeedSpec, validatePilotUxSeedSpec } from "../src/pilot-ux/pilot-ux-seed-spec.js";
 import { readFileSync } from "node:fs";
@@ -36,6 +42,10 @@ describe("pilot UX onboarding walkthrough fixture", () => {
     expect(onboarding?.onboardingWalkthrough).toBe(true);
     expect(onboarding?.posts).toEqual([]);
     expect(onboarding?.tiers).toHaveLength(2);
+    expect(spec.accounts.patronOnboarding.legacyFileId).toBe(
+      PILOT_UX_PATRON_ONBOARDING_LEGACY_FILE_ID
+    );
+    expect(spec.accounts.patronOnboarding.handle).toBe(PILOT_UX_PATRON_ONBOARDING_HANDLE);
   });
 });
 
@@ -108,6 +118,57 @@ describe("simulatePilotUxPatreonConnect", () => {
   });
 });
 
+describe("simulatePilotUxMediaImport", () => {
+  it("rejects non-walkthrough creator ids", async () => {
+    const exportIndex = new FileExportIndex("/tmp/exports");
+    await expect(
+      simulatePilotUxMediaImport({} as never, exportIndex, "rcx_other")
+    ).rejects.toBeInstanceOf(PilotUxWalkthroughForbiddenError);
+  });
+
+  it("seeds walkthrough posts, export index, and sync health", async () => {
+    const tempDir = await mkdtemp(join(tmpdir(), "relay-pux-media-"));
+    const exportIndex = new FileExportIndex(join(tempDir, "exports"));
+    const upsert = vi.fn().mockResolvedValue({});
+    const createMany = vi.fn().mockResolvedValue({ count: 1 });
+    const deleteMany = vi.fn().mockResolvedValue({ count: 0 });
+    const syncUpsert = vi.fn().mockResolvedValue({});
+    const onboardingFind = vi.fn().mockResolvedValue(null);
+    const onboardingCreate = vi.fn().mockResolvedValue({});
+    const prisma = {
+      campaign: { upsert },
+      tier: { upsert },
+      post: { upsert },
+      postVersion: { upsert },
+      postTier: { deleteMany, createMany },
+      mediaAsset: { upsert },
+      creatorSyncState: { upsert: syncUpsert, findUnique: vi.fn().mockResolvedValue(null) },
+      creatorOnboardingState: {
+        findUnique: onboardingFind,
+        create: onboardingCreate,
+        update: vi.fn()
+      }
+    } as never;
+
+    const result = await simulatePilotUxMediaImport(
+      prisma,
+      exportIndex,
+      PILOT_UX_ONBOARDING_RELAY_CREATOR_ID
+    );
+
+    expect(result.posts_written).toBe(PILOT_UX_ONBOARDING_WALKTHROUGH_MEDIA_POSTS.length);
+    expect(result.export_media_count).toBe(PILOT_UX_ONBOARDING_WALKTHROUGH_MEDIA_POSTS.length);
+    expect(result.media_ids).toHaveLength(PILOT_UX_ONBOARDING_WALKTHROUGH_MEDIA_POSTS.length);
+    expect(upsert).toHaveBeenCalled();
+    expect(syncUpsert).toHaveBeenCalled();
+
+    const index = await exportIndex.load(PILOT_UX_ONBOARDING_RELAY_CREATOR_ID);
+    expect(Object.keys(index.media ?? {})).toHaveLength(
+      PILOT_UX_ONBOARDING_WALKTHROUGH_MEDIA_POSTS.length
+    );
+  });
+});
+
 describe("pilot UX walkthrough dev routes", () => {
   it("404 when dev API disabled in production", async () => {
     const prev = process.env.NODE_ENV;
@@ -141,6 +202,10 @@ describe("pilot UX walkthrough dev routes", () => {
         .post("/api/v1/pilot-ux/dev/onboarding-walkthrough/reset")
         .send({});
       expect(res.status).toBe(404);
+      const patronRes = await request(app)
+        .post("/api/v1/pilot-ux/dev/patron-onboarding/reset")
+        .send({});
+      expect(patronRes.status).toBe(404);
     } finally {
       process.env.NODE_ENV = prev;
     }
@@ -188,6 +253,59 @@ describe("resetPilotUxOnboardingWalkthrough (mocked prisma)", () => {
       expect.objectContaining({
         where: { creatorId: PILOT_UX_ONBOARDING_RELAY_CREATOR_ID },
         update: expect.objectContaining({ step: "connected" })
+      })
+    );
+  });
+});
+
+describe("resetPilotUxPatronOnboardingWalkthrough (mocked prisma)", () => {
+  it("clears patron OAuth/follows/snapshots and restores profile defaults", async () => {
+    const deleteMany = vi.fn().mockResolvedValue({ count: 0 });
+    const accountUpdate = vi.fn().mockResolvedValue({});
+    const membershipUpdateMany = vi.fn().mockResolvedValue({ count: 1 });
+    const profileUpsert = vi.fn().mockResolvedValue({});
+    const prisma = {
+      $transaction: vi.fn(async (fn: (tx: unknown) => Promise<void>) =>
+        fn({
+          patronOAuthCredential: { deleteMany },
+          account: { update: accountUpdate },
+          tenantMembership: { updateMany: membershipUpdateMany },
+          patronFollow: { deleteMany },
+          patronFollowSeed: { deleteMany },
+          patronEntitlementSnapshot: { deleteMany },
+          notificationDigestRun: { deleteMany },
+          patronProfile: { upsert: profileUpsert }
+        })
+      )
+    } as never;
+
+    await resetPilotUxPatronOnboardingWalkthrough(prisma, {
+      accountId: "acct-1",
+      platformMembershipId: "tm-platform",
+      patronMembershipIds: ["tm-platform", "tm-creator"]
+    });
+
+    expect(deleteMany).toHaveBeenCalledWith({ where: { accountId: "acct-1" } });
+    expect(accountUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: "acct-1" }
+      })
+    );
+    expect(membershipUpdateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          id: { in: ["tm-platform", "tm-creator"] }
+        }),
+        data: { tierIds: [] }
+      })
+    );
+    expect(profileUpsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { tenantMembershipId: "tm-platform" },
+        update: expect.objectContaining({
+          handle: PILOT_UX_PATRON_ONBOARDING_HANDLE,
+          onboardingStep: 0
+        })
       })
     );
   });

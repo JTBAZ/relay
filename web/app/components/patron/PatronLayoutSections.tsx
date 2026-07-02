@@ -43,6 +43,7 @@ type Props = {
   lockedOverlayVariant?: VisitorTierGateOverlayVariant;
   /** Visitor star (whole post) + snip (visible slide’s media); omit in designer-only contexts */
   patronEngagement?: VisitorPatronEngagementCallbacks;
+  onVisitorTierReveal?: (args: { postId: string; mediaId?: string }) => void;
   /**
    * Site Designer canvas: wrap each API section body (title + grid) for selection chrome.
    * When set, the outer `<section>` wrapper is omitted — use `children` only inside your frame.
@@ -79,6 +80,7 @@ function SectionGroupTile({
   accentColor,
   lockedOverlayVariant,
   patronEngagement,
+  onVisitorTierReveal,
   imgClass = "aspect-square",
 }: {
   items: GalleryItem[];
@@ -91,6 +93,7 @@ function SectionGroupTile({
   accentColor: string;
   lockedOverlayVariant: VisitorTierGateOverlayVariant;
   patronEngagement?: VisitorPatronEngagementCallbacks;
+  onVisitorTierReveal?: (args: { postId: string; mediaId?: string }) => void;
   imgClass?: string;
 }) {
   const n = items.length;
@@ -140,6 +143,7 @@ function SectionGroupTile({
           lockedOverlayVariant={lockedOverlayVariant}
           visitorPatronStar={engage?.visitorPatronStar}
           visitorPatronSnip={engage?.visitorPatronSnip}
+          onVisitorTierReveal={onVisitorTierReveal}
           onActivateItem={(item) => onOpenItem(item)}
         />
       ) : (
@@ -156,6 +160,12 @@ function SectionGroupTile({
                 accentColor={accentColor}
                 membershipUrl={membershipUrl}
                 variant={lockedOverlayVariant}
+                onUpgradeClick={() =>
+                  onVisitorTierReveal?.({
+                    postId: solo.post_id,
+                    mediaId: solo.media_id
+                  })
+                }
               />
             </div>
           ) : soloImage ? (
@@ -295,6 +305,7 @@ export default function PatronLayoutSections({
   accentColor = "#00aa6f",
   lockedOverlayVariant = "blurred",
   patronEngagement,
+  onVisitorTierReveal,
   renderDesignerSectionChrome
 }: Props) {
   const showTierBadges = layout.theme.show_tier_badges ?? true;
@@ -315,7 +326,8 @@ export default function PatronLayoutSections({
     membershipUrl,
     accentColor,
     lockedOverlayVariant,
-    patronEngagement
+    patronEngagement,
+    onVisitorTierReveal
   };
 
   return (

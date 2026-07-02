@@ -5,8 +5,9 @@ import {
   MSG_STATUS,
   MSG_SYNC_NOW
 } from "./lib/messages";
-import { PATREON_SESSION_COOKIE_NAME, PATREON_URL } from "./lib/constants";
+import { PATREON_SESSION_COOKIE_NAME, PATREON_URL, RELAY_WEB_BASE } from "./lib/constants";
 import type { SyncResult } from "./lib/sync-now";
+import { renderPostLinkFallbackSections } from "./popup-post-link";
 
 type StatusPayload = {
   hasGrant: boolean;
@@ -163,7 +164,7 @@ async function render(): Promise<void> {
     );
     const open = el("button", { type: "button", class: "relay-btn-primary" }, "Open Relay");
     open.addEventListener("click", () => {
-      void browser.tabs.create({ url: "https://relayapp.me/" });
+      void browser.tabs.create({ url: `${RELAY_WEB_BASE}/` });
     });
     actions.append(open);
     return;
@@ -225,12 +226,16 @@ async function render(): Promise<void> {
       status.lastSyncStatus ? ` · ${status.lastSyncStatus}` : ""
     }.`
   );
-  region.append(studioLine, syncLine, actions);
+  region.append(studioLine, syncLine);
+
+  await renderPostLinkFallbackSections(region, render);
+
+  region.append(actions);
 
   const manage = el("button", { type: "button", class: "relay-link" }, "Manage on Relay →");
   manage.addEventListener("click", () => {
     void browser.tabs.create({
-      url: "https://relayapp.me/settings/connected-extensions"
+      url: `${RELAY_WEB_BASE}/settings/connected-extensions`
     });
   });
 

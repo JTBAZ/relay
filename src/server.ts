@@ -46,7 +46,24 @@ import { DbDeadLetterQueue } from "./ingest/dlq-db.js";
 import { FileDeadLetterQueue, type DeadLetterQueue } from "./ingest/dlq.js";
 import { recordSupabaseSyncOutcome } from "./health/auth-route-metrics.js";
 import { evaluatePlatformOperationsHealth } from "./health/platform-operations-metrics.js";
+import { buildPlatformMetricRegistry } from "./platform-metrics/platform-metric-registry-service.js";
+import { ingestFirstPartyEvent } from "./platform-metrics/first-party-event-ingestion.js";
+import {
+  auditAllowedPlatformMetricsRegistryRead,
+  platformOperatorAccessPolicyFromEnv,
+  requirePlatformOperatorForRequest
+} from "./platform-metrics/platform-operator-access.js";
+import { applyBaselineSecurityHeaders } from "./security/baseline-response-headers.js";
+import { exportRequireTierAccessFromEnv } from "./security/production-env-defaults.js";
 import { evaluatePart1aGates } from "./auth/part1a-gate-metrics.js";
+import { buildDeviantArtCrossPostPackage, buildPatreonCrossPostPackage, buildXCrossPostPackage } from "./extension/cross-post-package.js";
+import {
+  BlueskyCredentialValidationError,
+  deleteCreatorBlueskyCredential,
+  getCreatorBlueskyCredential,
+  putCreatorBlueskyCredential
+} from "./extension/bluesky-credential-service.js";
+import { publishRelayPostToBluesky } from "./extension/bluesky-publish-service.js";
 import { evaluateIngestHealthGates } from "./ingest/ingest-health-metrics.js";
 import { IngestService } from "./ingest/ingest-service.js";
 import { IngestRetryQueue } from "./ingest/retry-queue.js";
@@ -124,6 +141,7 @@ import {
   listNotifications,
   markAllRead,
   markRead,
+  resolveNotificationRecipientScope,
   unreadCount
 } from "./patron/notification-service.js";
 import {
@@ -138,6 +156,12 @@ import {
   requestDeletion
 } from "./patron/account-deletion-service.js";
 import { getPublicPatronProfileByHandle } from "./patron/public-patron-profile-service.js";
+import { getPublicPatronCollectionDetail } from "./patron/public-patron-collections-service.js";
+import {
+  hydratePatronCollectionDetailEntries,
+  loadCreatorProfilesForPatronCollection,
+  toPatronOwnerCollectionDetail
+} from "./patron/patron-collection-detail-service.js";
 import {
   CommentEditWindowClosedError,
   CommentForbiddenError,
@@ -182,20 +206,85 @@ import {
   type PatchCreatorOnboardingInput
 } from "./creator/onboarding-service.js";
 import {
+  CreatorPromoSlotTargetNotFoundError,
+  CreatorPromoSlotValidationError,
+  getCreatorPromoSlots,
+  putCreatorPromoSlots,
+  type CreatorPromoSlotPutRow
+} from "./creator/promo-slot-service.js";
+import {
+  AutopostDraftConflictError,
+  AutopostDraftDiscardWarningError,
+  AutopostDraftValidationError,
+  discardAutopostDraft,
+  getActiveAutopostDraft,
+  patchAutopostDraft,
+  publishAutopostDraft,
+  recordAutopostDistribution,
+  saveAutopostDraft,
+  type AutopostDistributionDestination
+} from "./autopost/autopost-draft-service.js";
+import {
+  StyleProfileValidationError,
+  getCreatorStyleProfile,
+  listStyleTonePresets,
+  putCreatorStyleProfile
+} from "./autopost/style-profile-service.js";
+import {
+  PostingGoalNotFoundError,
+  PostingGoalValidationError,
+  getCreatorPostingGoal,
+  getCreatorPostingGoalStatus,
+  putCreatorPostingGoal,
+  skipCreatorPostingNudge,
+  skipCurrentCreatorPostingNudge,
+  snoozeCreatorPostingNudge,
+  snoozeCurrentCreatorPostingNudge
+} from "./autopost/posting-goal-service.js";
+import { listConnectedPlatforms } from "./distribution/connected-platforms-service.js";
+import { buildCrossPostPackageFromAttempt } from "./distribution/distribution-package.js";
+import {
+  approveDistributionVariant,
+  completeDistributionAttempt,
+  createPostDistributionPlan,
+  getDistributionAttempt,
+  getPostDistributionPlan,
+  getPostDistributionSummary,
+  getDistributionSummariesForPosts,
+  patchDistributionVariant,
+  PostDistributionNotFoundError,
+  PostDistributionValidationError,
+  recordDistributionFillResult,
+  startDistributionHandoff
+} from "./distribution/post-distribution-service.js";
+import {
+  ExternalPostMetricsValidationError,
+  getPostExternalMetrics,
+  recordExternalPostMetricSnapshots
+} from "./distribution/external-post-metrics-service.js";
+import {
+  assertPilotUxPatronOnboardingWalkthroughAccount,
   assertPilotUxOnboardingWalkthroughAccount,
   isPilotUxDevWalkthroughApiEnabled,
   pilotUxOnboardingWalkthroughPatronTierSummary,
   PILOT_UX_ONBOARDING_RELAY_CREATOR_ID,
   PilotUxWalkthroughForbiddenError,
+  resetPilotUxPatronOnboardingWalkthrough,
   resetPilotUxOnboardingWalkthrough,
+  simulatePilotUxMediaImport,
   simulatePilotUxPatreonConnect
 } from "./pilot-ux/pilot-ux-onboarding-walkthrough.js";
 import { TokenEncryption } from "./lib/crypto.js";
 import {
   isBrowserExtensionOrigin,
+  isWebFacingExtensionAuthPath,
   parseRelayExtensionOrigins,
   RELAY_EXTENSION_AUTH_API_PREFIX
 } from "./lib/relay-extension-origins.js";
+import {
+  isCredentialedCorsOrigin,
+  parseAllowedWebOrigins
+} from "./lib/relay-cors.js";
 import { ExportService } from "./export/export-service.js";
 import { FileExportIndex } from "./export/export-index.js";
 import { DEFAULT_EXPORT_FETCH_RETRY_POLICY } from "./export/types.js";
@@ -205,6 +294,7 @@ import {
   buildTierMap
 } from "./export/manifests.js";
 import { GalleryService } from "./gallery/gallery-service.js";
+import { getGalleryPlatformInstanceSummariesForPosts } from "./gallery/platform-instance-enrichment.js";
 import {
   derivePresentationUpsertFragments,
   presentationPatchTouches,
@@ -244,6 +334,11 @@ import {
 import { buildPatronEntitlementHealthPayload } from "./gallery/entitlement-degraded.js";
 import { evaluatePostPermission } from "./gallery/post-permission.js";
 import { isPostHiddenFromPatronSurfaces } from "./gallery/hidden-post-ids.js";
+import {
+  isPostMatureFromPatronSurfaces,
+  loadMaturePostIdsByCreator,
+  isPostExcludedByPatronMaturePref
+} from "./gallery/mature-post-ids.js";
 import { resolveGalleryItemVisibility } from "./gallery/query.js";
 import { buildGridThumbnailImage, GRID_THUMB_ETAG_TOKEN } from "./export/grid-thumbnail.js";
 import { buildVisitorPreviewImage } from "./export/visitor-preview.js";
@@ -256,7 +351,8 @@ import type {
   PatronFavoriteTargetKind,
   PatronFavoriteWithViewerEntitlement,
   PostVisibility,
-  SavedFilterRecord
+  SavedFilterRecord,
+  GalleryOverridesRoot
 } from "./gallery/types.js";
 import { hashOpaqueSessionToken } from "./identity/session-token-hash.js";
 import type { SessionToken } from "./identity/types.js";
@@ -281,7 +377,22 @@ function normalizeGalleryVisibilityFilter(
  * @returns {boolean} True when dev tier simulation is enabled.
  */
 function devVisitorTierSimEnabled(): boolean {
+  // [R-SEC-23 @security-review 2026-06] Hard-disabled in production regardless of env value so a stray
+  // prod setting can never grant simulated tier entitlements. Dev behavior unchanged. See docs/security-review-2026-06.md.
+  if (process.env.NODE_ENV === "production") return false;
   return process.env.RELAY_DEV_VISITOR_TIER_SIM === "true";
+}
+
+/**
+ * @description [R-SEC-05 / R-SEC-06 @security-review 2026-06] Legacy unauthenticated routes (unsigned
+ *   Patreon webhook stub; `login-patreon` / `register-patreon` that mint sessions without OAuth proof) are
+ *   disabled in production. Dev/test keep them. Set `RELAY_ALLOW_LEGACY_INSECURE_ROUTES=1` only for a
+ *   controlled migration window. See docs/security-review-2026-06.md.
+ * @returns {boolean} True when the legacy route must respond 404 (production, no explicit override).
+ */
+function legacyInsecureRouteDisabled(): boolean {
+  if (process.env.NODE_ENV !== "production") return false;
+  return process.env.RELAY_ALLOW_LEGACY_INSECURE_ROUTES !== "1";
 }
 
 /**
@@ -372,6 +483,38 @@ import {
   readPatreonInsightsMultipart
 } from "./analytics/patreon-insights-csv.js";
 import { getCreatorPostPerformance } from "./analytics/creator-post-performance.js";
+import {
+  getCreatorUnifiedPerformance,
+  parseUnifiedPerformanceRange
+} from "./analytics/creator-unified-performance.js";
+import {
+  getPerformanceCampaignRollups,
+  getPerformanceOverview,
+  getPerformancePlatformInstance,
+  getPerformancePostVariant,
+  getPerformanceTagRollups,
+  getPerformanceWorkBundle,
+  getPerformanceWorkInstances,
+  listPerformanceWorks
+} from "./analytics/performance-intelligence-read.js";
+import {
+  getPlatformInstanceRefreshStatus,
+  requestPlatformInstanceManualRefresh
+} from "./analytics/platform-instance-refresh-service.js";
+import {
+  confirmMergeCreativeWorkBundle,
+  dismissCreativeWorkBundleSuggestion,
+  listCreativeWorkBundleSuggestions,
+  splitCreativeWorkMember
+} from "./analytics/creative-work-bundling-service.js";
+import { getPerformanceInsightActions } from "./analytics/performance-insight-actions.js";
+import {
+  createCreatorPerformanceGoal,
+  deleteCreatorPerformanceGoal,
+  listCreatorPerformanceGoals
+} from "./analytics/performance-insight-goals-service.js";
+import { platformAdapterCatalog } from "./analytics/platform-identity-adapters.js";
+import { confirmPlatformInstanceLink } from "./analytics/platform-instance-link-service.js";
 import { getCreatorUsagePreview } from "./usage/usage-preview-service.js";
 import { enqueueRelayEngagementEvent } from "./analytics/relay-engagement-event.js";
 import {
@@ -435,12 +578,20 @@ import {
   getPatronProfileViewForMembership,
   patchPatronProfileForMembership
 } from "./patron/patron-profile-service.js";
+import { loadPatronHideMatureContent } from "./patron/patron-content-preferences.js";
+import {
+  commitPatronProfileImageUpload,
+  getPatronProfileAssetBytes,
+  initPatronProfileImageUpload,
+  mayReadPatronProfileAsset,
+} from "./patron/patron-profile-upload-service.js";
 import {
   ensurePatronMembershipForSupabaseAccount,
   upsertAccountForSupabaseUser
 } from "./identity/supabase-account.js";
 import { getSupabaseUserFromAccessToken } from "./lib/supabase-auth.js";
 import { getR2ClientConfigFromEnv } from "./storage/r2-config.js";
+import { isPatronProfileAssetKind } from "./storage/patron-profile-r2.js";
 import {
   buildRelayR2ObjectKey,
   getAllowedMimePrefixesFromEnv,
@@ -456,6 +607,7 @@ import {
   MediaProcessingStatus,
   MediaUpstreamStatus,
   PostSource,
+  PostUpstreamStatus,
   Prisma,
   PublicSlugSource,
   SessionKind,
@@ -480,13 +632,20 @@ import {
   requireAccountWithRole,
   sendRelayAuthError
 } from "./identity/require-account.js";
+import { setRelayUsernameForAccount } from "./identity/relay-username-service.js";
 
 /**
  * @description When false (`RELAY_COOKIE_SESSION_DUAL_WRITE=0`), API JSON omits session token fields (cookie-only transport).
  * @returns {boolean} Whether dual-write of token in JSON is enabled.
  */
 function relayCookieDualWriteJson(): boolean {
-  return process.env.RELAY_COOKIE_SESSION_DUAL_WRITE !== "0";
+  const raw = process.env.RELAY_COOKIE_SESSION_DUAL_WRITE?.trim();
+  if (raw === "1") return true;
+  if (raw === "0") return false;
+  // [R-SEC-19 @security-review 2026-06] Default OFF in production (session token is cookie-only; the web
+  // client no longer reads it from JSON). Defaults ON in dev/test so legacy clients and tests that read
+  // the token keep working. Set RELAY_COOKIE_SESSION_DUAL_WRITE=1 to force on. See docs/security-review-2026-06.md.
+  return process.env.NODE_ENV !== "production";
 }
 
 /**
@@ -546,6 +705,15 @@ import {
   parseFilter as parsePatronFeedFilter,
   MAX_LIMIT as PATRON_FEED_MAX_LIMIT
 } from "./patron/assemble-patron-feed.js";
+import {
+  assemblePatronSearch,
+  normalizePatronSearchMediaFilter,
+  normalizePatronSearchSort,
+  parsePatronSearchCreatorIdsFromQuery,
+  PatronSearchValidationError,
+  PATRON_SEARCH_DEFAULT_LIMIT,
+  PATRON_SEARCH_MAX_LIMIT
+} from "./patron/patron-search-service.js";
 import { loadPatronRelayFeedBundleFromRepo } from "./patron/load-patron-relay-feed-bundle.js";
 import { CampaignService } from "./migrate/campaign-service.js";
 import { DbMigrationStore } from "./migrate/migration-store-db.js";
@@ -720,7 +888,7 @@ export type AppConfig = {
   /**
    * When true, `GET /api/v1/export/media/.../content` requires tier entitlement
    * (or public post) matching `clone/tier-rules` + patron session.
-   * Default: env `RELAY_EXPORT_REQUIRE_TIER_ACCESS=1`, else false (Library thumbnails keep working).
+   * Default: on in production, off in development (override with `RELAY_EXPORT_REQUIRE_TIER_ACCESS`).
    */
   export_require_tier_access?: boolean;
   /** Overrides defaults in `DEFAULT_EXPORT_FETCH_RETRY_POLICY` (export download retries). */
@@ -803,6 +971,13 @@ function ensureRelayTraceId(req: Request): string {
  */
 function traceIdFrom(req: Request): string {
   return ensureRelayTraceId(req);
+}
+
+/** Opaque visitor session from public gallery client (PMD-042). */
+function readVisitorSessionKey(req: Request): string | null {
+  const raw = req.header("x-relay-visitor-session")?.trim();
+  if (!raw || raw.length > 128) return null;
+  return raw;
 }
 
 /**
@@ -1205,6 +1380,7 @@ async function findRelayLibraryStagingRows(
       creatorId,
       ingestOrigin: { in: ingestOrigins },
       primaryPostId: null,
+      autopostDraftId: null,
       processingStatus: MediaProcessingStatus.READY
     },
     orderBy: { currentIngestedAt: "desc" },
@@ -1328,6 +1504,43 @@ async function deleteRelayStagedMediaForOrigins(
     await tx.mediaAsset.delete({ where: { id: mediaId } });
   });
   return true;
+}
+
+async function patronMatureGateForMediaExport(
+  config: AppConfig,
+  args: {
+    session: SessionToken | null;
+    creatorId: string;
+    mediaId: string;
+    snapshot: Parameters<typeof findPostIdForExportedMedia>[0];
+    overrides: GalleryOverridesRoot;
+    isContentOwner: boolean;
+  }
+): Promise<{ hideMatureContent?: boolean; isPostMature?: boolean }> {
+  if (args.isContentOwner || !args.session || !config.prisma) {
+    return {};
+  }
+  const hideMatureContent = await loadPatronHideMatureContent(
+    config.prisma,
+    args.session.user_id
+  );
+  if (!hideMatureContent) {
+    return {};
+  }
+  const postId = findPostIdForExportedMedia(args.snapshot, args.creatorId, args.mediaId);
+  if (!postId) {
+    return { hideMatureContent: true, isPostMature: false };
+  }
+  const postRow = args.snapshot.posts[args.creatorId]?.[postId];
+  const isPostMature = postRow
+    ? isPostMatureFromPatronSurfaces({
+        overrides: args.overrides,
+        creatorId: args.creatorId,
+        postId,
+        activeMediaIds: postRow.current.media_ids ?? []
+      })
+    : false;
+  return { hideMatureContent: true, isPostMature };
 }
 
 /**
@@ -1468,26 +1681,33 @@ export function createApp(config: AppConfig): CreateAppResult {
   const exportRequireTierAccess =
     typeof config.export_require_tier_access === "boolean"
       ? config.export_require_tier_access
-      : process.env.RELAY_EXPORT_REQUIRE_TIER_ACCESS === "1";
+      : exportRequireTierAccessFromEnv();
   const paymentStore = useDbPaymentStore(config)
     ? new DbPaymentStore(config.prisma!)
     : new FilePaymentStore(config.payment_store_path ?? ".relay-data/payments.json");
   const paymentAdapters = new Map<string, InstanceType<typeof StripeAdapter> | InstanceType<typeof PayPalAdapter>>();
+  // [R-SEC-21 @security-review 2026-06] Do not inject fake placeholder credentials in production: leave
+  // them empty so a misconfigured prod deploy fails closed rather than appearing configured. Dev keeps the
+  // convenient test placeholders. (Live charges are also blocked in prod — see R-SEC-07.)
+  const isProductionRuntime = process.env.NODE_ENV === "production";
   paymentAdapters.set(
     "stripe",
     new StripeAdapter(
-      config.stripe_secret_key ?? "sk_test_placeholder",
-      config.stripe_webhook_secret ?? "whsec_placeholder"
+      config.stripe_secret_key ?? (isProductionRuntime ? "" : "sk_test_placeholder"),
+      config.stripe_webhook_secret ?? (isProductionRuntime ? "" : "whsec_placeholder")
     )
   );
   paymentAdapters.set(
     "paypal",
     new PayPalAdapter(
-      config.paypal_client_id ?? "paypal_test_id",
-      config.paypal_client_secret ?? "paypal_test_secret"
+      config.paypal_client_id ?? (isProductionRuntime ? "" : "paypal_test_id"),
+      config.paypal_client_secret ?? (isProductionRuntime ? "" : "paypal_test_secret")
     )
   );
-  const paymentService = new PaymentService(paymentStore, cloneService, paymentAdapters);
+  const paymentService = new PaymentService(paymentStore, cloneService, paymentAdapters, {
+    prisma: config.prisma,
+    relay_db_store_analytics: config.relay_db_store_analytics
+  });
   const migrationStore = useDbMigrationStore(config)
     ? new DbMigrationStore(config.prisma!)
     : new FileMigrationStore(config.migration_store_path ?? ".relay-data/migrations.json");
@@ -1656,6 +1876,7 @@ export function createApp(config: AppConfig): CreateAppResult {
   app.use((req, res, next) => {
     const traceId = ensureRelayTraceId(req);
     res.setHeader("X-Trace-Id", traceId);
+    applyBaselineSecurityHeaders(res);
     const started = performance.now();
     res.on("finish", () => {
       const pathOnly = (req.originalUrl ?? req.url).split("?")[0] ?? "";
@@ -1958,37 +2179,59 @@ export function createApp(config: AppConfig): CreateAppResult {
     const path = req.path;
     const corsMethods = "GET,HEAD,POST,PUT,PATCH,DELETE,OPTIONS";
     const corsAllowHeaders =
-      "Content-Type, X-Trace-Id, Authorization, X-Relay-Pipeline-Parity-Secret, X-Relay-Discord-Signature";
+      "Content-Type, X-Trace-Id, Authorization, X-Relay-Visitor-Session, X-Relay-Pipeline-Parity-Secret, X-Relay-Discord-Signature";
 
-    // EXT-0E — `/api/v1/auth/extension/*` uses Bearer only; allowlist extension origins without credentials.
+    // EXT-0E — `/api/v1/auth/extension/*`: extension-only for consent/exchange; web UI routes also
+    // allow credentialed localhost / RELAY_ALLOWED_WEB_ORIGINS (authorize page, connected-extensions).
     if (path.startsWith(RELAY_EXTENSION_AUTH_API_PREFIX)) {
       const allow = parseRelayExtensionOrigins();
       const extensionCorsOk =
         Boolean(origin) &&
         isBrowserExtensionOrigin(origin!) &&
         allow.has(origin!);
+      const isProduction = process.env.NODE_ENV === "production";
+      const allowedWebOrigins = parseAllowedWebOrigins();
+      const webCorsOk =
+        Boolean(origin) &&
+        isWebFacingExtensionAuthPath(path) &&
+        isCredentialedCorsOrigin(origin!, allowedWebOrigins, isProduction);
+      const isExtensionExchange = path === "/api/v1/auth/extension/consent/exchange";
+      const corsOk = isExtensionExchange ? extensionCorsOk : extensionCorsOk || webCorsOk;
       if (req.method === "OPTIONS") {
-        if (!extensionCorsOk) {
+        if (!corsOk) {
           return res.sendStatus(403);
         }
         res.setHeader("Access-Control-Allow-Origin", origin!);
         res.setHeader("Access-Control-Allow-Methods", corsMethods);
         res.setHeader("Access-Control-Allow-Headers", corsAllowHeaders);
+        if (webCorsOk) {
+          res.setHeader("Access-Control-Allow-Credentials", "true");
+          res.setHeader("Vary", "Origin");
+        }
         return res.sendStatus(204);
       }
-      if (extensionCorsOk) {
+      if (corsOk) {
         res.setHeader("Access-Control-Allow-Origin", origin!);
+        if (webCorsOk) {
+          res.setHeader("Access-Control-Allow-Credentials", "true");
+          res.setHeader("Vary", "Origin");
+        }
       }
       next();
       return;
     }
 
-    // Echo Origin when present. `fetch(..., { credentials: "include" })` (GR-T0-1 session cookies)
-    // requires a concrete Allow-Origin + Access-Control-Allow-Credentials — wildcard alone fails CORS.
-    if (origin) {
+    // [R-SEC-03 HIGH @security-review 2026-06, Tier C] Explicit origin allowlist replaces reflective
+    // echo-any-origin. Credentialed responses only for allowlisted origins + localhost in dev.
+    // Configure: RELAY_ALLOWED_WEB_ORIGINS=https://app.relayapp.me (comma-separated).
+    const isProduction = process.env.NODE_ENV === "production";
+    const allowedWebOrigins = parseAllowedWebOrigins();
+    if (origin && isCredentialedCorsOrigin(origin, allowedWebOrigins, isProduction)) {
       res.setHeader("Access-Control-Allow-Origin", origin);
       res.setHeader("Access-Control-Allow-Credentials", "true");
+      res.setHeader("Vary", "Origin");
     } else {
+      // Unauthenticated public requests (no credentials header means browsers can still use the response).
       res.setHeader("Access-Control-Allow-Origin", "*");
     }
     res.setHeader("Access-Control-Allow-Methods", corsMethods);
@@ -2013,6 +2256,8 @@ export function createApp(config: AppConfig): CreateAppResult {
     <li><a href="/api/v1/health/analytics">GET /api/v1/health/analytics</a> — insight job counters (Workstream E)</li>
     <li><a href="/api/v1/health/export">GET /api/v1/health/export</a> — export retrieval + integrity metrics (Workstream C)</li>
     <li><a href="/api/v1/health/platform">GET /api/v1/health/platform</a> — DB, OAuth, patron snapshots, Supabase sync counters (MIG-51)</li>
+    <li><a href="/api/v1/platform-metrics/registry">GET /api/v1/platform-metrics/registry</a> — operator dashboard metric registry (PMD-020/030)</li>
+    <li>POST /api/v1/platform-metrics/events — first-party telemetry ingestion (PMD-041)</li>
   </ul>
   <p>The <strong>gallery / Patreon connect UI</strong> is the Next.js app: run <code>npm run dev</code> in the <code>web/</code> folder (default <code>http://localhost:3000</code>).</p>
   <p><code>NEXT_PUBLIC_RELAY_API_URL</code> in <code>web/.env.local</code> should point here (e.g. <code>http://127.0.0.1:8787</code>) with <strong>no trailing slash</strong>.</p>
@@ -2020,6 +2265,7 @@ export function createApp(config: AppConfig): CreateAppResult {
 </html>`);
   });
 
+  // PUBLIC: Liveness probe (no auth) — scrape-friendly health JSON for load balancers / uptime checks.
   app.get("/api/v1/health", (req: Request, res: Response) => {
     const traceId = traceIdFrom(req);
     return res.status(200).json(
@@ -2032,6 +2278,7 @@ export function createApp(config: AppConfig): CreateAppResult {
     );
   });
 
+  // PUBLIC: Ingest/DLQ health metrics (no auth) — operational scrape endpoint, no tenant data.
   app.get("/api/v1/health/ingest", async (req: Request, res: Response) => {
     const traceId = traceIdFrom(req);
     try {
@@ -2063,6 +2310,7 @@ export function createApp(config: AppConfig): CreateAppResult {
     }
   });
 
+  // PUBLIC: OAuth/token-refresh gate metrics (no auth) — operational scrape endpoint, no tenant data.
   app.get("/api/v1/health/part1a", (req: Request, res: Response) => {
     const traceId = traceIdFrom(req);
     const gates = evaluatePart1aGates();
@@ -2078,6 +2326,7 @@ export function createApp(config: AppConfig): CreateAppResult {
     );
   });
 
+  // PUBLIC: Insight-job health metrics (no auth) — operational scrape endpoint, no tenant data.
   app.get("/api/v1/health/analytics", (req: Request, res: Response) => {
     const traceId = traceIdFrom(req);
     const gates = evaluateInsightJobHealth();
@@ -2093,6 +2342,7 @@ export function createApp(config: AppConfig): CreateAppResult {
     );
   });
 
+  // PUBLIC: Export-retrieval health metrics (no auth) — operational scrape endpoint, no tenant data.
   app.get("/api/v1/health/export", (req: Request, res: Response) => {
     const traceId = traceIdFrom(req);
     const gates = evaluateExportRetrievalHealth();
@@ -2123,6 +2373,76 @@ export function createApp(config: AppConfig): CreateAppResult {
         )
       );
     }
+  });
+
+  /** PMD-020/030 — Operator dashboard registry with Phase 3 wiring from health + domain tables. */
+  app.get("/api/v1/platform-metrics/registry", async (req: Request, res: Response) => {
+    const traceId = traceIdFrom(req);
+    const operatorPolicy = platformOperatorAccessPolicyFromEnv(process.env);
+    const operator = await requirePlatformOperatorForRequest({
+      req,
+      res,
+      traceId,
+      prisma: config.prisma,
+      identityService,
+      policy: operatorPolicy
+    });
+    if (!operator) return;
+    try {
+      const payload = await buildPlatformMetricRegistry({
+        prisma: config.prisma,
+        pendingRetryJobs: ingestQueue.pendingCount(),
+        dlqRecordCount: await dlq.count()
+      });
+      auditAllowedPlatformMetricsRegistryRead({
+        prisma: config.prisma,
+        req,
+        traceId,
+        accountId: operator.accountId,
+        reason: operator.accessReason
+      });
+      return res.status(200).json(successEnvelope(payload, traceId));
+    } catch (err) {
+      return res.status(500).json(
+        errorEnvelope(
+          "INTERNAL_ERROR",
+          err instanceof Error ? err.message : String(err),
+          traceId
+        )
+      );
+    }
+  });
+
+  /** PMD-041 — Validate and persist first-party telemetry events for operator dashboard rollups. */
+  app.post("/api/v1/platform-metrics/events", async (req: Request, res: Response) => {
+    const traceId = traceIdFrom(req);
+    const outcome = await ingestFirstPartyEvent(
+      {
+        prisma: config.prisma,
+        relay_db_store_analytics: config.relay_db_store_analytics
+      },
+      req.body,
+      traceId
+    );
+
+    if (!outcome.ok) {
+      const status =
+        outcome.code === "STORAGE_UNAVAILABLE"
+          ? 503
+          : outcome.code === "EVENT_NOT_ACCEPTED"
+            ? 422
+            : 400;
+      return res.status(status).json(
+        errorEnvelope(
+          outcome.code,
+          outcome.message,
+          traceId,
+          outcome.errors.map((issue) => ({ field: "payload", issue }))
+        )
+      );
+    }
+
+    return res.status(202).json(successEnvelope(outcome.result, traceId));
   });
 
   /**
@@ -2480,6 +2800,436 @@ export function createApp(config: AppConfig): CreateAppResult {
     return res.status(200).json(
       successEnvelope({ token_id: tokenId, revoked: true }, traceId)
     );
+  });
+
+  /**
+   * Extension cross-post — owner-authorized Patreon draft package for a Relay-native post.
+   * Relay web sends only `relay_post_id` to the extension; the extension fetches this route.
+   */
+  app.get("/api/v1/extension/cross-post/patreon/:post_id", async (req: Request, res: Response) => {
+    const traceId = traceIdFrom(req);
+    if (!config.prisma) {
+      return res.status(503).json(
+        errorEnvelope("SERVICE_UNAVAILABLE", "Database required.", traceId)
+      );
+    }
+    const session = await requirePatronBearerSession(req, res, traceId);
+    if (!session) {
+      return;
+    }
+    if (session.kind !== SessionKind.extension) {
+      return res.status(403).json(
+        errorEnvelope("FORBIDDEN", "Extension grant required.", traceId)
+      );
+    }
+    const accountId = await getAccountIdForSession(config.prisma, session);
+    if (!accountId) {
+      return res
+        .status(403)
+        .json(errorEnvelope("FORBIDDEN", "Session is not linked to an account.", traceId));
+    }
+    const postId = typeof req.params.post_id === "string" ? req.params.post_id.trim() : "";
+    if (!postId) {
+      return res
+        .status(400)
+        .json(errorEnvelope("VALIDATION_ERROR", "post_id is required.", traceId));
+    }
+    const result = await buildPatreonCrossPostPackage(config.prisma, { postId, accountId });
+    switch (result.status) {
+      case "no_primary_creator":
+        return res.status(403).json(
+          errorEnvelope(
+            "FORBIDDEN",
+            "Relay workspace not provisioned for this account.",
+            traceId
+          )
+        );
+      case "forbidden":
+        return res.status(403).json(
+          errorEnvelope("FORBIDDEN", "Post is not owned by this account.", traceId)
+        );
+      case "not_found":
+        return res.status(404).json(
+          errorEnvelope("NOT_FOUND", "Relay post not found.", traceId)
+        );
+      case "ok":
+        res.setHeader("Cache-Control", "private, no-store");
+        return res.status(200).json(successEnvelope(result.package, traceId));
+    }
+  });
+
+  /**
+   * Extension cross-post — owner-authorized X compose package for a Relay-native post.
+   */
+  app.get("/api/v1/extension/cross-post/x/:post_id", async (req: Request, res: Response) => {
+    const traceId = traceIdFrom(req);
+    if (!config.prisma) {
+      return res.status(503).json(
+        errorEnvelope("SERVICE_UNAVAILABLE", "Database required.", traceId)
+      );
+    }
+    const session = await requirePatronBearerSession(req, res, traceId);
+    if (!session) {
+      return;
+    }
+    if (session.kind !== SessionKind.extension) {
+      return res.status(403).json(
+        errorEnvelope("FORBIDDEN", "Extension grant required.", traceId)
+      );
+    }
+    const accountId = await getAccountIdForSession(config.prisma, session);
+    if (!accountId) {
+      return res
+        .status(403)
+        .json(errorEnvelope("FORBIDDEN", "Session is not linked to an account.", traceId));
+    }
+    const postId = typeof req.params.post_id === "string" ? req.params.post_id.trim() : "";
+    if (!postId) {
+      return res
+        .status(400)
+        .json(errorEnvelope("VALIDATION_ERROR", "post_id is required.", traceId));
+    }
+    const result = await buildXCrossPostPackage(config.prisma, { postId, accountId });
+    switch (result.status) {
+      case "no_primary_creator":
+        return res.status(403).json(
+          errorEnvelope(
+            "FORBIDDEN",
+            "Relay workspace not provisioned for this account.",
+            traceId
+          )
+        );
+      case "forbidden":
+        return res.status(403).json(
+          errorEnvelope("FORBIDDEN", "Post is not owned by this account.", traceId)
+        );
+      case "not_found":
+        return res.status(404).json(
+          errorEnvelope("NOT_FOUND", "Relay post not found.", traceId)
+        );
+      case "ok":
+        res.setHeader("Cache-Control", "private, no-store");
+        return res.status(200).json(successEnvelope(result.package, traceId));
+    }
+  });
+
+  /**
+   * Extension cross-post — owner-authorized DeviantArt submit package for a Relay-native post.
+   */
+  app.get("/api/v1/extension/cross-post/deviantart/:post_id", async (req: Request, res: Response) => {
+    const traceId = traceIdFrom(req);
+    if (!config.prisma) {
+      return res.status(503).json(
+        errorEnvelope("SERVICE_UNAVAILABLE", "Database required.", traceId)
+      );
+    }
+    const session = await requirePatronBearerSession(req, res, traceId);
+    if (!session) {
+      return;
+    }
+    if (session.kind !== SessionKind.extension) {
+      return res.status(403).json(
+        errorEnvelope("FORBIDDEN", "Extension grant required.", traceId)
+      );
+    }
+    const accountId = await getAccountIdForSession(config.prisma, session);
+    if (!accountId) {
+      return res
+        .status(403)
+        .json(errorEnvelope("FORBIDDEN", "Session is not linked to an account.", traceId));
+    }
+    const postId = typeof req.params.post_id === "string" ? req.params.post_id.trim() : "";
+    if (!postId) {
+      return res
+        .status(400)
+        .json(errorEnvelope("VALIDATION_ERROR", "post_id is required.", traceId));
+    }
+    const result = await buildDeviantArtCrossPostPackage(config.prisma, { postId, accountId });
+    switch (result.status) {
+      case "no_primary_creator":
+        return res.status(403).json(
+          errorEnvelope(
+            "FORBIDDEN",
+            "Relay workspace not provisioned for this account.",
+            traceId
+          )
+        );
+      case "forbidden":
+        return res.status(403).json(
+          errorEnvelope("FORBIDDEN", "Post is not owned by this account.", traceId)
+        );
+      case "not_found":
+        return res.status(404).json(
+          errorEnvelope("NOT_FOUND", "Relay post not found.", traceId)
+        );
+      case "ok":
+        res.setHeader("Cache-Control", "private, no-store");
+        return res.status(200).json(successEnvelope(result.package, traceId));
+    }
+  });
+
+  /**
+   * Extension cross-post — package assembled from an approved distribution attempt/variant.
+   */
+  app.get("/api/v1/extension/cross-post/attempts/:attempt_id", async (req: Request, res: Response) => {
+    const traceId = traceIdFrom(req);
+    if (!config.prisma) {
+      return res.status(503).json(
+        errorEnvelope("SERVICE_UNAVAILABLE", "Database required.", traceId)
+      );
+    }
+    const session = await requirePatronBearerSession(req, res, traceId);
+    if (!session) {
+      return;
+    }
+    if (session.kind !== SessionKind.extension) {
+      return res.status(403).json(
+        errorEnvelope("FORBIDDEN", "Extension grant required.", traceId)
+      );
+    }
+    const accountId = await getAccountIdForSession(config.prisma, session);
+    if (!accountId) {
+      return res
+        .status(403)
+        .json(errorEnvelope("FORBIDDEN", "Session is not linked to an account.", traceId));
+    }
+    const attemptId = typeof req.params.attempt_id === "string" ? req.params.attempt_id.trim() : "";
+    if (!attemptId) {
+      return res
+        .status(400)
+        .json(errorEnvelope("VALIDATION_ERROR", "attempt_id is required.", traceId));
+    }
+    const result = await buildCrossPostPackageFromAttempt(config.prisma, accountId, attemptId);
+    switch (result.status) {
+      case "no_primary_creator":
+        return res.status(403).json(
+          errorEnvelope(
+            "FORBIDDEN",
+            "Relay workspace not provisioned for this account.",
+            traceId
+          )
+        );
+      case "forbidden":
+        return res.status(403).json(
+          errorEnvelope("FORBIDDEN", "Attempt is not owned by this account.", traceId)
+        );
+      case "not_found":
+        return res.status(404).json(
+          errorEnvelope("NOT_FOUND", "Distribution attempt not found.", traceId)
+        );
+      case "ok":
+        await config.prisma.postDistributionAttempt.update({
+          where: { id: attemptId },
+          data: { status: "package_fetched" }
+        });
+        res.setHeader("Cache-Control", "private, no-store");
+        return res.status(200).json(
+          successEnvelope(
+            {
+              destination: result.destination,
+              package: result.package,
+              attempt_id: attemptId
+            },
+            traceId
+          )
+        );
+    }
+  });
+
+  app.get("/api/v1/creator/bluesky/credential", async (req: Request, res: Response) => {
+    const traceId = traceIdFrom(req);
+    if (!config.prisma) {
+      return res.status(503).json(
+        errorEnvelope("SERVICE_UNAVAILABLE", "Database not configured.", traceId)
+      );
+    }
+    try {
+      const { context } = await requireAccountWithRole(
+        req,
+        { prisma: config.prisma, identityService },
+        "creator"
+      );
+      const relayCreatorId = context.primaryRelayCreatorId?.trim();
+      if (!relayCreatorId) {
+        return res.status(404).json(
+          errorEnvelope(
+            "NOT_FOUND",
+            "No creator studio — call POST /api/v1/creator/workspace first.",
+            traceId
+          )
+        );
+      }
+      const credential = await getCreatorBlueskyCredential(config.prisma, relayCreatorId);
+      res.setHeader("Cache-Control", "private, no-store");
+      return res.status(200).json(successEnvelope({ credential }, traceId));
+    } catch (err) {
+      if (sendRelayAuthError(res, err, traceId)) return;
+      return res.status(500).json(errorEnvelope("INTERNAL", (err as Error).message, traceId));
+    }
+  });
+
+  app.put("/api/v1/creator/bluesky/credential", async (req: Request, res: Response) => {
+    const traceId = traceIdFrom(req);
+    if (!config.prisma) {
+      return res.status(503).json(
+        errorEnvelope("SERVICE_UNAVAILABLE", "Database not configured.", traceId)
+      );
+    }
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    try {
+      const { context } = await requireAccountWithRole(
+        req,
+        { prisma: config.prisma, identityService },
+        "creator"
+      );
+      const relayCreatorId = context.primaryRelayCreatorId?.trim();
+      if (!relayCreatorId) {
+        return res.status(404).json(
+          errorEnvelope(
+            "NOT_FOUND",
+            "No creator studio — call POST /api/v1/creator/workspace first.",
+            traceId
+          )
+        );
+      }
+      const credential = await putCreatorBlueskyCredential(
+        config.prisma,
+        encryption,
+        relayCreatorId,
+        {
+          handle: typeof body.handle === "string" ? body.handle : "",
+          app_password: typeof body.app_password === "string" ? body.app_password : ""
+        }
+      );
+      res.setHeader("Cache-Control", "private, no-store");
+      return res.status(200).json(successEnvelope({ credential }, traceId));
+    } catch (err) {
+      if (sendRelayAuthError(res, err, traceId)) return;
+      if (err instanceof BlueskyCredentialValidationError) {
+        return res.status(400).json(
+          errorEnvelope("VALIDATION_ERROR", err.message, traceId, err.details)
+        );
+      }
+      return res.status(500).json(errorEnvelope("INTERNAL", (err as Error).message, traceId));
+    }
+  });
+
+  app.delete("/api/v1/creator/bluesky/credential", async (req: Request, res: Response) => {
+    const traceId = traceIdFrom(req);
+    if (!config.prisma) {
+      return res.status(503).json(
+        errorEnvelope("SERVICE_UNAVAILABLE", "Database not configured.", traceId)
+      );
+    }
+    try {
+      const { context } = await requireAccountWithRole(
+        req,
+        { prisma: config.prisma, identityService },
+        "creator"
+      );
+      const relayCreatorId = context.primaryRelayCreatorId?.trim();
+      if (!relayCreatorId) {
+        return res.status(404).json(
+          errorEnvelope(
+            "NOT_FOUND",
+            "No creator studio — call POST /api/v1/creator/workspace first.",
+            traceId
+          )
+        );
+      }
+      await deleteCreatorBlueskyCredential(config.prisma, relayCreatorId);
+      return res.status(200).json(successEnvelope({ removed: true }, traceId));
+    } catch (err) {
+      if (sendRelayAuthError(res, err, traceId)) return;
+      return res.status(500).json(errorEnvelope("INTERNAL", (err as Error).message, traceId));
+    }
+  });
+
+  app.post("/api/v1/creator/cross-post/bluesky/:post_id", async (req: Request, res: Response) => {
+    const traceId = traceIdFrom(req);
+    if (!config.prisma) {
+      return res.status(503).json(
+        errorEnvelope("SERVICE_UNAVAILABLE", "Database not configured.", traceId)
+      );
+    }
+    const postId = typeof req.params.post_id === "string" ? req.params.post_id.trim() : "";
+    if (!postId) {
+      return res
+        .status(400)
+        .json(errorEnvelope("VALIDATION_ERROR", "post_id is required.", traceId));
+    }
+    try {
+      const { context } = await requireAccountWithRole(
+        req,
+        { prisma: config.prisma, identityService },
+        "creator"
+      );
+      const relayCreatorId = context.primaryRelayCreatorId?.trim();
+      if (!relayCreatorId) {
+        return res.status(404).json(
+          errorEnvelope(
+            "NOT_FOUND",
+            "No creator studio — call POST /api/v1/creator/workspace first.",
+            traceId
+          )
+        );
+      }
+      const accountId = context.accountId?.trim();
+      if (!accountId) {
+        return res.status(403).json(
+          errorEnvelope("FORBIDDEN", "Account context missing.", traceId)
+        );
+      }
+      const result = await publishRelayPostToBluesky(config.prisma, encryption, {
+        postId,
+        accountId
+      });
+      switch (result.status) {
+        case "no_primary_creator":
+          return res.status(403).json(
+            errorEnvelope("FORBIDDEN", "Relay workspace not provisioned.", traceId)
+          );
+        case "forbidden":
+          return res.status(403).json(
+            errorEnvelope("FORBIDDEN", "Post is not owned by this account.", traceId)
+          );
+        case "not_found":
+          return res.status(404).json(
+            errorEnvelope("NOT_FOUND", "Relay post not found.", traceId)
+          );
+        case "not_connected":
+          return res.status(409).json(
+            errorEnvelope(
+              "CONFLICT",
+              "Connect Bluesky in Autopost settings before publishing.",
+              traceId,
+              [{ field: "bluesky", issue: "not_connected" }]
+            )
+          );
+        case "publish_failed":
+          return res.status(502).json(
+            errorEnvelope("UPSTREAM_ERROR", result.detail, traceId, [
+              { field: "bluesky", issue: "publish_failed" }
+            ])
+          );
+        case "ok":
+          res.setHeader("Cache-Control", "private, no-store");
+          return res.status(200).json(
+            successEnvelope(
+              {
+                relay_post_id: postId,
+                uri: result.uri,
+                cid: result.cid,
+                post_text: result.post_text
+              },
+              traceId
+            )
+          );
+      }
+    } catch (err) {
+      if (sendRelayAuthError(res, err, traceId)) return;
+      return res.status(500).json(errorEnvelope("INTERNAL", (err as Error).message, traceId));
+    }
   });
 
   app.post("/api/v1/auth/patreon/exchange", async (req: Request, res: Response) => {
@@ -3672,7 +4422,15 @@ export function createApp(config: AppConfig): CreateAppResult {
   });
 
   app.post("/api/v1/webhooks/patreon", async (req: Request, res: Response) => {
+    // [R-SEC-06 HIGH @security-review 2026-06] Legacy UNSIGNED webhook: any caller with a creator_id can
+    // trigger scrapeOrSync (DoS / resource burn). Disabled in production (see legacyInsecureRouteDisabled);
+    // route real deliveries through the signed platform webhook. See docs/security-review-2026-06.md.
     const traceId = traceIdFrom(req);
+    if (legacyInsecureRouteDisabled()) {
+      return res
+        .status(404)
+        .json(errorEnvelope("NOT_FOUND", "This endpoint is disabled. Use the signed Patreon platform webhook.", traceId));
+    }
     const body = (req.body ?? {}) as Record<string, unknown>;
     try {
       const result = await processPatreonWebhookStub(
@@ -4133,10 +4891,12 @@ export function createApp(config: AppConfig): CreateAppResult {
     }
   });
 
+  // [R-SEC-01 @security-review 2026-06, Tier C] Manifest read routes now require creator-route secret.
+  // These are internal pipeline/creator-only routes that expose the full media/post/tier inventory.
   app.get("/api/v1/export/manifests/media-manifest", async (req: Request, res: Response) => {
     const traceId = traceIdFrom(req);
-    const creatorId = typeof req.query.creator_id === "string" ? req.query.creator_id : "";
-    if (!creatorId.trim()) {
+    const creatorId = typeof req.query.creator_id === "string" ? req.query.creator_id.trim() : "";
+    if (!creatorId) {
       return res
         .status(400)
         .json(
@@ -4144,6 +4904,9 @@ export function createApp(config: AppConfig): CreateAppResult {
             { field: "creator_id", issue: "missing" }
           ])
         );
+    }
+    if (!(await assertCreatorRelayMutationAllowed(req, res, traceId, config.prisma, creatorId))) {
+      return;
     }
     const snapshot = await canonicalStore.load();
     const index = await exportIndex.load(creatorId);
@@ -4153,8 +4916,8 @@ export function createApp(config: AppConfig): CreateAppResult {
 
   app.get("/api/v1/export/manifests/post-map", async (req: Request, res: Response) => {
     const traceId = traceIdFrom(req);
-    const creatorId = typeof req.query.creator_id === "string" ? req.query.creator_id : "";
-    if (!creatorId.trim()) {
+    const creatorId = typeof req.query.creator_id === "string" ? req.query.creator_id.trim() : "";
+    if (!creatorId) {
       return res
         .status(400)
         .json(
@@ -4163,14 +4926,17 @@ export function createApp(config: AppConfig): CreateAppResult {
           ])
         );
     }
+    if (!(await assertCreatorRelayMutationAllowed(req, res, traceId, config.prisma, creatorId))) {
+      return;
+    }
     const snapshot = await canonicalStore.load();
     return res.status(200).json(successEnvelope(buildPostMap(creatorId, snapshot), traceId));
   });
 
   app.get("/api/v1/export/manifests/tier-map", async (req: Request, res: Response) => {
     const traceId = traceIdFrom(req);
-    const creatorId = typeof req.query.creator_id === "string" ? req.query.creator_id : "";
-    if (!creatorId.trim()) {
+    const creatorId = typeof req.query.creator_id === "string" ? req.query.creator_id.trim() : "";
+    if (!creatorId) {
       return res
         .status(400)
         .json(
@@ -4178,6 +4944,9 @@ export function createApp(config: AppConfig): CreateAppResult {
             { field: "creator_id", issue: "missing" }
           ])
         );
+    }
+    if (!(await assertCreatorRelayMutationAllowed(req, res, traceId, config.prisma, creatorId))) {
+      return;
     }
     const snapshot = await canonicalStore.load();
     return res.status(200).json(successEnvelope(buildTierMap(creatorId, snapshot), traceId));
@@ -4300,7 +5069,19 @@ export function createApp(config: AppConfig): CreateAppResult {
   });
 
   app.get("/api/v1/export/library-zip", async (req, res) => {
+    // [R-SEC-01 @security-review 2026-06, Tier C] Require authenticated session for full-library ZIP.
+    // The Studio downloads this via a same-origin anchor click (browser sends session cookie) after a
+    // cookie-bearing HEAD pre-flight. The session check runs against the file or DB identity store.
     const traceId = traceIdFrom(req);
+    const zipToken =
+      readSessionCookie(req)?.trim() ??
+      req.header("authorization")?.replace(/^Bearer\s+/i, "").trim() ??
+      "";
+    if (!zipToken || !(await identityService.resolveSession(zipToken))) {
+      return res
+        .status(401)
+        .json(errorEnvelope("AUTH_ERROR", "Authentication required to download library ZIP.", traceId));
+    }
     const creatorId =
       typeof req.query.creator_id === "string" ? req.query.creator_id.trim() : "";
     if (!creatorId) {
@@ -4356,6 +5137,9 @@ export function createApp(config: AppConfig): CreateAppResult {
   });
 
   app.get("/api/v1/export/media/:creator_id/:media_id/content", async (req, res) => {
+    // [R-SEC-01 CRITICAL / R-SEC-09 HIGH @security-review 2026-06] Tier paywall defaults ON in production
+    // (exportRequireTierAccessFromEnv). Mature gate runs when session present or tier gate enabled.
+    // library-zip/manifest auth still TODO. See docs/security-review-2026-06.md.
     const traceId = traceIdFrom(req);
     try {
       const content = await exportService.getExportContent(
@@ -4369,10 +5153,15 @@ export function createApp(config: AppConfig): CreateAppResult {
           .json(errorEnvelope("NOT_FOUND", "Exported media not found.", traceId));
       }
       const { record, buffer: bytes } = content;
-      if (exportRequireTierAccess) {
+      // [R-SEC-09 @security-review 2026-06] Enforce the patron "hide 18+" preference on byte delivery even
+      // when the tier paywall (exportRequireTierAccess) is off. Anonymous requests carry no preference, so
+      // the resolution is skipped unless a session is present or the tier gate is enabled — keeping the
+      // unauthenticated hot path fast. See docs/security-review-2026-06.md.
+      const bearer = req.header("authorization")?.replace(/^Bearer\s+/i, "").trim() ?? "";
+      const session = bearer ? await identityService.resolveSession(bearer) : null;
+      if (session || exportRequireTierAccess) {
         const snapshot = await canonicalStore.load();
-        const bearer = req.header("authorization")?.replace(/^Bearer\s+/i, "").trim() ?? "";
-        const session = bearer ? await identityService.resolveSession(bearer) : null;
+        const overrides = await galleryOverridesStore.load();
         let isContentOwner = false;
         if (config.prisma && session) {
           const accountId = await getAccountIdForSession(config.prisma, session);
@@ -4384,18 +5173,35 @@ export function createApp(config: AppConfig): CreateAppResult {
             isContentOwner = acc?.primaryRelayCreatorId === req.params.creator_id;
           }
         }
-        const gate = patronMayFetchMediaExport({
-          snapshot,
+        const matureGate = await patronMatureGateForMediaExport(config, {
+          session,
           creatorId: req.params.creator_id,
           mediaId: req.params.media_id,
-          session,
+          snapshot,
+          overrides,
           isContentOwner
         });
-        if (!gate.allowed) {
+        if (matureGate.hideMatureContent && matureGate.isPostMature) {
           recordContentDeliveryFailure();
           return res
             .status(403)
-            .json(errorEnvelope("FORBIDDEN", gate.reason, traceId));
+            .json(errorEnvelope("FORBIDDEN", "18+ content hidden by your settings.", traceId));
+        }
+        if (exportRequireTierAccess) {
+          const gate = patronMayFetchMediaExport({
+            snapshot,
+            creatorId: req.params.creator_id,
+            mediaId: req.params.media_id,
+            session,
+            isContentOwner,
+            ...matureGate
+          });
+          if (!gate.allowed) {
+            recordContentDeliveryFailure();
+            return res
+              .status(403)
+              .json(errorEnvelope("FORBIDDEN", gate.reason, traceId));
+          }
         }
       }
       recordContentDeliverySuccess();
@@ -4403,7 +5209,9 @@ export function createApp(config: AppConfig): CreateAppResult {
       const range = parseSingleByteRange(req.header("range"), bytes.byteLength);
       res.setHeader("accept-ranges", "bytes");
       res.setHeader("content-type", mime);
-      res.setHeader("cache-control", "public, max-age=3600");
+      // [R-SEC-18 @security-review 2026-06] Entitlement-gated bytes: use `private` so shared/CDN caches
+      // cannot serve one viewer's authorized media to another. See docs/security-review-2026-06.md.
+      res.setHeader("cache-control", "private, max-age=3600");
       res.setHeader("etag", `"${record.sha256}"`);
       if (range === "invalid") {
         res.setHeader("content-range", `bytes */${bytes.byteLength}`);
@@ -4460,10 +5268,13 @@ export function createApp(config: AppConfig): CreateAppResult {
           .json(errorEnvelope("NOT_FOUND", "Exported media not found.", traceId));
       }
       const { record, buffer: bytes } = content;
-      if (exportRequireTierAccess) {
+      // [R-SEC-09 @security-review 2026-06] Same as /content: enforce the "hide 18+" preference on thumbnail
+      // bytes regardless of the tier paywall flag; skip resolution for anonymous requests. See docs/security-review-2026-06.md.
+      const bearer = req.header("authorization")?.replace(/^Bearer\s+/i, "").trim() ?? "";
+      const session = bearer ? await identityService.resolveSession(bearer) : null;
+      if (session || exportRequireTierAccess) {
         const snapshot = await canonicalStore.load();
-        const bearer = req.header("authorization")?.replace(/^Bearer\s+/i, "").trim() ?? "";
-        const session = bearer ? await identityService.resolveSession(bearer) : null;
+        const overrides = await galleryOverridesStore.load();
         let isContentOwner = false;
         if (config.prisma && session) {
           const accountId = await getAccountIdForSession(config.prisma, session);
@@ -4475,18 +5286,35 @@ export function createApp(config: AppConfig): CreateAppResult {
             isContentOwner = acc?.primaryRelayCreatorId === req.params.creator_id;
           }
         }
-        const gate = patronMayFetchMediaExport({
-          snapshot,
+        const matureGate = await patronMatureGateForMediaExport(config, {
+          session,
           creatorId: req.params.creator_id,
           mediaId: req.params.media_id,
-          session,
+          snapshot,
+          overrides,
           isContentOwner
         });
-        if (!gate.allowed) {
+        if (matureGate.hideMatureContent && matureGate.isPostMature) {
           recordContentDeliveryFailure();
           return res
             .status(403)
-            .json(errorEnvelope("FORBIDDEN", gate.reason, traceId));
+            .json(errorEnvelope("FORBIDDEN", "18+ content hidden by your settings.", traceId));
+        }
+        if (exportRequireTierAccess) {
+          const gate = patronMayFetchMediaExport({
+            snapshot,
+            creatorId: req.params.creator_id,
+            mediaId: req.params.media_id,
+            session,
+            isContentOwner,
+            ...matureGate
+          });
+          if (!gate.allowed) {
+            recordContentDeliveryFailure();
+            return res
+              .status(403)
+              .json(errorEnvelope("FORBIDDEN", gate.reason, traceId));
+          }
         }
       }
       const mime = record.mime_type ?? "application/octet-stream";
@@ -4505,7 +5333,8 @@ export function createApp(config: AppConfig): CreateAppResult {
       }
       recordContentDeliverySuccess();
       res.setHeader("content-type", "image/webp");
-      res.setHeader("cache-control", "public, max-age=86400");
+      // [R-SEC-18 @security-review 2026-06] Gated thumbnail bytes: `private` to prevent shared-cache leakage.
+      res.setHeader("cache-control", "private, max-age=86400");
       res.setHeader("etag", `"${record.sha256}-${GRID_THUMB_ETAG_TOKEN}"`);
       res.setHeader("content-length", String(thumb.byteLength));
       scheduleExportMediaBytes(
@@ -4549,6 +5378,33 @@ export function createApp(config: AppConfig): CreateAppResult {
       if (vis === "hidden") {
         recordPreviewDeliveryFailure();
         return res.status(404).json(errorEnvelope("NOT_FOUND", "Not found.", traceId));
+      }
+      const bearer = req.header("authorization")?.replace(/^Bearer\s+/i, "").trim() ?? "";
+      const session = bearer ? await identityService.resolveSession(bearer) : null;
+      let isContentOwner = false;
+      if (config.prisma && session) {
+        const accountId = await getAccountIdForSession(config.prisma, session);
+        if (accountId) {
+          const acc = await config.prisma.account.findUnique({
+            where: { id: accountId },
+            select: { primaryRelayCreatorId: true }
+          });
+          isContentOwner = acc?.primaryRelayCreatorId === creatorId;
+        }
+      }
+      const matureGate = await patronMatureGateForMediaExport(config, {
+        session,
+        creatorId,
+        mediaId,
+        snapshot,
+        overrides,
+        isContentOwner
+      });
+      if (matureGate.hideMatureContent && matureGate.isPostMature) {
+        recordPreviewDeliveryFailure();
+        return res
+          .status(403)
+          .json(errorEnvelope("FORBIDDEN", "18+ content hidden by your settings.", traceId));
       }
       const mime = record.mime_type ?? "application/octet-stream";
       const preview = await buildVisitorPreviewImage(bytes, mime);
@@ -4617,9 +5473,12 @@ export function createApp(config: AppConfig): CreateAppResult {
     const text_only_posts =
       textOnlyRaw === "include" || textOnlyRaw === "exclude" ? textOnlyRaw : undefined;
     const limit = parseGalleryLimit(req);
+    const includeInstances = parseQueryTruthy(req.query.include_instances);
 
     const bearer = req.header("authorization")?.replace(/^Bearer\s+/i, "").trim() ?? "";
-    let patronSession = bearer ? await identityService.resolveSession(bearer) : null;
+    const fromCookie = readSessionCookie(req)?.trim() ?? "";
+    const opaque = bearer || fromCookie;
+    let patronSession = opaque ? await identityService.resolveSession(opaque) : null;
     const devSimPatron = parseQueryTruthy(req.query.dev_sim_patron);
     const simulate_tier_ids = queryStringList(req, "simulate_tier_ids");
     patronSession = resolveVisitorPatronSessionForRedaction({
@@ -4629,6 +5488,30 @@ export function createApp(config: AppConfig): CreateAppResult {
       simulateTierIds: simulate_tier_ids,
       bearerSession: patronSession
     });
+    if (visitor && patronSession && config.prisma) {
+      const accountId = await getAccountIdForSession(config.prisma, patronSession);
+      if (accountId) {
+        const memberships = await config.prisma.tenantMembership.findMany({
+          where: { accountId },
+          select: { id: true }
+        });
+        const snap = memberships.length
+          ? await config.prisma.patronEntitlementSnapshot.findFirst({
+              where: {
+                patronMembershipId: { in: memberships.map((m) => m.id) },
+                relayCreatorId: creatorId
+              },
+              orderBy: { asOf: "desc" },
+              select: { active: true, entitledTierIds: true }
+            })
+          : null;
+        patronSession = {
+          ...patronSession,
+          creator_id: creatorId,
+          tier_ids: snap?.active ? snap.entitledTierIds : []
+        };
+      }
+    }
 
     const result = await galleryService.list({
       creator_id: creatorId,
@@ -4650,8 +5533,49 @@ export function createApp(config: AppConfig): CreateAppResult {
     if (visitor && !cursor) {
       enqueueRelayEngagementEvent(config, {
         creatorId,
-        eventType: "gallery_view"
+        eventType: "gallery_view",
+        sessionKey: readVisitorSessionKey(req)
       });
+    }
+    if (!visitor && config.prisma && result.items.length > 0) {
+      try {
+        const postIds = [...new Set(result.items.map((item) => item.post_id))];
+        const summaries = await getDistributionSummariesForPosts(
+          config.prisma,
+          creatorId,
+          postIds
+        );
+        if (summaries.size > 0) {
+          result.items = result.items.map((item) => {
+            const summary = summaries.get(item.post_id);
+            return summary ? { ...item, distribution_summary: summary } : item;
+          });
+        }
+      } catch (error) {
+        serverLog.warn(
+          { err: error, creator_id: creatorId, trace_id: traceId },
+          "Gallery distribution summary enrichment failed; returning base gallery items."
+        );
+      }
+      if (includeInstances) {
+        try {
+          const postIds = [...new Set(result.items.map((item) => item.post_id))];
+          const instanceSummaries = await getGalleryPlatformInstanceSummariesForPosts(
+            config.prisma,
+            creatorId,
+            postIds
+          );
+          result.items = result.items.map((item) => ({
+            ...item,
+            platform_instances: instanceSummaries.get(item.post_id) ?? []
+          }));
+        } catch (error) {
+          serverLog.warn(
+            { err: error, creator_id: creatorId, trace_id: traceId },
+            "Gallery platform instance enrichment failed; returning base gallery items."
+          );
+        }
+      }
     }
     res.setHeader("Cache-Control", "private, no-store");
     return res.status(200).json(successEnvelope(result, traceId));
@@ -4673,7 +5597,11 @@ export function createApp(config: AppConfig): CreateAppResult {
     const facets = await galleryService.facets(creatorId, { visitor_catalog: visitor });
     let payload: typeof facets & { visitor_hero?: Record<string, string> } = facets;
     if (visitor) {
-      enqueueRelayEngagementEvent(config, { creatorId, eventType: "profile_view" });
+      enqueueRelayEngagementEvent(config, {
+        creatorId,
+        eventType: "profile_view",
+        sessionKey: readVisitorSessionKey(req)
+      });
       const snap = await creatorCampaignDisplayStore.get(creatorId);
       const relayName = config.relay_creator_display_name?.trim();
       payload = {
@@ -4704,7 +5632,9 @@ export function createApp(config: AppConfig): CreateAppResult {
     }
     const visitor = parseQueryTruthy(req.query.visitor);
     const bearer = req.header("authorization")?.replace(/^Bearer\s+/i, "").trim() ?? "";
-    let patronSession = bearer ? await identityService.resolveSession(bearer) : null;
+    const fromCookie = readSessionCookie(req)?.trim() ?? "";
+    const opaque = bearer || fromCookie;
+    let patronSession = opaque ? await identityService.resolveSession(opaque) : null;
     const devSimPatron = parseQueryTruthy(req.query.dev_sim_patron);
     const simulate_tier_ids = queryStringList(req, "simulate_tier_ids");
     patronSession = resolveVisitorPatronSessionForRedaction({
@@ -4714,6 +5644,30 @@ export function createApp(config: AppConfig): CreateAppResult {
       simulateTierIds: simulate_tier_ids,
       bearerSession: patronSession
     });
+    if (visitor && patronSession && config.prisma) {
+      const accountId = await getAccountIdForSession(config.prisma, patronSession);
+      if (accountId) {
+        const memberships = await config.prisma.tenantMembership.findMany({
+          where: { accountId },
+          select: { id: true }
+        });
+        const snap = memberships.length
+          ? await config.prisma.patronEntitlementSnapshot.findFirst({
+              where: {
+                patronMembershipId: { in: memberships.map((m) => m.id) },
+                relayCreatorId: creatorId
+              },
+              orderBy: { asOf: "desc" },
+              select: { active: true, entitledTierIds: true }
+            })
+          : null;
+        patronSession = {
+          ...patronSession,
+          creator_id: creatorId,
+          tier_ids: snap?.active ? snap.entitledTierIds : []
+        };
+      }
+    }
     const detail = await galleryService.postDetail(creatorId, postId, {
       visitor_catalog: visitor,
       patron_session: patronSession
@@ -4721,15 +5675,89 @@ export function createApp(config: AppConfig): CreateAppResult {
     if (!detail) {
       return res.status(404).json(errorEnvelope("NOT_FOUND", "Post not found.", traceId));
     }
+    if (patronSession && config.prisma && !devSimPatron) {
+      let isContentOwner = false;
+      const accountId = await getAccountIdForSession(config.prisma, patronSession);
+      if (accountId) {
+        const acc = await config.prisma.account.findUnique({
+          where: { id: accountId },
+          select: { primaryRelayCreatorId: true }
+        });
+        isContentOwner = acc?.primaryRelayCreatorId === creatorId;
+      }
+      if (!isContentOwner) {
+        const hideMatureContent = await loadPatronHideMatureContent(
+          config.prisma,
+          patronSession.user_id
+        );
+        if (hideMatureContent) {
+          const [snapshot, overrides] = await Promise.all([
+            canonicalStore.load(),
+            galleryOverridesStore.load()
+          ]);
+          const postRow = snapshot.posts[creatorId]?.[postId];
+          if (
+            postRow &&
+            isPostMatureFromPatronSurfaces({
+              overrides,
+              creatorId,
+              postId,
+              activeMediaIds: postRow.current.media_ids ?? []
+            })
+          ) {
+            return res.status(404).json(errorEnvelope("NOT_FOUND", "Post not found.", traceId));
+          }
+        }
+      }
+    }
     if (visitor) {
+      const sessionKey = readVisitorSessionKey(req);
       enqueueRelayEngagementEvent(config, {
         creatorId,
         eventType: "gallery_view",
-        postId
+        postId,
+        sessionKey
       });
+      void ingestFirstPartyEvent(
+        config,
+        {
+          event_name: "post_view",
+          occurred_at: new Date().toISOString(),
+          producer: "api",
+          session_key: sessionKey ?? undefined,
+          payload: {
+            creator_id: creatorId,
+            post_id: postId,
+            surface: "visitor_post_detail"
+          }
+        },
+        traceId
+      );
+    }
+    let distributionSummary: Awaited<ReturnType<typeof getPostDistributionSummary>> | undefined;
+    if (config.prisma && patronSession) {
+      const accountId = await getAccountIdForSession(config.prisma, patronSession);
+      if (accountId) {
+        const acc = await config.prisma.account.findUnique({
+          where: { id: accountId },
+          select: { primaryRelayCreatorId: true }
+        });
+        if (acc?.primaryRelayCreatorId === creatorId) {
+          distributionSummary = await getPostDistributionSummary(
+            config.prisma,
+            creatorId,
+            postId
+          );
+        }
+      }
     }
     res.setHeader("Cache-Control", "private, no-store");
-    return res.status(200).json(successEnvelope(detail, traceId));
+    return res.status(200).json(
+      successEnvelope(
+        distributionSummary ? { ...detail, distribution_summary: distributionSummary } : detail,
+        traceId
+      )
+    );
   });
 
   /** MIG-41 — Tier permission for a canonical post (Bearer session optional). */
@@ -4776,13 +5804,28 @@ export function createApp(config: AppConfig): CreateAppResult {
     const relayPostVisibility = hiddenFromPatron
       ? "hidden"
       : (overrides.creators[creatorId]?.posts[postId]?.visibility ?? null);
+    let hideMatureContent = false;
+    let isPostMature = false;
+    if (session && config.prisma && !isContentOwner) {
+      hideMatureContent = await loadPatronHideMatureContent(config.prisma, session.user_id);
+      if (hideMatureContent && postRow) {
+        isPostMature = isPostMatureFromPatronSurfaces({
+          overrides,
+          creatorId,
+          postId,
+          activeMediaIds: postRow.current.media_ids ?? []
+        });
+      }
+    }
     const perm = evaluatePostPermission({
       snapshot,
       creatorId,
       postId,
       session,
       isContentOwner,
-      relayPostVisibility
+      relayPostVisibility,
+      hideMatureContent,
+      isPostMature
     });
     if (!perm) {
       return res.status(404).json(errorEnvelope("NOT_FOUND", "Post not found.", traceId));
@@ -5010,6 +6053,8 @@ export function createApp(config: AppConfig): CreateAppResult {
           user_id: session.user_id,
           creator_id: session.creator_id,
           email: user?.email ?? null,
+          username: user?.username ?? null,
+          username_norm: user?.username_norm ?? null,
           auth_provider: user?.auth_provider ?? null,
           patreon_user_id: user?.patreon_user_id ?? null,
           email_verified: emailVerified,
@@ -5021,6 +6066,88 @@ export function createApp(config: AppConfig): CreateAppResult {
       )
     );
   });
+
+  /**
+   * Canonical Relay username for the signed-in account. This is the one public @mention alias
+   * used across creator and supporter surfaces; profile-level username/handle fields are mirrors.
+   */
+  app.patch(
+    "/api/v1/me/username",
+    async (req: Request, res: Response, next) => {
+      const traceId = traceIdFrom(req);
+      if (!config.prisma) {
+        return res.status(503).json(
+          errorEnvelope("SERVICE_UNAVAILABLE", "Database not configured.", traceId)
+        );
+      }
+      try {
+        const { context } = await requireAccount(req, { prisma: config.prisma, identityService });
+        (req as Request & { relayRateLimitKey?: string }).relayRateLimitKey = context.accountId;
+        next();
+      } catch (err) {
+        if (sendRelayAuthError(res, err, traceId)) return;
+        return res.status(500).json(errorEnvelope("INTERNAL", (err as Error).message, traceId));
+      }
+    },
+    patronProfileMutate,
+    buildIdem("me-username-patch"),
+    async (req: Request, res: Response) => {
+      const traceId = traceIdFrom(req);
+      if (!config.prisma) {
+        return res.status(503).json(
+          errorEnvelope("SERVICE_UNAVAILABLE", "Database not configured.", traceId)
+        );
+      }
+      try {
+        const { context } = await requireAccount(req, { prisma: config.prisma, identityService });
+        const body = (req.body ?? {}) as Record<string, unknown>;
+        const username = readOptionalString(body.username);
+        if (typeof username !== "string") {
+          return res.status(400).json(
+            errorEnvelope("VALIDATION_ERROR", "username is required.", traceId, [
+              { field: "username", issue: "required" }
+            ])
+          );
+        }
+
+        const updated = await setRelayUsernameForAccount(config.prisma, {
+          accountId: context.accountId,
+          username
+        });
+
+        if (context.primaryRelayCreatorId) {
+          await config.prisma.creatorProfile.updateMany({
+            where: { tenant: { relayCreatorId: context.primaryRelayCreatorId } },
+            data: { username: updated.username, usernameNorm: updated.usernameNorm }
+          });
+        }
+        await config.prisma.patronProfile.updateMany({
+          where: { tenantMembership: { accountId: context.accountId } },
+          data: { handle: updated.username, handleNorm: updated.usernameNorm }
+        });
+
+        res.setHeader("Cache-Control", "private, no-store");
+        return res.status(200).json(
+          successEnvelope(
+            { username: updated.username, username_norm: updated.usernameNorm },
+            traceId
+          )
+        );
+      } catch (err) {
+        const code =
+          typeof err === "object" && err !== null && "code" in err
+            ? (err as { code: string }).code
+            : "INTERNAL";
+        if (code === "CONFLICT" || code === "VALIDATION_ERROR") {
+          return res.status(code === "CONFLICT" ? 409 : 400).json(
+            errorEnvelope(code, err instanceof Error ? err.message : "Invalid username.", traceId)
+          );
+        }
+        if (sendRelayAuthError(res, err, traceId)) return;
+        return res.status(500).json(errorEnvelope("INTERNAL", (err as Error).message, traceId));
+      }
+    }
+  );
 
   /**
    * PE-I (BO-P4-01) — flip the `relay_active_role` UI lens cookie at runtime.
@@ -5457,6 +6584,19 @@ export function createApp(config: AppConfig): CreateAppResult {
         .status(400)
         .json(errorEnvelope("VALIDATION_ERROR", "publish must be a boolean.", traceId));
     }
+    // Publish-only v1: drafts (`publish: false` → epoch publishedAt sentinel) are not
+    // supported until `PostVersion.published_at` semantics for drafts are decided.
+    if (!publish) {
+      return res
+        .status(400)
+        .json(
+          errorEnvelope(
+            "DRAFT_NOT_SUPPORTED",
+            "Publish-only mode is active. Pass publish: true.",
+            traceId
+          )
+        );
+    }
     const publishedAtInput =
       typeof body.published_at === "string" && body.published_at.trim()
         ? body.published_at.trim()
@@ -5519,6 +6659,65 @@ export function createApp(config: AppConfig): CreateAppResult {
       }
       throw e;
     }
+  });
+
+  /**
+   * Relay-native post unpublish (soft delete): sets `Post.upstreamStatus = deleted`.
+   * Only `source = RELAY` posts owned by the session creator — Patreon/SubscribeStar
+   * mirrors are managed by ingest and respond 404 here. `PostVersion` / `MediaAsset`
+   * rows are preserved; all read paths already exclude `upstream_status = deleted`.
+   */
+  app.delete("/api/v1/relay/posts/:post_id", async (req: Request, res: Response) => {
+    const traceId = traceIdFrom(req);
+    if (!config.prisma) {
+      return res
+        .status(503)
+        .json(errorEnvelope("SERVICE_UNAVAILABLE", "Database not configured.", traceId));
+    }
+    const session = await requirePatronBearerSession(req, res, traceId);
+    if (!session) {
+      return;
+    }
+    const postId = typeof req.params.post_id === "string" ? req.params.post_id.trim() : "";
+    const creatorId =
+      typeof req.query.creator_id === "string" ? req.query.creator_id.trim() : "";
+    if (!postId || !creatorId) {
+      return res
+        .status(400)
+        .json(errorEnvelope("VALIDATION_ERROR", "post_id and creator_id are required.", traceId));
+    }
+    if (!(await requireAccountMatchesCreator(req, res, traceId, creatorId))) {
+      return;
+    }
+    if (
+      !(await assertCreatorRelayMutationAllowed(
+        req,
+        res,
+        traceId,
+        config.prisma,
+        creatorId
+      ))
+    ) {
+      return;
+    }
+    const post = await config.prisma.post.findFirst({
+      where: { id: postId, creatorId, source: PostSource.RELAY }
+    });
+    if (!post) {
+      return res
+        .status(404)
+        .json(errorEnvelope("NOT_FOUND", "Relay-native post not found for this creator.", traceId));
+    }
+    if (post.upstreamStatus !== PostUpstreamStatus.deleted) {
+      await config.prisma.post.update({
+        where: { id: postId },
+        data: { upstreamStatus: PostUpstreamStatus.deleted }
+      });
+    }
+    res.setHeader("Cache-Control", "private, no-store");
+    return res.status(200).json(
+      successEnvelope({ post_id: postId, upstream_status: "deleted" as const }, traceId)
+    );
   });
 
   /**
@@ -6339,6 +7538,1419 @@ export function createApp(config: AppConfig): CreateAppResult {
     }
   });
 
+  /**
+   * Autopost WI-3 — tone preset catalog for Style Profile picker.
+   */
+  app.get("/api/v1/creator/style-profile/presets", async (req: Request, res: Response) => {
+    const traceId = traceIdFrom(req);
+    res.setHeader("Cache-Control", "public, max-age=3600");
+    return res.status(200).json(
+      successEnvelope({ presets: listStyleTonePresets() }, traceId)
+    );
+  });
+
+  app.get("/api/v1/creator/style-profile", async (req: Request, res: Response) => {
+    const traceId = traceIdFrom(req);
+    if (!config.prisma) {
+      return res.status(503).json(
+        errorEnvelope("SERVICE_UNAVAILABLE", "Database not configured.", traceId)
+      );
+    }
+    try {
+      const { context } = await requireAccountWithRole(
+        req,
+        { prisma: config.prisma, identityService },
+        "creator"
+      );
+      const relayCreatorId = context.primaryRelayCreatorId?.trim();
+      if (!relayCreatorId) {
+        return res.status(404).json(
+          errorEnvelope(
+            "NOT_FOUND",
+            "No creator studio — call POST /api/v1/creator/workspace first.",
+            traceId
+          )
+        );
+      }
+      const profile = await getCreatorStyleProfile(config.prisma, relayCreatorId);
+      res.setHeader("Cache-Control", "private, no-store");
+      return res.status(200).json(successEnvelope({ profile }, traceId));
+    } catch (err) {
+      if (sendRelayAuthError(res, err, traceId)) return;
+      return res.status(500).json(errorEnvelope("INTERNAL", (err as Error).message, traceId));
+    }
+  });
+
+  app.put("/api/v1/creator/style-profile", async (req: Request, res: Response) => {
+    const traceId = traceIdFrom(req);
+    if (!config.prisma) {
+      return res.status(503).json(
+        errorEnvelope("SERVICE_UNAVAILABLE", "Database not configured.", traceId)
+      );
+    }
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    try {
+      const { context } = await requireAccountWithRole(
+        req,
+        { prisma: config.prisma, identityService },
+        "creator"
+      );
+      const relayCreatorId = context.primaryRelayCreatorId?.trim();
+      if (!relayCreatorId) {
+        return res.status(404).json(
+          errorEnvelope(
+            "NOT_FOUND",
+            "No creator studio — call POST /api/v1/creator/workspace first.",
+            traceId
+          )
+        );
+      }
+      const profile = await putCreatorStyleProfile(config.prisma, relayCreatorId, {
+        tone_preset: typeof body.tone_preset === "string" ? body.tone_preset : "",
+        user_prompt:
+          body.user_prompt === null || body.user_prompt === undefined
+            ? null
+            : typeof body.user_prompt === "string"
+              ? body.user_prompt
+              : null,
+        label: typeof body.label === "string" ? body.label : undefined
+      });
+      res.setHeader("Cache-Control", "private, no-store");
+      return res.status(200).json(successEnvelope({ profile }, traceId));
+    } catch (err) {
+      if (sendRelayAuthError(res, err, traceId)) return;
+      if (err instanceof StyleProfileValidationError) {
+        return res.status(400).json(
+          errorEnvelope("VALIDATION_ERROR", err.message, traceId, err.details)
+        );
+      }
+      return res.status(500).json(errorEnvelope("INTERNAL", (err as Error).message, traceId));
+    }
+  });
+
+  /**
+   * Autopost WI-5 — monthly Relay posting goal + nudge state.
+   */
+  app.get("/api/v1/creator/posting-goal", async (req: Request, res: Response) => {
+    const traceId = traceIdFrom(req);
+    if (!config.prisma) {
+      return res.status(503).json(
+        errorEnvelope("SERVICE_UNAVAILABLE", "Database not configured.", traceId)
+      );
+    }
+    try {
+      const { context } = await requireAccountWithRole(
+        req,
+        { prisma: config.prisma, identityService },
+        "creator"
+      );
+      const relayCreatorId = context.primaryRelayCreatorId?.trim();
+      if (!relayCreatorId) {
+        return res.status(404).json(
+          errorEnvelope(
+            "NOT_FOUND",
+            "No creator studio — call POST /api/v1/creator/workspace first.",
+            traceId
+          )
+        );
+      }
+      const goal = await getCreatorPostingGoal(config.prisma, relayCreatorId);
+      res.setHeader("Cache-Control", "private, no-store");
+      return res.status(200).json(successEnvelope({ goal }, traceId));
+    } catch (err) {
+      if (sendRelayAuthError(res, err, traceId)) return;
+      return res.status(500).json(errorEnvelope("INTERNAL", (err as Error).message, traceId));
+    }
+  });
+
+  app.put("/api/v1/creator/posting-goal", async (req: Request, res: Response) => {
+    const traceId = traceIdFrom(req);
+    if (!config.prisma) {
+      return res.status(503).json(
+        errorEnvelope("SERVICE_UNAVAILABLE", "Database not configured.", traceId)
+      );
+    }
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    try {
+      const { context } = await requireAccountWithRole(
+        req,
+        { prisma: config.prisma, identityService },
+        "creator"
+      );
+      const relayCreatorId = context.primaryRelayCreatorId?.trim();
+      if (!relayCreatorId) {
+        return res.status(404).json(
+          errorEnvelope(
+            "NOT_FOUND",
+            "No creator studio — call POST /api/v1/creator/workspace first.",
+            traceId
+          )
+        );
+      }
+      const goal = await putCreatorPostingGoal(config.prisma, relayCreatorId, {
+        monthly_post_target:
+          typeof body.monthly_post_target === "number"
+            ? body.monthly_post_target
+            : typeof body.monthly_post_target === "string"
+              ? Number.parseInt(body.monthly_post_target, 10)
+              : undefined,
+        bonus_nudges_enabled:
+          body.bonus_nudges_enabled === undefined
+            ? undefined
+            : Boolean(body.bonus_nudges_enabled),
+        timezone:
+          body.timezone === null || body.timezone === undefined
+            ? body.timezone === null
+              ? null
+              : undefined
+            : typeof body.timezone === "string"
+              ? body.timezone
+              : undefined,
+        enabled: body.enabled === undefined ? undefined : Boolean(body.enabled)
+      });
+      res.setHeader("Cache-Control", "private, no-store");
+      return res.status(200).json(successEnvelope({ goal }, traceId));
+    } catch (err) {
+      if (sendRelayAuthError(res, err, traceId)) return;
+      if (err instanceof PostingGoalValidationError) {
+        return res.status(400).json(
+          errorEnvelope("VALIDATION_ERROR", err.message, traceId, err.details)
+        );
+      }
+      return res.status(500).json(errorEnvelope("INTERNAL", (err as Error).message, traceId));
+    }
+  });
+
+  app.get("/api/v1/creator/posting-goal/status", async (req: Request, res: Response) => {
+    const traceId = traceIdFrom(req);
+    if (!config.prisma) {
+      return res.status(503).json(
+        errorEnvelope("SERVICE_UNAVAILABLE", "Database not configured.", traceId)
+      );
+    }
+    try {
+      const { context } = await requireAccountWithRole(
+        req,
+        { prisma: config.prisma, identityService },
+        "creator"
+      );
+      const relayCreatorId = context.primaryRelayCreatorId?.trim();
+      if (!relayCreatorId) {
+        return res.status(404).json(
+          errorEnvelope(
+            "NOT_FOUND",
+            "No creator studio — call POST /api/v1/creator/workspace first.",
+            traceId
+          )
+        );
+      }
+      const status = await getCreatorPostingGoalStatus(config.prisma, relayCreatorId);
+      res.setHeader("Cache-Control", "private, no-store");
+      return res.status(200).json(successEnvelope({ status }, traceId));
+    } catch (err) {
+      if (sendRelayAuthError(res, err, traceId)) return;
+      return res.status(500).json(errorEnvelope("INTERNAL", (err as Error).message, traceId));
+    }
+  });
+
+  app.post(
+    "/api/v1/creator/posting-goal/nudge/current/snooze",
+    async (req: Request, res: Response) => {
+      const traceId = traceIdFrom(req);
+      if (!config.prisma) {
+        return res.status(503).json(
+          errorEnvelope("SERVICE_UNAVAILABLE", "Database not configured.", traceId)
+        );
+      }
+      const body = (req.body ?? {}) as Record<string, unknown>;
+      try {
+        const { context } = await requireAccountWithRole(
+          req,
+          { prisma: config.prisma, identityService },
+          "creator"
+        );
+        const relayCreatorId = context.primaryRelayCreatorId?.trim();
+        if (!relayCreatorId) {
+          return res.status(404).json(
+            errorEnvelope(
+              "NOT_FOUND",
+              "No creator studio — call POST /api/v1/creator/workspace first.",
+              traceId
+            )
+          );
+        }
+        const nudge = await snoozeCurrentCreatorPostingNudge(
+          config.prisma,
+          relayCreatorId,
+          body.snoozed_until
+        );
+        res.setHeader("Cache-Control", "private, no-store");
+        return res.status(200).json(successEnvelope({ nudge }, traceId));
+      } catch (err) {
+        if (sendRelayAuthError(res, err, traceId)) return;
+        if (err instanceof PostingGoalValidationError) {
+          return res.status(400).json(
+            errorEnvelope("VALIDATION_ERROR", err.message, traceId, err.details)
+          );
+        }
+        if (err instanceof PostingGoalNotFoundError) {
+          return res.status(404).json(errorEnvelope("NOT_FOUND", err.message, traceId));
+        }
+        return res.status(500).json(errorEnvelope("INTERNAL", (err as Error).message, traceId));
+      }
+    }
+  );
+
+  app.post(
+    "/api/v1/creator/posting-goal/nudge/current/skip",
+    async (req: Request, res: Response) => {
+      const traceId = traceIdFrom(req);
+      if (!config.prisma) {
+        return res.status(503).json(
+          errorEnvelope("SERVICE_UNAVAILABLE", "Database not configured.", traceId)
+        );
+      }
+      try {
+        const { context } = await requireAccountWithRole(
+          req,
+          { prisma: config.prisma, identityService },
+          "creator"
+        );
+        const relayCreatorId = context.primaryRelayCreatorId?.trim();
+        if (!relayCreatorId) {
+          return res.status(404).json(
+            errorEnvelope(
+              "NOT_FOUND",
+              "No creator studio — call POST /api/v1/creator/workspace first.",
+              traceId
+            )
+          );
+        }
+        const nudge = await skipCurrentCreatorPostingNudge(config.prisma, relayCreatorId);
+        res.setHeader("Cache-Control", "private, no-store");
+        return res.status(200).json(successEnvelope({ nudge }, traceId));
+      } catch (err) {
+        if (sendRelayAuthError(res, err, traceId)) return;
+        if (err instanceof PostingGoalValidationError) {
+          return res.status(400).json(
+            errorEnvelope("VALIDATION_ERROR", err.message, traceId, err.details)
+          );
+        }
+        if (err instanceof PostingGoalNotFoundError) {
+          return res.status(404).json(errorEnvelope("NOT_FOUND", err.message, traceId));
+        }
+        return res.status(500).json(errorEnvelope("INTERNAL", (err as Error).message, traceId));
+      }
+    }
+  );
+
+  app.post(
+    "/api/v1/creator/posting-goal/nudge/:nudge_id/snooze",
+    async (req: Request, res: Response) => {
+      const traceId = traceIdFrom(req);
+      if (!config.prisma) {
+        return res.status(503).json(
+          errorEnvelope("SERVICE_UNAVAILABLE", "Database not configured.", traceId)
+        );
+      }
+      const body = (req.body ?? {}) as Record<string, unknown>;
+      const nudgeId = typeof req.params.nudge_id === "string" ? req.params.nudge_id.trim() : "";
+      if (!nudgeId) {
+        return res.status(400).json(
+          errorEnvelope("VALIDATION_ERROR", "nudge_id required.", traceId, [
+            { field: "nudge_id", issue: "required" }
+          ])
+        );
+      }
+      try {
+        const { context } = await requireAccountWithRole(
+          req,
+          { prisma: config.prisma, identityService },
+          "creator"
+        );
+        const relayCreatorId = context.primaryRelayCreatorId?.trim();
+        if (!relayCreatorId) {
+          return res.status(404).json(
+            errorEnvelope(
+              "NOT_FOUND",
+              "No creator studio — call POST /api/v1/creator/workspace first.",
+              traceId
+            )
+          );
+        }
+        const nudge = await snoozeCreatorPostingNudge(
+          config.prisma,
+          relayCreatorId,
+          nudgeId,
+          body.snoozed_until
+        );
+        res.setHeader("Cache-Control", "private, no-store");
+        return res.status(200).json(successEnvelope({ nudge }, traceId));
+      } catch (err) {
+        if (sendRelayAuthError(res, err, traceId)) return;
+        if (err instanceof PostingGoalValidationError) {
+          return res.status(400).json(
+            errorEnvelope("VALIDATION_ERROR", err.message, traceId, err.details)
+          );
+        }
+        if (err instanceof PostingGoalNotFoundError) {
+          return res.status(404).json(errorEnvelope("NOT_FOUND", err.message, traceId));
+        }
+        return res.status(500).json(errorEnvelope("INTERNAL", (err as Error).message, traceId));
+      }
+    }
+  );
+
+  app.post(
+    "/api/v1/creator/posting-goal/nudge/:nudge_id/skip",
+    async (req: Request, res: Response) => {
+      const traceId = traceIdFrom(req);
+      if (!config.prisma) {
+        return res.status(503).json(
+          errorEnvelope("SERVICE_UNAVAILABLE", "Database not configured.", traceId)
+        );
+      }
+      const nudgeId = typeof req.params.nudge_id === "string" ? req.params.nudge_id.trim() : "";
+      if (!nudgeId) {
+        return res.status(400).json(
+          errorEnvelope("VALIDATION_ERROR", "nudge_id required.", traceId, [
+            { field: "nudge_id", issue: "required" }
+          ])
+        );
+      }
+      try {
+        const { context } = await requireAccountWithRole(
+          req,
+          { prisma: config.prisma, identityService },
+          "creator"
+        );
+        const relayCreatorId = context.primaryRelayCreatorId?.trim();
+        if (!relayCreatorId) {
+          return res.status(404).json(
+            errorEnvelope(
+              "NOT_FOUND",
+              "No creator studio — call POST /api/v1/creator/workspace first.",
+              traceId
+            )
+          );
+        }
+        const nudge = await skipCreatorPostingNudge(config.prisma, relayCreatorId, nudgeId);
+        res.setHeader("Cache-Control", "private, no-store");
+        return res.status(200).json(successEnvelope({ nudge }, traceId));
+      } catch (err) {
+        if (sendRelayAuthError(res, err, traceId)) return;
+        if (err instanceof PostingGoalNotFoundError) {
+          return res.status(404).json(errorEnvelope("NOT_FOUND", err.message, traceId));
+        }
+        return res.status(500).json(errorEnvelope("INTERNAL", (err as Error).message, traceId));
+      }
+    }
+  );
+
+  /**
+   * Autopost WI-2 — hybrid draft workspace (creator-only).
+   */
+  app.get("/api/v1/creator/autopost/draft", async (req: Request, res: Response) => {
+    const traceId = traceIdFrom(req);
+    if (!config.prisma) {
+      return res.status(503).json(
+        errorEnvelope("SERVICE_UNAVAILABLE", "Database not configured.", traceId)
+      );
+    }
+    try {
+      const { context } = await requireAccountWithRole(
+        req,
+        { prisma: config.prisma, identityService },
+        "creator"
+      );
+      const relayCreatorId = context.primaryRelayCreatorId?.trim();
+      if (!relayCreatorId) {
+        return res.status(404).json(
+          errorEnvelope(
+            "NOT_FOUND",
+            "No creator studio — call POST /api/v1/creator/workspace first.",
+            traceId
+          )
+        );
+      }
+      const draft = await getActiveAutopostDraft(config.prisma, relayCreatorId);
+      res.setHeader("Cache-Control", "private, no-store");
+      return res.status(200).json(successEnvelope({ draft }, traceId));
+    } catch (err) {
+      if (sendRelayAuthError(res, err, traceId)) return;
+      return res.status(500).json(errorEnvelope("INTERNAL", (err as Error).message, traceId));
+    }
+  });
+
+  app.post("/api/v1/creator/autopost/draft", async (req: Request, res: Response) => {
+    const traceId = traceIdFrom(req);
+    if (!config.prisma) {
+      return res.status(503).json(
+        errorEnvelope("SERVICE_UNAVAILABLE", "Database not configured.", traceId)
+      );
+    }
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const mediaIds = Array.isArray(body.media_ids) ? (body.media_ids as unknown[]) : [];
+    try {
+      const { context } = await requireAccountWithRole(
+        req,
+        { prisma: config.prisma, identityService },
+        "creator"
+      );
+      const relayCreatorId = context.primaryRelayCreatorId?.trim();
+      if (!relayCreatorId) {
+        return res.status(404).json(
+          errorEnvelope(
+            "NOT_FOUND",
+            "No creator studio — call POST /api/v1/creator/workspace first.",
+            traceId
+          )
+        );
+      }
+      const draft = await saveAutopostDraft(config.prisma, relayCreatorId, {
+        media_ids: mediaIds.map(String),
+        title: typeof body.title === "string" ? body.title : null,
+        body_text: typeof body.body_text === "string" ? body.body_text : null,
+        generate: body.generate === true ? true : body.generate === false ? false : undefined
+      });
+      res.setHeader("Cache-Control", "private, no-store");
+      return res.status(201).json(successEnvelope({ draft }, traceId));
+    } catch (err) {
+      if (sendRelayAuthError(res, err, traceId)) return;
+      if (err instanceof StyleProfileValidationError) {
+        return res.status(400).json(
+          errorEnvelope("VALIDATION_ERROR", err.message, traceId, err.details)
+        );
+      }
+      if (err instanceof AutopostDraftConflictError) {
+        return res.status(409).json(
+          errorEnvelope("CONFLICT", err.message, traceId, [
+            { field: "active_draft_id", issue: err.active_draft_id }
+          ])
+        );
+      }
+      if (err instanceof AutopostDraftValidationError) {
+        return res.status(400).json(
+          errorEnvelope("VALIDATION_ERROR", err.message, traceId, err.details)
+        );
+      }
+      return res.status(500).json(errorEnvelope("INTERNAL", (err as Error).message, traceId));
+    }
+  });
+
+  app.patch("/api/v1/creator/autopost/draft/:draft_id", async (req: Request, res: Response) => {
+    const traceId = traceIdFrom(req);
+    if (!config.prisma) {
+      return res.status(503).json(
+        errorEnvelope("SERVICE_UNAVAILABLE", "Database not configured.", traceId)
+      );
+    }
+    const draftId = String(req.params.draft_id ?? "").trim();
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    try {
+      const { context } = await requireAccountWithRole(
+        req,
+        { prisma: config.prisma, identityService },
+        "creator"
+      );
+      const relayCreatorId = context.primaryRelayCreatorId?.trim();
+      if (!relayCreatorId) {
+        return res.status(404).json(
+          errorEnvelope(
+            "NOT_FOUND",
+            "No creator studio — call POST /api/v1/creator/workspace first.",
+            traceId
+          )
+        );
+      }
+      const draft = await patchAutopostDraft(config.prisma, relayCreatorId, draftId, {
+        title: body.title === undefined ? undefined : typeof body.title === "string" ? body.title : null,
+        body_text:
+          body.body_text === undefined
+            ? undefined
+            : typeof body.body_text === "string"
+              ? body.body_text
+              : null,
+        regenerate: body.regenerate === true,
+        status: typeof body.status === "string" ? body.status : undefined
+      });
+      res.setHeader("Cache-Control", "private, no-store");
+      return res.status(200).json(successEnvelope({ draft }, traceId));
+    } catch (err) {
+      if (sendRelayAuthError(res, err, traceId)) return;
+      if (err instanceof AutopostDraftValidationError) {
+        return res.status(400).json(
+          errorEnvelope("VALIDATION_ERROR", err.message, traceId, err.details)
+        );
+      }
+      return res.status(500).json(errorEnvelope("INTERNAL", (err as Error).message, traceId));
+    }
+  });
+
+  app.post("/api/v1/creator/autopost/draft/:draft_id/publish", async (req: Request, res: Response) => {
+    const traceId = traceIdFrom(req);
+    if (!config.prisma) {
+      return res.status(503).json(
+        errorEnvelope("SERVICE_UNAVAILABLE", "Database not configured.", traceId)
+      );
+    }
+    const draftId = String(req.params.draft_id ?? "").trim();
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const isPublic = body.is_public === true;
+    const isPublicFalse = body.is_public === false;
+    if (!isPublic && !isPublicFalse) {
+      return res.status(400).json(
+        errorEnvelope("VALIDATION_ERROR", "is_public must be a boolean.", traceId)
+      );
+    }
+    try {
+      const { context } = await requireAccountWithRole(
+        req,
+        { prisma: config.prisma, identityService },
+        "creator"
+      );
+      const relayCreatorId = context.primaryRelayCreatorId?.trim();
+      if (!relayCreatorId) {
+        return res.status(404).json(
+          errorEnvelope(
+            "NOT_FOUND",
+            "No creator studio — call POST /api/v1/creator/workspace first.",
+            traceId
+          )
+        );
+      }
+      if (
+        !(await assertCreatorRelayMutationAllowed(
+          req,
+          res,
+          traceId,
+          config.prisma,
+          relayCreatorId
+        ))
+      ) {
+        return;
+      }
+      const result = await publishAutopostDraft(config.prisma, relayCreatorId, draftId, {
+        campaign_id:
+          typeof body.campaign_id === "string" && body.campaign_id.trim()
+            ? body.campaign_id.trim()
+            : null,
+        is_public: isPublic,
+        required_tier_id:
+          typeof body.required_tier_id === "string" && body.required_tier_id.trim()
+            ? body.required_tier_id.trim()
+            : null,
+        tier_ids: Array.isArray(body.tier_ids) ? (body.tier_ids as unknown[]).map(String) : [],
+        tag_ids: Array.isArray(body.tag_ids) ? (body.tag_ids as unknown[]).map(String) : [],
+        title: typeof body.title === "string" ? body.title : null,
+        description: typeof body.description === "string" ? body.description : null
+      });
+      res.setHeader("Cache-Control", "private, no-store");
+      return res.status(200).json(successEnvelope(result, traceId));
+    } catch (err) {
+      if (sendRelayAuthError(res, err, traceId)) return;
+      if (err instanceof AutopostDraftValidationError) {
+        return res.status(400).json(
+          errorEnvelope("VALIDATION_ERROR", err.message, traceId, err.details)
+        );
+      }
+      return res.status(500).json(errorEnvelope("INTERNAL", (err as Error).message, traceId));
+    }
+  });
+
+  app.delete("/api/v1/creator/autopost/draft/:draft_id", async (req: Request, res: Response) => {
+    const traceId = traceIdFrom(req);
+    if (!config.prisma) {
+      return res.status(503).json(
+        errorEnvelope("SERVICE_UNAVAILABLE", "Database not configured.", traceId)
+      );
+    }
+    const draftId = String(req.params.draft_id ?? "").trim();
+    const force = req.query.force === "true" || req.query.force === "1";
+    try {
+      const { context } = await requireAccountWithRole(
+        req,
+        { prisma: config.prisma, identityService },
+        "creator"
+      );
+      const relayCreatorId = context.primaryRelayCreatorId?.trim();
+      if (!relayCreatorId) {
+        return res.status(404).json(
+          errorEnvelope(
+            "NOT_FOUND",
+            "No creator studio — call POST /api/v1/creator/workspace first.",
+            traceId
+          )
+        );
+      }
+      const draft = await discardAutopostDraft(config.prisma, relayCreatorId, draftId, force);
+      res.setHeader("Cache-Control", "private, no-store");
+      return res.status(200).json(successEnvelope({ draft }, traceId));
+    } catch (err) {
+      if (sendRelayAuthError(res, err, traceId)) return;
+      if (err instanceof AutopostDraftDiscardWarningError) {
+        return res.status(409).json(
+          errorEnvelope("DISCARD_WARNING", err.message, traceId, [
+            { field: "distribution_log", issue: JSON.stringify(err.distribution_log) }
+          ])
+        );
+      }
+      if (err instanceof AutopostDraftValidationError) {
+        return res.status(400).json(
+          errorEnvelope("VALIDATION_ERROR", err.message, traceId, err.details)
+        );
+      }
+      return res.status(500).json(errorEnvelope("INTERNAL", (err as Error).message, traceId));
+    }
+  });
+
+  app.post(
+    "/api/v1/creator/autopost/draft/:draft_id/distribution",
+    async (req: Request, res: Response) => {
+      const traceId = traceIdFrom(req);
+      if (!config.prisma) {
+        return res.status(503).json(
+          errorEnvelope("SERVICE_UNAVAILABLE", "Database not configured.", traceId)
+        );
+      }
+      const draftId = String(req.params.draft_id ?? "").trim();
+      const body = (req.body ?? {}) as Record<string, unknown>;
+      const destination = typeof body.destination === "string" ? body.destination.trim() : "";
+      const allowed: AutopostDistributionDestination[] = [
+        "patreon",
+        "x",
+        "bluesky",
+        "deviantart",
+        "relay"
+      ];
+      if (!allowed.includes(destination as AutopostDistributionDestination)) {
+        return res.status(400).json(
+          errorEnvelope("VALIDATION_ERROR", "destination is invalid.", traceId)
+        );
+      }
+      try {
+        const { context } = await requireAccountWithRole(
+          req,
+          { prisma: config.prisma, identityService },
+          "creator"
+        );
+        const relayCreatorId = context.primaryRelayCreatorId?.trim();
+        if (!relayCreatorId) {
+          return res.status(404).json(
+            errorEnvelope(
+              "NOT_FOUND",
+              "No creator studio — call POST /api/v1/creator/workspace first.",
+              traceId
+            )
+          );
+        }
+        const draft = await recordAutopostDistribution(
+          config.prisma,
+          relayCreatorId,
+          draftId,
+          destination as AutopostDistributionDestination
+        );
+        res.setHeader("Cache-Control", "private, no-store");
+        return res.status(200).json(successEnvelope({ draft }, traceId));
+      } catch (err) {
+        if (sendRelayAuthError(res, err, traceId)) return;
+        if (err instanceof AutopostDraftValidationError) {
+          return res.status(400).json(
+            errorEnvelope("VALIDATION_ERROR", err.message, traceId, err.details)
+          );
+        }
+        return res.status(500).json(errorEnvelope("INTERNAL", (err as Error).message, traceId));
+      }
+    }
+  );
+
+  app.get("/api/v1/creator/connected-platforms", async (req: Request, res: Response) => {
+    const traceId = traceIdFrom(req);
+    if (!config.prisma) {
+      return res.status(503).json(
+        errorEnvelope("SERVICE_UNAVAILABLE", "Database not configured.", traceId)
+      );
+    }
+    try {
+      const { context } = await requireAccountWithRole(
+        req,
+        { prisma: config.prisma, identityService },
+        "creator"
+      );
+      const relayCreatorId = context.primaryRelayCreatorId?.trim();
+      if (!relayCreatorId) {
+        return res.status(404).json(
+          errorEnvelope(
+            "NOT_FOUND",
+            "No creator studio — call POST /api/v1/creator/workspace first.",
+            traceId
+          )
+        );
+      }
+      const platforms = await listConnectedPlatforms(config.prisma, relayCreatorId);
+      res.setHeader("Cache-Control", "private, no-store");
+      return res.status(200).json(successEnvelope({ platforms }, traceId));
+    } catch (err) {
+      if (sendRelayAuthError(res, err, traceId)) return;
+      return res.status(500).json(errorEnvelope("INTERNAL", (err as Error).message, traceId));
+    }
+  });
+
+  app.post("/api/v1/relay/posts/:post_id/distribution-plan", async (req: Request, res: Response) => {
+    const traceId = traceIdFrom(req);
+    if (!config.prisma) {
+      return res.status(503).json(
+        errorEnvelope("SERVICE_UNAVAILABLE", "Database not configured.", traceId)
+      );
+    }
+    const postId = String(req.params.post_id ?? "").trim();
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    try {
+      const { context } = await requireAccountWithRole(
+        req,
+        { prisma: config.prisma, identityService },
+        "creator"
+      );
+      const relayCreatorId = context.primaryRelayCreatorId?.trim();
+      if (!relayCreatorId) {
+        return res.status(404).json(
+          errorEnvelope("NOT_FOUND", "No creator studio.", traceId)
+        );
+      }
+      if (!(await requireAccountMatchesCreator(req, res, traceId, relayCreatorId))) {
+        return;
+      }
+      const destinations = Array.isArray(body.destinations)
+        ? body.destinations.map(String)
+        : [];
+      const assistantByDestination =
+        body.assistant_by_destination &&
+        typeof body.assistant_by_destination === "object" &&
+        !Array.isArray(body.assistant_by_destination)
+          ? (body.assistant_by_destination as Record<string, boolean>)
+          : undefined;
+      const assistantContext =
+        body.assistant_context &&
+        typeof body.assistant_context === "object" &&
+        !Array.isArray(body.assistant_context)
+          ? (body.assistant_context as Record<string, unknown>)
+          : undefined;
+      const plan = await createPostDistributionPlan(config.prisma, relayCreatorId, postId, {
+        destinations,
+        assistant_by_destination: assistantByDestination,
+        assistant_context: assistantContext as {
+          user_notes?: string | null;
+          target_audience?: string | null;
+          locale?: string | null;
+          timezone?: string | null;
+        },
+        source_draft_id:
+          typeof body.source_draft_id === "string" ? body.source_draft_id : null
+      });
+      res.setHeader("Cache-Control", "private, no-store");
+      return res.status(201).json(successEnvelope({ plan }, traceId));
+    } catch (err) {
+      if (sendRelayAuthError(res, err, traceId)) return;
+      if (err instanceof PostDistributionValidationError) {
+        return res.status(400).json(
+          errorEnvelope("VALIDATION_ERROR", err.message, traceId, err.details)
+        );
+      }
+      if (err instanceof PostDistributionNotFoundError) {
+        return res.status(404).json(errorEnvelope("NOT_FOUND", err.message, traceId));
+      }
+      return res.status(500).json(errorEnvelope("INTERNAL", (err as Error).message, traceId));
+    }
+  });
+
+  app.get("/api/v1/relay/posts/:post_id/distribution-plan", async (req: Request, res: Response) => {
+    const traceId = traceIdFrom(req);
+    if (!config.prisma) {
+      return res.status(503).json(
+        errorEnvelope("SERVICE_UNAVAILABLE", "Database not configured.", traceId)
+      );
+    }
+    const postId = String(req.params.post_id ?? "").trim();
+    try {
+      const { context } = await requireAccountWithRole(
+        req,
+        { prisma: config.prisma, identityService },
+        "creator"
+      );
+      const relayCreatorId = context.primaryRelayCreatorId?.trim();
+      if (!relayCreatorId) {
+        return res.status(404).json(errorEnvelope("NOT_FOUND", "No creator studio.", traceId));
+      }
+      if (!(await requireAccountMatchesCreator(req, res, traceId, relayCreatorId))) {
+        return;
+      }
+      const plan = await getPostDistributionPlan(config.prisma, relayCreatorId, postId);
+      res.setHeader("Cache-Control", "private, no-store");
+      return res.status(200).json(successEnvelope({ plan }, traceId));
+    } catch (err) {
+      if (sendRelayAuthError(res, err, traceId)) return;
+      return res.status(500).json(errorEnvelope("INTERNAL", (err as Error).message, traceId));
+    }
+  });
+
+  app.get("/api/v1/relay/posts/:post_id/distribution-summary", async (req: Request, res: Response) => {
+    const traceId = traceIdFrom(req);
+    if (!config.prisma) {
+      return res.status(503).json(
+        errorEnvelope("SERVICE_UNAVAILABLE", "Database not configured.", traceId)
+      );
+    }
+    const postId = String(req.params.post_id ?? "").trim();
+    try {
+      const { context } = await requireAccountWithRole(
+        req,
+        { prisma: config.prisma, identityService },
+        "creator"
+      );
+      const relayCreatorId = context.primaryRelayCreatorId?.trim();
+      if (!relayCreatorId) {
+        return res.status(404).json(errorEnvelope("NOT_FOUND", "No creator studio.", traceId));
+      }
+      if (!(await requireAccountMatchesCreator(req, res, traceId, relayCreatorId))) {
+        return;
+      }
+      const summary = await getPostDistributionSummary(config.prisma, relayCreatorId, postId);
+      res.setHeader("Cache-Control", "private, no-store");
+      return res.status(200).json(successEnvelope({ summary }, traceId));
+    } catch (err) {
+      if (sendRelayAuthError(res, err, traceId)) return;
+      return res.status(500).json(errorEnvelope("INTERNAL", (err as Error).message, traceId));
+    }
+  });
+
+  app.get("/api/v1/relay/posts/:post_id/external-metrics", async (req: Request, res: Response) => {
+    const traceId = traceIdFrom(req);
+    if (!config.prisma) {
+      return res.status(503).json(
+        errorEnvelope("SERVICE_UNAVAILABLE", "Database not configured.", traceId)
+      );
+    }
+    const postId = String(req.params.post_id ?? "").trim();
+    try {
+      const { context } = await requireAccountWithRole(
+        req,
+        { prisma: config.prisma, identityService },
+        "creator"
+      );
+      const relayCreatorId = context.primaryRelayCreatorId?.trim();
+      if (!relayCreatorId) {
+        return res.status(404).json(errorEnvelope("NOT_FOUND", "No creator studio.", traceId));
+      }
+      if (!(await requireAccountMatchesCreator(req, res, traceId, relayCreatorId))) {
+        return;
+      }
+      const metrics = await getPostExternalMetrics(config.prisma, relayCreatorId, postId);
+      res.setHeader("Cache-Control", "private, no-store");
+      return res.status(200).json(successEnvelope({ metrics }, traceId));
+    } catch (err) {
+      if (sendRelayAuthError(res, err, traceId)) return;
+      return res.status(500).json(errorEnvelope("INTERNAL", (err as Error).message, traceId));
+    }
+  });
+
+  app.patch("/api/v1/relay/distribution-variants/:variant_id", async (req: Request, res: Response) => {
+    const traceId = traceIdFrom(req);
+    if (!config.prisma) {
+      return res.status(503).json(
+        errorEnvelope("SERVICE_UNAVAILABLE", "Database not configured.", traceId)
+      );
+    }
+    const variantId = String(req.params.variant_id ?? "").trim();
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    try {
+      const { context } = await requireAccountWithRole(
+        req,
+        { prisma: config.prisma, identityService },
+        "creator"
+      );
+      const relayCreatorId = context.primaryRelayCreatorId?.trim();
+      if (!relayCreatorId) {
+        return res.status(404).json(errorEnvelope("NOT_FOUND", "No creator studio.", traceId));
+      }
+      const variant = await patchDistributionVariant(config.prisma, relayCreatorId, variantId, {
+        title: body.title !== undefined ? (body.title as string | null) : undefined,
+        body_text: body.body_text !== undefined ? (body.body_text as string | null) : undefined,
+        post_text: body.post_text !== undefined ? (body.post_text as string | null) : undefined,
+        tags: Array.isArray(body.tags) ? body.tags.map(String) : undefined,
+        locale: body.locale !== undefined ? (body.locale as string | null) : undefined,
+        scheduled_for:
+          body.scheduled_for !== undefined ? (body.scheduled_for as string | null) : undefined,
+        platform_fields:
+          body.platform_fields &&
+          typeof body.platform_fields === "object" &&
+          !Array.isArray(body.platform_fields)
+            ? (body.platform_fields as Record<string, unknown>)
+            : undefined
+      });
+      res.setHeader("Cache-Control", "private, no-store");
+      return res.status(200).json(successEnvelope({ variant }, traceId));
+    } catch (err) {
+      if (sendRelayAuthError(res, err, traceId)) return;
+      if (err instanceof PostDistributionValidationError) {
+        return res.status(400).json(
+          errorEnvelope("VALIDATION_ERROR", err.message, traceId, err.details)
+        );
+      }
+      if (err instanceof PostDistributionNotFoundError) {
+        return res.status(404).json(errorEnvelope("NOT_FOUND", err.message, traceId));
+      }
+      return res.status(500).json(errorEnvelope("INTERNAL", (err as Error).message, traceId));
+    }
+  });
+
+  app.post(
+    "/api/v1/relay/distribution-variants/:variant_id/approve",
+    async (req: Request, res: Response) => {
+      const traceId = traceIdFrom(req);
+      if (!config.prisma) {
+        return res.status(503).json(
+          errorEnvelope("SERVICE_UNAVAILABLE", "Database not configured.", traceId)
+        );
+      }
+      const variantId = String(req.params.variant_id ?? "").trim();
+      try {
+        const { context } = await requireAccountWithRole(
+          req,
+          { prisma: config.prisma, identityService },
+          "creator"
+        );
+        const relayCreatorId = context.primaryRelayCreatorId?.trim();
+        if (!relayCreatorId) {
+          return res.status(404).json(errorEnvelope("NOT_FOUND", "No creator studio.", traceId));
+        }
+        const variant = await approveDistributionVariant(
+          config.prisma,
+          relayCreatorId,
+          variantId
+        );
+        res.setHeader("Cache-Control", "private, no-store");
+        return res.status(200).json(successEnvelope({ variant }, traceId));
+      } catch (err) {
+        if (sendRelayAuthError(res, err, traceId)) return;
+        if (err instanceof PostDistributionNotFoundError) {
+          return res.status(404).json(errorEnvelope("NOT_FOUND", err.message, traceId));
+        }
+        return res.status(500).json(errorEnvelope("INTERNAL", (err as Error).message, traceId));
+      }
+    }
+  );
+
+  app.post(
+    "/api/v1/relay/distribution-variants/:variant_id/handoff",
+    async (req: Request, res: Response) => {
+      const traceId = traceIdFrom(req);
+      if (!config.prisma) {
+        return res.status(503).json(
+          errorEnvelope("SERVICE_UNAVAILABLE", "Database not configured.", traceId)
+        );
+      }
+      const variantId = String(req.params.variant_id ?? "").trim();
+      const body = (req.body ?? {}) as Record<string, unknown>;
+      try {
+        const { context } = await requireAccountWithRole(
+          req,
+          { prisma: config.prisma, identityService },
+          "creator"
+        );
+        const relayCreatorId = context.primaryRelayCreatorId?.trim();
+        if (!relayCreatorId) {
+          return res.status(404).json(errorEnvelope("NOT_FOUND", "No creator studio.", traceId));
+        }
+        const attempt = await startDistributionHandoff(config.prisma, relayCreatorId, variantId, {
+          extension_installation_id:
+            typeof body.extension_installation_id === "string"
+              ? body.extension_installation_id
+              : null,
+          extension_tab_id:
+            typeof body.extension_tab_id === "number" ? body.extension_tab_id : null
+        });
+        res.setHeader("Cache-Control", "private, no-store");
+        return res.status(201).json(successEnvelope({ attempt }, traceId));
+      } catch (err) {
+        if (sendRelayAuthError(res, err, traceId)) return;
+        if (err instanceof PostDistributionValidationError) {
+          return res.status(400).json(
+            errorEnvelope("VALIDATION_ERROR", err.message, traceId, err.details)
+          );
+        }
+        if (err instanceof PostDistributionNotFoundError) {
+          return res.status(404).json(errorEnvelope("NOT_FOUND", err.message, traceId));
+        }
+        return res.status(500).json(errorEnvelope("INTERNAL", (err as Error).message, traceId));
+      }
+    }
+  );
+
+  app.post(
+    "/api/v1/relay/distribution-attempts/:attempt_id/fill-result",
+    async (req: Request, res: Response) => {
+      const traceId = traceIdFrom(req);
+      if (!config.prisma) {
+        return res.status(503).json(
+          errorEnvelope("SERVICE_UNAVAILABLE", "Database not configured.", traceId)
+        );
+      }
+      const attemptId = String(req.params.attempt_id ?? "").trim();
+      const body = (req.body ?? {}) as Record<string, unknown>;
+      const session = await requirePatronBearerSession(req, res, traceId);
+      if (!session) return;
+      const accountId = await getAccountIdForSession(config.prisma, session);
+      if (!accountId) {
+        return res
+          .status(403)
+          .json(errorEnvelope("FORBIDDEN", "Session is not linked to an account.", traceId));
+      }
+      const account = await config.prisma.account.findUnique({
+        where: { id: accountId },
+        select: { primaryRelayCreatorId: true }
+      });
+      const relayCreatorId = account?.primaryRelayCreatorId?.trim() ?? "";
+      if (!relayCreatorId) {
+        return res.status(403).json(errorEnvelope("FORBIDDEN", "No creator studio.", traceId));
+      }
+      const statusRaw = typeof body.status === "string" ? body.status.trim() : "";
+      if (
+        statusRaw !== "fill_succeeded" &&
+        statusRaw !== "fill_partial" &&
+        statusRaw !== "fill_failed"
+      ) {
+        return res.status(400).json(
+          errorEnvelope("VALIDATION_ERROR", "status is invalid.", traceId)
+        );
+      }
+      try {
+        const attempt = await recordDistributionFillResult(
+          config.prisma,
+          relayCreatorId,
+          attemptId,
+          {
+            status: statusRaw,
+            fill_result:
+              body.fill_result &&
+              typeof body.fill_result === "object" &&
+              !Array.isArray(body.fill_result)
+                ? (body.fill_result as Record<string, unknown>)
+                : {},
+            extension_tab_id:
+              typeof body.extension_tab_id === "number" ? body.extension_tab_id : null,
+            error_code: typeof body.error_code === "string" ? body.error_code : null,
+            error_detail: typeof body.error_detail === "string" ? body.error_detail : null
+          }
+        );
+        res.setHeader("Cache-Control", "private, no-store");
+        return res.status(200).json(successEnvelope({ attempt }, traceId));
+      } catch (err) {
+        if (sendRelayAuthError(res, err, traceId)) return;
+        if (err instanceof PostDistributionNotFoundError) {
+          return res.status(404).json(errorEnvelope("NOT_FOUND", err.message, traceId));
+        }
+        return res.status(500).json(errorEnvelope("INTERNAL", (err as Error).message, traceId));
+      }
+    }
+  );
+
+  app.post(
+    "/api/v1/relay/distribution-attempts/:attempt_id/complete",
+    async (req: Request, res: Response) => {
+      const traceId = traceIdFrom(req);
+      if (!config.prisma) {
+        return res.status(503).json(
+          errorEnvelope("SERVICE_UNAVAILABLE", "Database not configured.", traceId)
+        );
+      }
+      const attemptId = String(req.params.attempt_id ?? "").trim();
+      const body = (req.body ?? {}) as Record<string, unknown>;
+      try {
+        const session = await requirePatronBearerSession(req, res, traceId);
+        let relayCreatorId: string | null = null;
+        if (session) {
+          const accountId = await getAccountIdForSession(config.prisma, session);
+          if (accountId) {
+            const account = await config.prisma.account.findUnique({
+              where: { id: accountId },
+              select: { primaryRelayCreatorId: true }
+            });
+            relayCreatorId = account?.primaryRelayCreatorId?.trim() ?? null;
+          }
+        }
+        if (!relayCreatorId) {
+          const { context } = await requireAccountWithRole(
+            req,
+            { prisma: config.prisma, identityService },
+            "creator"
+          );
+          relayCreatorId = context.primaryRelayCreatorId?.trim() ?? null;
+        }
+        if (!relayCreatorId) {
+          return res.status(404).json(errorEnvelope("NOT_FOUND", "No creator studio.", traceId));
+        }
+        const statusRaw =
+          typeof body.status === "string" ? body.status.trim() : "posted";
+        const attempt = await completeDistributionAttempt(
+          config.prisma,
+          relayCreatorId,
+          attemptId,
+          {
+            external_url: typeof body.external_url === "string" ? body.external_url : null,
+            external_id: typeof body.external_id === "string" ? body.external_id : null,
+            status:
+              statusRaw === "posted" || statusRaw === "abandoned" || statusRaw === "failed"
+                ? statusRaw
+                : "posted"
+          }
+        );
+        res.setHeader("Cache-Control", "private, no-store");
+        return res.status(200).json(successEnvelope({ attempt }, traceId));
+      } catch (err) {
+        if (sendRelayAuthError(res, err, traceId)) return;
+        if (err instanceof PostDistributionNotFoundError) {
+          return res.status(404).json(errorEnvelope("NOT_FOUND", err.message, traceId));
+        }
+        return res.status(500).json(errorEnvelope("INTERNAL", (err as Error).message, traceId));
+      }
+    }
+  );
+
+  app.post(
+    "/api/v1/relay/distribution-attempts/:attempt_id/metrics",
+    async (req: Request, res: Response) => {
+      const traceId = traceIdFrom(req);
+      if (!config.prisma) {
+        return res.status(503).json(
+          errorEnvelope("SERVICE_UNAVAILABLE", "Database not configured.", traceId)
+        );
+      }
+      const attemptId = String(req.params.attempt_id ?? "").trim();
+      const body = (req.body ?? {}) as Record<string, unknown>;
+      const session = await requirePatronBearerSession(req, res, traceId);
+      if (!session) return;
+      const accountId = await getAccountIdForSession(config.prisma, session);
+      if (!accountId) {
+        return res
+          .status(403)
+          .json(errorEnvelope("FORBIDDEN", "Session is not linked to an account.", traceId));
+      }
+      const account = await config.prisma.account.findUnique({
+        where: { id: accountId },
+        select: { primaryRelayCreatorId: true }
+      });
+      const relayCreatorId = account?.primaryRelayCreatorId?.trim() ?? "";
+      if (!relayCreatorId) {
+        return res.status(403).json(errorEnvelope("FORBIDDEN", "No creator studio.", traceId));
+      }
+      const sourceRaw = typeof body.source === "string" ? body.source.trim() : "";
+      const metricsRaw = Array.isArray(body.metrics) ? body.metrics : null;
+      if (!sourceRaw || !metricsRaw) {
+        return res.status(400).json(
+          errorEnvelope("VALIDATION_ERROR", "source and metrics are required.", traceId)
+        );
+      }
+      try {
+        const snapshots = await recordExternalPostMetricSnapshots(
+          config.prisma,
+          relayCreatorId,
+          attemptId,
+          {
+            source: sourceRaw as "extension_dom",
+            metrics: metricsRaw.map((entry) => {
+              const row =
+                entry && typeof entry === "object" && !Array.isArray(entry)
+                  ? (entry as Record<string, unknown>)
+                  : {};
+              return {
+                metric_type:
+                  typeof row.metric_type === "string"
+                    ? row.metric_type
+                    : typeof row.metricType === "string"
+                      ? row.metricType
+                      : "",
+                value:
+                  row.value === null || row.value === undefined
+                    ? null
+                    : typeof row.value === "number"
+                      ? row.value
+                      : undefined,
+                raw:
+                  row.raw &&
+                  typeof row.raw === "object" &&
+                  !Array.isArray(row.raw)
+                    ? (row.raw as Record<string, unknown>)
+                    : undefined
+              };
+            })
+          }
+        );
+        const attempt = await getDistributionAttempt(config.prisma, relayCreatorId, attemptId);
+        res.setHeader("Cache-Control", "private, no-store");
+        return res.status(201).json(
+          successEnvelope(
+            {
+              snapshots,
+              attempt: attempt
+                ? {
+                    attempt_id: attempt.attempt_id,
+                    post_id: attempt.post_id,
+                    destination: attempt.destination,
+                    external_url: attempt.external_url,
+                    external_id: attempt.external_id,
+                    status: attempt.status
+                  }
+                : null
+            },
+            traceId
+          )
+        );
+      } catch (err) {
+        if (sendRelayAuthError(res, err, traceId)) return;
+        if (err instanceof ExternalPostMetricsValidationError) {
+          return res.status(400).json(
+            errorEnvelope("VALIDATION_ERROR", err.message, traceId, err.details)
+          );
+        }
+        if (err instanceof PostDistributionNotFoundError) {
+          return res.status(404).json(errorEnvelope("NOT_FOUND", err.message, traceId));
+        }
+        return res.status(500).json(errorEnvelope("INTERNAL", (err as Error).message, traceId));
+      }
+    }
+  );
+
+  app.get(
+    "/api/v1/relay/distribution-attempts/:attempt_id",
+    async (req: Request, res: Response) => {
+      const traceId = traceIdFrom(req);
+      if (!config.prisma) {
+        return res.status(503).json(
+          errorEnvelope("SERVICE_UNAVAILABLE", "Database not configured.", traceId)
+        );
+      }
+      const attemptId = String(req.params.attempt_id ?? "").trim();
+      try {
+        const { context } = await requireAccountWithRole(
+          req,
+          { prisma: config.prisma, identityService },
+          "creator"
+        );
+        const relayCreatorId = context.primaryRelayCreatorId?.trim();
+        if (!relayCreatorId) {
+          return res.status(404).json(errorEnvelope("NOT_FOUND", "No creator studio.", traceId));
+        }
+        const attempt = await getDistributionAttempt(
+          config.prisma,
+          relayCreatorId,
+          attemptId
+        );
+        if (!attempt) {
+          return res.status(404).json(errorEnvelope("NOT_FOUND", "Attempt not found.", traceId));
+        }
+        res.setHeader("Cache-Control", "private, no-store");
+        return res.status(200).json(successEnvelope({ attempt }, traceId));
+      } catch (err) {
+        if (sendRelayAuthError(res, err, traceId)) return;
+        return res.status(500).json(errorEnvelope("INTERNAL", (err as Error).message, traceId));
+      }
+    }
+  );
+
+  /**
+   * Slice D — Creator promo slots (Step 5 review): ranked 1..5 picks of post/media targets.
+   */
+  app.get("/api/v1/creator/promo-slots", async (req: Request, res: Response) => {
+    const traceId = traceIdFrom(req);
+    if (!config.prisma) {
+      return res.status(503).json(
+        errorEnvelope("SERVICE_UNAVAILABLE", "Database not configured.", traceId)
+      );
+    }
+    try {
+      const { context } = await requireAccountWithRole(
+        req,
+        { prisma: config.prisma, identityService },
+        "creator"
+      );
+      const relayCreatorId = context.primaryRelayCreatorId?.trim();
+      if (!relayCreatorId) {
+        return res.status(404).json(
+          errorEnvelope(
+            "NOT_FOUND",
+            "No creator studio — call POST /api/v1/creator/workspace first.",
+            traceId
+          )
+        );
+      }
+      const payload = await getCreatorPromoSlots(config.prisma, relayCreatorId);
+      res.setHeader("Cache-Control", "private, no-store");
+      return res.status(200).json(successEnvelope(payload, traceId));
+    } catch (err) {
+      if (sendRelayAuthError(res, err, traceId)) return;
+      if (err instanceof CreatorPromoSlotValidationError) {
+        return res.status(400).json(
+          errorEnvelope("VALIDATION_ERROR", err.message, traceId, err.details)
+        );
+      }
+      return res.status(500).json(errorEnvelope("INTERNAL", (err as Error).message, traceId));
+    }
+  });
+
+  app.put("/api/v1/creator/promo-slots", async (req: Request, res: Response) => {
+    const traceId = traceIdFrom(req);
+    if (!config.prisma) {
+      return res.status(503).json(
+        errorEnvelope("SERVICE_UNAVAILABLE", "Database not configured.", traceId)
+      );
+    }
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    if (!Array.isArray(body.slots)) {
+      return res.status(400).json(
+        errorEnvelope(
+          "VALIDATION_ERROR",
+          "Request body must include `slots` as an array.",
+          traceId,
+          [{ field: "slots", issue: "required_array" }]
+        )
+      );
+    }
+    try {
+      const { context } = await requireAccountWithRole(
+        req,
+        { prisma: config.prisma, identityService },
+        "creator"
+      );
+      const relayCreatorId = context.primaryRelayCreatorId?.trim();
+      if (!relayCreatorId) {
+        return res.status(404).json(
+          errorEnvelope(
+            "NOT_FOUND",
+            "No creator studio — call POST /api/v1/creator/workspace first.",
+            traceId
+          )
+        );
+      }
+      const slots = body.slots as CreatorPromoSlotPutRow[];
+      const payload = await putCreatorPromoSlots(config.prisma, relayCreatorId, slots);
+      res.setHeader("Cache-Control", "private, no-store");
+      return res.status(200).json(successEnvelope(payload, traceId));
+    } catch (err) {
+      if (sendRelayAuthError(res, err, traceId)) return;
+      if (err instanceof CreatorPromoSlotValidationError) {
+        return res.status(400).json(
+          errorEnvelope("VALIDATION_ERROR", err.message, traceId, err.details)
+        );
+      }
+      if (err instanceof CreatorPromoSlotTargetNotFoundError) {
+        return res.status(404).json(
+          errorEnvelope("NOT_FOUND", err.message, traceId, err.details)
+        );
+      }
+      return res.status(500).json(errorEnvelope("INTERNAL", (err as Error).message, traceId));
+    }
+  });
+
   /** PUX — repeatable creator onboarding walkthrough (dev-only; single seeded account). */
   app.post("/api/v1/pilot-ux/dev/onboarding-walkthrough/reset", async (req: Request, res: Response) => {
     const traceId = traceIdFrom(req);
@@ -6367,6 +8979,50 @@ export function createApp(config: AppConfig): CreateAppResult {
       );
       await resetPilotUxOnboardingWalkthrough(config.prisma, relayCreatorId);
       return res.status(200).json(successEnvelope({ ok: true, relay_creator_id: relayCreatorId }, traceId));
+    } catch (err) {
+      if (err instanceof PilotUxWalkthroughForbiddenError) {
+        return res.status(403).json(errorEnvelope("FORBIDDEN", err.message, traceId));
+      }
+      return res.status(500).json(errorEnvelope("INTERNAL", (err as Error).message, traceId));
+    }
+  });
+
+  /** PUX — repeatable patron onboarding walkthrough reset (dev-only; single seeded account). */
+  app.post("/api/v1/pilot-ux/dev/patron-onboarding/reset", async (req: Request, res: Response) => {
+    const traceId = traceIdFrom(req);
+    if (!isPilotUxDevWalkthroughApiEnabled()) {
+      return res.status(404).json(errorEnvelope("NOT_FOUND", "Not found.", traceId));
+    }
+    if (!config.prisma) {
+      return res.status(503).json(
+        errorEnvelope("SERVICE_UNAVAILABLE", "Database not configured.", traceId)
+      );
+    }
+    const session = await requirePatronBearerSession(req, res, traceId);
+    if (!session) {
+      return;
+    }
+    const accountId = await getAccountIdForSession(config.prisma, session);
+    if (!accountId) {
+      return res
+        .status(403)
+        .json(errorEnvelope("FORBIDDEN", "Session is not linked to an account.", traceId));
+    }
+    try {
+      const patronWalkthrough = await assertPilotUxPatronOnboardingWalkthroughAccount(
+        config.prisma,
+        accountId
+      );
+      await resetPilotUxPatronOnboardingWalkthrough(config.prisma, patronWalkthrough);
+      return res.status(200).json(
+        successEnvelope(
+          {
+            ok: true,
+            tenant_membership_id: patronWalkthrough.platformMembershipId
+          },
+          traceId
+        )
+      );
     } catch (err) {
       if (err instanceof PilotUxWalkthroughForbiddenError) {
         return res.status(403).json(errorEnvelope("FORBIDDEN", err.message, traceId));
@@ -6406,6 +9062,50 @@ export function createApp(config: AppConfig): CreateAppResult {
         return res
           .status(200)
           .json(successEnvelope({ ok: true, relay_creator_id: relayCreatorId }, traceId));
+      } catch (err) {
+        if (err instanceof PilotUxWalkthroughForbiddenError) {
+          return res.status(403).json(errorEnvelope("FORBIDDEN", err.message, traceId));
+        }
+        return res.status(500).json(errorEnvelope("INTERNAL", (err as Error).message, traceId));
+      }
+    }
+  );
+
+  app.post(
+    "/api/v1/pilot-ux/dev/onboarding-walkthrough/simulate-media-import",
+    async (req: Request, res: Response) => {
+      const traceId = traceIdFrom(req);
+      if (!isPilotUxDevWalkthroughApiEnabled()) {
+        return res.status(404).json(errorEnvelope("NOT_FOUND", "Not found.", traceId));
+      }
+      if (!config.prisma) {
+        return res.status(503).json(
+          errorEnvelope("SERVICE_UNAVAILABLE", "Database not configured.", traceId)
+        );
+      }
+      const session = await requirePatronBearerSession(req, res, traceId);
+      if (!session) {
+        return;
+      }
+      const accountId = await getAccountIdForSession(config.prisma, session);
+      if (!accountId) {
+        return res
+          .status(403)
+          .json(errorEnvelope("FORBIDDEN", "Session is not linked to an account.", traceId));
+      }
+      try {
+        const { relayCreatorId } = await assertPilotUxOnboardingWalkthroughAccount(
+          config.prisma,
+          accountId
+        );
+        const result = await simulatePilotUxMediaImport(
+          config.prisma,
+          exportIndex,
+          relayCreatorId
+        );
+        return res.status(200).json(
+          successEnvelope({ ok: true, relay_creator_id: relayCreatorId, ...result }, traceId)
+        );
       } catch (err) {
         if (err instanceof PilotUxWalkthroughForbiddenError) {
           return res.status(403).json(errorEnvelope("FORBIDDEN", err.message, traceId));
@@ -6884,6 +9584,1095 @@ export function createApp(config: AppConfig): CreateAppResult {
   });
 
   /**
+   * Slice 2d-4 — Unified cross-platform post performance from daily rollups (CSV fallback when empty).
+   */
+  app.get("/api/v1/creator/analytics/unified-performance", async (req: Request, res: Response) => {
+    const traceId = traceIdFrom(req);
+    if (!config.prisma) {
+      return res.status(503).json(
+        errorEnvelope("SERVICE_UNAVAILABLE", "Database not configured.", traceId)
+      );
+    }
+    try {
+      const { context } = await requireAccountWithRole(
+        req,
+        { prisma: config.prisma, identityService },
+        "creator"
+      );
+      const relayCreatorId = context.primaryRelayCreatorId?.trim();
+      if (!relayCreatorId) {
+        return res.status(404).json(
+          errorEnvelope(
+            "NOT_FOUND",
+            "No creator studio — call POST /api/v1/creator/workspace first.",
+            traceId
+          )
+        );
+      }
+
+      const range = parseUnifiedPerformanceRange(
+        typeof req.query.range === "string" ? req.query.range : undefined
+      );
+      const destination =
+        typeof req.query.destination === "string" && req.query.destination.trim()
+          ? req.query.destination.trim()
+          : undefined;
+      const rawTopPostsLimit =
+        typeof req.query.top_posts_limit === "string"
+          ? Number.parseInt(req.query.top_posts_limit, 10)
+          : undefined;
+
+      const out = await getCreatorUnifiedPerformance(config.prisma, relayCreatorId, {
+        range,
+        destination,
+        topPostsLimit: Number.isFinite(rawTopPostsLimit) ? rawTopPostsLimit : undefined
+      });
+
+      if (!out.ok) {
+        return res
+          .status(404)
+          .json(errorEnvelope("NOT_FOUND", "Creator tenant missing.", traceId));
+      }
+
+      res.setHeader("Cache-Control", "private, no-store");
+      return res.status(200).json(successEnvelope(out.report, traceId));
+    } catch (err) {
+      if (sendRelayAuthError(res, err, traceId)) return;
+      return res.status(500).json(errorEnvelope("INTERNAL", (err as Error).message, traceId));
+    }
+  });
+
+  /**
+   * Performance intelligence Phase 3 — scoped V2 read endpoints (Work/Bundle hierarchy).
+   */
+  app.get("/api/v1/creator/analytics/performance/overview", async (req: Request, res: Response) => {
+    const traceId = traceIdFrom(req);
+    if (!config.prisma) {
+      return res.status(503).json(
+        errorEnvelope("SERVICE_UNAVAILABLE", "Database not configured.", traceId)
+      );
+    }
+    try {
+      const { context } = await requireAccountWithRole(
+        req,
+        { prisma: config.prisma, identityService },
+        "creator"
+      );
+      const relayCreatorId = context.primaryRelayCreatorId?.trim();
+      if (!relayCreatorId) {
+        return res.status(404).json(
+          errorEnvelope(
+            "NOT_FOUND",
+            "No creator studio — call POST /api/v1/creator/workspace first.",
+            traceId
+          )
+        );
+      }
+
+      const range = parseUnifiedPerformanceRange(
+        typeof req.query.range === "string" ? req.query.range : undefined
+      );
+      const destination =
+        typeof req.query.destination === "string" && req.query.destination.trim()
+          ? req.query.destination.trim()
+          : undefined;
+
+      const out = await getPerformanceOverview(config.prisma, relayCreatorId, {
+        range,
+        destination
+      });
+
+      if (!out.ok) {
+        return res
+          .status(404)
+          .json(errorEnvelope("NOT_FOUND", "Creator tenant missing.", traceId));
+      }
+
+      res.setHeader("Cache-Control", "private, no-store");
+      return res.status(200).json(successEnvelope(out.report, traceId));
+    } catch (err) {
+      if (sendRelayAuthError(res, err, traceId)) return;
+      return res.status(500).json(errorEnvelope("INTERNAL", (err as Error).message, traceId));
+    }
+  });
+
+  app.get("/api/v1/creator/analytics/performance/campaigns", async (req: Request, res: Response) => {
+    const traceId = traceIdFrom(req);
+    if (!config.prisma) {
+      return res.status(503).json(
+        errorEnvelope("SERVICE_UNAVAILABLE", "Database not configured.", traceId)
+      );
+    }
+    try {
+      const { context } = await requireAccountWithRole(
+        req,
+        { prisma: config.prisma, identityService },
+        "creator"
+      );
+      const relayCreatorId = context.primaryRelayCreatorId?.trim();
+      if (!relayCreatorId) {
+        return res.status(404).json(
+          errorEnvelope(
+            "NOT_FOUND",
+            "No creator studio — call POST /api/v1/creator/workspace first.",
+            traceId
+          )
+        );
+      }
+
+      const range = parseUnifiedPerformanceRange(
+        typeof req.query.range === "string" ? req.query.range : undefined
+      );
+      const out = await getPerformanceCampaignRollups(config.prisma, relayCreatorId, { range });
+
+      if (!out.ok) {
+        return res
+          .status(404)
+          .json(errorEnvelope("NOT_FOUND", "Creator tenant missing.", traceId));
+      }
+
+      res.setHeader("Cache-Control", "private, no-store");
+      return res.status(200).json(successEnvelope(out.report, traceId));
+    } catch (err) {
+      if (sendRelayAuthError(res, err, traceId)) return;
+      return res.status(500).json(errorEnvelope("INTERNAL", (err as Error).message, traceId));
+    }
+  });
+
+  app.get("/api/v1/creator/analytics/performance/tags", async (req: Request, res: Response) => {
+    const traceId = traceIdFrom(req);
+    if (!config.prisma) {
+      return res.status(503).json(
+        errorEnvelope("SERVICE_UNAVAILABLE", "Database not configured.", traceId)
+      );
+    }
+    try {
+      const { context } = await requireAccountWithRole(
+        req,
+        { prisma: config.prisma, identityService },
+        "creator"
+      );
+      const relayCreatorId = context.primaryRelayCreatorId?.trim();
+      if (!relayCreatorId) {
+        return res.status(404).json(
+          errorEnvelope(
+            "NOT_FOUND",
+            "No creator studio — call POST /api/v1/creator/workspace first.",
+            traceId
+          )
+        );
+      }
+
+      const range = parseUnifiedPerformanceRange(
+        typeof req.query.range === "string" ? req.query.range : undefined
+      );
+      const tag =
+        typeof req.query.tag === "string" && req.query.tag.trim() ? req.query.tag.trim() : undefined;
+      const out = await getPerformanceTagRollups(config.prisma, relayCreatorId, { range, tag });
+
+      if (!out.ok) {
+        return res
+          .status(404)
+          .json(errorEnvelope("NOT_FOUND", "Creator tenant missing.", traceId));
+      }
+
+      res.setHeader("Cache-Control", "private, no-store");
+      return res.status(200).json(successEnvelope(out.report, traceId));
+    } catch (err) {
+      if (sendRelayAuthError(res, err, traceId)) return;
+      return res.status(500).json(errorEnvelope("INTERNAL", (err as Error).message, traceId));
+    }
+  });
+
+  app.get("/api/v1/creator/analytics/performance/works", async (req: Request, res: Response) => {
+    const traceId = traceIdFrom(req);
+    if (!config.prisma) {
+      return res.status(503).json(
+        errorEnvelope("SERVICE_UNAVAILABLE", "Database not configured.", traceId)
+      );
+    }
+    try {
+      const { context } = await requireAccountWithRole(
+        req,
+        { prisma: config.prisma, identityService },
+        "creator"
+      );
+      const relayCreatorId = context.primaryRelayCreatorId?.trim();
+      if (!relayCreatorId) {
+        return res.status(404).json(
+          errorEnvelope(
+            "NOT_FOUND",
+            "No creator studio — call POST /api/v1/creator/workspace first.",
+            traceId
+          )
+        );
+      }
+
+      const range = parseUnifiedPerformanceRange(
+        typeof req.query.range === "string" ? req.query.range : undefined
+      );
+      const rawLimit =
+        typeof req.query.limit === "string" ? Number.parseInt(req.query.limit, 10) : undefined;
+      const out = await listPerformanceWorks(config.prisma, relayCreatorId, {
+        range,
+        limit: Number.isFinite(rawLimit) ? rawLimit : undefined
+      });
+
+      if (!out.ok) {
+        return res
+          .status(404)
+          .json(errorEnvelope("NOT_FOUND", "Creator tenant missing.", traceId));
+      }
+
+      res.setHeader("Cache-Control", "private, no-store");
+      return res.status(200).json(successEnvelope(out.report, traceId));
+    } catch (err) {
+      if (sendRelayAuthError(res, err, traceId)) return;
+      return res.status(500).json(errorEnvelope("INTERNAL", (err as Error).message, traceId));
+    }
+  });
+
+  app.get(
+    "/api/v1/creator/analytics/performance/works/:creative_work_id",
+    async (req: Request, res: Response) => {
+      const traceId = traceIdFrom(req);
+      if (!config.prisma) {
+        return res.status(503).json(
+          errorEnvelope("SERVICE_UNAVAILABLE", "Database not configured.", traceId)
+        );
+      }
+      const creativeWorkId = String(req.params.creative_work_id ?? "").trim();
+      try {
+        const { context } = await requireAccountWithRole(
+          req,
+          { prisma: config.prisma, identityService },
+          "creator"
+        );
+        const relayCreatorId = context.primaryRelayCreatorId?.trim();
+        if (!relayCreatorId) {
+          return res.status(404).json(
+            errorEnvelope(
+              "NOT_FOUND",
+              "No creator studio — call POST /api/v1/creator/workspace first.",
+              traceId
+            )
+          );
+        }
+
+        const range = parseUnifiedPerformanceRange(
+          typeof req.query.range === "string" ? req.query.range : undefined
+        );
+        const groupBy =
+          typeof req.query.group_by === "string" ? req.query.group_by.trim() : undefined;
+        const out = await getPerformanceWorkBundle(config.prisma, relayCreatorId, creativeWorkId, {
+          range,
+          groupByVariantRole: groupBy === "variant_role"
+        });
+
+        if (!out.ok) {
+          const message =
+            out.code === "NOT_FOUND" ? "Work/Bundle not found." : "Creator tenant missing.";
+          return res.status(404).json(errorEnvelope("NOT_FOUND", message, traceId));
+        }
+
+        res.setHeader("Cache-Control", "private, no-store");
+        return res.status(200).json(successEnvelope(out.report, traceId));
+      } catch (err) {
+        if (sendRelayAuthError(res, err, traceId)) return;
+        return res.status(500).json(errorEnvelope("INTERNAL", (err as Error).message, traceId));
+      }
+    }
+  );
+
+  app.get(
+    "/api/v1/creator/analytics/performance/works/:creative_work_id/instances",
+    async (req: Request, res: Response) => {
+      const traceId = traceIdFrom(req);
+      if (!config.prisma) {
+        return res.status(503).json(
+          errorEnvelope("SERVICE_UNAVAILABLE", "Database not configured.", traceId)
+        );
+      }
+      const creativeWorkId = String(req.params.creative_work_id ?? "").trim();
+      try {
+        const { context } = await requireAccountWithRole(
+          req,
+          { prisma: config.prisma, identityService },
+          "creator"
+        );
+        const relayCreatorId = context.primaryRelayCreatorId?.trim();
+        if (!relayCreatorId) {
+          return res.status(404).json(
+            errorEnvelope(
+              "NOT_FOUND",
+              "No creator studio — call POST /api/v1/creator/workspace first.",
+              traceId
+            )
+          );
+        }
+
+        const out = await getPerformanceWorkInstances(
+          config.prisma,
+          relayCreatorId,
+          creativeWorkId
+        );
+
+        if (!out.ok) {
+          const message =
+            out.code === "NOT_FOUND" ? "Work/Bundle not found." : "Creator tenant missing.";
+          return res.status(404).json(errorEnvelope("NOT_FOUND", message, traceId));
+        }
+
+        res.setHeader("Cache-Control", "private, no-store");
+        return res.status(200).json(successEnvelope(out.report, traceId));
+      } catch (err) {
+        if (sendRelayAuthError(res, err, traceId)) return;
+        return res.status(500).json(errorEnvelope("INTERNAL", (err as Error).message, traceId));
+      }
+    }
+  );
+
+  app.get(
+    "/api/v1/creator/analytics/performance/posts/:post_id",
+    async (req: Request, res: Response) => {
+      const traceId = traceIdFrom(req);
+      if (!config.prisma) {
+        return res.status(503).json(
+          errorEnvelope("SERVICE_UNAVAILABLE", "Database not configured.", traceId)
+        );
+      }
+      const postId = String(req.params.post_id ?? "").trim();
+      try {
+        const { context } = await requireAccountWithRole(
+          req,
+          { prisma: config.prisma, identityService },
+          "creator"
+        );
+        const relayCreatorId = context.primaryRelayCreatorId?.trim();
+        if (!relayCreatorId) {
+          return res.status(404).json(
+            errorEnvelope(
+              "NOT_FOUND",
+              "No creator studio — call POST /api/v1/creator/workspace first.",
+              traceId
+            )
+          );
+        }
+
+        const range = parseUnifiedPerformanceRange(
+          typeof req.query.range === "string" ? req.query.range : undefined
+        );
+        const out = await getPerformancePostVariant(config.prisma, relayCreatorId, postId, {
+          range
+        });
+
+        if (!out.ok) {
+          const message = out.code === "NOT_FOUND" ? "Post not found." : "Creator tenant missing.";
+          return res.status(404).json(errorEnvelope("NOT_FOUND", message, traceId));
+        }
+
+        res.setHeader("Cache-Control", "private, no-store");
+        return res.status(200).json(successEnvelope(out.report, traceId));
+      } catch (err) {
+        if (sendRelayAuthError(res, err, traceId)) return;
+        return res.status(500).json(errorEnvelope("INTERNAL", (err as Error).message, traceId));
+      }
+    }
+  );
+
+  app.get(
+    "/api/v1/creator/analytics/performance/platform-instances/:platform_instance_id",
+    async (req: Request, res: Response) => {
+      const traceId = traceIdFrom(req);
+      if (!config.prisma) {
+        return res.status(503).json(
+          errorEnvelope("SERVICE_UNAVAILABLE", "Database not configured.", traceId)
+        );
+      }
+      const platformInstanceId = String(req.params.platform_instance_id ?? "").trim();
+      try {
+        const { context } = await requireAccountWithRole(
+          req,
+          { prisma: config.prisma, identityService },
+          "creator"
+        );
+        const relayCreatorId = context.primaryRelayCreatorId?.trim();
+        if (!relayCreatorId) {
+          return res.status(404).json(
+            errorEnvelope(
+              "NOT_FOUND",
+              "No creator studio — call POST /api/v1/creator/workspace first.",
+              traceId
+            )
+          );
+        }
+
+        const range = parseUnifiedPerformanceRange(
+          typeof req.query.range === "string" ? req.query.range : undefined
+        );
+        const out = await getPerformancePlatformInstance(
+          config.prisma,
+          relayCreatorId,
+          platformInstanceId,
+          { range }
+        );
+
+        if (!out.ok) {
+          const message =
+            out.code === "NOT_FOUND"
+              ? "Platform instance not found."
+              : "Creator tenant missing.";
+          return res.status(404).json(errorEnvelope("NOT_FOUND", message, traceId));
+        }
+
+        res.setHeader("Cache-Control", "private, no-store");
+        return res.status(200).json(successEnvelope(out.report, traceId));
+      } catch (err) {
+        if (sendRelayAuthError(res, err, traceId)) return;
+        return res.status(500).json(errorEnvelope("INTERNAL", (err as Error).message, traceId));
+      }
+    }
+  );
+
+  app.get(
+    "/api/v1/creator/analytics/platform-instances/:platform_instance_id/refresh-status",
+    async (req: Request, res: Response) => {
+      const traceId = traceIdFrom(req);
+      if (!config.prisma) {
+        return res.status(503).json(
+          errorEnvelope("SERVICE_UNAVAILABLE", "Database not configured.", traceId)
+        );
+      }
+      const platformInstanceId = String(req.params.platform_instance_id ?? "").trim();
+      try {
+        const { context } = await requireAccountWithRole(
+          req,
+          { prisma: config.prisma, identityService },
+          "creator"
+        );
+        const relayCreatorId = context.primaryRelayCreatorId?.trim();
+        if (!relayCreatorId) {
+          return res.status(404).json(
+            errorEnvelope(
+              "NOT_FOUND",
+              "No creator studio — call POST /api/v1/creator/workspace first.",
+              traceId
+            )
+          );
+        }
+
+        const out = await getPlatformInstanceRefreshStatus(
+          config.prisma,
+          relayCreatorId,
+          platformInstanceId
+        );
+
+        if (!out.ok) {
+          const message =
+            out.code === "NOT_FOUND"
+              ? "Platform instance not found."
+              : "Creator tenant missing.";
+          return res.status(404).json(errorEnvelope("NOT_FOUND", message, traceId));
+        }
+
+        res.setHeader("Cache-Control", "private, no-store");
+        return res.status(200).json(successEnvelope(out.status, traceId));
+      } catch (err) {
+        if (sendRelayAuthError(res, err, traceId)) return;
+        return res.status(500).json(errorEnvelope("INTERNAL", (err as Error).message, traceId));
+      }
+    }
+  );
+
+  app.post(
+    "/api/v1/creator/analytics/platform-instances/:platform_instance_id/refresh",
+    async (req: Request, res: Response) => {
+      const traceId = traceIdFrom(req);
+      if (!config.prisma) {
+        return res.status(503).json(
+          errorEnvelope("SERVICE_UNAVAILABLE", "Database not configured.", traceId)
+        );
+      }
+      const platformInstanceId = String(req.params.platform_instance_id ?? "").trim();
+      try {
+        const { context } = await requireAccountWithRole(
+          req,
+          { prisma: config.prisma, identityService },
+          "creator"
+        );
+        const relayCreatorId = context.primaryRelayCreatorId?.trim();
+        if (!relayCreatorId) {
+          return res.status(404).json(
+            errorEnvelope(
+              "NOT_FOUND",
+              "No creator studio — call POST /api/v1/creator/workspace first.",
+              traceId
+            )
+          );
+        }
+
+        const out = await requestPlatformInstanceManualRefresh(
+          config.prisma,
+          relayCreatorId,
+          platformInstanceId
+        );
+
+        if (!out.ok) {
+          const message =
+            out.code === "NOT_FOUND"
+              ? "Platform instance not found."
+              : "Creator tenant missing.";
+          return res.status(404).json(errorEnvelope("NOT_FOUND", message, traceId));
+        }
+
+        res.setHeader("Cache-Control", "private, no-store");
+        return res.status(200).json(successEnvelope(out.result, traceId));
+      } catch (err) {
+        if (sendRelayAuthError(res, err, traceId)) return;
+        return res.status(500).json(errorEnvelope("INTERNAL", (err as Error).message, traceId));
+      }
+    }
+  );
+
+  /**
+   * Performance intelligence Phase 9 — platform adapter catalog and manual instance linking.
+   */
+  app.get("/api/v1/creator/analytics/platform-adapters", async (req: Request, res: Response) => {
+    const traceId = traceIdFrom(req);
+    if (!config.prisma) {
+      return res.status(503).json(
+        errorEnvelope("SERVICE_UNAVAILABLE", "Database not configured.", traceId)
+      );
+    }
+    try {
+      const { context } = await requireAccountWithRole(
+        req,
+        { prisma: config.prisma, identityService },
+        "creator"
+      );
+      const relayCreatorId = context.primaryRelayCreatorId?.trim();
+      if (!relayCreatorId) {
+        return res.status(404).json(
+          errorEnvelope(
+            "NOT_FOUND",
+            "No creator studio — call POST /api/v1/creator/workspace first.",
+            traceId
+          )
+        );
+      }
+
+      res.setHeader("Cache-Control", "private, no-store");
+      return res.status(200).json(
+        successEnvelope(
+          {
+            creator_id: relayCreatorId,
+            adapters: platformAdapterCatalog()
+          },
+          traceId
+        )
+      );
+    } catch (err) {
+      if (sendRelayAuthError(res, err, traceId)) return;
+      return res.status(500).json(errorEnvelope("INTERNAL", (err as Error).message, traceId));
+    }
+  });
+
+  app.post("/api/v1/creator/analytics/platform-instances/link", async (req: Request, res: Response) => {
+    const traceId = traceIdFrom(req);
+    if (!config.prisma) {
+      return res.status(503).json(
+        errorEnvelope("SERVICE_UNAVAILABLE", "Database not configured.", traceId)
+      );
+    }
+    try {
+      const { context } = await requireAccountWithRole(
+        req,
+        { prisma: config.prisma, identityService },
+        "creator"
+      );
+      const relayCreatorId = context.primaryRelayCreatorId?.trim();
+      if (!relayCreatorId) {
+        return res.status(404).json(
+          errorEnvelope(
+            "NOT_FOUND",
+            "No creator studio — call POST /api/v1/creator/workspace first.",
+            traceId
+          )
+        );
+      }
+
+      const body = req.body as Record<string, unknown>;
+      const out = await confirmPlatformInstanceLink(config.prisma, relayCreatorId, {
+        postId: typeof body.post_id === "string" ? body.post_id : "",
+        destination: typeof body.destination === "string" ? body.destination : "",
+        externalUrl: typeof body.external_url === "string" ? body.external_url : "",
+        attemptId:
+          typeof body.attempt_id === "string"
+            ? body.attempt_id
+            : body.attempt_id === null
+              ? null
+              : undefined
+      });
+
+      if (!out.ok) {
+        const status =
+          out.code === "INVALID_INPUT" || out.code === "URL_DESTINATION_MISMATCH"
+            ? 400
+            : out.code === "UNSUPPORTED_DESTINATION"
+              ? 422
+              : 404;
+        return res
+          .status(status)
+          .json(
+            errorEnvelope(
+              out.code,
+              out.message ?? "Unable to link platform instance.",
+              traceId
+            )
+          );
+      }
+
+      res.setHeader("Cache-Control", "private, no-store");
+      return res.status(200).json(successEnvelope(out.link, traceId));
+    } catch (err) {
+      if (sendRelayAuthError(res, err, traceId)) return;
+      return res.status(500).json(errorEnvelope("INTERNAL", (err as Error).message, traceId));
+    }
+  });
+
+  /**
+   * Performance intelligence Phase 8 — metric-grounded insight actions and targeted goals.
+   */
+  app.get("/api/v1/creator/analytics/performance/insight-actions", async (req: Request, res: Response) => {
+    const traceId = traceIdFrom(req);
+    if (!config.prisma) {
+      return res.status(503).json(
+        errorEnvelope("SERVICE_UNAVAILABLE", "Database not configured.", traceId)
+      );
+    }
+    try {
+      const { context } = await requireAccountWithRole(
+        req,
+        { prisma: config.prisma, identityService },
+        "creator"
+      );
+      const relayCreatorId = context.primaryRelayCreatorId?.trim();
+      if (!relayCreatorId) {
+        return res.status(404).json(
+          errorEnvelope(
+            "NOT_FOUND",
+            "No creator studio — call POST /api/v1/creator/workspace first.",
+            traceId
+          )
+        );
+      }
+
+      const range = parseUnifiedPerformanceRange(
+        typeof req.query.range === "string" ? req.query.range : undefined
+      );
+      const out = await getPerformanceInsightActions(config.prisma, relayCreatorId, { range });
+
+      if (!out.ok) {
+        return res
+          .status(404)
+          .json(errorEnvelope("NOT_FOUND", "Creator tenant missing.", traceId));
+      }
+
+      res.setHeader("Cache-Control", "private, no-store");
+      return res.status(200).json(successEnvelope(out.report, traceId));
+    } catch (err) {
+      if (sendRelayAuthError(res, err, traceId)) return;
+      return res.status(500).json(errorEnvelope("INTERNAL", (err as Error).message, traceId));
+    }
+  });
+
+  app.get("/api/v1/creator/analytics/performance/goals", async (req: Request, res: Response) => {
+    const traceId = traceIdFrom(req);
+    if (!config.prisma) {
+      return res.status(503).json(
+        errorEnvelope("SERVICE_UNAVAILABLE", "Database not configured.", traceId)
+      );
+    }
+    try {
+      const { context } = await requireAccountWithRole(
+        req,
+        { prisma: config.prisma, identityService },
+        "creator"
+      );
+      const relayCreatorId = context.primaryRelayCreatorId?.trim();
+      if (!relayCreatorId) {
+        return res.status(404).json(
+          errorEnvelope(
+            "NOT_FOUND",
+            "No creator studio — call POST /api/v1/creator/workspace first.",
+            traceId
+          )
+        );
+      }
+
+      const range = parseUnifiedPerformanceRange(
+        typeof req.query.range === "string" ? req.query.range : undefined
+      );
+      const out = await listCreatorPerformanceGoals(config.prisma, relayCreatorId, { range });
+
+      if (!out.ok) {
+        return res
+          .status(404)
+          .json(errorEnvelope("NOT_FOUND", "Creator tenant missing.", traceId));
+      }
+
+      res.setHeader("Cache-Control", "private, no-store");
+      return res.status(200).json(successEnvelope(out.report, traceId));
+    } catch (err) {
+      if (sendRelayAuthError(res, err, traceId)) return;
+      return res.status(500).json(errorEnvelope("INTERNAL", (err as Error).message, traceId));
+    }
+  });
+
+  app.post("/api/v1/creator/analytics/performance/goals", async (req: Request, res: Response) => {
+    const traceId = traceIdFrom(req);
+    if (!config.prisma) {
+      return res.status(503).json(
+        errorEnvelope("SERVICE_UNAVAILABLE", "Database not configured.", traceId)
+      );
+    }
+    try {
+      const { context } = await requireAccountWithRole(
+        req,
+        { prisma: config.prisma, identityService },
+        "creator"
+      );
+      const relayCreatorId = context.primaryRelayCreatorId?.trim();
+      if (!relayCreatorId) {
+        return res.status(404).json(
+          errorEnvelope(
+            "NOT_FOUND",
+            "No creator studio — call POST /api/v1/creator/workspace first.",
+            traceId
+          )
+        );
+      }
+
+      const body = req.body as Record<string, unknown>;
+      const out = await createCreatorPerformanceGoal(config.prisma, relayCreatorId, {
+        scope: typeof body.scope === "string" ? (body.scope as "creator" | "work" | "campaign" | "platform") : "creator",
+        scopeRef:
+          typeof body.scope_ref === "string"
+            ? body.scope_ref
+            : body.scope_ref === null
+              ? null
+              : undefined,
+        metric: typeof body.metric === "string" ? (body.metric as "reach" | "likes" | "comments") : "reach",
+        targetValue:
+          typeof body.target_value === "number"
+            ? body.target_value
+            : Number.parseInt(String(body.target_value ?? ""), 10),
+        range:
+          typeof body.range === "string" && (body.range === "7d" || body.range === "30d" || body.range === "90d")
+            ? body.range
+            : undefined,
+        label: typeof body.label === "string" ? body.label : null
+      });
+
+      if (!out.ok) {
+        const status = out.code === "INVALID_INPUT" ? 400 : 404;
+        return res
+          .status(status)
+          .json(
+            errorEnvelope(
+              out.code === "INVALID_INPUT" ? "INVALID_INPUT" : "NOT_FOUND",
+              out.message ?? "Unable to create goal.",
+              traceId
+            )
+          );
+      }
+
+      res.setHeader("Cache-Control", "private, no-store");
+      return res.status(201).json(successEnvelope({ goal: out.goal }, traceId));
+    } catch (err) {
+      if (sendRelayAuthError(res, err, traceId)) return;
+      return res.status(500).json(errorEnvelope("INTERNAL", (err as Error).message, traceId));
+    }
+  });
+
+  app.delete("/api/v1/creator/analytics/performance/goals/:goal_id", async (req: Request, res: Response) => {
+    const traceId = traceIdFrom(req);
+    if (!config.prisma) {
+      return res.status(503).json(
+        errorEnvelope("SERVICE_UNAVAILABLE", "Database not configured.", traceId)
+      );
+    }
+    const goalId = String(req.params.goal_id ?? "").trim();
+    try {
+      const { context } = await requireAccountWithRole(
+        req,
+        { prisma: config.prisma, identityService },
+        "creator"
+      );
+      const relayCreatorId = context.primaryRelayCreatorId?.trim();
+      if (!relayCreatorId) {
+        return res.status(404).json(
+          errorEnvelope(
+            "NOT_FOUND",
+            "No creator studio — call POST /api/v1/creator/workspace first.",
+            traceId
+          )
+        );
+      }
+
+      const out = await deleteCreatorPerformanceGoal(config.prisma, relayCreatorId, goalId);
+      if (!out.ok) {
+        return res.status(404).json(errorEnvelope("NOT_FOUND", "Goal not found.", traceId));
+      }
+
+      res.setHeader("Cache-Control", "private, no-store");
+      return res.status(200).json(successEnvelope({ ok: true }, traceId));
+    } catch (err) {
+      if (sendRelayAuthError(res, err, traceId)) return;
+      return res.status(500).json(errorEnvelope("INTERNAL", (err as Error).message, traceId));
+    }
+  });
+
+  /**
+   * Performance intelligence Phase 5 — suggested Work/Bundle merge + split (user-confirmed).
+   */
+  app.get("/api/v1/creator/analytics/creative-works/bundle-suggestions", async (req: Request, res: Response) => {
+    const traceId = traceIdFrom(req);
+    if (!config.prisma) {
+      return res.status(503).json(
+        errorEnvelope("SERVICE_UNAVAILABLE", "Database not configured.", traceId)
+      );
+    }
+    try {
+      const { context } = await requireAccountWithRole(
+        req,
+        { prisma: config.prisma, identityService },
+        "creator"
+      );
+      const relayCreatorId = context.primaryRelayCreatorId?.trim();
+      if (!relayCreatorId) {
+        return res.status(404).json(
+          errorEnvelope(
+            "NOT_FOUND",
+            "No creator studio — call POST /api/v1/creator/workspace first.",
+            traceId
+          )
+        );
+      }
+
+      const rawLimit =
+        typeof req.query.limit === "string" ? Number.parseInt(req.query.limit, 10) : undefined;
+      const out = await listCreativeWorkBundleSuggestions(config.prisma, relayCreatorId, {
+        limit: Number.isFinite(rawLimit) ? rawLimit : undefined
+      });
+
+      if (!out.ok) {
+        return res
+          .status(404)
+          .json(errorEnvelope("NOT_FOUND", "Creator tenant missing.", traceId));
+      }
+
+      res.setHeader("Cache-Control", "private, no-store");
+      return res.status(200).json(successEnvelope(out.report, traceId));
+    } catch (err) {
+      if (sendRelayAuthError(res, err, traceId)) return;
+      return res.status(500).json(errorEnvelope("INTERNAL", (err as Error).message, traceId));
+    }
+  });
+
+  app.post(
+    "/api/v1/creator/analytics/creative-works/bundle-suggestions/dismiss",
+    async (req: Request, res: Response) => {
+      const traceId = traceIdFrom(req);
+      if (!config.prisma) {
+        return res.status(503).json(
+          errorEnvelope("SERVICE_UNAVAILABLE", "Database not configured.", traceId)
+        );
+      }
+      const body = (req.body ?? {}) as Record<string, unknown>;
+      const sourcePostId = typeof body.source_post_id === "string" ? body.source_post_id.trim() : "";
+      const targetCreativeWorkId =
+        typeof body.target_creative_work_id === "string"
+          ? body.target_creative_work_id.trim()
+          : "";
+
+      try {
+        const { context } = await requireAccountWithRole(
+          req,
+          { prisma: config.prisma, identityService },
+          "creator"
+        );
+        const relayCreatorId = context.primaryRelayCreatorId?.trim();
+        if (!relayCreatorId) {
+          return res.status(404).json(
+            errorEnvelope(
+              "NOT_FOUND",
+              "No creator studio — call POST /api/v1/creator/workspace first.",
+              traceId
+            )
+          );
+        }
+
+        const out = await dismissCreativeWorkBundleSuggestion(config.prisma, relayCreatorId, {
+          sourcePostId,
+          targetCreativeWorkId
+        });
+
+        if (!out.ok) {
+          const code = out.code === "INVALID_INPUT" ? "VALIDATION_ERROR" : "NOT_FOUND";
+          const message =
+            out.code === "INVALID_INPUT"
+              ? "source_post_id and target_creative_work_id are required."
+              : out.code === "NOT_FOUND"
+                ? "Target Work/Bundle not found."
+                : "Creator tenant missing.";
+          return res.status(out.code === "NO_TENANT" ? 404 : 400).json(
+            errorEnvelope(code, message, traceId)
+          );
+        }
+
+        res.setHeader("Cache-Control", "private, no-store");
+        return res.status(200).json(successEnvelope(out, traceId));
+      } catch (err) {
+        if (sendRelayAuthError(res, err, traceId)) return;
+        return res.status(500).json(errorEnvelope("INTERNAL", (err as Error).message, traceId));
+      }
+    }
+  );
+
+  app.post(
+    "/api/v1/creator/analytics/creative-works/bundle-suggestions/confirm",
+    async (req: Request, res: Response) => {
+      const traceId = traceIdFrom(req);
+      if (!config.prisma) {
+        return res.status(503).json(
+          errorEnvelope("SERVICE_UNAVAILABLE", "Database not configured.", traceId)
+        );
+      }
+      const body = (req.body ?? {}) as Record<string, unknown>;
+      const sourcePostId = typeof body.source_post_id === "string" ? body.source_post_id.trim() : "";
+      const targetCreativeWorkId =
+        typeof body.target_creative_work_id === "string"
+          ? body.target_creative_work_id.trim()
+          : "";
+      const variantRoleRaw =
+        typeof body.variant_role === "string" ? body.variant_role.trim() : undefined;
+      const allowedRoles = new Set([
+        "full",
+        "teaser",
+        "promo",
+        "repost",
+        "standalone"
+      ]);
+      const variantRole =
+        variantRoleRaw && allowedRoles.has(variantRoleRaw)
+          ? (variantRoleRaw as "full" | "teaser" | "promo" | "repost" | "standalone")
+          : undefined;
+
+      try {
+        const { context } = await requireAccountWithRole(
+          req,
+          { prisma: config.prisma, identityService },
+          "creator"
+        );
+        const relayCreatorId = context.primaryRelayCreatorId?.trim();
+        if (!relayCreatorId) {
+          return res.status(404).json(
+            errorEnvelope(
+              "NOT_FOUND",
+              "No creator studio — call POST /api/v1/creator/workspace first.",
+              traceId
+            )
+          );
+        }
+
+        const out = await confirmMergeCreativeWorkBundle(config.prisma, relayCreatorId, {
+          sourcePostId,
+          targetCreativeWorkId,
+          variantRole
+        });
+
+        if (!out.ok) {
+          if (out.code === "ALREADY_MERGED") {
+            return res
+              .status(409)
+              .json(errorEnvelope("CONFLICT", "Post is already in the target Work/Bundle.", traceId));
+          }
+          const message =
+            out.code === "INVALID_INPUT"
+              ? "source_post_id and target_creative_work_id are required."
+              : out.code === "NOT_FOUND"
+                ? "Post or Work/Bundle not found."
+                : "Creator tenant missing.";
+          const status = out.code === "INVALID_INPUT" ? 400 : 404;
+          return res.status(status).json(errorEnvelope("NOT_FOUND", message, traceId));
+        }
+
+        res.setHeader("Cache-Control", "private, no-store");
+        return res.status(200).json(successEnvelope(out.result, traceId));
+      } catch (err) {
+        if (sendRelayAuthError(res, err, traceId)) return;
+        return res.status(500).json(errorEnvelope("INTERNAL", (err as Error).message, traceId));
+      }
+    }
+  );
+
+  app.post(
+    "/api/v1/creator/analytics/creative-works/members/:post_id/split",
+    async (req: Request, res: Response) => {
+      const traceId = traceIdFrom(req);
+      if (!config.prisma) {
+        return res.status(503).json(
+          errorEnvelope("SERVICE_UNAVAILABLE", "Database not configured.", traceId)
+        );
+      }
+      const postId = String(req.params.post_id ?? "").trim();
+      const body = (req.body ?? {}) as Record<string, unknown>;
+      const title = typeof body.title === "string" ? body.title.trim() : undefined;
+
+      try {
+        const { context } = await requireAccountWithRole(
+          req,
+          { prisma: config.prisma, identityService },
+          "creator"
+        );
+        const relayCreatorId = context.primaryRelayCreatorId?.trim();
+        if (!relayCreatorId) {
+          return res.status(404).json(
+            errorEnvelope(
+              "NOT_FOUND",
+              "No creator studio — call POST /api/v1/creator/workspace first.",
+              traceId
+            )
+          );
+        }
+
+        const out = await splitCreativeWorkMember(config.prisma, relayCreatorId, postId, {
+          title
+        });
+
+        if (!out.ok) {
+          const message =
+            out.code === "INVALID_INPUT"
+              ? "post_id is required."
+              : out.code === "NOT_FOUND"
+                ? "Post membership not found."
+                : "Creator tenant missing.";
+          return res
+            .status(out.code === "INVALID_INPUT" ? 400 : 404)
+            .json(errorEnvelope("NOT_FOUND", message, traceId));
+        }
+
+        res.setHeader("Cache-Control", "private, no-store");
+        return res.status(200).json(successEnvelope(out.result, traceId));
+      } catch (err) {
+        if (sendRelayAuthError(res, err, traceId)) return;
+        return res.status(500).json(errorEnvelope("INTERNAL", (err as Error).message, traceId));
+      }
+    }
+  );
+
+  /**
    * P7 v0 / A14 — M1-lite usage preview for the studio (aggregated `usage_events`, non-binding).
    */
   app.get("/api/v1/creator/analytics/usage-preview", async (req: Request, res: Response) => {
@@ -7109,6 +10898,111 @@ export function createApp(config: AppConfig): CreateAppResult {
   });
 
   /**
+   * Public patron saved-collection detail — entries carry live viewer_entitlement for the caller.
+   * Optional Bearer/cookie session; unauthenticated callers see gated entries as locked.
+   */
+  app.get(
+    "/api/v1/public/patron-collections/:collection_id",
+    async (req: Request, res: Response) => {
+      const traceId = traceIdFrom(req);
+      if (!config.prisma) {
+        return res.status(503).json(
+          errorEnvelope("SERVICE_UNAVAILABLE", "Database not configured.", traceId)
+        );
+      }
+      const collectionId =
+        typeof req.params.collection_id === "string" ? req.params.collection_id.trim() : "";
+      if (!collectionId) {
+        return res.status(404).json(errorEnvelope("NOT_FOUND", "Collection not found.", traceId));
+      }
+      const bearer = req.header("authorization")?.replace(/^Bearer\s+/i, "").trim() ?? "";
+      const fromCookie = readSessionCookie(req)?.trim() ?? "";
+      const opaque = bearer || fromCookie;
+      let viewerAccountId: string | null = null;
+      if (opaque) {
+        const session = await identityService.resolveSession(opaque);
+        if (session && config.prisma) {
+          viewerAccountId = await getAccountIdForSession(config.prisma, session);
+        }
+      }
+      const detail = await getPublicPatronCollectionDetail(
+        config.prisma,
+        collectionId,
+        viewerAccountId
+      );
+      if (!detail) {
+        return res.status(404).json(errorEnvelope("NOT_FOUND", "Collection not found.", traceId));
+      }
+      res.setHeader("Cache-Control", "private, no-store");
+      return res.status(200).json(successEnvelope(detail, traceId));
+    }
+  );
+
+  /**
+   * Public delivery for patron profile avatar/banner objects in R2.
+   * Readable when the profile is public and references the asset, or by the owning account.
+   */
+  app.get(
+    "/api/v1/public/patron-profile-assets/:account_id/:kind/:asset_id/content",
+    async (req: Request, res: Response) => {
+      const traceId = traceIdFrom(req);
+      if (!config.prisma) {
+        return res.status(503).json(
+          errorEnvelope("SERVICE_UNAVAILABLE", "Database not configured.", traceId)
+        );
+      }
+      const accountId =
+        typeof req.params.account_id === "string" ? req.params.account_id.trim() : "";
+      const kindRaw = typeof req.params.kind === "string" ? req.params.kind.trim() : "";
+      const assetId = typeof req.params.asset_id === "string" ? req.params.asset_id.trim() : "";
+      if (!accountId || !isPatronProfileAssetKind(kindRaw) || !assetId) {
+        return res.status(404).json(errorEnvelope("NOT_FOUND", "Asset not found.", traceId));
+      }
+      const bearer = req.header("authorization")?.replace(/^Bearer\s+/i, "").trim() ?? "";
+      const fromCookie = readSessionCookie(req)?.trim() ?? "";
+      const opaque = bearer || fromCookie;
+      const session = opaque ? await identityService.resolveSession(opaque) : null;
+      let sessionAccountId: string | null = null;
+      if (session && config.prisma) {
+        if (session.kind === "extension") {
+          void identityService.touchSessionExpiry(opaque).catch(() => {});
+        }
+        await applyRelayAccountRlsIfPresent(config.prisma, session);
+        sessionAccountId = await getAccountIdForSession(config.prisma, session);
+      }
+      const allowed = await mayReadPatronProfileAsset({
+        prisma: config.prisma,
+        accountId,
+        kind: kindRaw,
+        assetId,
+        sessionAccountId,
+      });
+      if (!allowed) {
+        return res.status(404).json(errorEnvelope("NOT_FOUND", "Asset not found.", traceId));
+      }
+      const r2 = getR2ClientConfigFromEnv();
+      if (!r2) {
+        return res.status(503).json(
+          errorEnvelope("SERVICE_UNAVAILABLE", "Object storage is not configured.", traceId)
+        );
+      }
+      const payload = await getPatronProfileAssetBytes({
+        r2,
+        accountId,
+        kind: kindRaw,
+        assetId,
+      });
+      if (!payload) {
+        return res.status(404).json(errorEnvelope("NOT_FOUND", "Asset not found.", traceId));
+      }
+      res.setHeader("content-type", payload.contentType);
+      res.setHeader("cache-control", "public, max-age=3600");
+      res.setHeader("content-length", String(payload.buffer.byteLength));
+      return res.status(200).send(payload.buffer);
+    }
+  );
+
+  /**
    * Patron home (fan Relay): feed + sidebar bundle. Requires Bearer session from patron OAuth.
    * PE-B: when `RELAY_DB_STORE_IDENTITY` + Prisma are enabled, assembles from `PatronFollow` × `Post` ×
    * `PatronEntitlementSnapshot` with tier checks; otherwise serves fixture JSON from the repo.
@@ -7155,7 +11049,8 @@ export function createApp(config: AppConfig): CreateAppResult {
           viewerEmail: user?.email ?? null,
           limit,
           cursor: cursor ?? null,
-          filter: parsePatronFeedFilter(filterParam)
+          filter: parsePatronFeedFilter(filterParam),
+          hideMatureContent: await loadPatronHideMatureContent(config.prisma, session.user_id)
         });
         res.setHeader("Cache-Control", "private, no-store");
         return res.status(200).json(successEnvelope(data, traceId));
@@ -7179,6 +11074,117 @@ export function createApp(config: AppConfig): CreateAppResult {
   app.get("/api/v1/patron/feed", async (req: Request, res: Response) => {
     const traceId = traceIdFrom(req);
     return handlePatronFeedGet(req, res, traceId);
+  });
+
+  /**
+   * PE-S (PGS-03) — Patron global search over followed creators (accessible + locked bins).
+   *
+   * Query: `q` (required, min 2 chars), `limit` (default 20, max 50), `cursor` (opaque),
+   * `section` (`accessible` | `locked`; which bin `cursor` advances — default `accessible`),
+   * `media_filter` (`all` | `photo` | `video` | `writing`; aliases `image`, `text`),
+   * `sort` (`newest` | `oldest`; default `newest`),
+   * `creator_id` (repeatable) or `creator_ids` (comma-separated) to scope to followed creators,
+   * `q` optional when at least one `creator_id` is set (creator browse mode).
+   */
+  app.get("/api/v1/patron/search", async (req: Request, res: Response) => {
+    const traceId = traceIdFrom(req);
+    const session = await requirePatronBearerSession(req, res, traceId);
+    if (!session) return;
+    if (!useDbIdentityStore(config) || !config.prisma) {
+      return res.status(503).json(
+        errorEnvelope(
+          "NOT_AVAILABLE",
+          "Patron search requires database-backed identity (RELAY_DB_STORE_IDENTITY).",
+          traceId
+        )
+      );
+    }
+
+    const rawQ = typeof req.query.q === "string" ? req.query.q : "";
+    const rawLimit = req.query.limit;
+    const limitStr =
+      typeof rawLimit === "string"
+        ? rawLimit
+        : Array.isArray(rawLimit) && typeof rawLimit[0] === "string"
+          ? rawLimit[0]
+          : "";
+    const parsedLimit = Number.parseInt(String(limitStr), 10);
+    const limit =
+      Number.isFinite(parsedLimit) && parsedLimit > 0
+        ? Math.min(parsedLimit, PATRON_SEARCH_MAX_LIMIT)
+        : PATRON_SEARCH_DEFAULT_LIMIT;
+
+    const rawCursor = req.query.cursor;
+    const cursor =
+      typeof rawCursor === "string"
+        ? rawCursor
+        : Array.isArray(rawCursor) && typeof rawCursor[0] === "string"
+          ? rawCursor[0]
+          : undefined;
+
+    const rawSection = req.query.section;
+    const sectionRaw =
+      typeof rawSection === "string"
+        ? rawSection
+        : Array.isArray(rawSection) && typeof rawSection[0] === "string"
+          ? rawSection[0]
+          : undefined;
+    const section: "accessible" | "locked" =
+      sectionRaw === "locked" ? "locked" : "accessible";
+
+    const rawMediaFilter = req.query.media_filter ?? req.query.media;
+    const mediaFilterRaw =
+      typeof rawMediaFilter === "string"
+        ? rawMediaFilter
+        : Array.isArray(rawMediaFilter) && typeof rawMediaFilter[0] === "string"
+          ? rawMediaFilter[0]
+          : undefined;
+    const media_filter = normalizePatronSearchMediaFilter(mediaFilterRaw);
+
+    const rawSort = req.query.sort;
+    const sortRaw =
+      typeof rawSort === "string"
+        ? rawSort
+        : Array.isArray(rawSort) && typeof rawSort[0] === "string"
+          ? rawSort[0]
+          : undefined;
+    const sort = normalizePatronSearchSort(sortRaw);
+
+    const rawCreatorId = req.query.creator_id;
+    const rawCreatorIdsCsv =
+      typeof req.query.creator_ids === "string"
+        ? req.query.creator_ids
+        : Array.isArray(req.query.creator_ids) && typeof req.query.creator_ids[0] === "string"
+          ? req.query.creator_ids[0]
+          : undefined;
+    const creator_ids = parsePatronSearchCreatorIdsFromQuery(
+      rawCreatorId as string | string[] | undefined,
+      rawCreatorIdsCsv
+    );
+
+    try {
+      const data = await assemblePatronSearch({
+        prisma: config.prisma,
+        patronMembershipId: session.user_id,
+        q: rawQ,
+        limit,
+        cursor: cursor ?? null,
+        section,
+        media_filter,
+        sort,
+        creator_ids,
+        hideMatureContent: await loadPatronHideMatureContent(config.prisma, session.user_id)
+      });
+      res.setHeader("Cache-Control", "private, no-store");
+      return res.status(200).json(successEnvelope(data, traceId));
+    } catch (error) {
+      if (error instanceof PatronSearchValidationError) {
+        return res.status(400).json(errorEnvelope(error.code, error.message, traceId));
+      }
+      return res
+        .status(500)
+        .json(errorEnvelope("INTERNAL", (error as Error).message, traceId));
+    }
   });
 
   /**
@@ -7243,7 +11249,12 @@ export function createApp(config: AppConfig): CreateAppResult {
       avatar_url: readOptionalString(body.avatar_url),
       banner_url: readOptionalString(body.banner_url),
       is_public: readOptionalBoolean(body.is_public),
-      onboarding_step: readOptionalInt(body.onboarding_step)
+      onboarding_step: readOptionalInt(body.onboarding_step),
+      notification_digest_enabled: readOptionalBoolean(body.notification_digest_enabled),
+      notification_digest_cadence: readOptionalString(body.notification_digest_cadence),
+      notification_digest_slot: readOptionalString(body.notification_digest_slot),
+      notification_digest_timezone: readOptionalString(body.notification_digest_timezone),
+      hide_mature_content: readOptionalBoolean(body.hide_mature_content),
     };
     const hasAny = Object.values(patch).some((v) => v !== undefined);
     if (!hasAny) {
@@ -7266,6 +11277,151 @@ export function createApp(config: AppConfig): CreateAppResult {
     }
     }
   );
+
+  /**
+   * Patron profile avatar/banner — presigned R2 upload (account-scoped, image/* only).
+   * Commit returns a public URL path; PATCH /patron/me stores it on the profile row.
+   */
+  app.post("/api/v1/patron/profile/upload/init", async (req: Request, res: Response) => {
+    const traceId = traceIdFrom(req);
+    if (!config.prisma) {
+      return res
+        .status(503)
+        .json(errorEnvelope("SERVICE_UNAVAILABLE", "Database not configured.", traceId));
+    }
+    const session = await requirePatronBearerSession(req, res, traceId);
+    if (!session) return;
+    const accountId = await getAccountIdForSession(config.prisma, session);
+    if (!accountId) {
+      return res
+        .status(403)
+        .json(errorEnvelope("FORBIDDEN", "No account for session.", traceId));
+    }
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const kindRaw = typeof body.kind === "string" ? body.kind.trim() : "";
+    const contentType = typeof body.content_type === "string" ? body.content_type.trim() : "";
+    const byteSize =
+      typeof body.byte_size === "number" && Number.isFinite(body.byte_size) ? body.byte_size : -1;
+    if (!isPatronProfileAssetKind(kindRaw) || !contentType || byteSize < 0) {
+      return res.status(400).json(
+        errorEnvelope(
+          "VALIDATION_ERROR",
+          "kind (avatar|banner), content_type, byte_size (number) are required.",
+          traceId
+        )
+      );
+    }
+    const r2 = getR2ClientConfigFromEnv();
+    if (!r2) {
+      return res.status(503).json(
+        errorEnvelope(
+          "SERVICE_UNAVAILABLE",
+          "Object storage (R2) is not configured. See .env.example.",
+          traceId
+        )
+      );
+    }
+    try {
+      const result = await initPatronProfileImageUpload({
+        accountId,
+        kind: kindRaw,
+        contentType,
+        byteSize,
+        r2,
+      });
+      if (!result.ok) {
+        return res.status(400).json(errorEnvelope(result.code, result.message, traceId));
+      }
+      res.setHeader("Cache-Control", "private, no-store");
+      return res.status(201).json(
+        successEnvelope(
+          {
+            asset_id: result.asset_id,
+            storage_key: result.storage_key,
+            byte_size: byteSize,
+            upload: result.upload,
+            expires_in_sec: result.expires_in_sec,
+          },
+          traceId
+        )
+      );
+    } catch (error) {
+      return res
+        .status(500)
+        .json(errorEnvelope("INTERNAL", (error as Error).message, traceId));
+    }
+  });
+
+  app.post("/api/v1/patron/profile/upload/commit", async (req: Request, res: Response) => {
+    const traceId = traceIdFrom(req);
+    if (!config.prisma) {
+      return res
+        .status(503)
+        .json(errorEnvelope("SERVICE_UNAVAILABLE", "Database not configured.", traceId));
+    }
+    const session = await requirePatronBearerSession(req, res, traceId);
+    if (!session) return;
+    const accountId = await getAccountIdForSession(config.prisma, session);
+    if (!accountId) {
+      return res
+        .status(403)
+        .json(errorEnvelope("FORBIDDEN", "No account for session.", traceId));
+    }
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const kindRaw = typeof body.kind === "string" ? body.kind.trim() : "";
+    const assetId = typeof body.asset_id === "string" ? body.asset_id.trim() : "";
+    const contentType = typeof body.content_type === "string" ? body.content_type.trim() : "";
+    const byteSize =
+      typeof body.byte_size === "number" && Number.isFinite(body.byte_size) ? body.byte_size : -1;
+    if (!isPatronProfileAssetKind(kindRaw) || !assetId || !contentType || byteSize < 0) {
+      return res.status(400).json(
+        errorEnvelope(
+          "VALIDATION_ERROR",
+          "kind (avatar|banner), asset_id, content_type, byte_size (number) are required.",
+          traceId
+        )
+      );
+    }
+    const r2 = getR2ClientConfigFromEnv();
+    if (!r2) {
+      return res.status(503).json(
+        errorEnvelope(
+          "SERVICE_UNAVAILABLE",
+          "Object storage (R2) is not configured. See .env.example.",
+          traceId
+        )
+      );
+    }
+    try {
+      const result = await commitPatronProfileImageUpload({
+        accountId,
+        kind: kindRaw,
+        assetId,
+        contentType,
+        byteSize,
+        r2,
+      });
+      if (!result.ok) {
+        const status = result.code === "NOT_FOUND" ? 404 : 400;
+        return res.status(status).json(errorEnvelope(result.code, result.message, traceId));
+      }
+      res.setHeader("Cache-Control", "private, no-store");
+      return res.status(200).json(
+        successEnvelope(
+          {
+            asset_id: result.asset_id,
+            public_url_path: result.public_url_path,
+            content_length: result.content_length,
+          },
+          traceId
+        )
+      );
+    } catch (error) {
+      return res
+        .status(500)
+        .json(errorEnvelope("INTERNAL", (error as Error).message, traceId));
+    }
+  });
 
   /**
    * PE-C — Follow graph for the session membership (`session.user_id`): list Relay creators
@@ -8302,22 +12458,24 @@ export function createApp(config: AppConfig): CreateAppResult {
     if (!session) {
       return;
     }
-    if (!config.prisma) {
-      // File-backed identity has no Account/TenantMembership graph; return empty rather than
-      // pretending to support cross-creator queries.
+    let items;
+    if (patronFavoritesStore instanceof FilePatronFavoritesStore) {
+      items = await patronFavoritesStore.listAllForUser(session.user_id);
+    } else if (patronFavoritesStore instanceof DbPatronFavoritesStore) {
+      if (!config.prisma) {
+        res.setHeader("Cache-Control", "private, no-store");
+        return res.status(200).json(successEnvelope({ items: [] }, traceId));
+      }
+      const accountId = await getAccountIdForSession(config.prisma, session);
+      if (!accountId) {
+        res.setHeader("Cache-Control", "private, no-store");
+        return res.status(200).json(successEnvelope({ items: [] }, traceId));
+      }
+      items = await patronFavoritesStore.listAllForAccount(accountId);
+    } else {
       res.setHeader("Cache-Control", "private, no-store");
       return res.status(200).json(successEnvelope({ items: [] }, traceId));
     }
-    const accountId = await getAccountIdForSession(config.prisma, session);
-    if (!accountId) {
-      res.setHeader("Cache-Control", "private, no-store");
-      return res.status(200).json(successEnvelope({ items: [] }, traceId));
-    }
-    if (!(patronFavoritesStore instanceof DbPatronFavoritesStore)) {
-      res.setHeader("Cache-Control", "private, no-store");
-      return res.status(200).json(successEnvelope({ items: [] }, traceId));
-    }
-    const items = await patronFavoritesStore.listAllForAccount(accountId);
     const enriched = await enrichFavoritesWithViewerEntitlement(items, session);
     res.setHeader("Cache-Control", "private, no-store");
     return res.status(200).json(successEnvelope({ items: enriched }, traceId));
@@ -8329,25 +12487,113 @@ export function createApp(config: AppConfig): CreateAppResult {
     if (!session) {
       return;
     }
-    if (!config.prisma) {
+    let collections;
+    if (patronCollectionsStore instanceof FilePatronCollectionsStore) {
+      collections = await patronCollectionsStore.listAllCollectionsWithEntries(
+        session.user_id
+      );
+    } else if (patronCollectionsStore instanceof DbPatronCollectionsStore) {
+      if (!config.prisma) {
+        res.setHeader("Cache-Control", "private, no-store");
+        return res.status(200).json(successEnvelope({ collections: [] }, traceId));
+      }
+      const accountId = await getAccountIdForSession(config.prisma, session);
+      if (!accountId) {
+        res.setHeader("Cache-Control", "private, no-store");
+        return res.status(200).json(successEnvelope({ collections: [] }, traceId));
+      }
+      collections = await patronCollectionsStore.listAllCollectionsWithEntriesForAccount(
+        accountId
+      );
+    } else {
       res.setHeader("Cache-Control", "private, no-store");
       return res.status(200).json(successEnvelope({ collections: [] }, traceId));
     }
-    const accountId = await getAccountIdForSession(config.prisma, session);
-    if (!accountId) {
-      res.setHeader("Cache-Control", "private, no-store");
-      return res.status(200).json(successEnvelope({ collections: [] }, traceId));
-    }
-    if (!(patronCollectionsStore instanceof DbPatronCollectionsStore)) {
-      res.setHeader("Cache-Control", "private, no-store");
-      return res.status(200).json(successEnvelope({ collections: [] }, traceId));
-    }
-    const collections = await patronCollectionsStore.listAllCollectionsWithEntriesForAccount(
-      accountId
-    );
     const enriched = await enrichCollectionsWithViewerEntitlement(collections, session);
     res.setHeader("Cache-Control", "private, no-store");
     return res.status(200).json(successEnvelope({ collections: enriched }, traceId));
+  });
+
+  app.get("/api/v1/patron/collections/:collection_id", async (req: Request, res: Response) => {
+    const traceId = traceIdFrom(req);
+    const collectionId =
+      typeof req.params.collection_id === "string" ? req.params.collection_id.trim() : "";
+    if (!collectionId) {
+      return res.status(400).json(
+        errorEnvelope("VALIDATION_ERROR", "collection_id is required.", traceId, [
+          { field: "collection_id", issue: "missing" }
+        ])
+      );
+    }
+    const session = await requirePatronBearerSession(req, res, traceId);
+    if (!session) {
+      return;
+    }
+
+    let collection:
+      | (PatronCollectionRecord & { entries: PatronCollectionEntryRecord[] })
+      | null = null;
+    if (patronCollectionsStore instanceof FilePatronCollectionsStore) {
+      collection = await patronCollectionsStore.getCollectionWithEntriesForUser(
+        session.user_id,
+        collectionId
+      );
+    } else if (patronCollectionsStore instanceof DbPatronCollectionsStore) {
+      if (config.prisma) {
+        const accountId = await getAccountIdForSession(config.prisma, session);
+        if (accountId) {
+          collection = await patronCollectionsStore.getCollectionWithEntriesForAccount(
+            accountId,
+            collectionId
+          );
+        }
+      }
+    }
+
+    if (!collection) {
+      return res.status(404).json(errorEnvelope("NOT_FOUND", "Collection not found.", traceId));
+    }
+
+    const [enriched] = await enrichCollectionsWithViewerEntitlement([collection], session);
+    let collectionEntries = enriched.entries;
+    if (config.prisma) {
+      const hideMatureContent = await loadPatronHideMatureContent(
+        config.prisma,
+        session.user_id
+      );
+      if (hideMatureContent) {
+        const matureCreatorIds = [...new Set(collectionEntries.map((e) => e.creator_id))];
+        const maturePostIdsByCreator = await loadMaturePostIdsByCreator(
+          config.prisma,
+          matureCreatorIds
+        );
+        collectionEntries = collectionEntries.filter(
+          (entry) =>
+            !isPostExcludedByPatronMaturePref({
+              hideMatureContent: true,
+              maturePostIdsByCreator,
+              creatorId: entry.creator_id,
+              postId: entry.post_id
+            })
+        );
+      }
+    }
+    const snapshot = await canonicalStore.load();
+    const creatorIds = collectionEntries.map((entry) => entry.creator_id);
+    const profileByCreator = config.prisma
+      ? await loadCreatorProfilesForPatronCollection(config.prisma, creatorIds)
+      : new Map();
+    const hydratedEntries = hydratePatronCollectionDetailEntries(
+      snapshot,
+      collectionEntries,
+      profileByCreator
+    );
+    const detail = toPatronOwnerCollectionDetail(
+      { ...enriched, entries: collectionEntries },
+      hydratedEntries
+    );
+    res.setHeader("Cache-Control", "private, no-store");
+    return res.status(200).json(successEnvelope({ collection: detail }, traceId));
   });
 
   // ---------------------------------------------------------------------------
@@ -9065,6 +13311,9 @@ export function createApp(config: AppConfig): CreateAppResult {
       }
     }
     try {
+      const hideMatureContent = config.prisma
+        ? await loadPatronHideMatureContent(config.prisma, session.user_id)
+        : false;
       const [snapshot, overrides] = await Promise.all([
         canonicalStore.load(),
         galleryOverridesStore.load()
@@ -9074,7 +13323,8 @@ export function createApp(config: AppConfig): CreateAppResult {
         cursor,
         limit: limitRaw,
         creator_cap: capRaw,
-        viewer_relay_creator_id: viewerCreatorId
+        viewer_relay_creator_id: viewerCreatorId,
+        hide_mature_content: hideMatureContent
       });
       res.setHeader("Cache-Control", "private, no-store");
       return res.status(200).json(successEnvelope(page, traceId));
@@ -9181,8 +13431,14 @@ export function createApp(config: AppConfig): CreateAppResult {
         ? req.query.relay_creator_id.trim()
         : undefined;
     try {
+      const accountId = await getAccountIdForSession(config.prisma!, session);
+      const scope = await resolveNotificationRecipientScope(config.prisma!, {
+        membershipId: session.user_id,
+        accountId
+      });
       const page = await listNotifications(config.prisma!, {
-        recipientMembershipId: session.user_id,
+        recipientMembershipId: scope.recipientMembershipId,
+        recipientCreatorAccountId: scope.recipientCreatorAccountId,
         unreadOnly,
         limit: limitRaw,
         cursor,
@@ -9204,7 +13460,12 @@ export function createApp(config: AppConfig): CreateAppResult {
       if (!ensurePeEDbReady(res, traceId)) return;
       const session = await requirePatronBearerSession(req, res, traceId);
       if (!session) return;
-      const count = await unreadCount(config.prisma!, session.user_id);
+      const accountId = await getAccountIdForSession(config.prisma!, session);
+      const scope = await resolveNotificationRecipientScope(config.prisma!, {
+        membershipId: session.user_id,
+        accountId
+      });
+      const count = await unreadCount(config.prisma!, scope);
       res.setHeader("Cache-Control", "private, no-store");
       return res.status(200).json(successEnvelope({ unread_count: count }, traceId));
     }
@@ -9223,10 +13484,15 @@ export function createApp(config: AppConfig): CreateAppResult {
         ? body.notification_ids.filter((v): v is string => typeof v === "string")
         : [];
       try {
+        const accountId = await getAccountIdForSession(config.prisma!, session);
+        const scope = await resolveNotificationRecipientScope(config.prisma!, {
+          membershipId: session.user_id,
+          accountId
+        });
         const result = allUnread
-          ? await markAllRead(config.prisma!, session.user_id)
+          ? await markAllRead(config.prisma!, scope)
           : await markRead(config.prisma!, {
-              recipientMembershipId: session.user_id,
+              ...scope,
               notificationIds: ids
             });
         res.setHeader("Cache-Control", "private, no-store");
@@ -11081,8 +15347,15 @@ export function createApp(config: AppConfig): CreateAppResult {
   });
 
   // PUBLIC: Legacy Patreon-id registration path (bootstrap; no prior session).
+  // [R-SEC-05 HIGH @security-review 2026-06] Creates/links accounts from an unverified patreon_user_id;
+  // disabled in production (see legacyInsecureRouteDisabled). Use real Patreon OAuth. See docs/security-review-2026-06.md.
   app.post("/api/v1/identity/register-patreon", async (req: Request, res: Response) => {
     const traceId = traceIdFrom(req);
+    if (legacyInsecureRouteDisabled()) {
+      return res
+        .status(404)
+        .json(errorEnvelope("NOT_FOUND", "This endpoint is disabled. Sign in via Patreon OAuth.", traceId));
+    }
     const body = (req.body ?? {}) as Record<string, unknown>;
     const details = validateRequiredFields(body, [
       "creator_id",
@@ -11126,6 +15399,7 @@ export function createApp(config: AppConfig): CreateAppResult {
     }
   });
 
+  // PUBLIC: Deprecated email/password login entry (credentials are the auth; alias of /api/v1/auth/login).
   app.post("/api/v1/identity/login", async (req: Request, res: Response) => {
     const traceId = traceIdFrom(req);
     res.setHeader("Deprecation", 'true; api="/api/v1/auth/login"');
@@ -11184,7 +15458,16 @@ export function createApp(config: AppConfig): CreateAppResult {
   });
 
   app.post("/api/v1/identity/login-patreon", async (req: Request, res: Response) => {
+    // [R-SEC-05 HIGH @security-review 2026-06] Mints a full session from creator_id + patreon_user_id
+    // with NO secret/OAuth proof (patreon_user_id is not secret) — account-takeover path. Disabled in
+    // production (see legacyInsecureRouteDisabled); use the real Patreon OAuth exchange instead.
+    // See docs/security-review-2026-06.md.
     const traceId = traceIdFrom(req);
+    if (legacyInsecureRouteDisabled()) {
+      return res
+        .status(404)
+        .json(errorEnvelope("NOT_FOUND", "This endpoint is disabled. Sign in via Patreon OAuth.", traceId));
+    }
     const body = (req.body ?? {}) as Record<string, unknown>;
     const details = validateRequiredFields(body, ["creator_id", "patreon_user_id"]);
     if (details.length > 0) {

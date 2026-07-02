@@ -8,6 +8,7 @@ import {
   type PatronCollectionWithEntries
 } from "@/lib/relay-api";
 import SnipIcon from "@/app/components/icons/SnipIcon";
+import { emitRelayInteractionTelemetryEvent } from "@/lib/relay-interaction-telemetry";
 
 type Props = {
   open: boolean;
@@ -51,6 +52,14 @@ export default function SnipToCollectionModal({
     setErr(null);
     try {
       await addPatronCollectionEntry({ creatorId, collectionId, postId, mediaId });
+      emitRelayInteractionTelemetryEvent({
+        event_name: "snip_created",
+        surface: "public_gallery_snip_modal",
+        creator_id: creatorId,
+        post_id: postId,
+        media_id: mediaId,
+        collection_id: collectionId
+      });
       const fresh = await listPatronCollections(creatorId);
       onApplied(fresh);
       onClose();
@@ -73,6 +82,14 @@ export default function SnipToCollectionModal({
         collectionId: col.collection_id,
         postId,
         mediaId
+      });
+      emitRelayInteractionTelemetryEvent({
+        event_name: "snip_created",
+        surface: "public_gallery_snip_modal",
+        creator_id: creatorId,
+        post_id: postId,
+        media_id: mediaId,
+        collection_id: col.collection_id
       });
       const fresh = await listPatronCollections(creatorId);
       onApplied(fresh);

@@ -38,4 +38,39 @@ const r = spawnSync(process.execPath, [viteBin, "build"], {
   stdio: "inherit"
 });
 
-process.exit(r.status === null ? 1 : r.status);
+if (r.status !== 0) {
+  process.exit(r.status === null ? 1 : r.status);
+}
+
+const outDir = target === "firefox" ? "dist/firefox-prod" : `dist/chrome-${env}`;
+const contentEnv = {
+  ...envVars,
+  EXT_OUT_DIR: outDir
+};
+
+const contentEntries = [
+  "fill-patreon-editor",
+  "fill-x-compose",
+  "fill-deviantart-submit",
+  "post-link-toast",
+  "post-link-x-observer",
+  "scrape-patreon-metrics"
+];
+
+for (const contentEntry of contentEntries) {
+  const contentR = spawnSync(
+    process.execPath,
+    [viteBin, "build", "--config", "vite.content.config.ts"],
+    {
+      cwd: __dirname,
+      env: { ...contentEnv, EXT_CONTENT_ENTRY: contentEntry },
+      stdio: "inherit"
+    }
+  );
+
+  if (contentR.status !== 0) {
+    process.exit(contentR.status === null ? 1 : contentR.status);
+  }
+}
+
+process.exit(0);

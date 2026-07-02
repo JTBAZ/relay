@@ -6,7 +6,7 @@ import { isSubscribeStarCreatorConnectUiEnabled } from "@/lib/subscribestar-conn
 
 /**
  * Real navigation to Patreon OAuth flows (no demo timers).
- * Creator flow requires an existing Relay session — /patreon/connect explains that.
+ * Creator flow requires an existing Relay session — /connect/patreon/connect explains that.
  */
 export function PatreonOAuthLinks() {
   const showSubscribeStar = isSubscribeStarCreatorConnectUiEnabled();
@@ -18,7 +18,7 @@ export function PatreonOAuthLinks() {
         Patreon’s site).
       </p>
       <Link
-        href="/patreon/connect"
+        href="/connect/patreon/connect"
         className="group flex w-full items-center gap-4 rounded-lg border px-4 py-3.5 text-left transition-all duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#2D6A4F]"
         style={{ background: "#111111", borderColor: "#2A2A2A", color: "#F9FAFB" }}
       >
@@ -46,7 +46,7 @@ export function PatreonOAuthLinks() {
 
       {showSubscribeStar ? (
         <Link
-          href="/subscribestar/creator/connect"
+          href="/connect/subscribestar/connect/creator"
           className="group flex w-full items-center gap-4 rounded-lg border px-4 py-3.5 text-left transition-all duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/60"
           style={{ background: "#111111", borderColor: "#2A2A2A", color: "#F9FAFB" }}
         >
@@ -74,7 +74,7 @@ export function PatreonOAuthLinks() {
       ) : null}
 
       <Link
-        href="/patreon/patron/connect"
+        href="/connect/patreon/patron/connect"
         className="group flex w-full items-center gap-4 rounded-lg border px-4 py-3.5 text-left transition-all duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#2D6A4F]"
         style={{ background: "#111111", borderColor: "#2A2A2A", color: "#F9FAFB" }}
       >

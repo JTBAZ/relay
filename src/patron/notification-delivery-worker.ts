@@ -276,11 +276,21 @@ export async function processNotificationOutboxOnce(
  */
 async function alreadyDelivered(
   prisma: PrismaClient,
-  sourceEventId: string | null
+  input: CreateNotificationInput
 ): Promise<boolean> {
-  if (!sourceEventId) return false;
+  if (!input.sourceEventId || input.clusterKey) {
+    return false;
+  }
+  const recipient =
+    input.recipientCreatorAccountId != null
+      ? { recipientCreatorAccountId: input.recipientCreatorAccountId }
+      : { recipientMembershipId: input.recipientMembershipId! };
   const existing = await prisma.notification.findFirst({
-    where: { sourceEventId },
+    where: {
+      sourceEventId: input.sourceEventId,
+      ...recipient,
+      clusterKey: null
+    },
     select: { id: true }
   });
   return existing !== null;
@@ -292,7 +302,7 @@ async function deliverInputsForEvent(
 ): Promise<number> {
   let written = 0;
   for (const input of inputs) {
-    if (input.clusterKey === null && (await alreadyDelivered(prisma, input.sourceEventId ?? null))) {
+    if (input.clusterKey === null && (await alreadyDelivered(prisma, input))) {
       continue;
     }
     await createOrClusterNotification(prisma, input);

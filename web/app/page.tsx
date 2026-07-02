@@ -1,5 +1,9 @@
-import HomePageClient from "./home-page-client";
+import { redirect } from "next/navigation";
 
-export default function Home() {
-  return <HomePageClient />;
+/**
+ * Root `/` is handled by middleware (onboarding when logged out; role home when signed in).
+ * This page is a fallback for direct renders.
+ */
+export default function RootPage() {
+  redirect("/onboarding");
 }

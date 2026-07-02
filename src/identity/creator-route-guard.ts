@@ -20,7 +20,12 @@ import { errorEnvelope } from "../contracts/api.js";
 export function relayCreatorRouteSecretMatches(req: Request): boolean {
   const expected = process.env.RELAY_CREATOR_ROUTE_SECRET?.trim();
   if (!expected) {
-    return true;
+    // [R-SEC-04 HIGH @security-review 2026-06] When the secret is unset this guard fails OPEN in
+    // dev/test (headless convenience) but FAILS CLOSED in production, so a missing secret can never leave
+    // creator mutation/job routes (scrape, sync, ingest, export) unauthenticated. Set
+    // RELAY_CREATOR_ROUTE_SECRET in production (or migrate the route to requireAccountMatchesCreator).
+    // See docs/security-review-2026-06.md.
+    return process.env.NODE_ENV !== "production";
   }
   const got = req.header("x-relay-creator-secret")?.trim();
   return got === expected;

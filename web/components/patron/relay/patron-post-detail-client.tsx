@@ -16,13 +16,21 @@ import {
   galleryPostDetailToPatronFeedPost,
   stubCreatorFromRelayId,
 } from "@/lib/patron-post-detail-mapper";
+import { emitPatronFeedTelemetryEvent } from "@/lib/patron-feed-telemetry";
 
 export interface PatronPostDetailClientProps {
   creatorId: string;
   postId: string;
+  initialMediaId?: string;
+  initialIntent?: "comment" | "snip";
 }
 
-export function PatronPostDetailClient({ creatorId, postId }: PatronPostDetailClientProps) {
+export function PatronPostDetailClient({
+  creatorId,
+  postId,
+  initialMediaId,
+  initialIntent,
+}: PatronPostDetailClientProps) {
   const router = useRouter();
   const [detail, setDetail] = useState<GalleryPostDetail | null>(null);
   const [feedPost, setFeedPost] = useState<FeedPost | null>(null);
@@ -65,6 +73,17 @@ export function PatronPostDetailClient({ creatorId, postId }: PatronPostDetailCl
     };
   }, [creatorId, postId]);
 
+  useEffect(() => {
+    if (phase !== "ready" || !detail) return;
+    emitPatronFeedTelemetryEvent({
+      event_name: "post_view",
+      actor_key: sessionMe?.user_id,
+      creator_id: creatorId,
+      post_id: postId,
+      surface: "patron_feed_post_detail"
+    });
+  }, [phase, detail, sessionMe, creatorId, postId]);
+
   const liveCommentsScope = useMemo(() => {
     if (!sessionMe) return null;
     return {
@@ -94,7 +113,7 @@ export function PatronPostDetailClient({ creatorId, postId }: PatronPostDetailCl
           settings.
         </p>
         <a
-          href="/patron/feed"
+          href="/feed"
           className="text-sm font-medium text-[#2D6A4F] hover:text-[#40916C] transition-colors"
         >
           Back to feed
@@ -106,11 +125,13 @@ export function PatronPostDetailClient({ creatorId, postId }: PatronPostDetailCl
   return (
     <GalleryView
       post={feedPost}
+      initialMediaId={initialMediaId}
+      initialIntent={initialIntent}
       onClose={() => {
         if (typeof window !== "undefined" && window.history.length > 1) {
           router.back();
         } else {
-          router.push("/patron/feed");
+          router.push("/feed");
         }
       }}
       entitlementStrip={<PatronPostEntitlementStrip tiers={detail.tiers} />}

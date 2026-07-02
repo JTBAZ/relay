@@ -12,6 +12,7 @@ import {
   MediaProcessingStatus,
   MediaUpstreamStatus,
   PostSource,
+  PostUpstreamStatus,
   type PrismaClient
 } from "@prisma/client";
 import { createApp } from "../src/server.js";
@@ -183,9 +184,57 @@ describe("relay-native post routes (PILOT-014)", () => {
       });
     expect(res.status).toBe(503);
   });
+
+  it("DELETE /api/v1/relay/posts/:post_id returns 503 without database", async () => {
+    const tempDir = await mkdtemp(join(tmpdir(), "relay-del-503-"));
+    const { app } = createApp(fileOnlyConfig(tempDir));
+    const res = await request(app).delete(
+      `/api/v1/relay/posts/some_post?creator_id=${AVA_CREATOR_ID}`
+    );
+    expect(res.status).toBe(503);
+  });
+
+  it("DELETE /api/v1/relay/posts/:post_id returns 401 without session", async () => {
+    const tempDir = await mkdtemp(join(tmpdir(), "relay-del-401-"));
+    const { app } = createApp({ ...fileOnlyConfig(tempDir), prisma: {} as PrismaClient });
+    const res = await request(app).delete(
+      `/api/v1/relay/posts/some_post?creator_id=${AVA_CREATOR_ID}`
+    );
+    expect(res.status).toBe(401);
+  });
 });
 
 describe.skipIf(!hasDatabaseUrl)("relay-native posts — pilot UX integration (Gate H API)", () => {
+  it(
+    "POST /api/v1/relay/posts rejects publish:false with DRAFT_NOT_SUPPORTED (publish-only v1)",
+    async () => {
+      const spec = loadPilotUxSeedSpec(fixturePath);
+      const password = resolvePilotUxDevPassword(spec);
+      await seedPilotUxDevAccounts(prisma, { fixturePath });
+
+      const tempDir = await mkdtemp(join(tmpdir(), "relay-post-draft-400-"));
+      const { app } = createApp(pilotUxDbAppConfig(tempDir));
+
+      const avaToken = await loginCreator(app, spec.accounts.creatorAva.email, password);
+      const res = await request(app)
+        .post("/api/v1/relay/posts")
+        .set("Authorization", `Bearer ${avaToken}`)
+        .send({
+          creator_id: AVA_CREATOR_ID,
+          title: "draft attempt",
+          is_public: true,
+          required_tier_id: null,
+          tier_ids: [],
+          tag_ids: [],
+          media_ids: [],
+          publish: false
+        });
+      expect(res.status).toBe(400);
+      expect(res.body.error.code).toBe("DRAFT_NOT_SUPPORTED");
+    },
+    60_000
+  );
+
   it(
     "Dev Ava creates RELAY post → Library + Riley patron feed (tier entitlement)",
     async () => {
@@ -289,6 +338,138 @@ describe.skipIf(!hasDatabaseUrl)("relay-native posts — pilot UX integration (G
       expect(feedPostIds).toContain(supporterPostId);
       expect(feedTitles).toContain(supporterTitle);
       expect(feedPostIds).not.toContain(studioPostId);
+    },
+    120_000
+  );
+});
+
+describe.skipIf(!hasDatabaseUrl)("relay-native posts — unpublish (soft delete)", () => {
+  it(
+    "creator deletes own RELAY post → gone from gallery and patron feed; PATREON posts 404",
+    async () => {
+      const spec = loadPilotUxSeedSpec(fixturePath);
+      const password = resolvePilotUxDevPassword(spec);
+      await seedPilotUxDevAccounts(prisma, { fixturePath });
+
+      const tempDir = await mkdtemp(join(tmpdir(), "relay-del-int-"));
+      const { app } = createApp(pilotUxDbAppConfig(tempDir));
+
+      const avaToken = await loginCreator(app, spec.accounts.creatorAva.email, password);
+      const supporterTier = await fetchComposeTier(
+        app,
+        avaToken,
+        AVA_CREATOR_ID,
+        "patreon_tier_ava_supporter"
+      );
+
+      const suffix = randomUUID().slice(0, 8);
+      const mediaId = `relay_del_media_${suffix}`;
+      await seedCommittedRelayUploadMedia(AVA_CREATOR_ID, mediaId);
+
+      const title = `Unpublish target ${suffix}`;
+      const create = await request(app)
+        .post("/api/v1/relay/posts")
+        .set("Authorization", `Bearer ${avaToken}`)
+        .send({
+          creator_id: AVA_CREATOR_ID,
+          campaign_id: supporterTier.campaign_id,
+          title,
+          description: null,
+          is_public: false,
+          required_tier_id: null,
+          tier_ids: [supporterTier.tier_id],
+          tag_ids: [],
+          media_ids: [mediaId],
+          publish: true
+        });
+      expect(create.status).toBe(201);
+      const postId = create.body.data.post.id as string;
+
+      const patreonPostId = `relay_del_patreon_${suffix}`;
+      try {
+        // Visible before delete.
+        const galleryBefore = await request(app).get(
+          `/api/v1/gallery/items?creator_id=${AVA_CREATOR_ID}&limit=100&display=post_primary`
+        );
+        expect(galleryBefore.status).toBe(200);
+        expect(
+          (galleryBefore.body.data.items as Array<{ post_id: string }>).map((r) => r.post_id)
+        ).toContain(postId);
+
+        // PATREON-source posts are never deletable through this route.
+        await prisma.post.create({
+          data: {
+            id: patreonPostId,
+            campaignId: AVA_CAMPAIGN_ID,
+            creatorId: AVA_CREATOR_ID,
+            providerPostId: patreonPostId,
+            source: PostSource.PATREON,
+            upstreamStatus: PostUpstreamStatus.active,
+            createdAt: new Date(),
+            versions: {
+              create: {
+                versionSeq: 1,
+                upstreamRevision: `rev:${patreonPostId}`,
+                title: "Patreon mirror",
+                publishedAt: new Date(),
+                tagIds: [],
+                tierIds: [],
+                mediaIds: [],
+                ingestedAt: new Date()
+              }
+            }
+          }
+        });
+        const delPatreon = await request(app)
+          .delete(`/api/v1/relay/posts/${patreonPostId}?creator_id=${AVA_CREATOR_ID}`)
+          .set("Authorization", `Bearer ${avaToken}`);
+        expect(delPatreon.status).toBe(404);
+
+        // Delete the RELAY post.
+        const del = await request(app)
+          .delete(`/api/v1/relay/posts/${postId}?creator_id=${AVA_CREATOR_ID}`)
+          .set("Authorization", `Bearer ${avaToken}`);
+        expect(del.status).toBe(200);
+        expect(del.body.data).toMatchObject({ post_id: postId, upstream_status: "deleted" });
+
+        const dbRow = await prisma.post.findUnique({ where: { id: postId } });
+        expect(dbRow?.upstreamStatus).toBe(PostUpstreamStatus.deleted);
+        // Soft delete: version + media rows preserved.
+        expect(await prisma.postVersion.count({ where: { postId } })).toBe(1);
+        expect(await prisma.mediaAsset.findUnique({ where: { id: mediaId } })).toBeTruthy();
+
+        // Idempotent re-delete.
+        const delAgain = await request(app)
+          .delete(`/api/v1/relay/posts/${postId}?creator_id=${AVA_CREATOR_ID}`)
+          .set("Authorization", `Bearer ${avaToken}`);
+        expect(delAgain.status).toBe(200);
+
+        // Gone from creator gallery.
+        const galleryAfter = await request(app).get(
+          `/api/v1/gallery/items?creator_id=${AVA_CREATOR_ID}&limit=100&display=post_primary`
+        );
+        expect(galleryAfter.status).toBe(200);
+        expect(
+          (galleryAfter.body.data.items as Array<{ post_id: string }>).map((r) => r.post_id)
+        ).not.toContain(postId);
+
+        // Gone from entitled patron feed.
+        const rileyToken = await loginPatron(app, spec.accounts.patronRiley.email, password);
+        const feed = await request(app)
+          .get("/api/v1/patron/feed?limit=50")
+          .set("Authorization", `Bearer ${rileyToken}`);
+        expect(feed.status).toBe(200);
+        expect(
+          (feed.body.data.feedPosts as Array<{ id: string }>).map((p) => p.id)
+        ).not.toContain(postId);
+      } finally {
+        await prisma.postVersion.deleteMany({ where: { postId: patreonPostId } });
+        await prisma.post.deleteMany({ where: { id: patreonPostId } });
+        await prisma.postTier.deleteMany({ where: { postId } });
+        await prisma.postVersion.deleteMany({ where: { postId } });
+        await prisma.mediaAsset.deleteMany({ where: { id: mediaId } });
+        await prisma.post.deleteMany({ where: { id: postId } });
+      }
     },
     120_000
   );

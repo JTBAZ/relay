@@ -1,9 +1,9 @@
 import type { Metadata } from "next";
 import { DM_Sans, Fraunces } from "next/font/google";
 import "./globals.css";
-import ConditionalAppNav from "./components/ConditionalAppNav";
-import { StudioSessionRoot } from "./components/studio/studio-session-root";
-import { SupabaseHashRedirect } from "./components/SupabaseHashRedirect";
+import ConditionalAppNav from "@/app/components/ConditionalAppNav";
+import { StudioSessionRoot } from "@/app/components/studio/studio-session-root";
+import { SupabaseHashRedirect } from "@/app/components/SupabaseHashRedirect";
 
 const display = Fraunces({
   subsets: ["latin"],

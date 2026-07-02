@@ -14,6 +14,7 @@ import {
   Share2,
   ChevronLeft,
   Crosshair,
+  MessageCircle,
   Tag,
   Star,
   Loader,
@@ -25,9 +26,12 @@ import {
   patronFeedPosterSrc
 } from "@/lib/patron-feed-media";
 import { GalleryMediaStack } from "./gallery-media-stack";
+import { MediaEdgeRail } from "./media-edge-rail";
 import { PatronFeedVideo } from "./patron-feed-playback";
 import { CommentThreadPanel } from "./comment-thread-panel";
 import { useLiveComments, type LiveCommentsScope } from "./use-live-comments";
+import { SnipToCollectionDialog, type SnipTarget } from "./snip-to-collection-dialog";
+import { emitRelayInteractionTelemetryEvent } from "@/lib/relay-interaction-telemetry";
 
 interface GalleryViewProps {
   post: FeedPost;
@@ -35,6 +39,10 @@ interface GalleryViewProps {
   onNavigate?: (direction: "prev" | "next") => void;
   hasPrev?: boolean;
   hasNext?: boolean;
+  /** When set, initialize the media stack on the matching media item. */
+  initialMediaId?: string | null;
+  /** Optional deep-link action requested by feed-level controls. */
+  initialIntent?: "comment" | "snip" | null;
   /**
    * PE-E (BO-P2-04) — when set, comments load from the live API and submit/edit/delete/react/mod
    * actions hit the PE-E endpoints. When null/undefined, today's fixture-driven local-state path
@@ -68,12 +76,25 @@ const TAG_SUGGESTIONS = [
   "color",
 ];
 
+function resolveInitialStackIndex(
+  mediaItems: FeedPost["mediaItems"],
+  initialMediaId?: string | null
+): number {
+  if (!initialMediaId?.trim() || !mediaItems?.length) {
+    return 0;
+  }
+  const idx = mediaItems.findIndex((item) => item.mediaId === initialMediaId.trim());
+  return idx >= 0 ? idx : 0;
+}
+
 export function GalleryView({
   post,
   onClose,
   onNavigate,
   hasPrev = false,
   hasNext = false,
+  initialMediaId = null,
+  initialIntent = null,
   liveCommentsScope = null,
   entitlementStrip = null,
 }: GalleryViewProps) {
@@ -87,7 +108,6 @@ export function GalleryView({
   // fixture-driven local list is the source of truth. This flag is the single switch every
   // downstream branch reads so the two modes never interleave by accident.
   const isLive = liveCommentsScope !== null;
-  const comments: PositionalComment[] = isLive ? live.positional : fixtureComments;
   const setComments = setFixtureComments;
   const [pendingComment, setPendingComment] = useState<PendingComment | null>(
     null
@@ -99,8 +119,14 @@ export function GalleryView({
   /** Full-screen art overlay; enter animation is Z+scale (toward viewer), not letterbox FLIP */
   const [mediaExpanded, setMediaExpanded] = useState(false);
   /** Multi-image zoom: which slide is on top (wheel cycles). */
-  const [stackIndex, setStackIndex] = useState(0);
+  const [stackIndex, setStackIndex] = useState(() =>
+    resolveInitialStackIndex(post.mediaItems, initialMediaId)
+  );
   const [isFavorited, setIsFavorited] = useState(false);
+  const [snipDialogOpen, setSnipDialogOpen] = useState(false);
+  /** Thread board is on-demand: opened from the Thread toggle, not always visible. */
+  const [threadOpen, setThreadOpen] = useState(false);
+  const [radialMenuOpen, setRadialMenuOpen] = useState(false);
   const imageRef = useRef<HTMLDivElement>(null);
   const imageSurfaceRef = useRef<HTMLDivElement>(null);
   const expandedStackRef = useRef<HTMLDivElement>(null);
@@ -120,14 +146,6 @@ export function GalleryView({
   }, []);
 
   useEffect(() => () => clearPreviewHideTimer(), [clearPreviewHideTimer]);
-
-  useEffect(() => {
-    setMediaExpanded(false);
-    setStackIndex(0);
-    setViewMode("gallery");
-    setPinPreviewPhase("hidden");
-    pinPreviewBridgeRef.current = false;
-  }, [post.id]);
 
   /** Expanded overlay is gallery-only; never keep enlarge state alongside comment mode */
   useEffect(() => {
@@ -190,9 +208,39 @@ export function GalleryView({
   const playbackSrc = patronFeedPlaybackSrc(post);
   const posterSrc = patronFeedPosterSrc(post);
 
+  const mediaItems = useMemo(() => {
+    if (post.mediaItems && post.mediaItems.length > 0) {
+      return post.mediaItems;
+    }
+    const fallbackUrl = post.highResImageUrl || post.coverImageUrl || posterSrc || playbackSrc || undefined;
+    if (!post.primaryMediaId) return [];
+    return [
+      {
+        mediaId: post.primaryMediaId,
+        url: fallbackUrl,
+        previewUrl: post.coverImageUrl || posterSrc || undefined,
+        mimeType: post.primaryMimeType ?? null
+      }
+    ];
+  }, [
+    post.mediaItems,
+    post.primaryMediaId,
+    post.highResImageUrl,
+    post.coverImageUrl,
+    post.primaryMimeType,
+    posterSrc,
+    playbackSrc
+  ]);
+
   const imageUrls = useMemo(() => {
     if (isPatronFeedVideoPost(post)) {
       return [];
+    }
+    const mediaUrls = mediaItems
+      .map((item) => item.url || item.previewUrl)
+      .filter((u): u is string => Boolean(u));
+    if (mediaUrls.length > 0) {
+      return mediaUrls;
     }
     if (post.galleryImageUrls && post.galleryImageUrls.length > 0) {
       return post.galleryImageUrls;
@@ -207,10 +255,59 @@ export function GalleryView({
     post.highResImageUrl,
     post.coverImageUrl,
     post.mediaType,
-    post.primaryMimeType
+    post.primaryMimeType,
+    mediaItems
   ]);
 
   const multiImage = imageUrls.length > 1;
+  const activeMediaIndex = imageUrls.length > 0
+    ? ((stackIndex % imageUrls.length) + imageUrls.length) % imageUrls.length
+    : 0;
+  const activeMediaItem = mediaItems[activeMediaIndex] ?? mediaItems[0];
+  const activeMediaId = activeMediaItem?.mediaId ?? post.primaryMediaId ?? undefined;
+  const snipTarget: SnipTarget | null = activeMediaItem?.mediaId
+    ? {
+        creatorId: post.creator.id,
+        postId: post.id,
+        mediaId: activeMediaItem.mediaId,
+        title: post.title,
+        previewUrl:
+          activeMediaItem.url ||
+          activeMediaItem.previewUrl ||
+          post.coverImageUrl ||
+          posterSrc ||
+          undefined
+      }
+    : null;
+
+  const comments: PositionalComment[] = useMemo(() => {
+    if (!isLive) return fixtureComments;
+    const mediaId = activeMediaItem?.mediaId;
+    if (!mediaId) return [];
+    const pinnedForActiveMedia: PositionalComment[] = [];
+    for (let idx = 0; idx < live.records.length; idx += 1) {
+      const record = live.records[idx];
+      if (!record) continue;
+      if (record.mediaId !== mediaId) continue;
+      if (record.anchorX === null || record.anchorY === null) continue;
+      const positional = live.positional[idx];
+      if (!positional) continue;
+      pinnedForActiveMedia.push(positional);
+    }
+    return pinnedForActiveMedia;
+  }, [isLive, fixtureComments, activeMediaItem?.mediaId, live.records, live.positional]);
+
+  useEffect(() => {
+    if (!activeMediaId?.trim()) return;
+    emitRelayInteractionTelemetryEvent({
+      event_name: "media_view",
+      surface: "post_detail_gallery",
+      creator_id: post.creator.id,
+      post_id: post.id,
+      media_id: activeMediaId,
+      actor_key: liveCommentsScope?.viewerAccountId
+    });
+  }, [activeMediaId, liveCommentsScope?.viewerAccountId, post.creator.id, post.id]);
 
   const hasRealImageMedia = useMemo(() => {
     if (isVideoPost) return true;
@@ -221,9 +318,49 @@ export function GalleryView({
     isLive && (post.mediaType === "writing" || !hasRealImageMedia);
 
   const focusThreadComposer = useCallback(() => {
-    threadComposerRef.current?.focus();
-    threadComposerRef.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    setThreadOpen(true);
+    // Defer focus to the next frame so the panel is mounted before we focus its composer.
+    requestAnimationFrame(() => {
+      threadComposerRef.current?.focus();
+      threadComposerRef.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    });
   }, []);
+
+  useEffect(() => {
+    setMediaExpanded(false);
+    setStackIndex(resolveInitialStackIndex(post.mediaItems, initialMediaId));
+    setPinPreviewPhase("hidden");
+    setPendingComment(null);
+    setCommentText("");
+    setPendingTags([]);
+    setCustomTag("");
+    pinPreviewBridgeRef.current = false;
+    if (initialIntent === "snip") {
+      setViewMode("gallery");
+      setSnipDialogOpen(true);
+      return;
+    }
+    if (initialIntent === "comment" && !isVideoPost) {
+      setSnipDialogOpen(false);
+      if (prefersThreadComposer) {
+        setViewMode("gallery");
+        focusThreadComposer();
+      } else {
+        setViewMode("comment");
+      }
+      return;
+    }
+    setViewMode("gallery");
+    setSnipDialogOpen(false);
+  }, [
+    post.id,
+    initialMediaId,
+    post.mediaItems,
+    initialIntent,
+    isVideoPost,
+    prefersThreadComposer,
+    focusThreadComposer
+  ]);
 
   const handleThreadCompose = useCallback(
     async (body: string) => {
@@ -343,7 +480,7 @@ export function GalleryView({
       try {
         await live.submit({
           body: commentText.trim(),
-          mediaId: null,
+          mediaId: activeMediaItem?.mediaId ?? null,
           anchorX: pendingComment.position.x,
           anchorY: pendingComment.position.y,
           tagIds: pendingTags
@@ -395,6 +532,16 @@ export function GalleryView({
 
   const enterCommentMode = () => {
     if (isVideoPost) return;
+    emitRelayInteractionTelemetryEvent({
+      event_name: "cta_clicked",
+      surface: "post_detail_gallery",
+      creator_id: post.creator.id,
+      post_id: post.id,
+      media_id: activeMediaId,
+      actor_key: liveCommentsScope?.viewerAccountId,
+      interaction: prefersThreadComposer ? "comment_thread_open" : "comment_pin_mode",
+      target: "comment"
+    });
     if (prefersThreadComposer) {
       focusThreadComposer();
       return;
@@ -404,6 +551,55 @@ export function GalleryView({
     setPinPreviewPhase("hidden");
     collapseExpanded();
     setViewMode("comment");
+  };
+
+  const toggleFavorite = () => {
+    setIsFavorited((current) => {
+      const next = !current;
+      if (next) {
+        emitRelayInteractionTelemetryEvent({
+          event_name: "favorite_created",
+          surface: "post_detail_gallery",
+          creator_id: post.creator.id,
+          post_id: post.id,
+          media_id: activeMediaId,
+          actor_key: liveCommentsScope?.viewerAccountId,
+          target_kind: "post",
+          target_id: post.id
+        });
+      }
+      return next;
+    });
+  };
+
+  const toggleLike = () => {
+    setLiked((current) => {
+      const next = !current;
+      if (next) {
+        emitRelayInteractionTelemetryEvent({
+          event_name: "post_liked",
+          surface: "post_detail_gallery",
+          creator_id: post.creator.id,
+          post_id: post.id,
+          media_id: activeMediaId,
+          actor_key: liveCommentsScope?.viewerAccountId
+        });
+      }
+      return next;
+    });
+  };
+
+  const emitShareClick = () => {
+    emitRelayInteractionTelemetryEvent({
+      event_name: "cta_clicked",
+      surface: "post_detail_gallery",
+      creator_id: post.creator.id,
+      post_id: post.id,
+      media_id: activeMediaId,
+      actor_key: liveCommentsScope?.viewerAccountId,
+      interaction: "share_click",
+      target: "share"
+    });
   };
 
   const exitCommentMode = () => {
@@ -440,14 +636,15 @@ export function GalleryView({
         }
       />
 
-      {/* PE-E live thread panel — only renders when wired to the live API. Fixture flow keeps
-          the polished pin-tooltip UX intact; live flow gets the panel for non-anchored content,
-          reactions, and per-role mod actions that the tooltip doesn't expose. */}
+      {/* PE-E live thread panel — on-demand overlay. Opened from the Thread toggle so the
+          media + rail keep the stage; the board is for reading/replying when wanted. */}
       {isLive && liveCommentsScope ? (
         <CommentThreadPanel
           live={live}
+          open={threadOpen}
           viewerAccountId={liveCommentsScope.viewerAccountId}
           isCreatorOwner={liveCommentsScope.isCreatorOwner}
+          onClose={() => setThreadOpen(false)}
           onCompose={handleThreadCompose}
           composeBusy={composeBusy}
           composeError={composeError}
@@ -458,6 +655,24 @@ export function GalleryView({
           }
           composerRef={threadComposerRef}
         />
+      ) : null}
+
+      {/* Thread toggle — sits left of the close button so the board can be opened on demand. */}
+      {isLive && liveCommentsScope && !threadOpen && viewMode === "gallery" && !mediaExpanded ? (
+        <button
+          type="button"
+          onClick={() => setThreadOpen(true)}
+          className="absolute top-4 right-16 z-50 flex h-10 items-center gap-1.5 rounded-full border border-[#2A2A2A] bg-[#1A1A1A] px-3.5 text-[#888888] transition-colors hover:border-[#3A3A3A] hover:text-white"
+          aria-label={`Open comment thread${live.records.length > 0 ? ` (${live.records.length})` : ""}`}
+        >
+          <MessageCircle size={15} aria-hidden />
+          <span className="text-xs font-medium">Thread</span>
+          {live.records.length > 0 ? (
+            <span className="rounded-full border border-[#2A2A2A] px-1.5 text-[10px] text-[#9CA3AF]">
+              {live.records.length}
+            </span>
+          ) : null}
+        </button>
       ) : null}
 
       {/* Close button */}
@@ -504,17 +719,62 @@ export function GalleryView({
       {/* Main content — scroll the card when image + chrome + copy exceed the viewport */}
       <div
         className={[
-          "relative z-10 mx-4 flex w-full max-w-6xl min-h-0 max-h-[90vh] flex-col overflow-x-hidden overscroll-contain transition-all duration-300 animate-[scaleIn_0.2s_ease-out]",
+          "relative z-10 mx-4 flex w-full max-w-6xl min-h-0 max-h-[90vh] flex-col rounded-xl border border-[#242424] bg-[#0E0E0E] shadow-2xl shadow-black/40 overscroll-contain transition-all duration-300 animate-[scaleIn_0.2s_ease-out] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden",
+          radialMenuOpen ? "overflow-visible" : "overflow-x-hidden",
           viewMode === "comment"
             ? "max-w-5xl overflow-y-visible"
-            : "overflow-y-auto",
+            : radialMenuOpen
+              ? "overflow-y-visible"
+              : "overflow-y-auto",
         ].join(" ")}
       >
+        {/* Feed-like post header so deep-linked detail keeps creator context above the media. */}
+        {viewMode === "gallery" ? (
+          <div
+            className={[
+              "relative z-10 flex shrink-0 items-start justify-between gap-4 rounded-t-xl border-b border-[#1A1A1A] bg-[#161616] p-5 transition-opacity duration-300 ease-out",
+              mediaExpanded ? "pointer-events-none opacity-[0.22]" : "opacity-100",
+            ].join(" ")}
+            aria-hidden={mediaExpanded}
+          >
+            <div className="flex min-w-0 items-center gap-3">
+              <div className="h-11 w-11 shrink-0 overflow-hidden rounded-full bg-[#2A2A2A] ring-1 ring-[#2A2A2A]">
+                <img
+                  src={post.creator.avatarUrl}
+                  alt={`${post.creator.displayName} avatar`}
+                  className="h-full w-full object-cover"
+                  width={44}
+                  height={44}
+                />
+              </div>
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-sm font-semibold leading-tight text-[#F0F0F0]">
+                    {post.creator.displayName}
+                  </span>
+                </div>
+                <div className="mt-0.5 flex min-w-0 flex-wrap items-center gap-1.5">
+                  <span className="text-xs text-[#555555]">@{post.creator.handle}</span>
+                  <span className="text-[#2A2A2A]" aria-hidden="true">
+                    ·
+                  </span>
+                  <span className="truncate text-xs text-[#555555]">
+                    {post.creator.discipline}
+                  </span>
+                </div>
+              </div>
+            </div>
+            <time className="shrink-0 text-xs text-[#444444]" dateTime={post.publishedAt}>
+              {post.publishedAt}
+            </time>
+          </div>
+        ) : null}
+
         {/* Letterbox media — not painted while expanded overlay is shown (avoids duplicate img compositing) */}
         <div
           ref={imageRef}
           className={[
-            "relative z-0 isolate flex flex-col justify-center rounded-t-xl group",
+            "relative z-0 isolate flex flex-col justify-center group",
             /* Gallery: shrink-0 so the preview is never flex-squashed (was flex-1 + overflow-hidden clipping object-contain). Comment: keep flex-1 for pin canvas. */
             viewMode === "comment"
               ? [
@@ -571,7 +831,7 @@ export function GalleryView({
             <GalleryMediaStack
               stackRef={imageSurfaceRef}
               imageUrls={imageUrls}
-              displayIndex={0}
+              displayIndex={activeMediaIndex}
               visualStack={false}
               title={post.title}
               comments={comments}
@@ -580,11 +840,10 @@ export function GalleryView({
               cascadeEnter={(i) => i * 42}
               cascadeExit={(i) => (comments.length - 1 - i) * 36}
               surfaceClassName={[
-                "relative flex w-full max-w-full flex-col items-center justify-center outline-none",
-                viewMode === "comment" ? "max-h-[60vh]" : "",
+                "relative flex h-[min(60vh,620px)] w-full max-w-full flex-col items-center justify-center overflow-hidden outline-none",
                 viewMode === "gallery" ? "cursor-zoom-in" : "",
               ].join(" ")}
-              imgClassName="pointer-events-none h-auto w-auto max-h-[60vh] max-w-full object-contain"
+              imgClassName="pointer-events-none h-full w-full object-contain"
               onClick={handleMediaStackClick}
               onMouseEnter={viewMode === "gallery" ? onImageSurfaceEnter : undefined}
               onMouseLeave={viewMode === "gallery" ? onImageSurfaceLeave : undefined}
@@ -727,6 +986,39 @@ export function GalleryView({
             </GalleryMediaStack>
             )}
           </div>
+
+          {/* Vertical media rail — same affordance as the patron feed card */}
+          {viewMode === "gallery" && !isVideoPost && multiImage && !mediaExpanded ? (
+            <MediaEdgeRail
+              count={imageUrls.length}
+              activeIndex={activeMediaIndex}
+              onSelect={(idx) => setStackIndex(idx)}
+              className="absolute right-3 top-1/2 z-30 -translate-y-1/2"
+              onActionMenuOpenChange={setRadialMenuOpen}
+              actions={[
+                {
+                  kind: "favorite",
+                  label: "Favorite",
+                  active: isFavorited,
+                    onSelect: toggleFavorite
+                },
+                {
+                  kind: "snip",
+                  label: "Snip",
+                  disabled: !snipTarget,
+                  onSelect: () => {
+                    if (snipTarget) setSnipDialogOpen(true);
+                  }
+                },
+                {
+                  kind: "comment",
+                  label: "Comment",
+                  disabled: isVideoPost,
+                  onSelect: enterCommentMode
+                }
+              ]}
+            />
+          ) : null}
         </div>
 
         {/* Faded chrome while art is expanded */}
@@ -742,7 +1034,7 @@ export function GalleryView({
           <div className="relative z-20 flex shrink-0 justify-center items-center gap-1 border-t border-[#1A1A1A] bg-[#0E0E0E] py-1">
             {/* Favorite button - left wing */}
             <button
-              onClick={() => setIsFavorited(!isFavorited)}
+              onClick={toggleFavorite}
               className={[
                 "flex items-center justify-center w-8 h-8 rounded-lg transition-all",
                 isFavorited
@@ -809,9 +1101,16 @@ export function GalleryView({
 
             {/* Snip button - right wing */}
             <button
+              type="button"
+              onClick={() => {
+                if (snipTarget) setSnipDialogOpen(true);
+              }}
+              disabled={!snipTarget}
               className={[
                 "flex items-center justify-center w-8 h-8 rounded-lg transition-all",
-                "text-[#555555] border border-[#2A2A2A] bg-[#0E0E0E] hover:text-[#40916C] hover:border-[#2D6A4F]/50",
+                snipTarget
+                  ? "text-[#555555] border border-[#2A2A2A] bg-[#0E0E0E] hover:text-[#40916C] hover:border-[#2D6A4F]/50"
+                  : "cursor-not-allowed opacity-40 text-[#555555] border border-[#2A2A2A] bg-[#0E0E0E]",
               ].join(" ")}
               aria-label="Snip this image"
               title="Snip"
@@ -823,39 +1122,12 @@ export function GalleryView({
 
         {/* Info panel */}
         {viewMode === "gallery" && (
-          <div className="relative z-10 shrink-0 rounded-b-xl border-t border-[#1A1A1A] bg-[#0E0E0E] p-5">
+          <div className="relative z-10 shrink-0 rounded-b-xl border-t border-[#1A1A1A] bg-[#161616] p-5">
             {entitlementStrip ? (
               <div className="mb-4 rounded-lg border border-[#1F1F1F] bg-[#0A0A0A] px-3 py-2.5">
                 {entitlementStrip}
               </div>
             ) : null}
-            {/* Artist info row */}
-            <div className="flex items-start justify-between gap-4 mb-4">
-              <div className="flex items-center gap-3">
-                <div className="w-11 h-11 rounded-full overflow-hidden bg-[#2A2A2A] ring-2 ring-[#1A1A1A]">
-                  <img
-                    src={post.creator.avatarUrl}
-                    alt=""
-                    className="w-full h-full object-cover"
-                    width={44}
-                    height={44}
-                  />
-                </div>
-                <div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm font-semibold text-[#F0F0F0]">
-                      {post.creator.displayName}
-                    </span>
-                    <span className="text-xs text-[#555555]">
-                      @{post.creator.handle}
-                    </span>
-                  </div>
-                  <span className="text-xs text-[#444444]">
-                    {post.creator.discipline}
-                  </span>
-                </div>
-              </div>
-            </div>
 
             {/* Title and description */}
             <h1 className="text-xl font-semibold text-[#F0F0F0] mb-2 text-balance">
@@ -882,7 +1154,7 @@ export function GalleryView({
             {/* Action bar */}
             <div className="flex items-center gap-4">
               <button
-                onClick={() => setLiked(!liked)}
+              onClick={toggleLike}
                 className={[
                   "flex items-center gap-1.5 text-sm transition-colors",
                   liked
@@ -900,6 +1172,7 @@ export function GalleryView({
               </button>
 
               <button
+                onClick={emitShareClick}
                 className="flex items-center gap-1.5 text-sm text-[#5A5A5A] hover:text-[#9CA3AF] transition-colors"
                 aria-label="Share"
               >
@@ -907,9 +1180,6 @@ export function GalleryView({
                 Share
               </button>
 
-              <span className="ml-auto text-xs text-[#444444]">
-                {post.publishedAt}
-              </span>
             </div>
           </div>
         )}
@@ -997,6 +1267,11 @@ export function GalleryView({
           </div>
         </div>
       ) : null}
+      <SnipToCollectionDialog
+        open={snipDialogOpen}
+        target={snipTarget}
+        onClose={() => setSnipDialogOpen(false)}
+      />
     </div>
   );
 }

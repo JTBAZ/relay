@@ -7,6 +7,7 @@ import { FeedSectionDivider } from "./feed-section-divider";
 import { EmptyState } from "./empty-state";
 import { ErrorBanner } from "./error-banner";
 import { CommandPalette } from "./command-palette";
+import { FOLLOWED_CREATORS } from "@/lib/relay-fixtures";
 import { GalleryView } from "./gallery-view";
 import { FEED_POSTS, type FeedPost } from "@/lib/relay-fixtures";
 import { type FeedFilter } from "./filter-chips";
@@ -79,7 +80,11 @@ export function PatronHomeClient() {
 
   return (
     <>
-      <CommandPalette open={commandOpen} onClose={() => setCommandOpen(false)} />
+      <CommandPalette
+        open={commandOpen}
+        onClose={() => setCommandOpen(false)}
+        followedCreators={FOLLOWED_CREATORS}
+      />
 
       <RelayShell
         activeFilter={activeFilter}

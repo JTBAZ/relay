@@ -1,6 +1,6 @@
 /**
  * Patreon scrape body presets for Library PatreonSyncMenu (PILOT-007).
- * Tier access refresh uses POST /api/v1/patreon/sync-post-access (OAuth diff), not scrape presets.
+ * Tier access refresh uses POST /api/v1/connect/patreon/sync-post-access (OAuth diff), not scrape presets.
  */
 
 export const PATREON_SCRAPE_LIVE_MAX_PAGES = 20;

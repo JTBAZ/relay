@@ -11,6 +11,10 @@ import {
   PostUpstreamStatus,
   type MediaAsset
 } from "@prisma/client";
+import { emitPostPublishedEvent } from "../patron/notification-event-emit.js";
+import { sanitizeOptionalPostDescriptionHtml } from "../security/sanitize-post-html.js";
+import { ensureDefaultCreativeWorkForPost } from "../analytics/creative-work-service.js";
+import { ensureRelayPlatformInstanceForPost } from "../analytics/platform-instance-service.js";
 
 /** Accepted fields when creating a native Relay post (service / HTTP adapter maps into this). */
 export type RelayCreatePostInput = {
@@ -340,7 +344,7 @@ export async function createRelayPostTransaction(
               versionSeq: 1,
               upstreamRevision,
               title,
-              description: input.description?.trim() ? input.description : null,
+              description: sanitizeOptionalPostDescriptionHtml(input.description?.trim()) ?? null,
               publishedAt,
               tagIds: [...new Set((input.tagIds ?? []).map((t) => t.trim()).filter(Boolean))],
               tierIds: versionTierRelayIds,
@@ -377,11 +381,30 @@ export async function createRelayPostTransaction(
           }
         });
       }
+      await ensureDefaultCreativeWorkForPost(tx, {
+        postId,
+        creatorId: input.creatorId,
+        title,
+        createdAt: now
+      });
+      await ensureRelayPlatformInstanceForPost(tx, {
+        postId,
+        creatorId: input.creatorId,
+        linkedAt: now
+      });
       return { newPost, v0 };
     },
     { timeout: 30_000 }
   );
   const v = result.v0;
+  if (input.publish) {
+    await emitPostPublishedEvent(prisma, {
+      postId: result.newPost.id,
+      relayCreatorId: input.creatorId,
+      title: v.title,
+      publishedAt: v.publishedAt
+    });
+  }
   return {
     post: {
       id: result.newPost.id,

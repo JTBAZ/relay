@@ -27,7 +27,7 @@ function publishedLabel(raw: string): string {
 }
 
 function creatorPageHref(handle: string): string {
-  return `/patron/c/${encodeURIComponent(handle)}`;
+  return `/${encodeURIComponent(handle)}`;
 }
 
 export function WhatYouMissedCarousel({ posts }: { posts: LockedFeedPost[] }) {

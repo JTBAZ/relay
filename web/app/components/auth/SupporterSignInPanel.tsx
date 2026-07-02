@@ -4,7 +4,7 @@ import { useEffect, useState, type FormEvent } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Loader2 } from "lucide-react";
 import { getSupabaseBrowserClient } from "@/lib/supabase-browser";
-import { bootstrapSupporterAfterSupabase } from "@/lib/relay-auth-bootstrap";
+import { bootstrapAccountAfterSupabase } from "@/lib/relay-auth-bootstrap";
 import { resolveSupporterPostAuthDestination } from "@/lib/supporter-post-login-redirect";
 import { getWebAppOrigin } from "@/lib/site-origin";
 
@@ -13,11 +13,11 @@ import { getWebAppOrigin } from "@/lib/site-origin";
  *
  * Mirrors the Studio panel but:
  * - Uses `bootstrapSupporterAfterSupabase` (sync + relay-session, no creator workspace).
- * - After session bootstrap: linked Patreon → `/patron/feed`; else `/patreon/patron/connect`.
+ * - After session bootstrap: linked Patreon → `/feed`; else `/connect/patreon/patron/connect`.
  *   Non-default `returnTo` in the query still wins (deep links).
  * - Copy is supporter-flavoured ("supporter account", "Continue to feed").
  */
-export function SupporterSignInPanel() {
+export function SupporterSignInPanel({ onSuccess }: { onSuccess?: () => void } = {}) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const returnToParam = searchParams.get("returnTo");
@@ -75,8 +75,12 @@ export function SupporterSignInPanel() {
           });
           return;
         }
-        await bootstrapSupporterAfterSupabase(token);
-        router.push(await resolveSupporterPostAuthDestination(returnToParam));
+        await bootstrapAccountAfterSupabase(token, "supporter");
+        if (onSuccess) {
+          onSuccess();
+        } else {
+          router.push(await resolveSupporterPostAuthDestination(returnToParam));
+        }
         return;
       }
 
@@ -84,8 +88,12 @@ export function SupporterSignInPanel() {
       if (inErr) throw inErr;
       const token = data.session?.access_token;
       if (!token) throw new Error("No access token from Supabase.");
-      await bootstrapSupporterAfterSupabase(token);
-      router.push(await resolveSupporterPostAuthDestination(returnToParam));
+      await bootstrapAccountAfterSupabase(token, "supporter");
+      if (onSuccess) {
+        onSuccess();
+      } else {
+        router.push(await resolveSupporterPostAuthDestination(returnToParam));
+      }
     } catch (err) {
       setMessage({ kind: "error", text: err instanceof Error ? err.message : String(err) });
     } finally {

@@ -92,13 +92,67 @@ describe("addPatronFollowForMembership", () => {
 
 describe("listPatronFollowsForMembership", () => {
   it("maps rows to API shape", async () => {
-    const findMany = vi.fn().mockResolvedValue([
-      { relayCreatorId: "a", createdAt: new Date("2026-01-02T00:00:00.000Z") }
+    const createdAt = new Date("2026-01-02T00:00:00.000Z");
+    const asOf = new Date("2026-01-01T00:00:00.000Z");
+    const followFindMany = vi.fn().mockResolvedValue([
+      { relayCreatorId: "a", createdAt }
     ]);
-    const prisma = { patronFollow: { findMany } };
+    const creatorProfileFindMany = vi.fn().mockResolvedValue([
+      {
+        displayName: "Creator A",
+        username: "creator_a",
+        publicSlug: "creator-a",
+        avatarUrl: "/avatar.png",
+        discipline: "Painter",
+        tenant: { relayCreatorId: "a" }
+      }
+    ]);
+    const entitlementFindMany = vi.fn().mockResolvedValue([
+      {
+        relayCreatorId: "a",
+        active: true,
+        entitledTierIds: ["tier_supporter"],
+        asOf,
+        staleAfter: null
+      }
+    ]);
+    const tierFindMany = vi.fn().mockResolvedValue([
+      {
+        relayTierId: "tier_supporter",
+        creatorId: "a",
+        campaignId: null,
+        title: "Supporter",
+        amountCents: 500,
+        upstreamUpdatedAt: asOf,
+        versionSeq: 1
+      }
+    ]);
+    const prisma = {
+      patronFollow: { findMany: followFindMany },
+      creatorProfile: { findMany: creatorProfileFindMany },
+      patronEntitlementSnapshot: { findMany: entitlementFindMany },
+      tier: { findMany: tierFindMany }
+    };
     const rows = await listPatronFollowsForMembership(prisma as never, "m1");
     expect(rows).toEqual([
-      { relay_creator_id: "a", created_at: "2026-01-02T00:00:00.000Z" }
+      {
+        relay_creator_id: "a",
+        created_at: createdAt.toISOString(),
+        creator: {
+          display_name: "Creator A",
+          handle: "creator_a",
+          public_slug: "creator-a",
+          avatar_url: "/avatar.png",
+          discipline: "Painter"
+        },
+        entitlement: {
+          active: true,
+          tier_ids: ["tier_supporter"],
+          tier_label: "Supporter",
+          as_of: asOf.toISOString(),
+          stale_after: null
+        }
+      }
     ]);
   });
 });

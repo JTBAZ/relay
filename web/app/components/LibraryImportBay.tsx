@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   CheckCircle2,
   ChevronDown,
@@ -22,14 +22,12 @@ import {
 import {
   deleteRelayLibraryStagingMedia,
   fetchRelayLibraryStaging,
-  putRelayNativeUpload,
-  relayNativeUploadCommit,
-  relayNativeUploadInit,
   RELAY_API_BASE,
   RelayApiError,
   type RelayLibraryStagingItem
 } from "@/lib/relay-api";
-import { guessRelayUploadContentType } from "@/lib/guess-relay-upload-content-type";
+import { uploadFilesToRelayStaging } from "@/lib/relay-native-staging-upload";
+import LibraryUploadZone from "@/app/components/library/LibraryUploadZone";
 import LibrarySectionEyebrow from "./LibrarySectionEyebrow";
 
 export type ImportSource = "discord" | "upload" | "url";
@@ -50,6 +48,8 @@ type Props = {
   onError?: (message: string) => void;
   /** After beam animation: pass selected server-staged items into compose modal (parent owns navigation). */
   onAddToNewPost?: (items: ImportBinItem[]) => void;
+  /** Navigate to Autopost with selected staged media. */
+  onAutopost?: (items: ImportBinItem[]) => void;
 };
 
 function itemCaption(dc: unknown): string {
@@ -219,71 +219,6 @@ function DiscordStagingNote() {
   );
 }
 
-function UploadZone({
-  onFiles,
-  disabled
-}: {
-  onFiles: (files: File[]) => void;
-  disabled?: boolean;
-}) {
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const [dragging, setDragging] = useState(false);
-  return (
-    <div
-      onDragOver={(e) => {
-        e.preventDefault();
-        setDragging(true);
-      }}
-      onDragLeave={() => setDragging(false)}
-      onDrop={(e) => {
-        e.preventDefault();
-        setDragging(false);
-        onFiles(Array.from(e.dataTransfer.files));
-      }}
-      onClick={() => !disabled && fileInputRef.current?.click()}
-      onKeyDown={(e) => {
-        if (disabled) return;
-        if (e.key === "Enter" || e.key === " ") {
-          e.preventDefault();
-          fileInputRef.current?.click();
-        }
-      }}
-      role="button"
-      tabIndex={0}
-      aria-disabled={disabled || undefined}
-      className={`flex h-28 cursor-pointer flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed transition-all duration-200 ${
-        disabled ? "cursor-not-allowed opacity-45 pointer-events-none" : ""
-      } ${
-        dragging
-          ? "border-[var(--lib-primary)] bg-[color-mix(in_srgb,var(--lib-primary)_8%,transparent)]"
-          : "border-[var(--lib-border)] hover:border-[color-mix(in_srgb,var(--lib-primary)_45%,var(--lib-border))] hover:bg-[var(--lib-muted)]/30"
-      }`}
-    >
-      <Upload className={`h-[22px] w-[22px] ${dragging ? "text-[var(--lib-primary)]" : "text-[var(--lib-fg-muted)]"}`} aria-hidden />
-      <div className="text-center">
-        <p className="text-[12px] font-semibold text-[var(--lib-fg)]">
-          Drop files here or <span className="text-[var(--lib-primary)]">browse</span>
-        </p>
-        <p className="mt-0.5 text-[10px] text-[var(--lib-fg-muted)]">
-          Files upload to Relay immediately and appear as staged assets (same as Discord captures).
-        </p>
-      </div>
-      <input
-        ref={fileInputRef}
-        type="file"
-        multiple
-        accept="image/*,video/*,audio/*"
-        className="sr-only"
-        disabled={disabled}
-        onChange={(e) => {
-          onFiles(Array.from(e.target.files ?? []));
-          e.target.value = "";
-        }}
-      />
-    </div>
-  );
-}
-
 function URLInput({ onAdd }: { onAdd: (url: string) => void }) {
   const [val, setVal] = useState("");
   return (
@@ -321,7 +256,7 @@ function URLInput({ onAdd }: { onAdd: (url: string) => void }) {
   );
 }
 
-export default function LibraryImportBay({ creatorId, onError, onAddToNewPost }: Props) {
+export default function LibraryImportBay({ creatorId, onError, onAddToNewPost, onAutopost }: Props) {
   const [expanded, setExpanded] = useState(true);
   const [items, setItems] = useState<ImportBinItem[]>([]);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
@@ -424,49 +359,29 @@ export default function LibraryImportBay({ creatorId, onError, onAddToNewPost }:
       setUploadBusy(true);
       const cid = creatorId.trim();
       try {
-        await Promise.all(
-          files.map(async (file) => {
-            try {
-              const contentType = guessRelayUploadContentType(file);
-              if (contentType === "application/octet-stream") {
-                onError?.(
-                  `Could not determine media type for “${file.name}”. Use a recognizable extension (.png, .jpg, .mp4, …).`
-                );
-                return;
-              }
-              const init = await relayNativeUploadInit({
-                creator_id: cid,
-                content_type: contentType,
-                byte_size: file.size
-              });
-              const putCt = init.upload.headers["Content-Type"] ?? contentType;
-              await putRelayNativeUpload(init.upload.url, file, putCt);
-              await relayNativeUploadCommit({
-                creator_id: cid,
-                media_id: init.media_id,
-                content_type: contentType,
-                byte_size: file.size
-              });
-              const contentPath = `/api/v1/export/media/${encodeURIComponent(cid)}/${encodeURIComponent(init.media_id)}/content`;
-              setItems((prev) => {
-                const filtered = prev.filter((it) => it.id !== init.media_id);
-                const newItem: ImportBinItem = {
-                  id: init.media_id,
-                  src: absoluteRelayUrl(contentPath),
-                  mimeType: contentType,
-                  filename: file.name,
-                  timestamp: new Date(),
-                  source: "upload",
-                  serverStaged: true
-                };
-                return [newItem, ...filtered];
-              });
-            } catch (e) {
-              const msg = e instanceof RelayApiError ? e.message : String(e);
-              onError?.(`Upload failed for “${file.name}”: ${msg}`);
-            }
-          })
-        );
+        const { uploaded, errors } = await uploadFilesToRelayStaging({
+          creatorId: cid,
+          files,
+        });
+        for (const item of uploaded) {
+          const contentPath = `/api/v1/export/media/${encodeURIComponent(cid)}/${encodeURIComponent(item.media_id)}/content`;
+          setItems((prev) => {
+            const filtered = prev.filter((it) => it.id !== item.media_id);
+            const newItem: ImportBinItem = {
+              id: item.media_id,
+              src: absoluteRelayUrl(contentPath),
+              mimeType: item.content_type,
+              filename: item.filename,
+              timestamp: new Date(),
+              source: "upload",
+              serverStaged: true,
+            };
+            return [newItem, ...filtered];
+          });
+        }
+        for (const msg of errors) {
+          onError?.(msg);
+        }
       } finally {
         setUploadBusy(false);
       }
@@ -501,6 +416,12 @@ export default function LibraryImportBay({ creatorId, onError, onAddToNewPost }:
       setBeamActive(false);
     }, 560);
   }, [canComposeToPost, onAddToNewPost, selectedComposableItems]);
+
+  const handleAutopost = useCallback(() => {
+    if (!canComposeToPost || !onAutopost) return;
+    onAutopost(selectedComposableItems);
+    setSelectedIds(new Set());
+  }, [canComposeToPost, onAutopost, selectedComposableItems]);
 
   const visibleItems = items.filter((it) =>
     activeSource === "url" ? it.source === "url" : activeSource === "upload" ? it.source === "upload" : it.source === "discord"
@@ -609,7 +530,7 @@ export default function LibraryImportBay({ creatorId, onError, onAddToNewPost }:
                     </>
                   )}
                   {activeSource === "upload" && (
-                    <UploadZone onFiles={(f) => void handleFiles(f)} disabled={uploadBusy} />
+                    <LibraryUploadZone onFiles={(f) => void handleFiles(f)} disabled={uploadBusy} />
                   )}
                   {activeSource === "url" && <URLInput onAdd={handleAddURL} />}
                 </div>
@@ -677,12 +598,23 @@ export default function LibraryImportBay({ creatorId, onError, onAddToNewPost }:
             </div>
           </div>
 
-          <div className="relative flex flex-col items-center py-3">
+          <div className="relative flex flex-col items-center gap-2 py-3">
             <div
-              className={`transition-all duration-300 ${
+              className={`flex flex-col items-center gap-2 transition-all duration-300 ${
                 canComposeToPost ? "translate-y-0 opacity-100" : "pointer-events-none translate-y-2 opacity-0"
               }`}
             >
+              {onAutopost ? (
+                <button
+                  type="button"
+                  onClick={handleAutopost}
+                  disabled={!canComposeToPost || beamActive}
+                  className="flex items-center gap-2 rounded-full border border-[var(--lib-primary)] bg-[var(--lib-primary)] px-6 py-2.5 text-[12px] font-bold text-[var(--lib-primary-fg)] shadow-lg shadow-[color-mix(in_srgb,var(--lib-primary)_28%,transparent)] transition-all hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-45"
+                >
+                  <Sparkles className="h-3.5 w-3.5" aria-hidden />
+                  Autopost {selectedComposableItems.length > 0 ? selectedComposableItems.length : ""} selected
+                </button>
+              ) : null}
               <button
                 type="button"
                 onClick={handleAddToNewPost}
@@ -692,9 +624,8 @@ export default function LibraryImportBay({ creatorId, onError, onAddToNewPost }:
                     ? "Select staged Discord or uploaded assets to compose. URL previews cannot be published yet."
                     : undefined
                 }
-                className="flex items-center gap-2 rounded-full border border-[var(--lib-primary)] bg-[var(--lib-primary)] px-6 py-2.5 text-[12px] font-bold text-[var(--lib-primary-fg)] shadow-lg shadow-[color-mix(in_srgb,var(--lib-primary)_28%,transparent)] transition-all hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-45"
+                className="flex items-center gap-2 rounded-full border border-[var(--lib-border)] bg-[var(--lib-card)] px-6 py-2.5 text-[12px] font-bold text-[var(--lib-fg)] transition-all hover:border-[var(--lib-primary)]/50 disabled:cursor-not-allowed disabled:opacity-45"
               >
-                <Sparkles className="h-3.5 w-3.5" aria-hidden />
                 Add {selectedComposableItems.length > 0 ? selectedComposableItems.length : ""} to new post
               </button>
             </div>

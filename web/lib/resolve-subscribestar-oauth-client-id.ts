@@ -1,5 +1,5 @@
 /**
- * SubscribeStar creator OAuth Client ID for `/subscribestar/creator/connect`.
+ * SubscribeStar creator OAuth Client ID for `/connect/subscribestar/connect/creator`.
  *
  * Prefer runtime **`SUBSCRIBESTAR_RELAY_CREATOR_CLIENT_ID`** or **`SUBSCRIBESTAR_CREATOR_CLIENT_ID`**
  * (Server Components only — same pattern as Patreon).

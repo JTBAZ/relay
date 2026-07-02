@@ -42,7 +42,7 @@ So `metadataBase` in [`web/app/layout.tsx`](../../web/app/layout.tsx) matches th
 
 ## Patreon OAuth (dev)
 
-Register redirect URIs in the Patreon developer app for the same canonical host as Next (local dev: **`http://localhost:3000/...`**). [`patronPatronOAuthRedirectUri`](../../web/lib/patron-patron-redirect-uri.ts) uses [`getWebAppOrigin()`](../../web/lib/site-origin.ts) + `/patreon/patron/callback` unless `NEXT_PUBLIC_PATREON_PATRON_REDIRECT_URI` is set.
+Register redirect URIs in the Patreon developer app for the same canonical host as Next (local dev: **`http://localhost:3000/...`**). [`patronPatronOAuthRedirectUri`](../../web/lib/patron-patron-redirect-uri.ts) uses [`getWebAppOrigin()`](../../web/lib/site-origin.ts) + `/connect/patreon/patron/callback` unless `NEXT_PUBLIC_PATREON_PATRON_REDIRECT_URI` is set.
 
 ## See also
 

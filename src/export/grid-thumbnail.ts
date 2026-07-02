@@ -19,9 +19,9 @@ export const GRID_THUMB_MAX_EDGE = 320;
 
 /**
  * Stable fragment for ETag / cache busting when thumb parameters change.
- * Bumped when thumb logic changes (GIF / multi-frame MIME sniff).
+ * Bumped when thumb logic changes (GIF / multi-frame MIME sniff, EXIF orientation).
  */
-export const GRID_THUMB_ETAG_TOKEN = "thumb320w-animdetect";
+export const GRID_THUMB_ETAG_TOKEN = "thumb320w-animdetect-exifrotate";
 
 /** GIF89a / GIF87a */
 function bufferLooksGif(input: Buffer): boolean {
@@ -53,10 +53,13 @@ export async function buildGridThumbnailImage(
     const sharp = sharpMod.default;
     /** Sharp supports `animated` / `loop` at runtime; bundled `.d.ts` can lag. */
     const animatedWebpOut = { quality: 78, effort: 4, animated: true, loop: 0 };
-    const resizeStatic = sharp(input).resize(GRID_THUMB_MAX_EDGE, GRID_THUMB_MAX_EDGE, {
-      fit: "inside",
-      withoutEnlargement: true
-    });
+    const resizeStatic = sharp(input)
+      // Respect EXIF orientation so camera uploads don't appear sideways in tiles.
+      .rotate()
+      .resize(GRID_THUMB_MAX_EDGE, GRID_THUMB_MAX_EDGE, {
+        fit: "inside",
+        withoutEnlargement: true
+      });
 
     let metaPages = 1;
     let metaFormat = "";
@@ -83,6 +86,8 @@ export async function buildGridThumbnailImage(
           animated: true,
           limitInputPixels: SHARP_SAFE_INPUT_PIXELS
         })
+          // Apply orientation to animated and static sources consistently.
+          .rotate()
           .resize(GRID_THUMB_MAX_EDGE, GRID_THUMB_MAX_EDGE, {
             fit: "inside",
             withoutEnlargement: true

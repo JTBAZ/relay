@@ -7,10 +7,20 @@
 import type { PatronProfile, Prisma, PrismaClient } from "@prisma/client";
 import {
   generateAutoPatronHandle,
-  isReservedPatronHandle,
   normalizePatronHandle,
-  validatePatronHandleFormat
 } from "./patron-handle-policy.js";
+import { setRelayUsernameForAccount } from "../identity/relay-username-service.js";
+import {
+  MUTED_NOTIFICATION_CADENCE,
+  isMutedNotificationCadence,
+  normalizeNotificationDigestCadence,
+  normalizeNotificationCadencePreference,
+  normalizeNotificationDigestSlot,
+  type NotificationCadencePreferenceId,
+  type NotificationDigestSlotId,
+} from "./notification-digest-preferences.js";
+import { resolveNotificationDigestTimezone as normalizeNotificationDigestTimezone } from "./notification-digest-schedule.js";
+import { isAllowedPatronProfileImageUrl } from "./patron-profile-upload-service.js";
 
 const MAX_BIO = 4000;
 const MAX_DISPLAY = 120;
@@ -27,19 +37,33 @@ export type PatronProfileView = {
   banner_url: string | null;
   is_public: boolean;
   onboarding_step: number;
+  notification_digest_enabled: boolean;
+  notification_digest_cadence: NotificationCadencePreferenceId;
+  notification_digest_slot: NotificationDigestSlotId | null;
+  notification_digest_timezone: string | null;
+  hide_mature_content: boolean;
 };
 
-function toView(row: PatronProfile): PatronProfileView {
+function toView(
+  row: PatronProfile,
+  account?: { username: string | null; usernameNorm: string | null } | null
+): PatronProfileView {
   return {
     tenant_membership_id: row.tenantMembershipId,
-    handle: row.handle,
-    handle_norm: row.handleNorm,
+    handle: account?.username ?? row.handle,
+    handle_norm: account?.usernameNorm ?? row.handleNorm,
     display_name: row.displayName,
     bio: row.bio,
     avatar_url: row.avatarUrl,
     banner_url: row.bannerUrl,
     is_public: row.isPublic,
-    onboarding_step: row.onboardingStep
+    onboarding_step: row.onboardingStep,
+    notification_digest_enabled: row.notificationDigestEnabled,
+    notification_digest_cadence:
+      normalizeNotificationCadencePreference(row.notificationDigestCadence) ?? "weekly",
+    notification_digest_slot: normalizeNotificationDigestSlot(row.notificationDigestSlot),
+    notification_digest_timezone: row.notificationDigestTimezone,
+    hide_mature_content: row.hideMatureContent,
   };
 }
 
@@ -93,7 +117,11 @@ export async function getPatronProfileViewForMembership(
   tenantMembershipId: string
 ): Promise<PatronProfileView> {
   const row = await ensurePatronProfileForMembership(prisma, tenantMembershipId);
-  return toView(row);
+  const membership = await prisma.tenantMembership.findUnique({
+    where: { id: tenantMembershipId },
+    select: { account: { select: { username: true, usernameNorm: true } } }
+  });
+  return toView(row, membership?.account);
 }
 
 export type PatchPatronProfileInput = {
@@ -104,6 +132,11 @@ export type PatchPatronProfileInput = {
   banner_url?: string | null;
   is_public?: boolean;
   onboarding_step?: number;
+  notification_digest_enabled?: boolean;
+  notification_digest_cadence?: string | null;
+  notification_digest_slot?: string | null;
+  notification_digest_timezone?: string | null;
+  hide_mature_content?: boolean;
 };
 
 export type PatchPatronProfileResult =
@@ -118,6 +151,24 @@ export async function patchPatronProfileForMembership(
   const row = await ensurePatronProfileForMembership(prisma, tenantMembershipId);
 
   const data: Prisma.PatronProfileUpdateInput = {};
+  let membershipAccountId: string | null = null;
+  const needsImageUrlAccount =
+    (patch.avatar_url !== undefined && patch.avatar_url !== null) ||
+    (patch.banner_url !== undefined && patch.banner_url !== null);
+  if (needsImageUrlAccount) {
+    const membership = await prisma.tenantMembership.findUnique({
+      where: { id: tenantMembershipId },
+      select: { accountId: true },
+    });
+    membershipAccountId = membership?.accountId ?? null;
+    if (!membershipAccountId) {
+      return {
+        ok: false,
+        code: "VALIDATION_ERROR",
+        message: "Membership not found.",
+      };
+    }
+  }
 
   if (patch.display_name !== undefined) {
     const v = patch.display_name;
@@ -150,6 +201,13 @@ export async function patchPatronProfileForMembership(
         message: "avatar_url is too long."
       };
     }
+    if (v !== null && !isAllowedPatronProfileImageUrl(v, membershipAccountId!)) {
+      return {
+        ok: false,
+        code: "VALIDATION_ERROR",
+        message: "avatar_url must be a Relay-hosted profile image or static default.",
+      };
+    }
     data.avatarUrl = v;
   }
   if (patch.banner_url !== undefined) {
@@ -159,6 +217,13 @@ export async function patchPatronProfileForMembership(
         ok: false,
         code: "VALIDATION_ERROR",
         message: "banner_url is too long."
+      };
+    }
+    if (v !== null && !isAllowedPatronProfileImageUrl(v, membershipAccountId!)) {
+      return {
+        ok: false,
+        code: "VALIDATION_ERROR",
+        message: "banner_url must be a Relay-hosted profile image or static default.",
       };
     }
     data.bannerUrl = v;
@@ -177,6 +242,56 @@ export async function patchPatronProfileForMembership(
     }
     data.onboardingStep = s;
   }
+  if (patch.notification_digest_enabled !== undefined) {
+    data.notificationDigestEnabled = patch.notification_digest_enabled;
+  }
+  if (patch.notification_digest_cadence !== undefined) {
+    if (patch.notification_digest_cadence === null) {
+      data.notificationDigestCadence = "weekly";
+    } else {
+      if (isMutedNotificationCadence(patch.notification_digest_cadence)) {
+        data.notificationDigestCadence = MUTED_NOTIFICATION_CADENCE;
+      } else {
+        const cadence = normalizeNotificationDigestCadence(patch.notification_digest_cadence);
+        if (!cadence) {
+          return {
+            ok: false,
+            code: "VALIDATION_ERROR",
+            message: "notification_digest_cadence must be one of: weekly, monthly, never.",
+          };
+        }
+        data.notificationDigestCadence = cadence;
+      }
+    }
+  }
+  if (patch.notification_digest_slot !== undefined) {
+    if (patch.notification_digest_slot === null) {
+      data.notificationDigestSlot = null;
+    } else {
+      const slot = normalizeNotificationDigestSlot(patch.notification_digest_slot);
+      if (!slot) {
+        return {
+          ok: false,
+          code: "VALIDATION_ERROR",
+          message:
+            "notification_digest_slot must be one of: morning, midday, evening, late_night.",
+        };
+      }
+      data.notificationDigestSlot = slot;
+    }
+  }
+  if (patch.notification_digest_timezone !== undefined) {
+    if (patch.notification_digest_timezone === null) {
+      data.notificationDigestTimezone = null;
+    } else {
+      data.notificationDigestTimezone = normalizeNotificationDigestTimezone(
+        patch.notification_digest_timezone
+      );
+    }
+  }
+  if (patch.hide_mature_content !== undefined) {
+    data.hideMatureContent = patch.hide_mature_content;
+  }
 
   if (patch.handle !== undefined) {
     if (patch.handle === null) {
@@ -186,43 +301,52 @@ export async function patchPatronProfileForMembership(
         message: "handle cannot be cleared; use the auto-generated value or pick a new handle."
       };
     }
-    const norm = normalizePatronHandle(patch.handle);
-    const fmt = validatePatronHandleFormat(norm);
-    if (!fmt.ok) {
-      return { ok: false, code: "VALIDATION_ERROR", message: fmt.message };
-    }
-    if (isReservedPatronHandle(norm)) {
+    const membership = await prisma.tenantMembership.findUnique({
+      where: { id: tenantMembershipId },
+      select: { accountId: true }
+    });
+    if (!membership) {
       return {
         ok: false,
         code: "VALIDATION_ERROR",
-        message: "That handle is reserved."
+        message: "Membership not found."
       };
     }
-    const other = await prisma.patronProfile.findFirst({
-      where: {
-        handleNorm: norm,
-        NOT: { tenantMembershipId }
-      },
-      select: { id: true }
-    });
-    if (other) {
+    try {
+      const next = await setRelayUsernameForAccount(prisma, {
+        accountId: membership.accountId,
+        username: patch.handle
+      });
+      data.handle = next.username;
+      data.handleNorm = next.usernameNorm;
+    } catch (err: unknown) {
+      const code =
+        typeof err === "object" && err !== null && "code" in err
+          ? (err as { code: string }).code
+          : "VALIDATION_ERROR";
       return {
         ok: false,
-        code: "CONFLICT",
-        message: "That handle is already taken."
+        code: code === "CONFLICT" ? "CONFLICT" : "VALIDATION_ERROR",
+        message: err instanceof Error ? err.message : "Invalid username."
       };
     }
-    data.handle = patch.handle.trim();
-    data.handleNorm = norm;
   }
 
   if (Object.keys(data).length === 0) {
-    return { ok: true, profile: toView(row) };
+    const membership = await prisma.tenantMembership.findUnique({
+      where: { id: tenantMembershipId },
+      select: { account: { select: { username: true, usernameNorm: true } } }
+    });
+    return { ok: true, profile: toView(row, membership?.account) };
   }
 
   const updated = await prisma.patronProfile.update({
     where: { tenantMembershipId },
     data
   });
-  return { ok: true, profile: toView(updated) };
+  const membership = await prisma.tenantMembership.findUnique({
+    where: { id: tenantMembershipId },
+    select: { account: { select: { username: true, usernameNorm: true } } }
+  });
+  return { ok: true, profile: toView(updated, membership?.account) };
 }

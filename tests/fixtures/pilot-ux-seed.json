@@ -23,11 +23,24 @@
       "displayName": "Dev Onboarding",
       "publicSlug": "dev-onboarding"
     },
+    "creatorQuinn": {
+      "legacyFileId": "creator_dev_quinn",
+      "email": "creator_dev_quinn@pilot.relay.test",
+      "displayName": "Dev Quinn",
+      "publicSlug": "dev-quinn",
+      "discipline": "Unsub lab (pilot)"
+    },
     "patronRiley": {
       "legacyFileId": "patron_dev_riley",
       "email": "patron_dev_riley@pilot.relay.test",
       "displayName": "Dev Riley",
       "handle": "patron_dev_riley"
+    },
+    "patronOnboarding": {
+      "legacyFileId": "patron_dev_onboarding",
+      "email": "patron_dev_onboarding@pilot.relay.test",
+      "displayName": "Dev Patron Onboarding",
+      "handle": "patron_dev_onboarding"
     }
   },
   "creators": [
@@ -36,7 +49,7 @@
       "accountKey": "creatorAva",
       "campaignId": "pilot_campaign_ava",
       "campaignName": "Pilot UX — Ava",
-      "patreonCampaignId": "pilot_patreon_campaign_ava",
+      "patreonCampaignId": "pilot_campaign_ava",
       "tiers": [
         {
           "relayTierId": "patreon_tier_ava_supporter",
@@ -52,17 +65,17 @@
       "posts": [
         {
           "postId": "pilot_post_ava_intro",
-          "title": "Public intro",
-          "description": "Welcome — no tier required.",
+          "title": "Collect test — Test 1 (public)",
+          "description": "Public — any patron can view and snip.",
           "isPublic": true,
           "tierIds": [],
-          "mediaType": "writing",
+          "mediaType": "photo",
           "mediaId": "pilot_media_ava_intro"
         },
         {
           "postId": "pilot_post_ava_supporter_set",
-          "title": "Supporter photo set",
-          "description": "Gated to Supporter tier.",
+          "title": "Collect test — Test 2 (Supporter)",
+          "description": "Gated to Supporter tier — Riley is entitled.",
           "isPublic": false,
           "tierIds": ["patreon_tier_ava_supporter"],
           "mediaType": "photo",
@@ -70,8 +83,8 @@
         },
         {
           "postId": "pilot_post_ava_studio_archive",
-          "title": "Studio archive",
-          "description": "Gated to Studio tier.",
+          "title": "Collect test — Test 3 (Studio)",
+          "description": "Gated to Studio tier — Riley is NOT entitled (locked).",
           "isPublic": false,
           "tierIds": ["patreon_tier_ava_studio"],
           "mediaType": "photo",
@@ -84,7 +97,7 @@
       "accountKey": "creatorMilo",
       "campaignId": "pilot_campaign_milo",
       "campaignName": "Pilot UX — Milo",
-      "patreonCampaignId": "pilot_patreon_campaign_milo",
+      "patreonCampaignId": "pilot_campaign_milo",
       "tiers": [
         {
           "relayTierId": "patreon_tier_milo_supporter",
@@ -101,7 +114,7 @@
         {
           "postId": "pilot_post_milo_sketch",
           "title": "Public sketch",
-          "description": "Free sketch drop.",
+          "description": "Free sketch drop (legacy placeholder — collect tests use Tests 1–5).",
           "isPublic": true,
           "tierIds": [],
           "mediaType": "photo",
@@ -109,20 +122,20 @@
         },
         {
           "postId": "pilot_post_milo_supporter_video",
-          "title": "Supporter video",
-          "description": "Supporter-only process clip.",
+          "title": "Collect test — Test 4 (Supporter)",
+          "description": "Gated to Supporter tier — Riley is NOT entitled (locked).",
           "isPublic": false,
           "tierIds": ["patreon_tier_milo_supporter"],
-          "mediaType": "video",
+          "mediaType": "photo",
           "mediaId": "pilot_media_milo_video"
         },
         {
           "postId": "pilot_post_milo_backstage_notes",
-          "title": "Backstage notes",
-          "description": "Backstage tier notes.",
+          "title": "Collect test — Test 5 (Backstage)",
+          "description": "Gated to Backstage tier — Riley is entitled.",
           "isPublic": false,
           "tierIds": ["patreon_tier_milo_backstage"],
-          "mediaType": "writing",
+          "mediaType": "photo",
           "mediaId": "pilot_media_milo_backstage"
         }
       ]
@@ -132,7 +145,7 @@
       "accountKey": "creatorOnboarding",
       "campaignId": "pilot_campaign_onboarding",
       "campaignName": "Pilot UX — Onboarding walkthrough",
-      "patreonCampaignId": "pilot_patreon_campaign_onboarding",
+      "patreonCampaignId": "pilot_campaign_onboarding",
       "onboardingWalkthrough": true,
       "tiers": [
         {
@@ -147,11 +160,40 @@
         }
       ],
       "posts": []
+    },
+    {
+      "relayCreatorId": "rcx_pilot_dev_quinn",
+      "accountKey": "creatorQuinn",
+      "campaignId": "pilot_campaign_quinn",
+      "campaignName": "Pilot UX — Quinn (unsub lab)",
+      "patreonCampaignId": "pilot_campaign_quinn",
+      "tiers": [
+        {
+          "relayTierId": "patreon_tier_quinn_supporter",
+          "title": "Supporter",
+          "amountCents": 500
+        }
+      ],
+      "posts": [
+        {
+          "postId": "pilot_post_quinn_unsub_lab",
+          "title": "Unsub lab — Supporter gated snip",
+          "description": "Dev-only: Riley is subscribed. Snip this, then run npm run pilot:unsub to lapse entitlement and verify the collection locks.",
+          "isPublic": false,
+          "tierIds": ["patreon_tier_quinn_supporter"],
+          "mediaType": "photo",
+          "mediaId": "pilot_media_quinn_unsub_lab"
+        }
+      ]
     }
   ],
   "patron": {
     "accountKey": "patronRiley",
-    "followRelayCreatorIds": ["rcx_pilot_dev_ava", "rcx_pilot_dev_milo"],
+    "followRelayCreatorIds": [
+      "rcx_pilot_dev_ava",
+      "rcx_pilot_dev_milo",
+      "rcx_pilot_dev_quinn"
+    ],
     "entitlements": [
       {
         "relayCreatorId": "rcx_pilot_dev_ava",
@@ -160,7 +202,14 @@
       {
         "relayCreatorId": "rcx_pilot_dev_milo",
         "entitledTierIds": ["patreon_tier_milo_backstage"]
+      },
+      {
+        "relayCreatorId": "rcx_pilot_dev_quinn",
+        "entitledTierIds": ["patreon_tier_quinn_supporter"]
       }
     ]
+  },
+  "patronOnboarding": {
+    "accountKey": "patronOnboarding"
   }
 }

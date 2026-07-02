@@ -253,7 +253,7 @@ export function DiscordCapturesBin({
     // Relay mirroring hook checkpoint: this route seeds a draft from staged Discord media.
     // Future platform adapters can enqueue mirroring after the created Relay post returns.
     const ids = selectedList.map((item) => item.media_id).join(",");
-    router.push(`/new-post?media_ids=${encodeURIComponent(ids)}&source=discord_capture`);
+    router.push(`/studio/new-post?media_ids=${encodeURIComponent(ids)}&source=discord_capture`);
   }
 
   return (

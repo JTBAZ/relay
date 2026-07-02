@@ -40,6 +40,8 @@ import type { UseLiveCommentsResult } from "./use-live-comments";
 
 interface CommentThreadPanelProps {
   live: UseLiveCommentsResult;
+  /** Drawer visibility; closed state remains mounted so it can animate away. */
+  open?: boolean;
   /** Caller's account id; null = anonymous viewer (no reactions, no mod actions). */
   viewerAccountId: string | null;
   /** True when the caller's session owns this relay_creator_id. */
@@ -70,6 +72,7 @@ const REPORT_REASONS = [
 
 export function CommentThreadPanel({
   live,
+  open = true,
   viewerAccountId,
   isCreatorOwner,
   onClose,
@@ -84,7 +87,13 @@ export function CommentThreadPanel({
   return (
     <aside
       aria-label="Comment thread"
-      className="absolute right-4 top-4 bottom-4 z-30 flex w-[360px] max-w-[40vw] flex-col rounded-lg border border-[#2A2A2A] bg-[#0F0F0F] p-3 shadow-2xl"
+      aria-hidden={!open}
+      className={[
+        "absolute right-4 top-16 bottom-4 z-[80] flex w-[360px] max-w-[40vw] origin-right flex-col rounded-lg border border-[#2A2A2A] bg-[#0F0F0F] p-3 shadow-2xl transition-all duration-300 [transition-timing-function:cubic-bezier(0.22,1,0.36,1)]",
+        open
+          ? "pointer-events-auto translate-x-0 scale-x-100 opacity-100"
+          : "pointer-events-none translate-x-6 scale-x-95 opacity-0"
+      ].join(" ")}
     >
       <div className="mb-2 flex shrink-0 items-center justify-between">
         <h2 className="flex items-center gap-1.5 text-xs uppercase tracking-wide text-[#888]">

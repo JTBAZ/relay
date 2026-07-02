@@ -56,6 +56,8 @@ type Props = {
   visitorMembershipUrl?: string | null;
   visitorAccentColor?: string;
   visitorLockedOverlayVariant?: VisitorTierGateOverlayVariant;
+  /** PMD-042 — tier gate Upgrade click telemetry */
+  onVisitorTierReveal?: (args: { postId: string; mediaId?: string }) => void;
 };
 
 function StackLayer({
@@ -173,7 +175,8 @@ function VisitorMultiAssetSlideCell({
   tierOrderIds,
   membershipUrl,
   accentColor,
-  lockedOverlayVariant
+  lockedOverlayVariant,
+  onVisitorTierReveal
 }: {
   items: GalleryItem[];
   startFlatIndex: number;
@@ -191,6 +194,7 @@ function VisitorMultiAssetSlideCell({
   membershipUrl: string | null | undefined;
   accentColor: string;
   lockedOverlayVariant: VisitorTierGateOverlayVariant;
+  onVisitorTierReveal?: Props["onVisitorTierReveal"];
 }) {
   const n = items.length;
   const [carouselIdx, setCarouselIdx] = useState(0);
@@ -294,6 +298,12 @@ function VisitorMultiAssetSlideCell({
                 accentColor={accentColor}
                 membershipUrl={membershipUrl}
                 variant={lockedOverlayVariant}
+                onUpgradeClick={() =>
+                  onVisitorTierReveal?.({
+                    postId: current.post_id,
+                    mediaId: current.media_id
+                  })
+                }
               />
             </div>
           ) : (
@@ -318,8 +328,9 @@ function VisitorMultiAssetSlideCell({
                 ? item.content_url_path
                   ? `${RELAY_API_BASE}${item.content_url_path}`
                   : ""
-                : galleryItemImageGridSrc(item) ??
-                  (item.content_url_path ? `${RELAY_API_BASE}${item.content_url_path}` : "");
+                : item.content_url_path
+                  ? `${RELAY_API_BASE}${item.content_url_path}`
+                  : galleryItemImageGridSrc(item) ?? "";
 
               const transition =
                 "transform 0.4s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.4s cubic-bezier(0.4, 0, 0.2, 1)";
@@ -345,6 +356,12 @@ function VisitorMultiAssetSlideCell({
                       accentColor={accentColor}
                       membershipUrl={membershipUrl}
                       variant={lockedOverlayVariant}
+                      onUpgradeClick={() =>
+                        onVisitorTierReveal?.({
+                          postId: item.post_id,
+                          mediaId: item.media_id
+                        })
+                      }
                     />
                   </div>
                 ) : (
@@ -578,7 +595,8 @@ export default function PostBatchGridCell({
   visitorTierOrderIds = [],
   visitorMembershipUrl = null,
   visitorAccentColor = "#00aa6f",
-  visitorLockedOverlayVariant = "blurred"
+  visitorLockedOverlayVariant = "blurred",
+  onVisitorTierReveal
 }: Props) {
   const n = items.length;
   const primary = items[0]!;
@@ -653,6 +671,7 @@ export default function PostBatchGridCell({
         membershipUrl={visitorMembershipUrl}
         accentColor={visitorAccentColor}
         lockedOverlayVariant={visitorLockedOverlayVariant}
+        onVisitorTierReveal={onVisitorTierReveal}
       />
     );
   }

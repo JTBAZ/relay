@@ -23,7 +23,7 @@ export const patronFlowColors = {
 export function PatronFlowShell({
   title,
   subtitle,
-  backHref = "/patron/feed",
+  backHref = "/feed",
   backLabel = "Back to feed",
   children,
   footer

@@ -59,6 +59,12 @@ export class FilePatronFavoritesStore {
     return root.favorites.filter((f) => f.creator_id === creatorId && f.user_id === userId);
   }
 
+  /** Cross-creator favorites for one patron membership (file-store twin of DB account fan-out). */
+  public async listAllForUser(userId: string): Promise<PatronFavoriteRecord[]> {
+    const root = await this.load();
+    return root.favorites.filter((f) => f.user_id === userId);
+  }
+
   /** Idempotent add; returns the stored record (existing or new). */
   public async add(record: Omit<PatronFavoriteRecord, "created_at">): Promise<PatronFavoriteRecord> {
     const root = await this.load();

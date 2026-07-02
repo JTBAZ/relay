@@ -10,6 +10,7 @@ import {
   type MediaAsset,
   type PrismaClient
 } from "@prisma/client";
+import { getRelayUploadMaxBytes } from "../storage/relay-upload-r2.js";
 
 /** Truncate for `MediaAsset.processing_error` column safety. */
 const MAX_PROC_ERR = 2000;
@@ -81,6 +82,15 @@ export async function applyRelayUploadCommitUpdate(
     const msgSize = `byte_size does not match stored object (expected ${head.contentLength} bytes, got ${byteSize}).`;
     await markMediaAssetProcessingFailed(prisma, mediaId, msgSize);
     return { ok: false, httpStatus: 400, message: msgSize };
+  }
+
+  // [R-SEC-16 @security-review 2026-06] Presigned PUT does not bind object size, and internal callers may
+  // skip the init-time cap. Reject any actually-stored object larger than the upload limit. See docs/security-review-2026-06.md.
+  const maxUploadBytes = getRelayUploadMaxBytes();
+  if (head.contentLength > maxUploadBytes) {
+    const msgMax = `Uploaded object exceeds the maximum allowed size (${head.contentLength} > ${maxUploadBytes} bytes).`;
+    await markMediaAssetProcessingFailed(prisma, mediaId, msgMax);
+    return { ok: false, httpStatus: 400, message: msgMax };
   }
 
   let primaryPostId: string | null = row.primaryPostId;

@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { GalleryVisibility } from "@prisma/client";
 import { assemblePatronFeed } from "../../src/patron/assemble-patron-feed.js";
 
 function emptyHiddenPostOverrides() {
@@ -768,5 +769,41 @@ describe("assemblePatronFeed", () => {
     });
     expect(bundle.entitlement_degraded).toBe(true);
     expect(bundle.entitlement_stale_since).toBe(past.toISOString());
+  });
+
+  it("excludes mature posts when hideMatureContent is true", async () => {
+    const prisma = buildPrismaWithOnePost({
+      mediaId: "media_xyz",
+      storageKey: "media/media_xyz/asset"
+    });
+    prisma.postOverride = {
+      findMany: vi.fn().mockResolvedValue([
+        {
+          creatorId: "rc_relaytest",
+          postId: "post_orbitals",
+          mediaId: "",
+          visibility: GalleryVisibility.review,
+          addTagIds: [],
+          removeTagIds: [],
+          discoveryEligible: false
+        }
+      ])
+    };
+
+    const hidden = await assemblePatronFeed({
+      prisma: prisma as never,
+      patronMembershipId: "mem1",
+      viewerEmail: "a@b.com",
+      hideMatureContent: true
+    });
+    expect(hidden.feedPosts).toHaveLength(0);
+
+    const shown = await assemblePatronFeed({
+      prisma: prisma as never,
+      patronMembershipId: "mem1",
+      viewerEmail: "a@b.com",
+      hideMatureContent: false
+    });
+    expect(shown.feedPosts).toHaveLength(1);
   });
 });

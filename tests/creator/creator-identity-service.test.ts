@@ -47,7 +47,18 @@ function makePrisma(opts: {
   return {
     account: {
       findUnique: vi.fn(async () => ({
-        primaryRelayCreatorId: relayId
+        id: "acc_1",
+        primaryRelayCreatorId: relayId,
+        username: null,
+        usernameNorm: null
+      })),
+      findFirst: vi.fn(async ({ where }: { where?: { usernameNorm?: string } }) => {
+        if (where?.usernameNorm && opts.clashOnUsername) return { id: "other_acc" };
+        return null;
+      }),
+      update: vi.fn(async ({ data }: { data: { username?: string; usernameNorm?: string } }) => ({
+        username: data.username ?? null,
+        usernameNorm: data.usernameNorm ?? null
       }))
     },
     tenant: {
@@ -82,10 +93,10 @@ function makePrisma(opts: {
 }
 
 describe("normalizeCreatorUsername", () => {
-  it("lowercases and strips non-alphanumeric/underscore", () => {
+  it("lowercases and keeps valid Relay username punctuation", () => {
     expect(normalizeCreatorUsername("Hello_World123")).toBe("hello_world123");
-    expect(normalizeCreatorUsername("  MixedCase!  ")).toBe("mixedcase");
-    expect(normalizeCreatorUsername("a-b-c")).toBe("abc");
+    expect(normalizeCreatorUsername("  @Mixed-Case!  ")).toBe("mixed-case!");
+    expect(normalizeCreatorUsername("a-b-c")).toBe("a-b-c");
   });
 });
 
@@ -105,9 +116,9 @@ describe("validateCreatorUsernameFormat", () => {
     if (!r.ok) expect(r.message).toMatch(/reserved/i);
   });
 
-  it("rejects hyphens (only underscores allowed)", () => {
+  it("accepts hyphens", () => {
     const r = validateCreatorUsernameFormat("my-name");
-    expect(r.ok).toBe(false);
+    expect(r.ok).toBe(true);
   });
 });
 
@@ -235,14 +246,15 @@ describe("patchCreatorIdentity", () => {
     if (!result.ok) expect(result.code).toBe("CONFLICT");
   });
 
-  it("allows clearing username to null", async () => {
+  it("rejects clearing username to null", async () => {
     const prisma = makePrisma({
       profile: makeProfile({ username: "old_name", usernameNorm: "old_name" })
     });
     const result = await patchCreatorIdentity(prisma as never, "acc_1", {
       username: null
     });
-    expect(result.ok).toBe(true);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.code).toBe("VALIDATION_ERROR");
   });
 
   it("succeeds with valid fields", async () => {

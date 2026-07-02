@@ -59,6 +59,9 @@ export type PilotUxSeedSpec = {
     followRelayCreatorIds: string[];
     entitlements: PilotUxSeedPatronEntitlement[];
   };
+  patronOnboarding?: {
+    accountKey: string;
+  };
 };
 
 const MIME_BY_MEDIA: Record<PilotUxSeedPost["mediaType"], string> = {
@@ -118,7 +121,14 @@ export function validatePilotUxSeedSpec(spec: unknown): string[] {
   }
 
   const accountKeys = new Set(Object.keys(s.accounts));
-  for (const key of ["creatorAva", "creatorMilo", "creatorOnboarding", "patronRiley"] as const) {
+  for (const key of [
+    "creatorAva",
+    "creatorMilo",
+    "creatorOnboarding",
+    "creatorQuinn",
+    "patronRiley",
+    "patronOnboarding"
+  ] as const) {
     if (!accountKeys.has(key)) {
       errors.push(`accounts.${key} required`);
     }
@@ -172,6 +182,12 @@ export function validatePilotUxSeedSpec(spec: unknown): string[] {
           );
         }
       }
+    }
+  }
+
+  if (s.patronOnboarding) {
+    if (!accountKeys.has(s.patronOnboarding.accountKey)) {
+      errors.push(`patronOnboarding: unknown accountKey ${s.patronOnboarding.accountKey}`);
     }
   }
 

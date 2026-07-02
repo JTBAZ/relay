@@ -1,5 +1,5 @@
 /**
- * P5a-ins-010 — Patreon Insights CSV “stale” banner threshold for /analytics.
+ * P5a-ins-010 — Patreon Insights CSV “stale” banner threshold for /studio/analytics.
  */
 const DEFAULT_STALE_DAYS = 14;
 

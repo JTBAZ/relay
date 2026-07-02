@@ -290,6 +290,7 @@ export function buildGalleryItems(
         published_at: postRow.current.published_at,
         tag_ids: tags,
         tier_ids: [...postRow.current.tier_ids],
+        is_public: postRow.is_public === true,
         mime_type: m.current.mime_type,
         media_role: m.current.role,
         has_export: hasExport,
@@ -330,6 +331,7 @@ export function buildGalleryItems(
           overrides
         ),
         tier_ids: [...postRow.current.tier_ids],
+        is_public: postRow.is_public === true,
         mime_type: undefined,
         has_export: false,
         processing_status: "READY",

@@ -16,6 +16,15 @@ describe("presentationPatchTouches", () => {
 });
 
 describe("derivePresentationUpsertFragments", () => {
+  it("sanitizes relay_description HTML on write", () => {
+    const f = derivePresentationUpsertFragments(
+      { relay_description: '<p>ok</p><script>alert(1)</script>' },
+      presentationPatchTouches({ relay_description: '<p>ok</p><script>alert(1)</script>' })
+    );
+    expect(f.relayDescription).toBe("<p>ok</p>");
+    expect(f.relayDescription).not.toMatch(/script/i);
+  });
+
   it("parses relay_title clears to null when empty string", () => {
     const f = derivePresentationUpsertFragments(
       { relay_title: "" },

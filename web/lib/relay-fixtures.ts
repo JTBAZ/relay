@@ -35,7 +35,7 @@ export interface Creator {
 export interface FeedPost {
   id: string;
   kind: FeedItemKind;
-  /** P6-patron-003 — from API (`GET /api/v1/patron/feed`). Falls back to `kind` in the UI when missing. */
+  /** P6-patron-003 — from API (`GET /api/v1/patron/relay_feed`). Falls back to `kind` in the UI when missing. */
   feed_item_source?: PatronFeedItemSource;
   creator: Creator;
   title: string;
@@ -51,6 +51,15 @@ export interface FeedPost {
   highResImageUrl?: string; // Playback URL: full export `/content`
   /** Full gallery set — when multiple URLs, zoom shows a stacked deck (wheel to cycle). */
   galleryImageUrls?: string[];
+  /** Primary media id for media-level actions like Snip. Favorite remains post-level. */
+  primaryMediaId?: string;
+  /** Media-level payload preserving the id for each image/page in a multi-media post. */
+  mediaItems?: Array<{
+    mediaId: string;
+    url?: string;
+    previewUrl?: string;
+    mimeType?: string | null;
+  }>;
   publishedAt: string;
   readTimeLabel?: string;
   likeCount: number;
@@ -523,22 +532,35 @@ export function sortFollowedForSidebar(creators: Creator[]): Creator[] {
 export function mapPatronFollowApiItemToCreator(item: {
   relay_creator_id: string;
   created_at: string;
+  creator?: {
+    display_name: string;
+    handle: string;
+    public_slug: string | null;
+    avatar_url: string | null;
+    discipline: string | null;
+  };
+  entitlement?: {
+    tier_label: string;
+  };
 }): Creator {
   const id = item.relay_creator_id.trim();
   const short =
     id.length > 14 ? `${id.slice(0, 8)}…${id.slice(-4)}` : id || "creator";
   const handleBase = short.replace(/[^a-zA-Z0-9_]/g, "_").replace(/_+/g, "_");
+  const handle = item.creator?.handle?.trim() || (handleBase || "creator").slice(0, 32);
+  const displayName = item.creator?.display_name?.trim() || short;
+  const avatarUrl = item.creator?.avatar_url?.trim() || "/placeholder.svg?height=40&width=40";
   return {
     id,
-    handle: (handleBase || "creator").slice(0, 32),
-    displayName: short,
-    discipline: "",
-    avatarUrl: "/placeholder.svg?height=40&width=40",
+    handle,
+    displayName,
+    discipline: item.creator?.discipline?.trim() || "",
+    avatarUrl,
     isFollowed: true,
     followerCount: 0,
     postCount: 0,
     onRelay: true,
-    patronTierLabel: "Free"
+    patronTierLabel: (item.entitlement?.tier_label?.trim() as TierLabel | undefined) ?? "Free"
   };
 }
 
@@ -768,7 +790,7 @@ export const NOTIFICATIONS: Notification[] = [
 
 export type PatronFeedDataSource = "fixtures" | "live";
 
-/** Shape returned by `GET /api/v1/patron/relay_feed` and `GET /api/v1/patron/feed` (see `patron-feed-api.ts`). */
+/** Shape returned by `GET /api/v1/patron/relay_feed` and `GET /api/v1/patron/relay_feed` (see `patron-feed-api.ts`). */
 export interface PatronFeedBundle {
   feedPosts: FeedPost[];
   lockedPosts?: LockedFeedPost[];

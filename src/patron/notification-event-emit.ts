@@ -99,6 +99,36 @@ export async function emitCommentCreatedEvent(
   });
 }
 
+/** Comment @mention -- producer resolves the recipient membership before emitting. */
+export async function emitCommentMentionedEvent(
+  prisma: PrismaClient,
+  args: {
+    commentId: string;
+    relayCreatorId: string;
+    postId: string;
+    recipientMembershipId: string;
+    authorMembershipId: string;
+    mentionedHandle: string;
+    targetKind: string;
+  }
+): Promise<void> {
+  await emitNotificationOutboxEvent(prisma, {
+    eventName: PEG_EVENT_NAMES.COMMENT_MENTIONED,
+    tenantId: args.relayCreatorId,
+    primaryId: `${args.commentId}:${args.recipientMembershipId}`,
+    producer: "comment-service",
+    payload: {
+      comment_id: args.commentId,
+      relay_creator_id: args.relayCreatorId,
+      post_id: args.postId,
+      recipient_membership_id: args.recipientMembershipId,
+      author_membership_id: args.authorMembershipId,
+      mentioned_handle: args.mentionedHandle,
+      target_kind: args.targetKind
+    }
+  });
+}
+
 /** Reaction toggled ON -- mapper notifies the comment author. Toggling OFF is silent. */
 export async function emitCommentReactionAddedEvent(
   prisma: PrismaClient,
@@ -137,6 +167,87 @@ export async function emitAccountFollowCreatedEvent(
     payload: {
       follower_account_id: args.followerAccountId,
       followed_account_id: args.followedAccountId
+    }
+  });
+}
+
+/** New post published — instant in-app alerts for followers not on digest mode. */
+export async function emitPostPublishedEvent(
+  prisma: PrismaClient,
+  args: {
+    postId: string;
+    relayCreatorId: string;
+    title?: string | null;
+    publishedAt?: Date;
+  }
+): Promise<void> {
+  const occurredAt = args.publishedAt ?? new Date();
+  await emitNotificationOutboxEvent(prisma, {
+    eventName: PEG_EVENT_NAMES.POST_PUBLISHED,
+    tenantId: args.relayCreatorId,
+    primaryId: args.postId,
+    producer: "post-publish",
+    occurredAt,
+    payload: {
+      post_id: args.postId,
+      relay_creator_id: args.relayCreatorId,
+      title: args.title ?? null,
+      published_at: occurredAt.toISOString()
+    }
+  });
+}
+
+/** Patron starred a post or media item — creator inbox alert. */
+export async function emitPatronFavoriteAddedEvent(
+  prisma: PrismaClient,
+  args: {
+    relayCreatorId: string;
+    targetKind: "post" | "media";
+    targetId: string;
+    postId?: string | null;
+    actorAccountId: string;
+    actorMembershipId: string;
+  }
+): Promise<void> {
+  await emitNotificationOutboxEvent(prisma, {
+    eventName: PEG_EVENT_NAMES.PATRON_FAVORITE_ADDED,
+    tenantId: args.relayCreatorId,
+    primaryId: `${args.actorMembershipId}:${args.targetKind}:${args.targetId}`,
+    producer: "patron-favorites",
+    payload: {
+      relay_creator_id: args.relayCreatorId,
+      target_kind: args.targetKind,
+      target_id: args.targetId,
+      post_id: args.postId ?? null,
+      actor_account_id: args.actorAccountId,
+      actor_membership_id: args.actorMembershipId
+    }
+  });
+}
+
+/** Patron saved media to a snip collection — creator inbox alert. */
+export async function emitPatronCollectionEntryAddedEvent(
+  prisma: PrismaClient,
+  args: {
+    relayCreatorId: string;
+    collectionId: string;
+    entryId: string;
+    postId: string;
+    mediaId: string;
+    actorMembershipId: string;
+  }
+): Promise<void> {
+  await emitNotificationOutboxEvent(prisma, {
+    eventName: PEG_EVENT_NAMES.PATRON_COLLECTION_ENTRY_ADDED,
+    tenantId: args.relayCreatorId,
+    primaryId: args.entryId,
+    producer: "patron-collections",
+    payload: {
+      relay_creator_id: args.relayCreatorId,
+      collection_id: args.collectionId,
+      post_id: args.postId,
+      media_id: args.mediaId,
+      actor_membership_id: args.actorMembershipId
     }
   });
 }

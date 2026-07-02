@@ -29,8 +29,10 @@ import {
   startPatronEntitlementStaleRefreshWorker
 } from "./patron/patron-entitlement-stale-worker.js";
 import { startNotificationDeliveryWorker } from "./patron/notification-delivery-worker.js";
+import { startNotificationDigestWorker } from "./patron/notification-digest-worker.js";
 import { startAccountDeletionWorker } from "./patron/account-deletion-worker.js";
 import { startMediaStoragePurgeWorker } from "./storage/media-storage-purge-worker.js";
+import { startPostingGoalNudgeWorker } from "./autopost/posting-goal-nudge-worker.js";
 import {
   subscribeStarGraphqlIngestAutosyncRepeatEveryMsFromEnv,
   startSubscribeStarGraphqlIngestAutosyncTimer
@@ -170,6 +172,13 @@ export async function runRelayWorkerProcess(
         })
       : null;
 
+  const notificationDigestRunner =
+    jobBackend === "memory" && prisma
+      ? startNotificationDigestWorker(prisma, (msg, ctx) => {
+          log.warn({ ...(ctx ?? {}), relayMsg: msg }, "Relay worker");
+        })
+      : null;
+
   const accountDeletionRunner =
     jobBackend === "memory" && prisma
       ? startAccountDeletionWorker(prisma, (msg, ctx) => {
@@ -180,6 +189,13 @@ export async function runRelayWorkerProcess(
   const mediaStoragePurgeRunner =
     jobBackend === "memory" && prisma
       ? startMediaStoragePurgeWorker(prisma, (msg, ctx) => {
+          log.warn({ ...(ctx ?? {}), relayMsg: msg }, "Relay worker");
+        })
+      : null;
+
+  const postingGoalNudgeRunner =
+    jobBackend === "memory" && prisma
+      ? startPostingGoalNudgeWorker(prisma, (msg, ctx) => {
           log.warn({ ...(ctx ?? {}), relayMsg: msg }, "Relay worker");
         })
       : null;
@@ -218,8 +234,10 @@ export async function runRelayWorkerProcess(
   async function awaitMemoryDeliveryRunnersStopped(): Promise<void> {
     const pending = [
       notificationRunner?.stop(),
+      notificationDigestRunner?.stop(),
       accountDeletionRunner?.stop(),
-      mediaStoragePurgeRunner?.stop()
+      mediaStoragePurgeRunner?.stop(),
+      postingGoalNudgeRunner?.stop()
     ].filter((p): p is Promise<void> => p !== undefined);
     await Promise.all(pending);
   }

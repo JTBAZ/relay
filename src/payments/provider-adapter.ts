@@ -1,6 +1,10 @@
 /**
  * @fileoverview Stripe and PayPal checkout adapters with stubbed live charge paths and lightweight validation.
  * @description `processCheckout` returns synthetic success in non-dry-run paths (real gateway calls not implemented here). Webhook signature checks are partial stubs.
+ * @security-review 2026-06 [R-SEC-07 High] Do NOT enable live payments until real Stripe `constructEvent` /
+ *   PayPal webhook verification and real gateway sessions ship; PayPal `verifyWebhookSignature` returns true
+ *   and "live" checkout returns success without charging. Also require auth + idempotency + rate limits on
+ *   checkout. See docs/security-review-2026-06.md.
  * @see {@link ../jsdoc-core-entities.ts}
  * @see prisma/schema.prisma Checkout rows written via `PaymentStore.appendCheckout`, not this module
  */

@@ -12,6 +12,7 @@ function record(over: Record<string, unknown> = {}) {
   return {
     id: "n1",
     recipientMembershipId: "m1",
+    recipientCreatorAccountId: null,
     relayCreatorId: "c1",
     kind: "comment_liked" as const,
     payloadJson: { foo: "bar" },
@@ -150,7 +151,19 @@ describe("listNotifications + markRead + markAllRead + unreadCount", () => {
     });
     const args = findMany.mock.calls[0][0];
     expect(args.where).toEqual({ recipientMembershipId: "m1", readAt: null });
-    expect(args.take).toBe(101); // MAX_LIMIT (100) + 1 for next-cursor lookahead
+    expect(args.take).toBe(101);
+  });
+
+  it("listNotifications merges patron + creator lanes when creator account is set", async () => {
+    const findMany = vi.fn().mockResolvedValue([]);
+    const prisma = { notification: { findMany } } as never;
+    await listNotifications(prisma, {
+      recipientMembershipId: "m1",
+      recipientCreatorAccountId: "acc-creator"
+    });
+    expect(findMany.mock.calls[0][0].where).toEqual({
+      OR: [{ recipientMembershipId: "m1" }, { recipientCreatorAccountId: "acc-creator" }]
+    });
   });
 
   it("listNotifications returns nextCursor when result exceeds limit", async () => {
@@ -193,7 +206,7 @@ describe("listNotifications + markRead + markAllRead + unreadCount", () => {
   it("markAllRead writes readAt for all recipient unread rows", async () => {
     const updateMany = vi.fn().mockResolvedValue({ count: 5 });
     const prisma = { notification: { updateMany } } as never;
-    const out = await markAllRead(prisma, "m1");
+    const out = await markAllRead(prisma, { recipientMembershipId: "m1" });
     expect(out.updatedCount).toBe(5);
     expect(updateMany.mock.calls[0][0].where).toEqual({
       recipientMembershipId: "m1",
@@ -204,7 +217,7 @@ describe("listNotifications + markRead + markAllRead + unreadCount", () => {
   it("unreadCount queries notifications with readAt: null for the recipient", async () => {
     const count = vi.fn().mockResolvedValue(7);
     const prisma = { notification: { count } } as never;
-    expect(await unreadCount(prisma, "m1")).toBe(7);
+    expect(await unreadCount(prisma, { recipientMembershipId: "m1" })).toBe(7);
     expect(count.mock.calls[0][0].where).toEqual({
       recipientMembershipId: "m1",
       readAt: null

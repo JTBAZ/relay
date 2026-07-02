@@ -122,3 +122,53 @@ button:focus-visible {
   color: var(--danger);
   font-size: 0.9rem;
 }
+
+.relay-post-link {
+  margin: 12px 0 4px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--bg) 88%, var(--accent) 12%);
+}
+
+.relay-post-link__lead {
+  margin: 0 0 8px;
+  font-size: 0.85rem;
+}
+
+.relay-post-link__input {
+  width: 100%;
+  margin-bottom: 8px;
+  padding: 7px 10px;
+  font: inherit;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--fg);
+}
+
+.relay-post-link__input:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 1px;
+}
+
+.relay-post-link__actions {
+  display: flex;
+  gap: 8px;
+}
+
+.relay-post-link__btn {
+  flex: 1;
+}
+
+.relay-post-link__dismiss {
+  flex: 0 0 auto;
+  background: transparent;
+  color: var(--muted);
+  border-color: var(--border);
+}
+
+.relay-post-link__feedback {
+  margin: 8px 0 0;
+  font-size: 0.8rem;
+}

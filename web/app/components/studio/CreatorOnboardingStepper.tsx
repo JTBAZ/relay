@@ -187,7 +187,7 @@ export default function CreatorOnboardingStepper({
             <>
               {STEP_COPY.connected.hint}{" "}
               <Link
-                href="/creator/connect"
+                href="/connect/creator"
                 className="font-medium text-[var(--lib-primary)] underline-offset-2 hover:underline"
               >
                 Open Patreon connect

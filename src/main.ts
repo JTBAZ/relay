@@ -34,8 +34,10 @@ import {
   startPatronEntitlementStaleRefreshWorker
 } from "./patron/patron-entitlement-stale-worker.js";
 import { startNotificationDeliveryWorker } from "./patron/notification-delivery-worker.js";
+import { startNotificationDigestWorker } from "./patron/notification-digest-worker.js";
 import { startAccountDeletionWorker } from "./patron/account-deletion-worker.js";
 import { startMediaStoragePurgeWorker } from "./storage/media-storage-purge-worker.js";
+import { startPostingGoalNudgeWorker } from "./autopost/posting-goal-nudge-worker.js";
 import {
   subscribeStarGraphqlIngestAutosyncRepeatEveryMsFromEnv,
   startSubscribeStarGraphqlIngestAutosyncTimer
@@ -221,6 +223,13 @@ const notificationRunner =
     })
   : null;
 
+const notificationDigestRunner =
+  jobBackend === "memory" && startInProcessBackgroundWork && prisma
+  ? startNotificationDigestWorker(prisma, (msg, ctx) => {
+      log.warn({ ...(ctx ?? {}), relayMsg: msg }, "Relay");
+    })
+  : null;
+
 // PE-J (BO-P4-02) — account deletion sweeper. Periodically executes pending deletions whose
 // grace period (default 7 days, RELAY_ACCOUNT_DELETION_GRACE_DAYS) has elapsed. Disable
 // with RELAY_ACCOUNT_DELETION_SWEEP_MS=0; defaults to 1h otherwise.
@@ -248,6 +257,13 @@ const accountDeletionRunner =
 const mediaStoragePurgeRunner =
   jobBackend === "memory" && startInProcessBackgroundWork && prisma
   ? startMediaStoragePurgeWorker(prisma, (msg, ctx) => {
+      log.warn({ ...(ctx ?? {}), relayMsg: msg }, "Relay");
+    })
+  : null;
+
+const postingGoalNudgeRunner =
+  jobBackend === "memory" && startInProcessBackgroundWork && prisma
+  ? startPostingGoalNudgeWorker(prisma, (msg, ctx) => {
       log.warn({ ...(ctx ?? {}), relayMsg: msg }, "Relay");
     })
   : null;
@@ -333,8 +349,10 @@ function relayBgLog(msg: string, ctx?: Record<string, unknown>) {
 async function awaitMemoryDeliveryRunnersStopped(): Promise<void> {
   const pending = [
     notificationRunner?.stop(),
+    notificationDigestRunner?.stop(),
     accountDeletionRunner?.stop(),
-    mediaStoragePurgeRunner?.stop()
+    mediaStoragePurgeRunner?.stop(),
+    postingGoalNudgeRunner?.stop()
   ].filter((p): p is Promise<void> => p !== undefined);
   await Promise.all(pending);
 }

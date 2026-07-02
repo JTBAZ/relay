@@ -7,9 +7,9 @@
 /**
  * PE-K Rest (BO-P4-04) — public patron profile lookup.
  *
- * Resolves a `/p/[handle]` request into a public-safe payload. The lookup is keyed on
- * `PatronProfile.handleNorm` (canonical lowercase form of the handle) and returns null when:
- *   - The handle doesn't exist in any profile row.
+ * Resolves a `/p/[handle]` request into a public-safe payload. The lookup is keyed on the
+ * account-level Relay username and returns null when:
+ *   - The username doesn't exist in any account row.
  *   - The matching profile has `isPublic = false`.
  *
  * Returning null in BOTH cases is intentional: it prevents handle enumeration. A drive-by
@@ -30,7 +30,7 @@
 
 import type { PrismaClient } from "@prisma/client";
 
-import { normalizePatronHandle } from "./patron-handle-policy.js";
+import { normalizeRelayUsername } from "../identity/relay-username-service.js";
 
 export interface PublicPatronProfileView {
   handle: string;
@@ -53,10 +53,10 @@ export async function getPublicPatronProfileByHandle(
   prisma: PrismaClient,
   rawHandle: string
 ): Promise<PublicPatronProfileView | null> {
-  const handleNorm = normalizePatronHandle(rawHandle);
+  const handleNorm = normalizeRelayUsername(rawHandle);
   if (!handleNorm) return null;
-  const profile = await prisma.patronProfile.findUnique({
-    where: { handleNorm },
+  const profile = await prisma.patronProfile.findFirst({
+    where: { isPublic: true, tenantMembership: { account: { usernameNorm: handleNorm } } },
     select: {
       tenantMembershipId: true,
       handle: true,
@@ -64,10 +64,14 @@ export async function getPublicPatronProfileByHandle(
       bio: true,
       avatarUrl: true,
       bannerUrl: true,
-      isPublic: true
+      isPublic: true,
+      tenantMembership: {
+        select: { account: { select: { username: true } } }
+      }
     }
   });
-  if (!profile || !profile.isPublic || !profile.handle) {
+  const handle = profile?.tenantMembership.account.username ?? profile?.handle ?? null;
+  if (!profile || !handle) {
     // Same null for "private" and "not found" -- enumeration resistance.
     return null;
   }
@@ -90,7 +94,7 @@ export async function getPublicPatronProfileByHandle(
   });
 
   return {
-    handle: profile.handle,
+    handle,
     display_name: profile.displayName,
     bio: profile.bio,
     avatar_url: profile.avatarUrl,

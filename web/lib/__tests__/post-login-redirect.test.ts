@@ -20,13 +20,13 @@ describe("resolvePostAuthPath", () => {
   });
 
   it("accepts same-origin paths starting with single /", () => {
-    expect(resolvePostAuthPath("/designer")).toBe("/designer");
-    expect(resolvePostAuthPath("/patron/feed")).toBe("/patron/feed");
+    expect(resolvePostAuthPath("/studio/designer")).toBe("/studio/designer");
+    expect(resolvePostAuthPath("/feed")).toBe("/feed");
     expect(resolvePostAuthPath("/")).toBe("/");
   });
 
   it("preserves query strings on accepted paths", () => {
-    expect(resolvePostAuthPath("/designer?tab=layouts")).toBe("/designer?tab=layouts");
+    expect(resolvePostAuthPath("/studio/designer?tab=layouts")).toBe("/studio/designer?tab=layouts");
   });
 
   it("passes through /foo/../bar (normalization is route-layer)", () => {

@@ -31,6 +31,9 @@ const outDir =
 export default defineConfig({
   // Firefox prod uses `background.scripts` (MV3) — not in Chrome's ManifestV3 typedef.
   plugins: [crx({ manifest: loadManifest() as unknown as chrome.runtime.ManifestV3 })],
+  define: {
+    __EXT_ENV__: JSON.stringify(env)
+  },
   build: {
     outDir,
     emptyOutDir: true

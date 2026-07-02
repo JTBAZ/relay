@@ -8,7 +8,7 @@
 |-------------|--------|
 | [`web/app/layout.tsx`](../web/app/layout.tsx) | Entire app (root HTML shell). |
 | [`web/app/patron/layout.tsx`](../web/app/patron/layout.tsx) | All `/patron/*` except paths that hide nav per layout logic (`/patron`, `/patron/onboarding`, `/patron/c/*`). |
-| [`web/app/patreon/patron/layout.tsx`](../web/app/patreon/patron/layout.tsx) | `/patreon/patron/*` only. |
+| [`web/app/connect/patreon/patron/layout.tsx`](../web/app/connect/patreon/patron/layout.tsx) | `/patreon/patron/*` only. |
 | [`web/app/landing/layout.tsx`](../web/app/landing/layout.tsx) | `/landing` segment only. |
 
 ## Routes (`page.tsx` → primary user)
@@ -49,8 +49,8 @@ Primary user is the **main intended audience** for the screen. OAuth and auth ha
 | `/patreon/callback` | [`web/app/patreon/callback/page.tsx`](../web/app/patreon/callback/page.tsx) | public | Creator OAuth callback. |
 | `/patreon/connect` | [`web/app/patreon/connect/page.tsx`](../web/app/patreon/connect/page.tsx) | public | Creator connect handoff. |
 | `/patreon/cookie` | [`web/app/patreon/cookie/page.tsx`](../web/app/patreon/cookie/page.tsx) | public | Cookie / scrape handoff. |
-| `/patreon/patron/callback` | [`web/app/patreon/patron/callback/page.tsx`](../web/app/patreon/patron/callback/page.tsx) | public | Patron OAuth callback. |
-| `/patreon/patron/connect` | [`web/app/patreon/patron/connect/page.tsx`](../web/app/patreon/patron/connect/page.tsx) | public | Patron connect handoff. |
+| `/connect/patreon/patron/callback` | [`web/app/connect/patreon/patron/callback/page.tsx`](../web/app/connect/patreon/patron/callback/page.tsx) | public | Patron OAuth callback. |
+| `/connect/patreon/patron/connect` | [`web/app/connect/patreon/patron/connect/page.tsx`](../web/app/connect/patreon/patron/connect/page.tsx) | public | Patron connect handoff. |
 | `/settings/connected-extensions` | [`web/app/settings/connected-extensions/page.tsx`](../web/app/settings/connected-extensions/page.tsx) | patron | Copy links to patron profile; extensions UX. |
 | `/studio/moderation/reports` | [`web/app/studio/moderation/reports/page.tsx`](../web/app/studio/moderation/reports/page.tsx) | creator | Studio moderation. |
 | `/visitor` | [`web/app/visitor/page.tsx`](../web/app/visitor/page.tsx) | public | Visitor / gallery-style browsing. |

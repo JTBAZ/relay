@@ -18,6 +18,7 @@ import {
   X
 } from "lucide-react";
 import { dedupeShadowCoverRows, groupGalleryItemsByPost } from "@/lib/gallery-group";
+import { sanitizePostDescriptionHtml } from "@/lib/sanitize-post-html";
 import { useLayoutSectionItems } from "@/lib/use-layout-section-items";
 import {
   RELAY_API_BASE,
@@ -50,9 +51,15 @@ import SnipIcon from "@/app/components/icons/SnipIcon";
 import SnipToCollectionModal from "./SnipToCollectionModal";
 import { readGalleryVideoLoop, writeGalleryVideoLoop } from "@/lib/gallery-video-loop";
 import {
+  emitVisitorGalleryTelemetryEvent,
+  ensureVisitorSessionKey
+} from "@/lib/visitor-gallery-telemetry";
+import {
   filterGalleryItemsForVisitorLayout,
   type VisitorLayoutMediaKind
 } from "@/lib/visitor-layout-filter";
+import { fetchPatronProfileMe } from "@/lib/patron-profile-api";
+import { emitRelayInteractionTelemetryEvent } from "@/lib/relay-interaction-telemetry";
 import { useStudioSession } from "@/lib/studio-session-context";
 
 const defaultCreatorId = process.env.NEXT_PUBLIC_RELAY_CREATOR_ID?.trim() || "creator_1";
@@ -144,7 +151,8 @@ function VisitorPostModal({
   detail,
   videoLoop,
   onClose,
-  visitorPatron
+  visitorPatron,
+  onLockedPostReveal
 }: {
   item: GalleryItem;
   detail: GalleryPostDetail | null;
@@ -157,6 +165,7 @@ function VisitorPostModal({
     snippedMediaIds: Set<string>;
     onSnipRequest: (postId: string, mediaId: string) => void;
   };
+  onLockedPostReveal?: (args: { postId: string; mediaId?: string }) => void;
 }) {
   const panelRef = useRef<HTMLDivElement>(null);
 
@@ -181,6 +190,12 @@ function VisitorPostModal({
   const postFav = visitorPatron.isPostFavorited(postId);
   const snipActive = visitorPatron.snippedMediaIds.has(current.media_id);
   const engageAuthed = visitorPatron.patronAuthed;
+
+  useEffect(() => {
+    if (currentLocked) {
+      onLockedPostReveal?.({ postId, mediaId: current.media_id });
+    }
+  }, [currentLocked, current.media_id, onLockedPostReveal, postId]);
 
   const goPrev = useCallback(() => {
     setActiveIndex((i) => (i - 1 + slideCount) % slideCount);
@@ -466,7 +481,9 @@ function VisitorPostModal({
               {detail?.description ? (
                 <div
                   className="min-h-0 flex-1 overflow-y-auto rounded-md border border-[var(--lib-border)] bg-[color-mix(in_srgb,var(--lib-muted)_55%,var(--lib-card))] p-3 text-xs leading-relaxed text-[color-mix(in_srgb,var(--lib-fg)_88%,var(--lib-fg-muted))] [&_a]:text-[color-mix(in_srgb,var(--lib-selection)_80%,white)]"
-                  dangerouslySetInnerHTML={{ __html: detail.description }}
+                  dangerouslySetInnerHTML={{
+                    __html: sanitizePostDescriptionHtml(detail.description)
+                  }}
                 />
               ) : (
                 <div className="min-h-0 flex-1 rounded-md border border-[var(--lib-border)] bg-[color-mix(in_srgb,var(--lib-muted)_55%,var(--lib-card))] p-3 text-xs italic text-[var(--lib-fg-muted)]">
@@ -534,19 +551,31 @@ async function fetchAllVisitorItems(
 }
 
 export type VisitorGalleryViewProps = {
-  /** Overrides `NEXT_PUBLIC_RELAY_CREATOR_ID` (e.g. public `/patron/c/[slug]` page). */
+  /** Overrides `NEXT_PUBLIC_RELAY_CREATOR_ID` (e.g. public `/[slug]` page). */
   relayCreatorId?: string;
   /**
    * Public URL slug for this creator — used to load published layout for strangers via
-   * `GET /api/v1/public/creators/:slug/gallery-layout`. Optional on `/visitor` (may use env fallback).
+   * `GET /api/v1/public/creators/:slug/gallery-layout`. Optional on `/studio/preview` (may use env fallback).
    */
   publicSlug?: string;
+  /** Public creator profile fields resolved from `/api/v1/public/creators/:slug`. */
+  publicDisplayName?: string | null;
+  publicAvatarUrl?: string | null;
+  publicBannerUrl?: string | null;
+  publicBio?: string | null;
 };
 
 const envVisitorPublicSlug = process.env.NEXT_PUBLIC_RELAY_VISITOR_PUBLIC_SLUG?.trim() || "";
 
 export default function VisitorGalleryView(props: VisitorGalleryViewProps = {}) {
-  const { relayCreatorId: relayCreatorIdProp, publicSlug: publicSlugProp } = props;
+  const {
+    relayCreatorId: relayCreatorIdProp,
+    publicSlug: publicSlugProp,
+    publicDisplayName,
+    publicAvatarUrl,
+    publicBannerUrl,
+    publicBio
+  } = props;
   const router = useRouter();
   const { creatorId: studioCreatorId } = useStudioSession();
   const creatorId = relayCreatorIdProp?.trim() || defaultCreatorId;
@@ -600,12 +629,12 @@ export default function VisitorGalleryView(props: VisitorGalleryViewProps = {}) 
         pageLayout,
         visitorHero: facets?.visitor_hero,
         creatorId,
-        patreonBannerFallback: envVisitorBannerUrl || undefined,
-        avatarUrlFallback: envVisitorAvatarUrl || undefined,
-        displayNameFallback: envVisitorDisplayName || undefined,
-        taglineWhenHeroTextEmpty: envVisitorTagline || undefined
+        patreonBannerFallback: publicBannerUrl || envVisitorBannerUrl || undefined,
+        avatarUrlFallback: publicAvatarUrl || envVisitorAvatarUrl || undefined,
+        displayNameFallback: publicDisplayName || envVisitorDisplayName || undefined,
+        taglineWhenHeroTextEmpty: publicBio || envVisitorTagline || undefined
       }),
-    [facets?.visitor_hero, pageLayout, creatorId]
+    [facets?.visitor_hero, pageLayout, creatorId, publicAvatarUrl, publicBannerUrl, publicBio, publicDisplayName]
   );
 
   const hasLayoutSections = (pageLayout?.sections?.length ?? 0) > 0;
@@ -617,6 +646,44 @@ export default function VisitorGalleryView(props: VisitorGalleryViewProps = {}) 
     window.addEventListener("focus", read);
     return () => window.removeEventListener("focus", read);
   }, []);
+
+  useEffect(() => {
+    if (!patronAuthed || creatorIsViewingOwnGallery) {
+      return;
+    }
+    let cancelled = false;
+    void fetchPatronProfileMe({ suppressAuthRedirect: true })
+      .then((profile) => {
+        if (cancelled) return;
+        setVisitorMatureOn(!profile.hide_mature_content);
+      })
+      .catch(() => {
+        /* Keep default mature-on when profile cannot be loaded. */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [patronAuthed, creatorIsViewingOwnGallery]);
+
+  useEffect(() => {
+    if (!creatorIsViewingOwnGallery) {
+      ensureVisitorSessionKey();
+    }
+  }, [creatorIsViewingOwnGallery]);
+
+  const handleVisitorTierReveal = useCallback(
+    (args: { postId: string; mediaId?: string }) => {
+      if (creatorIsViewingOwnGallery) return;
+      emitVisitorGalleryTelemetryEvent({
+        event_name: "post_reveal",
+        creator_id: creatorId,
+        post_id: args.postId,
+        media_id: args.mediaId,
+        surface: "visitor_tier_gate"
+      });
+    },
+    [creatorId, creatorIsViewingOwnGallery]
+  );
 
   const reloadPatronData = useCallback(async () => {
     if (!patronAuthed) {
@@ -665,6 +732,14 @@ export default function VisitorGalleryView(props: VisitorGalleryViewProps = {}) 
       try {
         if (favorited) {
           await addPatronFavorite({ creatorId, targetKind: "post", targetId: postId });
+          emitRelayInteractionTelemetryEvent({
+            event_name: "favorite_created",
+            surface: "public_gallery",
+            creator_id: creatorId,
+            post_id: postId,
+            target_kind: "post",
+            target_id: postId
+          });
         } else {
           await removePatronFavorite({ creatorId, targetKind: "post", targetId: postId });
         }
@@ -690,7 +765,15 @@ export default function VisitorGalleryView(props: VisitorGalleryViewProps = {}) 
         postFavoriteKeys.has(patronFavoriteKey("post", postId)),
       onTogglePostStar: (postId: string, favorited: boolean) => {
         if (!patronAuthed) {
-          router.push("/patreon/patron/connect");
+          emitRelayInteractionTelemetryEvent({
+            event_name: "cta_clicked",
+            surface: "public_gallery",
+            creator_id: creatorId,
+            post_id: postId,
+            interaction: "connect_patreon_for_favorite",
+            target: "connect_patreon"
+          });
+          router.push("/connect/patreon/patron/connect");
           return;
         }
         void handlePostStarToggle(postId, favorited);
@@ -698,13 +781,22 @@ export default function VisitorGalleryView(props: VisitorGalleryViewProps = {}) 
       snippedMediaIds: patronAuthed ? snippedMediaIds : EMPTY_SNIP_IDS,
       onSnipRequest: (postId: string, mediaId: string) => {
         if (!patronAuthed) {
-          router.push("/patreon/patron/connect");
+          emitRelayInteractionTelemetryEvent({
+            event_name: "cta_clicked",
+            surface: "public_gallery",
+            creator_id: creatorId,
+            post_id: postId,
+            media_id: mediaId,
+            interaction: "connect_patreon_for_snip",
+            target: "connect_patreon"
+          });
+          router.push("/connect/patreon/patron/connect");
           return;
         }
         setSnipTarget({ postId, mediaId });
       }
     }),
-    [patronAuthed, postFavoriteKeys, snippedMediaIds, handlePostStarToggle, router]
+    [creatorId, patronAuthed, postFavoriteKeys, snippedMediaIds, handlePostStarToggle, router]
   );
 
   const tierSimKey =
@@ -1065,7 +1157,7 @@ export default function VisitorGalleryView(props: VisitorGalleryViewProps = {}) 
         {patronAuthed ? (
           <div className="mt-4 flex flex-wrap items-center justify-center gap-3">
             <Link
-              href="/visitor/favorites"
+              href="/studio/preview/favorites"
               className="inline-flex rounded-full border border-[var(--lib-border)] px-4 py-2 text-[11px] font-medium text-[var(--lib-fg-muted)] transition hover:border-[color-mix(in_srgb,var(--lib-selection)_40%,var(--lib-border))] hover:text-[var(--lib-fg)]"
             >
               Saved
@@ -1392,6 +1484,7 @@ export default function VisitorGalleryView(props: VisitorGalleryViewProps = {}) 
             membershipUrl={publicHeroModel.patreonProfileHref}
             accentColor={pageLayout.theme.accent_color?.trim() || "#00aa6f"}
             patronEngagement={visitorEngagement}
+            onVisitorTierReveal={handleVisitorTierReveal}
           />
         ) : loading ? (
           <p className="text-sm text-[var(--lib-fg-muted)]">Loading gallery…</p>
@@ -1438,6 +1531,7 @@ export default function VisitorGalleryView(props: VisitorGalleryViewProps = {}) 
                 }
                 onFocusIndex={() => {}}
                 onInspect={(item) => void openModal(item)}
+                onVisitorTierReveal={handleVisitorTierReveal}
               />
             ))}
           </div>
@@ -1481,6 +1575,7 @@ export default function VisitorGalleryView(props: VisitorGalleryViewProps = {}) 
           detail={modalDetail}
           videoLoop={videoLoop}
           visitorPatron={visitorEngagement}
+          onLockedPostReveal={handleVisitorTierReveal}
           onClose={() => {
             setModalItem(null);
             setModalDetail(null);

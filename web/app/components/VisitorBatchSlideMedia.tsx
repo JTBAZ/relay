@@ -63,6 +63,7 @@ export type VisitorBatchSlideMediaProps = {
   lockedOverlayVariant?: VisitorTierGateOverlayVariant;
   visitorPatronStar?: VisitorPatronTileStarProps;
   visitorPatronSnip?: VisitorPatronTileSnipProps;
+  onVisitorTierReveal?: (args: { postId: string; mediaId?: string }) => void;
 };
 
 /**
@@ -83,7 +84,8 @@ export function VisitorBatchSlideMedia({
   accentColor = "#00aa6f",
   lockedOverlayVariant = "blurred",
   visitorPatronStar,
-  visitorPatronSnip
+  visitorPatronSnip,
+  onVisitorTierReveal
 }: VisitorBatchSlideMediaProps) {
   const n = items.length;
   const [carouselIdx, setCarouselIdx] = useState(0);
@@ -153,6 +155,12 @@ export function VisitorBatchSlideMedia({
               accentColor={accentColor}
               membershipUrl={patronMembershipUrl}
               variant={lockedOverlayVariant}
+              onUpgradeClick={() =>
+                onVisitorTierReveal?.({
+                  postId: current.post_id,
+                  mediaId: current.media_id
+                })
+              }
             />
           </div>
         ) : (
@@ -177,8 +185,9 @@ export function VisitorBatchSlideMedia({
               ? item.content_url_path
                 ? `${RELAY_API_BASE}${item.content_url_path}`
                 : ""
-              : galleryItemImageGridSrc(item) ??
-                (item.content_url_path ? `${RELAY_API_BASE}${item.content_url_path}` : "");
+              : item.content_url_path
+                ? `${RELAY_API_BASE}${item.content_url_path}`
+                : galleryItemImageGridSrc(item) ?? "";
 
               if (locked) {
                 return visitorMediaTierGateLocked(item) ? (
@@ -201,6 +210,12 @@ export function VisitorBatchSlideMedia({
                       accentColor={accentColor}
                       membershipUrl={patronMembershipUrl}
                       variant={lockedOverlayVariant}
+                      onUpgradeClick={() =>
+                        onVisitorTierReveal?.({
+                          postId: item.post_id,
+                          mediaId: item.media_id
+                        })
+                      }
                     />
                   </div>
                 ) : (

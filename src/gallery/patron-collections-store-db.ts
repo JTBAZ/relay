@@ -10,6 +10,7 @@ import type {
   PatronCollectionEntryRecord,
   PatronCollectionRecord
 } from "./types.js";
+import { emitPatronCollectionEntryAddedEvent } from "../patron/notification-event-emit.js";
 
 /**
  * @description Maps patron saved collection row to wire {@link PatronCollectionRecord}.
@@ -97,6 +98,37 @@ export class DbPatronCollectionsStore {
       ...colRowToRecord(c),
       entries: byCol.get(c.id) ?? []
     }));
+  }
+
+  /** Owner-scoped collection detail for authenticated account (any patron membership). */
+  public async getCollectionWithEntriesForAccount(
+    accountId: string,
+    collectionId: string
+  ): Promise<
+    (PatronCollectionRecord & { entries: PatronCollectionEntryRecord[] }) | null
+  > {
+    const memberships = await this.prisma.tenantMembership.findMany({
+      where: { accountId },
+      select: { id: true }
+    });
+    if (memberships.length === 0) {
+      return null;
+    }
+    const membershipIds = memberships.map((m) => m.id);
+    const col = await this.prisma.patronSavedCollection.findFirst({
+      where: { id: collectionId, patronMembershipId: { in: membershipIds } }
+    });
+    if (!col) {
+      return null;
+    }
+    const entries = await this.prisma.patronSavedCollectionEntry.findMany({
+      where: { collectionId, patronMembershipId: { in: membershipIds } },
+      orderBy: { createdAt: "desc" }
+    });
+    return {
+      ...colRowToRecord(col),
+      entries: entries.map(entryRowToRecord)
+    };
   }
 
   /**
@@ -259,6 +291,14 @@ export class DbPatronCollectionsStore {
     await this.prisma.patronSavedCollection.update({
       where: { id: collectionId },
       data: { updatedAt: now }
+    });
+    await emitPatronCollectionEntryAddedEvent(this.prisma, {
+      relayCreatorId: creatorId,
+      collectionId,
+      entryId: row.id,
+      postId,
+      mediaId,
+      actorMembershipId: userId
     });
     return entryRowToRecord(row);
   }

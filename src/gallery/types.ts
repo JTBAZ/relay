@@ -29,6 +29,8 @@ export type GalleryItem = {
   published_at: string;
   tag_ids: string[];
   tier_ids: string[];
+  /** True when the source post is readable without patron tier membership. */
+  is_public?: boolean;
   mime_type?: string;
   media_role?: string;
   has_export: boolean;
@@ -58,6 +60,28 @@ export type GalleryItem = {
    * When true, UI may hide this row by default; it remains in API/search for recovery.
    */
   shadow_cover?: boolean;
+  /** Creator library: cross-post status per destination (owner list only). */
+  distribution_summary?: {
+    post_id: string;
+    destinations: Array<{
+      destination: string;
+      variant_status: string | null;
+      attempt_status: string | null;
+      attempt_id: string | null;
+      external_url: string | null;
+      external_id: string | null;
+    }>;
+  };
+  /** Creator library: linked platform instances when `include_instances=true` (owner list only). */
+  platform_instances?: Array<{
+    platform_instance_id: string;
+    destination: string;
+    external_url: string | null;
+    status: string;
+    last_refreshed_at: string | null;
+    variant_role: string;
+    refresh_eligible: boolean;
+  }>;
 };
 
 /**

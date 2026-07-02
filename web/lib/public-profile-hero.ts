@@ -11,7 +11,7 @@ export type PublicProfileHeroPatreonLinkPosition = "below_avatar" | "below_bio";
  * Plain data for the shared Designer + public hero shell (no designer-mock types).
  *
  * **Avatar (WYSIWYG):** `showAvatar` is always true — the UI shows a placeholder disk when
- * `avatarUrl` is missing so layout matches between Designer and `/patron/c/*`.
+ * `avatarUrl` is missing so layout matches between Designer and `/*`.
  *
  * **Cover:** `showCover` mirrors public behavior: `hero.show_cover === false` hides the strip;
  * when omitted, the strip is allowed and resolves export URL → Patreon banner (see builder).

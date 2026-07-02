@@ -29,7 +29,7 @@ import { LIBRARY_CREATE_POST_PUBLIC_TIER } from "@/lib/audience-access-tier-diff
 
 export { LIBRARY_CREATE_POST_PUBLIC_TIER };
 
-/** Library modal compose draft (UI state; Discord ids flow to `/new-post?media_ids=`). */
+/** Library modal compose draft (UI state; Discord ids flow to `/studio/new-post?media_ids=`). */
 export type PostDraft = {
   title: string;
   tags: string[];

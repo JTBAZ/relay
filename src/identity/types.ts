@@ -22,6 +22,8 @@ export type UserAccount = {
   user_id: string;
   creator_id: string;
   email: string;
+  username?: string | null;
+  username_norm?: string | null;
   password_hash: string;
   auth_provider: AuthProvider;
   patreon_user_id?: string;

@@ -10,6 +10,8 @@ export type CreatorTierCatalogMultiselectProps = {
   disabled?: boolean;
   /** When true, resolve campaign from the full catalog (public posts). */
   isPublic?: boolean;
+  /** Switch between public gallery visibility and tier-gated access. */
+  onPublicChange?: (isPublic: boolean) => void;
   /** Fires when compose tiers imply an unambiguous `campaign_id` for create-post. */
   onCampaignChange?: (campaignId: string | undefined) => void;
   /** Optional: associate with a heading for a11y */
@@ -35,10 +37,12 @@ export function CreatorTierCatalogMultiselect({
   onChange,
   disabled = false,
   isPublic = false,
+  onPublicChange,
   onCampaignChange,
   "aria-labelledby": ariaLabelledBy
 }: CreatorTierCatalogMultiselectProps) {
   const baseId = useId();
+  const publicId = `${baseId}-public`;
   const [tiers, setTiers] = useState<TierFacet[] | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -96,10 +100,53 @@ export function CreatorTierCatalogMultiselect({
       if (value.includes(tierId)) {
         onChange(value.filter((x) => x !== tierId));
       } else {
+        onPublicChange?.(false);
         onChange([...value, tierId]);
       }
     },
-    [value, onChange]
+    [value, onChange, onPublicChange]
+  );
+
+  const selectPublic = useCallback(() => {
+    onPublicChange?.(true);
+    onChange([]);
+  }, [onChange, onPublicChange]);
+
+  const selectTierOnly = useCallback(() => {
+    onPublicChange?.(false);
+  }, [onPublicChange]);
+
+  const publicCardClass = isPublic
+    ? "border-[var(--lib-primary)] bg-[color-mix(in_srgb,var(--lib-primary)_14%,transparent)]"
+    : "border-[var(--lib-border)] bg-[var(--lib-input)] hover:border-[color-mix(in_srgb,var(--lib-primary)_35%,var(--lib-border))] hover:bg-[var(--lib-muted)]/30";
+
+  const tierCardClass = (checked: boolean) =>
+    checked
+      ? "border-[var(--lib-primary)] bg-[color-mix(in_srgb,var(--lib-primary)_12%,transparent)]"
+      : "border-[var(--lib-border)] bg-[var(--lib-input)] hover:border-[color-mix(in_srgb,var(--lib-primary)_35%,var(--lib-border))] hover:bg-[var(--lib-muted)]/30";
+
+  const renderPublicOption = () => (
+    <li>
+      <label
+        htmlFor={publicId}
+        className={`flex cursor-pointer items-start gap-3 rounded-lg border px-3 py-3 transition-colors ${publicCardClass}`}
+      >
+        <input
+          id={publicId}
+          type="radio"
+          name={`${baseId}-access-mode`}
+          className="mt-1 h-4 w-4 shrink-0 border-[var(--lib-border)] text-[var(--lib-primary)] focus:ring-[var(--lib-primary)]"
+          checked={isPublic}
+          onChange={selectPublic}
+        />
+        <span className="min-w-0 flex-1">
+          <span className="block text-sm font-semibold text-[var(--lib-fg)]">Public</span>
+          <span className="mt-1 block text-xs leading-relaxed text-[var(--lib-fg-muted)]">
+            Anyone visiting your gallery will be able to see this content.
+          </span>
+        </span>
+      </label>
+    </li>
   );
 
   if (!creatorId.trim()) {
@@ -128,11 +175,18 @@ export function CreatorTierCatalogMultiselect({
 
   if (!sorted.length) {
     return (
-      <p className="text-center text-xs leading-relaxed text-[var(--lib-fg-muted)]" role="status">
-        No tiers in catalog yet. Run a Patreon sync from the menu so Relay can list membership tiers
-        (stable ids match <code className="text-[10px]">POST /api/v1/relay/posts</code>{" "}
-        <span className="font-mono text-[10px]">tier_ids</span>).
-      </p>
+      <fieldset
+        className="text-left"
+        disabled={disabled}
+        aria-labelledby={ariaLabelledBy}
+      >
+        <ul className="space-y-2">
+          {renderPublicOption()}
+        </ul>
+        <p className="mt-2 text-xs leading-relaxed text-[var(--lib-fg-muted)]" role="status">
+          No membership tiers in the catalog yet. Run a Patreon sync from the menu to add tier-gated options.
+        </p>
+      </fieldset>
     );
   }
 
@@ -142,7 +196,11 @@ export function CreatorTierCatalogMultiselect({
       disabled={disabled}
       aria-labelledby={ariaLabelledBy}
     >
-      <ul className="mx-auto max-h-40 max-w-lg space-y-1.5 overflow-y-auto pr-1 text-left">
+      <ul className="space-y-2 text-left">
+        {renderPublicOption()}
+        <li className="pt-1">
+          <div className="mx-auto my-1 h-px w-2/3 bg-[var(--lib-border)]/55" />
+        </li>
         {sorted.map((t) => {
           const id = `${baseId}-${t.tier_id}`;
           const checked = value.includes(t.tier_id);
@@ -150,23 +208,24 @@ export function CreatorTierCatalogMultiselect({
             <li key={t.tier_id}>
               <label
                 htmlFor={id}
-                className="flex cursor-pointer items-start gap-2 rounded-md border border-transparent px-1 py-0.5 hover:border-[var(--lib-border)] hover:bg-[var(--lib-muted)]/30"
+                className={`flex cursor-pointer items-start gap-3 rounded-lg border px-3 py-3 transition-colors ${tierCardClass(checked)}`}
               >
                 <input
                   id={id}
                   type="checkbox"
-                  className="mt-0.5 h-3.5 w-3.5 shrink-0 rounded border-[var(--lib-border)] text-[var(--lib-primary)] focus:ring-[var(--lib-primary)]"
+                  className="mt-1 h-4 w-4 shrink-0 rounded border-[var(--lib-border)] text-[var(--lib-primary)] focus:ring-[var(--lib-primary)]"
                   checked={checked}
+                  onFocus={selectTierOnly}
                   onChange={() => toggle(t.tier_id)}
                 />
-                <span className="min-w-0 flex-1 text-xs text-[var(--lib-fg)]">
-                  <span className="font-medium">{t.title}</span>
+                <span className="min-w-0 flex-1 text-sm text-[var(--lib-fg)]">
+                  <span className="font-semibold">{t.title}</span>
                   {typeof t.amount_cents === "number" && t.amount_cents > 0 ? (
-                    <span className="ml-1.5 text-[10px] text-[var(--lib-fg-muted)]">
+                    <span className="ml-1.5 text-xs text-[var(--lib-fg-muted)]">
                       ${(t.amount_cents / 100).toFixed(2)}/mo
                     </span>
                   ) : null}
-                  <span className="mt-0.5 block font-mono text-[10px] text-[var(--lib-fg-muted)]">
+                  <span className="mt-1 block font-mono text-[10px] text-[var(--lib-fg-muted)]">
                     {t.tier_id}
                   </span>
                 </span>

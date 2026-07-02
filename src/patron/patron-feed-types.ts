@@ -44,6 +44,13 @@ export type PatronFeedPostJson = {
   coverImageUrl?: string;
   highResImageUrl?: string;
   galleryImageUrls?: string[];
+  primaryMediaId?: string;
+  mediaItems?: Array<{
+    mediaId: string;
+    url?: string;
+    previewUrl?: string;
+    mimeType?: string | null;
+  }>;
   publishedAt: string;
   readTimeLabel?: string;
   likeCount: number;

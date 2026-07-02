@@ -28,7 +28,10 @@ export default defineConfig({
     }
   },
   esbuild: {
-    jsx: "automatic"
+    jsx: "automatic",
+    define: {
+      __EXT_ENV__: JSON.stringify("dev")
+    }
   },
   test: {
     environment: "node",

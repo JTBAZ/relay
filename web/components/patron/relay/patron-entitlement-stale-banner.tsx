@@ -29,7 +29,7 @@ export function PatronEntitlementStaleBanner({
           {dateHint}
         </p>
         <Link
-          href="/patreon/patron/connect"
+          href="/connect/patreon/patron/connect"
           className="inline-flex shrink-0 items-center justify-center rounded-lg bg-[#2D6A4F] px-4 py-2 text-sm font-medium text-[#F9FAFB] transition-opacity hover:opacity-90"
         >
           Reconnect Patreon

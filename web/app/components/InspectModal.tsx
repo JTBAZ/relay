@@ -17,6 +17,7 @@ import {
   type AudiencePreviewPreference,
   type PreviewStyle
 } from "./inspect/post-audience-preview";
+import { PostReachPanel } from "./inspect/post-reach-panel";
 
 type Props = {
   preview: GalleryItem;
@@ -138,6 +139,7 @@ export default function InspectModal({
                 savedPreferences={audiencePreferences}
                 onSavePreference={saveAudiencePreference}
               />
+              <PostReachPanel postId={preview.post_id} />
               <InspectMetaSidebar
                 preview={preview}
                 previewDetail={previewDetail}

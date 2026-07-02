@@ -74,11 +74,11 @@ describe("useRequireLoggedOut", () => {
     await waitFor(() => expect(nextNavigationMock.replace).toHaveBeenCalledWith("/"));
   });
 
-  it("when returnTo=/designer: redirects to /designer", async () => {
+  it("when returnTo=/studio/designer: redirects to /studio/designer", async () => {
     nextNavigationMock.search = new URLSearchParams("returnTo=%2Fdesigner");
     mockUseStudioSession.mockReturnValue(baseSession({ ready: true, hasRelaySession: true }));
     renderHook(() => useRequireLoggedOut());
-    await waitFor(() => expect(nextNavigationMock.replace).toHaveBeenCalledWith("/designer"));
+    await waitFor(() => expect(nextNavigationMock.replace).toHaveBeenCalledWith("/studio/designer"));
   });
 
   it("when returnTo=//evil.com: redirects to / (sanitized)", async () => {

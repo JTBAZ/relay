@@ -89,7 +89,7 @@ export function RelayShell({
         {/* Wordmark — logo + Relay, centered; links to patron feed home */}
         <div className="relative flex h-[56px] shrink-0 items-center justify-center border-b border-[#1A1A1A] px-5">
           <Link
-            href="/patron/feed"
+            href="/feed"
             onClick={() => setSidebarOpen(false)}
             className="flex items-center gap-2.5 rounded-lg px-1.5 py-1.5 text-[#C5B358] transition-colors duration-150 hover:bg-[#141414] hover:text-[#d4c47a] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#C5B358]/35"
             aria-label="Relay home"
@@ -124,7 +124,7 @@ export function RelayShell({
               return (
                 <Link
                   key={item.id}
-                  href="/patron/commission-hub"
+                  href="/commission-hub"
                   onClick={() => setSidebarOpen(false)}
                   className={className}
                   aria-label="Marketplace — Commission Hub"

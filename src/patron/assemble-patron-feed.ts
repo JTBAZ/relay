@@ -14,6 +14,7 @@ import {
 } from "../clone/tier-rules.js";
 import type { PatronFeedBundleJson } from "./patron-feed-types.js";
 import { loadHiddenPostIdsByCreator } from "../gallery/hidden-post-ids.js";
+import { loadMaturePostIdsByCreator } from "../gallery/mature-post-ids.js";
 import {
   resolvePatronEntitlementDisplayLabel,
   resolvePostTierDisplayLabel
@@ -40,6 +41,7 @@ export type AssemblePatronFeedArgs = {
   limit?: number;
   cursor?: string | null;
   filter?: PatronFeedFilter | null;
+  hideMatureContent?: boolean;
 };
 
 type CursorPayload = { t: number; id: string };
@@ -182,6 +184,12 @@ export async function assemblePatronFeed(args: AssemblePatronFeedArgs): Promise<
       ? new Map<string, Set<string>>()
       : await loadHiddenPostIdsByCreator(prisma, followedIds);
 
+  const hideMatureContent = args.hideMatureContent === true;
+  const maturePostIdsByCreator =
+    hideMatureContent && followedIds.length > 0
+      ? await loadMaturePostIdsByCreator(prisma, followedIds)
+      : new Map<string, Set<string>>();
+
   const postsRaw =
     followedIds.length === 0
       ? []
@@ -198,7 +206,6 @@ export async function assemblePatronFeed(args: AssemblePatronFeedArgs): Promise<
             },
             mediaAssets: {
               where: { upstreamStatus: MediaUpstreamStatus.active },
-              take: 1,
               orderBy: { currentIngestedAt: "desc" }
             }
           },
@@ -217,6 +224,13 @@ export async function assemblePatronFeed(args: AssemblePatronFeedArgs): Promise<
     primaryMimeType: string | null;
     /** Full export blob (`/content`); patron feed avoids blurred `/preview` for entitled rows. */
     coverContentPath: string | null;
+    primaryMediaId: string | null;
+    mediaItems: Array<{
+      mediaId: string;
+      mimeType: string | null;
+      contentPath: string | null;
+      previewPath: string | null;
+    }>;
     isPublicPost: boolean;
   };
 
@@ -229,6 +243,17 @@ export async function assemblePatronFeed(args: AssemblePatronFeedArgs): Promise<
     if (hiddenPostIdsByCreator.get(post.creatorId)?.has(post.id)) {
       continue;
     }
+    if (hideMatureContent && maturePostIdsByCreator.get(post.creatorId)?.has(post.id)) {
+      continue;
+    }
+    const postMediaAssets = post.mediaAssets ?? [];
+    const mediaById = new Map(postMediaAssets.map((m) => [m.id, m]));
+    const orderedMedia = (v.mediaIds ?? [])
+      .map((id) => mediaById.get(id))
+      .filter((m): m is (typeof postMediaAssets)[number] => Boolean(m));
+    const displayMedia =
+      orderedMedia.length > 0 ? orderedMedia : postMediaAssets.length > 0 ? [postMediaAssets[0]!] : [];
+    const media = displayMedia[0];
     const snap = snapByCreator.get(post.creatorId);
     const entitled = snap?.entitledTierIds ?? [];
     const tierCatalog = tiersByCreator.get(post.creatorId) ?? {};
@@ -258,13 +283,14 @@ export async function assemblePatronFeed(args: AssemblePatronFeedArgs): Promise<
           mediaType: mimeToMediaType(mime),
           primaryMimeType: mime ?? null,
           coverContentPath: null,
+          primaryMediaId: media?.id ?? null,
+          mediaItems: [],
           isPublicPost: post.isPublic
         });
       }
       continue;
     }
 
-    const media = post.mediaAssets[0];
     const mime = media?.currentMimeType;
 
     // PE-B / PE-C — never expose `currentUpstreamUrl` (Patreon CDN, gated by Patreon's own
@@ -273,10 +299,23 @@ export async function assemblePatronFeed(args: AssemblePatronFeedArgs): Promise<
     // (when `RELAY_EXPORT_REQUIRE_TIER_ACCESS=1`). `currentStorageKey` is the signal that
     // an export blob has actually been materialized; without it, the export endpoints would
     // 404 and we'd render a broken-image icon — fall back to a placeholder instead.
-    const hasExportedBlob = Boolean(media?.id && media.currentStorageKey);
-    const coverContentPath = hasExportedBlob
-      ? `/api/v1/export/media/${encodeURIComponent(post.creatorId)}/${encodeURIComponent(media!.id)}/content`
-      : null;
+    const mediaItems = displayMedia.map((item) => {
+      const hasExportedBlob = Boolean(item.id && item.currentStorageKey);
+      const contentPath = hasExportedBlob
+        ? `/api/v1/export/media/${encodeURIComponent(post.creatorId)}/${encodeURIComponent(item.id)}/content`
+        : null;
+      const previewPath =
+        hasExportedBlob && item.currentMimeType?.startsWith("image/")
+          ? `/api/v1/export/media/${encodeURIComponent(post.creatorId)}/${encodeURIComponent(item.id)}/preview`
+          : null;
+      return {
+        mediaId: item.id,
+        mimeType: item.currentMimeType ?? null,
+        contentPath,
+        previewPath
+      };
+    });
+    const coverContentPath = mediaItems[0]?.contentPath ?? null;
 
     candidates.push({
       postId: post.id,
@@ -288,6 +327,8 @@ export async function assemblePatronFeed(args: AssemblePatronFeedArgs): Promise<
       mediaType: mimeToMediaType(mime),
       primaryMimeType: mime ?? null,
       coverContentPath,
+      primaryMediaId: media?.id ?? null,
+      mediaItems,
       isPublicPost: post.isPublic
     });
   }
@@ -447,8 +488,9 @@ export async function assemblePatronFeed(args: AssemblePatronFeedArgs): Promise<
     };
 
     const placeholder = "/placeholder.svg?height=600&width=1200";
-    const content = c.coverContentPath;
-    const mimeLower = (c.primaryMimeType ?? "").toLowerCase();
+    const primaryMedia = c.mediaItems[0];
+    const content = primaryMedia?.contentPath ?? c.coverContentPath;
+    const mimeLower = (primaryMedia?.mimeType ?? c.primaryMimeType ?? "").toLowerCase();
     let coverImageUrl: string | undefined;
     if (!content) {
       coverImageUrl = placeholder;
@@ -460,6 +502,26 @@ export async function assemblePatronFeed(args: AssemblePatronFeedArgs): Promise<
       coverImageUrl = placeholder;
     }
     const highResImageUrl = content ?? placeholder;
+    const mediaItems =
+      c.mediaItems.length > 0
+        ? c.mediaItems.map((item) => ({
+            mediaId: item.mediaId,
+            url: item.contentPath ?? undefined,
+            previewUrl: item.previewPath ?? undefined,
+            mimeType: item.mimeType
+          }))
+        : c.primaryMediaId && content
+          ? [
+              {
+                mediaId: c.primaryMediaId,
+                url: content,
+                mimeType: c.primaryMimeType
+              }
+            ]
+          : undefined;
+    const galleryImageUrls = c.mediaItems
+      .map((item) => item.contentPath)
+      .filter((u): u is string => Boolean(u));
 
     return {
       id: c.postId,
@@ -470,9 +532,13 @@ export async function assemblePatronFeed(args: AssemblePatronFeedArgs): Promise<
       excerpt: excerptFromDescription(c.description, c.title),
       description: c.description ?? undefined,
       mediaType: c.mediaType,
-      primaryMimeType: c.primaryMimeType,
+      primaryMimeType: primaryMedia?.mimeType ?? c.primaryMimeType,
       coverImageUrl,
       highResImageUrl,
+      galleryImageUrls: galleryImageUrls.length > 0 ? galleryImageUrls : undefined,
+      primaryMediaId: primaryMedia?.mediaId ?? c.primaryMediaId ?? undefined,
+      mediaItems,
+      mediaCount: mediaItems?.length,
       publishedAt: c.publishedAt.toISOString(),
       likeCount: 0,
       commentCount: 0,

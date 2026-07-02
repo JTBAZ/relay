@@ -42,7 +42,7 @@ describe("PE-F discover API client", () => {
   });
 
   describe("listDiscoverFeed", () => {
-    it("issues GET /patron/discover with no query string when no params provided", async () => {
+    it("issues GET /discover with no query string when no params provided", async () => {
       vi.mocked(fetch).mockResolvedValue(
         jsonResponse(envelope({ items: [], next_cursor: null }))
       );

@@ -10,7 +10,7 @@ const LEGAL_LINKS = [
 ];
 
 const ENTRY_LINKS = [
-  { label: "Creator sign-up", href: "/patreon/connect" },
+  { label: "Creator sign-up", href: "/connect/patreon/connect" },
   { label: "Supporter sign in", href: "/login" }
 ];
 

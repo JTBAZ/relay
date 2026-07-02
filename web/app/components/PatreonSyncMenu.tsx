@@ -433,7 +433,7 @@ export default function PatreonSyncMenu({
                       <p className={`mt-2 text-xs font-medium ${line.className}`}>
                         {line.text}{" "}
                         <Link
-                          href="/creator/connect"
+                          href="/connect/creator"
                           className="font-normal text-[var(--lib-primary)] underline-offset-2 hover:underline"
                         >
                           Creator Connect
@@ -443,13 +443,13 @@ export default function PatreonSyncMenu({
                   })()}
                   <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[11px]">
                     <Link
-                      href="/patreon/connect"
+                      href="/connect/patreon/connect"
                       className="text-[var(--lib-primary)] underline-offset-2 hover:underline"
                     >
                       Creator OAuth
                     </Link>
                     <Link
-                      href="/patreon/cookie"
+                      href="/connect/patreon/cookie"
                       className="text-[var(--lib-primary)] underline-offset-2 hover:underline"
                     >
                       Patreon cookie

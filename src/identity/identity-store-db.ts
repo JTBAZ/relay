@@ -53,6 +53,8 @@ function membershipToAccount(
     user_id: m.id,
     creator_id: rid,
     email: m.account.emailNorm ?? "",
+    username: m.account.username ?? null,
+    username_norm: m.account.usernameNorm ?? null,
     password_hash: m.account.passwordHash ?? "",
     auth_provider: mapAuthProviderFromDb(m.account.identityAuthProvider),
     patreon_user_id: m.account.patronPatreonUserId ?? undefined,
@@ -121,6 +123,8 @@ export class DbIdentityStore implements IdentityStore {
         account = await tx.account.create({
           data: {
             emailNorm: emailNorm.length > 0 ? emailNorm : null,
+            username: user.username ?? null,
+            usernameNorm: user.username_norm ?? null,
             passwordHash: user.password_hash || null,
             identityAuthProvider: mapAuthProvider(user.auth_provider),
             patronPatreonUserId: user.patreon_user_id ?? null,
@@ -132,6 +136,8 @@ export class DbIdentityStore implements IdentityStore {
           where: { id: account.id },
           data: {
             emailNorm: emailNorm.length > 0 ? emailNorm : account.emailNorm,
+            username: user.username ?? account.username,
+            usernameNorm: user.username_norm ?? account.usernameNorm,
             passwordHash: user.password_hash || null,
             identityAuthProvider: mapAuthProvider(user.auth_provider),
             patronPatreonUserId: user.patreon_user_id ?? account.patronPatreonUserId,

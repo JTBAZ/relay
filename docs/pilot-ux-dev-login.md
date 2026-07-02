@@ -34,6 +34,7 @@ npm run seed:pilot-ux
 | Dev Milo (creator) | `creator_dev_milo@pilot.relay.test` | Library (`/`) — 3 posts, read-only tier chips from **`Tier.title`** |
 | Dev Onboarding (creator) | `creator_dev_onboarding@pilot.relay.test` | Repeatable sign-up walkthrough — resets to `/onboarding?path=creator&step=2` |
 | Dev Riley (patron) | `patron_dev_riley@pilot.relay.test` | Patron feed — follows both creators |
+| Dev Patron Onboarding (patron) | `patron_dev_onboarding@pilot.relay.test` | Repeatable supporter sign-up walkthrough — resets to `/onboarding?path=supporter&step=2` |
 
 Password login uses `POST /api/v1/auth/login` (independent `Account` rows from the seed). Cross-origin dev may require the dual-write Bearer on the login bootstrap hops (`web/lib/pilot-ux-password-login.ts`).
 
@@ -236,13 +237,59 @@ See `docs/pilot-exit-checklist.md` for the scale table and CI parity notes.
 
 Sign in as **Dev Onboarding** on `/login/pilot-ux`. Each login **resets** that account’s onboarding state (Patreon disconnect, empty profile, URL unclaimed) without touching Dev Ava/Milo/Riley or deleting catalog rows.
 
-After **Simulate Patreon connect (dev)**, step 4 reads faux Patreon metadata: **2 tiers** (Supporter, Studio), **127 patrons**, and **~$1,015/mo** detected revenue. Media stays pending until import. Re-run `npm run seed:pilot-ux` once if tiers are missing from an older seed.
+After **Simulate Patreon connect (dev)**, Step 5 shows faux Patreon metadata: **2 tiers** (Supporter, Studio), **127 patrons**, and **~$1,015/mo** detected revenue. Media starts `Pending` until the Relay extension unlocks it. Re-run `npm run seed:pilot-ux` once if tiers are missing from an older seed.
 
-1. Lands on onboarding step 2 (Patreon).
-2. Click **Simulate Patreon connect (dev)** — no OAuth, no new Patreon pages; seeds walkthrough tiers + patron snapshot.
-3. Complete the mandatory profile step — creator name and avatar. Relay creates your @handle and gallery URL from the name.
-4. Use the avatar uploader or keep the Patreon/default avatar when available.
-5. Review **What Relay sees** (Tiers, Patrons, Revenue, Media), then click **Import your Media**.
-6. Pick **Media Sync** (recommended) or **Manual Import** from the import modal.
+### Current step sequence (5 steps)
 
-Re-run anytime from the same dev login button.
+| Step | Description |
+| --- | --- |
+| 1 | Create account (email / password) |
+| 2 | Choose username / @handle |
+| 3 | Connect Patreon OAuth |
+| 4 | Profile (display name, avatar, bio) |
+| **5** | **Sync & Review** — business signals + extension gate + media import + library review |
+
+### Step 5 walkthrough
+
+1. **Simulate Patreon connect (dev)** — no OAuth, no new Patreon pages; seeds tiers + patron snapshot, redirects to Step 5.
+2. Complete the mandatory **profile step** (Step 4) — creator name and avatar.
+3. Land on **Step 5 (Sync & Review)**. Business signal rows:
+   - **Tiers** → Complete (green) immediately
+   - **Patrons** → Complete (green) — 127 patrons in snapshot
+   - **Revenue** → Complete (green) — ~$1,015/mo
+   - **Media** → Pending (amber) until extension + import
+4. CTA progresses through states automatically (polls every 4 s):
+   - **Connect Extension** → **Connect Extension →** → **Open Patreon to sync session** → **Import Media**
+5. Click **Import Media** → Media row transitions `Pending → Syncing → Complete`
+6. CTA becomes **Review your Library →** → opens **Review Library modal**:
+   - Search + tier-filter imported media
+   - Pick 1–5 promo pieces (ranked slots)
+   - Choose a growth goal
+   - Click **Continue to Library** → saves, advances onboarding, navigates to `/studio`
+
+### Fast path (no extension, no Patreon)
+
+On Step 5, Dev Onboarding shows **Simulate media import (dev)**. One click:
+
+- Seeds 6 faux gallery posts + export index entries for `rcx_pilot_dev_onboarding`
+- Writes a successful post-scrape health record (`sync_health: healthy`, `export_media_count > 0`)
+- Media row turns **Complete**; CTA becomes **Review your Library →**
+
+Use this to exercise the review modal and promo-slot save flow without installing the extension or connecting Patreon. Keep a separate manual pass for the real extension + scrape path (see checklist section E).
+
+**Advanced fallback** (always present at bottom): Paste Patreon cookie manually or manual file upload.
+
+Full E2E checklist: [`docs/qa/ONBOARDING_STEP5_E2E_CHECKLIST.md`](qa/ONBOARDING_STEP5_E2E_CHECKLIST.md)
+
+Re-run anytime from the same Dev Onboarding login button.
+
+### Gate L — Step 5 Sync & Review (PILOT-017 addendum)
+
+Automated coverage:
+
+```bash
+npx vitest run tests/web/onboarding-claim-handle-step.test.tsx
+npx vitest run tests/web/creator-library-review-modal.test.tsx
+npx vitest run tests/web/relay-extension-status-probe.test.ts
+npx vitest run tests/creator-promo-slots.test.ts tests/creator-promo-slots-route.test.ts
+```

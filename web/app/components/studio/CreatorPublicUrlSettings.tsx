@@ -65,11 +65,11 @@ export function CreatorPublicUrlSettings() {
   const localOrigin = typeof window !== "undefined" ? getWebAppOrigin() : null;
   const href =
     slug && localOrigin
-      ? `${localOrigin}/patron/c/${encodeURIComponent(slug)}`
+      ? `${localOrigin}/${encodeURIComponent(slug)}`
       : null;
   const pathPrefix = localOrigin
-    ? `${new URL(localOrigin).host}/patron/c/`
-    : "/patron/c/";
+    ? `${new URL(localOrigin).host}/`
+    : "/";
 
   return (
     <div className="rounded-xl border border-[var(--lib-border)] bg-[var(--lib-card)] px-4 py-4">

@@ -267,6 +267,7 @@ export class DbCanonicalStore implements CanonicalStore {
       const postRow: PostRow = {
         post_id: p.id,
         creator_id: p.creatorId,
+        is_public: p.isPublic,
         current,
         versions: sorted,
         upstream_status: p.upstreamStatus === PostUpstreamStatus.deleted ? "deleted" : "active",

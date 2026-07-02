@@ -14,14 +14,14 @@ describe("PatronEmptyFeedState P6-patron-005", () => {
     const block = screen.getByTestId("patron-empty-feed-oauth");
     expect(block.textContent).toMatch(/home feed/i);
     const link = screen.getByRole("link", { name: /continue to patreon/i });
-    expect(link.getAttribute("href")).toBe("/patreon/patron/connect");
+    expect(link.getAttribute("href")).toBe("/connect/patreon/patron/connect");
   });
 
   it("live_no_follows: discover link", () => {
     render(<PatronEmptyFeedState variant="live_no_follows" />);
     expect(screen.getByTestId("patron-empty-feed-no-follows")).toBeTruthy();
     expect(screen.getByRole("link", { name: /go to discover/i }).getAttribute("href")).toBe(
-      "/patron/discover"
+      "/discover"
     );
     expect(screen.getByText(/not following anyone/i)).toBeTruthy();
   });
@@ -31,7 +31,7 @@ describe("PatronEmptyFeedState P6-patron-005", () => {
     expect(screen.getByTestId("patron-empty-feed-no-posts")).toBeTruthy();
     expect(screen.getByText(/no posts yet/i)).toBeTruthy();
     expect(screen.getByRole("link", { name: /reconnect patreon/i }).getAttribute("href")).toBe(
-      "/patreon/patron/connect"
+      "/connect/patreon/patron/connect"
     );
   });
 

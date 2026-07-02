@@ -39,3 +39,14 @@ export function isBrowserExtensionOrigin(origin: string): boolean {
     return false;
   }
 }
+
+/** Web consent UI + connected-extensions settings (credentialed browser origins). */
+export function isWebFacingExtensionAuthPath(path: string): boolean {
+  if (
+    path === "/api/v1/auth/extension/consent/start" ||
+    path === "/api/v1/auth/extension/grants"
+  ) {
+    return true;
+  }
+  return /^\/api\/v1\/auth\/extension\/grants\/[^/]+$/.test(path);
+}

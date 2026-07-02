@@ -5,6 +5,7 @@
  */
 
 import type { Prisma, PrismaClient } from "@prisma/client";
+import { sanitizeOptionalPostDescriptionHtml } from "../security/sanitize-post-html.js";
 
 /**
  * @description Normalized PATCH body fragment for presentation handlers.
@@ -82,7 +83,10 @@ export function derivePresentationUpsertFragments(
     if (v !== null && v !== undefined && typeof v !== "string") {
       throw new Error("VALIDATION:relay_description");
     }
-    out.relayDescription = v === null || v === undefined ? null : String(v);
+    out.relayDescription =
+      v === null || v === undefined
+        ? null
+        : sanitizeOptionalPostDescriptionHtml(String(v)) ?? null;
   }
   if (touched.has("media_order")) {
     const mo = body.media_order;

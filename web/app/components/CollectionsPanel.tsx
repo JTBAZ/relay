@@ -87,7 +87,7 @@ export default function CollectionsPanel({
                   {col.post_ids.length}
                 </span>
                 <Link
-                  href={`/designer?highlight=collection:${encodeURIComponent(col.collection_id)}`}
+                  href={`/studio/designer?highlight=collection:${encodeURIComponent(col.collection_id)}`}
                   className="px-0.5 text-[10px] text-[var(--lib-fg-muted)] opacity-0 hover:text-[var(--lib-primary)] group-hover:opacity-100"
                   title="Designer"
                 >

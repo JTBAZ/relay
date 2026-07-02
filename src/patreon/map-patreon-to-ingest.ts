@@ -15,6 +15,7 @@ import {
 import { finalizePatreonPostMedia } from "./merge-ingest-media.js";
 import { normalizePatreonMediaUrl } from "./media-url-normalize.js";
 import { flattenProseMirrorDoc, normalizePatreonPostContent } from "./post-content.js";
+import { sanitizeOptionalPostDescriptionHtml } from "../security/sanitize-post-html.js";
 
 const IMG_IN_CONTENT_RE =
   /https?:\/\/[^\s"'<>]+?\.(?:jpg|jpeg|png|gif|webp)(?:\?[^\s"'<>]*)?/gi;
@@ -304,7 +305,7 @@ export function mapPatreonPostToIngest(resource: JsonApiResource): IngestPost {
   return {
     post_id: `patreon_post_${id}`,
     title,
-    description: content.trim() || undefined,
+    description: sanitizeOptionalPostDescriptionHtml(content),
     published_at: publishedAt,
     tag_ids: [],
     tier_ids,

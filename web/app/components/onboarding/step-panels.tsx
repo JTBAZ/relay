@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   Suspense,
   useCallback,
@@ -8,10 +9,10 @@ import {
   useMemo,
   useState,
 } from "react";
+import { motion } from "framer-motion";
 import {
   ArrowRight,
   Camera,
-  X,
   Loader2,
   Palette,
   Heart,
@@ -22,7 +23,8 @@ import {
 import { cn } from "@/app/lib/cn";
 import { StudioSupabaseSignInPanel } from "@/app/components/studio/StudioSupabaseSignInPanel";
 import { SupporterSignInPanel } from "@/app/components/auth/SupporterSignInPanel";
-import { InstallExtensionPrompt } from "@/app/components/InstallExtensionPrompt";
+import { CreatorImportReadinessPanel } from "@/app/components/onboarding/CreatorImportReadinessPanel";
+import { isReservedPathSegment } from "@/lib/reserved-paths";
 import { PATREON_PATRON_OAUTH_SCOPES } from "@/lib/patreon-patron-scopes";
 import { setPendingOAuthCallbackTarget } from "@/lib/oauth-pending-callback";
 import { patronPatronOAuthRedirectUri } from "@/lib/patron-patron-redirect-uri";
@@ -33,12 +35,11 @@ import {
   RELAY_PUBLIC_SLUG_STORAGE_KEY,
   buildPatreonCreatorAuthorizeUrl,
   fetchPatronSessionIfPresent,
-  fetchRelayComposeTiers,
-  getCreatorPatronTierSummary,
   getCreatorProfile,
   hasRelaySignedInCookie,
   patchCreatorProfile,
   patchCreatorPublicSlug,
+  patchRelayUsername,
   putRelayNativeUpload,
   postCreatorWorkspace,
   postPatreonCreatorPrepare,
@@ -48,8 +49,23 @@ import {
   RelayApiError,
   type CreatorProfileIdentity,
   type CreatorWorkspaceData,
-  type RelayComposeTierRow,
 } from "@/lib/relay-api";
+import {
+  fetchPatronProfileMe,
+  patchPatronProfileMe,
+  resolvedPatronDigestTimezone,
+  PATRON_PROFILE_BIO_UI_LIMIT,
+  PATRON_PROFILE_DISPLAY_NAME_LIMIT,
+} from "@/lib/patron-profile-api";
+import type {
+  NotificationCadencePreferenceId,
+  NotificationDigestSlotId,
+} from "@/lib/notification-digest-preferences";
+import {
+  digestCadenceFromProfile,
+  digestSlotFromProfile,
+  NotificationDigestPreferencesForm,
+} from "@/components/patron/NotificationDigestPreferencesForm";
 import { getWebAppOrigin } from "@/lib/site-origin";
 import {
   PILOT_UX_ONBOARDING_RELAY_CREATOR_ID,
@@ -58,6 +74,8 @@ import {
 import RelayUnifiedLogoV0 from "@/app/components/relay-unified-logo-v0";
 
 export type OnboardingPath = "creator" | "supporter";
+
+const ONBOARDING_EASE = [0.22, 1, 0.36, 1] as const;
 
 /* ──────────────────────────────────────────────────────────────────────────────
  * Brand mark — matches the Relay logo: circular node-network icon + gold wordmark
@@ -142,43 +160,282 @@ export function PathPicker({
 
 /* ── ARTSY FINTECH PATH PICKER (v1) ── START ─────────────────────────────── */
 
+type PathCardBenefit = {
+  label: string;
+  detail: string;
+};
+
+const creatorBenefits: PathCardBenefit[] = [
+  {
+    label: "Enhanced UI",
+    detail: "Your Patreon feed becomes a clean, searchable gallery.",
+  },
+  {
+    label: "Improved Experience",
+    detail: "Better browsing helps gain and retain subscribers.",
+  },
+  {
+    label: "Protected archive",
+    detail: "Back up posts while keeping paid tiers intact.",
+  },
+  {
+    label: "Audience discovery",
+    detail: "Give your work a better surface to find new fans.",
+  },
+];
+
+const followerBenefits: PathCardBenefit[] = [
+  {
+    label: "One clean feed",
+    detail: "All supported creators in one unified gallery.",
+  },
+  {
+    label: "Search and save",
+    detail:
+      "Find old posts, collect favorites, revisit anytime. No more chronological scrolling.",
+  },
+  {
+    label: "Creator discovery",
+    detail: "Preview artists who match what you already love.",
+  },
+  {
+    label: "Free to use",
+    detail: "Only pay for perks that help you further support your Creators.",
+  },
+];
+
+function PathCardBenefitList({
+  items,
+  delay = 0,
+}: {
+  items: PathCardBenefit[];
+  delay?: number;
+}) {
+  return (
+    <ul className="grid gap-2 text-left">
+      {items.map((item, index) => (
+        <motion.li
+          key={item.label}
+          initial={{ opacity: 0, x: -8 }}
+          whileInView={{ opacity: 1, x: 0 }}
+          viewport={{ once: true, margin: "-40px" }}
+          transition={{
+            duration: 0.38,
+            delay: delay + index * 0.06,
+            ease: ONBOARDING_EASE,
+          }}
+          className="grid grid-cols-[0.375rem_1fr] gap-x-2 gap-y-0.5 text-sm leading-snug"
+        >
+          <span
+            className="mt-1.5 h-1.5 w-1.5 rounded-full bg-[var(--relay-electric)]/80 shadow-[0_0_8px_var(--relay-glow)]"
+            aria-hidden
+          />
+          <span className="font-medium text-[var(--relay-fg)]">{item.label}</span>
+          <span className="col-start-2 text-xs leading-snug text-[var(--relay-fg-muted)]">
+            {item.detail}
+          </span>
+        </motion.li>
+      ))}
+    </ul>
+  );
+}
+
+function RelayUpgradeGraphic({ kind }: { kind: "creator" | "follower" }) {
+  const sourceLabel = kind === "creator" ? "Patreon feed" : "Patreon tabs";
+  const relayLabel = kind === "creator" ? "Relay gallery" : "Relay feed";
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 10 }}
+      whileInView={{ opacity: 1, y: 0 }}
+      viewport={{ once: true, margin: "-50px" }}
+      transition={{ duration: 0.48, ease: ONBOARDING_EASE }}
+      className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2 overflow-hidden rounded-xl border border-[var(--relay-electric)]/10 bg-black/20 p-2.5"
+      aria-hidden
+    >
+      <div className="min-w-0 space-y-1 rounded-lg border border-white/10 bg-black/30 p-2">
+        <span className="block truncate text-[0.58rem] font-semibold uppercase tracking-[0.12em] text-[var(--relay-fg-muted)]">
+          {sourceLabel}
+        </span>
+          {[0, 1, 2].map((idx) => (
+          <motion.span
+            key={`source-row-${kind}-${idx}`}
+            className="block h-1.5 rounded-full bg-white/15"
+            initial={{ scaleX: 0, opacity: 0 }}
+            whileInView={{ scaleX: 1, opacity: 1 }}
+            viewport={{ once: true, margin: "-50px" }}
+            transition={{ duration: 0.32, delay: idx * 0.05, ease: ONBOARDING_EASE }}
+            style={{ width: `${84 - idx * 14}%`, transformOrigin: "left" }}
+          />
+        ))}
+      </div>
+      <ArrowRight className="h-4 w-4 text-[var(--relay-electric)]" strokeWidth={2} />
+      <div className="min-w-0 space-y-1 rounded-lg border border-[var(--relay-electric)]/25 bg-[var(--relay-green-950)]/55 p-2">
+        <span className="block truncate text-[0.58rem] font-semibold uppercase tracking-[0.12em] text-[var(--relay-electric)]">
+          {relayLabel}
+        </span>
+        <div className="grid grid-cols-3 gap-1">
+          {[0, 1, 2, 3, 4, 5].map((idx) => (
+            <motion.span
+              key={`relay-cell-${kind}-${idx}`}
+              className="h-3 rounded-[0.2rem] bg-[var(--relay-electric)]/25"
+              initial={{ opacity: 0, scale: 0.72 }}
+              whileInView={{ opacity: 1, scale: 1 }}
+              viewport={{ once: true, margin: "-50px" }}
+              transition={{ duration: 0.28, delay: 0.12 + idx * 0.035, ease: ONBOARDING_EASE }}
+            />
+          ))}
+        </div>
+      </div>
+    </motion.div>
+  );
+}
+
 const creatorPathCardDescription = (
-  <>
-    <p className="flex items-center gap-1.5 text-base font-semibold tracking-tight text-[var(--relay-electric)] sm:text-[1.05rem]">
-      <span>Connect your Patreon</span>
-      <ArrowRight
-        className="h-4 w-4 shrink-0 transition-transform duration-200 group-hover:translate-x-1"
-        strokeWidth={2}
-        aria-hidden
-      />
-    </p>
-    <p className="text-sm leading-relaxed text-[var(--relay-fg-muted)]">
-      Your vertical feed becomes a gorgeous custom gallery. Fully searchable. Patron tiers maintained.
-    </p>
-    <p className="text-sm leading-relaxed text-[var(--relay-fg-muted)]">
-      Your public content gets inserted into the feeds of likely subscribers.
-    </p>
-  </>
+  <p className="flex items-center gap-1.5 text-base font-semibold tracking-tight text-[var(--relay-electric)] sm:text-[1.05rem]">
+    <span>Build my Relay gallery</span>
+    <ArrowRight
+      className="h-4 w-4 shrink-0 transition-transform duration-200 group-hover:translate-x-1"
+      strokeWidth={2}
+      aria-hidden
+    />
+  </p>
 );
 
 const patronPathCardDescription = (
-  <>
-    <p className="flex items-center gap-1.5 text-base font-semibold tracking-tight text-[var(--relay-electric)] sm:text-[1.05rem]">
-      <span>Free to use. Keep it forever.</span>
-      <ArrowRight
-        className="h-4 w-4 shrink-0 transition-transform duration-200 group-hover:translate-x-1"
-        strokeWidth={2}
-        aria-hidden
-      />
-    </p>
-    <p className="text-sm leading-relaxed text-[var(--relay-fg-muted)]">
-      All the artists you support in one clean feed.
-    </p>
-    <p className="text-sm leading-relaxed text-[var(--relay-fg-muted)]">
-      Discover new content from artists looking to woo you with promotions and freebies.
-    </p>
-  </>
+  <p className="flex items-center gap-1.5 text-base font-semibold tracking-tight text-[var(--relay-electric)] sm:text-[1.05rem]">
+    <span>Upgrade my feed</span>
+    <ArrowRight
+      className="h-4 w-4 shrink-0 transition-transform duration-200 group-hover:translate-x-1"
+      strokeWidth={2}
+      aria-hidden
+    />
+  </p>
 );
+
+type CtaPersonIconProps = {
+  active: "lead" | "follower";
+};
+
+function PersonGlyph({
+  cx,
+  cy,
+  active,
+  scale = 1,
+}: {
+  cx: number;
+  cy: number;
+  active: boolean;
+  scale?: number;
+}) {
+  const stroke = active ? "var(--relay-electric)" : "rgba(156,163,175,0.68)";
+  const glow = active ? "drop-shadow(0 0 5px rgba(0,170,111,0.5))" : undefined;
+
+  return (
+    <g
+      transform={`translate(${cx} ${cy}) scale(${scale})`}
+      style={glow ? { filter: glow } : undefined}
+    >
+      <circle
+        cx="0"
+        cy="-5.2"
+        r="2.7"
+        stroke={stroke}
+        strokeWidth="1.25"
+        fill="none"
+      />
+      <path
+        d="M-5.6 4.6a5.6 5.6 0 0 1 11.2 0"
+        stroke={stroke}
+        strokeWidth="1.25"
+        strokeLinecap="round"
+        fill="none"
+      />
+    </g>
+  );
+}
+
+function CtaPersonIcon({ active }: CtaPersonIconProps) {
+  const isLead = active === "lead";
+
+  return (
+    <svg viewBox="0 0 36 34" fill="none" aria-hidden="true" className="overflow-visible">
+      <PersonGlyph cx={18} cy={8.3} active={isLead} scale={isLead ? 1.08 : 0.98} />
+      {[0, 1, 2].map((idx) => (
+        <circle
+          key={`relationship-dot-${idx}`}
+          cx="18"
+          cy={14 + idx * 1.95}
+          r="0.4"
+          fill="currentColor"
+          opacity={0.14 + idx * 0.045}
+        />
+      ))}
+      <PersonGlyph cx={5.3} cy={27.1} active={false} scale={0.72} />
+      <PersonGlyph cx={18} cy={27.1} active={!isLead} scale={!isLead ? 0.84 : 0.72} />
+      <PersonGlyph cx={30.7} cy={27.1} active={false} scale={0.72} />
+    </svg>
+  );
+}
+
+function RelayUpgradePanel() {
+  return (
+    <motion.section
+      initial={{ opacity: 0, y: 18 }}
+      whileInView={{ opacity: 1, y: 0 }}
+      viewport={{ once: true, margin: "-80px" }}
+      transition={{ duration: 0.6, ease: ONBOARDING_EASE }}
+      className="w-full max-w-6xl rounded-2xl border border-[var(--relay-electric)]/10 bg-black/20 p-4 text-left shadow-[0_0_0_1px_rgba(34,197,94,0.03)] sm:p-5"
+      aria-labelledby="relay-adds-heading"
+    >
+      <div className="mb-4 flex flex-col gap-1 text-center">
+        <p className="text-[10px] font-bold uppercase tracking-[0.24em] text-[var(--relay-electric)]/80">
+          What Relay adds
+        </p>
+        <h2
+          id="relay-adds-heading"
+          className="text-balance text-lg font-semibold tracking-tight text-[var(--relay-fg)]"
+        >
+          An enhancement layer for your Patreon
+        </h2>
+      </div>
+
+      <div className="grid gap-4 lg:grid-cols-[1fr_1fr]">
+        <motion.div
+          initial={{ opacity: 0, y: 14 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true, margin: "-80px" }}
+          transition={{ duration: 0.5, delay: 0.08, ease: ONBOARDING_EASE }}
+          className="space-y-3 rounded-xl border border-white/10 bg-[var(--relay-surface-1)]/70 p-4"
+        >
+          <RelayUpgradeGraphic kind="creator" />
+          <div>
+            <h3 className="mb-2 text-sm font-bold text-[var(--relay-electric)]">
+              Creators
+            </h3>
+            <PathCardBenefitList items={creatorBenefits} delay={0.14} />
+          </div>
+        </motion.div>
+
+        <motion.div
+          initial={{ opacity: 0, y: 14 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true, margin: "-80px" }}
+          transition={{ duration: 0.5, delay: 0.16, ease: ONBOARDING_EASE }}
+          className="space-y-3 rounded-xl border border-white/10 bg-[var(--relay-surface-1)]/70 p-4"
+        >
+          <RelayUpgradeGraphic kind="follower" />
+          <div>
+            <h3 className="mb-2 text-sm font-bold text-[var(--relay-electric)]">
+              Subscribers
+            </h3>
+            <PathCardBenefitList items={followerBenefits} delay={0.22} />
+          </div>
+        </motion.div>
+      </div>
+    </motion.section>
+  );
+}
 
 function ArtsyFintechPathPicker({
   onChoose,
@@ -186,10 +443,10 @@ function ArtsyFintechPathPicker({
   onChoose: (path: OnboardingPath) => void;
 }) {
   return (
-    <div className="relay-artsy-fintech relative flex flex-col items-center gap-8 text-center sm:gap-10">
+    <div className="relay-artsy-fintech relative flex w-full min-w-0 flex-col items-center gap-8 overflow-x-hidden text-center sm:gap-10">
       {/* Ambient hero glow (existing util) */}
       <div
-        className="relay-hero-glow pointer-events-none absolute left-1/2 top-0 h-72 w-72 -translate-x-1/2 -translate-y-1/4 rounded-full blur-3xl"
+        className="relay-hero-glow pointer-events-none absolute left-1/2 top-0 h-80 w-80 -translate-x-1/2 -translate-y-1/4 rounded-full blur-3xl"
         aria-hidden
       />
       {/* Subtle brand wash (green, matches --relay-electric) */}
@@ -197,67 +454,110 @@ function ArtsyFintechPathPicker({
         className="relay-artsy-gold-wash pointer-events-none absolute left-1/2 top-1/2 h-[28rem] w-[28rem] -translate-x-1/2 -translate-y-1/2 rounded-full blur-[140px]"
         aria-hidden
       />
+      <div
+        className="pointer-events-none absolute inset-x-0 top-0 mx-auto h-[34rem] w-[34rem] max-w-full rounded-full opacity-80 blur-3xl"
+        style={{
+          background:
+            "radial-gradient(ellipse at 50% 18%, rgba(0,170,111,0.11) 0%, rgba(0,170,111,0.035) 34%, transparent 68%)",
+        }}
+        aria-hidden
+      />
 
       {/* Hero: v0 unified animated mark + wordmark (includes "Gallery" subline in SVG) */}
-      <div className="relative flex w-full max-w-sm flex-col items-center text-center sm:max-w-md">
+      <motion.div
+        className="relative flex w-full max-w-sm flex-col items-center text-center sm:max-w-md"
+        initial={{ opacity: 0, scale: 0.94, y: 12 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        transition={{ duration: 0.85, ease: ONBOARDING_EASE }}
+      >
         <RelayUnifiedLogoV0 size={220} />
-      </div>
+      </motion.div>
 
-      <p className="mt-2 max-w-md px-4 text-balance text-base font-semibold leading-relaxed tracking-tight text-[var(--relay-fg)] sm:mt-3 sm:text-lg">
-        Feel seen. See everything.
-      </p>
+      <motion.p
+        className="mt-2 max-w-[42rem] px-4 text-balance text-center text-[0.68rem] font-bold uppercase leading-relaxed tracking-[0.24em] text-[var(--relay-electric)] sm:mt-3 sm:whitespace-nowrap sm:text-xs sm:tracking-[0.28em]"
+        initial={{ opacity: 0, y: 10 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.6, delay: 0.25, ease: ONBOARDING_EASE }}
+      >
+        Turn your Patreon feed into a Custom, Searchable Gallery
+      </motion.p>
 
-      {/* Path cards — 2 col; hero mark is above (no flanking center logo) */}
-      <div className="w-full max-w-6xl space-y-4 pt-6 sm:pt-8">
-        <p className="text-center text-[10px] font-bold uppercase tracking-[0.32em] text-[var(--relay-fg-muted)]">
-        Elevate Your Patreon.
-        </p>
+      {/* Path cards — compact decisions; education sits below. */}
+      <motion.div
+        className="w-full max-w-4xl space-y-4 pt-6 sm:pt-8"
+        initial={{ opacity: 0, y: 18 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.6, delay: 0.45, ease: ONBOARDING_EASE }}
+      >
         <div
           className="grid w-full grid-cols-1 items-stretch gap-4 sm:grid-cols-2"
           aria-label="Choose creator or patron path"
         >
           <div className="h-full min-h-0 w-full min-w-0 self-stretch">
             <PathCard
-              label="Creators"
+              eyebrow="I make content"
+              label="Creator"
               description={creatorPathCardDescription}
-              icon={<Palette className="h-6 w-6" strokeWidth={1.5} />}
+              icon={<CtaPersonIcon active="lead" />}
               onClick={() => onChoose("creator")}
               accent="green"
-              className="h-full w-full"
-              labelLayout="hero"
+              className="h-full w-full min-h-[8.25rem] p-6"
+              labelLayout="cta"
+              ctaIconSide="right"
+              motionDelay={0.58}
             />
           </div>
           <div className="h-full min-h-0 w-full min-w-0 self-stretch">
             <PathCard
-              label="Patrons"
+              eyebrow="I support creators"
+              label="Supporter"
               description={patronPathCardDescription}
-              icon={<Heart className="h-6 w-6" strokeWidth={1.5} />}
+              icon={<CtaPersonIcon active="follower" />}
               onClick={() => onChoose("supporter")}
               accent="green"
-              className="h-full w-full"
-              labelLayout="hero"
+              className="h-full w-full min-h-[8.25rem] p-6"
+              labelLayout="cta"
+              ctaIconSide="left"
+              motionDelay={0.68}
             />
           </div>
         </div>
-      </div>
+      </motion.div>
+
+      <RelayUpgradePanel />
 
       {/* Sub-CTA: tiny feature strip — what Relay does, at a glance */}
-      <ul className="grid w-full max-w-xl grid-cols-3 gap-4 text-[11px] text-[var(--relay-fg-muted)] sm:gap-8 sm:text-xs">
+      <motion.ul
+        className="grid w-full max-w-xl grid-cols-3 gap-4 text-[11px] text-[var(--relay-fg-muted)] sm:gap-8 sm:text-xs"
+        initial={{ opacity: 0, y: 12 }}
+        whileInView={{ opacity: 1, y: 0 }}
+        viewport={{ once: true, margin: "-40px" }}
+        transition={{ duration: 0.48, ease: ONBOARDING_EASE }}
+      >
         <FeatureBullet
           icon={<Sparkles className="h-3.5 w-3.5" strokeWidth={1.75} />}
           label="Beautified galleries"
+          delay={0}
         />
         <FeatureBullet
           icon={<Heart className="h-3.5 w-3.5" strokeWidth={1.75} />}
           label="Follow & collect"
+          delay={0.06}
         />
         <FeatureBullet
           icon={<Compass className="h-3.5 w-3.5" strokeWidth={1.75} />}
           label="Discover artists"
+          delay={0.12}
         />
-      </ul>
+      </motion.ul>
 
-      <p className="text-sm text-[var(--relay-fg-muted)]">
+      <motion.p
+        className="text-sm text-[var(--relay-fg-muted)]"
+        initial={{ opacity: 0, y: 8 }}
+        whileInView={{ opacity: 1, y: 0 }}
+        viewport={{ once: true, margin: "-40px" }}
+        transition={{ duration: 0.42, delay: 0.1, ease: ONBOARDING_EASE }}
+      >
         Already signed up?{" "}
         <Link
           href="/login"
@@ -265,7 +565,7 @@ function ArtsyFintechPathPicker({
         >
           Log in
         </Link>
-      </p>
+      </motion.p>
     </div>
   );
 }
@@ -273,21 +573,30 @@ function ArtsyFintechPathPicker({
 function FeatureBullet({
   icon,
   label,
+  delay = 0,
 }: {
   icon: React.ReactNode;
   label: string;
+  delay?: number;
 }) {
   return (
-    <li className="flex items-center justify-center gap-1.5">
+    <motion.li
+      className="flex items-center justify-center gap-1.5"
+      initial={{ opacity: 0, y: 8 }}
+      whileInView={{ opacity: 1, y: 0 }}
+      viewport={{ once: true, margin: "-40px" }}
+      transition={{ duration: 0.36, delay, ease: ONBOARDING_EASE }}
+    >
       <span className="text-[var(--relay-gold-400)]/75">{icon}</span>
       <span className="font-medium text-[var(--relay-fg)]/85">{label}</span>
-    </li>
+    </motion.li>
   );
 }
 
 /* ── ARTSY FINTECH PATH PICKER (v1) ── END ───────────────────────────────── */
 
 function PathCard({
+  eyebrow,
   label,
   description,
   icon,
@@ -295,7 +604,10 @@ function PathCard({
   accent,
   className,
   labelLayout = "stack",
+  ctaIconSide = "left",
+  motionDelay = 0,
 }: {
+  eyebrow?: string;
   label: string;
   description: React.ReactNode;
   icon: React.ReactNode;
@@ -303,23 +615,32 @@ function PathCard({
   accent: "gold" | "green";
   className?: string;
   /** `hero` — label beside icon, larger type (path picker creator card) */
-  labelLayout?: "stack" | "hero";
+  labelLayout?: "stack" | "hero" | "cta";
+  ctaIconSide?: "left" | "right";
+  motionDelay?: number;
 }) {
   const isGold = accent === "gold";
   const isHero = labelLayout === "hero";
+  const isCta = labelLayout === "cta";
 
   const iconBoxClass = cn(
     "relative flex shrink-0 items-center justify-center rounded-xl border transition-all duration-200",
-    isHero
+    isCta
+      ? "h-20 w-24 border-transparent bg-transparent text-[var(--relay-electric)] shadow-none [&_svg]:!h-[5rem] [&_svg]:!w-[5.5rem]"
+      : isHero
       ? "h-10 w-10 [&_svg]:!h-[1.125rem] [&_svg]:!w-[1.125rem]"
       : "h-12 w-12",
-    isGold
+    isCta
+      ? "border-transparent bg-transparent text-[var(--relay-electric)] group-hover:border-transparent group-hover:shadow-none"
+      : isGold
       ? "border-[var(--relay-gold-500)]/40 bg-[var(--relay-gold-500)]/10 text-[var(--relay-gold-400)] group-hover:border-[var(--relay-gold-400)]/60 group-hover:shadow-[0_0_16px_0_rgba(197,179,88,0.3)]"
       : "border-[var(--relay-green-800)] bg-[var(--relay-green-950)] text-[var(--relay-green-400)] group-hover:border-[var(--relay-electric)]/60 group-hover:shadow-[0_0_16px_0_var(--relay-glow-strong)]"
   );
 
   const titleClass = isHero
     ? "min-w-0 flex-1 text-balance text-2xl font-bold leading-[1.1] tracking-tight text-[var(--relay-fg)] sm:text-3xl"
+    : isCta
+      ? "text-3xl font-bold leading-none tracking-tight text-[var(--relay-fg)] sm:text-4xl"
     : "text-lg font-bold tracking-tight text-[var(--relay-fg)]";
 
   const descriptionBlock =
@@ -331,13 +652,25 @@ function PathCard({
       <div className="space-y-2.5">{description}</div>
     );
 
+  const ButtonComponent = isCta ? motion.button : "button";
+  const motionProps = isCta
+    ? {
+        initial: { opacity: 0, y: 24 },
+        animate: { opacity: 1, y: 0 },
+        transition: { duration: 0.6, delay: motionDelay, ease: ONBOARDING_EASE },
+        whileHover: { y: -4 },
+        whileTap: { scale: 0.985 },
+      }
+    : {};
+
   return (
-    <button
+    <ButtonComponent
       type="button"
       onClick={onClick}
+      {...motionProps}
       className={cn(
-        "group relative flex flex-col items-start overflow-hidden rounded-2xl border p-7 text-left transition-all duration-250",
-        isHero ? "gap-4" : "gap-5",
+        "group relative flex min-w-0 flex-col items-start overflow-hidden rounded-2xl border p-7 text-left transition-all duration-250",
+        isCta ? "justify-center gap-0" : isHero ? "gap-4" : "gap-5",
         isGold
           ? "border-[var(--relay-gold-500)]/30 bg-[var(--relay-surface-1)] hover:border-[var(--relay-gold-400)]/70 hover:-translate-y-1 hover:shadow-[0_12px_40px_-8px_rgba(197,179,88,0.25)]"
           : "border-[var(--relay-border)] bg-[var(--relay-surface-1)] hover:border-[var(--relay-electric)]/60 hover:-translate-y-1 hover:shadow-[0_12px_40px_-8px_var(--relay-glow-strong)]",
@@ -355,7 +688,34 @@ function PathCard({
         aria-hidden
       />
 
-      {isHero ? (
+      {isCta ? (
+        <div className="relative z-[1] flex w-full items-center gap-5">
+          <div
+            className={cn(
+              "pointer-events-none absolute top-1/2 h-28 w-28 -translate-y-1/2 rounded-full bg-[var(--relay-electric)]/10 blur-2xl opacity-55 transition-opacity duration-300 group-hover:opacity-95",
+              ctaIconSide === "right" ? "-right-4" : "-left-4"
+            )}
+            aria-hidden
+          />
+          <div
+            className={cn(
+              "flex w-full items-center gap-5",
+              ctaIconSide === "right" ? "flex-row-reverse" : "flex-row"
+            )}
+          >
+            <div className={iconBoxClass}>{icon}</div>
+            <div className="min-w-0 flex-1 space-y-3">
+            {eyebrow ? (
+              <p className="text-[0.64rem] font-bold uppercase leading-none tracking-[0.24em] text-[var(--relay-fg-muted)]">
+                {eyebrow}
+              </p>
+            ) : null}
+              <h3 className={titleClass}>{label}</h3>
+              <div className="w-full">{descriptionBlock}</div>
+            </div>
+          </div>
+        </div>
+      ) : isHero ? (
         <>
           <div className="flex w-full min-w-0 items-center gap-3 sm:gap-4">
             <div className={iconBoxClass}>{icon}</div>
@@ -372,7 +732,7 @@ function PathCard({
           </div>
         </>
       )}
-    </button>
+    </ButtonComponent>
   );
 }
 
@@ -392,9 +752,10 @@ export function RoadmapPreview({
     path === "creator"
       ? [
           { n: 1, label: "Create your account" },
-          { n: 2, label: step2ConnectLabel },
-          { n: 3, label: "Profile + URL" },
-          { n: 4, label: "Import your art" },
+          { n: 2, label: "Username" },
+          { n: 3, label: step2ConnectLabel },
+          { n: 4, label: "Profile" },
+          { n: 5, label: "Sync & Review" },
         ]
       : [
           { n: 1, label: "Create your account" },
@@ -463,7 +824,7 @@ function StepBadge({
   extra?: string;
 }) {
   return (
-    <span className="inline-flex items-center gap-1.5 rounded-full border border-[var(--relay-electric)]/25 bg-[var(--relay-electric)]/8 px-3 py-1 text-[10px] font-bold uppercase tracking-widest text-[var(--relay-electric)]">
+    <span className="inline-flex items-center gap-1.5 rounded-full border border-[rgba(82,183,136,0.18)] bg-[rgba(82,183,136,0.07)] px-3 py-1 text-[10px] font-bold uppercase tracking-widest text-[var(--relay-electric)] shadow-[inset_0_0_0_1px_rgba(0,0,0,0.18)]">
       {icon ?? <Zap className="h-2.5 w-2.5 fill-current" strokeWidth={0} />}
       {extra ? `Step ${step} of ${of} · ${extra}` : `Step ${step} of ${of}`}
     </span>
@@ -525,13 +886,283 @@ export function StepSignUp({
         {path === "creator" ? (
           <StudioSupabaseSignInPanel variant="onboarding" onSuccess={onSignedIn} />
         ) : (
-          <SupporterSignInPanel />
+          <SupporterSignInPanel onSuccess={onSignedIn} />
         )}
       </Suspense>
 
       <p className="text-center text-xs text-[var(--relay-fg-muted)]">
         We&apos;ll email you a magic link to verify the account — check your inbox right after submitting.
       </p>
+    </div>
+  );
+}
+
+export function StepRelayUsername({
+  path,
+  onAdvance
+}: {
+  path: OnboardingPath;
+  onAdvance?: () => void;
+}) {
+  const isSupporter = path === "supporter";
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [username, setUsername] = useState("");
+  const [displayName, setDisplayName] = useState("");
+  const [bio, setBio] = useState("");
+  const [originalDisplayName, setOriginalDisplayName] = useState("");
+  const [originalBio, setOriginalBio] = useState("");
+  const [displayNameTouched, setDisplayNameTouched] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [profileWarning, setProfileWarning] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const me = await fetchPatronSessionIfPresent();
+        if (cancelled) return;
+        const sessionUsername = me?.username ?? "";
+        setUsername(sessionUsername);
+
+        if (isSupporter) {
+          try {
+            const profile = await fetchPatronProfileMe();
+            if (cancelled) return;
+            const nextDisplayName = profile.display_name ?? "";
+            const nextBio = profile.bio ?? "";
+            const sessionUsernameNorm = normalizeOnboardingUsername(sessionUsername);
+            const displayMatchesUsername =
+              !nextDisplayName.trim() ||
+              nextDisplayName.trim().toLowerCase() === sessionUsernameNorm;
+            setDisplayName(
+              nextDisplayName.trim() || sessionUsernameNorm || nextDisplayName
+            );
+            setDisplayNameTouched(!displayMatchesUsername);
+            setBio(nextBio);
+            setOriginalDisplayName(nextDisplayName);
+            setOriginalBio(nextBio);
+          } catch {
+            // Profile may not exist yet — optional fields stay empty.
+            const sessionUsernameNorm = normalizeOnboardingUsername(sessionUsername);
+            if (sessionUsernameNorm) {
+              setDisplayName(sessionUsernameNorm);
+            }
+            setDisplayNameTouched(false);
+          }
+        }
+      } catch {
+        if (!cancelled) setError("Sign in first, then choose your Relay username.");
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [isSupporter]);
+
+  const normalized = normalizeOnboardingUsername(username);
+  const usernameOk =
+    /^[a-z0-9][a-z0-9_-]{2,31}$/.test(normalized) && !isReservedPathSegment(normalized);
+  const bioOver = bio.length > PATRON_PROFILE_BIO_UI_LIMIT;
+  const displayNameOver = displayName.length > PATRON_PROFILE_DISPLAY_NAME_LIMIT;
+
+  const handleSave = async () => {
+    if (!usernameOk) {
+      setError("Choose 3-32 characters: letters, numbers, underscore, or hyphen.");
+      return;
+    }
+    if (isSupporter && (bioOver || displayNameOver)) {
+      setError("Profile details exceed the allowed length.");
+      return;
+    }
+    setSaving(true);
+    setError(null);
+    setProfileWarning(null);
+    try {
+      const saved = await patchRelayUsername(normalized);
+      setUsername(saved.username);
+
+      if (isSupporter) {
+        const displayToSave = displayName.trim() || normalized;
+        const displayDirty = displayToSave !== originalDisplayName.trim();
+        const bioDirty = bio.trim() !== originalBio.trim();
+        if (displayDirty || bioDirty) {
+          try {
+            await patchPatronProfileMe({
+              display_name: displayToSave || null,
+              bio: bio.trim() || null,
+            });
+          } catch {
+            setProfileWarning(
+              "Couldn't save profile details — you can edit them in Settings."
+            );
+          }
+        }
+      }
+
+      onAdvance?.();
+    } catch (e) {
+      const msg =
+        e instanceof RelayApiError
+          ? e.status === 409
+            ? "That Relay username is already taken."
+            : e.message
+          : e instanceof Error
+            ? e.message
+            : "Could not save username.";
+      setError(msg);
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="flex flex-col gap-7">
+      <div className="space-y-2">
+        <StepBadge step={2} of={path === "creator" ? 5 : 4} />
+        <h2 className="text-2xl font-semibold tracking-tight text-[var(--relay-fg)]">
+          Choose your Relay username
+        </h2>
+        <p className="text-sm leading-relaxed text-[var(--relay-fg-muted)]">
+          {isSupporter
+            ? "Your username is required — it's your @mention tag everywhere on Relay. Display name and bio are optional; you can change them later in Settings."
+            : "This is your one alias everywhere on Relay. It becomes your profile name, your @mention tag, and the identity people use to find you here."}
+        </p>
+      </div>
+
+      <div className="space-y-2">
+        <label
+          htmlFor="relay-username"
+          className="text-xs font-medium uppercase tracking-wider text-[var(--relay-fg-muted)]"
+        >
+          Relay username <span className="text-[var(--relay-green-400)]">*</span>
+        </label>
+        <div className="flex rounded-xl border border-[var(--relay-border)] bg-[var(--relay-surface-1)] focus-within:ring-2 focus-within:ring-[var(--relay-green-600)]/30">
+          <span className="flex items-center px-3 text-sm text-[var(--relay-green-400)]">@</span>
+          <input
+            id="relay-username"
+            type="text"
+            value={username}
+            disabled={loading || saving}
+            onChange={(e) => {
+              const next = e.target.value;
+              setUsername(next);
+              if (isSupporter && !displayNameTouched) {
+                setDisplayName(normalizeOnboardingUsername(next));
+              }
+            }}
+            placeholder="milo"
+            className="min-w-0 flex-1 rounded-r-xl bg-transparent px-0 py-3 pr-3 text-sm text-[var(--relay-fg)] outline-none placeholder:text-[var(--relay-fg-muted)]"
+            autoComplete="username"
+            spellCheck={false}
+          />
+        </div>
+        <p className="text-xs text-[var(--relay-fg-muted)]">
+          {isSupporter
+            ? "Username — your @handle for mentions and your profile URL."
+            : "Username — your @handle for mentions and discovery on Relay."}
+        </p>
+        {normalized && !isSupporter ? (
+          <p className="text-xs text-[var(--relay-fg-muted)]">
+            Your Relay identity will be{" "}
+            <span className="font-medium text-[var(--relay-green-400)]">@{normalized}</span>.
+          </p>
+        ) : null}
+      </div>
+
+      {isSupporter ? (
+        <>
+          <div className="space-y-2">
+            <label
+              htmlFor="supporter-display-name"
+              className="text-xs font-medium uppercase tracking-wider text-[var(--relay-fg-muted)]"
+            >
+              Display name
+            </label>
+            <input
+              id="supporter-display-name"
+              type="text"
+              value={displayName}
+              disabled={loading || saving}
+              maxLength={PATRON_PROFILE_DISPLAY_NAME_LIMIT}
+              onChange={(e) => {
+                setDisplayNameTouched(true);
+                setDisplayName(e.target.value);
+              }}
+              placeholder={normalized || "milo"}
+              className="w-full rounded-xl border border-[var(--relay-border)] bg-[var(--relay-surface-1)] px-3 py-3 text-sm text-[var(--relay-fg)] outline-none placeholder:text-[var(--relay-fg-muted)] focus:ring-2 focus:ring-[var(--relay-green-600)]/30"
+            />
+            <p className="text-xs text-[var(--relay-fg-muted)]">
+              Display name — your public-facing nametag on Relay. Matching your username is
+              recommended, but you can change it anytime.
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            <label
+              htmlFor="supporter-bio"
+              className="text-xs font-medium uppercase tracking-wider text-[var(--relay-fg-muted)]"
+            >
+              Short bio
+            </label>
+            <textarea
+              id="supporter-bio"
+              value={bio}
+              disabled={loading || saving}
+              rows={3}
+              onChange={(e) => setBio(e.target.value.slice(0, PATRON_PROFILE_BIO_UI_LIMIT))}
+              placeholder="Optional — a line about you"
+              className={[
+                "w-full resize-none rounded-xl border bg-[var(--relay-surface-1)] px-3 py-3 text-sm text-[var(--relay-fg)] outline-none placeholder:text-[var(--relay-fg-muted)] focus:ring-2 focus:ring-[var(--relay-green-600)]/30",
+                bioOver ? "border-red-900/50" : "border-[var(--relay-border)]",
+              ].join(" ")}
+            />
+            <p
+              className={[
+                "text-xs",
+                bioOver ? "text-red-300" : "text-[var(--relay-fg-muted)]",
+              ].join(" ")}
+            >
+              {bio.length} / {PATRON_PROFILE_BIO_UI_LIMIT}
+            </p>
+          </div>
+        </>
+      ) : null}
+
+      {error ? (
+        <p
+          role="alert"
+          className="rounded-md border border-red-900/50 bg-red-950/40 px-3 py-2 text-xs text-red-200"
+        >
+          {error}
+        </p>
+      ) : null}
+
+      {profileWarning ? (
+        <p className="rounded-md border border-[#3a2a14] bg-[#1f1408] px-3 py-2 text-xs text-[#d39e6a]">
+          {profileWarning}
+        </p>
+      ) : null}
+
+      <button
+        type="button"
+        onClick={() => void handleSave()}
+        disabled={loading || saving || !usernameOk || bioOver || displayNameOver}
+        className="flex items-center justify-center gap-2 rounded-xl bg-[var(--relay-green-600)] px-5 py-3 text-sm font-semibold text-[var(--relay-fg)] transition-colors hover:bg-[var(--relay-green-400)] disabled:cursor-not-allowed disabled:opacity-60"
+      >
+        {saving ? (
+          <>
+            <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+            Saving username...
+          </>
+        ) : (
+          <>
+            Save username
+            <ArrowRight className="h-4 w-4" strokeWidth={2} />
+          </>
+        )}
+      </button>
     </div>
   );
 }
@@ -574,7 +1205,7 @@ export function StepConnectPatreonCreator({
 
   const redirectUri = useMemo(() => {
     const fromEnv = process.env.NEXT_PUBLIC_PATREON_REDIRECT_URI?.trim();
-    return fromEnv || (origin ? `${origin}/patreon/callback` : "");
+    return fromEnv || (origin ? `${origin}/connect/patreon/callback` : "");
   }, [origin]);
 
   const applyWorkspace = useCallback((ws: CreatorWorkspaceData) => {
@@ -946,13 +1577,15 @@ export function StepCreatorProfileBasics({
   }, []);
 
   const trimmedCreatorName = creatorName.trim();
-  const derivedUsername = normalizeOnboardingUsername(trimmedCreatorName);
-  const publicSlugDraft = sanitizePublicSlugDraft(derivedUsername);
+  const relayUsername =
+    identity?.username_norm?.trim() || identity?.username?.trim().toLowerCase() || "";
+  const publicSlugDraft = sanitizePublicSlugDraft(relayUsername || trimmedCreatorName);
+  const publicSlugReserved = isReservedPathSegment(publicSlugDraft);
   const creatorNameOk = trimmedCreatorName.length > 0;
-  const derivedUsernameOk = /^[a-z0-9_]{3,32}$/.test(derivedUsername);
   const bioCount = bio.length;
   const bioOver = bioCount > PROFILE_BIO_LIMIT;
-  const canSave = creatorNameOk && derivedUsernameOk && !bioOver && !avatarUploading;
+  const canSave =
+    creatorNameOk && Boolean(relayUsername) && !bioOver && !avatarUploading && !publicSlugReserved;
 
   const isDirty = (field: keyof CreatorProfileIdentity, current: string): boolean => {
     const original = (identity?.[field] as string | null) ?? "";
@@ -961,13 +1594,8 @@ export function StepCreatorProfileBasics({
 
   const buildPatch = () => {
     const patch: Record<string, string | null> = {};
-    const currentUsername =
-      identity?.username_norm?.trim() || identity?.username?.trim().toLowerCase() || "";
     if (trimmedCreatorName !== (identity?.display_name ?? "").trim()) {
       patch.display_name = trimmedCreatorName || null;
-    }
-    if (derivedUsername && derivedUsername !== currentUsername) {
-      patch.username = derivedUsername;
     }
     if (isDirty("avatar_url", avatarUrl)) {
       patch.avatar_url = avatarUrl.trim() || null;
@@ -1028,10 +1656,8 @@ export function StepCreatorProfileBasics({
       setError("Add your creator name to continue.");
       return;
     }
-    if (!derivedUsernameOk) {
-      setError(
-        "Your name needs at least 3 letters or numbers so Relay can create your @handle and gallery URL."
-      );
+    if (!relayUsername) {
+      setError("Choose your Relay username before setting up your creator profile.");
       return;
     }
     const patch = buildPatch();
@@ -1064,8 +1690,8 @@ export function StepCreatorProfileBasics({
     <div className="flex flex-col gap-7">
       <div className="space-y-2">
         <StepBadge
-          step={3}
-          of={4}
+          step={4}
+          of={5}
           extra="Artists"
           icon={<Palette className="h-3 w-3" strokeWidth={2} />}
         />
@@ -1074,8 +1700,8 @@ export function StepCreatorProfileBasics({
         </h2>
         <p className="text-sm leading-relaxed text-[var(--relay-fg-muted)]">
           {identity
-            ? "We pulled what we could from Patreon. Confirm your creator name and avatar."
-            : "Add the name patrons will see. Relay creates your @handle and gallery URL from it."}
+            ? "We pulled what we could from Patreon. Confirm the display name and avatar for your creator profile."
+            : "Add the display name patrons will see. Your Relay username is already your @ tag."}
         </p>
       </div>
 
@@ -1102,29 +1728,26 @@ export function StepCreatorProfileBasics({
               className="w-full rounded-xl border border-[var(--relay-border)] bg-[var(--relay-surface-1)] px-3 py-3 text-sm text-[var(--relay-fg)] placeholder-[var(--relay-fg-muted)] outline-none ring-[var(--relay-green-600)]/30 focus:ring-2"
               maxLength={120}
             />
-            {derivedUsernameOk ? (
+            {relayUsername ? (
               <p className="text-xs text-[var(--relay-fg-muted)]">
                 Patrons will see{" "}
                 <span className="font-medium text-[var(--relay-fg)]">{trimmedCreatorName}</span>
                 {" · "}
-                <span className="text-[var(--relay-green-400)]">@{derivedUsername}</span>
+                <span className="text-[var(--relay-green-400)]">@{relayUsername}</span>
                 {" · "}
-                <span className="text-[var(--relay-green-400)]">/patron/c/{publicSlugDraft}</span>
+                <span className="text-[var(--relay-green-400)]">/{publicSlugDraft}</span>
               </p>
             ) : trimmedCreatorName ? (
               <p className="text-xs text-[var(--relay-fg-muted)]">
-                Add at least 3 letters or numbers so Relay can create your @handle.
+                Choose your Relay username first; it becomes your @ tag everywhere.
               </p>
             ) : null}
           </div>
 
           <div className="space-y-1.5">
-            <label
-              htmlFor="onboarding-avatar"
-              className="text-xs font-medium uppercase tracking-wider text-[var(--relay-fg-muted)]"
-            >
+            <p className="text-xs font-medium uppercase tracking-wider text-[var(--relay-fg-muted)]">
               Avatar image
-            </label>
+            </p>
             <div className="flex items-center gap-3">
               {(avatarPreviewUrl || avatarUrl).trim() ? (
                 /* eslint-disable-next-line @next/next/no-img-element */
@@ -1163,19 +1786,10 @@ export function StepCreatorProfileBasics({
                   className="sr-only"
                   onChange={(e) => void handleAvatarUpload(e.target.files?.[0])}
                 />
-                <input
-                  id="onboarding-avatar"
-                  type="url"
-                  value={avatarUrl}
-                  onChange={(e) => setAvatarUrl(e.target.value)}
-                  placeholder="Or paste an image URL"
-                  className="min-w-0 rounded-xl border border-[var(--relay-border)] bg-[var(--relay-surface-1)] px-3 py-2.5 text-xs text-[var(--relay-fg)] placeholder-[var(--relay-fg-muted)] outline-none ring-[var(--relay-green-600)]/30 focus:ring-2"
-                  spellCheck={false}
-                />
               </div>
             </div>
             <p className="text-xs text-[var(--relay-fg-muted)]">
-              If Patreon provides an avatar, Relay uses it automatically. You can replace it here.
+              If Patreon provides an avatar, Relay uses it automatically. Upload a file to replace it.
             </p>
           </div>
 
@@ -1237,8 +1851,7 @@ export function StepCreatorProfileBasics({
           )}
         </button>
         <p className="text-center text-[11px] text-[var(--relay-fg-muted)]">
-          Your @handle and gallery URL come from this name. Personalize your username later in profile
-          settings.
+          Your Relay username is your @ tag. This display name can be more descriptive.
         </p>
       </div>
     </div>
@@ -1246,26 +1859,11 @@ export function StepCreatorProfileBasics({
 }
 
 /* ───────────────────────────────────────────────────────────────────────────
- * Step 4 — Creator import handoff (detected platform signals + import choices).
- * Step 3 derives the public URL from the creator name.
+ * Step 5 — Creator sync & review (detected platform signals + import choices).
  * ─────────────────────────────────────────────────────────────────────────── */
 
-function formatOnboardingTierDetail(tiers: RelayComposeTierRow[]): string {
-  if (tiers.length === 0) {
-    return "Tier bins are waiting for import. Relay will use them to organize your media.";
-  }
-  const parts = tiers.map((tier) => {
-    const title = tier.title.trim() || "Tier";
-    const dollars = (tier.amount_cents ?? 0) / 100;
-    const price =
-      Number.isInteger(dollars) ? `$${dollars}` : `$${dollars.toFixed(2)}`;
-    return `${title} (${price})`;
-  });
-  return `Tiers Detected: ${parts.join(", ")}`;
-}
-
 function normalizeOnboardingUsername(raw: string): string {
-  return raw.trim().toLowerCase().replace(/[^a-z0-9_]/g, "");
+  return raw.trim().replace(/^@+/, "").toLowerCase().replace(/[^a-z0-9_-]/g, "");
 }
 
 function sanitizePublicSlugDraft(raw: string): string {
@@ -1277,350 +1875,185 @@ function sanitizePublicSlugDraft(raw: string): string {
   return s;
 }
 
-/** When true, creator onboarding step 4 shows `InstallExtensionPrompt`. Default off pre–store launch. */
-function isRelayExtensionOnboardingPromptEnabled(): boolean {
-  const v =
-    typeof process.env.NEXT_PUBLIC_RELAY_EXTENSION_ONBOARDING_PROMPT === "string"
-      ? process.env.NEXT_PUBLIC_RELAY_EXTENSION_ONBOARDING_PROMPT.trim().toLowerCase()
-      : "";
-  return v === "1" || v === "true" || v === "yes";
-}
-
 export function StepClaimHandleAndGo() {
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [importModalOpen, setImportModalOpen] = useState(false);
-  const [snapshotStatus, setSnapshotStatus] = useState<
-    "loading" | "profile_error" | "ready"
-  >("loading");
-  const [studioIdInBrowser, setStudioIdInBrowser] = useState("");
-  const [snapPatreon, setSnapPatreon] = useState(false);
-  const [snapSubstar, setSnapSubstar] = useState(false);
-  const [snapTierCount, setSnapTierCount] = useState<number | null>(null);
-  const [snapTierDetail, setSnapTierDetail] = useState<string>(
-    "Tier bins are waiting for import. Relay will use them to organize your media."
-  );
-  const [snapPatronLine, setSnapPatronLine] = useState<string | null>(null);
-  const [snapRevenueLine, setSnapRevenueLine] = useState<string | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    void (async () => {
-      setError(null);
-      setLoading(true);
-      setSnapshotStatus("loading");
-      const creatorIdLs =
-        typeof window !== "undefined"
-          ? window.localStorage.getItem(RELAY_CREATOR_ID_STORAGE_KEY)?.trim() ?? ""
-          : "";
-      try {
-        setStudioIdInBrowser(creatorIdLs);
-        let profile: CreatorProfileIdentity | null = null;
-        let profileFetchError = false;
-        try {
-          profile = await getCreatorProfile();
-        } catch {
-          profileFetchError = true;
-          profile = null;
-        }
-        if (cancelled) return;
-
-        const hasPa = Boolean(profile?.patreon_campaign_id?.trim());
-        const hasSs = Boolean(profile?.subscribestar_profile_id?.trim());
-        setSnapPatreon(hasPa);
-        setSnapSubstar(hasSs);
-
-        let tiersN: number | null = null;
-        let tierDetail =
-          "Tier bins are waiting for import. Relay will use them to organize your media.";
-        if (creatorIdLs) {
-          try {
-            const { tiers } = await fetchRelayComposeTiers(creatorIdLs);
-            tiersN = tiers.length;
-            tierDetail = formatOnboardingTierDetail(tiers);
-          } catch {
-            tiersN = null;
-          }
-        }
-        setSnapTierCount(tiersN);
-        setSnapTierDetail(tierDetail);
-
-        let patronLine: string | null = null;
-        if (hasPa) {
-          try {
-            const s = await getCreatorPatronTierSummary();
-            patronLine = `${s.total_patrons} patron${s.total_patrons === 1 ? "" : "s"} in your synced membership snapshot`;
-          } catch {
-            patronLine = null;
-          }
-        }
-        let revenueLine: string | null = null;
-        if (hasPa) {
-          try {
-            const s = await getCreatorPatronTierSummary();
-            const monthlyCents = s.tiers.reduce(
-              (sum, tier) => sum + (tier.amount_cents ?? 0) * tier.patron_count,
-              0
-            );
-            revenueLine =
-              monthlyCents > 0
-                ? `$${(monthlyCents / 100).toLocaleString(undefined, {
-                    maximumFractionDigits: 0
-                  })}/mo detected`
-                : "No active paid revenue detected yet";
-          } catch {
-            revenueLine = null;
-          }
-        }
-        setSnapPatronLine(patronLine);
-        setSnapRevenueLine(revenueLine);
-
-        setSnapshotStatus(profileFetchError ? "profile_error" : "ready");
-      } catch {
-        if (!cancelled) {
-          setSnapshotStatus("profile_error");
-        }
-      } finally {
-        if (!cancelled) {
-          setLoading(false);
-        }
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
   return (
     <div className="flex flex-col gap-7">
       <div className="space-y-2">
         <StepBadge
-          step={4}
-          of={4}
+          step={5}
+          of={5}
           extra="Artists"
           icon={<Zap className="h-3 w-3" strokeWidth={2} />}
         />
         <h2 className="text-2xl font-semibold tracking-tight text-[var(--relay-fg)]">
-          What Relay sees
+          Sync &amp; Review
         </h2>
         <p className="text-sm leading-relaxed text-[var(--relay-fg-muted)]">
-          Your profile is live. Here is the signal Relay can act on before you import your media.
+          Your creator profile is live. Confirm the signals, import your archive, then review
+          the gallery Relay built for you.
         </p>
       </div>
 
-      <div className="space-y-2">
-        <div
-          className={cn(
-            "rounded-2xl border border-[var(--relay-border)] bg-[var(--relay-surface-1)] p-3",
-            snapshotStatus === "loading" && "opacity-70"
-          )}
-          aria-busy={snapshotStatus === "loading"}
+      <CreatorImportReadinessPanel />
+
+      <p className="text-center text-xs text-[var(--relay-fg-muted)]">
+        Do you also support other creators on Patreon?{" "}
+        <Link
+          href="/onboarding?path=supporter&step=3"
+          className="text-[var(--relay-green-400)] underline-offset-2 hover:underline"
         >
-          {snapshotStatus === "loading" ? (
-            <p className="flex items-center gap-2 text-sm text-[var(--relay-fg-muted)]">
-              <Loader2 className="h-4 w-4 animate-spin shrink-0" aria-hidden />
-              Checking your connected platforms and tiers…
-            </p>
-          ) : (
-            <div className="space-y-2">
-              {snapshotStatus === "profile_error" ? (
-                <p className="rounded-xl border border-red-900/40 bg-red-950/30 px-3 py-2 text-sm leading-relaxed text-red-100">
-                  Your session may have expired, or the Relay API may be unreachable from this page.
-                  Refresh, sign in again, then revisit step 4.
-                </p>
-              ) : null}
-              <RelaySignalDot
-                label="Tiers"
-                status={snapTierCount !== null && snapTierCount > 0 ? "ready" : "pending"}
-                detail={snapTierDetail}
-              />
-              <RelaySignalDot
-                label="Patrons"
-                status={snapPatronLine ? "ready" : snapPatreon || snapSubstar ? "pending" : "missing"}
-                detail={
-                  snapPatronLine ??
-                  (snapPatreon || snapSubstar
-                    ? "Membership platform connected; patron snapshot has not synced yet."
-                    : `No membership platform linked to this studio yet${studioIdInBrowser ? "." : "."}`)
-                }
-              />
-              <RelaySignalDot
-                label="Revenue"
-                status={snapRevenueLine?.startsWith("$") ? "ready" : "pending"}
-                detail={snapRevenueLine ?? "Revenue appears after tier and patron snapshots sync."}
-              />
-              <RelaySignalDot
-                label="Media"
-                status="pending"
-                detail="Not connected yet. Import your media next so Relay can match art to tier access."
-              />
-            </div>
-          )}
-        </div>
-      </div>
-
-      <button
-        type="button"
-        onClick={() => setImportModalOpen(true)}
-        disabled={loading}
-        className="flex w-full items-center justify-center gap-2 rounded-xl bg-[var(--relay-green-600)] px-5 py-3 text-sm font-semibold text-[var(--relay-fg)] transition-colors hover:bg-[var(--relay-green-400)] disabled:cursor-not-allowed disabled:opacity-60"
-      >
-        Import your Media
-        <ArrowRight className="h-4 w-4" strokeWidth={2} />
-      </button>
-
-      {isRelayExtensionOnboardingPromptEnabled() ? (
-        <InstallExtensionPrompt variant="relay" title="Relay browser extension" />
-      ) : null}
-
-      {error ? (
-        <p className="text-xs font-medium text-red-400" role="alert">
-          {error}
-        </p>
-      ) : null}
-
-      {importModalOpen ? (
-        <ImportMediaChoiceModal
-          onClose={() => setImportModalOpen(false)}
-        />
-      ) : null}
-    </div>
-  );
-}
-
-function RelaySignalDot({
-  label,
-  status,
-  detail
-}: {
-  label: string;
-  status: "ready" | "pending" | "missing";
-  detail: string;
-}) {
-  const dotClass =
-    status === "ready"
-      ? "border-[var(--relay-green-400)] bg-[var(--relay-green-400)]"
-      : status === "pending"
-        ? "border-amber-300 bg-amber-400/30"
-        : "border-[var(--relay-border)] bg-[var(--relay-surface-2)]";
-  return (
-    <details className="group rounded-xl border border-[var(--relay-border)] bg-[var(--relay-bg)]/45 px-3 py-2.5">
-      <summary className="flex cursor-pointer list-none items-center justify-between gap-3">
-        <span className="flex items-center gap-3">
-          <span
-            className={cn("h-2.5 w-2.5 rounded-full border", dotClass)}
-            aria-hidden
-          />
-          <span className="text-sm font-semibold text-[var(--relay-fg)]">{label}</span>
-        </span>
-        <span className="text-[10px] uppercase tracking-[0.2em] text-[var(--relay-fg-muted)]">
-          {status === "ready" ? "Detected" : status === "pending" ? "Next" : "Open"}
-        </span>
-      </summary>
-      <p className="mt-2 pl-5 text-xs leading-relaxed text-[var(--relay-fg-muted)]">
-        {detail}
+          Set up your Follower Feed
+        </Link>
       </p>
-    </details>
-  );
-}
-
-function ImportMediaChoiceModal({
-  onClose
-}: {
-  onClose: () => void;
-}) {
-  return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4 backdrop-blur-sm"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="import-media-title"
-    >
-      <div className="w-full max-w-lg rounded-3xl border border-[var(--relay-electric)]/20 bg-[var(--relay-surface-2)] p-6 shadow-2xl">
-        <div className="flex items-start justify-between gap-4">
-          <div className="space-y-2">
-            <p className="text-[10px] font-bold uppercase tracking-[0.3em] text-[var(--relay-green-400)]">
-              Import your art
-            </p>
-            <h3
-              id="import-media-title"
-              className="text-xl font-semibold tracking-tight text-[var(--relay-fg)]"
-            >
-              Choose how Relay pulls your media
-            </h3>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-full border border-[var(--relay-border)] p-2 text-[var(--relay-fg-muted)] transition-colors hover:text-[var(--relay-fg)]"
-            aria-label="Close import options"
-          >
-            <X className="h-4 w-4" aria-hidden />
-          </button>
-        </div>
-
-        <div className="mt-6 grid gap-3">
-          <Link
-            href="/patreon/cookie"
-            className="group rounded-2xl border border-[var(--relay-green-500)]/40 bg-[var(--relay-green-600)]/15 p-4 transition-colors hover:border-[var(--relay-green-400)] hover:bg-[var(--relay-green-600)]/25"
-          >
-            <span className="flex items-center justify-between gap-3">
-              <span className="text-base font-semibold text-[var(--relay-fg)]">
-                Media Sync
-              </span>
-              <span className="rounded-full bg-[var(--relay-green-600)] px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.18em] text-[var(--relay-fg)]">
-                Recommended
-              </span>
-            </span>
-            <span className="mt-2 block text-sm leading-relaxed text-[var(--relay-fg-muted)]">
-              Pull your media automatically from Patreon. (Requires login cookie)
-            </span>
-          </Link>
-
-          <Link
-            href="/manual-import"
-            className="rounded-2xl border border-[var(--relay-border)] bg-[var(--relay-surface-1)] p-4 transition-colors hover:border-[var(--relay-electric)]/40"
-          >
-            <span className="text-base font-semibold text-[var(--relay-fg)]">
-              Manual Import
-            </span>
-            <span className="mt-2 block text-sm leading-relaxed text-[var(--relay-fg-muted)]">
-              More privacy. Upload art directly into your tiers manually.
-            </span>
-          </Link>
-        </div>
-      </div>
     </div>
   );
 }
 
 export function StepSupporterReady() {
+  const router = useRouter();
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [enabled, setEnabled] = useState(true);
+  const [cadence, setCadence] = useState<NotificationCadencePreferenceId>("weekly");
+  const [slot, setSlot] = useState<NotificationDigestSlotId>("evening");
+  const [blockMatureContent, setBlockMatureContent] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    void fetchPatronProfileMe()
+      .then((profile) => {
+        if (cancelled) return;
+        setEnabled(profile.notification_digest_enabled);
+        setCadence(digestCadenceFromProfile(profile.notification_digest_cadence));
+        setSlot(digestSlotFromProfile(profile.notification_digest_slot));
+        setBlockMatureContent(profile.hide_mature_content);
+      })
+      .catch(() => {
+        // Defaults are fine for first-time patrons.
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const openFeed = async () => {
+    setSaving(true);
+    setError(null);
+    try {
+      await patchPatronProfileMe({
+        notification_digest_enabled: enabled,
+        notification_digest_cadence: cadence,
+        notification_digest_slot: slot,
+        notification_digest_timezone: resolvedPatronDigestTimezone(null),
+        hide_mature_content: blockMatureContent,
+      });
+      // Mark supporter onboarding complete so the creator CTA banner may show on the feed.
+      try { localStorage.setItem("relay_supporter_onboarding_done", "1"); } catch { /* ignore */ }
+      router.push("/feed");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not save notification preferences.");
+      setSaving(false);
+    }
+  };
+
   return (
-    <div className="flex flex-col items-center gap-7 py-2 text-center">
-      <div className="relative flex h-16 w-16 items-center justify-center rounded-2xl border border-[var(--relay-green-800)] bg-[var(--relay-green-950)]">
-        <Heart
-          className="h-7 w-7 text-[var(--relay-green-400)]"
-          strokeWidth={1.5}
-        />
-        <span className="absolute -right-1 -top-1 h-3 w-3 animate-pulse rounded-full bg-[var(--relay-green-400)]" />
+    <div className="flex flex-col gap-6 py-1">
+      <div className="flex flex-col items-center gap-3 text-center">
+        <div className="max-w-md space-y-2">
+          <StepBadge step={4} of={4} extra="You're in" />
+          <h2 className="text-2xl font-semibold tracking-tight text-[var(--relay-fg)]">
+            Your feed is ready
+          </h2>
+          <p className="text-sm leading-relaxed text-[var(--relay-fg-muted)]">
+            Some final details...
+          </p>
+        </div>
       </div>
-      <div className="max-w-sm space-y-2.5">
-        <StepBadge step={3} of={3} extra="You're in" />
-        <h2 className="text-2xl font-semibold tracking-tight text-[var(--relay-fg)]">
-          Your feed is ready
-        </h2>
-        <p className="text-sm leading-relaxed text-[var(--relay-fg-muted)]">
-          Everything you support — in one beautiful, scrollable gallery. Open it
-          up and start exploring.
+
+      {loading ? (
+        <div className="flex items-center justify-center gap-2 py-4 text-xs text-[var(--relay-fg-muted)]">
+          <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+          Loading preferences…
+        </div>
+      ) : (
+        <div className="space-y-4">
+          <fieldset
+            className="space-y-3 rounded-2xl border border-[rgba(82,183,136,0.14)] bg-[linear-gradient(180deg,var(--relay-surface-1)_0%,var(--relay-surface-2)_100%)] p-3"
+            disabled={saving}
+          >
+            <legend className="mx-auto px-2 text-center text-[10px] font-semibold uppercase tracking-[0.18em] text-[var(--relay-green-400)]">
+              Should we block Mature Content from your feed?
+            </legend>
+            <div className="grid grid-cols-2 gap-2">
+              {[
+                { value: true, label: "Yes" },
+                { value: false, label: "No" },
+              ].map((option) => {
+                const selected = blockMatureContent === option.value;
+                return (
+                  <button
+                    key={option.label}
+                    type="button"
+                    aria-pressed={selected}
+                    onClick={() => setBlockMatureContent(option.value)}
+                    className={[
+                      "rounded-2xl border px-3 py-3 text-center text-[12px] font-semibold transition-all duration-150",
+                      selected
+                        ? "border-[var(--relay-electric)] bg-[linear-gradient(180deg,var(--relay-bg)_0%,var(--relay-surface-1)_220%)] text-[var(--relay-fg)] shadow-[inset_0_0_0_1px_rgba(82,183,136,0.22),0_10px_24px_-18px_var(--relay-glow)]"
+                        : "border-[rgba(255,255,255,0.07)] bg-[linear-gradient(180deg,var(--relay-bg)_0%,var(--relay-surface-1)_260%)] text-[var(--relay-fg-muted)] hover:border-[rgba(82,183,136,0.3)] hover:text-[var(--relay-fg)]",
+                      saving ? "cursor-not-allowed opacity-60" : ""
+                    ].join(" ")}
+                  >
+                    {option.label}
+                  </button>
+                );
+              })}
+            </div>
+          </fieldset>
+
+          <NotificationDigestPreferencesForm
+            digestEnabled={enabled}
+            cadence={cadence}
+            slot={slot}
+            disabled={saving}
+            variant="onboarding"
+            onDigestEnabledChange={setEnabled}
+            onCadenceChange={setCadence}
+            onSlotChange={setSlot}
+          />
+        </div>
+      )}
+
+      {error ? (
+        <p role="alert" className="rounded-md border border-red-900/50 bg-red-950/40 px-3 py-2 text-xs text-red-200">
+          {error}
         </p>
+      ) : null}
+
+      <div className="flex justify-center">
+        <button
+          type="button"
+          onClick={() => void openFeed()}
+          disabled={loading || saving}
+          className="group inline-flex items-center gap-2 rounded-xl bg-[var(--relay-electric)] px-7 py-3.5 text-sm font-bold text-white transition-colors duration-200 hover:bg-[var(--relay-green-600)] disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          {saving ? (
+            <>
+              <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+              Saving…
+            </>
+          ) : (
+            <>
+              Open my feed
+              <ArrowRight className="h-4 w-4 transition-transform duration-200 group-hover:translate-x-1" strokeWidth={2.5} />
+            </>
+          )}
+        </button>
       </div>
-      <Link
-        href="/patron/feed"
-        className="group inline-flex items-center gap-2 rounded-xl bg-[var(--relay-electric)] px-7 py-3.5 text-sm font-bold text-white transition-colors duration-200 hover:bg-[var(--relay-green-600)]"
-      >
-        Open my feed
-        <ArrowRight className="h-4 w-4 transition-transform duration-200 group-hover:translate-x-1" strokeWidth={2.5} />
-      </Link>
     </div>
   );
 }

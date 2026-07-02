@@ -27,11 +27,11 @@
 
 ## 1. Legacy `/exchange` is closed (no anonymous Patreon-only accounts)
 
-**Goal:** `POST /api/v1/auth/patreon/patron/exchange` rejects unauthenticated callers and the web `/patreon/patron/connect` page bounces anonymous visitors to `/login`.
+**Goal:** `POST /api/v1/auth/patreon/patron/exchange` rejects unauthenticated callers and the web `/connect/patreon/patron/connect` page bounces anonymous visitors to `/login`.
 
 | # | Step | Pass |
 |---|------|------|
-| 1.1 | Open **`/patreon/patron/connect`** in a **private/incognito** window. The page detects no `relay_session` and redirects to **`/login?role=supporter&returnTo=%2Fpatreon%2Fpatron%2Fconnect`**; no "Continue with Patreon" button is rendered. | ☐ |
+| 1.1 | Open **`/connect/patreon/patron/connect`** in a **private/incognito** window. The page detects no `relay_session` and redirects to **`/login?role=supporter&returnTo=%2Fpatreon%2Fpatron%2Fconnect`**; no "Continue with Patreon" button is rendered. | ☐ |
 | 1.2 | Hit `POST /api/v1/auth/patreon/patron/exchange` directly (curl / Postman). Response is **`403 RELAY_ACCOUNT_REQUIRED`** with header `Deprecation: true; successor=".../patron/link" ...` regardless of body. | ☐ |
 | 1.3 | If `RELAY_PATREON_PATRON_ALLOW_LEGACY_EXCHANGE=1` is set (rollback only), validation + token exchange still work (legacy behavior). Otherwise mark **N/A**. | ☐ |
 
@@ -44,7 +44,7 @@
 | # | Step | Pass |
 |---|------|------|
 | 2.1 | Sign in as supporter: **`/login`** (or product path) until **`relay_session`** / signed-in state is present (cookie or product indicator). | ☐ |
-| 2.2 | From same browser session, open **`/patreon/patron/connect`** and complete Patreon OAuth. | ☐ |
+| 2.2 | From same browser session, open **`/connect/patreon/patron/connect`** and complete Patreon OAuth. | ☐ |
 | 2.3 | Callback succeeds; lands on **`/patron/feed`** (or configured redirect). | ☐ |
 | 2.4 | (Optional) Network: second request path is **`POST .../patron/link`** with body `{ code, redirect_uri }` only (no duplicate identity fork). | ☐ |
 | 2.5 | API response JSON includes **`linked_relay_creator_ids`** (array) and campaign hints **`owned_relay_creator_id`**, **`unmapped_patreon_campaign_ids`** when applicable (inspect response in Network). | ☐ |
@@ -120,7 +120,7 @@ Notes:
 
 | Area | Location |
 |------|-----------|
-| Patron callback routing | `web/app/patreon/patron/callback/page.tsx`, `web/lib/relay-api.ts` (`fetchPatronSessionIfPresent`, `deletePatronPatreonLink`) |
+| Patron callback routing | `web/app/connect/patreon/patron/callback/page.tsx`, `web/lib/relay-api.ts` (`fetchPatronSessionIfPresent`, `deletePatronPatreonLink`) |
 | Connect campaign prompt + modal | `web/lib/patron-connect-campaign-prompt.ts`, `web/components/patron-mock/relay/connect-campaign-modal.tsx`, `relay-app.tsx` |
 | API routes | `src/server.ts` — `POST/DELETE /api/v1/auth/patreon/patron/link` |
 | Email gate | `src/identity/patreon-link-email-gate.ts` |

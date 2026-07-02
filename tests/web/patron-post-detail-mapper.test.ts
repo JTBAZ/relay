@@ -40,6 +40,12 @@ describe("galleryPostDetailToPatronFeedPost", () => {
     };
     const post = galleryPostDetailToPatronFeedPost("rc_x", detail, creator);
     expect(post.id).toBe("p1");
+    expect(post.primaryMediaId).toBe("m1");
+    expect(post.mediaItems?.[0]).toMatchObject({
+      mediaId: "m1",
+      mimeType: "image/png"
+    });
+    expect(post.mediaItems?.[0]?.url).toMatch(/\/api\/v1\/export\/media/);
     expect(post.highResImageUrl).toMatch(/\/api\/v1\/export\/media/);
     expect(post.excerpt).toMatch(/Hi/i);
   });

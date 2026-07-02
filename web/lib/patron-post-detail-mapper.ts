@@ -52,6 +52,14 @@ export function galleryPostDetailToPatronFeedPost(
         absolutizeApiPath(m.content_url_path) ?? absolutizeApiPath(m.preview_url_path)
     )
     .filter((u): u is string => Boolean(u));
+  const mediaItems = media
+    .map((m) => ({
+      mediaId: m.media_id,
+      url: absolutizeApiPath(m.content_url_path),
+      previewUrl: absolutizeApiPath(m.preview_url_path),
+      mimeType: m.mime_type ?? null
+    }))
+    .filter((m) => Boolean(m.mediaId));
 
   const placeholder = "/placeholder.svg?height=800&width=1200";
   const tierLabel = tierLabelFromDetail(detail);
@@ -74,6 +82,8 @@ export function galleryPostDetailToPatronFeedPost(
         : content ?? preview ?? "/placeholder.svg?height=600&width=1200",
     highResImageUrl: content ?? preview ?? placeholder,
     galleryImageUrls: galleryUrls.length > 1 ? galleryUrls : undefined,
+    primaryMediaId: first?.media_id,
+    mediaItems: mediaItems.length > 0 ? mediaItems : undefined,
     publishedAt: detail.published_at,
     likeCount: 0,
     commentCount: 0,

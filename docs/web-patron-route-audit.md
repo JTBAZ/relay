@@ -2,7 +2,7 @@
 
 **Work item:** P6-patron-001  
 **Date:** 2026-05-08  
-**Scope:** Next.js App Router pages under [`web/app/patron/`](../web/app/patron/) (the logged-in / supporter shell). Related OAuth UI lives under [`web/app/patreon/patron/`](../web/app/patreon/patron/) — summarized in § Related routes only.
+**Scope:** Next.js App Router pages under [`web/app/patron/`](../web/app/patron/) (the logged-in / supporter shell). Related OAuth UI lives under [`web/app/connect/patreon/patron/`](../web/app/connect/patreon/patron/) — summarized in § Related routes only.
 
 ## URL → purpose
 
@@ -27,8 +27,8 @@
 
 | URL | Purpose |
 |-----|---------|
-| `/patreon/patron/connect` | Start Patreon **patron OAuth** (with [`PatronConnectClient`](../web/app/patreon/patron/connect/PatronConnectClient.tsx)). |
-| `/patreon/patron/callback` | OAuth **callback** handler for patron linking. |
+| `/connect/patreon/patron/connect` | Start Patreon **patron OAuth** (with [`PatronConnectClient`](../web/app/connect/patreon/patron/connect/PatronConnectClient.tsx)). |
+| `/connect/patreon/patron/callback` | OAuth **callback** handler for patron linking. |
 
 ## Gaps vs road map **Part 3 — Workstream K** (Patron identity & follow graph)
 

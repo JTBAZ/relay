@@ -42,6 +42,8 @@ export type PostVersionRow = {
 export type PostRow = {
   post_id: string;
   creator_id: string;
+  /** DB round-trip: true when the post is readable without patron tier membership. */
+  is_public?: boolean;
   current: PostVersionRow;
   versions: PostVersionRow[];
   upstream_status: "active" | "deleted";

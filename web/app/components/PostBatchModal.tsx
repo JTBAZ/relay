@@ -23,6 +23,7 @@ import {
   type AudiencePreviewPreference,
   type PreviewStyle
 } from "./inspect/post-audience-preview";
+import { PostReachPanel } from "./inspect/post-reach-panel";
 import PostAssetCarouselStrip from "./PostAssetCarouselStrip";
 
 const SEL = "#00aa6f";
@@ -331,6 +332,7 @@ export default function PostBatchModal({
                   savedPreferences={audiencePreferences}
                   onSavePreference={saveAudiencePreference}
                 />
+                <PostReachPanel postId={primary.post_id} />
                 <InspectMetaSidebar
                   preview={focusedItem}
                   previewDetail={postDetail}

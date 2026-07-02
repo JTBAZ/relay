@@ -29,28 +29,56 @@ function testApp(tempDir: string) {
   });
 }
 
+async function seedSession(app: ReturnType<typeof testApp>["app"], creatorId: string): Promise<string> {
+  await request(app).post("/api/v1/identity/register").send({
+    creator_id: creatorId,
+    email: `zip-test-${creatorId}@example.com`,
+    password: "hunter2hunter2",
+    tier_ids: []
+  });
+  const login = await request(app).post("/api/v1/identity/login").send({
+    creator_id: creatorId,
+    email: `zip-test-${creatorId}@example.com`,
+    password: "hunter2hunter2"
+  });
+  return login.body.data.token as string;
+}
+
 describe("library zip export", () => {
-  it("returns 404 when creator has no exported media", async () => {
+  it("returns 401 without a session", async () => {
     const tempDir = await mkdtemp(join(tmpdir(), "relay-zip-"));
     const { app } = testApp(tempDir);
-
     const res = await request(app).get("/api/v1/export/library-zip?creator_id=nobody");
+    expect(res.status).toBe(401);
+  });
+
+  it("returns 400 without creator_id (authenticated)", async () => {
+    const tempDir = await mkdtemp(join(tmpdir(), "relay-zip-"));
+    const { app } = testApp(tempDir);
+    const token = await seedSession(app, "cr_400");
+    const res = await request(app)
+      .get("/api/v1/export/library-zip")
+      .set("Authorization", `Bearer ${token}`);
+    expect(res.status).toBe(400);
+  });
+
+  it("returns 404 when creator has no exported media (authenticated)", async () => {
+    const tempDir = await mkdtemp(join(tmpdir(), "relay-zip-"));
+    const { app } = testApp(tempDir);
+    const token = await seedSession(app, "nobody");
+    const res = await request(app)
+      .get("/api/v1/export/library-zip?creator_id=nobody")
+      .set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(404);
     expect(res.body.error?.message ?? res.body.data).toBeDefined();
   });
 
-  it("returns 400 without creator_id", async () => {
-    const tempDir = await mkdtemp(join(tmpdir(), "relay-zip-"));
-    const { app } = testApp(tempDir);
-    const res = await request(app).get("/api/v1/export/library-zip");
-    expect(res.status).toBe(400);
-  });
-
-  it("returns 502 JSON when export index references missing files on disk", async () => {
+  it("returns 502 JSON when export index references missing files on disk (authenticated)", async () => {
     const tempDir = await mkdtemp(join(tmpdir(), "relay-zip-miss-"));
     const { app } = testApp(tempDir);
     const exportRoot = join(tempDir, "exports");
     const creatorId = "cr_missing";
+    const token = await seedSession(app, creatorId);
 
     await mkdir(join(exportRoot, creatorId), { recursive: true });
     const exportIndex = {
@@ -73,16 +101,19 @@ describe("library zip export", () => {
       "utf8"
     );
 
-    const res = await request(app).get(`/api/v1/export/library-zip?creator_id=${creatorId}`);
+    const res = await request(app)
+      .get(`/api/v1/export/library-zip?creator_id=${creatorId}`)
+      .set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(502);
     expect(String(res.body?.error?.message ?? "")).toMatch(/missing on disk/i);
   });
 
-  it("streams a zip with manifests and exported blob paths", async () => {
+  it("streams a zip with manifests and exported blob paths (authenticated)", async () => {
     const tempDir = await mkdtemp(join(tmpdir(), "relay-zip-"));
     const { app } = testApp(tempDir);
     const exportRoot = join(tempDir, "exports");
     const creatorId = "cr_zip";
+    const token = await seedSession(app, creatorId);
 
     const ingestBody = {
       creator_id: creatorId,
@@ -141,6 +172,7 @@ describe("library zip export", () => {
 
     const res = await request(app)
       .get(`/api/v1/export/library-zip?creator_id=${creatorId}`)
+      .set("Authorization", `Bearer ${token}`)
       .buffer(true)
       .parse((res2, callback) => {
         const chunks: Buffer[] = [];

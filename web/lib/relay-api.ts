@@ -1,5 +1,6 @@
 import { PATREON_CREATOR_OAUTH_SCOPES } from "./patreon-creator-scopes";
 import { pilotUxDevBearerHeaders } from "./pilot-ux-session";
+import { VISITOR_SESSION_STORAGE_KEY } from "./visitor-gallery-telemetry";
 import { SUBSCRIBESTAR_CREATOR_OAUTH_SCOPES } from "./subscribestar-creator-scopes";
 import { resolveRelayApiBaseFromEnv } from "./relay-api-env";
 import {
@@ -101,7 +102,22 @@ function mergeRelayHeaders(init?: RequestInit): Headers {
       headers.set("authorization", pilot.authorization);
     }
   }
+  if (typeof window !== "undefined") {
+    try {
+      const visitorSession = window.localStorage.getItem(VISITOR_SESSION_STORAGE_KEY)?.trim();
+      if (visitorSession) {
+        headers.set("X-Relay-Visitor-Session", visitorSession);
+      }
+    } catch {
+      /* ignore storage failures */
+    }
+  }
   return headers;
+}
+
+/** Headers for authenticated patron requests (Bearer pilot-ux token + cookies). */
+export function relayPatronRequestHeaders(init?: RequestInit): Headers {
+  return mergeRelayHeaders(init);
 }
 
 async function handleRelayHttpErrors(res: Response): Promise<void> {
@@ -216,11 +232,53 @@ export async function relayFetch<T>(path: string, init?: RequestInit): Promise<T
   return envelope.data;
 }
 
+/**
+ * Same envelope parser as `relayFetch`, but does not perform the browser-level 401 redirect.
+ * Use only on dev/optional surfaces that can gracefully fall back when no session is present.
+ */
+export async function relayFetchWithoutAuthRedirect<T>(
+  path: string,
+  init?: RequestInit
+): Promise<T> {
+  let res: Response;
+  try {
+    res = await fetch(`${RELAY_API_BASE}${path}`, {
+      ...init,
+      headers: mergeRelayHeaders(init),
+      credentials: "include",
+      cache: init?.cache ?? "no-store"
+    });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    throw new RelayApiError(
+      msg.includes("fetch") ? "Network error — is the Relay API running?" : msg,
+      0,
+      "NETWORK"
+    );
+  }
+
+  const json = await parseRelayResponseBody(res, path);
+
+  if (!res.ok) {
+    const err = json as { error?: { message?: string; code?: string } };
+    throw new RelayApiError(
+      err.error?.message ?? res.statusText,
+      res.status,
+      err.error?.code
+    );
+  }
+
+  const envelope = json as Envelope<T>;
+  return envelope.data;
+}
+
 /** `GET /api/v1/me/session` — opaque Bearer + optional linked `UserAccount`. */
 export type PatronSessionMe = {
   user_id: string;
   creator_id: string;
   email: string | null;
+  username: string | null;
+  username_norm: string | null;
   auth_provider: "independent" | "patreon" | null;
   patreon_user_id: string | null;
   /** When false, session-first `POST .../patron/link` will reject until Supabase email is confirmed (PE-A gate). Omitted on older API builds. */
@@ -242,6 +300,16 @@ export type ActiveRole = "creator" | "supporter";
 
 export function fetchPatronSessionMe(): Promise<PatronSessionMe> {
   return relayFetch<PatronSessionMe>("/api/v1/me/session");
+}
+
+export async function patchRelayUsername(username: string): Promise<{
+  username: string;
+  username_norm: string;
+}> {
+  return relayFetch<{ username: string; username_norm: string }>("/api/v1/me/username", {
+    method: "PATCH",
+    body: JSON.stringify({ username })
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -403,7 +471,7 @@ export async function cancelPatronAccountDeletion(): Promise<{
  * persisted state so callers can update local context without a follow-up GET.
  *
  * Recommended caller pattern: after success, push the user to the role's natural landing
- * page (`/designer` for creator, `/patron/feed` for supporter) and re-fetch any
+ * page (`/studio/designer` for creator, `/feed` for supporter) and re-fetch any
  * shell-scoped session state.
  */
 export async function setActiveRole(role: ActiveRole): Promise<{
@@ -485,7 +553,7 @@ export async function fetchPatronSessionIfPresent(): Promise<PatronSessionMe | n
 /** Browser storage for studio id after `POST /api/v1/creator/workspace` (MT-032 / MT-035). */
 export const RELAY_CREATOR_ID_STORAGE_KEY = "relay_creator_id";
 
-/** Browser storage for `/patron/c/{slug}` segment after workspace bootstrap. */
+/** Browser storage for `/{slug}` segment after workspace bootstrap. */
 export const RELAY_PUBLIC_SLUG_STORAGE_KEY = "relay_public_slug";
 
 /** True when `state` is the signed value from `POST /api/v1/auth/patreon/creator/prepare` (v1.HMAC). */
@@ -522,7 +590,7 @@ export async function postSubscribeStarCreatorPrepare(
   creatorId: string
 ): Promise<SubscribeStarCreatorPrepareData> {
   return relayFetch<SubscribeStarCreatorPrepareData>(
-    "/api/v1/auth/subscribestar/creator/prepare",
+    "/api/v1/auth/connect/subscribestar/creator/prepare",
     {
       method: "POST",
       body: JSON.stringify({ creator_id: creatorId.trim() })
@@ -543,7 +611,7 @@ export async function postSubscribeStarCreatorExchange(body: {
   state?: string;
 }): Promise<SubscribeStarCreatorExchangeData> {
   return relayFetch<SubscribeStarCreatorExchangeData>(
-    "/api/v1/auth/subscribestar/creator/exchange",
+    "/api/v1/auth/connect/subscribestar/creator/exchange",
     {
       method: "POST",
       body: JSON.stringify({
@@ -556,7 +624,7 @@ export async function postSubscribeStarCreatorExchange(body: {
   );
 }
 
-/** `POST /api/v1/subscribestar/creator/sync/posts` — GraphQL posts ingest (session + creator mutation authz). */
+/** `POST /api/v1/connect/subscribestar/creator/sync/posts` — GraphQL posts ingest (session + creator mutation authz). */
 export type SubscribeStarCreatorSyncPostsData = {
   creator_id: string;
   pages_fetched: number;
@@ -571,7 +639,7 @@ export async function postSubscribeStarCreatorSyncPosts(body: {
   max_pages?: number;
 }): Promise<SubscribeStarCreatorSyncPostsData> {
   return relayFetch<SubscribeStarCreatorSyncPostsData>(
-    "/api/v1/subscribestar/creator/sync/posts",
+    "/api/v1/connect/subscribestar/creator/sync/posts",
     {
       method: "POST",
       body: JSON.stringify({
@@ -702,6 +770,8 @@ export type CreatorOnboardingImportProgress = {
   last_post_scrape_posts_written: number | null;
 };
 
+export type MediaImportStatus = "none" | "syncing" | "complete" | "failed";
+
 export type CreatorOnboardingData = {
   creator_id: string;
   step: CreatorOnboardingStep;
@@ -709,6 +779,8 @@ export type CreatorOnboardingData = {
   updated_at: string;
   import_progress: CreatorOnboardingImportProgress | null;
   sync_health: SyncHealthWebDto;
+  /** Derived by server — convenience field for the Step 5 CTA state machine. */
+  media_import_status?: MediaImportStatus;
 };
 
 export async function fetchCreatorOnboarding(): Promise<CreatorOnboardingData> {
@@ -723,6 +795,85 @@ export async function patchCreatorOnboarding(patch: {
     method: "PATCH",
     body: JSON.stringify(patch)
   });
+}
+
+// ---------------------------------------------------------------------------
+// Slice D — creator promo slots (Step 5 review picks)
+// ---------------------------------------------------------------------------
+
+export type CreatorPromoSlotTargetKind = "post" | "media";
+
+export type CreatorPromoSlotRow = {
+  slot_rank: 1 | 2 | 3 | 4 | 5;
+  target_kind: CreatorPromoSlotTargetKind;
+  target_id: string;
+  post_id?: string;
+  title?: string;
+  thumb_url_path?: string;
+  label?: string | null;
+};
+
+export type CreatorPromoSlotsData = {
+  creator_id: string;
+  slots: CreatorPromoSlotRow[];
+};
+
+export type PutCreatorPromoSlotRow = {
+  slot_rank: 1 | 2 | 3 | 4 | 5;
+  target_kind: CreatorPromoSlotTargetKind;
+  target_id: string;
+  label?: string | null;
+  metadata?: unknown | null;
+};
+
+export async function fetchCreatorPromoSlots(): Promise<CreatorPromoSlotsData> {
+  return relayFetch<CreatorPromoSlotsData>("/api/v1/creator/promo-slots");
+}
+
+export async function putCreatorPromoSlots(
+  slots: PutCreatorPromoSlotRow[]
+): Promise<CreatorPromoSlotsData> {
+  return relayFetch<CreatorPromoSlotsData>("/api/v1/creator/promo-slots", {
+    method: "PUT",
+    body: JSON.stringify({ slots })
+  });
+}
+
+/** Step 5 review modal — creator growth focus stored in onboarding metadata. */
+export type CreatorGrowthGoal = "discovery" | "conversion" | "consistency";
+
+export const CREATOR_GROWTH_GOALS: readonly {
+  id: CreatorGrowthGoal;
+  label: string;
+  detail: string;
+}[] = [
+  {
+    id: "discovery",
+    label: "Audience discovery",
+    detail: "Get new eyes on your best work in Relay and beyond."
+  },
+  {
+    id: "conversion",
+    label: "Convert fans to patrons",
+    detail: "Turn interest into paid support with promo-ready pieces."
+  },
+  {
+    id: "consistency",
+    label: "Posting consistency",
+    detail: "Build a reliable release rhythm your patrons can count on."
+  }
+] as const;
+
+/** PATCH onboarding replaces metadata wholesale — merge client-side before save. */
+export function mergeCreatorOnboardingMetadata(
+  existing: unknown | null,
+  patch: Record<string, unknown>
+): Record<string, unknown> {
+  const base =
+    existing && typeof existing === "object" && !Array.isArray(existing)
+      ? { ...(existing as Record<string, unknown>) }
+      : {};
+  return { ...base, ...patch };
 }
 
 // ---------------------------------------------------------------------------
@@ -885,6 +1036,518 @@ export async function fetchCreatorPostPerformance(
   );
 }
 
+export type CreatorUnifiedPerformanceRange = "7d" | "30d" | "90d";
+
+export type CreatorUnifiedPerformanceMetricTotals = {
+  impressions: number;
+  seen: number;
+  likes: number;
+  comments: number;
+  views: number;
+};
+
+export type CreatorUnifiedPerformanceData = {
+  creator_id: string;
+  as_of: string;
+  range: CreatorUnifiedPerformanceRange;
+  time_range: { start: string; end: string };
+  source: "rollup" | "csv_fallback";
+  rollup_computed_at: string | null;
+  totals: CreatorUnifiedPerformanceMetricTotals;
+  by_destination: Array<CreatorUnifiedPerformanceMetricTotals & { destination: string }>;
+  top_posts: Array<{
+    post_id: string;
+    title: string | null;
+    total_reach: number;
+    destinations: Array<CreatorUnifiedPerformanceMetricTotals & { destination: string }>;
+  }>;
+  daily_series: Array<CreatorUnifiedPerformanceMetricTotals & { day: string }>;
+};
+
+export async function fetchCreatorUnifiedPerformance(
+  params?: {
+    range?: CreatorUnifiedPerformanceRange;
+    destination?: string;
+    topPostsLimit?: number;
+  }
+): Promise<CreatorUnifiedPerformanceData> {
+  const u = new URLSearchParams();
+  if (params?.range) {
+    u.set("range", params.range);
+  }
+  if (params?.destination) {
+    u.set("destination", params.destination);
+  }
+  if (params?.topPostsLimit != null) {
+    u.set("top_posts_limit", String(params.topPostsLimit));
+  }
+  const qs = u.toString();
+  return relayFetch<CreatorUnifiedPerformanceData>(
+    `/api/v1/creator/analytics/unified-performance${qs ? `?${qs}` : ""}`
+  );
+}
+
+export type PerformanceFreshnessWire = {
+  rollup_computed_at: string | null;
+  stale: boolean;
+  stale_after_hours: number;
+};
+
+export type PerformanceConfidenceWire = "high" | "medium" | "low" | "unknown";
+
+export type PerformanceSourceSummaryWire = {
+  destination: string;
+  source: string;
+  confidence: PerformanceConfidenceWire;
+};
+
+export type PerformanceOverviewData = {
+  creator_id: string;
+  as_of: string;
+  range: CreatorUnifiedPerformanceRange;
+  time_range: { start: string; end: string };
+  source: "rollup" | "csv_fallback";
+  hierarchy: {
+    creative_work_count: number;
+    post_count: number;
+    platform_instance_count: number;
+  };
+  posting_goal: CreatorPostingGoalStatusWire;
+  performance: CreatorUnifiedPerformanceData;
+  freshness: PerformanceFreshnessWire;
+  source_summary: PerformanceSourceSummaryWire[];
+};
+
+export type PerformanceCampaignGroupWire = {
+  campaign_label: string | null;
+  campaign_label_display: string;
+  creative_work_count: number;
+  post_count: number;
+  total_reach: number;
+  totals: CreatorUnifiedPerformanceMetricTotals;
+  by_destination: Array<CreatorUnifiedPerformanceMetricTotals & { destination: string }>;
+};
+
+export type PerformanceCampaignRollupsData = {
+  creator_id: string;
+  as_of: string;
+  range: CreatorUnifiedPerformanceRange;
+  time_range: { start: string; end: string };
+  groups: PerformanceCampaignGroupWire[];
+  freshness: PerformanceFreshnessWire;
+};
+
+export type PerformanceTagGroupWire = {
+  tag: string;
+  creative_work_count: number;
+  post_count: number;
+  total_reach: number;
+  totals: CreatorUnifiedPerformanceMetricTotals;
+  by_destination: Array<CreatorUnifiedPerformanceMetricTotals & { destination: string }>;
+};
+
+export type PerformanceTagRollupsData = {
+  creator_id: string;
+  as_of: string;
+  range: CreatorUnifiedPerformanceRange;
+  time_range: { start: string; end: string };
+  tag_filter: string | null;
+  groups: PerformanceTagGroupWire[];
+  freshness: PerformanceFreshnessWire;
+};
+
+export type PerformanceWorkSummaryWire = {
+  creative_work_id: string;
+  title: string;
+  analytics_campaign_label: string | null;
+  tags: string[];
+  is_default_bundle: boolean;
+  member_count: number;
+  total_reach: number;
+  totals: CreatorUnifiedPerformanceMetricTotals;
+  by_destination: Array<CreatorUnifiedPerformanceMetricTotals & { destination: string }>;
+};
+
+export type PerformanceWorksListData = {
+  creator_id: string;
+  as_of: string;
+  range: CreatorUnifiedPerformanceRange;
+  time_range: { start: string; end: string };
+  works: PerformanceWorkSummaryWire[];
+  freshness: PerformanceFreshnessWire;
+};
+
+export type PerformancePlatformInstanceWire = {
+  platform_instance_id: string;
+  destination: string;
+  external_url: string | null;
+  external_id: string | null;
+  attempt_id: string | null;
+  link_source: string;
+  status: string;
+  refresh_policy: string;
+  linked_at: string;
+  last_refreshed_at: string | null;
+};
+
+export type PerformanceVariantWire = {
+  post_id: string;
+  title: string | null;
+  variant_role: string;
+  total_reach: number;
+  totals: CreatorUnifiedPerformanceMetricTotals;
+  by_destination: Array<CreatorUnifiedPerformanceMetricTotals & { destination: string }>;
+  platform_instances: PerformancePlatformInstanceWire[];
+};
+
+export type PerformanceVariantRoleMetricsWire = {
+  member_count: number;
+  post_ids: string[];
+  total_reach: number;
+  totals: CreatorUnifiedPerformanceMetricTotals;
+  by_destination: Array<CreatorUnifiedPerformanceMetricTotals & { destination: string }>;
+};
+
+export type PerformanceVariantRoleBreakdownWire = Partial<
+  Record<"full" | "teaser" | "promo" | "repost" | "standalone", PerformanceVariantRoleMetricsWire>
+>;
+
+export type PerformanceWorkCrosspostGapsWire = {
+  present_destinations: string[];
+  missing_destinations: string[];
+  missing_teaser_destinations: string[];
+  suggested_source_post_id: string | null;
+};
+
+export type PerformanceWorkBundleData = {
+  creative_work_id: string;
+  title: string;
+  description: string | null;
+  analytics_campaign_label: string | null;
+  tags: string[];
+  is_default_bundle: boolean;
+  as_of: string;
+  range: CreatorUnifiedPerformanceRange;
+  time_range: { start: string; end: string };
+  totals: CreatorUnifiedPerformanceMetricTotals;
+  by_destination: Array<CreatorUnifiedPerformanceMetricTotals & { destination: string }>;
+  daily_series: Array<CreatorUnifiedPerformanceMetricTotals & { day: string }>;
+  total_reach: number;
+  variants: PerformanceVariantWire[];
+  role_breakdown?: PerformanceVariantRoleBreakdownWire;
+  crosspost_gaps: PerformanceWorkCrosspostGapsWire;
+  freshness: PerformanceFreshnessWire;
+  source_summary: PerformanceSourceSummaryWire[];
+};
+
+export type BundleSuggestionSignalWire = {
+  code: string;
+  label: string;
+  weight: number;
+};
+
+export type BundleSuggestionWire = {
+  suggestion_id: string;
+  source_post_id: string;
+  source_title: string | null;
+  target_creative_work_id: string;
+  target_title: string;
+  target_post_ids: string[];
+  score: number;
+  confidence: "high" | "medium" | "low";
+  signals: BundleSuggestionSignalWire[];
+  suggested_variant_role: string;
+};
+
+export type BundleSuggestionsData = {
+  creator_id: string;
+  as_of: string;
+  suggestions: BundleSuggestionWire[];
+  dismissed_count: number;
+};
+
+function performanceRangeQuery(
+  params?: {
+    range?: CreatorUnifiedPerformanceRange;
+    destination?: string | null;
+    limit?: number;
+    group_by?: "variant_role";
+  }
+): string {
+  const u = new URLSearchParams();
+  if (params?.range) {
+    u.set("range", params.range);
+  }
+  if (params?.destination) {
+    u.set("destination", params.destination);
+  }
+  if (params?.limit != null) {
+    u.set("limit", String(params.limit));
+  }
+  if (params?.group_by) {
+    u.set("group_by", params.group_by);
+  }
+  const qs = u.toString();
+  return qs ? `?${qs}` : "";
+}
+
+export async function fetchPerformanceOverview(
+  params?: { range?: CreatorUnifiedPerformanceRange; destination?: string | null }
+): Promise<PerformanceOverviewData> {
+  return relayFetch<PerformanceOverviewData>(
+    `/api/v1/creator/analytics/performance/overview${performanceRangeQuery(params)}`
+  );
+}
+
+export async function fetchPerformanceCampaignRollups(
+  params?: { range?: CreatorUnifiedPerformanceRange }
+): Promise<PerformanceCampaignRollupsData> {
+  return relayFetch<PerformanceCampaignRollupsData>(
+    `/api/v1/creator/analytics/performance/campaigns${performanceRangeQuery(params)}`
+  );
+}
+
+export async function fetchPerformanceTagRollups(
+  params?: { range?: CreatorUnifiedPerformanceRange; tag?: string }
+): Promise<PerformanceTagRollupsData> {
+  const u = new URLSearchParams();
+  if (params?.range) {
+    u.set("range", params.range);
+  }
+  if (params?.tag) {
+    u.set("tag", params.tag);
+  }
+  const qs = u.toString();
+  return relayFetch<PerformanceTagRollupsData>(
+    `/api/v1/creator/analytics/performance/tags${qs ? `?${qs}` : ""}`
+  );
+}
+
+export async function fetchPerformanceWorks(
+  params?: { range?: CreatorUnifiedPerformanceRange; limit?: number }
+): Promise<PerformanceWorksListData> {
+  return relayFetch<PerformanceWorksListData>(
+    `/api/v1/creator/analytics/performance/works${performanceRangeQuery(params)}`
+  );
+}
+
+export async function fetchPerformanceWorkBundle(
+  creativeWorkId: string,
+  params?: { range?: CreatorUnifiedPerformanceRange; group_by?: "variant_role" }
+): Promise<PerformanceWorkBundleData> {
+  return relayFetch<PerformanceWorkBundleData>(
+    `/api/v1/creator/analytics/performance/works/${encodeURIComponent(creativeWorkId)}${performanceRangeQuery(params)}`
+  );
+}
+
+export type PerformanceWorkInstanceRowWire = PerformancePlatformInstanceWire & {
+  refresh_eligible: boolean;
+  can_refresh_manually: boolean;
+  cooldown_active: boolean;
+  retry_after_seconds: number;
+  next_allowed_at: string | null;
+  stale: boolean;
+  recommended_method: "extension_handoff" | "relay_rollup" | "csv_rollup_overlay" | "none";
+};
+
+export type PerformanceWorkPostInstancesWire = {
+  post_id: string;
+  title: string | null;
+  variant_role: string;
+  platform_instances: PerformanceWorkInstanceRowWire[];
+};
+
+export type PerformanceWorkInstancesData = {
+  creative_work_id: string;
+  title: string;
+  as_of: string;
+  posts: PerformanceWorkPostInstancesWire[];
+  crosspost_gaps: PerformanceWorkCrosspostGapsWire;
+};
+
+export async function fetchPerformanceWorkInstances(
+  creativeWorkId: string
+): Promise<PerformanceWorkInstancesData> {
+  return relayFetch<PerformanceWorkInstancesData>(
+    `/api/v1/creator/analytics/performance/works/${encodeURIComponent(creativeWorkId)}/instances`
+  );
+}
+
+export async function fetchCreativeWorkBundleSuggestions(): Promise<BundleSuggestionsData> {
+  return relayFetch<BundleSuggestionsData>(
+    "/api/v1/creator/analytics/creative-works/bundle-suggestions"
+  );
+}
+
+export type PlatformInstanceRefreshStatus =
+  | "completed"
+  | "handoff_required"
+  | "cooldown"
+  | "disabled"
+  | "unsupported_destination"
+  | "missing_link";
+
+export type PlatformInstanceRefreshHandoffWire = {
+  post_id: string;
+  attempt_id: string;
+  destination: string;
+  external_url: string;
+};
+
+export type PlatformInstanceRefreshWire = {
+  platform_instance_id: string;
+  destination: string;
+  status: PlatformInstanceRefreshStatus;
+  method:
+    | "relay_engagement_rollup"
+    | "csv_rollup_overlay"
+    | "extension_dom"
+    | "platform_api"
+    | null;
+  handoff: PlatformInstanceRefreshHandoffWire | null;
+  cooldown: {
+    retry_after_seconds: number;
+    next_allowed_at: string;
+  } | null;
+  rollup_upserted: number | null;
+  last_refreshed_at: string | null;
+  last_manual_refresh_requested_at: string | null;
+  message: string | null;
+};
+
+export type PlatformInstanceRefreshStatusData = {
+  platform_instance_id: string;
+  destination: string;
+  refresh_policy: string;
+  status: string;
+  can_refresh_manually: boolean;
+  cooldown_active: boolean;
+  retry_after_seconds: number;
+  next_allowed_at: string | null;
+  last_refreshed_at: string | null;
+  last_manual_refresh_requested_at: string | null;
+  stale: boolean;
+  recommended_method: "extension_handoff" | "relay_rollup" | "csv_rollup_overlay" | "none";
+};
+
+export async function fetchPlatformInstanceRefreshStatus(
+  platformInstanceId: string
+): Promise<PlatformInstanceRefreshStatusData> {
+  return relayFetch<PlatformInstanceRefreshStatusData>(
+    `/api/v1/creator/analytics/platform-instances/${encodeURIComponent(platformInstanceId)}/refresh-status`
+  );
+}
+
+export async function requestPlatformInstanceRefresh(
+  platformInstanceId: string
+): Promise<PlatformInstanceRefreshWire> {
+  return relayFetch<PlatformInstanceRefreshWire>(
+    `/api/v1/creator/analytics/platform-instances/${encodeURIComponent(platformInstanceId)}/refresh`,
+    { method: "POST" }
+  );
+}
+
+export type PerformanceInsightActionWire = {
+  id: string;
+  title: string;
+  trigger: string;
+  body: string;
+  action_label: string | null;
+  href: string | null;
+  tone: "active" | "watching" | "guidance";
+  confidence: PerformanceConfidenceWire;
+};
+
+export type PerformanceInsightActionsData = {
+  creator_id: string;
+  as_of: string;
+  range: CreatorUnifiedPerformanceRange;
+  actions: PerformanceInsightActionWire[];
+};
+
+export type PerformanceGoalScopeWire = "creator" | "work" | "campaign" | "platform";
+export type PerformanceGoalMetricWire = "reach" | "likes" | "comments";
+export type PerformanceGoalPaceStatus = "on_track" | "behind" | "complete";
+
+export type PerformanceGoalWire = {
+  id: string;
+  scope: PerformanceGoalScopeWire;
+  scope_ref: string | null;
+  scope_label: string;
+  metric: PerformanceGoalMetricWire;
+  target_value: number;
+  range: CreatorUnifiedPerformanceRange;
+  label: string | null;
+  enabled: boolean;
+  current_value: number;
+  progress_ratio: number;
+  pace_status: PerformanceGoalPaceStatus;
+  created_at: string;
+  updated_at: string;
+};
+
+export type PerformanceGoalSuggestionWire = {
+  suggestion_id: string;
+  scope: PerformanceGoalScopeWire;
+  scope_ref: string | null;
+  scope_label: string;
+  metric: PerformanceGoalMetricWire;
+  target_value: number;
+  range: CreatorUnifiedPerformanceRange;
+  label: string;
+  current_value: number;
+  reason: string;
+};
+
+export type PerformanceGoalsData = {
+  creator_id: string;
+  as_of: string;
+  range: CreatorUnifiedPerformanceRange;
+  goals: PerformanceGoalWire[];
+  suggested_goals: PerformanceGoalSuggestionWire[];
+};
+
+export type CreatePerformanceGoalInput = {
+  scope: PerformanceGoalScopeWire;
+  scope_ref?: string | null;
+  metric: PerformanceGoalMetricWire;
+  target_value: number;
+  range?: CreatorUnifiedPerformanceRange;
+  label?: string | null;
+};
+
+export async function fetchPerformanceInsightActions(
+  params?: { range?: CreatorUnifiedPerformanceRange }
+): Promise<PerformanceInsightActionsData> {
+  return relayFetch<PerformanceInsightActionsData>(
+    `/api/v1/creator/analytics/performance/insight-actions${performanceRangeQuery(params)}`
+  );
+}
+
+export async function fetchPerformanceGoals(
+  params?: { range?: CreatorUnifiedPerformanceRange }
+): Promise<PerformanceGoalsData> {
+  return relayFetch<PerformanceGoalsData>(
+    `/api/v1/creator/analytics/performance/goals${performanceRangeQuery(params)}`
+  );
+}
+
+export async function createPerformanceGoal(
+  body: CreatePerformanceGoalInput
+): Promise<{ goal: PerformanceGoalWire }> {
+  return relayFetch<{ goal: PerformanceGoalWire }>("/api/v1/creator/analytics/performance/goals", {
+    method: "POST",
+    body: JSON.stringify(body)
+  });
+}
+
+export async function deletePerformanceGoal(goalId: string): Promise<{ ok: true }> {
+  return relayFetch<{ ok: true }>(
+    `/api/v1/creator/analytics/performance/goals/${encodeURIComponent(goalId)}`,
+    { method: "DELETE" }
+  );
+}
+
 export type CreatorUsagePreviewBar = {
   metric: string;
   label: string;
@@ -1012,6 +1675,12 @@ export function describeCreatorGalleryPublishBlock(
 export type PublicCreatorResolution = {
   public_slug: string;
   relay_creator_id: string;
+  username?: string | null;
+  display_name?: string | null;
+  avatar_url?: string | null;
+  banner_url?: string | null;
+  bio?: string | null;
+  discipline?: string | null;
 };
 
 /** No auth — for public pages and share links. */
@@ -1093,6 +1762,7 @@ export type GalleryItem = {
   published_at: string;
   tag_ids: string[];
   tier_ids: string[];
+  is_public?: boolean;
   mime_type?: string;
   media_role?: string;
   has_export: boolean;
@@ -1110,6 +1780,30 @@ export type GalleryItem = {
   collection_theme_tag_ids: string[];
   /** Duplicate Patreon cover (same asset as another row); UI may hide by default. */
   shadow_cover?: boolean;
+  /** Creator library: cross-post status per destination (owner list only). */
+  distribution_summary?: {
+    post_id: string;
+    destinations: Array<{
+      destination: "patreon" | "x" | "deviantart" | "bluesky";
+      variant_status: string | null;
+      attempt_status: string | null;
+      attempt_id: string | null;
+      external_url: string | null;
+      external_id: string | null;
+    }>;
+  };
+  /** Creator library: linked platform instances when `include_instances=true` (owner list only). */
+  platform_instances?: GalleryPlatformInstanceSummaryWire[];
+};
+
+export type GalleryPlatformInstanceSummaryWire = {
+  platform_instance_id: string;
+  destination: string;
+  external_url: string | null;
+  status: string;
+  last_refreshed_at: string | null;
+  variant_role: string;
+  refresh_eligible: boolean;
 };
 
 /**
@@ -1395,10 +2089,13 @@ export async function listPatronCollections(
  * PE-D — cross-creator collections listing with live viewer_entitlement attached to each entry.
  * Backend route: GET /api/v1/patron/collections/all (account-scoped, no creator_id filter).
  */
-export async function listAllPatronCollectionsEnriched(): Promise<
-  PatronCollectionWithEnrichedEntries[]
-> {
-  const data = await relayFetch<PatronCollectionsEnrichedListData>(
+export async function listAllPatronCollectionsEnriched(
+  options?: { suppressAuthRedirect?: boolean }
+): Promise<PatronCollectionWithEnrichedEntries[]> {
+  const fetcher = options?.suppressAuthRedirect
+    ? relayFetchWithoutAuthRedirect
+    : relayFetch;
+  const data = await fetcher<PatronCollectionsEnrichedListData>(
     `/api/v1/patron/collections/all`
   );
   return data.collections;
@@ -1437,7 +2134,7 @@ export async function addPatronCollectionEntry(params: {
   mediaId: string;
 }): Promise<PatronCollectionEntryRecord> {
   const data = await relayFetch<{ entry: PatronCollectionEntryRecord }>(
-    `/api/v1/patron/collections/${encodeURIComponent(params.collectionId)}/entries`,
+    `/api/v1/collections/${encodeURIComponent(params.collectionId)}/entries`,
     {
       method: "POST",
       body: JSON.stringify({
@@ -1457,7 +2154,7 @@ export async function removePatronCollectionEntry(params: {
   mediaId: string;
 }): Promise<void> {
   await relayFetch<{ deleted: boolean }>(
-    `/api/v1/patron/collections/${encodeURIComponent(params.collectionId)}/entries`,
+    `/api/v1/collections/${encodeURIComponent(params.collectionId)}/entries`,
     {
       method: "DELETE",
       body: JSON.stringify({
@@ -1476,9 +2173,128 @@ export async function deletePatronCollection(
   const u = new URLSearchParams();
   u.set("creator_id", creatorId);
   await relayFetch<{ deleted: boolean }>(
-    `/api/v1/patron/collections/${encodeURIComponent(collectionId)}?${u.toString()}`,
+    `/api/v1/collections/${encodeURIComponent(collectionId)}?${u.toString()}`,
     { method: "DELETE" }
   );
+}
+
+export async function updatePatronCollection(params: {
+  creatorId: string;
+  collectionId: string;
+  title?: string;
+  sort_order?: number;
+  is_public?: boolean;
+}): Promise<PatronCollectionRecord> {
+  const data = await relayFetch<{ collection: PatronCollectionRecord }>(
+    `/api/v1/collections/${encodeURIComponent(params.collectionId)}`,
+    {
+      method: "PATCH",
+      body: JSON.stringify({
+        creator_id: params.creatorId,
+        ...(params.title !== undefined ? { title: params.title } : {}),
+        ...(params.sort_order !== undefined ? { sort_order: params.sort_order } : {}),
+        ...(params.is_public !== undefined ? { is_public: params.is_public } : {})
+      })
+    }
+  );
+  return data.collection;
+}
+
+export type PublicPatronCollectionDetail = {
+  collection_id: string;
+  title: string;
+  entry_count: number;
+  created_at: string;
+  entries: PatronCollectionEntryWithViewerEntitlement[];
+};
+
+export async function fetchPublicPatronCollectionDetail(
+  collectionId: string
+): Promise<PublicPatronCollectionDetail | null> {
+  try {
+    const data = await relayFetchWithoutAuthRedirect<PublicPatronCollectionDetail>(
+      `/api/v1/public/patron-collections/${encodeURIComponent(collectionId)}`
+    );
+    return data;
+  } catch (err) {
+    if (err instanceof RelayApiError && err.status === 404) {
+      return null;
+    }
+    throw err;
+  }
+}
+
+export type PatronCollectionDetailEntry = PatronCollectionEntryWithViewerEntitlement & {
+  source_post_title?: string;
+  source_post_description?: string;
+  mime_type?: string;
+  thumb_url_path?: string;
+  content_url_path?: string;
+  source_media_index?: number;
+  source_media_count?: number;
+  creator_handle?: string;
+  creator_display_name?: string;
+  creator_avatar_url?: string;
+};
+
+export type PatronOwnerCollectionDetail = PatronCollectionRecord & {
+  entry_count: number;
+  entries: PatronCollectionDetailEntry[];
+};
+
+export async function fetchPatronCollectionDetail(
+  collectionId: string
+): Promise<PatronOwnerCollectionDetail> {
+  const data = await relayFetch<{ collection: PatronOwnerCollectionDetail }>(
+    `/api/v1/collections/${encodeURIComponent(collectionId)}`
+  );
+  return data.collection;
+}
+
+export function patronCollectionDetailThumbUrl(thumbPath: string | undefined): string | null {
+  if (!thumbPath?.trim()) return null;
+  if (thumbPath.startsWith("http://") || thumbPath.startsWith("https://")) {
+    return thumbPath;
+  }
+  return `${RELAY_API_BASE}${thumbPath.startsWith("/") ? "" : "/"}${thumbPath}`;
+}
+
+export function patronCollectionDetailContentUrl(contentPath: string | undefined): string | null {
+  if (!contentPath?.trim()) return null;
+  if (contentPath.startsWith("http://") || contentPath.startsWith("https://")) {
+    return contentPath;
+  }
+  return `${RELAY_API_BASE}${contentPath.startsWith("/") ? "" : "/"}${contentPath}`;
+}
+
+export function patronCollectionPostDetailHref(entry: {
+  creator_id: string;
+  creator_handle?: string;
+  post_id: string;
+  media_id: string;
+}): string {
+  const slug = entry.creator_handle?.trim() || entry.creator_id;
+  const base = `/${encodeURIComponent(slug)}/post/${encodeURIComponent(entry.post_id)}`;
+  const u = new URLSearchParams();
+  u.set("media_id", entry.media_id);
+  return `${base}?${u.toString()}`;
+}
+
+export function patronCreatorProfileHref(handle: string): string {
+  return `/${encodeURIComponent(handle)}`;
+}
+
+export function patronCollectionMediaPageLabel(
+  index: number | undefined,
+  count: number | undefined
+): string | null {
+  if (index == null || count == null || count < 1 || index < 1 || index > count) {
+    return null;
+  }
+  if (count < 2) {
+    return null;
+  }
+  return `${index} of ${count}`;
 }
 
 export type SavedFilter = {
@@ -1562,7 +2378,7 @@ export function publishCreatorGalleryLayout(creatorId: string): Promise<PageLayo
   });
 }
 
-/** No auth — public gallery layout for `/patron/c/[slug]` when published. Unknown slug → null. */
+/** No auth — public gallery layout for `/[slug]` when published. Unknown slug → null. */
 export async function fetchPublicCreatorGalleryLayout(
   slug: string
 ): Promise<PublicCreatorGalleryLayoutPayload | null> {
@@ -1670,6 +2486,8 @@ export function buildGalleryQuery(params: {
   text_only_posts?: GalleryTextOnlyPostsParam;
   /** Public catalog: visible + review, never hidden; tier export fields redacted without entitlement. */
   visitor?: boolean;
+  /** Creator library: attach platform instance summaries per post. */
+  include_instances?: boolean;
   cursor?: string | null;
   limit?: number;
   /** Dev: server honors when RELAY_DEV_VISITOR_TIER_SIM=true */
@@ -1689,11 +2507,18 @@ export function buildGalleryQuery(params: {
   if (params.display) u.set("display", params.display);
   if (params.text_only_posts === "include") u.set("text_only_posts", "include");
   if (params.visitor) u.set("visitor", "true");
+  if (params.include_instances) u.set("include_instances", "true");
   if (params.cursor) u.set("cursor", params.cursor);
   if (params.limit != null) u.set("limit", String(params.limit));
   if (params.dev_sim_patron) u.set("dev_sim_patron", "true");
   for (const t of params.simulate_tier_ids ?? []) u.append("simulate_tier_ids", t);
   return `/api/v1/gallery/items?${u.toString()}`;
+}
+
+export async function fetchCreatorGalleryItems(
+  params: Parameters<typeof buildGalleryQuery>[0]
+): Promise<GalleryListData> {
+  return relayFetch<GalleryListData>(buildGalleryQuery(params));
 }
 
 export function buildGalleryFacetsQuery(creatorId: string, visitor?: boolean): string {
@@ -1807,7 +2632,7 @@ export async function fetchManualImportSetup(
   const q = new URLSearchParams();
   q.set("creator_id", creatorId.trim());
   return relayFetch<ManualImportSetupData>(
-    `/api/v1/relay/manual-import/setup?${q.toString()}`
+    `/api/v1/relay/studio/import/setup?${q.toString()}`
   );
 }
 
@@ -1815,7 +2640,7 @@ export async function postManualImportSetup(params: {
   creator_id: string;
   bins: ManualImportBinInput[];
 }): Promise<ManualImportSetupData> {
-  return relayFetch<ManualImportSetupData>("/api/v1/relay/manual-import/setup", {
+  return relayFetch<ManualImportSetupData>("/api/v1/relay/studio/import/setup", {
     method: "POST",
     body: JSON.stringify(params)
   });
@@ -1990,6 +2815,25 @@ export async function relayNativeCreatePost(
   });
 }
 
+export type RelayNativeDeletePostData = {
+  post_id: string;
+  upstream_status: "deleted";
+};
+
+/**
+ * `DELETE /api/v1/relay/posts/:post_id` — unpublish (soft delete) a Relay-native post.
+ * Only `source = RELAY` posts; Patreon/SubscribeStar mirrors return 404.
+ */
+export async function relayNativeDeletePost(
+  postId: string,
+  creatorId: string
+): Promise<RelayNativeDeletePostData> {
+  return relayFetch<RelayNativeDeletePostData>(
+    `/api/v1/relay/posts/${encodeURIComponent(postId)}?creator_id=${encodeURIComponent(creatorId)}`,
+    { method: "DELETE" }
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Discord capture (staging) — link codes, binding status, staged media list
 // ---------------------------------------------------------------------------
@@ -2077,7 +2921,7 @@ export async function fetchManualImportStaging(
   const q = new URLSearchParams();
   q.set("creator_id", creatorId);
   return relayFetch<RelayLibraryStagingListData>(
-    `/api/v1/relay/manual-import/staging?${q.toString()}`
+    `/api/v1/relay/studio/import/staging?${q.toString()}`
   );
 }
 
@@ -2086,7 +2930,7 @@ export async function commitManualImportStagingToLibrary(
   creatorId: string
 ): Promise<ManualImportCommitToLibraryData> {
   return relayFetch<ManualImportCommitToLibraryData>(
-    "/api/v1/relay/manual-import/commit-to-library",
+    "/api/v1/relay/studio/import/commit-to-library",
     {
       method: "POST",
       body: JSON.stringify({ creator_id: creatorId.trim() })
@@ -2202,7 +3046,7 @@ export function galleryParamsFromLayoutFilterQuery(query: Record<string, unknown
   return out;
 }
 
-/** Patreon incremental sync watermark (GET /api/v1/patreon/sync-state). */
+/** Patreon incremental sync watermark (GET /api/v1/connect/patreon/sync-state). */
 export type PatreonOAuthHealthData = {
   credential_health_status: "healthy" | "refresh_failed";
   access_token_expires_at: string;
@@ -2234,7 +3078,7 @@ export type LastMemberSyncHealthData = {
   error?: SyncHealthErrorData;
 };
 
-/** Rollup from `GET /api/v1/patreon/sync-state` (`sync_health`); matches server `SyncHealthWebDto`. */
+/** Rollup from `GET /api/v1/connect/patreon/sync-state` (`sync_health`); matches server `SyncHealthWebDto`. */
 export type SyncHealthWebLastErrorData = SyncHealthErrorData & {
   source: "post_scrape" | "member_sync";
 };
@@ -2408,7 +3252,7 @@ export async function fetchPatreonSyncState(
   if (opts?.probeUpstream) {
     q.set("probe_upstream", "true");
   }
-  return relayFetch<PatreonSyncStateData>(`/api/v1/patreon/sync-state?${q}`);
+  return relayFetch<PatreonSyncStateData>(`/api/v1/connect/patreon/sync-state?${q}`);
 }
 
 export async function postPatreonScrape(body: {
@@ -2418,13 +3262,13 @@ export async function postPatreonScrape(body: {
   force_refresh_post_access?: boolean;
   max_post_pages?: number;
 }): Promise<PatreonScrapeResultData> {
-  return relayFetch<PatreonScrapeResultData>("/api/v1/patreon/scrape", {
+  return relayFetch<PatreonScrapeResultData>("/api/v1/connect/patreon/scrape", {
     method: "POST",
     body: JSON.stringify(body)
   });
 }
 
-/** POST /api/v1/patreon/webhooks/register — requires Bearer session + creator scope. */
+/** POST /api/v1/connect/patreon/webhooks/register — requires Bearer session + creator scope. */
 export type RegisterPatreonWebhooksData = {
   creator_id: string;
   webhook_id: string;
@@ -2434,13 +3278,13 @@ export type RegisterPatreonWebhooksData = {
 export async function registerPatreonWebhooks(
   creatorId: string
 ): Promise<RegisterPatreonWebhooksData> {
-  return relayFetch<RegisterPatreonWebhooksData>("/api/v1/patreon/webhooks/register", {
+  return relayFetch<RegisterPatreonWebhooksData>("/api/v1/connect/patreon/webhooks/register", {
     method: "POST",
     body: JSON.stringify({ creator_id: creatorId.trim() })
   });
 }
 
-/** POST /api/v1/patreon/sync-members — requires Bearer session + creator scope. */
+/** POST /api/v1/connect/patreon/sync-members — requires Bearer session + creator scope. */
 export type PatreonMemberSyncResultData = {
   creator_id: string;
   patreon_campaign_id: string;
@@ -2454,13 +3298,13 @@ export async function postPatreonSyncMembers(body: {
   campaign_id?: string;
   max_pages?: number;
 }): Promise<PatreonMemberSyncResultData> {
-  return relayFetch<PatreonMemberSyncResultData>("/api/v1/patreon/sync-members", {
+  return relayFetch<PatreonMemberSyncResultData>("/api/v1/connect/patreon/sync-members", {
     method: "POST",
     body: JSON.stringify(body)
   });
 }
 
-/** POST /api/v1/patreon/sync-post-access — OAuth tier gate diff (no media scrape). */
+/** POST /api/v1/connect/patreon/sync-post-access — OAuth tier gate diff (no media scrape). */
 export type PatreonSyncPostAccessResultData = {
   creator_id: string;
   patreon_campaign_id: string;
@@ -2477,7 +3321,7 @@ export async function postPatreonSyncPostAccess(body: {
   campaign_id?: string;
   max_post_pages?: number;
 }): Promise<PatreonSyncPostAccessResultData> {
-  return relayFetch<PatreonSyncPostAccessResultData>("/api/v1/patreon/sync-post-access", {
+  return relayFetch<PatreonSyncPostAccessResultData>("/api/v1/connect/patreon/sync-post-access", {
     method: "POST",
     body: JSON.stringify(body)
   });
@@ -2487,6 +3331,16 @@ export async function postPatreonSyncPostAccess(body: {
 export async function postPilotUxOnboardingWalkthroughReset(): Promise<{ ok: true }> {
   const auth = pilotUxDevBearerHeaders();
   return relayFetch<{ ok: true }>("/api/v1/pilot-ux/dev/onboarding-walkthrough/reset", {
+    method: "POST",
+    body: JSON.stringify({}),
+    headers: auth
+  });
+}
+
+/** PUX — rewind the faux supporter onboarding account to fresh pre-link state. */
+export async function postPilotUxPatronOnboardingReset(): Promise<{ ok: true }> {
+  const auth = pilotUxDevBearerHeaders();
+  return relayFetch<{ ok: true }>("/api/v1/pilot-ux/dev/patron-onboarding/reset", {
     method: "POST",
     body: JSON.stringify({}),
     headers: auth
@@ -2504,6 +3358,28 @@ export async function postPilotUxSimulatePatreonConnect(): Promise<{ ok: true }>
       headers: auth
     }
   );
+}
+
+/** PUX — fake media import for the onboarding walkthrough account (no extension / scrape). */
+export async function postPilotUxSimulateMediaImport(): Promise<{
+  ok: true;
+  relay_creator_id: string;
+  posts_written: number;
+  export_media_count: number;
+  media_ids: string[];
+}> {
+  const auth = pilotUxDevBearerHeaders();
+  return relayFetch<{
+    ok: true;
+    relay_creator_id: string;
+    posts_written: number;
+    export_media_count: number;
+    media_ids: string[];
+  }>("/api/v1/pilot-ux/dev/onboarding-walkthrough/simulate-media-import", {
+    method: "POST",
+    body: JSON.stringify({}),
+    headers: auth
+  });
 }
 
 /** Short user-facing summary after a live scrape (media path + tier OAuth stats). */
@@ -2557,7 +3433,7 @@ export type ActionCenterCardsData = {
 
 export async function fetchActionCenterCards(creatorId: string): Promise<ActionCenterCardsData> {
   const q = new URLSearchParams({ creator_id: creatorId });
-  return relayFetch<ActionCenterCardsData>(`/api/v1/action-center/cards?${q.toString()}`);
+  return relayFetch<ActionCenterCardsData>(`/api/v1/studio/actions/cards?${q.toString()}`);
 }
 
 export async function postAnalyticsGenerate(creatorId: string): Promise<{
@@ -2579,7 +3455,7 @@ export async function postActionCenterAccept(
   notes?: string
 ): Promise<{ recommendation_id: string; status: string }> {
   return relayFetch<{ recommendation_id: string; status: string }>(
-    `/api/v1/action-center/cards/${encodeURIComponent(recommendationId)}/accept`,
+    `/api/v1/studio/actions/cards/${encodeURIComponent(recommendationId)}/accept`,
     {
       method: "POST",
       body: JSON.stringify({ creator_id: creatorId, notes })
@@ -2593,7 +3469,7 @@ export async function postActionCenterDismiss(
   reasonCode?: string
 ): Promise<{ recommendation_id: string; status: string }> {
   return relayFetch<{ recommendation_id: string; status: string }>(
-    `/api/v1/action-center/cards/${encodeURIComponent(recommendationId)}/dismiss`,
+    `/api/v1/studio/actions/cards/${encodeURIComponent(recommendationId)}/dismiss`,
     {
       method: "POST",
       body: JSON.stringify({
@@ -2619,6 +3495,117 @@ export type AnalyticsHealthData = {
 
 export async function fetchAnalyticsHealth(): Promise<AnalyticsHealthData> {
   return relayFetch<AnalyticsHealthData>("/api/v1/health/analytics");
+}
+
+export type PlatformMetricRegistryData = {
+  generatedAt: string;
+  prismaConfigured: boolean;
+  sections: Array<{
+    key: string;
+    title: string;
+    description: string;
+  }>;
+  metrics: Array<{
+    key: string;
+    label: string;
+    section: string;
+    phase: string;
+    status: string;
+    scope: string;
+    definition: string;
+    formula: string;
+    source: string;
+    value: number | string | null;
+    displayValue: string;
+    freshnessState: string;
+    lastUpdatedAt: string | null;
+    priority: "P0" | "P1";
+    trends?: {
+      dod: {
+        direction: string;
+        delta: number | null;
+        deltaPercent: number | null;
+        priorValue: number | null;
+        currentValue: number | null;
+        sufficientHistory: boolean;
+      };
+      wow: {
+        direction: string;
+        delta: number | null;
+        deltaPercent: number | null;
+        priorValue: number | null;
+        currentValue: number | null;
+        sufficientHistory: boolean;
+      };
+      mom: {
+        direction: string;
+        delta: number | null;
+        deltaPercent: number | null;
+        priorValue: number | null;
+        currentValue: number | null;
+        sufficientHistory: boolean;
+      };
+    };
+  }>;
+  coverage: {
+    total: number;
+    live: number;
+    collecting: number;
+    not_wired: number;
+    estimated: number;
+    manual_import: number;
+    deferred: number;
+  };
+  alerts: Array<{
+    key: string;
+    severity: "warning" | "critical";
+    title: string;
+    message: string;
+    relatedMetricKey: string;
+    relatedSection: string;
+    sourceContext: string;
+  }>;
+  operatingReview: {
+    generatedAt: string;
+    checklist: string[];
+    totals: {
+      needsReview: number;
+      notWired: number;
+      pendingInstrumentation: number;
+      deferred: number;
+      stale: number;
+      activeAlerts: number;
+    };
+    items: Array<{
+      metricKey: string;
+      label: string;
+      section: string;
+      status: string;
+      freshnessState: string;
+      phase: string;
+      priority: "P0" | "P1";
+      recommendedAction: "wire" | "defer" | "remove" | "monitor";
+      reason: string;
+    }>;
+    bySection: Array<{
+      section: string;
+      items: Array<{
+        metricKey: string;
+        label: string;
+        section: string;
+        status: string;
+        freshnessState: string;
+        phase: string;
+        priority: "P0" | "P1";
+        recommendedAction: "wire" | "defer" | "remove" | "monitor";
+        reason: string;
+      }>;
+    }>;
+  };
+};
+
+export async function fetchPlatformMetricRegistry(): Promise<PlatformMetricRegistryData> {
+  return relayFetch<PlatformMetricRegistryData>("/api/v1/platform-metrics/registry");
 }
 
 // ---------------------------------------------------------------------------
@@ -2972,11 +3959,11 @@ export async function unblockAccount(
 
 // ---------------------------------------------------------------------------
 // PE-F (BO-P3-02) — Discovery v1 API client.
-// Backend service: src/patron/discover-service.ts; routes in src/server.ts.
+// Backend service: src/discover-service.ts; routes in src/server.ts.
 // ---------------------------------------------------------------------------
 
 /**
- * Mirror of `DiscoverItem` from src/patron/discover-service.ts. The wire format is the same
+ * Mirror of `DiscoverItem` from src/discover-service.ts. The wire format is the same
  * shape; we keep field names snake_case to match the envelope rather than renaming on the
  * client.
  */
@@ -3057,11 +4044,16 @@ export type NotificationKind =
   | "new_follower"
   | "tier_changed"
   | "new_post_followed"
-  | "mention";
+  | "mention"
+  | "post_commented"
+  | "post_favorited"
+  | "post_collected"
+  | "new_subscriber";
 
 export type NotificationRecord = {
   id: string;
-  recipientMembershipId: string;
+  recipientMembershipId: string | null;
+  recipientCreatorAccountId: string | null;
   relayCreatorId: string;
   kind: NotificationKind;
   /** Kind-shaped; see backend mapper for canonical fields per kind. */
@@ -3170,5 +4162,540 @@ export async function setPatronNotificationPreference(args: {
         enabled: args.enabled
       })
     }
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Autopost WI-6 — Style Profile + draft workspace (creator session scope)
+// ---------------------------------------------------------------------------
+
+export type StyleTonePresetId =
+  | "none"
+  | "friendly"
+  | "professional"
+  | "warm"
+  | "playful"
+  | "formal";
+
+export type StyleTonePresetWire = {
+  id: StyleTonePresetId;
+  label: string;
+  sample: string;
+  voice_instruction: string;
+};
+
+export type CreatorStyleProfileWire = {
+  creator_id: string;
+  profile_id: string;
+  label: string;
+  tone_preset: StyleTonePresetId;
+  user_prompt: string | null;
+  voice_script: string;
+  updated_at: string;
+};
+
+export type AutopostDraftWire = {
+  draft_id: string;
+  creator_id: string;
+  status: string;
+  media_ids: string[];
+  title: string | null;
+  body_text: string | null;
+  style_profile_id: string | null;
+  enhancements: Record<string, unknown>;
+  distribution_log: Record<string, unknown>;
+  published_post_id: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type AutopostDraftPublishInput = {
+  campaign_id?: string | null;
+  is_public: boolean;
+  required_tier_id?: string | null;
+  tier_ids?: string[];
+  tag_ids?: string[];
+  title?: string | null;
+  description?: string | null;
+};
+
+export type AutopostDistributionDestination = "patreon" | "x" | "bluesky" | "deviantart" | "relay";
+
+/** GET /api/v1/creator/style-profile/presets */
+export async function fetchStyleProfilePresets(): Promise<{ presets: StyleTonePresetWire[] }> {
+  return relayFetch<{ presets: StyleTonePresetWire[] }>("/api/v1/creator/style-profile/presets");
+}
+
+/** GET /api/v1/creator/style-profile */
+export async function fetchCreatorStyleProfile(): Promise<{ profile: CreatorStyleProfileWire | null }> {
+  return relayFetch<{ profile: CreatorStyleProfileWire | null }>("/api/v1/creator/style-profile");
+}
+
+/** PUT /api/v1/creator/style-profile */
+export async function putCreatorStyleProfile(body: {
+  tone_preset: StyleTonePresetId;
+  user_prompt?: string | null;
+  label?: string;
+}): Promise<{ profile: CreatorStyleProfileWire }> {
+  return relayFetch<{ profile: CreatorStyleProfileWire }>("/api/v1/creator/style-profile", {
+    method: "PUT",
+    body: JSON.stringify(body)
+  });
+}
+
+export type CreatorPostingGoalWire = {
+  creator_id: string;
+  monthly_post_target: number;
+  bonus_nudges_enabled: boolean;
+  timezone: string;
+  enabled: boolean;
+  is_default: boolean;
+  updated_at: string | null;
+};
+
+export type CreatorPostingGoalPutInput = {
+  monthly_post_target?: number;
+  bonus_nudges_enabled?: boolean;
+  timezone?: string | null;
+  enabled?: boolean;
+};
+
+/** GET /api/v1/creator/posting-goal */
+export async function fetchCreatorPostingGoal(): Promise<{ goal: CreatorPostingGoalWire }> {
+  return relayFetch<{ goal: CreatorPostingGoalWire }>("/api/v1/creator/posting-goal");
+}
+
+/** PUT /api/v1/creator/posting-goal */
+export async function putCreatorPostingGoal(
+  body: CreatorPostingGoalPutInput
+): Promise<{ goal: CreatorPostingGoalWire }> {
+  return relayFetch<{ goal: CreatorPostingGoalWire }>("/api/v1/creator/posting-goal", {
+    method: "PUT",
+    body: JSON.stringify(body)
+  });
+}
+
+export type PostingGoalPaceStatus = "on_track" | "behind" | "complete" | "bonus_available";
+export type PostingGoalNudgeType = "posting_goal" | "bonus_post";
+export type PostingGoalNudgeStatus = "active" | "snoozed" | "skipped" | "resolved";
+
+export type CreatorPostingGoalStatusWire = {
+  goal: {
+    monthly_post_target: number;
+    bonus_nudges_enabled: boolean;
+    timezone: string;
+    enabled: boolean;
+  };
+  period: {
+    key: string;
+    start: string;
+    end: string;
+  };
+  posts_this_month: number;
+  remaining: number;
+  staged_media_count: number;
+  pace_status: PostingGoalPaceStatus;
+  active_nudge: null | {
+    nudge_id: string;
+    nudge_type: PostingGoalNudgeType;
+    status: PostingGoalNudgeStatus;
+    snoozed_until: string | null;
+  };
+};
+
+export type CreatorPostingNudgeWire = {
+  nudge_id: string;
+  creator_id: string;
+  period_key: string;
+  nudge_type: PostingGoalNudgeType;
+  status: PostingGoalNudgeStatus;
+  snoozed_until: string | null;
+  updated_at: string;
+};
+
+/** GET /api/v1/creator/posting-goal/status */
+export async function fetchCreatorPostingGoalStatus(): Promise<{
+  status: CreatorPostingGoalStatusWire;
+}> {
+  return relayFetch<{ status: CreatorPostingGoalStatusWire }>(
+    "/api/v1/creator/posting-goal/status"
+  );
+}
+
+/** POST /api/v1/creator/posting-goal/nudge/current/snooze */
+export async function snoozeCurrentCreatorPostingGoalNudge(
+  snoozedUntil?: string | null
+): Promise<{ nudge: CreatorPostingNudgeWire }> {
+  return relayFetch<{ nudge: CreatorPostingNudgeWire }>(
+    "/api/v1/creator/posting-goal/nudge/current/snooze",
+    {
+      method: "POST",
+      body: JSON.stringify(
+        snoozedUntil === undefined ? {} : { snoozed_until: snoozedUntil }
+      ),
+    }
+  );
+}
+
+/** POST /api/v1/creator/posting-goal/nudge/current/skip */
+export async function skipCurrentCreatorPostingGoalNudge(): Promise<{
+  nudge: CreatorPostingNudgeWire;
+}> {
+  return relayFetch<{ nudge: CreatorPostingNudgeWire }>(
+    "/api/v1/creator/posting-goal/nudge/current/skip",
+    { method: "POST", body: JSON.stringify({}) }
+  );
+}
+
+/** POST /api/v1/creator/posting-goal/nudge/:nudge_id/snooze */
+export async function snoozeCreatorPostingGoalNudge(
+  nudgeId: string,
+  snoozedUntil?: string | null
+): Promise<{ nudge: CreatorPostingNudgeWire }> {
+  return relayFetch<{ nudge: CreatorPostingNudgeWire }>(
+    `/api/v1/creator/posting-goal/nudge/${encodeURIComponent(nudgeId)}/snooze`,
+    {
+      method: "POST",
+      body: JSON.stringify(
+        snoozedUntil === undefined ? {} : { snoozed_until: snoozedUntil }
+      ),
+    }
+  );
+}
+
+/** POST /api/v1/creator/posting-goal/nudge/:nudge_id/skip */
+export async function skipCreatorPostingGoalNudge(
+  nudgeId: string
+): Promise<{ nudge: CreatorPostingNudgeWire }> {
+  return relayFetch<{ nudge: CreatorPostingNudgeWire }>(
+    `/api/v1/creator/posting-goal/nudge/${encodeURIComponent(nudgeId)}/skip`,
+    { method: "POST", body: JSON.stringify({}) }
+  );
+}
+
+/** GET /api/v1/creator/autopost/draft — active draft or null */
+export async function fetchActiveAutopostDraft(): Promise<{ draft: AutopostDraftWire | null }> {
+  return relayFetch<{ draft: AutopostDraftWire | null }>("/api/v1/creator/autopost/draft");
+}
+
+/** POST /api/v1/creator/autopost/draft */
+export async function createAutopostDraft(body: {
+  media_ids: string[];
+  title?: string | null;
+  body_text?: string | null;
+  generate?: boolean;
+}): Promise<{ draft: AutopostDraftWire }> {
+  return relayFetch<{ draft: AutopostDraftWire }>("/api/v1/creator/autopost/draft", {
+    method: "POST",
+    body: JSON.stringify(body)
+  });
+}
+
+/** PATCH /api/v1/creator/autopost/draft/:draft_id */
+export async function patchAutopostDraft(
+  draftId: string,
+  body: {
+    title?: string | null;
+    body_text?: string | null;
+    regenerate?: boolean;
+    status?: string;
+  }
+): Promise<{ draft: AutopostDraftWire }> {
+  return relayFetch<{ draft: AutopostDraftWire }>(
+    `/api/v1/creator/autopost/draft/${encodeURIComponent(draftId)}`,
+    {
+      method: "PATCH",
+      body: JSON.stringify(body)
+    }
+  );
+}
+
+/** POST /api/v1/creator/autopost/draft/:draft_id/publish */
+export async function publishAutopostDraft(
+  draftId: string,
+  body: AutopostDraftPublishInput
+): Promise<{ draft: AutopostDraftWire; post_id: string }> {
+  return relayFetch<{ draft: AutopostDraftWire; post_id: string }>(
+    `/api/v1/creator/autopost/draft/${encodeURIComponent(draftId)}/publish`,
+    {
+      method: "POST",
+      body: JSON.stringify(body)
+    }
+  );
+}
+
+/** DELETE /api/v1/creator/autopost/draft/:draft_id */
+export async function discardAutopostDraft(
+  draftId: string,
+  opts?: { force?: boolean }
+): Promise<{ draft: AutopostDraftWire }> {
+  const q = opts?.force ? "?force=true" : "";
+  return relayFetch<{ draft: AutopostDraftWire }>(
+    `/api/v1/creator/autopost/draft/${encodeURIComponent(draftId)}${q}`,
+    { method: "DELETE" }
+  );
+}
+
+/** POST /api/v1/creator/autopost/draft/:draft_id/distribution */
+export async function recordAutopostDistribution(
+  draftId: string,
+  destination: AutopostDistributionDestination
+): Promise<{ draft: AutopostDraftWire }> {
+  return relayFetch<{ draft: AutopostDraftWire }>(
+    `/api/v1/creator/autopost/draft/${encodeURIComponent(draftId)}/distribution`,
+    {
+      method: "POST",
+      body: JSON.stringify({ destination })
+    }
+  );
+}
+
+// ---------------------------------------------------------------------------
+// WI-8 — Bluesky credential + API publish; extension X uses cross-post package route
+// ---------------------------------------------------------------------------
+
+export type CreatorBlueskyCredentialWire = {
+  creator_id: string;
+  handle: string;
+  connected: true;
+  updated_at: string;
+};
+
+export async function fetchCreatorBlueskyCredential(): Promise<{
+  credential: CreatorBlueskyCredentialWire | null;
+}> {
+  return relayFetch<{ credential: CreatorBlueskyCredentialWire | null }>(
+    "/api/v1/creator/bluesky/credential"
+  );
+}
+
+export async function putCreatorBlueskyCredential(body: {
+  handle: string;
+  app_password: string;
+}): Promise<{ credential: CreatorBlueskyCredentialWire }> {
+  return relayFetch<{ credential: CreatorBlueskyCredentialWire }>(
+    "/api/v1/creator/bluesky/credential",
+    {
+      method: "PUT",
+      body: JSON.stringify(body)
+    }
+  );
+}
+
+export async function deleteCreatorBlueskyCredential(): Promise<{ removed: true }> {
+  return relayFetch<{ removed: true }>("/api/v1/creator/bluesky/credential", {
+    method: "DELETE"
+  });
+}
+
+export type BlueskyCrossPostData = {
+  relay_post_id: string;
+  uri: string;
+  cid: string;
+  post_text: string;
+};
+
+/** POST /api/v1/creator/cross-post/bluesky/:post_id — server-side ATProto publish. */
+export async function crossPostBlueskyPost(postId: string): Promise<BlueskyCrossPostData> {
+  return relayFetch<BlueskyCrossPostData>(
+    `/api/v1/creator/cross-post/bluesky/${encodeURIComponent(postId)}`,
+    { method: "POST", body: "{}" }
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Post distribution plan / variants / attempts
+// ---------------------------------------------------------------------------
+
+export type DistributionDestination = "patreon" | "x" | "deviantart" | "bluesky";
+
+export type ConnectedPlatformWire = {
+  destination: DistributionDestination;
+  label: string;
+  readiness: "available" | "needs_extension" | "needs_credential" | "disabled" | "unsupported";
+  handoff: "extension" | "api";
+  detail?: string | null;
+};
+
+export type DistributionAttemptWire = {
+  attempt_id: string;
+  variant_id: string;
+  post_id: string;
+  destination: DistributionDestination;
+  status: string;
+  extension_tab_id: number | null;
+  fill_result: Record<string, unknown>;
+  external_url: string | null;
+  external_id: string | null;
+  error_code: string | null;
+  error_detail: string | null;
+  started_at: string;
+  completed_at: string | null;
+};
+
+export type DistributionVariantWire = {
+  variant_id: string;
+  plan_id: string;
+  post_id: string;
+  destination: DistributionDestination;
+  status: string;
+  assistant_enabled: boolean;
+  title: string | null;
+  body_text: string | null;
+  post_text: string | null;
+  tags: string[];
+  locale: string | null;
+  scheduled_for: string | null;
+  platform_fields: Record<string, unknown>;
+  advice: Record<string, unknown>;
+  approved_at: string | null;
+  latest_attempt: DistributionAttemptWire | null;
+};
+
+export type DistributionPlanWire = {
+  plan_id: string;
+  post_id: string;
+  creator_id: string;
+  status: string;
+  assistant_mode: string;
+  assistant_context: Record<string, unknown>;
+  assistant_plan: Record<string, unknown>;
+  variants: DistributionVariantWire[];
+  created_at: string;
+  updated_at: string;
+};
+
+export type DistributionSummaryWire = {
+  post_id: string;
+  destinations: Array<{
+    destination: DistributionDestination;
+    variant_status: string | null;
+    attempt_status: string | null;
+    attempt_id: string | null;
+    external_url: string | null;
+    external_id: string | null;
+  }>;
+};
+
+export type ExternalPostMetricLatestWire = {
+  snapshot_id: string;
+  metric_type: string;
+  value: number | null;
+  source: string;
+  captured_at: string;
+};
+
+export type ExternalPostDestinationMetricsWire = {
+  destination: DistributionDestination;
+  attempt_id: string;
+  external_url: string;
+  external_id: string | null;
+  metrics: ExternalPostMetricLatestWire[];
+};
+
+export type PostExternalMetricsWire = {
+  post_id: string;
+  destinations: ExternalPostDestinationMetricsWire[];
+};
+
+export async function fetchConnectedPlatforms(): Promise<{ platforms: ConnectedPlatformWire[] }> {
+  return relayFetch<{ platforms: ConnectedPlatformWire[] }>("/api/v1/creator/connected-platforms");
+}
+
+export async function createPostDistributionPlan(
+  postId: string,
+  body: {
+    destinations: string[];
+    assistant_by_destination?: Record<string, boolean>;
+    assistant_context?: Record<string, unknown>;
+    source_draft_id?: string | null;
+  }
+): Promise<{ plan: DistributionPlanWire }> {
+  return relayFetch<{ plan: DistributionPlanWire }>(
+    `/api/v1/relay/posts/${encodeURIComponent(postId)}/distribution-plan`,
+    { method: "POST", body: JSON.stringify(body) }
+  );
+}
+
+export async function fetchPostDistributionPlan(
+  postId: string
+): Promise<{ plan: DistributionPlanWire | null }> {
+  return relayFetch<{ plan: DistributionPlanWire | null }>(
+    `/api/v1/relay/posts/${encodeURIComponent(postId)}/distribution-plan`
+  );
+}
+
+export async function fetchPostDistributionSummary(
+  postId: string
+): Promise<{ summary: DistributionSummaryWire }> {
+  return relayFetch<{ summary: DistributionSummaryWire }>(
+    `/api/v1/relay/posts/${encodeURIComponent(postId)}/distribution-summary`
+  );
+}
+
+export async function fetchPostExternalMetrics(
+  postId: string
+): Promise<{ metrics: PostExternalMetricsWire }> {
+  return relayFetch<{ metrics: PostExternalMetricsWire }>(
+    `/api/v1/relay/posts/${encodeURIComponent(postId)}/external-metrics`
+  );
+}
+
+export async function patchDistributionVariant(
+  variantId: string,
+  body: Partial<{
+    title: string | null;
+    body_text: string | null;
+    post_text: string | null;
+    tags: string[];
+    locale: string | null;
+    scheduled_for: string | null;
+    platform_fields: Record<string, unknown>;
+  }>
+): Promise<{ variant: DistributionVariantWire }> {
+  return relayFetch<{ variant: DistributionVariantWire }>(
+    `/api/v1/relay/distribution-variants/${encodeURIComponent(variantId)}`,
+    { method: "PATCH", body: JSON.stringify(body) }
+  );
+}
+
+export async function approveDistributionVariant(
+  variantId: string
+): Promise<{ variant: DistributionVariantWire }> {
+  return relayFetch<{ variant: DistributionVariantWire }>(
+    `/api/v1/relay/distribution-variants/${encodeURIComponent(variantId)}/approve`,
+    { method: "POST", body: "{}" }
+  );
+}
+
+export async function startDistributionHandoff(
+  variantId: string,
+  body?: { extension_installation_id?: string | null; extension_tab_id?: number | null }
+): Promise<{ attempt: DistributionAttemptWire }> {
+  return relayFetch<{ attempt: DistributionAttemptWire }>(
+    `/api/v1/relay/distribution-variants/${encodeURIComponent(variantId)}/handoff`,
+    { method: "POST", body: JSON.stringify(body ?? {}) }
+  );
+}
+
+export async function fetchDistributionAttempt(
+  attemptId: string
+): Promise<{ attempt: DistributionAttemptWire }> {
+  return relayFetch<{ attempt: DistributionAttemptWire }>(
+    `/api/v1/relay/distribution-attempts/${encodeURIComponent(attemptId)}`
+  );
+}
+
+export async function completeDistributionAttempt(
+  attemptId: string,
+  body: {
+    external_url?: string | null;
+    external_id?: string | null;
+    status?: "posted" | "abandoned" | "failed";
+  }
+): Promise<{ attempt: DistributionAttemptWire }> {
+  return relayFetch<{ attempt: DistributionAttemptWire }>(
+    `/api/v1/relay/distribution-attempts/${encodeURIComponent(attemptId)}/complete`,
+    { method: "POST", body: JSON.stringify(body) }
   );
 }

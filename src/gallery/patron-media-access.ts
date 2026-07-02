@@ -29,6 +29,9 @@ export function patronMayViewGalleryExport(
   tierRules: CloneTierRule[],
   tierMap: Record<string, TierRow>
 ): boolean {
+  if (item.is_public === true) {
+    return true;
+  }
   const access = resolvePostAccessLevel(item.tier_ids, tierRules);
   const post: ClonePostEntry = {
     post_id: item.post_id,
@@ -114,8 +117,12 @@ export function patronMayFetchMediaExport(args: {
   session: SessionToken | null;
   /** Set by route when DB confirms session.account.primaryRelayCreatorId === creatorId. */
   isContentOwner?: boolean;
+  /** When true and owning post is Adult (18+), deny export fetch. */
+  hideMatureContent?: boolean;
+  isPostMature?: boolean;
 }): { allowed: true } | { allowed: false; reason: string } {
-  const { snapshot, creatorId, mediaId, session, isContentOwner } = args;
+  const { snapshot, creatorId, mediaId, session, isContentOwner, hideMatureContent, isPostMature } =
+    args;
 
   // Content owner: always allow — the creator must be able to load their own
   // full-resolution exports even when RELAY_EXPORT_REQUIRE_TIER_ACCESS=1.
@@ -126,6 +133,9 @@ export function patronMayFetchMediaExport(args: {
   const postId = findPostIdForExportedMedia(snapshot, creatorId, mediaId);
   if (!postId) {
     return { allowed: false, reason: "Media not found in catalog." };
+  }
+  if (hideMatureContent && isPostMature) {
+    return { allowed: false, reason: "18+ content hidden by your settings." };
   }
   const post = snapshot.posts[creatorId]?.[postId];
   if (!post || post.upstream_status === "deleted") {

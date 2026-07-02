@@ -18,13 +18,16 @@ import {
   normalizePublicSlugCandidate,
   RESERVED_PUBLIC_SLUGS
 } from "./public-slug.js";
+import {
+  normalizeRelayUsername,
+  setRelayUsernameForAccount,
+  validateRelayUsernameFormat
+} from "../identity/relay-username-service.js";
 
 const MAX_BIO = 280;
 const MAX_DISPLAY = 120;
 const MAX_DISCIPLINE = 120;
 const MAX_URL = 2048;
-const USERNAME_RE = /^[a-z0-9_]{3,32}$/;
-
 const RESERVED_USERNAMES = new Set([
   ...RESERVED_PUBLIC_SLUGS,
   "admin",
@@ -62,14 +65,19 @@ export type CreatorIdentityView = {
   subscribestar_provider_snapshot_at: string | null;
 };
 
-function toView(row: CreatorProfile): CreatorIdentityView {
+function toView(
+  row: CreatorProfile,
+  account?: { username: string | null; usernameNorm: string | null } | null
+): CreatorIdentityView {
+  const username = account?.username ?? row.username;
+  const usernameNorm = account?.usernameNorm ?? row.usernameNorm;
   return {
     public_slug: row.publicSlug,
     slug_source: row.slugSource,
     patreon_campaign_id: row.patreonCampaignId,
     subscribestar_profile_id: row.subscribestarProfileId,
-    username: row.username,
-    username_norm: row.usernameNorm,
+    username,
+    username_norm: usernameNorm,
     display_name: row.displayName,
     avatar_url: row.avatarUrl,
     banner_url: row.bannerUrl,
@@ -86,7 +94,7 @@ function toView(row: CreatorProfile): CreatorIdentityView {
  * @param raw Raw username text.
  */
 export function normalizeCreatorUsername(raw: string): string {
-  return raw.trim().toLowerCase().replace(/[^a-z0-9_]/g, "");
+  return normalizeRelayUsername(raw);
 }
 
 /**
@@ -96,12 +104,8 @@ export function normalizeCreatorUsername(raw: string): string {
 export function validateCreatorUsernameFormat(
   norm: string
 ): { ok: true } | { ok: false; message: string } {
-  if (!USERNAME_RE.test(norm)) {
-    return {
-      ok: false,
-      message: "Username must be 3–32 characters: lowercase letters, numbers, and underscores only."
-    };
-  }
+  const fmt = validateRelayUsernameFormat(norm);
+  if (!fmt.ok) return fmt;
   if (RESERVED_USERNAMES.has(norm)) {
     return { ok: false, message: "That username is reserved." };
   }
@@ -138,7 +142,11 @@ export async function getCreatorIdentity(
 ): Promise<CreatorIdentityView | null> {
   const row = await findCreatorProfileForAccount(prisma, accountId);
   if (!row) return null;
-  return toView(row);
+  const account = await prisma.account.findUnique({
+    where: { id: accountId },
+    select: { username: true, usernameNorm: true }
+  });
+  return toView(row, account);
 }
 
 /** @description Writable subset for `patchCreatorIdentity`. */
@@ -231,35 +239,50 @@ export async function patchCreatorIdentity(
 
   if (patch.username !== undefined) {
     if (patch.username === null) {
-      data.username = null;
-      data.usernameNorm = null;
+      return {
+        ok: false,
+        code: "VALIDATION_ERROR",
+        message: "Username cannot be cleared. Choose a new Relay username instead."
+      };
     } else {
-      const norm = normalizeCreatorUsername(patch.username);
-      const fmt = validateCreatorUsernameFormat(norm);
-      if (!fmt.ok) {
-        return { ok: false, code: "VALIDATION_ERROR", message: fmt.message };
+      try {
+        const next = await setRelayUsernameForAccount(prisma, {
+          accountId,
+          username: patch.username
+        });
+        data.username = next.username;
+        data.usernameNorm = next.usernameNorm;
+      } catch (err: unknown) {
+        const code =
+          typeof err === "object" && err !== null && "code" in err
+            ? (err as { code: string }).code
+            : "VALIDATION_ERROR";
+        return {
+          ok: false,
+          code: code === "CONFLICT" ? "CONFLICT" : "VALIDATION_ERROR",
+          message: err instanceof Error ? err.message : "Invalid username."
+        };
       }
-      const clash = await prisma.creatorProfile.findFirst({
-        where: { usernameNorm: norm, NOT: { id: row.id } },
-        select: { id: true }
-      });
-      if (clash) {
-        return { ok: false, code: "CONFLICT", message: "That username is already taken." };
-      }
-      data.username = patch.username.trim();
-      data.usernameNorm = norm;
     }
   }
 
   if (Object.keys(data).length === 0) {
-    return { ok: true, profile: toView(row) };
+    const account = await prisma.account.findUnique({
+      where: { id: accountId },
+      select: { username: true, usernameNorm: true }
+    });
+    return { ok: true, profile: toView(row, account) };
   }
 
   const updated = await prisma.creatorProfile.update({
     where: { id: row.id },
     data
   });
-  return { ok: true, profile: toView(updated) };
+  const account = await prisma.account.findUnique({
+    where: { id: accountId },
+    select: { username: true, usernameNorm: true }
+  });
+  return { ok: true, profile: toView(updated, account) };
 }
 
 /**

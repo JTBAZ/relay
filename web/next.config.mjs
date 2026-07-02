@@ -1,5 +1,3 @@
-/** @type {import('next').NextConfig} */
-
 /** Keep in sync with web/lib/relay-api-env.ts (this file must stay plain JS for Node). */
 function resolveRelayApiBaseFromEnv(envValue) {
   const DEFAULT_RELAY_API_BASE = "http://127.0.0.1:8787";
@@ -23,7 +21,24 @@ function resolveRelayApiBaseFromEnv(envValue) {
   return candidate;
 }
 
+// [R-SEC-11 Medium @security-review 2026-06, Tier B] Baseline headers only — strict CSP deferred to
+// report-only rollout. Keep values in sync with src/security/baseline-response-headers.ts.
+const BASELINE_SECURITY_HEADERS = [
+  { key: "X-Content-Type-Options", value: "nosniff" },
+  { key: "X-Frame-Options", value: "SAMEORIGIN" },
+  { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" }
+];
+
+/** @type {import('next').NextConfig} */
 const nextConfig = {
+  async headers() {
+    return [
+      {
+        source: "/:path*",
+        headers: BASELINE_SECURITY_HEADERS
+      }
+    ];
+  },
   async rewrites() {
     const relay = resolveRelayApiBaseFromEnv(process.env.NEXT_PUBLIC_RELAY_API_URL);
     return [

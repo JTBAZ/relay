@@ -9,6 +9,26 @@
   --relay-app-nav-height: 2.75rem;
 }
 
+@keyframes fadeInScale {
+  0% {
+    opacity: 0.4;
+    transform: scale(0.9);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes fadeIn {
+  0% {
+    opacity: 0;
+  }
+  100% {
+    opacity: 1;
+  }
+}
+
 body {
   color: var(--foreground);
   background: var(--background);
@@ -129,6 +149,28 @@ body {
 
 .onboarding-shell {
   --relay-bg: #000000;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.onboarding-shell::-webkit-scrollbar,
+.onboarding-shell *::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none;
+}
+
+html:has(.onboarding-shell),
+body:has(.onboarding-shell) {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+html:has(.onboarding-shell)::-webkit-scrollbar,
+body:has(.onboarding-shell)::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none;
 }
 
 @keyframes onboardingPanelIn {
@@ -176,6 +218,27 @@ body {
 
 .relay-shimmer {
   background-size: 200% auto;
+  animation: relay-shimmer-kf 2.4s linear infinite;
+}
+
+@keyframes ctaShimmer {
+  0% {
+    background-position: -200% center;
+  }
+  100% {
+    background-position: 200% center;
+  }
+}
+
+/* v0 Autopost composer loading shimmer. */
+.shimmer {
+  background: linear-gradient(
+    105deg,
+    transparent 40%,
+    rgba(0, 170, 111, 0.08) 50%,
+    transparent 60%
+  );
+  background-size: 200% 100%;
   animation: relay-shimmer-kf 2.4s linear infinite;
 }
 

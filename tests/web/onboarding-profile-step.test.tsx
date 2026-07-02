@@ -12,6 +12,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const getCreatorProfile = vi.fn();
 const patchCreatorProfile = vi.fn();
 const patchCreatorPublicSlug = vi.fn();
+const patchRelayUsername = vi.fn();
 
 vi.mock("@/lib/relay-api", async () => {
   // Keep the named exports the step pulls in; everything else is unused here.
@@ -29,6 +30,7 @@ vi.mock("@/lib/relay-api", async () => {
     getCreatorProfile: (...args: unknown[]) => getCreatorProfile(...args),
     patchCreatorProfile: (...args: unknown[]) => patchCreatorProfile(...args),
     patchCreatorPublicSlug: (...args: unknown[]) => patchCreatorPublicSlug(...args),
+    patchRelayUsername: (...args: unknown[]) => patchRelayUsername(...args),
     RELAY_API_BASE: "http://localhost:8787",
     RelayApiError: StubRelayApiError,
     RELAY_CREATOR_ID_STORAGE_KEY: "relay_creator_id",
@@ -89,6 +91,7 @@ describe("<StepCreatorProfileBasics />", () => {
     getCreatorProfile.mockReset();
     patchCreatorProfile.mockReset();
     patchCreatorPublicSlug.mockReset();
+    patchRelayUsername.mockReset();
   });
   afterEach(() => {
     cleanup();
@@ -116,11 +119,12 @@ describe("<StepCreatorProfileBasics />", () => {
     ).toBe("Pixel artist.");
   });
 
-  it("PATCHes display name, derived username, and advances", async () => {
+  it("PATCHes display name and advances using the existing Relay username", async () => {
     getCreatorProfile.mockResolvedValue({
       ...baseIdentity,
       display_name: "Old Name",
-      username: "old_handle"
+      username: "old_handle",
+      username_norm: "old_handle"
     });
     patchCreatorProfile.mockResolvedValue({
       ...baseIdentity,
@@ -143,20 +147,22 @@ describe("<StepCreatorProfileBasics />", () => {
 
     await waitFor(() => expect(patchCreatorProfile).toHaveBeenCalledTimes(1));
     expect(patchCreatorProfile).toHaveBeenCalledWith({
-      display_name: "New Name",
-      username: "newname"
+      display_name: "New Name"
     });
-    expect(patchCreatorPublicSlug).toHaveBeenCalledWith("newname");
+    expect(patchCreatorPublicSlug).toHaveBeenCalledWith("old-handle");
     await waitFor(() => expect(onAdvance).toHaveBeenCalledTimes(1));
   });
 
   it("requires creator name", async () => {
-    getCreatorProfile.mockResolvedValue({ ...baseIdentity });
+    getCreatorProfile.mockResolvedValue({ ...baseIdentity, username: "studio", username_norm: "studio" });
     const onAdvance = vi.fn();
     render(<StepCreatorProfileBasics onAdvance={onAdvance} />);
     await waitFor(() => expect(getCreatorProfile).toHaveBeenCalledTimes(1));
 
     expect(screen.queryByRole("button", { name: /skip for now/i })).toBeNull();
+    fireEvent.change(await screen.findByLabelText(/creator name/i), {
+      target: { value: "" }
+    });
     fireEvent.click(screen.getByRole("button", { name: /save and continue/i }));
     expect(patchCreatorProfile).not.toHaveBeenCalled();
     expect(onAdvance).not.toHaveBeenCalled();
@@ -184,14 +190,14 @@ describe("<StepCreatorProfileBasics />", () => {
   });
 
   it("Surfaces server error message and does not advance", async () => {
-    getCreatorProfile.mockResolvedValue({ ...baseIdentity });
-    patchCreatorProfile.mockRejectedValue(new Error("That username is reserved."));
+    getCreatorProfile.mockResolvedValue({ ...baseIdentity, username: "studio", username_norm: "studio" });
+    patchCreatorProfile.mockRejectedValue(new Error("Display name is reserved."));
     const onAdvance = vi.fn();
     render(<StepCreatorProfileBasics onAdvance={onAdvance} />);
     await waitFor(() => expect(getCreatorProfile).toHaveBeenCalledTimes(1));
 
     fireEvent.change(await screen.findByLabelText(/creator name/i), {
-      target: { value: "admin" }
+      target: { value: "Reserved Display" }
     });
     fireEvent.click(screen.getByRole("button", { name: /save and continue/i }));
     await waitFor(() => expect(patchCreatorProfile).toHaveBeenCalledTimes(1));

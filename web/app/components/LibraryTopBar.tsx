@@ -2,7 +2,7 @@
 
 import { type ReactNode } from "react";
 import Link from "next/link";
-import { Check, Eye, PenLine, RefreshCw } from "lucide-react";
+import { Check, Eye, PenLine, RefreshCw, Sparkles } from "lucide-react";
 
 type SyncStatus = "synced" | "syncing" | "error";
 
@@ -153,7 +153,15 @@ export default function LibraryTopBar({
           <SyncPill status={syncStatus} />
           {trailingActions}
           <Link
-            href="/new-post"
+            href="/studio/autopost"
+            className="inline-flex h-7 items-center gap-1.5 rounded-md border border-[var(--lib-primary)]/40 bg-[color-mix(in_srgb,var(--lib-primary)_12%,transparent)] px-3 text-xs font-medium text-[var(--lib-fg)] transition-colors hover:border-[var(--lib-primary)]/70"
+            title="Autopost — pick from bin, draft copy, publish"
+          >
+            <Sparkles className="h-3.5 w-3.5 text-[var(--lib-primary)]" aria-hidden />
+            Autopost
+          </Link>
+          <Link
+            href="/studio/new-post"
             className="inline-flex h-7 items-center gap-1.5 rounded-md border border-[var(--lib-border)] bg-[var(--lib-card)] px-3 text-xs font-medium text-[var(--lib-fg)] transition-colors hover:border-[var(--lib-primary)]/50"
             title="New Relay post — compose (shell)"
           >
@@ -161,7 +169,7 @@ export default function LibraryTopBar({
             New post
           </Link>
           <Link
-            href="/designer"
+            href="/studio/designer"
             className="inline-flex h-7 items-center gap-1.5 rounded-md border border-[var(--lib-border)] bg-[var(--lib-input)] px-3 text-xs font-medium text-[var(--lib-fg)] transition-colors hover:border-[var(--lib-primary)]/55 hover:text-[var(--lib-fg)]"
           >
             <Eye className="h-3.5 w-3.5 text-[var(--lib-primary)]" aria-hidden />

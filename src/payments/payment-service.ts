@@ -8,6 +8,10 @@ import type { CloneService } from "../clone/clone-service.js";
 import { runPreflight } from "./preflight.js";
 import type { PaymentStore } from "./payment-store.js";
 import type { ProviderAdapter } from "./provider-adapter.js";
+import {
+  recordCheckoutRevenueTelemetry,
+  type RevenueTelemetryWriterConfig
+} from "../platform-metrics/platform-revenue-telemetry-service.js";
 import type {
   CheckoutResult,
   PaymentConfig,
@@ -20,20 +24,24 @@ export class PaymentService {
   private readonly paymentStore: PaymentStore;
   private readonly cloneService: CloneService;
   private readonly adapters: Map<string, ProviderAdapter>;
+  private readonly revenueTelemetry?: RevenueTelemetryWriterConfig;
 
   /**
    * @param paymentStore Backing store (file or DB).
    * @param cloneService Source of tier rules for preflight.
    * @param adapters Provider registry (`stripe`, `paypal`, …).
+   * @param revenueTelemetry Optional PMD-061 writer config for platform revenue events.
    */
   public constructor(
     paymentStore: PaymentStore,
     cloneService: CloneService,
-    adapters: Map<string, ProviderAdapter>
+    adapters: Map<string, ProviderAdapter>,
+    revenueTelemetry?: RevenueTelemetryWriterConfig
   ) {
     this.paymentStore = paymentStore;
     this.cloneService = cloneService;
     this.adapters = adapters;
+    this.revenueTelemetry = revenueTelemetry;
   }
 
   /**
@@ -103,6 +111,20 @@ export class PaymentService {
       throw new Error("Live checkout blocked: payment config is not in live mode. Use dry_run=true or enable live_mode.");
     }
 
+    // [R-SEC-07 @security-review 2026-06] Provider adapters are stubs today (no real Stripe/PayPal charge
+    // or webhook verification — see provider-adapter.ts). Refuse non-dry-run checkout in production until a
+    // verified integration ships and RELAY_ALLOW_LIVE_PAYMENTS=1 is explicitly set, so a stub can never
+    // report a "successful" payment that never charged. See docs/security-review-2026-06.md.
+    if (
+      !dryRun &&
+      process.env.NODE_ENV === "production" &&
+      process.env.RELAY_ALLOW_LIVE_PAYMENTS !== "1"
+    ) {
+      throw new Error(
+        "Live checkout is disabled in production until a verified payment integration is enabled (set RELAY_ALLOW_LIVE_PAYMENTS=1 once real gateway + webhook verification ship)."
+      );
+    }
+
     const mapping = config.mappings.find((m) => m.tier_id === tierId);
     if (!mapping) {
       throw new Error(`No payment mapping for tier ${tierId}.`);
@@ -113,12 +135,31 @@ export class PaymentService {
       throw new Error(`Provider ${mapping.provider} not configured.`);
     }
 
+    if (this.revenueTelemetry) {
+      await recordCheckoutRevenueTelemetry({
+        cfg: this.revenueTelemetry,
+        phase: "started",
+        creatorId,
+        mapping
+      });
+    }
+
     const result = await adapter.processCheckout({
       mapping,
       user_id: userId,
       email,
       dry_run: dryRun
     });
+
+    if (this.revenueTelemetry) {
+      await recordCheckoutRevenueTelemetry({
+        cfg: this.revenueTelemetry,
+        phase: result.status === "failed" ? "failed" : "completed",
+        creatorId,
+        mapping,
+        result
+      });
+    }
 
     await this.paymentStore.appendCheckout(result);
     return result;

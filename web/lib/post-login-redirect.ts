@@ -5,7 +5,7 @@ export function getCreatorPublicProfilePathFromStorage(): string | null {
   if (typeof window === "undefined") return null;
   const slug = window.localStorage.getItem(RELAY_PUBLIC_SLUG_STORAGE_KEY)?.trim();
   if (!slug) return null;
-  return `/patron/c/${encodeURIComponent(slug)}`;
+  return `/${encodeURIComponent(slug)}`;
 }
 
 /**
@@ -15,5 +15,5 @@ export function getCreatorPublicProfilePathFromStorage(): string | null {
 export function resolvePostAuthPath(returnTo: string | null | undefined): string {
   const r = returnTo?.trim();
   if (r && r.startsWith("/") && !r.startsWith("//")) return r;
-  return "/";
+  return "/studio";
 }

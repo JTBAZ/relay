@@ -23,6 +23,40 @@ import {
 
 const SEL = "#00aa6f";
 
+const DISTRIBUTION_DEST_LABEL: Record<string, string> = {
+  patreon: "Patreon",
+  x: "X",
+  deviantart: "DA",
+  bluesky: "Bluesky"
+};
+
+function distributionChipLabel(
+  destination: string,
+  attemptStatus: string | null | undefined,
+  externalUrl: string | null | undefined
+): string {
+  const name = DISTRIBUTION_DEST_LABEL[destination] ?? destination;
+  if (attemptStatus === "posted" || externalUrl) {
+    return externalUrl ? `${name} ↗` : `${name} · Posted`;
+  }
+  if (attemptStatus?.startsWith("fill_")) {
+    return `${name} · Sent`;
+  }
+  return name;
+}
+
+function distributionBadgeChips(item: GalleryItem): { key: string; label: string; href?: string }[] {
+  const summary = item.distribution_summary;
+  if (!summary?.destinations?.length) return [];
+  return summary.destinations
+    .filter((d) => d.variant_status || d.attempt_status || d.external_url)
+    .map((d) => ({
+      key: `dist:${d.destination}`,
+      label: distributionChipLabel(d.destination, d.attempt_status, d.external_url),
+      href: d.external_url ?? undefined
+    }));
+}
+
 function libraryPlaceholderLabel(item: GalleryItem): string {
   if (item.processing_status === "FAILED") return "Media unavailable";
   if (!item.has_export) return "Not yet exported";
@@ -73,7 +107,10 @@ function LibraryUniformMeta({
       : null;
   const tierLabel = tierId ? accessChipLabel(tierId, tierTitleById) : null;
 
-  const chips: { key: string; label: string }[] = [];
+  const chips: { key: string; label: string; href?: string }[] = [];
+  for (const chip of distributionBadgeChips(item)) {
+    chips.push(chip);
+  }
   if (items.length > 1) {
     chips.push({ key: "__assets", label: `${items.length} assets` });
   }
@@ -116,11 +153,25 @@ function LibraryUniformMeta({
         {chips.length === 0 ? (
           <span className="text-[9px] text-white/[0.12]">&nbsp;</span>
         ) : (
-          chips.map((c) => (
-            <span key={c.key} className={chipLow} title={c.label}>
-              {c.label}
-            </span>
-          ))
+          chips.map((c) =>
+            c.href ? (
+              <a
+                key={c.key}
+                href={c.href}
+                target="_blank"
+                rel="noopener noreferrer"
+                className={chipLow}
+                title={c.label}
+                onClick={(e) => e.stopPropagation()}
+              >
+                {c.label}
+              </a>
+            ) : (
+              <span key={c.key} className={chipLow} title={c.label}>
+                {c.label}
+              </span>
+            )
+          )
         )}
       </div>
     </div>

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { BarChart3, ChevronDown, Lock, MousePointerClick, Save, Sparkles, UploadCloud, Users } from "lucide-react";
+import { ChevronDown, Lock, Save, UploadCloud, Users } from "lucide-react";
 import type { GalleryItem, GalleryPostDetail, TierFacet } from "@/lib/relay-api";
 import { InspectAssetPreview } from "./inspect-asset-preview";
 import { InspectAddMediaControl, InspectPostDescription } from "./inspect-preview-actions";
@@ -17,12 +17,6 @@ type AudienceOption = {
   id: string;
   label: string;
   amountCents?: number;
-};
-
-type Metrics = {
-  views: number;
-  discoveryTips: number;
-  conversions: number;
 };
 
 const FALLBACK_AUDIENCES: AudienceOption[] = [
@@ -219,21 +213,7 @@ export function AudiencePreviewControls({
   onSavePreference: () => void;
 }) {
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const metrics = audienceOptions.map((audience, index) => ({
-    audience,
-    canView: audienceCanView(item, audience.id, audienceOptions),
-    metrics: mockMetrics(item.post_id, audience.id, index)
-  }));
   const active = audienceOptions.find((option) => option.id === activeAudienceId) ?? audienceOptions[0]!;
-  const activeMetric = metrics.find((entry) => entry.audience.id === active.id)?.metrics ?? mockMetrics(item.post_id, active.id, 0);
-  const totalMetrics = metrics.reduce(
-    (total, entry) => ({
-      views: total.views + entry.metrics.views,
-      discoveryTips: total.discoveryTips + entry.metrics.discoveryTips,
-      conversions: total.conversions + entry.metrics.conversions
-    }),
-    { views: 0, discoveryTips: 0, conversions: 0 }
-  );
   const activePreference = savedPreferences[active.id];
 
   return (
@@ -267,27 +247,6 @@ export function AudiencePreviewControls({
             );
           })}
         </div>
-      </section>
-
-      <section className="grid grid-cols-3 gap-2">
-        <MetricTile
-          icon={BarChart3}
-          label="Total Views"
-          value={totalMetrics.views.toLocaleString()}
-          subvalue={`${activeMetric.views.toLocaleString()} from ${active.label}`}
-        />
-        <MetricTile
-          icon={Sparkles}
-          label="Discovery Tips"
-          value={totalMetrics.discoveryTips.toLocaleString()}
-          subvalue={`${activeMetric.discoveryTips.toLocaleString()} from ${active.label}`}
-        />
-        <MetricTile
-          icon={MousePointerClick}
-          label="Conversions"
-          value={totalMetrics.conversions.toLocaleString()}
-          subvalue={`${activeMetric.conversions.toLocaleString()} from ${active.label}`}
-        />
       </section>
 
       <section className="rounded-xl border border-[var(--lib-border)] bg-[var(--lib-muted)]/25">
@@ -384,37 +343,6 @@ export function AudiencePreviewControls({
 
     </div>
   );
-}
-
-function MetricTile({
-  icon: Icon,
-  label,
-  value,
-  subvalue
-}: {
-  icon: typeof BarChart3;
-  label: string;
-  value: string;
-  subvalue: string;
-}) {
-  return (
-    <div className="rounded-xl border border-[var(--lib-border)] bg-[var(--lib-muted)]/45 p-2">
-      <Icon className="h-3.5 w-3.5 text-[var(--lib-primary)]" aria-hidden />
-      <p className="mt-2 text-sm font-semibold tabular-nums text-[var(--lib-fg)]">{value}</p>
-      <p className="text-[10px] uppercase tracking-wide text-[var(--lib-fg-muted)]">{label}</p>
-      <p className="mt-1 text-[9px] leading-3 text-[var(--lib-primary)]">{subvalue}</p>
-    </div>
-  );
-}
-
-function mockMetrics(postId: string, audienceId: string, index: number): Metrics {
-  const seed = Array.from(`${postId}:${audienceId}`).reduce((acc, char) => acc + char.charCodeAt(0), 0);
-  const base = 220 + ((seed * (index + 3)) % 1300);
-  return {
-    views: base,
-    discoveryTips: Math.max(3, Math.round(base * (0.025 + index * 0.012))),
-    conversions: Math.max(1, Math.round(base * (0.006 + index * 0.003)))
-  };
 }
 
 function normalizeTierLabel(value: string): string {

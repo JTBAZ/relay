@@ -66,7 +66,11 @@ describe("patron-profile-service", () => {
     const create = vi.fn();
     const update = vi.fn();
     const prisma = {
-      patronProfile: { findUnique, findFirst, create, update }
+      patronProfile: { findUnique, findFirst, create, update },
+      // patchPatronProfileForMembership looks up the membership before calling setRelayUsernameForAccount.
+      tenantMembership: { findUnique: vi.fn().mockResolvedValue({ accountId: "acc_test" }) },
+      // setRelayUsernameForAccount checks for existing username before "admin" validation throws.
+      account: { findFirst: vi.fn().mockResolvedValue(null), update: vi.fn() }
     };
     const r = await patchPatronProfileForMembership(prisma as never, "mem1", {
       handle: "admin"
@@ -79,11 +83,14 @@ describe("patron-profile-service", () => {
   it("patchPatronProfileForMembership returns CONFLICT when handleNorm taken", async () => {
     const row = mockRow();
     const findUnique = vi.fn().mockResolvedValue(row);
-    const findFirst = vi.fn().mockResolvedValue({ id: "other" });
+    const findFirst = vi.fn();
     const create = vi.fn();
     const update = vi.fn();
     const prisma = {
-      patronProfile: { findUnique, findFirst, create, update }
+      patronProfile: { findUnique, findFirst, create, update },
+      tenantMembership: { findUnique: vi.fn().mockResolvedValue({ accountId: "acc_test" }) },
+      // account.findFirst returns another account with the same username — triggers CONFLICT.
+      account: { findFirst: vi.fn().mockResolvedValue({ id: "other_acc" }), update: vi.fn() }
     };
     const r = await patchPatronProfileForMembership(prisma as never, "mem1", {
       handle: "cool_name"
@@ -101,7 +108,11 @@ describe("patron-profile-service", () => {
     const create = vi.fn();
     const update = vi.fn().mockResolvedValue(updated);
     const prisma = {
-      patronProfile: { findUnique, findFirst, create, update }
+      patronProfile: { findUnique, findFirst, create, update },
+      // After the profile update, the service fetches the membership to resolve the username.
+      tenantMembership: {
+        findUnique: vi.fn().mockResolvedValue({ account: { username: "user_abc123", usernameNorm: "user_abc123" } })
+      }
     };
     const r = await patchPatronProfileForMembership(prisma as never, "mem1", {
       display_name: "Ada"

@@ -5,34 +5,9 @@ import { useSearchParams } from "next/navigation";
 import { useCallback, useMemo, useState } from "react";
 import { isRecognizedRelayExtensionId, parseRelayExtensionIds } from "@/lib/relay-extension-ids";
 import { relayFetch } from "@/lib/relay-api";
+import { sendConsentCodeToExtension } from "@/lib/relay-extension-messaging";
 
-type AuthorizeStatus = "idle" | "authorizing" | "connected" | "error";
-
-type ExtensionRuntime = {
-  sendMessage(extensionId: string, message: unknown): Promise<unknown> | void;
-};
-
-function getExtensionRuntime(): ExtensionRuntime | null {
-  if (typeof window === "undefined") return null;
-  const w = window as Window & {
-    chrome?: { runtime?: ExtensionRuntime };
-    browser?: { runtime?: ExtensionRuntime };
-  };
-  return w.chrome?.runtime ?? w.browser?.runtime ?? null;
-}
-
-async function sendConsentCodeToExtension(extId: string, code: string): Promise<void> {
-  const runtime = getExtensionRuntime();
-  if (!runtime?.sendMessage) {
-    throw new Error(
-      "Could not reach the extension from this page. Use Chrome or Firefox with the Relay extension installed, or open this tab from the extension."
-    );
-  }
-  const out = runtime.sendMessage(extId, { type: "RELAY_CONSENT_CODE", code });
-  if (out && typeof (out as Promise<unknown>).then === "function") {
-    await out;
-  }
-}
+type AuthorizeStatus = "idle" | "authorizing" | "connected" | "error" | "exchange_failed";
 
 export function AuthorizeClient() {
   const searchParams = useSearchParams();
@@ -71,7 +46,12 @@ export function AuthorizeClient() {
       if (!code) {
         throw new Error("Relay did not return a consent code.");
       }
-      await sendConsentCodeToExtension(extId, code);
+      const exchangeResult = await sendConsentCodeToExtension(extId, code);
+      if (!exchangeResult.ok) {
+        setStatus("exchange_failed");
+        setMessage(exchangeResult.error);
+        return;
+      }
       setStatus("connected");
     } catch (e) {
       setStatus("error");
@@ -140,6 +120,23 @@ export function AuthorizeClient() {
         <p className="rounded border border-emerald-500/40 bg-emerald-950/40 p-4 text-emerald-100">
           Connected ✓ — you can close this tab.
         </p>
+      </main>
+    );
+  }
+
+  if (status === "exchange_failed") {
+    return (
+      <main className="mx-auto max-w-lg space-y-4 p-8 text-stone-200">
+        <h1 className="font-[family-name:var(--font-display)] text-2xl text-stone-50">
+          Connect extension
+        </h1>
+        <div className="rounded border border-red-500/40 bg-red-950/40 p-4 text-sm text-red-100">
+          <p className="font-medium text-red-50">Extension authorization failed.</p>
+          {message && <p className="mt-2 text-red-200/90">{message}</p>}
+          <p className="mt-2 text-red-200/90">
+            Close this tab and try connecting again from the Relay extension popup.
+          </p>
+        </div>
       </main>
     );
   }

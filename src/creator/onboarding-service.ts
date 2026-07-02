@@ -304,7 +304,8 @@ export async function patchCreatorOnboarding(
     metadata: updated.metadata ?? null,
     updated_at: updated.updatedAt.toISOString(),
     import_progress: importProgress,
-    sync_health
+    sync_health,
+    media_import_status: deriveMediaImportStatus(importProgress, sync_health)
   };
 }
 
@@ -315,6 +316,29 @@ export type CreatorOnboardingImportProgress = {
   last_post_scrape_posts_written: number | null;
 };
 
+/**
+ * Derived summary for Step 5 CTA state machine.
+ * - `none`     — no scrape ever started
+ * - `syncing`  — scrape in flight (finished_at null)
+ * - `complete` — last scrape ok
+ * - `failed`   — last scrape not ok
+ */
+export type MediaImportStatus = "none" | "syncing" | "complete" | "failed";
+
+export function deriveMediaImportStatus(
+  progress: CreatorOnboardingImportProgress | null,
+  syncHealth: SyncHealthWebDto
+): MediaImportStatus {
+  if (syncHealth.status === "failed") return "failed";
+  if (!progress) return "none";
+  if (progress.last_post_scrape_ok === null && progress.last_post_scrape_finished_at === null) {
+    return "syncing";
+  }
+  if (progress.last_post_scrape_ok === true) return "complete";
+  if (progress.last_post_scrape_ok === false) return "failed";
+  return "none";
+}
+
 export type CreatorOnboardingReadModel = {
   creator_id: string;
   step: CreatorOnboardingStep;
@@ -322,6 +346,8 @@ export type CreatorOnboardingReadModel = {
   updated_at: string;
   import_progress: CreatorOnboardingImportProgress | null;
   sync_health: SyncHealthWebDto;
+  /** Derived convenience field for Step 5 CTA state machine. */
+  media_import_status: MediaImportStatus;
 };
 
 function parseLastPostScrape(blob: unknown): CreatorOnboardingImportProgress | null {
@@ -388,6 +414,7 @@ export async function getCreatorOnboardingForStudio(
     metadata: row.metadata ?? null,
     updated_at: row.updatedAt.toISOString(),
     import_progress: importProgress,
-    sync_health
+    sync_health,
+    media_import_status: deriveMediaImportStatus(importProgress, sync_health)
   };
 }

@@ -12,6 +12,7 @@ import type {
   SyncBatchInput
 } from "../ingest/types.js";
 import { mirrorSnapshotSourceForIngestPostId } from "../ingest/mirror-post-source.js";
+import { sanitizeOptionalPostDescriptionHtml } from "../security/sanitize-post-html.js";
 
 /** External id fragments (numbers/slugs) without `substar_*` prefix wrappers. */
 export type SubscribeStarIngestCampaignWire = {
@@ -145,7 +146,10 @@ export function subscribeStarPostRow(wire: SubscribeStarIngestPostWire): IngestP
   return {
     post_id: substarPostId(wire.external_post_id),
     title: wire.title.trim() || substarPostId(wire.external_post_id),
-    description: typeof wire.description === "string" ? wire.description : undefined,
+    description:
+      typeof wire.description === "string"
+        ? sanitizeOptionalPostDescriptionHtml(wire.description)
+        : undefined,
     published_at: wire.published_at.trim(),
     tag_ids: tagIds,
     tier_ids: tierIds,

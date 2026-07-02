@@ -7,17 +7,24 @@ import { CreatorRelayPostComposer } from "./CreatorRelayPostComposer";
 type Props = {
   /** Relay `creator_id` from studio session (required for upload/publish). */
   creatorId?: string;
-  /** When true (e.g. `/new-post` page), show a link back to Library. */
+  /** When true (e.g. `/studio/new-post` page), show a link back to Library. */
   showBackLink?: boolean;
   /** Pre-fill composer with staged media ids (e.g. `?media_ids=` from Discord flow). */
   initialMediaIds?: string[];
+  /** Forwarded to the composer — e.g. `/studio/new-post` navigates back to the Library after publish. */
+  onPublishSuccess?: (postId: string) => void;
 };
 
 /**
  * T-6.1 / T-6.3 — In-page shell for Relay-native compose (presigned upload + `POST /api/v1/relay/posts`).
  * Primary placement: Creator Library (`/`) directly under `LibraryTopBar`.
  */
-export function CreatorNewPostShell({ creatorId, showBackLink, initialMediaIds }: Props) {
+export function CreatorNewPostShell({
+  creatorId,
+  showBackLink,
+  initialMediaIds,
+  onPublishSuccess
+}: Props) {
   return (
     <section
       data-relay-creator-id={creatorId ?? ""}
@@ -54,7 +61,7 @@ export function CreatorNewPostShell({ creatorId, showBackLink, initialMediaIds }
             </Link>
           ) : (
             <Link
-              href="/new-post"
+              href="/studio/new-post"
               className="inline-flex h-8 items-center gap-1.5 rounded-md border border-[var(--lib-border)] bg-[var(--lib-input)] px-3 text-xs font-medium text-[var(--lib-fg)] transition-colors hover:border-[var(--lib-primary)]/50"
             >
               <PenLine className="h-3.5 w-3.5 text-[var(--lib-primary)]" aria-hidden />
@@ -72,6 +79,7 @@ export function CreatorNewPostShell({ creatorId, showBackLink, initialMediaIds }
         <CreatorRelayPostComposer
           creatorId={creatorId ?? ""}
           initialMediaIds={initialMediaIds}
+          onPublishSuccess={onPublishSuccess}
         />
         <p className="mt-4 border-t border-[var(--lib-border)]/60 pt-3 text-center text-[11px] text-[var(--lib-fg-muted)]/90">
           Patreon-mirrored posts use the post card menu; this path is for new Relay uploads only.

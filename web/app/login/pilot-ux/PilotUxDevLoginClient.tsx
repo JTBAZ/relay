@@ -6,7 +6,10 @@ import { useState } from "react";
 import { Loader2 } from "lucide-react";
 import { RelayLogo } from "@/app/components/auth/relay-logo";
 import { bootstrapPilotUxPasswordLogin } from "@/lib/pilot-ux-password-login";
-import { postPilotUxOnboardingWalkthroughReset } from "@/lib/relay-api";
+import {
+  postPilotUxOnboardingWalkthroughReset,
+  postPilotUxPatronOnboardingReset
+} from "@/lib/relay-api";
 import {
   PILOT_UX_DEFAULT_DEV_PASSWORD,
   PILOT_UX_DEV_ACCOUNTS,
@@ -45,6 +48,8 @@ export function PilotUxDevLoginClient() {
       });
       if (account.onboardingWalkthrough) {
         await postPilotUxOnboardingWalkthroughReset();
+      } else if (account.patronOnboardingWalkthrough) {
+        await postPilotUxPatronOnboardingReset();
       }
       router.push(account.destination);
     } catch (err) {
@@ -61,7 +66,7 @@ export function PilotUxDevLoginClient() {
           <RelayLogo size="md" />
           <h1 className="text-center text-lg font-semibold">Pilot UX dev login</h1>
           <p className="text-center text-sm text-[#9CA3AF]">
-            Password sign-in for seeded faux creators and patron — no Supabase or Patreon OAuth.
+            Password sign-in for seeded faux creators and patrons — no Supabase or Patreon OAuth.
             Run <code className="text-[#D1D5DB]">npm run seed:pilot-ux</code> first.
           </p>
         </header>
@@ -101,6 +106,8 @@ export function PilotUxDevLoginClient() {
                 <span className="mt-0.5 block text-[0.65rem] uppercase tracking-wide text-[#6B7280]">
                   {account.onboardingWalkthrough
                     ? "Creator onboarding walkthrough"
+                    : account.patronOnboardingWalkthrough
+                      ? "Patron onboarding walkthrough"
                     : account.kind === "creator"
                       ? "Creator library"
                       : "Patron feed"}
@@ -117,6 +124,19 @@ export function PilotUxDevLoginClient() {
           Creators open Library with tier chips (read-only for Patreon posts). Patron follows both creators
           with seeded entitlements — permission parity is UX Gate B (PUX-002).
         </p>
+
+        <Link
+          href="/dev/patron-profile"
+          className="flex items-center justify-between rounded-xl border border-dashed border-[#2A2A2A] bg-[#0C0C0C] px-4 py-3 text-left transition-colors hover:border-[#52B788]/50"
+        >
+          <span>
+            <span className="block text-sm font-medium">Patron profile draft</span>
+            <span className="block text-xs text-[#9CA3AF]">
+              Preview the user (not creator) profile layout — mock data, no sign-in required.
+            </span>
+          </span>
+          <span className="text-xs uppercase tracking-wide text-[#52B788]">Open</span>
+        </Link>
 
         <Link href="/login" className="text-center text-sm text-[#52B788] hover:underline">
           Standard sign in

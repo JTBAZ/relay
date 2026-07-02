@@ -12,15 +12,31 @@ import {
   type AccountDeletionSweepJobData,
   type MediaStoragePurgeJobData,
   type NotificationDeliveryJobData,
+  type NotificationDigestJobData,
   type PatreonIncrementalAutosyncJobData,
   type PatronEntitlementStaleRefreshJobData,
+  type PlatformMetricDailyRollupJobData,
+  type ExternalMetricDailyRollupJobData,
+  type PlatformInstanceRefreshSweepJobData,
+  type PostingGoalNudgeJobData,
   type SubscribeStarGraphqlPostsIngestJobData
 } from "./queue-names.js";
 import { incrementalAutosyncRepeatEveryMsFromEnv } from "../patreon/incremental-sync-worker.js";
 import { patronEntitlementStaleRefreshIntervalFromEnv } from "../patron/patron-entitlement-stale-worker.js";
 import { notificationDeliveryRepeatEveryMsFromEnv } from "../patron/notification-delivery-worker.js";
+import { notificationDigestSweepRepeatEveryMsFromEnv } from "../patron/notification-digest-worker.js";
 import { accountDeletionSweepRepeatEveryMsFromEnv } from "../patron/account-deletion-worker.js";
 import { mediaStoragePurgeSweepRepeatEveryMsFromEnv } from "../storage/media-storage-purge-worker.js";
+import {
+  platformMetricDailyRollupIntervalFromEnv
+} from "../platform-metrics/platform-metric-daily-rollup-job.js";
+import {
+  externalMetricDailyRollupIntervalFromEnv
+} from "../analytics/external-metric-rollup-job.js";
+import {
+  platformInstanceRefreshSweepIntervalFromEnv
+} from "../analytics/platform-instance-refresh-sweep-job.js";
+import { postingGoalNudgeRepeatEveryMsFromEnv } from "../autopost/posting-goal-nudge-worker.js";
 import { subscribeStarGraphqlIngestAutosyncRepeatEveryMsFromEnv } from "../subscribestar/subscribestar-graphql-ingest-autosync.js";
 
 const REPEAT_JOB_NAME = "relay-tick";
@@ -120,6 +136,16 @@ export async function registerRelayBullMqRepeatSchedulers(
       );
     }
 
+    const digestEvery = notificationDigestSweepRepeatEveryMsFromEnv(env);
+    if (digestEvery !== null) {
+      await replaceRepeatEvery(
+        openQueue(RELAY_JOB_QUEUE_NAMES.NOTIFICATION_DIGEST),
+        digestEvery,
+        {} as NotificationDigestJobData,
+        log
+      );
+    }
+
     const acctEvery = accountDeletionSweepRepeatEveryMsFromEnv(env);
     if (acctEvery !== null) {
       await replaceRepeatEvery(
@@ -136,6 +162,46 @@ export async function registerRelayBullMqRepeatSchedulers(
         openQueue(RELAY_JOB_QUEUE_NAMES.MEDIA_STORAGE_PURGE),
         purgeEvery,
         {} as MediaStoragePurgeJobData,
+        log
+      );
+    }
+
+    const rollupEvery = platformMetricDailyRollupIntervalFromEnv(env);
+    if (rollupEvery !== null) {
+      await replaceRepeatEvery(
+        openQueue(RELAY_JOB_QUEUE_NAMES.PLATFORM_METRIC_DAILY_ROLLUP),
+        rollupEvery,
+        {} as PlatformMetricDailyRollupJobData,
+        log
+      );
+    }
+
+    const externalRollupEvery = externalMetricDailyRollupIntervalFromEnv(env);
+    if (externalRollupEvery !== null) {
+      await replaceRepeatEvery(
+        openQueue(RELAY_JOB_QUEUE_NAMES.EXTERNAL_METRIC_DAILY_ROLLUP),
+        externalRollupEvery,
+        {} as ExternalMetricDailyRollupJobData,
+        log
+      );
+    }
+
+    const instanceRefreshEvery = platformInstanceRefreshSweepIntervalFromEnv(env);
+    if (instanceRefreshEvery !== null) {
+      await replaceRepeatEvery(
+        openQueue(RELAY_JOB_QUEUE_NAMES.PLATFORM_INSTANCE_REFRESH_SWEEP),
+        instanceRefreshEvery,
+        {} as PlatformInstanceRefreshSweepJobData,
+        log
+      );
+    }
+
+    const postingGoalEvery = postingGoalNudgeRepeatEveryMsFromEnv(env);
+    if (postingGoalEvery !== null) {
+      await replaceRepeatEvery(
+        openQueue(RELAY_JOB_QUEUE_NAMES.POSTING_GOAL_NUDGE),
+        postingGoalEvery,
+        {} as PostingGoalNudgeJobData,
         log
       );
     }

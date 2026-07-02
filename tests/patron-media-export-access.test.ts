@@ -232,4 +232,27 @@ describe("patronMayFetchMediaExport", () => {
       })
     ).toEqual({ allowed: true });
   });
+
+  it("denies entitled patron when hide-mature pref is on for Adult (18+) post", () => {
+    const snap = snapshotWithPost(["patreon_tier_555"]);
+    const session: SessionToken = {
+      token: "t",
+      user_id: "u1",
+      creator_id: creatorId,
+      tier_ids: ["patreon_tier_555"],
+      expires_at: "2099-01-01T00:00:00.000Z"
+    };
+    const r = patronMayFetchMediaExport({
+      snapshot: snap,
+      creatorId,
+      mediaId: "patreon_media_m1",
+      session,
+      hideMatureContent: true,
+      isPostMature: true
+    });
+    expect(r).toEqual({
+      allowed: false,
+      reason: "18+ content hidden by your settings."
+    });
+  });
 });

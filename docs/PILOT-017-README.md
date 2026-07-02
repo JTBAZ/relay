@@ -10,7 +10,9 @@
 ## What You Need
 
 ### For Product/QA Sign-Off (START HERE)
-👉 **`docs/pilot-017-human-signoff-checklist.md`**
+
+👉 `**docs/pilot-017-human-signoff-checklist.md`**
+
 - 60+ end-to-end test scenarios
 - Pre-flight environment checks
 - Patron account creation (≥25)
@@ -25,24 +27,29 @@
 ---
 
 ### For Context & Architecture
-👉 **`docs/PILOT-017-engineering-complete.md`**
+
+👉 `**docs/PILOT-017-engineering-complete.md`**
+
 - Engineering fixes summary
 - Code path mapping (how tests connect to code)
 - Known issues (Gate F hidden-post regression)
 - File change log
 
-👉 **`docs/pilot-exit-checklist.md`**
+👉 `**docs/pilot-exit-checklist.md**`
+
 - Scale table: engineering ✅, product ⏳, prod env ⏳
 - CI vs local `verify:pilot` equivalence
 - Notes section for human evidence
 
-👉 **`docs/pilot-ux-dev-login.md` § Gate K**
+👉 `**docs/pilot-ux-dev-login.md` § Gate K**
+
 - Engineering vs product bars
 - Wiring summary
 
 ---
 
 ### Test Files (for reference)
+
 ```
 tests/pilot-017-pilot-exit-signoff.test.ts
   ├─ verify:pilot script exists
@@ -63,48 +70,54 @@ tests/relay-native-post-route.test.ts (Gate H)
 ## Steps to Sign-Off
 
 ### 1. Environment (30 min) — ENV-1 to ENV-5
-- [ ] `RELAY_DB_STORE_*=1` on staging
-- [ ] RLS policies active
-- [ ] BullMQ + webhooks live
-- [ ] Test accounts ready
+
+- `RELAY_DB_STORE_*=1` on staging
+- RLS policies active
+- BullMQ + webhooks live
+- Test accounts ready
 
 ### 2. Patron Experience (45 min) — PAT-1 to FEED-5
-- [ ] Email/password signup
-- [ ] Patreon OAuth connect
-- [ ] Session persist
-- [ ] **≥25 patron accounts created**
-- [ ] Follow creators
-- [ ] Feed loads with tier badges
-- [ ] Permissions enforced
+
+- Email/password signup
+- Patreon OAuth connect
+- Session persist
+- **≥25 patron accounts created**
+- Follow creators
+- Feed loads with tier badges
+- Permissions enforced
 
 ### 3. Creator Experience (45 min) — CRE-1 to POST-5
-- [ ] Email/password signup
-- [ ] Patreon OAuth (must own campaign)
-- [ ] Profile setup + handle claim
-- [ ] **≥5 creator accounts created**
-- [ ] Import from Patreon
-- [ ] Create Relay-native posts
-- [ ] Tier gates enforced
-- [ ] **≥10 total posts published** (≥2 per creator)
+
+- Email/password signup
+- Patreon OAuth (must own campaign)
+- Profile setup + handle claim
+- **≥5 creator accounts created**
+- Import from Patreon
+- Create Relay-native posts
+- Tier gates enforced
+- **≥10 total posts published** (≥2 per creator)
 
 ### 4. Browser Matrix (30 min)
-- [ ] Chrome desktop
-- [ ] Chrome mobile
-- [ ] Firefox desktop
-- [ ] Safari desktop
-- [ ] Safari iOS (if possible)
+
+- Chrome desktop
+- Chrome mobile
+- Firefox desktop
+- Safari desktop
+- Safari iOS (if possible)
 
 ### 5. Security (15 min)
-- [ ] SQL injection test
-- [ ] JWT tampering test
-- [ ] CORS breach attempt
-- [ ] Sentry: zero new P1s
+
+- SQL injection test
+- JWT tampering test
+- CORS breach attempt
+- Sentry: zero new P1s
 
 ### 6. Collect Signatures
-- [ ] Product Lead
-- [ ] QA Lead
-- [ ] Creator Outreach (optional, can be same person as Product)
-- [ ] DevOps / Platform
+
+- Product Lead
+- QA Lead
+- Creator Outreach (optional, can be same person as Product)
+- DevOps / Platform
 
 ---
 
@@ -129,6 +142,7 @@ tests/relay-native-post-route.test.ts (Gate H)
 **Record:** PILOT-017 (`rec5qlZFK8Dsvwvap`)
 
 **When done:**
+
 1. Update Notes → add sign-off date + checklist link
 2. Change Status → **Done**
 3. Ensure all required fields filled (signatures, dates)
@@ -137,28 +151,32 @@ tests/relay-native-post-route.test.ts (Gate H)
 
 ## Contacts & Resources
 
-| Role | Contact | Notes |
-|------|---------|-------|
-| **Engineering (done)** | [Engineering lead] | Verify:pilot green 2026-05-23 |
-| **Product Lead** | [Product owner] | Fills checklist, approves cohort metrics |
-| **QA Lead** | [QA owner] | Runs browser matrix + security checks |
-| **Creator Outreach** | [Outreach lead] | Recruits + counts ≥5 creators, ≥25 patrons |
-| **DevOps** | [DevOps owner] | Validates prod/staging env setup |
+
+| Role                   | Contact            | Notes                                      |
+| ---------------------- | ------------------ | ------------------------------------------ |
+| **Engineering (done)** | [Engineering lead] | Verify:pilot green 2026-05-23              |
+| **Product Lead**       | [Product owner]    | Fills checklist, approves cohort metrics   |
+| **QA Lead**            | [QA owner]         | Runs browser matrix + security checks      |
+| **Creator Outreach**   | [Outreach lead]    | Recruits + counts ≥5 creators, ≥25 patrons |
+| **DevOps**             | [DevOps owner]     | Validates prod/staging env setup           |
+
 
 ---
 
 ## Quick Links
 
-| Document | Purpose |
-|----------|---------|
-| `docs/pilot-017-human-signoff-checklist.md` | 👈 START HERE: 60+ test scenarios |
-| `docs/PILOT-017-engineering-complete.md` | Engineering summary + architecture |
-| `docs/pilot-exit-checklist.md` | Exit gate scale table |
-| `docs/pilot-ux-dev-login.md` | UX gates A–K reference |
-| `docs/pilot-build-plan.md` | Cohort targets + success metrics |
-| `docs/pilot-browser-matrix.md` | Browser coverage definition |
-| `.github/workflows/ci.yml` | CI equivalent of `verify:pilot` |
-| `package.json` | `verify:pilot` script definition |
+
+| Document                                    | Purpose                            |
+| ------------------------------------------- | ---------------------------------- |
+| `docs/pilot-017-human-signoff-checklist.md` | 👈 START HERE: 60+ test scenarios  |
+| `docs/PILOT-017-engineering-complete.md`    | Engineering summary + architecture |
+| `docs/pilot-exit-checklist.md`              | Exit gate scale table              |
+| `docs/pilot-ux-dev-login.md`                | UX gates A–K reference             |
+| `docs/pilot-build-plan.md`                  | Cohort targets + success metrics   |
+| `docs/pilot-browser-matrix.md`              | Browser coverage definition        |
+| `.github/workflows/ci.yml`                  | CI equivalent of `verify:pilot`    |
+| `package.json`                              | `verify:pilot` script definition   |
+
 
 ---
 

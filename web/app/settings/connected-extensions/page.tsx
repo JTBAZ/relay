@@ -6,7 +6,7 @@ export default function ConnectedExtensionsPage() {
     <main className="mx-auto max-w-3xl space-y-6 p-8 text-stone-200">
       <p>
         <Link
-          href="/patron/profile"
+          href="/profile"
           className="text-amber-400 underline decoration-amber-400/60 hover:text-amber-300"
         >
           ← Profile

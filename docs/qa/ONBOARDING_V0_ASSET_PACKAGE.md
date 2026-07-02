@@ -62,7 +62,7 @@
   │   (Supabase verify-email link sent)        │   │   (Supabase verify-email link)     │
   │                                            │   │                                    │
   │ Step 2  Connect Patreon                    │   │ Step 2  Connect Patreon            │
-  │   OAuth → /patreon/callback → back here    │   │   OAuth → /patreon/patron/callback │
+  │   OAuth → /patreon/callback → back here    │   │   OAuth → /connect/patreon/patron/callback │
   │                                            │   │   → /patron/feed (auto)            │
   │                                            │   │                                    │
   │ Step 3  Claim Gallery URL                  │   │ Step 3  Open Feed                  │

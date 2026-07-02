@@ -14,7 +14,7 @@
 
 | Domain | Status | Code reference |
 |---|---|---|
-| Patron Patreon link (after Relay sign-in + tier sync on link) | **Working** end-to-end | `src/patreon/patreon-patron-oauth.ts`, `POST /api/v1/auth/patreon/patron/link` (session required); legacy `POST .../patron/exchange` rollback-only; `web/app/patreon/patron/connect`, `web/app/patreon/patron/callback` |
+| Patron Patreon link (after Relay sign-in + tier sync on link) | **Working** end-to-end | `src/patreon/patreon-patron-oauth.ts`, `POST /api/v1/auth/patreon/patron/link` (session required); legacy `POST .../patron/exchange` rollback-only; `web/app/connect/patreon/patron/connect`, `web/app/connect/patreon/patron/callback` |
 | Multi-tenant identity (Account + TenantMembership) | **Working** (Option B, MT-031) | `prisma/schema.prisma` (Account, TenantMembership), `src/identity/patron-auth-context.ts` |
 | `PatronEntitlementSnapshot` materialized on OAuth | **Working** (`source = oauth_exchange`, `staleAfter` 6h default) | `src/identity/patron-entitlement-snapshot.ts` |
 | Per-creator favorites + collections (file & DB stores, validated) | **Working** API + DB | `src/gallery/patron-favorites-store*.ts`, `src/gallery/patron-collections-store*.ts`, `/api/v1/patron/favorites`, `/api/v1/patron/collections*` |
@@ -33,14 +33,14 @@
 | **Feed assembly (remaining polish)** | DB path **shipped** (`assemblePatronFeed`, cursors, filters); fixture only if API has no DB identity | P95, cache policy, deeper degraded-edge cases per `entitlement-degraded.ts` |
 | **Follow graph endpoints** | Schema only (`PatronFollow` is creator-scoped) | Routes for follow/unfollow/list **and** generalize to follow other Accounts (supporters) |
 | **Initial follow seeding from Patreon memberships** | Manual/none | Job that auto-creates `PatronFollow` rows for entitled creators present on Relay |
-| **Webhook → patron entitlement refresh** | Member events detected, not wired to snapshots | `members:create/update/delete` enqueues snapshot refresh for affected `(creator, patron_user_id)` |
-| **Scheduled refresh worker** | None | BullMQ worker that scans `staleAfter < now` and refreshes via stored refresh token |
-| **`PatronOAuthCredential` persistence** | Schema only (intentionally not written today) | Encrypted refresh-token storage (same KMS pattern as creator `OAuthCredential`) |
-| **Comments (read/write/moderation)** | Schema only | API + UI + auto-mod + creator + Relay queue |
+| **Webhook → patron entitlement refresh** | **Shipped** — `members:*` platform webhooks dispatch to member sync (`src/patreon/patreon-webhook-platform.ts`, `src/webhooks/patreon-webhook.ts`) | `members:create/update/delete` enqueues snapshot refresh for affected `(creator, patron_user_id)` |
+| **Scheduled refresh worker** | **Shipped** — `src/patron/patron-entitlement-stale-worker.ts` (+ `src/patron/patron-entitlement-refresh.ts`) | BullMQ worker that scans `staleAfter < now` and refreshes via stored refresh token |
+| **`PatronOAuthCredential` persistence** | **Shipped** — `src/auth/patron-oauth-credential-store.ts`, refresh via `src/patreon/patron-oauth-refresh.ts` | Encrypted refresh-token storage (same KMS pattern as creator `OAuthCredential`) |
+| **Comments (read/write/moderation)** | **Shipped** — `src/patron/comment-service.ts`, mentions in `src/patron/comment-mention-service.ts` | API + UI + auto-mod + creator + Relay queue |
 | **Discovery / Browse assembly** | Static `discoverItems` from fixtures | v1 = creator-opt-in public-post grid; v2 = ranked Browse with `DiscoveryDecisionLog` |
-| **Notification system (storage + delivery + prefs UI)** | Schema only | `Notification` table, `/api/v1/patron/notifications`, in-app + email channel |
+| **Notification system (storage + delivery + prefs UI)** | **Shipped** — `src/patron/notification-service.ts`, delivery worker, digest worker + email (`src/patron/notification-digest-worker.ts`, `src/notifications/email-sender.ts`) | `Notification` table, `/api/v1/patron/notifications`, in-app + email channel |
 | **Email/password supporter signup** | Patreon-OAuth-only path | `Account` create with verified email, then **link** Patreon as a separate step |
-| **Supporter profile (handle, bio, avatar, public/private)** | `PatronProfile.handle` exists but no API/UI/uniqueness | Full profile model + public profile route `/p/[handle]` |
+| **Supporter profile (handle, bio, avatar, public/private)** | **Shipped** — `src/patron/public-patron-profile-service.ts`, `src/patron/patron-profile-service.ts`, route `web/app/p/[handle]/page.tsx` | Full profile model + public profile route `/p/[handle]` |
 | **Cross-creator favorites/collections** | Per-creator scope partitioning | Allow any-post collection items, render through viewer entitlement filter |
 | **Viewer-permission-aware rendering** | None | Blurred teaser + upgrade-CTA for items the viewer can't access |
 | **Comment likes / reactions** | None | New table, API |

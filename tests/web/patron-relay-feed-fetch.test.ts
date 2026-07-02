@@ -41,8 +41,10 @@ describe("fetchPatronRelayFeed → Relay API paths", () => {
     expect(relayFetch).toHaveBeenCalledWith("/api/v1/patron/relay_feed");
   });
 
-  it("calls GET /api/v1/patron/feed with query when options set", async () => {
+  it("calls GET /api/v1/patron/relay_feed with query when options set", async () => {
     await fetchPatronRelayFeedWithOptions({ cursor: "abc", limit: 10, filter: "following" });
-    expect(relayFetch).toHaveBeenCalledWith("/api/v1/patron/feed?cursor=abc&limit=10&filter=following");
+    expect(relayFetch).toHaveBeenCalledWith(
+      "/api/v1/patron/relay_feed?cursor=abc&limit=10&filter=following"
+    );
   });
 });

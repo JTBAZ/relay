@@ -276,7 +276,7 @@ export function evaluatePipelineParity(input: {
   if (input.syncStateError || !syncState) {
     nodes.push({
       id: "sync_state_live",
-      label: "Live sync-state (GET /api/v1/patreon/sync-state)",
+      label: "Live sync-state (GET /api/v1/connect/patreon/sync-state)",
       status: "unknown",
       severity_hint: 2,
       summary: input.syncStateError ?? "sync-state unavailable (OAuth/creator missing).",

@@ -1,6 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type MouseEvent
+} from "react";
 import {
   Heart,
   MessageCircle,
@@ -12,17 +19,22 @@ import {
   Check,
   Star,
   Crosshair,
-  Loader,
+  X,
 } from "lucide-react";
-import type { FeedPost } from "@/lib/relay-fixtures";
+import SnipIcon from "@/app/components/icons/SnipIcon";
+import type { FeedPost, PositionalComment } from "@/lib/relay-fixtures";
 import {
   isPatronFeedVideoPost,
   patronFeedPlaybackSrc,
   patronFeedPosterSrc
 } from "@/lib/patron-feed-media";
 import { GalleryMediaStack } from "./gallery-media-stack";
+import { MediaEdgeRail } from "./media-edge-rail";
 import { PatronFeedVideo } from "./patron-feed-playback";
-import { listPostComments } from "@/lib/relay-api";
+import { listPostComments, type PatronCommentRecord } from "@/lib/relay-api";
+import { formatFeedPublishedDate } from "@/lib/format-feed-published-date";
+import { SnipToCollectionDialog, type SnipTarget } from "./snip-to-collection-dialog";
+import { emitRelayInteractionTelemetryEvent } from "@/lib/relay-interaction-telemetry";
 
 const MEDIA_ICONS = {
   writing: FileText,
@@ -31,39 +43,526 @@ const MEDIA_ICONS = {
   video: Video,
 } as const;
 
+const HYBRID_MEDIA_BAR_EXPERIMENT_POST_ID = "pilot_post_ava_multi_gallery";
+
+type HybridMediaBarProps = {
+  count: number;
+  activeIndex: number;
+  favorited: boolean;
+  snipDisabled: boolean;
+  onSelect: (index: number) => void;
+  onFavorite: () => void;
+  onComment: () => void;
+  onSnip: () => void;
+  onCommentPreviewEnter: () => void;
+  onCommentPreviewLeave: () => void;
+  onOpenChange?: (open: boolean) => void;
+};
+
+function HybridMediaActionBar({
+  count,
+  activeIndex,
+  favorited,
+  snipDisabled,
+  onSelect,
+  onFavorite,
+  onComment,
+  onSnip,
+  onCommentPreviewEnter,
+  onCommentPreviewLeave,
+  onOpenChange
+}: HybridMediaBarProps) {
+  const [expanded, setExpanded] = useState(false);
+  const [actionMenuOpenForIndex, setActionMenuOpenForIndex] = useState<number | null>(null);
+  const [radialMenuAnimated, setRadialMenuAnimated] = useState(false);
+  const [hoveredDot, setHoveredDot] = useState<number | null>(null);
+  const [hoveredAction, setHoveredAction] = useState<string | null>(null);
+  const rootRef = useRef<HTMLDivElement | null>(null);
+  const collapseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const safeCount = Math.max(1, count);
+  const actionMenuOpen = actionMenuOpenForIndex !== null;
+  const dotIndexWithMenu =
+    actionMenuOpenForIndex !== null ? Math.min(actionMenuOpenForIndex, safeCount - 1) : null;
+
+  const radialPositions = [
+    { x: -34, y: -38 },
+    { x: 0, y: -48 },
+    { x: 34, y: -38 }
+  ];
+
+  const dotHit = 20;
+  const dotRingRest = 9;
+  const dotRingHover = 13;
+  const dotRingSelected = 18;
+  const dotGlowRest = 11;
+  const dotGlowHover = 16;
+  const dotGlowSelected = 20;
+  const innerDot = 3;
+  const closeSize = 19;
+  const actionSize = 28;
+  const actionIcon = 12;
+  const trackHeightCollapsed = 40;
+  const trackHeightExpanded = 52;
+  const trackWidthCollapsed = 58;
+  const trackWidthExpanded = 210;
+  const trackHeight = expanded || actionMenuOpen ? trackHeightExpanded : trackHeightCollapsed;
+
+  const clearCollapseTimer = useCallback(() => {
+    if (collapseTimerRef.current != null) {
+      clearTimeout(collapseTimerRef.current);
+      collapseTimerRef.current = null;
+    }
+  }, []);
+
+  const open = useCallback(() => {
+    clearCollapseTimer();
+    setExpanded(true);
+  }, [clearCollapseTimer]);
+
+  const scheduleCollapse = useCallback(() => {
+    clearCollapseTimer();
+    collapseTimerRef.current = setTimeout(() => {
+      setExpanded(false);
+      setActionMenuOpenForIndex(null);
+      setHoveredDot(null);
+      collapseTimerRef.current = null;
+    }, 160);
+  }, [clearCollapseTimer]);
+
+  useEffect(() => () => clearCollapseTimer(), [clearCollapseTimer]);
+
+  useEffect(() => {
+    onOpenChange?.(expanded || actionMenuOpen);
+  }, [expanded, actionMenuOpen, onOpenChange]);
+
+  useEffect(
+    () => () => {
+      onOpenChange?.(false);
+    },
+    [onOpenChange]
+  );
+
+  useEffect(() => {
+    if (dotIndexWithMenu !== null && dotIndexWithMenu !== actionMenuOpenForIndex) {
+      setActionMenuOpenForIndex(dotIndexWithMenu);
+    }
+  }, [actionMenuOpenForIndex, dotIndexWithMenu]);
+
+  useEffect(() => {
+    if (actionMenuOpenForIndex === null) {
+      setRadialMenuAnimated(false);
+      return;
+    }
+
+    setRadialMenuAnimated(false);
+    const frame = window.requestAnimationFrame(() => setRadialMenuAnimated(true));
+    return () => window.cancelAnimationFrame(frame);
+  }, [actionMenuOpenForIndex]);
+
+  const stop = (e: MouseEvent) => e.stopPropagation();
+
+  const radialActions = [
+    {
+      key: "favorite",
+      label: favorited ? "Unfavorite" : "Favorite",
+      Icon: Heart,
+      disabled: false,
+      active: favorited,
+      onSelect: onFavorite
+    },
+    {
+      key: "snip",
+      label: "Snip",
+      Icon: SnipIcon,
+      disabled: snipDisabled,
+      active: false,
+      onSelect: onSnip
+    },
+    {
+      key: "comment",
+      label: "Comment",
+      Icon: MessageCircle,
+      disabled: false,
+      active: false,
+      onSelect: onComment,
+      onEnter: onCommentPreviewEnter,
+      onLeave: onCommentPreviewLeave
+    }
+  ] as const;
+
+  const mediaPositionLabelIndex =
+    hoveredDot !== null ? hoveredDot : Math.min(Math.max(0, activeIndex), safeCount - 1);
+
+  return (
+    <div
+      ref={rootRef}
+      className="relative z-50 flex shrink-0 justify-center overflow-visible border-t border-[#1A1A1A] bg-[#0E0E0E]/95 py-1.5"
+      onClick={stop}
+      onMouseEnter={open}
+      onMouseLeave={scheduleCollapse}
+      onFocusCapture={open}
+      onBlurCapture={(e) => {
+        const next = e.relatedTarget as Node | null;
+        if (next && rootRef.current?.contains(next)) return;
+        scheduleCollapse();
+      }}
+    >
+      <div
+        className="relative z-50 overflow-visible transition-[width,height] duration-500 [transition-timing-function:cubic-bezier(0.23,1,0.32,1)]"
+        style={{
+          width: expanded || actionMenuOpen ? `${trackWidthExpanded}px` : `${trackWidthCollapsed}px`,
+          height: trackHeight
+        }}
+        aria-label={`Open media actions (${safeCount} assets)`}
+      >
+        <button
+          type="button"
+          aria-label="Snip"
+          tabIndex={-1}
+          disabled={snipDisabled}
+          onClick={(e) => {
+            e.stopPropagation();
+            if (!snipDisabled) onSnip();
+          }}
+          className="sr-only"
+        />
+        <div
+          className={[
+            "absolute inset-0 border backdrop-blur-sm transition-all duration-300",
+            expanded || actionMenuOpen ? "rounded-[26px]" : "rounded-full"
+          ].join(" ")}
+          style={{
+            backgroundColor: actionMenuOpen
+              ? "rgba(16,16,16,0.98)"
+              : expanded
+                ? "rgba(14,14,14,0.96)"
+                : "rgba(12,12,12,0.86)",
+            borderColor: actionMenuOpen
+              ? "rgba(64,145,108,0.46)"
+              : expanded
+                ? "rgba(255,255,255,0.18)"
+                : "rgba(255,255,255,0.12)",
+            boxShadow: actionMenuOpen
+              ? "0 0 0 1px rgba(64,145,108,0.16), 0 0 22px rgba(27,155,110,0.12), inset 0 0 18px rgba(255,255,255,0.03)"
+              : expanded
+                ? "0 0 0 1px rgba(255,255,255,0.05), 0 12px 26px rgba(0,0,0,0.28)"
+                : "0 0 0 1px rgba(255,255,255,0.04), 0 8px 18px rgba(0,0,0,0.28)"
+          }}
+        />
+
+        {!expanded && !actionMenuOpen ? (
+          <div className="pointer-events-none absolute inset-0 flex items-center justify-center transition-all duration-300">
+            <span className="relative flex items-center justify-center gap-1.5" aria-hidden="true">
+              {[0, 1, 2].map((idx) => (
+                <span
+                  key={`hybrid-media-ring-badge-${idx}`}
+                  className="block h-[7px] w-[7px] shrink-0 rounded-full border-2 border-[#1B9B6E]/75 bg-transparent shadow-[0_0_7px_rgba(27,155,110,0.22)]"
+                />
+              ))}
+            </span>
+          </div>
+        ) : null}
+
+        <div
+          className={[
+            "absolute inset-0 flex flex-col items-center justify-center overflow-visible px-6 py-2 transition-all duration-300",
+            expanded || actionMenuOpen ? "opacity-100 scale-100" : "pointer-events-none opacity-0 scale-95"
+          ].join(" ")}
+          aria-hidden={!expanded && !actionMenuOpen}
+        >
+          <span
+            className={[
+              "pointer-events-none mb-1 whitespace-nowrap text-center text-[10px] font-medium tracking-wide text-[#888888] transition-all duration-200",
+              actionMenuOpen ? "-translate-y-0.5 opacity-0" : "translate-y-0 opacity-100"
+            ].join(" ")}
+            aria-live="polite"
+          >
+            {mediaPositionLabelIndex + 1} of {safeCount}
+          </span>
+          <div className="relative flex h-6 w-full items-center justify-between">
+            {Array.from({ length: safeCount }).map((_, idx) => {
+              const isCurrent = idx === activeIndex;
+              const isHovered = hoveredDot === idx;
+              const isSelected = dotIndexWithMenu === idx;
+              const isOtherDotSelected = actionMenuOpen && !isSelected;
+              return (
+                <div
+                  key={`hybrid-media-dot-${idx}`}
+                  className="relative flex items-center justify-center transition-all duration-300 [transition-timing-function:cubic-bezier(0.23,1,0.32,1)]"
+                  style={{
+                    width: dotHit,
+                    height: dotHit,
+                    opacity: isOtherDotSelected ? 0.3 : 1
+                  }}
+                >
+                  <button
+                    type="button"
+                    onMouseEnter={() => {
+                      if (!actionMenuOpen) {
+                        setHoveredDot(idx);
+                        onSelect(idx);
+                      }
+                    }}
+                    onMouseLeave={() => {
+                      if (!actionMenuOpen) setHoveredDot(null);
+                    }}
+                    onFocus={() => {
+                      if (!actionMenuOpen) {
+                        setHoveredDot(idx);
+                        onSelect(idx);
+                      }
+                    }}
+                    onBlur={() => {
+                      if (!actionMenuOpen) setHoveredDot(null);
+                    }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (isSelected) {
+                        setActionMenuOpenForIndex(null);
+                        return;
+                      }
+                      onSelect(idx);
+                      setActionMenuOpenForIndex(idx);
+                    }}
+                    className="relative flex items-center justify-center rounded-full focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#1B9B6E]/80"
+                    style={{ width: dotHit, height: dotHit }}
+                    aria-label={isSelected ? `Close media ${idx + 1} actions` : `Open media ${idx + 1} actions`}
+                    aria-current={isCurrent ? "true" : undefined}
+                    aria-expanded={isSelected || undefined}
+                    tabIndex={expanded || actionMenuOpen ? 0 : -1}
+                  >
+                    <span
+                      className="absolute rounded-full transition-all duration-200 [transition-timing-function:cubic-bezier(0.22,1,0.36,1)]"
+                      style={{
+                        width: isSelected ? dotGlowSelected : isHovered ? dotGlowHover : dotGlowRest,
+                        height: isSelected ? dotGlowSelected : isHovered ? dotGlowHover : dotGlowRest,
+                        opacity: isSelected || isHovered ? 0.6 : 0,
+                        background: "radial-gradient(circle, rgba(27,155,110,0.25) 0%, transparent 70%)"
+                      }}
+                    />
+                    <span
+                      className="absolute rounded-full transition-all duration-200 [transition-timing-function:cubic-bezier(0.22,1,0.36,1)]"
+                      style={{
+                        width: isSelected ? dotRingSelected : isHovered ? dotRingHover : dotRingRest,
+                        height: isSelected ? dotRingSelected : isHovered ? dotRingHover : dotRingRest,
+                        borderWidth: 2,
+                        borderStyle: "solid",
+                        borderColor: isSelected || isHovered ? "#1B9B6E" : "rgba(255,255,255,0.22)",
+                        backgroundColor: isSelected ? "#101010" : "transparent",
+                        boxShadow: isSelected
+                          ? "0 0 12px rgba(27,155,110,0.3)"
+                          : isHovered
+                            ? "0 0 8px rgba(27,155,110,0.28)"
+                            : "none"
+                      }}
+                    />
+                    <span
+                      className={[
+                        "absolute rounded-full bg-[#1B9B6E] transition-all duration-200 [transition-timing-function:cubic-bezier(0.22,1,0.36,1)]",
+                        !isSelected && isHovered ? "scale-100 opacity-100" : "scale-50 opacity-0"
+                      ].join(" ")}
+                      style={{ width: innerDot, height: innerDot }}
+                      aria-hidden="true"
+                    />
+                    {isSelected ? (
+                      <span
+                        className="absolute z-[31] flex items-center justify-center rounded-full text-[#1B9B6E] transition-all duration-200"
+                        style={{ width: closeSize, height: closeSize }}
+                        aria-hidden="true"
+                      >
+                        <X style={{ width: actionIcon, height: actionIcon }} />
+                      </span>
+                    ) : null}
+                  </button>
+
+                  {isSelected ? (
+                    <div
+                      className="pointer-events-auto absolute left-1/2 top-1/2 z-[90] transition-all duration-300 [transition-timing-function:cubic-bezier(0.22,1,0.36,1)]"
+                      style={{
+                        opacity: radialMenuAnimated ? 1 : 0,
+                        transform: radialMenuAnimated ? "scale(1)" : "scale(0.72)"
+                      }}
+                      aria-hidden={!isSelected}
+                    >
+                      <div
+                        className="pointer-events-none absolute left-0 top-0 h-[126px] w-[126px] -translate-x-1/2 -translate-y-[104px] rounded-full transition-all duration-300"
+                        style={{
+                          opacity: radialMenuAnimated ? 1 : 0,
+                          background:
+                            "radial-gradient(circle at center bottom, rgba(27,155,110,0.14) 0%, rgba(27,155,110,0.05) 42%, transparent 72%)"
+                        }}
+                      />
+                      <svg
+                        className="pointer-events-none absolute left-0 top-0 overflow-visible"
+                        width="1"
+                        height="1"
+                        aria-hidden="true"
+                      >
+                        {radialActions.map((action, actionIdx) => {
+                          const pos = radialPositions[actionIdx] ?? radialPositions[1];
+                          return (
+                            <line
+                              key={`hybrid-radial-line-${action.key}`}
+                              x1={0}
+                              y1={0}
+                              x2={pos.x}
+                              y2={pos.y}
+                              stroke="#1B9B6E"
+                              strokeWidth={2}
+                              strokeLinecap="round"
+                              opacity={hoveredAction === action.key ? 0.95 : 0.34}
+                              style={{
+                                strokeDasharray: 120,
+                                strokeDashoffset: radialMenuAnimated ? 0 : 120,
+                                transition: `stroke-dashoffset 280ms ${actionIdx * 45}ms ease-out, opacity 160ms ease-out`
+                              }}
+                            />
+                          );
+                        })}
+                      </svg>
+                      {radialActions.map((action, actionIdx) => {
+                        const Icon = action.Icon;
+                        const pos = radialPositions[actionIdx] ?? radialPositions[1];
+                        const labelVisible = hoveredAction === action.key;
+                        return (
+                          <div
+                            key={action.key}
+                            className="absolute left-0 top-0 transition-all duration-300 [transition-timing-function:cubic-bezier(0.34,1.56,0.64,1)]"
+                            style={{
+                              opacity: radialMenuAnimated ? 1 : 0,
+                              transform: radialMenuAnimated
+                                ? `translate(${pos.x}px, ${pos.y}px) scale(1)`
+                                : "translate(0px, 0px) scale(0.22)",
+                              transitionDelay: radialMenuAnimated ? `${actionIdx * 50}ms` : "0ms"
+                            }}
+                          >
+                            <span
+                              className={[
+                                "pointer-events-none absolute left-1/2 top-full mt-2 -translate-x-1/2 whitespace-nowrap rounded-md bg-white px-3 py-1.5 text-xs font-medium text-black shadow-lg transition-all duration-150",
+                                labelVisible ? "translate-y-0 scale-100 opacity-100" : "translate-y-1 scale-95 opacity-0"
+                              ].join(" ")}
+                            >
+                              {action.label}
+                              <span className="absolute -top-1 left-1/2 h-2 w-2 -translate-x-1/2 rotate-45 bg-white" />
+                            </span>
+                            <button
+                              type="button"
+                              disabled={action.disabled}
+                              aria-label={action.label}
+                              tabIndex={isSelected ? 0 : -1}
+                              onMouseEnter={() => {
+                                setHoveredAction(action.key);
+                                if ("onEnter" in action) action.onEnter();
+                              }}
+                              onMouseLeave={() => {
+                                setHoveredAction(null);
+                                if ("onLeave" in action) action.onLeave();
+                              }}
+                              onFocus={() => {
+                                setHoveredAction(action.key);
+                                if ("onEnter" in action) action.onEnter();
+                              }}
+                              onBlur={() => {
+                                setHoveredAction(null);
+                                if ("onLeave" in action) action.onLeave();
+                              }}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                if (action.disabled) return;
+                                action.onSelect();
+                                if ("onLeave" in action) action.onLeave();
+                                setHoveredAction(null);
+                                setActionMenuOpenForIndex(null);
+                              }}
+                              className={[
+                                "relative z-[91] flex -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border-2 border-[#1B9B6E]/55 bg-[#101010] text-[#1B9B6E] shadow-[0_3px_14px_rgba(0,0,0,0.38)] transition-all duration-200 hover:scale-110 hover:border-[#1B9B6E] hover:text-[#2BC48A] hover:shadow-[0_0_18px_rgba(27,155,110,0.42)] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#1B9B6E]/80 disabled:cursor-not-allowed disabled:opacity-45",
+                                action.active ? "border-[#1B9B6E] text-[#2BC48A]" : ""
+                              ].join(" ")}
+                              style={{ width: actionSize, height: actionSize }}
+                            >
+                              <span className="absolute left-1/2 top-1/2 h-1 w-1 -translate-x-1/2 -translate-y-1/2 rounded-full bg-[#1B9B6E] opacity-80 shadow-[0_0_9px_rgba(27,155,110,0.55)]" />
+                              <Icon className="relative z-[1]" style={{ width: actionIcon, height: actionIcon }} />
+                            </button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : null}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function humanizeTimestamp(iso: string): string {
+  const t = new Date(iso).getTime();
+  if (!Number.isFinite(t)) return iso;
+  const diffMs = Date.now() - t;
+  const min = Math.round(diffMs / 60_000);
+  if (min < 1) return "Just now";
+  if (min < 60) return `${min}m ago`;
+  const hr = Math.round(min / 60);
+  if (hr < 24) return `${hr}h ago`;
+  const day = Math.round(hr / 24);
+  return `${day}d ago`;
+}
+
+function toPinnedPositionalComment(record: PatronCommentRecord): PositionalComment | null {
+  if (record.anchorX === null || record.anchorY === null || !record.mediaId) {
+    return null;
+  }
+  const visibleTags = record.tagIds.filter((t) => !record.tagsRevokedByOwner.includes(t));
+  return {
+    id: record.id,
+    author: {
+      id: record.patronUserId,
+      displayName: `Patron · ${record.patronUserId.slice(-6)}`,
+      handle: record.patronUserId,
+      avatarUrl: "/placeholder.svg?height=32&width=32"
+    },
+    text: record.body,
+    position: { x: record.anchorX, y: record.anchorY },
+    createdAt: humanizeTimestamp(record.createdAt),
+    tags: visibleTags.length > 0 ? visibleTags : undefined
+  };
+}
+
 function normalizeTierLabel(label: string): string {
   return label.trim().toLowerCase();
 }
 
-/** Patron's subscription tier for creator header chip (PILOT-003 catalog title). */
-function patronSubscriptionChipLabel(creator: FeedPost["creator"]): string {
-  const raw = creator.patronTierLabel?.trim();
-  if (raw) return raw;
-  return "Supporter";
+/** Post access chip from `post.tierLabel` (catalog / PostVersion.tierIds). */
+function postAccessChipLabel(post: FeedPost): string {
+  const raw = post.tierLabel?.trim();
+  return raw || "Free";
 }
 
-/** Hide footer post-tier badge when it duplicates the patron subscription chip. */
-function shouldShowFooterTierBadge(args: {
-  isDiscover: boolean;
-  patronChipLabel: string;
-  postTierLabel: string;
-}): boolean {
-  const postTier = normalizeTierLabel(args.postTierLabel);
-  if (args.isDiscover) return true;
-  if (postTier === "free") return true;
-  return normalizeTierLabel(args.patronChipLabel) !== postTier;
-}
-
-function patronChipClassName(label: string): string {
+function postAccessChipClassName(label: string): string {
   if (normalizeTierLabel(label) === "free") {
-    return "inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-[#0D1F17] text-[#2D6A4F] border border-[#1B4332]/50 shrink-0";
+    return "inline-flex items-center gap-1.5 rounded-full border border-[#1B4332]/50 bg-[#0D1F17] px-1.5 py-0.5 text-[10px] font-medium text-[#2D6A4F] shrink-0";
   }
-  return "inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-[#0D1F17] text-[#40916C] border border-[#1B4332]/70 shrink-0";
+  return "inline-flex items-center gap-1.5 rounded-full border border-[#1B4332]/70 bg-[#0D1F17] px-1.5 py-0.5 text-[10px] font-medium text-[#40916C] shrink-0";
 }
 
 interface FeedCardProps {
   post: FeedPost;
   onClick?: () => void;
+  /** Direct action hook for feed-level "Comment" controls. */
+  onCommentClick?: (args: {
+    creatorId: string;
+    postId: string;
+    mediaId?: string;
+  }) => void;
+  /** Direct action hook for feed-level "Snip" controls. */
+  onSnipClick?: (args: {
+    creatorId: string;
+    postId: string;
+    mediaId?: string;
+  }) => void;
   /**
    * PE-E (BO-P2-04) — when set, the comment-count badge is refreshed from the live API on
    * mount + every time `refreshSignal` changes (typically the parent bumps it after the
@@ -81,11 +580,20 @@ interface FeedCardProps {
 /** Matches gallery pin-preview: comment chrome → image surface, with timed hide */
 type PinPreviewPhase = "hidden" | "chrome" | "image";
 
-export function FeedCard({ post, onClick, liveCommentCountScope = null }: FeedCardProps) {
+export function FeedCard({
+  post,
+  onClick,
+  onCommentClick,
+  onSnipClick,
+  liveCommentCountScope = null
+}: FeedCardProps) {
   const [liked, setLiked] = useState(false);
   const [followed, setFollowed] = useState(false);
   const [inlineFavorite, setInlineFavorite] = useState(false);
+  const [radialMenuOpen, setRadialMenuOpen] = useState(false);
   const [liveCommentCount, setLiveCommentCount] = useState<number | null>(null);
+  const [livePinnedComments, setLivePinnedComments] = useState<PositionalComment[] | null>(null);
+  const [snipDialogOpen, setSnipDialogOpen] = useState(false);
 
   useEffect(() => {
     if (!liveCommentCountScope) {
@@ -111,8 +619,7 @@ export function FeedCard({ post, onClick, liveCommentCountScope = null }: FeedCa
   }, [
     liveCommentCountScope?.relayCreatorId,
     liveCommentCountScope?.postId,
-    liveCommentCountScope?.refreshSignal,
-    liveCommentCountScope
+    liveCommentCountScope?.refreshSignal
   ]);
 
   const displayedCommentCount = liveCommentCount ?? post.commentCount;
@@ -121,7 +628,6 @@ export function FeedCard({ post, onClick, liveCommentCountScope = null }: FeedCa
     post.feed_item_source ?? (post.kind === "discovery" ? "discover" : "subscribed");
   const isDiscover = feedSource === "discover";
   const MediaIcon = MEDIA_ICONS[post.mediaType] ?? FileText;
-  const layout = post.feedCardLayout ?? "classic";
   const isVideoPost = isPatronFeedVideoPost(post);
   const playbackSrc = patronFeedPlaybackSrc(post);
   const posterSrc = patronFeedPosterSrc(post);
@@ -130,7 +636,36 @@ export function FeedCard({ post, onClick, liveCommentCountScope = null }: FeedCa
     Boolean(playbackSrc) &&
     !playbackSrc.includes("placeholder.svg");
 
+  const mediaItems = useMemo(() => {
+    if (post.mediaItems && post.mediaItems.length > 0) {
+      return post.mediaItems;
+    }
+    const fallbackUrl = post.highResImageUrl || post.coverImageUrl || posterSrc || playbackSrc || undefined;
+    if (!post.primaryMediaId) return [];
+    return [
+      {
+        mediaId: post.primaryMediaId,
+        url: fallbackUrl,
+        previewUrl: post.coverImageUrl || posterSrc || undefined,
+        mimeType: post.primaryMimeType ?? null
+      }
+    ];
+  }, [
+    post.mediaItems,
+    post.primaryMediaId,
+    post.highResImageUrl,
+    post.coverImageUrl,
+    post.primaryMimeType,
+    posterSrc,
+    playbackSrc
+  ]);
   const imageUrls = useMemo(() => {
+    const mediaUrls = mediaItems
+      .map((item) => item.url || item.previewUrl)
+      .filter((u): u is string => Boolean(u));
+    if (mediaUrls.length > 0) {
+      return mediaUrls;
+    }
     if (post.galleryImageUrls && post.galleryImageUrls.length > 0) {
       return post.galleryImageUrls;
     }
@@ -142,9 +677,86 @@ export function FeedCard({ post, onClick, liveCommentCountScope = null }: FeedCa
       post.coverImageUrl ||
       "/placeholder.svg?height=800&width=1200";
     return [single];
-  }, [post.galleryImageUrls, post.highResImageUrl, post.coverImageUrl, post.mediaType, post.primaryMimeType]);
+  }, [
+    mediaItems,
+    post.galleryImageUrls,
+    post.highResImageUrl,
+    post.coverImageUrl,
+    post.mediaType,
+    post.primaryMimeType
+  ]);
 
-  const cardComments = post.comments ?? [];
+  const [inlineMediaIndex, setInlineMediaIndex] = useState(0);
+  useEffect(() => {
+    setInlineMediaIndex(0);
+  }, [post.id]);
+
+  const inlineMediaCount = imageUrls.length;
+  const hasInlineMedia =
+    hasRenderableVideo ||
+    mediaItems.length > 0 ||
+    Boolean(post.coverImageUrl || post.highResImageUrl);
+  const layout = hasInlineMedia ? "inlineMedia" : post.feedCardLayout ?? "classic";
+  const activeInlineMediaIndex =
+    inlineMediaCount > 0
+      ? ((inlineMediaIndex % inlineMediaCount) + inlineMediaCount) % inlineMediaCount
+      : 0;
+
+  const activeSnipMedia = mediaItems[activeInlineMediaIndex] ?? mediaItems[0];
+  const activeMediaId = activeSnipMedia?.mediaId ?? post.primaryMediaId ?? undefined;
+  const snipTarget: SnipTarget | null = activeSnipMedia?.mediaId
+    ? {
+        creatorId: post.creator.id,
+        postId: post.id,
+        mediaId: activeSnipMedia.mediaId,
+        title: post.title,
+        previewUrl:
+          activeSnipMedia.url ||
+          activeSnipMedia.previewUrl ||
+          post.coverImageUrl ||
+          posterSrc ||
+          undefined
+      }
+    : null;
+
+  useEffect(() => {
+    if (
+      !liveCommentCountScope ||
+      !activeMediaId?.trim() ||
+      hasRenderableVideo
+    ) {
+      setLivePinnedComments(null);
+      return;
+    }
+    let cancelled = false;
+    setLivePinnedComments([]);
+    void listPostComments({
+      relayCreatorId: liveCommentCountScope.relayCreatorId,
+      postId: liveCommentCountScope.postId,
+      mediaId: activeMediaId
+    })
+      .then((items) => {
+        if (cancelled) return;
+        const next = items
+          .map(toPinnedPositionalComment)
+          .filter((v): v is PositionalComment => v !== null);
+        setLivePinnedComments(next);
+      })
+      .catch(() => {
+        if (!cancelled) setLivePinnedComments([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    liveCommentCountScope?.relayCreatorId,
+    liveCommentCountScope?.postId,
+    liveCommentCountScope?.refreshSignal,
+    activeMediaId,
+    hasRenderableVideo
+  ]);
+
+  const cardComments = livePinnedComments ?? post.comments ?? [];
 
   const [pinPreviewPhase, setPinPreviewPhase] = useState<PinPreviewPhase>("hidden");
   const previewHideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -198,28 +810,112 @@ export function FeedCard({ post, onClick, liveCommentCountScope = null }: FeedCa
   }, []);
 
   const pinLayerVisible = pinPreviewPhase !== "hidden";
+  const useHybridMediaBar =
+    post.id === HYBRID_MEDIA_BAR_EXPERIMENT_POST_ID && inlineMediaCount > 1 && !hasRenderableVideo;
 
-  const patronChipLabel = !isDiscover ? patronSubscriptionChipLabel(post.creator) : null;
-  const showFooterTierBadge =
-    patronChipLabel != null
-      ? shouldShowFooterTierBadge({
-          isDiscover,
-          patronChipLabel,
-          postTierLabel: post.tierLabel,
-        })
-      : true;
+  const postTierChip = !isDiscover ? postAccessChipLabel(post) : null;
+  const showFooterTierBadge = isDiscover;
+  const publishedLabel = formatFeedPublishedDate(post.publishedAt);
+  useEffect(() => {
+    emitRelayInteractionTelemetryEvent({
+      event_name: "post_impression",
+      surface: "patron_feed_card",
+      creator_id: post.creator.id,
+      post_id: post.id,
+      media_id: activeMediaId,
+      feed_source: feedSource
+    });
+  }, [post.creator.id, post.id, activeMediaId, feedSource]);
+
+  useEffect(() => {
+    if (!activeMediaId?.trim()) return;
+    emitRelayInteractionTelemetryEvent({
+      event_name: "media_view",
+      surface: "patron_feed_card",
+      creator_id: post.creator.id,
+      post_id: post.id,
+      media_id: activeMediaId
+    });
+  }, [post.creator.id, post.id, activeMediaId]);
+
+  const emitCommentClick = useCallback(() => {
+    emitRelayInteractionTelemetryEvent({
+      event_name: "cta_clicked",
+      surface: "patron_feed_card",
+      creator_id: post.creator.id,
+      post_id: post.id,
+      media_id: activeMediaId,
+      interaction: "comment_open",
+      target: "comment_thread"
+    });
+    onCommentClick?.({
+      creatorId: post.creator.id,
+      postId: post.id,
+      mediaId: activeMediaId
+    });
+  }, [onCommentClick, post.creator.id, post.id, activeMediaId]);
+  const emitSnipClick = useCallback(() => {
+    emitRelayInteractionTelemetryEvent({
+      event_name: "cta_clicked",
+      surface: "patron_feed_card",
+      creator_id: post.creator.id,
+      post_id: post.id,
+      media_id: activeMediaId,
+      interaction: "snip_open",
+      target: "snip_to_collection"
+    });
+    onSnipClick?.({
+      creatorId: post.creator.id,
+      postId: post.id,
+      mediaId: activeMediaId
+    });
+  }, [onSnipClick, post.creator.id, post.id, activeMediaId]);
+  const toggleInlineFavorite = useCallback(() => {
+    setInlineFavorite((nextCurrent) => {
+      const next = !nextCurrent;
+      if (next) {
+        emitRelayInteractionTelemetryEvent({
+          event_name: "favorite_created",
+          surface: "patron_feed_card",
+          creator_id: post.creator.id,
+          post_id: post.id,
+          media_id: activeMediaId,
+          target_kind: "post",
+          target_id: post.id
+        });
+      }
+      return next;
+    });
+  }, [activeMediaId, post.creator.id, post.id]);
+  const togglePostLike = useCallback(() => {
+    setLiked((current) => {
+      const next = !current;
+      if (next) {
+        emitRelayInteractionTelemetryEvent({
+          event_name: "post_liked",
+          surface: "patron_feed_card",
+          creator_id: post.creator.id,
+          post_id: post.id,
+          media_id: activeMediaId
+        });
+      }
+      return next;
+    });
+  }, [activeMediaId, post.creator.id, post.id]);
 
   return (
+    <>
     <article
       onClick={onClick}
       className={[
-        "group relative rounded-lg border transition-colors duration-150 overflow-hidden",
+        "group relative rounded-lg border transition-colors duration-150",
+        radialMenuOpen ? "overflow-visible z-30" : "overflow-hidden",
         isDiscover
           ? "bg-[#131313] border-[#232323] border-l-2 border-l-[#1B4332]"
           : "bg-[#161616] border-[#242424] hover:border-[#2E2E2E]",
         onClick ? "cursor-pointer" : "",
       ].join(" ")}
-      aria-label={`${isDiscover ? "Discover: " : `${patronChipLabel ?? "Following"}: `}${post.title} by ${post.creator.displayName}`}
+      aria-label={`${isDiscover ? "Discover: " : `${postTierChip ?? "Following"}: `}${post.title} by ${post.creator.displayName}`}
       role={onClick ? "button" : undefined}
       tabIndex={onClick ? 0 : undefined}
       onKeyDown={onClick ? (e) => {
@@ -260,20 +956,8 @@ export function FeedCard({ post, onClick, liveCommentCountScope = null }: FeedCa
                 <span className="text-sm font-semibold text-[#F0F0F0] leading-tight">
                   {post.creator.displayName}
                 </span>
-                {!isDiscover && patronChipLabel ? (
-                  <span
-                    className={patronChipClassName(patronChipLabel)}
-                    aria-label={`Your tier: ${patronChipLabel}`}
-                  >
-                    <span
-                      className="w-1 h-1 rounded-full bg-[#2D6A4F] inline-block"
-                      aria-hidden="true"
-                    />
-                    {patronChipLabel}
-                  </span>
-                ) : null}
               </div>
-              <div className="flex items-center gap-1.5 mt-0.5">
+              <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
                 <span className="text-xs text-[#555555]">
                   @{post.creator.handle}
                 </span>
@@ -288,41 +972,51 @@ export function FeedCard({ post, onClick, liveCommentCountScope = null }: FeedCa
           </div>
 
           {/* Right: follow CTA (discovery only) + timestamp */}
-          <div className="flex items-center gap-2 shrink-0">
-            {isDiscover && (
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setFollowed(!followed);
-                }}
-                className={[
-                  "flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border transition-colors duration-150",
-                  followed
-                    ? "bg-[#1B4332] border-[#2D6A4F] text-[#40916C]"
-                    : "bg-transparent border-[#2E2E2E] text-[#7A7A7A] hover:border-[#2D6A4F]/60 hover:text-[#40916C]",
-                ].join(" ")}
-                aria-label={followed ? "Unfollow creator" : "Follow creator"}
+          <div className="flex shrink-0 flex-col items-end gap-1.5">
+            <div className="flex items-center gap-2">
+              {isDiscover && (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setFollowed(!followed);
+                  }}
+                  className={[
+                    "flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border transition-colors duration-150",
+                    followed
+                      ? "bg-[#1B4332] border-[#2D6A4F] text-[#40916C]"
+                      : "bg-transparent border-[#2E2E2E] text-[#7A7A7A] hover:border-[#2D6A4F]/60 hover:text-[#40916C]",
+                  ].join(" ")}
+                  aria-label={followed ? "Unfollow creator" : "Follow creator"}
+                >
+                  {followed ? (
+                    <Check size={11} aria-hidden="true" />
+                  ) : (
+                    <UserPlus size={11} aria-hidden="true" />
+                  )}
+                  {followed ? "Following" : "Follow"}
+                </button>
+              )}
+              <time
+                className="text-xs text-[#444444] whitespace-nowrap"
+                dateTime={post.publishedAt}
               >
-                {followed ? (
-                  <Check size={11} aria-hidden="true" />
-                ) : (
-                  <UserPlus size={11} aria-hidden="true" />
-                )}
-                {followed ? "Following" : "Follow"}
-              </button>
-            )}
-            <time
-              className="text-xs text-[#444444] whitespace-nowrap"
-              dateTime={post.publishedAt}
-            >
-              {post.publishedAt}
-            </time>
+                {publishedLabel}
+              </time>
+            </div>
+            {!isDiscover && postTierChip ? (
+              <span
+                className={postAccessChipClassName(postTierChip)}
+                aria-label={`Tier: ${postTierChip}`}
+              >
+                {postTierChip}
+              </span>
+            ) : null}
           </div>
         </div>
 
-        {/* Inline hero + pins (A/B vs classic thumb) — opens same GalleryView on card click */}
-        {layout === "inlineMedia" && (post.coverImageUrl || hasRenderableVideo) ? (
-          <div className="-mx-5 mb-4 border-y border-[#1C1C1C] bg-[#0E0E0E]">
+        {/* Canonical feed media: prominent in-card art with comment / collect affordances. */}
+        {layout === "inlineMedia" && hasInlineMedia ? (
+          <div className="-mx-5 mb-4 border-y border-[#1C1C1C] bg-[#0E0E0E] relative overflow-visible">
             {hasRenderableVideo ? (
               <div className="relative flex w-full min-w-0 max-w-full flex-col items-center justify-center outline-none">
                 <PatronFeedVideo
@@ -337,7 +1031,7 @@ export function FeedCard({ post, onClick, liveCommentCountScope = null }: FeedCa
             ) : (
               <GalleryMediaStack
                 imageUrls={imageUrls}
-                displayIndex={0}
+                displayIndex={activeInlineMediaIndex}
                 visualStack={false}
                 pinLayerPointerEvents={
                   pinLayerVisible && cardComments.length > 0 ? "auto" : "none"
@@ -349,70 +1043,138 @@ export function FeedCard({ post, onClick, liveCommentCountScope = null }: FeedCa
                 ghostPins={false}
                 cascadeEnter={(i) => i * 42}
                 cascadeExit={(i) => (cardComments.length - 1 - i) * 36}
-                surfaceClassName="relative flex w-full min-w-0 max-w-full flex-col items-center justify-center outline-none"
-                imgClassName="pointer-events-none h-auto w-auto max-h-[min(42vh,320px)] max-w-full object-contain"
+                surfaceClassName="relative flex h-[min(42vh,320px)] w-full min-w-0 max-w-full flex-col items-center justify-center overflow-hidden outline-none"
+                imgClassName="pointer-events-none h-full w-full object-contain"
                 onMouseEnter={onImageSurfaceEnter}
                 onMouseLeave={onImageSurfaceLeave}
               />
             )}
-            {/* Condensed gallery chrome — rail hover bridges to image (pins readable via CommentPin tooltips) */}
-            <div
-              className="relative z-10 shrink-0 border-t border-[#1A1A1A] bg-[#0E0E0E] opacity-[0.38] transition-opacity duration-200 ease-out hover:opacity-100 focus-within:opacity-100"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div className="flex justify-center items-center gap-0.5 py-0.5">
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setInlineFavorite((v) => !v);
-                  }}
-                  className={[
-                    "flex items-center justify-center w-7 h-7 rounded-md transition-all",
-                    inlineFavorite
-                      ? "text-[#40916C] border border-[#2D6A4F] bg-[#0D1F17]"
-                      : "text-[#555555] border border-[#2A2A2A] bg-[#0E0E0E] hover:text-[#40916C] hover:border-[#2D6A4F]/50",
-                  ].join(" ")}
-                  aria-label={inlineFavorite ? "Remove from favorites" : "Add to favorites"}
-                  aria-pressed={inlineFavorite}
-                  title="Favorite"
-                >
-                  <Star size={12} fill={inlineFavorite ? "currentColor" : "none"} />
-                </button>
-                <button
-                  type="button"
-                  disabled={hasRenderableVideo}
-                  title={hasRenderableVideo ? "Pinned comments apply to images only" : undefined}
-                  onClick={(e) => e.stopPropagation()}
-                  onMouseEnter={hasRenderableVideo ? undefined : onCommentChromeEnter}
-                  onMouseLeave={hasRenderableVideo ? undefined : onCommentChromeLeave}
-                  onFocus={hasRenderableVideo ? undefined : onCommentChromeEnter}
-                  onBlur={hasRenderableVideo ? undefined : onCommentChromeLeave}
-                  className={[
-                    "group flex items-center gap-1 px-2 py-1 bg-[#0E0E0E] border border-[#2A2A2A] rounded-md text-[11px] leading-tight transition-all",
-                    hasRenderableVideo
-                      ? "cursor-not-allowed opacity-40 text-[#555555]"
-                      : "text-[#555555] hover:text-[#40916C] hover:border-[#2D6A4F]/50",
-                  ].join(" ")}
-                  aria-label="Preview pinned comments on image. Hover pins on the image to read. Click card for full gallery."
-                >
-                  <Crosshair size={11} className="group-hover:rotate-45 transition-transform shrink-0" />
-                  <span>Comment</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={(e) => e.stopPropagation()}
-                  className={[
-                    "flex items-center justify-center w-7 h-7 rounded-md transition-all",
-                    "text-[#555555] border border-[#2A2A2A] bg-[#0E0E0E] hover:text-[#40916C] hover:border-[#2D6A4F]/50",
-                  ].join(" ")}
-                  aria-label="Snip this image"
-                  title="Snip"
-                >
-                  <Loader size={12} />
-                </button>
+            {!useHybridMediaBar && !hasRenderableVideo && inlineMediaCount > 1 ? (
+              <MediaEdgeRail
+                count={inlineMediaCount}
+                activeIndex={activeInlineMediaIndex}
+                onSelect={setInlineMediaIndex}
+                onActionMenuOpenChange={setRadialMenuOpen}
+                actions={[
+                  {
+                    kind: "favorite",
+                    label: "Favorite",
+                    active: inlineFavorite,
+                    onSelect: toggleInlineFavorite
+                  },
+                  {
+                    kind: "snip",
+                    label: "Snip",
+                    disabled: !snipTarget,
+                    onSelect: () => {
+                      if (onSnipClick) {
+                        emitSnipClick();
+                        return;
+                      }
+                      if (snipTarget) setSnipDialogOpen(true);
+                    }
+                  },
+                  {
+                    kind: "comment",
+                    label: "Comment",
+                    onSelect: emitCommentClick
+                  }
+                ]}
+              />
+            ) : null}
+            {useHybridMediaBar ? (
+              <HybridMediaActionBar
+                count={inlineMediaCount}
+                activeIndex={activeInlineMediaIndex}
+                favorited={inlineFavorite}
+                snipDisabled={!snipTarget}
+                onSelect={setInlineMediaIndex}
+                onFavorite={toggleInlineFavorite}
+                onComment={emitCommentClick}
+                onSnip={() => {
+                  if (onSnipClick) {
+                    emitSnipClick();
+                    return;
+                  }
+                  if (snipTarget) setSnipDialogOpen(true);
+                }}
+                onCommentPreviewEnter={onCommentChromeEnter}
+                onCommentPreviewLeave={onCommentChromeLeave}
+                onOpenChange={setRadialMenuOpen}
+              />
+            ) : (
+              /* Condensed gallery chrome — rail hover bridges to image (pins readable via CommentPin tooltips) */
+              <div
+                className="relative z-10 shrink-0 border-t border-[#1A1A1A] bg-[#0E0E0E] opacity-[0.38] transition-opacity duration-200 ease-out hover:opacity-100 focus-within:opacity-100"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="flex justify-center items-center gap-0.5 py-0.5">
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      toggleInlineFavorite();
+                    }}
+                    className={[
+                      "flex items-center justify-center w-7 h-7 rounded-md transition-all",
+                      inlineFavorite
+                        ? "text-[#40916C] border border-[#2D6A4F] bg-[#0D1F17]"
+                        : "text-[#555555] border border-[#2A2A2A] bg-[#0E0E0E] hover:text-[#40916C] hover:border-[#2D6A4F]/50",
+                    ].join(" ")}
+                    aria-label={inlineFavorite ? "Remove from favorites" : "Add to favorites"}
+                    aria-pressed={inlineFavorite}
+                    title="Favorite"
+                  >
+                    <Star size={12} fill={inlineFavorite ? "currentColor" : "none"} />
+                  </button>
+                  <button
+                    type="button"
+                    disabled={hasRenderableVideo}
+                    title={hasRenderableVideo ? "Pinned comments apply to images only" : undefined}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      emitCommentClick();
+                    }}
+                    onMouseEnter={hasRenderableVideo ? undefined : onCommentChromeEnter}
+                    onMouseLeave={hasRenderableVideo ? undefined : onCommentChromeLeave}
+                    onFocus={hasRenderableVideo ? undefined : onCommentChromeEnter}
+                    onBlur={hasRenderableVideo ? undefined : onCommentChromeLeave}
+                    className={[
+                      "group flex items-center gap-1 px-2 py-1 bg-[#0E0E0E] border border-[#2A2A2A] rounded-md text-[11px] leading-tight transition-all",
+                      hasRenderableVideo
+                        ? "cursor-not-allowed opacity-40 text-[#555555]"
+                        : "text-[#555555] hover:text-[#40916C] hover:border-[#2D6A4F]/50",
+                    ].join(" ")}
+                    aria-label="Preview pinned comments on image. Hover pins on the image to read. Click card for full gallery."
+                  >
+                    <Crosshair size={11} className="group-hover:rotate-45 transition-transform shrink-0" />
+                    <span>Comment</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (onSnipClick) {
+                        emitSnipClick();
+                        return;
+                      }
+                      if (snipTarget) setSnipDialogOpen(true);
+                    }}
+                    disabled={!snipTarget}
+                    className={[
+                      "flex items-center justify-center w-7 h-7 rounded-md transition-all",
+                      snipTarget
+                        ? "text-[#555555] border border-[#2A2A2A] bg-[#0E0E0E] hover:text-[#40916C] hover:border-[#2D6A4F]/50"
+                        : "cursor-not-allowed opacity-40 text-[#555555] border border-[#2A2A2A] bg-[#0E0E0E]",
+                    ].join(" ")}
+                    aria-label="Snip this image"
+                    title="Snip"
+                  >
+                    <SnipIcon className="h-3 w-3" />
+                  </button>
+                </div>
               </div>
-            </div>
+            )}
           </div>
         ) : null}
 
@@ -487,7 +1249,7 @@ export function FeedCard({ post, onClick, liveCommentCountScope = null }: FeedCa
           <button
             onClick={(e) => {
               e.stopPropagation();
-              setLiked(!liked);
+              togglePostLike();
             }}
             className={[
               "flex items-center gap-1.5 text-xs transition-colors duration-150",
@@ -508,7 +1270,10 @@ export function FeedCard({ post, onClick, liveCommentCountScope = null }: FeedCa
 
           {/* Comments */}
           <button
-            onClick={(e) => e.stopPropagation()}
+            onClick={(e) => {
+              e.stopPropagation();
+              emitCommentClick();
+            }}
             className="flex items-center gap-1.5 text-xs text-[#4B5563] hover:text-[#9CA3AF] transition-colors duration-150"
             aria-label="View comments"
           >
@@ -516,7 +1281,7 @@ export function FeedCard({ post, onClick, liveCommentCountScope = null }: FeedCa
             {displayedCommentCount}
           </button>
 
-          {/* Tier badge — post access level; omitted when same as patron subscription chip */}
+          {/* Tier badge — discover cards only; subscribed cards show post tier in header */}
           {showFooterTierBadge ? (
             <div className="ml-auto">
               <span
@@ -535,5 +1300,11 @@ export function FeedCard({ post, onClick, liveCommentCountScope = null }: FeedCa
         </div>
       </div>
     </article>
+    <SnipToCollectionDialog
+      open={snipDialogOpen}
+      target={snipTarget}
+      onClose={() => setSnipDialogOpen(false)}
+    />
+    </>
   );
 }

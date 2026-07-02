@@ -74,6 +74,44 @@ export class FilePatronCollectionsStore {
     }));
   }
 
+  /** Owner-scoped collection detail for authenticated patron (file store). */
+  public async getCollectionWithEntriesForUser(
+    userId: string,
+    collectionId: string
+  ): Promise<
+    (PatronCollectionRecord & { entries: PatronCollectionEntryRecord[] }) | null
+  > {
+    const root = await this.load();
+    const col = root.collections.find(
+      (c) => c.collection_id === collectionId && c.user_id === userId
+    );
+    if (!col) {
+      return null;
+    }
+    return {
+      ...col,
+      entries: root.entries
+        .filter((e) => e.collection_id === collectionId && e.user_id === userId)
+        .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+    };
+  }
+
+  /** Cross-creator listing for a single patron membership (file-store twin of DB account fan-out). */
+  public async listAllCollectionsWithEntries(
+    userId: string
+  ): Promise<Array<PatronCollectionRecord & { entries: PatronCollectionEntryRecord[] }>> {
+    const root = await this.load();
+    const cols = root.collections
+      .filter((c) => c.user_id === userId)
+      .sort((a, b) => a.sort_order - b.sort_order || a.title.localeCompare(b.title));
+    return cols.map((c) => ({
+      ...c,
+      entries: root.entries
+        .filter((e) => e.collection_id === c.collection_id && e.user_id === userId)
+        .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+    }));
+  }
+
   public async createCollection(
     creatorId: string,
     userId: string,

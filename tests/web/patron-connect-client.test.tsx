@@ -2,7 +2,7 @@
 
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { PatronConnectClient } from "../../web/app/patreon/patron/connect/PatronConnectClient";
+import { PatronConnectClient } from "../../web/app/connect/patreon/patron/connect/PatronConnectClient";
 
 vi.mock("@/lib/relay-api", () => ({
   fetchPatronSessionIfPresent: vi.fn().mockResolvedValue({
@@ -13,7 +13,7 @@ vi.mock("@/lib/relay-api", () => ({
 }));
 
 vi.mock("@/lib/patron-patron-redirect-uri", () => ({
-  patronPatronOAuthRedirectUri: () => "http://localhost:3000/patreon/patron/callback"
+  patronPatronOAuthRedirectUri: () => "http://localhost:3000/connect/patreon/patron/callback"
 }));
 
 describe("PatronConnectClient PILOT-008", () => {

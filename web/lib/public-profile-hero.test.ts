@@ -65,10 +65,10 @@ describe("buildPublicProfileHeroModel", () => {
     const pageLayout = baseLayout({ title: "T", show_cover: true });
     const m = buildPublicProfileHeroModel({
       pageLayout,
-      visitorHero: { banner_url: "https://patreon/camp.png" },
+      visitorHero: { banner_url: "https://connect/patreon/camp.png" },
       creatorId: "c"
     });
-    expect(m.coverImageUrl).toBe("https://patreon/camp.png");
+    expect(m.coverImageUrl).toBe("https://connect/patreon/camp.png");
   });
 
   it("hides cover when show_cover is false", () => {
@@ -79,7 +79,7 @@ describe("buildPublicProfileHeroModel", () => {
     });
     const m = buildPublicProfileHeroModel({
       pageLayout,
-      visitorHero: { banner_url: "https://patreon/camp.png" },
+      visitorHero: { banner_url: "https://connect/patreon/camp.png" },
       creatorId: "c"
     });
     expect(m.showCover).toBe(false);

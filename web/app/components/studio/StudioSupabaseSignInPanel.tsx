@@ -5,7 +5,10 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Loader2 } from "lucide-react";
 import { getSupabaseBrowserClient } from "@/lib/supabase-browser";
-import { bootstrapStudioAfterSupabase } from "@/lib/relay-auth-bootstrap";
+import {
+  bootstrapAccountAfterSupabase,
+  bootstrapStudioAfterSupabase,
+} from "@/lib/relay-auth-bootstrap";
 import { resolveCreatorPostAuthDestination } from "@/lib/creator-post-login-redirect";
 import { emitStudioSessionUpdate } from "@/lib/studio-session-context";
 import { getWebAppOrigin } from "@/lib/site-origin";
@@ -82,6 +85,15 @@ export function StudioSupabaseSignInPanel({
           );
           return;
         }
+        // Onboarding: unified bootstrap — no workspace provisioned yet. Workspace is deferred
+        // to the Patreon connect step (step 3) via StepConnectPatreonCreator.ensureWorkspace().
+        // Login: full studio bootstrap for returning creators who already have a workspace.
+        if (variant === "onboarding") {
+          await bootstrapAccountAfterSupabase(token, "creator");
+          emitStudioSessionUpdate();
+          onSuccess?.();
+          return;
+        }
         const boot = await bootstrapStudioAfterSupabase(token);
         emitStudioSessionUpdate();
         if (onSuccess) { onSuccess(); return; }
@@ -92,6 +104,12 @@ export function StudioSupabaseSignInPanel({
       if (inErr) throw inErr;
       const token = data.session?.access_token;
       if (!token) throw new Error("No access token from Supabase.");
+      if (variant === "onboarding") {
+        await bootstrapAccountAfterSupabase(token, "creator");
+        emitStudioSessionUpdate();
+        onSuccess?.();
+        return;
+      }
       const boot = await bootstrapStudioAfterSupabase(token);
       emitStudioSessionUpdate();
       if (onSuccess) { onSuccess(); return; }

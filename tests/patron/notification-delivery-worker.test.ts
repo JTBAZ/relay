@@ -65,7 +65,9 @@ function buildPrismaStub(rows: OutboxRow[], existingNotifications: unknown[] = [
     },
     comment: { findUnique: findUniqueComment },
     tenantMembership: { findMany: findManyMembership },
-    notificationPreference: { findUnique: vi.fn().mockResolvedValue(null) }
+    notificationPreference: { findUnique: vi.fn().mockResolvedValue(null) },
+    // resolveCreatorAccountIdForRelayCreator (called for new-subscriber creator notifications)
+    account: { findFirst: vi.fn().mockResolvedValue(null) }
   };
   return {
     prisma,

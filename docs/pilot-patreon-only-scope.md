@@ -21,7 +21,7 @@ The pilot cohort uses **Patreon only** for creator OAuth, patron link, ingest, a
 ## What stays available
 
 - Patreon creator OAuth (`/patreon/connect`, onboarding step 2)
-- Patreon patron link (`/patreon/patron/connect`)
+- Patreon patron link (`/connect/patreon/patron/connect`)
 - Existing SubscribeStar code paths (disabled by flags, not deleted)
 
 ## Re-enable SubscribeStar (post-pilot / staging spike)
