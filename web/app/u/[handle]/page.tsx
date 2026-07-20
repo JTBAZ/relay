@@ -5,6 +5,7 @@ import {
   fetchPublicPatronProfileByHandle,
   type PublicPatronProfile
 } from "@/lib/relay-api";
+import { CuratorBadge } from "@/components/patron/CuratorBadge";
 
 /**
  * PE-K Rest (BO-P4-04) — public patron profile page.
@@ -168,6 +169,11 @@ function ProfileHero({ profile }: { profile: PublicPatronProfile }): React.React
           <div className="min-w-0 flex-1 pb-2">
             <h1 className="truncate text-lg font-semibold text-[#E0E0E0] sm:text-xl">
               {profile.display_name ?? `@${profile.handle}`}
+              {profile.is_curator ? (
+                <span className="ml-2 inline-block align-middle">
+                  <CuratorBadge />
+                </span>
+              ) : null}
             </h1>
             {profile.display_name ? (
               <p className="text-xs text-[#888]">@{profile.handle}</p>

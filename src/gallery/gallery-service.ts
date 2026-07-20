@@ -255,6 +255,9 @@ export class GalleryService {
       media,
       ...("tier_preview_settings" in merged
         ? { tier_preview_settings: merged.tier_preview_settings }
+        : {}),
+      ...("promo_preview_media_id" in merged
+        ? { promo_preview_media_id: merged.promo_preview_media_id ?? null }
         : {})
     };
   }

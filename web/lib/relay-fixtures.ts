@@ -79,6 +79,15 @@ export interface LockedFeedPost {
   mediaType: MediaType;
   publishedAt: string;
   tierLabel: TierLabel;
+  /** Slice 9 — discount-backed locked promo when resolved by the feed assembler. */
+  effective_promo?: {
+    headline: string;
+    cta_text: string;
+    code: string | null;
+    percent_off: number | null;
+    tracked_url: string | null;
+    source: "explicit" | "tier_default";
+  } | null;
 }
 
 export interface CurrentViewer {
@@ -105,6 +114,8 @@ export interface PositionalComment {
     displayName: string;
     handle: string;
     avatarUrl: string;
+    /** MB-14 — live Curator badge when present. */
+    isCurator?: boolean;
   };
   text: string;
   position: { x: number; y: number }; // 0-100 percentage

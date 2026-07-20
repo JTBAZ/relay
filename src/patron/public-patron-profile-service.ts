@@ -25,12 +25,15 @@
  * What we DO NOT return:
  *   - the underlying TenantMembership id, account id, email, or any creator scope info
  *   - private collections, favorites, follows, or comments
- *   - anything keyed off entitlement state (this is a public profile, not a content surface)
+ *   - entitlement-gated content (this is a profile, not a feed)
+ *
+ * MB-14 exception: `is_curator` is a public status badge (live PlanSubscription check).
  */
 
 import type { PrismaClient } from "@prisma/client";
 
 import { normalizeRelayUsername } from "../identity/relay-username-service.js";
+import { isActiveCuratorForMembership } from "./curator-status.js";
 
 export interface PublicPatronProfileView {
   handle: string;
@@ -38,6 +41,8 @@ export interface PublicPatronProfileView {
   bio: string | null;
   avatar_url: string | null;
   banner_url: string | null;
+  /** Live Curator badge — active/trialing Curator only; false when premium off or lapsed. */
+  is_curator: boolean;
   /** Subset of `PatronSavedCollection` rows where `isPublic = true`. */
   public_collections: Array<{
     id: string;
@@ -99,6 +104,7 @@ export async function getPublicPatronProfileByHandle(
     bio: profile.bio,
     avatar_url: profile.avatarUrl,
     banner_url: profile.bannerUrl,
+    is_curator: await isActiveCuratorForMembership(prisma, profile.tenantMembershipId),
     public_collections: collections.map((c) => ({
       id: c.id,
       title: c.title,

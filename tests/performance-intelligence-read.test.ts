@@ -278,6 +278,92 @@ describe("getPerformanceWorkBundle", () => {
     expect(out.report.total_reach).toBe(40);
   });
 
+  it("splits role_breakdown by instance contentVariantRole on a single post", async () => {
+    const prisma = {
+      tenant: { findUnique: vi.fn().mockResolvedValue({ id: "tenant_1" }) },
+      creativeWork: {
+        findFirst: vi.fn().mockResolvedValue({
+          id: "cw_single",
+          title: "Single post bundle",
+          description: null,
+          analyticsCampaignLabel: null,
+          tags: [],
+          isDefaultBundle: false,
+          members: [{ postId: "post_standalone", variantRole: "standalone" }]
+        })
+      },
+      externalPostMetricDaily: {
+        findMany: vi.fn().mockResolvedValue([
+          rollupRow("post_standalone", "patreon", "likes", 8),
+          rollupRow("post_standalone", "x", "impressions", 25)
+        ])
+      },
+      post: {
+        findMany: vi.fn().mockResolvedValue([
+          { id: "post_standalone", versions: [{ title: "Piece" }] }
+        ])
+      },
+      platformInstance: {
+        findMany: vi.fn().mockResolvedValue([
+          {
+            id: "pi_patreon",
+            postId: "post_standalone",
+            destination: "patreon",
+            externalUrl: "https://patreon.com/posts/1",
+            externalId: null,
+            attemptId: "attempt_patreon",
+            linkSource: "autopost_success",
+            status: "active",
+            refreshPolicy: "conservative",
+            linkedAt: new Date("2026-06-01T00:00:00.000Z"),
+            lastRefreshedAt: new Date("2026-06-30T10:00:00.000Z"),
+            contentVariantRole: null
+          },
+          {
+            id: "pi_x",
+            postId: "post_standalone",
+            destination: "x",
+            externalUrl: "https://x.com/handle/status/1",
+            externalId: "1",
+            attemptId: "attempt_x",
+            linkSource: "autopost_success",
+            status: "active",
+            refreshPolicy: "conservative",
+            linkedAt: new Date("2026-06-01T00:00:00.000Z"),
+            lastRefreshedAt: new Date("2026-06-30T10:00:00.000Z"),
+            contentVariantRole: "promo"
+          }
+        ])
+      }
+    };
+
+    const out = await getPerformanceWorkBundle(prisma as never, CREATOR_ID, "cw_single", {
+      groupByVariantRole: true
+    });
+    expect(out.ok).toBe(true);
+    if (!out.ok) return;
+
+    expect(out.report.role_breakdown).toMatchObject({
+      standalone: {
+        member_count: 1,
+        post_ids: ["post_standalone"],
+        totals: expect.objectContaining({ likes: 8 })
+      },
+      promo: {
+        member_count: 1,
+        post_ids: ["post_standalone"],
+        total_reach: 25,
+        totals: expect.objectContaining({ impressions: 25 })
+      }
+    });
+    expect(out.report.variants[0].platform_instances).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ destination: "patreon", variant_role: "standalone" }),
+        expect.objectContaining({ destination: "x", variant_role: "promo" })
+      ])
+    );
+  });
+
   it("includes crosspost_gaps for linked destinations", async () => {
     const prisma = {
       tenant: { findUnique: vi.fn().mockResolvedValue({ id: "tenant_1" }) },

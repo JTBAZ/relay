@@ -46,4 +46,13 @@ describe("creator promo slot routes", () => {
       .send({ slots: [] });
     expect(res.status).toBe(503);
   });
+
+  it("PATCH /api/v1/creator/promo-slots/:id returns 503 when DB not configured", async () => {
+    const tempDir = await mkdtemp(join(tmpdir(), "relay-creator-promo-slots-patch-"));
+    const { app } = fileIdentityApp(tempDir);
+    const res = await request(app)
+      .patch("/api/v1/creator/promo-slots/pp1")
+      .send({ tip_eligible: false });
+    expect(res.status).toBe(503);
+  });
 });

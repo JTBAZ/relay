@@ -1,11 +1,32 @@
 "use client";
 
-import { memo } from "react";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
+import { useVirtualizer } from "@tanstack/react-virtual";
 import { galleryItemKey, type PostGalleryGroup } from "@/lib/gallery-group";
+import { collapsePostGroupsToGridCards } from "@/lib/active-post-linked-sets";
 import type { GalleryItem, TierFacet } from "@/lib/relay-api";
-import GalleryGridTile from "./GalleryGridTile";
+import ActivePostPresenceCard from "./ActivePostPresenceCard";
+import LinkedSetCard from "./studio/LinkedSetCard";
 
 export type GalleryGridDensity = "dense" | "normal";
+
+/** Match Tailwind viewport breakpoints used by the grid classes. */
+export function galleryGridColumnCount(
+  viewportWidth: number,
+  density: GalleryGridDensity
+): number {
+  if (density === "dense") {
+    if (viewportWidth >= 1280) return 7;
+    if (viewportWidth >= 1024) return 6;
+    if (viewportWidth >= 768) return 4;
+    if (viewportWidth >= 640) return 3;
+    return 2;
+  }
+  if (viewportWidth >= 1024) return 5;
+  if (viewportWidth >= 768) return 4;
+  if (viewportWidth >= 640) return 3;
+  return 2;
+}
 
 function groupFullySelected(group: PostGalleryGroup, selectedKeys: Set<string>): boolean {
   return (
@@ -19,19 +40,31 @@ function groupPartiallySelected(group: PostGalleryGroup, selectedKeys: Set<strin
   return any && !groupFullySelected(group, selectedKeys);
 }
 
+function setFullySelected(
+  members: PostGalleryGroup[],
+  selectedKeys: Set<string>
+): boolean {
+  return (
+    members.length > 0 &&
+    members.every((group) => groupFullySelected(group, selectedKeys))
+  );
+}
+
 type Props = {
   groups: PostGalleryGroup[];
   tierTitleById: Record<string, string>;
   tierFacets?: TierFacet[];
   selectedKeys: Set<string>;
-  /** Dense = more columns (control-room style); comfortable = larger thumbnails */
   gridDensity?: GalleryGridDensity;
-  onToggleSelectGroup: (items: GalleryItem[]) => void;
+  onToggleSelectGroup: (items: GalleryItem[], selectionAnchorKey?: string) => void;
   onFocusIndex: (index: number) => void;
-  /** Carousel thumb (etc.): select only this asset, not the whole post. */
   onIsolateAssetSelection?: (item: GalleryItem) => void;
   creatorId: string;
   onExportRetryComplete?: () => void;
+  onPresentClick: (destination: string, externalUrl: string) => void;
+  onGhostClick: (destination: string, items: GalleryItem[]) => void;
+  onOpenLinkedSet: (creativeWorkId: string) => void;
+  onOpenPost: (items: GalleryItem[]) => void;
 };
 
 function GalleryGrid({
@@ -42,34 +75,132 @@ function GalleryGrid({
   gridDensity = "dense",
   onToggleSelectGroup,
   onFocusIndex,
-  onIsolateAssetSelection,
-  creatorId,
-  onExportRetryComplete
+  onPresentClick,
+  onGhostClick,
+  onOpenLinkedSet,
+  onOpenPost
 }: Props) {
-  const gridClass =
-    gridDensity === "dense"
-      ? "grid grid-cols-2 auto-rows-[minmax(14rem,1fr)] gap-3 p-4 sm:grid-cols-3 lg:grid-cols-5 xl:grid-cols-6"
-      : "grid grid-cols-2 auto-rows-[minmax(14rem,1fr)] gap-4 p-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-4 xl:grid-cols-5";
+  const cards = useMemo(() => collapsePostGroupsToGridCards(groups), [groups]);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const [viewportWidth, setViewportWidth] = useState(() =>
+    typeof window !== "undefined" ? window.innerWidth : 1024
+  );
+  const [scrollWidth, setScrollWidth] = useState(0);
+
+  useEffect(() => {
+    const onResize = () => setViewportWidth(window.innerWidth);
+    onResize();
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver((entries) => {
+      const w = entries[0]?.contentRect.width ?? el.clientWidth;
+      setScrollWidth(w);
+    });
+    ro.observe(el);
+    setScrollWidth(el.clientWidth);
+    return () => ro.disconnect();
+  }, []);
+
+  const columnCount = galleryGridColumnCount(viewportWidth, gridDensity);
+  const rowCount = Math.ceil(cards.length / columnCount) || 0;
+
+  const padX = gridDensity === "dense" ? 32 : 48;
+  const gap = 12;
+  const estimateRowSize = useMemo(() => {
+    const inner = Math.max(160, (scrollWidth || viewportWidth) - padX);
+    const colW = (inner - gap * (columnCount - 1)) / columnCount;
+    // Cards use aspect-[3/4] (portrait): height = width * 4/3
+    return Math.max(140, colW * (4 / 3) + gap);
+  }, [scrollWidth, viewportWidth, padX, columnCount]);
+
+  const rowVirtualizer = useVirtualizer({
+    count: rowCount,
+    getScrollElement: () => scrollRef.current,
+    estimateSize: () => estimateRowSize,
+    overscan: 3
+  });
+
+  const padClass = gridDensity === "dense" ? "px-4" : "px-6";
 
   return (
-    <div className={gridClass} role="list">
-      {groups.map((group, idx) => (
-        <div key={group.post_id} className="flex h-full min-h-0 min-w-0 w-full">
-          <GalleryGridTile
-            items={group.items}
-            tierTitleById={tierTitleById}
-            tierFacets={tierFacets}
-            selected={groupFullySelected(group, selectedKeys)}
-            partiallySelected={groupPartiallySelected(group, selectedKeys)}
-            flatIndex={idx}
-            onToggleSelect={onToggleSelectGroup}
-            onFocusIndex={onFocusIndex}
-            onIsolateAssetSelection={onIsolateAssetSelection}
-            creatorId={creatorId}
-            onExportRetryComplete={onExportRetryComplete}
-          />
-        </div>
-      ))}
+    <div ref={scrollRef} className="min-h-0 flex-1 overflow-auto bg-black pb-10">
+      <div
+        className="relative w-full pt-4"
+        style={{ height: `${rowVirtualizer.getTotalSize() + 96}px` }}
+        role="list"
+      >
+        {rowVirtualizer.getVirtualItems().map((virtualRow) => {
+          const start = virtualRow.index * columnCount;
+          const rowCards = cards.slice(start, start + columnCount);
+          return (
+            <div
+              key={virtualRow.key}
+              data-index={virtualRow.index}
+              ref={rowVirtualizer.measureElement}
+              className={`absolute left-0 right-0 grid gap-3 ${padClass}`}
+              style={{
+                transform: `translateY(${virtualRow.start}px)`,
+                gridTemplateColumns: `repeat(${columnCount}, minmax(0, 1fr))`
+              }}
+            >
+              {rowCards.map((card, colIdx) => {
+                const idx = start + colIdx;
+                if (card.kind === "linked_set") {
+                  const memberGroups = card.members.map((m) => m.group);
+                  const allItems = memberGroups.flatMap((g) => g.items);
+                  const coverItems =
+                    card.members.find((m) => m.post_id === card.cover_post_id)?.group.items ??
+                    card.members[0]?.group.items ??
+                    [];
+                  return (
+                    <div key={card.creative_work_id} className="min-w-0 w-full">
+                      <LinkedSetCard
+                        creativeWorkId={card.creative_work_id}
+                        title={card.title}
+                        memberCount={card.member_count}
+                        members={card.members}
+                        present={card.present}
+                        missing={card.missing}
+                        selected={setFullySelected(memberGroups, selectedKeys)}
+                        onToggleSelect={() => onToggleSelectGroup(allItems)}
+                        onOpenSummary={() => onOpenLinkedSet(card.creative_work_id)}
+                        onPresentClick={onPresentClick}
+                        onGhostClick={() => {
+                          onGhostClick("x", coverItems);
+                        }}
+                      />
+                    </div>
+                  );
+                }
+
+                const group = card.group;
+                return (
+                  <div key={group.post_id} className="min-w-0 w-full">
+                    <ActivePostPresenceCard
+                      items={group.items}
+                      tierTitleById={tierTitleById}
+                      tierFacets={tierFacets}
+                      selected={groupFullySelected(group, selectedKeys)}
+                      partiallySelected={groupPartiallySelected(group, selectedKeys)}
+                      flatIndex={idx}
+                      onToggleSelect={onToggleSelectGroup}
+                      onFocusIndex={onFocusIndex}
+                      onOpen={onOpenPost}
+                      onPresentClick={onPresentClick}
+                      onGhostClick={onGhostClick}
+                    />
+                  </div>
+                );
+              })}
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }

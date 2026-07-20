@@ -9,7 +9,7 @@
 export type AiServiceConfig = {
   /** Master switch. Defaults to RELAY_AI_ENABLED. */
   enabled?: boolean;
-  /** "anthropic" (default) | "disabled". From RELAY_AI_PROVIDER. */
+  /** "anthropic" (default) | "mock" | "disabled". From RELAY_AI_PROVIDER. */
   provider?: string;
   /** Provider API key. Falls back to RELAY_AI_API_KEY then ANTHROPIC_API_KEY. */
   apiKey?: string;

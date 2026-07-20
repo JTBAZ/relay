@@ -5,7 +5,6 @@ import {
   CheckCircle2,
   ChevronDown,
   ChevronUp,
-  ChevronsDown,
   FileText,
   Film,
   Hash,
@@ -29,6 +28,11 @@ import {
 import { uploadFilesToRelayStaging } from "@/lib/relay-native-staging-upload";
 import LibraryUploadZone from "@/app/components/library/LibraryUploadZone";
 import LibrarySectionEyebrow from "./LibrarySectionEyebrow";
+import {
+  RELAY_STAGED_MEDIA_MIME,
+  serializeStagedMediaDrag,
+  type StagedMediaDragPayload,
+} from "@/lib/staged-media-dnd";
 
 export type ImportSource = "discord" | "upload" | "url";
 
@@ -134,18 +138,36 @@ function BinCard({
   selected,
   onToggle,
   onDiscard,
-  beaming
+  beaming,
+  onDragStartPayload,
 }: {
   item: ImportBinItem;
   selected: boolean;
   onToggle: () => void;
   onDiscard: () => void;
   beaming?: boolean;
+  /** When set and item is server-staged, card is draggable into Drop Assets. */
+  onDragStartPayload?: () => StagedMediaDragPayload | null;
 }) {
+  const canDrag = item.serverStaged === true && typeof onDragStartPayload === "function";
+
   return (
     <div
       role="button"
       tabIndex={0}
+      draggable={canDrag}
+      onDragStart={(e) => {
+        if (!canDrag) return;
+        const payload = onDragStartPayload();
+        if (!payload || payload.media_ids.length === 0) {
+          e.preventDefault();
+          return;
+        }
+        const raw = serializeStagedMediaDrag(payload);
+        e.dataTransfer.setData(RELAY_STAGED_MEDIA_MIME, raw);
+        e.dataTransfer.setData("text/plain", raw);
+        e.dataTransfer.effectAllowed = "copy";
+      }}
       onClick={onToggle}
       onKeyDown={(e) => {
         if (e.key === "Enter" || e.key === " ") {
@@ -574,6 +596,25 @@ export default function LibraryImportBay({ creatorId, onError, onAddToNewPost, o
                           beaming={beamingIds.has(item.id)}
                           onToggle={() => handleToggle(item.id)}
                           onDiscard={() => void handleDiscard(item.id)}
+                          onDragStartPayload={() => {
+                            if (item.serverStaged !== true) return null;
+                            const selectedComposable = items.filter(
+                              (it) => selectedIds.has(it.id) && it.serverStaged === true
+                            );
+                            const dragItems =
+                              selectedComposable.length > 0 && selectedIds.has(item.id)
+                                ? selectedComposable
+                                : [item];
+                            return {
+                              media_ids: dragItems.map((it) => it.id),
+                              items: dragItems.map((it) => ({
+                                id: it.id,
+                                src: it.src,
+                                filename: it.filename,
+                                mimeType: it.mimeType,
+                              })),
+                            };
+                          }}
                         />
                       ))}
                     </div>
@@ -629,42 +670,9 @@ export default function LibraryImportBay({ creatorId, onError, onAddToNewPost, o
                 Add {selectedComposableItems.length > 0 ? selectedComposableItems.length : ""} to new post
               </button>
             </div>
-
-            <div className="relative mt-2 flex flex-col items-center">
-              <div
-                className="w-px bg-gradient-to-b from-[var(--lib-primary)]/40 to-[var(--lib-primary)]/10"
-                style={{ height: beamActive ? "48px" : "24px", transition: "height 0.3s ease" }}
-              />
-              {beamActive ? (
-                <div
-                  aria-hidden
-                  className="absolute top-0 h-2 w-2 rounded-full bg-[var(--lib-primary)] shadow-md shadow-[var(--lib-primary)]/60"
-                  style={{ animation: "libraryBeamDrop 0.52s ease-in forwards" }}
-                />
-              ) : null}
-              <div
-                className={`flex h-8 w-8 items-center justify-center rounded-full border transition-all duration-300 ${
-                  beamActive
-                    ? "border-[var(--lib-primary)]/60 bg-[color-mix(in_srgb,var(--lib-primary)_15%,transparent)] shadow-md shadow-[color-mix(in_srgb,var(--lib-primary)_30%,transparent)]"
-                    : "border-[var(--lib-primary)]/25 bg-[var(--lib-muted)]"
-                }`}
-              >
-                <ChevronsDown className={`h-3.5 w-3.5 ${beamActive ? "text-[var(--lib-primary)]" : "text-[var(--lib-primary)]/55"}`} />
-              </div>
-              <div className="h-5 w-px bg-gradient-to-b from-[var(--lib-primary)]/10 to-transparent" />
-            </div>
           </div>
         </div>
       </div>
-
-      {/* beam keyframes */}
-      <style>{`
-        @keyframes libraryBeamDrop {
-          0% { transform: translateY(0); opacity: 1; }
-          80% { transform: translateY(48px); opacity: 0.7; }
-          100% { transform: translateY(52px); opacity: 0; }
-        }
-      `}</style>
     </div>
   );
 }

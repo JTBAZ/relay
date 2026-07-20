@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import type { PositionalComment } from "@/lib/relay-fixtures";
+import { CuratorBadge } from "@/components/patron/CuratorBadge";
 
 interface CommentPinProps {
   comment: PositionalComment;
@@ -94,8 +95,9 @@ export function CommentPin({
               />
             </div>
             <div className="min-w-0">
-              <span className="text-xs font-medium text-[#E0E0E0] block truncate">
-                {comment.author.displayName}
+              <span className="flex items-center gap-1.5 text-xs font-medium text-[#E0E0E0]">
+                <span className="block truncate">{comment.author.displayName}</span>
+                {comment.author.isCurator ? <CuratorBadge /> : null}
               </span>
               <span className="text-[10px] text-[#555555]">
                 {comment.createdAt}

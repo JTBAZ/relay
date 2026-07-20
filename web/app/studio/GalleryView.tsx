@@ -1,23 +1,32 @@
 "use client";
 
-import { useVirtualizer } from "@tanstack/react-virtual";
 import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent } from "react";
 import { useRouter } from "next/navigation";
-import { ChevronDown, Grid3X3, LayoutGrid, List, SlidersHorizontal } from "lucide-react";
+import { ChevronDown, Grid3X3, LayoutGrid, SlidersHorizontal } from "lucide-react";
+import {
+  GALLERY_VIEW_MODE_KEY,
+  galleryViewModeNeedsRewrite,
+  readGalleryViewMode,
+  type GalleryViewMode
+} from "@/lib/gallery-view-mode";
+import LibraryEmptyState from "@/app/components/studio/LibraryEmptyState";
 import { galleryItemKey, groupGalleryItemsByPost } from "@/lib/gallery-group";
+import { collapsePostGroupsToGridCards } from "@/lib/active-post-linked-sets";
 import {
   buildGalleryQuery,
   buildGalleryVisibilityBody,
+  createPostDistributionPlan,
   fetchCreatorOnboarding,
-  fetchGalleryPostDetail,
   fetchPatreonSyncState,
   fetchRelayComposeTiers,
   formatSyncHealthBanner,
   galleryItemImageGridSrc,
   getCreatorProfile,
+  linkCreativeWorkPosts,
   patchCreatorOnboarding,
   relayFetch,
   relayNativeCreatePost,
+  relayNativeDeletePost,
   relayNativeUploadCommit,
   relayNativeUploadInit,
   putRelayNativeUpload,
@@ -27,20 +36,32 @@ import {
   syncStateNeedsAttention,
   type Collection,
   type CreatorProfileIdentity,
+  type DistributionDestination,
   type FacetsData,
   type GalleryItem,
   type GalleryListData,
-  type GalleryPostDetail,
   type PatreonSyncStateData,
   type PostVisibility,
   type TierFacet
 } from "@/lib/relay-api";
 import GallerySidebar from "@/app/components/GallerySidebar";
+import StudioScheduleRail, {
+  type StudioScheduleRailHandle
+} from "@/app/components/schedule-rail/StudioScheduleRail";
 import GalleryGrid from "@/app/components/GalleryGrid";
 import BulkActionBar from "@/app/components/BulkActionBar";
 import { DistributionSheet } from "@/app/components/distribution/DistributionSheet";
-import PostBatchModal from "@/app/components/PostBatchModal";
-import InspectModal from "@/app/components/InspectModal";
+import HeroInspectOverlay, {
+  galleryItemsToHeroMediaStrip
+} from "@/app/components/studio/HeroInspectOverlay";
+import LinkConfirmSheet, {
+  type LinkConfirmMemberDraft
+} from "@/app/components/studio/LinkConfirmSheet";
+import LinkedSetDrilldown from "@/app/components/studio/LinkedSetDrilldown";
+import {
+  HERO_DEFAULT_RANGE,
+  type HeroInspectKey
+} from "@/lib/hero-inspect-data";
 import LibraryTopBar from "@/app/components/LibraryTopBar";
 import PatreonSyncMenu from "@/app/components/PatreonSyncMenu";
 import SyncHealthBanner from "@/app/components/SyncHealthBanner";
@@ -53,8 +74,8 @@ import LibraryCreatePostModal, {
   type PostDraft
 } from "@/app/components/LibraryCreatePostModal";
 import LibrarySectionEyebrow from "@/app/components/LibrarySectionEyebrow";
-import CreatorOnboardingStepper from "@/app/components/studio/CreatorOnboardingStepper";
-import PostingGoalStatusCard from "@/app/components/studio/PostingGoalStatusCard";
+import { GoalCycleLauncher } from "@/app/components/goal-cycle/GoalCycleLauncher";
+import { collectRailEventIds } from "@/app/components/goal-cycle/goal-cycle-rail-handoff";
 import type { MediaTypeValue } from "@/app/components/MediaTypeMultiSelect";
 import { freePublicTierIdsFromFacets } from "@/lib/tier-access";
 import { guessRelayUploadContentType } from "@/lib/guess-relay-upload-content-type";
@@ -128,7 +149,6 @@ async function uploadImportBinDataUrlToRelay(creatorId: string, item: ImportBinI
   return init.media_id;
 }
 
-type ViewMode = "dense" | "normal" | "list";
 type VisibilityState = { hidden: boolean; mature: boolean };
 
 export default function GalleryView() {
@@ -173,10 +193,13 @@ export default function GalleryView() {
   const [, setFocusIndex] = useState(-1);
   const [libraryMode, setLibraryMode] = useState<LibraryMode>("media");
   const [powerPanelOpen, setPowerPanelOpen] = useState(false);
-  const [viewMode, setViewMode] = useState<ViewMode>(() => {
+  const [viewMode, setViewMode] = useState<GalleryViewMode>(() => {
     if (typeof window === "undefined") return "dense";
-    const v = window.localStorage.getItem("relay.galleryViewMode");
-    return v === "list" || v === "normal" ? v : "dense";
+    const v = window.localStorage.getItem(GALLERY_VIEW_MODE_KEY);
+    if (galleryViewModeNeedsRewrite(v)) {
+      window.localStorage.setItem(GALLERY_VIEW_MODE_KEY, "normal");
+    }
+    return readGalleryViewMode(v);
   });
   const [statsOpen, setStatsOpen] = useState(false);
   const [showShadowCovers, setShowShadowCovers] = useState(false);
@@ -187,15 +210,14 @@ export default function GalleryView() {
     return readGalleryVideoLoop();
   });
   const statsButtonRef = useRef<HTMLButtonElement>(null);
-  const listRef = useRef<HTMLDivElement>(null);
   const [librarySyncPhase, setLibrarySyncPhase] = useState<"idle" | "syncing" | "error">(
     "idle"
   );
   const [syncHealth, setSyncHealth] = useState<PatreonSyncStateData | null>(null);
   const [patreonDetailsSignal, setPatreonDetailsSignal] = useState(0);
   const [creatorProfile, setCreatorProfile] = useState<CreatorProfileIdentity | null>(null);
-  const [onboardingStepperReloadKey, setOnboardingStepperReloadKey] = useState(0);
   const prevLibrarySyncPhase = useRef(librarySyncPhase);
+  const scheduleRailRef = useRef<StudioScheduleRailHandle>(null);
 
   /**
    * Fullscreen-feel for creator library: keep viewport scroll enabled but hide
@@ -287,7 +309,6 @@ export default function GalleryView() {
           } catch {
             /* ignore */
           }
-          setOnboardingStepperReloadKey((k) => k + 1);
         }
       } catch {
         /* 401/403/404/503 — not fatal for Library */
@@ -487,11 +508,13 @@ export default function GalleryView() {
     [selectedPostIds.length]
   );
 
-  const [postBatchOpen, setPostBatchOpen] = useState(false);
-  const [postBatchPostId, setPostBatchPostId] = useState<string | null>(null);
   const [crossPostTargetId, setCrossPostTargetId] = useState<string | null>(null);
-  const [postDetail, setPostDetail] = useState<GalleryPostDetail | null>(null);
-  const [postDetailLoading, setPostDetailLoading] = useState(false);
+  const [crossPostInitialPreviewMediaId, setCrossPostInitialPreviewMediaId] = useState<
+    string | null
+  >(null);
+  const [crossPostInitialDestinations, setCrossPostInitialDestinations] = useState<
+    DistributionDestination[]
+  >([]);
 
   const crossPostMediaItems = useMemo(() => {
     if (!crossPostTargetId) return [];
@@ -504,36 +527,42 @@ export default function GalleryView() {
     return postGroups.find((g) => g.post_id === crossPostTargetId)?.items[0]?.title;
   }, [crossPostTargetId, postGroups]);
 
-  const postBatchGroupIndex = useMemo(
-    () => (postBatchPostId ? postGroups.findIndex((g) => g.post_id === postBatchPostId) : -1),
-    [postGroups, postBatchPostId]
+  const [heroOpen, setHeroOpen] = useState(false);
+  const [heroKey, setHeroKey] = useState<HeroInspectKey | null>(null);
+  const [heroPreview, setHeroPreview] = useState<GalleryItem | null>(null);
+
+  const heroPostItems = useMemo(() => {
+    if (!heroKey?.post_id) return [];
+    return postGroups.find((g) => g.post_id === heroKey.post_id)?.items ?? [];
+  }, [heroKey?.post_id, postGroups]);
+
+  const heroMediaStrip = useMemo(
+    () => galleryItemsToHeroMediaStrip(heroPostItems),
+    [heroPostItems]
   );
 
-  const postBatchItems = useMemo(() => {
-    if (!postBatchPostId) return [];
-    if (postDetail?.post_id === postBatchPostId && postDetail.media.length > 0) {
-      return postDetail.media;
-    }
-    const g = postGroups.find((x) => x.post_id === postBatchPostId);
-    return g?.items ?? [];
-  }, [postBatchPostId, postDetail, postGroups]);
-
-  const closePostBatch = useCallback(() => {
-    setPostBatchOpen(false);
-    setPostBatchPostId(null);
-    setPostDetail(null);
-    setPostDetailLoading(false);
+  const closeHero = useCallback(() => {
+    setHeroOpen(false);
+    setHeroKey(null);
+    setHeroPreview(null);
   }, []);
 
-  const [inspectModalOpen, setInspectModalOpen] = useState(false);
-  const [inspectPreview, setInspectPreview] = useState<GalleryItem | null>(null);
-  const [inspectDetail, setInspectDetail] = useState<GalleryPostDetail | null>(null);
+  const [heroDeleteBusy, setHeroDeleteBusy] = useState(false);
 
-  const closeInspectModal = useCallback(() => {
-    setInspectModalOpen(false);
-    setInspectPreview(null);
-    setInspectDetail(null);
-  }, []);
+  const openHeroForItem = useCallback(
+    (item: GalleryItem, creativeWorkId?: string | null) => {
+      const workId =
+        (creativeWorkId?.trim() || item.creative_work_id?.trim() || null) as string | null;
+      setHeroPreview(item);
+      setHeroKey({
+        creative_work_id: workId,
+        post_id: item.post_id,
+        range: HERO_DEFAULT_RANGE
+      });
+      setHeroOpen(true);
+    },
+    []
+  );
 
   const [libraryCreatePostOpen, setLibraryCreatePostOpen] = useState(false);
   const [libraryCreatePostMedia, setLibraryCreatePostMedia] = useState<ImportBinItem[]>([]);
@@ -561,6 +590,97 @@ export default function GalleryView() {
     [router]
   );
 
+  const handleScheduleRailAutopost = useCallback(
+    (mediaIds: string[]) => {
+      const ids = mediaIds.map((id) => id.trim()).filter(Boolean).join(",");
+      if (!ids) return;
+      router.push(`/studio/autopost?media_ids=${encodeURIComponent(ids)}`);
+    },
+    [router]
+  );
+
+  const openCrossPostForPost = useCallback(
+    (
+      postId: string,
+      destinations: DistributionDestination[] = [],
+      options?: { initialPreviewMediaId?: string | null }
+    ) => {
+      setCrossPostInitialDestinations(destinations);
+      setCrossPostInitialPreviewMediaId(options?.initialPreviewMediaId?.trim() || null);
+      setCrossPostTargetId(postId);
+    },
+    []
+  );
+
+  const handleActivePostPresentClick = useCallback(
+    (_destination: string, externalUrl: string) => {
+      const url = externalUrl.trim();
+      if (!url) return;
+      window.open(url, "_blank", "noopener,noreferrer");
+    },
+    []
+  );
+
+  const handleActivePostGhostClick = useCallback(
+    (destination: string, items: GalleryItem[]) => {
+      const postId = items[0]?.post_id?.trim();
+      if (!postId) {
+        // No Relay post context — Autopost staging bin is the right surface.
+        router.push("/studio/autopost");
+        return;
+      }
+      // Existing Relay Post media is not staging-bin media; cross-post the post.
+      const dest =
+        destination === "patreon" ||
+        destination === "x" ||
+        destination === "deviantart" ||
+        destination === "bluesky"
+          ? ([destination] as DistributionDestination[])
+          : [];
+      openCrossPostForPost(postId, dest);
+    },
+    [router, openCrossPostForPost]
+  );
+
+  const [linkConfirmOpen, setLinkConfirmOpen] = useState(false);
+  const [linkConfirmPosts, setLinkConfirmPosts] = useState<GalleryItem[]>([]);
+  const [linkBusy, setLinkBusy] = useState(false);
+  const [linkError, setLinkError] = useState<string | null>(null);
+  const [linkedSetSummaryId, setLinkedSetSummaryId] = useState<string | null>(null);
+  const [linkExpandHint, setLinkExpandHint] = useState<string | null>(null);
+
+  const linkedSetCards = useMemo(
+    () => collapsePostGroupsToGridCards(postGroups),
+    [postGroups]
+  );
+  const openLinkedSetCard = useMemo(() => {
+    if (!linkedSetSummaryId) return null;
+    return (
+      linkedSetCards.find(
+        (card) => card.kind === "linked_set" && card.creative_work_id === linkedSetSummaryId
+      ) ?? null
+    );
+  }, [linkedSetCards, linkedSetSummaryId]);
+
+  const handleLinkPosts = useCallback(
+    (postIds: string[]) => {
+      const unique = [...new Set(postIds)];
+      if (unique.length < 2) return;
+      const posts = unique
+        .map((id) => postGroups.find((g) => g.post_id === id)?.items[0])
+        .filter((item): item is GalleryItem => Boolean(item));
+      if (posts.length < 2) {
+        setListError("Select at least two posts to create a Linked Set.");
+        return;
+      }
+      setLinkError(null);
+      setLinkExpandHint(null);
+      setLinkConfirmPosts(posts);
+      setLinkConfirmOpen(true);
+    },
+    [postGroups]
+  );
+
   /** Replace selection with a single asset (carousel / inspect / fullscreen). */
   const isolateSelectionToItem = useCallback((item: GalleryItem) => {
     setSelectedKeys(new Set([galleryItemKey(item)]));
@@ -577,6 +697,34 @@ export default function GalleryView() {
   const refreshList = useCallback(() => {
     void fetchPage(null, false);
   }, [fetchPage]);
+
+  const handleConfirmLinkPosts = useCallback(
+    async (members: LinkConfirmMemberDraft[], title: string) => {
+      setLinkBusy(true);
+      setLinkError(null);
+      try {
+        await linkCreativeWorkPosts({
+          title: title || undefined,
+          members: members.map((m) => ({
+            post_id: m.post_id,
+            variant_role: m.variant_role,
+            member_label: m.member_label.trim() || null,
+            is_cover: m.is_cover
+          }))
+        });
+        setLinkConfirmOpen(false);
+        setLinkConfirmPosts([]);
+        setSelectedKeys(new Set());
+        setLinkExpandHint(null);
+        refreshList();
+      } catch (error) {
+        setLinkError(error instanceof Error ? error.message : String(error));
+      } finally {
+        setLinkBusy(false);
+      }
+    },
+    [refreshList]
+  );
 
   useEffect(() => {
     return subscribeRelayDistributionRefresh(refreshList);
@@ -702,12 +850,13 @@ export default function GalleryView() {
     void fetchLibraryComposeTiers();
     refreshList();
     void loadCreatorProfile();
-    setOnboardingStepperReloadKey((k) => k + 1);
   }, [fetchFacets, fetchLibraryComposeTiers, refreshList, loadCreatorProfile]);
 
-  const persistViewMode = (mode: ViewMode) => {
+  const persistViewMode = (mode: GalleryViewMode) => {
     setViewMode(mode);
-    if (typeof window !== "undefined") window.localStorage.setItem("relay.galleryViewMode", mode);
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem(GALLERY_VIEW_MODE_KEY, mode);
+    }
   };
 
   const toggleTag = (tag: string) => {
@@ -741,7 +890,7 @@ export default function GalleryView() {
     [creatorId]
   );
 
-  const openInspectPost = useCallback(async () => {
+  const openInspectPost = useCallback(() => {
     if (selectedItems.length === 0) return;
     const first = selectedItems[0]!;
     const g = postGroups.find((x) => x.post_id === first.post_id);
@@ -752,47 +901,33 @@ export default function GalleryView() {
     const keySet = new Set(selectedItems.map(galleryItemKey));
     const keep =
       g.items.find((it) => keySet.has(galleryItemKey(it))) ?? g.items[0]!;
-
-    if (g.items.length === 1) {
-      closePostBatch();
-      setSelectedKeys(new Set([galleryItemKey(keep)]));
-      setInspectPreview(keep);
-      setInspectDetail(null);
-      setInspectModalOpen(true);
-      try {
-        const detail = await fetchGalleryPostDetail(creatorId, first.post_id);
-        setInspectDetail(detail);
-      } catch (error) {
-        const msg = error instanceof Error ? error.message : String(error);
-        setListError(msg);
-        closeInspectModal();
-      }
-      return;
-    }
-
-    closeInspectModal();
     setSelectedKeys(new Set([galleryItemKey(keep)]));
-    setPostBatchPostId(first.post_id);
-    setPostBatchOpen(true);
-    setPostDetail(null);
-    setPostDetailLoading(true);
-    try {
-      const detail = await fetchGalleryPostDetail(creatorId, first.post_id);
-      setPostDetail(detail);
-    } catch (error) {
-      const msg = error instanceof Error ? error.message : String(error);
-      setListError(msg);
-      closePostBatch();
-    } finally {
-      setPostDetailLoading(false);
-    }
-  }, [
-    selectedItems,
-    postGroups,
-    creatorId,
-    closePostBatch,
-    closeInspectModal
-  ]);
+    openHeroForItem(keep);
+  }, [selectedItems, postGroups, openHeroForItem]);
+
+  const handleHeroGapFill = useCallback(
+    (destination: string, sourcePostId: string) => {
+      const dest =
+        destination === "patreon" ||
+        destination === "x" ||
+        destination === "deviantart" ||
+        destination === "bluesky"
+          ? ([destination] as DistributionDestination[])
+          : [];
+      closeHero();
+      // Prefer cross-post sheet for existing Relay posts — Autopost staging requires
+      // unattached bin media (primaryPostId null), which post-attached assets are not.
+      const open = () => openCrossPostForPost(sourcePostId, dest);
+      if (dest.length === 0) {
+        open();
+        return;
+      }
+      void createPostDistributionPlan(sourcePostId, { destinations: dest })
+        .then(open)
+        .catch(open);
+    },
+    [closeHero, openCrossPostForPost]
+  );
 
   const toggleSelectGroup = useCallback((groupItems: GalleryItem[]) => {
     const keys = groupItems.map(galleryItemKey);
@@ -809,7 +944,6 @@ export default function GalleryView() {
       return next;
     });
     if (clearedFocus) {
-      // After deselect, avoid the grid tile stealing focus; blur after the click completes.
       queueMicrotask(() => {
         setFocusIndex(-1);
         if (typeof document !== "undefined") {
@@ -887,14 +1021,6 @@ export default function GalleryView() {
     [creatorId, fetchFacets, refreshList, selectedItems, selectedPostIds]
   );
 
-  const rowVirtualizer = useVirtualizer({
-    count: viewMode === "list" ? postGroups.length : 0,
-    getScrollElement: () => listRef.current,
-    estimateSize: () => 72,
-    /** Extra rows above/below viewport — smoother scroll when many posts (list mode is the scale path). */
-    overscan: 10
-  });
-
   const derivedLibrarySyncStatus =
     librarySyncPhase === "syncing"
       ? "syncing"
@@ -936,6 +1062,38 @@ export default function GalleryView() {
     () => (syncHealth ? syncHealthBlocksStudioWrites(syncHealth) : false),
     [syncHealth]
   );
+
+  const handleHeroDeletePost = useCallback(async () => {
+    const postId = heroKey?.post_id?.trim();
+    if (!postId?.startsWith("relay_p_") || studioWriteBlocked || heroDeleteBusy) return;
+    setHeroDeleteBusy(true);
+    try {
+      await relayNativeDeletePost(postId, creatorId);
+      closeHero();
+      setSelectedKeys((prev) => {
+        const next = new Set(prev);
+        for (const key of [...next]) {
+          const group = postGroups.find((g) => g.items.some((it) => galleryItemKey(it) === key));
+          if (group?.post_id === postId) next.delete(key);
+        }
+        return next;
+      });
+      refreshList();
+    } catch (error) {
+      setListError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setHeroDeleteBusy(false);
+    }
+  }, [
+    heroKey?.post_id,
+    studioWriteBlocked,
+    heroDeleteBusy,
+    creatorId,
+    closeHero,
+    postGroups,
+    refreshList
+  ]);
+
   return (
     <div className="library-shell library-hide-scrollbars flex min-h-0 flex-1 flex-col overflow-hidden bg-[var(--lib-bg)] text-[var(--lib-fg)]">
       <LibraryTopBar
@@ -961,12 +1119,15 @@ export default function GalleryView() {
         onViewDetails={() => setPatreonDetailsSignal((n) => n + 1)}
       />
 
-      <CreatorOnboardingStepper
-        creatorId={creatorId}
-        reloadKey={onboardingStepperReloadKey}
+      <GoalCycleLauncher
+        onMaterialized={(receipt) => {
+          const ids = collectRailEventIds(receipt);
+          void scheduleRailRef.current?.refreshAndHighlight({
+            focusEventId: ids[0] ?? null,
+            highlightEventIds: ids
+          });
+        }}
       />
-
-      <PostingGoalStatusCard />
 
       <div className="relative z-0 flex min-h-0 flex-1 flex-col overflow-hidden lg:flex-row">
         {powerPanelOpen ? (
@@ -1090,27 +1251,24 @@ export default function GalleryView() {
           ) : null}
 
           {emptyLibrary ? (
-            <div className="mx-4 mt-3 rounded-lg border border-dashed border-[var(--lib-border)] bg-[var(--lib-muted)]/25 px-4 py-8 text-center">
-              <p className="text-sm font-medium text-[var(--lib-fg)]">No posts in your library yet</p>
-              <p className="mx-auto mt-2 max-w-md text-xs leading-relaxed text-[var(--lib-fg-muted)]">
-                Connect Patreon (creator OAuth), then use{" "}
-                <strong>Patreon → Check for new posts</strong> to pull posts into Relay. Nothing here
-                is shown to visitors until you curate visibility and layout.
-              </p>
-            </div>
+            <LibraryEmptyState variant="no_posts" dashed className="mx-4 mt-3 py-8" />
           ) : null}
 
           {emptyAfterFilters ? (
-            <div className="mx-4 mt-3 rounded-lg border border-[var(--lib-border)] bg-[var(--lib-card)] px-4 py-6 text-center">
-              <p className="text-sm font-medium text-[var(--lib-fg)]">
-                {activeCollectionId ? "No assets in this collection for current filters" : "No assets match your filters"}
-              </p>
-              <p className="mx-auto mt-2 max-w-md text-xs text-[var(--lib-fg-muted)]">
-                {activeCollectionId
+            <LibraryEmptyState
+              variant="no_results"
+              className="mx-4 mt-3"
+              title={
+                activeCollectionId
+                  ? "No assets in this collection for current filters"
+                  : undefined
+              }
+              description={
+                activeCollectionId
                   ? "Try clearing the sidebar filters or pick another collection."
-                  : "Adjust Find Assets, tags, tiers, visibility toggles, or media types — or clear search."}
-              </p>
-            </div>
+                  : undefined
+              }
+            />
           ) : null}
 
           {!emptyLibrary ? (
@@ -1147,6 +1305,11 @@ export default function GalleryView() {
               {selectedKeys.size > 0 ? (
                 <span className="text-xs tabular-nums text-[var(--lib-selection)]">{selectedKeys.size} selected</span>
               ) : null}
+              {linkExpandHint ? (
+                <span className="max-w-md truncate text-[11px] text-[#9bf0c4]/90" title={linkExpandHint}>
+                  {linkExpandHint}
+                </span>
+              ) : null}
             </div>
 
             <div className="flex items-center gap-1">
@@ -1169,6 +1332,8 @@ export default function GalleryView() {
                   viewMode === "dense" ? "bg-[var(--lib-muted)] text-[var(--lib-fg)]" : "text-[var(--lib-fg-muted)]"
                 }`}
                 onClick={() => persistViewMode("dense")}
+                aria-label="Dense grid density"
+                title="Dense grid"
               >
                 <Grid3X3 className="h-3.5 w-3.5" />
               </button>
@@ -1178,17 +1343,10 @@ export default function GalleryView() {
                   viewMode === "normal" ? "bg-[var(--lib-muted)] text-[var(--lib-fg)]" : "text-[var(--lib-fg-muted)]"
                 }`}
                 onClick={() => persistViewMode("normal")}
+                aria-label="Normal grid density"
+                title="Normal grid"
               >
                 <LayoutGrid className="h-3.5 w-3.5" />
-              </button>
-              <button
-                type="button"
-                className={`flex h-7 w-7 items-center justify-center rounded ${
-                  viewMode === "list" ? "bg-[var(--lib-muted)] text-[var(--lib-fg)]" : "text-[var(--lib-fg-muted)]"
-                }`}
-                onClick={() => persistViewMode("list")}
-              >
-                <List className="h-3.5 w-3.5" />
               </button>
             </div>
 
@@ -1202,71 +1360,27 @@ export default function GalleryView() {
             />
           </div>
 
-          {viewMode === "list" ? (
-            <div ref={listRef} className="min-h-0 flex-1 overflow-auto bg-black">
-              <div style={{ height: `${rowVirtualizer.getTotalSize()}px`, position: "relative", width: "100%" }}>
-                {rowVirtualizer.getVirtualItems().map((virtualRow) => {
-                  const group = postGroups[virtualRow.index];
-                  if (!group) return null;
-                  const primary = group.items[0];
-                  if (!primary) return null;
-                  const rowSelected =
-                    group.items.length > 0 &&
-                    group.items.every((i) => selectedKeys.has(galleryItemKey(i)));
-                  return (
-                    <div
-                      key={group.post_id}
-                      ref={rowVirtualizer.measureElement}
-                      style={{
-                        position: "absolute",
-                        top: 0,
-                        left: 0,
-                        width: "100%",
-                        transform: `translateY(${virtualRow.start}px)`
-                      }}
-                    >
-                      <button
-                        type="button"
-                        data-gallery-tile
-                        role="listitem"
-                        onFocus={() => setFocusIndex(virtualRow.index)}
-                        onClick={() => toggleSelectGroup(group.items)}
-                        className={`flex w-full items-center gap-3 border-b border-[var(--lib-border)] px-3 py-2 text-left transition-colors ${
-                          rowSelected ? "bg-[var(--lib-primary)]/10" : "hover:bg-[var(--lib-muted)]/40"
-                        }`}
-                      >
-                        <span className="h-3 w-3 shrink-0 rounded-full border border-[var(--lib-border)] bg-[var(--lib-card)]">
-                          {rowSelected ? (
-                            <span className="block h-full w-full rounded-full bg-[var(--lib-primary)]" />
-                          ) : null}
-                        </span>
-                        <span className="min-w-0 flex-1 truncate text-xs text-[var(--lib-fg)]">{primary.title}</span>
-                        <span className="shrink-0 text-[10px] tabular-nums text-[var(--lib-fg-muted)]">
-                          {group.items.length > 1 ? `${group.items.length} assets · ` : null}
-                          {primary.published_at.slice(0, 10)}
-                        </span>
-                      </button>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          ) : (
-            <div className="min-h-0 flex-1 overflow-auto bg-black pb-10">
-              <GalleryGrid
-                groups={postGroups}
-                tierTitleById={tierTitleById}
-                tierFacets={facets.tiers}
-                selectedKeys={selectedKeys}
-                gridDensity={viewMode === "dense" ? "dense" : "normal"}
-                onToggleSelectGroup={toggleSelectGroup}
-                onFocusIndex={setFocusIndex}
-                onIsolateAssetSelection={isolateSelectionToItem}
-                creatorId={creatorId}
-                onExportRetryComplete={refreshList}
-              />
-            </div>
-          )}
+          <GalleryGrid
+            groups={postGroups}
+            tierTitleById={tierTitleById}
+            tierFacets={facets.tiers}
+            selectedKeys={selectedKeys}
+            gridDensity={viewMode}
+            onToggleSelectGroup={toggleSelectGroup}
+            onFocusIndex={setFocusIndex}
+            onIsolateAssetSelection={isolateSelectionToItem}
+            creatorId={creatorId}
+            onExportRetryComplete={refreshList}
+            onPresentClick={handleActivePostPresentClick}
+            onGhostClick={handleActivePostGhostClick}
+            onOpenLinkedSet={(creativeWorkId) => setLinkedSetSummaryId(creativeWorkId)}
+            onOpenPost={(items) => {
+              const primary =
+                items.find((it) => !it.shadow_cover) ?? items[0];
+              if (!primary) return;
+              openHeroForItem(primary);
+            }}
+          />
 
           {nextCursor ? (
             <div className="flex shrink-0 justify-center border-t border-white/[0.06] bg-black py-3">
@@ -1283,87 +1397,12 @@ export default function GalleryView() {
 
             </>
           ) : null}
-
-          {inspectModalOpen && inspectPreview ? (
-            <InspectModal
-              preview={inspectPreview}
-              previewDetail={inspectDetail}
-              creatorId={creatorId}
-              onPresentationUpdated={async () => {
-                await fetchFacets();
-                refreshList();
-                if (inspectPreview) {
-                  try {
-                    const detail = await fetchGalleryPostDetail(creatorId, inspectPreview.post_id);
-                    setInspectDetail(detail);
-                  } catch {
-                    /* ignore refresh errors */
-                  }
-                }
-              }}
-              onClose={closeInspectModal}
-            />
-          ) : null}
-
-          {postBatchOpen && postBatchItems.length > 0 ? (
-            <PostBatchModal
-              items={postBatchItems}
-              startFlatIndex={postBatchGroupIndex >= 0 ? postBatchGroupIndex : 0}
-              tierTitleById={tierTitleById}
-              selectedKeys={selectedKeys}
-              postDetail={postDetail}
-              postDetailLoading={postDetailLoading}
-              creatorId={creatorId}
-              facets={facets}
-              collections={collections}
-              videoLoop={videoLoop}
-              onClose={closePostBatch}
-              onIsolateSelectionForAsset={isolateSelectionToItem}
-              onFocusIndex={setFocusIndex}
-              onPostMetadataUpdated={async () => {
-                await fetchFacets();
-                setCollectionsReloadToken((n) => n + 1);
-                refreshList();
-                if (postBatchPostId) {
-                  try {
-                    const d = await fetchGalleryPostDetail(creatorId, postBatchPostId);
-                    setPostDetail(d);
-                  } catch {
-                    /* ignore refresh errors */
-                  }
-                }
-              }}
-              onMediaExportRetryComplete={() => {
-                refreshList();
-                if (postBatchPostId) {
-                  void fetchGalleryPostDetail(creatorId, postBatchPostId)
-                    .then(setPostDetail)
-                    .catch(() => {});
-                }
-              }}
-            />
-          ) : null}
-
-          {selectedKeys.size > 0 ? (
-            <BulkActionBar
-              selectedCount={selectedKeys.size}
-              creatorId={creatorId}
-              selectedItems={selectedItems}
-              selectedPostIds={selectedPostIds}
-              collections={collections}
-              tierTitleById={tierTitleById}
-              suggestedTags={facets.tag_ids}
-              onClearSelection={() => setSelectedKeys(new Set())}
-              onListRefresh={refreshList}
-              onCollectionsReload={() => setCollectionsReloadToken((n) => n + 1)}
-              onApplyBulkTagDelta={applyBulkTagDelta}
-              onInspectPost={() => void openInspectPost()}
-              onError={(msg) => setListError(msg)}
-              studioWriteBlocked={studioWriteBlocked}
-              onCrossPost={setCrossPostTargetId}
-            />
-          ) : null}
         </main>
+
+        <StudioScheduleRail
+          ref={scheduleRailRef}
+          onCommitMedia={handleScheduleRailAutopost}
+        />
 
         <LibraryPowerPanel
           isOpen={powerPanelOpen}
@@ -1382,7 +1421,9 @@ export default function GalleryView() {
           facets={facets}
           tierTitleById={tierTitleById}
           creatorId={creatorId}
-          onClearSelection={() => setSelectedKeys(new Set())}
+          onClearSelection={() => {
+            setSelectedKeys(new Set());
+          }}
           onListRefresh={refreshList}
           onCollectionsReload={() => setCollectionsReloadToken((n) => n + 1)}
           onSelectCollection={setActiveCollectionId}
@@ -1411,10 +1452,136 @@ export default function GalleryView() {
           postId={crossPostTargetId}
           mediaItems={crossPostMediaItems}
           postTitle={crossPostTitle}
+          initialSelectedDestinations={crossPostInitialDestinations}
+          initialPreviewMediaId={crossPostInitialPreviewMediaId}
           onClose={() => {
             setCrossPostTargetId(null);
+            setCrossPostInitialDestinations([]);
+            setCrossPostInitialPreviewMediaId(null);
             refreshList();
           }}
+        />
+      ) : null}
+
+      <LinkConfirmSheet
+        open={linkConfirmOpen}
+        posts={linkConfirmPosts}
+        busy={linkBusy}
+        error={linkError}
+        onClose={() => {
+          if (linkBusy) return;
+          setLinkConfirmOpen(false);
+          setLinkError(null);
+        }}
+        onConfirm={(members, title) => {
+          void handleConfirmLinkPosts(members, title);
+        }}
+      />
+
+      {openLinkedSetCard && openLinkedSetCard.kind === "linked_set" ? (
+        <LinkedSetDrilldown
+          open
+          creativeWorkId={openLinkedSetCard.creative_work_id}
+          title={openLinkedSetCard.title}
+          coverPostId={openLinkedSetCard.cover_post_id}
+          members={openLinkedSetCard.members}
+          onClose={() => setLinkedSetSummaryId(null)}
+          onChanged={() => {
+            refreshList();
+          }}
+          onOpenHero={(postId) => {
+            const group = postGroups.find((g) => g.post_id === postId);
+            if (!group?.items[0]) return;
+            const keep = group.items[0];
+            setSelectedKeys(new Set([galleryItemKey(keep)]));
+            openHeroForItem(keep, openLinkedSetCard.creative_work_id);
+          }}
+          onGapFill={(postId, destination) => {
+            const dest =
+              destination === "patreon" ||
+              destination === "x" ||
+              destination === "deviantart" ||
+              destination === "bluesky"
+                ? ([destination] as DistributionDestination[])
+                : [];
+            const open = () => openCrossPostForPost(postId, dest);
+            if (dest.length === 0) {
+              open();
+              return;
+            }
+            void createPostDistributionPlan(postId, { destinations: dest })
+              .then(open)
+              .catch(open);
+          }}
+          onAddPosts={() => {
+            const keys = new Set<string>();
+            for (const member of openLinkedSetCard.members) {
+              const item =
+                member.group.items.find((it) => !it.shadow_cover) ?? member.group.items[0];
+              if (item) keys.add(galleryItemKey(item));
+            }
+            setSelectedKeys(keys);
+            setLinkedSetSummaryId(null);
+            setLinkExpandHint(
+              "Select additional posts, then Link posts to expand this Linked Set."
+            );
+          }}
+        />
+      ) : null}
+
+      {selectedPostIds.length >= 2 && !heroOpen && !linkedSetSummaryId ? (
+        <BulkActionBar
+          creatorId={creatorId}
+          selectedItems={selectedItems}
+          selectedPostIds={selectedPostIds}
+          collections={collections}
+          suggestedTags={facets.tag_ids}
+          onClearSelection={() => {
+            setSelectedKeys(new Set());
+            setLinkExpandHint(null);
+          }}
+          onListRefresh={refreshList}
+          onCollectionsReload={() => setCollectionsReloadToken((n) => n + 1)}
+          onApplyBulkTagDelta={applyBulkTagDelta}
+          onError={(msg) => setListError(msg)}
+          studioWriteBlocked={studioWriteBlocked}
+          onLinkPosts={handleLinkPosts}
+        />
+      ) : null}
+
+      {heroOpen && heroKey ? (
+        <HeroInspectOverlay
+          open={heroOpen}
+          heroKey={heroKey}
+          preview={heroPreview}
+          mediaStrip={heroMediaStrip}
+          postItems={heroPostItems}
+          creatorId={creatorId}
+          tiers={facets.tiers}
+          studioWriteBlocked={studioWriteBlocked}
+          onRefresh={async () => {
+            await fetchPage(null, false);
+          }}
+          onClose={closeHero}
+          onGapFill={handleHeroGapFill}
+          onOpenDistribute={() => {
+            const postId = heroKey.post_id;
+            closeHero();
+            openCrossPostForPost(postId, []);
+          }}
+          onDeletePost={
+            heroKey.post_id.startsWith("relay_p_") && !studioWriteBlocked
+              ? () => void handleHeroDeletePost()
+              : null
+          }
+          deleteBusy={heroDeleteBusy}
+          deleteBlockedReason={
+            !heroKey.post_id.startsWith("relay_p_")
+              ? "Relay-native only"
+              : studioWriteBlocked
+                ? "Sync blocked"
+                : null
+          }
         />
       ) : null}
     </div>

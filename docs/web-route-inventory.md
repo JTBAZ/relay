@@ -53,10 +53,11 @@ Primary user is the **main intended audience** for the screen. OAuth and auth ha
 | `/connect/patreon/patron/connect` | [`web/app/connect/patreon/patron/connect/page.tsx`](../web/app/connect/patreon/patron/connect/page.tsx) | public | Patron connect handoff. |
 | `/settings/connected-extensions` | [`web/app/settings/connected-extensions/page.tsx`](../web/app/settings/connected-extensions/page.tsx) | patron | Copy links to patron profile; extensions UX. |
 | `/studio/moderation/reports` | [`web/app/studio/moderation/reports/page.tsx`](../web/app/studio/moderation/reports/page.tsx) | creator | Studio moderation. |
+| `/studio/promos` | [`web/app/studio/promos/page.tsx`](../web/app/studio/promos/page.tsx) | creator | Locked-access Promo Hub (Pieces, Tier Rules, Codes, Preview). Deep link `?post_id=` opens Preview for that post when it is in the pool. |
 | `/visitor` | [`web/app/visitor/page.tsx`](../web/app/visitor/page.tsx) | public | Visitor / gallery-style browsing. |
 | `/visitor/favorites` | [`web/app/visitor/favorites/page.tsx`](../web/app/visitor/favorites/page.tsx) | public | Visitor favorites. |
 
-**Count:** 38 `page.tsx` files (38 rows).
+**Count:** 39 `page.tsx` files (39 rows; includes `/studio/promos`).
 
 ## Maintenance
 

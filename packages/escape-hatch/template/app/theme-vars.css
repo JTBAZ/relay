@@ -1,0 +1,11 @@
+:root {
+  /* Discord-inspired console defaults */
+  --eh-bg: #313338;
+  --eh-fg: #f2f3f5;
+  --eh-muted: #b5bac1;
+  --eh-card: #2b2d31;
+  --eh-accent: #5865f2;
+  --eh-bg-deep: #1e1f22;
+  --eh-hover: #35373c;
+  --eh-border: #3f4147;
+}

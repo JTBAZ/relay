@@ -27,6 +27,10 @@ import {
 } from "../analytics/external-metric-rollup-job.js";
 import { runPlatformInstanceRefreshSweepOnce } from "../analytics/platform-instance-refresh-sweep-job.js";
 import { runPostingGoalNudgeOnce } from "../autopost/posting-goal-nudge-worker.js";
+import { runScheduleSeriesReconcileOnce } from "../autopost/schedule-series-worker.js";
+import { runDistributionRulesReconcileOnce } from "../autopost/distribution-rule-worker.js";
+import { runDistributionScheduleReminderOnce } from "../distribution/distribution-schedule-reminder-worker.js";
+import { runTipGrantOnce } from "../tips/tip-grant-worker.js";
 import type { PatreonCampaignCreatorIndex } from "../patreon/patreon-campaign-creator-index.js";
 import type { PatreonSyncHealthStoreAPI } from "../patreon/patreon-sync-health-store.js";
 import type { PatreonSyncService } from "../patreon/patreon-sync-service.js";
@@ -49,12 +53,31 @@ import {
   type ExternalMetricDailyRollupJobData,
   type PlatformInstanceRefreshSweepJobData,
   type PostingGoalNudgeJobData,
+  type DistributionScheduleReminderJobData,
+  type AutopostScheduleSeriesJobData,
+  type AutopostDistributionRulesJobData,
+  type TipGrantJobData,
+  type BillCreditSettlementJobData,
+  type RevealExpiryJobData,
+  type CoachPlanCreditGrantJobData,
+  type CoachPlanCreditExpiryJobData,
+  type GoalCycleTrendResearchJobData,
+  type GoalCycleOutcomeRefreshJobData,
   type RelayJobQueueName,
   type RelayJobTraceFields,
   type SubscribeStarGraphqlPostsIngestJobData
 } from "./queue-names.js";
 import { relayJobTraceIdForProcessing } from "./relay-job-trace.js";
 import type { RelayBullMqWorkersClose } from "./bullmq-shutdown.js";
+import { runSettlementOnce } from "../ledger/settlement-service.js";
+import { getStripeClient } from "../billing/stripe-client.js";
+import { runRevealExpiryOnce } from "../tips/reveal-expiry-worker.js";
+import {
+  runCoachPlanCreditExpiryOnce,
+  runCoachPlanCreditGrantOnce
+} from "../usage/coach-plan-credit-grant-worker.js";
+import { processGoalCycleTrendResearchJob } from "../goal-cycle/trends/trend-research-worker.js";
+import { runGoalCycleOutcomeRefreshOnce } from "../goal-cycle/outcomes/goal-cycle-outcome-worker.js";
 
 export type RegisterRelayBullMqWorkersDeps = {
   prisma: PrismaClient | null;
@@ -430,6 +453,209 @@ export function registerRelayBullMqWorkers(
           );
         },
         mk(RELAY_JOB_QUEUE_NAMES.POSTING_GOAL_NUDGE)
+      )
+    );
+
+    workers.push(
+      new Worker<DistributionScheduleReminderJobData>(
+        RELAY_JOB_QUEUE_NAMES.DISTRIBUTION_SCHEDULE_REMINDER,
+        async (job) => {
+          await runRelayBullMqJob(
+            log,
+            RELAY_JOB_QUEUE_NAMES.DISTRIBUTION_SCHEDULE_REMINDER,
+            job,
+            async () => {
+              await runDistributionScheduleReminderOnce(prisma, {
+                variantId: job.data?.variantId,
+                log
+              });
+            }
+          );
+        },
+        mk(RELAY_JOB_QUEUE_NAMES.DISTRIBUTION_SCHEDULE_REMINDER)
+      )
+    );
+
+    workers.push(
+      new Worker<AutopostScheduleSeriesJobData>(
+        RELAY_JOB_QUEUE_NAMES.AUTOPOST_SCHEDULE_SERIES,
+        async (job) => {
+          await runRelayBullMqJob(
+            log,
+            RELAY_JOB_QUEUE_NAMES.AUTOPOST_SCHEDULE_SERIES,
+            job,
+            async () => {
+              await runScheduleSeriesReconcileOnce(prisma, {
+                creatorId: job.data?.creatorId,
+                log
+              });
+            }
+          );
+        },
+        mk(RELAY_JOB_QUEUE_NAMES.AUTOPOST_SCHEDULE_SERIES)
+      )
+    );
+
+    workers.push(
+      new Worker<AutopostDistributionRulesJobData>(
+        RELAY_JOB_QUEUE_NAMES.AUTOPOST_DISTRIBUTION_RULES,
+        async (job) => {
+          await runRelayBullMqJob(
+            log,
+            RELAY_JOB_QUEUE_NAMES.AUTOPOST_DISTRIBUTION_RULES,
+            job,
+            async () => {
+              await runDistributionRulesReconcileOnce(prisma, {
+                creatorId: job.data?.creatorId,
+                log
+              });
+            }
+          );
+        },
+        mk(RELAY_JOB_QUEUE_NAMES.AUTOPOST_DISTRIBUTION_RULES)
+      )
+    );
+
+    workers.push(
+      new Worker<TipGrantJobData>(
+        RELAY_JOB_QUEUE_NAMES.TIP_GRANT,
+        async (job) => {
+          await runRelayBullMqJob(
+            log,
+            RELAY_JOB_QUEUE_NAMES.TIP_GRANT,
+            job,
+            async () => {
+              await runTipGrantOnce(prisma, {
+                accountId: job.data?.accountId,
+                log
+              });
+            }
+          );
+        },
+        mk(RELAY_JOB_QUEUE_NAMES.TIP_GRANT)
+      )
+    );
+
+    workers.push(
+      new Worker<BillCreditSettlementJobData>(
+        RELAY_JOB_QUEUE_NAMES.BILL_CREDIT_SETTLEMENT,
+        async (job) => {
+          await runRelayBullMqJob(
+            log,
+            RELAY_JOB_QUEUE_NAMES.BILL_CREDIT_SETTLEMENT,
+            job,
+            async () => {
+              const stripe = await getStripeClient({}, env);
+              await runSettlementOnce({
+                prisma,
+                stripe,
+                creatorId: job.data?.creatorId,
+                env,
+                log
+              });
+            }
+          );
+        },
+        mk(RELAY_JOB_QUEUE_NAMES.BILL_CREDIT_SETTLEMENT)
+      )
+    );
+
+    workers.push(
+      new Worker<RevealExpiryJobData>(
+        RELAY_JOB_QUEUE_NAMES.REVEAL_EXPIRY,
+        async (job) => {
+          await runRelayBullMqJob(
+            log,
+            RELAY_JOB_QUEUE_NAMES.REVEAL_EXPIRY,
+            job,
+            async () => {
+              await runRevealExpiryOnce(prisma, { env, log });
+            }
+          );
+        },
+        mk(RELAY_JOB_QUEUE_NAMES.REVEAL_EXPIRY)
+      )
+    );
+
+    workers.push(
+      new Worker<CoachPlanCreditGrantJobData>(
+        RELAY_JOB_QUEUE_NAMES.COACH_PLAN_CREDIT_GRANT,
+        async (job) => {
+          await runRelayBullMqJob(
+            log,
+            RELAY_JOB_QUEUE_NAMES.COACH_PLAN_CREDIT_GRANT,
+            job,
+            async () => {
+              await runCoachPlanCreditGrantOnce(prisma, {
+                creatorId: job.data?.creatorId,
+                env,
+                log
+              });
+            }
+          );
+        },
+        mk(RELAY_JOB_QUEUE_NAMES.COACH_PLAN_CREDIT_GRANT)
+      )
+    );
+
+    workers.push(
+      new Worker<CoachPlanCreditExpiryJobData>(
+        RELAY_JOB_QUEUE_NAMES.COACH_PLAN_CREDIT_EXPIRY,
+        async (job) => {
+          await runRelayBullMqJob(
+            log,
+            RELAY_JOB_QUEUE_NAMES.COACH_PLAN_CREDIT_EXPIRY,
+            job,
+            async () => {
+              await runCoachPlanCreditExpiryOnce(prisma, {
+                batchSize: job.data?.batchSize,
+                env,
+                log
+              });
+            }
+          );
+        },
+        mk(RELAY_JOB_QUEUE_NAMES.COACH_PLAN_CREDIT_EXPIRY)
+      )
+    );
+
+    workers.push(
+      new Worker<GoalCycleTrendResearchJobData>(
+        RELAY_JOB_QUEUE_NAMES.GOAL_CYCLE_TREND_RESEARCH,
+        async (job) => {
+          await runRelayBullMqJob(
+            log,
+            RELAY_JOB_QUEUE_NAMES.GOAL_CYCLE_TREND_RESEARCH,
+            job,
+            async () => {
+              await processGoalCycleTrendResearchJob(prisma, job.data, { env, log });
+            }
+          );
+        },
+        mk(RELAY_JOB_QUEUE_NAMES.GOAL_CYCLE_TREND_RESEARCH)
+      )
+    );
+
+    workers.push(
+      new Worker<GoalCycleOutcomeRefreshJobData>(
+        RELAY_JOB_QUEUE_NAMES.GOAL_CYCLE_OUTCOME_REFRESH,
+        async (job) => {
+          await runRelayBullMqJob(
+            log,
+            RELAY_JOB_QUEUE_NAMES.GOAL_CYCLE_OUTCOME_REFRESH,
+            job,
+            async () => {
+              await runGoalCycleOutcomeRefreshOnce(prisma, {
+                creatorId: job.data?.creatorId,
+                cycleId: job.data?.cycleId,
+                batchSize: job.data?.batchSize,
+                env,
+                log
+              });
+            }
+          );
+        },
+        mk(RELAY_JOB_QUEUE_NAMES.GOAL_CYCLE_OUTCOME_REFRESH)
       )
     );
   }

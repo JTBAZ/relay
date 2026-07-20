@@ -157,6 +157,15 @@ describe("pilot UX seed fixture (PUX-000)", () => {
     expect(spec.creators).toHaveLength(4);
     expect(spec.patron.followRelayCreatorIds).toHaveLength(3);
     expect(spec.patron.entitlements).toHaveLength(3);
+    const ava = spec.creators.find((c) => c.relayCreatorId === "rcx_pilot_dev_ava");
+    expect(ava?.creatorPlan).toBe("growth_engine");
+  });
+
+  it("rejects invalid creatorPlan in seed validation", () => {
+    const spec = loadPilotUxSeedSpec(fixturePath);
+    const bad = structuredClone(spec) as PilotUxSeedSpec;
+    bad.creators[0] = { ...bad.creators[0]!, creatorPlan: "free_forever" as never };
+    expect(validatePilotUxSeedSpec(bad).some((e) => e.includes("creatorPlan"))).toBe(true);
   });
 
   it("maps tier stable ids consistently with canonical store", () => {

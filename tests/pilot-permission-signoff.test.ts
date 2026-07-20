@@ -12,11 +12,12 @@ import {
 
 const ROOT = join(__dirname, "..");
 
+/** Post-G9 surfaces: legacy Inspect/PostBatch shells deleted; A&P + Power + sidebar remain. */
 const UI_SURFACES: Array<{ path: string; label: string }> = [
-  { path: "web/app/components/inspect/inspect-meta-sidebar.tsx", label: "inspect sidebar" },
   { path: "web/app/components/BulkActionBar.tsx", label: "bulk visibility panel" },
-  { path: "web/app/components/PostBatchPostDetails.tsx", label: "PostBatchPostDetails" },
-  { path: "web/app/components/LibraryPowerPanel.tsx", label: "LibraryPowerPanel placement" }
+  { path: "web/app/components/LibraryPowerPanel.tsx", label: "LibraryPowerPanel placement" },
+  { path: "web/app/components/studio/AudiencePromotionPanel.tsx", label: "Audience & Promotion" },
+  { path: "web/app/components/GallerySidebar.tsx", label: "GallerySidebar filters" }
 ];
 
 describe("PILOT-004 — permission model sign-off", () => {

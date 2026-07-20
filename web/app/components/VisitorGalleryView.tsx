@@ -28,6 +28,8 @@ import {
   buildGalleryQuery,
   fetchGalleryPostDetail,
   fetchPublicCreatorGalleryLayout,
+  galleryItemExportVisibleToVisitor,
+  galleryItemPreviewSrc,
   hasRelaySignedInCookie,
   listPatronCollections,
   listPatronFavorites,
@@ -41,13 +43,21 @@ import {
   type GalleryListData,
   type GalleryPostDetail,
   type PageLayout,
-  type PatronCollectionWithEntries
+  type PatronCollectionWithEntries,
+  type TipGatedDiscoverItem
 } from "@/lib/relay-api";
 import PatronLayoutSections from "@/app/components/patron/PatronLayoutSections";
 import CreatorPublicHero from "@/app/components/public-profile/CreatorPublicHero";
 import { buildPublicProfileHeroModel } from "@/lib/public-profile-hero";
 import PostBatchGridCell from "./PostBatchGridCell";
+import {
+  TipBlurredTile,
+  TipRevealModal
+} from "@/components/patron/TipRevealModal";
 import SnipIcon from "@/app/components/icons/SnipIcon";
+import { LockedPromoOverlay } from "@/app/components/visitor/LockedPromoOverlay";
+import { VisitorTierGateBackdrop } from "@/app/components/visitor/VisitorTierGateOverlay";
+import { trackedPromoHref } from "@/lib/effective-promo";
 import SnipToCollectionModal from "./SnipToCollectionModal";
 import { readGalleryVideoLoop, writeGalleryVideoLoop } from "@/lib/gallery-video-loop";
 import {
@@ -374,7 +384,7 @@ function VisitorPostModal({
                 </button>
               </>
             ) : null}
-            <div className="flex max-h-full w-full max-w-full items-center justify-center">
+            <div className="relative flex max-h-full min-h-[200px] w-full max-w-full items-center justify-center">
               {mainSrc && mainIsVideo ? (
                 <video
                   key={current.media_id}
@@ -392,6 +402,19 @@ function VisitorPostModal({
                   alt=""
                   className="mx-auto max-h-[min(78vh,680px)] w-auto max-w-full object-contain object-center p-1 md:p-2"
                 />
+              ) : currentLocked && detail?.effective_promo ? (
+                <div className="relative h-[min(52vh,420px)] w-full max-w-md overflow-hidden rounded-lg">
+                  <VisitorTierGateBackdrop previewSrc={galleryItemPreviewSrc(current)} />
+                  <LockedPromoOverlay
+                    unlockLabel="Members only"
+                    accentColor="var(--lib-selection, #9bf0c4)"
+                    effectivePromo={detail.effective_promo}
+                    variant="locked"
+                    onUpgradeClick={() =>
+                      onLockedPostReveal?.({ postId, mediaId: current.media_id })
+                    }
+                  />
+                </div>
               ) : (
                 <div className="flex min-h-[200px] flex-col items-center justify-center gap-3 p-8 text-[var(--lib-fg-muted)]">
                   <Lock className="h-12 w-12" strokeWidth={1.25} aria-hidden />
@@ -400,8 +423,28 @@ function VisitorPostModal({
                       ? "This asset is available on Patreon for eligible members."
                       : "Preview unavailable."}
                   </p>
+                  {currentLocked && detail?.effective_promo?.tracked_url ? (
+                    <a
+                      href={trackedPromoHref(detail.effective_promo)}
+                      className="rounded-md bg-[var(--lib-selection,#9bf0c4)] px-3 py-1.5 text-xs font-semibold text-[#0a0a0a]"
+                      data-locked-promo-cta
+                    >
+                      {detail.effective_promo.cta_text || "Unlock on Patreon"}
+                    </a>
+                  ) : null}
                 </div>
               )}
+              {currentLocked && detail?.effective_promo && mainSrc ? (
+                <LockedPromoOverlay
+                  unlockLabel="Members only"
+                  accentColor="var(--lib-selection, #9bf0c4)"
+                  effectivePromo={detail.effective_promo}
+                  variant="blurred"
+                  onUpgradeClick={() =>
+                    onLockedPostReveal?.({ postId, mediaId: current.media_id })
+                  }
+                />
+              ) : null}
             </div>
             {slideCount > 1 ? (
               <p className="pointer-events-none absolute bottom-3 left-1/2 z-[1] -translate-x-1/2 rounded-full border border-[color-mix(in_srgb,var(--lib-border)_55%,transparent)] bg-black/72 px-2.5 py-1 text-[10px] font-semibold tabular-nums tracking-wide text-[var(--lib-fg)]">
@@ -622,6 +665,9 @@ export default function VisitorGalleryView(props: VisitorGalleryViewProps = {}) 
   const [snippedMediaIds, setSnippedMediaIds] = useState<Set<string>>(() => new Set());
   const [snipTarget, setSnipTarget] = useState<{ postId: string; mediaId: string } | null>(null);
   const [patronAuthed, setPatronAuthed] = useState(false);
+  const [tipGated, setTipGated] = useState<TipGatedDiscoverItem[]>([]);
+  const [tipsBeta, setTipsBeta] = useState(false);
+  const [tipRevealItem, setTipRevealItem] = useState<TipGatedDiscoverItem | null>(null);
 
   const publicHeroModel = useMemo(
     () =>
@@ -843,6 +889,8 @@ export default function VisitorGalleryView(props: VisitorGalleryViewProps = {}) 
         )
       ]);
       setFacets(f);
+      setTipGated(visitorMode ? (f.tip_gated ?? []) : []);
+      setTipsBeta(visitorMode && f.tips_beta === true);
       setCollections(colRes.items.sort((a, b) => a.sort_order - b.sort_order));
 
       let layoutRes: PageLayout | null = null;
@@ -953,6 +1001,12 @@ export default function VisitorGalleryView(props: VisitorGalleryViewProps = {}) 
 
   /** One grid cell per post — same grouping as Library (`PostBatchGridCell`). */
   const postGroups = useMemo(() => groupGalleryItemsByPost(displayItems), [displayItems]);
+
+  const tipGatedByPostId = useMemo(() => {
+    const map = new Map<string, TipGatedDiscoverItem>();
+    for (const item of tipGated) map.set(item.post_id, item);
+    return map;
+  }, [tipGated]);
 
   const layoutMediaKindSet = useMemo(() => new Set(layoutMediaKinds), [layoutMediaKinds]);
 
@@ -1485,6 +1539,8 @@ export default function VisitorGalleryView(props: VisitorGalleryViewProps = {}) 
             accentColor={pageLayout.theme.accent_color?.trim() || "#00aa6f"}
             patronEngagement={visitorEngagement}
             onVisitorTierReveal={handleVisitorTierReveal}
+            tipGatedByPostId={tipsBeta ? tipGatedByPostId : undefined}
+            onTipSelect={(item) => setTipRevealItem(item)}
           />
         ) : loading ? (
           <p className="text-sm text-[var(--lib-fg-muted)]">Loading gallery…</p>
@@ -1500,7 +1556,22 @@ export default function VisitorGalleryView(props: VisitorGalleryViewProps = {}) 
           </p>
         ) : (
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
-            {postGroups.map((group) => (
+            {postGroups.map((group) => {
+              const primary = group.items[0]!;
+              const tipItem =
+                tipsBeta && !galleryItemExportVisibleToVisitor(primary)
+                  ? tipGatedByPostId.get(group.post_id)
+                  : undefined;
+              if (tipItem) {
+                return (
+                  <TipBlurredTile
+                    key={group.post_id}
+                    item={tipItem}
+                    onSelect={(selected) => setTipRevealItem(selected)}
+                  />
+                );
+              }
+              return (
               <PostBatchGridCell
                 key={group.post_id}
                 items={group.items}
@@ -1533,10 +1604,26 @@ export default function VisitorGalleryView(props: VisitorGalleryViewProps = {}) 
                 onInspect={(item) => void openModal(item)}
                 onVisitorTierReveal={handleVisitorTierReveal}
               />
-            ))}
+              );
+            })}
           </div>
         )}
       </main>
+
+      <TipRevealModal
+        open={Boolean(tipRevealItem) && tipsBeta}
+        item={tipRevealItem}
+        surface="artist_page"
+        onClose={() => setTipRevealItem(null)}
+        onRevealed={() => {
+          const revealedId = tipRevealItem?.post_id;
+          if (revealedId) {
+            setTipGated((prev) => prev.filter((t) => t.post_id !== revealedId));
+          }
+          setTipRevealItem(null);
+          void loadItems();
+        }}
+      />
 
       {showDevTierTool ? (
         <div className="fixed bottom-4 right-4 z-[60] w-[min(100vw-2rem,15rem)] rounded-lg border border-[var(--lib-border)] bg-[var(--lib-card)] p-2.5 shadow-xl">

@@ -18,9 +18,10 @@ import { designerUnlockLabelFromFacets } from "@/lib/tier-access";
 import { visitorMediaTierGateLocked } from "@/lib/visitor-tier-gate";
 import {
   VisitorTierGateBackdrop,
-  VisitorTierGateOverlay,
   type VisitorTierGateOverlayVariant
 } from "@/app/components/visitor/VisitorTierGateOverlay";
+import { LockedPromoOverlay } from "@/app/components/visitor/LockedPromoOverlay";
+import type { EffectivePromo } from "@/lib/effective-promo";
 import {
   VisitorPatronTileEngageCluster,
   type VisitorPatronTileSnipProps,
@@ -61,6 +62,8 @@ export type VisitorBatchSlideMediaProps = {
   patronMembershipUrl?: string | null;
   accentColor?: string;
   lockedOverlayVariant?: VisitorTierGateOverlayVariant;
+  /** Slice 9 — resolved locked promo for this post when available. */
+  effectivePromo?: EffectivePromo | null;
   visitorPatronStar?: VisitorPatronTileStarProps;
   visitorPatronSnip?: VisitorPatronTileSnipProps;
   onVisitorTierReveal?: (args: { postId: string; mediaId?: string }) => void;
@@ -83,6 +86,7 @@ export function VisitorBatchSlideMedia({
   patronMembershipUrl = null,
   accentColor = "#00aa6f",
   lockedOverlayVariant = "blurred",
+  effectivePromo = null,
   visitorPatronStar,
   visitorPatronSnip,
   onVisitorTierReveal
@@ -205,10 +209,11 @@ export function VisitorBatchSlideMedia({
                     }}
                   >
                     <VisitorTierGateBackdrop previewSrc={galleryItemPreviewSrc(item)} />
-                    <VisitorTierGateOverlay
+                    <LockedPromoOverlay
                       unlockLabel={designerUnlockLabelFromFacets(item, tierOrderIds, tierTitleById)}
                       accentColor={accentColor}
                       membershipUrl={patronMembershipUrl}
+                      effectivePromo={effectivePromo}
                       variant={lockedOverlayVariant}
                       onUpgradeClick={() =>
                         onVisitorTierReveal?.({

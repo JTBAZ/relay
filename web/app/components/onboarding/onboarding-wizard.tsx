@@ -8,7 +8,6 @@ import { cn } from "@/app/lib/cn";
 import { ProgressStepper, type OnboardingStep } from "./progress-stepper";
 import {
   PathPicker,
-  RoadmapPreview,
   StepClaimHandleAndGo,
   StepConnectPatreonCreator,
   StepConnectPatreonSupporter,
@@ -18,6 +17,10 @@ import {
   StepSupporterReady,
   type OnboardingPath,
 } from "./step-panels";
+import {
+  StepCreatorPlanChoice,
+  StepSupporterPlanChoice,
+} from "./onboarding-plan-step";
 import RelayUnifiedLogoV0 from "@/app/components/relay-unified-logo-v0";
 
 const CREATOR_STEPS: OnboardingStep[] = [
@@ -25,17 +28,19 @@ const CREATOR_STEPS: OnboardingStep[] = [
   { id: 2, label: "Username", description: "Choose your Relay alias" },
   { id: 3, label: "Patreon", description: "Connect your Patreon" },
   { id: 4, label: "Profile", description: "Name and avatar" },
-  { id: 5, label: "Sync & Review", description: "Import media and review your library" },
+  { id: 5, label: "Plan", description: "Choose your Relay plan" },
+  { id: 6, label: "Sync & Review", description: "Import media and review your library" },
 ];
 
 const SUPPORTER_STEPS: OnboardingStep[] = [
   { id: 1, label: "Account", description: "Create your Relay account" },
   { id: 2, label: "Username", description: "Choose your Relay alias" },
   { id: 3, label: "Patreon", description: "Connect your Patreon" },
-  { id: 4, label: "Feed", description: "Open your feed" },
+  { id: 4, label: "Plan", description: "Choose how you support" },
+  { id: 5, label: "Feed", description: "Open your feed" },
 ];
 
-export type WizardStep = 1 | 2 | 3 | 4 | 5;
+export type WizardStep = 1 | 2 | 3 | 4 | 5 | 6;
 
 function isPath(value: string | null | undefined): value is OnboardingPath {
   return value === "creator" || value === "supporter";
@@ -76,10 +81,14 @@ export function OnboardingWizard({
       setCurrentStep(2);
     } else if (s === "patreon" || s === "3") {
       setCurrentStep(clampStep(3, max));
-    } else if (s === "profile" || s === "4") {
+    } else if (s === "profile" || (s === "4" && p === "creator")) {
       setCurrentStep(clampStep(4, max));
-    } else if (s === "5" || s === "finish") {
+    } else if (s === "plan" || (s === "4" && p === "supporter")) {
+      setCurrentStep(clampStep(p === "supporter" ? 4 : 5, max));
+    } else if (s === "5") {
       setCurrentStep(clampStep(5, max));
+    } else if (s === "6" || s === "finish" || s === "sync") {
+      setCurrentStep(clampStep(6, max));
     } else if (s === "1" || s === "account") {
       setCurrentStep(1);
     }
@@ -168,17 +177,12 @@ export function OnboardingWizard({
 
       <main className="flex flex-1 items-center justify-center px-4 py-10 sm:py-16">
         {path === null ? (
-          <div
-            key="picker"
-            className="onboarding-panel-animate w-full max-w-3xl"
-          >
+          <div key="picker" className="onboarding-panel-animate w-full max-w-3xl">
             <PathPicker onChoose={handleChoosePath} />
           </div>
         ) : (
           <div className="flex w-full max-w-lg flex-col gap-8">
             <ProgressStepper steps={steps} currentStep={currentStep} />
-
-            <RoadmapPreview path={path} currentStep={currentStep} />
 
             <div
               key={`${path}-${currentStep}`}
@@ -265,15 +269,20 @@ function renderStep({
     return path === "creator" ? (
       <StepConnectPatreonCreator onConnected={onAdvance} />
     ) : (
-      <StepConnectPatreonSupporter initialClientId={initialPatronClientId} />
+      <StepConnectPatreonSupporter
+        initialClientId={initialPatronClientId}
+        onAdvance={onAdvance}
+      />
     );
   }
   if (path === "creator" && currentStep === 4) {
     return <StepCreatorProfileBasics onAdvance={onAdvance} />;
   }
-  return path === "creator" ? (
-    <StepClaimHandleAndGo />
-  ) : (
-    <StepSupporterReady />
-  );
+  if (path === "creator" && currentStep === 5) {
+    return <StepCreatorPlanChoice onAdvance={onAdvance} />;
+  }
+  if (path === "supporter" && currentStep === 4) {
+    return <StepSupporterPlanChoice onAdvance={onAdvance} />;
+  }
+  return path === "creator" ? <StepClaimHandleAndGo /> : <StepSupporterReady />;
 }

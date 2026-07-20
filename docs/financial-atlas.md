@@ -9,6 +9,7 @@ Use this document when:
 - Onboarding contributors who need business model context
 
 Related docs:
+- [MONETIZATION_MASTER_MAP.md](MONETIZATION_MASTER_MAP.md) — **implementation canon**: billing spine, Tip economy schema/services/workers, phased work items (this atlas stays the authority on prices and payout rates)
 - [monetization-scheme-infrastructure-plan.md](../monetization-scheme-infrastructure-plan.md) — infrastructure costs, COGS guardrails, hosting modes
 - [monetization-discovery-premium-agent-prompt.md](monetization-discovery-premium-agent-prompt.md) — agent constraints for Premium, promo, and boost mechanics
 - [road map.md](../road map.md) — Part 3 Workstreams K–N (patron identity, feed, discovery, audience monetization)

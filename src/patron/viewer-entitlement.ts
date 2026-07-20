@@ -35,6 +35,10 @@ import {
   evaluateTierRules,
   resolvePostAccessLevel
 } from "../clone/tier-rules.js";
+import {
+  hasOpenTipReveal,
+  openTipRevealPostIds
+} from "../tips/open-tip-reveal.js";
 
 export type ViewerEntitlementSourceTarget = {
   /** The creator who owns the source post being saved. */
@@ -80,6 +84,16 @@ function visibleDecision(
   };
 }
 
+function tipRevealVisible(
+  requiredTierIds: readonly string[]
+): ViewerEntitlementDecision {
+  return {
+    state: "visible",
+    required_tier_ids: [...requiredTierIds],
+    source: "tip_reveal"
+  };
+}
+
 /**
  * Single-target computation. Internally fetches the post + viewer's snapshot row.
  *
@@ -121,7 +135,19 @@ export async function computeViewerEntitlementForPost(
     args.source_creator_id
   ]);
   const tierCatalog = tiersByCreator.get(args.source_creator_id) ?? {};
-  return decideFromSnapshot(snap, requiredTierIds, tierCatalog);
+  const decided = decideFromSnapshot(snap, requiredTierIds, tierCatalog);
+  if (decided.state === "visible") return decided;
+
+  if (
+    await hasOpenTipReveal(args.prisma, {
+      patronAccountId: args.viewer_account_id,
+      postId: args.source_post_id,
+      now: args.now
+    })
+  ) {
+    return tipRevealVisible(requiredTierIds);
+  }
+  return decided;
 }
 
 /**
@@ -190,6 +216,7 @@ export async function computeViewerEntitlementsForPostsBulk(args: {
   const tiersByCreator = await getTierCatalogForCreators(args.prisma, creatorIds);
 
   // 3) Decide per target.
+  const lockedCandidates: ViewerEntitlementSourceTarget[] = [];
   for (const t of uniqueTargets.values()) {
     const info = postByKey.get(`${t.source_creator_id}\0${t.source_post_id}`);
     if (info === undefined) {
@@ -206,7 +233,22 @@ export async function computeViewerEntitlementsForPostsBulk(args: {
     }
     const snap = snapshotByCreator.get(t.source_creator_id) ?? null;
     const tierCatalog = tiersByCreator.get(t.source_creator_id) ?? {};
-    out.set(targetKey(t), decideFromSnapshot(snap, info.tierIds, tierCatalog));
+    const decided = decideFromSnapshot(snap, info.tierIds, tierCatalog);
+    out.set(targetKey(t), decided);
+    if (decided.state !== "visible") lockedCandidates.push(t);
+  }
+
+  if (args.viewer_account_id && lockedCandidates.length > 0) {
+    const revealed = await openTipRevealPostIds(args.prisma, {
+      patronAccountId: args.viewer_account_id,
+      postIds: lockedCandidates.map((t) => t.source_post_id),
+      now: args.now
+    });
+    for (const t of lockedCandidates) {
+      if (!revealed.has(t.source_post_id)) continue;
+      const info = postByKey.get(`${t.source_creator_id}\0${t.source_post_id}`);
+      out.set(targetKey(t), tipRevealVisible(info?.tierIds ?? []));
+    }
   }
 
   return out;

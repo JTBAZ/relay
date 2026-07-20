@@ -92,4 +92,49 @@ describe("getGalleryPlatformInstanceSummariesForPosts", () => {
       })
     ]);
   });
+
+  it("prefers platform instance contentVariantRole over member role", async () => {
+    const prisma = {
+      platformInstance: {
+        findMany: vi.fn().mockResolvedValue([
+          {
+            id: "pi_x_promo",
+            creatorId: CREATOR_ID,
+            postId: "post_standalone",
+            destination: "x",
+            externalUrl: "https://x.com/handle/status/2",
+            externalId: "2",
+            attemptId: "attempt_x",
+            linkSource: "autopost_success",
+            status: "active",
+            refreshPolicy: "conservative",
+            linkedAt: new Date("2026-06-01T00:00:00.000Z"),
+            lastRefreshedAt: new Date("2026-06-30T10:00:00.000Z"),
+            lastManualRefreshRequestedAt: null,
+            contentVariantRole: "promo"
+          }
+        ])
+      },
+      creativeWorkMember: {
+        findMany: vi.fn().mockResolvedValue([
+          { postId: "post_standalone", variantRole: "standalone" }
+        ])
+      }
+    };
+
+    const out = await getGalleryPlatformInstanceSummariesForPosts(
+      prisma as never,
+      CREATOR_ID,
+      ["post_standalone"],
+      NOW
+    );
+
+    expect(out.get("post_standalone")).toEqual([
+      expect.objectContaining({
+        platform_instance_id: "pi_x_promo",
+        destination: "x",
+        variant_role: "promo"
+      })
+    ]);
+  });
 });

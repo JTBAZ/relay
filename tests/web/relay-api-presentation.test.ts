@@ -82,4 +82,35 @@ describe("relay-api presentation (BO-RPB-06)", () => {
     });
     expect(got.presentation.tier_preview_settings).toEqual({ tiers: {} });
   });
+
+  it("PATCH encodes promo_preview_media_id alone (attach teaser)", async () => {
+    vi.mocked(fetch).mockResolvedValue(
+      new Response(
+        JSON.stringify(
+          envelope({
+            presentation: {
+              post_id: "p1",
+              relay_title: null,
+              relay_description: null,
+              media_order: [],
+              tier_preview_settings: null,
+              promo_preview_media_id: "staged_promo",
+              updated_at: "2026-07-15T12:00:00.000Z"
+            }
+          })
+        ),
+        { status: 200, headers: { "content-type": "application/json" } }
+      )
+    );
+    await patchPostPresentation({
+      relayCreatorId: "cr1",
+      postId: "p1",
+      promo_preview_media_id: "staged_promo"
+    });
+    const init = vi.mocked(fetch).mock.calls[0]?.[1] as RequestInit;
+    expect(JSON.parse(init.body as string)).toEqual({
+      creator_id: "cr1",
+      promo_preview_media_id: "staged_promo"
+    });
+  });
 });

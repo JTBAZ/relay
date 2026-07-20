@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useId, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { fetchRelayComposeTiers, resolveRelayComposeCampaignId, type TierFacet } from "@/lib/relay-api";
 
 export type CreatorTierCatalogMultiselectProps = {
@@ -41,8 +41,6 @@ export function CreatorTierCatalogMultiselect({
   onCampaignChange,
   "aria-labelledby": ariaLabelledBy
 }: CreatorTierCatalogMultiselectProps) {
-  const baseId = useId();
-  const publicId = `${baseId}-public`;
   const [tiers, setTiers] = useState<TierFacet[] | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -112,40 +110,40 @@ export function CreatorTierCatalogMultiselect({
     onChange([]);
   }, [onChange, onPublicChange]);
 
-  const selectTierOnly = useCallback(() => {
-    onPublicChange?.(false);
-  }, [onPublicChange]);
 
   const publicCardClass = isPublic
-    ? "border-[var(--lib-primary)] bg-[color-mix(in_srgb,var(--lib-primary)_14%,transparent)]"
-    : "border-[var(--lib-border)] bg-[var(--lib-input)] hover:border-[color-mix(in_srgb,var(--lib-primary)_35%,var(--lib-border))] hover:bg-[var(--lib-muted)]/30";
+    ? "border-[#00aa6f] bg-[rgba(0,170,111,0.08)] shadow-[0_0_12px_rgba(0,170,111,0.15)]"
+    : "border-[#2a2a2a] bg-[rgba(42,42,42,0.3)] hover:border-[rgba(0,170,111,0.4)] hover:bg-[rgba(42,42,42,0.5)]";
 
   const tierCardClass = (checked: boolean) =>
     checked
-      ? "border-[var(--lib-primary)] bg-[color-mix(in_srgb,var(--lib-primary)_12%,transparent)]"
-      : "border-[var(--lib-border)] bg-[var(--lib-input)] hover:border-[color-mix(in_srgb,var(--lib-primary)_35%,var(--lib-border))] hover:bg-[var(--lib-muted)]/30";
+      ? "border-[#00aa6f] bg-[rgba(0,170,111,0.08)] shadow-[0_0_12px_rgba(0,170,111,0.15)]"
+      : "border-[#2a2a2a] bg-[rgba(42,42,42,0.3)] hover:border-[rgba(0,170,111,0.4)] hover:bg-[rgba(42,42,42,0.5)]";
 
   const renderPublicOption = () => (
     <li>
-      <label
-        htmlFor={publicId}
-        className={`flex cursor-pointer items-start gap-3 rounded-lg border px-3 py-3 transition-colors ${publicCardClass}`}
+      <button
+        type="button"
+        onClick={selectPublic}
+        className={`w-full flex items-center gap-2.5 rounded-full border px-4 py-2.5 transition-all duration-200 text-left ${publicCardClass}`}
       >
-        <input
-          id={publicId}
-          type="radio"
-          name={`${baseId}-access-mode`}
-          className="mt-1 h-4 w-4 shrink-0 border-[var(--lib-border)] text-[var(--lib-primary)] focus:ring-[var(--lib-primary)]"
-          checked={isPublic}
-          onChange={selectPublic}
-        />
         <span className="min-w-0 flex-1">
-          <span className="block text-sm font-semibold text-[var(--lib-fg)]">Public</span>
-          <span className="mt-1 block text-xs leading-relaxed text-[var(--lib-fg-muted)]">
-            Anyone visiting your gallery will be able to see this content.
+          <span className="block text-xs font-semibold text-[#f9fafb]">Public</span>
+          <span className="block text-[10px] leading-snug text-[#9ca3af]">
+            Visible to all gallery visitors.
           </span>
         </span>
-      </label>
+        <span
+          className="w-5 h-5 rounded-full flex items-center justify-center shrink-0 transition-all duration-200"
+          style={{ background: isPublic ? "#00aa6f" : "#2a2a2a" }}
+        >
+          {isPublic && (
+            <svg width="10" height="10" viewBox="0 0 10 10" fill="none" aria-hidden>
+              <path d="M2 5L4.2 7.5L8 2.5" stroke="black" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          )}
+        </span>
+      </button>
     </li>
   );
 
@@ -199,37 +197,36 @@ export function CreatorTierCatalogMultiselect({
       <ul className="space-y-2 text-left">
         {renderPublicOption()}
         <li className="pt-1">
-          <div className="mx-auto my-1 h-px w-2/3 bg-[var(--lib-border)]/55" />
+          <div className="mx-auto my-1 h-px w-2/3 bg-[#2a2a2a]" />
         </li>
         {sorted.map((t) => {
-          const id = `${baseId}-${t.tier_id}`;
           const checked = value.includes(t.tier_id);
           return (
             <li key={t.tier_id}>
-              <label
-                htmlFor={id}
-                className={`flex cursor-pointer items-start gap-3 rounded-lg border px-3 py-3 transition-colors ${tierCardClass(checked)}`}
+              <button
+                type="button"
+                onClick={() => toggle(t.tier_id)}
+                className={`w-full flex items-center gap-2.5 rounded-full border px-4 py-2.5 transition-all duration-200 text-left ${tierCardClass(checked)}`}
               >
-                <input
-                  id={id}
-                  type="checkbox"
-                  className="mt-1 h-4 w-4 shrink-0 rounded border-[var(--lib-border)] text-[var(--lib-primary)] focus:ring-[var(--lib-primary)]"
-                  checked={checked}
-                  onFocus={selectTierOnly}
-                  onChange={() => toggle(t.tier_id)}
-                />
-                <span className="min-w-0 flex-1 text-sm text-[var(--lib-fg)]">
-                  <span className="font-semibold">{t.title}</span>
+                <span className="min-w-0 flex-1 text-xs font-medium text-[#f9fafb]">
+                  {t.title}
                   {typeof t.amount_cents === "number" && t.amount_cents > 0 ? (
-                    <span className="ml-1.5 text-xs text-[var(--lib-fg-muted)]">
+                    <span className="ml-1.5 text-[#9ca3af]">
                       ${(t.amount_cents / 100).toFixed(2)}/mo
                     </span>
                   ) : null}
-                  <span className="mt-1 block font-mono text-[10px] text-[var(--lib-fg-muted)]">
-                    {t.tier_id}
-                  </span>
                 </span>
-              </label>
+                <span
+                  className="w-5 h-5 rounded-full flex items-center justify-center shrink-0 transition-all duration-200"
+                  style={{ background: checked ? "#00aa6f" : "#2a2a2a" }}
+                >
+                  {checked && (
+                    <svg width="10" height="10" viewBox="0 0 10 10" fill="none" aria-hidden>
+                      <path d="M2 5L4.2 7.5L8 2.5" stroke="black" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                    </svg>
+                  )}
+                </span>
+              </button>
             </li>
           );
         })}

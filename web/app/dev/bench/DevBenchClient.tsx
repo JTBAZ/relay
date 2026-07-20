@@ -5,6 +5,12 @@ import { useEffect, useState } from "react";
 
 const steps = [
   {
+    href: "/dev/previewizer",
+    title: "Previewizer (dev)",
+    description:
+      "Canvas 2D focal crop, blur/pixelate/censor presets, text overlay, and local export.",
+  },
+  {
     href: "/dev/pipeline-parity",
     title: "Pipeline parity (truth matrix)",
     description:

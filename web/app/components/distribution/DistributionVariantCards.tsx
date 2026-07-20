@@ -116,6 +116,47 @@ function tagsToDraft(tags: string[]): string {
   return tags.join(", ");
 }
 
+/** `<input type="datetime-local">` uses local-wall-clock "YYYY-MM-DDTHH:mm" with no timezone. */
+function isoToDatetimeLocalValue(iso: string | null): string {
+  if (!iso) return "";
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "";
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+function datetimeLocalValueToIso(value: string): string | null {
+  if (!value.trim()) return null;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date.toISOString();
+}
+
+function formatScheduledFor(iso: string | null): string {
+  if (!iso) return "";
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toLocaleString(undefined, {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit"
+  });
+}
+
+function suggestedTimeFromAdvice(variant: DistributionVariantWire): string | null {
+  const raw = variant.advice?.suggested_post_time;
+  if (typeof raw !== "string" || !raw.trim()) return null;
+  // Older deterministic advice used a free-text hint ("Evening in your local timezone...");
+  // only surface it as a real schedulable time when it parses as an actual timestamp.
+  return Number.isNaN(new Date(raw).getTime()) ? null : raw;
+}
+
+function rationaleFromAdvice(variant: DistributionVariantWire): string | null {
+  const raw = variant.advice?.rationale;
+  return typeof raw === "string" && raw.trim() ? raw.trim() : null;
+}
+
 function relayCreatorPreviewIdentity(profile: CreatorProfileIdentity | null): {
   creatorName: string;
   avatarUrl: string | null;
@@ -245,6 +286,22 @@ export function DistributionVariantCards({
     void saveVariant(next);
   }
 
+  async function saveSchedule(
+    variant: DistributionVariantWire,
+    patch: { scheduled_for?: string | null; remind_me?: boolean }
+  ) {
+    updateLocal(variant.variant_id, patch);
+    setBusyId(variant.variant_id);
+    try {
+      const { variant: updated } = await patchDistributionVariant(variant.variant_id, patch);
+      const next = localVariants.map((v) => (v.variant_id === updated.variant_id ? updated : v));
+      setLocalVariants(next);
+      onVariantsChange(next);
+    } finally {
+      setBusyId(null);
+    }
+  }
+
   const progressLabel = useMemo(
     () => `${Math.min(activeIndex + 1, localVariants.length)} / ${localVariants.length}`,
     [activeIndex, localVariants.length]
@@ -322,6 +379,76 @@ export function DistributionVariantCards({
             ))}
           </ul>
         ) : null}
+
+        {activeVariant.assistant_enabled && rationaleFromAdvice(activeVariant) ? (
+          <div className="mb-4 rounded-lg border border-[#00aa6f]/30 bg-[#00aa6f]/[0.07] px-3 py-2.5">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[#00d488]">
+              Posting Assistant recommends
+            </p>
+            <p className="mt-1 text-[12px] text-[#e5faf1]">{rationaleFromAdvice(activeVariant)}</p>
+          </div>
+        ) : null}
+
+        <div className="mb-4 rounded-lg border border-white/[0.08] bg-black/30 px-3 py-2.5">
+          <div className="flex flex-wrap items-end gap-3">
+            <label className="text-xs text-[#9ca3af]">
+              <span className="block">Schedule for</span>
+              <input
+                type="datetime-local"
+                value={isoToDatetimeLocalValue(activeVariant.scheduled_for)}
+                onChange={(event) =>
+                  void saveSchedule(activeVariant, {
+                    scheduled_for: datetimeLocalValueToIso(event.target.value)
+                  })
+                }
+                className="mt-1 rounded-lg border bg-transparent px-2.5 py-1.5 text-xs text-[#f9fafb]"
+                style={{ borderColor: "#2a2a2a" }}
+              />
+            </label>
+            {suggestedTimeFromAdvice(activeVariant) && !activeVariant.scheduled_for ? (
+              <button
+                type="button"
+                onClick={() =>
+                  void saveSchedule(activeVariant, {
+                    scheduled_for: suggestedTimeFromAdvice(activeVariant)
+                  })
+                }
+                className="rounded-lg border px-2.5 py-1.5 text-[11px] font-semibold text-[#00d488]"
+                style={{ borderColor: "rgba(0,170,111,0.4)" }}
+              >
+                Use recommended: {formatScheduledFor(suggestedTimeFromAdvice(activeVariant))}
+              </button>
+            ) : null}
+            {activeVariant.scheduled_for ? (
+              <>
+                <label className="flex items-center gap-1.5 text-[11px] text-[#9ca3af]">
+                  <input
+                    type="checkbox"
+                    checked={activeVariant.remind_me}
+                    onChange={(event) =>
+                      void saveSchedule(activeVariant, { remind_me: event.target.checked })
+                    }
+                  />
+                  Remind me when it&apos;s time
+                </label>
+                <button
+                  type="button"
+                  onClick={() =>
+                    void saveSchedule(activeVariant, { scheduled_for: null, remind_me: false })
+                  }
+                  className="text-[11px] text-[#6b7280] underline"
+                >
+                  Clear
+                </button>
+              </>
+            ) : null}
+          </div>
+          <p className="mt-1.5 text-[10px] text-[#6b7280]">
+            {activeVariant.scheduled_for
+              ? `Queued for ${formatScheduledFor(activeVariant.scheduled_for)}. When you cross-post, we'll fill ${DESTINATION_LABEL[activeVariant.destination]}'s composer — use its own "Schedule" button to set the exact time.`
+              : "Optional — pick a time and we'll remind you (if opted in) instead of posting immediately."}
+          </p>
+        </div>
 
         <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_18rem]">
           <div className="space-y-3">

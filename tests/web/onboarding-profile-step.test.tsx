@@ -103,6 +103,7 @@ describe("<StepCreatorProfileBasics />", () => {
       ...baseIdentity,
       display_name: "Studio Display",
       username: "studio_handle",
+      username_norm: "studio_handle",
       avatar_url: "https://cdn.example/avatar.jpg",
       bio: "Pixel artist."
     });
@@ -111,7 +112,9 @@ describe("<StepCreatorProfileBasics />", () => {
     expect(
       (await screen.findByLabelText(/creator name/i)) as HTMLInputElement
     ).toHaveProperty("value", "Studio Display");
-    expect((screen.getByLabelText(/avatar image/i) as HTMLInputElement).value).toBe(
+    expect(screen.getByText(/avatar image/i)).toBeTruthy();
+    expect(screen.getByAltText(/avatar preview/i)).toHaveProperty(
+      "src",
       "https://cdn.example/avatar.jpg"
     );
     expect(
@@ -154,7 +157,11 @@ describe("<StepCreatorProfileBasics />", () => {
   });
 
   it("requires creator name", async () => {
-    getCreatorProfile.mockResolvedValue({ ...baseIdentity, username: "studio", username_norm: "studio" });
+    getCreatorProfile.mockResolvedValue({
+      ...baseIdentity,
+      username: "artist_handle",
+      username_norm: "artist_handle"
+    });
     const onAdvance = vi.fn();
     render(<StepCreatorProfileBasics onAdvance={onAdvance} />);
     await waitFor(() => expect(getCreatorProfile).toHaveBeenCalledTimes(1));
@@ -171,12 +178,12 @@ describe("<StepCreatorProfileBasics />", () => {
   it("claims URL from derived handle when profile is already uniform", async () => {
     getCreatorProfile.mockResolvedValue({
       ...baseIdentity,
-      display_name: "Studio",
-      username: "studio",
-      username_norm: "studio"
+      display_name: "Artist Studio",
+      username: "artist_handle",
+      username_norm: "artist_handle"
     });
     patchCreatorPublicSlug.mockResolvedValue({
-      public_slug: "studio",
+      public_slug: "artist-handle",
       slug_source: "user_chosen"
     });
     const onAdvance = vi.fn();
@@ -186,11 +193,15 @@ describe("<StepCreatorProfileBasics />", () => {
     fireEvent.click(screen.getByRole("button", { name: /save and continue/i }));
     await waitFor(() => expect(onAdvance).toHaveBeenCalledTimes(1));
     expect(patchCreatorProfile).not.toHaveBeenCalled();
-    expect(patchCreatorPublicSlug).toHaveBeenCalledWith("studio");
+    expect(patchCreatorPublicSlug).toHaveBeenCalledWith("artist-handle");
   });
 
   it("Surfaces server error message and does not advance", async () => {
-    getCreatorProfile.mockResolvedValue({ ...baseIdentity, username: "studio", username_norm: "studio" });
+    getCreatorProfile.mockResolvedValue({
+      ...baseIdentity,
+      username: "artist_handle",
+      username_norm: "artist_handle"
+    });
     patchCreatorProfile.mockRejectedValue(new Error("Display name is reserved."));
     const onAdvance = vi.fn();
     render(<StepCreatorProfileBasics onAdvance={onAdvance} />);

@@ -418,4 +418,74 @@ describe("mapOutboxEventToNotifications", () => {
       expect(out[0]?.kind).toBe("new_post_followed");
     });
   });
+
+  describe("reveal_expiring", () => {
+    it("emits reveal_expiring with clusterKey and offer attach", async () => {
+      const prisma = prismaWith({
+        tenantMembership: {
+          findFirst: vi.fn().mockResolvedValue({ id: "m-fan" })
+        },
+        postMarketingOffer: {
+          findFirst: vi.fn().mockResolvedValue({
+            headline: "Join for 20% off",
+            ctaText: "Upgrade",
+            redirectSlug: "offer-slug"
+          })
+        },
+        creatorProfile: {
+          findFirst: vi.fn().mockResolvedValue({ displayName: "Ada" })
+        }
+      });
+      const out = await mapOutboxEventToNotifications(
+        prisma,
+        event({
+          eventName: PEG_EVENT_NAMES.REVEAL_EXPIRING,
+          tenantId: "creator-1",
+          primaryId: "rev-1",
+          payload: {
+            reveal_id: "rev-1",
+            post_id: "post-9",
+            creator_id: "creator-1",
+            patron_account_id: "acct-fan",
+            expires_at: "2026-07-17T12:00:00.000Z",
+            cluster_key: "reveal_expiring:rev-1"
+          }
+        })
+      );
+      expect(out).toHaveLength(1);
+      expect(out[0]?.kind).toBe("reveal_expiring");
+      expect(out[0]?.recipientMembershipId).toBe("m-fan");
+      expect(out[0]?.clusterKey).toBe("reveal_expiring:rev-1");
+      expect(String(out[0]?.payload.body)).toMatch(/Ada.*closes tomorrow/i);
+      expect(out[0]?.payload.offer).toEqual({
+        headline: "Join for 20% off",
+        cta_text: "Upgrade",
+        slug: "offer-slug"
+      });
+    });
+
+    it("respects disabled reveal_expiring preference", async () => {
+      const prisma = prismaWith({
+        tenantMembership: {
+          findFirst: vi.fn().mockResolvedValue({ id: "m-fan" })
+        },
+        notificationPreference: {
+          findUnique: vi.fn().mockResolvedValue({ enabled: false })
+        }
+      });
+      const out = await mapOutboxEventToNotifications(
+        prisma,
+        event({
+          eventName: PEG_EVENT_NAMES.REVEAL_EXPIRING,
+          payload: {
+            reveal_id: "rev-1",
+            post_id: "post-9",
+            creator_id: "creator-1",
+            patron_account_id: "acct-fan"
+          }
+        })
+      );
+      expect(out).toEqual([]);
+    });
+  });
 });

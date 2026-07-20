@@ -33,6 +33,9 @@ import { startNotificationDigestWorker } from "./patron/notification-digest-work
 import { startAccountDeletionWorker } from "./patron/account-deletion-worker.js";
 import { startMediaStoragePurgeWorker } from "./storage/media-storage-purge-worker.js";
 import { startPostingGoalNudgeWorker } from "./autopost/posting-goal-nudge-worker.js";
+import { startScheduleSeriesWorker } from "./autopost/schedule-series-worker.js";
+import { startDistributionRulesWorker } from "./autopost/distribution-rule-worker.js";
+import { startDistributionScheduleReminderWorker } from "./distribution/distribution-schedule-reminder-worker.js";
 import {
   subscribeStarGraphqlIngestAutosyncRepeatEveryMsFromEnv,
   startSubscribeStarGraphqlIngestAutosyncTimer
@@ -200,6 +203,27 @@ export async function runRelayWorkerProcess(
         })
       : null;
 
+  const distributionScheduleReminderRunner =
+    jobBackend === "memory" && prisma
+      ? startDistributionScheduleReminderWorker(prisma, (msg, ctx) => {
+          log.warn({ ...(ctx ?? {}), relayMsg: msg }, "Relay worker");
+        })
+      : null;
+
+  const scheduleSeriesRunner =
+    jobBackend === "memory" && prisma
+      ? startScheduleSeriesWorker(prisma, (msg, ctx) => {
+          log.warn({ ...(ctx ?? {}), relayMsg: msg }, "Relay worker");
+        })
+      : null;
+
+  const distributionRulesRunner =
+    jobBackend === "memory" && prisma
+      ? startDistributionRulesWorker(prisma, (msg, ctx) => {
+          log.warn({ ...(ctx ?? {}), relayMsg: msg }, "Relay worker");
+        })
+      : null;
+
   let closeBullMqWorkers: RelayBullMqWorkersClose | undefined;
   if (jobBackend === "bullmq") {
     closeBullMqWorkers = registerRelayBullMqWorkers({
@@ -237,7 +261,10 @@ export async function runRelayWorkerProcess(
       notificationDigestRunner?.stop(),
       accountDeletionRunner?.stop(),
       mediaStoragePurgeRunner?.stop(),
-      postingGoalNudgeRunner?.stop()
+      postingGoalNudgeRunner?.stop(),
+      distributionScheduleReminderRunner?.stop(),
+      scheduleSeriesRunner?.stop(),
+      distributionRulesRunner?.stop()
     ].filter((p): p is Promise<void> => p !== undefined);
     await Promise.all(pending);
   }

@@ -16,6 +16,8 @@ export type PostPresentationOverlay = {
   relay_description?: string | null;
   media_order?: string[];
   tier_preview_settings?: Prisma.JsonValue | null;
+  /** Soft teaser pointer — never merged into `media_ids_ordered`. */
+  promo_preview_media_id?: string | null;
 };
 
 /**
@@ -36,6 +38,7 @@ export type EffectiveMergedPostPresentation = {
   description?: string;
   media_ids_ordered: string[];
   tier_preview_settings?: Prisma.JsonValue | null;
+  promo_preview_media_id?: string | null;
 };
 
 /**
@@ -94,12 +97,24 @@ export function mergePostPresentation(
     hasTierPreview = true;
   }
 
+  let promo_preview_media_id: EffectiveMergedPostPresentation["promo_preview_media_id"];
+  let hasPromoPreview = false;
+  if (overlay && "promo_preview_media_id" in overlay) {
+    const raw = overlay.promo_preview_media_id;
+    promo_preview_media_id =
+      raw === null || raw === undefined || String(raw).trim() === ""
+        ? null
+        : String(raw).trim();
+    hasPromoPreview = true;
+  }
+
   const sanitizedDescription = sanitizeOptionalPostDescriptionHtml(description);
 
   return {
     title,
     ...(sanitizedDescription !== undefined ? { description: sanitizedDescription } : {}),
     media_ids_ordered,
-    ...(hasTierPreview ? { tier_preview_settings } : {})
+    ...(hasTierPreview ? { tier_preview_settings } : {}),
+    ...(hasPromoPreview ? { promo_preview_media_id } : {})
   };
 }

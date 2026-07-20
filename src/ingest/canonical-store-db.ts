@@ -241,6 +241,7 @@ export class DbCanonicalStore implements CanonicalStore {
 
     const versionsByPost = new Map<string, PostVersionRow[]>();
     for (const v of postVersions) {
+      if (!v.publishedAt) continue;
       const pv: PostVersionRow = {
         version_seq: v.versionSeq,
         upstream_revision: v.upstreamRevision,

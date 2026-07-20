@@ -16,6 +16,16 @@ import {
   startPostLinkWatcher
 } from "./lib/post-link-listener";
 import {
+  getActiveScheduleReminderForTab,
+  handleScheduleReminderDismiss,
+  handleScheduleReminderDone,
+  handleScheduleReminderOpen,
+  handleScheduleReminderSnooze,
+  isScheduleReminderAlarm,
+  pollScheduleReminders,
+  startScheduleReminderWatcher
+} from "./lib/schedule-reminder-listener";
+import {
   buildPostLinkWatch,
   clearPostLinkWatch,
   getMostRecentActiveWatchForTab,
@@ -38,6 +48,11 @@ import {
   MSG_POST_LINK_FORGET,
   MSG_POST_LINK_GET_ACTIVE_WATCH,
   MSG_REVOKE_LOCAL,
+  MSG_SCHEDULE_REMINDER_DISMISS,
+  MSG_SCHEDULE_REMINDER_DONE,
+  MSG_SCHEDULE_REMINDER_GET_ACTIVE,
+  MSG_SCHEDULE_REMINDER_OPEN,
+  MSG_SCHEDULE_REMINDER_SNOOZE,
   MSG_START_CONSENT,
   MSG_STATUS,
   MSG_SYNC_NOW,
@@ -55,6 +70,7 @@ console.log("[relay:post-link] background service worker started", {
   extensionId: browser.runtime.id
 });
 startPostLinkWatcher();
+startScheduleReminderWatcher();
 void purgeLegacyPostLinkWatchKeys();
 
 /** Match `externally_connectable`. Dev-only localhost checks use `import.meta.env.DEV` so prod bundles stay free of `localhost` (P-12). */
@@ -86,12 +102,17 @@ browser.runtime.onStartup.addListener(() => {
 });
 
 browser.alarms.onAlarm.addListener((alarm) => {
-  if (alarm.name !== ALARM_RELAY_COOKIE) return;
-  void (async () => {
-    const g = await storage.getGrant();
-    if (!g) return;
-    await syncNow();
-  })();
+  if (alarm.name === ALARM_RELAY_COOKIE) {
+    void (async () => {
+      const g = await storage.getGrant();
+      if (!g) return;
+      await syncNow();
+    })();
+    return;
+  }
+  if (isScheduleReminderAlarm(alarm.name)) {
+    void pollScheduleReminders();
+  }
 });
 
 browser.cookies.onChanged.addListener((changeInfo) => {
@@ -274,6 +295,37 @@ async function handleInternalMessage(
       }
       const watch: PostLinkWatch | null = await getMostRecentActiveWatchForTab(tabId);
       return { ok: true as const, watch };
+    }
+    case MSG_SCHEDULE_REMINDER_GET_ACTIVE: {
+      const tabId = sender?.tab?.id;
+      if (typeof tabId !== "number") {
+        return { ok: false as const, error: "missing_tab", packet: null };
+      }
+      const packet = getActiveScheduleReminderForTab(tabId);
+      return { ok: true as const, packet };
+    }
+    case MSG_SCHEDULE_REMINDER_OPEN: {
+      if (raw.type !== MSG_SCHEDULE_REMINDER_OPEN) return undefined;
+      handleScheduleReminderOpen(raw.open_url);
+      return { ok: true as const };
+    }
+    case MSG_SCHEDULE_REMINDER_DONE: {
+      if (raw.type !== MSG_SCHEDULE_REMINDER_DONE) return undefined;
+      const ok = await handleScheduleReminderDone(raw.reminder_id, raw.task_id);
+      return { ok };
+    }
+    case MSG_SCHEDULE_REMINDER_DISMISS: {
+      if (raw.type !== MSG_SCHEDULE_REMINDER_DISMISS) return undefined;
+      const ok = await handleScheduleReminderDismiss(raw.reminder_id);
+      return { ok };
+    }
+    case MSG_SCHEDULE_REMINDER_SNOOZE: {
+      if (raw.type !== MSG_SCHEDULE_REMINDER_SNOOZE) return undefined;
+      const ok = await handleScheduleReminderSnooze(
+        raw.reminder_id,
+        typeof raw.snooze_minutes === "number" ? raw.snooze_minutes : 60
+      );
+      return { ok };
     }
     case MSG_POST_LINK_CANDIDATE_URL: {
       if (raw.type !== MSG_POST_LINK_CANDIDATE_URL) return undefined;

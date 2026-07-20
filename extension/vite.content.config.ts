@@ -14,6 +14,7 @@ const entries: Record<string, string> = {
   "fill-deviantart-submit": resolve(__dirname, "src/content/fill-deviantart-submit.ts"),
   "post-link-toast": resolve(__dirname, "src/content/post-link-toast.ts"),
   "post-link-x-observer": resolve(__dirname, "src/content/post-link-x-observer.ts"),
+  "schedule-reminder-toast": resolve(__dirname, "src/content/schedule-reminder-toast.ts"),
   "scrape-patreon-metrics": resolve(__dirname, "src/content/scrape-patreon-metrics.ts")
 };
 
@@ -31,6 +32,10 @@ const bundleConfig: Record<string, { fileName: string; globalName: string }> = {
   "post-link-x-observer": {
     fileName: "post-link-x-observer.js",
     globalName: "RelayPostLinkXObserver"
+  },
+  "schedule-reminder-toast": {
+    fileName: "schedule-reminder-toast.js",
+    globalName: "RelayScheduleReminderToast"
   },
   "scrape-patreon-metrics": {
     fileName: "scrape-patreon-metrics.js",

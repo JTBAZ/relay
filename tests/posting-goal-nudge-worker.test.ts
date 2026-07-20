@@ -96,18 +96,21 @@ describe("posting-goal nudge worker", () => {
 
   it("creates a separate bonus_post nudge when target is met and bonus media exists", async () => {
     const create = vi.fn().mockResolvedValue({ id: "bonus1" });
+    const updateMany = vi.fn().mockResolvedValue({ count: 0 });
     const prisma = prismaStub({
       post: { count: vi.fn().mockResolvedValue(1) },
       mediaAsset: { count: vi.fn().mockResolvedValue(3) },
       creatorPostingNudge: {
         findMany: vi.fn().mockResolvedValue([]),
-        create
+        create,
+        updateMany
       }
     });
 
     const result = await processPostingGoalNudgeForCreator(prisma, goalRow, now);
     expect(result.posting_goal_nudge_created).toBe(false);
     expect(result.bonus_post_nudge_created).toBe(true);
+    expect(updateMany).toHaveBeenCalled();
     expect(create).toHaveBeenCalledWith({
       data: {
         creatorId: "cr1",

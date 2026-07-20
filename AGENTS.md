@@ -14,6 +14,7 @@
 | **`.docs/anthropic/PRODUCT_UX_NORTH_STAR.md`** | Artist Relay vs Fan Relay. |
 | **`docs/UI_SPECIALIST_RELAY.md`** | Relay UI/UX scope: `web/`, patron mock, guardrails, verification. |
 | **`docs/qa/UX_ACCEPTANCE_GUARDRAILS.md`** | Pass/fail UX expectations. |
+| **`docs/studio/goal-cycle-build-plans/00-README.md`** | **Goal Cycle worker program:** Library-first Coach planning, credits, trend evidence, paid-support attribution, rail materialization, extension execution, outcomes, and rollout. Claim slices in dependency order and use its builder orientation. |
 | **`docs/qa/HTTP_VERB_HYGIENE.md`** | GETs are side-effect-free; mutations use POST/PUT/PATCH/DELETE (logout is POST only). |
 | **`.cursor/rules/airtable-execution-control-plane.mdc`** | IDE mirror: read ledger before work, batching, MCP hygiene. |
 | **`docs/pilot-build-plan.md`** | Pilot execution: Phases P0–P9, Airtable-style work items, v0 asset register, exit checklist. |
@@ -39,7 +40,7 @@
 
 **Multi-tenant + cloud (Supabase target):** **Agent preamble for Airtable Multi Tenant Changes** — [`docs/architecture/MULTI_TENANT_AGENT_ORIENTATION.md`](docs/architecture/MULTI_TENANT_AGENT_ORIENTATION.md). Runtime schema — [`docs/architecture/multi-tenant-cloud-runtime.md`](docs/architecture/multi-tenant-cloud-runtime.md); migration work items — [`docs/architecture/supabase-migration-work-items.md`](docs/architecture/supabase-migration-work-items.md); identity Option B — [`docs/architecture/multi-tenant-option-b.md`](docs/architecture/multi-tenant-option-b.md).
 
-**Strategic narrative:** [`road map.md`](road%20map.md). **Business / unit economics:** **`docs/financial-atlas.md`**.
+**Strategic narrative:** [`road map.md`](road%20map.md). **Goal Cycle product/build contract:** [`docs/studio/GOAL_CYCLE_PRODUCT_CONTRACT.md`](docs/studio/GOAL_CYCLE_PRODUCT_CONTRACT.md) and [`docs/studio/goal-cycle-build-plans/00-README.md`](docs/studio/goal-cycle-build-plans/00-README.md). **Schedule Rail Automations worker program:** [`docs/studio/automation-build-plans/00-README.md`](docs/studio/automation-build-plans/00-README.md) — connector-first composition of series, rules, drafts, rail/reminders, Previewizer, and human-confirmed distribution. **Business / unit economics:** **`docs/financial-atlas.md`**. **Monetization build plan (billing spine + Tip economy):** [`docs/MONETIZATION_MASTER_MAP.md`](docs/MONETIZATION_MASTER_MAP.md).
 
 ---
 

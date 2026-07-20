@@ -31,6 +31,14 @@ export type PilotUxSeedPost = {
   mediaId: string;
 };
 
+export const PILOT_UX_CREATOR_PLANS = [
+  "studio_core",
+  "autopost",
+  "growth_engine"
+] as const;
+
+export type PilotUxCreatorPlanId = (typeof PILOT_UX_CREATOR_PLANS)[number];
+
 export type PilotUxSeedCreator = {
   relayCreatorId: string;
   accountKey: string;
@@ -41,6 +49,11 @@ export type PilotUxSeedCreator = {
   posts: PilotUxSeedPost[];
   /** Repeatable sign-up walkthrough — profile starts disconnected from Patreon. */
   onboardingWalkthrough?: boolean;
+  /**
+   * Server-side CreatorPlanEntitlement (source `pilot`).
+   * Omit for free / paywall-lab accounts (e.g. onboarding walkthrough).
+   */
+  creatorPlan?: PilotUxCreatorPlanId;
 };
 
 export type PilotUxSeedPatronEntitlement = {
@@ -146,6 +159,16 @@ export function validatePilotUxSeedSpec(spec: unknown): string[] {
     creatorIds.add(c.relayCreatorId);
     if (!accountKeys.has(c.accountKey)) {
       errors.push(`creator ${c.relayCreatorId}: unknown accountKey ${c.accountKey}`);
+    }
+    if (c.creatorPlan !== undefined) {
+      if (
+        typeof c.creatorPlan !== "string" ||
+        !(PILOT_UX_CREATOR_PLANS as readonly string[]).includes(c.creatorPlan)
+      ) {
+        errors.push(
+          `creator ${c.relayCreatorId}: creatorPlan must be studio_core | autopost | growth_engine`
+        );
+      }
     }
     const tierIds = new Set(c.tiers.map((t) => t.relayTierId));
     for (const p of c.posts) {

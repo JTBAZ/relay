@@ -7,20 +7,16 @@
  */
 
 import type { PrismaClient } from "@prisma/client";
-
-import {
-
-  MediaUpstreamStatus,
-
-  PostSource,
-
-  PostUpstreamStatus
-
-} from "@prisma/client";
+import { PostSource, PostUpstreamStatus } from "@prisma/client";
 
 import { mergePostPresentation } from "../gallery/effective-presentation.js";
-
 import { stripHtmlForSearch } from "../gallery/query.js";
+import {
+  buildCrossPostMediaEntries,
+  crossPostMediaContentUrlPath
+} from "./cross-post-media-entries.js";
+
+export { crossPostMediaContentUrlPath };
 
 
 
@@ -120,65 +116,11 @@ export type BuildDeviantArtCrossPostPackageResult =
 
 
 
-/** Relay export route used by the extension to fetch media bytes with its bearer token. */
-
-export function crossPostMediaContentUrlPath(creatorId: string, mediaId: string): string {
-
-  return `/api/v1/export/media/${encodeURIComponent(creatorId)}/${encodeURIComponent(mediaId)}/content`;
-
-}
-
-
-
 const X_POST_TEXT_MAX = 280;
 
 const X_IMAGE_MAX = 4;
 
 const DEVIANTART_IMAGE_MAX = 1;
-
-
-
-function filenameForMedia(mediaId: string, mimeType: string | null | undefined): string {
-
-  const safeBase = mediaId.replace(/[^\w.-]+/g, "_");
-
-  if (!mimeType?.trim()) {
-
-    return safeBase;
-
-  }
-
-  const mime = mimeType.trim().toLowerCase();
-
-  const ext =
-
-    mime === "image/jpeg"
-
-      ? ".jpg"
-
-      : mime === "image/png"
-
-        ? ".png"
-
-        : mime === "image/gif"
-
-          ? ".gif"
-
-          : mime === "image/webp"
-
-            ? ".webp"
-
-            : mime.startsWith("image/")
-
-              ? ".img"
-
-              : "";
-
-  return ext ? `${safeBase}${ext}` : safeBase;
-
-}
-
-
 
 function bodyFieldsFromDescription(
 
@@ -207,16 +149,6 @@ function bodyFieldsFromDescription(
   return { body_text: body_text || html };
 
 }
-
-
-
-function isImageMimeType(mimeType: string | null | undefined): boolean {
-
-  return Boolean(mimeType?.trim().toLowerCase().startsWith("image/"));
-
-}
-
-
 
 export function formatXPostText(title: string, bodyText: string, maxLen = X_POST_TEXT_MAX): string {
 
@@ -385,70 +317,9 @@ export async function buildRelayCrossPostPackage(
 
 
   const { body_text, body_html } = bodyFieldsFromDescription(merged.description);
-
   const mediaIds = merged.media_ids_ordered;
 
-
-
-  const mediaRows =
-
-    mediaIds.length === 0
-
-      ? []
-
-      : await prisma.mediaAsset.findMany({
-
-          where: {
-
-            id: { in: mediaIds },
-
-            creatorId,
-
-            upstreamStatus: MediaUpstreamStatus.active
-
-          },
-
-          select: {
-
-            id: true,
-
-            currentMimeType: true
-
-          }
-
-        });
-
-
-
-  const byId = new Map(mediaRows.map((row) => [row.id, row]));
-
-  const ordered = mediaIds
-
-    .map((id) => byId.get(id))
-
-    .filter((row): row is (typeof mediaRows)[number] => Boolean(row));
-
-
-
-  const images = ordered.filter((row) => isImageMimeType(row.currentMimeType));
-
-  const nonImages = ordered.filter((row) => !isImageMimeType(row.currentMimeType));
-
-
-
-  const media: RelayCrossPostPackageMedia[] = [...images, ...nonImages].map((row) => ({
-
-    media_id: row.id,
-
-    filename: filenameForMedia(row.id, row.currentMimeType),
-
-    mime_type: row.currentMimeType?.trim() || "application/octet-stream",
-
-    content_url: crossPostMediaContentUrlPath(creatorId, row.id)
-
-  }));
-
-
+  const media = await buildCrossPostMediaEntries(prisma, creatorId, mediaIds);
 
   const pkg: RelayCrossPostPackage = {
 

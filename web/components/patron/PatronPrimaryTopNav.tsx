@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Bell, ChevronDown, Heart, Home, LogOut, User, type LucideIcon } from "lucide-react";
+import { Bell, ChevronDown, Coins, Heart, Home, LogOut, User, type LucideIcon } from "lucide-react";
 import { PatronProfileAssetImage } from "@/components/patron/PatronProfileAssetImage";
 import { RelayMarkIcon } from "@/components/patron/relay/relay-mark-icon";
 import { fetchPatronProfileMe } from "@/lib/patron-profile-api";
@@ -13,6 +13,7 @@ import {
   type PatronSessionMe,
 } from "@/lib/relay-api";
 import { performRelayLogout } from "@/lib/relay-session-logout";
+import { TipWalletChip } from "@/components/patron/TipWalletChip";
 
 export const PATRON_PRIMARY_NAV_ITEMS: ReadonlyArray<{
   href: string;
@@ -197,6 +198,7 @@ export function PatronPrimaryTopNav({
       </nav>
 
       <div className="relative z-20 ml-auto flex shrink-0 items-center" ref={accountMenuRef}>
+        <TipWalletChip />
         <button
           type="button"
           onClick={() => setAccountMenuOpen((open) => !open)}
@@ -242,6 +244,16 @@ export function PatronPrimaryTopNav({
                 User {truncateMiddleId(me.user_id)}
               </p>
             </div>
+            <Link
+              href="/plans"
+              role="menuitem"
+              onClick={() => setAccountMenuOpen(false)}
+              className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-[#888888] transition-colors hover:bg-[#1f1f1f] hover:text-[#E0E0E0]"
+              data-testid="patron-nav-plans"
+            >
+              <Coins size={14} aria-hidden />
+              Tips &amp; plans
+            </Link>
             <Link
               href="/settings"
               role="menuitem"

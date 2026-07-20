@@ -13,6 +13,8 @@ Read **[PRODUCT_UX_NORTH_STAR.md](../.docs/anthropic/PRODUCT_UX_NORTH_STAR.md)**
 
 **Strategic context:** [`road map.md`](../road%20map.md). **Pass/fail UX expectations:** [`UX_ACCEPTANCE_GUARDRAILS.md`](qa/UX_ACCEPTANCE_GUARDRAILS.md) (personas, key routes, OAuth route separation).
 
+**Binding visual + code style rules:** [`RELAY_DESIGN_CODE.md`](RELAY_DESIGN_CODE.md) — tokens, color grammar, the canonical post media card spec, state display, and code conventions. Follow it for every front-end element.
+
 ---
 
 ## Canonical web (implement here only)

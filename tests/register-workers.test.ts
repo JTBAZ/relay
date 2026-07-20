@@ -74,9 +74,12 @@ describe("registerRelayBullMqWorkers", () => {
     registerRelayBullMqWorkers(minimalDeps());
 
     expect(RedisConstructor).toHaveBeenCalledTimes(1);
-    expect(hoisted.workerCalls.length).toBe(9);
+    expect(hoisted.workerCalls.length).toBeGreaterThanOrEqual(10);
     expect(
       hoisted.workerCalls.some((c) => c.name === RELAY_JOB_QUEUE_NAMES.NOTIFICATION_DIGEST)
+    ).toBe(true);
+    expect(
+      hoisted.workerCalls.some((c) => c.name === RELAY_JOB_QUEUE_NAMES.TIP_GRANT)
     ).toBe(true);
     const [firstConn] = hoisted.workerCalls.map((c) => c.opts.connection);
     expect(

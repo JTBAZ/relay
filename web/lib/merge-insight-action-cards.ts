@@ -24,7 +24,7 @@ function wireToCard(action: PerformanceInsightActionWire): InsightActionCard {
     actionLabel: action.action_label ?? undefined,
     href: action.href ?? undefined,
     tone: action.tone,
-    confidence: action.confidence,
+    confidence: action.confidence === "unknown" ? undefined : action.confidence,
     source: "performance"
   };
 }

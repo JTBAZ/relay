@@ -94,7 +94,18 @@ export function PlatformSelectionPanel({
                 />
                 Posting Assistant optimization
                 {!postingAssistantAllowed ? (
-                  <span className="text-[10px] text-[#6b7280]">(upgrade required)</span>
+                  <span className="text-[10px] text-[#6b7280]">
+                    (upgrade required —{" "}
+                    <a
+                      href="/studio/settings/billing?feature=posting_assistant"
+                      className="text-[#00AA6F] underline-offset-2 hover:underline"
+                      data-testid="platform-assistant-billing-link"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      View plans
+                    </a>
+                    )
+                  </span>
                 ) : null}
               </label>
             ) : null}

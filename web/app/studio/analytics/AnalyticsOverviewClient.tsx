@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { AnalyticsInsightsHub } from "./AnalyticsInsightsHub";
+import { InsightsActionHub } from "./action-hub/InsightsActionHub";
 import { pickHottestFromPostPerformance } from "@/lib/analytics-pulse";
 import {
   fetchCreatorMembershipCohorts,
@@ -10,6 +11,7 @@ import {
   fetchCreatorTierStickiness,
   fetchCreatorUnifiedPerformance,
   fetchCreatorUsagePreview,
+  fetchCreatorTipBetaStats,
   createPerformanceGoal,
   deletePerformanceGoal,
   fetchCreativeWorkBundleSuggestions,
@@ -29,6 +31,7 @@ import {
   type CreatorUnifiedPerformanceData,
   type CreatorUnifiedPerformanceRange,
   type CreatorUsagePreviewData,
+  type CreatorTipBetaStatsData,
   type PerformanceCampaignRollupsData,
   type PerformanceGoalsData,
   type PerformanceGoalSuggestionWire,
@@ -323,6 +326,7 @@ export default function AnalyticsOverviewClient() {
   const [performanceRange, setPerformanceRange] =
     useState<CreatorUnifiedPerformanceRange>("30d");
   const [usagePreview, setUsagePreview] = useState<CreatorUsagePreviewData | null>(null);
+  const [tipBetaStats, setTipBetaStats] = useState<CreatorTipBetaStatsData | null>(null);
   const [performanceOverview, setPerformanceOverview] = useState<PerformanceOverviewData | null>(null);
   const [performanceCampaigns, setPerformanceCampaigns] =
     useState<PerformanceCampaignRollupsData | null>(null);
@@ -341,6 +345,7 @@ export default function AnalyticsOverviewClient() {
   const [errPerformance, setErrPerformance] = useState<string | null>(null);
   const [errUnifiedPerformance, setErrUnifiedPerformance] = useState<string | null>(null);
   const [errUsagePreview, setErrUsagePreview] = useState<string | null>(null);
+  const [errTipBetaStats, setErrTipBetaStats] = useState<string | null>(null);
   const [errPerformanceHierarchy, setErrPerformanceHierarchy] = useState<string | null>(null);
 
   const [csvFile, setCsvFile] = useState<File | null>(null);
@@ -355,6 +360,7 @@ export default function AnalyticsOverviewClient() {
     setErrPerformance(null);
     setErrUnifiedPerformance(null);
     setErrUsagePreview(null);
+    setErrTipBetaStats(null);
     setErrPerformanceHierarchy(null);
 
     const hierarchyParams = {
@@ -362,7 +368,7 @@ export default function AnalyticsOverviewClient() {
       destination: hierarchyDestination
     };
 
-    const [r1, r1_7, r2, r3, r4, r5, r6, r7, r8, r9, r10, r11, r12, r13] = await Promise.allSettled([
+    const [r1, r1_7, r2, r3, r4, r5, r6, r6b, r7, r8, r9, r10, r11, r12, r13] = await Promise.allSettled([
       fetchCreatorMembershipSummary({ days: 30 }),
       fetchCreatorMembershipSummary({ days: 7 }),
       fetchCreatorMembershipCohorts({ cohortMonths: 12, maxOffset: 12 }),
@@ -374,6 +380,7 @@ export default function AnalyticsOverviewClient() {
       }),
       fetchCreatorUnifiedPerformance({ range: performanceRange, topPostsLimit: 20 }),
       fetchCreatorUsagePreview({ days: 30 }),
+      fetchCreatorTipBetaStats(),
       fetchPerformanceOverview(hierarchyParams),
       fetchPerformanceCampaignRollups({ range: performanceRange }),
       fetchPerformanceTagRollups({ range: performanceRange }),
@@ -431,6 +438,15 @@ export default function AnalyticsOverviewClient() {
     } else {
       setUsagePreview(null);
       setErrUsagePreview(r6.reason instanceof Error ? r6.reason.message : String(r6.reason));
+    }
+
+    if (r6b.status === "fulfilled") {
+      setTipBetaStats(r6b.value);
+    } else {
+      setTipBetaStats(null);
+      setErrTipBetaStats(
+        r6b.reason instanceof Error ? r6b.reason.message : String(r6b.reason)
+      );
     }
 
     if (r7.status === "fulfilled") {
@@ -645,7 +661,7 @@ export default function AnalyticsOverviewClient() {
   const insightsPerformance = useMemo(() => withDevelopmentCadenceDemo(performance), [performance]);
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col gap-5 bg-[#050706] px-3 py-4 text-[#E0E0E0] sm:px-6">
+    <div className="flex min-h-0 flex-1 flex-col gap-5 bg-[var(--relay-bg,#050706)] px-3 py-4 text-[var(--relay-fg,#E0E0E0)] sm:px-6 [--relay-bg:#0a0a0a] [--relay-surface-1:#111111] [--relay-surface-2:#1a1a1a] [--relay-fg:#f9fafb] [--relay-fg-muted:#9ca3af] [--relay-fg-subtle:#6b7280]">
       {loading ? (
         <div
           className="flex min-h-[120px] items-center justify-center text-sm text-[#888]"
@@ -657,28 +673,7 @@ export default function AnalyticsOverviewClient() {
 
       {!loading ? (
         <>
-          <AnalyticsInsightsHub
-            performance={insightsPerformance}
-            unifiedPerformance={unifiedPerformance}
-            performanceRange={performanceRange}
-            onPerformanceRangeChange={handlePerformanceRangeChange}
-            summary={summary}
-            summary7d={summary7d}
-            stickiness={stickiness}
-            usagePreview={usagePreview}
-            actionCards={creatorActionCards}
-            performanceOverview={performanceOverview}
-            performanceCampaigns={performanceCampaigns}
-            performanceTags={performanceTags}
-            performanceWorks={performanceWorks}
-            bundleSuggestions={bundleSuggestions}
-            hierarchyDestination={hierarchyDestination}
-            onHierarchyDestinationChange={handleHierarchyDestinationChange}
-            performanceGoals={performanceGoals}
-            goalsBusySuggestionId={goalsBusySuggestionId}
-            onAdoptPerformanceGoalSuggestion={handleAdoptPerformanceGoalSuggestion}
-            onRemovePerformanceGoal={handleRemovePerformanceGoal}
-          />
+          <InsightsActionHub unifiedPerformance={unifiedPerformance} />
 
           {errPerformanceHierarchy ? (
             <p
@@ -715,11 +710,11 @@ export default function AnalyticsOverviewClient() {
             <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-[#E8E8E8] [&::-webkit-details-marker]:hidden">
               <div>
                 <h2 className="font-[family-name:var(--font-display)] text-base font-semibold tracking-tight">
-                  Detailed data and imports
+                  Studio data
                 </h2>
                 <p className="mt-1 text-xs leading-relaxed text-[#888]">
-                  CSV upload, source tables, cohorts, stickiness, and usage diagnostics live here so the insight
-                  families stay focused.
+                  Goals, trends, actions, CSV upload, cohorts, stickiness, and usage diagnostics — demoted so
+                  Coach stays the primary surface.
                 </p>
               </div>
               <span className="text-[#6a8] transition-transform group-open:rotate-180" aria-hidden>
@@ -727,6 +722,29 @@ export default function AnalyticsOverviewClient() {
               </span>
             </summary>
             <div className="mt-4 space-y-6 border-t border-[#1a1a1a] pt-4">
+          <AnalyticsInsightsHub
+            performance={insightsPerformance}
+            unifiedPerformance={unifiedPerformance}
+            performanceRange={performanceRange}
+            onPerformanceRangeChange={handlePerformanceRangeChange}
+            summary={summary}
+            summary7d={summary7d}
+            stickiness={stickiness}
+            usagePreview={usagePreview}
+            actionCards={creatorActionCards}
+            performanceOverview={performanceOverview}
+            performanceCampaigns={performanceCampaigns}
+            performanceTags={performanceTags}
+            performanceWorks={performanceWorks}
+            bundleSuggestions={bundleSuggestions}
+            hierarchyDestination={hierarchyDestination}
+            onHierarchyDestinationChange={handleHierarchyDestinationChange}
+            performanceGoals={performanceGoals}
+            goalsBusySuggestionId={goalsBusySuggestionId}
+            onAdoptPerformanceGoalSuggestion={handleAdoptPerformanceGoalSuggestion}
+            onRemovePerformanceGoal={handleRemovePerformanceGoal}
+          />
+
           <SectionCard
             title="Usage preview (beta)"
             error={errUsagePreview}
@@ -779,6 +797,52 @@ export default function AnalyticsOverviewClient() {
               </div>
             ) : (
               <p className="text-sm text-[#888]">No usage preview yet.</p>
+            )}
+          </SectionCard>
+
+          <SectionCard
+            title="Tip beta"
+            error={errTipBetaStats}
+            description="Tip reveals on your promo pieces this UTC month ($0.33/Tip to you when fan premium is on)."
+          >
+            {tipBetaStats ? (
+              <div className="grid gap-3 sm:grid-cols-3" data-testid="analytics-tip-beta">
+                <div className="rounded-2xl border border-[#2a2a2a] bg-[#111] p-3">
+                  <div className="text-[11px] font-medium uppercase tracking-wide text-[#888]">
+                    Period
+                  </div>
+                  <div className="mt-1 text-lg font-semibold tabular-nums text-[#F0F0F0]">
+                    {tipBetaStats.period_key}
+                  </div>
+                </div>
+                <div className="rounded-2xl border border-[#2a2a2a] bg-[#111] p-3">
+                  <div className="text-[11px] font-medium uppercase tracking-wide text-[#888]">
+                    Reveals
+                  </div>
+                  <div
+                    className="mt-1 text-2xl font-semibold tabular-nums text-[#F0F0F0]"
+                    data-testid="analytics-tip-beta-reveals"
+                  >
+                    {tipBetaStats.reveals}
+                  </div>
+                </div>
+                <div className="rounded-2xl border border-[#2a2a2a] bg-[#111] p-3">
+                  <div className="text-[11px] font-medium uppercase tracking-wide text-[#888]">
+                    Offer CTR
+                  </div>
+                  <div
+                    className="mt-1 text-2xl font-semibold tabular-nums text-[#F0F0F0]"
+                    data-testid="analytics-tip-beta-offer-ctr"
+                  >
+                    {fmtPct(tipBetaStats.offer_ctr)}
+                  </div>
+                  <p className="mt-1 text-[10px] text-[#707070]">
+                    {tipBetaStats.offer_clicks} offer clicks
+                  </p>
+                </div>
+              </div>
+            ) : (
+              <p className="text-sm text-[#888]">No Tip beta stats yet.</p>
             )}
           </SectionCard>
 
@@ -1061,6 +1125,17 @@ export default function AnalyticsOverviewClient() {
                 listed in that CSV snapshot.
               </li>
             </ul>
+            <p className="mt-3 text-[#555]">
+              Coach Plan cycle outcomes live on a quiet audit page —{" "}
+              <a
+                href="/studio/goals"
+                className="text-[#707070] underline-offset-2 hover:text-[#888] hover:underline"
+                data-testid="analytics-goals-audit-link"
+              >
+                Goal history
+              </a>
+              . Planning stays in the Library.
+            </p>
           </footer>
             </div>
           </details>

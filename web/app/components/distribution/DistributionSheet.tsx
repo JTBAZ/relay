@@ -8,6 +8,7 @@ import {
   AutopostDistributionSteps,
   type DistributionStep
 } from "@/app/components/distribution/AutopostDistributionSteps";
+import type { DistributionDestination } from "@/lib/relay-api";
 
 type MediaItem = {
   id: string;
@@ -20,10 +21,21 @@ type Props = {
   postId: string;
   mediaItems: MediaItem[];
   postTitle?: string;
+  /** Prefill destinations (e.g. hero gap fill for one missing platform). */
+  initialSelectedDestinations?: DistributionDestination[];
+  /** Prefill Autopost preview media (Audience & Promotion Continue). */
+  initialPreviewMediaId?: string | null;
   onClose: () => void;
 };
 
-export function DistributionSheet({ postId, mediaItems, postTitle, onClose }: Props) {
+export function DistributionSheet({
+  postId,
+  mediaItems,
+  postTitle,
+  initialSelectedDestinations = [],
+  initialPreviewMediaId = null,
+  onClose
+}: Props) {
   const [mounted, setMounted] = useState(false);
   const [step, setStep] = useState<DistributionStep>("variation-planning");
 
@@ -100,6 +112,8 @@ export function DistributionSheet({ postId, mediaItems, postTitle, onClose }: Pr
             <AutopostDistributionSteps
               postId={postId}
               mediaItems={mediaItems}
+              initialSelectedDestinations={initialSelectedDestinations}
+              initialPreviewMediaId={initialPreviewMediaId}
               step={step}
               onStepChange={setStep}
             />

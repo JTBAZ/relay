@@ -20,6 +20,8 @@ export default defineConfig({
       // Same story for next/link: bare RTL render lacks the AppRouter context provider, so
       // we ship a plain <a> stub. Tests asserting client-side routing should mock useRouter.
       "next/link": path.resolve(root, "tests/mocks/next-link.tsx"),
+      // web/node_modules/framer-motion resolves its own React copy → invalid hook call in root vitest.
+      "framer-motion": path.resolve(root, "tests/mocks/framer-motion.tsx"),
       // Mirror Next.js' tsconfig path mapping (`web/tsconfig.json` → "@/*": ["./*"]) so
       // tests that touch web/lib modules (which use `@/lib/*` imports) resolve correctly.
       "@/lib": path.resolve(root, "web/lib"),

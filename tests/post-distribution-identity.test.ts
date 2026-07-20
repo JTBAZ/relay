@@ -28,6 +28,7 @@ function baseAttemptRow(overrides: Record<string, unknown> = {}) {
     errorDetail: null,
     startedAt: new Date("2026-06-30T18:00:00.000Z"),
     completedAt: null,
+    variant: { platformFields: { media_version: "full" } },
     ...overrides
   };
 }
@@ -51,7 +52,11 @@ describe("post distribution identity contract (Slice 1)", () => {
       $transaction: vi.fn(async (fn) =>
         fn({
           postDistributionAttempt: { update: attemptUpdate },
-          postDistributionVariant: { update: variantUpdate }
+          postDistributionVariant: { update: variantUpdate },
+          platformInstance: {
+            findUnique: vi.fn().mockResolvedValue(null),
+            upsert: vi.fn().mockResolvedValue({})
+          }
         })
       )
     } as unknown as PrismaClient;
@@ -69,7 +74,7 @@ describe("post distribution identity contract (Slice 1)", () => {
       where: { id: ATTEMPT_ID },
       data: expect.objectContaining({
         status: "posted",
-        externalUrl: `${EXTERNAL_URL}?pr=true`,
+        externalUrl: EXTERNAL_URL,
         externalId: EXTERNAL_ID
       })
     });

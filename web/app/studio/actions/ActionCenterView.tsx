@@ -46,6 +46,7 @@ import {
 import { emitCreatorStudioTelemetryEvent } from "@/lib/creator-studio-telemetry";
 import { useStudioSession } from "@/lib/studio-session-context";
 import { CreatorPublicUrlSettings } from "@/app/components/studio/CreatorPublicUrlSettings";
+import { PostTemplateSettings } from "@/app/components/studio/PostTemplateSettings";
 
 type ActiveSection = "discovery" | "community" | "gallery" | "insights";
 type DrawerKind = "inbox" | "moderation" | null;
@@ -1829,11 +1830,14 @@ function GallerySection() {
           </div>
         </section>
 
-        <div className="rounded-2xl border border-[var(--lib-border)] bg-[color-mix(in_srgb,var(--lib-card)_72%,var(--lib-bg))] p-4">
-          <p className="mb-3 text-sm text-[var(--lib-fg-muted)]">
-            Public URL and profile settings remain live inside this management area.
-          </p>
-          <CreatorPublicUrlSettings />
+        <div className="space-y-4">
+          <div className="rounded-2xl border border-[var(--lib-border)] bg-[color-mix(in_srgb,var(--lib-card)_72%,var(--lib-bg))] p-4">
+            <p className="mb-3 text-sm text-[var(--lib-fg-muted)]">
+              Public URL and profile settings remain live inside this management area.
+            </p>
+            <CreatorPublicUrlSettings />
+          </div>
+          <PostTemplateSettings />
         </div>
       </div>
 

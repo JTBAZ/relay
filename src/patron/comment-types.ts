@@ -81,6 +81,8 @@ export interface CommentRecord {
   editedAt: Date | null;
   deletedAt: Date | null;
   modState: "visible" | "hidden" | "removed";
+  /** MB-14 — live Curator badge for the comment author. */
+  is_curator?: boolean;
 }
 
 export interface ListCommentsOptions {

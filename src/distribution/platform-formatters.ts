@@ -18,6 +18,8 @@ export type VariantAdvice = {
   warnings?: string[];
   suggested_post_time?: string | null;
   rationale?: string | null;
+  /** True when Relay Coach mutated title/body for this variant. */
+  coach_edited?: boolean;
 };
 
 export type FormattedPlatformVariant = {

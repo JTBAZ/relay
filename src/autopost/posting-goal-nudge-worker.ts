@@ -1,10 +1,12 @@
 import type { PrismaClient } from "@prisma/client";
 import {
+  computePaceStatus,
   countRelayLibraryStagingMedia,
   countRelayNativePostsInWindow,
   createActivePostingNudgeIfAbsent,
   creatorLocalMonthWindow,
   findCurrentPeriodNudges,
+  reconcilePostingGoalNudgeResolution,
   resolvePostingGoalTimezone
 } from "./posting-goal-service.js";
 
@@ -61,13 +63,33 @@ export async function processPostingGoalNudgeForCreator(
   let postingGoalNudgeCreated = false;
   let bonusPostNudgeCreated = false;
 
+  const paceStatus = computePaceStatus({
+    postsThisMonth,
+    monthlyPostTarget: goal.monthlyPostTarget,
+    bonusNudgesEnabled: goal.bonusNudgesEnabled,
+    stagedMediaCount,
+    now,
+    timeZone
+  });
+
+  const resolvedCount = await reconcilePostingGoalNudgeResolution(prisma, creatorId, {
+    periodKey: period.key,
+    postsThisMonth,
+    monthlyPostTarget: goal.monthlyPostTarget,
+    paceStatus
+  });
+  const nudgesFresh =
+    resolvedCount > 0
+      ? await findCurrentPeriodNudges(prisma, creatorId, period.key)
+      : nudges;
+
   if (postsThisMonth < goal.monthlyPostTarget) {
     postingGoalNudgeCreated = await createActivePostingNudgeIfAbsent(
       prisma,
       creatorId,
       period.key,
       "posting_goal",
-      nudges,
+      nudgesFresh,
       now
     );
   }
@@ -82,7 +104,7 @@ export async function processPostingGoalNudgeForCreator(
       creatorId,
       period.key,
       "bonus_post",
-      nudges,
+      nudgesFresh,
       now
     );
   }

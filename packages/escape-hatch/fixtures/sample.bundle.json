@@ -1,0 +1,89 @@
+{
+  "site_id": "site_fixture_sample",
+  "creator_id": "cr_escape_demo",
+  "generated_at": "2026-07-13T20:00:00.000Z",
+  "base_url": "http://localhost:3001",
+  "creator": {
+    "display_name": "Elena Adler",
+    "handle": "elena-adler"
+  },
+  "theme": {
+    "color_scheme": "dark",
+    "accent_color": "#5865f2",
+    "paywall_style": "blur",
+    "hero": {
+      "title": "Elena Adler",
+      "subtitle": "Independent membership gallery",
+      "bio": "Escape Hatch fixture — public, patrons-only, and Gold-tier posts."
+    }
+  },
+  "demo_personas": [
+    { "id": "public", "label": "Public", "tier_ids": [] },
+    { "id": "patron_all", "label": "Patron (any paid)", "tier_ids": ["t_gold"] },
+    { "id": "tier:t_gold", "label": "Gold", "tier_ids": ["t_gold"] },
+    { "id": "tier:t_silver", "label": "Silver", "tier_ids": ["t_silver"] }
+  ],
+  "tiers": [
+    {
+      "tier_id": "t_gold",
+      "title": "Gold",
+      "access_level": "tier_gated"
+    },
+    {
+      "tier_id": "t_silver",
+      "title": "Silver",
+      "access_level": "tier_gated"
+    }
+  ],
+  "posts": [
+    {
+      "post_id": "p_public",
+      "slug": "welcome-public",
+      "title": "Welcome (Public)",
+      "published_at": "2026-07-01T12:00:00.000Z",
+      "tag_ids": ["intro"],
+      "access": { "level": "public", "tier_ids": [] },
+      "media": [
+        {
+          "media_id": "m_public",
+          "mime_type": "image/svg+xml",
+          "has_export": true,
+          "content_path": "/media/m_public.svg"
+        }
+      ]
+    },
+    {
+      "post_id": "p_members",
+      "slug": "patrons-only-sketch",
+      "title": "Patrons-Only Sketch",
+      "published_at": "2026-07-05T12:00:00.000Z",
+      "tag_ids": ["sketch"],
+      "access": { "level": "member_only", "tier_ids": [] },
+      "media": [
+        {
+          "media_id": "m_members",
+          "mime_type": "image/svg+xml",
+          "has_export": true,
+          "content_path": "/media/m_members.svg"
+        }
+      ]
+    },
+    {
+      "post_id": "p_gold",
+      "slug": "gold-exclusive",
+      "title": "Gold Exclusive Piece",
+      "published_at": "2026-07-10T12:00:00.000Z",
+      "tag_ids": ["exclusive"],
+      "access": { "level": "tier_gated", "tier_ids": ["t_gold"] },
+      "media": [
+        {
+          "media_id": "m_gold",
+          "mime_type": "image/svg+xml",
+          "has_export": true,
+          "content_path": "/media/m_gold.svg"
+        }
+      ]
+    }
+  ],
+  "total_media": 3
+}

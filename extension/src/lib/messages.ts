@@ -14,6 +14,11 @@ export const MSG_POST_LINK_FORGET = "POST_LINK_FORGET" as const;
 export const MSG_POST_LINK_GET_ACTIVE_WATCH = "POST_LINK_GET_ACTIVE_WATCH" as const;
 export const MSG_EXTERNAL_METRICS_REFRESH = "EXTERNAL_METRICS_REFRESH" as const;
 export const MSG_EXTERNAL_METRICS_RESULT = "EXTERNAL_METRICS_RESULT" as const;
+export const MSG_SCHEDULE_REMINDER_GET_ACTIVE = "SCHEDULE_REMINDER_GET_ACTIVE" as const;
+export const MSG_SCHEDULE_REMINDER_OPEN = "SCHEDULE_REMINDER_OPEN" as const;
+export const MSG_SCHEDULE_REMINDER_DONE = "SCHEDULE_REMINDER_DONE" as const;
+export const MSG_SCHEDULE_REMINDER_DISMISS = "SCHEDULE_REMINDER_DISMISS" as const;
+export const MSG_SCHEDULE_REMINDER_SNOOZE = "SCHEDULE_REMINDER_SNOOZE" as const;
 
 export type ExternalMetricsDestination = "patreon" | "x" | "deviantart";
 
@@ -64,6 +69,23 @@ export type InternalRequest =
       source?: "extension_dom" | "platform_api";
       metrics?: ExternalMetricsScrapeMetricWire[];
       error?: string | null;
+    }
+  | { type: typeof MSG_SCHEDULE_REMINDER_GET_ACTIVE }
+  | {
+      type: typeof MSG_SCHEDULE_REMINDER_OPEN;
+      reminder_id: string;
+      open_url: string | null;
+    }
+  | {
+      type: typeof MSG_SCHEDULE_REMINDER_DONE;
+      reminder_id: string;
+      task_id: string;
+    }
+  | { type: typeof MSG_SCHEDULE_REMINDER_DISMISS; reminder_id: string }
+  | {
+      type: typeof MSG_SCHEDULE_REMINDER_SNOOZE;
+      reminder_id: string;
+      snooze_minutes?: number;
     };
 
 export type ExternalConsentMessage = { type: "RELAY_CONSENT_CODE"; code: string };
@@ -102,7 +124,12 @@ export function isInternalRequest(v: unknown): v is InternalRequest {
     t === MSG_POST_LINK_FORGET ||
     t === MSG_POST_LINK_GET_ACTIVE_WATCH ||
     t === MSG_EXTERNAL_METRICS_REFRESH ||
-    t === MSG_EXTERNAL_METRICS_RESULT
+    t === MSG_EXTERNAL_METRICS_RESULT ||
+    t === MSG_SCHEDULE_REMINDER_GET_ACTIVE ||
+    t === MSG_SCHEDULE_REMINDER_OPEN ||
+    t === MSG_SCHEDULE_REMINDER_DONE ||
+    t === MSG_SCHEDULE_REMINDER_DISMISS ||
+    t === MSG_SCHEDULE_REMINDER_SNOOZE
   );
 }
 

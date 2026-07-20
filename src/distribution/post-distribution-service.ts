@@ -4,7 +4,8 @@
 
 import { randomUUID } from "node:crypto";
 import type { PrismaClient } from "@prisma/client";
-import { PostSource, PostUpstreamStatus } from "@prisma/client";
+import { syncGoalCycleDestinationCompletion } from "../goal-cycle/execution/goal-cycle-execution-service.js";
+import { PostSource, PostUpstreamStatus, MediaUpstreamStatus } from "@prisma/client";
 import { mergePostPresentation } from "../gallery/effective-presentation.js";
 import { stripHtmlForSearch } from "../gallery/query.js";
 import {
@@ -21,11 +22,54 @@ import {
 } from "./platform-destinations.js";
 import {
   applyPostingAssistantToVariants,
-  isPostingAssistantAllowed,
   type PostingAssistantContext
 } from "./posting-assistant-service.js";
+import {
+  mapPostbotTaskRow,
+  persistPostbotTasksForPlan,
+  type PostbotTaskWire
+} from "./postbot-task-service.js";
+import { isPostingAssistantAllowedForCreator } from "../creator/creator-feature-flags-service.js";
+import { getCreatorStudioBrief } from "../creator/studio-brief-service.js";
+import { mergeAssistantContextWithStudioBrief } from "../creator/studio-mounted-context.js";
 import { upsertPlatformInstanceFromAttempt } from "../analytics/platform-instance-service.js";
 import { normalizeCompleteDistributionIdentity } from "../analytics/platform-instance-link-service.js";
+import {
+  buildPlanMediaAssistantFields,
+  contentVariantRoleFromPlatformFields,
+  destinationsUsingPreviewRouting,
+  mergeVariantPlatformFieldsWithMedia,
+  normalizeMediaRoutingByDestination,
+  resolveMediaVersionForDestination
+} from "./media-binding.js";
+
+const COACH_REVIEW_ASSISTANT_MODE = "coach_review";
+
+/** Drop coach checkpoint-only keys when upgrading a stub plan in place. */
+function finalizeAssistantPlanFromCheckpoint(
+  priorPlan: Record<string, unknown>,
+  finalizedPlan: Record<string, unknown>
+): Record<string, unknown> {
+  const {
+    coach_checkpoint_version: _v,
+    coach_phase: _phase,
+    platform_review_index: _idx,
+    coach_destinations: _dests,
+    proposal: _proposal,
+    ...restPrior
+  } = priorPlan;
+  const merged = { ...restPrior, ...finalizedPlan };
+  delete merged.coach_checkpoint_version;
+  delete merged.coach_phase;
+  delete merged.platform_review_index;
+  delete merged.coach_destinations;
+  delete merged.proposal;
+  delete merged.fact_pack;
+  return merged;
+}
+
+export type { PostbotTaskWire } from "./postbot-task-service.js";
+export { updatePostbotTaskStatus, updatePostbotTaskRemindMe } from "./postbot-task-service.js";
 
 export type DistributionVariantWire = {
   variant_id: string;
@@ -40,10 +84,13 @@ export type DistributionVariantWire = {
   tags: string[];
   locale: string | null;
   scheduled_for: string | null;
+  remind_me: boolean;
+  reminder_sent_at: string | null;
   platform_fields: Record<string, unknown>;
   advice: Record<string, unknown>;
   approved_at: string | null;
   latest_attempt: DistributionAttemptWire | null;
+  postbot_tasks: PostbotTaskWire[];
 };
 
 export type DistributionAttemptWire = {
@@ -150,10 +197,13 @@ function mapVariant(
     tags: string[];
     locale: string | null;
     scheduledFor: Date | null;
+    remindMe: boolean;
+    reminderSentAt: Date | null;
     platformFields: unknown;
     advice: unknown;
     approvedAt: Date | null;
     attempts?: Array<Parameters<typeof mapAttempt>[0]>;
+    postbotTasks?: Array<Parameters<typeof mapPostbotTaskRow>[0]>;
   }
 ): DistributionVariantWire {
   const latest = row.attempts?.[0] ?? null;
@@ -170,6 +220,8 @@ function mapVariant(
     tags: row.tags ?? [],
     locale: row.locale,
     scheduled_for: row.scheduledFor?.toISOString() ?? null,
+    remind_me: row.remindMe,
+    reminder_sent_at: row.reminderSentAt?.toISOString() ?? null,
     platform_fields:
       row.platformFields && typeof row.platformFields === "object" && !Array.isArray(row.platformFields)
         ? (row.platformFields as Record<string, unknown>)
@@ -179,7 +231,8 @@ function mapVariant(
         ? (row.advice as Record<string, unknown>)
         : {},
     approved_at: row.approvedAt?.toISOString() ?? null,
-    latest_attempt: latest ? mapAttempt(latest) : null
+    latest_attempt: latest ? mapAttempt(latest) : null,
+    postbot_tasks: (row.postbotTasks ?? []).map(mapPostbotTaskRow)
   };
 }
 
@@ -215,7 +268,8 @@ function mapPlan(row: {
   };
 }
 
-async function loadCanonicalCopy(
+/** Load Relay post title/body/tags for distribution formatting (also used by Coach propose). */
+export async function loadCanonicalCopy(
   prisma: PrismaClient,
   creatorId: string,
   postId: string
@@ -266,7 +320,65 @@ export type CreateDistributionPlanInput = {
   assistant_by_destination?: Record<string, boolean>;
   assistant_context?: PostingAssistantContext;
   source_draft_id?: string | null;
+  needs_preview?: boolean;
+  media_routing_by_destination?: Record<string, string>;
+  preview_media_id?: string | null;
 };
+
+async function assertPreviewMediaForPlan(
+  prisma: PrismaClient,
+  creatorId: string,
+  previewMediaId: string
+): Promise<void> {
+  const id = previewMediaId.trim();
+  const row = await prisma.mediaAsset.findFirst({
+    where: {
+      id,
+      creatorId,
+      upstreamStatus: MediaUpstreamStatus.active
+    },
+    select: {
+      id: true,
+      currentStorageKey: true,
+      currentUpstreamUrl: true
+    }
+  });
+  if (!row) {
+    throw new PostDistributionValidationError("preview_media_id is not available for this creator.", [
+      { field: "preview_media_id", issue: "not_found" }
+    ]);
+  }
+  if (!row.currentStorageKey?.trim() && !row.currentUpstreamUrl?.trim()) {
+    throw new PostDistributionValidationError("preview_media_id is not export-ready.", [
+      { field: "preview_media_id", issue: "not_export_ready" }
+    ]);
+  }
+}
+
+function applyMediaRoutingToFormattedVariants(
+  variants: FormattedPlatformVariant[],
+  destinations: DistributionDestination[],
+  input: CreateDistributionPlanInput
+): {
+  variants: FormattedPlatformVariant[];
+  mediaRouting: ReturnType<typeof normalizeMediaRoutingByDestination>;
+  previewMediaId: string | null;
+} {
+  const mediaRouting = normalizeMediaRoutingByDestination(
+    input.media_routing_by_destination,
+    destinations
+  );
+  const previewMediaId = input.preview_media_id?.trim() || null;
+  const variantsWithMedia = variants.map((variant) => ({
+    ...variant,
+    platformFields: mergeVariantPlatformFieldsWithMedia(
+      variant.platformFields,
+      variant.destination,
+      resolveMediaVersionForDestination(variant.destination, mediaRouting)
+    )
+  }));
+  return { variants: variantsWithMedia, mediaRouting, previewMediaId };
+}
 
 export async function createPostDistributionPlan(
   prisma: PrismaClient,
@@ -284,9 +396,13 @@ export async function createPostDistributionPlan(
   const canonical = await loadCanonicalCopy(prisma, creatorId, postId);
 
   const assistantEnabledSet = new Set<DistributionDestination>();
+  const wantsAssistant = destinations.some((dest) => input.assistant_by_destination?.[dest]);
+  const assistantAllowed = wantsAssistant
+    ? await isPostingAssistantAllowedForCreator(prisma, creatorId)
+    : false;
   for (const dest of destinations) {
     if (input.assistant_by_destination?.[dest]) {
-      if (!isPostingAssistantAllowed(creatorId)) {
+      if (!assistantAllowed) {
         throw new PostDistributionValidationError("Posting Assistant is not available on your plan.", [
           { field: "assistant_by_destination", issue: "tier_not_allowed" }
         ]);
@@ -298,7 +414,15 @@ export async function createPostDistributionPlan(
   let formatted = formatVariantsForDestinations(destinations, canonical);
   let assistantMode = "none";
   let assistantPlan: Record<string, unknown> = {};
-  const assistantContext = (input.assistant_context ?? {}) as PostingAssistantContext;
+  // Merge durable Insights studio brief under request context (request wins).
+  // Does not rebuild Coach fact_pack — brief is creator-scoped persistence only.
+  let assistantContext = (input.assistant_context ?? {}) as PostingAssistantContext;
+  try {
+    const brief = await getCreatorStudioBrief(prisma, creatorId);
+    assistantContext = mergeAssistantContextWithStudioBrief(assistantContext, brief);
+  } catch {
+    // Brief load failure must not block plan create.
+  }
 
   if (assistantEnabledSet.size > 0) {
     const assistant = await applyPostingAssistantToVariants(
@@ -313,10 +437,46 @@ export async function createPostDistributionPlan(
     assistantPlan = assistant.assistantPlan;
   }
 
+  const mediaPrepared = applyMediaRoutingToFormattedVariants(formatted, destinations, input);
+  formatted = mediaPrepared.variants;
+  const previewDestinations = destinationsUsingPreviewRouting(destinations, mediaPrepared.mediaRouting);
+  if (previewDestinations.length > 0) {
+    if (!mediaPrepared.previewMediaId) {
+      throw new PostDistributionValidationError(
+        "preview_media_id is required when any destination uses preview routing.",
+        [{ field: "preview_media_id", issue: "required" }]
+      );
+    }
+    await assertPreviewMediaForPlan(prisma, creatorId, mediaPrepared.previewMediaId);
+  }
+
+  assistantPlan = {
+    ...assistantPlan,
+    ...buildPlanMediaAssistantFields({
+      needsPreview: input.needs_preview,
+      previewMediaId: mediaPrepared.previewMediaId,
+      mediaRoutingByDestination: mediaPrepared.mediaRouting
+    })
+  };
+
   const existing = await prisma.postDistributionPlan.findFirst({
-    where: { postId, creatorId, status: "active" }
+    where: { postId, creatorId, status: "active" },
+    include: { _count: { select: { variants: true } } }
   });
-  if (existing) {
+
+  const acceptedCopy = assistantContext.accepted_copy_by_destination;
+  const hasAcceptedCopy =
+    acceptedCopy != null &&
+    typeof acceptedCopy === "object" &&
+    Object.keys(acceptedCopy).length > 0;
+
+  const reuseCoachStub =
+    Boolean(existing) &&
+    existing!.assistantMode === COACH_REVIEW_ASSISTANT_MODE &&
+    existing!._count.variants === 0 &&
+    hasAcceptedCopy;
+
+  if (existing && !reuseCoachStub) {
     await prisma.postDistributionPlan.update({
       where: { id: existing.id },
       data: { status: "archived" }
@@ -324,22 +484,52 @@ export async function createPostDistributionPlan(
   }
 
   const plan = await prisma.$transaction(async (tx) => {
-    const created = await tx.postDistributionPlan.create({
-      data: {
-        creatorId,
-        postId,
-        sourceDraftId: input.source_draft_id?.trim() || null,
-        status: "active",
-        assistantMode,
-        assistantContext: assistantContext as object,
-        assistantPlan: assistantPlan as object
-      }
-    });
+    let planId: string;
+    if (reuseCoachStub && existing) {
+      const priorPlan =
+        existing.assistantPlan &&
+        typeof existing.assistantPlan === "object" &&
+        !Array.isArray(existing.assistantPlan)
+          ? (existing.assistantPlan as Record<string, unknown>)
+          : {};
+      const cleanedPlan = finalizeAssistantPlanFromCheckpoint(priorPlan, assistantPlan);
+      await tx.postDistributionPlan.update({
+        where: { id: existing.id },
+        data: {
+          sourceDraftId: input.source_draft_id?.trim() || null,
+          status: "active",
+          assistantMode,
+          assistantContext: assistantContext as object,
+          assistantPlan: cleanedPlan as object
+        }
+      });
+      planId = existing.id;
+    } else {
+      const created = await tx.postDistributionPlan.create({
+        data: {
+          creatorId,
+          postId,
+          sourceDraftId: input.source_draft_id?.trim() || null,
+          status: "active",
+          assistantMode,
+          assistantContext: assistantContext as object,
+          assistantPlan: assistantPlan as object
+        }
+      });
+      planId = created.id;
+    }
+
+    const createdVariants: Array<{
+      id: string;
+      destination: string;
+      assistantEnabled: boolean;
+      advice: unknown;
+    }> = [];
 
     for (const variant of formatted) {
-      await tx.postDistributionVariant.create({
+      const row = await tx.postDistributionVariant.create({
         data: {
-          planId: created.id,
+          planId,
           postId,
           creatorId,
           destination: variant.destination,
@@ -353,14 +543,26 @@ export async function createPostDistributionPlan(
           advice: variant.advice as object
         }
       });
+      createdVariants.push(row);
+    }
+
+    if (assistantEnabledSet.size > 0) {
+      await persistPostbotTasksForPlan(tx, {
+        creatorId,
+        postId,
+        planId,
+        variants: createdVariants,
+        assistantContext
+      });
     }
 
     return tx.postDistributionPlan.findUniqueOrThrow({
-      where: { id: created.id },
+      where: { id: planId },
       include: {
         variants: {
           include: {
-            attempts: { orderBy: { createdAt: "desc" }, take: 1 }
+            attempts: { orderBy: { createdAt: "desc" }, take: 1 },
+            postbotTasks: { orderBy: { createdAt: "asc" } }
           }
         }
       }
@@ -380,7 +582,8 @@ export async function getPostDistributionPlan(
     include: {
       variants: {
         include: {
-          attempts: { orderBy: { createdAt: "desc" }, take: 1 }
+          attempts: { orderBy: { createdAt: "desc" }, take: 1 },
+          postbotTasks: { orderBy: { createdAt: "asc" } }
         }
       }
     }
@@ -395,6 +598,7 @@ export type PatchDistributionVariantInput = {
   tags?: string[];
   locale?: string | null;
   scheduled_for?: string | null;
+  remind_me?: boolean;
   platform_fields?: Record<string, unknown>;
 };
 
@@ -406,7 +610,10 @@ export async function patchDistributionVariant(
 ): Promise<DistributionVariantWire> {
   const row = await prisma.postDistributionVariant.findFirst({
     where: { id: variantId, creatorId },
-    include: { attempts: { orderBy: { createdAt: "desc" }, take: 1 } }
+    include: {
+      attempts: { orderBy: { createdAt: "desc" }, take: 1 },
+      postbotTasks: { orderBy: { createdAt: "asc" } }
+    }
   });
   if (!row) {
     throw new PostDistributionNotFoundError("Variant not found.");
@@ -443,11 +650,19 @@ export async function patchDistributionVariant(
       ...(input.tags !== undefined ? { tags: nextTags } : {}),
       ...(input.locale !== undefined ? { locale: input.locale?.trim() || null } : {}),
       ...(input.scheduled_for !== undefined
-        ? { scheduledFor: input.scheduled_for ? new Date(input.scheduled_for) : null }
+        ? {
+            scheduledFor: input.scheduled_for ? new Date(input.scheduled_for) : null,
+            // Re-arming: a new/changed schedule should be eligible for a fresh reminder ping.
+            reminderSentAt: null
+          }
         : {}),
+      ...(input.remind_me !== undefined ? { remindMe: input.remind_me } : {}),
       ...(input.platform_fields !== undefined ? { platformFields: input.platform_fields as object } : {})
     },
-    include: { attempts: { orderBy: { createdAt: "desc" }, take: 1 } }
+    include: {
+      attempts: { orderBy: { createdAt: "desc" }, take: 1 },
+      postbotTasks: { orderBy: { createdAt: "asc" } }
+    }
   });
   return mapVariant(updated);
 }
@@ -466,7 +681,10 @@ export async function approveDistributionVariant(
   const updated = await prisma.postDistributionVariant.update({
     where: { id: variantId },
     data: { status: "approved", approvedAt: new Date() },
-    include: { attempts: { orderBy: { createdAt: "desc" }, take: 1 } }
+    include: {
+      attempts: { orderBy: { createdAt: "desc" }, take: 1 },
+      postbotTasks: { orderBy: { createdAt: "asc" } }
+    }
   });
   return mapVariant(updated);
 }
@@ -574,11 +792,24 @@ export async function completeDistributionAttempt(
   input: CompleteDistributionInput
 ): Promise<DistributionAttemptWire> {
   const attempt = await prisma.postDistributionAttempt.findFirst({
-    where: { id: attemptId, creatorId }
+    where: { id: attemptId, creatorId },
+    include: {
+      variant: {
+        select: { platformFields: true }
+      }
+    }
   });
   if (!attempt) {
     throw new PostDistributionNotFoundError("Attempt not found.");
   }
+
+  const variantPlatformFields =
+    attempt.variant?.platformFields &&
+    typeof attempt.variant.platformFields === "object" &&
+    !Array.isArray(attempt.variant.platformFields)
+      ? (attempt.variant.platformFields as Record<string, unknown>)
+      : {};
+  const contentVariantRole = contentVariantRoleFromPlatformFields(variantPlatformFields);
 
   const finalStatus = input.status ?? "posted";
   const normalizedIdentity = normalizeCompleteDistributionIdentity(
@@ -608,10 +839,18 @@ export async function completeDistributionAttempt(
         destination: row.destination,
         externalUrl: row.externalUrl,
         externalId: row.externalId,
-        linkedAt: row.completedAt ?? new Date()
+        linkedAt: row.completedAt ?? new Date(),
+        contentVariantRole
       });
     }
     return row;
+  });
+
+  // VS8-T04 — sync PostBot task + Goal Cycle slot/plan (idempotent; partial-safe).
+  await syncGoalCycleDestinationCompletion(prisma, {
+    creatorId,
+    attemptId,
+    finalStatus
   });
 
   return mapAttempt(updated);
@@ -717,19 +956,31 @@ export async function loadVariantForPackage(
 ): Promise<{
   attempt: DistributionAttemptWire;
   variant: DistributionVariantWire;
+  assistant_plan: Record<string, unknown>;
 } | null> {
   const attemptRow = await prisma.postDistributionAttempt.findFirst({
     where: { id: attemptId, creatorId },
     include: {
       variant: {
-        include: { attempts: { orderBy: { createdAt: "desc" }, take: 1 } }
+        include: {
+          plan: { select: { assistantPlan: true } },
+          attempts: { orderBy: { createdAt: "desc" }, take: 1 },
+          postbotTasks: { orderBy: { createdAt: "asc" } }
+        }
       }
     }
   });
   if (!attemptRow?.variant) return null;
+  const assistantPlan =
+    attemptRow.variant.plan.assistantPlan &&
+    typeof attemptRow.variant.plan.assistantPlan === "object" &&
+    !Array.isArray(attemptRow.variant.plan.assistantPlan)
+      ? (attemptRow.variant.plan.assistantPlan as Record<string, unknown>)
+      : {};
   return {
     attempt: mapAttempt(attemptRow),
-    variant: mapVariant(attemptRow.variant)
+    variant: mapVariant(attemptRow.variant),
+    assistant_plan: assistantPlan
   };
 }
 

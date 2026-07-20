@@ -66,7 +66,10 @@ export const PEG_EVENT_NAMES = {
 
   PATRON_FAVORITE_ADDED: "patron_favorite.added",
 
-  PATRON_COLLECTION_ENTRY_ADDED: "patron_collection.entry_added"
+  PATRON_COLLECTION_ENTRY_ADDED: "patron_collection.entry_added",
+
+  /** MB-13 — Tip reveal window closes tomorrow. */
+  REVEAL_EXPIRING: "tips.reveal_expiring"
 
 } as const;
 
@@ -88,7 +91,9 @@ export const PEG_NOTIFIABLE_EVENT_NAMES: readonly string[] = [
 
   PEG_EVENT_NAMES.PATRON_FAVORITE_ADDED,
 
-  PEG_EVENT_NAMES.PATRON_COLLECTION_ENTRY_ADDED
+  PEG_EVENT_NAMES.PATRON_COLLECTION_ENTRY_ADDED,
+
+  PEG_EVENT_NAMES.REVEAL_EXPIRING
 
 ];
 
@@ -179,6 +184,10 @@ export async function mapOutboxEventToNotifications(
     case PEG_EVENT_NAMES.PATRON_COLLECTION_ENTRY_ADDED:
 
       return mapPatronCollectionEntryAdded(prisma, event);
+
+    case PEG_EVENT_NAMES.REVEAL_EXPIRING:
+
+      return mapRevealExpiring(prisma, event);
 
     default:
 
@@ -976,6 +985,166 @@ async function mapPatronCollectionEntryAdded(
       },
 
       clusterKey: `post_collected:${mediaId}`,
+
+      sourceEventId: event.id
+
+    }
+
+  ];
+
+}
+
+
+
+async function mapRevealExpiring(
+
+  prisma: PrismaClient,
+
+  event: OutboxEventLike
+
+): Promise<CreateNotificationInput[]> {
+
+  const payload = asObject(event.payload);
+
+  const revealId = asString(payload.reveal_id) ?? event.primaryId;
+
+  const postId = asString(payload.post_id);
+
+  const relayCreatorId = asString(payload.creator_id) ?? event.tenantId;
+
+  const patronAccountId = asString(payload.patron_account_id);
+
+  const expiresAt = asString(payload.expires_at);
+
+  const clusterKey =
+
+    asString(payload.cluster_key) ?? (revealId ? `reveal_expiring:${revealId}` : null);
+
+  if (!revealId || !postId || !relayCreatorId || !patronAccountId) return [];
+
+
+
+  const membership = await prisma.tenantMembership.findFirst({
+
+    where: { accountId: patronAccountId },
+
+    select: { id: true }
+
+  });
+
+  if (!membership) return [];
+
+
+
+  const enabled = await isPreferenceEnabled(prisma, {
+
+    membershipId: membership.id,
+
+    relayCreatorId,
+
+    preferenceType: "reveal_expiring"
+
+  });
+
+  if (!enabled) return [];
+
+
+
+  let offer: { headline: string; cta_text: string; slug: string } | null = null;
+
+  try {
+
+    const offerRow = await prisma.postMarketingOffer.findFirst({
+
+      where: {
+
+        creatorId: relayCreatorId,
+
+        postId,
+
+        active: true,
+
+        redirectSlug: { not: null }
+
+      },
+
+      orderBy: { updatedAt: "desc" },
+
+      select: { headline: true, ctaText: true, redirectSlug: true }
+
+    });
+
+    if (offerRow?.redirectSlug) {
+
+      offer = {
+
+        headline: offerRow.headline,
+
+        cta_text: offerRow.ctaText,
+
+        slug: offerRow.redirectSlug
+
+      };
+
+    }
+
+  } catch {
+
+    // Offer attach is best-effort — notification still ships without it.
+
+  }
+
+
+
+  const profile = await prisma.creatorProfile.findFirst({
+
+    where: { tenant: { relayCreatorId } },
+
+    select: { displayName: true }
+
+  });
+
+  const artistName = profile?.displayName?.trim() || "the artist";
+
+
+
+  const body = offer
+
+    ? `Your access to ${artistName}'s piece closes tomorrow — ${offer.headline || offer.cta_text}`
+
+    : `Your access to ${artistName}'s piece closes tomorrow`;
+
+
+
+  return [
+
+    {
+
+      recipientMembershipId: membership.id,
+
+      relayCreatorId,
+
+      kind: "reveal_expiring",
+
+      payload: {
+
+        reveal_id: revealId,
+
+        post_id: postId,
+
+        creator_id: relayCreatorId,
+
+        artist_name: artistName,
+
+        expires_at: expiresAt,
+
+        body,
+
+        offer
+
+      },
+
+      clusterKey,
 
       sourceEventId: event.id
 

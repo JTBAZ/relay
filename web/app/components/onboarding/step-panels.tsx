@@ -737,82 +737,10 @@ function PathCard({
 }
 
 /* ──────────────────────────────────────────────────────────────────────────────
- * Roadmap preview — shows all 3 steps with current/past/future states
- * ──────────────────────────────────────────────────────────────────────────── */
-
-export function RoadmapPreview({
-  path,
-  currentStep,
-}: {
-  path: OnboardingPath;
-  currentStep: number;
-}) {
-  const step2ConnectLabel = "Connect Patreon";
-  const items =
-    path === "creator"
-      ? [
-          { n: 1, label: "Create your account" },
-          { n: 2, label: "Username" },
-          { n: 3, label: step2ConnectLabel },
-          { n: 4, label: "Profile" },
-          { n: 5, label: "Sync & Review" },
-        ]
-      : [
-          { n: 1, label: "Create your account" },
-          { n: 2, label: "Connect Patreon" },
-          { n: 3, label: "Open your feed" },
-        ];
-
-  return (
-    <ol className="flex flex-wrap items-center justify-center gap-x-3 gap-y-2 text-xs text-[var(--relay-fg-muted)]">
-      {items.map((it, idx) => {
-        const active = it.n === currentStep;
-        const done = it.n < currentStep;
-        return (
-          <li key={it.n} className="flex items-center gap-3">
-            <span
-              className={cn(
-                "inline-flex items-center gap-1.5 transition-colors duration-200",
-                active && "text-[var(--relay-fg)]",
-                done && "text-[var(--relay-electric)]"
-              )}
-            >
-              <span
-                className={cn(
-                  "inline-flex h-4 w-4 items-center justify-center rounded-full border text-[10px] font-semibold leading-none",
-                  active
-                    ? "border-[var(--relay-electric)] bg-[var(--relay-electric)] text-[var(--relay-bg)]"
-                    : done
-                      ? "border-[var(--relay-electric)] bg-[var(--relay-electric)]/20 text-[var(--relay-electric)]"
-                      : "border-[var(--relay-border)] text-[var(--relay-fg-muted)]"
-                )}
-              >
-                {it.n}
-              </span>
-              {it.label}
-            </span>
-            {idx < items.length - 1 && (
-              <span
-                className={cn(
-                  "transition-colors duration-200",
-                  done ? "text-[var(--relay-electric)]/60" : "text-[var(--relay-border)]"
-                )}
-              >
-                ›
-              </span>
-            )}
-          </li>
-        );
-      })}
-    </ol>
-  );
-}
-
-/* ──────────────────────────────────────────────────────────────────────────────
  * Reusable step header badge
  * ──────────────────────────────────────────────────────────────────────────── */
 
-function StepBadge({
+export function StepBadge({
   step,
   of = 3,
   icon,
@@ -849,7 +777,7 @@ export function StepSignUp({
       ? "Spin up your Relay creator account in seconds. We'll send a quick email to verify it's really you."
       : "Get a verified Relay supporter account so you can follow your favorite creators.";
 
-  const totalSteps = path === "creator" ? 4 : 3;
+  const totalSteps = path === "creator" ? 6 : 5;
 
   return (
     <div className="flex flex-col gap-7">
@@ -1020,7 +948,7 @@ export function StepRelayUsername({
   return (
     <div className="flex flex-col gap-7">
       <div className="space-y-2">
-        <StepBadge step={2} of={path === "creator" ? 5 : 4} />
+        <StepBadge step={2} of={path === "creator" ? 6 : 5} />
         <h2 className="text-2xl font-semibold tracking-tight text-[var(--relay-fg)]">
           Choose your Relay username
         </h2>
@@ -1304,8 +1232,8 @@ export function StepConnectPatreonCreator({
 
   return (
     <PatreonStepShell
-      step={2}
-      of={4}
+      step={3}
+      of={6}
       title="Connect your Patreon"
       subhead="Authorize Relay to import your posts so we can stream your art straight into your gallery."
     >
@@ -1386,8 +1314,10 @@ export function StepConnectPatreonCreator({
 
 export function StepConnectPatreonSupporter({
   initialClientId,
+  onAdvance,
 }: {
   initialClientId: string;
+  onAdvance?: () => void;
 }) {
   const [sessionGate, setSessionGate] = useState<
     "loading" | "needs_signin" | "needs_verify_email" | "ready"
@@ -1433,8 +1363,8 @@ export function StepConnectPatreonSupporter({
 
   return (
     <PatreonStepShell
-      step={2}
-      of={3}
+      step={3}
+      of={5}
       title="Connect your Patreon"
       subhead="Sign in with Patreon so we can show you the creators and tiers you support. You need a verified email before this step (see step 1)."
     >
@@ -1495,8 +1425,19 @@ export function StepConnectPatreonSupporter({
       )}
 
       <p className="text-xs leading-relaxed text-[var(--relay-fg-muted)]">
-        Once you authorize on Patreon, we&apos;ll bring you straight to your feed.
+        Once you authorize on Patreon, come back here and continue — next you&apos;ll choose how
+        you support (free stays available).
       </p>
+      {onAdvance ? (
+        <button
+          type="button"
+          data-testid="onboarding-supporter-patreon-continue"
+          onClick={onAdvance}
+          className="inline-flex h-10 w-full items-center justify-center rounded-xl border border-[var(--relay-border)] px-4 text-sm font-medium text-[var(--relay-fg)] transition-colors hover:border-[var(--relay-electric)]/40"
+        >
+          Continue to plan choice
+        </button>
+      ) : null}
     </PatreonStepShell>
   );
 }
@@ -1691,7 +1632,7 @@ export function StepCreatorProfileBasics({
       <div className="space-y-2">
         <StepBadge
           step={4}
-          of={5}
+          of={6}
           extra="Artists"
           icon={<Palette className="h-3 w-3" strokeWidth={2} />}
         />
@@ -1880,8 +1821,8 @@ export function StepClaimHandleAndGo() {
     <div className="flex flex-col gap-7">
       <div className="space-y-2">
         <StepBadge
-          step={5}
-          of={5}
+          step={6}
+          of={6}
           extra="Artists"
           icon={<Zap className="h-3 w-3" strokeWidth={2} />}
         />
@@ -1964,7 +1905,7 @@ export function StepSupporterReady() {
     <div className="flex flex-col gap-6 py-1">
       <div className="flex flex-col items-center gap-3 text-center">
         <div className="max-w-md space-y-2">
-          <StepBadge step={4} of={4} extra="You're in" />
+          <StepBadge step={5} of={5} extra="You're in" />
           <h2 className="text-2xl font-semibold tracking-tight text-[var(--relay-fg)]">
             Your feed is ready
           </h2>

@@ -70,6 +70,15 @@ export type PatronFeedLockedPostJson = {
   mediaType: "writing" | "photo" | "audio" | "video";
   publishedAt: string;
   tierLabel: PatronFeedTierLabel;
+  /** Slice 9 — discount-backed locked promo when resolved. */
+  effective_promo?: {
+    headline: string;
+    cta_text: string;
+    code: string | null;
+    percent_off: number | null;
+    tracked_url: string | null;
+    source: "explicit" | "tier_default";
+  } | null;
 };
 
 export type PatronFeedCurrentViewerJson = {

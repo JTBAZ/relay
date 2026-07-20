@@ -5,6 +5,7 @@
 
 import type { PrismaClient } from "@prisma/client";
 import { platformInstanceRefreshEligibility } from "../analytics/platform-instance-refresh-service.js";
+import { effectiveVariantRole } from "../analytics/work-crosspost-gaps.js";
 
 export type GalleryPlatformInstanceSummaryWire = {
   platform_instance_id: string;
@@ -44,13 +45,14 @@ export async function getGalleryPlatformInstanceSummariesForPosts(
 
   for (const instance of instances) {
     const eligibility = platformInstanceRefreshEligibility(instance, asOf);
+    const memberRole = roleByPost.get(instance.postId) ?? "standalone";
     const row: GalleryPlatformInstanceSummaryWire = {
       platform_instance_id: instance.id,
       destination: instance.destination,
       external_url: instance.externalUrl,
       status: instance.status,
       last_refreshed_at: instance.lastRefreshedAt?.toISOString() ?? null,
-      variant_role: roleByPost.get(instance.postId) ?? "standalone",
+      variant_role: effectiveVariantRole(memberRole, instance.contentVariantRole),
       refresh_eligible: eligibility.refresh_eligible
     };
     const bucket = out.get(instance.postId) ?? [];

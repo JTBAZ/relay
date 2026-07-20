@@ -26,6 +26,8 @@ export type PatronProfileMe = {
   notification_digest_slot: NotificationDigestSlotId | null;
   notification_digest_timezone: string | null;
   hide_mature_content: boolean;
+  /** MB-14 — live Curator badge. */
+  is_curator?: boolean;
 };
 
 export type PatronProfileMeFetchOptions = {

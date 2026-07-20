@@ -1,0 +1,93 @@
+{
+  "campaigns": {
+    "cr_eh_relay": {
+      "camp1": {
+        "campaign_id": "camp1",
+        "creator_id": "cr_eh_relay",
+        "name": "Escape Hatch Demo",
+        "upstream_updated_at": "2026-07-01T00:00:00.000Z",
+        "version_seq": 1
+      }
+    }
+  },
+  "tiers": {
+    "cr_eh_relay": {
+      "t_gold": {
+        "tier_id": "t_gold",
+        "creator_id": "cr_eh_relay",
+        "campaign_id": "camp1",
+        "title": "Gold",
+        "amount_cents": 1000,
+        "upstream_updated_at": "2026-07-01T00:00:00.000Z",
+        "version_seq": 1
+      }
+    }
+  },
+  "posts": {
+    "cr_eh_relay": {
+      "p1": {
+        "post_id": "p1",
+        "creator_id": "cr_eh_relay",
+        "upstream_status": "active",
+        "current": {
+          "version_seq": 1,
+          "upstream_revision": "r1",
+          "title": "Relay Dump Public",
+          "published_at": "2026-07-01T12:00:00.000Z",
+          "tag_ids": [],
+          "tier_ids": ["relay_tier_public"],
+          "media_ids": ["m_relay"],
+          "ingested_at": "2026-07-01T12:00:00.000Z"
+        },
+        "versions": []
+      },
+      "p2": {
+        "post_id": "p2",
+        "creator_id": "cr_eh_relay",
+        "upstream_status": "active",
+        "current": {
+          "version_seq": 1,
+          "upstream_revision": "r2",
+          "title": "Relay Dump Gold",
+          "published_at": "2026-07-02T12:00:00.000Z",
+          "tag_ids": [],
+          "tier_ids": ["t_gold"],
+          "media_ids": ["m_relay_gold"],
+          "ingested_at": "2026-07-02T12:00:00.000Z"
+        },
+        "versions": []
+      }
+    }
+  },
+  "media": {
+    "cr_eh_relay": {
+      "m_relay": {
+        "media_id": "m_relay",
+        "creator_id": "cr_eh_relay",
+        "post_ids": ["p1"],
+        "upstream_status": "active",
+        "current": {
+          "version_seq": 1,
+          "upstream_revision": "mr1",
+          "mime_type": "image/svg+xml",
+          "ingested_at": "2026-07-01T12:00:00.000Z"
+        },
+        "versions": []
+      },
+      "m_relay_gold": {
+        "media_id": "m_relay_gold",
+        "creator_id": "cr_eh_relay",
+        "post_ids": ["p2"],
+        "upstream_status": "active",
+        "current": {
+          "version_seq": 1,
+          "upstream_revision": "mr2",
+          "mime_type": "image/svg+xml",
+          "ingested_at": "2026-07-02T12:00:00.000Z"
+        },
+        "versions": []
+      }
+    }
+  },
+  "idempotency": {}
+}

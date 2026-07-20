@@ -229,6 +229,90 @@ export const FIRST_PARTY_EVENT_DEFINITIONS: FirstPartyEventDefinition[] = [
     implementationStatus: "live"
   },
   {
+    name: "offer_link_clicked",
+    version: FIRST_PARTY_EVENT_VERSION,
+    storage: "domain_table",
+    requiredFields: ["occurred_at", "creator_id", "post_id", "offer_id"],
+    optionalFields: ["referrer_host"],
+    forbiddenFields: [
+      ...PLATFORM_TELEMETRY_FORBIDDEN_FIELDS,
+      "destination_url",
+      "destination_query",
+      "discount_code",
+      "user_agent",
+      "ip"
+    ],
+    privacyRules: [
+      "Persist only via marketing_offer_click_events — no raw IP or User-Agent.",
+      "referrer_host is hostname only; never full Referer URL or destination query string.",
+      "Do not store discount code values on the click row."
+    ],
+    dedupePosture: "At-least-once append per redirect; no visitor identity required.",
+    sourceSurfaces: ["api: GET /go/:slug"],
+    dashboardMetricKeys: [],
+    implementationStatus: "live"
+  },
+  {
+    name: "promo_piece_impression",
+    version: FIRST_PARTY_EVENT_VERSION,
+    storage: "platform_telemetry_events",
+    requiredFields: [
+      "occurred_at",
+      "creator_id",
+      "promo_piece_id",
+      "post_id",
+      "placement_id",
+      "surface"
+    ],
+    optionalFields: ["impression_id", "session_key"],
+    forbiddenFields: [
+      ...PLATFORM_TELEMETRY_FORBIDDEN_FIELDS,
+      "slot_rank_as_identity",
+      "destination_url",
+      "discount_code"
+    ],
+    privacyRules: [
+      "promo_piece_id is the durable pool identity — never use slot_rank alone as a permanent key.",
+      "placement_id / impression_id are opaque server-minted tokens from a future placement service.",
+      "No raw destination URLs or discount code values."
+    ],
+    dedupePosture:
+      "Planned — at-least-once emit keyed by impression_id when writes exist.",
+    sourceSurfaces: ["planned: discovery/feed insertion surfaces"],
+    dashboardMetricKeys: [],
+    implementationStatus: "planned"
+  },
+  {
+    name: "promo_piece_link_clicked",
+    version: FIRST_PARTY_EVENT_VERSION,
+    storage: "domain_table",
+    requiredFields: [
+      "occurred_at",
+      "creator_id",
+      "promo_piece_id",
+      "post_id",
+      "redirect_slug"
+    ],
+    optionalFields: ["placement_id", "impression_id", "referrer_host", "offer_id", "tier_default_id"],
+    forbiddenFields: [
+      ...PLATFORM_TELEMETRY_FORBIDDEN_FIELDS,
+      "destination_url",
+      "destination_query",
+      "discount_code",
+      "user_agent",
+      "ip"
+    ],
+    privacyRules: [
+      "Click context enters via /go/:slug; server validates ownership before recording.",
+      "Tier-default clicks must carry post_id + promo_piece_id for per-piece reporting.",
+      "referrer_host is hostname only."
+    ],
+    dedupePosture: "Planned — append on validated redirect; no visitor identity required.",
+    sourceSurfaces: ["api: GET /go/:slug (future attribution context)"],
+    dashboardMetricKeys: [],
+    implementationStatus: "planned"
+  },
+  {
     name: "post_reveal",
     version: FIRST_PARTY_EVENT_VERSION,
     storage: "relay_engagement_events",

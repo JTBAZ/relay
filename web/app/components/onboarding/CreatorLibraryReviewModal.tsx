@@ -313,7 +313,6 @@ export function CreatorLibraryReviewModal({
       const onboarding = await fetchCreatorOnboarding();
       const metadata = mergeCreatorOnboardingMetadata(onboarding.metadata, {
         growth_goal: growthGoal,
-        posting_cadence_per_month: monthlyPostTarget,
         library_review_completed_at: new Date().toISOString(),
       });
       const patch: { metadata: Record<string, unknown>; step?: "organized" } = { metadata };

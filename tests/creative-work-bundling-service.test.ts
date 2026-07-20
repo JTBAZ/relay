@@ -3,6 +3,7 @@ import {
   confirmMergeCreativeWorkBundle,
   dismissCreativeWorkBundleSuggestion,
   inferSuggestedVariantRole,
+  linkCreativeWorkMembers,
   scoreBundlePair,
   splitCreativeWorkMember,
   suggestionIdFor,
@@ -136,29 +137,87 @@ describe("confirmMergeCreativeWorkBundle", () => {
   });
 });
 
-describe("splitCreativeWorkMember", () => {
-  it("returns existing default bundle without changes", async () => {
+describe("linkCreativeWorkMembers", () => {
+  it("rejects fewer than two posts", async () => {
+    const prisma = {
+      tenant: { findUnique: vi.fn().mockResolvedValue({ id: "tenant_1" }) }
+    };
+    const out = await linkCreativeWorkMembers(prisma as never, "creator_a", {
+      members: [{ postId: "post_a" }]
+    });
+    expect(out.ok).toBe(false);
+    if (out.ok) return;
+    expect(out.code).toBe("INVALID_INPUT");
+  });
+
+  it("creates a non-default work and moves members with cover sort_order 0", async () => {
+    const createWork = vi.fn().mockResolvedValue({});
+    const updateMember = vi.fn().mockResolvedValue({});
+    const count = vi.fn().mockResolvedValue(0);
+    const deleteWork = vi.fn().mockResolvedValue({});
+    const findManyPosts = vi.fn().mockResolvedValue([
+      { id: "post_a", versions: [{ title: "Page 1" }] },
+      { id: "post_b", versions: [{ title: "Page 2" }] }
+    ]);
+    const findManyMembers = vi.fn().mockResolvedValue([
+      {
+        id: "cwm_a",
+        postId: "post_a",
+        creativeWorkId: "cw_default_post_a",
+        variantRole: "full",
+        memberLabel: null
+      },
+      {
+        id: "cwm_b",
+        postId: "post_b",
+        creativeWorkId: "cw_default_post_b",
+        variantRole: "teaser",
+        memberLabel: null
+      }
+    ]);
+
     const prisma = {
       tenant: { findUnique: vi.fn().mockResolvedValue({ id: "tenant_1" }) },
+      post: { findMany: findManyPosts },
       creativeWorkMember: {
-        findFirst: vi.fn().mockResolvedValue({
-          id: "cwm_default_post_a",
-          creativeWorkId: "cw_default_post_a",
-          variantRole: "standalone",
-          creativeWork: {
-            id: "cw_default_post_a",
-            title: "Alpha",
-            isDefaultBundle: true,
-            members: [{ postId: "post_a" }]
-          },
-          post: { versions: [{ title: "Alpha" }] }
+        findUnique: vi.fn().mockResolvedValue({ id: "existing", creativeWorkId: "cw" }),
+        findMany: findManyMembers,
+        update: updateMember,
+        count,
+        create: vi.fn()
+      },
+      creativeWork: {
+        create: createWork,
+        upsert: vi.fn(),
+        delete: deleteWork,
+        update: vi.fn()
+      },
+      $transaction: vi.fn(async (fn: (tx: unknown) => Promise<unknown>) =>
+        fn({
+          creativeWork: { create: createWork, delete: deleteWork, update: vi.fn() },
+          creativeWorkMember: { update: updateMember, count }
         })
-      }
+      )
     };
 
-    const out = await splitCreativeWorkMember(prisma as never, "creator_a", "post_a");
+    const out = await linkCreativeWorkMembers(prisma as never, "creator_a", {
+      title: "Comic set",
+      members: [
+        { postId: "post_a", variantRole: "full", memberLabel: "Page 1", isCover: true },
+        { postId: "post_b", variantRole: "teaser", memberLabel: "Teaser" }
+      ]
+    });
+
     expect(out.ok).toBe(true);
     if (!out.ok) return;
-    expect(out.result.creative_work_id).toBe("cw_default_post_a");
+    expect(out.result.title).toBe("Comic set");
+    expect(out.result.member_count).toBe(2);
+    expect(out.result.members[0]).toMatchObject({
+      post_id: "post_a",
+      sort_order: 0,
+      member_label: "Page 1"
+    });
+    expect(createWork).toHaveBeenCalled();
+    expect(updateMember).toHaveBeenCalledTimes(2);
   });
 });

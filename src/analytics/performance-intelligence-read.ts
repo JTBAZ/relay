@@ -23,6 +23,7 @@ import {
 } from "./platform-instance-refresh-service.js";
 import {
   computeWorkCrosspostGaps,
+  effectiveVariantRole,
   type PerformanceWorkCrosspostGapsWire
 } from "./work-crosspost-gaps.js";
 
@@ -226,18 +227,21 @@ async function loadPostTitles(
   );
 }
 
-function mapPlatformInstanceWire(row: {
-  id: string;
-  destination: string;
-  externalUrl: string | null;
-  externalId: string | null;
-  attemptId: string | null;
-  linkSource: string;
-  status: string;
-  refreshPolicy: string;
-  linkedAt: Date;
-  lastRefreshedAt: Date | null;
-}) {
+function mapPlatformInstanceWire(
+  row: {
+    id: string;
+    destination: string;
+    externalUrl: string | null;
+    externalId: string | null;
+    attemptId: string | null;
+    linkSource: string;
+    status: string;
+    refreshPolicy: string;
+    linkedAt: Date;
+    lastRefreshedAt: Date | null;
+  },
+  options?: { variantRole?: string }
+) {
   return {
     platform_instance_id: row.id,
     destination: row.destination,
@@ -248,7 +252,8 @@ function mapPlatformInstanceWire(row: {
     status: row.status,
     refresh_policy: row.refreshPolicy,
     linked_at: row.linkedAt.toISOString(),
-    last_refreshed_at: row.lastRefreshedAt?.toISOString() ?? null
+    last_refreshed_at: row.lastRefreshedAt?.toISOString() ?? null,
+    ...(options?.variantRole ? { variant_role: options.variantRole } : {})
   };
 }
 
@@ -656,18 +661,42 @@ export type PerformanceVariantRoleBreakdown = Partial<
 function buildVariantRoleBreakdown(
   members: Array<{ postId: string; variantRole: string }>,
   rowsByPost: Map<string, RollupRow[]>,
+  platformInstances: Array<{
+    postId: string;
+    destination: string;
+    contentVariantRole?: string | null;
+  }>,
   asOf: Date
 ): PerformanceVariantRoleBreakdown {
-  const membersByRole = new Map<string, string[]>();
-  for (const member of members) {
-    const posts = membersByRole.get(member.variantRole) ?? [];
-    posts.push(member.postId);
-    membersByRole.set(member.variantRole, posts);
+  const roleByPost = new Map(members.map((member) => [member.postId, member.variantRole]));
+  const instanceRoleByPostDest = new Map(
+    platformInstances
+      .filter((instance) => instance.contentVariantRole)
+      .map((instance) => [
+        `${instance.postId}:${instance.destination}`,
+        instance.contentVariantRole!.trim()
+      ])
+  );
+
+  const roleForRollupRow = (row: RollupRow): string => {
+    const instanceRole = instanceRoleByPostDest.get(`${row.postId}:${row.destination}`);
+    if (instanceRole) return instanceRole;
+    return roleByPost.get(row.postId) ?? "standalone";
+  };
+
+  const rowsByRole = new Map<string, RollupRow[]>();
+  for (const rows of rowsByPost.values()) {
+    for (const row of rows) {
+      const role = roleForRollupRow(row);
+      const bucket = rowsByRole.get(role) ?? [];
+      bucket.push(row);
+      rowsByRole.set(role, bucket);
+    }
   }
 
   const breakdown: PerformanceVariantRoleBreakdown = {};
-  for (const [role, postIds] of membersByRole.entries()) {
-    const rows = postIds.flatMap((postId) => rowsByPost.get(postId) ?? []);
+  for (const [role, rows] of rowsByRole.entries()) {
+    const postIds = [...new Set(rows.map((row) => row.postId))];
     const aggregated = mapAggregatedPerformance(rows, asOf);
     breakdown[role as CreativeWorkVariantRole] = {
       member_count: postIds.length,
@@ -765,9 +794,15 @@ export async function getPerformanceWorkBundle(
   }
 
   const instancesByPost = new Map<string, ReturnType<typeof mapPlatformInstanceWire>[]>();
+  const roleByPost = new Map(work.members.map((member) => [member.postId, member.variantRole]));
   for (const instance of platformInstances) {
     const bucket = instancesByPost.get(instance.postId) ?? [];
-    bucket.push(mapPlatformInstanceWire(instance));
+    const memberRole = roleByPost.get(instance.postId) ?? "standalone";
+    bucket.push(
+      mapPlatformInstanceWire(instance, {
+        variantRole: effectiveVariantRole(memberRole, instance.contentVariantRole)
+      })
+    );
     instancesByPost.set(instance.postId, bucket);
   }
 
@@ -808,7 +843,12 @@ export async function getPerformanceWorkBundle(
   };
 
   if (options?.groupByVariantRole) {
-    report.role_breakdown = buildVariantRoleBreakdown(work.members, rowsByPost, ctx.asOf);
+    report.role_breakdown = buildVariantRoleBreakdown(
+      work.members,
+      rowsByPost,
+      platformInstances,
+      ctx.asOf
+    );
   }
 
   return {
@@ -850,11 +890,15 @@ function mapWorkInstanceRow(
     linkedAt: Date;
     lastRefreshedAt: Date | null;
     lastManualRefreshRequestedAt: Date | null;
+    contentVariantRole?: string | null;
   },
-  asOf: Date
+  asOf: Date,
+  memberVariantRole: string
 ): PerformanceWorkInstanceRowWire {
   return {
-    ...mapPlatformInstanceWire(instance),
+    ...mapPlatformInstanceWire(instance, {
+      variantRole: effectiveVariantRole(memberVariantRole, instance.contentVariantRole)
+    }),
     ...platformInstanceRefreshEligibility(instance, asOf)
   };
 }
@@ -902,9 +946,11 @@ export async function getPerformanceWorkInstances(
   ]);
 
   const instancesByPost = new Map<string, PerformanceWorkInstanceRowWire[]>();
+  const roleByPost = new Map(work.members.map((member) => [member.postId, member.variantRole]));
   for (const instance of platformInstances) {
     const bucket = instancesByPost.get(instance.postId) ?? [];
-    bucket.push(mapWorkInstanceRow(instance, asOf));
+    const memberRole = roleByPost.get(instance.postId) ?? "standalone";
+    bucket.push(mapWorkInstanceRow(instance, asOf, memberRole));
     instancesByPost.set(instance.postId, bucket);
   }
 
@@ -1005,6 +1051,7 @@ export async function getPerformancePostVariant(
 
   const aggregated = mapAggregatedPerformance(rollupRows, ctx.asOf);
   const member = post.creativeWorkMember;
+  const memberVariantRole = member?.variantRole ?? "standalone";
 
   return {
     ok: true,
@@ -1026,7 +1073,11 @@ export async function getPerformancePostVariant(
       by_destination: aggregated.by_destination,
       daily_series: aggregated.daily_series,
       total_reach: aggregated.total_reach,
-      platform_instances: platformInstances.map(mapPlatformInstanceWire),
+      platform_instances: platformInstances.map((instance) =>
+        mapPlatformInstanceWire(instance, {
+          variantRole: effectiveVariantRole(memberVariantRole, instance.contentVariantRole)
+        })
+      ),
       freshness: aggregated.freshness,
       source_summary: aggregated.source_summary
     }

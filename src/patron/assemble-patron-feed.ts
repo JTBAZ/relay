@@ -19,6 +19,7 @@ import {
   resolvePatronEntitlementDisplayLabel,
   resolvePostTierDisplayLabel
 } from "../gallery/tier-display-label.js";
+import { loadEffectivePromoForViewer } from "../marketing/load-effective-promo.js";
 
 const MAX_POSTS_SCAN = 800;
 const DEFAULT_LIMIT = 30;
@@ -239,7 +240,7 @@ export async function assemblePatronFeed(args: AssemblePatronFeedArgs): Promise<
 
   for (const post of postsRaw) {
     const v = post.versions[0];
-    if (!v) continue;
+    if (!v?.publishedAt) continue;
     if (hiddenPostIdsByCreator.get(post.creatorId)?.has(post.id)) {
       continue;
     }
@@ -547,44 +548,69 @@ export async function assemblePatronFeed(args: AssemblePatronFeedArgs): Promise<
     };
   });
 
-  const lockedPosts = lockedCandidates.slice(0, LOCKED_POSTS_LIMIT).map((c) => {
-    const prof = profileByCreator.get(c.creatorId);
-    const { handle, displayName, discipline, avatarUrl } = creatorIdentityFromProfile(
-      prof,
-      c.creatorId
-    );
-    const tierCatalog = tiersByCreator.get(c.creatorId) ?? {};
-    const snap = snapByCreator.get(c.creatorId);
-    const patronTierLabel = resolvePatronEntitlementDisplayLabel(
-      snap?.entitledTierIds ?? [],
-      tierCatalog
-    );
-    const tierLabel = resolvePostTierDisplayLabel({
-      tierIds: c.tierIds,
-      tierCatalog,
-      isPublicPost: c.isPublicPost
-    });
+  const lockedSlice = lockedCandidates.slice(0, LOCKED_POSTS_LIMIT);
+  const lockedPosts = await Promise.all(
+    lockedSlice.map(async (c) => {
+      const prof = profileByCreator.get(c.creatorId);
+      const { handle, displayName, discipline, avatarUrl } = creatorIdentityFromProfile(
+        prof,
+        c.creatorId
+      );
+      const tierCatalog = tiersByCreator.get(c.creatorId) ?? {};
+      const snap = snapByCreator.get(c.creatorId);
+      const patronTierLabel = resolvePatronEntitlementDisplayLabel(
+        snap?.entitledTierIds ?? [],
+        tierCatalog
+      );
+      const tierLabel = resolvePostTierDisplayLabel({
+        tierIds: c.tierIds,
+        tierCatalog,
+        isPublicPost: c.isPublicPost
+      });
+      const entitled = snap?.entitledTierIds ?? [];
+      const audienceKeys =
+        entitled.length > 0 ? entitled.map((t) => `tier:${t}`) : ["anonymous"];
+      const catalogTiers = Object.values(tierCatalog).map((t) => ({
+        relay_tier_id: t.tier_id,
+        amount_cents: typeof t.amount_cents === "number" ? t.amount_cents : null
+      }));
+      let effective_promo = null;
+      try {
+        effective_promo = await loadEffectivePromoForViewer({
+          prisma,
+          creatorId: c.creatorId,
+          postId: c.postId,
+          audienceKeys,
+          permissionOutcome: "locked_preview",
+          postTierIds: c.tierIds,
+          catalogTiers
+        });
+      } catch {
+        effective_promo = null;
+      }
 
-    return {
-      id: c.postId,
-      creator: {
-        id: c.creatorId,
-        handle,
-        displayName,
-        discipline,
-        avatarUrl,
-        isFollowed: true,
-        followerCount: 0,
-        postCount: 0,
-        onRelay: true as const,
-        patronTierLabel
-      },
-      title: c.title,
-      mediaType: c.mediaType,
-      publishedAt: c.publishedAt.toISOString(),
-      tierLabel
-    };
-  });
+      return {
+        id: c.postId,
+        creator: {
+          id: c.creatorId,
+          handle,
+          displayName,
+          discipline,
+          avatarUrl,
+          isFollowed: true,
+          followerCount: 0,
+          postCount: 0,
+          onRelay: true as const,
+          patronTierLabel
+        },
+        title: c.title,
+        mediaType: c.mediaType,
+        publishedAt: c.publishedAt.toISOString(),
+        tierLabel,
+        effective_promo
+      };
+    })
+  );
 
   return {
     feedPosts,

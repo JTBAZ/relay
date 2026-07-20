@@ -5,7 +5,8 @@
 import type { PrismaClient } from "@prisma/client";
 
 export const PLATFORM_OPERATOR_AUDIT_ACTIONS = {
-  registryRead: "platform_metrics.registry.read"
+  registryRead: "platform_metrics.registry.read",
+  tipBetaFunnelRead: "platform_metrics.tip_beta_funnel.read"
 } as const;
 
 export type PlatformOperatorAuditOutcome = "allowed" | "denied";

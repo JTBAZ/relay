@@ -1,6 +1,6 @@
 # Relay Autopost — Build Plan
 
-**Status:** WI-1 through WI-6 and WI-8 landed. WI-5 posting goals / nudge worker and WI-7 gap/trend enhancements not started.
+**Status:** WI-1 through WI-6 and WI-8 landed (including **WI-5** posting goals + nudge worker). WI-7 gap/trend enhancements not started.
 **Scope:** A guided posting copilot that walks an artist from a bin of raw work-in-progress media to published, on-brand posts across their connected platforms — with opt-in growth enhancements gated by SaaS tier.
 **Related:**
 
@@ -8,6 +8,7 @@
 - Feature scoring: canvas `ai-analytics-feature-review.canvas.tsx`
 - Business model: `[financial-atlas.md](financial-atlas.md)`
 - Cross-post precedent: `[EXTENSION_CROSS_POST_BUILD_PLAN.md](EXTENSION_CROSS_POST_BUILD_PLAN.md)`
+- Goal Cycle multi-post planning/materialization: [`studio/goal-cycle-build-plans/00-README.md`](studio/goal-cycle-build-plans/00-README.md)
 
 ---
 
@@ -59,6 +60,16 @@ Product decisions locked for WI-2 / WI-3 / WI-4 implementation:
 | 6   | **Scheduled publish**    | **Deferred.** No future `published_at` worker in this slice.                                                                                                                                                                                        |
 | 7   | **Lifecycle**            | **One active draft** per creator (`nudged`                                                                                                                                                                                                          |
 
+
+### Goal Cycle materialization boundary
+
+The Library-first Goal Cycle is a separate bounded planner that reuses Autopost/distribution execution after approval. Its canonical contract is [`studio/GOAL_CYCLE_PRODUCT_CONTRACT.md`](studio/GOAL_CYCLE_PRODUCT_CONTRACT.md).
+
+- Approval is allowed to create multiple **unpublished Relay-native post records**, one per Plan slot, plus post-level distribution plans, variants, PostBot tasks, and rail events.
+- These planned records remain creator-only and do not satisfy posting-goal progress until explicit publish.
+- The current `AutopostDraft` hybrid rule above remains authoritative for the existing single-post Autopost composer. Goal Cycle VS7 adds explicit `Post.publishState = draft | published` and nullable `PostVersion.publishedAt`; existing rows migrate to `published`. Goal Cycle planned posts use `source = RELAY`, creator-only access, `publishState = draft`, and `publishedAt = null` until creator confirmation. Workers must not use epoch/future timestamps or silently mark planned work published.
+- Tier/access selection and cross-posting retain the existing human confirmation gates. Goal Cycle scheduling never authorizes a future worker or extension to click Publish autonomously.
+- Media may be attached after materialization; missing media is a visible readiness state, not a fabricated completed draft.
 
 ### Style Profile (required before first Autopost draft)
 
@@ -235,12 +246,12 @@ Plus an additive entitlement signal (tier) on the creator/account record, or a d
 | 2   | `draft-post-enablement`   | Better · Dev T1 · **done** | Hybrid `AutopostDraft` + media reservation; publish via standard Relay post flow.                                                             | `src/autopost/`*, migration, `src/server.ts`                            |
 | 3   | `style-profile`           | Better · Dev T1 · **done** | Tone presets + required-before-draft gate.                                                                                                    | `src/autopost/style-profile-service.ts`                                 |
 | 4   | `autopost-draft-service`  | Better · Dev T1 · **done** | Compose a draft from staged `media_ids` + Style Profile + Discord caption via `src/ai`; fall back to blank editable draft on `skipped`.       | `src/autopost/`* (new), `src/ai`, staging query                         |
-| 5A  | `posting-goal-schema-api` | Better · Dev T1            | Persist creator monthly Relay post goal + bonus-nudge preference; expose read/write + status APIs.                                            | `prisma/schema.prisma`, migration, `src/autopost/`, `src/server.ts`     |
-| 5B  | `posting-goal-onboarding` | Better · Dev T1            | Wire existing library-review posting cadence to `CreatorPostingGoal` API; add bonus-nudge checkbox; change default from 8 → 1.                  | `web/app/components/onboarding/CreatorLibraryReviewModal.tsx`, `web/lib/relay-api.ts`, `tests/web/creator-library-review-modal.test.tsx` |
-| 5C  | `posting-goal-settings`   | Better · Dev T1            | Let creators adjust the same goal after onboarding in profile/settings.                                                                       | `web/app/studio/designer/profile/CreatorProfileClient.tsx`, API client  |
-| 5D  | `posting-goal-status-card`| Better · Dev T1            | Show dashboard/Studio landing progress and first nudge surface with Start Autopost / upload / snooze / skip actions.                         | `web/app/studio/`*, `web/lib/relay-api.ts`                              |
-| 5E  | `posting-goal-worker`     | Better · Dev T1            | Daily job counts Relay-native posts this month, creates one active nudge per creator/month/type, respects snooze/skip.                        | `src/jobs/`*, `src/autopost/`, `src/main.ts`, `src/worker.ts`           |
-| 5F  | `nudge-upload-modal`      | Better · Dev T1            | If behind pace and bin is empty, allow low-friction upload/drop from the nudge, then route to Autopost.                                       | `web/app/studio/`*, native upload helpers                               |
+| 5A  | `posting-goal-schema-api` | Better · Dev T1 · **done** | Persist creator monthly Relay post goal + bonus-nudge preference; expose read/write + status APIs.                                            | `prisma/schema.prisma`, migration, `src/autopost/`, `src/server.ts`     |
+| 5B  | `posting-goal-onboarding` | Better · Dev T1 · **done** | Wire existing library-review posting cadence to `CreatorPostingGoal` API; add bonus-nudge checkbox; change default from 8 → 1.                  | `web/app/components/onboarding/CreatorLibraryReviewModal.tsx`, `web/lib/relay-api.ts`, `tests/web/creator-library-review-modal.test.tsx` |
+| 5C  | `posting-goal-settings`   | Better · Dev T1 · **done** | Let creators adjust the same goal after onboarding in profile/settings.                                                                       | `web/app/studio/designer/profile/CreatorProfileClient.tsx`, API client  |
+| 5D  | `posting-goal-status-card`| Better · Dev T1 · **done** | Show dashboard/Studio landing progress and first nudge surface with Start Autopost / upload / snooze / skip actions.                         | `web/app/studio/`*, `web/lib/relay-api.ts`                              |
+| 5E  | `posting-goal-worker`     | Better · Dev T1 · **done** | Daily job counts Relay-native posts this month, creates one active nudge per creator/month/type, respects snooze/skip.                        | `src/jobs/`*, `src/autopost/`, `src/main.ts`, `src/worker.ts`           |
+| 5F  | `nudge-upload-modal`      | Better · Dev T1 · **done** | If behind pace and bin is empty, allow low-friction upload/drop from the nudge, then route to Autopost.                                       | `web/app/studio/`*, native upload helpers                               |
 | 6   | `autopost-compose-ux`     | Better · Dev T1 · **done** | Picker → Draft → Preview flow.                                                                                                                | `web/app/studio/autopost/`*, `web/lib/relay-api.ts`                     |
 | 7   | `enhance-gap-trend`       | Better · Dev T1            | Gap-fit + Trend-timing facts on the preview, narrated via `src/ai`. Built on `recommendation-engine.ts` + `platform-metric-trend-service.ts`. | `src/analytics`, `src/platform-metrics`, `src/autopost`                 |
 | 8   | `distribute-bluesky-x`    | Better · Dev T1 · **done** | Bluesky API publish + X extension form-fill; shared cross-post package builder.                                                               | `src/extension/cross-post-package.ts`, `extension/src/lib/cross-post-`* |
@@ -276,7 +287,9 @@ flowchart TD
 
 **Recommended vertical slice (already landed):** 2 → 3 → 4 → 6 → 8 (Relay + Patreon/X path). That ships a working "pick → draft → publish/cross-post" flow before adding the worker nudge and enhancements.
 
-**Next recommended vertical slice:** 5A → 5B → 5C → 5D, then 5E and 5F. This gives creators a visible monthly goal and progress card before the background worker starts producing nudges.
+**WI-5 (landed):** 5A → 5F posting goals + nudge worker + Studio card + upload modal. Polish: nudges resolve when the monthly target is met (status read, worker, and Relay publish); Insights Action Hub hydrates live goal/status; onboarding no longer dual-writes `posting_cadence_per_month`.
+
+**Next recommended vertical slice:** 7 (`enhance-gap-trend`), then Best-tier items (9–11) and entitlement gating (12) as needed.
 
 ---
 
@@ -387,7 +400,7 @@ type CreatorPostingGoalStatusWire = {
   - "Suggest an extra post when I have unused media ready."
 - On modal open, hydrate from `fetchCreatorPostingGoal` when a row exists; otherwise fall back to `metadata.posting_cadence_per_month`, then default `1`.
 - In `handleFinish`, call `putCreatorPostingGoal({ monthly_post_target, bonus_nudges_enabled, timezone })` **before** or alongside the existing onboarding metadata patch.
-  - Keep writing `posting_cadence_per_month` to metadata during transition (dual-write) so analytics copy that reads metadata does not break until cleaned up.
+  - Goal of record is `CreatorPostingGoal` only (no `posting_cadence_per_month` dual-write). Legacy metadata may still be read as a hydrate fallback if no goal row exists.
   - Pass browser timezone via `Intl.DateTimeFormat().resolvedOptions().timeZone` when available.
 - Require valid monthly target (1–31 per API; modal may keep 1–60 client cap but clamp on save) before finish enables.
 - Do **not** add a second posting-goal field to `StepCreatorProfileBasics`.
@@ -555,6 +568,31 @@ if (result.ok) {
 ```
 
 Config via env (`RELAY_AI_ENABLED`, `RELAY_AI_PROVIDER`, `RELAY_AI_API_KEY`, `RELAY_AI_MODEL_CHEAP`, `RELAY_AI_MODEL_FLAGSHIP`, `RELAY_AI_MAX_OUTPUT_TOKENS`). See `.env.example`.
+
+---
+
+## Shipped — Insights ↔ Autopost / PostBot context cross-talk
+
+**Status:** shipped. Spec + UX: [`docs/analytics/INSIGHTS_ACTION_HUB_UX.md`](analytics/INSIGHTS_ACTION_HUB_UX.md).
+
+**Problem (was):** Coach propose builds a grounded `fact_pack` / findings report, and creators fill a brief (`PostingAssistantContext`) during Attack Review — but Autopost draft AI and PostBot did not systematically **reuse** Insights-mounted studio context.
+
+**Behavior:**
+
+1. Insights Hub mounts a durable **studio brief** + **latest report** (fact pack / findings).
+2. Autopost LLM (`generateAutopostDraftCopy` via `loadStudioMountedContext`) and PostBot task rationales **read** that mounted context.
+3. Routine Autopost / PostBot ticks **do not** re-run a full metrics search; refresh only on explicit **Review with AI** / **Frame next posts** / Coach propose.
+4. Insights primary CTA: **Frame next posts** → nudged `AutopostDraft` frames (`intent`, optional `performance_goal_id`).
+
+**Acceptance:**
+
+- [x] Brief fields persist at creator scope and are available to Autopost compose without re-entering Transform & route.
+- [x] Latest report (or `coach_review` checkpoint proposal) is addressable from Insights “Full report.”
+- [x] Autopost draft generation includes brief + report-derived intent when present (`buildAutopostDraftAiFacts`).
+- [x] Token/cost path: no automatic second `buildCoachFactPack` on every Autopost open (snippet-only from checkpoint).
+- [x] Plan create / PostBot persist merge studio brief under thin `assistant_context` (request wins when set).
+
+**Code:** `src/creator/studio-mounted-context.ts`, `src/autopost/autopost-draft-ai.ts`, `src/distribution/post-distribution-service.ts`, `src/distribution/postbot-task-service.ts`.
 
 ---
 

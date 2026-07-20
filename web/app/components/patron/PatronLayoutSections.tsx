@@ -7,7 +7,8 @@ import {
   galleryItemPreviewSrc,
   type GalleryItem,
   type PageLayout,
-  type TierFacet
+  type TierFacet,
+  type TipGatedDiscoverItem
 } from "@/lib/relay-api";
 import { accessChipLabel } from "@/app/components/GalleryGridTile";
 import { groupGalleryItemsByPost } from "@/lib/gallery-group";
@@ -17,14 +18,15 @@ import { visitorMediaTierGateLocked } from "@/lib/visitor-tier-gate";
 import { VisitorBatchSlideMedia } from "@/app/components/VisitorBatchSlideMedia";
 import {
   VisitorTierGateBackdrop,
-  VisitorTierGateOverlay,
   type VisitorTierGateOverlayVariant
 } from "@/app/components/visitor/VisitorTierGateOverlay";
+import { LockedPromoOverlay } from "@/app/components/visitor/LockedPromoOverlay";
 import {
   VisitorPatronTileEngageCluster,
   visitorPatronStarSnipFromEngagement,
   type VisitorPatronEngagementCallbacks
 } from "@/app/components/visitor/VisitorPatronTileEngage";
+import { TipBlurredTile } from "@/components/patron/TipRevealModal";
 
 type Props = {
   layout: PageLayout;
@@ -44,6 +46,9 @@ type Props = {
   /** Visitor star (whole post) + snip (visible slide’s media); omit in designer-only contexts */
   patronEngagement?: VisitorPatronEngagementCallbacks;
   onVisitorTierReveal?: (args: { postId: string; mediaId?: string }) => void;
+  /** Tip beta (MB-6): eligible locked promo posts → Tip blur tile. */
+  tipGatedByPostId?: Map<string, TipGatedDiscoverItem>;
+  onTipSelect?: (item: TipGatedDiscoverItem) => void;
   /**
    * Site Designer canvas: wrap each API section body (title + grid) for selection chrome.
    * When set, the outer `<section>` wrapper is omitted — use `children` only inside your frame.
@@ -81,6 +86,8 @@ function SectionGroupTile({
   lockedOverlayVariant,
   patronEngagement,
   onVisitorTierReveal,
+  tipItem,
+  onTipSelect,
   imgClass = "aspect-square",
 }: {
   items: GalleryItem[];
@@ -94,6 +101,8 @@ function SectionGroupTile({
   lockedOverlayVariant: VisitorTierGateOverlayVariant;
   patronEngagement?: VisitorPatronEngagementCallbacks;
   onVisitorTierReveal?: (args: { postId: string; mediaId?: string }) => void;
+  tipItem?: TipGatedDiscoverItem;
+  onTipSelect?: (item: TipGatedDiscoverItem) => void;
   imgClass?: string;
 }) {
   const n = items.length;
@@ -126,6 +135,10 @@ function SectionGroupTile({
     ? visitorPatronStarSnipFromEngagement(primary.post_id, patronEngagement)
     : null;
 
+  if (tipItem && soloGateLocked && onTipSelect) {
+    return <TipBlurredTile item={tipItem} onSelect={onTipSelect} />;
+  }
+
   return (
     <div className="group relative overflow-hidden rounded-lg bg-current/[0.06] motion-safe:transition-[transform,box-shadow] motion-safe:duration-300 motion-safe:ease-out hover:z-[1] hover:-translate-y-0.5 hover:shadow-[0_12px_40px_-12px_rgba(0,0,0,0.55)]">
       {hasMulti ? (
@@ -155,7 +168,7 @@ function SectionGroupTile({
           {soloGateLocked ? (
             <div className="relative h-full w-full min-h-[8rem]">
               <VisitorTierGateBackdrop previewSrc={galleryItemPreviewSrc(solo)} />
-              <VisitorTierGateOverlay
+              <LockedPromoOverlay
                 unlockLabel={designerUnlockLabelFromFacets(solo, tierOrderIds, tierTitleById)}
                 accentColor={accentColor}
                 membershipUrl={membershipUrl}
@@ -306,6 +319,8 @@ export default function PatronLayoutSections({
   lockedOverlayVariant = "blurred",
   patronEngagement,
   onVisitorTierReveal,
+  tipGatedByPostId,
+  onTipSelect,
   renderDesignerSectionChrome
 }: Props) {
   const showTierBadges = layout.theme.show_tier_badges ?? true;
@@ -327,7 +342,8 @@ export default function PatronLayoutSections({
     accentColor,
     lockedOverlayVariant,
     patronEngagement,
-    onVisitorTierReveal
+    onVisitorTierReveal,
+    onTipSelect
   };
 
   return (
@@ -369,6 +385,7 @@ export default function PatronLayoutSections({
                     key={displayGroups[0].post_id}
                     items={displayGroups[0].items}
                     imgClass="aspect-[16/9] w-full"
+                    tipItem={tipGatedByPostId?.get(displayGroups[0].post_id)}
                     {...sectionGroupProps}
                   />
                 ) : null}
@@ -385,6 +402,7 @@ export default function PatronLayoutSections({
                         key={group.post_id}
                         items={group.items}
                         imgClass="aspect-square"
+                        tipItem={tipGatedByPostId?.get(group.post_id)}
                         {...sectionGroupProps}
                       />
                     ))}
@@ -403,6 +421,7 @@ export default function PatronLayoutSections({
                   <SectionGroupTile
                     key={group.post_id}
                     items={group.items}
+                    tipItem={tipGatedByPostId?.get(group.post_id)}
                     imgClass={
                       sec.layout === "masonry"
                         ? "max-h-80 min-h-[10rem] h-auto w-full"

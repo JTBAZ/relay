@@ -1,0 +1,29 @@
+{
+  "name": "@relay/escape-hatch",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": "^20.19.0 || ^22.12.0 || >=24.0.0"
+  },
+  "scripts": {
+    "fixture": "tsx src/cli.ts fixture",
+    "wizard": "tsx src/cli.ts wizard",
+    "build-site": "tsx src/cli.ts build",
+    "from-relay": "tsx src/cli.ts from-relay",
+    "zip": "tsx src/cli.ts zip",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "archiver": "^7.0.1",
+    "relay": "file:../.."
+  },
+  "devDependencies": {
+    "@types/archiver": "^6.0.3",
+    "@types/node": "^20",
+    "tsx": "^4.19.3",
+    "typescript": "^5",
+    "vitest": "^3.0.5"
+  }
+}

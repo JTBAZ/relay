@@ -49,6 +49,8 @@ Module: [`performance-insight-goals-service.ts`](../../src/analytics/performance
 
 GET also returns **suggested goals** (not persisted) for top work, campaign, or single-platform concentration. The Actions tab **Set goal** button POSTs them.
 
+These targeted performance goals remain an Analytics primitive. The multi-step Library planning lifecycle is specified separately in [`../studio/GOAL_CYCLE_PRODUCT_CONTRACT.md`](../studio/GOAL_CYCLE_PRODUCT_CONTRACT.md). Goal Cycle may consume these facts, but paid-support success must use [`CONVERSION_ATTRIBUTION.md`](CONVERSION_ATTRIBUTION.md); `reach` is never a conversion proxy.
+
 ## UI
 
 | Surface | Component |

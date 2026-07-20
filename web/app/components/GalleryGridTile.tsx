@@ -298,12 +298,13 @@ export default function GalleryGridTile({
     ? "relative min-h-0 w-full flex-1 overflow-hidden bg-[var(--lib-muted)]"
     : `${thumbClass} relative overflow-hidden bg-[var(--lib-muted)]`;
 
+  /** Focused carousel asset (or sole asset) — multi-asset retry no longer requires PostBatchModal (G8). */
   const showExportFail =
-    items.length === 1 && !item.has_export && Boolean(item.export_error) && Boolean(creatorId);
+    !item.has_export && Boolean(item.export_error) && Boolean(creatorId);
 
   const runExportRetry = async (e: ReactMouseEvent<HTMLButtonElement>) => {
     e.stopPropagation();
-    if (!creatorId || items.length !== 1 || exportRetryBusy) return;
+    if (!creatorId || exportRetryBusy) return;
     setExportRetryBusy(true);
     try {
       await relayFetch<unknown>("/api/v1/export/media", {

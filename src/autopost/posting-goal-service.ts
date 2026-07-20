@@ -2,12 +2,14 @@ import type { PrismaClient } from "@prisma/client";
 import {
   MediaIngestOrigin,
   MediaProcessingStatus,
+  PostPublishState,
   PostSource,
   PostUpstreamStatus
 } from "@prisma/client";
 
 export const DEFAULT_POSTING_GOAL_TIMEZONE = "UTC";
 export const DEFAULT_MONTHLY_POST_TARGET = 1;
+/** @deprecated Epoch sentinel retired by VS7-T01; counts use publishState=published. */
 export const DRAFT_PUBLISHED_AT = new Date(0);
 
 export type PostingGoalPaceStatus = "on_track" | "behind" | "complete" | "bonus_available";
@@ -20,6 +22,7 @@ export type CreatorPostingGoalWire = {
   bonus_nudges_enabled: boolean;
   timezone: string;
   enabled: boolean;
+  remind_me_global: boolean;
   /** True when no durable row exists yet (defaults only). */
   is_default: boolean;
   updated_at: string | null;
@@ -30,6 +33,7 @@ export type CreatorPostingGoalPutInput = {
   bonus_nudges_enabled?: boolean;
   timezone?: string | null;
   enabled?: boolean;
+  remind_me_global?: boolean;
 };
 
 export type CreatorPostingGoalStatusWire = {
@@ -217,6 +221,7 @@ function mapGoalRow(row: {
   bonusNudgesEnabled: boolean;
   timezone: string;
   enabled: boolean;
+  remindMeGlobal: boolean;
   updatedAt: Date;
 }): CreatorPostingGoalWire {
   return {
@@ -225,6 +230,7 @@ function mapGoalRow(row: {
     bonus_nudges_enabled: row.bonusNudgesEnabled,
     timezone: row.timezone,
     enabled: row.enabled,
+    remind_me_global: row.remindMeGlobal,
     is_default: false,
     updated_at: row.updatedAt.toISOString()
   };
@@ -237,6 +243,7 @@ function defaultGoalWire(creatorId: string): CreatorPostingGoalWire {
     bonus_nudges_enabled: false,
     timezone: DEFAULT_POSTING_GOAL_TIMEZONE,
     enabled: true,
+    remind_me_global: true,
     is_default: true,
     updated_at: null
   };
@@ -280,10 +287,11 @@ export async function countRelayNativePostsInWindow(
       creatorId,
       source: PostSource.RELAY,
       upstreamStatus: PostUpstreamStatus.active,
+      publishState: PostPublishState.published,
       versions: {
         some: {
           publishedAt: {
-            gt: DRAFT_PUBLISHED_AT,
+            not: null,
             gte: window.start,
             lt: window.end
           }
@@ -466,6 +474,10 @@ export async function putCreatorPostingGoal(
       : (existing?.timezone ?? DEFAULT_POSTING_GOAL_TIMEZONE);
   const enabled =
     input.enabled !== undefined ? Boolean(input.enabled) : (existing?.enabled ?? true);
+  const remindMeGlobal =
+    input.remind_me_global !== undefined
+      ? Boolean(input.remind_me_global)
+      : (existing?.remindMeGlobal ?? true);
 
   const row = await prisma.creatorPostingGoal.upsert({
     where: { creatorId: id },
@@ -474,17 +486,98 @@ export async function putCreatorPostingGoal(
       monthlyPostTarget,
       bonusNudgesEnabled,
       timezone,
-      enabled
+      enabled,
+      remindMeGlobal
     },
     update: {
       monthlyPostTarget,
       bonusNudgesEnabled,
       timezone,
-      enabled
+      enabled,
+      remindMeGlobal
     }
   });
 
   return mapGoalRow(row);
+}
+
+/**
+ * Close open nudges when the monthly Relay goal is met.
+ * - `posting_goal`: resolved once posts >= target (active/snoozed only; skip stays skip).
+ * - `bonus_post`: resolved when pace is `complete` (goal met, bonus not applicable).
+ * Idempotent.
+ */
+export async function reconcilePostingGoalNudgeResolution(
+  prisma: PrismaClient,
+  creatorId: string,
+  args: {
+    periodKey: string;
+    postsThisMonth: number;
+    monthlyPostTarget: number;
+    paceStatus: PostingGoalPaceStatus;
+  }
+): Promise<number> {
+  const id = creatorId.trim();
+  if (!id || args.postsThisMonth < args.monthlyPostTarget) return 0;
+
+  let resolved = 0;
+  const postingGoal = await prisma.creatorPostingNudge.updateMany({
+    where: {
+      creatorId: id,
+      periodKey: args.periodKey,
+      nudgeType: "posting_goal",
+      status: { in: ["active", "snoozed"] }
+    },
+    data: { status: "resolved", snoozedUntil: null }
+  });
+  resolved += postingGoal.count;
+
+  if (args.paceStatus === "complete") {
+    const bonus = await prisma.creatorPostingNudge.updateMany({
+      where: {
+        creatorId: id,
+        periodKey: args.periodKey,
+        nudgeType: "bonus_post",
+        status: { in: ["active", "snoozed"] }
+      },
+      data: { status: "resolved", snoozedUntil: null }
+    });
+    resolved += bonus.count;
+  }
+
+  return resolved;
+}
+
+/** After a Relay-native publish, resolve met-goal nudges for the creator's current period. */
+export async function reconcilePostingGoalNudgesAfterPublish(
+  prisma: PrismaClient,
+  creatorId: string,
+  now = new Date()
+): Promise<number> {
+  const id = creatorId.trim();
+  if (!id) return 0;
+  const goal = await resolveGoalConfig(prisma, id);
+  if (!goal.enabled) return 0;
+  const timeZone = resolvePostingGoalTimezone(goal.timezone);
+  const period = creatorLocalMonthWindow(now, timeZone);
+  const [postsThisMonth, stagedMediaCount] = await Promise.all([
+    countRelayNativePostsInWindow(prisma, id, period),
+    countRelayLibraryStagingMedia(prisma, id)
+  ]);
+  const paceStatus = computePaceStatus({
+    postsThisMonth,
+    monthlyPostTarget: goal.monthly_post_target,
+    bonusNudgesEnabled: goal.bonus_nudges_enabled,
+    stagedMediaCount,
+    now,
+    timeZone
+  });
+  return reconcilePostingGoalNudgeResolution(prisma, id, {
+    periodKey: period.key,
+    postsThisMonth,
+    monthlyPostTarget: goal.monthly_post_target,
+    paceStatus
+  });
 }
 
 export async function getCreatorPostingGoalStatus(
@@ -496,7 +589,7 @@ export async function getCreatorPostingGoalStatus(
   const goal = await resolveGoalConfig(prisma, id);
   const timeZone = resolvePostingGoalTimezone(goal.timezone);
   const period = creatorLocalMonthWindow(now, timeZone);
-  const [postsThisMonth, stagedMediaCount, nudges] = await Promise.all([
+  const [postsThisMonth, stagedMediaCount, initialNudges] = await Promise.all([
     countRelayNativePostsInWindow(prisma, id, period),
     countRelayLibraryStagingMedia(prisma, id),
     findCurrentPeriodNudges(prisma, id, period.key)
@@ -510,6 +603,17 @@ export async function getCreatorPostingGoalStatus(
     now,
     timeZone
   });
+
+  const resolvedCount = await reconcilePostingGoalNudgeResolution(prisma, id, {
+    periodKey: period.key,
+    postsThisMonth,
+    monthlyPostTarget: goal.monthly_post_target,
+    paceStatus
+  });
+  const nudges =
+    resolvedCount > 0
+      ? await findCurrentPeriodNudges(prisma, id, period.key)
+      : initialNudges;
 
   return {
     goal: {

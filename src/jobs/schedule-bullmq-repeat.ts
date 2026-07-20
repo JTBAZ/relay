@@ -19,6 +19,15 @@ import {
   type ExternalMetricDailyRollupJobData,
   type PlatformInstanceRefreshSweepJobData,
   type PostingGoalNudgeJobData,
+  type DistributionScheduleReminderJobData,
+  type AutopostScheduleSeriesJobData,
+  type AutopostDistributionRulesJobData,
+  type TipGrantJobData,
+  type BillCreditSettlementJobData,
+  type RevealExpiryJobData,
+  type CoachPlanCreditGrantJobData,
+  type CoachPlanCreditExpiryJobData,
+  type GoalCycleOutcomeRefreshJobData,
   type SubscribeStarGraphqlPostsIngestJobData
 } from "./queue-names.js";
 import { incrementalAutosyncRepeatEveryMsFromEnv } from "../patreon/incremental-sync-worker.js";
@@ -37,6 +46,17 @@ import {
   platformInstanceRefreshSweepIntervalFromEnv
 } from "../analytics/platform-instance-refresh-sweep-job.js";
 import { postingGoalNudgeRepeatEveryMsFromEnv } from "../autopost/posting-goal-nudge-worker.js";
+import { scheduleSeriesRepeatEveryMsFromEnv } from "../autopost/schedule-series-worker.js";
+import { distributionRulesRepeatEveryMsFromEnv } from "../autopost/distribution-rule-worker.js";
+import { distributionScheduleReminderRepeatEveryMsFromEnv } from "../distribution/distribution-schedule-reminder-worker.js";
+import { tipGrantRepeatEveryMsFromEnv } from "../tips/tip-grant-worker.js";
+import { settlementRepeatEveryMsFromEnv } from "../ledger/settlement-service.js";
+import { revealExpiryRepeatEveryMsFromEnv } from "../tips/reveal-expiry-worker.js";
+import {
+  coachPlanCreditExpiryRepeatEveryMsFromEnv,
+  coachPlanCreditGrantRepeatEveryMsFromEnv
+} from "../usage/coach-plan-credit-grant-worker.js";
+import { goalCycleOutcomeRefreshRepeatEveryMsFromEnv } from "../goal-cycle/outcomes/goal-cycle-outcome-worker.js";
 import { subscribeStarGraphqlIngestAutosyncRepeatEveryMsFromEnv } from "../subscribestar/subscribestar-graphql-ingest-autosync.js";
 
 const REPEAT_JOB_NAME = "relay-tick";
@@ -202,6 +222,96 @@ export async function registerRelayBullMqRepeatSchedulers(
         openQueue(RELAY_JOB_QUEUE_NAMES.POSTING_GOAL_NUDGE),
         postingGoalEvery,
         {} as PostingGoalNudgeJobData,
+        log
+      );
+    }
+
+    const scheduleReminderEvery = distributionScheduleReminderRepeatEveryMsFromEnv(env);
+    if (scheduleReminderEvery !== null) {
+      await replaceRepeatEvery(
+        openQueue(RELAY_JOB_QUEUE_NAMES.DISTRIBUTION_SCHEDULE_REMINDER),
+        scheduleReminderEvery,
+        {} as DistributionScheduleReminderJobData,
+        log
+      );
+    }
+
+    const scheduleSeriesEvery = scheduleSeriesRepeatEveryMsFromEnv(env);
+    if (scheduleSeriesEvery !== null) {
+      await replaceRepeatEvery(
+        openQueue(RELAY_JOB_QUEUE_NAMES.AUTOPOST_SCHEDULE_SERIES),
+        scheduleSeriesEvery,
+        {} as AutopostScheduleSeriesJobData,
+        log
+      );
+    }
+
+    const distributionRulesEvery = distributionRulesRepeatEveryMsFromEnv(env);
+    if (distributionRulesEvery !== null) {
+      await replaceRepeatEvery(
+        openQueue(RELAY_JOB_QUEUE_NAMES.AUTOPOST_DISTRIBUTION_RULES),
+        distributionRulesEvery,
+        {} as AutopostDistributionRulesJobData,
+        log
+      );
+    }
+
+    const tipGrantEvery = tipGrantRepeatEveryMsFromEnv(env);
+    if (tipGrantEvery !== null) {
+      await replaceRepeatEvery(
+        openQueue(RELAY_JOB_QUEUE_NAMES.TIP_GRANT),
+        tipGrantEvery,
+        {} as TipGrantJobData,
+        log
+      );
+    }
+
+    const settlementEvery = settlementRepeatEveryMsFromEnv(env);
+    if (settlementEvery !== null) {
+      await replaceRepeatEvery(
+        openQueue(RELAY_JOB_QUEUE_NAMES.BILL_CREDIT_SETTLEMENT),
+        settlementEvery,
+        {} as BillCreditSettlementJobData,
+        log
+      );
+    }
+
+    const revealExpiryEvery = revealExpiryRepeatEveryMsFromEnv(env);
+    if (revealExpiryEvery !== null) {
+      await replaceRepeatEvery(
+        openQueue(RELAY_JOB_QUEUE_NAMES.REVEAL_EXPIRY),
+        revealExpiryEvery,
+        {} as RevealExpiryJobData,
+        log
+      );
+    }
+
+    const coachPlanGrantEvery = coachPlanCreditGrantRepeatEveryMsFromEnv(env);
+    if (coachPlanGrantEvery !== null) {
+      await replaceRepeatEvery(
+        openQueue(RELAY_JOB_QUEUE_NAMES.COACH_PLAN_CREDIT_GRANT),
+        coachPlanGrantEvery,
+        {} as CoachPlanCreditGrantJobData,
+        log
+      );
+    }
+
+    const coachPlanExpiryEvery = coachPlanCreditExpiryRepeatEveryMsFromEnv(env);
+    if (coachPlanExpiryEvery !== null) {
+      await replaceRepeatEvery(
+        openQueue(RELAY_JOB_QUEUE_NAMES.COACH_PLAN_CREDIT_EXPIRY),
+        coachPlanExpiryEvery,
+        {} as CoachPlanCreditExpiryJobData,
+        log
+      );
+    }
+
+    const outcomeRefreshEvery = goalCycleOutcomeRefreshRepeatEveryMsFromEnv(env);
+    if (outcomeRefreshEvery !== null) {
+      await replaceRepeatEvery(
+        openQueue(RELAY_JOB_QUEUE_NAMES.GOAL_CYCLE_OUTCOME_REFRESH),
+        outcomeRefreshEvery,
+        {} as GoalCycleOutcomeRefreshJobData,
         log
       );
     }

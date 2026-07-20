@@ -56,6 +56,11 @@ export type GalleryItem = {
   /** Theme tags from collections that include this post (for search / UI). */
   collection_theme_tag_ids: string[];
   /**
+   * Soft pointer to Audience & Promotion teaser media (`PostPresentation.promoPreviewMediaId`).
+   * Not part of post media_order / version media ids.
+   */
+  promo_preview_media_id?: string | null;
+  /**
    * Patreon often ships the same binary as both `cover` and attachment with different signed URLs.
    * When true, UI may hide this row by default; it remains in API/search for recovery.
    */
@@ -82,6 +87,22 @@ export type GalleryItem = {
     variant_role: string;
     refresh_eligible: boolean;
   }>;
+  /** Creator library: CreativeWork membership (owner list only). */
+  creative_work_id?: string;
+  is_default_bundle?: boolean;
+  creative_work_member_count?: number;
+  member_label?: string | null;
+  variant_role?: string | null;
+  creative_work_sort_order?: number;
+  /**
+   * Owner-only: true when this post is in the creator's Promo Pool (`CreatorPromoSlot`).
+   * Never set on visitor_catalog / patron DTOs.
+   */
+  is_promo_piece?: boolean;
+  /** Owner-only stable Promo Piece id (`CreatorPromoSlot.id`). */
+  promo_piece_id?: string;
+  /** Owner-only compact rank 1…5 in the Promo Pool. */
+  promo_slot_rank?: 1 | 2 | 3 | 4 | 5;
 };
 
 /**
@@ -96,6 +117,16 @@ export type GalleryTierFacet = {
 /**
  * @description Single-post gallery detail response including tier facets and ordered media rows.
  */
+/** Patron-safe locked-viewer promo (Slice 9). Never includes raw destinations or code libraries. */
+export type GalleryEffectivePromo = {
+  headline: string;
+  cta_text: string;
+  code: string | null;
+  percent_off: number | null;
+  tracked_url: string | null;
+  source: "explicit" | "tier_default";
+};
+
 export type GalleryPostDetail = {
   post_id: string;
   title: string;
@@ -106,6 +137,10 @@ export type GalleryPostDetail = {
   media: GalleryItem[];
   /** Relay Inspect tier previews + CTA JSON when `PostPresentation.tierPreviewSettings` exists. */
   tier_preview_settings?: unknown;
+  /** Soft teaser pointer when `PostPresentation.promoPreviewMediaId` is set. */
+  promo_preview_media_id?: string | null;
+  /** Present only for locked visitors (`deny` / `locked_preview`). */
+  effective_promo?: GalleryEffectivePromo | null;
 };
 
 /**
@@ -443,7 +478,7 @@ export type ViewerEntitlementDecision = {
    * Optional debug breadcrumb: which kind of snapshot we consulted. Helpful in QA and metrics
    * but never surfaced to end users.
    */
-  source: "free_post" | "active_snapshot" | "missing_snapshot" | "inactive_snapshot";
+  source: "free_post" | "active_snapshot" | "missing_snapshot" | "inactive_snapshot" | "tip_reveal";
 };
 
 /**

@@ -54,6 +54,7 @@ const contentEntries = [
   "fill-deviantart-submit",
   "post-link-toast",
   "post-link-x-observer",
+  "schedule-reminder-toast",
   "scrape-patreon-metrics"
 ];
 

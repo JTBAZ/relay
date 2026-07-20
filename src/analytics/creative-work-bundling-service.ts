@@ -650,3 +650,220 @@ export async function splitCreativeWorkMember(
     }
   };
 }
+
+export type LinkCreativeWorkMemberSpec = {
+  postId: string;
+  variantRole?: CreativeWorkVariantRole;
+  memberLabel?: string | null;
+  isCover?: boolean;
+};
+
+export type LinkCreativeWorkMembersInput = {
+  title?: string;
+  members: LinkCreativeWorkMemberSpec[];
+};
+
+export type LinkCreativeWorkMembersResult = {
+  creative_work_id: string;
+  title: string;
+  member_count: number;
+  members: Array<{
+    post_id: string;
+    variant_role: CreativeWorkVariantRole;
+    member_label: string | null;
+    sort_order: number;
+  }>;
+};
+
+const VARIANT_ROLES = new Set<CreativeWorkVariantRole>([
+  "full",
+  "teaser",
+  "promo",
+  "repost",
+  "standalone"
+]);
+
+function newLinkedCreativeWorkId(): string {
+  return `cw_linked_${crypto.randomUUID().replace(/-/g, "")}`;
+}
+
+/**
+ * Bulk-link N posts into one non-default CreativeWork (Linked Set).
+ * Always creates a new work; moves existing memberships; deletes empty source works.
+ */
+export async function linkCreativeWorkMembers(
+  prisma: PrismaClient,
+  relayCreatorId: string,
+  input: LinkCreativeWorkMembersInput
+): Promise<
+  { ok: true; result: LinkCreativeWorkMembersResult } | { ok: false; code: BundlingErrorCode }
+> {
+  const creatorId = relayCreatorId.trim();
+  const rawMembers = Array.isArray(input.members) ? input.members : [];
+  const byPost = new Map<string, LinkCreativeWorkMemberSpec>();
+  for (const member of rawMembers) {
+    const postId = member.postId?.trim() ?? "";
+    if (!postId) continue;
+    byPost.set(postId, {
+      postId,
+      variantRole:
+        member.variantRole && VARIANT_ROLES.has(member.variantRole)
+          ? member.variantRole
+          : undefined,
+      memberLabel:
+        typeof member.memberLabel === "string"
+          ? member.memberLabel.trim() || null
+          : member.memberLabel ?? null,
+      isCover: Boolean(member.isCover)
+    });
+  }
+
+  const uniquePostIds = [...byPost.keys()];
+  if (uniquePostIds.length < 2) {
+    return { ok: false, code: "INVALID_INPUT" };
+  }
+
+  const tenant = await prisma.tenant.findUnique({
+    where: { relayCreatorId: creatorId },
+    select: { id: true }
+  });
+  if (!tenant) return { ok: false, code: "NO_TENANT" };
+
+  const posts = await prisma.post.findMany({
+    where: { id: { in: uniquePostIds }, creatorId },
+    select: {
+      id: true,
+      versions: {
+        orderBy: { versionSeq: "desc" },
+        take: 1,
+        select: { title: true }
+      }
+    }
+  });
+  if (posts.length !== uniquePostIds.length) {
+    return { ok: false, code: "NOT_FOUND" };
+  }
+
+  const titleByPost = new Map(
+    posts.map((post) => [post.id, post.versions[0]?.title?.trim() || post.id] as const)
+  );
+
+  // Ensure every post has a membership row before moving.
+  for (const postId of uniquePostIds) {
+    await ensureDefaultCreativeWorkForPost(prisma, {
+      postId,
+      creatorId,
+      title: titleByPost.get(postId) ?? postId
+    });
+  }
+
+  const existingMembers = await prisma.creativeWorkMember.findMany({
+    where: { postId: { in: uniquePostIds }, creatorId },
+    select: {
+      id: true,
+      postId: true,
+      creativeWorkId: true,
+      variantRole: true,
+      memberLabel: true
+    }
+  });
+  if (existingMembers.length !== uniquePostIds.length) {
+    return { ok: false, code: "NOT_FOUND" };
+  }
+
+  const memberByPost = new Map(existingMembers.map((m) => [m.postId, m]));
+
+  let coverPostId =
+    uniquePostIds.find((id) => byPost.get(id)?.isCover) ??
+    uniquePostIds.find((id) => {
+      const role = byPost.get(id)?.variantRole ?? memberByPost.get(id)?.variantRole;
+      return role === "full";
+    }) ??
+    uniquePostIds[0]!;
+
+  const orderedPostIds = [
+    coverPostId,
+    ...uniquePostIds.filter((id) => id !== coverPostId)
+  ];
+
+  const coverTitle = titleByPost.get(coverPostId) ?? coverPostId;
+  const workTitle = input.title?.trim() || coverTitle;
+  const newWorkId = newLinkedCreativeWorkId();
+  const now = new Date();
+  const sourceWorkIds = new Set(existingMembers.map((m) => m.creativeWorkId));
+
+  const planned = orderedPostIds.map((postId, index) => {
+    const spec = byPost.get(postId)!;
+    const existing = memberByPost.get(postId)!;
+    const variantRole =
+      (spec.variantRole && VARIANT_ROLES.has(spec.variantRole)
+        ? spec.variantRole
+        : undefined) ?? existing.variantRole;
+    const memberLabel =
+      spec.memberLabel !== undefined ? spec.memberLabel : existing.memberLabel ?? null;
+    return {
+      memberId: existing.id,
+      postId,
+      variantRole,
+      memberLabel,
+      sortOrder: index,
+      previousWorkId: existing.creativeWorkId
+    };
+  });
+
+  await prisma.$transaction(async (tx) => {
+    await tx.creativeWork.create({
+      data: {
+        id: newWorkId,
+        creatorId,
+        title: workTitle,
+        isDefaultBundle: false,
+        createdAt: now,
+        updatedAt: now
+      }
+    });
+
+    for (const row of planned) {
+      await tx.creativeWorkMember.update({
+        where: { id: row.memberId },
+        data: {
+          creativeWorkId: newWorkId,
+          variantRole: row.variantRole,
+          memberLabel: row.memberLabel,
+          sortOrder: row.sortOrder,
+          linkedAt: now
+        }
+      });
+    }
+
+    for (const sourceWorkId of sourceWorkIds) {
+      if (sourceWorkId === newWorkId) continue;
+      const remaining = await tx.creativeWorkMember.count({
+        where: { creativeWorkId: sourceWorkId }
+      });
+      if (remaining === 0) {
+        await tx.creativeWork.delete({ where: { id: sourceWorkId } });
+      } else if (remaining === 1) {
+        await tx.creativeWork.update({
+          where: { id: sourceWorkId },
+          data: { isDefaultBundle: true, updatedAt: now }
+        });
+      }
+    }
+  });
+
+  return {
+    ok: true,
+    result: {
+      creative_work_id: newWorkId,
+      title: workTitle,
+      member_count: planned.length,
+      members: planned.map((row) => ({
+        post_id: row.postId,
+        variant_role: row.variantRole,
+        member_label: row.memberLabel,
+        sort_order: row.sortOrder
+      }))
+    }
+  };
+}

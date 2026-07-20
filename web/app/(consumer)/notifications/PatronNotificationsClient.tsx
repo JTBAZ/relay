@@ -9,6 +9,7 @@ import {
   Bell,
   Bookmark,
   CheckCheck,
+  Clock,
   Heart,
   Inbox,
   Loader2,
@@ -503,6 +504,16 @@ function PayloadPreview({ record }: { record: NotificationRecord }): React.React
         </p>
       );
     }
+    case "distribution_schedule_reminder": {
+      const destination = payload.destination as string | undefined;
+      const post = payload.post_id as string | undefined;
+      return (
+        <p className="mt-1 text-[11px] text-[#888]">
+          {destination ? `Time to post to ${destination}` : "Queued cross-post is due"}
+          {post ? <> · <code className="text-[#bbb]">{post}</code></> : null}
+        </p>
+      );
+    }
     default:
       return null;
   }
@@ -542,6 +553,8 @@ function summarize(record: NotificationRecord): string {
         : "Someone saved your content";
     case "new_subscriber":
       return "New subscriber";
+    case "distribution_schedule_reminder":
+      return "Your queued cross-post is ready";
     default:
       return "Notification";
   }
@@ -569,6 +582,8 @@ function iconForKind(kind: NotificationKind) {
       return Bookmark;
     case "new_subscriber":
       return Users;
+    case "distribution_schedule_reminder":
+      return Clock;
     default:
       return Inbox;
   }

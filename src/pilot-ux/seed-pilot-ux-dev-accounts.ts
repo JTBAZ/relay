@@ -3,6 +3,7 @@
  * No Patreon OAuth/API calls. Idempotent upserts into canonical Prisma tables.
  */
 import {
+  CreatorPlan,
   EntitlementSource,
   IdentityAuthProvider,
   MediaIngestOrigin,
@@ -162,6 +163,32 @@ async function upsertCreatorStudio(
       where: { creatorId: creator.relayCreatorId },
       create: { creatorId: creator.relayCreatorId, step: "connected" },
       update: { step: "connected" }
+    });
+  }
+
+  if (creator.creatorPlan) {
+    const plan =
+      creator.creatorPlan === "studio_core"
+        ? CreatorPlan.studio_core
+        : creator.creatorPlan === "autopost"
+          ? CreatorPlan.autopost
+          : CreatorPlan.growth_engine;
+    const now = new Date();
+    await tx.creatorPlanEntitlement.upsert({
+      where: { creatorId: creator.relayCreatorId },
+      create: {
+        creatorId: creator.relayCreatorId,
+        plan,
+        source: "pilot",
+        effectiveAt: now,
+        expiresAt: null
+      },
+      update: {
+        plan,
+        source: "pilot",
+        effectiveAt: now,
+        expiresAt: null
+      }
     });
   }
 

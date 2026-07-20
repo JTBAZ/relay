@@ -36,6 +36,7 @@ import type {
   CommentReactionKind,
   PatronCommentRecord
 } from "@/lib/relay-api";
+import { CuratorBadge } from "@/components/patron/CuratorBadge";
 import type { UseLiveCommentsResult } from "./use-live-comments";
 
 interface CommentThreadPanelProps {
@@ -301,6 +302,7 @@ function CommentRow({ record, viewerAccountId, isCreatorOwner, live }: CommentRo
             <span className="truncate text-[11px] font-medium text-[#E0E0E0]">
               Patron · {record.patronUserId.slice(-6)}
             </span>
+            {record.is_curator ? <CuratorBadge /> : null}
             {isHidden ? (
               <span
                 className="rounded-full border border-[#3a2a14] bg-[#1f1408] px-1 text-[9px] uppercase tracking-wide text-[#d39e6a]"

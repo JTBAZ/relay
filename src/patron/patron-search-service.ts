@@ -536,7 +536,7 @@ export async function assemblePatronSearch(
 
   for (const post of postsRaw) {
     const v = post.versions[0];
-    if (!v) continue;
+    if (!v?.publishedAt) continue;
     if (hiddenPostIdsByCreator.get(post.creatorId)?.has(post.id)) {
       continue;
     }

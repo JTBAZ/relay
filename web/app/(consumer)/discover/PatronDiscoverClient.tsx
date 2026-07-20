@@ -13,8 +13,13 @@ import {
 import {
   listDiscoverFeed,
   type DiscoverItem,
-  type DiscoverPageResult
+  type DiscoverPageResult,
+  type TipGatedDiscoverItem
 } from "@/lib/relay-api";
+import {
+  TipBlurredTile,
+  TipRevealModal
+} from "@/components/patron/TipRevealModal";
 
 // ─── Dev-only fixtures ─────────────────────────────────────────────────────────
 
@@ -116,6 +121,9 @@ export function PatronDiscoverClient(): React.ReactElement {
   const devState = isDevState ? (requestedState as DiscoverViewState) : null;
 
   const [items, setItems] = useState<DiscoverItem[]>([]);
+  const [tipGated, setTipGated] = useState<TipGatedDiscoverItem[]>([]);
+  const [tipsBeta, setTipsBeta] = useState(false);
+  const [revealItem, setRevealItem] = useState<TipGatedDiscoverItem | null>(null);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [phase, setPhase] = useState<"loading" | "ready" | "error">("loading");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -129,6 +137,8 @@ export function PatronDiscoverClient(): React.ReactElement {
       // Dev override: render the synthetic fixture page immediately.
       const fx = fixtureFor(devState);
       setItems(fx.items);
+      setTipGated([]);
+      setTipsBeta(false);
       setNextCursor(fx.next_cursor);
       setPhase(devState === "error" ? "error" : "ready");
       setErrorMessage(devState === "error" ? "Simulated discover error." : null);
@@ -144,6 +154,8 @@ export function PatronDiscoverClient(): React.ReactElement {
         });
         if (cancelled) return;
         setItems(page.items);
+        setTipGated(page.tip_gated ?? []);
+        setTipsBeta(page.tips_beta === true);
         setNextCursor(page.next_cursor);
         setPhase("ready");
       } catch (err) {
@@ -198,8 +210,22 @@ export function PatronDiscoverClient(): React.ReactElement {
             onRetry={() => setSubmittedQuery((q) => q + "")}
           />
         ) : null}
-        {phase === "ready" && items.length === 0 ? (
+        {phase === "ready" && items.length === 0 && tipGated.length === 0 ? (
           <EmptyState query={submittedQuery} />
+        ) : null}
+        {phase === "ready" && tipGated.length > 0 ? (
+          <section className="mb-8" aria-label="Tip-gated posts">
+            <h2 className="mb-3 text-sm font-medium text-[#9CA3AF]">Unlock with Tips</h2>
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
+              {tipGated.map((item) => (
+                <TipBlurredTile
+                  key={item.post_id}
+                  item={item}
+                  onSelect={(selected) => setRevealItem(selected)}
+                />
+              ))}
+            </div>
+          </section>
         ) : null}
         {phase === "ready" && items.length > 0 ? (
           <DiscoverGrid items={items} />
@@ -217,6 +243,20 @@ export function PatronDiscoverClient(): React.ReactElement {
           </div>
         ) : null}
       </main>
+
+      <TipRevealModal
+        open={Boolean(revealItem) && tipsBeta}
+        item={revealItem}
+        surface="discover"
+        onClose={() => setRevealItem(null)}
+        onRevealed={() => {
+          const revealedId = revealItem?.post_id;
+          if (revealedId) {
+            setTipGated((prev) => prev.filter((t) => t.post_id !== revealedId));
+          }
+          setRevealItem(null);
+        }}
+      />
     </div>
   );
 }

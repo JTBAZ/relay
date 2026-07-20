@@ -15,8 +15,10 @@ import {
   type BundleSuggestionsData,
   type CreatorUnifiedPerformanceMetricTotals,
   type CreatorUnifiedPerformanceRange,
+  type PerformanceCampaignGroupWire,
   type PerformanceCampaignRollupsData,
   type PerformanceOverviewData,
+  type PerformanceTagGroupWire,
   type PerformanceTagRollupsData,
   type PerformanceWorkBundleData,
   type PerformanceWorkSummaryWire,
@@ -408,7 +410,10 @@ export function PerformanceHierarchyPanel({
                     </span>
                     <span className="font-mono text-[11px] text-[#9bf0c4]">
                       {formatNumber(
-                        hierarchyDestination ? group.scoped_reach ?? 0 : group.total_reach
+                        hierarchyDestination
+                          ? (group as PerformanceCampaignGroupWire & { scoped_reach?: number })
+                              .scoped_reach ?? 0
+                          : group.total_reach
                       )}{" "}
                       reach
                     </span>
@@ -440,7 +445,10 @@ export function PerformanceHierarchyPanel({
                     <span className="truncate text-xs font-medium text-[#E8E8E8]">{group.tag}</span>
                     <span className="font-mono text-[11px] text-[#9bf0c4]">
                       {formatNumber(
-                        hierarchyDestination ? group.scoped_reach ?? 0 : group.total_reach
+                        hierarchyDestination
+                          ? (group as PerformanceTagGroupWire & { scoped_reach?: number })
+                              .scoped_reach ?? 0
+                          : group.total_reach
                       )}{" "}
                       reach
                     </span>

@@ -9,6 +9,7 @@ const fetchCreatorMembershipCohorts = vi.fn();
 const fetchCreatorTierStickiness = vi.fn();
 const fetchCreatorPostPerformance = vi.fn();
 const fetchCreatorUsagePreview = vi.fn();
+const fetchCreatorTipBetaStats = vi.fn();
 const fetchCreatorUnifiedPerformance = vi.fn();
 const fetchPerformanceOverview = vi.fn();
 const fetchPerformanceCampaignRollups = vi.fn();
@@ -39,6 +40,7 @@ vi.mock("@/lib/relay-api", async () => {
     fetchCreatorPostPerformance: (...a: unknown[]) => fetchCreatorPostPerformance(...a),
     fetchCreatorUnifiedPerformance: (...a: unknown[]) => fetchCreatorUnifiedPerformance(...a),
     fetchCreatorUsagePreview: (...a: unknown[]) => fetchCreatorUsagePreview(...a),
+    fetchCreatorTipBetaStats: (...a: unknown[]) => fetchCreatorTipBetaStats(...a),
     fetchPerformanceOverview: (...a: unknown[]) => fetchPerformanceOverview(...a),
     fetchPerformanceCampaignRollups: (...a: unknown[]) => fetchPerformanceCampaignRollups(...a),
     fetchPerformanceTagRollups: (...a: unknown[]) => fetchPerformanceTagRollups(...a),
@@ -220,6 +222,7 @@ describe("<AnalyticsOverviewClient />", () => {
     fetchCreatorTierStickiness.mockReset();
     fetchCreatorPostPerformance.mockReset();
     fetchCreatorUsagePreview.mockReset();
+    fetchCreatorTipBetaStats.mockReset();
     fetchCreatorUnifiedPerformance.mockReset();
     fetchPerformanceOverview.mockReset();
     fetchPerformanceCampaignRollups.mockReset();
@@ -250,6 +253,12 @@ describe("<AnalyticsOverviewClient />", () => {
     fetchCreatorPostPerformance.mockResolvedValue(basePerformance);
     fetchCreatorUnifiedPerformance.mockResolvedValue(baseUnifiedPerformance);
     fetchCreatorUsagePreview.mockResolvedValue(baseUsagePreview);
+    fetchCreatorTipBetaStats.mockResolvedValue({
+      period_key: "2026-07",
+      reveals: 0,
+      offer_clicks: 0,
+      offer_ctr: 0
+    });
     fetchPerformanceOverview.mockResolvedValue({
       ...emptyPerformanceHierarchy,
       source: "csv_fallback",

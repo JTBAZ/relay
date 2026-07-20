@@ -4,6 +4,7 @@
  */
 
 import type {
+  CreativeWorkVariantRole,
   PlatformInstanceLinkSource,
   PlatformInstanceStatus,
   Prisma,
@@ -42,6 +43,7 @@ export type UpsertPlatformInstanceFromAttemptArgs = {
   linkSource?: PlatformInstanceLinkSource;
   linkedAt?: Date;
   status?: PlatformInstanceStatus;
+  contentVariantRole?: CreativeWorkVariantRole | null;
 };
 
 export type UpsertPlatformInstanceResult = {
@@ -66,6 +68,7 @@ export async function upsertPlatformInstanceFromAttempt(
   const linkSource = args.linkSource ?? "autopost_success";
   const linkedAt = args.linkedAt ?? new Date();
   const status = args.status ?? "active";
+  const contentVariantRole = args.contentVariantRole ?? null;
 
   if (!attemptId || !creatorId || !postId || !destination) {
     throw new Error("attemptId, creatorId, postId, and destination are required");
@@ -94,7 +97,8 @@ export async function upsertPlatformInstanceFromAttempt(
       linkSource,
       status,
       refreshPolicy: DEFAULT_REFRESH_POLICY,
-      linkedAt
+      linkedAt,
+      contentVariantRole
     },
     update: {
       externalUrl,
@@ -103,6 +107,7 @@ export async function upsertPlatformInstanceFromAttempt(
       linkSource,
       status,
       linkedAt,
+      contentVariantRole,
       updatedAt: new Date()
     }
   });

@@ -183,7 +183,7 @@ export async function assembleDigestContentForPatron(
 
     const v = post.versions[0];
 
-    if (!v) continue;
+    if (!v?.publishedAt) continue;
 
     if (hiddenPostIdsByCreator.get(post.creatorId)?.has(post.id)) {
 

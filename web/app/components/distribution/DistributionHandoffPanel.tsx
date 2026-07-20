@@ -1,12 +1,14 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Check } from "lucide-react";
+import { Check, Clock, ExternalLink } from "lucide-react";
 import {
   approveDistributionVariant,
+  buildXIntentTweetUrl,
   completeDistributionAttempt,
   crossPostBlueskyPost,
   fetchDistributionAttempt,
+  patchDistributionVariant,
   startDistributionHandoff,
   type DistributionPlanWire,
   type DistributionVariantWire
@@ -33,10 +35,29 @@ type Props = {
   onComplete: () => void;
 };
 
+function formatScheduledFor(iso: string | null): string {
+  if (!iso) return "";
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toLocaleString(undefined, {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit"
+  });
+}
+
 export function DistributionHandoffPanel({ plan, onComplete }: Props) {
   const [sendState, setSendState] = useState<Record<string, VariantSendState>>({});
   const [fallbackVariant, setFallbackVariant] = useState<DistributionVariantWire | null>(null);
   const [manualUrl, setManualUrl] = useState("");
+  const [localVariants, setLocalVariants] = useState<DistributionVariantWire[]>(plan.variants);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+
+  useEffect(() => {
+    setLocalVariants(plan.variants);
+  }, [plan.variants]);
 
   const setVariantState = useCallback((variantId: string, patch: Partial<VariantSendState>) => {
     setSendState((prev) => {
@@ -197,7 +218,37 @@ export function DistributionHandoffPanel({ plan, onComplete }: Props) {
     setVariantState(variant.variant_id, { fillStatus: "posted" });
   }
 
-  const allDone = plan.variants.every((v) => {
+  async function postNowInstead(variant: DistributionVariantWire) {
+    const { variant: updated } = await patchDistributionVariant(variant.variant_id, {
+      scheduled_for: null,
+      remind_me: false
+    });
+    setLocalVariants((prev) => prev.map((v) => (v.variant_id === updated.variant_id ? updated : v)));
+    await sendVariant(updated);
+  }
+
+  function openIntentLink(variant: DistributionVariantWire) {
+    const text = variant.post_text ?? variant.body_text ?? variant.title ?? "";
+    window.open(buildXIntentTweetUrl(text), "_blank", "noopener,noreferrer");
+  }
+
+  async function copyFormattedText(variant: DistributionVariantWire) {
+    const text =
+      variant.destination === "x" || variant.destination === "bluesky"
+        ? variant.post_text ?? ""
+        : [variant.title, variant.body_text, variant.tags.length > 0 ? `Tags: ${variant.tags.join(", ")}` : null]
+            .filter(Boolean)
+            .join("\n\n");
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopiedId(variant.variant_id);
+      setTimeout(() => setCopiedId((id) => (id === variant.variant_id ? null : id)), 2000);
+    } catch {
+      /* clipboard access denied — no-op, text is still visible in the fields above */
+    }
+  }
+
+  const allDone = localVariants.every((v) => {
     const st = sendState[v.variant_id];
     return st?.fillStatus === "posted" || v.status === "posted";
   });
@@ -211,7 +262,7 @@ export function DistributionHandoffPanel({ plan, onComplete }: Props) {
 
   return (
     <div className="space-y-4">
-      {plan.variants.map((variant) => {
+      {localVariants.map((variant) => {
         const st = sendState[variant.variant_id] ?? {
           busy: false,
           confirmBusy: false,
@@ -228,6 +279,10 @@ export function DistributionHandoffPanel({ plan, onComplete }: Props) {
           st.fillStatus !== "handoff_started";
         const isPosted = st.fillStatus === "posted" || variant.status === "posted";
         const isPolling = st.fillStatus === "handoff_started";
+        const isQueued =
+          !isPosted &&
+          Boolean(variant.scheduled_for) &&
+          new Date(variant.scheduled_for as string).getTime() > Date.now();
 
         return (
           <div
@@ -236,9 +291,11 @@ export function DistributionHandoffPanel({ plan, onComplete }: Props) {
             style={{
               borderColor: isPosted
                 ? "rgba(0,170,111,0.4)"
-                : isFilled
-                  ? "rgba(234,179,8,0.3)"
-                  : "#2a2a2a",
+                : isQueued
+                  ? "rgba(59,130,246,0.35)"
+                  : isFilled
+                    ? "rgba(234,179,8,0.3)"
+                    : "#2a2a2a",
               background: "#0a0a0a"
             }}
           >
@@ -247,6 +304,12 @@ export function DistributionHandoffPanel({ plan, onComplete }: Props) {
                 <p className="text-sm font-medium text-[#f9fafb]">{destLabel}</p>
                 {isPosted ? (
                   <p className="text-[11px] text-emerald-400 mt-0.5">Posted</p>
+                ) : isQueued ? (
+                  <p className="mt-0.5 flex items-center gap-1 text-[11px] text-blue-300">
+                    <Clock className="h-3 w-3" aria-hidden />
+                    Queued for {formatScheduledFor(variant.scheduled_for)}
+                    {variant.remind_me ? " · we'll remind you" : ""}
+                  </p>
                 ) : isFilled && !st.confirmExpanded ? (
                   <p className="text-[11px] text-amber-300 mt-0.5">
                     Form filled — publish on {destLabel}, then confirm below
@@ -268,6 +331,16 @@ export function DistributionHandoffPanel({ plan, onComplete }: Props) {
                     <Check className="h-3.5 w-3.5" aria-hidden />
                     Posted
                   </span>
+                ) : isQueued ? (
+                  <button
+                    type="button"
+                    disabled={st.busy}
+                    onClick={() => void postNowInstead(variant)}
+                    className="rounded-lg border px-3 py-1.5 text-xs font-semibold text-[#9ca3af] disabled:opacity-50"
+                    style={{ borderColor: "#2a2a2a" }}
+                  >
+                    {st.busy ? "Opening…" : "Post now instead"}
+                  </button>
                 ) : isFilled ? (
                   <button
                     type="button"
@@ -282,18 +355,54 @@ export function DistributionHandoffPanel({ plan, onComplete }: Props) {
                     Confirm Posted
                   </button>
                 ) : (
-                  <button
-                    type="button"
-                    disabled={st.busy || isPolling}
-                    onClick={() => void sendVariant(variant)}
-                    className="px-3 py-1.5 rounded-lg text-xs font-semibold disabled:opacity-50"
-                    style={{ background: "#00aa6f", color: "#000" }}
-                  >
-                    {st.busy || isPolling ? "Opening…" : `Post to ${destLabel}`}
-                  </button>
+                  <>
+                    {variant.destination === "x" ? (
+                      <button
+                        type="button"
+                        onClick={() => openIntentLink(variant)}
+                        className="flex items-center gap-1 rounded-lg border px-3 py-1.5 text-xs font-semibold text-[#f9fafb]"
+                        style={{ borderColor: "#2a2a2a" }}
+                        title="Opens X's own composer prefilled with your text — no extension needed"
+                      >
+                        <ExternalLink className="h-3.5 w-3.5" aria-hidden />
+                        Get link
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => void copyFormattedText(variant)}
+                        className="rounded-lg border px-3 py-1.5 text-xs font-semibold text-[#f9fafb]"
+                        style={{ borderColor: "#2a2a2a" }}
+                      >
+                        {copiedId === variant.variant_id ? "Copied!" : "Copy text"}
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      disabled={st.busy || isPolling}
+                      onClick={() => void sendVariant(variant)}
+                      className="px-3 py-1.5 rounded-lg text-xs font-semibold disabled:opacity-50"
+                      style={{ background: "#00aa6f", color: "#000" }}
+                    >
+                      {st.busy || isPolling ? "Opening…" : `Post to ${destLabel}`}
+                    </button>
+                  </>
                 )}
               </div>
             </div>
+            {isQueued && variant.destination === "x" ? (
+              <p className="mt-2 text-[10px] text-[#6b7280]">
+                Or skip the wait —{" "}
+                <button
+                  type="button"
+                  onClick={() => openIntentLink(variant)}
+                  className="underline text-[#9ca3af]"
+                >
+                  get a prefilled link
+                </button>{" "}
+                now.
+              </p>
+            ) : null}
             {st.confirmExpanded ? (
               <div className="mt-3 flex items-center gap-2">
                 <input

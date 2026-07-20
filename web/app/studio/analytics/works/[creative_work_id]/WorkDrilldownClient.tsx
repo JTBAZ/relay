@@ -14,7 +14,7 @@ import {
   type CrossPostDestination
 } from "@/lib/relay-extension-messaging";
 import { deriveWorkDrilldownActions } from "@/lib/work-drilldown-actions";
-import { WorkDrilldownView } from "../WorkDrilldownView";
+import { WorkDrilldownView } from "../../WorkDrilldownView";
 
 function parseRange(raw: string | null): CreatorUnifiedPerformanceRange {
   if (raw === "7d" || raw === "90d") return raw;

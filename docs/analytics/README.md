@@ -39,6 +39,9 @@ This folder contains the **complete design & implementation guide** for the Rela
 | Document | Purpose | Audience |
 |----------|---------|----------|
 | **[INSIGHTS_IA_TREE.md](INSIGHTS_IA_TREE.md)** | Multi-page split, landing portals, primary→tertiary drill-down; **unified Reach** portal for Patreon + Relay + future socials | Product, frontend |
+| **[INSIGHTS_ACTION_HUB_UX.md](INSIGHTS_ACTION_HUB_UX.md)** | **Shipped UX:** Hero Coach + Recent posts; **Frame next posts**; brief + report cross-talk to Autopost/PostBot; Bronze utilities (Edit brief, Review & goals) | Product, design, v0, agents |
+| **[TREND_DISCOVERY_GATEWAY.md](TREND_DISCOVERY_GATEWAY.md)** | Goal Cycle evidence boundary: interest-series + controlled-web providers, provenance, weak-evidence fallback, benchmark, and live-provider human gates | Product, backend, data, compliance |
+| **[CONVERSION_ATTRIBUTION.md](CONVERSION_ATTRIBUTION.md)** | Goal Cycle paid-support measurement: deterministic attribution, campaign-level estimated lift, confidence/freshness, and privacy | Product, backend, analytics |
 | **[V0_INSIGHTS_DASHBOARD_PROMPT.md](V0_INSIGHTS_DASHBOARD_PROMPT.md)** | **Copy-paste v0 prompt** — Relay-themed 7d dashboard, three zones, primary KPIs, carousel/kebab/drawer for secondary stats, per-zone **Action** buttons (e.g. New post) | Design, v0 |
 | **[insights-hub-v0-prompt-visual-mockup.png](insights-hub-v0-prompt-visual-mockup.png)** | PNG mockup | **Rendered from v0 prompt spec:** Performance / Growth / Audience + kebabs + **More detail** carousel + all primary CTAs |
 
@@ -240,9 +243,11 @@ A: Post-pilot. Colors in the spec adapt; currently light mode only.
 - `.docs/anthropic/BUILD_BRIEF.md` — Build verification checklist
 
 **Product:**
-- `road map.md` — Strategic narrative
-- `docs/UI_SPECIALIST_RELAY.md` — UI/UX scope for Relay
-- `docs/qa/UX_ACCEPTANCE_GUARDRAILS.md` — Pass/fail UX expectations
+- [`road map.md`](../../road%20map.md) — Strategic narrative
+- [`docs/studio/GOAL_CYCLE_PRODUCT_CONTRACT.md`](../studio/GOAL_CYCLE_PRODUCT_CONTRACT.md) — Library-first bounded planning and learning contract
+- [`docs/studio/goal-cycle-build-plans/00-README.md`](../studio/goal-cycle-build-plans/00-README.md) — dependency-ordered Goal Cycle implementation program
+- [`docs/UI_SPECIALIST_RELAY.md`](../UI_SPECIALIST_RELAY.md) — UI/UX scope for Relay
+- [`docs/qa/UX_ACCEPTANCE_GUARDRAILS.md`](../qa/UX_ACCEPTANCE_GUARDRAILS.md) — Pass/fail UX expectations
 
 **Data:**
 - `prisma/schema.prisma` — Database schema (P5a tables)

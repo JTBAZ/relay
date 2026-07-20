@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { ArrowRight, FileText, Headphones, ImageIcon, Sparkles, Video } from "lucide-react";
 import type { LockedFeedPost, MediaType } from "@/lib/relay-fixtures";
+import { trackedPromoHref } from "@/lib/effective-promo";
 
 const MEDIA_META: Record<MediaType, { label: string; icon: typeof FileText }> = {
   writing: { label: "Writing", icon: FileText },
@@ -126,8 +127,13 @@ export function WhatYouMissedCarousel({ posts }: { posts: LockedFeedPost[] }) {
           const meta = MEDIA_META[post.mediaType] ?? MEDIA_META.writing;
           const Icon = meta.icon;
           const tierName = post.tierLabel.trim();
-          const unlockCtaText = `Unlock at ${tierName} Tier`;
-          const href = post.creator.patreonCreatorUrl ?? creatorPageHref(post.creator.handle);
+          const promo = post.effective_promo;
+          const unlockCtaText = promo?.cta_text?.trim()
+            ? promo.cta_text.trim()
+            : `Unlock at ${tierName} Tier`;
+          const href = promo
+            ? trackedPromoHref(promo, post.creator.patreonCreatorUrl)
+            : post.creator.patreonCreatorUrl ?? creatorPageHref(post.creator.handle);
           return (
             <article
               key={`${post.creator.id}:${post.id}`}
@@ -158,10 +164,16 @@ export function WhatYouMissedCarousel({ posts }: { posts: LockedFeedPost[] }) {
                 </div>
               </div>
 
-              <div className="mt-3 flex h-20 items-center rounded-xl border border-[#2E2617] bg-[radial-gradient(circle_at_10%_0%,rgba(197,179,88,0.13),transparent_42%),#17130D] px-3 transition-colors group-hover:border-[#4A3C23]">
+              <div className="mt-3 flex h-20 flex-col justify-center rounded-xl border border-[#2E2617] bg-[radial-gradient(circle_at_10%_0%,rgba(197,179,88,0.13),transparent_42%),#17130D] px-3 transition-colors group-hover:border-[#4A3C23]">
                 <p className="line-clamp-2 text-sm font-medium leading-snug text-[#D6D3C6]">
-                  {post.title}
+                  {promo?.headline?.trim() || post.title}
                 </p>
+                {promo?.code ? (
+                  <p className="mt-1 truncate font-mono text-[10px] text-[#C5B358]" data-locked-promo-code>
+                    {promo.code}
+                    {promo.percent_off != null ? ` · ${promo.percent_off}% off` : ""}
+                  </p>
+                ) : null}
               </div>
 
               <div className="mt-3 flex flex-wrap items-center gap-1.5 text-[10px]">

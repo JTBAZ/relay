@@ -6,9 +6,12 @@ import { useCallback, useEffect, useState } from "react";
 import {
   Activity,
   BarChart2,
+  Coins,
+  CreditCard,
   FlaskConical,
   Home,
   Images,
+  Megaphone,
   Palette,
   User
 } from "lucide-react";
@@ -27,8 +30,11 @@ const baseNavItems: ReadonlyArray<{
   { href: "/studio/designer", label: "Designer", Icon: Palette },
   { href: "/studio/designer/profile", label: "Profile", Icon: User },
   { href: "/studio/analytics", label: "Analytics", Icon: BarChart2 },
+  { href: "/studio/earnings", label: "Earnings", Icon: Coins },
+  { href: "/studio/promos", label: "Promos", Icon: Megaphone },
   { href: "/studio/actions", label: "Action Center", Icon: Activity },
-  { href: "/studio/preview", label: "Gallery", Icon: Images }
+  { href: "/studio/preview", label: "Gallery", Icon: Images },
+  { href: "/studio/settings/billing", label: "Billing", Icon: CreditCard }
 ] as const;
 
 const devBenchNav =
@@ -132,6 +138,8 @@ export default function AppNav() {
               ? pathname === "/studio"
               : item.href === "/studio/actions"
                 ? pathname === "/studio/actions" || pathname.startsWith("/studio/actions/")
+                : item.href === "/studio/promos"
+                  ? pathname === "/studio/promos" || pathname.startsWith("/studio/promos/")
                 : item.href === "/studio/analytics"
                   ? pathname === "/studio/analytics" || pathname.startsWith("/studio/analytics/")
                 : item.href === "/studio/preview"

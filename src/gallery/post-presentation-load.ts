@@ -28,7 +28,8 @@ export async function loadPostPresentationOverlaysFromDb(
       relayTitle: true,
       relayDescription: true,
       mediaOrder: true,
-      tierPreviewSettings: true
+      tierPreviewSettings: true,
+      promoPreviewMediaId: true
     }
   });
   const out: Record<string, PostPresentationOverlay> = {};
@@ -37,7 +38,8 @@ export async function loadPostPresentationOverlaysFromDb(
       relay_title: r.relayTitle,
       relay_description: r.relayDescription,
       media_order: r.mediaOrder ?? [],
-      tier_preview_settings: r.tierPreviewSettings ?? null
+      tier_preview_settings: r.tierPreviewSettings ?? null,
+      promo_preview_media_id: r.promoPreviewMediaId ?? null
     };
   }
   return out;

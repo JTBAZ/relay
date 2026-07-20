@@ -43,7 +43,7 @@ function relayFromPost(p: {
   source: string;
   upstreamStatus: string;
   isPublic: boolean;
-  versions: Array<{ title: string; publishedAt: Date }>;
+  versions: Array<{ title: string; publishedAt: Date | null }>;
 }): NonNullable<PostPerformanceRow["relay"]> {
   const v = p.versions[0];
   return {
@@ -172,7 +172,7 @@ export async function getCreatorPostPerformance(
       upstreamStatus: string;
       isPublic: boolean;
       providerPostId: string | null;
-      versions: Array<{ title: string; publishedAt: Date }>;
+      versions: Array<{ title: string; publishedAt: Date | null }>;
     }
   >();
 

@@ -101,7 +101,8 @@ function adaptToPositional(record: PatronCommentRecord): PositionalComment {
       // Skeletal-UI placeholder — display name resolution lives in PE-K notification copy lookup.
       displayName: `Patron · ${record.patronUserId.slice(-6)}`,
       handle: record.patronUserId,
-      avatarUrl: "/placeholder.svg?height=32&width=32"
+      avatarUrl: "/placeholder.svg?height=32&width=32",
+      isCurator: record.is_curator === true
     },
     text: record.body,
     position: { x, y },

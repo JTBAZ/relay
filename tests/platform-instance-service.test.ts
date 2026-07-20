@@ -58,8 +58,35 @@ describe("platform-instance-service", () => {
         create: expect.objectContaining({
           id: platformInstanceIdForAttempt(ATTEMPT_ID),
           externalUrl: "https://patreon.com/posts/1",
-          linkSource: "autopost_success"
+          linkSource: "autopost_success",
+          contentVariantRole: null
+        }),
+        update: expect.objectContaining({
+          contentVariantRole: null
         })
+      })
+    );
+  });
+
+  it("persists contentVariantRole when provided", async () => {
+    const findUnique = vi.fn().mockResolvedValue(null);
+    const upsert = vi.fn().mockResolvedValue({});
+    const db = { platformInstance: { findUnique, upsert } };
+
+    await upsertPlatformInstanceFromAttempt(db as never, {
+      attemptId: ATTEMPT_ID,
+      creatorId: CREATOR_ID,
+      postId: POST_ID,
+      destination: "x",
+      externalUrl: "https://x.com/handle/status/1",
+      externalId: "1",
+      contentVariantRole: "promo"
+    });
+
+    expect(upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        create: expect.objectContaining({ contentVariantRole: "promo" }),
+        update: expect.objectContaining({ contentVariantRole: "promo" })
       })
     );
   });

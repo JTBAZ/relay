@@ -50,6 +50,7 @@
       "campaignId": "pilot_campaign_ava",
       "campaignName": "Pilot UX — Ava",
       "patreonCampaignId": "pilot_campaign_ava",
+      "creatorPlan": "growth_engine",
       "tiers": [
         {
           "relayTierId": "patreon_tier_ava_supporter",

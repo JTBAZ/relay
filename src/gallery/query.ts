@@ -310,7 +310,10 @@ export function buildGalleryItems(
             : "",
         visibility: resolveGalleryItemVisibility(creatorId, postId, mediaId, overrides),
         collection_ids: colIds,
-        collection_theme_tag_ids: themeTagList
+        collection_theme_tag_ids: themeTagList,
+        ...("promo_preview_media_id" in merged
+          ? { promo_preview_media_id: merged.promo_preview_media_id ?? null }
+          : {})
       });
       addedMedia = true;
     }
@@ -341,7 +344,10 @@ export function buildGalleryItems(
         thumb_url_path: "",
         visibility: resolveGalleryItemVisibility(creatorId, postId, syntheticId, overrides),
         collection_ids: colIds,
-        collection_theme_tag_ids: themeTagList
+        collection_theme_tag_ids: themeTagList,
+        ...("promo_preview_media_id" in merged
+          ? { promo_preview_media_id: merged.promo_preview_media_id ?? null }
+          : {})
       });
     }
   }

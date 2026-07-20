@@ -37,21 +37,22 @@ Relay is **two intentional products** that share one **access and content model*
 
 Use this roadmap as the execution sequence and use the reference docs for deeper implementation decisions:
 
-- **Managed agent swarms (Airtable queue + strict roles):** [.docs/anthropic/README.md](.docs/anthropic/README.md), [.docs/anthropic/BUILD_BRIEF.md](.docs/anthropic/BUILD_BRIEF.md), and **[.docs/anthropic/CURRENT_LEDGER_QUEUE.md](.docs/anthropic/CURRENT_LEDGER_QUEUE.md)** (live queued rows + record IDs) — operational ground truth is the **Production Ledger** in Airtable (see [.docs/anthropic/AIRTABLE_LEDGER.md](.docs/anthropic/AIRTABLE_LEDGER.md)); this file is strategic narrative, not the live task queue by itself.
+- **Managed agent swarms (Airtable queue + strict roles):** start with [AGENTS.md](AGENTS.md) for the current operational pointers and use the **Production Ledger** in Airtable as queue truth; this file is strategic narrative, not the live task queue by itself.
 - **Coding agents / anyone touching Patreon ingest or gallery duplicate behavior:** read [AGENTS.md](AGENTS.md), [docs/patreon-ingest-canonical.md](docs/patreon-ingest-canonical.md), and [docs/relay-artist-metadata.md](docs/relay-artist-metadata.md) so canonical vs overrides stay aligned (artist tags/visibility survive re-ingest).
 - **Relational backend (PostgreSQL + Prisma, migration from file-backed stores):** [docs/database/README.md](docs/database/README.md) — schema, migrations, per-domain `RELAY_DB_STORE_*` flags; **M10** verification and handoff — [docs/database/M10_VERIFICATION.md](docs/database/M10_VERIFICATION.md). **Not** the Airtable Production Ledger (operational queue only).
 - Library + Designer UX ideals, workflows, gaps, and phased UI backlog:
   - [docs/pattern-library.md](docs/pattern-library.md)
   - **Publish-preflight UI snapshot (not production):** [design-archive/preflight/PREFLIGHT.txt](design-archive/preflight/PREFLIGHT.txt) — reserved Next.js archive (`relay-preflight-archive`); see [builder reference under Workstream D](#workstream-d-gallery-experience). Search repo: `preflight`.
+- **Relay Goal Cycle (Library-first goal → research → Plan → schedule → execute → outcomes):** the authoritative dependency graph, locked decisions, worker packs, human gates, and Dream-flow traceability are in [docs/studio/goal-cycle-build-plans/00-README.md](docs/studio/goal-cycle-build-plans/00-README.md). Build from those slices; do not treat this strategic roadmap as the task pack.
 - **Sync & access hardening (Slices 1–4, shipped):** [docs/part1-sync-hardening-ledger.md](docs/part1-sync-hardening-ledger.md) — export retries, tier alignment, watermark + re-sync UI, sync health; one ledger for APIs, env vars, and tests.
 - Standardized build contracts, quality gates, and traceability:
-  - [builder-boost-pack/README.md](c:\Users\jorda\Documents\Coding Projects\Rescue\builder-boost-pack\README.md)
+  - [builder-boost-pack/README.md](builder-boost-pack/README.md)
 - Analytics decisioning, action cards, data contracts, and execution APIs:
-  - [analytics-action-center-spec.md](c:\Users\jorda\Documents\Coding Projects\Rescue\analytics-action-center-spec.md)
+  - [analytics-action-center-spec.md](analytics-action-center-spec.md)
 - **Long-term growth analytics loop** (first-party truth → optional omni-channel → diagnosis → coach → goals): strategy and phased vision in [docs/growth-analytics-features.md](docs/growth-analytics-features.md). **Near-term** delivery remains Workstream E and Action Center contracts.
 - **Third-party metrics when APIs are insufficient** (aggregators, optional extractors, Relay Link / first-party supplements): tiered strategy and compliance posture in [docs/third-party-metrics-sourcing.md](docs/third-party-metrics-sourcing.md). **Not** a substitute for first-party Relay telemetry.
 - Pricing model, COGS guardrails, hosting modes, and post-independence operations:
-  - [monetization-scheme-infrastructure-plan.md](c:\Users\jorda\Documents\Coding Projects\Rescue\monetization-scheme-infrastructure-plan.md)
+  - [monetization-scheme-infrastructure-plan.md](monetization-scheme-infrastructure-plan.md)
 - **Canonical business model, revenue streams, unit economics, projections, and ruled-out decisions:**
   - [docs/financial-atlas.md](docs/financial-atlas.md)
 - **Audience Premium, daily paywalled promos, and boost tokens** — strategic constraints and agent prompt for roadmap/plan edits:

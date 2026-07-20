@@ -4,9 +4,10 @@
  * @see {@link ../jsdoc-core-entities.ts}
  * @see prisma/schema.prisma `Post`, `PostVersion`, `PostTier`, `Campaign`, `Tier`, `MediaAsset`, `CreatorProfile`
  */
-import type { PrismaClient } from "@prisma/client";
+import type { Prisma, PrismaClient } from "@prisma/client";
 import {
   MediaIngestOrigin,
+  PostPublishState,
   PostSource,
   PostUpstreamStatus,
   type MediaAsset
@@ -15,6 +16,7 @@ import { emitPostPublishedEvent } from "../patron/notification-event-emit.js";
 import { sanitizeOptionalPostDescriptionHtml } from "../security/sanitize-post-html.js";
 import { ensureDefaultCreativeWorkForPost } from "../analytics/creative-work-service.js";
 import { ensureRelayPlatformInstanceForPost } from "../analytics/platform-instance-service.js";
+import { reconcilePostingGoalNudgesAfterPublish } from "../autopost/posting-goal-service.js";
 
 /** Accepted fields when creating a native Relay post (service / HTTP adapter maps into this). */
 export type RelayCreatePostInput = {
@@ -32,7 +34,8 @@ export type RelayCreatePostInput = {
   publishedAtInput: string | null;
 };
 
-const DRAFT_PUBLISHED_AT = new Date(0);
+/** Legacy epoch sentinel — VS7 migration nulls these; new drafts use null `publishedAt`. */
+export const RELAY_DRAFT_EPOCH_SENTINEL = new Date(0);
 
 /**
  * Structured validation / resolution failure for relay-native post flows (HTTP status carried in `statusCode`).
@@ -212,7 +215,7 @@ export type RelayCreatePostRow = {
     upstreamRevision: string;
     title: string;
     description: string | null;
-    publishedAt: Date;
+    publishedAt: Date | null;
     tagIds: string[];
     /** Canonical `relayTierId` values (not Prisma `Tier.id`). */
     tierIds: string[];
@@ -245,7 +248,8 @@ export function isMediaEligibleForRelayNativePost(
 export async function createRelayPostTransaction(
   prisma: PrismaClient,
   postId: string,
-  input: RelayCreatePostInput
+  input: RelayCreatePostInput,
+  opts?: { tx?: Prisma.TransactionClient }
 ): Promise<RelayCreatePostRow> {
   validateTitle(input.title);
   const title = input.title.trim();
@@ -309,8 +313,10 @@ export async function createRelayPostTransaction(
   }
 
   const now = new Date();
-  let publishedAt: Date;
+  let publishedAt: Date | null;
+  let publishState: PostPublishState;
   if (input.publish) {
+    publishState = PostPublishState.published;
     if (input.publishedAtInput?.trim()) {
       const p = new Date(input.publishedAtInput);
       if (Number.isNaN(p.getTime())) {
@@ -321,13 +327,14 @@ export async function createRelayPostTransaction(
       publishedAt = now;
     }
   } else {
-    publishedAt = DRAFT_PUBLISHED_AT;
+    // VS7-T01: draft uses publishState + null publishedAt (never epoch sentinel).
+    publishState = PostPublishState.draft;
+    publishedAt = null;
   }
 
   const upstreamRevision = `relay:v1:${now.getTime()}`;
 
-  const result = await prisma.$transaction(
-    async (tx) => {
+  const runCreate = async (tx: Prisma.TransactionClient) => {
       const newPost = await tx.post.create({
         data: {
           id: postId,
@@ -335,6 +342,7 @@ export async function createRelayPostTransaction(
           creatorId: input.creatorId,
           providerPostId: null,
           source: PostSource.RELAY,
+          publishState,
           upstreamStatus: PostUpstreamStatus.active,
           createdAt: now,
           isPublic: input.isPublic,
@@ -393,17 +401,25 @@ export async function createRelayPostTransaction(
         linkedAt: now
       });
       return { newPost, v0 };
-    },
-    { timeout: 30_000 }
-  );
+  };
+
+  const result = opts?.tx
+    ? await runCreate(opts.tx)
+    : await prisma.$transaction(runCreate, { timeout: 30_000 });
   const v = result.v0;
-  if (input.publish) {
+  if (input.publish && !opts?.tx) {
+    const publishedAtForEvent = v.publishedAt ?? now;
     await emitPostPublishedEvent(prisma, {
       postId: result.newPost.id,
       relayCreatorId: input.creatorId,
       title: v.title,
-      publishedAt: v.publishedAt
+      publishedAt: publishedAtForEvent
     });
+    try {
+      await reconcilePostingGoalNudgesAfterPublish(prisma, input.creatorId);
+    } catch {
+      // Nudge reconcile must not fail publish.
+    }
   }
   return {
     post: {

@@ -38,6 +38,9 @@ import { startNotificationDigestWorker } from "./patron/notification-digest-work
 import { startAccountDeletionWorker } from "./patron/account-deletion-worker.js";
 import { startMediaStoragePurgeWorker } from "./storage/media-storage-purge-worker.js";
 import { startPostingGoalNudgeWorker } from "./autopost/posting-goal-nudge-worker.js";
+import { startScheduleSeriesWorker } from "./autopost/schedule-series-worker.js";
+import { startDistributionRulesWorker } from "./autopost/distribution-rule-worker.js";
+import { startDistributionScheduleReminderWorker } from "./distribution/distribution-schedule-reminder-worker.js";
 import {
   subscribeStarGraphqlIngestAutosyncRepeatEveryMsFromEnv,
   startSubscribeStarGraphqlIngestAutosyncTimer
@@ -268,6 +271,27 @@ const postingGoalNudgeRunner =
     })
   : null;
 
+const distributionScheduleReminderRunner =
+  jobBackend === "memory" && startInProcessBackgroundWork && prisma
+  ? startDistributionScheduleReminderWorker(prisma, (msg, ctx) => {
+      log.warn({ ...(ctx ?? {}), relayMsg: msg }, "Relay");
+    })
+  : null;
+
+const scheduleSeriesRunner =
+  jobBackend === "memory" && startInProcessBackgroundWork && prisma
+  ? startScheduleSeriesWorker(prisma, (msg, ctx) => {
+      log.warn({ ...(ctx ?? {}), relayMsg: msg }, "Relay");
+    })
+  : null;
+
+const distributionRulesRunner =
+  jobBackend === "memory" && startInProcessBackgroundWork && prisma
+  ? startDistributionRulesWorker(prisma, (msg, ctx) => {
+      log.warn({ ...(ctx ?? {}), relayMsg: msg }, "Relay");
+    })
+  : null;
+
 /** BullMQ: shared Redis for repeat schedulers + in-process workers; quit on shutdown. */
 let bullMqSharedRedis: Redis | undefined;
 /** Repeatable job producers (`Queue`); API process only. */
@@ -352,7 +376,10 @@ async function awaitMemoryDeliveryRunnersStopped(): Promise<void> {
     notificationDigestRunner?.stop(),
     accountDeletionRunner?.stop(),
     mediaStoragePurgeRunner?.stop(),
-    postingGoalNudgeRunner?.stop()
+    postingGoalNudgeRunner?.stop(),
+    distributionScheduleReminderRunner?.stop(),
+    scheduleSeriesRunner?.stop(),
+    distributionRulesRunner?.stop()
   ].filter((p): p is Promise<void> => p !== undefined);
   await Promise.all(pending);
 }

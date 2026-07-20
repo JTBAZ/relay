@@ -21,6 +21,7 @@ import {
 } from "./notification-digest-preferences.js";
 import { resolveNotificationDigestTimezone as normalizeNotificationDigestTimezone } from "./notification-digest-schedule.js";
 import { isAllowedPatronProfileImageUrl } from "./patron-profile-upload-service.js";
+import { isActiveCuratorForMembership } from "./curator-status.js";
 
 const MAX_BIO = 4000;
 const MAX_DISPLAY = 120;
@@ -42,11 +43,14 @@ export type PatronProfileView = {
   notification_digest_slot: NotificationDigestSlotId | null;
   notification_digest_timezone: string | null;
   hide_mature_content: boolean;
+  /** MB-14 — live Curator badge signal (active/trialing Curator only). */
+  is_curator: boolean;
 };
 
 function toView(
   row: PatronProfile,
-  account?: { username: string | null; usernameNorm: string | null } | null
+  account?: { username: string | null; usernameNorm: string | null } | null,
+  isCurator = false
 ): PatronProfileView {
   return {
     tenant_membership_id: row.tenantMembershipId,
@@ -64,6 +68,7 @@ function toView(
     notification_digest_slot: normalizeNotificationDigestSlot(row.notificationDigestSlot),
     notification_digest_timezone: row.notificationDigestTimezone,
     hide_mature_content: row.hideMatureContent,
+    is_curator: isCurator
   };
 }
 
@@ -121,7 +126,8 @@ export async function getPatronProfileViewForMembership(
     where: { id: tenantMembershipId },
     select: { account: { select: { username: true, usernameNorm: true } } }
   });
-  return toView(row, membership?.account);
+  const isCurator = await isActiveCuratorForMembership(prisma, tenantMembershipId);
+  return toView(row, membership?.account, isCurator);
 }
 
 export type PatchPatronProfileInput = {
@@ -337,7 +343,8 @@ export async function patchPatronProfileForMembership(
       where: { id: tenantMembershipId },
       select: { account: { select: { username: true, usernameNorm: true } } }
     });
-    return { ok: true, profile: toView(row, membership?.account) };
+    const isCurator = await isActiveCuratorForMembership(prisma, tenantMembershipId);
+    return { ok: true, profile: toView(row, membership?.account, isCurator) };
   }
 
   const updated = await prisma.patronProfile.update({
@@ -348,5 +355,6 @@ export async function patchPatronProfileForMembership(
     where: { id: tenantMembershipId },
     select: { account: { select: { username: true, usernameNorm: true } } }
   });
-  return { ok: true, profile: toView(updated, membership?.account) };
+  const isCurator = await isActiveCuratorForMembership(prisma, tenantMembershipId);
+  return { ok: true, profile: toView(updated, membership?.account, isCurator) };
 }

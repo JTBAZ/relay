@@ -145,6 +145,26 @@ export function auditAllowedPlatformMetricsRegistryRead(args: {
     method: args.req.method
   });
 }
+
+export function auditAllowedTipBetaFunnelRead(args: {
+  prisma: PrismaClient | null | undefined;
+  req: Request;
+  traceId: string;
+  accountId: string | null;
+  reason: PlatformOperatorAccessEvaluation["reason"];
+}): void {
+  if (!args.prisma) return;
+  schedulePlatformOperatorAccessAudit({
+    prisma: args.prisma,
+    action: PLATFORM_OPERATOR_AUDIT_ACTIONS.tipBetaFunnelRead,
+    outcome: "allowed",
+    reason: args.reason,
+    accountId: args.accountId,
+    traceId: args.traceId,
+    route: args.req.path,
+    method: args.req.method
+  });
+}
 function extractOpaqueSessionToken(req: Request): string {
   const bearer = req.header("authorization")?.replace(/^Bearer\s+/i, "").trim() ?? "";
   const fromCookie = readSessionCookie(req)?.trim() ?? "";

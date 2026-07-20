@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  PostPublishState,
   PostSource,
   PostUpstreamStatus,
   MediaIngestOrigin,
@@ -7,7 +8,6 @@ import {
 } from "@prisma/client";
 import {
   DEFAULT_MONTHLY_POST_TARGET,
-  DRAFT_PUBLISHED_AT,
   PostingGoalNotFoundError,
   PostingGoalValidationError,
   computePaceStatus,
@@ -150,10 +150,11 @@ describe("posting-goal-service reads and writes", () => {
         creatorId: "cr1",
         source: PostSource.RELAY,
         upstreamStatus: PostUpstreamStatus.active,
+        publishState: PostPublishState.published,
         versions: {
           some: {
             publishedAt: {
-              gt: DRAFT_PUBLISHED_AT,
+              not: null,
               gte: window.start,
               lt: window.end
             }
@@ -198,6 +199,66 @@ describe("posting-goal-service reads and writes", () => {
         processingStatus: MediaProcessingStatus.READY
       }
     });
+  });
+
+  it("resolves active posting_goal nudges when monthly target is met", async () => {
+    const updateMany = vi.fn().mockResolvedValue({ count: 1 });
+    const findMany = vi
+      .fn()
+      .mockResolvedValueOnce([
+        {
+          id: "n1",
+          creatorId: "cr1",
+          periodKey: "2026-06",
+          nudgeType: "posting_goal",
+          status: "active",
+          snoozedUntil: null,
+          updatedAt: new Date("2026-06-01T00:00:00.000Z")
+        }
+      ])
+      .mockResolvedValueOnce([
+        {
+          id: "n1",
+          creatorId: "cr1",
+          periodKey: "2026-06",
+          nudgeType: "posting_goal",
+          status: "resolved",
+          snoozedUntil: null,
+          updatedAt: new Date("2026-06-10T00:00:00.000Z")
+        }
+      ]);
+    const prisma = prismaStub({
+      creatorPostingGoal: {
+        findUnique: vi.fn().mockResolvedValue({
+          creatorId: "cr1",
+          monthlyPostTarget: 1,
+          bonusNudgesEnabled: false,
+          timezone: "UTC",
+          enabled: true,
+          updatedAt: new Date("2026-06-01T00:00:00.000Z")
+        })
+      },
+      post: { count: vi.fn().mockResolvedValue(1) },
+      mediaAsset: { count: vi.fn().mockResolvedValue(0) },
+      creatorPostingNudge: { findMany, updateMany }
+    });
+
+    const status = await getCreatorPostingGoalStatus(
+      prisma,
+      "cr1",
+      new Date("2026-06-10T00:00:00.000Z")
+    );
+    expect(status.pace_status).toBe("complete");
+    expect(status.active_nudge).toBeNull();
+    expect(updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          nudgeType: "posting_goal",
+          status: { in: ["active", "snoozed"] }
+        }),
+        data: { status: "resolved", snoozedUntil: null }
+      })
+    );
   });
 });
 

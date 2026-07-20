@@ -19,6 +19,7 @@ export type WorkCrosspostGapInputInstance = {
   destination: string;
   status: string;
   externalUrl: string | null;
+  contentVariantRole?: string | null;
 };
 
 export type PerformanceWorkCrosspostGapsWire = {
@@ -27,6 +28,15 @@ export type PerformanceWorkCrosspostGapsWire = {
   missing_teaser_destinations: string[];
   suggested_source_post_id: string | null;
 };
+
+/** Prefer platform-instance content role (e.g. promo on X) over bundle member role. */
+export function effectiveVariantRole(
+  memberVariantRole: string,
+  contentVariantRole?: string | null
+): string {
+  const instanceRole = contentVariantRole?.trim();
+  return instanceRole || memberVariantRole;
+}
 
 function isPostedInstance(instance: WorkCrosspostGapInputInstance): boolean {
   if (instance.status === "unlinked") return false;
@@ -47,7 +57,8 @@ export function computeWorkCrosspostGaps(
     if (instance.destination === "relay") continue;
 
     presentDestinations.add(instance.destination);
-    const role = roleByPost.get(instance.postId) ?? "standalone";
+    const memberRole = roleByPost.get(instance.postId) ?? "standalone";
+    const role = effectiveVariantRole(memberRole, instance.contentVariantRole);
     if (PROMO_ROLES.has(role)) {
       promoDestinations.add(instance.destination);
     }
@@ -57,7 +68,14 @@ export function computeWorkCrosspostGaps(
     (destination) => !presentDestinations.has(destination)
   );
 
-  const hasPromoMembers = members.some((member) => PROMO_ROLES.has(member.variantRole));
+  const hasPromoMembers =
+    members.some((member) => PROMO_ROLES.has(member.variantRole)) ||
+    instances.some(
+      (instance) =>
+        isPostedInstance(instance) &&
+        instance.destination !== "relay" &&
+        PROMO_ROLES.has(effectiveVariantRole(roleByPost.get(instance.postId) ?? "standalone", instance.contentVariantRole))
+    );
   const missing_teaser_destinations =
     hasPromoMembers && presentDestinations.size > 0
       ? DISTRIBUTION_DESTINATIONS.filter((destination) => !promoDestinations.has(destination))

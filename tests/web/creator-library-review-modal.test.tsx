@@ -246,9 +246,11 @@ describe("<CreatorLibraryReviewModal />", () => {
         step: "organized",
         metadata: expect.objectContaining({
           growth_goal: "conversion",
-          posting_cadence_per_month: 1,
         }),
       })
+    );
+    expect(patchCreatorOnboarding.mock.calls[0]?.[0]?.metadata).not.toHaveProperty(
+      "posting_cadence_per_month"
     );
     expect(onComplete).toHaveBeenCalled();
   });

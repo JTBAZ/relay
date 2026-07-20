@@ -16,6 +16,7 @@ import {
   upsertPlatformInstanceFromAttempt,
   type UpsertPlatformInstanceResult
 } from "./platform-instance-service.js";
+import { contentVariantRoleFromPlatformFields } from "../distribution/media-binding.js";
 
 export type PlatformInstanceLinkErrorCode =
   | "NO_TENANT"
@@ -148,6 +149,18 @@ export async function confirmPlatformInstanceLink(
   let upsert: UpsertPlatformInstanceResult | null = null;
 
   if (attempt) {
+    const attemptWithVariant = await prisma.postDistributionAttempt.findFirst({
+      where: { id: attempt.id, creatorId: tenant.creatorId },
+      include: { variant: { select: { platformFields: true } } }
+    });
+    const variantPlatformFields =
+      attemptWithVariant?.variant.platformFields &&
+      typeof attemptWithVariant.variant.platformFields === "object" &&
+      !Array.isArray(attemptWithVariant.variant.platformFields)
+        ? (attemptWithVariant.variant.platformFields as Record<string, unknown>)
+        : {};
+    const contentVariantRole = contentVariantRoleFromPlatformFields(variantPlatformFields);
+
     await prisma.postDistributionAttempt.update({
       where: { id: attempt.id },
       data: {
@@ -166,7 +179,8 @@ export async function confirmPlatformInstanceLink(
       externalUrl: parsed.canonical_url,
       externalId: parsed.external_id,
       linkSource,
-      status: "active"
+      status: "active",
+      contentVariantRole
     });
   } else {
     const manualId = platformInstanceIdForManualLink(postId, destination);

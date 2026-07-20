@@ -8,6 +8,7 @@ import {
   ArrowLeft,
   Bell,
   Clock,
+  Coins,
   Loader2,
   Settings,
   ShieldAlert,
@@ -18,8 +19,12 @@ import {
   cancelPatronAccountDeletion,
   getPendingPatronAccountDeletion,
   requestPatronAccountDeletion,
-  type PendingDeletion
+  fetchTipsWallet,
+  RelayApiError,
+  type PendingDeletion,
+  type TipsWalletWire
 } from "@/lib/relay-api";
+import { fanPlanEntry, isPaidFanPlanId, type FanPlanId } from "@/lib/fan-plans";
 import {
   fetchPatronProfileMe,
   patchPatronProfileMe,
@@ -128,6 +133,7 @@ export function PatronSettingsClient(): React.ReactElement {
         {phase === "ready" ? (
           <>
             <ProfileSection devMode={devState !== null} />
+            <TipsPlanSection devMode={devState !== null} />
             <ContentPreferencesSection devMode={devState !== null} />
             <NotificationDigestSection devMode={devState !== null} />
             <AccountDeletionSection
@@ -431,6 +437,87 @@ function AccountDeletionSection({
         confirmLabel="Schedule deletion"
         onConfirm={handleRequest}
       />
+    </Section>
+  );
+}
+
+function TipsPlanSection({ devMode }: { devMode: boolean }): React.ReactElement | null {
+  const [wallet, setWallet] = useState<TipsWalletWire | null>(null);
+  const [hidden, setHidden] = useState(devMode);
+
+  useEffect(() => {
+    if (devMode) {
+      setHidden(true);
+      return;
+    }
+    let cancelled = false;
+    void fetchTipsWallet()
+      .then((w) => {
+        if (cancelled) return;
+        setWallet(w);
+        setHidden(false);
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        if (err instanceof RelayApiError && (err.status === 404 || err.code === "NOT_FOUND")) {
+          setHidden(true);
+          setWallet(null);
+          return;
+        }
+        setHidden(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [devMode]);
+
+  if (hidden || !wallet) return null;
+
+  const planId: FanPlanId =
+    wallet.plan === "supporter" || wallet.plan === "curator" || wallet.plan === "free"
+      ? wallet.plan
+      : "free";
+  const plan = fanPlanEntry(planId);
+  const total = wallet.granted_balance + wallet.purchased_balance;
+  const allowance = wallet.monthly_allowance ?? plan?.monthlyTips ?? 0;
+
+  return (
+    <Section
+      icon={<Coins size={16} className="text-[#40916C]" aria-hidden />}
+      title="Tips & plan"
+      description="Tips unlock art and route value to artists. Manage your allowance here."
+    >
+      <div className="space-y-2 text-sm" data-testid="settings-tips-plan">
+        <p className="text-[#E0E0E0]">
+          Plan:{" "}
+          <span className="font-medium" data-testid="settings-tips-plan-name">
+            {plan?.name ?? "Free"}
+          </span>
+        </p>
+        <p className="text-[#888]">
+          Balance:{" "}
+          <span className="tabular-nums text-[#E0E0E0]" data-testid="settings-tips-balance">
+            {total}
+          </span>{" "}
+          Tips
+          {allowance > 0 ? (
+            <>
+              {" "}
+              · Allowance: <span className="tabular-nums">{allowance}</span>/mo
+            </>
+          ) : null}
+        </p>
+        <p className="text-[11px] text-[#666]" data-testid="settings-tips-next-grant">
+          Next free grant period: {wallet.next_grant_period}
+        </p>
+        <Link
+          href="/plans"
+          data-testid="settings-tips-plans-link"
+          className="inline-flex h-7 items-center rounded-md border border-[#2a2a2a] bg-[#0a0a0a] px-3 text-xs font-medium text-[#9bf0c4] outline-none transition-colors hover:border-[#2D6A4F] focus-visible:ring-2 focus-visible:ring-[#00AA6F]/40"
+        >
+          {isPaidFanPlanId(planId) ? "Manage plan" : "Compare plans"}
+        </Link>
+      </div>
     </Section>
   );
 }

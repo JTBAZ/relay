@@ -17,6 +17,8 @@
  *   - "tier_changed"
  *   - "new_post_followed"
  *   - "mention"
+ *   - "reveal_expiring" (MB-13 Tip window day-before)
+ *   - "tips_granted" (MB-9 Tip allowance landed)
  */
 
 import type { PrismaClient } from "@prisma/client";

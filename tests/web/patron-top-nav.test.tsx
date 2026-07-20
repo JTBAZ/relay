@@ -7,13 +7,27 @@ import { nextNavigationMock } from "../mocks/next-navigation";
 const fetchPatronSessionIfPresent = vi.fn();
 const getPatronNotificationUnreadCount = vi.fn();
 const fetchPatronProfileMe = vi.fn();
+const fetchTipsWallet = vi.fn();
 
-vi.mock("@/lib/relay-api", () => ({
-  fetchPatronSessionIfPresent: (...args: unknown[]) =>
-    fetchPatronSessionIfPresent(...args),
-  getPatronNotificationUnreadCount: (...args: unknown[]) =>
-    getPatronNotificationUnreadCount(...args),
-}));
+vi.mock("@/lib/relay-api", () => {
+  class StubRelayApiError extends Error {
+    public override readonly name = "RelayApiError";
+    public constructor(
+      message: string,
+      public readonly status: number
+    ) {
+      super(message);
+    }
+  }
+  return {
+    fetchPatronSessionIfPresent: (...args: unknown[]) =>
+      fetchPatronSessionIfPresent(...args),
+    getPatronNotificationUnreadCount: (...args: unknown[]) =>
+      getPatronNotificationUnreadCount(...args),
+    fetchTipsWallet: (...args: unknown[]) => fetchTipsWallet(...args),
+    RelayApiError: StubRelayApiError
+  };
+});
 
 vi.mock("@/lib/patron-profile-api", () => ({
   fetchPatronProfileMe: (...args: unknown[]) => fetchPatronProfileMe(...args),
@@ -27,6 +41,8 @@ describe("<PatronTopNav />", () => {
     fetchPatronSessionIfPresent.mockReset();
     getPatronNotificationUnreadCount.mockReset();
     fetchPatronProfileMe.mockReset();
+    fetchTipsWallet.mockReset();
+    fetchTipsWallet.mockRejectedValue({ status: 404, name: "RelayApiError" });
     nextNavigationMock.pathname = "/feed";
     fetchPatronProfileMe.mockResolvedValue({ avatar_url: null });
   });
