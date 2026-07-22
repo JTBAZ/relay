@@ -10,7 +10,7 @@ import {
   type SiteBundle
 } from "@/lib/access";
 import { PaywallTeaser } from "@/components/PaywallTeaser";
-import { ConsoleNav } from "@/components/ConsoleNav";
+import { PatronChrome } from "@/components/PatronChrome";
 import {
   applyPostOverrides,
   loadPostOverrides
@@ -20,10 +20,14 @@ type Props = {
   site: SiteBundle;
 };
 
-function accessLabel(post: ClonePostEntry): string {
+function accessLabel(post: ClonePostEntry, tiers: SiteBundle["tiers"]): string {
   if (post.access.level === "public") return "Public";
   if (post.access.level === "member_only") return "Patrons";
-  return `Tier: ${post.access.tier_ids.join(", ")}`;
+  const titles = post.access.tier_ids.map((id) => {
+    const tier = tiers.find((t) => t.tier_id === id);
+    return tier?.title ?? id;
+  });
+  return titles.length ? titles.join(" · ") : "Tier";
 }
 
 export function GalleryApp({ site }: Props) {
@@ -41,82 +45,79 @@ export function GalleryApp({ site }: Props) {
     [personas, personaId]
   );
   const style: PaywallStyle = site.theme.paywall_style ?? "blur";
+  const density = site.theme.gallery_density ?? "comfortable";
 
   const liveSite = { ...site, posts };
   return (
-    <>
-      <ConsoleNav quiet />
-      <div className="shell">
-        <div className="banner">
-          Soft-gate preview — not production security.
-        </div>
+    <PatronChrome
+      site={liveSite}
+      personas={personas}
+      personaId={persona.id}
+      onPersonaChange={setPersonaId}
+    >
+      <div
+        className={`patron-grid patron-grid--${density}`}
+        role="list"
+        aria-label="Gallery posts"
+      >
+        {liveSite.posts.map((post, index) => {
+          const unlocked = canViewPost(post, persona);
+          const thumb = post.media[0]?.content_path;
+          const lockClass = unlocked ? "" : `locked ${style}`;
+          const body = (
+            <>
+              <div className="media-wrap">
+                {thumb ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={thumb}
+                    alt=""
+                    width={640}
+                    height={480}
+                    loading={index < 4 ? "eager" : "lazy"}
+                    decoding="async"
+                    fetchPriority={index === 0 ? "high" : undefined}
+                  />
+                ) : (
+                  <div className="patron-media-empty">No media</div>
+                )}
+                {!unlocked ? (
+                  <PaywallTeaser
+                    style={style}
+                    message={liveSite.theme.paywall_message}
+                    communityCta={liveSite.theme.community_cta}
+                  />
+                ) : null}
+              </div>
+              <div className="body">
+                <div className="badge">{accessLabel(post, liveSite.tiers)}</div>
+                <h2 className="patron-card-title">{post.title}</h2>
+              </div>
+            </>
+          );
 
-        <header className="hero">
-          <h1>{liveSite.theme.hero.title}</h1>
-          {liveSite.theme.hero.subtitle ? (
-            <p className="sub">{liveSite.theme.hero.subtitle}</p>
-          ) : null}
-          {liveSite.theme.hero.bio ? (
-            <p className="bio">{liveSite.theme.hero.bio}</p>
-          ) : null}
-        </header>
-
-        <div className="soft-gate" role="group" aria-label="Demo persona">
-          <span>View as</span>
-          {personas.map((p) => (
-            <button
-              key={p.id}
-              type="button"
-              className={p.id === persona.id ? "active" : undefined}
-              onClick={() => setPersonaId(p.id)}
+          return (
+            <article
+              key={post.post_id}
+              className={`patron-card ${lockClass}`.trim()}
+              role="listitem"
+              style={{ ["--patron-stagger" as string]: String(index) }}
             >
-              {p.label}
-            </button>
-          ))}
-        </div>
-
-        <div className="grid">
-          {liveSite.posts.map((post) => {
-            const unlocked = canViewPost(post, persona);
-            const thumb = post.media[0]?.content_path;
-            const lockClass = unlocked ? "" : `locked ${style}`;
-            return (
-              <article
-                key={post.post_id}
-                className={`card ${lockClass}`.trim()}
-              >
-                <div className="media-wrap">
-                  {thumb ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img src={thumb} alt="" />
-                  ) : (
-                    <div style={{ padding: "2rem", color: "var(--eh-muted)" }}>
-                      No media
-                    </div>
-                  )}
-                  {!unlocked ? <PaywallTeaser style={style} /> : null}
-                </div>
-                <div className="body">
-                  <div className="badge">{accessLabel(post)}</div>
-                  <h2>
-                    {unlocked ? (
-                      <Link href={`/p/${post.slug}`}>{post.title}</Link>
-                    ) : (
-                      post.title
-                    )}
-                  </h2>
-                </div>
-              </article>
-            );
-          })}
-        </div>
-
-        <p className="muted small" style={{ marginTop: "2rem" }}>
-          <Link href="/structure">← Back to Structure</Link>
-          {" · "}
-          <Link href="/style">Style dials</Link>
-        </p>
+              {unlocked ? (
+                <Link
+                  href={`/p/${post.slug}`}
+                  className="patron-card-link"
+                  aria-label={`Open ${post.title}`}
+                >
+                  {body}
+                </Link>
+              ) : (
+                <div className="patron-card-static">{body}</div>
+              )}
+            </article>
+          );
+        })}
       </div>
-    </>
+    </PatronChrome>
   );
 }

@@ -153,39 +153,87 @@ export function embedLibraryTruthModules(outDir: string): string[] {
 function themeCssVars(theme: EscapeHatchTheme): string {
   const schemes: Record<
     string,
-    { bg: string; fg: string; muted: string; card: string; deep: string; hover: string; border: string }
+    {
+      bg: string;
+      fg: string;
+      muted: string;
+      card: string;
+      deep: string;
+      hover: string;
+      border: string;
+      atmosphere: string;
+      colorScheme: string;
+    }
   > = {
     dark: {
-      bg: "#313338",
-      fg: "#f2f3f5",
-      muted: "#b5bac1",
-      card: "#2b2d31",
-      deep: "#1e1f22",
-      hover: "#35373c",
-      border: "#3f4147"
+      bg: "#141210",
+      fg: "#f4efe6",
+      muted: "#a89f93",
+      card: "#1c1a17",
+      deep: "#0c0b09",
+      hover: "#26221c",
+      border: "#2e2a24",
+      atmosphere:
+        "radial-gradient(ellipse 90% 55% at 50% -10%, color-mix(in srgb, var(--eh-accent) 22%, transparent), transparent 70%), linear-gradient(180deg, #1a1714 0%, #141210 42%, #0c0b09 100%)",
+      colorScheme: "dark"
     },
     light: {
-      bg: "#ffffff",
-      fg: "#060607",
-      muted: "#4e5058",
-      card: "#f2f3f5",
-      deep: "#e3e5e8",
-      hover: "#ebebeb",
-      border: "#d1d3d7"
+      bg: "#f0ebe3",
+      fg: "#1a1814",
+      muted: "#5c564c",
+      card: "#faf7f2",
+      deep: "#e4ddd2",
+      hover: "#ebe4d8",
+      border: "#d4cdc0",
+      atmosphere:
+        "radial-gradient(ellipse 90% 50% at 50% -8%, color-mix(in srgb, var(--eh-accent) 16%, transparent), transparent 68%), linear-gradient(180deg, #f7f3ec 0%, #f0ebe3 50%, #e8e1d6 100%)",
+      colorScheme: "light"
     },
     warm: {
-      bg: "#2b2d31",
-      fg: "#f2f3f5",
-      muted: "#b5bac1",
-      card: "#1e1f22",
-      deep: "#111214",
-      hover: "#35373c",
-      border: "#3f4147"
+      bg: "#10141a",
+      fg: "#eef2f6",
+      muted: "#9aa6b2",
+      card: "#161b22",
+      deep: "#0a0d11",
+      hover: "#1e2530",
+      border: "#2a3340",
+      atmosphere:
+        "radial-gradient(ellipse 85% 50% at 50% -12%, color-mix(in srgb, var(--eh-accent) 20%, transparent), transparent 72%), linear-gradient(180deg, #141a22 0%, #10141a 45%, #0a0d11 100%)",
+      colorScheme: "dark"
     }
   };
+  const pairings: Record<string, { display: string; body: string }> = {
+    editorial: {
+      display:
+        'var(--font-fraunces), "Iowan Old Style", "Palatino Linotype", Palatino, serif',
+      body: 'var(--font-source-sans), "Segoe UI", system-ui, sans-serif'
+    },
+    studio: {
+      display: 'var(--font-instrument-serif), "Iowan Old Style", Georgia, serif',
+      body: 'var(--font-dm-sans), "Segoe UI", system-ui, sans-serif'
+    },
+    signal: {
+      display:
+        'var(--font-space-grotesk), "Avenir Next", "Segoe UI", system-ui, sans-serif',
+      body: 'var(--font-newsreader), "Iowan Old Style", Georgia, serif'
+    }
+  };
+  const crops: Record<string, string> = {
+    center: "center",
+    top: "center top",
+    safe: "center 30%"
+  };
+  const densities: Record<string, string> = {
+    comfortable: "280px",
+    compact: "180px"
+  };
   const s = schemes[theme.color_scheme] ?? schemes.dark;
-  const accent = theme.accent_color ?? "#5865f2";
+  const pairing = pairings[theme.type_pairing ?? "editorial"] ?? pairings.editorial;
+  const accent = theme.accent_color ?? "#c4784a";
+  const cover = crops[theme.cover_crop ?? "center"] ?? crops.center;
+  const gridMin = densities[theme.gallery_density ?? "comfortable"] ?? densities.comfortable;
   return `:root {
+  color-scheme: ${s.colorScheme};
   --eh-bg: ${s.bg};
   --eh-fg: ${s.fg};
   --eh-muted: ${s.muted};
@@ -194,6 +242,11 @@ function themeCssVars(theme: EscapeHatchTheme): string {
   --eh-bg-deep: ${s.deep};
   --eh-hover: ${s.hover};
   --eh-border: ${s.border};
+  --eh-atmosphere: ${s.atmosphere};
+  --eh-font-display: ${pairing.display};
+  --eh-font-body: ${pairing.body};
+  --eh-cover-position: ${cover};
+  --eh-grid-min: ${gridMin};
 }
 `;
 }
@@ -280,7 +333,7 @@ export function stampEscapeHatchManifest(
   parsed.generated_at = bundle.generated_at;
   parsed.creator_id = bundle.creator_id;
   parsed.site_id = bundle.site_id ?? bundle.creator_id;
-  parsed.slice = "EH-020";
+  parsed.slice = "EH-021";
   parsed.productionSafe = false;
   parsed.feature_flags = {
     ...parsed.feature_flags,
@@ -363,7 +416,7 @@ export function fillTemplate(opts: FillOptions): FillResult {
       "",
       "**Soft gate only** — persona switching is for demo. This is not production security.",
       "Locked media is still present in `/public/media`; do not deploy this kit as a real paywall.",
-      "`productionSafe: false` — Milestone 2 chassis (EH-020), not EH-033 signed delivery.",
+      "`productionSafe: false` — Milestone 2 (EH-021 premium theme on EH-020 chassis), not EH-033 signed delivery.",
       "",
       `Contract: ${bundle.contract_version}`,
       "",
@@ -376,7 +429,7 @@ export function fillTemplate(opts: FillOptions): FillResult {
       "",
       "`/` redirects to Library. Library truth rebuilds parity from data/ artifacts on every load (never trusts a tampered report alone).",
       "",
-      "## Standalone chassis (EH-020)",
+      "## Standalone chassis (EH-020) + premium patron theme (EH-021)",
       "",
       "- Typed env: `lib/env.ts` + `.env.example` (names only)",
       "- SQL migrations: `db/schema/`, `db/migrations/` (not required for `npm run build`)",

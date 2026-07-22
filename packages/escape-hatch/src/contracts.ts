@@ -56,6 +56,18 @@ export type PaywallStyle = (typeof PAYWALL_STYLES)[number];
 export const COLOR_SCHEMES = ["dark", "light", "warm"] as const;
 export type ColorScheme = (typeof COLOR_SCHEMES)[number];
 
+/** Approved visitor typography pairings (no arbitrary font picker). */
+export const TYPE_PAIRINGS = ["editorial", "studio", "signal"] as const;
+export type TypePairing = (typeof TYPE_PAIRINGS)[number];
+
+/** Gallery grid density dial. */
+export const GALLERY_DENSITIES = ["comfortable", "compact"] as const;
+export type GalleryDensity = (typeof GALLERY_DENSITIES)[number];
+
+/** Safe cover-crop focus for grid thumbs. */
+export const COVER_CROPS = ["center", "top", "safe"] as const;
+export type CoverCrop = (typeof COVER_CROPS)[number];
+
 /** Tier-gated match mode. Default `tier_or_higher` aligns with Relay tier-rules. */
 export const TIER_MATCH_MODES = ["exact", "tier_or_higher"] as const;
 export type TierMatchMode = (typeof TIER_MATCH_MODES)[number];
@@ -118,6 +130,21 @@ export type EscapeHatchTheme = {
     title: string;
     subtitle?: string;
     bio?: string;
+  };
+  /** Public path to logo/avatar (e.g. `/media/m_public.svg`). */
+  logo_path?: string;
+  /** Approved type pairing id; defaults to `editorial` when omitted. */
+  type_pairing?: TypePairing;
+  /** Gallery grid density; defaults to `comfortable` when omitted. */
+  gallery_density?: GalleryDensity;
+  /** Cover-crop focus for thumbs; defaults to `center` when omitted. */
+  cover_crop?: CoverCrop;
+  /** Soft-gate paywall message (preview copy only — not production paywall). */
+  paywall_message?: string;
+  /** Community / Discord CTA (label + href). */
+  community_cta?: {
+    label: string;
+    href: string;
   };
 };
 
@@ -642,6 +669,12 @@ function parseTheme(
   const color_scheme = ownGet(value, "color_scheme");
   const paywall_style = ownGet(value, "paywall_style");
   const accent_color = ownGet(value, "accent_color");
+  const logo_path = ownGet(value, "logo_path");
+  const type_pairing = ownGet(value, "type_pairing");
+  const gallery_density = ownGet(value, "gallery_density");
+  const cover_crop = ownGet(value, "cover_crop");
+  const paywall_message = ownGet(value, "paywall_message");
+  const community_cta_raw = ownGet(value, "community_cta");
   const heroRaw = ownGet(value, "hero");
   if (
     typeof color_scheme !== "string" ||
@@ -661,6 +694,67 @@ function parseTheme(
   }
   if (accent_color !== undefined && !isNonEmptyString(accent_color)) {
     issues.push(issue(`${path}.accent_color`, "expected non-empty string when present", "type"));
+  }
+  if (logo_path !== undefined && !isNonEmptyString(logo_path)) {
+    issues.push(issue(`${path}.logo_path`, "expected non-empty string when present", "type"));
+  }
+  if (
+    type_pairing !== undefined &&
+    (typeof type_pairing !== "string" ||
+      !(TYPE_PAIRINGS as readonly string[]).includes(type_pairing))
+  ) {
+    issues.push(
+      issue(`${path}.type_pairing`, `expected one of ${TYPE_PAIRINGS.join(", ")}`, "enum")
+    );
+  }
+  if (
+    gallery_density !== undefined &&
+    (typeof gallery_density !== "string" ||
+      !(GALLERY_DENSITIES as readonly string[]).includes(gallery_density))
+  ) {
+    issues.push(
+      issue(
+        `${path}.gallery_density`,
+        `expected one of ${GALLERY_DENSITIES.join(", ")}`,
+        "enum"
+      )
+    );
+  }
+  if (
+    cover_crop !== undefined &&
+    (typeof cover_crop !== "string" ||
+      !(COVER_CROPS as readonly string[]).includes(cover_crop))
+  ) {
+    issues.push(
+      issue(`${path}.cover_crop`, `expected one of ${COVER_CROPS.join(", ")}`, "enum")
+    );
+  }
+  if (paywall_message !== undefined && typeof paywall_message !== "string") {
+    issues.push(
+      issue(`${path}.paywall_message`, "expected string when present", "type")
+    );
+  }
+  let community_cta: EscapeHatchTheme["community_cta"] | undefined;
+  if (community_cta_raw !== undefined) {
+    if (!isPlainObject(community_cta_raw)) {
+      issues.push(issue(`${path}.community_cta`, "expected object when present", "type"));
+    } else {
+      const ctaLabel = ownGet(community_cta_raw, "label");
+      const ctaHref = ownGet(community_cta_raw, "href");
+      if (!isNonEmptyString(ctaLabel)) {
+        issues.push(
+          issue(`${path}.community_cta.label`, "expected non-empty string", "type")
+        );
+      }
+      if (!isNonEmptyString(ctaHref)) {
+        issues.push(
+          issue(`${path}.community_cta.href`, "expected non-empty string", "type")
+        );
+      }
+      if (isNonEmptyString(ctaLabel) && isNonEmptyString(ctaHref)) {
+        community_cta = { label: ctaLabel, href: ctaHref };
+      }
+    }
   }
   if (!isPlainObject(heroRaw)) {
     issues.push(issue(`${path}.hero`, "expected object", "type"));
@@ -687,6 +781,21 @@ function parseTheme(
   ) {
     return null;
   }
+  if (
+    (type_pairing !== undefined &&
+      (typeof type_pairing !== "string" ||
+        !(TYPE_PAIRINGS as readonly string[]).includes(type_pairing))) ||
+    (gallery_density !== undefined &&
+      (typeof gallery_density !== "string" ||
+        !(GALLERY_DENSITIES as readonly string[]).includes(gallery_density))) ||
+    (cover_crop !== undefined &&
+      (typeof cover_crop !== "string" ||
+        !(COVER_CROPS as readonly string[]).includes(cover_crop))) ||
+    (paywall_message !== undefined && typeof paywall_message !== "string") ||
+    (community_cta_raw !== undefined && community_cta === undefined)
+  ) {
+    return null;
+  }
   const hero: EscapeHatchTheme["hero"] = { title: heroTitle };
   if (typeof subtitle === "string") hero.subtitle = subtitle;
   if (typeof bio === "string") hero.bio = bio;
@@ -696,6 +805,14 @@ function parseTheme(
     hero
   };
   if (typeof accent_color === "string") out.accent_color = accent_color;
+  if (typeof logo_path === "string") out.logo_path = logo_path;
+  if (typeof type_pairing === "string") out.type_pairing = type_pairing as TypePairing;
+  if (typeof gallery_density === "string") {
+    out.gallery_density = gallery_density as GalleryDensity;
+  }
+  if (typeof cover_crop === "string") out.cover_crop = cover_crop as CoverCrop;
+  if (typeof paywall_message === "string") out.paywall_message = paywall_message;
+  if (community_cta) out.community_cta = community_cta;
   return out;
 }
 

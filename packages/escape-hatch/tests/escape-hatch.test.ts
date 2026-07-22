@@ -138,8 +138,8 @@ describe("fill-template integration", () => {
       "utf8"
     );
     expect(generatedCss).toMatch(/:focus-visible\s*\{/);
-    expect(generatedCss).toMatch(/outline:\s*3px solid #fff;/);
-    expect(generatedCss).toMatch(/box-shadow:\s*0 0 0 6px #111214;/);
+    expect(generatedCss).toMatch(/outline:\s*3px solid var\(--eh-fg\);/);
+    expect(generatedCss).toMatch(/box-shadow:\s*0 0 0 6px var\(--eh-bg-deep\);/);
     expect(generatedCss).not.toMatch(/outline:\s*(?:none|0)\s*;/);
   });
 

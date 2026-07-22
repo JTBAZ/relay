@@ -62,14 +62,14 @@ function collectSourceFiles(root: string, out: string[] = []): string[] {
   return out;
 }
 
-describe("EH-020 status", () => {
-  it("advances slice to EH-020 with next EH-021 and productionSafe false", () => {
+describe("EH-020 status (preserved under EH-021)", () => {
+  it("keeps generated-repository capability with productionSafe false", () => {
     const status = buildEscapeHatchStatus();
-    expect(ESCAPE_HATCH_SLICE).toBe("EH-020");
-    expect(status.slice).toBe("EH-020");
+    expect(ESCAPE_HATCH_SLICE).toBe("EH-021");
+    expect(status.slice).toBe("EH-021");
     expect(status.productionSafe).toBe(false);
-    expect(status.nextSlice.id).toBe("EH-021");
-    expect(status.nextSlice.title).toMatch(/Premium patron theme/i);
+    expect(status.nextSlice.id).toBe("EH-022");
+    expect(status.nextSlice.title).toMatch(/Native admin shell/i);
     const cap = status.capabilities.find((c) => c.id === "generated-repository");
     expect(cap?.state).toBe("preview_only");
     expect(cap?.evidence).toMatch(/clean directory|typed env|Dockerfile/i);
@@ -187,7 +187,7 @@ describe("EH-020 fillTemplate chassis materialization", () => {
       creator_id: string | null;
       site_id: string | null;
     };
-    expect(manifest.slice).toBe("EH-020");
+    expect(manifest.slice).toBe("EH-021");
     expect(manifest.productionSafe).toBe(false);
     expect(manifest.generated_at).toBeTruthy();
     expect(manifest.creator_id).toBeTruthy();

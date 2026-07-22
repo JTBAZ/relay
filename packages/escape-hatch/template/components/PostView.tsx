@@ -9,7 +9,7 @@ import {
   type SiteBundle
 } from "@/lib/access";
 import { PaywallTeaser } from "@/components/PaywallTeaser";
-import { ConsoleNav } from "@/components/ConsoleNav";
+import { PatronChrome } from "@/components/PatronChrome";
 import {
   applyPostOverrides,
   loadPostOverrides
@@ -20,13 +20,37 @@ type Props = {
   slug: string;
 };
 
+function formatPublished(iso: string): string {
+  try {
+    return new Intl.DateTimeFormat(undefined, {
+      year: "numeric",
+      month: "short",
+      day: "numeric"
+    }).format(new Date(iso));
+  } catch {
+    return iso;
+  }
+}
+
+function accessLabel(
+  level: string,
+  tierIds: string[],
+  tiers: SiteBundle["tiers"]
+): string {
+  if (level === "public") return "Public";
+  if (level === "member_only") return "Patrons";
+  const titles = tierIds.map((id) => {
+    const tier = tiers.find((t) => t.tier_id === id);
+    return tier?.title ?? id;
+  });
+  return titles.length ? titles.join(" · ") : "Tier";
+}
+
 export function PostView({ site, slug }: Props) {
   const [posts, setPosts] = useState(site.posts);
 
   useEffect(() => {
-    setPosts(
-      applyPostOverrides(site.posts, loadPostOverrides(site.site_id))
-    );
+    setPosts(applyPostOverrides(site.posts, loadPostOverrides(site.site_id)));
   }, [site.site_id, site.posts]);
 
   const post = posts.find((p) => p.slug === slug);
@@ -40,55 +64,76 @@ export function PostView({ site, slug }: Props) {
 
   if (!post) {
     return (
-      <>
-        <ConsoleNav quiet />
-        <div className="shell">
+      <PatronChrome
+        site={site}
+        personas={personas}
+        personaId={personaId}
+        onPersonaChange={setPersonaId}
+        compact
+      >
+        <div className="patron-post">
           <p>Post not found.</p>
-          <Link href="/preview">Back to Preview</Link>
+          <Link className="patron-back" href="/preview">
+            Back to gallery
+          </Link>
         </div>
-      </>
+      </PatronChrome>
     );
   }
 
   const unlocked = canViewPost(post, persona);
 
   return (
-    <>
-      <ConsoleNav quiet />
-      <div className="shell post-page">
-        <div className="banner">Soft gate demo — not production security.</div>
-        <p>
-          <Link href="/preview">← Preview</Link>
-        </p>
-        <div className="soft-gate" role="group" aria-label="Demo persona">
-          <span>View as</span>
-          {personas.map((p) => (
-            <button
-              key={p.id}
-              type="button"
-              className={p.id === persona.id ? "active" : undefined}
-              onClick={() => setPersonaId(p.id)}
+    <PatronChrome
+      site={site}
+      personas={personas}
+      personaId={persona.id}
+      onPersonaChange={setPersonaId}
+      compact
+    >
+      <article className="patron-post">
+        <Link className="patron-back" href="/preview">
+          ← Gallery
+        </Link>
+        <header className="patron-post-header">
+          <p className="badge">
+            {accessLabel(post.access.level, post.access.tier_ids, site.tiers)}
+          </p>
+          <h1 className="patron-post-title">{post.title}</h1>
+          <p className="patron-post-meta">
+            <time dateTime={post.published_at}>
+              {formatPublished(post.published_at)}
+            </time>
+          </p>
+        </header>
+
+        <div className="patron-post-media">
+          {post.media.map((m, index) => (
+            <div
+              key={m.media_id}
+              className={`media-wrap patron-media-frame ${unlocked ? "" : `locked ${style}`}`.trim()}
             >
-              {p.label}
-            </button>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={m.content_path}
+                alt=""
+                width={1200}
+                height={900}
+                loading={index === 0 ? "eager" : "lazy"}
+                decoding="async"
+                fetchPriority={index === 0 ? "high" : undefined}
+              />
+              {!unlocked ? (
+                <PaywallTeaser
+                  style={style}
+                  message={site.theme.paywall_message}
+                  communityCta={site.theme.community_cta}
+                />
+              ) : null}
+            </div>
           ))}
         </div>
-        <h1>{post.title}</h1>
-        <p className="sub" style={{ color: "var(--eh-muted)" }}>
-          {new Date(post.published_at).toLocaleDateString()} ·{" "}
-          {post.access.level}
-        </p>
-        {post.media.map((m) => (
-          <div
-            key={m.media_id}
-            className={`media-wrap ${unlocked ? "" : `locked ${style}`}`.trim()}
-          >
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={m.content_path} alt="" />
-            {!unlocked ? <PaywallTeaser style={style} /> : null}
-          </div>
-        ))}
-      </div>
-    </>
+      </article>
+    </PatronChrome>
   );
 }

@@ -1,11 +1,11 @@
 /**
- * Deterministic Escape Hatch capability inventory (through EH-020).
+ * Deterministic Escape Hatch capability inventory (through EH-021).
  * No timestamps, env reads, network, or live data — informational only.
  */
 
 export const ESCAPE_HATCH_STATUS_SCHEMA_VERSION = "escape-hatch-status/1.0.0";
 
-export const ESCAPE_HATCH_SLICE = "EH-020";
+export const ESCAPE_HATCH_SLICE = "EH-021";
 
 export type CapabilityState =
   | "production_safe"
@@ -36,7 +36,7 @@ export type EscapeHatchStatus = {
   capabilities: EscapeHatchCapability[];
   blockers: string[];
   nextSlice: {
-    id: "EH-021";
+    id: "EH-022";
     title: string;
     focus: string[];
   };
@@ -48,7 +48,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
     title: "Prototype generator and CLI",
     state: "preview_only",
     evidence:
-      "fixture, wizard, build, from-relay, from-clone, import-relay-dump, migrate-media, library-truth / parity-report, and zip subcommands materialize a standalone Next.js kit (typed env, SQL migrations, Vercel/Docker manifests, adapter surfaces) plus import/migration/library-parity artifacts; suitable for local preview only.",
+      "fixture, wizard, build, from-relay, from-clone, import-relay-dump, migrate-media, library-truth / parity-report, and zip subcommands materialize a standalone Next.js kit (typed env, SQL migrations, Vercel/Docker manifests, adapter surfaces, premium patron theme) plus import/migration/library-parity artifacts; suitable for local preview only.",
     sourcePaths: [
       "packages/escape-hatch/src/cli.ts",
       "packages/escape-hatch/src/fill-template.ts",
@@ -59,7 +59,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "packages/escape-hatch/src/library-truth/kit-io.ts"
     ],
     risk: "high",
-    nextSlice: "EH-021"
+    nextSlice: "EH-022"
   },
   {
     id: "generated-repository",
@@ -80,7 +80,32 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "packages/escape-hatch/tests/escape-hatch-generated-repo.test.ts"
     ],
     risk: "high",
-    nextSlice: "EH-021"
+    nextSlice: "EH-022"
+  },
+  {
+    id: "premium-patron-theme",
+    title: "Premium patron theme",
+    state: "preview_only",
+    evidence:
+      "EH-021 adapts Relay patron-gallery media hierarchy into a standalone kit theme (GalleryApp, PostView, PaywallTeaser, PatronChrome) with controlled branding dials (logo, display name, intro, accent, approved type pairings, light/dark/warm schemes, gallery density, cover crop, paywall message, community CTA). No comments, favorites, or Relay network chrome on visitor routes; soft persona switch remains labeled non-authoritative. Soft-gate / preview-only — not EH-033 private media delivery; productionSafe remains false.",
+    sourcePaths: [
+      "packages/escape-hatch/template/components/GalleryApp.tsx",
+      "packages/escape-hatch/template/components/PostView.tsx",
+      "packages/escape-hatch/template/components/PaywallTeaser.tsx",
+      "packages/escape-hatch/template/components/PatronChrome.tsx",
+      "packages/escape-hatch/template/components/StyleStudio.tsx",
+      "packages/escape-hatch/template/app/preview/page.tsx",
+      "packages/escape-hatch/template/app/p/[slug]/page.tsx",
+      "packages/escape-hatch/template/app/globals.css",
+      "packages/escape-hatch/template/app/theme-vars.css",
+      "packages/escape-hatch/template/lib/theme.ts",
+      "packages/escape-hatch/src/contracts.ts",
+      "packages/escape-hatch/src/wizard.ts",
+      "packages/escape-hatch/src/fill-template.ts",
+      "packages/escape-hatch/tests/escape-hatch-theme.test.ts"
+    ],
+    risk: "medium",
+    nextSlice: "EH-022"
   },
   {
     id: "soft-persona-gate",
@@ -125,14 +150,14 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "packages/escape-hatch/src/library-truth/kit-io.ts"
     ],
     risk: "high",
-    nextSlice: "EH-021"
+    nextSlice: "EH-022"
   },
   {
     id: "duplicate-contracts",
     title: "Versioned shared contracts",
     state: "preview_only",
     evidence:
-      "SiteBundle and CloneSiteModel are explicitly versioned and runtime-validated; generated apps receive a byte-identical self-contained canonical contracts module. EH-011 adds import-provenance / import-local-state / import-report; EH-012 adds media-migration-ledger/1.0.0 and media-migration-report/1.0.0; EH-013 adds library-parity-report/1.0.0 and library-truth-state/1.0.0 with fail-closed parsers.",
+      "SiteBundle and CloneSiteModel are explicitly versioned and runtime-validated; generated apps receive a byte-identical self-contained canonical contracts module. EH-011 adds import-provenance / import-local-state / import-report; EH-012 adds media-migration-ledger/1.0.0 and media-migration-report/1.0.0; EH-013 adds library-parity-report/1.0.0 and library-truth-state/1.0.0 with fail-closed parsers. EH-021 extends EscapeHatchTheme with optional branding dials (type pairing, density, cover crop, paywall message, community CTA, logo).",
     sourcePaths: [
       "packages/escape-hatch/src/contracts.ts",
       "packages/escape-hatch/src/types.ts",
@@ -152,7 +177,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
     title: "Fixture coverage (sample, clone, Patreon shapes)",
     state: "preview_only",
     evidence:
-      "EH-020 fixture matrix (MATRIX.json) covers sanitized OAuth/cookie Patreon JSON, SiteBundle/Clone adaptations, relay-dump import + media migration + library-truth parity accounting, generated-repo chassis smoke, promoted tombstone/legacy-tier families, and deferred mature/legal enforcement stubs; secret/PII scan remains wired.",
+      "EH-021 fixture matrix (MATRIX.json) covers sanitized OAuth/cookie Patreon JSON, SiteBundle/Clone adaptations with optional branding dials, relay-dump import + media migration + library-truth parity accounting, generated-repo chassis smoke, premium patron theme branding fields, promoted tombstone/legacy-tier families, and deferred mature/legal enforcement stubs; secret/PII scan remains wired.",
     sourcePaths: [
       "packages/escape-hatch/fixtures/MATRIX.json",
       "packages/escape-hatch/fixtures/PROVENANCE.md",
@@ -165,11 +190,12 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "packages/escape-hatch/tests/escape-hatch-migrate.test.ts",
       "packages/escape-hatch/tests/escape-hatch-library-truth.test.ts",
       "packages/escape-hatch/tests/escape-hatch-generated-repo.test.ts",
+      "packages/escape-hatch/tests/escape-hatch-theme.test.ts",
       "tests/fixtures/patreon/oauth-list-post-text-only.json",
       "tests/fixtures/patreon/cookie-list-with-media.json"
     ],
     risk: "medium",
-    nextSlice: "EH-021"
+    nextSlice: "EH-022"
   },
   {
     id: "relay-dump-fixtures",
@@ -188,7 +214,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "packages/escape-hatch/tests/escape-hatch-library-truth.test.ts"
     ],
     risk: "medium",
-    nextSlice: "EH-021"
+    nextSlice: "EH-022"
   },
   {
     id: "relay-canonical-reuse",
@@ -211,7 +237,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "src/storage/media-delivery-policy.ts"
     ],
     risk: "informational",
-    nextSlice: "EH-021"
+    nextSlice: "EH-022"
   },
   {
     id: "simplified-access-semantics",
@@ -293,8 +319,14 @@ const CAPABILITIES: EscapeHatchCapability[] = [
     id: "native-admin",
     title: "Native generated-site admin",
     state: "not_implemented",
-    evidence: "No admin shell, health framing, or patron override workflows in the generated template.",
-    sourcePaths: [],
+    evidence:
+      "Hatch Console remains Library/Structure/Style operator surfaces only. No dedicated admin shell, health framing, or patron override workflows in the generated template — EH-022 owns native admin shell.",
+    sourcePaths: [
+      "packages/escape-hatch/template/components/ConsoleNav.tsx",
+      "packages/escape-hatch/template/components/LibraryTruthView.tsx",
+      "packages/escape-hatch/template/components/StructureView.tsx",
+      "packages/escape-hatch/template/components/StyleStudio.tsx"
+    ],
     risk: "high",
     nextSlice: "EH-022"
   },
@@ -315,7 +347,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "packages/escape-hatch/tests/escape-hatch-migrate.test.ts"
     ],
     risk: "high",
-    nextSlice: "EH-021"
+    nextSlice: "EH-022"
   },
   {
     id: "library-truth-parity",
@@ -338,7 +370,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "packages/escape-hatch/tests/escape-hatch-library-truth.test.ts"
     ],
     risk: "high",
-    nextSlice: "EH-021"
+    nextSlice: "EH-022"
   },
   {
     id: "backup-restore",
@@ -365,6 +397,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
 
 const PROTOTYPE_WARNINGS: string[] = [
   "productionSafe is false — this deliverable is prototype/preview-only.",
+  "EH-021 premium patron theme is soft-gate / preview-only; soft paywall UI is not production security.",
   "EH-020 generated repository chassis installs/builds without Relay credentials but is not a production-safe deploy.",
   "Premium (member_only and tier_gated) media bytes are still copied to public/media by fillTemplate and are directly fetchable without authentication.",
   "Direct HTTP GET to a locked premium media URL is expected to return HTTP 200 with public bytes; this is a known prototype security failure, not a passing paywall.",
@@ -385,6 +418,7 @@ const BLOCKERS: string[] = [
   "Premium media remains world-readable in public/ for soft preview; server-enforced private visitor delivery belongs to EH-033.",
   "No hard patron identity, entitlements, or RLS-backed session (EH-030).",
   "Billing is stub-only; creator-owned Stripe/eligible adapters belong to EH-050/051.",
+  "Native admin shell (health framing, posts/media/tier workflows) remains open (EH-022).",
   "Verified Vercel/Docker production deploy rehearsals remain open (EH-070/071).",
   "Mature/legal-adult enforcement beyond accounted exclusions remains open."
 ];
@@ -396,7 +430,7 @@ export function buildEscapeHatchStatus(): EscapeHatchStatus {
     deliverable: "prototype_preview_only",
     productionSafe: false,
     summary:
-      "Escape Hatch through EH-020 delivers a standalone generated Next.js repository chassis (typed env, portable SQL migrations, adapter/manifest surfaces, Vercel + Docker build files) that installs and builds from a clean directory without Relay runtime credentials; Library truth (EH-013), soft persona gate, and public/media prototype leakage remain; productionSafe is false.",
+      "Escape Hatch through EH-021 delivers a standalone generated Next.js repository chassis (EH-020) plus a premium patron visitor theme with controlled branding dials and no Relay-social chrome; Library truth (EH-013), soft persona gate, and public/media prototype leakage remain; productionSafe is false.",
     prototypeWarnings: [...PROTOTYPE_WARNINGS],
     capabilities: CAPABILITIES.map((c) => ({
       ...c,
@@ -404,11 +438,11 @@ export function buildEscapeHatchStatus(): EscapeHatchStatus {
     })),
     blockers: [...BLOCKERS],
     nextSlice: {
-      id: "EH-021",
-      title: "Premium patron theme",
+      id: "EH-022",
+      title: "Native admin shell",
       focus: [
-        "Adapt Relay patron gallery into one standalone theme",
-        "Remove network/comments/favorites; add controlled branding",
+        "Admin navigation and health framing",
+        "Posts, media, and tier workflows with fixture data",
         "Keep soft-gate honesty and productionSafe false"
       ]
     }

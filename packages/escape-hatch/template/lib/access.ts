@@ -21,13 +21,22 @@ export {
   SITE_BUNDLE_CONTRACT_VERSION,
   GENERATED_APP_DATA_CONTRACT_VERSION,
   RELAY_TIER_PUBLIC,
-  RELAY_TIER_ALL_PATRONS
+  RELAY_TIER_ALL_PATRONS,
+  ACCESS_LEVELS,
+  PAYWALL_STYLES,
+  COLOR_SCHEMES,
+  TYPE_PAIRINGS,
+  GALLERY_DENSITIES,
+  COVER_CROPS
 } from "./contracts";
 
 export type {
   AccessLevel,
   PaywallStyle,
   ColorScheme,
+  TypePairing,
+  GalleryDensity,
+  CoverCrop,
   TierMatchMode,
   CloneTierRule,
   CloneMediaRef,

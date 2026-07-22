@@ -26,8 +26,12 @@ export type FromCloneOptions = {
 function defaultTheme(displayName: string): EscapeHatchTheme {
   return {
     color_scheme: "dark",
-    accent_color: "#5865f2",
+    accent_color: "#c4784a",
     paywall_style: "blur",
+    type_pairing: "editorial",
+    gallery_density: "comfortable",
+    cover_crop: "center",
+    paywall_message: "Members only — unlock to view",
     hero: {
       title: displayName,
       subtitle: "Independent membership gallery",

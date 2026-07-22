@@ -3,7 +3,7 @@
   "contract_version": "escape-hatch.manifest/1.0.0",
   "chassis_version": "0.2.0",
   "schema_version": "eh-db/0001_preview_chassis",
-  "slice": "EH-020",
+  "slice": "EH-021",
   "productionSafe": false,
   "generated_at": null,
   "creator_id": null,

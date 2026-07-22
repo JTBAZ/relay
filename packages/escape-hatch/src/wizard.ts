@@ -1,21 +1,31 @@
 /**
- * Interactive CLI wizard → EscapeHatchTheme (Designer-aligned tokens).
+ * Interactive CLI wizard → EscapeHatchTheme (controlled branding dials).
  */
 
 import * as readline from "node:readline/promises";
 import { stdin as input, stdout as output } from "node:process";
-import type { ColorScheme, EscapeHatchTheme, PaywallStyle } from "./types.js";
+import type {
+  ColorScheme,
+  CoverCrop,
+  EscapeHatchTheme,
+  GalleryDensity,
+  PaywallStyle,
+  TypePairing
+} from "./types.js";
 
 const SCHEMES: ColorScheme[] = ["dark", "light", "warm"];
 const ACCENTS = [
-  "#5865f2",
-  "#57f287",
-  "#eb459e",
-  "#ed4245",
-  "#fee75c",
-  "#00a8fc"
+  "#c4784a",
+  "#2a9d8f",
+  "#d4a05a",
+  "#c45c6a",
+  "#4a7fc4",
+  "#8b6bb5"
 ];
 const PAYWALLS: PaywallStyle[] = ["blur", "hard", "teaser"];
+const TYPE_PAIRINGS: TypePairing[] = ["editorial", "studio", "signal"];
+const DENSITIES: GalleryDensity[] = ["comfortable", "compact"];
+const CROPS: CoverCrop[] = ["center", "top", "safe"];
 
 async function ask(
   rl: readline.Interface,
@@ -52,7 +62,7 @@ export async function runWizard(
 
     const title = await ask(
       rl,
-      "Hero title",
+      "Display name / hero title",
       defaults?.hero?.title ?? "My Gallery"
     );
     const subtitle = await ask(
@@ -62,9 +72,45 @@ export async function runWizard(
     );
     const bio = await ask(
       rl,
-      "Hero bio",
+      "Short introduction",
       defaults?.hero?.bio ?? "Art and tiers you own."
     );
+
+    const logo_path = await ask(
+      rl,
+      "Logo / avatar path (public URL path, blank to skip)",
+      defaults?.logo_path ?? ""
+    );
+
+    const typeDefault = defaults?.type_pairing ?? "editorial";
+    const typeRaw = await ask(
+      rl,
+      `Type pairing (${TYPE_PAIRINGS.join("|")})`,
+      typeDefault
+    );
+    const type_pairing = (TYPE_PAIRINGS.includes(typeRaw as TypePairing)
+      ? typeRaw
+      : typeDefault) as TypePairing;
+
+    const densityDefault = defaults?.gallery_density ?? "comfortable";
+    const densityRaw = await ask(
+      rl,
+      `Gallery density (${DENSITIES.join("|")})`,
+      densityDefault
+    );
+    const gallery_density = (DENSITIES.includes(densityRaw as GalleryDensity)
+      ? densityRaw
+      : densityDefault) as GalleryDensity;
+
+    const cropDefault = defaults?.cover_crop ?? "center";
+    const cropRaw = await ask(
+      rl,
+      `Cover crop (${CROPS.join("|")})`,
+      cropDefault
+    );
+    const cover_crop = (CROPS.includes(cropRaw as CoverCrop)
+      ? cropRaw
+      : cropDefault) as CoverCrop;
 
     const pwDefault = defaults?.paywall_style ?? "blur";
     const pwRaw = await ask(
@@ -76,12 +122,41 @@ export async function runWizard(
       ? pwRaw
       : pwDefault) as PaywallStyle;
 
-    return {
+    const paywall_message = await ask(
+      rl,
+      "Paywall message",
+      defaults?.paywall_message ?? "Members only — unlock to view"
+    );
+
+    const ctaLabel = await ask(
+      rl,
+      "Community CTA label (blank to skip)",
+      defaults?.community_cta?.label ?? "Join the community"
+    );
+    const ctaHref =
+      ctaLabel.length > 0
+        ? await ask(
+            rl,
+            "Community CTA link",
+            defaults?.community_cta?.href ?? "https://example.com/community"
+          )
+        : "";
+
+    const theme: EscapeHatchTheme = {
       color_scheme,
       accent_color,
       paywall_style,
+      type_pairing,
+      gallery_density,
+      cover_crop,
+      paywall_message,
       hero: { title, subtitle, bio }
     };
+    if (logo_path.length > 0) theme.logo_path = logo_path;
+    if (ctaLabel.length > 0 && ctaHref.length > 0) {
+      theme.community_cta = { label: ctaLabel, href: ctaHref };
+    }
+    return theme;
   } finally {
     rl.close();
   }
