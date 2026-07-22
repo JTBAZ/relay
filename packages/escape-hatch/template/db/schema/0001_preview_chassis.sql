@@ -1,6 +1,6 @@
 -- Escape Hatch generated kit — preview chassis schema (EH-020)
 -- Portable SQL for creator-owned Postgres. Not applied by `next build`.
--- EH-030 owns live apply, Auth, and RLS. Do not invent production policies here.
+-- EH-030 adds identity tables + RLS in 0002_identity_rls.sql.
 
 -- Sites / creators (independent of Relay runtime)
 CREATE TABLE IF NOT EXISTS eh_sites (

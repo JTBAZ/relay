@@ -23,7 +23,10 @@ This kit ships **portable SQL** under `db/schema/` and `db/migrations/`.
 - RLS is **enabled + forced** on all `eh_*` tables.
 - Patrons read **only their own** entitlement snapshots and memberships.
 - Site **admin/operator** roles manage roster and content for **their site only** (no cross-site leakage).
-- `anon` may read **public** post/media **metadata** only — premium **bytes** remain EH-033 (`public/media` coexistence is prototype leakage).
+- **Posts / media SELECT is fail-closed until EH-032** (SQL entitlement evaluator):
+  - Non-staff (`anon` and patron members) may read only `access_level = 'public'` **and** (for posts) `published_at IS NOT NULL`.
+  - Drafts and `member_only` / `tier_gated` rows are **staff-only** — membership alone never grants blanket SELECT on premium or unpublished rows.
+  - Premium **bytes** remain EH-033 (`public/media` coexistence is prototype leakage).
 - **Service role** bypasses RLS — use only on the server; never ship in the browser bundle.
 - Authorization helpers live in **`eh_private`** (`SECURITY DEFINER`) so policies do not recurse.
 

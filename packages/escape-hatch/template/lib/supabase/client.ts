@@ -9,7 +9,7 @@ import {
   loadEnv,
   resolveSupabaseAnonKey,
   resolveSupabaseUrl
-} from "@/lib/env";
+} from "../env";
 
 export function createBrowserSupabaseClient() {
   const env = loadEnv();

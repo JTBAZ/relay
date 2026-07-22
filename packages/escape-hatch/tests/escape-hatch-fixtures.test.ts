@@ -157,6 +157,7 @@ describe("EH-010 provenance", () => {
     expect(text).toMatch(/EH-013/);
     expect(text).toMatch(/EH-020/);
     expect(text).toMatch(/EH-022/);
+    expect(text).toMatch(/EH-030/);
     expect(text).toMatch(/sparse `included`|sparse included/i);
     expect(text).toMatch(/public\/media/);
   });

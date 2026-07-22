@@ -1,4 +1,4 @@
-# Escape Hatch fixture provenance (EH-010 / EH-011 / EH-012 / EH-013 / EH-020 / EH-021 / EH-022)
+# Escape Hatch fixture provenance (EH-010 / EH-011 / EH-012 / EH-013 / EH-020 / EH-021 / EH-022 / EH-030)
 
 All fixtures under `packages/escape-hatch/fixtures/` are **synthetic or irreversibly sanitized**. They preserve Relay-supported structural oddities without live secrets or patron PII.
 
@@ -73,4 +73,5 @@ Sanitization method for Patreon-shaped JSON:
 | **EH-020** | Generated repository chassis smoke (clean-dir install/build, env/Docker/Vercel/manifest presence); fixtures unchanged structurally. |
 | **EH-021** | Premium patron theme branding dials on sample SiteBundle theme (logo, type pairing, density, cover crop, paywall message, community CTA); visitor theme is kit-local (no `web/` runtime imports). |
 | **EH-022** | Native admin shell routes against fixture/kit `data/` (posts, media inventory, tiers, stub adapter health); attention marks are local-operator only — not auth. |
+| **EH-030** | Supabase identity/data path (schema, RLS, session scaffolding); package identity tests use SQL review + mocks — no live Supabase. Soft persona never authorizes admin. |
 | **EH-033+** | Visitor signed-URL delivery and mature/legal enforcement beyond accounted exclusions. |

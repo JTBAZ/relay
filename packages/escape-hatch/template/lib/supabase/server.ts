@@ -4,7 +4,7 @@
  * Service-role client is server-only and must never be imported from client components.
  */
 
-import { createServerClient } from "@supabase/ssr";
+import { createServerClient, type CookieOptions } from "@supabase/ssr";
 import { createClient } from "@supabase/supabase-js";
 import { cookies } from "next/headers";
 import {
@@ -13,7 +13,7 @@ import {
   loadEnv,
   resolveSupabaseAnonKey,
   resolveSupabaseUrl
-} from "@/lib/env";
+} from "../env";
 
 export async function createServerSupabaseClient() {
   const env = loadEnv();
@@ -32,7 +32,7 @@ export async function createServerSupabaseClient() {
       getAll() {
         return cookieStore.getAll();
       },
-      setAll(cookiesToSet) {
+      setAll(cookiesToSet: { name: string; value: string; options?: CookieOptions }[]) {
         try {
           for (const { name, value, options } of cookiesToSet) {
             cookieStore.set(name, value, options);

@@ -26,8 +26,11 @@
     "relay": "file:../.."
   },
   "devDependencies": {
+    "@supabase/ssr": "^0.6.1",
+    "@supabase/supabase-js": "^2.49.8",
     "@types/archiver": "^6.0.3",
     "@types/node": "^20",
+    "next": "15.5.21",
     "tsx": "^4.19.3",
     "typescript": "^5",
     "vitest": "^3.0.5"

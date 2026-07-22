@@ -15,7 +15,6 @@ import {
   requireServerEnv,
   resolveSupabaseUrl
 } from "../env";
-import { getServerAuthSession } from "../identity/session";
 import type { SiteAuthSession } from "../identity/types";
 import type {
   AuthProvider,
@@ -64,6 +63,7 @@ const supabaseAuth: AuthProvider = {
     };
   },
   async getSession(siteId?: string): Promise<SiteAuthSession | null> {
+    const { getServerAuthSession } = await import("../identity/session");
     return getServerAuthSession(siteId);
   }
 };

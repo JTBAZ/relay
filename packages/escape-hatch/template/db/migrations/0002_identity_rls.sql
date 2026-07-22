@@ -161,7 +161,9 @@ CREATE POLICY eh_tiers_staff_all ON eh_tiers
   USING (eh_private.is_site_staff(site_id))
   WITH CHECK (eh_private.is_site_staff(site_id));
 
--- eh_posts: public posts readable by anon; staff full; members read site posts
+-- eh_posts: fail-closed until EH-032 entitlement evaluator in SQL.
+-- Non-staff (anon + patrons) may SELECT only public published rows.
+-- Drafts and member_only / tier_gated rows are staff-only — never blanket membership SELECT.
 DROP POLICY IF EXISTS eh_posts_select_public ON eh_posts;
 CREATE POLICY eh_posts_select_public ON eh_posts
   FOR SELECT TO anon, authenticated
@@ -170,7 +172,10 @@ CREATE POLICY eh_posts_select_public ON eh_posts
 DROP POLICY IF EXISTS eh_posts_select_member ON eh_posts;
 CREATE POLICY eh_posts_select_member ON eh_posts
   FOR SELECT TO authenticated
-  USING (eh_private.is_site_member(site_id));
+  USING (
+    eh_private.is_site_staff(site_id)
+    OR (access_level = 'public' AND published_at IS NOT NULL)
+  );
 
 DROP POLICY IF EXISTS eh_posts_staff_all ON eh_posts;
 CREATE POLICY eh_posts_staff_all ON eh_posts
@@ -178,7 +183,8 @@ CREATE POLICY eh_posts_staff_all ON eh_posts
   USING (eh_private.is_site_staff(site_id))
   WITH CHECK (eh_private.is_site_staff(site_id));
 
--- eh_media_objects: public metadata only for anon; staff full.
+-- eh_media_objects: public metadata only for non-staff; staff full.
+-- Fail-closed: membership alone never grants premium metadata SELECT.
 -- Premium byte delivery remains EH-033 (signed URLs). Metadata is not authorization.
 DROP POLICY IF EXISTS eh_media_objects_select_public ON eh_media_objects;
 CREATE POLICY eh_media_objects_select_public ON eh_media_objects
@@ -188,7 +194,10 @@ CREATE POLICY eh_media_objects_select_public ON eh_media_objects
 DROP POLICY IF EXISTS eh_media_objects_select_member ON eh_media_objects;
 CREATE POLICY eh_media_objects_select_member ON eh_media_objects
   FOR SELECT TO authenticated
-  USING (eh_private.is_site_member(site_id));
+  USING (
+    eh_private.is_site_staff(site_id)
+    OR access_level = 'public'
+  );
 
 DROP POLICY IF EXISTS eh_media_objects_staff_all ON eh_media_objects;
 CREATE POLICY eh_media_objects_staff_all ON eh_media_objects

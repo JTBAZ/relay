@@ -101,13 +101,13 @@ function materializeKit(slug: string): string {
   return result.outDir;
 }
 
-describe("EH-013 status (preserved under EH-022)", () => {
+describe("EH-013 status (preserved under EH-030)", () => {
   it("keeps library-truth preview capability with productionSafe false", () => {
     const status = buildEscapeHatchStatus();
-    expect(ESCAPE_HATCH_SLICE).toBe("EH-022");
-    expect(status.slice).toBe("EH-022");
+    expect(ESCAPE_HATCH_SLICE).toBe("EH-030");
+    expect(status.slice).toBe("EH-030");
     expect(status.productionSafe).toBe(false);
-    expect(status.nextSlice.id).toBe("EH-030");
+    expect(status.nextSlice.id).toBe("EH-031");
     expect(
       status.blockers.some((b) => /Library truth wizard remains open/i.test(b))
     ).toBe(false);

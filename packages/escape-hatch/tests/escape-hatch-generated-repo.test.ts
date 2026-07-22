@@ -62,14 +62,14 @@ function collectSourceFiles(root: string, out: string[] = []): string[] {
   return out;
 }
 
-describe("EH-020 status (preserved under EH-022)", () => {
+describe("EH-020 status (preserved under EH-030)", () => {
   it("keeps generated-repository capability with productionSafe false", () => {
     const status = buildEscapeHatchStatus();
-    expect(ESCAPE_HATCH_SLICE).toBe("EH-022");
-    expect(status.slice).toBe("EH-022");
+    expect(ESCAPE_HATCH_SLICE).toBe("EH-030");
+    expect(status.slice).toBe("EH-030");
     expect(status.productionSafe).toBe(false);
-    expect(status.nextSlice.id).toBe("EH-030");
-    expect(status.nextSlice.title).toMatch(/Supabase identity/i);
+    expect(status.nextSlice.id).toBe("EH-031");
+    expect(status.nextSlice.title).toMatch(/Portable identity/i);
     const cap = status.capabilities.find((c) => c.id === "generated-repository");
     expect(cap?.state).toBe("preview_only");
     expect(cap?.evidence).toMatch(/clean directory|typed env|Dockerfile/i);
@@ -128,10 +128,11 @@ describe("EH-020 generated chassis files", () => {
     ]);
     expect(manifest.required_env_names).toEqual([]);
     expect(manifest.optional_env_names).toContain("DATABASE_URL");
+    expect(manifest.optional_env_names).toContain("NEXT_PUBLIC_SUPABASE_URL");
     expect(manifest.optional_env_names).not.toContain(
       "ESCAPE_HATCH_LIBRARY_TRUTH_ALLOW"
     );
-    expect(manifest.adapters.auth.state).toMatch(/stub/i);
+    expect(manifest.adapters.auth.state).toMatch(/preview|stub/i);
   });
 
   it("binds compose Postgres to loopback only with a dev-only password", () => {
@@ -187,7 +188,7 @@ describe("EH-020 fillTemplate chassis materialization", () => {
       creator_id: string | null;
       site_id: string | null;
     };
-    expect(manifest.slice).toBe("EH-022");
+    expect(manifest.slice).toBe("EH-030");
     expect(manifest.productionSafe).toBe(false);
     expect(manifest.generated_at).toBeTruthy();
     expect(manifest.creator_id).toBeTruthy();
@@ -369,8 +370,11 @@ describe("EH-020 status source paths exist", () => {
 describe("EH-020 requireEnv placeholder rejection", () => {
   const SECRET_KEYS = [
     "DATABASE_URL",
+    "SUPABASE_URL",
     "SUPABASE_ANON_KEY",
     "SUPABASE_SERVICE_ROLE_KEY",
+    "NEXT_PUBLIC_SUPABASE_URL",
+    "NEXT_PUBLIC_SUPABASE_ANON_KEY",
     "R2_ACCESS_KEY_ID",
     "R2_SECRET_ACCESS_KEY",
     "STRIPE_SECRET_KEY",

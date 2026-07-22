@@ -1,24 +1,27 @@
 /**
  * Server-side admin data loaders (EH-022 / EH-030).
  * Prefer data/ kit artifacts; never treat public/media as private-verified.
- * productionSafe remains false. Soft persona never authorizes admin.
+ * When Supabase identity is configured, staff session is required before inventory.
+ * Soft persona never authorizes admin. productionSafe remains false.
  */
 
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { createSiteAdapters } from "@/lib/adapters";
-import type { AdapterHealth } from "@/lib/adapters/types";
+import { createSiteAdapters } from "../adapters";
+import type { AdapterHealth } from "../adapters/types";
 import {
-  resolveAdminIdentity,
-  type AdminIdentityState
-} from "@/lib/identity/admin-access";
-import { loadSite } from "@/lib/load-site";
+  assertAdminReadAccess,
+  type AdminIdentityState,
+  type AdminReadDeniedReason
+} from "../identity/admin-access";
+import { loadSite } from "../load-site";
 import { loadAdminAttention } from "./attention";
-import type {
-  AdapterHealthRow,
-  AdminAttentionState,
-  AdminMediaRow,
-  AdminTierRow
+import {
+  ADMIN_ATTENTION_CONTRACT_VERSION,
+  type AdapterHealthRow,
+  type AdminAttentionState,
+  type AdminMediaRow,
+  type AdminTierRow
 } from "./types";
 
 export type AdminOverviewModel = {
@@ -35,6 +38,8 @@ export type AdminOverviewModel = {
   blockers: string[];
   attention_count: number;
   identity: AdminIdentityState;
+  read_allowed: boolean;
+  deny_reason: AdminReadDeniedReason | null;
 };
 
 export type AdminPostsModel = {
@@ -51,6 +56,9 @@ export type AdminPostsModel = {
     media_count: number;
     attention_note: string | null;
   }>;
+  identity: AdminIdentityState;
+  read_allowed: boolean;
+  deny_reason: AdminReadDeniedReason | null;
 };
 
 export type AdminMediaModel = {
@@ -59,6 +67,9 @@ export type AdminMediaModel = {
   ledger_present: boolean;
   rows: AdminMediaRow[];
   honesty: string[];
+  identity: AdminIdentityState;
+  read_allowed: boolean;
+  deny_reason: AdminReadDeniedReason | null;
 };
 
 export type AdminTiersModel = {
@@ -66,6 +77,9 @@ export type AdminTiersModel = {
   production_safe: false;
   tiers: AdminTierRow[];
   unmapped_warnings: string[];
+  identity: AdminIdentityState;
+  read_allowed: boolean;
+  deny_reason: AdminReadDeniedReason | null;
 };
 
 function kitDir(): string {
@@ -90,10 +104,38 @@ async function healthDetail(h: AdapterHealth): Promise<{ ok: boolean; detail: st
   return { ok: false, detail: h.reason };
 }
 
+function denyBlocker(reason: AdminReadDeniedReason): string {
+  return reason === "sign_in_required"
+    ? "Supabase identity configured — sign in required for admin reads"
+    : "Signed in but no admin/operator membership for this site — inventory withheld";
+}
+
 export async function loadAdminOverview(): Promise<AdminOverviewModel> {
   const site = loadSite();
+  const access = await assertAdminReadAccess(site.site_id);
+
+  if (!access.allowed) {
+    return {
+      site_id: site.site_id,
+      creator_display_name: "",
+      creator_handle: "",
+      base_url: "",
+      post_count: 0,
+      media_count: 0,
+      tier_count: 0,
+      production_safe: false,
+      manifest_slice: null,
+      adapters: [],
+      blockers: [denyBlocker(access.reason)],
+      attention_count: 0,
+      identity: access.identity,
+      read_allowed: false,
+      deny_reason: access.reason
+    };
+  }
+
+  const identity = access.identity;
   const adapters = createSiteAdapters();
-  const identity = await resolveAdminIdentity(site.site_id);
   const healthPairs = await Promise.all([
     adapters.auth.health().then((h) =>
       healthDetail(h).then((d) => ({
@@ -162,12 +204,6 @@ export async function loadAdminOverview(): Promise<AdminOverviewModel> {
     blockers.unshift(
       "Identity not configured — admin mutations remain local-operator only (not authentication)"
     );
-  } else if (!identity.session) {
-    blockers.unshift("Supabase identity configured — sign in required for admin mutations");
-  } else if (!identity.isStaff) {
-    blockers.unshift(
-      "Signed in but no admin/operator membership for this site"
-    );
   }
 
   return {
@@ -183,12 +219,34 @@ export async function loadAdminOverview(): Promise<AdminOverviewModel> {
     adapters: healthPairs,
     blockers,
     attention_count: Object.keys(attention.marks).length,
-    identity
+    identity,
+    read_allowed: true,
+    deny_reason: null
   };
 }
 
-export function loadAdminPosts(): AdminPostsModel {
+export async function loadAdminPosts(): Promise<AdminPostsModel> {
   const site = loadSite();
+  const access = await assertAdminReadAccess(site.site_id);
+
+  if (!access.allowed) {
+    return {
+      site_id: site.site_id,
+      production_safe: false,
+      attention: {
+        contract_version: ADMIN_ATTENTION_CONTRACT_VERSION,
+        site_id: site.site_id,
+        production_safe: false,
+        updated_at: "",
+        marks: {}
+      } satisfies AdminAttentionState,
+      posts: [],
+      identity: access.identity,
+      read_allowed: false,
+      deny_reason: access.reason
+    };
+  }
+
   const attention = loadAdminAttention(site.site_id);
   return {
     site_id: site.site_id,
@@ -203,7 +261,10 @@ export function loadAdminPosts(): AdminPostsModel {
       tier_ids: [...p.access.tier_ids],
       media_count: p.media.length,
       attention_note: attention.marks[p.post_id]?.note ?? null
-    }))
+    })),
+    identity: access.identity,
+    read_allowed: true,
+    deny_reason: null
   };
 }
 
@@ -248,8 +309,25 @@ function tryParseLedgerObjects():
   }
 }
 
-export function loadAdminMedia(): AdminMediaModel {
+export async function loadAdminMedia(): Promise<AdminMediaModel> {
   const site = loadSite();
+  const access = await assertAdminReadAccess(site.site_id);
+
+  if (!access.allowed) {
+    return {
+      site_id: site.site_id,
+      production_safe: false,
+      ledger_present: false,
+      rows: [],
+      honesty: [
+        "Admin inventory withheld — staff session required when Supabase identity is configured."
+      ],
+      identity: access.identity,
+      read_allowed: false,
+      deny_reason: access.reason
+    };
+  }
+
   const ledger = tryParseLedgerObjects();
   const byId = new Map<string, AdminMediaRow>();
 
@@ -301,12 +379,29 @@ export function loadAdminMedia(): AdminMediaModel {
       ledger
         ? "Migration ledger present — verified flags come from private-read checks only."
         : "No media-migration-ledger.json — inventory is from site bundle only (fixture/kit state)."
-    ]
+    ],
+    identity: access.identity,
+    read_allowed: true,
+    deny_reason: null
   };
 }
 
-export function loadAdminTiers(): AdminTiersModel {
+export async function loadAdminTiers(): Promise<AdminTiersModel> {
   const site = loadSite();
+  const access = await assertAdminReadAccess(site.site_id);
+
+  if (!access.allowed) {
+    return {
+      site_id: site.site_id,
+      production_safe: false,
+      tiers: [],
+      unmapped_warnings: [],
+      identity: access.identity,
+      read_allowed: false,
+      deny_reason: access.reason
+    };
+  }
+
   const counts = new Map<string, number>();
   for (const post of site.posts) {
     if (post.access.level !== "tier_gated") continue;
@@ -344,6 +439,9 @@ export function loadAdminTiers(): AdminTiersModel {
     site_id: site.site_id,
     production_safe: false,
     tiers,
-    unmapped_warnings
+    unmapped_warnings,
+    identity: access.identity,
+    read_allowed: true,
+    deny_reason: null
   };
 }

@@ -1,5 +1,5 @@
 /**
- * EH-021 Premium patron theme: branding dial validation (preserved under EH-022),
+ * EH-021 Premium patron theme: branding dial validation (preserved under EH-030),
  * fillTemplate theme CSS tokens, productionSafe false.
  */
 import { existsSync, readFileSync, rmSync } from "node:fs";
@@ -36,19 +36,19 @@ function loadSample(): unknown {
   return JSON.parse(readFileSync(SAMPLE_BUNDLE, "utf8"));
 }
 
-describe("EH-021 theme capability (preserved under EH-022)", () => {
+describe("EH-021 theme capability (preserved under EH-030)", () => {
   it("keeps premium-patron-theme preview_only with productionSafe false", () => {
     const status = buildEscapeHatchStatus();
-    expect(ESCAPE_HATCH_SLICE).toBe("EH-022");
-    expect(status.slice).toBe("EH-022");
+    expect(ESCAPE_HATCH_SLICE).toBe("EH-030");
+    expect(status.slice).toBe("EH-030");
     expect(status.productionSafe).toBe(false);
-    expect(status.nextSlice.id).toBe("EH-030");
+    expect(status.nextSlice.id).toBe("EH-031");
     const theme = status.capabilities.find((c) => c.id === "premium-patron-theme");
     expect(theme?.state).toBe("preview_only");
     expect(theme?.evidence).toMatch(/soft-gate|preview-only/i);
     expect(theme?.evidence).toMatch(/productionSafe remains false/i);
     expect(theme?.evidence).not.toMatch(/EH-033 private media delivery claimed/i);
-    expect(theme?.nextSlice).toBe("EH-030");
+    expect(theme?.nextSlice).toBe("EH-034");
   });
 });
 
@@ -128,7 +128,7 @@ describe("EH-021 theme branding fields", () => {
 });
 
 describe("EH-021 fillTemplate theme tokens", () => {
-  it("writes theme CSS vars for branding dials and manifest EH-022", () => {
+  it("writes theme CSS vars for branding dials and manifest EH-030", () => {
     const slug = `eh021-theme-${Date.now()}`;
     const result = fillTemplate({
       bundle: loadSample(),
@@ -160,7 +160,7 @@ describe("EH-021 fillTemplate theme tokens", () => {
     const manifest = JSON.parse(
       readFileSync(join(result.outDir, "escape-hatch.manifest.json"), "utf8")
     ) as { slice: string; productionSafe: boolean };
-    expect(manifest.slice).toBe("EH-022");
+    expect(manifest.slice).toBe("EH-030");
     expect(manifest.productionSafe).toBe(false);
 
     expect(existsSync(join(result.outDir, "components", "PatronChrome.tsx"))).toBe(

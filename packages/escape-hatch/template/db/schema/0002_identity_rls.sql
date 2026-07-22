@@ -108,4 +108,23 @@ CREATE TABLE IF NOT EXISTS eh_schema_migrations (
   applied_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- Policy definitions live in db/migrations/0002_identity_rls.sql (apply after 0001).
+-- RLS policy mirror (apply via migrations/0002_identity_rls.sql after 0001).
+-- Fail-closed until EH-032: non-staff SELECT is public published posts / public media only.
+-- Staff (admin/operator) via eh_private.is_site_staff; never blanket is_site_member on premium rows.
+
+-- eh_posts_select_public:
+--   FOR SELECT TO anon, authenticated
+--   USING (access_level = 'public' AND published_at IS NOT NULL)
+-- eh_posts_select_member:
+--   FOR SELECT TO authenticated
+--   USING (eh_private.is_site_staff(site_id)
+--          OR (access_level = 'public' AND published_at IS NOT NULL))
+-- eh_posts_staff_all:
+--   FOR ALL TO authenticated USING/WITH CHECK (eh_private.is_site_staff(site_id))
+-- eh_media_objects_select_public:
+--   FOR SELECT TO anon, authenticated USING (access_level = 'public')
+-- eh_media_objects_select_member:
+--   FOR SELECT TO authenticated
+--   USING (eh_private.is_site_staff(site_id) OR access_level = 'public')
+-- eh_media_objects_staff_all:
+--   FOR ALL TO authenticated USING/WITH CHECK (eh_private.is_site_staff(site_id))

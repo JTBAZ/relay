@@ -1,16 +1,19 @@
 import { ConsoleNav } from "@/components/ConsoleNav";
+import { AdminAccessDenied } from "@/components/admin/AdminAccessDenied";
 import { AdminMedia } from "@/components/admin/AdminMedia";
 import { AdminShell } from "@/components/admin/AdminShell";
 import { loadAdminMedia } from "@/lib/admin/load-admin";
-import { resolveAdminIdentity } from "@/lib/identity/admin-access";
-import { loadSite } from "@/lib/load-site";
+import { redirectIfAdminSignInRequired } from "@/lib/admin/require-admin-page";
 
 export const dynamic = "force-dynamic";
 
 export default async function AdminMediaPage() {
-  const model = loadAdminMedia();
-  const site = loadSite();
-  const identity = await resolveAdminIdentity(site.site_id);
+  const model = await loadAdminMedia();
+  redirectIfAdminSignInRequired(
+    model.read_allowed,
+    model.deny_reason,
+    "/admin/media"
+  );
 
   return (
     <>
@@ -18,9 +21,13 @@ export default async function AdminMediaPage() {
       <AdminShell
         title="Media"
         lede="Inventory from site bundle and migration ledger when present. Never treat public/media as private-verified."
-        identity={identity}
+        identity={model.identity}
       >
-        <AdminMedia model={model} />
+        {model.read_allowed && model.deny_reason === null ? (
+          <AdminMedia model={model} />
+        ) : (
+          <AdminAccessDenied reason={model.deny_reason ?? "staff_required"} />
+        )}
       </AdminShell>
     </>
   );

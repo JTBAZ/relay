@@ -6,15 +6,19 @@
 import {
   isSupabaseIdentityConfigured,
   loadEnv
-} from "@/lib/env";
-import { createServerSupabaseClient } from "@/lib/supabase/server";
+} from "../env";
 import {
   isStaffRole,
   type SiteAuthSession,
   type SiteMembershipRole
-} from "@/lib/identity/types";
-import type { EntitlementReadResult } from "@/lib/identity/types";
-import { parseEntitlementSnapshot } from "@/lib/identity/entitlements";
+} from "./types";
+import type { EntitlementReadResult } from "./types";
+import { parseEntitlementSnapshot } from "./entitlements";
+
+async function createServerSupabaseClient() {
+  const mod = await import("../supabase/server");
+  return mod.createServerSupabaseClient();
+}
 
 const STAFF_ROLES = new Set<SiteMembershipRole>(["admin", "operator"]);
 
@@ -47,7 +51,11 @@ export async function getServerAuthSession(
     let resolvedSiteId: string | null = siteId ?? null;
 
     if (siteId) {
-      role = await loadMembershipRole(siteId, data.user.id, supabase);
+      role = await loadMembershipRole(
+        siteId,
+        data.user.id,
+        supabase as unknown as MembershipClient
+      );
       resolvedSiteId = siteId;
     }
 
@@ -64,11 +72,18 @@ export async function getServerAuthSession(
 }
 
 type MembershipClient = {
+  // Minimal query surface — avoid coupling to full Supabase generics.
   from: (table: string) => {
     select: (cols: string) => {
-      eq: (col: string, val: string) => {
-        eq: (col: string, val: string) => {
-          maybeSingle: () => Promise<{
+      eq: (
+        col: string,
+        val: string
+      ) => {
+        eq: (
+          col: string,
+          val: string
+        ) => {
+          maybeSingle: () => PromiseLike<{
             data: { role?: string } | null;
             error: { message: string } | null;
           }>;

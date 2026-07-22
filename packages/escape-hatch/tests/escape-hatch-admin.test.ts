@@ -1,7 +1,6 @@
 /**
- * EH-022 Native admin shell: status EH-022 → EH-030, admin routes in kit,
- * stub health honesty (ok: false), local-operator attention marks,
- * productionSafe false.
+ * EH-022 Native admin shell (preserved under EH-030): status EH-030 → EH-031,
+ * admin routes in kit, identity-aware gating, productionSafe false.
  */
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -31,14 +30,13 @@ afterEach(() => {
   }
 });
 
-describe("EH-022 status", () => {
-  it("advances slice to EH-022 with next EH-030 and productionSafe false", () => {
+describe("EH-022 status (preserved under EH-030)", () => {
+  it("keeps native-admin preview with identity wiring and next EH-031", () => {
     const status = buildEscapeHatchStatus();
-    expect(ESCAPE_HATCH_SLICE).toBe("EH-022");
-    expect(status.slice).toBe("EH-022");
+    expect(ESCAPE_HATCH_SLICE).toBe("EH-030");
+    expect(status.slice).toBe("EH-030");
     expect(status.productionSafe).toBe(false);
-    expect(status.nextSlice.id).toBe("EH-030");
-    expect(status.nextSlice.title).toMatch(/Supabase identity/i);
+    expect(status.nextSlice.id).toBe("EH-031");
     expect(status.blockers.some((b) => /Native admin shell.*remains open/i.test(b))).toBe(
       false
     );
@@ -46,10 +44,9 @@ describe("EH-022 status", () => {
     const admin = status.capabilities.find((c) => c.id === "native-admin");
     expect(admin?.state).toBe("preview_only");
     expect(admin?.evidence).toMatch(/\/admin/);
-    expect(admin?.evidence).toMatch(/ok:\s*false|degraded/i);
+    expect(admin?.evidence).toMatch(/identity|staff session|local-operator/i);
     expect(admin?.evidence).toMatch(/productionSafe remains false/i);
-    expect(admin?.evidence).toMatch(/not authentication|local-operator/i);
-    expect(admin?.nextSlice).toBe("EH-030");
+    expect(admin?.nextSlice).toBe("EH-033");
     expect(admin?.sourcePaths).toEqual(
       expect.arrayContaining([
         "packages/escape-hatch/template/app/admin/page.tsx",
@@ -59,16 +56,21 @@ describe("EH-022 status", () => {
     );
   });
 
-  it("documents admin local-operator honesty in prototype warnings", () => {
+  it("documents admin identity/local-operator honesty in prototype warnings", () => {
     const status = buildEscapeHatchStatus();
     expect(
       status.prototypeWarnings.some((w) =>
-        /EH-022|native admin/i.test(w) && /not authentication|local-operator|degraded/i.test(w)
+        /native admin|EH-022/i.test(w) &&
+        /not authentication|local-operator|soft personas never authorize/i.test(w)
+      )
+    ).toBe(true);
+    expect(
+      status.prototypeWarnings.some((w) =>
+        /admin reads and mutations|staff session is required for admin reads/i.test(w)
       )
     ).toBe(true);
   });
 });
-
 describe("EH-022 template admin surfaces", () => {
   it("ships admin routes, components, and ConsoleNav entry", () => {
     const routes = [
@@ -82,8 +84,11 @@ describe("EH-022 template admin surfaces", () => {
       "components/admin/AdminPosts.tsx",
       "components/admin/AdminMedia.tsx",
       "components/admin/AdminTiers.tsx",
+      "components/admin/AdminAccessDenied.tsx",
       "lib/admin/load-admin.ts",
-      "lib/admin/attention.ts"
+      "lib/admin/attention.ts",
+      "lib/admin/require-admin-page.ts",
+      "lib/identity/admin-access.ts"
     ];
     for (const rel of routes) {
       expect(existsSync(join(TEMPLATE, rel))).toBe(true);
@@ -97,7 +102,7 @@ describe("EH-022 template admin surfaces", () => {
       join(TEMPLATE, "components/admin/AdminOverview.tsx"),
       "utf8"
     );
-    expect(overview).toMatch(/degraded|ok:\s*false/i);
+    expect(overview).toMatch(/identity not configured|degraded|ok:\s*false/i);
     expect(overview).not.toMatch(/all systems (?:operational|green)/i);
 
     const media = readFileSync(
@@ -112,8 +117,17 @@ describe("EH-022 template admin surfaces", () => {
       "utf8"
     );
     expect(adapters).toMatch(/ok:\s*false/);
-  });
 
+    const adminPage = readFileSync(join(TEMPLATE, "app/admin/page.tsx"), "utf8");
+    expect(adminPage).toMatch(/assertAdminReadAccess|redirectIfAdminSignInRequired/);
+    expect(adminPage).toMatch(/AdminAccessDenied|read_allowed/);
+
+    const accessDenied = readFileSync(
+      join(TEMPLATE, "components/admin/AdminAccessDenied.tsx"),
+      "utf8"
+    );
+    expect(accessDenied).toMatch(/Soft demo personas do not authorize admin reads/i);
+  });
   it("keeps visitor preview distinct from admin chrome", () => {
     const preview = readFileSync(join(TEMPLATE, "app/preview/page.tsx"), "utf8");
     expect(preview).not.toMatch(/AdminShell|AdminOverview/);
@@ -126,7 +140,7 @@ describe("EH-022 template admin surfaces", () => {
 });
 
 describe("EH-022 fillTemplate stamps admin", () => {
-  it("writes manifest EH-022 and ESCAPE_HATCH.md admin routes", () => {
+  it("writes manifest EH-030 and ESCAPE_HATCH.md admin routes", () => {
     const bundle = JSON.parse(readFileSync(SAMPLE_BUNDLE, "utf8")) as {
       creator: { handle: string };
     };
@@ -141,12 +155,12 @@ describe("EH-022 fillTemplate stamps admin", () => {
     const manifest = JSON.parse(
       readFileSync(join(result.outDir, "escape-hatch.manifest.json"), "utf8")
     ) as { slice: string; productionSafe: boolean; feature_flags: Record<string, boolean> };
-    expect(manifest.slice).toBe("EH-022");
+    expect(manifest.slice).toBe("EH-030");
     expect(manifest.productionSafe).toBe(false);
     expect(manifest.feature_flags.native_admin).toBe(true);
     expect(manifest.feature_flags.hard_paywall).toBe(false);
     expect(manifest.feature_flags.signed_media_delivery).toBe(false);
-    expect(manifest.feature_flags.supabase_identity).toBe(false);
+    expect(manifest.feature_flags.supabase_identity).toBe(true);
 
     const doc = readFileSync(join(result.outDir, "ESCAPE_HATCH.md"), "utf8");
     expect(doc).toMatch(/\/admin/);

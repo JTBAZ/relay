@@ -1,16 +1,19 @@
 import { ConsoleNav } from "@/components/ConsoleNav";
+import { AdminAccessDenied } from "@/components/admin/AdminAccessDenied";
 import { AdminShell } from "@/components/admin/AdminShell";
 import { AdminTiers } from "@/components/admin/AdminTiers";
 import { loadAdminTiers } from "@/lib/admin/load-admin";
-import { resolveAdminIdentity } from "@/lib/identity/admin-access";
-import { loadSite } from "@/lib/load-site";
+import { redirectIfAdminSignInRequired } from "@/lib/admin/require-admin-page";
 
 export const dynamic = "force-dynamic";
 
 export default async function AdminTiersPage() {
-  const model = loadAdminTiers();
-  const site = loadSite();
-  const identity = await resolveAdminIdentity(site.site_id);
+  const model = await loadAdminTiers();
+  redirectIfAdminSignInRequired(
+    model.read_allowed,
+    model.deny_reason,
+    "/admin/tiers"
+  );
 
   return (
     <>
@@ -18,9 +21,13 @@ export default async function AdminTiersPage() {
       <AdminShell
         title="Tiers & access"
         lede="Catalog and mapping honesty for membership tiers. Deep edits stay in Structure and Library truth."
-        identity={identity}
+        identity={model.identity}
       >
-        <AdminTiers model={model} />
+        {model.read_allowed && model.deny_reason === null ? (
+          <AdminTiers model={model} />
+        ) : (
+          <AdminAccessDenied reason={model.deny_reason ?? "staff_required"} />
+        )}
       </AdminShell>
     </>
   );

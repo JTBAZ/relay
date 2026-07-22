@@ -17,13 +17,12 @@ type Props = {
 export function AdminShell({ children, title, lede, identity }: Props) {
   const identityLine =
     identity?.mode === "local_preview"
-      ? "identity not configured · local-preview mutations (not authentication)"
+      ? "identity not configured · local-preview operator (not authentication)"
       : identity?.session && identity.isStaff
         ? `signed in as staff · ${identity.session.email ?? identity.session.userId}`
         : identity?.session
-          ? "signed in · staff membership required for mutations"
-          : "supabase identity configured · sign in required for mutations";
-
+          ? "signed in · staff membership required for admin reads"
+          : "supabase identity configured · sign in required for admin reads";
   return (
     <main className="console-page shell admin-shell">
       <header className="console-hero admin-hero">

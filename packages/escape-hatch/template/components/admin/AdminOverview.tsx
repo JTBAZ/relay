@@ -30,8 +30,8 @@ export function AdminOverview({ model }: { model: AdminOverviewModel }) {
           {identity.mode === "local_preview"
             ? " — local-preview mode. Soft personas do not authorize admin. Configure Supabase env to enable the intended identity path."
             : identity.isStaff
-              ? " — mutations require this staff membership. productionSafe remains false until EH-033."
-              : " — admin mutations are blocked until a staff membership session exists."}
+              ? " — admin reads and mutations require this staff membership. productionSafe remains false until EH-033."
+              : " — admin inventory and mutations are blocked until a staff membership session exists."}
         </p>
         <p className="small muted">
           {model.creator_display_name} (@{model.creator_handle}) ·{" "}

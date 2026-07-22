@@ -1,11 +1,11 @@
 /**
- * Deterministic Escape Hatch capability inventory (through EH-022).
+ * Deterministic Escape Hatch capability inventory (through EH-030).
  * No timestamps, env reads, network, or live data — informational only.
  */
 
 export const ESCAPE_HATCH_STATUS_SCHEMA_VERSION = "escape-hatch-status/1.0.0";
 
-export const ESCAPE_HATCH_SLICE = "EH-022";
+export const ESCAPE_HATCH_SLICE = "EH-030";
 
 export type CapabilityState =
   | "production_safe"
@@ -36,7 +36,7 @@ export type EscapeHatchStatus = {
   capabilities: EscapeHatchCapability[];
   blockers: string[];
   nextSlice: {
-    id: "EH-030";
+    id: "EH-031";
     title: string;
     focus: string[];
   };
@@ -48,7 +48,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
     title: "Prototype generator and CLI",
     state: "preview_only",
     evidence:
-      "fixture, wizard, build, from-relay, from-clone, import-relay-dump, migrate-media, library-truth / parity-report, and zip subcommands materialize a standalone Next.js kit (typed env, SQL migrations, Vercel/Docker manifests, adapter surfaces, premium patron theme, native admin shell) plus import/migration/library-parity artifacts; suitable for local preview only.",
+      "fixture, wizard, build, from-relay, from-clone, import-relay-dump, migrate-media, library-truth / parity-report, and zip subcommands materialize a standalone Next.js kit (typed env, SQL migrations + RLS, Vercel/Docker manifests, adapter surfaces, premium patron theme, native admin shell, optional Supabase identity) plus import/migration/library-parity artifacts; suitable for local preview only.",
     sourcePaths: [
       "packages/escape-hatch/src/cli.ts",
       "packages/escape-hatch/src/fill-template.ts",
@@ -59,19 +59,20 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "packages/escape-hatch/src/library-truth/kit-io.ts"
     ],
     risk: "high",
-    nextSlice: "EH-030"
+    nextSlice: "EH-031"
   },
   {
     id: "generated-repository",
     title: "Generated repository chassis",
     state: "preview_only",
     evidence:
-      "EH-020 ships a standalone kit: package.json + Next App Router, typed lib/env.ts + .env.example, db/schema + db/migrations SQL (no live DB required for next build), lib/adapters typed stubs (health reports degraded), escape-hatch.manifest.json, vercel.json, Dockerfile/.dockerignore, optional loopback-only docker-compose Postgres profile. Install/build from a clean directory without RELAY_* / root .env. productionSafe remains false — not a production-safe deploy; public/media in Docker images is prototype leakage until EH-033.",
+      "EH-020 chassis plus EH-030 identity: package.json + Next App Router, typed lib/env.ts + .env.example (Supabase URL/anon/service names), db/schema + db/migrations SQL including RLS (no live DB required for next build), lib/adapters with optional Supabase Auth/DB implementations, escape-hatch.manifest.json, vercel.json, Dockerfile/.dockerignore, optional loopback-only docker-compose Postgres profile. Install/build from a clean directory without RELAY_* / root .env. productionSafe remains false — not a production-safe deploy; public/media in Docker images is prototype leakage until EH-033.",
     sourcePaths: [
       "packages/escape-hatch/template/package.json",
       "packages/escape-hatch/template/lib/env.ts",
       "packages/escape-hatch/template/lib/adapters/index.ts",
       "packages/escape-hatch/template/db/migrations/0001_preview_chassis.sql",
+      "packages/escape-hatch/template/db/migrations/0002_identity_rls.sql",
       "packages/escape-hatch/template/escape-hatch.manifest.json",
       "packages/escape-hatch/template/vercel.json",
       "packages/escape-hatch/template/Dockerfile",
@@ -80,7 +81,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "packages/escape-hatch/tests/escape-hatch-generated-repo.test.ts"
     ],
     risk: "high",
-    nextSlice: "EH-030"
+    nextSlice: "EH-031"
   },
   {
     id: "premium-patron-theme",
@@ -105,21 +106,22 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "packages/escape-hatch/tests/escape-hatch-theme.test.ts"
     ],
     risk: "medium",
-    nextSlice: "EH-030"
+    nextSlice: "EH-034"
   },
   {
     id: "soft-persona-gate",
     title: "Soft client persona gate",
     state: "preview_only",
     evidence:
-      "Generated site switches visible paywall UI by demo persona (public, patron, tier) in client state; persona tier_ids are not authoritative entitlements.",
+      "Generated site switches visible paywall UI by demo persona (public, patron, tier) in client state when identity is unset; persona tier_ids are not authoritative entitlements and never authorize admin or premium server-side. Intended identity path is Supabase session + membership/entitlement snapshots (EH-030).",
     sourcePaths: [
       "packages/escape-hatch/src/access.ts",
       "packages/escape-hatch/template/lib/access.ts",
-      "packages/escape-hatch/template/lib/site-session.ts"
+      "packages/escape-hatch/template/lib/site-session.ts",
+      "packages/escape-hatch/template/lib/identity/entitlements.ts"
     ],
     risk: "critical",
-    nextSlice: "EH-030"
+    nextSlice: "EH-034"
   },
   {
     id: "public-media-copy",
@@ -150,7 +152,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "packages/escape-hatch/src/library-truth/kit-io.ts"
     ],
     risk: "high",
-    nextSlice: "EH-030"
+    nextSlice: "EH-033"
   },
   {
     id: "duplicate-contracts",
@@ -177,7 +179,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
     title: "Fixture coverage (sample, clone, Patreon shapes)",
     state: "preview_only",
     evidence:
-      "EH-022 fixture matrix (MATRIX.json) covers sanitized OAuth/cookie Patreon JSON, SiteBundle/Clone adaptations with branding dials, relay-dump import + media migration + library-truth parity accounting, generated-repo chassis smoke, premium patron theme branding fields, native admin shell routes against fixture data, promoted tombstone/legacy-tier families, and deferred mature/legal enforcement stubs; secret/PII scan remains wired.",
+      "Fixture matrix (MATRIX.json) covers sanitized OAuth/cookie Patreon JSON, SiteBundle/Clone adaptations with branding dials, relay-dump import + media migration + library-truth parity accounting, generated-repo chassis smoke, premium patron theme branding fields, native admin shell routes against fixture data, identity/RLS SQL review tests, promoted tombstone/legacy-tier families, and deferred mature/legal enforcement stubs; secret/PII scan remains wired.",
     sourcePaths: [
       "packages/escape-hatch/fixtures/MATRIX.json",
       "packages/escape-hatch/fixtures/PROVENANCE.md",
@@ -192,11 +194,12 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "packages/escape-hatch/tests/escape-hatch-generated-repo.test.ts",
       "packages/escape-hatch/tests/escape-hatch-theme.test.ts",
       "packages/escape-hatch/tests/escape-hatch-admin.test.ts",
+      "packages/escape-hatch/tests/escape-hatch-identity.test.ts",
       "tests/fixtures/patreon/oauth-list-post-text-only.json",
       "tests/fixtures/patreon/cookie-list-with-media.json"
     ],
     risk: "medium",
-    nextSlice: "EH-030"
+    nextSlice: "EH-031"
   },
   {
     id: "relay-dump-fixtures",
@@ -215,7 +218,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "packages/escape-hatch/tests/escape-hatch-library-truth.test.ts"
     ],
     risk: "medium",
-    nextSlice: "EH-030"
+    nextSlice: "EH-031"
   },
   {
     id: "relay-canonical-reuse",
@@ -238,44 +241,57 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "src/storage/media-delivery-policy.ts"
     ],
     risk: "informational",
-    nextSlice: "EH-030"
+    nextSlice: "EH-031"
   },
   {
     id: "simplified-access-semantics",
     title: "Canonical-aligned preview access semantics",
     state: "preview_only",
     evidence:
-      "The shared preview evaluator matches canonical paid/free, exact-tier, and tier-or-higher ordering semantics using serialized tier catalog data; it remains client-only soft gating and is not server authorization. Library truth surfaces access ambiguities instead of auto-picking paid tiers by array order.",
+      "The shared preview evaluator matches canonical paid/free, exact-tier, and tier-or-higher ordering semantics using serialized tier catalog data; soft persona remains client-only. Server entitlement reads use fail-closed snapshots (EH-030) and do not trust client tier_ids.",
     sourcePaths: [
       "packages/escape-hatch/src/contracts.ts",
       "packages/escape-hatch/src/access.ts",
       "packages/escape-hatch/src/library-truth/build-report.ts",
+      "packages/escape-hatch/template/lib/identity/entitlements.ts",
       "src/clone/tier-rules.ts"
     ],
     risk: "high",
-    nextSlice: "EH-030"
+    nextSlice: "EH-032"
   },
   {
     id: "generated-site-identity",
     title: "Generated-site patron identity",
-    state: "not_implemented",
+    state: "preview_only",
     evidence:
-      "No creator-owned auth, session cookies, entitlement snapshots, or Supabase/Postgres path in the generated kit; preview personas only. Typed AuthProvider/DatabaseProvider stubs + SQL migration files exist as EH-020 chassis placeholders only. Native admin (EH-022) is local-operator gated, not authenticated.",
+      "EH-030 ships creator-owned Supabase Auth/Postgres path: SQL migrations for profiles, site memberships, entitlement snapshots, and fail-closed RLS (patrons may SELECT only public published posts/media metadata until EH-032; drafts and premium rows staff-only); typed env for URL/anon/service keys; server/client Supabase clients; login/callback/logout (POST) routes; admin requires staff session for inventory reads and mutations when identity configured and shows identity not configured when unset. Soft persona remains for local preview only and never authorizes admin. Auth/DB adapters report readiness only with real non-placeholder env, still labeled preview. productionSafe remains false. Package tests use mocks/SQL review — no live Supabase required.",
     sourcePaths: [
       "packages/escape-hatch/template/lib/site-session.ts",
+      "packages/escape-hatch/template/lib/identity/types.ts",
+      "packages/escape-hatch/template/lib/identity/session.ts",
+      "packages/escape-hatch/template/lib/identity/entitlements.ts",
+      "packages/escape-hatch/template/lib/identity/admin-access.ts",
+      "packages/escape-hatch/template/lib/supabase/client.ts",
+      "packages/escape-hatch/template/lib/supabase/server.ts",
       "packages/escape-hatch/template/lib/adapters/types.ts",
-      "packages/escape-hatch/template/db/schema/0001_preview_chassis.sql",
-      "src/identity/patron-entitlement-snapshot.ts"
+      "packages/escape-hatch/template/lib/adapters/index.ts",
+      "packages/escape-hatch/template/db/migrations/0002_identity_rls.sql",
+      "packages/escape-hatch/template/db/schema/0002_identity_rls.sql",
+      "packages/escape-hatch/template/app/login/page.tsx",
+      "packages/escape-hatch/template/app/auth/callback/route.ts",
+      "packages/escape-hatch/template/app/auth/logout/route.ts",
+      "packages/escape-hatch/template/scripts/bootstrap-identity.md",
+      "packages/escape-hatch/tests/escape-hatch-identity.test.ts"
     ],
     risk: "critical",
-    nextSlice: "EH-030"
+    nextSlice: "EH-031"
   },
   {
     id: "private-media-delivery",
     title: "Private media delivery and signed URLs",
     state: "not_implemented",
     evidence:
-      "EH-012 migrates objects into opaque private keys with private-read checks that require authenticated success and anonymous denial (memory adapter fully proves; R2 requires publicBaseUrl + allowPublicProbe and otherwise fails closed). The generated app still has no visitor signed-URL gateway or entitlement enforcement; StorageProvider.signGetObject stub returns null. Relay media-delivery-policy is not integrated into the kit.",
+      "EH-012 migrates objects into opaque private keys with private-read checks that require authenticated success and anonymous denial (memory adapter fully proves; R2 requires publicBaseUrl + allowPublicProbe and otherwise fails closed). The generated app still has no visitor signed-URL gateway or entitlement enforcement; StorageProvider.signGetObject stub returns null. Relay media-delivery-policy is not integrated into the kit. public/media coexistence remains prototype leakage.",
     sourcePaths: [
       "packages/escape-hatch/src/migrate/engine.ts",
       "packages/escape-hatch/src/migrate/storage-port.ts",
@@ -321,7 +337,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
     title: "Native generated-site admin",
     state: "preview_only",
     evidence:
-      "EH-022 ships a native admin shell under /admin (overview health framing, posts, media, tiers) with Hatch Console nav entry. Adapter health surfaces stub degraded status (ok: false); media inventory never treats public/media as private-verified; attention marks POST /api/admin/attention require x-escape-hatch-local: 1 and loopback only — not authentication. productionSafe remains false; no hard auth/RLS (EH-030), signed private media (EH-033), or billing.",
+      "EH-022 admin shell under /admin (overview health framing, posts, media, tiers) with Hatch Console nav entry. EH-030 wires identity: when Supabase env unset, shows identity not configured and local-operator preview (reads + mutations); when configured, staff session required for admin inventory reads and mutations (soft persona never authorizes). Auth/DB adapters may report ok:true only with real non-placeholder env and still label preview. Media inventory never treats public/media as private-verified. productionSafe remains false; signed private media is EH-033.",
     sourcePaths: [
       "packages/escape-hatch/template/app/admin/page.tsx",
       "packages/escape-hatch/template/app/admin/posts/page.tsx",
@@ -333,10 +349,11 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "packages/escape-hatch/template/components/admin/AdminPosts.tsx",
       "packages/escape-hatch/template/components/ConsoleNav.tsx",
       "packages/escape-hatch/template/lib/admin/load-admin.ts",
+      "packages/escape-hatch/template/lib/identity/admin-access.ts",
       "packages/escape-hatch/tests/escape-hatch-admin.test.ts"
     ],
     risk: "high",
-    nextSlice: "EH-030"
+    nextSlice: "EH-033"
   },
   {
     id: "migration-import",
@@ -355,7 +372,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "packages/escape-hatch/tests/escape-hatch-migrate.test.ts"
     ],
     risk: "high",
-    nextSlice: "EH-030"
+    nextSlice: "EH-031"
   },
   {
     id: "library-truth-parity",
@@ -378,7 +395,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "packages/escape-hatch/tests/escape-hatch-library-truth.test.ts"
     ],
     risk: "high",
-    nextSlice: "EH-030"
+    nextSlice: "EH-031"
   },
   {
     id: "backup-restore",
@@ -392,20 +409,25 @@ const CAPABILITIES: EscapeHatchCapability[] = [
   {
     id: "provider-readiness",
     title: "Provider readiness checks",
-    state: "not_implemented",
+    state: "preview_only",
     evidence:
-      "No executable readiness probes exist for Supabase identity/data (EH-030), Stripe billing (EH-051), provider policy (EH-052), Vercel/domain/DNS (EH-070), or transactional email (EH-072); stub adapters and passing fixture tests are not readiness evidence.",
+      "EH-030 Auth/DB adapters expose env-honest readiness (ok only when Supabase URL/anon are real and non-placeholder; still labeled preview). No live network probes in package tests. Executable readiness for Stripe billing (EH-051), provider policy (EH-052), Vercel/domain/DNS (EH-070), and transactional email (EH-072) remains open; passing fixture tests are not production evidence.",
     sourcePaths: [
+      "packages/escape-hatch/template/lib/adapters/index.ts",
+      "packages/escape-hatch/template/lib/env.ts",
+      "packages/escape-hatch/tests/escape-hatch-identity.test.ts",
       "src/payments/provider-adapter.ts",
       "src/deploy/deploy-adapter.ts"
     ],
-    risk: "high"
+    risk: "high",
+    nextSlice: "EH-031"
   }
 ];
 
 const PROTOTYPE_WARNINGS: string[] = [
   "productionSafe is false — this deliverable is prototype/preview-only.",
-  "EH-022 native admin is preview_only — local-operator gating is not authentication; stub adapter health must remain degraded (ok: false).",
+  "EH-030 Supabase identity is preview_only — configured Auth/DB readiness is not a production-safe deploy claim; EH-033 public media leakage remains.",
+  "EH-022 native admin: when identity is unset, local-operator gating is not authentication; when configured, staff session is required for admin reads and mutations — soft personas never authorize admin.",
   "EH-021 premium patron theme is soft-gate / preview-only; soft paywall UI is not production security.",
   "EH-020 generated repository chassis installs/builds without Relay credentials but is not a production-safe deploy.",
   "Premium (member_only and tier_gated) media bytes are still copied to public/media by fillTemplate and are directly fetchable without authentication.",
@@ -416,8 +438,8 @@ const PROTOTYPE_WARNINGS: string[] = [
   "EH-013 kit Library truth always rebuilds parity from data/ artifacts on load and before mutations; a tampered library-parity-report.json alone cannot greenwash can_continue or library_truth_complete.",
   "R2 without an explicit anonymous probe (publicBaseUrl + allowPublicProbe) cannot claim private_read_verified — authenticated GetObject alone is insufficient.",
   "Client demo persona state is non-authoritative; switching persona only changes UI gating, not server entitlements.",
-  "Package preview access helpers align with canonical tier semantics but remain client-only and are not enforced server-side.",
-  "Typed adapter stubs and SQL migration files are chassis placeholders — runtime health is degraded/stub until EH-030/033/050/070, not production-ready.",
+  "Package preview access helpers align with canonical tier semantics but remain client-only unless entitlement snapshots are loaded server-side.",
+  "Service role keys must never be committed or shipped to the browser; RLS fails closed for patrons.",
   "Vercel/Docker manifests are present; shipping public/media remains prototype leakage until EH-033; verified golden-path deploy remains EH-070/071.",
   "Relay Part 2 billing adapter remains a synthetic stub and must not be treated as production or provider proof.",
   "Passing package tests or a successful local preview does not make any soft-gated capability production-safe."
@@ -425,7 +447,8 @@ const PROTOTYPE_WARNINGS: string[] = [
 
 const BLOCKERS: string[] = [
   "Premium media remains world-readable in public/ for soft preview; server-enforced private visitor delivery belongs to EH-033.",
-  "No hard patron identity, entitlements, or RLS-backed session (EH-030).",
+  "Portable Postgres/auth adapter parity for Docker remains open (EH-031).",
+  "Entitlement service freshness, Patreon/billing/manual grant merge, and audit belong to EH-032.",
   "Billing is stub-only; creator-owned Stripe/eligible adapters belong to EH-050/051.",
   "Verified Vercel/Docker production deploy rehearsals remain open (EH-070/071).",
   "Mature/legal-adult enforcement beyond accounted exclusions remains open."
@@ -438,7 +461,7 @@ export function buildEscapeHatchStatus(): EscapeHatchStatus {
     deliverable: "prototype_preview_only",
     productionSafe: false,
     summary:
-      "Escape Hatch through EH-022 delivers a standalone generated Next.js chassis (EH-020), premium patron visitor theme (EH-021), and native admin shell with honest stub health framing plus posts/media/tier workflows against fixture data; Library truth (EH-013), soft persona gate, and public/media prototype leakage remain; productionSafe is false.",
+      "Escape Hatch through EH-030 delivers a standalone generated Next.js chassis with optional creator-owned Supabase Auth/Postgres (schema, RLS, session scaffolding, bootstrap docs), premium patron visitor theme, native admin shell with identity-aware gating, Library truth, and soft persona local-preview; public/media prototype leakage remains; productionSafe is false.",
     prototypeWarnings: [...PROTOTYPE_WARNINGS],
     capabilities: CAPABILITIES.map((c) => ({
       ...c,
@@ -446,12 +469,12 @@ export function buildEscapeHatchStatus(): EscapeHatchStatus {
     })),
     blockers: [...BLOCKERS],
     nextSlice: {
-      id: "EH-030",
-      title: "Supabase identity/data path",
+      id: "EH-031",
+      title: "Portable identity/data path",
       focus: [
-        "Creator-owned Supabase/Auth/Postgres schema and RLS",
-        "Bootstrap and recovery for site identity",
-        "Replace stub auth/database adapters with a real data path"
+        "Postgres/auth adapter parity for Docker without Supabase Auth",
+        "Same membership and entitlement contracts as EH-030",
+        "Honest health and bootstrap without Relay runtime credentials"
       ]
     }
   };

@@ -1855,6 +1855,43 @@ code {
   border-color: color-mix(in srgb, var(--eh-accent) 35%, var(--eh-border));
 }
 
+.admin-banner--identity {
+  border-color: color-mix(in srgb, #4a8f6c 50%, var(--eh-border));
+  background: color-mix(in srgb, #4a8f6c 10%, var(--eh-bg-deep));
+}
+
+.eh-login-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  max-width: 24rem;
+  margin: 0 0 2rem;
+}
+
+.eh-login-label {
+  font-size: 0.85rem;
+  color: var(--eh-muted);
+}
+
+.eh-login-input {
+  min-height: 44px;
+  padding: 0.5rem 0.75rem;
+  border-radius: 6px;
+  border: 1px solid var(--eh-border);
+  background: var(--eh-bg-deep, #1e1f22);
+  color: inherit;
+}
+
+.eh-login-error {
+  color: #c4784a;
+  margin: 0;
+}
+
+.eh-login-ok {
+  color: #4a8f6c;
+  margin: 0;
+}
+
 .admin-section h2 {
   margin: 0 0 0.65rem;
   font-size: 1.05rem;
