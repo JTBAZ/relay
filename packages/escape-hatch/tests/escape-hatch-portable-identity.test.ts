@@ -68,14 +68,14 @@ function setSupabaseEnv(): void {
     "eh_ci_anon_key_not_a_secret_aaaaaaaaaaaaaaaaaaaaaaaa";
 }
 
-describe("EH-031 status", () => {
-  it("advances slice to EH-031 with next EH-032 and productionSafe false", () => {
+describe("EH-031 status (preserved under EH-032)", () => {
+  it("keeps portable identity evidence under EH-032 with next EH-033", () => {
     const status = buildEscapeHatchStatus();
-    expect(ESCAPE_HATCH_SLICE).toBe("EH-031");
-    expect(status.slice).toBe("EH-031");
+    expect(ESCAPE_HATCH_SLICE).toBe("EH-032");
+    expect(status.slice).toBe("EH-032");
     expect(status.productionSafe).toBe(false);
-    expect(status.nextSlice.id).toBe("EH-032");
-    expect(status.nextSlice.title).toMatch(/Entitlement/i);
+    expect(status.nextSlice.id).toBe("EH-033");
+    expect(status.nextSlice.title).toMatch(/Private media/i);
     expect(status.blockers.some((b) => /EH-031/i.test(b))).toBe(false);
     expect(status.blockers.some((b) => /EH-033/i.test(b))).toBe(true);
 
@@ -85,7 +85,7 @@ describe("EH-031 status", () => {
     expect(identity?.state).toBe("preview_only");
     expect(identity?.evidence).toMatch(/portable|Path B/i);
     expect(identity?.evidence).toMatch(/productionSafe remains false/i);
-    expect(identity?.nextSlice).toBe("EH-032");
+    expect(identity?.nextSlice).toBe("EH-033");
     expect(identity?.sourcePaths).toEqual(
       expect.arrayContaining([
         "packages/escape-hatch/template/db/migrations/0003_portable_identity.sql",

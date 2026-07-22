@@ -295,6 +295,13 @@ export const GENERATED_CHASSIS_RELATIVE_PATHS = [
   "lib/identity/entitlements.ts",
   "lib/identity/session.ts",
   "lib/identity/admin-access.ts",
+  "lib/entitlements/types.ts",
+  "lib/entitlements/freshness.ts",
+  "lib/entitlements/merge.ts",
+  "lib/entitlements/gate.ts",
+  "lib/entitlements/evaluate.ts",
+  "lib/entitlements/server.ts",
+  "lib/entitlements/index.ts",
   "lib/supabase/client.ts",
   "lib/supabase/server.ts",
   "lib/portable-auth/index.ts",
@@ -304,11 +311,16 @@ export const GENERATED_CHASSIS_RELATIVE_PATHS = [
   "db/schema/0001_preview_chassis.sql",
   "db/schema/0002_identity_rls.sql",
   "db/schema/0003_portable_identity.sql",
+  "db/schema/0004_entitlement_evaluator_supabase.sql",
+  "db/schema/0004_entitlement_evaluator_portable.sql",
   "db/migrations/0001_preview_chassis.sql",
   "db/migrations/0002_identity_rls.sql",
   "db/migrations/0003_portable_identity.sql",
+  "db/migrations/0004_entitlement_evaluator_supabase.sql",
+  "db/migrations/0004_entitlement_evaluator_portable.sql",
   "db/docker-init/01_preview_chassis.sql",
   "db/docker-init/02_portable_identity.sql",
+  "db/docker-init/03_entitlement_evaluator.sql",
   "db/README.md",
   "scripts/bootstrap-identity.md",
   "deploy/README.md",
@@ -355,9 +367,9 @@ export function stampEscapeHatchManifest(
   parsed.generated_at = bundle.generated_at;
   parsed.creator_id = bundle.creator_id;
   parsed.site_id = bundle.site_id ?? bundle.creator_id;
-  parsed.slice = "EH-031";
+  parsed.slice = "EH-032";
   parsed.productionSafe = false;
-  parsed.schema_version = "eh-db/0003_portable_identity";
+  parsed.schema_version = "eh-db/0004_entitlement_evaluator";
   parsed.feature_flags = {
     ...parsed.feature_flags,
     soft_persona_gate: true,
@@ -365,6 +377,7 @@ export function stampEscapeHatchManifest(
     signed_media_delivery: false,
     supabase_identity: true,
     portable_identity: true,
+    entitlement_evaluator: true,
     stripe_billing: false,
     native_admin: true
   };

@@ -20,8 +20,9 @@ In the SQL editor (or CLI), apply in order:
 
 1. `db/migrations/0001_preview_chassis.sql`
 2. `db/migrations/0002_identity_rls.sql`
+3. `db/migrations/0004_entitlement_evaluator_supabase.sql`
 
-Confirm `eh_schema_migrations` contains `0001_preview_chassis` and `0002_identity_rls`.
+Confirm `eh_schema_migrations` contains `0001_preview_chassis`, `0002_identity_rls`, and `0004_entitlement_evaluator_supabase`.
 
 ### 3. Environment names (Path A)
 
@@ -91,7 +92,7 @@ Auth choice: **app-managed users** with **scrypt** password hashes (Node `crypto
 docker compose --profile db up -d
 ```
 
-Binds **`127.0.0.1:5433` only**. Dev password is for local use — never expose the profile publicly. Init applies `0001` + `0003` from `db/docker-init/`.
+Binds **`127.0.0.1:5433` only**. Dev password is for local use — never expose the profile publicly. Init applies `0001` + `0003` + portable entitlement evaluator from `db/docker-init/`.
 
 Or point `DATABASE_URL` at any creator-owned Postgres and apply migrations manually.
 
@@ -100,9 +101,10 @@ Or point `DATABASE_URL` at any creator-owned Postgres and apply migrations manua
 ```bash
 psql "$DATABASE_URL" -f db/migrations/0001_preview_chassis.sql
 psql "$DATABASE_URL" -f db/migrations/0003_portable_identity.sql
+psql "$DATABASE_URL" -f db/migrations/0004_entitlement_evaluator_portable.sql
 ```
 
-Confirm `eh_schema_migrations` contains `0001_preview_chassis` and `0003_portable_identity`. **Do not** apply `0002_identity_rls.sql` on Path B.
+Confirm `eh_schema_migrations` contains `0001_preview_chassis`, `0003_portable_identity`, and `0004_entitlement_evaluator_portable`. **Do not** apply `0002_identity_rls.sql` or `0004_entitlement_evaluator_supabase.sql` on Path B.
 
 ### 3. Environment names (Path B)
 

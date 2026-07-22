@@ -28,6 +28,10 @@ export type EntitlementSnapshot = {
   reason: string | null;
   observedAt: string;
   staleAfter: string | null;
+  /** Optional hard expiry (EH-032). */
+  expiresAt: string | null;
+  /** Optional revoke timestamp (EH-032). */
+  revokedAt: string | null;
 };
 
 export type EntitlementReadResult =

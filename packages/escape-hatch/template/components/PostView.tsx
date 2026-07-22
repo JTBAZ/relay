@@ -15,9 +15,23 @@ import {
   loadPostOverrides
 } from "@/lib/site-session";
 
+type ServerAccessSummary = {
+  allowed: boolean;
+  reason: string;
+  detail: string;
+  provider: string;
+  stale: boolean;
+};
+
 type Props = {
   site: SiteBundle;
   slug: string;
+  /**
+   * EH-032 server evaluation. When provider is supabase/portable, this is
+   * authoritative for unlock — soft persona cannot elevate.
+   * When provider is none, soft persona preview remains for local UX.
+   */
+  serverAccess?: ServerAccessSummary | null;
 };
 
 function formatPublished(iso: string): string {
@@ -46,7 +60,7 @@ function accessLabel(
   return titles.length ? titles.join(" · ") : "Tier";
 }
 
-export function PostView({ site, slug }: Props) {
+export function PostView({ site, slug, serverAccess }: Props) {
   const [posts, setPosts] = useState(site.posts);
 
   useEffect(() => {
@@ -61,6 +75,10 @@ export function PostView({ site, slug }: Props) {
     [personas, personaId]
   );
   const style: PaywallStyle = site.theme.paywall_style ?? "blur";
+
+  const identityConfigured =
+    serverAccess?.provider === "supabase" ||
+    serverAccess?.provider === "portable";
 
   if (!post) {
     return (
@@ -81,7 +99,10 @@ export function PostView({ site, slug }: Props) {
     );
   }
 
-  const unlocked = canViewPost(post, persona);
+  // Soft persona UI only when identity is unset; otherwise server evaluator wins.
+  const unlocked = identityConfigured
+    ? Boolean(serverAccess?.allowed)
+    : canViewPost(post, persona);
 
   return (
     <PatronChrome
@@ -105,6 +126,23 @@ export function PostView({ site, slug }: Props) {
               {formatPublished(post.published_at)}
             </time>
           </p>
+          {identityConfigured ? (
+            <p
+              className="patron-post-meta"
+              data-entitlement-reason={serverAccess?.reason}
+            >
+              {serverAccess?.allowed
+                ? serverAccess.stale
+                  ? "Access granted (entitlement snapshot marked stale)."
+                  : "Access resolved by server entitlement evaluator."
+                : (serverAccess?.detail ?? "Premium access denied.")}{" "}
+              Soft personas do not authorize when identity is configured.
+            </p>
+          ) : (
+            <p className="patron-post-meta">
+              Local soft-persona preview only — not production entitlements.
+            </p>
+          )}
         </header>
 
         <div className="patron-post-media">

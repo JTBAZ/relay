@@ -40,6 +40,7 @@ const EXPECTED_CAPABILITY_IDS = [
   "relay-canonical-reuse",
   "simplified-access-semantics",
   "generated-site-identity",
+  "entitlement-evaluator",
   "private-media-delivery",
   "billing-adapters",
   "deploy-adapters",
@@ -54,7 +55,7 @@ describe("buildEscapeHatchStatus", () => {
   it("returns a versioned schema with productionSafe false", () => {
     const status = buildEscapeHatchStatus();
     expect(status.schemaVersion).toBe(ESCAPE_HATCH_STATUS_SCHEMA_VERSION);
-    expect(status.slice).toBe("EH-031");
+    expect(status.slice).toBe("EH-032");
     expect(status.deliverable).toBe("prototype_preview_only");
     expect(status.productionSafe).toBe(false);
   });
@@ -89,7 +90,7 @@ describe("buildEscapeHatchStatus", () => {
     expect(media?.nextSlice).toBe("EH-033");
   });
 
-  it("records EH-031 complete and routes next work to EH-032", () => {
+  it("records EH-032 complete and routes next work to EH-033", () => {
     const status = buildEscapeHatchStatus();
     expect(status.blockers.length).toBeGreaterThan(0);
     expect(status.blockers.some((b) => /OAuth\/cookie.*not yet wired/i.test(b))).toBe(
@@ -102,8 +103,11 @@ describe("buildEscapeHatchStatus", () => {
       false
     );
     expect(status.blockers.some((b) => /No hard patron identity/i.test(b))).toBe(false);
-    expect(status.nextSlice.id).toBe("EH-032");
-    expect(status.nextSlice.title).toMatch(/Entitlement/i);
+    expect(status.blockers.some((b) => /Entitlement service freshness/i.test(b))).toBe(
+      false
+    );
+    expect(status.nextSlice.id).toBe("EH-033");
+    expect(status.nextSlice.title).toMatch(/Private media/i);
     expect(status.nextSlice.focus.length).toBeGreaterThan(0);
   });
 
@@ -120,8 +124,8 @@ describe("buildEscapeHatchStatus", () => {
     const access = capabilities.get("simplified-access-semantics");
     expect(access?.evidence).toMatch(/paid\/free/i);
     expect(access?.evidence).toMatch(/tier-or-higher/i);
-    expect(access?.evidence).toMatch(/client-only|fail-closed/i);
-    expect(access?.nextSlice).toBe("EH-032");
+    expect(access?.evidence).toMatch(/client-only|fail-closed|EH-032/i);
+    expect(access?.nextSlice).toBe("EH-033");
   });
 
   it("states billing stubs are not production proof and deploy manifests are preview-only", () => {
@@ -145,12 +149,14 @@ describe("buildEscapeHatchStatus", () => {
     expect(capabilities.get("billing-adapters")?.nextSlice).toBe("EH-050");
     expect(capabilities.get("deploy-adapters")?.nextSlice).toBe("EH-070");
     expect(capabilities.get("backup-restore")?.nextSlice).toBe("EH-073");
-    expect(capabilities.get("provider-readiness")?.nextSlice).toBe("EH-032");
+    expect(capabilities.get("provider-readiness")?.nextSlice).toBe("EH-033");
     expect(capabilities.get("provider-readiness")?.evidence).toMatch(
       /EH-030|EH-031|Auth\/DB|EH-051|EH-070|EH-072/
     );
     expect(capabilities.get("generated-site-identity")?.state).toBe("preview_only");
-    expect(capabilities.get("generated-site-identity")?.nextSlice).toBe("EH-032");
+    expect(capabilities.get("generated-site-identity")?.nextSlice).toBe("EH-033");
+    expect(capabilities.get("entitlement-evaluator")?.state).toBe("preview_only");
+    expect(capabilities.get("entitlement-evaluator")?.nextSlice).toBe("EH-033");
   });
 
   it("uses exact repository-relative source paths that exist", () => {
@@ -183,7 +189,7 @@ describe("buildEscapeHatchStatus", () => {
     expect(capability?.evidence).toMatch(/MATRIX\.json/i);
     expect(capability?.evidence).toMatch(/secret\/PII scan/i);
     expect(capability?.evidence).not.toMatch(/not wired/i);
-    expect(capability?.nextSlice).toBe("EH-032");
+    expect(capability?.nextSlice).toBe("EH-033");
     expect(capability?.sourcePaths).toEqual(
       expect.arrayContaining([
         "packages/escape-hatch/fixtures/MATRIX.json",
@@ -207,7 +213,7 @@ describe("buildEscapeHatchStatus", () => {
     expect(migration?.state).toBe("preview_only");
     expect(migration?.evidence).toMatch(/idempotent|provenance|conflict|ledger|private-read/i);
     expect(migration?.evidence).not.toMatch(/no idempotent/i);
-    expect(migration?.nextSlice).toBe("EH-032");
+    expect(migration?.nextSlice).toBe("EH-033");
     expect(migration?.sourcePaths).toEqual(
       expect.arrayContaining([
         "packages/escape-hatch/src/import/importer.ts",
@@ -221,7 +227,7 @@ describe("buildEscapeHatchStatus", () => {
     expect(dump?.state).toBe("preview_only");
     expect(dump?.evidence).toMatch(/import-relay-dump|migrate-media|checksum|private-read/i);
     expect(dump?.evidence).not.toMatch(/no automated importer/i);
-    expect(dump?.nextSlice).toBe("EH-032");
+    expect(dump?.nextSlice).toBe("EH-033");
   });
 
   it("marks library-truth-parity as implemented preview capability", () => {
@@ -231,7 +237,7 @@ describe("buildEscapeHatchStatus", () => {
     expect(cap?.state).toBe("preview_only");
     expect(cap?.evidence).toMatch(/100% accounted-for|accounted-for/i);
     expect(cap?.evidence).toMatch(/productionSafe remains false|production_safe/i);
-    expect(cap?.nextSlice).toBe("EH-032");
+    expect(cap?.nextSlice).toBe("EH-033");
     expect(cap?.sourcePaths).toEqual(
       expect.arrayContaining([
         "packages/escape-hatch/src/library-truth/build-report.ts",
@@ -247,7 +253,7 @@ describe("buildEscapeHatchStatus", () => {
     );
     expect(cap?.state).toBe("preview_only");
     expect(cap?.evidence).toMatch(/typed env|Dockerfile|clean directory/i);
-    expect(cap?.nextSlice).toBe("EH-032");
+    expect(cap?.nextSlice).toBe("EH-033");
     expect(cap?.sourcePaths).toEqual(
       expect.arrayContaining([
         "packages/escape-hatch/template/lib/env.ts",

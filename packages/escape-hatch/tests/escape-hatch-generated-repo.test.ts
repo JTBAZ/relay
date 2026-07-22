@@ -62,14 +62,14 @@ function collectSourceFiles(root: string, out: string[] = []): string[] {
   return out;
 }
 
-describe("EH-020 status (preserved under EH-031)", () => {
+describe("EH-020 status (preserved under EH-032)", () => {
   it("keeps generated-repository capability with productionSafe false", () => {
     const status = buildEscapeHatchStatus();
-    expect(ESCAPE_HATCH_SLICE).toBe("EH-031");
-    expect(status.slice).toBe("EH-031");
+    expect(ESCAPE_HATCH_SLICE).toBe("EH-032");
+    expect(status.slice).toBe("EH-032");
     expect(status.productionSafe).toBe(false);
-    expect(status.nextSlice.id).toBe("EH-032");
-    expect(status.nextSlice.title).toMatch(/Entitlement/i);
+    expect(status.nextSlice.id).toBe("EH-033");
+    expect(status.nextSlice.title).toMatch(/Private media/i);
     const cap = status.capabilities.find((c) => c.id === "generated-repository");
     expect(cap?.state).toBe("preview_only");
     expect(cap?.evidence).toMatch(/clean directory|typed env|Dockerfile/i);
@@ -188,7 +188,7 @@ describe("EH-020 fillTemplate chassis materialization", () => {
       creator_id: string | null;
       site_id: string | null;
     };
-    expect(manifest.slice).toBe("EH-031");
+    expect(manifest.slice).toBe("EH-032");
     expect(manifest.productionSafe).toBe(false);
     expect(manifest.generated_at).toBeTruthy();
     expect(manifest.creator_id).toBeTruthy();

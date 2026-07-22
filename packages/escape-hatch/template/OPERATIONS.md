@@ -1,4 +1,4 @@
-# Operations (EH-031 identity paths)
+# Operations (EH-032 entitlement evaluation)
 
 ## Local preview
 
@@ -23,6 +23,30 @@ No `RELAY_*` or monorepo root `.env` is required. Neither Path A nor Path B must
 | anything else | Fail closed — admin denied; adapters degraded. |
 
 Soft personas never authorize admin or premium server-side when Path A or Path B is active.
+
+## Entitlement evaluation (EH-032)
+
+Server-only module: `lib/entitlements/`.
+
+- `evaluateAccess({ subject, resource, grants, provider })` → `{ allowed, reason, grants, evaluatedAt, stale }`
+- Resources: `post`, `media`, `tier_minimum`, `admin_surface`
+- Subjects: `anonymous`, `member`, `staff`, `soft_persona` (preview only)
+- Grant merge: active Patreon **or** billing **or** unexpired manual (union of tier ids). Staff override allows admin + premium metadata reads.
+- Soft persona grants apply **only** when provider is `none` / local_preview — never when supabase/portable is configured.
+- Fail closed: missing credentials with provider configured, unknown resource, revoked/expired/stale premium grants.
+
+### Freshness / staleness
+
+| Signal | Meaning |
+|--------|---------|
+| `stale_after` past | Grant is **stale**. Premium paths **hard-deny** by default (`failClosedOnStale: true`). |
+| `expires_at` past | Grant **expired** — deny. |
+| `revoked_at` set | Grant **revoked** — deny. |
+| `observed_at` older than 12h | Soft UI warning only (`shouldWarnFreshness`) — does not itself deny. |
+
+Default write offsets (when minting snapshots): Patreon 24h, billing 6h, bootstrap 7d, manual uses `expires_at` only.
+
+RLS helpers `eh_private.fresh_entitlement_tiers` / `entitled_for_access` (migration `0004_*`) complement the TypeScript evaluator — they do **not** replace it, and they do **not** authorize private media bytes (EH-033).
 
 ## Environment
 
@@ -57,8 +81,9 @@ SQL under `db/schema/` and `db/migrations/`:
 |-------|-------------------|----------------------------|
 | 1 | `0001_preview_chassis.sql` | `0001_preview_chassis.sql` |
 | 2 | `0002_identity_rls.sql` (`auth.users`) | `0003_portable_identity.sql` (no `auth.users`) |
+| 3 | `0004_entitlement_evaluator_supabase.sql` | `0004_entitlement_evaluator_portable.sql` |
 
-Do **not** mix `0002` and `0003` on the same database.
+Do **not** mix `0002` and `0003` on the same database. Do **not** apply the Path A `0004_*_supabase` file on Path B (it references `auth.uid()` / `auth.users`).
 
 ### Path B Compose Postgres
 
@@ -68,7 +93,7 @@ Loopback bind only (`127.0.0.1:5433`), dev password — do not expose the profil
 docker compose --profile db up -d
 ```
 
-Init applies `db/docker-init/` → chassis + portable identity. Example `DATABASE_URL`:
+Init applies `db/docker-init/` → chassis + portable identity + entitlement evaluator. Example `DATABASE_URL`:
 
 `postgresql://escape_hatch:escape_hatch_dev_only@127.0.0.1:5433/escape_hatch`
 
@@ -91,8 +116,9 @@ Adapter inventory: `escape-hatch.manifest.json` and `lib/adapters/`. Auth/DB rea
 ## Security honesty
 
 - Soft gate / demo personas are not entitlements and never authorize admin.
+- Entitlement evaluator is server-only — never trust client-passed tier ids or “I am entitled”.
 - Premium media may still be world-readable under `public/media` until EH-033 (including inside Docker images that copy `public/`).
 - Service role keys and session secrets must never appear in client bundles or committed files.
 - Path A RLS uses `auth.uid()`; Path B RLS uses `current_setting('eh.user_id')` set by the server after session validate.
-- Both paths fail-close: non-staff cannot SELECT premium post/media metadata until EH-032.
+- Both paths: entitled patrons may SELECT premium **metadata** when grants are fresh; private **bytes** remain EH-033.
 - Logout is **POST** `/auth/logout` only (HTTP verb hygiene). Portable login is **POST** `/auth/portable/login` only.

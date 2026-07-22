@@ -1,9 +1,9 @@
 {
   "$schema": "https://escape-hatch.local/schemas/escape-hatch.manifest/1.0.0.json",
   "contract_version": "escape-hatch.manifest/1.0.0",
-  "chassis_version": "0.4.0",
-  "schema_version": "eh-db/0003_portable_identity",
-  "slice": "EH-031",
+  "chassis_version": "0.5.0",
+  "schema_version": "eh-db/0004_entitlement_evaluator",
+  "slice": "EH-032",
   "productionSafe": false,
   "generated_at": null,
   "creator_id": null,
@@ -14,12 +14,13 @@
     "signed_media_delivery": false,
     "supabase_identity": true,
     "portable_identity": true,
+    "entitlement_evaluator": true,
     "stripe_billing": false,
     "native_admin": true
   },
   "adapters": {
     "auth": { "id": "supabase_or_portable_optional", "version": "0.2.0", "state": "preview_only" },
-    "database": { "id": "sql_migrations_path_a_or_b", "version": "0003_portable_identity", "state": "preview_only" },
+    "database": { "id": "sql_migrations_path_a_or_b", "version": "0004_entitlement_evaluator", "state": "preview_only" },
     "storage": { "id": "stub", "version": "0.0.0", "state": "stub_only" },
     "billing": { "id": "stub", "version": "0.0.0", "state": "stub_only" },
     "patreon": { "id": "stub", "version": "0.0.0", "state": "stub_only" },
@@ -66,8 +67,8 @@
     "No hard paywall (soft persona gate remains for local preview)",
     "Premium media may still be under public/media (prototype leakage until EH-033)",
     "Supabase and portable identity are opt-in via env; productionSafe remains false",
-    "No signed private media delivery (EH-033)",
-    "Path A uses 0001+0002; Path B uses 0001+0003 — do not mix on one database"
+    "Entitlement evaluator (EH-032) is present; signed private media delivery is EH-033",
+    "Path A uses 0001+0002+0004_supabase; Path B uses 0001+0003+0004_portable — do not mix on one database"
   ],
   "source_export_manifest_hash": null,
   "relay_optional_services": [],

@@ -199,7 +199,7 @@ export async function loadOwnEntitlementSnapshot(
     const { data, error } = await supabase
       .from("eh_entitlement_snapshots")
       .select(
-        "site_id, auth_user_id, tier_ids, source, reason, observed_at, stale_after"
+        "site_id, auth_user_id, tier_ids, source, reason, observed_at, stale_after, expires_at, revoked_at"
       )
       .eq("site_id", siteId)
       .eq("auth_user_id", authUserId)

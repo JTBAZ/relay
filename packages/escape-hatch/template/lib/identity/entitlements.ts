@@ -89,6 +89,13 @@ export function parseEntitlementSnapshot(
   const reason =
     typeof reasonRaw === "string" && reasonRaw.length > 0 ? reasonRaw : null;
 
+  const expiresRaw = row.expires_at ?? row.expiresAt;
+  const expiresAt =
+    typeof expiresRaw === "string" && expiresRaw.length > 0 ? expiresRaw : null;
+  const revokedRaw = row.revoked_at ?? row.revokedAt;
+  const revokedAt =
+    typeof revokedRaw === "string" && revokedRaw.length > 0 ? revokedRaw : null;
+
   const snapshot: EntitlementSnapshot = {
     siteId,
     authUserId,
@@ -96,10 +103,26 @@ export function parseEntitlementSnapshot(
     source: sourceRaw,
     reason,
     observedAt,
-    staleAfter
+    staleAfter,
+    expiresAt,
+    revokedAt
   };
 
-  const stale = isEntitlementStale(snapshot, Date.now());
+  const nowMs = Date.now();
+  const stale = isEntitlementStale(snapshot, nowMs);
+  const expired =
+    expiresAt != null &&
+    (!Number.isFinite(Date.parse(expiresAt)) || nowMs >= Date.parse(expiresAt));
+  const revoked = revokedAt != null;
+  if (revoked || expired) {
+    return {
+      ok: false,
+      reason: revoked
+        ? "Entitlement grant revoked."
+        : "Entitlement grant expired.",
+      tierIds: []
+    };
+  }
   return { ok: true, snapshot, stale };
 }
 

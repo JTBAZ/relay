@@ -151,7 +151,8 @@ export async function loadPortableEntitlementSnapshot(
     await client.setAppUserId(authUserId);
     const result = await client.query(
       `SELECT site_id, auth_user_id::text, tier_ids, source, reason,
-              observed_at::text, stale_after::text
+              observed_at::text, stale_after::text,
+              expires_at::text, revoked_at::text
        FROM eh_entitlement_snapshots
        WHERE site_id = $1 AND auth_user_id = $2::uuid
        LIMIT 1`,

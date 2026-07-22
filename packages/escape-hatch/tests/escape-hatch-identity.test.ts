@@ -60,14 +60,14 @@ function setRealLookingIdentityEnv(): void {
     "eh_ci_service_role_not_a_secret_bbbbbbbbbbbbbbbbbbbb";
 }
 
-describe("EH-030 status (preserved under EH-031)", () => {
-  it("keeps EH-030 supabase capability evidence under EH-031 with next EH-032", () => {
+describe("EH-030 status (preserved under EH-032)", () => {
+  it("keeps EH-030 supabase capability evidence under EH-032 with next EH-033", () => {
     const status = buildEscapeHatchStatus();
-    expect(ESCAPE_HATCH_SLICE).toBe("EH-031");
-    expect(status.slice).toBe("EH-031");
+    expect(ESCAPE_HATCH_SLICE).toBe("EH-032");
+    expect(status.slice).toBe("EH-032");
     expect(status.productionSafe).toBe(false);
-    expect(status.nextSlice.id).toBe("EH-032");
-    expect(status.nextSlice.title).toMatch(/Entitlement/i);
+    expect(status.nextSlice.id).toBe("EH-033");
+    expect(status.nextSlice.title).toMatch(/Private media/i);
     expect(status.blockers.some((b) => /EH-033/i.test(b))).toBe(true);
     expect(status.blockers.some((b) => /No hard patron identity/i.test(b))).toBe(
       false
@@ -79,7 +79,7 @@ describe("EH-030 status (preserved under EH-031)", () => {
     expect(identity?.state).toBe("preview_only");
     expect(identity?.evidence).toMatch(/RLS|Supabase|portable/i);
     expect(identity?.evidence).toMatch(/productionSafe remains false/i);
-    expect(identity?.nextSlice).toBe("EH-032");
+    expect(identity?.nextSlice).toBe("EH-033");
     expect(identity?.sourcePaths).toEqual(
       expect.arrayContaining([
         "packages/escape-hatch/template/db/migrations/0002_identity_rls.sql",
@@ -162,11 +162,11 @@ describe("EH-030 SQL migrations and RLS review", () => {
     expect(sql).toMatch(/CREATE POLICY eh_posts_staff_all/);
     expect(sql).toMatch(/CREATE POLICY eh_media_objects_staff_all/);
 
-    // Schema mirror + README honesty
+    // Schema mirror + README honesty (EH-032 entitled SELECT via 0004)
     expect(schema).toMatch(/access_level = 'public' AND published_at IS NOT NULL/);
     expect(schema).toMatch(/never blanket is_site_member on premium rows/i);
-    expect(readme).toMatch(/Fail-closed until EH-032|fail-closed until EH-032/i);
-    expect(readme).toMatch(/membership alone never grants blanket SELECT/i);
+    expect(readme).toMatch(/EH-032|entitled|fresh_entitlement/i);
+    expect(readme).toMatch(/membership alone never grants blanket SELECT|Stale \/ expired \/ revoked/i);
     expect(readme).toMatch(/published_at IS NOT NULL/);
   });
   it("documents bootstrap without live secrets", () => {
