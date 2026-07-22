@@ -142,6 +142,52 @@ describe("fill-template integration", () => {
     expect(generatedCss).toMatch(/box-shadow:\s*0 0 0 6px #111214;/);
     expect(generatedCss).not.toMatch(/outline:\s*(?:none|0)\s*;/);
   });
+
+  it("pins patched Next 15.5 Maintenance LTS, not EOL Next 14", () => {
+    const templatePkgPath = join(PACKAGE_ROOT, "template", "package.json");
+    const templatePkg = JSON.parse(readFileSync(templatePkgPath, "utf8")) as {
+      dependencies: Record<string, string>;
+      overrides?: Record<string, string>;
+    };
+    expect(templatePkg.dependencies.next).toBe("15.5.21");
+    expect(templatePkg.dependencies.next).not.toMatch(/^14\./);
+    expect(templatePkg.dependencies.react).toBe("18.3.1");
+    expect(templatePkg.dependencies["react-dom"]).toBe("18.3.1");
+    expect(templatePkg.dependencies.react).toBe(
+      templatePkg.dependencies["react-dom"]
+    );
+    expect(templatePkg.overrides?.postcss).toBe("8.5.10");
+    expect(templatePkg.overrides?.sharp).toBe("0.35.3");
+    expect(existsSync(join(PACKAGE_ROOT, "template", "package-lock.json"))).toBe(
+      true
+    );
+
+    const bundle = JSON.parse(
+      readFileSync(
+        join(PACKAGE_ROOT, "fixtures", "sample.bundle.json"),
+        "utf8"
+      )
+    );
+    const result = fillTemplate({
+      bundle,
+      mediaSourceDir: join(PACKAGE_ROOT, "fixtures", "media"),
+      slug: "test-next-lts-pins",
+      clean: true
+    });
+    const generatedPkg = JSON.parse(
+      readFileSync(join(result.outDir, "package.json"), "utf8")
+    ) as {
+      dependencies: Record<string, string>;
+      overrides?: Record<string, string>;
+    };
+    expect(generatedPkg.dependencies.next).toBe("15.5.21");
+    expect(generatedPkg.dependencies.next).not.toMatch(/^14\./);
+    expect(generatedPkg.dependencies.react).toBe("18.3.1");
+    expect(generatedPkg.dependencies["react-dom"]).toBe("18.3.1");
+    expect(generatedPkg.overrides?.postcss).toBe("8.5.10");
+    expect(generatedPkg.overrides?.sharp).toBe("0.35.3");
+    expect(existsSync(join(result.outDir, "package-lock.json"))).toBe(true);
+  });
 });
 
 describe("from-clone fill integration", () => {

@@ -1,11 +1,12 @@
 import { PostView } from "@/components/PostView";
 import { loadSite } from "@/lib/load-site";
 
-export default function PostPage({
+export default async function PostPage({
   params
 }: {
-  params: { slug: string };
+  params: Promise<{ slug: string }>;
 }) {
+  const { slug } = await params;
   const site = loadSite();
-  return <PostView site={site} slug={params.slug} />;
+  return <PostView site={site} slug={slug} />;
 }
