@@ -3,8 +3,8 @@
  * Server-only — do not import from client components.
  *
  * Complements Path A (Supabase) and Path B (portable) RLS; does not replace them.
- * Soft persona grants are local_preview only. productionSafe remains false until
- * EH-033 private media delivery.
+ * Soft persona grants are local_preview only. Private media bytes use EH-033
+ * delivery after evaluateAccess. productionSafe remains false.
  */
 
 export type {

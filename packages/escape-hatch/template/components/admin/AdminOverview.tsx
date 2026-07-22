@@ -40,7 +40,7 @@ export function AdminOverview({ model }: { model: AdminOverviewModel }) {
             : identity.mode === "invalid"
               ? " — unknown ESCAPE_HATCH_IDENTITY_PROVIDER. Use none, supabase, or portable."
               : identity.isStaff
-                ? " — admin reads and mutations require this staff membership. productionSafe remains false until EH-033."
+                ? " — admin reads and mutations require this staff membership. productionSafe remains false (EH-034+)."
                 : " — admin inventory and mutations are blocked until a staff membership session exists."}
         </p>
         <p className="small muted">
@@ -66,9 +66,9 @@ export function AdminOverview({ model }: { model: AdminOverviewModel }) {
                 : "unknown"}
           </strong>
           {allDegraded
-            ? " — non-identity adapters remain stub/degraded until EH-033/050/070."
+            ? " — billing/deploy adapters remain stub/degraded until EH-050/070."
             : anyOk
-              ? " — Auth/DB may report configured readiness; not a production-safe deploy claim."
+              ? " — Auth/DB/storage may report configured readiness; not a production-safe deploy claim."
               : null}
         </p>
       </section>
@@ -98,8 +98,8 @@ export function AdminOverview({ model }: { model: AdminOverviewModel }) {
       <section className="admin-section" aria-labelledby="admin-adapters-heading">
         <h2 id="admin-adapters-heading">Adapter health</h2>
         <p className="small muted">
-          Auth/DB report readiness only with real non-placeholder env. Still
-          preview until EH-033. productionSafe remains false.
+          Auth/DB/storage report readiness only with real non-placeholder env.
+          Overall kit remains preview — productionSafe remains false.
         </p>
         <ul className="admin-health-list">
           {model.adapters.map((row) => (

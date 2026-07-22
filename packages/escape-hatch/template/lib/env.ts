@@ -38,12 +38,21 @@ export type SiteServerEnv = {
   SUPABASE_ANON_KEY: string | undefined;
   /** Supabase service role — server-only; never expose to the browser. */
   SUPABASE_SERVICE_ROLE_KEY: string | undefined;
-  /** Cloudflare R2 / S3-compatible endpoint — optional until storage wiring. */
+  /**
+   * Media delivery mode (EH-033): public_legacy | private_r2 | local_private.
+   * Unset prefers private_r2 when R2 signing env is real, else local_private.
+   */
+  ESCAPE_HATCH_MEDIA_MODE: string | undefined;
+  /** Signed GET TTL seconds (clamped; default 60). */
+  ESCAPE_HATCH_MEDIA_SIGNED_URL_TTL_SEC: string | undefined;
+  /** Cloudflare R2 / S3-compatible endpoint — required for private_r2. */
   R2_ENDPOINT: string | undefined;
   R2_BUCKET: string | undefined;
   R2_ACCESS_KEY_ID: string | undefined;
   R2_SECRET_ACCESS_KEY: string | undefined;
   R2_PUBLIC_BASE_URL: string | undefined;
+  /** Optional R2/S3 region (default auto). */
+  R2_REGION: string | undefined;
   /** Stripe keys — optional placeholders for EH-050/051; not required for build. */
   STRIPE_SECRET_KEY: string | undefined;
   STRIPE_WEBHOOK_SECRET: string | undefined;
@@ -69,6 +78,16 @@ export const SITE_ENV_NAMES = {
     "DATABASE_URL",
     "ESCAPE_HATCH_SESSION_SECRET"
   ] as const,
+  optionalMedia: [
+    "ESCAPE_HATCH_MEDIA_MODE",
+    "ESCAPE_HATCH_MEDIA_SIGNED_URL_TTL_SEC",
+    "R2_ENDPOINT",
+    "R2_BUCKET",
+    "R2_ACCESS_KEY_ID",
+    "R2_SECRET_ACCESS_KEY",
+    "R2_PUBLIC_BASE_URL",
+    "R2_REGION"
+  ] as const,
   optionalFutureAdapters: [
     "ESCAPE_HATCH_IDENTITY_PROVIDER",
     "DATABASE_URL",
@@ -78,11 +97,14 @@ export const SITE_ENV_NAMES = {
     "SUPABASE_SERVICE_ROLE_KEY",
     "NEXT_PUBLIC_SUPABASE_URL",
     "NEXT_PUBLIC_SUPABASE_ANON_KEY",
+    "ESCAPE_HATCH_MEDIA_MODE",
+    "ESCAPE_HATCH_MEDIA_SIGNED_URL_TTL_SEC",
     "R2_ENDPOINT",
     "R2_BUCKET",
     "R2_ACCESS_KEY_ID",
     "R2_SECRET_ACCESS_KEY",
     "R2_PUBLIC_BASE_URL",
+    "R2_REGION",
     "STRIPE_SECRET_KEY",
     "STRIPE_WEBHOOK_SECRET",
     "NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY"
@@ -138,11 +160,16 @@ export function loadEnv(): SiteEnv {
     SUPABASE_URL: readOptional("SUPABASE_URL"),
     SUPABASE_ANON_KEY: readOptional("SUPABASE_ANON_KEY"),
     SUPABASE_SERVICE_ROLE_KEY: readOptional("SUPABASE_SERVICE_ROLE_KEY"),
+    ESCAPE_HATCH_MEDIA_MODE: readOptional("ESCAPE_HATCH_MEDIA_MODE"),
+    ESCAPE_HATCH_MEDIA_SIGNED_URL_TTL_SEC: readOptional(
+      "ESCAPE_HATCH_MEDIA_SIGNED_URL_TTL_SEC"
+    ),
     R2_ENDPOINT: readOptional("R2_ENDPOINT"),
     R2_BUCKET: readOptional("R2_BUCKET"),
     R2_ACCESS_KEY_ID: readOptional("R2_ACCESS_KEY_ID"),
     R2_SECRET_ACCESS_KEY: readOptional("R2_SECRET_ACCESS_KEY"),
     R2_PUBLIC_BASE_URL: readOptional("R2_PUBLIC_BASE_URL"),
+    R2_REGION: readOptional("R2_REGION"),
     STRIPE_SECRET_KEY: readOptional("STRIPE_SECRET_KEY"),
     STRIPE_WEBHOOK_SECRET: readOptional("STRIPE_WEBHOOK_SECRET"),
     NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: readOptional(
@@ -157,6 +184,12 @@ export function isSecretLikeEnvKey(key: keyof SiteEnv): boolean {
   if (name === "DATABASE_URL") return true;
   if (name === "ESCAPE_HATCH_SESSION_SECRET") return true;
   if (name === "ESCAPE_HATCH_IDENTITY_PROVIDER") return false;
+  if (name === "ESCAPE_HATCH_MEDIA_MODE") return false;
+  if (name === "ESCAPE_HATCH_MEDIA_SIGNED_URL_TTL_SEC") return false;
+  if (name === "R2_REGION" || name === "R2_ENDPOINT" || name === "R2_BUCKET") {
+    return false;
+  }
+  if (name === "R2_PUBLIC_BASE_URL") return false;
   if (name === "SUPABASE_URL" || name === "NEXT_PUBLIC_SUPABASE_URL") return false;
   if (name.startsWith("NEXT_PUBLIC_")) {
     return /KEY|TOKEN|SECRET/i.test(name);

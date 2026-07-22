@@ -30,10 +30,15 @@ export type DatabaseProvider = {
 
 export type StorageProvider = {
   readonly id: "storage";
-  readonly implementation: "stub" | "r2";
+  readonly implementation: "stub" | "r2" | "local_private";
   health(): Promise<AdapterHealth>;
-  /** EH-033 owns signed delivery — stub never returns a live URL. */
-  signGetObject(_key: string): Promise<{ url: null; reason: string }>;
+  /**
+   * Mint a short-lived signed GET URL for a private object key (EH-033).
+   * Stub / misconfigured private_r2 returns url: null (fail closed).
+   */
+  signGetObject(
+    key: string
+  ): Promise<{ url: string | null; expiresAt?: string; reason?: string }>;
 };
 
 export type BillingProvider = {

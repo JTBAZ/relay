@@ -1,4 +1,4 @@
-# Operations (EH-032 entitlement evaluation)
+# Operations (EH-033 private media delivery)
 
 ## Local preview
 
@@ -46,61 +46,55 @@ Server-only module: `lib/entitlements/`.
 
 Default write offsets (when minting snapshots): Patreon 24h, billing 6h, bootstrap 7d, manual uses `expires_at` only.
 
-RLS helpers `eh_private.fresh_entitlement_tiers` / `entitled_for_access` (migration `0004_*`) complement the TypeScript evaluator — they do **not** replace it, and they do **not** authorize private media bytes (EH-033).
+RLS helpers `eh_private.fresh_entitlement_tiers` / `entitled_for_access` (migration `0004_*`) complement the TypeScript evaluator — they do **not** replace it. Private **bytes** are authorized only via EH-033 `/api/media`.
 
-## Environment
+## Private media delivery (EH-033)
 
-Typed contract: `lib/env.ts`. Names-only example: `.env.example`.
+**Model:** Private R2 (or S3-compatible) objects + short-lived signed GET URLs after `evaluateAccess`, with a `local_private` authenticated proxy for kits without R2.
 
-### Path A — Supabase (optional)
+| Mode (`ESCAPE_HATCH_MEDIA_MODE`) | Behavior |
+|----------------------------------|----------|
+| unset | `private_r2` when R2 signing env is real; else `local_private` |
+| `local_private` | Stream from `data/private-media` after entitlement check (CI/local default) |
+| `private_r2` | Mint short-lived signed GET; fail closed if credentials missing/placeholder |
+| `public_legacy` | Explicit residual leakage mode — do **not** use in production |
 
-| Names | Role |
-|-------|------|
-| `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Browser + user-scoped server client |
-| `SUPABASE_URL`, `SUPABASE_ANON_KEY` | Server aliases when public vars unset |
-| `SUPABASE_SERVICE_ROLE_KEY` | **Server only** — bootstrap/recovery |
+Visitor route: `GET /api/media/{mediaId}` → auth + soft-persona cookie (provider `none` only; persona **id**; tiers from bundle) → `evaluateAccess` → redirect/stream; deny otherwise.
 
-### Path B — portable (optional)
+### R2 / signing env (names only)
 
-| Names | Role |
-|-------|------|
-| `ESCAPE_HATCH_IDENTITY_PROVIDER=portable` | Required (Path B is never auto-selected) |
-| `DATABASE_URL` | Postgres connection string |
-| `ESCAPE_HATCH_SESSION_SECRET` | Server pepper for hashing opaque session tokens |
+- `R2_ENDPOINT`, `R2_BUCKET`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, optional `R2_PUBLIC_BASE_URL`, `R2_REGION`
+- `ESCAPE_HATCH_MEDIA_SIGNED_URL_TTL_SEC` (default 60, max 300)
+- Bucket: deny public ACLs on premium objects; never commit secrets or long-lived signed URLs
+- Rotate access keys in the host secret store; signed URLs are never embedded in client bundles
+- Redirect Location hosts are allowlisted (configured R2 endpoint / public base / mock fixture host) — open redirects rejected
+
+### Generator layout
+
+Default fill stages **premium** bytes under `data/private-media` (not `public/media`). Public/free assets may remain under `public/media`. Gallery/post UI loads premium via `/api/media/{id}` only when unlocked.
+
+## Path A — Supabase bootstrap
+
+See `scripts/bootstrap-identity.md`. Apply `db/migrations/0001_preview_chassis.sql`, then `0002_identity_rls.sql`, then `0004_entitlement_evaluator_supabase.sql`.
+
+## Path B — portable Postgres bootstrap
+
+See `scripts/bootstrap-identity.md` and `db/README.md`. Compose profile `db` binds **127.0.0.1:5433** only. Apply `0001` + `0003` + `0004_entitlement_evaluator_portable` (or docker-init scripts). Do **not** apply Path A `0002` / `0004_*_supabase` on Path B.
+
+### Session cookies (Path B)
+
+| Name | Notes |
+|------|-------|
+| `ESCAPE_HATCH_SESSION_SECRET` | Server HMAC/pepper — rotate invalidates sessions |
 | `ESCAPE_HATCH_COOKIE_SECURE` | Optional `1` to force Secure cookies |
 
 Session cookies: httpOnly, SameSite=Lax, path `/`, Secure when `NODE_ENV=production` or `ESCAPE_HATCH_COOKIE_SECURE=1`. Never store the raw token in localStorage.
 
-Bootstrap/recovery: `scripts/bootstrap-identity.md` and `db/README.md`.
-
-## Database
-
-SQL under `db/schema/` and `db/migrations/`:
-
-| Order | Path A (Supabase) | Path B (portable / Docker) |
-|-------|-------------------|----------------------------|
-| 1 | `0001_preview_chassis.sql` | `0001_preview_chassis.sql` |
-| 2 | `0002_identity_rls.sql` (`auth.users`) | `0003_portable_identity.sql` (no `auth.users`) |
-| 3 | `0004_entitlement_evaluator_supabase.sql` | `0004_entitlement_evaluator_portable.sql` |
-
-Do **not** mix `0002` and `0003` on the same database. Do **not** apply the Path A `0004_*_supabase` file on Path B (it references `auth.uid()` / `auth.users`).
-
-### Path B Compose Postgres
-
-Loopback bind only (`127.0.0.1:5433`), dev password — do not expose the profile DB:
-
-```bash
-docker compose --profile db up -d
-```
-
-Init applies `db/docker-init/` → chassis + portable identity + entitlement evaluator. Example `DATABASE_URL`:
-
-`postgresql://escape_hatch:escape_hatch_dev_only@127.0.0.1:5433/escape_hatch`
-
-### Key / password rotation (names only)
+### Key / password / media rotation (names only)
 
 - **Path A:** rotate anon + service_role in Supabase dashboard; update host secrets; revoke sessions.
 - **Path B:** rotate `ESCAPE_HATCH_SESSION_SECRET` (invalidates sessions — revoke `eh_sessions`); re-hash operator passwords with scrypt; rotate `DATABASE_URL` credentials in the host secret store. Never commit secrets.
+- **Media (R2):** rotate `R2_ACCESS_KEY_ID` / `R2_SECRET_ACCESS_KEY`; keep signed TTL short; revoke old keys after cutover.
 
 ## Deploy manifests
 
@@ -109,16 +103,17 @@ Init applies `db/docker-init/` → chassis + portable identity + entitlement eva
 | Vercel | `vercel.json` | Next App Router defaults. Golden-path verification is EH-070. |
 | Docker | `Dockerfile`, `.dockerignore` | Multi-stage standalone build. Golden-path verification is EH-071. |
 
-Adapter inventory: `escape-hatch.manifest.json` and `lib/adapters/`. Auth/DB readiness is env-honest; storage/billing/deploy remain degraded/stub until EH-033/050/070.
+Adapter inventory: `escape-hatch.manifest.json` and `lib/adapters/`. Auth/DB/storage readiness is env-honest; billing/deploy remain stub until EH-050/070.
 
-**Not production-safe:** `productionSafe` is false. Docker images that `COPY public/` ship `public/media` when present — prototype leakage until EH-033 private delivery.
+**Not production-safe:** `productionSafe` is false. Private delivery closes the default premium `public/media` path, but Milestone 3 UX (EH-034), security/browser gate, billing, and verified deploy remain open. `public_legacy` and residual public copies are explicitly non-production.
 
 ## Security honesty
 
 - Soft gate / demo personas are not entitlements and never authorize admin.
 - Entitlement evaluator is server-only — never trust client-passed tier ids or “I am entitled”.
-- Premium media may still be world-readable under `public/media` until EH-033 (including inside Docker images that copy `public/`).
-- Service role keys and session secrets must never appear in client bundles or committed files.
+- Default private layout does **not** stage premium originals under `public/media`; visitor premium bytes go through `/api/media` after `evaluateAccess`.
+- `ESCAPE_HATCH_MEDIA_MODE=public_legacy` reintroduces world-readable premium copies — residual only; keep `productionSafe` false.
+- Service role keys, R2 secrets, and session secrets must never appear in client bundles or committed files.
 - Path A RLS uses `auth.uid()`; Path B RLS uses `current_setting('eh.user_id')` set by the server after session validate.
-- Both paths: entitled patrons may SELECT premium **metadata** when grants are fresh; private **bytes** remain EH-033.
+- Both paths: entitled patrons may SELECT premium **metadata** when grants are fresh; premium **bytes** require EH-033 delivery.
 - Logout is **POST** `/auth/logout` only (HTTP verb hygiene). Portable login is **POST** `/auth/portable/login` only.

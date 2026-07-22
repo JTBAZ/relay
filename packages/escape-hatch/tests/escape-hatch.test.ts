@@ -126,8 +126,15 @@ describe("fill-template integration", () => {
     expect(
       existsSync(join(result.outDir, "public", "media", "m_public.svg"))
     ).toBe(true);
+    // Premium originals are private by default (EH-033) — not world-readable under public/media.
     expect(
       existsSync(join(result.outDir, "public", "media", "m_gold.svg"))
+    ).toBe(false);
+    expect(
+      existsSync(join(result.outDir, "data", "private-media", "m_gold.svg"))
+    ).toBe(true);
+    expect(
+      existsSync(join(result.outDir, "data", "private-media", "m_members.svg"))
     ).toBe(true);
     const site = JSON.parse(readFileSync(result.siteJsonPath, "utf8"));
     expect(site.contract_version).toBe(SITE_BUNDLE_CONTRACT_VERSION);

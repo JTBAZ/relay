@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, type ReactNode } from "react";
 import type { DemoPersona, SiteBundle } from "@/lib/access";
 import { applyThemeTokens } from "@/lib/theme";
+import { SOFT_PERSONA_COOKIE } from "@/lib/media/types";
 
 type Props = {
   site: SiteBundle;
@@ -14,6 +15,13 @@ type Props = {
   /** Compact header for post detail */
   compact?: boolean;
 };
+
+/** Soft persona id cookie — tiers resolved server-side from the bundle (EH-033). */
+function writeSoftPersonaCookie(personaId: string): void {
+  if (typeof document === "undefined") return;
+  const safe = encodeURIComponent(personaId);
+  document.cookie = `${SOFT_PERSONA_COOKIE}=${safe}; Path=/; SameSite=Lax`;
+}
 
 export function PatronChrome({
   site,
@@ -28,6 +36,10 @@ export function PatronChrome({
   useEffect(() => {
     applyThemeTokens(theme);
   }, [theme]);
+
+  useEffect(() => {
+    writeSoftPersonaCookie(personaId);
+  }, [personaId]);
 
   const displayName = theme.hero.title || site.creator.display_name;
   const monogram = displayName.trim().charAt(0).toUpperCase() || "·";

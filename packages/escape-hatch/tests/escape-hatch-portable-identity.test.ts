@@ -69,15 +69,15 @@ function setSupabaseEnv(): void {
 }
 
 describe("EH-031 status (preserved under EH-032)", () => {
-  it("keeps portable identity evidence under EH-032 with next EH-033", () => {
+  it("keeps portable identity evidence under EH-032 with next EH-034", () => {
     const status = buildEscapeHatchStatus();
-    expect(ESCAPE_HATCH_SLICE).toBe("EH-032");
-    expect(status.slice).toBe("EH-032");
+    expect(ESCAPE_HATCH_SLICE).toBe("EH-033");
+    expect(status.slice).toBe("EH-033");
     expect(status.productionSafe).toBe(false);
-    expect(status.nextSlice.id).toBe("EH-033");
-    expect(status.nextSlice.title).toMatch(/Private media/i);
+    expect(status.nextSlice.id).toBe("EH-034");
+    expect(status.nextSlice.title).toMatch(/Account|paywall/i);
     expect(status.blockers.some((b) => /EH-031/i.test(b))).toBe(false);
-    expect(status.blockers.some((b) => /EH-033/i.test(b))).toBe(true);
+    expect(status.blockers.some((b) => /EH-034|Milestone 3|paywall UX/i.test(b))).toBe(true);
 
     const identity = status.capabilities.find(
       (c) => c.id === "generated-site-identity"
@@ -85,7 +85,7 @@ describe("EH-031 status (preserved under EH-032)", () => {
     expect(identity?.state).toBe("preview_only");
     expect(identity?.evidence).toMatch(/portable|Path B/i);
     expect(identity?.evidence).toMatch(/productionSafe remains false/i);
-    expect(identity?.nextSlice).toBe("EH-033");
+    expect(identity?.nextSlice).toBe("EH-034");
     expect(identity?.sourcePaths).toEqual(
       expect.arrayContaining([
         "packages/escape-hatch/template/db/migrations/0003_portable_identity.sql",
@@ -254,10 +254,10 @@ describe("EH-031 portable adapter health", () => {
     expect(auth.ok).toBe(true);
     expect(db.ok).toBe(true);
     if (auth.ok) {
-      expect(auth.detail).toMatch(/EH-033|preview|not production-safe|Path B/i);
+      expect(auth.detail).toMatch(/preview|productionSafe|Milestone|Path B/i);
     }
     if (db.ok) {
-      expect(db.detail).toMatch(/0003|Path B|EH-033|preview/i);
+      expect(db.detail).toMatch(/0003|Path B|preview|productionSafe|Milestone/i);
     }
   });
 

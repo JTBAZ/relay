@@ -14,6 +14,7 @@ import {
   applyPostOverrides,
   loadPostOverrides
 } from "@/lib/site-session";
+import { resolveVisitorMediaSrc } from "@/lib/media/visitor-src";
 
 type ServerAccessSummary = {
   allowed: boolean;
@@ -146,21 +147,31 @@ export function PostView({ site, slug, serverAccess }: Props) {
         </header>
 
         <div className="patron-post-media">
-          {post.media.map((m, index) => (
+          {post.media.map((m, index) => {
+            const src = resolveVisitorMediaSrc({
+              mediaId: m.media_id,
+              contentPath: m.content_path,
+              accessLevel: post.access.level
+            });
+            return (
             <div
               key={m.media_id}
               className={`media-wrap patron-media-frame ${unlocked ? "" : `locked ${style}`}`.trim()}
             >
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={m.content_path}
-                alt=""
-                width={1200}
-                height={900}
-                loading={index === 0 ? "eager" : "lazy"}
-                decoding="async"
-                fetchPriority={index === 0 ? "high" : undefined}
-              />
+              {unlocked ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={src}
+                  alt=""
+                  width={1200}
+                  height={900}
+                  loading={index === 0 ? "eager" : "lazy"}
+                  decoding="async"
+                  fetchPriority={index === 0 ? "high" : undefined}
+                />
+              ) : (
+                <div className="patron-media-empty" aria-hidden="true" />
+              )}
               {!unlocked ? (
                 <PaywallTeaser
                   style={style}
@@ -169,7 +180,8 @@ export function PostView({ site, slug, serverAccess }: Props) {
                 />
               ) : null}
             </div>
-          ))}
+            );
+          })}
         </div>
       </article>
     </PatronChrome>

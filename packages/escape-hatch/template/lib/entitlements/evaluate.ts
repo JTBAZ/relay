@@ -244,7 +244,7 @@ export function evaluateAccess(input: EvaluateAccessInput): AccessEvaluation {
     });
   }
 
-  // Public resources: always allow (bytes still may leak via public/media until EH-033).
+  // Public resources: always allow (bytes still gated by EH-033 delivery mode).
   if (gate.level === "public") {
     return result({
       allowed: true,

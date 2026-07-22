@@ -186,5 +186,5 @@ After validating a session, the server sets `eh.user_id` (`SET LOCAL` / `set_con
 ## Honesty (both paths)
 
 - Soft demo personas on `/preview` are **not** entitlements and **never** authorize admin.
-- `productionSafe` remains **false** until EH-033 private media and broader gates land.
+- `productionSafe` remains **false** until Milestone 3 UX/security gate (EH-034+), billing, and verified deploy land.
 - Auth/DB adapter health may report configured readiness when env is real and non-placeholder; that is **not** a production-safe deploy claim.

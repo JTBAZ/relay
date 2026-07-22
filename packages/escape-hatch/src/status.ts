@@ -1,11 +1,11 @@
 /**
- * Deterministic Escape Hatch capability inventory (through EH-032).
+ * Deterministic Escape Hatch capability inventory (through EH-033).
  * No timestamps, env reads, network, or live data — informational only.
  */
 
 export const ESCAPE_HATCH_STATUS_SCHEMA_VERSION = "escape-hatch-status/1.0.0";
 
-export const ESCAPE_HATCH_SLICE = "EH-032";
+export const ESCAPE_HATCH_SLICE = "EH-033";
 
 export type CapabilityState =
   | "production_safe"
@@ -36,7 +36,7 @@ export type EscapeHatchStatus = {
   capabilities: EscapeHatchCapability[];
   blockers: string[];
   nextSlice: {
-    id: "EH-033";
+    id: "EH-034";
     title: string;
     focus: string[];
   };
@@ -59,14 +59,14 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "packages/escape-hatch/src/library-truth/kit-io.ts"
     ],
     risk: "high",
-    nextSlice: "EH-033"
+    nextSlice: "EH-034"
   },
   {
     id: "generated-repository",
     title: "Generated repository chassis",
     state: "preview_only",
     evidence:
-      "EH-020 chassis plus EH-030/031/032: package.json + Next App Router, typed lib/env.ts + .env.example (Supabase + portable provider names), db/schema + db/migrations SQL including Path A RLS (0002), Path B portable identity (0003), and entitlement evaluator migrations (0004_*) (no live DB required for next build), lib/adapters with optional Supabase and portable Auth/DB implementations, lib/entitlements evaluator, escape-hatch.manifest.json, vercel.json, Dockerfile/.dockerignore, optional loopback-only docker-compose Postgres profile (127.0.0.1:5433). Install/build from a clean directory without RELAY_* / root .env. productionSafe remains false — not a production-safe deploy; public/media in Docker images is prototype leakage until EH-033.",
+      "EH-020 chassis plus EH-030/031/032: package.json + Next App Router, typed lib/env.ts + .env.example (Supabase + portable provider names), db/schema + db/migrations SQL including Path A RLS (0002), Path B portable identity (0003), and entitlement evaluator migrations (0004_*) (no live DB required for next build), lib/adapters with optional Supabase and portable Auth/DB implementations, lib/entitlements evaluator, escape-hatch.manifest.json, vercel.json, Dockerfile/.dockerignore, optional loopback-only docker-compose Postgres profile (127.0.0.1:5433). Install/build from a clean directory without RELAY_* / root .env. productionSafe remains false — not a production-safe deploy; prefer private media layout so premium bytes are not shipped under public/media.",
     sourcePaths: [
       "packages/escape-hatch/template/package.json",
       "packages/escape-hatch/template/lib/env.ts",
@@ -84,7 +84,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "packages/escape-hatch/tests/escape-hatch-generated-repo.test.ts"
     ],
     risk: "high",
-    nextSlice: "EH-033"
+    nextSlice: "EH-034"
   },
   {
     id: "premium-patron-theme",
@@ -129,17 +129,18 @@ const CAPABILITIES: EscapeHatchCapability[] = [
   },
   {
     id: "public-media-copy",
-    title: "All generated media copied to public",
+    title: "Generated media staging layout",
     state: "preview_only",
     evidence:
-      "fill-template still copies every bundle media file into public/media, including member_only and tier_gated assets; direct HTTP GET to locked paths returns 200 with public bytes (known prototype security failure). EH-012 migrate-media records private object keys under data/ and never treats public/media as private-read success. Admin media inventory (EH-022) surfaces the same honesty.",
+      "EH-033 default fill stages premium (member_only/tier_gated) bytes under data/private-media and public/free assets under public/media. Visitor premium delivery uses /api/media/{id} after evaluateAccess. Explicit mediaLayout=public_legacy still copies premium into public/media (residual leakage; productionSafe false). EH-012 migrate-media never treats public/media as private-read success.",
     sourcePaths: [
       "packages/escape-hatch/src/fill-template.ts",
       "packages/escape-hatch/src/migrate/engine.ts",
-      "packages/escape-hatch/src/migrate/validate.ts"
+      "packages/escape-hatch/src/migrate/validate.ts",
+      "packages/escape-hatch/template/lib/media/delivery.ts"
     ],
     risk: "critical",
-    nextSlice: "EH-033"
+    nextSlice: "EH-034"
   },
   {
     id: "client-readable-bundle",
@@ -156,7 +157,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "packages/escape-hatch/src/library-truth/kit-io.ts"
     ],
     risk: "high",
-    nextSlice: "EH-033"
+    nextSlice: "EH-034"
   },
   {
     id: "duplicate-contracts",
@@ -204,7 +205,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "tests/fixtures/patreon/cookie-list-with-media.json"
     ],
     risk: "medium",
-    nextSlice: "EH-033"
+    nextSlice: "EH-034"
   },
   {
     id: "relay-dump-fixtures",
@@ -223,7 +224,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "packages/escape-hatch/tests/escape-hatch-library-truth.test.ts"
     ],
     risk: "medium",
-    nextSlice: "EH-033"
+    nextSlice: "EH-034"
   },
   {
     id: "relay-canonical-reuse",
@@ -246,7 +247,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "src/storage/media-delivery-policy.ts"
     ],
     risk: "informational",
-    nextSlice: "EH-033"
+    nextSlice: "EH-034"
   },
   {
     id: "simplified-access-semantics",
@@ -263,7 +264,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "src/clone/tier-rules.ts"
     ],
     risk: "high",
-    nextSlice: "EH-033"
+    nextSlice: "EH-034"
   },
   {
     id: "generated-site-identity",
@@ -301,14 +302,14 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "packages/escape-hatch/tests/escape-hatch-entitlements.test.ts"
     ],
     risk: "critical",
-    nextSlice: "EH-033"
+    nextSlice: "EH-034"
   },
   {
     id: "entitlement-evaluator",
     title: "Entitlement evaluation and grant merge",
     state: "preview_only",
     evidence:
-      "EH-032 ships server-only lib/entitlements (evaluateAccess, grant merge, freshness helpers) plus Path A/B 0004 SQL (fresh_entitlement_tiers, entitled_for_access, grant audit, expires_at/revoked_at). Merges Patreon OR billing OR manual grants; staff override; soft persona only in local_preview. Fail-closed on stale/expired/revoked premium grants. Wired into post page server evaluation. Evaluator present but private media bytes remain world-readable under public/media until EH-033. productionSafe remains false.",
+      "EH-032 ships server-only lib/entitlements (evaluateAccess, grant merge, freshness helpers) plus Path A/B 0004 SQL (fresh_entitlement_tiers, entitled_for_access, grant audit, expires_at/revoked_at). Merges Patreon OR billing OR manual grants; staff override; soft persona only in local_preview. Fail-closed on stale/expired/revoked premium grants. Wired into post page and EH-033 media delivery. productionSafe remains false.",
     sourcePaths: [
       "packages/escape-hatch/template/lib/entitlements/index.ts",
       "packages/escape-hatch/template/lib/entitlements/evaluate.ts",
@@ -322,24 +323,24 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "packages/escape-hatch/tests/escape-hatch-entitlements.test.ts"
     ],
     risk: "critical",
-    nextSlice: "EH-033"
+    nextSlice: "EH-034"
   },
   {
     id: "private-media-delivery",
     title: "Private media delivery and signed URLs",
-    state: "not_implemented",
+    state: "preview_only",
     evidence:
-      "EH-012 migrates objects into opaque private keys with private-read checks that require authenticated success and anonymous denial (memory adapter fully proves; R2 requires publicBaseUrl + allowPublicProbe and otherwise fails closed). EH-032 entitlement evaluator can decide access but the generated app still has no visitor signed-URL gateway; StorageProvider.signGetObject stub returns null. Relay media-delivery-policy is not integrated into the kit. public/media coexistence remains prototype leakage.",
+      "EH-033 ships template/lib/media (mode resolve, object keys, mock/R2 signer, redirect host allowlist) and GET /api/media/{mediaId}: evaluateAccess → local_private stream or short-lived signed R2 redirect. Soft persona cookie (id only) honored only when provider is none. Fail closed when private_r2 lacks credentials. Default fill avoids staging premium under public/media. productionSafe remains false — Milestone 3 UX/security gate, public_legacy residual, billing/deploy open.",
     sourcePaths: [
-      "packages/escape-hatch/src/migrate/engine.ts",
-      "packages/escape-hatch/src/migrate/storage-port.ts",
+      "packages/escape-hatch/template/lib/media/delivery.ts",
+      "packages/escape-hatch/template/lib/media/sign.ts",
+      "packages/escape-hatch/template/app/api/media/[mediaId]/route.ts",
       "packages/escape-hatch/template/lib/adapters/index.ts",
-      "packages/escape-hatch/template/lib/entitlements/evaluate.ts",
-      "src/storage/media-delivery-policy.ts",
-      "src/storage/relay-upload-r2.ts"
+      "packages/escape-hatch/src/fill-template.ts",
+      "packages/escape-hatch/tests/escape-hatch-private-media.test.ts"
     ],
     risk: "critical",
-    nextSlice: "EH-033"
+    nextSlice: "EH-034"
   },
   {
     id: "billing-adapters",
@@ -392,7 +393,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "packages/escape-hatch/tests/escape-hatch-admin.test.ts"
     ],
     risk: "high",
-    nextSlice: "EH-033"
+    nextSlice: "EH-034"
   },
   {
     id: "migration-import",
@@ -411,7 +412,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "packages/escape-hatch/tests/escape-hatch-migrate.test.ts"
     ],
     risk: "high",
-    nextSlice: "EH-033"
+    nextSlice: "EH-034"
   },
   {
     id: "library-truth-parity",
@@ -434,7 +435,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "packages/escape-hatch/tests/escape-hatch-library-truth.test.ts"
     ],
     risk: "high",
-    nextSlice: "EH-033"
+    nextSlice: "EH-034"
   },
   {
     id: "backup-restore",
@@ -460,37 +461,40 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "src/deploy/deploy-adapter.ts"
     ],
     risk: "high",
-    nextSlice: "EH-033"
+    nextSlice: "EH-034"
   }
 ];
 
 const PROTOTYPE_WARNINGS: string[] = [
   "productionSafe is false — this deliverable is prototype/preview-only.",
-  "EH-032 entitlement evaluator is preview_only — grant merge and freshness do not make private media production-safe; EH-033 public media leakage remains.",
-  "EH-030/031 identity paths are preview_only — configured Auth/DB readiness is not a production-safe deploy claim; EH-033 public media leakage remains.",
+  "EH-033 private media delivery is preview_only — default private path closes premium public/media staging, but Milestone 3 UX/security gate, billing, and verified deploy remain open.",
+  "ESCAPE_HATCH_MEDIA_MODE=public_legacy reintroduces world-readable premium copies under public/media — residual leakage only; never production.",
+  "EH-032 entitlement evaluator is preview_only — grant merge authorizes metadata and media delivery decisions but does not alone make the kit production-safe.",
+  "EH-030/031 identity paths are preview_only — configured Auth/DB readiness is not a production-safe deploy claim.",
   "EH-022 native admin: when identity is unset, local-operator gating is not authentication; when Path A/B is active, staff session is required for admin reads and mutations — soft personas never authorize admin.",
   "EH-021 premium patron theme is soft-gate / preview-only; soft paywall UI is not production security.",
   "EH-020 generated repository chassis installs/builds without Relay credentials but is not a production-safe deploy.",
-  "Premium (member_only and tier_gated) media bytes are still copied to public/media by fillTemplate and are directly fetchable without authentication.",
-  "Direct HTTP GET to a locked premium media URL is expected to return HTTP 200 with public bytes; this is a known prototype security failure, not a passing paywall.",
+  "Default fill stages premium under data/private-media; visitor premium bytes require /api/media after evaluateAccess (anonymous denied).",
   "EH-012 private object migration ledger entries are not visitor delivery; public/media is never accepted as private-read verification.",
-  "EH-013 library-truth continue gate is a soft audit gate; it does not enable production-safe private media.",
+  "EH-013 library-truth continue gate is a soft audit gate; it does not enable production-safe launch.",
   "EH-013 library-truth mutations require header x-escape-hatch-local: 1 and localhost/127.0.0.1 only; this is local-prototype operator gating only, not authentication — no remote env override.",
   "EH-013 kit Library truth always rebuilds parity from data/ artifacts on load and before mutations; a tampered library-parity-report.json alone cannot greenwash can_continue or library_truth_complete.",
   "R2 without an explicit anonymous probe (publicBaseUrl + allowPublicProbe) cannot claim private_read_verified — authenticated GetObject alone is insufficient.",
-  "Client demo persona state is non-authoritative; switching persona only changes UI gating when identity is unset — never server entitlements when Path A/B is configured.",
+  "Client demo persona state is non-authoritative; soft persona cookie carries persona id only — tiers resolve server-side from the bundle when provider is none.",
   "Package preview access helpers align with canonical tier semantics; server entitlement evaluation uses fail-closed snapshots and grant merge (EH-032).",
-  "Service role keys and portable session secrets must never be committed or shipped to the browser; RLS fails closed for patrons.",
-  "Vercel/Docker manifests are present; shipping public/media remains prototype leakage until EH-033; verified golden-path deploy remains EH-070/071.",
+  "Service role keys, R2 secrets, and portable session secrets must never be committed or shipped to the browser; RLS fails closed for patrons.",
+  "Vercel/Docker manifests are present; verified golden-path deploy remains EH-070/071.",
   "Relay Part 2 billing adapter remains a synthetic stub and must not be treated as production or provider proof.",
   "Passing package tests or a successful local preview does not make any soft-gated capability production-safe."
 ];
 
 const BLOCKERS: string[] = [
-  "Premium media remains world-readable in public/ for soft preview; server-enforced private visitor delivery belongs to EH-033.",
+  "Account/paywall UX (login/link/locked states and access-source clarity) belongs to EH-034.",
   "Billing is stub-only; creator-owned Stripe/eligible adapters belong to EH-050/051.",
   "Verified Vercel/Docker production deploy rehearsals remain open (EH-070/071).",
-  "Mature/legal-adult enforcement beyond accounted exclusions remains open."
+  "Milestone 3 security review + browser personas gate remains open before productionSafe can flip.",
+  "Mature/legal-adult enforcement beyond accounted exclusions remains open.",
+  "public_legacy media mode remains available as an explicit residual leakage path — keep productionSafe false while it exists."
 ];
 
 export function buildEscapeHatchStatus(): EscapeHatchStatus {
@@ -500,7 +504,7 @@ export function buildEscapeHatchStatus(): EscapeHatchStatus {
     deliverable: "prototype_preview_only",
     productionSafe: false,
     summary:
-      "Escape Hatch through EH-032 delivers a standalone generated Next.js chassis with optional Path A/B identity, a server-only entitlement evaluator (grant merge + freshness), premium patron theme, native admin shell, Library truth, and soft persona local-preview; public/media prototype leakage remains; productionSafe is false.",
+      "Escape Hatch through EH-033 delivers Path A/B identity, server entitlement evaluation, and private media delivery (local_private proxy or short-lived R2 signed URLs after evaluateAccess) with default fill avoiding premium public/media staging; productionSafe remains false pending EH-034 UX, security/browser gate, billing, and verified deploy.",
     prototypeWarnings: [...PROTOTYPE_WARNINGS],
     capabilities: CAPABILITIES.map((c) => ({
       ...c,
@@ -508,12 +512,12 @@ export function buildEscapeHatchStatus(): EscapeHatchStatus {
     })),
     blockers: [...BLOCKERS],
     nextSlice: {
-      id: "EH-033",
-      title: "Private media delivery",
+      id: "EH-034",
+      title: "Account/paywall UX",
       focus: [
-        "Server-enforced access and short-lived R2 delivery",
-        "Remove public/media world-readability for premium bytes",
-        "Cache/security tests for signed private media"
+        "Login/link/account/locked states and access-source clarity",
+        "Browser personas against private media + entitlements",
+        "Milestone 3 security review gate"
       ]
     }
   };

@@ -256,6 +256,12 @@ export type FillOptions = {
   bundle: unknown;
   /** Absolute or package-relative path to a media source directory (files named by media_id + ext). */
   mediaSourceDir?: string;
+  /**
+   * Media layout (EH-033). Default `private` — premium bytes go to
+   * data/private-media (not world-readable public/media).
+   * `public_legacy` copies all media to public/media (explicit residual leakage).
+   */
+  mediaLayout?: "private" | "public_legacy";
   /** Optional theme override (wizard). */
   themeOverride?: Partial<EscapeHatchTheme>;
   /** Output slug; defaults to creator handle. */
@@ -302,6 +308,17 @@ export const GENERATED_CHASSIS_RELATIVE_PATHS = [
   "lib/entitlements/evaluate.ts",
   "lib/entitlements/server.ts",
   "lib/entitlements/index.ts",
+  "lib/media/types.ts",
+  "lib/media/keys.ts",
+  "lib/media/visitor-src.ts",
+  "lib/media/config.ts",
+  "lib/media/sign.ts",
+  "lib/media/redirect-guard.ts",
+  "lib/media/lookup.ts",
+  "lib/media/local-store.ts",
+  "lib/media/delivery.ts",
+  "lib/media/index.ts",
+  "app/api/media/[mediaId]/route.ts",
   "lib/supabase/client.ts",
   "lib/supabase/server.ts",
   "lib/portable-auth/index.ts",
@@ -367,14 +384,14 @@ export function stampEscapeHatchManifest(
   parsed.generated_at = bundle.generated_at;
   parsed.creator_id = bundle.creator_id;
   parsed.site_id = bundle.site_id ?? bundle.creator_id;
-  parsed.slice = "EH-032";
+  parsed.slice = "EH-033";
   parsed.productionSafe = false;
   parsed.schema_version = "eh-db/0004_entitlement_evaluator";
   parsed.feature_flags = {
     ...parsed.feature_flags,
     soft_persona_gate: true,
     hard_paywall: false,
-    signed_media_delivery: false,
+    signed_media_delivery: true,
     supabase_identity: true,
     portable_identity: true,
     entitlement_evaluator: true,
@@ -433,7 +450,8 @@ export function fillTemplate(opts: FillOptions): FillResult {
   const cssPath = join(outDir, "app", "theme-vars.css");
   writeFileSync(cssPath, themeCssVars(theme), "utf8");
 
-  // Client-readable copies
+  // Client-readable copies (site/theme JSON). Premium media bytes are NOT
+  // staged under public/media by default (EH-033 private layout).
   const publicDir = join(outDir, "public");
   mkdirSync(join(publicDir, "media"), { recursive: true });
   writeFileSync(join(publicDir, "site.json"), siteJson, "utf8");
@@ -443,9 +461,32 @@ export function fillTemplate(opts: FillOptions): FillResult {
     ? resolve(opts.mediaSourceDir)
     : join(PACKAGE_ROOT, "fixtures", "media");
 
+  const mediaLayout = opts.mediaLayout ?? "private";
   if (existsSync(mediaSource)) {
-    copyMediaIntoPublic(bundle, mediaSource, join(publicDir, "media"));
+    stageMediaForKit(bundle, mediaSource, {
+      publicMediaDir: join(publicDir, "media"),
+      privateMediaDir: join(dataDir, "private-media"),
+      layout: mediaLayout
+    });
   }
+
+  writeFileSync(
+    join(dataDir, "media-layout.json"),
+    `${JSON.stringify(
+      {
+        schema: "escape-hatch-media-layout/1.0.0",
+        layout: mediaLayout,
+        production_safe: false,
+        notes:
+          mediaLayout === "private"
+            ? "Premium originals live under data/private-media; visitor delivery is /api/media/{id} after evaluateAccess. public/media holds public/free assets only."
+            : "public_legacy copies premium bytes into public/media — residual leakage for soft preview only; keep productionSafe false."
+      },
+      null,
+      2
+    )}\n`,
+    "utf8"
+  );
 
   writeFileSync(
     join(outDir, "ESCAPE_HATCH.md"),
@@ -454,8 +495,10 @@ export function fillTemplate(opts: FillOptions): FillResult {
       "",
       "**Soft gate remains for local preview** — persona switching is demo UI only, not production security.",
       "Identity: Path A Supabase (`ESCAPE_HATCH_IDENTITY_PROVIDER=supabase` or unset + Supabase env) or Path B portable (`=portable` + DATABASE_URL).",
-      "Locked media is still present in `/public/media`; do not deploy this kit as a real paywall.",
-      "`productionSafe: false` — EH-031 identity paths available; not EH-033 signed private media delivery.",
+      mediaLayout === "private"
+        ? "Premium media is staged under `data/private-media` and delivered via `/api/media/{id}` after server entitlement checks (EH-033). Do not set `ESCAPE_HATCH_MEDIA_MODE=public_legacy` in production."
+        : "WARNING: `public_legacy` media layout copied premium bytes into `/public/media` — residual leakage; not production-safe.",
+      "`productionSafe: false` — private delivery is implemented, but full Milestone 3 gate (EH-034 UX + security review) and deploy/billing remain open.",
       "",
       `Contract: ${bundle.contract_version}`,
       "",
@@ -471,12 +514,13 @@ export function fillTemplate(opts: FillOptions): FillResult {
       "`/` redirects to Library. Library truth rebuilds parity from data/ artifacts on every load (never trusts a tampered report alone).",
       "Admin mutations: local-operator when identity unset; staff session when Path A/B configured. Soft personas never authorize admin.",
       "",
-      "## Chassis (EH-020) + theme (EH-021) + admin (EH-022) + identity (EH-030/031)",
+      "## Chassis + identity + entitlements + private media (EH-033)",
       "",
       "- Typed env: `lib/env.ts` + `.env.example` (names only — never commit secrets)",
-      "- SQL migrations: Path A `0001`+`0002`; Path B `0001`+`0003` (see `db/README.md`)",
+      "- Media: `ESCAPE_HATCH_MEDIA_MODE=local_private|private_r2` (default prefers private); R2 env names for signed GETs",
+      "- SQL migrations: Path A `0001`+`0002`+`0004_supabase`; Path B `0001`+`0003`+`0004_portable`",
       "- Bootstrap: `scripts/bootstrap-identity.md`",
-      "- Adapters: `lib/adapters/` — Auth/DB ready when env is real; still preview until EH-033",
+      "- Adapters: `lib/adapters/` — Auth/DB/storage readiness when env is real; still preview overall",
       "- Admin: `/admin` routes — distinct from visitor gallery",
       "- Deploy: `vercel.json`, `Dockerfile`, optional `docker-compose.yml` (Path B profile `db`)",
       "- See `OPERATIONS.md` and `OWNERSHIP.md`",
@@ -508,28 +552,69 @@ export function fillTemplate(opts: FillOptions): FillResult {
   };
 }
 
-function copyMediaIntoPublic(
+function isPremiumAccessLevel(level: string): boolean {
+  return level === "member_only" || level === "tier_gated";
+}
+
+function findMediaSourceFile(
+  mediaSource: string,
+  mediaId: string,
+  contentPath: string
+): string | undefined {
+  const fileName = contentPath.replace(/^\/media\//, "");
+  const candidates = [
+    join(mediaSource, fileName),
+    join(mediaSource, mediaId),
+    join(mediaSource, `${mediaId}.svg`),
+    join(mediaSource, `${mediaId}.png`),
+    join(mediaSource, `${mediaId}.jpg`)
+  ];
+  return candidates.find((c) => existsSync(c) && statSync(c).isFile());
+}
+
+/**
+ * Stage media for a generated kit (EH-033).
+ * Default private layout: public assets → public/media; premium → data/private-media.
+ * public_legacy: copies everything to public/media (residual leakage; not production-safe).
+ */
+function stageMediaForKit(
   bundle: SiteBundle,
   mediaSource: string,
-  mediaDest: string
+  opts: {
+    publicMediaDir: string;
+    privateMediaDir: string;
+    layout: "private" | "public_legacy";
+  }
 ): void {
-  mkdirSync(mediaDest, { recursive: true });
+  mkdirSync(opts.publicMediaDir, { recursive: true });
+  mkdirSync(opts.privateMediaDir, { recursive: true });
   const seen = new Set<string>();
   for (const post of bundle.posts) {
+    const premium = isPremiumAccessLevel(post.access.level);
     for (const m of post.media) {
       if (seen.has(m.media_id)) continue;
       seen.add(m.media_id);
+      const src = findMediaSourceFile(mediaSource, m.media_id, m.content_path);
+      if (!src) continue;
       const fileName = m.content_path.replace(/^\/media\//, "");
-      const destFile = join(mediaDest, fileName);
-      const candidates = [
-        join(mediaSource, fileName),
-        join(mediaSource, m.media_id),
-        join(mediaSource, `${m.media_id}.svg`),
-        join(mediaSource, `${m.media_id}.png`),
-        join(mediaSource, `${m.media_id}.jpg`)
-      ];
-      const src = candidates.find((c) => existsSync(c) && statSync(c).isFile());
-      if (src) {
+      const ext = fileName.includes(".")
+        ? fileName.slice(fileName.lastIndexOf("."))
+        : "";
+      const privateName = `${m.media_id}${ext || ".bin"}`;
+
+      if (opts.layout === "public_legacy") {
+        const destFile = join(opts.publicMediaDir, fileName);
+        mkdirSync(dirname(destFile), { recursive: true });
+        cpSync(src, destFile);
+        continue;
+      }
+
+      if (premium) {
+        const destFile = join(opts.privateMediaDir, privateName);
+        mkdirSync(dirname(destFile), { recursive: true });
+        cpSync(src, destFile);
+      } else {
+        const destFile = join(opts.publicMediaDir, fileName);
         mkdirSync(dirname(destFile), { recursive: true });
         cpSync(src, destFile);
       }

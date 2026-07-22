@@ -1,8 +1,8 @@
 /**
- * Adapter bundle for the generated kit (EH-031).
+ * Adapter bundle for the generated kit (EH-033).
  * Auth/DB report readiness only when env is real and non-placeholder;
- * detail still labels preview until EH-033 private media and broader gates.
- * productionSafe remains false.
+ * storage signs private GETs when private_r2 credentials are real.
+ * productionSafe remains false (Milestone 3 UX/security gate + deploy/billing open).
  */
 
 import {
@@ -18,6 +18,11 @@ import {
   resolveSupabaseUrl
 } from "../env";
 import type { SiteAuthSession } from "../identity/types";
+import {
+  isR2SigningConfigured,
+  resolveMediaModeSafe
+} from "../media/config";
+import { createMockMediaSigner, createR2MediaSigner } from "../media/sign";
 import type {
   AuthProvider,
   BillingProvider,
@@ -29,8 +34,8 @@ import type {
   TransactionalEmailProvider
 } from "./types";
 
-const PREVIEW_UNTIL_MEDIA =
-  "Preview identity path — not production-safe until EH-033 private media and broader gates.";
+const PREVIEW_OVERALL =
+  "Preview path — productionSafe remains false until Milestone 3 security/browser gate and deploy/billing close.";
 
 const stubAuth: AuthProvider = {
   id: "auth",
@@ -61,7 +66,7 @@ const supabaseAuth: AuthProvider = {
     }
     return {
       ok: true,
-      detail: `Supabase Auth env configured (Path A). ${PREVIEW_UNTIL_MEDIA}`
+      detail: `Supabase Auth env configured (Path A). ${PREVIEW_OVERALL}`
     };
   },
   async getSession(siteId?: string): Promise<SiteAuthSession | null> {
@@ -84,7 +89,7 @@ const portableAuth: AuthProvider = {
     }
     return {
       ok: true,
-      detail: `Portable app-managed auth env configured (Path B). ${PREVIEW_UNTIL_MEDIA}`
+      detail: `Portable app-managed auth env configured (Path B). ${PREVIEW_OVERALL}`
     };
   },
   async getSession(siteId?: string): Promise<SiteAuthSession | null> {
@@ -160,7 +165,7 @@ const supabaseDatabase: DatabaseProvider = {
       : "Service role unset (user-scoped RLS path only).";
     return {
       ok: true,
-      detail: `Supabase Postgres path configured (Path A). ${serviceNote} ${PREVIEW_UNTIL_MEDIA}`
+      detail: `Supabase Postgres path configured (Path A). ${serviceNote} ${PREVIEW_OVERALL}`
     };
   },
   async migrate() {
@@ -187,7 +192,7 @@ const portableDatabase: DatabaseProvider = {
     }
     return {
       ok: true,
-      detail: `Portable Postgres path configured (Path B). Apply 0001+0003. ${PREVIEW_UNTIL_MEDIA}`
+      detail: `Portable Postgres path configured (Path B). Apply 0001+0003. ${PREVIEW_OVERALL}`
     };
   },
   async migrate() {
@@ -204,25 +209,73 @@ const stubStorage: StorageProvider = {
   id: "storage",
   implementation: "stub",
   async health() {
-    const env = loadEnv();
-    if (!env.R2_BUCKET || !env.R2_ENDPOINT) {
-      return {
-        ok: false,
-        reason:
-          "R2 env not configured. Soft-preview still serves public/media (known prototype leakage until EH-033)."
-      };
-    }
     return {
       ok: false,
       reason:
-        "R2 env names may be present, but storage remains stub/preview-only — private signed delivery is EH-033."
+        "Storage adapter stub — set ESCAPE_HATCH_MEDIA_MODE=local_private (default) or private_r2 with R2 env for signed delivery."
     };
   },
   async signGetObject(_key: string) {
     return {
       url: null,
-      reason: "Signed object delivery is not implemented (EH-033)."
+      reason: "Storage adapter is stub — no signed URL."
     };
+  }
+};
+
+const localPrivateStorage: StorageProvider = {
+  id: "storage",
+  implementation: "local_private",
+  async health() {
+    return {
+      ok: true,
+      detail: `local_private media mode — authenticated proxy from data/private-media after evaluateAccess. ${PREVIEW_OVERALL}`
+    };
+  },
+  async signGetObject(_key: string) {
+    return {
+      url: null,
+      reason:
+        "local_private streams via /api/media (no R2 signed URL). Use private_r2 for object signing."
+    };
+  }
+};
+
+const r2Storage: StorageProvider = {
+  id: "storage",
+  implementation: "r2",
+  async health() {
+    const env = loadEnv();
+    if (!isR2SigningConfigured(env)) {
+      return {
+        ok: false,
+        reason:
+          "private_r2 selected but R2 signing env is missing or placeholder — fail closed."
+      };
+    }
+    return {
+      ok: true,
+      detail: `R2 signing env configured for short-lived GET URLs after evaluateAccess. ${PREVIEW_OVERALL}`
+    };
+  },
+  async signGetObject(key: string) {
+    const env = loadEnv();
+    if (!isR2SigningConfigured(env)) {
+      return {
+        url: null,
+        reason: "R2 signing credentials missing or placeholder."
+      };
+    }
+    try {
+      const signer =
+        process.env.ESCAPE_HATCH_MEDIA_SIGNER === "mock"
+          ? createMockMediaSigner()
+          : createR2MediaSigner();
+      const signed = await signer.signGetObject(key);
+      return { url: signed.url, expiresAt: signed.expiresAt };
+    } catch {
+      return { url: null, reason: "Failed to mint signed GET URL." };
+    }
   }
 };
 
@@ -271,7 +324,7 @@ const manifestDeployment: DeploymentProvider = {
     return {
       ok: false,
       reason:
-        "vercel.json / Dockerfile manifests are present but do not prove a healthy production deploy (EH-070/071). Shipping public/media in the image remains prototype leakage until EH-033."
+        "vercel.json / Dockerfile manifests are present but do not prove a healthy production deploy (EH-070/071). Prefer private media layout so premium bytes are not shipped under public/media."
     };
   }
 };
@@ -290,12 +343,20 @@ function createDatabaseProvider(): DatabaseProvider {
   return stubDatabase;
 }
 
+function createStorageProvider(): StorageProvider {
+  const mode = resolveMediaModeSafe(loadEnv());
+  if (mode === "private_r2") return r2Storage;
+  if (mode === "local_private") return localPrivateStorage;
+  if (mode === "public_legacy") return stubStorage;
+  return stubStorage;
+}
+
 /** Factory for the env-aware adapter set (no live network probes). */
 export function createSiteAdapters(): SiteAdapters {
   return {
     auth: createAuthProvider(),
     database: createDatabaseProvider(),
-    storage: stubStorage,
+    storage: createStorageProvider(),
     billing: stubBilling,
     patreon: stubPatreon,
     email: stubEmail,

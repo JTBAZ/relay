@@ -15,6 +15,7 @@ import {
   applyPostOverrides,
   loadPostOverrides
 } from "@/lib/site-session";
+import { resolveVisitorMediaSrc } from "@/lib/media/visitor-src";
 
 type Props = {
   site: SiteBundle;
@@ -62,12 +63,19 @@ export function GalleryApp({ site }: Props) {
       >
         {liveSite.posts.map((post, index) => {
           const unlocked = canViewPost(post, persona);
-          const thumb = post.media[0]?.content_path;
+          const thumbRaw = post.media[0];
+          const thumb = thumbRaw
+            ? resolveVisitorMediaSrc({
+                mediaId: thumbRaw.media_id,
+                contentPath: thumbRaw.content_path,
+                accessLevel: post.access.level
+              })
+            : undefined;
           const lockClass = unlocked ? "" : `locked ${style}`;
           const body = (
             <>
               <div className="media-wrap">
-                {thumb ? (
+                {thumb && unlocked ? (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img
                     src={thumb}
@@ -78,6 +86,9 @@ export function GalleryApp({ site }: Props) {
                     decoding="async"
                     fetchPriority={index === 0 ? "high" : undefined}
                   />
+                ) : thumb && !unlocked ? (
+                  // Locked premium: do not fetch bytes (blur teaser only).
+                  <div className="patron-media-empty" aria-hidden="true" />
                 ) : (
                   <div className="patron-media-empty">No media</div>
                 )}
