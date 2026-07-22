@@ -4,18 +4,22 @@
 
 import { basename, extname } from "node:path";
 import { rewriteExportApiPath, rewriteMediaContentPath, mimeToExt } from "./access.js";
-import type {
-  CloneSiteModelInput,
-  CreatorExportIndexInput,
-  DemoPersona,
-  EscapeHatchTheme,
-  SiteBundle
-} from "./types.js";
+import {
+  parseCloneSiteModelInput,
+  parseSiteBundle,
+  SITE_BUNDLE_CONTRACT_VERSION,
+  type CloneSiteModelInput,
+  type CreatorExportIndexInput,
+  type DemoPersona,
+  type EscapeHatchTheme,
+  type SiteBundle
+} from "./contracts.js";
 
 export type FromCloneOptions = {
-  clone: CloneSiteModelInput;
+  /** Raw or versioned CloneSiteModel input (validated/normalized before use). */
+  clone: unknown;
   exportIndex?: CreatorExportIndexInput;
-  creator?: { display_name: string; handle: string };
+  creator?: Partial<{ display_name: string; handle: string }>;
   theme?: Partial<EscapeHatchTheme>;
 };
 
@@ -32,9 +36,7 @@ function defaultTheme(displayName: string): EscapeHatchTheme {
   };
 }
 
-function buildPersonas(
-  clone: CloneSiteModelInput
-): DemoPersona[] {
+function buildPersonas(clone: CloneSiteModelInput): DemoPersona[] {
   const personas: DemoPersona[] = [
     { id: "public", label: "Public", tier_ids: [] },
     {
@@ -52,25 +54,34 @@ function buildPersonas(
   }
   // Ensure patron_all has at least a synthetic marker if no tiers
   if (clone.tiers.length === 0) {
-    personas[1] = { id: "patron_all", label: "Patron (any paid)", tier_ids: ["demo_paid"] };
+    personas[1] = {
+      id: "patron_all",
+      label: "Patron (any paid)",
+      tier_ids: ["demo_paid"]
+    };
   }
   return personas;
 }
 
 /**
  * Rewrite media paths to /media/{id}{ext} and prefer export index blob basenames when present.
+ * Validates/normalizes clone input; output is always current SiteBundle contract.
  */
 export function fromClone(opts: FromCloneOptions): SiteBundle {
-  const display =
-    opts.creator?.display_name ?? opts.clone.creator_id;
+  const clone = parseCloneSiteModelInput(opts.clone);
+  const display = opts.creator?.display_name ?? clone.creator_id;
   const handle =
     opts.creator?.handle ??
-    opts.clone.creator_id.replace(/[^a-zA-Z0-9_-]/g, "-").toLowerCase();
+    clone.creator_id.replace(/[^a-zA-Z0-9_-]/g, "-").toLowerCase();
 
   const exportMedia = opts.exportIndex?.media ?? {};
 
-  const posts = opts.clone.posts.map((post) => ({
+  const posts = clone.posts.map((post) => ({
     ...post,
+    access: {
+      ...post.access,
+      match_mode: post.access.match_mode ?? ("tier_or_higher" as const)
+    },
     media: post.media.map((m) => {
       const rec = exportMedia[m.media_id];
       let content_path: string;
@@ -105,18 +116,20 @@ export function fromClone(opts: FromCloneOptions): SiteBundle {
     }
   };
 
-  return {
-    site_id: opts.clone.site_id,
-    creator_id: opts.clone.creator_id,
-    generated_at: new Date().toISOString(),
-    base_url: opts.clone.base_url || "/",
+  // Route through parseSiteBundle so personas get tier_catalog and version is current.
+  return parseSiteBundle({
+    contract_version: SITE_BUNDLE_CONTRACT_VERSION,
+    site_id: clone.site_id,
+    creator_id: clone.creator_id,
+    generated_at: clone.generated_at,
+    base_url: clone.base_url || "/",
     creator: { display_name: display, handle },
     theme,
-    demo_personas: buildPersonas(opts.clone),
-    tiers: opts.clone.tiers,
+    demo_personas: buildPersonas(clone),
+    tiers: clone.tiers,
     posts,
     total_media: posts.reduce((n, p) => n + p.media.length, 0)
-  };
+  });
 }
 
 export { rewriteMediaContentPath };

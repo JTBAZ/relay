@@ -51,7 +51,7 @@ describe("buildEscapeHatchStatus", () => {
   it("returns a versioned schema with productionSafe false", () => {
     const status = buildEscapeHatchStatus();
     expect(status.schemaVersion).toBe(ESCAPE_HATCH_STATUS_SCHEMA_VERSION);
-    expect(status.slice).toBe("EH-000");
+    expect(status.slice).toBe("EH-001");
     expect(status.deliverable).toBe("prototype_preview_only");
     expect(status.productionSafe).toBe(false);
   });
@@ -85,12 +85,30 @@ describe("buildEscapeHatchStatus", () => {
     expect(media?.evidence).toMatch(/public bytes/i);
   });
 
-  it("lists blockers and next slice EH-001", () => {
+  it("records EH-001 complete and routes next work to EH-010", () => {
     const status = buildEscapeHatchStatus();
     expect(status.blockers.length).toBeGreaterThan(0);
-    expect(status.blockers.some((b) => b.includes("EH-001"))).toBe(true);
-    expect(status.nextSlice.id).toBe("EH-001");
+    expect(status.blockers.some((b) => b.includes("EH-001"))).toBe(false);
+    expect(status.nextSlice.id).toBe("EH-010");
+    expect(status.nextSlice.title).toMatch(/sanitized golden fixtures/i);
     expect(status.nextSlice.focus.length).toBeGreaterThan(0);
+  });
+
+  it("reports shared contracts and aligned preview access honestly", () => {
+    const capabilities = new Map(
+      buildEscapeHatchStatus().capabilities.map((cap) => [cap.id, cap])
+    );
+    const contracts = capabilities.get("duplicate-contracts");
+    expect(contracts?.evidence).toMatch(/versioned/i);
+    expect(contracts?.evidence).toMatch(/runtime-validated/i);
+    expect(contracts?.evidence).toMatch(/generated apps/i);
+    expect(contracts?.nextSlice).toBeUndefined();
+
+    const access = capabilities.get("simplified-access-semantics");
+    expect(access?.evidence).toMatch(/paid\/free/i);
+    expect(access?.evidence).toMatch(/tier-or-higher/i);
+    expect(access?.evidence).toMatch(/client-only/i);
+    expect(access?.nextSlice).toBe("EH-030");
   });
 
   it("states billing/deploy stubs are not production proof", () => {

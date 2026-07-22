@@ -1,22 +1,28 @@
 /**
- * Soft-gate / clone access helpers (mirrors src/clone/tier-rules canAccessPost semantics
- * without requiring the full Relay TierRow catalog).
+ * Soft-gate / clone access helpers.
+ * Access evaluation lives in contracts.ts (canonical, aligned with src/clone/tier-rules.ts).
+ * Path rewrite helpers are package/CLI utilities, not authorization.
  */
 
-import type { AccessLevel, ClonePostEntry, DemoPersona } from "./types.js";
+export {
+  canAccessPost,
+  canViewPost,
+  buildTierCatalog,
+  isFreeTier,
+  paidUserTierIds,
+  tierFloorCents,
+  userMeetsTierGatesWithOrdering,
+  RELAY_TIER_PUBLIC,
+  RELAY_TIER_ALL_PATRONS
+} from "./contracts.js";
 
-export function canAccessPost(
-  postAccess: { level: AccessLevel; tier_ids: string[] },
-  userTierIds: string[]
-): boolean {
-  if (postAccess.level === "public") return true;
-  if (postAccess.level === "member_only") return userTierIds.length > 0;
-  return postAccess.tier_ids.some((t) => userTierIds.includes(t));
-}
-
-export function canViewPost(post: ClonePostEntry, persona: DemoPersona): boolean {
-  return canAccessPost(post.access, persona.tier_ids);
-}
+export type {
+  AccessLevel,
+  ClonePostEntry,
+  DemoPersona,
+  PreviewTierEntry,
+  TierMatchMode
+} from "./contracts.js";
 
 export function rewriteMediaContentPath(mediaId: string, extHint?: string): string {
   const ext = extHint?.includes("/")

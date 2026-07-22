@@ -6,7 +6,10 @@ import {
   rewriteMediaContentPath
 } from "../src/access.js";
 import { fromClone } from "../src/from-clone.js";
-import type { CloneSiteModelInput, DemoPersona } from "../src/types.js";
+import {
+  SITE_BUNDLE_CONTRACT_VERSION,
+  type DemoPersona
+} from "../src/types.js";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fillTemplate, PACKAGE_ROOT } from "../src/fill-template.js";
@@ -89,11 +92,12 @@ describe("fromClone adapter", () => {
   it("rewrites clone API media paths and builds personas", () => {
     const clone = JSON.parse(
       readFileSync(join(PACKAGE_ROOT, "fixtures", "clone-site.json"), "utf8")
-    ) as CloneSiteModelInput;
+    );
     const bundle = fromClone({
       clone,
       creator: { display_name: "Demo", handle: "demo" }
     });
+    expect(bundle.contract_version).toBe(SITE_BUNDLE_CONTRACT_VERSION);
     expect(bundle.posts[0].media[0].content_path).toBe("/media/m_api.png");
     expect(bundle.posts[1].media[0].content_path).toBe("/media/m_gold2.jpg");
     expect(bundle.demo_personas.some((p) => p.id === "public")).toBe(true);
@@ -117,6 +121,7 @@ describe("fill-template integration", () => {
     });
     expect(existsSync(result.siteJsonPath)).toBe(true);
     expect(existsSync(result.themeJsonPath)).toBe(true);
+    expect(existsSync(result.contractsPath)).toBe(true);
     expect(existsSync(join(result.outDir, "app", "page.tsx"))).toBe(true);
     expect(
       existsSync(join(result.outDir, "public", "media", "m_public.svg"))
@@ -125,8 +130,17 @@ describe("fill-template integration", () => {
       existsSync(join(result.outDir, "public", "media", "m_gold.svg"))
     ).toBe(true);
     const site = JSON.parse(readFileSync(result.siteJsonPath, "utf8"));
+    expect(site.contract_version).toBe(SITE_BUNDLE_CONTRACT_VERSION);
     expect(site.creator.handle).toBe("elena-adler");
     expect(site.posts).toHaveLength(3);
+    const generatedCss = readFileSync(
+      join(result.outDir, "app", "globals.css"),
+      "utf8"
+    );
+    expect(generatedCss).toMatch(/:focus-visible\s*\{/);
+    expect(generatedCss).toMatch(/outline:\s*3px solid #fff;/);
+    expect(generatedCss).toMatch(/box-shadow:\s*0 0 0 6px #111214;/);
+    expect(generatedCss).not.toMatch(/outline:\s*(?:none|0)\s*;/);
   });
 });
 
@@ -134,7 +148,7 @@ describe("from-clone fill integration", () => {
   it("adapts clone JSON then fills a site tree", () => {
     const clone = JSON.parse(
       readFileSync(join(PACKAGE_ROOT, "fixtures", "clone-site.json"), "utf8")
-    ) as CloneSiteModelInput;
+    );
     const bundle = fromClone({
       clone,
       creator: { display_name: "Clone Demo", handle: "clone-fill" }
@@ -147,6 +161,7 @@ describe("from-clone fill integration", () => {
     });
     expect(existsSync(result.siteJsonPath)).toBe(true);
     const site = JSON.parse(readFileSync(result.siteJsonPath, "utf8"));
+    expect(site.contract_version).toBe(SITE_BUNDLE_CONTRACT_VERSION);
     expect(site.posts[0].media[0].content_path).toBe("/media/m_api.png");
   });
 });

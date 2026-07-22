@@ -14,12 +14,25 @@ import {
 } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import type { EscapeHatchTheme, SiteBundle } from "./types.js";
+import {
+  ContractValidationError,
+  isSafeRouteSegment,
+  parseSiteBundle,
+  serializeSiteBundle,
+  type EscapeHatchTheme,
+  type SiteBundle
+} from "./contracts.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 export const PACKAGE_ROOT = resolve(__dirname, "..");
 export const TEMPLATE_DIR = join(PACKAGE_ROOT, "template");
 export const OUT_ROOT = join(PACKAGE_ROOT, ".out");
+
+/** Canonical contracts module path (copied into generated apps). */
+export const CONTRACTS_SOURCE_PATH = join(PACKAGE_ROOT, "src", "contracts.ts");
+
+/** Stable generated-app path for the self-contained contract module. */
+export const GENERATED_CONTRACTS_RELATIVE_PATH = join("lib", "contracts.ts");
 
 const SKIP_COPY_NAMES = new Set(["node_modules", ".next", ".git"]);
 
@@ -31,6 +44,18 @@ function copyTemplate(dest: string): void {
     const target = join(dest, name);
     cpSync(src, target, { recursive: true });
   }
+}
+
+/**
+ * Embed the canonical contracts module into a generated (or template) site tree.
+ * Generated apps must not import Relay-local paths; this file is self-contained.
+ */
+export function embedContractsModule(outDir: string): string {
+  const dest = join(outDir, GENERATED_CONTRACTS_RELATIVE_PATH);
+  mkdirSync(dirname(dest), { recursive: true });
+  const source = readFileSync(CONTRACTS_SOURCE_PATH, "utf8");
+  writeFileSync(dest, source, "utf8");
+  return dest;
 }
 
 function themeCssVars(theme: EscapeHatchTheme): string {
@@ -82,7 +107,8 @@ function themeCssVars(theme: EscapeHatchTheme): string {
 }
 
 export type FillOptions = {
-  bundle: SiteBundle;
+  /** Raw or versioned SiteBundle (validated/normalized before write). */
+  bundle: unknown;
   /** Absolute or package-relative path to a media source directory (files named by media_id + ext). */
   mediaSourceDir?: string;
   /** Optional theme override (wizard). */
@@ -98,19 +124,30 @@ export type FillResult = {
   slug: string;
   siteJsonPath: string;
   themeJsonPath: string;
+  contractsPath: string;
+  bundle: SiteBundle;
 };
 
 export function fillTemplate(opts: FillOptions): FillResult {
+  const baseBundle = parseSiteBundle(opts.bundle);
   const theme: EscapeHatchTheme = {
-    ...opts.bundle.theme,
+    ...baseBundle.theme,
     ...opts.themeOverride,
     hero: {
-      ...opts.bundle.theme.hero,
+      ...baseBundle.theme.hero,
       ...(opts.themeOverride?.hero ?? {})
     }
   };
-  const bundle: SiteBundle = { ...opts.bundle, theme };
+  // Re-normalize after theme merge so output is always current contract.
+  const bundle = parseSiteBundle({ ...baseBundle, theme });
   const slug = opts.slug ?? bundle.creator.handle ?? bundle.creator_id;
+  if (!isSafeRouteSegment(slug)) {
+    throw new ContractValidationError(
+      "slug",
+      "expected safe output directory segment",
+      "path"
+    );
+  }
   const outDir = join(OUT_ROOT, slug);
 
   if (opts.clean !== false && existsSync(outDir)) {
@@ -124,12 +161,14 @@ export function fillTemplate(opts: FillOptions): FillResult {
   }
 
   copyTemplate(outDir);
+  const contractsPath = embedContractsModule(outDir);
 
   const dataDir = join(outDir, "data");
   mkdirSync(dataDir, { recursive: true });
   const siteJsonPath = join(dataDir, "site.json");
   const themeJsonPath = join(dataDir, "theme.json");
-  writeFileSync(siteJsonPath, JSON.stringify(bundle, null, 2), "utf8");
+  const siteJson = serializeSiteBundle(bundle).replace(/\n$/, "");
+  writeFileSync(siteJsonPath, siteJson, "utf8");
   writeFileSync(themeJsonPath, JSON.stringify(theme, null, 2), "utf8");
 
   const cssPath = join(outDir, "app", "theme-vars.css");
@@ -138,7 +177,7 @@ export function fillTemplate(opts: FillOptions): FillResult {
   // Client-readable copies
   const publicDir = join(outDir, "public");
   mkdirSync(join(publicDir, "media"), { recursive: true });
-  writeFileSync(join(publicDir, "site.json"), JSON.stringify(bundle, null, 2), "utf8");
+  writeFileSync(join(publicDir, "site.json"), siteJson, "utf8");
   writeFileSync(join(publicDir, "theme.json"), JSON.stringify(theme, null, 2), "utf8");
 
   const mediaSource = opts.mediaSourceDir
@@ -156,6 +195,8 @@ export function fillTemplate(opts: FillOptions): FillResult {
       "",
       "**Soft gate only** — persona switching is for demo. This is not production security.",
       "Locked media is still present in `/public/media`; do not deploy this kit as a real paywall.",
+      "",
+      `Contract: ${bundle.contract_version}`,
       "",
       "## Hatch Console (open these in order)",
       "",
@@ -179,7 +220,7 @@ export function fillTemplate(opts: FillOptions): FillResult {
     "utf8"
   );
 
-  return { outDir, slug, siteJsonPath, themeJsonPath };
+  return { outDir, slug, siteJsonPath, themeJsonPath, contractsPath, bundle };
 }
 
 function copyMediaIntoPublic(
@@ -213,10 +254,17 @@ function copyMediaIntoPublic(
 
 export function loadThemeFile(themePath: string): EscapeHatchTheme {
   const raw = readFileSync(themePath, "utf8").replace(/^\uFEFF/, "");
-  return JSON.parse(raw) as EscapeHatchTheme;
+  const parsed = JSON.parse(raw) as unknown;
+  // Theme is validated as part of a bundle; accept partial wizard themes as plain objects.
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new Error("theme file: expected object");
+  }
+  return parsed as EscapeHatchTheme;
 }
 
+/** Load and validate/normalize a SiteBundle JSON file (legacy or current). */
 export function loadBundleFile(bundlePath: string): SiteBundle {
   const raw = readFileSync(bundlePath, "utf8").replace(/^\uFEFF/, "");
-  return JSON.parse(raw) as SiteBundle;
+  const parsed = JSON.parse(raw) as unknown;
+  return parseSiteBundle(parsed);
 }

@@ -25,7 +25,7 @@ import {
 import { runWizard } from "./wizard.js";
 import { buildEscapeHatchStatus, formatHumanStatus } from "./status.js";
 import { zipExportKit } from "./zip-kit.js";
-import type { CloneSiteModelInput, EscapeHatchTheme, SiteBundle } from "./types.js";
+import type { EscapeHatchTheme, SiteBundle } from "./types.js";
 
 function usage(): never {
   console.log(`Escape Hatch CLI
@@ -286,16 +286,14 @@ async function main(): Promise<void> {
       console.error("--clone is required (or: from-clone <clone.json>)");
       usage();
     }
-    const clone = JSON.parse(
+    const clone: unknown = JSON.parse(
       readFileSync(resolvePath(clonePath), "utf8")
-    ) as CloneSiteModelInput;
+    );
     const bundle = fromClone({
       clone,
       creator: {
-        display_name: argValue(args, "--display-name") ?? clone.creator_id,
-        handle:
-          argValue(args, "--handle") ??
-          clone.creator_id.replace(/[^a-zA-Z0-9_-]/g, "-").toLowerCase()
+        display_name: argValue(args, "--display-name"),
+        handle: argValue(args, "--handle")
       }
     });
     const slug = argValue(args, "--slug") ?? bundle.creator.handle;

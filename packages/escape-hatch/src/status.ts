@@ -1,11 +1,11 @@
 /**
- * Deterministic Escape Hatch capability inventory (EH-000).
+ * Deterministic Escape Hatch capability inventory (through EH-001).
  * No timestamps, env reads, network, or live data — informational only.
  */
 
 export const ESCAPE_HATCH_STATUS_SCHEMA_VERSION = "escape-hatch-status/1.0.0";
 
-export const ESCAPE_HATCH_SLICE = "EH-000";
+export const ESCAPE_HATCH_SLICE = "EH-001";
 
 export type CapabilityState =
   | "production_safe"
@@ -36,7 +36,7 @@ export type EscapeHatchStatus = {
   capabilities: EscapeHatchCapability[];
   blockers: string[];
   nextSlice: {
-    id: "EH-001";
+    id: "EH-010";
     title: string;
     focus: string[];
   };
@@ -56,7 +56,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "packages/escape-hatch/src/zip-kit.ts"
     ],
     risk: "high",
-    nextSlice: "EH-001"
+    nextSlice: "EH-010"
   },
   {
     id: "soft-persona-gate",
@@ -98,16 +98,18 @@ const CAPABILITIES: EscapeHatchCapability[] = [
   },
   {
     id: "duplicate-contracts",
-    title: "Duplicate unversioned contracts",
+    title: "Versioned shared contracts",
     state: "preview_only",
     evidence:
-      "SiteBundle, access helpers, and theme shapes are duplicated between packages/escape-hatch/src/types.ts and template/lib without a shared versioned schema or validation gate.",
+      "SiteBundle and CloneSiteModel are explicitly versioned and runtime-validated; generated apps receive a byte-identical self-contained canonical contracts module and validate site.json before use.",
     sourcePaths: [
+      "packages/escape-hatch/src/contracts.ts",
       "packages/escape-hatch/src/types.ts",
-      "packages/escape-hatch/template/lib/access.ts"
+      "packages/escape-hatch/src/fill-template.ts",
+      "packages/escape-hatch/template/lib/access.ts",
+      "packages/escape-hatch/template/lib/load-site.ts"
     ],
-    risk: "medium",
-    nextSlice: "EH-001"
+    risk: "low"
   },
   {
     id: "fixture-coverage",
@@ -158,16 +160,17 @@ const CAPABILITIES: EscapeHatchCapability[] = [
   },
   {
     id: "simplified-access-semantics",
-    title: "Simplified package access semantics",
+    title: "Canonical-aligned preview access semantics",
     state: "preview_only",
     evidence:
-      "packages/escape-hatch/src/access.ts mirrors a subset of src/clone/tier-rules.ts canAccessPost without the full Relay TierRow catalog or server enforcement.",
+      "The shared preview evaluator matches canonical paid/free, exact-tier, and tier-or-higher ordering semantics using serialized tier catalog data; it remains client-only soft gating and is not server authorization.",
     sourcePaths: [
+      "packages/escape-hatch/src/contracts.ts",
       "packages/escape-hatch/src/access.ts",
       "src/clone/tier-rules.ts"
     ],
     risk: "high",
-    nextSlice: "EH-001"
+    nextSlice: "EH-030"
   },
   {
     id: "generated-site-identity",
@@ -265,18 +268,17 @@ const PROTOTYPE_WARNINGS: string[] = [
   "Premium (member_only and tier_gated) media bytes are copied to public/media and are directly fetchable without authentication.",
   "Direct HTTP GET to a locked premium media URL is expected to return HTTP 200 with public bytes; this is a known prototype security failure, not a passing paywall.",
   "Client demo persona state is non-authoritative; switching persona only changes UI gating, not server entitlements.",
-  "Package access helpers are simplified versus canonical src/clone/tier-rules.ts and are not enforced server-side.",
+  "Package preview access helpers align with canonical tier semantics but remain client-only and are not enforced server-side.",
   "Relay Part 2 billing and deploy adapters are synthetic stubs and must not be treated as production or provider proof.",
   "Passing package tests or a successful local preview does not make any soft-gated capability production-safe."
 ];
 
 const BLOCKERS: string[] = [
-  "No versioned shared SiteBundle/CloneSiteModel contract or schema validation (EH-001).",
   "Premium media remains world-readable in public/; migration/copy belongs to EH-012 and server-enforced private delivery belongs to EH-033.",
   "No hard patron identity, entitlements, or RLS-backed session (EH-030).",
   "Billing and deploy paths are stub-only in Relay core, not creator-owned production integrations (EH-050, EH-070).",
-  "Relay-dump golden fixtures and Patreon OAuth/cookie shapes lack automated escape-hatch coverage (EH-010, EH-011).",
-  "Duplicate unversioned types between package src and generated template (EH-001)."
+  "Sanitized Patreon OAuth/cookie golden shapes are not yet wired into Escape Hatch contract coverage (EH-010).",
+  "Relay-dump fixtures still lack the idempotent importer, conflict queue, and parity accounting planned for EH-011."
 ];
 
 export function buildEscapeHatchStatus(): EscapeHatchStatus {
@@ -286,7 +288,7 @@ export function buildEscapeHatchStatus(): EscapeHatchStatus {
     deliverable: "prototype_preview_only",
     productionSafe: false,
     summary:
-      "Escape Hatch EH-000 is a deterministic prototype generator with soft UI gating only; locked premium bytes are public, persona state is non-authoritative, and Part 2 billing/deploy stubs are not production proof.",
+      "Escape Hatch through EH-001 has versioned runtime-validated shared contracts and canonical-aligned preview access semantics; locked premium bytes remain public, persona state is non-authoritative, and the prototype is not production safe.",
     prototypeWarnings: [...PROTOTYPE_WARNINGS],
     capabilities: CAPABILITIES.map((c) => ({
       ...c,
@@ -294,12 +296,12 @@ export function buildEscapeHatchStatus(): EscapeHatchStatus {
     })),
     blockers: [...BLOCKERS],
     nextSlice: {
-      id: "EH-001",
-      title: "Shared contracts",
+      id: "EH-010",
+      title: "Sanitized golden fixtures",
       focus: [
-        "Extract versioned SiteBundle and CloneSiteModel contracts",
-        "Align tier/access semantics with src/clone/tier-rules.ts",
-        "Add schema validation and compatibility tests"
+        "Add sanitized OAuth and cookie extraction fixture coverage",
+        "Verify fixture provenance without secrets or patron PII",
+        "Exercise real Patreon content and media shapes against shared contracts"
       ]
     }
   };

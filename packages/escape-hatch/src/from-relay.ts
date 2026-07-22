@@ -7,7 +7,11 @@ import { dirname, join, resolve } from "node:path";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import { fromClone } from "./from-clone.js";
-import type { CloneSiteModelInput, CreatorExportIndexInput, SiteBundle } from "./types.js";
+import {
+  parseCloneSiteModelInput,
+  type CreatorExportIndexInput,
+  type SiteBundle
+} from "./contracts.js";
 
 const require = createRequire(import.meta.url);
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -28,7 +32,7 @@ type GenerateCloneFn = (
   canonical: unknown,
   exportIndex: unknown,
   baseUrl: string
-) => CloneSiteModelInput;
+) => unknown;
 
 function loadGenerateClone(): GenerateCloneFn {
   const distPath = resolve(HERE, "../../../dist/src/clone/clone-generator.js");
@@ -68,19 +72,24 @@ export function fromRelay(opts: FromRelayOptions): {
     ) as CreatorExportIndexInput;
   }
 
-  const clone = generateCloneSiteModel(
+  const cloneRaw = generateCloneSiteModel(
     opts.creatorId,
     canonical,
     exportIndex ?? { creator_id: opts.creatorId, media: {} },
     opts.baseUrl ?? "http://localhost:3001"
   );
 
+  // Validate/normalize Relay clone output before adapting (legacy unversioned OK).
+  const clone = parseCloneSiteModelInput(cloneRaw);
+
   const bundle = fromClone({
     clone,
     exportIndex: exportIndex ?? undefined,
     creator: {
       display_name: opts.displayName ?? opts.creatorId,
-      handle: opts.handle ?? opts.creatorId.replace(/[^a-zA-Z0-9_-]/g, "-").toLowerCase()
+      handle:
+        opts.handle ??
+        opts.creatorId.replace(/[^a-zA-Z0-9_-]/g, "-").toLowerCase()
     }
   });
 
