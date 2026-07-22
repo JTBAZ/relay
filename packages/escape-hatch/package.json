@@ -12,6 +12,7 @@
     "build-site": "tsx src/cli.ts build",
     "from-relay": "tsx src/cli.ts from-relay",
     "zip": "tsx src/cli.ts zip",
+    "status": "tsx src/cli.ts status",
     "test": "vitest run",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },

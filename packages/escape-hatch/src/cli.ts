@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Escape Hatch CLI: fixture | wizard | build | from-relay | from-clone | zip
+ * Escape Hatch CLI: fixture | wizard | build | from-relay | from-clone | zip | status
  */
 
 import {
@@ -23,6 +23,7 @@ import {
   PACKAGE_ROOT
 } from "./fill-template.js";
 import { runWizard } from "./wizard.js";
+import { buildEscapeHatchStatus, formatHumanStatus } from "./status.js";
 import { zipExportKit } from "./zip-kit.js";
 import type { CloneSiteModelInput, EscapeHatchTheme, SiteBundle } from "./types.js";
 
@@ -36,9 +37,11 @@ Usage:
   npx tsx src/cli.ts from-relay <creator_id> [slug]
   npx tsx src/cli.ts from-clone <clone.json> [slug]
   npx tsx src/cli.ts zip <slug>
+  npx tsx src/cli.ts status [--json]
+  npx tsx src/cli.ts status json
 
-Flags (also supported): --bundle --theme --slug --clone --creator --media
-Note: on Windows, prefer positional args — npm may strip --flags.
+Flags (also supported): --bundle --theme --slug --clone --creator --media --json
+Note: on Windows, prefer positional args — npm may strip --flags (e.g. status json).
 `);
   process.exit(1);
 }
@@ -317,6 +320,18 @@ async function main(): Promise<void> {
     }
     const zipPath = await zipExportKit(slug, argValue(args, "--out"));
     console.log(`Export Kit zip: ${zipPath}`);
+    return;
+  }
+
+  if (cmd === "status") {
+    const pos = positionals(args);
+    const asJson = hasFlag(args, "--json") || pos[0] === "json";
+    const status = buildEscapeHatchStatus();
+    if (asJson) {
+      console.log(JSON.stringify(status, null, 2));
+    } else {
+      console.log(formatHumanStatus(status));
+    }
     return;
   }
 
