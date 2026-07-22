@@ -42,6 +42,7 @@ const EXPECTED_CAPABILITY_IDS = [
   "generated-site-identity",
   "entitlement-evaluator",
   "private-media-delivery",
+  "account-paywall-ux",
   "billing-adapters",
   "deploy-adapters",
   "native-admin",
@@ -55,7 +56,7 @@ describe("buildEscapeHatchStatus", () => {
   it("returns a versioned schema with productionSafe false", () => {
     const status = buildEscapeHatchStatus();
     expect(status.schemaVersion).toBe(ESCAPE_HATCH_STATUS_SCHEMA_VERSION);
-    expect(status.slice).toBe("EH-033");
+    expect(status.slice).toBe("EH-034");
     expect(status.deliverable).toBe("prototype_preview_only");
     expect(status.productionSafe).toBe(false);
   });
@@ -87,10 +88,10 @@ describe("buildEscapeHatchStatus", () => {
     const media = status.capabilities.find((c) => c.id === "public-media-copy");
     expect(media?.evidence).toMatch(/private-media|public\/media/i);
     expect(media?.evidence).toMatch(/evaluateAccess|api\/media/i);
-    expect(media?.nextSlice).toBe("EH-034");
+    expect(media?.nextSlice).toBe("EH-040");
   });
 
-  it("records EH-033 complete and routes next work to EH-034", () => {
+  it("records EH-034 complete and routes next work to EH-040", () => {
     const status = buildEscapeHatchStatus();
     expect(status.blockers.length).toBeGreaterThan(0);
     expect(status.blockers.some((b) => /OAuth\/cookie.*not yet wired/i.test(b))).toBe(
@@ -106,8 +107,11 @@ describe("buildEscapeHatchStatus", () => {
     expect(status.blockers.some((b) => /Entitlement service freshness/i.test(b))).toBe(
       false
     );
-    expect(status.nextSlice.id).toBe("EH-034");
-    expect(status.nextSlice.title).toMatch(/Account|paywall/i);
+    expect(status.blockers.some((b) => /Account\/paywall UX.*EH-034/i.test(b))).toBe(
+      false
+    );
+    expect(status.nextSlice.id).toBe("EH-040");
+    expect(status.nextSlice.title).toMatch(/Patreon|OAuth/i);
     expect(status.nextSlice.focus.length).toBeGreaterThan(0);
   });
 
@@ -125,7 +129,7 @@ describe("buildEscapeHatchStatus", () => {
     expect(access?.evidence).toMatch(/paid\/free/i);
     expect(access?.evidence).toMatch(/tier-or-higher/i);
     expect(access?.evidence).toMatch(/client-only|fail-closed|EH-032/i);
-    expect(access?.nextSlice).toBe("EH-034");
+    expect(access?.nextSlice).toBe("EH-040");
   });
 
   it("states billing stubs are not production proof and deploy manifests are preview-only", () => {
@@ -145,18 +149,19 @@ describe("buildEscapeHatchStatus", () => {
     const capabilities = new Map(
       buildEscapeHatchStatus().capabilities.map((cap) => [cap.id, cap])
     );
-    expect(capabilities.get("private-media-delivery")?.nextSlice).toBe("EH-034");
+    expect(capabilities.get("private-media-delivery")?.nextSlice).toBe("EH-040");
+    expect(capabilities.get("account-paywall-ux")?.nextSlice).toBe("EH-040");
     expect(capabilities.get("billing-adapters")?.nextSlice).toBe("EH-050");
     expect(capabilities.get("deploy-adapters")?.nextSlice).toBe("EH-070");
     expect(capabilities.get("backup-restore")?.nextSlice).toBe("EH-073");
-    expect(capabilities.get("provider-readiness")?.nextSlice).toBe("EH-034");
+    expect(capabilities.get("provider-readiness")?.nextSlice).toBe("EH-040");
     expect(capabilities.get("provider-readiness")?.evidence).toMatch(
       /EH-030|EH-031|Auth\/DB|EH-051|EH-070|EH-072/
     );
     expect(capabilities.get("generated-site-identity")?.state).toBe("preview_only");
-    expect(capabilities.get("generated-site-identity")?.nextSlice).toBe("EH-034");
+    expect(capabilities.get("generated-site-identity")?.nextSlice).toBe("EH-040");
     expect(capabilities.get("entitlement-evaluator")?.state).toBe("preview_only");
-    expect(capabilities.get("entitlement-evaluator")?.nextSlice).toBe("EH-034");
+    expect(capabilities.get("entitlement-evaluator")?.nextSlice).toBe("EH-040");
   });
 
   it("uses exact repository-relative source paths that exist", () => {
@@ -189,7 +194,7 @@ describe("buildEscapeHatchStatus", () => {
     expect(capability?.evidence).toMatch(/MATRIX\.json/i);
     expect(capability?.evidence).toMatch(/secret\/PII scan/i);
     expect(capability?.evidence).not.toMatch(/not wired/i);
-    expect(capability?.nextSlice).toBe("EH-034");
+    expect(capability?.nextSlice).toBe("EH-040");
     expect(capability?.sourcePaths).toEqual(
       expect.arrayContaining([
         "packages/escape-hatch/fixtures/MATRIX.json",
@@ -213,7 +218,7 @@ describe("buildEscapeHatchStatus", () => {
     expect(migration?.state).toBe("preview_only");
     expect(migration?.evidence).toMatch(/idempotent|provenance|conflict|ledger|private-read/i);
     expect(migration?.evidence).not.toMatch(/no idempotent/i);
-    expect(migration?.nextSlice).toBe("EH-034");
+    expect(migration?.nextSlice).toBe("EH-040");
     expect(migration?.sourcePaths).toEqual(
       expect.arrayContaining([
         "packages/escape-hatch/src/import/importer.ts",
@@ -227,7 +232,7 @@ describe("buildEscapeHatchStatus", () => {
     expect(dump?.state).toBe("preview_only");
     expect(dump?.evidence).toMatch(/import-relay-dump|migrate-media|checksum|private-read/i);
     expect(dump?.evidence).not.toMatch(/no automated importer/i);
-    expect(dump?.nextSlice).toBe("EH-034");
+    expect(dump?.nextSlice).toBe("EH-040");
   });
 
   it("marks library-truth-parity as implemented preview capability", () => {
@@ -237,7 +242,7 @@ describe("buildEscapeHatchStatus", () => {
     expect(cap?.state).toBe("preview_only");
     expect(cap?.evidence).toMatch(/100% accounted-for|accounted-for/i);
     expect(cap?.evidence).toMatch(/productionSafe remains false|production_safe/i);
-    expect(cap?.nextSlice).toBe("EH-034");
+    expect(cap?.nextSlice).toBe("EH-040");
     expect(cap?.sourcePaths).toEqual(
       expect.arrayContaining([
         "packages/escape-hatch/src/library-truth/build-report.ts",
@@ -253,7 +258,7 @@ describe("buildEscapeHatchStatus", () => {
     );
     expect(cap?.state).toBe("preview_only");
     expect(cap?.evidence).toMatch(/typed env|Dockerfile|clean directory/i);
-    expect(cap?.nextSlice).toBe("EH-034");
+    expect(cap?.nextSlice).toBe("EH-040");
     expect(cap?.sourcePaths).toEqual(
       expect.arrayContaining([
         "packages/escape-hatch/template/lib/env.ts",

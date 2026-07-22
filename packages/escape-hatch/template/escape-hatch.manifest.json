@@ -1,16 +1,16 @@
 {
   "$schema": "https://escape-hatch.local/schemas/escape-hatch.manifest/1.0.0.json",
   "contract_version": "escape-hatch.manifest/1.0.0",
-  "chassis_version": "0.6.0",
+  "chassis_version": "0.7.0",
   "schema_version": "eh-db/0004_entitlement_evaluator",
-  "slice": "EH-033",
+  "slice": "EH-034",
   "productionSafe": false,
   "generated_at": null,
   "creator_id": null,
   "site_id": null,
   "feature_flags": {
     "soft_persona_gate": true,
-    "hard_paywall": false,
+    "hard_paywall": true,
     "signed_media_delivery": true,
     "supabase_identity": true,
     "portable_identity": true,
@@ -67,10 +67,11 @@
   ],
   "applied_migrations": [],
   "known_exclusions": [
-    "No hard paywall UX polish (EH-034) — soft persona remains for local preview",
+    "Soft persona remains for local preview when identity provider is none — never elevates under Path A/B",
     "Default private layout stages premium under data/private-media; public_legacy is residual leakage only",
     "Supabase and portable identity are opt-in via env; productionSafe remains false",
-    "Entitlement evaluator (EH-032) + private media delivery (EH-033) present; Milestone 3 gate still open",
+    "Account/paywall UX (EH-034) present; Milestone 3 security/browser gate still open",
+    "Independent Stripe Checkout not live — billing adapters remain stub (EH-050+)",
     "Path A uses 0001+0002+0004_supabase; Path B uses 0001+0003+0004_portable — do not mix on one database"
   ],
   "source_export_manifest_hash": null,
@@ -78,6 +79,6 @@
   "warranty": {
     "start": null,
     "end": null,
-    "notes": "Private media preview — not a production handoff warranty."
+    "notes": "Account/paywall preview — not a production handoff warranty."
   }
 }

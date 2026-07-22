@@ -342,10 +342,19 @@ export const GENERATED_CHASSIS_RELATIVE_PATHS = [
   "scripts/bootstrap-identity.md",
   "deploy/README.md",
   "app/login/page.tsx",
+  "app/account/page.tsx",
   "app/auth/callback/route.ts",
   "app/auth/logout/route.ts",
   "app/auth/portable/login/route.ts",
-  "components/PortableLoginForm.tsx"
+  "components/PortableLoginForm.tsx",
+  "components/PaywallOverlay.tsx",
+  "components/AccountShell.tsx",
+  "components/SignOutButton.tsx",
+  "components/EntitlementStatusBanner.tsx",
+  "components/VisitorMedia.tsx",
+  "lib/paywall/copy.ts",
+  "lib/paywall/types.ts",
+  "lib/account/summary.ts"
 ] as const;
 
 type EscapeHatchManifest = {
@@ -384,13 +393,14 @@ export function stampEscapeHatchManifest(
   parsed.generated_at = bundle.generated_at;
   parsed.creator_id = bundle.creator_id;
   parsed.site_id = bundle.site_id ?? bundle.creator_id;
-  parsed.slice = "EH-033";
+  parsed.slice = "EH-034";
   parsed.productionSafe = false;
   parsed.schema_version = "eh-db/0004_entitlement_evaluator";
+  parsed.chassis_version = "0.7.0";
   parsed.feature_flags = {
     ...parsed.feature_flags,
     soft_persona_gate: true,
-    hard_paywall: false,
+    hard_paywall: true,
     signed_media_delivery: true,
     supabase_identity: true,
     portable_identity: true,
@@ -493,12 +503,12 @@ export function fillTemplate(opts: FillOptions): FillResult {
     [
       "# Escape Hatch site kit",
       "",
-      "**Soft gate remains for local preview** — persona switching is demo UI only, not production security.",
+      "**Soft gate remains for local preview** — persona switching is demo UI only (provider `none`), not production security.",
       "Identity: Path A Supabase (`ESCAPE_HATCH_IDENTITY_PROVIDER=supabase` or unset + Supabase env) or Path B portable (`=portable` + DATABASE_URL).",
       mediaLayout === "private"
-        ? "Premium media is staged under `data/private-media` and delivered via `/api/media/{id}` after server entitlement checks (EH-033). Do not set `ESCAPE_HATCH_MEDIA_MODE=public_legacy` in production."
+        ? "Premium media is staged under `data/private-media` and delivered via `/api/media/{id}` after server entitlement checks (EH-033). Locked gallery/post UI never fetches those bytes (EH-034). Do not set `ESCAPE_HATCH_MEDIA_MODE=public_legacy` in production."
         : "WARNING: `public_legacy` media layout copied premium bytes into `/public/media` — residual leakage; not production-safe.",
-      "`productionSafe: false` — private delivery is implemented, but full Milestone 3 gate (EH-034 UX + security review) and deploy/billing remain open.",
+      "`productionSafe: false` — account/paywall UX is present (EH-034), but Milestone 3 security/browser gate, Patreon OAuth (EH-040), billing, and verified deploy remain open.",
       "",
       `Contract: ${bundle.contract_version}`,
       "",
@@ -509,18 +519,20 @@ export function fillTemplate(opts: FillOptions): FillResult {
       "3. `/style` — few aesthetic dials (session peek)",
       "4. `/admin` — operator shell (health, posts, media, tiers)",
       "5. `/login` — Supabase magic-link or portable password (when provider configured)",
-      "6. `/preview` — visitor walkthrough (soft gate)",
+      "6. `/account` — session, membership summary, POST sign-out",
+      "7. `/preview` — visitor walkthrough (server-gated paywall when Path A/B)",
       "",
       "`/` redirects to Library. Library truth rebuilds parity from data/ artifacts on every load (never trusts a tampered report alone).",
       "Admin mutations: local-operator when identity unset; staff session when Path A/B configured. Soft personas never authorize admin.",
       "",
-      "## Chassis + identity + entitlements + private media (EH-033)",
+      "## Chassis + identity + entitlements + private media + account UX (EH-034)",
       "",
       "- Typed env: `lib/env.ts` + `.env.example` (names only — never commit secrets)",
       "- Media: `ESCAPE_HATCH_MEDIA_MODE=local_private|private_r2` (default prefers private); R2 env names for signed GETs",
       "- SQL migrations: Path A `0001`+`0002`+`0004_supabase`; Path B `0001`+`0003`+`0004_portable`",
       "- Bootstrap: `scripts/bootstrap-identity.md`",
       "- Adapters: `lib/adapters/` — Auth/DB/storage readiness when env is real; still preview overall",
+      "- Account/paywall: `/account`, PaywallOverlay, locked posts skip `/api/media`",
       "- Admin: `/admin` routes — distinct from visitor gallery",
       "- Deploy: `vercel.json`, `Dockerfile`, optional `docker-compose.yml` (Path B profile `db`)",
       "- See `OPERATIONS.md` and `OWNERSHIP.md`",

@@ -76,8 +76,8 @@ export function LoginForm() {
         </p>
       ) : null}
       <p className="small muted">
-        Service role keys are never used in this form. Premium media delivery
-        remains EH-033.
+        Service role keys are never used in this form. Premium media stays
+        server-gated via /api/media after entitlement checks.
       </p>
     </form>
   );

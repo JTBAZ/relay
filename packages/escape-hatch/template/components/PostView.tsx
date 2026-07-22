@@ -8,21 +8,17 @@ import {
   type PaywallStyle,
   type SiteBundle
 } from "@/lib/access";
-import { PaywallTeaser } from "@/components/PaywallTeaser";
+import { PaywallOverlay } from "@/components/PaywallOverlay";
+import { EntitlementStatusBanner } from "@/components/EntitlementStatusBanner";
 import { PatronChrome } from "@/components/PatronChrome";
+import { VisitorMedia } from "@/components/VisitorMedia";
 import {
   applyPostOverrides,
   loadPostOverrides
 } from "@/lib/site-session";
 import { resolveVisitorMediaSrc } from "@/lib/media/visitor-src";
-
-type ServerAccessSummary = {
-  allowed: boolean;
-  reason: string;
-  detail: string;
-  provider: string;
-  stale: boolean;
-};
+import type { PaywallAudience } from "@/lib/paywall/copy";
+import type { IdentityProviderUx, ServerAccessSummary } from "@/lib/paywall/types";
 
 type Props = {
   site: SiteBundle;
@@ -61,6 +57,24 @@ function accessLabel(
   return titles.length ? titles.join(" · ") : "Tier";
 }
 
+function resolveAudience(
+  identityConfigured: boolean,
+  serverAccess: ServerAccessSummary | null | undefined
+): PaywallAudience {
+  if (!identityConfigured) return "soft_persona_preview";
+  if (serverAccess?.reason === "soft_persona_blocked") return "soft_persona_blocked";
+  if (serverAccess?.reason === "staff_override") return "staff";
+  if (
+    serverAccess &&
+    !serverAccess.allowed &&
+    serverAccess.reason !== "anonymous_denied" &&
+    serverAccess.reason !== "missing_credentials"
+  ) {
+    return "signed_in";
+  }
+  return "anonymous";
+}
+
 export function PostView({ site, slug, serverAccess }: Props) {
   const [posts, setPosts] = useState(site.posts);
 
@@ -77,9 +91,16 @@ export function PostView({ site, slug, serverAccess }: Props) {
   );
   const style: PaywallStyle = site.theme.paywall_style ?? "blur";
 
-  const identityConfigured =
+  const identityMode: IdentityProviderUx =
     serverAccess?.provider === "supabase" ||
-    serverAccess?.provider === "portable";
+    serverAccess?.provider === "portable" ||
+    serverAccess?.provider === "invalid" ||
+    serverAccess?.provider === "none"
+      ? serverAccess.provider
+      : "none";
+
+  const identityConfigured =
+    identityMode === "supabase" || identityMode === "portable";
 
   if (!post) {
     return (
@@ -88,6 +109,8 @@ export function PostView({ site, slug, serverAccess }: Props) {
         personas={personas}
         personaId={personaId}
         onPersonaChange={setPersonaId}
+        identityMode={identityMode}
+        showSoftPersona={!identityConfigured}
         compact
       >
         <div className="patron-post">
@@ -105,12 +128,21 @@ export function PostView({ site, slug, serverAccess }: Props) {
     ? Boolean(serverAccess?.allowed)
     : canViewPost(post, persona);
 
+  const audience = resolveAudience(identityConfigured, serverAccess);
+  const reason = identityConfigured
+    ? (serverAccess?.reason ?? "anonymous_denied")
+    : unlocked
+      ? "soft_persona_preview"
+      : "anonymous_denied";
+
   return (
     <PatronChrome
       site={site}
       personas={personas}
       personaId={persona.id}
       onPersonaChange={setPersonaId}
+      identityMode={identityMode}
+      showSoftPersona={!identityConfigured}
       compact
     >
       <article className="patron-post">
@@ -127,59 +159,49 @@ export function PostView({ site, slug, serverAccess }: Props) {
               {formatPublished(post.published_at)}
             </time>
           </p>
-          {identityConfigured ? (
-            <p
-              className="patron-post-meta"
-              data-entitlement-reason={serverAccess?.reason}
-            >
-              {serverAccess?.allowed
-                ? serverAccess.stale
-                  ? "Access granted (entitlement snapshot marked stale)."
-                  : "Access resolved by server entitlement evaluator."
-                : (serverAccess?.detail ?? "Premium access denied.")}{" "}
-              Soft personas do not authorize when identity is configured.
-            </p>
-          ) : (
-            <p className="patron-post-meta">
-              Local soft-persona preview only — not production entitlements.
-            </p>
-          )}
+          <EntitlementStatusBanner
+            access={serverAccess}
+            softPreview={!identityConfigured}
+          />
         </header>
 
         <div className="patron-post-media">
           {post.media.map((m, index) => {
-            const src = resolveVisitorMediaSrc({
-              mediaId: m.media_id,
-              contentPath: m.content_path,
-              accessLevel: post.access.level
-            });
+            // Locked: do not resolve /api/media — no byte fetch.
+            const src = unlocked
+              ? resolveVisitorMediaSrc({
+                  mediaId: m.media_id,
+                  contentPath: m.content_path,
+                  accessLevel: post.access.level
+                })
+              : null;
             return (
-            <div
-              key={m.media_id}
-              className={`media-wrap patron-media-frame ${unlocked ? "" : `locked ${style}`}`.trim()}
-            >
-              {unlocked ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={src}
-                  alt=""
-                  width={1200}
-                  height={900}
-                  loading={index === 0 ? "eager" : "lazy"}
-                  decoding="async"
-                  fetchPriority={index === 0 ? "high" : undefined}
-                />
-              ) : (
-                <div className="patron-media-empty" aria-hidden="true" />
-              )}
-              {!unlocked ? (
-                <PaywallTeaser
-                  style={style}
-                  message={site.theme.paywall_message}
-                  communityCta={site.theme.community_cta}
-                />
-              ) : null}
-            </div>
+              <div
+                key={m.media_id}
+                className={`media-wrap patron-media-frame ${unlocked ? "" : `locked ${style}`}`.trim()}
+              >
+                {unlocked && src ? (
+                  <VisitorMedia
+                    src={src}
+                    width={1200}
+                    height={900}
+                    loading={index === 0 ? "eager" : "lazy"}
+                    fetchPriority={index === 0 ? "high" : undefined}
+                  />
+                ) : (
+                  <div className="patron-media-empty" aria-hidden="true" />
+                )}
+                {!unlocked ? (
+                  <PaywallOverlay
+                    style={style}
+                    allowed={false}
+                    reason={reason}
+                    audience={audience}
+                    message={site.theme.paywall_message}
+                    communityCta={site.theme.community_cta}
+                  />
+                ) : null}
+              </div>
             );
           })}
         </div>

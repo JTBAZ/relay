@@ -8,6 +8,7 @@ const TABS = [
   { href: "/structure", label: "Structure", hint: "Tiers & posts" },
   { href: "/style", label: "Style", hint: "Few dials" },
   { href: "/admin", label: "Admin", hint: "Operate site" },
+  { href: "/account", label: "Account", hint: "Sign-in & membership" },
   { href: "/preview", label: "Preview", hint: "Visitor walk" }
 ] as const;
 
@@ -32,6 +33,7 @@ export function ConsoleNav({ quiet = false }: Props) {
           const active =
             pathname === tab.href ||
             (tab.href === "/admin" && pathname.startsWith("/admin")) ||
+            (tab.href === "/account" && pathname.startsWith("/account")) ||
             (tab.href === "/preview" && pathname.startsWith("/p/")) ||
             (tab.href === "/library" && pathname === "/");
           return (

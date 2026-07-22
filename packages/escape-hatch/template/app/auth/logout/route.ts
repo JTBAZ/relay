@@ -19,6 +19,20 @@ export async function POST(request: Request) {
   const env = loadEnv();
   const mode = resolveIdentityProviderSafe(env);
 
+  let nextPath = "/account";
+  try {
+    const contentType = request.headers.get("content-type") ?? "";
+    if (contentType.includes("application/x-www-form-urlencoded") || contentType.includes("multipart/form-data")) {
+      const form = await request.formData();
+      const next = form.get("next");
+      if (typeof next === "string" && next.startsWith("/") && !next.startsWith("//")) {
+        nextPath = next;
+      }
+    }
+  } catch {
+    // Keep default redirect.
+  }
+
   if (mode === "supabase" && isSupabaseIdentityConfigured(env)) {
     try {
       const supabase = await createServerSupabaseClient();
@@ -47,7 +61,7 @@ export async function POST(request: Request) {
     }
   }
 
-  return NextResponse.redirect(new URL("/login", url.origin), {
+  return NextResponse.redirect(new URL(nextPath, url.origin), {
     status: 303
   });
 }

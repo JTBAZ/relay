@@ -1,4 +1,4 @@
-# Operations (EH-033 private media delivery)
+# Operations (EH-034 account / paywall UX)
 
 ## Local preview
 
@@ -10,6 +10,26 @@ npm run dev
 ```
 
 No `RELAY_*` or monorepo root `.env` is required. Neither Path A nor Path B must be configured for install/build.
+
+## Account / paywall UX (EH-034)
+
+Visitor surfaces:
+
+| Route | Role |
+|-------|------|
+| `/account` | Session summary, provider mode, membership/entitlement summary, POST sign-out |
+| `/login` | Provider-aware sign-in (Supabase magic link or portable email/password) |
+| `/preview`, `/p/[slug]` | Gallery/post with locked vs unlocked honesty |
+
+Rules:
+
+- Locked premium posts **do not** fetch `/api/media/{id}` — overlays show CTAs only.
+- Unlocked posts use private media URLs; image load failures show a denied message (stale/401/403 race).
+- Soft persona switch appears **only** when `ESCAPE_HATCH_IDENTITY_PROVIDER` is unset/`none`.
+- Soft personas **never** elevate under Path A (supabase) or Path B (portable).
+- Evaluator reason codes drive visitor copy (`anonymous_denied`, `soft_persona_blocked`, `entitlement_expired`, …) without leaking secrets.
+- Independent billing Checkout is **not** live — Account shows an honest “billing not configured (EH-050+)” note; community CTA may still link out.
+- Logout remains **POST** `/auth/logout` only.
 
 ## Identity provider
 
@@ -105,11 +125,12 @@ Session cookies: httpOnly, SameSite=Lax, path `/`, Secure when `NODE_ENV=product
 
 Adapter inventory: `escape-hatch.manifest.json` and `lib/adapters/`. Auth/DB/storage readiness is env-honest; billing/deploy remain stub until EH-050/070.
 
-**Not production-safe:** `productionSafe` is false. Private delivery closes the default premium `public/media` path, but Milestone 3 UX (EH-034), security/browser gate, billing, and verified deploy remain open. `public_legacy` and residual public copies are explicitly non-production.
+**Not production-safe:** `productionSafe` is false. Account/paywall UX is present, but Milestone 3 security review + browser personas gate, billing, and verified deploy remain open. `public_legacy` and residual public copies are explicitly non-production.
 
 ## Security honesty
 
 - Soft gate / demo personas are not entitlements and never authorize admin.
+- Soft persona preview is **local_preview only** (provider `none`) — never elevates under Path A/B.
 - Entitlement evaluator is server-only — never trust client-passed tier ids or “I am entitled”.
 - Default private layout does **not** stage premium originals under `public/media`; visitor premium bytes go through `/api/media` after `evaluateAccess`.
 - `ESCAPE_HATCH_MEDIA_MODE=public_legacy` reintroduces world-readable premium copies — residual only; keep `productionSafe` false.

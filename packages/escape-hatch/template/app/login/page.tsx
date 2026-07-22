@@ -40,7 +40,12 @@ export default function LoginPage() {
                 : "Configure ESCAPE_HATCH_IDENTITY_PROVIDER=supabase|portable with matching env to enable an authoritative session."}
           </p>
           <p className="meta muted">
-            productionSafe: false · EH-031 identity paths
+            productionSafe: false · EH-034 account / paywall UX
+          </p>
+          <p className="meta">
+            After sign-in, open{" "}
+            <a href="/account">Account</a> for membership status. Soft personas
+            never unlock Path A/B premium media.
           </p>
         </header>
         {mode === "invalid" ? (

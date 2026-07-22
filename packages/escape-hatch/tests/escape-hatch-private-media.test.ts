@@ -106,15 +106,15 @@ function withEnv(
 }
 
 describe("EH-033 status", () => {
-  it("advances slice to EH-033 with next EH-034 and productionSafe false", () => {
+  it("advances slice to EH-034 with next EH-040 and productionSafe false", () => {
     const status = buildEscapeHatchStatus();
-    expect(ESCAPE_HATCH_SLICE).toBe("EH-033");
-    expect(status.slice).toBe("EH-033");
+    expect(ESCAPE_HATCH_SLICE).toBe("EH-034");
+    expect(status.slice).toBe("EH-034");
     expect(status.productionSafe).toBe(false);
-    expect(status.nextSlice.id).toBe("EH-034");
-    expect(status.nextSlice.title).toMatch(/Account|paywall/i);
+    expect(status.nextSlice.id).toBe("EH-040");
+    expect(status.nextSlice.title).toMatch(/Patreon|OAuth/i);
     expect(
-      status.blockers.some((b) => /EH-034|paywall UX|Milestone 3/i.test(b))
+      status.blockers.some((b) => /Milestone 3|security review|browser personas/i.test(b))
     ).toBe(true);
 
     const media = status.capabilities.find(
@@ -122,7 +122,7 @@ describe("EH-033 status", () => {
     );
     expect(media?.state).toBe("preview_only");
     expect(media?.evidence).toMatch(/evaluateAccess|signed|local_private/i);
-    expect(media?.nextSlice).toBe("EH-034");
+    expect(media?.nextSlice).toBe("EH-040");
   });
 });
 
@@ -400,7 +400,7 @@ describe("EH-033 fillTemplate private layout", () => {
       productionSafe: boolean;
       feature_flags: { signed_media_delivery: boolean };
     };
-    expect(manifest.slice).toBe("EH-033");
+    expect(manifest.slice).toBe("EH-034");
     expect(manifest.productionSafe).toBe(false);
     expect(manifest.feature_flags.signed_media_delivery).toBe(true);
   });

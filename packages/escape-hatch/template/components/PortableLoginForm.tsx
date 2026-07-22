@@ -38,7 +38,7 @@ export function PortableLoginForm() {
       }
       setStatus("ok");
       setMessage("Signed in. Redirecting…");
-      window.location.assign("/admin");
+      window.location.assign("/account");
     } catch {
       setStatus("error");
       setMessage("Sign-in request failed.");
@@ -93,8 +93,7 @@ export function PortableLoginForm() {
       ) : null}
       <p className="small muted">
         Passwords are verified server-side with scrypt hashes. Session cookies
-        are httpOnly. Soft personas never authorize admin. Premium media remains
-        EH-033.
+        are httpOnly. Soft personas never authorize admin or premium media.
       </p>
     </form>
   );

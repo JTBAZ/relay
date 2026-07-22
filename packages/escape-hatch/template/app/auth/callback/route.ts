@@ -14,7 +14,7 @@ export const dynamic = "force-dynamic";
 export async function GET(request: Request) {
   const url = new URL(request.url);
   const code = url.searchParams.get("code");
-  const next = url.searchParams.get("next") ?? "/admin";
+  const next = url.searchParams.get("next") ?? "/account";
 
   if (!isSupabaseIdentityConfigured(loadEnv())) {
     return NextResponse.redirect(new URL("/login", url.origin));
@@ -31,6 +31,7 @@ export async function GET(request: Request) {
     }
   }
 
-  const safeNext = next.startsWith("/") && !next.startsWith("//") ? next : "/admin";
+  const safeNext =
+    next.startsWith("/") && !next.startsWith("//") ? next : "/account";
   return NextResponse.redirect(new URL(safeNext, url.origin));
 }

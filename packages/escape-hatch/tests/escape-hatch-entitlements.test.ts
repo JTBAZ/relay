@@ -72,22 +72,22 @@ function activeGrant(
 }
 
 describe("EH-032 status", () => {
-  it("advances slice to EH-033 with next EH-034 and productionSafe false", () => {
+  it("advances slice to EH-034 with next EH-040 and productionSafe false", () => {
     const status = buildEscapeHatchStatus();
-    expect(ESCAPE_HATCH_SLICE).toBe("EH-033");
-    expect(status.slice).toBe("EH-033");
+    expect(ESCAPE_HATCH_SLICE).toBe("EH-034");
+    expect(status.slice).toBe("EH-034");
     expect(status.productionSafe).toBe(false);
-    expect(status.nextSlice.id).toBe("EH-034");
-    expect(status.nextSlice.title).toMatch(/Account|paywall/i);
+    expect(status.nextSlice.id).toBe("EH-040");
+    expect(status.nextSlice.title).toMatch(/Patreon|OAuth/i);
     expect(status.blockers.some((b) => /EH-032/i.test(b))).toBe(false);
-    expect(status.blockers.some((b) => /EH-034|Milestone 3|paywall UX/i.test(b))).toBe(true);
+    expect(status.blockers.some((b) => /Milestone 3|security review|browser personas/i.test(b))).toBe(true);
 
     const cap = status.capabilities.find((c) => c.id === "entitlement-evaluator");
     expect(cap?.state).toBe("preview_only");
     expect(cap?.evidence).toMatch(/evaluateAccess|grant merge/i);
     expect(cap?.evidence).toMatch(/EH-033|media delivery|productionSafe remains false/i);
     expect(cap?.evidence).toMatch(/productionSafe remains false/i);
-    expect(cap?.nextSlice).toBe("EH-034");
+    expect(cap?.nextSlice).toBe("EH-040");
     expect(cap?.sourcePaths).toEqual(
       expect.arrayContaining([
         "packages/escape-hatch/template/lib/entitlements/evaluate.ts",

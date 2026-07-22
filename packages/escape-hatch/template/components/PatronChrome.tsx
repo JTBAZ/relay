@@ -5,6 +5,7 @@ import { useEffect, type ReactNode } from "react";
 import type { DemoPersona, SiteBundle } from "@/lib/access";
 import { applyThemeTokens } from "@/lib/theme";
 import { SOFT_PERSONA_COOKIE } from "@/lib/media/types";
+import type { IdentityProviderUx } from "@/lib/paywall/types";
 
 type Props = {
   site: SiteBundle;
@@ -14,6 +15,13 @@ type Props = {
   children: ReactNode;
   /** Compact header for post detail */
   compact?: boolean;
+  /**
+   * Identity provider mode (EH-034). Soft persona switch only when `none`.
+   * Defaults to none for backward-compatible local preview.
+   */
+  identityMode?: IdentityProviderUx;
+  /** Explicit override; defaults to identityMode === "none". */
+  showSoftPersona?: boolean;
 };
 
 /** Soft persona id cookie — tiers resolved server-side from the bundle (EH-033). */
@@ -29,20 +37,42 @@ export function PatronChrome({
   personaId,
   onPersonaChange,
   children,
-  compact = false
+  compact = false,
+  identityMode = "none",
+  showSoftPersona
 }: Props) {
   const theme = site.theme;
+  const softPersonaVisible =
+    showSoftPersona ?? identityMode === "none";
 
   useEffect(() => {
     applyThemeTokens(theme);
   }, [theme]);
 
   useEffect(() => {
-    writeSoftPersonaCookie(personaId);
-  }, [personaId]);
+    if (softPersonaVisible) {
+      writeSoftPersonaCookie(personaId);
+    }
+  }, [personaId, softPersonaVisible]);
 
   const displayName = theme.hero.title || site.creator.display_name;
   const monogram = displayName.trim().charAt(0).toUpperCase() || "·";
+
+  const banner =
+    identityMode === "supabase" || identityMode === "portable"
+      ? {
+          label: "Membership gate",
+          text: "Server entitlement + private media · soft personas do not unlock"
+        }
+      : identityMode === "invalid"
+        ? {
+            label: "Identity invalid",
+            text: "Provider misconfigured — membership checks fail closed"
+          }
+        : {
+            label: "Soft-gate preview",
+            text: "Not production security · persona switch is non-authoritative"
+          };
 
   return (
     <div className="patron-root">
@@ -51,8 +81,11 @@ export function PatronChrome({
       </a>
 
       <div className="patron-banner" role="status">
-        <span className="patron-banner-label">Soft-gate preview</span>
-        <span>Not production security · persona switch is non-authoritative</span>
+        <span className="patron-banner-label">{banner.label}</span>
+        <span>{banner.text}</span>
+        <Link className="patron-banner-account" href="/account">
+          Account
+        </Link>
       </div>
 
       <header className={`patron-hero ${compact ? "patron-hero--compact" : ""}`}>
@@ -97,25 +130,36 @@ export function PatronChrome({
             </div>
           </div>
 
-          <div
-            className="soft-gate patron-persona"
-            role="group"
-            aria-label="Demo persona — preview only, not authoritative"
-          >
-            <span className="soft-gate-label">View as</span>
-            <span className="soft-gate-hint">Preview only</span>
-            {personas.map((p) => (
-              <button
-                key={p.id}
-                type="button"
-                className={p.id === personaId ? "active" : undefined}
-                aria-pressed={p.id === personaId}
-                onClick={() => onPersonaChange(p.id)}
-              >
-                {p.label}
-              </button>
-            ))}
-          </div>
+          {softPersonaVisible ? (
+            <div
+              className="soft-gate patron-persona"
+              role="group"
+              aria-label="Demo persona — preview only, not authoritative"
+            >
+              <span className="soft-gate-label">View as</span>
+              <span className="soft-gate-hint">Preview only</span>
+              {personas.map((p) => (
+                <button
+                  key={p.id}
+                  type="button"
+                  className={p.id === personaId ? "active" : undefined}
+                  aria-pressed={p.id === personaId}
+                  onClick={() => onPersonaChange(p.id)}
+                >
+                  {p.label}
+                </button>
+              ))}
+            </div>
+          ) : (
+            <div className="patron-account-actions">
+              <Link className="patron-community-cta" href="/account">
+                Account
+              </Link>
+              <Link className="patron-console-link" href="/login">
+                Sign in
+              </Link>
+            </div>
+          )}
         </div>
       </header>
 
@@ -124,6 +168,12 @@ export function PatronChrome({
       </main>
 
       <footer className="patron-footer">
+        <Link className="patron-console-link" href="/account">
+          Account
+        </Link>
+        <span className="patron-footer-sep" aria-hidden="true">
+          ·
+        </span>
         <Link className="patron-console-link" href="/library">
           Hatch Console
         </Link>

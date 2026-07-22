@@ -9,16 +9,22 @@ import {
   type PaywallStyle,
   type SiteBundle
 } from "@/lib/access";
-import { PaywallTeaser } from "@/components/PaywallTeaser";
+import { PaywallOverlay } from "@/components/PaywallOverlay";
 import { PatronChrome } from "@/components/PatronChrome";
 import {
   applyPostOverrides,
   loadPostOverrides
 } from "@/lib/site-session";
 import { resolveVisitorMediaSrc } from "@/lib/media/visitor-src";
+import type { IdentityProviderUx, ServerAccessSummary } from "@/lib/paywall/types";
+import type { PaywallAudience } from "@/lib/paywall/copy";
 
 type Props = {
   site: SiteBundle;
+  /** Provider mode from server — soft persona only when none. */
+  identityMode?: IdentityProviderUx;
+  /** Per-post server evaluation when Path A/B is active. */
+  accessByPostId?: Record<string, ServerAccessSummary>;
 };
 
 function accessLabel(post: ClonePostEntry, tiers: SiteBundle["tiers"]): string {
@@ -31,10 +37,29 @@ function accessLabel(post: ClonePostEntry, tiers: SiteBundle["tiers"]): string {
   return titles.length ? titles.join(" · ") : "Tier";
 }
 
-export function GalleryApp({ site }: Props) {
+function audienceForAccess(
+  identityMode: IdentityProviderUx,
+  access: ServerAccessSummary | undefined
+): PaywallAudience {
+  if (identityMode === "none") return "soft_persona_preview";
+  if (access?.reason === "soft_persona_blocked") return "soft_persona_blocked";
+  if (access?.reason === "staff_override") return "staff";
+  if (access && !access.allowed && access.reason !== "anonymous_denied") {
+    return "signed_in";
+  }
+  return "anonymous";
+}
+
+export function GalleryApp({
+  site,
+  identityMode = "none",
+  accessByPostId
+}: Props) {
   const personas = site.demo_personas;
   const [personaId, setPersonaId] = useState(personas[0]?.id ?? "public");
   const [posts, setPosts] = useState(site.posts);
+  const identityConfigured =
+    identityMode === "supabase" || identityMode === "portable";
 
   useEffect(() => {
     const overrides = loadPostOverrides(site.site_id);
@@ -55,6 +80,8 @@ export function GalleryApp({ site }: Props) {
       personas={personas}
       personaId={persona.id}
       onPersonaChange={setPersonaId}
+      identityMode={identityMode}
+      showSoftPersona={!identityConfigured}
     >
       <div
         className={`patron-grid patron-grid--${density}`}
@@ -62,15 +89,27 @@ export function GalleryApp({ site }: Props) {
         aria-label="Gallery posts"
       >
         {liveSite.posts.map((post, index) => {
-          const unlocked = canViewPost(post, persona);
+          const serverAccess = accessByPostId?.[post.post_id];
+          const unlocked = identityConfigured
+            ? Boolean(serverAccess?.allowed)
+            : canViewPost(post, persona);
+          const reason =
+            identityConfigured
+              ? (serverAccess?.reason ?? "anonymous_denied")
+              : unlocked
+                ? "soft_persona_preview"
+                : "anonymous_denied";
+          const audience = audienceForAccess(identityMode, serverAccess);
           const thumbRaw = post.media[0];
-          const thumb = thumbRaw
-            ? resolveVisitorMediaSrc({
-                mediaId: thumbRaw.media_id,
-                contentPath: thumbRaw.content_path,
-                accessLevel: post.access.level
-              })
-            : undefined;
+          // Locked premium: never construct / fetch /api/media URLs.
+          const thumb =
+            thumbRaw && unlocked
+              ? resolveVisitorMediaSrc({
+                  mediaId: thumbRaw.media_id,
+                  contentPath: thumbRaw.content_path,
+                  accessLevel: post.access.level
+                })
+              : undefined;
           const lockClass = unlocked ? "" : `locked ${style}`;
           const body = (
             <>
@@ -86,17 +125,20 @@ export function GalleryApp({ site }: Props) {
                     decoding="async"
                     fetchPriority={index === 0 ? "high" : undefined}
                   />
-                ) : thumb && !unlocked ? (
-                  // Locked premium: do not fetch bytes (blur teaser only).
+                ) : !unlocked ? (
                   <div className="patron-media-empty" aria-hidden="true" />
                 ) : (
                   <div className="patron-media-empty">No media</div>
                 )}
                 {!unlocked ? (
-                  <PaywallTeaser
+                  <PaywallOverlay
                     style={style}
+                    allowed={false}
+                    reason={reason}
+                    audience={audience}
                     message={liveSite.theme.paywall_message}
                     communityCta={liveSite.theme.community_cta}
+                    compact
                   />
                 ) : null}
               </div>
@@ -114,17 +156,16 @@ export function GalleryApp({ site }: Props) {
               role="listitem"
               style={{ ["--patron-stagger" as string]: String(index) }}
             >
-              {unlocked ? (
-                <Link
-                  href={`/p/${post.slug}`}
-                  className="patron-card-link"
-                  aria-label={`Open ${post.title}`}
-                >
-                  {body}
-                </Link>
-              ) : (
-                <div className="patron-card-static">{body}</div>
-              )}
+              {/* Locked cards still link to post so paywall CTA / account can be used. */}
+              <Link
+                href={`/p/${post.slug}`}
+                className={unlocked ? "patron-card-link" : "patron-card-link patron-card-link--locked"}
+                aria-label={
+                  unlocked ? `Open ${post.title}` : `Locked: ${post.title}`
+                }
+              >
+                {body}
+              </Link>
             </article>
           );
         })}
