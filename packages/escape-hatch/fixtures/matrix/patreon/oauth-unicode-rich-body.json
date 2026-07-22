@@ -1,0 +1,17 @@
+{
+  "data": [
+    {
+      "type": "post",
+      "id": "fixture_post_unicode",
+      "attributes": {
+        "title": "作品 Études — café résumé 日本語テスト",
+        "published_at": "2026-04-05T12:00:00.000Z",
+        "content": "<article><h2>Sanitized rich body</h2><p>Long fixture HTML for Escape Hatch EH-010. Includes <em>emphasis</em>, <strong>strong</strong>, a list:</p><ul><li>Alpha</li><li>Beta — β</li><li>Gamma — γ</li></ul><p>Repeated filler to exercise size without secrets: Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.</p><p>Second paragraph of sanitized filler text for rich-body coverage. No emails, tokens, or phone numbers appear in this document. CDN references intentionally use https://cdn.fixture.example/placeholder.png only.</p><blockquote><p>Unicode quote: «café» · «東京» · «naïve»</p></blockquote></article>",
+        "is_public": true,
+        "is_paid": false,
+        "tiers": []
+      }
+    }
+  ],
+  "links": {}
+}

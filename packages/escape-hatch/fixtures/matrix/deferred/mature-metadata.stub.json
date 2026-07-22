@@ -1,0 +1,11 @@
+{
+  "id": "mature-metadata",
+  "status": "deferred-to-EH-011",
+  "schemaNote": "Structural stub only — not present on SiteBundle/CloneSiteModel contracts.",
+  "expectedSourceFields": [
+    "is_mature",
+    "legal_adult",
+    "content_flags"
+  ],
+  "reason": "Mature/legal-adult metadata without explicit media must not invent EH-001 contract fields. Capture and map in EH-011 importer provenance."
+}

@@ -1,0 +1,12 @@
+{
+  "id": "deleted-tombstoned",
+  "status": "deferred-to-EH-011",
+  "schemaNote": "Structural stub only — SiteBundle has no upstream_status field.",
+  "expectedCanonicalShape": {
+    "post_id": "fixture_post_tombstone",
+    "upstream_status": "deleted",
+    "current": null,
+    "versions": []
+  },
+  "reason": "Deleted/unpublished/tombstoned posts are modeled on canonical upstream_status and must flow through the EH-011 importer conflict/exclusion path. Do not invent SiteBundle publish states here."
+}

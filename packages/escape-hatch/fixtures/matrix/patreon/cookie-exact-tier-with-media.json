@@ -1,0 +1,30 @@
+{
+  "data": [
+    {
+      "type": "post",
+      "id": "fixture_post_exact_tier",
+      "attributes": {
+        "title": "Fixture Exact Tier Post",
+        "content": "<p>Cookie-shaped exact tier with raw numeric tier string.</p>",
+        "published_at": "2026-04-03T12:00:00.000Z",
+        "edited_at": "2026-04-03T12:00:00.000Z",
+        "tiers": ["555"]
+      },
+      "relationships": {
+        "images": {
+          "data": [{ "type": "media", "id": "fixture_media_exact" }]
+        }
+      }
+    }
+  ],
+  "included": [
+    {
+      "type": "media",
+      "id": "fixture_media_exact",
+      "attributes": {
+        "download_url": "https://cdn.fixture.example/patreon-media-exact.png"
+      }
+    }
+  ],
+  "links": {}
+}

@@ -51,7 +51,7 @@ describe("buildEscapeHatchStatus", () => {
   it("returns a versioned schema with productionSafe false", () => {
     const status = buildEscapeHatchStatus();
     expect(status.schemaVersion).toBe(ESCAPE_HATCH_STATUS_SCHEMA_VERSION);
-    expect(status.slice).toBe("EH-001");
+    expect(status.slice).toBe("EH-010");
     expect(status.deliverable).toBe("prototype_preview_only");
     expect(status.productionSafe).toBe(false);
   });
@@ -85,12 +85,14 @@ describe("buildEscapeHatchStatus", () => {
     expect(media?.evidence).toMatch(/public bytes/i);
   });
 
-  it("records EH-001 complete and routes next work to EH-010", () => {
+  it("records EH-010 complete and routes next work to EH-011", () => {
     const status = buildEscapeHatchStatus();
     expect(status.blockers.length).toBeGreaterThan(0);
-    expect(status.blockers.some((b) => b.includes("EH-001"))).toBe(false);
-    expect(status.nextSlice.id).toBe("EH-010");
-    expect(status.nextSlice.title).toMatch(/sanitized golden fixtures/i);
+    expect(status.blockers.some((b) => /OAuth\/cookie.*not yet wired/i.test(b))).toBe(
+      false
+    );
+    expect(status.nextSlice.id).toBe("EH-011");
+    expect(status.nextSlice.title).toMatch(/importer/i);
     expect(status.nextSlice.focus.length).toBeGreaterThan(0);
   });
 
@@ -161,12 +163,20 @@ describe("buildEscapeHatchStatus", () => {
     );
   });
 
-  it("cites real-shape Patreon fixture paths exactly", () => {
+  it("cites wired matrix, scan, and real-shape Patreon fixture paths", () => {
     const capability = buildEscapeHatchStatus().capabilities.find(
       (cap) => cap.id === "fixture-coverage"
     );
+    expect(capability?.evidence).toMatch(/MATRIX\.json/i);
+    expect(capability?.evidence).toMatch(/secret\/PII scan/i);
+    expect(capability?.evidence).not.toMatch(/not wired/i);
+    expect(capability?.nextSlice).toBe("EH-011");
     expect(capability?.sourcePaths).toEqual(
       expect.arrayContaining([
+        "packages/escape-hatch/fixtures/MATRIX.json",
+        "packages/escape-hatch/fixtures/PROVENANCE.md",
+        "packages/escape-hatch/src/fixture-scan.ts",
+        "packages/escape-hatch/tests/escape-hatch-fixtures.test.ts",
         "tests/fixtures/patreon/oauth-list-post-text-only.json",
         "tests/fixtures/patreon/cookie-list-with-media.json"
       ])

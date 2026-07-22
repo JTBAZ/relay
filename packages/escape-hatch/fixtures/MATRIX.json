@@ -1,0 +1,179 @@
+{
+  "schemaVersion": "escape-hatch-fixture-matrix/1.0.0",
+  "slice": "EH-010",
+  "productionSafe": false,
+  "provenance": "packages/escape-hatch/fixtures/PROVENANCE.md",
+  "allowlistedHosts": [
+    "cdn.fixture.example",
+    "media.fixture.example",
+    "example.com",
+    "localhost"
+  ],
+  "families": [
+    {
+      "id": "baseline-sample-bundle",
+      "status": "present",
+      "kind": "site-bundle",
+      "paths": ["sample.bundle.json", "media/m_public.svg", "media/m_members.svg", "media/m_gold.svg"],
+      "notes": "Legacy unversioned SiteBundle; public / member_only / tier_gated without amount_cents."
+    },
+    {
+      "id": "baseline-clone-site",
+      "status": "present",
+      "kind": "clone-site",
+      "paths": ["clone-site.json"],
+      "notes": "Legacy CloneSiteModel with export API paths and has_export false."
+    },
+    {
+      "id": "baseline-relay-dump",
+      "status": "present",
+      "kind": "relay-dump",
+      "paths": [
+        "relay-dump/canonical.json",
+        "relay-dump/exports/cr_eh_relay/export_index.json",
+        "relay-dump/exports/cr_eh_relay/blobs/m_relay.svg",
+        "relay-dump/exports/cr_eh_relay/blobs/m_relay_gold.svg"
+      ],
+      "notes": "Structural dump present; idempotent importer/parity tests deferred to EH-011."
+    },
+    {
+      "id": "public-text-only",
+      "status": "present",
+      "kind": "patreon-oauth+site-bundle",
+      "paths": [
+        "matrix/patreon/oauth-public-text-only.json",
+        "matrix/site-bundles/access-matrix.bundle.json"
+      ],
+      "postIds": ["fixture_post_public_text", "p_public_text"],
+      "notes": "OAuth JSON:API array, HTML body, empty tiers, no included/media; SiteBundle public text-only post."
+    },
+    {
+      "id": "all-patrons-with-image",
+      "status": "present",
+      "kind": "patreon-cookie+site-bundle",
+      "paths": [
+        "matrix/patreon/cookie-all-patrons-with-image.json",
+        "matrix/site-bundles/access-matrix.bundle.json",
+        "media/m_members.svg"
+      ],
+      "postIds": ["fixture_post_all_patrons", "p_all_patrons"],
+      "notes": "member_only / all-patrons with relationship images and sparse included CDN URL."
+    },
+    {
+      "id": "exact-tier",
+      "status": "present",
+      "kind": "patreon-cookie+site-bundle",
+      "paths": [
+        "matrix/patreon/cookie-exact-tier-with-media.json",
+        "matrix/site-bundles/access-matrix.bundle.json",
+        "media/m_gold.svg"
+      ],
+      "postIds": ["fixture_post_exact_tier", "p_exact_gold"],
+      "notes": "Raw numeric tier string in cookie shape; SiteBundle match_mode exact + amount_cents floors."
+    },
+    {
+      "id": "tier-or-higher",
+      "status": "present",
+      "kind": "site-bundle",
+      "paths": ["matrix/site-bundles/access-matrix.bundle.json"],
+      "postIds": ["p_tier_or_higher_silver"],
+      "notes": "tier_or_higher with silver floor; gold/platinum personas unlock."
+    },
+    {
+      "id": "multi-media-gallery",
+      "status": "present",
+      "kind": "patreon-oauth+site-bundle+clone",
+      "paths": [
+        "matrix/patreon/oauth-multi-image-gallery.json",
+        "matrix/site-bundles/access-matrix.bundle.json",
+        "matrix/clone-sites/multi-media.clone.json",
+        "media/m_gallery_a.svg",
+        "media/m_gallery_b.svg",
+        "media/m_gallery_c.svg",
+        "media/m_attachment.svg"
+      ],
+      "postIds": ["fixture_post_gallery", "p_gallery", "p_gallery_clone"],
+      "notes": "Multi-image gallery + attachment mime placeholders (SVG only)."
+    },
+    {
+      "id": "free-vs-paid",
+      "status": "present",
+      "kind": "site-bundle",
+      "paths": ["matrix/site-bundles/access-matrix.bundle.json"],
+      "notes": "demo_personas distinguish free follower (amount_cents 0) from paid members."
+    },
+    {
+      "id": "export-failure",
+      "status": "present",
+      "kind": "clone-site",
+      "paths": ["matrix/clone-sites/export-failure.clone.json"],
+      "postIds": ["p_export_fail"],
+      "notes": "has_export false missing-blob case; does not claim importer or R2 success."
+    },
+    {
+      "id": "unicode-rich",
+      "status": "present",
+      "kind": "patreon-oauth+site-bundle",
+      "paths": [
+        "matrix/patreon/oauth-unicode-rich-body.json",
+        "matrix/site-bundles/unicode-rich.bundle.json"
+      ],
+      "postIds": ["fixture_post_unicode", "p_unicode"],
+      "notes": "Unicode title/slug; long sanitized HTML content in Patreon shape only (SiteBundle has no body field)."
+    },
+    {
+      "id": "multi-tier-floors",
+      "status": "present",
+      "kind": "site-bundle",
+      "paths": ["matrix/site-bundles/access-matrix.bundle.json"],
+      "notes": "Free + Silver/Gold/Platinum amount_cents floors on one creator catalog."
+    },
+    {
+      "id": "duplicate-cdn-urls",
+      "status": "present",
+      "kind": "patreon-oauth",
+      "paths": ["matrix/patreon/oauth-duplicate-cdn-urls.json"],
+      "postIds": ["fixture_post_dup_cdn"],
+      "notes": "Duplicate download_url values intentionally preserved for normalization tests later."
+    },
+    {
+      "id": "missing-cover-attachment",
+      "status": "present",
+      "kind": "clone-site",
+      "paths": [
+        "matrix/clone-sites/multi-media.clone.json",
+        "media/m_attachment.svg"
+      ],
+      "postIds": ["p_attachment_only"],
+      "notes": "Attachment media without cover image."
+    },
+    {
+      "id": "video-audio-embed",
+      "status": "deferred-to-EH-011",
+      "kind": "structural-stub",
+      "paths": ["matrix/deferred/video-audio-embed.stub.json"],
+      "reason": "SiteBundle media refs can carry mime_type labels, but real video/audio/embed ingest + private blob migration require EH-011/EH-012; stub documents expected shapes without fake import success."
+    },
+    {
+      "id": "deleted-tombstoned",
+      "status": "deferred-to-EH-011",
+      "kind": "structural-stub",
+      "paths": ["matrix/deferred/deleted-tombstoned.stub.json"],
+      "reason": "Tombstone/unpublished handling lives on canonical upstream_status and the idempotent importer conflict path (EH-011)."
+    },
+    {
+      "id": "mature-metadata",
+      "status": "deferred-to-EH-011",
+      "kind": "structural-stub",
+      "paths": ["matrix/deferred/mature-metadata.stub.json"],
+      "reason": "Mature/legal-adult metadata is not a SiteBundle field; do not invent contract fields in EH-010."
+    },
+    {
+      "id": "legacy-tier-rename",
+      "status": "deferred-to-EH-011",
+      "kind": "structural-stub",
+      "paths": ["matrix/deferred/legacy-tier-rename.stub.json"],
+      "reason": "Changed tier names/prices with legacy patrons needs importer remapping + conflict queue (EH-011)."
+    }
+  ]
+}

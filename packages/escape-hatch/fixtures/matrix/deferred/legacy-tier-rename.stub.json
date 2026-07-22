@@ -1,0 +1,15 @@
+{
+  "id": "legacy-tier-rename",
+  "status": "deferred-to-EH-011",
+  "schemaNote": "Structural stub only — amount_cents floors exist on access-matrix; remapping does not.",
+  "scenario": {
+    "prior_tier_id": "t_gold_legacy",
+    "prior_title": "Gold (legacy)",
+    "prior_amount_cents": 900,
+    "current_tier_id": "t_gold",
+    "current_title": "Gold",
+    "current_amount_cents": 1000,
+    "legacy_patron_ids": ["fixture_patron_legacy_1"]
+  },
+  "reason": "Changed tier names/prices with legacy patrons requires importer remapping, conflict queue, and local mutable state separation in EH-011. EH-010 only documents the gap."
+}

@@ -1,0 +1,23 @@
+{
+  "id": "video-audio-embed",
+  "status": "deferred-to-EH-011",
+  "schemaNote": "Structural stub only — not a SiteBundle and not importable as success.",
+  "expectedShapes": [
+    {
+      "role": "video",
+      "mime_type": "video/mp4",
+      "placeholder_policy": "Do not commit real video bytes; EH-012 owns private blob copy."
+    },
+    {
+      "role": "audio",
+      "mime_type": "audio/mpeg",
+      "placeholder_policy": "Synthetic placeholder only when needed; no live audio."
+    },
+    {
+      "role": "embed",
+      "mime_type": "text/html",
+      "placeholder_policy": "Embed provenance belongs to importer; Escape Hatch must not fetch third-party embeds at fixture time."
+    }
+  ],
+  "reason": "SiteBundle can label mime_type on media refs, but video/audio/embed ingest, checksum ledger, and private delivery require EH-011/EH-012. This stub documents the family without faking importer success."
+}

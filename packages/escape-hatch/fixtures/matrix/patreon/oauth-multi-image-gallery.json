@@ -1,0 +1,52 @@
+{
+  "data": [
+    {
+      "type": "post",
+      "id": "fixture_post_gallery",
+      "attributes": {
+        "title": "Fixture Multi Image Gallery",
+        "content": "<p>Gallery with sparse included media.</p>",
+        "published_at": "2026-04-04T12:00:00.000Z",
+        "is_public": false,
+        "is_paid": true,
+        "tiers": ["fixture_tier_gold"]
+      },
+      "relationships": {
+        "images": {
+          "data": [
+            { "type": "media", "id": "fixture_media_g1" },
+            { "type": "media", "id": "fixture_media_g2" },
+            { "type": "media", "id": "fixture_media_g3" }
+          ]
+        }
+      }
+    }
+  ],
+  "included": [
+    {
+      "type": "media",
+      "id": "fixture_media_g1",
+      "attributes": {
+        "download_url": "https://cdn.fixture.example/gallery-a.png",
+        "mimetype": "image/png"
+      }
+    },
+    {
+      "type": "media",
+      "id": "fixture_media_g2",
+      "attributes": {
+        "download_url": "https://cdn.fixture.example/gallery-b.png",
+        "mimetype": "image/png"
+      }
+    },
+    {
+      "type": "media",
+      "id": "fixture_media_g3",
+      "attributes": {
+        "download_url": "https://cdn.fixture.example/gallery-c.png",
+        "mimetype": "image/png"
+      }
+    }
+  ],
+  "links": {}
+}

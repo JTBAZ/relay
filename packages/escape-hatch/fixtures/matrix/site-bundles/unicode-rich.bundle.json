@@ -1,0 +1,45 @@
+{
+  "contract_version": "site-bundle/1.0.0",
+  "site_id": "site_fixture_unicode",
+  "creator_id": "cr_fixture_unicode",
+  "generated_at": "2026-07-22T16:05:00.000Z",
+  "base_url": "http://localhost:3001",
+  "creator": {
+    "display_name": "Fixture Unicode Studio",
+    "handle": "fixture-unicode"
+  },
+  "theme": {
+    "color_scheme": "warm",
+    "accent_color": "#c45c26",
+    "paywall_style": "teaser",
+    "hero": {
+      "title": "Fixture Unicode Studio",
+      "subtitle": "作品 · Études",
+      "bio": "Unicode title/slug coverage for EH-010. Rich HTML body lives in the Patreon-shaped sibling fixture."
+    }
+  },
+  "demo_personas": [
+    { "id": "public", "label": "Public", "tier_ids": [] },
+    { "id": "patron_all", "label": "Any paid", "tier_ids": ["t_studio"] }
+  ],
+  "tiers": [
+    {
+      "tier_id": "t_studio",
+      "title": "Studio",
+      "access_level": "tier_gated",
+      "amount_cents": 1200
+    }
+  ],
+  "posts": [
+    {
+      "post_id": "p_unicode",
+      "slug": "作品-été.2026",
+      "title": "作品 Études — café résumé 日本語テスト",
+      "published_at": "2026-07-07T12:00:00.000Z",
+      "tag_ids": ["unicode"],
+      "access": { "level": "public", "tier_ids": [] },
+      "media": []
+    }
+  ],
+  "total_media": 0
+}

@@ -1,11 +1,11 @@
 /**
- * Deterministic Escape Hatch capability inventory (through EH-001).
+ * Deterministic Escape Hatch capability inventory (through EH-010).
  * No timestamps, env reads, network, or live data — informational only.
  */
 
 export const ESCAPE_HATCH_STATUS_SCHEMA_VERSION = "escape-hatch-status/1.0.0";
 
-export const ESCAPE_HATCH_SLICE = "EH-001";
+export const ESCAPE_HATCH_SLICE = "EH-010";
 
 export type CapabilityState =
   | "production_safe"
@@ -36,7 +36,7 @@ export type EscapeHatchStatus = {
   capabilities: EscapeHatchCapability[];
   blockers: string[];
   nextSlice: {
-    id: "EH-010";
+    id: "EH-011";
     title: string;
     focus: string[];
   };
@@ -56,7 +56,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "packages/escape-hatch/src/zip-kit.ts"
     ],
     risk: "high",
-    nextSlice: "EH-010"
+    nextSlice: "EH-011"
   },
   {
     id: "soft-persona-gate",
@@ -116,16 +116,20 @@ const CAPABILITIES: EscapeHatchCapability[] = [
     title: "Fixture coverage (sample, clone, Patreon shapes)",
     state: "preview_only",
     evidence:
-      "sample.bundle.json and clone-site.json drive package tests; repo-root tests/fixtures/patreon oauth-list-post-text-only and cookie-list-with-media shapes are documented but not wired into escape-hatch automated coverage.",
+      "EH-010 wires a sanitized fixture matrix (MATRIX.json) with OAuth/cookie-shaped Patreon JSON, amount_cents SiteBundle/CloneSiteModel adaptations, provenance notes, and an automated secret/PII scan over packages/escape-hatch/fixtures; deferred importer families are explicitly stubbed for EH-011.",
     sourcePaths: [
+      "packages/escape-hatch/fixtures/MATRIX.json",
+      "packages/escape-hatch/fixtures/PROVENANCE.md",
       "packages/escape-hatch/fixtures/sample.bundle.json",
       "packages/escape-hatch/fixtures/clone-site.json",
-      "packages/escape-hatch/tests/escape-hatch.test.ts",
+      "packages/escape-hatch/fixtures/matrix/site-bundles/access-matrix.bundle.json",
+      "packages/escape-hatch/src/fixture-scan.ts",
+      "packages/escape-hatch/tests/escape-hatch-fixtures.test.ts",
       "tests/fixtures/patreon/oauth-list-post-text-only.json",
       "tests/fixtures/patreon/cookie-list-with-media.json"
     ],
     risk: "medium",
-    nextSlice: "EH-010"
+    nextSlice: "EH-011"
   },
   {
     id: "relay-dump-fixtures",
@@ -277,8 +281,8 @@ const BLOCKERS: string[] = [
   "Premium media remains world-readable in public/; migration/copy belongs to EH-012 and server-enforced private delivery belongs to EH-033.",
   "No hard patron identity, entitlements, or RLS-backed session (EH-030).",
   "Billing and deploy paths are stub-only in Relay core, not creator-owned production integrations (EH-050, EH-070).",
-  "Sanitized Patreon OAuth/cookie golden shapes are not yet wired into Escape Hatch contract coverage (EH-010).",
-  "Relay-dump fixtures still lack the idempotent importer, conflict queue, and parity accounting planned for EH-011."
+  "Relay-dump fixtures still lack the idempotent importer, conflict queue, and parity accounting planned for EH-011.",
+  "Deferred fixture families (tombstones, mature metadata, legacy tier rename, real video/audio/embed ingest) remain stubs until EH-011/EH-012."
 ];
 
 export function buildEscapeHatchStatus(): EscapeHatchStatus {
@@ -288,7 +292,7 @@ export function buildEscapeHatchStatus(): EscapeHatchStatus {
     deliverable: "prototype_preview_only",
     productionSafe: false,
     summary:
-      "Escape Hatch through EH-001 has versioned runtime-validated shared contracts and canonical-aligned preview access semantics; locked premium bytes remain public, persona state is non-authoritative, and the prototype is not production safe.",
+      "Escape Hatch through EH-010 has versioned runtime-validated shared contracts, a sanitized golden fixture matrix with secret/PII scanning, and canonical-aligned preview access semantics; locked premium bytes remain public, persona state is non-authoritative, and the prototype is not production safe.",
     prototypeWarnings: [...PROTOTYPE_WARNINGS],
     capabilities: CAPABILITIES.map((c) => ({
       ...c,
@@ -296,12 +300,12 @@ export function buildEscapeHatchStatus(): EscapeHatchStatus {
     })),
     blockers: [...BLOCKERS],
     nextSlice: {
-      id: "EH-010",
-      title: "Sanitized golden fixtures",
+      id: "EH-011",
+      title: "Canonical generated-app importer",
       focus: [
-        "Add sanitized OAuth and cookie extraction fixture coverage",
-        "Verify fixture provenance without secrets or patron PII",
-        "Exercise real Patreon content and media shapes against shared contracts"
+        "Import canonical/clone/export into the independent app seed",
+        "Separate immutable provenance from local mutable state",
+        "Idempotent replay, conflict queue, and deferred fixture family coverage"
       ]
     }
   };
