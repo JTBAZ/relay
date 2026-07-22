@@ -1,6 +1,6 @@
 {
   "schemaVersion": "escape-hatch-fixture-matrix/1.0.0",
-  "slice": "EH-021",
+  "slice": "EH-022",
   "productionSafe": false,
   "provenance": "packages/escape-hatch/fixtures/PROVENANCE.md",
   "allowlistedHosts": [
@@ -15,7 +15,7 @@
       "status": "present",
       "kind": "site-bundle",
       "paths": ["sample.bundle.json", "media/m_public.svg", "media/m_members.svg", "media/m_gold.svg"],
-      "notes": "Legacy unversioned SiteBundle; public / member_only / tier_gated without amount_cents. EH-021 branding dials (logo, type pairing, density, cover crop, paywall message, community CTA) present on theme."
+      "notes": "Legacy unversioned SiteBundle; public / member_only / tier_gated without amount_cents. EH-021 branding dials (logo, type pairing, density, cover crop, paywall message, community CTA) present on theme. EH-022 native admin inspects this kit state (posts/media/tiers) with stub health honesty."
     },
     {
       "id": "baseline-clone-site",

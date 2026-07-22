@@ -26,7 +26,9 @@ export {
 } from "./kit-io.js";
 export {
   assertLocalLibraryTruthMutation,
+  assertLocalOperatorMutation,
   evaluateLocalLibraryTruthMutationAccess,
+  evaluateLocalOperatorMutationAccess,
   LOCAL_OPERATOR_HEADER,
   LOCAL_OPERATOR_HEADER_VALUE,
   type LocalOperatorDecision

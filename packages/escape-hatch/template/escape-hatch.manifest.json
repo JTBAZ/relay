@@ -3,7 +3,7 @@
   "contract_version": "escape-hatch.manifest/1.0.0",
   "chassis_version": "0.2.0",
   "schema_version": "eh-db/0001_preview_chassis",
-  "slice": "EH-021",
+  "slice": "EH-022",
   "productionSafe": false,
   "generated_at": null,
   "creator_id": null,
@@ -13,7 +13,8 @@
     "hard_paywall": false,
     "signed_media_delivery": false,
     "supabase_identity": false,
-    "stripe_billing": false
+    "stripe_billing": false,
+    "native_admin": true
   },
   "adapters": {
     "auth": { "id": "stub", "version": "0.0.0", "state": "stub_only" },

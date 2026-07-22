@@ -7,6 +7,7 @@ const TABS = [
   { href: "/library", label: "Library", hint: "Truth audit" },
   { href: "/structure", label: "Structure", hint: "Tiers & posts" },
   { href: "/style", label: "Style", hint: "Few dials" },
+  { href: "/admin", label: "Admin", hint: "Operate site" },
   { href: "/preview", label: "Preview", hint: "Visitor walk" }
 ] as const;
 
@@ -30,6 +31,7 @@ export function ConsoleNav({ quiet = false }: Props) {
         {TABS.map((tab) => {
           const active =
             pathname === tab.href ||
+            (tab.href === "/admin" && pathname.startsWith("/admin")) ||
             (tab.href === "/preview" && pathname.startsWith("/p/")) ||
             (tab.href === "/library" && pathname === "/");
           return (

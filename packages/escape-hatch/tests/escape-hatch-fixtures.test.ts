@@ -92,7 +92,7 @@ describe("EH-010 fixture matrix index", () => {
   it("lists every expected present and deferred family", () => {
     const matrix = loadMatrix();
     expect(matrix.schemaVersion).toBe("escape-hatch-fixture-matrix/1.0.0");
-    expect(matrix.slice).toBe("EH-021");
+    expect(matrix.slice).toBe("EH-022");
     expect(matrix.productionSafe).toBe(false);
 
     const byId = new Map(matrix.families.map((f) => [f.id, f]));
@@ -156,7 +156,7 @@ describe("EH-010 provenance", () => {
     expect(text).toMatch(/EH-011/);
     expect(text).toMatch(/EH-013/);
     expect(text).toMatch(/EH-020/);
-    expect(text).toMatch(/EH-021/);
+    expect(text).toMatch(/EH-022/);
     expect(text).toMatch(/sparse `included`|sparse included/i);
     expect(text).toMatch(/public\/media/);
   });

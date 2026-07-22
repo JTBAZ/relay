@@ -41,5 +41,6 @@ Adapter inventory: `escape-hatch.manifest.json` and `lib/adapters/`. Runtime ada
 
 - Soft gate / demo personas are not entitlements.
 - Premium media may still be world-readable under `public/media` until EH-033 (including inside Docker images that copy `public/`).
-- Library-truth operator gating is header + loopback only (EH-013) — not authentication; no remote env override.
+- Library-truth and admin attention mutations are header + loopback only — not authentication; no remote env override.
+- `/admin` is a preview operator shell; stub adapter health stays degraded (`ok: false`) until EH-030/033/050.
 

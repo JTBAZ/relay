@@ -333,7 +333,7 @@ export function stampEscapeHatchManifest(
   parsed.generated_at = bundle.generated_at;
   parsed.creator_id = bundle.creator_id;
   parsed.site_id = bundle.site_id ?? bundle.creator_id;
-  parsed.slice = "EH-021";
+  parsed.slice = "EH-022";
   parsed.productionSafe = false;
   parsed.feature_flags = {
     ...parsed.feature_flags,
@@ -341,7 +341,8 @@ export function stampEscapeHatchManifest(
     hard_paywall: false,
     signed_media_delivery: false,
     supabase_identity: false,
-    stripe_billing: false
+    stripe_billing: false,
+    native_admin: true
   };
   writeFileSync(manifestPath, `${JSON.stringify(parsed, null, 2)}\n`, "utf8");
   return manifestPath;
@@ -416,7 +417,7 @@ export function fillTemplate(opts: FillOptions): FillResult {
       "",
       "**Soft gate only** — persona switching is for demo. This is not production security.",
       "Locked media is still present in `/public/media`; do not deploy this kit as a real paywall.",
-      "`productionSafe: false` — Milestone 2 (EH-021 premium theme on EH-020 chassis), not EH-033 signed delivery.",
+      "`productionSafe: false` — Milestone 2 (EH-022 native admin on EH-021 theme / EH-020 chassis), not EH-033 signed delivery.",
       "",
       `Contract: ${bundle.contract_version}`,
       "",
@@ -425,15 +426,18 @@ export function fillTemplate(opts: FillOptions): FillResult {
       "1. `/library` — Library truth audit (parity, anomalies, exclude)",
       "2. `/structure` — tiers & posts detected (accuracy)",
       "3. `/style` — few aesthetic dials (session peek)",
-      "4. `/preview` — visitor walkthrough (soft gate)",
+      "4. `/admin` — operator shell (health, posts, media, tiers)",
+      "5. `/preview` — visitor walkthrough (soft gate)",
       "",
       "`/` redirects to Library. Library truth rebuilds parity from data/ artifacts on every load (never trusts a tampered report alone).",
+      "Admin attention marks are local-operator only (header + loopback) — not authentication.",
       "",
-      "## Standalone chassis (EH-020) + premium patron theme (EH-021)",
+      "## Standalone chassis (EH-020) + premium theme (EH-021) + admin (EH-022)",
       "",
       "- Typed env: `lib/env.ts` + `.env.example` (names only)",
       "- SQL migrations: `db/schema/`, `db/migrations/` (not required for `npm run build`)",
-      "- Adapters: `lib/adapters/` + `escape-hatch.manifest.json`",
+      "- Adapters: `lib/adapters/` + `escape-hatch.manifest.json` (stub health ok: false)",
+      "- Admin: `/admin` routes — distinct from visitor gallery",
       "- Deploy: `vercel.json`, `Dockerfile`, optional `docker-compose.yml`",
       "- See `OPERATIONS.md` and `OWNERSHIP.md`",
       "",

@@ -1,6 +1,6 @@
 /**
  * EH-020 Generated repository chassis: clean-dir build contract, env/deploy
- * manifests, no Relay path imports, status EH-020 → EH-021, productionSafe false.
+ * manifests, no Relay path imports, status EH-020 preserved under EH-022, productionSafe false.
  */
 
 import { spawnSync } from "node:child_process";
@@ -62,14 +62,14 @@ function collectSourceFiles(root: string, out: string[] = []): string[] {
   return out;
 }
 
-describe("EH-020 status (preserved under EH-021)", () => {
+describe("EH-020 status (preserved under EH-022)", () => {
   it("keeps generated-repository capability with productionSafe false", () => {
     const status = buildEscapeHatchStatus();
-    expect(ESCAPE_HATCH_SLICE).toBe("EH-021");
-    expect(status.slice).toBe("EH-021");
+    expect(ESCAPE_HATCH_SLICE).toBe("EH-022");
+    expect(status.slice).toBe("EH-022");
     expect(status.productionSafe).toBe(false);
-    expect(status.nextSlice.id).toBe("EH-022");
-    expect(status.nextSlice.title).toMatch(/Native admin shell/i);
+    expect(status.nextSlice.id).toBe("EH-030");
+    expect(status.nextSlice.title).toMatch(/Supabase identity/i);
     const cap = status.capabilities.find((c) => c.id === "generated-repository");
     expect(cap?.state).toBe("preview_only");
     expect(cap?.evidence).toMatch(/clean directory|typed env|Dockerfile/i);
@@ -187,7 +187,7 @@ describe("EH-020 fillTemplate chassis materialization", () => {
       creator_id: string | null;
       site_id: string | null;
     };
-    expect(manifest.slice).toBe("EH-021");
+    expect(manifest.slice).toBe("EH-022");
     expect(manifest.productionSafe).toBe(false);
     expect(manifest.generated_at).toBeTruthy();
     expect(manifest.creator_id).toBeTruthy();
