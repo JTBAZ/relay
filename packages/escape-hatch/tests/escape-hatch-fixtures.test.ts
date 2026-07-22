@@ -36,7 +36,7 @@ const PROVENANCE_PATH = join(FIXTURE_ROOT, "PROVENANCE.md");
 
 type MatrixFamily = {
   id: string;
-  status: "present" | "deferred-to-EH-011";
+  status: "present" | "deferred-to-EH-011" | "deferred-to-EH-012";
   kind: string;
   paths: string[];
   reason?: string;
@@ -66,14 +66,14 @@ const EXPECTED_PRESENT_IDS = [
   "unicode-rich",
   "multi-tier-floors",
   "duplicate-cdn-urls",
-  "missing-cover-attachment"
+  "missing-cover-attachment",
+  "deleted-tombstoned",
+  "legacy-tier-rename"
 ] as const;
 
 const EXPECTED_DEFERRED_IDS = [
   "video-audio-embed",
-  "deleted-tombstoned",
-  "mature-metadata",
-  "legacy-tier-rename"
+  "mature-metadata"
 ] as const;
 
 function loadMatrix(): FixtureMatrix {
@@ -94,7 +94,7 @@ describe("EH-010 fixture matrix index", () => {
   it("lists every expected present and deferred family", () => {
     const matrix = loadMatrix();
     expect(matrix.schemaVersion).toBe("escape-hatch-fixture-matrix/1.0.0");
-    expect(matrix.slice).toBe("EH-010");
+    expect(matrix.slice).toBe("EH-011");
     expect(matrix.productionSafe).toBe(false);
 
     const byId = new Map(matrix.families.map((f) => [f.id, f]));
@@ -103,7 +103,7 @@ describe("EH-010 fixture matrix index", () => {
     }
     for (const id of EXPECTED_DEFERRED_IDS) {
       const fam = byId.get(id);
-      expect(fam?.status).toBe("deferred-to-EH-011");
+      expect(fam?.status).toBe("deferred-to-EH-012");
       expect(fam?.reason?.length).toBeGreaterThan(10);
     }
     expect(matrix.families.map((f) => f.id).sort()).toEqual(
@@ -122,16 +122,16 @@ describe("EH-010 fixture matrix index", () => {
     }
   });
 
-  it("marks deferred stubs without claiming importer success", () => {
+  it("marks deferred stubs without claiming importer or R2 success", () => {
     for (const id of EXPECTED_DEFERRED_IDS) {
       const stub = readFixtureRel(`matrix/deferred/${id}.stub.json`) as {
         status: string;
         reason: string;
       };
-      expect(stub.status).toBe("deferred-to-EH-011");
-      expect(stub.reason.toLowerCase()).toMatch(/eh-011/);
+      expect(stub.status).toBe("deferred-to-EH-012");
+      expect(stub.reason.toLowerCase()).toMatch(/eh-012/);
       expect(JSON.stringify(stub).toLowerCase()).not.toMatch(
-        /successfully imported|import succeeded|importer succeeded/
+        /successfully imported|import succeeded|importer succeeded|r2 copy succeeded/
       );
     }
   });

@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 /**
- * Escape Hatch CLI: fixture | wizard | build | from-relay | from-clone | zip | status
+ * Escape Hatch CLI: fixture | wizard | build | from-relay | from-clone |
+ * import-relay-dump | zip | status
  */
 
 import {
-  cpSync,
   existsSync,
   mkdirSync,
   readdirSync,
@@ -22,6 +22,14 @@ import {
   OUT_ROOT,
   PACKAGE_ROOT
 } from "./fill-template.js";
+import {
+  DEFAULT_RELAY_DUMP_CREATOR_ID,
+  DEFAULT_RELAY_DUMP_ROOT,
+  importRelayDump,
+  loadExistingImportArtifacts,
+  serializeImportDocument,
+  stageExportMediaSafe
+} from "./import/index.js";
 import { runWizard } from "./wizard.js";
 import { buildEscapeHatchStatus, formatHumanStatus } from "./status.js";
 import { zipExportKit } from "./zip-kit.js";
@@ -36,12 +44,16 @@ Usage:
   npx tsx src/cli.ts build <bundle.json> [theme.json] [slug]
   npx tsx src/cli.ts from-relay <creator_id> [slug]
   npx tsx src/cli.ts from-clone <clone.json> [slug]
+  npx tsx src/cli.ts import-relay-dump [slug]
+  npx tsx src/cli.ts import-relay-dump <dumpRoot> [creator_id] [slug]
+  npx tsx src/cli.ts import-relay-dump [slug] fresh
   npx tsx src/cli.ts zip <slug>
   npx tsx src/cli.ts status [--json]
   npx tsx src/cli.ts status json
 
-Flags (also supported): --bundle --theme --slug --clone --creator --media --json
+Flags (also supported): --bundle --theme --slug --clone --creator --media --json --dump-root --fresh
 Note: on Windows, prefer positional args — npm may strip --flags (e.g. status json).
+Re-import loads data/provenance.json + import-state.json + site.bundle.json when present unless --fresh / fresh.
 `);
   process.exit(1);
 }
@@ -75,6 +87,10 @@ function argValue(args: string[], name: string): string | undefined {
   }
   if (long === "--media") {
     const j = args.indexOf("-m");
+    if (j >= 0 && args[j + 1]) return args[j + 1];
+  }
+  if (long === "--dump-root") {
+    const j = args.indexOf("-d");
     if (j >= 0 && args[j + 1]) return args[j + 1];
   }
   return undefined;
@@ -124,22 +140,7 @@ function stageExportMedia(
   stagingDir: string,
   bundle: SiteBundle
 ): void {
-  mkdirSync(stagingDir, { recursive: true });
-  const indexPath = join(exportCreatorRoot, "export_index.json");
-  if (!existsSync(indexPath)) return;
-  const index = JSON.parse(readFileSync(indexPath, "utf8")) as {
-    media: Record<string, { relative_blob_path: string; mime_type?: string }>;
-  };
-  for (const post of bundle.posts) {
-    for (const m of post.media) {
-      const rec = index.media[m.media_id];
-      if (!rec) continue;
-      const src = join(exportCreatorRoot, rec.relative_blob_path);
-      if (!existsSync(src) || !statSync(src).isFile()) continue;
-      const destName = m.content_path.replace(/^\/media\//, "");
-      cpSync(src, join(stagingDir, destName));
-    }
-  }
+  stageExportMediaSafe(exportCreatorRoot, stagingDir, bundle);
 }
 
 async function main(): Promise<void> {
@@ -306,6 +307,116 @@ async function main(): Promise<void> {
       slug,
       clean: true
     });
+    printPreviewHint(result.outDir, result.slug);
+    return;
+  }
+
+  if (cmd === "import-relay-dump") {
+    const pos = positionals(args);
+    const fresh =
+      hasFlag(args, "--fresh") || pos.some((p) => p.toLowerCase() === "fresh");
+    const posNoFresh = pos.filter((p) => p.toLowerCase() !== "fresh");
+
+    let dumpRoot = argValue(args, "--dump-root") ?? DEFAULT_RELAY_DUMP_ROOT;
+    let creatorId =
+      argValue(args, "--creator") ?? DEFAULT_RELAY_DUMP_CREATOR_ID;
+    let slug = argValue(args, "--slug");
+
+    const p0 = posNoFresh[0];
+    if (p0) {
+      const asPath = resolvePath(p0);
+      if (existsSync(asPath) && statSync(asPath).isDirectory()) {
+        dumpRoot = asPath;
+        if (posNoFresh[1] && /^cr_[A-Za-z0-9_.:-]+$/.test(posNoFresh[1])) {
+          creatorId = argValue(args, "--creator") ?? posNoFresh[1];
+          slug = slug ?? posNoFresh[2];
+        } else {
+          slug = slug ?? posNoFresh[1];
+        }
+      } else {
+        slug = slug ?? p0;
+      }
+    }
+
+    // Resolve slug before import so persisted kit state can be merged.
+    slug = slug ?? argValue(args, "--handle") ?? "eh-relay";
+
+    let existing:
+      | {
+          provenance?: unknown;
+          localState?: unknown;
+          bundle?: unknown;
+        }
+      | undefined;
+    if (!fresh) {
+      const dataDir = join(OUT_ROOT, slug, "data");
+      const loaded = loadExistingImportArtifacts(dataDir, creatorId);
+      if (loaded) {
+        existing = {
+          provenance: loaded.provenance,
+          localState: loaded.localState,
+          bundle: loaded.bundle
+        };
+        console.log(`Re-import merging existing state from: ${dataDir}`);
+      }
+    }
+
+    const resolvedDump = resolvePath(dumpRoot);
+    const imported = importRelayDump({
+      dumpRoot: resolvedDump,
+      creatorId,
+      displayName: argValue(args, "--display-name"),
+      handle: argValue(args, "--handle"),
+      existing
+    });
+
+    const exportCreatorRoot = join(resolvedDump, "exports", creatorId);
+    const staging = join(OUT_ROOT, ".media-staging", slug);
+    if (existsSync(exportCreatorRoot)) {
+      stageExportMedia(exportCreatorRoot, staging, imported.bundle);
+    }
+    const mediaSource =
+      existsSync(staging) && readdirSync(staging).length > 0
+        ? staging
+        : join(PACKAGE_ROOT, "fixtures", "media");
+
+    const result = fillTemplate({
+      bundle: imported.bundle,
+      mediaSourceDir: mediaSource,
+      slug,
+      clean: true
+    });
+
+    const dataDir = join(result.outDir, "data");
+    mkdirSync(dataDir, { recursive: true });
+    writeFileSync(
+      join(dataDir, "provenance.json"),
+      serializeImportDocument(imported.provenance),
+      "utf8"
+    );
+    writeFileSync(
+      join(dataDir, "import-state.json"),
+      serializeImportDocument(imported.localState),
+      "utf8"
+    );
+    writeFileSync(
+      join(dataDir, "import-report.json"),
+      serializeImportDocument(imported.report),
+      "utf8"
+    );
+    writeFileSync(
+      join(dataDir, "site.bundle.json"),
+      JSON.stringify(imported.bundle, null, 2),
+      "utf8"
+    );
+
+    console.log(`Import report: ${join(dataDir, "import-report.json")}`);
+    console.log(
+      `Posts imported=${imported.report.posts.imported} excluded=${imported.report.posts.excluded} conflicts=${imported.report.conflicts.length}`
+    );
+    console.log(
+      "Note: public/media copy remains prototype-only; private R2 delivery is EH-012."
+    );
     printPreviewHint(result.outDir, result.slug);
     return;
   }

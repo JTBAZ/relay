@@ -1,12 +1,18 @@
 {
   "id": "deleted-tombstoned",
-  "status": "deferred-to-EH-011",
-  "schemaNote": "Structural stub only — SiteBundle has no upstream_status field.",
+  "status": "present",
+  "schemaNote": "Covered by EH-011 importer against relay-dump p_tombstone (upstream_status=deleted).",
   "expectedCanonicalShape": {
-    "post_id": "fixture_post_tombstone",
+    "post_id": "p_tombstone",
     "upstream_status": "deleted",
-    "current": null,
+    "current": {
+      "upstream_revision": "r_tombstone_2",
+      "title": "Relay Dump Tombstoned"
+    },
     "versions": []
   },
-  "reason": "Deleted/unpublished/tombstoned posts are modeled on canonical upstream_status and must flow through the EH-011 importer conflict/exclusion path. Do not invent SiteBundle publish states here."
+  "paths": [
+    "relay-dump/canonical.json"
+  ],
+  "reason": "EH-011 accounts tombstones as exclusions (or conflicts when local posts are protected). SiteBundle still has no publish-state field."
 }

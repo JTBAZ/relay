@@ -51,7 +51,7 @@ describe("buildEscapeHatchStatus", () => {
   it("returns a versioned schema with productionSafe false", () => {
     const status = buildEscapeHatchStatus();
     expect(status.schemaVersion).toBe(ESCAPE_HATCH_STATUS_SCHEMA_VERSION);
-    expect(status.slice).toBe("EH-010");
+    expect(status.slice).toBe("EH-011");
     expect(status.deliverable).toBe("prototype_preview_only");
     expect(status.productionSafe).toBe(false);
   });
@@ -85,14 +85,14 @@ describe("buildEscapeHatchStatus", () => {
     expect(media?.evidence).toMatch(/public bytes/i);
   });
 
-  it("records EH-010 complete and routes next work to EH-011", () => {
+  it("records EH-011 complete and routes next work to EH-012", () => {
     const status = buildEscapeHatchStatus();
     expect(status.blockers.length).toBeGreaterThan(0);
     expect(status.blockers.some((b) => /OAuth\/cookie.*not yet wired/i.test(b))).toBe(
       false
     );
-    expect(status.nextSlice.id).toBe("EH-011");
-    expect(status.nextSlice.title).toMatch(/importer/i);
+    expect(status.nextSlice.id).toBe("EH-012");
+    expect(status.nextSlice.title).toMatch(/R2|migration/i);
     expect(status.nextSlice.focus.length).toBeGreaterThan(0);
   });
 
@@ -170,7 +170,7 @@ describe("buildEscapeHatchStatus", () => {
     expect(capability?.evidence).toMatch(/MATRIX\.json/i);
     expect(capability?.evidence).toMatch(/secret\/PII scan/i);
     expect(capability?.evidence).not.toMatch(/not wired/i);
-    expect(capability?.nextSlice).toBe("EH-011");
+    expect(capability?.nextSlice).toBe("EH-012");
     expect(capability?.sourcePaths).toEqual(
       expect.arrayContaining([
         "packages/escape-hatch/fixtures/MATRIX.json",
@@ -181,6 +181,29 @@ describe("buildEscapeHatchStatus", () => {
         "tests/fixtures/patreon/cookie-list-with-media.json"
       ])
     );
+  });
+
+  it("marks migration-import and relay-dump as implemented preview capabilities", () => {
+    const capabilities = new Map(
+      buildEscapeHatchStatus().capabilities.map((cap) => [cap.id, cap])
+    );
+    const migration = capabilities.get("migration-import");
+    expect(migration?.state).toBe("preview_only");
+    expect(migration?.evidence).toMatch(/idempotent|provenance|conflict/i);
+    expect(migration?.evidence).not.toMatch(/no idempotent/i);
+    expect(migration?.nextSlice).toBe("EH-012");
+    expect(migration?.sourcePaths).toEqual(
+      expect.arrayContaining([
+        "packages/escape-hatch/src/import/importer.ts",
+        "packages/escape-hatch/tests/escape-hatch-import.test.ts"
+      ])
+    );
+
+    const dump = capabilities.get("relay-dump-fixtures");
+    expect(dump?.state).toBe("preview_only");
+    expect(dump?.evidence).toMatch(/import-relay-dump|idempotency|conflict/i);
+    expect(dump?.evidence).not.toMatch(/no automated importer/i);
+    expect(dump?.nextSlice).toBe("EH-012");
   });
 
   it("is deterministic across calls", () => {

@@ -34,7 +34,8 @@ type GenerateCloneFn = (
   baseUrl: string
 ) => unknown;
 
-function loadGenerateClone(): GenerateCloneFn {
+/** Load Relay `generateCloneSiteModel` from repo dist (shared with EH-011 importer). */
+export function loadGenerateClone(): GenerateCloneFn {
   const distPath = resolve(HERE, "../../../dist/src/clone/clone-generator.js");
   if (existsSync(distPath)) {
     const mod = require(distPath) as { generateCloneSiteModel: GenerateCloneFn };

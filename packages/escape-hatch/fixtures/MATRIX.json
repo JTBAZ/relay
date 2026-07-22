@@ -1,6 +1,6 @@
 {
   "schemaVersion": "escape-hatch-fixture-matrix/1.0.0",
-  "slice": "EH-010",
+  "slice": "EH-011",
   "productionSafe": false,
   "provenance": "packages/escape-hatch/fixtures/PROVENANCE.md",
   "allowlistedHosts": [
@@ -34,7 +34,7 @@
         "relay-dump/exports/cr_eh_relay/blobs/m_relay.svg",
         "relay-dump/exports/cr_eh_relay/blobs/m_relay_gold.svg"
       ],
-      "notes": "Structural dump present; idempotent importer/parity tests deferred to EH-011."
+      "notes": "Sanitized dump exercises EH-011 importCanonical / import-relay-dump (idempotency, provenance, missing-blob failure, tombstone exclusion). Private R2 copy remains EH-012."
     },
     {
       "id": "public-text-only",
@@ -148,32 +148,36 @@
       "notes": "Attachment media without cover image."
     },
     {
-      "id": "video-audio-embed",
-      "status": "deferred-to-EH-011",
-      "kind": "structural-stub",
-      "paths": ["matrix/deferred/video-audio-embed.stub.json"],
-      "reason": "SiteBundle media refs can carry mime_type labels, but real video/audio/embed ingest + private blob migration require EH-011/EH-012; stub documents expected shapes without fake import success."
-    },
-    {
       "id": "deleted-tombstoned",
-      "status": "deferred-to-EH-011",
-      "kind": "structural-stub",
-      "paths": ["matrix/deferred/deleted-tombstoned.stub.json"],
-      "reason": "Tombstone/unpublished handling lives on canonical upstream_status and the idempotent importer conflict path (EH-011)."
-    },
-    {
-      "id": "mature-metadata",
-      "status": "deferred-to-EH-011",
-      "kind": "structural-stub",
-      "paths": ["matrix/deferred/mature-metadata.stub.json"],
-      "reason": "Mature/legal-adult metadata is not a SiteBundle field; do not invent contract fields in EH-010."
+      "status": "present",
+      "kind": "relay-dump+importer",
+      "paths": [
+        "relay-dump/canonical.json",
+        "matrix/deferred/deleted-tombstoned.stub.json"
+      ],
+      "postIds": ["p_tombstone"],
+      "notes": "EH-011 accounts deleted upstream posts as exclusions (or conflicts when local is protected)."
     },
     {
       "id": "legacy-tier-rename",
-      "status": "deferred-to-EH-011",
+      "status": "present",
+      "kind": "importer-conflict",
+      "paths": ["matrix/deferred/legacy-tier-rename.stub.json", "relay-dump/canonical.json"],
+      "notes": "EH-011 emits tier_remap conflicts for legacy tier_mappings and title/amount drift."
+    },
+    {
+      "id": "video-audio-embed",
+      "status": "deferred-to-EH-012",
       "kind": "structural-stub",
-      "paths": ["matrix/deferred/legacy-tier-rename.stub.json"],
-      "reason": "Changed tier names/prices with legacy patrons needs importer remapping + conflict queue (EH-011)."
+      "paths": ["matrix/deferred/video-audio-embed.stub.json"],
+      "reason": "EH-011 accounts AV/embed mime as exclusions without private blob success; R2 stream copy + verification is EH-012."
+    },
+    {
+      "id": "mature-metadata",
+      "status": "deferred-to-EH-012",
+      "kind": "structural-stub",
+      "paths": ["matrix/deferred/mature-metadata.stub.json"],
+      "reason": "EH-011 excludes mature/legal-adult posts from the live SiteBundle as accounted exclusions; private/legal enforcement remains EH-012+."
     }
   ]
 }

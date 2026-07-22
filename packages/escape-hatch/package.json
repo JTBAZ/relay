@@ -11,6 +11,7 @@
     "wizard": "tsx src/cli.ts wizard",
     "build-site": "tsx src/cli.ts build",
     "from-relay": "tsx src/cli.ts from-relay",
+    "import-relay-dump": "tsx src/cli.ts import-relay-dump",
     "zip": "tsx src/cli.ts zip",
     "status": "tsx src/cli.ts status",
     "test": "vitest run",

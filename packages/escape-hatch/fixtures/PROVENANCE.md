@@ -1,4 +1,4 @@
-# Escape Hatch fixture provenance (EH-010)
+# Escape Hatch fixture provenance (EH-010 / EH-011)
 
 All fixtures under `packages/escape-hatch/fixtures/` are **synthetic or irreversibly sanitized**. They preserve Relay-supported structural oddities without live secrets or patron PII.
 
@@ -26,21 +26,22 @@ Sanitization method for Patreon-shaped JSON:
 |-----------|--------|-------|
 | `baseline-sample-bundle` | synthetic SiteBundle | Legacy unversioned `sample.bundle.json`; EH-000/001 CLI + contract upgrade. |
 | `baseline-clone-site` | synthetic CloneSiteModel | Legacy unversioned `clone-site.json`; path rewrite + `has_export: false`. |
-| `baseline-relay-dump` | synthetic canonical/export | `relay-dump/*`; importer/parity deferred to **EH-011**. |
+| `baseline-relay-dump` | synthetic canonical/export | `relay-dump/*`; **EH-011** importer/idempotency/conflict/tombstone/missing-blob tests. |
 | `public-text-only` | OAuth JSON:API + SiteBundle | Mirrors `oauth-list-post-text-only` (HTML body, empty tiers, no media). |
 | `all-patrons-with-image` | cookie JSON:API + SiteBundle | `member_only` / all-patrons with relationship media + sparse `included`. |
 | `exact-tier` | cookie-like + SiteBundle | Raw numeric tier string preserved in Patreon shape; SiteBundle uses `match_mode: exact` + `amount_cents`. |
 | `tier-or-higher` | synthetic SiteBundle | `match_mode: tier_or_higher` with ordered floors. |
-| `multi-media-gallery` | OAuth-like + SiteBundle/Clone | Multi-image gallery + attachment mime; video/audio/embed structural stubs noted deferred where bytes/import needed. |
+| `multi-media-gallery` | OAuth-like + SiteBundle/Clone | Multi-image gallery + attachment mime; AV/embed private copy deferred to EH-012. |
 | `free-vs-paid` | synthetic SiteBundle | Free follower (`amount_cents: 0`) vs paid member personas. |
 | `export-failure` | CloneSiteModel | `has_export: false` missing-blob case (no fake importer success). |
 | `unicode-rich` | OAuth JSON:API + SiteBundle | Unicode title/slug; long sanitized HTML `content` in Patreon shape (SiteBundle has no body field yet). |
 | `multi-tier-floors` | synthetic SiteBundle | Creator with multiple paid floors + free tier. |
 | `duplicate-cdn-urls` | Patreon JSON:API | Duplicate / normalized CDN URL oddity preserved intentionally. |
 | `missing-cover-attachment` | CloneSiteModel | Attachment present without cover image media. |
-| `deleted-tombstoned` | **deferred-to-EH-011** | Needs canonical `upstream_status` / importer tombstone handling. |
-| `mature-metadata` | **deferred-to-EH-011** | Mature/legal-adult metadata not on SiteBundle contract; avoid inventing fields. |
-| `legacy-tier-rename` | **deferred-to-EH-011** | Legacy patron remapping + conflict queue belong to importer. |
+| `deleted-tombstoned` | **present (EH-011)** | `relay-dump` `p_tombstone` + importer accounted exclusion/conflict path. |
+| `legacy-tier-rename` | **present (EH-011)** | Importer `tier_remap` conflict queue for mappings + title/amount drift. |
+| `mature-metadata` | **deferred-to-EH-012** | EH-011 **excludes** mature/legal-adult posts from live SiteBundle (accounted); private/legal enforcement is EH-012+. |
+| `video-audio-embed` | **deferred-to-EH-012** | EH-011 accounts mime exclusions; private blob migration is EH-012. |
 
 ## Intentionally preserved oddities
 
@@ -49,13 +50,14 @@ Sanitization method for Patreon-shaped JSON:
 - Sparse `included` media with `download_url` only.
 - `links: {}` pagination placeholder.
 - Relay sentinels documented in SiteBundle personas / notes: `relay_tier_public`, `relay_tier_all_patrons` (never treated as paid pledges by preview access).
-- `has_export: false` without inventing successful blob copy.
+- `has_export: false` / missing on-disk blob without inventing successful blob copy.
+- Tombstoned canonical posts (`upstream_status: "deleted"`) accounted by the importer.
 
 ## Confirmation
 
 - No live tokens, cookies, or PEM material in this tree.
 - No real patron PII; display names are fictional fixture labels (`Fixture Creator`, etc.).
-- Media files are tiny synthetic SVGs under `fixtures/media/`.
+- Media files are tiny synthetic SVGs under `fixtures/media/` and `fixtures/relay-dump/**/blobs/`.
 - Automated scan: `packages/escape-hatch/src/fixture-scan.ts` (wired into package tests / `npm run escape-hatch:test`).
 
 ## Consumers
@@ -64,5 +66,5 @@ Sanitization method for Patreon-shaped JSON:
 |-------|-----|
 | **EH-001** | `parseSiteBundle` / `parseCloneSiteModelInput`, preview `canAccessPost` / `canViewPost`. |
 | **EH-010** | Matrix index, provenance, secret/PII scan, contract + access coverage. |
-| **EH-011** | Relay-dump + deferred families (importer, conflict queue, provenance split). |
+| **EH-011** | Relay-dump importer, provenance/local-state split, conflict queue, tombstone + legacy tier coverage. |
 | **EH-012+** | Media migration / private delivery must not treat `public/media` prototype copy as safe. |
