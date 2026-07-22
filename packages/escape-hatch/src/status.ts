@@ -1,11 +1,11 @@
 /**
- * Deterministic Escape Hatch capability inventory (through EH-012).
+ * Deterministic Escape Hatch capability inventory (through EH-013).
  * No timestamps, env reads, network, or live data — informational only.
  */
 
 export const ESCAPE_HATCH_STATUS_SCHEMA_VERSION = "escape-hatch-status/1.0.0";
 
-export const ESCAPE_HATCH_SLICE = "EH-012";
+export const ESCAPE_HATCH_SLICE = "EH-013";
 
 export type CapabilityState =
   | "production_safe"
@@ -36,7 +36,7 @@ export type EscapeHatchStatus = {
   capabilities: EscapeHatchCapability[];
   blockers: string[];
   nextSlice: {
-    id: "EH-013";
+    id: "EH-020";
     title: string;
     focus: string[];
   };
@@ -48,17 +48,18 @@ const CAPABILITIES: EscapeHatchCapability[] = [
     title: "Prototype generator and CLI",
     state: "preview_only",
     evidence:
-      "fixture, wizard, build, from-relay, from-clone, import-relay-dump, migrate-media, and zip subcommands materialize a Next.js kit and optional private-object migration ledger; suitable for local preview only.",
+      "fixture, wizard, build, from-relay, from-clone, import-relay-dump, migrate-media, library-truth / parity-report, and zip subcommands materialize a Next.js kit plus import, migration, and library-parity artifacts; suitable for local preview only.",
     sourcePaths: [
       "packages/escape-hatch/src/cli.ts",
       "packages/escape-hatch/src/fill-template.ts",
       "packages/escape-hatch/src/wizard.ts",
       "packages/escape-hatch/src/zip-kit.ts",
       "packages/escape-hatch/src/import/importer.ts",
-      "packages/escape-hatch/src/migrate/engine.ts"
+      "packages/escape-hatch/src/migrate/engine.ts",
+      "packages/escape-hatch/src/library-truth/kit-io.ts"
     ],
     risk: "high",
-    nextSlice: "EH-013"
+    nextSlice: "EH-020"
   },
   {
     id: "soft-persona-gate",
@@ -93,13 +94,14 @@ const CAPABILITIES: EscapeHatchCapability[] = [
     title: "Public client-readable bundle and theme",
     state: "preview_only",
     evidence:
-      "fill-template writes both data/site.json and data/theme.json and public/site.json and public/theme.json; the public copies are client-readable without server-side entitlement enforcement. Import provenance/local-state/report and media-migration ledger/report stay under data/ only.",
+      "fill-template writes both data/site.json and data/theme.json and public/site.json and public/theme.json; the public copies are client-readable without server-side entitlement enforcement. Import provenance/local-state/report, media-migration ledger/report, and library-parity report/state stay under data/ only.",
     sourcePaths: [
       "packages/escape-hatch/src/fill-template.ts",
       "packages/escape-hatch/src/cli.ts",
       "packages/escape-hatch/template/lib/load-site.ts",
       "packages/escape-hatch/template/lib/site-session.ts",
-      "packages/escape-hatch/src/migrate/kit-io.ts"
+      "packages/escape-hatch/src/migrate/kit-io.ts",
+      "packages/escape-hatch/src/library-truth/kit-io.ts"
     ],
     risk: "high",
     nextSlice: "EH-020"
@@ -109,7 +111,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
     title: "Versioned shared contracts",
     state: "preview_only",
     evidence:
-      "SiteBundle and CloneSiteModel are explicitly versioned and runtime-validated; generated apps receive a byte-identical self-contained canonical contracts module. EH-011 adds import-provenance / import-local-state / import-report; EH-012 adds media-migration-ledger/1.0.0 and media-migration-report/1.0.0 with fail-closed parsers.",
+      "SiteBundle and CloneSiteModel are explicitly versioned and runtime-validated; generated apps receive a byte-identical self-contained canonical contracts module. EH-011 adds import-provenance / import-local-state / import-report; EH-012 adds media-migration-ledger/1.0.0 and media-migration-report/1.0.0; EH-013 adds library-parity-report/1.0.0 and library-truth-state/1.0.0 with fail-closed parsers.",
     sourcePaths: [
       "packages/escape-hatch/src/contracts.ts",
       "packages/escape-hatch/src/types.ts",
@@ -117,6 +119,8 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "packages/escape-hatch/src/import/types.ts",
       "packages/escape-hatch/src/migrate/types.ts",
       "packages/escape-hatch/src/migrate/validate.ts",
+      "packages/escape-hatch/src/library-truth/types.ts",
+      "packages/escape-hatch/src/library-truth/validate.ts",
       "packages/escape-hatch/template/lib/access.ts",
       "packages/escape-hatch/template/lib/load-site.ts"
     ],
@@ -127,7 +131,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
     title: "Fixture coverage (sample, clone, Patreon shapes)",
     state: "preview_only",
     evidence:
-      "EH-012 fixture matrix (MATRIX.json) covers sanitized OAuth/cookie Patreon JSON, SiteBundle/Clone adaptations, relay-dump import + media migration accounting for present blobs (including AV mime placeholders), promoted tombstone/legacy-tier families, and deferred mature/legal enforcement stubs; secret/PII scan remains wired.",
+      "EH-013 fixture matrix (MATRIX.json) covers sanitized OAuth/cookie Patreon JSON, SiteBundle/Clone adaptations, relay-dump import + media migration + library-truth parity accounting, promoted tombstone/legacy-tier families, and deferred mature/legal enforcement stubs; secret/PII scan remains wired.",
     sourcePaths: [
       "packages/escape-hatch/fixtures/MATRIX.json",
       "packages/escape-hatch/fixtures/PROVENANCE.md",
@@ -138,28 +142,31 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "packages/escape-hatch/tests/escape-hatch-fixtures.test.ts",
       "packages/escape-hatch/tests/escape-hatch-import.test.ts",
       "packages/escape-hatch/tests/escape-hatch-migrate.test.ts",
+      "packages/escape-hatch/tests/escape-hatch-library-truth.test.ts",
       "tests/fixtures/patreon/oauth-list-post-text-only.json",
       "tests/fixtures/patreon/cookie-list-with-media.json"
     ],
     risk: "medium",
-    nextSlice: "EH-013"
+    nextSlice: "EH-020"
   },
   {
     id: "relay-dump-fixtures",
     title: "Relay-dump fixtures and importer tests",
     state: "preview_only",
     evidence:
-      "fixtures/relay-dump/ drives import-relay-dump and migrate-media with checksum/byte-length verification and private-read ledger entries; missing blobs remain accounted failures.",
+      "fixtures/relay-dump/ drives import-relay-dump, migrate-media, and library-truth with checksum/byte-length verification, private-read ledger entries, and 100% accounted-for parity reporting; missing blobs remain accounted failures.",
     sourcePaths: [
       "packages/escape-hatch/fixtures/relay-dump/canonical.json",
       "packages/escape-hatch/fixtures/relay-dump/exports/cr_eh_relay/export_index.json",
       "packages/escape-hatch/src/import/load-relay-dump.ts",
       "packages/escape-hatch/src/migrate/engine.ts",
+      "packages/escape-hatch/src/library-truth/build-report.ts",
       "packages/escape-hatch/tests/escape-hatch-import.test.ts",
-      "packages/escape-hatch/tests/escape-hatch-migrate.test.ts"
+      "packages/escape-hatch/tests/escape-hatch-migrate.test.ts",
+      "packages/escape-hatch/tests/escape-hatch-library-truth.test.ts"
     ],
     risk: "medium",
-    nextSlice: "EH-013"
+    nextSlice: "EH-020"
   },
   {
     id: "relay-canonical-reuse",
@@ -182,17 +189,18 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "src/storage/media-delivery-policy.ts"
     ],
     risk: "informational",
-    nextSlice: "EH-013"
+    nextSlice: "EH-020"
   },
   {
     id: "simplified-access-semantics",
     title: "Canonical-aligned preview access semantics",
     state: "preview_only",
     evidence:
-      "The shared preview evaluator matches canonical paid/free, exact-tier, and tier-or-higher ordering semantics using serialized tier catalog data; it remains client-only soft gating and is not server authorization.",
+      "The shared preview evaluator matches canonical paid/free, exact-tier, and tier-or-higher ordering semantics using serialized tier catalog data; it remains client-only soft gating and is not server authorization. Library truth surfaces access ambiguities instead of auto-picking paid tiers by array order.",
     sourcePaths: [
       "packages/escape-hatch/src/contracts.ts",
       "packages/escape-hatch/src/access.ts",
+      "packages/escape-hatch/src/library-truth/build-report.ts",
       "src/clone/tier-rules.ts"
     ],
     risk: "high",
@@ -275,7 +283,30 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "packages/escape-hatch/tests/escape-hatch-migrate.test.ts"
     ],
     risk: "high",
-    nextSlice: "EH-013"
+    nextSlice: "EH-020"
+  },
+  {
+    id: "library-truth-parity",
+    title: "Library truth wizard and parity report",
+    state: "preview_only",
+    evidence:
+      "EH-013 builds library-parity-report/1.0.0 and library-truth-state/1.0.0 under kit data/, surfaces anomalies with exclude-from-build, soft access simulation, and a continue gate that requires 100% accounted-for items plus no unresolved blocking anomalies (premium media without verified private source blocks unless excluded). Kit load and mutations always rebuild parity from site.bundle + import + migration artifacts via byte-copied library-truth modules (never trust a tampered on-disk report alone). POST /api/library-truth requires x-escape-hatch-local: 1 and localhost (or ESCAPE_HATCH_LIBRARY_TRUTH_ALLOW=1) — local-prototype operator gating only, not authentication. productionSafe remains false; not EH-033 private delivery.",
+    sourcePaths: [
+      "packages/escape-hatch/src/library-truth/build-report.ts",
+      "packages/escape-hatch/src/library-truth/gate.ts",
+      "packages/escape-hatch/src/library-truth/kit-io.ts",
+      "packages/escape-hatch/src/library-truth/validate.ts",
+      "packages/escape-hatch/src/library-truth/local-operator.ts",
+      "packages/escape-hatch/src/fill-template.ts",
+      "packages/escape-hatch/src/cli.ts",
+      "packages/escape-hatch/template/lib/library-truth/index.ts",
+      "packages/escape-hatch/template/app/api/library-truth/route.ts",
+      "packages/escape-hatch/template/components/LibraryTruthView.tsx",
+      "packages/escape-hatch/template/app/library/page.tsx",
+      "packages/escape-hatch/tests/escape-hatch-library-truth.test.ts"
+    ],
+    risk: "high",
+    nextSlice: "EH-020"
   },
   {
     id: "backup-restore",
@@ -305,6 +336,9 @@ const PROTOTYPE_WARNINGS: string[] = [
   "Premium (member_only and tier_gated) media bytes are still copied to public/media by fillTemplate and are directly fetchable without authentication.",
   "Direct HTTP GET to a locked premium media URL is expected to return HTTP 200 with public bytes; this is a known prototype security failure, not a passing paywall.",
   "EH-012 private object migration ledger entries are not visitor delivery; public/media is never accepted as private-read verification.",
+  "EH-013 library-truth continue gate is a soft audit gate; it does not enable production-safe private media.",
+  "EH-013 library-truth mutations require header x-escape-hatch-local: 1 and localhost/127.0.0.1 (or ESCAPE_HATCH_LIBRARY_TRUTH_ALLOW=1); this is local-prototype operator gating only, not authentication.",
+  "EH-013 kit Library truth always rebuilds parity from data/ artifacts on load and before mutations; a tampered library-parity-report.json alone cannot greenwash can_continue or library_truth_complete.",
   "R2 without an explicit anonymous probe (publicBaseUrl + allowPublicProbe) cannot claim private_read_verified — authenticated GetObject alone is insufficient.",
   "Client demo persona state is non-authoritative; switching persona only changes UI gating, not server entitlements.",
   "Package preview access helpers align with canonical tier semantics but remain client-only and are not enforced server-side.",
@@ -316,7 +350,7 @@ const BLOCKERS: string[] = [
   "Premium media remains world-readable in public/ for soft preview; server-enforced private visitor delivery belongs to EH-033.",
   "No hard patron identity, entitlements, or RLS-backed session (EH-030).",
   "Billing and deploy paths are stub-only in Relay core, not creator-owned production integrations (EH-050, EH-070).",
-  "Library truth wizard / parity audit (EH-013) and mature/legal-adult enforcement beyond accounted exclusions remain open."
+  "Mature/legal-adult enforcement beyond accounted exclusions remains open."
 ];
 
 export function buildEscapeHatchStatus(): EscapeHatchStatus {
@@ -326,7 +360,7 @@ export function buildEscapeHatchStatus(): EscapeHatchStatus {
     deliverable: "prototype_preview_only",
     productionSafe: false,
     summary:
-      "Escape Hatch through EH-012 adds a creator-owned media migration engine with stream copy, SHA-256/byte-length checks, an idempotent resumable ledger with live private-read re-checks on resume, and private-read verification that requires anonymous denial (in-memory default; R2 needs an explicit public probe); fillTemplate public/media remains prototype leakage, persona state is non-authoritative, and productionSafe is false.",
+      "Escape Hatch through EH-013 adds a Library truth audit step with versioned parity reports, creator exclusions, access ambiguity surfacing, and a fail-closed continue gate (100% accounted-for; premium media without private-read verification blocks unless explicitly excluded); fillTemplate public/media remains prototype leakage, persona state is non-authoritative, and productionSafe is false.",
     prototypeWarnings: [...PROTOTYPE_WARNINGS],
     capabilities: CAPABILITIES.map((c) => ({
       ...c,
@@ -334,12 +368,12 @@ export function buildEscapeHatchStatus(): EscapeHatchStatus {
     })),
     blockers: [...BLOCKERS],
     nextSlice: {
-      id: "EH-013",
-      title: "Library truth wizard",
+      id: "EH-020",
+      title: "Generated repository",
       focus: [
-        "Data audit, exclusions, and access ambiguities",
-        "Creator-readable parity report",
-        "100% accounted-for gate with sampled page parity"
+        "Full Next.js package with typed env and migrations",
+        "Adapter manifest for Vercel and Docker builds",
+        "Install/build from a clean directory without Relay runtime credentials"
       ]
     }
   };

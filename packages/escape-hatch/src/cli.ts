@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * Escape Hatch CLI: fixture | wizard | build | from-relay | from-clone |
- * import-relay-dump | migrate-media | zip | status
+ * import-relay-dump | migrate-media | library-truth | parity-report | zip | status
  */
 
 import {
@@ -39,6 +39,11 @@ import {
   R2ObjectStorage,
   createR2StorageConfig
 } from "./migrate/index.js";
+import {
+  excludeAnomalyFromBuild,
+  runLibraryTruthForKit,
+  writeLibraryTruthArtifacts
+} from "./library-truth/index.js";
 import type { EscapeHatchTheme, SiteBundle } from "./types.js";
 
 function usage(): never {
@@ -55,14 +60,19 @@ Usage:
   npx tsx src/cli.ts import-relay-dump [slug] fresh
   npx tsx src/cli.ts migrate-media [slug|kitPath]
   npx tsx src/cli.ts migrate-media [slug|kitPath] --dump-root <relay-dump>
+  npx tsx src/cli.ts library-truth [slug|kitPath]
+  npx tsx src/cli.ts library-truth [slug|kitPath] --exclude <anomaly_id> [--reason <text>]
+  npx tsx src/cli.ts library-truth [slug|kitPath] --complete
+  npx tsx src/cli.ts parity-report [slug|kitPath]
   npx tsx src/cli.ts zip <slug>
   npx tsx src/cli.ts status [--json]
   npx tsx src/cli.ts status json
 
-Flags (also supported): --bundle --theme --slug --clone --creator --media --json --dump-root --fresh --r2
+Flags (also supported): --bundle --theme --slug --clone --creator --media --json --dump-root --fresh --r2 --exclude --reason --complete
 Note: on Windows, prefer positional args — npm may strip --flags (e.g. status json).
 Re-import loads data/provenance.json + import-state.json + site.bundle.json when present unless --fresh / fresh.
 migrate-media defaults to in-memory storage (CI-safe). --r2 requires injected R2_* env (never logged).
+library-truth / parity-report write data/library-parity-report.json and data/library-truth-state.json.
 `);
   process.exit(1);
 }
@@ -533,6 +543,75 @@ async function main(): Promise<void> {
       "productionSafe remains false. public/media is not private delivery (EH-033 owns visitor signed URLs)."
     );
     process.exit(migrated.exitCode);
+  }
+
+  if (cmd === "library-truth" || cmd === "parity-report") {
+    const pos = positionals(args);
+    const target = argValue(args, "--slug") ?? pos[0] ?? "eh-relay";
+    const asPath = resolvePath(target);
+    const kitDir =
+      existsSync(asPath) && statSync(asPath).isDirectory()
+        ? asPath
+        : join(OUT_ROOT, target);
+
+    if (!existsSync(kitDir)) {
+      console.error(
+        `Kit not found: ${kitDir}\nRun import-relay-dump, fixture, or build first.`
+      );
+      process.exit(1);
+    }
+
+    const excludeId = argValue(args, "--exclude");
+    const excludeReason =
+      argValue(args, "--reason") ?? "Creator excluded from this build.";
+    const markComplete = hasFlag(args, "--complete");
+
+    let result = runLibraryTruthForKit({ kitDir });
+
+    if (excludeId) {
+      const nowIso = new Date().toISOString().replace(/\.\d{3}Z$/, ".000Z");
+      const state = excludeAnomalyFromBuild(
+        result.report,
+        result.state,
+        excludeId,
+        excludeReason,
+        nowIso
+      );
+      writeLibraryTruthArtifacts(join(kitDir, "data"), result.report, state);
+      result = runLibraryTruthForKit({ kitDir });
+    }
+
+    if (markComplete) {
+      result = runLibraryTruthForKit({ kitDir, markComplete: true });
+      if (!result.gate.can_continue) {
+        console.error(
+          "Cannot mark library truth complete: blocking issues remain unresolved."
+        );
+        for (const id of result.gate.unresolved_blocking_ids) {
+          console.error(`  - ${id}`);
+        }
+        process.exit(1);
+      }
+    }
+
+    console.log(`Parity report: ${result.reportPath}`);
+    console.log(`Library truth state: ${result.statePath}`);
+    console.log(
+      `Posts expected=${result.report.posts.expected} imported=${result.report.posts.imported} excluded=${result.report.posts.excluded} failed=${result.report.posts.failed} accounted=${result.report.posts.fully_accounted}`
+    );
+    console.log(
+      `Media expected=${result.report.media.expected} imported=${result.report.media.imported} verified=${result.report.media.verified} failed=${result.report.media.failed} accounted=${result.report.media.fully_accounted}`
+    );
+    console.log(
+      `Anomalies=${result.report.anomalies.length} blocking_unresolved=${result.gate.unresolved_blocking_ids.length} can_continue=${result.gate.can_continue}`
+    );
+    console.log(
+      `production_safe=${result.report.production_safe} library_truth_complete=${result.state.library_truth_complete}`
+    );
+    console.log(
+      "Soft gate only — not EH-033 private delivery. Structure/Preview remain open for exploration."
+    );
+    process.exit(result.gate.can_continue ? 0 : 2);
   }
 
   if (cmd === "zip") {

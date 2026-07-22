@@ -13,6 +13,8 @@
     "from-relay": "tsx src/cli.ts from-relay",
     "import-relay-dump": "tsx src/cli.ts import-relay-dump",
     "migrate-media": "tsx src/cli.ts migrate-media",
+    "library-truth": "tsx src/cli.ts library-truth",
+    "parity-report": "tsx src/cli.ts parity-report",
     "zip": "tsx src/cli.ts zip",
     "status": "tsx src/cli.ts status",
     "test": "vitest run",

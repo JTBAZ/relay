@@ -1,4 +1,4 @@
-# Escape Hatch fixture provenance (EH-010 / EH-011 / EH-012)
+# Escape Hatch fixture provenance (EH-010 / EH-011 / EH-012 / EH-013)
 
 All fixtures under `packages/escape-hatch/fixtures/` are **synthetic or irreversibly sanitized**. They preserve Relay-supported structural oddities without live secrets or patron PII.
 
@@ -26,7 +26,7 @@ Sanitization method for Patreon-shaped JSON:
 |-----------|--------|-------|
 | `baseline-sample-bundle` | synthetic SiteBundle | Legacy unversioned `sample.bundle.json`; EH-000/001 CLI + contract upgrade. |
 | `baseline-clone-site` | synthetic CloneSiteModel | Legacy unversioned `clone-site.json`; path rewrite + `has_export: false`. |
-| `baseline-relay-dump` | synthetic canonical/export | `relay-dump/*`; **EH-011** importer + **EH-012** migrate-media checksum/private-read ledger. |
+| `baseline-relay-dump` | synthetic canonical/export | `relay-dump/*`; **EH-011** importer + **EH-012** migrate-media checksum/private-read ledger + **EH-013** library-truth parity report. |
 | `public-text-only` | OAuth JSON:API + SiteBundle | Mirrors `oauth-list-post-text-only` (HTML body, empty tiers, no media). |
 | `all-patrons-with-image` | cookie JSON:API + SiteBundle | `member_only` / all-patrons with relationship media + sparse `included`. |
 | `exact-tier` | cookie-like + SiteBundle | Raw numeric tier string preserved in Patreon shape; SiteBundle uses `match_mode: exact` + `amount_cents`. |
@@ -69,4 +69,5 @@ Sanitization method for Patreon-shaped JSON:
 | **EH-010** | Matrix index, provenance, secret/PII scan, contract + access coverage. |
 | **EH-011** | Relay-dump importer, provenance/local-state split, conflict queue, tombstone + legacy tier coverage. |
 | **EH-012** | Media migration engine (`migrate-media`), private object keys, checksum ledger; **never** treats `public/media` as private delivery. |
+| **EH-013** | Library truth wizard / `library-parity-report` / continue gate; excludes do not delete export blobs. |
 | **EH-033+** | Visitor signed-URL delivery and mature/legal enforcement beyond accounted exclusions. |

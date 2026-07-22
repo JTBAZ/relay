@@ -1,6 +1,6 @@
 {
   "schemaVersion": "escape-hatch-fixture-matrix/1.0.0",
-  "slice": "EH-012",
+  "slice": "EH-013",
   "productionSafe": false,
   "provenance": "packages/escape-hatch/fixtures/PROVENANCE.md",
   "allowlistedHosts": [
@@ -34,7 +34,7 @@
         "relay-dump/exports/cr_eh_relay/blobs/m_relay.svg",
         "relay-dump/exports/cr_eh_relay/blobs/m_relay_gold.svg"
       ],
-      "notes": "Sanitized dump exercises EH-011 import and EH-012 migrate-media (checksum, private-read ledger). Missing-blob remains an accounted failure."
+      "notes": "Sanitized dump exercises EH-011 import, EH-012 migrate-media, and EH-013 library-truth parity (checksum, private-read ledger, accounted-for gate). Missing-blob remains an accounted failure."
     },
     {
       "id": "public-text-only",

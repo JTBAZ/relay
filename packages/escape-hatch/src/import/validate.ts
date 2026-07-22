@@ -1179,18 +1179,46 @@ export function parseImportReport(input: unknown): ImportReport {
       if (typeof kind !== "string" || !(EXCLUSION_KINDS as readonly string[]).includes(kind)) {
         continue;
       }
-      exclusions.push({
+      const entry: AccountedItem = {
         id: String(ownGet(item, "id") ?? ""),
         kind: kind as ExclusionKind,
         reason: String(ownGet(item, "reason") ?? ""),
         field_paths: Array.isArray(ownGet(item, "field_paths"))
           ? (ownGet(item, "field_paths") as string[])
           : []
-      });
+      };
+      const post_id = ownGet(item, "post_id");
+      const media_id = ownGet(item, "media_id");
+      if (isSafeId(post_id)) entry.post_id = post_id;
+      if (isSafeId(media_id)) entry.media_id = media_id;
+      exclusions.push(entry);
     }
   }
 
   const failures: AccountedItem[] = [];
+  const failuresRaw = ownGet(input, "failures");
+  if (Array.isArray(failuresRaw)) {
+    for (const item of failuresRaw) {
+      if (!isPlainObject(item)) continue;
+      const id = ownGet(item, "id");
+      const reason = ownGet(item, "reason");
+      if (!isNonEmptyString(id) || !isNonEmptyString(reason)) continue;
+      const entry: AccountedItem = {
+        id,
+        kind: "failed",
+        reason,
+        field_paths: Array.isArray(ownGet(item, "field_paths"))
+          ? (ownGet(item, "field_paths") as string[])
+          : []
+      };
+      const post_id = ownGet(item, "post_id");
+      const media_id = ownGet(item, "media_id");
+      if (isSafeId(post_id)) entry.post_id = post_id;
+      if (isSafeId(media_id)) entry.media_id = media_id;
+      failures.push(entry);
+    }
+  }
+
   const conflicts: ConflictItem[] = [];
   const conflictsRaw = ownGet(input, "conflicts");
   if (Array.isArray(conflictsRaw)) {

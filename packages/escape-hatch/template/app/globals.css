@@ -902,3 +902,346 @@ code {
   font-family: ui-monospace, Consolas, monospace;
   font-size: 0.85em;
 }
+
+/* —— Library truth (EH-013) —— */
+.lt-page .muted {
+  color: var(--eh-muted);
+}
+
+.lt-banner {
+  border: 1px solid var(--eh-border, #3f4147);
+  background: var(--eh-bg-deep, #1e1f22);
+  border-radius: 8px;
+  padding: 0.85rem 1rem;
+  margin-bottom: 1.5rem;
+  line-height: 1.45;
+}
+
+.lt-banner--warn {
+  border-color: color-mix(in srgb, #f0b232 55%, var(--eh-border, #3f4147));
+}
+
+.lt-banner p {
+  margin: 0;
+}
+
+.lt-error {
+  color: #f23f43;
+  margin: 0 0 1rem;
+}
+
+.lt-status {
+  color: var(--eh-accent);
+  margin: 0 0 1rem;
+}
+
+.lt-section {
+  margin-bottom: 2rem;
+}
+
+.lt-section h2 {
+  font-size: 1.15rem;
+  margin: 0 0 0.75rem;
+  font-weight: 600;
+}
+
+.lt-section h3 {
+  font-size: 0.95rem;
+  margin: 0 0 0.65rem;
+  font-weight: 600;
+  color: var(--eh-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.lt-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(9.5rem, 1fr));
+  gap: 0.65rem;
+  margin-bottom: 1rem;
+}
+
+.lt-tile {
+  border: 1px solid var(--eh-border, #3f4147);
+  background: var(--eh-card, #2b2d31);
+  border-radius: 8px;
+  padding: 0.75rem 0.85rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.lt-tile--ok {
+  border-color: color-mix(in srgb, #3ba55d 50%, var(--eh-border, #3f4147));
+}
+
+.lt-tile--warn {
+  border-color: color-mix(in srgb, #f0b232 50%, var(--eh-border, #3f4147));
+}
+
+.lt-tile--bad {
+  border-color: color-mix(in srgb, #f23f43 50%, var(--eh-border, #3f4147));
+}
+
+.lt-tile-value {
+  font-size: 1.15rem;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+}
+
+.lt-tile-label {
+  font-size: 0.75rem;
+  color: var(--eh-muted);
+  line-height: 1.3;
+}
+
+.lt-notes {
+  margin: 0 0 1rem;
+  padding-left: 1.15rem;
+  line-height: 1.45;
+  color: var(--eh-muted);
+}
+
+.lt-artifacts summary {
+  cursor: pointer;
+  color: var(--eh-muted);
+  font-size: 0.9rem;
+}
+
+.lt-artifacts ul {
+  margin: 0.5rem 0 0;
+  padding-left: 1.15rem;
+  color: var(--eh-muted);
+  font-size: 0.88rem;
+}
+
+.lt-ok {
+  color: #3ba55d;
+}
+
+.lt-missing {
+  color: #f0b232;
+}
+
+.lt-help {
+  margin: 0 0 0.85rem;
+  color: var(--eh-muted);
+  line-height: 1.45;
+  max-width: 42rem;
+}
+
+.lt-bucket-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-bottom: 0.85rem;
+}
+
+.lt-bucket-tab {
+  min-height: 44px;
+  min-width: 44px;
+  padding: 0.45rem 0.8rem;
+  border-radius: 6px;
+  border: 1px solid var(--eh-border, #3f4147);
+  background: var(--eh-bg-deep, #1e1f22);
+  color: var(--eh-fg);
+  cursor: pointer;
+  font: inherit;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.lt-bucket-tab:hover {
+  border-color: var(--eh-accent);
+}
+
+.lt-bucket-tab.is-active {
+  background: var(--eh-accent);
+  border-color: var(--eh-accent);
+  color: #fff;
+  font-weight: 600;
+}
+
+.lt-bucket-count {
+  font-size: 0.75rem;
+  opacity: 0.85;
+  font-variant-numeric: tabular-nums;
+}
+
+.lt-bucket-panel {
+  border: 1px solid var(--eh-border, #3f4147);
+  border-radius: 8px;
+  padding: 0.9rem 1rem;
+  background: var(--eh-card, #2b2d31);
+}
+
+.lt-id-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 0.75rem;
+  list-style: none;
+  margin: 0.5rem 0;
+  padding: 0;
+}
+
+.lt-sim {
+  margin: 0.75rem 0 0;
+  font-size: 0.9rem;
+  color: var(--eh-muted);
+}
+
+.lt-anomaly-list {
+  list-style: none;
+  margin: 0 0 1.25rem;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.lt-anomaly {
+  border: 1px solid var(--eh-border, #3f4147);
+  border-radius: 8px;
+  padding: 0.9rem 1rem;
+  background: var(--eh-bg-deep, #1e1f22);
+}
+
+.lt-anomaly.is-blocking {
+  border-color: color-mix(in srgb, #f23f43 45%, var(--eh-border, #3f4147));
+}
+
+.lt-anomaly.is-excluded {
+  opacity: 0.78;
+}
+
+.lt-anomaly p {
+  margin: 0.35rem 0;
+  line-height: 1.45;
+  font-size: 0.92rem;
+}
+
+.lt-anomaly-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  align-items: center;
+  margin-bottom: 0.35rem;
+}
+
+.lt-anomaly-kind {
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 0.8rem;
+  color: var(--eh-muted);
+}
+
+.lt-pill {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 0.2rem 0.45rem;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--eh-muted) 22%, transparent);
+  color: var(--eh-muted);
+}
+
+.lt-pill--block {
+  background: color-mix(in srgb, #f23f43 25%, transparent);
+  color: #f23f43;
+}
+
+.lt-exclude-btn,
+.lt-primary-btn {
+  min-height: 44px;
+  min-width: 44px;
+  margin-top: 0.55rem;
+  padding: 0.55rem 0.95rem;
+  border-radius: 6px;
+  border: 1px solid var(--eh-border, #3f4147);
+  background: var(--eh-card, #2b2d31);
+  color: var(--eh-fg);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.lt-exclude-btn:hover:not(:disabled) {
+  border-color: var(--eh-accent);
+}
+
+.lt-exclude-btn:disabled,
+.lt-primary-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.lt-exclude-btn--ghost {
+  font-weight: 500;
+}
+
+.btn-primary.lt-primary-btn {
+  border: none;
+  background: var(--eh-accent);
+  color: #fff;
+}
+
+.lt-cta {
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+.lt-gate-help {
+  margin: 0;
+  color: var(--eh-muted);
+  font-size: 0.88rem;
+  max-width: 36rem;
+  line-height: 1.4;
+}
+
+.lt-secondary {
+  opacity: 0.85;
+}
+
+.lt-code {
+  margin: 0.65rem 0 0;
+  padding: 0.65rem 0.75rem;
+  overflow-x: auto;
+  background: var(--eh-bg, #313338);
+  border-radius: 6px;
+  font-size: 0.82rem;
+}
+
+.console-tabs {
+  flex-wrap: wrap;
+}
+
+.console-tab {
+  min-height: 44px;
+  justify-content: center;
+}
+
+@media (max-width: 640px) {
+  .lt-tiles {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .console-nav {
+    align-items: stretch;
+  }
+
+  .console-tabs {
+    width: 100%;
+  }
+
+  .console-tab {
+    flex: 1 1 calc(50% - 0.35rem);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lt-bucket-tab,
+  .lt-exclude-btn,
+  .lt-primary-btn {
+    transition: none;
+  }
+}

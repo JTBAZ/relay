@@ -34,6 +34,73 @@ export const CONTRACTS_SOURCE_PATH = join(PACKAGE_ROOT, "src", "contracts.ts");
 /** Stable generated-app path for the self-contained contract module. */
 export const GENERATED_CONTRACTS_RELATIVE_PATH = join("lib", "contracts.ts");
 
+/**
+ * Canonical library-truth rebuild modules (copied into generated kits with
+ * NodeNext `.js` relative import suffixes stripped for bundler resolution).
+ * Paths are relative to PACKAGE_ROOT / outDir respectively.
+ */
+export const LIBRARY_TRUTH_EMBED_SOURCES: ReadonlyArray<{
+  from: string;
+  to: string;
+}> = [
+  { from: join("src", "library-truth", "build-report.ts"), to: join("lib", "library-truth", "build-report.ts") },
+  { from: join("src", "library-truth", "gate.ts"), to: join("lib", "library-truth", "gate.ts") },
+  { from: join("src", "library-truth", "kit-io.ts"), to: join("lib", "library-truth", "kit-io.ts") },
+  { from: join("src", "library-truth", "types.ts"), to: join("lib", "library-truth", "types.ts") },
+  { from: join("src", "library-truth", "validate.ts"), to: join("lib", "library-truth", "validate.ts") },
+  { from: join("src", "library-truth", "local-operator.ts"), to: join("lib", "library-truth", "local-operator.ts") },
+  { from: join("src", "import", "types.ts"), to: join("lib", "import", "types.ts") },
+  { from: join("src", "import", "validate.ts"), to: join("lib", "import", "validate.ts") },
+  { from: join("src", "import", "path-safety.ts"), to: join("lib", "import", "path-safety.ts") },
+  { from: join("src", "migrate", "types.ts"), to: join("lib", "migrate", "types.ts") },
+  { from: join("src", "migrate", "validate.ts"), to: join("lib", "migrate", "validate.ts") }
+];
+
+/**
+ * Strip `.js` from relative import/export module specifiers so embedded sources
+ * resolve under the generated kit's `moduleResolution: "bundler"`.
+ * Leaves bare package imports and `node:` builtins unchanged.
+ */
+export function rewriteKitModuleImports(source: string): string {
+  return source.replace(
+    /(\bfrom\s+|import\s*\(\s*|import\s+)(["'])(\.\.?\/[^"']+)\.js\2/g,
+    "$1$2$3$2"
+  );
+}
+
+/** Minimal import surface for kit library-truth rebuild (parsers only). */
+export const GENERATED_IMPORT_INDEX_SOURCE = `/**
+ * Generated-kit import parsers for library-truth rebuild (EH-013).
+ * Extensionless relative imports for kit bundler resolution.
+ */
+
+export {
+  parseImportLocalState,
+  parseImportProvenance,
+  parseImportReport,
+  serializeImportDocument
+} from "./validate";
+export {
+  CONFLICT_KINDS,
+  EXCLUSION_KINDS,
+  IMPORT_LOCAL_STATE_CONTRACT_VERSION,
+  IMPORT_ORIGINS,
+  IMPORT_PROVENANCE_CONTRACT_VERSION,
+  IMPORT_REPORT_CONTRACT_VERSION,
+  type AccountedItem,
+  type ConflictItem,
+  type ConflictKind,
+  type ExclusionKind,
+  type ImportLocalState,
+  type ImportOrigin,
+  type ImportProvenance,
+  type ImportReport,
+  type LocalPostState,
+  type ProvenanceMediaEntry,
+  type ProvenancePostEntry
+} from "./types";
+`;
+
 const SKIP_COPY_NAMES = new Set(["node_modules", ".next", ".git"]);
 
 function copyTemplate(dest: string): void {
@@ -56,6 +123,31 @@ export function embedContractsModule(outDir: string): string {
   const source = readFileSync(CONTRACTS_SOURCE_PATH, "utf8");
   writeFileSync(dest, source, "utf8");
   return dest;
+}
+
+/**
+ * Embed library-truth rebuild modules (and fail-closed import/migrate parsers)
+ * so kit load/exclude/complete never trust a tampered on-disk parity report alone.
+ * Relative `*.js` import suffixes are rewritten for the kit's bundler resolution.
+ */
+export function embedLibraryTruthModules(outDir: string): string[] {
+  const written: string[] = [];
+  for (const entry of LIBRARY_TRUTH_EMBED_SOURCES) {
+    const dest = join(outDir, entry.to);
+    mkdirSync(dirname(dest), { recursive: true });
+    const source = readFileSync(join(PACKAGE_ROOT, entry.from), "utf8");
+    writeFileSync(dest, rewriteKitModuleImports(source), "utf8");
+    written.push(dest);
+  }
+  const importIndexPath = join(outDir, "lib", "import", "index.ts");
+  mkdirSync(dirname(importIndexPath), { recursive: true });
+  writeFileSync(
+    importIndexPath,
+    rewriteKitModuleImports(GENERATED_IMPORT_INDEX_SOURCE),
+    "utf8"
+  );
+  written.push(importIndexPath);
+  return written;
 }
 
 function themeCssVars(theme: EscapeHatchTheme): string {
@@ -125,6 +217,7 @@ export type FillResult = {
   siteJsonPath: string;
   themeJsonPath: string;
   contractsPath: string;
+  libraryTruthModulePaths: string[];
   bundle: SiteBundle;
 };
 
@@ -162,6 +255,7 @@ export function fillTemplate(opts: FillOptions): FillResult {
 
   copyTemplate(outDir);
   const contractsPath = embedContractsModule(outDir);
+  const libraryTruthModulePaths = embedLibraryTruthModules(outDir);
 
   const dataDir = join(outDir, "data");
   mkdirSync(dataDir, { recursive: true });
@@ -200,11 +294,12 @@ export function fillTemplate(opts: FillOptions): FillResult {
       "",
       "## Hatch Console (open these in order)",
       "",
-      "1. `/structure` — tiers & posts detected (accuracy)",
-      "2. `/style` — few aesthetic dials (session peek)",
-      "3. `/preview` — visitor walkthrough (soft gate)",
+      "1. `/library` — Library truth audit (parity, anomalies, exclude)",
+      "2. `/structure` — tiers & posts detected (accuracy)",
+      "3. `/style` — few aesthetic dials (session peek)",
+      "4. `/preview` — visitor walkthrough (soft gate)",
       "",
-      "`/` redirects to Structure. See `IA.md` in the escape-hatch package.",
+      "`/` redirects to Library. Library truth rebuilds parity from data/ artifacts on every load (never trusts a tampered report alone).",
       "",
       "## Run",
       "",
@@ -220,7 +315,15 @@ export function fillTemplate(opts: FillOptions): FillResult {
     "utf8"
   );
 
-  return { outDir, slug, siteJsonPath, themeJsonPath, contractsPath, bundle };
+  return {
+    outDir,
+    slug,
+    siteJsonPath,
+    themeJsonPath,
+    contractsPath,
+    libraryTruthModulePaths,
+    bundle
+  };
 }
 
 function copyMediaIntoPublic(

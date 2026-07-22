@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 const TABS = [
+  { href: "/library", label: "Library", hint: "Truth audit" },
   { href: "/structure", label: "Structure", hint: "Tiers & posts" },
   { href: "/style", label: "Style", hint: "Few dials" },
   { href: "/preview", label: "Preview", hint: "Visitor walk" }
@@ -20,7 +21,7 @@ export function ConsoleNav({ quiet = false }: Props) {
   return (
     <header className={`console-nav ${quiet ? "console-nav--quiet" : ""}`}>
       <div className="console-brand">
-        <Link href="/structure" className="console-wordmark">
+        <Link href="/library" className="console-wordmark">
           Escape Hatch
         </Link>
         <span className="console-tag">Console</span>
@@ -29,7 +30,8 @@ export function ConsoleNav({ quiet = false }: Props) {
         {TABS.map((tab) => {
           const active =
             pathname === tab.href ||
-            (tab.href === "/preview" && pathname.startsWith("/p/"));
+            (tab.href === "/preview" && pathname.startsWith("/p/")) ||
+            (tab.href === "/library" && pathname === "/");
           return (
             <Link
               key={tab.href}
