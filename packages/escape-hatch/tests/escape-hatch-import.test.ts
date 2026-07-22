@@ -583,7 +583,7 @@ describe("EH-011 matrix deferred promotions", () => {
       productionSafe: boolean;
       families: Array<{ id: string; status: string; reason?: string; notes?: string }>;
     };
-    expect(matrix.slice).toBe("EH-013");
+    expect(matrix.slice).toBe("EH-020");
     expect(matrix.productionSafe).toBe(false);
     const byId = new Map(matrix.families.map((f) => [f.id, f]));
     expect(byId.get("deleted-tombstoned")?.status).toBe("present");

@@ -218,8 +218,81 @@ export type FillResult = {
   themeJsonPath: string;
   contractsPath: string;
   libraryTruthModulePaths: string[];
+  manifestPath: string;
   bundle: SiteBundle;
 };
+
+/** Chassis files that must be present in every generated kit (EH-020). */
+export const GENERATED_CHASSIS_RELATIVE_PATHS = [
+  "package.json",
+  "tsconfig.json",
+  "next.config.mjs",
+  ".env.example",
+  "vercel.json",
+  "Dockerfile",
+  ".dockerignore",
+  "docker-compose.yml",
+  "escape-hatch.manifest.json",
+  "OWNERSHIP.md",
+  "OPERATIONS.md",
+  "lib/env.ts",
+  "lib/adapters/index.ts",
+  "lib/adapters/types.ts",
+  "db/schema/0001_preview_chassis.sql",
+  "db/migrations/0001_preview_chassis.sql",
+  "db/README.md",
+  "deploy/README.md"
+] as const;
+
+type EscapeHatchManifest = {
+  contract_version: string;
+  chassis_version: string;
+  schema_version: string;
+  slice: string;
+  productionSafe: false;
+  generated_at: string | null;
+  creator_id: string | null;
+  site_id: string | null;
+  feature_flags: Record<string, boolean>;
+  adapters: Record<string, unknown>;
+  deploy_targets: unknown[];
+  required_env_names: string[];
+  optional_env_names: string[];
+  applied_migrations: string[];
+  known_exclusions: string[];
+  source_export_manifest_hash: string | null;
+  relay_optional_services: unknown[];
+  warranty: Record<string, unknown>;
+  [key: string]: unknown;
+};
+
+/**
+ * Stamp generation metadata into escape-hatch.manifest.json without
+ * embedding secrets or patron PII.
+ */
+export function stampEscapeHatchManifest(
+  outDir: string,
+  bundle: SiteBundle
+): string {
+  const manifestPath = join(outDir, "escape-hatch.manifest.json");
+  const raw = readFileSync(manifestPath, "utf8");
+  const parsed = JSON.parse(raw) as EscapeHatchManifest;
+  parsed.generated_at = bundle.generated_at;
+  parsed.creator_id = bundle.creator_id;
+  parsed.site_id = bundle.site_id ?? bundle.creator_id;
+  parsed.slice = "EH-020";
+  parsed.productionSafe = false;
+  parsed.feature_flags = {
+    ...parsed.feature_flags,
+    soft_persona_gate: true,
+    hard_paywall: false,
+    signed_media_delivery: false,
+    supabase_identity: false,
+    stripe_billing: false
+  };
+  writeFileSync(manifestPath, `${JSON.stringify(parsed, null, 2)}\n`, "utf8");
+  return manifestPath;
+}
 
 export function fillTemplate(opts: FillOptions): FillResult {
   const baseBundle = parseSiteBundle(opts.bundle);
@@ -256,6 +329,7 @@ export function fillTemplate(opts: FillOptions): FillResult {
   copyTemplate(outDir);
   const contractsPath = embedContractsModule(outDir);
   const libraryTruthModulePaths = embedLibraryTruthModules(outDir);
+  const manifestPath = stampEscapeHatchManifest(outDir, bundle);
 
   const dataDir = join(outDir, "data");
   mkdirSync(dataDir, { recursive: true });
@@ -289,6 +363,7 @@ export function fillTemplate(opts: FillOptions): FillResult {
       "",
       "**Soft gate only** — persona switching is for demo. This is not production security.",
       "Locked media is still present in `/public/media`; do not deploy this kit as a real paywall.",
+      "`productionSafe: false` — Milestone 2 chassis (EH-020), not EH-033 signed delivery.",
       "",
       `Contract: ${bundle.contract_version}`,
       "",
@@ -301,10 +376,19 @@ export function fillTemplate(opts: FillOptions): FillResult {
       "",
       "`/` redirects to Library. Library truth rebuilds parity from data/ artifacts on every load (never trusts a tampered report alone).",
       "",
-      "## Run",
+      "## Standalone chassis (EH-020)",
+      "",
+      "- Typed env: `lib/env.ts` + `.env.example` (names only)",
+      "- SQL migrations: `db/schema/`, `db/migrations/` (not required for `npm run build`)",
+      "- Adapters: `lib/adapters/` + `escape-hatch.manifest.json`",
+      "- Deploy: `vercel.json`, `Dockerfile`, optional `docker-compose.yml`",
+      "- See `OPERATIONS.md` and `OWNERSHIP.md`",
+      "",
+      "## Run (clean directory — no Relay root env)",
       "",
       "```bash",
       "npm install",
+      "npm run build",
       "npm run dev",
       "```",
       "",
@@ -322,6 +406,7 @@ export function fillTemplate(opts: FillOptions): FillResult {
     themeJsonPath,
     contractsPath,
     libraryTruthModulePaths,
+    manifestPath,
     bundle
   };
 }

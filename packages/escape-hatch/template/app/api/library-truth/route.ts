@@ -15,8 +15,8 @@ type Body = {
 };
 
 /**
- * Library-truth mutations are local-prototype operator only (header + loopback
- * or ESCAPE_HATCH_LIBRARY_TRUTH_ALLOW=1). This is not authentication.
+ * Library-truth mutations are local-prototype operator only (header + loopback).
+ * This is not authentication — hosted previews cannot enable mutations via env.
  */
 export async function POST(request: Request) {
   const access = assertLocalLibraryTruthMutation(request);

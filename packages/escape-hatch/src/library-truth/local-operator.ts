@@ -1,16 +1,16 @@
 /**
  * Local-prototype operator gate for library-truth mutations (EH-013).
  *
- * Not authentication. Shared-preview hosts must reject exclude/complete unless
- * an explicit local override is set.
+ * Not authentication. Shared-preview hosts must reject exclude/complete.
+ * Mutations require `x-escape-hatch-local: 1` and a loopback host only —
+ * there is no remote env override (ESCAPE_HATCH_LIBRARY_TRUTH_ALLOW is not honored).
  */
 
 export const LOCAL_OPERATOR_HEADER = "x-escape-hatch-local" as const;
 export const LOCAL_OPERATOR_HEADER_VALUE = "1" as const;
-export const LOCAL_OPERATOR_ALLOW_ENV = "ESCAPE_HATCH_LIBRARY_TRUTH_ALLOW" as const;
 
 export type LocalOperatorDecision =
-  | { allowed: true; reason: "localhost" | "explicit_allow" }
+  | { allowed: true; reason: "localhost" }
   | { allowed: false; status: 403; error: string };
 
 function hostnameFromHostHeader(host: string | null): string {
@@ -34,14 +34,13 @@ function isLoopbackHostname(hostname: string): boolean {
 
 /**
  * Fail-closed mutation gate for `/api/library-truth` POST actions.
- * Requires `x-escape-hatch-local: 1` and either loopback host or
- * `ESCAPE_HATCH_LIBRARY_TRUTH_ALLOW=1`.
+ * Requires `x-escape-hatch-local: 1` and a loopback host (localhost / 127.0.0.1 / ::1).
+ * Not authentication — hosted previews cannot enable mutations via env alone.
  */
 export function evaluateLocalLibraryTruthMutationAccess(input: {
   headerValue: string | null;
   hostHeader?: string | null;
   requestUrl?: string | null;
-  allowEnvValue?: string | null;
 }): LocalOperatorDecision {
   const headerOk =
     (input.headerValue ?? "").trim() === LOCAL_OPERATOR_HEADER_VALUE;
@@ -52,11 +51,6 @@ export function evaluateLocalLibraryTruthMutationAccess(input: {
       error:
         "Library truth mutations require header x-escape-hatch-local: 1 (local prototype operator only — not authentication)."
     };
-  }
-
-  const allowEnv = (input.allowEnvValue ?? "").trim() === "1";
-  if (allowEnv) {
-    return { allowed: true, reason: "explicit_allow" };
   }
 
   const hostName = hostnameFromHostHeader(input.hostHeader ?? null);
@@ -79,19 +73,17 @@ export function evaluateLocalLibraryTruthMutationAccess(input: {
     allowed: false,
     status: 403,
     error:
-      "Library truth mutations are local-prototype only (localhost / 127.0.0.1, or ESCAPE_HATCH_LIBRARY_TRUTH_ALLOW=1). Not authentication."
+      "Library truth mutations are local-prototype only (localhost / 127.0.0.1). Not authentication."
   };
 }
 
 /** Convenience wrapper for Fetch API Request. */
 export function assertLocalLibraryTruthMutation(
-  request: Request,
-  env: NodeJS.ProcessEnv = process.env
+  request: Request
 ): LocalOperatorDecision {
   return evaluateLocalLibraryTruthMutationAccess({
     headerValue: request.headers.get(LOCAL_OPERATOR_HEADER),
     hostHeader: request.headers.get("host"),
-    requestUrl: request.url,
-    allowEnvValue: env[LOCAL_OPERATOR_ALLOW_ENV] ?? null
+    requestUrl: request.url
   });
 }

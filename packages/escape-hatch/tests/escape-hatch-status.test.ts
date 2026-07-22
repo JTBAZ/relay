@@ -29,6 +29,7 @@ function runStatus(args: string[] = []): { exitCode: number; stdout: string } {
 
 const EXPECTED_CAPABILITY_IDS = [
   "cli-generator",
+  "generated-repository",
   "soft-persona-gate",
   "public-media-copy",
   "client-readable-bundle",
@@ -52,7 +53,7 @@ describe("buildEscapeHatchStatus", () => {
   it("returns a versioned schema with productionSafe false", () => {
     const status = buildEscapeHatchStatus();
     expect(status.schemaVersion).toBe(ESCAPE_HATCH_STATUS_SCHEMA_VERSION);
-    expect(status.slice).toBe("EH-013");
+    expect(status.slice).toBe("EH-020");
     expect(status.deliverable).toBe("prototype_preview_only");
     expect(status.productionSafe).toBe(false);
   });
@@ -87,7 +88,7 @@ describe("buildEscapeHatchStatus", () => {
     expect(media?.nextSlice).toBe("EH-033");
   });
 
-  it("records EH-013 complete and routes next work to EH-020", () => {
+  it("records EH-020 complete and routes next work to EH-021", () => {
     const status = buildEscapeHatchStatus();
     expect(status.blockers.length).toBeGreaterThan(0);
     expect(status.blockers.some((b) => /OAuth\/cookie.*not yet wired/i.test(b))).toBe(
@@ -96,8 +97,8 @@ describe("buildEscapeHatchStatus", () => {
     expect(status.blockers.some((b) => /Library truth wizard remains open/i.test(b))).toBe(
       false
     );
-    expect(status.nextSlice.id).toBe("EH-020");
-    expect(status.nextSlice.title).toMatch(/Generated repository/i);
+    expect(status.nextSlice.id).toBe("EH-021");
+    expect(status.nextSlice.title).toMatch(/Premium patron theme/i);
     expect(status.nextSlice.focus.length).toBeGreaterThan(0);
   });
 
@@ -118,16 +119,16 @@ describe("buildEscapeHatchStatus", () => {
     expect(access?.nextSlice).toBe("EH-030");
   });
 
-  it("states billing/deploy stubs are not production proof", () => {
+  it("states billing stubs are not production proof and deploy manifests are preview-only", () => {
     const status = buildEscapeHatchStatus();
     expect(
-      status.prototypeWarnings.some((w) => /billing|deploy|stub/i.test(w))
+      status.prototypeWarnings.some((w) => /billing|deploy|stub|manifest/i.test(w))
     ).toBe(true);
     expect(status.capabilities.find((c) => c.id === "billing-adapters")?.state).toBe(
       "stub_only"
     );
     expect(status.capabilities.find((c) => c.id === "deploy-adapters")?.state).toBe(
-      "stub_only"
+      "preview_only"
     );
   });
 
@@ -175,13 +176,14 @@ describe("buildEscapeHatchStatus", () => {
     expect(capability?.evidence).toMatch(/MATRIX\.json/i);
     expect(capability?.evidence).toMatch(/secret\/PII scan/i);
     expect(capability?.evidence).not.toMatch(/not wired/i);
-    expect(capability?.nextSlice).toBe("EH-020");
+    expect(capability?.nextSlice).toBe("EH-021");
     expect(capability?.sourcePaths).toEqual(
       expect.arrayContaining([
         "packages/escape-hatch/fixtures/MATRIX.json",
         "packages/escape-hatch/fixtures/PROVENANCE.md",
         "packages/escape-hatch/src/fixture-scan.ts",
         "packages/escape-hatch/tests/escape-hatch-fixtures.test.ts",
+        "packages/escape-hatch/tests/escape-hatch-generated-repo.test.ts",
         "tests/fixtures/patreon/oauth-list-post-text-only.json",
         "tests/fixtures/patreon/cookie-list-with-media.json"
       ])
@@ -196,7 +198,7 @@ describe("buildEscapeHatchStatus", () => {
     expect(migration?.state).toBe("preview_only");
     expect(migration?.evidence).toMatch(/idempotent|provenance|conflict|ledger|private-read/i);
     expect(migration?.evidence).not.toMatch(/no idempotent/i);
-    expect(migration?.nextSlice).toBe("EH-020");
+    expect(migration?.nextSlice).toBe("EH-021");
     expect(migration?.sourcePaths).toEqual(
       expect.arrayContaining([
         "packages/escape-hatch/src/import/importer.ts",
@@ -210,7 +212,7 @@ describe("buildEscapeHatchStatus", () => {
     expect(dump?.state).toBe("preview_only");
     expect(dump?.evidence).toMatch(/import-relay-dump|migrate-media|checksum|private-read/i);
     expect(dump?.evidence).not.toMatch(/no automated importer/i);
-    expect(dump?.nextSlice).toBe("EH-020");
+    expect(dump?.nextSlice).toBe("EH-021");
   });
 
   it("marks library-truth-parity as implemented preview capability", () => {
@@ -220,12 +222,28 @@ describe("buildEscapeHatchStatus", () => {
     expect(cap?.state).toBe("preview_only");
     expect(cap?.evidence).toMatch(/100% accounted-for|accounted-for/i);
     expect(cap?.evidence).toMatch(/productionSafe remains false|production_safe/i);
-    expect(cap?.nextSlice).toBe("EH-020");
+    expect(cap?.nextSlice).toBe("EH-021");
     expect(cap?.sourcePaths).toEqual(
       expect.arrayContaining([
         "packages/escape-hatch/src/library-truth/build-report.ts",
         "packages/escape-hatch/template/components/LibraryTruthView.tsx",
         "packages/escape-hatch/tests/escape-hatch-library-truth.test.ts"
+      ])
+    );
+  });
+
+  it("marks generated-repository as preview chassis capability", () => {
+    const cap = buildEscapeHatchStatus().capabilities.find(
+      (c) => c.id === "generated-repository"
+    );
+    expect(cap?.state).toBe("preview_only");
+    expect(cap?.evidence).toMatch(/typed env|Dockerfile|clean directory/i);
+    expect(cap?.nextSlice).toBe("EH-021");
+    expect(cap?.sourcePaths).toEqual(
+      expect.arrayContaining([
+        "packages/escape-hatch/template/lib/env.ts",
+        "packages/escape-hatch/template/Dockerfile",
+        "packages/escape-hatch/tests/escape-hatch-generated-repo.test.ts"
       ])
     );
   });

@@ -46,7 +46,6 @@ export {
 export {
   assertLocalLibraryTruthMutation,
   evaluateLocalLibraryTruthMutationAccess,
-  LOCAL_OPERATOR_ALLOW_ENV,
   LOCAL_OPERATOR_HEADER,
   LOCAL_OPERATOR_HEADER_VALUE,
   type LocalOperatorDecision

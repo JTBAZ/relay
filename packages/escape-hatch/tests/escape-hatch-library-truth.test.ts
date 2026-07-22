@@ -101,14 +101,13 @@ function materializeKit(slug: string): string {
   return result.outDir;
 }
 
-describe("EH-013 status", () => {
-  it("advances slice to EH-013 with next EH-020 and productionSafe false", () => {
+describe("EH-013 status (preserved under EH-020)", () => {
+  it("keeps library-truth preview capability with productionSafe false", () => {
     const status = buildEscapeHatchStatus();
-    expect(ESCAPE_HATCH_SLICE).toBe("EH-013");
-    expect(status.slice).toBe("EH-013");
+    expect(ESCAPE_HATCH_SLICE).toBe("EH-020");
+    expect(status.slice).toBe("EH-020");
     expect(status.productionSafe).toBe(false);
-    expect(status.nextSlice.id).toBe("EH-020");
-    expect(status.nextSlice.title).toMatch(/Generated repository/i);
+    expect(status.nextSlice.id).toBe("EH-021");
     expect(
       status.blockers.some((b) => /Library truth wizard remains open/i.test(b))
     ).toBe(false);
@@ -581,6 +580,7 @@ describe("EH-013 security-review corrections", () => {
     if (!missingHeader.allowed) {
       expect(missingHeader.status).toBe(403);
       expect(missingHeader.error).toMatch(/x-escape-hatch-local/i);
+      expect(missingHeader.error).toMatch(/not authentication/i);
     }
 
     const remote = evaluateLocalLibraryTruthMutationAccess({
@@ -592,6 +592,7 @@ describe("EH-013 security-review corrections", () => {
     if (!remote.allowed) {
       expect(remote.status).toBe(403);
       expect(remote.error).toMatch(/local-prototype|localhost/i);
+      expect(remote.error).toMatch(/not authentication/i);
     }
 
     const local = evaluateLocalLibraryTruthMutationAccess({
@@ -600,14 +601,37 @@ describe("EH-013 security-review corrections", () => {
       requestUrl: "http://localhost:3000/api/library-truth"
     });
     expect(local.allowed).toBe(true);
+    if (local.allowed) {
+      expect(local.reason).toBe("localhost");
+    }
 
-    const override = evaluateLocalLibraryTruthMutationAccess({
+    const loopbackIpv4 = evaluateLocalLibraryTruthMutationAccess({
       headerValue: "1",
-      hostHeader: "preview.example.com",
-      requestUrl: "https://preview.example.com/api/library-truth",
-      allowEnvValue: "1"
+      hostHeader: "127.0.0.1:3001",
+      requestUrl: "http://127.0.0.1:3001/api/library-truth"
     });
-    expect(override.allowed).toBe(true);
+    expect(loopbackIpv4.allowed).toBe(true);
+
+    // Env override must not enable remote mutations (ESCAPE_HATCH_LIBRARY_TRUTH_ALLOW removed).
+    const priorAllow = process.env.ESCAPE_HATCH_LIBRARY_TRUTH_ALLOW;
+    process.env.ESCAPE_HATCH_LIBRARY_TRUTH_ALLOW = "1";
+    try {
+      const remoteWithEnv = evaluateLocalLibraryTruthMutationAccess({
+        headerValue: "1",
+        hostHeader: "preview.example.com",
+        requestUrl: "https://preview.example.com/api/library-truth"
+      });
+      expect(remoteWithEnv.allowed).toBe(false);
+      if (!remoteWithEnv.allowed) {
+        expect(remoteWithEnv.error).toMatch(/not authentication/i);
+      }
+    } finally {
+      if (priorAllow === undefined) {
+        delete process.env.ESCAPE_HATCH_LIBRARY_TRUTH_ALLOW;
+      } else {
+        process.env.ESCAPE_HATCH_LIBRARY_TRUTH_ALLOW = priorAllow;
+      }
+    }
   });
 
   it("status documents rebuild + local-operator honesty", () => {

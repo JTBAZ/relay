@@ -1,6 +1,6 @@
 {
   "schemaVersion": "escape-hatch-fixture-matrix/1.0.0",
-  "slice": "EH-013",
+  "slice": "EH-020",
   "productionSafe": false,
   "provenance": "packages/escape-hatch/fixtures/PROVENANCE.md",
   "allowlistedHosts": [

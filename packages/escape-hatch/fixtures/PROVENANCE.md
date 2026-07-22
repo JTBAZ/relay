@@ -1,4 +1,4 @@
-# Escape Hatch fixture provenance (EH-010 / EH-011 / EH-012 / EH-013)
+# Escape Hatch fixture provenance (EH-010 / EH-011 / EH-012 / EH-013 / EH-020)
 
 All fixtures under `packages/escape-hatch/fixtures/` are **synthetic or irreversibly sanitized**. They preserve Relay-supported structural oddities without live secrets or patron PII.
 
@@ -70,4 +70,5 @@ Sanitization method for Patreon-shaped JSON:
 | **EH-011** | Relay-dump importer, provenance/local-state split, conflict queue, tombstone + legacy tier coverage. |
 | **EH-012** | Media migration engine (`migrate-media`), private object keys, checksum ledger; **never** treats `public/media` as private delivery. |
 | **EH-013** | Library truth wizard / `library-parity-report` / continue gate; excludes do not delete export blobs. |
+| **EH-020** | Generated repository chassis smoke (clean-dir install/build, env/Docker/Vercel/manifest presence); fixtures unchanged structurally. |
 | **EH-033+** | Visitor signed-URL delivery and mature/legal enforcement beyond accounted exclusions. |

@@ -1,0 +1,72 @@
+{
+  "$schema": "https://escape-hatch.local/schemas/escape-hatch.manifest/1.0.0.json",
+  "contract_version": "escape-hatch.manifest/1.0.0",
+  "chassis_version": "0.2.0",
+  "schema_version": "eh-db/0001_preview_chassis",
+  "slice": "EH-020",
+  "productionSafe": false,
+  "generated_at": null,
+  "creator_id": null,
+  "site_id": null,
+  "feature_flags": {
+    "soft_persona_gate": true,
+    "hard_paywall": false,
+    "signed_media_delivery": false,
+    "supabase_identity": false,
+    "stripe_billing": false
+  },
+  "adapters": {
+    "auth": { "id": "stub", "version": "0.0.0", "state": "stub_only" },
+    "database": { "id": "sql_migrations", "version": "0001_preview_chassis", "state": "preview_only" },
+    "storage": { "id": "stub", "version": "0.0.0", "state": "stub_only" },
+    "billing": { "id": "stub", "version": "0.0.0", "state": "stub_only" },
+    "patreon": { "id": "stub", "version": "0.0.0", "state": "stub_only" },
+    "email": { "id": "stub", "version": "0.0.0", "state": "stub_only" },
+    "deployment": { "id": "vercel_docker_manifest", "version": "1.0.0", "state": "preview_only" }
+  },
+  "deploy_targets": [
+    {
+      "id": "vercel",
+      "kind": "vercel",
+      "config": "vercel.json",
+      "notes": "Next App Router defaults; verified golden path is EH-070."
+    },
+    {
+      "id": "docker",
+      "kind": "docker",
+      "config": "Dockerfile",
+      "notes": "Multi-stage Node build; portable compose Postgres is optional. Verified path is EH-071."
+    }
+  ],
+  "required_env_names": [],
+  "optional_env_names": [
+    "NEXT_PUBLIC_SITE_URL",
+    "NEXT_PUBLIC_SITE_NAME",
+    "DATABASE_URL",
+    "SUPABASE_URL",
+    "SUPABASE_ANON_KEY",
+    "SUPABASE_SERVICE_ROLE_KEY",
+    "R2_ENDPOINT",
+    "R2_BUCKET",
+    "R2_ACCESS_KEY_ID",
+    "R2_SECRET_ACCESS_KEY",
+    "R2_PUBLIC_BASE_URL",
+    "STRIPE_SECRET_KEY",
+    "STRIPE_WEBHOOK_SECRET",
+    "NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY"
+  ],
+  "applied_migrations": [],
+  "known_exclusions": [
+    "No hard paywall (soft persona gate only)",
+    "Premium media may still be under public/media (prototype leakage)",
+    "No Supabase RLS / identity (EH-030)",
+    "No signed private media delivery (EH-033)"
+  ],
+  "source_export_manifest_hash": null,
+  "relay_optional_services": [],
+  "warranty": {
+    "start": null,
+    "end": null,
+    "notes": "Chassis preview — not a production handoff warranty."
+  }
+}
