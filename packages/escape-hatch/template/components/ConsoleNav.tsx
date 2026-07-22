@@ -38,6 +38,7 @@ export function ConsoleNav({ quiet = false }: Props) {
               href={tab.href}
               className={`console-tab ${active ? "is-active" : ""}`}
               title={tab.hint}
+              aria-current={active ? "page" : undefined}
             >
               <span className="console-tab-label">{tab.label}</span>
               {!quiet ? (

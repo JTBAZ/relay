@@ -15,19 +15,74 @@ type Props = {
   gate: ContinueGateResult;
 };
 
+/** Live inventory counts (posts/media) for creator-facing tiles. */
+export type LiveInventoryCounts = {
+  expected: number;
+  imported: number;
+  excluded: number;
+  failed: number;
+  fully_accounted: boolean;
+};
+
+export type LiveInventoryDisplay = {
+  /** Ratio or status word — never an impossible N/M with N > M. */
+  primary: string;
+  detail: string;
+  tone: "ok" | "bad";
+};
+
+/**
+ * Posts/media contract: `expected` is live inventory (non-excluded candidates).
+ * Exclusions (tombstones, mature, skips) are separate rows and must not inflate
+ * the ratio numerator (e.g. imported=3 + excluded=1 must not render as 4/3).
+ */
+export function formatLiveInventoryDisplay(
+  counts: LiveInventoryCounts
+): LiveInventoryDisplay {
+  const live = counts.imported + counts.failed;
+  const detail = `${counts.imported} imported · ${counts.excluded} excluded · ${counts.failed} failed`;
+
+  if (counts.fully_accounted) {
+    return {
+      primary: `${counts.expected}/${counts.expected}`,
+      detail,
+      tone: "ok"
+    };
+  }
+
+  // Incomplete: never render an impossible fraction. Live progress when it fits;
+  // otherwise a clear status word (failures stay visible via tone + detail).
+  if (live > counts.expected) {
+    return {
+      primary: "Needs review",
+      detail: `${live} live dispositions vs ${counts.expected} expected · ${detail}`,
+      tone: "bad"
+    };
+  }
+
+  return {
+    primary: `${live}/${counts.expected}`,
+    detail,
+    tone: "bad"
+  };
+}
+
 function CountTile({
   label,
   value,
+  detail,
   tone = "default"
 }: {
   label: string;
   value: string | number;
+  detail?: string;
   tone?: "default" | "ok" | "warn" | "bad";
 }) {
   return (
     <div className={`lt-tile lt-tile--${tone}`}>
       <span className="lt-tile-value">{value}</span>
       <span className="lt-tile-label">{label}</span>
+      {detail ? <span className="lt-tile-detail">{detail}</span> : null}
     </div>
   );
 }
@@ -151,6 +206,14 @@ export function LibraryTruthView({ report: initialReport, state, gate: initialGa
 
   const blocking = report.anomalies.filter((a) => a.blocking);
   const other = report.anomalies.filter((a) => !a.blocking);
+  const postsDisplay = formatLiveInventoryDisplay(report.posts);
+  const mediaDisplay = formatLiveInventoryDisplay({
+    expected: report.media.expected,
+    imported: report.media.imported,
+    excluded: report.media.excluded,
+    failed: report.media.failed,
+    fully_accounted: report.media.fully_accounted
+  });
 
   return (
     <main className="console-page shell lt-page">
@@ -200,13 +263,15 @@ export function LibraryTruthView({ report: initialReport, state, gate: initialGa
         <div className="lt-tiles">
           <CountTile
             label="Posts accounted"
-            value={`${report.posts.imported + report.posts.excluded + report.posts.failed}/${report.posts.expected}`}
-            tone={report.posts.fully_accounted ? "ok" : "bad"}
+            value={postsDisplay.primary}
+            detail={postsDisplay.detail}
+            tone={postsDisplay.tone}
           />
           <CountTile
             label="Media accounted"
-            value={`${report.media.imported + report.media.excluded + report.media.failed}/${report.media.expected}`}
-            tone={report.media.fully_accounted ? "ok" : "bad"}
+            value={mediaDisplay.primary}
+            detail={mediaDisplay.detail}
+            tone={mediaDisplay.tone}
           />
           <CountTile
             label="Tiers mapped"

@@ -627,3 +627,163 @@ describe("EH-013 security-review corrections", () => {
     expect(cap?.evidence).toMatch(/rebuild|byte-copied|x-escape-hatch-local/i);
   });
 });
+
+/**
+ * Presentation contract for inventory tiles (mirrors LibraryTruthView.tsx).
+ * Expected is live inventory; exclusions are detail-only and must not inflate the ratio.
+ */
+function formatLiveInventoryDisplay(counts: {
+  expected: number;
+  imported: number;
+  excluded: number;
+  failed: number;
+  fully_accounted: boolean;
+}): { primary: string; detail: string; tone: "ok" | "bad" } {
+  const live = counts.imported + counts.failed;
+  const detail = `${counts.imported} imported · ${counts.excluded} excluded · ${counts.failed} failed`;
+
+  if (counts.fully_accounted) {
+    return {
+      primary: `${counts.expected}/${counts.expected}`,
+      detail,
+      tone: "ok"
+    };
+  }
+
+  if (live > counts.expected) {
+    return {
+      primary: "Needs review",
+      detail: `${live} live dispositions vs ${counts.expected} expected · ${detail}`,
+      tone: "bad"
+    };
+  }
+
+  return {
+    primary: `${live}/${counts.expected}`,
+    detail,
+    tone: "bad"
+  };
+}
+
+describe("EH-013 presentation — inventory readout + mobile nav", () => {
+  const viewPath = join(
+    PACKAGE_ROOT,
+    "template",
+    "components",
+    "LibraryTruthView.tsx"
+  );
+  const cssPath = join(PACKAGE_ROOT, "template", "app", "globals.css");
+
+  it("accepted fixture never derives impossible posts ratio like 4/3", async () => {
+    const kitDir = materializeKit("eh-013-posts-display");
+    await migrateKitMedia({
+      kitDir,
+      storage: new MemoryObjectStorage(),
+      exportCreatorRoot: join(RELAY_DUMP, "exports", "cr_eh_relay"),
+      batchId: "eh013_posts_display",
+      now: FIXED_NOW
+    });
+    const result = runLibraryTruthForKit({ kitDir, now: FIXED_NOW });
+    const posts = result.report.posts;
+
+    // Fixture shape that previously rendered 4/3: live inventory closed with a
+    // separate tombstone exclusion.
+    expect(posts.fully_accounted).toBe(true);
+    expect(posts.imported + posts.excluded + posts.failed).toBeGreaterThan(
+      posts.expected
+    );
+    expect(posts.imported + posts.excluded + posts.failed).toBe(4);
+    expect(posts.expected).toBe(3);
+
+    const display = formatLiveInventoryDisplay(posts);
+    expect(display.primary).toBe("3/3");
+    expect(display.primary).not.toBe("4/3");
+    expect(display.tone).toBe("ok");
+    expect(display.detail).toMatch(/3 imported/);
+    expect(display.detail).toMatch(/1 excluded/);
+
+    // Naive sum must never be what we show.
+    const naive = `${posts.imported + posts.excluded + posts.failed}/${posts.expected}`;
+    expect(naive).toBe("4/3");
+    expect(display.primary).not.toBe(naive);
+  });
+
+  it("under-accounted posts still read incomplete/bad", () => {
+    const under = formatLiveInventoryDisplay({
+      expected: 3,
+      imported: 1,
+      excluded: 0,
+      failed: 0,
+      fully_accounted: false
+    });
+    expect(under.primary).toBe("1/3");
+    expect(under.tone).toBe("bad");
+    expect(under.primary).not.toMatch(/Complete|3\/3/);
+
+    const overLive = formatLiveInventoryDisplay({
+      expected: 3,
+      imported: 4,
+      excluded: 0,
+      failed: 0,
+      fully_accounted: false
+    });
+    expect(overLive.primary).toBe("Needs review");
+    expect(overLive.tone).toBe("bad");
+    expect(overLive.primary).not.toBe("4/3");
+  });
+
+  it("LibraryTruthView uses live-inventory display, not naive imported+excluded+failed/expected", () => {
+    const source = readFileSync(viewPath, "utf8");
+    expect(source).toContain("formatLiveInventoryDisplay");
+    expect(source).toContain("postsDisplay.primary");
+    expect(source).toContain("postsDisplay.detail");
+    // Old impossible-ratio formula must be gone.
+    expect(source).not.toMatch(
+      /report\.posts\.imported\s*\+\s*report\.posts\.excluded\s*\+\s*report\.posts\.failed/
+    );
+    expect(source).not.toMatch(
+      /report\.media\.imported\s*\+\s*report\.media\.excluded\s*\+\s*report\.media\.failed/
+    );
+    // Presentation contract branches present in source.
+    expect(source).toContain("Needs review");
+    expect(source).toMatch(/imported \+ counts\.failed|counts\.imported \+ counts\.failed/);
+    expect(source).toMatch(/\$\{counts\.expected\}\/\$\{counts\.expected\}/);
+  });
+
+  it("mobile console nav is a single scrollable rail with 44px targets and hidden hints", () => {
+    const css = readFileSync(cssPath, "utf8");
+    // Mobile block markers for the compact tab rail (not the old 2×2 card stack).
+    expect(css).toMatch(
+      /@media\s*\(max-width:\s*640px\)[\s\S]*\.console-tabs\s*\{[\s\S]*?flex-wrap:\s*nowrap/
+    );
+    expect(css).toMatch(
+      /@media\s*\(max-width:\s*640px\)[\s\S]*\.console-tabs\s*\{[\s\S]*?overflow-x:\s*auto/
+    );
+    expect(css).toMatch(
+      /@media\s*\(max-width:\s*640px\)[\s\S]*\.console-tab\s*\{[\s\S]*?min-height:\s*44px/
+    );
+    expect(css).toMatch(
+      /@media\s*\(max-width:\s*640px\)[\s\S]*\.console-tab\s*\{[\s\S]*?min-width:\s*44px/
+    );
+    expect(css).toMatch(
+      /@media\s*\(max-width:\s*640px\)[\s\S]*\.console-tab-hint\s*\{[\s\S]*?clip:\s*rect\(0,\s*0,\s*0,\s*0\)/
+    );
+    // Old 2×2 card flex-basis must not return.
+    expect(css).not.toMatch(
+      /@media\s*\(max-width:\s*640px\)[\s\S]*flex:\s*1\s+1\s+calc\(50%/
+    );
+
+    // Filled kits receive the same mobile rail CSS.
+    const kitDir = materializeKit("eh-013-mobile-nav-css");
+    const generated = readFileSync(join(kitDir, "app", "globals.css"), "utf8");
+    expect(generated).toMatch(
+      /@media\s*\(max-width:\s*640px\)[\s\S]*\.console-tabs\s*\{[\s\S]*?flex-wrap:\s*nowrap/
+    );
+    expect(generated).toMatch(
+      /@media\s*\(max-width:\s*640px\)[\s\S]*\.console-tabs\s*\{[\s\S]*?overflow-x:\s*auto/
+    );
+    expect(generated).toMatch(
+      /@media\s*\(max-width:\s*640px\)[\s\S]*\.console-tab-hint\s*\{[\s\S]*?clip:\s*rect\(0,\s*0,\s*0,\s*0\)/
+    );
+  });
+});

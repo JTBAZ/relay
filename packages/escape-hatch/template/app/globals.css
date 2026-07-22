@@ -995,6 +995,13 @@ code {
   line-height: 1.3;
 }
 
+.lt-tile-detail {
+  font-size: 0.68rem;
+  color: var(--eh-muted);
+  line-height: 1.35;
+  margin-top: 0.15rem;
+}
+
 .lt-notes {
   margin: 0 0 1rem;
   padding-left: 1.15rem;
@@ -1217,7 +1224,9 @@ code {
 
 .console-tab {
   min-height: 44px;
+  min-width: 44px;
   justify-content: center;
+  touch-action: manipulation;
 }
 
 @media (max-width: 640px) {
@@ -1226,15 +1235,45 @@ code {
   }
 
   .console-nav {
+    flex-direction: column;
     align-items: stretch;
+    gap: 0.5rem;
   }
 
+  /* Single-row scrollable tab rail — labels only, 44px targets, no 2×2 card stack. */
   .console-tabs {
+    flex-wrap: nowrap;
     width: 100%;
+    max-width: 100%;
+    overflow-x: auto;
+    overflow-y: hidden;
+    gap: 0.3rem;
+    -webkit-overflow-scrolling: touch;
+    scroll-snap-type: x proximity;
+    overscroll-behavior-x: contain;
+    padding-block: 0.15rem;
   }
 
   .console-tab {
-    flex: 1 1 calc(50% - 0.35rem);
+    flex: 0 0 auto;
+    flex-direction: row;
+    align-items: center;
+    min-height: 44px;
+    min-width: 44px;
+    padding: 0.5rem 0.85rem;
+    scroll-snap-align: start;
+  }
+
+  .console-tab-hint {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
   }
 }
 
