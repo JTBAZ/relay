@@ -36,7 +36,7 @@ const PROVENANCE_PATH = join(FIXTURE_ROOT, "PROVENANCE.md");
 
 type MatrixFamily = {
   id: string;
-  status: "present" | "deferred-to-EH-011" | "deferred-to-EH-012";
+  status: "present" | "deferred-to-EH-011" | "deferred-to-EH-012" | "deferred-to-EH-033";
   kind: string;
   paths: string[];
   reason?: string;
@@ -68,13 +68,11 @@ const EXPECTED_PRESENT_IDS = [
   "duplicate-cdn-urls",
   "missing-cover-attachment",
   "deleted-tombstoned",
-  "legacy-tier-rename"
+  "legacy-tier-rename",
+  "video-audio-embed"
 ] as const;
 
-const EXPECTED_DEFERRED_IDS = [
-  "video-audio-embed",
-  "mature-metadata"
-] as const;
+const EXPECTED_DEFERRED_IDS = ["mature-metadata"] as const;
 
 function loadMatrix(): FixtureMatrix {
   return JSON.parse(readFileSync(MATRIX_PATH, "utf8")) as FixtureMatrix;
@@ -94,7 +92,7 @@ describe("EH-010 fixture matrix index", () => {
   it("lists every expected present and deferred family", () => {
     const matrix = loadMatrix();
     expect(matrix.schemaVersion).toBe("escape-hatch-fixture-matrix/1.0.0");
-    expect(matrix.slice).toBe("EH-011");
+    expect(matrix.slice).toBe("EH-012");
     expect(matrix.productionSafe).toBe(false);
 
     const byId = new Map(matrix.families.map((f) => [f.id, f]));
@@ -103,7 +101,7 @@ describe("EH-010 fixture matrix index", () => {
     }
     for (const id of EXPECTED_DEFERRED_IDS) {
       const fam = byId.get(id);
-      expect(fam?.status).toBe("deferred-to-EH-012");
+      expect(fam?.status).toBe("deferred-to-EH-033");
       expect(fam?.reason?.length).toBeGreaterThan(10);
     }
     expect(matrix.families.map((f) => f.id).sort()).toEqual(
@@ -128,12 +126,23 @@ describe("EH-010 fixture matrix index", () => {
         status: string;
         reason: string;
       };
-      expect(stub.status).toBe("deferred-to-EH-012");
-      expect(stub.reason.toLowerCase()).toMatch(/eh-012/);
+      expect(stub.status).toBe("deferred-to-EH-033");
+      expect(stub.reason.toLowerCase()).toMatch(/eh-033/);
       expect(JSON.stringify(stub).toLowerCase()).not.toMatch(
         /successfully imported|import succeeded|importer succeeded|r2 copy succeeded/
       );
     }
+  });
+
+  it("documents video-audio-embed migration accounting without visitor players", () => {
+    const fam = loadMatrix().families.find((f) => f.id === "video-audio-embed");
+    expect(fam?.status).toBe("present");
+    expect(fam?.notes?.toLowerCase()).toMatch(/migrat/);
+    expect(fam?.notes?.toLowerCase()).toMatch(/eh-033|no visitor|no.*player/);
+    const stub = readFixtureRel("matrix/deferred/video-audio-embed.stub.json") as {
+      status: string;
+    };
+    expect(stub.status).toBe("present");
   });
 });
 
@@ -145,7 +154,9 @@ describe("EH-010 provenance", () => {
     expect(text).toMatch(/No live tokens/i);
     expect(text).toMatch(/EH-010/);
     expect(text).toMatch(/EH-011/);
+    expect(text).toMatch(/EH-012/);
     expect(text).toMatch(/sparse `included`|sparse included/i);
+    expect(text).toMatch(/public\/media/);
   });
 });
 

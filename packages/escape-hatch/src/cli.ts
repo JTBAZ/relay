@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * Escape Hatch CLI: fixture | wizard | build | from-relay | from-clone |
- * import-relay-dump | zip | status
+ * import-relay-dump | migrate-media | zip | status
  */
 
 import {
@@ -33,6 +33,12 @@ import {
 import { runWizard } from "./wizard.js";
 import { buildEscapeHatchStatus, formatHumanStatus } from "./status.js";
 import { zipExportKit } from "./zip-kit.js";
+import {
+  MemoryObjectStorage,
+  migrateKitMedia,
+  R2ObjectStorage,
+  createR2StorageConfig
+} from "./migrate/index.js";
 import type { EscapeHatchTheme, SiteBundle } from "./types.js";
 
 function usage(): never {
@@ -47,13 +53,16 @@ Usage:
   npx tsx src/cli.ts import-relay-dump [slug]
   npx tsx src/cli.ts import-relay-dump <dumpRoot> [creator_id] [slug]
   npx tsx src/cli.ts import-relay-dump [slug] fresh
+  npx tsx src/cli.ts migrate-media [slug|kitPath]
+  npx tsx src/cli.ts migrate-media [slug|kitPath] --dump-root <relay-dump>
   npx tsx src/cli.ts zip <slug>
   npx tsx src/cli.ts status [--json]
   npx tsx src/cli.ts status json
 
-Flags (also supported): --bundle --theme --slug --clone --creator --media --json --dump-root --fresh
+Flags (also supported): --bundle --theme --slug --clone --creator --media --json --dump-root --fresh --r2
 Note: on Windows, prefer positional args — npm may strip --flags (e.g. status json).
 Re-import loads data/provenance.json + import-state.json + site.bundle.json when present unless --fresh / fresh.
+migrate-media defaults to in-memory storage (CI-safe). --r2 requires injected R2_* env (never logged).
 `);
   process.exit(1);
 }
@@ -415,10 +424,115 @@ async function main(): Promise<void> {
       `Posts imported=${imported.report.posts.imported} excluded=${imported.report.posts.excluded} conflicts=${imported.report.conflicts.length}`
     );
     console.log(
-      "Note: public/media copy remains prototype-only; private R2 delivery is EH-012."
+      "Note: public/media copy remains prototype-only; run migrate-media for private object ledger (visitor delivery is EH-033)."
     );
     printPreviewHint(result.outDir, result.slug);
     return;
+  }
+
+  if (cmd === "migrate-media" || cmd === "migrate-r2") {
+    const pos = positionals(args);
+    const target = argValue(args, "--slug") ?? pos[0] ?? "eh-relay";
+    const asPath = resolvePath(target);
+    const kitDir =
+      existsSync(asPath) && statSync(asPath).isDirectory()
+        ? asPath
+        : join(OUT_ROOT, target);
+
+    if (!existsSync(kitDir)) {
+      console.error(
+        `Kit not found: ${kitDir}\nRun import-relay-dump or fixture first.`
+      );
+      process.exit(1);
+    }
+
+    let dumpRoot = argValue(args, "--dump-root") ?? DEFAULT_RELAY_DUMP_ROOT;
+    dumpRoot = resolvePath(dumpRoot);
+
+    // Load creator_id from kit data to resolve export root.
+    const dataBundlePath = join(kitDir, "data", "site.bundle.json");
+    const dataSitePath = join(kitDir, "data", "site.json");
+    let creatorId = argValue(args, "--creator") ?? DEFAULT_RELAY_DUMP_CREATOR_ID;
+    if (existsSync(dataBundlePath) || existsSync(dataSitePath)) {
+      try {
+        const raw = JSON.parse(
+          readFileSync(
+            existsSync(dataBundlePath) ? dataBundlePath : dataSitePath,
+            "utf8"
+          )
+        ) as { creator_id?: string };
+        if (raw.creator_id) creatorId = raw.creator_id;
+      } catch {
+        // fall through with default creator id
+      }
+    }
+    const exportCreatorRoot = join(dumpRoot, "exports", creatorId);
+    if (!existsSync(exportCreatorRoot)) {
+      console.error(
+        `Export creator root not found: ${exportCreatorRoot}\nProvide --dump-root pointing at fixtures/relay-dump (or a kit export).`
+      );
+      process.exit(1);
+    }
+
+    let storage: MemoryObjectStorage | R2ObjectStorage = new MemoryObjectStorage();
+    if (hasFlag(args, "--r2")) {
+      const endpoint =
+        process.env.R2_ENDPOINT?.trim() ||
+        (process.env.R2_ACCOUNT_ID?.trim()
+          ? `https://${process.env.R2_ACCOUNT_ID.trim()}.r2.cloudflarestorage.com`
+          : "");
+      const accessKeyId = process.env.R2_ACCESS_KEY_ID?.trim() ?? "";
+      const secretAccessKey = process.env.R2_SECRET_ACCESS_KEY?.trim() ?? "";
+      const bucket = process.env.R2_BUCKET?.trim() ?? "";
+      if (!endpoint || !accessKeyId || !secretAccessKey || !bucket) {
+        console.error(
+          " --r2 requires R2_ENDPOINT (or R2_ACCOUNT_ID), R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, and R2_BUCKET."
+        );
+        process.exit(1);
+      }
+      const publicBaseUrl = process.env.R2_PUBLIC_BASE_URL?.trim() || undefined;
+      const allowPublicProbe =
+        hasFlag(args, "--r2-probe") ||
+        process.env.R2_ALLOW_PUBLIC_PROBE?.trim() === "1";
+      storage = new R2ObjectStorage(
+        createR2StorageConfig({
+          endpoint,
+          bucket,
+          accessKeyId,
+          secretAccessKey,
+          region: process.env.R2_REGION?.trim() || "auto",
+          publicBaseUrl,
+          allowPublicProbe
+        })
+      );
+      console.log("Using injected R2 storage adapter (credentials not logged).");
+      if (!allowPublicProbe || !publicBaseUrl) {
+        console.log(
+          "R2 anonymous probe not configured (need R2_PUBLIC_BASE_URL + --r2-probe or R2_ALLOW_PUBLIC_PROBE=1); private_read_verified will fail closed — auth GET alone is insufficient."
+        );
+      }
+    } else {
+      console.log(
+        "Using in-memory storage adapter (default; CI-safe). Pass --r2 for live R2."
+      );
+    }
+
+    const migrated = await migrateKitMedia({
+      kitDir,
+      storage,
+      exportCreatorRoot,
+      batchId: argValue(args, "--batch") ?? `cli_${Date.now().toString(36)}`
+    });
+
+    console.log(`Migration ledger: ${migrated.ledgerPath}`);
+    console.log(`Migration report: ${migrated.reportPath}`);
+    console.log(
+      `Media expected=${migrated.report.expected} verified=${migrated.report.verified} failed=${migrated.report.failed} bytes=${migrated.report.bytes_verified}`
+    );
+    console.log(
+      "productionSafe remains false. public/media is not private delivery (EH-033 owns visitor signed URLs)."
+    );
+    process.exit(migrated.exitCode);
   }
 
   if (cmd === "zip") {

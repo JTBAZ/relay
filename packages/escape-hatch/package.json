@@ -12,12 +12,14 @@
     "build-site": "tsx src/cli.ts build",
     "from-relay": "tsx src/cli.ts from-relay",
     "import-relay-dump": "tsx src/cli.ts import-relay-dump",
+    "migrate-media": "tsx src/cli.ts migrate-media",
     "zip": "tsx src/cli.ts zip",
     "status": "tsx src/cli.ts status",
     "test": "vitest run",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1029.0",
     "archiver": "^7.0.1",
     "relay": "file:../.."
   },

@@ -1,11 +1,11 @@
 /**
- * Deterministic Escape Hatch capability inventory (through EH-011).
+ * Deterministic Escape Hatch capability inventory (through EH-012).
  * No timestamps, env reads, network, or live data — informational only.
  */
 
 export const ESCAPE_HATCH_STATUS_SCHEMA_VERSION = "escape-hatch-status/1.0.0";
 
-export const ESCAPE_HATCH_SLICE = "EH-011";
+export const ESCAPE_HATCH_SLICE = "EH-012";
 
 export type CapabilityState =
   | "production_safe"
@@ -36,7 +36,7 @@ export type EscapeHatchStatus = {
   capabilities: EscapeHatchCapability[];
   blockers: string[];
   nextSlice: {
-    id: "EH-012";
+    id: "EH-013";
     title: string;
     focus: string[];
   };
@@ -48,16 +48,17 @@ const CAPABILITIES: EscapeHatchCapability[] = [
     title: "Prototype generator and CLI",
     state: "preview_only",
     evidence:
-      "fixture, wizard, build, from-relay, from-clone, import-relay-dump, and zip subcommands materialize a Next.js kit from fixtures or Relay adapters; suitable for local preview only.",
+      "fixture, wizard, build, from-relay, from-clone, import-relay-dump, migrate-media, and zip subcommands materialize a Next.js kit and optional private-object migration ledger; suitable for local preview only.",
     sourcePaths: [
       "packages/escape-hatch/src/cli.ts",
       "packages/escape-hatch/src/fill-template.ts",
       "packages/escape-hatch/src/wizard.ts",
       "packages/escape-hatch/src/zip-kit.ts",
-      "packages/escape-hatch/src/import/importer.ts"
+      "packages/escape-hatch/src/import/importer.ts",
+      "packages/escape-hatch/src/migrate/engine.ts"
     ],
     risk: "high",
-    nextSlice: "EH-012"
+    nextSlice: "EH-013"
   },
   {
     id: "soft-persona-gate",
@@ -78,22 +79,27 @@ const CAPABILITIES: EscapeHatchCapability[] = [
     title: "All generated media copied to public",
     state: "preview_only",
     evidence:
-      "fill-template copies every bundle media file into public/media, including member_only and tier_gated assets; direct HTTP GET to locked paths returns 200 with public bytes (known prototype security failure). EH-011 records media provenance/checksums but does not perform private R2 copy.",
-    sourcePaths: ["packages/escape-hatch/src/fill-template.ts"],
+      "fill-template still copies every bundle media file into public/media, including member_only and tier_gated assets; direct HTTP GET to locked paths returns 200 with public bytes (known prototype security failure). EH-012 migrate-media records private object keys under data/ and never treats public/media as private-read success.",
+    sourcePaths: [
+      "packages/escape-hatch/src/fill-template.ts",
+      "packages/escape-hatch/src/migrate/engine.ts",
+      "packages/escape-hatch/src/migrate/validate.ts"
+    ],
     risk: "critical",
-    nextSlice: "EH-012"
+    nextSlice: "EH-033"
   },
   {
     id: "client-readable-bundle",
     title: "Public client-readable bundle and theme",
     state: "preview_only",
     evidence:
-      "fill-template writes both data/site.json and data/theme.json and public/site.json and public/theme.json; the public copies are client-readable without server-side entitlement enforcement. Import provenance/local-state/report stay under data/ only.",
+      "fill-template writes both data/site.json and data/theme.json and public/site.json and public/theme.json; the public copies are client-readable without server-side entitlement enforcement. Import provenance/local-state/report and media-migration ledger/report stay under data/ only.",
     sourcePaths: [
       "packages/escape-hatch/src/fill-template.ts",
       "packages/escape-hatch/src/cli.ts",
       "packages/escape-hatch/template/lib/load-site.ts",
-      "packages/escape-hatch/template/lib/site-session.ts"
+      "packages/escape-hatch/template/lib/site-session.ts",
+      "packages/escape-hatch/src/migrate/kit-io.ts"
     ],
     risk: "high",
     nextSlice: "EH-020"
@@ -103,12 +109,14 @@ const CAPABILITIES: EscapeHatchCapability[] = [
     title: "Versioned shared contracts",
     state: "preview_only",
     evidence:
-      "SiteBundle and CloneSiteModel are explicitly versioned and runtime-validated; generated apps receive a byte-identical self-contained canonical contracts module and validate site.json before use. EH-011 adds separate versioned import-provenance / import-local-state / import-report documents.",
+      "SiteBundle and CloneSiteModel are explicitly versioned and runtime-validated; generated apps receive a byte-identical self-contained canonical contracts module. EH-011 adds import-provenance / import-local-state / import-report; EH-012 adds media-migration-ledger/1.0.0 and media-migration-report/1.0.0 with fail-closed parsers.",
     sourcePaths: [
       "packages/escape-hatch/src/contracts.ts",
       "packages/escape-hatch/src/types.ts",
       "packages/escape-hatch/src/fill-template.ts",
       "packages/escape-hatch/src/import/types.ts",
+      "packages/escape-hatch/src/migrate/types.ts",
+      "packages/escape-hatch/src/migrate/validate.ts",
       "packages/escape-hatch/template/lib/access.ts",
       "packages/escape-hatch/template/lib/load-site.ts"
     ],
@@ -119,7 +127,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
     title: "Fixture coverage (sample, clone, Patreon shapes)",
     state: "preview_only",
     evidence:
-      "EH-010/EH-011 fixture matrix (MATRIX.json) covers sanitized OAuth/cookie Patreon JSON, SiteBundle/Clone adaptations, relay-dump import fixtures, promoted tombstone/legacy-tier families, and deferred AV/mature stubs for EH-012; secret/PII scan remains wired.",
+      "EH-012 fixture matrix (MATRIX.json) covers sanitized OAuth/cookie Patreon JSON, SiteBundle/Clone adaptations, relay-dump import + media migration accounting for present blobs (including AV mime placeholders), promoted tombstone/legacy-tier families, and deferred mature/legal enforcement stubs; secret/PII scan remains wired.",
     sourcePaths: [
       "packages/escape-hatch/fixtures/MATRIX.json",
       "packages/escape-hatch/fixtures/PROVENANCE.md",
@@ -129,45 +137,52 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "packages/escape-hatch/src/fixture-scan.ts",
       "packages/escape-hatch/tests/escape-hatch-fixtures.test.ts",
       "packages/escape-hatch/tests/escape-hatch-import.test.ts",
+      "packages/escape-hatch/tests/escape-hatch-migrate.test.ts",
       "tests/fixtures/patreon/oauth-list-post-text-only.json",
       "tests/fixtures/patreon/cookie-list-with-media.json"
     ],
     risk: "medium",
-    nextSlice: "EH-012"
+    nextSlice: "EH-013"
   },
   {
     id: "relay-dump-fixtures",
     title: "Relay-dump fixtures and importer tests",
     state: "preview_only",
     evidence:
-      "fixtures/relay-dump/ drives import-relay-dump and automated idempotency/conflict/tombstone tests; checksum and byte-length fields are recorded in provenance. Private R2 stream copy remains EH-012.",
+      "fixtures/relay-dump/ drives import-relay-dump and migrate-media with checksum/byte-length verification and private-read ledger entries; missing blobs remain accounted failures.",
     sourcePaths: [
       "packages/escape-hatch/fixtures/relay-dump/canonical.json",
       "packages/escape-hatch/fixtures/relay-dump/exports/cr_eh_relay/export_index.json",
       "packages/escape-hatch/src/import/load-relay-dump.ts",
-      "packages/escape-hatch/tests/escape-hatch-import.test.ts"
+      "packages/escape-hatch/src/migrate/engine.ts",
+      "packages/escape-hatch/tests/escape-hatch-import.test.ts",
+      "packages/escape-hatch/tests/escape-hatch-migrate.test.ts"
     ],
     risk: "medium",
-    nextSlice: "EH-012"
+    nextSlice: "EH-013"
   },
   {
     id: "relay-canonical-reuse",
     title: "Canonical ingest, clone, and export reuse",
     state: "reusable_relay_source",
     evidence:
-      "Importer and from-relay load Relay dist clone-generator against canonical and export_index inputs; canonical ingest, clone tier-rules, and export types live in repo src/ and are reused, not reimplemented here.",
+      "Importer and from-relay load Relay dist clone-generator against canonical and export_index inputs; canonical ingest, clone tier-rules, and export types live in repo src/ and are reused, not reimplemented here. R2 patterns are referenced only; package tests use an in-memory storage port.",
     sourcePaths: [
       "packages/escape-hatch/src/from-relay.ts",
       "packages/escape-hatch/src/from-clone.ts",
       "packages/escape-hatch/src/import/importer.ts",
+      "packages/escape-hatch/src/migrate/r2-storage.ts",
       "src/ingest/types.ts",
       "src/ingest/canonical-store.ts",
       "src/clone/types.ts",
       "src/clone/tier-rules.ts",
-      "src/export/types.ts"
+      "src/export/types.ts",
+      "src/storage/r2-config.ts",
+      "src/storage/relay-upload-r2.ts",
+      "src/storage/media-delivery-policy.ts"
     ],
     risk: "informational",
-    nextSlice: "EH-012"
+    nextSlice: "EH-013"
   },
   {
     id: "simplified-access-semantics",
@@ -201,8 +216,10 @@ const CAPABILITIES: EscapeHatchCapability[] = [
     title: "Private media delivery and signed URLs",
     state: "not_implemented",
     evidence:
-      "No R2 private-read policy, signed URL gateway, or media-delivery enforcement in the generated app; Relay src/storage/media-delivery-policy.ts is not integrated.",
+      "EH-012 migrates objects into opaque private keys with private-read checks that require authenticated success and anonymous denial (memory adapter fully proves; R2 requires publicBaseUrl + allowPublicProbe and otherwise fails closed). The generated app still has no visitor signed-URL gateway or entitlement enforcement; Relay media-delivery-policy is not integrated into the kit.",
     sourcePaths: [
+      "packages/escape-hatch/src/migrate/engine.ts",
+      "packages/escape-hatch/src/migrate/storage-port.ts",
       "src/storage/media-delivery-policy.ts",
       "src/storage/relay-upload-r2.ts"
     ],
@@ -246,16 +263,19 @@ const CAPABILITIES: EscapeHatchCapability[] = [
     title: "Migration and canonical import pipeline",
     state: "preview_only",
     evidence:
-      "EH-011 importCanonical / import-relay-dump produce SiteBundle plus versioned provenance, local mutable state, conflict queue, and import report with idempotent replay; private R2 media migration remains EH-012. productionSafe is false.",
+      "EH-011 importCanonical / import-relay-dump produce SiteBundle plus versioned provenance, local mutable state, conflict queue, and import report; EH-012 adds resumable private object migration ledger with checksums and live private-read re-verification on resume (ledger verified alone is never success) via an injected storage port (in-memory default; R2 needs anonymous probe to claim private_read_verified). productionSafe is false.",
     sourcePaths: [
       "packages/escape-hatch/src/import/importer.ts",
       "packages/escape-hatch/src/import/load-relay-dump.ts",
       "packages/escape-hatch/src/import/types.ts",
+      "packages/escape-hatch/src/migrate/engine.ts",
+      "packages/escape-hatch/src/migrate/types.ts",
       "packages/escape-hatch/src/cli.ts",
-      "packages/escape-hatch/tests/escape-hatch-import.test.ts"
+      "packages/escape-hatch/tests/escape-hatch-import.test.ts",
+      "packages/escape-hatch/tests/escape-hatch-migrate.test.ts"
     ],
     risk: "high",
-    nextSlice: "EH-012"
+    nextSlice: "EH-013"
   },
   {
     id: "backup-restore",
@@ -282,20 +302,21 @@ const CAPABILITIES: EscapeHatchCapability[] = [
 
 const PROTOTYPE_WARNINGS: string[] = [
   "productionSafe is false — this deliverable is prototype/preview-only.",
-  "Premium (member_only and tier_gated) media bytes are copied to public/media and are directly fetchable without authentication.",
+  "Premium (member_only and tier_gated) media bytes are still copied to public/media by fillTemplate and are directly fetchable without authentication.",
   "Direct HTTP GET to a locked premium media URL is expected to return HTTP 200 with public bytes; this is a known prototype security failure, not a passing paywall.",
+  "EH-012 private object migration ledger entries are not visitor delivery; public/media is never accepted as private-read verification.",
+  "R2 without an explicit anonymous probe (publicBaseUrl + allowPublicProbe) cannot claim private_read_verified — authenticated GetObject alone is insufficient.",
   "Client demo persona state is non-authoritative; switching persona only changes UI gating, not server entitlements.",
   "Package preview access helpers align with canonical tier semantics but remain client-only and are not enforced server-side.",
   "Relay Part 2 billing and deploy adapters are synthetic stubs and must not be treated as production or provider proof.",
-  "Passing package tests or a successful local preview does not make any soft-gated capability production-safe.",
-  "EH-011 importer provenance does not imply private media delivery; R2 copy/verification is EH-012."
+  "Passing package tests or a successful local preview does not make any soft-gated capability production-safe."
 ];
 
 const BLOCKERS: string[] = [
-  "Premium media remains world-readable in public/; migration/copy belongs to EH-012 and server-enforced private delivery belongs to EH-033.",
+  "Premium media remains world-readable in public/ for soft preview; server-enforced private visitor delivery belongs to EH-033.",
   "No hard patron identity, entitlements, or RLS-backed session (EH-030).",
   "Billing and deploy paths are stub-only in Relay core, not creator-owned production integrations (EH-050, EH-070).",
-  "Video/audio/embed private blob migration and mature/legal-adult enforcement beyond accounted exclusions remain deferred to EH-012+."
+  "Library truth wizard / parity audit (EH-013) and mature/legal-adult enforcement beyond accounted exclusions remain open."
 ];
 
 export function buildEscapeHatchStatus(): EscapeHatchStatus {
@@ -305,7 +326,7 @@ export function buildEscapeHatchStatus(): EscapeHatchStatus {
     deliverable: "prototype_preview_only",
     productionSafe: false,
     summary:
-      "Escape Hatch through EH-011 adds a canonical generated-app importer with immutable provenance, local mutable state, idempotent replay, and a conflict queue against sanitized relay-dump fixtures; locked premium bytes remain public, persona state is non-authoritative, and the prototype is not production safe.",
+      "Escape Hatch through EH-012 adds a creator-owned media migration engine with stream copy, SHA-256/byte-length checks, an idempotent resumable ledger with live private-read re-checks on resume, and private-read verification that requires anonymous denial (in-memory default; R2 needs an explicit public probe); fillTemplate public/media remains prototype leakage, persona state is non-authoritative, and productionSafe is false.",
     prototypeWarnings: [...PROTOTYPE_WARNINGS],
     capabilities: CAPABILITIES.map((c) => ({
       ...c,
@@ -313,12 +334,12 @@ export function buildEscapeHatchStatus(): EscapeHatchStatus {
     })),
     blockers: [...BLOCKERS],
     nextSlice: {
-      id: "EH-012",
-      title: "R2 migration engine",
+      id: "EH-013",
+      title: "Library truth wizard",
       focus: [
-        "Creator-owned bucket setup and resumable stream copy",
-        "Checksum verification, retry ledger, and private-read checks",
-        "Replace prototype public/media premium copy for migrated objects"
+        "Data audit, exclusions, and access ambiguities",
+        "Creator-readable parity report",
+        "100% accounted-for gate with sampled page parity"
       ]
     }
   };

@@ -1,6 +1,6 @@
 {
   "schemaVersion": "escape-hatch-fixture-matrix/1.0.0",
-  "slice": "EH-011",
+  "slice": "EH-012",
   "productionSafe": false,
   "provenance": "packages/escape-hatch/fixtures/PROVENANCE.md",
   "allowlistedHosts": [
@@ -34,7 +34,7 @@
         "relay-dump/exports/cr_eh_relay/blobs/m_relay.svg",
         "relay-dump/exports/cr_eh_relay/blobs/m_relay_gold.svg"
       ],
-      "notes": "Sanitized dump exercises EH-011 importCanonical / import-relay-dump (idempotency, provenance, missing-blob failure, tombstone exclusion). Private R2 copy remains EH-012."
+      "notes": "Sanitized dump exercises EH-011 import and EH-012 migrate-media (checksum, private-read ledger). Missing-blob remains an accounted failure."
     },
     {
       "id": "public-text-only",
@@ -167,17 +167,22 @@
     },
     {
       "id": "video-audio-embed",
-      "status": "deferred-to-EH-012",
-      "kind": "structural-stub",
-      "paths": ["matrix/deferred/video-audio-embed.stub.json"],
-      "reason": "EH-011 accounts AV/embed mime as exclusions without private blob success; R2 stream copy + verification is EH-012."
+      "status": "present",
+      "kind": "migration-accounting",
+      "paths": [
+        "matrix/deferred/video-audio-embed.stub.json",
+        "relay-dump/exports/cr_eh_relay/blobs/m_video_stub.txt",
+        "relay-dump/exports/cr_eh_relay/blobs/m_audio_stub.txt",
+        "relay-dump/exports/cr_eh_relay/blobs/m_embed_stub.txt"
+      ],
+      "notes": "EH-012 migrates present AV/embed mime placeholder blobs into private object keys with ledger accounting. No visitor streaming players or live embed fetch (EH-033)."
     },
     {
       "id": "mature-metadata",
-      "status": "deferred-to-EH-012",
+      "status": "deferred-to-EH-033",
       "kind": "structural-stub",
       "paths": ["matrix/deferred/mature-metadata.stub.json"],
-      "reason": "EH-011 excludes mature/legal-adult posts from the live SiteBundle as accounted exclusions; private/legal enforcement remains EH-012+."
+      "reason": "EH-011 excludes mature/legal-adult posts as accounted exclusions; visitor/legal enforcement and product UX remain deferred to EH-033+."
     }
   ]
 }

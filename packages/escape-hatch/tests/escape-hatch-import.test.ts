@@ -86,8 +86,10 @@ describe("EH-011 relay-dump import", () => {
     expect(result.provenance.contract_version).toBe("import-provenance/1.0.0");
     expect(result.provenance.batch_id).toBe("batch_test_1");
     expect(result.provenance.posts.p1.upstream_revision).toBe("r1");
-    expect(result.provenance.media.m_relay.checksum).toBe("abc");
-    expect(result.provenance.media.m_relay.byte_length).toBe(100);
+    expect(result.provenance.media.m_relay.checksum).toBe(
+      "47ee847f578d5cc56737bf838c48d4801d51508b3103086c6f908c069392e7b7"
+    );
+    expect(result.provenance.media.m_relay.byte_length).toBe(205);
 
     expect(result.localState.contract_version).toBe("import-local-state/1.0.0");
     expect(result.localState.posts.p1.origin).toBe("imported");
@@ -98,7 +100,7 @@ describe("EH-011 relay-dump import", () => {
     expect(result.report.exclusions.some((e) => e.kind === "tombstone")).toBe(
       true
     );
-    expect(result.report.notes.join(" ")).toMatch(/EH-012|public\/media/i);
+    expect(result.report.notes.join(" ")).toMatch(/migrate-media|public\/media|EH-033/i);
   });
 
   it("records missing export blob without fake success", () => {
@@ -561,7 +563,7 @@ describe("EH-011 mature-metadata exclusion", () => {
       )
     ).toBe(true);
     expect(result.localState.posts.p1).toBeUndefined();
-    expect(result.report.notes.join(" ")).toMatch(/EH-012/);
+    expect(result.report.notes.join(" ")).toMatch(/EH-033|public\/media|migrate-media/i);
   });
 });
 
@@ -573,23 +575,23 @@ describe("EH-011 fixture scan still clean", () => {
 });
 
 describe("EH-011 matrix deferred promotions", () => {
-  it("promotes tombstone/legacy-tier and keeps AV/mature deferred to EH-012", () => {
+  it("promotes tombstone/legacy-tier/AV and defers mature to EH-033", () => {
     const matrix = JSON.parse(
       readFileSync(join(FIXTURE_ROOT, "MATRIX.json"), "utf8")
     ) as {
       slice: string;
       productionSafe: boolean;
-      families: Array<{ id: string; status: string; reason?: string }>;
+      families: Array<{ id: string; status: string; reason?: string; notes?: string }>;
     };
-    expect(matrix.slice).toBe("EH-011");
+    expect(matrix.slice).toBe("EH-012");
     expect(matrix.productionSafe).toBe(false);
     const byId = new Map(matrix.families.map((f) => [f.id, f]));
     expect(byId.get("deleted-tombstoned")?.status).toBe("present");
     expect(byId.get("legacy-tier-rename")?.status).toBe("present");
-    expect(byId.get("video-audio-embed")?.status).toBe("deferred-to-EH-012");
-    expect(byId.get("mature-metadata")?.status).toBe("deferred-to-EH-012");
-    expect(byId.get("video-audio-embed")?.reason).toMatch(/EH-012/);
-    expect(byId.get("mature-metadata")?.reason).toMatch(/EH-012/);
+    expect(byId.get("video-audio-embed")?.status).toBe("present");
+    expect(byId.get("mature-metadata")?.status).toBe("deferred-to-EH-033");
+    expect(byId.get("video-audio-embed")?.notes).toMatch(/migrat|EH-033/i);
+    expect(byId.get("mature-metadata")?.reason).toMatch(/EH-033/);
     expect(byId.get("mature-metadata")?.reason).toMatch(/exclud/i);
   });
 });

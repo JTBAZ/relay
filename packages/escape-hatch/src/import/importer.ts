@@ -258,7 +258,8 @@ export function importCanonical(opts: ImportCanonicalOptions): ImportCanonicalRe
   const failures: AccountedItem[] = [];
   const conflicts: ConflictItem[] = [];
   const notes: string[] = [
-    "Premium media may still be copied into public/media by fillTemplate (prototype only; EH-012 owns private R2 delivery).",
+    "Premium media may still be copied into public/media by fillTemplate (prototype only; not private delivery).",
+    "Run migrate-media for private object ledger + private-read verification; visitor signed URLs are EH-033.",
     "productionSafe remains false."
   ];
 
