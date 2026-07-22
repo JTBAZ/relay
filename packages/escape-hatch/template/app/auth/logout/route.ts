@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server";
 import {
+  isPortableIdentityConfigured,
   isSupabaseIdentityConfigured,
-  loadEnv
+  loadEnv,
+  resolveIdentityProviderSafe
 } from "@/lib/env";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 
@@ -10,16 +12,38 @@ export const dynamic = "force-dynamic";
 
 /**
  * Logout — POST only (HTTP verb hygiene). GETs must not mutate session.
+ * Clears Supabase and/or portable session depending on active provider.
  */
 export async function POST(request: Request) {
   const url = new URL(request.url);
+  const env = loadEnv();
+  const mode = resolveIdentityProviderSafe(env);
 
-  if (isSupabaseIdentityConfigured(loadEnv())) {
+  if (mode === "supabase" && isSupabaseIdentityConfigured(env)) {
     try {
       const supabase = await createServerSupabaseClient();
       await supabase.auth.signOut();
     } catch {
       // Fail open to redirect — cookie clear best-effort.
+    }
+  }
+
+  if (mode === "portable" && isPortableIdentityConfigured(env)) {
+    try {
+      const { portableLogout } = await import("@/lib/portable-auth/session");
+      await portableLogout();
+    } catch {
+      // best-effort
+    }
+  }
+
+  // Also clear portable cookie if present when provider is none (stale cookie)
+  if (mode === "none" || mode === "invalid") {
+    try {
+      const { portableLogout } = await import("@/lib/portable-auth/session");
+      await portableLogout();
+    } catch {
+      // best-effort
     }
   }
 

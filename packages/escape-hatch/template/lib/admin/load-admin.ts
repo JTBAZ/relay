@@ -204,6 +204,10 @@ export async function loadAdminOverview(): Promise<AdminOverviewModel> {
     blockers.unshift(
       "Identity not configured — admin mutations remain local-operator only (not authentication)"
     );
+  } else if (identity.mode === "invalid") {
+    blockers.unshift(
+      "ESCAPE_HATCH_IDENTITY_PROVIDER is invalid — use none, supabase, or portable"
+    );
   }
 
   return {

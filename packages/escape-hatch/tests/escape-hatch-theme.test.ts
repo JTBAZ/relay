@@ -36,13 +36,13 @@ function loadSample(): unknown {
   return JSON.parse(readFileSync(SAMPLE_BUNDLE, "utf8"));
 }
 
-describe("EH-021 theme capability (preserved under EH-030)", () => {
+describe("EH-021 theme capability (preserved under EH-031)", () => {
   it("keeps premium-patron-theme preview_only with productionSafe false", () => {
     const status = buildEscapeHatchStatus();
-    expect(ESCAPE_HATCH_SLICE).toBe("EH-030");
-    expect(status.slice).toBe("EH-030");
+    expect(ESCAPE_HATCH_SLICE).toBe("EH-031");
+    expect(status.slice).toBe("EH-031");
     expect(status.productionSafe).toBe(false);
-    expect(status.nextSlice.id).toBe("EH-031");
+    expect(status.nextSlice.id).toBe("EH-032");
     const theme = status.capabilities.find((c) => c.id === "premium-patron-theme");
     expect(theme?.state).toBe("preview_only");
     expect(theme?.evidence).toMatch(/soft-gate|preview-only/i);
@@ -128,7 +128,7 @@ describe("EH-021 theme branding fields", () => {
 });
 
 describe("EH-021 fillTemplate theme tokens", () => {
-  it("writes theme CSS vars for branding dials and manifest EH-030", () => {
+  it("writes theme CSS vars for branding dials and manifest EH-031", () => {
     const slug = `eh021-theme-${Date.now()}`;
     const result = fillTemplate({
       bundle: loadSample(),
@@ -160,7 +160,7 @@ describe("EH-021 fillTemplate theme tokens", () => {
     const manifest = JSON.parse(
       readFileSync(join(result.outDir, "escape-hatch.manifest.json"), "utf8")
     ) as { slice: string; productionSafe: boolean };
-    expect(manifest.slice).toBe("EH-030");
+    expect(manifest.slice).toBe("EH-031");
     expect(manifest.productionSafe).toBe(false);
 
     expect(existsSync(join(result.outDir, "components", "PatronChrome.tsx"))).toBe(

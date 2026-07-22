@@ -1,9 +1,9 @@
 {
   "$schema": "https://escape-hatch.local/schemas/escape-hatch.manifest/1.0.0.json",
   "contract_version": "escape-hatch.manifest/1.0.0",
-  "chassis_version": "0.3.0",
-  "schema_version": "eh-db/0002_identity_rls",
-  "slice": "EH-030",
+  "chassis_version": "0.4.0",
+  "schema_version": "eh-db/0003_portable_identity",
+  "slice": "EH-031",
   "productionSafe": false,
   "generated_at": null,
   "creator_id": null,
@@ -13,12 +13,13 @@
     "hard_paywall": false,
     "signed_media_delivery": false,
     "supabase_identity": true,
+    "portable_identity": true,
     "stripe_billing": false,
     "native_admin": true
   },
   "adapters": {
-    "auth": { "id": "supabase_optional", "version": "0.1.0", "state": "preview_only" },
-    "database": { "id": "supabase_sql_migrations", "version": "0002_identity_rls", "state": "preview_only" },
+    "auth": { "id": "supabase_or_portable_optional", "version": "0.2.0", "state": "preview_only" },
+    "database": { "id": "sql_migrations_path_a_or_b", "version": "0003_portable_identity", "state": "preview_only" },
     "storage": { "id": "stub", "version": "0.0.0", "state": "stub_only" },
     "billing": { "id": "stub", "version": "0.0.0", "state": "stub_only" },
     "patreon": { "id": "stub", "version": "0.0.0", "state": "stub_only" },
@@ -36,16 +37,18 @@
       "id": "docker",
       "kind": "docker",
       "config": "Dockerfile",
-      "notes": "Multi-stage Node build; portable compose Postgres is optional. Verified path is EH-071."
+      "notes": "Multi-stage Node build; portable compose Postgres (Path B) is optional. Verified path is EH-071."
     }
   ],
   "required_env_names": [],
   "optional_env_names": [
     "NEXT_PUBLIC_SITE_URL",
     "NEXT_PUBLIC_SITE_NAME",
+    "ESCAPE_HATCH_IDENTITY_PROVIDER",
     "NEXT_PUBLIC_SUPABASE_URL",
     "NEXT_PUBLIC_SUPABASE_ANON_KEY",
     "DATABASE_URL",
+    "ESCAPE_HATCH_SESSION_SECRET",
     "SUPABASE_URL",
     "SUPABASE_ANON_KEY",
     "SUPABASE_SERVICE_ROLE_KEY",
@@ -62,9 +65,9 @@
   "known_exclusions": [
     "No hard paywall (soft persona gate remains for local preview)",
     "Premium media may still be under public/media (prototype leakage until EH-033)",
-    "Supabase identity is opt-in via env; productionSafe remains false",
+    "Supabase and portable identity are opt-in via env; productionSafe remains false",
     "No signed private media delivery (EH-033)",
-    "Portable Postgres/auth without Supabase is EH-031"
+    "Path A uses 0001+0002; Path B uses 0001+0003 — do not mix on one database"
   ],
   "source_export_manifest_hash": null,
   "relay_optional_services": [],

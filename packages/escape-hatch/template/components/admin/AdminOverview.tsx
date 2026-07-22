@@ -21,17 +21,27 @@ export function AdminOverview({ model }: { model: AdminOverviewModel }) {
           <strong>
             {identity.mode === "local_preview"
               ? "Identity not configured"
-              : identity.isStaff
-                ? "Supabase identity (staff session)"
-                : identity.session
-                  ? "Supabase identity (not staff)"
-                  : "Supabase identity (sign in required)"}
+              : identity.mode === "invalid"
+                ? "Identity provider invalid"
+                : identity.mode === "portable"
+                  ? identity.isStaff
+                    ? "Portable identity (staff session)"
+                    : identity.session
+                      ? "Portable identity (not staff)"
+                      : "Portable identity (sign in required)"
+                  : identity.isStaff
+                    ? "Supabase identity (staff session)"
+                    : identity.session
+                      ? "Supabase identity (not staff)"
+                      : "Supabase identity (sign in required)"}
           </strong>
           {identity.mode === "local_preview"
-            ? " — local-preview mode. Soft personas do not authorize admin. Configure Supabase env to enable the intended identity path."
-            : identity.isStaff
-              ? " — admin reads and mutations require this staff membership. productionSafe remains false until EH-033."
-              : " — admin inventory and mutations are blocked until a staff membership session exists."}
+            ? " — local-preview mode. Soft personas do not authorize admin. Set ESCAPE_HATCH_IDENTITY_PROVIDER=supabase|portable with matching env."
+            : identity.mode === "invalid"
+              ? " — unknown ESCAPE_HATCH_IDENTITY_PROVIDER. Use none, supabase, or portable."
+              : identity.isStaff
+                ? " — admin reads and mutations require this staff membership. productionSafe remains false until EH-033."
+                : " — admin inventory and mutations are blocked until a staff membership session exists."}
         </p>
         <p className="small muted">
           {model.creator_display_name} (@{model.creator_handle}) ·{" "}

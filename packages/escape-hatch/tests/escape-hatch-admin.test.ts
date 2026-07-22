@@ -30,13 +30,13 @@ afterEach(() => {
   }
 });
 
-describe("EH-022 status (preserved under EH-030)", () => {
-  it("keeps native-admin preview with identity wiring and next EH-031", () => {
+describe("EH-022 status (preserved under EH-031)", () => {
+  it("keeps native-admin preview with identity wiring and next EH-032", () => {
     const status = buildEscapeHatchStatus();
-    expect(ESCAPE_HATCH_SLICE).toBe("EH-030");
-    expect(status.slice).toBe("EH-030");
+    expect(ESCAPE_HATCH_SLICE).toBe("EH-031");
+    expect(status.slice).toBe("EH-031");
     expect(status.productionSafe).toBe(false);
-    expect(status.nextSlice.id).toBe("EH-031");
+    expect(status.nextSlice.id).toBe("EH-032");
     expect(status.blockers.some((b) => /Native admin shell.*remains open/i.test(b))).toBe(
       false
     );
@@ -140,7 +140,7 @@ describe("EH-022 template admin surfaces", () => {
 });
 
 describe("EH-022 fillTemplate stamps admin", () => {
-  it("writes manifest EH-030 and ESCAPE_HATCH.md admin routes", () => {
+  it("writes manifest EH-031 and ESCAPE_HATCH.md admin routes", () => {
     const bundle = JSON.parse(readFileSync(SAMPLE_BUNDLE, "utf8")) as {
       creator: { handle: string };
     };
@@ -155,12 +155,13 @@ describe("EH-022 fillTemplate stamps admin", () => {
     const manifest = JSON.parse(
       readFileSync(join(result.outDir, "escape-hatch.manifest.json"), "utf8")
     ) as { slice: string; productionSafe: boolean; feature_flags: Record<string, boolean> };
-    expect(manifest.slice).toBe("EH-030");
+    expect(manifest.slice).toBe("EH-031");
     expect(manifest.productionSafe).toBe(false);
     expect(manifest.feature_flags.native_admin).toBe(true);
     expect(manifest.feature_flags.hard_paywall).toBe(false);
     expect(manifest.feature_flags.signed_media_delivery).toBe(false);
     expect(manifest.feature_flags.supabase_identity).toBe(true);
+    expect(manifest.feature_flags.portable_identity).toBe(true);
 
     const doc = readFileSync(join(result.outDir, "ESCAPE_HATCH.md"), "utf8");
     expect(doc).toMatch(/\/admin/);

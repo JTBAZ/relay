@@ -275,7 +275,7 @@ export type FillResult = {
   bundle: SiteBundle;
 };
 
-/** Chassis files that must be present in every generated kit (EH-020 / EH-030). */
+/** Chassis files that must be present in every generated kit (EH-020 / EH-031). */
 export const GENERATED_CHASSIS_RELATIVE_PATHS = [
   "package.json",
   "tsconfig.json",
@@ -297,16 +297,26 @@ export const GENERATED_CHASSIS_RELATIVE_PATHS = [
   "lib/identity/admin-access.ts",
   "lib/supabase/client.ts",
   "lib/supabase/server.ts",
+  "lib/portable-auth/index.ts",
+  "lib/portable-auth/crypto.ts",
+  "lib/portable-auth/db.ts",
+  "lib/portable-auth/session.ts",
   "db/schema/0001_preview_chassis.sql",
   "db/schema/0002_identity_rls.sql",
+  "db/schema/0003_portable_identity.sql",
   "db/migrations/0001_preview_chassis.sql",
   "db/migrations/0002_identity_rls.sql",
+  "db/migrations/0003_portable_identity.sql",
+  "db/docker-init/01_preview_chassis.sql",
+  "db/docker-init/02_portable_identity.sql",
   "db/README.md",
   "scripts/bootstrap-identity.md",
   "deploy/README.md",
   "app/login/page.tsx",
   "app/auth/callback/route.ts",
-  "app/auth/logout/route.ts"
+  "app/auth/logout/route.ts",
+  "app/auth/portable/login/route.ts",
+  "components/PortableLoginForm.tsx"
 ] as const;
 
 type EscapeHatchManifest = {
@@ -345,14 +355,16 @@ export function stampEscapeHatchManifest(
   parsed.generated_at = bundle.generated_at;
   parsed.creator_id = bundle.creator_id;
   parsed.site_id = bundle.site_id ?? bundle.creator_id;
-  parsed.slice = "EH-030";
+  parsed.slice = "EH-031";
   parsed.productionSafe = false;
+  parsed.schema_version = "eh-db/0003_portable_identity";
   parsed.feature_flags = {
     ...parsed.feature_flags,
     soft_persona_gate: true,
     hard_paywall: false,
     signed_media_delivery: false,
     supabase_identity: true,
+    portable_identity: true,
     stripe_billing: false,
     native_admin: true
   };
@@ -428,9 +440,9 @@ export function fillTemplate(opts: FillOptions): FillResult {
       "# Escape Hatch site kit",
       "",
       "**Soft gate remains for local preview** — persona switching is demo UI only, not production security.",
-      "When Supabase env is configured, `/login` + session cookies are the intended identity path (EH-030).",
+      "Identity: Path A Supabase (`ESCAPE_HATCH_IDENTITY_PROVIDER=supabase` or unset + Supabase env) or Path B portable (`=portable` + DATABASE_URL).",
       "Locked media is still present in `/public/media`; do not deploy this kit as a real paywall.",
-      "`productionSafe: false` — EH-030 identity path available; not EH-033 signed private media delivery.",
+      "`productionSafe: false` — EH-031 identity paths available; not EH-033 signed private media delivery.",
       "",
       `Contract: ${bundle.contract_version}`,
       "",
@@ -440,20 +452,20 @@ export function fillTemplate(opts: FillOptions): FillResult {
       "2. `/structure` — tiers & posts detected (accuracy)",
       "3. `/style` — few aesthetic dials (session peek)",
       "4. `/admin` — operator shell (health, posts, media, tiers)",
-      "5. `/login` — Supabase Auth (when env configured)",
+      "5. `/login` — Supabase magic-link or portable password (when provider configured)",
       "6. `/preview` — visitor walkthrough (soft gate)",
       "",
       "`/` redirects to Library. Library truth rebuilds parity from data/ artifacts on every load (never trusts a tampered report alone).",
-      "Admin mutations: local-operator when identity unset; staff session when Supabase configured. Soft personas never authorize admin.",
+      "Admin mutations: local-operator when identity unset; staff session when Path A/B configured. Soft personas never authorize admin.",
       "",
-      "## Chassis (EH-020) + theme (EH-021) + admin (EH-022) + identity (EH-030)",
+      "## Chassis (EH-020) + theme (EH-021) + admin (EH-022) + identity (EH-030/031)",
       "",
       "- Typed env: `lib/env.ts` + `.env.example` (names only — never commit secrets)",
-      "- SQL migrations: `db/schema/`, `db/migrations/` including RLS (`0002_identity_rls`)",
+      "- SQL migrations: Path A `0001`+`0002`; Path B `0001`+`0003` (see `db/README.md`)",
       "- Bootstrap: `scripts/bootstrap-identity.md`",
       "- Adapters: `lib/adapters/` — Auth/DB ready when env is real; still preview until EH-033",
       "- Admin: `/admin` routes — distinct from visitor gallery",
-      "- Deploy: `vercel.json`, `Dockerfile`, optional `docker-compose.yml`",
+      "- Deploy: `vercel.json`, `Dockerfile`, optional `docker-compose.yml` (Path B profile `db`)",
       "- See `OPERATIONS.md` and `OWNERSHIP.md`",
       "",
       "## Run (clean directory — no Relay root env)",

@@ -1,5 +1,5 @@
 /**
- * Adapter bundle for the generated kit (EH-030).
+ * Adapter bundle for the generated kit (EH-031).
  * Auth/DB report readiness only when env is real and non-placeholder;
  * detail still labels preview until EH-033 private media and broader gates.
  * productionSafe remains false.
@@ -9,10 +9,12 @@ import {
   EnvValidationError,
   isPlaceholderSecret,
   isPlaceholderSupabaseUrl,
+  isPortableIdentityConfigured,
   isSupabaseIdentityConfigured,
   isSupabaseServiceRoleConfigured,
   loadEnv,
   requireServerEnv,
+  resolveIdentityProviderSafe,
   resolveSupabaseUrl
 } from "../env";
 import type { SiteAuthSession } from "../identity/types";
@@ -37,7 +39,7 @@ const stubAuth: AuthProvider = {
     return {
       ok: false,
       reason:
-        "Auth adapter is a typed stub/local-preview until Supabase URL + anon key are configured (EH-030)."
+        "Auth adapter is a typed stub/local-preview until ESCAPE_HATCH_IDENTITY_PROVIDER=supabase|portable is configured with real env (EH-030/031)."
     };
   },
   async getSession() {
@@ -59,7 +61,30 @@ const supabaseAuth: AuthProvider = {
     }
     return {
       ok: true,
-      detail: `Supabase Auth env configured. ${PREVIEW_UNTIL_MEDIA}`
+      detail: `Supabase Auth env configured (Path A). ${PREVIEW_UNTIL_MEDIA}`
+    };
+  },
+  async getSession(siteId?: string): Promise<SiteAuthSession | null> {
+    const { getServerAuthSession } = await import("../identity/session");
+    return getServerAuthSession(siteId);
+  }
+};
+
+const portableAuth: AuthProvider = {
+  id: "auth",
+  implementation: "portable",
+  async health() {
+    const env = loadEnv();
+    if (!isPortableIdentityConfigured(env)) {
+      return {
+        ok: false,
+        reason:
+          "Portable identity requires DATABASE_URL + ESCAPE_HATCH_SESSION_SECRET (non-placeholder) with ESCAPE_HATCH_IDENTITY_PROVIDER=portable."
+      };
+    }
+    return {
+      ok: true,
+      detail: `Portable app-managed auth env configured (Path B). ${PREVIEW_UNTIL_MEDIA}`
     };
   },
   async getSession(siteId?: string): Promise<SiteAuthSession | null> {
@@ -89,7 +114,7 @@ const stubDatabase: DatabaseProvider = {
     return {
       ok: false,
       reason:
-        "Database adapter is still a stub (set Supabase identity env for the EH-030 data path)."
+        "Database adapter is still a stub (set ESCAPE_HATCH_IDENTITY_PROVIDER=supabase|portable with real env for Path A/B)."
     };
   },
   async migrate() {
@@ -101,7 +126,7 @@ const stubDatabase: DatabaseProvider = {
           applied: [],
           skipped: true,
           reason:
-            "No DATABASE_URL — apply SQL under db/migrations via Supabase SQL editor (see scripts/bootstrap-identity.md)."
+            "No DATABASE_URL — apply SQL under db/migrations via Supabase SQL editor (Path A) or docker compose --profile db (Path B). See scripts/bootstrap-identity.md."
         };
       }
       throw err;
@@ -110,7 +135,7 @@ const stubDatabase: DatabaseProvider = {
       applied: [],
       skipped: true,
       reason:
-        "DATABASE_URL set but live migrate runner is not executed in-process; apply db/migrations/0001 and 0002 via psql or Supabase dashboard."
+        "DATABASE_URL set but live migrate runner is not executed in-process; apply db/migrations via psql (Path A: 0001+0002; Path B: 0001+0003)."
     };
   }
 };
@@ -135,7 +160,7 @@ const supabaseDatabase: DatabaseProvider = {
       : "Service role unset (user-scoped RLS path only).";
     return {
       ok: true,
-      detail: `Supabase Postgres path configured. ${serviceNote} ${PREVIEW_UNTIL_MEDIA}`
+      detail: `Supabase Postgres path configured (Path A). ${serviceNote} ${PREVIEW_UNTIL_MEDIA}`
     };
   },
   async migrate() {
@@ -144,6 +169,33 @@ const supabaseDatabase: DatabaseProvider = {
       skipped: true,
       reason:
         "Apply db/migrations/0001_preview_chassis.sql then 0002_identity_rls.sql in the creator Supabase project (see scripts/bootstrap-identity.md). No live network apply from this kit."
+    };
+  }
+};
+
+const portableDatabase: DatabaseProvider = {
+  id: "database",
+  implementation: "postgres",
+  async health() {
+    const env = loadEnv();
+    if (!isPortableIdentityConfigured(env)) {
+      return {
+        ok: false,
+        reason:
+          "Portable Postgres path needs DATABASE_URL + ESCAPE_HATCH_SESSION_SECRET (non-placeholder)."
+      };
+    }
+    return {
+      ok: true,
+      detail: `Portable Postgres path configured (Path B). Apply 0001+0003. ${PREVIEW_UNTIL_MEDIA}`
+    };
+  },
+  async migrate() {
+    return {
+      applied: [],
+      skipped: true,
+      reason:
+        "Apply db/migrations/0001_preview_chassis.sql then 0003_portable_identity.sql via psql or docker compose --profile db (see scripts/bootstrap-identity.md). Do not apply 0002 (auth.users) on Path B."
     };
   }
 };
@@ -225,13 +277,17 @@ const manifestDeployment: DeploymentProvider = {
 };
 
 function createAuthProvider(): AuthProvider {
-  return isSupabaseIdentityConfigured(loadEnv()) ? supabaseAuth : stubAuth;
+  const mode = resolveIdentityProviderSafe(loadEnv());
+  if (mode === "portable") return portableAuth;
+  if (mode === "supabase") return supabaseAuth;
+  return stubAuth;
 }
 
 function createDatabaseProvider(): DatabaseProvider {
-  return isSupabaseIdentityConfigured(loadEnv())
-    ? supabaseDatabase
-    : stubDatabase;
+  const mode = resolveIdentityProviderSafe(loadEnv());
+  if (mode === "portable") return portableDatabase;
+  if (mode === "supabase") return supabaseDatabase;
+  return stubDatabase;
 }
 
 /** Factory for the env-aware adapter set (no live network probes). */

@@ -1,11 +1,14 @@
 /**
- * Server-side auth session helpers (EH-030).
+ * Server-side auth session helpers (EH-030 / EH-031).
  * Soft persona state in the browser is never consulted here.
+ * Dispatches to Supabase (Path A) or portable (Path B) by provider mode.
  */
 
 import {
+  isPortableIdentityConfigured,
   isSupabaseIdentityConfigured,
-  loadEnv
+  loadEnv,
+  resolveIdentityProviderSafe
 } from "../env";
 import {
   isStaffRole,
@@ -30,13 +33,27 @@ function asRole(value: unknown): SiteMembershipRole | null {
 }
 
 /**
- * Read the current Supabase user session and optional site membership.
- * Returns null when identity is not configured or no user is signed in.
+ * Read the current auth session and optional site membership.
+ * Returns null when identity is not configured, invalid provider, or unsigned.
  */
 export async function getServerAuthSession(
   siteId?: string
 ): Promise<SiteAuthSession | null> {
-  if (!isSupabaseIdentityConfigured(loadEnv())) {
+  const env = loadEnv();
+  const mode = resolveIdentityProviderSafe(env);
+
+  if (mode === "invalid" || mode === "none") {
+    return null;
+  }
+
+  if (mode === "portable") {
+    if (!isPortableIdentityConfigured(env)) return null;
+    const { getPortableAuthSession } = await import("../portable-auth/session");
+    return getPortableAuthSession(siteId, env);
+  }
+
+  // supabase
+  if (!isSupabaseIdentityConfigured(env)) {
     return null;
   }
 
@@ -98,7 +115,18 @@ export async function loadMembershipRole(
   authUserId: string,
   client?: MembershipClient
 ): Promise<SiteMembershipRole | null> {
-  if (!isSupabaseIdentityConfigured(loadEnv())) {
+  const env = loadEnv();
+  const mode = resolveIdentityProviderSafe(env);
+
+  if (mode === "portable") {
+    if (!isPortableIdentityConfigured(env)) return null;
+    const { loadPortableMembershipRole } = await import(
+      "../portable-auth/session"
+    );
+    return loadPortableMembershipRole(siteId, authUserId);
+  }
+
+  if (mode !== "supabase" || !isSupabaseIdentityConfigured(env)) {
     return null;
   }
 
@@ -141,7 +169,24 @@ export async function loadOwnEntitlementSnapshot(
   siteId: string,
   authUserId: string
 ): Promise<EntitlementReadResult> {
-  if (!isSupabaseIdentityConfigured(loadEnv())) {
+  const env = loadEnv();
+  const mode = resolveIdentityProviderSafe(env);
+
+  if (mode === "portable") {
+    if (!isPortableIdentityConfigured(env)) {
+      return {
+        ok: false,
+        reason: "Portable identity not configured.",
+        tierIds: []
+      };
+    }
+    const { loadPortableEntitlementSnapshot } = await import(
+      "../portable-auth/session"
+    );
+    return loadPortableEntitlementSnapshot(siteId, authUserId);
+  }
+
+  if (mode !== "supabase" || !isSupabaseIdentityConfigured(env)) {
     return {
       ok: false,
       reason: "Identity not configured.",

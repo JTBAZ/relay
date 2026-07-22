@@ -35,12 +35,14 @@ const PACKAGE_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const TEMPLATE = join(PACKAGE_ROOT, "template");
 
 const IDENTITY_ENV_KEYS = [
+  "ESCAPE_HATCH_IDENTITY_PROVIDER",
   "NEXT_PUBLIC_SUPABASE_URL",
   "NEXT_PUBLIC_SUPABASE_ANON_KEY",
   "SUPABASE_URL",
   "SUPABASE_ANON_KEY",
   "SUPABASE_SERVICE_ROLE_KEY",
-  "DATABASE_URL"
+  "DATABASE_URL",
+  "ESCAPE_HATCH_SESSION_SECRET"
 ] as const;
 
 function clearIdentityEnv(): void {
@@ -58,14 +60,14 @@ function setRealLookingIdentityEnv(): void {
     "eh_ci_service_role_not_a_secret_bbbbbbbbbbbbbbbbbbbb";
 }
 
-describe("EH-030 status", () => {
-  it("advances slice to EH-030 with next EH-031 and productionSafe false", () => {
+describe("EH-030 status (preserved under EH-031)", () => {
+  it("keeps EH-030 supabase capability evidence under EH-031 with next EH-032", () => {
     const status = buildEscapeHatchStatus();
-    expect(ESCAPE_HATCH_SLICE).toBe("EH-030");
-    expect(status.slice).toBe("EH-030");
+    expect(ESCAPE_HATCH_SLICE).toBe("EH-031");
+    expect(status.slice).toBe("EH-031");
     expect(status.productionSafe).toBe(false);
-    expect(status.nextSlice.id).toBe("EH-031");
-    expect(status.nextSlice.title).toMatch(/Portable identity/i);
+    expect(status.nextSlice.id).toBe("EH-032");
+    expect(status.nextSlice.title).toMatch(/Entitlement/i);
     expect(status.blockers.some((b) => /EH-033/i.test(b))).toBe(true);
     expect(status.blockers.some((b) => /No hard patron identity/i.test(b))).toBe(
       false
@@ -75,9 +77,9 @@ describe("EH-030 status", () => {
       (c) => c.id === "generated-site-identity"
     );
     expect(identity?.state).toBe("preview_only");
-    expect(identity?.evidence).toMatch(/RLS|Supabase/i);
+    expect(identity?.evidence).toMatch(/RLS|Supabase|portable/i);
     expect(identity?.evidence).toMatch(/productionSafe remains false/i);
-    expect(identity?.nextSlice).toBe("EH-031");
+    expect(identity?.nextSlice).toBe("EH-032");
     expect(identity?.sourcePaths).toEqual(
       expect.arrayContaining([
         "packages/escape-hatch/template/db/migrations/0002_identity_rls.sql",

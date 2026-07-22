@@ -1,14 +1,29 @@
 import { ConsoleNav } from "@/components/ConsoleNav";
 import { LoginForm } from "@/components/LoginForm";
+import { PortableLoginForm } from "@/components/PortableLoginForm";
 import {
+  isPortableIdentityConfigured,
   isSupabaseIdentityConfigured,
-  loadEnv
+  loadEnv,
+  resolveIdentityProviderSafe
 } from "@/lib/env";
 
 export const dynamic = "force-dynamic";
 
 export default function LoginPage() {
-  const configured = isSupabaseIdentityConfigured(loadEnv());
+  const env = loadEnv();
+  const mode = resolveIdentityProviderSafe(env);
+  const supabaseReady =
+    mode === "supabase" && isSupabaseIdentityConfigured(env);
+  const portableReady =
+    mode === "portable" && isPortableIdentityConfigured(env);
+
+  const title =
+    mode === "portable"
+      ? "Sign in (portable)"
+      : mode === "supabase"
+        ? "Sign in (Supabase)"
+        : "Sign in";
 
   return (
     <>
@@ -16,23 +31,47 @@ export default function LoginPage() {
       <main className="console-page shell">
         <header className="console-hero">
           <p className="eyebrow">Account</p>
-          <h1>Sign in</h1>
+          <h1>{title}</h1>
           <p className="lede">
-            Creator-owned Supabase Auth for this site kit. Soft demo personas on
-            visitor preview are not a substitute for this session.
+            {mode === "portable"
+              ? "Creator-owned portable auth (email + password) against your Postgres. Soft demo personas on visitor preview are not a substitute for this session."
+              : mode === "supabase"
+                ? "Creator-owned Supabase Auth for this site kit. Soft demo personas on visitor preview are not a substitute for this session."
+                : "Configure ESCAPE_HATCH_IDENTITY_PROVIDER=supabase|portable with matching env to enable an authoritative session."}
           </p>
-          <p className="meta muted">productionSafe: false · EH-030 identity path</p>
+          <p className="meta muted">
+            productionSafe: false · EH-031 identity paths
+          </p>
         </header>
-        {configured ? (
+        {mode === "invalid" ? (
+          <section
+            className="admin-banner admin-banner--degraded"
+            aria-live="polite"
+          >
+            <p>
+              <strong>Identity provider invalid</strong> —{" "}
+              <span className="mono">ESCAPE_HATCH_IDENTITY_PROVIDER</span> must
+              be <span className="mono">none</span>,{" "}
+              <span className="mono">supabase</span>, or{" "}
+              <span className="mono">portable</span>.
+            </p>
+          </section>
+        ) : portableReady ? (
+          <PortableLoginForm />
+        ) : supabaseReady ? (
           <LoginForm />
         ) : (
-          <section className="admin-banner admin-banner--degraded" aria-live="polite">
+          <section
+            className="admin-banner admin-banner--degraded"
+            aria-live="polite"
+          >
             <p>
               <strong>Identity not configured</strong> — set{" "}
-              <span className="mono">NEXT_PUBLIC_SUPABASE_URL</span> and{" "}
-              <span className="mono">NEXT_PUBLIC_SUPABASE_ANON_KEY</span> (see{" "}
-              <span className="mono">.env.example</span> and{" "}
-              <span className="mono">scripts/bootstrap-identity.md</span>). Local
+              <span className="mono">ESCAPE_HATCH_IDENTITY_PROVIDER</span> to{" "}
+              <span className="mono">supabase</span> (Path A) or{" "}
+              <span className="mono">portable</span> (Path B) and the matching
+              env names in <span className="mono">.env.example</span> /{" "}
+              <span className="mono">scripts/bootstrap-identity.md</span>. Local
               preview continues with soft personas only.
             </p>
           </section>
