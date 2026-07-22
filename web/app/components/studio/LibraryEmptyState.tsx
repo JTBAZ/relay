@@ -34,7 +34,7 @@ const COPY: Record<LibraryEmptyVariant, { title: string; description: string }> 
   no_cues: {
     title: "Nothing cued to fill",
     description:
-      "Approve a Coach plan or add a scheduled post with + — then drop Import Bay media onto that event.",
+      "Drop Import Bay media onto the Scheduler, then choose AutoPost or Schedule Post. Or add a scheduled post with +.",
   },
   no_month_events: {
     title: "No scheduled steps this month",

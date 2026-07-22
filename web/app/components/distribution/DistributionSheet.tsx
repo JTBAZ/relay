@@ -78,7 +78,7 @@ export function DistributionSheet({
           onClick={onClose}
         />
         <motion.aside
-          className="relative flex h-full w-full max-w-xl flex-col border-l border-[#2a2a2a] bg-[#111] shadow-2xl"
+          className="relative flex h-full w-full max-w-6xl flex-col border-l border-[#2a2a2a] bg-[#111] shadow-2xl"
           initial={{ x: "100%" }}
           animate={{ x: 0 }}
           exit={{ x: "100%" }}

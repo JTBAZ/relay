@@ -154,10 +154,11 @@ export function VisitorBatchSlideMedia({
         visitorMediaTierGateLocked(current) ? (
           <div className="absolute inset-0 overflow-hidden bg-[var(--lib-muted)]">
             <VisitorTierGateBackdrop previewSrc={galleryItemPreviewSrc(current)} />
-            <VisitorTierGateOverlay
+            <LockedPromoOverlay
               unlockLabel={designerUnlockLabelFromFacets(current, tierOrderIds, tierTitleById)}
               accentColor={accentColor}
               membershipUrl={patronMembershipUrl}
+              effectivePromo={effectivePromo}
               variant={lockedOverlayVariant}
               onUpgradeClick={() =>
                 onVisitorTierReveal?.({

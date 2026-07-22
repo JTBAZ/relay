@@ -263,8 +263,12 @@ import {
 import {
   AutomationServiceError,
   archiveAutomation,
+  cancelAutomationRun,
+  completeAutomationRunFromHandoff,
+  correlateAutomationRunPlan,
   createAutomation,
   getAutomation,
+  getAutomationApprovalContext,
   listAutomationRuns,
   listAutomations,
   patchAutomation
@@ -643,7 +647,8 @@ import {
   createScheduledPostForRail,
   getCreatorScheduleRail,
   ScheduleRailNotFoundError,
-  ScheduleRailValidationError
+  ScheduleRailValidationError,
+  updateScheduleRailEventPostDetails
 } from "./distribution/schedule-rail-service.js";
 import {
   createCreatorScheduleEvent,
@@ -9338,6 +9343,113 @@ export function createApp(config: AppConfig): CreateAppResult {
     }
   );
 
+  app.patch(
+    "/api/v1/creator/schedule-rail/events/:event_id/post-details",
+    async (req: Request, res: Response) => {
+      const traceId = traceIdFrom(req);
+      if (!config.prisma) {
+        return res.status(503).json(
+          errorEnvelope("SERVICE_UNAVAILABLE", "Database not configured.", traceId)
+        );
+      }
+      const eventId = String(req.params.event_id ?? "").trim();
+      const body = (req.body ?? {}) as Record<string, unknown>;
+      const fitRaw = typeof body.fit_mode === "string" ? body.fit_mode.trim() : "as_written";
+      const fitMode =
+        fitRaw === "fit_platforms" || fitRaw === "as_written" ? fitRaw : null;
+      if (!fitMode) {
+        return res.status(400).json(
+          errorEnvelope(
+            "VALIDATION_ERROR",
+            "fit_mode must be as_written or fit_platforms.",
+            traceId
+          )
+        );
+      }
+      if (body.tags !== undefined && !Array.isArray(body.tags)) {
+        return res.status(400).json(
+          errorEnvelope("VALIDATION_ERROR", "tags must be an array of strings.", traceId)
+        );
+      }
+      if (
+        body.tags !== undefined &&
+        !(body.tags as unknown[]).every((t) => typeof t === "string")
+      ) {
+        return res.status(400).json(
+          errorEnvelope("VALIDATION_ERROR", "tags must be an array of strings.", traceId)
+        );
+      }
+      const overridesRaw = Array.isArray(body.variant_overrides)
+        ? (body.variant_overrides as unknown[])
+        : undefined;
+      const variant_overrides = overridesRaw?.map((row) => {
+        const o = (row ?? {}) as Record<string, unknown>;
+        return {
+          destination: String(o.destination ?? ""),
+          use_original: o.use_original === true,
+          title: o.title === null || typeof o.title === "string" ? (o.title as string | null) : undefined,
+          body_text:
+            o.body_text === null || typeof o.body_text === "string"
+              ? (o.body_text as string | null)
+              : undefined,
+          post_text:
+            o.post_text === null || typeof o.post_text === "string"
+              ? (o.post_text as string | null)
+              : undefined
+        };
+      });
+      try {
+        const { context } = await requireAccountWithRole(
+          req,
+          { prisma: config.prisma, identityService },
+          "creator"
+        );
+        const relayCreatorId = context.primaryRelayCreatorId?.trim();
+        if (!relayCreatorId) {
+          return res.status(404).json(
+            errorEnvelope(
+              "NOT_FOUND",
+              "No creator studio — call POST /api/v1/creator/workspace first.",
+              traceId
+            )
+          );
+        }
+        const result = await updateScheduleRailEventPostDetails(
+          config.prisma,
+          relayCreatorId,
+          eventId,
+          {
+            title:
+              body.title === null || typeof body.title === "string"
+                ? (body.title as string | null)
+                : undefined,
+            description:
+              body.description === null || typeof body.description === "string"
+                ? (body.description as string | null)
+                : undefined,
+            tags: body.tags as string[] | undefined,
+            fit_mode: fitMode,
+            preview: body.preview === true,
+            variant_overrides
+          }
+        );
+        res.setHeader("Cache-Control", "private, no-store");
+        return res.status(200).json(successEnvelope({ post_details: result }, traceId));
+      } catch (err) {
+        if (sendRelayAuthError(res, err, traceId)) return;
+        if (err instanceof ScheduleRailValidationError) {
+          return res
+            .status(err.statusCode)
+            .json(errorEnvelope("VALIDATION_ERROR", err.message, traceId));
+        }
+        if (err instanceof ScheduleRailNotFoundError) {
+          return res.status(err.statusCode).json(errorEnvelope("NOT_FOUND", err.message, traceId));
+        }
+        return res.status(500).json(errorEnvelope("INTERNAL", (err as Error).message, traceId));
+      }
+    }
+  );
+
   app.post(
     "/api/v1/creator/posting-goal/nudge/current/snooze",
     async (req: Request, res: Response) => {
@@ -10966,6 +11078,216 @@ export function createApp(config: AppConfig): CreateAppResult {
         const runs = await listAutomationRuns(config.prisma, relayCreatorId, automationId);
         res.setHeader("Cache-Control", "private, no-store");
         return res.status(200).json(successEnvelope({ runs }, traceId));
+      } catch (err) {
+        if (sendRelayAuthError(res, err, traceId)) return;
+        if (sendAutomationError(res, err, traceId)) return;
+        return res.status(500).json(errorEnvelope("INTERNAL", (err as Error).message, traceId));
+      }
+    }
+  );
+
+  app.get(
+    "/api/v1/creator/autopost/automations/:automation_id/runs/:run_id/approval-context",
+    async (req: Request, res: Response) => {
+      const traceId = traceIdFrom(req);
+      if (!config.prisma) {
+        return res.status(503).json(
+          errorEnvelope("SERVICE_UNAVAILABLE", "Database not configured.", traceId)
+        );
+      }
+      const automationId = String(req.params.automation_id ?? "").trim();
+      const runId = String(req.params.run_id ?? "").trim();
+      try {
+        const { context } = await requireAccountWithRole(
+          req,
+          { prisma: config.prisma, identityService },
+          "creator"
+        );
+        const relayCreatorId = context.primaryRelayCreatorId?.trim();
+        if (!relayCreatorId) {
+          return res.status(404).json(
+            errorEnvelope(
+              "NOT_FOUND",
+              "No creator studio — call POST /api/v1/creator/workspace first.",
+              traceId
+            )
+          );
+        }
+        const approval_context = await getAutomationApprovalContext(
+          config.prisma,
+          relayCreatorId,
+          automationId,
+          runId
+        );
+        res.setHeader("Cache-Control", "private, no-store");
+        return res.status(200).json(successEnvelope({ approval_context }, traceId));
+      } catch (err) {
+        if (sendRelayAuthError(res, err, traceId)) return;
+        if (sendAutomationError(res, err, traceId)) return;
+        return res.status(500).json(errorEnvelope("INTERNAL", (err as Error).message, traceId));
+      }
+    }
+  );
+
+  app.post(
+    "/api/v1/creator/autopost/automations/:automation_id/runs/:run_id/correlate-plan",
+    async (req: Request, res: Response) => {
+      const traceId = traceIdFrom(req);
+      if (!config.prisma) {
+        return res.status(503).json(
+          errorEnvelope("SERVICE_UNAVAILABLE", "Database not configured.", traceId)
+        );
+      }
+      const automationId = String(req.params.automation_id ?? "").trim();
+      const runId = String(req.params.run_id ?? "").trim();
+      const planId =
+        typeof req.body?.plan_id === "string" ? req.body.plan_id.trim() : "";
+      try {
+        const { context } = await requireAccountWithRole(
+          req,
+          { prisma: config.prisma, identityService },
+          "creator"
+        );
+        const relayCreatorId = context.primaryRelayCreatorId?.trim();
+        if (!relayCreatorId) {
+          return res.status(404).json(
+            errorEnvelope(
+              "NOT_FOUND",
+              "No creator studio — call POST /api/v1/creator/workspace first.",
+              traceId
+            )
+          );
+        }
+        if (
+          !(await assertCreatorRelayMutationAllowed(
+            req,
+            res,
+            traceId,
+            config.prisma,
+            relayCreatorId
+          ))
+        ) {
+          return;
+        }
+        if (!planId) {
+          return res
+            .status(400)
+            .json(errorEnvelope("BAD_REQUEST", "plan_id is required.", traceId));
+        }
+        const result = await correlateAutomationRunPlan(config.prisma, relayCreatorId, {
+          automationId,
+          runId,
+          planId
+        });
+        res.setHeader("Cache-Control", "private, no-store");
+        return res.status(200).json(successEnvelope(result, traceId));
+      } catch (err) {
+        if (sendRelayAuthError(res, err, traceId)) return;
+        if (sendAutomationError(res, err, traceId)) return;
+        return res.status(500).json(errorEnvelope("INTERNAL", (err as Error).message, traceId));
+      }
+    }
+  );
+
+  app.post(
+    "/api/v1/creator/autopost/automations/:automation_id/runs/:run_id/complete",
+    async (req: Request, res: Response) => {
+      const traceId = traceIdFrom(req);
+      if (!config.prisma) {
+        return res.status(503).json(
+          errorEnvelope("SERVICE_UNAVAILABLE", "Database not configured.", traceId)
+        );
+      }
+      const automationId = String(req.params.automation_id ?? "").trim();
+      const runId = String(req.params.run_id ?? "").trim();
+      const attemptId =
+        typeof req.body?.attempt_id === "string" ? req.body.attempt_id.trim() : null;
+      try {
+        const { context } = await requireAccountWithRole(
+          req,
+          { prisma: config.prisma, identityService },
+          "creator"
+        );
+        const relayCreatorId = context.primaryRelayCreatorId?.trim();
+        if (!relayCreatorId) {
+          return res.status(404).json(
+            errorEnvelope(
+              "NOT_FOUND",
+              "No creator studio — call POST /api/v1/creator/workspace first.",
+              traceId
+            )
+          );
+        }
+        if (
+          !(await assertCreatorRelayMutationAllowed(
+            req,
+            res,
+            traceId,
+            config.prisma,
+            relayCreatorId
+          ))
+        ) {
+          return;
+        }
+        const result = await completeAutomationRunFromHandoff(
+          config.prisma,
+          relayCreatorId,
+          { automationId, runId, attemptId }
+        );
+        res.setHeader("Cache-Control", "private, no-store");
+        return res.status(200).json(successEnvelope(result, traceId));
+      } catch (err) {
+        if (sendRelayAuthError(res, err, traceId)) return;
+        if (sendAutomationError(res, err, traceId)) return;
+        return res.status(500).json(errorEnvelope("INTERNAL", (err as Error).message, traceId));
+      }
+    }
+  );
+
+  app.post(
+    "/api/v1/creator/autopost/automations/:automation_id/runs/:run_id/cancel",
+    async (req: Request, res: Response) => {
+      const traceId = traceIdFrom(req);
+      if (!config.prisma) {
+        return res.status(503).json(
+          errorEnvelope("SERVICE_UNAVAILABLE", "Database not configured.", traceId)
+        );
+      }
+      const automationId = String(req.params.automation_id ?? "").trim();
+      const runId = String(req.params.run_id ?? "").trim();
+      try {
+        const { context } = await requireAccountWithRole(
+          req,
+          { prisma: config.prisma, identityService },
+          "creator"
+        );
+        const relayCreatorId = context.primaryRelayCreatorId?.trim();
+        if (!relayCreatorId) {
+          return res.status(404).json(
+            errorEnvelope(
+              "NOT_FOUND",
+              "No creator studio — call POST /api/v1/creator/workspace first.",
+              traceId
+            )
+          );
+        }
+        if (
+          !(await assertCreatorRelayMutationAllowed(
+            req,
+            res,
+            traceId,
+            config.prisma,
+            relayCreatorId
+          ))
+        ) {
+          return;
+        }
+        const result = await cancelAutomationRun(config.prisma, relayCreatorId, {
+          automationId,
+          runId
+        });
+        res.setHeader("Cache-Control", "private, no-store");
+        return res.status(200).json(successEnvelope(result, traceId));
       } catch (err) {
         if (sendRelayAuthError(res, err, traceId)) return;
         if (sendAutomationError(res, err, traceId)) return;

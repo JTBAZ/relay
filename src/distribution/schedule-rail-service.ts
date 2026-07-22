@@ -6,7 +6,7 @@
  */
 
 import { randomUUID } from "node:crypto";
-import type { PostbotTaskAction, PostbotTaskStatus, PrismaClient } from "@prisma/client";
+import type { PostbotTaskAction, PostbotTaskStatus, Prisma, PrismaClient } from "@prisma/client";
 import {
   AutopostDraftValidationError,
   isPlannedPostFormat,
@@ -34,6 +34,11 @@ import {
 } from "../goal-cycle/execution/goal-cycle-execution-service.js";
 import { effectivePerEventNotify } from "./schedule-reminder-extension-api.js";
 import { getPostDistributionSummary } from "./post-distribution-service.js";
+import { formatPlatformVariant } from "./platform-formatters.js";
+import {
+  isDistributionDestination,
+  type DistributionDestination
+} from "./platform-destinations.js";
 
 const STUDIO_GOAL_LABELS: Record<string, string> = {
   engagement_optimization: "Engagement",
@@ -142,6 +147,22 @@ export type ScheduleRailReadyItem = {
   /** Follow-up playbook run when this row was materialized from a template. */
   playbook_run_id?: string | null;
   playbook_action_key?: string | null;
+  /** Schedule Rail Automations enrichment (additive; ordinary rows omit). */
+  automation_id?: string | null;
+  automation_title?: string | null;
+  preset_kind?: string | null;
+  automation_state?: "planned" | "awaiting_review" | string | null;
+  automation_run_id?: string | null;
+  expires_at?: string | null;
+  /**
+   * Artist-authored post details on the linked draft.
+   * `none` when media may be attached but Title / Description / Tags were never saved.
+   */
+  post_details_state?: "none" | "authored" | "adapted" | null;
+  /** Canonical authored description (plain text) when available. */
+  post_description?: string | null;
+  /** Relay organization tags (not hashtags). */
+  post_tags?: string[];
 };
 
 export class ScheduleRailValidationError extends Error {
@@ -601,20 +622,33 @@ export async function getCreatorScheduleRail(
 
   const postIds = [...new Set(classified.map((row) => row.postId))];
   const mediaByPostId = new Map<string, string[]>();
+  const versionMetaByPostId = new Map<
+    string,
+    { title: string; description: string | null; tagIds: string[] }
+  >();
   if (postIds.length > 0) {
     const versions = await prisma.postVersion.findMany({
       where: { postId: { in: postIds }, post: { creatorId: id } },
       orderBy: [{ postId: "asc" }, { versionSeq: "desc" }],
-      select: { postId: true, mediaIds: true }
+      select: { postId: true, mediaIds: true, title: true, description: true, tagIds: true }
     });
     for (const v of versions) {
-      if (!mediaByPostId.has(v.postId)) mediaByPostId.set(v.postId, v.mediaIds);
+      if (!mediaByPostId.has(v.postId)) {
+        mediaByPostId.set(v.postId, v.mediaIds);
+        versionMetaByPostId.set(v.postId, {
+          title: v.title,
+          description: v.description,
+          tagIds: v.tagIds ?? []
+        });
+      }
     }
   }
 
   const planIds = [...new Set(classified.map((row) => row.planId).filter(Boolean))] as string[];
   const draftByPlanId = new Map<string, string>();
   const plannedFormatByPlanId = new Map<string, PlannedPostFormat>();
+  const postDetailsStateByPlanId = new Map<string, "authored" | "adapted">();
+  const draftTagsByPlanId = new Map<string, string[]>();
   if (planIds.length > 0) {
     const plans = await prisma.postDistributionPlan.findMany({
       where: { id: { in: planIds }, creatorId: id },
@@ -628,6 +662,8 @@ export async function getCreatorScheduleRail(
       )
     ];
     const formatByDraftId = new Map<string, PlannedPostFormat>();
+    const detailsStateByDraftId = new Map<string, "authored" | "adapted">();
+    const tagsByDraftId = new Map<string, string[]>();
     if (draftIds.length > 0) {
       const drafts = await prisma.autopostDraft.findMany({
         where: { id: { in: draftIds }, creatorId: id },
@@ -641,6 +677,16 @@ export async function getCreatorScheduleRail(
         if (isPlannedPostFormat(ws.planned_format)) {
           formatByDraftId.set(draft.id, ws.planned_format);
         }
+        const detailsState = ws.post_details_state;
+        if (detailsState === "authored" || detailsState === "adapted") {
+          detailsStateByDraftId.set(draft.id, detailsState);
+        }
+        if (Array.isArray(ws.tags)) {
+          tagsByDraftId.set(
+            draft.id,
+            ws.tags.map((t) => String(t).trim()).filter(Boolean)
+          );
+        }
       }
     }
     for (const plan of plans) {
@@ -649,14 +695,20 @@ export async function getCreatorScheduleRail(
       const fromDraft = draftId ? formatByDraftId.get(draftId) : undefined;
       if (fromDraft) {
         plannedFormatByPlanId.set(plan.id, fromDraft);
-        continue;
+      } else {
+        const planJson =
+          plan.assistantPlan && typeof plan.assistantPlan === "object" && !Array.isArray(plan.assistantPlan)
+            ? (plan.assistantPlan as Record<string, unknown>)
+            : {};
+        if (isPlannedPostFormat(planJson.planned_format)) {
+          plannedFormatByPlanId.set(plan.id, planJson.planned_format);
+        }
       }
-      const planJson =
-        plan.assistantPlan && typeof plan.assistantPlan === "object" && !Array.isArray(plan.assistantPlan)
-          ? (plan.assistantPlan as Record<string, unknown>)
-          : {};
-      if (isPlannedPostFormat(planJson.planned_format)) {
-        plannedFormatByPlanId.set(plan.id, planJson.planned_format);
+      if (draftId) {
+        const detailsState = detailsStateByDraftId.get(draftId);
+        if (detailsState) postDetailsStateByPlanId.set(plan.id, detailsState);
+        const tags = tagsByDraftId.get(draftId);
+        if (tags) draftTagsByPlanId.set(plan.id, tags);
       }
     }
   }
@@ -669,7 +721,11 @@ export async function getCreatorScheduleRail(
     const destination = mapDestination(row.destination);
     const meta = row.planId ? planMeta.get(`${row.planId}:${row.id}`) : undefined;
     const mediaIds = mediaByPostId.get(row.postId) ?? [];
+    const versionMeta = versionMetaByPostId.get(row.postId);
     const plannedFormat = row.planId ? (plannedFormatByPlanId.get(row.planId) ?? null) : null;
+    const detailsState = row.planId
+      ? (postDetailsStateByPlanId.get(row.planId) ?? null)
+      : null;
     const needsMedia = computeNeedsMedia({
       action: row.action,
       taskStatus: row.status,
@@ -683,6 +739,14 @@ export async function getCreatorScheduleRail(
           : deriveMediaStateFromIds(mediaIds)
         : ("not_required" as const);
     const readinessErrors = needsMedia ? buildMediaReadinessErrors(mediaState) : [];
+    const postTags =
+      (row.planId ? draftTagsByPlanId.get(row.planId) : undefined) ??
+      versionMeta?.tagIds ??
+      [];
+    const authoredTitle =
+      (detailsState ? versionMeta?.title?.trim() : null) ||
+      row.variant.title?.trim() ||
+      actionTitle(action, destination);
     const base: ScheduleRailReadyItem = {
       id: row.id,
       task_id: row.id,
@@ -691,7 +755,7 @@ export async function getCreatorScheduleRail(
       source: "postbot_task",
       event_type: null,
       action,
-      title: row.variant.title?.trim() || actionTitle(action, destination),
+      title: authoredTitle,
       rationale: row.rationale,
       destination,
       link: row.link,
@@ -714,7 +778,10 @@ export async function getCreatorScheduleRail(
       publish_confirm_path:
         row.action === "post" && !needsMedia && row.railStatus !== "done"
           ? buildPublishConfirmationPath({ variantId: row.variantId })
-          : null
+          : null,
+      post_details_state: detailsState ?? "none",
+      post_description: versionMeta?.description ?? null,
+      post_tags: postTags
     };
 
     const inWindow =
@@ -806,22 +873,43 @@ export async function getCreatorScheduleRail(
           window.start,
           window.end
         );
+        let seriesAutomationMeta = new Map<
+          string,
+          import("../autopost/automation-attention-service.js").AutomationRailMeta
+        >();
+        try {
+          const { loadAutomationRailMetaForSeriesIds } = await import(
+            "../autopost/automation-attention-service.js"
+          );
+          seriesAutomationMeta = await loadAutomationRailMetaForSeriesIds(
+            prisma,
+            id,
+            planned.map((o) => o.series_id)
+          );
+        } catch {
+          /* automations tables may be absent mid-migrate */
+        }
         for (const occ of planned) {
           const primaryDest = mapDestination(occ.destinations[0] ?? null);
           const dueMs = new Date(occ.due_at).getTime();
           const railStatus =
             dueMs < now.getTime() ? ("overdue" as const) : ("pending" as const);
+          const autoMeta = seriesAutomationMeta.get(occ.series_id);
           events.push({
             id: occ.occurrence_id,
             source: "recurrence_occurrence",
             event_type: "make_post",
             action: "post",
-            title: occ.title,
-            rationale: `Routine · ${occ.series_cadence}`,
+            title: autoMeta
+              ? autoMeta.automation_title
+              : occ.title,
+            rationale: autoMeta
+              ? `Automation · ${autoMeta.preset_kind}`
+              : `Routine · ${occ.series_cadence}`,
             destination: primaryDest,
             link: null,
             notify: false,
-            plan_label: null,
+            plan_label: autoMeta ? autoMeta.automation_title : null,
             status: railStatus,
             needs_media: false,
             media_count: 0,
@@ -829,11 +917,17 @@ export async function getCreatorScheduleRail(
             media_state: "not_required",
             readiness_errors: [],
             task_kind: "publish",
-            instructions: "Prepare now",
+            instructions: autoMeta ? "Trigger upcoming" : "Prepare now",
             publish_confirm_path: null,
             draft_id: null,
             series_id: occ.series_id,
             series_cadence: occ.series_cadence,
+            automation_id: autoMeta?.automation_id ?? null,
+            automation_title: autoMeta?.automation_title ?? null,
+            preset_kind: autoMeta?.preset_kind ?? null,
+            automation_state: autoMeta?.automation_state ?? null,
+            automation_run_id: autoMeta?.automation_run_id ?? null,
+            expires_at: autoMeta?.expires_at ?? null,
             at: occ.due_at,
             destinations: occ.destinations.map((d, i) => ({
               destination: mapDestination(d),
@@ -884,6 +978,45 @@ export async function getCreatorScheduleRail(
     }
   } catch {
     /* playbook tables may be absent mid-migrate */
+  }
+
+  // Enrich automation-prepared manual_event rows (playbook-style batch meta).
+  try {
+    const { loadAutomationRailMetaForEventIds } = await import(
+      "../autopost/automation-attention-service.js"
+    );
+    const manualIds = events
+      .filter((e) => e.source === "manual_event")
+      .map((e) => e.id);
+    const autoEventMeta = await loadAutomationRailMetaForEventIds(prisma, id, manualIds);
+    for (const ev of events) {
+      if (ev.source !== "manual_event") continue;
+      const meta = autoEventMeta.get(ev.id);
+      if (!meta) continue;
+      ev.automation_id = meta.automation_id;
+      ev.automation_title = meta.automation_title;
+      ev.preset_kind = meta.preset_kind;
+      ev.automation_state = meta.automation_state;
+      ev.automation_run_id = meta.automation_run_id ?? null;
+      ev.draft_id = meta.draft_id ?? ev.draft_id ?? null;
+      ev.expires_at = meta.expires_at ?? null;
+      if (!ev.plan_label) ev.plan_label = meta.automation_title;
+    }
+    for (const item of ready) {
+      if (item.source !== "manual_event") continue;
+      const meta = autoEventMeta.get(item.id);
+      if (!meta) continue;
+      item.automation_id = meta.automation_id;
+      item.automation_title = meta.automation_title;
+      item.preset_kind = meta.preset_kind;
+      item.automation_state = meta.automation_state;
+      item.automation_run_id = meta.automation_run_id ?? null;
+      item.draft_id = meta.draft_id ?? item.draft_id ?? null;
+      item.expires_at = meta.expires_at ?? null;
+      if (!item.plan_label) item.plan_label = meta.automation_title;
+    }
+  } catch {
+    /* automations tables may be absent mid-migrate */
   }
 
   // PostBot tracker: pending+done in window (dated) or undated pending/done created in window
@@ -1010,9 +1143,9 @@ function resolveCreateDestinations(input: CreateScheduledPostInput): NonNullable
 }
 
 /**
- * Phase 8 — manual `+` Add scheduled post: empty-media Relay draft + Autopost nudge
- * + plan + N variants/tasks. Autopost draft carries selected_destinations so reminders
- * and "Continue in Autopost" resume the same job.
+ * Phase 8 — manual `+` Add scheduled post: empty-media Relay draft
+ * + plan + N variants/tasks. Autopost draft still carries selected_destinations
+ * for reminders / extension handoff; the rail event popover stays calendar-native.
  */
 export async function createScheduledPostForRail(
   prisma: PrismaClient,
@@ -1033,10 +1166,7 @@ export async function createScheduledPostForRail(
   const note = input.note?.trim() || null;
   const notify = input.notify !== false;
   const rationale =
-    note ||
-    (isText
-      ? "Scheduled from the Studio calendar. Continue in Autopost to finish copy — platforms are already set."
-      : "Scheduled from the Studio calendar. Drop media here when the art is ready — Autopost is queued with your platforms.");
+    note || "Scheduled from the Studio calendar.";
 
   const postId = `relay_p_${randomUUID()}`;
   let createdPostId: string;
@@ -1197,9 +1327,113 @@ export type AttachScheduleRailMediaResult = {
   mode: AttachScheduleRailMediaMode;
 };
 
+type ResolvedAttachTarget = {
+  /** Id returned to the client (postbot task id, or schedule event id for manual posts). */
+  result_task_id: string;
+  post_id: string;
+  plan_id: string | null;
+  goal_cycle_campaign_key: string | null;
+};
+
+/**
+ * Resolve a rail event id to an attachable post target.
+ * Accepts postbot task ids, planned routine occurrence ids (JIT materialize),
+ * and manual make_post events that link a Library post.
+ */
+async function resolveScheduleRailAttachTarget(
+  prisma: PrismaClient,
+  creatorId: string,
+  railEventId: string
+): Promise<ResolvedAttachTarget> {
+  const id = creatorId.trim();
+  const tid = railEventId.trim();
+
+  let task = await prisma.postbotTask.findFirst({
+    where: { id: tid, creatorId: id }
+  });
+
+  if (!task) {
+    const occ = await prisma.creatorScheduleOccurrence.findFirst({
+      where: { id: tid, creatorId: id },
+      select: { id: true }
+    });
+    if (occ) {
+      const series = await import("../autopost/schedule-series-service.js");
+      let wire: { primary_task_id?: string | null };
+      try {
+        wire = await series.materializeOccurrence(prisma, occ.id);
+      } catch (err) {
+        if (err instanceof series.ScheduleSeriesValidationError) {
+          throw new ScheduleRailValidationError(err.message);
+        }
+        if (err instanceof series.ScheduleSeriesNotFoundError) {
+          throw new ScheduleRailNotFoundError(err.message);
+        }
+        throw err;
+      }
+      const primaryTaskId = wire.primary_task_id?.trim();
+      if (!primaryTaskId) {
+        throw new ScheduleRailNotFoundError(
+          `Could not prepare schedule slot for media: ${tid}`
+        );
+      }
+      task = await prisma.postbotTask.findFirst({
+        where: { id: primaryTaskId, creatorId: id }
+      });
+      if (!task) {
+        throw new ScheduleRailNotFoundError(
+          `Postbot task not found after preparing schedule slot: ${primaryTaskId}`
+        );
+      }
+    }
+  }
+
+  if (task) {
+    if (task.action !== "post") {
+      throw new ScheduleRailValidationError("Only post events accept media attach.");
+    }
+    if (task.status !== "pending") {
+      throw new ScheduleRailValidationError("Only pending post events accept media attach.");
+    }
+    return {
+      result_task_id: task.id,
+      post_id: task.postId,
+      plan_id: task.planId ?? null,
+      goal_cycle_campaign_key: task.goalCycleCampaignKey ?? null
+    };
+  }
+
+  const manual = await prisma.creatorScheduleEvent.findFirst({
+    where: { id: tid, creatorId: id },
+    select: { id: true, postId: true, status: true, eventType: true }
+  });
+  if (!manual) {
+    throw new ScheduleRailNotFoundError(`Postbot task not found: ${tid}`);
+  }
+  if (manual.status === "done") {
+    throw new ScheduleRailValidationError("Only pending schedule events accept media attach.");
+  }
+  if (manual.eventType !== "make_post") {
+    throw new ScheduleRailValidationError("Only post events accept media attach.");
+  }
+  const postId = manual.postId?.trim();
+  if (!postId) {
+    throw new ScheduleRailValidationError(
+      "This schedule reminder has no linked post to attach media to."
+    );
+  }
+  return {
+    result_task_id: manual.id,
+    post_id: postId,
+    plan_id: null,
+    goal_cycle_campaign_key: null
+  };
+}
+
 /**
  * Phase 8 / VS8 — attach, replace, or remove Import Bay media on a pending post task’s latest version.
  * Draft posts stay unpublished. Goal Cycle slot/variant projections sync when campaign-linked.
+ * Also accepts planned routine occurrence ids (materializes first) and manual make_post events with a linked post.
  */
 export async function attachMediaToScheduleRailEvent(
   prisma: PrismaClient,
@@ -1218,23 +1452,15 @@ export async function attachMediaToScheduleRailEvent(
     throw new ScheduleRailValidationError("media_ids must be a non-empty array of strings.");
   }
 
-  const task = await prisma.postbotTask.findFirst({
-    where: { id: tid, creatorId: id }
-  });
-  if (!task) throw new ScheduleRailNotFoundError(`Postbot task not found: ${tid}`);
-  if (task.action !== "post") {
-    throw new ScheduleRailValidationError("Only post events accept media attach.");
-  }
-  if (task.status !== "pending") {
-    throw new ScheduleRailValidationError("Only pending post events accept media attach.");
-  }
+  const target = await resolveScheduleRailAttachTarget(prisma, id, tid);
+  const postId = target.post_id;
 
   const version = await prisma.postVersion.findFirst({
-    where: { postId: task.postId, post: { creatorId: id } },
+    where: { postId, post: { creatorId: id } },
     orderBy: { versionSeq: "desc" }
   });
   if (!version) {
-    throw new ScheduleRailNotFoundError(`Post version not found for post: ${task.postId}`);
+    throw new ScheduleRailNotFoundError(`Post version not found for post: ${postId}`);
   }
 
   if (mode !== "remove") {
@@ -1274,15 +1500,13 @@ export async function attachMediaToScheduleRailEvent(
     });
     for (const mid of nextIds) {
       const m = await tx.mediaAsset.findUniqueOrThrow({ where: { id: mid } });
-      const nextPostIds = m.postIds.includes(task.postId)
-        ? m.postIds
-        : [...m.postIds, task.postId];
+      const nextPostIds = m.postIds.includes(postId) ? m.postIds : [...m.postIds, postId];
       const setPrimary = m.primaryPostId == null;
       await tx.mediaAsset.update({
         where: { id: mid },
         data: {
           postIds: nextPostIds,
-          ...(setPrimary ? { primaryPostId: task.postId } : {}),
+          ...(setPrimary ? { primaryPostId: postId } : {}),
           autopostDraftId: null
         }
       });
@@ -1292,22 +1516,22 @@ export async function attachMediaToScheduleRailEvent(
         where: { id: mid, creatorId: id }
       });
       if (!m) continue;
-      const nextPostIds = m.postIds.filter((pid) => pid !== task.postId);
+      const nextPostIds = m.postIds.filter((pid) => pid !== postId);
       await tx.mediaAsset.update({
         where: { id: mid },
         data: {
           postIds: nextPostIds,
-          ...(m.primaryPostId === task.postId
-            ? { primaryPostId: nextPostIds[0] ?? null }
+          ...(m.primaryPostId === postId || nextPostIds.length === 0
+            ? { primaryPostId: null }
             : {})
         }
       });
     }
 
     // Keep the bridged Autopost draft in sync so resume opens with the same media.
-    if (task.planId) {
+    if (target.plan_id) {
       const plan = await tx.postDistributionPlan.findFirst({
-        where: { id: task.planId, creatorId: id },
+        where: { id: target.plan_id, creatorId: id },
         select: { sourceDraftId: true }
       });
       const sourceDraftId = plan?.sourceDraftId?.trim();
@@ -1330,15 +1554,15 @@ export async function attachMediaToScheduleRailEvent(
 
   const synced = await syncGoalCycleMediaProjections(prisma, {
     creatorId: id,
-    postId: task.postId,
-    campaignKey: task.goalCycleCampaignKey,
+    postId,
+    campaignKey: target.goal_cycle_campaign_key,
     mediaIds: nextIds
   });
 
   const needsMedia = nextIds.length === 0;
   return {
-    task_id: task.id,
-    post_id: task.postId,
+    task_id: target.result_task_id,
+    post_id: postId,
     needs_media: needsMedia,
     media_count: countMediaIds(nextIds),
     media_ids: nextIds,
@@ -1347,3 +1571,351 @@ export async function attachMediaToScheduleRailEvent(
     mode
   };
 }
+
+export type PostDetailsFitMode = "as_written" | "fit_platforms";
+
+export type ScheduleRailPostDetailsVariantOverride = {
+  destination: string;
+  /** When true, keep the artist-authored text for this destination. */
+  use_original?: boolean;
+  title?: string | null;
+  body_text?: string | null;
+  post_text?: string | null;
+};
+
+export type UpdateScheduleRailPostDetailsInput = {
+  title?: string | null;
+  description?: string | null;
+  tags?: string[];
+  fit_mode?: PostDetailsFitMode;
+  /** When true, compute variant previews without writing. */
+  preview?: boolean;
+  variant_overrides?: ScheduleRailPostDetailsVariantOverride[];
+};
+
+export type ScheduleRailPostDetailsVariantWire = {
+  destination: string;
+  title: string | null;
+  body_text: string | null;
+  post_text: string | null;
+  tags: string[];
+  adapted: boolean;
+};
+
+export type ScheduleRailPostDetailsResult = {
+  task_id: string;
+  post_id: string;
+  title: string;
+  description: string | null;
+  tags: string[];
+  post_details_state: "authored" | "adapted";
+  variants: ScheduleRailPostDetailsVariantWire[];
+  preview: boolean;
+};
+
+function normalizePostDetailTags(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return [];
+  const out: string[] = [];
+  for (const item of raw) {
+    const t = String(item ?? "")
+      .trim()
+      .replace(/^#/, "")
+      .slice(0, 64);
+    if (!t) continue;
+    if (!out.some((x) => x.toLowerCase() === t.toLowerCase())) out.push(t);
+  }
+  return out.slice(0, 20);
+}
+
+function seedVariantAsWritten(
+  destination: DistributionDestination,
+  title: string,
+  description: string | null,
+  tags: string[]
+): ScheduleRailPostDetailsVariantWire {
+  const body = description?.trim() || null;
+  const titled = title.trim() || null;
+  if (destination === "x") {
+    const postText = (body || titled || "").trim() || null;
+    return {
+      destination,
+      title: null,
+      body_text: body,
+      post_text: postText,
+      tags: tags.map((t) => (t.startsWith("#") ? t : `#${t}`)),
+      adapted: false
+    };
+  }
+  if (destination === "bluesky") {
+    const postText = (body || titled || "").trim() || null;
+    return {
+      destination,
+      title: null,
+      body_text: null,
+      post_text: postText,
+      tags: [],
+      adapted: false
+    };
+  }
+  if (destination === "deviantart") {
+    return {
+      destination,
+      title: titled,
+      body_text: body,
+      post_text: null,
+      tags,
+      adapted: false
+    };
+  }
+  return {
+    destination,
+    title: titled,
+    body_text: body,
+    post_text: null,
+    tags: [],
+    adapted: false
+  };
+}
+
+function buildPostDetailsVariants(args: {
+  destinations: DistributionDestination[];
+  title: string;
+  description: string | null;
+  tags: string[];
+  fitMode: PostDetailsFitMode;
+  overrides?: ScheduleRailPostDetailsVariantOverride[];
+}): ScheduleRailPostDetailsVariantWire[] {
+  const overrideByDest = new Map(
+    (args.overrides ?? []).map((o) => [o.destination.trim().toLowerCase(), o])
+  );
+  return args.destinations.map((destination) => {
+    const override = overrideByDest.get(destination);
+    const useOriginal = override?.use_original === true;
+    let built: ScheduleRailPostDetailsVariantWire;
+    if (args.fitMode === "fit_platforms" && !useOriginal) {
+      try {
+        const formatted = formatPlatformVariant(destination, {
+          title: args.title,
+          bodyText: args.description ?? "",
+          tagLabels: args.tags
+        });
+        const asWritten = seedVariantAsWritten(
+          destination,
+          args.title,
+          args.description,
+          args.tags
+        );
+        const adapted =
+          (formatted.title ?? null) !== asWritten.title ||
+          (formatted.bodyText ?? null) !== asWritten.body_text ||
+          (formatted.postText ?? null) !== asWritten.post_text;
+        built = {
+          destination,
+          title: formatted.title,
+          body_text: formatted.bodyText,
+          post_text: formatted.postText,
+          tags: formatted.tags,
+          adapted
+        };
+      } catch {
+        // Adaptation failure: keep authored text unchanged for this destination.
+        built = seedVariantAsWritten(destination, args.title, args.description, args.tags);
+      }
+    } else {
+      built = seedVariantAsWritten(destination, args.title, args.description, args.tags);
+    }
+    if (override && !useOriginal) {
+      if (override.title !== undefined) built.title = override.title?.trim() || null;
+      if (override.body_text !== undefined) {
+        built.body_text = override.body_text?.trim() || null;
+      }
+      if (override.post_text !== undefined) {
+        built.post_text = override.post_text?.trim() || null;
+      }
+    }
+    return built;
+  });
+}
+
+/**
+ * Persist artist-authored Title / Description / Tags on a scheduled rail event's
+ * draft post, Autopost draft, and destination variants.
+ */
+export async function updateScheduleRailEventPostDetails(
+  prisma: PrismaClient,
+  creatorId: string,
+  railEventId: string,
+  input: UpdateScheduleRailPostDetailsInput
+): Promise<ScheduleRailPostDetailsResult> {
+  const id = creatorId.trim();
+  const tid = railEventId.trim();
+  if (!tid) throw new ScheduleRailValidationError("event id is required.");
+
+  const fitMode: PostDetailsFitMode =
+    input.fit_mode === "fit_platforms" ? "fit_platforms" : "as_written";
+  const preview = input.preview === true;
+
+  const target = await resolveScheduleRailAttachTarget(prisma, id, tid);
+  const postId = target.post_id;
+
+  const post = await prisma.post.findFirst({
+    where: { id: postId, creatorId: id },
+    select: { id: true, publishState: true }
+  });
+  if (!post) {
+    throw new ScheduleRailNotFoundError(`Post not found: ${postId}`);
+  }
+  if (post.publishState !== "draft") {
+    throw new ScheduleRailValidationError(
+      "Only draft Relay posts accept post details from the schedule rail."
+    );
+  }
+
+  const version = await prisma.postVersion.findFirst({
+    where: { postId, post: { creatorId: id } },
+    orderBy: { versionSeq: "desc" }
+  });
+  if (!version) {
+    throw new ScheduleRailNotFoundError(`Post version not found for post: ${postId}`);
+  }
+
+  const title =
+    input.title !== undefined
+      ? (input.title?.trim() || "Scheduled post").slice(0, 200)
+      : version.title.slice(0, 200);
+  const description =
+    input.description !== undefined
+      ? input.description?.trim() || null
+      : version.description?.trim() || null;
+  const tags =
+    input.tags !== undefined
+      ? normalizePostDetailTags(input.tags)
+      : normalizePostDetailTags(version.tagIds);
+
+  let planId = target.plan_id;
+  if (!planId) {
+    const plan = await prisma.postDistributionPlan.findFirst({
+      where: { postId, creatorId: id },
+      orderBy: { createdAt: "desc" },
+      select: { id: true }
+    });
+    planId = plan?.id ?? null;
+  }
+
+  const variantsRows = planId
+    ? await prisma.postDistributionVariant.findMany({
+        where: { planId, creatorId: id, status: "draft" },
+        select: { id: true, destination: true }
+      })
+    : await prisma.postDistributionVariant.findMany({
+        where: { postId, creatorId: id, status: "draft" },
+        select: { id: true, destination: true }
+      });
+
+  const destinations = variantsRows
+    .map((v) => v.destination)
+    .filter(isDistributionDestination);
+
+  const variantWires = buildPostDetailsVariants({
+    destinations,
+    title,
+    description,
+    tags,
+    fitMode,
+    overrides: input.variant_overrides
+  });
+
+  const postDetailsState: "authored" | "adapted" =
+    fitMode === "fit_platforms" && variantWires.some((v) => v.adapted)
+      ? "adapted"
+      : "authored";
+
+  if (preview) {
+    return {
+      task_id: target.result_task_id,
+      post_id: postId,
+      title,
+      description,
+      tags,
+      post_details_state: postDetailsState,
+      variants: variantWires,
+      preview: true
+    };
+  }
+
+  let sourceDraftId: string | null = null;
+  if (planId) {
+    const plan = await prisma.postDistributionPlan.findFirst({
+      where: { id: planId, creatorId: id },
+      select: { sourceDraftId: true }
+    });
+    sourceDraftId = plan?.sourceDraftId?.trim() || null;
+  }
+
+  await prisma.$transaction(async (tx) => {
+    await tx.postVersion.update({
+      where: { id: version.id },
+      data: {
+        title,
+        description,
+        tagIds: tags
+      }
+    });
+
+    if (sourceDraftId) {
+      const draft = await tx.autopostDraft.findFirst({
+        where: {
+          id: sourceDraftId,
+          creatorId: id,
+          status: { in: ["nudged", "drafting", "previewing"] }
+        },
+        select: { id: true, workspace: true, mediaIds: true }
+      });
+      if (draft) {
+        const ws: Record<string, unknown> =
+          draft.workspace && typeof draft.workspace === "object" && !Array.isArray(draft.workspace)
+            ? { ...(draft.workspace as Record<string, unknown>) }
+            : {};
+        ws.tags = tags;
+        ws.post_details_state = postDetailsState;
+        await tx.autopostDraft.update({
+          where: { id: draft.id },
+          data: {
+            title,
+            bodyText: description,
+            workspace: ws as Prisma.InputJsonValue,
+            status: "drafting",
+            composerStep: "draft-post"
+          }
+        });
+      }
+    }
+
+    for (const row of variantsRows) {
+      if (!isDistributionDestination(row.destination)) continue;
+      const wire = variantWires.find((v) => v.destination === row.destination);
+      if (!wire) continue;
+      await tx.postDistributionVariant.update({
+        where: { id: row.id },
+        data: {
+          title: wire.title,
+          bodyText: wire.body_text,
+          postText: wire.post_text,
+          tags: wire.tags
+        }
+      });
+    }
+  });
+
+  return {
+    task_id: target.result_task_id,
+    post_id: postId,
+    title,
+    description,
+    tags,
+    post_details_state: postDetailsState,
+    variants: variantWires,
+    preview: false
+  };
+}
+

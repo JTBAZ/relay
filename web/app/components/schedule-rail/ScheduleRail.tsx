@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useState, useRef, useCallback, useMemo, useEffect, type DragEvent } from "react";
+import { useState, useRef, useCallback, useMemo, useEffect, useLayoutEffect, type DragEvent } from "react";
 import {
   ACTION_COLORS,
   railItemDestLabels,
@@ -14,23 +14,36 @@ import { RELAY_STAGED_MEDIA_MIME } from "@/lib/staged-media-dnd";
 import { resolveScheduleDisplayTimeZone } from "@/lib/goal-cycle-schedule-local";
 import { EventPopover } from "./EventPopover";
 import { DayOverflowList } from "./DayOverflowList";
-import { DropAssetsCard, type DropAssetsFilledItem } from "./DropAssetsCard";
+import { DropAssetsCard, type DropAssetsFilledItem, type DropScheduleTarget } from "./DropAssetsCard";
 import { AddEventPopover, type CreateEventPayload, type MissingPlatformLinkState } from "./AddEventPopover";
 import { RepeatEventPrompt, type RepeatEventSeed } from "./RepeatEventPrompt";
 import {
   FollowUpPlaybookPrompt,
   type PlaybookEventSeed,
 } from "./FollowUpPlaybookPrompt";
-import { eventNeedsMediaDrop } from "./EventMediaDropBin";
+import { eventNeedsMediaDrop, eventShowsMediaBin } from "./EventMediaDropBin";
 import LibraryEmptyState from "@/app/components/studio/LibraryEmptyState";
+import { Lab2IntakeBand } from "@/app/components/studio-lab2/Lab2IntakeBand";
 import type { ApplySocialPlaybookBody } from "@/lib/social-playbooks-api";
+import {
+  computeScheduleRailPopoverFit,
+  SCHEDULE_RAIL_POPOVER_ESTIMATED_HEIGHT_PX,
+} from "@/lib/schedule-rail-popover-fit";
+import { formatInstantInTimeZone } from "@/lib/goal-cycle-schedule-local";
+import {
+  MediaAttachReceipt,
+  type MediaAttachReceiptData,
+} from "./MediaAttachReceipt";
 
 /** Expanded Scheduler width (v0 `/2` panel). */
 export const SCHEDULE_RAIL_WIDTH_PX = 224;
+/** Lab Library — modestly wider right column (resize only). */
+export const SCHEDULE_RAIL_LAB_WIDTH_PX = 280;
+/** Lab2 fused Studio — wider rail for drop ritual + choice surface. */
+export const SCHEDULE_RAIL_LAB2_WIDTH_PX = 304;
 
 const DAY_ROW_PX = 34;
-/** Estimated popover height for clamping inside the rail viewport. */
-const POPOVER_ESTIMATED_HEIGHT_PX = 360;
+const DAY_ROW_LAB_PX = 38;
 
 const SET_GOAL_HREF = "/studio/analytics";
 
@@ -54,6 +67,10 @@ interface ScheduleRailProps {
   dropFilled?: DropAssetsFilledItem[];
   onDropFilledChange?: (items: DropAssetsFilledItem[]) => void;
   onDropCommit?: (mediaIds: string[]) => void;
+  /** Lab2: magnetic drop ritual + decisive AutoPost / Schedule panel. */
+  dropPresentation?: "default" | "ritual";
+  /** Creator id for media thumb URLs in event popovers. */
+  creatorId?: string;
   /** Phase 8 — attach media to scheduled post event. */
   onEventMediaCommit?: (
     event: ScheduleEvent | ReadyItem,
@@ -62,9 +79,7 @@ interface ScheduleRailProps {
   onEventMediaClear?: (event: ScheduleEvent | ReadyItem) => void | Promise<void>;
   mediaCommitBusy?: boolean;
   mediaCommitError?: string | null;
-  onDone?: (id: string) => void | Promise<void>;
   onDelete?: (id: string) => void | Promise<void>;
-  onNotifyToggle?: (id: string, val: boolean) => void | Promise<void>;
   onEditTime?: (id: string, scheduledForIso: string) => void | Promise<void>;
   /** Create Event (manual social reminders + optional draft). */
   allowAddScheduledPost?: boolean;
@@ -79,6 +94,14 @@ interface ScheduleRailProps {
   onClearAddEventMissingLink?: () => void;
   /** Autopost gate for post-create routine / playbook prompts. */
   autopostAllowed?: boolean;
+  /** Opens Schedule Rail Automations modal (dumb trigger — not a PopoverTarget). */
+  onOpenAutomations?: () => void;
+  /** Open shared AutomationApprovalOverlay for awaiting-review rail events. */
+  onOpenAutomationApproval?: (args: {
+    automationId: string;
+    runId: string;
+    draftId?: string | null;
+  }) => void;
   onCreateScheduleSeries?: (body: import("@/lib/autopost-routines-api").CreateScheduleSeriesBody) => void | Promise<void>;
   createSeriesBusy?: boolean;
   createSeriesError?: string | null;
@@ -91,6 +114,10 @@ interface ScheduleRailProps {
   /** Additional event ids to highlight briefly (Goal Cycle multi-slot handoff). */
   highlightEventIds?: string[];
   onFocusEventConsumed?: () => void;
+  /** Lab2: Import Bay is actively dragging — arm the intake corridor. */
+  corridorArmed?: boolean;
+  /** Override rail width (lab uses a modestly wider column). */
+  widthPx?: number;
 }
 
 type PopoverTarget =
@@ -134,16 +161,20 @@ function isStagedMediaDrag(e: DragEvent): boolean {
   return types.includes(RELAY_STAGED_MEDIA_MIME) || types.includes("text/plain");
 }
 
-/** Prefer a hovered slice, else earliest needs_media post on that day. */
+/** Prefer a hovered slice, else earliest incomplete post, else any attachable post that day. */
 function pickMediaDropTarget(
   events: ScheduleEvent[],
   preferEventId?: string | null
 ): ScheduleEvent | null {
   if (preferEventId) {
-    const preferred = events.find((e) => e.id === preferEventId && eventNeedsMediaDrop(e));
+    const preferred = events.find((e) => e.id === preferEventId && eventShowsMediaBin(e));
     if (preferred) return preferred;
   }
-  return events.find((e) => eventNeedsMediaDrop(e)) ?? null;
+  return (
+    events.find((e) => eventNeedsMediaDrop(e)) ??
+    events.find((e) => eventShowsMediaBin(e)) ??
+    null
+  );
 }
 
 export function ScheduleRail({
@@ -151,19 +182,16 @@ export function ScheduleRail({
   onDataChange,
   remindersGlobal,
   onRemindersToggle,
-  armed = false,
-  presentDestinations,
-  missingDestinations,
   dropFilled = [],
   onDropFilledChange,
   onDropCommit,
+  dropPresentation = "default",
+  creatorId,
   onEventMediaCommit,
   onEventMediaClear,
   mediaCommitBusy = false,
   mediaCommitError = null,
-  onDone,
   onDelete,
-  onNotifyToggle,
   onEditTime,
   allowAddScheduledPost = false,
   onAddScheduledPost,
@@ -174,6 +202,8 @@ export function ScheduleRail({
   addEventMissingLink = null,
   onClearAddEventMissingLink,
   autopostAllowed = false,
+  onOpenAutomations,
+  onOpenAutomationApproval,
   onCreateScheduleSeries,
   createSeriesBusy = false,
   createSeriesError = null,
@@ -184,9 +214,22 @@ export function ScheduleRail({
   focusEventId = null,
   highlightEventIds = [],
   onFocusEventConsumed,
+  corridorArmed = false,
+  widthPx,
 }: ScheduleRailProps) {
+  const railWidth = widthPx ?? SCHEDULE_RAIL_WIDTH_PX;
+  const isRitual = dropPresentation === "ritual";
+  const dayRowPx = isRitual
+    ? 28
+    : railWidth >= SCHEDULE_RAIL_LAB_WIDTH_PX
+      ? DAY_ROW_LAB_PX
+      : DAY_ROW_PX;
   const [popover, setPopover] = useState<PopoverTarget>(null);
   const [popoverTopPx, setPopoverTopPx] = useState(96);
+  const [popoverMaxHeightPx, setPopoverMaxHeightPx] = useState(
+    SCHEDULE_RAIL_POPOVER_ESTIMATED_HEIGHT_PX
+  );
+  const [popoverNeedsScroll, setPopoverNeedsScroll] = useState(false);
   const [popSliceId, setPopSliceId] = useState<string | null>(null);
   const [highlightIds, setHighlightIds] = useState<Set<string>>(new Set());
   const [pulseDay, setPulseDay] = useState<number | null>(null);
@@ -194,43 +237,63 @@ export function ScheduleRail({
   const [mediaDragDay, setMediaDragDay] = useState<number | null>(null);
   const [mediaDragSliceId, setMediaDragSliceId] = useState<string | null>(null);
   const [rowDropError, setRowDropError] = useState<string | null>(null);
+  const [attachReceipt, setAttachReceipt] = useState<MediaAttachReceiptData | null>(null);
+  const [postDetailsOpen, setPostDetailsOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
   const railRef = useRef<HTMLDivElement>(null);
   const dayListRef = useRef<HTMLDivElement>(null);
   const addButtonRef = useRef<HTMLButtonElement>(null);
   const dayRowRefs = useRef<Map<number, HTMLDivElement>>(new Map());
+  const preferredPopoverTopRef = useRef(96);
   const snoozed = !remindersGlobal;
 
-  const measureAnchorTop = useCallback((anchor: HTMLElement | null | undefined): number => {
+  /** Unclamped preferred top (anchor-aligned); fit logic shifts/caps afterward. */
+  const measurePreferredTop = useCallback((anchor: HTMLElement | null | undefined): number => {
     const root = rootRef.current;
     if (!root || !anchor) return 96;
     const rootRect = root.getBoundingClientRect();
     const anchorRect = anchor.getBoundingClientRect();
-    const raw = anchorRect.top - rootRect.top;
-    const maxTop = Math.max(8, rootRect.height - POPOVER_ESTIMATED_HEIGHT_PX);
-    return Math.max(8, Math.min(raw, maxTop));
+    return Math.max(8, anchorRect.top - rootRect.top);
+  }, []);
+
+  const applyPopoverFit = useCallback((preferredTop: number, contentHeight?: number) => {
+    const root = rootRef.current;
+    if (!root) return;
+    preferredPopoverTopRef.current = preferredTop;
+    const rootRect = root.getBoundingClientRect();
+    const fit = computeScheduleRailPopoverFit({
+      rootTop: rootRect.top,
+      rootHeight: rootRect.height,
+      preferredTopInRoot: preferredTop,
+      contentHeight: contentHeight ?? SCHEDULE_RAIL_POPOVER_ESTIMATED_HEIGHT_PX,
+      viewportHeight: window.innerHeight,
+    });
+    setPopoverTopPx((prev) => (prev === fit.topPx ? prev : fit.topPx));
+    setPopoverMaxHeightPx((prev) => (prev === fit.maxHeightPx ? prev : fit.maxHeightPx));
+    setPopoverNeedsScroll((prev) => (prev === fit.needsScroll ? prev : fit.needsScroll));
   }, []);
 
   const displayTimeZone = resolveScheduleDisplayTimeZone(data.timezone);
 
   const openPopover = useCallback(
     (next: NonNullable<PopoverTarget>, anchorDay?: number) => {
+      let preferred = 96;
       if (next.kind === "add" || next.kind === "repeat" || next.kind === "playbook") {
-        setPopoverTopPx(measureAnchorTop(addButtonRef.current));
+        preferred = measurePreferredTop(addButtonRef.current);
       } else if (next.kind === "overflow") {
-        setPopoverTopPx(measureAnchorTop(dayRowRefs.current.get(next.day)));
+        preferred = measurePreferredTop(dayRowRefs.current.get(next.day));
       } else if (next.kind === "event") {
         const day =
           anchorDay ??
           dayOfEvent(next.event, displayTimeZone) ??
           undefined;
-        setPopoverTopPx(
-          day != null ? measureAnchorTop(dayRowRefs.current.get(day)) : 96
-        );
+        preferred =
+          day != null ? measurePreferredTop(dayRowRefs.current.get(day)) : 96;
       }
+      applyPopoverFit(preferred);
       setPopover(next);
     },
-    [displayTimeZone, measureAnchorTop]
+    [applyPopoverFit, displayTimeZone, measurePreferredTop]
   );
 
   const clearMediaDrag = useCallback(() => {
@@ -248,20 +311,20 @@ export function ScheduleRail({
     }
   }, []);
 
-  /** Open the needs_media event popover while dragging Import Bay media. */
+  /** Open the event popover while dragging Import Bay media (attach or replace). */
   const openEventForMediaDrag = useCallback(
     (event: ScheduleEvent, day: number) => {
       cancelMediaDragClose();
       setMediaDragDay(day);
       setMediaDragSliceId(event.id);
       setRowDropError(null);
-      setPopoverTopPx(measureAnchorTop(dayRowRefs.current.get(day)));
+      applyPopoverFit(measurePreferredTop(dayRowRefs.current.get(day)));
       setPopover((prev) => {
         if (prev?.kind === "event" && prev.event.id === event.id) return prev;
         return { kind: "event", event };
       });
     },
-    [cancelMediaDragClose, measureAnchorTop]
+    [applyPopoverFit, cancelMediaDragClose, measurePreferredTop]
   );
 
   const scheduleMediaDragClose = useCallback(() => {
@@ -281,6 +344,67 @@ export function ScheduleRail({
     [daysInMonth]
   );
   const { label, name: monthName } = monthParts(data.month);
+
+  const scheduleDropTargets = useMemo((): DropScheduleTarget[] => {
+    return data.events
+      .filter((ev) => eventShowsMediaBin(ev) && Boolean(ev.at))
+      .slice()
+      .sort((a, b) => Date.parse(a.at) - Date.parse(b.at))
+      .map((ev) => ({
+        id: ev.id,
+        title: ev.title,
+        at: ev.at,
+        needsMedia: eventNeedsMediaDrop(ev),
+      }));
+  }, [data.events]);
+
+  const showAttachReceipt = useCallback(
+    (event: ScheduleEvent | ReadyItem) => {
+      if (!("at" in event) || !event.at) return;
+      const platformCount = Math.max(
+        1,
+        event.destinations?.length ?? (event.destination ? 1 : 1)
+      );
+      setAttachReceipt({
+        eventId: event.task_id ?? event.id,
+        scheduledLabel: formatInstantInTimeZone(event.at, displayTimeZone, {
+          month: "short",
+          day: "numeric",
+          hour: "numeric",
+          minute: "2-digit",
+          hour12: true,
+        }),
+        platformCount,
+        remind: event.notify !== false,
+      });
+    },
+    [displayTimeZone]
+  );
+
+  const handleScheduleDropAttach = useCallback(
+    async (eventId: string, mediaIds: string[]) => {
+      const event = data.events.find((ev) => ev.id === eventId);
+      if (!event) throw new Error("Event not found on this month’s rail.");
+      await onEventMediaCommit?.(event, mediaIds);
+      onDropFilledChange?.([]);
+      showAttachReceipt(event);
+      const day = dayOfEvent(event, displayTimeZone);
+      if (day != null) {
+        openEventForMediaDrag(event, day);
+      } else {
+        openPopover({ kind: "event", event });
+      }
+    },
+    [
+      data.events,
+      displayTimeZone,
+      onDropFilledChange,
+      onEventMediaCommit,
+      openEventForMediaDrag,
+      openPopover,
+      showAttachReceipt,
+    ]
+  );
 
   const focusConsumedRef = useRef(onFocusEventConsumed);
   focusConsumedRef.current = onFocusEventConsumed;
@@ -363,7 +487,7 @@ export function ScheduleRail({
           return { kind: "event", event };
         });
         if (day != null && Number.isFinite(day)) {
-          setPopoverTopPx(measureAnchorTop(dayRowRefs.current.get(day)));
+          applyPopoverFit(measurePreferredTop(dayRowRefs.current.get(day)));
         }
       }, openPopoverMs);
       clearTimer = window.setTimeout(() => {
@@ -381,45 +505,65 @@ export function ScheduleRail({
     };
     // Intentionally keyed on focusEventId + event presence in data, not callback identity.
     // eslint-disable-next-line react-hooks/exhaustive-deps -- focusConsumedRef / openPopover
-  }, [focusEventId, highlightEventIds, data.events, data.ready, displayTimeZone, openPopover]);
+  }, [
+    focusEventId,
+    highlightEventIds,
+    data.events,
+    data.ready,
+    displayTimeZone,
+    openPopover,
+    applyPopoverFit,
+    measurePreferredTop,
+  ]);
 
-  const handleDone = useCallback(
-    (id: string) => {
-      if (onDone) {
-        void onDone(id);
-        setTimeout(() => setPopover(null), 300);
-        return;
-      }
-      const updateList = <T extends { id: string; status: string; destinations?: Array<{ task_id: string; status: string }> }>(
-        list: T[]
-      ) =>
-        list.map((e) => {
-          if (e.destinations?.some((d) => d.task_id === id)) {
-            const destinations = e.destinations.map((d) =>
-              d.task_id === id ? { ...d, status: "done" as const } : d
-            );
-            const allDone = destinations.every((d) => d.status === "done");
-            return {
-              ...e,
-              destinations,
-              status: allDone ? ("done" as const) : e.status,
-            };
-          }
-          return e.id === id ? { ...e, status: "done" as const } : e;
-        });
-      onDataChange({
-        ...data,
-        events: updateList(data.events),
-        ready: updateList(data.ready),
-        postbot: {
-          ...data.postbot,
-          done: Math.min(data.postbot.done + 1, data.postbot.total),
-        },
-      });
-      setTimeout(() => setPopover(null), 300);
-    },
-    [data, onDataChange, onDone]
-  );
+  /** After layout, refit using real popover height so tall panels (media bin) stay on screen. */
+  useLayoutEffect(() => {
+    if (!popover) return;
+    const layer = popoverLayerRef.current;
+    const root = rootRef.current;
+    if (!layer || !root) return;
+
+    const refit = () => {
+      // Measure intrinsic height without the scroll clamp (scrollHeight can lag).
+      const prevMax = layer.style.maxHeight;
+      const prevOverflow = layer.style.overflowY;
+      layer.style.maxHeight = "none";
+      layer.style.overflowY = "visible";
+      const contentHeight = Math.max(layer.getBoundingClientRect().height, layer.scrollHeight, 160);
+      layer.style.maxHeight = prevMax;
+      layer.style.overflowY = prevOverflow;
+      applyPopoverFit(preferredPopoverTopRef.current, contentHeight);
+    };
+
+    refit();
+    const ro = new ResizeObserver(() => {
+      refit();
+    });
+    ro.observe(layer);
+    window.addEventListener("resize", refit);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener("resize", refit);
+    };
+  }, [popover, applyPopoverFit]);
+
+  /** Keep open event popover in sync after attach / unmount reloads rail media fields. */
+  useEffect(() => {
+    if (popover?.kind !== "event") return;
+    const id = popover.event.id;
+    const fresh =
+      data.events.find((e) => railItemMatchesId(e, id)) ??
+      data.ready.find((e) => railItemMatchesId(e, id));
+    if (!fresh) return;
+    const prev = popover.event;
+    const sameMedia =
+      prev.needs_media === fresh.needs_media &&
+      prev.media_count === fresh.media_count &&
+      prev.media_state === fresh.media_state &&
+      (prev.media_ids ?? []).join("\0") === (fresh.media_ids ?? []).join("\0");
+    if (sameMedia) return;
+    setPopover({ kind: "event", event: fresh });
+  }, [data.events, data.ready, popover]);
 
   const handleDelete = useCallback(
     (id: string) => {
@@ -438,30 +582,21 @@ export function ScheduleRail({
     [data, onDataChange, onDelete]
   );
 
-  const handleNotifyToggle = useCallback(
-    (id: string, val: boolean) => {
-      if (onNotifyToggle) {
-        void onNotifyToggle(id, val);
-        return;
-      }
-      const updateList = <T extends { id: string; notify: boolean }>(list: T[]) =>
-        list.map((e) => (e.id === id ? { ...e, notify: val } : e));
-      onDataChange({
-        ...data,
-        events: updateList(data.events),
-        ready: updateList(data.ready),
-      });
-    },
-    [data, onDataChange, onNotifyToggle]
-  );
-
   return (
     <div ref={rootRef} className="relative flex h-full min-h-0 overflow-visible">
       {popover !== null ? (
         <div
           ref={popoverLayerRef}
-          className="pointer-events-auto absolute right-full z-[70] mr-2"
-          style={{ top: `${popoverTopPx}px` }}
+          className={`pointer-events-auto absolute right-full z-[70] mr-2 overscroll-contain ${
+            popoverNeedsScroll ? "overflow-y-auto" : "overflow-visible"
+          }`}
+          style={{
+            top: `${popoverTopPx}px`,
+            ...(popoverNeedsScroll
+              ? { maxHeight: `${popoverMaxHeightPx}px` }
+              : { height: "auto", maxHeight: "none" }),
+          }}
+          data-schedule-rail-popover-layer
           onDragEnter={(e) => {
             if (!isStagedMediaDrag(e)) return;
             e.preventDefault();
@@ -485,14 +620,14 @@ export function ScheduleRail({
             <EventPopover
               key={popover.event.id}
               event={popover.event}
+              creatorId={creatorId}
               timeZone={displayTimeZone}
-              onDone={handleDone}
               onDelete={handleDelete}
-              onNotifyToggle={handleNotifyToggle}
               onEditTime={onEditTime}
               onMediaCommit={async (ev, mediaIds) => {
                 clearMediaDrag();
                 await onEventMediaCommit?.(ev, mediaIds);
+                showAttachReceipt(ev);
               }}
               onMediaClear={async (ev) => {
                 clearMediaDrag();
@@ -502,8 +637,46 @@ export function ScheduleRail({
               mediaCommitError={mediaCommitError ?? rowDropError}
               mediaCommitLabel="Save media"
               onPrepareOccurrence={onPrepareOccurrence}
+              onOpenAutomationApproval={onOpenAutomationApproval}
+              postDetailsOpen={postDetailsOpen}
+              onPostDetailsOpenChange={setPostDetailsOpen}
+              onPostDetailsSaved={(patch) => {
+                const apply = <T extends ScheduleEvent | ReadyItem>(item: T): T => {
+                  if (!railItemMatchesId(item, popover.event.id) &&
+                      !railItemMatchesId(item, popover.event.task_id ?? "")) {
+                    return item;
+                  }
+                  return {
+                    ...item,
+                    title: patch.title,
+                    post_description: patch.description,
+                    post_tags: patch.tags,
+                    post_details_state: patch.post_details_state,
+                  };
+                };
+                onDataChange({
+                  ...data,
+                  events: data.events.map(apply),
+                  ready: data.ready.map(apply),
+                });
+                setPopover((prev) =>
+                  prev?.kind === "event"
+                    ? {
+                        kind: "event",
+                        event: {
+                          ...prev.event,
+                          title: patch.title,
+                          post_description: patch.description,
+                          post_tags: patch.tags,
+                          post_details_state: patch.post_details_state,
+                        },
+                      }
+                    : prev
+                );
+              }}
               onClose={() => {
                 clearMediaDrag();
+                setPostDetailsOpen(false);
                 setPopover(null);
               }}
             />
@@ -618,123 +791,265 @@ export function ScheduleRail({
       <aside
         ref={railRef}
         aria-label="Scheduler"
-        className="flex h-full min-h-0 flex-shrink-0 flex-col select-none border-l border-[#1c211f] bg-[#080a09]"
-        style={{ width: SCHEDULE_RAIL_WIDTH_PX }}
+        data-drop-presentation={dropPresentation}
+        data-corridor-armed={corridorArmed ? "true" : undefined}
+        className={`flex h-full min-h-0 flex-shrink-0 flex-col select-none border-l ${
+          isRitual
+            ? corridorArmed
+              ? "border-[#111] bg-[#070c09]"
+              : "border-[#111] bg-[#070a08]"
+            : "border-[#1c211f] bg-[#080a09]"
+        }`}
+        style={{ width: railWidth }}
       >
-        {/* Header — Scheduler + month, Remind/Add icon buttons */}
-        <header className="flex flex-col items-center border-b border-[#1c211f] px-4 pb-4 pt-6">
-          <p className="text-center text-[9px] font-semibold uppercase leading-none tracking-[0.22em] text-[#6f7773]">
-            {label}
-          </p>
-          <h2
-            className="mt-2 text-center text-[22px] font-semibold leading-none tracking-[-0.04em] text-[#edf2ef]"
-            style={{ fontFamily: "var(--font-display), Fraunces, Georgia, serif" }}
-          >
-            Scheduler
-          </h2>
-          <div className="mt-5 flex items-center gap-2">
-            <button
-              type="button"
-              role="switch"
-              aria-checked={!snoozed}
-              aria-label={
-                snoozed
-                  ? "Notifications snoozed — click to resume reminders"
-                  : "Reminders on — click to snooze"
-              }
-              title={snoozed ? "Resume reminders" : "Snooze reminders"}
-              onClick={() => onRemindersToggle(!remindersGlobal)}
-              className={`inline-flex h-8 w-8 items-center justify-center rounded-xl border transition-all duration-200 hover:-translate-y-0.5 active:scale-95 ${
-                !snoozed
-                  ? "border-[#9bf0c43d] bg-[#9bf0c414] text-[#9bf0c4]"
-                  : "border-[#242a27] bg-[#ffffff08] text-[#69716d] hover:border-[#9bf0c43d] hover:text-[#9bf0c4]"
-              }`}
-            >
-              <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-                <path
-                  d="M4.3 6.6a3.7 3.7 0 1 1 7.4 0c0 4 1.5 4.2 1.5 4.2H2.8s1.5-.2 1.5-4.2Z"
-                  stroke="currentColor"
-                  strokeWidth="1.35"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-                <path
-                  d="M6.6 12.7a1.6 1.6 0 0 0 2.8 0"
-                  stroke="currentColor"
-                  strokeWidth="1.35"
-                  strokeLinecap="round"
-                />
-              </svg>
-            </button>
-            <button
-              ref={addButtonRef}
-              type="button"
-              disabled={!allowAddScheduledPost}
-              onClick={() => {
-                if (!allowAddScheduledPost) return;
-                openPopover({ kind: "add" });
-              }}
-              className="inline-flex h-8 w-8 items-center justify-center rounded-xl border border-[#242a27] bg-[#ffffff08] text-[#69716d] transition-all duration-200 hover:-translate-y-0.5 hover:border-[#9bf0c43d] hover:bg-[#9bf0c414] hover:text-[#9bf0c4] active:scale-95 disabled:cursor-not-allowed disabled:opacity-45 disabled:hover:translate-y-0"
-              aria-label="Add scheduled post"
-              title="Add scheduled post"
-            >
-              <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
-                <path
-                  d="M7 2V12M2 7H12"
-                  stroke="currentColor"
-                  strokeWidth="1.5"
-                  strokeLinecap="round"
-                />
-              </svg>
-            </button>
-          </div>
-        </header>
-
-        {/* Drop bin chrome (Import Bay wiring unchanged) */}
-        <div className="flex flex-col border-b border-[#1c211f] px-4 py-4">
-          <DropAssetsCard
-            armed={armed}
+        {/* Corridor intake — flush with Import Bay (76px) */}
+        {isRitual ? (
+          <Lab2IntakeBand
+            armed={corridorArmed}
             filled={dropFilled}
-            onFilledChange={(items) => onDropFilledChange?.(items)}
-            onCommit={(ids) => onDropCommit?.(ids)}
-            presentDestinations={presentDestinations}
-            missingDestinations={missingDestinations}
+            onAccept={(items) => onDropFilledChange?.(items)}
           />
-        </div>
+        ) : null}
 
-        {/* Monthly Goal — studio brief / posting target excerpt */}
-        <div className="border-b border-[#1c211f] px-5 py-4">
-          <p className="text-[9px] font-medium uppercase tracking-[0.16em] text-[#68706c]">
-            Monthly Goal
-          </p>
-          {data.monthly_goal?.excerpt?.trim() ? (
-            <Link
-              href={SET_GOAL_HREF}
-              className="mt-2 block text-[12px] leading-snug tracking-[-0.01em] text-[#c8d0cb] transition-colors hover:text-[#edf2ef]"
-              title="Edit goal in Analytics"
+        {/* Header */}
+        {isRitual ? (
+          <header className="flex flex-shrink-0 items-center justify-between border-b border-[#0d0d0d] px-4 py-3">
+            <div className="flex flex-col gap-0.5">
+              <span className="text-[9.5px] font-semibold uppercase tracking-[0.16em] text-[#404a44]">
+                Scheduler
+              </span>
+              <span className="text-[10px] text-[#2e3a32]">{label}</span>
+            </div>
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                role="switch"
+                aria-checked={!snoozed}
+                aria-label={
+                  snoozed
+                    ? "Notifications snoozed — click to resume reminders"
+                    : "Reminders on — click to snooze"
+                }
+                title={snoozed ? "Resume reminders" : "Snooze reminders"}
+                onClick={() => onRemindersToggle(!remindersGlobal)}
+                className={`flex h-6 w-6 items-center justify-center rounded-md border transition-all duration-150 active:scale-95 ${
+                  !snoozed
+                    ? "border-[#2a4a34] bg-[#0f1e16] text-[#5fb98f]"
+                    : "border-[#161e18] bg-transparent text-[#364540] hover:border-[#2a3a2e] hover:text-[#5fb98f]"
+                }`}
+              >
+                <svg width="11" height="11" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+                  <path
+                    d="M4.3 6.6a2.7 2.7 0 1 1 5.4 0c0 3.4 1.3 3.6 1.3 3.6H3s1.3-.2 1.3-3.6Z"
+                    stroke="currentColor"
+                    strokeWidth="1.4"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                  <path
+                    d="M5.8 11.4a1.2 1.2 0 0 0 2.4 0"
+                    stroke="currentColor"
+                    strokeWidth="1.3"
+                    strokeLinecap="round"
+                  />
+                  {!snoozed ? <circle cx="10.5" cy="3.5" r="2" fill="#5fb98f" /> : null}
+                </svg>
+              </button>
+              {onOpenAutomations ? (
+                <button
+                  type="button"
+                  onClick={onOpenAutomations}
+                  className="flex h-6 w-6 items-center justify-center rounded-md border border-[#161e18] bg-transparent text-[#364540] transition-all duration-150 hover:border-[#2a3a2e] hover:text-[#5fb98f] active:scale-95"
+                  aria-label="Open Automations"
+                  title="Automations"
+                  data-testid="schedule-rail-automations-open"
+                >
+                  <svg width="9" height="11" viewBox="0 0 10 13" fill="none" aria-hidden="true">
+                    <path
+                      d="M6 1L2 7.5h3.5L4 12L8.5 5.5H5L6 1Z"
+                      stroke="currentColor"
+                      strokeWidth="1.3"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  </svg>
+                </button>
+              ) : null}
+              <button
+                ref={addButtonRef}
+                type="button"
+                disabled={!allowAddScheduledPost}
+                onClick={() => {
+                  if (!allowAddScheduledPost) return;
+                  openPopover({ kind: "add" });
+                }}
+                className="flex h-6 w-6 items-center justify-center rounded-md border border-[#161e18] bg-transparent text-[#364540] transition-all duration-150 hover:border-[#2a3a2e] hover:text-[#5fb98f] active:scale-95 disabled:cursor-not-allowed disabled:opacity-45"
+                aria-label="Add scheduled post"
+                title="Add scheduled post"
+              >
+                <svg width="10" height="10" viewBox="0 0 10 10" fill="none" aria-hidden="true">
+                  <path
+                    d="M5 1.5V8.5M1.5 5H8.5"
+                    stroke="currentColor"
+                    strokeWidth="1.4"
+                    strokeLinecap="round"
+                  />
+                </svg>
+              </button>
+            </div>
+          </header>
+        ) : (
+          <header className="flex flex-col items-center border-b border-[#1c211f] px-4 pb-4 pt-6">
+            <p className="text-center text-[9px] font-semibold uppercase leading-none tracking-[0.22em] text-[#6f7773]">
+              {label}
+            </p>
+            <h2
+              className={`mt-2 text-center font-semibold leading-none tracking-[-0.04em] text-[#edf2ef] ${
+                railWidth >= SCHEDULE_RAIL_LAB_WIDTH_PX ? "text-[24px]" : "text-[22px]"
+              }`}
+              style={{ fontFamily: "var(--font-display), Fraunces, Georgia, serif" }}
             >
-              <span className="line-clamp-3">{data.monthly_goal.excerpt.trim()}</span>
-            </Link>
-          ) : (
-            <Link
-              href={SET_GOAL_HREF}
-              className="mt-2 inline-block text-[12px] italic text-[#9bf0c4] transition-colors hover:text-[#b8f5d4]"
-            >
-              set goal
-            </Link>
-          )}
-        </div>
+              Scheduler
+            </h2>
+            <div className="mt-5 flex items-center gap-2">
+              <button
+                type="button"
+                role="switch"
+                aria-checked={!snoozed}
+                aria-label={
+                  snoozed
+                    ? "Notifications snoozed — click to resume reminders"
+                    : "Reminders on — click to snooze"
+                }
+                title={snoozed ? "Resume reminders" : "Snooze reminders"}
+                onClick={() => onRemindersToggle(!remindersGlobal)}
+                className={`inline-flex h-8 w-8 items-center justify-center rounded-xl border transition-all duration-200 hover:-translate-y-0.5 active:scale-95 ${
+                  !snoozed
+                    ? "border-[#9bf0c43d] bg-[#9bf0c414] text-[#9bf0c4]"
+                    : "border-[#242a27] bg-[#ffffff08] text-[#69716d] hover:border-[#9bf0c43d] hover:text-[#9bf0c4]"
+                }`}
+              >
+                <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                  <path
+                    d="M4.3 6.6a3.7 3.7 0 1 1 7.4 0c0 4 1.5 4.2 1.5 4.2H2.8s1.5-.2 1.5-4.2Z"
+                    stroke="currentColor"
+                    strokeWidth="1.35"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                  <path
+                    d="M6.6 12.7a1.6 1.6 0 0 0 2.8 0"
+                    stroke="currentColor"
+                    strokeWidth="1.35"
+                    strokeLinecap="round"
+                  />
+                </svg>
+              </button>
+              {onOpenAutomations ? (
+                <button
+                  type="button"
+                  onClick={onOpenAutomations}
+                  className="inline-flex h-8 w-8 items-center justify-center rounded-xl border border-[#242a27] bg-[#ffffff08] text-[#69716d] transition-all duration-200 hover:-translate-y-0.5 hover:border-[#9bf0c43d] hover:bg-[#9bf0c414] hover:text-[#9bf0c4] active:scale-95"
+                  aria-label="Open Automations"
+                  title="Automations"
+                  data-testid="schedule-rail-automations-open"
+                >
+                  <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                    <path
+                      d="M3 4.5h4.5M8.5 4.5H13M3 8h10M3 11.5h6.5"
+                      stroke="currentColor"
+                      strokeWidth="1.35"
+                      strokeLinecap="round"
+                    />
+                    <circle cx="6.2" cy="4.5" r="1.1" fill="currentColor" />
+                    <circle cx="11.2" cy="11.5" r="1.1" fill="currentColor" />
+                  </svg>
+                </button>
+              ) : null}
+              <button
+                ref={addButtonRef}
+                type="button"
+                disabled={!allowAddScheduledPost}
+                onClick={() => {
+                  if (!allowAddScheduledPost) return;
+                  openPopover({ kind: "add" });
+                }}
+                className="inline-flex h-8 w-8 items-center justify-center rounded-xl border border-[#242a27] bg-[#ffffff08] text-[#69716d] transition-all duration-200 hover:-translate-y-0.5 hover:border-[#9bf0c43d] hover:bg-[#9bf0c414] hover:text-[#9bf0c4] active:scale-95 disabled:cursor-not-allowed disabled:opacity-45 disabled:hover:translate-y-0"
+                aria-label="Add scheduled post"
+                title="Add scheduled post"
+              >
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+                  <path
+                    d="M7 2V12M2 7H12"
+                    stroke="currentColor"
+                    strokeWidth="1.5"
+                    strokeLinecap="round"
+                  />
+                </svg>
+              </button>
+            </div>
+          </header>
+        )}
+
+        {/* Drop bin — classic rail always; ritual only when assets are filled (choice). */}
+        {!isRitual || dropFilled.length > 0 ? (
+          <div
+            className={
+              isRitual
+                ? "relative z-20 mx-2 mt-2 flex flex-col"
+                : "flex flex-col border-b border-[#1c211f] px-4 py-4"
+            }
+          >
+            <DropAssetsCard
+              filled={dropFilled}
+              onFilledChange={(items) => onDropFilledChange?.(items)}
+              onAutopost={(ids) => onDropCommit?.(ids)}
+              scheduleTargets={scheduleDropTargets}
+              onScheduleAttach={handleScheduleDropAttach}
+              attachBusy={mediaCommitBusy}
+              timeZone={displayTimeZone}
+              presentation={dropPresentation}
+            />
+          </div>
+        ) : null}
+
+        {/* Monthly Goal — classic rail only (v0 /4 has no goal block) */}
+        {!isRitual ? (
+          <div className="border-b border-[#1c211f] px-5 py-4">
+            <p className="text-[9px] font-medium uppercase tracking-[0.16em] text-[#68706c]">
+              Monthly Goal
+            </p>
+            {data.monthly_goal?.excerpt?.trim() ? (
+              <Link
+                href={SET_GOAL_HREF}
+                className="mt-2 block text-[12px] leading-snug tracking-[-0.01em] text-[#c8d0cb] transition-colors hover:text-[#edf2ef]"
+                title="Edit goal in Analytics"
+              >
+                <span className="line-clamp-3">{data.monthly_goal.excerpt.trim()}</span>
+              </Link>
+            ) : (
+              <Link
+                href={SET_GOAL_HREF}
+                className="mt-2 inline-block text-[12px] italic text-[#9bf0c4] transition-colors hover:text-[#b8f5d4]"
+              >
+                set goal
+              </Link>
+            )}
+          </div>
+        ) : null}
 
         {/* Month axis */}
-        <div ref={dayListRef} className="min-h-0 flex-1 overflow-y-auto px-2 py-3">
-          <div className="flex items-center justify-between px-3 pb-3">
-            <span className="text-[9px] font-medium uppercase tracking-[0.16em] text-[#68706c]">
-              {monthName} timeline
-            </span>
-            <span className="text-[9px] text-[#4f5753]">
-              {snoozed ? "Snoozed" : `${daysInMonth} days`}
-            </span>
-          </div>
+        <div ref={dayListRef} className={`min-h-0 flex-1 overflow-y-auto ${isRitual ? "px-3 py-2" : "px-2 py-3"}`}>
+          {!isRitual ? (
+            <div className="flex items-center justify-between px-3 pb-3">
+              <span className="text-[9px] font-medium uppercase tracking-[0.16em] text-[#68706c]">
+                {monthName} timeline
+              </span>
+              <span className="text-[9px] text-[#4f5753]">
+                {snoozed ? "Snoozed" : `${daysInMonth} days`}
+              </span>
+            </div>
+          ) : null}
 
           {data.events.length === 0 ? (
             <LibraryEmptyState
@@ -747,8 +1062,9 @@ export function ScheduleRail({
           {days.map((day) => {
             const eventsForDay = byDay[day] ?? [];
             const isToday = todayDay > 0 && day === todayDay;
+            const isPast = todayDay > 0 && day < todayDay;
             const isPulsingDay = pulseDay === day;
-            const CLUSTER_THRESHOLD = 2;
+            const CLUSTER_THRESHOLD = isRitual ? 4 : 2;
             const visibleSlices = eventsForDay.slice(0, CLUSTER_THRESHOLD);
             const overflowCount = eventsForDay.length - CLUSTER_THRESHOLD;
             const highlightInOverflow =
@@ -765,7 +1081,7 @@ export function ScheduleRail({
               );
             const leadTitle = eventsForDay[0]?.title;
             const acceptsMedia =
-              Boolean(onEventMediaCommit) && eventsForDay.some((e) => eventNeedsMediaDrop(e));
+              Boolean(onEventMediaCommit) && eventsForDay.some((e) => eventShowsMediaBin(e));
             const openEventId =
               popover?.kind === "event" ? popover.event.id : null;
             const isMediaCatching =
@@ -773,7 +1089,162 @@ export function ScheduleRail({
               acceptsMedia &&
               (mediaDragSliceId != null ||
                 (openEventId != null &&
-                  eventsForDay.some((e) => e.id === openEventId && eventNeedsMediaDrop(e))));
+                  eventsForDay.some((e) => e.id === openEventId && eventShowsMediaBin(e))));
+
+            const dayDragProps = {
+              onDragEnterCapture: (e: DragEvent) => {
+                if (!acceptsMedia || mediaCommitBusy || !isStagedMediaDrag(e)) return;
+                e.preventDefault();
+                cancelMediaDragClose();
+                const target = pickMediaDropTarget(eventsForDay, mediaDragSliceId);
+                if (!target) return;
+                openEventForMediaDrag(target, day);
+              },
+              onDragOverCapture: (e: DragEvent) => {
+                if (!acceptsMedia || mediaCommitBusy || !isStagedMediaDrag(e)) return;
+                e.preventDefault();
+                e.dataTransfer.dropEffect = "copy";
+                cancelMediaDragClose();
+              },
+              onDragLeaveCapture: (e: DragEvent) => {
+                if (!acceptsMedia) return;
+                const next = e.relatedTarget as Node | null;
+                if (next && e.currentTarget.contains(next)) return;
+                if (next && popoverLayerRef.current?.contains(next)) {
+                  cancelMediaDragClose();
+                  return;
+                }
+                if (mediaDragDay === day) scheduleMediaDragClose();
+              },
+              onDropCapture: (e: DragEvent) => {
+                if (!acceptsMedia || !isStagedMediaDrag(e)) return;
+                e.preventDefault();
+              }
+            };
+
+            if (isRitual) {
+              return (
+                <div
+                  key={day}
+                  ref={(el) => {
+                    if (el) dayRowRefs.current.set(day, el);
+                    else dayRowRefs.current.delete(day);
+                  }}
+                  {...dayDragProps}
+                  className={`flex items-center gap-2 rounded-lg px-2 py-[5px] transition-colors ${
+                    isMediaCatching
+                      ? "border border-dashed border-[#9bf0c4] bg-[#9bf0c422]"
+                      : isPulsingDay
+                        ? "bg-[#9bf0c4]/18"
+                        : isToday
+                          ? "bg-[#9bf0c40f]"
+                          : "hover:bg-[#ffffff05]"
+                  }`}
+                >
+                  <span
+                    className={`w-5 flex-shrink-0 text-right text-[9.5px] tabular-nums leading-none ${
+                      isToday || isMediaCatching
+                        ? "font-bold text-[#9bf0c4]"
+                        : isPast
+                          ? "text-[#2a2a2a]"
+                          : "text-[#3a4a3e]"
+                    }`}
+                  >
+                    {day}
+                  </span>
+
+                  <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1">
+                    {isMediaCatching ? (
+                      <span className="text-[9px] font-medium tracking-wide text-[#9bf0c4]/90">
+                        Open → drop in Media
+                      </span>
+                    ) : null}
+                    {!isMediaCatching && isToday ? (
+                      <span className="text-[9px] font-medium tracking-wide text-[#9bf0c4]">
+                        Today
+                      </span>
+                    ) : null}
+                    {!isMediaCatching
+                      ? visibleSlices.map((ev) => {
+                          const color = ACTION_COLORS[ev.action];
+                          const isActive =
+                            popover?.kind === "event" && popover.event.id === ev.id;
+                          const isPopping = popSliceId === ev.id;
+                          const isHighlighted = [...highlightIds].some((hid) =>
+                            railItemMatchesId(ev, hid)
+                          );
+                          const sliceNeedsMedia = eventNeedsMediaDrop(ev);
+                          const destLabels = railItemDestLabels(ev);
+                          const destAria =
+                            destLabels.length > 0 ? ` · ${destLabels.join(", ")}` : "";
+                          return (
+                            <button
+                              key={ev.id}
+                              type="button"
+                              onClick={() => {
+                                if (isActive) setPopover(null);
+                                else openPopover({ kind: "event", event: ev }, day);
+                              }}
+                              onDragEnter={(e) => {
+                                if (!eventShowsMediaBin(ev) || !isStagedMediaDrag(e)) return;
+                                e.preventDefault();
+                                openEventForMediaDrag(ev, day);
+                              }}
+                              title={sliceNeedsMedia ? `${ev.title} · needs media` : ev.title}
+                              aria-label={`${ev.title}${destAria} on day ${day}${
+                                sliceNeedsMedia
+                                  ? " — needs media; drag from Import Bay to attach"
+                                  : ""
+                              }`}
+                              data-highlighted={
+                                isHighlighted || isPopping ? "true" : undefined
+                              }
+                              className={`group/ev relative flex max-w-full items-center gap-1 overflow-hidden rounded-md border px-1.5 py-[3px] transition-all ${
+                                isActive || isPopping || isHighlighted
+                                  ? "border-[#1e2e22] bg-[#0a0f0b]"
+                                  : "border-transparent hover:border-[#1e2e22] hover:bg-[#0a0f0b]"
+                              } ${isPopping || isHighlighted ? "schedule-slice-pop" : ""}`}
+                            >
+                              <span
+                                className="h-1.5 w-1.5 flex-shrink-0 rounded-full"
+                                style={{
+                                  backgroundColor: color,
+                                  opacity: ev.status === "done" ? 0.3 : 0.8
+                                }}
+                              />
+                              <span className="max-w-[130px] truncate text-[9.5px] text-[#4a5a50] group-hover/ev:text-[#7a9a84]">
+                                {ev.title}
+                              </span>
+                              {sliceNeedsMedia && ev.status === "pending" ? (
+                                <span
+                                  className="h-1 w-1 flex-shrink-0 rounded-full bg-[#f0b86a] opacity-60"
+                                  title="Needs media"
+                                />
+                              ) : null}
+                            </button>
+                          );
+                        })
+                      : null}
+
+                    {!isMediaCatching && overflowCount > 0 ? (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          openPopover({ kind: "overflow", day, events: eventsForDay })
+                        }
+                        className={`flex h-4 flex-shrink-0 items-center rounded-full border px-1 text-[8px] tabular-nums leading-none transition-colors ${
+                          highlightInOverflow
+                            ? "schedule-slice-pop border-[#9bf0c4]/50 bg-[#9bf0c4]/15 text-[#9bf0c4]"
+                            : "border-[#1e2a22] bg-[#0a100c] text-[#3a4a3e] hover:text-[#9bf0c4]"
+                        }`}
+                      >
+                        +{overflowCount}
+                      </button>
+                    ) : null}
+                  </div>
+                </div>
+              );
+            }
 
             return (
               <div
@@ -782,36 +1253,7 @@ export function ScheduleRail({
                   if (el) dayRowRefs.current.set(day, el);
                   else dayRowRefs.current.delete(day);
                 }}
-                onDragEnterCapture={(e) => {
-                  if (!acceptsMedia || mediaCommitBusy || !isStagedMediaDrag(e)) return;
-                  e.preventDefault();
-                  cancelMediaDragClose();
-                  const target = pickMediaDropTarget(eventsForDay, mediaDragSliceId);
-                  if (!target) return;
-                  openEventForMediaDrag(target, day);
-                }}
-                onDragOverCapture={(e) => {
-                  if (!acceptsMedia || mediaCommitBusy || !isStagedMediaDrag(e)) return;
-                  e.preventDefault();
-                  e.dataTransfer.dropEffect = "copy";
-                  cancelMediaDragClose();
-                }}
-                onDragLeaveCapture={(e) => {
-                  if (!acceptsMedia) return;
-                  const next = e.relatedTarget as Node | null;
-                  if (next && e.currentTarget.contains(next)) return;
-                  // Moving into the open popover — keep it open.
-                  if (next && popoverLayerRef.current?.contains(next)) {
-                    cancelMediaDragClose();
-                    return;
-                  }
-                  if (mediaDragDay === day) scheduleMediaDragClose();
-                }}
-                onDropCapture={(e) => {
-                  // Drops land in the popover media window — don't silent-attach on the bar.
-                  if (!acceptsMedia || !isStagedMediaDrag(e)) return;
-                  e.preventDefault();
-                }}
+                {...dayDragProps}
                 className={`group relative mx-0 flex min-h-[34px] items-center rounded-xl px-2.5 transition-all duration-200 ${
                   isMediaCatching
                     ? "z-[1] min-h-[44px] scale-[1.02] border border-dashed border-[#9bf0c4] bg-[#9bf0c422] shadow-[0_0_0_1px_rgba(155,240,196,0.25)]"
@@ -821,7 +1263,7 @@ export function ScheduleRail({
                         ? "bg-[#9bf0c418]"
                         : "hover:bg-[#ffffff08]"
                 }`}
-                style={{ height: isMediaCatching ? 44 : DAY_ROW_PX }}
+                style={{ height: isMediaCatching ? 44 : dayRowPx }}
               >
                 {isToday && !isMediaCatching ? (
                   <span className="pointer-events-none absolute left-[7px] top-1/2 h-1.5 w-1.5 -translate-y-1/2 rounded-full bg-[#9bf0c4]" />
@@ -872,7 +1314,7 @@ export function ScheduleRail({
                           }
                         }}
                         onDragEnter={(e) => {
-                          if (!sliceNeedsMedia || !isStagedMediaDrag(e)) return;
+                          if (!eventShowsMediaBin(ev) || !isStagedMediaDrag(e)) return;
                           e.preventDefault();
                           openEventForMediaDrag(ev, day);
                         }}
@@ -949,6 +1391,25 @@ export function ScheduleRail({
           </div>
         ) : null}
       </aside>
+
+      {attachReceipt ? (
+        <MediaAttachReceipt
+          receipt={attachReceipt}
+          onDismiss={() => setAttachReceipt(null)}
+          onAddPostDetails={() => {
+            const eventId = attachReceipt.eventId;
+            setAttachReceipt(null);
+            setPostDetailsOpen(true);
+            const match =
+              data.events.find((e) => railItemMatchesId(e, eventId)) ??
+              data.ready.find((e) => railItemMatchesId(e, eventId));
+            if (match) {
+              const day = dayOfEvent(match, displayTimeZone);
+              openPopover({ kind: "event", event: match }, day ?? undefined);
+            }
+          }}
+        />
+      ) : null}
 
       <style>{`
         @keyframes scheduleSlicePop {

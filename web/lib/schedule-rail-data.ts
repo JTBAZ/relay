@@ -54,6 +54,17 @@ export interface ReadyItem {
   /** Follow-up playbook metadata when materialized from a template. */
   playbook_run_id?: string | null;
   playbook_action_key?: string | null;
+  /** Schedule Rail Automations enrichment (additive; ordinary rows omit). */
+  automation_id?: string | null;
+  automation_title?: string | null;
+  preset_kind?: string | null;
+  automation_state?: "planned" | "awaiting_review" | string | null;
+  automation_run_id?: string | null;
+  expires_at?: string | null;
+  /** Artist-authored post details state on the linked draft. */
+  post_details_state?: "none" | "authored" | "adapted" | null;
+  post_description?: string | null;
+  post_tags?: string[];
   /** Visual group children (one calendar slice, separate ops). */
   destinations?: ScheduleRailDestinationChild[];
 }
@@ -94,6 +105,17 @@ export interface ScheduleEvent {
   /** Follow-up playbook metadata when materialized from a template. */
   playbook_run_id?: string | null;
   playbook_action_key?: string | null;
+  /** Schedule Rail Automations enrichment (additive; ordinary rows omit). */
+  automation_id?: string | null;
+  automation_title?: string | null;
+  preset_kind?: string | null;
+  automation_state?: "planned" | "awaiting_review" | string | null;
+  automation_run_id?: string | null;
+  expires_at?: string | null;
+  /** Artist-authored post details state on the linked draft. */
+  post_details_state?: "none" | "authored" | "adapted" | null;
+  post_description?: string | null;
+  post_tags?: string[];
   /** Visual group children (one calendar slice, separate ops). */
   destinations?: ScheduleRailDestinationChild[];
 }

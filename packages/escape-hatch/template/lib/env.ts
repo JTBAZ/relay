@@ -1,10 +1,9 @@
 /**
- * Typed environment contract for the generated Escape Hatch site kit (EH-020).
+ * Typed environment contract for the generated Escape Hatch site kit (EH-030).
  *
  * Preview / `next build` succeed with empty or minimal env.
  * Runtime paths that need credentials call `requireEnv` / `requireServerEnv`
- * and fail closed — they do not invent production auth (EH-030) or signed
- * media delivery (EH-033).
+ * and fail closed. Soft persona remains for local preview when identity env is unset.
  */
 
 export type SitePublicEnv = {
@@ -12,16 +11,20 @@ export type SitePublicEnv = {
   NEXT_PUBLIC_SITE_URL: string | undefined;
   /** Optional display name override (falls back to bundle theme / creator). */
   NEXT_PUBLIC_SITE_NAME: string | undefined;
+  /** Creator-owned Supabase project URL (browser-safe). */
+  NEXT_PUBLIC_SUPABASE_URL: string | undefined;
+  /** Supabase anon/publishable key (browser-safe; RLS-enforced). */
+  NEXT_PUBLIC_SUPABASE_ANON_KEY: string | undefined;
 };
 
 export type SiteServerEnv = {
-  /** Postgres connection string — optional until EH-030/031. */
+  /** Postgres connection string — optional direct path / EH-031. */
   DATABASE_URL: string | undefined;
-  /** Creator-owned Supabase URL — optional placeholder for EH-030. */
+  /** Server-side Supabase URL alias when public URL unset. */
   SUPABASE_URL: string | undefined;
-  /** Supabase anon/publishable key name only in .env.example — never commit secrets. */
+  /** Server-side anon key alias when public anon unset. */
   SUPABASE_ANON_KEY: string | undefined;
-  /** Supabase service role — server-only; optional until identity slice. */
+  /** Supabase service role — server-only; never expose to the browser. */
   SUPABASE_SERVICE_ROLE_KEY: string | undefined;
   /** Cloudflare R2 / S3-compatible endpoint — optional until storage wiring. */
   R2_ENDPOINT: string | undefined;
@@ -44,11 +47,21 @@ export const SITE_ENV_NAMES = {
     "NEXT_PUBLIC_SITE_URL",
     "NEXT_PUBLIC_SITE_NAME"
   ] as const,
+  optionalIdentity: [
+    "NEXT_PUBLIC_SUPABASE_URL",
+    "NEXT_PUBLIC_SUPABASE_ANON_KEY",
+    "SUPABASE_URL",
+    "SUPABASE_ANON_KEY",
+    "SUPABASE_SERVICE_ROLE_KEY",
+    "DATABASE_URL"
+  ] as const,
   optionalFutureAdapters: [
     "DATABASE_URL",
     "SUPABASE_URL",
     "SUPABASE_ANON_KEY",
     "SUPABASE_SERVICE_ROLE_KEY",
+    "NEXT_PUBLIC_SUPABASE_URL",
+    "NEXT_PUBLIC_SUPABASE_ANON_KEY",
     "R2_ENDPOINT",
     "R2_BUCKET",
     "R2_ACCESS_KEY_ID",
@@ -90,6 +103,8 @@ export function loadEnv(): SiteEnv {
   return {
     NEXT_PUBLIC_SITE_URL: readOptional("NEXT_PUBLIC_SITE_URL"),
     NEXT_PUBLIC_SITE_NAME: readOptional("NEXT_PUBLIC_SITE_NAME"),
+    NEXT_PUBLIC_SUPABASE_URL: readOptional("NEXT_PUBLIC_SUPABASE_URL"),
+    NEXT_PUBLIC_SUPABASE_ANON_KEY: readOptional("NEXT_PUBLIC_SUPABASE_ANON_KEY"),
     DATABASE_URL: readOptional("DATABASE_URL"),
     SUPABASE_URL: readOptional("SUPABASE_URL"),
     SUPABASE_ANON_KEY: readOptional("SUPABASE_ANON_KEY"),
@@ -111,7 +126,10 @@ export function loadEnv(): SiteEnv {
 export function isSecretLikeEnvKey(key: keyof SiteEnv): boolean {
   const name = String(key);
   if (name === "DATABASE_URL") return true;
-  if (name.startsWith("NEXT_PUBLIC_")) return false;
+  if (name === "SUPABASE_URL" || name === "NEXT_PUBLIC_SUPABASE_URL") return false;
+  if (name.startsWith("NEXT_PUBLIC_")) {
+    return /KEY|TOKEN|SECRET/i.test(name);
+  }
   return /SECRET|KEY|TOKEN|PASSWORD/i.test(name);
 }
 
@@ -131,7 +149,9 @@ export function requireEnv(
     const value = env[key];
     if (
       value === undefined ||
-      (isSecretLikeEnvKey(key) && isPlaceholderSecret(value))
+      (isSecretLikeEnvKey(key) && isPlaceholderSecret(value)) ||
+      ((key === "SUPABASE_URL" || key === "NEXT_PUBLIC_SUPABASE_URL") &&
+        isPlaceholderSupabaseUrl(value))
     ) {
       missing.push(key);
     } else {
@@ -168,4 +188,59 @@ export function isPlaceholderSecret(value: string | undefined): boolean {
     // Empty-looking: only quotes / punctuation / whitespace
     /^["'`._-]+$/.test(lower)
   );
+}
+
+/** True when a Supabase URL is missing or a documented placeholder. */
+export function isPlaceholderSupabaseUrl(value: string | undefined): boolean {
+  if (value === undefined || value === null) return true;
+  const lower = value.toLowerCase().trim();
+  if (lower.length === 0) return true;
+  if (isPlaceholderSecret(value)) return true;
+  return (
+    lower.includes("your_project") ||
+    lower.includes("your-project") ||
+    lower.includes("example.supabase") ||
+    lower === "https://your_project.supabase.co" ||
+    lower === "https://your-project.supabase.co"
+  );
+}
+
+/**
+ * Resolve the effective Supabase project URL (public preferred, server alias fallback).
+ */
+export function resolveSupabaseUrl(env: SiteEnv = loadEnv()): string | undefined {
+  const primary = env.NEXT_PUBLIC_SUPABASE_URL ?? env.SUPABASE_URL;
+  if (!primary || isPlaceholderSupabaseUrl(primary)) return undefined;
+  return primary;
+}
+
+/**
+ * Resolve the effective anon/publishable key (public preferred, server alias fallback).
+ */
+export function resolveSupabaseAnonKey(
+  env: SiteEnv = loadEnv()
+): string | undefined {
+  const primary = env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? env.SUPABASE_ANON_KEY;
+  if (!primary || isPlaceholderSecret(primary)) return undefined;
+  return primary;
+}
+
+/**
+ * True when URL + anon key are present and non-placeholder.
+ * Does not prove network reachability (CI-safe).
+ */
+export function isSupabaseIdentityConfigured(
+  env: SiteEnv = loadEnv()
+): boolean {
+  return Boolean(resolveSupabaseUrl(env) && resolveSupabaseAnonKey(env));
+}
+
+/**
+ * True when service role is present and non-placeholder (server-only paths).
+ */
+export function isSupabaseServiceRoleConfigured(
+  env: SiteEnv = loadEnv()
+): boolean {
+  const key = env.SUPABASE_SERVICE_ROLE_KEY;
+  return Boolean(key && !isPlaceholderSecret(key));
 }

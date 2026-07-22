@@ -127,3 +127,88 @@ Stop if a new extension permission/store action is needed, if safe Relay deep li
 ## Delta Out
 
 B12 names B13. B13 names B14 after rail/reminder regressions and slice exit pass.
+
+```
+Automation Delta Out
+- Global batch / claimed work items: B12 / AUT-VS5-T01
+- Completed: AUT-VS5-T01
+- Files created/edited:
+  - src/autopost/automation-attention-service.ts (new) — deep link; ensureAutomationAttentionEventForRun; series/event rail meta loaders; ensureMissing repair helper
+  - src/autopost/automation-reconcile-service.ts — after owned prepare success, ensure attention event (non-fatal)
+  - src/autopost/distribution-rule-service.ts — after owned delayed-release materialize, ensure attention event
+  - src/distribution/schedule-rail-service.ts — additive automation_* fields; enrich planned recurrence_occurrence + prepared manual_event
+  - web/lib/schedule-rail-data.ts — mirror additive automation fields on ReadyItem / ScheduleEvent
+  - tests/automations/automation-attention.test.ts (new)
+  - tests/automations/automation-rail.test.ts (new)
+  - docs/studio/automation-build-plans/00-README.md (VS5 → In progress)
+  - docs/studio/automation-build-plans/06-VS5-RAIL-REMINDER-PROJECTION.md (this Delta Out)
+- Migration and backfill state: none
+- Contracts changed (expected: none unless this batch owns them): additive rail DTO fields only; sources remain recurrence_occurrence | manual_event (no automation_occurrence)
+- Commands and results:
+  - npx vitest run tests/automations/{automation-rail,automation-attention,automation-reconcile}.test.ts tests/schedule-rail-service.test.ts → 41 passed
+  - npm run build → ok
+- Manual/browser checks: n/a (VS7 owns ScheduleRail.tsx chrome)
+- Feature flags / kill switches: RELAY_FEATURE_AUTOMATIONS still defaults off
+- Existing atom regressions checked: schedule-rail-service helpers green; ordinary sources unchanged
+- Known risks or human gates: B13 owns sticky reminder packet proof + clustered no-new-post/expiry notifications + run↔event sync; do not change ordinary event grouping/status
+- Reopened owner IDs, if any: none
+- Next unblocked batch: B13 (AUT-VS5-T02)
+- Pasteable next-worker prompt:
+  You are a Schedule Rail Automations builder in Rescue/Relay.
+  Read AGENTS.md, .cursor/rules/rescue-workflow-always.mdc,
+  docs/studio/automation-build-plans/BUILDER-ORIENTATION.md,
+  docs/studio/automation-build-plans/00-README.md,
+  docs/studio/automation-build-plans/06-VS5-RAIL-REMINDER-PROJECTION.md (B12 Delta Out),
+  src/autopost/automation-attention-service.ts,
+  src/distribution/schedule-reminder-extension-api.ts,
+  extension reminder toast types, and src/patron/notification-service.ts.
+  Claim global Batch B13 only: AUT-VS5-T02 (reuse manual-event sticky reminders + clustered lifecycle notifications + run/event sync).
+  Do not implement Previewizer UI or Automations modal.
+  Prefer zero extension permission changes; keep old clients compatible.
+  When complete, append Automation Delta Out, mark VS5 Done if exit gate passes, name B14 next, then stop.
+```
+
+**Slice status:** VS5 **In progress** (B12 Done; B13 next).
+
+```
+Automation Delta Out
+- Global batch / claimed work items: B13 / AUT-VS5-T02
+- Completed: AUT-VS5-T02
+- Files created/edited:
+  - src/autopost/automation-attention-service.ts — dismissAutomationAttentionEventForRun; syncAutomationAttentionEventToRunStatus; deliverAutomationNotificationIntent(s)
+  - src/autopost/automation-reconcile-service.ts — dismiss attention event on successful expire
+  - src/autopost/automation-worker.ts — deliver intents after reconcileAutomations
+  - prisma/schema.prisma — NotificationKind automation_no_new_post + automation_approval_expired
+  - prisma/migrations/20260720120000_automation_notification_kinds/migration.sql (new)
+  - web/lib/relay-api.ts — mirror new NotificationKind values (+ reveal/tips already in schema)
+  - tests/automations/automation-attention.test.ts — dismiss/sync/notify + listDue deep-link packet
+  - tests/schedule-reminder-extension-api.test.ts — custom approval deep-link CTA
+  - docs/studio/automation-build-plans/00-README.md (VS5 → Done)
+  - docs/studio/automation-build-plans/06-VS5-RAIL-REMINDER-PROJECTION.md (this Delta Out)
+- Migration and backfill state: additive enum migration applied via prisma migrate deploy to linked Supabase (after BOM fix/rollback recover). Note: same deploy also applied previously pending 20260720070000_creator_automations_connector.
+- Contracts changed (expected: none unless this batch owns them): additive NotificationKind values; sticky reminder still schedule_reminder:manual: (no new packet family)
+- Commands and results:
+  - npx vitest run tests/automations/{automation-rail,automation-attention,automation-reconcile}.test.ts tests/schedule-{rail-service,reminder-extension-api}.test.ts → 51 passed
+  - npm run build → ok
+  - npm run build --prefix extension → ok
+  - Supabase read-check: NotificationKind enum labels automation_no_new_post + automation_approval_expired present
+- Manual/browser checks: n/a (toast open-path proven via listDue packet; VS7 UI chrome later)
+- Feature flags / kill switches: RELAY_FEATURE_AUTOMATIONS still defaults off
+- Existing atom regressions checked: schedule-reminder helpers + schedule-rail helpers green; extension build unchanged contract-wise
+- Known risks or human gates: linked DB received pending automations connector migration during deploy recovery — confirm intentional; no new extension permissions
+- Reopened owner IDs, if any: none
+- Next unblocked batch: B14 (AUT-VS6-T01)
+- Pasteable next-worker prompt:
+  You are a Schedule Rail Automations builder in Rescue/Relay.
+  Read AGENTS.md, .cursor/rules/rescue-workflow-always.mdc,
+  docs/studio/automation-build-plans/BUILDER-ORIENTATION.md,
+  docs/studio/automation-build-plans/00-README.md,
+  docs/studio/automation-build-plans/07-VS6-PREVIEWIZER-APPROVAL.md,
+  docs/studio/automation-build-plans/06-VS5-RAIL-REMINDER-PROJECTION.md (B13 Delta Out),
+  web/lib/previewizer-session.ts, previewizer client, and automation-attention deep-link params.
+  Claim global Batch B14 only: first VS6 work item (Previewizer preload / approval context — follow slice todo IDs).
+  Do not implement Automations modal (VS7). Publishing remains human-confirmed.
+  When complete, append Automation Delta Out, name B15 next, then stop.
+```
+
+**Slice status:** VS5 **Done** (B12–B13 complete; exit gate: sticky manual reminder + lifecycle notifications + event dismiss on expiry).

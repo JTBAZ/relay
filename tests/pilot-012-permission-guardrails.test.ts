@@ -12,9 +12,8 @@ import {
 
 const ROOT = join(__dirname, "..");
 
-/** Post-G9 surfaces: legacy Inspect/PostBatch shells deleted. */
-const CREATOR_SURFACES: Array<{ path: string; label: string }> = [
-  { path: "web/app/components/BulkActionBar.tsx", label: "bulk visibility panel" },
+/** Surfaces that still render the shared permission headline (explanatory copy). */
+const HEADLINE_SURFACES: Array<{ path: string; label: string }> = [
   { path: "web/app/components/LibraryPowerPanel.tsx", label: "LibraryPowerPanel" },
   { path: "web/app/components/studio/AudiencePromotionPanel.tsx", label: "Audience & Promotion" },
   { path: "web/app/components/GallerySidebar.tsx", label: "GallerySidebar filters" }
@@ -31,11 +30,19 @@ describe("PILOT-012 — permission override guardrails", () => {
   });
 
   it("creator Library surfaces render shared permission headline", () => {
-    for (const { path, label } of CREATOR_SURFACES) {
+    for (const { path, label } of HEADLINE_SURFACES) {
       const src = readFileSync(join(ROOT, path), "utf8");
       expect(src, `${label} should import shared copy`).toMatch(/pilot-permission-copy/);
       expect(src, `${label} should render headline`).toMatch(/\{PILOT_PERMISSION_HEADLINE\}/);
     }
+  });
+
+  it("BulkActionBar keeps Hidden / Adult separate from tier access reference", () => {
+    const bar = readFileSync(join(ROOT, "web/app/components/BulkActionBar.tsx"), "utf8");
+    expect(bar).toMatch(/data-visibility-switchboard/);
+    expect(bar).toMatch(/label="Hidden"/);
+    expect(bar).toMatch(/Tier access/);
+    expect(bar).not.toContain("PILOT_PERMISSION_HEADLINE");
   });
 
   it("GallerySidebar distinguishes library filters from patron hide actions", () => {

@@ -17,7 +17,7 @@ This map connects each acceptance gate to one primary implementation owner, cano
 | AU-09 Post-export distribution | VS6 | VS3 | plan/variant/attempt services | Preview-media ordering + handoff tests |
 | AU-10 Lifecycle/expiry | VS4 | VS2, VS5, VS6, VS7 | connector children + run/event | Pause/archive/expiry/recovery tests |
 | AU-11 Delayed release parity | VS3 | VS2, VS7 | distribution rule/worker | Legacy parity + wrapper sync tests |
-| AU-12 Integrated safety | VS8 | all | full existing spine | Automated matrix + browser evidence |
+| AU-12 Integrated safety | VS8 | all | full existing spine | Automated matrix (`tests/automations/integration.test.ts`, `concurrency.test.ts`) + [`../../qa/AUTOMATIONS_VS8_B19_EVIDENCE.md`](../../qa/AUTOMATIONS_VS8_B19_EVIDENCE.md); browser/flag/migration remain human gates |
 
 ## Contract ownership
 
@@ -32,7 +32,7 @@ This map connects each acceptance gate to one primary implementation owner, cano
 | Rail metadata and manual-event attention projection | VS5 | VS6–VS8 |
 | Initial Previewizer config and approval receipt | VS6 | VS7, VS8 |
 | Modal flow/state machine | VS7 | VS8 |
-| Rollout and verification evidence | VS8 | release owner |
+| Rollout and verification evidence | VS8 (B19–B20 Done; human release pending) | release owner — [`../AUTOMATIONS_RUNBOOK.md`](../AUTOMATIONS_RUNBOOK.md), [`../../qa/AUTOMATIONS_RELEASE_EVIDENCE.md`](../../qa/AUTOMATIONS_RELEASE_EVIDENCE.md) |
 
 Downstream slices may extend responses only through an upstream-owned contract change and fixture update. They must not infer public wire fields from Prisma rows.
 
@@ -103,7 +103,7 @@ No other slice may create a shadow status ledger for the same responsibility.
 6. VS5 proves future and ready work appear through existing rail/reminder atoms.
 7. VS6 proves saved-template review and post-export distribution preserve human confirmation.
 8. VS7 proves the accessible, gated modal manages both presets.
-9. VS8 proves the complete flow and stages a reversible rollout.
+9. VS8 proves the complete automated flow, stages a reversible rollout, and leaves production migration/flag activation as a signed human release gate.
 
 ## Non-goals trace
 

@@ -3,8 +3,8 @@ import {
   clearAdminAttention,
   markAdminAttention
 } from "@/lib/admin/attention";
+import { assertAdminMutationAccess } from "@/lib/identity/admin-access";
 import { loadSite } from "@/lib/load-site";
-import { assertLocalOperatorMutation } from "@/lib/library-truth";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -16,14 +16,35 @@ type Body = {
 };
 
 /**
- * Admin attention marks — local-prototype operator only (header + loopback).
- * Not authentication. Does not delete export blobs or change entitlements.
+ * Admin attention marks.
+ * - Identity unset: local-operator (header + loopback) — not authentication.
+ * - Supabase configured: staff membership session required.
+ * Soft persona tier_ids never authorize this route.
  */
 export async function POST(request: Request) {
-  const access = assertLocalOperatorMutation(request, "Admin");
+  let site;
+  try {
+    site = loadSite();
+  } catch (err) {
+    return NextResponse.json(
+      {
+        ok: false,
+        error: err instanceof Error ? err.message : "Failed to load site.",
+        production_safe: false
+      },
+      { status: 400 }
+    );
+  }
+
+  const access = await assertAdminMutationAccess(request, site.site_id);
   if (!access.allowed) {
     return NextResponse.json(
-      { ok: false, error: access.error, production_safe: false },
+      {
+        ok: false,
+        error: access.error,
+        mode: access.mode,
+        production_safe: false
+      },
       { status: access.status }
     );
   }
@@ -42,20 +63,6 @@ export async function POST(request: Request) {
   if (!postId) {
     return NextResponse.json(
       { ok: false, error: "post_id is required.", production_safe: false },
-      { status: 400 }
-    );
-  }
-
-  let site;
-  try {
-    site = loadSite();
-  } catch (err) {
-    return NextResponse.json(
-      {
-        ok: false,
-        error: err instanceof Error ? err.message : "Failed to load site.",
-        production_safe: false
-      },
       { status: 400 }
     );
   }

@@ -76,7 +76,6 @@ function ExpandableEditor({
 type TabMotionProps = {
   active: boolean;
   reduceMotion: boolean | null;
-  enterX: number;
   exitX: number;
   enterDuration: number;
   exitDuration: number;
@@ -88,7 +87,6 @@ type TabMotionProps = {
 function PersistentTabBody({
   active,
   reduceMotion,
-  enterX,
   exitX,
   enterDuration,
   exitDuration,
@@ -273,7 +271,6 @@ export default function AudiencePromotionPanel({
 
   const motionShared = {
     reduceMotion,
-    enterX,
     exitX,
     enterDuration,
     exitDuration

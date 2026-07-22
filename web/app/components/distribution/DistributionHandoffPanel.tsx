@@ -33,6 +33,16 @@ type VariantSendState = {
 type Props = {
   plan: DistributionPlanWire;
   onComplete: () => void;
+  /**
+   * Optional Automations hook: fires after a durable attempt exists
+   * (extension handoff start, or Bluesky posted).
+   */
+  onDurableAttempt?: (args: {
+    attemptId: string;
+    variantId: string;
+    destination: string;
+    status: string;
+  }) => void | Promise<void>;
 };
 
 function formatScheduledFor(iso: string | null): string {
@@ -48,7 +58,7 @@ function formatScheduledFor(iso: string | null): string {
   });
 }
 
-export function DistributionHandoffPanel({ plan, onComplete }: Props) {
+export function DistributionHandoffPanel({ plan, onComplete, onDurableAttempt }: Props) {
   const [sendState, setSendState] = useState<Record<string, VariantSendState>>({});
   const [fallbackVariant, setFallbackVariant] = useState<DistributionVariantWire | null>(null);
   const [manualUrl, setManualUrl] = useState("");
@@ -143,6 +153,12 @@ export function DistributionHandoffPanel({ plan, onComplete }: Props) {
           attemptId: attempt.attempt_id,
           fillStatus: "posted"
         });
+        await onDurableAttempt?.({
+          attemptId: attempt.attempt_id,
+          variantId: variant.variant_id,
+          destination: variant.destination,
+          status: "posted"
+        });
         return;
       }
 
@@ -157,6 +173,12 @@ export function DistributionHandoffPanel({ plan, onComplete }: Props) {
       }
 
       const { attempt } = await startDistributionHandoff(variant.variant_id);
+      await onDurableAttempt?.({
+        attemptId: attempt.attempt_id,
+        variantId: variant.variant_id,
+        destination: variant.destination,
+        status: "started"
+      });
       const result = await sendRelayCrossPostToExtension(plan.post_id, variant.destination, undefined, {
         distribution_attempt_id: attempt.attempt_id
       });

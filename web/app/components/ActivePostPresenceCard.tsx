@@ -6,7 +6,17 @@ import { EyeOff, Layers } from "lucide-react";
 import { CrosspostChipRow } from "@/app/components/distribution/platform-presence-chips";
 import { accessChipLabel } from "@/app/components/GalleryGridTile";
 import { postCarouselMainVisual } from "@/app/components/PostAssetCarouselStrip";
-import { summaryToPresence } from "@/lib/active-post-presence";
+import {
+  Lab2DestBadge,
+  Lab2StatusBar,
+  Lab2StatusPill,
+  lab2HueFromSeed
+} from "@/app/components/studio-lab2/lab2-card-chrome";
+import {
+  galleryPostLifecycleStatus,
+  summaryToPresence,
+  type GalleryPostLifecycle
+} from "@/lib/active-post-presence";
 import { pickPrimaryAccessTierIdForChip } from "@/lib/tier-access";
 import type { GalleryItem, TierFacet } from "@/lib/relay-api";
 
@@ -21,6 +31,10 @@ type Props = {
   selected: boolean;
   partiallySelected?: boolean;
   flatIndex: number;
+  /** CSS aspect-ratio. Lab uses square tiles; classic stays portrait; lab2 uses v0 4/3. */
+  aspectRatio?: string;
+  /** lab2 adds v0 status pill chrome over live media. */
+  presentation?: "default" | "lab2";
   onToggleSelect: (items: GalleryItem[]) => void;
   /** Open packaging hero for this post (body / Enter). */
   onOpen: (items: GalleryItem[]) => void;
@@ -40,6 +54,8 @@ export default function ActivePostPresenceCard({
   selected,
   partiallySelected = false,
   flatIndex,
+  aspectRatio = "3 / 4",
+  presentation = "default",
   onToggleSelect,
   onOpen,
   onFocusIndex,
@@ -85,6 +101,14 @@ export default function ActivePostPresenceCard({
       ? pickPrimaryAccessTierIdForChip(primary.tier_ids, tierFacets)
       : null;
   const audienceLabel = tierId ? accessChipLabel(tierId, tierTitleById) : "";
+  const isLab2 = presentation === "lab2";
+  const lifecycle: GalleryPostLifecycle = galleryPostLifecycleStatus(primary);
+  const publishedLabel = (() => {
+    if (!primary.published_at) return null;
+    const d = new Date(primary.published_at);
+    if (Number.isNaN(d.getTime())) return null;
+    return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  })();
 
   const selectLabel =
     items.length > 1
@@ -92,6 +116,8 @@ export default function ActivePostPresenceCard({
       : `Select ${primary.title}`;
 
   const main = postCarouselMainVisual(item);
+  const primaryDest = presentDests[0] ?? null;
+  const cardHue = lab2HueFromSeed(primary.post_id || primary.title || String(flatIndex));
 
   const borderColor = selected
     ? `${MINT}80`
@@ -109,13 +135,181 @@ export default function ActivePostPresenceCard({
     if (e.button === 0) e.preventDefault();
   };
 
+  const onKeyActivate = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      onOpen(items);
+    } else if (e.key === " ") {
+      e.preventDefault();
+      onToggleSelect(items);
+    }
+  };
+
+  const selectControl = (opts?: { hideUntilActive?: boolean }) => (
+    <label
+      className="z-20 flex cursor-pointer items-center justify-center"
+      onClick={(e) => e.stopPropagation()}
+      style={{
+        width: opts?.hideUntilActive ? 18 : 20,
+        height: opts?.hideUntilActive ? 18 : 20,
+        borderRadius: 9999,
+        background: selected
+          ? MINT
+          : hovered || partiallySelected
+            ? "rgba(0,0,0,0.55)"
+            : "transparent",
+        border: selected
+          ? "none"
+          : `1px solid ${hovered || partiallySelected ? "#555" : "transparent"}`,
+        opacity:
+          opts?.hideUntilActive && !(selected || hovered || partiallySelected) ? 0 : 1
+      }}
+    >
+      <input
+        ref={selectCheckboxRef}
+        type="checkbox"
+        checked={selected}
+        onChange={() => onToggleSelect(items)}
+        onClick={(e) => e.stopPropagation()}
+        className="peer sr-only"
+        aria-label={selectLabel}
+      />
+      {selected ? (
+        <svg viewBox="0 0 12 12" className="h-2.5 w-2.5" aria-hidden>
+          <path
+            d="M2 6l3 3 5-5"
+            fill="none"
+            stroke="#050706"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </svg>
+      ) : null}
+    </label>
+  );
+
+  /* ── lab2: v0 /4 GalleryCard chrome (tinted tile, dest + status, muted title) ── */
+  if (isLab2) {
+    return (
+      <div
+        data-gallery-tile
+        data-lab2-card
+        role="listitem"
+        className="group relative flex w-full min-w-0 cursor-pointer flex-col justify-between overflow-hidden rounded-xl border border-[#141e16] p-2.5 text-left outline-none transition-all duration-150 hover:scale-[1.015] hover:border-[#2a3e2e] [&:has(:focus-visible)]:ring-2 [&:has(:focus-visible)]:ring-[var(--lib-ring)]"
+        style={{
+          aspectRatio,
+          backgroundColor: cardHue,
+          boxShadow: selected ? "0 0 0 1px #9bf0c440, 0 0 16px #9bf0c415" : "none",
+          zIndex: hovered ? 10 : 0
+        }}
+        tabIndex={0}
+        onClick={() => onOpen(items)}
+        onFocus={() => onFocusIndex(flatIndex)}
+        onMouseEnter={() => setHovered(true)}
+        onMouseLeave={() => setHovered(false)}
+        onKeyDown={onKeyActivate}
+      >
+        {/* Optional media as faint plane — never displaces chrome */}
+        <div className="pointer-events-none absolute inset-0" onMouseDown={skipMouseFocus}>
+          {main.relayProcessing ? null : main.src && main.isVideo ? (
+            <video
+              className="block h-full w-full object-cover object-center opacity-[0.28]"
+              src={main.src}
+              muted
+              playsInline
+              preload="metadata"
+              aria-hidden
+            />
+          ) : main.src ? (
+            // eslint-disable-next-line @next/next/no-img-element -- relay-served export URLs
+            <img
+              key={main.src + activeSlide}
+              src={main.src}
+              alt=""
+              className="block h-full w-full object-cover object-center opacity-[0.28]"
+            />
+          ) : null}
+          <div
+            className="absolute inset-0"
+            style={{
+              background:
+                "linear-gradient(to top, rgba(5,7,6,0.55) 0%, transparent 55%)"
+            }}
+          />
+        </div>
+
+        {primary.visibility === "hidden" ? (
+          <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-black/35">
+            <EyeOff className="h-6 w-6 text-white/70" aria-hidden />
+          </div>
+        ) : null}
+
+        {/* Top: dest badge + status (checkbox only when active) */}
+        <div className="relative z-10 flex items-start justify-between gap-1">
+          <div className="flex items-center gap-1">
+            {selectControl({ hideUntilActive: true })}
+            <Lab2DestBadge dest={primaryDest} />
+            {isMultiMedia ? (
+              <span
+                className="flex items-center gap-0.5 rounded px-1 py-0.5 text-[8px] font-medium"
+                style={{
+                  background: `${AMBER}18`,
+                  border: `1px solid ${AMBER}44`,
+                  color: AMBER
+                }}
+              >
+                <Layers className="h-2 w-2" aria-hidden />
+                {mediaCount}
+              </span>
+            ) : null}
+          </div>
+          <Lab2StatusPill status={lifecycle} />
+        </div>
+
+        {/* Bottom: optional chips on hover, title, date, status bar */}
+        <div className="relative z-10 flex flex-col gap-1">
+          {hovered ? (
+            <div
+              className="mb-0.5"
+              onClick={(e) => e.stopPropagation()}
+              onKeyDown={(e) => e.stopPropagation()}
+            >
+              <CrosspostChipRow
+                present={presentDests}
+                missing={missing}
+                parentHovered={hovered}
+                presentUrls={presentUrls}
+                onPresentActivate={(destination, externalUrl) => {
+                  onPresentClick(destination, externalUrl);
+                }}
+                onGhostActivate={(destination) => {
+                  onGhostClick(destination, items);
+                }}
+              />
+            </div>
+          ) : null}
+          <p className="line-clamp-2 text-[10.5px] font-medium leading-tight text-[#8ea898]">
+            {primary.title || "Untitled"}
+          </p>
+          <div className="flex items-center justify-between gap-2">
+            <span className="truncate text-[8.5px] tabular-nums text-[#3a4a3e]">
+              {publishedLabel || audienceLabel || (isMultiMedia ? `${mediaCount} pages` : "—")}
+            </span>
+            <Lab2StatusBar status={lifecycle} />
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div
       data-gallery-tile
       role="listitem"
       className="group relative w-full min-w-0 overflow-hidden rounded-xl border text-left outline-none transition-all duration-200 [&:has(:focus-visible)]:ring-2 [&:has(:focus-visible)]:ring-[var(--lib-ring)]"
       style={{
-        aspectRatio: "3 / 4",
+        aspectRatio,
         borderColor,
         background: "#0a0a0a",
         transform: hovered ? "translateY(-2px) scale(1.01)" : "none",
@@ -133,15 +327,7 @@ export default function ActivePostPresenceCard({
       onFocus={() => onFocusIndex(flatIndex)}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
-      onKeyDown={(e) => {
-        if (e.key === "Enter") {
-          e.preventDefault();
-          onOpen(items);
-        } else if (e.key === " ") {
-          e.preventDefault();
-          onToggleSelect(items);
-        }
-      }}
+      onKeyDown={onKeyActivate}
     >
       {/* Full-bleed media */}
       <div className="absolute inset-0" onMouseDown={skipMouseFocus}>
@@ -207,45 +393,7 @@ export default function ActivePostPresenceCard({
       ) : null}
 
       {/* Checkbox — top-left (v0 circular mint) */}
-      <label
-        className="absolute left-2 top-2 z-20 flex cursor-pointer items-center justify-center"
-        onClick={(e) => e.stopPropagation()}
-        style={{
-          width: 20,
-          height: 20,
-          borderRadius: 9999,
-          background: selected
-            ? MINT
-            : hovered || partiallySelected
-              ? "rgba(0,0,0,0.55)"
-              : "transparent",
-          border: selected
-            ? "none"
-            : `1px solid ${hovered || partiallySelected ? "#555" : "transparent"}`
-        }}
-      >
-        <input
-          ref={selectCheckboxRef}
-          type="checkbox"
-          checked={selected}
-          onChange={() => onToggleSelect(items)}
-          onClick={(e) => e.stopPropagation()}
-          className="peer sr-only"
-          aria-label={selectLabel}
-        />
-        {selected ? (
-          <svg viewBox="0 0 12 12" className="h-2.5 w-2.5" aria-hidden>
-            <path
-              d="M2 6l3 3 5-5"
-              fill="none"
-              stroke="#050706"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          </svg>
-        ) : null}
-      </label>
+      <div className="absolute left-2 top-2">{selectControl()}</div>
 
       {/* Carousel dots */}
       {isMultiMedia ? (

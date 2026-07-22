@@ -2721,6 +2721,10 @@ enum NotificationKind {
   reveal_expiring
   /// Fan — monthly Tip allowance landed (MB-9+).
   tips_granted
+  /// Creator inbox — Automations skip: no new eligible source post (VS5).
+  automation_no_new_post
+  /// Creator inbox — Automations approval TTL expired without action (VS5).
+  automation_approval_expired
 }
 
 /// PE-G (BO-P3-03) — durable per-recipient notification rows.

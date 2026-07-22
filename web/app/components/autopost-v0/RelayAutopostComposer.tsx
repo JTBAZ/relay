@@ -1,4 +1,4 @@
-﻿"use client"
+"use client"
 
 import { useCallback, useEffect, useMemo, useState } from "react"
 import { AnimatePresence, motion } from "framer-motion"
@@ -549,10 +549,13 @@ function DraftInitialPostScreen({
 export function RelayAutopostComposer({
   initialMediaIds = [],
   initialDraftId = null,
+  prefillMode = "continue",
   onPlanRequired,
 }: {
   initialMediaIds?: string[]
   initialDraftId?: string | null
+  /** platforms = media preselected on pick step; continue = auto-advance past pick. */
+  prefillMode?: "continue" | "platforms"
   /** MB-15A — server 402 wins over stale client allow state. */
   onPlanRequired?: () => void
 }) {
@@ -569,7 +572,7 @@ export function RelayAutopostComposer({
   const [pickContinueBusy, setPickContinueBusy] = useState(false)
   const [resumeBootstrapping, setResumeBootstrapping] = useState(Boolean(initialDraftId?.trim()))
   const [prefillBootstrapping, setPrefillBootstrapping] = useState(
-    prefillMediaIds.length > 0 && !initialDraftId?.trim()
+    prefillMode === "continue" && prefillMediaIds.length > 0 && !initialDraftId?.trim()
   )
   const [selectedDestinations, setSelectedDestinations] = useState<DistributionDestination[]>([])
   const [sourcePreview, setSourcePreview] = useState<AutopostDraftWire["source_preview"]>(null)
@@ -722,6 +725,11 @@ export function RelayAutopostComposer({
       setPrefillBootstrapping(false)
       return
     }
+    // Schedule Rail AutoPost: land on pick/platform step with media preselected.
+    if (prefillMode === "platforms") {
+      setPrefillBootstrapping(false)
+      return
+    }
     const cid = creatorId.trim()
     if (!cid) return
 
@@ -759,7 +767,7 @@ export function RelayAutopostComposer({
     return () => {
       cancelled = true
     }
-  }, [creatorId, handleUploadAndSelect, prefillMediaIds, initialDraftId])
+  }, [creatorId, handleUploadAndSelect, prefillMediaIds, initialDraftId, prefillMode])
 
   const handlePublishToRelay = useCallback(async (
     draft: DraftInitialPost,

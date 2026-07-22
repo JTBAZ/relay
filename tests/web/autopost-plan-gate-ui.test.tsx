@@ -17,6 +17,10 @@ vi.mock("@/app/components/autopost-v0/RelayAutopostComposer", () => ({
   RelayAutopostComposer: () => <div data-testid="autopost-composer">composer</div>
 }));
 
+vi.mock("@/app/components/automations/AutomationApprovalOverlay", () => ({
+  AutomationApprovalOverlay: () => null
+}));
+
 vi.mock("@/lib/relay-api", async () => {
   class StubRelayApiError extends Error {
     public override readonly name = "RelayApiError";

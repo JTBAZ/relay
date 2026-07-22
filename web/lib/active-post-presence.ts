@@ -80,6 +80,37 @@ export function summaryToPresence(
   return { present, missing };
 }
 
+/** Map a library post onto v0 Active Posts filter pills (live / scheduled / draft). */
+export type GalleryPostLifecycle = "live" | "scheduled" | "draft";
+
+export function galleryPostLifecycleStatus(
+  item: {
+    published_at?: string;
+    visibility?: string;
+    distribution_summary?: DistributionSummaryLike;
+  } | null | undefined
+): GalleryPostLifecycle {
+  if (!item) return "draft";
+  const { present } = summaryToPresence(item.distribution_summary);
+  if (present.length > 0) return "live";
+  const dests = item.distribution_summary?.destinations ?? [];
+  const scheduledish = dests.some((d) => {
+    const s = (d.attempt_status ?? "").toLowerCase();
+    return (
+      s === "scheduled" ||
+      s === "queued" ||
+      s === "pending" ||
+      s === "planned" ||
+      s === "fill_sent"
+    );
+  });
+  if (scheduledish) return "scheduled";
+  if (item.visibility === "hidden" || item.visibility === "review") return "draft";
+  if (item.published_at) return "live";
+  return "draft";
+}
+
+
 /** Media ids suitable for `/studio/autopost?media_ids=` (skip text-only stubs). */
 export function autopostMediaIdsFromItems(
   items: Array<{ media_id: string }>

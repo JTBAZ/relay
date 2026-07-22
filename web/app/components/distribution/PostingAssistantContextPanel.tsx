@@ -340,9 +340,10 @@ export function RelayCoachModal({
 }
 
 /** @deprecated Prefer RelayCoachModal — kept for type re-exports. */
-export function PostingAssistantContextPanel(_props: {
+export function PostingAssistantContextPanel(props: {
   value: PostingAssistantContextValue;
   onChange: (next: PostingAssistantContextValue) => void;
 }) {
+  void props;
   return null;
 }

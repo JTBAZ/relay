@@ -19,6 +19,7 @@ export const RELAY_JOB_QUEUE_NAMES = {
   DISTRIBUTION_SCHEDULE_REMINDER: "distribution_schedule_reminder",
   AUTOPOST_SCHEDULE_SERIES: "autopost_schedule_series",
   AUTOPOST_DISTRIBUTION_RULES: "autopost_distribution_rules",
+  AUTOPOST_AUTOMATIONS: "autopost_automations",
   TIP_GRANT: "tip_grant",
   BILL_CREDIT_SETTLEMENT: "bill_credit_settlement",
   REVEAL_EXPIRY: "reveal_expiry",
@@ -47,6 +48,7 @@ export const ALL_RELAY_JOB_QUEUE_NAMES: readonly RelayJobQueueName[] = [
   RELAY_JOB_QUEUE_NAMES.DISTRIBUTION_SCHEDULE_REMINDER,
   RELAY_JOB_QUEUE_NAMES.AUTOPOST_SCHEDULE_SERIES,
   RELAY_JOB_QUEUE_NAMES.AUTOPOST_DISTRIBUTION_RULES,
+  RELAY_JOB_QUEUE_NAMES.AUTOPOST_AUTOMATIONS,
   RELAY_JOB_QUEUE_NAMES.TIP_GRANT,
   RELAY_JOB_QUEUE_NAMES.BILL_CREDIT_SETTLEMENT,
   RELAY_JOB_QUEUE_NAMES.REVEAL_EXPIRY,
@@ -149,6 +151,12 @@ export type AutopostDistributionRulesJobData = RelayJobTraceFields & {
   creatorId?: string;
 };
 
+/** Schedule Rail Automations trigger reconcile (skip / pending / expiry / prepare). */
+export type AutopostAutomationsJobData = RelayJobTraceFields & {
+  /** Optional: restrict cycle to one Relay creator id (ops / replay). */
+  creatorId?: string;
+};
+
 /** Tip beta monthly grant sweep (see tip-grant-worker). */
 export type TipGrantJobData = RelayJobTraceFields & {
   /** Optional: grant for a single account id (ops / replay). */
@@ -212,6 +220,7 @@ export type RelayJobPayloadByQueue = {
   [RELAY_JOB_QUEUE_NAMES.DISTRIBUTION_SCHEDULE_REMINDER]: DistributionScheduleReminderJobData;
   [RELAY_JOB_QUEUE_NAMES.AUTOPOST_SCHEDULE_SERIES]: AutopostScheduleSeriesJobData;
   [RELAY_JOB_QUEUE_NAMES.AUTOPOST_DISTRIBUTION_RULES]: AutopostDistributionRulesJobData;
+  [RELAY_JOB_QUEUE_NAMES.AUTOPOST_AUTOMATIONS]: AutopostAutomationsJobData;
   [RELAY_JOB_QUEUE_NAMES.TIP_GRANT]: TipGrantJobData;
   [RELAY_JOB_QUEUE_NAMES.BILL_CREDIT_SETTLEMENT]: BillCreditSettlementJobData;
   [RELAY_JOB_QUEUE_NAMES.REVEAL_EXPIRY]: RevealExpiryJobData;

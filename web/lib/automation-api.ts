@@ -73,6 +73,23 @@ export type AutomationRunHistoryWire = {
   completed_at: string | null;
 };
 
+export type AutomationApprovalContextWire = {
+  automation_id: string;
+  run_id: string;
+  draft_id: string;
+  source_post_id: string;
+  source_media_id: string | null;
+  source_image_export_path: string | null;
+  target_destinations: AutomationDestination[];
+  preview_template_snapshot: Record<string, unknown> | null;
+  preview_template_id: string | null;
+  status: string;
+  expires_at: string | null;
+  version: number;
+  existing_plan_id: string | null;
+  existing_attempt_id: string | null;
+};
+
 export type CreateAutomationBody = {
   preset_kind: AutomationPresetKind;
   title?: string | null;
@@ -159,4 +176,59 @@ export async function listAutomationRuns(
     `${BASE}/${encodeURIComponent(automationId)}/runs`
   );
   return out.runs ?? [];
+}
+
+export async function getAutomationApprovalContext(
+  automationId: string,
+  runId: string
+): Promise<AutomationApprovalContextWire> {
+  const out = await relayFetch<{ approval_context: AutomationApprovalContextWire }>(
+    `${BASE}/${encodeURIComponent(automationId)}/runs/${encodeURIComponent(runId)}/approval-context`
+  );
+  return out.approval_context;
+}
+
+export async function correlateAutomationRunPlan(
+  automationId: string,
+  runId: string,
+  planId: string
+): Promise<{ correlated: boolean }> {
+  return relayFetch<{ correlated: boolean }>(
+    `${BASE}/${encodeURIComponent(automationId)}/runs/${encodeURIComponent(runId)}/correlate-plan`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ plan_id: planId })
+    }
+  );
+}
+
+export type AutomationRunMutationResult = {
+  run: AutomationRunHistoryWire;
+  applied: boolean;
+};
+
+export async function completeAutomationRun(
+  automationId: string,
+  runId: string,
+  body?: { attempt_id?: string | null }
+): Promise<AutomationRunMutationResult> {
+  return relayFetch<AutomationRunMutationResult>(
+    `${BASE}/${encodeURIComponent(automationId)}/runs/${encodeURIComponent(runId)}/complete`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body ?? {})
+    }
+  );
+}
+
+export async function cancelAutomationRun(
+  automationId: string,
+  runId: string
+): Promise<AutomationRunMutationResult> {
+  return relayFetch<AutomationRunMutationResult>(
+    `${BASE}/${encodeURIComponent(automationId)}/runs/${encodeURIComponent(runId)}/cancel`,
+    { method: "POST" }
+  );
 }

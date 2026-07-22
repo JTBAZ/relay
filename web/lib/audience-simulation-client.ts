@@ -19,6 +19,7 @@ export type SimulatorPersonaOption = {
   label: string;
   outcome: AudienceSimulationEnvelope["simulation"]["personas"][number]["outcome"];
   reason?: string;
+  effective_promo?: AudienceSimulationEnvelope["simulation"]["personas"][number]["effective_promo"];
 };
 
 export function personasFromSimulationEnvelope(
@@ -32,7 +33,8 @@ export function personasFromSimulationEnvelope(
       persona_key: key,
       label: p.label,
       outcome: p.outcome,
-      reason: p.reason
+      reason: p.reason,
+      effective_promo: p.effective_promo ?? null
     });
   }
   return out;

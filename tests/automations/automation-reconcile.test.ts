@@ -4,7 +4,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   createOrGetAutomationRunForOccurrence,
-  prepareAutomationOccurrenceWork
+  expireStaleAutomationRuns,
+  prepareAutomationOccurrenceWork,
+  reconcileAutomations
 } from "../../src/autopost/automation-reconcile-service.js";
 import { automationRunIdempotencyKeyForOccurrence } from "../../src/autopost/automation-contract.js";
 import { AUTOMATIONS_QA_PERSONA, AUTOMATIONS_QA_POSTS } from "./fixtures.js";
@@ -287,5 +289,261 @@ describe("prepareAutomationOccurrenceWork", () => {
     expect(result.status).toBe("source_media_required");
     expect(runs.size).toBe(1);
     expect(mockedMaterialize).toHaveBeenCalled();
+  });
+});
+
+describe("reconcileAutomations (AUT-VS4-T03)", () => {
+  const NOW = new Date("2026-07-20T15:00:00.000Z");
+
+  beforeEach(() => {
+    mockedMaterialize.mockReset();
+    mockedResolve.mockReset();
+    process.env.RELAY_FEATURE_AUTOMATIONS = "true";
+  });
+
+  function createCoordinatorMemory(opts?: {
+    awaitingRun?: { id: string; status: string } | null;
+    staleRuns?: Array<{ id: string; expiresAt: Date; status: string }>;
+    dueOccurrences?: Array<{ id: string; status: string }>;
+  }) {
+    const occs = new Map(
+      (opts?.dueOccurrences ?? [{ id: OCC, status: "planned" }]).map((o) => [
+        o.id,
+        {
+          id: o.id,
+          seriesId: SERIES,
+          creatorId: CREATOR,
+          dueAt: new Date("2026-07-20T14:00:00.000Z"),
+          status: o.status,
+          draftId: null as string | null,
+          failureReason: null as string | null,
+          materializedAt: null as Date | null
+        }
+      ])
+    );
+    const runs = new Map(
+      (opts?.staleRuns ?? []).map((r) => [
+        r.id,
+        {
+          id: r.id,
+          creatorId: CREATOR,
+          ruleId: RULE,
+          status: r.status,
+          expiresAt: r.expiresAt,
+          scheduleOccurrenceId: OCC as string | null
+        }
+      ])
+    );
+    let awaiting = opts?.awaitingRun ?? null;
+
+    const prisma = {
+      creatorDistributionRuleRun: {
+        findMany: vi.fn(async ({ where }: { where: Record<string, unknown> }) => {
+          // expire sweep
+          if (where.status === "materialized" && where.expiresAt) {
+            return [...runs.values()]
+              .filter((r) => r.status === "materialized" && r.expiresAt <= NOW)
+              .map((r) => ({
+                id: r.id,
+                creatorId: r.creatorId,
+                ruleId: r.ruleId,
+                scheduleOccurrenceId: r.scheduleOccurrenceId
+              }));
+          }
+          return [];
+        }),
+        findFirst: vi.fn(async () => awaiting),
+        updateMany: vi.fn(
+          async ({
+            where,
+            data
+          }: {
+            where: { id: string; status: string };
+            data: Record<string, unknown>;
+          }) => {
+            const row = runs.get(where.id);
+            if (!row || row.status !== where.status) return { count: 0 };
+            Object.assign(row, data);
+            return { count: 1 };
+          }
+        ),
+        findUnique: vi.fn(async () => null),
+        create: vi.fn(async ({ data }: { data: Record<string, unknown> }) => {
+          const row = {
+            id: "run_new",
+            ruleId: data.ruleId as string,
+            creatorId: data.creatorId as string,
+            sourcePostId: data.sourcePostId as string,
+            idempotencyKey: data.idempotencyKey as string,
+            scheduleOccurrenceId: data.scheduleOccurrenceId as string,
+            status: "pending",
+            draftId: null
+          };
+          return row;
+        })
+      },
+      creatorAutomation: {
+        findFirst: vi.fn(async ({ where }: { where: Record<string, unknown> }) => {
+          if (where.distributionRuleId === RULE || where.id === AUTO) {
+            return {
+              id: AUTO,
+              distributionRuleId: RULE,
+              scheduleSeriesId: SERIES,
+              creatorId: CREATOR
+            };
+          }
+          return null;
+        }),
+        findMany: vi.fn(async () => [
+          {
+            id: AUTO,
+            creatorId: CREATOR,
+            distributionRuleId: RULE,
+            scheduleSeriesId: SERIES
+          }
+        ])
+      },
+      creatorScheduleOccurrence: {
+        findMany: vi.fn(async () =>
+          [...occs.values()]
+            .filter((o) => o.status === "planned")
+            .map((o) => ({
+              id: o.id,
+              seriesId: o.seriesId,
+              creatorId: o.creatorId,
+              dueAt: o.dueAt
+            }))
+        ),
+        findFirst: vi.fn(async ({ where }: { where: Record<string, unknown> }) => {
+          const row = occs.get(where.id as string);
+          if (!row) return null;
+          return {
+            ...row,
+            series: { materializationKind: "automation_trigger", status: "active" }
+          };
+        }),
+        updateMany: vi.fn(
+          async ({
+            where,
+            data
+          }: {
+            where: { id: string; status: string };
+            data: Record<string, unknown>;
+          }) => {
+            const row = occs.get(where.id);
+            if (!row || row.status !== where.status) return { count: 0 };
+            Object.assign(row, data);
+            return { count: 1 };
+          }
+        )
+      }
+    };
+
+    return { prisma: prisma as any, occs, runs, setAwaiting: (v: typeof awaiting) => (awaiting = v) };
+  }
+
+  it("flag-off performs no discovery/materialization and preserves prepared runs", async () => {
+    process.env.RELAY_FEATURE_AUTOMATIONS = "false";
+    const preparedId = "run_prepared_keep";
+    const { prisma, runs, occs } = createCoordinatorMemory({
+      awaitingRun: { id: preparedId, status: "materialized" },
+      staleRuns: [
+        {
+          id: preparedId,
+          status: "materialized",
+          // Future expiry — must not be swept while flag is off either.
+          expiresAt: new Date("2026-07-23T14:00:00.000Z")
+        }
+      ]
+    });
+    const result = await reconcileAutomations(prisma, { now: NOW });
+    expect(result).toMatchObject({
+      expired: 0,
+      claimed: 0,
+      materialized: 0,
+      skipped_no_post: 0,
+      skipped_awaiting_review: 0,
+      failed: 0
+    });
+    expect(result.notification_intents).toEqual([]);
+    expect(mockedResolve).not.toHaveBeenCalled();
+    expect(runs.get(preparedId)?.status).toBe("materialized");
+    expect(occs.get(OCC)?.status).toBe("planned");
+  });
+
+  it("skips due occurrence while awaiting review without creating work", async () => {
+    const { prisma, occs } = createCoordinatorMemory({
+      awaitingRun: { id: "run_open", status: "materialized" }
+    });
+    const result = await reconcileAutomations(prisma, { now: NOW });
+    expect(result.skipped_awaiting_review).toBe(1);
+    expect(occs.get(OCC)!.status).toBe("skipped");
+    expect(occs.get(OCC)!.failureReason).toBe("awaiting_review");
+    expect(mockedResolve).not.toHaveBeenCalled();
+  });
+
+  it("marks no-new-post skipped and emits deduped notification intent", async () => {
+    const { prisma, occs } = createCoordinatorMemory({ awaitingRun: null });
+    mockedResolve.mockResolvedValue({ ok: false, code: "AUTOMATION_NO_ELIGIBLE_POST" });
+    const result = await reconcileAutomations(prisma, { now: NOW });
+    expect(result.skipped_no_post).toBe(1);
+    expect(occs.get(OCC)!.status).toBe("skipped");
+    expect(result.notification_intents).toEqual([
+      {
+        kind: "automation_no_new_post",
+        creator_id: CREATOR,
+        automation_id: AUTO,
+        occurrence_id: OCC,
+        dedupe_key: `automation_no_new_post:occurrence:${OCC}`
+      }
+    ]);
+  });
+
+  it("expires stale materialized runs idempotently", async () => {
+    const { prisma, runs } = createCoordinatorMemory({
+      dueOccurrences: [],
+      staleRuns: [
+        {
+          id: "run_stale",
+          status: "materialized",
+          expiresAt: new Date("2026-07-19T00:00:00.000Z")
+        }
+      ]
+    });
+    const first = await expireStaleAutomationRuns(prisma, { now: NOW });
+    expect(first.expired).toBe(1);
+    expect(runs.get("run_stale")!.status).toBe("expired");
+    expect(first.notification_intents[0]?.dedupe_key).toBe(
+      "automation_approval_expired:run:run_stale"
+    );
+    const second = await expireStaleAutomationRuns(prisma, { now: NOW });
+    expect(second.expired).toBe(0);
+  });
+
+  it("materializes due occurrence and recovers after crash (already planned→materialized)", async () => {
+    const { prisma, occs } = createCoordinatorMemory({ awaitingRun: null });
+    mockedResolve.mockResolvedValue({
+      ok: true,
+      source: {
+        post_id: POST,
+        published_at: PUBLISHED,
+        media_ids: ["m1"],
+        has_image_media: true
+      }
+    });
+    mockedMaterialize.mockResolvedValue({
+      status: "materialized",
+      run_id: "run_new",
+      draft_id: "draft_1"
+    });
+    const first = await reconcileAutomations(prisma, { now: NOW });
+    expect(first.materialized).toBe(1);
+    expect(occs.get(OCC)!.status).toBe("materialized");
+    expect(occs.get(OCC)!.draftId).toBe("draft_1");
+
+    // Second pass: occurrence no longer planned → nothing claimed
+    const second = await reconcileAutomations(prisma, { now: NOW });
+    expect(second.claimed).toBe(0);
+    expect(second.materialized).toBe(0);
   });
 });

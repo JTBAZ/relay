@@ -25,6 +25,30 @@ import {
 } from "@/lib/schedule-date-presets";
 import { isoFromDatetimeLocal } from "@/lib/goal-cycle-schedule-local";
 
+/** Lab2 floorplan tokens — soft mint chassis, not sharp gray cards. */
+const SHELL =
+  "animate-popover-in overflow-hidden rounded-2xl border border-[#242a27] bg-[#0e100f] shadow-2xl shadow-black/60 ring-1 ring-white/5";
+const HEADER =
+  "flex items-center justify-between border-b border-[#172018] px-4 pb-3 pt-4";
+const OPTION =
+  "rounded-xl border px-3 py-2.5 text-left text-[12px] transition-all duration-200 active:scale-[0.99]";
+const OPTION_ON =
+  "border-[#9bf0c4]/45 bg-[#9bf0c414] text-[#edf2ef] shadow-[0_0_0_1px_rgba(155,240,196,0.14)]";
+const OPTION_OFF =
+  "border-[#1e2a22] bg-[#0a0f0b] text-[#aaa] hover:border-[#243426] hover:text-[#c8d0cb]";
+const FIELD =
+  "w-full rounded-xl border border-[#242a27] bg-[#0a0f0b] px-3 py-2 text-[12px] text-[#e8e8e8] placeholder-[#555] [color-scheme:dark] focus:border-[#9bf0c4]/40 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#9bf0c4]/20";
+const PRIMARY =
+  "flex-1 rounded-xl bg-[#9bf0c4] py-2.5 text-[12px] font-medium text-[#050706] transition-all hover:bg-[#b8f5d4] active:scale-[0.98] disabled:opacity-40 disabled:hover:bg-[#9bf0c4] disabled:active:scale-100";
+const SECONDARY =
+  "flex-1 rounded-xl border border-[#242a27] bg-[#ffffff08] py-2.5 text-[12px] text-[#888] transition-all hover:border-[#9bf0c43d] hover:text-[#c8d0cb] disabled:opacity-50";
+const CHOICE_CARD =
+  "rounded-xl border border-[#1e2a22] bg-[#0a0f0b] px-3 py-2.5 text-left transition-all duration-200 hover:border-[#9bf0c43d] hover:bg-[#0e1410] active:scale-[0.99] disabled:opacity-40";
+const SUMMARY =
+  "rounded-xl border border-[#1e2a22] bg-[#0a100c] px-3 py-2.5";
+const LIST_SHELL =
+  "max-h-36 overflow-y-auto rounded-xl border border-[#1e2a22] bg-[#0a0f0b]";
+
 export type PlannedPostFormat = "text" | "image" | "video" | "mixed";
 
 export type CreateEventPayload = {
@@ -117,7 +141,6 @@ export function AddEventPopover({
   const [plannedFormat, setPlannedFormat] = useState<PlannedPostFormat>("image");
   const [destination, setDestination] = useState<NonNullable<Destination>>("patreon");
   const [destinations, setDestinations] = useState<NonNullable<Destination>[]>([]);
-  const [postStartMode, setPostStartMode] = useState<PostStartMode>("later");
   const [targetMode, setTargetMode] = useState<"new_post" | "existing_post" | "external_url">(
     "new_post"
   );
@@ -128,7 +151,6 @@ export function AddEventPopover({
   const [datetime, setDatetime] = useState(() => defaultScheduleDatetimeLocal(timeZone));
   const [datePreset, setDatePreset] = useState<ScheduleDatePresetId | null>(null);
   const [showDatePicker, setShowDatePicker] = useState(false);
-  const [notify, setNotify] = useState(true);
   const [note, setNote] = useState("");
   const [posts, setPosts] = useState<LibraryPostPickerRow[]>([]);
   const [postsLoading, setPostsLoading] = useState(false);
@@ -154,7 +176,6 @@ export function AddEventPopover({
   useEffect(() => {
     if (missingLink) {
       setEventType("make_post");
-      setPostStartMode("library");
       setTargetMode("existing_post");
       setPostId(missingLink.post_id);
       setDestination(missingLink.destination);
@@ -278,7 +299,7 @@ export function AddEventPopover({
           due_at: iso,
           title: FORMAT_TITLE[plannedFormat],
           note: "",
-          remind_me: notify,
+          remind_me: true,
           target_mode: "new_post",
           post_id: null,
           external_url: null,
@@ -299,7 +320,7 @@ export function AddEventPopover({
         due_at: iso,
         title: selectedPostTitle?.trim() || FORMAT_TITLE[plannedFormat],
         note: "",
-        remind_me: notify,
+        remind_me: true,
         target_mode: "existing_post",
         post_id: postId,
         external_url: externalUrl.trim() || null,
@@ -321,7 +342,7 @@ export function AddEventPopover({
         due_at: iso,
         title: title.trim() || EVENT_TYPE_LABELS[eventType],
         note: note.trim(),
-        remind_me: notify,
+        remind_me: true,
         target_mode: targetMode,
         post_id: !isCustom && targetMode === "existing_post" ? postId : null,
         external_url:
@@ -366,12 +387,17 @@ export function AddEventPopover({
 
   if (locked) {
     return (
-      <div className="animate-popover-in w-[280px] overflow-hidden rounded-2xl border border-[#242a27] bg-[#0e100f] shadow-2xl shadow-black/60 ring-1 ring-white/5">
-        <div className="flex items-center justify-between border-b border-[#1f1f1f] px-4 pb-3 pt-4">
+      <div className={`${SHELL} w-[280px]`}>
+        <div className={HEADER}>
           <span className="text-[12.5px] font-medium tracking-[-0.01em] text-[#edf2ef]">
             Create event
           </span>
-          <button type="button" onClick={onClose} className="text-[#555] hover:text-[#aaa]" aria-label="Close">
+          <button
+            type="button"
+            onClick={onClose}
+            className="flex h-7 w-7 items-center justify-center rounded-full border border-[#1e2a22] bg-[#0a0f0b] text-[#69716d] transition-colors hover:border-[#243426] hover:text-[#c8d0cb]"
+            aria-label="Close"
+          >
             ×
           </button>
         </div>
@@ -382,7 +408,7 @@ export function AddEventPopover({
           </p>
           <a
             href={upgradeHref}
-            className="rounded-lg bg-[#9bf0c4] px-3 py-2 text-center text-[12px] font-medium text-[#050706]"
+            className="rounded-xl bg-[#9bf0c4] px-3 py-2.5 text-center text-[12px] font-medium text-[#050706] transition-all hover:bg-[#b8f5d4] active:scale-[0.98]"
           >
             View plans
           </a>
@@ -392,16 +418,16 @@ export function AddEventPopover({
   }
 
   return (
-    <div className="animate-popover-in w-[300px] overflow-hidden rounded-2xl border border-[#242a27] bg-[#0e100f] shadow-2xl shadow-black/60 ring-1 ring-white/5">
+    <div className={`${SHELL} w-[300px]`}>
       <form onSubmit={handleSubmit}>
-        <div className="flex items-center justify-between border-b border-[#1f1f1f] px-4 pb-3 pt-4">
+        <div className={HEADER}>
           <span className="text-[12.5px] font-medium tracking-[-0.01em] text-[#edf2ef]">
             Create event
           </span>
           <button
             type="button"
             onClick={onClose}
-            className="text-[#555] transition-colors hover:text-[#aaa]"
+            className="flex h-7 w-7 items-center justify-center rounded-full border border-[#1e2a22] bg-[#0a0f0b] text-[#69716d] transition-colors hover:border-[#243426] hover:text-[#c8d0cb]"
             aria-label="Close"
           >
             <svg width="13" height="13" viewBox="0 0 13 13" fill="none" aria-hidden="true">
@@ -415,13 +441,13 @@ export function AddEventPopover({
           </button>
         </div>
 
-        <div className="flex flex-col gap-3 px-4 py-3">
-          <p className="text-[10px] text-[#555]" aria-live="polite">
+        <div className="flex flex-col gap-3.5 px-4 py-3.5">
+          <p className="text-[10px] font-medium tracking-[0.04em] text-[#3d5a46]" aria-live="polite">
             Step {stepIndex} of {stepTotal}
           </p>
 
           {step === "type" ? (
-            <div className="flex flex-col gap-1" role="listbox" aria-label="Event type">
+            <div className="flex flex-col gap-1.5" role="listbox" aria-label="Event type">
               {CREATE_EVENT_PICKER.map((opt) => {
                 const selected =
                   opt.id === "social"
@@ -439,7 +465,6 @@ export function AddEventPopover({
                       if (opt.id === "make_post") {
                         setEventType("make_post");
                         setTargetMode("new_post");
-                        setPostStartMode("later");
                         setStep("format");
                         return;
                       }
@@ -461,11 +486,7 @@ export function AddEventPopover({
                       onClearMissingLink?.();
                       setStep("platform");
                     }}
-                    className={`rounded-lg border px-3 py-2 text-left text-[12px] transition-colors ${
-                      selected
-                        ? "border-[#9bf0c4]/50 bg-[#161616] text-[#edf2ef]"
-                        : "border-[#2a2a2a] bg-[#161616] text-[#aaa] hover:border-[#9bf0c4]/30"
-                    }`}
+                    className={`${OPTION} ${selected ? OPTION_ON : OPTION_OFF}`}
                   >
                     {opt.label}
                   </button>
@@ -480,7 +501,7 @@ export function AddEventPopover({
               <p className="text-[12px] leading-snug text-[#c8d0cb]">
                 Planning a new post — what type?
               </p>
-              <div className="flex flex-col gap-1" role="listbox" aria-label="Post format">
+              <div className="flex flex-col gap-1.5" role="listbox" aria-label="Post format">
                 {FORMAT_OPTIONS.map((opt) => (
                   <button
                     key={opt.id}
@@ -491,11 +512,7 @@ export function AddEventPopover({
                       setPlannedFormat(opt.id);
                       setStep("platform");
                     }}
-                    className={`rounded-lg border px-3 py-2 text-left text-[12px] transition-colors ${
-                      plannedFormat === opt.id
-                        ? "border-[#9bf0c4]/50 bg-[#161616] text-[#edf2ef]"
-                        : "border-[#2a2a2a] bg-[#161616] text-[#aaa] hover:border-[#9bf0c4]/30"
-                    }`}
+                    className={`${OPTION} ${plannedFormat === opt.id ? OPTION_ON : OPTION_OFF}`}
                   >
                     {opt.label}
                   </button>
@@ -511,7 +528,7 @@ export function AddEventPopover({
                 Select one or more platforms. You&apos;ll finish titles and media in Autopost when
                 ready.
               </p>
-              <div className="flex flex-col gap-1" role="group" aria-label="Platforms">
+              <div className="flex flex-col gap-1.5" role="group" aria-label="Platforms">
                 {DESTINATIONS.map((d) => {
                   const selected = destinations.includes(d);
                   return (
@@ -521,10 +538,8 @@ export function AddEventPopover({
                       role="checkbox"
                       aria-checked={selected}
                       onClick={() => toggleDestination(d)}
-                      className={`rounded-lg border px-3 py-2 text-left text-[12px] transition-colors ${
-                        selected
-                          ? "border-[#9bf0c4]/50 bg-[#161616] text-[#edf2ef]"
-                          : "border-[#2a2a2a] bg-[#161616] text-[#aaa] hover:border-[#9bf0c4]/30"
+                      className={`${OPTION} ${
+                        selected ? OPTION_ON : OPTION_OFF
                       }`}
                     >
                       {DEST_LABELS[d]}
@@ -540,7 +555,7 @@ export function AddEventPopover({
               <p className="text-[12px] leading-snug text-[#c8d0cb]">
                 When do you plan to post?
               </p>
-              <div className="flex flex-col gap-1" role="group" aria-label="When">
+              <div className="flex flex-col gap-1.5" role="group" aria-label="When">
                 {SCHEDULE_DATE_PRESETS.map((preset) => {
                   const selected =
                     datePreset === preset.id ||
@@ -564,10 +579,8 @@ export function AddEventPopover({
                         setDatePreset(preset.id);
                         setShowDatePicker(false);
                       }}
-                      className={`rounded-lg border px-3 py-2 text-left text-[12px] transition-colors ${
-                        selected
-                          ? "border-[#9bf0c4]/50 bg-[#161616] text-[#edf2ef]"
-                          : "border-[#2a2a2a] bg-[#161616] text-[#aaa] hover:border-[#9bf0c4]/30"
+                      className={`${OPTION} ${
+                        selected ? OPTION_ON : OPTION_OFF
                       }`}
                     >
                       {preset.label}
@@ -576,7 +589,7 @@ export function AddEventPopover({
                 })}
               </div>
               {datePreset && datePreset !== "choose_date" && datetime ? (
-                <div className="rounded-lg border border-[#1f1f1f] bg-[#121412] px-3 py-2">
+                <div className={SUMMARY}>
                   <p className="text-[11px] text-[#c8d0cb]">
                     {formatResolvedScheduleLabel(datetime, timeZone)}
                   </p>
@@ -594,7 +607,7 @@ export function AddEventPopover({
               ) : null}
               {showDatePicker || datePreset === "choose_date" ? (
                 <div className="flex flex-col gap-1">
-                  <label className="text-[10.5px] uppercase tracking-widest text-[#555]">
+                  <label className="text-[10px] font-medium text-[#3d5a46]">
                     Date & time
                   </label>
                   <input
@@ -605,28 +618,10 @@ export function AddEventPopover({
                       setDatePreset("choose_date");
                     }}
                     required
-                    className="rounded-lg border border-[#2a2a2a] bg-[#161616] px-3 py-2 text-[12px] text-[#e8e8e8] [color-scheme:dark] focus:border-[#9bf0c4]/40 focus:outline-none"
+                    className={FIELD}
                   />
                 </div>
               ) : null}
-              <div className="flex items-center justify-between">
-                <span className="text-[11.5px] text-[#aaa]">Notify me</span>
-                <button
-                  type="button"
-                  role="switch"
-                  aria-checked={notify}
-                  onClick={() => setNotify(!notify)}
-                  className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
-                    notify ? "bg-[#9bf0c4]" : "bg-[#2a2a2a]"
-                  }`}
-                >
-                  <span
-                    className={`inline-block h-3.5 w-3.5 transform rounded-full bg-[#050706] transition-transform ${
-                      notify ? "translate-x-4.5" : "translate-x-0.5"
-                    }`}
-                  />
-                </button>
-              </div>
             </div>
           ) : null}
 
@@ -636,14 +631,13 @@ export function AddEventPopover({
               <button
                 type="button"
                 onClick={() => {
-                  setPostStartMode("later");
                   setTargetMode("new_post");
                   setPostId(null);
                   onClearMissingLink?.();
                   commitPostCreate("later");
                 }}
                 disabled={busy || !datetime.trim() || destinations.length === 0}
-                className="rounded-lg border border-[#2a2a2a] bg-[#161616] px-3 py-2.5 text-left transition-colors hover:border-[#9bf0c4]/40 disabled:opacity-40"
+                className={CHOICE_CARD}
               >
                 <span className="block text-[12px] text-[#edf2ef]">Add media later</span>
                 <span className="mt-0.5 block text-[10px] leading-snug text-[#666]">
@@ -654,13 +648,12 @@ export function AddEventPopover({
               <button
                 type="button"
                 onClick={() => {
-                  setPostStartMode("library");
                   setTargetMode("existing_post");
                   // Library reminders are single-platform for now.
                   setDestinations([destination]);
                   setStep("library");
                 }}
-                className="rounded-lg border border-[#2a2a2a] bg-[#161616] px-3 py-2.5 text-left transition-colors hover:border-[#9bf0c4]/40"
+                className={CHOICE_CARD}
               >
                 <span className="block text-[12px] text-[#edf2ef]">
                   Use an existing Library post
@@ -682,7 +675,7 @@ export function AddEventPopover({
                 Library reminders use one platform today. Multi-platform Autopost from Library comes
                 later.
               </p>
-              <div className="flex flex-col gap-1" role="listbox" aria-label="Platform">
+              <div className="flex flex-col gap-1.5" role="listbox" aria-label="Platform">
                 {DESTINATIONS.map((d) => (
                   <button
                     key={d}
@@ -696,11 +689,7 @@ export function AddEventPopover({
                       setSelectedPostTitle(null);
                       onClearMissingLink?.();
                     }}
-                    className={`rounded-lg border px-3 py-1.5 text-left text-[11px] transition-colors ${
-                      destination === d
-                        ? "border-[#9bf0c4]/50 bg-[#161616] text-[#edf2ef]"
-                        : "border-[#2a2a2a] bg-[#161616] text-[#aaa] hover:border-[#9bf0c4]/30"
-                    }`}
+                    className={`${OPTION} ${destination === d ? OPTION_ON : OPTION_OFF}`}
                   >
                     {DEST_LABELS[d]}
                   </button>
@@ -711,10 +700,10 @@ export function AddEventPopover({
                 value={postQuery}
                 onChange={(e) => setPostQuery(e.target.value)}
                 placeholder="Search Library…"
-                className="rounded-lg border border-[#2a2a2a] bg-[#161616] px-3 py-2 text-[12px] text-[#e8e8e8] placeholder-[#444] focus:border-[#9bf0c4]/40 focus:outline-none"
+                className={FIELD}
               />
               <div
-                className="max-h-36 overflow-y-auto rounded-lg border border-[#2a2a2a]"
+                className={LIST_SHELL}
                 role="listbox"
                 aria-label="Library posts"
               >
@@ -737,8 +726,8 @@ export function AddEventPopover({
                           setSelectedPostTitle(p.title);
                           onClearMissingLink?.();
                         }}
-                        className={`flex w-full flex-col gap-0.5 border-b border-[#1f1f1f] px-3 py-2 text-left last:border-0 ${
-                          postId === p.post_id ? "bg-[#1a221e]" : "hover:bg-[#141816]"
+                        className={`flex w-full flex-col gap-0.5 border-b border-[#172018] px-3 py-2 text-left last:border-0 ${
+                          postId === p.post_id ? "bg-[#9bf0c414]" : "hover:bg-[#0e1410]"
                         }`}
                       >
                         <span className="truncate text-[12px] text-[#e8e8e8]">{p.title}</span>
@@ -760,7 +749,7 @@ export function AddEventPopover({
                     ?.destinations.find((d) => d.destination === destination)?.has_url ===
                     false)) && (
                 <div className="flex flex-col gap-1">
-                  <label className="text-[10.5px] uppercase tracking-widest text-[#555]">
+                  <label className="text-[10px] font-medium text-[#3d5a46]">
                     Link the {DEST_LABELS[destination]} version
                   </label>
                   <p className="text-[10px] leading-snug text-[#888]">
@@ -772,7 +761,7 @@ export function AddEventPopover({
                     value={externalUrl}
                     onChange={(e) => setExternalUrl(e.target.value)}
                     placeholder="https://…"
-                    className="rounded-lg border border-[#2a2a2a] bg-[#161616] px-3 py-2 text-[12px] text-[#e8e8e8] placeholder-[#444] focus:border-[#9bf0c4]/40 focus:outline-none"
+                    className={FIELD}
                   />
                 </div>
               )}
@@ -787,7 +776,7 @@ export function AddEventPopover({
                   Which platform is the post on?
                 </p>
               ) : null}
-              <div className="flex flex-col gap-1" role="listbox" aria-label="Platform">
+              <div className="flex flex-col gap-1.5" role="listbox" aria-label="Platform">
                 {DESTINATIONS.map((d) => {
                   const selected = destination === d;
                   return (
@@ -797,10 +786,8 @@ export function AddEventPopover({
                       role="option"
                       aria-selected={selected}
                       onClick={() => selectSingleDestination(d)}
-                      className={`rounded-lg border px-3 py-2 text-left text-[12px] transition-colors ${
-                        selected
-                          ? "border-[#9bf0c4]/50 bg-[#161616] text-[#edf2ef]"
-                          : "border-[#2a2a2a] bg-[#161616] text-[#aaa] hover:border-[#9bf0c4]/30"
+                      className={`${OPTION} ${
+                        selected ? OPTION_ON : OPTION_OFF
                       }`}
                     >
                       {DEST_LABELS[d]}
@@ -824,9 +811,9 @@ export function AddEventPopover({
                   Point at the published post you want to go back to.
                 </p>
               ) : null}
-              <div className="flex flex-col gap-1" role="group" aria-label="Target">
+              <div className="flex flex-col gap-1.5" role="group" aria-label="Target">
                 {isCustom && (
-                  <label className="flex cursor-pointer items-center gap-2 rounded-lg border border-[#2a2a2a] bg-[#161616] px-3 py-2 text-[12px] text-[#e8e8e8]">
+                  <label className="flex cursor-pointer items-center gap-2 rounded-xl border border-[#1e2a22] bg-[#0a0f0b] px-3 py-2.5 text-[12px] text-[#e8e8e8] transition-colors has-[:checked]:border-[#9bf0c4]/45 has-[:checked]:bg-[#9bf0c414]">
                     <input
                       type="radio"
                       name="target"
@@ -841,7 +828,7 @@ export function AddEventPopover({
                   </label>
                 )}
                 {!isCustom ? (
-                  <label className="flex cursor-pointer items-center gap-2 rounded-lg border border-[#2a2a2a] bg-[#161616] px-3 py-2 text-[12px] text-[#e8e8e8]">
+                  <label className="flex cursor-pointer items-center gap-2 rounded-xl border border-[#1e2a22] bg-[#0a0f0b] px-3 py-2.5 text-[12px] text-[#e8e8e8] transition-colors has-[:checked]:border-[#9bf0c4]/45 has-[:checked]:bg-[#9bf0c414]">
                     <input
                       type="radio"
                       name="target"
@@ -852,7 +839,7 @@ export function AddEventPopover({
                     Library post
                   </label>
                 ) : null}
-                <label className="flex cursor-pointer items-center gap-2 rounded-lg border border-[#2a2a2a] bg-[#161616] px-3 py-2 text-[12px] text-[#e8e8e8]">
+                <label className="flex cursor-pointer items-center gap-2 rounded-xl border border-[#1e2a22] bg-[#0a0f0b] px-3 py-2.5 text-[12px] text-[#e8e8e8] transition-colors has-[:checked]:border-[#9bf0c4]/45 has-[:checked]:bg-[#9bf0c414]">
                   <input
                     type="radio"
                     name="target"
@@ -874,10 +861,10 @@ export function AddEventPopover({
                     value={postQuery}
                     onChange={(e) => setPostQuery(e.target.value)}
                     placeholder="Search Library…"
-                    className="rounded-lg border border-[#2a2a2a] bg-[#161616] px-3 py-2 text-[12px] text-[#e8e8e8] placeholder-[#444] focus:border-[#9bf0c4]/40 focus:outline-none"
+                    className={FIELD}
                   />
                   <div
-                    className="max-h-36 overflow-y-auto rounded-lg border border-[#2a2a2a]"
+                    className={LIST_SHELL}
                     role="listbox"
                     aria-label="Library posts"
                   >
@@ -900,8 +887,8 @@ export function AddEventPopover({
                               setSelectedPostTitle(p.title);
                               onClearMissingLink?.();
                             }}
-                            className={`flex w-full flex-col gap-0.5 border-b border-[#1f1f1f] px-3 py-2 text-left last:border-0 ${
-                              postId === p.post_id ? "bg-[#1a221e]" : "hover:bg-[#141816]"
+                            className={`flex w-full flex-col gap-0.5 border-b border-[#172018] px-3 py-2 text-left last:border-0 ${
+                              postId === p.post_id ? "bg-[#9bf0c414]" : "hover:bg-[#0e1410]"
                             }`}
                           >
                             <span className="truncate text-[12px] text-[#e8e8e8]">{p.title}</span>
@@ -924,7 +911,7 @@ export function AddEventPopover({
                         ?.destinations.find((d) => d.destination === destination)?.has_url ===
                         false)) && (
                     <div className="flex flex-col gap-1">
-                      <label className="text-[10.5px] uppercase tracking-widest text-[#555]">
+                      <label className="text-[10px] font-medium text-[#3d5a46]">
                         Link the {DEST_LABELS[destination]} version
                       </label>
                       <p className="text-[10px] leading-snug text-[#888]">
@@ -937,7 +924,7 @@ export function AddEventPopover({
                         onChange={(e) => setExternalUrl(e.target.value)}
                         onKeyDown={handleTargetFieldKeyDown}
                         placeholder="https://…"
-                        className="rounded-lg border border-[#2a2a2a] bg-[#161616] px-3 py-2 text-[12px] text-[#e8e8e8] placeholder-[#444] focus:border-[#9bf0c4]/40 focus:outline-none"
+                        className={FIELD}
                       />
                     </div>
                   )}
@@ -946,7 +933,7 @@ export function AddEventPopover({
 
               {targetMode === "external_url" ? (
                 <div className="flex flex-col gap-1">
-                  <label className="text-[10.5px] uppercase tracking-widest text-[#555]">
+                  <label className="text-[10px] font-medium text-[#3d5a46]">
                     {isCustom
                       ? "URL"
                       : `${DEST_LABELS[destination]} URL${!needsUrlOrPost(eventType) ? " (optional)" : ""}`}
@@ -958,7 +945,7 @@ export function AddEventPopover({
                     onKeyDown={handleTargetFieldKeyDown}
                     required={isCustom || needsUrlOrPost(eventType)}
                     placeholder="https://…"
-                    className="rounded-lg border border-[#2a2a2a] bg-[#161616] px-3 py-2 text-[12px] text-[#e8e8e8] placeholder-[#444] focus:border-[#9bf0c4]/40 focus:outline-none"
+                    className={FIELD}
                   />
                 </div>
               ) : null}
@@ -969,10 +956,10 @@ export function AddEventPopover({
             <>
               {isSocialDialogue ? (
                 <div className="flex flex-col gap-1.5">
-                  <label className="text-[10.5px] uppercase tracking-widest text-[#555]">
+                  <label className="text-[10px] font-medium text-[#3d5a46]">
                     Action
                   </label>
-                  <div className="flex flex-col gap-1" role="listbox" aria-label="Social action">
+                  <div className="flex flex-col gap-1.5" role="listbox" aria-label="Social action">
                     {SOCIAL_ACTION_TYPES.map((action) => {
                       const selected = eventType === action;
                       return (
@@ -982,11 +969,7 @@ export function AddEventPopover({
                           role="option"
                           aria-selected={selected}
                           onClick={() => selectSocialAction(action)}
-                          className={`rounded-lg border px-3 py-2 text-left text-[12px] transition-colors ${
-                            selected
-                              ? "border-[#9bf0c4]/50 bg-[#161616] text-[#edf2ef]"
-                              : "border-[#2a2a2a] bg-[#161616] text-[#aaa] hover:border-[#9bf0c4]/30"
-                          }`}
+                          className={`${OPTION} ${selected ? OPTION_ON : OPTION_OFF}`}
                         >
                           {SOCIAL_ACTION_CHIP_LABELS[action]}
                         </button>
@@ -996,17 +979,17 @@ export function AddEventPopover({
                 </div>
               ) : null}
               <div className="flex flex-col gap-1">
-                <label className="text-[10.5px] uppercase tracking-widest text-[#555]">Title</label>
+                <label className="text-[10px] font-medium text-[#3d5a46]">Title</label>
                 <input
                   type="text"
                   value={title}
                   onChange={(e) => setTitle(e.target.value)}
                   placeholder={EVENT_TYPE_LABELS[eventType]}
-                  className="rounded-lg border border-[#2a2a2a] bg-[#161616] px-3 py-2 text-[12px] text-[#e8e8e8] placeholder-[#444] focus:border-[#9bf0c4]/40 focus:outline-none"
+                  className={FIELD}
                 />
               </div>
               <div className="flex flex-col gap-1">
-                <label className="text-[10.5px] uppercase tracking-widest text-[#555]">
+                <label className="text-[10px] font-medium text-[#3d5a46]">
                   Date & time
                 </label>
                 <input
@@ -1014,11 +997,11 @@ export function AddEventPopover({
                   value={datetime}
                   onChange={(e) => setDatetime(e.target.value)}
                   required
-                  className="rounded-lg border border-[#2a2a2a] bg-[#161616] px-3 py-2 text-[12px] text-[#e8e8e8] [color-scheme:dark] focus:border-[#9bf0c4]/40 focus:outline-none"
+                  className={FIELD}
                 />
               </div>
               <div className="flex flex-col gap-1">
-                <label className="text-[10.5px] uppercase tracking-widest text-[#555]">
+                <label className="text-[10px] font-medium text-[#3d5a46]">
                   Note (optional)
                 </label>
                 <textarea
@@ -1026,26 +1009,8 @@ export function AddEventPopover({
                   onChange={(e) => setNote(e.target.value)}
                   placeholder="Short note…"
                   rows={2}
-                  className="resize-none rounded-lg border border-[#2a2a2a] bg-[#161616] px-3 py-2 text-[12px] text-[#e8e8e8] placeholder-[#444] focus:border-[#9bf0c4]/40 focus:outline-none"
+                  className={`resize-none ${FIELD}`}
                 />
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-[11.5px] text-[#aaa]">Notify me</span>
-                <button
-                  type="button"
-                  role="switch"
-                  aria-checked={notify}
-                  onClick={() => setNotify(!notify)}
-                  className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
-                    notify ? "bg-[#9bf0c4]" : "bg-[#2a2a2a]"
-                  }`}
-                >
-                  <span
-                    className={`inline-block h-3.5 w-3.5 transform rounded-full bg-[#050706] transition-transform ${
-                      notify ? "translate-x-4.5" : "translate-x-0.5"
-                    }`}
-                  />
-                </button>
               </div>
             </>
           ) : null}
@@ -1053,13 +1018,13 @@ export function AddEventPopover({
           {error ? <p className="text-[10px] leading-snug text-red-400/90">{error}</p> : null}
         </div>
 
-        <div className="flex gap-2 px-4 pb-4">
+        <div className="flex gap-2 border-t border-[#172018] px-4 pb-4 pt-3">
           {step !== "type" ? (
             <button
               type="button"
               onClick={goBack}
               disabled={busy}
-              className="flex-1 rounded-lg border border-[#2a2a2a] bg-[#161616] py-2 text-[12px] text-[#888] transition-colors hover:bg-[#1e1e1e] disabled:opacity-50"
+              className={SECONDARY}
             >
               Back
             </button>
@@ -1068,7 +1033,7 @@ export function AddEventPopover({
               type="button"
               onClick={onClose}
               disabled={busy}
-              className="flex-1 rounded-lg border border-[#2a2a2a] bg-[#161616] py-2 text-[12px] text-[#888] transition-colors hover:bg-[#1e1e1e] disabled:opacity-50"
+              className={SECONDARY}
             >
               Cancel
             </button>
@@ -1080,7 +1045,7 @@ export function AddEventPopover({
                 type="button"
                 disabled={!canAdvanceLibrary || busy}
                 onClick={() => commitPostCreate("library")}
-                className="flex-1 rounded-lg bg-[#9bf0c4] py-2 text-[12px] font-medium text-[#050706] transition-opacity disabled:opacity-40"
+                className={PRIMARY}
               >
                 {busy ? "Saving…" : "Create"}
               </button>
@@ -1088,7 +1053,7 @@ export function AddEventPopover({
               <button
                 type="button"
                 disabled
-                className="flex-1 rounded-lg bg-[#9bf0c4] py-2 text-[12px] font-medium text-[#050706] opacity-40"
+                className={`${PRIMARY} opacity-40`}
               >
                 Choose above
               </button>
@@ -1106,7 +1071,7 @@ export function AddEventPopover({
                     setStep("when");
                   } else if (step === "when") setStep("start");
                 }}
-                className="flex-1 rounded-lg bg-[#9bf0c4] py-2 text-[12px] font-medium text-[#050706] transition-opacity disabled:opacity-40"
+                className={PRIMARY}
               >
                 Next
               </button>
@@ -1131,7 +1096,7 @@ export function AddEventPopover({
                 }
                 setStep("details");
               }}
-              className="flex-1 rounded-lg bg-[#9bf0c4] py-2 text-[12px] font-medium text-[#050706] transition-opacity disabled:opacity-40"
+              className={PRIMARY}
             >
               Next
             </button>
@@ -1140,7 +1105,7 @@ export function AddEventPopover({
               type="button"
               disabled={!canSubmitLegacy}
               onClick={() => commitLegacyCreate()}
-              className="flex-1 rounded-lg bg-[#9bf0c4] py-2 text-[12px] font-medium text-[#050706] transition-opacity disabled:opacity-40"
+              className={PRIMARY}
             >
               {busy ? "Saving…" : "Create"}
             </button>

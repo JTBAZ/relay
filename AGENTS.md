@@ -15,6 +15,7 @@
 | **`docs/UI_SPECIALIST_RELAY.md`** | Relay UI/UX scope: `web/`, patron mock, guardrails, verification. |
 | **`docs/qa/UX_ACCEPTANCE_GUARDRAILS.md`** | Pass/fail UX expectations. |
 | **`docs/studio/goal-cycle-build-plans/00-README.md`** | **Goal Cycle worker program:** Library-first Coach planning, credits, trend evidence, paid-support attribution, rail materialization, extension execution, outcomes, and rollout. Claim slices in dependency order and use its builder orientation. |
+| **`docs/studio/escape-hatch-build-plans/00-README.md`** | **Escape Hatch worker program:** creator-owned Patreon-to-site wizard, hard paywalls, independent billing/deployment, optional managed OAuth, testing, and ownership handoff. |
 | **`docs/qa/HTTP_VERB_HYGIENE.md`** | GETs are side-effect-free; mutations use POST/PUT/PATCH/DELETE (logout is POST only). |
 | **`.cursor/rules/airtable-execution-control-plane.mdc`** | IDE mirror: read ledger before work, batching, MCP hygiene. |
 | **`docs/pilot-build-plan.md`** | Pilot execution: Phases P0–P9, Airtable-style work items, v0 asset register, exit checklist. |
@@ -24,6 +25,8 @@
 **Relay-native posts plan (Batting Order):** base **Batting Order** `apprid6UGT9E1KlkN`. **Status** (single-select: **Queued** default, **Done**) exists on:
 - **`RN - Epics`** `tbl925QBL3fvXCFid` — set an epic to **Done** when all of its work under that epic is complete.
 - **`RN - Work items`** `tblwwrxy7KYK04udR` — set each work item to **Done** when that item’s acceptance criteria are met (update via Airtable MCP `update_records` or the Airtable UI).
+
+**Escape Hatch agent boundary:** Fable or Sol plans/reviews only. **Cursor Grok 4.5 High is the sole approved implementation builder** for auth, paywall/media, billing/OAuth, migration, deploy, recovery, security-critical work, wizard/generated-site UI, fixtures, tests, docs, and bounded integration. Do not recruit Composer 2.5 Fast for Escape Hatch work. The master browser-reviews every UI slice and complete milestone journey. Escape Hatch uses its docs + git + milestone reports for execution state; it does not use Airtable unless a human explicitly adds that workflow later. Full contract: [`docs/studio/escape-hatch-build-plans/10-AGENT-ORCHESTRATION.md`](docs/studio/escape-hatch-build-plans/10-AGENT-ORCHESTRATION.md).
 
 ---
 

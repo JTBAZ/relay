@@ -460,11 +460,7 @@ function drawLogoLayer(
   ctx.restore();
 }
 
-function drawGraphicLayer(
-  _ctx: CanvasRenderingContext2D,
-  _layer: GraphicOverlayLayer,
-  _out: OutputSize
-): void {
+function drawGraphicLayer(): void {
   /* Graphics render via v0 React overlay — see PreviewizerStudioCanvas. */
 }
 
@@ -480,7 +476,8 @@ export function applyOverlayDocument(
   }
   if (options?.includeGraphics) {
     for (const layer of doc.graphicLayers ?? []) {
-      drawGraphicLayer(ctx, layer, out);
+      void layer;
+      drawGraphicLayer();
     }
   }
   for (const layer of doc.logoLayers) {

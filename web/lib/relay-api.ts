@@ -4577,7 +4577,11 @@ export type NotificationKind =
   | "post_favorited"
   | "post_collected"
   | "new_subscriber"
-  | "distribution_schedule_reminder";
+  | "distribution_schedule_reminder"
+  | "reveal_expiring"
+  | "tips_granted"
+  | "automation_no_new_post"
+  | "automation_approval_expired";
 
 export type NotificationRecord = {
   id: string;

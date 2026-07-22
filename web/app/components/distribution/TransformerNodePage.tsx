@@ -526,18 +526,15 @@ function SourcePostCard({ loading, previewUrl, title, description, tags }: Sourc
       initial={{ opacity: 0, x: -16 }}
       animate={{ opacity: 1, x: 0 }}
       transition={{ duration: 0.4, ease: "easeOut" }}
-      className="relative shrink-0 rounded-2xl"
+      className="relative w-full max-w-[280px] shrink-0 justify-self-center rounded-2xl min-[960px]:justify-self-start"
       style={{
-        width: SOURCE_CARD_WIDTH_PX,
         maxWidth: SOURCE_CARD_WIDTH_PX,
         boxShadow: "0 0 32px rgba(0,170,111,0.08)",
       }}
     >
       <div
-        className="flex flex-col overflow-hidden rounded-2xl border"
+        className="flex w-full flex-col overflow-hidden rounded-2xl border"
         style={{
-          width: SOURCE_CARD_WIDTH_PX,
-          maxWidth: SOURCE_CARD_WIDTH_PX,
           borderColor: "#2a2a2a",
           borderLeft: "2px solid #00aa6f",
           background: "rgba(10,10,10,0.95)",
@@ -803,7 +800,6 @@ function DestinationPlatformCard({
   const accent = DESTINATION_ACCENT[dest];
   const label = DESTINATION_LABEL[dest];
   const badgeText = badgeLabel(badge);
-  const hasBadge = Boolean(badgeText);
 
   return (
     <motion.div
@@ -2012,17 +2008,18 @@ export function TransformerNodePage({
 
 
   return (
-    <div className="w-full max-w-6xl mx-auto px-4 py-6 space-y-6">
+    <div className="mx-auto w-full max-w-6xl space-y-6 px-4 py-6 sm:px-5">
       <div>
         <h2 className="text-xl font-bold text-[#f9fafb]">Transform &amp; route</h2>
-        <p className="text-xs text-[#9ca3af] mt-1">
+        <p className="mt-1 text-xs text-[#9ca3af]">
           Apply templates or PostBot, then route formatted variants to each platform.
         </p>
       </div>
 
-      {/* Pre-routing: 3-column layout with source, questionnaire, destinations */}
+      {/* Pre-routing: 3-column layout with source, questionnaire, destinations.
+          Uses min-[960px] (not viewport lg alone) so a narrow host never crushes columns. */}
       {!planIsRouted && (
-      <div className="relative grid gap-4 lg:grid-cols-[280px_minmax(0,1fr)_minmax(0,320px)] items-start">
+      <div className="relative grid grid-cols-1 items-start gap-4 min-[960px]:grid-cols-[280px_minmax(0,1fr)_minmax(0,320px)]">
         {/* Loading overlay */}
         <AnimatePresence>
           {generating && (
@@ -2043,7 +2040,7 @@ export function TransformerNodePage({
           initial={{ opacity: 0, scale: 0.98 }}
           animate={{ opacity: 1, scale: 1 }}
           transition={{ delay: 0.05 }}
-          className="flex flex-col gap-5 p-5 rounded-2xl border"
+          className="flex min-w-0 flex-col gap-5 rounded-2xl border p-5"
           style={{ borderColor: "#2a2a2a", background: "rgba(10,10,10,0.95)" }}
         >
           <div>
@@ -2494,9 +2491,9 @@ export function TransformerNodePage({
         ) : null}
 
         {/* Platform cards */}
-        <div className="space-y-3">
+        <div className="min-w-0 space-y-3">
           <p
-            className="text-[10px] font-semibold uppercase tracking-widest mb-1"
+            className="mb-1 text-[10px] font-semibold uppercase tracking-widest"
             style={{ color: "#6b7280" }}
           >
             Destinations

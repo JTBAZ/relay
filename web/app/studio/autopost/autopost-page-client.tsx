@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { RelayAutopostComposer } from "@/app/components/autopost-v0/RelayAutopostComposer";
+import { AutomationApprovalOverlay } from "@/app/components/automations/AutomationApprovalOverlay";
 import { StudioRouteGuard } from "@/app/components/studio/StudioRouteGuard";
 import { StudioPlanGate } from "@/app/components/studio/StudioPlanGate";
 import {
@@ -18,13 +19,23 @@ type AccessLoad =
 
 function AutopostEntitlementShell({
   initialMediaIds,
-  initialDraftId
+  initialDraftId,
+  automationId,
+  automationRunId,
+  prefillMode = "continue"
 }: {
   initialMediaIds: string[];
   initialDraftId: string | null;
+  automationId: string | null;
+  automationRunId: string | null;
+  /** platforms = stay on pick/platform step with media preselected. */
+  prefillMode?: "continue" | "platforms";
 }) {
   const [load, setLoad] = useState<AccessLoad>({ status: "loading" });
   const [forceWall, setForceWall] = useState<CreatorCapabilityWire | null>(null);
+  const [approvalOpen, setApprovalOpen] = useState(
+    Boolean(automationId && automationRunId)
+  );
 
   const refresh = useCallback(async () => {
     setLoad({ status: "loading" });
@@ -43,6 +54,10 @@ function AutopostEntitlementShell({
   useEffect(() => {
     void refresh();
   }, [refresh]);
+
+  useEffect(() => {
+    setApprovalOpen(Boolean(automationId && automationRunId));
+  }, [automationId, automationRunId]);
 
   if (load.status === "loading") {
     return (
@@ -95,6 +110,7 @@ function AutopostEntitlementShell({
       <RelayAutopostComposer
         initialMediaIds={initialDraftId ? [] : initialMediaIds}
         initialDraftId={initialDraftId}
+        prefillMode={prefillMode}
         onPlanRequired={() => {
           setForceWall({
             allowed: false,
@@ -103,6 +119,15 @@ function AutopostEntitlementShell({
           });
         }}
       />
+      {automationId && automationRunId ? (
+        <AutomationApprovalOverlay
+          open={approvalOpen}
+          automationId={automationId}
+          runId={automationRunId}
+          draftId={initialDraftId}
+          onClose={() => setApprovalOpen(false)}
+        />
+      ) : null}
     </>
   );
 }
@@ -111,17 +136,24 @@ export function AutopostPageClient() {
   const searchParams = useSearchParams();
   const mediaIdsParam = searchParams.get("media_ids") ?? "";
   const draftIdParam = searchParams.get("draft_id")?.trim() || null;
+  const automationId = searchParams.get("automation_id")?.trim() || null;
+  const automationRunId = searchParams.get("automation_run_id")?.trim() || null;
+  const stageParam = searchParams.get("stage")?.trim() || null;
   /** Import Bay / studio selection passes ids — composer skips Step 1 and commits them on load. */
   const initialMediaIds = mediaIdsParam
     .split(",")
     .map((id) => id.trim())
     .filter(Boolean);
+  const prefillMode = stageParam === "platforms" ? "platforms" : "continue";
 
   return (
     <StudioRouteGuard>
       <AutopostEntitlementShell
         initialMediaIds={initialMediaIds}
         initialDraftId={draftIdParam}
+        automationId={automationId}
+        automationRunId={automationRunId}
+        prefillMode={prefillMode}
       />
     </StudioRouteGuard>
   );

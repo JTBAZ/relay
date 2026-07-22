@@ -275,7 +275,7 @@ export type FillResult = {
   bundle: SiteBundle;
 };
 
-/** Chassis files that must be present in every generated kit (EH-020). */
+/** Chassis files that must be present in every generated kit (EH-020 / EH-030). */
 export const GENERATED_CHASSIS_RELATIVE_PATHS = [
   "package.json",
   "tsconfig.json",
@@ -291,10 +291,22 @@ export const GENERATED_CHASSIS_RELATIVE_PATHS = [
   "lib/env.ts",
   "lib/adapters/index.ts",
   "lib/adapters/types.ts",
+  "lib/identity/types.ts",
+  "lib/identity/entitlements.ts",
+  "lib/identity/session.ts",
+  "lib/identity/admin-access.ts",
+  "lib/supabase/client.ts",
+  "lib/supabase/server.ts",
   "db/schema/0001_preview_chassis.sql",
+  "db/schema/0002_identity_rls.sql",
   "db/migrations/0001_preview_chassis.sql",
+  "db/migrations/0002_identity_rls.sql",
   "db/README.md",
-  "deploy/README.md"
+  "scripts/bootstrap-identity.md",
+  "deploy/README.md",
+  "app/login/page.tsx",
+  "app/auth/callback/route.ts",
+  "app/auth/logout/route.ts"
 ] as const;
 
 type EscapeHatchManifest = {
@@ -333,14 +345,14 @@ export function stampEscapeHatchManifest(
   parsed.generated_at = bundle.generated_at;
   parsed.creator_id = bundle.creator_id;
   parsed.site_id = bundle.site_id ?? bundle.creator_id;
-  parsed.slice = "EH-022";
+  parsed.slice = "EH-030";
   parsed.productionSafe = false;
   parsed.feature_flags = {
     ...parsed.feature_flags,
     soft_persona_gate: true,
     hard_paywall: false,
     signed_media_delivery: false,
-    supabase_identity: false,
+    supabase_identity: true,
     stripe_billing: false,
     native_admin: true
   };
@@ -415,9 +427,10 @@ export function fillTemplate(opts: FillOptions): FillResult {
     [
       "# Escape Hatch site kit",
       "",
-      "**Soft gate only** — persona switching is for demo. This is not production security.",
+      "**Soft gate remains for local preview** — persona switching is demo UI only, not production security.",
+      "When Supabase env is configured, `/login` + session cookies are the intended identity path (EH-030).",
       "Locked media is still present in `/public/media`; do not deploy this kit as a real paywall.",
-      "`productionSafe: false` — Milestone 2 (EH-022 native admin on EH-021 theme / EH-020 chassis), not EH-033 signed delivery.",
+      "`productionSafe: false` — EH-030 identity path available; not EH-033 signed private media delivery.",
       "",
       `Contract: ${bundle.contract_version}`,
       "",
@@ -427,16 +440,18 @@ export function fillTemplate(opts: FillOptions): FillResult {
       "2. `/structure` — tiers & posts detected (accuracy)",
       "3. `/style` — few aesthetic dials (session peek)",
       "4. `/admin` — operator shell (health, posts, media, tiers)",
-      "5. `/preview` — visitor walkthrough (soft gate)",
+      "5. `/login` — Supabase Auth (when env configured)",
+      "6. `/preview` — visitor walkthrough (soft gate)",
       "",
       "`/` redirects to Library. Library truth rebuilds parity from data/ artifacts on every load (never trusts a tampered report alone).",
-      "Admin attention marks are local-operator only (header + loopback) — not authentication.",
+      "Admin mutations: local-operator when identity unset; staff session when Supabase configured. Soft personas never authorize admin.",
       "",
-      "## Standalone chassis (EH-020) + premium theme (EH-021) + admin (EH-022)",
+      "## Chassis (EH-020) + theme (EH-021) + admin (EH-022) + identity (EH-030)",
       "",
-      "- Typed env: `lib/env.ts` + `.env.example` (names only)",
-      "- SQL migrations: `db/schema/`, `db/migrations/` (not required for `npm run build`)",
-      "- Adapters: `lib/adapters/` + `escape-hatch.manifest.json` (stub health ok: false)",
+      "- Typed env: `lib/env.ts` + `.env.example` (names only — never commit secrets)",
+      "- SQL migrations: `db/schema/`, `db/migrations/` including RLS (`0002_identity_rls`)",
+      "- Bootstrap: `scripts/bootstrap-identity.md`",
+      "- Adapters: `lib/adapters/` — Auth/DB ready when env is real; still preview until EH-033",
       "- Admin: `/admin` routes — distinct from visitor gallery",
       "- Deploy: `vercel.json`, `Dockerfile`, optional `docker-compose.yml`",
       "- See `OPERATIONS.md` and `OWNERSHIP.md`",

@@ -11,7 +11,8 @@ const DEFAULT_ACCENT = "#00aa6f";
 
 export type VisibilitySwitchRowProps = {
   label: string;
-  helper: string;
+  /** Optional secondary line — omit for compact switchboard rows. */
+  helper?: string;
   state: VisibilityToggleTriState;
   disabled?: boolean;
   busy?: boolean;
@@ -41,11 +42,11 @@ export function VisibilitySwitchRow({
     <div className="flex items-center justify-between gap-3 px-3 py-2.5" title={title}>
       <div className="min-w-0 flex-1">
         <p className="text-xs font-medium text-[var(--lib-fg,#e8eee9)]">{label}</p>
-        <p className="text-[9px] leading-snug text-[var(--lib-fg-muted,#6a726e)]">{helper}</p>
+        {helper ? (
+          <p className="text-[9px] leading-snug text-[var(--lib-fg-muted,#6a726e)]">{helper}</p>
+        ) : null}
         {mixed ? (
-          <p className="mt-0.5 text-[9px] text-amber-400/90">
-            Mixed — click to set all off, then on again if needed
-          </p>
+          <p className="mt-0.5 text-[9px] text-amber-400/90">Mixed</p>
         ) : null}
       </div>
       <button

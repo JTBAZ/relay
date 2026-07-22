@@ -29,6 +29,7 @@ import { runPlatformInstanceRefreshSweepOnce } from "../analytics/platform-insta
 import { runPostingGoalNudgeOnce } from "../autopost/posting-goal-nudge-worker.js";
 import { runScheduleSeriesReconcileOnce } from "../autopost/schedule-series-worker.js";
 import { runDistributionRulesReconcileOnce } from "../autopost/distribution-rule-worker.js";
+import { runAutomationsReconcileOnce } from "../autopost/automation-worker.js";
 import { runDistributionScheduleReminderOnce } from "../distribution/distribution-schedule-reminder-worker.js";
 import { runTipGrantOnce } from "../tips/tip-grant-worker.js";
 import type { PatreonCampaignCreatorIndex } from "../patreon/patreon-campaign-creator-index.js";
@@ -56,6 +57,7 @@ import {
   type DistributionScheduleReminderJobData,
   type AutopostScheduleSeriesJobData,
   type AutopostDistributionRulesJobData,
+  type AutopostAutomationsJobData,
   type TipGrantJobData,
   type BillCreditSettlementJobData,
   type RevealExpiryJobData,
@@ -513,6 +515,26 @@ export function registerRelayBullMqWorkers(
           );
         },
         mk(RELAY_JOB_QUEUE_NAMES.AUTOPOST_DISTRIBUTION_RULES)
+      )
+    );
+
+    workers.push(
+      new Worker<AutopostAutomationsJobData>(
+        RELAY_JOB_QUEUE_NAMES.AUTOPOST_AUTOMATIONS,
+        async (job) => {
+          await runRelayBullMqJob(
+            log,
+            RELAY_JOB_QUEUE_NAMES.AUTOPOST_AUTOMATIONS,
+            job,
+            async () => {
+              await runAutomationsReconcileOnce(prisma, {
+                creatorId: job.data?.creatorId,
+                log
+              });
+            }
+          );
+        },
+        mk(RELAY_JOB_QUEUE_NAMES.AUTOPOST_AUTOMATIONS)
       )
     );
 

@@ -67,6 +67,13 @@ describe("automations HTTP API (B06)", () => {
     ).toBe(503);
     expect((await request(app).delete(AUTOMATIONS_API_FIXTURES.paths.item(id))).status).toBe(503);
     expect((await request(app).get(AUTOMATIONS_API_FIXTURES.paths.runs(id))).status).toBe(503);
+    expect(
+      (
+        await request(app).get(
+          AUTOMATIONS_API_FIXTURES.paths.approvalContext(id, "run_qa_1")
+        )
+      ).status
+    ).toBe(503);
   });
 
   it("keeps GETs side-effect-free in route source (HTTP verb hygiene)", () => {

@@ -5,7 +5,6 @@
 
 import { createDefaultOverlayDocument, type OverlayDocument } from "./previewizer-overlay-layers";
 import {
-  DEFAULT_SELECTION,
   type AspectRatioKey,
   type NormalizedRect,
   type PresetId

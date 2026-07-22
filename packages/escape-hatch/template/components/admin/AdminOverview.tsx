@@ -3,17 +3,35 @@ import type { AdminOverviewModel } from "@/lib/admin/load-admin";
 export function AdminOverview({ model }: { model: AdminOverviewModel }) {
   const anyOk = model.adapters.some((a) => a.ok);
   const allDegraded = model.adapters.every((a) => !a.ok);
+  const identity = model.identity;
 
   return (
     <div className="admin-panel">
-      <section className="admin-banner admin-banner--degraded" aria-live="polite">
+      <section
+        className={
+          identity.mode === "local_preview"
+            ? "admin-banner admin-banner--degraded"
+            : identity.isStaff
+              ? "admin-banner admin-banner--identity"
+              : "admin-banner admin-banner--degraded"
+        }
+        aria-live="polite"
+      >
         <p>
-          <strong>Site health: degraded (preview stubs)</strong>
-          {allDegraded
-            ? " — every adapter reports ok: false. This is expected until EH-030/033/050."
-            : anyOk
-              ? " — at least one adapter claimed ok; treat as non-authoritative until Milestone 3."
-              : null}
+          <strong>
+            {identity.mode === "local_preview"
+              ? "Identity not configured"
+              : identity.isStaff
+                ? "Supabase identity (staff session)"
+                : identity.session
+                  ? "Supabase identity (not staff)"
+                  : "Supabase identity (sign in required)"}
+          </strong>
+          {identity.mode === "local_preview"
+            ? " — local-preview mode. Soft personas do not authorize admin. Configure Supabase env to enable the intended identity path."
+            : identity.isStaff
+              ? " — mutations require this staff membership. productionSafe remains false until EH-033."
+              : " — admin mutations are blocked until a staff membership session exists."}
         </p>
         <p className="small muted">
           {model.creator_display_name} (@{model.creator_handle}) ·{" "}
@@ -24,6 +42,24 @@ export function AdminOverview({ model }: { model: AdminOverviewModel }) {
               · manifest slice {model.manifest_slice}
             </>
           ) : null}
+        </p>
+      </section>
+
+      <section className="admin-banner admin-banner--degraded" aria-live="polite">
+        <p>
+          <strong>
+            Site health:{" "}
+            {allDegraded
+              ? "degraded (preview stubs)"
+              : anyOk
+                ? "partial readiness (preview)"
+                : "unknown"}
+          </strong>
+          {allDegraded
+            ? " — non-identity adapters remain stub/degraded until EH-033/050/070."
+            : anyOk
+              ? " — Auth/DB may report configured readiness; not a production-safe deploy claim."
+              : null}
         </p>
       </section>
 
@@ -52,8 +88,8 @@ export function AdminOverview({ model }: { model: AdminOverviewModel }) {
       <section className="admin-section" aria-labelledby="admin-adapters-heading">
         <h2 id="admin-adapters-heading">Adapter health</h2>
         <p className="small muted">
-          Stub/preview adapters must not false-green. productionSafe remains
-          false.
+          Auth/DB report readiness only with real non-placeholder env. Still
+          preview until EH-033. productionSafe remains false.
         </p>
         <ul className="admin-health-list">
           {model.adapters.map((row) => (

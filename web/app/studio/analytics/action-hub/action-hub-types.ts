@@ -205,7 +205,7 @@ export const MOCK_REPORT: LatestReport = {
   coach_review: { hasOpenReview: true }
 };
 
-export function generateDraftFrames(_findings: FindingChip[]): AutopostDraftFrame[] {
+export function generateDraftFrames(): AutopostDraftFrame[] {
   return [
     {
       id: "draft-nudge-01",

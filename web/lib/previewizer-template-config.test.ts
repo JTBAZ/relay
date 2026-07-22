@@ -6,7 +6,8 @@ import {
   hydratePreviewTemplateConfig,
   PreviewTemplateConfigParseError,
   PREVIEW_TEMPLATE_SCHEMA_VERSION,
-  serializePreviewTemplateConfig
+  serializePreviewTemplateConfig,
+  tryHydratePreviewTemplateConfig
 } from "./previewizer-template-config";
 
 describe("previewizer-template-config", () => {
@@ -130,5 +131,30 @@ describe("previewizer-template-config", () => {
       customDestinationUrl: "https://ok.example"
     });
     expect(patch.templateOptions.relayBranding).toBe(true);
+  });
+
+  it("tryHydrate soft-fails invalid config and never returns selection", () => {
+    const bad = tryHydratePreviewTemplateConfig({ schemaVersion: 99 });
+    expect(bad.ok).toBe(false);
+    if (!bad.ok) expect(bad.message).toMatch(/Invalid preview template config/i);
+
+    const serialized = serializePreviewTemplateConfig(
+      {
+        preset: "tight_crop",
+        aspectKey: "1:1",
+        compositionId: null,
+        compositionProps: null,
+        compositionVariantIndex: null,
+        overlayDoc: createDefaultOverlayDocument(),
+        templateOptions: { ...DEFAULT_TEMPLATE_OPTIONS }
+      },
+      { selectedDestinationId: null, customDestinationUrl: null }
+    );
+    const good = tryHydratePreviewTemplateConfig(serialized);
+    expect(good.ok).toBe(true);
+    if (good.ok) {
+      expect(good.patch).not.toHaveProperty("selection");
+      expect(good.patch.preset).toBe("tight_crop");
+    }
   });
 });

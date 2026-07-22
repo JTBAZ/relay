@@ -265,3 +265,25 @@ export function hydratePreviewTemplateConfig(raw: unknown): PreviewTemplateHydra
     })
   };
 }
+
+/**
+ * Soft hydrate for optional session preload — never throws; caller keeps mount defaults on failure.
+ * Patch never includes selection/crop.
+ */
+export function tryHydratePreviewTemplateConfig(
+  raw: unknown
+):
+  | { ok: true; patch: PreviewTemplateHydratePatch }
+  | { ok: false; message: string } {
+  try {
+    return { ok: true, patch: hydratePreviewTemplateConfig(raw) };
+  } catch (e) {
+    if (e instanceof PreviewTemplateConfigParseError) {
+      return { ok: false, message: e.message };
+    }
+    return {
+      ok: false,
+      message: e instanceof Error ? e.message : "Invalid preview template config."
+    };
+  }
+}

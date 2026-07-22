@@ -20,25 +20,28 @@ import {
   type Collection,
   type GalleryItem,
   type PostVisibility,
+  type TierFacet,
   type VisibilityAxisAction
 } from "@/lib/relay-api";
 import {
-  PILOT_PERMISSION_BULK_VISIBILITY_HINT,
-  PILOT_PERMISSION_HEADLINE
-} from "@/lib/pilot-permission-copy";
+  buildVisibilityTierSwitchboard,
+  type TierAccessBucket
+} from "@/lib/visibility-tier-switchboard";
 import { visibilityItemsTriState } from "@/lib/visibility-toggle-state";
 import { VisibilitySwitchRow } from "@/app/components/studio/VisibilitySwitchRow";
 
 type Panel = "none" | "tags" | "visibility" | "collection";
 
-const SEL = "#00aa6f";
+const SEL = "#9bf0c4";
 
 type Props = {
-  /** Distinct selected post count (for copy); bar should only mount when ≥2. */
+  /** Distinct selected post ids (for copy); bar mounts when ≥1. */
   selectedPostIds: string[];
   creatorId: string;
   selectedItems: GalleryItem[];
   collections: Collection[];
+  /** Creator tier catalog (facets) for the Access switchboard. */
+  tiers?: TierFacet[];
   onClearSelection: () => void;
   onListRefresh: () => void;
   onCollectionsReload: () => void;
@@ -53,6 +56,18 @@ type Props = {
   onLinkPosts?: (postIds: string[]) => void;
 };
 
+function tierBucketLabel(bucket: TierAccessBucket): string {
+  if (bucket === "access") return "Can access";
+  if (bucket === "mixed") return "Mixed";
+  return "No access";
+}
+
+function tierBucketTone(bucket: TierAccessBucket): string {
+  if (bucket === "access") return SEL;
+  if (bucket === "mixed") return "#e0b35a";
+  return "#555";
+}
+
 function parseTagList(raw: string): string[] {
   return raw
     .split(",")
@@ -61,13 +76,15 @@ function parseTagList(raw: string): string[] {
 }
 
 /**
- * Multi-select library toolkit (≥2 posts). Single-post manage lives on card click → hero / chips.
+ * Selection action bar for Active Posts / Library (≥1 post).
+ * Link posts stays multi-post only; Visibility is a compact switchboard.
  */
 export default function BulkActionBar({
   selectedPostIds,
   creatorId,
   selectedItems,
   collections,
+  tiers = [],
   onClearSelection,
   onListRefresh,
   onCollectionsReload,
@@ -207,6 +224,22 @@ export default function BulkActionBar({
     () => visibilityItemsTriState(selectedItems, (v) => v === "review"),
     [selectedItems]
   );
+  const tierBoard = useMemo(
+    () => buildVisibilityTierSwitchboard(selectedItems, tiers),
+    [selectedItems, tiers]
+  );
+  const accessTiers = useMemo(
+    () => tierBoard.tiers.filter((t) => t.bucket === "access"),
+    [tierBoard.tiers]
+  );
+  const lockedTiers = useMemo(
+    () => tierBoard.tiers.filter((t) => t.bucket === "locked"),
+    [tierBoard.tiers]
+  );
+  const mixedTiers = useMemo(
+    () => tierBoard.tiers.filter((t) => t.bucket === "mixed"),
+    [tierBoard.tiers]
+  );
   const allHidden = hiddenState === "on";
   const onHiddenToggle = (nextOn: boolean) => {
     void applyVisibilityAxis(nextOn ? "set_hidden" : "set_visible");
@@ -287,7 +320,7 @@ export default function BulkActionBar({
     else setTagRemoveDraft(tag);
   };
 
-  if (postCount < 2) return null;
+  if (postCount < 1) return null;
 
   const toggle = (next: Panel) => setPanel((p) => (p === next ? "none" : next));
 
@@ -407,57 +440,169 @@ export default function BulkActionBar({
 
         {panel === "visibility" ? (
           <div
-            className="mb-2 w-[min(100vw-2rem,18rem)] overflow-hidden rounded-2xl border shadow-2xl"
+            className="mb-2 w-[min(100vw-2rem,20rem)] overflow-hidden rounded-2xl border shadow-2xl"
             style={{ background: "#0e0e0e", borderColor: "#2a2a2a" }}
+            data-visibility-switchboard
+            aria-label="Visibility"
           >
-            <p
-              className="border-b px-3 py-2 text-[10px] font-semibold uppercase tracking-wider"
-              style={{ borderColor: "#1a1a1a", color: "#666" }}
+            <div
+              className="flex items-center justify-between border-b px-3 py-2"
+              style={{ borderColor: "#1a1a1a" }}
             >
-              Visibility
-            </p>
-            <p
-              className="border-b px-3 py-1.5 text-[10px] font-medium leading-snug"
-              style={{ borderColor: "#1a1a1a", color: "#ccc" }}
-            >
-              {PILOT_PERMISSION_HEADLINE}
-            </p>
-            <p
-              className="border-b px-3 py-2 text-[9px] leading-snug"
-              style={{ borderColor: "#1a1a1a", color: "#555" }}
-            >
-              {PILOT_PERMISSION_BULK_VISIBILITY_HINT}
-            </p>
+              <p
+                className="text-[10px] font-semibold uppercase tracking-[0.14em]"
+                style={{ color: "#68706c" }}
+              >
+                Visibility
+              </p>
+              <p className="text-[10px] tabular-nums" style={{ color: "#555" }}>
+                {postCount} {postCount === 1 ? "post" : "posts"}
+              </p>
+            </div>
+
             {studioWriteBlocked ? (
-              <p className="mx-3 mt-2 rounded-lg border border-[var(--lib-warning)]/35 bg-[var(--lib-warning)]/10 px-2.5 py-2 text-[10px] text-[var(--lib-fg)]">
-                Patreon sync must be healthy before changing visibility.
+              <p
+                className="mx-3 mt-2 rounded-lg border px-2.5 py-2 text-[10px]"
+                style={{
+                  borderColor: "rgba(224,179,90,0.35)",
+                  background: "rgba(224,179,90,0.08)",
+                  color: "#e8e0d0"
+                }}
+              >
+                Sync must be healthy before changing visibility.
               </p>
             ) : null}
+
             <VisibilitySwitchRow
               label="Hidden"
-              helper="Off gallery for patrons; you still see it in Library"
               state={hiddenState}
               busy={visBusy}
               disabled={studioWriteBlocked}
               accentColor={SEL}
-              title="Applies to all selected posts and assets"
               onToggle={onHiddenToggle}
             />
             <div className="mx-3 h-px" style={{ background: "#1a1a1a" }} role="separator" />
             <VisibilitySwitchRow
               label="Adult (18+)"
-              helper="Mature content rating on Relay"
               state={matureState}
               busy={visBusy}
               disabled={studioWriteBlocked || allHidden}
               accentColor={SEL}
-              title={
-                allHidden
-                  ? "Unhide first — hidden posts cannot be rated while off-gallery"
-                  : "Applies to all selected; hidden rows stay hidden"
-              }
+              title={allHidden ? "Unhide first" : undefined}
               onToggle={onMatureToggle}
             />
+
+            <div className="border-t" style={{ borderColor: "#1a1a1a" }}>
+              <p
+                className="px-3 pb-1 pt-2.5 text-[10px] font-semibold uppercase tracking-[0.14em]"
+                style={{ color: "#68706c" }}
+              >
+                Tier access
+              </p>
+
+              <div className="px-3 pb-1.5">
+                <div className="flex items-center justify-between gap-2 py-1">
+                  <span className="text-[12px] font-medium" style={{ color: "#edf2ef" }}>
+                    Public (open web)
+                  </span>
+                  <span
+                    className="text-[10px] font-semibold uppercase tracking-wide"
+                    style={{ color: tierBucketTone(tierBoard.publicAccess) }}
+                  >
+                    {tierBucketLabel(tierBoard.publicAccess)}
+                  </span>
+                </div>
+              </div>
+
+              {tiers.length === 0 ? (
+                <p className="px-3 pb-3 text-[11px]" style={{ color: "#555" }}>
+                  No tiers synced yet.
+                </p>
+              ) : (
+                <div className="max-h-44 space-y-2.5 overflow-y-auto px-3 pb-3">
+                  {accessTiers.length > 0 ? (
+                    <div>
+                      <p
+                        className="mb-1 text-[10px] font-medium uppercase tracking-wide"
+                        style={{ color: SEL }}
+                      >
+                        Can access
+                      </p>
+                      <ul className="space-y-0.5">
+                        {accessTiers.map((t) => (
+                          <li
+                            key={t.tier_id}
+                            className="flex items-center gap-2 rounded-md px-2 py-1.5 text-[12px]"
+                            style={{ background: "rgba(155,240,196,0.06)", color: "#edf2ef" }}
+                          >
+                            <span
+                              className="h-1.5 w-1.5 shrink-0 rounded-full"
+                              style={{ background: SEL }}
+                              aria-hidden
+                            />
+                            <span className="min-w-0 truncate">{t.label}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  ) : null}
+
+                  {mixedTiers.length > 0 ? (
+                    <div>
+                      <p
+                        className="mb-1 text-[10px] font-medium uppercase tracking-wide"
+                        style={{ color: "#e0b35a" }}
+                      >
+                        Mixed
+                      </p>
+                      <ul className="space-y-0.5">
+                        {mixedTiers.map((t) => (
+                          <li
+                            key={t.tier_id}
+                            className="flex items-center gap-2 rounded-md px-2 py-1.5 text-[12px]"
+                            style={{ background: "rgba(224,179,90,0.08)", color: "#d8c9a8" }}
+                          >
+                            <span
+                              className="h-1.5 w-1.5 shrink-0 rounded-full"
+                              style={{ background: "#e0b35a" }}
+                              aria-hidden
+                            />
+                            <span className="min-w-0 truncate">{t.label}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  ) : null}
+
+                  {lockedTiers.length > 0 ? (
+                    <div>
+                      <p
+                        className="mb-1 text-[10px] font-medium uppercase tracking-wide"
+                        style={{ color: "#555" }}
+                      >
+                        No access
+                      </p>
+                      <ul className="space-y-0.5">
+                        {lockedTiers.map((t) => (
+                          <li
+                            key={t.tier_id}
+                            className="flex items-center gap-2 rounded-md px-2 py-1.5 text-[12px]"
+                            style={{ background: "#121212", color: "#6a726e" }}
+                          >
+                            <span
+                              className="h-1.5 w-1.5 shrink-0 rounded-full"
+                              style={{ background: "#3a3a3a" }}
+                              aria-hidden
+                            />
+                            <span className="min-w-0 truncate">{t.label}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  ) : null}
+                </div>
+              )}
+            </div>
           </div>
         ) : null}
 
@@ -569,14 +714,16 @@ export default function BulkActionBar({
             <span className="font-semibold tabular-nums" style={{ color: "#ccc" }}>
               {postCount}
             </span>{" "}
-            posts selected
+            {postCount === 1 ? "post selected" : "posts selected"}
           </span>
           <div className="h-4 w-px" style={{ background: "#2a2a2a" }} />
           {onLinkPosts ? (
             <button
               type="button"
               onClick={triggerLinkPosts}
-              className="flex items-center gap-2 rounded-xl px-3.5 py-2 text-[12px] font-semibold transition-all duration-150"
+              disabled={postCount < 2}
+              title={postCount < 2 ? "Select at least two posts to link" : "Link posts"}
+              className="flex items-center gap-2 rounded-xl px-3.5 py-2 text-[12px] font-semibold transition-all duration-150 disabled:cursor-not-allowed disabled:opacity-40"
               style={{
                 background: "rgba(155,240,196,0.14)",
                 color: mint,

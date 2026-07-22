@@ -30,6 +30,9 @@ Authority split:
 | Boosts                  | **Deferred** to the Exposure Feed phase. v1 status layer = Curator badge + perks.                                                                                            |
 | Coach Plan credits      | Entitlement/quota unit for bounded Goal Cycle planning; **not Tips, money, or stored value**. Included allowances stay configurable pending pilot COGS; paid top-ups are deferred. |
 | Build order             | **Phase 1** artist billing spine → **Phase 2** free-Tip instrumented beta → **Phase 3** paid fan tiers + waterfall + payouts → **Phase 4** frontend monetization integration |
+| Escape Hatch            | Separate one-time independence product; creator owns generated site, infrastructure, processor, and subscription revenue. Price remains configurable pending delivery COGS. |
+| Managed Patreon verification | Optional monthly Relay add-on for OAuth mediation/token upkeep/site-scoped entitlement assertions; creator-owned OAuth remains the replaceable independence path. |
+| Escape Hatch maintenance | Delivery defects covered for 90 days; post-warranty upgrades, provider migration, operations, and future managed hosting are separately priced. |
 
 
 ---
@@ -49,6 +52,38 @@ See the dependency-ordered implementation packs at [`studio/goal-cycle-build-pla
 
 ---
 
+## Escape Hatch billing boundary
+
+The construction and agent contract is [`studio/escape-hatch-build-plans/00-README.md`](studio/escape-hatch-build-plans/00-README.md). Escape Hatch does not use the Tip economy or artist-earnings ledger for the creator's independent website.
+
+### Revenue products
+
+1. **Construction fee:** one-time Relay checkout for assembly, migration, guided deployment, verification, and ownership handoff. Price is configurable; no patron-count bands or percentage of creator subscription revenue.
+2. **Managed Patreon verification:** optional recurring Relay line item. Entitles a registered generated site to Relay-mediated OAuth/token maintenance and short-lived site-scoped Patreon entitlement assertions.
+3. **Maintenance/hosting:** future or quoted services for post-warranty upgrades, provider changes, hands-on operations, and optional managed hosting. Not bundled silently into construction.
+
+### Managed connector implementation
+
+- Use the existing Relay creator billing spine (`BillingCustomer` / `PlanSubscription` or the final generalized product-entitlement abstraction), not the independent site's billing account.
+- Give the connector its own configurable price ID/product key, subscription item, entitlement, feature flag, webhook/idempotency handling, grace/cancellation state, and invoice copy.
+- Keep connector status separate from Studio Core/Autopost/Growth Engine feature ladders unless Finance explicitly chooses bundling later.
+- Cancellation stops new managed verification after the disclosed service/grace date; it never deletes the generated site's users, media, native posts, independent subscriptions, or admin.
+- The site must support migration to creator-owned Patreon OAuth without rebuild.
+- Meter service health/usage for COGS, but do not turn Patreon patrons or revenue into billable units.
+
+### Independent-site money flow
+
+- The creator opens and owns the processor account and is the business patrons pay.
+- Relay takes no application fee or revenue percentage in v1.
+- Stripe is offered only to eligible creator businesses. Lawful categories Stripe prohibits require a separately approved billing adapter; Relay never hides or misclassifies content.
+- Provider charges, tax, refunds, disputes, and negative balances belong to the creator/provider relationship.
+
+### Finance gates
+
+Do not set public prices until cohort evidence covers construction labor, media transfer, support, warranty reserve, connector infrastructure, incident/privacy burden, attach rate, churn, and margin. Update [`financial-atlas.md`](financial-atlas.md) when those prices are locked.
+
+---
+
 ## Platform invariants (the format the app must abide by)
 
 These are non-negotiable rules enforced in code review and tests, not just convention:
@@ -64,6 +99,7 @@ These are non-negotiable rules enforced in code review and tests, not just conve
 9. **No tax on creator subscription revenue.** No percentage of Patreon income, no ledger debits against Patreon earnings, ever (atlas ruled-out list).
 10. **Accurate money copy.** "Artists earn $0.33 per preview" — never "100% of Tip value." Paid/boosted placement is always labeled.
 11. **Staged rollout behind flags.** Every phase ships dark behind `CreatorFeatureFlag` (artist side) and a fan-side plan/flag check, enabled per tenant before general release.
+12. **Escape Hatch independence.** Construction, optional OAuth mediation, and maintenance are disclosed service charges. Relay never takes a cut of the generated site's patron subscriptions, and optional Relay-service cancellation cannot disable native site operation.
 
 ---
 
@@ -444,13 +480,14 @@ Each phase has an itemized, worker-agent-iterable build plan with frozen contrac
 
 **Mandatory frontend canon:** builders must read [RELAY_DESIGN_CODE.md](RELAY_DESIGN_CODE.md) in full before changing `web/`.
 
-**Fast-follow (out of scope here):** Exposure Feed + Boosts (needs feed ranking), storefront checkout (unlocks true discount codes + the 10% storefront cut), migration/Escape Hatch services packaging (post EH-4).
+**Separate construction program:** Escape Hatch packaging, hard paywall, independent billing adapters, deployment, ownership handoff, and managed Patreon verification are specified in [`studio/escape-hatch-build-plans/`](studio/escape-hatch-build-plans/00-README.md). Its Relay invoice items reuse the billing spine but do not share the independent site's money flow.
 
 ---
 
 ## Return-to list
 
 - **Adult-segment monetization rail** — dual-rail high-risk processor decision, deliberately deferred; SFW-only boundary holds until then.
+- **Escape Hatch lawful alternate billing adapter** — separate from Relay fan monetization; requires provider-policy, sandbox, security, and human approval before the wizard advertises it.
 - **Reload Pack pricing sanity** — re-verify $5/10 against observed reveal demand before enabling purchase.
 - **Boost economics** — funded by Premium subscriptions per the atlas; design against real feed-ranking when the Exposure Feed lands.
 - **Revenue recognition** — bill credits net against SaaS MRR; align bookkeeping treatment before scale.

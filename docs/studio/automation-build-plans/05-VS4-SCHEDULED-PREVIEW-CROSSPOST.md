@@ -215,4 +215,47 @@ Automation Delta Out
   When complete, append Automation Delta Out, mark VS4 Done if exit gate passes, name B12 next, then stop.
 ```
 
-**Slice status:** VS4 **In progress** (B09–B10 landed; B11 remaining).
+### Batch 11 — 2026-07-20
+
+```text
+Automation Delta Out
+- Global batch / claimed work items: B11 / AUT-VS4-T03
+- Completed: AUT-VS4-T03
+- Files created/edited:
+  - src/autopost/automation-reconcile-service.ts — reconcileAutomations; expireStaleAutomationRuns; one-pending awaiting_review skip; no-new-post skip + notification intents
+  - src/autopost/automation-worker.ts (new) — in-process runner; RELAY_AUTOPOST_AUTOMATIONS_MS kill switch
+  - src/jobs/queue-names.ts — AUTOPOST_AUTOMATIONS queue + AutopostAutomationsJobData
+  - src/jobs/register-workers.ts, schedule-bullmq-repeat.ts — BullMQ worker + repeat registration
+  - src/main.ts, src/worker.ts — memory-backend in-process start/stop
+  - .env.example — RELAY_AUTOPOST_AUTOMATIONS_MS docs
+  - tests/automations/automation-reconcile.test.ts — flag-off, awaiting-review, no-new-post, expiry idempotency, materialize recovery
+  - tests/schedule-series-service.test.ts — queue + interval env
+  - docs/studio/automation-build-plans/00-README.md (VS4 → Done)
+  - docs/studio/automation-build-plans/05-VS4-SCHEDULED-PREVIEW-CROSSPOST.md (this Delta Out)
+- Migration and backfill state: none
+- Contracts changed (expected: none unless this batch owns them): notification intents returned in-reconcile only (VS5 delivers)
+- Commands and results:
+  - npx vitest run tests/automations/{trigger-series,source-resolver,automation-reconcile}.test.ts tests/schedule-series-service.test.ts → 31 passed
+  - npm run build → ok
+- Manual/browser checks: n/a
+- Feature flags / kill switches: RELAY_FEATURE_AUTOMATIONS still defaults off; RELAY_AUTOPOST_AUTOMATIONS_MS=0 disables worker even if flag on
+- Existing atom regressions checked: ordinary schedule-series + distribution-rules workers unchanged; Automations reconcile is additive
+- Known risks or human gates: notification intents not written to outbox (VS5); rail/toast projection is B12+
+- Reopened owner IDs, if any: none
+- Next unblocked batch: B12 (AUT-VS5-T01)
+- Pasteable next-worker prompt:
+  You are a Schedule Rail Automations builder in Rescue/Relay.
+  Read AGENTS.md, .cursor/rules/rescue-workflow-always.mdc,
+  docs/studio/automation-build-plans/BUILDER-ORIENTATION.md,
+  docs/studio/automation-build-plans/00-README.md,
+  docs/studio/automation-build-plans/06-VS5-RAIL-REMINDER-PROJECTION.md,
+  docs/studio/automation-build-plans/05-VS4-SCHEDULED-PREVIEW-CROSSPOST.md (B11 Delta Out),
+  src/autopost/automation-reconcile-service.ts, distribution/schedule-rail-service,
+  and schedule reminder / CreatorScheduleEvent paths.
+  Claim global Batch B12 only: AUT-VS5-T01 (project planned + materialized automation metadata onto the rail).
+  Do not implement Previewizer UI or Automations modal.
+  Reuse manual_event + schedule_reminder:manual:; do not invent automation_occurrence.
+  When complete, append Automation Delta Out, name B13 next, then stop.
+```
+
+**Slice status:** VS4 **Done** (B09–B11 complete).

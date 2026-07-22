@@ -9,8 +9,7 @@ import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { Sparkles } from "lucide-react";
 import type {
   GoalCycleDetail,
-  GoalCycleMaterializationReceipt,
-  GoalCyclePlan
+  GoalCycleMaterializationReceipt
 } from "@/lib/goal-cycle-types";
 import { approveCreatorGoalCycle, RelayApiError } from "@/lib/relay-api";
 import { GoalCycleFlow, type GoalCycleFlowApi } from "./GoalCycleFlow";
@@ -105,7 +104,7 @@ export function GoalCycleLauncher({
   }, [open]);
 
   const handleApprove = useCallback(
-    async (c: GoalCycleDetail, _plan: GoalCyclePlan) => {
+    async (c: GoalCycleDetail) => {
       if (!approvalKeyRef.current) {
         approvalKeyRef.current =
           typeof crypto !== "undefined" && "randomUUID" in crypto

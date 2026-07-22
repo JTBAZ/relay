@@ -4,6 +4,17 @@ CLI test bed that turns a Patreon-shaped JSON bundle into a **viewable subscript
 
 > **Not production security.** Soft gate only changes what the UI shows. Locked media files are still copied into `public/media`. Do not deploy an Escape Hatch kit as a real paywall until hard auth + entitlement checks land (roadmap EH-4).
 
+## Product status and construction program
+
+This package is the **prototype engine**, not the finished creator product. The production target is a Relay Studio wizard that generates and deploys a creator-owned Next.js membership application with hard entitlement checks, private R2 media, creator-owned accounts/billing/infrastructure, an operating admin, and an ownership packet.
+
+The authoritative product, UX, security, testing, agent, and build contracts are in:
+
+- [`docs/studio/escape-hatch-build-plans/00-README.md`](../../docs/studio/escape-hatch-build-plans/00-README.md)
+- [`docs/studio/escape-hatch-build-plans/11-BUILD-BATTING-ORDER.md`](../../docs/studio/escape-hatch-build-plans/11-BUILD-BATTING-ORDER.md)
+
+Do not infer production readiness from this CLI's generated zip or passing package tests.
+
 ## Pipeline
 
 ```text
@@ -32,7 +43,7 @@ npm run dev
 
 Open the URL Next prints (port **3001**). You land on **Structure** (tier/post map). Use console tabs: Structure → Style → Preview.
 
-> See **[IA.md](./IA.md)** for the product hierarchy and field bindings.
+> See **[IA.md](./IA.md)** for the current prototype hierarchy and field bindings. Production wizard/admin IA is defined by the construction program.
 
 > **Windows / npm note:** prefer **positional** CLI args. npm often strips `--bundle`-style flags on Windows.
 

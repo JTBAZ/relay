@@ -12,6 +12,10 @@ import {
   distributionRulesRepeatEveryMsFromEnv,
   DEFAULT_DISTRIBUTION_RULES_INTERVAL_MS
 } from "../src/autopost/distribution-rule-worker.js";
+import {
+  automationsRepeatEveryMsFromEnv,
+  DEFAULT_AUTOMATIONS_INTERVAL_MS
+} from "../src/autopost/automation-worker.js";
 import { RELAY_JOB_QUEUE_NAMES, ALL_RELAY_JOB_QUEUE_NAMES } from "../src/jobs/queue-names.js";
 
 describe("schedule-series occurrence expansion", () => {
@@ -83,10 +87,19 @@ describe("autopost routine workers env", () => {
     ).toBeNull();
   });
 
+  it("defaults automations interval to 1h and honors kill switch", () => {
+    expect(automationsRepeatEveryMsFromEnv({})).toBe(DEFAULT_AUTOMATIONS_INTERVAL_MS);
+    expect(automationsRepeatEveryMsFromEnv({ RELAY_AUTOPOST_AUTOMATIONS_MS: "0" })).toBeNull();
+    expect(
+      automationsRepeatEveryMsFromEnv({ RELAY_AUTOPOST_AUTOMATIONS_MS: "120000" })
+    ).toBe(120000);
+  });
+
   it("registers queue names in ALL_RELAY_JOB_QUEUE_NAMES", () => {
     expect(ALL_RELAY_JOB_QUEUE_NAMES).toContain(RELAY_JOB_QUEUE_NAMES.AUTOPOST_SCHEDULE_SERIES);
     expect(ALL_RELAY_JOB_QUEUE_NAMES).toContain(
       RELAY_JOB_QUEUE_NAMES.AUTOPOST_DISTRIBUTION_RULES
     );
+    expect(ALL_RELAY_JOB_QUEUE_NAMES).toContain(RELAY_JOB_QUEUE_NAMES.AUTOPOST_AUTOMATIONS);
   });
 });

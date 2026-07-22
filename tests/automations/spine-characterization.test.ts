@@ -199,9 +199,28 @@ describe("Automations spine characterization (AUT-VS0-T01)", () => {
       sourceMediaId: "m1",
       sourceImageUrl: "https://example.test/m1.jpg"
     });
-    // No initial template config on session today — VS6 must extend additively.
+    // Ordinary callers omit initial template config — VS6 extends additively only when passed.
     expect(session).not.toHaveProperty("initialTemplateConfig");
     expect(session).not.toHaveProperty("initialConfig");
+    const withPreload = buildPreviewizerSession({
+      creatorId: "c1",
+      postId: "p1",
+      sourceMediaId: "m1",
+      sourceImageUrl: "https://example.test/m1.jpg",
+      initialTemplateConfig: {
+        schemaVersion: 1,
+        preset: "tight_crop",
+        aspectKey: "1:1",
+        compositionId: null,
+        compositionProps: null,
+        compositionVariantIndex: null,
+        overlayDoc: { version: 1, layers: [], stamps: [], graphicLayers: [] },
+        templateOptions: {},
+        destination: { selectedDestinationId: null, customDestinationUrl: null }
+      } as never
+    });
+    expect(withPreload).toHaveProperty("initialTemplateConfig");
+    expect(withPreload.initialTemplateConfig).not.toHaveProperty("selection");
   });
 
   it("rejects preview routing without preview_media_id (ordering invariant)", () => {

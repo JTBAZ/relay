@@ -89,7 +89,9 @@ import {
 import {
   hydratePreviewTemplateConfig,
   MAX_CUSTOM_PREVIEW_TEMPLATES,
-  serializePreviewTemplateConfig
+  serializePreviewTemplateConfig,
+  tryHydratePreviewTemplateConfig,
+  type PreviewTemplateHydratePatch
 } from "@/lib/previewizer-template-config";
 
 const ASPECT_KEYS: AspectRatioKey[] = ["1:1", "4:5", "9:16"];
@@ -528,40 +530,48 @@ export default function PreviewizerClient({
     refreshSavedTemplates
   ]);
 
+  const applyHydratePatch = useCallback(
+    (patch: PreviewTemplateHydratePatch, historyLabel: string) => {
+      setApplyNotice(null);
+      undo.setPresent(historyLabel, (prev) => ({
+        ...prev,
+        preset: patch.preset,
+        aspectKey: patch.aspectKey,
+        compositionId: patch.compositionId,
+        compositionProps: patch.compositionProps,
+        compositionVariantIndex: patch.compositionVariantIndex,
+        overlayDoc: patch.overlayDoc,
+        templateOptions: patch.templateOptions
+        // selection intentionally unchanged
+      }));
+      setSelectedLayerId(null);
+      setSelectedStampId(null);
+
+      const destId = asLinkPlatformId(patch.destination.selectedDestinationId);
+      if (destId === "custom") {
+        setCustomDestinationUrl(patch.destination.customDestinationUrl ?? "");
+        setSelectedDestinationId("custom");
+      } else if (destId) {
+        const live = findPreviewizerDestination(linkDestinations, destId);
+        if (!live?.available) {
+          setApplyNotice(
+            `Template applied, but ${destId} isn’t linked — pick a destination for the QR.`
+          );
+        }
+        setSelectedDestinationId(destId);
+        // Do not call applyDestinationToComposition — keeps sticky handle/label text.
+      }
+    },
+    [undo, linkDestinations]
+  );
+
   const applySavedTemplate = useCallback(
     (template: PreviewTemplateWire) => {
       setApplyingTemplateId(template.template_id);
       setApplyNotice(null);
       try {
         const patch = hydratePreviewTemplateConfig(template.config);
-        undo.setPresent(`Apply template: ${template.name}`, (prev) => ({
-          ...prev,
-          preset: patch.preset,
-          aspectKey: patch.aspectKey,
-          compositionId: patch.compositionId,
-          compositionProps: patch.compositionProps,
-          compositionVariantIndex: patch.compositionVariantIndex,
-          overlayDoc: patch.overlayDoc,
-          templateOptions: patch.templateOptions
-          // selection intentionally unchanged
-        }));
-        setSelectedLayerId(null);
-        setSelectedStampId(null);
-
-        const destId = asLinkPlatformId(patch.destination.selectedDestinationId);
-        if (destId === "custom") {
-          setCustomDestinationUrl(patch.destination.customDestinationUrl ?? "");
-          setSelectedDestinationId("custom");
-        } else if (destId) {
-          const live = findPreviewizerDestination(linkDestinations, destId);
-          if (!live?.available) {
-            setApplyNotice(
-              `Template applied, but ${destId} isn’t linked — pick a destination for the QR.`
-            );
-          }
-          setSelectedDestinationId(destId);
-          // Do not call applyDestinationToComposition — keeps sticky handle/label text.
-        }
+        applyHydratePatch(patch, `Apply template: ${template.name}`);
         setMyTemplatesOpen(false);
       } catch (e) {
         setTemplatesListError(e instanceof Error ? e.message : String(e));
@@ -569,7 +579,7 @@ export default function PreviewizerClient({
         setApplyingTemplateId(null);
       }
     },
-    [undo, linkDestinations]
+    [applyHydratePatch]
   );
 
   const deleteSavedTemplate = useCallback(
@@ -758,6 +768,8 @@ export default function PreviewizerClient({
 
   // Generation token so superseded mounts (effect cleanup / newer load) ignore late onload.
   const imageMountGenRef = useRef(0);
+  /** AUT-VS6-T01 — apply session.initialTemplateConfig once after source mount. */
+  const initialTemplateAppliedRef = useRef(false);
   const replaceSnapshot = undo.replace;
 
   const mountImageFromUrl = useCallback(
@@ -837,6 +849,7 @@ export default function PreviewizerClient({
   useEffect(() => {
     const sourceUrl = session?.sourceImageUrl;
     if (!sourceUrl) return;
+    initialTemplateAppliedRef.current = false;
     let cancelled = false;
     void loadFromUrl(sourceUrl).catch((e) => {
       if (cancelled) return;
@@ -848,6 +861,27 @@ export default function PreviewizerClient({
       imageMountGenRef.current += 1;
     };
   }, [session?.sourceImageUrl, loadFromUrl]);
+
+  // Optional Automations / approval preload: after mount crop is set, apply layout once.
+  useEffect(() => {
+    if (!studioReady || !imageEl) return;
+    const config = session?.initialTemplateConfig;
+    if (!config || initialTemplateAppliedRef.current) return;
+    initialTemplateAppliedRef.current = true;
+    const hydrated = tryHydratePreviewTemplateConfig(config);
+    if (!hydrated.ok) {
+      setApplyNotice(
+        "Saved template snapshot could not be applied — studio defaults kept. You can pick a template from My Templates."
+      );
+      return;
+    }
+    applyHydratePatch(hydrated.patch, "Apply saved template snapshot");
+  }, [
+    studioReady,
+    imageEl,
+    session?.initialTemplateConfig,
+    applyHydratePatch
+  ]);
 
   useEffect(() => {
     void preloadPreviewizerFonts();

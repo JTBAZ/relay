@@ -340,7 +340,6 @@ export function SaleBurstShell({
  * a translucent outer halo ring, and an inset top-left highlight band.
  */
 export function StickerOutlineShell({
-  id = "stickerOutline",
   className,
   style,
 }: {
@@ -409,7 +408,6 @@ export function StickerOutlineShell({
  * and a fold corner triangle indicating the ribbon's peel depth.
  */
 export function CornerRibbonShell({
-  id = "cornerRibbon",
   className,
   style,
 }: {
@@ -476,7 +474,6 @@ export function CornerRibbonShell({
  * Represented in SVG as two concentric rounded rectangles.
  */
 export function GhostTagShell({
-  id = "ghostTag",
   className,
   style,
 }: {
@@ -539,7 +536,6 @@ export function GhostTagShell({
  * rule lines. The shell encodes both panels as SVG rects.
  */
 export function SplitBannerShell({
-  id = "splitBanner",
   className,
   style,
 }: {
@@ -614,7 +610,6 @@ export function SplitBannerShell({
  * stroke ring and hollow registration-mark dots at the upper corners.
  */
 export function StampMonoShell({
-  id = "stampMono",
   className,
   style,
 }: {
@@ -687,7 +682,6 @@ export function StampMonoShell({
  * an outer thin stroke ring, and an inset top highlight arc.
  */
 export function FlashPillShell({
-  id = "flashPill",
   className,
   style,
 }: {
@@ -748,7 +742,6 @@ export function FlashPillShell({
  */
 export function PlatformCardShell({
   platformColor = "#FF424D",
-  id = "platformCard",
   className,
   style,
 }: {
@@ -1231,7 +1224,6 @@ export function PromoSplitBanner({
 /* ─── 6. STAMP MONO ──────────────────────────────────────────────────────── */
 export function PromoStampMono({
   text,
-  fontClass = "mono",
   platform = "patreon",
   scale = 1,
   textFillRatio = 1,
@@ -1385,7 +1377,6 @@ export function PromoPlatformCard({
   platform = "patreon",
   scale = 1,
   textFillRatio = 1,
-  showPlatformLockup = false,
 }: PromoProps) {
   const s = scale
   const platformColors: Record<Platform, string> = {

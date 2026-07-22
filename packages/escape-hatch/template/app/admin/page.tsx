@@ -13,7 +13,8 @@ export default async function AdminPage() {
       <ConsoleNav />
       <AdminShell
         title="Admin"
-        lede="Operate this membership kit from its own console — health, posts, media, and tiers against fixture/data state. Not production auth."
+        lede="Operate this membership kit from its own console — health, posts, media, and tiers against fixture/data state. Soft personas never authorize admin."
+        identity={model.identity}
       >
         <AdminOverview model={model} />
       </AdminShell>

@@ -1,13 +1,17 @@
 /**
- * Server-side admin data loaders (EH-022).
+ * Server-side admin data loaders (EH-022 / EH-030).
  * Prefer data/ kit artifacts; never treat public/media as private-verified.
- * productionSafe remains false — stub adapters report ok: false.
+ * productionSafe remains false. Soft persona never authorizes admin.
  */
 
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { createStubAdapters } from "@/lib/adapters";
+import { createSiteAdapters } from "@/lib/adapters";
 import type { AdapterHealth } from "@/lib/adapters/types";
+import {
+  resolveAdminIdentity,
+  type AdminIdentityState
+} from "@/lib/identity/admin-access";
 import { loadSite } from "@/lib/load-site";
 import { loadAdminAttention } from "./attention";
 import type {
@@ -30,6 +34,7 @@ export type AdminOverviewModel = {
   adapters: AdapterHealthRow[];
   blockers: string[];
   attention_count: number;
+  identity: AdminIdentityState;
 };
 
 export type AdminPostsModel = {
@@ -87,7 +92,8 @@ async function healthDetail(h: AdapterHealth): Promise<{ ok: boolean; detail: st
 
 export async function loadAdminOverview(): Promise<AdminOverviewModel> {
   const site = loadSite();
-  const adapters = createStubAdapters();
+  const adapters = createSiteAdapters();
+  const identity = await resolveAdminIdentity(site.site_id);
   const healthPairs = await Promise.all([
     adapters.auth.health().then((h) =>
       healthDetail(h).then((d) => ({
@@ -147,6 +153,23 @@ export async function loadAdminOverview(): Promise<AdminOverviewModel> {
 
   const attention = loadAdminAttention(site.site_id);
 
+  const blockers: string[] = [
+    "No signed private media delivery (EH-033) — public/media may still leak premium bytes",
+    "Billing adapter is stub-only (EH-050)",
+    "Entitlement service freshness/audit (EH-032) not fully wired"
+  ];
+  if (identity.mode === "local_preview") {
+    blockers.unshift(
+      "Identity not configured — admin mutations remain local-operator only (not authentication)"
+    );
+  } else if (!identity.session) {
+    blockers.unshift("Supabase identity configured — sign in required for admin mutations");
+  } else if (!identity.isStaff) {
+    blockers.unshift(
+      "Signed in but no admin/operator membership for this site"
+    );
+  }
+
   return {
     site_id: site.site_id,
     creator_display_name: site.creator.display_name,
@@ -158,13 +181,9 @@ export async function loadAdminOverview(): Promise<AdminOverviewModel> {
     production_safe: false,
     manifest_slice: readManifestSlice(),
     adapters: healthPairs,
-    blockers: [
-      "No hard patron identity / RLS (EH-030)",
-      "No signed private media delivery (EH-033)",
-      "Billing adapter is stub-only (EH-050)",
-      "Admin mutations are local-operator only — not authentication"
-    ],
-    attention_count: Object.keys(attention.marks).length
+    blockers,
+    attention_count: Object.keys(attention.marks).length,
+    identity
   };
 }
 

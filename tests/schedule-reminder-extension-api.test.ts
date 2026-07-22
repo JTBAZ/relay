@@ -181,6 +181,21 @@ describe("schedule-reminder-extension-api helpers", () => {
     expect(customUrl.primary_cta.label).toBe("Open link");
     expect(customUrl.primary_cta.url).toBe("https://example.com/notes");
 
+    // Automations approval deep link (B13 / AU-07) — same custom+url path.
+    const approval = resolveReminderCtas({
+      action: "post",
+      destination: null,
+      mediaReady: true,
+      openUrl:
+        "https://relay.example/studio/autopost?draft_id=d1&automation_run_id=r1&automation_id=a1",
+      relayWebBase: base,
+      draftId: null,
+      eventType: "custom"
+    });
+    expect(approval.primary_cta.kind).toBe("external_post");
+    expect(approval.primary_cta.url).toContain("/studio/autopost?");
+    expect(approval.primary_cta.url).toContain("automation_run_id=r1");
+
     const customNoUrl = resolveReminderCtas({
       action: "post",
       destination: null,

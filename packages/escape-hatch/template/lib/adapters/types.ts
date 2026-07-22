@@ -1,8 +1,9 @@
 /**
- * Typed adapter surfaces for the generated kit (EH-020 chassis).
- * Implementations are stubs until EH-030+; interfaces keep the kit compilable
- * without Relay monorepo imports or live credentials.
+ * Typed adapter surfaces for the generated kit (EH-030).
+ * Stub adapters remain for unset env; Supabase implementations activate when configured.
  */
+
+import type { SiteAuthSession } from "../identity/types";
 
 export type AdapterHealth =
   | { ok: true; detail?: string }
@@ -12,8 +13,8 @@ export type AuthProvider = {
   readonly id: "auth";
   readonly implementation: "stub" | "supabase" | "portable";
   health(): Promise<AdapterHealth>;
-  /** EH-030 owns real sessions — stub always returns null. */
-  getSession(): Promise<null>;
+  /** Null when unset, unsigned, or outside a request context. */
+  getSession(siteId?: string): Promise<SiteAuthSession | null>;
 };
 
 export type DatabaseProvider = {
@@ -21,8 +22,8 @@ export type DatabaseProvider = {
   readonly implementation: "stub" | "postgres" | "supabase";
   health(): Promise<AdapterHealth>;
   /**
-   * Apply forward migrations. Stub refuses without DATABASE_URL.
-   * Live migration runners belong to EH-030/031.
+   * Apply forward migrations. Live runners apply SQL under db/migrations
+   * when DATABASE_URL is real; otherwise documents apply-via-dashboard path.
    */
   migrate(): Promise<{ applied: string[]; skipped: boolean; reason?: string }>;
 };

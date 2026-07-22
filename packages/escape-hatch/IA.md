@@ -1,5 +1,7 @@
 # Escape Hatch — Information Architecture
 
+> **Prototype IA.** This document describes the current generated soft-gate Hatch Console. It is not the production wizard/admin contract. The finished product experience is defined in [`docs/studio/escape-hatch-build-plans/02-WIZARD-UX-CONTRACT.md`](../../docs/studio/escape-hatch-build-plans/02-WIZARD-UX-CONTRACT.md) and [`08-GENERATED-SITE-ADMIN.md`](../../docs/studio/escape-hatch-build-plans/08-GENERATED-SITE-ADMIN.md).
+
 **Product job:** Prove a Patreon-shaped library is correct and beautiful enough to commit to an independent membership site.
 
 **Console metaphor:** Hatch Console = Structure → Style → Preview.  

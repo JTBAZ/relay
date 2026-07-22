@@ -1,7 +1,7 @@
 /** @vitest-environment happy-dom */
 
 /**
- * Schedule Rail visual grouping — EventPopover multi-dest Done uses child task id.
+ * Schedule Rail visual grouping — EventPopover multi-dest Dismiss uses child task id.
  */
 
 import { describe, expect, it, vi } from "vitest";
@@ -50,25 +50,23 @@ describe("railItemMatchesId", () => {
 });
 
 describe("EventPopover multi-destination", () => {
-  it("renders destination chips and Done calls through with child task id", () => {
-    const onDone = vi.fn();
+  it("renders destination chips and Dismiss calls through with child task id", () => {
     const onDelete = vi.fn();
     render(
       <EventPopover
         event={groupedEvent}
-        onDone={onDone}
         onDelete={onDelete}
-        onNotifyToggle={() => {}}
         onClose={() => {}}
       />
     );
 
     expect(screen.getByText(/Patreon/)).toBeTruthy();
     expect(screen.getByText(/X ·/)).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Done" })).toBeNull();
 
-    const doneButtons = screen.getAllByRole("button", { name: "Done" });
-    expect(doneButtons.length).toBeGreaterThanOrEqual(2);
-    fireEvent.click(doneButtons[0]!);
-    expect(onDone).toHaveBeenCalledWith("task_patreon");
+    const dismissButtons = screen.getAllByRole("button", { name: "Dismiss" });
+    expect(dismissButtons.length).toBeGreaterThanOrEqual(2);
+    fireEvent.click(dismissButtons[0]!);
+    expect(onDelete).toHaveBeenCalledWith("task_patreon");
   });
 });

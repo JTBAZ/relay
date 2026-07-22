@@ -48,6 +48,7 @@ import GallerySidebar from "@/app/components/GallerySidebar";
 import StudioScheduleRail, {
   type StudioScheduleRailHandle
 } from "@/app/components/schedule-rail/StudioScheduleRail";
+import { SCHEDULE_RAIL_LAB_WIDTH_PX, SCHEDULE_RAIL_LAB2_WIDTH_PX } from "@/app/components/schedule-rail/ScheduleRail";
 import GalleryGrid from "@/app/components/GalleryGrid";
 import BulkActionBar from "@/app/components/BulkActionBar";
 import { DistributionSheet } from "@/app/components/distribution/DistributionSheet";
@@ -76,6 +77,10 @@ import LibraryCreatePostModal, {
 import LibrarySectionEyebrow from "@/app/components/LibrarySectionEyebrow";
 import { GoalCycleLauncher } from "@/app/components/goal-cycle/GoalCycleLauncher";
 import { collectRailEventIds } from "@/app/components/goal-cycle/goal-cycle-rail-handoff";
+import { GoalsLabLauncher } from "@/app/components/goals-lab/GoalsLabLauncher";
+import { LabFloorspaceHeader } from "@/app/components/studio/LabFloorspaceHeader";
+import { LabGalleryFilterBar } from "@/app/components/studio/LabGalleryFilterBar";
+import { LabStagingDock } from "@/app/components/studio/LabStagingDock";
 import type { MediaTypeValue } from "@/app/components/MediaTypeMultiSelect";
 import { freePublicTierIdsFromFacets } from "@/lib/tier-access";
 import { guessRelayUploadContentType } from "@/lib/guess-relay-upload-content-type";
@@ -151,10 +156,21 @@ async function uploadImportBinDataUrlToRelay(creatorId: string, item: ImportBinI
 
 type VisibilityState = { hidden: boolean; mature: boolean };
 
-export default function GalleryView() {
+/** Classic = production Library chrome. Lab / Lab2 = schedule-rail floorspace shell. */
+export type GalleryFloorspace = "classic" | "lab" | "lab2";
+
+type GalleryViewProps = {
+  floorspace?: GalleryFloorspace;
+};
+
+export default function GalleryView({ floorspace = "classic" }: GalleryViewProps) {
+  const isLab = floorspace === "lab" || floorspace === "lab2";
+  const isLab2 = floorspace === "lab2";
   const router = useRouter();
   const { creatorId } = useStudioSession();
+  const [bayDragging, setBayDragging] = useState(false);
   const [q, setQ] = useState("");
+  const [labSidebarOpen, setLabSidebarOpen] = useState(false);
   const debouncedQ = useDebouncedValue(q, GALLERY_SEARCH_DEBOUNCE_MS);
   const [tagPick, setTagPick] = useState<string[]>([]);
   const [tierPick, setTierPick] = useState<string[]>([]);
@@ -594,7 +610,10 @@ export default function GalleryView() {
     (mediaIds: string[]) => {
       const ids = mediaIds.map((id) => id.trim()).filter(Boolean).join(",");
       if (!ids) return;
-      router.push(`/studio/autopost?media_ids=${encodeURIComponent(ids)}`);
+      // Land on Autopost pick/platform stage with media preselected (skip redundant upload).
+      router.push(
+        `/studio/autopost?media_ids=${encodeURIComponent(ids)}&stage=platforms`
+      );
     },
     [router]
   );
@@ -1094,83 +1113,152 @@ export default function GalleryView() {
     refreshList
   ]);
 
+  const importBay = (
+    <LibraryImportBay
+      creatorId={creatorId}
+      onError={setListError}
+      onAddToNewPost={handleImportBayAddToNewPost}
+      onAutopost={handleImportBayAutopost}
+    />
+  );
+
+  const labStagingDock = (
+    <LabStagingDock
+      creatorId={creatorId}
+      onError={setListError}
+      onAddToNewPost={handleImportBayAddToNewPost}
+      onAutopost={handleImportBayAutopost}
+      variant={isLab2 ? "studio" : "default"}
+      onCorridorDragChange={isLab2 ? setBayDragging : undefined}
+    />
+  );
+
+  const sidebar = (
+    <GallerySidebar
+      creatorId={creatorId}
+      facets={facets}
+      q={q}
+      onSetQ={setQ}
+      mediaTypes={mediaTypes}
+      onSetMediaTypes={setMediaTypes}
+      tagPick={tagPick}
+      tierPick={tierPick}
+      visibility={visibility}
+      onSetVisibility={setVisibility}
+      showTextOnlyPosts={showTextOnlyPosts}
+      onSetShowTextOnlyPosts={setShowTextOnlyPosts}
+      showShadowCovers={showShadowCovers}
+      onSetShowShadowCovers={setShowShadowCovers}
+      videoLoop={videoLoop}
+      onSetVideoLoop={(v: boolean) => {
+        setVideoLoop(v);
+        writeGalleryVideoLoop(v);
+      }}
+      onToggleTag={toggleTag}
+      onToggleTier={toggleTier}
+      freePublicTierIds={freePublicTierIds}
+      onToggleFreePublicTierGroup={toggleFreePublicTierGroup}
+      collections={collections}
+      activeCollectionId={activeCollectionId}
+      onSelectCollection={setActiveCollectionId}
+      selectedPostCount={selectedPostIds.length}
+      onRequestAddSelectionToCollection={requestAddSelectionToCollection}
+      assetsInView={displayItems.length}
+      collectionCount={collections.length}
+    />
+  );
+
   return (
-    <div className="library-shell library-hide-scrollbars flex min-h-0 flex-1 flex-col overflow-hidden bg-[var(--lib-bg)] text-[var(--lib-fg)]">
-      <LibraryTopBar
-        syncStatus={derivedLibrarySyncStatus}
-        syncIssueDetail={librarySyncIssueDetail}
-        creatorDisplayName={libraryDisplayName}
-        patreonName={patreonVanitySlug}
-        campaignImageSmallUrl={campaignAvatarUrl}
-        campaignBannerUrl={campaignBannerRemote}
-        trailingActions={
-          <PatreonSyncMenu
-            creatorId={creatorId}
-            campaignId={patreonCampaignIdEnv}
-            detailsSignal={patreonDetailsSignal}
-            onAfterScrape={afterPatreonScrape}
-            onSyncActivity={setLibrarySyncPhase}
-          />
-        }
-      />
+    <div
+      className={`library-shell library-hide-scrollbars flex min-h-0 flex-1 flex-col overflow-hidden text-[var(--lib-fg)] ${
+        isLab ? "bg-[#050706]" : "bg-[var(--lib-bg)]"
+      }`}
+    >
+      {!isLab ? (
+        <LibraryTopBar
+          syncStatus={derivedLibrarySyncStatus}
+          syncIssueDetail={librarySyncIssueDetail}
+          creatorDisplayName={libraryDisplayName}
+          patreonName={patreonVanitySlug}
+          campaignImageSmallUrl={campaignAvatarUrl}
+          campaignBannerUrl={campaignBannerRemote}
+          trailingActions={
+            <PatreonSyncMenu
+              creatorId={creatorId}
+              campaignId={patreonCampaignIdEnv}
+              detailsSignal={patreonDetailsSignal}
+              onAfterScrape={afterPatreonScrape}
+              onSyncActivity={setLibrarySyncPhase}
+            />
+          }
+        />
+      ) : (
+        <LabFloorspaceHeader
+          variant={isLab2 ? "studio" : "tools"}
+          goalsSlot={<GoalsLabLauncher />}
+          patreonSlot={
+            <PatreonSyncMenu
+              creatorId={creatorId}
+              campaignId={patreonCampaignIdEnv}
+              detailsSignal={patreonDetailsSignal}
+              onAfterScrape={afterPatreonScrape}
+              onSyncActivity={setLibrarySyncPhase}
+              triggerLabel="Patreon Health"
+            />
+          }
+          onOpenAutomations={() => {
+            router.push(isLab2 ? "/studio/lab2?automations=1" : "/studio/lab?automations=1");
+          }}
+          onOpenCrossposter={() => {
+            const fromSelection = selectedItems[0]?.post_id?.trim();
+            const fromGallery = items.find((it) => it.post_id?.trim())?.post_id?.trim();
+            const postId = fromSelection || fromGallery;
+            if (!postId) return;
+            openCrossPostForPost(postId, []);
+          }}
+          crossposterDisabled={
+            !selectedItems.some((it) => it.post_id?.trim()) &&
+            !items.some((it) => it.post_id?.trim())
+          }
+        />
+      )}
 
       <SyncHealthBanner
         syncState={syncHealth}
         onViewDetails={() => setPatreonDetailsSignal((n) => n + 1)}
       />
 
-      <GoalCycleLauncher
-        onMaterialized={(receipt) => {
-          const ids = collectRailEventIds(receipt);
-          void scheduleRailRef.current?.refreshAndHighlight({
-            focusEventId: ids[0] ?? null,
-            highlightEventIds: ids
-          });
-        }}
-      />
+      {!isLab ? (
+        <GoalCycleLauncher
+          onMaterialized={(receipt) => {
+            const ids = collectRailEventIds(receipt);
+            void scheduleRailRef.current?.refreshAndHighlight({
+              focusEventId: ids[0] ?? null,
+              highlightEventIds: ids
+            });
+          }}
+        />
+      ) : null}
 
       <div className="relative z-0 flex min-h-0 flex-1 flex-col overflow-hidden lg:flex-row">
-        {powerPanelOpen ? (
+        {powerPanelOpen || (isLab && labSidebarOpen) ? (
           <div
             role="presentation"
             tabIndex={-1}
             className="absolute inset-0 z-[82] bg-black/[0.55]"
-            onClick={() => setPowerPanelOpen(false)}
+            onClick={() => {
+              setPowerPanelOpen(false);
+              setLabSidebarOpen(false);
+            }}
           />
         ) : null}
 
-        <GallerySidebar
-          creatorId={creatorId}
-          facets={facets}
-          q={q}
-          onSetQ={setQ}
-          mediaTypes={mediaTypes}
-          onSetMediaTypes={setMediaTypes}
-          tagPick={tagPick}
-          tierPick={tierPick}
-          visibility={visibility}
-          onSetVisibility={setVisibility}
-          showTextOnlyPosts={showTextOnlyPosts}
-          onSetShowTextOnlyPosts={setShowTextOnlyPosts}
-          showShadowCovers={showShadowCovers}
-          onSetShowShadowCovers={setShowShadowCovers}
-          videoLoop={videoLoop}
-          onSetVideoLoop={(v: boolean) => {
-            setVideoLoop(v);
-            writeGalleryVideoLoop(v);
-          }}
-          onToggleTag={toggleTag}
-          onToggleTier={toggleTier}
-          freePublicTierIds={freePublicTierIds}
-          onToggleFreePublicTierGroup={toggleFreePublicTierGroup}
-          collections={collections}
-          activeCollectionId={activeCollectionId}
-          onSelectCollection={setActiveCollectionId}
-          selectedPostCount={selectedPostIds.length}
-          onRequestAddSelectionToCollection={requestAddSelectionToCollection}
-          assetsInView={displayItems.length}
-          collectionCount={collections.length}
-        />
+        {!isLab ? sidebar : null}
+        {isLab && labSidebarOpen ? (
+          <div className="absolute inset-y-0 left-0 z-[83] flex max-h-full w-full max-w-xs flex-col overflow-hidden shadow-2xl shadow-black/50 lg:w-64">
+            {sidebar}
+          </div>
+        ) : null}
 
         {collectionAddTarget ? (
           <div
@@ -1228,15 +1316,11 @@ export default function GalleryView() {
         ) : null}
 
         <main
-          className="relative flex min-h-0 min-w-0 flex-1 flex-col"
+          className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden"
           onPointerDownCapture={onMainPointerDownCapture}
         >
-          <LibraryImportBay
-            creatorId={creatorId}
-            onError={setListError}
-            onAddToNewPost={handleImportBayAddToNewPost}
-            onAutopost={handleImportBayAutopost}
-          />
+          {!isLab ? importBay : null}
+          {isLab ? labStagingDock : null}
 
           {listError ? (
             <div
@@ -1273,15 +1357,59 @@ export default function GalleryView() {
 
           {!emptyLibrary ? (
             <>
-          <div
-            data-library-active-posts
-            className="shrink-0 border-b border-white/[0.06] bg-black px-4 pb-2 pt-6 text-center lg:pt-8"
-          >
-            <LibrarySectionEyebrow label="Published content" />
+          {isLab ? (
+            <div
+              data-library-active-posts
+              className={`flex shrink-0 items-center border-b border-[#111] px-5 ${
+                isLab2 ? "bg-[#060807] pb-2.5 pt-4" : "bg-[#080c0a] pb-3 pt-5"
+              }`}
+            >
+              <div className="min-w-0">
+                <span
+                  className={`font-semibold tracking-tight text-[#c8cec9] ${
+                    isLab2 ? "text-[15px]" : "text-[17px]"
+                  }`}
+                >
+                  Active Posts
+                </span>
+                {isLab2 ? (
+                  <p className="mt-0.5 text-[10px] text-[#5a6a62]">
+                    Your published archive - inspect, cross-post, link sets
+                  </p>
+                ) : null}
+              </div>
+            </div>
+          ) : null}
 
-            <h2 className="mt-2 text-2xl font-bold tracking-tight text-white sm:text-3xl">Active Posts</h2>
-          </div>
+          {isLab ? (
+            <LabGalleryFilterBar
+              q={q}
+              onSetQ={setQ}
+              mediaTypes={mediaTypes}
+              onSetMediaTypes={setMediaTypes}
+              tagPick={tagPick}
+              onToggleTag={toggleTag}
+              tierPick={tierPick}
+              onToggleTier={toggleTier}
+              facets={facets}
+              onOpenMoreFilters={() => setLabSidebarOpen(true)}
+            />
+          ) : null}
 
+          {!isLab ? (
+            <div
+              data-library-active-posts
+              className="shrink-0 border-b border-white/[0.06] bg-black px-4 pb-2 pt-6 text-center lg:pt-8"
+            >
+              <LibrarySectionEyebrow label="Published content" />
+
+              <h2 className="mt-2 text-2xl font-bold tracking-tight text-white sm:text-3xl">
+                Active Posts
+              </h2>
+            </div>
+          ) : null}
+
+          {!isLab ? (
           <div
             data-library-toolbar
             className="relative z-10 flex h-10 shrink-0 items-center justify-between border-b border-white/[0.06] bg-black px-4"
@@ -1359,13 +1487,14 @@ export default function GalleryView() {
               tierFacets={facets.tiers}
             />
           </div>
+          ) : null}
 
           <GalleryGrid
             groups={postGroups}
             tierTitleById={tierTitleById}
             tierFacets={facets.tiers}
             selectedKeys={selectedKeys}
-            gridDensity={viewMode}
+            gridDensity={isLab ? "lab" : viewMode}
             onToggleSelectGroup={toggleSelectGroup}
             onFocusIndex={setFocusIndex}
             onIsolateAssetSelection={isolateSelectionToItem}
@@ -1402,6 +1531,15 @@ export default function GalleryView() {
         <StudioScheduleRail
           ref={scheduleRailRef}
           onCommitMedia={handleScheduleRailAutopost}
+          widthPx={
+            isLab2
+              ? SCHEDULE_RAIL_LAB2_WIDTH_PX
+              : isLab
+                ? SCHEDULE_RAIL_LAB_WIDTH_PX
+                : undefined
+          }
+          dropPresentation={isLab2 ? "ritual" : "default"}
+          corridorArmed={isLab2 ? bayDragging : false}
         />
 
         <LibraryPowerPanel
@@ -1529,12 +1667,13 @@ export default function GalleryView() {
         />
       ) : null}
 
-      {selectedPostIds.length >= 2 && !heroOpen && !linkedSetSummaryId ? (
+      {selectedPostIds.length >= 1 && !heroOpen && !linkedSetSummaryId ? (
         <BulkActionBar
           creatorId={creatorId}
           selectedItems={selectedItems}
           selectedPostIds={selectedPostIds}
           collections={collections}
+          tiers={facets.tiers}
           suggestedTags={facets.tag_ids}
           onClearSelection={() => {
             setSelectedKeys(new Set());

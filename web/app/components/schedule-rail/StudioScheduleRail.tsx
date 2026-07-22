@@ -8,6 +8,7 @@ import {
   useRef,
   useState
 } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { INITIAL_DATA, railItemMatchesId, type ReadyItem, type ScheduleData, type ScheduleEvent } from "@/lib/schedule-rail-data";
 import {
   attachScheduleRailMedia,
@@ -16,6 +17,8 @@ import {
   patchManualScheduleEvent,
   fetchScheduleRail,
 } from "@/lib/schedule-rail-api";
+import { requestLibraryStagingRefresh } from "@/lib/library-staging-events";
+import { useStudioSession } from "@/lib/studio-session-context";
 import {
   createScheduleSeries,
   materializeScheduleOccurrence,
@@ -33,6 +36,9 @@ import {
   type CreatorCapabilityWire,
 } from "@/lib/relay-api";
 import { ScheduleRail, SCHEDULE_RAIL_WIDTH_PX } from "./ScheduleRail";
+import { ScheduleRailAutomationsModal } from "@/app/components/automations/ScheduleRailAutomationsModal";
+import { AutomationApprovalOverlay } from "@/app/components/automations/AutomationApprovalOverlay";
+import type { AutomationApprovalOpenArgs } from "@/app/components/automations/AutomationsPanel";
 import type { DropAssetsFilledItem } from "./DropAssetsCard";
 import type { CreateEventPayload, MissingPlatformLinkState } from "./AddEventPopover";
 
@@ -42,6 +48,12 @@ const SCHEDULE_RAIL_POPOVER_GUTTER_PX = 300;
 type StudioScheduleRailProps = {
   /** Top Drop Assets → Autopost (compose-now path). */
   onCommitMedia?: (mediaIds: string[]) => void;
+  /** Override rail width (lab uses a modestly wider column). */
+  widthPx?: number;
+  /** Lab2 drop ritual presentation. */
+  dropPresentation?: "default" | "ritual";
+  /** Lab2: Import Bay drag session arms the intake corridor. */
+  corridorArmed?: boolean;
 };
 
 export type StudioScheduleRailHandle = {
@@ -56,7 +68,18 @@ export type StudioScheduleRailHandle = {
  * Studio Library host for the Schedule Rail — live feed + Phase 5 remind + Create Event.
  */
 const StudioScheduleRail = forwardRef<StudioScheduleRailHandle, StudioScheduleRailProps>(
-  function StudioScheduleRail({ onCommitMedia }, ref) {
+  function StudioScheduleRail(
+    { onCommitMedia, widthPx, dropPresentation = "default", corridorArmed = false },
+    ref
+  ) {
+  const { creatorId } = useStudioSession();
+  const railWidth = widthPx ?? SCHEDULE_RAIL_WIDTH_PX;
+  const isRitual = dropPresentation === "ritual";
+  /** Lab2 top bar is h-11 — pin intake flush with Import Bay. */
+  const pinTopClass = isRitual ? "top-11" : "top-14";
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const [data, setData] = useState<ScheduleData>(INITIAL_DATA);
   const [remindersOn, setRemindersOn] = useState(true);
   const [dropFilled, setDropFilled] = useState<DropAssetsFilledItem[]>([]);
@@ -72,7 +95,10 @@ const StudioScheduleRail = forwardRef<StudioScheduleRailHandle, StudioScheduleRa
   const [addError, setAddError] = useState<string | null>(null);
   const [missingLink, setMissingLink] = useState<MissingPlatformLinkState | null>(null);
   const [studioCoreCap, setStudioCoreCap] = useState<CreatorCapabilityWire | null>(null);
-  const [autopostAllowed, setAutopostAllowed] = useState(false);
+  const [autopostCapability, setAutopostCapability] = useState<CreatorCapabilityWire | null>(null);
+  const [automationsOpen, setAutomationsOpen] = useState(false);
+  const [approval, setApproval] = useState<AutomationApprovalOpenArgs | null>(null);
+  const deepLinkConsumedRef = useRef(false);
   const [seriesBusy, setSeriesBusy] = useState(false);
   const [seriesError, setSeriesError] = useState<string | null>(null);
   const [playbookBusy, setPlaybookBusy] = useState(false);
@@ -132,12 +158,45 @@ const StudioScheduleRail = forwardRef<StudioScheduleRailHandle, StudioScheduleRa
     void fetchCreatorPlanAccess()
       .then((access) => {
         setStudioCoreCap(access.capabilities.studio_core);
-        setAutopostAllowed(Boolean(access.capabilities.autopost?.allowed));
+        setAutopostCapability(access.capabilities.autopost ?? null);
       })
       .catch(() => {
         setStudioCoreCap(null);
+        setAutopostCapability(null);
       });
   }, []);
+
+  const autopostAllowed = Boolean(autopostCapability?.allowed);
+
+  const openAutomationApproval = useCallback((args: AutomationApprovalOpenArgs) => {
+    setApproval(args);
+  }, []);
+
+  /** Library deep links: ?automations=1 and/or automation_id+automation_run_id → same approval adapter. */
+  useEffect(() => {
+    const openModal = searchParams.get("automations");
+    const automationId = searchParams.get("automation_id")?.trim() || "";
+    const runId = searchParams.get("automation_run_id")?.trim() || "";
+    const draftId = searchParams.get("draft_id")?.trim() || null;
+    let shouldClean = false;
+    if (openModal === "1" || openModal === "open") {
+      setAutomationsOpen(true);
+      shouldClean = true;
+    }
+    if (automationId && runId && !deepLinkConsumedRef.current) {
+      deepLinkConsumedRef.current = true;
+      setApproval({ automationId, runId, draftId });
+      shouldClean = true;
+    }
+    if (!shouldClean) return;
+    const next = new URLSearchParams(searchParams.toString());
+    next.delete("automations");
+    next.delete("automation_id");
+    next.delete("automation_run_id");
+    next.delete("draft_id");
+    const qs = next.toString();
+    router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+  }, [searchParams, router, pathname]);
 
   const findItem = useCallback(
     (id: string) =>
@@ -171,24 +230,6 @@ const StudioScheduleRail = forwardRef<StudioScheduleRailHandle, StudioScheduleRa
     [data.month, loadRail]
   );
 
-  const handleDone = useCallback(
-    async (id: string) => {
-      const item = findItem(id);
-      try {
-        if (item?.source === "manual_event") {
-          await patchManualScheduleEvent(item.id, { status: "done" });
-        } else {
-          const taskId = resolveTaskId(id);
-          await patchPostbotTask(taskId, { status: "done" });
-        }
-        await loadRail(data.month);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : String(err));
-      }
-    },
-    [data.month, findItem, loadRail, resolveTaskId]
-  );
-
   const handleDelete = useCallback(
     async (id: string) => {
       const item = findItem(id);
@@ -198,33 +239,6 @@ const StudioScheduleRail = forwardRef<StudioScheduleRailHandle, StudioScheduleRa
         } else {
           const taskId = resolveTaskId(id);
           await patchPostbotTask(taskId, { status: "dismissed" });
-        }
-        await loadRail(data.month);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : String(err));
-      }
-    },
-    [data.month, findItem, loadRail, resolveTaskId]
-  );
-
-  const handleNotifyToggle = useCallback(
-    async (id: string, val: boolean) => {
-      const item = findItem(id);
-      try {
-        if (item?.source === "manual_event") {
-          await patchManualScheduleEvent(item.id, { remind_me: val });
-        } else {
-          const taskId = resolveTaskId(id);
-          const variantId =
-            item?.destinations?.find((d) => d.task_id === taskId)?.variant_id ??
-            item?.variant_id;
-          if (taskId) {
-            await patchPostbotTask(taskId, { remind_me: val });
-          } else if (variantId) {
-            await patchDistributionVariant(variantId, { remind_me: val });
-          } else {
-            return;
-          }
         }
         await loadRail(data.month);
       } catch (err) {
@@ -369,13 +383,32 @@ const StudioScheduleRail = forwardRef<StudioScheduleRailHandle, StudioScheduleRa
     [data.month, loadRail]
   );
 
+  /** Prefer real postbot / occurrence / manual event ids — never visual group or dest-slice ids. */
+  const resolveAttachRailId = useCallback((event: ScheduleEvent | ReadyItem) => {
+    const candidates = [
+      event.task_id,
+      event.id,
+      event.destinations?.find((d) => d.status !== "done")?.task_id,
+      event.destinations?.[0]?.task_id
+    ];
+    for (const raw of candidates) {
+      const id = raw?.trim();
+      if (!id) continue;
+      // Grouped visual ids (`grp_…`) and occurrence dest slices (`occId:0`) are not attach keys.
+      if (id.startsWith("grp_") || id.includes(":")) continue;
+      return id;
+    }
+    throw new Error("Could not resolve a schedule slot for media attach.");
+  }, []);
+
   const handleEventMediaCommit = useCallback(
     async (event: ScheduleEvent | ReadyItem, mediaIds: string[]) => {
-      if (event.source === "manual_event") return;
-      const taskId = event.task_id ?? event.id;
+      const taskId = resolveAttachRailId(event);
       setAttachBusy(true);
       setAttachError(null);
       try {
+        // Server resolves postbot tasks, planned routine occurrences (JIT materialize),
+        // and manual make_post events that link a Library post.
         await attachScheduleRailMedia(taskId, mediaIds, { mode: "replace" });
         await loadRail(data.month);
       } catch (err) {
@@ -385,18 +418,19 @@ const StudioScheduleRail = forwardRef<StudioScheduleRailHandle, StudioScheduleRa
         setAttachBusy(false);
       }
     },
-    [data.month, loadRail]
+    [data.month, loadRail, resolveAttachRailId]
   );
 
   const handleEventMediaClear = useCallback(
     async (event: ScheduleEvent | ReadyItem) => {
-      if (event.source === "manual_event") return;
-      const taskId = event.task_id ?? event.id;
+      const taskId = resolveAttachRailId(event);
       setAttachBusy(true);
       setAttachError(null);
       try {
         await attachScheduleRailMedia(taskId, [], { mode: "remove" });
         await loadRail(data.month);
+        // Detached assets are unattached READY media again — refresh Import Bay.
+        requestLibraryStagingRefresh();
       } catch (err) {
         setAttachError(err instanceof Error ? err.message : String(err));
         throw err;
@@ -404,7 +438,7 @@ const StudioScheduleRail = forwardRef<StudioScheduleRailHandle, StudioScheduleRa
         setAttachBusy(false);
       }
     },
-    [data.month, loadRail]
+    [data.month, loadRail, resolveAttachRailId]
   );
 
   const handleFocusEventConsumed = useCallback(() => {
@@ -418,16 +452,16 @@ const StudioScheduleRail = forwardRef<StudioScheduleRailHandle, StudioScheduleRa
     <>
       <div
         className="hidden shrink-0 lg:block"
-        style={{ width: SCHEDULE_RAIL_WIDTH_PX }}
+        style={{ width: railWidth }}
         aria-hidden
       />
       <div
-        className="pointer-events-none fixed bottom-0 right-0 top-14 z-[60] hidden min-h-0 lg:block"
-        style={{ width: SCHEDULE_RAIL_WIDTH_PX + SCHEDULE_RAIL_POPOVER_GUTTER_PX }}
+        className={`pointer-events-none fixed bottom-0 right-0 z-[60] hidden min-h-0 lg:block ${pinTopClass}`}
+        style={{ width: railWidth + SCHEDULE_RAIL_POPOVER_GUTTER_PX }}
       >
         <div
           className="pointer-events-auto relative ml-auto flex h-full min-h-0 flex-col overflow-visible bg-[#080808]"
-          style={{ width: SCHEDULE_RAIL_WIDTH_PX }}
+          style={{ width: railWidth }}
         >
           {loading && !bootstrapped ? (
             <div className="flex flex-1 items-start justify-center border-l border-[#1a1a1a] px-2 pt-4">
@@ -442,6 +476,10 @@ const StudioScheduleRail = forwardRef<StudioScheduleRailHandle, StudioScheduleRa
               onRemindersToggle={(val) => {
                 void handleRemindersToggle(val);
               }}
+              widthPx={railWidth}
+              dropPresentation={dropPresentation}
+              corridorArmed={corridorArmed}
+              creatorId={creatorId}
               armed={armed}
               presentDestinations={presentDestinations}
               missingDestinations={missingDestinations}
@@ -455,9 +493,7 @@ const StudioScheduleRail = forwardRef<StudioScheduleRailHandle, StudioScheduleRa
               onEventMediaClear={handleEventMediaClear}
               mediaCommitBusy={attachBusy}
               mediaCommitError={attachError}
-              onDone={handleDone}
               onDelete={handleDelete}
-              onNotifyToggle={handleNotifyToggle}
               onEditTime={handleEditTime}
               allowAddScheduledPost
               onAddScheduledPost={handleAddEvent}
@@ -468,6 +504,8 @@ const StudioScheduleRail = forwardRef<StudioScheduleRailHandle, StudioScheduleRa
               addEventMissingLink={missingLink}
               onClearAddEventMissingLink={() => setMissingLink(null)}
               autopostAllowed={autopostAllowed}
+              onOpenAutomations={() => setAutomationsOpen(true)}
+              onOpenAutomationApproval={openAutomationApproval}
               onCreateScheduleSeries={handleCreateSeries}
               createSeriesBusy={seriesBusy}
               createSeriesError={seriesError}
@@ -494,6 +532,36 @@ const StudioScheduleRail = forwardRef<StudioScheduleRailHandle, StudioScheduleRa
           ) : null}
         </div>
       </div>
+      <ScheduleRailAutomationsModal
+        open={automationsOpen}
+        onClose={() => setAutomationsOpen(false)}
+        autopostCapability={autopostCapability}
+        onOpenApproval={(args) => {
+          setAutomationsOpen(false);
+          openAutomationApproval(args);
+        }}
+      />
+      {approval ? (
+        <AutomationApprovalOverlay
+          open
+          automationId={approval.automationId}
+          runId={approval.runId}
+          draftId={approval.draftId}
+          onClose={() => {
+            setApproval(null);
+            void loadRail(data.month);
+          }}
+        />
+      ) : null}
+      {/* Narrow viewport: rail is lg-only — open Automations via query or this fallback. */}
+      <button
+        type="button"
+        className="fixed bottom-4 right-4 z-[55] rounded-full border border-[#9bf0c43d] bg-[#0a0a0a] px-3 py-2 text-[11px] text-[#9bf0c4] shadow-lg lg:hidden"
+        data-testid="schedule-rail-automations-open-mobile"
+        onClick={() => setAutomationsOpen(true)}
+      >
+        Automations
+      </button>
     </>
   );
 });

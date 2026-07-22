@@ -26,6 +26,7 @@ import {
   type RelayLibraryStagingItem
 } from "@/lib/relay-api";
 import { uploadFilesToRelayStaging } from "@/lib/relay-native-staging-upload";
+import { RELAY_LIBRARY_STAGING_REFRESH } from "@/lib/library-staging-events";
 import LibraryUploadZone from "@/app/components/library/LibraryUploadZone";
 import LibrarySectionEyebrow from "./LibrarySectionEyebrow";
 import {
@@ -312,6 +313,14 @@ export default function LibraryImportBay({ creatorId, onError, onAddToNewPost, o
 
   useEffect(() => {
     void loadStaging();
+  }, [loadStaging]);
+
+  useEffect(() => {
+    const onRefresh = () => {
+      void loadStaging();
+    };
+    window.addEventListener(RELAY_LIBRARY_STAGING_REFRESH, onRefresh);
+    return () => window.removeEventListener(RELAY_LIBRARY_STAGING_REFRESH, onRefresh);
   }, [loadStaging]);
 
   const selectedItems = useMemo(() => items.filter((it) => selectedIds.has(it.id)), [items, selectedIds]);

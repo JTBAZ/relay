@@ -209,3 +209,55 @@ export async function attachScheduleRailMedia(
   );
   return out.attach;
 }
+
+export type PostDetailsFitMode = "as_written" | "fit_platforms";
+
+export type ScheduleRailPostDetailsVariant = {
+  destination: string;
+  title: string | null;
+  body_text: string | null;
+  post_text: string | null;
+  tags: string[];
+  adapted: boolean;
+};
+
+export type ScheduleRailPostDetailsResult = {
+  task_id: string;
+  post_id: string;
+  title: string;
+  description: string | null;
+  tags: string[];
+  post_details_state: "authored" | "adapted";
+  variants: ScheduleRailPostDetailsVariant[];
+  preview: boolean;
+};
+
+export type UpdateScheduleRailPostDetailsBody = {
+  title?: string | null;
+  description?: string | null;
+  tags?: string[];
+  fit_mode?: PostDetailsFitMode;
+  preview?: boolean;
+  variant_overrides?: Array<{
+    destination: string;
+    use_original?: boolean;
+    title?: string | null;
+    body_text?: string | null;
+    post_text?: string | null;
+  }>;
+};
+
+export async function updateScheduleRailPostDetails(
+  eventId: string,
+  body: UpdateScheduleRailPostDetailsBody
+): Promise<ScheduleRailPostDetailsResult> {
+  const out = await relayFetch<{ post_details: ScheduleRailPostDetailsResult }>(
+    `/api/v1/creator/schedule-rail/events/${encodeURIComponent(eventId)}/post-details`,
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }
+  );
+  return out.post_details;
+}

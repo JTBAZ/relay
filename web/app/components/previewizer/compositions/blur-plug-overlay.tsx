@@ -569,13 +569,15 @@ const STAMP_FONT_CHIP_LABELS: Record<StampFontId, string> = {
   editorial: "Classic"
 };
 
-function resolveEighteenVariant(_variant?: StampVariantId): StampEighteenVariant {
+function resolveEighteenVariant(variant?: StampVariantId): StampEighteenVariant {
   // Style variants parked for later — always render baseline classic.
+  void variant;
   return "classic";
 }
 
-function resolveNsfwVariant(_variant?: StampVariantId): StampNsfwVariant {
+function resolveNsfwVariant(variant?: StampVariantId): StampNsfwVariant {
   // Style variants parked for later — always render baseline alert.
+  void variant;
   return "alert";
 }
 
@@ -1839,7 +1841,7 @@ export default function BlurPlugOverlay({
       )}
 
       {/* Crisp reveal — same framing as base; aspect-correct CSS mask (no stretched SVG) */}
-      {hasReveal && revealShape !== "none" ? (
+      {hasReveal ? (
         <div
           aria-hidden="true"
           style={{

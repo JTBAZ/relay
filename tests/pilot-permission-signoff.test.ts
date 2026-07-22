@@ -6,15 +6,13 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   PILOT_ADR004_DOC_PATH,
-  PILOT_PERMISSION_BULK_VISIBILITY_HINT,
   PILOT_PERMISSION_HEADLINE
 } from "../web/lib/pilot-permission-copy.js";
 
 const ROOT = join(__dirname, "..");
 
-/** Post-G9 surfaces: legacy Inspect/PostBatch shells deleted; A&P + Power + sidebar remain. */
-const UI_SURFACES: Array<{ path: string; label: string }> = [
-  { path: "web/app/components/BulkActionBar.tsx", label: "bulk visibility panel" },
+/** Surfaces that still render the shared permission headline (explanatory copy). */
+const HEADLINE_SURFACES: Array<{ path: string; label: string }> = [
   { path: "web/app/components/LibraryPowerPanel.tsx", label: "LibraryPowerPanel placement" },
   { path: "web/app/components/studio/AudiencePromotionPanel.tsx", label: "Audience & Promotion" },
   { path: "web/app/components/GallerySidebar.tsx", label: "GallerySidebar filters" }
@@ -35,17 +33,23 @@ describe("PILOT-004 — permission model sign-off", () => {
   });
 
   it("creator Library surfaces import pilot-permission-copy and render headline constant", () => {
-    for (const { path, label } of UI_SURFACES) {
+    for (const { path, label } of HEADLINE_SURFACES) {
       const src = readFileSync(join(ROOT, path), "utf8");
       expect(src, `${label} should import shared copy`).toMatch(/pilot-permission-copy/);
       expect(src, `${label} should render headline`).toMatch(/\{PILOT_PERMISSION_HEADLINE\}/);
     }
   });
 
-  it("BulkActionBar visibility panel uses bulk hint from shared copy", () => {
+  it("BulkActionBar visibility is a Layer C + Layer A switchboard (no lecture copy)", () => {
     const bar = readFileSync(join(ROOT, "web/app/components/BulkActionBar.tsx"), "utf8");
-    expect(bar).toContain("PILOT_PERMISSION_BULK_VISIBILITY_HINT");
-    expect(bar).toMatch(/\{PILOT_PERMISSION_BULK_VISIBILITY_HINT\}/);
+    expect(bar).toMatch(/data-visibility-switchboard/);
+    expect(bar).toMatch(/label="Hidden"/);
+    expect(bar).toMatch(/label="Adult \(18\+\)"/);
+    expect(bar).toMatch(/Tier access/);
+    expect(bar).toMatch(/Can access/);
+    expect(bar).toMatch(/No access/);
+    expect(bar).not.toContain("PILOT_PERMISSION_HEADLINE");
+    expect(bar).not.toContain("PILOT_PERMISSION_BULK_VISIBILITY_HINT");
   });
 
   it("server gating modules documented in ADR remain wired", () => {

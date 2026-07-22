@@ -25,10 +25,13 @@ import {
   type AutomationScheduleConfig,
   type AutomationSourceKind,
   type AutomationTriggerKind,
+  type AutomationApprovalContextWire,
+  isAutomationDestination,
   isAutomationsFeatureEnabled,
   validateCreateAutomationBody,
   validatePatchAutomationBody
 } from "./automation-contract.js";
+import { loadDistributionRunSourceVersion } from "./automation-materializer.js";
 
 /** Stored on owned distribution rule.title for create retry lookups (no mutation-key column yet). */
 export const AUTOMATION_MUTATION_RULE_TITLE_PREFIX = "__relay_auto_mut:" as const;
@@ -57,6 +60,8 @@ function statusForCode(code: AutomationErrorCode): number {
       return 402;
     case "AUTOMATION_VERSION_CONFLICT":
       return 409;
+    case "AUTOMATION_APPROVAL_EXPIRED":
+      return 410;
     default:
       return 400;
   }
@@ -711,9 +716,32 @@ export async function listAutomationRuns(
     where: { ruleId: automation.distributionRuleId, creatorId },
     orderBy: { createdAt: "desc" }
   });
-  return runs.map((run) => ({
+  return runs.map((run) => mapRunHistoryWire(automation.id, run));
+}
+
+function mapRunHistoryWire(
+  automationId: string,
+  run: {
+    id: string;
+    creatorId: string;
+    status: string;
+    sourcePostId: string;
+    scheduleOccurrenceId: string | null;
+    draftId: string | null;
+    materializedEventId: string | null;
+    planId: string | null;
+    dueAt: Date;
+    expiresAt: Date | null;
+    idempotencyKey: string;
+    failureReason: string | null;
+    createdAt: Date;
+    updatedAt: Date;
+    completedAt: Date | null;
+  }
+): AutomationRunHistoryWire {
+  return {
     run_id: run.id,
-    automation_id: automation.id,
+    automation_id: automationId,
     creator_id: run.creatorId,
     status: run.status as AutomationRunStatus,
     source_post_id: run.sourcePostId,
@@ -728,5 +756,313 @@ export async function listAutomationRuns(
     created_at: run.createdAt.toISOString(),
     updated_at: run.updatedAt.toISOString(),
     completed_at: run.completedAt?.toISOString() ?? null
-  }));
+  };
+}
+
+/**
+ * Creator-scoped approval context for Previewizer resume (VS6 / B15).
+ * Does not create plans or mark runs complete.
+ */
+export async function getAutomationApprovalContext(
+  prisma: PrismaClient,
+  creatorId: string,
+  automationId: string,
+  runId: string,
+  options?: { now?: Date }
+): Promise<AutomationApprovalContextWire> {
+  await assertAutomationsAccess(prisma, creatorId);
+  const automation = await loadAutomation(prisma, creatorId, automationId);
+  const now = options?.now ?? new Date();
+
+  const run = await prisma.creatorDistributionRuleRun.findFirst({
+    where: {
+      id: runId,
+      creatorId,
+      ruleId: automation.distributionRuleId
+    }
+  });
+  if (!run) {
+    fail("AUTOMATION_NOT_FOUND", "Automation run not found.");
+  }
+
+  const status = run.status as AutomationRunStatus;
+  if (status === "expired" || (run.expiresAt != null && run.expiresAt.getTime() <= now.getTime())) {
+    fail("AUTOMATION_APPROVAL_EXPIRED", "This automation approval has expired.");
+  }
+  if (status === "cancelled" || status === "failed" || status === "skipped") {
+    fail("AUTOMATION_NOT_FOUND", "Automation run is not available for approval.");
+  }
+  if (!run.draftId) {
+    fail("AUTOMATION_NOT_FOUND", "Automation run has no prepared draft.");
+  }
+
+  const destinations = automation.distributionRule.targetDestinations.filter(
+    (d): d is AutomationDestination => isAutomationDestination(d)
+  );
+
+  let sourceMediaId: string | null = null;
+  let sourceImageExportPath: string | null = null;
+  try {
+    const source = await loadDistributionRunSourceVersion(prisma, run.sourcePostId);
+    sourceMediaId = source?.mediaIds[0] ?? null;
+    if (sourceMediaId) {
+      sourceImageExportPath = `/api/v1/export/media/${encodeURIComponent(creatorId)}/${encodeURIComponent(sourceMediaId)}/content`;
+    }
+  } catch {
+    sourceMediaId = null;
+    sourceImageExportPath = null;
+  }
+
+  if (!sourceMediaId && status !== "completed") {
+    fail(
+      "AUTOMATION_SOURCE_MEDIA_REQUIRED",
+      "Source post has no image media for Previewizer."
+    );
+  }
+
+  let snapshot: Record<string, unknown> | null = null;
+  const rawSnap = run.previewTemplateSnapshot;
+  if (rawSnap && typeof rawSnap === "object" && !Array.isArray(rawSnap)) {
+    snapshot = rawSnap as Record<string, unknown>;
+  }
+
+  let existingAttemptId: string | null = null;
+  if (run.planId) {
+    const attempt = await prisma.postDistributionAttempt.findFirst({
+      where: {
+        creatorId,
+        variant: { planId: run.planId }
+      },
+      orderBy: { startedAt: "desc" },
+      select: { id: true }
+    });
+    existingAttemptId = attempt?.id ?? null;
+  }
+
+  return {
+    automation_id: automation.id,
+    run_id: run.id,
+    draft_id: run.draftId,
+    source_post_id: run.sourcePostId,
+    source_media_id: sourceMediaId,
+    source_image_export_path: sourceImageExportPath,
+    target_destinations: destinations,
+    preview_template_snapshot: snapshot,
+    preview_template_id: automation.previewTemplateId,
+    status,
+    expires_at: run.expiresAt?.toISOString() ?? null,
+    version: automation.version,
+    existing_plan_id: run.planId,
+    existing_attempt_id: existingAttemptId
+  };
+}
+
+/**
+ * Correlate a created distribution plan onto the automation-owned run (idempotent).
+ * Does not mark the run completed (that requires a durable handoff receipt).
+ */
+export async function correlateAutomationRunPlan(
+  prisma: PrismaClient,
+  creatorId: string,
+  args: { automationId: string; runId: string; planId: string }
+): Promise<{ correlated: boolean }> {
+  await assertAutomationsAccess(prisma, creatorId);
+  const automation = await loadAutomation(prisma, creatorId, args.automationId);
+  const updated = await prisma.creatorDistributionRuleRun.updateMany({
+    where: {
+      id: args.runId,
+      creatorId,
+      ruleId: automation.distributionRuleId,
+      OR: [{ planId: null }, { planId: args.planId }]
+    },
+    data: { planId: args.planId }
+  });
+  return { correlated: updated.count === 1 };
+}
+
+export type AutomationRunMutationResult = {
+  run: AutomationRunHistoryWire;
+  applied: boolean;
+};
+
+/**
+ * Mark run completed only after a durable distribution attempt exists for the plan.
+ * Extension offline / no attempt → rejection. Idempotent when already completed.
+ */
+export async function completeAutomationRunFromHandoff(
+  prisma: PrismaClient,
+  creatorId: string,
+  args: {
+    automationId: string;
+    runId: string;
+    attemptId?: string | null;
+    now?: Date;
+  }
+): Promise<AutomationRunMutationResult> {
+  await assertAutomationsAccess(prisma, creatorId);
+  const automation = await loadAutomation(prisma, creatorId, args.automationId);
+  const now = args.now ?? new Date();
+
+  const run = await prisma.creatorDistributionRuleRun.findFirst({
+    where: {
+      id: args.runId,
+      creatorId,
+      ruleId: automation.distributionRuleId
+    }
+  });
+  if (!run) {
+    fail("AUTOMATION_NOT_FOUND", "Automation run not found.");
+  }
+
+  if (run.status === "completed") {
+    return { run: mapRunHistoryWire(automation.id, run), applied: false };
+  }
+  if (run.status === "cancelled") {
+    fail("AUTOMATION_NOT_FOUND", "Automation run was cancelled.");
+  }
+  if (
+    run.status === "expired" ||
+    (run.expiresAt != null && run.expiresAt.getTime() <= now.getTime())
+  ) {
+    fail("AUTOMATION_APPROVAL_EXPIRED", "This automation approval has expired.");
+  }
+  if (run.status !== "materialized" && run.status !== "pending") {
+    fail("AUTOMATION_NOT_FOUND", "Automation run is not awaiting completion.");
+  }
+  if (!run.planId) {
+    fail(
+      "AUTOMATION_NOT_FOUND",
+      "Automation run has no distribution plan — export a preview first."
+    );
+  }
+
+  const attemptId = args.attemptId?.trim() || null;
+  const attempt = attemptId
+    ? await prisma.postDistributionAttempt.findFirst({
+        where: {
+          id: attemptId,
+          creatorId,
+          variant: { planId: run.planId }
+        },
+        select: { id: true, status: true, destination: true }
+      })
+    : await prisma.postDistributionAttempt.findFirst({
+        where: {
+          creatorId,
+          variant: { planId: run.planId }
+        },
+        orderBy: { startedAt: "desc" },
+        select: { id: true, status: true, destination: true }
+      });
+
+  if (!attempt) {
+    fail(
+      "AUTOMATION_NOT_FOUND",
+      "No durable handoff attempt found — start destination handoff first."
+    );
+  }
+
+  // Bluesky completes in-process; require posted. Extension destinations: handoff start is enough.
+  if (attempt.destination === "bluesky" && attempt.status !== "posted") {
+    fail(
+      "AUTOMATION_NOT_FOUND",
+      "Bluesky handoff is not complete yet."
+    );
+  }
+
+  const updated = await prisma.creatorDistributionRuleRun.updateMany({
+    where: {
+      id: run.id,
+      creatorId,
+      status: { in: ["materialized", "pending"] }
+    },
+    data: { status: "completed", completedAt: now, updatedAt: now }
+  });
+
+  if (updated.count === 1) {
+    const { syncAutomationAttentionEventToRunStatus } = await import(
+      "./automation-attention-service.js"
+    );
+    await syncAutomationAttentionEventToRunStatus(prisma, {
+      creatorId,
+      runId: run.id,
+      runStatus: "completed",
+      now
+    });
+  }
+
+  const fresh = await prisma.creatorDistributionRuleRun.findFirstOrThrow({
+    where: { id: run.id, creatorId }
+  });
+  return {
+    run: mapRunHistoryWire(automation.id, fresh),
+    applied: updated.count === 1
+  };
+}
+
+/**
+ * Cancel awaiting-review work without destroying draft/plan/attempts.
+ * Close-without-cancel leaves the run materialized (UI-only).
+ */
+export async function cancelAutomationRun(
+  prisma: PrismaClient,
+  creatorId: string,
+  args: { automationId: string; runId: string; now?: Date }
+): Promise<AutomationRunMutationResult> {
+  await assertAutomationsAccess(prisma, creatorId);
+  const automation = await loadAutomation(prisma, creatorId, args.automationId);
+  const now = args.now ?? new Date();
+
+  const run = await prisma.creatorDistributionRuleRun.findFirst({
+    where: {
+      id: args.runId,
+      creatorId,
+      ruleId: automation.distributionRuleId
+    }
+  });
+  if (!run) {
+    fail("AUTOMATION_NOT_FOUND", "Automation run not found.");
+  }
+
+  if (run.status === "cancelled") {
+    return { run: mapRunHistoryWire(automation.id, run), applied: false };
+  }
+  if (run.status === "completed") {
+    fail("AUTOMATION_NOT_FOUND", "Automation run is already completed.");
+  }
+  if (run.status === "expired") {
+    fail("AUTOMATION_APPROVAL_EXPIRED", "This automation approval has expired.");
+  }
+  if (run.status !== "materialized" && run.status !== "pending") {
+    fail("AUTOMATION_NOT_FOUND", "Automation run cannot be cancelled.");
+  }
+
+  const updated = await prisma.creatorDistributionRuleRun.updateMany({
+    where: {
+      id: run.id,
+      creatorId,
+      status: { in: ["materialized", "pending"] }
+    },
+    data: { status: "cancelled", completedAt: now, updatedAt: now }
+  });
+
+  if (updated.count === 1) {
+    const { syncAutomationAttentionEventToRunStatus } = await import(
+      "./automation-attention-service.js"
+    );
+    await syncAutomationAttentionEventToRunStatus(prisma, {
+      creatorId,
+      runId: run.id,
+      runStatus: "cancelled",
+      now
+    });
+  }
+
+  const fresh = await prisma.creatorDistributionRuleRun.findFirstOrThrow({
+    where: { id: run.id, creatorId }
+  });
+  return {
+    run: mapRunHistoryWire(automation.id, fresh),
+    applied: updated.count === 1
+  };
 }

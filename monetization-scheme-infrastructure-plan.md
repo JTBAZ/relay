@@ -5,6 +5,7 @@
 For build controls, compliance gates, and traceable execution, pair this plan with:
 
 - [docs/financial-atlas.md](docs/financial-atlas.md) — **canonical** tier table, Skip/Boost economics, storefront assumptions, projections, and ruled-out revenue models (this plan focuses on *infra COGS and packaging*; the atlas is *what we charge and pay*).
+- [docs/studio/escape-hatch-build-plans/00-README.md](docs/studio/escape-hatch-build-plans/00-README.md) — Escape Hatch product, ownership, wizard, generated application, deployment, and service-boundary canon.
 - [builder-boost-pack/README.md](c:\Users\jorda\Documents\Coding Projects\Rescue\builder-boost-pack\README.md)
 - [builder-boost-pack/builder-decision-checklist.md](c:\Users\jorda\Documents\Coding Projects\Rescue\builder-boost-pack\builder-decision-checklist.md)
 - [builder-boost-pack/standards/security-compliance-checklist.md](c:\Users\jorda\Documents\Coding Projects\Rescue\builder-boost-pack\standards\security-compliance-checklist.md)
@@ -19,8 +20,9 @@ Authority note:
 Use a hybrid model:
 
 - Recurring SaaS for ongoing value.
-- One-time migration package for high-touch transition.
-- Optional managed independence retainer post-migration.
+- One-time creator-owned Escape Hatch construction package.
+- Optional monthly Relay-managed Patreon verification.
+- Optional paid maintenance or managed hosting after the creator-owned product proves demand.
 
 This aligns revenue with recurring cost structure (storage, compute, support, deliverability).
 
@@ -36,40 +38,45 @@ Includes:
 
 Pricing levers:
 
-- Creator size bands (members and media volume).
-- Overage for storage, egress, and email events.
+- Flat Studio/Autopost/Growth Engine ladder per `docs/financial-atlas.md`; creator size bands are retired.
+- Creator-owned infrastructure absorbs its own storage, egress, and email costs after Escape Hatch handoff.
 
-### Plan B: Independence Migration Package (One-Time)
-
-Includes:
-
-- Clone setup.
-- Tier and payment mapping.
-- Deliverability setup assistance.
-- Re-Populate campaign launch support.
-- Go-live and rollback readiness.
-
-### Plan C: Managed Independence Retainer (Monthly)
+### Plan B: Escape Hatch Construction Package (One-Time)
 
 Includes:
 
-- Managed hosting and operations.
-- Uptime and monitoring.
-- Ongoing analytics and recommendations.
-- Migration campaign tuning.
-- Security patching and backup verification.
+- Patreon data/tier/media parity review.
+- Creator-owned generated Next.js application.
+- Private media migration to creator-owned R2.
+- Independent account and billing setup.
+- Vercel/Supabase or portable deployment guidance.
+- Go-live, rollback, backup/restore, and ownership packet.
 
-### Optional: BYOI (Bring Your Own Infrastructure)
+Does not include Re-Populate campaigns, comments/favorites/community hosting, provider charges, or indefinite maintenance.
 
-- Creator owns infrastructure and cloud billing.
-- Platform provides control plane, analytics, and orchestration.
-- Lower monthly fee plus optional SLA support.
+### Plan C: Managed Patreon Verification (Monthly Add-On)
 
-## Why Not One-Time Only
+Includes:
 
-- Core operating costs recur monthly (infrastructure, support, reliability operations).
-- Highest creator value (insights, backup assurance, optimization) is ongoing.
-- One-time pricing increases support pressure without recurring margin.
+- Relay-mediated Patreon OAuth and token refresh.
+- Site-scoped signed entitlement assertions.
+- Connector monitoring, key rotation, incident handling, and migration metadata.
+- Guided migration to creator-owned OAuth on cancellation.
+
+It does not host the generated site, media, account database, or independent checkout. Price must cover ongoing connector COGS and support rather than act as a percentage toll.
+
+### Optional: Paid Maintenance / Future Managed Hosting
+
+- Escape Hatch delivery defects are covered for 90 days.
+- Post-warranty dependency/security upgrades, provider migrations, and hands-on operations are quoted.
+- A future managed-hosting retainer may bundle hosting, monitoring, backups, and updates, but must remain optional and preserve export/migration rights.
+
+## Why One-Time Can Work
+
+- The creator owns and pays recurring infrastructure, so Relay does not silently inherit hosting/storage COGS.
+- The construction price includes measured assembly, migration, QA, deployment, handoff labor, and a 90-day defect reserve.
+- Ongoing Relay obligations are separately funded by managed Patreon verification or paid maintenance/hosting.
+- Native site operation cannot depend on buying those services.
 
 ## Infrastructure Strategy: Before and After Independence
 
@@ -82,13 +89,13 @@ Includes:
 
 ### Post-Independence Modes
 
-1. Managed Mode (recommended default)
-   - Hosted clone site in platform-managed network.
-   - Faster support, stronger reliability, easier upgrades.
-2. Self-Hosted/BYOI Mode
-   - Exportable deployment artifacts plus infrastructure templates.
-   - Creator controls keys and billing.
-   - Platform continues as analytics and control-plane provider.
+1. Creator-owned Vercel/Supabase/R2 mode (recommended v1)
+   - Fast guided launch with creator-owned accounts, keys, domain, billing, and customer relationship.
+2. Portable Docker/Postgres mode
+   - Exportable application and deployment templates.
+   - One currently policy-validated hosting recipe for lawful creators who cannot use the primary route.
+3. Future managed mode
+   - Optional Relay hosting/operations only after service pricing, SLOs, moderation/privacy, and exit guarantees are approved.
 
 ## Cost Model Guardrails
 
@@ -99,18 +106,22 @@ Track COGS per tenant:
 - Email sends and deliverability tooling.
 - Support hours.
 - Payment processing overhead (if managed checkout).
+- Generated-site build, media-copy, browser QA, and handoff labor.
+- Managed Patreon token refresh, signing, monitoring, incidents, privacy/compliance, and migration support.
+- 90-day delivery-defect reserve.
 
 Enforce controls:
 
-- Fair-use limits and clear overages.
-- Throttling for accidental heavy operations.
-- Separate pricing for high-volume media retrieval and archive restores.
+- Quote exceptional migration volume before construction rather than taxing patron count or revenue.
+- Throttle/resume media-copy operations and expose creator-owned provider estimates.
+- Meter managed connector usage for COGS planning without billing per Patreon patron or revenue.
 
 ## Revenue Mechanics
 
 - Core recurring fee anchored to outcome value.
-- One-time migration fee for implementation and risk reduction.
-- Retainer for ongoing operations and growth support.
+- One-time Escape Hatch fee for construction, migration, verification, deployment, and ownership handoff.
+- Monthly managed Patreon verification surcharge.
+- Paid post-warranty maintenance and future optional managed-hosting retainer.
 - Annual discounts to improve retention and cash flow.
 
 Optional add-ons:
@@ -129,23 +140,25 @@ Optional add-ons:
 
 ## Recommended Path Forward
 
-1. Launch with Core SaaS and Migration Package first.
-2. Add Managed Independence Retainer after first successful migrations.
-3. Offer BYOI after operational tooling matures (v2), not day one.
-4. Keep analytics and recommendations as post-migration recurring value.
-5. Position price against Patreon platform tax narrative:
-   - Lower effective platform tax plus ownership plus growth intelligence.
+1. Launch Core SaaS and the creator-owned Escape Hatch construction package.
+2. Ship creator-owned OAuth and the separately billed managed Patreon verification choice in Escape Hatch v1.
+3. Make creator-owned infrastructure the v1 handoff; do not postpone portability.
+4. Measure delivery COGS and connector attach/support rates before locking prices.
+5. Add paid maintenance and managed hosting only with clear SLO, moderation/privacy, and exit obligations.
+6. Position around ownership and fixed disclosed service charges, never a tax on creator subscription success.
 
 ## Operational Milestones to Support Monetization
 
 - M1: Usage metering and billing primitives.
 - M2: Migration playbooks and support SOPs.
-- M3: Deliverability and compliance automation.
-- M4: Managed hosting SLOs and on-call operations.
-- M5: BYOI deployment templates and support-tier definitions.
+- M3: Provider-policy routing, transactional email, and compliance gates.
+- M4: Creator-owned Vercel and portable deployment/restore templates.
+- M5: Managed Patreon verification billing, monitoring, cancellation, and migration.
+- M6: Optional managed-hosting SLOs and on-call operations.
 
 ## Decision Matrix for Creator Path
 
-- Lowest friction desired -> Managed Mode.
-- Full infrastructure control desired -> BYOI.
-- Risk-averse or undecided -> Managed first, BYOI later with portability.
+- Lowest friction -> creator-owned Vercel/Supabase/R2 guided path.
+- Policy or portability requirement -> Docker/Postgres/R2 path with validated provider recipe.
+- Patreon OAuth setup burden -> optional monthly Relay-managed verification.
+- Ongoing operations burden -> paid maintenance now; optional managed hosting when available.

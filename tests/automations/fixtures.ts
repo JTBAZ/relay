@@ -259,6 +259,8 @@ export const AUTOMATIONS_API_FIXTURES = {
   paths: {
     collection: "/api/v1/creator/autopost/automations",
     item: (id: string) => `/api/v1/creator/autopost/automations/${id}`,
-    runs: (id: string) => `/api/v1/creator/autopost/automations/${id}/runs`
+    runs: (id: string) => `/api/v1/creator/autopost/automations/${id}/runs`,
+    approvalContext: (automationId: string, runId: string) =>
+      `/api/v1/creator/autopost/automations/${automationId}/runs/${runId}/approval-context`
   }
 } as const;

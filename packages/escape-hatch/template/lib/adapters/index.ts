@@ -1,10 +1,22 @@
 /**
- * Default stub adapter bundle for Milestone 2 chassis.
- * productionSafe remains false — no hard paywall or EH-033 delivery.
- * Runtime health always reports degraded/stub until EH-030/033/050/070.
+ * Adapter bundle for the generated kit (EH-030).
+ * Auth/DB report readiness only when env is real and non-placeholder;
+ * detail still labels preview until EH-033 private media and broader gates.
+ * productionSafe remains false.
  */
 
-import { loadEnv, requireServerEnv, EnvValidationError } from "../env";
+import {
+  EnvValidationError,
+  isPlaceholderSecret,
+  isPlaceholderSupabaseUrl,
+  isSupabaseIdentityConfigured,
+  isSupabaseServiceRoleConfigured,
+  loadEnv,
+  requireServerEnv,
+  resolveSupabaseUrl
+} from "../env";
+import { getServerAuthSession } from "../identity/session";
+import type { SiteAuthSession } from "../identity/types";
 import type {
   AuthProvider,
   BillingProvider,
@@ -16,6 +28,9 @@ import type {
   TransactionalEmailProvider
 } from "./types";
 
+const PREVIEW_UNTIL_MEDIA =
+  "Preview identity path — not production-safe until EH-033 private media and broader gates.";
+
 const stubAuth: AuthProvider = {
   id: "auth",
   implementation: "stub",
@@ -23,11 +38,33 @@ const stubAuth: AuthProvider = {
     return {
       ok: false,
       reason:
-        "Auth adapter is a typed stub/preview-only until EH-030 (Supabase identity)."
+        "Auth adapter is a typed stub/local-preview until Supabase URL + anon key are configured (EH-030)."
     };
   },
   async getSession() {
     return null;
+  }
+};
+
+const supabaseAuth: AuthProvider = {
+  id: "auth",
+  implementation: "supabase",
+  async health() {
+    const env = loadEnv();
+    if (!isSupabaseIdentityConfigured(env)) {
+      return {
+        ok: false,
+        reason:
+          "Supabase identity env missing or placeholder. Local-preview mode — soft personas are non-authoritative."
+      };
+    }
+    return {
+      ok: true,
+      detail: `Supabase Auth env configured. ${PREVIEW_UNTIL_MEDIA}`
+    };
+  },
+  async getSession(siteId?: string): Promise<SiteAuthSession | null> {
+    return getServerAuthSession(siteId);
   }
 };
 
@@ -36,17 +73,23 @@ const stubDatabase: DatabaseProvider = {
   implementation: "stub",
   async health() {
     const env = loadEnv();
-    if (!env.DATABASE_URL) {
+    if (!env.DATABASE_URL && !isSupabaseIdentityConfigured(env)) {
       return {
         ok: false,
         reason:
-          "DATABASE_URL not set. Preview chassis uses JSON under data/; SQL migrations live in db/ for creator-owned deploy (EH-030)."
+          "DATABASE_URL / Supabase not set. Preview chassis uses JSON under data/; SQL migrations live in db/."
+      };
+    }
+    if (env.DATABASE_URL && isPlaceholderSecret(env.DATABASE_URL)) {
+      return {
+        ok: false,
+        reason: "DATABASE_URL is a placeholder — not ready."
       };
     }
     return {
       ok: false,
       reason:
-        "DATABASE_URL may be present, but the database adapter is still a stub/preview-only surface until EH-030/031 (no live connection probe)."
+        "Database adapter is still a stub (set Supabase identity env for the EH-030 data path)."
     };
   },
   async migrate() {
@@ -58,7 +101,7 @@ const stubDatabase: DatabaseProvider = {
           applied: [],
           skipped: true,
           reason:
-            "No DATABASE_URL — SQL files under db/migrations are portable stubs; apply when wiring EH-030/031."
+            "No DATABASE_URL — apply SQL under db/migrations via Supabase SQL editor (see scripts/bootstrap-identity.md)."
         };
       }
       throw err;
@@ -67,7 +110,40 @@ const stubDatabase: DatabaseProvider = {
       applied: [],
       skipped: true,
       reason:
-        "DATABASE_URL set but preview chassis does not run live migrations (EH-030 owns apply + RLS)."
+        "DATABASE_URL set but live migrate runner is not executed in-process; apply db/migrations/0001 and 0002 via psql or Supabase dashboard."
+    };
+  }
+};
+
+const supabaseDatabase: DatabaseProvider = {
+  id: "database",
+  implementation: "supabase",
+  async health() {
+    const env = loadEnv();
+    if (!isSupabaseIdentityConfigured(env)) {
+      return {
+        ok: false,
+        reason: "Supabase identity env missing or placeholder."
+      };
+    }
+    const url = resolveSupabaseUrl(env);
+    if (!url || isPlaceholderSupabaseUrl(url)) {
+      return { ok: false, reason: "Supabase URL is placeholder." };
+    }
+    const serviceNote = isSupabaseServiceRoleConfigured(env)
+      ? "Service role present (server-only)."
+      : "Service role unset (user-scoped RLS path only).";
+    return {
+      ok: true,
+      detail: `Supabase Postgres path configured. ${serviceNote} ${PREVIEW_UNTIL_MEDIA}`
+    };
+  },
+  async migrate() {
+    return {
+      applied: [],
+      skipped: true,
+      reason:
+        "Apply db/migrations/0001_preview_chassis.sql then 0002_identity_rls.sql in the creator Supabase project (see scripts/bootstrap-identity.md). No live network apply from this kit."
     };
   }
 };
@@ -104,8 +180,7 @@ const stubBilling: BillingProvider = {
   async health() {
     return {
       ok: false,
-      reason:
-        "Billing adapter is a typed stub/preview-only until EH-050/051."
+      reason: "Billing adapter is a typed stub/preview-only until EH-050/051."
     };
   }
 };
@@ -149,7 +224,32 @@ const manifestDeployment: DeploymentProvider = {
   }
 };
 
-/** Factory for the default stub adapter set (no live network). */
+function createAuthProvider(): AuthProvider {
+  return isSupabaseIdentityConfigured(loadEnv()) ? supabaseAuth : stubAuth;
+}
+
+function createDatabaseProvider(): DatabaseProvider {
+  return isSupabaseIdentityConfigured(loadEnv())
+    ? supabaseDatabase
+    : stubDatabase;
+}
+
+/** Factory for the env-aware adapter set (no live network probes). */
+export function createSiteAdapters(): SiteAdapters {
+  return {
+    auth: createAuthProvider(),
+    database: createDatabaseProvider(),
+    storage: stubStorage,
+    billing: stubBilling,
+    patreon: stubPatreon,
+    email: stubEmail,
+    deployment: manifestDeployment
+  };
+}
+
+/**
+ * Explicit stub bundle — always degraded. Used by tests that assert stub honesty.
+ */
 export function createStubAdapters(): SiteAdapters {
   return {
     auth: stubAuth,

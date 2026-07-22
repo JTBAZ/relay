@@ -1,9 +1,9 @@
 {
   "$schema": "https://escape-hatch.local/schemas/escape-hatch.manifest/1.0.0.json",
   "contract_version": "escape-hatch.manifest/1.0.0",
-  "chassis_version": "0.2.0",
-  "schema_version": "eh-db/0001_preview_chassis",
-  "slice": "EH-022",
+  "chassis_version": "0.3.0",
+  "schema_version": "eh-db/0002_identity_rls",
+  "slice": "EH-030",
   "productionSafe": false,
   "generated_at": null,
   "creator_id": null,
@@ -12,13 +12,13 @@
     "soft_persona_gate": true,
     "hard_paywall": false,
     "signed_media_delivery": false,
-    "supabase_identity": false,
+    "supabase_identity": true,
     "stripe_billing": false,
     "native_admin": true
   },
   "adapters": {
-    "auth": { "id": "stub", "version": "0.0.0", "state": "stub_only" },
-    "database": { "id": "sql_migrations", "version": "0001_preview_chassis", "state": "preview_only" },
+    "auth": { "id": "supabase_optional", "version": "0.1.0", "state": "preview_only" },
+    "database": { "id": "supabase_sql_migrations", "version": "0002_identity_rls", "state": "preview_only" },
     "storage": { "id": "stub", "version": "0.0.0", "state": "stub_only" },
     "billing": { "id": "stub", "version": "0.0.0", "state": "stub_only" },
     "patreon": { "id": "stub", "version": "0.0.0", "state": "stub_only" },
@@ -43,6 +43,8 @@
   "optional_env_names": [
     "NEXT_PUBLIC_SITE_URL",
     "NEXT_PUBLIC_SITE_NAME",
+    "NEXT_PUBLIC_SUPABASE_URL",
+    "NEXT_PUBLIC_SUPABASE_ANON_KEY",
     "DATABASE_URL",
     "SUPABASE_URL",
     "SUPABASE_ANON_KEY",
@@ -58,16 +60,17 @@
   ],
   "applied_migrations": [],
   "known_exclusions": [
-    "No hard paywall (soft persona gate only)",
-    "Premium media may still be under public/media (prototype leakage)",
-    "No Supabase RLS / identity (EH-030)",
-    "No signed private media delivery (EH-033)"
+    "No hard paywall (soft persona gate remains for local preview)",
+    "Premium media may still be under public/media (prototype leakage until EH-033)",
+    "Supabase identity is opt-in via env; productionSafe remains false",
+    "No signed private media delivery (EH-033)",
+    "Portable Postgres/auth without Supabase is EH-031"
   ],
   "source_export_manifest_hash": null,
   "relay_optional_services": [],
   "warranty": {
     "start": null,
     "end": null,
-    "notes": "Chassis preview — not a production handoff warranty."
+    "notes": "Identity path preview — not a production handoff warranty."
   }
 }

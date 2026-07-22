@@ -170,8 +170,7 @@ export function resolveScheduleDatePreset(args: {
 /** Human-readable confirmation for the resolved local datetime. */
 export function formatResolvedScheduleLabel(
   datetimeLocal: string,
-  timeZone: string,
-  now?: Date
+  timeZone: string
 ): string {
   const parsed = parseScheduledLocal(datetimeLocal);
   if (!parsed) return datetimeLocal;

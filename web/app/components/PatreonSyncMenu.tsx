@@ -24,6 +24,8 @@ type Props = {
   onSyncActivity?: (phase: SyncPhase) => void;
   /** Increment (e.g. from SyncHealthBanner) to open the menu and refresh sync state. */
   detailsSignal?: number;
+  /** Trigger button label (default Patreon). Lab hotbar uses “Patreon Health”. */
+  triggerLabel?: string;
 };
 
 function fmtIso(iso: string | null | undefined): string {
@@ -122,7 +124,8 @@ export default function PatreonSyncMenu({
   campaignId,
   onAfterScrape,
   onSyncActivity,
-  detailsSignal
+  detailsSignal,
+  triggerLabel = "Patreon"
 }: Props) {
   const [open, setOpen] = useState(false);
   const [loadingState, setLoadingState] = useState(false);
@@ -338,7 +341,7 @@ export default function PatreonSyncMenu({
         ) : (
           <CloudDownload className="h-3.5 w-3.5 text-[var(--lib-primary)]" aria-hidden />
         )}
-        Patreon
+        {triggerLabel}
       </button>
 
       {open && (

@@ -22,6 +22,7 @@ import {
   type DistributionScheduleReminderJobData,
   type AutopostScheduleSeriesJobData,
   type AutopostDistributionRulesJobData,
+  type AutopostAutomationsJobData,
   type TipGrantJobData,
   type BillCreditSettlementJobData,
   type RevealExpiryJobData,
@@ -48,6 +49,7 @@ import {
 import { postingGoalNudgeRepeatEveryMsFromEnv } from "../autopost/posting-goal-nudge-worker.js";
 import { scheduleSeriesRepeatEveryMsFromEnv } from "../autopost/schedule-series-worker.js";
 import { distributionRulesRepeatEveryMsFromEnv } from "../autopost/distribution-rule-worker.js";
+import { automationsRepeatEveryMsFromEnv } from "../autopost/automation-worker.js";
 import { distributionScheduleReminderRepeatEveryMsFromEnv } from "../distribution/distribution-schedule-reminder-worker.js";
 import { tipGrantRepeatEveryMsFromEnv } from "../tips/tip-grant-worker.js";
 import { settlementRepeatEveryMsFromEnv } from "../ledger/settlement-service.js";
@@ -252,6 +254,16 @@ export async function registerRelayBullMqRepeatSchedulers(
         openQueue(RELAY_JOB_QUEUE_NAMES.AUTOPOST_DISTRIBUTION_RULES),
         distributionRulesEvery,
         {} as AutopostDistributionRulesJobData,
+        log
+      );
+    }
+
+    const automationsEvery = automationsRepeatEveryMsFromEnv(env);
+    if (automationsEvery !== null) {
+      await replaceRepeatEvery(
+        openQueue(RELAY_JOB_QUEUE_NAMES.AUTOPOST_AUTOMATIONS),
+        automationsEvery,
+        {} as AutopostAutomationsJobData,
         log
       );
     }

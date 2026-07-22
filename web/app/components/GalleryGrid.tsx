@@ -8,13 +8,28 @@ import type { GalleryItem, TierFacet } from "@/lib/relay-api";
 import ActivePostPresenceCard from "./ActivePostPresenceCard";
 import LinkedSetCard from "./studio/LinkedSetCard";
 
-export type GalleryGridDensity = "dense" | "normal";
+export type GalleryGridDensity = "dense" | "normal" | "lab" | "lab2";
 
 /** Match Tailwind viewport breakpoints used by the grid classes. */
 export function galleryGridColumnCount(
   viewportWidth: number,
   density: GalleryGridDensity
 ): number {
+  if (density === "lab2") {
+    // v0 Active Posts: 3 cols default, 4 at xl.
+    if (viewportWidth >= 1280) return 4;
+    if (viewportWidth >= 768) return 3;
+    if (viewportWidth >= 560) return 2;
+    return 1;
+  }
+  if (density === "lab") {
+    // Fill stage left of Schedule Rail — denser columns as width grows.
+    if (viewportWidth >= 1280) return 5;
+    if (viewportWidth >= 1024) return 4;
+    if (viewportWidth >= 768) return 3;
+    if (viewportWidth >= 560) return 2;
+    return 1;
+  }
   if (density === "dense") {
     if (viewportWidth >= 1280) return 7;
     if (viewportWidth >= 1024) return 6;
@@ -108,15 +123,19 @@ function GalleryGrid({
 
   const columnCount = galleryGridColumnCount(viewportWidth, gridDensity);
   const rowCount = Math.ceil(cards.length / columnCount) || 0;
+  const isLab2Grid = gridDensity === "lab2";
+  const isLabGrid = gridDensity === "lab" || isLab2Grid;
+  // lab2 uses v0 landscape cards; classic lab uses square tiles.
+  const tileAspect = isLab2Grid ? "4 / 3" : gridDensity === "lab" ? "1 / 1" : "3 / 4";
+  const aspectFactor = isLab2Grid ? 3 / 4 : gridDensity === "lab" ? 1 : 4 / 3;
 
-  const padX = gridDensity === "dense" ? 32 : 48;
-  const gap = 12;
+  const padX = isLab2Grid ? 40 : isLabGrid ? 24 : gridDensity === "dense" ? 32 : 48;
+  const gap = isLab2Grid ? 10 : isLabGrid ? 12 : 12;
   const estimateRowSize = useMemo(() => {
     const inner = Math.max(160, (scrollWidth || viewportWidth) - padX);
     const colW = (inner - gap * (columnCount - 1)) / columnCount;
-    // Cards use aspect-[3/4] (portrait): height = width * 4/3
-    return Math.max(140, colW * (4 / 3) + gap);
-  }, [scrollWidth, viewportWidth, padX, columnCount]);
+    return Math.max(140, colW * aspectFactor + gap);
+  }, [scrollWidth, viewportWidth, padX, columnCount, gap, aspectFactor]);
 
   const rowVirtualizer = useVirtualizer({
     count: rowCount,
@@ -125,13 +144,22 @@ function GalleryGrid({
     overscan: 3
   });
 
-  const padClass = gridDensity === "dense" ? "px-4" : "px-6";
+  const padClass = isLab2Grid
+    ? "px-5"
+    : isLabGrid
+      ? "px-3"
+      : gridDensity === "dense"
+        ? "px-4"
+        : "px-6";
 
   return (
-    <div ref={scrollRef} className="min-h-0 flex-1 overflow-auto bg-black pb-10">
+    <div
+      ref={scrollRef}
+      className={`min-h-0 flex-1 overflow-auto pb-10 ${isLabGrid ? "bg-[#050706]" : "bg-black"}`}
+    >
       <div
-        className="relative w-full pt-4"
-        style={{ height: `${rowVirtualizer.getTotalSize() + 96}px` }}
+        className={`relative w-full ${isLab2Grid ? "pt-4" : isLabGrid ? "pt-3" : "pt-4"}`}
+        style={{ height: `${rowVirtualizer.getTotalSize() + (isLabGrid ? 72 : 96)}px` }}
         role="list"
       >
         {rowVirtualizer.getVirtualItems().map((virtualRow) => {
@@ -142,10 +170,11 @@ function GalleryGrid({
               key={virtualRow.key}
               data-index={virtualRow.index}
               ref={rowVirtualizer.measureElement}
-              className={`absolute left-0 right-0 grid gap-3 ${padClass}`}
+              className={`absolute left-0 right-0 grid ${padClass}`}
               style={{
                 transform: `translateY(${virtualRow.start}px)`,
-                gridTemplateColumns: `repeat(${columnCount}, minmax(0, 1fr))`
+                gridTemplateColumns: `repeat(${columnCount}, minmax(0, 1fr))`,
+                gap: `${gap}px`
               }}
             >
               {rowCards.map((card, colIdx) => {
@@ -167,6 +196,8 @@ function GalleryGrid({
                         present={card.present}
                         missing={card.missing}
                         selected={setFullySelected(memberGroups, selectedKeys)}
+                        aspectRatio={tileAspect}
+                        presentation={isLab2Grid ? "lab2" : "default"}
                         onToggleSelect={() => onToggleSelectGroup(allItems)}
                         onOpenSummary={() => onOpenLinkedSet(card.creative_work_id)}
                         onPresentClick={onPresentClick}
@@ -188,6 +219,8 @@ function GalleryGrid({
                       selected={groupFullySelected(group, selectedKeys)}
                       partiallySelected={groupPartiallySelected(group, selectedKeys)}
                       flatIndex={idx}
+                      aspectRatio={tileAspect}
+                      presentation={isLab2Grid ? "lab2" : "default"}
                       onToggleSelect={onToggleSelectGroup}
                       onFocusIndex={onFocusIndex}
                       onOpen={onOpenPost}

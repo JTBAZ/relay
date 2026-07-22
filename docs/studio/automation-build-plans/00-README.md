@@ -39,11 +39,11 @@ Consequences:
 | VS1 | Connector schema and migration | B03–B04 | VS0 | Done |
 | VS2 | Lifecycle service and API | B05–B06 | VS1 | Done |
 | VS3 | Delayed public release preset | B07–B08 | VS2 | Done |
-| VS4 | Scheduled preview-and-crosspost preset | B09–B11 | VS2, VS3 shared materializer | In progress |
-| VS5 | Rail, reminder, and notification projection | B12–B13 | VS3, VS4 | Queued |
-| VS6 | Previewizer approval and distribution handoff | B14–B16 | VS5 | Queued |
-| VS7 | Schedule Rail Automations modal | B17–B18 | VS2–VS6 contracts | Queued |
-| VS8 | Integrated verification and rollout | B19–B20 | VS3–VS7 | Queued |
+| VS4 | Scheduled preview-and-crosspost preset | B09–B11 | VS2, VS3 shared materializer | Done |
+| VS5 | Rail, reminder, and notification projection | B12–B13 | VS3, VS4 | Done |
+| VS6 | Previewizer approval and distribution handoff | B14–B16 | VS5 | Done |
+| VS7 | Schedule Rail Automations modal | B17–B18 | VS2–VS6 contracts | Done |
+| VS8 | Integrated verification and rollout | B19–B20 | VS3–VS7 | Done |
 
 Status changes require a Delta Out proving the slice exit gate. “Code written” is not “Done.”
 
@@ -62,7 +62,7 @@ Status changes require a Delta Out proving the slice exit gate. “Code written�
 - A saved Previewizer template is preloaded but never server-rendered in v1.
 - Publishing and social handoff always require creator confirmation.
 - The existing post-create playbook → repeat prompt chain stays intact; the new modal is a create/manage surface for the two automation presets.
-- `RELAY_FEATURE_AUTOMATIONS` defaults off until VS8 exit.
+- `RELAY_FEATURE_AUTOMATIONS` defaults off until a human release owner approves evidence (see [`../AUTOMATIONS_RUNBOOK.md`](../AUTOMATIONS_RUNBOOK.md) and [`../../qa/AUTOMATIONS_RELEASE_EVIDENCE.md`](../../qa/AUTOMATIONS_RELEASE_EVIDENCE.md)).
 
 ## Dependency and claim order
 

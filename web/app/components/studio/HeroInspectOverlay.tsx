@@ -55,17 +55,17 @@ function thumbUrl(item: GalleryItem | null): string | null {
 }
 
 export function galleryItemsToHeroMediaStrip(items: GalleryItem[]): HeroMediaThumb[] {
-  return items
-    .map((item) => {
-      const src = thumbUrl(item);
-      if (!src) return null;
-      return {
-        media_id: item.media_id,
-        thumb_src: src,
-        caption: item.title ?? null
-      };
-    })
-    .filter((x): x is HeroMediaThumb => Boolean(x));
+  const out: HeroMediaThumb[] = [];
+  for (const item of items) {
+    const src = thumbUrl(item);
+    if (!src) continue;
+    out.push({
+      media_id: item.media_id,
+      thumb_src: src,
+      caption: item.title ?? null
+    });
+  }
+  return out;
 }
 
 type Props = {

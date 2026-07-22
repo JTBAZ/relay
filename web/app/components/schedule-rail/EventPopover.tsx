@@ -1,6 +1,7 @@
 'use client'
 
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
+import { ImageIcon, Trash2 } from 'lucide-react'
 import {
   ACTION_COLORS,
   DEST_LABELS,
@@ -9,37 +10,65 @@ import {
   type ReadyItem,
   type ScheduleRailDestinationChild,
 } from "@/lib/schedule-rail-data";
+import { RELAY_API_BASE } from "@/lib/relay-api";
 import type { StagedMediaDragItem } from "@/lib/staged-media-dnd";
 import {
   datetimeLocalFromIso,
   formatInstantInTimeZone,
   isoFromDatetimeLocal,
 } from "@/lib/goal-cycle-schedule-local";
-import { EventMediaDropBin, eventMediaIncomplete, eventShowsMediaBin } from "./EventMediaDropBin";
+import { EventMediaDropBin, eventShowsMediaBin } from "./EventMediaDropBin";
+import { EventPostDetails } from "./EventPostDetails";
 
 type EventItem = ScheduleEvent | ReadyItem
 
 interface EventPopoverProps {
   event: EventItem
+  /** Owner creator id — builds export thumb URLs for mounted media. */
+  creatorId?: string
   /** Creator / display IANA timezone for day + clock formatting. */
   timeZone?: string
-  onDone: (id: string) => void
   onDelete: (id: string) => void
-  onNotifyToggle: (id: string, val: boolean) => void
   onEditTime?: (id: string, scheduledForIso: string) => void | Promise<void>
   /** Phase 8 / VS8: drop → replace media on event post. */
   onMediaCommit?: (event: EventItem, mediaIds: string[]) => void | Promise<void>
-  /** VS8: clear/remove attached media. */
+  /** VS8: unmount attached media and return it to Import Bay (not permanent delete). */
   onMediaClear?: (event: EventItem) => void | Promise<void>
   onClose: () => void
   mediaCommitLabel?: string
   mediaCommitBusy?: boolean
   mediaCommitError?: string | null
   onPrepareOccurrence?: (occurrenceId: string) => void | Promise<void>
+  /** VS7 — open shared AutomationApprovalOverlay when event is awaiting review. */
+  onOpenAutomationApproval?: (args: {
+    automationId: string
+    runId: string
+    draftId?: string | null
+  }) => void
+  /** Open the post-details authoring panel (e.g. from attach receipt). */
+  postDetailsOpen?: boolean
+  onPostDetailsOpenChange?: (open: boolean) => void
+  onPostDetailsSaved?: (patch: {
+    title: string
+    description: string | null
+    tags: string[]
+    post_details_state: "authored" | "adapted"
+  }) => void
 }
 
 function isScheduleEvent(e: EventItem): e is ScheduleEvent {
   return 'at' in e
+}
+
+function mediaExportUrl(
+  creatorId: string | undefined,
+  mediaId: string,
+  kind: "thumb" | "content"
+): string | null {
+  const cid = creatorId?.trim()
+  const mid = mediaId.trim()
+  if (!cid || !mid) return null
+  return `${RELAY_API_BASE}/api/v1/export/media/${encodeURIComponent(cid)}/${encodeURIComponent(mid)}/${kind}`
 }
 
 function destChildren(event: EventItem): ScheduleRailDestinationChild[] {
@@ -63,12 +92,23 @@ function statusChipClass(status: ScheduleRailDestinationChild["status"]): string
   return "text-[#aaa] border-[#2a2a2a]"
 }
 
+/** Strip schedule-create media/drop boilerplate; media bins already explain attach. */
+function displayEventRationale(rationale: string | null | undefined): string | null {
+  if (!rationale?.trim()) return null
+  const cleaned = rationale
+    .replace(/\s*Drop media here when the art is ready[^.]*\./gi, "")
+    .replace(/\s*Autopost is queued with your platforms\.?/gi, "")
+    .replace(/\s*Platforms are already set\./gi, "")
+    .replace(/\s{2,}/g, " ")
+    .trim()
+  return cleaned || null
+}
+
 export function EventPopover({
   event,
+  creatorId,
   timeZone = "UTC",
-  onDone,
   onDelete,
-  onNotifyToggle,
   onEditTime,
   onMediaCommit,
   onMediaClear,
@@ -77,10 +117,18 @@ export function EventPopover({
   mediaCommitBusy = false,
   mediaCommitError = null,
   onPrepareOccurrence,
+  onOpenAutomationApproval,
+  postDetailsOpen: postDetailsOpenProp,
+  onPostDetailsOpenChange,
+  onPostDetailsSaved,
 }: EventPopoverProps) {
   const [deleteHover, setDeleteHover] = useState(false)
   const [editing, setEditing] = useState(false)
   const [mediaFilled, setMediaFilled] = useState<StagedMediaDragItem[]>([])
+  const [clearBusy, setClearBusy] = useState(false)
+  const [postDetailsOpenLocal, setPostDetailsOpenLocal] = useState(false)
+  const postDetailsOpen = postDetailsOpenProp ?? postDetailsOpenLocal
+  const setPostDetailsOpen = onPostDetailsOpenChange ?? setPostDetailsOpenLocal
   const [editValue, setEditValue] = useState(() => {
     if (!isScheduleEvent(event)) return ''
     return datetimeLocalFromIso(event.at, timeZone)
@@ -88,21 +136,45 @@ export function EventPopover({
   const color = ACTION_COLORS[event.action]
   const children = destChildren(event)
   const multiDest = children.length > 1
-  const isDone = event.status === 'done'
   const showMediaDrop = eventShowsMediaBin(event)
-  const mediaIncomplete = eventMediaIncomplete(event)
   const taskKind = event.task_kind ?? null
   const isBoundedNonPublish =
     taskKind === "social_upkeep" || taskKind === "active_rest" ||
     event.action === "repost" || event.action === "pin_comment" ||
     (taskKind !== "publish" && event.action === "schedule")
-  const doneLabel = isDone
-    ? "Completed"
-    : isBoundedNonPublish
-      ? taskKind === "active_rest"
-        ? "Mark rest done"
-        : "Mark upkeep done"
-      : "Done"
+
+  /** Mounted media: local drop staging first, else server-attached ids on the event. */
+  const mountedMedia = useMemo((): StagedMediaDragItem[] => {
+    if (mediaFilled.length > 0) return mediaFilled
+    const ids = (event.media_ids ?? []).map((id) => id.trim()).filter(Boolean)
+    return ids.map((id) => ({
+      id,
+      src: mediaExportUrl(creatorId, id, "thumb"),
+      filename: id,
+      mimeType: "application/octet-stream",
+    }))
+  }, [mediaFilled, event.media_ids, creatorId])
+
+  const hasMountedMedia = mountedMedia.length > 0
+  const primaryMedia = mountedMedia[0] ?? null
+  const extraMediaCount = Math.max(0, mountedMedia.length - 1)
+  const showPostDetails =
+    showMediaDrop && hasMountedMedia && !isBoundedNonPublish
+  const primaryTaskId = event.task_id ?? event.id
+  const railEventId = primaryTaskId
+
+  const unmountMedia = async () => {
+    if (clearBusy || mediaCommitBusy) return
+    setClearBusy(true)
+    try {
+      await onMediaClear?.(event)
+      setMediaFilled([])
+    } catch {
+      /* host surfaces mediaCommitError */
+    } finally {
+      setClearBusy(false)
+    }
+  }
 
   const formattedDay = isScheduleEvent(event)
     ? formatInstantInTimeZone(event.at, timeZone, {
@@ -123,8 +195,7 @@ export function EventPopover({
 
   const openLinkLabel =
     event.destination == null ? "Open link" : "Open post"
-
-  const primaryTaskId = event.task_id ?? event.id
+  const rationaleText = displayEventRationale(event.rationale)
 
   return (
     <div
@@ -132,6 +203,47 @@ export function EventPopover({
       role="dialog"
       aria-modal="false"
     >
+      {/* Mounted media — persistent hero thumb; trash returns piece to Import Bay */}
+      {showMediaDrop && hasMountedMedia && primaryMedia ? (
+        <div className="relative border-b border-[#1f1f1f]" data-event-media-hero>
+          <div className="relative aspect-[4/3] w-full bg-[#0a0a0a]">
+            {primaryMedia.src ? (
+              // eslint-disable-next-line @next/next/no-img-element -- export media URLs
+              <img
+                src={primaryMedia.src}
+                alt=""
+                className="h-full w-full object-cover"
+                onError={(e) => {
+                  const fallback = mediaExportUrl(creatorId, primaryMedia.id, "content")
+                  if (fallback && e.currentTarget.src !== fallback) {
+                    e.currentTarget.src = fallback
+                  }
+                }}
+              />
+            ) : (
+              <div className="flex h-full w-full items-center justify-center">
+                <ImageIcon className="h-8 w-8 text-[#3a3a3a]" aria-hidden />
+              </div>
+            )}
+            {extraMediaCount > 0 ? (
+              <span className="absolute bottom-2 left-2 rounded-md bg-black/70 px-1.5 py-0.5 text-[10px] font-medium tabular-nums text-[#edf2ef]">
+                +{extraMediaCount}
+              </span>
+            ) : null}
+            <button
+              type="button"
+              disabled={clearBusy || mediaCommitBusy}
+              onClick={() => void unmountMedia()}
+              className="absolute right-2 top-2 flex h-8 w-8 items-center justify-center rounded-lg border border-[#2a2a2a] bg-[#0e100f]/92 text-[#aaa] transition-colors hover:border-[#3a3a3a] hover:text-[#edf2ef] disabled:cursor-not-allowed disabled:opacity-45"
+              aria-label="Return media to Import Bay"
+              title="Return to Import Bay"
+            >
+              <Trash2 className="h-3.5 w-3.5" aria-hidden />
+            </button>
+          </div>
+        </div>
+      ) : null}
+
       {/* Header */}
       <div className="flex items-start justify-between gap-2 px-4 pt-4 pb-2">
         <div className="flex items-center gap-2 min-w-0">
@@ -170,11 +282,11 @@ export function EventPopover({
       </div>
 
       {/* Rationale */}
-      {event.rationale && (
+      {rationaleText ? (
         <p className="px-4 pb-3 text-[11.5px] leading-relaxed text-[#888]">
-          {event.rationale}
+          {rationaleText}
         </p>
-      )}
+      ) : null}
 
       {event.series_id ? (
         <div className="flex items-center justify-between gap-2 px-4 pb-3" data-testid="series-badge">
@@ -214,7 +326,6 @@ export function EventPopover({
               const label = child.destination
                 ? DEST_LABELS[child.destination as NonNullable<Destination>]
                 : "No destination"
-              const childDone = child.status === "done"
               return (
                 <div
                   key={child.task_id}
@@ -228,27 +339,13 @@ export function EventPopover({
                     {multiDest ? ` · ${child.status}` : ""}
                   </span>
                   {multiDest ? (
-                    <div className="ml-auto flex items-center gap-1">
-                      <button
-                        type="button"
-                        disabled={childDone}
-                        onClick={() => onDone(child.task_id)}
-                        className={`rounded px-1.5 py-0.5 text-[10px] font-medium transition-colors ${
-                          childDone
-                            ? "cursor-default text-[#555]"
-                            : "text-[#9bf0c4] hover:bg-[#9bf0c4]/10"
-                        }`}
-                      >
-                        Done
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => onDelete(child.task_id)}
-                        className="rounded px-1.5 py-0.5 text-[10px] text-[#555] hover:text-red-400"
-                      >
-                        Dismiss
-                      </button>
-                    </div>
+                    <button
+                      type="button"
+                      onClick={() => onDelete(child.task_id)}
+                      className="ml-auto rounded px-1.5 py-0.5 text-[10px] text-[#555] hover:text-red-400"
+                    >
+                      Dismiss
+                    </button>
                   ) : null}
                 </div>
               )
@@ -306,103 +403,56 @@ export function EventPopover({
         </>
       ) : null}
 
-      {/* Media drop — pending publish posts (attach / replace) */}
+      {/* Media — drop only when nothing is mounted; mounted media lives in the hero thumb */}
       {showMediaDrop ? (
         <>
-          <div className="mx-4 border-t border-[#1f1f1f]" />
-          <div className="px-4 pt-3 pb-1">
-            <p className="text-[10px] font-medium uppercase tracking-[0.12em] text-[#555]">
-              Media
-            </p>
-            <p className="mt-0.5 text-[10px] leading-snug text-[#666]">
-              {mediaIncomplete
-                ? "Drop Import Bay media here to attach to this event."
-                : "Media attached — drop to replace, or clear to remove."}
-            </p>
-            {event.draft_id ? (
-              <a
-                href={`/studio/autopost?draft_id=${encodeURIComponent(event.draft_id)}`}
-                className="mt-1.5 inline-block text-[10px] font-medium text-[#9bf0c4] hover:underline"
-              >
-                {mediaIncomplete ? "Continue in Autopost" : "Open in Autopost"}
-              </a>
-            ) : null}
-            {event.media_state ? (
-              <p className="mt-1 text-[10px] tabular-nums text-[#777]" role="status">
-                State: {event.media_state}
-                {typeof event.media_count === "number" ? ` · ${event.media_count}` : ""}
-              </p>
-            ) : null}
-          </div>
-          <EventMediaDropBin
-            filled={mediaFilled}
-            onFilledChange={setMediaFilled}
-            attachedCount={event.media_count ?? 0}
-            readinessErrors={event.readiness_errors ?? []}
-            onClearAttached={() => {
-              void (async () => {
-                try {
-                  await onMediaClear?.(event)
-                  setMediaFilled([])
-                } catch {
-                  /* host surfaces mediaCommitError */
-                }
-              })()
-            }}
-            onCommit={(mediaIds) => {
-              void (async () => {
-                try {
-                  await onMediaCommit?.(event, mediaIds)
-                  setMediaFilled([])
-                  onClose()
-                } catch {
-                  /* host surfaces mediaCommitError; keep bin filled */
-                }
-              })()
-            }}
-            commitLabel={mediaCommitBusy ? "Saving…" : mediaCommitLabel}
-            commitDisabled={mediaCommitBusy}
-          />
+          {!hasMountedMedia ? (
+            <>
+              <div className="mx-4 border-t border-[#1f1f1f]" />
+              <div className="px-4 pt-3 pb-1">
+                <p className="text-[10px] font-medium uppercase tracking-[0.12em] text-[#555]">
+                  Media
+                </p>
+              </div>
+              <EventMediaDropBin
+                filled={mediaFilled}
+                onFilledChange={setMediaFilled}
+                attachedCount={0}
+                readinessErrors={event.readiness_errors ?? []}
+                onCommit={(mediaIds) => {
+                  void (async () => {
+                    try {
+                      await onMediaCommit?.(event, mediaIds)
+                      // Keep local thumbs until rail refresh writes media_ids onto the event.
+                    } catch {
+                      /* host surfaces mediaCommitError; keep bin filled */
+                    }
+                  })()
+                }}
+                commitLabel={mediaCommitBusy ? "Saving…" : mediaCommitLabel}
+                commitDisabled={mediaCommitBusy}
+              />
+            </>
+          ) : null}
           {mediaCommitError ? (
             <p className="px-4 pb-2 text-[10px] leading-snug text-red-400/90">{mediaCommitError}</p>
-          ) : null}
-          {!mediaIncomplete && event.publish_confirm_path ? (
-            <div className="px-4 pb-3">
-              <a
-                href={event.publish_confirm_path}
-                className="block w-full rounded-lg border border-[#2a2a2a] bg-[#121212] py-2 text-center text-[11px] font-medium text-[#9bf0c4] hover:border-[#9bf0c4]/40"
-              >
-                Confirm publish in Studio
-              </a>
-              <p className="mt-1 text-[9px] leading-snug text-[#555]">
-                Opens the existing handoff flow — Relay never publishes for you.
-              </p>
-            </div>
           ) : null}
         </>
       ) : null}
 
-      {/* Divider */}
-      <div className="mx-4 border-t border-[#1f1f1f]" />
-
-      {/* Notify toggle */}
-      <div className="px-4 py-3 flex items-center justify-between">
-        <span className="text-[11.5px] text-[#aaa]">Notify me</span>
-        <button
-          role="switch"
-          aria-checked={event.notify}
-          onClick={() => onNotifyToggle(primaryTaskId, !event.notify)}
-          className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[#9bf0c4]/50 ${
-            event.notify ? 'bg-[#9bf0c4]' : 'bg-[#2a2a2a]'
-          }`}
-        >
-          <span
-            className={`inline-block h-3.5 w-3.5 transform rounded-full bg-[#050706] transition-transform ${
-              event.notify ? 'translate-x-4.5' : 'translate-x-0.5'
-            }`}
+      {showPostDetails ? (
+        <>
+          <div className="mx-4 border-t border-[#1f1f1f]" />
+          <EventPostDetails
+            event={event}
+            creatorId={creatorId}
+            railEventId={railEventId}
+            open={postDetailsOpen}
+            onOpenChange={setPostDetailsOpen}
+            onSaved={(patch) => onPostDetailsSaved?.(patch)}
           />
-        </button>
-      </div>
+        </>
+      ) : null}
 
       {/* Plan one-liner */}
       {event.plan_label && event.plan_index && event.plan_total && (
@@ -422,31 +472,31 @@ export function EventPopover({
       {/* Divider */}
       <div className="mx-4 border-t border-[#1f1f1f]" />
 
-      {/* Done button — single-dest; multi uses per-row Done */}
-      {!multiDest ? (
-        <div className="px-4 pt-3 pb-2">
+      {event.automation_state === "awaiting_review" &&
+      event.automation_id &&
+      event.automation_run_id &&
+      onOpenAutomationApproval ? (
+        <div className="px-4 pt-3 pb-1">
           <button
-            onClick={() => onDone(primaryTaskId)}
-            disabled={isDone}
-            className={`w-full py-2 rounded-lg text-[12.5px] font-medium transition-all ${
-              isDone
-                ? 'bg-[#1a1a1a] text-[#555] cursor-default'
-                : 'bg-[#9bf0c4] text-[#050706] hover:bg-[#b8f5d4] active:scale-[0.98]'
-            }`}
+            type="button"
+            data-testid="event-open-automation-approval"
+            className="w-full rounded-lg border border-[#9bf0c43d] bg-[#9bf0c414] py-2 text-[12.5px] font-medium text-[#9bf0c4] transition-all hover:bg-[#9bf0c422] active:scale-[0.98]"
+            onClick={() => {
+              onOpenAutomationApproval({
+                automationId: event.automation_id!,
+                runId: event.automation_run_id!,
+                draftId: event.draft_id ?? null
+              })
+              onClose()
+            }}
           >
-            {doneLabel}
+            Review Automation
           </button>
         </div>
-      ) : (
-        <div className="px-4 pt-2 pb-1">
-          <p className="text-[10px] leading-snug text-[#555]">
-            Mark each destination Done when published. Partial success stays on the calendar.
-          </p>
-        </div>
-      )}
+      ) : null}
 
       {/* Edit / Delete */}
-      <div className="px-4 pb-3 flex flex-col gap-2">
+      <div className="px-4 pt-2 pb-3 flex flex-col gap-2">
         {editing && onEditTime && isScheduleEvent(event) ? (
           <div className="flex flex-col gap-1.5">
             <input

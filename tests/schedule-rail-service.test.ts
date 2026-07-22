@@ -12,6 +12,7 @@ import {
   resolveTaskDueAt,
   ScheduleRailNotFoundError,
   ScheduleRailValidationError,
+  updateScheduleRailEventPostDetails,
   type ScheduleRailEventItem
 } from "../src/distribution/schedule-rail-service.js";
 
@@ -308,7 +309,7 @@ describe("createScheduledPostForRail", () => {
       variantId: "var1",
       destination: "patreon",
       action: "post",
-      rationale: "Scheduled from the Studio calendar. Drop media here when the art is ready.",
+      rationale: "Scheduled from the Studio calendar.",
       suggestedTime: new Date("2026-07-20T15:00:00.000Z"),
       link: null,
       remindMe: true,
@@ -538,12 +539,150 @@ describe("attachMediaToScheduleRailEvent", () => {
     const prisma = {
       postbotTask: {
         findFirst: vi.fn().mockResolvedValue(null)
+      },
+      creatorScheduleOccurrence: {
+        findFirst: vi.fn().mockResolvedValue(null)
+      },
+      creatorScheduleEvent: {
+        findFirst: vi.fn().mockResolvedValue(null)
       }
     } as unknown as PrismaClient;
 
     await expect(
       attachMediaToScheduleRailEvent(prisma, "cr1", "task_other", ["m1"])
     ).rejects.toBeInstanceOf(ScheduleRailNotFoundError);
+  });
+
+  it("materializes a planned routine occurrence then attaches media", async () => {
+    const seriesMod = await import("../src/autopost/schedule-series-service.js");
+    const spy = vi.spyOn(seriesMod, "materializeOccurrence").mockResolvedValue({
+      occurrence_id: "occ1",
+      series_id: "ser1",
+      occurrence_key: "k1",
+      due_at: new Date().toISOString(),
+      status: "materialized",
+      post_id: "post1",
+      draft_id: "draft1",
+      primary_task_id: "task1",
+      planned_format: "image",
+      destinations: ["patreon"],
+      title: "Routine post",
+      series_cadence: "weekly"
+    });
+
+    const mediaRow = {
+      id: "m1",
+      creatorId: "cr1",
+      ingestOrigin: MediaIngestOrigin.RELAY_UPLOAD,
+      currentStorageKey: "uploads/m1.jpg",
+      postIds: [] as string[],
+      primaryPostId: null as string | null,
+      autopostDraftId: null as string | null
+    };
+    const prisma = {
+      postbotTask: {
+        findFirst: vi
+          .fn()
+          .mockResolvedValueOnce(null)
+          .mockResolvedValueOnce({
+            id: "task1",
+            creatorId: "cr1",
+            postId: "post1",
+            planId: null,
+            goalCycleCampaignKey: null,
+            action: "post",
+            status: "pending"
+          })
+      },
+      creatorScheduleOccurrence: {
+        findFirst: vi.fn().mockResolvedValue({ id: "occ1" })
+      },
+      postVersion: {
+        findFirst: vi.fn().mockResolvedValue({
+          id: "ver1",
+          postId: "post1",
+          mediaIds: []
+        })
+      },
+      mediaAsset: {
+        findFirst: vi.fn().mockResolvedValue(mediaRow)
+      },
+      $transaction: vi.fn(async (fn: (tx: unknown) => Promise<unknown>) =>
+        fn({
+          postVersion: { update: vi.fn().mockResolvedValue({}) },
+          mediaAsset: {
+            findUniqueOrThrow: vi.fn().mockResolvedValue(mediaRow),
+            update: vi.fn().mockResolvedValue(mediaRow)
+          }
+        })
+      )
+    } as unknown as PrismaClient;
+
+    try {
+      const result = await attachMediaToScheduleRailEvent(prisma, "cr1", "occ1", ["m1"], {
+        mode: "replace"
+      });
+      expect(spy).toHaveBeenCalledWith(prisma, "occ1");
+      expect(result.task_id).toBe("task1");
+      expect(result.post_id).toBe("post1");
+      expect(result.needs_media).toBe(false);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("attaches media to a manual make_post event via linked post_id", async () => {
+    const mediaRow = {
+      id: "m1",
+      creatorId: "cr1",
+      ingestOrigin: MediaIngestOrigin.RELAY_UPLOAD,
+      currentStorageKey: "uploads/m1.jpg",
+      postIds: [] as string[],
+      primaryPostId: null as string | null,
+      autopostDraftId: null as string | null
+    };
+    const prisma = {
+      postbotTask: {
+        findFirst: vi.fn().mockResolvedValue(null)
+      },
+      creatorScheduleOccurrence: {
+        findFirst: vi.fn().mockResolvedValue(null)
+      },
+      creatorScheduleEvent: {
+        findFirst: vi.fn().mockResolvedValue({
+          id: "ev1",
+          postId: "post1",
+          status: "pending",
+          eventType: "make_post"
+        })
+      },
+      postVersion: {
+        findFirst: vi.fn().mockResolvedValue({
+          id: "ver1",
+          postId: "post1",
+          mediaIds: []
+        })
+      },
+      mediaAsset: {
+        findFirst: vi.fn().mockResolvedValue(mediaRow)
+      },
+      $transaction: vi.fn(async (fn: (tx: unknown) => Promise<unknown>) =>
+        fn({
+          postVersion: { update: vi.fn().mockResolvedValue({}) },
+          mediaAsset: {
+            findUniqueOrThrow: vi.fn().mockResolvedValue(mediaRow),
+            update: vi.fn().mockResolvedValue(mediaRow)
+          }
+        })
+      )
+    } as unknown as PrismaClient;
+
+    const result = await attachMediaToScheduleRailEvent(prisma, "cr1", "ev1", ["m1"], {
+      mode: "replace"
+    });
+    expect(result.task_id).toBe("ev1");
+    expect(result.post_id).toBe("post1");
+    expect(result.needs_media).toBe(false);
   });
 
   it("rejects non-post actions", async () => {
@@ -794,6 +933,278 @@ describe("attachMediaToScheduleRailEvent", () => {
       media_ids: [],
       media_state: "missing",
       readiness_errors: ["attach_media"]
+    });
+  });
+});
+
+describe("updateScheduleRailEventPostDetails", () => {
+  it("rejects cross-creator access", async () => {
+    const prisma = {
+      postbotTask: { findFirst: vi.fn().mockResolvedValue(null) },
+      creatorScheduleOccurrence: { findFirst: vi.fn().mockResolvedValue(null) },
+      creatorScheduleEvent: { findFirst: vi.fn().mockResolvedValue(null) }
+    } as unknown as PrismaClient;
+
+    await expect(
+      updateScheduleRailEventPostDetails(prisma, "cr1", "task_other", {
+        title: "Hello",
+        description: "Body"
+      })
+    ).rejects.toBeInstanceOf(ScheduleRailNotFoundError);
+  });
+
+  it("rejects published posts", async () => {
+    const prisma = {
+      postbotTask: {
+        findFirst: vi.fn().mockResolvedValue({
+          id: "task1",
+          creatorId: "cr1",
+          postId: "post1",
+          planId: "plan1",
+          goalCycleCampaignKey: null,
+          action: "post",
+          status: "pending"
+        })
+      },
+      post: {
+        findFirst: vi.fn().mockResolvedValue({ id: "post1", publishState: "published" })
+      }
+    } as unknown as PrismaClient;
+
+    await expect(
+      updateScheduleRailEventPostDetails(prisma, "cr1", "task1", {
+        title: "Hello",
+        description: "Body"
+      })
+    ).rejects.toBeInstanceOf(ScheduleRailValidationError);
+  });
+
+  it("seeds the same authored text on every draft variant by default", async () => {
+    const versionUpdate = vi.fn().mockResolvedValue({});
+    const draftUpdate = vi.fn().mockResolvedValue({});
+    const variantUpdate = vi.fn().mockResolvedValue({});
+
+    const prisma = {
+      postbotTask: {
+        findFirst: vi.fn().mockResolvedValue({
+          id: "task1",
+          creatorId: "cr1",
+          postId: "post1",
+          planId: "plan1",
+          goalCycleCampaignKey: null,
+          action: "post",
+          status: "pending"
+        })
+      },
+      post: {
+        findFirst: vi.fn().mockResolvedValue({ id: "post1", publishState: "draft" })
+      },
+      postVersion: {
+        findFirst: vi.fn().mockResolvedValue({
+          id: "ver1",
+          postId: "post1",
+          title: "Scheduled post",
+          description: null,
+          tagIds: []
+        })
+      },
+      postDistributionPlan: {
+        findFirst: vi.fn().mockResolvedValue({ id: "plan1", sourceDraftId: "draft1" })
+      },
+      postDistributionVariant: {
+        findMany: vi.fn().mockResolvedValue([
+          { id: "v_patreon", destination: "patreon" },
+          { id: "v_x", destination: "x" }
+        ])
+      },
+      $transaction: vi.fn(async (fn: (tx: unknown) => Promise<unknown>) =>
+        fn({
+          postVersion: { update: versionUpdate },
+          autopostDraft: {
+            findFirst: vi.fn().mockResolvedValue({
+              id: "draft1",
+              workspace: { selected_destinations: ["patreon", "x"] },
+              mediaIds: ["m1"]
+            }),
+            update: draftUpdate
+          },
+          postDistributionVariant: { update: variantUpdate }
+        })
+      )
+    } as unknown as PrismaClient;
+
+    const result = await updateScheduleRailEventPostDetails(prisma, "cr1", "task1", {
+      title: "Morning study",
+      description: "Soft light on the desk.",
+      tags: ["sketch", "studio"],
+      fit_mode: "as_written"
+    });
+
+    expect(result.post_details_state).toBe("authored");
+    expect(result.preview).toBe(false);
+    expect(result.title).toBe("Morning study");
+    expect(result.description).toBe("Soft light on the desk.");
+    expect(result.tags).toEqual(["sketch", "studio"]);
+    expect(result.variants).toHaveLength(2);
+    expect(result.variants.find((v) => v.destination === "patreon")).toMatchObject({
+      title: "Morning study",
+      body_text: "Soft light on the desk.",
+      adapted: false
+    });
+    expect(result.variants.find((v) => v.destination === "x")).toMatchObject({
+      body_text: "Soft light on the desk.",
+      post_text: "Soft light on the desk.",
+      adapted: false
+    });
+
+    expect(versionUpdate).toHaveBeenCalledWith({
+      where: { id: "ver1" },
+      data: {
+        title: "Morning study",
+        description: "Soft light on the desk.",
+        tagIds: ["sketch", "studio"]
+      }
+    });
+    expect(draftUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: "draft1" },
+        data: expect.objectContaining({
+          title: "Morning study",
+          bodyText: "Soft light on the desk.",
+          workspace: expect.objectContaining({
+            tags: ["sketch", "studio"],
+            post_details_state: "authored"
+          })
+        })
+      })
+    );
+    expect(variantUpdate).toHaveBeenCalledTimes(2);
+  });
+
+  it("previews platform fit without writing and preserves original on failure path", async () => {
+    const prisma = {
+      postbotTask: {
+        findFirst: vi.fn().mockResolvedValue({
+          id: "task1",
+          creatorId: "cr1",
+          postId: "post1",
+          planId: "plan1",
+          goalCycleCampaignKey: null,
+          action: "post",
+          status: "pending"
+        })
+      },
+      post: {
+        findFirst: vi.fn().mockResolvedValue({ id: "post1", publishState: "draft" })
+      },
+      postVersion: {
+        findFirst: vi.fn().mockResolvedValue({
+          id: "ver1",
+          postId: "post1",
+          title: "Old",
+          description: "Old body",
+          tagIds: []
+        })
+      },
+      postDistributionPlan: {
+        findFirst: vi.fn().mockResolvedValue({ id: "plan1", sourceDraftId: "draft1" })
+      },
+      postDistributionVariant: {
+        findMany: vi.fn().mockResolvedValue([{ id: "v_x", destination: "x" }])
+      },
+      $transaction: vi.fn()
+    } as unknown as PrismaClient;
+
+    const longBody = "A".repeat(400);
+    const result = await updateScheduleRailEventPostDetails(prisma, "cr1", "task1", {
+      title: "Wide canvas",
+      description: longBody,
+      tags: [],
+      fit_mode: "fit_platforms",
+      preview: true
+    });
+
+    expect(result.preview).toBe(true);
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+    expect(result.title).toBe("Wide canvas");
+    expect(result.description).toBe(longBody);
+    const xVariant = result.variants[0]!;
+    expect(xVariant.destination).toBe("x");
+    expect(xVariant.adapted).toBe(true);
+    expect((xVariant.post_text ?? "").length).toBeLessThanOrEqual(280);
+  });
+
+  it("honors use_original override when committing platform fit", async () => {
+    const variantUpdate = vi.fn().mockResolvedValue({});
+    const longBody = "B".repeat(400);
+
+    const prisma = {
+      postbotTask: {
+        findFirst: vi.fn().mockResolvedValue({
+          id: "task1",
+          creatorId: "cr1",
+          postId: "post1",
+          planId: "plan1",
+          goalCycleCampaignKey: null,
+          action: "post",
+          status: "pending"
+        })
+      },
+      post: {
+        findFirst: vi.fn().mockResolvedValue({ id: "post1", publishState: "draft" })
+      },
+      postVersion: {
+        findFirst: vi.fn().mockResolvedValue({
+          id: "ver1",
+          postId: "post1",
+          title: "Old",
+          description: null,
+          tagIds: []
+        })
+      },
+      postDistributionPlan: {
+        findFirst: vi.fn().mockResolvedValue({ id: "plan1", sourceDraftId: "draft1" })
+      },
+      postDistributionVariant: {
+        findMany: vi.fn().mockResolvedValue([{ id: "v_x", destination: "x" }])
+      },
+      $transaction: vi.fn(async (fn: (tx: unknown) => Promise<unknown>) =>
+        fn({
+          postVersion: { update: vi.fn().mockResolvedValue({}) },
+          autopostDraft: {
+            findFirst: vi.fn().mockResolvedValue({
+              id: "draft1",
+              workspace: {},
+              mediaIds: []
+            }),
+            update: vi.fn().mockResolvedValue({})
+          },
+          postDistributionVariant: { update: variantUpdate }
+        })
+      )
+    } as unknown as PrismaClient;
+
+    const result = await updateScheduleRailEventPostDetails(prisma, "cr1", "task1", {
+      title: "Keep mine",
+      description: longBody,
+      tags: [],
+      fit_mode: "fit_platforms",
+      variant_overrides: [{ destination: "x", use_original: true }]
+    });
+
+    expect(result.post_details_state).toBe("authored");
+    expect(result.description).toBe(longBody);
+    expect(result.variants[0]).toMatchObject({
+      destination: "x",
+      post_text: longBody,
+      adapted: false
+    });
+    expect(variantUpdate).toHaveBeenCalledWith({
+      where: { id: "v_x" },
+      data: expect.objectContaining({
+        postText: longBody,
+        bodyText: longBody
+      })
     });
   });
 });

@@ -35,6 +35,7 @@ import { startMediaStoragePurgeWorker } from "./storage/media-storage-purge-work
 import { startPostingGoalNudgeWorker } from "./autopost/posting-goal-nudge-worker.js";
 import { startScheduleSeriesWorker } from "./autopost/schedule-series-worker.js";
 import { startDistributionRulesWorker } from "./autopost/distribution-rule-worker.js";
+import { startAutomationsWorker } from "./autopost/automation-worker.js";
 import { startDistributionScheduleReminderWorker } from "./distribution/distribution-schedule-reminder-worker.js";
 import {
   subscribeStarGraphqlIngestAutosyncRepeatEveryMsFromEnv,
@@ -224,6 +225,13 @@ export async function runRelayWorkerProcess(
         })
       : null;
 
+  const automationsRunner =
+    jobBackend === "memory" && prisma
+      ? startAutomationsWorker(prisma, (msg, ctx) => {
+          log.warn({ ...(ctx ?? {}), relayMsg: msg }, "Relay worker");
+        })
+      : null;
+
   let closeBullMqWorkers: RelayBullMqWorkersClose | undefined;
   if (jobBackend === "bullmq") {
     closeBullMqWorkers = registerRelayBullMqWorkers({
@@ -264,7 +272,8 @@ export async function runRelayWorkerProcess(
       postingGoalNudgeRunner?.stop(),
       distributionScheduleReminderRunner?.stop(),
       scheduleSeriesRunner?.stop(),
-      distributionRulesRunner?.stop()
+      distributionRulesRunner?.stop(),
+      automationsRunner?.stop()
     ].filter((p): p is Promise<void> => p !== undefined);
     await Promise.all(pending);
   }

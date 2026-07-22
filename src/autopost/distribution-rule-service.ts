@@ -413,6 +413,20 @@ export async function materializeDueDistributionRuns(
           now
         });
     if (result.status === "materialized" || result.status === "already_materialized") {
+      if (automationId && result.run_id) {
+        try {
+          const { ensureAutomationAttentionEventForRun } = await import(
+            "./automation-attention-service.js"
+          );
+          await ensureAutomationAttentionEventForRun(prisma, {
+            creatorId: run.creatorId,
+            runId: result.run_id,
+            now
+          });
+        } catch {
+          /* attention event is repairable on rail load */
+        }
+      }
       materialized += 1;
     } else {
       failed += 1;
