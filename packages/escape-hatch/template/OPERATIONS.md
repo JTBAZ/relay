@@ -173,6 +173,19 @@ Rules:
 - Independent billing Checkout is available when `ESCAPE_HATCH_BILLING_PROVIDER=stripe` and Stripe secrets are configured (EH-051). Stub default remains honest “not configured”. Account notes reflect readiness. EH-054 maps tiers and duplicate-billing UX.
 - Logout remains **POST** `/auth/logout` only.
 
+## Posts/media CMS (EH-060)
+
+Local-kit mutations only (`productionSafe: false`):
+
+| Surface | Role |
+|---------|------|
+| `/admin/posts` | Create/edit/publish/draft; pin via `feature_order`; plain body; public cover media id |
+| `POST` / `DELETE` `/api/admin/posts` | Upsert / delete post rows in `data/site.json` (admin mutation gate) |
+| `POST` `/api/admin/media/upload` | Multipart → `data/private-media/` + attach to post |
+| Gallery | Search (mosaic→feed), draft hidden from visitors, `feature_order` sort, locked public cover via `/media/…` |
+
+Deferrals: R2 multipart upload, schedule cron, rich HTML body. Prefer plain `body_plain` until a sanitizer lands.
+
 ## Identity provider
 
 `ESCAPE_HATCH_IDENTITY_PROVIDER`:

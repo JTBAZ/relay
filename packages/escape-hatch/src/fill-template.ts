@@ -394,7 +394,7 @@ export function stampEscapeHatchManifest(
   parsed.generated_at = bundle.generated_at;
   parsed.creator_id = bundle.creator_id;
   parsed.site_id = bundle.site_id ?? bundle.creator_id;
-  parsed.slice = "EH-054";
+  parsed.slice = "EH-060";
   parsed.productionSafe = false;
   parsed.schema_version = "eh-db/0005_patreon_oauth";
   parsed.chassis_version = "0.8.0";
@@ -527,7 +527,7 @@ export function fillTemplate(opts: FillOptions): FillResult {
       mediaLayout === "private"
         ? "Premium media is staged under `data/private-media` and delivered via `/api/media/{id}` after server entitlement checks (EH-033). Locked gallery/post UI never fetches those bytes (EH-034/035). Do not set `ESCAPE_HATCH_MEDIA_MODE=public_legacy` in production."
         : "WARNING: `public_legacy` media layout copied premium bytes into `/public/media` — residual leakage; not production-safe.",
-      "`productionSafe: false` — creator Patreon OAuth (EH-040) + Relay-managed verification (EH-041) + connector billing (EH-042) + OAuth choice/migration UX (EH-043) + billing contract (EH-050) + Stripe adapter (EH-051) + provider policy router (EH-052) + alternate billing recipes (EH-053) + tier/billing wizard (EH-054) + visitor visual + account/paywall UX present, but Milestone 3 security/browser gate, CMS (EH-060+), and verified deploy remain open.",
+      "`productionSafe: false` — through EH-060: identity, entitlements, private media, Patreon OAuth paths, billing recipes, tier wizard, and local posts/media CMS (draft/publish + local upload + searchable gallery). Milestone 3 security/browser gate, EH-061+ CMS, and verified deploy remain open.",
       "",
       `Contract: ${bundle.contract_version}`,
       "",

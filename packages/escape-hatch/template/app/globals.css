@@ -2593,3 +2593,33 @@ code {
   gap: 0.75rem;
   grid-template-columns: repeat(auto-fit, minmax(8rem, 1fr));
 }
+
+/* EH-060 gallery search + feed state */
+.patron-gallery-tools {
+  max-width: 72rem;
+  margin: 0 auto 1rem;
+  padding: 0 1rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: center;
+}
+.patron-search input {
+  min-height: 44px;
+  min-width: min(100%, 18rem);
+  padding: 0.5rem 0.75rem;
+  border: 1px solid color-mix(in srgb, currentColor 22%, transparent);
+  border-radius: 0.4rem;
+  background: transparent;
+  color: inherit;
+}
+.patron-grid--feed {
+  grid-template-columns: 1fr;
+  max-width: 36rem;
+  margin-inline: auto;
+}
+.patron-post-body {
+  margin-top: 1rem;
+  max-width: 40rem;
+  line-height: 1.55;
+}

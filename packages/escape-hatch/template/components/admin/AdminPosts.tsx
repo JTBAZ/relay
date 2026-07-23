@@ -86,6 +86,9 @@ export function AdminPosts({ model }: { model: AdminPostsModel }) {
               </p>
               <p className="admin-post-meta">
                 <span className="admin-pill">{accessLabel(post.access_level, post.tier_ids)}</span>
+                <span className="admin-pill">
+                  {post.status === "draft" ? "Draft" : "Published"}
+                </span>
                 <span className="muted small">{post.media_count} media</span>
                 <span className="muted small">
                   {new Date(post.published_at).toLocaleDateString()}

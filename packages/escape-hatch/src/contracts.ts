@@ -120,6 +120,17 @@ export type ClonePostEntry = {
   tag_ids: string[];
   access: PostAccess;
   media: CloneMediaRef[];
+  /**
+   * EH-060 CMS: draft posts are hidden from visitor gallery until published.
+   * Omitted → treated as published (legacy fixtures).
+   */
+  status?: "draft" | "published";
+  /** Lower sorts first in mosaic; null/omit → after pinned posts. */
+  feature_order?: number | null;
+  /** Optional public cover media_id shown on locked cards (must be in media[] or public). */
+  public_cover_media_id?: string | null;
+  /** Plain-text body (sanitized on write). Rich HTML is a later slice. */
+  body_plain?: string | null;
 };
 
 export type EscapeHatchTheme = {
@@ -646,7 +657,64 @@ function parsePostEntry(
   ) {
     return null;
   }
-  return {
+
+  const statusRaw = ownGet(value, "status");
+  let status: ClonePostEntry["status"];
+  if (statusRaw !== undefined && statusRaw !== null) {
+    if (statusRaw !== "draft" && statusRaw !== "published") {
+      issues.push(
+        issue(`${path}.status`, 'expected "draft" or "published"', "enum")
+      );
+      return null;
+    }
+    status = statusRaw;
+  }
+
+  const featureRaw = ownGet(value, "feature_order");
+  let feature_order: number | null | undefined;
+  if (featureRaw !== undefined && featureRaw !== null) {
+    if (typeof featureRaw !== "number" || !Number.isFinite(featureRaw)) {
+      issues.push(
+        issue(`${path}.feature_order`, "expected finite number or null", "type")
+      );
+      return null;
+    }
+    feature_order = featureRaw;
+  } else if (featureRaw === null) {
+    feature_order = null;
+  }
+
+  const coverRaw = ownGet(value, "public_cover_media_id");
+  let public_cover_media_id: string | null | undefined;
+  if (coverRaw !== undefined && coverRaw !== null) {
+    if (!isSafeId(coverRaw)) {
+      issues.push(
+        issue(
+          `${path}.public_cover_media_id`,
+          "expected non-empty safe id string or null",
+          "type"
+        )
+      );
+      return null;
+    }
+    public_cover_media_id = coverRaw;
+  } else if (coverRaw === null) {
+    public_cover_media_id = null;
+  }
+
+  const bodyRaw = ownGet(value, "body_plain");
+  let body_plain: string | null | undefined;
+  if (bodyRaw !== undefined && bodyRaw !== null) {
+    if (typeof bodyRaw !== "string") {
+      issues.push(issue(`${path}.body_plain`, "expected string or null", "type"));
+      return null;
+    }
+    body_plain = bodyRaw;
+  } else if (bodyRaw === null) {
+    body_plain = null;
+  }
+
+  const out: ClonePostEntry = {
     post_id,
     slug,
     title,
@@ -655,6 +723,13 @@ function parsePostEntry(
     access,
     media
   };
+  if (status) out.status = status;
+  if (feature_order !== undefined) out.feature_order = feature_order;
+  if (public_cover_media_id !== undefined) {
+    out.public_cover_media_id = public_cover_media_id;
+  }
+  if (body_plain !== undefined) out.body_plain = body_plain;
+  return out;
 }
 
 function parseTheme(

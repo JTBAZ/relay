@@ -50,6 +50,46 @@ function audienceForAccess(
   return "anonymous";
 }
 
+function isPublished(post: ClonePostEntry): boolean {
+  return post.status !== "draft";
+}
+
+function sortGalleryPosts(posts: ClonePostEntry[]): ClonePostEntry[] {
+  return [...posts].filter(isPublished).sort((a, b) => {
+    const fa =
+      typeof a.feature_order === "number" && Number.isFinite(a.feature_order)
+        ? a.feature_order
+        : Number.POSITIVE_INFINITY;
+    const fb =
+      typeof b.feature_order === "number" && Number.isFinite(b.feature_order)
+        ? b.feature_order
+        : Number.POSITIVE_INFINITY;
+    if (fa !== fb) return fa - fb;
+    return Date.parse(b.published_at) - Date.parse(a.published_at);
+  });
+}
+
+function resolveThumb(
+  post: ClonePostEntry,
+  unlocked: boolean
+): { mediaId: string; contentPath: string } | undefined {
+  if (unlocked) {
+    const m = post.media[0];
+    if (!m) return undefined;
+    return { mediaId: m.media_id, contentPath: m.content_path };
+  }
+  // Locked: only public cover (never premium /api/media)
+  const coverId = post.public_cover_media_id;
+  if (!coverId) return undefined;
+  const cover = post.media.find((m) => m.media_id === coverId);
+  if (!cover) return undefined;
+  // Cover must be world-readable path under /media — still don't use /api/media when locked
+  if (cover.content_path.startsWith("/media/")) {
+    return { mediaId: cover.media_id, contentPath: cover.content_path };
+  }
+  return undefined;
+}
+
 export function GalleryApp({
   site,
   identityMode = "none",
@@ -58,6 +98,7 @@ export function GalleryApp({
   const personas = site.demo_personas;
   const [personaId, setPersonaId] = useState(personas[0]?.id ?? "public");
   const [posts, setPosts] = useState(site.posts);
+  const [query, setQuery] = useState("");
   const identityConfigured =
     identityMode === "supabase" || identityMode === "portable";
 
@@ -73,7 +114,22 @@ export function GalleryApp({
   const style: PaywallStyle = site.theme.paywall_style ?? "blur";
   const density = site.theme.gallery_density ?? "comfortable";
 
+  const sorted = useMemo(() => sortGalleryPosts(posts), [posts]);
+  const q = query.trim().toLowerCase();
+  const searching = q.length > 0;
+  const visible = useMemo(() => {
+    if (!searching) return sorted;
+    return sorted.filter((p) => {
+      const hay = `${p.title} ${p.body_plain ?? ""} ${p.tag_ids.join(" ")}`.toLowerCase();
+      return hay.includes(q);
+    });
+  }, [sorted, searching, q]);
+
   const liveSite = { ...site, posts };
+  const gridClass = searching
+    ? `patron-grid patron-grid--${density} patron-grid--feed`
+    : `patron-grid patron-grid--${density} patron-grid--mosaic`;
+
   return (
     <PatronChrome
       site={liveSite}
@@ -84,39 +140,57 @@ export function GalleryApp({
       showSoftPersona={!identityConfigured}
       showAbout
     >
-      <div
-        className={`patron-grid patron-grid--${density} patron-grid--mosaic`}
-        role="list"
-        aria-label="Gallery posts"
-      >
-        {liveSite.posts.map((post, index) => {
+      <div className="patron-gallery-tools">
+        <label className="patron-search">
+          <span className="visually-hidden">Search posts</span>
+          <input
+            type="search"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search posts…"
+            aria-label="Search posts"
+          />
+        </label>
+        {searching ? (
+          <p className="muted small" role="status">
+            Showing {visible.length} result{visible.length === 1 ? "" : "s"} for
+            “{query.trim()}”
+          </p>
+        ) : null}
+      </div>
+
+      <div className={gridClass} role="list" aria-label="Gallery posts">
+        {visible.map((post, index) => {
           const serverAccess = accessByPostId?.[post.post_id];
           const unlocked = identityConfigured
             ? Boolean(serverAccess?.allowed)
             : canViewPost(post, persona);
-          const reason =
-            identityConfigured
-              ? (serverAccess?.reason ?? "anonymous_denied")
-              : unlocked
-                ? "soft_persona_preview"
-                : "anonymous_denied";
+          const reason = identityConfigured
+            ? (serverAccess?.reason ?? "anonymous_denied")
+            : unlocked
+              ? "soft_persona_preview"
+              : "anonymous_denied";
           const audience = audienceForAccess(identityMode, serverAccess);
-          const thumbRaw = post.media[0];
-          // Locked premium: never construct / fetch /api/media URLs.
+          const thumbMeta = resolveThumb(post, unlocked);
           const thumb =
-            thumbRaw && unlocked
+            thumbMeta && unlocked
               ? resolveVisitorMediaSrc({
-                  mediaId: thumbRaw.media_id,
-                  contentPath: thumbRaw.content_path,
+                  mediaId: thumbMeta.mediaId,
+                  contentPath: thumbMeta.contentPath,
                   accessLevel: post.access.level
                 })
-              : undefined;
+              : thumbMeta && !unlocked
+                ? thumbMeta.contentPath
+                : undefined;
           const lockClass = unlocked ? "" : `locked ${style}`;
-          const featured = index === 0;
+          const featured =
+            !searching &&
+            (typeof post.feature_order === "number" || index === 0) &&
+            index === 0;
           const body = (
             <>
               <div className="media-wrap">
-                {thumb && unlocked ? (
+                {thumb ? (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img
                     src={thumb}
@@ -145,7 +219,9 @@ export function GalleryApp({
                 ) : null}
               </div>
               <div className="body">
-                <p className="patron-card-meta">{accessLabel(post, liveSite.tiers)}</p>
+                <p className="patron-card-meta">
+                  {accessLabel(post, liveSite.tiers)}
+                </p>
                 <h2 className="patron-card-title">{post.title}</h2>
               </div>
             </>
@@ -158,10 +234,13 @@ export function GalleryApp({
               role="listitem"
               style={{ ["--patron-stagger" as string]: String(index) }}
             >
-              {/* Locked cards still link to post so paywall CTA / account can be used. */}
               <Link
                 href={`/p/${post.slug}`}
-                className={unlocked ? "patron-card-link" : "patron-card-link patron-card-link--locked"}
+                className={
+                  unlocked
+                    ? "patron-card-link"
+                    : "patron-card-link patron-card-link--locked"
+                }
                 aria-label={
                   unlocked ? `Open ${post.title}` : `Locked: ${post.title}`
                 }
@@ -172,6 +251,11 @@ export function GalleryApp({
           );
         })}
       </div>
+      {visible.length === 0 ? (
+        <p className="muted" role="status">
+          {searching ? "No posts match this search." : "No published posts yet."}
+        </p>
+      ) : null}
     </PatronChrome>
   );
 }

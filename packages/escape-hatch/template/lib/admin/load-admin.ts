@@ -55,6 +55,10 @@ export type AdminPostsModel = {
     tier_ids: string[];
     media_count: number;
     attention_note: string | null;
+    status: "draft" | "published";
+    feature_order: number | null;
+    body_plain: string | null;
+    public_cover_media_id: string | null;
   }>;
   identity: AdminIdentityState;
   read_allowed: boolean;
@@ -264,7 +268,12 @@ export async function loadAdminPosts(): Promise<AdminPostsModel> {
       access_level: p.access.level,
       tier_ids: [...p.access.tier_ids],
       media_count: p.media.length,
-      attention_note: attention.marks[p.post_id]?.note ?? null
+      attention_note: attention.marks[p.post_id]?.note ?? null,
+      status: p.status === "draft" ? "draft" : "published",
+      feature_order:
+        typeof p.feature_order === "number" ? p.feature_order : null,
+      body_plain: p.body_plain ?? null,
+      public_cover_media_id: p.public_cover_media_id ?? null
     })),
     identity: access.identity,
     read_allowed: true,

@@ -169,7 +169,7 @@ Execute one documented slice at a time. The program docs define scope and depend
 ### EH-060 Posts/media
 
 - **Builder:** Cursor Grok 4.5 High
-- Native create/edit/schedule/publish, sanitized rich body, feature/public-cover controls, searchable two-state gallery, image/video/audio/attachment delivery, R2 uploads, and access simulation.
+- **Status:** Implemented (preview_only; `productionSafe: false`). Local posts/media CMS: draft/publish + feature_order + public_cover + body_plain on `data/site.json`; admin editor on `/admin/posts`; POST/DELETE `/api/admin/posts`; local multipart upload to `data/private-media/`; searchable gallery with draft filter. Explicit deferrals: R2 multipart, schedule cron, rich HTML. Evidence: `docs/qa/ESCAPE_HATCH_EH_060_EVIDENCE.md`. Next: **EH-061**.
 
 ### EH-061 Tiers/patrons
 

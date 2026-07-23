@@ -82,7 +82,7 @@ export function PostView({ site, slug, serverAccess }: Props) {
     setPosts(applyPostOverrides(site.posts, loadPostOverrides(site.site_id)));
   }, [site.site_id, site.posts]);
 
-  const post = posts.find((p) => p.slug === slug);
+  const post = posts.find((p) => p.slug === slug && p.status !== "draft");
   const personas = site.demo_personas;
   const [personaId, setPersonaId] = useState(personas[0]?.id ?? "public");
   const persona: DemoPersona = useMemo(
@@ -206,6 +206,11 @@ export function PostView({ site, slug, serverAccess }: Props) {
             softPreview={!identityConfigured}
           />
         </header>
+        {unlocked && post.body_plain ? (
+          <div className="patron-post-body">
+            <p>{post.body_plain}</p>
+          </div>
+        ) : null}
       </article>
     </PatronChrome>
   );

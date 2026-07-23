@@ -1,11 +1,11 @@
 /**
- * Deterministic Escape Hatch capability inventory (through EH-054).
+ * Deterministic Escape Hatch capability inventory (through EH-060).
  * No timestamps, env reads, network, or live data — informational only.
  */
 
 export const ESCAPE_HATCH_STATUS_SCHEMA_VERSION = "escape-hatch-status/1.0.0";
 
-export const ESCAPE_HATCH_SLICE = "EH-054";
+export const ESCAPE_HATCH_SLICE = "EH-060";
 
 export type CapabilityState =
   | "production_safe"
@@ -36,7 +36,7 @@ export type EscapeHatchStatus = {
   capabilities: EscapeHatchCapability[];
   blockers: string[];
   nextSlice: {
-    id: "EH-060";
+    id: "EH-061";
     title: string;
     focus: string[];
   };
@@ -59,7 +59,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "packages/escape-hatch/src/library-truth/kit-io.ts"
     ],
     risk: "high",
-    nextSlice: "EH-060"
+    nextSlice: "EH-061"
   },
   {
     id: "generated-repository",
@@ -84,7 +84,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "packages/escape-hatch/tests/escape-hatch-generated-repo.test.ts"
     ],
     risk: "high",
-    nextSlice: "EH-060"
+    nextSlice: "EH-061"
   },
   {
     id: "premium-patron-theme",
@@ -110,7 +110,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "packages/escape-hatch/tests/escape-hatch-theme.test.ts"
     ],
     risk: "medium",
-    nextSlice: "EH-060"
+    nextSlice: "EH-061"
   },
   {
     id: "soft-persona-gate",
@@ -128,7 +128,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "packages/escape-hatch/template/lib/paywall/copy.ts"
     ],
     risk: "critical",
-    nextSlice: "EH-060"
+    nextSlice: "EH-061"
   },
   {
     id: "public-media-copy",
@@ -143,7 +143,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "packages/escape-hatch/template/lib/media/delivery.ts"
     ],
     risk: "critical",
-    nextSlice: "EH-060"
+    nextSlice: "EH-061"
   },
   {
     id: "client-readable-bundle",
@@ -160,7 +160,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "packages/escape-hatch/src/library-truth/kit-io.ts"
     ],
     risk: "high",
-    nextSlice: "EH-060"
+    nextSlice: "EH-061"
   },
   {
     id: "duplicate-contracts",
@@ -208,7 +208,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "tests/fixtures/patreon/cookie-list-with-media.json"
     ],
     risk: "medium",
-    nextSlice: "EH-060"
+    nextSlice: "EH-061"
   },
   {
     id: "relay-dump-fixtures",
@@ -227,7 +227,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "packages/escape-hatch/tests/escape-hatch-library-truth.test.ts"
     ],
     risk: "medium",
-    nextSlice: "EH-060"
+    nextSlice: "EH-061"
   },
   {
     id: "relay-canonical-reuse",
@@ -250,7 +250,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "src/storage/media-delivery-policy.ts"
     ],
     risk: "informational",
-    nextSlice: "EH-060"
+    nextSlice: "EH-061"
   },
   {
     id: "simplified-access-semantics",
@@ -267,7 +267,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "src/clone/tier-rules.ts"
     ],
     risk: "high",
-    nextSlice: "EH-060"
+    nextSlice: "EH-061"
   },
   {
     id: "generated-site-identity",
@@ -305,7 +305,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "packages/escape-hatch/tests/escape-hatch-entitlements.test.ts"
     ],
     risk: "critical",
-    nextSlice: "EH-060"
+    nextSlice: "EH-061"
   },
   {
     id: "entitlement-evaluator",
@@ -326,7 +326,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "packages/escape-hatch/tests/escape-hatch-entitlements.test.ts"
     ],
     risk: "critical",
-    nextSlice: "EH-060"
+    nextSlice: "EH-061"
   },
   {
     id: "private-media-delivery",
@@ -343,7 +343,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "packages/escape-hatch/tests/escape-hatch-private-media.test.ts"
     ],
     risk: "critical",
-    nextSlice: "EH-060"
+    nextSlice: "EH-061"
   },
   {
     id: "account-paywall-ux",
@@ -368,7 +368,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "packages/escape-hatch/tests/escape-hatch-account-paywall.test.ts"
     ],
     risk: "critical",
-    nextSlice: "EH-060"
+    nextSlice: "EH-061"
   },
   {
     id: "billing-adapters",
@@ -388,7 +388,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "src/payments/provider-adapter.ts"
     ],
     risk: "critical",
-    nextSlice: "EH-060"
+    nextSlice: "EH-061"
   },
   {
     id: "provider-policy",
@@ -404,7 +404,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "packages/escape-hatch/tests/escape-hatch-billing-alternate.test.ts"
     ],
     risk: "critical",
-    nextSlice: "EH-060"
+    nextSlice: "EH-061"
   },
   {
     id: "deploy-adapters",
@@ -428,23 +428,28 @@ const CAPABILITIES: EscapeHatchCapability[] = [
     title: "Native generated-site admin",
     state: "preview_only",
     evidence:
-      "EH-022 admin shell under /admin (overview health framing, posts, media, tiers) with Hatch Console nav entry. EH-030/031 wires identity: when provider is none/unset (and Supabase not auto-selected), shows identity not configured and local-operator preview (reads + mutations); when Path A or Path B is active, staff session required for admin inventory reads and mutations (soft persona never authorizes). Auth/DB adapters may report ok:true only with real non-placeholder env and still label preview. Media inventory never treats public/media as private-verified. productionSafe remains false; signed private media is EH-033.",
+      "EH-022 admin shell under /admin (overview, posts, media, tiers) with Hatch Console nav. EH-030/031 identity gates: provider none → local-operator preview; Path A/B → staff session required (soft persona never authorizes). EH-060 adds local posts/media CMS: mutate data/site.json (draft/publish, feature_order, public_cover, body_plain), POST/DELETE /api/admin/posts, multipart local upload to data/private-media/, searchable gallery with draft filter. Auth/DB adapters may report ok:true only with real non-placeholder env and still label preview. Media inventory never treats public/media as private-verified. R2 multipart + rich HTML + schedule remain open. productionSafe remains false.",
     sourcePaths: [
       "packages/escape-hatch/template/app/admin/page.tsx",
       "packages/escape-hatch/template/app/admin/posts/page.tsx",
       "packages/escape-hatch/template/app/admin/media/page.tsx",
       "packages/escape-hatch/template/app/admin/tiers/page.tsx",
       "packages/escape-hatch/template/app/api/admin/attention/route.ts",
+      "packages/escape-hatch/template/app/api/admin/posts/route.ts",
+      "packages/escape-hatch/template/app/api/admin/media/upload/route.ts",
       "packages/escape-hatch/template/components/admin/AdminShell.tsx",
       "packages/escape-hatch/template/components/admin/AdminOverview.tsx",
       "packages/escape-hatch/template/components/admin/AdminPosts.tsx",
+      "packages/escape-hatch/template/components/admin/AdminPostsEditor.tsx",
+      "packages/escape-hatch/template/lib/cms/posts.ts",
       "packages/escape-hatch/template/components/ConsoleNav.tsx",
       "packages/escape-hatch/template/lib/admin/load-admin.ts",
       "packages/escape-hatch/template/lib/identity/admin-access.ts",
-      "packages/escape-hatch/tests/escape-hatch-admin.test.ts"
+      "packages/escape-hatch/tests/escape-hatch-admin.test.ts",
+      "packages/escape-hatch/tests/escape-hatch-cms-posts.test.ts"
     ],
     risk: "high",
-    nextSlice: "EH-060"
+    nextSlice: "EH-061"
   },
   {
     id: "migration-import",
@@ -463,7 +468,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "packages/escape-hatch/tests/escape-hatch-migrate.test.ts"
     ],
     risk: "high",
-    nextSlice: "EH-060"
+    nextSlice: "EH-061"
   },
   {
     id: "library-truth-parity",
@@ -486,7 +491,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "packages/escape-hatch/tests/escape-hatch-library-truth.test.ts"
     ],
     risk: "high",
-    nextSlice: "EH-060"
+    nextSlice: "EH-061"
   },
   {
     id: "backup-restore",
@@ -514,7 +519,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "src/deploy/deploy-adapter.ts"
     ],
     risk: "high",
-    nextSlice: "EH-060"
+    nextSlice: "EH-061"
   },
   {
     id: "creator-patreon-oauth",
@@ -534,7 +539,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "packages/escape-hatch/tests/escape-hatch-patreon-oauth.test.ts"
     ],
     risk: "critical",
-    nextSlice: "EH-060"
+    nextSlice: "EH-061"
   },
   {
     id: "relay-managed-patreon-verification",
@@ -552,7 +557,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "tests/escape-hatch-managed-verify.test.ts"
     ],
     risk: "critical",
-    nextSlice: "EH-060"
+    nextSlice: "EH-061"
   },
   {
     id: "relay-managed-connector-billing",
@@ -570,7 +575,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "packages/escape-hatch/tests/escape-hatch-connector-billing.test.ts"
     ],
     risk: "critical",
-    nextSlice: "EH-060"
+    nextSlice: "EH-061"
   },
   {
     id: "oauth-choice-migration-ux",
@@ -589,13 +594,13 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "packages/escape-hatch/tests/escape-hatch-oauth-choice.test.ts"
     ],
     risk: "high",
-    nextSlice: "EH-060"
+    nextSlice: "EH-061"
   }
 ];
 
 const PROTOTYPE_WARNINGS: string[] = [
   "productionSafe is false — this deliverable is prototype/preview-only.",
-  "EH-054 tier/billing wizard is preview_only — tier→price map, /tiers catalog CTAs, preflight, and duplicate-billing safeguards; productionSafe false pending Milestone 3.",
+  "EH-060 posts/media CMS is preview_only — local site.json mutations + private-media attach; R2 multipart and rich HTML remain open; productionSafe false pending Milestone 3.",
   "EH-043 OAuth choice / migration UX is preview_only — preference file is non-secret operator intent; runtime mode remains ESCAPE_HATCH_PATREON_MODE; Milestone 4 residuals (live multi-tenant managed outage proof) remain open.",
   "EH-042 Relay connector billing entitlement is preview_only — in-memory webhook store; kit status is an env mirror, not live Stripe Checkout.",
   "EH-040 creator-owned Patreon OAuth is preview_only — mocked fetch in tests; live campaign link still needs creator credentials and Milestone gate.",
@@ -625,7 +630,7 @@ const PROTOTYPE_WARNINGS: string[] = [
 
 const BLOCKERS: string[] = [
   "Milestone 3 security review + browser personas gate remains open before productionSafe can flip.",
-  "Milestone 6 CMS (EH-060+) and Milestone 3 security/browser gate remain open; never disguise adult content to unlock Stripe.",
+  "Milestone 6 continues with EH-061 tiers/patrons; Milestone 3 security/browser gate remains open; never disguise adult content to unlock Stripe.",
   "Verified Vercel/Docker production deploy rehearsals remain open (EH-070/071).",
   "Mature/legal-adult enforcement beyond accounted exclusions remains open.",
   "public_legacy media mode remains available as an explicit residual leakage path — keep productionSafe false while it exists.",
@@ -639,7 +644,7 @@ export function buildEscapeHatchStatus(): EscapeHatchStatus {
     deliverable: "prototype_preview_only",
     productionSafe: false,
     summary:
-      "Escape Hatch through EH-054 delivers identity, entitlements, private media, Patreon paths, Stripe/NOWPayments billing, provider policy router, tier→price map, unified /tiers conversion, and duplicate-billing safeguards; productionSafe remains false pending Milestone 3 security/browser gate, CMS slices (EH-060+), and verified deploy.",
+      "Escape Hatch through EH-060 delivers identity, entitlements, private media, billing recipes, tier wizard, and a local posts/media CMS (create/edit/publish, local upload, searchable gallery); productionSafe remains false pending Milestone 3, EH-061+, and verified deploy.",
     prototypeWarnings: [...PROTOTYPE_WARNINGS],
     capabilities: CAPABILITIES.map((c) => ({
       ...c,
@@ -647,12 +652,12 @@ export function buildEscapeHatchStatus(): EscapeHatchStatus {
     })),
     blockers: [...BLOCKERS],
     nextSlice: {
-      id: "EH-060",
-      title: "Posts/media CMS",
+      id: "EH-061",
+      title: "Tiers/patrons CMS",
       focus: [
-        "Native create/edit/schedule/publish",
-        "Sanitized rich body and feature/public-cover controls",
-        "Searchable gallery and R2 uploads with access simulation"
+        "Tier mapping/retirement and public catalog",
+        "Context-aware conversion actions and access reasons",
+        "Grants, session controls, and visitor-contract persona preview"
       ]
     }
   };
