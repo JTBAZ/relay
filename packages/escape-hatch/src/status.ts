@@ -1,11 +1,11 @@
 /**
- * Deterministic Escape Hatch capability inventory (through EH-070).
+ * Deterministic Escape Hatch capability inventory (through EH-071).
  * No timestamps, env reads, network, or live data — informational only.
  */
 
 export const ESCAPE_HATCH_STATUS_SCHEMA_VERSION = "escape-hatch-status/1.0.0";
 
-export const ESCAPE_HATCH_SLICE = "EH-070";
+export const ESCAPE_HATCH_SLICE = "EH-071";
 
 export type CapabilityState =
   | "production_safe"
@@ -36,7 +36,7 @@ export type EscapeHatchStatus = {
   capabilities: EscapeHatchCapability[];
   blockers: string[];
   nextSlice: {
-    id: "EH-071";
+    id: "EH-072";
     title: string;
     focus: string[];
   };
@@ -59,7 +59,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "packages/escape-hatch/src/library-truth/kit-io.ts"
     ],
     risk: "high",
-    nextSlice: "EH-071"
+    nextSlice: "EH-072"
   },
   {
     id: "generated-repository",
@@ -84,7 +84,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "packages/escape-hatch/tests/escape-hatch-generated-repo.test.ts"
     ],
     risk: "high",
-    nextSlice: "EH-071"
+    nextSlice: "EH-072"
   },
   {
     id: "premium-patron-theme",
@@ -110,7 +110,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "packages/escape-hatch/tests/escape-hatch-theme.test.ts"
     ],
     risk: "medium",
-    nextSlice: "EH-071"
+    nextSlice: "EH-072"
   },
   {
     id: "soft-persona-gate",
@@ -128,7 +128,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "packages/escape-hatch/template/lib/paywall/copy.ts"
     ],
     risk: "critical",
-    nextSlice: "EH-071"
+    nextSlice: "EH-072"
   },
   {
     id: "public-media-copy",
@@ -143,7 +143,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "packages/escape-hatch/template/lib/media/delivery.ts"
     ],
     risk: "critical",
-    nextSlice: "EH-071"
+    nextSlice: "EH-072"
   },
   {
     id: "client-readable-bundle",
@@ -160,7 +160,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "packages/escape-hatch/src/library-truth/kit-io.ts"
     ],
     risk: "high",
-    nextSlice: "EH-071"
+    nextSlice: "EH-072"
   },
   {
     id: "duplicate-contracts",
@@ -208,7 +208,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "tests/fixtures/patreon/cookie-list-with-media.json"
     ],
     risk: "medium",
-    nextSlice: "EH-071"
+    nextSlice: "EH-072"
   },
   {
     id: "relay-dump-fixtures",
@@ -227,7 +227,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "packages/escape-hatch/tests/escape-hatch-library-truth.test.ts"
     ],
     risk: "medium",
-    nextSlice: "EH-071"
+    nextSlice: "EH-072"
   },
   {
     id: "relay-canonical-reuse",
@@ -250,7 +250,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "src/storage/media-delivery-policy.ts"
     ],
     risk: "informational",
-    nextSlice: "EH-071"
+    nextSlice: "EH-072"
   },
   {
     id: "simplified-access-semantics",
@@ -267,7 +267,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "src/clone/tier-rules.ts"
     ],
     risk: "high",
-    nextSlice: "EH-071"
+    nextSlice: "EH-072"
   },
   {
     id: "generated-site-identity",
@@ -305,7 +305,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "packages/escape-hatch/tests/escape-hatch-entitlements.test.ts"
     ],
     risk: "critical",
-    nextSlice: "EH-071"
+    nextSlice: "EH-072"
   },
   {
     id: "entitlement-evaluator",
@@ -326,7 +326,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "packages/escape-hatch/tests/escape-hatch-entitlements.test.ts"
     ],
     risk: "critical",
-    nextSlice: "EH-071"
+    nextSlice: "EH-072"
   },
   {
     id: "private-media-delivery",
@@ -343,7 +343,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "packages/escape-hatch/tests/escape-hatch-private-media.test.ts"
     ],
     risk: "critical",
-    nextSlice: "EH-071"
+    nextSlice: "EH-072"
   },
   {
     id: "account-paywall-ux",
@@ -368,7 +368,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "packages/escape-hatch/tests/escape-hatch-account-paywall.test.ts"
     ],
     risk: "critical",
-    nextSlice: "EH-071"
+    nextSlice: "EH-072"
   },
   {
     id: "billing-adapters",
@@ -388,7 +388,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "src/payments/provider-adapter.ts"
     ],
     risk: "critical",
-    nextSlice: "EH-071"
+    nextSlice: "EH-072"
   },
   {
     id: "provider-policy",
@@ -404,36 +404,42 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "packages/escape-hatch/tests/escape-hatch-billing-alternate.test.ts"
     ],
     risk: "critical",
-    nextSlice: "EH-071"
+    nextSlice: "EH-072"
   },
   {
     id: "deploy-adapters",
-    title: "Deploy adapters (kit manifests + Vercel fixture path)",
+    title: "Deploy adapters (Vercel + Docker Path B fixtures)",
     state: "preview_only",
     evidence:
-      "EH-070 adds kit-local Vercel golden-path rehearsal: data/deploy-state.json, injectable preview→promote→rollback, callback checklist from NEXT_PUBLIC_SITE_URL, /admin/deploy + Health items. Default deployment health stays fail-closed without a fixture live pointer. Live Vercel API and Docker Path B (EH-071) remain open. Relay src/deploy/deploy-adapter.ts remains a synthetic stub. productionSafe false.",
+      "EH-070/071 kit-local deploy rehearsals: data/deploy-state.json, injectable Vercel and Docker preview→promote→rollback, callback checklist, deploy/docker Compose+Caddy recipe, /admin/deploy Path A/B, Health Path B item. MojoHost is policy candidate only (not wizard-supported). Live Vercel/Docker daemon and ACME remain open. Relay src/deploy/deploy-adapter.ts remains a synthetic stub. productionSafe false.",
     sourcePaths: [
       "packages/escape-hatch/template/vercel.json",
       "packages/escape-hatch/template/Dockerfile",
+      "packages/escape-hatch/template/docker-compose.yml",
+      "packages/escape-hatch/template/deploy/docker/compose.path-b.yml",
+      "packages/escape-hatch/template/deploy/docker/Caddyfile.sample",
       "packages/escape-hatch/template/escape-hatch.manifest.json",
       "packages/escape-hatch/template/lib/adapters/index.ts",
       "packages/escape-hatch/template/lib/deploy/vercel-path.ts",
+      "packages/escape-hatch/template/lib/deploy/docker-path.ts",
+      "packages/escape-hatch/template/lib/deploy/path-b-recipe.ts",
       "packages/escape-hatch/template/lib/deploy/callbacks.ts",
       "packages/escape-hatch/template/app/admin/deploy/page.tsx",
       "packages/escape-hatch/template/app/api/admin/deploy/route.ts",
       "packages/escape-hatch/tests/escape-hatch-deploy-vercel.test.ts",
+      "packages/escape-hatch/tests/escape-hatch-deploy-docker.test.ts",
       "src/deploy/deploy-adapter.ts",
       "packages/escape-hatch/src/zip-kit.ts"
     ],
     risk: "high",
-    nextSlice: "EH-071"
+    nextSlice: "EH-072"
   },
   {
     id: "native-admin",
     title: "Native generated-site admin",
     state: "preview_only",
     evidence:
-      "EH-022 admin shell with identity gates (local-operator preview or staff session). EH-060/061/062 CMS surfaces. EH-063 Patreon transition sync. EH-064 Relay Crosspost. EH-070 fixture Vercel deploy rehearsal on /admin/deploy with callback checklist on Health. Live Patreon/Vercel network and Relay Studio client deferred. Auth/DB adapters may report ok:true only with real non-placeholder env and still label preview. Domain/TLS/backup probes remain open. productionSafe remains false.",
+      "EH-022 admin shell with identity gates (local-operator preview or staff session). EH-060/061/062 CMS surfaces. EH-063 Patreon transition sync. EH-064 Relay Crosspost. EH-070/071 fixture Vercel + Docker Path B deploy rehearsals on /admin/deploy with callback checklist and Path B recipe on Health. Live Patreon/Vercel/Docker daemon and Relay Studio client deferred. Auth/DB adapters may report ok:true only with real non-placeholder env and still label preview. Domain/TLS/backup probes remain open. productionSafe remains false.",
     sourcePaths: [
       "packages/escape-hatch/template/app/admin/page.tsx",
       "packages/escape-hatch/template/app/admin/posts/page.tsx",
@@ -465,10 +471,11 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "packages/escape-hatch/tests/escape-hatch-cms-appearance-health.test.ts",
       "packages/escape-hatch/tests/escape-hatch-patreon-sync.test.ts",
       "packages/escape-hatch/tests/escape-hatch-relay-crosspost.test.ts",
-      "packages/escape-hatch/tests/escape-hatch-deploy-vercel.test.ts"
+      "packages/escape-hatch/tests/escape-hatch-deploy-vercel.test.ts",
+      "packages/escape-hatch/tests/escape-hatch-deploy-docker.test.ts"
     ],
     risk: "high",
-    nextSlice: "EH-071"
+    nextSlice: "EH-072"
   },
   {
     id: "migration-import",
@@ -487,7 +494,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "packages/escape-hatch/tests/escape-hatch-migrate.test.ts"
     ],
     risk: "high",
-    nextSlice: "EH-071"
+    nextSlice: "EH-072"
   },
   {
     id: "library-truth-parity",
@@ -510,7 +517,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "packages/escape-hatch/tests/escape-hatch-library-truth.test.ts"
     ],
     risk: "high",
-    nextSlice: "EH-071"
+    nextSlice: "EH-072"
   },
   {
     id: "backup-restore",
@@ -538,7 +545,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "src/deploy/deploy-adapter.ts"
     ],
     risk: "high",
-    nextSlice: "EH-071"
+    nextSlice: "EH-072"
   },
   {
     id: "creator-patreon-oauth",
@@ -558,7 +565,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "packages/escape-hatch/tests/escape-hatch-patreon-oauth.test.ts"
     ],
     risk: "critical",
-    nextSlice: "EH-071"
+    nextSlice: "EH-072"
   },
   {
     id: "relay-managed-patreon-verification",
@@ -576,7 +583,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "tests/escape-hatch-managed-verify.test.ts"
     ],
     risk: "critical",
-    nextSlice: "EH-071"
+    nextSlice: "EH-072"
   },
   {
     id: "relay-managed-connector-billing",
@@ -594,7 +601,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "packages/escape-hatch/tests/escape-hatch-connector-billing.test.ts"
     ],
     risk: "critical",
-    nextSlice: "EH-071"
+    nextSlice: "EH-072"
   },
   {
     id: "oauth-choice-migration-ux",
@@ -613,13 +620,13 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "packages/escape-hatch/tests/escape-hatch-oauth-choice.test.ts"
     ],
     risk: "high",
-    nextSlice: "EH-071"
+    nextSlice: "EH-072"
   }
 ];
 
 const PROTOTYPE_WARNINGS: string[] = [
   "productionSafe is false — this deliverable is prototype/preview-only.",
-  "EH-070 Vercel golden path is preview_only — fixture preview/promote/rollback + callback checklist on /admin/deploy; live Vercel API and Docker Path B deferred; productionSafe false pending Milestone 3.",
+  "EH-071 Portable Docker path is preview_only — Compose/proxy/TLS recipe + fixture Path B rehearsal; MojoHost policy candidate only; live daemon/ACME deferred; productionSafe false pending Milestone 3.",
   "EH-043 OAuth choice / migration UX is preview_only — preference file is non-secret operator intent; runtime mode remains ESCAPE_HATCH_PATREON_MODE; Milestone 4 residuals (live multi-tenant managed outage proof) remain open.",
   "EH-042 Relay connector billing entitlement is preview_only — in-memory webhook store; kit status is an env mirror, not live Stripe Checkout.",
   "EH-040 creator-owned Patreon OAuth is preview_only — mocked fetch in tests; live campaign link still needs creator credentials and Milestone gate.",
@@ -642,15 +649,15 @@ const PROTOTYPE_WARNINGS: string[] = [
   "Client demo persona state is non-authoritative; soft persona cookie carries persona id only — tiers resolve server-side from the bundle when provider is none; Path A/B hide persona switch and block elevation.",
   "Package preview access helpers align with canonical tier semantics; server entitlement evaluation uses fail-closed snapshots and grant merge (EH-032).",
   "Service role keys, R2 secrets, Patreon client secrets, Stripe secret/webhook keys, and token encryption keys must never be committed or shipped to the browser; RLS fails closed for patrons.",
-  "Vercel/Docker manifests plus EH-070 fixture Vercel rehearsal are present; live Vercel API and verified Docker golden path remain EH-071+.",
+  "Vercel/Docker manifests plus EH-070/071 fixture rehearsals are present; live provider deploys and MojoHost wizard support remain open.",
   "Relay Part 2 billing adapter remains a synthetic stub and must not be treated as production or provider proof.",
   "Passing package tests or a successful local preview does not make any soft-gated capability production-safe."
 ];
 
 const BLOCKERS: string[] = [
   "Milestone 3 security review + browser personas gate remains open before productionSafe can flip.",
-  "Milestone 7 continues with EH-071 Portable Docker path after EH-070 fixture Vercel rehearsal; Milestone 3 security/browser gate remains open; never disguise adult content to unlock Stripe.",
-  "Verified live Vercel API deploy and Docker Path B rehearsals remain open (EH-071+); EH-070 is fixture-only.",
+  "Milestone 7 continues with EH-072 transactional email after EH-070/071 fixture deploy paths; Milestone 3 security/browser gate remains open; never disguise adult content to unlock Stripe.",
+  "Verified live Vercel/Docker daemon deploys remain open; EH-070/071 are fixture + recipe only. MojoHost is not wizard-supported.",
   "Mature/legal-adult enforcement beyond accounted exclusions remains open.",
   "public_legacy media mode remains available as an explicit residual leakage path — keep productionSafe false while it exists.",
   "Milestone 4 residual: live multi-tenant managed-verify outage + migration drill beyond kit/CI honesty remains open."
@@ -663,7 +670,7 @@ export function buildEscapeHatchStatus(): EscapeHatchStatus {
     deliverable: "prototype_preview_only",
     productionSafe: false,
     summary:
-      "Escape Hatch through EH-070 delivers CMS ops, optional Patreon/Crosspost, and a fixture Vercel golden-path rehearsal (preview/promote/rollback + callback checklist); productionSafe remains false pending Milestone 3, Docker Path B (EH-071), and live provider deploys.",
+      "Escape Hatch through EH-071 delivers CMS ops, optional Patreon/Crosspost, and fixture Vercel + Docker Path B deploy rehearsals with Compose/proxy recipe; productionSafe remains false pending Milestone 3, transactional email (EH-072), and live provider deploys.",
     prototypeWarnings: [...PROTOTYPE_WARNINGS],
     capabilities: CAPABILITIES.map((c) => ({
       ...c,
@@ -671,12 +678,12 @@ export function buildEscapeHatchStatus(): EscapeHatchStatus {
     })),
     blockers: [...BLOCKERS],
     nextSlice: {
-      id: "EH-071",
-      title: "Portable Docker path",
+      id: "EH-072",
+      title: "Transactional email",
       focus: [
-        "Compose and reverse-proxy/TLS recipe",
-        "Policy-validated host path",
-        "Honest Path B without claiming productionSafe"
+        "Provider-neutral adapter",
+        "One validated golden-path recipe",
+        "DNS/delivery checks without claiming productionSafe"
       ]
     }
   };

@@ -198,12 +198,12 @@ Execute one documented slice at a time. The program docs define scope and depend
 ### EH-070 Vercel golden path
 
 - **Builder:** Cursor Grok 4.5 High
-- **Status:** Implemented (preview_only; `productionSafe: false`). Fixture preview→promote→rollback + callback checklist (`data/deploy-state.json`, `/admin/deploy`). Live Vercel API deferred. Evidence: `docs/qa/ESCAPE_HATCH_EH_070_EVIDENCE.md`. Next: **EH-071**.
+- **Status:** Implemented (preview_only; `productionSafe: false`). Fixture preview→promote→rollback + callback checklist (`data/deploy-state.json`, `/admin/deploy`). Live Vercel API deferred. Evidence: `docs/qa/ESCAPE_HATCH_EH_070_EVIDENCE.md`. Next was **EH-071** (done).
 
 ### EH-071 Portable Docker path
 
 - **Builder:** Cursor Grok 4.5 High
-- Compose/reverse proxy/TLS and current policy-validated host recipe.
+- **Status:** Implemented (preview_only; `productionSafe: false`). Path B Compose/proxy/TLS recipe under `deploy/docker/`, fixture Docker rehearsal on `/admin/deploy`, MojoHost documented as policy candidate only. Evidence: `docs/qa/ESCAPE_HATCH_EH_071_EVIDENCE.md`. Next: **EH-072**.
 
 ### EH-072 Transactional email
 

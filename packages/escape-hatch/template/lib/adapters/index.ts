@@ -618,10 +618,11 @@ function createDeploymentProvider(): DeploymentProvider {
     siteUrl: env.NEXT_PUBLIC_SITE_URL
   });
 
-  if (readiness.path === "vercel_rehearsal") {
+  if (readiness.path === "vercel_rehearsal" || readiness.path === "docker_rehearsal") {
     return {
       id: "deployment",
-      implementation: "vercel",
+      implementation:
+        readiness.path === "docker_rehearsal" ? "docker" : "vercel",
       listTargets() {
         return ["vercel", "docker"];
       },

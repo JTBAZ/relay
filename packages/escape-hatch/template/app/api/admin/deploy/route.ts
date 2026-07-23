@@ -3,6 +3,8 @@ import { assertAdminMutationAccess } from "@/lib/identity/admin-access";
 import { loadEnv } from "@/lib/env";
 import { loadSite } from "@/lib/load-site";
 import { loadDeployState } from "@/lib/deploy/state";
+import { assessPathBRecipe } from "@/lib/deploy/path-b-recipe";
+import { createDockerPreview } from "@/lib/deploy/docker-path";
 import {
   assessVercelDeployReadiness,
   createVercelPreview,
@@ -13,7 +15,7 @@ import {
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-/** Deploy readiness + state (EH-070). */
+/** Deploy readiness + Path B recipe (EH-070/071). */
 export async function GET(request: Request): Promise<NextResponse> {
   let site;
   try {
@@ -48,10 +50,12 @@ export async function GET(request: Request): Promise<NextResponse> {
     siteUrl: env.NEXT_PUBLIC_SITE_URL ?? site.base_url
   });
   const state = loadDeployState(site.site_id);
+  const path_b = assessPathBRecipe();
 
   return NextResponse.json({
     ok: true,
     readiness,
+    path_b,
     state: {
       active_deployment_id: state.active_deployment_id,
       previous_stable_deployment_id: state.previous_stable_deployment_id,
@@ -63,8 +67,9 @@ export async function GET(request: Request): Promise<NextResponse> {
 }
 
 /**
- * Fixture Vercel golden-path actions: preview | promote | rollback.
- * Never calls live Vercel APIs.
+ * Fixture deploy actions (EH-070/071).
+ * path=vercel|docker; actions: preview | promote | rollback.
+ * Never calls live Vercel or Docker daemon APIs.
  */
 export async function POST(request: Request): Promise<NextResponse> {
   let site;
@@ -117,16 +122,25 @@ export async function POST(request: Request): Promise<NextResponse> {
     );
   }
 
+  const path =
+    body.path === "docker" || body.path === "vercel" ? body.path : "vercel";
+
   const env = loadEnv();
   const siteUrl = env.NEXT_PUBLIC_SITE_URL ?? site.base_url;
 
   if (action === "preview") {
     const domain =
       typeof body.domain === "string" ? body.domain : null;
-    const result = await createVercelPreview({
-      siteId: site.site_id,
-      domain
-    });
+    const result =
+      path === "docker"
+        ? await createDockerPreview({
+            siteId: site.site_id,
+            domain
+          })
+        : await createVercelPreview({
+            siteId: site.site_id,
+            domain
+          });
     if (!result.ok) {
       return NextResponse.json(
         { ok: false, error: result.reason, production_safe: false },
@@ -136,11 +150,13 @@ export async function POST(request: Request): Promise<NextResponse> {
     return NextResponse.json({
       ok: true,
       action,
+      path,
       record: result.record,
       readiness: assessVercelDeployReadiness({
         siteId: site.site_id,
         siteUrl
       }),
+      path_b: assessPathBRecipe(),
       production_safe: false
     });
   }
@@ -170,11 +186,13 @@ export async function POST(request: Request): Promise<NextResponse> {
     return NextResponse.json({
       ok: true,
       action,
+      path,
       record: result.record,
       readiness: assessVercelDeployReadiness({
         siteId: site.site_id,
         siteUrl
       }),
+      path_b: assessPathBRecipe(),
       production_safe: false
     });
   }
@@ -194,12 +212,14 @@ export async function POST(request: Request): Promise<NextResponse> {
   return NextResponse.json({
     ok: true,
     action,
+    path,
     record: result.record,
     restored: result.restored,
     readiness: assessVercelDeployReadiness({
       siteId: site.site_id,
       siteUrl
     }),
+    path_b: assessPathBRecipe(),
     production_safe: false
   });
 }

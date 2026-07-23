@@ -8,6 +8,7 @@ import {
   assessVercelDeployReadiness,
   type DeployReadiness
 } from "../deploy/vercel-path";
+import { assessPathBRecipe, type PathBRecipeReport } from "../deploy/path-b-recipe";
 import type { AdapterHealthRow } from "./types";
 
 export type ConnectionCard = {
@@ -44,7 +45,7 @@ const NEXT_ACTIONS: Record<string, string> = {
   email:
     "Transactional email is a stub until EH-072 — do not treat as delivery-ready.",
   deployment:
-    "Open /admin/deploy — EH-070 fixture Vercel preview→promote→rollback rehearsal (not a live Vercel API deploy). Docker remains EH-071."
+    "Open /admin/deploy — EH-070 Vercel or EH-071 Docker Path B fixture rehearsal (not live provider APIs)."
 };
 
 const WHAT_BREAKS: Record<string, string> = {
@@ -144,6 +145,7 @@ export function buildHealthItems(args: {
   manifestSlice: string | null;
   publicMediaHonesty: string;
   deployReadiness?: DeployReadiness | null;
+  pathBRecipe?: PathBRecipeReport | null;
 }): HealthItem[] {
   const items: HealthItem[] = [
     {
@@ -171,12 +173,12 @@ export function buildHealthItems(args: {
     const r = args.deployReadiness;
     items.push({
       id: "deploy_version",
-      title: "Deployment / version (EH-070)",
+      title: "Deployment / version (EH-070/071)",
       ok: r.ok,
       detail: r.detail,
       next_action: r.ok
-        ? "Fixture rehearsal only — live Vercel promote and Docker Path B remain open; productionSafe false."
-        : "Run preview→promote on /admin/deploy, then register callbacks from the checklist."
+        ? "Fixture rehearsal only — live Vercel/Docker daemon and MojoHost support remain open; productionSafe false."
+        : "Run Path A or Path B rehearsal on /admin/deploy, then register callbacks from the checklist."
     });
     items.push({
       id: "callback_checklist",
@@ -197,7 +199,20 @@ export function buildHealthItems(args: {
           ? `Active ${r.active_deployment_id} — no prior stable yet (first promote).`
           : "No active or prior stable deployment pointer in kit state.",
       next_action:
-        "Promote twice in /admin/deploy rehearsal to retain a rollback target; live Vercel instant rollback deferred."
+        "Promote twice in /admin/deploy rehearsal to retain a rollback target; live provider instant rollback deferred."
+    });
+  }
+
+  if (args.pathBRecipe) {
+    const p = args.pathBRecipe;
+    items.push({
+      id: "path_b_recipe",
+      title: "Docker Path B recipe",
+      ok: p.ok,
+      detail: `${p.detail} Host: ${p.host_candidate.title} (${p.host_candidate.status}; wizard=${p.host_candidate.wizard_supported}).`,
+      next_action: p.ok
+        ? "Recipe present — still kit-local; MojoHost not wizard-supported; live compose/TLS deferred."
+        : "Restore deploy/docker recipe files from the template chassis."
     });
   }
 

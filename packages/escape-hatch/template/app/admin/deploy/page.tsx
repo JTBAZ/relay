@@ -20,7 +20,7 @@ export default async function AdminDeployPage() {
       <ConsoleNav />
       <AdminShell
         title="Deploy"
-        lede="EH-070 Vercel golden-path fixture rehearsal — preview, promote, rollback, and callback checklist. Not a live Vercel API deploy; productionSafe remains false."
+        lede="EH-070/071 Path A (Vercel) and Path B (Docker) fixture rehearsals — preview, promote, rollback, callback checklist, and Compose/proxy recipe. Not live provider deploys; productionSafe remains false."
         identity={model.identity}
       >
         {model.read_allowed && model.deny_reason === null ? (

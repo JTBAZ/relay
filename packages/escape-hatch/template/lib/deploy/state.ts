@@ -1,5 +1,5 @@
 /**
- * Kit-local deploy state for Vercel golden-path rehearsal (EH-070).
+ * Kit-local deploy state for Path A/B golden-path rehearsal (EH-070/071).
  * Fixture/injectable only — productionSafe remains false.
  */
 
@@ -13,6 +13,8 @@ import { join } from "node:path";
 
 export const DEPLOY_STATE_CONTRACT = "escape-hatch-deploy-state/1.0.0" as const;
 
+export type DeployProviderKind = "vercel" | "docker";
+
 export type DeployStatus =
   | "preview"
   | "approved"
@@ -22,7 +24,7 @@ export type DeployStatus =
 
 export type DeployRecord = {
   deployment_id: string;
-  provider: "vercel";
+  provider: DeployProviderKind;
   status: DeployStatus;
   preview_url: string;
   production_url: string | null;
@@ -31,6 +33,8 @@ export type DeployRecord = {
   promoted_at: string | null;
   rolled_back_at: string | null;
   build_duration_ms: number;
+  /** Optional fixture notes (image tag, compose profile). */
+  notes: string | null;
 };
 
 export type DeployStateDocument = {
@@ -62,6 +66,14 @@ export function emptyDeployState(siteId: string): DeployStateDocument {
     deployments: [],
     last_rehearsal_at: null,
     last_error: null
+  };
+}
+
+function normalizeRecord(raw: DeployRecord): DeployRecord {
+  return {
+    ...raw,
+    provider: raw.provider === "docker" ? "docker" : "vercel",
+    notes: typeof raw.notes === "string" ? raw.notes : null
   };
 }
 
@@ -97,7 +109,7 @@ export function loadDeployState(
         typeof raw.previous_stable_deployment_id === "string"
           ? raw.previous_stable_deployment_id
           : null,
-      deployments: raw.deployments as DeployRecord[],
+      deployments: (raw.deployments as DeployRecord[]).map(normalizeRecord),
       last_rehearsal_at:
         typeof raw.last_rehearsal_at === "string"
           ? raw.last_rehearsal_at
@@ -117,7 +129,8 @@ export function saveDeployState(
     ...doc,
     contract_version: DEPLOY_STATE_CONTRACT,
     production_safe: false,
-    updated_at: new Date().toISOString()
+    updated_at: new Date().toISOString(),
+    deployments: doc.deployments.map(normalizeRecord)
   };
   mkdirSync(join(kitDir, "data"), { recursive: true });
   writeFileSync(

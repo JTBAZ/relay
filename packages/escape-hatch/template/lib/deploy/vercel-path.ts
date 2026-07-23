@@ -75,7 +75,8 @@ export async function createVercelPreview(opts: {
     created_at: now,
     promoted_at: null,
     rolled_back_at: null,
-    build_duration_ms: created.build_duration_ms
+    build_duration_ms: created.build_duration_ms,
+    notes: null
   };
   const state = loadDeployState(opts.siteId, kitDir);
   state.deployments = [record, ...state.deployments].slice(0, 50);
@@ -189,7 +190,7 @@ export function rollbackVercelDeployment(opts: {
 }
 
 export type DeployReadiness = {
-  path: "manifest" | "vercel_rehearsal";
+  path: "manifest" | "vercel_rehearsal" | "docker_rehearsal";
   ok: boolean;
   detail: string;
   active_deployment_id: string | null;
@@ -215,10 +216,13 @@ export function assessVercelDeployReadiness(opts: {
     : null;
 
   if (active?.status === "live") {
+    const isDocker = active.provider === "docker";
     return {
-      path: "vercel_rehearsal",
+      path: isDocker ? "docker_rehearsal" : "vercel_rehearsal",
       ok: true,
-      detail: `Fixture Vercel rehearsal live at ${active.production_url ?? active.preview_url} — not a live Vercel API deploy; productionSafe remains false.`,
+      detail: isDocker
+        ? `Fixture Docker Path B rehearsal live at ${active.production_url ?? active.preview_url} — not a live docker daemon deploy; productionSafe remains false.`
+        : `Fixture Vercel rehearsal live at ${active.production_url ?? active.preview_url} — not a live Vercel API deploy; productionSafe remains false.`,
       active_deployment_id: state.active_deployment_id,
       previous_stable_deployment_id: state.previous_stable_deployment_id,
       domain_mode,
@@ -231,7 +235,7 @@ export function assessVercelDeployReadiness(opts: {
     path: "manifest",
     ok: false,
     detail:
-      "No fixture production pointer — vercel.json is present but does not prove a healthy deploy. Run /admin/deploy rehearsal or a live Vercel promote outside the kit.",
+      "No fixture production pointer — vercel.json / Dockerfile are present but do not prove a healthy deploy. Run /admin/deploy Path A or Path B rehearsal.",
     active_deployment_id: state.active_deployment_id,
     previous_stable_deployment_id: state.previous_stable_deployment_id,
     domain_mode,

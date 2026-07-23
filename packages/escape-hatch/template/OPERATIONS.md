@@ -250,6 +250,20 @@ Workflow (fixture): create preview → smoke/approve (operator) → promote (ret
 
 Deferrals: live Vercel CLI/API, real DNS/TLS probes, Docker Path B (**EH-071**), deploy wizard (**EH-074**).
 
+## Portable Docker path (EH-071)
+
+| Surface | Role |
+|---------|------|
+| `deploy/docker/` | Compose overlay, Caddy TLS sample, Path B README |
+| `/admin/deploy` Path B | Fixture image-build → promote; recipe inventory; MojoHost candidate note |
+| `lib/deploy/docker-path.ts` | Injectable Docker rehearsal (no daemon) |
+| `lib/deploy/path-b-recipe.ts` | Recipe file presence + host-candidate honesty |
+| Health | Path B recipe item alongside deploy/callback/rollback |
+
+MojoHost is a **policy candidate** only — not wizard-supported until gates in `13-PROVIDER-POLICY-EVIDENCE.md` pass.
+
+Deferrals: required live Docker in CI, live ACME/DNS, MojoHost as supported host, email (**EH-072**), backup (**EH-073**), wizard (**EH-074**).
+
 ## Identity provider
 
 `ESCAPE_HATCH_IDENTITY_PROVIDER`:
