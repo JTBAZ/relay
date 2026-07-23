@@ -14,6 +14,7 @@ import {
   type EmailReadiness
 } from "../email/readiness";
 import type { BackupReadiness } from "../backup/readiness";
+import type { LaunchReadiness } from "../deploy/launch-wizard";
 import type { AdapterHealthRow } from "./types";
 
 export type ConnectionCard = {
@@ -153,6 +154,7 @@ export function buildHealthItems(args: {
   pathBRecipe?: PathBRecipeReport | null;
   emailReadiness?: EmailReadiness | null;
   backupReadiness?: BackupReadiness | null;
+  launchReadiness?: LaunchReadiness | null;
 }): HealthItem[] {
   const items: HealthItem[] = [
     {
@@ -287,6 +289,21 @@ export function buildHealthItems(args: {
       next_action: b.diagnostics_available
         ? "Download diagnostics for support; never paste secrets into tickets."
         : "Rebuild kit so the manifest is present."
+    });
+  }
+
+  if (args.launchReadiness) {
+    const l = args.launchReadiness;
+    items.push({
+      id: "launch_wizard",
+      title: "Launch wizard (EH-074)",
+      ok: Boolean(l.wizard.launch_completed_at) || l.can_complete || l.ok,
+      detail: l.detail,
+      next_action: l.wizard.launch_completed_at
+        ? "Launch marked complete in fixture — still not productionSafe; live provider proofs deferred."
+        : l.can_complete
+          ? "Open /admin/deploy and Complete launch."
+          : "Open /admin/deploy launch wizard; clear blockers (path, callbacks, backup/restore, promote, smoke)."
     });
   }
 

@@ -1,6 +1,7 @@
 import { ConsoleNav } from "@/components/ConsoleNav";
 import { AdminAccessDenied } from "@/components/admin/AdminAccessDenied";
 import { AdminShell } from "@/components/admin/AdminShell";
+import { DeployLaunchWizard } from "@/components/admin/DeployLaunchWizard";
 import { DeployPanel } from "@/components/admin/DeployPanel";
 import { loadAdminOverview } from "@/lib/admin/load-admin";
 import { redirectIfAdminSignInRequired } from "@/lib/admin/require-admin-page";
@@ -20,11 +21,14 @@ export default async function AdminDeployPage() {
       <ConsoleNav />
       <AdminShell
         title="Deploy"
-        lede="EH-070/071 Path A (Vercel) and Path B (Docker) fixture rehearsals — preview, promote, rollback, callback checklist, and Compose/proxy recipe. Not live provider deploys; productionSafe remains false."
+        lede="EH-074 launch wizard plus EH-070/071 Path A/B fixture rehearsals. Backup-before-complete is enforced; not live provider deploys; productionSafe remains false."
         identity={model.identity}
       >
         {model.read_allowed && model.deny_reason === null ? (
-          <DeployPanel siteId={model.site_id} />
+          <>
+            <DeployLaunchWizard siteId={model.site_id} />
+            <DeployPanel siteId={model.site_id} />
+          </>
         ) : (
           <AdminAccessDenied reason={model.deny_reason ?? "staff_required"} />
         )}

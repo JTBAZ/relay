@@ -6,6 +6,15 @@ import { loadDeployState } from "@/lib/deploy/state";
 import { assessPathBRecipe } from "@/lib/deploy/path-b-recipe";
 import { createDockerPreview } from "@/lib/deploy/docker-path";
 import {
+  acknowledgeDiagnostics,
+  assessLaunchReadiness,
+  completeLaunchWizard,
+  markLaunchStep,
+  selectLaunchPath,
+  setLaunchStuckNote,
+  type LaunchStepId
+} from "@/lib/deploy/launch-wizard";
+import {
   assessVercelDeployReadiness,
   createVercelPreview,
   promoteVercelDeployment,
@@ -15,7 +24,7 @@ import {
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-/** Deploy readiness + Path B recipe (EH-070/071). */
+/** Deploy readiness + Path B recipe + launch wizard (EH-070/071/074). */
 export async function GET(request: Request): Promise<NextResponse> {
   let site;
   try {
@@ -45,17 +54,28 @@ export async function GET(request: Request): Promise<NextResponse> {
   }
 
   const env = loadEnv();
+  const siteUrl = env.NEXT_PUBLIC_SITE_URL ?? site.base_url;
   const readiness = assessVercelDeployReadiness({
     siteId: site.site_id,
-    siteUrl: env.NEXT_PUBLIC_SITE_URL ?? site.base_url
+    siteUrl
   });
   const state = loadDeployState(site.site_id);
   const path_b = assessPathBRecipe();
+  const url = new URL(request.url);
+  const includeWizard = url.searchParams.get("wizard") === "1";
+  const launch = includeWizard
+    ? assessLaunchReadiness({
+        siteId: site.site_id,
+        siteUrl,
+        env
+      })
+    : undefined;
 
   return NextResponse.json({
     ok: true,
     readiness,
     path_b,
+    ...(launch ? { launch } : {}),
     state: {
       active_deployment_id: state.active_deployment_id,
       previous_stable_deployment_id: state.previous_stable_deployment_id,
@@ -67,9 +87,10 @@ export async function GET(request: Request): Promise<NextResponse> {
 }
 
 /**
- * Fixture deploy actions (EH-070/071).
- * path=vercel|docker; actions: preview | promote | rollback.
- * Never calls live Vercel or Docker daemon APIs.
+ * Fixture deploy + launch wizard actions (EH-070/071/074).
+ * Deploy: preview | promote | rollback (never live Vercel/Docker).
+ * Wizard: wizard_select_path | wizard_mark_step | wizard_stuck |
+ *         wizard_ack_diagnostics | wizard_complete.
  */
 export async function POST(request: Request): Promise<NextResponse> {
   let site;
@@ -109,6 +130,83 @@ export async function POST(request: Request): Promise<NextResponse> {
     );
   }
 
+  const env = loadEnv();
+  const siteUrl = env.NEXT_PUBLIC_SITE_URL ?? site.base_url;
+  const launchOpts = {
+    siteId: site.site_id,
+    siteUrl,
+    env
+  };
+
+  const wizardAction = String(body.action ?? "");
+  if (wizardAction === "wizard_select_path") {
+    const path =
+      body.path === "docker" || body.path === "vercel" ? body.path : null;
+    if (!path) {
+      return NextResponse.json(
+        { ok: false, error: "path_required", production_safe: false },
+        { status: 400 }
+      );
+    }
+    selectLaunchPath(site.site_id, path);
+    return NextResponse.json({
+      ok: true,
+      action: wizardAction,
+      launch: assessLaunchReadiness(launchOpts),
+      production_safe: false
+    });
+  }
+
+  if (wizardAction === "wizard_mark_step") {
+    const stepId = String(body.step_id ?? "") as LaunchStepId;
+    const status =
+      body.status === "verified" || body.status === "pending"
+        ? body.status
+        : "verified";
+    markLaunchStep(site.site_id, stepId, status);
+    return NextResponse.json({
+      ok: true,
+      action: wizardAction,
+      launch: assessLaunchReadiness(launchOpts),
+      production_safe: false
+    });
+  }
+
+  if (wizardAction === "wizard_stuck") {
+    const note = typeof body.note === "string" ? body.note : null;
+    setLaunchStuckNote(site.site_id, note);
+    return NextResponse.json({
+      ok: true,
+      action: wizardAction,
+      launch: assessLaunchReadiness(launchOpts),
+      production_safe: false
+    });
+  }
+
+  if (wizardAction === "wizard_ack_diagnostics") {
+    acknowledgeDiagnostics(site.site_id);
+    return NextResponse.json({
+      ok: true,
+      action: wizardAction,
+      launch: assessLaunchReadiness(launchOpts),
+      production_safe: false
+    });
+  }
+
+  if (wizardAction === "wizard_complete") {
+    const result = completeLaunchWizard(launchOpts);
+    return NextResponse.json(
+      {
+        ok: result.ok,
+        action: wizardAction,
+        launch: result.readiness,
+        error: result.error,
+        production_safe: false
+      },
+      { status: result.ok ? 200 : 400 }
+    );
+  }
+
   const action =
     body.action === "preview" ||
     body.action === "promote" ||
@@ -124,9 +222,6 @@ export async function POST(request: Request): Promise<NextResponse> {
 
   const path =
     body.path === "docker" || body.path === "vercel" ? body.path : "vercel";
-
-  const env = loadEnv();
-  const siteUrl = env.NEXT_PUBLIC_SITE_URL ?? site.base_url;
 
   if (action === "preview") {
     const domain =

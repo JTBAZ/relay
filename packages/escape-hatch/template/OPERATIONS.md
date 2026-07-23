@@ -248,7 +248,7 @@ Deferrals: Relay Studio client, live network E2E, remote media upload, SQL token
 
 Workflow (fixture): create preview → smoke/approve (operator) → promote (retains prior stable) → guided rollback. Provider URL (`*.vercel.app`) then custom domain. Absolute callback URLs fail closed for unset/placeholder origins.
 
-Deferrals: live Vercel CLI/API, real DNS/TLS probes, Docker Path B (**EH-071**), deploy wizard (**EH-074**).
+Deferrals: live Vercel CLI/API, real DNS/TLS probes, ownership packet (**EH-080**).
 
 ## Portable Docker path (EH-071)
 
@@ -262,7 +262,7 @@ Deferrals: live Vercel CLI/API, real DNS/TLS probes, Docker Path B (**EH-071**),
 
 MojoHost is a **policy candidate** only — not wizard-supported until gates in `13-PROVIDER-POLICY-EVIDENCE.md` pass.
 
-Deferrals: required live Docker in CI, live ACME/DNS, MojoHost as supported host, deploy wizard (**EH-074**).
+Deferrals: required live Docker in CI, live ACME/DNS, MojoHost as supported host, ownership packet (**EH-080**).
 
 ## Transactional email (EH-072)
 
@@ -277,7 +277,7 @@ Required message types: account verification, password/admin recovery, security 
 
 Golden path recipe: **Resend HTTP API** (names only). Creator owns the ESP account and sender domain. Checklist is operator guidance — no live DNS probes.
 
-Deferrals: live Resend/SMTP in CI, adult ToS selection, patrons resend UX, deploy wizard (**EH-074**).
+Deferrals: live Resend/SMTP in CI, adult ToS selection, patrons resend UX, ownership packet (**EH-080**).
 
 ## Backup / restore / diagnostics (EH-073)
 
@@ -292,7 +292,20 @@ Deferrals: live Resend/SMTP in CI, adult ToS selection, patrons resend UX, deplo
 
 Workflow (fixture): run backup → verify freshness within RPO → isolated restore rehearsal → download redacted diagnostics. Not live Postgres/R2.
 
-Deferrals: live cloud backup providers, wizard “backup before complete” gate (**EH-074**), full production restore signoff (**EH-082**), `productionSafe: true`.
+Deferrals: live cloud backup providers, full production restore signoff (**EH-082**), `productionSafe: true`.
+
+## Launch wizard (EH-074)
+
+| Surface | Role |
+|---------|------|
+| `/admin/deploy` launch wizard | Path A/B choice, guided steps, recovery notes, complete gate |
+| `lib/deploy/launch-wizard*.ts` | `assessLaunchReadiness` + fail-closed `completeLaunchWizard` |
+| `data/launch-wizard-state.json` | Path choice, step marks, launch_completed_at |
+| Health | Launch wizard item with next safe action |
+
+Blocking complete gate: path chosen, callback origin ok, EH-073 backup freshness + restore rehearsal, active promote pointer, operator smoke approval. MojoHost remains not wizard-supported. Still preview_only.
+
+Deferrals: live Vercel/Docker daemon, live DNS/TLS, ownership packet (**EH-080**), `productionSafe: true`.
 
 ## Identity provider
 

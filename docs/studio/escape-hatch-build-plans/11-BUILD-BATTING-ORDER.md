@@ -213,14 +213,14 @@ Execute one documented slice at a time. The program docs define scope and depend
 ### EH-073 Backup/restore/update manifest
 
 - **Builder:** Cursor Grok 4.5 High
-- **Status:** Implemented (preview_only; `productionSafe: false`). Kit-local scheduled backups, isolated restore rehearsal, version/compatibility diagnostics, Health + `/api/admin/backup`. Evidence: `docs/qa/ESCAPE_HATCH_EH_073_EVIDENCE.md`. Next: **EH-074**.
+- **Status:** Implemented (preview_only; `productionSafe: false`). Kit-local scheduled backups, isolated restore rehearsal, version/compatibility diagnostics, Health + `/api/admin/backup`. Evidence: `docs/qa/ESCAPE_HATCH_EH_073_EVIDENCE.md`. Next was **EH-074** (done).
 
 ### EH-074 Deployment wizard
 
 - **Builder:** Cursor Grok 4.5 High
-- Smart-guided external steps, validation, recovery, launch checklist.
+- **Status:** Implemented (preview_only; `productionSafe: false`). Path A/B launch wizard on `/admin/deploy` with backup-before-complete, validation/recovery, launch checklist. Evidence: `docs/qa/ESCAPE_HATCH_EH_074_EVIDENCE.md`. Next: **EH-080**.
 
-**Gate:** both paths deploy cleanly; domain/email/restore/rollback proven in browser and automation.
+**Gate:** both paths deploy cleanly; domain/email/restore/rollback proven in browser and automation. (Fixture/checklist satisfied in EH-074; live provider proofs remain open.)
 
 ## Milestone 8 — handoff and release
 

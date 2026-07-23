@@ -6,6 +6,7 @@ import { buildHealthItems, loadDeployReadinessForAdmin } from "@/lib/admin/conne
 import { loadAdminOverview } from "@/lib/admin/load-admin";
 import { redirectIfAdminSignInRequired } from "@/lib/admin/require-admin-page";
 import { assessBackupReadiness } from "@/lib/backup/readiness";
+import { assessLaunchReadiness } from "@/lib/deploy/launch-wizard";
 import { assessPathBRecipe } from "@/lib/deploy/path-b-recipe";
 import { assessEmailReadiness } from "@/lib/email/readiness";
 import { loadEnv } from "@/lib/env";
@@ -33,7 +34,12 @@ export default async function AdminHealthPage() {
     deployReadiness,
     pathBRecipe: assessPathBRecipe(),
     emailReadiness: assessEmailReadiness({ env }),
-    backupReadiness: assessBackupReadiness({ siteId: model.site_id })
+    backupReadiness: assessBackupReadiness({ siteId: model.site_id }),
+    launchReadiness: assessLaunchReadiness({
+      siteId: model.site_id,
+      siteUrl: env.NEXT_PUBLIC_SITE_URL,
+      env
+    })
   });
 
   return (
@@ -41,7 +47,7 @@ export default async function AdminHealthPage() {
       <ConsoleNav />
       <AdminShell
         title="Site health"
-        lede="Actionable next steps for adapters, deploy checklist, email, and EH-073 backup/restore. Live DNS/TLS and cloud backup providers remain deferred."
+        lede="Actionable next steps for adapters, deploy, email, backup/restore, and EH-074 launch wizard. Live DNS/TLS and cloud providers remain deferred."
         identity={model.identity}
       >
         {model.read_allowed && model.deny_reason === null ? (

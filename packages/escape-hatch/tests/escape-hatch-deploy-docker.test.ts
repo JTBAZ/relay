@@ -27,16 +27,16 @@ const TEMPLATE = join(
 );
 
 describe("EH-071 status", () => {
-  it("advances slice to EH-073 with next EH-074 and productionSafe false", () => {
+  it("advances slice to EH-074 with next EH-080 and productionSafe false", () => {
     const status = buildEscapeHatchStatus();
-    expect(ESCAPE_HATCH_SLICE).toBe("EH-073");
-    expect(status.slice).toBe("EH-073");
+    expect(ESCAPE_HATCH_SLICE).toBe("EH-074");
+    expect(status.slice).toBe("EH-074");
     expect(status.productionSafe).toBe(false);
-    expect(status.nextSlice.id).toBe("EH-074");
-    expect(status.nextSlice.title).toMatch(/deploy|wizard/i);
+    expect(status.nextSlice.id).toBe("EH-080");
+    expect(status.nextSlice.title).toMatch(/ownership/i);
     const deploy = status.capabilities.find((c) => c.id === "deploy-adapters");
     expect(deploy?.state).toBe("preview_only");
-    expect(deploy?.nextSlice).toBe("EH-074");
+    expect(deploy?.nextSlice).toBe("EH-080");
     expect(deploy?.evidence).toMatch(/EH-071|docker|Path B|fixture/i);
   });
 });

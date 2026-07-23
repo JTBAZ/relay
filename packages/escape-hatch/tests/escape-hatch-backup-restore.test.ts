@@ -51,16 +51,16 @@ function seedKitDir(): string {
 }
 
 describe("EH-073 status", () => {
-  it("advances slice to EH-073 with next EH-074 and productionSafe false", () => {
+  it("advances slice to EH-074 with next EH-080 and productionSafe false", () => {
     const status = buildEscapeHatchStatus();
-    expect(ESCAPE_HATCH_SLICE).toBe("EH-073");
-    expect(status.slice).toBe("EH-073");
+    expect(ESCAPE_HATCH_SLICE).toBe("EH-074");
+    expect(status.slice).toBe("EH-074");
     expect(status.productionSafe).toBe(false);
-    expect(status.nextSlice.id).toBe("EH-074");
-    expect(status.nextSlice.title).toMatch(/deploy|wizard/i);
+    expect(status.nextSlice.id).toBe("EH-080");
+    expect(status.nextSlice.title).toMatch(/ownership/i);
     const backup = status.capabilities.find((c) => c.id === "backup-restore");
     expect(backup?.state).toBe("preview_only");
-    expect(backup?.nextSlice).toBe("EH-074");
+    expect(backup?.nextSlice).toBe("EH-080");
     expect(backup?.sourcePaths.length).toBeGreaterThan(0);
   });
 });
