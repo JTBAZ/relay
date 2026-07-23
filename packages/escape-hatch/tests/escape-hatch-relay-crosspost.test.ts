@@ -58,13 +58,13 @@ function minimalBundle(over?: Partial<SiteBundle>): SiteBundle {
 }
 
 describe("EH-064 status", () => {
-  it("advances slice to EH-071 with next EH-072 and productionSafe false", () => {
+  it("advances slice to EH-072 with next EH-073 and productionSafe false", () => {
     const status = buildEscapeHatchStatus();
-    expect(ESCAPE_HATCH_SLICE).toBe("EH-071");
-    expect(status.slice).toBe("EH-071");
+    expect(ESCAPE_HATCH_SLICE).toBe("EH-072");
+    expect(status.slice).toBe("EH-072");
     expect(status.productionSafe).toBe(false);
-    expect(status.nextSlice.id).toBe("EH-072");
-    expect(status.nextSlice.title).toMatch(/email|transactional/i);
+    expect(status.nextSlice.id).toBe("EH-073");
+    expect(status.nextSlice.title).toMatch(/backup|restore/i);
   });
 });
 

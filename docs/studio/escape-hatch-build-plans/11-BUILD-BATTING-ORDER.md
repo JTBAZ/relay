@@ -203,12 +203,12 @@ Execute one documented slice at a time. The program docs define scope and depend
 ### EH-071 Portable Docker path
 
 - **Builder:** Cursor Grok 4.5 High
-- **Status:** Implemented (preview_only; `productionSafe: false`). Path B Compose/proxy/TLS recipe under `deploy/docker/`, fixture Docker rehearsal on `/admin/deploy`, MojoHost documented as policy candidate only. Evidence: `docs/qa/ESCAPE_HATCH_EH_071_EVIDENCE.md`. Next: **EH-072**.
+- **Status:** Implemented (preview_only; `productionSafe: false`). Path B Compose/proxy/TLS recipe under `deploy/docker/`, fixture Docker rehearsal on `/admin/deploy`, MojoHost documented as policy candidate only. Evidence: `docs/qa/ESCAPE_HATCH_EH_071_EVIDENCE.md`. Next was **EH-072** (done).
 
 ### EH-072 Transactional email
 
 - **Builder:** Cursor Grok 4.5 High
-- Provider-neutral adapter, one validated recipe, DNS/delivery checks.
+- **Status:** Implemented (preview_only; `productionSafe: false`). Provider-neutral transport, memory outbox fixture, Resend golden-path recipe (env names), SPF/DKIM/DMARC checklist. Evidence: `docs/qa/ESCAPE_HATCH_EH_072_EVIDENCE.md`. Next: **EH-073**.
 
 ### EH-073 Backup/restore/update manifest
 

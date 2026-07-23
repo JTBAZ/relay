@@ -3,7 +3,7 @@
   "contract_version": "escape-hatch.manifest/1.0.0",
   "chassis_version": "0.8.0",
   "schema_version": "eh-db/0005_patreon_oauth",
-  "slice": "EH-071",
+  "slice": "EH-072",
   "productionSafe": false,
   "generated_at": null,
   "creator_id": null,
@@ -28,7 +28,7 @@
     "storage": { "id": "private_r2_or_local_private", "version": "0.1.0", "state": "preview_only" },
     "billing": { "id": "stripe_eligible_business_eh051", "version": "0.1.0", "state": "preview_only" },
     "patreon": { "id": "creator_oauth_or_relay_managed", "version": "0.1.0", "state": "preview_only" },
-    "email": { "id": "stub", "version": "0.0.0", "state": "stub_only" },
+    "email": { "id": "resend_golden_path_fixture", "version": "0.1.0", "state": "preview_only" },
     "deployment": { "id": "vercel_and_docker_path_b_fixture", "version": "0.2.0", "state": "preview_only" }
   },
   "deploy_targets": [
@@ -86,7 +86,12 @@
     "ESCAPE_HATCH_RELAY_VERIFY_ENABLED",
     "ESCAPE_HATCH_RELAY_CONNECTOR_BILLING_ENABLED",
     "ESCAPE_HATCH_RELAY_CONNECTOR_ENTITLEMENT_STATUS",
-    "ESCAPE_HATCH_RELAY_CONNECTOR_LAST_SERVICE_DATE"
+    "ESCAPE_HATCH_RELAY_CONNECTOR_LAST_SERVICE_DATE",
+    "ESCAPE_HATCH_CROSSPOST_TOKEN_PEPPER",
+    "ESCAPE_HATCH_EMAIL_PROVIDER",
+    "RESEND_API_KEY",
+    "EMAIL_FROM",
+    "EMAIL_REPLY_TO"
   ],
   "applied_migrations": [],
   "known_exclusions": [

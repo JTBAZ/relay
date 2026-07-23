@@ -182,8 +182,25 @@ export type PatreonVerificationProvider = {
 
 export type TransactionalEmailProvider = {
   readonly id: "email";
-  readonly implementation: "stub";
+  readonly implementation: "stub" | "resend" | "memory";
   health(): Promise<AdapterHealth>;
+  /** Send a transactional message — fail-closed when stub. */
+  send(payload: {
+    message_type:
+      | "account_verification"
+      | "password_recovery"
+      | "security_alert"
+      | "subscription_notice"
+      | "connector_failure";
+    to: string;
+    subject: string;
+    text_body: string;
+    html_body?: string | null;
+    link_origin?: string | null;
+  }): Promise<
+    | { ok: true; message_id: string; production_safe: false }
+    | { ok: false; reason: string; production_safe: false }
+  >;
 };
 
 export type DeploymentProvider = {

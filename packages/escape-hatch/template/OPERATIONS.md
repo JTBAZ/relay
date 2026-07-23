@@ -264,6 +264,21 @@ MojoHost is a **policy candidate** only — not wizard-supported until gates in 
 
 Deferrals: required live Docker in CI, live ACME/DNS, MojoHost as supported host, email (**EH-072**), backup (**EH-073**), wizard (**EH-074**).
 
+## Transactional email (EH-072)
+
+| Surface | Role |
+|---------|------|
+| `lib/email/` | Provider-neutral transport, memory outbox, Resend recipe, delivery checklist |
+| `GET/POST /api/admin/email` | Readiness + fixture send (default memory; no live network in CI) |
+| Env | `ESCAPE_HATCH_EMAIL_PROVIDER=resend\|memory`, `RESEND_API_KEY`, `EMAIL_FROM`, `EMAIL_REPLY_TO` |
+| Health / Connections | Email adapter + SPF/DKIM/DMARC guidance checklist |
+
+Required message types: account verification, password/admin recovery, security alert, subscription/access notice, connector failure.
+
+Golden path recipe: **Resend HTTP API** (names only). Creator owns the ESP account and sender domain. Checklist is operator guidance — no live DNS probes.
+
+Deferrals: live Resend/SMTP in CI, adult ToS selection, patrons resend UX, backup (**EH-073**), deploy wizard (**EH-074**).
+
 ## Identity provider
 
 `ESCAPE_HATCH_IDENTITY_PROVIDER`:

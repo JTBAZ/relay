@@ -6,6 +6,7 @@ import { buildHealthItems, loadDeployReadinessForAdmin } from "@/lib/admin/conne
 import { loadAdminOverview } from "@/lib/admin/load-admin";
 import { redirectIfAdminSignInRequired } from "@/lib/admin/require-admin-page";
 import { assessPathBRecipe } from "@/lib/deploy/path-b-recipe";
+import { assessEmailReadiness } from "@/lib/email/readiness";
 import { loadEnv } from "@/lib/env";
 
 export const dynamic = "force-dynamic";
@@ -29,7 +30,8 @@ export default async function AdminHealthPage() {
     publicMediaHonesty:
       "public/media paths are never treated as private-read verification; premium bytes use /api/media after entitlement checks.",
     deployReadiness,
-    pathBRecipe: assessPathBRecipe()
+    pathBRecipe: assessPathBRecipe(),
+    emailReadiness: assessEmailReadiness({ env })
   });
 
   return (

@@ -22,6 +22,12 @@ import {
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { assessVercelDeployReadiness } from "../deploy/vercel-path";
+import {
+  assessEmailReadiness,
+  createMemoryEmailTransport,
+  resolveEmailTransport,
+  sendTransactionalEmail
+} from "../email/readiness";
 import type { SiteAuthSession } from "../identity/types";
 import {
   isR2SigningConfigured,
@@ -576,10 +582,93 @@ const stubEmail: TransactionalEmailProvider = {
     return {
       ok: false,
       reason:
-        "Transactional email adapter is stub/preview-only until EH-072."
+        "Transactional email stub — set ESCAPE_HATCH_EMAIL_PROVIDER=resend with RESEND_API_KEY + EMAIL_FROM (EH-072), or use fixture memory transport."
+    };
+  },
+  async send() {
+    return {
+      ok: false,
+      reason: "email_stub",
+      production_safe: false
     };
   }
 };
+
+function createEmailProvider(): TransactionalEmailProvider {
+  const env = loadEnv();
+  const readiness = assessEmailReadiness({ env });
+  if (!readiness.ok) return stubEmail;
+
+  if (readiness.provider === "memory") {
+    const mem = createMemoryEmailTransport({
+      siteId: tryLoadSiteIdFromKit()
+    });
+    return {
+      id: "email",
+      implementation: "memory",
+      async health() {
+        const r = assessEmailReadiness({ env: loadEnv() });
+        if (r.ok) return { ok: true, detail: r.detail };
+        return { ok: false, reason: r.detail };
+      },
+      async send(payload) {
+        const result = await sendTransactionalEmail(mem, payload);
+        if (!result.ok) {
+          return {
+            ok: false,
+            reason: result.reason,
+            production_safe: false
+          };
+        }
+        return {
+          ok: true,
+          message_id: result.message_id,
+          production_safe: false
+        };
+      }
+    };
+  }
+
+  if (readiness.provider === "resend") {
+    return {
+      id: "email",
+      implementation: "resend",
+      async health() {
+        const r = assessEmailReadiness({ env: loadEnv() });
+        if (r.ok) return { ok: true, detail: r.detail };
+        return { ok: false, reason: r.detail };
+      },
+      async send(payload) {
+        const t = resolveEmailTransport({
+          env: loadEnv(),
+          fetchImpl: globalThis.fetch?.bind(globalThis)
+        });
+        if (!t) {
+          return {
+            ok: false,
+            reason: "resend_not_configured",
+            production_safe: false
+          };
+        }
+        const result = await sendTransactionalEmail(t, payload);
+        if (!result.ok) {
+          return {
+            ok: false,
+            reason: result.reason,
+            production_safe: false
+          };
+        }
+        return {
+          ok: true,
+          message_id: result.message_id,
+          production_safe: false
+        };
+      }
+    };
+  }
+
+  return stubEmail;
+}
 
 const manifestDeployment: DeploymentProvider = {
   id: "deployment",
@@ -672,7 +761,7 @@ export function createSiteAdapters(): SiteAdapters {
     storage: createStorageProvider(),
     billing: createBillingProvider(),
     patreon: createPatreonProvider(),
-    email: stubEmail,
+    email: createEmailProvider(),
     deployment: createDeploymentProvider()
   };
 }

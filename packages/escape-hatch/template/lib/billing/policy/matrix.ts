@@ -225,14 +225,14 @@ export const PROVIDER_POLICY_MATRIX: {
       ]
     },
     {
-      id: "email_stub",
+      id: "email_resend_recipe",
       provider: "transactional_email",
-      product: "Transactional email (stub until EH-072)",
+      product: "Transactional email (Resend golden path — EH-072)",
       role: "email",
-      policyUrl: "https://escape-hatch.local/docs/email-policy-pending",
+      policyUrl: "https://resend.com/legal/terms",
       checkedAt: "2026-07-23",
       nextReviewAt: "2026-10-23",
-      reviewer: "escape-hatch-eh052",
+      reviewer: "escape-hatch-eh072",
       eligibilityByCategory: {
         general_eligible_business: "unknown",
         creative_non_adult: "unknown",
@@ -241,11 +241,16 @@ export const PROVIDER_POLICY_MATRIX: {
         other_high_risk: "unknown",
         undeclared: "prohibited"
       },
-      regionNotes: "No live email adapter in EH-052.",
-      accountApprovalNotes: "Stub only.",
-      adapterStatus: "stub_only",
-      migrationRoute: "EH-072 transactional email.",
-      notes: ["Email provider not selectable for paid launch in this slice."]
+      regionNotes:
+        "Technical recipe named (Resend). Adult/content ToS selection remains open — not launch-certified.",
+      accountApprovalNotes:
+        "Creator-owned Resend account; SPF/DKIM/DMARC at creator DNS host.",
+      adapterStatus: "preview_only",
+      migrationRoute: "Keep provider-neutral transport; swap recipe if policy requires.",
+      notes: [
+        "EH-072 ships injectable/memory fixture + Resend env recipe (names only).",
+        "Live SMTP/API and wizard unlock remain deferred; productionSafe false."
+      ]
     }
   ]
 };

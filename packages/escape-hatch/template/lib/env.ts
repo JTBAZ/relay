@@ -119,6 +119,17 @@ export type SiteServerEnv = {
   ESCAPE_HATCH_RELAY_CONNECTOR_LAST_SERVICE_DATE: string | undefined;
   /** Optional pepper for hashing Crosspost Bearer secrets (EH-064). */
   ESCAPE_HATCH_CROSSPOST_TOKEN_PEPPER: string | undefined;
+  /**
+   * Transactional email provider (EH-072): stub (default) | resend | memory.
+   * memory = kit-local outbox rehearsal; resend = golden-path recipe.
+   */
+  ESCAPE_HATCH_EMAIL_PROVIDER: string | undefined;
+  /** Resend API key — server-only; never browser. */
+  RESEND_API_KEY: string | undefined;
+  /** Verified sender address / domain identity (e.g. Studio <noreply@example.art>). */
+  EMAIL_FROM: string | undefined;
+  /** Optional reply-to. */
+  EMAIL_REPLY_TO: string | undefined;
 };
 
 export type SiteEnv = SitePublicEnv & SiteServerEnv;
@@ -173,6 +184,12 @@ export const SITE_ENV_NAMES = {
   optionalCrosspost: [
     "ESCAPE_HATCH_CROSSPOST_TOKEN_PEPPER"
   ] as const,
+  optionalEmail: [
+    "ESCAPE_HATCH_EMAIL_PROVIDER",
+    "RESEND_API_KEY",
+    "EMAIL_FROM",
+    "EMAIL_REPLY_TO"
+  ] as const,
   optionalFutureAdapters: [
     "ESCAPE_HATCH_IDENTITY_PROVIDER",
     "DATABASE_URL",
@@ -215,7 +232,11 @@ export const SITE_ENV_NAMES = {
     "ESCAPE_HATCH_RELAY_CONNECTOR_BILLING_ENABLED",
     "ESCAPE_HATCH_RELAY_CONNECTOR_ENTITLEMENT_STATUS",
     "ESCAPE_HATCH_RELAY_CONNECTOR_LAST_SERVICE_DATE",
-    "ESCAPE_HATCH_CROSSPOST_TOKEN_PEPPER"
+    "ESCAPE_HATCH_CROSSPOST_TOKEN_PEPPER",
+    "ESCAPE_HATCH_EMAIL_PROVIDER",
+    "RESEND_API_KEY",
+    "EMAIL_FROM",
+    "EMAIL_REPLY_TO"
   ] as const
 } as const;
 
@@ -344,7 +365,11 @@ export function loadEnv(): SiteEnv {
     ),
     ESCAPE_HATCH_CROSSPOST_TOKEN_PEPPER: readOptional(
       "ESCAPE_HATCH_CROSSPOST_TOKEN_PEPPER"
-    )
+    ),
+    ESCAPE_HATCH_EMAIL_PROVIDER: readOptional("ESCAPE_HATCH_EMAIL_PROVIDER"),
+    RESEND_API_KEY: readOptional("RESEND_API_KEY"),
+    EMAIL_FROM: readOptional("EMAIL_FROM"),
+    EMAIL_REPLY_TO: readOptional("EMAIL_REPLY_TO")
   };
 }
 
@@ -361,6 +386,8 @@ export function isSecretLikeEnvKey(key: keyof SiteEnv): boolean {
   if (name === "ESCAPE_HATCH_RELAY_CONNECTOR_BILLING_ENABLED") return false;
   if (name === "ESCAPE_HATCH_RELAY_CONNECTOR_ENTITLEMENT_STATUS") return false;
   if (name === "ESCAPE_HATCH_RELAY_CONNECTOR_LAST_SERVICE_DATE") return false;
+  if (name === "ESCAPE_HATCH_EMAIL_PROVIDER") return false;
+  if (name === "EMAIL_FROM" || name === "EMAIL_REPLY_TO") return false;
   if (name === "PATREON_REDIRECT_URI" || name === "PATREON_CAMPAIGN_ID") {
     return false;
   }

@@ -9,6 +9,10 @@ import {
   type DeployReadiness
 } from "../deploy/vercel-path";
 import { assessPathBRecipe, type PathBRecipeReport } from "../deploy/path-b-recipe";
+import {
+  assessEmailReadiness,
+  type EmailReadiness
+} from "../email/readiness";
 import type { AdapterHealthRow } from "./types";
 
 export type ConnectionCard = {
@@ -43,7 +47,7 @@ const NEXT_ACTIONS: Record<string, string> = {
   patreon:
     "Open /admin/patreon — OAuth choice plus EH-063 optional read-only post sync (conflicts never overwrite local edits).",
   email:
-    "Transactional email is a stub until EH-072 — do not treat as delivery-ready.",
+    "Set ESCAPE_HATCH_EMAIL_PROVIDER=resend with RESEND_API_KEY + EMAIL_FROM, or memory for kit-local outbox (EH-072). Complete SPF/DKIM/DMARC at your DNS host.",
   deployment:
     "Open /admin/deploy — EH-070 Vercel or EH-071 Docker Path B fixture rehearsal (not live provider APIs)."
 };
@@ -54,7 +58,7 @@ const WHAT_BREAKS: Record<string, string> = {
   storage: "Premium media delivery fails closed for private_r2 without credentials.",
   billing: "Independent Checkout stays unavailable; stubs never mint live charges.",
   patreon: "Patreon-derived entitlements stay stale or unavailable.",
-  email: "No password-reset / receipt email delivery in this kit.",
+  email: "No password-reset / security email delivery when the adapter is stub.",
   deployment: "No verified production deploy from adapter health alone."
 };
 
@@ -64,7 +68,7 @@ const OWNERS: Record<string, string> = {
   storage: "Creator-owned R2 / local private media",
   billing: "Creator-owned Stripe or alternate provider",
   patreon: "Creator OAuth or Relay-managed (explicit choice)",
-  email: "Not wired (kit stub)",
+  email: "Creator-owned ESP (Resend golden path)",
   deployment: "Creator host (Vercel Path A / Docker Path B)"
 };
 
@@ -84,7 +88,7 @@ const ENV_HINTS: Record<string, string[]> = {
   storage: ["R2_ENDPOINT", "R2_BUCKET", "ESCAPE_HATCH_MEDIA_MODE"],
   billing: ["ESCAPE_HATCH_BILLING_PROVIDER", "STRIPE_SECRET_KEY"],
   patreon: ["ESCAPE_HATCH_PATREON_MODE", "PATREON_CLIENT_ID"],
-  email: [],
+  email: ["ESCAPE_HATCH_EMAIL_PROVIDER", "RESEND_API_KEY", "EMAIL_FROM"],
   deployment: ["NEXT_PUBLIC_SITE_URL", "vercel.json"]
 };
 
@@ -146,6 +150,7 @@ export function buildHealthItems(args: {
   publicMediaHonesty: string;
   deployReadiness?: DeployReadiness | null;
   pathBRecipe?: PathBRecipeReport | null;
+  emailReadiness?: EmailReadiness | null;
 }): HealthItem[] {
   const items: HealthItem[] = [
     {
@@ -213,6 +218,28 @@ export function buildHealthItems(args: {
       next_action: p.ok
         ? "Recipe present — still kit-local; MojoHost not wizard-supported; live compose/TLS deferred."
         : "Restore deploy/docker recipe files from the template chassis."
+    });
+  }
+
+  if (args.emailReadiness) {
+    const e = args.emailReadiness;
+    items.push({
+      id: "email_delivery",
+      title: "Transactional email (EH-072)",
+      ok: e.ok,
+      detail: e.detail,
+      next_action: e.ok
+        ? "Preview readiness only — complete SPF/DKIM/DMARC attestations and a real test-inbox send outside CI; productionSafe false."
+        : "Configure Resend recipe env or ESCAPE_HATCH_EMAIL_PROVIDER=memory for fixture outbox."
+    });
+    items.push({
+      id: "email_dns_checklist",
+      title: "Email DNS / delivery checklist",
+      ok: e.checklist.ok,
+      detail: e.checklist.detail,
+      next_action: e.checklist.ok
+        ? "Checklist attested — still no live DNS probe; re-verify after domain changes."
+        : "Follow SPF/DKIM/DMARC guidance at your DNS host; set EMAIL_FROM and public site URL."
     });
   }
 

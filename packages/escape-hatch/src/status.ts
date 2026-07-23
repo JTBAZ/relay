@@ -1,11 +1,11 @@
 /**
- * Deterministic Escape Hatch capability inventory (through EH-071).
+ * Deterministic Escape Hatch capability inventory (through EH-072).
  * No timestamps, env reads, network, or live data — informational only.
  */
 
 export const ESCAPE_HATCH_STATUS_SCHEMA_VERSION = "escape-hatch-status/1.0.0";
 
-export const ESCAPE_HATCH_SLICE = "EH-071";
+export const ESCAPE_HATCH_SLICE = "EH-072";
 
 export type CapabilityState =
   | "production_safe"
@@ -36,7 +36,7 @@ export type EscapeHatchStatus = {
   capabilities: EscapeHatchCapability[];
   blockers: string[];
   nextSlice: {
-    id: "EH-072";
+    id: "EH-073";
     title: string;
     focus: string[];
   };
@@ -59,7 +59,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "packages/escape-hatch/src/library-truth/kit-io.ts"
     ],
     risk: "high",
-    nextSlice: "EH-072"
+    nextSlice: "EH-073"
   },
   {
     id: "generated-repository",
@@ -84,7 +84,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "packages/escape-hatch/tests/escape-hatch-generated-repo.test.ts"
     ],
     risk: "high",
-    nextSlice: "EH-072"
+    nextSlice: "EH-073"
   },
   {
     id: "premium-patron-theme",
@@ -110,7 +110,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "packages/escape-hatch/tests/escape-hatch-theme.test.ts"
     ],
     risk: "medium",
-    nextSlice: "EH-072"
+    nextSlice: "EH-073"
   },
   {
     id: "soft-persona-gate",
@@ -128,7 +128,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "packages/escape-hatch/template/lib/paywall/copy.ts"
     ],
     risk: "critical",
-    nextSlice: "EH-072"
+    nextSlice: "EH-073"
   },
   {
     id: "public-media-copy",
@@ -143,7 +143,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "packages/escape-hatch/template/lib/media/delivery.ts"
     ],
     risk: "critical",
-    nextSlice: "EH-072"
+    nextSlice: "EH-073"
   },
   {
     id: "client-readable-bundle",
@@ -160,7 +160,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "packages/escape-hatch/src/library-truth/kit-io.ts"
     ],
     risk: "high",
-    nextSlice: "EH-072"
+    nextSlice: "EH-073"
   },
   {
     id: "duplicate-contracts",
@@ -208,7 +208,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "tests/fixtures/patreon/cookie-list-with-media.json"
     ],
     risk: "medium",
-    nextSlice: "EH-072"
+    nextSlice: "EH-073"
   },
   {
     id: "relay-dump-fixtures",
@@ -227,7 +227,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "packages/escape-hatch/tests/escape-hatch-library-truth.test.ts"
     ],
     risk: "medium",
-    nextSlice: "EH-072"
+    nextSlice: "EH-073"
   },
   {
     id: "relay-canonical-reuse",
@@ -250,7 +250,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "src/storage/media-delivery-policy.ts"
     ],
     risk: "informational",
-    nextSlice: "EH-072"
+    nextSlice: "EH-073"
   },
   {
     id: "simplified-access-semantics",
@@ -267,7 +267,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "src/clone/tier-rules.ts"
     ],
     risk: "high",
-    nextSlice: "EH-072"
+    nextSlice: "EH-073"
   },
   {
     id: "generated-site-identity",
@@ -305,7 +305,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "packages/escape-hatch/tests/escape-hatch-entitlements.test.ts"
     ],
     risk: "critical",
-    nextSlice: "EH-072"
+    nextSlice: "EH-073"
   },
   {
     id: "entitlement-evaluator",
@@ -326,7 +326,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "packages/escape-hatch/tests/escape-hatch-entitlements.test.ts"
     ],
     risk: "critical",
-    nextSlice: "EH-072"
+    nextSlice: "EH-073"
   },
   {
     id: "private-media-delivery",
@@ -343,7 +343,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "packages/escape-hatch/tests/escape-hatch-private-media.test.ts"
     ],
     risk: "critical",
-    nextSlice: "EH-072"
+    nextSlice: "EH-073"
   },
   {
     id: "account-paywall-ux",
@@ -368,7 +368,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "packages/escape-hatch/tests/escape-hatch-account-paywall.test.ts"
     ],
     risk: "critical",
-    nextSlice: "EH-072"
+    nextSlice: "EH-073"
   },
   {
     id: "billing-adapters",
@@ -388,7 +388,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "src/payments/provider-adapter.ts"
     ],
     risk: "critical",
-    nextSlice: "EH-072"
+    nextSlice: "EH-073"
   },
   {
     id: "provider-policy",
@@ -404,7 +404,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "packages/escape-hatch/tests/escape-hatch-billing-alternate.test.ts"
     ],
     risk: "critical",
-    nextSlice: "EH-072"
+    nextSlice: "EH-073"
   },
   {
     id: "deploy-adapters",
@@ -432,7 +432,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "packages/escape-hatch/src/zip-kit.ts"
     ],
     risk: "high",
-    nextSlice: "EH-072"
+    nextSlice: "EH-073"
   },
   {
     id: "native-admin",
@@ -475,7 +475,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "packages/escape-hatch/tests/escape-hatch-deploy-docker.test.ts"
     ],
     risk: "high",
-    nextSlice: "EH-072"
+    nextSlice: "EH-073"
   },
   {
     id: "migration-import",
@@ -494,7 +494,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "packages/escape-hatch/tests/escape-hatch-migrate.test.ts"
     ],
     risk: "high",
-    nextSlice: "EH-072"
+    nextSlice: "EH-073"
   },
   {
     id: "library-truth-parity",
@@ -517,7 +517,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "packages/escape-hatch/tests/escape-hatch-library-truth.test.ts"
     ],
     risk: "high",
-    nextSlice: "EH-072"
+    nextSlice: "EH-073"
   },
   {
     id: "backup-restore",
@@ -533,19 +533,21 @@ const CAPABILITIES: EscapeHatchCapability[] = [
     title: "Provider readiness checks",
     state: "preview_only",
     evidence:
-      "EH-030/031 Auth/DB adapters expose env-honest readiness (ok only when Path A Supabase URL/anon or Path B DATABASE_URL+session secret are real and non-placeholder; still labeled preview). EH-050/051 billing readiness is env-honest (stub fail-closed; Stripe ready when secrets or injected client present). No live Stripe network probes in package tests. Executable readiness for provider policy (EH-052), Vercel/domain/DNS (EH-070), and transactional email (EH-072) remains open; passing fixture tests are not production evidence.",
+      "EH-030/031 Auth/DB adapters expose env-honest readiness (ok only when Path A Supabase URL/anon or Path B DATABASE_URL+session secret are real and non-placeholder; still labeled preview). EH-050/051 billing readiness is env-honest (stub fail-closed; Stripe ready when secrets or injected client present). EH-072 transactional email readiness is env-honest (stub fail-closed; Resend/memory preview). No live Stripe/Resend network probes in package tests. Executable readiness for provider policy adult ToS, live Vercel/domain/DNS, and backup remain open; passing fixture tests are not production evidence.",
     sourcePaths: [
       "packages/escape-hatch/template/lib/adapters/index.ts",
       "packages/escape-hatch/template/lib/billing/readiness.ts",
+      "packages/escape-hatch/template/lib/email/readiness.ts",
       "packages/escape-hatch/template/lib/env.ts",
       "packages/escape-hatch/tests/escape-hatch-identity.test.ts",
       "packages/escape-hatch/tests/escape-hatch-portable-identity.test.ts",
       "packages/escape-hatch/tests/escape-hatch-billing-contract.test.ts",
+      "packages/escape-hatch/tests/escape-hatch-email.test.ts",
       "src/payments/provider-adapter.ts",
       "src/deploy/deploy-adapter.ts"
     ],
     risk: "high",
-    nextSlice: "EH-072"
+    nextSlice: "EH-073"
   },
   {
     id: "creator-patreon-oauth",
@@ -565,7 +567,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "packages/escape-hatch/tests/escape-hatch-patreon-oauth.test.ts"
     ],
     risk: "critical",
-    nextSlice: "EH-072"
+    nextSlice: "EH-073"
   },
   {
     id: "relay-managed-patreon-verification",
@@ -583,7 +585,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "tests/escape-hatch-managed-verify.test.ts"
     ],
     risk: "critical",
-    nextSlice: "EH-072"
+    nextSlice: "EH-073"
   },
   {
     id: "relay-managed-connector-billing",
@@ -601,7 +603,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "packages/escape-hatch/tests/escape-hatch-connector-billing.test.ts"
     ],
     risk: "critical",
-    nextSlice: "EH-072"
+    nextSlice: "EH-073"
   },
   {
     id: "oauth-choice-migration-ux",
@@ -620,13 +622,13 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "packages/escape-hatch/tests/escape-hatch-oauth-choice.test.ts"
     ],
     risk: "high",
-    nextSlice: "EH-072"
+    nextSlice: "EH-073"
   }
 ];
 
 const PROTOTYPE_WARNINGS: string[] = [
   "productionSafe is false — this deliverable is prototype/preview-only.",
-  "EH-071 Portable Docker path is preview_only — Compose/proxy/TLS recipe + fixture Path B rehearsal; MojoHost policy candidate only; live daemon/ACME deferred; productionSafe false pending Milestone 3.",
+  "EH-072 transactional email is preview_only — provider-neutral transport, memory outbox fixture, Resend recipe (names only), SPF/DKIM/DMARC guidance checklist; live SMTP/API deferred; productionSafe false pending Milestone 3.",
   "EH-043 OAuth choice / migration UX is preview_only — preference file is non-secret operator intent; runtime mode remains ESCAPE_HATCH_PATREON_MODE; Milestone 4 residuals (live multi-tenant managed outage proof) remain open.",
   "EH-042 Relay connector billing entitlement is preview_only — in-memory webhook store; kit status is an env mirror, not live Stripe Checkout.",
   "EH-040 creator-owned Patreon OAuth is preview_only — mocked fetch in tests; live campaign link still needs creator credentials and Milestone gate.",
@@ -656,7 +658,7 @@ const PROTOTYPE_WARNINGS: string[] = [
 
 const BLOCKERS: string[] = [
   "Milestone 3 security review + browser personas gate remains open before productionSafe can flip.",
-  "Milestone 7 continues with EH-072 transactional email after EH-070/071 fixture deploy paths; Milestone 3 security/browser gate remains open; never disguise adult content to unlock Stripe.",
+  "Milestone 7 continues with EH-073 backup/restore after EH-072 email recipe; Milestone 3 security/browser gate remains open; never disguise adult content to unlock Stripe.",
   "Verified live Vercel/Docker daemon deploys remain open; EH-070/071 are fixture + recipe only. MojoHost is not wizard-supported.",
   "Mature/legal-adult enforcement beyond accounted exclusions remains open.",
   "public_legacy media mode remains available as an explicit residual leakage path — keep productionSafe false while it exists.",
@@ -670,7 +672,7 @@ export function buildEscapeHatchStatus(): EscapeHatchStatus {
     deliverable: "prototype_preview_only",
     productionSafe: false,
     summary:
-      "Escape Hatch through EH-071 delivers CMS ops, optional Patreon/Crosspost, and fixture Vercel + Docker Path B deploy rehearsals with Compose/proxy recipe; productionSafe remains false pending Milestone 3, transactional email (EH-072), and live provider deploys.",
+      "Escape Hatch through EH-072 delivers CMS ops, fixture deploy paths, and a provider-neutral transactional email adapter with Resend golden-path recipe + delivery checklist; productionSafe remains false pending Milestone 3, backup/restore (EH-073), and live provider proofs.",
     prototypeWarnings: [...PROTOTYPE_WARNINGS],
     capabilities: CAPABILITIES.map((c) => ({
       ...c,
@@ -678,12 +680,12 @@ export function buildEscapeHatchStatus(): EscapeHatchStatus {
     })),
     blockers: [...BLOCKERS],
     nextSlice: {
-      id: "EH-072",
-      title: "Transactional email",
+      id: "EH-073",
+      title: "Backup/restore/update manifest",
       focus: [
-        "Provider-neutral adapter",
-        "One validated golden-path recipe",
-        "DNS/delivery checks without claiming productionSafe"
+        "Scheduled backups and isolated restore",
+        "Version/compatibility diagnostics",
+        "Honest recovery without claiming productionSafe"
       ]
     }
   };
