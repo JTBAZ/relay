@@ -18,6 +18,8 @@ No slice is complete because its happy-path mock returns success. Tests must pro
 - tier/access evaluator;
 - entitlement-source union and freshness;
 - slug and redirect behavior;
+- default-home versus active-search gallery state transitions and exact curation restoration;
+- authorized search-field visibility and filter behavior;
 - media policy and signed URL lifetime;
 - webhook normalization/idempotency;
 - provider policy eligibility;
@@ -53,6 +55,8 @@ Every security-critical milestone runs the `security-review` subagent after test
 Generate from each fixture family, install from a clean directory, migrate a clean DB, build, start, and test:
 
 - visitor gallery/post routes;
+- public tier, login/account, and legal routes;
+- legacy `/p/[slug]` redirect and operator-only `/preview`;
 - admin;
 - provider adapters;
 - Docker and Vercel build;
@@ -71,6 +75,7 @@ Every UI slice:
 - loading, empty, degraded, and retry state;
 - one destructive-action confirmation;
 - screenshots and friction notes.
+- no premium body/media/embed/attachment metadata request from unauthorized states.
 
 Every milestone:
 
@@ -79,6 +84,20 @@ Every milestone:
 - generated admin workflow;
 - external provider sandbox/setup steps;
 - launch and handoff.
+
+### 6a. Visitor frontend contract matrix
+
+The canonical matrix is [`14-VISITOR-FRONTEND-PRODUCT-CONTRACT.md`](14-VISITOR-FRONTEND-PRODUCT-CONTRACT.md). At minimum, browser tests prove:
+
+- empty query with default filters shows creator-pinned mosaic plus recent feed;
+- a typed query or any active media/tier/mature filter replaces both sections with one full eligible gallery;
+- clearing query and every filter restores feature order, feed order, URL state, and accessible focus behavior;
+- title/tag/body search does not return unauthorized premium body excerpts or attachment metadata;
+- image stacks, gated video/audio players, and downloads allow and deny by the same server entitlement;
+- locked posts use a generic frame or explicitly public cover without fetching a premium original;
+- `/tiers` presents context-aware actions for public, Patreon, independent, insufficient, and dual-source states;
+- patron chrome contains no Hatch Console or other operator link;
+- desktop, approximately 390px mobile, keyboard, reduced-motion, loading, empty, error, and recovery states pass.
 
 ### 7. Operations tests
 
@@ -154,6 +173,13 @@ Use repository naming conventions when materialized; these names describe owners
 - Every advertised adapter passes real sandbox lifecycle tests.
 - Provider-policy evidence is current and human-approved.
 - No ineligible creator is offered Stripe.
+
+### Visitor frontend contract gate
+
+- Human signoff covers route map, patron/operator separation, two-state gallery, search/filter boundary, post schema, teaser policy, unified tier conversion, controlled branding, media behavior, and exclusions.
+- EH-054 does not pass until `/tiers` mapping and duplicate-billing behavior match the contract.
+- EH-060/EH-061 do not pass until post/media/tier/admin behavior matches the contract.
+- Known preview drift is recorded as planned work or compatibility migration, never reported as complete.
 
 ### UX gate
 

@@ -66,7 +66,7 @@ export function AdminOverview({ model }: { model: AdminOverviewModel }) {
                 : "unknown"}
           </strong>
           {allDegraded
-            ? " — billing/deploy adapters remain stub/degraded until EH-050/070."
+            ? " — billing contract EH-050 (stub/shell); live Stripe + deploy remain EH-051/070."
             : anyOk
               ? " — Auth/DB/storage may report configured readiness; not a production-safe deploy claim."
               : null}

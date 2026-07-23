@@ -36,17 +36,17 @@ afterEach(() => {
 });
 
 describe("EH-034 status + manifest", () => {
-  it("advances slice to EH-043 with next EH-050 and productionSafe false", () => {
+  it("advances slice to EH-051 with next EH-052 and productionSafe false", () => {
     const status = buildEscapeHatchStatus();
-    expect(ESCAPE_HATCH_SLICE).toBe("EH-043");
-    expect(status.slice).toBe("EH-043");
+    expect(ESCAPE_HATCH_SLICE).toBe("EH-051");
+    expect(status.slice).toBe("EH-051");
     expect(status.productionSafe).toBe(false);
-    expect(status.nextSlice.id).toBe("EH-050");
-    expect(status.nextSlice.title).toMatch(/Billing|provider|contract/i);
+    expect(status.nextSlice.id).toBe("EH-052");
+    expect(status.nextSlice.title).toMatch(/policy/i);
     const cap = status.capabilities.find((c) => c.id === "account-paywall-ux");
     expect(cap?.state).toBe("preview_only");
     expect(cap?.evidence).toMatch(/EH-034|\/account|PaywallOverlay|productionSafe remains false/i);
-    expect(cap?.nextSlice).toBe("EH-050");
+    expect(cap?.nextSlice).toBe("EH-052");
     expect(
       status.blockers.some((b) => /Account\/paywall UX.*EH-034/i.test(b))
     ).toBe(false);
@@ -70,7 +70,7 @@ describe("EH-034 status + manifest", () => {
       productionSafe: boolean;
       feature_flags: Record<string, boolean>;
     };
-    expect(manifest.slice).toBe("EH-043");
+    expect(manifest.slice).toBe("EH-051");
     expect(manifest.productionSafe).toBe(false);
     expect(manifest.feature_flags.hard_paywall).toBe(true);
     expect(existsSync(join(result.outDir, "app/account/page.tsx"))).toBe(true);

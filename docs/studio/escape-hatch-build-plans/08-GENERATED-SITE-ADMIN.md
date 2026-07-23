@@ -6,6 +6,8 @@ The creator should operate the delivered site from its own admin, not from Supab
 
 UI builders use `frontend-design`, `vercel-react-best-practices`, and `web-design-guidelines`. The master planner browser-tests each workflow with realistic creator data.
 
+Patron-facing publish controls and preview states conform to [`14-VISITOR-FRONTEND-PRODUCT-CONTRACT.md`](14-VISITOR-FRONTEND-PRODUCT-CONTRACT.md).
+
 ## Navigation
 
 Keep the admin narrow:
@@ -42,12 +44,14 @@ Creator can:
 - create, edit, preview, publish, unpublish, schedule, and duplicate;
 - add title, sanitized rich body, tags, embeds/links, and community CTA;
 - attach/reorder images, video, audio, and downloads;
+- pin/unpin and order a post in the homepage feature mosaic;
+- publish/remove an explicitly public cover for a locked post;
 - choose Public, All paid members, exact tiers, or tier-or-higher;
 - see imported/native/crossposted origin and Patreon sync state;
 - resolve sync conflicts without overwriting local work;
 - copy a patron-facing link.
 
-Every access change includes “View as” simulation before save. Schedule and publish mutations are server-authorized and idempotent.
+Every access change includes “View as” simulation before save. View as covers public, signed-in unentitled, Patreon, independent subscriber, insufficient tier, stale/expired, dual-source, and admin states. Schedule and publish mutations are server-authorized and idempotent.
 
 ## Media
 
@@ -68,6 +72,7 @@ Premium previews use authenticated delivery. The admin never constructs permanen
 - edit benefit/display copy without changing provider identity;
 - retire a tier with migration preview;
 - test access personas.
+- preview the unified public `/tiers` card, Patreon continuity copy, checkout destination, and duplicate-billing action state.
 
 Live price/provider changes require recent authentication and billing sandbox/preflight checks where feasible.
 
@@ -100,11 +105,14 @@ Use the single premium theme contract:
 - logo/avatar and hero media;
 - title, introduction, community/Discord link;
 - accent and approved typography pairing;
-- light/dark choice where supported;
+- one fixed creator-published scheme selected from supported schemes;
 - gallery density/cover crop;
 - paywall copy.
+- feature-post order and locked-post public-cover treatment.
 
 Changes stage in preview and publish as a versioned configuration. No raw scripts or CSS.
+
+Appearance preview includes both homepage modes: pinned feature mosaic plus recent feed with no search state, and the full gallery produced by a query or active filter. Clearing preview search state must restore the staged feature order exactly.
 
 ## Connections
 

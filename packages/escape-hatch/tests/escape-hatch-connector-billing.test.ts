@@ -38,13 +38,13 @@ afterEach(() => {
 });
 
 describe("EH-042 status", () => {
-  it("advances slice to EH-043 with next EH-050 and productionSafe false", () => {
+  it("advances slice to EH-051 with next EH-052 and productionSafe false", () => {
     const status = buildEscapeHatchStatus();
-    expect(ESCAPE_HATCH_SLICE).toBe("EH-043");
-    expect(status.slice).toBe("EH-043");
+    expect(ESCAPE_HATCH_SLICE).toBe("EH-051");
+    expect(status.slice).toBe("EH-051");
     expect(status.productionSafe).toBe(false);
-    expect(status.nextSlice.id).toBe("EH-050");
-    expect(status.nextSlice.title).toMatch(/Billing|provider|contract/i);
+    expect(status.nextSlice.id).toBe("EH-052");
+    expect(status.nextSlice.title).toMatch(/policy/i);
     expect(status.blockers.some((b) => /EH-042/i.test(b))).toBe(false);
     expect(status.blockers.some((b) => /belongs to EH-043/i.test(b))).toBe(
       false
@@ -53,7 +53,7 @@ describe("EH-042 status", () => {
       (c) => c.id === "relay-managed-connector-billing"
     );
     expect(cap?.state).toBe("preview_only");
-    expect(cap?.nextSlice).toBe("EH-050");
+    expect(cap?.nextSlice).toBe("EH-052");
     expect(cap?.evidence).toMatch(/webhook|grace|feature flag/i);
   });
 });

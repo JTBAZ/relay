@@ -26,6 +26,7 @@ The target is a complete Next.js TypeScript application with:
 8. The visual chassis is one premium theme derived from Relay's patron gallery. Branding is controlled, not a general page builder.
 9. Comments and favorites are out of scope. The product supports posts, media, attachments, tiers, accounts, and access; creators may link Discord for community.
 10. The delivered package has a 90-day defect warranty. Ongoing package maintenance is paid; maintenance of Relay-managed OAuth is included only while that service remains active.
+11. The production patron site follows [`14-VISITOR-FRONTEND-PRODUCT-CONTRACT.md`](14-VISITOR-FRONTEND-PRODUCT-CONTRACT.md): a creator-pinned feature mosaic and recent feed at rest, a full eligible gallery during search/filter, post-first rich content, a unified tier catalog, and strict separation from Hatch Console.
 
 ## Reading order
 
@@ -42,10 +43,12 @@ The target is a complete Next.js TypeScript application with:
 11. [`11-BUILD-BATTING-ORDER.md`](11-BUILD-BATTING-ORDER.md)
 12. [`12-HUMAN-SIGNOFF-AND-OWNERSHIP-PACKET.md`](12-HUMAN-SIGNOFF-AND-OWNERSHIP-PACKET.md)
 13. [`13-PROVIDER-POLICY-EVIDENCE.md`](13-PROVIDER-POLICY-EVIDENCE.md)
+14. [`14-VISITOR-FRONTEND-PRODUCT-CONTRACT.md`](14-VISITOR-FRONTEND-PRODUCT-CONTRACT.md)
 
 ## Authority and reuse
 
 - Product contract: this folder.
+- Visitor frontend authority: [`14-VISITOR-FRONTEND-PRODUCT-CONTRACT.md`](14-VISITOR-FRONTEND-PRODUCT-CONTRACT.md).
 - Existing generator and prototype: [`packages/escape-hatch`](../../../packages/escape-hatch/).
 - Canonical Patreon data: [`src/ingest`](../../../src/ingest/) and [`docs/patreon-ingest-canonical.md`](../../patreon-ingest-canonical.md).
 - Clone and access semantics: [`src/clone`](../../../src/clone/).

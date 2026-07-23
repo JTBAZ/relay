@@ -63,11 +63,11 @@ function setRealLookingIdentityEnv(): void {
 describe("EH-030 status (preserved under EH-032)", () => {
   it("keeps EH-030 supabase capability evidence under EH-032 with next EH-034", () => {
     const status = buildEscapeHatchStatus();
-    expect(ESCAPE_HATCH_SLICE).toBe("EH-043");
-    expect(status.slice).toBe("EH-043");
+    expect(ESCAPE_HATCH_SLICE).toBe("EH-051");
+    expect(status.slice).toBe("EH-051");
     expect(status.productionSafe).toBe(false);
-    expect(status.nextSlice.id).toBe("EH-050");
-    expect(status.nextSlice.title).toMatch(/Billing|provider|contract/i);
+    expect(status.nextSlice.id).toBe("EH-052");
+    expect(status.nextSlice.title).toMatch(/policy/i);
     expect(status.blockers.some((b) => /EH-034|Milestone 3|paywall UX/i.test(b))).toBe(true);
     expect(status.blockers.some((b) => /No hard patron identity/i.test(b))).toBe(
       false
@@ -79,7 +79,7 @@ describe("EH-030 status (preserved under EH-032)", () => {
     expect(identity?.state).toBe("preview_only");
     expect(identity?.evidence).toMatch(/RLS|Supabase|portable/i);
     expect(identity?.evidence).toMatch(/productionSafe remains false/i);
-    expect(identity?.nextSlice).toBe("EH-050");
+    expect(identity?.nextSlice).toBe("EH-052");
     expect(identity?.sourcePaths).toEqual(
       expect.arrayContaining([
         "packages/escape-hatch/template/db/migrations/0002_identity_rls.sql",

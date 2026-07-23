@@ -59,6 +59,8 @@ OPERATIONS.md
 
 ## Visitor routes
 
+The route map and patron-facing behavior are governed by [`14-VISITOR-FRONTEND-PRODUCT-CONTRACT.md`](14-VISITOR-FRONTEND-PRODUCT-CONTRACT.md).
+
 - `/` — branded gallery.
 - `/posts/[slug]` — post detail with server-resolved access.
 - `/tiers` — independent tier catalog and Patreon-transition explanation.
@@ -66,6 +68,8 @@ OPERATIONS.md
 - `/account` — active access sources, billing management, Patreon link, migration guidance.
 - `/community` or configured external link — Discord/community handoff.
 - `/privacy`, `/terms`, `/content-policy` — creator-configured legal surfaces with clear template status.
+
+`/preview` is an authenticated operator preview, not the production homepage. Legacy `/p/[slug]` links redirect to `/posts/[slug]`. Patron chrome never links to Hatch Console.
 
 ## Admin routes
 
@@ -84,6 +88,8 @@ Defined fully in [`08-GENERATED-SITE-ADMIN.md`](08-GENERATED-SITE-ADMIN.md). At 
 ### Content
 
 Preserve title, sanitized rich body, publish timestamp, tags, stable slug, media ordering/roles, attachments, source provider IDs, and provenance. Source IDs are immutable integration keys; display slugs may change with redirect history.
+
+The versioned post contract includes sanitized `body_html`, generated `body_plain`, creator-published feature position, optional public-cover reference, ordered media and embeds, and structured secure attachments. Posts are primary; attachments are not a separate storefront authority. Full field and rendering rules are defined in the visitor frontend contract.
 
 ### Access
 
@@ -106,6 +112,8 @@ Generated client code never contains a second authoritative access implementatio
 - Downloads set safe content disposition and mime handling.
 - Caches cannot turn a premium response public.
 - Public derivatives and premium originals use distinguishable policy.
+- Locked posts use a generic frame by default. An optional teaser cover must be a separate explicitly public object; automatic blur never fetches a premium original.
+- Images, authenticated video/audio players, and secure downloads use the same server entitlement result.
 
 ### Accounts
 
@@ -142,6 +150,8 @@ Use the Relay patron gallery as the source, then remove Relay-network features t
 - remove Relay navigation, discovery economy, comments, favorites, and network-specific actions;
 - use creator brand assets and controlled tokens;
 - do not expose Hatch Console chrome on the live patron site.
+
+At rest, the homepage presents creator-pinned features followed by reverse-chronological recent posts. A query or active media/tier/mature filter replaces those sections with one full eligible-gallery result set. Clearing all search state restores the creator curation exactly. Search preserves Relay title/tag/body, media-kind, tier, My tier, and mature-filter behavior without importing Relay collections, random walk, comments, favorites, or network discovery.
 
 ## Manifest
 

@@ -14,6 +14,21 @@ Package generation alone is not completion.
 - Exclusions and unresolved source limitations accepted explicitly.
 - Public/member/tier personas match Patreon expectations.
 - Visitor site reflects creator brand and works on desktop/mobile.
+- Creator accepts one fixed published scheme and the controlled branding boundary.
+- Creator approves feature-post order and every optional public cover used on a locked post.
+
+### Patron frontend
+
+- Production `/`, `/posts/[slug]`, `/tiers`, `/login`, `/account`, and legal routes match [`14-VISITOR-FRONTEND-PRODUCT-CONTRACT.md`](14-VISITOR-FRONTEND-PRODUCT-CONTRACT.md).
+- Patron chrome contains no Hatch Console or operator link; `/preview` remains operator-only.
+- Empty search state shows the approved feature mosaic and recent feed.
+- A typed query or active media/tier/mature filter shows one full eligible gallery; clearing all search state restores curation exactly.
+- Search does not expose premium body text, attachment metadata, media URLs, object keys, or highlights to unauthorized accounts.
+- Locked posts use the approved generic frame or an explicitly public cover, never a fetched premium original.
+- Image stacks, video/audio players, secure downloads, rich body, and attachment order match the approved post.
+- The unified tier catalog routes existing Patreon patrons and new independent subscribers correctly.
+- Loading, empty, not-found, media failure, stale, expired, dual-source, managed-outage, checkout-failure, and restored states provide a safe next action.
+- Desktop, approximately 390px mobile, keyboard, focus, contrast, and reduced-motion checks pass.
 
 ### Accounts and access
 
@@ -22,6 +37,7 @@ Package generation alone is not completion.
 - Independent test subscriber receives correct access.
 - Lower-tier/public account cannot retrieve premium bytes.
 - Dual-source patron is not prompted into accidental duplicate billing.
+- Signed-in unentitled and insufficient-tier accounts receive the correct tier action without premium metadata leakage.
 - Manual grant and revocation work.
 
 ### Patreon choice
@@ -105,7 +121,9 @@ No secrets.
 
 - administrator login/recovery;
 - create/schedule/gate a post;
+- pin/order feature posts and publish/remove a safe public cover;
 - upload/replace media;
+- operate gallery search/filter preview and verify default-state restoration;
 - manage tiers/prices/patrons;
 - inspect health;
 - backup/restore;

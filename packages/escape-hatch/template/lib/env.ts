@@ -53,10 +53,20 @@ export type SiteServerEnv = {
   R2_PUBLIC_BASE_URL: string | undefined;
   /** Optional R2/S3 region (default auto). */
   R2_REGION: string | undefined;
-  /** Stripe keys — optional placeholders for EH-050/051; not required for build. */
+  /** Stripe keys — optional; required for EH-051 live adapter. Not required for build. */
   STRIPE_SECRET_KEY: string | undefined;
   STRIPE_WEBHOOK_SECRET: string | undefined;
   NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: string | undefined;
+  /**
+   * Billing provider selection (EH-050/051): stub (default) | stripe (EH-051 adapter).
+   * Unset → stub. Stripe still fails closed without non-placeholder secrets.
+   */
+  ESCAPE_HATCH_BILLING_PROVIDER: string | undefined;
+  /**
+   * Test-only webhook secret when injecting a mock Stripe client without STRIPE_WEBHOOK_SECRET.
+   * Never use in production.
+   */
+  ESCAPE_HATCH_BILLING_TEST_WEBHOOK_SECRET: string | undefined;
   /**
    * Patreon verification mode (EH-040/041): creator_oauth | relay_managed | none.
    * Unset → stub (not live).
@@ -174,6 +184,8 @@ export const SITE_ENV_NAMES = {
     "STRIPE_SECRET_KEY",
     "STRIPE_WEBHOOK_SECRET",
     "NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY",
+    "ESCAPE_HATCH_BILLING_PROVIDER",
+    "ESCAPE_HATCH_BILLING_TEST_WEBHOOK_SECRET",
     "ESCAPE_HATCH_PATREON_MODE",
     "PATREON_CLIENT_ID",
     "PATREON_CLIENT_SECRET",
@@ -258,6 +270,12 @@ export function loadEnv(): SiteEnv {
     STRIPE_WEBHOOK_SECRET: readOptional("STRIPE_WEBHOOK_SECRET"),
     NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: readOptional(
       "NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY"
+    ),
+    ESCAPE_HATCH_BILLING_PROVIDER: readOptional(
+      "ESCAPE_HATCH_BILLING_PROVIDER"
+    ),
+    ESCAPE_HATCH_BILLING_TEST_WEBHOOK_SECRET: readOptional(
+      "ESCAPE_HATCH_BILLING_TEST_WEBHOOK_SECRET"
     ),
     ESCAPE_HATCH_PATREON_MODE: readOptional("ESCAPE_HATCH_PATREON_MODE"),
     PATREON_CLIENT_ID: readOptional("PATREON_CLIENT_ID"),

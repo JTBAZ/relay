@@ -1,8 +1,23 @@
 /**
- * Typed adapter surfaces for the generated kit (EH-030).
+ * Typed adapter surfaces for the generated kit (EH-030 / EH-050 billing).
  * Stub adapters remain for unset env; Supabase implementations activate when configured.
+ * Billing: contract EH-050; creator-owned Stripe adapter EH-051.
  */
 
+import type {
+  BillingAccountConnection,
+  BillingCapabilityMatrix,
+  BillingCheckoutSession,
+  BillingMigrationMapping,
+  BillingPolicyDeclaration,
+  BillingPortalSession,
+  BillingPrice,
+  BillingProduct,
+  BillingReadinessReport,
+  BillingResult,
+  BillingWebhookEnvelope,
+  NormalizeWebhookResult
+} from "../billing/types";
 import type { SiteAuthSession } from "../identity/types";
 
 export type AdapterHealth =
@@ -41,10 +56,91 @@ export type StorageProvider = {
   ): Promise<{ url: string | null; expiresAt?: string; reason?: string }>;
 };
 
+/**
+ * Shared BillingProvider contract (EH-050 / EH-051).
+ * Stub is default; `implementation: "stripe"` is the creator-owned Stripe adapter.
+ * Entitlement service consumes normalized events — never provider client payloads.
+ */
 export type BillingProvider = {
   readonly id: "billing";
   readonly implementation: "stub" | "stripe";
   health(): Promise<AdapterHealth>;
+
+  /** Connect and validate creator-owned processor account. */
+  connectAccount(args?: {
+    returnUrl?: string;
+    refreshUrl?: string;
+  }): Promise<BillingResult<BillingAccountConnection>>;
+  validateAccount(): Promise<BillingResult<BillingAccountConnection>>;
+
+  /** List / create / update tier products and recurring prices. */
+  listProducts(): Promise<BillingResult<BillingProduct[]>>;
+  createProduct(input: {
+    name: string;
+    tierId?: string | null;
+  }): Promise<BillingResult<BillingProduct>>;
+  updateProduct(input: {
+    productId: string;
+    name?: string;
+    active?: boolean;
+    tierId?: string | null;
+  }): Promise<BillingResult<BillingProduct>>;
+  listPrices(productId?: string): Promise<BillingResult<BillingPrice[]>>;
+  createPrice(input: {
+    productId: string;
+    currency: string;
+    unitAmountCents: number;
+    interval: "month" | "year" | "week" | "day";
+  }): Promise<BillingResult<BillingPrice>>;
+  updatePrice(input: {
+    priceId: string;
+    active?: boolean;
+  }): Promise<BillingResult<BillingPrice>>;
+
+  /** Hosted or embedded checkout session. */
+  createCheckoutSession(input: {
+    priceId: string;
+    successUrl: string;
+    cancelUrl: string;
+    customerId?: string | null;
+    authUserId?: string | null;
+    siteId: string;
+    tierIds?: readonly string[];
+    mode?: "hosted" | "embedded";
+  }): Promise<BillingResult<BillingCheckoutSession>>;
+
+  /** Account-management portal (or documented equivalent). */
+  createCustomerPortalSession(input: {
+    customerId: string;
+    returnUrl: string;
+  }): Promise<BillingResult<BillingPortalSession>>;
+
+  /** Verify signed webhooks (fail closed when not implemented). */
+  verifyWebhookSignature(input: {
+    rawBody: string | Buffer;
+    signatureHeader: string | null;
+  }): Promise<BillingResult<{ verified: true }>>;
+
+  /**
+   * Normalize a verified webhook envelope into a canonical lifecycle event.
+   * Always fail closed when signatureVerified is false.
+   */
+  normalizeWebhookEvent(
+    envelope: BillingWebhookEnvelope
+  ): NormalizeWebhookResult;
+
+  /** Capability / readiness / policy declaration. */
+  getCapabilityMatrix(): BillingCapabilityMatrix;
+  getReadiness(): BillingReadinessReport;
+  getPolicyDeclaration(): BillingPolicyDeclaration;
+
+  /** Sandbox / test mode honesty. */
+  isSandboxMode(): boolean;
+
+  /** Export customer/subscription mapping for migration. */
+  exportMigrationMapping(siteId: string): Promise<
+    BillingResult<BillingMigrationMapping>
+  >;
 };
 
 export type PatreonAuthorizeResult =

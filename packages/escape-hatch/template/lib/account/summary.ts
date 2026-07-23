@@ -3,6 +3,7 @@
  * Never trusts client persona or client-passed entitlement claims.
  */
 
+import { createSiteAdapters } from "../adapters";
 import {
   isPortableIdentityConfigured,
   isSupabaseIdentityConfigured,
@@ -95,9 +96,17 @@ export async function loadAccountSummary(
   const provider = toProviderUx(mode);
   const softPersonaAllowed = provider === "none";
 
-  const billingConfigured = false;
-  const billingNote =
-    "Independent billing checkout is not configured yet (EH-050+). Membership may come from Patreon sync, manual grants, or staff — not a live Stripe Checkout in this kit.";
+  const billing = createSiteAdapters().billing;
+  const billingReady = billing.getReadiness();
+  const billingConfigured =
+    billing.implementation === "stripe" && billingReady.ok;
+  const billingNote = billingConfigured
+    ? billing.isSandboxMode()
+      ? "Independent Stripe billing is configured in test/sandbox mode (EH-051). Membership updates come from verified webhooks — not from the browser alone."
+      : "Independent Stripe billing is configured (EH-051). Membership updates come from verified webhooks — not from the browser alone."
+    : billing.implementation === "stripe"
+      ? "Stripe billing adapter selected but credentials are incomplete — Checkout/Portal remain closed until STRIPE_SECRET_KEY and STRIPE_WEBHOOK_SECRET are set."
+      : "Independent billing checkout is not configured (stub). Set ESCAPE_HATCH_BILLING_PROVIDER=stripe with creator Stripe credentials (EH-051), or use Patreon sync / manual grants.";
 
   const withPatreon = (
     base: Omit<AccountSummaryView, "patreon">

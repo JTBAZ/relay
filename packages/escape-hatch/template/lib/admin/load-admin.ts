@@ -197,7 +197,7 @@ export async function loadAdminOverview(): Promise<AdminOverviewModel> {
 
   const blockers: string[] = [
     "No signed private media delivery (EH-033) — public/media may still leak premium bytes",
-    "Billing adapter is stub-only (EH-050)",
+    "Billing adapter: EH-050 contract + stub (Stripe live is EH-051)",
     "Entitlement service freshness/audit (EH-032) not fully wired"
   ];
   if (identity.mode === "local_preview") {

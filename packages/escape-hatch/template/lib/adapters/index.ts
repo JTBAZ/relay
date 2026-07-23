@@ -1,9 +1,10 @@
 /**
- * Adapter bundle for the generated kit (EH-041).
+ * Adapter bundle for the generated kit (EH-041 / EH-050 billing contract).
  * Auth/DB report readiness only when env is real and non-placeholder;
  * storage signs private GETs when private_r2 credentials are real;
  * Patreon creator_oauth (EH-040) or relay_managed (EH-041) when configured.
- * productionSafe remains false (Milestone 3 UX/security gate + deploy/billing open).
+ * Billing defaults to stub; ESCAPE_HATCH_BILLING_PROVIDER=stripe selects EH-051 adapter.
+ * productionSafe remains false (Milestone 3 UX/security gate + deploy/policy open).
  */
 
 import {
@@ -42,6 +43,10 @@ import {
   previewAssertionReplayStore,
   resolveRelayCallbackUrl
 } from "../patreon/relay-managed";
+import {
+  createStubBillingProvider,
+  createStripeBillingProvider
+} from "../billing";
 import { createMemoryPatreonLinkStore } from "../patreon/store";
 import type {
   AuthProvider,
@@ -302,16 +307,26 @@ const r2Storage: StorageProvider = {
   }
 };
 
-const stubBilling: BillingProvider = {
-  id: "billing",
-  implementation: "stub",
-  async health() {
-    return {
-      ok: false,
-      reason: "Billing adapter is a typed stub/preview-only until EH-050/051."
-    };
-  }
-};
+const stubBilling: BillingProvider = createStubBillingProvider();
+
+/**
+ * Stripe adapter — not selected by default. Export for EH-051 wiring / tests.
+ * createSiteAdapters() returns stub until ESCAPE_HATCH_BILLING_PROVIDER=stripe.
+ * Without real STRIPE_* secrets the adapter still fails closed on money paths.
+ */
+export const stripeBillingProvider: BillingProvider =
+  createStripeBillingProvider();
+
+/** @deprecated Use stripeBillingProvider */
+export const stripeBillingShell: BillingProvider = stripeBillingProvider;
+
+function createBillingProvider(): BillingProvider {
+  const raw = (loadEnv().ESCAPE_HATCH_BILLING_PROVIDER ?? "stub")
+    .trim()
+    .toLowerCase();
+  if (raw === "stripe") return createStripeBillingProvider();
+  return stubBilling;
+}
 
 const stubPatreon: PatreonVerificationProvider = {
   id: "patreon",
@@ -601,7 +616,7 @@ export function createSiteAdapters(): SiteAdapters {
     auth: createAuthProvider(),
     database: createDatabaseProvider(),
     storage: createStorageProvider(),
-    billing: stubBilling,
+    billing: createBillingProvider(),
     patreon: createPatreonProvider(),
     email: stubEmail,
     deployment: manifestDeployment

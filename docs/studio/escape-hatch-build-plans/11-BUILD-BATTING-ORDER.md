@@ -124,7 +124,7 @@ Execute one documented slice at a time. The program docs define scope and depend
 ### EH-043 OAuth choice and migration UX
 
 - **Builder:** Cursor Grok 4.5 High
-- **Status:** Implemented (preview_only; `productionSafe: false`). Neutral `/admin/patreon/choice` (neither path preselected), disclosure cards, setup/health, switch-off to `creator_oauth` without rebuild. Next: **EH-050**.
+- **Status:** Implemented (preview_only; `productionSafe: false`). Neutral `/admin/patreon/choice` (neither path preselected), disclosure cards, setup/health, switch-off to `creator_oauth` without rebuild. Next: **EH-050** (complete) → **EH-051**.
 
 **Milestone 4 gate residuals:** kit/CI honesty for both paths + bounded managed outage copy + no-rebuild migration; live multi-tenant managed outage drill remains open. `productionSafe` stays false.
 
@@ -133,12 +133,19 @@ Execute one documented slice at a time. The program docs define scope and depend
 ### EH-050 Billing provider contract
 
 - **Builder:** Cursor Grok 4.5 High
-- Normalized lifecycle/capability/policy interface and entitlement events.
+- **Status:** Implemented (preview_only; `productionSafe: false`). Shared `BillingProvider` contract, normalized lifecycle events, billing entitlement grant/revoke (`source: billing`), stub default + fail-closed Stripe shell. Next: **EH-051** (complete) → **EH-052**.
+
+### Visitor Frontend Product Contract gate
+
+- **Owner:** Sol planning/review; implementation remains Cursor Grok 4.5 High.
+- **Contract:** [`14-VISITOR-FRONTEND-PRODUCT-CONTRACT.md`](14-VISITOR-FRONTEND-PRODUCT-CONTRACT.md).
+- **Status:** Accepted contract required before EH-054 and EH-060/EH-061 acceptance. EH-051/EH-052/EH-053 may proceed because provider adapters and policy evidence are presentation-independent.
+- Locks canonical patron/operator routes, controlled cold-gallery system, pinned mosaic plus recent feed, query/filter full-gallery mode, post body/media/attachment shape, minimal locked frame with optional public cover, unified tier conversion, responsive/accessibility baseline, and persona/network acceptance.
 
 ### EH-051 Stripe eligible-business adapter
 
 - **Builder:** Cursor Grok 4.5 High
-- Creator-owned Stripe Billing/Checkout/Portal/webhooks and sandbox lifecycle.
+- **Status:** Implemented (preview_only; `productionSafe: false`). Creator-owned Stripe Billing/Checkout/Portal/signed webhooks with injectable CI client, `/api/billing/*` routes, checkout/portal hooks for `/tiers` and `/account`. Next: **EH-052**.
 
 ### EH-052 Provider policy router
 
@@ -153,7 +160,7 @@ Execute one documented slice at a time. The program docs define scope and depend
 ### EH-054 Tier and billing wizard
 
 - **Builder:** Cursor Grok 4.5 High
-- Mapping, preflight, duplicate-billing safeguards, sandbox results.
+- Mapping, preflight, duplicate-billing safeguards, sandbox results, unified `/tiers` catalog preview, and context-aware Patreon/independent actions per the visitor frontend contract.
 
 **Gate:** every advertised adapter passes sandbox parity; ineligible creators are never offered Stripe.
 
@@ -162,12 +169,12 @@ Execute one documented slice at a time. The program docs define scope and depend
 ### EH-060 Posts/media
 
 - **Builder:** Cursor Grok 4.5 High
-- Native create/edit/schedule/publish, R2 uploads, access simulation.
+- Native create/edit/schedule/publish, sanitized rich body, feature/public-cover controls, searchable two-state gallery, image/video/audio/attachment delivery, R2 uploads, and access simulation.
 
 ### EH-061 Tiers/patrons
 
 - **Builder:** Cursor Grok 4.5 High
-- Tier mapping/retirement, access reasons, grants, session controls.
+- Tier mapping/retirement, public tier catalog, context-aware conversion actions, access reasons, grants, session controls, and visitor-contract persona preview.
 
 ### EH-062 Appearance/connections/health
 

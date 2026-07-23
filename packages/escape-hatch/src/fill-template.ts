@@ -394,7 +394,7 @@ export function stampEscapeHatchManifest(
   parsed.generated_at = bundle.generated_at;
   parsed.creator_id = bundle.creator_id;
   parsed.site_id = bundle.site_id ?? bundle.creator_id;
-  parsed.slice = "EH-043";
+  parsed.slice = "EH-051";
   parsed.productionSafe = false;
   parsed.schema_version = "eh-db/0005_patreon_oauth";
   parsed.chassis_version = "0.8.0";
@@ -416,6 +416,13 @@ export function stampEscapeHatchManifest(
   if (parsed.adapters?.patreon) {
     parsed.adapters.patreon = {
       id: "creator_oauth_or_relay_managed",
+      version: "0.1.0",
+      state: "preview_only"
+    };
+  }
+  if (parsed.adapters?.billing) {
+    parsed.adapters.billing = {
+      id: "stub_contract_eh050",
       version: "0.1.0",
       state: "preview_only"
     };
@@ -520,7 +527,7 @@ export function fillTemplate(opts: FillOptions): FillResult {
       mediaLayout === "private"
         ? "Premium media is staged under `data/private-media` and delivered via `/api/media/{id}` after server entitlement checks (EH-033). Locked gallery/post UI never fetches those bytes (EH-034/035). Do not set `ESCAPE_HATCH_MEDIA_MODE=public_legacy` in production."
         : "WARNING: `public_legacy` media layout copied premium bytes into `/public/media` — residual leakage; not production-safe.",
-      "`productionSafe: false` — creator Patreon OAuth (EH-040) + Relay-managed verification (EH-041) + connector billing (EH-042) + OAuth choice/migration UX (EH-043) + visitor visual + account/paywall UX present, but Milestone 3 security/browser gate, billing adapters (EH-050+), and verified deploy remain open.",
+      "`productionSafe: false` — creator Patreon OAuth (EH-040) + Relay-managed verification (EH-041) + connector billing (EH-042) + OAuth choice/migration UX (EH-043) + billing contract (EH-050) + Stripe adapter (EH-051) + visitor visual + account/paywall UX present, but Milestone 3 security/browser gate, provider policy (EH-052), and verified deploy remain open.",
       "",
       `Contract: ${bundle.contract_version}`,
       "",
@@ -538,12 +545,13 @@ export function fillTemplate(opts: FillOptions): FillResult {
       "`/` redirects to Library. Library truth rebuilds parity from data/ artifacts on every load (never trusts a tampered report alone).",
       "Admin mutations: local-operator when identity unset; staff session when Path A/B configured. Soft personas never authorize admin.",
       "",
-      "## Chassis + identity + entitlements + private media + account UX + visitor visual + Patreon OAuth / Relay-managed verify + connector billing + OAuth choice (EH-043)",
+      "## Chassis + identity + entitlements + private media + account UX + visitor visual + Patreon + Stripe billing (EH-051)",
       "",
       "- Typed env: `lib/env.ts` + `.env.example` (names only — never commit secrets)",
       "- Media: `ESCAPE_HATCH_MEDIA_MODE=local_private|private_r2` (default prefers private); R2 env names for signed GETs",
       "- SQL migrations: Path A `0001`+`0002`+`0004_supabase`+`0005_supabase`; Path B `0001`+`0003`+`0004_portable`+`0005_portable`",
       "- Patreon: choose path at `/admin/patreon/choice`; set `ESCAPE_HATCH_PATREON_MODE=creator_oauth|relay_managed`; optional `data/patreon-mode-preference.json` (non-secret)",
+      "- Billing: `lib/billing/` contract + stub default; `ESCAPE_HATCH_BILLING_PROVIDER=stripe` selects creator-owned Checkout/Portal/webhooks (EH-051)",
       "- Bootstrap: `scripts/bootstrap-identity.md`",
       "- Adapters: `lib/adapters/` — Auth/DB/storage/Patreon readiness when env is real; still preview overall",
       "- Account/paywall: `/account`, PaywallOverlay, locked posts skip `/api/media`",

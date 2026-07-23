@@ -19,11 +19,14 @@ The generated visitor site uses one premium theme derived from the current Relay
 - logo/avatar and hero media;
 - display name, title, short introduction, and community link;
 - accent color and approved type pairings;
-- light/dark preference where the chassis supports both;
+- one creator-published fixed color scheme chosen from supported schemes;
 - gallery density and safe cover crop;
 - paywall message and Discord/community CTA.
+- feature-post selection/order and optional explicitly public covers for locked posts.
 
 No arbitrary blocks, absolute-position editor, custom scripts, or raw CSS field.
+
+The production visitor IA, two-state gallery, post/media contract, tier conversion, locked-cover policy, and acceptance personas are defined in [`14-VISITOR-FRONTEND-PRODUCT-CONTRACT.md`](14-VISITOR-FRONTEND-PRODUCT-CONTRACT.md).
 
 ## Journey map
 
@@ -53,6 +56,9 @@ No arbitrary blocks, absolute-position editor, custom scripts, or raw CSS field.
 - Preview using the creator's real sanitized content, not generic cards.
 - Keep one primary preview viewport and an explicit mobile toggle.
 - Persist every accepted change server-side; browser session state alone is not valid.
+- Preview the empty-query homepage with creator-pinned feature mosaic plus recent feed.
+- Let the creator pin/order feature posts and explicitly approve/remove public covers for locked posts.
+- Preview active search/filter state as a full eligible gallery, then prove clearing every query/filter restores curation exactly.
 
 ### 4. Choose a route
 
@@ -93,6 +99,7 @@ For both, show data handled, runtime dependencies, cancellation effects, and mig
 - Show currency, amount, interval, tax setting, benefits, and access result.
 - Prevent duplicate subscription prompts for a patron with active Patreon access.
 - Require sandbox checkout, webhook, cancellation, failed-payment, and restoration tests.
+- Preview one unified `/tiers` catalog: existing patrons connect Patreon; new patrons use independent checkout; active or dual-source patrons receive context-aware actions rather than duplicate purchase prompts.
 
 ### 8. Copy and verify
 
@@ -110,9 +117,13 @@ Creator must walk:
 - independent subscriber;
 - insufficient tier;
 - expired/canceled account;
+- signed-in account with no paid access;
+- dual-source patron;
 - admin.
 
 Premium responses must be verified at the network layer, not only blurred visually.
+
+For each applicable persona, preview `/`, `/posts/[slug]`, `/tiers`, `/login`, and `/account`, including the default mosaic/feed, active search/filter gallery, locked frame, optional public cover, media players, and attachment actions.
 
 ### 10. Launch
 

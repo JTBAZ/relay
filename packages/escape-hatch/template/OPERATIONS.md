@@ -1,4 +1,4 @@
-# Operations (EH-043 OAuth choice/migration + EH-042 connector billing + EH-041 Relay-managed verify + EH-040 creator Patreon OAuth + EH-035 visitor visual + EH-034 account / paywall UX)
+# Operations (EH-051 Stripe adapter + EH-050 billing contract + EH-043 OAuth choice/migration + EH-042 connector billing + EH-041 Relay-managed verify + EH-040 creator Patreon OAuth + EH-035 visitor visual + EH-034 account / paywall UX)
 
 ## Local preview
 
@@ -10,6 +10,40 @@ npm run dev
 ```
 
 No `RELAY_*` or monorepo root `.env` is required. Neither Path A nor Path B must be configured for install/build.
+
+## Billing provider contract (EH-050) + Stripe adapter (EH-051)
+
+Independent-site billing uses a shared `BillingProvider` contract in `lib/adapters/types.ts` with helpers under `lib/billing/`:
+
+| Concern | Module / behavior |
+|---------|-------------------|
+| Lifecycle events | `subscription.created\|updated\|canceled\|past_due\|renewed\|…` (canonical) |
+| Normalize | `normalizeWebhookEvent` — requires `signatureVerified`; unsigned/malformed fail closed |
+| Entitlements | `applyBillingEntitlementEvent` → snapshot upsert with `source: "billing"` (EH-032 merge) |
+| Readiness / policy | `reportBillingReadiness` / capability matrix / policy declaration |
+| Default adapter | `implementation: "stub"` — money paths fail closed |
+| Stripe adapter | `ESCAPE_HATCH_BILLING_PROVIDER=stripe` + `STRIPE_SECRET_KEY` + `STRIPE_WEBHOOK_SECRET` |
+
+### Stripe routes (EH-051)
+
+| Route | Role |
+|-------|------|
+| `POST /api/billing/webhook` | Stripe-Signature verify → normalize → preview entitlement apply |
+| `POST /api/billing/checkout` | Hosted Checkout Session (session required when identity configured) |
+| `POST /api/billing/portal` | Customer Portal session |
+
+Helpers: `startIndependentCheckout` / `startCustomerPortal` in `lib/billing/hooks.ts` for `/tiers`, paywalls, and `/account` (EH-054 maps tiers and duplicate-billing UX).
+
+### Boundary honesty
+
+- Entitlement service consumes **normalized events only** — never provider-specific client payloads as grants.
+- Creator is the business the patron pays; Relay takes **no %** of independent-site subscription revenue in v1.
+- Prefer **restricted API keys** (`rk_`) over secret keys when Stripe supports the needed permissions.
+- Never pass `payment_method_types` on Checkout — use dynamic payment methods.
+- `STRIPE_SECRET_KEY` / `STRIPE_WEBHOOK_SECRET` are server-only — never ship them in the browser bundle.
+- Secrets are **not** required for `npm run build`.
+- Provider policy router (EH-052) and alternate processors (EH-053) remain open — do not route ineligible adult content through Stripe.
+- Webhook entitlement sink is **process-local preview memory** until durable SQL store lands; `productionSafe` stays false.
 
 ## OAuth choice and migration UX (EH-043)
 
@@ -136,7 +170,7 @@ Rules:
 - Soft persona switch appears **only** when `ESCAPE_HATCH_IDENTITY_PROVIDER` is unset/`none`.
 - Soft personas **never** elevate under Path A (supabase) or Path B (portable).
 - Evaluator reason codes drive visitor copy (`anonymous_denied`, `soft_persona_blocked`, `entitlement_expired`, …) without leaking secrets.
-- Independent billing Checkout is **not** live — Account shows an honest “billing not configured (EH-050+)” note; community CTA may still link out.
+- Independent billing Checkout is available when `ESCAPE_HATCH_BILLING_PROVIDER=stripe` and Stripe secrets are configured (EH-051). Stub default remains honest “not configured”. Account notes reflect readiness. EH-054 maps tiers and duplicate-billing UX.
 - Logout remains **POST** `/auth/logout` only.
 
 ## Identity provider
@@ -231,9 +265,9 @@ Session cookies: httpOnly, SameSite=Lax, path `/`, Secure when `NODE_ENV=product
 | Vercel | `vercel.json` | Next App Router defaults. Golden-path verification is EH-070. |
 | Docker | `Dockerfile`, `.dockerignore` | Multi-stage standalone build. Golden-path verification is EH-071. |
 
-Adapter inventory: `escape-hatch.manifest.json` and `lib/adapters/`. Auth/DB/storage readiness is env-honest; billing/deploy remain stub until EH-050/070.
+Adapter inventory: `escape-hatch.manifest.json` and `lib/adapters/`. Auth/DB/storage readiness is env-honest; billing is EH-050 contract + EH-051 Stripe adapter (stub default); provider policy is EH-052; deploy verification remains EH-070.
 
-**Not production-safe:** `productionSafe` is false. Account/paywall UX is present, but Milestone 3 security review + browser personas gate, billing, and verified deploy remain open. `public_legacy` and residual public copies are explicitly non-production.
+**Not production-safe:** `productionSafe` is false. Account/paywall UX and Stripe adapter are present, but Milestone 3 security review + browser personas gate, provider policy router (EH-052), and verified deploy remain open. `public_legacy` and residual public copies are explicitly non-production.
 
 ## Security honesty
 
