@@ -1,5 +1,5 @@
 /**
- * Server account summary for /account (EH-034).
+ * Server account summary for /account (EH-034 / EH-040).
  * Never trusts client persona or client-passed entitlement claims.
  */
 
@@ -13,6 +13,10 @@ import {
   getServerAuthSession,
   loadOwnEntitlementSnapshot
 } from "../identity/session";
+import {
+  isCreatorOAuthConfigured,
+  resolvePatreonMode
+} from "../patreon/config";
 import type { AccountSummaryView, IdentityProviderUx } from "../paywall/types";
 
 function toProviderUx(
@@ -20,6 +24,50 @@ function toProviderUx(
 ): IdentityProviderUx {
   if (mode === "invalid") return "invalid";
   return mode;
+}
+
+function patreonSummary(args: {
+  signedIn: boolean;
+  userId: string | null;
+  entitlementSource: string | null;
+}): AccountSummaryView["patreon"] {
+  const env = loadEnv();
+  const rawMode = env.ESCAPE_HATCH_PATREON_MODE?.toLowerCase();
+  if (rawMode === "relay_managed") {
+    return {
+      mode: "relay_managed_deferred",
+      configured: false,
+      canConnect: false,
+      linked: false,
+      patreonUserId: null,
+      note: "Relay-managed Patreon verification belongs to EH-041 and is not available in this kit."
+    };
+  }
+  const configured = isCreatorOAuthConfigured(env);
+  const mode = resolvePatreonMode(env);
+  if (!configured || mode !== "creator_oauth") {
+    return {
+      mode: "stub",
+      configured: false,
+      canConnect: false,
+      linked: false,
+      patreonUserId: null,
+      note: "Creator-owned Patreon OAuth is not configured. Set ESCAPE_HATCH_PATREON_MODE=creator_oauth and the Patreon env names in OPERATIONS.md."
+    };
+  }
+  const linkedBySource = args.entitlementSource === "patreon";
+  return {
+    mode: "creator_oauth",
+    configured: true,
+    canConnect: args.signedIn && Boolean(args.userId),
+    linked: linkedBySource,
+    patreonUserId: null,
+    note: linkedBySource
+      ? "Patreon membership is linked for this account (source=patreon)."
+      : args.signedIn
+        ? "Connect Patreon to validate campaign membership and refresh entitlements."
+        : "Sign in to connect Patreon."
+  };
 }
 
 export async function loadAccountSummary(
@@ -34,8 +82,19 @@ export async function loadAccountSummary(
   const billingNote =
     "Independent billing checkout is not configured yet (EH-050+). Membership may come from Patreon sync, manual grants, or staff — not a live Stripe Checkout in this kit.";
 
+  const withPatreon = (
+    base: Omit<AccountSummaryView, "patreon">
+  ): AccountSummaryView => ({
+    ...base,
+    patreon: patreonSummary({
+      signedIn: base.signedIn,
+      userId: base.userId,
+      entitlementSource: base.entitlement.source
+    })
+  });
+
   if (provider === "invalid") {
-    return {
+    return withPatreon({
       provider,
       signedIn: false,
       email: null,
@@ -55,11 +114,11 @@ export async function loadAccountSummary(
       softPersonaAllowed,
       billingConfigured,
       billingNote
-    };
+    });
   }
 
   if (provider === "none") {
-    return {
+    return withPatreon({
       provider,
       signedIn: false,
       email: null,
@@ -80,7 +139,7 @@ export async function loadAccountSummary(
       softPersonaAllowed,
       billingConfigured,
       billingNote
-    };
+    });
   }
 
   const configured =
@@ -88,7 +147,7 @@ export async function loadAccountSummary(
     (provider === "portable" && isPortableIdentityConfigured(env));
 
   if (!configured) {
-    return {
+    return withPatreon({
       provider,
       signedIn: false,
       email: null,
@@ -108,12 +167,12 @@ export async function loadAccountSummary(
       softPersonaAllowed: false,
       billingConfigured,
       billingNote
-    };
+    });
   }
 
   const session = await getServerAuthSession(siteId);
   if (!session) {
-    return {
+    return withPatreon({
       provider,
       signedIn: false,
       email: null,
@@ -133,12 +192,12 @@ export async function loadAccountSummary(
       softPersonaAllowed: false,
       billingConfigured,
       billingNote
-    };
+    });
   }
 
   const snap = await loadOwnEntitlementSnapshot(siteId, session.userId);
   if (!snap.ok) {
-    return {
+    return withPatreon({
       provider,
       signedIn: true,
       email: session.email,
@@ -158,7 +217,7 @@ export async function loadAccountSummary(
       softPersonaAllowed: false,
       billingConfigured,
       billingNote
-    };
+    });
   }
 
   const s = snap.snapshot;
@@ -169,7 +228,7 @@ export async function loadAccountSummary(
       : s.expiresAt && Date.parse(s.expiresAt) <= Date.now()
         ? "expired"
         : "active";
-  return {
+  return withPatreon({
     provider,
     signedIn: true,
     email: session.email,
@@ -189,5 +248,5 @@ export async function loadAccountSummary(
     softPersonaAllowed: false,
     billingConfigured,
     billingNote
-  };
+  });
 }

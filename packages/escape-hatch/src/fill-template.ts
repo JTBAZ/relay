@@ -166,27 +166,27 @@ function themeCssVars(theme: EscapeHatchTheme): string {
     }
   > = {
     dark: {
-      bg: "#141210",
-      fg: "#f4efe6",
-      muted: "#a89f93",
-      card: "#1c1a17",
-      deep: "#0c0b09",
-      hover: "#26221c",
-      border: "#2e2a24",
+      bg: "#0e0f12",
+      fg: "#e8eaed",
+      muted: "#8b919a",
+      card: "#16181d",
+      deep: "#08090b",
+      hover: "#1c1f26",
+      border: "#2a2e36",
       atmosphere:
-        "radial-gradient(ellipse 90% 55% at 50% -10%, color-mix(in srgb, var(--eh-accent) 22%, transparent), transparent 70%), linear-gradient(180deg, #1a1714 0%, #141210 42%, #0c0b09 100%)",
+        "radial-gradient(ellipse 90% 50% at 50% -12%, color-mix(in srgb, var(--eh-accent) 14%, transparent), transparent 70%), linear-gradient(180deg, #12141a 0%, #0e0f12 45%, #08090b 100%)",
       colorScheme: "dark"
     },
     light: {
-      bg: "#f0ebe3",
-      fg: "#1a1814",
-      muted: "#5c564c",
-      card: "#faf7f2",
-      deep: "#e4ddd2",
-      hover: "#ebe4d8",
-      border: "#d4cdc0",
+      bg: "#f4f5f7",
+      fg: "#12141a",
+      muted: "#5c6570",
+      card: "#ffffff",
+      deep: "#e8eaee",
+      hover: "#eceef2",
+      border: "#d0d5dc",
       atmosphere:
-        "radial-gradient(ellipse 90% 50% at 50% -8%, color-mix(in srgb, var(--eh-accent) 16%, transparent), transparent 68%), linear-gradient(180deg, #f7f3ec 0%, #f0ebe3 50%, #e8e1d6 100%)",
+        "radial-gradient(ellipse 90% 48% at 50% -10%, color-mix(in srgb, var(--eh-accent) 12%, transparent), transparent 68%), linear-gradient(180deg, #fafbfc 0%, #f4f5f7 50%, #eef0f3 100%)",
       colorScheme: "light"
     },
     warm: {
@@ -198,24 +198,25 @@ function themeCssVars(theme: EscapeHatchTheme): string {
       hover: "#1e2530",
       border: "#2a3340",
       atmosphere:
-        "radial-gradient(ellipse 85% 50% at 50% -12%, color-mix(in srgb, var(--eh-accent) 20%, transparent), transparent 72%), linear-gradient(180deg, #141a22 0%, #10141a 45%, #0a0d11 100%)",
+        "radial-gradient(ellipse 85% 50% at 50% -12%, color-mix(in srgb, var(--eh-accent) 16%, transparent), transparent 72%), linear-gradient(180deg, #141a22 0%, #10141a 45%, #0a0d11 100%)",
       colorScheme: "dark"
     }
   };
   const pairings: Record<string, { display: string; body: string }> = {
     editorial: {
       display:
-        'var(--font-fraunces), "Iowan Old Style", "Palatino Linotype", Palatino, serif',
+        'var(--font-outfit), "Avenir Next", "Segoe UI", system-ui, sans-serif',
       body: 'var(--font-source-sans), "Segoe UI", system-ui, sans-serif'
     },
     studio: {
-      display: 'var(--font-instrument-serif), "Iowan Old Style", Georgia, serif',
+      display:
+        'var(--font-space-grotesk), "Avenir Next", "Segoe UI", system-ui, sans-serif',
       body: 'var(--font-dm-sans), "Segoe UI", system-ui, sans-serif'
     },
     signal: {
       display:
-        'var(--font-space-grotesk), "Avenir Next", "Segoe UI", system-ui, sans-serif',
-      body: 'var(--font-newsreader), "Iowan Old Style", Georgia, serif'
+        'var(--font-newsreader), "Iowan Old Style", Georgia, serif',
+      body: 'var(--font-source-sans), "Segoe UI", system-ui, sans-serif'
     }
   };
   const crops: Record<string, string> = {
@@ -229,7 +230,7 @@ function themeCssVars(theme: EscapeHatchTheme): string {
   };
   const s = schemes[theme.color_scheme] ?? schemes.dark;
   const pairing = pairings[theme.type_pairing ?? "editorial"] ?? pairings.editorial;
-  const accent = theme.accent_color ?? "#c4784a";
+  const accent = theme.accent_color ?? "#4a7fc4";
   const cover = crops[theme.cover_crop ?? "center"] ?? crops.center;
   const gridMin = densities[theme.gallery_density ?? "comfortable"] ?? densities.comfortable;
   return `:root {
@@ -393,10 +394,10 @@ export function stampEscapeHatchManifest(
   parsed.generated_at = bundle.generated_at;
   parsed.creator_id = bundle.creator_id;
   parsed.site_id = bundle.site_id ?? bundle.creator_id;
-  parsed.slice = "EH-034";
+  parsed.slice = "EH-040";
   parsed.productionSafe = false;
-  parsed.schema_version = "eh-db/0004_entitlement_evaluator";
-  parsed.chassis_version = "0.7.0";
+  parsed.schema_version = "eh-db/0005_patreon_oauth";
+  parsed.chassis_version = "0.8.0";
   parsed.feature_flags = {
     ...parsed.feature_flags,
     soft_persona_gate: true,
@@ -405,9 +406,17 @@ export function stampEscapeHatchManifest(
     supabase_identity: true,
     portable_identity: true,
     entitlement_evaluator: true,
+    creator_patreon_oauth: true,
     stripe_billing: false,
     native_admin: true
   };
+  if (parsed.adapters?.patreon) {
+    parsed.adapters.patreon = {
+      id: "creator_oauth_optional",
+      version: "0.1.0",
+      state: "preview_only"
+    };
+  }
   writeFileSync(manifestPath, `${JSON.stringify(parsed, null, 2)}\n`, "utf8");
   return manifestPath;
 }
@@ -506,9 +515,9 @@ export function fillTemplate(opts: FillOptions): FillResult {
       "**Soft gate remains for local preview** — persona switching is demo UI only (provider `none`), not production security.",
       "Identity: Path A Supabase (`ESCAPE_HATCH_IDENTITY_PROVIDER=supabase` or unset + Supabase env) or Path B portable (`=portable` + DATABASE_URL).",
       mediaLayout === "private"
-        ? "Premium media is staged under `data/private-media` and delivered via `/api/media/{id}` after server entitlement checks (EH-033). Locked gallery/post UI never fetches those bytes (EH-034). Do not set `ESCAPE_HATCH_MEDIA_MODE=public_legacy` in production."
+        ? "Premium media is staged under `data/private-media` and delivered via `/api/media/{id}` after server entitlement checks (EH-033). Locked gallery/post UI never fetches those bytes (EH-034/035). Do not set `ESCAPE_HATCH_MEDIA_MODE=public_legacy` in production."
         : "WARNING: `public_legacy` media layout copied premium bytes into `/public/media` — residual leakage; not production-safe.",
-      "`productionSafe: false` — account/paywall UX is present (EH-034), but Milestone 3 security/browser gate, Patreon OAuth (EH-040), billing, and verified deploy remain open.",
+      "`productionSafe: false` — creator Patreon OAuth (EH-040) + visitor visual + account/paywall UX present, but Milestone 3 security/browser gate, Relay-managed verification (EH-041), billing, and verified deploy remain open.",
       "",
       `Contract: ${bundle.contract_version}`,
       "",
@@ -517,21 +526,22 @@ export function fillTemplate(opts: FillOptions): FillResult {
       "1. `/library` — Library truth audit (parity, anomalies, exclude)",
       "2. `/structure` — tiers & posts detected (accuracy)",
       "3. `/style` — few aesthetic dials (session peek)",
-      "4. `/admin` — operator shell (health, posts, media, tiers)",
+      "4. `/admin` — operator shell (health, posts, media, tiers, Patreon setup)",
       "5. `/login` — Supabase magic-link or portable password (when provider configured)",
-      "6. `/account` — session, membership summary, POST sign-out",
+      "6. `/account` — session, membership summary, Connect Patreon, POST sign-out",
       "7. `/preview` — visitor walkthrough (server-gated paywall when Path A/B)",
       "",
       "`/` redirects to Library. Library truth rebuilds parity from data/ artifacts on every load (never trusts a tampered report alone).",
       "Admin mutations: local-operator when identity unset; staff session when Path A/B configured. Soft personas never authorize admin.",
       "",
-      "## Chassis + identity + entitlements + private media + account UX (EH-034)",
+      "## Chassis + identity + entitlements + private media + account UX + visitor visual + Patreon OAuth (EH-040)",
       "",
       "- Typed env: `lib/env.ts` + `.env.example` (names only — never commit secrets)",
       "- Media: `ESCAPE_HATCH_MEDIA_MODE=local_private|private_r2` (default prefers private); R2 env names for signed GETs",
-      "- SQL migrations: Path A `0001`+`0002`+`0004_supabase`; Path B `0001`+`0003`+`0004_portable`",
+      "- SQL migrations: Path A `0001`+`0002`+`0004_supabase`+`0005_supabase`; Path B `0001`+`0003`+`0004_portable`+`0005_portable`",
+      "- Patreon: `ESCAPE_HATCH_PATREON_MODE=creator_oauth` + PATREON_* env; `/api/patreon/oauth/*`",
       "- Bootstrap: `scripts/bootstrap-identity.md`",
-      "- Adapters: `lib/adapters/` — Auth/DB/storage readiness when env is real; still preview overall",
+      "- Adapters: `lib/adapters/` — Auth/DB/storage/Patreon readiness when env is real; still preview overall",
       "- Account/paywall: `/account`, PaywallOverlay, locked posts skip `/api/media`",
       "- Admin: `/admin` routes — distinct from visitor gallery",
       "- Deploy: `vercel.json`, `Dockerfile`, optional `docker-compose.yml` (Path B profile `db`)",

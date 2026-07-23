@@ -1,6 +1,7 @@
 /**
  * Visitor-theme CSS token helpers (client-side Style studio + live dials).
  * Soft-gate preview only — not production branding enforcement.
+ * EH-035: cold-gallery defaults (keep --eh-* names + dial enums).
  */
 
 import type {
@@ -26,27 +27,27 @@ export const SCHEME_TOKENS: Record<
   }
 > = {
   dark: {
-    bg: "#141210",
-    fg: "#f4efe6",
-    muted: "#a89f93",
-    card: "#1c1a17",
-    deep: "#0c0b09",
-    hover: "#26221c",
-    border: "#2e2a24",
+    bg: "#0e0f12",
+    fg: "#e8eaed",
+    muted: "#8b919a",
+    card: "#16181d",
+    deep: "#08090b",
+    hover: "#1c1f26",
+    border: "#2a2e36",
     atmosphere:
-      "radial-gradient(ellipse 90% 55% at 50% -10%, color-mix(in srgb, var(--eh-accent) 22%, transparent), transparent 70%), linear-gradient(180deg, #1a1714 0%, #141210 42%, #0c0b09 100%)",
+      "radial-gradient(ellipse 90% 50% at 50% -12%, color-mix(in srgb, var(--eh-accent) 14%, transparent), transparent 70%), linear-gradient(180deg, #12141a 0%, #0e0f12 45%, #08090b 100%)",
     colorScheme: "dark"
   },
   light: {
-    bg: "#f0ebe3",
-    fg: "#1a1814",
-    muted: "#5c564c",
-    card: "#faf7f2",
-    deep: "#e4ddd2",
-    hover: "#ebe4d8",
-    border: "#d4cdc0",
+    bg: "#f4f5f7",
+    fg: "#12141a",
+    muted: "#5c6570",
+    card: "#ffffff",
+    deep: "#e8eaee",
+    hover: "#eceef2",
+    border: "#d0d5dc",
     atmosphere:
-      "radial-gradient(ellipse 90% 50% at 50% -8%, color-mix(in srgb, var(--eh-accent) 16%, transparent), transparent 68%), linear-gradient(180deg, #f7f3ec 0%, #f0ebe3 50%, #e8e1d6 100%)",
+      "radial-gradient(ellipse 90% 48% at 50% -10%, color-mix(in srgb, var(--eh-accent) 12%, transparent), transparent 68%), linear-gradient(180deg, #fafbfc 0%, #f4f5f7 50%, #eef0f3 100%)",
     colorScheme: "light"
   },
   warm: {
@@ -58,7 +59,7 @@ export const SCHEME_TOKENS: Record<
     hover: "#1e2530",
     border: "#2a3340",
     atmosphere:
-      "radial-gradient(ellipse 85% 50% at 50% -12%, color-mix(in srgb, var(--eh-accent) 20%, transparent), transparent 72%), linear-gradient(180deg, #141a22 0%, #10141a 45%, #0a0d11 100%)",
+      "radial-gradient(ellipse 85% 50% at 50% -12%, color-mix(in srgb, var(--eh-accent) 16%, transparent), transparent 72%), linear-gradient(180deg, #141a22 0%, #10141a 45%, #0a0d11 100%)",
     colorScheme: "dark"
   }
 };
@@ -69,17 +70,18 @@ export const TYPE_PAIRING_FONTS: Record<
 > = {
   editorial: {
     display:
-      'var(--font-fraunces), "Iowan Old Style", "Palatino Linotype", Palatino, serif',
+      'var(--font-outfit), "Avenir Next", "Segoe UI", system-ui, sans-serif',
     body: 'var(--font-source-sans), "Segoe UI", system-ui, sans-serif'
   },
   studio: {
-    display: 'var(--font-instrument-serif), "Iowan Old Style", Georgia, serif',
+    display:
+      'var(--font-space-grotesk), "Avenir Next", "Segoe UI", system-ui, sans-serif',
     body: 'var(--font-dm-sans), "Segoe UI", system-ui, sans-serif'
   },
   signal: {
     display:
-      'var(--font-space-grotesk), "Avenir Next", "Segoe UI", system-ui, sans-serif',
-    body: 'var(--font-newsreader), "Iowan Old Style", Georgia, serif'
+      'var(--font-newsreader), "Iowan Old Style", Georgia, serif',
+    body: 'var(--font-source-sans), "Segoe UI", system-ui, sans-serif'
   }
 };
 
@@ -107,7 +109,7 @@ export function applyThemeTokens(theme: {
   const pairing =
     TYPE_PAIRING_FONTS[theme.type_pairing as TypePairing] ??
     TYPE_PAIRING_FONTS.editorial;
-  const accent = theme.accent_color ?? "#c4784a";
+  const accent = theme.accent_color ?? "#4a7fc4";
   const cover =
     COVER_POSITIONS[theme.cover_crop as CoverCrop] ?? COVER_POSITIONS.center;
   const gridMin =

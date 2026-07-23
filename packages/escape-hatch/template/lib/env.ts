@@ -57,6 +57,27 @@ export type SiteServerEnv = {
   STRIPE_SECRET_KEY: string | undefined;
   STRIPE_WEBHOOK_SECRET: string | undefined;
   NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: string | undefined;
+  /**
+   * Patreon verification mode (EH-040): creator_oauth | none.
+   * Unset → stub (not live). relay_managed is EH-041 — not implemented here.
+   */
+  ESCAPE_HATCH_PATREON_MODE: string | undefined;
+  /** Creator-owned Patreon OAuth client id (server-only). */
+  PATREON_CLIENT_ID: string | undefined;
+  /** Creator-owned Patreon OAuth client secret (server-only). */
+  PATREON_CLIENT_SECRET: string | undefined;
+  /** Exact registered OAuth callback URL. */
+  PATREON_REDIRECT_URI: string | undefined;
+  /** Numeric Patreon campaign id to validate memberships against. */
+  PATREON_CAMPAIGN_ID: string | undefined;
+  /** Creator-owned AES key for refresh tokens at rest (base64 or hex, 32+ bytes). */
+  ESCAPE_HATCH_PATREON_TOKEN_KEY: string | undefined;
+  /** HMAC secret for OAuth state (min 16 chars). */
+  ESCAPE_HATCH_PATREON_OAUTH_STATE_SECRET: string | undefined;
+  /** Optional authorize/token/identity URL overrides — tests only. */
+  ESCAPE_HATCH_PATREON_AUTHORIZE_URL: string | undefined;
+  ESCAPE_HATCH_PATREON_TOKEN_URL: string | undefined;
+  ESCAPE_HATCH_PATREON_IDENTITY_URL: string | undefined;
 };
 
 export type SiteEnv = SitePublicEnv & SiteServerEnv;
@@ -88,6 +109,15 @@ export const SITE_ENV_NAMES = {
     "R2_PUBLIC_BASE_URL",
     "R2_REGION"
   ] as const,
+  optionalPatreon: [
+    "ESCAPE_HATCH_PATREON_MODE",
+    "PATREON_CLIENT_ID",
+    "PATREON_CLIENT_SECRET",
+    "PATREON_REDIRECT_URI",
+    "PATREON_CAMPAIGN_ID",
+    "ESCAPE_HATCH_PATREON_TOKEN_KEY",
+    "ESCAPE_HATCH_PATREON_OAUTH_STATE_SECRET"
+  ] as const,
   optionalFutureAdapters: [
     "ESCAPE_HATCH_IDENTITY_PROVIDER",
     "DATABASE_URL",
@@ -107,7 +137,14 @@ export const SITE_ENV_NAMES = {
     "R2_REGION",
     "STRIPE_SECRET_KEY",
     "STRIPE_WEBHOOK_SECRET",
-    "NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY"
+    "NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY",
+    "ESCAPE_HATCH_PATREON_MODE",
+    "PATREON_CLIENT_ID",
+    "PATREON_CLIENT_SECRET",
+    "PATREON_REDIRECT_URI",
+    "PATREON_CAMPAIGN_ID",
+    "ESCAPE_HATCH_PATREON_TOKEN_KEY",
+    "ESCAPE_HATCH_PATREON_OAUTH_STATE_SECRET"
   ] as const
 } as const;
 
@@ -174,6 +211,26 @@ export function loadEnv(): SiteEnv {
     STRIPE_WEBHOOK_SECRET: readOptional("STRIPE_WEBHOOK_SECRET"),
     NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: readOptional(
       "NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY"
+    ),
+    ESCAPE_HATCH_PATREON_MODE: readOptional("ESCAPE_HATCH_PATREON_MODE"),
+    PATREON_CLIENT_ID: readOptional("PATREON_CLIENT_ID"),
+    PATREON_CLIENT_SECRET: readOptional("PATREON_CLIENT_SECRET"),
+    PATREON_REDIRECT_URI: readOptional("PATREON_REDIRECT_URI"),
+    PATREON_CAMPAIGN_ID: readOptional("PATREON_CAMPAIGN_ID"),
+    ESCAPE_HATCH_PATREON_TOKEN_KEY: readOptional(
+      "ESCAPE_HATCH_PATREON_TOKEN_KEY"
+    ),
+    ESCAPE_HATCH_PATREON_OAUTH_STATE_SECRET: readOptional(
+      "ESCAPE_HATCH_PATREON_OAUTH_STATE_SECRET"
+    ),
+    ESCAPE_HATCH_PATREON_AUTHORIZE_URL: readOptional(
+      "ESCAPE_HATCH_PATREON_AUTHORIZE_URL"
+    ),
+    ESCAPE_HATCH_PATREON_TOKEN_URL: readOptional(
+      "ESCAPE_HATCH_PATREON_TOKEN_URL"
+    ),
+    ESCAPE_HATCH_PATREON_IDENTITY_URL: readOptional(
+      "ESCAPE_HATCH_PATREON_IDENTITY_URL"
     )
   };
 }
@@ -186,6 +243,17 @@ export function isSecretLikeEnvKey(key: keyof SiteEnv): boolean {
   if (name === "ESCAPE_HATCH_IDENTITY_PROVIDER") return false;
   if (name === "ESCAPE_HATCH_MEDIA_MODE") return false;
   if (name === "ESCAPE_HATCH_MEDIA_SIGNED_URL_TTL_SEC") return false;
+  if (name === "ESCAPE_HATCH_PATREON_MODE") return false;
+  if (name === "PATREON_REDIRECT_URI" || name === "PATREON_CAMPAIGN_ID") {
+    return false;
+  }
+  if (
+    name === "ESCAPE_HATCH_PATREON_AUTHORIZE_URL" ||
+    name === "ESCAPE_HATCH_PATREON_TOKEN_URL" ||
+    name === "ESCAPE_HATCH_PATREON_IDENTITY_URL"
+  ) {
+    return false;
+  }
   if (name === "R2_REGION" || name === "R2_ENDPOINT" || name === "R2_BUCKET") {
     return false;
   }

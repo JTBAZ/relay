@@ -1,30 +1,22 @@
 import type { Metadata } from "next";
 import {
   DM_Sans,
-  Fraunces,
-  Instrument_Serif,
   Newsreader,
+  Outfit,
   Source_Sans_3,
   Space_Grotesk
 } from "next/font/google";
 import "./globals.css";
 
-const fraunces = Fraunces({
+const outfit = Outfit({
   subsets: ["latin"],
-  variable: "--font-fraunces",
+  variable: "--font-outfit",
   display: "swap"
 });
 
 const sourceSans = Source_Sans_3({
   subsets: ["latin"],
   variable: "--font-source-sans",
-  display: "swap"
-});
-
-const instrumentSerif = Instrument_Serif({
-  subsets: ["latin"],
-  weight: "400",
-  variable: "--font-instrument-serif",
   display: "swap"
 });
 
@@ -60,9 +52,8 @@ export default function RootLayout({
     <html
       lang="en"
       className={[
-        fraunces.variable,
+        outfit.variable,
         sourceSans.variable,
-        instrumentSerif.variable,
         dmSans.variable,
         spaceGrotesk.variable,
         newsreader.variable

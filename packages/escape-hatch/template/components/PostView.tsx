@@ -147,23 +147,8 @@ export function PostView({ site, slug, serverAccess }: Props) {
     >
       <article className="patron-post">
         <Link className="patron-back" href="/preview">
-          ← Gallery
+          Gallery
         </Link>
-        <header className="patron-post-header">
-          <p className="badge">
-            {accessLabel(post.access.level, post.access.tier_ids, site.tiers)}
-          </p>
-          <h1 className="patron-post-title">{post.title}</h1>
-          <p className="patron-post-meta">
-            <time dateTime={post.published_at}>
-              {formatPublished(post.published_at)}
-            </time>
-          </p>
-          <EntitlementStatusBanner
-            access={serverAccess}
-            softPreview={!identityConfigured}
-          />
-        </header>
 
         <div className="patron-post-media">
           {post.media.map((m, index) => {
@@ -205,6 +190,22 @@ export function PostView({ site, slug, serverAccess }: Props) {
             );
           })}
         </div>
+
+        <header className="patron-post-header">
+          <p className="patron-card-meta">
+            {accessLabel(post.access.level, post.access.tier_ids, site.tiers)}
+          </p>
+          <h1 className="patron-post-title">{post.title}</h1>
+          <p className="patron-post-meta">
+            <time dateTime={post.published_at}>
+              {formatPublished(post.published_at)}
+            </time>
+          </p>
+          <EntitlementStatusBanner
+            access={serverAccess}
+            softPreview={!identityConfigured}
+          />
+        </header>
       </article>
     </PatronChrome>
   );

@@ -3,7 +3,7 @@
  * manifests, no Relay path imports, status EH-020 preserved under EH-022, productionSafe false.
  */
 
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import {
   existsSync,
   mkdirSync,
@@ -46,6 +46,46 @@ const RELAY_CREDENTIAL_ENV_RE =
 
 const NEXT_MAINTENANCE_LTS_RE = /^15\.5\.\d+$/;
 
+/**
+ * Async npm spawn so a long clean-dir install/build does not block the Vitest
+ * worker event loop (spawnSync >60s triggers birpc "onTaskUpdate" timeout).
+ */
+function runNpmAsync(
+  args: string[],
+  opts: { cwd: string; env: NodeJS.ProcessEnv; timeoutMs: number }
+): Promise<{ status: number | null; stdout: string; stderr: string }> {
+  return new Promise((resolve, reject) => {
+    const child = spawn("npm", args, {
+      cwd: opts.cwd,
+      env: opts.env,
+      shell: true,
+      stdio: ["ignore", "pipe", "pipe"]
+    });
+    let stdout = "";
+    let stderr = "";
+    const timer = setTimeout(() => {
+      child.kill();
+      reject(
+        new Error(`npm ${args.join(" ")} timed out after ${opts.timeoutMs}ms`)
+      );
+    }, opts.timeoutMs);
+    child.stdout?.on("data", (chunk: Buffer | string) => {
+      stdout += String(chunk);
+    });
+    child.stderr?.on("data", (chunk: Buffer | string) => {
+      stderr += String(chunk);
+    });
+    child.on("error", (err) => {
+      clearTimeout(timer);
+      reject(err);
+    });
+    child.on("close", (status) => {
+      clearTimeout(timer);
+      resolve({ status, stdout, stderr });
+    });
+  });
+}
+
 function collectSourceFiles(root: string, out: string[] = []): string[] {
   for (const name of readdirSync(root)) {
     if (name === "node_modules" || name === ".next" || name === "data") continue;
@@ -65,11 +105,11 @@ function collectSourceFiles(root: string, out: string[] = []): string[] {
 describe("EH-020 status (preserved under EH-032)", () => {
   it("keeps generated-repository capability with productionSafe false", () => {
     const status = buildEscapeHatchStatus();
-    expect(ESCAPE_HATCH_SLICE).toBe("EH-034");
-    expect(status.slice).toBe("EH-034");
+    expect(ESCAPE_HATCH_SLICE).toBe("EH-040");
+    expect(status.slice).toBe("EH-040");
     expect(status.productionSafe).toBe(false);
-    expect(status.nextSlice.id).toBe("EH-040");
-    expect(status.nextSlice.title).toMatch(/Patreon|OAuth/i);
+    expect(status.nextSlice.id).toBe("EH-041");
+    expect(status.nextSlice.title).toMatch(/Relay-managed|verification|Patreon|OAuth/i);
     const cap = status.capabilities.find((c) => c.id === "generated-repository");
     expect(cap?.state).toBe("preview_only");
     expect(cap?.evidence).toMatch(/clean directory|typed env|Dockerfile/i);
@@ -188,7 +228,7 @@ describe("EH-020 fillTemplate chassis materialization", () => {
       creator_id: string | null;
       site_id: string | null;
     };
-    expect(manifest.slice).toBe("EH-034");
+    expect(manifest.slice).toBe("EH-040");
     expect(manifest.productionSafe).toBe(false);
     expect(manifest.generated_at).toBeTruthy();
     expect(manifest.creator_id).toBeTruthy();
@@ -215,7 +255,7 @@ describe("EH-020 clean-directory build contract", () => {
   it(
     "npm install && npm run build succeeds without Relay root env",
     { timeout: 300_000 },
-    () => {
+    async () => {
       const bundle = JSON.parse(
         readFileSync(
           join(PACKAGE_ROOT, "fixtures", "sample.bundle.json"),
@@ -287,24 +327,20 @@ describe("EH-020 clean-directory build contract", () => {
           }
         }
 
-        const install = spawnSync("npm", ["install"], {
+        const install = await runNpmAsync(["install"], {
           cwd: cleanDir,
-          encoding: "utf8",
           env,
-          shell: true,
-          timeout: 180_000
+          timeoutMs: 180_000
         });
         expect(
           install.status,
           `npm install failed:\n${install.stdout}\n${install.stderr}`
         ).toBe(0);
 
-        const build = spawnSync("npm", ["run", "build"], {
+        const build = await runNpmAsync(["run", "build"], {
           cwd: cleanDir,
-          encoding: "utf8",
           env,
-          shell: true,
-          timeout: 240_000
+          timeoutMs: 240_000
         });
         expect(
           build.status,

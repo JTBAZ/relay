@@ -26,7 +26,7 @@ export type FromCloneOptions = {
 function defaultTheme(displayName: string): EscapeHatchTheme {
   return {
     color_scheme: "dark",
-    accent_color: "#c4784a",
+    accent_color: "#4a7fc4",
     paywall_style: "blur",
     type_pairing: "editorial",
     gallery_density: "comfortable",

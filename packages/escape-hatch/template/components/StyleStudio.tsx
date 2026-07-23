@@ -12,18 +12,18 @@ import type {
 import { applyThemeTokens, paywallCopy } from "@/lib/theme";
 
 const SCHEMES = [
-  { id: "dark", label: "Dark", bg: "#141210" },
-  { id: "light", label: "Light", bg: "#f0ebe3" },
+  { id: "dark", label: "Dark", bg: "#0e0f12" },
+  { id: "light", label: "Light", bg: "#f4f5f7" },
   { id: "warm", label: "Midnight", bg: "#10141a" }
 ] as const;
 
 const ACCENTS = [
-  "#c4784a",
-  "#2a9d8f",
-  "#d4a05a",
-  "#c45c6a",
   "#4a7fc4",
-  "#8b6bb5"
+  "#c45c6a",
+  "#2a9d8f",
+  "#8b6bb5",
+  "#c4784a",
+  "#d4a05a"
 ];
 
 const PAYWALLS: { id: PaywallStyle; label: string; blurb: string }[] = [
@@ -33,9 +33,9 @@ const PAYWALLS: { id: PaywallStyle; label: string; blurb: string }[] = [
 ];
 
 const TYPE_PAIRINGS: { id: TypePairing; label: string; blurb: string }[] = [
-  { id: "editorial", label: "Editorial", blurb: "Fraunces + Source Sans" },
-  { id: "studio", label: "Studio", blurb: "Instrument Serif + DM Sans" },
-  { id: "signal", label: "Signal", blurb: "Space Grotesk + Newsreader" }
+  { id: "editorial", label: "Editorial", blurb: "Outfit + Source Sans" },
+  { id: "studio", label: "Studio", blurb: "Space Grotesk + DM Sans" },
+  { id: "signal", label: "Signal", blurb: "Newsreader + Source Sans" }
 ];
 
 const DENSITIES: { id: GalleryDensity; label: string }[] = [

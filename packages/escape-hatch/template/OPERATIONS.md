@@ -1,4 +1,4 @@
-# Operations (EH-034 account / paywall UX)
+# Operations (EH-040 creator Patreon OAuth + EH-035 visitor visual + EH-034 account / paywall UX)
 
 ## Local preview
 
@@ -10,6 +10,38 @@ npm run dev
 ```
 
 No `RELAY_*` or monorepo root `.env` is required. Neither Path A nor Path B must be configured for install/build.
+
+## Creator-owned Patreon OAuth (EH-040)
+
+Guided setup checklist (also on `/admin/patreon`):
+
+1. Create or choose a Patreon OAuth client in the Patreon developer portal.
+2. Register the exact callback URL: `{NEXT_PUBLIC_SITE_URL}/api/patreon/oauth/callback` → `PATREON_REDIRECT_URI`.
+3. Set env names only (never commit secrets):
+   - `ESCAPE_HATCH_PATREON_MODE=creator_oauth`
+   - `PATREON_CLIENT_ID`, `PATREON_CLIENT_SECRET`
+   - `PATREON_REDIRECT_URI`, `PATREON_CAMPAIGN_ID`
+   - `ESCAPE_HATCH_PATREON_TOKEN_KEY` (32-byte key, base64 or hex)
+   - `ESCAPE_HATCH_PATREON_OAUTH_STATE_SECRET` (min 16 chars)
+4. Apply SQL `0005_patreon_oauth_supabase.sql` (Path A) or `0005_patreon_oauth_portable.sql` (Path B).
+5. Sign in on the site, open `/account`, use **Connect Patreon** (POST `/api/patreon/oauth/start` only — GET returns 405).
+6. Confirm redirect returns `/account?patreon=linked` with no tokens in the URL.
+7. Rotate client secret + token key in the host secret store; never paste tokens into logs or diagnostics.
+
+Rules:
+
+- Refresh tokens are encrypted at rest with the creator-owned key; plaintext never appears in zip, browser bundle, logs, or Relay records after handoff.
+- Campaign membership must match `PATREON_CAMPAIGN_ID` **and** `patron_status=active_patron` or linking fails closed.
+- OAuth start is POST + same-origin only (account-linking CSRF defense).
+- `ESCAPE_HATCH_PATREON_MODE=relay_managed` is **EH-041** (not implemented) — adapter stays stub with an honest reason.
+- Soft persona honesty unchanged; premium bytes still require `evaluateAccess` (EH-032/033).
+
+## Visitor visual system (EH-035)
+
+- Cold-gallery tokens (`--eh-*`) with Outfit + Source Sans defaults and cobalt accent `#4a7fc4`.
+- Sticky visitor top bar (creator name + Account); Hatch Console / Style dials stay in a demoted operator footer.
+- `/account` and `/login` use **PatronChrome** (not Hatch Console tabs).
+- Gallery is a media-first mosaic; locked tiles never fetch `/api/media`.
 
 ## Account / paywall UX (EH-034)
 

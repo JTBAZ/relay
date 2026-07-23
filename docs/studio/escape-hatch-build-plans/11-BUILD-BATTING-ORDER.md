@@ -95,13 +95,19 @@ Execute one documented slice at a time. The program docs define scope and depend
 - **Builder:** Cursor Grok 4.5 High
 - Login/link/account/locked states and access-source clarity.
 
-**Gate:** security review; zero unauthorized premium byte reads; browser personas pass.
+### EH-035 Visitor visual system
+
+- **Builder:** Composer 2.5 Fast
+- Cold-gallery tokens/type, media-first mosaic, visitor vs operator chrome split, account/login under PatronChrome (not Hatch Console). Preserve EH-030–034 honesty; `productionSafe` stays false.
+
+**Gate:** security review; zero unauthorized premium byte reads; browser personas pass; visual acceptance (desktop + ~390px).
 
 ## Milestone 4 — Patreon continuity and Relay add-on
 
 ### EH-040 Creator-owned Patreon OAuth
 
 - **Builder:** Cursor Grok 4.5 High
+- **Status (kit):** Implemented in `packages/escape-hatch` (preview_only; `productionSafe: false`). Next: **EH-041**.
 - Guided app setup, exchange/refresh/link, campaign validation, encrypted tokens.
 
 ### EH-041 Relay-managed verification service

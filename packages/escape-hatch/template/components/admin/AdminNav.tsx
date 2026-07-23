@@ -7,7 +7,8 @@ const ADMIN_TABS = [
   { href: "/admin", label: "Overview", hint: "Health" },
   { href: "/admin/posts", label: "Posts", hint: "Access" },
   { href: "/admin/media", label: "Media", hint: "Inventory" },
-  { href: "/admin/tiers", label: "Tiers", hint: "Mapping" }
+  { href: "/admin/tiers", label: "Tiers", hint: "Mapping" },
+  { href: "/admin/patreon", label: "Patreon", hint: "OAuth setup" }
 ] as const;
 
 export function AdminNav() {

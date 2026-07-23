@@ -1,22 +1,22 @@
 :root {
   color-scheme: dark;
-  /* Ink-gallery defaults (overwritten by fillTemplate from site theme) */
-  --eh-bg: #141210;
-  --eh-fg: #f4efe6;
-  --eh-muted: #a89f93;
-  --eh-card: #1c1a17;
-  --eh-accent: #c4784a;
-  --eh-bg-deep: #0c0b09;
-  --eh-hover: #26221c;
-  --eh-border: #2e2a24;
+  /* Cold-gallery defaults (overwritten by fillTemplate from site theme) */
+  --eh-bg: #0e0f12;
+  --eh-fg: #e8eaed;
+  --eh-muted: #8b919a;
+  --eh-card: #16181d;
+  --eh-accent: #4a7fc4;
+  --eh-bg-deep: #08090b;
+  --eh-hover: #1c1f26;
+  --eh-border: #2a2e36;
   --eh-atmosphere: radial-gradient(
-      ellipse 90% 55% at 50% -10%,
-      color-mix(in srgb, var(--eh-accent) 22%, transparent),
+      ellipse 90% 50% at 50% -12%,
+      color-mix(in srgb, var(--eh-accent) 14%, transparent),
       transparent 70%
     ),
-    linear-gradient(180deg, #1a1714 0%, #141210 42%, #0c0b09 100%);
-  --eh-font-display: var(--font-fraunces), "Iowan Old Style", "Palatino Linotype",
-    Palatino, serif;
+    linear-gradient(180deg, #12141a 0%, #0e0f12 45%, #08090b 100%);
+  --eh-font-display: var(--font-outfit), "Avenir Next", "Segoe UI", system-ui,
+    sans-serif;
   --eh-font-body: var(--font-source-sans), "Segoe UI", system-ui, sans-serif;
   --eh-cover-position: center;
   --eh-grid-min: 280px;

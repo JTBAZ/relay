@@ -1,7 +1,8 @@
 /**
- * Adapter bundle for the generated kit (EH-033).
+ * Adapter bundle for the generated kit (EH-040).
  * Auth/DB report readiness only when env is real and non-placeholder;
- * storage signs private GETs when private_r2 credentials are real.
+ * storage signs private GETs when private_r2 credentials are real;
+ * Patreon creator_oauth when fully configured (EH-040); relay_managed is EH-041.
  * productionSafe remains false (Milestone 3 UX/security gate + deploy/billing open).
  */
 
@@ -23,6 +24,17 @@ import {
   resolveMediaModeSafe
 } from "../media/config";
 import { createMockMediaSigner, createR2MediaSigner } from "../media/sign";
+import {
+  isCreatorOAuthConfigured,
+  loadCreatorOAuthConfig,
+  resolvePatreonMode
+} from "../patreon/config";
+import {
+  buildAuthorizeUrl,
+  linkFromAuthorizationCode,
+  refreshAndRelink
+} from "../patreon/link";
+import { createMemoryPatreonLinkStore } from "../patreon/store";
 import type {
   AuthProvider,
   BillingProvider,
@@ -33,6 +45,9 @@ import type {
   StorageProvider,
   TransactionalEmailProvider
 } from "./types";
+
+/** Process-local link store for preview/tests until SQL-backed store is wired. */
+const previewPatreonStore = createMemoryPatreonLinkStore();
 
 const PREVIEW_OVERALL =
   "Preview path — productionSafe remains false until Milestone 3 security/browser gate and deploy/billing close.";
@@ -294,13 +309,132 @@ const stubPatreon: PatreonVerificationProvider = {
   id: "patreon",
   implementation: "stub",
   async health() {
+    const mode = resolvePatreonMode(loadEnv());
+    if (mode === "stub" && loadEnv().ESCAPE_HATCH_PATREON_MODE?.toLowerCase() === "relay_managed") {
+      return {
+        ok: false,
+        reason:
+          "Relay-managed Patreon verification (relay_managed) belongs to EH-041 — not implemented in this kit."
+      };
+    }
     return {
       ok: false,
       reason:
-        "Patreon verification adapters are stub/preview-only until EH-040/041."
+        "Patreon verification is stub until ESCAPE_HATCH_PATREON_MODE=creator_oauth with real non-placeholder credentials (EH-040). Relay-managed path is EH-041."
     };
+  },
+  async buildAuthorizeUrl() {
+    return {
+      ok: false,
+      reason: "Patreon creator_oauth is not configured (stub)."
+    };
+  },
+  async handleCallback() {
+    return {
+      ok: false,
+      redirectTo: "/account?patreon=error&reason=not_configured",
+      reason: "not_configured"
+    };
+  },
+  async refreshAndRelink() {
+    return { ok: false, reason: "not_configured" };
   }
 };
+
+const creatorOAuthPatreon: PatreonVerificationProvider = {
+  id: "patreon",
+  implementation: "creator_oauth",
+  async health() {
+    const env = loadEnv();
+    if (!isCreatorOAuthConfigured(env)) {
+      return {
+        ok: false,
+        reason:
+          "ESCAPE_HATCH_PATREON_MODE=creator_oauth but client id/secret/redirect/campaign/token key/state secret are missing or placeholders."
+      };
+    }
+    return {
+      ok: true,
+      detail: `Creator-owned Patreon OAuth env configured. ${PREVIEW_OVERALL}`
+    };
+  },
+  async buildAuthorizeUrl(args) {
+    try {
+      const config = loadCreatorOAuthConfig();
+      const built = buildAuthorizeUrl({
+        config,
+        siteId: args.siteId,
+        accountId: args.accountId,
+        returnPath: args.returnPath
+      });
+      return {
+        ok: true,
+        url: built.url,
+        state: built.state,
+        expiresAtIso: built.expiresAtIso
+      };
+    } catch {
+      return { ok: false, reason: "authorize_build_failed" };
+    }
+  },
+  async handleCallback(args) {
+    const returnPath =
+      args.returnPath && args.returnPath.startsWith("/") && !args.returnPath.startsWith("//")
+        ? args.returnPath
+        : "/account";
+    try {
+      const config = loadCreatorOAuthConfig();
+      const result = await linkFromAuthorizationCode({
+        config,
+        store: previewPatreonStore,
+        code: args.code,
+        codeVerifier: args.codeVerifier,
+        siteId: args.siteId,
+        accountId: args.accountId
+      });
+      if (!result.ok) {
+        return {
+          ok: false,
+          redirectTo: `${returnPath}?patreon=error&reason=${encodeURIComponent(result.reason)}`,
+          reason: result.reason
+        };
+      }
+      return {
+        ok: true,
+        redirectTo: `${returnPath.split("?")[0]}?patreon=linked`,
+        patreonUserId: result.patreonUserId,
+        tierIds: result.tierIds
+      };
+    } catch {
+      return {
+        ok: false,
+        redirectTo: `${returnPath}?patreon=error&reason=callback_failed`,
+        reason: "callback_failed"
+      };
+    }
+  },
+  async refreshAndRelink(args) {
+    try {
+      const config = loadCreatorOAuthConfig();
+      return await refreshAndRelink({
+        config,
+        store: previewPatreonStore,
+        siteId: args.siteId,
+        accountId: args.accountId
+      });
+    } catch {
+      return { ok: false, reason: "refresh_failed" };
+    }
+  }
+};
+
+function createPatreonProvider(): PatreonVerificationProvider {
+  const env = loadEnv();
+  if (isCreatorOAuthConfigured(env)) {
+    return creatorOAuthPatreon;
+  }
+  return stubPatreon;
+}
 
 const stubEmail: TransactionalEmailProvider = {
   id: "email",
@@ -358,7 +492,7 @@ export function createSiteAdapters(): SiteAdapters {
     database: createDatabaseProvider(),
     storage: createStorageProvider(),
     billing: stubBilling,
-    patreon: stubPatreon,
+    patreon: createPatreonProvider(),
     email: stubEmail,
     deployment: manifestDeployment
   };

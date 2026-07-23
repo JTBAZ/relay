@@ -36,17 +36,17 @@ afterEach(() => {
 });
 
 describe("EH-034 status + manifest", () => {
-  it("advances slice to EH-034 with next EH-040 and productionSafe false", () => {
+  it("advances slice to EH-040 with next EH-041 and productionSafe false", () => {
     const status = buildEscapeHatchStatus();
-    expect(ESCAPE_HATCH_SLICE).toBe("EH-034");
-    expect(status.slice).toBe("EH-034");
+    expect(ESCAPE_HATCH_SLICE).toBe("EH-040");
+    expect(status.slice).toBe("EH-040");
     expect(status.productionSafe).toBe(false);
-    expect(status.nextSlice.id).toBe("EH-040");
-    expect(status.nextSlice.title).toMatch(/Patreon|OAuth/i);
+    expect(status.nextSlice.id).toBe("EH-041");
+    expect(status.nextSlice.title).toMatch(/Relay-managed|verification|Patreon|OAuth/i);
     const cap = status.capabilities.find((c) => c.id === "account-paywall-ux");
     expect(cap?.state).toBe("preview_only");
     expect(cap?.evidence).toMatch(/EH-034|\/account|PaywallOverlay|productionSafe remains false/i);
-    expect(cap?.nextSlice).toBe("EH-040");
+    expect(cap?.nextSlice).toBe("EH-041");
     expect(
       status.blockers.some((b) => /Account\/paywall UX.*EH-034/i.test(b))
     ).toBe(false);
@@ -70,7 +70,7 @@ describe("EH-034 status + manifest", () => {
       productionSafe: boolean;
       feature_flags: Record<string, boolean>;
     };
-    expect(manifest.slice).toBe("EH-034");
+    expect(manifest.slice).toBe("EH-040");
     expect(manifest.productionSafe).toBe(false);
     expect(manifest.feature_flags.hard_paywall).toBe(true);
     expect(existsSync(join(result.outDir, "app/account/page.tsx"))).toBe(true);
@@ -78,6 +78,15 @@ describe("EH-034 status + manifest", () => {
       true
     );
     expect(existsSync(join(result.outDir, "lib/paywall/copy.ts"))).toBe(true);
+    const accountPage = readFileSync(
+      join(result.outDir, "app/account/page.tsx"),
+      "utf8"
+    );
+    expect(accountPage).toMatch(/PatronChrome/);
+    expect(accountPage).not.toMatch(/ConsoleNav/);
+    const loginPage = readFileSync(join(result.outDir, "app/login/page.tsx"), "utf8");
+    expect(loginPage).toMatch(/PatronChrome/);
+    expect(loginPage).not.toMatch(/ConsoleNav/);
     const ops = readFileSync(join(result.outDir, "OPERATIONS.md"), "utf8");
     expect(ops).toMatch(/EH-034|Account \/ paywall/i);
     expect(ops).toMatch(/Soft persona/i);

@@ -28,13 +28,12 @@ export function AccountShell({ summary, displayName, communityCta }: Props) {
   return (
     <div className="eh-account">
       <header className="eh-account-header">
-        <p className="eyebrow">Account</p>
         <h1>{displayName}</h1>
         <p className="lede">
           Membership and sign-in for this site. Access decisions are server-side —
           the browser never unlocks premium media on its own.
         </p>
-        <p className="meta muted">productionSafe: false · EH-034 account / paywall UX</p>
+        <p className="meta muted">productionSafe: false · EH-040 Patreon OAuth</p>
       </header>
 
       <section className="eh-account-panel" aria-labelledby="eh-account-session">
@@ -81,6 +80,54 @@ export function AccountShell({ summary, displayName, communityCta }: Props) {
             signing in.
           </p>
         )}
+      </section>
+
+      <section
+        className="eh-account-panel"
+        aria-labelledby="eh-account-patreon"
+      >
+        <h2 id="eh-account-patreon">Patreon</h2>
+        <p
+          className={
+            summary.patreon.linked
+              ? "eh-account-note"
+              : "eh-account-note eh-account-note--denied"
+          }
+          role="status"
+        >
+          {summary.patreon.note}
+        </p>
+        <dl className="eh-account-dl">
+          <div>
+            <dt>Mode</dt>
+            <dd>{summary.patreon.mode}</dd>
+          </div>
+          <div>
+            <dt>Configured</dt>
+            <dd>{summary.patreon.configured ? "Yes" : "No"}</dd>
+          </div>
+          <div>
+            <dt>Linked</dt>
+            <dd>{summary.patreon.linked ? "Yes" : "No"}</dd>
+          </div>
+        </dl>
+        {summary.patreon.canConnect && !summary.patreon.linked ? (
+          <form
+            className="eh-account-actions"
+            action="/api/patreon/oauth/start"
+            method="post"
+          >
+            <input type="hidden" name="next" value="/account" />
+            <button type="submit" className="admin-link-btn">
+              Connect Patreon
+            </button>
+          </form>
+        ) : null}
+        {summary.patreon.mode === "relay_managed_deferred" ? (
+          <p className="eh-account-note muted" role="note">
+            Relay-managed verification ships in EH-041.
+          </p>
+        ) : null}
       </section>
 
       <section

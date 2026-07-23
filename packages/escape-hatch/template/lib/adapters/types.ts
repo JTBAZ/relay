@@ -47,10 +47,41 @@ export type BillingProvider = {
   health(): Promise<AdapterHealth>;
 };
 
+export type PatreonAuthorizeResult =
+  | { ok: true; url: string; state: string; expiresAtIso: string }
+  | { ok: false; reason: string };
+
+export type PatreonCallbackResult =
+  | { ok: true; redirectTo: string; patreonUserId: string; tierIds: string[] }
+  | { ok: false; redirectTo: string; reason: string };
+
+export type PatreonRefreshResult =
+  | { ok: true; patreonUserId: string; tierIds: string[] }
+  | { ok: false; reason: string };
+
 export type PatreonVerificationProvider = {
   readonly id: "patreon";
   readonly implementation: "stub" | "creator_oauth" | "relay_managed";
   health(): Promise<AdapterHealth>;
+  /** Mint Patreon authorize URL + signed state (CSRF + PKCE). */
+  buildAuthorizeUrl(args: {
+    siteId: string;
+    accountId: string;
+    returnPath?: string;
+  }): Promise<PatreonAuthorizeResult>;
+  /** Exchange callback code after state verify (caller verifies state first). */
+  handleCallback(args: {
+    siteId: string;
+    accountId: string;
+    code: string;
+    codeVerifier: string;
+    returnPath?: string;
+  }): Promise<PatreonCallbackResult>;
+  /** Refresh stored token and re-validate campaign membership. */
+  refreshAndRelink(args: {
+    siteId: string;
+    accountId: string;
+  }): Promise<PatreonRefreshResult>;
 };
 
 export type TransactionalEmailProvider = {

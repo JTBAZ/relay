@@ -1,5 +1,5 @@
-import { ConsoleNav } from "@/components/ConsoleNav";
 import { LoginForm } from "@/components/LoginForm";
+import { PatronChrome } from "@/components/PatronChrome";
 import { PortableLoginForm } from "@/components/PortableLoginForm";
 import {
   isPortableIdentityConfigured,
@@ -7,12 +7,17 @@ import {
   loadEnv,
   resolveIdentityProviderSafe
 } from "@/lib/env";
+import { loadSite } from "@/lib/load-site";
+import type { IdentityProviderUx } from "@/lib/paywall/types";
 
 export const dynamic = "force-dynamic";
 
 export default function LoginPage() {
+  const site = loadSite();
   const env = loadEnv();
   const mode = resolveIdentityProviderSafe(env);
+  const identityMode: IdentityProviderUx =
+    mode === "invalid" ? "invalid" : mode;
   const supabaseReady =
     mode === "supabase" && isSupabaseIdentityConfigured(env);
   const portableReady =
@@ -20,32 +25,22 @@ export default function LoginPage() {
 
   const title =
     mode === "portable"
-      ? "Sign in (portable)"
+      ? "Sign in"
       : mode === "supabase"
-        ? "Sign in (Supabase)"
+        ? "Sign in"
         : "Sign in";
 
   return (
-    <>
-      <ConsoleNav />
-      <main className="console-page shell">
-        <header className="console-hero">
-          <p className="eyebrow">Account</p>
+    <PatronChrome site={site} identityMode={identityMode} compact>
+      <div className="patron-account">
+        <header className="eh-account-header">
           <h1>{title}</h1>
           <p className="lede">
             {mode === "portable"
-              ? "Creator-owned portable auth (email + password) against your Postgres. Soft demo personas on visitor preview are not a substitute for this session."
+              ? "Use your site account (email and password) on creator-owned Postgres."
               : mode === "supabase"
-                ? "Creator-owned Supabase Auth for this site kit. Soft demo personas on visitor preview are not a substitute for this session."
-                : "Configure ESCAPE_HATCH_IDENTITY_PROVIDER=supabase|portable with matching env to enable an authoritative session."}
-          </p>
-          <p className="meta muted">
-            productionSafe: false · EH-034 account / paywall UX
-          </p>
-          <p className="meta">
-            After sign-in, open{" "}
-            <a href="/account">Account</a> for membership status. Soft personas
-            never unlock Path A/B premium media.
+                ? "Use your site account on creator-owned Supabase Auth."
+                : "Configure an identity provider to enable an authoritative session. Soft personas on the gallery are preview-only."}
           </p>
         </header>
         {mode === "invalid" ? (
@@ -73,15 +68,18 @@ export default function LoginPage() {
             <p>
               <strong>Identity not configured</strong> — set{" "}
               <span className="mono">ESCAPE_HATCH_IDENTITY_PROVIDER</span> to{" "}
-              <span className="mono">supabase</span> (Path A) or{" "}
-              <span className="mono">portable</span> (Path B) and the matching
-              env names in <span className="mono">.env.example</span> /{" "}
-              <span className="mono">scripts/bootstrap-identity.md</span>. Local
+              <span className="mono">supabase</span> or{" "}
+              <span className="mono">portable</span> with matching env. Local
               preview continues with soft personas only.
+            </p>
+            <p>
+              <a href="/preview">Back to gallery</a>
+              {" · "}
+              <a href="/account">Account</a>
             </p>
           </section>
         )}
-      </main>
-    </>
+      </div>
+    </PatronChrome>
   );
 }

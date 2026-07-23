@@ -39,16 +39,16 @@ function loadSample(): unknown {
 describe("EH-021 theme capability (preserved under EH-032)", () => {
   it("keeps premium-patron-theme preview_only with productionSafe false", () => {
     const status = buildEscapeHatchStatus();
-    expect(ESCAPE_HATCH_SLICE).toBe("EH-034");
-    expect(status.slice).toBe("EH-034");
+    expect(ESCAPE_HATCH_SLICE).toBe("EH-040");
+    expect(status.slice).toBe("EH-040");
     expect(status.productionSafe).toBe(false);
-    expect(status.nextSlice.id).toBe("EH-040");
+    expect(status.nextSlice.id).toBe("EH-041");
     const theme = status.capabilities.find((c) => c.id === "premium-patron-theme");
     expect(theme?.state).toBe("preview_only");
     expect(theme?.evidence).toMatch(/soft-gate|preview-only/i);
     expect(theme?.evidence).toMatch(/productionSafe remains false/i);
     expect(theme?.evidence).not.toMatch(/EH-033 private media delivery claimed/i);
-    expect(theme?.nextSlice).toBe("EH-040");
+    expect(theme?.nextSlice).toBe("EH-041");
   });
 });
 
@@ -56,7 +56,7 @@ describe("EH-021 theme branding fields", () => {
   it("parses sample bundle branding dials", () => {
     const bundle = parseSiteBundle(loadSample());
     expect(bundle.theme.color_scheme).toBe("dark");
-    expect(bundle.theme.accent_color).toBe("#c4784a");
+    expect(bundle.theme.accent_color).toBe("#4a7fc4");
     expect(bundle.theme.type_pairing).toBe("editorial");
     expect(bundle.theme.gallery_density).toBe("comfortable");
     expect(bundle.theme.cover_crop).toBe("center");
@@ -139,8 +139,9 @@ describe("EH-021 fillTemplate theme tokens", () => {
     tempDirs.push(result.outDir);
 
     const css = readFileSync(join(result.outDir, "app", "theme-vars.css"), "utf8");
-    expect(css).toMatch(/--eh-accent:\s*#c4784a/);
+    expect(css).toMatch(/--eh-accent:\s*#4a7fc4/);
     expect(css).toMatch(/--eh-font-display:/);
+    expect(css).toMatch(/--font-outfit/);
     expect(css).toMatch(/--eh-font-body:/);
     expect(css).toMatch(/--eh-grid-min:\s*280px/);
     expect(css).toMatch(/--eh-cover-position:\s*center/);
@@ -160,7 +161,7 @@ describe("EH-021 fillTemplate theme tokens", () => {
     const manifest = JSON.parse(
       readFileSync(join(result.outDir, "escape-hatch.manifest.json"), "utf8")
     ) as { slice: string; productionSafe: boolean };
-    expect(manifest.slice).toBe("EH-034");
+    expect(manifest.slice).toBe("EH-040");
     expect(manifest.productionSafe).toBe(false);
 
     expect(existsSync(join(result.outDir, "components", "PatronChrome.tsx"))).toBe(

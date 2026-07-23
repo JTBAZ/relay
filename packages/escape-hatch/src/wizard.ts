@@ -15,12 +15,12 @@ import type {
 
 const SCHEMES: ColorScheme[] = ["dark", "light", "warm"];
 const ACCENTS = [
-  "#c4784a",
-  "#2a9d8f",
-  "#d4a05a",
-  "#c45c6a",
   "#4a7fc4",
-  "#8b6bb5"
+  "#c45c6a",
+  "#2a9d8f",
+  "#8b6bb5",
+  "#c4784a",
+  "#d4a05a"
 ];
 const PAYWALLS: PaywallStyle[] = ["blur", "hard", "teaser"];
 const TYPE_PAIRINGS: TypePairing[] = ["editorial", "studio", "signal"];

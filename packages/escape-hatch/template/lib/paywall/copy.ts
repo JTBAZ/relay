@@ -91,7 +91,7 @@ export function paywallCopyForReason(input: {
     case "missing_credentials":
       return {
         headline: theme || "Members only",
-        detail: "Sign in to check your membership, or join to unlock this post.",
+        detail: "Sign in to check membership, or join to unlock.",
         primaryCta: "Sign in",
         primaryHref: LOGIN,
         secondaryCta: community?.label,

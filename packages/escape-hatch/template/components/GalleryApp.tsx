@@ -82,9 +82,10 @@ export function GalleryApp({
       onPersonaChange={setPersonaId}
       identityMode={identityMode}
       showSoftPersona={!identityConfigured}
+      showAbout
     >
       <div
-        className={`patron-grid patron-grid--${density}`}
+        className={`patron-grid patron-grid--${density} patron-grid--mosaic`}
         role="list"
         aria-label="Gallery posts"
       >
@@ -111,6 +112,7 @@ export function GalleryApp({
                 })
               : undefined;
           const lockClass = unlocked ? "" : `locked ${style}`;
+          const featured = index === 0;
           const body = (
             <>
               <div className="media-wrap">
@@ -143,7 +145,7 @@ export function GalleryApp({
                 ) : null}
               </div>
               <div className="body">
-                <div className="badge">{accessLabel(post, liveSite.tiers)}</div>
+                <p className="patron-card-meta">{accessLabel(post, liveSite.tiers)}</p>
                 <h2 className="patron-card-title">{post.title}</h2>
               </div>
             </>
@@ -152,7 +154,7 @@ export function GalleryApp({
           return (
             <article
               key={post.post_id}
-              className={`patron-card ${lockClass}`.trim()}
+              className={`patron-card ${featured ? "patron-card--featured" : ""} ${lockClass}`.trim()}
               role="listitem"
               style={{ ["--patron-stagger" as string]: String(index) }}
             >
