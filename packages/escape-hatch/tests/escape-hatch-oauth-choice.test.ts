@@ -37,13 +37,13 @@ import { observeConnectorBilling } from "../template/lib/patreon/relay-managed/b
 const TEMPLATE = join(__dirname, "..", "template");
 
 describe("EH-043 status", () => {
-  it("advances slice to EH-074 with next EH-080 and productionSafe false", () => {
+  it("advances slice to EH-080 with next EH-081 and productionSafe false", () => {
     const status = buildEscapeHatchStatus();
-    expect(ESCAPE_HATCH_SLICE).toBe("EH-074");
-    expect(status.slice).toBe("EH-074");
+    expect(ESCAPE_HATCH_SLICE).toBe("EH-080");
+    expect(status.slice).toBe("EH-080");
     expect(status.productionSafe).toBe(false);
-    expect(status.nextSlice.id).toBe("EH-080");
-    expect(status.nextSlice.title).toMatch(/ownership/i);
+    expect(status.nextSlice.id).toBe("EH-081");
+    expect(status.nextSlice.title).toMatch(/golden|journeys/i);
     expect(status.blockers.some((b) => /belongs to EH-043/i.test(b))).toBe(
       false
     );
@@ -51,7 +51,7 @@ describe("EH-043 status", () => {
       (c) => c.id === "oauth-choice-migration-ux"
     );
     expect(cap?.state).toBe("preview_only");
-    expect(cap?.nextSlice).toBe("EH-080");
+    expect(cap?.nextSlice).toBe("EH-081");
     expect(cap?.evidence).toMatch(/neither preselected|no managed|choice/i);
   });
 });

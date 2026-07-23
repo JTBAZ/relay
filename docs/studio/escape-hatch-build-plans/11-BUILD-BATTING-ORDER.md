@@ -218,7 +218,7 @@ Execute one documented slice at a time. The program docs define scope and depend
 ### EH-074 Deployment wizard
 
 - **Builder:** Cursor Grok 4.5 High
-- **Status:** Implemented (preview_only; `productionSafe: false`). Path A/B launch wizard on `/admin/deploy` with backup-before-complete, validation/recovery, launch checklist. Evidence: `docs/qa/ESCAPE_HATCH_EH_074_EVIDENCE.md`. Next: **EH-080**.
+- **Status:** Implemented (preview_only; `productionSafe: false`). Path A/B launch wizard on `/admin/deploy` with backup-before-complete, validation/recovery, launch checklist. Evidence: `docs/qa/ESCAPE_HATCH_EH_074_EVIDENCE.md`. Next was **EH-080** (done).
 
 **Gate:** both paths deploy cleanly; domain/email/restore/rollback proven in browser and automation. (Fixture/checklist satisfied in EH-074; live provider proofs remain open.)
 
@@ -227,7 +227,7 @@ Execute one documented slice at a time. The program docs define scope and depend
 ### EH-080 Ownership packet
 
 - **Builder:** Cursor Grok 4.5 High
-- Source/data/media manifests, costs, dependencies, warranty, operations, migration rights.
+- **Status:** Implemented (preview_only; `productionSafe: false`). Ownership packet generator (manifesto, env-name inventory, optional Relay disclosure, 90-day warranty), Admin Deploy/Health surfaces. Evidence: `docs/qa/ESCAPE_HATCH_EH_080_EVIDENCE.md`. Next: **EH-081**.
 
 ### EH-081 Full golden journeys
 

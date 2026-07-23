@@ -248,7 +248,7 @@ Deferrals: Relay Studio client, live network E2E, remote media upload, SQL token
 
 Workflow (fixture): create preview → smoke/approve (operator) → promote (retains prior stable) → guided rollback. Provider URL (`*.vercel.app`) then custom domain. Absolute callback URLs fail closed for unset/placeholder origins.
 
-Deferrals: live Vercel CLI/API, real DNS/TLS probes, ownership packet (**EH-080**).
+Deferrals: live Vercel CLI/API, real DNS/TLS probes, golden journeys (**EH-081**).
 
 ## Portable Docker path (EH-071)
 
@@ -262,7 +262,7 @@ Deferrals: live Vercel CLI/API, real DNS/TLS probes, ownership packet (**EH-080*
 
 MojoHost is a **policy candidate** only — not wizard-supported until gates in `13-PROVIDER-POLICY-EVIDENCE.md` pass.
 
-Deferrals: required live Docker in CI, live ACME/DNS, MojoHost as supported host, ownership packet (**EH-080**).
+Deferrals: required live Docker in CI, live ACME/DNS, MojoHost as supported host, golden journeys (**EH-081**).
 
 ## Transactional email (EH-072)
 
@@ -277,7 +277,7 @@ Required message types: account verification, password/admin recovery, security 
 
 Golden path recipe: **Resend HTTP API** (names only). Creator owns the ESP account and sender domain. Checklist is operator guidance — no live DNS probes.
 
-Deferrals: live Resend/SMTP in CI, adult ToS selection, patrons resend UX, ownership packet (**EH-080**).
+Deferrals: live Resend/SMTP in CI, adult ToS selection, patrons resend UX, golden journeys (**EH-081**).
 
 ## Backup / restore / diagnostics (EH-073)
 
@@ -305,7 +305,21 @@ Deferrals: live cloud backup providers, full production restore signoff (**EH-08
 
 Blocking complete gate: path chosen, callback origin ok, EH-073 backup freshness + restore rehearsal, active promote pointer, operator smoke approval. MojoHost remains not wizard-supported. Still preview_only.
 
-Deferrals: live Vercel/Docker daemon, live DNS/TLS, ownership packet (**EH-080**), `productionSafe: true`.
+Deferrals: live Vercel/Docker daemon, live DNS/TLS, golden journeys (**EH-081**), `productionSafe: true`.
+
+## Ownership packet (EH-080)
+
+| Surface | Role |
+|---------|------|
+| `lib/ownership/` | Packet builder, env-name inventory, warranty boundary, secret scan |
+| `GET/POST /api/admin/ownership` | Status + generate + `?download=1` |
+| `data/ownership-packet/` | JSON + markdown handoff artifacts |
+| `/admin/deploy` panel | Generate / download |
+| Health | Ownership packet readiness item |
+
+Contents (doc 12 subset): manifesto, source/data pointers, credentials **names only**, optional Relay disclosure, operating pointers, 90-day warranty. Live independence proof deferred to **EH-082**.
+
+Deferrals: full human signoff browser journeys (**EH-081**), remove-Relay independence drill (**EH-082**), embedding secrets/PII, `productionSafe: true`.
 
 ## Identity provider
 

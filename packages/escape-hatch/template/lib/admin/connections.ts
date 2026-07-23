@@ -15,6 +15,7 @@ import {
 } from "../email/readiness";
 import type { BackupReadiness } from "../backup/readiness";
 import type { LaunchReadiness } from "../deploy/launch-wizard";
+import type { OwnershipReadiness } from "../ownership/readiness";
 import type { AdapterHealthRow } from "./types";
 
 export type ConnectionCard = {
@@ -155,6 +156,7 @@ export function buildHealthItems(args: {
   emailReadiness?: EmailReadiness | null;
   backupReadiness?: BackupReadiness | null;
   launchReadiness?: LaunchReadiness | null;
+  ownershipReadiness?: OwnershipReadiness | null;
 }): HealthItem[] {
   const items: HealthItem[] = [
     {
@@ -304,6 +306,19 @@ export function buildHealthItems(args: {
         : l.can_complete
           ? "Open /admin/deploy and Complete launch."
           : "Open /admin/deploy launch wizard; clear blockers (path, callbacks, backup/restore, promote, smoke)."
+    });
+  }
+
+  if (args.ownershipReadiness) {
+    const o = args.ownershipReadiness;
+    items.push({
+      id: "ownership_packet",
+      title: "Ownership packet (EH-080)",
+      ok: o.ok,
+      detail: o.detail,
+      next_action: o.packet_generated
+        ? "Download from /admin/deploy — env names only; live independence proof is EH-082."
+        : "Generate ownership packet on /admin/deploy (manifesto, credentials names, warranty)."
     });
   }
 

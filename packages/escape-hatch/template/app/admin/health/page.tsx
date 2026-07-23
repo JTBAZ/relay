@@ -9,6 +9,7 @@ import { assessBackupReadiness } from "@/lib/backup/readiness";
 import { assessLaunchReadiness } from "@/lib/deploy/launch-wizard";
 import { assessPathBRecipe } from "@/lib/deploy/path-b-recipe";
 import { assessEmailReadiness } from "@/lib/email/readiness";
+import { assessOwnershipReadiness } from "@/lib/ownership/readiness";
 import { loadEnv } from "@/lib/env";
 
 export const dynamic = "force-dynamic";
@@ -39,7 +40,8 @@ export default async function AdminHealthPage() {
       siteId: model.site_id,
       siteUrl: env.NEXT_PUBLIC_SITE_URL,
       env
-    })
+    }),
+    ownershipReadiness: assessOwnershipReadiness({ siteId: model.site_id })
   });
 
   return (
@@ -47,7 +49,7 @@ export default async function AdminHealthPage() {
       <ConsoleNav />
       <AdminShell
         title="Site health"
-        lede="Actionable next steps for adapters, deploy, email, backup/restore, and EH-074 launch wizard. Live DNS/TLS and cloud providers remain deferred."
+        lede="Actionable next steps for adapters, deploy, email, backup, launch wizard, and EH-080 ownership packet. Live DNS/TLS and cloud providers remain deferred."
         identity={model.identity}
       >
         {model.read_allowed && model.deny_reason === null ? (

@@ -1,11 +1,11 @@
 /**
- * Deterministic Escape Hatch capability inventory (through EH-074).
+ * Deterministic Escape Hatch capability inventory (through EH-080).
  * No timestamps, env reads, network, or live data — informational only.
  */
 
 export const ESCAPE_HATCH_STATUS_SCHEMA_VERSION = "escape-hatch-status/1.0.0";
 
-export const ESCAPE_HATCH_SLICE = "EH-074";
+export const ESCAPE_HATCH_SLICE = "EH-080";
 
 export type CapabilityState =
   | "production_safe"
@@ -36,7 +36,7 @@ export type EscapeHatchStatus = {
   capabilities: EscapeHatchCapability[];
   blockers: string[];
   nextSlice: {
-    id: "EH-080";
+    id: "EH-081";
     title: string;
     focus: string[];
   };
@@ -59,7 +59,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "packages/escape-hatch/src/library-truth/kit-io.ts"
     ],
     risk: "high",
-    nextSlice: "EH-080"
+    nextSlice: "EH-081"
   },
   {
     id: "generated-repository",
@@ -84,7 +84,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "packages/escape-hatch/tests/escape-hatch-generated-repo.test.ts"
     ],
     risk: "high",
-    nextSlice: "EH-080"
+    nextSlice: "EH-081"
   },
   {
     id: "premium-patron-theme",
@@ -110,7 +110,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "packages/escape-hatch/tests/escape-hatch-theme.test.ts"
     ],
     risk: "medium",
-    nextSlice: "EH-080"
+    nextSlice: "EH-081"
   },
   {
     id: "soft-persona-gate",
@@ -128,7 +128,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "packages/escape-hatch/template/lib/paywall/copy.ts"
     ],
     risk: "critical",
-    nextSlice: "EH-080"
+    nextSlice: "EH-081"
   },
   {
     id: "public-media-copy",
@@ -143,7 +143,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "packages/escape-hatch/template/lib/media/delivery.ts"
     ],
     risk: "critical",
-    nextSlice: "EH-080"
+    nextSlice: "EH-081"
   },
   {
     id: "client-readable-bundle",
@@ -160,7 +160,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "packages/escape-hatch/src/library-truth/kit-io.ts"
     ],
     risk: "high",
-    nextSlice: "EH-080"
+    nextSlice: "EH-081"
   },
   {
     id: "duplicate-contracts",
@@ -208,7 +208,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "tests/fixtures/patreon/cookie-list-with-media.json"
     ],
     risk: "medium",
-    nextSlice: "EH-080"
+    nextSlice: "EH-081"
   },
   {
     id: "relay-dump-fixtures",
@@ -227,7 +227,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "packages/escape-hatch/tests/escape-hatch-library-truth.test.ts"
     ],
     risk: "medium",
-    nextSlice: "EH-080"
+    nextSlice: "EH-081"
   },
   {
     id: "relay-canonical-reuse",
@@ -250,7 +250,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "src/storage/media-delivery-policy.ts"
     ],
     risk: "informational",
-    nextSlice: "EH-080"
+    nextSlice: "EH-081"
   },
   {
     id: "simplified-access-semantics",
@@ -267,7 +267,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "src/clone/tier-rules.ts"
     ],
     risk: "high",
-    nextSlice: "EH-080"
+    nextSlice: "EH-081"
   },
   {
     id: "generated-site-identity",
@@ -305,7 +305,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "packages/escape-hatch/tests/escape-hatch-entitlements.test.ts"
     ],
     risk: "critical",
-    nextSlice: "EH-080"
+    nextSlice: "EH-081"
   },
   {
     id: "entitlement-evaluator",
@@ -326,7 +326,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "packages/escape-hatch/tests/escape-hatch-entitlements.test.ts"
     ],
     risk: "critical",
-    nextSlice: "EH-080"
+    nextSlice: "EH-081"
   },
   {
     id: "private-media-delivery",
@@ -343,7 +343,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "packages/escape-hatch/tests/escape-hatch-private-media.test.ts"
     ],
     risk: "critical",
-    nextSlice: "EH-080"
+    nextSlice: "EH-081"
   },
   {
     id: "account-paywall-ux",
@@ -368,7 +368,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "packages/escape-hatch/tests/escape-hatch-account-paywall.test.ts"
     ],
     risk: "critical",
-    nextSlice: "EH-080"
+    nextSlice: "EH-081"
   },
   {
     id: "billing-adapters",
@@ -388,7 +388,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "src/payments/provider-adapter.ts"
     ],
     risk: "critical",
-    nextSlice: "EH-080"
+    nextSlice: "EH-081"
   },
   {
     id: "provider-policy",
@@ -404,7 +404,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "packages/escape-hatch/tests/escape-hatch-billing-alternate.test.ts"
     ],
     risk: "critical",
-    nextSlice: "EH-080"
+    nextSlice: "EH-081"
   },
   {
     id: "deploy-adapters",
@@ -436,14 +436,14 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "packages/escape-hatch/src/zip-kit.ts"
     ],
     risk: "high",
-    nextSlice: "EH-080"
+    nextSlice: "EH-081"
   },
   {
     id: "native-admin",
     title: "Native generated-site admin",
     state: "preview_only",
     evidence:
-      "EH-022 admin shell with identity gates (local-operator preview or staff session). EH-060/061/062 CMS surfaces. EH-063 Patreon transition sync. EH-064 Relay Crosspost. EH-070/071 fixture deploy rehearsals + EH-074 launch wizard on /admin/deploy. EH-072 email + EH-073 backup/restore Health items. Live Patreon/Vercel/Docker daemon and Relay Studio client deferred. Auth/DB adapters may report ok:true only with real non-placeholder env and still label preview. Domain/TLS and live cloud backup probes remain open. productionSafe remains false.",
+      "EH-022 admin shell with identity gates (local-operator preview or staff session). EH-060/061/062 CMS surfaces. EH-063 Patreon transition sync. EH-064 Relay Crosspost. EH-070/071 fixture deploy + EH-074 launch wizard + EH-080 ownership packet on /admin/deploy. EH-072 email + EH-073 backup/restore Health items. Live Patreon/Vercel/Docker daemon and Relay Studio client deferred. Auth/DB adapters may report ok:true only with real non-placeholder env and still label preview. Domain/TLS and live cloud backup probes remain open. productionSafe remains false.",
     sourcePaths: [
       "packages/escape-hatch/template/app/admin/page.tsx",
       "packages/escape-hatch/template/app/admin/posts/page.tsx",
@@ -468,6 +468,10 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "packages/escape-hatch/template/components/admin/DeployLaunchWizard.tsx",
       "packages/escape-hatch/template/lib/deploy/launch-wizard.ts",
       "packages/escape-hatch/tests/escape-hatch-deploy-wizard.test.ts",
+      "packages/escape-hatch/template/components/admin/OwnershipPacketPanel.tsx",
+      "packages/escape-hatch/template/lib/ownership/",
+      "packages/escape-hatch/template/app/api/admin/ownership/route.ts",
+      "packages/escape-hatch/tests/escape-hatch-ownership-packet.test.ts",
       "packages/escape-hatch/template/lib/patreon/sync.ts",
       "packages/escape-hatch/template/lib/patreon/sync-state.ts",
       "packages/escape-hatch/template/lib/relay-crosspost/tokens.ts",
@@ -485,7 +489,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "packages/escape-hatch/tests/escape-hatch-deploy-docker.test.ts"
     ],
     risk: "high",
-    nextSlice: "EH-080"
+    nextSlice: "EH-081"
   },
   {
     id: "migration-import",
@@ -504,7 +508,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "packages/escape-hatch/tests/escape-hatch-migrate.test.ts"
     ],
     risk: "high",
-    nextSlice: "EH-080"
+    nextSlice: "EH-081"
   },
   {
     id: "library-truth-parity",
@@ -527,7 +531,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "packages/escape-hatch/tests/escape-hatch-library-truth.test.ts"
     ],
     risk: "high",
-    nextSlice: "EH-080"
+    nextSlice: "EH-081"
   },
   {
     id: "backup-restore",
@@ -546,7 +550,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "packages/escape-hatch/tests/escape-hatch-backup-restore.test.ts"
     ],
     risk: "medium",
-    nextSlice: "EH-080"
+    nextSlice: "EH-081"
   },
   {
     id: "provider-readiness",
@@ -569,7 +573,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "src/deploy/deploy-adapter.ts"
     ],
     risk: "high",
-    nextSlice: "EH-080"
+    nextSlice: "EH-081"
   },
   {
     id: "creator-patreon-oauth",
@@ -589,7 +593,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "packages/escape-hatch/tests/escape-hatch-patreon-oauth.test.ts"
     ],
     risk: "critical",
-    nextSlice: "EH-080"
+    nextSlice: "EH-081"
   },
   {
     id: "relay-managed-patreon-verification",
@@ -607,7 +611,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "tests/escape-hatch-managed-verify.test.ts"
     ],
     risk: "critical",
-    nextSlice: "EH-080"
+    nextSlice: "EH-081"
   },
   {
     id: "relay-managed-connector-billing",
@@ -625,7 +629,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "packages/escape-hatch/tests/escape-hatch-connector-billing.test.ts"
     ],
     risk: "critical",
-    nextSlice: "EH-080"
+    nextSlice: "EH-081"
   },
   {
     id: "oauth-choice-migration-ux",
@@ -644,12 +648,13 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "packages/escape-hatch/tests/escape-hatch-oauth-choice.test.ts"
     ],
     risk: "high",
-    nextSlice: "EH-080"
+    nextSlice: "EH-081"
   }
 ];
 
 const PROTOTYPE_WARNINGS: string[] = [
   "productionSafe is false — this deliverable is prototype/preview-only.",
+  "EH-080 ownership packet is preview_only — manifesto, env-name inventory, optional Relay disclosure, 90-day warranty boundary; no secrets; live independence proof deferred to EH-082; productionSafe false pending Milestone 3.",
   "EH-074 launch wizard is preview_only — Path A/B guided checklist with backup-before-complete; not live Vercel/Docker; MojoHost not wizard-supported; productionSafe false pending Milestone 3.",
   "EH-073 backup/restore is preview_only — kit-local redacted snapshots, isolated restore rehearsal, and diagnostic download; not live Postgres/R2 backup; productionSafe false pending Milestone 3.",
   "EH-072 transactional email is preview_only — provider-neutral transport, memory outbox fixture, Resend recipe (names only), SPF/DKIM/DMARC guidance checklist; live SMTP/API deferred; productionSafe false pending Milestone 3.",
@@ -682,9 +687,10 @@ const PROTOTYPE_WARNINGS: string[] = [
 
 const BLOCKERS: string[] = [
   "Milestone 3 security review + browser personas gate remains open before productionSafe can flip.",
-  "Milestone 8 continues with EH-080 ownership packet after EH-074 launch wizard; Milestone 3 security/browser gate remains open; never disguise adult content to unlock Stripe.",
+  "Milestone 8 continues with EH-081 full golden journeys after EH-080 ownership packet; Milestone 3 security/browser gate remains open; never disguise adult content to unlock Stripe.",
   "Verified live Vercel/Docker daemon deploys remain open; EH-070/071/074 are fixture + recipe + checklist only. MojoHost is not wizard-supported.",
   "Live Postgres/R2 scheduled backup providers remain open; EH-073 is kit-local fixture only.",
+  "Live remove-Relay independence proof remains open (EH-082); ownership packet does not claim it.",
   "Mature/legal-adult enforcement beyond accounted exclusions remains open.",
   "public_legacy media mode remains available as an explicit residual leakage path — keep productionSafe false while it exists.",
   "Milestone 4 residual: live multi-tenant managed-verify outage + migration drill beyond kit/CI honesty remains open."
@@ -697,7 +703,7 @@ export function buildEscapeHatchStatus(): EscapeHatchStatus {
     deliverable: "prototype_preview_only",
     productionSafe: false,
     summary:
-      "Escape Hatch through EH-074 delivers CMS ops, fixture deploy paths, email recipe, kit-local backup/restore, and a backup-gated Path A/B launch wizard; productionSafe remains false pending Milestone 3, ownership packet (EH-080), and live provider proofs.",
+      "Escape Hatch through EH-080 delivers CMS ops, fixture deploy/launch wizard, email, kit-local backup/restore, and a redacted ownership packet (env names + warranty); productionSafe remains false pending Milestone 3, golden journeys (EH-081), and live independence (EH-082).",
     prototypeWarnings: [...PROTOTYPE_WARNINGS],
     capabilities: CAPABILITIES.map((c) => ({
       ...c,
@@ -705,12 +711,12 @@ export function buildEscapeHatchStatus(): EscapeHatchStatus {
     })),
     blockers: [...BLOCKERS],
     nextSlice: {
-      id: "EH-080",
-      title: "Ownership packet",
+      id: "EH-081",
+      title: "Full golden journeys",
       focus: [
-        "Creator ownership and handoff artifacts",
-        "Credentials inventory without embedding secrets",
-        "Honest independence from Relay Studio"
+        "Master browser journeys across Path A/B and Patreon modes",
+        "Builders fix findings only",
+        "Honest gates without claiming productionSafe"
       ]
     }
   };
