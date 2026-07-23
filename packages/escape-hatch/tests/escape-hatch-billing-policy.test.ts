@@ -27,21 +27,21 @@ import {
 const SITE = "site_eh_052";
 
 describe("EH-052 status", () => {
-  it("advances slice to EH-061 with next EH-062 and productionSafe false", () => {
+  it("advances slice to EH-062 with next EH-063 and productionSafe false", () => {
     const status = buildEscapeHatchStatus();
-    expect(ESCAPE_HATCH_SLICE).toBe("EH-061");
-    expect(status.slice).toBe("EH-061");
+    expect(ESCAPE_HATCH_SLICE).toBe("EH-062");
+    expect(status.slice).toBe("EH-062");
     expect(status.productionSafe).toBe(false);
-    expect(status.nextSlice.id).toBe("EH-062");
-    expect(status.nextSlice.title).toMatch(/appearance|connections|health/i);
+    expect(status.nextSlice.id).toBe("EH-063");
+    expect(status.nextSlice.title).toMatch(/patreon|sync/i);
     expect(
-      status.blockers.some((b) => /EH-062|Milestone 3|Stripe/i.test(b))
+      status.blockers.some((b) => /EH-063|Milestone 3|Stripe/i.test(b))
     ).toBe(true);
 
     const cap = status.capabilities.find((c) => c.id === "provider-policy");
     expect(cap?.state).toBe("preview_only");
     expect(cap?.evidence).toMatch(/EH-052|attestation|matrix/i);
-    expect(cap?.nextSlice).toBe("EH-062");
+    expect(cap?.nextSlice).toBe("EH-063");
   });
 });
 

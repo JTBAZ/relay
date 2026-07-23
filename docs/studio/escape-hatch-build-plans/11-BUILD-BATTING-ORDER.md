@@ -179,7 +179,7 @@ Execute one documented slice at a time. The program docs define scope and depend
 ### EH-062 Appearance/connections/health
 
 - **Builder:** Cursor Grok 4.5 High
-- Controlled brand publishing and actionable provider health.
+- **Status:** Implemented (preview_only; `productionSafe: false`). `/admin/appearance` publishes approved theme dials to `site.json` + `theme-vars.css`; `/admin/connections` adapter cards with next actions; `/admin/health` actionable rollup. Evidence: `docs/qa/ESCAPE_HATCH_EH_062_EVIDENCE.md`. Next: **EH-063**.
 
 ### EH-063 Optional Patreon sync
 

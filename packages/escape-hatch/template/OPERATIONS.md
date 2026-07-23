@@ -199,6 +199,17 @@ Deferrals: R2 multipart upload, schedule cron, rich HTML body. Prefer plain `bod
 
 Deferrals: Supabase staff session revoke, lawful PII export, live Stripe portal from /account.
 
+## Appearance / connections / health (EH-062)
+
+| Surface | Role |
+|---------|------|
+| `/admin/appearance` | Preview approved theme dials; Publish → `data/site.json` + `theme-vars.css` / theme JSON copies |
+| `POST /api/admin/theme` | Staff-gated theme publish (no raw CSS/scripts) |
+| `/admin/connections` | Adapter cards: ownership, env names, what breaks, next action |
+| `/admin/health` | Actionable rollup (adapters + blockers); connected ≠ healthy |
+
+Deferrals: domain/TLS probes, backup/restore status, live webhook freshness, theme draft version history.
+
 ## Identity provider
 
 `ESCAPE_HATCH_IDENTITY_PROVIDER`:

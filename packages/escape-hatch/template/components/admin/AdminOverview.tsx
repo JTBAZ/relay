@@ -93,6 +93,13 @@ export function AdminOverview({ model }: { model: AdminOverviewModel }) {
             <span className="admin-tile-label">Attention marks</span>
           </div>
         </div>
+        <p className="small muted">
+          Daily ops:{" "}
+          <a href="/admin/appearance">Appearance</a>,{" "}
+          <a href="/admin/connections">Connections</a>,{" "}
+          <a href="/admin/health">Site health</a>,{" "}
+          <a href="/admin/posts">Create / edit posts</a>.
+        </p>
       </section>
 
       <section className="admin-section" aria-labelledby="admin-adapters-heading">

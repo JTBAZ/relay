@@ -53,12 +53,12 @@ function minimalBundle(over?: Partial<SiteBundle>): SiteBundle {
 }
 
 describe("EH-060 status", () => {
-  it("advances slice to EH-061 with next EH-062 and productionSafe false", () => {
+  it("advances slice to EH-062 with next EH-063 and productionSafe false", () => {
     const status = buildEscapeHatchStatus();
-    expect(ESCAPE_HATCH_SLICE).toBe("EH-061");
-    expect(status.slice).toBe("EH-061");
+    expect(ESCAPE_HATCH_SLICE).toBe("EH-062");
+    expect(status.slice).toBe("EH-062");
     expect(status.productionSafe).toBe(false);
-    expect(status.nextSlice.id).toBe("EH-062");
+    expect(status.nextSlice.id).toBe("EH-063");
   });
 });
 

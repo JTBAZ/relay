@@ -10,7 +10,7 @@ import type {
   EscapeHatchTheme,
   GalleryDensity,
   TypePairing
-} from "@/lib/access";
+} from "./contracts";
 
 export const SCHEME_TOKENS: Record<
   ColorScheme,
@@ -129,6 +129,43 @@ export function applyThemeTokens(theme: {
   root.style.setProperty("--eh-cover-position", cover);
   root.style.setProperty("--eh-grid-min", gridMin);
   root.style.colorScheme = scheme.colorScheme;
+}
+
+/** Server-safe CSS `:root` block for theme-vars.css (EH-062 publish). */
+export function renderThemeCssVars(theme: {
+  color_scheme: ColorScheme | string;
+  accent_color?: string;
+  type_pairing?: TypePairing | string;
+  gallery_density?: GalleryDensity | string;
+  cover_crop?: CoverCrop | string;
+}): string {
+  const scheme =
+    SCHEME_TOKENS[theme.color_scheme as ColorScheme] ?? SCHEME_TOKENS.dark;
+  const pairing =
+    TYPE_PAIRING_FONTS[theme.type_pairing as TypePairing] ??
+    TYPE_PAIRING_FONTS.editorial;
+  const accent = theme.accent_color ?? "#4a7fc4";
+  const cover =
+    COVER_POSITIONS[theme.cover_crop as CoverCrop] ?? COVER_POSITIONS.center;
+  const gridMin =
+    GRID_MINS[theme.gallery_density as GalleryDensity] ?? GRID_MINS.comfortable;
+  return `:root {
+  color-scheme: ${scheme.colorScheme};
+  --eh-bg: ${scheme.bg};
+  --eh-fg: ${scheme.fg};
+  --eh-muted: ${scheme.muted};
+  --eh-card: ${scheme.card};
+  --eh-accent: ${accent};
+  --eh-bg-deep: ${scheme.deep};
+  --eh-hover: ${scheme.hover};
+  --eh-border: ${scheme.border};
+  --eh-atmosphere: ${scheme.atmosphere};
+  --eh-font-display: ${pairing.display};
+  --eh-font-body: ${pairing.body};
+  --eh-cover-position: ${cover};
+  --eh-grid-min: ${gridMin};
+}
+`;
 }
 
 export function paywallCopy(
