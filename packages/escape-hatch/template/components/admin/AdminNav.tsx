@@ -8,6 +8,7 @@ const ADMIN_TABS = [
   { href: "/admin/posts", label: "Posts", hint: "Access" },
   { href: "/admin/media", label: "Media", hint: "Inventory" },
   { href: "/admin/tiers", label: "Tiers", hint: "Mapping" },
+  { href: "/admin/patrons", label: "Patrons", hint: "Grants" },
   { href: "/admin/patreon", label: "Patreon", hint: "Choice / health" },
   { href: "/admin/patreon/choice", label: "OAuth choice", hint: "Paths" },
   { href: "/admin/billing/policy", label: "Billing policy", hint: "Attest / route" }

@@ -91,6 +91,13 @@ export type CloneTierRule = {
    * Omitted/null on legacy fixtures → exact id match only for tier_gated.
    */
   amount_cents?: number | null;
+  /**
+   * EH-061: retired tiers stay in site.json for post gates / migration honesty
+   * but are omitted from the public /tiers catalog.
+   */
+  retired?: boolean;
+  /** Optional visitor-facing benefit blurb (plain text). */
+  benefit_copy?: string | null;
 };
 
 export type CloneMediaRef = {
@@ -504,6 +511,26 @@ function parseCloneTierRule(
     `${path}.amount_cents`,
     issues
   );
+  const retiredRaw = ownGet(value, "retired");
+  let retired: boolean | undefined;
+  if (retiredRaw !== undefined && retiredRaw !== null) {
+    if (typeof retiredRaw !== "boolean") {
+      issues.push(issue(`${path}.retired`, "expected boolean", "type"));
+      return null;
+    }
+    retired = retiredRaw;
+  }
+  const benefitRaw = ownGet(value, "benefit_copy");
+  let benefit_copy: string | null | undefined;
+  if (benefitRaw !== undefined && benefitRaw !== null) {
+    if (typeof benefitRaw !== "string") {
+      issues.push(issue(`${path}.benefit_copy`, "expected string or null", "type"));
+      return null;
+    }
+    benefit_copy = benefitRaw.slice(0, 2_000);
+  } else if (benefitRaw === null) {
+    benefit_copy = null;
+  }
   if (!isSafeId(tier_id) || !isNonEmptyString(title) || !access_level) return null;
   const out: CloneTierRule = {
     tier_id,
@@ -512,6 +539,8 @@ function parseCloneTierRule(
   };
   if (isSafeId(campaign_id)) out.campaign_id = campaign_id;
   if (amount_cents !== undefined) out.amount_cents = amount_cents;
+  if (retired !== undefined) out.retired = retired;
+  if (benefit_copy !== undefined) out.benefit_copy = benefit_copy;
   return out;
 }
 
@@ -1032,6 +1061,8 @@ function cloneTierRules(tiers: CloneTierRule[]): CloneTierRule[] {
     };
     if (t.campaign_id !== undefined) out.campaign_id = t.campaign_id;
     if (t.amount_cents !== undefined) out.amount_cents = t.amount_cents;
+    if (t.retired !== undefined) out.retired = t.retired;
+    if (t.benefit_copy !== undefined) out.benefit_copy = t.benefit_copy;
     return out;
   });
 }

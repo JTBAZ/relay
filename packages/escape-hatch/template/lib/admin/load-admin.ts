@@ -444,6 +444,9 @@ export async function loadAdminTiers(): Promise<AdminTiersModel> {
       title: t.title,
       access_level: t.access_level,
       post_count,
+      amount_cents: t.amount_cents ?? null,
+      retired: t.retired === true,
+      benefit_copy: t.benefit_copy ?? null,
       mapping_warning
     };
   });
@@ -453,6 +456,62 @@ export async function loadAdminTiers(): Promise<AdminTiersModel> {
     production_safe: false,
     tiers,
     unmapped_warnings,
+    identity: access.identity,
+    read_allowed: true,
+    deny_reason: null
+  };
+}
+
+export type AdminPatronsModel = {
+  site_id: string;
+  production_safe: false;
+  tier_ids: string[];
+  grants: Array<{
+    grant_id: string;
+    subject_key: string;
+    tier_ids: string[];
+    reason: string;
+    actor: string;
+    created_at: string;
+    expires_at: string | null;
+    revoked_at: string | null;
+  }>;
+  identity: AdminIdentityState;
+  read_allowed: boolean;
+  deny_reason: AdminReadDeniedReason | null;
+};
+
+export async function loadAdminPatrons(): Promise<AdminPatronsModel> {
+  const site = loadSite();
+  const access = await assertAdminReadAccess(site.site_id);
+  if (!access.allowed) {
+    return {
+      site_id: site.site_id,
+      production_safe: false,
+      tier_ids: [],
+      grants: [],
+      identity: access.identity,
+      read_allowed: false,
+      deny_reason: access.reason
+    };
+  }
+
+  const { loadManualGrants } = await import("../cms/grants");
+  const doc = loadManualGrants(site.site_id);
+  return {
+    site_id: site.site_id,
+    production_safe: false,
+    tier_ids: site.tiers.map((t) => t.tier_id),
+    grants: doc.grants.map((g) => ({
+      grant_id: g.grant_id,
+      subject_key: g.subject_key,
+      tier_ids: [...g.tier_ids],
+      reason: g.reason,
+      actor: g.actor,
+      created_at: g.created_at,
+      expires_at: g.expires_at,
+      revoked_at: g.revoked_at
+    })),
     identity: access.identity,
     read_allowed: true,
     deny_reason: null

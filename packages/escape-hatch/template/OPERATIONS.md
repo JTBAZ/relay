@@ -186,6 +186,19 @@ Local-kit mutations only (`productionSafe: false`):
 
 Deferrals: R2 multipart upload, schedule cron, rich HTML body. Prefer plain `body_plain` until a sanitizer lands.
 
+## Tiers/patrons CMS (EH-061)
+
+| Surface | Role |
+|---------|------|
+| `/admin/tiers` | Edit benefit copy / retire tiers; persona access preview; EH-054 billing map |
+| `POST /api/admin/tiers` | Upsert tier fields on `data/site.json` |
+| `/admin/patrons` | Manual grants, access-reason inspect, portable session revoke |
+| `GET/POST/DELETE /api/admin/grants` | Local `data/manual-grants.json` CRUD + inspect |
+| `POST /api/admin/sessions/revoke` | Path B portable only — revoke all sessions for a user id |
+| Visitor `/tiers` | Omits `retired: true` tiers from the public catalog |
+
+Deferrals: Supabase staff session revoke, lawful PII export, live Stripe portal from /account.
+
 ## Identity provider
 
 `ESCAPE_HATCH_IDENTITY_PROVIDER`:

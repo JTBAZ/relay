@@ -24,6 +24,7 @@ export {
   loadPortableEntitlementSnapshot,
   portableLogin,
   portableLogout,
+  portableRevokeAllSessionsForUser,
   portableHashPasswordForBootstrap,
   portableSessionIsSiteStaff
 } from "./session";

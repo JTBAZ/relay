@@ -43,6 +43,9 @@ export type AdminTierRow = {
   title: string;
   access_level: string;
   post_count: number;
+  amount_cents?: number | null;
+  retired?: boolean;
+  benefit_copy?: string | null;
   /** Unmapped when no posts and no amount_cents identity (preview honesty). */
   mapping_warning?: string;
 };

@@ -24,6 +24,7 @@ import type {
   EntitlementGrant,
   IdentityProviderKind
 } from "./types";
+import { manualGrantsForSubject } from "../cms/grants";
 
 function toProviderKind(
   mode: IdentityProviderMode | "invalid"
@@ -147,6 +148,15 @@ export async function evaluateCurrentAccess(
       subject.userId
     );
     grants = grantsFromEntitlementResult(snap, nowMs);
+    const manual = manualGrantsForSubject(input.siteId, subject.userId, {
+      nowMs
+    });
+    grants = [...grants, ...manual];
+  } else if (provider === "none" && subject.kind === "soft_persona") {
+    const manual = manualGrantsForSubject(input.siteId, subject.personaId, {
+      nowMs
+    });
+    grants = [...grants, ...manual];
   }
 
   return evaluateAccess({

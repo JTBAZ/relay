@@ -174,7 +174,7 @@ Execute one documented slice at a time. The program docs define scope and depend
 ### EH-061 Tiers/patrons
 
 - **Builder:** Cursor Grok 4.5 High
-- Tier mapping/retirement, public tier catalog, context-aware conversion actions, access reasons, grants, session controls, and visitor-contract persona preview.
+- **Status:** Implemented (preview_only; `productionSafe: false`). Tier retire/benefit_copy on `site.json`; `/admin/tiers` CMS editor + persona preview; `/admin/patrons` manual grants (`data/manual-grants.json`), access-reason inspect, portable session revoke; public `/tiers` hides retired. Evidence: `docs/qa/ESCAPE_HATCH_EH_061_EVIDENCE.md`. Next: **EH-062**.
 
 ### EH-062 Appearance/connections/health
 

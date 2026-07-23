@@ -59,7 +59,9 @@ export function buildTierCatalogCards(args: {
     return aa - bb || a.title.localeCompare(b.title);
   });
 
-  return sorted.map((tier) => {
+  return sorted
+    .filter((tier) => tier.retired !== true)
+    .map((tier) => {
     const entry = getTierMapEntry(args.map, tier.tier_id);
     const amount =
       entry?.unitAmountCents ??
@@ -72,6 +74,10 @@ export function buildTierCatalogCards(args: {
       policy: args.policy,
       catalog: args.catalog
     });
+    const tierBenefit =
+      typeof tier.benefit_copy === "string" && tier.benefit_copy.trim()
+        ? tier.benefit_copy.trim()
+        : null;
     return {
       tierId: tier.tier_id,
       title: tier.title,
@@ -81,6 +87,7 @@ export function buildTierCatalogCards(args: {
       interval,
       benefitCopy:
         entry?.benefitCopy ??
+        tierBenefit ??
         `Access level: ${tier.access_level.replace(/_/g, " ")}.`,
       patreonContinuityNote: entry?.patreonContinuityNote ?? null,
       mapped: Boolean(entry?.priceId?.trim()),

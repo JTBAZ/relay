@@ -283,6 +283,35 @@ export async function portableLogout(): Promise<void> {
 }
 
 /**
+ * Staff revoke: mark all portable sessions for a user revoked (EH-061).
+ * Supabase session revoke is not implemented here — returns not_supported.
+ */
+export async function portableRevokeAllSessionsForUser(
+  userId: string
+): Promise<{ ok: true; revoked: number } | { ok: false; error: string }> {
+  const env = loadEnv();
+  if (!isPortableIdentityConfigured(env)) {
+    return { ok: false, error: "portable_not_configured" };
+  }
+  if (!userId.trim()) return { ok: false, error: "user_id_required" };
+  try {
+    const result = await withPortableClient(async (client) => {
+      return client.query(
+        `UPDATE eh_sessions SET revoked_at = NOW()
+         WHERE user_id = $1 AND revoked_at IS NULL`,
+        [userId.trim()]
+      );
+    });
+    return { ok: true, revoked: result?.rowCount ?? 0 };
+  } catch (err) {
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : "revoke_failed"
+    };
+  }
+}
+
+/**
  * Bootstrap helper (server/scripts only): hash a password for SQL seed docs.
  * Not a public route.
  */

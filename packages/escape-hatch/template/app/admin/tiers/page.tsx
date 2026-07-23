@@ -1,7 +1,9 @@
 import { ConsoleNav } from "@/components/ConsoleNav";
 import { AdminAccessDenied } from "@/components/admin/AdminAccessDenied";
+import { AdminPersonaPreview } from "@/components/admin/AdminPersonaPreview";
 import { AdminShell } from "@/components/admin/AdminShell";
 import { AdminTiers } from "@/components/admin/AdminTiers";
+import { AdminTierEditor } from "@/components/admin/AdminTierEditor";
 import {
   TierBillingWizard,
   toDraft
@@ -44,12 +46,26 @@ export default async function AdminTiersPage() {
       <ConsoleNav />
       <AdminShell
         title="Tiers & billing"
-        lede="Catalog honesty plus EH-054 independent billing map, preflight, and /tiers conversion preview. Never disguise adult use to unlock Stripe."
+        lede="Catalog CMS (retire/copy), EH-054 billing map/preflight, and access persona preview. Never disguise adult use to unlock Stripe."
         identity={model.identity}
       >
         {model.read_allowed && model.deny_reason === null ? (
           <>
             <AdminTiers model={model} />
+            <AdminTierEditor siteId={site.site_id} initialTiers={model.tiers} />
+            <AdminPersonaPreview
+              siteId={site.site_id}
+              personas={site.demo_personas.map((p) => ({
+                id: p.id,
+                label: p.label,
+                tier_ids: [...p.tier_ids]
+              }))}
+              postOptions={site.posts.map((p) => ({
+                post_id: p.post_id,
+                title: p.title,
+                access_level: p.access.level
+              }))}
+            />
             <TierBillingWizard
               siteId={site.site_id}
               initialRows={draftRows}
