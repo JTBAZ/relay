@@ -5,22 +5,41 @@ import {
   saveContentUseAttestation,
   type ContentUseCategory
 } from "@/lib/billing/policy";
-import { assertAdminReadAccess } from "@/lib/identity/admin-access";
+import { assertAdminMutationAccess } from "@/lib/identity/admin-access";
 import { loadSite } from "@/lib/load-site";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 /**
- * Save content/use attestation (EH-052). Admin-only. No secrets in body.
+ * Save content/use attestation (EH-052). Admin mutation gate.
+ * No secrets in body. Local preview requires loopback + x-escape-hatch-local.
  */
 export async function POST(request: Request): Promise<NextResponse> {
-  const site = loadSite();
-  const read = await assertAdminReadAccess(site.site_id);
-  if (!read.allowed) {
+  let site;
+  try {
+    site = loadSite();
+  } catch (err) {
     return NextResponse.json(
-      { ok: false, error: read.reason, production_safe: false },
-      { status: 403 }
+      {
+        ok: false,
+        error: err instanceof Error ? err.message : "Failed to load site.",
+        production_safe: false
+      },
+      { status: 400 }
+    );
+  }
+
+  const access = await assertAdminMutationAccess(request, site.site_id);
+  if (!access.allowed) {
+    return NextResponse.json(
+      {
+        ok: false,
+        error: access.error,
+        mode: access.mode,
+        production_safe: false
+      },
+      { status: access.status }
     );
   }
 
@@ -50,10 +69,7 @@ export async function POST(request: Request): Promise<NextResponse> {
     category: body.category as ContentUseCategory,
     acceptedProviderTerms: body.acceptedProviderTerms === true,
     affirmedAccurate: body.affirmedAccurate === true,
-    attestedByHint:
-      read.identity.mode !== "local_preview"
-        ? read.identity.session?.userId ?? null
-        : "local_preview"
+    attestedByHint: access.userId ?? (access.mode === "local_preview" ? "local_preview" : null)
   });
 
   if (!saved.ok) {

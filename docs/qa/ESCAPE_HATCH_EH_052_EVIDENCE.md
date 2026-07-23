@@ -23,6 +23,15 @@
 | `npm test --prefix packages/escape-hatch` | 0 | **22/22 files, 341/341 tests** |
 | `npx tsx packages/escape-hatch/src/cli.ts status --json` | 0 | Slice **EH-052**; next **EH-053**; `productionSafe: false` |
 
+## Security review
+
+[Security Review](09f898f9-9b2f-4228-bfa5-ab4fd45399be) (EH-052):
+
+| Severity | Finding | Disposition |
+|---|---|---|
+| Medium | Attestation POST used `assertAdminReadAccess` instead of mutation gate | **Fixed** — now `assertAdminMutationAccess`; panel sends `x-escape-hatch-local: 1` |
+| — | No High/Critical | Pass |
+
 ## Residual
 
 - EH-053 alternate processor requires human approval
