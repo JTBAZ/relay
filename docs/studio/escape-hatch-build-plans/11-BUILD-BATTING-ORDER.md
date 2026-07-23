@@ -107,12 +107,13 @@ Execute one documented slice at a time. The program docs define scope and depend
 ### EH-040 Creator-owned Patreon OAuth
 
 - **Builder:** Cursor Grok 4.5 High
-- **Status (kit):** Implemented in `packages/escape-hatch` (preview_only; `productionSafe: false`). Next: **EH-041**.
+- **Status (kit):** Implemented in `packages/escape-hatch` (preview_only; `productionSafe: false`).
 - Guided app setup, exchange/refresh/link, campaign validation, encrypted tokens.
 
 ### EH-041 Relay-managed verification service
 
 - **Builder:** Cursor Grok 4.5 High
+- **Status:** Implemented (preview_only; `productionSafe: false`). Kit `relay_managed` assertion verify + Relay `src/escape-hatch/managed-verify` in-memory service. Next: **EH-042**.
 - Site registration, callback allowlist, signed assertions, rotation, revocation, monitoring, migration metadata.
 
 ### EH-042 Relay billing entitlement for connector

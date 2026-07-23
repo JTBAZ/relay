@@ -1,5 +1,5 @@
 /**
- * Creator-owned Patreon OAuth mode resolution (EH-040).
+ * Patreon mode resolution (EH-040 creator_oauth + EH-041 relay_managed).
  * Fail-closed: placeholders and incomplete env → not configured.
  */
 
@@ -9,8 +9,9 @@ import {
   type SiteEnv
 } from "../env";
 import { decodePatreonTokenKey } from "./crypto";
+import { isRelayManagedConfigured } from "./relay-managed/config";
 
-export type PatreonMode = "none" | "creator_oauth" | "stub";
+export type PatreonMode = "none" | "creator_oauth" | "relay_managed" | "stub";
 
 export type CreatorOAuthConfig = {
   mode: "creator_oauth";
@@ -44,7 +45,7 @@ function nonPlaceholder(value: string | undefined): string | undefined {
  * Resolve Patreon mode from env.
  * - unset / none / stub → stub path
  * - creator_oauth → creator path (may still be incomplete)
- * - relay_managed → treated as stub here (EH-041 not implemented)
+ * - relay_managed → relay path when configured; else stub
  */
 export function resolvePatreonMode(env: SiteEnv = loadEnv()): PatreonMode {
   const raw = env.ESCAPE_HATCH_PATREON_MODE?.toLowerCase();
@@ -52,7 +53,9 @@ export function resolvePatreonMode(env: SiteEnv = loadEnv()): PatreonMode {
     return "stub";
   }
   if (raw === "creator_oauth") return "creator_oauth";
-  if (raw === "relay_managed") return "stub";
+  if (raw === "relay_managed") {
+    return isRelayManagedConfigured(env) ? "relay_managed" : "stub";
+  }
   return "stub";
 }
 

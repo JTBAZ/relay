@@ -17,6 +17,7 @@ import {
   isCreatorOAuthConfigured,
   resolvePatreonMode
 } from "../patreon/config";
+import { isRelayManagedConfigured } from "../patreon/relay-managed/config";
 import type { AccountSummaryView, IdentityProviderUx } from "../paywall/types";
 
 function toProviderUx(
@@ -34,13 +35,29 @@ function patreonSummary(args: {
   const env = loadEnv();
   const rawMode = env.ESCAPE_HATCH_PATREON_MODE?.toLowerCase();
   if (rawMode === "relay_managed") {
+    const configured = isRelayManagedConfigured(env);
+    if (!configured) {
+      return {
+        mode: "relay_managed_deferred",
+        configured: false,
+        canConnect: false,
+        linked: false,
+        patreonUserId: null,
+        note: "Relay-managed mode is selected but verify env is incomplete, placeholder, or kill-switched (ESCAPE_HATCH_RELAY_VERIFY_ENABLED)."
+      };
+    }
+    const linkedBySource = args.entitlementSource === "patreon";
     return {
-      mode: "relay_managed_deferred",
-      configured: false,
-      canConnect: false,
-      linked: false,
+      mode: "relay_managed",
+      configured: true,
+      canConnect: args.signedIn && Boolean(args.userId),
+      linked: linkedBySource,
       patreonUserId: null,
-      note: "Relay-managed Patreon verification belongs to EH-041 and is not available in this kit."
+      note: linkedBySource
+        ? "Patreon membership linked via Relay-managed assertion (source=patreon)."
+        : args.signedIn
+          ? "Verify with Patreon through Relay — site does not hold Patreon tokens."
+          : "Sign in to verify Patreon via Relay."
     };
   }
   const configured = isCreatorOAuthConfigured(env);
@@ -52,7 +69,7 @@ function patreonSummary(args: {
       canConnect: false,
       linked: false,
       patreonUserId: null,
-      note: "Creator-owned Patreon OAuth is not configured. Set ESCAPE_HATCH_PATREON_MODE=creator_oauth and the Patreon env names in OPERATIONS.md."
+      note: "Creator-owned Patreon OAuth is not configured. Set ESCAPE_HATCH_PATREON_MODE=creator_oauth or relay_managed with the env names in OPERATIONS.md."
     };
   }
   const linkedBySource = args.entitlementSource === "patreon";

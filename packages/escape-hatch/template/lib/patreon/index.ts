@@ -51,3 +51,15 @@ export {
   type PatreonCredentialRecord
 } from "./store";
 export { isSameOriginOAuthStart } from "./csrf";
+export {
+  isRelayManagedConfigured,
+  isRelayVerifyKillSwitchOff,
+  loadRelayManagedConfig,
+  resolveRelayCallbackUrl,
+  verifyRelayAssertion,
+  buildRelayManagedStartUrl,
+  handleRelayManagedCallback,
+  buildRelayMigrationMetadataExport,
+  previewAssertionReplayStore,
+  type RelayManagedConfig
+} from "./relay-managed";

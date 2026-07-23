@@ -85,20 +85,20 @@ afterEach(() => {
 });
 
 describe("EH-040 status + slice", () => {
-  it("advances slice to EH-040 with next EH-041 and productionSafe false", () => {
+  it("advances slice to EH-041 with next EH-042 and productionSafe false", () => {
     const status = buildEscapeHatchStatus();
-    expect(ESCAPE_HATCH_SLICE).toBe("EH-040");
-    expect(status.slice).toBe("EH-040");
+    expect(ESCAPE_HATCH_SLICE).toBe("EH-041");
+    expect(status.slice).toBe("EH-041");
     expect(status.productionSafe).toBe(false);
-    expect(status.nextSlice.id).toBe("EH-041");
-    expect(status.nextSlice.title).toMatch(/Relay-managed/i);
+    expect(status.nextSlice.id).toBe("EH-042");
+    expect(status.nextSlice.title).toMatch(/billing|connector/i);
     expect(
       status.blockers.some((b) => /Creator-owned Patreon OAuth.*EH-040/i.test(b))
     ).toBe(false);
-    expect(status.blockers.some((b) => /EH-041/i.test(b))).toBe(true);
+    expect(status.blockers.some((b) => /EH-042/i.test(b))).toBe(true);
     const cap = status.capabilities.find((c) => c.id === "creator-patreon-oauth");
     expect(cap?.state).toBe("preview_only");
-    expect(cap?.nextSlice).toBe("EH-041");
+    expect(cap?.nextSlice).toBe("EH-042");
   });
 });
 
@@ -398,7 +398,7 @@ describe("EH-040 adapter health", () => {
     const h0 = await stub.patreon.health();
     expect(h0.ok).toBe(false);
     if (!h0.ok) {
-      expect(h0.reason).toMatch(/EH-041/);
+      expect(h0.reason).toMatch(/stub|creator_oauth|relay_managed|EH-040|EH-041/i);
     }
 
     setCreatorOAuthEnv();
@@ -419,14 +419,14 @@ describe("EH-040 adapter health", () => {
     expect(isCreatorOAuthConfigured(loadEnv())).toBe(false);
   });
 
-  it("relay_managed mode stays stub with EH-041 reason", async () => {
+  it("relay_managed mode without env stays stub with honest reason", async () => {
     process.env.ESCAPE_HATCH_PATREON_MODE = "relay_managed";
     const adapters = createSiteAdapters();
     expect(adapters.patreon.implementation).toBe("stub");
     const h = await adapters.patreon.health();
     expect(h.ok).toBe(false);
     if (!h.ok) {
-      expect(h.reason).toMatch(/EH-041/);
+      expect(h.reason).toMatch(/relay_managed|incomplete|kill|EH-041/i);
     }
   });
 });

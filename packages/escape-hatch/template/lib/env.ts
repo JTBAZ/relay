@@ -58,8 +58,8 @@ export type SiteServerEnv = {
   STRIPE_WEBHOOK_SECRET: string | undefined;
   NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: string | undefined;
   /**
-   * Patreon verification mode (EH-040): creator_oauth | none.
-   * Unset → stub (not live). relay_managed is EH-041 — not implemented here.
+   * Patreon verification mode (EH-040/041): creator_oauth | relay_managed | none.
+   * Unset → stub (not live).
    */
   ESCAPE_HATCH_PATREON_MODE: string | undefined;
   /** Creator-owned Patreon OAuth client id (server-only). */
@@ -78,6 +78,22 @@ export type SiteServerEnv = {
   ESCAPE_HATCH_PATREON_AUTHORIZE_URL: string | undefined;
   ESCAPE_HATCH_PATREON_TOKEN_URL: string | undefined;
   ESCAPE_HATCH_PATREON_IDENTITY_URL: string | undefined;
+  /** Relay-managed verify service origin (EH-041). */
+  ESCAPE_HATCH_RELAY_VERIFY_BASE_URL: string | undefined;
+  /** Site id registered with Relay managed-verify. */
+  ESCAPE_HATCH_RELAY_SITE_ID: string | undefined;
+  /** Assertion audience (site-scoped). */
+  ESCAPE_HATCH_RELAY_ASSERTION_AUDIENCE: string | undefined;
+  /** Assertion issuer (must match Relay). */
+  ESCAPE_HATCH_RELAY_ASSERTION_ISSUER: string | undefined;
+  /** Optional JWKS URL for overlapping verification keys. */
+  ESCAPE_HATCH_RELAY_ASSERTION_JWKS_URL: string | undefined;
+  /** Static overlapping public keys JSON (tests / offline). */
+  ESCAPE_HATCH_RELAY_ASSERTION_KEYS_JSON: string | undefined;
+  /** HMAC secret for site→Relay state (min 16 chars). */
+  ESCAPE_HATCH_RELAY_VERIFY_STATE_SECRET: string | undefined;
+  /** Kill switch: 0|false|off fails closed. */
+  ESCAPE_HATCH_RELAY_VERIFY_ENABLED: string | undefined;
 };
 
 export type SiteEnv = SitePublicEnv & SiteServerEnv;
@@ -116,7 +132,15 @@ export const SITE_ENV_NAMES = {
     "PATREON_REDIRECT_URI",
     "PATREON_CAMPAIGN_ID",
     "ESCAPE_HATCH_PATREON_TOKEN_KEY",
-    "ESCAPE_HATCH_PATREON_OAUTH_STATE_SECRET"
+    "ESCAPE_HATCH_PATREON_OAUTH_STATE_SECRET",
+    "ESCAPE_HATCH_RELAY_VERIFY_BASE_URL",
+    "ESCAPE_HATCH_RELAY_SITE_ID",
+    "ESCAPE_HATCH_RELAY_ASSERTION_AUDIENCE",
+    "ESCAPE_HATCH_RELAY_ASSERTION_ISSUER",
+    "ESCAPE_HATCH_RELAY_ASSERTION_JWKS_URL",
+    "ESCAPE_HATCH_RELAY_ASSERTION_KEYS_JSON",
+    "ESCAPE_HATCH_RELAY_VERIFY_STATE_SECRET",
+    "ESCAPE_HATCH_RELAY_VERIFY_ENABLED"
   ] as const,
   optionalFutureAdapters: [
     "ESCAPE_HATCH_IDENTITY_PROVIDER",
@@ -144,7 +168,15 @@ export const SITE_ENV_NAMES = {
     "PATREON_REDIRECT_URI",
     "PATREON_CAMPAIGN_ID",
     "ESCAPE_HATCH_PATREON_TOKEN_KEY",
-    "ESCAPE_HATCH_PATREON_OAUTH_STATE_SECRET"
+    "ESCAPE_HATCH_PATREON_OAUTH_STATE_SECRET",
+    "ESCAPE_HATCH_RELAY_VERIFY_BASE_URL",
+    "ESCAPE_HATCH_RELAY_SITE_ID",
+    "ESCAPE_HATCH_RELAY_ASSERTION_AUDIENCE",
+    "ESCAPE_HATCH_RELAY_ASSERTION_ISSUER",
+    "ESCAPE_HATCH_RELAY_ASSERTION_JWKS_URL",
+    "ESCAPE_HATCH_RELAY_ASSERTION_KEYS_JSON",
+    "ESCAPE_HATCH_RELAY_VERIFY_STATE_SECRET",
+    "ESCAPE_HATCH_RELAY_VERIFY_ENABLED"
   ] as const
 } as const;
 
@@ -231,6 +263,28 @@ export function loadEnv(): SiteEnv {
     ),
     ESCAPE_HATCH_PATREON_IDENTITY_URL: readOptional(
       "ESCAPE_HATCH_PATREON_IDENTITY_URL"
+    ),
+    ESCAPE_HATCH_RELAY_VERIFY_BASE_URL: readOptional(
+      "ESCAPE_HATCH_RELAY_VERIFY_BASE_URL"
+    ),
+    ESCAPE_HATCH_RELAY_SITE_ID: readOptional("ESCAPE_HATCH_RELAY_SITE_ID"),
+    ESCAPE_HATCH_RELAY_ASSERTION_AUDIENCE: readOptional(
+      "ESCAPE_HATCH_RELAY_ASSERTION_AUDIENCE"
+    ),
+    ESCAPE_HATCH_RELAY_ASSERTION_ISSUER: readOptional(
+      "ESCAPE_HATCH_RELAY_ASSERTION_ISSUER"
+    ),
+    ESCAPE_HATCH_RELAY_ASSERTION_JWKS_URL: readOptional(
+      "ESCAPE_HATCH_RELAY_ASSERTION_JWKS_URL"
+    ),
+    ESCAPE_HATCH_RELAY_ASSERTION_KEYS_JSON: readOptional(
+      "ESCAPE_HATCH_RELAY_ASSERTION_KEYS_JSON"
+    ),
+    ESCAPE_HATCH_RELAY_VERIFY_STATE_SECRET: readOptional(
+      "ESCAPE_HATCH_RELAY_VERIFY_STATE_SECRET"
+    ),
+    ESCAPE_HATCH_RELAY_VERIFY_ENABLED: readOptional(
+      "ESCAPE_HATCH_RELAY_VERIFY_ENABLED"
     )
   };
 }
@@ -244,6 +298,7 @@ export function isSecretLikeEnvKey(key: keyof SiteEnv): boolean {
   if (name === "ESCAPE_HATCH_MEDIA_MODE") return false;
   if (name === "ESCAPE_HATCH_MEDIA_SIGNED_URL_TTL_SEC") return false;
   if (name === "ESCAPE_HATCH_PATREON_MODE") return false;
+  if (name === "ESCAPE_HATCH_RELAY_VERIFY_ENABLED") return false;
   if (name === "PATREON_REDIRECT_URI" || name === "PATREON_CAMPAIGN_ID") {
     return false;
   }
@@ -251,6 +306,15 @@ export function isSecretLikeEnvKey(key: keyof SiteEnv): boolean {
     name === "ESCAPE_HATCH_PATREON_AUTHORIZE_URL" ||
     name === "ESCAPE_HATCH_PATREON_TOKEN_URL" ||
     name === "ESCAPE_HATCH_PATREON_IDENTITY_URL"
+  ) {
+    return false;
+  }
+  if (
+    name === "ESCAPE_HATCH_RELAY_VERIFY_BASE_URL" ||
+    name === "ESCAPE_HATCH_RELAY_SITE_ID" ||
+    name === "ESCAPE_HATCH_RELAY_ASSERTION_AUDIENCE" ||
+    name === "ESCAPE_HATCH_RELAY_ASSERTION_ISSUER" ||
+    name === "ESCAPE_HATCH_RELAY_ASSERTION_JWKS_URL"
   ) {
     return false;
   }

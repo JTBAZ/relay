@@ -1,8 +1,8 @@
 /**
- * Adapter bundle for the generated kit (EH-040).
+ * Adapter bundle for the generated kit (EH-041).
  * Auth/DB report readiness only when env is real and non-placeholder;
  * storage signs private GETs when private_r2 credentials are real;
- * Patreon creator_oauth when fully configured (EH-040); relay_managed is EH-041.
+ * Patreon creator_oauth (EH-040) or relay_managed (EH-041) when configured.
  * productionSafe remains false (Milestone 3 UX/security gate + deploy/billing open).
  */
 
@@ -26,14 +26,21 @@ import {
 import { createMockMediaSigner, createR2MediaSigner } from "../media/sign";
 import {
   isCreatorOAuthConfigured,
-  loadCreatorOAuthConfig,
-  resolvePatreonMode
+  loadCreatorOAuthConfig
 } from "../patreon/config";
 import {
   buildAuthorizeUrl,
   linkFromAuthorizationCode,
   refreshAndRelink
 } from "../patreon/link";
+import {
+  buildRelayManagedStartUrl,
+  handleRelayManagedCallback,
+  isRelayManagedConfigured,
+  loadRelayManagedConfig,
+  previewAssertionReplayStore,
+  resolveRelayCallbackUrl
+} from "../patreon/relay-managed";
 import { createMemoryPatreonLinkStore } from "../patreon/store";
 import type {
   AuthProvider,
@@ -309,24 +316,25 @@ const stubPatreon: PatreonVerificationProvider = {
   id: "patreon",
   implementation: "stub",
   async health() {
-    const mode = resolvePatreonMode(loadEnv());
-    if (mode === "stub" && loadEnv().ESCAPE_HATCH_PATREON_MODE?.toLowerCase() === "relay_managed") {
+    const env = loadEnv();
+    const raw = env.ESCAPE_HATCH_PATREON_MODE?.toLowerCase();
+    if (raw === "relay_managed") {
       return {
         ok: false,
         reason:
-          "Relay-managed Patreon verification (relay_managed) belongs to EH-041 — not implemented in this kit."
+          "ESCAPE_HATCH_PATREON_MODE=relay_managed but Relay verify env is incomplete, placeholder, or kill-switched (EH-041)."
       };
     }
     return {
       ok: false,
       reason:
-        "Patreon verification is stub until ESCAPE_HATCH_PATREON_MODE=creator_oauth with real non-placeholder credentials (EH-040). Relay-managed path is EH-041."
+        "Patreon verification is stub until ESCAPE_HATCH_PATREON_MODE=creator_oauth (EH-040) or relay_managed (EH-041) with real non-placeholder credentials."
     };
   },
   async buildAuthorizeUrl() {
     return {
       ok: false,
-      reason: "Patreon creator_oauth is not configured (stub)."
+      reason: "Patreon verification is not configured (stub)."
     };
   },
   async handleCallback() {
@@ -428,13 +436,107 @@ const creatorOAuthPatreon: PatreonVerificationProvider = {
   }
 };
 
+const relayManagedPatreon: PatreonVerificationProvider = {
+  id: "patreon",
+  implementation: "relay_managed",
+  async health() {
+    const env = loadEnv();
+    if (!isRelayManagedConfigured(env)) {
+      return {
+        ok: false,
+        reason:
+          "ESCAPE_HATCH_PATREON_MODE=relay_managed but Relay verify base URL/site id/issuer/audience/keys/state secret are missing, placeholder, or kill-switched."
+      };
+    }
+    return {
+      ok: true,
+      detail: `Relay-managed Patreon verification env configured (EH-041). ${PREVIEW_OVERALL}`
+    };
+  },
+  async buildAuthorizeUrl(args) {
+    try {
+      const config = loadRelayManagedConfig();
+      const returnUrl = resolveRelayCallbackUrl();
+      if (!returnUrl) {
+        return { ok: false, reason: "site_url_unconfigured" };
+      }
+      const built = buildRelayManagedStartUrl({
+        config,
+        siteId: args.siteId,
+        accountId: args.accountId,
+        returnUrl,
+        returnPath: args.returnPath
+      });
+      if (!built.ok) return built;
+      return {
+        ok: true,
+        url: built.url,
+        state: built.state,
+        expiresAtIso: built.expiresAtIso
+      };
+    } catch {
+      return { ok: false, reason: "authorize_build_failed" };
+    }
+  },
+  async handleCallback(args) {
+    const returnPath =
+      args.returnPath && args.returnPath.startsWith("/") && !args.returnPath.startsWith("//")
+        ? args.returnPath
+        : "/account";
+    try {
+      const config = loadRelayManagedConfig();
+      // For relay_managed, `code` carries the signed assertion; `codeVerifier` unused
+      // (nonce is bound in local HMAC state verified inside handleRelayManagedCallback).
+      const result = await handleRelayManagedCallback({
+        config,
+        store: previewPatreonStore,
+        replay: previewAssertionReplayStore,
+        assertion: args.code,
+        state: args.codeVerifier,
+        expectedAccountId: args.accountId,
+        expectedSiteId: args.siteId
+      });
+      if (!result.ok) {
+        return {
+          ok: false,
+          redirectTo: result.redirectTo,
+          reason: result.reason
+        };
+      }
+      return {
+        ok: true,
+        redirectTo: result.redirectTo,
+        patreonUserId: result.patreonUserId,
+        tierIds: result.tierIds
+      };
+    } catch {
+      return {
+        ok: false,
+        redirectTo: `${returnPath}?patreon=error&reason=callback_failed`,
+        reason: "callback_failed"
+      };
+    }
+  },
+  async refreshAndRelink() {
+    return {
+      ok: false,
+      reason:
+        "relay_managed_refresh_via_relay — site does not hold Patreon tokens; re-verify through Relay."
+    };
+  }
+};
+
 function createPatreonProvider(): PatreonVerificationProvider {
   const env = loadEnv();
+  if (isRelayManagedConfigured(env)) {
+    return relayManagedPatreon;
+  }
   if (isCreatorOAuthConfigured(env)) {
     return creatorOAuthPatreon;
   }
   return stubPatreon;
 }
+
 
 const stubEmail: TransactionalEmailProvider = {
   id: "email",

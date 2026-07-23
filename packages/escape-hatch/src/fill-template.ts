@@ -394,7 +394,7 @@ export function stampEscapeHatchManifest(
   parsed.generated_at = bundle.generated_at;
   parsed.creator_id = bundle.creator_id;
   parsed.site_id = bundle.site_id ?? bundle.creator_id;
-  parsed.slice = "EH-040";
+  parsed.slice = "EH-041";
   parsed.productionSafe = false;
   parsed.schema_version = "eh-db/0005_patreon_oauth";
   parsed.chassis_version = "0.8.0";
@@ -407,12 +407,13 @@ export function stampEscapeHatchManifest(
     portable_identity: true,
     entitlement_evaluator: true,
     creator_patreon_oauth: true,
+    relay_managed_patreon_verification: true,
     stripe_billing: false,
     native_admin: true
   };
   if (parsed.adapters?.patreon) {
     parsed.adapters.patreon = {
-      id: "creator_oauth_optional",
+      id: "creator_oauth_or_relay_managed",
       version: "0.1.0",
       state: "preview_only"
     };
@@ -517,7 +518,7 @@ export function fillTemplate(opts: FillOptions): FillResult {
       mediaLayout === "private"
         ? "Premium media is staged under `data/private-media` and delivered via `/api/media/{id}` after server entitlement checks (EH-033). Locked gallery/post UI never fetches those bytes (EH-034/035). Do not set `ESCAPE_HATCH_MEDIA_MODE=public_legacy` in production."
         : "WARNING: `public_legacy` media layout copied premium bytes into `/public/media` — residual leakage; not production-safe.",
-      "`productionSafe: false` — creator Patreon OAuth (EH-040) + visitor visual + account/paywall UX present, but Milestone 3 security/browser gate, Relay-managed verification (EH-041), billing, and verified deploy remain open.",
+      "`productionSafe: false` — creator Patreon OAuth (EH-040) + Relay-managed verification (EH-041) + visitor visual + account/paywall UX present, but Milestone 3 security/browser gate, Relay billing entitlement (EH-042), billing adapters, and verified deploy remain open.",
       "",
       `Contract: ${bundle.contract_version}`,
       "",
@@ -534,7 +535,7 @@ export function fillTemplate(opts: FillOptions): FillResult {
       "`/` redirects to Library. Library truth rebuilds parity from data/ artifacts on every load (never trusts a tampered report alone).",
       "Admin mutations: local-operator when identity unset; staff session when Path A/B configured. Soft personas never authorize admin.",
       "",
-      "## Chassis + identity + entitlements + private media + account UX + visitor visual + Patreon OAuth (EH-040)",
+      "## Chassis + identity + entitlements + private media + account UX + visitor visual + Patreon OAuth / Relay-managed verify (EH-041)",
       "",
       "- Typed env: `lib/env.ts` + `.env.example` (names only — never commit secrets)",
       "- Media: `ESCAPE_HATCH_MEDIA_MODE=local_private|private_r2` (default prefers private); R2 env names for signed GETs",

@@ -1,93 +1,102 @@
-{
-  "$schema": "https://escape-hatch.local/schemas/escape-hatch.manifest/1.0.0.json",
-  "contract_version": "escape-hatch.manifest/1.0.0",
-  "chassis_version": "0.8.0",
-  "schema_version": "eh-db/0005_patreon_oauth",
-  "slice": "EH-040",
-  "productionSafe": false,
-  "generated_at": null,
-  "creator_id": null,
-  "site_id": null,
-  "feature_flags": {
-    "soft_persona_gate": true,
-    "hard_paywall": true,
-    "signed_media_delivery": true,
-    "supabase_identity": true,
-    "portable_identity": true,
-    "entitlement_evaluator": true,
-    "creator_patreon_oauth": true,
-    "stripe_billing": false,
-    "native_admin": true
-  },
-  "adapters": {
-    "auth": { "id": "supabase_or_portable_optional", "version": "0.2.0", "state": "preview_only" },
-    "database": { "id": "sql_migrations_path_a_or_b", "version": "0005_patreon_oauth", "state": "preview_only" },
-    "storage": { "id": "private_r2_or_local_private", "version": "0.1.0", "state": "preview_only" },
-    "billing": { "id": "stub", "version": "0.0.0", "state": "stub_only" },
-    "patreon": { "id": "creator_oauth_optional", "version": "0.1.0", "state": "preview_only" },
-    "email": { "id": "stub", "version": "0.0.0", "state": "stub_only" },
-    "deployment": { "id": "vercel_docker_manifest", "version": "1.0.0", "state": "preview_only" }
-  },
-  "deploy_targets": [
-    {
-      "id": "vercel",
-      "kind": "vercel",
-      "config": "vercel.json",
-      "notes": "Next App Router defaults; verified golden path is EH-070."
-    },
-    {
-      "id": "docker",
-      "kind": "docker",
-      "config": "Dockerfile",
-      "notes": "Multi-stage Node build; portable compose Postgres (Path B) is optional. Verified path is EH-071. Prefer private media layout so premium bytes are not under public/media."
-    }
-  ],
-  "required_env_names": [],
-  "optional_env_names": [
-    "NEXT_PUBLIC_SITE_URL",
-    "NEXT_PUBLIC_SITE_NAME",
-    "ESCAPE_HATCH_IDENTITY_PROVIDER",
-    "NEXT_PUBLIC_SUPABASE_URL",
-    "NEXT_PUBLIC_SUPABASE_ANON_KEY",
-    "DATABASE_URL",
-    "ESCAPE_HATCH_SESSION_SECRET",
-    "SUPABASE_URL",
-    "SUPABASE_ANON_KEY",
-    "SUPABASE_SERVICE_ROLE_KEY",
-    "ESCAPE_HATCH_MEDIA_MODE",
-    "ESCAPE_HATCH_MEDIA_SIGNED_URL_TTL_SEC",
-    "R2_ENDPOINT",
-    "R2_BUCKET",
-    "R2_ACCESS_KEY_ID",
-    "R2_SECRET_ACCESS_KEY",
-    "R2_PUBLIC_BASE_URL",
-    "R2_REGION",
-    "STRIPE_SECRET_KEY",
-    "STRIPE_WEBHOOK_SECRET",
-    "NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY",
-    "ESCAPE_HATCH_PATREON_MODE",
-    "PATREON_CLIENT_ID",
-    "PATREON_CLIENT_SECRET",
-    "PATREON_REDIRECT_URI",
-    "PATREON_CAMPAIGN_ID",
-    "ESCAPE_HATCH_PATREON_TOKEN_KEY",
-    "ESCAPE_HATCH_PATREON_OAUTH_STATE_SECRET"
-  ],
-  "applied_migrations": [],
-  "known_exclusions": [
-    "Soft persona remains for local preview when identity provider is none — never elevates under Path A/B",
-    "Default private layout stages premium under data/private-media; public_legacy is residual leakage only",
-    "Supabase and portable identity are opt-in via env; productionSafe remains false",
-    "Creator-owned Patreon OAuth (EH-040) is opt-in via ESCAPE_HATCH_PATREON_MODE=creator_oauth; Relay-managed is EH-041",
-    "Account/paywall UX (EH-034) + visitor visual (EH-035) present; Milestone 3 security/browser gate still open",
-    "Independent Stripe Checkout not live — billing adapters remain stub (EH-050+)",
-    "Path A uses 0001+0002+0004_supabase+0005_supabase; Path B uses 0001+0003+0004_portable+0005_portable — do not mix on one database"
-  ],
-  "source_export_manifest_hash": null,
-  "relay_optional_services": [],
-  "warranty": {
-    "start": null,
-    "end": null,
-    "notes": "Creator Patreon OAuth preview — not a production handoff warranty."
-  }
-}
+{
+  "$schema": "https://escape-hatch.local/schemas/escape-hatch.manifest/1.0.0.json",
+  "contract_version": "escape-hatch.manifest/1.0.0",
+  "chassis_version": "0.8.0",
+  "schema_version": "eh-db/0005_patreon_oauth",
+  "slice": "EH-041",
+  "productionSafe": false,
+  "generated_at": null,
+  "creator_id": null,
+  "site_id": null,
+  "feature_flags": {
+    "soft_persona_gate": true,
+    "hard_paywall": true,
+    "signed_media_delivery": true,
+    "supabase_identity": true,
+    "portable_identity": true,
+    "entitlement_evaluator": true,
+    "creator_patreon_oauth": true,
+    "relay_managed_patreon_verification": true,
+    "stripe_billing": false,
+    "native_admin": true
+  },
+  "adapters": {
+    "auth": { "id": "supabase_or_portable_optional", "version": "0.2.0", "state": "preview_only" },
+    "database": { "id": "sql_migrations_path_a_or_b", "version": "0005_patreon_oauth", "state": "preview_only" },
+    "storage": { "id": "private_r2_or_local_private", "version": "0.1.0", "state": "preview_only" },
+    "billing": { "id": "stub", "version": "0.0.0", "state": "stub_only" },
+    "patreon": { "id": "creator_oauth_or_relay_managed", "version": "0.1.0", "state": "preview_only" },
+    "email": { "id": "stub", "version": "0.0.0", "state": "stub_only" },
+    "deployment": { "id": "vercel_docker_manifest", "version": "1.0.0", "state": "preview_only" }
+  },
+  "deploy_targets": [
+    {
+      "id": "vercel",
+      "kind": "vercel",
+      "config": "vercel.json",
+      "notes": "Next App Router defaults; verified golden path is EH-070."
+    },
+    {
+      "id": "docker",
+      "kind": "docker",
+      "config": "Dockerfile",
+      "notes": "Multi-stage Node build; portable compose Postgres (Path B) is optional. Verified path is EH-071. Prefer private media layout so premium bytes are not under public/media."
+    }
+  ],
+  "required_env_names": [],
+  "optional_env_names": [
+    "NEXT_PUBLIC_SITE_URL",
+    "NEXT_PUBLIC_SITE_NAME",
+    "ESCAPE_HATCH_IDENTITY_PROVIDER",
+    "NEXT_PUBLIC_SUPABASE_URL",
+    "NEXT_PUBLIC_SUPABASE_ANON_KEY",
+    "DATABASE_URL",
+    "ESCAPE_HATCH_SESSION_SECRET",
+    "SUPABASE_URL",
+    "SUPABASE_ANON_KEY",
+    "SUPABASE_SERVICE_ROLE_KEY",
+    "ESCAPE_HATCH_MEDIA_MODE",
+    "ESCAPE_HATCH_MEDIA_SIGNED_URL_TTL_SEC",
+    "R2_ENDPOINT",
+    "R2_BUCKET",
+    "R2_ACCESS_KEY_ID",
+    "R2_SECRET_ACCESS_KEY",
+    "R2_PUBLIC_BASE_URL",
+    "R2_REGION",
+    "STRIPE_SECRET_KEY",
+    "STRIPE_WEBHOOK_SECRET",
+    "NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY",
+    "ESCAPE_HATCH_PATREON_MODE",
+    "PATREON_CLIENT_ID",
+    "PATREON_CLIENT_SECRET",
+    "PATREON_REDIRECT_URI",
+    "PATREON_CAMPAIGN_ID",
+    "ESCAPE_HATCH_PATREON_TOKEN_KEY",
+    "ESCAPE_HATCH_PATREON_OAUTH_STATE_SECRET",
+    "ESCAPE_HATCH_RELAY_VERIFY_BASE_URL",
+    "ESCAPE_HATCH_RELAY_SITE_ID",
+    "ESCAPE_HATCH_RELAY_ASSERTION_AUDIENCE",
+    "ESCAPE_HATCH_RELAY_ASSERTION_ISSUER",
+    "ESCAPE_HATCH_RELAY_ASSERTION_JWKS_URL",
+    "ESCAPE_HATCH_RELAY_ASSERTION_KEYS_JSON",
+    "ESCAPE_HATCH_RELAY_VERIFY_STATE_SECRET",
+    "ESCAPE_HATCH_RELAY_VERIFY_ENABLED"
+  ],
+  "applied_migrations": [],
+  "known_exclusions": [
+    "Soft persona remains for local preview when identity provider is none — never elevates under Path A/B",
+    "Default private layout stages premium under data/private-media; public_legacy is residual leakage only",
+    "Supabase and portable identity are opt-in via env; productionSafe remains false",
+    "Creator-owned Patreon OAuth (EH-040) and Relay-managed verification (EH-041) are opt-in; Relay billing entitlement is EH-042",
+    "Account/paywall UX (EH-034) + visitor visual (EH-035) present; Milestone 3 security/browser gate still open",
+    "Independent Stripe Checkout not live — billing adapters remain stub (EH-050+)",
+    "Path A uses 0001+0002+0004_supabase+0005_supabase; Path B uses 0001+0003+0004_portable+0005_portable — do not mix on one database"
+  ],
+  "source_export_manifest_hash": null,
+  "relay_optional_services": [],
+  "warranty": {
+    "start": null,
+    "end": null,
+    "notes": "Patreon verification preview (creator_oauth + relay_managed) — not a production handoff warranty."
+  }
+}

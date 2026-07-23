@@ -114,18 +114,31 @@ export function AccountShell({ summary, displayName, communityCta }: Props) {
         {summary.patreon.canConnect && !summary.patreon.linked ? (
           <form
             className="eh-account-actions"
-            action="/api/patreon/oauth/start"
+            action={
+              summary.patreon.mode === "relay_managed"
+                ? "/api/patreon/relay/start"
+                : "/api/patreon/oauth/start"
+            }
             method="post"
           >
             <input type="hidden" name="next" value="/account" />
             <button type="submit" className="admin-link-btn">
-              Connect Patreon
+              {summary.patreon.mode === "relay_managed"
+                ? "Verify with Patreon (Relay)"
+                : "Connect Patreon"}
             </button>
           </form>
         ) : null}
         {summary.patreon.mode === "relay_managed_deferred" ? (
           <p className="eh-account-note muted" role="note">
-            Relay-managed verification ships in EH-041.
+            Relay-managed mode needs complete ESCAPE_HATCH_RELAY_* env (or kill
+            switch is off).
+          </p>
+        ) : null}
+        {summary.patreon.mode === "relay_managed" ? (
+          <p className="eh-account-note muted" role="note">
+            Relay authenticates Patreon and returns a short-lived signed
+            assertion. This site does not hold Patreon tokens.
           </p>
         ) : null}
       </section>

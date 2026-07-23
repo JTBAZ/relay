@@ -1,4 +1,4 @@
-# Operations (EH-040 creator Patreon OAuth + EH-035 visitor visual + EH-034 account / paywall UX)
+# Operations (EH-041 Relay-managed verify + EH-040 creator Patreon OAuth + EH-035 visitor visual + EH-034 account / paywall UX)
 
 ## Local preview
 
@@ -33,8 +33,42 @@ Rules:
 - Refresh tokens are encrypted at rest with the creator-owned key; plaintext never appears in zip, browser bundle, logs, or Relay records after handoff.
 - Campaign membership must match `PATREON_CAMPAIGN_ID` **and** `patron_status=active_patron` or linking fails closed.
 - OAuth start is POST + same-origin only (account-linking CSRF defense).
-- `ESCAPE_HATCH_PATREON_MODE=relay_managed` is **EH-041** (not implemented) — adapter stays stub with an honest reason.
 - Soft persona honesty unchanged; premium bytes still require `evaluateAccess` (EH-032/033).
+
+## Relay-managed Patreon verification (EH-041)
+
+Optional monthly Relay service — replaceable with creator_oauth without rebuilding the site.
+
+1. Set `ESCAPE_HATCH_PATREON_MODE=relay_managed` and:
+   - `ESCAPE_HATCH_RELAY_VERIFY_BASE_URL` (Relay origin)
+   - `ESCAPE_HATCH_RELAY_SITE_ID`
+   - `ESCAPE_HATCH_RELAY_ASSERTION_AUDIENCE`
+   - `ESCAPE_HATCH_RELAY_ASSERTION_ISSUER`
+   - `ESCAPE_HATCH_RELAY_ASSERTION_JWKS_URL` and/or `ESCAPE_HATCH_RELAY_ASSERTION_KEYS_JSON` (overlapping public keys)
+   - `ESCAPE_HATCH_RELAY_VERIFY_STATE_SECRET` (min 16 chars)
+2. Register `{NEXT_PUBLIC_SITE_URL}` origin + `/api/patreon/relay/callback` on Relay (allowlist).
+3. Kill switch: `ESCAPE_HATCH_RELAY_VERIFY_ENABLED=0` fails closed.
+4. Relay mutating APIs (`/sites`, `/complete`, rotate, revoke) require operator token `ESCAPE_HATCH_RELAY_MANAGED_VERIFY_OPERATOR_TOKEN` (never public).
+5. From `/account`, **Verify with Patreon (Relay)** → POST `/api/patreon/relay/start` (GET → 405).
+6. Site verifies EdDSA (Ed25519) assertion: iss/aud/kid/exp/nbf/nonce/observation time + `patron_status=active_patron` + replay store; applies entitlement `source: patreon`.
+7. Export non-secret migration metadata from `/admin/patreon` + Relay `.../migration-export`.
+
+### Service boundary (honesty)
+
+- Relay authenticates Patreon and returns a short-lived signed assertion scoped to the site.
+- Relay does **not** serve site media, hold site billing credentials, or become the site's account database.
+- Site does **not** hold Patreon refresh tokens in relay_managed mode.
+
+### Privacy / data-processing disclosure (names only)
+
+Relay may process: site id, allowlisted callback origin, opaque Patreon user id, mapped tier ids, entitlement observation timestamps, assertion jti (replay). Relays must **not** retain site Stripe secrets, admin passwords, or premium media. Creators remain controllers of site accounts; Relay is a processor for verification only while the add-on is active (billing entitlement: EH-042).
+
+### Residuals (not production-safe yet)
+
+- In-memory Relay registry / keyring in CI; production persistence + multi-tenant hard isolation remain open.
+- Live Patreon OAuth inside Relay start is mocked in preview (`POST .../complete`).
+- Token refresh / provider failure monitoring are stub metric hooks.
+- `productionSafe` remains **false**.
 
 ## Visitor visual system (EH-035)
 

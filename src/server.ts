@@ -945,6 +945,10 @@ import { registerGoalCyclePlannerRoutes } from "./goal-cycle/planner/planner-rou
 import { registerGoalCycleMaterializationRoutes } from "./goal-cycle/materialization/materialization-routes.js";
 import { registerGoalCycleOutcomeRoutes } from "./goal-cycle/outcomes/outcome-routes.js";
 import { registerCoachPlanCreditRoutes } from "./usage/coach-plan-credit-routes.js";
+import {
+  createManagedVerifyService,
+  registerManagedVerifyRoutes
+} from "./escape-hatch/managed-verify/index.js";
 import { attachRelaySentryExpressErrorHandler } from "./lib/relay-sentry.js";
 import { resolveHttpAccessLogEmit } from "./lib/http-access-log-policy.js";
 import { createLogger } from "./lib/logger.js";
@@ -21120,6 +21124,17 @@ export function createApp(config: AppConfig): CreateAppResult {
     prisma: config.prisma,
     identityService
   });
+
+  // EH-041 — Relay-managed Patreon verification (in-memory preview; productionSafe false).
+  {
+    const managedVerifyIssuer =
+      process.env.ESCAPE_HATCH_RELAY_ASSERTION_ISSUER?.trim() ||
+      "https://relay.local/eh-managed-verify";
+    const managedVerifyService = createManagedVerifyService({
+      issuer: managedVerifyIssuer
+    });
+    registerManagedVerifyRoutes(app, { service: managedVerifyService });
+  }
 
   registerPipelineParityRoutes(app, {
     config,

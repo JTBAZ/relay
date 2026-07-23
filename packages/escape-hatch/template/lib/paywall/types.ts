@@ -33,9 +33,9 @@ export type AccountSummaryView = {
   softPersonaAllowed: boolean;
   billingConfigured: boolean;
   billingNote: string;
-  /** EH-040 Patreon link honesty on /account */
+  /** EH-040/041 Patreon link honesty on /account */
   patreon: {
-    mode: "stub" | "creator_oauth" | "relay_managed_deferred";
+    mode: "stub" | "creator_oauth" | "relay_managed" | "relay_managed_deferred";
     configured: boolean;
     canConnect: boolean;
     linked: boolean;

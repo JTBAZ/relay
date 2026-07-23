@@ -1,11 +1,11 @@
 /**
- * Deterministic Escape Hatch capability inventory (through EH-040).
+ * Deterministic Escape Hatch capability inventory (through EH-041).
  * No timestamps, env reads, network, or live data — informational only.
  */
 
 export const ESCAPE_HATCH_STATUS_SCHEMA_VERSION = "escape-hatch-status/1.0.0";
 
-export const ESCAPE_HATCH_SLICE = "EH-040";
+export const ESCAPE_HATCH_SLICE = "EH-041";
 
 export type CapabilityState =
   | "production_safe"
@@ -36,7 +36,7 @@ export type EscapeHatchStatus = {
   capabilities: EscapeHatchCapability[];
   blockers: string[];
   nextSlice: {
-    id: "EH-041";
+    id: "EH-042";
     title: string;
     focus: string[];
   };
@@ -48,7 +48,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
     title: "Prototype generator and CLI",
     state: "preview_only",
     evidence:
-      "fixture, wizard, build, from-relay, from-clone, import-relay-dump, migrate-media, library-truth / parity-report, and zip subcommands materialize a standalone Next.js kit (typed env, SQL migrations + RLS, Vercel/Docker manifests, adapter surfaces, cold-gallery patron theme, native admin shell, optional Supabase Path A + portable Path B identity, EH-032 entitlement evaluator, EH-033 private media, EH-034 account/paywall UX, EH-035 visitor visual system, EH-040 creator-owned Patreon OAuth) plus import/migration/library-parity artifacts; suitable for local preview only.",
+      "fixture, wizard, build, from-relay, from-clone, import-relay-dump, migrate-media, library-truth / parity-report, and zip subcommands materialize a standalone Next.js kit (typed env, SQL migrations + RLS, Vercel/Docker manifests, adapter surfaces, cold-gallery patron theme, native admin shell, optional Supabase Path A + portable Path B identity, EH-032 entitlement evaluator, EH-033 private media, EH-034 account/paywall UX, EH-035 visitor visual system, EH-040 creator-owned Patreon OAuth, EH-041 Relay-managed verification) plus import/migration/library-parity artifacts; suitable for local preview only.",
     sourcePaths: [
       "packages/escape-hatch/src/cli.ts",
       "packages/escape-hatch/src/fill-template.ts",
@@ -59,14 +59,14 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "packages/escape-hatch/src/library-truth/kit-io.ts"
     ],
     risk: "high",
-    nextSlice: "EH-041"
+    nextSlice: "EH-042"
   },
   {
     id: "generated-repository",
     title: "Generated repository chassis",
     state: "preview_only",
     evidence:
-      "EH-020 chassis plus EH-030–040: package.json + Next App Router, typed lib/env.ts + .env.example (Supabase + portable + Patreon OAuth names), db/schema + db/migrations SQL including Path A RLS (0002), Path B portable identity (0003), entitlement evaluator (0004_*), and Patreon OAuth tables (0005_*) (no live DB required for next build), lib/adapters with optional Supabase/portable Auth/DB and creator_oauth Patreon, lib/entitlements evaluator, private media delivery, account/paywall UX, cold-gallery visitor chrome, escape-hatch.manifest.json, vercel.json, Dockerfile/.dockerignore, optional loopback-only docker-compose Postgres profile (127.0.0.1:5433). Install/build from a clean directory without RELAY_* / root .env. productionSafe remains false — Milestone 3 security/browser gate, billing, and verified deploy remain open.",
+      "EH-020 chassis plus EH-030–041: package.json + Next App Router, typed lib/env.ts + .env.example (Supabase + portable + Patreon OAuth names), db/schema + db/migrations SQL including Path A RLS (0002), Path B portable identity (0003), entitlement evaluator (0004_*), and Patreon OAuth tables (0005_*) (no live DB required for next build), lib/adapters with optional Supabase/portable Auth/DB creator_oauth + relay_managed Patreon, lib/entitlements evaluator, private media delivery, account/paywall UX, cold-gallery visitor chrome, escape-hatch.manifest.json, vercel.json, Dockerfile/.dockerignore, optional loopback-only docker-compose Postgres profile (127.0.0.1:5433). Install/build from a clean directory without RELAY_* / root .env. productionSafe remains false — Milestone 3 security/browser gate, billing, and verified deploy remain open.",
     sourcePaths: [
       "packages/escape-hatch/template/package.json",
       "packages/escape-hatch/template/lib/env.ts",
@@ -84,7 +84,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "packages/escape-hatch/tests/escape-hatch-generated-repo.test.ts"
     ],
     risk: "high",
-    nextSlice: "EH-041"
+    nextSlice: "EH-042"
   },
   {
     id: "premium-patron-theme",
@@ -110,7 +110,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "packages/escape-hatch/tests/escape-hatch-theme.test.ts"
     ],
     risk: "medium",
-    nextSlice: "EH-041"
+    nextSlice: "EH-042"
   },
   {
     id: "soft-persona-gate",
@@ -128,7 +128,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "packages/escape-hatch/template/lib/paywall/copy.ts"
     ],
     risk: "critical",
-    nextSlice: "EH-041"
+    nextSlice: "EH-042"
   },
   {
     id: "public-media-copy",
@@ -143,7 +143,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "packages/escape-hatch/template/lib/media/delivery.ts"
     ],
     risk: "critical",
-    nextSlice: "EH-041"
+    nextSlice: "EH-042"
   },
   {
     id: "client-readable-bundle",
@@ -160,7 +160,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "packages/escape-hatch/src/library-truth/kit-io.ts"
     ],
     risk: "high",
-    nextSlice: "EH-041"
+    nextSlice: "EH-042"
   },
   {
     id: "duplicate-contracts",
@@ -208,7 +208,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "tests/fixtures/patreon/cookie-list-with-media.json"
     ],
     risk: "medium",
-    nextSlice: "EH-041"
+    nextSlice: "EH-042"
   },
   {
     id: "relay-dump-fixtures",
@@ -227,7 +227,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "packages/escape-hatch/tests/escape-hatch-library-truth.test.ts"
     ],
     risk: "medium",
-    nextSlice: "EH-041"
+    nextSlice: "EH-042"
   },
   {
     id: "relay-canonical-reuse",
@@ -250,7 +250,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "src/storage/media-delivery-policy.ts"
     ],
     risk: "informational",
-    nextSlice: "EH-041"
+    nextSlice: "EH-042"
   },
   {
     id: "simplified-access-semantics",
@@ -267,7 +267,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "src/clone/tier-rules.ts"
     ],
     risk: "high",
-    nextSlice: "EH-041"
+    nextSlice: "EH-042"
   },
   {
     id: "generated-site-identity",
@@ -305,7 +305,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "packages/escape-hatch/tests/escape-hatch-entitlements.test.ts"
     ],
     risk: "critical",
-    nextSlice: "EH-041"
+    nextSlice: "EH-042"
   },
   {
     id: "entitlement-evaluator",
@@ -326,7 +326,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "packages/escape-hatch/tests/escape-hatch-entitlements.test.ts"
     ],
     risk: "critical",
-    nextSlice: "EH-041"
+    nextSlice: "EH-042"
   },
   {
     id: "private-media-delivery",
@@ -343,7 +343,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "packages/escape-hatch/tests/escape-hatch-private-media.test.ts"
     ],
     risk: "critical",
-    nextSlice: "EH-041"
+    nextSlice: "EH-042"
   },
   {
     id: "account-paywall-ux",
@@ -368,7 +368,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "packages/escape-hatch/tests/escape-hatch-account-paywall.test.ts"
     ],
     risk: "critical",
-    nextSlice: "EH-041"
+    nextSlice: "EH-042"
   },
   {
     id: "billing-adapters",
@@ -421,7 +421,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "packages/escape-hatch/tests/escape-hatch-admin.test.ts"
     ],
     risk: "high",
-    nextSlice: "EH-041"
+    nextSlice: "EH-042"
   },
   {
     id: "migration-import",
@@ -440,7 +440,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "packages/escape-hatch/tests/escape-hatch-migrate.test.ts"
     ],
     risk: "high",
-    nextSlice: "EH-041"
+    nextSlice: "EH-042"
   },
   {
     id: "library-truth-parity",
@@ -463,7 +463,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "packages/escape-hatch/tests/escape-hatch-library-truth.test.ts"
     ],
     risk: "high",
-    nextSlice: "EH-041"
+    nextSlice: "EH-042"
   },
   {
     id: "backup-restore",
@@ -489,14 +489,14 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "src/deploy/deploy-adapter.ts"
     ],
     risk: "high",
-    nextSlice: "EH-041"
+    nextSlice: "EH-042"
   },
   {
     id: "creator-patreon-oauth",
     title: "Creator-owned Patreon OAuth",
     state: "preview_only",
     evidence:
-      "EH-040 ships creator_oauth path: typed env (PATREON_* + ESCAPE_HATCH_PATREON_*), AES-256-GCM refresh-token crypto, HMAC+PKCE OAuth state, PatreonClient exchange/refresh (injectable fetch), campaign-bound identity extraction, link upsert + entitlement snapshot source=patreon, SQL 0005_* RLS fail-closed credential tables, /api/patreon/oauth/start|callback, /account Connect Patreon, /admin/patreon ops checklist. Fail-closed without real credentials; no live Patreon in CI. relay_managed deferred to EH-041. productionSafe remains false.",
+      "EH-040 ships creator_oauth path: typed env (PATREON_* + ESCAPE_HATCH_PATREON_*), AES-256-GCM refresh-token crypto, HMAC+PKCE OAuth state, PatreonClient exchange/refresh (injectable fetch), campaign-bound identity extraction, link upsert + entitlement snapshot source=patreon, SQL 0005_* RLS fail-closed credential tables, /api/patreon/oauth/start|callback, /account Connect Patreon, /admin/patreon ops checklist. Fail-closed without real credentials; no live Patreon in CI. relay_managed implemented in EH-041 side-by-side. productionSafe remains false.",
     sourcePaths: [
       "packages/escape-hatch/template/lib/patreon/",
       "packages/escape-hatch/template/lib/adapters/index.ts",
@@ -509,13 +509,32 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "packages/escape-hatch/tests/escape-hatch-patreon-oauth.test.ts"
     ],
     risk: "critical",
-    nextSlice: "EH-041"
+    nextSlice: "EH-042"
+  },
+  {
+    id: "relay-managed-patreon-verification",
+    title: "Relay-managed Patreon verification",
+    state: "preview_only",
+    evidence:
+      "EH-041 ships relay_managed path: kit verifies EdDSA assertions (iss/aud/kid/exp/nbf/nonce/observation/replay), POST-only start + GET callback, kill switch fail-closed, migration metadata export (non-secret). Relay src/escape-hatch/managed-verify provides in-memory registry, allowlisted callbacks, key rotation overlap, revocation, JWKS, stub metrics. No live Patreon in CI. productionSafe remains false.",
+    sourcePaths: [
+      "packages/escape-hatch/template/lib/patreon/relay-managed/",
+      "packages/escape-hatch/template/lib/adapters/index.ts",
+      "packages/escape-hatch/template/app/api/patreon/relay/start/route.ts",
+      "packages/escape-hatch/template/app/api/patreon/relay/callback/route.ts",
+      "src/escape-hatch/managed-verify/",
+      "packages/escape-hatch/tests/escape-hatch-relay-managed.test.ts",
+      "tests/escape-hatch-managed-verify.test.ts"
+    ],
+    risk: "critical",
+    nextSlice: "EH-042"
   }
 ];
 
 const PROTOTYPE_WARNINGS: string[] = [
   "productionSafe is false — this deliverable is prototype/preview-only.",
   "EH-040 creator-owned Patreon OAuth is preview_only — mocked fetch in tests; live campaign link still needs creator credentials and Milestone gate.",
+  "EH-041 Relay-managed Patreon verification is preview_only — in-memory Relay registry + mocked Patreon; assertion crypto is CI-covered but not a production multi-tenant deploy.",
   "EH-035 visitor visual system is preview_only — cold-gallery tokens and chrome split land, but Milestone 3 security review + browser personas gate remains open.",
   "EH-034 account/paywall UX is preview_only — locked/unlocked honesty is wired, but Milestone 3 security review + browser personas gate remains open.",
   "EH-033 private media delivery is preview_only — default private path closes premium public/media staging, but billing and verified deploy remain open.",
@@ -541,7 +560,7 @@ const PROTOTYPE_WARNINGS: string[] = [
 
 const BLOCKERS: string[] = [
   "Milestone 3 security review + browser personas gate remains open before productionSafe can flip.",
-  "Relay-managed Patreon verification service belongs to EH-041.",
+  "Relay billing entitlement for the managed connector belongs to EH-042.",
   "Billing is stub-only; creator-owned Stripe/eligible adapters belong to EH-050/051.",
   "Verified Vercel/Docker production deploy rehearsals remain open (EH-070/071).",
   "Mature/legal-adult enforcement beyond accounted exclusions remains open.",
@@ -555,7 +574,7 @@ export function buildEscapeHatchStatus(): EscapeHatchStatus {
     deliverable: "prototype_preview_only",
     productionSafe: false,
     summary:
-      "Escape Hatch through EH-040 delivers Path A/B identity, entitlements, private media, account/paywall UX, visitor visual system, and creator-owned Patreon OAuth (exchange/refresh/link, campaign validation, encrypted refresh tokens); productionSafe remains false pending Milestone 3 security/browser gate, Relay-managed verification (EH-041), billing, and verified deploy.",
+      "Escape Hatch through EH-041 delivers Path A/B identity, entitlements, private media, account/paywall UX, visitor visual system, creator-owned Patreon OAuth, and Relay-managed Patreon verification (EdDSA assertions, allowlist, rotation/replay/revoke); productionSafe remains false pending Milestone 3 security/browser gate, Relay billing entitlement (EH-042), billing adapters, and verified deploy.",
     prototypeWarnings: [...PROTOTYPE_WARNINGS],
     capabilities: CAPABILITIES.map((c) => ({
       ...c,
@@ -563,12 +582,12 @@ export function buildEscapeHatchStatus(): EscapeHatchStatus {
     })),
     blockers: [...BLOCKERS],
     nextSlice: {
-      id: "EH-041",
-      title: "Relay-managed verification service",
+      id: "EH-042",
+      title: "Relay billing entitlement for connector",
       focus: [
-        "Site registration, callback allowlist, signed assertions",
-        "Rotation, revocation, monitoring, migration metadata",
-        "Replaceable without rebuilding the generated site"
+        "Separate configurable monthly add-on on Relay billing",
+        "Webhook truth, feature flag, cancellation/grace",
+        "Does not replace creator-owned OAuth independence path"
       ]
     }
   };
