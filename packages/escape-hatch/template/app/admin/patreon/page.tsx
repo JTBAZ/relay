@@ -3,6 +3,7 @@ import { ConsoleNav } from "@/components/ConsoleNav";
 import { AdminAccessDenied } from "@/components/admin/AdminAccessDenied";
 import { AdminShell } from "@/components/admin/AdminShell";
 import { PatreonModeSwitchOff } from "@/components/admin/PatreonModeSwitchOff";
+import { PatreonSyncPanel } from "@/components/admin/PatreonSyncPanel";
 import { createSiteAdapters } from "@/lib/adapters";
 import { redirectIfAdminSignInRequired } from "@/lib/admin/require-admin-page";
 import { loadEnv } from "@/lib/env";
@@ -90,6 +91,7 @@ export default async function AdminPatreonPage() {
           <AdminAccessDenied reason={read.reason} />
         ) : (
           <>
+            <PatreonSyncPanel siteId={site.site_id} />
             <section className="admin-panel">
               <h2>Choice</h2>
               <p className="muted">

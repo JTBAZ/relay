@@ -184,7 +184,7 @@ Execute one documented slice at a time. The program docs define scope and depend
 ### EH-063 Optional Patreon sync
 
 - **Builder:** Cursor Grok 4.5 High
-- Read-only transition sync, conflict queue, local-edit protection.
+- **Status:** Implemented (preview_only; `productionSafe: false`). Read-only transition sync into `site.json` with `data/patreon-sync-state.json`, CMS local-edit protection, conflict queue on `/admin/patreon`, post origin badges. Live network posts fetch deferred (fixture/injectable). Evidence: `docs/qa/ESCAPE_HATCH_EH_063_EVIDENCE.md`. Next: **EH-064**.
 
 ### EH-064 Optional Relay Crosspost API
 

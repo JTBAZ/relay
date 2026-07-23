@@ -76,6 +76,15 @@ export function AdminPosts({ model }: { model: AdminPostsModel }) {
         </p>
       ) : null}
 
+      {model.sync_conflict_count > 0 ? (
+        <p className="admin-banner admin-banner--warn">
+          {model.sync_conflict_count} Patreon sync conflict
+          {model.sync_conflict_count === 1 ? "" : "s"} — local edits are
+          protected. Review on{" "}
+          <Link href="/admin/patreon">/admin/patreon</Link>.
+        </p>
+      ) : null}
+
       <ul className="admin-post-list">
         {model.posts.map((post) => (
           <li key={post.post_id} className="admin-post-card">
@@ -89,6 +98,12 @@ export function AdminPosts({ model }: { model: AdminPostsModel }) {
                 <span className="admin-pill">
                   {post.status === "draft" ? "Draft" : "Published"}
                 </span>
+                {post.sync_origin ? (
+                  <span className="admin-pill">{post.sync_origin}</span>
+                ) : null}
+                {post.locally_edited ? (
+                  <span className="admin-pill">locally edited</span>
+                ) : null}
                 <span className="muted small">{post.media_count} media</span>
                 <span className="muted small">
                   {new Date(post.published_at).toLocaleDateString()}

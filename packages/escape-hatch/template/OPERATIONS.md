@@ -210,6 +210,17 @@ Deferrals: Supabase staff session revoke, lawful PII export, live Stripe portal 
 
 Deferrals: domain/TLS probes, backup/restore status, live webhook freshness, theme draft version history.
 
+## Optional Patreon sync (EH-063)
+
+| Surface | Role |
+|---------|------|
+| `/admin/patreon` | Fixture/preview sync trigger + conflict queue |
+| `GET/POST /api/admin/patreon/sync` | Status + read-only merge (creator_oauth; `fixture_posts` for preview) |
+| `data/patreon-sync-state.json` | Tracking, local-edit flags, conflicts |
+| CMS post save | Marks `locally_edited` — upstream revision changes queue conflicts |
+
+Deferrals: live Patreon posts network fetch, accept-upstream resolution, cron/webhooks, media binary pull.
+
 ## Identity provider
 
 `ESCAPE_HATCH_IDENTITY_PROVIDER`:

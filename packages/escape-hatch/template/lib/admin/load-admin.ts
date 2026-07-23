@@ -59,7 +59,11 @@ export type AdminPostsModel = {
     feature_order: number | null;
     body_plain: string | null;
     public_cover_media_id: string | null;
+    sync_origin: string | null;
+    locally_edited: boolean;
+    upstream_revision: string | null;
   }>;
+  sync_conflict_count: number;
   identity: AdminIdentityState;
   read_allowed: boolean;
   deny_reason: AdminReadDeniedReason | null;
@@ -249,6 +253,7 @@ export async function loadAdminPosts(): Promise<AdminPostsModel> {
         marks: {}
       } satisfies AdminAttentionState,
       posts: [],
+      sync_conflict_count: 0,
       identity: access.identity,
       read_allowed: false,
       deny_reason: access.reason
@@ -256,25 +261,36 @@ export async function loadAdminPosts(): Promise<AdminPostsModel> {
   }
 
   const attention = loadAdminAttention(site.site_id);
+  const { loadPatreonSyncState, conflictCount } = await import(
+    "../patreon/sync-state"
+  );
+  const syncState = loadPatreonSyncState(site.site_id);
   return {
     site_id: site.site_id,
     production_safe: false,
     attention,
-    posts: site.posts.map((p) => ({
-      post_id: p.post_id,
-      slug: p.slug,
-      title: p.title,
-      published_at: p.published_at,
-      access_level: p.access.level,
-      tier_ids: [...p.access.tier_ids],
-      media_count: p.media.length,
-      attention_note: attention.marks[p.post_id]?.note ?? null,
-      status: p.status === "draft" ? "draft" : "published",
-      feature_order:
-        typeof p.feature_order === "number" ? p.feature_order : null,
-      body_plain: p.body_plain ?? null,
-      public_cover_media_id: p.public_cover_media_id ?? null
-    })),
+    posts: site.posts.map((p) => {
+      const track = syncState.posts[p.post_id];
+      return {
+        post_id: p.post_id,
+        slug: p.slug,
+        title: p.title,
+        published_at: p.published_at,
+        access_level: p.access.level,
+        tier_ids: [...p.access.tier_ids],
+        media_count: p.media.length,
+        attention_note: attention.marks[p.post_id]?.note ?? null,
+        status: p.status === "draft" ? "draft" : "published",
+        feature_order:
+          typeof p.feature_order === "number" ? p.feature_order : null,
+        body_plain: p.body_plain ?? null,
+        public_cover_media_id: p.public_cover_media_id ?? null,
+        sync_origin: track?.origin ?? null,
+        locally_edited: track?.locally_edited === true,
+        upstream_revision: track?.upstream_revision ?? null
+      };
+    }),
+    sync_conflict_count: conflictCount(syncState),
     identity: access.identity,
     read_allowed: true,
     deny_reason: null

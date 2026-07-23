@@ -35,7 +35,7 @@ const NEXT_ACTIONS: Record<string, string> = {
   billing:
     "Set ESCAPE_HATCH_BILLING_PROVIDER=stripe|nowpayments with secrets, or leave stub and use Patreon/manual grants.",
   patreon:
-    "Open /admin/patreon/choice — pick creator OAuth or Relay-managed; never leave secrets in kit files.",
+    "Open /admin/patreon — OAuth choice plus EH-063 optional read-only post sync (conflicts never overwrite local edits).",
   email:
     "Transactional email is a stub until EH-072 — do not treat as delivery-ready.",
   deployment:

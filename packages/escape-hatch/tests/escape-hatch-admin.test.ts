@@ -31,12 +31,12 @@ afterEach(() => {
 });
 
 describe("EH-022 status (preserved under EH-032)", () => {
-  it("keeps native-admin preview with identity wiring and next EH-063", () => {
+  it("keeps native-admin preview with identity wiring and next EH-064", () => {
     const status = buildEscapeHatchStatus();
-    expect(ESCAPE_HATCH_SLICE).toBe("EH-062");
-    expect(status.slice).toBe("EH-062");
+    expect(ESCAPE_HATCH_SLICE).toBe("EH-063");
+    expect(status.slice).toBe("EH-063");
     expect(status.productionSafe).toBe(false);
-    expect(status.nextSlice.id).toBe("EH-063");
+    expect(status.nextSlice.id).toBe("EH-064");
     expect(status.blockers.some((b) => /Native admin shell.*remains open/i.test(b))).toBe(
       false
     );
@@ -46,7 +46,7 @@ describe("EH-022 status (preserved under EH-032)", () => {
     expect(admin?.evidence).toMatch(/\/admin/);
     expect(admin?.evidence).toMatch(/identity|staff session|local-operator/i);
     expect(admin?.evidence).toMatch(/productionSafe remains false/i);
-    expect(admin?.nextSlice).toBe("EH-063");
+    expect(admin?.nextSlice).toBe("EH-064");
     expect(admin?.sourcePaths).toEqual(
       expect.arrayContaining([
         "packages/escape-hatch/template/app/admin/page.tsx",
@@ -155,7 +155,7 @@ describe("EH-022 fillTemplate stamps admin", () => {
     const manifest = JSON.parse(
       readFileSync(join(result.outDir, "escape-hatch.manifest.json"), "utf8")
     ) as { slice: string; productionSafe: boolean; feature_flags: Record<string, boolean> };
-    expect(manifest.slice).toBe("EH-062");
+    expect(manifest.slice).toBe("EH-063");
     expect(manifest.productionSafe).toBe(false);
     expect(manifest.feature_flags.native_admin).toBe(true);
     expect(manifest.feature_flags.hard_paywall).toBe(true);

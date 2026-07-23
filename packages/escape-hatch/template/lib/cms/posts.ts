@@ -19,6 +19,7 @@ import {
   type ClonePostEntry,
   type SiteBundle
 } from "../contracts";
+import { markPostLocallyEdited } from "../patreon/sync-state";
 
 const SAFE_SLUG_RE = /^[\p{L}\p{N}_][\p{L}\p{N}_.-]*$/u;
 
@@ -207,6 +208,10 @@ export function upsertPost(
     generated_at: new Date().toISOString()
   };
   saveSiteBundle(next, kitDir);
+  markPostLocallyEdited(site.site_id, postId, {
+    created,
+    kitDir
+  });
   return { ok: true, post, created };
 }
 
