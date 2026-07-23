@@ -94,6 +94,15 @@ export type SiteServerEnv = {
   ESCAPE_HATCH_RELAY_VERIFY_STATE_SECRET: string | undefined;
   /** Kill switch: 0|false|off fails closed. */
   ESCAPE_HATCH_RELAY_VERIFY_ENABLED: string | undefined;
+  /**
+   * EH-042 — local mirror of Relay managed-connector billing feature flag.
+   * Explicit 0|false|off denies relay_managed honesty (creator_oauth unaffected).
+   */
+  ESCAPE_HATCH_RELAY_CONNECTOR_BILLING_ENABLED: string | undefined;
+  /** EH-042 — observed entitlement: active|grace|cancelled|past_due|none */
+  ESCAPE_HATCH_RELAY_CONNECTOR_ENTITLEMENT_STATUS: string | undefined;
+  /** EH-042 — ISO last service / stale boundary date (no secrets). */
+  ESCAPE_HATCH_RELAY_CONNECTOR_LAST_SERVICE_DATE: string | undefined;
 };
 
 export type SiteEnv = SitePublicEnv & SiteServerEnv;
@@ -140,7 +149,10 @@ export const SITE_ENV_NAMES = {
     "ESCAPE_HATCH_RELAY_ASSERTION_JWKS_URL",
     "ESCAPE_HATCH_RELAY_ASSERTION_KEYS_JSON",
     "ESCAPE_HATCH_RELAY_VERIFY_STATE_SECRET",
-    "ESCAPE_HATCH_RELAY_VERIFY_ENABLED"
+    "ESCAPE_HATCH_RELAY_VERIFY_ENABLED",
+    "ESCAPE_HATCH_RELAY_CONNECTOR_BILLING_ENABLED",
+    "ESCAPE_HATCH_RELAY_CONNECTOR_ENTITLEMENT_STATUS",
+    "ESCAPE_HATCH_RELAY_CONNECTOR_LAST_SERVICE_DATE"
   ] as const,
   optionalFutureAdapters: [
     "ESCAPE_HATCH_IDENTITY_PROVIDER",
@@ -176,7 +188,10 @@ export const SITE_ENV_NAMES = {
     "ESCAPE_HATCH_RELAY_ASSERTION_JWKS_URL",
     "ESCAPE_HATCH_RELAY_ASSERTION_KEYS_JSON",
     "ESCAPE_HATCH_RELAY_VERIFY_STATE_SECRET",
-    "ESCAPE_HATCH_RELAY_VERIFY_ENABLED"
+    "ESCAPE_HATCH_RELAY_VERIFY_ENABLED",
+    "ESCAPE_HATCH_RELAY_CONNECTOR_BILLING_ENABLED",
+    "ESCAPE_HATCH_RELAY_CONNECTOR_ENTITLEMENT_STATUS",
+    "ESCAPE_HATCH_RELAY_CONNECTOR_LAST_SERVICE_DATE"
   ] as const
 } as const;
 
@@ -285,6 +300,15 @@ export function loadEnv(): SiteEnv {
     ),
     ESCAPE_HATCH_RELAY_VERIFY_ENABLED: readOptional(
       "ESCAPE_HATCH_RELAY_VERIFY_ENABLED"
+    ),
+    ESCAPE_HATCH_RELAY_CONNECTOR_BILLING_ENABLED: readOptional(
+      "ESCAPE_HATCH_RELAY_CONNECTOR_BILLING_ENABLED"
+    ),
+    ESCAPE_HATCH_RELAY_CONNECTOR_ENTITLEMENT_STATUS: readOptional(
+      "ESCAPE_HATCH_RELAY_CONNECTOR_ENTITLEMENT_STATUS"
+    ),
+    ESCAPE_HATCH_RELAY_CONNECTOR_LAST_SERVICE_DATE: readOptional(
+      "ESCAPE_HATCH_RELAY_CONNECTOR_LAST_SERVICE_DATE"
     )
   };
 }
@@ -299,6 +323,9 @@ export function isSecretLikeEnvKey(key: keyof SiteEnv): boolean {
   if (name === "ESCAPE_HATCH_MEDIA_SIGNED_URL_TTL_SEC") return false;
   if (name === "ESCAPE_HATCH_PATREON_MODE") return false;
   if (name === "ESCAPE_HATCH_RELAY_VERIFY_ENABLED") return false;
+  if (name === "ESCAPE_HATCH_RELAY_CONNECTOR_BILLING_ENABLED") return false;
+  if (name === "ESCAPE_HATCH_RELAY_CONNECTOR_ENTITLEMENT_STATUS") return false;
+  if (name === "ESCAPE_HATCH_RELAY_CONNECTOR_LAST_SERVICE_DATE") return false;
   if (name === "PATREON_REDIRECT_URI" || name === "PATREON_CAMPAIGN_ID") {
     return false;
   }

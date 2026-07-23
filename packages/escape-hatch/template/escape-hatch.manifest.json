@@ -3,7 +3,7 @@
   "contract_version": "escape-hatch.manifest/1.0.0",
   "chassis_version": "0.8.0",
   "schema_version": "eh-db/0005_patreon_oauth",
-  "slice": "EH-041",
+  "slice": "EH-043",
   "productionSafe": false,
   "generated_at": null,
   "creator_id": null,
@@ -17,6 +17,8 @@
     "entitlement_evaluator": true,
     "creator_patreon_oauth": true,
     "relay_managed_patreon_verification": true,
+    "relay_managed_connector_billing": true,
+    "oauth_choice_migration_ux": true,
     "stripe_billing": false,
     "native_admin": true
   },
@@ -80,14 +82,17 @@
     "ESCAPE_HATCH_RELAY_ASSERTION_JWKS_URL",
     "ESCAPE_HATCH_RELAY_ASSERTION_KEYS_JSON",
     "ESCAPE_HATCH_RELAY_VERIFY_STATE_SECRET",
-    "ESCAPE_HATCH_RELAY_VERIFY_ENABLED"
+    "ESCAPE_HATCH_RELAY_VERIFY_ENABLED",
+    "ESCAPE_HATCH_RELAY_CONNECTOR_BILLING_ENABLED",
+    "ESCAPE_HATCH_RELAY_CONNECTOR_ENTITLEMENT_STATUS",
+    "ESCAPE_HATCH_RELAY_CONNECTOR_LAST_SERVICE_DATE"
   ],
   "applied_migrations": [],
   "known_exclusions": [
     "Soft persona remains for local preview when identity provider is none — never elevates under Path A/B",
     "Default private layout stages premium under data/private-media; public_legacy is residual leakage only",
     "Supabase and portable identity are opt-in via env; productionSafe remains false",
-    "Creator-owned Patreon OAuth (EH-040) and Relay-managed verification (EH-041) are opt-in; Relay billing entitlement is EH-042",
+    "Creator-owned Patreon OAuth (EH-040), Relay-managed verification (EH-041), connector billing (EH-042), and OAuth choice/migration UX (EH-043) are opt-in; independent Stripe is EH-050+",
     "Account/paywall UX (EH-034) + visitor visual (EH-035) present; Milestone 3 security/browser gate still open",
     "Independent Stripe Checkout not live — billing adapters remain stub (EH-050+)",
     "Path A uses 0001+0002+0004_supabase+0005_supabase; Path B uses 0001+0003+0004_portable+0005_portable — do not mix on one database"

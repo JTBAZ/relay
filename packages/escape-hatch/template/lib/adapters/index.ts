@@ -38,6 +38,7 @@ import {
   handleRelayManagedCallback,
   isRelayManagedConfigured,
   loadRelayManagedConfig,
+  observeConnectorBilling,
   previewAssertionReplayStore,
   resolveRelayCallbackUrl
 } from "../patreon/relay-managed";
@@ -448,9 +449,16 @@ const relayManagedPatreon: PatreonVerificationProvider = {
           "ESCAPE_HATCH_PATREON_MODE=relay_managed but Relay verify base URL/site id/issuer/audience/keys/state secret are missing, placeholder, or kill-switched."
       };
     }
+    const billing = observeConnectorBilling(env);
+    if (!billing.canUseRelayManaged) {
+      return {
+        ok: false,
+        reason: `Relay managed connector billing entitlement denied (state=${billing.state}; feature=${billing.billingFeatureEnabled ? "on" : "off"}). creator_oauth remains available. ${billing.staleWarning}`
+      };
+    }
     return {
       ok: true,
-      detail: `Relay-managed Patreon verification env configured (EH-041). ${PREVIEW_OVERALL}`
+      detail: `Relay-managed Patreon verification env configured (EH-041/042); connector billing ${billing.state}. ${PREVIEW_OVERALL}`
     };
   },
   async buildAuthorizeUrl(args) {

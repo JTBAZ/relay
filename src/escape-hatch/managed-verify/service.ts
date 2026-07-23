@@ -31,6 +31,17 @@ import type {
   ManagedVerifyJwks
 } from "./types.js";
 
+/**
+ * Optional EH-042 billing gate. When provided, assertion mint fails closed
+ * unless the site has active/grace connector entitlement (webhook truth).
+ */
+export type ManagedVerifyBillingGate = {
+  assertCanIssue(args: {
+    siteId: string;
+    nowMs?: number;
+  }): { ok: true } | { ok: false; reason: string };
+};
+
 export type ManagedVerifyService = {
   isEnabled(): boolean;
   health(): ManagedVerifyHealth;
@@ -45,6 +56,7 @@ export type ManagedVerifyService = {
   /**
    * Issue a short-lived signed assertion after mocked/membership resolution.
    * Validates allowlisted return URL when provided; records non-secret link metadata.
+   * When a billing gate is configured (EH-042), denies mint if entitlement inactive/past grace.
    */
   issueAssertion(args: {
     siteId: string;
@@ -108,6 +120,8 @@ export type CreateManagedVerifyServiceArgs = {
   registry?: ManagedVerifySiteRegistry;
   replay?: ManagedVerifyReplayStore;
   metrics?: ManagedVerifyMetrics;
+  /** EH-042 — when set, issueAssertion/completeRedirect check billing entitlement. */
+  billingGate?: ManagedVerifyBillingGate | null;
 };
 
 export function createManagedVerifyService(
@@ -119,11 +133,22 @@ export function createManagedVerifyService(
   const replay = args.replay ?? createMemoryReplayStore();
   const metrics = args.metrics ?? createManagedVerifyMetrics();
   const issuer = args.issuer.trim();
+  const billingGate = args.billingGate ?? null;
 
   const guardEnabled = (): true | { ok: false; reason: string } => {
     if (!isManagedVerifyEnabled(env)) {
       return { ok: false, reason: "kill_switch" };
     }
+    return true;
+  };
+
+  const guardBilling = (
+    siteId: string,
+    nowMs?: number
+  ): true | { ok: false; reason: string } => {
+    if (!billingGate) return true;
+    const gate = billingGate.assertCanIssue({ siteId, nowMs });
+    if (!gate.ok) return { ok: false, reason: gate.reason };
     return true;
   };
 
@@ -177,6 +202,8 @@ export function createManagedVerifyService(
     issueAssertion(issueArgs) {
       const g = guardEnabled();
       if (g !== true) return g;
+      const b = guardBilling(issueArgs.siteId, issueArgs.nowMs);
+      if (b !== true) return b;
       const site = registry.get(issueArgs.siteId);
       if (!site) return { ok: false, reason: "site_not_found" };
       if (site.revoked) return { ok: false, reason: "site_revoked" };

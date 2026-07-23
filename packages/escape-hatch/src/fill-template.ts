@@ -394,7 +394,7 @@ export function stampEscapeHatchManifest(
   parsed.generated_at = bundle.generated_at;
   parsed.creator_id = bundle.creator_id;
   parsed.site_id = bundle.site_id ?? bundle.creator_id;
-  parsed.slice = "EH-041";
+  parsed.slice = "EH-043";
   parsed.productionSafe = false;
   parsed.schema_version = "eh-db/0005_patreon_oauth";
   parsed.chassis_version = "0.8.0";
@@ -408,6 +408,8 @@ export function stampEscapeHatchManifest(
     entitlement_evaluator: true,
     creator_patreon_oauth: true,
     relay_managed_patreon_verification: true,
+    relay_managed_connector_billing: true,
+    oauth_choice_migration_ux: true,
     stripe_billing: false,
     native_admin: true
   };
@@ -518,7 +520,7 @@ export function fillTemplate(opts: FillOptions): FillResult {
       mediaLayout === "private"
         ? "Premium media is staged under `data/private-media` and delivered via `/api/media/{id}` after server entitlement checks (EH-033). Locked gallery/post UI never fetches those bytes (EH-034/035). Do not set `ESCAPE_HATCH_MEDIA_MODE=public_legacy` in production."
         : "WARNING: `public_legacy` media layout copied premium bytes into `/public/media` — residual leakage; not production-safe.",
-      "`productionSafe: false` — creator Patreon OAuth (EH-040) + Relay-managed verification (EH-041) + visitor visual + account/paywall UX present, but Milestone 3 security/browser gate, Relay billing entitlement (EH-042), billing adapters, and verified deploy remain open.",
+      "`productionSafe: false` — creator Patreon OAuth (EH-040) + Relay-managed verification (EH-041) + connector billing (EH-042) + OAuth choice/migration UX (EH-043) + visitor visual + account/paywall UX present, but Milestone 3 security/browser gate, billing adapters (EH-050+), and verified deploy remain open.",
       "",
       `Contract: ${bundle.contract_version}`,
       "",
@@ -527,20 +529,21 @@ export function fillTemplate(opts: FillOptions): FillResult {
       "1. `/library` — Library truth audit (parity, anomalies, exclude)",
       "2. `/structure` — tiers & posts detected (accuracy)",
       "3. `/style` — few aesthetic dials (session peek)",
-      "4. `/admin` — operator shell (health, posts, media, tiers, Patreon setup)",
-      "5. `/login` — Supabase magic-link or portable password (when provider configured)",
-      "6. `/account` — session, membership summary, Connect Patreon, POST sign-out",
-      "7. `/preview` — visitor walkthrough (server-gated paywall when Path A/B)",
+      "4. `/admin` — operator shell (health, posts, media, tiers, Patreon choice/setup)",
+      "5. `/admin/patreon/choice` — neutral OAuth path choice (neither preselected)",
+      "6. `/login` — Supabase magic-link or portable password (when provider configured)",
+      "7. `/account` — session, membership summary, Connect Patreon, POST sign-out",
+      "8. `/preview` — visitor walkthrough (server-gated paywall when Path A/B)",
       "",
       "`/` redirects to Library. Library truth rebuilds parity from data/ artifacts on every load (never trusts a tampered report alone).",
       "Admin mutations: local-operator when identity unset; staff session when Path A/B configured. Soft personas never authorize admin.",
       "",
-      "## Chassis + identity + entitlements + private media + account UX + visitor visual + Patreon OAuth / Relay-managed verify (EH-041)",
+      "## Chassis + identity + entitlements + private media + account UX + visitor visual + Patreon OAuth / Relay-managed verify + connector billing + OAuth choice (EH-043)",
       "",
       "- Typed env: `lib/env.ts` + `.env.example` (names only — never commit secrets)",
       "- Media: `ESCAPE_HATCH_MEDIA_MODE=local_private|private_r2` (default prefers private); R2 env names for signed GETs",
       "- SQL migrations: Path A `0001`+`0002`+`0004_supabase`+`0005_supabase`; Path B `0001`+`0003`+`0004_portable`+`0005_portable`",
-      "- Patreon: `ESCAPE_HATCH_PATREON_MODE=creator_oauth` + PATREON_* env; `/api/patreon/oauth/*`",
+      "- Patreon: choose path at `/admin/patreon/choice`; set `ESCAPE_HATCH_PATREON_MODE=creator_oauth|relay_managed`; optional `data/patreon-mode-preference.json` (non-secret)",
       "- Bootstrap: `scripts/bootstrap-identity.md`",
       "- Adapters: `lib/adapters/` — Auth/DB/storage/Patreon readiness when env is real; still preview overall",
       "- Account/paywall: `/account`, PaywallOverlay, locked posts skip `/api/media`",

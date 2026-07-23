@@ -1948,6 +1948,70 @@ code {
   gap: 1.5rem;
 }
 
+/* EH-043 — neutral OAuth choice (Hatch Console) */
+.eh-oauth-choice {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.eh-oauth-choice-fieldset {
+  border: 0;
+  margin: 0;
+  padding: 0;
+}
+
+.eh-oauth-choice-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
+  gap: 1rem;
+}
+
+.eh-oauth-choice-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 1rem;
+  border: 1px solid var(--eh-border, #3f4147);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--eh-bg-deep, #1e1f22) 75%, transparent);
+  cursor: pointer;
+}
+
+.eh-oauth-choice-card.is-selected {
+  border-color: color-mix(in srgb, var(--eh-accent) 55%, var(--eh-border));
+  background: color-mix(in srgb, var(--eh-accent) 12%, var(--eh-bg-deep));
+}
+
+.eh-oauth-choice-card-head {
+  display: flex;
+  gap: 0.65rem;
+  align-items: flex-start;
+}
+
+.eh-oauth-choice-headline {
+  display: block;
+  font-size: 0.85rem;
+  margin-top: 0.15rem;
+}
+
+.eh-oauth-disclosure ul {
+  margin: 0.25rem 0 0.75rem;
+  padding-left: 1.15rem;
+}
+
+.eh-oauth-choice-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  align-items: flex-start;
+}
+
+.eh-oauth-switch-off ol {
+  margin: 0.5rem 0 1rem;
+  padding-left: 1.25rem;
+}
+
 .admin-banner {
   border-radius: 8px;
   padding: 0.85rem 1rem;

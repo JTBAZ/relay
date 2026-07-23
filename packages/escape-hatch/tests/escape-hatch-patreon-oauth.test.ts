@@ -85,20 +85,22 @@ afterEach(() => {
 });
 
 describe("EH-040 status + slice", () => {
-  it("advances slice to EH-041 with next EH-042 and productionSafe false", () => {
+  it("advances slice to EH-043 with next EH-050 and productionSafe false", () => {
     const status = buildEscapeHatchStatus();
-    expect(ESCAPE_HATCH_SLICE).toBe("EH-041");
-    expect(status.slice).toBe("EH-041");
+    expect(ESCAPE_HATCH_SLICE).toBe("EH-043");
+    expect(status.slice).toBe("EH-043");
     expect(status.productionSafe).toBe(false);
-    expect(status.nextSlice.id).toBe("EH-042");
-    expect(status.nextSlice.title).toMatch(/billing|connector/i);
+    expect(status.nextSlice.id).toBe("EH-050");
+    expect(status.nextSlice.title).toMatch(/Billing|provider|contract/i);
     expect(
       status.blockers.some((b) => /Creator-owned Patreon OAuth.*EH-040/i.test(b))
     ).toBe(false);
-    expect(status.blockers.some((b) => /EH-042/i.test(b))).toBe(true);
+    expect(status.blockers.some((b) => /belongs to EH-043/i.test(b))).toBe(
+      false
+    );
     const cap = status.capabilities.find((c) => c.id === "creator-patreon-oauth");
     expect(cap?.state).toBe("preview_only");
-    expect(cap?.nextSlice).toBe("EH-042");
+    expect(cap?.nextSlice).toBe("EH-050");
   });
 });
 

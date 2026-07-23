@@ -2,6 +2,7 @@ import Link from "next/link";
 import { ConsoleNav } from "@/components/ConsoleNav";
 import { AdminAccessDenied } from "@/components/admin/AdminAccessDenied";
 import { AdminShell } from "@/components/admin/AdminShell";
+import { PatreonModeSwitchOff } from "@/components/admin/PatreonModeSwitchOff";
 import { createSiteAdapters } from "@/lib/adapters";
 import { redirectIfAdminSignInRequired } from "@/lib/admin/require-admin-page";
 import { loadEnv } from "@/lib/env";
@@ -12,16 +13,26 @@ import {
   resolvePatreonMode
 } from "@/lib/patreon";
 import {
+  buildPatreonVerificationHealthSummary,
+  creatorOAuthSetupChecklist,
+  observeManagedConnectorPrice,
+  relayManagedSetupChecklist,
+  switchOffMigrationSteps
+} from "@/lib/patreon/oauth-choice";
+import { loadPatreonModePreference } from "@/lib/patreon/mode-preference";
+import {
   buildRelayMigrationMetadataExport,
   isRelayManagedConfigured,
   isRelayVerifyKillSwitchOff,
-  loadRelayManagedConfig
+  loadRelayManagedConfig,
+  observeConnectorBilling
 } from "@/lib/patreon/relay-managed";
 
 export const dynamic = "force-dynamic";
 
 /**
- * Operator checklist for Patreon verification (EH-040 creator_oauth + EH-041 relay_managed).
+ * Operator checklist for Patreon verification
+ * (EH-040–043: choice, setup, health, switch-off).
  * Hatch Console / admin chrome — not visitor gallery.
  */
 export default async function AdminPatreonPage() {
@@ -40,6 +51,21 @@ export default async function AdminPatreonPage() {
   const adapters = createSiteAdapters();
   const health = await adapters.patreon.health();
   const killOff = isRelayVerifyKillSwitchOff(env);
+  const connectorBilling = observeConnectorBilling(env);
+  const preference = loadPatreonModePreference(site.site_id);
+  const price = observeManagedConnectorPrice(env);
+  const healthSummary = buildPatreonVerificationHealthSummary({
+    env,
+    adapterImplementation: adapters.patreon.implementation,
+    healthOk: health.ok,
+    healthReason: health.ok ? null : health.reason,
+    preferredMode: preference.preferred_mode
+  });
+  const creatorSteps = creatorOAuthSetupChecklist();
+  const relaySteps = relayManagedSetupChecklist();
+  const migrationSteps = switchOffMigrationSteps(
+    connectorBilling.lastServiceDateIso
+  );
   let migrationExport: ReturnType<typeof buildRelayMigrationMetadataExport> | null =
     null;
   if (relayConfigured) {
@@ -57,7 +83,7 @@ export default async function AdminPatreonPage() {
       <ConsoleNav />
       <AdminShell
         title="Patreon verification"
-        lede="Creator-owned OAuth or Relay-managed verification. Credentials and assertion keys stay in your host secret store — never in zip or browser bundle."
+        lede="Creator-owned OAuth or Relay-managed verification. Choose a path, complete setup, monitor health, and switch off managed without rebuilding. Credentials stay in your host secret store."
         identity={read.identity}
       >
         {!read.allowed ? (
@@ -65,51 +91,110 @@ export default async function AdminPatreonPage() {
         ) : (
           <>
             <section className="admin-panel">
-              <h2>Status</h2>
+              <h2>Choice</h2>
               <p className="muted">
-                Mode: <span className="mono">{mode}</span> · Adapter:{" "}
-                <span className="mono">{adapters.patreon.implementation}</span> ·{" "}
-                {health.ok ? "health ok (preview)" : health.reason}
+                Neutral choice surface (neither option preselected):{" "}
+                <Link href="/admin/patreon/choice">/admin/patreon/choice</Link>
               </p>
               <p className="muted">
-                productionSafe: false · Next billing add-on: EH-042
+                Preferred (local, non-secret):{" "}
+                <span className="mono">
+                  {preference.preferred_mode ?? "unset"}
+                </span>
+                {preference.switch_off_at
+                  ? ` · switch-off ${preference.switch_off_at.slice(0, 10)}`
+                  : ""}
+                {" · "}
+                Runtime env: <span className="mono">{mode}</span>
               </p>
             </section>
 
             <section className="admin-panel">
-              <h2>Creator-owned Patreon OAuth (EH-040)</h2>
+              <h2>Health summary</h2>
+              <ul>
+                <li>
+                  Adapter:{" "}
+                  <span className="mono">
+                    {healthSummary.adapterImplementation}
+                  </span>{" "}
+                  · env mode <span className="mono">{healthSummary.envMode}</span>
+                </li>
+                <li>
+                  Creator OAuth configured:{" "}
+                  {healthSummary.creatorConfigured ? "yes (preview)" : "no"}
+                </li>
+                <li>
+                  Relay-managed configured:{" "}
+                  {healthSummary.relayConfigured ? "yes (preview)" : "no"}
+                </li>
+                <li>
+                  Kill switch off: {healthSummary.killSwitchOff ? "yes" : "no"}
+                </li>
+                <li>
+                  Connector billing:{" "}
+                  <span className="mono">{healthSummary.billing.state}</span>
+                  {healthSummary.billing.lastServiceDateIso
+                    ? ` · last service ${healthSummary.billing.lastServiceDateIso.slice(0, 10)}`
+                    : ""}{" "}
+                  · entitled{" "}
+                  {healthSummary.billing.canUseRelayManaged ? "yes" : "no"}
+                </li>
+                <li>
+                  Adapter health:{" "}
+                  {healthSummary.healthOk
+                    ? "ok (preview)"
+                    : healthSummary.healthReason}
+                </li>
+              </ul>
+              {healthSummary.boundedOutageCopy ? (
+                <p role="status">{healthSummary.boundedOutageCopy}</p>
+              ) : null}
+              {healthSummary.staleWarning ? (
+                <p role="status">{healthSummary.staleWarning}</p>
+              ) : null}
+              <p className="muted">productionSafe: false · Slice EH-043</p>
+            </section>
+
+            <section className="admin-panel">
+              <h2>Relay connector billing (EH-042)</h2>
+              <p className="muted">
+                Add-on SKU:{" "}
+                <span className="mono">{price.sku}</span> · list{" "}
+                <span className="mono">{price.monthlyPriceDisplay}</span> (
+                {price.source === "env" ? "env mirror" : "EH-042 default copy"}
+                ). Kit observes entitlement only — Checkout lives on Relay.
+              </p>
+              <ul>
+                <li>
+                  Feature flag:{" "}
+                  <span className="mono">
+                    ESCAPE_HATCH_RELAY_CONNECTOR_BILLING_ENABLED
+                  </span>{" "}
+                  — currently{" "}
+                  {connectorBilling.billingFeatureEnabled ? "on" : "off (denied)"}
+                </li>
+                <li>
+                  Entitlement:{" "}
+                  <span className="mono">{connectorBilling.state}</span>
+                  {connectorBilling.lastServiceDateIso
+                    ? ` · last service ${connectorBilling.lastServiceDateIso.slice(0, 10)}`
+                    : ""}
+                </li>
+                <li>{connectorBilling.staleWarning}</li>
+                <li>{connectorBilling.nativeContinuesWorking}</li>
+                <li>
+                  When billing not entitled, relay_managed health is degraded;
+                  creator_oauth still works.
+                </li>
+              </ul>
+            </section>
+
+            <section className="admin-panel" id="setup-creator_oauth">
+              <h2>Creator-owned Patreon OAuth setup (EH-040)</h2>
               <ol>
-                <li>
-                  Create or choose a Patreon OAuth client in the Patreon developer
-                  portal.
-                </li>
-                <li>
-                  Register the exact callback:{" "}
-                  <span className="mono">/api/patreon/oauth/callback</span> on
-                  your site origin (
-                  <span className="mono">PATREON_REDIRECT_URI</span>).
-                </li>
-                <li>
-                  Set env names only (never commit secrets):{" "}
-                  <span className="mono">ESCAPE_HATCH_PATREON_MODE=creator_oauth</span>
-                  , <span className="mono">PATREON_CLIENT_ID</span>,{" "}
-                  <span className="mono">PATREON_CLIENT_SECRET</span>,{" "}
-                  <span className="mono">PATREON_REDIRECT_URI</span>,{" "}
-                  <span className="mono">PATREON_CAMPAIGN_ID</span>,{" "}
-                  <span className="mono">ESCAPE_HATCH_PATREON_TOKEN_KEY</span>,{" "}
-                  <span className="mono">ESCAPE_HATCH_PATREON_OAUTH_STATE_SECRET</span>
-                  .
-                </li>
-                <li>
-                  Apply SQL{" "}
-                  <span className="mono">0005_patreon_oauth_*.sql</span> for Path
-                  A or Path B.
-                </li>
-                <li>
-                  Test link from <Link href="/account">/account</Link> while
-                  signed in — state, exchange, refresh, campaign identity,
-                  entitlement snapshot.
-                </li>
+                {creatorSteps.map((step) => (
+                  <li key={step}>{step}</li>
+                ))}
               </ol>
               <p role="status">
                 {creatorConfigured
@@ -118,42 +203,19 @@ export default async function AdminPatreonPage() {
               </p>
             </section>
 
-            <section className="admin-panel">
-              <h2>Relay-managed verification (EH-041)</h2>
+            <section className="admin-panel" id="setup-relay_managed">
+              <h2>Relay-managed verification setup (EH-041)</h2>
               <ol>
-                <li>
-                  Set{" "}
-                  <span className="mono">ESCAPE_HATCH_PATREON_MODE=relay_managed</span>{" "}
-                  and Relay env names:{" "}
-                  <span className="mono">ESCAPE_HATCH_RELAY_VERIFY_BASE_URL</span>,{" "}
-                  <span className="mono">ESCAPE_HATCH_RELAY_SITE_ID</span>,{" "}
-                  <span className="mono">ESCAPE_HATCH_RELAY_ASSERTION_AUDIENCE</span>,{" "}
-                  <span className="mono">ESCAPE_HATCH_RELAY_ASSERTION_ISSUER</span>,{" "}
-                  <span className="mono">ESCAPE_HATCH_RELAY_ASSERTION_JWKS_URL</span>{" "}
-                  and/or{" "}
-                  <span className="mono">ESCAPE_HATCH_RELAY_ASSERTION_KEYS_JSON</span>,{" "}
-                  <span className="mono">ESCAPE_HATCH_RELAY_VERIFY_STATE_SECRET</span>.
-                </li>
-                <li>
-                  Register this site&apos;s callback origin with Relay (
-                  <span className="mono">/api/patreon/relay/callback</span>) —
-                  allowlist prevents open redirects.
-                </li>
-                <li>
-                  Kill switch:{" "}
-                  <span className="mono">ESCAPE_HATCH_RELAY_VERIFY_ENABLED=0</span>{" "}
-                  fails closed
-                  {killOff ? " (currently off)." : "."}
-                </li>
-                <li>
-                  Assertions use EdDSA (Ed25519); verify iss/aud/kid/exp/nbf/nonce
-                  and reject replays. Site does not hold Patreon tokens.
-                </li>
-                <li>
-                  Migration: export non-secret link metadata from Relay; switch to
-                  creator_oauth without rebuilding the site (EH-043 UX).
-                </li>
+                {relaySteps.map((step) => (
+                  <li key={step}>{step}</li>
+                ))}
               </ol>
+              <p className="muted">
+                Kill switch{" "}
+                <span className="mono">ESCAPE_HATCH_RELAY_VERIFY_ENABLED=0</span>{" "}
+                fails closed
+                {killOff ? " (currently off)." : "."}
+              </p>
               <p role="status">
                 {relayConfigured
                   ? "Relay-managed env looks complete (non-placeholder). Still preview-only."
@@ -164,6 +226,14 @@ export default async function AdminPatreonPage() {
                   {JSON.stringify(migrationExport, null, 2)}
                 </pre>
               ) : null}
+            </section>
+
+            <section className="admin-panel" id="switch-off">
+              <h2>Switch off managed / migrate (no rebuild)</h2>
+              <PatreonModeSwitchOff
+                lastServiceDateIso={connectorBilling.lastServiceDateIso}
+                migrationSteps={migrationSteps}
+              />
             </section>
           </>
         )}

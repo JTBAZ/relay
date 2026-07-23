@@ -1,4 +1,4 @@
-# Operations (EH-041 Relay-managed verify + EH-040 creator Patreon OAuth + EH-035 visitor visual + EH-034 account / paywall UX)
+# Operations (EH-043 OAuth choice/migration + EH-042 connector billing + EH-041 Relay-managed verify + EH-040 creator Patreon OAuth + EH-035 visitor visual + EH-034 account / paywall UX)
 
 ## Local preview
 
@@ -10,6 +10,25 @@ npm run dev
 ```
 
 No `RELAY_*` or monorepo root `.env` is required. Neither Path A nor Path B must be configured for install/build.
+
+## OAuth choice and migration UX (EH-043)
+
+Neutral Hatch Console surfaces (not visitor gallery):
+
+| Route | Role |
+|-------|------|
+| `/admin/patreon/choice` | Equal-weight choice: **Own your Patreon connection** vs **Let Relay maintain it**. Neither is preselected; Continue disabled until explicit selection. |
+| `/admin/patreon` | Health summary, per-mode setup checklists, billing entitlement mirror, switch-off / migration |
+
+### Honesty rules
+
+- Managed path **cannot** be a default selection.
+- Disclosure cards always show data handled, runtime dependencies, cancellation effects, and migration path for both options.
+- Managed monthly list price mirrors EH-042 product copy (`$29.00/mo` default; override with `ESCAPE_HATCH_RELAY_CONNECTOR_PRICE_CENTS`).
+- Preference file `data/patreon-mode-preference.json` stores **non-secret** operator intent only (fail closed if corrupt / secret-looking keys). Runtime authority remains `ESCAPE_HATCH_PATREON_MODE`.
+- Switch-off toward `creator_oauth` does **not** rebuild the kit and does **not** delete linked patrons.
+- Cancellation / grace: show exact last service date when mirrored; warn before Patreon-derived entitlements go stale.
+- Bounded outage: when managed is selected but kill-switched / not entitled / incomplete, health shows fail-closed copy while native accounts/media/admin continue.
 
 ## Creator-owned Patreon OAuth (EH-040)
 
@@ -61,13 +80,36 @@ Optional monthly Relay service — replaceable with creator_oauth without rebuil
 
 ### Privacy / data-processing disclosure (names only)
 
-Relay may process: site id, allowlisted callback origin, opaque Patreon user id, mapped tier ids, entitlement observation timestamps, assertion jti (replay). Relays must **not** retain site Stripe secrets, admin passwords, or premium media. Creators remain controllers of site accounts; Relay is a processor for verification only while the add-on is active (billing entitlement: EH-042).
+Relay may process: site id, allowlisted callback origin, opaque Patreon user id, mapped tier ids, entitlement observation timestamps, assertion jti (replay). Relays must **not** retain site Stripe secrets, admin passwords, or premium media. Creators remain controllers of site accounts; Relay is a processor for verification only while the add-on is active.
+
+## Relay connector billing entitlement (EH-042)
+
+Separate monthly add-on on the creator's **Relay** invoice (`relay_managed_patreon_connector`). The kit does **not** run Stripe Checkout for this add-on — it observes entitlement truth.
+
+### Env names (observation / kill switch — no secrets)
+
+| Name | Role |
+|------|------|
+| `ESCAPE_HATCH_RELAY_CONNECTOR_BILLING_ENABLED` | Feature flag mirror; `0`/`false`/`off` denies managed connector |
+| `ESCAPE_HATCH_RELAY_CONNECTOR_ENTITLEMENT_STATUS` | `active` \| `grace` \| `cancelled` \| `past_due` \| `none` |
+| `ESCAPE_HATCH_RELAY_CONNECTOR_LAST_SERVICE_DATE` | ISO last service / stale boundary |
+
+Unset status defaults to **active** for local preview. Mirror Relay webhook state in production.
+
+### Honesty rules
+
+- When billing is inactive / cancelled past grace / flag off: `relay_managed` adapter health reports degraded/denied; **creator_oauth still works**.
+- Cancellation copy states the exact last service date and creator-owned OAuth migration steps (`/admin/patreon`).
+- Warn before Patreon-derived entitlements go stale; **do not delete linked patrons**.
+- Native site accounts, Stripe subscriptions (when configured), media, and admin continue after connector cancel.
+- Relay service env (operators): `ESCAPE_HATCH_MANAGED_VERIFY_BILLING_ENABLED`, `ESCAPE_HATCH_MANAGED_VERIFY_PRICE_CENTS`, `ESCAPE_HATCH_MANAGED_VERIFY_GRACE_DAYS`, `ESCAPE_HATCH_MANAGED_VERIFY_BILLING_WEBHOOK_SECRET`. Signature verification is **required by default**; unsigned only with explicit `ESCAPE_HATCH_MANAGED_VERIFY_BILLING_SIGNATURE_REQUIRED=0` or `ESCAPE_HATCH_MANAGED_VERIFY_BILLING_ALLOW_UNSIGNED=1` (CI/dev). Webhook route uses raw body + HMAC.
 
 ### Residuals (not production-safe yet)
 
-- In-memory Relay registry / keyring in CI; production persistence + multi-tenant hard isolation remain open.
+- In-memory Relay registry / keyring / billing store in CI; production persistence + multi-tenant hard isolation remain open.
 - Live Patreon OAuth inside Relay start is mocked in preview (`POST .../complete`).
 - Token refresh / provider failure monitoring are stub metric hooks.
+- Milestone 4 residual: live multi-tenant managed-verify outage + migration drill beyond kit/CI honesty.
 - `productionSafe` remains **false**.
 
 ## Visitor visual system (EH-035)

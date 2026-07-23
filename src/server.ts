@@ -949,6 +949,11 @@ import {
   createManagedVerifyService,
   registerManagedVerifyRoutes
 } from "./escape-hatch/managed-verify/index.js";
+import {
+  createManagedVerifyBillingService,
+  createManagedVerifyBillingWebhookHandler,
+  registerManagedVerifyBillingRoutes
+} from "./escape-hatch/managed-verify-billing/index.js";
 import { attachRelaySentryExpressErrorHandler } from "./lib/relay-sentry.js";
 import { resolveHttpAccessLogEmit } from "./lib/http-access-log-policy.js";
 import { createLogger } from "./lib/logger.js";
@@ -2250,6 +2255,25 @@ export function createApp(config: AppConfig): CreateAppResult {
       prisma: config.prisma,
       log: (msg, ctx) => httpRequestLogger.info(ctx ?? {}, msg)
     })
+  );
+
+  /**
+   * PUBLIC: EH-042 managed Patreon connector billing webhook.
+   * Raw body required for HMAC (same posture as Stripe SaaS billing webhook).
+   * Signature required by default — unsigned only with explicit ALLOW_UNSIGNED / SIGNATURE_REQUIRED=0.
+   */
+  const managedVerifyBillingService = createManagedVerifyBillingService();
+  const eh042BillingRawBody = express.raw({
+    type: (req) =>
+      String(req.headers["content-type"] ?? "")
+        .toLowerCase()
+        .includes("json"),
+    limit: "1mb"
+  });
+  app.post(
+    "/api/v1/escape-hatch/managed-verify-billing/webhook",
+    eh042BillingRawBody,
+    createManagedVerifyBillingWebhookHandler(managedVerifyBillingService)
   );
 
   /**
@@ -21126,12 +21150,18 @@ export function createApp(config: AppConfig): CreateAppResult {
   });
 
   // EH-041 — Relay-managed Patreon verification (in-memory preview; productionSafe false).
+  // EH-042 — billing entitlement gate + product/entitlement routes (webhook mounted earlier with raw body).
   {
     const managedVerifyIssuer =
       process.env.ESCAPE_HATCH_RELAY_ASSERTION_ISSUER?.trim() ||
       "https://relay.local/eh-managed-verify";
+    registerManagedVerifyBillingRoutes(app, {
+      service: managedVerifyBillingService,
+      registerWebhook: false
+    });
     const managedVerifyService = createManagedVerifyService({
-      issuer: managedVerifyIssuer
+      issuer: managedVerifyIssuer,
+      billingGate: managedVerifyBillingService
     });
     registerManagedVerifyRoutes(app, { service: managedVerifyService });
   }

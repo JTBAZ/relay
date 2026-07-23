@@ -63,3 +63,30 @@ export {
   previewAssertionReplayStore,
   type RelayManagedConfig
 } from "./relay-managed";
+export {
+  buildOAuthChoiceDisclosures,
+  buildPatreonVerificationHealthSummary,
+  buildManagedBoundedOutageCopy,
+  creatorOAuthSetupChecklist,
+  defaultOAuthChoiceSelection,
+  isValidOAuthChoiceOption,
+  observeManagedConnectorPrice,
+  relayManagedSetupChecklist,
+  switchOffMigrationSteps,
+  DEFAULT_MANAGED_CONNECTOR_MONTHLY_CENTS,
+  type ManagedPriceHonesty,
+  type OAuthChoiceDisclosure,
+  type OAuthChoiceOptionId,
+  type PatreonVerificationHealthSummary
+} from "./oauth-choice";
+export {
+  buildSwitchOffResult,
+  emptyPatreonModePreference,
+  loadPatreonModePreference,
+  savePatreonModePreference,
+  switchOffToCreatorOAuth,
+  PATREON_MODE_PREFERENCE_CONTRACT,
+  PATREON_MODE_PREFERENCE_FILENAME,
+  type PatreonModePreference,
+  type SwitchOffResult
+} from "./mode-preference";

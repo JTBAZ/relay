@@ -1,5 +1,5 @@
 /**
- * Relay-managed Patreon verification (EH-041) — kit public surface.
+ * Relay-managed Patreon verification (EH-041) + billing honesty (EH-042).
  */
 
 export {
@@ -34,3 +34,10 @@ export {
   previewAssertionReplayStore,
   type AssertionReplayStore
 } from "./replay";
+export {
+  observeConnectorBilling,
+  buildStaleWarning,
+  type ConnectorBillingHonesty,
+  type ConnectorBillingState,
+  type ConnectorBillingEnvBag
+} from "./billing";

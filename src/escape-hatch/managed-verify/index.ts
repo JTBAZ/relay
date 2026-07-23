@@ -1,5 +1,6 @@
 /**
  * Escape Hatch EH-041 — Relay-managed Patreon verification (public surface).
+ * EH-042 billing gate is optional via createManagedVerifyService({ billingGate }).
  */
 
 export type {
@@ -45,6 +46,7 @@ export {
   createManagedVerifyService,
   mintManagedVerifyNonce,
   type ManagedVerifyService,
-  type CreateManagedVerifyServiceArgs
+  type CreateManagedVerifyServiceArgs,
+  type ManagedVerifyBillingGate
 } from "./service.js";
 export { registerManagedVerifyRoutes } from "./routes.js";

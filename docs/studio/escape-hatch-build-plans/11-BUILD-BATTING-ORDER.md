@@ -113,20 +113,20 @@ Execute one documented slice at a time. The program docs define scope and depend
 ### EH-041 Relay-managed verification service
 
 - **Builder:** Cursor Grok 4.5 High
-- **Status:** Implemented (preview_only; `productionSafe: false`). Kit `relay_managed` assertion verify + Relay `src/escape-hatch/managed-verify` in-memory service. Next: **EH-042**.
+- **Status:** Implemented (preview_only; `productionSafe: false`). Kit `relay_managed` assertion verify + Relay `src/escape-hatch/managed-verify` in-memory service.
 - Site registration, callback allowlist, signed assertions, rotation, revocation, monitoring, migration metadata.
 
 ### EH-042 Relay billing entitlement for connector
 
 - **Builder:** Cursor Grok 4.5 High
-- Separate configurable monthly add-on on Relay billing; webhook truth, feature flag, cancellation/grace.
+- **Status:** Implemented (preview_only; `productionSafe: false`). Separate configurable monthly add-on; webhook truth, feature flag, cancellation/grace; gates managed-verify mint.
 
 ### EH-043 OAuth choice and migration UX
 
 - **Builder:** Cursor Grok 4.5 High
-- Neutral choice, costs/dependency disclosure, setup, health, switch-off path.
+- **Status:** Implemented (preview_only; `productionSafe: false`). Neutral `/admin/patreon/choice` (neither path preselected), disclosure cards, setup/health, switch-off to `creator_oauth` without rebuild. Next: **EH-050**.
 
-**Gate:** both paths pass; managed outage is bounded; migration requires no site rebuild.
+**Milestone 4 gate residuals:** kit/CI honesty for both paths + bounded managed outage copy + no-rebuild migration; live multi-tenant managed outage drill remains open. `productionSafe` stays false.
 
 ## Milestone 5 — independent billing
 
