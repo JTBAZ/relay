@@ -12,6 +12,7 @@ const ADMIN_TABS = [
   { href: "/admin/appearance", label: "Appearance", hint: "Brand" },
   { href: "/admin/connections", label: "Connections", hint: "Adapters" },
   { href: "/admin/crosspost", label: "Crosspost", hint: "Tokens" },
+  { href: "/admin/deploy", label: "Deploy", hint: "Vercel" },
   { href: "/admin/health", label: "Health", hint: "Actions" },
   { href: "/admin/patreon", label: "Patreon", hint: "Choice / health" },
   { href: "/admin/patreon/choice", label: "OAuth choice", hint: "Paths" },

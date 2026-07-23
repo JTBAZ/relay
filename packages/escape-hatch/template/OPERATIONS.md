@@ -236,6 +236,20 @@ Scopes: `crosspost:draft`, `crosspost:publish`. Optional pepper: `ESCAPE_HATCH_C
 
 Deferrals: Relay Studio client, live network E2E, remote media upload, SQL token store, schedule/rich HTML.
 
+## Vercel golden path (EH-070)
+
+| Surface | Role |
+|---------|------|
+| `/admin/deploy` | Fixture preview → promote → rollback; callback checklist |
+| `GET/POST /api/admin/deploy` | Staff-gated deploy state + rehearsal actions (no live Vercel API) |
+| `data/deploy-state.json` | Active / prior-stable deployment pointers |
+| `lib/deploy/*` | Callback checklist from `NEXT_PUBLIC_SITE_URL`, injectable preview client |
+| Health / Connections | Deploy version, callbacks, rollback pointer; deployment deep-link → `/admin/deploy` |
+
+Workflow (fixture): create preview → smoke/approve (operator) → promote (retains prior stable) → guided rollback. Provider URL (`*.vercel.app`) then custom domain. Absolute callback URLs fail closed for unset/placeholder origins.
+
+Deferrals: live Vercel CLI/API, real DNS/TLS probes, Docker Path B (**EH-071**), deploy wizard (**EH-074**).
+
 ## Identity provider
 
 `ESCAPE_HATCH_IDENTITY_PROVIDER`:

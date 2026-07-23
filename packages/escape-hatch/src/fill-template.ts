@@ -394,7 +394,7 @@ export function stampEscapeHatchManifest(
   parsed.generated_at = bundle.generated_at;
   parsed.creator_id = bundle.creator_id;
   parsed.site_id = bundle.site_id ?? bundle.creator_id;
-  parsed.slice = "EH-064";
+  parsed.slice = "EH-070";
   parsed.productionSafe = false;
   parsed.schema_version = "eh-db/0005_patreon_oauth";
   parsed.chassis_version = "0.8.0";
@@ -527,7 +527,7 @@ export function fillTemplate(opts: FillOptions): FillResult {
       mediaLayout === "private"
         ? "Premium media is staged under `data/private-media` and delivered via `/api/media/{id}` after server entitlement checks (EH-033). Locked gallery/post UI never fetches those bytes (EH-034/035). Do not set `ESCAPE_HATCH_MEDIA_MODE=public_legacy` in production."
         : "WARNING: `public_legacy` media layout copied premium bytes into `/public/media` — residual leakage; not production-safe.",
-      "`productionSafe: false` — through EH-064: CMS ops, optional Patreon sync, optional Relay Crosspost scoped ingest. Milestone 3 security/browser gate, EH-070+, and verified deploy remain open.",
+      "`productionSafe: false` — through EH-070: CMS ops, optional Patreon/Crosspost, fixture Vercel golden-path rehearsal. Milestone 3 security/browser gate, EH-071+, and live provider deploys remain open.",
       "",
       `Contract: ${bundle.contract_version}`,
       "",

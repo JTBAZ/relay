@@ -36,17 +36,17 @@ afterEach(() => {
 });
 
 describe("EH-034 status + manifest", () => {
-  it("advances slice to EH-064 with next EH-070 and productionSafe false", () => {
+  it("advances slice to EH-070 with next EH-071 and productionSafe false", () => {
     const status = buildEscapeHatchStatus();
-    expect(ESCAPE_HATCH_SLICE).toBe("EH-064");
-    expect(status.slice).toBe("EH-064");
+    expect(ESCAPE_HATCH_SLICE).toBe("EH-070");
+    expect(status.slice).toBe("EH-070");
     expect(status.productionSafe).toBe(false);
-    expect(status.nextSlice.id).toBe("EH-070");
-    expect(status.nextSlice.title).toMatch(/vercel|deploy/i);
+    expect(status.nextSlice.id).toBe("EH-071");
+    expect(status.nextSlice.title).toMatch(/docker|portable/i);
     const cap = status.capabilities.find((c) => c.id === "account-paywall-ux");
     expect(cap?.state).toBe("preview_only");
     expect(cap?.evidence).toMatch(/EH-034|\/account|PaywallOverlay|productionSafe remains false/i);
-    expect(cap?.nextSlice).toBe("EH-070");
+    expect(cap?.nextSlice).toBe("EH-071");
     expect(
       status.blockers.some((b) => /Account\/paywall UX.*EH-034/i.test(b))
     ).toBe(false);
@@ -70,7 +70,7 @@ describe("EH-034 status + manifest", () => {
       productionSafe: boolean;
       feature_flags: Record<string, boolean>;
     };
-    expect(manifest.slice).toBe("EH-064");
+    expect(manifest.slice).toBe("EH-070");
     expect(manifest.productionSafe).toBe(false);
     expect(manifest.feature_flags.hard_paywall).toBe(true);
     expect(existsSync(join(result.outDir, "app/account/page.tsx"))).toBe(true);

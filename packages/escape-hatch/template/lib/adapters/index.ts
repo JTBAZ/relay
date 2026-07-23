@@ -19,6 +19,9 @@ import {
   resolveIdentityProviderSafe,
   resolveSupabaseUrl
 } from "../env";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import { assessVercelDeployReadiness } from "../deploy/vercel-path";
 import type { SiteAuthSession } from "../identity/types";
 import {
   isR2SigningConfigured,
@@ -588,10 +591,55 @@ const manifestDeployment: DeploymentProvider = {
     return {
       ok: false,
       reason:
-        "vercel.json / Dockerfile manifests are present but do not prove a healthy production deploy (EH-070/071). Prefer private media layout so premium bytes are not shipped under public/media."
+        "vercel.json / Dockerfile manifests are present but do not prove a healthy production deploy. Open /admin/deploy for EH-070 fixture Vercel rehearsal; Docker golden path remains EH-071. Prefer private media layout so premium bytes are not shipped under public/media."
     };
   }
 };
+
+function tryLoadSiteIdFromKit(): string {
+  try {
+    const path = join(process.cwd(), "data", "site.json");
+    const raw = JSON.parse(
+      readFileSync(path, "utf8").replace(/^\uFEFF/, "")
+    ) as { site_id?: string };
+    return typeof raw.site_id === "string" && raw.site_id
+      ? raw.site_id
+      : "kit_local";
+  } catch {
+    return "kit_local";
+  }
+}
+
+function createDeploymentProvider(): DeploymentProvider {
+  const siteId = tryLoadSiteIdFromKit();
+  const env = loadEnv();
+  const readiness = assessVercelDeployReadiness({
+    siteId,
+    siteUrl: env.NEXT_PUBLIC_SITE_URL
+  });
+
+  if (readiness.path === "vercel_rehearsal") {
+    return {
+      id: "deployment",
+      implementation: "vercel",
+      listTargets() {
+        return ["vercel", "docker"];
+      },
+      async health() {
+        const r = assessVercelDeployReadiness({
+          siteId: tryLoadSiteIdFromKit(),
+          siteUrl: loadEnv().NEXT_PUBLIC_SITE_URL
+        });
+        if (r.ok) {
+          return { ok: true, detail: r.detail };
+        }
+        return { ok: false, reason: r.detail };
+      }
+    };
+  }
+
+  return manifestDeployment;
+}
 
 function createAuthProvider(): AuthProvider {
   const mode = resolveIdentityProviderSafe(loadEnv());
@@ -624,7 +672,7 @@ export function createSiteAdapters(): SiteAdapters {
     billing: createBillingProvider(),
     patreon: createPatreonProvider(),
     email: stubEmail,
-    deployment: manifestDeployment
+    deployment: createDeploymentProvider()
   };
 }
 

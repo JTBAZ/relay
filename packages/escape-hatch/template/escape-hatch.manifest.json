@@ -3,7 +3,7 @@
   "contract_version": "escape-hatch.manifest/1.0.0",
   "chassis_version": "0.8.0",
   "schema_version": "eh-db/0005_patreon_oauth",
-  "slice": "EH-064",
+  "slice": "EH-070",
   "productionSafe": false,
   "generated_at": null,
   "creator_id": null,
@@ -29,14 +29,14 @@
     "billing": { "id": "stripe_eligible_business_eh051", "version": "0.1.0", "state": "preview_only" },
     "patreon": { "id": "creator_oauth_or_relay_managed", "version": "0.1.0", "state": "preview_only" },
     "email": { "id": "stub", "version": "0.0.0", "state": "stub_only" },
-    "deployment": { "id": "vercel_docker_manifest", "version": "1.0.0", "state": "preview_only" }
+    "deployment": { "id": "vercel_golden_path_fixture", "version": "0.1.0", "state": "preview_only" }
   },
   "deploy_targets": [
     {
       "id": "vercel",
       "kind": "vercel",
       "config": "vercel.json",
-      "notes": "Next App Router defaults; verified golden path is EH-070."
+      "notes": "Next App Router defaults; EH-070 ships fixture preview/promote/rollback + callback checklist on /admin/deploy (not live Vercel API)."
     },
     {
       "id": "docker",

@@ -4,6 +4,10 @@
  */
 
 import { activeCrosspostTokenCount } from "../relay-crosspost/tokens";
+import {
+  assessVercelDeployReadiness,
+  type DeployReadiness
+} from "../deploy/vercel-path";
 import type { AdapterHealthRow } from "./types";
 
 export type ConnectionCard = {
@@ -40,7 +44,7 @@ const NEXT_ACTIONS: Record<string, string> = {
   email:
     "Transactional email is a stub until EH-072 — do not treat as delivery-ready.",
   deployment:
-    "Kit manifests only — verified Vercel/Docker golden paths are EH-070/071."
+    "Open /admin/deploy — EH-070 fixture Vercel preview→promote→rollback rehearsal (not a live Vercel API deploy). Docker remains EH-071."
 };
 
 const WHAT_BREAKS: Record<string, string> = {
@@ -60,7 +64,7 @@ const OWNERS: Record<string, string> = {
   billing: "Creator-owned Stripe or alternate provider",
   patreon: "Creator OAuth or Relay-managed (explicit choice)",
   email: "Not wired (kit stub)",
-  deployment: "Creator host (Vercel/Docker) — manifests only"
+  deployment: "Creator host (Vercel Path A / Docker Path B)"
 };
 
 const DEEP_LINKS: Record<string, string | null> = {
@@ -70,7 +74,7 @@ const DEEP_LINKS: Record<string, string | null> = {
   billing: "/admin/billing/policy",
   patreon: "/admin/patreon",
   email: "/admin/health",
-  deployment: "/admin/health"
+  deployment: "/admin/deploy"
 };
 
 const ENV_HINTS: Record<string, string[]> = {
@@ -80,7 +84,7 @@ const ENV_HINTS: Record<string, string[]> = {
   billing: ["ESCAPE_HATCH_BILLING_PROVIDER", "STRIPE_SECRET_KEY"],
   patreon: ["ESCAPE_HATCH_PATREON_MODE", "PATREON_CLIENT_ID"],
   email: [],
-  deployment: []
+  deployment: ["NEXT_PUBLIC_SITE_URL", "vercel.json"]
 };
 
 export function buildConnectionCards(
@@ -139,6 +143,7 @@ export function buildHealthItems(args: {
   blockers: readonly string[];
   manifestSlice: string | null;
   publicMediaHonesty: string;
+  deployReadiness?: DeployReadiness | null;
 }): HealthItem[] {
   const items: HealthItem[] = [
     {
@@ -161,6 +166,40 @@ export function buildHealthItems(args: {
         "Keep ESCAPE_HATCH_MEDIA_MODE away from public_legacy; use /api/media after entitlement checks."
     }
   ];
+
+  if (args.deployReadiness) {
+    const r = args.deployReadiness;
+    items.push({
+      id: "deploy_version",
+      title: "Deployment / version (EH-070)",
+      ok: r.ok,
+      detail: r.detail,
+      next_action: r.ok
+        ? "Fixture rehearsal only — live Vercel promote and Docker Path B remain open; productionSafe false."
+        : "Run preview→promote on /admin/deploy, then register callbacks from the checklist."
+    });
+    items.push({
+      id: "callback_checklist",
+      title: "Domain / callback checklist",
+      ok: r.callbacks.ok,
+      detail: `${r.callbacks.detail} (${r.callbacks.slots.filter((s) => s.absolute_url).length}/${r.callbacks.slots.length} absolute URLs)`,
+      next_action: r.callbacks.ok
+        ? "Copy absolute URLs into provider dashboards (Patreon/Stripe/auth). Live DNS/TLS probe deferred."
+        : "Set a non-placeholder NEXT_PUBLIC_SITE_URL (preview or custom domain) before registering callbacks."
+    });
+    items.push({
+      id: "rollback_pointer",
+      title: "Rollback pointer",
+      ok: Boolean(r.previous_stable_deployment_id || r.active_deployment_id),
+      detail: r.previous_stable_deployment_id
+        ? `Prior stable retained: ${r.previous_stable_deployment_id}`
+        : r.active_deployment_id
+          ? `Active ${r.active_deployment_id} — no prior stable yet (first promote).`
+          : "No active or prior stable deployment pointer in kit state.",
+      next_action:
+        "Promote twice in /admin/deploy rehearsal to retain a rollback target; live Vercel instant rollback deferred."
+    });
+  }
 
   for (const row of args.adapters) {
     items.push({
@@ -187,4 +226,13 @@ export function buildHealthItems(args: {
   }
 
   return items;
+}
+
+/** Convenience for admin pages that already know site id + public URL. */
+export function loadDeployReadinessForAdmin(
+  siteId: string,
+  siteUrl: string | null | undefined,
+  kitDir?: string
+): DeployReadiness {
+  return assessVercelDeployReadiness({ siteId, siteUrl, kitDir });
 }

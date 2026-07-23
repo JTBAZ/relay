@@ -189,7 +189,7 @@ Execute one documented slice at a time. The program docs define scope and depend
 ### EH-064 Optional Relay Crosspost API
 
 - **Builder:** Cursor Grok 4.5 High
-- **Status:** Implemented (preview_only; `productionSafe: false`). Revocable scoped Bearer tokens (`crosspost:draft` / `crosspost:publish`), inbound `POST /api/relay/crosspost/posts`, audit + Idempotency-Key, `/admin/crosspost` mint/revoke, Connections Crosspost card. Origin `crossposted` in sync-state. Evidence: `docs/qa/ESCAPE_HATCH_EH_064_EVIDENCE.md`. Next: **EH-070**.
+- **Status:** Implemented (preview_only; `productionSafe: false`). Revocable scoped Bearer tokens (`crosspost:draft` / `crosspost:publish`), inbound `POST /api/relay/crosspost/posts`, audit + Idempotency-Key, `/admin/crosspost` mint/revoke, Connections Crosspost card. Origin `crossposted` in sync-state. Evidence: `docs/qa/ESCAPE_HATCH_EH_064_EVIDENCE.md`. Next was **EH-070** (done).
 
 **Gate:** complete admin browser workflow; no provider dashboard needed for daily operations.
 
@@ -198,7 +198,7 @@ Execute one documented slice at a time. The program docs define scope and depend
 ### EH-070 Vercel golden path
 
 - **Builder:** Cursor Grok 4.5 High
-- Preview/production, domain, callbacks, rollback.
+- **Status:** Implemented (preview_only; `productionSafe: false`). Fixture preview→promote→rollback + callback checklist (`data/deploy-state.json`, `/admin/deploy`). Live Vercel API deferred. Evidence: `docs/qa/ESCAPE_HATCH_EH_070_EVIDENCE.md`. Next: **EH-071**.
 
 ### EH-071 Portable Docker path
 
