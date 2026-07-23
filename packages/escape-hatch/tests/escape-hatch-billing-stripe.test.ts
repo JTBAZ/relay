@@ -88,21 +88,21 @@ function testEnv(partial: Partial<SiteEnv> = {}): SiteEnv {
 }
 
 describe("EH-051 status", () => {
-  it("advances slice to EH-051 with next EH-052 and productionSafe false", () => {
+  it("advances slice to EH-052 with next EH-053 and productionSafe false", () => {
     const status = buildEscapeHatchStatus();
-    expect(ESCAPE_HATCH_SLICE).toBe("EH-051");
-    expect(status.slice).toBe("EH-051");
+    expect(ESCAPE_HATCH_SLICE).toBe("EH-052");
+    expect(status.slice).toBe("EH-052");
     expect(status.productionSafe).toBe(false);
-    expect(status.nextSlice.id).toBe("EH-052");
-    expect(status.nextSlice.title).toMatch(/policy/i);
+    expect(status.nextSlice.id).toBe("EH-053");
+    expect(status.nextSlice.title).toMatch(/alternate|billing|recipe/i);
     expect(
-      status.blockers.some((b) => /EH-052|policy|ineligible/i.test(b))
+      status.blockers.some((b) => /EH-053|alternate|human/i.test(b))
     ).toBe(true);
 
     const cap = status.capabilities.find((c) => c.id === "billing-adapters");
     expect(cap?.state).toBe("preview_only");
     expect(cap?.evidence).toMatch(/EH-051|Checkout|Portal|webhook/i);
-    expect(cap?.nextSlice).toBe("EH-052");
+    expect(cap?.nextSlice).toBe("EH-053");
     expect(cap?.sourcePaths).toEqual(
       expect.arrayContaining([
         "packages/escape-hatch/template/lib/billing/",
@@ -177,7 +177,8 @@ describe("EH-051 Stripe adapter sandbox lifecycle", () => {
       successUrl: "https://example.test/account?ok=1",
       cancelUrl: "https://example.test/tiers",
       authUserId: USER,
-      tierIds: ["tier_patron"]
+      tierIds: ["tier_patron"],
+      enforceProviderPolicy: false
     });
     expect(checkout.ok).toBe(true);
     if (checkout.ok) {
@@ -204,7 +205,8 @@ describe("EH-051 Stripe adapter sandbox lifecycle", () => {
       priceId: price.value.id,
       siteId: SITE,
       successUrl: "https://example.test/ok",
-      cancelUrl: "https://example.test/cancel"
+      cancelUrl: "https://example.test/cancel",
+      enforceProviderPolicy: false
     });
     expect(stubHooks.ok).toBe(false);
   });
@@ -416,7 +418,7 @@ describe("EH-051 docs + routes", () => {
     const manifest = JSON.parse(
       readFileSync(join(TEMPLATE, "escape-hatch.manifest.json"), "utf8")
     ) as { slice: string; feature_flags: { stripe_billing: boolean } };
-    expect(manifest.slice).toBe("EH-051");
+    expect(manifest.slice).toBe("EH-052");
     expect(manifest.feature_flags.stripe_billing).toBe(true);
 
     const envEx = readFileSync(join(TEMPLATE, ".env.example"), "utf8");

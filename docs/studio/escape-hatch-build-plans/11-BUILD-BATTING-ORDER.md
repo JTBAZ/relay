@@ -145,12 +145,12 @@ Execute one documented slice at a time. The program docs define scope and depend
 ### EH-051 Stripe eligible-business adapter
 
 - **Builder:** Cursor Grok 4.5 High
-- **Status:** Implemented (preview_only; `productionSafe: false`). Creator-owned Stripe Billing/Checkout/Portal/signed webhooks with injectable CI client, `/api/billing/*` routes, checkout/portal hooks for `/tiers` and `/account`. Next: **EH-052**.
+- **Status:** Implemented (preview_only; `productionSafe: false`). Creator-owned Stripe Billing/Checkout/Portal/signed webhooks with injectable CI client, `/api/billing/*` routes, checkout/portal hooks for `/tiers` and `/account`. Next: **EH-052** (complete) → **EH-053**.
 
 ### EH-052 Provider policy router
 
 - **Builder:** Cursor Grok 4.5 High
-- Dated official-policy matrix, content/use attestation, eligibility and launch blocking.
+- **Status:** Implemented (preview_only; `productionSafe: false`). Dated official-policy matrix, content/use attestation, recipe router, Checkout/paid-launch blocking for ineligible use. Admin `/admin/billing/policy`. Next: **EH-053**.
 
 ### EH-053 Lawful alternate billing recipe
 

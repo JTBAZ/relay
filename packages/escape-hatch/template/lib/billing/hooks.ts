@@ -5,6 +5,7 @@
  */
 
 import type { BillingProvider } from "../adapters/types";
+import { assertIndependentCheckoutAllowed } from "./policy";
 import type {
   BillingCheckoutSession,
   BillingPortalSession,
@@ -21,6 +22,13 @@ export type StartCheckoutArgs = {
   customerId?: string | null;
   tierIds?: readonly string[];
   mode?: "hosted" | "embedded";
+  /** Kit root for attestation file (tests). */
+  kitDir?: string;
+  /**
+   * When true (default), EH-052 provider policy must allow Stripe.
+   * Tests may set false only when exercising adapter isolation.
+   */
+  enforceProviderPolicy?: boolean;
 };
 
 export type StartPortalArgs = {
@@ -31,7 +39,8 @@ export type StartPortalArgs = {
 
 /**
  * Start independent Checkout for a mapped price.
- * Callers must already decide the patron is eligible (EH-052/054 policy + duplicate guards).
+ * EH-052 blocks Checkout when attestation routes away from Stripe.
+ * EH-054 maps tiers and adds duplicate-billing UX.
  */
 export async function startIndependentCheckout(
   args: StartCheckoutArgs
@@ -43,6 +52,17 @@ export async function startIndependentCheckout(
         "billing_stub — set ESCAPE_HATCH_BILLING_PROVIDER=stripe with creator Stripe credentials (EH-051)"
     };
   }
+
+  if (args.enforceProviderPolicy !== false) {
+    const policy = assertIndependentCheckoutAllowed({
+      siteId: args.siteId,
+      kitDir: args.kitDir
+    });
+    if (!policy.ok) {
+      return { ok: false, reason: policy.reason };
+    }
+  }
+
   return args.billing.createCheckoutSession({
     priceId: args.priceId,
     successUrl: args.successUrl,

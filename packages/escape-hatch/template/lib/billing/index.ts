@@ -100,3 +100,27 @@ export {
   processVerifiedBillingWebhook,
   type ProcessVerifiedBillingWebhookResult
 } from "./webhook-process";
+
+export {
+  assertIndependentCheckoutAllowed,
+  CONTENT_ATTESTATION_CONTRACT,
+  CONTENT_ATTESTATION_FILENAME,
+  CONTENT_USE_CATEGORY_LABELS,
+  emptyContentUseAttestation,
+  evaluateSiteProviderPolicy,
+  getBillingPolicyRow,
+  isAttestationComplete,
+  isContentUseCategory,
+  listMatrixSummary,
+  loadContentUseAttestation,
+  PROVIDER_POLICY_MATRIX,
+  PROVIDER_POLICY_MATRIX_CONTRACT,
+  routeProviderPolicy,
+  saveContentUseAttestation,
+  type BillingRecipe,
+  type BillingRecipeId,
+  type ContentUseAttestation,
+  type ContentUseCategory,
+  type PolicyRouteDecision,
+  type ProviderPolicyRow
+} from "./policy";

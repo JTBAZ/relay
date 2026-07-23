@@ -44,13 +44,14 @@ export const STRIPE_POLICY: BillingPolicyDeclaration = {
   supportedCurrencies: ["USD"],
   supportedIntervals: ["month", "year"],
   taxFeatures: ["stripe_tax_optional"],
-  contentCategories: ["general_eligible_business"],
+  contentCategories: ["general_eligible_business", "creative_non_adult"],
   regions: ["global_stripe_supported"],
   policyUrl: "https://stripe.com/legal/restricted-businesses",
-  policyCheckedAt: null,
+  policyCheckedAt: "2026-07-23",
   notes: [
     "Creator-owned Stripe Billing/Checkout/Portal/webhooks (EH-051).",
-    "Restricted / adult content must not be routed through Stripe (EH-052).",
+    "EH-052 provider policy router: attestation required; adult_sexual_gratification never offered Stripe.",
+    "Restricted / adult content must not be routed through Stripe.",
     "Prefer restricted API keys (rk_) over secret keys (sk_) when supported.",
     "Never pass payment_method_types — use dynamic payment methods.",
     "Creator is the business the patron pays; Relay takes no % of independent-site subscription revenue in v1."

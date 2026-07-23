@@ -1,4 +1,4 @@
-# Operations (EH-051 Stripe adapter + EH-050 billing contract + EH-043 OAuth choice/migration + EH-042 connector billing + EH-041 Relay-managed verify + EH-040 creator Patreon OAuth + EH-035 visitor visual + EH-034 account / paywall UX)
+# Operations (EH-052 provider policy + EH-051 Stripe adapter + EH-050 billing contract + EH-043 OAuth choice/migration + EH-042 connector billing + EH-041 Relay-managed verify + EH-040 creator Patreon OAuth + EH-035 visitor visual + EH-034 account / paywall UX)
 
 ## Local preview
 
@@ -42,7 +42,7 @@ Helpers: `startIndependentCheckout` / `startCustomerPortal` in `lib/billing/hook
 - Never pass `payment_method_types` on Checkout — use dynamic payment methods.
 - `STRIPE_SECRET_KEY` / `STRIPE_WEBHOOK_SECRET` are server-only — never ship them in the browser bundle.
 - Secrets are **not** required for `npm run build`.
-- Provider policy router (EH-052) and alternate processors (EH-053) remain open — do not route ineligible adult content through Stripe.
+- **EH-052:** content/use attestation + dated policy matrix gate independent Checkout. Admin: `/admin/billing/policy`. Adult sexual gratification is never offered Stripe. Alternate processor is EH-053 (human approval).
 - Webhook entitlement sink is **process-local preview memory** until durable SQL store lands; `productionSafe` stays false.
 
 ## OAuth choice and migration UX (EH-043)

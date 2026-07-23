@@ -115,9 +115,12 @@ export async function POST(request: Request): Promise<NextResponse> {
   });
 
   if (!result.ok) {
+    const policyBlocked =
+      result.reason === "provider_policy_blocks_stripe" ||
+      result.reason === "provider_policy_attestation_required";
     return NextResponse.json(
       { ok: false, error: result.reason, production_safe: false },
-      { status: 503 }
+      { status: policyBlocked ? 403 : 503 }
     );
   }
 
