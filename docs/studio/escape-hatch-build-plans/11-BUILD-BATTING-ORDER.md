@@ -155,7 +155,7 @@ Execute one documented slice at a time. The program docs define scope and depend
 ### EH-053 Lawful alternate billing recipe
 
 - **Builder:** Cursor Grok 4.5 High
-- Implement only after human approval of provider policy and sandbox evidence.
+- **Status:** Implemented (preview_only; `productionSafe: false`). NOWPayments crypto adapter shell + injectable CI client; dated matrix rows for NOWPayments / CCBill / Segpay; recipe router offers crypto Checkout for Stripe-gap categories; CCBill/Segpay listed as merchant-approval guidance (LLC/approved account most times) without live Checkout. Evidence: `docs/qa/ESCAPE_HATCH_EH_053_EVIDENCE.md`, `15-ALTERNATE-BILLING-RECIPES.md`. Next: **EH-054**.
 
 ### EH-054 Tier and billing wizard
 

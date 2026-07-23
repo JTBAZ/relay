@@ -33,15 +33,15 @@ const SITE = "site_eh_050";
 const USER = "user_eh_050";
 
 describe("EH-050 status", () => {
-  it("advances slice to EH-052 with next EH-053 and productionSafe false", () => {
+  it("advances slice to EH-053 with next EH-054 and productionSafe false", () => {
     const status = buildEscapeHatchStatus();
-    expect(ESCAPE_HATCH_SLICE).toBe("EH-052");
-    expect(status.slice).toBe("EH-052");
+    expect(ESCAPE_HATCH_SLICE).toBe("EH-053");
+    expect(status.slice).toBe("EH-053");
     expect(status.productionSafe).toBe(false);
-    expect(status.nextSlice.id).toBe("EH-053");
-    expect(status.nextSlice.title).toMatch(/alternate|billing|recipe/i);
+    expect(status.nextSlice.id).toBe("EH-054");
+    expect(status.nextSlice.title).toMatch(/tier|billing|wizard/i);
     expect(
-      status.blockers.some((b) => /EH-053|alternate|human/i.test(b))
+      status.blockers.some((b) => /EH-054|tier|Milestone 3|Stripe/i.test(b))
     ).toBe(true);
     expect(status.blockers.some((b) => /belongs to EH-050\/051/i.test(b))).toBe(
       false
@@ -50,8 +50,8 @@ describe("EH-050 status", () => {
     const cap = status.capabilities.find((c) => c.id === "billing-adapters");
     expect(cap?.state).toBe("preview_only");
     expect(cap?.evidence).toMatch(/EH-051|BillingProvider|Checkout|webhook/i);
-    expect(cap?.evidence).toMatch(/EH-052/);
-    expect(cap?.nextSlice).toBe("EH-053");
+    expect(cap?.evidence).toMatch(/EH-053|NOWPayments|Stripe/);
+    expect(cap?.nextSlice).toBe("EH-054");
     expect(cap?.sourcePaths).toEqual(
       expect.arrayContaining([
         "packages/escape-hatch/template/lib/billing/",
@@ -459,7 +459,7 @@ describe("EH-050 docs + env honesty", () => {
     const manifest = JSON.parse(
       readFileSync(join(TEMPLATE, "escape-hatch.manifest.json"), "utf8")
     );
-    expect(manifest.slice).toBe("EH-052");
+    expect(manifest.slice).toBe("EH-053");
     expect(manifest.productionSafe).toBe(false);
     expect(manifest.adapters.billing.state).toBe("preview_only");
   });

@@ -1,7 +1,7 @@
 /**
- * Billing readiness / capability reporter (EH-050 / EH-051).
- * Env-honest: Stripe is ready only when secret + webhook secret are real
- * (or a test client is injected). Never claims productionSafe.
+ * Billing readiness / capability reporter (EH-050 / EH-051 / EH-053).
+ * Env-honest: adapters are ready only when secrets are real (or a test client
+ * is injected). Never claims productionSafe.
  */
 
 import {
@@ -23,6 +23,11 @@ export const STRIPE_BILLING_ENV_NAMES = [
   "NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY"
 ] as const;
 
+export const NOWPAYMENTS_BILLING_ENV_NAMES = [
+  "NOWPAYMENTS_API_KEY",
+  "NOWPAYMENTS_IPN_SECRET"
+] as const;
+
 export const STUB_POLICY: BillingPolicyDeclaration = {
   implementation: "stub",
   supportedCurrencies: [],
@@ -35,7 +40,7 @@ export const STUB_POLICY: BillingPolicyDeclaration = {
   notes: [
     "Stub billing provider — no live processor.",
     "Relay takes no percentage of independent-site subscription revenue in v1.",
-    "Stripe eligible-business adapter is EH-051; provider policy router is EH-052."
+    "Stripe eligible-business adapter is EH-051; NOWPayments / CCBill / Segpay guidance is EH-053."
   ]
 };
 
@@ -55,6 +60,28 @@ export const STRIPE_POLICY: BillingPolicyDeclaration = {
     "Prefer restricted API keys (rk_) over secret keys (sk_) when supported.",
     "Never pass payment_method_types — use dynamic payment methods.",
     "Creator is the business the patron pays; Relay takes no % of independent-site subscription revenue in v1."
+  ]
+};
+
+export const NOWPAYMENTS_POLICY: BillingPolicyDeclaration = {
+  implementation: "nowpayments",
+  supportedCurrencies: ["USD", "EUR"],
+  supportedIntervals: ["month", "year", "week", "day"],
+  taxFeatures: [],
+  contentCategories: [
+    "adult_sexual_gratification",
+    "mature_non_sexual",
+    "other_high_risk"
+  ],
+  regions: ["global_crypto"],
+  policyUrl: "https://nowpayments.io/",
+  policyCheckedAt: "2026-07-23",
+  notes: [
+    "Creator-owned NOWPayments crypto recurring / invoice path (EH-053).",
+    "Marketed for adult / high-risk verticals where card rails refuse; still subject to NOWPayments ToS and local law.",
+    "Crypto renewals require patron payment each cycle — not card autopull.",
+    "Live HTTP client + IPN HMAC verification must be completed before production claims.",
+    "CCBill / Segpay remain separate merchant-approval recipes — not auto-selected."
   ]
 };
 
@@ -106,9 +133,44 @@ function stripeCapability(
   };
 }
 
+function nowpaymentsCapability(
+  ready: boolean,
+  detail: string
+): BillingCapabilityMatrix {
+  return {
+    implementation: "nowpayments",
+    ready,
+    sandbox: true,
+    capabilities: {
+      connectAccount: ready,
+      listProducts: ready,
+      mutateProducts: ready,
+      createCheckout: ready,
+      customerPortal: false,
+      verifyWebhooks: false,
+      normalizeLifecycle: true,
+      sandboxMode: true,
+      tax: false,
+      migrationExport: ready
+    },
+    detail
+  };
+}
+
 function configuredStripeEnvNames(env: SiteEnv): string[] {
   const out: string[] = [];
   for (const name of STRIPE_BILLING_ENV_NAMES) {
+    const v = env[name];
+    if (typeof v === "string" && v.trim() !== "" && !isPlaceholderSecret(v)) {
+      out.push(name);
+    }
+  }
+  return out;
+}
+
+function configuredNowPaymentsEnvNames(env: SiteEnv): string[] {
+  const out: string[] = [];
+  for (const name of NOWPAYMENTS_BILLING_ENV_NAMES) {
     const v = env[name];
     if (typeof v === "string" && v.trim() !== "" && !isPlaceholderSecret(v)) {
       out.push(name);
@@ -135,8 +197,32 @@ export function isStripeBillingConfigured(env: SiteEnv = loadEnv()): boolean {
   return Boolean(resolveStripeSecretKey(env) && resolveStripeWebhookSecret(env));
 }
 
+export function resolveNowPaymentsApiKey(
+  env: SiteEnv = loadEnv()
+): string | null {
+  const v = env.NOWPAYMENTS_API_KEY;
+  if (typeof v !== "string" || !v.trim() || isPlaceholderSecret(v)) return null;
+  return v.trim();
+}
+
+export function resolveNowPaymentsIpnSecret(
+  env: SiteEnv = loadEnv()
+): string | null {
+  const v = env.NOWPAYMENTS_IPN_SECRET;
+  if (typeof v !== "string" || !v.trim() || isPlaceholderSecret(v)) return null;
+  return v.trim();
+}
+
+export function isNowPaymentsBillingConfigured(
+  env: SiteEnv = loadEnv()
+): boolean {
+  return Boolean(
+    resolveNowPaymentsApiKey(env) && resolveNowPaymentsIpnSecret(env)
+  );
+}
+
 export type BillingReadinessOptions = {
-  /** When true, treat Stripe as configured for capability (injected mock client). */
+  /** When true, treat adapter as configured for capability (injected mock client). */
   clientInjected?: boolean;
 };
 
@@ -148,24 +234,84 @@ export function reportBillingReadiness(
   env: SiteEnv = loadEnv(),
   opts?: BillingReadinessOptions
 ): BillingReadinessReport {
-  const configured = configuredStripeEnvNames(env);
-
   if (implementation === "stub") {
     return {
       implementation: "stub",
       ok: false,
       reason:
-        "Billing adapter is a typed stub (EH-050 contract). Set ESCAPE_HATCH_BILLING_PROVIDER=stripe with creator Stripe credentials for EH-051.",
+        "Billing adapter is a typed stub (EH-050 contract). Set ESCAPE_HATCH_BILLING_PROVIDER=stripe or nowpayments with creator credentials.",
       sandbox: true,
       capability: stubCapability(
         "normalizeLifecycle available for unit tests; all money-path methods fail closed."
       ),
       policy: STUB_POLICY,
-      requiredEnvNames: [...STRIPE_BILLING_ENV_NAMES],
+      requiredEnvNames: [
+        ...STRIPE_BILLING_ENV_NAMES,
+        ...NOWPAYMENTS_BILLING_ENV_NAMES
+      ],
+      configuredEnvNames: [
+        ...configuredStripeEnvNames(env),
+        ...configuredNowPaymentsEnvNames(env)
+      ]
+    };
+  }
+
+  if (implementation === "nowpayments") {
+    const configured = configuredNowPaymentsEnvNames(env);
+    const ready =
+      Boolean(opts?.clientInjected) || isNowPaymentsBillingConfigured(env);
+
+    if (opts?.clientInjected) {
+      return {
+        implementation: "nowpayments",
+        ok: true,
+        reason:
+          "NOWPayments billing adapter ready via injected client (CI/sandbox). productionSafe remains false.",
+        sandbox: true,
+        capability: nowpaymentsCapability(
+          true,
+          "EH-053: crypto checkout sessions via injectable client; portal/IPN live verify deferred."
+        ),
+        policy: NOWPAYMENTS_POLICY,
+        requiredEnvNames: [...NOWPAYMENTS_BILLING_ENV_NAMES],
+        configuredEnvNames: configured
+      };
+    }
+
+    if (ready) {
+      return {
+        implementation: "nowpayments",
+        ok: false,
+        reason:
+          "NOWPayments secrets present but live HTTP client is not wired — inject client for sandbox or complete live API before claiming ready.",
+        sandbox: true,
+        capability: nowpaymentsCapability(
+          false,
+          "EH-053 secrets present; live client / IPN verify still open."
+        ),
+        policy: NOWPAYMENTS_POLICY,
+        requiredEnvNames: [...NOWPAYMENTS_BILLING_ENV_NAMES],
+        configuredEnvNames: configured
+      };
+    }
+
+    return {
+      implementation: "nowpayments",
+      ok: false,
+      reason:
+        "NOWPayments billing not configured — set NOWPAYMENTS_API_KEY and NOWPAYMENTS_IPN_SECRET; money paths fail closed.",
+      sandbox: true,
+      capability: nowpaymentsCapability(
+        false,
+        "EH-053 adapter selected but credentials missing; checkout fails closed."
+      ),
+      policy: NOWPAYMENTS_POLICY,
+      requiredEnvNames: [...NOWPAYMENTS_BILLING_ENV_NAMES],
       configuredEnvNames: configured
     };
   }
 
+  const configured = configuredStripeEnvNames(env);
   const ready =
     Boolean(opts?.clientInjected) || isStripeBillingConfigured(env);
 
@@ -175,7 +321,7 @@ export function reportBillingReadiness(
       ok: true,
       reason: opts?.clientInjected
         ? "Stripe billing adapter ready via injected client (CI/sandbox). productionSafe remains false."
-        : "Stripe secret + webhook secret configured for creator-owned Billing/Checkout/Portal. productionSafe remains false — Milestone 3 + EH-052 policy still open.",
+        : "Stripe secret + webhook secret configured for creator-owned Billing/Checkout/Portal. productionSafe remains false — Milestone 3 gate still open.",
       sandbox: true,
       capability: stripeCapability(
         true,
@@ -219,5 +365,7 @@ export function getBillingCapabilityMatrix(
 export function getBillingPolicyDeclaration(
   implementation: BillingImplementation = "stub"
 ): BillingPolicyDeclaration {
-  return implementation === "stripe" ? STRIPE_POLICY : STUB_POLICY;
+  if (implementation === "stripe") return STRIPE_POLICY;
+  if (implementation === "nowpayments") return NOWPAYMENTS_POLICY;
+  return STUB_POLICY;
 }

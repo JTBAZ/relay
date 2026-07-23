@@ -14,11 +14,16 @@ type RecipeView = {
   offered: boolean;
   reason: string;
   requiresHumanApproval: boolean;
+  requiresMerchantApproval?: boolean;
+  checkoutProvider?: string | null;
 };
 
 type DecisionView = {
   paidLaunchAllowed: boolean;
   stripeEligibility: string;
+  stripeOffered?: boolean;
+  nowpaymentsOffered?: boolean;
+  checkoutProviders?: string[];
   recipes: RecipeView[];
   blockers: string[];
 };
@@ -88,13 +93,15 @@ export function ProviderPolicyPanel({
       <section className="admin-panel">
         <h2>Official policy matrix</h2>
         <p className="muted">
-          Stripe restricted businesses checked{" "}
+          Policy matrix checked{" "}
           <time dateTime={matrixCheckedAt}>{matrixCheckedAt}</time>
           {" · "}
           <a href={matrixPolicyUrl} rel="noreferrer" target="_blank">
-            Current Stripe policy
+            Stripe restricted businesses
           </a>
-          . Compatible is not permanent — re-check before paid launch.
+          . Compatible is not permanent — re-check before paid launch. CCBill /
+          Segpay require approved merchant accounts (LLC/entity most times) —
+          guidance only until credentials exist.
         </p>
         <ul>
           {decision.recipes.map((r) => (
@@ -102,7 +109,14 @@ export function ProviderPolicyPanel({
               <strong>{r.title}</strong>
               {" — "}
               {r.offered ? "offered" : "not offered"}
-              {r.requiresHumanApproval ? " (needs human approval)" : ""}
+              {r.requiresMerchantApproval
+                ? " (merchant approval / LLC usually required)"
+                : r.requiresHumanApproval
+                  ? " (needs human approval)"
+                  : ""}
+              {r.checkoutProvider
+                ? ` · checkout=${r.checkoutProvider}`
+                : " · guidance only"}
               <div className="muted">{r.reason}</div>
             </li>
           ))}
@@ -111,7 +125,10 @@ export function ProviderPolicyPanel({
           Paid independent launch:{" "}
           <strong>{decision.paidLaunchAllowed ? "allowed" : "blocked"}</strong>
           {" · "}
-          Stripe eligibility: {decision.stripeEligibility}
+          Stripe: {decision.stripeEligibility}
+          {decision.checkoutProviders && decision.checkoutProviders.length > 0
+            ? ` · Checkout via: ${decision.checkoutProviders.join(", ")}`
+            : ""}
         </p>
         {decision.blockers.length > 0 ? (
           <ul>

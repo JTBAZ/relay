@@ -58,10 +58,14 @@ export type SiteServerEnv = {
   STRIPE_WEBHOOK_SECRET: string | undefined;
   NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: string | undefined;
   /**
-   * Billing provider selection (EH-050/051): stub (default) | stripe (EH-051 adapter).
-   * Unset → stub. Stripe still fails closed without non-placeholder secrets.
+   * Billing provider selection (EH-050/053): stub (default) | stripe | nowpayments.
+   * Unset → stub. Adapters still fail closed without non-placeholder secrets.
    */
   ESCAPE_HATCH_BILLING_PROVIDER: string | undefined;
+  /** NOWPayments API key (EH-053) — creator-owned; never browser. */
+  NOWPAYMENTS_API_KEY: string | undefined;
+  /** NOWPayments IPN secret for signed callbacks (EH-053). */
+  NOWPAYMENTS_IPN_SECRET: string | undefined;
   /**
    * Test-only webhook secret when injecting a mock Stripe client without STRIPE_WEBHOOK_SECRET.
    * Never use in production.
@@ -185,6 +189,8 @@ export const SITE_ENV_NAMES = {
     "STRIPE_WEBHOOK_SECRET",
     "NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY",
     "ESCAPE_HATCH_BILLING_PROVIDER",
+    "NOWPAYMENTS_API_KEY",
+    "NOWPAYMENTS_IPN_SECRET",
     "ESCAPE_HATCH_BILLING_TEST_WEBHOOK_SECRET",
     "ESCAPE_HATCH_PATREON_MODE",
     "PATREON_CLIENT_ID",
@@ -274,6 +280,8 @@ export function loadEnv(): SiteEnv {
     ESCAPE_HATCH_BILLING_PROVIDER: readOptional(
       "ESCAPE_HATCH_BILLING_PROVIDER"
     ),
+    NOWPAYMENTS_API_KEY: readOptional("NOWPAYMENTS_API_KEY"),
+    NOWPAYMENTS_IPN_SECRET: readOptional("NOWPAYMENTS_IPN_SECRET"),
     ESCAPE_HATCH_BILLING_TEST_WEBHOOK_SECRET: readOptional(
       "ESCAPE_HATCH_BILLING_TEST_WEBHOOK_SECRET"
     ),

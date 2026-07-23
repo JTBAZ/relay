@@ -25,7 +25,7 @@ export type StartCheckoutArgs = {
   /** Kit root for attestation file (tests). */
   kitDir?: string;
   /**
-   * When true (default), EH-052 provider policy must allow Stripe.
+   * When true (default), EH-052/053 provider policy must allow this provider.
    * Tests may set false only when exercising adapter isolation.
    */
   enforceProviderPolicy?: boolean;
@@ -39,7 +39,7 @@ export type StartPortalArgs = {
 
 /**
  * Start independent Checkout for a mapped price.
- * EH-052 blocks Checkout when attestation routes away from Stripe.
+ * EH-052/053 blocks Checkout unless attestation offers this provider's recipe.
  * EH-054 maps tiers and adds duplicate-billing UX.
  */
 export async function startIndependentCheckout(
@@ -49,14 +49,15 @@ export async function startIndependentCheckout(
     return {
       ok: false,
       reason:
-        "billing_stub — set ESCAPE_HATCH_BILLING_PROVIDER=stripe with creator Stripe credentials (EH-051)"
+        "billing_stub — set ESCAPE_HATCH_BILLING_PROVIDER=stripe or nowpayments with creator credentials (EH-051/053)"
     };
   }
 
   if (args.enforceProviderPolicy !== false) {
     const policy = assertIndependentCheckoutAllowed({
       siteId: args.siteId,
-      kitDir: args.kitDir
+      kitDir: args.kitDir,
+      implementation: args.billing.implementation
     });
     if (!policy.ok) {
       return { ok: false, reason: policy.reason };
@@ -77,6 +78,7 @@ export async function startIndependentCheckout(
 
 /**
  * Open Customer Portal for subscription self-service (cancel / payment method).
+ * NOWPayments has no Stripe-style portal — adapter fails closed with an honest reason.
  */
 export async function startCustomerPortal(
   args: StartPortalArgs

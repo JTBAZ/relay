@@ -30,7 +30,7 @@ export type BillingSubscriptionStatus =
 
 export type BillingInterval = "month" | "year" | "week" | "day";
 
-export type BillingImplementation = "stub" | "stripe";
+export type BillingImplementation = "stub" | "stripe" | "nowpayments";
 
 /**
  * Provider-agnostic lifecycle event. No raw Stripe/client bodies here —

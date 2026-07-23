@@ -58,12 +58,17 @@ export {
   getBillingPolicyDeclaration,
   isStripeBillingConfigured,
   reportBillingReadiness,
+  resolveNowPaymentsApiKey,
+  resolveNowPaymentsIpnSecret,
   resolveStripeSecretKey,
   resolveStripeWebhookSecret,
+  NOWPAYMENTS_BILLING_ENV_NAMES,
+  NOWPAYMENTS_POLICY,
   STRIPE_BILLING_ENV_NAMES,
   STRIPE_POLICY,
   STRIPE_POLICY_SHELL,
-  STUB_POLICY
+  STUB_POLICY,
+  isNowPaymentsBillingConfigured
 } from "./readiness";
 
 export { createStubBillingProvider } from "./stub";
@@ -75,6 +80,11 @@ export {
   verifyStripeWebhookSignature,
   wrapStripeSdk
 } from "./stripe";
+
+export {
+  createMemoryNowPaymentsClient,
+  createNowPaymentsBillingProvider
+} from "./nowpayments";
 
 export {
   startCustomerPortal,
@@ -109,6 +119,7 @@ export {
   emptyContentUseAttestation,
   evaluateSiteProviderPolicy,
   getBillingPolicyRow,
+  getProviderPolicyRow,
   isAttestationComplete,
   isContentUseCategory,
   listMatrixSummary,
@@ -119,6 +130,7 @@ export {
   saveContentUseAttestation,
   type BillingRecipe,
   type BillingRecipeId,
+  type CheckoutCapableProvider,
   type ContentUseAttestation,
   type ContentUseCategory,
   type PolicyRouteDecision,

@@ -58,12 +58,12 @@ export type StorageProvider = {
 
 /**
  * Shared BillingProvider contract (EH-050 / EH-051).
- * Stub is default; `implementation: "stripe"` is the creator-owned Stripe adapter.
+ * Stub is default; `stripe` / `nowpayments` are creator-owned adapters.
  * Entitlement service consumes normalized events — never provider client payloads.
  */
 export type BillingProvider = {
   readonly id: "billing";
-  readonly implementation: "stub" | "stripe";
+  readonly implementation: "stub" | "stripe" | "nowpayments";
   health(): Promise<AdapterHealth>;
 
   /** Connect and validate creator-owned processor account. */

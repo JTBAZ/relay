@@ -36,7 +36,7 @@ export default async function AdminBillingPolicyPage() {
       <ConsoleNav />
       <AdminShell
         title="Billing provider policy"
-        lede="Declare content/use for routing. Stripe is offered only for eligible attested categories. Ineligible creators keep archive/free/Patreon paths — never disguise content to unlock Checkout."
+        lede="Declare content/use for routing. Stripe is offered only for eligible attested categories. Stripe-gap creators get NOWPayments crypto and CCBill/Segpay merchant guidance (LLC/approval required) — never disguise content to unlock Stripe Checkout."
         identity={read.identity}
       >
         {!read.allowed ? (
@@ -46,7 +46,7 @@ export default async function AdminBillingPolicyPage() {
             <p className="muted">
               <Link href="/admin">← Overview</Link>
               {" · "}
-              productionSafe: false · EH-052
+              productionSafe: false · EH-053
             </p>
             <ProviderPolicyPanel
               siteId={site.site_id}

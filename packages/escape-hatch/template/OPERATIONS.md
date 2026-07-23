@@ -42,7 +42,7 @@ Helpers: `startIndependentCheckout` / `startCustomerPortal` in `lib/billing/hook
 - Never pass `payment_method_types` on Checkout — use dynamic payment methods.
 - `STRIPE_SECRET_KEY` / `STRIPE_WEBHOOK_SECRET` are server-only — never ship them in the browser bundle.
 - Secrets are **not** required for `npm run build`.
-- **EH-052:** content/use attestation + dated policy matrix gate independent Checkout. Admin: `/admin/billing/policy`. Adult sexual gratification is never offered Stripe. Alternate processor is EH-053 (human approval).
+- **EH-052/053:** content/use attestation + dated policy matrix gate independent Checkout. Admin: `/admin/billing/policy`. Adult sexual gratification is never offered Stripe. Stripe-gap: NOWPayments crypto (`ESCAPE_HATCH_BILLING_PROVIDER=nowpayments` + `NOWPAYMENTS_*`); CCBill/Segpay are merchant-approval guidance (LLC/approved account most times) — no live Checkout until adapters ship. See `docs/studio/escape-hatch-build-plans/15-ALTERNATE-BILLING-RECIPES.md`.
 - Webhook entitlement sink is **process-local preview memory** until durable SQL store lands; `productionSafe` stays false.
 
 ## OAuth choice and migration UX (EH-043)

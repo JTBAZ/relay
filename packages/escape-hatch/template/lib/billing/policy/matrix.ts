@@ -102,11 +102,100 @@ export const PROVIDER_POLICY_MATRIX: {
         "Restricted categories may require Stripe preapproval; Escape Hatch never auto-approves restricted use.",
       adapterStatus: "preview_only",
       migrationRoute:
-        "If ineligible: keep archive/free/Patreon-entitled site; EH-053 lawful alternate only after human approval.",
+        "If ineligible: keep archive/free/Patreon-entitled site; EH-053 NOWPayments crypto or CCBill/Segpay merchant recipes (merchant approval required for card high-risk).",
       notes: [
         "Stripe prohibits pornography and other mature audience content designed for sexual gratification (official list; page last updated 2026-05-13).",
         "Do not disguise content or advise misclassification.",
         "Prefer restricted API keys (rk_) for live adapters."
+      ]
+    },
+    {
+      id: "nowpayments_crypto_recurring",
+      provider: "nowpayments",
+      product: "Crypto recurring / invoices (creator wallet)",
+      role: "billing",
+      policyUrl: "https://nowpayments.io/",
+      checkedAt: "2026-07-23",
+      nextReviewAt: "2026-10-23",
+      reviewer: "escape-hatch-eh053",
+      eligibilityByCategory: {
+        general_eligible_business: "restricted",
+        creative_non_adult: "restricted",
+        mature_non_sexual: "allowed",
+        adult_sexual_gratification: "allowed",
+        other_high_risk: "restricted",
+        undeclared: "prohibited"
+      },
+      regionNotes:
+        "Global crypto rails; creator owns wallet + NOWPayments account. Local law and NOWPayments ToS still bind.",
+      accountApprovalNotes:
+        "Creator creates NOWPayments account + API/IPN secrets. Re-read official ToS before launch; marketing pages are not permanence guarantees.",
+      adapterStatus: "preview_only",
+      migrationRoute:
+        "Swap BillingProvider to nowpayments; entitlement contract unchanged. Crypto renewals ≠ card autopull.",
+      notes: [
+        "Primary EH-053 alternate when Stripe prohibits sexual-gratification / mature adult use.",
+        "Official product pages list adult business among supported verticals (checked 2026-07-23) — still re-verify ToS.",
+        "MoonPay classic is an on-ramp, not merchant subscriptions; MoonPay Commerce ToS restricts certain sexually oriented materials — not the Stripe-gap default."
+      ]
+    },
+    {
+      id: "ccbill_merchant_card",
+      provider: "ccbill",
+      product: "High-risk card merchant (subscriptions)",
+      role: "billing",
+      policyUrl: "https://ccbill.com/doc/general-faqs",
+      checkedAt: "2026-07-23",
+      nextReviewAt: "2026-10-23",
+      reviewer: "escape-hatch-eh053",
+      eligibilityByCategory: {
+        general_eligible_business: "restricted",
+        creative_non_adult: "restricted",
+        mature_non_sexual: "restricted",
+        adult_sexual_gratification: "restricted",
+        other_high_risk: "restricted",
+        undeclared: "prohibited"
+      },
+      regionNotes:
+        "Visa/Mastercard via CCBill typically require U.S., Canadian, EU, or U.K. presence — see CCBill designated-country list.",
+      accountApprovalNotes:
+        "Requires approved CCBill merchant account. Most applicants need a registered business (LLC/corp or equivalent), IDs, bank details, live HTTPS site, and compliance review — Escape Hatch does not auto-provision or guarantee approval.",
+      adapterStatus: "preview_only",
+      migrationRoute:
+        "Guidance-only in EH-053 — no live BillingProvider until creator has approved merchant credentials and a dedicated adapter ships.",
+      notes: [
+        "Official signup FAQ: company/sole-proprietor info, two forms of ID, site URL, payout bank (https://ccbill.com/doc/general-faqs).",
+        "Sales inquiry for new merchants — existing accounts use Merchant Support.",
+        "Honest default: treat as heavy onboarding, not a one-click Escape Hatch toggle."
+      ]
+    },
+    {
+      id: "segpay_merchant_card",
+      provider: "segpay",
+      product: "High-risk card merchant (subscriptions)",
+      role: "billing",
+      policyUrl: "https://www.segpay.com/",
+      checkedAt: "2026-07-23",
+      nextReviewAt: "2026-10-23",
+      reviewer: "escape-hatch-eh053",
+      eligibilityByCategory: {
+        general_eligible_business: "restricted",
+        creative_non_adult: "restricted",
+        mature_non_sexual: "restricted",
+        adult_sexual_gratification: "restricted",
+        other_high_risk: "restricted",
+        undeclared: "prohibited"
+      },
+      regionNotes:
+        "Merchant inquiry includes country of incorporation and website — underwriting decides fit.",
+      accountApprovalNotes:
+        "Requires approved Segpay merchant account. Typically needs a legal entity (LLC/corp common), business banking, live site with policies, and underwriting — Escape Hatch does not auto-provision or guarantee approval.",
+      adapterStatus: "preview_only",
+      migrationRoute:
+        "Guidance-only in EH-053 — no live BillingProvider until creator has approved merchant credentials and a dedicated adapter ships.",
+      notes: [
+        "Adult / dating / subscription vertical processor; apply via Segpay merchant inquiry — do not invent eligibility.",
+        "Honest default: heavier than crypto onboarding; plan for LLC + document pack before expecting card Checkout."
       ]
     },
     {
@@ -169,6 +258,14 @@ export function getBillingPolicyRow(): ProviderPolicyRow {
     throw new Error("stripe_billing_policy_row_missing");
   }
   return row;
+}
+
+export function getProviderPolicyRow(
+  provider: ProviderPolicyRow["provider"]
+): ProviderPolicyRow | undefined {
+  return PROVIDER_POLICY_MATRIX.rows.find(
+    (r) => r.provider === provider && r.role === "billing"
+  );
 }
 
 export const CONTENT_USE_CATEGORY_LABELS: Record<ContentUseCategory, string> =

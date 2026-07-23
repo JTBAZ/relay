@@ -27,21 +27,21 @@ import {
 const SITE = "site_eh_052";
 
 describe("EH-052 status", () => {
-  it("advances slice to EH-052 with next EH-053 and productionSafe false", () => {
+  it("advances slice to EH-053 with next EH-054 and productionSafe false", () => {
     const status = buildEscapeHatchStatus();
-    expect(ESCAPE_HATCH_SLICE).toBe("EH-052");
-    expect(status.slice).toBe("EH-052");
+    expect(ESCAPE_HATCH_SLICE).toBe("EH-053");
+    expect(status.slice).toBe("EH-053");
     expect(status.productionSafe).toBe(false);
-    expect(status.nextSlice.id).toBe("EH-053");
-    expect(status.nextSlice.title).toMatch(/alternate|billing|recipe/i);
+    expect(status.nextSlice.id).toBe("EH-054");
+    expect(status.nextSlice.title).toMatch(/tier|billing|wizard/i);
     expect(
-      status.blockers.some((b) => /EH-053|alternate|human/i.test(b))
+      status.blockers.some((b) => /EH-054|tier|Milestone 3|Stripe/i.test(b))
     ).toBe(true);
 
     const cap = status.capabilities.find((c) => c.id === "provider-policy");
     expect(cap?.state).toBe("preview_only");
     expect(cap?.evidence).toMatch(/EH-052|attestation|matrix/i);
-    expect(cap?.nextSlice).toBe("EH-053");
+    expect(cap?.nextSlice).toBe("EH-054");
   });
 });
 
@@ -77,7 +77,10 @@ describe("EH-052 provider policy matrix + router", () => {
     });
     expect(adult.stripeEligibility).toBe("prohibited");
     expect(adult.stripeOffered).toBe(false);
-    expect(adult.paidLaunchAllowed).toBe(false);
+    // EH-053: NOWPayments may unlock paid launch; Stripe still blocked
+    expect(adult.nowpaymentsOffered).toBe(true);
+    expect(adult.paidLaunchAllowed).toBe(true);
+    expect(adult.checkoutProviders).toEqual(["nowpayments"]);
   });
 
   it("offers Stripe only for eligible attested categories", () => {

@@ -3,7 +3,7 @@
  * Auth/DB report readiness only when env is real and non-placeholder;
  * storage signs private GETs when private_r2 credentials are real;
  * Patreon creator_oauth (EH-040) or relay_managed (EH-041) when configured.
- * Billing defaults to stub; ESCAPE_HATCH_BILLING_PROVIDER=stripe selects EH-051 adapter.
+ * Billing defaults to stub; ESCAPE_HATCH_BILLING_PROVIDER=stripe|nowpayments selects adapters.
  * productionSafe remains false (Milestone 3 UX/security gate + deploy/policy open).
  */
 
@@ -45,7 +45,8 @@ import {
 } from "../patreon/relay-managed";
 import {
   createStubBillingProvider,
-  createStripeBillingProvider
+  createStripeBillingProvider,
+  createNowPaymentsBillingProvider
 } from "../billing";
 import { createMemoryPatreonLinkStore } from "../patreon/store";
 import type {
@@ -310,9 +311,9 @@ const r2Storage: StorageProvider = {
 const stubBilling: BillingProvider = createStubBillingProvider();
 
 /**
- * Stripe adapter — not selected by default. Export for EH-051 wiring / tests.
- * createSiteAdapters() returns stub until ESCAPE_HATCH_BILLING_PROVIDER=stripe.
- * Without real STRIPE_* secrets the adapter still fails closed on money paths.
+ * Stripe / NOWPayments adapters — not selected by default.
+ * createSiteAdapters() returns stub until ESCAPE_HATCH_BILLING_PROVIDER is set.
+ * Without real secrets the adapters still fail closed on money paths.
  */
 export const stripeBillingProvider: BillingProvider =
   createStripeBillingProvider();
@@ -320,11 +321,15 @@ export const stripeBillingProvider: BillingProvider =
 /** @deprecated Use stripeBillingProvider */
 export const stripeBillingShell: BillingProvider = stripeBillingProvider;
 
+export const nowPaymentsBillingProvider: BillingProvider =
+  createNowPaymentsBillingProvider();
+
 function createBillingProvider(): BillingProvider {
   const raw = (loadEnv().ESCAPE_HATCH_BILLING_PROVIDER ?? "stub")
     .trim()
     .toLowerCase();
   if (raw === "stripe") return createStripeBillingProvider();
+  if (raw === "nowpayments") return createNowPaymentsBillingProvider();
   return stubBilling;
 }
 
