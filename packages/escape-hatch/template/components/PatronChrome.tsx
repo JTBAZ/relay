@@ -137,6 +137,9 @@ export function PatronChrome({
           </Link>
 
           <nav className="patron-topbar-nav" aria-label="Account">
+            <Link className="patron-nav-link" href="/tiers">
+              Tiers
+            </Link>
             <Link className="patron-nav-link" href="/account">
               Account
             </Link>
@@ -178,6 +181,9 @@ export function PatronChrome({
       </main>
 
       <footer className="patron-footer">
+        <Link className="patron-footer-link" href="/tiers">
+          Tiers
+        </Link>
         <Link className="patron-footer-link" href="/account">
           Account
         </Link>

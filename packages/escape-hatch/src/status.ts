@@ -1,11 +1,11 @@
 /**
- * Deterministic Escape Hatch capability inventory (through EH-053).
+ * Deterministic Escape Hatch capability inventory (through EH-054).
  * No timestamps, env reads, network, or live data — informational only.
  */
 
 export const ESCAPE_HATCH_STATUS_SCHEMA_VERSION = "escape-hatch-status/1.0.0";
 
-export const ESCAPE_HATCH_SLICE = "EH-053";
+export const ESCAPE_HATCH_SLICE = "EH-054";
 
 export type CapabilityState =
   | "production_safe"
@@ -36,7 +36,7 @@ export type EscapeHatchStatus = {
   capabilities: EscapeHatchCapability[];
   blockers: string[];
   nextSlice: {
-    id: "EH-054";
+    id: "EH-060";
     title: string;
     focus: string[];
   };
@@ -59,7 +59,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "packages/escape-hatch/src/library-truth/kit-io.ts"
     ],
     risk: "high",
-    nextSlice: "EH-054"
+    nextSlice: "EH-060"
   },
   {
     id: "generated-repository",
@@ -84,7 +84,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "packages/escape-hatch/tests/escape-hatch-generated-repo.test.ts"
     ],
     risk: "high",
-    nextSlice: "EH-054"
+    nextSlice: "EH-060"
   },
   {
     id: "premium-patron-theme",
@@ -110,7 +110,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "packages/escape-hatch/tests/escape-hatch-theme.test.ts"
     ],
     risk: "medium",
-    nextSlice: "EH-054"
+    nextSlice: "EH-060"
   },
   {
     id: "soft-persona-gate",
@@ -128,7 +128,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "packages/escape-hatch/template/lib/paywall/copy.ts"
     ],
     risk: "critical",
-    nextSlice: "EH-054"
+    nextSlice: "EH-060"
   },
   {
     id: "public-media-copy",
@@ -143,7 +143,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "packages/escape-hatch/template/lib/media/delivery.ts"
     ],
     risk: "critical",
-    nextSlice: "EH-054"
+    nextSlice: "EH-060"
   },
   {
     id: "client-readable-bundle",
@@ -160,7 +160,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "packages/escape-hatch/src/library-truth/kit-io.ts"
     ],
     risk: "high",
-    nextSlice: "EH-054"
+    nextSlice: "EH-060"
   },
   {
     id: "duplicate-contracts",
@@ -208,7 +208,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "tests/fixtures/patreon/cookie-list-with-media.json"
     ],
     risk: "medium",
-    nextSlice: "EH-054"
+    nextSlice: "EH-060"
   },
   {
     id: "relay-dump-fixtures",
@@ -227,7 +227,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "packages/escape-hatch/tests/escape-hatch-library-truth.test.ts"
     ],
     risk: "medium",
-    nextSlice: "EH-054"
+    nextSlice: "EH-060"
   },
   {
     id: "relay-canonical-reuse",
@@ -250,7 +250,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "src/storage/media-delivery-policy.ts"
     ],
     risk: "informational",
-    nextSlice: "EH-054"
+    nextSlice: "EH-060"
   },
   {
     id: "simplified-access-semantics",
@@ -267,7 +267,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "src/clone/tier-rules.ts"
     ],
     risk: "high",
-    nextSlice: "EH-054"
+    nextSlice: "EH-060"
   },
   {
     id: "generated-site-identity",
@@ -305,7 +305,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "packages/escape-hatch/tests/escape-hatch-entitlements.test.ts"
     ],
     risk: "critical",
-    nextSlice: "EH-054"
+    nextSlice: "EH-060"
   },
   {
     id: "entitlement-evaluator",
@@ -326,7 +326,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "packages/escape-hatch/tests/escape-hatch-entitlements.test.ts"
     ],
     risk: "critical",
-    nextSlice: "EH-054"
+    nextSlice: "EH-060"
   },
   {
     id: "private-media-delivery",
@@ -343,7 +343,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "packages/escape-hatch/tests/escape-hatch-private-media.test.ts"
     ],
     risk: "critical",
-    nextSlice: "EH-054"
+    nextSlice: "EH-060"
   },
   {
     id: "account-paywall-ux",
@@ -368,14 +368,14 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "packages/escape-hatch/tests/escape-hatch-account-paywall.test.ts"
     ],
     risk: "critical",
-    nextSlice: "EH-054"
+    nextSlice: "EH-060"
   },
   {
     id: "billing-adapters",
     title: "Stripe + alternate billing adapters",
     state: "preview_only",
     evidence:
-      "EH-051 Stripe + EH-053 NOWPayments shell (injectable CI). Checkout gated by attestation + active provider. CCBill/Segpay guidance only (merchant approval/LLC). productionSafe remains false.",
+      "EH-051–054: Stripe/NOWPayments adapters, tier→price map, /tiers conversion, duplicate-billing guard, preflight. productionSafe remains false.",
     sourcePaths: [
       "packages/escape-hatch/template/lib/adapters/types.ts",
       "packages/escape-hatch/template/lib/adapters/index.ts",
@@ -384,17 +384,18 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "packages/escape-hatch/tests/escape-hatch-billing-contract.test.ts",
       "packages/escape-hatch/tests/escape-hatch-billing-stripe.test.ts",
       "packages/escape-hatch/tests/escape-hatch-billing-alternate.test.ts",
+      "packages/escape-hatch/tests/escape-hatch-billing-tiers.test.ts",
       "src/payments/provider-adapter.ts"
     ],
     risk: "critical",
-    nextSlice: "EH-054"
+    nextSlice: "EH-060"
   },
   {
     id: "provider-policy",
     title: "Provider policy router",
     state: "preview_only",
     evidence:
-      "EH-052/053: dated matrix (Stripe + NOWPayments + CCBill + Segpay), attestation, recipe router with crypto Checkout + merchant-approval guidance. Admin /admin/billing/policy. productionSafe remains false.",
+      "EH-052/053/054: dated matrix + attestation + recipe router + tier wizard conversion gated by policy. productionSafe remains false.",
     sourcePaths: [
       "packages/escape-hatch/template/lib/billing/policy/",
       "packages/escape-hatch/template/app/admin/billing/policy/",
@@ -403,7 +404,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "packages/escape-hatch/tests/escape-hatch-billing-alternate.test.ts"
     ],
     risk: "critical",
-    nextSlice: "EH-054"
+    nextSlice: "EH-060"
   },
   {
     id: "deploy-adapters",
@@ -443,7 +444,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "packages/escape-hatch/tests/escape-hatch-admin.test.ts"
     ],
     risk: "high",
-    nextSlice: "EH-054"
+    nextSlice: "EH-060"
   },
   {
     id: "migration-import",
@@ -462,7 +463,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "packages/escape-hatch/tests/escape-hatch-migrate.test.ts"
     ],
     risk: "high",
-    nextSlice: "EH-054"
+    nextSlice: "EH-060"
   },
   {
     id: "library-truth-parity",
@@ -485,7 +486,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "packages/escape-hatch/tests/escape-hatch-library-truth.test.ts"
     ],
     risk: "high",
-    nextSlice: "EH-054"
+    nextSlice: "EH-060"
   },
   {
     id: "backup-restore",
@@ -513,7 +514,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "src/deploy/deploy-adapter.ts"
     ],
     risk: "high",
-    nextSlice: "EH-054"
+    nextSlice: "EH-060"
   },
   {
     id: "creator-patreon-oauth",
@@ -533,7 +534,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "packages/escape-hatch/tests/escape-hatch-patreon-oauth.test.ts"
     ],
     risk: "critical",
-    nextSlice: "EH-054"
+    nextSlice: "EH-060"
   },
   {
     id: "relay-managed-patreon-verification",
@@ -551,7 +552,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "tests/escape-hatch-managed-verify.test.ts"
     ],
     risk: "critical",
-    nextSlice: "EH-054"
+    nextSlice: "EH-060"
   },
   {
     id: "relay-managed-connector-billing",
@@ -569,7 +570,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "packages/escape-hatch/tests/escape-hatch-connector-billing.test.ts"
     ],
     risk: "critical",
-    nextSlice: "EH-054"
+    nextSlice: "EH-060"
   },
   {
     id: "oauth-choice-migration-ux",
@@ -588,13 +589,13 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "packages/escape-hatch/tests/escape-hatch-oauth-choice.test.ts"
     ],
     risk: "high",
-    nextSlice: "EH-054"
+    nextSlice: "EH-060"
   }
 ];
 
 const PROTOTYPE_WARNINGS: string[] = [
   "productionSafe is false — this deliverable is prototype/preview-only.",
-  "EH-053 alternate billing recipes are preview_only — NOWPayments crypto shell + CCBill/Segpay merchant-approval guidance; productionSafe false pending Milestone 3.",
+  "EH-054 tier/billing wizard is preview_only — tier→price map, /tiers catalog CTAs, preflight, and duplicate-billing safeguards; productionSafe false pending Milestone 3.",
   "EH-043 OAuth choice / migration UX is preview_only — preference file is non-secret operator intent; runtime mode remains ESCAPE_HATCH_PATREON_MODE; Milestone 4 residuals (live multi-tenant managed outage proof) remain open.",
   "EH-042 Relay connector billing entitlement is preview_only — in-memory webhook store; kit status is an env mirror, not live Stripe Checkout.",
   "EH-040 creator-owned Patreon OAuth is preview_only — mocked fetch in tests; live campaign link still needs creator credentials and Milestone gate.",
@@ -624,7 +625,7 @@ const PROTOTYPE_WARNINGS: string[] = [
 
 const BLOCKERS: string[] = [
   "Milestone 3 security review + browser personas gate remains open before productionSafe can flip.",
-  "Tier/billing wizard (EH-054) and Milestone 3 security/browser gate remain open; never disguise adult content to unlock Stripe.",
+  "Milestone 6 CMS (EH-060+) and Milestone 3 security/browser gate remain open; never disguise adult content to unlock Stripe.",
   "Verified Vercel/Docker production deploy rehearsals remain open (EH-070/071).",
   "Mature/legal-adult enforcement beyond accounted exclusions remains open.",
   "public_legacy media mode remains available as an explicit residual leakage path — keep productionSafe false while it exists.",
@@ -638,7 +639,7 @@ export function buildEscapeHatchStatus(): EscapeHatchStatus {
     deliverable: "prototype_preview_only",
     productionSafe: false,
     summary:
-      "Escape Hatch through EH-053 delivers identity, entitlements, private media, Patreon paths, Stripe Billing, provider policy router, and lawful alternate recipes (NOWPayments shell + CCBill/Segpay guidance); productionSafe remains false pending Milestone 3 security/browser gate, EH-054 tier wizard, and verified deploy.",
+      "Escape Hatch through EH-054 delivers identity, entitlements, private media, Patreon paths, Stripe/NOWPayments billing, provider policy router, tier→price map, unified /tiers conversion, and duplicate-billing safeguards; productionSafe remains false pending Milestone 3 security/browser gate, CMS slices (EH-060+), and verified deploy.",
     prototypeWarnings: [...PROTOTYPE_WARNINGS],
     capabilities: CAPABILITIES.map((c) => ({
       ...c,
@@ -646,12 +647,12 @@ export function buildEscapeHatchStatus(): EscapeHatchStatus {
     })),
     blockers: [...BLOCKERS],
     nextSlice: {
-      id: "EH-054",
-      title: "Tier and billing wizard",
+      id: "EH-060",
+      title: "Posts/media CMS",
       focus: [
-        "Map tiers to prices with duplicate-billing safeguards",
-        "Sandbox results and unified /tiers catalog preview",
-        "Context-aware Patreon/independent actions per visitor contract"
+        "Native create/edit/schedule/publish",
+        "Sanitized rich body and feature/public-cover controls",
+        "Searchable gallery and R2 uploads with access simulation"
       ]
     }
   };

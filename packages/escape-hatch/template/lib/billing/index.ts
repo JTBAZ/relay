@@ -136,3 +136,36 @@ export {
   type PolicyRouteDecision,
   type ProviderPolicyRow
 } from "./policy";
+
+export {
+  BILLING_TIER_MAP_CONTRACT,
+  BILLING_TIER_MAP_FILENAME,
+  emptyBillingTierMap,
+  getMappedPriceId,
+  getTierMapEntry,
+  loadBillingTierMap,
+  saveBillingTierMap,
+  type BillingTierMapDocument,
+  type BillingTierMapEntry
+} from "./tier-map";
+
+export {
+  assertNoDuplicateBilling,
+  buildConversionSubjectFromSummary,
+  loadPolicyForSite,
+  resolveTierConversionAction,
+  type ConversionAction,
+  type ConversionActionKind,
+  type ConversionSubject
+} from "./conversion";
+
+export {
+  buildTierCatalogCards,
+  type TierCatalogCard
+} from "./catalog";
+
+export {
+  runBillingTierPreflight,
+  type BillingPreflightCheck,
+  type BillingPreflightReport
+} from "./preflight";

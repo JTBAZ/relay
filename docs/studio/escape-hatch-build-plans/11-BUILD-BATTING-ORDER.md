@@ -160,7 +160,7 @@ Execute one documented slice at a time. The program docs define scope and depend
 ### EH-054 Tier and billing wizard
 
 - **Builder:** Cursor Grok 4.5 High
-- Mapping, preflight, duplicate-billing safeguards, sandbox results, unified `/tiers` catalog preview, and context-aware Patreon/independent actions per the visitor frontend contract.
+- **Status:** Implemented (preview_only; `productionSafe: false`). Tier→price map (`data/billing-tier-map.json`), admin wizard on `/admin/tiers`, preflight API, unified visitor `/tiers` with context-aware CTAs, duplicate-billing Checkout guard, PatronChrome Tiers link. Evidence: `docs/qa/ESCAPE_HATCH_EH_054_EVIDENCE.md`. Next: **EH-060**.
 
 **Gate:** every advertised adapter passes sandbox parity; ineligible creators are never offered Stripe.
 

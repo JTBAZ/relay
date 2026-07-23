@@ -33,7 +33,7 @@ export function AccountShell({ summary, displayName, communityCta }: Props) {
           Membership and sign-in for this site. Access decisions are server-side —
           the browser never unlocks premium media on its own.
         </p>
-        <p className="meta muted">productionSafe: false · EH-040 Patreon OAuth</p>
+        <p className="meta muted">productionSafe: false · EH-054 tiers / billing</p>
       </header>
 
       <section className="eh-account-panel" aria-labelledby="eh-account-session">
@@ -201,7 +201,19 @@ export function AccountShell({ summary, displayName, communityCta }: Props) {
       <section className="eh-account-panel" aria-labelledby="eh-account-support">
         <h2 id="eh-account-support">Upgrade / support</h2>
         <p className="eh-account-note">{summary.billingNote}</p>
+        {summary.entitlement.source === "billing" && summary.entitlement.ok ? (
+          <p className="eh-account-note" role="status">
+            Independent subscription is active. Use Manage billing for portal
+            self-service when Stripe is configured; NOWPayments has no Stripe-style
+            portal.
+          </p>
+        ) : null}
         <div className="eh-account-actions">
+          <Link className="admin-link-btn" href="/tiers">
+            {summary.entitlement.source === "billing" && summary.entitlement.ok
+              ? "Manage billing / tiers"
+              : "Browse tiers"}
+          </Link>
           {communityCta ? (
             <a
               className="admin-link-btn"

@@ -99,14 +99,16 @@ export async function loadAccountSummary(
   const billing = createSiteAdapters().billing;
   const billingReady = billing.getReadiness();
   const billingConfigured =
-    billing.implementation === "stripe" && billingReady.ok;
+    (billing.implementation === "stripe" ||
+      billing.implementation === "nowpayments") &&
+    (billingReady.ok || billing.isSandboxMode());
   const billingNote = billingConfigured
     ? billing.isSandboxMode()
-      ? "Independent Stripe billing is configured in test/sandbox mode (EH-051). Membership updates come from verified webhooks — not from the browser alone."
-      : "Independent Stripe billing is configured (EH-051). Membership updates come from verified webhooks — not from the browser alone."
-    : billing.implementation === "stripe"
-      ? "Stripe billing adapter selected but credentials are incomplete — Checkout/Portal remain closed until STRIPE_SECRET_KEY and STRIPE_WEBHOOK_SECRET are set."
-      : "Independent billing checkout is not configured (stub). Set ESCAPE_HATCH_BILLING_PROVIDER=stripe with creator Stripe credentials (EH-051), or use Patreon sync / manual grants.";
+      ? `Independent ${billing.implementation} billing is configured in test/sandbox mode (EH-051/053). Membership updates come from verified webhooks — not from the browser alone.`
+      : `Independent ${billing.implementation} billing is configured. Membership updates come from verified webhooks — not from the browser alone.`
+    : billing.implementation === "stripe" || billing.implementation === "nowpayments"
+      ? `${billing.implementation} adapter selected but credentials/client incomplete — Checkout remains closed until secrets (and live client for NOWPayments) are ready.`
+      : "Independent billing checkout is not configured (stub). Set ESCAPE_HATCH_BILLING_PROVIDER=stripe or nowpayments, or use Patreon / manual grants.";
 
   const withPatreon = (
     base: Omit<AccountSummaryView, "patreon">

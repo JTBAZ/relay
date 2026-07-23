@@ -1,10 +1,14 @@
 /**
- * Checkout / portal helpers for `/tiers`, paywalls, and `/account` (EH-051).
+ * Checkout / portal helpers for `/tiers`, paywalls, and `/account` (EH-051 / EH-054).
  * Server-only — never treat client claims as entitlement truth.
- * EH-054 maps tiers to prices and adds duplicate-billing UX; these hooks are primitives.
  */
 
 import type { BillingProvider } from "../adapters/types";
+import type { CloneTierRule } from "../contracts";
+import {
+  assertNoDuplicateBilling,
+  type ConversionSubject
+} from "./conversion";
 import { assertIndependentCheckoutAllowed } from "./policy";
 import type {
   BillingCheckoutSession,
@@ -22,13 +26,22 @@ export type StartCheckoutArgs = {
   customerId?: string | null;
   tierIds?: readonly string[];
   mode?: "hosted" | "embedded";
-  /** Kit root for attestation file (tests). */
+  /** Kit root for attestation / map files (tests). */
   kitDir?: string;
   /**
    * When true (default), EH-052/053 provider policy must allow this provider.
    * Tests may set false only when exercising adapter isolation.
    */
   enforceProviderPolicy?: boolean;
+  /**
+   * EH-054 duplicate-billing guard. When tier + subject provided, block
+   * Checkout if equivalent access already exists.
+   */
+  duplicateGuard?: {
+    tier: CloneTierRule;
+    catalog: readonly CloneTierRule[];
+    subject: ConversionSubject;
+  };
 };
 
 export type StartPortalArgs = {
@@ -40,7 +53,7 @@ export type StartPortalArgs = {
 /**
  * Start independent Checkout for a mapped price.
  * EH-052/053 blocks Checkout unless attestation offers this provider's recipe.
- * EH-054 maps tiers and adds duplicate-billing UX.
+ * EH-054 adds duplicate-billing safeguards when guard context is supplied.
  */
 export async function startIndependentCheckout(
   args: StartCheckoutArgs
@@ -61,6 +74,13 @@ export async function startIndependentCheckout(
     });
     if (!policy.ok) {
       return { ok: false, reason: policy.reason };
+    }
+  }
+
+  if (args.duplicateGuard) {
+    const dup = assertNoDuplicateBilling(args.duplicateGuard);
+    if (!dup.ok) {
+      return { ok: false, reason: dup.reason };
     }
   }
 

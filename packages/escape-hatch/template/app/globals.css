@@ -2558,3 +2558,38 @@ code {
   }
 }
 
+
+/* EH-054 unified /tiers catalog */
+.eh-tiers {
+  max-width: 52rem;
+  margin: 0 auto;
+  padding: 1.5rem 1rem 3rem;
+}
+.eh-tiers-header {
+  margin-bottom: 1.5rem;
+}
+.eh-tiers-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 1rem;
+}
+.eh-tiers-card {
+  border: 1px solid color-mix(in srgb, currentColor 18%, transparent);
+  border-radius: 0.5rem;
+  padding: 1rem 1.1rem;
+}
+.eh-tiers-card h2 {
+  margin: 0 0 0.35rem;
+  font-size: 1.25rem;
+}
+.eh-tiers-price {
+  font-weight: 600;
+  margin: 0 0 0.5rem;
+}
+.admin-field-row {
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: repeat(auto-fit, minmax(8rem, 1fr));
+}

@@ -3,7 +3,7 @@
   "contract_version": "escape-hatch.manifest/1.0.0",
   "chassis_version": "0.8.0",
   "schema_version": "eh-db/0005_patreon_oauth",
-  "slice": "EH-053",
+  "slice": "EH-054",
   "productionSafe": false,
   "generated_at": null,
   "creator_id": null,
