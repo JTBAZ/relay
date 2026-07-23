@@ -33,13 +33,13 @@ const SITE = "site_eh_050";
 const USER = "user_eh_050";
 
 describe("EH-050 status", () => {
-  it("advances slice to EH-072 with next EH-073 and productionSafe false", () => {
+  it("advances slice to EH-073 with next EH-074 and productionSafe false", () => {
     const status = buildEscapeHatchStatus();
-    expect(ESCAPE_HATCH_SLICE).toBe("EH-072");
-    expect(status.slice).toBe("EH-072");
+    expect(ESCAPE_HATCH_SLICE).toBe("EH-073");
+    expect(status.slice).toBe("EH-073");
     expect(status.productionSafe).toBe(false);
-    expect(status.nextSlice.id).toBe("EH-073");
-    expect(status.nextSlice.title).toMatch(/backup|restore/i);
+    expect(status.nextSlice.id).toBe("EH-074");
+    expect(status.nextSlice.title).toMatch(/deploy|wizard/i);
     expect(
       status.blockers.some((b) => /EH-073|Milestone 3|Stripe/i.test(b))
     ).toBe(true);
@@ -51,7 +51,7 @@ describe("EH-050 status", () => {
     expect(cap?.state).toBe("preview_only");
     expect(cap?.evidence).toMatch(/EH-051|BillingProvider|Checkout|webhook/i);
     expect(cap?.evidence).toMatch(/EH-053|NOWPayments|Stripe/);
-    expect(cap?.nextSlice).toBe("EH-073");
+    expect(cap?.nextSlice).toBe("EH-074");
     expect(cap?.sourcePaths).toEqual(
       expect.arrayContaining([
         "packages/escape-hatch/template/lib/billing/",
@@ -459,7 +459,7 @@ describe("EH-050 docs + env honesty", () => {
     const manifest = JSON.parse(
       readFileSync(join(TEMPLATE, "escape-hatch.manifest.json"), "utf8")
     );
-    expect(manifest.slice).toBe("EH-072");
+    expect(manifest.slice).toBe("EH-073");
     expect(manifest.productionSafe).toBe(false);
     expect(manifest.adapters.billing.state).toBe("preview_only");
   });

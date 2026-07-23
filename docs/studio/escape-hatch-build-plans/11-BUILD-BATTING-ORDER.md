@@ -208,12 +208,12 @@ Execute one documented slice at a time. The program docs define scope and depend
 ### EH-072 Transactional email
 
 - **Builder:** Cursor Grok 4.5 High
-- **Status:** Implemented (preview_only; `productionSafe: false`). Provider-neutral transport, memory outbox fixture, Resend golden-path recipe (env names), SPF/DKIM/DMARC checklist. Evidence: `docs/qa/ESCAPE_HATCH_EH_072_EVIDENCE.md`. Next: **EH-073**.
+- **Status:** Implemented (preview_only; `productionSafe: false`). Provider-neutral transport, memory outbox fixture, Resend golden-path recipe (env names), SPF/DKIM/DMARC checklist. Evidence: `docs/qa/ESCAPE_HATCH_EH_072_EVIDENCE.md`. Next was **EH-073** (done).
 
 ### EH-073 Backup/restore/update manifest
 
 - **Builder:** Cursor Grok 4.5 High
-- Scheduled backups, isolated restore, version/compatibility/diagnostics.
+- **Status:** Implemented (preview_only; `productionSafe: false`). Kit-local scheduled backups, isolated restore rehearsal, version/compatibility diagnostics, Health + `/api/admin/backup`. Evidence: `docs/qa/ESCAPE_HATCH_EH_073_EVIDENCE.md`. Next: **EH-074**.
 
 ### EH-074 Deployment wizard
 

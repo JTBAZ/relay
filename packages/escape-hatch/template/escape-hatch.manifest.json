@@ -3,7 +3,7 @@
   "contract_version": "escape-hatch.manifest/1.0.0",
   "chassis_version": "0.8.0",
   "schema_version": "eh-db/0005_patreon_oauth",
-  "slice": "EH-072",
+  "slice": "EH-073",
   "productionSafe": false,
   "generated_at": null,
   "creator_id": null,
@@ -29,7 +29,8 @@
     "billing": { "id": "stripe_eligible_business_eh051", "version": "0.1.0", "state": "preview_only" },
     "patreon": { "id": "creator_oauth_or_relay_managed", "version": "0.1.0", "state": "preview_only" },
     "email": { "id": "resend_golden_path_fixture", "version": "0.1.0", "state": "preview_only" },
-    "deployment": { "id": "vercel_and_docker_path_b_fixture", "version": "0.2.0", "state": "preview_only" }
+    "deployment": { "id": "vercel_and_docker_path_b_fixture", "version": "0.2.0", "state": "preview_only" },
+    "backup": { "id": "kit_local_fixture_diagnostics", "version": "0.1.0", "state": "preview_only" }
   },
   "deploy_targets": [
     {

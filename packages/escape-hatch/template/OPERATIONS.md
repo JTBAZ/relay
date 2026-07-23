@@ -208,7 +208,7 @@ Deferrals: Supabase staff session revoke, lawful PII export, live Stripe portal 
 | `/admin/connections` | Adapter cards: ownership, env names, what breaks, next action |
 | `/admin/health` | Actionable rollup (adapters + blockers); connected ≠ healthy |
 
-Deferrals: domain/TLS probes, backup/restore status, live webhook freshness, theme draft version history.
+Deferrals: domain/TLS probes, live webhook freshness, theme draft version history.
 
 ## Optional Patreon sync (EH-063)
 
@@ -262,7 +262,7 @@ Deferrals: live Vercel CLI/API, real DNS/TLS probes, Docker Path B (**EH-071**),
 
 MojoHost is a **policy candidate** only — not wizard-supported until gates in `13-PROVIDER-POLICY-EVIDENCE.md` pass.
 
-Deferrals: required live Docker in CI, live ACME/DNS, MojoHost as supported host, email (**EH-072**), backup (**EH-073**), wizard (**EH-074**).
+Deferrals: required live Docker in CI, live ACME/DNS, MojoHost as supported host, deploy wizard (**EH-074**).
 
 ## Transactional email (EH-072)
 
@@ -277,7 +277,22 @@ Required message types: account verification, password/admin recovery, security 
 
 Golden path recipe: **Resend HTTP API** (names only). Creator owns the ESP account and sender domain. Checklist is operator guidance — no live DNS probes.
 
-Deferrals: live Resend/SMTP in CI, adult ToS selection, patrons resend UX, backup (**EH-073**), deploy wizard (**EH-074**).
+Deferrals: live Resend/SMTP in CI, adult ToS selection, patrons resend UX, deploy wizard (**EH-074**).
+
+## Backup / restore / diagnostics (EH-073)
+
+| Surface | Role |
+|---------|------|
+| `lib/backup/` | Schedule state, redacted snapshots, isolated restore, compatibility, diagnostics |
+| `GET/POST /api/admin/backup` | Readiness + run_backup / restore_rehearsal + `?diagnostics=1` |
+| `data/backup-state.json` | Daily cadence, RPO 24h / RTO 30m documented, previous_stable pointer |
+| `data/backups/`, `data/restore-rehearsal/` | Fixture artifacts (never overwrite live kit roots on restore) |
+| `scripts/{backup,restore,update}.md` | Operator stubs (kit-local only) |
+| Health | Backup freshness, restore rehearsal, compatibility, diagnostic download |
+
+Workflow (fixture): run backup → verify freshness within RPO → isolated restore rehearsal → download redacted diagnostics. Not live Postgres/R2.
+
+Deferrals: live cloud backup providers, wizard “backup before complete” gate (**EH-074**), full production restore signoff (**EH-082**), `productionSafe: true`.
 
 ## Identity provider
 

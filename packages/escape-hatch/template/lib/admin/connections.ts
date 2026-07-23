@@ -13,6 +13,7 @@ import {
   assessEmailReadiness,
   type EmailReadiness
 } from "../email/readiness";
+import type { BackupReadiness } from "../backup/readiness";
 import type { AdapterHealthRow } from "./types";
 
 export type ConnectionCard = {
@@ -151,6 +152,7 @@ export function buildHealthItems(args: {
   deployReadiness?: DeployReadiness | null;
   pathBRecipe?: PathBRecipeReport | null;
   emailReadiness?: EmailReadiness | null;
+  backupReadiness?: BackupReadiness | null;
 }): HealthItem[] {
   const items: HealthItem[] = [
     {
@@ -240,6 +242,51 @@ export function buildHealthItems(args: {
       next_action: e.checklist.ok
         ? "Checklist attested — still no live DNS probe; re-verify after domain changes."
         : "Follow SPF/DKIM/DMARC guidance at your DNS host; set EMAIL_FROM and public site URL."
+    });
+  }
+
+  if (args.backupReadiness) {
+    const b = args.backupReadiness;
+    items.push({
+      id: "backup_freshness",
+      title: "Backup freshness (EH-073)",
+      ok: b.schedule_ok,
+      detail: b.detail,
+      next_action: b.schedule_ok
+        ? `Within RPO ${b.rpo_hours}h (fixture) — still not live Postgres/R2; productionSafe false.`
+        : "POST /api/admin/backup with action=run_backup (kit-local redacted snapshot)."
+    });
+    items.push({
+      id: "restore_rehearsal",
+      title: "Isolated restore rehearsal",
+      ok: b.restore_ok,
+      detail: `Status: ${b.restore_status}. RTO documented ${b.rto_minutes}m (kit-local).`,
+      next_action: b.restore_ok
+        ? "Last rehearsal passed into data/restore-rehearsal/ — full production restore deferred."
+        : "POST /api/admin/backup action=restore_rehearsal after a successful fixture backup."
+    });
+    items.push({
+      id: "update_compatibility",
+      title: "Update / compatibility",
+      ok:
+        b.compatibility.verdict === "compatible" ||
+        b.compatibility.verdict === "compatible_with_notes",
+      detail: b.compatibility.detail,
+      next_action:
+        b.compatibility.verdict === "unknown"
+          ? "Run a fixture backup to capture previous_stable, then re-check compatibility."
+          : "Fixture guidance only — not a live migrate; review schema notes before updating."
+    });
+    items.push({
+      id: "diagnostic_bundle",
+      title: "Audit / diagnostic download",
+      ok: b.diagnostics_available,
+      detail: b.diagnostics_available
+        ? "GET /api/admin/backup?diagnostics=1 — versions, statuses, error codes; secrets stripped."
+        : "Diagnostics unavailable until escape-hatch.manifest.json is readable.",
+      next_action: b.diagnostics_available
+        ? "Download diagnostics for support; never paste secrets into tickets."
+        : "Rebuild kit so the manifest is present."
     });
   }
 

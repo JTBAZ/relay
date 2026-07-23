@@ -5,6 +5,7 @@ import { AdminShell } from "@/components/admin/AdminShell";
 import { buildHealthItems, loadDeployReadinessForAdmin } from "@/lib/admin/connections";
 import { loadAdminOverview } from "@/lib/admin/load-admin";
 import { redirectIfAdminSignInRequired } from "@/lib/admin/require-admin-page";
+import { assessBackupReadiness } from "@/lib/backup/readiness";
 import { assessPathBRecipe } from "@/lib/deploy/path-b-recipe";
 import { assessEmailReadiness } from "@/lib/email/readiness";
 import { loadEnv } from "@/lib/env";
@@ -31,7 +32,8 @@ export default async function AdminHealthPage() {
       "public/media paths are never treated as private-read verification; premium bytes use /api/media after entitlement checks.",
     deployReadiness,
     pathBRecipe: assessPathBRecipe(),
-    emailReadiness: assessEmailReadiness({ env })
+    emailReadiness: assessEmailReadiness({ env }),
+    backupReadiness: assessBackupReadiness({ siteId: model.site_id })
   });
 
   return (
@@ -39,7 +41,7 @@ export default async function AdminHealthPage() {
       <ConsoleNav />
       <AdminShell
         title="Site health"
-        lede="Actionable next steps for adapters, EH-070 deploy checklist, and known blockers. Live DNS/TLS/backup probes remain deferred."
+        lede="Actionable next steps for adapters, deploy checklist, email, and EH-073 backup/restore. Live DNS/TLS and cloud backup providers remain deferred."
         identity={model.identity}
       >
         {model.read_allowed && model.deny_reason === null ? (

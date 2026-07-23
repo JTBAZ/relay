@@ -88,13 +88,13 @@ function testEnv(partial: Partial<SiteEnv> = {}): SiteEnv {
 }
 
 describe("EH-051 status", () => {
-  it("advances slice to EH-072 with next EH-073 and productionSafe false", () => {
+  it("advances slice to EH-073 with next EH-074 and productionSafe false", () => {
     const status = buildEscapeHatchStatus();
-    expect(ESCAPE_HATCH_SLICE).toBe("EH-072");
-    expect(status.slice).toBe("EH-072");
+    expect(ESCAPE_HATCH_SLICE).toBe("EH-073");
+    expect(status.slice).toBe("EH-073");
     expect(status.productionSafe).toBe(false);
-    expect(status.nextSlice.id).toBe("EH-073");
-    expect(status.nextSlice.title).toMatch(/backup|restore/i);
+    expect(status.nextSlice.id).toBe("EH-074");
+    expect(status.nextSlice.title).toMatch(/deploy|wizard/i);
     expect(
       status.blockers.some((b) => /EH-073|Milestone 3|Stripe/i.test(b))
     ).toBe(true);
@@ -102,7 +102,7 @@ describe("EH-051 status", () => {
     const cap = status.capabilities.find((c) => c.id === "billing-adapters");
     expect(cap?.state).toBe("preview_only");
     expect(cap?.evidence).toMatch(/EH-051|Checkout|Portal|webhook/i);
-    expect(cap?.nextSlice).toBe("EH-073");
+    expect(cap?.nextSlice).toBe("EH-074");
     expect(cap?.sourcePaths).toEqual(
       expect.arrayContaining([
         "packages/escape-hatch/template/lib/billing/",
@@ -418,7 +418,7 @@ describe("EH-051 docs + routes", () => {
     const manifest = JSON.parse(
       readFileSync(join(TEMPLATE, "escape-hatch.manifest.json"), "utf8")
     ) as { slice: string; feature_flags: { stripe_billing: boolean } };
-    expect(manifest.slice).toBe("EH-072");
+    expect(manifest.slice).toBe("EH-073");
     expect(manifest.feature_flags.stripe_billing).toBe(true);
 
     const envEx = readFileSync(join(TEMPLATE, ".env.example"), "utf8");
