@@ -41,12 +41,12 @@ const CATALOG = [
 ];
 
 describe("EH-054 status", () => {
-  it("advances slice to EH-063 with next EH-064 and productionSafe false", () => {
+  it("advances slice to EH-064 with next EH-070 and productionSafe false", () => {
     const status = buildEscapeHatchStatus();
-    expect(ESCAPE_HATCH_SLICE).toBe("EH-063");
-    expect(status.slice).toBe("EH-063");
+    expect(ESCAPE_HATCH_SLICE).toBe("EH-064");
+    expect(status.slice).toBe("EH-064");
     expect(status.productionSafe).toBe(false);
-    expect(status.nextSlice.id).toBe("EH-064");
+    expect(status.nextSlice.id).toBe("EH-070");
   });
 });
 

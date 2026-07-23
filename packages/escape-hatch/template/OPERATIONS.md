@@ -221,6 +221,21 @@ Deferrals: domain/TLS probes, backup/restore status, live webhook freshness, the
 
 Deferrals: live Patreon posts network fetch, accept-upstream resolution, cron/webhooks, media binary pull.
 
+## Optional Relay Crosspost (EH-064)
+
+| Surface | Role |
+|---------|------|
+| `/admin/crosspost` | Mint / list (prefix) / revoke scoped Bearer tokens; audit trail |
+| `GET/POST/DELETE /api/admin/crosspost/tokens` | Staff-gated token ops (secret shown once on mint) |
+| `POST /api/relay/crosspost/posts` | Inbound draft/publish — Bearer scopes only; never admin |
+| `data/relay-crosspost-tokens.json` | Hashed secrets + scopes / expiry / revoke |
+| `data/relay-crosspost-audit.json` | Audit + Idempotency-Key store (no secrets) |
+| Sync-state origin | Ingest marks `origin: crossposted` + stable `upstream_id` |
+
+Scopes: `crosspost:draft`, `crosspost:publish`. Optional pepper: `ESCAPE_HATCH_CROSSPOST_TOKEN_PEPPER`. Revoking tokens does not affect native CMS publishing.
+
+Deferrals: Relay Studio client, live network E2E, remote media upload, SQL token store, schedule/rich HTML.
+
 ## Identity provider
 
 `ESCAPE_HATCH_IDENTITY_PROVIDER`:

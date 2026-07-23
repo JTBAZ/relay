@@ -117,6 +117,8 @@ export type SiteServerEnv = {
   ESCAPE_HATCH_RELAY_CONNECTOR_ENTITLEMENT_STATUS: string | undefined;
   /** EH-042 — ISO last service / stale boundary date (no secrets). */
   ESCAPE_HATCH_RELAY_CONNECTOR_LAST_SERVICE_DATE: string | undefined;
+  /** Optional pepper for hashing Crosspost Bearer secrets (EH-064). */
+  ESCAPE_HATCH_CROSSPOST_TOKEN_PEPPER: string | undefined;
 };
 
 export type SiteEnv = SitePublicEnv & SiteServerEnv;
@@ -168,6 +170,9 @@ export const SITE_ENV_NAMES = {
     "ESCAPE_HATCH_RELAY_CONNECTOR_ENTITLEMENT_STATUS",
     "ESCAPE_HATCH_RELAY_CONNECTOR_LAST_SERVICE_DATE"
   ] as const,
+  optionalCrosspost: [
+    "ESCAPE_HATCH_CROSSPOST_TOKEN_PEPPER"
+  ] as const,
   optionalFutureAdapters: [
     "ESCAPE_HATCH_IDENTITY_PROVIDER",
     "DATABASE_URL",
@@ -209,7 +214,8 @@ export const SITE_ENV_NAMES = {
     "ESCAPE_HATCH_RELAY_VERIFY_ENABLED",
     "ESCAPE_HATCH_RELAY_CONNECTOR_BILLING_ENABLED",
     "ESCAPE_HATCH_RELAY_CONNECTOR_ENTITLEMENT_STATUS",
-    "ESCAPE_HATCH_RELAY_CONNECTOR_LAST_SERVICE_DATE"
+    "ESCAPE_HATCH_RELAY_CONNECTOR_LAST_SERVICE_DATE",
+    "ESCAPE_HATCH_CROSSPOST_TOKEN_PEPPER"
   ] as const
 } as const;
 
@@ -335,6 +341,9 @@ export function loadEnv(): SiteEnv {
     ),
     ESCAPE_HATCH_RELAY_CONNECTOR_LAST_SERVICE_DATE: readOptional(
       "ESCAPE_HATCH_RELAY_CONNECTOR_LAST_SERVICE_DATE"
+    ),
+    ESCAPE_HATCH_CROSSPOST_TOKEN_PEPPER: readOptional(
+      "ESCAPE_HATCH_CROSSPOST_TOKEN_PEPPER"
     )
   };
 }

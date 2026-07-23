@@ -3,6 +3,7 @@
  * Honest next-safe-action copy — never claims productionSafe.
  */
 
+import { activeCrosspostTokenCount } from "../relay-crosspost/tokens";
 import type { AdapterHealthRow } from "./types";
 
 export type ConnectionCard = {
@@ -83,9 +84,10 @@ const ENV_HINTS: Record<string, string[]> = {
 };
 
 export function buildConnectionCards(
-  adapters: readonly AdapterHealthRow[]
+  adapters: readonly AdapterHealthRow[],
+  opts?: { siteId?: string; kitDir?: string }
 ): ConnectionCard[] {
-  return adapters.map((row) => {
+  const cards = adapters.map((row) => {
     const id = row.id;
     return {
       id,
@@ -104,6 +106,32 @@ export function buildConnectionCards(
       deep_link: DEEP_LINKS[id] ?? null
     };
   });
+
+  const siteId = opts?.siteId;
+  if (siteId) {
+    const active = activeCrosspostTokenCount(siteId, opts?.kitDir);
+    cards.push({
+      id: "crosspost",
+      title: "Relay Crosspost",
+      implementation: "optional_scoped_bearer",
+      ok: true,
+      detail:
+        active > 0
+          ? `${active} active scoped token(s) — inbound drafts/publish only; never admin.`
+          : "Optional — no active tokens. Mint on /admin/crosspost when Relay Crosspost is desired.",
+      ownership: "Creator-owned site API (revocable)",
+      env_hints: ["ESCAPE_HATCH_CROSSPOST_TOKEN_PEPPER"],
+      what_breaks:
+        "Revoking Crosspost tokens stops inbound Relay posts only — native CMS publishing continues.",
+      next_action:
+        active > 0
+          ? "Rotate/revoke unused tokens on /admin/crosspost; productionSafe remains false."
+          : "Open /admin/crosspost to mint draft/publish scopes if needed — not required for daily ops.",
+      deep_link: "/admin/crosspost"
+    });
+  }
+
+  return cards;
 }
 
 export function buildHealthItems(args: {

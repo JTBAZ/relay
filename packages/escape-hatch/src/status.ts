@@ -1,11 +1,11 @@
 /**
- * Deterministic Escape Hatch capability inventory (through EH-063).
+ * Deterministic Escape Hatch capability inventory (through EH-064).
  * No timestamps, env reads, network, or live data — informational only.
  */
 
 export const ESCAPE_HATCH_STATUS_SCHEMA_VERSION = "escape-hatch-status/1.0.0";
 
-export const ESCAPE_HATCH_SLICE = "EH-063";
+export const ESCAPE_HATCH_SLICE = "EH-064";
 
 export type CapabilityState =
   | "production_safe"
@@ -36,7 +36,7 @@ export type EscapeHatchStatus = {
   capabilities: EscapeHatchCapability[];
   blockers: string[];
   nextSlice: {
-    id: "EH-064";
+    id: "EH-070";
     title: string;
     focus: string[];
   };
@@ -59,7 +59,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "packages/escape-hatch/src/library-truth/kit-io.ts"
     ],
     risk: "high",
-    nextSlice: "EH-064"
+    nextSlice: "EH-070"
   },
   {
     id: "generated-repository",
@@ -84,7 +84,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "packages/escape-hatch/tests/escape-hatch-generated-repo.test.ts"
     ],
     risk: "high",
-    nextSlice: "EH-064"
+    nextSlice: "EH-070"
   },
   {
     id: "premium-patron-theme",
@@ -110,7 +110,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "packages/escape-hatch/tests/escape-hatch-theme.test.ts"
     ],
     risk: "medium",
-    nextSlice: "EH-064"
+    nextSlice: "EH-070"
   },
   {
     id: "soft-persona-gate",
@@ -128,7 +128,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "packages/escape-hatch/template/lib/paywall/copy.ts"
     ],
     risk: "critical",
-    nextSlice: "EH-064"
+    nextSlice: "EH-070"
   },
   {
     id: "public-media-copy",
@@ -143,7 +143,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "packages/escape-hatch/template/lib/media/delivery.ts"
     ],
     risk: "critical",
-    nextSlice: "EH-064"
+    nextSlice: "EH-070"
   },
   {
     id: "client-readable-bundle",
@@ -160,7 +160,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "packages/escape-hatch/src/library-truth/kit-io.ts"
     ],
     risk: "high",
-    nextSlice: "EH-064"
+    nextSlice: "EH-070"
   },
   {
     id: "duplicate-contracts",
@@ -208,7 +208,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "tests/fixtures/patreon/cookie-list-with-media.json"
     ],
     risk: "medium",
-    nextSlice: "EH-064"
+    nextSlice: "EH-070"
   },
   {
     id: "relay-dump-fixtures",
@@ -227,7 +227,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "packages/escape-hatch/tests/escape-hatch-library-truth.test.ts"
     ],
     risk: "medium",
-    nextSlice: "EH-064"
+    nextSlice: "EH-070"
   },
   {
     id: "relay-canonical-reuse",
@@ -250,7 +250,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "src/storage/media-delivery-policy.ts"
     ],
     risk: "informational",
-    nextSlice: "EH-064"
+    nextSlice: "EH-070"
   },
   {
     id: "simplified-access-semantics",
@@ -267,7 +267,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "src/clone/tier-rules.ts"
     ],
     risk: "high",
-    nextSlice: "EH-064"
+    nextSlice: "EH-070"
   },
   {
     id: "generated-site-identity",
@@ -305,7 +305,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "packages/escape-hatch/tests/escape-hatch-entitlements.test.ts"
     ],
     risk: "critical",
-    nextSlice: "EH-064"
+    nextSlice: "EH-070"
   },
   {
     id: "entitlement-evaluator",
@@ -326,7 +326,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "packages/escape-hatch/tests/escape-hatch-entitlements.test.ts"
     ],
     risk: "critical",
-    nextSlice: "EH-064"
+    nextSlice: "EH-070"
   },
   {
     id: "private-media-delivery",
@@ -343,7 +343,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "packages/escape-hatch/tests/escape-hatch-private-media.test.ts"
     ],
     risk: "critical",
-    nextSlice: "EH-064"
+    nextSlice: "EH-070"
   },
   {
     id: "account-paywall-ux",
@@ -368,7 +368,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "packages/escape-hatch/tests/escape-hatch-account-paywall.test.ts"
     ],
     risk: "critical",
-    nextSlice: "EH-064"
+    nextSlice: "EH-070"
   },
   {
     id: "billing-adapters",
@@ -388,7 +388,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "src/payments/provider-adapter.ts"
     ],
     risk: "critical",
-    nextSlice: "EH-064"
+    nextSlice: "EH-070"
   },
   {
     id: "provider-policy",
@@ -404,7 +404,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "packages/escape-hatch/tests/escape-hatch-billing-alternate.test.ts"
     ],
     risk: "critical",
-    nextSlice: "EH-064"
+    nextSlice: "EH-070"
   },
   {
     id: "deploy-adapters",
@@ -428,30 +428,37 @@ const CAPABILITIES: EscapeHatchCapability[] = [
     title: "Native generated-site admin",
     state: "preview_only",
     evidence:
-      "EH-022 admin shell with identity gates (local-operator preview or staff session). EH-060/061/062 CMS surfaces. EH-063 adds optional read-only Patreon transition sync: data/patreon-sync-state.json, injectable merge into site.json, local-edit protection on CMS saves, conflict queue on /admin/patreon, post origin badges. Live Patreon posts network fetch deferred (fixture_posts for preview). Auth/DB adapters may report ok:true only with real non-placeholder env and still label preview. Domain/TLS/backup/webhook probes remain open. productionSafe remains false.",
+      "EH-022 admin shell with identity gates (local-operator preview or staff session). EH-060/061/062 CMS surfaces. EH-063 Patreon transition sync. EH-064 optional Relay Crosspost: hashed tokens in data/relay-crosspost-tokens.json, audit/idempotency, POST /api/relay/crosspost/posts (Bearer scopes only), /admin/crosspost mint/revoke, Connections Crosspost card. Revoke never breaks native CMS. Live Patreon network fetch and Relay Studio client deferred. Auth/DB adapters may report ok:true only with real non-placeholder env and still label preview. Domain/TLS/backup/webhook probes remain open. productionSafe remains false.",
     sourcePaths: [
       "packages/escape-hatch/template/app/admin/page.tsx",
       "packages/escape-hatch/template/app/admin/posts/page.tsx",
       "packages/escape-hatch/template/app/admin/patreon/page.tsx",
       "packages/escape-hatch/template/app/admin/appearance/page.tsx",
       "packages/escape-hatch/template/app/admin/connections/page.tsx",
+      "packages/escape-hatch/template/app/admin/crosspost/page.tsx",
       "packages/escape-hatch/template/app/admin/health/page.tsx",
       "packages/escape-hatch/template/app/api/admin/attention/route.ts",
       "packages/escape-hatch/template/app/api/admin/patreon/sync/route.ts",
+      "packages/escape-hatch/template/app/api/admin/crosspost/tokens/route.ts",
       "packages/escape-hatch/template/app/api/admin/theme/route.ts",
+      "packages/escape-hatch/template/app/api/relay/crosspost/posts/route.ts",
       "packages/escape-hatch/template/components/admin/PatreonSyncPanel.tsx",
+      "packages/escape-hatch/template/components/admin/CrosspostPanel.tsx",
       "packages/escape-hatch/template/lib/patreon/sync.ts",
       "packages/escape-hatch/template/lib/patreon/sync-state.ts",
+      "packages/escape-hatch/template/lib/relay-crosspost/tokens.ts",
+      "packages/escape-hatch/template/lib/relay-crosspost/ingest.ts",
       "packages/escape-hatch/template/lib/cms/posts.ts",
       "packages/escape-hatch/template/lib/cms/theme.ts",
       "packages/escape-hatch/template/lib/admin/connections.ts",
       "packages/escape-hatch/template/lib/admin/load-admin.ts",
       "packages/escape-hatch/tests/escape-hatch-admin.test.ts",
       "packages/escape-hatch/tests/escape-hatch-cms-appearance-health.test.ts",
-      "packages/escape-hatch/tests/escape-hatch-patreon-sync.test.ts"
+      "packages/escape-hatch/tests/escape-hatch-patreon-sync.test.ts",
+      "packages/escape-hatch/tests/escape-hatch-relay-crosspost.test.ts"
     ],
     risk: "high",
-    nextSlice: "EH-064"
+    nextSlice: "EH-070"
   },
   {
     id: "migration-import",
@@ -470,7 +477,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "packages/escape-hatch/tests/escape-hatch-migrate.test.ts"
     ],
     risk: "high",
-    nextSlice: "EH-064"
+    nextSlice: "EH-070"
   },
   {
     id: "library-truth-parity",
@@ -493,7 +500,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "packages/escape-hatch/tests/escape-hatch-library-truth.test.ts"
     ],
     risk: "high",
-    nextSlice: "EH-064"
+    nextSlice: "EH-070"
   },
   {
     id: "backup-restore",
@@ -521,7 +528,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "src/deploy/deploy-adapter.ts"
     ],
     risk: "high",
-    nextSlice: "EH-064"
+    nextSlice: "EH-070"
   },
   {
     id: "creator-patreon-oauth",
@@ -541,7 +548,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "packages/escape-hatch/tests/escape-hatch-patreon-oauth.test.ts"
     ],
     risk: "critical",
-    nextSlice: "EH-064"
+    nextSlice: "EH-070"
   },
   {
     id: "relay-managed-patreon-verification",
@@ -559,7 +566,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "tests/escape-hatch-managed-verify.test.ts"
     ],
     risk: "critical",
-    nextSlice: "EH-064"
+    nextSlice: "EH-070"
   },
   {
     id: "relay-managed-connector-billing",
@@ -577,7 +584,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "packages/escape-hatch/tests/escape-hatch-connector-billing.test.ts"
     ],
     risk: "critical",
-    nextSlice: "EH-064"
+    nextSlice: "EH-070"
   },
   {
     id: "oauth-choice-migration-ux",
@@ -596,13 +603,13 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "packages/escape-hatch/tests/escape-hatch-oauth-choice.test.ts"
     ],
     risk: "high",
-    nextSlice: "EH-064"
+    nextSlice: "EH-070"
   }
 ];
 
 const PROTOTYPE_WARNINGS: string[] = [
   "productionSafe is false — this deliverable is prototype/preview-only.",
-  "EH-063 optional Patreon sync is preview_only — fixture/injectable read-only merge into site.json with conflict queue; live network posts fetch and accept-upstream remain open; productionSafe false pending Milestone 3.",
+  "EH-064 optional Relay Crosspost is preview_only — revocable scoped Bearer tokens, inbound draft/publish with audit/idempotency, origin=crossposted; Relay Studio client and live network E2E deferred; productionSafe false pending Milestone 3.",
   "EH-043 OAuth choice / migration UX is preview_only — preference file is non-secret operator intent; runtime mode remains ESCAPE_HATCH_PATREON_MODE; Milestone 4 residuals (live multi-tenant managed outage proof) remain open.",
   "EH-042 Relay connector billing entitlement is preview_only — in-memory webhook store; kit status is an env mirror, not live Stripe Checkout.",
   "EH-040 creator-owned Patreon OAuth is preview_only — mocked fetch in tests; live campaign link still needs creator credentials and Milestone gate.",
@@ -632,7 +639,7 @@ const PROTOTYPE_WARNINGS: string[] = [
 
 const BLOCKERS: string[] = [
   "Milestone 3 security review + browser personas gate remains open before productionSafe can flip.",
-  "Milestone 6 continues with EH-064 optional Relay Crosspost API; Milestone 3 security/browser gate remains open; never disguise adult content to unlock Stripe.",
+  "Milestone 6 admin gate complete through EH-064; Milestone 7 continues with EH-070 Vercel golden path; Milestone 3 security/browser gate remains open; never disguise adult content to unlock Stripe.",
   "Verified Vercel/Docker production deploy rehearsals remain open (EH-070/071).",
   "Mature/legal-adult enforcement beyond accounted exclusions remains open.",
   "public_legacy media mode remains available as an explicit residual leakage path — keep productionSafe false while it exists.",
@@ -646,7 +653,7 @@ export function buildEscapeHatchStatus(): EscapeHatchStatus {
     deliverable: "prototype_preview_only",
     productionSafe: false,
     summary:
-      "Escape Hatch through EH-063 delivers CMS ops plus optional read-only Patreon transition sync with conflict queue and local-edit protection; productionSafe remains false pending Milestone 3, EH-064+, and verified deploy.",
+      "Escape Hatch through EH-064 delivers CMS ops, optional Patreon sync, and optional Relay Crosspost scoped ingest; productionSafe remains false pending Milestone 3 and verified deploy (EH-070+).",
     prototypeWarnings: [...PROTOTYPE_WARNINGS],
     capabilities: CAPABILITIES.map((c) => ({
       ...c,
@@ -654,12 +661,12 @@ export function buildEscapeHatchStatus(): EscapeHatchStatus {
     })),
     blockers: [...BLOCKERS],
     nextSlice: {
-      id: "EH-064",
-      title: "Optional Relay Crosspost API",
+      id: "EH-070",
+      title: "Vercel golden path",
       focus: [
-        "Revocable scoped tokens",
-        "Drafts/publish with audit and idempotency",
-        "Creator-owned Crosspost without productionSafe claims"
+        "Preview and production deploys",
+        "Domain and callback wiring",
+        "Rollback without claiming productionSafe prematurely"
       ]
     }
   };

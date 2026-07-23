@@ -110,6 +110,8 @@ export type UpsertPostInput = {
   body_plain?: string | null;
   /** Replace media list when provided. */
   media?: CloneMediaRef[];
+  /** Skip local-edit marker (Relay Crosspost ingest — EH-064). */
+  skip_local_edit_mark?: boolean;
 };
 
 export type UpsertPostResult =
@@ -208,10 +210,12 @@ export function upsertPost(
     generated_at: new Date().toISOString()
   };
   saveSiteBundle(next, kitDir);
-  markPostLocallyEdited(site.site_id, postId, {
-    created,
-    kitDir
-  });
+  if (!input.skip_local_edit_mark) {
+    markPostLocallyEdited(site.site_id, postId, {
+      created,
+      kitDir
+    });
+  }
   return { ok: true, post, created };
 }
 

@@ -27,17 +27,17 @@ import {
 const SITE = "site_eh_053";
 
 describe("EH-053 status", () => {
-  it("advances slice to EH-063 with next EH-064 and productionSafe false", () => {
+  it("advances slice to EH-064 with next EH-070 and productionSafe false", () => {
     const status = buildEscapeHatchStatus();
-    expect(ESCAPE_HATCH_SLICE).toBe("EH-063");
-    expect(status.slice).toBe("EH-063");
+    expect(ESCAPE_HATCH_SLICE).toBe("EH-064");
+    expect(status.slice).toBe("EH-064");
     expect(status.productionSafe).toBe(false);
-    expect(status.nextSlice.id).toBe("EH-064");
-    expect(status.nextSlice.title).toMatch(/crosspost|relay/i);
+    expect(status.nextSlice.id).toBe("EH-070");
+    expect(status.nextSlice.title).toMatch(/vercel|deploy/i);
 
     const billing = status.capabilities.find((c) => c.id === "billing-adapters");
     expect(billing?.evidence).toMatch(/NOWPayments|EH-053/i);
-    expect(billing?.nextSlice).toBe("EH-064");
+    expect(billing?.nextSlice).toBe("EH-070");
   });
 });
 

@@ -33,15 +33,15 @@ const SITE = "site_eh_050";
 const USER = "user_eh_050";
 
 describe("EH-050 status", () => {
-  it("advances slice to EH-063 with next EH-064 and productionSafe false", () => {
+  it("advances slice to EH-064 with next EH-070 and productionSafe false", () => {
     const status = buildEscapeHatchStatus();
-    expect(ESCAPE_HATCH_SLICE).toBe("EH-063");
-    expect(status.slice).toBe("EH-063");
+    expect(ESCAPE_HATCH_SLICE).toBe("EH-064");
+    expect(status.slice).toBe("EH-064");
     expect(status.productionSafe).toBe(false);
-    expect(status.nextSlice.id).toBe("EH-064");
-    expect(status.nextSlice.title).toMatch(/crosspost|relay/i);
+    expect(status.nextSlice.id).toBe("EH-070");
+    expect(status.nextSlice.title).toMatch(/vercel|deploy/i);
     expect(
-      status.blockers.some((b) => /EH-064|Milestone 3|Stripe/i.test(b))
+      status.blockers.some((b) => /EH-070|Milestone 3|Stripe/i.test(b))
     ).toBe(true);
     expect(status.blockers.some((b) => /belongs to EH-050\/051/i.test(b))).toBe(
       false
@@ -51,7 +51,7 @@ describe("EH-050 status", () => {
     expect(cap?.state).toBe("preview_only");
     expect(cap?.evidence).toMatch(/EH-051|BillingProvider|Checkout|webhook/i);
     expect(cap?.evidence).toMatch(/EH-053|NOWPayments|Stripe/);
-    expect(cap?.nextSlice).toBe("EH-064");
+    expect(cap?.nextSlice).toBe("EH-070");
     expect(cap?.sourcePaths).toEqual(
       expect.arrayContaining([
         "packages/escape-hatch/template/lib/billing/",
@@ -459,7 +459,7 @@ describe("EH-050 docs + env honesty", () => {
     const manifest = JSON.parse(
       readFileSync(join(TEMPLATE, "escape-hatch.manifest.json"), "utf8")
     );
-    expect(manifest.slice).toBe("EH-063");
+    expect(manifest.slice).toBe("EH-064");
     expect(manifest.productionSafe).toBe(false);
     expect(manifest.adapters.billing.state).toBe("preview_only");
   });

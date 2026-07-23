@@ -165,6 +165,31 @@ export function markPostLocallyEdited(
   savePatreonSyncState(doc, kitDir);
 }
 
+/** Mark a Relay Crosspost ingest as origin=crossposted (EH-064). */
+export function markPostCrossposted(
+  siteId: string,
+  postId: string,
+  opts: {
+    upstream_id: string;
+    upstream_revision?: string | null;
+    kitDir?: string;
+  }
+): void {
+  const kitDir = opts.kitDir ?? process.cwd();
+  const doc = loadPatreonSyncState(siteId, kitDir);
+  const prior = doc.posts[postId];
+  doc.posts[postId] = {
+    origin: "crossposted",
+    locally_edited: prior?.locally_edited ?? false,
+    upstream_id: opts.upstream_id,
+    upstream_revision:
+      opts.upstream_revision !== undefined
+        ? opts.upstream_revision
+        : (prior?.upstream_revision ?? null)
+  };
+  savePatreonSyncState(doc, kitDir);
+}
+
 export function conflictCount(doc: PatreonSyncStateDocument): number {
   return doc.conflict_queue.length;
 }
