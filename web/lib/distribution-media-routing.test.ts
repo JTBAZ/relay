@@ -91,7 +91,7 @@ describe("distribution-media-routing", () => {
         previewMediaId: "rel_preview",
         planAssistantPlan: {},
       })
-    ).toBe("http://127.0.0.1:8787/api/v1/export/media/cr_1/rel_preview/content");
+    ).toBe("/api/v1/export/media/cr_1/rel_preview/content");
   });
 
   it("resolveEffectiveMediaVersion prefers explicit variant fields", () => {

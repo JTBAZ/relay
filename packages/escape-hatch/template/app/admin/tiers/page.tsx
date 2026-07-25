@@ -10,6 +10,7 @@ import {
 } from "@/components/admin/TierBillingWizard";
 import { loadAdminTiers } from "@/lib/admin/load-admin";
 import { redirectIfAdminSignInRequired } from "@/lib/admin/require-admin-page";
+import { readAdminRequestContextFromHeaders } from "@/lib/identity/admin-access";
 import {
   getTierMapEntry,
   loadBillingTierMap,
@@ -20,7 +21,8 @@ import { loadSite } from "@/lib/load-site";
 export const dynamic = "force-dynamic";
 
 export default async function AdminTiersPage() {
-  const model = await loadAdminTiers();
+  const requestContext = await readAdminRequestContextFromHeaders();
+  const model = await loadAdminTiers(requestContext);
   redirectIfAdminSignInRequired(
     model.read_allowed,
     model.deny_reason,

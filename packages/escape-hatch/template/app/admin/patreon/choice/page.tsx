@@ -5,7 +5,10 @@ import { AdminShell } from "@/components/admin/AdminShell";
 import { PatreonOAuthChoice } from "@/components/admin/PatreonOAuthChoice";
 import { redirectIfAdminSignInRequired } from "@/lib/admin/require-admin-page";
 import { loadEnv } from "@/lib/env";
-import { assertAdminReadAccess } from "@/lib/identity/admin-access";
+import {
+  assertAdminReadAccess,
+  readAdminRequestContextFromHeaders
+} from "@/lib/identity/admin-access";
 import { loadSite } from "@/lib/load-site";
 import { buildOAuthChoiceDisclosures } from "@/lib/patreon/oauth-choice";
 import { loadPatreonModePreference } from "@/lib/patreon/mode-preference";
@@ -19,7 +22,8 @@ export const dynamic = "force-dynamic";
  */
 export default async function AdminPatreonChoicePage() {
   const site = loadSite();
-  const read = await assertAdminReadAccess(site.site_id);
+  const requestContext = await readAdminRequestContextFromHeaders();
+  const read = await assertAdminReadAccess(site.site_id, requestContext);
   redirectIfAdminSignInRequired(
     read.allowed,
     read.allowed ? null : read.reason,

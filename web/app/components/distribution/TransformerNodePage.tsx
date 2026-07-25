@@ -23,7 +23,6 @@ import {
   patchDistributionVariant,
   patchPostbotTask,
   proposeCoachAttackPlans,
-  RELAY_API_BASE,
   startDistributionHandoff,
   type CoachProposeResultWire,
   type CreatorCapabilityWire,
@@ -57,12 +56,17 @@ import {
 } from "@/lib/distribution-media-routing";
 import { isPreviewizerEnabled } from "@/lib/previewizer-feature";
 import { buildPreviewizerSession, type PreviewizerResult } from "@/lib/previewizer-session";
+import { relayBrowserMediaUrl } from "@/lib/relay-api-env";
 import { uploadFileToRelayStaging } from "@/lib/relay-native-staging-upload";
 import { CustomTextEditorFields } from "@/app/components/distribution/CustomTextEditorFields";
 import { PreviewMediaPicker } from "@/app/components/distribution/PreviewMediaPicker";
 import { PreviewizerOverlay } from "@/app/components/distribution/PreviewizerOverlay";
 import { PostbotTaskList } from "@/app/components/distribution/PostbotTaskList";
 import { PlatformPostPreview } from "@/app/components/distribution/PlatformPostPreview";
+import {
+  ScheduledPostPreparePanel,
+  buildScheduledPrepareVariants
+} from "@/app/components/distribution/ScheduledPostPreparePanel";
 import { CoachFindingsPanel } from "@/app/components/distribution/CoachFindingsPanel";
 import { CoachReviewModal } from "@/app/components/distribution/CoachReviewModal";
 import {
@@ -141,6 +145,8 @@ type Props = {
    * Does not auto-open Previewizer.
    */
   initialPreviewMediaId?: string | null;
+  /** Seeded Rail variants do not count as routed until explicit preparation. */
+  requireExplicitPrepare?: boolean;
 };
 
 type CoachPhase = "questionnaire" | "gathering" | "findings" | "platformReview";
@@ -1084,6 +1090,7 @@ export function TransformerNodePage({
   error,
   onContinueToHandoff,
   initialPreviewMediaId = null,
+  requireExplicitPrepare = false,
 }: Props) {
   const [postDetail, setPostDetail] = useState<GalleryPostDetail | null>(null);
   const [postLoading, setPostLoading] = useState(true);
@@ -1143,7 +1150,7 @@ export function TransformerNodePage({
   const previewUrl =
     previewMedia?.preview ||
     (galleryThumb
-      ? `${RELAY_API_BASE}${galleryThumb.startsWith("/") ? galleryThumb : `/${galleryThumb}`}`
+      ? relayBrowserMediaUrl(galleryThumb.startsWith("/") ? galleryThumb : `/${galleryThumb}`)
       : "");
 
   useEffect(() => {
@@ -1284,7 +1291,16 @@ export function TransformerNodePage({
     };
   }, [postingAssistantAllowed]);
 
-  const planIsRouted = Boolean(plan && plan.variants.length > 0);
+  const hasExplicitRailPreparation = Boolean(
+    plan &&
+      (plan.assistant_plan?.rail_scheduled_revision === true ||
+        plan.variants.some((variant) => variant.platform_fields?.rail_prepared === true))
+  );
+  const planIsRouted = Boolean(
+    plan &&
+      plan.variants.length > 0 &&
+      (!requireExplicitPrepare || hasExplicitRailPreparation)
+  );
   const hasCoachCheckpoint =
     plan?.assistant_mode === "coach_review" &&
     isCoachProposeResultWire(plan.assistant_plan?.proposal);
@@ -2009,16 +2025,268 @@ export function TransformerNodePage({
 
   return (
     <div className="mx-auto w-full max-w-6xl space-y-6 px-4 py-6 sm:px-5">
-      <div>
-        <h2 className="text-xl font-bold text-[#f9fafb]">Transform &amp; route</h2>
-        <p className="mt-1 text-xs text-[#9ca3af]">
-          Apply templates or PostBot, then route formatted variants to each platform.
-        </p>
-      </div>
+      {!requireExplicitPrepare ? (
+        <div>
+          <h2 className="text-xl font-bold text-[#f9fafb]">Transform &amp; route</h2>
+          <p className="mt-1 text-xs text-[#9ca3af]">
+            Apply templates or PostBot, then route formatted variants to each platform.
+          </p>
+        </div>
+      ) : !planIsRouted ? (
+        <div>
+          <p className="text-[9.5px] font-semibold uppercase tracking-[0.16em] text-[#404a44]">
+            Scheduled post
+          </p>
+          <h2 className="mt-1 text-[1.65rem] font-bold tracking-tight text-[#edf2ef]">
+            Prepare platforms
+          </h2>
+          <p className="mt-1 max-w-[42ch] text-sm leading-relaxed text-[#6aaa7a]">
+            Review source content and prepare it for each platform.
+          </p>
+        </div>
+      ) : null}
 
-      {/* Pre-routing: 3-column layout with source, questionnaire, destinations.
-          Uses min-[960px] (not viewport lg alone) so a narrow host never crushes columns. */}
-      {!planIsRouted && (
+      {/* Scheduled fused prepare (requireExplicitPrepare) */}
+      {!planIsRouted && requireExplicitPrepare ? (
+        <div className="relative">
+          <AnimatePresence>
+            {generating ? (
+              <TransformerLoadingOverlay destinations={selectedDestinations} />
+            ) : null}
+          </AnimatePresence>
+          <ScheduledPostPreparePanel
+            title={postDetail?.title ?? "Relay post"}
+            description={
+              postDetail?.description?.trim() || "No description on the Relay post."
+            }
+            tags={postDetail?.tag_ids ?? []}
+            imageUrl={previewUrl || null}
+            mediaMeta={previewUrl ? ["Image"] : undefined}
+            destinations={selectedDestinations}
+            variants={buildScheduledPrepareVariants({
+              destinations: selectedDestinations,
+              variantsByDest,
+              title: postDetail?.title ?? "Relay post",
+              description: postDetail?.description?.trim() || "",
+              tags: postDetail?.tag_ids ?? []
+            })}
+            coachOn={coachEnabled}
+            onCoachChange={(enabled) => setCoachEnabled(enabled)}
+            coachAllowed={postingAssistantAllowed}
+            coachGoalsSummary={
+              coachEnabled && assistantContext.goals.length > 0
+                ? (() => {
+                    const pathId = coachPathFromGoals(assistantContext.goals);
+                    const path = COACH_PATHS.find((p) => p.id === pathId);
+                    return path
+                      ? `${path.label} - change path…`
+                      : "Change Coach path…";
+                  })()
+                : null
+            }
+            onOpenCoachPath={() => setCoachModalOpen(true)}
+            needsPreview={needsPreview}
+            onNeedsPreviewChange={setNeedsPreviewChoice}
+            needsCustomText={needsCustomText}
+            onNeedsCustomTextChange={(v) => {
+              setNeedsCustomText(v);
+              if (!v) {
+                setCustomTextDestinations([]);
+                setEditingDestination(null);
+              }
+            }}
+            mediaRouting={mediaRouting}
+            onMediaVersionChange={setMediaVersionForDestination}
+            previewMediaId={previewMediaId}
+            onPreviewMediaIdChange={setPreviewMediaId}
+            onOpenPreviewizer={openPreviewizer}
+            previewizerAvailable={previewizerAvailable}
+            previewizerDisabled={previewizerDisabled}
+            showExistingPicker={showExistingPreviewPicker}
+            onToggleExistingPicker={() => setShowExistingPreviewPicker((prev) => !prev)}
+            creatorId={creatorId}
+            postMedia={postDetail?.media}
+            customTextDestinations={customTextDestinations}
+            editingDestination={editingDestination}
+            editDraft={editDraft}
+            onOpenCustomEditor={(dest) => {
+              setNeedsCustomText(true);
+              if (editingDestination && editDraft.body.trim()) {
+                if (plan) {
+                  void saveEdit();
+                } else {
+                  saveQuestionnaireEdit();
+                }
+              }
+              if (!customTextDestinations.includes(dest)) {
+                setCustomTextDestinations((prev) => [...prev, dest]);
+              }
+              const existingDraft = customTextDrafts[dest];
+              const variant = variantsByDest.get(dest);
+              setEditingDestination(dest);
+              setEditDraft({
+                title:
+                  existingDraft?.title ??
+                  variant?.title ??
+                  postDetail?.title ??
+                  "",
+                body:
+                  existingDraft?.body ??
+                  variant?.body_text ??
+                  variant?.post_text ??
+                  postDetail?.description ??
+                  "",
+                tags:
+                  existingDraft?.tags ??
+                  variant?.tags.join(", ") ??
+                  postDetail?.tag_ids?.join(", ") ??
+                  ""
+              });
+            }}
+            onEditDraftChange={(patch) => setEditDraft((d) => ({ ...d, ...patch }))}
+            onSaveCustomText={() =>
+              plan ? void saveEdit() : saveQuestionnaireEdit()
+            }
+            savingCustomText={savingDestination != null}
+            onRoute={() => void handleRouteClick()}
+            routeDisabled={
+              generating ||
+              selectedDestinations.length === 0 ||
+              needsPreview === null ||
+              needsCustomText === null ||
+              previewRoutingNeedsMediaId ||
+              (coachEnabled && assistantContext.goals.length === 0)
+            }
+            routeBusy={generating}
+            routeLabel={
+              generating
+                ? "Routing to platforms…"
+                : hasCoachCheckpoint || coachProposal
+                  ? "Resume Coach review"
+                  : coachEnabled
+                    ? "Route with Coach"
+                    : "Route to platforms"
+            }
+            routeHint={
+              previewRoutingNeedsMediaId
+                ? "Attach a preview image or set platforms to Full."
+                : postPreviewRouteHint === "answer-custom-text"
+                  ? "Preview ready — answer the custom text question to continue."
+                  : postPreviewRouteHint === "ready-to-route"
+                    ? "Preview ready — route to platforms when you are."
+                    : needsPreview === null || needsCustomText === null
+                      ? "Answer both questions to unlock routing."
+                      : null
+            }
+            error={localError ?? error}
+            onApprove={(dest) => void approveVariant(dest)}
+            approvingDestination={approvingDestination}
+            customDrafts={customTextDrafts}
+          />
+          {coachPhase !== "questionnaire" ? (
+            <CoachReviewModal
+              title={
+                coachPhase === "gathering"
+                  ? "Gathering research"
+                  : coachPhase === "findings"
+                    ? "Here's what I found"
+                    : coachPhase === "platformReview" &&
+                        coachDestinations[platformReviewIndex]
+                      ? DESTINATION_LABEL[coachDestinations[platformReviewIndex]!]
+                      : "Relay Coach"
+              }
+              subtitle={
+                coachPhase === "findings" && coachProposal
+                  ? "Grounded signals for this run — then pick copy."
+                  : coachPhase === "platformReview"
+                    ? "Formula drafts for this platform."
+                    : coachPhase === "gathering"
+                      ? "Pulling post, history, and goals…"
+                      : null
+              }
+              size={coachPhase === "platformReview" ? "lg" : "md"}
+              onClose={() => {
+                setCoachPhase("questionnaire");
+                if (plan?.assistant_mode !== "coach_review") {
+                  setCoachProposal(null);
+                  setPlatformReviewIndex(0);
+                }
+              }}
+            >
+              {coachPhase === "gathering" ? (
+                <CoachGatheringPanel message={COACH_GATHER_MESSAGES[gatherMessageIndex]!} />
+              ) : coachPhase === "findings" && coachProposal ? (
+                <div className="flex flex-col gap-3">
+                  <CoachFindingsPanel
+                    pathId={coachProposal.path_id}
+                    chips={coachProposal.findings.chips}
+                    onContinue={() => {
+                      if (coachDestinations.length === 0) {
+                        setLocalError("Enable Coach on at least one destination.");
+                        setCoachPhase("questionnaire");
+                        return;
+                      }
+                      setPlatformReviewIndex(0);
+                      setCoachPhase("platformReview");
+                      void persistCoachProgress({
+                        coach_phase: "platformReview",
+                        platform_review_index: 0
+                      });
+                    }}
+                    onBack={() => {
+                      setCoachPhase("questionnaire");
+                    }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => void runCoachAgain()}
+                    className="self-center text-[11px] underline-offset-2 hover:underline"
+                    style={{ color: "#6b7280" }}
+                  >
+                    Run Coach again
+                  </button>
+                </div>
+              ) : coachPhase === "platformReview" &&
+                coachProposal &&
+                coachDestinations[platformReviewIndex] ? (
+                <CoachPlatformCopyReview
+                  embedded
+                  destination={coachDestinations[platformReviewIndex]!}
+                  stepIndex={platformReviewIndex + 1}
+                  stepTotal={coachDestinations.length}
+                  variants={
+                    coachProposal.by_destination[coachDestinations[platformReviewIndex]!]
+                      ?.variants ?? []
+                  }
+                  isLastPlatform={platformReviewIndex + 1 >= coachDestinations.length}
+                  onCommit={(commit) => void handlePlatformCommit(commit)}
+                  onBack={() => {
+                    if (platformReviewIndex > 0) {
+                      const next = platformReviewIndex - 1;
+                      setPlatformReviewIndex(next);
+                      void persistCoachProgress({
+                        coach_phase: "platformReview",
+                        platform_review_index: next
+                      });
+                      return;
+                    }
+                    setCoachPhase("findings");
+                    void persistCoachProgress({
+                      coach_phase: "findings",
+                      platform_review_index: 0
+                    });
+                  }}
+                />
+              ) : (
+                <CoachGatheringPanel message="Preparing Coach…" />
+              )}
+            </CoachReviewModal>
+          ) : null}
+        </div>
+      ) : null}
+
+      {/* Pre-routing: classic 3-column layout (Autopost composer). */}
+      {!planIsRouted && !requireExplicitPrepare && (
       <div className="relative grid grid-cols-1 items-start gap-4 min-[960px]:grid-cols-[280px_minmax(0,1fr)_minmax(0,320px)]">
         {/* Loading overlay */}
         <AnimatePresence>

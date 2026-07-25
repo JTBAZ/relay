@@ -114,11 +114,12 @@ describe("schedule-reminder-extension-api helpers", () => {
       mediaReady: false,
       openUrl: null,
       relayWebBase: base,
-      draftId: null
+      draftId: null,
+      eventId: "task_1"
     });
-    expect(postEmpty.primary_cta.kind).toBe("relay_autopost");
-    expect(postEmpty.primary_cta.label).toBe("Stage in Autopost");
-    expect(postEmpty.primary_cta.url).toBe(`${base}/studio/autopost`);
+    expect(postEmpty.primary_cta.kind).toBe("relay_studio");
+    expect(postEmpty.primary_cta.label).toBe("Finish media in Studio");
+    expect(postEmpty.primary_cta.url).toBe(`${base}/studio`);
     expect(postEmpty.secondary_cta).toBeNull();
 
     const postEmptyLinked = resolveReminderCtas({
@@ -127,10 +128,11 @@ describe("schedule-reminder-extension-api helpers", () => {
       mediaReady: false,
       openUrl: null,
       relayWebBase: base,
-      draftId: "draft_queued"
+      draftId: "draft_queued",
+      eventId: "task_queued"
     });
-    expect(postEmptyLinked.primary_cta.label).toBe("Continue in Autopost");
-    expect(postEmptyLinked.primary_cta.url).toContain("draft_id=draft_queued");
+    expect(postEmptyLinked.primary_cta.label).toBe("Finish media in Studio");
+    expect(postEmptyLinked.primary_cta.url).toBe(`${base}/studio`);
 
     const postReady = resolveReminderCtas({
       action: "post",
@@ -138,11 +140,24 @@ describe("schedule-reminder-extension-api helpers", () => {
       mediaReady: true,
       openUrl: "https://www.deviantart.com/art/1",
       relayWebBase: base,
-      draftId: "draft_9"
+      draftId: "draft_9",
+      eventId: "task_9"
     });
-    expect(postReady.primary_cta.label).toBe("Open in Autopost");
-    expect(postReady.primary_cta.url).toContain("draft_id=draft_9");
+    expect(postReady.primary_cta.label).toBe("Review and send");
+    expect(postReady.primary_cta.url).toContain("event_id=task_9");
+    expect(postReady.primary_cta.url).toContain("/studio/distribution");
     expect(postReady.secondary_cta?.label).toBe("Open on DeviantArt");
+
+    const postReadyNoEvent = resolveReminderCtas({
+      action: "post",
+      destination: "deviantart",
+      mediaReady: true,
+      openUrl: null,
+      relayWebBase: base,
+      draftId: "draft_legacy"
+    });
+    expect(postReadyNoEvent.primary_cta.label).toBe("Open in Autopost");
+    expect(postReadyNoEvent.primary_cta.url).toContain("draft_id=draft_legacy");
 
     const schedule = resolveReminderCtas({
       action: "schedule",

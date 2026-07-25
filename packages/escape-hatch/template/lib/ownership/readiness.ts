@@ -39,7 +39,7 @@ export function assessOwnershipReadiness(opts: {
   } else {
     parts.push("Launch wizard not marked complete — packet may still be generated anytime.");
   }
-  parts.push("Env names only; productionSafe false; live independence deferred to EH-082.");
+  parts.push("Env names only; productionSafe false; local native QC passed; live provider independence open.");
 
   return {
     ok: packet_generated,

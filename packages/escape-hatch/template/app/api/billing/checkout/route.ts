@@ -150,6 +150,7 @@ export async function POST(request: Request): Promise<NextResponse> {
     identityConfigured,
     siteId: site.site_id,
     authUserId,
+    // Discard client customerId by default — production route never enables client binding.
     clientCustomerId:
       typeof body.customerId === "string" ? body.customerId : null
   });

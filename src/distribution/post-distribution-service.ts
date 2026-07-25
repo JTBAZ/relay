@@ -591,6 +591,197 @@ export async function getPostDistributionPlan(
   return plan ? mapPlan(plan) : null;
 }
 
+const REVISABLE_VARIANT_STATUSES = new Set(["draft"]);
+
+/**
+ * Revise platform variants on an active Rail-linked plan without archiving it
+ * or replacing variant/task IDs. Only draft variants for explicitly selected
+ * destinations are updated; posted/handed_off siblings stay untouched.
+ */
+export async function reviseScheduledPostDistributionPlan(
+  prisma: PrismaClient,
+  creatorId: string,
+  postId: string,
+  input: CreateDistributionPlanInput
+): Promise<DistributionPlanWire> {
+  const destinations = normalizeDistributionDestinations(input.destinations ?? []);
+  if (destinations.length === 0) {
+    throw new PostDistributionValidationError("Select at least one destination.", [
+      { field: "destinations", issue: "required" }
+    ]);
+  }
+
+  const existing = await prisma.postDistributionPlan.findFirst({
+    where: { postId, creatorId, status: "active" },
+    include: {
+      variants: {
+        include: {
+          attempts: { orderBy: { createdAt: "desc" }, take: 1 },
+          postbotTasks: { orderBy: { createdAt: "asc" } }
+        }
+      }
+    }
+  });
+  if (!existing) {
+    throw new PostDistributionNotFoundError("Active distribution plan not found.");
+  }
+
+  const canonical = await loadCanonicalCopy(prisma, creatorId, postId);
+
+  const assistantEnabledSet = new Set<DistributionDestination>();
+  const wantsAssistant = destinations.some((dest) => input.assistant_by_destination?.[dest]);
+  const assistantAllowed = wantsAssistant
+    ? await isPostingAssistantAllowedForCreator(prisma, creatorId)
+    : false;
+  for (const dest of destinations) {
+    if (input.assistant_by_destination?.[dest]) {
+      if (!assistantAllowed) {
+        throw new PostDistributionValidationError("Posting Assistant is not available on your plan.", [
+          { field: "assistant_by_destination", issue: "tier_not_allowed" }
+        ]);
+      }
+      assistantEnabledSet.add(dest);
+    }
+  }
+
+  let formatted = formatVariantsForDestinations(destinations, canonical);
+  let assistantMode = existing.assistantMode || "none";
+  let assistantPlan: Record<string, unknown> =
+    existing.assistantPlan &&
+    typeof existing.assistantPlan === "object" &&
+    !Array.isArray(existing.assistantPlan)
+      ? { ...(existing.assistantPlan as Record<string, unknown>) }
+      : {};
+
+  let assistantContext = (input.assistant_context ?? {}) as PostingAssistantContext;
+  try {
+    const brief = await getCreatorStudioBrief(prisma, creatorId);
+    assistantContext = mergeAssistantContextWithStudioBrief(assistantContext, brief);
+  } catch {
+    // Brief load failure must not block plan revise.
+  }
+
+  if (assistantEnabledSet.size > 0) {
+    const assistant = await applyPostingAssistantToVariants(
+      prisma,
+      creatorId,
+      formatted,
+      assistantContext,
+      assistantEnabledSet
+    );
+    formatted = assistant.variants;
+    assistantMode = assistant.assistantMode;
+    assistantPlan = { ...assistantPlan, ...assistant.assistantPlan };
+  }
+
+  const mediaPrepared = applyMediaRoutingToFormattedVariants(formatted, destinations, input);
+  formatted = mediaPrepared.variants;
+  const previewDestinations = destinationsUsingPreviewRouting(destinations, mediaPrepared.mediaRouting);
+  if (previewDestinations.length > 0) {
+    if (!mediaPrepared.previewMediaId) {
+      throw new PostDistributionValidationError(
+        "preview_media_id is required when any destination uses preview routing.",
+        [{ field: "preview_media_id", issue: "required" }]
+      );
+    }
+    await assertPreviewMediaForPlan(prisma, creatorId, mediaPrepared.previewMediaId);
+  }
+
+  assistantPlan = {
+    ...assistantPlan,
+    ...buildPlanMediaAssistantFields({
+      needsPreview: input.needs_preview,
+      previewMediaId: mediaPrepared.previewMediaId,
+      mediaRoutingByDestination: mediaPrepared.mediaRouting
+    }),
+    rail_scheduled_revision: true
+  };
+
+  const byDestination = new Map(existing.variants.map((v) => [v.destination, v]));
+  const formattedByDest = new Map(formatted.map((v) => [v.destination, v]));
+
+  const plan = await prisma.$transaction(async (tx) => {
+    await tx.postDistributionPlan.update({
+      where: { id: existing.id },
+      data: {
+        sourceDraftId: input.source_draft_id?.trim() || existing.sourceDraftId,
+        status: "active",
+        assistantMode,
+        assistantContext: assistantContext as object,
+        assistantPlan: assistantPlan as object
+      }
+    });
+
+    for (const destination of destinations) {
+      const existingVariant = byDestination.get(destination);
+      const next = formattedByDest.get(destination);
+      if (!next) continue;
+
+      if (existingVariant) {
+        if (!REVISABLE_VARIANT_STATUSES.has(existingVariant.status)) {
+          continue;
+        }
+        const priorFields =
+          existingVariant.platformFields &&
+          typeof existingVariant.platformFields === "object" &&
+          !Array.isArray(existingVariant.platformFields)
+            ? (existingVariant.platformFields as Record<string, unknown>)
+            : {};
+        await tx.postDistributionVariant.update({
+          where: { id: existingVariant.id },
+          data: {
+            assistantEnabled: assistantEnabledSet.has(destination),
+            title: next.title,
+            bodyText: next.bodyText,
+            postText: next.postText,
+            tags: next.tags,
+            platformFields: {
+              ...priorFields,
+              ...(next.platformFields as object),
+              rail_prepared: true
+            } as object,
+            advice: next.advice as object
+          }
+        });
+      } else {
+        await tx.postDistributionVariant.create({
+          data: {
+            planId: existing.id,
+            postId,
+            creatorId,
+            destination,
+            status: "draft",
+            assistantEnabled: assistantEnabledSet.has(destination),
+            title: next.title,
+            bodyText: next.bodyText,
+            postText: next.postText,
+            tags: next.tags,
+            platformFields: {
+              ...(next.platformFields as object),
+              rail_prepared: true
+            } as object,
+            advice: next.advice as object
+          }
+        });
+      }
+    }
+
+    return tx.postDistributionPlan.findUniqueOrThrow({
+      where: { id: existing.id },
+      include: {
+        variants: {
+          include: {
+            attempts: { orderBy: { createdAt: "desc" }, take: 1 },
+            postbotTasks: { orderBy: { createdAt: "asc" } }
+          }
+        }
+      }
+    });
+  });
+
+  return mapPlan(plan);
+}
+
 export type PatchDistributionVariantInput = {
   title?: string | null;
   body_text?: string | null;

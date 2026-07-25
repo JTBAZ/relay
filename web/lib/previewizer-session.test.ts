@@ -23,7 +23,7 @@ describe("previewizer-session", () => {
     });
 
     expect(session.sourceImageUrl).toBe(
-      "http://127.0.0.1:8787/api/v1/export/media/cr_1/rel_main/content"
+      "/api/v1/export/media/cr_1/rel_main/content"
     );
     expect(session).not.toHaveProperty("destinations");
     expect(session).not.toHaveProperty("initialMediaRouting");

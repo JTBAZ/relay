@@ -4,12 +4,14 @@ import { AdminAppearanceEditor } from "@/components/admin/AdminAppearanceEditor"
 import { AdminShell } from "@/components/admin/AdminShell";
 import { loadAdminOverview } from "@/lib/admin/load-admin";
 import { redirectIfAdminSignInRequired } from "@/lib/admin/require-admin-page";
+import { readAdminRequestContextFromHeaders } from "@/lib/identity/admin-access";
 import { loadSite } from "@/lib/load-site";
 
 export const dynamic = "force-dynamic";
 
 export default async function AdminAppearancePage() {
-  const model = await loadAdminOverview();
+  const requestContext = await readAdminRequestContextFromHeaders();
+  const model = await loadAdminOverview(requestContext);
   redirectIfAdminSignInRequired(
     model.read_allowed,
     model.deny_reason,

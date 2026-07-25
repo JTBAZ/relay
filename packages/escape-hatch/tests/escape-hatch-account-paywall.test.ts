@@ -36,22 +36,22 @@ afterEach(() => {
 });
 
 describe("EH-034 status + manifest", () => {
-  it("advances slice to EH-080 with next EH-081 and productionSafe false", () => {
+  it("advances slice to EH-082 with next HUMAN-SIGNOFF and productionSafe false", () => {
     const status = buildEscapeHatchStatus();
-    expect(ESCAPE_HATCH_SLICE).toBe("EH-080");
-    expect(status.slice).toBe("EH-080");
+    expect(ESCAPE_HATCH_SLICE).toBe("EH-082");
+    expect(status.slice).toBe("EH-082");
     expect(status.productionSafe).toBe(false);
-    expect(status.nextSlice.id).toBe("EH-081");
-    expect(status.nextSlice.title).toMatch(/golden|journeys/i);
+    expect(status.nextSlice.id).toBe("HUMAN-SIGNOFF");
+    expect(status.nextSlice.title).toMatch(/human|sign[- ]?off|release/i);
     const cap = status.capabilities.find((c) => c.id === "account-paywall-ux");
     expect(cap?.state).toBe("preview_only");
     expect(cap?.evidence).toMatch(/EH-034|\/account|PaywallOverlay|productionSafe remains false/i);
-    expect(cap?.nextSlice).toBe("EH-081");
+    expect(cap?.nextSlice).toBe("HUMAN-SIGNOFF");
     expect(
       status.blockers.some((b) => /Account\/paywall UX.*EH-034/i.test(b))
     ).toBe(false);
     expect(
-      status.blockers.some((b) => /browser personas|security review/i.test(b))
+      status.blockers.some((b) => /HUMAN-SIGNOFF|live-provider|live provider|human checklist/i.test(b))
     ).toBe(true);
   });
 
@@ -70,7 +70,7 @@ describe("EH-034 status + manifest", () => {
       productionSafe: boolean;
       feature_flags: Record<string, boolean>;
     };
-    expect(manifest.slice).toBe("EH-080");
+    expect(manifest.slice).toBe("EH-082");
     expect(manifest.productionSafe).toBe(false);
     expect(manifest.feature_flags.hard_paywall).toBe(true);
     expect(existsSync(join(result.outDir, "app/account/page.tsx"))).toBe(true);

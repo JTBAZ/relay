@@ -1,5 +1,6 @@
 "use client";
 
+import { adminLocalFetch } from "./adminLocalFetch";
 import { useEffect, useState } from "react";
 import type {
   CoverCrop,
@@ -76,7 +77,7 @@ export function AdminAppearanceEditor({
     setBusy(true);
     setMessage(null);
     try {
-      const res = await fetch("/api/admin/theme", {
+      const res = await adminLocalFetch("/api/admin/theme", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({

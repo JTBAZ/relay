@@ -1,5 +1,6 @@
 "use client";
 
+import { adminLocalFetch } from "./adminLocalFetch";
 import { useState, useTransition } from "react";
 import type { BillingPreflightReport } from "@/lib/billing/preflight";
 import type { BillingTierMapEntry } from "@/lib/billing/tier-map";
@@ -61,11 +62,10 @@ export function TierBillingWizard({
   function save() {
     setError(null);
     startTransition(async () => {
-      const res = await fetch("/api/admin/billing/tier-map", {
+      const res = await adminLocalFetch("/api/admin/billing/tier-map", {
         method: "POST",
         headers: {
-          "content-type": "application/json",
-          "x-escape-hatch-local": "1"
+          "content-type": "application/json"
         },
         body: JSON.stringify({
           siteId,
@@ -99,11 +99,10 @@ export function TierBillingWizard({
   function runPreflight() {
     setError(null);
     startTransition(async () => {
-      const res = await fetch("/api/admin/billing/preflight", {
+      const res = await adminLocalFetch("/api/admin/billing/preflight", {
         method: "POST",
         headers: {
-          "content-type": "application/json",
-          "x-escape-hatch-local": "1"
+          "content-type": "application/json"
         },
         body: JSON.stringify({ siteId })
       });

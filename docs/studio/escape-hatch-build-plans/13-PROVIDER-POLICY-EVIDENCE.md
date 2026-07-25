@@ -8,7 +8,7 @@ This is a dated routing aid, not legal advice or a permanence guarantee. A provi
 
 | Provider | Role | Current evidence | Product status |
 |---|---|---|---|
-| Vercel | Primary Next.js host | Primary technical target; content-policy review must be refreshed before launch | Implementation target, not yet release-certified |
+| Vercel | Primary Next.js host | AUP last updated 2026-04-21 prohibits offensive/obscene/graphic and sexually exploitative content | General eligible creators only; explicit/obscene route not release-certified |
 | Supabase | Primary auth/Postgres | Creator-owned Auth/Postgres target; RLS/security guidance required | Implementation target, not yet release-certified |
 | Cloudflare R2 | Private media | S3-compatible storage; published pricing states no internet egress fee | Existing Relay smoke coverage; generated-site adapter pending |
 | Stripe | Eligible-business subscriptions | Published prohibited-business list bars pornography/mature content designed for sexual gratification | Eligible creators only; EH-051 adapter preview_only |
@@ -16,11 +16,17 @@ This is a dated routing aid, not legal advice or a permanence guarantee. A provi
 | CCBill | High-risk card merchant | Official FAQ: company/sole-proprietor info, IDs, site URL, bank; compliance review before account ready | **Guidance only** — approved merchant account / LLC most times; no live kit adapter |
 | Segpay | High-risk card merchant | Merchant inquiry / underwriting for adult & subscription sites | **Guidance only** — approved merchant account / LLC most times; no live kit adapter |
 | MojoHost | Portable lawful-adult host candidate | Official creator guidance explicitly welcomes legal, rightfully used adult content and offers virtual machines/infrastructure | Policy-reviewed candidate; Docker deployment/SLA/security rehearsal required before wizard support |
-| Transactional email provider | Auth/security email | Not selected | Blocked pending policy, deliverability, API/SMTP, and sandbox review |
+| Resend | Auth/security email | AUP prohibits pornography/sexually explicit email content; neutral auth/security notices only | EH-072 preview recipe; not certified for explicit email content |
 
 See also: [`15-ALTERNATE-BILLING-RECIPES.md`](./15-ALTERNATE-BILLING-RECIPES.md).
 
 ## Official evidence
+
+### Vercel
+
+- Acceptable Use Policy: <https://vercel.com/legal/acceptable-use-policy>
+- Checked: 2026-07-23. Policy page states “Last Updated April 21, 2026” and prohibits offensive, obscene, graphic, or sexually exploitative content.
+- Consequence: Path A is offered only to a creator whose declared content fits the current policy. Do not route explicit/obscene content to Vercel or present Vercel as universally adult-friendly; use the portable-provider review path instead.
 
 ### Stripe
 
@@ -53,6 +59,13 @@ See also: [`15-ALTERNATE-BILLING-RECIPES.md`](./15-ALTERNATE-BILLING-RECIPES.md)
 - Pricing: <https://developers.cloudflare.com/r2/pricing/>
 - Current published Standard pricing includes 10 GB-month free tier and no internet egress charge, with storage/operation charges above the allowance.
 - Consequence: R2 is the primary media contract, but creator still sees current estimates and owns the account.
+
+### Resend
+
+- Acceptable Use Policy: <https://resend.com/legal/acceptable-use>
+- Terms of Service: <https://resend.com/legal/terms-of-service>
+- Checked: 2026-07-23. The AUP prohibits pornography/sexually explicit email content.
+- Consequence: the EH-072 recipe is limited to content-neutral account verification, password recovery, security alerts, subscription/access notices, and connector failures. Never put explicit media or sexually explicit promotional copy in Resend messages; select a separately reviewed provider when the required message content is incompatible.
 
 ### MojoHost candidate
 

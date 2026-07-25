@@ -189,28 +189,14 @@ export async function deliverMedia(
     };
   }
 
+  // EH-082: public_legacy must not deliver premium bytes (static or private stream).
   if (mode === "public_legacy" && isPremiumAccessLevel(lookup.accessLevel)) {
-    // Explicit residual leakage mode — still gated by evaluateAccess above.
-    // Prefer API stream from private store when present; else static path.
-    const local = readLocalPrivateMedia(lookup.mediaId, input.cwd);
-    if (local) {
-      return {
-        ok: true,
-        kind: "stream",
-        body: local.body,
-        contentType: local.contentType,
-        cacheControl: PRIVATE_NO_STORE,
-        reason: evaluation.reason
-      };
-    }
     return {
-      ok: true,
-      kind: "public_path",
-      path: lookup.contentPath.startsWith("/")
-        ? lookup.contentPath
-        : `/${lookup.contentPath}`,
-      cacheControl: PRIVATE_NO_STORE,
-      reason: evaluation.reason
+      ok: false,
+      status: 503,
+      reason: "public_legacy_forbidden",
+      detail:
+        "ESCAPE_HATCH_MEDIA_MODE=public_legacy is blocked for premium delivery. Use local_private or private_r2."
     };
   }
 

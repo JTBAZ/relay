@@ -3,7 +3,7 @@
   "contract_version": "escape-hatch.manifest/1.0.0",
   "chassis_version": "0.8.0",
   "schema_version": "eh-db/0005_patreon_oauth",
-  "slice": "EH-080",
+  "slice": "EH-082",
   "productionSafe": false,
   "generated_at": null,
   "creator_id": null,
@@ -97,7 +97,7 @@
   "applied_migrations": [],
   "known_exclusions": [
     "Soft persona remains for local preview when identity provider is none — never elevates under Path A/B",
-    "Default private layout stages premium under data/private-media; public_legacy is residual leakage only",
+    "Default private layout stages premium under data/private-media; public_legacy premium is hard-blocked (EH-082)",
     "Supabase and portable identity are opt-in via env; productionSafe remains false",
     "Creator-owned Patreon OAuth (EH-040), Relay-managed verification (EH-041), connector billing (EH-042), and OAuth choice/migration UX (EH-043) are opt-in; independent Stripe live adapter is EH-051",
     "Account/paywall UX (EH-034) + visitor visual (EH-035) present; Milestone 3 security/browser gate still open",

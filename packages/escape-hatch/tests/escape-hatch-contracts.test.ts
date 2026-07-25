@@ -752,6 +752,42 @@ describe("canonical tier-rules compatibility", () => {
 
 describe("generated contract embedding", () => {
   it("fillTemplate embeds a byte-identical contracts module from the canonical source", () => {
+    // Template checkout mirrors (EH-060 contracts, EH-082 local-operator) must
+    // stay byte-identical to canonical sources. fillTemplate still overwrites
+    // generated output from canonical; these mirrors exist for static template
+    // imports / typecheck and must not silently drift.
+    const contractsMirrorPath = join(
+      PACKAGE_ROOT,
+      "template",
+      "lib",
+      "contracts.ts"
+    );
+    const localOperatorCanonicalPath = join(
+      PACKAGE_ROOT,
+      "src",
+      "library-truth",
+      "local-operator.ts"
+    );
+    const localOperatorMirrorPath = join(
+      PACKAGE_ROOT,
+      "template",
+      "lib",
+      "library-truth",
+      "local-operator.ts"
+    );
+    expect(
+      Buffer.compare(
+        readFileSync(contractsMirrorPath),
+        readFileSync(CONTRACTS_SOURCE_PATH)
+      )
+    ).toBe(0);
+    expect(
+      Buffer.compare(
+        readFileSync(localOperatorMirrorPath),
+        readFileSync(localOperatorCanonicalPath)
+      )
+    ).toBe(0);
+
     const legacy = readFixtureJson("sample.bundle.json");
     const result = fillTemplate({
       bundle: legacy,
@@ -759,9 +795,12 @@ describe("generated contract embedding", () => {
       slug: "eh-001-contract-parity",
       clean: true
     });
-    const canonical = readFileSync(CONTRACTS_SOURCE_PATH, "utf8");
-    const embedded = readFileSync(result.contractsPath, "utf8");
-    expect(embedded).toBe(canonical);
+    expect(
+      Buffer.compare(
+        readFileSync(result.contractsPath),
+        readFileSync(CONTRACTS_SOURCE_PATH)
+      )
+    ).toBe(0);
     expect(result.bundle.contract_version).toBe(SITE_BUNDLE_CONTRACT_VERSION);
 
     const site = JSON.parse(readFileSync(result.siteJsonPath, "utf8"));

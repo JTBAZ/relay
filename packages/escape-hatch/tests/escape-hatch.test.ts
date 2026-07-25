@@ -163,7 +163,7 @@ describe("fill-template integration", () => {
     expect(templatePkg.dependencies.react).toBe(
       templatePkg.dependencies["react-dom"]
     );
-    expect(templatePkg.overrides?.postcss).toBe("8.5.10");
+    expect(templatePkg.overrides?.postcss).toBe("8.5.22");
     expect(templatePkg.overrides?.sharp).toBe("0.35.3");
     expect(existsSync(join(PACKAGE_ROOT, "template", "package-lock.json"))).toBe(
       true
@@ -191,7 +191,7 @@ describe("fill-template integration", () => {
     expect(generatedPkg.dependencies.next).not.toMatch(/^14\./);
     expect(generatedPkg.dependencies.react).toBe("18.3.1");
     expect(generatedPkg.dependencies["react-dom"]).toBe("18.3.1");
-    expect(generatedPkg.overrides?.postcss).toBe("8.5.10");
+    expect(generatedPkg.overrides?.postcss).toBe("8.5.22");
     expect(generatedPkg.overrides?.sharp).toBe("0.35.3");
     expect(existsSync(join(result.outDir, "package-lock.json"))).toBe(true);
   });

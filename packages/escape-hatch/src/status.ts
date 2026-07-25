@@ -1,11 +1,11 @@
 /**
- * Deterministic Escape Hatch capability inventory (through EH-080).
+ * Deterministic Escape Hatch capability inventory (through EH-082).
  * No timestamps, env reads, network, or live data — informational only.
  */
 
 export const ESCAPE_HATCH_STATUS_SCHEMA_VERSION = "escape-hatch-status/1.0.0";
 
-export const ESCAPE_HATCH_SLICE = "EH-080";
+export const ESCAPE_HATCH_SLICE = "EH-082";
 
 export type CapabilityState =
   | "production_safe"
@@ -36,7 +36,7 @@ export type EscapeHatchStatus = {
   capabilities: EscapeHatchCapability[];
   blockers: string[];
   nextSlice: {
-    id: "EH-081";
+    id: "HUMAN-SIGNOFF";
     title: string;
     focus: string[];
   };
@@ -59,7 +59,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "packages/escape-hatch/src/library-truth/kit-io.ts"
     ],
     risk: "high",
-    nextSlice: "EH-081"
+    nextSlice: "HUMAN-SIGNOFF"
   },
   {
     id: "generated-repository",
@@ -84,7 +84,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "packages/escape-hatch/tests/escape-hatch-generated-repo.test.ts"
     ],
     risk: "high",
-    nextSlice: "EH-081"
+    nextSlice: "HUMAN-SIGNOFF"
   },
   {
     id: "premium-patron-theme",
@@ -110,7 +110,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "packages/escape-hatch/tests/escape-hatch-theme.test.ts"
     ],
     risk: "medium",
-    nextSlice: "EH-081"
+    nextSlice: "HUMAN-SIGNOFF"
   },
   {
     id: "soft-persona-gate",
@@ -128,14 +128,14 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "packages/escape-hatch/template/lib/paywall/copy.ts"
     ],
     risk: "critical",
-    nextSlice: "EH-081"
+    nextSlice: "HUMAN-SIGNOFF"
   },
   {
     id: "public-media-copy",
     title: "Generated media staging layout",
     state: "preview_only",
     evidence:
-      "EH-033 default fill stages premium (member_only/tier_gated) bytes under data/private-media and public/free assets under public/media. Visitor premium delivery uses /api/media/{id} after evaluateAccess. Explicit mediaLayout=public_legacy still copies premium into public/media (residual leakage; productionSafe false). EH-012 migrate-media never treats public/media as private-read success.",
+      "EH-033/EH-082 default fill stages premium (member_only/tier_gated) bytes under data/private-media and public/free assets under public/media. Visitor premium delivery uses /api/media/{id} after evaluateAccess. mediaLayout=public_legacy is refused at fill time and ESCAPE_HATCH_MEDIA_MODE=public_legacy is hard-blocked for premium delivery (productionSafe false). EH-012 migrate-media never treats public/media as private-read success.",
     sourcePaths: [
       "packages/escape-hatch/src/fill-template.ts",
       "packages/escape-hatch/src/migrate/engine.ts",
@@ -143,7 +143,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "packages/escape-hatch/template/lib/media/delivery.ts"
     ],
     risk: "critical",
-    nextSlice: "EH-081"
+    nextSlice: "HUMAN-SIGNOFF"
   },
   {
     id: "client-readable-bundle",
@@ -160,7 +160,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "packages/escape-hatch/src/library-truth/kit-io.ts"
     ],
     risk: "high",
-    nextSlice: "EH-081"
+    nextSlice: "HUMAN-SIGNOFF"
   },
   {
     id: "duplicate-contracts",
@@ -208,7 +208,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "tests/fixtures/patreon/cookie-list-with-media.json"
     ],
     risk: "medium",
-    nextSlice: "EH-081"
+    nextSlice: "HUMAN-SIGNOFF"
   },
   {
     id: "relay-dump-fixtures",
@@ -227,7 +227,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "packages/escape-hatch/tests/escape-hatch-library-truth.test.ts"
     ],
     risk: "medium",
-    nextSlice: "EH-081"
+    nextSlice: "HUMAN-SIGNOFF"
   },
   {
     id: "relay-canonical-reuse",
@@ -250,7 +250,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "src/storage/media-delivery-policy.ts"
     ],
     risk: "informational",
-    nextSlice: "EH-081"
+    nextSlice: "HUMAN-SIGNOFF"
   },
   {
     id: "simplified-access-semantics",
@@ -267,7 +267,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "src/clone/tier-rules.ts"
     ],
     risk: "high",
-    nextSlice: "EH-081"
+    nextSlice: "HUMAN-SIGNOFF"
   },
   {
     id: "generated-site-identity",
@@ -305,7 +305,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "packages/escape-hatch/tests/escape-hatch-entitlements.test.ts"
     ],
     risk: "critical",
-    nextSlice: "EH-081"
+    nextSlice: "HUMAN-SIGNOFF"
   },
   {
     id: "entitlement-evaluator",
@@ -326,14 +326,14 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "packages/escape-hatch/tests/escape-hatch-entitlements.test.ts"
     ],
     risk: "critical",
-    nextSlice: "EH-081"
+    nextSlice: "HUMAN-SIGNOFF"
   },
   {
     id: "private-media-delivery",
     title: "Private media delivery and signed URLs",
     state: "preview_only",
     evidence:
-      "EH-033 ships template/lib/media (mode resolve, object keys, mock/R2 signer, redirect host allowlist) and GET /api/media/{mediaId}: evaluateAccess → local_private stream or short-lived signed R2 redirect. Soft persona cookie (id only) honored only when provider is none. Fail closed when private_r2 lacks credentials. Default fill avoids staging premium under public/media. EH-034 UX never fetches /api/media while locked. productionSafe remains false — Milestone 3 security/browser gate, public_legacy residual, billing/deploy open.",
+      "EH-033 ships template/lib/media (mode resolve, object keys, mock/R2 signer, redirect host allowlist) and GET /api/media/{mediaId}: evaluateAccess → local_private stream or short-lived signed R2 redirect. Soft persona cookie (id only) honored only when provider is none. Fail closed when private_r2 lacks credentials. Default fill avoids staging premium under public/media. EH-034 UX never fetches /api/media while locked. EH-082 hard-blocks public_legacy for premium generation/config/delivery. productionSafe remains false — human/live-provider release gate (HUMAN-SIGNOFF) and live billing/deploy proofs remain open.",
     sourcePaths: [
       "packages/escape-hatch/template/lib/media/delivery.ts",
       "packages/escape-hatch/template/lib/media/sign.ts",
@@ -343,7 +343,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "packages/escape-hatch/tests/escape-hatch-private-media.test.ts"
     ],
     risk: "critical",
-    nextSlice: "EH-081"
+    nextSlice: "HUMAN-SIGNOFF"
   },
   {
     id: "account-paywall-ux",
@@ -368,7 +368,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "packages/escape-hatch/tests/escape-hatch-account-paywall.test.ts"
     ],
     risk: "critical",
-    nextSlice: "EH-081"
+    nextSlice: "HUMAN-SIGNOFF"
   },
   {
     id: "billing-adapters",
@@ -388,7 +388,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "src/payments/provider-adapter.ts"
     ],
     risk: "critical",
-    nextSlice: "EH-081"
+    nextSlice: "HUMAN-SIGNOFF"
   },
   {
     id: "provider-policy",
@@ -404,7 +404,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "packages/escape-hatch/tests/escape-hatch-billing-alternate.test.ts"
     ],
     risk: "critical",
-    nextSlice: "EH-081"
+    nextSlice: "HUMAN-SIGNOFF"
   },
   {
     id: "deploy-adapters",
@@ -436,7 +436,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "packages/escape-hatch/src/zip-kit.ts"
     ],
     risk: "high",
-    nextSlice: "EH-081"
+    nextSlice: "HUMAN-SIGNOFF"
   },
   {
     id: "native-admin",
@@ -489,7 +489,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "packages/escape-hatch/tests/escape-hatch-deploy-docker.test.ts"
     ],
     risk: "high",
-    nextSlice: "EH-081"
+    nextSlice: "HUMAN-SIGNOFF"
   },
   {
     id: "migration-import",
@@ -508,7 +508,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "packages/escape-hatch/tests/escape-hatch-migrate.test.ts"
     ],
     risk: "high",
-    nextSlice: "EH-081"
+    nextSlice: "HUMAN-SIGNOFF"
   },
   {
     id: "library-truth-parity",
@@ -531,7 +531,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "packages/escape-hatch/tests/escape-hatch-library-truth.test.ts"
     ],
     risk: "high",
-    nextSlice: "EH-081"
+    nextSlice: "HUMAN-SIGNOFF"
   },
   {
     id: "backup-restore",
@@ -550,7 +550,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "packages/escape-hatch/tests/escape-hatch-backup-restore.test.ts"
     ],
     risk: "medium",
-    nextSlice: "EH-081"
+    nextSlice: "HUMAN-SIGNOFF"
   },
   {
     id: "provider-readiness",
@@ -573,7 +573,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "src/deploy/deploy-adapter.ts"
     ],
     risk: "high",
-    nextSlice: "EH-081"
+    nextSlice: "HUMAN-SIGNOFF"
   },
   {
     id: "creator-patreon-oauth",
@@ -593,7 +593,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "packages/escape-hatch/tests/escape-hatch-patreon-oauth.test.ts"
     ],
     risk: "critical",
-    nextSlice: "EH-081"
+    nextSlice: "HUMAN-SIGNOFF"
   },
   {
     id: "relay-managed-patreon-verification",
@@ -611,7 +611,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "tests/escape-hatch-managed-verify.test.ts"
     ],
     risk: "critical",
-    nextSlice: "EH-081"
+    nextSlice: "HUMAN-SIGNOFF"
   },
   {
     id: "relay-managed-connector-billing",
@@ -629,7 +629,7 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "packages/escape-hatch/tests/escape-hatch-connector-billing.test.ts"
     ],
     risk: "critical",
-    nextSlice: "EH-081"
+    nextSlice: "HUMAN-SIGNOFF"
   },
   {
     id: "oauth-choice-migration-ux",
@@ -648,13 +648,13 @@ const CAPABILITIES: EscapeHatchCapability[] = [
       "packages/escape-hatch/tests/escape-hatch-oauth-choice.test.ts"
     ],
     risk: "high",
-    nextSlice: "EH-081"
+    nextSlice: "HUMAN-SIGNOFF"
   }
 ];
 
 const PROTOTYPE_WARNINGS: string[] = [
   "productionSafe is false — this deliverable is prototype/preview-only.",
-  "EH-080 ownership packet is preview_only — manifesto, env-name inventory, optional Relay disclosure, 90-day warranty boundary; no secrets; live independence proof deferred to EH-082; productionSafe false pending Milestone 3.",
+  "EH-080 ownership packet is preview_only — manifesto, env-name inventory, optional Relay disclosure, 90-day warranty boundary; no secrets. EH-082 stamps local native independence QC as local_native_passed_live_provider_open; live provider independence remains open under HUMAN-SIGNOFF; productionSafe false.",
   "EH-074 launch wizard is preview_only — Path A/B guided checklist with backup-before-complete; not live Vercel/Docker; MojoHost not wizard-supported; productionSafe false pending Milestone 3.",
   "EH-073 backup/restore is preview_only — kit-local redacted snapshots, isolated restore rehearsal, and diagnostic download; not live Postgres/R2 backup; productionSafe false pending Milestone 3.",
   "EH-072 transactional email is preview_only — provider-neutral transport, memory outbox fixture, Resend recipe (names only), SPF/DKIM/DMARC guidance checklist; live SMTP/API deferred; productionSafe false pending Milestone 3.",
@@ -665,7 +665,7 @@ const PROTOTYPE_WARNINGS: string[] = [
   "EH-035 visitor visual system is preview_only — cold-gallery tokens and chrome split land, but Milestone 3 security review + browser personas gate remains open.",
   "EH-034 account/paywall UX is preview_only — locked/unlocked honesty is wired, but Milestone 3 security review + browser personas gate remains open.",
   "EH-033 private media delivery is preview_only — default private path closes premium public/media staging, but live independent billing and verified deploy remain open.",
-  "ESCAPE_HATCH_MEDIA_MODE=public_legacy reintroduces world-readable premium copies under public/media — residual leakage only; never production.",
+  "ESCAPE_HATCH_MEDIA_MODE=public_legacy is hard-blocked for premium delivery (EH-082) and mediaLayout=public_legacy is refused at fill — not a supported release path.",
   "EH-032 entitlement evaluator is preview_only — grant merge authorizes metadata and media delivery decisions but does not alone make the kit production-safe.",
   "EH-030/031 identity paths are preview_only — configured Auth/DB readiness is not a production-safe deploy claim.",
   "EH-022 native admin: when identity is unset, local-operator gating is not authentication; when Path A/B is active, staff session is required for admin reads and mutations — soft personas never authorize admin.",
@@ -686,13 +686,13 @@ const PROTOTYPE_WARNINGS: string[] = [
 ];
 
 const BLOCKERS: string[] = [
-  "Milestone 3 security review + browser personas gate remains open before productionSafe can flip.",
-  "Milestone 8 continues with EH-081 full golden journeys after EH-080 ownership packet; Milestone 3 security/browser gate remains open; never disguise adult content to unlock Stripe.",
+  "HUMAN-SIGNOFF (final human checklist + live-provider proofs) remains open before productionSafe can flip.",
+  "Representative local journeys completed in the EH-082 master pass; full live-provider golden journeys (Vercel/Stripe sandbox, live Docker/Postgres/R2, multi-path Patreon) remain open — never disguise adult content to unlock Stripe.",
   "Verified live Vercel/Docker daemon deploys remain open; EH-070/071/074 are fixture + recipe + checklist only. MojoHost is not wizard-supported.",
   "Live Postgres/R2 scheduled backup providers remain open; EH-073 is kit-local fixture only.",
-  "Live remove-Relay independence proof remains open (EH-082); ownership packet does not claim it.",
+  "Live remove-Relay / live-provider independence proof remains open; ownership packet stamps local_native_passed_live_provider_open only.",
   "Mature/legal-adult enforcement beyond accounted exclusions remains open.",
-  "public_legacy media mode remains available as an explicit residual leakage path — keep productionSafe false while it exists.",
+  "public_legacy premium path is hard-blocked (EH-082) but productionSafe stays false until HUMAN-SIGNOFF and live proofs close.",
   "Milestone 4 residual: live multi-tenant managed-verify outage + migration drill beyond kit/CI honesty remains open."
 ];
 
@@ -703,7 +703,7 @@ export function buildEscapeHatchStatus(): EscapeHatchStatus {
     deliverable: "prototype_preview_only",
     productionSafe: false,
     summary:
-      "Escape Hatch through EH-080 delivers CMS ops, fixture deploy/launch wizard, email, kit-local backup/restore, and a redacted ownership packet (env names + warranty); productionSafe remains false pending Milestone 3, golden journeys (EH-081), and live independence (EH-082).",
+      "Escape Hatch through EH-082 delivers CMS ops, fixture deploy/launch wizard, email, kit-local backup/restore, ownership packet, and local security/independence QC (public_legacy premium hard block, local-preview gate, portal IDOR fix); productionSafe remains false pending HUMAN-SIGNOFF and live-provider proofs.",
     prototypeWarnings: [...PROTOTYPE_WARNINGS],
     capabilities: CAPABILITIES.map((c) => ({
       ...c,
@@ -711,12 +711,12 @@ export function buildEscapeHatchStatus(): EscapeHatchStatus {
     })),
     blockers: [...BLOCKERS],
     nextSlice: {
-      id: "EH-081",
-      title: "Full golden journeys",
+      id: "HUMAN-SIGNOFF",
+      title: "Human signoff and live-provider release gate",
       focus: [
-        "Master browser journeys across Path A/B and Patreon modes",
-        "Builders fix findings only",
-        "Honest gates without claiming productionSafe"
+        "Signed human checklist (doc 12) across Path A/B and Patreon modes under live providers",
+        "Live Vercel/Docker/Postgres/R2/provider-sandbox proofs",
+        "Keep productionSafe false until human + live gates close"
       ]
     }
   };

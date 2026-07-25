@@ -313,11 +313,11 @@ export function buildHealthItems(args: {
     const o = args.ownershipReadiness;
     items.push({
       id: "ownership_packet",
-      title: "Ownership packet (EH-080)",
+      title: "Ownership packet (EH-080 / EH-082)",
       ok: o.ok,
       detail: o.detail,
       next_action: o.packet_generated
-        ? "Download from /admin/deploy — env names only; live independence proof is EH-082."
+        ? "Download from /admin/deploy — env names only; local native QC passed; live provider independence open."
         : "Generate ownership packet on /admin/deploy (manifesto, credentials names, warranty)."
     });
   }

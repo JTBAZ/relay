@@ -25,7 +25,10 @@ export function StudioRouteGuard({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!mounted || !ready || authDisabled) return;
     if (hasRelaySession) return;
-    router.replace(`/login?returnTo=${encodeURIComponent(pathname || "/")}`);
+    // Preserve query string (e.g. event_id on scheduled-post review) across login.
+    const qs = typeof window !== "undefined" ? window.location.search : "";
+    const returnTo = `${pathname || "/"}${qs}`;
+    router.replace(`/login?returnTo=${encodeURIComponent(returnTo)}`);
   }, [mounted, ready, hasRelaySession, router, pathname]);
 
   if (!mounted || !ready) {

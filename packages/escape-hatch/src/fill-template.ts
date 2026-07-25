@@ -258,9 +258,10 @@ export type FillOptions = {
   /** Absolute or package-relative path to a media source directory (files named by media_id + ext). */
   mediaSourceDir?: string;
   /**
-   * Media layout (EH-033). Default `private` — premium bytes go to
+   * Media layout (EH-033 / EH-082). Default `private` — premium bytes go to
    * data/private-media (not world-readable public/media).
-   * `public_legacy` copies all media to public/media (explicit residual leakage).
+   * `public_legacy` is retained in the type for compatibility but fillTemplate
+   * refuses it before copying any premium bytes.
    */
   mediaLayout?: "private" | "public_legacy";
   /** Optional theme override (wizard). */
@@ -394,7 +395,7 @@ export function stampEscapeHatchManifest(
   parsed.generated_at = bundle.generated_at;
   parsed.creator_id = bundle.creator_id;
   parsed.site_id = bundle.site_id ?? bundle.creator_id;
-  parsed.slice = "EH-080";
+  parsed.slice = "EH-082";
   parsed.productionSafe = false;
   parsed.schema_version = "eh-db/0005_patreon_oauth";
   parsed.chassis_version = "0.8.0";
@@ -491,11 +492,17 @@ export function fillTemplate(opts: FillOptions): FillResult {
     : join(PACKAGE_ROOT, "fixtures", "media");
 
   const mediaLayout = opts.mediaLayout ?? "private";
+  if (mediaLayout === "public_legacy") {
+    throw new Error(
+      "mediaLayout=public_legacy is refused (EH-082). Premium bytes must not be copied into public/media. Use default private layout (local_private / private_r2 delivery)."
+    );
+  }
+  const privateLayout = "private" as const;
   if (existsSync(mediaSource)) {
     stageMediaForKit(bundle, mediaSource, {
       publicMediaDir: join(publicDir, "media"),
       privateMediaDir: join(dataDir, "private-media"),
-      layout: mediaLayout
+      layout: privateLayout
     });
   }
 
@@ -504,12 +511,10 @@ export function fillTemplate(opts: FillOptions): FillResult {
     `${JSON.stringify(
       {
         schema: "escape-hatch-media-layout/1.0.0",
-        layout: mediaLayout,
+        layout: privateLayout,
         production_safe: false,
         notes:
-          mediaLayout === "private"
-            ? "Premium originals live under data/private-media; visitor delivery is /api/media/{id} after evaluateAccess. public/media holds public/free assets only."
-            : "public_legacy copies premium bytes into public/media — residual leakage for soft preview only; keep productionSafe false."
+          "Premium originals live under data/private-media; visitor delivery is /api/media/{id} after evaluateAccess. public/media holds public/free assets only. public_legacy layout is refused at fill time (EH-082)."
       },
       null,
       2
@@ -524,10 +529,8 @@ export function fillTemplate(opts: FillOptions): FillResult {
       "",
       "**Soft gate remains for local preview** — persona switching is demo UI only (provider `none`), not production security.",
       "Identity: Path A Supabase (`ESCAPE_HATCH_IDENTITY_PROVIDER=supabase` or unset + Supabase env) or Path B portable (`=portable` + DATABASE_URL).",
-      mediaLayout === "private"
-        ? "Premium media is staged under `data/private-media` and delivered via `/api/media/{id}` after server entitlement checks (EH-033). Locked gallery/post UI never fetches those bytes (EH-034/035). Do not set `ESCAPE_HATCH_MEDIA_MODE=public_legacy` in production."
-        : "WARNING: `public_legacy` media layout copied premium bytes into `/public/media` — residual leakage; not production-safe.",
-      "`productionSafe: false` — through EH-080: CMS ops, fixture deploy/launch, email, backup/restore, ownership packet. Milestone 3 security/browser gate, EH-081+, and live provider proofs remain open.",
+      "Premium media is staged under `data/private-media` and delivered via `/api/media/{id}` after server entitlement checks (EH-033). Locked gallery/post UI never fetches those bytes (EH-034/035). `ESCAPE_HATCH_MEDIA_MODE=public_legacy` is blocked for premium delivery (EH-082).",
+      "`productionSafe: false` — through EH-082 local QC: CMS ops, fixture deploy/launch, email, backup/restore, ownership packet, public_legacy premium hard block. HUMAN-SIGNOFF and live provider proofs remain open.",
       "",
       `Contract: ${bundle.contract_version}`,
       "",
@@ -607,9 +610,9 @@ function findMediaSourceFile(
 }
 
 /**
- * Stage media for a generated kit (EH-033).
+ * Stage media for a generated kit (EH-033 / EH-082).
  * Default private layout: public assets → public/media; premium → data/private-media.
- * public_legacy: copies everything to public/media (residual leakage; not production-safe).
+ * `public_legacy` is refused by fillTemplate before this runs.
  */
 function stageMediaForKit(
   bundle: SiteBundle,
@@ -617,7 +620,7 @@ function stageMediaForKit(
   opts: {
     publicMediaDir: string;
     privateMediaDir: string;
-    layout: "private" | "public_legacy";
+    layout: "private";
   }
 ): void {
   mkdirSync(opts.publicMediaDir, { recursive: true });
@@ -635,13 +638,6 @@ function stageMediaForKit(
         ? fileName.slice(fileName.lastIndexOf("."))
         : "";
       const privateName = `${m.media_id}${ext || ".bin"}`;
-
-      if (opts.layout === "public_legacy") {
-        const destFile = join(opts.publicMediaDir, fileName);
-        mkdirSync(dirname(destFile), { recursive: true });
-        cpSync(src, destFile);
-        continue;
-      }
 
       if (premium) {
         const destFile = join(opts.privateMediaDir, privateName);

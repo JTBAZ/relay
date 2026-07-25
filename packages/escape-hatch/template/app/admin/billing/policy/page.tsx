@@ -9,7 +9,10 @@ import {
   getBillingPolicyRow,
   loadContentUseAttestation
 } from "@/lib/billing/policy";
-import { assertAdminReadAccess } from "@/lib/identity/admin-access";
+import {
+  assertAdminReadAccess,
+  readAdminRequestContextFromHeaders
+} from "@/lib/identity/admin-access";
 import { loadSite } from "@/lib/load-site";
 
 export const dynamic = "force-dynamic";
@@ -20,7 +23,8 @@ export const dynamic = "force-dynamic";
  */
 export default async function AdminBillingPolicyPage() {
   const site = loadSite();
-  const read = await assertAdminReadAccess(site.site_id);
+  const requestContext = await readAdminRequestContextFromHeaders();
+  const read = await assertAdminReadAccess(site.site_id, requestContext);
   redirectIfAdminSignInRequired(
     read.allowed,
     read.allowed ? null : read.reason,

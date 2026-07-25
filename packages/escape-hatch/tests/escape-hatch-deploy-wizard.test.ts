@@ -6,6 +6,7 @@ import {
   copyFileSync,
   mkdtempSync,
   mkdirSync,
+  readFileSync,
   rmSync,
   writeFileSync
 } from "node:fs";
@@ -34,12 +35,8 @@ import {
 } from "../template/lib/deploy/vercel-path.js";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const TEMPLATE_MANIFEST = join(
-  HERE,
-  "..",
-  "template",
-  "escape-hatch.manifest.json"
-);
+const TEMPLATE = join(HERE, "..", "template");
+const TEMPLATE_MANIFEST = join(TEMPLATE, "escape-hatch.manifest.json");
 
 function seedKitDir(): string {
   const kitDir = mkdtempSync(join(tmpdir(), "eh074-"));
@@ -51,13 +48,13 @@ function seedKitDir(): string {
 const SITE_URL = "https://fixture-eh074.vercel.app";
 
 describe("EH-074 status", () => {
-  it("advances slice to EH-080 with next EH-081 and productionSafe false", () => {
+  it("advances slice to EH-082 with next HUMAN-SIGNOFF and productionSafe false", () => {
     const status = buildEscapeHatchStatus();
-    expect(ESCAPE_HATCH_SLICE).toBe("EH-080");
-    expect(status.slice).toBe("EH-080");
+    expect(ESCAPE_HATCH_SLICE).toBe("EH-082");
+    expect(status.slice).toBe("EH-082");
     expect(status.productionSafe).toBe(false);
-    expect(status.nextSlice.id).toBe("EH-081");
-    expect(status.nextSlice.title).toMatch(/golden|journeys/i);
+    expect(status.nextSlice.id).toBe("HUMAN-SIGNOFF");
+    expect(status.nextSlice.title).toMatch(/human|sign[- ]?off|release/i);
   });
 });
 
@@ -228,5 +225,40 @@ describe("EH-074 launch wizard", () => {
     } finally {
       rmSync(kitDir, { recursive: true, force: true });
     }
+  });
+});
+
+describe("EH-082 deploy/handoff a11y source contract", () => {
+  it("announces async action feedback once and names the recovery note", () => {
+    const wizard = readFileSync(
+      join(TEMPLATE, "components/admin/DeployLaunchWizard.tsx"),
+      "utf8"
+    );
+    const ownership = readFileSync(
+      join(TEMPLATE, "components/admin/OwnershipPacketPanel.tsx"),
+      "utf8"
+    );
+    const deploy = readFileSync(
+      join(TEMPLATE, "components/admin/DeployPanel.tsx"),
+      "utf8"
+    );
+
+    for (const src of [wizard, ownership, deploy]) {
+      // Single polite status region for async success/error — no nested live regions.
+      expect(src).toMatch(
+        /role="status"[\s\S]{0,80}aria-live="polite"|aria-live="polite"[\s\S]{0,80}role="status"/
+      );
+      expect(src).toMatch(/aria-atomic="true"/);
+      expect(src.match(/aria-live=/g)?.length).toBe(1);
+      expect(src.match(/role="status"/g)?.length).toBe(1);
+    }
+
+    expect(wizard).toMatch(/I am stuck \(recovery note\)/);
+    expect(wizard).toMatch(/name="stuck_recovery_note"/);
+    expect(wizard).toMatch(/autoComplete="off"/);
+    // Wrapping label preserved (label text precedes textarea; no htmlFor-only pattern).
+    expect(wizard).toMatch(
+      /<label[\s\S]*I am stuck \(recovery note\)[\s\S]*<textarea[\s\S]*name="stuck_recovery_note"/
+    );
   });
 });

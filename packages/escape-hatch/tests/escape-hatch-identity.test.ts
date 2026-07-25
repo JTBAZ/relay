@@ -63,12 +63,12 @@ function setRealLookingIdentityEnv(): void {
 describe("EH-030 status (preserved under EH-032)", () => {
   it("keeps EH-030 supabase capability evidence under EH-032 with next EH-034", () => {
     const status = buildEscapeHatchStatus();
-    expect(ESCAPE_HATCH_SLICE).toBe("EH-080");
-    expect(status.slice).toBe("EH-080");
+    expect(ESCAPE_HATCH_SLICE).toBe("EH-082");
+    expect(status.slice).toBe("EH-082");
     expect(status.productionSafe).toBe(false);
-    expect(status.nextSlice.id).toBe("EH-081");
-    expect(status.nextSlice.title).toMatch(/golden|journeys/i);
-    expect(status.blockers.some((b) => /EH-034|Milestone 3|paywall UX/i.test(b))).toBe(true);
+    expect(status.nextSlice.id).toBe("HUMAN-SIGNOFF");
+    expect(status.nextSlice.title).toMatch(/human|sign[- ]?off|release/i);
+    expect(status.blockers.some((b) => /HUMAN-SIGNOFF|live-provider|live provider/i.test(b))).toBe(true);
     expect(status.blockers.some((b) => /No hard patron identity/i.test(b))).toBe(
       false
     );
@@ -79,7 +79,7 @@ describe("EH-030 status (preserved under EH-032)", () => {
     expect(identity?.state).toBe("preview_only");
     expect(identity?.evidence).toMatch(/RLS|Supabase|portable/i);
     expect(identity?.evidence).toMatch(/productionSafe remains false/i);
-    expect(identity?.nextSlice).toBe("EH-081");
+    expect(identity?.nextSlice).toBe("HUMAN-SIGNOFF");
     expect(identity?.sourcePaths).toEqual(
       expect.arrayContaining([
         "packages/escape-hatch/template/db/migrations/0002_identity_rls.sql",
@@ -377,14 +377,54 @@ describe("EH-030 admin read gate behavior", () => {
     clearIdentityEnv();
   });
 
-  it("allows local_preview admin reads when identity env is unset", async () => {
+  const loopbackCtx = { hostHeader: "localhost:3000" };
+  const publicCtx = { hostHeader: "example.com" };
+
+  it("allows local_preview admin reads only with explicit loopback context", async () => {
+    clearIdentityEnv();
+    const { assertAdminReadAccess } = await import(
+      "../template/lib/identity/admin-access.js"
+    );
+    const access = await assertAdminReadAccess("site_test", loopbackCtx);
+    expect(access.allowed).toBe(true);
+    expect(access.identity.mode).toBe("local_preview");
+  });
+
+  it("denies local_preview admin reads when request context is missing", async () => {
     clearIdentityEnv();
     const { assertAdminReadAccess } = await import(
       "../template/lib/identity/admin-access.js"
     );
     const access = await assertAdminReadAccess("site_test");
-    expect(access.allowed).toBe(true);
-    expect(access.identity.mode).toBe("local_preview");
+    expect(access.allowed).toBe(false);
+    if (!access.allowed) {
+      expect(access.reason).toBe("local_operator_required");
+      expect(access.identity.mode).toBe("local_preview");
+    }
+  });
+
+  it("denies local_preview admin reads for public/non-loopback hosts", async () => {
+    clearIdentityEnv();
+    const { assertAdminReadAccess, isLoopbackAdminReadContext } = await import(
+      "../template/lib/identity/admin-access.js"
+    );
+    expect(isLoopbackAdminReadContext(publicCtx)).toBe(false);
+    expect(isLoopbackAdminReadContext({ hostHeader: "127.0.0.1:8787" })).toBe(
+      true
+    );
+    expect(isLoopbackAdminReadContext({ hostHeader: "[::1]:3000" })).toBe(true);
+    expect(
+      isLoopbackAdminReadContext({
+        hostHeader: "evil.example",
+        requestUrl: "https://evil.example/"
+      })
+    ).toBe(false);
+
+    const access = await assertAdminReadAccess("site_test", publicCtx);
+    expect(access.allowed).toBe(false);
+    if (!access.allowed) {
+      expect(access.reason).toBe("local_operator_required");
+    }
   });
 
   it("denies admin reads without staff session when Supabase is configured", async () => {
@@ -393,7 +433,7 @@ describe("EH-030 admin read gate behavior", () => {
     const { assertAdminReadAccess } = await import(
       "../template/lib/identity/admin-access.js"
     );
-    const access = await assertAdminReadAccess("site_test");
+    const access = await assertAdminReadAccess("site_test", loopbackCtx);
     expect(access.allowed).toBe(false);
     if (!access.allowed) {
       expect(access.reason).toBe("sign_in_required");
@@ -429,25 +469,30 @@ describe("EH-030 admin read gate behavior", () => {
         loadAdminOverview
       } = await import(loadAdminUrl);
 
-      const localPosts = await loadAdminPosts();
+      const localPosts = await loadAdminPosts(loopbackCtx);
       expect(localPosts.read_allowed).toBe(true);
       expect(localPosts.posts.length).toBeGreaterThan(0);
 
+      const deniedLocal = await loadAdminPosts(publicCtx);
+      expect(deniedLocal.read_allowed).toBe(false);
+      expect(deniedLocal.deny_reason).toBe("local_operator_required");
+      expect(deniedLocal.posts).toEqual([]);
+
       setRealLookingIdentityEnv();
-      const deniedPosts = await loadAdminPosts();
+      const deniedPosts = await loadAdminPosts(loopbackCtx);
       expect(deniedPosts.read_allowed).toBe(false);
       expect(deniedPosts.deny_reason).toBe("sign_in_required");
       expect(deniedPosts.posts).toEqual([]);
 
-      const deniedMedia = await loadAdminMedia();
+      const deniedMedia = await loadAdminMedia(loopbackCtx);
       expect(deniedMedia.read_allowed).toBe(false);
       expect(deniedMedia.rows).toEqual([]);
 
-      const deniedTiers = await loadAdminTiers();
+      const deniedTiers = await loadAdminTiers(loopbackCtx);
       expect(deniedTiers.read_allowed).toBe(false);
       expect(deniedTiers.tiers).toEqual([]);
 
-      const deniedOverview = await loadAdminOverview();
+      const deniedOverview = await loadAdminOverview(loopbackCtx);
       expect(deniedOverview.read_allowed).toBe(false);
       expect(deniedOverview.post_count).toBe(0);
       expect(deniedOverview.media_count).toBe(0);

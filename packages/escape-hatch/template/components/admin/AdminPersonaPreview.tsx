@@ -1,5 +1,6 @@
 "use client";
 
+import { adminLocalFetch } from "./adminLocalFetch";
 import { useMemo, useState } from "react";
 
 type Persona = { id: string; label: string; tier_ids: string[] };
@@ -42,7 +43,7 @@ export function AdminPersonaPreview({
     setBusy(true);
     setResult(null);
     try {
-      const res = await fetch("/api/admin/grants", {
+      const res = await adminLocalFetch("/api/admin/grants", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({

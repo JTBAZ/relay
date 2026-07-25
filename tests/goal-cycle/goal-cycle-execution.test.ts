@@ -193,6 +193,9 @@ describe("VS8-T02 / T03 execution helpers", () => {
     expect(buildPublishConfirmationPath({ variantId: "var_1" })).toContain(
       "variant_id=var_1"
     );
+    expect(buildPublishConfirmationPath({ eventId: "task_1", variantId: "var_1" })).toContain(
+      "event_id=task_1"
+    );
   });
 
   it("completes upkeep tasks without distribution handoff", async () => {

@@ -2,7 +2,7 @@ import { PATREON_CREATOR_OAUTH_SCOPES } from "./patreon-creator-scopes";
 import { pilotUxDevBearerHeaders } from "./pilot-ux-session";
 import { VISITOR_SESSION_STORAGE_KEY } from "./visitor-gallery-telemetry";
 import { SUBSCRIBESTAR_CREATOR_OAUTH_SCOPES } from "./subscribestar-creator-scopes";
-import { resolveRelayApiBaseFromEnv } from "./relay-api-env";
+import { resolveRelayApiBaseFromEnv, relayBrowserMediaUrl } from "./relay-api-env";
 import {
   RelayForbiddenError,
   RelayServerError,
@@ -10,6 +10,7 @@ import {
 } from "./relay-fetch-errors";
 
 export { RelayForbiddenError, RelayServerError, RelayUnauthorizedError };
+export { relayBrowserMediaUrl };
 
 /** No trailing slash — paths like `/api/v1/...` are appended below. */
 function resolveRelayApiBase(): string {
@@ -18,9 +19,9 @@ function resolveRelayApiBase(): string {
 export const RELAY_API_BASE = resolveRelayApiBase();
 
 /**
- * Patron feed media: `<video crossOrigin="anonymous" src={RELAY_API_BASE + "/content"}>` may not send
- * the same cookies as `fetch` with `credentials: "include"` in all browsers. If `/content` 403s in
- * prod for `<video>`/`<img>`, add a same-origin proxy route or signed short-lived URLs.
+ * JSON API calls use {@link RELAY_API_BASE} (cross-origin OK with credentialed CORS).
+ * Export media **bytes** (`/content`, `/thumb`, `/preview`) should use {@link relayBrowserMediaUrl}
+ * so the browser hits same-origin Next rewrites — see `web/next.config.mjs`.
  */
 type Envelope<T> = { data: T; meta: { trace_id: string } };
 
@@ -1986,30 +1987,30 @@ export function galleryItemExportVisibleToVisitor(item: GalleryItem): boolean {
 }
 
 /**
- * Absolute URL for grid/list image tiles: `/thumb` (WebP) when available, else `/content`.
+ * Same-origin URL for grid/list image tiles: `/thumb` (WebP) when available, else `/content`.
  * For `image/gif`, uses `/content` first so tiles play the native animated GIF at full export resolution.
  */
 export function galleryItemImageGridSrc(item: GalleryItem): string | null {
   if (!item.has_export || !item.mime_type?.startsWith("image/")) return null;
   if ((item.mime_type ?? "").toLowerCase() === "image/gif") {
     const full = item.content_url_path?.trim();
-    if (full) return `${RELAY_API_BASE}${full}`;
+    if (full) return relayBrowserMediaUrl(full);
     const thumb = item.thumb_url_path?.trim();
-    if (thumb) return `${RELAY_API_BASE}${thumb}`;
+    if (thumb) return relayBrowserMediaUrl(thumb);
     return null;
   }
   const thumb = item.thumb_url_path?.trim();
-  if (thumb) return `${RELAY_API_BASE}${thumb}`;
+  if (thumb) return relayBrowserMediaUrl(thumb);
   const full = item.content_url_path?.trim();
-  if (full) return `${RELAY_API_BASE}${full}`;
+  if (full) return relayBrowserMediaUrl(full);
   return null;
 }
 
-/** Absolute URL for visitor teaser image (tier-gated tiles), or null. */
+/** Same-origin URL for visitor teaser image (tier-gated tiles), or null. */
 export function galleryItemPreviewSrc(item: GalleryItem): string | null {
   const p = item.preview_url_path?.trim();
   if (!p) return null;
-  return `${RELAY_API_BASE}${p}`;
+  return relayBrowserMediaUrl(p);
 }
 
 export type Collection = {
@@ -2448,7 +2449,7 @@ export function patronCollectionDetailThumbUrl(thumbPath: string | undefined): s
   if (thumbPath.startsWith("http://") || thumbPath.startsWith("https://")) {
     return thumbPath;
   }
-  return `${RELAY_API_BASE}${thumbPath.startsWith("/") ? "" : "/"}${thumbPath}`;
+  return relayBrowserMediaUrl(thumbPath.startsWith("/") ? thumbPath : `/${thumbPath}`);
 }
 
 export function patronCollectionDetailContentUrl(contentPath: string | undefined): string | null {
@@ -2456,7 +2457,7 @@ export function patronCollectionDetailContentUrl(contentPath: string | undefined
   if (contentPath.startsWith("http://") || contentPath.startsWith("https://")) {
     return contentPath;
   }
-  return `${RELAY_API_BASE}${contentPath.startsWith("/") ? "" : "/"}${contentPath}`;
+  return relayBrowserMediaUrl(contentPath.startsWith("/") ? contentPath : `/${contentPath}`);
 }
 
 export function patronCollectionPostDetailHref(entry: {
@@ -4755,6 +4756,8 @@ export type AutopostDraftWire = {
   enhancements: Record<string, unknown>;
   distribution_log: Record<string, unknown>;
   published_post_id: string | null;
+  /** Rail-linked Relay post when this draft backs a scheduled distribution plan. */
+  linked_post_id?: string | null;
   created_at: string;
   updated_at: string;
   source_preview?: {
@@ -5877,6 +5880,17 @@ export async function createPostDistributionPlan(
 ): Promise<{ plan: DistributionPlanWire }> {
   return relayFetch<{ plan: DistributionPlanWire }>(
     `/api/v1/relay/posts/${encodeURIComponent(postId)}/distribution-plan`,
+    { method: "POST", body: JSON.stringify(body) }
+  );
+}
+
+/** Revise an active Rail-linked plan without archiving it. */
+export async function reviseScheduledPostDistributionPlan(
+  postId: string,
+  body: CreatePostDistributionPlanBody
+): Promise<{ plan: DistributionPlanWire }> {
+  return relayFetch<{ plan: DistributionPlanWire }>(
+    `/api/v1/relay/posts/${encodeURIComponent(postId)}/distribution-plan/revise`,
     { method: "POST", body: JSON.stringify(body) }
   );
 }

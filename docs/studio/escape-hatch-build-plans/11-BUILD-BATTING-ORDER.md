@@ -227,24 +227,21 @@ Execute one documented slice at a time. The program docs define scope and depend
 ### EH-080 Ownership packet
 
 - **Builder:** Cursor Grok 4.5 High
-- **Status:** Implemented (preview_only; `productionSafe: false`). Ownership packet generator (manifesto, env-name inventory, optional Relay disclosure, 90-day warranty), Admin Deploy/Health surfaces. Evidence: `docs/qa/ESCAPE_HATCH_EH_080_EVIDENCE.md`. Next: **EH-081**.
+- **Status:** Implemented (preview_only; `productionSafe: false`). Ownership packet generator (manifesto, env-name inventory, optional Relay disclosure, 90-day warranty), Admin Deploy/Health surfaces. Evidence: `docs/qa/ESCAPE_HATCH_EH_080_EVIDENCE.md`. Next was **EH-081** / **EH-082** (local QC accepted).
 
 ### EH-081 Full golden journeys
 
 - **Owner:** Fable/Sol master using browser; builders only fix findings.
-- General eligible creator on Vercel/Stripe.
-- Creator-owned Patreon OAuth.
-- Relay-managed Patreon verification and cancellation/migration.
-- Portable lawful-content route with validated provider policy.
-- Mobile/keyboard/admin/patron/recovery.
+- **Status (2026-07-23 master pass):** Representative **local** desktop + ~390px admin/visitor journeys completed (media matrix, Gold unlock, mobile rails, recovery note). Full **live-provider** journeys (Vercel/Stripe sandbox, live Docker/Postgres/R2, signed multi-path human checklist) remain **open**.
+- Remaining live/human journeys still expected before production: general eligible creator on Vercel/Stripe; creator-owned Patreon OAuth; Relay-managed verification and cancellation/migration; portable lawful-content route with validated provider policy; full keyboard/a11y + recovery under live providers.
 
 ### EH-082 Release security and independence
 
 - **Builder:** Cursor Grok 4.5 High fixes; master/security reviewer accepts.
-- Remove Relay optional services and prove native operation.
-- Final security review, backup restore, rollback, secret scan.
+- **Status:** **Local QC accepted** (preview_only; `productionSafe: false`). Security fixes landed (local-preview read gate, billing portal IDOR, `public_legacy` premium hard block); backup/restore + fixture promote/rollback + ownership packet + secret scan + independence packet stamp `local_native_passed_live_provider_open`. Evidence: `docs/qa/ESCAPE_HATCH_EH_082_EVIDENCE.md`.
+- **Still open:** live remove-Relay / live-provider independence proofs; signed human checklist.
 
-**Gate:** human checklist signed; milestone report complete; release notes name supported adapters and dated policy evidence.
+**Gate:** human checklist signed (**`HUMAN-SIGNOFF`**); live-provider proofs complete; milestone report + release notes name supported adapters and dated policy evidence (`13-PROVIDER-POLICY-EVIDENCE.md`, review date 2026-07-23). Local security/independence acceptance is **PASS**; production release gate remains **OPEN/BLOCKED**.
 
 ## Work-item minimum
 

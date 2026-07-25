@@ -1,5 +1,6 @@
 "use client";
 
+import { adminLocalFetch } from "./adminLocalFetch";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
@@ -25,11 +26,10 @@ export function AdminPosts({ model }: { model: AdminPostsModel }) {
     setStatus(null);
     startTransition(async () => {
       try {
-        const res = await fetch("/api/admin/attention", {
+        const res = await adminLocalFetch("/api/admin/attention", {
           method: "POST",
           headers: {
-            "content-type": "application/json",
-            "x-escape-hatch-local": "1"
+            "content-type": "application/json"
           },
           body: JSON.stringify({
             action,

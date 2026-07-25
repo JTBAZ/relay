@@ -1,5 +1,6 @@
 "use client";
 
+import { adminLocalFetch } from "./adminLocalFetch";
 import { useState } from "react";
 
 type GrantRow = {
@@ -37,7 +38,7 @@ export function AdminPatronsPanel({
     setBusy(true);
     setMessage(null);
     try {
-      const res = await fetch("/api/admin/grants", {
+      const res = await adminLocalFetch("/api/admin/grants", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
@@ -71,7 +72,7 @@ export function AdminPatronsPanel({
     setBusy(true);
     setMessage(null);
     try {
-      const res = await fetch(
+      const res = await adminLocalFetch(
         `/api/admin/grants?grant_id=${encodeURIComponent(grantId)}`,
         { method: "DELETE" }
       );
@@ -99,7 +100,7 @@ export function AdminPatronsPanel({
     setBusy(true);
     setInspectOut(null);
     try {
-      const res = await fetch("/api/admin/grants", {
+      const res = await adminLocalFetch("/api/admin/grants", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
@@ -131,7 +132,7 @@ export function AdminPatronsPanel({
     setBusy(true);
     setMessage(null);
     try {
-      const res = await fetch("/api/admin/sessions/revoke", {
+      const res = await adminLocalFetch("/api/admin/sessions/revoke", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ user_id: sessionUser })

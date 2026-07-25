@@ -52,7 +52,7 @@ interface EventPopoverProps {
     title: string
     description: string | null
     tags: string[]
-    post_details_state: "authored" | "adapted"
+    post_details_state: "authored"
   }) => void
 }
 
@@ -162,6 +162,14 @@ export function EventPopover({
     showMediaDrop && hasMountedMedia && !isBoundedNonPublish
   const primaryTaskId = event.task_id ?? event.id
   const railEventId = primaryTaskId
+  const detailsAuthored = event.post_details_state === "authored"
+  const hasOpenDestination = children.some((c) => c.status !== "done")
+  const canPostNow = showPostDetails && detailsAuthored && hasOpenDestination
+  const postNowHref = `/studio/distribution?event_id=${encodeURIComponent(railEventId)}`
+  const isEarlyPost =
+    isScheduleEvent(event) &&
+    Number.isFinite(Date.parse(event.at)) &&
+    Date.parse(event.at) > Date.now()
 
   const unmountMedia = async () => {
     if (clearBusy || mediaCommitBusy) return
@@ -452,6 +460,35 @@ export function EventPopover({
             onSaved={(patch) => onPostDetailsSaved?.(patch)}
           />
         </>
+      ) : null}
+
+      {canPostNow && !postDetailsOpen ? (
+        <div className="px-4 pb-3" data-testid="event-post-now">
+          <button
+            type="button"
+            className="w-full rounded-xl border border-[#2D6A4F] bg-[#1B4332] px-3 py-2 text-[12px] font-semibold text-[#9bf0c4] transition-colors hover:bg-[#244f3a] active:scale-[0.99]"
+            onClick={() => {
+              if (isEarlyPost) {
+                const when = formattedClock
+                  ? `${formattedDay} · ${formattedClock}`
+                  : formattedDay
+                const ok = window.confirm(
+                  `Post now instead of waiting until ${when}? Relay will open publish, then the send handoff.`
+                )
+                if (!ok) return
+              }
+              onClose()
+              window.location.assign(postNowHref)
+            }}
+          >
+            Post now
+          </button>
+          <p className="mt-1.5 text-center text-[10px] leading-snug text-[#555]">
+            {isEarlyPost
+              ? "Opens Relay publish, then platform send — you still publish on each site."
+              : "Opens Relay publish, then platform send — you still publish on each site."}
+          </p>
+        </div>
       ) : null}
 
       {/* Plan one-liner */}

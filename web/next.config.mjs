@@ -45,6 +45,12 @@ const nextConfig = {
       {
         source: "/api/relay/library-zip",
         destination: `${relay}/api/v1/export/library-zip`
+      },
+      // Same-origin media bytes: browser <img>/fetch → Next → Relay. Avoids CORS + no-cors
+      // HTTP-cache poisoning when Previewizer credential-fetches a URL already used as <img src>.
+      {
+        source: "/api/v1/export/media/:path*",
+        destination: `${relay}/api/v1/export/media/:path*`
       }
     ];
   }

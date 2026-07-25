@@ -1,7 +1,8 @@
 /**
- * Admin access resolution (EH-030 / EH-031).
+ * Admin access resolution (EH-030 / EH-031 / EH-082).
  * When supabase/portable identity is active, admin reads and mutations require staff.
- * When none, local-preview mode is labeled — soft persona never authorizes admin.
+ * When none, local-preview inventory reads require an explicit loopback request context
+ * (not authentication). Soft persona never authorizes admin.
  * Unknown provider strings fail closed (no local-preview fallback).
  */
 
@@ -12,6 +13,7 @@ import {
   resolveIdentityProviderSafe,
   type IdentityProviderMode
 } from "../env";
+import { assertLocalOperatorMutation } from "../library-truth/local-operator";
 import {
   getServerAuthSession,
   loadMembershipRole
@@ -51,7 +53,8 @@ export type AdminIdentityState =
 export type AdminReadDeniedReason =
   | "sign_in_required"
   | "staff_required"
-  | "provider_invalid";
+  | "provider_invalid"
+  | "local_operator_required";
 
 export type AdminReadAccess =
   | { allowed: true; identity: AdminIdentityState }
@@ -61,11 +64,80 @@ export type AdminReadAccess =
       reason: AdminReadDeniedReason;
     };
 
+/**
+ * Injectable request context for local_preview admin inventory reads.
+ * Missing context and non-loopback hosts fail closed.
+ * Do not trust x-forwarded-host for authorization.
+ */
+export type AdminReadRequestContext = {
+  hostHeader?: string | null;
+  requestUrl?: string | null;
+};
+
 function activeMode(
   mode: IdentityProviderMode | "invalid"
 ): "supabase" | "portable" | null {
   if (mode === "supabase" || mode === "portable") return mode;
   return null;
+}
+
+function hostnameFromHostHeader(host: string | null | undefined): string {
+  if (!host) return "";
+  const trimmed = host.trim().toLowerCase();
+  if (trimmed.startsWith("[")) {
+    const end = trimmed.indexOf("]");
+    if (end > 0) return trimmed.slice(1, end);
+  }
+  const colon = trimmed.lastIndexOf(":");
+  if (colon > 0 && !trimmed.includes("]")) {
+    return trimmed.slice(0, colon);
+  }
+  return trimmed;
+}
+
+function isLoopbackHostname(hostname: string): boolean {
+  const h = hostname.trim().toLowerCase().replace(/^\[|\]$/g, "");
+  return (
+    h === "localhost" ||
+    h === "127.0.0.1" ||
+    h === "::1" ||
+    h === "0:0:0:0:0:0:0:1"
+  );
+}
+
+/**
+ * True when Host (or request URL hostname) is loopback.
+ * Fail closed when context is missing or neither host signal is loopback.
+ * Does not consult x-forwarded-* (spoofable).
+ */
+export function isLoopbackAdminReadContext(
+  ctx: AdminReadRequestContext | null | undefined
+): boolean {
+  if (!ctx) return false;
+  const fromHost = hostnameFromHostHeader(ctx.hostHeader);
+  if (isLoopbackHostname(fromHost)) return true;
+  if (ctx.requestUrl) {
+    try {
+      const url = new URL(ctx.requestUrl);
+      if (isLoopbackHostname(url.hostname)) return true;
+    } catch {
+      // ignore malformed URL
+    }
+  }
+  return false;
+}
+
+/**
+ * Resolve Host from Next.js request headers (async in Next 15).
+ * Intentionally omits x-forwarded-host so spoofed forwarded hosts cannot unlock reads.
+ */
+export async function readAdminRequestContextFromHeaders(): Promise<AdminReadRequestContext> {
+  const { headers } = await import("next/headers");
+  const h = await headers();
+  return {
+    hostHeader: h.get("host"),
+    requestUrl: null
+  };
 }
 
 export async function resolveAdminIdentity(
@@ -140,12 +212,14 @@ export async function resolveAdminIdentity(
 
 /**
  * Gate admin page loaders (inventory reads).
- * - local_preview: allow current local-operator preview (not authentication).
+ * - local_preview: allow only with explicit loopback request context (not authentication).
  * - supabase / portable: require staff session; soft persona never unlocks admin reads.
  * - invalid provider: deny.
+ * Missing request context on local_preview fails closed.
  */
 export async function assertAdminReadAccess(
-  siteId: string
+  siteId: string,
+  requestContext?: AdminReadRequestContext | null
 ): Promise<AdminReadAccess> {
   const identity = await resolveAdminIdentity(siteId);
 
@@ -158,6 +232,13 @@ export async function assertAdminReadAccess(
   }
 
   if (identity.mode === "local_preview") {
+    if (!isLoopbackAdminReadContext(requestContext)) {
+      return {
+        allowed: false,
+        identity,
+        reason: "local_operator_required"
+      };
+    }
     return { allowed: true, identity };
   }
 
@@ -220,19 +301,8 @@ export async function assertAdminMutationAccess(
   }
 
   if (identity.mode === "local_preview") {
-    // Modules under library-truth/ (except index glue) are embedded by fill-template.
-    // Extensionless relative import matches kit rewriteKitModuleImports convention.
-    const localOperatorPath = "../library-truth/local-operator";
-    const { assertLocalOperatorMutation } = (await import(
-      localOperatorPath
-    )) as {
-      assertLocalOperatorMutation: (
-        request: Request,
-        surface: string
-      ) =>
-        | { allowed: true }
-        | { allowed: false; status: number; error: string };
-    };
+    // Static import of library-truth/local-operator (template ships a copy;
+    // fill-template embeds the package-canonical module into generated kits).
     const access = assertLocalOperatorMutation(request, "Admin");
     if (!access.allowed) {
       return {

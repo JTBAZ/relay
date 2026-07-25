@@ -4,11 +4,13 @@ import { AdminPatronsPanel } from "@/components/admin/AdminPatronsPanel";
 import { AdminShell } from "@/components/admin/AdminShell";
 import { loadAdminPatrons } from "@/lib/admin/load-admin";
 import { redirectIfAdminSignInRequired } from "@/lib/admin/require-admin-page";
+import { readAdminRequestContextFromHeaders } from "@/lib/identity/admin-access";
 
 export const dynamic = "force-dynamic";
 
 export default async function AdminPatronsPage() {
-  const model = await loadAdminPatrons();
+  const requestContext = await readAdminRequestContextFromHeaders();
+  const model = await loadAdminPatrons(requestContext);
   redirectIfAdminSignInRequired(
     model.read_allowed,
     model.deny_reason,

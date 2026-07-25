@@ -248,7 +248,7 @@ Deferrals: Relay Studio client, live network E2E, remote media upload, SQL token
 
 Workflow (fixture): create preview → smoke/approve (operator) → promote (retains prior stable) → guided rollback. Provider URL (`*.vercel.app`) then custom domain. Absolute callback URLs fail closed for unset/placeholder origins.
 
-Deferrals: live Vercel CLI/API, real DNS/TLS probes, golden journeys (**EH-081**).
+Deferrals: live Vercel CLI/API, real DNS/TLS probes, live-provider golden journeys / **HUMAN-SIGNOFF**.
 
 ## Portable Docker path (EH-071)
 
@@ -262,7 +262,7 @@ Deferrals: live Vercel CLI/API, real DNS/TLS probes, golden journeys (**EH-081**
 
 MojoHost is a **policy candidate** only — not wizard-supported until gates in `13-PROVIDER-POLICY-EVIDENCE.md` pass.
 
-Deferrals: required live Docker in CI, live ACME/DNS, MojoHost as supported host, golden journeys (**EH-081**).
+Deferrals: required live Docker in CI, live ACME/DNS, MojoHost as supported host, live-provider golden journeys / **HUMAN-SIGNOFF**.
 
 ## Transactional email (EH-072)
 
@@ -277,7 +277,7 @@ Required message types: account verification, password/admin recovery, security 
 
 Golden path recipe: **Resend HTTP API** (names only). Creator owns the ESP account and sender domain. Checklist is operator guidance — no live DNS probes.
 
-Deferrals: live Resend/SMTP in CI, adult ToS selection, patrons resend UX, golden journeys (**EH-081**).
+Deferrals: live Resend/SMTP in CI, adult ToS selection, patrons resend UX, live-provider golden journeys / **HUMAN-SIGNOFF**.
 
 ## Backup / restore / diagnostics (EH-073)
 
@@ -292,7 +292,7 @@ Deferrals: live Resend/SMTP in CI, adult ToS selection, patrons resend UX, golde
 
 Workflow (fixture): run backup → verify freshness within RPO → isolated restore rehearsal → download redacted diagnostics. Not live Postgres/R2.
 
-Deferrals: live cloud backup providers, full production restore signoff (**EH-082**), `productionSafe: true`.
+Deferrals: live cloud backup providers, full production restore under **HUMAN-SIGNOFF**, `productionSafe: true`.
 
 ## Launch wizard (EH-074)
 
@@ -305,7 +305,7 @@ Deferrals: live cloud backup providers, full production restore signoff (**EH-08
 
 Blocking complete gate: path chosen, callback origin ok, EH-073 backup freshness + restore rehearsal, active promote pointer, operator smoke approval. MojoHost remains not wizard-supported. Still preview_only.
 
-Deferrals: live Vercel/Docker daemon, live DNS/TLS, golden journeys (**EH-081**), `productionSafe: true`.
+Deferrals: live Vercel/Docker daemon, live DNS/TLS, live-provider golden journeys / **HUMAN-SIGNOFF**, `productionSafe: true`.
 
 ## Ownership packet (EH-080)
 
@@ -317,9 +317,9 @@ Deferrals: live Vercel/Docker daemon, live DNS/TLS, golden journeys (**EH-081**)
 | `/admin/deploy` panel | Generate / download |
 | Health | Ownership packet readiness item |
 
-Contents (doc 12 subset): manifesto, source/data pointers, credentials **names only**, optional Relay disclosure, operating pointers, 90-day warranty. Live independence proof deferred to **EH-082**.
+Contents (doc 12 subset): manifesto, source/data pointers, credentials **names only**, optional Relay disclosure, operating pointers, 90-day warranty. Independence stamp: `local_native_passed_live_provider_open` (EH-082 local QC; live provider independence open).
 
-Deferrals: full human signoff browser journeys (**EH-081**), remove-Relay independence drill (**EH-082**), embedding secrets/PII, `productionSafe: true`.
+Deferrals: signed human checklist + live-provider journeys (**HUMAN-SIGNOFF**), live remove-Relay / live-provider independence drill, embedding secrets/PII, `productionSafe: true`.
 
 ## Identity provider
 
@@ -367,7 +367,7 @@ RLS helpers `eh_private.fresh_entitlement_tiers` / `entitled_for_access` (migrat
 | unset | `private_r2` when R2 signing env is real; else `local_private` |
 | `local_private` | Stream from `data/private-media` after entitlement check (CI/local default) |
 | `private_r2` | Mint short-lived signed GET; fail closed if credentials missing/placeholder |
-| `public_legacy` | Explicit residual leakage mode — do **not** use in production |
+| `public_legacy` | **Blocked for premium delivery (EH-082).** Env value still parses for compatibility; premium static/stream delivery fails closed. Generator refuses `mediaLayout: public_legacy`. Do not use. |
 
 Visitor route: `GET /api/media/{mediaId}` → auth + soft-persona cookie (provider `none` only; persona **id**; tiers from bundle) → `evaluateAccess` → redirect/stream; deny otherwise.
 
@@ -415,7 +415,7 @@ Session cookies: httpOnly, SameSite=Lax, path `/`, Secure when `NODE_ENV=product
 
 Adapter inventory: `escape-hatch.manifest.json` and `lib/adapters/`. Auth/DB/storage readiness is env-honest; billing is EH-050 contract + EH-051 Stripe adapter (stub default); provider policy is EH-052; deploy verification remains EH-070.
 
-**Not production-safe:** `productionSafe` is false. Account/paywall UX and Stripe adapter are present, but Milestone 3 security review + browser personas gate, provider policy router (EH-052), and verified deploy remain open. `public_legacy` and residual public copies are explicitly non-production.
+**Not production-safe:** `productionSafe` is false. Account/paywall UX and Stripe adapter are present, but Milestone 3 security review + browser personas gate, provider policy router (EH-052), and verified deploy remain open. `ESCAPE_HATCH_MEDIA_MODE=public_legacy` is a hard fail-closed path for premium bytes (EH-082); fill refuses that layout.
 
 ## Security honesty
 
@@ -423,7 +423,7 @@ Adapter inventory: `escape-hatch.manifest.json` and `lib/adapters/`. Auth/DB/sto
 - Soft persona preview is **local_preview only** (provider `none`) — never elevates under Path A/B.
 - Entitlement evaluator is server-only — never trust client-passed tier ids or “I am entitled”.
 - Default private layout does **not** stage premium originals under `public/media`; visitor premium bytes go through `/api/media` after `evaluateAccess`.
-- `ESCAPE_HATCH_MEDIA_MODE=public_legacy` reintroduces world-readable premium copies — residual only; keep `productionSafe` false.
+- `ESCAPE_HATCH_MEDIA_MODE=public_legacy` does **not** deliver premium media (EH-082 hard block). Use `local_private` or `private_r2`. fillTemplate refuses `mediaLayout: public_legacy` before any premium copy.
 - Service role keys, R2 secrets, and session secrets must never appear in client bundles or committed files.
 - Path A RLS uses `auth.uid()`; Path B RLS uses `current_setting('eh.user_id')` set by the server after session validate.
 - Both paths: entitled patrons may SELECT premium **metadata** when grants are fresh; premium **bytes** require EH-033 delivery.

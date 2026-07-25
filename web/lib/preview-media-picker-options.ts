@@ -1,4 +1,5 @@
-import { galleryItemImageGridSrc, RELAY_API_BASE, type GalleryItem, type RelayLibraryStagingItem } from "@/lib/relay-api";
+import { galleryItemImageGridSrc, type GalleryItem, type RelayLibraryStagingItem } from "@/lib/relay-api";
+import { relayBrowserMediaUrl } from "@/lib/relay-api-env";
 
 export type PreviewMediaPickerOption = {
   mediaId: string;
@@ -20,8 +21,7 @@ function stagingThumbUrl(item: RelayLibraryStagingItem): string | null {
         : item.content_url_path;
   const p = pathForThumb?.trim();
   if (!p) return null;
-  if (/^https?:\/\//i.test(p)) return p;
-  return `${RELAY_API_BASE}${p.startsWith("/") ? p : `/${p}`}`;
+  return relayBrowserMediaUrl(p);
 }
 
 export function mergePreviewMediaPickerOptions(args: {

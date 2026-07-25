@@ -1,8 +1,8 @@
 # Escape Hatch
 
-CLI test bed that turns a Patreon-shaped JSON bundle into a **viewable subscription gallery folder** (mini-Relay copy) with theme tokens and a **soft-gate** persona switcher.
+CLI test bed that turns a Patreon-shaped JSON bundle into a **viewable subscription gallery folder** (mini-Relay copy) with theme tokens, **server entitlement checks**, and **private media delivery** (default layout).
 
-> **Not production security.** Soft gate only changes what the UI shows. Locked media files are still copied into `public/media`. Do not deploy an Escape Hatch kit as a real paywall until hard auth + entitlement checks land (roadmap EH-4).
+> **Not production-ready (`productionSafe: false`).** Soft personas are demo UI only when identity is unset. Default fill stages premium bytes under `data/private-media` and serves them via `/api/media/{id}` after `evaluateAccess` — not world-readable `public/media`. `ESCAPE_HATCH_MEDIA_MODE=public_legacy` / `mediaLayout: public_legacy` is hard-blocked (EH-082). Live provider proofs, Milestone 3 security/browser gate, and human acceptance remain open — do not treat a generated kit as a deployable paywall without those gates.
 
 ## Product status and construction program
 
@@ -26,7 +26,7 @@ Patreon API + media extract (Relay)
         ↓
   Template fill → packages/escape-hatch/.out/<slug>/
         ↓
-  npm run dev  →  soft-gate preview
+  npm run dev  →  local Hatch Console + visitor preview
 ```
 
 ## Quick start (fixture)
@@ -96,6 +96,6 @@ packages/escape-hatch/
   .out/<slug>/        generated site kit (gitignored)
 ```
 
-## Soft-gate disclaimer
+## Soft-persona vs private media (honesty)
 
-Persona switching is a **demo**. Entitlements are not enforced server-side. Anyone with the Export Kit can open files under `public/media`.
+Persona switching is a **local demo** when identity provider is `none` — not production authorization and never elevates under Path A/B. Premium originals default to `data/private-media` with delivery through `/api/media` after server entitlement evaluation. Free/public assets may remain under `public/media`. `public_legacy` is refused at fill time and blocked for premium delivery. Kits remain **`productionSafe: false`** until live-provider and human gates close.

@@ -27,14 +27,21 @@ import {
   RelayCreatePostError
 } from "../relay/create-relay-post.js";
 import {
+  publishExistingRelayPost
+} from "../relay/publish-existing-relay-post.js";
+import {
   buildMediaReadinessErrors,
   buildPublishConfirmationPath,
   deriveMediaStateFromIds,
   syncGoalCycleMediaProjections
 } from "../goal-cycle/execution/goal-cycle-execution-service.js";
 import { effectivePerEventNotify } from "./schedule-reminder-extension-api.js";
-import { getPostDistributionSummary } from "./post-distribution-service.js";
-import { formatPlatformVariant } from "./platform-formatters.js";
+import {
+  getPostDistributionPlan,
+  getPostDistributionSummary,
+  type DistributionPlanWire,
+  type DistributionVariantWire
+} from "./post-distribution-service.js";
 import {
   isDistributionDestination,
   type DistributionDestination
@@ -158,7 +165,7 @@ export type ScheduleRailReadyItem = {
    * Artist-authored post details on the linked draft.
    * `none` when media may be attached but Title / Description / Tags were never saved.
    */
-  post_details_state?: "none" | "authored" | "adapted" | null;
+  post_details_state?: "none" | "authored" | null;
   /** Canonical authored description (plain text) when available. */
   post_description?: string | null;
   /** Relay organization tags (not hashtags). */
@@ -647,7 +654,7 @@ export async function getCreatorScheduleRail(
   const planIds = [...new Set(classified.map((row) => row.planId).filter(Boolean))] as string[];
   const draftByPlanId = new Map<string, string>();
   const plannedFormatByPlanId = new Map<string, PlannedPostFormat>();
-  const postDetailsStateByPlanId = new Map<string, "authored" | "adapted">();
+  const postDetailsStateByPlanId = new Map<string, "authored">();
   const draftTagsByPlanId = new Map<string, string[]>();
   if (planIds.length > 0) {
     const plans = await prisma.postDistributionPlan.findMany({
@@ -662,7 +669,7 @@ export async function getCreatorScheduleRail(
       )
     ];
     const formatByDraftId = new Map<string, PlannedPostFormat>();
-    const detailsStateByDraftId = new Map<string, "authored" | "adapted">();
+    const detailsStateByDraftId = new Map<string, "authored">();
     const tagsByDraftId = new Map<string, string[]>();
     if (draftIds.length > 0) {
       const drafts = await prisma.autopostDraft.findMany({
@@ -678,8 +685,9 @@ export async function getCreatorScheduleRail(
           formatByDraftId.set(draft.id, ws.planned_format);
         }
         const detailsState = ws.post_details_state;
+        // Legacy `adapted` maps to authored — platform prep now happens at review time.
         if (detailsState === "authored" || detailsState === "adapted") {
-          detailsStateByDraftId.set(draft.id, detailsState);
+          detailsStateByDraftId.set(draft.id, "authored");
         }
         if (Array.isArray(ws.tags)) {
           tagsByDraftId.set(
@@ -777,7 +785,7 @@ export async function getCreatorScheduleRail(
       instructions: null,
       publish_confirm_path:
         row.action === "post" && !needsMedia && row.railStatus !== "done"
-          ? buildPublishConfirmationPath({ variantId: row.variantId })
+          ? buildPublishConfirmationPath({ variantId: row.variantId, eventId: row.id })
           : null,
       post_details_state: detailsState ?? "none",
       post_description: versionMeta?.description ?? null,
@@ -1572,34 +1580,18 @@ export async function attachMediaToScheduleRailEvent(
   };
 }
 
-export type PostDetailsFitMode = "as_written" | "fit_platforms";
-
-export type ScheduleRailPostDetailsVariantOverride = {
-  destination: string;
-  /** When true, keep the artist-authored text for this destination. */
-  use_original?: boolean;
-  title?: string | null;
-  body_text?: string | null;
-  post_text?: string | null;
-};
-
-export type UpdateScheduleRailPostDetailsInput = {
-  title?: string | null;
-  description?: string | null;
-  tags?: string[];
-  fit_mode?: PostDetailsFitMode;
-  /** When true, compute variant previews without writing. */
-  preview?: boolean;
-  variant_overrides?: ScheduleRailPostDetailsVariantOverride[];
-};
-
 export type ScheduleRailPostDetailsVariantWire = {
   destination: string;
   title: string | null;
   body_text: string | null;
   post_text: string | null;
   tags: string[];
-  adapted: boolean;
+};
+
+export type UpdateScheduleRailPostDetailsInput = {
+  title?: string | null;
+  description?: string | null;
+  tags?: string[];
 };
 
 export type ScheduleRailPostDetailsResult = {
@@ -1608,9 +1600,8 @@ export type ScheduleRailPostDetailsResult = {
   title: string;
   description: string | null;
   tags: string[];
-  post_details_state: "authored" | "adapted";
+  post_details_state: "authored";
   variants: ScheduleRailPostDetailsVariantWire[];
-  preview: boolean;
 };
 
 function normalizePostDetailTags(raw: unknown): string[] {
@@ -1642,8 +1633,7 @@ function seedVariantAsWritten(
       title: null,
       body_text: body,
       post_text: postText,
-      tags: tags.map((t) => (t.startsWith("#") ? t : `#${t}`)),
-      adapted: false
+      tags: tags.map((t) => (t.startsWith("#") ? t : `#${t}`))
     };
   }
   if (destination === "bluesky") {
@@ -1653,8 +1643,7 @@ function seedVariantAsWritten(
       title: null,
       body_text: null,
       post_text: postText,
-      tags: [],
-      adapted: false
+      tags: []
     };
   }
   if (destination === "deviantart") {
@@ -1663,8 +1652,7 @@ function seedVariantAsWritten(
       title: titled,
       body_text: body,
       post_text: null,
-      tags,
-      adapted: false
+      tags
     };
   }
   return {
@@ -1672,74 +1660,22 @@ function seedVariantAsWritten(
     title: titled,
     body_text: body,
     post_text: null,
-    tags: [],
-    adapted: false
+    tags: []
   };
 }
 
-function buildPostDetailsVariants(args: {
-  destinations: DistributionDestination[];
-  title: string;
-  description: string | null;
-  tags: string[];
-  fitMode: PostDetailsFitMode;
-  overrides?: ScheduleRailPostDetailsVariantOverride[];
-}): ScheduleRailPostDetailsVariantWire[] {
-  const overrideByDest = new Map(
-    (args.overrides ?? []).map((o) => [o.destination.trim().toLowerCase(), o])
-  );
-  return args.destinations.map((destination) => {
-    const override = overrideByDest.get(destination);
-    const useOriginal = override?.use_original === true;
-    let built: ScheduleRailPostDetailsVariantWire;
-    if (args.fitMode === "fit_platforms" && !useOriginal) {
-      try {
-        const formatted = formatPlatformVariant(destination, {
-          title: args.title,
-          bodyText: args.description ?? "",
-          tagLabels: args.tags
-        });
-        const asWritten = seedVariantAsWritten(
-          destination,
-          args.title,
-          args.description,
-          args.tags
-        );
-        const adapted =
-          (formatted.title ?? null) !== asWritten.title ||
-          (formatted.bodyText ?? null) !== asWritten.body_text ||
-          (formatted.postText ?? null) !== asWritten.post_text;
-        built = {
-          destination,
-          title: formatted.title,
-          body_text: formatted.bodyText,
-          post_text: formatted.postText,
-          tags: formatted.tags,
-          adapted
-        };
-      } catch {
-        // Adaptation failure: keep authored text unchanged for this destination.
-        built = seedVariantAsWritten(destination, args.title, args.description, args.tags);
-      }
-    } else {
-      built = seedVariantAsWritten(destination, args.title, args.description, args.tags);
-    }
-    if (override && !useOriginal) {
-      if (override.title !== undefined) built.title = override.title?.trim() || null;
-      if (override.body_text !== undefined) {
-        built.body_text = override.body_text?.trim() || null;
-      }
-      if (override.post_text !== undefined) {
-        built.post_text = override.post_text?.trim() || null;
-      }
-    }
-    return built;
-  });
-}
+const IMMUTABLE_VARIANT_STATUSES = new Set([
+  "approved",
+  "handed_off",
+  "posted",
+  "failed",
+  "abandoned"
+]);
 
 /**
  * Persist artist-authored Title / Description / Tags on a scheduled rail event's
- * draft post, Autopost draft, and destination variants.
+ * draft post and Autopost draft. Seeds only untouched draft destination variants
+ * with exact authored text (no platform fitting).
  */
 export async function updateScheduleRailEventPostDetails(
   prisma: PrismaClient,
@@ -1750,10 +1686,6 @@ export async function updateScheduleRailEventPostDetails(
   const id = creatorId.trim();
   const tid = railEventId.trim();
   if (!tid) throw new ScheduleRailValidationError("event id is required.");
-
-  const fitMode: PostDetailsFitMode =
-    input.fit_mode === "fit_platforms" ? "fit_platforms" : "as_written";
-  const preview = input.preview === true;
 
   const target = await resolveScheduleRailAttachTarget(prisma, id, tid);
   const postId = target.post_id;
@@ -1795,7 +1727,7 @@ export async function updateScheduleRailEventPostDetails(
   let planId = target.plan_id;
   if (!planId) {
     const plan = await prisma.postDistributionPlan.findFirst({
-      where: { postId, creatorId: id },
+      where: { postId, creatorId: id, status: "active" },
       orderBy: { createdAt: "desc" },
       select: { id: true }
     });
@@ -1804,44 +1736,41 @@ export async function updateScheduleRailEventPostDetails(
 
   const variantsRows = planId
     ? await prisma.postDistributionVariant.findMany({
-        where: { planId, creatorId: id, status: "draft" },
-        select: { id: true, destination: true }
+        where: { planId, creatorId: id },
+        select: {
+          id: true,
+          destination: true,
+          status: true,
+          platformFields: true
+        }
       })
     : await prisma.postDistributionVariant.findMany({
-        where: { postId, creatorId: id, status: "draft" },
-        select: { id: true, destination: true }
+        where: { postId, creatorId: id },
+        select: {
+          id: true,
+          destination: true,
+          status: true,
+          platformFields: true
+        }
       });
 
-  const destinations = variantsRows
-    .map((v) => v.destination)
-    .filter(isDistributionDestination);
-
-  const variantWires = buildPostDetailsVariants({
-    destinations,
-    title,
-    description,
-    tags,
-    fitMode,
-    overrides: input.variant_overrides
+  const seedableRows = variantsRows.filter((row) => {
+    if (IMMUTABLE_VARIANT_STATUSES.has(row.status)) return false;
+    if (row.status !== "draft") return false;
+    const fields =
+      row.platformFields &&
+      typeof row.platformFields === "object" &&
+      !Array.isArray(row.platformFields)
+        ? (row.platformFields as Record<string, unknown>)
+        : {};
+    // Skip variants already prepared at scheduled-post review.
+    return fields.rail_prepared !== true;
   });
 
-  const postDetailsState: "authored" | "adapted" =
-    fitMode === "fit_platforms" && variantWires.some((v) => v.adapted)
-      ? "adapted"
-      : "authored";
-
-  if (preview) {
-    return {
-      task_id: target.result_task_id,
-      post_id: postId,
-      title,
-      description,
-      tags,
-      post_details_state: postDetailsState,
-      variants: variantWires,
-      preview: true
-    };
-  }
+  const variantWires = seedableRows
+    .map((row) => row.destination)
+    .filter(isDistributionDestination)
+    .map((destination) => seedVariantAsWritten(destination, title, description, tags));
 
   let sourceDraftId: string | null = null;
   if (planId) {
@@ -1877,7 +1806,7 @@ export async function updateScheduleRailEventPostDetails(
             ? { ...(draft.workspace as Record<string, unknown>) }
             : {};
         ws.tags = tags;
-        ws.post_details_state = postDetailsState;
+        ws.post_details_state = "authored";
         await tx.autopostDraft.update({
           where: { id: draft.id },
           data: {
@@ -1891,7 +1820,7 @@ export async function updateScheduleRailEventPostDetails(
       }
     }
 
-    for (const row of variantsRows) {
+    for (const row of seedableRows) {
       if (!isDistributionDestination(row.destination)) continue;
       const wire = variantWires.find((v) => v.destination === row.destination);
       if (!wire) continue;
@@ -1913,9 +1842,373 @@ export async function updateScheduleRailEventPostDetails(
     title,
     description,
     tags,
-    post_details_state: postDetailsState,
-    variants: variantWires,
-    preview: false
+    post_details_state: "authored",
+    variants: variantWires
   };
+}
+
+export type ScheduleRailReviewContext = {
+  event_id: string;
+  task_id: string;
+  post_id: string;
+  draft_id: string | null;
+  plan_id: string | null;
+  plan: DistributionPlanWire | null;
+  variants: DistributionVariantWire[];
+  destinations: DistributionDestination[];
+  title: string;
+  description: string | null;
+  tags: string[];
+  post_details_state: "none" | "authored";
+  media_ids: string[];
+  media_ready: boolean;
+  media_state: string;
+  readiness_errors: string[];
+  composer_step: string | null;
+  publish_state: string;
+  scheduled_for: string | null;
+  /** Prefill from Autopost draft workspace when present; otherwise default Public. */
+  is_public: boolean;
+  tier_ids: string[];
+};
+
+/**
+ * Creator-scoped review context for a Schedule Rail event (task / occurrence).
+ * Resolves by event_id, or legacy draft_id / variant_id / post_id.
+ */
+export async function getScheduleRailReviewContext(
+  prisma: PrismaClient,
+  creatorId: string,
+  query: {
+    event_id?: string | null;
+    draft_id?: string | null;
+    variant_id?: string | null;
+    post_id?: string | null;
+  }
+): Promise<ScheduleRailReviewContext> {
+  const id = creatorId.trim();
+  let eventId = query.event_id?.trim() || "";
+
+  if (!eventId && query.variant_id?.trim()) {
+    const variant = await prisma.postDistributionVariant.findFirst({
+      where: { id: query.variant_id.trim(), creatorId: id },
+      select: { id: true, postId: true, planId: true }
+    });
+    if (!variant) {
+      throw new ScheduleRailNotFoundError(`Variant not found: ${query.variant_id}`);
+    }
+    const task = await prisma.postbotTask.findFirst({
+      where: {
+        creatorId: id,
+        postId: variant.postId,
+        OR: [{ variantId: variant.id }, { planId: variant.planId }]
+      },
+      orderBy: { createdAt: "asc" },
+      select: { id: true }
+    });
+    eventId = task?.id ?? "";
+    if (!eventId) {
+      // Fall through with post-only resolution below.
+      query = { ...query, post_id: variant.postId };
+    }
+  }
+
+  if (!eventId && query.draft_id?.trim()) {
+    const plan = await prisma.postDistributionPlan.findFirst({
+      where: {
+        creatorId: id,
+        sourceDraftId: query.draft_id.trim(),
+        status: "active"
+      },
+      orderBy: { updatedAt: "desc" },
+      select: { postId: true }
+    });
+    if (!plan) {
+      throw new ScheduleRailNotFoundError(
+        `No scheduled post linked to draft: ${query.draft_id}`
+      );
+    }
+    const task = await prisma.postbotTask.findFirst({
+      where: { creatorId: id, postId: plan.postId, action: "post", status: "pending" },
+      orderBy: { createdAt: "asc" },
+      select: { id: true }
+    });
+    eventId = task?.id ?? "";
+    if (!eventId) {
+      query = { ...query, post_id: plan.postId };
+    }
+  }
+
+  if (!eventId && query.post_id?.trim()) {
+    const task = await prisma.postbotTask.findFirst({
+      where: {
+        creatorId: id,
+        postId: query.post_id.trim(),
+        action: "post"
+      },
+      orderBy: { createdAt: "asc" },
+      select: { id: true }
+    });
+    eventId = task?.id ?? "";
+    if (!eventId) {
+      throw new ScheduleRailNotFoundError(
+        `No schedule rail event for post: ${query.post_id}`
+      );
+    }
+  }
+
+  if (!eventId) {
+    throw new ScheduleRailValidationError(
+      "event_id, draft_id, variant_id, or post_id is required."
+    );
+  }
+
+  const target = await resolveScheduleRailAttachTarget(prisma, id, eventId);
+  const postId = target.post_id;
+
+  const post = await prisma.post.findFirst({
+    where: { id: postId, creatorId: id },
+    select: { id: true, publishState: true }
+  });
+  if (!post) {
+    throw new ScheduleRailNotFoundError(`Post not found: ${postId}`);
+  }
+
+  const version = await prisma.postVersion.findFirst({
+    where: { postId, post: { creatorId: id } },
+    orderBy: { versionSeq: "desc" },
+    select: {
+      title: true,
+      description: true,
+      tagIds: true,
+      mediaIds: true
+    }
+  });
+  if (!version) {
+    throw new ScheduleRailNotFoundError(`Post version not found for post: ${postId}`);
+  }
+
+  let planId = target.plan_id;
+  let sourceDraftId: string | null = null;
+  if (planId) {
+    const planRow = await prisma.postDistributionPlan.findFirst({
+      where: { id: planId, creatorId: id },
+      select: { sourceDraftId: true }
+    });
+    sourceDraftId = planRow?.sourceDraftId?.trim() || null;
+  } else {
+    const planRow = await prisma.postDistributionPlan.findFirst({
+      where: { postId, creatorId: id, status: "active" },
+      orderBy: { updatedAt: "desc" },
+      select: { id: true, sourceDraftId: true }
+    });
+    planId = planRow?.id ?? null;
+    sourceDraftId = planRow?.sourceDraftId?.trim() || null;
+  }
+
+  const plan = await getPostDistributionPlan(prisma, id, postId);
+
+  let postDetailsState: "none" | "authored" = "none";
+  let composerStep: string | null = null;
+  let draftTags: string[] | null = null;
+  let audienceIsPublic = true;
+  let audienceTierIds: string[] = [];
+  if (sourceDraftId) {
+    const draft = await prisma.autopostDraft.findFirst({
+      where: { id: sourceDraftId, creatorId: id },
+      select: { workspace: true, composerStep: true }
+    });
+    if (draft) {
+      composerStep = draft.composerStep?.trim() || null;
+      const ws =
+        draft.workspace && typeof draft.workspace === "object" && !Array.isArray(draft.workspace)
+          ? (draft.workspace as Record<string, unknown>)
+          : {};
+      if (ws.post_details_state === "authored" || ws.post_details_state === "adapted") {
+        postDetailsState = "authored";
+      }
+      if (Array.isArray(ws.tags)) {
+        draftTags = ws.tags.map((t) => String(t).trim()).filter(Boolean);
+      }
+      if (typeof ws.is_public === "boolean") {
+        audienceIsPublic = ws.is_public;
+      }
+      if (Array.isArray(ws.tier_ids)) {
+        audienceTierIds = ws.tier_ids
+          .map((t) => String(t ?? "").trim())
+          .filter(Boolean);
+      }
+      if (!audienceIsPublic && audienceTierIds.length === 0) {
+        // Invalid/missing gated audience — force reselection via Public default.
+        audienceIsPublic = true;
+      }
+    }
+  }
+
+  // Authored details may live only on PostVersion (no draft workspace marker).
+  if (postDetailsState === "none") {
+    const hasAuthoredCopy =
+      (version.title.trim() && version.title.trim() !== "Scheduled post") ||
+      Boolean(version.description?.trim()) ||
+      (version.tagIds?.length ?? 0) > 0;
+    if (hasAuthoredCopy) postDetailsState = "authored";
+  }
+
+  const mediaIds = (version.mediaIds ?? []).map((m) => m.trim()).filter(Boolean);
+  const mediaState = deriveMediaStateFromIds(mediaIds);
+  const mediaReady = mediaState === "ready" || mediaState === "not_required";
+
+  const task = await prisma.postbotTask.findFirst({
+    where: { id: target.result_task_id, creatorId: id },
+    select: {
+      suggestedTime: true,
+      variant: { select: { scheduledFor: true } }
+    }
+  });
+  const scheduledFor =
+    task?.variant?.scheduledFor?.toISOString() ??
+    task?.suggestedTime?.toISOString() ??
+    null;
+
+  const destinations = (plan?.variants ?? [])
+    .map((v) => v.destination)
+    .filter(isDistributionDestination);
+
+  return {
+    event_id: target.result_task_id,
+    task_id: target.result_task_id,
+    post_id: postId,
+    draft_id: sourceDraftId,
+    plan_id: planId,
+    plan,
+    variants: plan?.variants ?? [],
+    destinations,
+    title: version.title,
+    description: version.description?.trim() || null,
+    tags: draftTags ?? normalizePostDetailTags(version.tagIds),
+    post_details_state: postDetailsState,
+    media_ids: mediaIds,
+    media_ready: mediaReady,
+    media_state: mediaState,
+    readiness_errors: buildMediaReadinessErrors(mediaState),
+    composer_step: composerStep,
+    publish_state: post.publishState,
+    scheduled_for: scheduledFor,
+    is_public: audienceIsPublic,
+    tier_ids: audienceIsPublic ? [] : audienceTierIds
+  };
+}
+
+/**
+ * Persist review-step progress on the linked Autopost draft without publishing.
+ */
+export async function updateScheduleRailReviewStep(
+  prisma: PrismaClient,
+  creatorId: string,
+  eventId: string,
+  composerStep: string
+): Promise<ScheduleRailReviewContext> {
+  const allowed = new Set([
+    "draft-post",
+    "variation-planning",
+    "variant-review",
+    "cross-post",
+    "complete"
+  ]);
+  const step = composerStep.trim();
+  if (!allowed.has(step)) {
+    throw new ScheduleRailValidationError(
+      "composer_step must be a valid review stage."
+    );
+  }
+
+  const ctx = await getScheduleRailReviewContext(prisma, creatorId, { event_id: eventId });
+  if (ctx.draft_id) {
+    const draft = await prisma.autopostDraft.findFirst({
+      where: {
+        id: ctx.draft_id,
+        creatorId: creatorId.trim(),
+        status: { in: ["nudged", "drafting", "previewing"] }
+      },
+      select: { id: true }
+    });
+    if (draft) {
+      await prisma.autopostDraft.update({
+        where: { id: draft.id },
+        data: {
+          composerStep: step,
+          status: "drafting"
+        }
+      });
+    }
+  }
+
+  return getScheduleRailReviewContext(prisma, creatorId, { event_id: eventId });
+}
+
+export type PublishScheduleRailReviewInput = {
+  is_public: boolean;
+  tier_ids?: string[];
+  title?: string | null;
+  description?: string | null;
+  tags?: string[];
+};
+
+/**
+ * Publish the existing linked draft Relay post for a Schedule Rail review event.
+ * Never mints a second Post. Advances Autopost draft composer_step toward prepare.
+ */
+export async function publishScheduleRailReviewPost(
+  prisma: PrismaClient,
+  creatorId: string,
+  eventId: string,
+  input: PublishScheduleRailReviewInput
+): Promise<ScheduleRailReviewContext> {
+  const ctx = await getScheduleRailReviewContext(prisma, creatorId, {
+    event_id: eventId
+  });
+
+  await publishExistingRelayPost(prisma, {
+    creatorId,
+    postId: ctx.post_id,
+    isPublic: input.is_public === true,
+    tierIds: input.tier_ids ?? [],
+    title: input.title,
+    description: input.description,
+    tags: input.tags
+  });
+
+  // Persist audience on draft workspace for resume; always enter prepare next.
+  // Rail-seeded variants may carry rail_prepared without an explicit prepare pass —
+  // requireExplicitPrepare still needs variation-planning before handoff.
+  if (ctx.draft_id) {
+    const draft = await prisma.autopostDraft.findFirst({
+      where: {
+        id: ctx.draft_id,
+        creatorId: creatorId.trim(),
+        status: { in: ["nudged", "drafting", "previewing"] }
+      },
+      select: { id: true, workspace: true, composerStep: true }
+    });
+    if (draft) {
+      const ws =
+        draft.workspace && typeof draft.workspace === "object" && !Array.isArray(draft.workspace)
+          ? { ...(draft.workspace as Record<string, unknown>) }
+          : {};
+      ws.is_public = input.is_public === true;
+      ws.tier_ids = input.is_public === true ? [] : (input.tier_ids ?? []);
+      await prisma.autopostDraft.update({
+        where: { id: draft.id },
+        data: {
+          workspace: ws as Prisma.InputJsonValue,
+          composerStep: "variation-planning",
+          status: "drafting",
+          publishedPostId: ctx.post_id
+        }
+      });
+    }
+  }
+
+  return getScheduleRailReviewContext(prisma, creatorId, { event_id: eventId });
 }
 

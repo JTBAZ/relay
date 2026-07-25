@@ -50,9 +50,11 @@ When a due PostBot / schedule step has Remind me effectively on, show a **must-d
 | `action` | `media_ready` | `primary_cta` | `secondary_cta` |
 | -------- | ------------- | ------------- | --------------- |
 | `repost` / `pin_comment` | n/a | `external_post` + resolved URL; label `Open on {Dest}` / `Open post` | if null external → `relay_studio` `{RELAY_WEB}/studio` (`Open in Relay`) |
-| `post` | false | `relay_autopost` `{RELAY_WEB}/studio/autopost` (`Stage in Autopost`) | null |
-| `post` | true | `relay_autopost` draft deep-link when known, else `/studio/autopost` (`Open in Autopost`) | external URL if known (`Open on {Dest}`) |
+| `post` | false | `relay_studio` `{RELAY_WEB}/studio` (`Finish media in Studio`) | null |
+| `post` | true | `relay_autopost` `{RELAY_WEB}/studio/distribution?event_id={task_id}` (`Review and send`) | external URL if known (`Open on {Dest}`) |
 | `schedule` | n/a | `relay_studio` `{RELAY_WEB}/studio` (`Review in Relay`) | external if known |
+
+**Scheduled-post review:** Due post tasks open `/studio/distribution` (not Autopost composer). Studio Core reviews exact authored text and hands off; Autopost may prepare platform variants only after an explicit action on that existing Rail plan. Incomplete posts recover to Studio. Legacy `?draft_id=` links for Rail-linked drafts redirect into the same review route.
 
 ---
 
@@ -250,7 +252,7 @@ Inject only when an open tab matches; if no matching tab, skip inject (next poll
 ## Verify checklist
 
 - Due + effective notify on → sticky toast on Relay or any social host (prefer active tab)
-- CTA matrix: repost/pin → platform; post empty → Stage in Autopost; post ready → Open in Autopost; schedule → Review in Relay
+- CTA matrix: repost/pin → platform; post empty → Finish media in Studio; post ready → Review and send (`/studio/distribution?event_id=…`); schedule → Review in Relay
 - No auto-dismiss; primary uses `primary_cta.url`; no green Open when URL is null
 - Dismiss does not re-fire on next poll; Snooze defers; Done marks task done and survives refresh
 - Global off **or** per-event mute → no toast

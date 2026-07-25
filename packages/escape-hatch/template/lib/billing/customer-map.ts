@@ -1,7 +1,8 @@
 /**
- * Preview authUser ↔ Stripe customer binding (EH-051 security remediation).
+ * Preview authUser ↔ Stripe customer binding (EH-051 / EH-082).
  * Process-local memory until a durable store ships — never trust client customerId
- * when an identity path is configured.
+ * on production portal/checkout routes. Fixture-only client binding requires an
+ * explicit opt-in that production routes must never pass.
  */
 
 export type BillingCustomerLink = {
@@ -79,9 +80,10 @@ export type ResolvePortalCustomerResult =
   | { ok: false; reason: string };
 
 /**
- * Portal customer resolution.
- * Identity-configured: ignore client customerId; require owned map entry.
- * Local preview (no identity): allow client customerId only.
+ * Portal customer resolution (EH-082).
+ * Default: ignore client customerId; require configured identity + owned map entry.
+ * Fixture-only client trust requires `allowClientCustomerIdPreview: true`
+ * (production portal route must never set this).
  */
 export async function resolvePortalCustomerId(args: {
   identityConfigured: boolean;
@@ -89,6 +91,11 @@ export async function resolvePortalCustomerId(args: {
   authUserId: string | null;
   clientCustomerId?: string | null;
   store?: BillingCustomerMapStore;
+  /**
+   * Fixture/test opt-in only. When true and identity is unset, a non-empty
+   * client customerId may be used. Production routes must omit this.
+   */
+  allowClientCustomerIdPreview?: boolean;
 }): Promise<ResolvePortalCustomerResult> {
   const store = args.store ?? previewMap;
   const client =
@@ -107,10 +114,15 @@ export async function resolvePortalCustomerId(args: {
     return { ok: true, customerId: mapped, source: "map" };
   }
 
-  if (!client) {
-    return { ok: false, reason: "missing_customer_id" };
+  // Identity unset: fail closed unless explicit fixture opt-in.
+  if (args.allowClientCustomerIdPreview === true) {
+    if (!client) {
+      return { ok: false, reason: "missing_customer_id" };
+    }
+    return { ok: true, customerId: client, source: "client_preview" };
   }
-  return { ok: true, customerId: client, source: "client_preview" };
+
+  return { ok: false, reason: "identity_required" };
 }
 
 export type ResolveCheckoutCustomerResult = {
@@ -121,9 +133,10 @@ export type ResolveCheckoutCustomerResult = {
 };
 
 /**
- * Checkout customer resolution.
- * Identity-configured: discard client customerId; use map only (else omit).
- * Local preview: may pass through client customerId.
+ * Checkout customer resolution (EH-082).
+ * Default: discard client customerId; use server map when identity is configured.
+ * Fixture-only client pass-through requires `allowClientCustomerIdPreview: true`
+ * (production checkout route must never set this).
  */
 export async function resolveCheckoutCustomerId(args: {
   identityConfigured: boolean;
@@ -131,6 +144,8 @@ export async function resolveCheckoutCustomerId(args: {
   authUserId: string | null;
   clientCustomerId?: string | null;
   store?: BillingCustomerMapStore;
+  /** Fixture/test opt-in only. Production routes must omit this. */
+  allowClientCustomerIdPreview?: boolean;
 }): Promise<ResolveCheckoutCustomerResult> {
   const store = args.store ?? previewMap;
   const client =
@@ -149,9 +164,16 @@ export async function resolveCheckoutCustomerId(args: {
     };
   }
 
+  if (args.allowClientCustomerIdPreview === true) {
+    return {
+      customerId: client || null,
+      discardedClientCustomerId: false
+    };
+  }
+
   return {
-    customerId: client || null,
-    discardedClientCustomerId: false
+    customerId: null,
+    discardedClientCustomerId: Boolean(client)
   };
 }
 

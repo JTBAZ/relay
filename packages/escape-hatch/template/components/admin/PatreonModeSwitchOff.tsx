@@ -1,5 +1,6 @@
 "use client";
 
+import { adminLocalFetch } from "./adminLocalFetch";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 
@@ -25,7 +26,7 @@ export function PatreonModeSwitchOff({
     setError(null);
     setDone(null);
     startTransition(async () => {
-      const res = await fetch("/api/admin/patreon/mode-preference", {
+      const res = await adminLocalFetch("/api/admin/patreon/mode-preference", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ action: "switch_off_to_creator_oauth" })

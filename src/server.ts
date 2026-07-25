@@ -333,6 +333,7 @@ import {
   approveDistributionVariant,
   completeDistributionAttempt,
   createPostDistributionPlan,
+  reviseScheduledPostDistributionPlan,
   getDistributionAttempt,
   getPostDistributionPlan,
   getPostDistributionSummary,
@@ -646,10 +647,16 @@ import {
   attachMediaToScheduleRailEvent,
   createScheduledPostForRail,
   getCreatorScheduleRail,
+  getScheduleRailReviewContext,
+  publishScheduleRailReviewPost,
   ScheduleRailNotFoundError,
   ScheduleRailValidationError,
-  updateScheduleRailEventPostDetails
+  updateScheduleRailEventPostDetails,
+  updateScheduleRailReviewStep
 } from "./distribution/schedule-rail-service.js";
+import {
+  PublishExistingRelayPostError
+} from "./relay/publish-existing-relay-post.js";
 import {
   createCreatorScheduleEvent,
   CreatorScheduleEventNotFoundError,
@@ -9382,18 +9389,6 @@ export function createApp(config: AppConfig): CreateAppResult {
       }
       const eventId = String(req.params.event_id ?? "").trim();
       const body = (req.body ?? {}) as Record<string, unknown>;
-      const fitRaw = typeof body.fit_mode === "string" ? body.fit_mode.trim() : "as_written";
-      const fitMode =
-        fitRaw === "fit_platforms" || fitRaw === "as_written" ? fitRaw : null;
-      if (!fitMode) {
-        return res.status(400).json(
-          errorEnvelope(
-            "VALIDATION_ERROR",
-            "fit_mode must be as_written or fit_platforms.",
-            traceId
-          )
-        );
-      }
       if (body.tags !== undefined && !Array.isArray(body.tags)) {
         return res.status(400).json(
           errorEnvelope("VALIDATION_ERROR", "tags must be an array of strings.", traceId)
@@ -9407,25 +9402,6 @@ export function createApp(config: AppConfig): CreateAppResult {
           errorEnvelope("VALIDATION_ERROR", "tags must be an array of strings.", traceId)
         );
       }
-      const overridesRaw = Array.isArray(body.variant_overrides)
-        ? (body.variant_overrides as unknown[])
-        : undefined;
-      const variant_overrides = overridesRaw?.map((row) => {
-        const o = (row ?? {}) as Record<string, unknown>;
-        return {
-          destination: String(o.destination ?? ""),
-          use_original: o.use_original === true,
-          title: o.title === null || typeof o.title === "string" ? (o.title as string | null) : undefined,
-          body_text:
-            o.body_text === null || typeof o.body_text === "string"
-              ? (o.body_text as string | null)
-              : undefined,
-          post_text:
-            o.post_text === null || typeof o.post_text === "string"
-              ? (o.post_text as string | null)
-              : undefined
-        };
-      });
       try {
         const { context } = await requireAccountWithRole(
           req,
@@ -9455,16 +9431,231 @@ export function createApp(config: AppConfig): CreateAppResult {
               body.description === null || typeof body.description === "string"
                 ? (body.description as string | null)
                 : undefined,
-            tags: body.tags as string[] | undefined,
-            fit_mode: fitMode,
-            preview: body.preview === true,
-            variant_overrides
+            tags: body.tags as string[] | undefined
           }
         );
         res.setHeader("Cache-Control", "private, no-store");
         return res.status(200).json(successEnvelope({ post_details: result }, traceId));
       } catch (err) {
         if (sendRelayAuthError(res, err, traceId)) return;
+        if (err instanceof ScheduleRailValidationError) {
+          return res
+            .status(err.statusCode)
+            .json(errorEnvelope("VALIDATION_ERROR", err.message, traceId));
+        }
+        if (err instanceof ScheduleRailNotFoundError) {
+          return res.status(err.statusCode).json(errorEnvelope("NOT_FOUND", err.message, traceId));
+        }
+        return res.status(500).json(errorEnvelope("INTERNAL", (err as Error).message, traceId));
+      }
+    }
+  );
+
+  app.get(
+    "/api/v1/creator/schedule-rail/review",
+    async (req: Request, res: Response) => {
+      const traceId = traceIdFrom(req);
+      if (!config.prisma) {
+        return res.status(503).json(
+          errorEnvelope("SERVICE_UNAVAILABLE", "Database not configured.", traceId)
+        );
+      }
+      const eventId =
+        typeof req.query.event_id === "string" ? req.query.event_id.trim() : "";
+      const draftId =
+        typeof req.query.draft_id === "string" ? req.query.draft_id.trim() : "";
+      const variantId =
+        typeof req.query.variant_id === "string" ? req.query.variant_id.trim() : "";
+      const postId =
+        typeof req.query.post_id === "string" ? req.query.post_id.trim() : "";
+      try {
+        const { context } = await requireAccountWithRole(
+          req,
+          { prisma: config.prisma, identityService },
+          "creator"
+        );
+        const relayCreatorId = context.primaryRelayCreatorId?.trim();
+        if (!relayCreatorId) {
+          return res.status(404).json(
+            errorEnvelope(
+              "NOT_FOUND",
+              "No creator studio — call POST /api/v1/creator/workspace first.",
+              traceId
+            )
+          );
+        }
+        const review = await getScheduleRailReviewContext(config.prisma, relayCreatorId, {
+          event_id: eventId || null,
+          draft_id: draftId || null,
+          variant_id: variantId || null,
+          post_id: postId || null
+        });
+        res.setHeader("Cache-Control", "private, no-store");
+        return res.status(200).json(successEnvelope({ review }, traceId));
+      } catch (err) {
+        if (sendRelayAuthError(res, err, traceId)) return;
+        if (err instanceof ScheduleRailValidationError) {
+          return res
+            .status(err.statusCode)
+            .json(errorEnvelope("VALIDATION_ERROR", err.message, traceId));
+        }
+        if (err instanceof ScheduleRailNotFoundError) {
+          return res.status(err.statusCode).json(errorEnvelope("NOT_FOUND", err.message, traceId));
+        }
+        return res.status(500).json(errorEnvelope("INTERNAL", (err as Error).message, traceId));
+      }
+    }
+  );
+
+  app.patch(
+    "/api/v1/creator/schedule-rail/review/:event_id/step",
+    async (req: Request, res: Response) => {
+      const traceId = traceIdFrom(req);
+      if (!config.prisma) {
+        return res.status(503).json(
+          errorEnvelope("SERVICE_UNAVAILABLE", "Database not configured.", traceId)
+        );
+      }
+      const eventId = String(req.params.event_id ?? "").trim();
+      const body = (req.body ?? {}) as Record<string, unknown>;
+      const composerStep =
+        typeof body.composer_step === "string" ? body.composer_step.trim() : "";
+      if (!composerStep) {
+        return res.status(400).json(
+          errorEnvelope("VALIDATION_ERROR", "composer_step is required.", traceId)
+        );
+      }
+      try {
+        const { context } = await requireAccountWithRole(
+          req,
+          { prisma: config.prisma, identityService },
+          "creator"
+        );
+        const relayCreatorId = context.primaryRelayCreatorId?.trim();
+        if (!relayCreatorId) {
+          return res.status(404).json(
+            errorEnvelope(
+              "NOT_FOUND",
+              "No creator studio — call POST /api/v1/creator/workspace first.",
+              traceId
+            )
+          );
+        }
+        const review = await updateScheduleRailReviewStep(
+          config.prisma,
+          relayCreatorId,
+          eventId,
+          composerStep
+        );
+        res.setHeader("Cache-Control", "private, no-store");
+        return res.status(200).json(successEnvelope({ review }, traceId));
+      } catch (err) {
+        if (sendRelayAuthError(res, err, traceId)) return;
+        if (err instanceof ScheduleRailValidationError) {
+          return res
+            .status(err.statusCode)
+            .json(errorEnvelope("VALIDATION_ERROR", err.message, traceId));
+        }
+        if (err instanceof ScheduleRailNotFoundError) {
+          return res.status(err.statusCode).json(errorEnvelope("NOT_FOUND", err.message, traceId));
+        }
+        return res.status(500).json(errorEnvelope("INTERNAL", (err as Error).message, traceId));
+      }
+    }
+  );
+
+  app.post(
+    "/api/v1/creator/schedule-rail/review/:event_id/publish",
+    async (req: Request, res: Response) => {
+      const traceId = traceIdFrom(req);
+      if (!config.prisma) {
+        return res.status(503).json(
+          errorEnvelope("SERVICE_UNAVAILABLE", "Database not configured.", traceId)
+        );
+      }
+      const eventId = String(req.params.event_id ?? "").trim();
+      if (!eventId) {
+        return res.status(400).json(
+          errorEnvelope("VALIDATION_ERROR", "event_id is required.", traceId)
+        );
+      }
+      const body = (req.body ?? {}) as Record<string, unknown>;
+      const isPublic = body.is_public === true;
+      const isPublicFalse = body.is_public === false;
+      if (!isPublic && !isPublicFalse) {
+        return res.status(400).json(
+          errorEnvelope("VALIDATION_ERROR", "is_public is required.", traceId, [
+            { field: "is_public", issue: "missing" }
+          ])
+        );
+      }
+      const tierIdsRaw = Array.isArray(body.tier_ids) ? (body.tier_ids as unknown[]) : [];
+      const tierIds = tierIdsRaw
+        .filter((x): x is string => typeof x === "string" && x.trim().length > 0)
+        .map((x) => x.trim());
+      const title =
+        typeof body.title === "string"
+          ? body.title
+          : body.title === null
+            ? null
+            : undefined;
+      const description =
+        typeof body.description === "string"
+          ? body.description
+          : body.description === null
+            ? null
+            : undefined;
+      const tags = Array.isArray(body.tags)
+        ? body.tags
+            .filter((x): x is string => typeof x === "string")
+            .map((x) => x.trim())
+            .filter(Boolean)
+        : undefined;
+      try {
+        const { context } = await requireAccountWithRole(
+          req,
+          { prisma: config.prisma, identityService },
+          "creator"
+        );
+        const relayCreatorId = context.primaryRelayCreatorId?.trim();
+        if (!relayCreatorId) {
+          return res.status(404).json(
+            errorEnvelope(
+              "NOT_FOUND",
+              "No creator studio — call POST /api/v1/creator/workspace first.",
+              traceId
+            )
+          );
+        }
+        if (
+          !(await assertCreatorRelayMutationAllowed(req, res, traceId, config.prisma, relayCreatorId))
+        ) {
+          return;
+        }
+        if (!(await guardStudioSyncWritable(res, traceId, relayCreatorId))) {
+          return;
+        }
+        const review = await publishScheduleRailReviewPost(
+          config.prisma,
+          relayCreatorId,
+          eventId,
+          {
+            is_public: isPublic,
+            tier_ids: tierIds,
+            title,
+            description,
+            tags
+          }
+        );
+        res.setHeader("Cache-Control", "private, no-store");
+        return res.status(200).json(successEnvelope({ review }, traceId));
+      } catch (err) {
+        if (sendRelayAuthError(res, err, traceId)) return;
+        if (err instanceof PublishExistingRelayPostError) {
+          return res
+            .status(err.statusCode)
+            .json(errorEnvelope(err.code, err.message, traceId));
+        }
         if (err instanceof ScheduleRailValidationError) {
           return res
             .status(err.statusCode)
@@ -12381,6 +12572,94 @@ export function createApp(config: AppConfig): CreateAppResult {
       return res.status(500).json(errorEnvelope("INTERNAL", (err as Error).message, traceId));
     }
   });
+
+  app.post(
+    "/api/v1/relay/posts/:post_id/distribution-plan/revise",
+    async (req: Request, res: Response) => {
+      const traceId = traceIdFrom(req);
+      if (!config.prisma) {
+        return res.status(503).json(
+          errorEnvelope("SERVICE_UNAVAILABLE", "Database not configured.", traceId)
+        );
+      }
+      const postId = String(req.params.post_id ?? "").trim();
+      const body = (req.body ?? {}) as Record<string, unknown>;
+      try {
+        const { context } = await requireAccountWithRole(
+          req,
+          { prisma: config.prisma, identityService },
+          "creator"
+        );
+        const relayCreatorId = context.primaryRelayCreatorId?.trim();
+        if (!relayCreatorId) {
+          return res.status(404).json(
+            errorEnvelope("NOT_FOUND", "No creator studio.", traceId)
+          );
+        }
+        if (!(await requireAccountMatchesCreator(req, res, traceId, relayCreatorId))) {
+          return;
+        }
+        const destinations = Array.isArray(body.destinations)
+          ? body.destinations.map(String)
+          : [];
+        const assistantByDestination =
+          body.assistant_by_destination &&
+          typeof body.assistant_by_destination === "object" &&
+          !Array.isArray(body.assistant_by_destination)
+            ? (body.assistant_by_destination as Record<string, boolean>)
+            : undefined;
+        const assistantContext =
+          body.assistant_context &&
+          typeof body.assistant_context === "object" &&
+          !Array.isArray(body.assistant_context)
+            ? (body.assistant_context as Record<string, unknown>)
+            : undefined;
+        const mediaRoutingByDestination =
+          body.media_routing_by_destination &&
+          typeof body.media_routing_by_destination === "object" &&
+          !Array.isArray(body.media_routing_by_destination)
+            ? (body.media_routing_by_destination as Record<string, string>)
+            : undefined;
+        const needsPreview =
+          typeof body.needs_preview === "boolean" ? body.needs_preview : undefined;
+        const previewMediaId =
+          typeof body.preview_media_id === "string" ? body.preview_media_id : null;
+        const plan = await reviseScheduledPostDistributionPlan(
+          config.prisma,
+          relayCreatorId,
+          postId,
+          {
+            destinations,
+            assistant_by_destination: assistantByDestination,
+            assistant_context: assistantContext as {
+              user_notes?: string | null;
+              target_audience?: string | null;
+              locale?: string | null;
+              timezone?: string | null;
+            },
+            source_draft_id:
+              typeof body.source_draft_id === "string" ? body.source_draft_id : null,
+            needs_preview: needsPreview,
+            media_routing_by_destination: mediaRoutingByDestination,
+            preview_media_id: previewMediaId
+          }
+        );
+        res.setHeader("Cache-Control", "private, no-store");
+        return res.status(200).json(successEnvelope({ plan }, traceId));
+      } catch (err) {
+        if (sendRelayAuthError(res, err, traceId)) return;
+        if (err instanceof PostDistributionValidationError) {
+          return res.status(400).json(
+            errorEnvelope("VALIDATION_ERROR", err.message, traceId, err.details)
+          );
+        }
+        if (err instanceof PostDistributionNotFoundError) {
+          return res.status(404).json(errorEnvelope("NOT_FOUND", err.message, traceId));
+        }
+        return res.status(500).json(errorEnvelope("INTERNAL", (err as Error).message, traceId));
+      }
+    }
+  );
 
   app.get("/api/v1/relay/posts/:post_id/distribution-plan", async (req: Request, res: Response) => {
     const traceId = traceIdFrom(req);

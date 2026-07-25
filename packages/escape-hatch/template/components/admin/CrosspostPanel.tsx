@@ -1,5 +1,6 @@
 "use client";
 
+import { adminLocalFetch } from "./adminLocalFetch";
 import { useEffect, useState } from "react";
 
 type TokenRow = {
@@ -37,7 +38,7 @@ export function CrosspostPanel({ siteId }: { siteId: string }) {
   const [wantPublish, setWantPublish] = useState(false);
 
   async function refresh() {
-    const res = await fetch("/api/admin/crosspost/tokens", { method: "GET" });
+    const res = await adminLocalFetch("/api/admin/crosspost/tokens", { method: "GET" });
     const json = (await res.json()) as {
       ok?: boolean;
       tokens?: TokenRow[];
@@ -64,7 +65,7 @@ export function CrosspostPanel({ siteId }: { siteId: string }) {
     if (wantDraft) selected.push("crosspost:draft");
     if (wantPublish) selected.push("crosspost:publish");
     try {
-      const res = await fetch("/api/admin/crosspost/tokens", {
+      const res = await adminLocalFetch("/api/admin/crosspost/tokens", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ scopes: selected, label })
@@ -92,7 +93,7 @@ export function CrosspostPanel({ siteId }: { siteId: string }) {
     setBusy(true);
     setMessage(null);
     try {
-      const res = await fetch(
+      const res = await adminLocalFetch(
         `/api/admin/crosspost/tokens?token_id=${encodeURIComponent(tokenId)}`,
         { method: "DELETE" }
       );

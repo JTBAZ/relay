@@ -27,3 +27,23 @@ export function resolveRelayApiBaseFromEnv(envValue: string | undefined): string
   }
   return candidate;
 }
+
+/**
+ * Same-origin browser URL for Relay export media paths (`/api/v1/export/media/...`).
+ * Next.js rewrites these to {@link resolveRelayApiBaseFromEnv} so `<img>` and credentialed
+ * `fetch` share one origin (avoids no-cors image cache poisoning CORS fetches).
+ * Absolute http(s)/blob/data URLs pass through unchanged.
+ */
+export function relayBrowserMediaUrl(apiPath: string): string {
+  const trimmed = apiPath.trim();
+  if (!trimmed) return trimmed;
+  if (
+    trimmed.startsWith("http://") ||
+    trimmed.startsWith("https://") ||
+    trimmed.startsWith("blob:") ||
+    trimmed.startsWith("data:")
+  ) {
+    return trimmed;
+  }
+  return trimmed.startsWith("/") ? trimmed : `/${trimmed}`;
+}

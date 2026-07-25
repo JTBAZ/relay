@@ -62,7 +62,7 @@ export interface ReadyItem {
   automation_run_id?: string | null;
   expires_at?: string | null;
   /** Artist-authored post details state on the linked draft. */
-  post_details_state?: "none" | "authored" | "adapted" | null;
+  post_details_state?: "none" | "authored" | null;
   post_description?: string | null;
   post_tags?: string[];
   /** Visual group children (one calendar slice, separate ops). */
@@ -113,7 +113,7 @@ export interface ScheduleEvent {
   automation_run_id?: string | null;
   expires_at?: string | null;
   /** Artist-authored post details state on the linked draft. */
-  post_details_state?: "none" | "authored" | "adapted" | null;
+  post_details_state?: "none" | "authored" | null;
   post_description?: string | null;
   post_tags?: string[];
   /** Visual group children (one calendar slice, separate ops). */

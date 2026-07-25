@@ -16,5 +16,5 @@ Omitting `backup_id` uses the latest successful backup.
 ## Explicit non-claims
 
 - Not a full production DB/R2 restore
-- Release signoff restore stays Milestone 8 / EH-082
+- Full production restore signoff stays **HUMAN-SIGNOFF** (EH-082 local QC already passed)
 - `productionSafe` remains false

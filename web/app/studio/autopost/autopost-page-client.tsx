@@ -1,12 +1,13 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { RelayAutopostComposer } from "@/app/components/autopost-v0/RelayAutopostComposer";
 import { AutomationApprovalOverlay } from "@/app/components/automations/AutomationApprovalOverlay";
 import { StudioRouteGuard } from "@/app/components/studio/StudioRouteGuard";
 import { StudioPlanGate } from "@/app/components/studio/StudioPlanGate";
 import {
+  fetchAutopostDraft,
   fetchCreatorPlanAccess,
   type CreatorCapabilityWire,
   type CreatorPlanAccessWire
@@ -133,6 +134,7 @@ function AutopostEntitlementShell({
 }
 
 export function AutopostPageClient() {
+  const router = useRouter();
   const searchParams = useSearchParams();
   const mediaIdsParam = searchParams.get("media_ids") ?? "";
   const draftIdParam = searchParams.get("draft_id")?.trim() || null;
@@ -145,6 +147,44 @@ export function AutopostPageClient() {
     .map((id) => id.trim())
     .filter(Boolean);
   const prefillMode = stageParam === "platforms" ? "platforms" : "continue";
+
+  const [railRedirectPending, setRailRedirectPending] = useState(Boolean(draftIdParam));
+
+  useEffect(() => {
+    if (!draftIdParam) {
+      setRailRedirectPending(false);
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      try {
+        const { draft } = await fetchAutopostDraft(draftIdParam);
+        if (cancelled) return;
+        if (draft.linked_post_id) {
+          router.replace(
+            `/studio/distribution?draft_id=${encodeURIComponent(draftIdParam)}`
+          );
+          return;
+        }
+      } catch {
+        /* fall through to normal Autopost */
+      }
+      if (!cancelled) setRailRedirectPending(false);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [draftIdParam, router]);
+
+  if (railRedirectPending) {
+    return (
+      <StudioRouteGuard>
+        <div className="px-4 py-16 text-center text-sm text-[#6b7280]">
+          Opening scheduled-post review…
+        </div>
+      </StudioRouteGuard>
+    );
+  }
 
   return (
     <StudioRouteGuard>

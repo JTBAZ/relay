@@ -39,16 +39,16 @@ function loadSample(): unknown {
 describe("EH-021 theme capability (preserved under EH-032)", () => {
   it("keeps premium-patron-theme preview_only with productionSafe false", () => {
     const status = buildEscapeHatchStatus();
-    expect(ESCAPE_HATCH_SLICE).toBe("EH-080");
-    expect(status.slice).toBe("EH-080");
+    expect(ESCAPE_HATCH_SLICE).toBe("EH-082");
+    expect(status.slice).toBe("EH-082");
     expect(status.productionSafe).toBe(false);
-    expect(status.nextSlice.id).toBe("EH-081");
+    expect(status.nextSlice.id).toBe("HUMAN-SIGNOFF");
     const theme = status.capabilities.find((c) => c.id === "premium-patron-theme");
     expect(theme?.state).toBe("preview_only");
     expect(theme?.evidence).toMatch(/soft-gate|preview-only/i);
     expect(theme?.evidence).toMatch(/productionSafe remains false/i);
     expect(theme?.evidence).not.toMatch(/EH-033 private media delivery claimed/i);
-    expect(theme?.nextSlice).toBe("EH-081");
+    expect(theme?.nextSlice).toBe("HUMAN-SIGNOFF");
   });
 });
 
@@ -161,7 +161,7 @@ describe("EH-021 fillTemplate theme tokens", () => {
     const manifest = JSON.parse(
       readFileSync(join(result.outDir, "escape-hatch.manifest.json"), "utf8")
     ) as { slice: string; productionSafe: boolean };
-    expect(manifest.slice).toBe("EH-080");
+    expect(manifest.slice).toBe("EH-082");
     expect(manifest.productionSafe).toBe(false);
 
     expect(existsSync(join(result.outDir, "components", "PatronChrome.tsx"))).toBe(

@@ -82,14 +82,18 @@ export function buildMediaReadinessErrors(mediaState: GoalCycleMediaState): stri
 export function buildPublishConfirmationPath(args: {
   variantId: string | null | undefined;
   draftId?: string | null;
+  eventId?: string | null;
   relayWebBase?: string | null;
 }): string {
   const base = (args.relayWebBase?.trim() || "http://localhost:3000").replace(/\/$/, "");
-  if (args.draftId?.trim()) {
-    return `${base}/studio/autopost?draft_id=${encodeURIComponent(args.draftId.trim())}`;
+  if (args.eventId?.trim()) {
+    return `${base}/studio/distribution?event_id=${encodeURIComponent(args.eventId.trim())}`;
   }
   if (args.variantId?.trim()) {
     return `${base}/studio/distribution?variant_id=${encodeURIComponent(args.variantId.trim())}`;
+  }
+  if (args.draftId?.trim()) {
+    return `${base}/studio/autopost?draft_id=${encodeURIComponent(args.draftId.trim())}`;
   }
   return `${base}/studio/autopost`;
 }

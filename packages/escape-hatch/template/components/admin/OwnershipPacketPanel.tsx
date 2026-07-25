@@ -1,5 +1,6 @@
 "use client";
 
+import { adminLocalFetch } from "./adminLocalFetch";
 import { useCallback, useEffect, useState } from "react";
 
 type Readiness = {
@@ -17,7 +18,7 @@ export function OwnershipPacketPanel({ siteId }: { siteId: string }) {
   const [message, setMessage] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
-    const res = await fetch("/api/admin/ownership", { method: "GET" });
+    const res = await adminLocalFetch("/api/admin/ownership", { method: "GET" });
     const json = (await res.json()) as {
       ok?: boolean;
       readiness?: Readiness;
@@ -34,7 +35,7 @@ export function OwnershipPacketPanel({ siteId }: { siteId: string }) {
     setBusy(true);
     setMessage(null);
     try {
-      const res = await fetch("/api/admin/ownership", {
+      const res = await adminLocalFetch("/api/admin/ownership", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ action: "generate" })
@@ -61,7 +62,7 @@ export function OwnershipPacketPanel({ siteId }: { siteId: string }) {
     setBusy(true);
     setMessage(null);
     try {
-      const res = await fetch("/api/admin/ownership?download=1", {
+      const res = await adminLocalFetch("/api/admin/ownership?download=1", {
         method: "GET"
       });
       const json = await res.json();
@@ -91,12 +92,11 @@ export function OwnershipPacketPanel({ siteId }: { siteId: string }) {
   return (
     <section className="admin-panel" aria-labelledby="ownership-packet-title">
       <h2 id="ownership-packet-title" className="admin-section-title">
-        Ownership packet (EH-080)
+        Ownership packet (EH-080 / EH-082)
       </h2>
       <p className="small muted">
         Handoff artifact: manifesto, env-name inventory, optional Relay
-        disclosure, 90-day warranty boundary. No secrets. Live independence
-        proof deferred to EH-082.
+        disclosure, 90-day warranty boundary. No secrets. Local native QC passed; live provider independence remains open (HUMAN-SIGNOFF).
       </p>
       {readiness ? (
         <p
@@ -125,7 +125,11 @@ export function OwnershipPacketPanel({ siteId }: { siteId: string }) {
       {readiness?.packet_path ? (
         <p className="small mono">{readiness.packet_path}</p>
       ) : null}
-      {message ? <p className="small">{message}</p> : null}
+      {message ? (
+        <p className="small" role="status" aria-live="polite" aria-atomic="true">
+          {message}
+        </p>
+      ) : null}
     </section>
   );
 }

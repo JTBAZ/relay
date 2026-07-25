@@ -831,7 +831,8 @@ export default function PreviewizerClient({
     async (url: string) => {
       setSourceLoadError(null);
       setSourceLoading(true);
-      const res = await fetch(url, { credentials: "include" });
+      // no-store: defense if a no-cors <img> ever shared this URL under a cross-origin base
+      const res = await fetch(url, { credentials: "include", cache: "no-store" });
       if (!res.ok) {
         throw new Error(`Could not load post image (${res.status}).`);
       }

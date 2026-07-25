@@ -1013,8 +1013,8 @@ describe("updateScheduleRailEventPostDetails", () => {
       },
       postDistributionVariant: {
         findMany: vi.fn().mockResolvedValue([
-          { id: "v_patreon", destination: "patreon" },
-          { id: "v_x", destination: "x" }
+          { id: "v_patreon", destination: "patreon", status: "draft", platformFields: {} },
+          { id: "v_x", destination: "x", status: "draft", platformFields: {} }
         ])
       },
       $transaction: vi.fn(async (fn: (tx: unknown) => Promise<unknown>) =>
@@ -1036,25 +1036,21 @@ describe("updateScheduleRailEventPostDetails", () => {
     const result = await updateScheduleRailEventPostDetails(prisma, "cr1", "task1", {
       title: "Morning study",
       description: "Soft light on the desk.",
-      tags: ["sketch", "studio"],
-      fit_mode: "as_written"
+      tags: ["sketch", "studio"]
     });
 
     expect(result.post_details_state).toBe("authored");
-    expect(result.preview).toBe(false);
     expect(result.title).toBe("Morning study");
     expect(result.description).toBe("Soft light on the desk.");
     expect(result.tags).toEqual(["sketch", "studio"]);
     expect(result.variants).toHaveLength(2);
     expect(result.variants.find((v) => v.destination === "patreon")).toMatchObject({
       title: "Morning study",
-      body_text: "Soft light on the desk.",
-      adapted: false
+      body_text: "Soft light on the desk."
     });
     expect(result.variants.find((v) => v.destination === "x")).toMatchObject({
       body_text: "Soft light on the desk.",
-      post_text: "Soft light on the desk.",
-      adapted: false
+      post_text: "Soft light on the desk."
     });
 
     expect(versionUpdate).toHaveBeenCalledWith({
@@ -1081,62 +1077,8 @@ describe("updateScheduleRailEventPostDetails", () => {
     expect(variantUpdate).toHaveBeenCalledTimes(2);
   });
 
-  it("previews platform fit without writing and preserves original on failure path", async () => {
-    const prisma = {
-      postbotTask: {
-        findFirst: vi.fn().mockResolvedValue({
-          id: "task1",
-          creatorId: "cr1",
-          postId: "post1",
-          planId: "plan1",
-          goalCycleCampaignKey: null,
-          action: "post",
-          status: "pending"
-        })
-      },
-      post: {
-        findFirst: vi.fn().mockResolvedValue({ id: "post1", publishState: "draft" })
-      },
-      postVersion: {
-        findFirst: vi.fn().mockResolvedValue({
-          id: "ver1",
-          postId: "post1",
-          title: "Old",
-          description: "Old body",
-          tagIds: []
-        })
-      },
-      postDistributionPlan: {
-        findFirst: vi.fn().mockResolvedValue({ id: "plan1", sourceDraftId: "draft1" })
-      },
-      postDistributionVariant: {
-        findMany: vi.fn().mockResolvedValue([{ id: "v_x", destination: "x" }])
-      },
-      $transaction: vi.fn()
-    } as unknown as PrismaClient;
-
-    const longBody = "A".repeat(400);
-    const result = await updateScheduleRailEventPostDetails(prisma, "cr1", "task1", {
-      title: "Wide canvas",
-      description: longBody,
-      tags: [],
-      fit_mode: "fit_platforms",
-      preview: true
-    });
-
-    expect(result.preview).toBe(true);
-    expect(prisma.$transaction).not.toHaveBeenCalled();
-    expect(result.title).toBe("Wide canvas");
-    expect(result.description).toBe(longBody);
-    const xVariant = result.variants[0]!;
-    expect(xVariant.destination).toBe("x");
-    expect(xVariant.adapted).toBe(true);
-    expect((xVariant.post_text ?? "").length).toBeLessThanOrEqual(280);
-  });
-
-  it("honors use_original override when committing platform fit", async () => {
+  it("does not overwrite variants already prepared at review time", async () => {
     const variantUpdate = vi.fn().mockResolvedValue({});
-    const longBody = "B".repeat(400);
 
     const prisma = {
       postbotTask: {
@@ -1166,7 +1108,20 @@ describe("updateScheduleRailEventPostDetails", () => {
         findFirst: vi.fn().mockResolvedValue({ id: "plan1", sourceDraftId: "draft1" })
       },
       postDistributionVariant: {
-        findMany: vi.fn().mockResolvedValue([{ id: "v_x", destination: "x" }])
+        findMany: vi.fn().mockResolvedValue([
+          {
+            id: "v_x",
+            destination: "x",
+            status: "draft",
+            platformFields: { rail_prepared: true }
+          },
+          {
+            id: "v_patreon",
+            destination: "patreon",
+            status: "posted",
+            platformFields: {}
+          }
+        ])
       },
       $transaction: vi.fn(async (fn: (tx: unknown) => Promise<unknown>) =>
         fn({
@@ -1186,25 +1141,12 @@ describe("updateScheduleRailEventPostDetails", () => {
 
     const result = await updateScheduleRailEventPostDetails(prisma, "cr1", "task1", {
       title: "Keep mine",
-      description: longBody,
-      tags: [],
-      fit_mode: "fit_platforms",
-      variant_overrides: [{ destination: "x", use_original: true }]
+      description: "New body",
+      tags: []
     });
 
     expect(result.post_details_state).toBe("authored");
-    expect(result.description).toBe(longBody);
-    expect(result.variants[0]).toMatchObject({
-      destination: "x",
-      post_text: longBody,
-      adapted: false
-    });
-    expect(variantUpdate).toHaveBeenCalledWith({
-      where: { id: "v_x" },
-      data: expect.objectContaining({
-        postText: longBody,
-        bodyText: longBody
-      })
-    });
+    expect(result.variants).toHaveLength(0);
+    expect(variantUpdate).not.toHaveBeenCalled();
   });
 });

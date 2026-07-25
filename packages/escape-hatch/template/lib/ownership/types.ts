@@ -66,7 +66,7 @@ export type OwnershipPacketDocument = {
   independence: {
     native_without_relay: string;
     optional_addons: string;
-    live_independence_proof: "deferred_eh_082";
+    live_independence_proof: "local_native_passed_live_provider_open";
   };
   warranty: WarrantyBoundary;
   operating_guide_pointers: string[];

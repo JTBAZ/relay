@@ -1,5 +1,6 @@
 "use client";
 
+import { adminLocalFetch } from "./adminLocalFetch";
 import { useState, useTransition } from "react";
 import type { ContentUseAttestation, ContentUseCategory } from "@/lib/billing/policy/matrix";
 import { CONTENT_USE_CATEGORY_LABELS } from "@/lib/billing/policy/matrix";
@@ -60,11 +61,10 @@ export function ProviderPolicyPanel({
   function submit() {
     setError(null);
     startTransition(async () => {
-      const res = await fetch("/api/admin/billing/attestation", {
+      const res = await adminLocalFetch("/api/admin/billing/attestation", {
         method: "POST",
         headers: {
-          "content-type": "application/json",
-          "x-escape-hatch-local": "1"
+          "content-type": "application/json"
         },
         body: JSON.stringify({
           siteId,

@@ -1,4 +1,5 @@
-import { RELAY_API_BASE, type DistributionDestination } from "@/lib/relay-api";
+import type { DistributionDestination } from "@/lib/relay-api";
+import { relayBrowserMediaUrl } from "@/lib/relay-api-env";
 
 export type MediaVersion = "full" | "preview";
 export type MediaRoutingByDestination = Partial<Record<DistributionDestination, MediaVersion>>;
@@ -46,8 +47,11 @@ export function resolveEffectiveMediaVersion(
   return "full";
 }
 
+/** Same-origin export `/content` URL (Next rewrite → Relay). Prefer this for `<img>` and Previewizer. */
 export function exportMediaContentUrl(creatorId: string, mediaId: string): string {
-  return `${RELAY_API_BASE}/api/v1/export/media/${encodeURIComponent(creatorId)}/${encodeURIComponent(mediaId)}/content`;
+  return relayBrowserMediaUrl(
+    `/api/v1/export/media/${encodeURIComponent(creatorId)}/${encodeURIComponent(mediaId)}/content`
+  );
 }
 
 export function hydratePreviewPlanState(assistantPlan: Record<string, unknown>): {

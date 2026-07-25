@@ -1,5 +1,6 @@
 "use client";
 
+import { adminLocalFetch } from "./adminLocalFetch";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import type { OAuthChoiceDisclosure, OAuthChoiceOptionId } from "@/lib/patreon/oauth-choice";
@@ -30,7 +31,7 @@ export function PatreonOAuthChoice({ disclosures, initialSelection }: Props) {
     }
     setError(null);
     startTransition(async () => {
-      const res = await fetch("/api/admin/patreon/mode-preference", {
+      const res = await adminLocalFetch("/api/admin/patreon/mode-preference", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ action: "save", preferred_mode: selected })

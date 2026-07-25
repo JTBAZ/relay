@@ -42,6 +42,10 @@ export function isR2SigningConfigured(env: SiteEnv = loadEnv()): boolean {
  * - Explicit `public_legacy` | `private_r2` | `local_private`
  * - Unset: prefer `private_r2` when R2 signing env is real; else `local_private`
  * - Unknown strings throw (fail closed)
+ *
+ * EH-082: `public_legacy` remains parseable for compatibility but must not
+ * deliver premium static bytes (see deliverMedia) and fillTemplate refuses
+ * `mediaLayout: public_legacy` before copying premium originals.
  */
 export function resolveMediaMode(env: SiteEnv = loadEnv()): MediaMode {
   const raw = env.ESCAPE_HATCH_MEDIA_MODE;
@@ -55,6 +59,20 @@ export function resolveMediaMode(env: SiteEnv = loadEnv()): MediaMode {
   throw new MediaConfigError(
     `Unknown ESCAPE_HATCH_MEDIA_MODE "${raw}". Use public_legacy, private_r2, or local_private.`
   );
+}
+
+/**
+ * EH-082 hard block: public_legacy is not a release/production delivery path
+ * for premium media. Callers that must refuse the mode entirely use this.
+ */
+export function assertPublicLegacyNotForPremiumDelivery(
+  mode: MediaMode
+): void {
+  if (mode === "public_legacy") {
+    throw new MediaConfigError(
+      "ESCAPE_HATCH_MEDIA_MODE=public_legacy is blocked for premium delivery (EH-082). Use local_private or private_r2."
+    );
+  }
 }
 
 /** Safe resolve for request paths — invalid → fail closed as private intent. */

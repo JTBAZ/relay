@@ -2,7 +2,7 @@
  * EH-022 Native admin shell (preserved under EH-030): status EH-030 → EH-031,
  * admin routes in kit, identity-aware gating, productionSafe false.
  */
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
@@ -33,10 +33,10 @@ afterEach(() => {
 describe("EH-022 status (preserved under EH-032)", () => {
   it("keeps native-admin preview with identity wiring and next EH-073", () => {
     const status = buildEscapeHatchStatus();
-    expect(ESCAPE_HATCH_SLICE).toBe("EH-080");
-    expect(status.slice).toBe("EH-080");
+    expect(ESCAPE_HATCH_SLICE).toBe("EH-082");
+    expect(status.slice).toBe("EH-082");
     expect(status.productionSafe).toBe(false);
-    expect(status.nextSlice.id).toBe("EH-081");
+    expect(status.nextSlice.id).toBe("HUMAN-SIGNOFF");
     expect(status.blockers.some((b) => /Native admin shell.*remains open/i.test(b))).toBe(
       false
     );
@@ -46,7 +46,7 @@ describe("EH-022 status (preserved under EH-032)", () => {
     expect(admin?.evidence).toMatch(/\/admin/);
     expect(admin?.evidence).toMatch(/identity|staff session|local-operator/i);
     expect(admin?.evidence).toMatch(/productionSafe remains false/i);
-    expect(admin?.nextSlice).toBe("EH-081");
+    expect(admin?.nextSlice).toBe("HUMAN-SIGNOFF");
     expect(admin?.sourcePaths).toEqual(
       expect.arrayContaining([
         "packages/escape-hatch/template/app/admin/page.tsx",
@@ -127,6 +127,17 @@ describe("EH-022 template admin surfaces", () => {
       "utf8"
     );
     expect(accessDenied).toMatch(/Soft demo personas do not authorize admin reads/i);
+    expect(accessDenied).toMatch(/local_operator_required/);
+    expect(accessDenied).toMatch(/Local machine preview only|loopback host/i);
+    expect(accessDenied).toMatch(/Path A|Path B|staff account/i);
+    // Must not describe local_operator_required as staff membership failure.
+    const localBranch = accessDenied.slice(
+      accessDenied.indexOf('local_operator_required"')
+    );
+    expect(localBranch).toMatch(/loopback|local machine/i);
+    expect(localBranch.split("Staff membership")[0]).not.toMatch(
+      /no admin\/operator membership/i
+    );
   });
   it("keeps visitor preview distinct from admin chrome", () => {
     const preview = readFileSync(join(TEMPLATE, "app/preview/page.tsx"), "utf8");
@@ -155,7 +166,7 @@ describe("EH-022 fillTemplate stamps admin", () => {
     const manifest = JSON.parse(
       readFileSync(join(result.outDir, "escape-hatch.manifest.json"), "utf8")
     ) as { slice: string; productionSafe: boolean; feature_flags: Record<string, boolean> };
-    expect(manifest.slice).toBe("EH-080");
+    expect(manifest.slice).toBe("EH-082");
     expect(manifest.productionSafe).toBe(false);
     expect(manifest.feature_flags.native_admin).toBe(true);
     expect(manifest.feature_flags.hard_paywall).toBe(true);
@@ -258,5 +269,57 @@ describe("EH-022 admin attention + local-operator", () => {
     ) as { production_safe: boolean; marks: Record<string, unknown> };
     expect(roundTrip.production_safe).toBe(false);
     expect(roundTrip.marks[postId!]).toBeTruthy();
+  });
+});
+
+describe("EH-082 admin local-operator client header coverage", () => {
+  it("requires adminLocalFetch (or explicit local header) on every /api/admin client call", () => {
+    const helperPath = join(TEMPLATE, "components/admin/adminLocalFetch.ts");
+    expect(existsSync(helperPath)).toBe(true);
+    const helper = readFileSync(helperPath, "utf8");
+    expect(helper).toMatch(/x-escape-hatch-local/);
+    expect(helper).toMatch(/export function adminLocalFetch/);
+
+    const adminDir = join(TEMPLATE, "components/admin");
+    const files = readdirSync(adminDir).filter((f) => f.endsWith(".tsx"));
+
+    const offenders: string[] = [];
+    for (const file of files) {
+      const src = readFileSync(join(adminDir, file), "utf8");
+      if (!src.includes("/api/admin")) continue;
+
+      // Raw fetch to /api/admin without helper or inline header is a regression.
+      const usesHelper =
+        src.includes("adminLocalFetch") ||
+        /x-escape-hatch-local["']\s*:\s*["']1["']/.test(src);
+      if (!usesHelper) {
+        offenders.push(`${file}: missing adminLocalFetch / local-operator header`);
+        continue;
+      }
+
+      // Any remaining bare fetch( that targets /api/admin (not the helper).
+      const bareAdminFetch =
+        /(?<!adminLocal)fetch\s*\(\s*[`'"][^`'"]*\/api\/admin/.test(src) ||
+        /(?<!adminLocal)fetch\s*\(\s*`[^`]*\/api\/admin/.test(src);
+      if (bareAdminFetch && !/x-escape-hatch-local["']\s*:\s*["']1["']/.test(src)) {
+        offenders.push(`${file}: bare fetch(/api/admin…) without local header`);
+      }
+    }
+
+    expect(offenders).toEqual([]);
+  });
+
+  it("documents local_operator_required as loopback preview, not staff failure", () => {
+    const accessDenied = readFileSync(
+      join(TEMPLATE, "components/admin/AdminAccessDenied.tsx"),
+      "utf8"
+    );
+    expect(accessDenied).toMatch(/reason === "local_operator_required"/);
+    expect(accessDenied).toMatch(/Local machine preview only/);
+    expect(accessDenied).toMatch(/loopback host/);
+    expect(accessDenied).toMatch(/configure Path A|Path B/i);
+    expect(accessDenied).not.toMatch(
+      /local_operator_required[\s\S]{0,200}no admin\/operator membership/
+    );
   });
 });

@@ -202,7 +202,7 @@ export function buildOwnershipPacket(opts: {
         "Native publishing, identity (Path A/B), billing adapters, private media, email, admin, backup, and deploy rehearsals operate without Relay Studio.",
       optional_addons:
         "Crosspost and Relay-managed Patreon are optional, disclosed, and revocable — not required for daily ops.",
-      live_independence_proof: "deferred_eh_082"
+      live_independence_proof: "local_native_passed_live_provider_open"
     },
     warranty: warranty(now),
     operating_guide_pointers: [
@@ -334,7 +334,7 @@ export function renderPacketMarkdown(packet: OwnershipPacketDocument): string {
     ``,
     packet.independence.optional_addons,
     ``,
-    `Live remove-Relay independence proof: deferred to EH-082.`,
+    `Independence proof: local_native_passed_live_provider_open — local native QC passed (EH-082); live provider independence remains open.`,
     ``,
     `## 8. Warranty (${packet.warranty.days} days)`,
     ``,

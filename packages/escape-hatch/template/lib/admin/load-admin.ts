@@ -2,6 +2,7 @@
  * Server-side admin data loaders (EH-022 / EH-030).
  * Prefer data/ kit artifacts; never treat public/media as private-verified.
  * When Supabase identity is configured, staff session is required before inventory.
+ * When identity is unset, inventory reads require loopback request context (EH-082).
  * Soft persona never authorizes admin. productionSafe remains false.
  */
 
@@ -12,8 +13,10 @@ import type { AdapterHealth } from "../adapters/types";
 import {
   assertAdminReadAccess,
   type AdminIdentityState,
-  type AdminReadDeniedReason
+  type AdminReadDeniedReason,
+  type AdminReadRequestContext
 } from "../identity/admin-access";
+
 import { loadSite } from "../load-site";
 import { loadAdminAttention } from "./attention";
 import {
@@ -113,14 +116,23 @@ async function healthDetail(h: AdapterHealth): Promise<{ ok: boolean; detail: st
 }
 
 function denyBlocker(reason: AdminReadDeniedReason): string {
-  return reason === "sign_in_required"
-    ? "Supabase identity configured — sign in required for admin reads"
-    : "Signed in but no admin/operator membership for this site — inventory withheld";
+  if (reason === "sign_in_required") {
+    return "Supabase identity configured — sign in required for admin reads";
+  }
+  if (reason === "local_operator_required") {
+    return "Identity unset — admin inventory reads require a loopback local-operator request context";
+  }
+  if (reason === "provider_invalid") {
+    return "ESCAPE_HATCH_IDENTITY_PROVIDER is invalid — use none, supabase, or portable";
+  }
+  return "Signed in but no admin/operator membership for this site — inventory withheld";
 }
 
-export async function loadAdminOverview(): Promise<AdminOverviewModel> {
+export async function loadAdminOverview(
+  requestContext?: AdminReadRequestContext | null
+): Promise<AdminOverviewModel> {
   const site = loadSite();
-  const access = await assertAdminReadAccess(site.site_id);
+  const access = await assertAdminReadAccess(site.site_id, requestContext);
 
   if (!access.allowed) {
     return {
@@ -237,9 +249,11 @@ export async function loadAdminOverview(): Promise<AdminOverviewModel> {
   };
 }
 
-export async function loadAdminPosts(): Promise<AdminPostsModel> {
+export async function loadAdminPosts(
+  requestContext?: AdminReadRequestContext | null
+): Promise<AdminPostsModel> {
   const site = loadSite();
-  const access = await assertAdminReadAccess(site.site_id);
+  const access = await assertAdminReadAccess(site.site_id, requestContext);
 
   if (!access.allowed) {
     return {
@@ -338,9 +352,11 @@ function tryParseLedgerObjects():
   }
 }
 
-export async function loadAdminMedia(): Promise<AdminMediaModel> {
+export async function loadAdminMedia(
+  requestContext?: AdminReadRequestContext | null
+): Promise<AdminMediaModel> {
   const site = loadSite();
-  const access = await assertAdminReadAccess(site.site_id);
+  const access = await assertAdminReadAccess(site.site_id, requestContext);
 
   if (!access.allowed) {
     return {
@@ -415,9 +431,11 @@ export async function loadAdminMedia(): Promise<AdminMediaModel> {
   };
 }
 
-export async function loadAdminTiers(): Promise<AdminTiersModel> {
+export async function loadAdminTiers(
+  requestContext?: AdminReadRequestContext | null
+): Promise<AdminTiersModel> {
   const site = loadSite();
-  const access = await assertAdminReadAccess(site.site_id);
+  const access = await assertAdminReadAccess(site.site_id, requestContext);
 
   if (!access.allowed) {
     return {
@@ -497,9 +515,11 @@ export type AdminPatronsModel = {
   deny_reason: AdminReadDeniedReason | null;
 };
 
-export async function loadAdminPatrons(): Promise<AdminPatronsModel> {
+export async function loadAdminPatrons(
+  requestContext?: AdminReadRequestContext | null
+): Promise<AdminPatronsModel> {
   const site = loadSite();
-  const access = await assertAdminReadAccess(site.site_id);
+  const access = await assertAdminReadAccess(site.site_id, requestContext);
   if (!access.allowed) {
     return {
       site_id: site.site_id,

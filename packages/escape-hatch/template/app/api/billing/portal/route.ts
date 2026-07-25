@@ -17,10 +17,10 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 /**
- * Start Stripe Customer Portal (EH-051).
- * POST JSON: { returnPath? } — when identity is configured, customer is resolved
- * server-side from the auth session mapping (client customerId is ignored).
- * Local preview (identity none): { customerId, returnPath? }.
+ * Start Stripe Customer Portal (EH-051 / EH-082).
+ * Requires configured identity + authenticated session + server-owned customer mapping.
+ * Client customerId is never trusted on this route.
+ * POST JSON: { returnPath? }
  */
 export async function POST(request: Request): Promise<NextResponse> {
   const url = new URL(request.url);
@@ -30,17 +30,21 @@ export async function POST(request: Request): Promise<NextResponse> {
   const identityConfigured =
     mode !== "none" && mode !== "invalid" && isIdentityPathConfigured(env);
 
-  let authUserId: string | null = null;
-  if (identityConfigured) {
-    const session = await getServerAuthSession(site.site_id);
-    if (!session) {
-      return NextResponse.json(
-        { ok: false, error: "auth_required", production_safe: false },
-        { status: 401 }
-      );
-    }
-    authUserId = session.userId;
+  if (!identityConfigured) {
+    return NextResponse.json(
+      { ok: false, error: "identity_required", production_safe: false },
+      { status: 401 }
+    );
   }
+
+  const session = await getServerAuthSession(site.site_id);
+  if (!session) {
+    return NextResponse.json(
+      { ok: false, error: "auth_required", production_safe: false },
+      { status: 401 }
+    );
+  }
+  const authUserId = session.userId;
 
   let body: { customerId?: unknown; returnPath?: unknown };
   try {
@@ -70,16 +74,17 @@ export async function POST(request: Request): Promise<NextResponse> {
   );
 
   const resolved = await resolvePortalCustomerId({
-    identityConfigured,
+    identityConfigured: true,
     siteId: site.site_id,
     authUserId,
-    clientCustomerId:
-      typeof body.customerId === "string" ? body.customerId : null
+    // Discard any client-supplied id — production route never enables client binding.
+    clientCustomerId: null
   });
 
   if (!resolved.ok) {
     const status =
-      resolved.reason === "auth_required"
+      resolved.reason === "auth_required" ||
+      resolved.reason === "identity_required"
         ? 401
         : resolved.reason === "billing_customer_link_missing"
           ? 404

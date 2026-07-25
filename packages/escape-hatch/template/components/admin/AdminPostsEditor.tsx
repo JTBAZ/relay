@@ -1,5 +1,6 @@
 "use client";
 
+import { adminLocalFetch } from "./adminLocalFetch";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import type { AdminPostsModel } from "@/lib/admin/load-admin";
@@ -56,11 +57,10 @@ export function AdminPostsEditor({ model, tiers }: Props) {
     setError(null);
     setStatus(null);
     startTransition(async () => {
-      const res = await fetch("/api/admin/posts", {
+      const res = await adminLocalFetch("/api/admin/posts", {
         method: "POST",
         headers: {
-          "content-type": "application/json",
-          "x-escape-hatch-local": "1"
+          "content-type": "application/json"
         },
         body: JSON.stringify({
           post_id: form.post_id || undefined,
@@ -103,11 +103,10 @@ export function AdminPostsEditor({ model, tiers }: Props) {
     if (!form.post_id) return;
     setError(null);
     startTransition(async () => {
-      const res = await fetch("/api/admin/posts", {
+      const res = await adminLocalFetch("/api/admin/posts", {
         method: "DELETE",
         headers: {
-          "content-type": "application/json",
-          "x-escape-hatch-local": "1"
+          "content-type": "application/json"
         },
         body: JSON.stringify({ post_id: form.post_id })
       });
@@ -129,9 +128,8 @@ export function AdminPostsEditor({ model, tiers }: Props) {
       const fd = new FormData();
       fd.set("post_id", uploadPostId);
       fd.set("file", file);
-      const res = await fetch("/api/admin/media/upload", {
+      const res = await adminLocalFetch("/api/admin/media/upload", {
         method: "POST",
-        headers: { "x-escape-hatch-local": "1" },
         body: fd
       });
       const json = (await res.json()) as { ok?: boolean; error?: string };

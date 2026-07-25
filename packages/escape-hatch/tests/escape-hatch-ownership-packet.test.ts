@@ -48,13 +48,13 @@ function seedKitDir(): string {
 }
 
 describe("EH-080 status", () => {
-  it("advances slice to EH-080 with next EH-081 and productionSafe false", () => {
+  it("advances slice to EH-082 with next HUMAN-SIGNOFF and productionSafe false", () => {
     const status = buildEscapeHatchStatus();
-    expect(ESCAPE_HATCH_SLICE).toBe("EH-080");
-    expect(status.slice).toBe("EH-080");
+    expect(ESCAPE_HATCH_SLICE).toBe("EH-082");
+    expect(status.slice).toBe("EH-082");
     expect(status.productionSafe).toBe(false);
-    expect(status.nextSlice.id).toBe("EH-081");
-    expect(status.nextSlice.title).toMatch(/golden|journeys/i);
+    expect(status.nextSlice.id).toBe("HUMAN-SIGNOFF");
+    expect(status.nextSlice.title).toMatch(/human|sign[- ]?off|release/i);
   });
 });
 
@@ -85,7 +85,7 @@ describe("EH-080 ownership packet", () => {
       expect(result.packet!.credentials.length).toBeGreaterThan(0);
       expect(result.packet!.warranty.days).toBe(90);
       expect(result.packet!.independence.live_independence_proof).toBe(
-        "deferred_eh_082"
+        "local_native_passed_live_provider_open"
       );
       expect(result.packet!.optional_relay_services.every((s) => !s.required_for_native_ops)).toBe(
         true
@@ -126,7 +126,7 @@ describe("EH-080 ownership packet", () => {
       const items = buildHealthItems({
         adapters: [],
         blockers: [],
-        manifestSlice: "EH-080",
+        manifestSlice: "EH-082",
         publicMediaHonesty: "test",
         ownershipReadiness: readiness
       });

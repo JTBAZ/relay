@@ -1,5 +1,6 @@
 "use client";
 
+import { adminLocalFetch } from "./adminLocalFetch";
 import { useEffect, useState } from "react";
 
 type SyncStatus = {
@@ -23,7 +24,7 @@ export function PatreonSyncPanel({ siteId }: { siteId: string }) {
   const [message, setMessage] = useState<string | null>(null);
 
   async function refresh() {
-    const res = await fetch("/api/admin/patreon/sync", { method: "GET" });
+    const res = await adminLocalFetch("/api/admin/patreon/sync", { method: "GET" });
     const json = (await res.json()) as SyncStatus & {
       ok?: boolean;
       error?: string;
@@ -48,7 +49,7 @@ export function PatreonSyncPanel({ siteId }: { siteId: string }) {
     setBusy(true);
     setMessage(null);
     try {
-      const res = await fetch("/api/admin/patreon/sync", {
+      const res = await adminLocalFetch("/api/admin/patreon/sync", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({

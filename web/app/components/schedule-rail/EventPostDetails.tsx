@@ -9,16 +9,10 @@ import {
 } from "@/lib/relay-api";
 import { renderPostTemplateBody } from "@/lib/post-template-client";
 import { buildPatreonHomepageUrl } from "@/lib/previewizer-destination-qr";
-import {
-  updateScheduleRailPostDetails,
-  type PostDetailsFitMode,
-  type ScheduleRailPostDetailsVariant,
-} from "@/lib/schedule-rail-api";
-import { DEST_LABELS, type Destination, type ReadyItem, type ScheduleEvent } from "@/lib/schedule-rail-data";
+import { updateScheduleRailPostDetails } from "@/lib/schedule-rail-api";
+import type { ReadyItem, ScheduleEvent } from "@/lib/schedule-rail-data";
 
 type EventItem = ScheduleEvent | ReadyItem;
-
-type FitMode = PostDetailsFitMode;
 
 type LineChip = {
   id: string;
@@ -39,14 +33,9 @@ export type EventPostDetailsProps = {
     title: string;
     description: string | null;
     tags: string[];
-    post_details_state: "authored" | "adapted";
+    post_details_state: "authored";
   }) => void;
 };
-
-function destLabel(destination: string): string {
-  const key = destination as NonNullable<Destination>;
-  return DEST_LABELS[key] ?? destination;
-}
 
 function insertAtCursor(
   value: string,
@@ -84,22 +73,16 @@ export function EventPostDetails({
   onOpenChange,
   onSaved,
 }: EventPostDetailsProps) {
-  const detailsReady =
-    event.post_details_state === "authored" || event.post_details_state === "adapted";
+  const detailsReady = event.post_details_state === "authored";
 
   const [title, setTitle] = useState(event.title ?? "");
   const [description, setDescription] = useState(event.post_description ?? "");
   const [tags, setTags] = useState<string[]>(event.post_tags ?? []);
   const [tagDraft, setTagDraft] = useState("");
-  const [fitMode, setFitMode] = useState<FitMode>("as_written");
   const [savedLines, setSavedLines] = useState<PostTemplateWire[]>([]);
   const [patreonUrl, setPatreonUrl] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [previewVariants, setPreviewVariants] = useState<ScheduleRailPostDetailsVariant[] | null>(
-    null
-  );
-  const [useOriginal, setUseOriginal] = useState<Record<string, boolean>>({});
   const [customOpen, setCustomOpen] = useState(false);
   const [customName, setCustomName] = useState("");
   const [customBody, setCustomBody] = useState("");
@@ -113,9 +96,6 @@ export function EventPostDetails({
     setTitle(event.title ?? "");
     setDescription(event.post_description ?? "");
     setTags(event.post_tags ?? []);
-    setFitMode("as_written");
-    setPreviewVariants(null);
-    setUseOriginal({});
     setSaveError(null);
     setCustomOpen(false);
     setCustomName("");
@@ -242,64 +222,28 @@ export function EventPostDetails({
     }
   }, [customBody, customName, insertText, tags]);
 
-  const commitDetails = useCallback(
-    async (opts?: { preview?: boolean }) => {
-      setBusy(true);
-      setSaveError(null);
-      try {
-        const overrides =
-          fitMode === "fit_platforms" && previewVariants
-            ? previewVariants.map((v) => ({
-                destination: v.destination,
-                use_original: useOriginal[v.destination] === true,
-              }))
-            : undefined;
-        const result = await updateScheduleRailPostDetails(railEventId, {
-          title: title.trim() || null,
-          description: description.trim() || null,
-          tags,
-          fit_mode: fitMode,
-          preview: opts?.preview === true,
-          variant_overrides: overrides,
-        });
-        if (opts?.preview) {
-          setPreviewVariants(result.variants);
-          setUseOriginal({});
-          return;
-        }
-        onSaved({
-          title: result.title,
-          description: result.description,
-          tags: result.tags,
-          post_details_state: result.post_details_state,
-        });
-        onOpenChange(false);
-        setPreviewVariants(null);
-      } catch (err) {
-        setSaveError(err instanceof Error ? err.message : "Could not save post details.");
-      } finally {
-        setBusy(false);
-      }
-    },
-    [
-      description,
-      fitMode,
-      onOpenChange,
-      onSaved,
-      previewVariants,
-      railEventId,
-      tags,
-      title,
-      useOriginal,
-    ]
-  );
-
-  const primaryLabel =
-    fitMode === "fit_platforms" && !previewVariants
-      ? "Prepare platform versions"
-      : fitMode === "fit_platforms" && previewVariants
-        ? "Save platform versions"
-        : "Save post details";
+  const commitDetails = useCallback(async () => {
+    setBusy(true);
+    setSaveError(null);
+    try {
+      const result = await updateScheduleRailPostDetails(railEventId, {
+        title: title.trim() || null,
+        description: description.trim() || null,
+        tags,
+      });
+      onSaved({
+        title: result.title,
+        description: result.description,
+        tags: result.tags,
+        post_details_state: result.post_details_state,
+      });
+      onOpenChange(false);
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : "Could not save post details.");
+    } finally {
+      setBusy(false);
+    }
+  }, [description, onOpenChange, onSaved, railEventId, tags, title]);
 
   if (!open) {
     return (
@@ -436,85 +380,6 @@ export function EventPostDetails({
         />
       </div>
 
-      <fieldset className="flex flex-col gap-1.5">
-        <legend className="text-[11px] text-[#aaa]">How to use your words</legend>
-        <label className="flex items-start gap-2 text-[11px] text-[#ccc]">
-          <input
-            type="radio"
-            name={`fit-${event.id}`}
-            checked={fitMode === "as_written"}
-            onChange={() => {
-              setFitMode("as_written");
-              setPreviewVariants(null);
-            }}
-            className="mt-0.5 accent-[#9bf0c4]"
-          />
-          <span>Use as written</span>
-        </label>
-        <label className="flex items-start gap-2 text-[11px] text-[#ccc]">
-          <input
-            type="radio"
-            name={`fit-${event.id}`}
-            checked={fitMode === "fit_platforms"}
-            onChange={() => setFitMode("fit_platforms")}
-            className="mt-0.5 accent-[#9bf0c4]"
-          />
-          <span className="leading-snug">
-            Fit to each platform
-            <span className="mt-0.5 block text-[10px] text-[#666]">
-              Relay may shorten and reformat your words. It will not add new details.
-            </span>
-          </span>
-        </label>
-      </fieldset>
-
-      {previewVariants && fitMode === "fit_platforms" ? (
-        <div className="flex flex-col gap-2 rounded-xl border border-[#242a27] bg-[#0a0c0b] p-2">
-          <p className="text-[11px] text-[#aaa]">Platform versions</p>
-          {previewVariants.map((variant) => {
-            const text =
-              variant.post_text?.trim() ||
-              variant.body_text?.trim() ||
-              variant.title?.trim() ||
-              "(empty)";
-            const original = useOriginal[variant.destination] === true;
-            return (
-              <div
-                key={variant.destination}
-                className="flex flex-col gap-1 border-t border-[#1f1f1f] pt-2 first:border-t-0 first:pt-0"
-              >
-                <div className="flex items-center justify-between gap-2">
-                  <span className="text-[11px] font-medium text-[#e8e8e8]">
-                    {destLabel(variant.destination)}
-                  </span>
-                  {variant.adapted ? (
-                    <button
-                      type="button"
-                      className="text-[10px] text-[#9bf0c4] hover:text-[#b8f5d4]"
-                      onClick={() =>
-                        setUseOriginal((prev) => ({
-                          ...prev,
-                          [variant.destination]: !original,
-                        }))
-                      }
-                    >
-                      {original ? "Use fitted" : "Use original"}
-                    </button>
-                  ) : (
-                    <span className="text-[10px] text-[#555]">Unchanged</span>
-                  )}
-                </div>
-                <p className="line-clamp-3 whitespace-pre-wrap text-[10px] leading-relaxed text-[#888]">
-                  {original
-                    ? description.trim() || title.trim() || "(empty)"
-                    : text}
-                </p>
-              </div>
-            );
-          })}
-        </div>
-      ) : null}
-
       {saveError && !customOpen ? (
         <p className="text-[10px] leading-snug text-red-400/90" role="alert">
           {saveError}
@@ -524,16 +389,10 @@ export function EventPostDetails({
       <button
         type="button"
         disabled={busy}
-        onClick={() => {
-          if (fitMode === "fit_platforms" && !previewVariants) {
-            void commitDetails({ preview: true });
-            return;
-          }
-          void commitDetails();
-        }}
+        onClick={() => void commitDetails()}
         className="w-full rounded-xl bg-[#9bf0c4] px-3 py-2 text-[12.5px] font-medium text-[#0a100c] transition-transform hover:bg-[#b8f5d4] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"
       >
-        {busy ? "Saving…" : primaryLabel}
+        {busy ? "Saving…" : "Save post details"}
       </button>
 
       {customOpen ? (

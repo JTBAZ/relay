@@ -27,13 +27,13 @@ import {
 const SITE = "site_eh_052";
 
 describe("EH-052 status", () => {
-  it("advances slice to EH-080 with next EH-081 and productionSafe false", () => {
+  it("advances slice to EH-082 with next HUMAN-SIGNOFF and productionSafe false", () => {
     const status = buildEscapeHatchStatus();
-    expect(ESCAPE_HATCH_SLICE).toBe("EH-080");
-    expect(status.slice).toBe("EH-080");
+    expect(ESCAPE_HATCH_SLICE).toBe("EH-082");
+    expect(status.slice).toBe("EH-082");
     expect(status.productionSafe).toBe(false);
-    expect(status.nextSlice.id).toBe("EH-081");
-    expect(status.nextSlice.title).toMatch(/golden|journeys/i);
+    expect(status.nextSlice.id).toBe("HUMAN-SIGNOFF");
+    expect(status.nextSlice.title).toMatch(/human|sign[- ]?off|release/i);
     expect(
       status.blockers.some((b) => /EH-073|Milestone 3|Stripe/i.test(b))
     ).toBe(true);
@@ -41,7 +41,7 @@ describe("EH-052 status", () => {
     const cap = status.capabilities.find((c) => c.id === "provider-policy");
     expect(cap?.state).toBe("preview_only");
     expect(cap?.evidence).toMatch(/EH-052|attestation|matrix/i);
-    expect(cap?.nextSlice).toBe("EH-081");
+    expect(cap?.nextSlice).toBe("HUMAN-SIGNOFF");
   });
 });
 

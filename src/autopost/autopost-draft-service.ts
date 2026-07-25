@@ -80,6 +80,12 @@ export type AutopostDraftWire = {
   enhancements: Record<string, unknown>;
   distribution_log: Record<string, unknown>;
   published_post_id: string | null;
+  /**
+   * When this draft is linked to a Schedule Rail–created Relay post (active plan
+   * sourceDraftId), the post id so clients can route to scheduled-post review
+   * instead of minting a second post.
+   */
+  linked_post_id?: string | null;
   created_at: string;
   updated_at: string;
   /**
@@ -268,7 +274,7 @@ type DraftRow = {
   updatedAt: Date;
 };
 
-function mapDraft(row: DraftRow): AutopostDraftWire {
+function mapDraft(row: DraftRow, linkedPostId: string | null = null): AutopostDraftWire {
   return {
     draft_id: row.id,
     creator_id: row.creatorId,
@@ -284,9 +290,45 @@ function mapDraft(row: DraftRow): AutopostDraftWire {
     enhancements: asRecord(row.enhancements),
     distribution_log: asRecord(row.distributionLog),
     published_post_id: row.publishedPostId,
+    linked_post_id: linkedPostId,
     created_at: row.createdAt.toISOString(),
     updated_at: row.updatedAt.toISOString()
   };
+}
+
+async function mapDraftWithLinkedPost(
+  prisma: PrismaClient,
+  creatorId: string,
+  row: DraftRow
+): Promise<AutopostDraftWire> {
+  const linked = await resolveLinkedPostIds(prisma, creatorId, [row.id]);
+  return mapDraft(row, linked.get(row.id) ?? null);
+}
+
+async function resolveLinkedPostIds(
+  prisma: PrismaClient,
+  creatorId: string,
+  draftIds: string[]
+): Promise<Map<string, string>> {
+  const out = new Map<string, string>();
+  const ids = [...new Set(draftIds.map((d) => d.trim()).filter(Boolean))];
+  if (ids.length === 0) return out;
+  const plans = await prisma.postDistributionPlan.findMany({
+    where: {
+      creatorId,
+      sourceDraftId: { in: ids },
+      status: "active"
+    },
+    select: { sourceDraftId: true, postId: true },
+    orderBy: { updatedAt: "desc" }
+  });
+  for (const plan of plans) {
+    const draftId = plan.sourceDraftId?.trim();
+    if (draftId && !out.has(draftId)) {
+      out.set(draftId, plan.postId);
+    }
+  }
+  return out;
 }
 
 function normalizeMediaIds(raw: string[]): string[] {
@@ -391,7 +433,9 @@ export async function getActiveAutopostDraft(
   creatorId: string
 ): Promise<AutopostDraftWire | null> {
   const row = await findActiveDraft(prisma, creatorId);
-  return row ? mapDraft(row as DraftRow) : null;
+  if (!row) return null;
+  const linked = await resolveLinkedPostIds(prisma, creatorId, [row.id]);
+  return mapDraft(row as DraftRow, linked.get(row.id) ?? null);
 }
 
 export async function listAutopostDrafts(
@@ -415,7 +459,12 @@ export async function listAutopostDrafts(
     orderBy: { updatedAt: "desc" },
     take: limit
   });
-  return rows.map((row) => mapDraft(row as DraftRow));
+  const linked = await resolveLinkedPostIds(
+    prisma,
+    creatorId,
+    rows.map((r) => r.id)
+  );
+  return rows.map((row) => mapDraft(row as DraftRow, linked.get(row.id) ?? null));
 }
 
 export async function getAutopostDraft(
@@ -431,7 +480,8 @@ export async function getAutopostDraft(
       { field: "draft_id", issue: "not_found" }
     ]);
   }
-  const wire = mapDraft(row as DraftRow);
+  const linked = await resolveLinkedPostIds(prisma, creatorId, [row.id]);
+  const wire = mapDraft(row as DraftRow, linked.get(row.id) ?? null);
   const sourcePostId = wire.workspace.source_post_id?.trim();
   if (!sourcePostId) return wire;
 
@@ -564,7 +614,7 @@ export async function saveAutopostDraft(
     return created;
   });
 
-  return mapDraft(draft as DraftRow);
+  return mapDraftWithLinkedPost(prisma, creatorId, draft as DraftRow);
 }
 
 export async function patchAutopostDraft(
@@ -685,7 +735,7 @@ export async function patchAutopostDraft(
       }
     });
   });
-  return mapDraft(updated as DraftRow);
+  return mapDraftWithLinkedPost(prisma, creatorId, updated as DraftRow);
 }
 
 export async function publishAutopostDraft(
@@ -706,6 +756,18 @@ export async function publishAutopostDraft(
     throw new AutopostDraftValidationError("Attach media before publishing.", [
       { field: "media_ids", issue: "required" }
     ]);
+  }
+
+  const linked = await resolveLinkedPostIds(prisma, creatorId, [row.id]);
+  const linkedPostId = linked.get(row.id);
+  if (linkedPostId) {
+    throw new AutopostDraftValidationError(
+      "This draft is linked to a scheduled Relay post. Open scheduled-post review instead of publishing a second post.",
+      [
+        { field: "draft_id", issue: "rail_linked_post" },
+        { field: "linked_post_id", issue: linkedPostId }
+      ]
+    );
   }
 
   const title = (input.title ?? row.title ?? "").trim() || "Untitled";
@@ -754,7 +816,10 @@ export async function publishAutopostDraft(
     });
   });
 
-  return { draft: mapDraft(updated as DraftRow), post_id: createdPostId };
+  return {
+    draft: await mapDraftWithLinkedPost(prisma, creatorId, updated as DraftRow),
+    post_id: createdPostId
+  };
 }
 
 export async function discardAutopostDraft(
@@ -787,7 +852,7 @@ export async function discardAutopostDraft(
       data: { status: "discarded" }
     });
   });
-  return mapDraft(updated as DraftRow);
+  return mapDraftWithLinkedPost(prisma, creatorId, updated as DraftRow);
 }
 
 export async function recordAutopostDistribution(
@@ -816,7 +881,7 @@ export async function recordAutopostDistribution(
     where: { id: draftId },
     data: { distributionLog: log as Prisma.InputJsonValue }
   });
-  return mapDraft(updated as DraftRow);
+  return mapDraftWithLinkedPost(prisma, creatorId, updated as DraftRow);
 }
 
 export type { CreatorStyleProfileWire };

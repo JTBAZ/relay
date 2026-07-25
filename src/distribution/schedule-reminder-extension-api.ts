@@ -295,10 +295,15 @@ export function resolveReminderCtas(args: {
   openUrl: string | null;
   relayWebBase: string;
   draftId: string | null;
+  /** Schedule rail event id (postbot task id) for post-task review deep links. */
+  eventId?: string | null;
   eventType?: CreatorScheduleEventTypeWire | null;
 }): { primary_cta: ScheduleReminderCta; secondary_cta: ScheduleReminderCta | null } {
   const base = args.relayWebBase.replace(/\/$/, "");
   const studioUrl = `${base}/studio`;
+  const reviewUrl = args.eventId
+    ? `${base}/studio/distribution?event_id=${encodeURIComponent(args.eventId)}`
+    : null;
   const autopostUrl = args.draftId
     ? `${base}/studio/autopost?draft_id=${encodeURIComponent(args.draftId)}`
     : `${base}/studio/autopost`;
@@ -337,11 +342,23 @@ export function resolveReminderCtas(args: {
     if (!args.mediaReady) {
       return {
         primary_cta: {
-          kind: "relay_autopost",
-          url: autopostUrl,
-          label: args.draftId ? "Continue in Autopost" : "Stage in Autopost"
+          kind: "relay_studio",
+          url: studioUrl,
+          label: "Finish media in Studio"
         },
         secondary_cta: null
+      };
+    }
+    if (reviewUrl) {
+      return {
+        primary_cta: {
+          kind: "relay_autopost",
+          url: reviewUrl,
+          label: "Review and send"
+        },
+        secondary_cta: args.openUrl
+          ? { kind: "external_post", url: args.openUrl, label: externalLabel }
+          : null
       };
     }
     return {
@@ -454,7 +471,8 @@ export async function listDueScheduleReminders(
       mediaReady,
       openUrl,
       relayWebBase,
-      draftId
+      draftId,
+      eventId: action === "post" ? row.id : null
     });
     ctas.primary_cta = {
       ...ctas.primary_cta,

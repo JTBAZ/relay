@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import {
   createPostDistributionPlan,
+  reviseScheduledPostDistributionPlan,
   fetchCreatorPlanAccess,
   isPlanRequiredApiError,
   fetchPostDistributionPlan,
@@ -39,6 +40,16 @@ type Props = {
   initialPreviewMediaId?: string | null;
   step: DistributionStep;
   onStepChange: (step: DistributionStep) => void;
+  /**
+   * When true, platform preparation revises the existing Rail plan in place
+   * instead of archiving it via createPostDistributionPlan.
+   */
+  preserveScheduledPlan?: boolean;
+  /**
+   * Rail plans begin with exact authored seed variants. Keep the preparation
+   * controls visible until the creator explicitly routes/revises the plan.
+   */
+  requireExplicitPrepare?: boolean;
 };
 
 const LOCKED_POSTING_ASSISTANT: CreatorCapabilityWire = {
@@ -54,7 +65,9 @@ export function AutopostDistributionSteps({
   initialSelectedDestinations = [],
   initialPreviewMediaId = null,
   step,
-  onStepChange
+  onStepChange,
+  preserveScheduledPlan = false,
+  requireExplicitPrepare = false
 }: Props) {
   const { creatorId } = useStudioSession();
   const [selected, setSelected] = useState<DistributionDestination[]>(initialSelectedDestinations);
@@ -90,7 +103,8 @@ export function AutopostDistributionSteps({
   }, []);
 
   useEffect(() => {
-    if (step === "cross-post" || step === "complete") return;
+    // Fetch plan for prepare and for handoff resume (refresh mid cross-post).
+    if (step === "complete") return;
 
     let cancelled = false;
     setLoadingPlan(true);
@@ -135,7 +149,7 @@ export function AutopostDistributionSteps({
     setError(null);
     setPlanRequiredWall(false);
     try {
-      const { plan: created } = await createPostDistributionPlan(postId, {
+      const planBody = {
         destinations,
         assistant_by_destination: assistantByDestination,
         assistant_context: {
@@ -153,7 +167,10 @@ export function AutopostDistributionSteps({
         ...(options?.media_routing_by_destination
           ? { media_routing_by_destination: options.media_routing_by_destination }
           : {})
-      });
+      };
+      const { plan: created } = preserveScheduledPlan
+        ? await reviseScheduledPostDistributionPlan(postId, planBody)
+        : await createPostDistributionPlan(postId, planBody);
       const drafts = options?.customTextDrafts;
       const planWithDrafts =
         drafts && Object.keys(drafts).length > 0
@@ -256,6 +273,7 @@ export function AutopostDistributionSteps({
           error={error}
           onContinueToHandoff={() => onStepChange("cross-post")}
           initialPreviewMediaId={initialPreviewMediaId}
+          requireExplicitPrepare={requireExplicitPrepare}
         />
       </div>
     );

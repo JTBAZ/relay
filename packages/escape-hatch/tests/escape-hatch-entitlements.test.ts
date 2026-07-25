@@ -1,9 +1,18 @@
 /**
  * EH-032 Entitlement service: evaluateAccess grant-merge matrix,
  * freshness rules, soft-persona honesty, SQL review (no live DB).
+ * EH-082: generated-gate parity with missing amount_cents fixtures.
  */
 
-import { existsSync, readFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync
+} from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
@@ -12,6 +21,7 @@ import {
   buildEscapeHatchStatus
 } from "../src/status.js";
 import { evaluateAccess } from "../template/lib/entitlements/evaluate.js";
+import { userMeetsResourceGate } from "../template/lib/entitlements/gate.js";
 import {
   grantFromSnapshot,
   mergeEntitlementGrants
@@ -26,11 +36,20 @@ import type {
   AccessResource,
   EntitlementGrant
 } from "../template/lib/entitlements/types.js";
+import { deliverMedia } from "../template/lib/media/delivery.js";
+import { SOFT_PERSONA_COOKIE } from "../template/lib/media/types.js";
 
 const PACKAGE_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const TEMPLATE = join(PACKAGE_ROOT, "template");
+const FIXTURES = join(PACKAGE_ROOT, "fixtures");
 
 const SITE = "site_eh_032";
+
+/** Sample.bundle-shaped tiers: titles/access only — no amount_cents. */
+const FIXTURE_SHAPED_TIERS = {
+  t_gold: { title: "Gold" },
+  t_silver: { title: "Silver" }
+} as const;
 
 function premiumPost(overrides?: Partial<AccessResource & { type: "post" }>): AccessResource {
   return {
@@ -72,22 +91,22 @@ function activeGrant(
 }
 
 describe("EH-032 status", () => {
-  it("advances slice to EH-080 with next EH-081 and productionSafe false", () => {
+  it("advances slice to EH-082 with next HUMAN-SIGNOFF and productionSafe false", () => {
     const status = buildEscapeHatchStatus();
-    expect(ESCAPE_HATCH_SLICE).toBe("EH-080");
-    expect(status.slice).toBe("EH-080");
+    expect(ESCAPE_HATCH_SLICE).toBe("EH-082");
+    expect(status.slice).toBe("EH-082");
     expect(status.productionSafe).toBe(false);
-    expect(status.nextSlice.id).toBe("EH-081");
-    expect(status.nextSlice.title).toMatch(/golden|journeys/i);
+    expect(status.nextSlice.id).toBe("HUMAN-SIGNOFF");
+    expect(status.nextSlice.title).toMatch(/human|sign[- ]?off|release/i);
     expect(status.blockers.some((b) => /EH-032/i.test(b))).toBe(false);
-    expect(status.blockers.some((b) => /Milestone 3|security review|browser personas/i.test(b))).toBe(true);
+    expect(status.blockers.some((b) => /HUMAN-SIGNOFF|live-provider|live provider|human checklist/i.test(b))).toBe(true);
 
     const cap = status.capabilities.find((c) => c.id === "entitlement-evaluator");
     expect(cap?.state).toBe("preview_only");
     expect(cap?.evidence).toMatch(/evaluateAccess|grant merge/i);
     expect(cap?.evidence).toMatch(/EH-033|media delivery|productionSafe remains false/i);
     expect(cap?.evidence).toMatch(/productionSafe remains false/i);
-    expect(cap?.nextSlice).toBe("EH-081");
+    expect(cap?.nextSlice).toBe("HUMAN-SIGNOFF");
     expect(cap?.sourcePaths).toEqual(
       expect.arrayContaining([
         "packages/escape-hatch/template/lib/entitlements/evaluate.ts",
@@ -465,5 +484,226 @@ describe("EH-032 SQL migrations (Path A / Path B)", () => {
     expect(operations).toMatch(/evaluateAccess/);
     expect(operations).toMatch(/stale_after/);
     expect(operations).toMatch(/fail-closed|Fail closed/i);
+  });
+});
+
+describe("EH-082 generated-gate parity (missing amount_cents fixtures)", () => {
+  const nowMs = Date.parse("2026-07-23T16:00:00.000Z");
+
+  it("treats title-only Gold as paid for member_only (not free via missing amount)", () => {
+    expect(
+      userMeetsResourceGate(
+        { level: "member_only", tierIds: [] },
+        ["t_gold"],
+        FIXTURE_SHAPED_TIERS
+      )
+    ).toBe(true);
+    expect(
+      userMeetsResourceGate(
+        { level: "member_only", tierIds: [] },
+        [],
+        FIXTURE_SHAPED_TIERS
+      )
+    ).toBe(false);
+
+    // Explicit numeric free + free-title heuristic still apply.
+    expect(
+      userMeetsResourceGate(
+        { level: "member_only", tierIds: [] },
+        ["t_free_amt"],
+        { t_free_amt: { title: "Paid Looking", amount_cents: 0 } }
+      )
+    ).toBe(false);
+    expect(
+      userMeetsResourceGate(
+        { level: "member_only", tierIds: [] },
+        ["t_free_title"],
+        { t_free_title: { title: "Free Tier" } }
+      )
+    ).toBe(false);
+  });
+
+  it("exact Gold gate passes Gold and denies Silver when floors are unknown", () => {
+    expect(
+      userMeetsResourceGate(
+        { level: "tier_gated", tierIds: ["t_gold"], matchMode: "exact" },
+        ["t_gold"],
+        FIXTURE_SHAPED_TIERS
+      )
+    ).toBe(true);
+    expect(
+      userMeetsResourceGate(
+        { level: "tier_gated", tierIds: ["t_gold"], matchMode: "exact" },
+        ["t_silver"],
+        FIXTURE_SHAPED_TIERS
+      )
+    ).toBe(false);
+  });
+
+  it("tier_or_higher with unknown floors does not let a different tier pass", () => {
+    // Exact id still works when floors are null.
+    expect(
+      userMeetsResourceGate(
+        {
+          level: "tier_gated",
+          tierIds: ["t_gold"],
+          matchMode: "tier_or_higher"
+        },
+        ["t_gold"],
+        FIXTURE_SHAPED_TIERS
+      )
+    ).toBe(true);
+    // Silver must not satisfy Gold via phantom floor 0.
+    expect(
+      userMeetsResourceGate(
+        {
+          level: "tier_gated",
+          tierIds: ["t_gold"],
+          matchMode: "tier_or_higher"
+        },
+        ["t_silver"],
+        FIXTURE_SHAPED_TIERS
+      )
+    ).toBe(false);
+  });
+
+  it("allows paid Gold soft persona to read member_only media with fixture-shaped catalog", () => {
+    const allowed = evaluateAccess({
+      subject: {
+        kind: "soft_persona",
+        personaId: "tier:t_gold",
+        tierIds: ["t_gold"]
+      },
+      resource: {
+        type: "media",
+        id: "m_members",
+        siteId: SITE,
+        accessLevel: "member_only",
+        tierIds: []
+      },
+      provider: "none",
+      tierCatalog: FIXTURE_SHAPED_TIERS,
+      nowMs
+    });
+    expect(allowed.allowed).toBe(true);
+    expect(allowed.reason).toBe("soft_persona_preview");
+  });
+
+  it("denies anonymous and blocks soft persona when identity is configured", () => {
+    const anonymous = evaluateAccess({
+      subject: { kind: "anonymous" },
+      resource: {
+        type: "media",
+        id: "m_members",
+        siteId: SITE,
+        accessLevel: "member_only",
+        tierIds: []
+      },
+      provider: "none",
+      tierCatalog: FIXTURE_SHAPED_TIERS,
+      nowMs
+    });
+    expect(anonymous.allowed).toBe(false);
+    expect(anonymous.reason).toBe("anonymous_denied");
+
+    const blocked = evaluateAccess({
+      subject: {
+        kind: "soft_persona",
+        personaId: "tier:t_gold",
+        tierIds: ["t_gold"]
+      },
+      resource: {
+        type: "media",
+        id: "m_members",
+        siteId: SITE,
+        accessLevel: "member_only",
+        tierIds: []
+      },
+      provider: "supabase",
+      tierCatalog: FIXTURE_SHAPED_TIERS,
+      nowMs
+    });
+    expect(blocked.allowed).toBe(false);
+    expect(blocked.reason).toBe("soft_persona_blocked");
+  });
+
+  it("deliverMedia streams m_members for sample.bundle Gold soft persona cookie", async () => {
+    const sample = JSON.parse(
+      readFileSync(join(FIXTURES, "sample.bundle.json"), "utf8")
+    ) as {
+      creator_id: string;
+      site_id: string;
+      tiers: Array<{ tier_id: string; title?: string; access_level?: string }>;
+      demo_personas: Array<{ id: string; tier_ids: string[] }>;
+      posts: Array<{
+        post_id: string;
+        access: {
+          level: "public" | "member_only" | "tier_gated";
+          tier_ids: string[];
+          match_mode?: "exact" | "tier_or_higher";
+        };
+        media: Array<{ media_id: string; content_path: string }>;
+      }>;
+    };
+
+    // Confirm fixture still omits amount_cents (regression shape).
+    expect(sample.tiers.every((t) => !("amount_cents" in t))).toBe(true);
+
+    const cwd = mkdtempSync(join(tmpdir(), "eh-082-gate-"));
+    const prevMode = process.env.ESCAPE_HATCH_MEDIA_MODE;
+    const prevProvider = process.env.ESCAPE_HATCH_IDENTITY_PROVIDER;
+    try {
+      mkdirSync(join(cwd, "data", "private-media"), { recursive: true });
+      writeFileSync(
+        join(cwd, "data", "private-media", "m_members.svg"),
+        "<svg id='members-fixture'/>",
+        "utf8"
+      );
+      process.env.ESCAPE_HATCH_MEDIA_MODE = "local_private";
+      process.env.ESCAPE_HATCH_IDENTITY_PROVIDER = "none";
+
+      const allowed = await deliverMedia({
+        site: {
+          creator_id: sample.creator_id,
+          site_id: sample.site_id,
+          tiers: sample.tiers,
+          demo_personas: sample.demo_personas,
+          posts: sample.posts
+        },
+        mediaId: "m_members",
+        cwd,
+        cookieHeader: `${SOFT_PERSONA_COOKIE}=${encodeURIComponent("tier:t_gold")}`
+      });
+      expect(allowed.ok).toBe(true);
+      if (allowed.ok && allowed.kind === "stream") {
+        expect(allowed.body.toString("utf8")).toContain("members-fixture");
+      }
+
+      const anonymous = await deliverMedia({
+        site: {
+          creator_id: sample.creator_id,
+          site_id: sample.site_id,
+          tiers: sample.tiers,
+          demo_personas: sample.demo_personas,
+          posts: sample.posts
+        },
+        mediaId: "m_members",
+        cwd
+      });
+      expect(anonymous.ok).toBe(false);
+      if (!anonymous.ok) {
+        expect(anonymous.status).toBe(401);
+        expect(anonymous.reason).toMatch(/anonymous_denied/i);
+      }
+    } finally {
+      if (prevMode === undefined) delete process.env.ESCAPE_HATCH_MEDIA_MODE;
+      else process.env.ESCAPE_HATCH_MEDIA_MODE = prevMode;
+      if (prevProvider === undefined) {
+        delete process.env.ESCAPE_HATCH_IDENTITY_PROVIDER;
+      } else {
+        process.env.ESCAPE_HATCH_IDENTITY_PROVIDER = prevProvider;
+      }
+      rmSync(cwd, { recursive: true, force: true });
+    }
   });
 });

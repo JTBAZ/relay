@@ -106,15 +106,15 @@ function withEnv(
 }
 
 describe("EH-033 status", () => {
-  it("advances slice to EH-080 with next EH-081 and productionSafe false", () => {
+  it("advances slice to EH-082 with next HUMAN-SIGNOFF and productionSafe false", () => {
     const status = buildEscapeHatchStatus();
-    expect(ESCAPE_HATCH_SLICE).toBe("EH-080");
-    expect(status.slice).toBe("EH-080");
+    expect(ESCAPE_HATCH_SLICE).toBe("EH-082");
+    expect(status.slice).toBe("EH-082");
     expect(status.productionSafe).toBe(false);
-    expect(status.nextSlice.id).toBe("EH-081");
-    expect(status.nextSlice.title).toMatch(/golden|journeys/i);
+    expect(status.nextSlice.id).toBe("HUMAN-SIGNOFF");
+    expect(status.nextSlice.title).toMatch(/human|sign[- ]?off|release/i);
     expect(
-      status.blockers.some((b) => /Milestone 3|security review|browser personas/i.test(b))
+      status.blockers.some((b) => /HUMAN-SIGNOFF|live-provider|live provider|human checklist/i.test(b))
     ).toBe(true);
 
     const media = status.capabilities.find(
@@ -122,7 +122,7 @@ describe("EH-033 status", () => {
     );
     expect(media?.state).toBe("preview_only");
     expect(media?.evidence).toMatch(/evaluateAccess|signed|local_private/i);
-    expect(media?.nextSlice).toBe("EH-081");
+    expect(media?.nextSlice).toBe("HUMAN-SIGNOFF");
   });
 });
 
@@ -400,9 +400,115 @@ describe("EH-033 fillTemplate private layout", () => {
       productionSafe: boolean;
       feature_flags: { signed_media_delivery: boolean };
     };
-    expect(manifest.slice).toBe("EH-080");
+    expect(manifest.slice).toBe("EH-082");
     expect(manifest.productionSafe).toBe(false);
     expect(manifest.feature_flags.signed_media_delivery).toBe(true);
+  });
+
+  it("refuses mediaLayout=public_legacy before copying premium bytes (EH-082)", () => {
+    const bundle = JSON.parse(
+      readFileSync(join(FIXTURES, "sample.bundle.json"), "utf8")
+    );
+    expect(() =>
+      fillTemplate({
+        bundle,
+        mediaSourceDir: join(FIXTURES, "media"),
+        slug: "eh-082-public-legacy-refuse",
+        mediaLayout: "public_legacy",
+        clean: true
+      })
+    ).toThrow(/public_legacy is refused|EH-082/i);
+  });
+});
+
+describe("EH-082 public_legacy premium hard block", () => {
+  afterEach(() => {
+    delete process.env.ESCAPE_HATCH_MEDIA_MODE;
+    delete process.env.ESCAPE_HATCH_IDENTITY_PROVIDER;
+  });
+
+  it("blocks premium delivery under ESCAPE_HATCH_MEDIA_MODE=public_legacy", async () => {
+    await withEnv(
+      {
+        ESCAPE_HATCH_MEDIA_MODE: "public_legacy",
+        ESCAPE_HATCH_IDENTITY_PROVIDER: "none"
+      },
+      async () => {
+      expect(resolveMediaMode()).toBe("public_legacy");
+
+      const site = sampleSite();
+      const tmp = mkdtempSync(join(tmpdir(), "eh-082-legacy-"));
+      try {
+        mkdirSync(join(tmp, "data", "private-media"), { recursive: true });
+        writeFileSync(
+          join(tmp, "data", "private-media", "m_members.svg"),
+          "<svg/>",
+          "utf8"
+        );
+
+        const premium = await deliverMedia({
+          site,
+          mediaId: "m_members",
+          cookieHeader: `${SOFT_PERSONA_COOKIE}=patron`,
+          cwd: tmp
+        });
+        expect(premium.ok).toBe(false);
+        if (!premium.ok) {
+          expect(premium.reason).toBe("public_legacy_forbidden");
+          expect(premium.status).toBe(503);
+        }
+
+        const free = await deliverMedia({
+          site,
+          mediaId: "m_public",
+          cwd: tmp
+        });
+        expect(free.ok).toBe(true);
+        if (free.ok) {
+          expect(free.kind).toBe("public_path");
+        }
+      } finally {
+        rmSync(tmp, { recursive: true, force: true });
+      }
+    });
+  });
+
+  it("keeps default private layout and free/public delivery green", async () => {
+    await withEnv(
+      {
+        ESCAPE_HATCH_MEDIA_MODE: "local_private",
+        ESCAPE_HATCH_IDENTITY_PROVIDER: "none"
+      },
+      async () => {
+      const site = sampleSite();
+      const tmp = mkdtempSync(join(tmpdir(), "eh-082-private-"));
+      try {
+        mkdirSync(join(tmp, "data", "private-media"), { recursive: true });
+        writeFileSync(
+          join(tmp, "data", "private-media", "m_members.svg"),
+          "<svg id='members'/>",
+          "utf8"
+        );
+
+        const free = await deliverMedia({
+          site,
+          mediaId: "m_public",
+          cwd: tmp
+        });
+        expect(free.ok).toBe(true);
+
+        const premium = await deliverMedia({
+          site,
+          mediaId: "m_members",
+          cookieHeader: `${SOFT_PERSONA_COOKIE}=patron`,
+          cwd: tmp
+        });
+        expect(premium.ok).toBe(true);
+        if (premium.ok) expect(premium.kind).toBe("stream");
+      } finally {
+        rmSync(tmp, { recursive: true, force: true });
+      }
+    });
   });
 });
 

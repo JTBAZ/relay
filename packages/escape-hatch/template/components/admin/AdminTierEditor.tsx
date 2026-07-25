@@ -1,5 +1,6 @@
 "use client";
 
+import { adminLocalFetch } from "./adminLocalFetch";
 import { useState } from "react";
 
 type TierRow = {
@@ -28,7 +29,7 @@ export function AdminTierEditor({
     setBusy(tier.tier_id);
     setMessage(null);
     try {
-      const res = await fetch("/api/admin/tiers", {
+      const res = await adminLocalFetch("/api/admin/tiers", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({

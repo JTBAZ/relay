@@ -1,5 +1,6 @@
 "use client";
 
+import { adminLocalFetch } from "./adminLocalFetch";
 import { useCallback, useEffect, useState } from "react";
 
 type LaunchStep = {
@@ -34,7 +35,7 @@ export function DeployLaunchWizard({ siteId }: { siteId: string }) {
   const [stuckDraft, setStuckDraft] = useState("");
 
   const refresh = useCallback(async () => {
-    const res = await fetch("/api/admin/deploy?wizard=1", { method: "GET" });
+    const res = await adminLocalFetch("/api/admin/deploy?wizard=1", { method: "GET" });
     const json = (await res.json()) as {
       ok?: boolean;
       launch?: LaunchReadiness;
@@ -54,7 +55,7 @@ export function DeployLaunchWizard({ siteId }: { siteId: string }) {
     setBusy(true);
     setMessage(null);
     try {
-      const res = await fetch("/api/admin/deploy", {
+      const res = await adminLocalFetch("/api/admin/deploy", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify(body)
@@ -186,6 +187,8 @@ export function DeployLaunchWizard({ siteId }: { siteId: string }) {
             <label className="small">
               I am stuck (recovery note)
               <textarea
+                name="stuck_recovery_note"
+                autoComplete="off"
                 value={stuckDraft}
                 onChange={(e) => setStuckDraft(e.target.value)}
                 rows={2}
@@ -230,7 +233,11 @@ export function DeployLaunchWizard({ siteId }: { siteId: string }) {
         <p className="small muted">Loading launch wizard…</p>
       )}
 
-      {message ? <p className="small">{message}</p> : null}
+      {message ? (
+        <p className="small" role="status" aria-live="polite" aria-atomic="true">
+          {message}
+        </p>
+      ) : null}
       <p className="small muted">Site: {siteId}</p>
     </section>
   );

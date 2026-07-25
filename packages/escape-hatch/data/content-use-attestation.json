@@ -1,0 +1,11 @@
+{
+  "contract_version": "eh-content-use-attestation/1.0.0",
+  "site_id": "site_eh_053",
+  "category": "adult_sexual_gratification",
+  "acceptedProviderTerms": true,
+  "affirmedAccurate": true,
+  "attestedAt": "2026-07-23T15:07:33.228Z",
+  "attestedByHint": "test",
+  "production_safe": false,
+  "note": "Non-secret routing declaration only — not a catalog export. Never store secrets. productionSafe remains false."
+}

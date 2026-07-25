@@ -210,15 +210,12 @@ export async function attachScheduleRailMedia(
   return out.attach;
 }
 
-export type PostDetailsFitMode = "as_written" | "fit_platforms";
-
 export type ScheduleRailPostDetailsVariant = {
   destination: string;
   title: string | null;
   body_text: string | null;
   post_text: string | null;
   tags: string[];
-  adapted: boolean;
 };
 
 export type ScheduleRailPostDetailsResult = {
@@ -227,24 +224,14 @@ export type ScheduleRailPostDetailsResult = {
   title: string;
   description: string | null;
   tags: string[];
-  post_details_state: "authored" | "adapted";
+  post_details_state: "authored";
   variants: ScheduleRailPostDetailsVariant[];
-  preview: boolean;
 };
 
 export type UpdateScheduleRailPostDetailsBody = {
   title?: string | null;
   description?: string | null;
   tags?: string[];
-  fit_mode?: PostDetailsFitMode;
-  preview?: boolean;
-  variant_overrides?: Array<{
-    destination: string;
-    use_original?: boolean;
-    title?: string | null;
-    body_text?: string | null;
-    post_text?: string | null;
-  }>;
 };
 
 export async function updateScheduleRailPostDetails(
@@ -260,4 +247,90 @@ export async function updateScheduleRailPostDetails(
     }
   );
   return out.post_details;
+}
+
+export type ScheduleRailReviewContext = {
+  event_id: string;
+  task_id: string;
+  post_id: string;
+  draft_id: string | null;
+  plan_id: string | null;
+  plan: import("@/lib/relay-api").DistributionPlanWire | null;
+  variants: import("@/lib/relay-api").DistributionVariantWire[];
+  destinations: import("@/lib/relay-api").DistributionDestination[];
+  title: string;
+  description: string | null;
+  tags: string[];
+  post_details_state: "none" | "authored";
+  media_ids: string[];
+  media_ready: boolean;
+  media_state: string;
+  readiness_errors: string[];
+  composer_step: string | null;
+  publish_state: string;
+  scheduled_for: string | null;
+  is_public: boolean;
+  tier_ids: string[];
+};
+
+export async function fetchScheduleRailReview(query: {
+  event_id?: string | null;
+  draft_id?: string | null;
+  variant_id?: string | null;
+  post_id?: string | null;
+}): Promise<ScheduleRailReviewContext> {
+  const params = new URLSearchParams();
+  if (query.event_id?.trim()) params.set("event_id", query.event_id.trim());
+  if (query.draft_id?.trim()) params.set("draft_id", query.draft_id.trim());
+  if (query.variant_id?.trim()) params.set("variant_id", query.variant_id.trim());
+  if (query.post_id?.trim()) params.set("post_id", query.post_id.trim());
+  const qs = params.toString();
+  const out = await relayFetch<{ review: ScheduleRailReviewContext }>(
+    `/api/v1/creator/schedule-rail/review${qs ? `?${qs}` : ""}`
+  );
+  return out.review;
+}
+
+export async function updateScheduleRailReviewStep(
+  eventId: string,
+  composerStep: string
+): Promise<ScheduleRailReviewContext> {
+  const out = await relayFetch<{ review: ScheduleRailReviewContext }>(
+    `/api/v1/creator/schedule-rail/review/${encodeURIComponent(eventId)}/step`,
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ composer_step: composerStep }),
+    }
+  );
+  return out.review;
+}
+
+export type PublishScheduleRailReviewBody = {
+  is_public: boolean;
+  tier_ids?: string[];
+  title?: string | null;
+  description?: string | null;
+  tags?: string[];
+};
+
+export async function publishScheduleRailReview(
+  eventId: string,
+  body: PublishScheduleRailReviewBody
+): Promise<ScheduleRailReviewContext> {
+  const out = await relayFetch<{ review: ScheduleRailReviewContext }>(
+    `/api/v1/creator/schedule-rail/review/${encodeURIComponent(eventId)}/publish`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        is_public: body.is_public,
+        tier_ids: body.is_public ? [] : (body.tier_ids ?? []),
+        title: body.title,
+        description: body.description,
+        tags: body.tags,
+      }),
+    }
+  );
+  return out.review;
 }

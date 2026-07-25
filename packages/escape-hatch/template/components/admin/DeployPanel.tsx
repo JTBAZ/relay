@@ -1,5 +1,6 @@
 "use client";
 
+import { adminLocalFetch } from "./adminLocalFetch";
 import { useEffect, useState } from "react";
 
 type DeployRecord = {
@@ -60,7 +61,7 @@ export function DeployPanel({ siteId }: { siteId: string }) {
   const [lastDockerId, setLastDockerId] = useState<string | null>(null);
 
   async function refresh() {
-    const res = await fetch("/api/admin/deploy", { method: "GET" });
+    const res = await adminLocalFetch("/api/admin/deploy", { method: "GET" });
     const json = (await res.json()) as {
       ok?: boolean;
       readiness?: Readiness;
@@ -89,7 +90,7 @@ export function DeployPanel({ siteId }: { siteId: string }) {
     try {
       const body: Record<string, string> = { action, path };
       if (deploymentId) body.deployment_id = deploymentId;
-      const res = await fetch("/api/admin/deploy", {
+      const res = await adminLocalFetch("/api/admin/deploy", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify(body)
@@ -128,7 +129,16 @@ export function DeployPanel({ siteId }: { siteId: string }) {
         Site <span className="mono">{siteId}</span>. Fixture rehearsals only —
         no live Vercel API or Docker daemon. productionSafe remains false.
       </p>
-      {message ? <p className="admin-attention-note">{message}</p> : null}
+      {message ? (
+        <p
+          className="admin-attention-note"
+          role="status"
+          aria-live="polite"
+          aria-atomic="true"
+        >
+          {message}
+        </p>
+      ) : null}
       {readiness ? (
         <p className="small">
           Status: {readiness.ok ? readiness.path ?? "live" : "manifest only"} —{" "}

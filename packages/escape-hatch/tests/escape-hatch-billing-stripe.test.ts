@@ -61,6 +61,8 @@ function testEnv(partial: Partial<SiteEnv> = {}): SiteEnv {
     STRIPE_WEBHOOK_SECRET: WH_SECRET,
     NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: "pk_test_eh051",
     ESCAPE_HATCH_BILLING_PROVIDER: "stripe",
+    NOWPAYMENTS_API_KEY: undefined,
+    NOWPAYMENTS_IPN_SECRET: undefined,
     ESCAPE_HATCH_BILLING_TEST_WEBHOOK_SECRET: undefined,
     ESCAPE_HATCH_PATREON_MODE: undefined,
     PATREON_CLIENT_ID: undefined,
@@ -83,18 +85,23 @@ function testEnv(partial: Partial<SiteEnv> = {}): SiteEnv {
     ESCAPE_HATCH_RELAY_CONNECTOR_BILLING_ENABLED: undefined,
     ESCAPE_HATCH_RELAY_CONNECTOR_ENTITLEMENT_STATUS: undefined,
     ESCAPE_HATCH_RELAY_CONNECTOR_LAST_SERVICE_DATE: undefined,
+    ESCAPE_HATCH_CROSSPOST_TOKEN_PEPPER: undefined,
+    ESCAPE_HATCH_EMAIL_PROVIDER: undefined,
+    RESEND_API_KEY: undefined,
+    EMAIL_FROM: undefined,
+    EMAIL_REPLY_TO: undefined,
     ...partial
   };
 }
 
 describe("EH-051 status", () => {
-  it("advances slice to EH-080 with next EH-081 and productionSafe false", () => {
+  it("advances slice to EH-082 with next HUMAN-SIGNOFF and productionSafe false", () => {
     const status = buildEscapeHatchStatus();
-    expect(ESCAPE_HATCH_SLICE).toBe("EH-080");
-    expect(status.slice).toBe("EH-080");
+    expect(ESCAPE_HATCH_SLICE).toBe("EH-082");
+    expect(status.slice).toBe("EH-082");
     expect(status.productionSafe).toBe(false);
-    expect(status.nextSlice.id).toBe("EH-081");
-    expect(status.nextSlice.title).toMatch(/golden|journeys/i);
+    expect(status.nextSlice.id).toBe("HUMAN-SIGNOFF");
+    expect(status.nextSlice.title).toMatch(/human|sign[- ]?off|release/i);
     expect(
       status.blockers.some((b) => /EH-073|Milestone 3|Stripe/i.test(b))
     ).toBe(true);
@@ -102,7 +109,7 @@ describe("EH-051 status", () => {
     const cap = status.capabilities.find((c) => c.id === "billing-adapters");
     expect(cap?.state).toBe("preview_only");
     expect(cap?.evidence).toMatch(/EH-051|Checkout|Portal|webhook/i);
-    expect(cap?.nextSlice).toBe("EH-081");
+    expect(cap?.nextSlice).toBe("HUMAN-SIGNOFF");
     expect(cap?.sourcePaths).toEqual(
       expect.arrayContaining([
         "packages/escape-hatch/template/lib/billing/",
@@ -418,7 +425,7 @@ describe("EH-051 docs + routes", () => {
     const manifest = JSON.parse(
       readFileSync(join(TEMPLATE, "escape-hatch.manifest.json"), "utf8")
     ) as { slice: string; feature_flags: { stripe_billing: boolean } };
-    expect(manifest.slice).toBe("EH-080");
+    expect(manifest.slice).toBe("EH-082");
     expect(manifest.feature_flags.stripe_billing).toBe(true);
 
     const envEx = readFileSync(join(TEMPLATE, ".env.example"), "utf8");
@@ -480,6 +487,67 @@ describe("EH-051 customer binding + return path hardening", () => {
       expect(owned.customerId).toBe("cus_owned_portal");
       expect(owned.source).toBe("map");
     }
+  });
+
+  it("portal rejects client customerId when identity is unset (no fixture opt-in)", async () => {
+    const denied = await resolvePortalCustomerId({
+      identityConfigured: false,
+      siteId: SITE,
+      authUserId: null,
+      clientCustomerId: "cus_attacker_idor"
+    });
+    expect(denied.ok).toBe(false);
+    if (!denied.ok) {
+      expect(denied.reason).toBe("identity_required");
+    }
+
+    const portalSrc = readFileSync(
+      join(TEMPLATE, "app/api/billing/portal/route.ts"),
+      "utf8"
+    );
+    expect(portalSrc).toMatch(/identity_required/);
+    expect(portalSrc).not.toMatch(/allowClientCustomerIdPreview\s*:/);
+    expect(portalSrc).toMatch(/clientCustomerId:\s*null/);
+  });
+
+  it("fixture opt-in isolates client_preview portal binding from production route", async () => {
+    const preview = await resolvePortalCustomerId({
+      identityConfigured: false,
+      siteId: SITE,
+      authUserId: null,
+      clientCustomerId: "cus_fixture_only",
+      allowClientCustomerIdPreview: true
+    });
+    expect(preview.ok).toBe(true);
+    if (preview.ok) {
+      expect(preview.customerId).toBe("cus_fixture_only");
+      expect(preview.source).toBe("client_preview");
+    }
+
+    const checkoutDefault = await resolveCheckoutCustomerId({
+      identityConfigured: false,
+      siteId: SITE,
+      authUserId: null,
+      clientCustomerId: "cus_discard_me"
+    });
+    expect(checkoutDefault.customerId).toBeNull();
+    expect(checkoutDefault.discardedClientCustomerId).toBe(true);
+
+    const checkoutOptIn = await resolveCheckoutCustomerId({
+      identityConfigured: false,
+      siteId: SITE,
+      authUserId: null,
+      clientCustomerId: "cus_fixture_checkout",
+      allowClientCustomerIdPreview: true
+    });
+    expect(checkoutOptIn.customerId).toBe("cus_fixture_checkout");
+    expect(checkoutOptIn.discardedClientCustomerId).toBe(false);
+
+    const checkoutSrc = readFileSync(
+      join(TEMPLATE, "app/api/billing/checkout/route.ts"),
+      "utf8"
+    );
+    expect(checkoutSrc).not.toMatch(/allowClientCustomerIdPreview\s*:/);
   });
 
   it("rejects protocol-relative // return paths (Patreon helpers)", () => {

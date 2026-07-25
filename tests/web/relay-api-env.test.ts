@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   DEFAULT_RELAY_API_BASE,
+  relayBrowserMediaUrl,
   resolveRelayApiBaseFromEnv
 } from "../../web/lib/relay-api-env";
 
@@ -25,5 +26,21 @@ describe("resolveRelayApiBaseFromEnv", () => {
 
   it("rejects non-http(s) schemes", () => {
     expect(() => resolveRelayApiBaseFromEnv("ftp://example.com")).toThrow(/http:/);
+  });
+});
+
+describe("relayBrowserMediaUrl", () => {
+  it("returns same-origin paths for export media", () => {
+    expect(relayBrowserMediaUrl("/api/v1/export/media/c/m/content")).toBe(
+      "/api/v1/export/media/c/m/content"
+    );
+    expect(relayBrowserMediaUrl("api/v1/export/media/c/m/thumb")).toBe(
+      "/api/v1/export/media/c/m/thumb"
+    );
+  });
+
+  it("passes through absolute and blob URLs", () => {
+    expect(relayBrowserMediaUrl("https://cdn.example/x.png")).toBe("https://cdn.example/x.png");
+    expect(relayBrowserMediaUrl("blob:http://localhost/abc")).toBe("blob:http://localhost/abc");
   });
 });
