@@ -17,7 +17,9 @@ describe("worker entry smoke", () => {
           ...process.env,
           RELAY_JOB_BACKEND: "memory",
           // Worker subprocess inherits NODE_ENV=test from Vitest; logger defaults to silent — allow banner assertion.
-          LOG_LEVEL: "info"
+          LOG_LEVEL: "info",
+          RELAY_TOKEN_ENCRYPTION_KEY:
+            process.env.RELAY_TOKEN_ENCRYPTION_KEY ?? Buffer.alloc(32).toString("base64")
         },
         timeout: 60_000
       });

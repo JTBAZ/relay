@@ -180,7 +180,7 @@ function makePrismaForPublicCollection(args: {
             campaignId: null;
             title: string;
             amountCents: number;
-            upstreamUpdatedAt: null;
+            upstreamUpdatedAt: Date;
             versionSeq: number;
           }> = [];
           if (where.creatorId.in.includes("creator_a")) {
@@ -190,13 +190,17 @@ function makePrismaForPublicCollection(args: {
               campaignId: null,
               title: "Paid",
               amountCents: 500,
-              upstreamUpdatedAt: null,
+              upstreamUpdatedAt: new Date("2026-01-01T00:00:00.000Z"),
               versionSeq: 1
             });
           }
           return rows;
         }
       )
+    },
+    tipReveal: {
+      findFirst: vi.fn().mockResolvedValue(null),
+      findMany: vi.fn().mockResolvedValue([])
     },
     patronSavedCollection: {
       findFirst: vi.fn(

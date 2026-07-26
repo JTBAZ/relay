@@ -33,7 +33,7 @@ describe("PILOT-017 — Pilot exit sign-off", () => {
     const checklist = readFileSync(join(ROOT, "docs/pilot-exit-checklist.md"), "utf8");
     const browser = readFileSync(join(ROOT, "docs/pilot-browser-matrix.md"), "utf8");
     expect(checklist).toContain("verify:pilot");
-    expect(checklist).toContain("Pilot target");
+    expect(checklist).toContain("Stage 1 target");
     expect(browser).toContain("Chrome (desktop)");
     expect(browser).toContain("Blocking");
   });

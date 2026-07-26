@@ -66,6 +66,8 @@ describe("completeDistributionAttempt promo platform instance", () => {
         findFirst: vi.fn().mockResolvedValue(baseAttemptRow()),
         update: attemptUpdate
       },
+      postDistributionVariant: { findFirst: vi.fn().mockResolvedValue(null) },
+      postbotTask: { findFirst: vi.fn().mockResolvedValue(null) },
       $transaction: vi.fn(async (fn) =>
         fn({
           postDistributionAttempt: { update: attemptUpdate },
@@ -112,6 +114,8 @@ describe("completeDistributionAttempt promo platform instance", () => {
           })
         )
       },
+      postDistributionVariant: { findFirst: vi.fn().mockResolvedValue(null) },
+      postbotTask: { findFirst: vi.fn().mockResolvedValue(null) },
       $transaction: vi.fn(async (fn) =>
         fn({
           postDistributionAttempt: { update: attemptUpdate },

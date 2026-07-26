@@ -310,6 +310,17 @@ describe("createRelayPostTransaction manual campaign", () => {
           mediaAsset: {
             findUniqueOrThrow: vi.fn().mockResolvedValue(media),
             update: mediaUpdate
+          },
+          creativeWorkMember: {
+            findUnique: vi.fn().mockResolvedValue(null),
+            create: vi.fn().mockResolvedValue({})
+          },
+          creativeWork: {
+            upsert: vi.fn().mockResolvedValue({})
+          },
+          platformInstance: {
+            findUnique: vi.fn().mockResolvedValue(null),
+            upsert: vi.fn().mockResolvedValue({})
           }
         })
       )

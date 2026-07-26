@@ -67,6 +67,8 @@ jobs:
     env:
       SKIP_REDIS_IT: "0"
       REDIS_URL: redis://127.0.0.1:6379
+      # Prisma 7 config requires DATABASE_URL even for generate (no DB connection).
+      DATABASE_URL: postgresql://relay:relay@127.0.0.1:5433/relay_dev
     services:
       redis:
         image: redis:7-alpine

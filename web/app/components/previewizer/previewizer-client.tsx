@@ -75,7 +75,7 @@ import {
   fetchPatreonSyncState,
   fetchPreviewTemplates,
   type PreviewTemplateWire
-} from "@/lib/relay-api";
+} from "@/lib/previewizer-api";
 import { previewizerDestinationQrPngDataUrl } from "@/lib/previewizer-destination-qr";
 import {
   assemblePreviewizerLinkDestinations,

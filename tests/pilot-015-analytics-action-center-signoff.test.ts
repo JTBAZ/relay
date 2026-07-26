@@ -8,9 +8,9 @@ import { describe, expect, it } from "vitest";
 const ROOT = join(__dirname, "..");
 
 describe("PILOT-015 — Analytics Action Center MVP sign-off", () => {
-  it("/analytics and /action-center pages render behind StudioRouteGuard", () => {
-    const analyticsPage = readFileSync(join(ROOT, "web/app/analytics/page.tsx"), "utf8");
-    const actionCenterPage = readFileSync(join(ROOT, "web/app/action-center/page.tsx"), "utf8");
+  it("/studio/analytics and /studio/actions pages render behind StudioRouteGuard", () => {
+    const analyticsPage = readFileSync(join(ROOT, "web/app/studio/analytics/page.tsx"), "utf8");
+    const actionCenterPage = readFileSync(join(ROOT, "web/app/studio/actions/page.tsx"), "utf8");
     expect(analyticsPage).toContain("AnalyticsOverviewClient");
     expect(analyticsPage).toContain("StudioRouteGuard");
     expect(actionCenterPage).toContain("ActionCenterView");
@@ -18,19 +18,22 @@ describe("PILOT-015 — Analytics Action Center MVP sign-off", () => {
   });
 
   it("AnalyticsOverviewClient wires membership KPIs, cohorts, CSV import, and Action Center link", () => {
-    const client = readFileSync(join(ROOT, "web/app/analytics/AnalyticsOverviewClient.tsx"), "utf8");
+    const client = readFileSync(
+      join(ROOT, "web/app/studio/analytics/AnalyticsOverviewClient.tsx"),
+      "utf8"
+    );
     expect(client).toContain("fetchCreatorMembershipSummary");
     expect(client).toContain("fetchCreatorMembershipCohorts");
     expect(client).toContain("fetchCreatorTierStickiness");
     expect(client).toContain("fetchCreatorPostPerformance");
     expect(client).toContain("uploadPatreonInsightsCsv");
-    expect(client).toContain('href="/action-center"');
+    expect(client).toContain('href: "/studio/actions"');
     expect(client).toContain("analytics-kpi-paying");
     expect(client).toContain("insights-csv-upload");
   });
 
   it("ActionCenterView wires insight cards, refresh, and growth sections", () => {
-    const view = readFileSync(join(ROOT, "web/app/action-center/ActionCenterView.tsx"), "utf8");
+    const view = readFileSync(join(ROOT, "web/app/studio/actions/ActionCenterView.tsx"), "utf8");
     expect(view).toContain("fetchActionCenterCards");
     expect(view).toContain("fetchAnalyticsHealth");
     expect(view).toContain("postAnalyticsGenerate");

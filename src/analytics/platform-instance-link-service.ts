@@ -154,7 +154,7 @@ export async function confirmPlatformInstanceLink(
       include: { variant: { select: { platformFields: true } } }
     });
     const variantPlatformFields =
-      attemptWithVariant?.variant.platformFields &&
+      attemptWithVariant?.variant?.platformFields &&
       typeof attemptWithVariant.variant.platformFields === "object" &&
       !Array.isArray(attemptWithVariant.variant.platformFields)
         ? (attemptWithVariant.variant.platformFields as Record<string, unknown>)

@@ -75,16 +75,16 @@ describe("useRequireLoggedOut", () => {
   });
 
   it("when returnTo=/studio/designer: redirects to /studio/designer", async () => {
-    nextNavigationMock.search = new URLSearchParams("returnTo=%2Fdesigner");
+    nextNavigationMock.search = new URLSearchParams("returnTo=%2Fstudio%2Fdesigner");
     mockUseStudioSession.mockReturnValue(baseSession({ ready: true, hasRelaySession: true }));
     renderHook(() => useRequireLoggedOut());
     await waitFor(() => expect(nextNavigationMock.replace).toHaveBeenCalledWith("/studio/designer"));
   });
 
-  it("when returnTo=//evil.com: redirects to / (sanitized)", async () => {
+  it("when returnTo=//evil.com: redirects to /studio (sanitized)", async () => {
     nextNavigationMock.search = new URLSearchParams("returnTo=%2F%2Fevil.com");
     mockUseStudioSession.mockReturnValue(baseSession({ ready: true, hasRelaySession: true }));
     renderHook(() => useRequireLoggedOut());
-    await waitFor(() => expect(nextNavigationMock.replace).toHaveBeenCalledWith("/"));
+    await waitFor(() => expect(nextNavigationMock.replace).toHaveBeenCalledWith("/studio"));
   });
 });

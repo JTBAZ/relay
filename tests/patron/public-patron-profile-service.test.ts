@@ -9,6 +9,9 @@ function buildPrismaStub(overrides: Record<string, unknown> = {}) {
     patronSavedCollection: {
       findMany: vi.fn().mockResolvedValue([])
     },
+    tenantMembership: {
+      findUnique: vi.fn().mockResolvedValue(null)
+    },
     ...overrides
   };
 }
@@ -108,6 +111,7 @@ describe("getPublicPatronProfileByHandle", () => {
       bio: "Hello world",
       avatar_url: "https://cdn/a.png",
       banner_url: null,
+      is_curator: false,
       public_collections: [
         {
           id: "col1",

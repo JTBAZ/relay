@@ -59,6 +59,10 @@ vi.mock("@/lib/relay-api", async () => {
   };
 });
 
+vi.mock("../../web/app/studio/analytics/action-hub/InsightsActionHub", () => ({
+  InsightsActionHub: () => <div data-testid="insights-action-hub-stub" />
+}));
+
 import AnalyticsOverviewClient from "../../web/app/studio/analytics/AnalyticsOverviewClient";
 
 // Provide a minimal StudioSessionContext so AnalyticsOverviewClient can call useStudioSession()

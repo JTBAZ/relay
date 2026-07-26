@@ -269,6 +269,7 @@ function createPlannerPrisma(seed: CycleRow) {
       findFirst: vi.fn(async () => null)
     },
     creatorGoalCycleOutcome: {
+      findUnique: vi.fn().mockResolvedValue(null),
       upsert: vi.fn(async () => ({}))
     },
     $transaction: vi.fn(async (fn: (tx: any) => Promise<unknown>) => fn(api))

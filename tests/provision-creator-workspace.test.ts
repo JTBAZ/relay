@@ -70,14 +70,14 @@ describe("provisionCreatorWorkspace (MT-032)", () => {
     expect(r.created).toBe(true);
     expect(r.account_id).toBe("acc_1");
     expect(r.relay_creator_id).toMatch(/^cr_[a-f0-9]{32}$/);
-    expect(r.public_slug).toBe("studio");
+    expect(r.public_slug).toBe("studio-x");
     expect(tenantCreate).toHaveBeenCalledWith({
       data: { relayCreatorId: r.relay_creator_id }
     });
     expect(userCreate).toHaveBeenCalled();
     expect(profileCreate).toHaveBeenCalledWith({
       data: expect.objectContaining({
-        publicSlug: "studio",
+        publicSlug: "studio-x",
         slugSource: PublicSlugSource.allocated
       })
     });

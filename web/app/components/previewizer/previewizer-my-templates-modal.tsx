@@ -2,7 +2,7 @@
 
 import { Loader2, Trash2, X } from "lucide-react";
 import { getCompositionTemplateMeta, type CompositionTemplateId } from "./previewizer-template-compositions";
-import type { PreviewTemplateWire } from "@/lib/relay-api";
+import type { PreviewTemplateWire } from "@/lib/previewizer-api";
 import { MAX_CUSTOM_PREVIEW_TEMPLATES } from "@/lib/previewizer-template-config";
 
 type Props = {

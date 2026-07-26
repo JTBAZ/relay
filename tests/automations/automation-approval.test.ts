@@ -249,7 +249,7 @@ describe("completeAutomationRunFromHandoff / cancelAutomationRun (B16)", () => {
       scheduleOccurrenceId: null,
       materializedEventId: "evt_1",
       dueAt: new Date("2026-07-20T14:00:00.000Z"),
-      expiresAt: new Date("2026-07-25T00:00:00.000Z"),
+      expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
       idempotencyKey: "k1",
       failureReason: null,
       createdAt: new Date(),

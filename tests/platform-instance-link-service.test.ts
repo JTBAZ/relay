@@ -129,7 +129,10 @@ describe("confirmPlatformInstanceLink", () => {
     const attemptUpdate = vi.fn().mockResolvedValue({});
     const prisma = basePrisma({
       postDistributionAttempt: {
-        findFirst: vi.fn().mockResolvedValue({ id: "attempt_1" }),
+        findFirst: vi.fn().mockResolvedValue({
+          id: "attempt_1",
+          variant: { platformFields: {} }
+        }),
         update: attemptUpdate
       }
     });

@@ -191,6 +191,10 @@ function makePrismaWith(args: {
           return out;
         }
       )
+    },
+    tipReveal: {
+      findFirst: vi.fn().mockResolvedValue(null),
+      findMany: vi.fn().mockResolvedValue([])
     }
   } as never;
 }

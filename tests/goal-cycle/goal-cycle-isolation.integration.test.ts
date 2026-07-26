@@ -18,6 +18,7 @@ import {
   startGoalCycle,
   suggestGoalCycleCompletion
 } from "../../src/goal-cycle/goal-cycle-service.js";
+import { grantMonthlyCoachPlanCredits } from "../../src/usage/coach-plan-credit-service.js";
 import { prisma } from "../../src/lib/db.js";
 
 const hasDatabaseUrl = Boolean(process.env.DATABASE_URL?.trim());
@@ -31,6 +32,20 @@ let skipReason = "not checked";
 async function wipeCreators(...creatorIds: string[]): Promise<void> {
   await prisma.creatorGoalCycle.deleteMany({
     where: { creatorId: { in: creatorIds } }
+  });
+  for (const creatorId of creatorIds) {
+    await prisma.coachPlanCreditReservation.deleteMany({ where: { creatorId } }).catch(() => undefined);
+    await prisma.coachPlanCreditLedger.deleteMany({ where: { creatorId } }).catch(() => undefined);
+    await prisma.coachPlanCreditWallet.deleteMany({ where: { creatorId } }).catch(() => undefined);
+  }
+}
+
+async function seedCredits(creatorId: string, allowance = 5): Promise<void> {
+  await grantMonthlyCoachPlanCredits(prisma, {
+    creatorId,
+    periodKey: "2026-07",
+    allowance,
+    idempotencyKey: `grant:${creatorId}:iso:${allowance}:${Date.now()}`
   });
 }
 
@@ -56,6 +71,7 @@ describe.skipIf(!hasDatabaseUrl)("Goal Cycle isolation (VS1-T05, real DB)", () =
   it("simultaneous starts yield exactly one active cycle", async (ctx) => {
     if (!tablesReady) ctx.skip(skipReason);
     await wipeCreators(CREATOR_A);
+    await seedCredits(CREATOR_A);
 
     const results = await Promise.allSettled([
       startGoalCycle(prisma, CREATOR_A, {
@@ -99,6 +115,7 @@ describe.skipIf(!hasDatabaseUrl)("Goal Cycle isolation (VS1-T05, real DB)", () =
   it("simultaneous checkpoint patches are version-safe", async (ctx) => {
     if (!tablesReady) ctx.skip(skipReason);
     await wipeCreators(CREATOR_A);
+    await seedCredits(CREATOR_A);
     const started = await startGoalCycle(prisma, CREATOR_A, {
       goal_kind: "engagement",
       time_zone: "America/New_York",
@@ -138,6 +155,7 @@ describe.skipIf(!hasDatabaseUrl)("Goal Cycle isolation (VS1-T05, real DB)", () =
   it("terminal confirm frees active scope for a later same-month cycle", async (ctx) => {
     if (!tablesReady) ctx.skip(skipReason);
     await wipeCreators(CREATOR_A);
+    await seedCredits(CREATOR_A, 5);
     const first = await startGoalCycle(prisma, CREATOR_A, {
       goal_kind: "engagement",
       time_zone: "America/New_York",
@@ -171,6 +189,8 @@ describe.skipIf(!hasDatabaseUrl)("Goal Cycle isolation (VS1-T05, real DB)", () =
   it("cancel then restart is allowed; cross-tenant get is not found", async (ctx) => {
     if (!tablesReady) ctx.skip(skipReason);
     await wipeCreators(CREATOR_A, CREATOR_B);
+    await seedCredits(CREATOR_A, 5);
+    await seedCredits(CREATOR_B, 5);
 
     const a = await startGoalCycle(prisma, CREATOR_A, {
       goal_kind: "engagement",

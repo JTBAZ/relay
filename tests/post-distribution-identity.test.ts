@@ -49,6 +49,8 @@ describe("post distribution identity contract (Slice 1)", () => {
       postDistributionAttempt: {
         findFirst: vi.fn().mockResolvedValue(baseAttemptRow())
       },
+      postDistributionVariant: { findFirst: vi.fn().mockResolvedValue(null) },
+      postbotTask: { findFirst: vi.fn().mockResolvedValue(null) },
       $transaction: vi.fn(async (fn) =>
         fn({
           postDistributionAttempt: { update: attemptUpdate },
@@ -98,6 +100,8 @@ describe("post distribution identity contract (Slice 1)", () => {
       postDistributionAttempt: {
         findFirst: vi.fn().mockResolvedValue(baseAttemptRow())
       },
+      postDistributionVariant: { findFirst: vi.fn().mockResolvedValue(null) },
+      postbotTask: { findFirst: vi.fn().mockResolvedValue(null) },
       $transaction: vi.fn(async (fn) =>
         fn({
           postDistributionAttempt: { update: attemptUpdate },

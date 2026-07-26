@@ -8,14 +8,14 @@ import { describe, expect, it } from "vitest";
 const ROOT = join(__dirname, "..");
 
 describe("PILOT-014 — Relay-native posts optional sign-off", () => {
-  it("Library create-post modal and /new-post shell wire relayNativeCreatePost", () => {
+  it("Library create-post modal and /studio/new-post shell wire relayNativeCreatePost", () => {
     const modal = readFileSync(join(ROOT, "web/app/components/LibraryCreatePostModal.tsx"), "utf8");
-    const gallery = readFileSync(join(ROOT, "web/app/GalleryView.tsx"), "utf8");
+    const gallery = readFileSync(join(ROOT, "web/app/studio/GalleryView.tsx"), "utf8");
     const composer = readFileSync(
       join(ROOT, "web/app/components/shell/CreatorRelayPostComposer.tsx"),
       "utf8"
     );
-    const newPostPage = readFileSync(join(ROOT, "web/app/new-post/page.tsx"), "utf8");
+    const newPostPage = readFileSync(join(ROOT, "web/app/studio/new-post/page.tsx"), "utf8");
     expect(modal).toContain("compose-tiers");
     expect(modal).toContain("tierFacets");
     expect(gallery).toContain("fetchRelayComposeTiers");

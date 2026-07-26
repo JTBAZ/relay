@@ -40,7 +40,7 @@ describe("relay-api sync members", () => {
     });
     expect(out.members_synced).toBe(12);
     const url = vi.mocked(fetch).mock.calls[0]?.[0] as string;
-    expect(url).toContain("/api/v1/connect/patreon/sync-members");
+    expect(url).toContain("/api/v1/patreon/sync-members");
     const init = vi.mocked(fetch).mock.calls[0]?.[1] as RequestInit;
     expect(init.method).toBe("POST");
     expect(JSON.parse(init.body as string)).toEqual({

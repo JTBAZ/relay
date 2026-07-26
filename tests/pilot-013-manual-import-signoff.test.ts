@@ -9,9 +9,9 @@ const ROOT = join(__dirname, "..");
 
 describe("PILOT-013 — manual import optional sign-off", () => {
   it("manual import page and client exist with upload gate copy", () => {
-    const page = readFileSync(join(ROOT, "web/app/manual-import/page.tsx"), "utf8");
+    const page = readFileSync(join(ROOT, "web/app/studio/import/page.tsx"), "utf8");
     const client = readFileSync(
-      join(ROOT, "web/app/manual-import/manual-import-page-client.tsx"),
+      join(ROOT, "web/app/studio/import/manual-import-page-client.tsx"),
       "utf8"
     );
     expect(page).toContain("ManualImportPageClient");
@@ -39,8 +39,11 @@ describe("PILOT-013 — manual import optional sign-off", () => {
     expect(catalog).toContain("manual_bins");
   });
 
-  it("onboarding import modal links to manual-import", () => {
-    const steps = readFileSync(join(ROOT, "web/app/components/onboarding/step-panels.tsx"), "utf8");
-    expect(steps).toContain('href="/manual-import"');
+  it("onboarding import modal links to studio import", () => {
+    const panel = readFileSync(
+      join(ROOT, "web/app/components/onboarding/CreatorImportReadinessPanel.tsx"),
+      "utf8"
+    );
+    expect(panel).toContain('href="/studio/import"');
   });
 });
