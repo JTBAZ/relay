@@ -1,6 +1,8 @@
 # Pilot exit checklist (scaled from roadmap Part 1 gates)
 
-**Purpose:** P9-test-003 — conscious **pilot vs full** targets before calling the pilot “done.” Product owns final sign-off; engineering fills **evidence** links.
+**Purpose:** P9-test-003 — conscious **pilot vs full** targets before calling **Stage 1** “done.” Product owns final sign-off; engineering fills **evidence** links.
+
+**Stage boundary:** This checklist is **Stage 1 — Functionality** only ([pilot-two-stage-charter.md](pilot-two-stage-charter.md)). Meeting these gates does **not** authorize Stripe live charges, Tip beta for the cohort, or `RELAY_FAN_PREMIUM_ENABLED`. Stage 2 has its own entry blockers and exit draft in that charter.
 
 **Automation before sign-off:** `npm run verify:pilot` (see [pilot-build-plan.md](pilot-build-plan.md) P9-test-001).
 
@@ -23,9 +25,9 @@ Together, green CI implies the same checks as `verify:pilot` **plus** migrate de
 
 ---
 
-## Scale table (example — edit to match your pilot charter)
+## Scale table (Stage 1 — edit only with Stage 1 charter in mind)
 
-| Gate (full roadmap idea) | Full-scale example | **Pilot target (N)** | Evidence / link | Met? |
+| Gate (full roadmap idea) | Full-scale example | **Stage 1 target (N)** | Evidence / link | Met? |
 |-------------------------|-------------------|----------------------|-----------------|------|
 | Creators complete OAuth without support | 10 | **5** | e.g. Airtable / support log | ☐ product |
 | Patron sessions / feed reads | (your metric) | **25** | Dashboard or logs | ☐ product |
@@ -35,11 +37,12 @@ Together, green CI implies the same checks as `verify:pilot` **plus** migrate de
 | Browser matrix spot-check | Chrome blocking | **required** | `docs/pilot-browser-matrix.md` | ☐ QA/product |
 | Prod `RELAY_DB_STORE_*` + RLS | required | **required** | `scripts/pilot-env-check.mjs` | ☐ staging |
 
-Replace rows with the gates your team actually tracks; keep **pilot N** explicit so nobody confuses pilot with production SLOs.
+Replace rows with the gates your team actually tracks; keep **Stage 1 N** explicit so nobody confuses Stage 1 with production SLOs or Stage 2 monetization gates.
 
 ## Notes
 
-- If a gate is **not in scope** for pilot, mark it “N/A” and record why (same doc or linked decision).
+- If a gate is **not in scope** for Stage 1, mark it “N/A” and record why (same doc or linked decision). Stripe / Tips / fan premium are **Stage 2** — mark N/A here, not as Stage 1 blockers.
 - **Human sign-off:** name + date when product accepts the column “Met?”
+- After Stage 1 exit, proceed to Stage 2 prep only per [pilot-two-stage-charter.md](pilot-two-stage-charter.md).
 
 See also [pilot-browser-matrix.md](pilot-browser-matrix.md) for UX device coverage (P9-test-006).

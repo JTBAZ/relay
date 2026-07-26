@@ -1,15 +1,19 @@
 # Relay Pilot Build Plan
 
-**Version:** 0.1  
-**Last updated:** 2026-05-08  
+**Version:** 0.2  
+**Last updated:** 2026-07-25  
 **Audience:** agentic coding runs, Airtable (Phases → Runs → Work items), human pilot owners  
 
-**Pilot cohort & success metrics:** 2026-05-08 — [canonical definition & outcomes](#pilot-cohort-success-metrics).
+**Two-stage charter (canonical):** As of 2026-07-25 the pilot is **split**. This document is the **Stage 1 — Functionality** execution plan (original May 2026 scope). Monetization viability is **Stage 2** and must not be folded into Stage 1 exit. Read **[pilot-two-stage-charter.md](pilot-two-stage-charter.md)** first for stage boundaries, blockers, and authority map.
+
+**Pilot cohort & success metrics (Stage 1):** 2026-05-08 — [canonical definition & outcomes](#pilot-cohort-success-metrics).
 
 **Primary references:**
 
+- **Stage 1 / Stage 2 split:** [pilot-two-stage-charter.md](pilot-two-stage-charter.md)
 - Strategic narrative & workstreams: [road map.md](../road%20map.md)
 - Packaging, COGS, operational milestones M1–M5: [monetization-scheme-infrastructure-plan.md](../monetization-scheme-infrastructure-plan.md)
+- Monetization build contracts (Stage 2): [MONETIZATION_MASTER_MAP.md](MONETIZATION_MASTER_MAP.md)
 - Machine dependency graph (regenerate): `node scripts/relay-dependency-audit.mjs` → [relay_audit.json](../relay_audit.json), [audit/dependency_report.md](../audit/dependency_report.md)
 - Sync hardening context: [docs/part1-sync-hardening-ledger.md](part1-sync-hardening-ledger.md)
 - DB verification: [docs/database/M10_VERIFICATION.md](database/M10_VERIFICATION.md)
@@ -20,7 +24,7 @@
 
 *P0-base-001 — canonical store for cohort definition and measurable pilot outcomes (Airtable **Pilot Build Plan** points here).*
 
-**Definition.** The Relay pilot is a bounded (~two-month) production exercise with a small cohort of Patreon-backed creators and their patrons. It proves end-to-end value for **Part 1** (creator OAuth, ingest, Library, Designer and public projection, export/R2, creator-visible sync health, and the **P5a** analytics / action-center MVP) and a **thin Part 3** patron feed (Relay account + Patreon link, honest entitlement and degradation UX), without blocking on Part 2 clone campaigns, Stripe live checkout, or audience monetization features deferred in this doc.
+**Definition (Stage 1).** The Relay **Stage 1** pilot is a bounded (~two-month) production exercise with a small cohort of Patreon-backed creators and their patrons. It proves end-to-end value for **Part 1** (creator OAuth, ingest, Library, Designer and public projection, export/R2, creator-visible sync health, and the **P5a** analytics / action-center MVP) and a **thin Part 3** patron feed (Relay account + Patreon link, honest entitlement and degradation UX), without blocking on Part 2 clone campaigns, Stripe live checkout, or audience monetization. **Stage 2** (billing, Tips, fan premium) is chartered separately in [pilot-two-stage-charter.md](pilot-two-stage-charter.md) and does **not** expand these Stage 1 metrics.
 
 **Measurable outcomes (pilot scale; adjust targets with product sign-off):**
 
@@ -50,23 +54,28 @@ Import: one Airtable row per work item ID; link **Depends on** as a linked recor
 
 ---
 
-## Pilot scope (authoritative)
+## Pilot scope (Stage 1 authoritative)
 
-**In pilot (target ~2 months):**
+> **Stage boundary:** Scope below is **Stage 1 — Functionality** only. Stripe charges, Tip beta for real fans, and fan premium are **Stage 2** — see [pilot-two-stage-charter.md](pilot-two-stage-charter.md). Do not treat Stage 2 work as a Stage 1 exit blocker, and do not enable Stage 2 money paths merely because Stage 1 engineering is green.
+
+**In Stage 1 (target ~2 months):**
 
 - **Part 1** — Gallery export: creator OAuth, ingest, Library, Designer/public projection, export/R2, sync health **surfaced to users**, plus a **creator Analytics / Action Center MVP** (see **Phase P5a**): Patreon API–backed membership insights, optional **Patreon Insights CSV** import for post-level impressions/seen/likes/comments Patreon does not expose on API v2, first-party Relay engagement where the gallery/visitor path is live, and a dashboard with **growth + cohort-style views** and **action-oriented** copy (full prescriptive engine is capped—see P5a experimental notes).
 - **Part 3 (thin)** — Patron Network: Relay account + Patreon patron link, unified feed **shell** with honest entitlement/degraded states, **no** deep Browse ranking, **no** paid boost/premium viewer.
+- **M1-lite only** — usage metering / preview as non-binding estimates (Phase **P7**); not invoices.
 
-**Explicitly deferred (do not block pilot closure):**
+**Explicitly deferred from Stage 1 (do not block Stage 1 closure):**
 
-- **SubscribeStar** creator/patron connect and ingest during pilot — gated by `RELAY_PILOT_PATREON_ONLY` / `NEXT_PUBLIC_RELAY_PILOT_PATREON_ONLY` ([`docs/pilot-patreon-only-scope.md`](pilot-patreon-only-scope.md), work item **PILOT-001**)
+- **SubscribeStar** creator/patron connect and ingest during Stage 1 — gated by `RELAY_PILOT_PATREON_ONLY` / `NEXT_PUBLIC_RELAY_PILOT_PATREON_ONLY` ([`docs/pilot-patreon-only-scope.md`](pilot-patreon-only-scope.md), work item **PILOT-001**)
 - Smart Tag Assistant (road map Part 1 ledger)
 - Full **Part 2** Clone / Re-Populate / email migration campaigns / Stripe live checkout for independence
-- **Workstream N** audience monetization (premium/boost)
+- **Workstream N** audience monetization (premium/boost) **as a Stage 1 gate** — Stage 2 charters Tip / fan premium separately
+- Stripe live checkout, Tip economy enablement (`RELAY_TIPS_BETA` / `RELAY_FAN_PREMIUM_ENABLED` for cohort money paths), Connect payouts — **Stage 2**
+- Monetization plan **M2–M5** as Stage 1 exit criteria
 - **Full** multi-channel growth analytics arc, third-party metric scrapers, and “perfect” first-party coverage before ship
-- **Relay as exclusive SoT** for Patreon impressions (API cannot supply them without CSV); do **not** block pilot on API parity with Patreon Insights
+- **Relay as exclusive SoT** for Patreon impressions (API cannot supply them without CSV); do **not** block Stage 1 on API parity with Patreon Insights
 - **Deep** prescriptive co-pilot (multi-week auto calendars, one-click multi-platform distribution, vulnerability-marketing playbooks)
-- Architecture doc says NestJS — **do not** rewrite Express for pilot; track as tech debt
+- Architecture doc says NestJS — **do not** rewrite Express for Stage 1; track as tech debt
 
 ---
 
@@ -1556,19 +1565,20 @@ One **`npm run verify:pilot`** command and a **short checklist** tell us “read
 
 # Appendix C — “What next?” relative to [road map.md](../road%20map.md)
 
-After this pilot plan is **fully executed**:
+After **Stage 1** of this pilot plan is **fully executed** (human sign-off complete):
 
 - **Milestone Build Order items 1–3** (Part 1 foundation, value, hardening) are **advanced** to a **pilot-appropriate** level—not every numeric SLO from the roadmap, but **the same shape** of product (OAuth, ingest, gallery, analytics foundation-lite, reliability).
 - **Item 4** (Smart Tag Assistant) remains **explicitly later**.
-- **Items 5–7** (Part 2 Clone / migrate / payments at scale) stay **mostly unstarted** unless the pilot explicitly includes a **single** migration experiment—plan those as a **separate** program.
-- **Item 8** (Part 3 foundation) is **started in thin form** (patron identity, feed, honesty); **items 9–10** (discovery depth, paid audience products) stay **post-pilot** unless scope changes.
+- **Items 5–7** (Part 2 Clone / migrate / payments at scale) stay **mostly unstarted** as Stage 1 work—plan Escape Hatch / migration as a **separate** program ([pilot-two-stage-charter.md](pilot-two-stage-charter.md) keeps them out of Stage 2 as well unless separately chartered).
+- **Item 8** (Part 3 foundation) is **started in thin form** (patron identity, feed, honesty).
+- **Items 9–10** (discovery depth, **paid audience products**) are **post–Stage 1**. Paid Tips / fan premium / artist SaaS charging are **Stage 2** per [pilot-two-stage-charter.md](pilot-two-stage-charter.md) — not an informal expansion of this Stage 1 plan.
 
-**Monetization plan:** **M1** is either **implemented lightly** or **waived with paperwork**. **M2–M5** remain **after** a successful pilot cohort unless you deliberately pull forward email/compliance work for a migration pilot.
-
----
-
-**Work item count (quick index):** P0×9 + P1×22 + P2×8 + P3×10 + P4×10 + P5×6 + **P5a-db×4** + **P5a-ins×12** + P6×8 + P7×6 + P8×6 + P9×6 = **107** required cards; add **P5a-exp×1–2** only if you ship prescriptive insight rules in pilot (**109** max). Expand sub-bullets as separate Airtable rows → **~135–175** rows when split.
+**Monetization plan:** Stage 1 ships **M1-lite** (or waiver). **M2–M5** and live Tip / fan-premium cohort testing belong to **Stage 2**, after Stage 1 exit (or an explicit product waiver for parallel prep only). Do not amend Stage 1 checklists to require Stripe or Tips.
 
 ---
 
-*End of Pilot Build Plan v0.1.*
+**Work item count (quick index):** P0×9 + P1×22 + P2×8 + P3×10 + P4×10 + P5×6 + **P5a-db×4** + **P5a-ins×12** + P6×8 + P7×6 + P8×6 + P9×6 = **107** required cards; add **P5a-exp×1–2** only if you ship prescriptive insight rules in Stage 1 (**109** max). Expand sub-bullets as separate Airtable rows → **~135–175** rows when split.
+
+---
+
+*End of Pilot Build Plan v0.2 (Stage 1 execution plan). Stage 2 charter: [pilot-two-stage-charter.md](pilot-two-stage-charter.md).*

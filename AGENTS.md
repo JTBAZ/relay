@@ -18,7 +18,8 @@
 | **`docs/studio/escape-hatch-build-plans/00-README.md`** | **Escape Hatch worker program:** creator-owned Patreon-to-site wizard, hard paywalls, independent billing/deployment, optional managed OAuth, testing, and ownership handoff. |
 | **`docs/qa/HTTP_VERB_HYGIENE.md`** | GETs are side-effect-free; mutations use POST/PUT/PATCH/DELETE (logout is POST only). |
 | **`.cursor/rules/airtable-execution-control-plane.mdc`** | IDE mirror: read ledger before work, batching, MCP hygiene. |
-| **`docs/pilot-build-plan.md`** | Pilot execution: Phases P0–P9, Airtable-style work items, v0 asset register, exit checklist. |
+| **`docs/pilot-two-stage-charter.md`** | **Canonical Stage 1 / Stage 2 split** — functionality exit vs monetization viability; Stage 2 blockers. |
+| **`docs/pilot-build-plan.md`** | Stage 1 execution: Phases P0–P9, Airtable-style work items, v0 asset register (read charter first). |
 
 **MCP:** **`user-airtable`** — base **Project tracker** `applW4dOjVNHoWBM9`. Read MCP tool descriptors before calling. Always read **`Production Ledger`** state before claiming work; use **`Session Lock`**. **`user-supabase`** — read-check migrations/tables/SQL against the linked Supabase project after Prisma or identity work when prudent (`.cursor/rules/supabase-mcp-read-check.mdc`); never paste secrets.
 

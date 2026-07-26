@@ -3,7 +3,25 @@
 **Purpose:** Product/QA validates engineering automation (`verify:pilot` green) + manually verifies cohort targets before calling pilot done.
 
 **Owner:** Product/QA lead + creator/patron outreach  
-**Timeline:** Recommend 2–3 hours after engineering bar green + staging env live
+**Timeline:** Recommend 2–3 hours after engineering bar green + staging env live  
+**Stage:** Stage 1 only ([pilot-two-stage-charter.md](pilot-two-stage-charter.md)) — Tips / Stripe charges are out of scope here.
+
+---
+
+## Agent-assisted progress log (2026-07-26)
+
+Evidence gathered via Coolify MCP + public HTTP probes. **Do not paste secrets into this file.**
+
+| Check | Agent finding | Verdict |
+|-------|---------------|---------|
+| **ENV-1** config on Coolify app `relay api` (`iyr2upyq1pxsg3d5e55sca8e`) | `RELAY_DB_STORE_IDENTITY=1`, `RELAY_DB_STORE_OVERRIDES=1`, `RELAY_DB_STORE_CANONICAL=1` all present | Config **PASS** — human still ticks ☐ after accepting |
+| **Runtime** `https://api.relayapp.me` | Responds `no available server`; Coolify status `exited:unhealthy`; logs unavailable (app not running) | **BLOCKER** — start/redeploy before ENV-3/4 and all UX tests |
+| **Web** `https://relayapp.me` | HTTP **307** (responding) | Partial — usable once API is up |
+| **ENV-3 Redis** | No `REDIS_URL` / `RELAY_JOB_BACKEND` keys found in Coolify env list for `relay api` | Likely **FAIL** until Redis is configured |
+| **ENV-4 webhooks** | `RELAY_PUBLIC_WEBHOOK_BASE_URL` set to `https://api.relayapp.me` | Config present; cannot verify deliveries while API down |
+| **Clone apps** | `clone-of-relay-api` health **200** `{status:ok}` but **no** `/api/v1/health/jobs`; missing pilot `RELAY_DB_STORE_*` flags | **Not** a Stage 1 staging substitute |
+
+**Next action:** Start or redeploy Coolify app **`relay api`**, then re-probe `/api/v1/health` and `/api/v1/health/jobs`. Optionally add Redis + `RELAY_JOB_BACKEND=bullmq` if jobs health stays degraded.
 
 ---
 
@@ -12,10 +30,10 @@
 
 | #         | Check                                                                                                           | Expected                                                                        | Link                                                                                           | Sign-off |
 | --------- | --------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- | -------- |
-| **ENV-1** | Staging environment has `RELAY_DB_STORE_IDENTITY=1`, `RELAY_DB_STORE_OVERRIDES=1`, `RELAY_DB_STORE_CANONICAL=1` | All three **1** (not 0, not empty)                                              | `node scripts/pilot-env-check.mjs` in staging                                                  | ☐        |
+| **ENV-1** | Staging environment has `RELAY_DB_STORE_IDENTITY=1`, `RELAY_DB_STORE_OVERRIDES=1`, `RELAY_DB_STORE_CANONICAL=1` | All three **1** (not 0, not empty)                                              | Coolify `relay api` env (agent verified 2026-07-26) + `node scripts/pilot-env-check.mjs`       | ☐        |
 | **ENV-2** | Postgres RLS policies active on `patron_follow`, `patron_entitlement_snapshot`, `post_override`                 | Queries fail if `SET LOCAL` session context is wrong                            | `SELECT * FROM patron_follow LIMIT 1;` in psql (should enforce `SET rls.patron_membership_id`) | ☐        |
-| **ENV-3** | BullMQ + Redis live; `/api/v1/health/jobs` returns status                                                       | `status: "ok"` or similar; job queues not stalled                               | Staging: `https://staging-relay.example.com/api/v1/health/jobs`                                | ☐        |
-| **ENV-4** | Patreon webhook ingress active; test member/post sync fires                                                     | Check logs/monitoring; ≥1 webhook in last hour                                  | Datadog/CloudWatch for `POST /api/v1/patreon/webhooks/process` 200s                            | ☐        |
+| **ENV-3** | BullMQ + Redis live; `/api/v1/health/jobs` returns status                                                       | `status: "ok"` or similar; job queues not stalled                               | Prod: `https://api.relayapp.me/api/v1/health/jobs`                                             | ☐        |
+| **ENV-4** | Patreon webhook ingress active; test member/post sync fires                                                     | Check logs/monitoring; ≥1 webhook in last hour                                  | Coolify logs for webhook routes once API is running                                            | ☐        |
 | **ENV-5** | Creator/patron test accounts exist in staging                                                                   | Ava, Milo, Riley; seeded via `npm run build && npm start` locally or pre-staged | Airtable or ops docs reference                                                                 | ☐        |
 
 
@@ -213,12 +231,15 @@ Test on **≥2 browsers** on ≥1 desktop + 1 mobile device.
 
 ## Testing Environment URLs
 
-**Staging (pre-prod):**
+**Production / Coolify (current checklist target):**
 
-- App: `https://staging-relay.example.com`
-- Patreon OAuth: `https://sandbox.patreon.com` (or prod, depending on setup)
-- Monitoring: `https://datadog.com/dash/...` (link to dashboard)
-- Postgres: Direct connection via bastion or `staging-db.example.com:5432` (per ops)
+- Web: `https://relayapp.me`
+- API: `https://api.relayapp.me` (**down as of 2026-07-26 agent probe** — Coolify app `relay api`)
+- Coolify dashboard: `http://178.156.253.217:8000`
+- Webhook base (env): `https://api.relayapp.me`
+- Monitoring: Coolify application logs (until Datadog/CloudWatch is wired)
+
+**Not preferred for Stage 1 sign-off:** `clone-of-relay-api` / `clone-of-relay-web` (sslip.io) — missing pilot store flags and jobs health route.
 
 **Patron Test Accounts (pre-created for re-use):**
 

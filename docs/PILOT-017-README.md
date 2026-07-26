@@ -1,6 +1,8 @@
 # PILOT-017 Quick Reference
 
-## Status: Engineering ✅ → Ready for Human Sign-Off
+## Status: Engineering ✅ → Ready for Human Sign-Off (Stage 1)
+
+**Stage:** **Stage 1 — Functionality** only. See [pilot-two-stage-charter.md](pilot-two-stage-charter.md) before enabling Tips, fan premium, or Stripe cohort charges.
 
 **Engineering automation (`verify:pilot`):** GREEN (2026-05-23)  
 **Product/QA gates:** 🔄 Follow human checklist below
@@ -27,6 +29,11 @@
 ---
 
 ### For Context & Architecture
+
+👉 `**docs/pilot-two-stage-charter.md`**
+
+- Stage 1 vs Stage 2 split (canonical)
+- What PILOT-017 Done does **not** authorize
 
 👉 `**docs/PILOT-017-engineering-complete.md`**
 

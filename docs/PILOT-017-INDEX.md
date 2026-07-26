@@ -1,7 +1,8 @@
 # PILOT-017 Documentation Index
 
-**Date:** 2026-05-23  
-**Status:** Engineering ✅ Green | Product ⏳ Ready for Human Sign-Off
+**Date:** 2026-05-23 (index); **charter update:** 2026-07-25  
+**Status:** Engineering ✅ Green | Product ⏳ Ready for Human Sign-Off  
+**Stage:** This index covers **Stage 1 — Functionality** only. Monetization / Tips / Stripe cohort work is **Stage 2** — see [pilot-two-stage-charter.md](pilot-two-stage-charter.md).
 
 ---
 
@@ -9,26 +10,29 @@
 
 ### 👨‍💼 Product / UX Leads
 Start here for UX strategy:
-1. **`PILOT-017-core-ux-summary.md`** — Three essential flows + what "done" looks like
-2. **`PILOT-017-critical-ux-flows.md`** — Detailed UX journey for each flow
-3. **`PILOT-017-README.md`** — Quick reference + FAQ
+1. **`pilot-two-stage-charter.md`** — Stage 1 vs Stage 2 boundaries (read first)
+2. **`PILOT-017-core-ux-summary.md`** — Three essential flows + what "done" looks like
+3. **`PILOT-017-critical-ux-flows.md`** — Detailed UX journey for each flow
+4. **`PILOT-017-README.md`** — Quick reference + FAQ
 
 ### ✅ QA / Product Testers
 Start here for manual testing:
 1. **`pilot-017-human-signoff-checklist.md`** — 60+ end-to-end tests (~2.5–3 hours)
 2. **`PILOT-017-README.md`** — Quick reference + FAQ
-3. **`pilot-exit-checklist.md`** — Go/no-go gate definitions
+3. **`pilot-exit-checklist.md`** — Go/no-go gate definitions (Stage 1)
 
 ### 👩‍💻 Engineering / Developers
 For context and architecture:
 1. **`PILOT-017-engineering-complete.md`** — What was fixed + code path mapping
 2. **`tests/pilot-017-pilot-exit-signoff.test.ts`** — Automated verification wiring
+3. **`pilot-two-stage-charter.md`** — Do not enable Tip/billing cohort flags as part of PILOT-017 Done
 
 ### 📊 Stakeholders / Leadership
 For pilot success metrics:
-1. **`PILOT-017-core-ux-summary.md`** — Three flows + success metrics
-2. **`pilot-build-plan.md`** — Cohort targets (≥25 patrons, ≥5 creators, etc.)
-3. **`pilot-exit-checklist.md`** — Scale table with gate definitions
+1. **`pilot-two-stage-charter.md`** — Two-stage fit and Stage 2 blockers
+2. **`PILOT-017-core-ux-summary.md`** — Three flows + success metrics
+3. **`pilot-build-plan.md`** — Stage 1 cohort targets (≥25 patrons, ≥5 creators, etc.)
+4. **`pilot-exit-checklist.md`** — Scale table with gate definitions
 
 ---
 
