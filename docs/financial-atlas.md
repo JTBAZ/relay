@@ -9,6 +9,7 @@ Use this document when:
 - Onboarding contributors who need business model context
 
 Related docs:
+- [MONETIZATION_MASTER_MAP.md](MONETIZATION_MASTER_MAP.md) — **implementation canon**: billing spine, Tip economy schema/services/workers, phased work items (this atlas stays the authority on prices and payout rates)
 - [monetization-scheme-infrastructure-plan.md](../monetization-scheme-infrastructure-plan.md) — infrastructure costs, COGS guardrails, hosting modes
 - [monetization-discovery-premium-agent-prompt.md](monetization-discovery-premium-agent-prompt.md) — agent constraints for Premium, promo, and boost mechanics
 - [road map.md](../road map.md) — Part 3 Workstreams K–N (patron identity, feed, discovery, audience monetization)
@@ -30,8 +31,13 @@ Relay is a **creator gallery, analytics suite, and patron discovery network** bu
 | **Supporter (Fan)** | **$5/mo** | 5 Skips/mo, 1 Boost/mo, 14-day timed access windows |
 | **Curator (Fan)** | **$14.99/mo** | 15 Skips/mo, 3–5 Boosts/mo, 30-day timed access windows, status badge |
 | **Reload Pack** | **$5 / 10 skips** | Extra Skips on demand; ~$0.17/skip platform spread |
+| **Escape Hatch construction** | **One-time; price TBD** | Creator-owned generated membership application, migrated data/media, guided deployment, and ownership packet |
+| **Managed Patreon verification** | **Monthly add-on; price TBD** | Relay mediates Patreon OAuth/token maintenance and returns site-scoped entitlement assertions |
+| **Escape Hatch maintenance** | **Quoted / optional recurring** | Post-warranty upgrades, provider migration, hands-on operations, or future managed hosting |
 
 **Artist pricing is flat, not size-tiered.** The value proposition: "We do not tax your success. One flat fee — you keep everything you earn on Patreon."
+
+**Escape Hatch is a separate independence service.** Its one-time construction fee pays for assembly, migration, verification, deployment, and handoff; it is not tied to patron count or creator subscription revenue. The optional managed Patreon verification add-on is a recurring software/service fee and must remain replaceable by creator-owned OAuth.
 
 ---
 
@@ -187,7 +193,8 @@ With moderate storefront added: **~$28,914/mo (~$347k/yr).**
 | Storefront cut (moderate) | $4,700 |
 | Reload packs (net) | ~$1,250 |
 | Commissions + digital goods | ~$3,100 |
-| Part 2 activation fee | Deferred (near 100% margin when live) |
+| Escape Hatch construction | Not modeled until price, conversion, and delivery COGS are measured |
+| Managed Patreon verification | Not modeled until per-site OAuth/support COGS and attach rate are measured |
 
 ---
 
@@ -203,7 +210,23 @@ With moderate storefront added: **~$28,914/mo (~$347k/yr).**
 | One-time-only Skip views | Clashes with collection and saving UX; timed windows are better |
 | Skip queue exposure for storefront assets (default) | Cannibalizes digital sales; excluded by default, opt-in with resolution cap and purchase CTA |
 
-**Part 2 activation fee** (flat charge on first new subscriber processed through Relay checkout) is deferred until Relay owns the checkout. Attribution is then clean and the fee is transparent. Do not implement via ledger-debit against Patreon-connected artists.
+The former **Part 2 activation fee on first subscriber** is retired for Escape Hatch v1. Relay does not own the independent site's checkout and takes no percentage of its subscriptions. Charge the creator a disclosed one-time construction fee instead.
+
+### Escape Hatch economics to validate
+
+Set prices only after a small build cohort measures:
+
+- planner/builder and human-support time per completed site;
+- Patreon extraction cleanup and media-transfer cost;
+- provider setup abandonment and support contacts;
+- R2 copy, build, browser QA, deployment, and handoff labor;
+- 90-day delivery-defect reserve;
+- managed OAuth token/refresh traffic, signing infrastructure, monitoring, incidents, privacy/compliance, and billing cost;
+- paid maintenance demand after the warranty.
+
+The managed Patreon verification price must cover ongoing service obligations plus margin; it is not “free retention.” Cancellation must leave the creator's native accounts, media, independent billing, and admin intact and provide a creator-owned OAuth migration path.
+
+Future managed hosting may be sold as a separate upkeep service. Do not bundle it implicitly into the one-time construction fee or make it technically mandatory.
 
 ---
 
@@ -256,4 +279,4 @@ If recruiting artists feels expensive or slow, the model is stressed. If it is a
 
 ---
 
-*Last updated: April 2026. Update this file when pricing, payout rates, tier structure, or financial projections change materially. Cross-reference `monetization-scheme-infrastructure-plan.md` for infrastructure COGS detail and `road map.md` for workstream sequencing.*
+*Last updated: July 2026. Update this file when pricing, payout rates, tier structure, Escape Hatch service boundaries, or financial projections change materially. Cross-reference `monetization-scheme-infrastructure-plan.md` for infrastructure COGS detail, `docs/studio/escape-hatch-build-plans/` for the independence product contract, and `road map.md` for workstream sequencing.*

@@ -1,7 +1,15 @@
+/**
+ * @fileoverview Pure snapshot mutation for a single ingest batch (file or DB mirror).
+ * @description Idempotent keys, version sequencing, tombstones, and event bus emission.
+ * @see ./idempotency.js
+ * @see ../events/event-bus.js
+ */
+
 import type { RelayEventBus } from "../events/event-bus.js";
 import type { MediaRow, PostRow, CanonicalSnapshot } from "./canonical-store.js";
 import { ingestIdempotencyKey } from "./idempotency.js";
 import type { ApplyBatchResult, SyncBatchInput } from "./types.js";
+import { mirrorSnapshotSourceForIngestPostId } from "./mirror-post-source.js";
 
 function ensureNested<T extends Record<string, Record<string, unknown>>>(
   root: T,
@@ -17,7 +25,15 @@ function nowIso(): string {
   return new Date().toISOString();
 }
 
-/** Mutates canonical snapshot JSON only — never touches Relay `PostPresentation`; Postgres ingest mirrors this via `DbCanonicalStore` (presentation backup on stomp + read-time merge). */
+/**
+ * @description Mutates canonical snapshot JSON only; Postgres mirrors via `DbCanonicalStore`.
+ * @param {import("./canonical-store.js").CanonicalSnapshot} snapshot
+ * @param {import("./types.js").SyncBatchInput} batch
+ * @param {string} jobId
+ * @param {string} traceId
+ * @param {import("../events/event-bus.js").RelayEventBus} eventBus
+ * @returns {import("./types.js").ApplyBatchResult}
+ */
 export function applySyncBatchToSnapshot(
   snapshot: CanonicalSnapshot,
   batch: SyncBatchInput,
@@ -141,7 +157,10 @@ export function applySyncBatchToSnapshot(
       current: versionRow,
       versions: existingPost ? [...existingPost.versions, versionRow] : [versionRow],
       upstream_status: "active",
-      source: "PATREON"
+      source:
+        mirrorSnapshotSourceForIngestPostId(p.post_id) === "SUBSCRIBESTAR"
+          ? "SUBSCRIBESTAR"
+          : "PATREON"
     };
     posts[p.post_id] = postRow;
     result.posts_written += 1;

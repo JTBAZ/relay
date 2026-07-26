@@ -1,4 +1,10 @@
 /**
+ * @fileoverview Patron experience module viewer-entitlement.ts — see exported symbols.
+ * @see {@link ../jsdoc-core-entities.ts}
+ * @see prisma/schema.prisma Account, TenantMembership, and related patron tables
+ * @security-audit-required Patron PII or entitlement paths — audit responses and logs.
+ */
+/**
  * PE-D / D29 — viewer-aware entitlement re-check.
  *
  * Decides what the **current viewer** is entitled to see for a given source post, by combining:
@@ -18,11 +24,21 @@
  * dormant). This module only emits 'visible' or 'locked' today; the API shape is forward-compatible.
  */
 
-import type { Prisma, PrismaClient } from "@prisma/client";
+import { TenantRole, type Prisma, type PrismaClient } from "@prisma/client";
 import type {
   ViewerEntitlementDecision,
   ViewerEntitlementState
 } from "../gallery/types.js";
+import type { TierRow } from "../ingest/canonical-store.js";
+import {
+  canAccessPost,
+  evaluateTierRules,
+  resolvePostAccessLevel
+} from "../clone/tier-rules.js";
+import {
+  hasOpenTipReveal,
+  openTipRevealPostIds
+} from "../tips/open-tip-reveal.js";
 
 export type ViewerEntitlementSourceTarget = {
   /** The creator who owns the source post being saved. */
@@ -68,6 +84,16 @@ function visibleDecision(
   };
 }
 
+function tipRevealVisible(
+  requiredTierIds: readonly string[]
+): ViewerEntitlementDecision {
+  return {
+    state: "visible",
+    required_tier_ids: [...requiredTierIds],
+    source: "tip_reveal"
+  };
+}
+
 /**
  * Single-target computation. Internally fetches the post + viewer's snapshot row.
  *
@@ -105,7 +131,23 @@ export async function computeViewerEntitlementForPost(
     args.viewer_account_id,
     args.source_creator_id
   );
-  return decideFromSnapshot(snap, requiredTierIds);
+  const tiersByCreator = await getTierCatalogForCreators(args.prisma, [
+    args.source_creator_id
+  ]);
+  const tierCatalog = tiersByCreator.get(args.source_creator_id) ?? {};
+  const decided = decideFromSnapshot(snap, requiredTierIds, tierCatalog);
+  if (decided.state === "visible") return decided;
+
+  if (
+    await hasOpenTipReveal(args.prisma, {
+      patronAccountId: args.viewer_account_id,
+      postId: args.source_post_id,
+      now: args.now
+    })
+  ) {
+    return tipRevealVisible(requiredTierIds);
+  }
+  return decided;
 }
 
 /**
@@ -171,8 +213,10 @@ export async function computeViewerEntitlementsForPostsBulk(args: {
         creatorIds
       )
     : new Map<string, PatronEntitlementSnapshotLite>();
+  const tiersByCreator = await getTierCatalogForCreators(args.prisma, creatorIds);
 
   // 3) Decide per target.
+  const lockedCandidates: ViewerEntitlementSourceTarget[] = [];
   for (const t of uniqueTargets.values()) {
     const info = postByKey.get(`${t.source_creator_id}\0${t.source_post_id}`);
     if (info === undefined) {
@@ -188,7 +232,23 @@ export async function computeViewerEntitlementsForPostsBulk(args: {
       continue;
     }
     const snap = snapshotByCreator.get(t.source_creator_id) ?? null;
-    out.set(targetKey(t), decideFromSnapshot(snap, info.tierIds));
+    const tierCatalog = tiersByCreator.get(t.source_creator_id) ?? {};
+    const decided = decideFromSnapshot(snap, info.tierIds, tierCatalog);
+    out.set(targetKey(t), decided);
+    if (decided.state !== "visible") lockedCandidates.push(t);
+  }
+
+  if (args.viewer_account_id && lockedCandidates.length > 0) {
+    const revealed = await openTipRevealPostIds(args.prisma, {
+      patronAccountId: args.viewer_account_id,
+      postIds: lockedCandidates.map((t) => t.source_post_id),
+      now: args.now
+    });
+    for (const t of lockedCandidates) {
+      if (!revealed.has(t.source_post_id)) continue;
+      const info = postByKey.get(`${t.source_creator_id}\0${t.source_post_id}`);
+      out.set(targetKey(t), tipRevealVisible(info?.tierIds ?? []));
+    }
   }
 
   return out;
@@ -207,7 +267,8 @@ type PatronEntitlementSnapshotLite = {
 
 function decideFromSnapshot(
   snap: PatronEntitlementSnapshotLite | null,
-  requiredTierIds: readonly string[]
+  requiredTierIds: readonly string[],
+  tierCatalog: Record<string, TierRow>
 ): ViewerEntitlementDecision {
   if (!snap) {
     return lockedDecision(requiredTierIds, "missing_snapshot");
@@ -215,11 +276,10 @@ function decideFromSnapshot(
   if (!snap.active) {
     return lockedDecision(requiredTierIds, "inactive_snapshot");
   }
-  const entitled = new Set(snap.entitledTierIds);
-  for (const t of requiredTierIds) {
-    if (entitled.has(t)) {
-      return visibleDecision(requiredTierIds);
-    }
+  const tierRules = evaluateTierRules(tierCatalog);
+  const postAccess = resolvePostAccessLevel([...requiredTierIds], tierRules);
+  if (canAccessPost(postAccess, snap.entitledTierIds, tierCatalog)) {
+    return visibleDecision(requiredTierIds);
   }
   return lockedDecision(requiredTierIds, "active_snapshot");
 }
@@ -232,7 +292,7 @@ async function loadAccountSnapshotForCreator(
   const memberships = await prisma.tenantMembership.findMany({
     where: {
       accountId,
-      tenant: { relayCreatorId }
+      role: TenantRole.patron
     },
     select: { id: true }
   });
@@ -260,9 +320,9 @@ async function getAccountSnapshotsForCreators(
   const memberships = await prisma.tenantMembership.findMany({
     where: {
       accountId,
-      tenant: { relayCreatorId: { in: [...relayCreatorIds] } }
+      role: TenantRole.patron
     },
-    select: { id: true, tenant: { select: { relayCreatorId: true } } }
+    select: { id: true }
   });
   if (memberships.length === 0) {
     return result;
@@ -287,6 +347,56 @@ async function getAccountSnapshotsForCreators(
     }
   }
   return result;
+}
+
+type TierLite = {
+  relayTierId: string;
+  creatorId: string;
+  campaignId: string | null;
+  title: string;
+  amountCents: number | null;
+  upstreamUpdatedAt: Date;
+  versionSeq: number;
+};
+
+function toTierRow(t: TierLite): TierRow {
+  return {
+    tier_id: t.relayTierId,
+    creator_id: t.creatorId,
+    campaign_id: t.campaignId ?? undefined,
+    title: t.title,
+    amount_cents: t.amountCents ?? undefined,
+    upstream_updated_at: t.upstreamUpdatedAt.toISOString(),
+    version_seq: t.versionSeq
+  };
+}
+
+async function getTierCatalogForCreators(
+  prisma: PrismaClient | Prisma.TransactionClient,
+  creatorIds: readonly string[]
+): Promise<Map<string, Record<string, TierRow>>> {
+  const out = new Map<string, Record<string, TierRow>>();
+  if (creatorIds.length === 0) {
+    return out;
+  }
+  const rows = await prisma.tier.findMany({
+    where: { creatorId: { in: [...creatorIds] } },
+    select: {
+      relayTierId: true,
+      creatorId: true,
+      campaignId: true,
+      title: true,
+      amountCents: true,
+      upstreamUpdatedAt: true,
+      versionSeq: true
+    }
+  });
+  for (const row of rows) {
+    const byId = out.get(row.creatorId) ?? {};
+    byId[row.relayTierId] = toTierRow(row);
+    out.set(row.creatorId, byId);
+  }
+  return out;
 }
 
 /**

@@ -1,3 +1,10 @@
+/**
+ * @fileoverview Domain types for Action Center analytics: recommendation cards, snapshots, actions, and rollup summaries.
+ * @description Plain TypeScript types shared by file-backed and Postgres-backed analytics stores; align with persisted rows in Prisma models for snapshots, recommendations, actions, and outcomes.
+ * @see prisma/schema.prisma AnalyticsSnapshotRow, RecommendationRecord, AnalyticsActionExecution, AnalyticsOutcome
+ */
+
+/** @description Discriminant for recommendation card templates (cadence, series, churn, tiers, migration readiness). */
 export type CardType =
   | "cadence_rescue"
   | "series_continuation"
@@ -6,14 +13,20 @@ export type CardType =
   | "win_back_nudge"
   | "pre_migration_readiness";
 
+/** @description Lifecycle state for a recommendation surfaced in the Action Center UI. */
 export type CardStatus = "open" | "accepted" | "dismissed" | "executed";
 
+/** @description Expected metric movement attached to a card for prioritization and explainability. */
 export type ExpectedImpact = {
   metric: string;
   delta_range: [number, number];
   horizon_days: number;
 };
 
+/**
+ * @description A scored recommendation produced by the analytics engine or ingested into the store.
+ * @security-audit-required Cards reference `creator_id` and operational metadata; callers must enforce tenant/creator scope when persisting or serving rows.
+ */
 export type RecommendationCard = {
   recommendation_id: string;
   creator_id: string;
@@ -33,6 +46,7 @@ export type RecommendationCard = {
   dismiss_reason_code?: string;
 };
 
+/** @description Queued execution record tying a creator action job to a recommendation. */
 export type ActionExecution = {
   action_job_id: string;
   recommendation_id: string;
@@ -43,6 +57,7 @@ export type ActionExecution = {
   created_at: string;
 };
 
+/** @description Post-hoc evaluation comparing predicted versus actual metric delta for calibration. */
 export type RecommendationOutcome = {
   recommendation_id: string;
   creator_id: string;
@@ -52,6 +67,10 @@ export type RecommendationOutcome = {
   actual_delta: number;
 };
 
+/**
+ * @description Point-in-time rollup of creator posting and tier signals used for recommendations and dashboards.
+ * @see src/jsdoc-core-entities.ts Artist, SyncStatus (conceptual parallels for creator-scoped aggregates)
+ */
 export type AnalyticsSnapshot = {
   snapshot_id: string;
   creator_id: string;
@@ -69,6 +88,7 @@ export type AnalyticsSnapshot = {
   method?: string;
 };
 
+/** @description Aggregate document shape for JSON file persistence of the analytics domain. */
 export type AnalyticsStoreRoot = {
   snapshots: Record<string, AnalyticsSnapshot[]>;
   recommendations: Record<string, RecommendationCard[]>;
@@ -76,6 +96,10 @@ export type AnalyticsStoreRoot = {
   outcomes: RecommendationOutcome[];
 };
 
+/**
+ * @description Lightweight summary for Action Center surfaces without loading full snapshot history.
+ * @security-audit-required Exposes creator-scoped metrics; callers must scope by authorized `creator_id` / tenant.
+ */
 export type MetricsSummary = {
   creator_id: string;
   total_posts: number;

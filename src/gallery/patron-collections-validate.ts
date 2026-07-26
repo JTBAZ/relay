@@ -1,11 +1,26 @@
+/**
+ * @fileoverview Validates patron saved-collection entries against canonical post/media linkage.
+ * @see ./patron-collections-store.js Persistence layer
+ * @see src/jsdoc-core-entities.ts Artist/Gallery mapping notes
+ */
+
 import type { CanonicalSnapshot } from "../ingest/canonical-store.js";
 
+/**
+ * @description Outcome for {@link validatePatronCollectionEntry}.
+ */
 export type ValidateCollectionEntryResult =
   | { ok: true }
   | { ok: false; code: "NOT_FOUND" | "MEDIA_POST_MISMATCH"; message: string };
 
 /**
- * Post and media must exist for creator; media must belong to the post in canonical.
+ * @description Post and media must exist for creator; media must belong to the post in canonical.
+ * @param snapshot Canonical snapshot.
+ * @param creatorId Creator partition.
+ * @param postId Post id.
+ * @param mediaId Media id.
+ * @returns Ok or structured failure.
+ * @security-audit-required Routes must ensure patron may write snips for this creator before trusting ids.
  */
 export function validatePatronCollectionEntry(
   snapshot: CanonicalSnapshot,

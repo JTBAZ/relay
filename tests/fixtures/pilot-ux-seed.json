@@ -1,0 +1,216 @@
+{
+  "version": 1,
+  "devPasswordEnv": "RELAY_PILOT_UX_DEV_PASSWORD",
+  "defaultDevPassword": "pilot-ux-dev-only",
+  "accounts": {
+    "creatorAva": {
+      "legacyFileId": "creator_dev_ava",
+      "email": "creator_dev_ava@pilot.relay.test",
+      "displayName": "Dev Ava",
+      "publicSlug": "dev-ava",
+      "discipline": "Illustrator (pilot)"
+    },
+    "creatorMilo": {
+      "legacyFileId": "creator_dev_milo",
+      "email": "creator_dev_milo@pilot.relay.test",
+      "displayName": "Dev Milo",
+      "publicSlug": "dev-milo",
+      "discipline": "Filmmaker (pilot)"
+    },
+    "creatorOnboarding": {
+      "legacyFileId": "creator_dev_onboarding",
+      "email": "creator_dev_onboarding@pilot.relay.test",
+      "displayName": "Dev Onboarding",
+      "publicSlug": "dev-onboarding"
+    },
+    "creatorQuinn": {
+      "legacyFileId": "creator_dev_quinn",
+      "email": "creator_dev_quinn@pilot.relay.test",
+      "displayName": "Dev Quinn",
+      "publicSlug": "dev-quinn",
+      "discipline": "Unsub lab (pilot)"
+    },
+    "patronRiley": {
+      "legacyFileId": "patron_dev_riley",
+      "email": "patron_dev_riley@pilot.relay.test",
+      "displayName": "Dev Riley",
+      "handle": "patron_dev_riley"
+    },
+    "patronOnboarding": {
+      "legacyFileId": "patron_dev_onboarding",
+      "email": "patron_dev_onboarding@pilot.relay.test",
+      "displayName": "Dev Patron Onboarding",
+      "handle": "patron_dev_onboarding"
+    }
+  },
+  "creators": [
+    {
+      "relayCreatorId": "rcx_pilot_dev_ava",
+      "accountKey": "creatorAva",
+      "campaignId": "pilot_campaign_ava",
+      "campaignName": "Pilot UX — Ava",
+      "patreonCampaignId": "pilot_campaign_ava",
+      "creatorPlan": "growth_engine",
+      "tiers": [
+        {
+          "relayTierId": "patreon_tier_ava_supporter",
+          "title": "Supporter",
+          "amountCents": 500
+        },
+        {
+          "relayTierId": "patreon_tier_ava_studio",
+          "title": "Studio",
+          "amountCents": 1500
+        }
+      ],
+      "posts": [
+        {
+          "postId": "pilot_post_ava_intro",
+          "title": "Collect test — Test 1 (public)",
+          "description": "Public — any patron can view and snip.",
+          "isPublic": true,
+          "tierIds": [],
+          "mediaType": "photo",
+          "mediaId": "pilot_media_ava_intro"
+        },
+        {
+          "postId": "pilot_post_ava_supporter_set",
+          "title": "Collect test — Test 2 (Supporter)",
+          "description": "Gated to Supporter tier — Riley is entitled.",
+          "isPublic": false,
+          "tierIds": ["patreon_tier_ava_supporter"],
+          "mediaType": "photo",
+          "mediaId": "pilot_media_ava_supporter"
+        },
+        {
+          "postId": "pilot_post_ava_studio_archive",
+          "title": "Collect test — Test 3 (Studio)",
+          "description": "Gated to Studio tier — Riley is NOT entitled (locked).",
+          "isPublic": false,
+          "tierIds": ["patreon_tier_ava_studio"],
+          "mediaType": "photo",
+          "mediaId": "pilot_media_ava_studio"
+        }
+      ]
+    },
+    {
+      "relayCreatorId": "rcx_pilot_dev_milo",
+      "accountKey": "creatorMilo",
+      "campaignId": "pilot_campaign_milo",
+      "campaignName": "Pilot UX — Milo",
+      "patreonCampaignId": "pilot_campaign_milo",
+      "tiers": [
+        {
+          "relayTierId": "patreon_tier_milo_supporter",
+          "title": "Supporter",
+          "amountCents": 700
+        },
+        {
+          "relayTierId": "patreon_tier_milo_backstage",
+          "title": "Backstage",
+          "amountCents": 2000
+        }
+      ],
+      "posts": [
+        {
+          "postId": "pilot_post_milo_sketch",
+          "title": "Public sketch",
+          "description": "Free sketch drop (legacy placeholder — collect tests use Tests 1–5).",
+          "isPublic": true,
+          "tierIds": [],
+          "mediaType": "photo",
+          "mediaId": "pilot_media_milo_sketch"
+        },
+        {
+          "postId": "pilot_post_milo_supporter_video",
+          "title": "Collect test — Test 4 (Supporter)",
+          "description": "Gated to Supporter tier — Riley is NOT entitled (locked).",
+          "isPublic": false,
+          "tierIds": ["patreon_tier_milo_supporter"],
+          "mediaType": "photo",
+          "mediaId": "pilot_media_milo_video"
+        },
+        {
+          "postId": "pilot_post_milo_backstage_notes",
+          "title": "Collect test — Test 5 (Backstage)",
+          "description": "Gated to Backstage tier — Riley is entitled.",
+          "isPublic": false,
+          "tierIds": ["patreon_tier_milo_backstage"],
+          "mediaType": "photo",
+          "mediaId": "pilot_media_milo_backstage"
+        }
+      ]
+    },
+    {
+      "relayCreatorId": "rcx_pilot_dev_onboarding",
+      "accountKey": "creatorOnboarding",
+      "campaignId": "pilot_campaign_onboarding",
+      "campaignName": "Pilot UX — Onboarding walkthrough",
+      "patreonCampaignId": "pilot_campaign_onboarding",
+      "onboardingWalkthrough": true,
+      "tiers": [
+        {
+          "relayTierId": "patreon_tier_onboarding_supporter",
+          "title": "Supporter",
+          "amountCents": 500
+        },
+        {
+          "relayTierId": "patreon_tier_onboarding_studio",
+          "title": "Studio",
+          "amountCents": 1500
+        }
+      ],
+      "posts": []
+    },
+    {
+      "relayCreatorId": "rcx_pilot_dev_quinn",
+      "accountKey": "creatorQuinn",
+      "campaignId": "pilot_campaign_quinn",
+      "campaignName": "Pilot UX — Quinn (unsub lab)",
+      "patreonCampaignId": "pilot_campaign_quinn",
+      "tiers": [
+        {
+          "relayTierId": "patreon_tier_quinn_supporter",
+          "title": "Supporter",
+          "amountCents": 500
+        }
+      ],
+      "posts": [
+        {
+          "postId": "pilot_post_quinn_unsub_lab",
+          "title": "Unsub lab — Supporter gated snip",
+          "description": "Dev-only: Riley is subscribed. Snip this, then run npm run pilot:unsub to lapse entitlement and verify the collection locks.",
+          "isPublic": false,
+          "tierIds": ["patreon_tier_quinn_supporter"],
+          "mediaType": "photo",
+          "mediaId": "pilot_media_quinn_unsub_lab"
+        }
+      ]
+    }
+  ],
+  "patron": {
+    "accountKey": "patronRiley",
+    "followRelayCreatorIds": [
+      "rcx_pilot_dev_ava",
+      "rcx_pilot_dev_milo",
+      "rcx_pilot_dev_quinn"
+    ],
+    "entitlements": [
+      {
+        "relayCreatorId": "rcx_pilot_dev_ava",
+        "entitledTierIds": ["patreon_tier_ava_supporter"]
+      },
+      {
+        "relayCreatorId": "rcx_pilot_dev_milo",
+        "entitledTierIds": ["patreon_tier_milo_backstage"]
+      },
+      {
+        "relayCreatorId": "rcx_pilot_dev_quinn",
+        "entitledTierIds": ["patreon_tier_quinn_supporter"]
+      }
+    ]
+  },
+  "patronOnboarding": {
+    "accountKey": "patronOnboarding"
+  }
+}

@@ -2,11 +2,11 @@ import browser from "./browser";
 import {
   PATREON_SESSION_COOKIE_NAME,
   PATREON_URL,
-  RELAY_BASE
+  RELAY_API_BASE
 } from "./constants";
 import * as storage from "./storage";
 
-export { PATREON_URL, RELAY_BASE } from "./constants";
+export { PATREON_URL, RELAY_API_BASE, RELAY_API_BASE as RELAY_BASE } from "./constants";
 
 const DEBUG = import.meta.env.DEV;
 
@@ -52,7 +52,7 @@ export async function syncNow(): Promise<SyncResult> {
     return { ok: true, status: "unchanged" };
   }
 
-  const res = await fetch(`${RELAY_BASE}/api/v1/patreon/cookie`, {
+  const res = await fetch(`${RELAY_API_BASE}/api/v1/patreon/cookie`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",

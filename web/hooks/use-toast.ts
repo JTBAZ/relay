@@ -2,8 +2,19 @@
 
 // Inspired by react-hot-toast library
 import * as React from 'react'
+import * as ToastPrimitives from '@radix-ui/react-toast'
 
-import type { ToastActionElement, ToastProps } from '@/components/patron-mock/ui/toast'
+/**
+ * Type shapes aligned with shadcn `Toast` (see `components/patron-mock/ui/toast.tsx`).
+ * Defined here so this hook does not depend on `patron-mock` — P3-web-004.
+ */
+type ToastProps = React.ComponentPropsWithoutRef<typeof ToastPrimitives.Root> & {
+  variant?: 'default' | 'destructive' | null
+}
+
+type ToastActionElement = React.ReactElement<
+  React.ComponentPropsWithoutRef<typeof ToastPrimitives.Action>
+>
 
 const TOAST_LIMIT = 1
 const TOAST_REMOVE_DELAY = 1000000

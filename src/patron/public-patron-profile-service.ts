@@ -1,9 +1,15 @@
 /**
+ * @fileoverview Patron experience module public-patron-profile-service.ts — see exported symbols.
+ * @see {@link ../jsdoc-core-entities.ts}
+ * @see prisma/schema.prisma Account, TenantMembership, and related patron tables
+ * @security-audit-required Patron PII or entitlement paths — audit responses and logs.
+ */
+/**
  * PE-K Rest (BO-P4-04) — public patron profile lookup.
  *
- * Resolves a `/p/[handle]` request into a public-safe payload. The lookup is keyed on
- * `PatronProfile.handleNorm` (canonical lowercase form of the handle) and returns null when:
- *   - The handle doesn't exist in any profile row.
+ * Resolves a `/p/[handle]` request into a public-safe payload. The lookup is keyed on the
+ * account-level Relay username and returns null when:
+ *   - The username doesn't exist in any account row.
  *   - The matching profile has `isPublic = false`.
  *
  * Returning null in BOTH cases is intentional: it prevents handle enumeration. A drive-by
@@ -19,12 +25,15 @@
  * What we DO NOT return:
  *   - the underlying TenantMembership id, account id, email, or any creator scope info
  *   - private collections, favorites, follows, or comments
- *   - anything keyed off entitlement state (this is a public profile, not a content surface)
+ *   - entitlement-gated content (this is a profile, not a feed)
+ *
+ * MB-14 exception: `is_curator` is a public status badge (live PlanSubscription check).
  */
 
 import type { PrismaClient } from "@prisma/client";
 
-import { normalizePatronHandle } from "./patron-handle-policy.js";
+import { normalizeRelayUsername } from "../identity/relay-username-service.js";
+import { isActiveCuratorForMembership } from "./curator-status.js";
 
 export interface PublicPatronProfileView {
   handle: string;
@@ -32,6 +41,8 @@ export interface PublicPatronProfileView {
   bio: string | null;
   avatar_url: string | null;
   banner_url: string | null;
+  /** Live Curator badge — active/trialing Curator only; false when premium off or lapsed. */
+  is_curator: boolean;
   /** Subset of `PatronSavedCollection` rows where `isPublic = true`. */
   public_collections: Array<{
     id: string;
@@ -47,10 +58,10 @@ export async function getPublicPatronProfileByHandle(
   prisma: PrismaClient,
   rawHandle: string
 ): Promise<PublicPatronProfileView | null> {
-  const handleNorm = normalizePatronHandle(rawHandle);
+  const handleNorm = normalizeRelayUsername(rawHandle);
   if (!handleNorm) return null;
-  const profile = await prisma.patronProfile.findUnique({
-    where: { handleNorm },
+  const profile = await prisma.patronProfile.findFirst({
+    where: { isPublic: true, tenantMembership: { account: { usernameNorm: handleNorm } } },
     select: {
       tenantMembershipId: true,
       handle: true,
@@ -58,10 +69,14 @@ export async function getPublicPatronProfileByHandle(
       bio: true,
       avatarUrl: true,
       bannerUrl: true,
-      isPublic: true
+      isPublic: true,
+      tenantMembership: {
+        select: { account: { select: { username: true } } }
+      }
     }
   });
-  if (!profile || !profile.isPublic || !profile.handle) {
+  const handle = profile?.tenantMembership.account.username ?? profile?.handle ?? null;
+  if (!profile || !handle) {
     // Same null for "private" and "not found" -- enumeration resistance.
     return null;
   }
@@ -84,11 +99,12 @@ export async function getPublicPatronProfileByHandle(
   });
 
   return {
-    handle: profile.handle,
+    handle,
     display_name: profile.displayName,
     bio: profile.bio,
     avatar_url: profile.avatarUrl,
     banner_url: profile.bannerUrl,
+    is_curator: await isActiveCuratorForMembership(prisma, profile.tenantMembershipId),
     public_collections: collections.map((c) => ({
       id: c.id,
       title: c.title,

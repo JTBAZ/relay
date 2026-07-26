@@ -9,6 +9,9 @@ import {
   relayNativeUploadInit
 } from "@/lib/relay-api";
 import { CreatorTierCatalogMultiselect } from "./CreatorTierCatalogMultiselect";
+import { PublishToDeviantArtButton } from "./PublishToDeviantArtButton";
+import { PublishToPatreonButton } from "./PublishToPatreonButton";
+import { PublishToXButton } from "./PublishToXButton";
 
 function guessContentType(file: File): string {
   if (file.type && file.type !== "application/octet-stream") {
@@ -30,10 +33,15 @@ export type CreatorRelayPostComposerProps = {
   /** Shown as secondary text under success (e.g. link to Library). */
   successHint?: string;
   /**
-   * Pre-selected `media_ids` (e.g. Discord-staged assets from `?media_ids=` on `/new-post`).
+   * Pre-selected `media_ids` (e.g. Discord-staged assets from `?media_ids=` on `/studio/new-post`).
    * User can remove chips before publish; optional file upload is merged into the same post.
    */
   initialMediaIds?: string[];
+  /**
+   * Called after a successful publish (e.g. `/studio/new-post` navigates back to the Library).
+   * When omitted, the inline success message is the only feedback.
+   */
+  onPublishSuccess?: (postId: string) => void;
 };
 
 function dedupeIds(ids: string[]): string[] {
@@ -46,14 +54,14 @@ function dedupeIds(ids: string[]): string[] {
 export function CreatorRelayPostComposer({
   creatorId,
   successHint,
-  initialMediaIds
+  initialMediaIds,
+  onPublishSuccess
 }: CreatorRelayPostComposerProps) {
   const formId = useId();
   const titleId = `${formId}-title`;
   const descId = `${formId}-desc`;
   const fileId = `${formId}-file`;
   const tierSectionId = `${formId}-tiers`;
-  const publicId = `${formId}-public`;
 
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
@@ -64,6 +72,7 @@ export function CreatorRelayPostComposer({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lastPostId, setLastPostId] = useState<string | null>(null);
+  const [composeCampaignId, setComposeCampaignId] = useState<string | undefined>(undefined);
 
   useEffect(() => {
     setStagedMediaIds(dedupeIds(initialMediaIds ?? []));
@@ -73,6 +82,13 @@ export function CreatorRelayPostComposer({
   const hasMedia = hasUploadFile || stagedMediaIds.length > 0;
   const canSubmit =
     Boolean(creatorId.trim()) && title.trim().length > 0 && hasMedia && !busy;
+
+  function setAccessPublic(nextPublic: boolean): void {
+    setIsPublic(nextPublic);
+    if (nextPublic) {
+      setTierIds([]);
+    }
+  }
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
@@ -140,11 +156,13 @@ export function CreatorRelayPostComposer({
         tier_ids: isPublic ? [] : tierIds,
         tag_ids: [],
         media_ids: mediaIds,
-        publish: true
+        publish: true,
+        ...(composeCampaignId ? { campaign_id: composeCampaignId } : {})
       });
       setLastPostId(created.post.id);
       setFile(null);
       setStagedMediaIds([]);
+      onPublishSuccess?.(created.post.id);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -163,13 +181,23 @@ export function CreatorRelayPostComposer({
   return (
     <form onSubmit={onSubmit} className="mx-auto max-w-5xl text-left">
       {lastPostId && (
-        <p
+        <div
           className="mb-3 rounded-md border border-emerald-500/40 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-200"
           role="status"
         >
-          Published post <span className="font-mono text-[11px]">{lastPostId}</span>.
-          {successHint ? ` ${successHint}` : " Open the Library to see it in your grid."}
-        </p>
+          <p>
+            Published post <span className="font-mono text-[11px]">{lastPostId}</span>.
+            {successHint ? ` ${successHint}` : " Open the Library to see it in your grid."}
+          </p>
+          <div className="mt-3 space-y-3">
+            <p className="text-[11px] text-emerald-100/80">
+              Cross-post from Relay — review and publish manually on each platform.
+            </p>
+            <PublishToPatreonButton relayPostId={lastPostId} disabled={busy} />
+            <PublishToXButton relayPostId={lastPostId} disabled={busy} />
+            <PublishToDeviantArtButton relayPostId={lastPostId} disabled={busy} />
+          </div>
+        </div>
       )}
       {error && (
         <p className="mb-3 rounded-md border border-red-500/40 bg-red-500/10 px-3 py-2 text-xs text-red-200" role="alert">
@@ -208,7 +236,7 @@ export function CreatorRelayPostComposer({
             maxLength={20000}
           />
         </div>
-        <div>
+        <div className="sm:col-span-2">
           <label htmlFor={fileId} className="text-[11px] font-medium text-[var(--lib-fg-muted)]">
             Media file {stagedMediaIds.length > 0 ? <span className="font-normal">(optional)</span> : null}
           </label>
@@ -257,21 +285,6 @@ export function CreatorRelayPostComposer({
             />
           </div>
         </div>
-        <div className="flex items-end">
-          <div className="flex w-full items-center gap-2 rounded-md border border-[var(--lib-border)] bg-[var(--lib-muted)]/30 px-3 py-2">
-            <input
-              id={publicId}
-              type="checkbox"
-              className="h-4 w-4 rounded border-[var(--lib-border)]"
-              checked={isPublic}
-              onChange={(e) => setIsPublic(e.target.checked)}
-              disabled={busy}
-            />
-            <label htmlFor={publicId} className="text-xs text-[var(--lib-fg)]">
-              Public in gallery
-            </label>
-          </div>
-        </div>
       </div>
 
       <div className="mt-4">
@@ -282,14 +295,16 @@ export function CreatorRelayPostComposer({
           Access tiers
         </h3>
         <p className="mb-2 text-[10px] text-[var(--lib-fg-muted)]">
-          When <strong>Public</strong> is off, pick at least one tier. Ids are{" "}
-          <code className="font-mono text-[10px]">Tier.id</code> from facets (same as{" "}
-          <code className="font-mono text-[10px]">tier_ids</code> on the API).
+          Choose exactly how this post is gated. <strong>Public</strong> clears all tier
+          selections; choosing a tier makes the post members-only.
         </p>
         <CreatorTierCatalogMultiselect
           creatorId={creatorId}
           value={tierIds}
           onChange={setTierIds}
+          isPublic={isPublic}
+          onPublicChange={setAccessPublic}
+          onCampaignChange={setComposeCampaignId}
           disabled={busy}
           aria-labelledby={tierSectionId}
         />

@@ -1,4 +1,10 @@
 /**
+ * @fileoverview Patron experience module comment-service.ts — see exported symbols.
+ * @see {@link ../jsdoc-core-entities.ts}
+ * @see prisma/schema.prisma Account, TenantMembership, and related patron tables
+ * @security-audit-required Patron PII or entitlement paths — audit responses and logs.
+ */
+/**
  * PE-E (BO-P2-03) — comment lifecycle service.
  *
  * Responsibilities:
@@ -26,7 +32,14 @@ import {
   countDistinctTagContributors,
   mirrorTagsForComment
 } from "./comment-tag-service.js";
-import { emitCommentCreatedEvent } from "./notification-event-emit.js";
+import {
+  emitCommentCreatedEvent,
+  emitCommentMentionedEvent
+} from "./notification-event-emit.js";
+import {
+  extractMentionHandles,
+  resolveMentionRecipients
+} from "./comment-mention-service.js";
 import type {
   CommentRecord,
   CreateCommentInput,
@@ -123,6 +136,47 @@ function toRecord(row: Awaited<ReturnType<PrismaClient["comment"]["findFirstOrTh
   };
 }
 
+async function emitMentionEventsForBody(
+  prisma: PrismaClient,
+  args: {
+    body: string;
+    relayCreatorId: string;
+    postId: string;
+    commentId: string;
+    authorMembershipId: string;
+    previousBody?: string | null;
+  }
+): Promise<void> {
+  const nextHandles = extractMentionHandles(args.body);
+  if (nextHandles.length === 0) return;
+  const previousHandles = new Set(
+    args.previousBody ? extractMentionHandles(args.previousBody) : []
+  );
+  const newHandles = nextHandles.filter((handle) => !previousHandles.has(handle));
+  if (newHandles.length === 0) return;
+
+  try {
+    const recipients = await resolveMentionRecipients(prisma, {
+      handles: newHandles,
+      authorMembershipId: args.authorMembershipId
+    });
+    for (const recipient of recipients) {
+      await emitCommentMentionedEvent(prisma, {
+        commentId: args.commentId,
+        relayCreatorId: args.relayCreatorId,
+        postId: args.postId,
+        recipientMembershipId: recipient.recipientMembershipId,
+        authorMembershipId: args.authorMembershipId,
+        mentionedHandle: recipient.handle,
+        targetKind: recipient.targetKind
+      });
+    }
+  } catch (err: unknown) {
+    // eslint-disable-next-line no-console -- mentions must not make comment writes fail
+    console.error("emitMentionEventsForBody failed", err);
+  }
+}
+
 /**
  * Create a comment. Returns the created record AND the auto-mod flags so route handlers can
  * surface them to the author ("your comment is awaiting review because…").
@@ -212,6 +266,15 @@ export async function createComment(
     parentCommentId: created.parentCommentId,
     authorMembershipId: created.patronUserId
   });
+  if (created.modState === "visible") {
+    await emitMentionEventsForBody(prisma, {
+      body: created.body,
+      relayCreatorId: created.relayCreatorId,
+      postId: created.postId,
+      commentId: created.id,
+      authorMembershipId: created.patronUserId
+    });
+  }
   // overrides param accepted for symmetry with revoke path; mirror only writes TagSuggestion.
   void overrides;
   return { record: toRecord(created), autoModFlags: autoMod.flags };
@@ -237,12 +300,14 @@ export async function patchComment(
     throw new CommentEditWindowClosedError(args.commentId);
   }
   const data: Prisma.CommentUpdateInput = { editedAt: new Date() };
+  let previousBody: string | null = null;
   if (args.patch.body !== undefined) {
     const body = String(args.patch.body).trim();
     if (!body) {
       throw new CommentValidationError("body", "must be non-empty");
     }
     const autoMod = evaluateCommentAutoMod(body);
+    previousBody = existing.body;
     data.body = body;
     data.autoModFlagsJson = autoMod.flags as unknown as Prisma.InputJsonValue;
     data.modState = autoMod.initialModState;
@@ -268,6 +333,16 @@ export async function patchComment(
     for (const tagId of removed) {
       await reconcileTagOnContributorChange(prisma, overrides, updated, tagId);
     }
+  }
+  if (previousBody !== null && updated.modState === "visible") {
+    await emitMentionEventsForBody(prisma, {
+      body: updated.body,
+      previousBody,
+      relayCreatorId: updated.relayCreatorId,
+      postId: updated.postId,
+      commentId: updated.id,
+      authorMembershipId: updated.patronUserId
+    });
   }
   return toRecord(updated);
 }

@@ -1,3 +1,8 @@
+/**
+ * @fileoverview Patron experience module patron-handle-policy.ts — see exported symbols.
+ * @see {@link ../jsdoc-core-entities.ts}
+ * @see prisma/schema.prisma Account, TenantMembership, and related patron tables
+ */
 import { randomBytes } from "node:crypto";
 
 /** Lowercase reserved segments (D16 + short infra list). */

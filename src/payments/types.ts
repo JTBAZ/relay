@@ -1,7 +1,20 @@
+/**
+ * @fileoverview Serialisable payment domain types for Stripe/PayPal tier mappings, preflight, and checkout audit rows.
+ * @description Shapes mirror file-store JSON and Prisma `CreatorPaymentConfig.payload` / `PaymentCheckout` columns.
+ * @see {@link ../jsdoc-core-entities.ts}
+ * @see prisma/schema.prisma `CreatorPaymentConfig`, `PaymentCheckout`
+ */
+
+/** Supported third-party payment processor. */
 export type PaymentProvider = "stripe" | "paypal";
 
+/** Recurring billing cadence for mapped prices. */
 export type BillingInterval = "month" | "year";
 
+/**
+ * Maps a Relay tier to a provider product/price pair.
+ * @todo Brittle: `product_id` / `price_id` format rules are enforced in adapters, not here.
+ */
 export type TierProductMapping = {
   tier_id: string;
   provider: PaymentProvider;
@@ -13,6 +26,7 @@ export type TierProductMapping = {
   tax_behavior: "inclusive" | "exclusive";
 };
 
+/** Per-creator payment configuration blob (file or `CreatorPaymentConfig.payload`). */
 export type PaymentConfig = {
   creator_id: string;
   default_currency: string;
@@ -23,6 +37,7 @@ export type PaymentConfig = {
   updated_at: string;
 };
 
+/** Single preflight finding from {@link ./preflight.js}. */
 export type PreflightIssue = {
   tier_id: string;
   code: string;
@@ -30,6 +45,7 @@ export type PreflightIssue = {
   severity: "error" | "warning";
 };
 
+/** Aggregated preflight outcome for a creator’s payment config vs clone tiers. */
 export type PreflightResult = {
   creator_id: string;
   pass: boolean;
@@ -38,6 +54,7 @@ export type PreflightResult = {
   mappings_checked: number;
 };
 
+/** Record appended after a checkout attempt (file list or `PaymentCheckout` row). */
 export type CheckoutResult = {
   checkout_id: string;
   tier_id: string;
@@ -50,6 +67,7 @@ export type CheckoutResult = {
   error_message?: string;
 };
 
+/** Root JSON document for file-backed `FilePaymentStore`. */
 export type PaymentStoreRoot = {
   configs: Record<string, PaymentConfig>;
   checkouts: CheckoutResult[];

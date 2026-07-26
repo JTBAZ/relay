@@ -1,0 +1,31 @@
+# Escape Hatch — Path B portable compose overlay (EH-071)
+#
+# Usage (from kit root, after `docker build -t escape-hatch:local .`):
+#   docker compose -f docker-compose.yml -f deploy/docker/compose.path-b.yml --profile app up
+#
+# Optional Postgres (loopback only):
+#   docker compose --profile db up -d
+#   then set DATABASE_URL=postgresql://escape_hatch:escape_hatch_dev_only@host.docker.internal:5433/escape_hatch
+#
+# productionSafe: false — sample only; no secrets baked in.
+# Prefer private media layout. Terminate TLS at the reverse proxy (see Caddyfile.sample).
+
+services:
+  app:
+    profiles: ["app"]
+    image: escape-hatch:local
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    ports:
+      - "3001:3001"
+    environment:
+      NODE_ENV: production
+      PORT: "3001"
+      HOSTNAME: 0.0.0.0
+      # Names only — inject real values at runtime; never commit secrets.
+      NEXT_PUBLIC_SITE_URL: ${NEXT_PUBLIC_SITE_URL:-http://localhost:3001}
+      ESCAPE_HATCH_IDENTITY_PROVIDER: ${ESCAPE_HATCH_IDENTITY_PROVIDER:-portable}
+      DATABASE_URL: ${DATABASE_URL:-}
+      ESCAPE_HATCH_SESSION_SECRET: ${ESCAPE_HATCH_SESSION_SECRET:-}
+    restart: unless-stopped

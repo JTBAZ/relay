@@ -21,9 +21,12 @@ Building a “source of truth” **only** from official APIs risks a **data dese
 | First-party | [growth-analytics-features.md](growth-analytics-features.md) — **Phase 1** | Views/clicks/plays on Relay gallery, clone, and future patron surfaces. |
 | Direct auth | [road map.md](../road%20map.md) — Patreon OAuth, ingest | Authoritative **owned-account** data where the platform grants it. |
 | Action Center | [analytics-action-center-spec.md](../analytics-action-center-spec.md) | Any externally sourced metric shown on cards must carry **provenance**, **confidence**, and **stale-after** semantics. |
+| Goal Cycle trend evidence | [analytics/TREND_DISCOVERY_GATEWAY.md](analytics/TREND_DISCOVERY_GATEWAY.md) | Provider-neutral interest + controlled-web evidence, fixture-first benchmark, creator-history fallback, and explicit live-provider gates. |
 | Compliance | [builder-boost-pack/standards/security-compliance-checklist.md](../builder-boost-pack/standards/security-compliance-checklist.md) | Subprocessors, data processing terms, retention. |
 
 **Short-term rule:** do **not** introduce aggregator or scraper dependencies until **first-party event plumbing** and **Workstream E** foundations exist; otherwise the product optimizes for brittle external data.
+
+**Goal Cycle clarification:** its worker program does not pre-approve an aggregator or scraper. VS3 ships provider interfaces, fixtures, provenance, sanitization, and history-only fallback with no live vendor calls. VS10 may activate one source only after benchmark, procurement/legal/privacy, cost, source-label, and kill-switch gates. Weak evidence remains visible and never replaces creator history.
 
 ---
 
@@ -82,6 +85,7 @@ Treat as a **dedicated ledger** when scoped (schema for links, redirects, events
 - **No silent merge** into financial or entitlement truth—Patreon (or clone billing) remains authoritative for **who is paid and who has access**.
 - **One connector at a time** in engineering: spike → compliance sign-off → ship; no “50 scrapers” monolith.
 - **Adult / sensitive content:** third-party vendors often restrict adult; vet per vertical before promising coverage.
+- **Untrusted discovery text:** treat summaries as data, never instructions; the Goal Cycle planner consumes only the sanitized, bounded evidence envelope from [`analytics/TREND_DISCOVERY_GATEWAY.md`](analytics/TREND_DISCOVERY_GATEWAY.md).
 
 ---
 

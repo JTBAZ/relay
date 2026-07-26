@@ -1,3 +1,10 @@
+/**
+ * @fileoverview Resolves saved {@link PageLayout} sections into clone-facing post entries for export / preview.
+ * @description Applies visibility overrides and tier access metadata without HTTP.
+ * @see ../clone/types.js `ClonePostEntry`
+ * @see src/jsdoc-core-entities.ts Artist/Gallery/SyncStatus mapping notes
+ */
+
 import type { CanonicalSnapshot } from "../ingest/canonical-store.js";
 import type { CreatorExportIndex } from "../export/types.js";
 import type { ClonePostEntry, CloneMediaRef } from "../clone/types.js";
@@ -5,6 +12,9 @@ import { evaluateTierRules, resolvePostAccessLevel } from "../clone/tier-rules.j
 import { slugify } from "../clone/slug.js";
 import type { GalleryOverridesRoot, PageLayout, Collection } from "./types.js";
 
+/**
+ * @description Clone post row plus section provenance for layout-driven grids.
+ */
 export type ResolvedLayoutPost = ClonePostEntry & {
   section_id: string;
   section_title: string;
@@ -12,9 +22,15 @@ export type ResolvedLayoutPost = ClonePostEntry & {
 };
 
 /**
- * Resolves a PageLayout into an ordered list of ClonePostEntry items,
- * respecting section ordering, visibility overrides, and tier-gating.
- * Hidden posts are excluded; tier access is resolved from canonical data.
+ * @description Resolves a {@link PageLayout} into ordered {@link ResolvedLayoutPost} items with tier-gating and hidden suppression.
+ * @param layout Saved layout document.
+ * @param creatorId Creator owning canonical rows.
+ * @param canonical Canonical ingest snapshot.
+ * @param exportIndex Export blob index for `has_export` paths.
+ * @param overrides Gallery visibility/tag deltas.
+ * @param collections Library collections for section sources.
+ * @returns Ordered posts with section metadata.
+ * @security-audit-required Caller must ensure snapshot/overrides/collections align with authorized creator scope.
  */
 export function resolveLayoutPosts(
   layout: PageLayout,

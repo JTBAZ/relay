@@ -1,7 +1,15 @@
+/**
+ * @fileoverview Heuristic scoring that turns rollup snapshots plus canonical ingest into actionable recommendation cards.
+ * @description Pure functions over in-memory snapshots; persists via `AnalyticsStore` elsewhere.
+ * @see ../ingest/canonical-store.js
+ * @see src/jsdoc-core-entities.ts Canonical Patreon-aligned shapes underpin `CanonicalSnapshot` media/posts.
+ */
+
 import { randomUUID } from "node:crypto";
 import type { CanonicalSnapshot } from "../ingest/canonical-store.js";
 import type { AnalyticsSnapshot, CardType, RecommendationCard } from "./types.js";
 
+/** @description Tunable thresholds for filtering candidate cards by confidence. */
 export type EngineConfig = {
   confidence_threshold: number;
 };
@@ -109,6 +117,14 @@ function tierUpgradeCandidate(
   };
 }
 
+/**
+ * @description Evaluates heuristics (cadence, series tags, tier skew) and materializes scored `RecommendationCard` rows.
+ * @param creatorId Creator receiving recommendations.
+ * @param snapshot Latest analytics snapshot inputs.
+ * @param canonical Canonical posts/media/tiers keyed by creator.
+ * @param config Optional confidence cutoff (defaults in-module).
+ * @returns New open cards sorted by descending confidence.
+ */
 export function scoreRecommendations(
   creatorId: string,
   snapshot: AnalyticsSnapshot,

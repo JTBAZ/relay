@@ -125,7 +125,8 @@ function createMockTx(): MockTx {
       upsert: vi.fn().mockResolvedValue({}),
       delete: vi.fn().mockResolvedValue({})
     },
-    ingestIdempotencyKey: { deleteMany: vi.fn().mockResolvedValue({}), createMany: vi.fn().mockResolvedValue({}) }
+    ingestIdempotencyKey: { deleteMany: vi.fn().mockResolvedValue({}), createMany: vi.fn().mockResolvedValue({}) },
+    postPresentation: { findMany: vi.fn().mockResolvedValue([]), deleteMany: vi.fn().mockResolvedValue({}) }
   };
 }
 
@@ -635,11 +636,23 @@ describe("PK conflict resolution (workspace migration)", () => {
 
     // Post findMany: first call returns this creator's posts (phase 1),
     // second call finds orphan posts from another creator (phase 2)
-    const postFindMany = vi.fn()
-      .mockResolvedValueOnce([])  // phase 1: this creator's posts (empty)
-      .mockResolvedValueOnce([    // phase 2: orphan posts from old creator
-        { id: "patreon_post_999", creatorId: "creator_old" }
-      ]);
+    const postFindMany = vi.fn(async (args?: { where?: Record<string, unknown> }) => {
+      const where = args?.where ?? {};
+      const creatorIdFilter = where.creatorId;
+      if (
+        where.source === "PATREON" &&
+        typeof creatorIdFilter === "object" &&
+        creatorIdFilter !== null &&
+        "not" in creatorIdFilter
+      ) {
+        return [{ id: "patreon_post_999", creatorId: "creator_old" }];
+      }
+      const idIn = (where.id as { in?: string[] } | undefined)?.in;
+      if (Array.isArray(idIn)) {
+        return idIn.map((id) => ({ id }));
+      }
+      return [];
+    });
     tx.post.findMany = postFindMany;
 
     for (const [table, methods] of Object.entries(tx)) {
@@ -715,17 +728,27 @@ describe("PK conflict resolution (workspace migration)", () => {
       .mockResolvedValueOnce([{ id: "camp_shared", creatorId: "old_creator" }])
       .mockResolvedValue([]);
 
-    // Orphan posts exist under old creator
-    tx.post.findMany = vi.fn()
-      .mockResolvedValueOnce([])  // existing patreon posts for new_creator
-      .mockResolvedValueOnce([    // phase 2: orphan posts
-        { id: "post_shared_1", creatorId: "old_creator" },
-        { id: "post_shared_2", creatorId: "old_creator" }
-      ])
-      .mockResolvedValueOnce([    // leftover posts under orphan campaign
-        { id: "post_shared_1" },
-        { id: "post_shared_2" }
-      ]);
+    // Orphan posts exist under old creator (PATREON + SUBSCRIBESTAR mirror passes).
+    tx.post.findMany = vi.fn(async (args?: { where?: Record<string, unknown> }) => {
+      const where = args?.where ?? {};
+      const creatorIdFilter = where.creatorId;
+      if (
+        where.source === "PATREON" &&
+        typeof creatorIdFilter === "object" &&
+        creatorIdFilter !== null &&
+        "not" in creatorIdFilter
+      ) {
+        return [
+          { id: "post_shared_1", creatorId: "old_creator" },
+          { id: "post_shared_2", creatorId: "old_creator" }
+        ];
+      }
+      const idIn = (where.id as { in?: string[] } | undefined)?.in;
+      if (Array.isArray(idIn)) {
+        return idIn.map((id) => ({ id }));
+      }
+      return [];
+    });
 
     for (const [table, methods] of Object.entries(tx)) {
       const dm = methods.deleteMany;

@@ -1,3 +1,10 @@
+/**
+ * @fileoverview Resolve `Tenant` by public slug or `relay_creator_id` for routing.
+ * @description Canonical server-side tenant lookup; used by public profile and API scoping.
+ * @see ../creator/public-slug.js
+ * @see src/jsdoc-core-entities.ts
+ */
+
 import type { PrismaClient } from "@prisma/client";
 import { normalizePublicSlugCandidate } from "../creator/public-slug.js";
 import { prisma as defaultPrisma } from "../lib/db.js";
@@ -12,8 +19,11 @@ export type TenantRef = {
 };
 
 /**
- * Resolve a public creator slug to `Tenant.id` + `relayCreatorId`.
- * Canonical slug → tenant lookup for server routes; call once per request.
+ * @description Resolves `CreatorProfile.public_slug` to tenant ids (normalized, min length 3).
+ * @param {string} slug
+ * @param {import("@prisma/client").PrismaClient} [db]
+ * @returns {Promise<TenantRef | null>}
+ * @async
  */
 export async function resolveTenantBySlug(
   slug: string,
@@ -41,7 +51,11 @@ export async function resolveTenantBySlug(
 }
 
 /**
- * Resolve immutable `cr_*` tenant key to `Tenant.id` (and public slug when present).
+ * @description Resolves immutable `cr_*` key to tenant + optional public slug.
+ * @param {string} crId
+ * @param {import("@prisma/client").PrismaClient} [db]
+ * @returns {Promise<TenantRef | null>}
+ * @async
  */
 export async function resolveTenantByRelayCreatorId(
   crId: string,

@@ -1,4 +1,10 @@
 /**
+ * @fileoverview Patron experience module notification-delivery-worker.ts — see exported symbols.
+ * @see {@link ../jsdoc-core-entities.ts}
+ * @see prisma/schema.prisma Account, TenantMembership, and related patron tables
+ * @security-audit-required Patron PII or entitlement paths — audit responses and logs.
+ */
+/**
  * PE-G (BO-P3-03) — Notification delivery worker.
  *
  * Consumes `OutboxEvent` rows produced by Relay services and writes one or more
@@ -13,19 +19,29 @@
  *     Cursor stored in `NotificationDeliveryCursor`. Single-row leader; safe for single-node.
  *
  *   - Future BullMQ runner: enqueue a job per OutboxEvent at producer-side; consume with a
- *     dedicated worker process. Same `processOnce` body; storage-side idempotency comes from
+ *     dedicated worker process. Same {@link processNotificationOutboxOnce} body; storage-side idempotency comes from
  *     the (event_name, tenant_id, primary_id, occurred_at) unique constraint already present
  *     on OutboxEvent + the cluster-key dedupe in `createOrClusterNotification`. Redis adoption
  *     also unlocks distributed leader election so multi-node deploys don't double-fan-out.
  *
- * # Idempotency story
+ * # Idempotency story (P1-queue-015)
  *
- * If the worker crashes between writing notifications and bumping the cursor, the next run
- * processes the same events again. Cluster-key dedupe folds the duplicate into the same
- * notification row (count increments by 1 -> wrong count by 1). For tier_changed (no cluster
- * key) we additionally check `sourceEventId` before creating to avoid double-write. This keeps
- * the at-least-once-with-soft-dedupe semantics acceptable for v1; exact-once needs Redis +
- * BullMQ `removeOnComplete: { age: ... }` semantics.
+ * **Outbox:** `OutboxEvent` is deduped by `(event_name, tenant_id, primary_id, occurred_at)` — one durable
+ * event row per logical change.
+ *
+ * **Delivery:** The cursor is at-least-once; the same event can be processed twice after a crash or if two
+ * workers overlap. Mitigations:
+ *   - **Non-clustered** kinds (`cluster_key` null, e.g. `tier_changed`): `alreadyDelivered` checks
+ *     `source_event_id` before insert. A **partial unique index** on `(source_event_id, recipient_membership_id)`
+ *     where `cluster_key` is null closes the TOCTOU race: the second insert fails with `P2002` and
+ *     `createOrClusterNotification` returns the existing row.
+ *   - **Clustered** kinds: `createOrClusterNotification` uses a read-then-write window; duplicate rows are
+ *     still theoretically possible under concurrent ticks with identical cluster keys. In-process delivery
+ *     skips overlapping ticks (`inFlight`); BullMQ should run bounded concurrency. Exact clustering under
+ *     multi-worker contention is a follow-up (transactional upsert / advisory lock).
+ *
+ * Re-processing a clustered event may increment `cluster_count` more than once; that remains acceptable
+ * soft-dedupe for v1 compared to duplicate **tier_changed** rows.
  *
  * # Cursor advance
  *
@@ -140,6 +156,119 @@ async function fetchNextBatch(
   return rows;
 }
 
+function isStrictlyAfterCursor(
+  event: { occurredAt: Date; eventId: string },
+  cursor: { lastOccurredAt: Date; lastEventId: string | null }
+): boolean {
+  if (event.occurredAt > cursor.lastOccurredAt) return true;
+  if (event.occurredAt < cursor.lastOccurredAt) return false;
+  if (!cursor.lastEventId) return true;
+  return event.eventId > cursor.lastEventId;
+}
+
+async function fetchOutboxBatchForDelivery(
+  prisma: PrismaClient,
+  cursor: { lastOccurredAt: Date; lastEventId: string | null },
+  batchSize: number,
+  outboxEventId?: string
+): Promise<OutboxRow[]> {
+  const targeted = outboxEventId?.trim();
+  if (targeted) {
+    const row = await prisma.outboxEvent.findFirst({
+      where: {
+        eventId: targeted,
+        eventName: { in: PEG_NOTIFIABLE_EVENT_NAMES as string[] }
+      },
+      select: {
+        id: true,
+        eventId: true,
+        eventName: true,
+        tenantId: true,
+        primaryId: true,
+        occurredAt: true,
+        payload: true
+      }
+    });
+    return row ? [row as OutboxRow] : [];
+  }
+  return fetchNextBatch(prisma, cursor, batchSize);
+}
+
+export type ProcessNotificationOutboxOnceOptions = {
+  batchSize?: number;
+  log?: (msg: string, ctx?: Record<string, unknown>) => void;
+  /** Single `OutboxEvent.eventId` (BullMQ). Cursor advances only when strictly after current cursor. */
+  outboxEventId?: string;
+};
+
+/**
+ * Single PE-G delivery tick: outbox → notifications + cursor advance (when safe).
+ * Callable from {@link InProcessNotificationDeliveryRunner} or a BullMQ processor.
+ */
+export async function processNotificationOutboxOnce(
+  prisma: PrismaClient,
+  opts?: ProcessNotificationOutboxOnceOptions
+): Promise<NotificationDeliveryStats> {
+  const batchSize = opts?.batchSize ?? DEFAULT_NOTIFICATION_BATCH_SIZE;
+  const log = opts?.log ?? (() => undefined);
+  const targeted = Boolean(opts?.outboxEventId?.trim());
+
+  await ensureCursorRow(prisma);
+  const cursor = await loadCursor(prisma);
+  const batch = await fetchOutboxBatchForDelivery(
+    prisma,
+    cursor,
+    batchSize,
+    opts?.outboxEventId
+  );
+  if (batch.length === 0) {
+    return { scanned: 0, written: 0, cursorAdvancedTo: null };
+  }
+
+  let written = 0;
+  let lastOccurredAt: Date | null = null;
+  let lastEventId: string | null = null;
+  for (const event of batch) {
+    try {
+      const inputs = await mapOutboxEventToNotifications(prisma, {
+        id: event.id,
+        eventName: event.eventName,
+        tenantId: event.tenantId,
+        primaryId: event.primaryId,
+        payload: event.payload as unknown
+      });
+      written += await deliverInputsForEvent(prisma, inputs);
+    } catch (err) {
+      log("notification-delivery: event failed", {
+        eventId: event.eventId,
+        eventName: event.eventName,
+        error: err instanceof Error ? err.message : String(err)
+      });
+    }
+    lastOccurredAt = event.occurredAt;
+    lastEventId = event.eventId;
+  }
+
+  let cursorAdvancedTo: Date | null = null;
+  if (lastOccurredAt && lastEventId) {
+    const shouldAdvance =
+      !targeted || isStrictlyAfterCursor({ occurredAt: lastOccurredAt, eventId: lastEventId }, cursor);
+    if (shouldAdvance) {
+      await prisma.notificationDeliveryCursor.update({
+        where: { id: CURSOR_ID },
+        data: { lastOccurredAt, lastEventId }
+      });
+      cursorAdvancedTo = lastOccurredAt;
+    }
+  }
+
+  return {
+    scanned: batch.length,
+    written,
+    cursorAdvancedTo
+  };
+}
+
 /**
  * Soft-dedupe for non-clustered kinds (`clusterKey === null`). Checks whether a notification
  * for the same `sourceEventId` already exists; skips the write if so. Cluster-keyed kinds rely
@@ -147,11 +276,21 @@ async function fetchNextBatch(
  */
 async function alreadyDelivered(
   prisma: PrismaClient,
-  sourceEventId: string | null
+  input: CreateNotificationInput
 ): Promise<boolean> {
-  if (!sourceEventId) return false;
+  if (!input.sourceEventId || input.clusterKey) {
+    return false;
+  }
+  const recipient =
+    input.recipientCreatorAccountId != null
+      ? { recipientCreatorAccountId: input.recipientCreatorAccountId }
+      : { recipientMembershipId: input.recipientMembershipId! };
   const existing = await prisma.notification.findFirst({
-    where: { sourceEventId },
+    where: {
+      sourceEventId: input.sourceEventId,
+      ...recipient,
+      clusterKey: null
+    },
     select: { id: true }
   });
   return existing !== null;
@@ -163,7 +302,7 @@ async function deliverInputsForEvent(
 ): Promise<number> {
   let written = 0;
   for (const input of inputs) {
-    if (input.clusterKey === null && (await alreadyDelivered(prisma, input.sourceEventId ?? null))) {
+    if (input.clusterKey === null && (await alreadyDelivered(prisma, input))) {
       continue;
     }
     await createOrClusterNotification(prisma, input);
@@ -240,47 +379,10 @@ export class InProcessNotificationDeliveryRunner implements NotificationDelivery
   }
 
   public async processOnce(): Promise<NotificationDeliveryStats> {
-    await ensureCursorRow(this.prisma);
-    const cursor = await loadCursor(this.prisma);
-    const batch = await fetchNextBatch(this.prisma, cursor, this.batchSize);
-    if (batch.length === 0) {
-      return { scanned: 0, written: 0, cursorAdvancedTo: null };
-    }
-    let written = 0;
-    let lastOccurredAt: Date | null = null;
-    let lastEventId: string | null = null;
-    for (const event of batch) {
-      try {
-        const inputs = await mapOutboxEventToNotifications(this.prisma, {
-          id: event.id,
-          eventName: event.eventName,
-          tenantId: event.tenantId,
-          primaryId: event.primaryId,
-          payload: event.payload as unknown
-        });
-        written += await deliverInputsForEvent(this.prisma, inputs);
-      } catch (err) {
-        // One bad event must not stall the whole batch. Log and advance.
-        this.log("notification-delivery: event failed", {
-          eventId: event.eventId,
-          eventName: event.eventName,
-          error: err instanceof Error ? err.message : String(err)
-        });
-      }
-      lastOccurredAt = event.occurredAt;
-      lastEventId = event.eventId;
-    }
-    if (lastOccurredAt && lastEventId) {
-      await this.prisma.notificationDeliveryCursor.update({
-        where: { id: CURSOR_ID },
-        data: { lastOccurredAt, lastEventId }
-      });
-    }
-    return {
-      scanned: batch.length,
-      written,
-      cursorAdvancedTo: lastOccurredAt
-    };
+    return processNotificationOutboxOnce(this.prisma, {
+      batchSize: this.batchSize,
+      log: this.log
+    });
   }
 }
 
@@ -293,16 +395,28 @@ export function startNotificationDeliveryWorker(
   prisma: PrismaClient,
   log?: (msg: string, ctx?: Record<string, unknown>) => void
 ): NotificationDeliveryRunner | null {
-  const raw = (process.env.RELAY_NOTIFICATION_DELIVERY_MS ?? "").trim();
-  const parsed = raw === "" ? DEFAULT_NOTIFICATION_DELIVERY_MS : Number(raw);
-  if (!Number.isFinite(parsed) || parsed === 0) {
-    return null;
-  }
+  const every = notificationDeliveryRepeatEveryMsFromEnv();
+  if (every === null) return null;
   const runner = new InProcessNotificationDeliveryRunner({
     prisma,
-    pollIntervalMs: parsed,
+    pollIntervalMs: every,
     log
   });
   runner.start();
   return runner;
+}
+
+/**
+ * Effective notification poll interval for BullMQ `repeat.every`, or `null` when delivery is disabled (`RELAY_NOTIFICATION_DELIVERY_MS=0`).
+ * Mirrors [startNotificationDeliveryWorker](#startNotificationDeliveryWorker) / env floor.
+ */
+export function notificationDeliveryRepeatEveryMsFromEnv(
+  env: NodeJS.ProcessEnv = process.env
+): number | null {
+  const raw = (env.RELAY_NOTIFICATION_DELIVERY_MS ?? "").trim();
+  const parsed = raw === "" ? DEFAULT_NOTIFICATION_DELIVERY_MS : Number(raw);
+  if (!Number.isFinite(parsed) || parsed === 0) {
+    return null;
+  }
+  return Math.max(MIN_NOTIFICATION_DELIVERY_MS, Math.floor(parsed));
 }

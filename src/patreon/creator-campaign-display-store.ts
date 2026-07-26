@@ -1,3 +1,8 @@
+/**
+ * @fileoverview File-backed snapshots of Patreon campaign imagery and patron counts keyed by Relay `creator_id`.
+ * @description Updated after successful OAuth campaign fetches for UI / diagnostics.
+ * @see {@link ../jsdoc-core-entities.ts}
+ */
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 
@@ -16,6 +21,7 @@ type Root = {
   records: Record<string, CampaignDisplaySnapshot>;
 };
 
+/** JSON persistence for {@link CampaignDisplaySnapshot} keyed by Relay creator id. */
 export class CreatorCampaignDisplayStore {
   private readonly filePath: string;
 
@@ -37,11 +43,13 @@ export class CreatorCampaignDisplayStore {
     await writeFile(this.filePath, JSON.stringify(root, null, 2), "utf8");
   }
 
+  /** @async @throws {Error} Disk IO / JSON failures. */
   public async get(creatorId: string): Promise<CampaignDisplaySnapshot | null> {
     const root = await this.readRoot();
     return root.records[creatorId] ?? null;
   }
 
+  /** @async @throws {Error} Disk IO failures. */
   public async upsert(creatorId: string, snapshot: CampaignDisplaySnapshot): Promise<void> {
     const root = await this.readRoot();
     root.records[creatorId] = snapshot;

@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import {
   RELAY_API_BASE,
+  relayFetch,
   type Collection,
   type FacetsData,
   type GalleryItem,
@@ -24,7 +25,16 @@ import {
   type TierFacet
 } from "@/lib/relay-api";
 import { InspectAssetPreview } from "./inspect/inspect-asset-preview";
+import {
+  InspectAddMediaControl,
+  InspectPostDescription
+} from "./inspect/inspect-preview-actions";
 import { accessChipLabel } from "./GalleryGridTile";
+import LibraryEmptyState from "./studio/LibraryEmptyState";
+import {
+  PILOT_PERMISSION_HEADLINE,
+  PILOT_PERMISSION_VISIBILITY_HINT
+} from "@/lib/pilot-permission-copy";
 
 export type LibraryMode = "media" | "placement" | "engagement" | "financials";
 
@@ -50,6 +60,8 @@ type Props = {
   onApplyBulkTagDelta: (delta: { add: string[]; remove: string[]; perAsset?: boolean }) => Promise<void>;
   setItemVisibility: (items: GalleryItem[], visibility: PostVisibility) => Promise<void>;
   onError?: (message: string) => void;
+  /** P5-sync-004 — matches API 423 when Patreon sync rollup is failed/degraded. */
+  studioWriteBlocked?: boolean;
 };
 
 const MODES: Array<{ id: LibraryMode; label: string }> = [
@@ -93,11 +105,6 @@ function statusLabel(item: GalleryItem | null): string {
   return item.has_export ? "Ready" : "Patreon URL only";
 }
 
-function seededMetric(seed: string, min: number, max: number): number {
-  const value = Array.from(seed).reduce((sum, char) => sum + char.charCodeAt(0), 0);
-  return min + (value % Math.max(1, max - min + 1));
-}
-
 export default function LibraryPowerPanel({
   isOpen,
   onClose,
@@ -110,12 +117,15 @@ export default function LibraryPowerPanel({
   collections,
   facets,
   tierTitleById,
+  creatorId,
   onClearSelection,
   onListRefresh,
+  onCollectionsReload,
   onInspectPost,
   onApplyBulkTagDelta,
   setItemVisibility,
-  onError
+  onError,
+  studioWriteBlocked = false
 }: Props) {
   const [tagDraft, setTagDraft] = useState("");
   const [mediaEditorOpen, setMediaEditorOpen] = useState(false);
@@ -123,6 +133,8 @@ export default function LibraryPowerPanel({
   const [stagedAdditions, setStagedAdditions] = useState<string[]>([]);
   const [busy, setBusy] = useState<string | null>(null);
   const [previewTierId, setPreviewTierId] = useState("free");
+  const [newCollectionTitle, setNewCollectionTitle] = useState("");
+  const [collBusy, setCollBusy] = useState<string | null>(null);
   const selectedItem = selectedItems[0] ?? null;
   const singleSelection = selectedPostIds.length === 1;
   const selectedPostCount = selectedPostIds.length;
@@ -147,18 +159,8 @@ export default function LibraryPowerPanel({
     );
   }, [collections, selectedItem]);
 
-  const pulseMetrics = useMemo(() => {
-    if (!selectedItem) return null;
-    const seed = `${selectedItem.post_id}:${selectedItem.media_id}`;
-    const impressions = seededMetric(seed, 120, 3600);
-    const comments = seededMetric(`${seed}:comments`, 0, 42);
-    const collectionAdds = Math.max(selectedCollections.length, seededMetric(`${seed}:collections`, 0, 18));
-    const conversions = seededMetric(`${seed}:conversions`, 0, 11);
-    const tipRevenue = conversions * seededMetric(`${seed}:tips`, 3, 18);
-    return { impressions, comments, collectionAdds, conversions, tipRevenue };
-  }, [selectedCollections.length, selectedItem]);
-
   const applyVisibility = async (visibility: PostVisibility) => {
+    if (studioWriteBlocked) return;
     if (selectedItems.length === 0) return;
     setBusy(`visibility:${visibility}`);
     try {
@@ -172,6 +174,7 @@ export default function LibraryPowerPanel({
   };
 
   const applyTags = async () => {
+    if (studioWriteBlocked) return;
     const add = Array.from(new Set(tagDraft.split(",").map((tag) => tag.trim()).filter(Boolean)));
     if (add.length === 0) return;
     setBusy("tags");
@@ -182,6 +185,55 @@ export default function LibraryPowerPanel({
       onError?.(error instanceof Error ? error.message : String(error));
     } finally {
       setBusy(null);
+    }
+  };
+
+  const removeTag = async (tag: string) => {
+    if (studioWriteBlocked || !tag.trim()) return;
+    setBusy(`tag-remove:${tag}`);
+    try {
+      await onApplyBulkTagDelta({ add: [], remove: [tag.trim()] });
+    } catch (error) {
+      onError?.(error instanceof Error ? error.message : String(error));
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const addPostsToCollection = async (collectionId: string) => {
+    if (studioWriteBlocked || selectedPostIds.length === 0) return;
+    setCollBusy(collectionId);
+    try {
+      await relayFetch<unknown>(
+        `/api/v1/gallery/collections/${encodeURIComponent(collectionId)}/posts`,
+        {
+          method: "POST",
+          body: JSON.stringify({ post_ids: selectedPostIds })
+        }
+      );
+      setNewCollectionTitle("");
+      onCollectionsReload();
+      onListRefresh();
+    } catch (error) {
+      onError?.(error instanceof Error ? error.message : String(error));
+    } finally {
+      setCollBusy(null);
+    }
+  };
+
+  const createCollectionAndAdd = async () => {
+    const title = newCollectionTitle.trim();
+    if (!title || studioWriteBlocked || selectedPostIds.length === 0) return;
+    setCollBusy("new");
+    try {
+      const created = await relayFetch<Collection>("/api/v1/gallery/collections", {
+        method: "POST",
+        body: JSON.stringify({ title })
+      });
+      await addPostsToCollection(created.collection_id);
+    } catch (error) {
+      onError?.(error instanceof Error ? error.message : String(error));
+      setCollBusy(null);
     }
   };
 
@@ -284,12 +336,12 @@ export default function LibraryPowerPanel({
                 </div>
               </>
             ) : (
-              <div className="flex h-full w-full flex-col items-center justify-center px-4 text-center">
-                <Images className="h-6 w-6 text-[var(--lib-fg-muted)]" aria-hidden />
-                <p className="mt-2 text-xs font-medium text-[var(--lib-fg)]">No post selected</p>
-                <p className="mt-1 text-[10px] leading-4 text-[var(--lib-fg-muted)]">
-                  Click an item in the gallery to load it here.
-                </p>
+              <div className="flex h-full w-full flex-col items-center justify-center px-2">
+                <Images className="mb-1 h-6 w-6 text-[var(--lib-fg-muted)]" aria-hidden />
+                <LibraryEmptyState
+                  variant="no_selection"
+                  className="border-0 bg-transparent px-2 py-2 [&>p:first-child]:text-xs [&>p:last-of-type]:text-[10px]"
+                />
               </div>
             )}
           </div>
@@ -298,6 +350,11 @@ export default function LibraryPowerPanel({
         {mode === "media" ? (
           <section className="space-y-3">
             <PanelHeading icon={Images} title="Media" />
+            {studioWriteBlocked ? (
+              <p className="rounded-xl border border-[var(--lib-warning)]/35 bg-[var(--lib-warning)]/10 px-3 py-2 text-[11px] text-[var(--lib-fg)]">
+                Patreon sync must be healthy before editing — use the sync banner or Patreon menu.
+              </p>
+            ) : null}
             <div className="rounded-xl border border-[var(--lib-border)] bg-[var(--lib-bg)] p-3">
               <p className="text-[10px] font-semibold uppercase tracking-wide text-[var(--lib-fg-muted)]">
                 Attached media
@@ -325,14 +382,31 @@ export default function LibraryPowerPanel({
                 )}
               </div>
             </div>
+            {singleSelection && selectedItem && creatorId ? (
+              <div
+                className="rounded-xl border border-[var(--lib-border)] bg-[var(--lib-bg)] p-3"
+                data-power-add-media
+              >
+                <p className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-[var(--lib-fg-muted)]">
+                  Upload &amp; attach media
+                </p>
+                <InspectAddMediaControl
+                  creatorId={creatorId}
+                  postId={selectedItem.post_id}
+                  onPresentationUpdated={async () => {
+                    onListRefresh();
+                  }}
+                />
+              </div>
+            ) : null}
             <button
               type="button"
-              disabled={selectedItems.length === 0}
+              disabled={selectedItems.length === 0 || studioWriteBlocked}
               onClick={() => setMediaEditorOpen(true)}
               className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-[color-mix(in_srgb,var(--lib-primary)_45%,var(--lib-border))] bg-[color-mix(in_srgb,var(--lib-primary)_14%,var(--lib-card))] px-3 py-2 text-xs font-medium text-[var(--lib-fg)] hover:border-[var(--lib-primary)] disabled:opacity-45"
             >
               <Upload size={13} aria-hidden />
-              Add or Edit Media
+              Media tray (stage notes)
             </button>
             <button
               type="button"
@@ -357,22 +431,59 @@ export default function LibraryPowerPanel({
         {mode === "placement" ? (
           <section className="space-y-3">
             <PanelHeading icon={ShieldCheck} title="Placement" />
+            {studioWriteBlocked ? (
+              <p className="rounded-xl border border-[var(--lib-warning)]/35 bg-[var(--lib-warning)]/10 px-3 py-2 text-[11px] text-[var(--lib-fg)]">
+                Editing is paused until Patreon sync is healthy.
+              </p>
+            ) : null}
             <div className="grid grid-cols-2 gap-2">
-              <InfoTile label="Visibility" value={selectedItem?.visibility ?? "No selection"} />
-              <InfoTile label="Access" value={selectedAccess(selectedItem, realTiers, tierTitleById)} />
+              <InfoTile label="Relay visibility" value={selectedItem?.visibility ?? "No selection"} />
+              <InfoTile
+                label="Patreon access (read-only)"
+                value={selectedAccess(selectedItem, realTiers, tierTitleById)}
+                truncate
+              />
             </div>
+            <p className="text-[10px] font-medium leading-4 text-[var(--lib-fg)]">{PILOT_PERMISSION_HEADLINE}</p>
+            <p className="text-[10px] leading-4 text-[var(--lib-fg-muted)]">{PILOT_PERMISSION_VISIBILITY_HINT}</p>
             <div className="grid grid-cols-3 gap-2">
-              <AccessButton icon={Eye} label="Visible" busy={busy === "visibility:visible"} onClick={() => void applyVisibility("visible")} />
-              <AccessButton icon={EyeOff} label="Hidden" busy={busy === "visibility:hidden"} onClick={() => void applyVisibility("hidden")} />
-              <AccessButton icon={ShieldAlert} label="Review" busy={busy === "visibility:review"} onClick={() => void applyVisibility("review")} />
+              <AccessButton icon={Eye} label="Visible" disabled={studioWriteBlocked} busy={busy === "visibility:visible"} onClick={() => void applyVisibility("visible")} />
+              <AccessButton icon={EyeOff} label="Hidden" disabled={studioWriteBlocked} busy={busy === "visibility:hidden"} onClick={() => void applyVisibility("hidden")} />
+              <AccessButton icon={ShieldAlert} label="Review" disabled={studioWriteBlocked} busy={busy === "visibility:review"} onClick={() => void applyVisibility("review")} />
             </div>
-            <TagEditor value={tagDraft} onChange={setTagDraft} onSubmit={applyTags} busy={busy === "tags"} currentTags={selectedItem?.tag_ids ?? []} />
-            <div className="rounded-xl border border-[var(--lib-border)] bg-[var(--lib-bg)] p-3">
-              <p className="text-[10px] font-semibold uppercase tracking-wide text-[var(--lib-fg-muted)]">Collections it lives in</p>
+            {singleSelection && selectedItem && creatorId ? (
+              <div data-power-description>
+                <InspectPostDescription
+                  preview={selectedItem}
+                  previewDetail={null}
+                  creatorId={creatorId}
+                  postId={selectedItem.post_id}
+                  onPresentationUpdated={async () => {
+                    onListRefresh();
+                  }}
+                />
+              </div>
+            ) : null}
+            <TagEditor
+              value={tagDraft}
+              onChange={setTagDraft}
+              onSubmit={applyTags}
+              onRemoveTag={(tag) => void removeTag(tag)}
+              busy={Boolean(busy?.startsWith("tag") || busy === "tags")}
+              currentTags={selectedItem?.tag_ids ?? []}
+              disabled={studioWriteBlocked}
+            />
+            <div className="rounded-xl border border-[var(--lib-border)] bg-[var(--lib-bg)] p-3" data-power-collections>
+              <p className="text-[10px] font-semibold uppercase tracking-wide text-[var(--lib-fg-muted)]">
+                Collections
+              </p>
               <div className="mt-2 flex flex-wrap gap-1.5">
                 {selectedCollections.length > 0 ? (
                   selectedCollections.map((collection) => (
-                    <span key={collection.collection_id} className="rounded-full border border-[var(--lib-border)] px-2 py-1 text-[10px] text-[var(--lib-fg-muted)]">
+                    <span
+                      key={collection.collection_id}
+                      className="rounded-full border border-[var(--lib-border)] px-2 py-1 text-[10px] text-[var(--lib-fg-muted)]"
+                    >
                       {collection.title}
                     </span>
                   ))
@@ -380,6 +491,44 @@ export default function LibraryPowerPanel({
                   <span className="text-xs text-[var(--lib-fg-muted)]">Not in a collection yet.</span>
                 )}
               </div>
+              {selectedPostIds.length > 0 && !studioWriteBlocked ? (
+                <div className="mt-3 space-y-2">
+                  <p className="text-[10px] text-[var(--lib-fg-muted)]">Add selected post(s) to a collection</p>
+                  <ul className="max-h-28 space-y-1 overflow-y-auto">
+                    {collections.map((c) => (
+                      <li key={c.collection_id}>
+                        <button
+                          type="button"
+                          disabled={collBusy !== null}
+                          onClick={() => void addPostsToCollection(c.collection_id)}
+                          className="flex w-full items-center justify-between rounded-lg border border-[var(--lib-border)] px-2 py-1.5 text-left text-[10px] text-[var(--lib-fg)] hover:border-[var(--lib-primary)]/50 disabled:opacity-45"
+                        >
+                          <span className="truncate">{c.title}</span>
+                          <span className="shrink-0 text-[var(--lib-fg-muted)]">
+                            {collBusy === c.collection_id ? "…" : "Add"}
+                          </span>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                  <div className="flex gap-1.5">
+                    <input
+                      value={newCollectionTitle}
+                      onChange={(e) => setNewCollectionTitle(e.target.value)}
+                      placeholder="New collection name"
+                      className="min-w-0 flex-1 rounded-lg border border-[var(--lib-border)] bg-[var(--lib-input)] px-2 py-1.5 text-[10px] text-[var(--lib-fg)]"
+                    />
+                    <button
+                      type="button"
+                      disabled={!newCollectionTitle.trim() || collBusy !== null}
+                      onClick={() => void createCollectionAndAdd()}
+                      className="shrink-0 rounded-lg border border-[var(--lib-border)] px-2 py-1.5 text-[10px] text-[var(--lib-fg)] disabled:opacity-45"
+                    >
+                      {collBusy === "new" ? "…" : "Create"}
+                    </button>
+                  </div>
+                </div>
+              ) : null}
             </div>
           </section>
         ) : null}
@@ -387,9 +536,25 @@ export default function LibraryPowerPanel({
         {mode === "engagement" ? (
           <section className="space-y-3">
             <PanelHeading icon={MessageSquare} title="Engagement" />
+            <div className="rounded-xl border border-[var(--lib-border)] bg-[var(--lib-bg)] p-3">
+              <p className="text-[10px] font-semibold uppercase tracking-wide text-[var(--lib-fg-muted)]">
+                Packaging stats
+              </p>
+              <p className="mt-2 text-xs leading-5 text-[var(--lib-fg-muted)]">
+                Per-platform reach lives in the packaging hero — not seeded placeholders.
+              </p>
+              <button
+                type="button"
+                className="mt-3 rounded-full bg-[var(--lib-primary)] px-3 py-1.5 text-[11px] font-semibold text-black disabled:opacity-50"
+                disabled={!selectedItem}
+                onClick={() => onInspectPost()}
+              >
+                Open packaging
+              </button>
+            </div>
             <div className="grid grid-cols-2 gap-2">
-              <InfoTile label="Comments" value={pulseMetrics ? String(pulseMetrics.comments) : "0"} />
-              <InfoTile label="Saved" value={pulseMetrics ? String(pulseMetrics.collectionAdds) : "0"} />
+              <InfoTile label="In collections" value={String(selectedCollections.length)} />
+              <InfoTile label="Comments" value="—" />
             </div>
             <div className="rounded-xl border border-[var(--lib-border)] bg-[var(--lib-bg)] p-3">
               <p className="text-[10px] font-semibold uppercase tracking-wide text-[var(--lib-fg-muted)]">Audience preview</p>
@@ -417,20 +582,28 @@ export default function LibraryPowerPanel({
         {mode === "financials" ? (
           <section className="space-y-3">
             <PanelHeading icon={DollarSign} title="Financials" />
-            <div className="grid grid-cols-2 gap-2">
-              <InfoTile label="Tips" value={pulseMetrics ? `$${pulseMetrics.tipRevenue.toLocaleString()}` : "$0"} />
-              <InfoTile label="Conversions" value={pulseMetrics ? String(pulseMetrics.conversions) : "0"} />
-              <InfoTile label="Impressions" value={pulseMetrics ? pulseMetrics.impressions.toLocaleString() : "0"} />
-              <InfoTile label="Promo" value={selectedItem ? "Eligible" : "No selection"} />
-            </div>
             <div className="rounded-xl border border-[var(--lib-border)] bg-[var(--lib-bg)] p-3">
               <div className="mb-2 flex items-center gap-2 text-[10px] font-semibold uppercase tracking-wide text-[var(--lib-fg-muted)]">
                 <BarChart3 className="h-3.5 w-3.5" aria-hidden />
                 Revenue pulse
               </div>
               <p className="text-xs leading-5 text-[var(--lib-fg-muted)]">
-                Prototype figures are placeholders until tip, impression, and conversion events are attributed to posts/media.
+                Tip and conversion attribution is not seeded here. Use packaging / Advanced analytics for reach.
               </p>
+              <button
+                type="button"
+                className="mt-3 rounded-full border border-[var(--lib-border)] px-3 py-1.5 text-[11px] font-medium text-[var(--lib-fg)] hover:bg-[var(--lib-muted)] disabled:opacity-50"
+                disabled={!selectedItem}
+                onClick={() => onInspectPost()}
+              >
+                Open packaging
+              </button>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <InfoTile label="Tips" value="—" />
+              <InfoTile label="Conversions" value="—" />
+              <InfoTile label="Impressions" value="—" />
+              <InfoTile label="Promo" value={selectedItem ? "Eligible" : "No selection"} />
             </div>
           </section>
         ) : null}
@@ -618,14 +791,18 @@ function TagEditor({
   value,
   onChange,
   onSubmit,
+  onRemoveTag,
   busy,
-  currentTags
+  currentTags,
+  disabled = false
 }: {
   value: string;
   onChange: (value: string) => void;
   onSubmit: () => void;
+  onRemoveTag?: (tag: string) => void;
   busy: boolean;
   currentTags: string[];
+  disabled?: boolean;
 }) {
   return (
     <div className="rounded-xl border border-[var(--lib-border)] bg-[var(--lib-bg)] p-3">
@@ -636,8 +813,22 @@ function TagEditor({
       <div className="mt-2 flex flex-wrap gap-1">
         {currentTags.length > 0 ? (
           currentTags.map((tag) => (
-            <span key={tag} className="rounded-full border border-[var(--lib-border)] px-2 py-0.5 text-[10px] text-[var(--lib-fg-muted)]">
+            <span
+              key={tag}
+              className="inline-flex items-center gap-1 rounded-full border border-[var(--lib-border)] px-2 py-0.5 text-[10px] text-[var(--lib-fg-muted)]"
+            >
               {tag}
+              {onRemoveTag && !disabled ? (
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => onRemoveTag(tag)}
+                  className="rounded-full px-0.5 text-[var(--lib-fg)] hover:text-red-300 disabled:opacity-40"
+                  aria-label={`Remove tag ${tag}`}
+                >
+                  ×
+                </button>
+              ) : null}
             </span>
           ))
         ) : (
@@ -647,12 +838,13 @@ function TagEditor({
       <input
         value={value}
         onChange={(event) => onChange(event.target.value)}
+        disabled={disabled}
         placeholder="tag_a, tag_b"
-        className="mt-2 w-full rounded-lg border border-[var(--lib-border)] bg-[var(--lib-input)] px-2.5 py-2 text-xs text-[var(--lib-fg)] outline-none placeholder:text-[var(--lib-fg-muted)] focus:border-[var(--lib-primary)]"
+        className="mt-2 w-full rounded-lg border border-[var(--lib-border)] bg-[var(--lib-input)] px-2.5 py-2 text-xs text-[var(--lib-fg)] outline-none placeholder:text-[var(--lib-fg-muted)] focus:border-[var(--lib-primary)] disabled:opacity-45"
       />
       <button
         type="button"
-        disabled={!value.trim() || busy}
+        disabled={disabled || !value.trim() || busy}
         onClick={onSubmit}
         className="mt-2 rounded-lg border border-[var(--lib-border)] bg-[var(--lib-card)] px-3 py-1.5 text-xs text-[var(--lib-fg)] hover:border-[var(--lib-primary)]/50 disabled:opacity-45"
       >
@@ -666,17 +858,19 @@ function AccessButton({
   icon: Icon,
   label,
   busy,
+  disabled = false,
   onClick
 }: {
   icon: typeof Eye;
   label: string;
   busy: boolean;
+  disabled?: boolean;
   onClick: () => void;
 }) {
   return (
     <button
       type="button"
-      disabled={busy}
+      disabled={busy || disabled}
       onClick={onClick}
       className="inline-flex items-center gap-2 rounded-xl border border-[var(--lib-border)] bg-[var(--lib-card)] px-3 py-2 text-xs text-[var(--lib-fg)] hover:border-[var(--lib-primary)]/50 disabled:opacity-45"
     >

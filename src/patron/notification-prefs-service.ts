@@ -1,4 +1,10 @@
 /**
+ * @fileoverview Patron experience module notification-prefs-service.ts — see exported symbols.
+ * @see {@link ../jsdoc-core-entities.ts}
+ * @see prisma/schema.prisma Account, TenantMembership, and related patron tables
+ * @security-audit-required Patron PII or entitlement paths — audit responses and logs.
+ */
+/**
  * PE-G (BO-P3-03) — notification preference read/write.
  *
  * Per (membership, creator, type) toggle. Defaults to enabled when no row exists, so the
@@ -11,6 +17,8 @@
  *   - "tier_changed"
  *   - "new_post_followed"
  *   - "mention"
+ *   - "reveal_expiring" (MB-13 Tip window day-before)
+ *   - "tips_granted" (MB-9 Tip allowance landed)
  */
 
 import type { PrismaClient } from "@prisma/client";

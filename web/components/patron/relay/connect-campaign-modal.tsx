@@ -97,7 +97,7 @@ export function ConnectCampaignModal({ isOpen, payload, onClose }: ConnectCampai
           </button>
           {ownedId ? (
             <Link
-              href="/designer"
+              href="/studio/designer"
               className="rounded-lg bg-[#2D6A4F] px-4 py-2 text-xs font-medium text-white transition-colors hover:bg-[#40916C]"
               onClick={onClose}
             >
@@ -105,7 +105,7 @@ export function ConnectCampaignModal({ isOpen, payload, onClose }: ConnectCampai
             </Link>
           ) : (
             <Link
-              href="/creator/connect"
+              href="/connect/creator"
               className="rounded-lg bg-[#2D6A4F] px-4 py-2 text-xs font-medium text-white transition-colors hover:bg-[#40916C]"
               onClick={onClose}
             >

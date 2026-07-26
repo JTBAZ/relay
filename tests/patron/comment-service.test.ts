@@ -102,7 +102,8 @@ describe("createComment", () => {
     const prisma = {
       comment: {
         create: vi.fn().mockResolvedValue(created)
-      }
+      },
+      outboxEvent: { create: vi.fn().mockResolvedValue({}) }
     } as never;
     const result = await createComment(prisma, overridesStub(), {
       relayCreatorId: "c",
@@ -112,6 +113,65 @@ describe("createComment", () => {
     });
     expect(result.record.modState).toBe("hidden");
     expect(result.autoModFlags.some((f) => f.severity === "block")).toBe(true);
+  });
+
+  it("emits mention notification events for visible comments with resolvable @handles", async () => {
+    const created = {
+      id: "cmt1",
+      relayCreatorId: "creator-1",
+      postId: "post-1",
+      mediaId: null,
+      anchorX: null,
+      anchorY: null,
+      patronUserId: "author-m",
+      body: "Loved this @riley",
+      parentCommentId: null,
+      tagIds: [],
+      tagsRevokedByOwner: [],
+      creatorPinnedAt: null,
+      requiredTierId: null,
+      visibility: "everyone",
+      autoModFlagsJson: [],
+      createdAt: new Date(),
+      editedAt: null,
+      deletedAt: null,
+      modState: "visible"
+    };
+    const outboxCreate = vi.fn().mockResolvedValue({});
+    const prisma = {
+      comment: { create: vi.fn().mockResolvedValue(created) },
+      outboxEvent: { create: outboxCreate },
+      tenantMembership: {
+        findUnique: vi.fn().mockResolvedValue({ id: "author-m", accountId: "author-a" }),
+        findMany: vi.fn().mockResolvedValue([{ id: "riley-m", accountId: "riley-a" }])
+      },
+      account: {
+        findMany: vi.fn().mockResolvedValue([
+          { id: "riley-a", usernameNorm: "riley", primaryRelayCreatorId: null }
+        ])
+      }
+    } as never;
+
+    await createComment(prisma, overridesStub(), {
+      relayCreatorId: "creator-1",
+      postId: "post-1",
+      patronUserId: "author-m",
+      body: "Loved this @riley"
+    });
+
+    expect(outboxCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          eventName: "relay_comment.mention_created",
+          primaryId: "cmt1:riley-m",
+          payload: expect.objectContaining({
+            recipient_membership_id: "riley-m",
+            mentioned_handle: "riley",
+            target_kind: "patron"
+          })
+        })
+      })
+    );
   });
 });
 
@@ -167,6 +227,68 @@ describe("patchComment", () => {
         patch: { body: "updated" }
       })
     ).rejects.toBeInstanceOf(CommentForbiddenError);
+  });
+
+  it("emits mention events only for newly-added handles on edit", async () => {
+    const existing = {
+      id: "cmt1",
+      relayCreatorId: "creator-1",
+      postId: "post-1",
+      mediaId: null,
+      patronUserId: "author-m",
+      body: "hi @old",
+      tagIds: [],
+      tagsRevokedByOwner: [],
+      createdAt: new Date(),
+      deletedAt: null,
+      modState: "visible"
+    };
+    const updated = {
+      ...existing,
+      body: "hi @old and @new",
+      editedAt: new Date(),
+      parentCommentId: null,
+      anchorX: null,
+      anchorY: null,
+      creatorPinnedAt: null,
+      requiredTierId: null,
+      visibility: "everyone",
+      autoModFlagsJson: []
+    };
+    const outboxCreate = vi.fn().mockResolvedValue({});
+    const prisma = {
+      comment: {
+        findUnique: vi.fn().mockResolvedValue(existing),
+        update: vi.fn().mockResolvedValue(updated)
+      },
+      outboxEvent: { create: outboxCreate },
+      tenantMembership: {
+        findUnique: vi.fn().mockResolvedValue({ id: "author-m", accountId: "author-a" }),
+        findMany: vi.fn().mockResolvedValue([{ id: "new-m", accountId: "new-a" }])
+      },
+      account: {
+        findMany: vi.fn().mockResolvedValue([
+          { id: "new-a", usernameNorm: "new", primaryRelayCreatorId: null }
+        ])
+      }
+    } as never;
+
+    await patchComment(prisma, overridesStub(), {
+      commentId: "cmt1",
+      actorUserId: "author-m",
+      patch: { body: "hi @old and @new" }
+    });
+
+    expect(outboxCreate).toHaveBeenCalledTimes(1);
+    expect(outboxCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          eventName: "relay_comment.mention_created",
+          primaryId: "cmt1:new-m",
+          payload: expect.objectContaining({ mentioned_handle: "new" })
+        })
+      })
+    );
   });
 });
 

@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { randomBytes } from "node:crypto";
 import request from "supertest";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createApp } from "../src/server.js";
 
 function appConfig(tempDir: string, fetchImpl: typeof fetch) {
@@ -30,6 +30,13 @@ function appConfig(tempDir: string, fetchImpl: typeof fetch) {
 }
 
 describe("Workstream C export storage and manifests", () => {
+  beforeEach(() => {
+    vi.stubEnv("RELAY_CREATOR_ROUTE_SECRET", "test-secret");
+  });
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
   it("downloads asset, stores checksum, serves content, manifests, verify, materialize", async () => {
     const tempDir = await mkdtemp(join(tmpdir(), "relay-c-"));
     const payload = Buffer.from("fake-original-bytes");
@@ -79,13 +86,16 @@ describe("Workstream C export storage and manifests", () => {
       ]
     };
 
-    const ing = await request(app).post("/api/v1/ingest/batches?process_sync=true").send(ingestBody);
+    const ing = await request(app)
+      .post("/api/v1/ingest/batches?process_sync=true")
+      .set("X-Relay-Creator-Secret", "test-secret")
+      .send(ingestBody);
     expect(ing.status).toBe(200);
 
-    const ex = await request(app).post("/api/v1/export/media").send({
-      creator_id: "creator_1",
-      media_id: "media_1"
-    });
+    const ex = await request(app)
+      .post("/api/v1/export/media")
+      .set("X-Relay-Creator-Secret", "test-secret")
+      .send({ creator_id: "creator_1", media_id: "media_1" });
     expect(ex.status).toBe(200);
     expect(ex.body.data).toMatchObject({
       sha256: expectedHash,
@@ -93,17 +103,17 @@ describe("Workstream C export storage and manifests", () => {
       idempotent_skip: false
     });
 
-    const again = await request(app).post("/api/v1/export/media").send({
-      creator_id: "creator_1",
-      media_id: "media_1"
-    });
+    const again = await request(app)
+      .post("/api/v1/export/media")
+      .set("X-Relay-Creator-Secret", "test-secret")
+      .send({ creator_id: "creator_1", media_id: "media_1" });
     expect(again.status).toBe(200);
     expect(again.body.data.idempotent_skip).toBe(true);
     expect(fetchImpl).toHaveBeenCalledTimes(1);
 
-    const manifest = await request(app).get(
-      "/api/v1/export/manifests/media-manifest?creator_id=creator_1"
-    );
+    const manifest = await request(app)
+      .get("/api/v1/export/manifests/media-manifest?creator_id=creator_1")
+      .set("X-Relay-Creator-Secret", "test-secret");
     expect(manifest.status).toBe(200);
     expect(manifest.body.data.items).toHaveLength(1);
     expect(manifest.body.data.items[0].sha256).toBe(expectedHash);
@@ -114,15 +124,16 @@ describe("Workstream C export storage and manifests", () => {
     expect(content.headers.etag).toBe(`"${expectedHash}"`);
     expect(content.body).toEqual(payload);
 
-    const verify = await request(app).post("/api/v1/export/verify").send({
-      creator_id: "creator_1",
-      media_id: "media_1"
-    });
+    const verify = await request(app)
+      .post("/api/v1/export/verify")
+      .set("X-Relay-Creator-Secret", "test-secret")
+      .send({ creator_id: "creator_1", media_id: "media_1" });
     expect(verify.status).toBe(200);
     expect(verify.body.data.match).toBe(true);
 
     const mat = await request(app)
       .post("/api/v1/export/manifests/materialize")
+      .set("X-Relay-Creator-Secret", "test-secret")
       .send({ creator_id: "creator_1" });
     expect(mat.status).toBe(200);
     const rawManifest = await readFile(
@@ -136,10 +147,10 @@ describe("Workstream C export storage and manifests", () => {
     expect(health.status).toBe(200);
     expect(health.body.data.metrics.export_media_attempts).toBeGreaterThanOrEqual(2);
 
-    const sample = await request(app).post("/api/v1/export/integrity-sample").send({
-      creator_id: "creator_1",
-      limit: 5
-    });
+    const sample = await request(app)
+      .post("/api/v1/export/integrity-sample")
+      .set("X-Relay-Creator-Secret", "test-secret")
+      .send({ creator_id: "creator_1", limit: 5 });
     expect(sample.status).toBe(200);
     expect(sample.body.data.checked).toBe(1);
     expect(sample.body.data.matched).toBe(1);

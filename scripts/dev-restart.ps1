@@ -2,84 +2,17 @@
 #
 # Usage (from repo root):
 #   powershell -ExecutionPolicy Bypass -File .\scripts\dev-restart.ps1
+#   npm run dev:restart
 #
-# What this does:
-# 1) Stops existing Node processes that are running from this Rescue repo path.
-# 2) Starts backend API in a new PowerShell window: npm start (repo root).
-# 3) Starts frontend app in another new PowerShell window: npm run dev (web folder).
-#
-# Notes:
-# - This is intended for local dev convenience ("flash refresh" both services).
-# - Repo root is inferred from this script location (scripts/ -> parent).
-# - Stopping by CommandLine often misses `node dist/src/main.js` because the path
-#   may be relative (no $RepoRoot in Win32 CommandLine). We also stop listeners
-#   on RELAY_PORT / PORT (from repo .env) and Next default 3000 so the API/UI
-#   actually restart instead of leaving an old process bound to the port.
-# - If you use PowerShell 7 (`pwsh`), this still works when invoked via powershell.
+# Opens API + web in separate terminal windows after killing stale listeners.
+# For one terminal (same as dev:stack), use: npm run dev:stack:restart
 
 $ErrorActionPreference = "Stop"
 
 $RepoRoot = Split-Path -Parent $PSScriptRoot
 $WebRoot = Join-Path $RepoRoot "web"
-$EnvFile = Join-Path $RepoRoot ".env"
 
-function Stop-ListenersOnPort {
-  param([int]$Port, [string]$Label)
-
-  $conns = @(
-    Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue |
-      Where-Object { $_.OwningProcess -and $_.OwningProcess -ne 0 }
-  )
-  if (-not $conns) { return }
-
-  $pids = $conns | Select-Object -ExpandProperty OwningProcess -Unique
-  foreach ($procId in $pids) {
-    try {
-      $p = Get-Process -Id $procId -ErrorAction Stop
-      if ($p.ProcessName -ne "node") {
-        continue
-      }
-      Stop-Process -Id $procId -Force -ErrorAction Stop
-      Write-Host "  Stopped node PID $procId (listener on $Label port $Port)"
-    } catch {
-      Write-Warning "  Could not stop listener on port ${Port} (PID $procId): $($_.Exception.Message)"
-    }
-  }
-}
-
-Write-Host "Stopping existing Rescue node processes..."
-
-$nodeProcs = Get-CimInstance Win32_Process |
-  Where-Object {
-    $_.Name -eq "node.exe" -and
-    $_.CommandLine -and
-    $_.CommandLine -match [regex]::Escape($RepoRoot)
-  }
-
-foreach ($proc in $nodeProcs) {
-  try {
-    Stop-Process -Id $proc.ProcessId -Force -ErrorAction Stop
-    Write-Host "  Stopped PID $($proc.ProcessId)"
-  } catch {
-    Write-Warning "  Could not stop PID $($proc.ProcessId): $($_.Exception.Message)"
-  }
-}
-
-$relayPort = 8787
-if (Test-Path -LiteralPath $EnvFile) {
-  foreach ($line in Get-Content -LiteralPath $EnvFile) {
-    if ($line -match '^\s*PORT\s*=\s*(\d+)\s*$') {
-      $relayPort = [int]$Matches[1]
-      break
-    }
-  }
-}
-Stop-ListenersOnPort -Port $relayPort -Label "relay"
-# Next.js dev (package.json pins hostname 127.0.0.1; default port 3000)
-Stop-ListenersOnPort -Port 3000 -Label "web"
-
-# Brief pause so the OS releases listen sockets before rebuild/start.
-Start-Sleep -Seconds 1
+& (Join-Path $RepoRoot "scripts\kill-relay-dev-ports.ps1")
 
 Write-Host "Rebuilding backend (npm run build)..."
 Push-Location -LiteralPath $RepoRoot
@@ -108,5 +41,5 @@ Start-Process powershell -ArgumentList @(
 )
 
 Write-Host "Done. Two new terminal windows were opened."
-Write-Host "Open the web UI at the URL shown in the frontend window (http://127.0.0.1:3000)."
-Write-Host "If you still use http://localhost:3000 and see connection refused, use 127.0.0.1 instead (IPv4 vs IPv6 loopback on Windows)."
+Write-Host "Open the web UI at http://localhost:3000 (or http://127.0.0.1:3000)."
+Write-Host "For a single terminal instead, run: npm run dev:stack:restart"

@@ -1,4 +1,8 @@
 import { PATREON_CREATOR_OAUTH_SCOPES } from "./patreon-creator-scopes";
+import { pilotUxDevBearerHeaders } from "./pilot-ux-session";
+import { VISITOR_SESSION_STORAGE_KEY } from "./visitor-gallery-telemetry";
+import { SUBSCRIBESTAR_CREATOR_OAUTH_SCOPES } from "./subscribestar-creator-scopes";
+import { resolveRelayApiBaseFromEnv, relayBrowserMediaUrl } from "./relay-api-env";
 import {
   RelayForbiddenError,
   RelayServerError,
@@ -6,20 +10,18 @@ import {
 } from "./relay-fetch-errors";
 
 export { RelayForbiddenError, RelayServerError, RelayUnauthorizedError };
+export { relayBrowserMediaUrl };
 
 /** No trailing slash — paths like `/api/v1/...` are appended below. */
 function resolveRelayApiBase(): string {
-  const fromEnv = (process.env.NEXT_PUBLIC_RELAY_API_URL ?? "").trim();
-  const raw = fromEnv.length > 0 ? fromEnv : "http://127.0.0.1:8787";
-  const trimmed = raw.replace(/\/+$/, "");
-  return trimmed.length > 0 ? trimmed : "http://127.0.0.1:8787";
+  return resolveRelayApiBaseFromEnv(process.env.NEXT_PUBLIC_RELAY_API_URL);
 }
 export const RELAY_API_BASE = resolveRelayApiBase();
 
 /**
- * Patron feed media: `<video crossOrigin="anonymous" src={RELAY_API_BASE + "/content"}>` may not send
- * the same cookies as `fetch` with `credentials: "include"` in all browsers. If `/content` 403s in
- * prod for `<video>`/`<img>`, add a same-origin proxy route or signed short-lived URLs.
+ * JSON API calls use {@link RELAY_API_BASE} (cross-origin OK with credentialed CORS).
+ * Export media **bytes** (`/content`, `/thumb`, `/preview`) should use {@link relayBrowserMediaUrl}
+ * so the browser hits same-origin Next rewrites — see `web/next.config.mjs`.
  */
 type Envelope<T> = { data: T; meta: { trace_id: string } };
 
@@ -95,7 +97,28 @@ function mergeRelayHeaders(init?: RequestInit): Headers {
   if (hasBody && !headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
   }
+  if (!headers.has("authorization")) {
+    const pilot = pilotUxDevBearerHeaders();
+    if (pilot?.authorization) {
+      headers.set("authorization", pilot.authorization);
+    }
+  }
+  if (typeof window !== "undefined") {
+    try {
+      const visitorSession = window.localStorage.getItem(VISITOR_SESSION_STORAGE_KEY)?.trim();
+      if (visitorSession) {
+        headers.set("X-Relay-Visitor-Session", visitorSession);
+      }
+    } catch {
+      /* ignore storage failures */
+    }
+  }
   return headers;
+}
+
+/** Headers for authenticated patron requests (Bearer pilot-ux token + cookies). */
+export function relayPatronRequestHeaders(init?: RequestInit): Headers {
+  return mergeRelayHeaders(init);
 }
 
 async function handleRelayHttpErrors(res: Response): Promise<void> {
@@ -210,11 +233,53 @@ export async function relayFetch<T>(path: string, init?: RequestInit): Promise<T
   return envelope.data;
 }
 
+/**
+ * Same envelope parser as `relayFetch`, but does not perform the browser-level 401 redirect.
+ * Use only on dev/optional surfaces that can gracefully fall back when no session is present.
+ */
+export async function relayFetchWithoutAuthRedirect<T>(
+  path: string,
+  init?: RequestInit
+): Promise<T> {
+  let res: Response;
+  try {
+    res = await fetch(`${RELAY_API_BASE}${path}`, {
+      ...init,
+      headers: mergeRelayHeaders(init),
+      credentials: "include",
+      cache: init?.cache ?? "no-store"
+    });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    throw new RelayApiError(
+      msg.includes("fetch") ? "Network error — is the Relay API running?" : msg,
+      0,
+      "NETWORK"
+    );
+  }
+
+  const json = await parseRelayResponseBody(res, path);
+
+  if (!res.ok) {
+    const err = json as { error?: { message?: string; code?: string } };
+    throw new RelayApiError(
+      err.error?.message ?? res.statusText,
+      res.status,
+      err.error?.code
+    );
+  }
+
+  const envelope = json as Envelope<T>;
+  return envelope.data;
+}
+
 /** `GET /api/v1/me/session` — opaque Bearer + optional linked `UserAccount`. */
 export type PatronSessionMe = {
   user_id: string;
   creator_id: string;
   email: string | null;
+  username: string | null;
+  username_norm: string | null;
   auth_provider: "independent" | "patreon" | null;
   patreon_user_id: string | null;
   /** When false, session-first `POST .../patron/link` will reject until Supabase email is confirmed (PE-A gate). Omitted on older API builds. */
@@ -238,6 +303,16 @@ export function fetchPatronSessionMe(): Promise<PatronSessionMe> {
   return relayFetch<PatronSessionMe>("/api/v1/me/session");
 }
 
+export async function patchRelayUsername(username: string): Promise<{
+  username: string;
+  username_norm: string;
+}> {
+  return relayFetch<{ username: string; username_norm: string }>("/api/v1/me/username", {
+    method: "PATCH",
+    body: JSON.stringify({ username })
+  });
+}
+
 // ---------------------------------------------------------------------------
 // PE-K Rest (BO-P4-04) — public patron profile lookup for /p/[handle].
 // Backend service: src/patron/public-patron-profile-service.ts; route GET /api/v1/public/patrons/:handle.
@@ -249,6 +324,8 @@ export type PublicPatronProfile = {
   bio: string | null;
   avatar_url: string | null;
   banner_url: string | null;
+  /** MB-14 — live Curator badge. */
+  is_curator?: boolean;
   public_collections: Array<{
     id: string;
     title: string;
@@ -397,7 +474,7 @@ export async function cancelPatronAccountDeletion(): Promise<{
  * persisted state so callers can update local context without a follow-up GET.
  *
  * Recommended caller pattern: after success, push the user to the role's natural landing
- * page (`/designer` for creator, `/patron/feed` for supporter) and re-fetch any
+ * page (`/studio/designer` for creator, `/feed` for supporter) and re-fetch any
  * shell-scoped session state.
  */
 export async function setActiveRole(role: ActiveRole): Promise<{
@@ -479,7 +556,7 @@ export async function fetchPatronSessionIfPresent(): Promise<PatronSessionMe | n
 /** Browser storage for studio id after `POST /api/v1/creator/workspace` (MT-032 / MT-035). */
 export const RELAY_CREATOR_ID_STORAGE_KEY = "relay_creator_id";
 
-/** Browser storage for `/patron/c/{slug}` segment after workspace bootstrap. */
+/** Browser storage for `/{slug}` segment after workspace bootstrap. */
 export const RELAY_PUBLIC_SLUG_STORAGE_KEY = "relay_public_slug";
 
 /** True when `state` is the signed value from `POST /api/v1/auth/patreon/creator/prepare` (v1.HMAC). */
@@ -499,6 +576,81 @@ export async function postPatreonCreatorPrepare(creatorId: string): Promise<Patr
     method: "POST",
     body: JSON.stringify({ creator_id: creatorId.trim() })
   });
+}
+
+/** Same HMAC `state` shape as Patreon prepare (`1.<payload>.<sig>`). */
+export function isPreparedSubscribeStarOAuthState(state: string | null | undefined): boolean {
+  return Boolean(state && state.startsWith("1.") && state.split(".").length === 3);
+}
+
+export type SubscribeStarCreatorPrepareData = {
+  state: string;
+  creator_id: string;
+  expires_at: string;
+};
+
+export async function postSubscribeStarCreatorPrepare(
+  creatorId: string
+): Promise<SubscribeStarCreatorPrepareData> {
+  return relayFetch<SubscribeStarCreatorPrepareData>(
+    "/api/v1/auth/connect/subscribestar/creator/prepare",
+    {
+      method: "POST",
+      body: JSON.stringify({ creator_id: creatorId.trim() })
+    }
+  );
+}
+
+export type SubscribeStarCreatorExchangeData = {
+  creator_id: string;
+  credential_health_status: string;
+  subscribestar_profile_id: string;
+};
+
+export async function postSubscribeStarCreatorExchange(body: {
+  creator_id: string;
+  code: string;
+  redirect_uri: string;
+  state?: string;
+}): Promise<SubscribeStarCreatorExchangeData> {
+  return relayFetch<SubscribeStarCreatorExchangeData>(
+    "/api/v1/auth/connect/subscribestar/creator/exchange",
+    {
+      method: "POST",
+      body: JSON.stringify({
+        creator_id: body.creator_id.trim(),
+        code: body.code,
+        redirect_uri: body.redirect_uri,
+        ...(body.state ? { state: body.state } : {})
+      })
+    }
+  );
+}
+
+/** `POST /api/v1/connect/subscribestar/creator/sync/posts` — GraphQL posts ingest (session + creator mutation authz). */
+export type SubscribeStarCreatorSyncPostsData = {
+  creator_id: string;
+  pages_fetched: number;
+  batches_ingested: number;
+  ended_reason: string;
+  last_cursor: string | null;
+  last_apply_result: unknown;
+};
+
+export async function postSubscribeStarCreatorSyncPosts(body: {
+  creator_id: string;
+  max_pages?: number;
+}): Promise<SubscribeStarCreatorSyncPostsData> {
+  return relayFetch<SubscribeStarCreatorSyncPostsData>(
+    "/api/v1/connect/subscribestar/creator/sync/posts",
+    {
+      method: "POST",
+      body: JSON.stringify({
+        creator_id: body.creator_id.trim(),
+        ...(body.max_pages != null ? { max_pages: body.max_pages } : {})
+      })
+    }
+  );
 }
 
 export type CreatorWorkspaceData = {
@@ -548,6 +700,12 @@ export type CreatorProfileIdentity = {
   public_slug: string;
   slug_source: PublicSlugSourceValue;
   patreon_campaign_id: string | null;
+  /** Present when SubscribeStar creator OAuth linked this studio. */
+  subscribestar_profile_id: string | null;
+  /** Last merged supplemental SubscribeStar GraphQL `data` from ingest (subscriptions/payments roots), or null. */
+  subscribestar_provider_snapshot: unknown | null;
+  /** ISO time when `subscribestar_provider_snapshot` was last written. */
+  subscribestar_provider_snapshot_at: string | null;
   username: string | null;
   username_norm: string | null;
   display_name: string | null;
@@ -595,9 +753,1092 @@ export async function patchCreatorProfile(
   });
 }
 
+// ---------------------------------------------------------------------------
+// P4-onb — creator onboarding funnel (studio)
+// ---------------------------------------------------------------------------
+
+export type CreatorOnboardingStep = "connected" | "import_started" | "organized" | "published";
+
+/** Same sequence as backend `CREATOR_ONBOARDING_STEP_ORDER` (linear funnel). */
+export const CREATOR_ONBOARDING_STEP_ORDER: readonly CreatorOnboardingStep[] = [
+  "connected",
+  "import_started",
+  "organized",
+  "published"
+] as const;
+
+export type CreatorOnboardingImportProgress = {
+  last_post_scrape_finished_at: string | null;
+  last_post_scrape_ok: boolean | null;
+  last_post_scrape_posts_written: number | null;
+};
+
+export type MediaImportStatus = "none" | "syncing" | "complete" | "failed";
+
+export type CreatorOnboardingData = {
+  creator_id: string;
+  step: CreatorOnboardingStep;
+  metadata: unknown | null;
+  updated_at: string;
+  import_progress: CreatorOnboardingImportProgress | null;
+  sync_health: SyncHealthWebDto;
+  /** Derived by server — convenience field for the Step 5 CTA state machine. */
+  media_import_status?: MediaImportStatus;
+};
+
+export async function fetchCreatorOnboarding(): Promise<CreatorOnboardingData> {
+  return relayFetch<CreatorOnboardingData>("/api/v1/creator/onboarding");
+}
+
+export async function patchCreatorOnboarding(patch: {
+  step?: CreatorOnboardingStep;
+  metadata?: unknown | null;
+}): Promise<CreatorOnboardingData> {
+  return relayFetch<CreatorOnboardingData>("/api/v1/creator/onboarding", {
+    method: "PATCH",
+    body: JSON.stringify(patch)
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Slice D — creator promo slots (Step 5 review picks)
+// ---------------------------------------------------------------------------
+
+export type CreatorPromoSlotTargetKind = "post" | "media";
+
+export type CreatorPromoSlotTipEligibility = {
+  eligible: boolean;
+  reasons: Array<
+    "not_in_promo_pool" | "mature" | "storefront" | "disabled" | "already_entitled"
+  >;
+};
+
+export type CreatorPromoSlotRow = {
+  promo_piece_id: string;
+  slot_rank: 1 | 2 | 3 | 4 | 5;
+  target_kind: CreatorPromoSlotTargetKind;
+  target_id: string;
+  post_id?: string;
+  title?: string;
+  thumb_url_path?: string;
+  label?: string | null;
+  metadata?: unknown | null;
+  tip_eligible?: boolean;
+  tip_eligibility?: CreatorPromoSlotTipEligibility;
+};
+
+export type CreatorPromoSlotsData = {
+  creator_id: string;
+  slots: CreatorPromoSlotRow[];
+};
+
+export type PutCreatorPromoSlotRow = {
+  slot_rank: 1 | 2 | 3 | 4 | 5;
+  target_kind: CreatorPromoSlotTargetKind;
+  target_id: string;
+  label?: string | null;
+  metadata?: unknown | null;
+};
+
+export async function fetchCreatorPromoSlots(): Promise<CreatorPromoSlotsData> {
+  return relayFetch<CreatorPromoSlotsData>("/api/v1/creator/promo-slots");
+}
+
+export async function putCreatorPromoSlots(
+  slots: PutCreatorPromoSlotRow[]
+): Promise<CreatorPromoSlotsData> {
+  return relayFetch<CreatorPromoSlotsData>("/api/v1/creator/promo-slots", {
+    method: "PUT",
+    body: JSON.stringify({ slots })
+  });
+}
+
+export async function patchCreatorPromoSlotTipEligible(
+  promoPieceId: string,
+  tipEligible: boolean
+): Promise<{ slot: CreatorPromoSlotRow }> {
+  return relayFetch<{ slot: CreatorPromoSlotRow }>(
+    `/api/v1/creator/promo-slots/${encodeURIComponent(promoPieceId)}`,
+    {
+      method: "PATCH",
+      body: JSON.stringify({ tip_eligible: tipEligible })
+    }
+  );
+}
+
+export type PromotionHubPieceSummary = {
+  promo_piece_id: string;
+  slot_rank: 1 | 2 | 3 | 4 | 5;
+  post_id: string | null;
+  title: string | null;
+  minimum_gate_relay_tier_id: string | null;
+  unmatched_reason: "missing_post" | "public_or_ungated" | "no_matching_default" | null;
+};
+
+export type PromotionHubRuleSummary = {
+  default_id: string;
+  gate_relay_tier_id: string;
+  inherited_piece_count: number;
+  matching_promo_piece_ids: string[];
+};
+
+export type PromotionHubSummary = {
+  creator_id: string;
+  pieces: PromotionHubPieceSummary[];
+  rules: PromotionHubRuleSummary[];
+  unmatched: {
+    missing_post_count: number;
+    public_or_ungated_count: number;
+    no_matching_default_count: number;
+  };
+  code_usage: Array<{
+    discount_code_id: string;
+    tier_rule_active_count: number;
+    tier_rule_inactive_count: number;
+    post_offer_active_count: number;
+    post_offer_inactive_count: number;
+  }>;
+};
+
+export async function fetchPromotionHubSummary(): Promise<PromotionHubSummary> {
+  return relayFetch<PromotionHubSummary>("/api/v1/creator/promotion-hub-summary");
+}
+
+/** Step 5 review modal — creator growth focus stored in onboarding metadata. */
+export type CreatorGrowthGoal = "discovery" | "conversion" | "consistency";
+
+export const CREATOR_GROWTH_GOALS: readonly {
+  id: CreatorGrowthGoal;
+  label: string;
+  detail: string;
+}[] = [
+  {
+    id: "discovery",
+    label: "Audience discovery",
+    detail: "Get new eyes on your best work in Relay and beyond."
+  },
+  {
+    id: "conversion",
+    label: "Convert fans to patrons",
+    detail: "Turn interest into paid support with promo-ready pieces."
+  },
+  {
+    id: "consistency",
+    label: "Posting consistency",
+    detail: "Build a reliable release rhythm your patrons can count on."
+  }
+] as const;
+
+const CREATOR_GROWTH_GOAL_IDS = new Set<string>(
+  CREATOR_GROWTH_GOALS.map((g) => g.id)
+);
+
+/** Parse `growth_goal` from creator onboarding metadata (Library Review / Coach). */
+export function parseGrowthGoal(metadata: unknown | null | undefined): CreatorGrowthGoal | null {
+  if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) return null;
+  const raw = (metadata as Record<string, unknown>).growth_goal;
+  if (typeof raw !== "string" || !CREATOR_GROWTH_GOAL_IDS.has(raw)) return null;
+  return raw as CreatorGrowthGoal;
+}
+
+export function growthGoalMeta(id: CreatorGrowthGoal): {
+  id: CreatorGrowthGoal;
+  label: string;
+  detail: string;
+} {
+  return CREATOR_GROWTH_GOALS.find((g) => g.id === id) ?? CREATOR_GROWTH_GOALS[0]!;
+}
+
+/** PATCH onboarding replaces metadata wholesale — merge client-side before save. */
+export function mergeCreatorOnboardingMetadata(
+  existing: unknown | null,
+  patch: Record<string, unknown>
+): Record<string, unknown> {
+  const base =
+    existing && typeof existing === "object" && !Array.isArray(existing)
+      ? { ...(existing as Record<string, unknown>) }
+      : {};
+  return { ...base, ...patch };
+}
+
+// ---------------------------------------------------------------------------
+// P5a — creator analytics (membership ledger, cohorts, tier stickiness, Insights CSV).
+// ---------------------------------------------------------------------------
+
+export type CreatorMembershipSummaryData = {
+  window: { days: number; start: string; end: string };
+  active_paying_members: number;
+  free_patrons: number;
+  total_patrons: number;
+  events_in_window: {
+    join: number;
+    rejoin: number;
+    upgrade: number;
+    downgrade: number;
+    cancel: number;
+  };
+  adds_in_window: number;
+  cancels_in_window: number;
+  net_growth_events: number;
+  tier_breakdown: Array<{
+    tier_id: string;
+    title: string;
+    amount_cents: number | null;
+    patron_count: number;
+  }>;
+  estimated_from_sync: boolean;
+  note?: string;
+};
+
+export async function fetchCreatorMembershipSummary(
+  params?: { days?: number }
+): Promise<CreatorMembershipSummaryData> {
+  const d = params?.days;
+  const q =
+    typeof d === "number" && Number.isFinite(d)
+      ? `?days=${Math.min(Math.max(Math.floor(d), 1), 366)}`
+      : "";
+  return relayFetch<CreatorMembershipSummaryData>(
+    `/api/v1/creator/analytics/membership-summary${q}`
+  );
+}
+
+export type CreatorMembershipCohortsData = {
+  as_of: string;
+  max_months_since_join: number;
+  cohort_months_included: number;
+  cohorts: Array<{
+    cohort_month: string;
+    cohort_size: number;
+    retention: Array<{
+      months_since_join: number;
+      retained_count: number;
+      cohort_size: number;
+      retained_pct: number;
+    }>;
+  }>;
+  note: string;
+};
+
+export async function fetchCreatorMembershipCohorts(
+  params?: { cohortMonths?: number; maxOffset?: number }
+): Promise<CreatorMembershipCohortsData> {
+  const u = new URLSearchParams();
+  if (params?.cohortMonths != null) {
+    u.set("cohort_months", String(params.cohortMonths));
+  }
+  if (params?.maxOffset != null) {
+    u.set("max_offset", String(params.maxOffset));
+  }
+  const qs = u.toString();
+  return relayFetch<CreatorMembershipCohortsData>(
+    `/api/v1/creator/analytics/membership-cohorts${qs ? `?${qs}` : ""}`
+  );
+}
+
+export type CreatorTierStickinessData = {
+  as_of: string;
+  window_days: number;
+  tiers: Array<{
+    tier_id: string;
+    title: string;
+    amount_cents: number | null;
+    member_count: number;
+    median_tenure_days: number | null;
+    churn_proxy: number;
+    cancel_events_in_window: number;
+  }>;
+  estimated_from_sync: boolean;
+  note: string;
+};
+
+export async function fetchCreatorTierStickiness(
+  params?: { days?: number }
+): Promise<CreatorTierStickinessData> {
+  const d = params?.days;
+  const q =
+    typeof d === "number" && Number.isFinite(d)
+      ? `?days=${Math.min(Math.max(Math.floor(d), 1), 366)}`
+      : "";
+  return relayFetch<CreatorTierStickinessData>(
+    `/api/v1/creator/analytics/tier-stickiness${q}`
+  );
+}
+
+export type CreatorPostPerformanceData = {
+  as_of: string;
+  import_id: string | null;
+  import_uploaded_at: string | null;
+  import_label: string | null;
+  rows: Array<{
+    patreon_post_id: string;
+    post_id: string | null;
+    insights: {
+      impressions: number | null;
+      seen: number | null;
+      likes: number | null;
+      comments: number | null;
+      as_of: string | null;
+    } | null;
+    relay: {
+      title: string | null;
+      published_at: string | null;
+      source: string;
+      upstream_status: string;
+      is_public: boolean;
+    } | null;
+    gap: "none" | "metrics_without_relay" | "relay_without_metrics";
+  }>;
+  relay_only_count: number;
+  relay_only_truncated: boolean;
+  note: string;
+};
+
+export async function fetchCreatorPostPerformance(
+  params?: {
+    importId?: string;
+    metricsLimit?: number;
+    relayOnlyLimit?: number;
+    includeRelayOnly?: boolean;
+  }
+): Promise<CreatorPostPerformanceData> {
+  const u = new URLSearchParams();
+  if (params?.importId) {
+    u.set("import_id", params.importId);
+  }
+  if (params?.metricsLimit != null) {
+    u.set("metrics_limit", String(params.metricsLimit));
+  }
+  if (params?.relayOnlyLimit != null) {
+    u.set("relay_only_limit", String(params.relayOnlyLimit));
+  }
+  if (params?.includeRelayOnly === false) {
+    u.set("include_relay_only", "0");
+  }
+  const qs = u.toString();
+  return relayFetch<CreatorPostPerformanceData>(
+    `/api/v1/creator/analytics/post-performance${qs ? `?${qs}` : ""}`
+  );
+}
+
+export type CreatorUnifiedPerformanceRange = "7d" | "30d" | "90d";
+
+export type CreatorUnifiedPerformanceMetricTotals = {
+  impressions: number;
+  seen: number;
+  likes: number;
+  comments: number;
+  views: number;
+};
+
+export type CreatorUnifiedPerformanceData = {
+  creator_id: string;
+  as_of: string;
+  range: CreatorUnifiedPerformanceRange;
+  time_range: { start: string; end: string };
+  source: "rollup" | "csv_fallback";
+  rollup_computed_at: string | null;
+  totals: CreatorUnifiedPerformanceMetricTotals;
+  by_destination: Array<CreatorUnifiedPerformanceMetricTotals & { destination: string }>;
+  top_posts: Array<{
+    post_id: string;
+    title: string | null;
+    total_reach: number;
+    destinations: Array<CreatorUnifiedPerformanceMetricTotals & { destination: string }>;
+  }>;
+  daily_series: Array<CreatorUnifiedPerformanceMetricTotals & { day: string }>;
+};
+
+export async function fetchCreatorUnifiedPerformance(
+  params?: {
+    range?: CreatorUnifiedPerformanceRange;
+    destination?: string;
+    topPostsLimit?: number;
+  }
+): Promise<CreatorUnifiedPerformanceData> {
+  const u = new URLSearchParams();
+  if (params?.range) {
+    u.set("range", params.range);
+  }
+  if (params?.destination) {
+    u.set("destination", params.destination);
+  }
+  if (params?.topPostsLimit != null) {
+    u.set("top_posts_limit", String(params.topPostsLimit));
+  }
+  const qs = u.toString();
+  return relayFetch<CreatorUnifiedPerformanceData>(
+    `/api/v1/creator/analytics/unified-performance${qs ? `?${qs}` : ""}`
+  );
+}
+
+export type PerformanceFreshnessWire = {
+  rollup_computed_at: string | null;
+  stale: boolean;
+  stale_after_hours: number;
+};
+
+export type PerformanceConfidenceWire = "high" | "medium" | "low" | "unknown";
+
+export type PerformanceSourceSummaryWire = {
+  destination: string;
+  source: string;
+  confidence: PerformanceConfidenceWire;
+};
+
+export type PerformanceOverviewData = {
+  creator_id: string;
+  as_of: string;
+  range: CreatorUnifiedPerformanceRange;
+  time_range: { start: string; end: string };
+  source: "rollup" | "csv_fallback";
+  hierarchy: {
+    creative_work_count: number;
+    post_count: number;
+    platform_instance_count: number;
+  };
+  posting_goal: CreatorPostingGoalStatusWire;
+  performance: CreatorUnifiedPerformanceData;
+  freshness: PerformanceFreshnessWire;
+  source_summary: PerformanceSourceSummaryWire[];
+};
+
+export type PerformanceCampaignGroupWire = {
+  campaign_label: string | null;
+  campaign_label_display: string;
+  creative_work_count: number;
+  post_count: number;
+  total_reach: number;
+  totals: CreatorUnifiedPerformanceMetricTotals;
+  by_destination: Array<CreatorUnifiedPerformanceMetricTotals & { destination: string }>;
+};
+
+export type PerformanceCampaignRollupsData = {
+  creator_id: string;
+  as_of: string;
+  range: CreatorUnifiedPerformanceRange;
+  time_range: { start: string; end: string };
+  groups: PerformanceCampaignGroupWire[];
+  freshness: PerformanceFreshnessWire;
+};
+
+export type PerformanceTagGroupWire = {
+  tag: string;
+  creative_work_count: number;
+  post_count: number;
+  total_reach: number;
+  totals: CreatorUnifiedPerformanceMetricTotals;
+  by_destination: Array<CreatorUnifiedPerformanceMetricTotals & { destination: string }>;
+};
+
+export type PerformanceTagRollupsData = {
+  creator_id: string;
+  as_of: string;
+  range: CreatorUnifiedPerformanceRange;
+  time_range: { start: string; end: string };
+  tag_filter: string | null;
+  groups: PerformanceTagGroupWire[];
+  freshness: PerformanceFreshnessWire;
+};
+
+export type PerformanceWorkSummaryWire = {
+  creative_work_id: string;
+  title: string;
+  analytics_campaign_label: string | null;
+  tags: string[];
+  is_default_bundle: boolean;
+  member_count: number;
+  total_reach: number;
+  totals: CreatorUnifiedPerformanceMetricTotals;
+  by_destination: Array<CreatorUnifiedPerformanceMetricTotals & { destination: string }>;
+};
+
+export type PerformanceWorksListData = {
+  creator_id: string;
+  as_of: string;
+  range: CreatorUnifiedPerformanceRange;
+  time_range: { start: string; end: string };
+  works: PerformanceWorkSummaryWire[];
+  freshness: PerformanceFreshnessWire;
+};
+
+export type PerformancePlatformInstanceWire = {
+  platform_instance_id: string;
+  destination: string;
+  external_url: string | null;
+  external_id: string | null;
+  attempt_id: string | null;
+  link_source: string;
+  status: string;
+  refresh_policy: string;
+  linked_at: string;
+  last_refreshed_at: string | null;
+};
+
+export type PerformanceVariantWire = {
+  post_id: string;
+  title: string | null;
+  variant_role: string;
+  total_reach: number;
+  totals: CreatorUnifiedPerformanceMetricTotals;
+  by_destination: Array<CreatorUnifiedPerformanceMetricTotals & { destination: string }>;
+  platform_instances: PerformancePlatformInstanceWire[];
+};
+
+export type PerformanceVariantRoleMetricsWire = {
+  member_count: number;
+  post_ids: string[];
+  total_reach: number;
+  totals: CreatorUnifiedPerformanceMetricTotals;
+  by_destination: Array<CreatorUnifiedPerformanceMetricTotals & { destination: string }>;
+};
+
+export type PerformanceVariantRoleBreakdownWire = Partial<
+  Record<"full" | "teaser" | "promo" | "repost" | "standalone", PerformanceVariantRoleMetricsWire>
+>;
+
+export type PerformanceWorkCrosspostGapsWire = {
+  present_destinations: string[];
+  missing_destinations: string[];
+  missing_teaser_destinations: string[];
+  suggested_source_post_id: string | null;
+};
+
+export type PerformanceWorkBundleData = {
+  creative_work_id: string;
+  title: string;
+  description: string | null;
+  analytics_campaign_label: string | null;
+  tags: string[];
+  is_default_bundle: boolean;
+  as_of: string;
+  range: CreatorUnifiedPerformanceRange;
+  time_range: { start: string; end: string };
+  totals: CreatorUnifiedPerformanceMetricTotals;
+  by_destination: Array<CreatorUnifiedPerformanceMetricTotals & { destination: string }>;
+  daily_series: Array<CreatorUnifiedPerformanceMetricTotals & { day: string }>;
+  total_reach: number;
+  variants: PerformanceVariantWire[];
+  role_breakdown?: PerformanceVariantRoleBreakdownWire;
+  crosspost_gaps: PerformanceWorkCrosspostGapsWire;
+  freshness: PerformanceFreshnessWire;
+  source_summary: PerformanceSourceSummaryWire[];
+};
+
+export type BundleSuggestionSignalWire = {
+  code: string;
+  label: string;
+  weight: number;
+};
+
+export type BundleSuggestionWire = {
+  suggestion_id: string;
+  source_post_id: string;
+  source_title: string | null;
+  target_creative_work_id: string;
+  target_title: string;
+  target_post_ids: string[];
+  score: number;
+  confidence: "high" | "medium" | "low";
+  signals: BundleSuggestionSignalWire[];
+  suggested_variant_role: string;
+};
+
+export type BundleSuggestionsData = {
+  creator_id: string;
+  as_of: string;
+  suggestions: BundleSuggestionWire[];
+  dismissed_count: number;
+};
+
+function performanceRangeQuery(
+  params?: {
+    range?: CreatorUnifiedPerformanceRange;
+    destination?: string | null;
+    limit?: number;
+    group_by?: "variant_role";
+  }
+): string {
+  const u = new URLSearchParams();
+  if (params?.range) {
+    u.set("range", params.range);
+  }
+  if (params?.destination) {
+    u.set("destination", params.destination);
+  }
+  if (params?.limit != null) {
+    u.set("limit", String(params.limit));
+  }
+  if (params?.group_by) {
+    u.set("group_by", params.group_by);
+  }
+  const qs = u.toString();
+  return qs ? `?${qs}` : "";
+}
+
+export async function fetchPerformanceOverview(
+  params?: { range?: CreatorUnifiedPerformanceRange; destination?: string | null }
+): Promise<PerformanceOverviewData> {
+  return relayFetch<PerformanceOverviewData>(
+    `/api/v1/creator/analytics/performance/overview${performanceRangeQuery(params)}`
+  );
+}
+
+export async function fetchPerformanceCampaignRollups(
+  params?: { range?: CreatorUnifiedPerformanceRange }
+): Promise<PerformanceCampaignRollupsData> {
+  return relayFetch<PerformanceCampaignRollupsData>(
+    `/api/v1/creator/analytics/performance/campaigns${performanceRangeQuery(params)}`
+  );
+}
+
+export async function fetchPerformanceTagRollups(
+  params?: { range?: CreatorUnifiedPerformanceRange; tag?: string }
+): Promise<PerformanceTagRollupsData> {
+  const u = new URLSearchParams();
+  if (params?.range) {
+    u.set("range", params.range);
+  }
+  if (params?.tag) {
+    u.set("tag", params.tag);
+  }
+  const qs = u.toString();
+  return relayFetch<PerformanceTagRollupsData>(
+    `/api/v1/creator/analytics/performance/tags${qs ? `?${qs}` : ""}`
+  );
+}
+
+export async function fetchPerformanceWorks(
+  params?: { range?: CreatorUnifiedPerformanceRange; limit?: number }
+): Promise<PerformanceWorksListData> {
+  return relayFetch<PerformanceWorksListData>(
+    `/api/v1/creator/analytics/performance/works${performanceRangeQuery(params)}`
+  );
+}
+
+export async function fetchPerformanceWorkBundle(
+  creativeWorkId: string,
+  params?: { range?: CreatorUnifiedPerformanceRange; group_by?: "variant_role" }
+): Promise<PerformanceWorkBundleData> {
+  return relayFetch<PerformanceWorkBundleData>(
+    `/api/v1/creator/analytics/performance/works/${encodeURIComponent(creativeWorkId)}${performanceRangeQuery(params)}`
+  );
+}
+
+export type PerformanceWorkInstanceRowWire = PerformancePlatformInstanceWire & {
+  refresh_eligible: boolean;
+  can_refresh_manually: boolean;
+  cooldown_active: boolean;
+  retry_after_seconds: number;
+  next_allowed_at: string | null;
+  stale: boolean;
+  recommended_method: "extension_handoff" | "relay_rollup" | "csv_rollup_overlay" | "none";
+};
+
+export type PerformanceWorkPostInstancesWire = {
+  post_id: string;
+  title: string | null;
+  variant_role: string;
+  platform_instances: PerformanceWorkInstanceRowWire[];
+};
+
+export type PerformanceWorkInstancesData = {
+  creative_work_id: string;
+  title: string;
+  as_of: string;
+  posts: PerformanceWorkPostInstancesWire[];
+  crosspost_gaps: PerformanceWorkCrosspostGapsWire;
+};
+
+export async function fetchPerformanceWorkInstances(
+  creativeWorkId: string
+): Promise<PerformanceWorkInstancesData> {
+  return relayFetch<PerformanceWorkInstancesData>(
+    `/api/v1/creator/analytics/performance/works/${encodeURIComponent(creativeWorkId)}/instances`
+  );
+}
+
+export async function fetchCreativeWorkBundleSuggestions(): Promise<BundleSuggestionsData> {
+  return relayFetch<BundleSuggestionsData>(
+    "/api/v1/creator/analytics/creative-works/bundle-suggestions"
+  );
+}
+
+export type LinkCreativeWorkPostsBody = {
+  title?: string;
+  members: Array<{
+    post_id: string;
+    variant_role?: "full" | "teaser" | "promo" | "repost" | "standalone";
+    member_label?: string | null;
+    is_cover?: boolean;
+  }>;
+};
+
+export type LinkCreativeWorkPostsResult = {
+  creative_work_id: string;
+  title: string;
+  member_count: number;
+  members: Array<{
+    post_id: string;
+    variant_role: string;
+    member_label: string | null;
+    sort_order: number;
+  }>;
+};
+
+/** Bulk-link posts into a Linked Set (non-default CreativeWork). */
+export async function linkCreativeWorkPosts(
+  body: LinkCreativeWorkPostsBody
+): Promise<LinkCreativeWorkPostsResult> {
+  return relayFetch<LinkCreativeWorkPostsResult>(
+    "/api/v1/creator/analytics/creative-works/link",
+    {
+      method: "POST",
+      body: JSON.stringify(body)
+    }
+  );
+}
+
+export type SplitCreativeWorkMemberResult = {
+  post_id: string;
+  creative_work_id: string;
+  variant_role: string;
+  previous_creative_work_id: string;
+  previous_member_count: number;
+};
+
+/** Unlink a post from its Linked Set back to a default 1:1 work. */
+export async function splitCreativeWorkMember(
+  postId: string,
+  body?: { title?: string }
+): Promise<SplitCreativeWorkMemberResult> {
+  return relayFetch<SplitCreativeWorkMemberResult>(
+    `/api/v1/creator/analytics/creative-works/members/${encodeURIComponent(postId)}/split`,
+    {
+      method: "POST",
+      body: JSON.stringify(body ?? {})
+    }
+  );
+}
+
+export type PlatformInstanceRefreshStatus =
+  | "completed"
+  | "handoff_required"
+  | "cooldown"
+  | "disabled"
+  | "unsupported_destination"
+  | "missing_link";
+
+export type PlatformInstanceRefreshHandoffWire = {
+  post_id: string;
+  attempt_id: string;
+  destination: string;
+  external_url: string;
+};
+
+export type PlatformInstanceRefreshWire = {
+  platform_instance_id: string;
+  destination: string;
+  status: PlatformInstanceRefreshStatus;
+  method:
+    | "relay_engagement_rollup"
+    | "csv_rollup_overlay"
+    | "extension_dom"
+    | "platform_api"
+    | null;
+  handoff: PlatformInstanceRefreshHandoffWire | null;
+  cooldown: {
+    retry_after_seconds: number;
+    next_allowed_at: string;
+  } | null;
+  rollup_upserted: number | null;
+  last_refreshed_at: string | null;
+  last_manual_refresh_requested_at: string | null;
+  message: string | null;
+};
+
+export type PlatformInstanceRefreshStatusData = {
+  platform_instance_id: string;
+  destination: string;
+  refresh_policy: string;
+  status: string;
+  can_refresh_manually: boolean;
+  cooldown_active: boolean;
+  retry_after_seconds: number;
+  next_allowed_at: string | null;
+  last_refreshed_at: string | null;
+  last_manual_refresh_requested_at: string | null;
+  stale: boolean;
+  recommended_method: "extension_handoff" | "relay_rollup" | "csv_rollup_overlay" | "none";
+};
+
+export async function fetchPlatformInstanceRefreshStatus(
+  platformInstanceId: string
+): Promise<PlatformInstanceRefreshStatusData> {
+  return relayFetch<PlatformInstanceRefreshStatusData>(
+    `/api/v1/creator/analytics/platform-instances/${encodeURIComponent(platformInstanceId)}/refresh-status`
+  );
+}
+
+export async function requestPlatformInstanceRefresh(
+  platformInstanceId: string
+): Promise<PlatformInstanceRefreshWire> {
+  return relayFetch<PlatformInstanceRefreshWire>(
+    `/api/v1/creator/analytics/platform-instances/${encodeURIComponent(platformInstanceId)}/refresh`,
+    { method: "POST" }
+  );
+}
+
+export type PerformanceInsightActionWire = {
+  id: string;
+  title: string;
+  trigger: string;
+  body: string;
+  action_label: string | null;
+  href: string | null;
+  tone: "active" | "watching" | "guidance";
+  confidence: PerformanceConfidenceWire;
+};
+
+export type PerformanceInsightActionsData = {
+  creator_id: string;
+  as_of: string;
+  range: CreatorUnifiedPerformanceRange;
+  actions: PerformanceInsightActionWire[];
+};
+
+export type PerformanceGoalScopeWire = "creator" | "work" | "campaign" | "platform";
+export type PerformanceGoalMetricWire = "reach" | "likes" | "comments";
+export type PerformanceGoalPaceStatus = "on_track" | "behind" | "complete";
+
+export type PerformanceGoalWire = {
+  id: string;
+  scope: PerformanceGoalScopeWire;
+  scope_ref: string | null;
+  scope_label: string;
+  metric: PerformanceGoalMetricWire;
+  target_value: number;
+  range: CreatorUnifiedPerformanceRange;
+  label: string | null;
+  enabled: boolean;
+  current_value: number;
+  progress_ratio: number;
+  pace_status: PerformanceGoalPaceStatus;
+  created_at: string;
+  updated_at: string;
+};
+
+export type PerformanceGoalSuggestionWire = {
+  suggestion_id: string;
+  scope: PerformanceGoalScopeWire;
+  scope_ref: string | null;
+  scope_label: string;
+  metric: PerformanceGoalMetricWire;
+  target_value: number;
+  range: CreatorUnifiedPerformanceRange;
+  label: string;
+  current_value: number;
+  reason: string;
+};
+
+export type PerformanceGoalsData = {
+  creator_id: string;
+  as_of: string;
+  range: CreatorUnifiedPerformanceRange;
+  goals: PerformanceGoalWire[];
+  suggested_goals: PerformanceGoalSuggestionWire[];
+};
+
+export type CreatePerformanceGoalInput = {
+  scope: PerformanceGoalScopeWire;
+  scope_ref?: string | null;
+  metric: PerformanceGoalMetricWire;
+  target_value: number;
+  range?: CreatorUnifiedPerformanceRange;
+  label?: string | null;
+};
+
+export async function fetchPerformanceInsightActions(
+  params?: { range?: CreatorUnifiedPerformanceRange }
+): Promise<PerformanceInsightActionsData> {
+  return relayFetch<PerformanceInsightActionsData>(
+    `/api/v1/creator/analytics/performance/insight-actions${performanceRangeQuery(params)}`
+  );
+}
+
+export async function fetchPerformanceGoals(
+  params?: { range?: CreatorUnifiedPerformanceRange }
+): Promise<PerformanceGoalsData> {
+  return relayFetch<PerformanceGoalsData>(
+    `/api/v1/creator/analytics/performance/goals${performanceRangeQuery(params)}`
+  );
+}
+
+export async function createPerformanceGoal(
+  body: CreatePerformanceGoalInput
+): Promise<{ goal: PerformanceGoalWire }> {
+  return relayFetch<{ goal: PerformanceGoalWire }>("/api/v1/creator/analytics/performance/goals", {
+    method: "POST",
+    body: JSON.stringify(body)
+  });
+}
+
+export async function deletePerformanceGoal(goalId: string): Promise<{ ok: true }> {
+  return relayFetch<{ ok: true }>(
+    `/api/v1/creator/analytics/performance/goals/${encodeURIComponent(goalId)}`,
+    { method: "DELETE" }
+  );
+}
+
+export type CreatorUsagePreviewBar = {
+  metric: string;
+  label: string;
+  quantity: string;
+  kind: "bytes" | "count";
+};
+
+export type CreatorUsagePreviewData = {
+  window: { days: number; start: string; end: string };
+  bars: CreatorUsagePreviewBar[];
+  disclaimer: string;
+};
+
+export async function fetchCreatorUsagePreview(
+  params?: { days?: number }
+): Promise<CreatorUsagePreviewData> {
+  const d = params?.days;
+  const q =
+    typeof d === "number" && Number.isFinite(d)
+      ? `?days=${Math.min(Math.max(Math.floor(d), 1), 366)}`
+      : "";
+  return relayFetch<CreatorUsagePreviewData>(
+    `/api/v1/creator/analytics/usage-preview${q}`
+  );
+}
+
+export type CreatorTipBetaStatsData = {
+  period_key: string;
+  reveals: number;
+  offer_clicks: number;
+  offer_ctr: number;
+};
+
+/** MB-8 — Tip beta reveals + offer CTR for Studio analytics. */
+export async function fetchCreatorTipBetaStats(
+  params?: { period?: string }
+): Promise<CreatorTipBetaStatsData> {
+  const period = params?.period?.trim();
+  const q = period ? `?period=${encodeURIComponent(period)}` : "";
+  return relayFetch<CreatorTipBetaStatsData>(`/api/v1/creator/tips/beta-stats${q}`);
+}
+
+export type PatreonInsightsCsvUploadResult = {
+  import_id: string;
+  file_hash: string;
+  rows_written: number;
+  already_imported: boolean;
+  filename: string | null;
+};
+
+/**
+ * Multipart upload — must not set `Content-Type` (browser sets boundary).
+ */
+export async function uploadPatreonInsightsCsv(
+  file: File,
+  options?: { label?: string; asOf?: string }
+): Promise<PatreonInsightsCsvUploadResult> {
+  const u = new URLSearchParams();
+  if (options?.asOf?.trim()) {
+    u.set("as_of", options.asOf.trim());
+  }
+  const path = `/api/v1/creator/analytics/patreon-insights-csv${u.toString() ? `?${u}` : ""}`;
+  const form = new FormData();
+  form.append("file", file);
+  if (options?.label?.trim()) {
+    form.append("label", options.label.trim());
+  }
+
+  let res: Response;
+  try {
+    res = await fetch(`${RELAY_API_BASE}${path}`, {
+      method: "POST",
+      credentials: "include",
+      headers: { Accept: "application/json" },
+      body: form
+    });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    throw new RelayApiError(
+      msg.includes("fetch") ? "Network error — is the Relay API running?" : msg,
+      0,
+      "NETWORK"
+    );
+  }
+
+  await handleRelayHttpErrors(res);
+  const json = await parseRelayResponseBody(res, path);
+  if (!res.ok) {
+    const err = json as { error?: { message?: string; code?: string } };
+    throw new RelayApiError(
+      err.error?.message ?? res.statusText,
+      res.status,
+      err.error?.code
+    );
+  }
+  const envelope = json as Envelope<PatreonInsightsCsvUploadResult>;
+  return envelope.data;
+}
+
+/**
+ * PILOT-009b — Human copy when sync_health rollup blocks publish / go-live.
+ */
+export function describeSyncHealthPublishBlock(
+  syncHealth: SyncHealthWebDto | null | undefined
+): string | null {
+  if (!syncHealth) return null;
+  if (syncHealth.status === "failed") {
+    return "Patreon sync failed — open the sync menu in Library and fix import health before publishing.";
+  }
+  if (syncHealth.status === "degraded") {
+    return "Patreon sync is degraded — resolve sync warnings in Library before publishing.";
+  }
+  return null;
+}
+
+/**
+ * P4-onb-008 / PILOT-009b — Human copy when gallery publish would fail per onboarding + sync_health.
+ * Returns `null` when publish is allowed from the client’s perspective.
+ */
+export function describeCreatorGalleryPublishBlock(
+  onboarding: CreatorOnboardingData | null
+): string | null {
+  if (!onboarding) return null;
+  if (onboarding.step !== "published") {
+    const byStep: Record<CreatorOnboardingStep, string> = {
+      connected: "Connect Patreon and finish setup in Library first.",
+      import_started: "Finish importing (run sync from Library), then continue setup there.",
+      organized: 'In Library, tap “Mark ready to publish”.',
+      published: ""
+    };
+    return byStep[onboarding.step] || "Finish studio setup in Library before publishing.";
+  }
+  const syncBlock = describeSyncHealthPublishBlock(onboarding.sync_health);
+  if (syncBlock) return syncBlock;
+  if (onboarding.import_progress?.last_post_scrape_ok === false) {
+    return "Patreon import failed on the last run. Fix sync from Library, then publish.";
+  }
+  return null;
+}
+
 export type PublicCreatorResolution = {
   public_slug: string;
   relay_creator_id: string;
+  username?: string | null;
+  display_name?: string | null;
+  avatar_url?: string | null;
+  banner_url?: string | null;
+  bio?: string | null;
+  discipline?: string | null;
 };
 
 /** No auth — for public pages and share links. */
@@ -640,6 +1881,28 @@ export function buildPatreonCreatorAuthorizeUrl(
   return u.toString();
 }
 
+/** Authorize host for SubscribeStar (`.adult` vs `.com` must match OAuth app). */
+export function resolveSubscribeStarAuthorizeBaseUrl(): string {
+  return (
+    process.env.NEXT_PUBLIC_SUBSCRIBESTAR_API_ORIGIN?.trim() || "https://subscribestar.adult"
+  ).replace(/\/$/, "");
+}
+
+export function buildSubscribeStarCreatorAuthorizeUrl(
+  clientId: string,
+  redirectUri: string,
+  oauthState: string
+): string {
+  const base = resolveSubscribeStarAuthorizeBaseUrl();
+  const u = new URL(`${base}/oauth2/authorize`);
+  u.searchParams.set("response_type", "code");
+  u.searchParams.set("client_id", clientId.trim());
+  u.searchParams.set("redirect_uri", redirectUri);
+  u.searchParams.set("scope", SUBSCRIBESTAR_CREATOR_OAUTH_SCOPES);
+  u.searchParams.set("state", oauthState);
+  return u.toString();
+}
+
 export type PostVisibility = "visible" | "hidden" | "review";
 
 /** Matches server `GalleryItem`; Prisma-backed Relay upload pipeline visibility. */
@@ -657,6 +1920,7 @@ export type GalleryItem = {
   published_at: string;
   tag_ids: string[];
   tier_ids: string[];
+  is_public?: boolean;
   mime_type?: string;
   media_role?: string;
   has_export: boolean;
@@ -667,27 +1931,86 @@ export type GalleryItem = {
   content_url_path: string;
   /** Blurred still from API (`/preview`); kept when full export is tier-redacted. */
   preview_url_path: string;
+  /** WebP grid thumbnail (`/thumb`, images only); cleared with `content_url_path` when tier-redacted. */
+  thumb_url_path: string;
   visibility: PostVisibility;
   collection_ids: string[];
   collection_theme_tag_ids: string[];
+  /** Soft Audience & Promotion teaser pointer (not part of post media order). */
+  promo_preview_media_id?: string | null;
   /** Duplicate Patreon cover (same asset as another row); UI may hide by default. */
   shadow_cover?: boolean;
+  /** Creator library: cross-post status per destination (owner list only). */
+  distribution_summary?: {
+    post_id: string;
+    destinations: Array<{
+      destination: "patreon" | "x" | "deviantart" | "bluesky";
+      variant_status: string | null;
+      attempt_status: string | null;
+      attempt_id: string | null;
+      external_url: string | null;
+      external_id: string | null;
+    }>;
+  };
+  /** Creator library: linked platform instances when `include_instances=true` (owner list only). */
+  platform_instances?: GalleryPlatformInstanceSummaryWire[];
+  /** Creator library: CreativeWork membership (owner list only). */
+  creative_work_id?: string;
+  is_default_bundle?: boolean;
+  creative_work_member_count?: number;
+  member_label?: string | null;
+  variant_role?: string | null;
+  creative_work_sort_order?: number;
+  /** Owner-only Promo Pool membership (absent on visitor reads). */
+  is_promo_piece?: boolean;
+  promo_piece_id?: string;
+  promo_slot_rank?: 1 | 2 | 3 | 4 | 5;
+};
+
+export type GalleryPlatformInstanceSummaryWire = {
+  platform_instance_id: string;
+  destination: string;
+  external_url: string | null;
+  status: string;
+  last_refreshed_at: string | null;
+  variant_role: string;
+  refresh_eligible: boolean;
 };
 
 /**
- * Visitor / patron gallery list: `redactGalleryItemExportIfLocked` clears `content_url_path` when
- * the session may not view the export; `preview_url_path` stays set for blurred teasers.
+ * Visitor / patron gallery list: `redactGalleryItemExportIfLocked` clears `content_url_path` and
+ * `thumb_url_path` when the session may not view the export; `preview_url_path` stays set for blurred teasers.
  * Use this before showing tier chips on the tile.
  */
 export function galleryItemExportVisibleToVisitor(item: GalleryItem): boolean {
   return Boolean(item.has_export && item.content_url_path?.trim());
 }
 
-/** Absolute URL for visitor teaser image (tier-gated tiles), or null. */
+/**
+ * Same-origin URL for grid/list image tiles: `/thumb` (WebP) when available, else `/content`.
+ * For `image/gif`, uses `/content` first so tiles play the native animated GIF at full export resolution.
+ */
+export function galleryItemImageGridSrc(item: GalleryItem): string | null {
+  if (!item.has_export || !item.mime_type?.startsWith("image/")) return null;
+  if ((item.mime_type ?? "").toLowerCase() === "image/gif") {
+    const full = item.content_url_path?.trim();
+    if (full) return relayBrowserMediaUrl(full);
+    const thumb = item.thumb_url_path?.trim();
+    if (thumb) return relayBrowserMediaUrl(thumb);
+    return null;
+  }
+  const thumb = item.thumb_url_path?.trim();
+  if (thumb) return relayBrowserMediaUrl(thumb);
+  const full = item.content_url_path?.trim();
+  if (full) return relayBrowserMediaUrl(full);
+  return null;
+}
+
+/** Same-origin URL for visitor teaser image (tier-gated tiles), or null. */
 export function galleryItemPreviewSrc(item: GalleryItem): string | null {
   const p = item.preview_url_path?.trim();
   if (!p) return null;
-  return `${RELAY_API_BASE}${p}`;
+  return relayBrowserMediaUrl(p);
 }
 
 export type Collection = {
@@ -714,7 +2037,15 @@ export type GalleryListData = {
   next_cursor: string | null;
 };
 
-export type TierFacet = { tier_id: string; title: string; amount_cents?: number };
+export type TierFacet = {
+  tier_id: string;
+  title: string;
+  amount_cents?: number;
+  /** Present on `GET /api/v1/relay/compose-tiers` rows; Patreon/Relay tier key for display. */
+  relay_tier_id?: string;
+  /** Present on compose-tiers rows; send as `campaign_id` on `POST /relay/posts`. */
+  campaign_id?: string | null;
+};
 
 /** Public gallery header: Relay display name + Patreon campaign art (from `creator_campaign_display` after sync). */
 export type VisitorHeroData = {
@@ -722,6 +2053,16 @@ export type VisitorHeroData = {
   patreon_name?: string;
   banner_url?: string;
   avatar_url?: string;
+};
+
+/** Tip-gated Discover / artist-page tile (MB-6). */
+export type TipGatedDiscoverItem = {
+  post_id: string;
+  creator_id: string;
+  creator_display_name?: string | null;
+  blur_thumb_url: string | null;
+  tip_cost: 1;
+  tip_again?: boolean;
 };
 
 export type FacetsData = {
@@ -736,6 +2077,9 @@ export type FacetsData = {
   export_media_count?: number;
   /** Present when `GET .../facets?visitor=true`: hero imagery and names for the public gallery page. */
   visitor_hero?: VisitorHeroData;
+  /** Tip beta (MB-6): eligible promo posts for Tip reveal on artist pages. */
+  tip_gated?: TipGatedDiscoverItem[];
+  tips_beta?: boolean;
 };
 
 export type GalleryPostDetail = {
@@ -746,6 +2090,15 @@ export type GalleryPostDetail = {
   tag_ids: string[];
   tiers: TierFacet[];
   media: GalleryItem[];
+  /** Slice 9 — locked visitor promo only. */
+  effective_promo?: {
+    headline: string;
+    cta_text: string;
+    code: string | null;
+    percent_off: number | null;
+    tracked_url: string | null;
+    source: "explicit" | "tier_default";
+  } | null;
 };
 
 export async function fetchGalleryPostDetail(
@@ -929,10 +2282,13 @@ export async function listPatronCollections(
  * PE-D — cross-creator collections listing with live viewer_entitlement attached to each entry.
  * Backend route: GET /api/v1/patron/collections/all (account-scoped, no creator_id filter).
  */
-export async function listAllPatronCollectionsEnriched(): Promise<
-  PatronCollectionWithEnrichedEntries[]
-> {
-  const data = await relayFetch<PatronCollectionsEnrichedListData>(
+export async function listAllPatronCollectionsEnriched(
+  options?: { suppressAuthRedirect?: boolean }
+): Promise<PatronCollectionWithEnrichedEntries[]> {
+  const fetcher = options?.suppressAuthRedirect
+    ? relayFetchWithoutAuthRedirect
+    : relayFetch;
+  const data = await fetcher<PatronCollectionsEnrichedListData>(
     `/api/v1/patron/collections/all`
   );
   return data.collections;
@@ -971,7 +2327,7 @@ export async function addPatronCollectionEntry(params: {
   mediaId: string;
 }): Promise<PatronCollectionEntryRecord> {
   const data = await relayFetch<{ entry: PatronCollectionEntryRecord }>(
-    `/api/v1/patron/collections/${encodeURIComponent(params.collectionId)}/entries`,
+    `/api/v1/collections/${encodeURIComponent(params.collectionId)}/entries`,
     {
       method: "POST",
       body: JSON.stringify({
@@ -991,7 +2347,7 @@ export async function removePatronCollectionEntry(params: {
   mediaId: string;
 }): Promise<void> {
   await relayFetch<{ deleted: boolean }>(
-    `/api/v1/patron/collections/${encodeURIComponent(params.collectionId)}/entries`,
+    `/api/v1/collections/${encodeURIComponent(params.collectionId)}/entries`,
     {
       method: "DELETE",
       body: JSON.stringify({
@@ -1010,9 +2366,128 @@ export async function deletePatronCollection(
   const u = new URLSearchParams();
   u.set("creator_id", creatorId);
   await relayFetch<{ deleted: boolean }>(
-    `/api/v1/patron/collections/${encodeURIComponent(collectionId)}?${u.toString()}`,
+    `/api/v1/collections/${encodeURIComponent(collectionId)}?${u.toString()}`,
     { method: "DELETE" }
   );
+}
+
+export async function updatePatronCollection(params: {
+  creatorId: string;
+  collectionId: string;
+  title?: string;
+  sort_order?: number;
+  is_public?: boolean;
+}): Promise<PatronCollectionRecord> {
+  const data = await relayFetch<{ collection: PatronCollectionRecord }>(
+    `/api/v1/collections/${encodeURIComponent(params.collectionId)}`,
+    {
+      method: "PATCH",
+      body: JSON.stringify({
+        creator_id: params.creatorId,
+        ...(params.title !== undefined ? { title: params.title } : {}),
+        ...(params.sort_order !== undefined ? { sort_order: params.sort_order } : {}),
+        ...(params.is_public !== undefined ? { is_public: params.is_public } : {})
+      })
+    }
+  );
+  return data.collection;
+}
+
+export type PublicPatronCollectionDetail = {
+  collection_id: string;
+  title: string;
+  entry_count: number;
+  created_at: string;
+  entries: PatronCollectionEntryWithViewerEntitlement[];
+};
+
+export async function fetchPublicPatronCollectionDetail(
+  collectionId: string
+): Promise<PublicPatronCollectionDetail | null> {
+  try {
+    const data = await relayFetchWithoutAuthRedirect<PublicPatronCollectionDetail>(
+      `/api/v1/public/patron-collections/${encodeURIComponent(collectionId)}`
+    );
+    return data;
+  } catch (err) {
+    if (err instanceof RelayApiError && err.status === 404) {
+      return null;
+    }
+    throw err;
+  }
+}
+
+export type PatronCollectionDetailEntry = PatronCollectionEntryWithViewerEntitlement & {
+  source_post_title?: string;
+  source_post_description?: string;
+  mime_type?: string;
+  thumb_url_path?: string;
+  content_url_path?: string;
+  source_media_index?: number;
+  source_media_count?: number;
+  creator_handle?: string;
+  creator_display_name?: string;
+  creator_avatar_url?: string;
+};
+
+export type PatronOwnerCollectionDetail = PatronCollectionRecord & {
+  entry_count: number;
+  entries: PatronCollectionDetailEntry[];
+};
+
+export async function fetchPatronCollectionDetail(
+  collectionId: string
+): Promise<PatronOwnerCollectionDetail> {
+  const data = await relayFetch<{ collection: PatronOwnerCollectionDetail }>(
+    `/api/v1/collections/${encodeURIComponent(collectionId)}`
+  );
+  return data.collection;
+}
+
+export function patronCollectionDetailThumbUrl(thumbPath: string | undefined): string | null {
+  if (!thumbPath?.trim()) return null;
+  if (thumbPath.startsWith("http://") || thumbPath.startsWith("https://")) {
+    return thumbPath;
+  }
+  return relayBrowserMediaUrl(thumbPath.startsWith("/") ? thumbPath : `/${thumbPath}`);
+}
+
+export function patronCollectionDetailContentUrl(contentPath: string | undefined): string | null {
+  if (!contentPath?.trim()) return null;
+  if (contentPath.startsWith("http://") || contentPath.startsWith("https://")) {
+    return contentPath;
+  }
+  return relayBrowserMediaUrl(contentPath.startsWith("/") ? contentPath : `/${contentPath}`);
+}
+
+export function patronCollectionPostDetailHref(entry: {
+  creator_id: string;
+  creator_handle?: string;
+  post_id: string;
+  media_id: string;
+}): string {
+  const slug = entry.creator_handle?.trim() || entry.creator_id;
+  const base = `/${encodeURIComponent(slug)}/post/${encodeURIComponent(entry.post_id)}`;
+  const u = new URLSearchParams();
+  u.set("media_id", entry.media_id);
+  return `${base}?${u.toString()}`;
+}
+
+export function patronCreatorProfileHref(handle: string): string {
+  return `/${encodeURIComponent(handle)}`;
+}
+
+export function patronCollectionMediaPageLabel(
+  index: number | undefined,
+  count: number | undefined
+): string | null {
+  if (index == null || count == null || count < 1 || index < 1 || index > count) {
+    return null;
+  }
+  if (count < 2) {
+    return null;
+  }
+  return `${index} of ${count}`;
 }
 
 export type SavedFilter = {
@@ -1069,7 +2544,58 @@ export type PageLayout = {
   };
   sections: PageSection[];
   updated_at: string;
+  /** When set, the creator has published their public gallery at least once (ISO). */
+  published_at?: string;
 };
+
+/** Result of `GET /api/v1/public/creators/:slug/gallery-layout`. */
+export type PublicCreatorGalleryLayoutPayload =
+  | {
+      published: true;
+      relay_creator_id: string;
+      public_slug: string;
+      layout: PageLayout;
+    }
+  | {
+      published: false;
+      relay_creator_id: string;
+      public_slug: string;
+      layout: null;
+    };
+
+/** Authenticated creator — marks the public gallery as live (same session + creator_id as PUT layout). */
+export function publishCreatorGalleryLayout(creatorId: string): Promise<PageLayout> {
+  return relayFetch<PageLayout>("/api/v1/gallery/layout/publish", {
+    method: "POST",
+    body: JSON.stringify({ creator_id: creatorId.trim() })
+  });
+}
+
+/** No auth — public gallery layout for `/[slug]` when published. Unknown slug → null. */
+export async function fetchPublicCreatorGalleryLayout(
+  slug: string
+): Promise<PublicCreatorGalleryLayoutPayload | null> {
+  const trimmed = slug.trim();
+  if (trimmed.length < 2) {
+    return null;
+  }
+  const path = `/api/v1/public/creators/${encodeURIComponent(trimmed)}/gallery-layout`;
+  try {
+    const res = await fetch(`${RELAY_API_BASE}${path}`, {
+      credentials: "include",
+      cache: "no-store",
+      headers: mergeRelayHeaders()
+    });
+    await handleRelayHttpErrors(res);
+    if (res.status === 404) {
+      return null;
+    }
+    const json = (await parseRelayResponseBody(res, path)) as Envelope<PublicCreatorGalleryLayoutPayload>;
+    return json.data ?? null;
+  } catch {
+    return null;
+  }
+}
 
 export type GallerySortMode = "published" | "visibility";
 
@@ -1153,6 +2679,8 @@ export function buildGalleryQuery(params: {
   text_only_posts?: GalleryTextOnlyPostsParam;
   /** Public catalog: visible + review, never hidden; tier export fields redacted without entitlement. */
   visitor?: boolean;
+  /** Creator library: attach platform instance summaries per post. */
+  include_instances?: boolean;
   cursor?: string | null;
   limit?: number;
   /** Dev: server honors when RELAY_DEV_VISITOR_TIER_SIM=true */
@@ -1172,11 +2700,18 @@ export function buildGalleryQuery(params: {
   if (params.display) u.set("display", params.display);
   if (params.text_only_posts === "include") u.set("text_only_posts", "include");
   if (params.visitor) u.set("visitor", "true");
+  if (params.include_instances) u.set("include_instances", "true");
   if (params.cursor) u.set("cursor", params.cursor);
   if (params.limit != null) u.set("limit", String(params.limit));
   if (params.dev_sim_patron) u.set("dev_sim_patron", "true");
   for (const t of params.simulate_tier_ids ?? []) u.append("simulate_tier_ids", t);
   return `/api/v1/gallery/items?${u.toString()}`;
+}
+
+export async function fetchCreatorGalleryItems(
+  params: Parameters<typeof buildGalleryQuery>[0]
+): Promise<GalleryListData> {
+  return relayFetch<GalleryListData>(buildGalleryQuery(params));
 }
 
 export function buildGalleryFacetsQuery(creatorId: string, visitor?: boolean): string {
@@ -1187,11 +2722,121 @@ export function buildGalleryFacetsQuery(creatorId: string, visitor?: boolean): s
 }
 
 /**
- * T-6.2 — Load the creator tier catalog (stable `TierFacet.tier_id` values) for Relay-native compose.
- * These ids are the `tier_ids` array in `POST /api/v1/relay/posts` (Prisma `Tier.id`).
+ * Creator Library facets: tag/tier dimensions for filtering the gallery grid.
+ * `TierFacet.tier_id` values are **relay tier keys** (`patreon_tier_*`, `relay_tier_*`, …) — the same
+ * keys that appear on `GalleryItem.tier_ids`. They are **not** Prisma `Tier.id` (`creator_id::…` keys).
+ *
+ * For Relay-native compose (`POST /api/v1/relay/posts` **request** `tier_ids`), use {@link fetchRelayComposeTiers}
+ * (Prisma id on each row). **`201` `version.tier_ids`** are **relay** keys — see {@link relayNativeCreatePost}.
  */
 export async function fetchCreatorGalleryFacets(creatorId: string): Promise<FacetsData> {
   return relayFetch<FacetsData>(buildGalleryFacetsQuery(creatorId));
+}
+
+/**
+ * One row from `GET /api/v1/relay/compose-tiers`.
+ * **`tier_id`** is Prisma `Tier.id` — send in `POST /relay/posts` `tier_ids` as-is.
+ * **`relay_tier_id`** is the canonical key persisted on `PostVersion.tierIds` and returned on **201** `version.tier_ids`.
+ */
+export type RelayComposeTierRow = {
+  tier_id: string;
+  relay_tier_id: string;
+  title: string;
+  amount_cents: number | null;
+  /** `Campaign.id` for this tier — pass through on `POST /relay/posts` as `campaign_id`. */
+  campaign_id: string | null;
+};
+
+/**
+ * Resolve `campaign_id` for Relay-native compose from loaded compose-tier rows.
+ * Gated posts use the selected tier(s)' campaign when unambiguous; public posts use a single catalog campaign when present.
+ */
+export function resolveRelayComposeCampaignId(
+  tiers: Pick<RelayComposeTierRow | TierFacet, "tier_id" | "campaign_id">[],
+  selectedTierIdOrIds: string | null | string[],
+  isPublic: boolean
+): string | undefined {
+  if (!isPublic) {
+    const ids = Array.isArray(selectedTierIdOrIds)
+      ? selectedTierIdOrIds
+      : selectedTierIdOrIds
+        ? [selectedTierIdOrIds]
+        : [];
+    if (ids.length === 0) {
+      return undefined;
+    }
+    const campaignIds = ids
+      .map((id) => tiers.find((t) => t.tier_id === id)?.campaign_id?.trim())
+      .filter((id): id is string => Boolean(id));
+    const unique = Array.from(new Set(campaignIds));
+    return unique.length === 1 ? unique[0] : undefined;
+  }
+  const unique = Array.from(
+    new Set(
+      tiers.map((t) => t.campaign_id?.trim()).filter((id): id is string => Boolean(id))
+    )
+  );
+  return unique.length === 1 ? unique[0] : undefined;
+}
+
+/** `GET /api/v1/relay/compose-tiers` — session + studio scope; excludes synthetic public/all-patrons rows. Use `tier_id` (Prisma) in `POST /relay/posts` bodies; **`201` `version.tier_ids`** remain relay-key space. */
+export async function fetchRelayComposeTiers(
+  creatorId: string
+): Promise<{ tiers: RelayComposeTierRow[] }> {
+  const q = new URLSearchParams();
+  q.set("creator_id", creatorId.trim());
+  return relayFetch<{ tiers: RelayComposeTierRow[] }>(
+    `/api/v1/relay/compose-tiers?${q.toString()}`
+  );
+}
+
+export type ManualImportTierRow = RelayComposeTierRow & {
+  source: "manual" | "synced";
+  upload_enabled: boolean;
+  provider: "patreon" | "subscribestar" | null;
+  provider_tier_relay_id: string | null;
+  linked_provider_relay_tier_id: string | null;
+};
+
+export type ManualImportSetupData = {
+  manual_campaign: {
+    campaign_id: string;
+    name: string;
+    ready: boolean;
+  };
+  manual_bins: ManualImportTierRow[];
+  synced_tiers: ManualImportTierRow[];
+  suggestions: ManualImportTierRow[];
+  upload: {
+    r2_configured: boolean;
+  };
+};
+
+export type ManualImportBinInput = {
+  name: string;
+  amount_cents?: number | null;
+  source_hint?: string | null;
+  linked_provider_relay_tier_id?: string | null;
+};
+
+export async function fetchManualImportSetup(
+  creatorId: string
+): Promise<ManualImportSetupData> {
+  const q = new URLSearchParams();
+  q.set("creator_id", creatorId.trim());
+  return relayFetch<ManualImportSetupData>(
+    `/api/v1/relay/studio/import/setup?${q.toString()}`
+  );
+}
+
+export async function postManualImportSetup(params: {
+  creator_id: string;
+  bins: ManualImportBinInput[];
+}): Promise<ManualImportSetupData> {
+  return relayFetch<ManualImportSetupData>("/api/v1/relay/studio/import/setup", {
+    method: "POST",
+    body: JSON.stringify(params)
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -1274,6 +2919,8 @@ export async function relayNativeUploadCommit(args: {
   content_type: string;
   byte_size: number;
   post_id?: string;
+  /** Prisma Tier.id (`tier_id`) of the Relay manual folder uploads are staged against. Requires provider link on that folder. */
+  manual_import_bin_tier_id?: string;
 }): Promise<RelayNativeUploadCommitData> {
   const body: Record<string, unknown> = {
     creator_id: args.creator_id,
@@ -1283,6 +2930,9 @@ export async function relayNativeUploadCommit(args: {
   };
   if (args.post_id) {
     body.post_id = args.post_id;
+  }
+  if (args.manual_import_bin_tier_id) {
+    body.manual_import_bin_tier_id = args.manual_import_bin_tier_id;
   }
   return relayFetch<RelayNativeUploadCommitData>("/api/v1/relay/upload/commit", {
     method: "POST",
@@ -1295,7 +2945,9 @@ export type RelayNativeCreatePostParams = {
   title: string;
   description?: string | null;
   is_public: boolean;
+  /** Same resolution as server: Prisma `Tier.id` (e.g. from compose-tiers) or `relayTierId`. */
   required_tier_id?: string | null;
+  /** Typically Prisma `Tier.id` from {@link fetchRelayComposeTiers}; relay keys also accepted. */
   tier_ids: string[];
   tag_ids?: string[];
   media_ids: string[];
@@ -1311,6 +2963,7 @@ export type RelayNativeCreatePostData = {
     creatorId: string;
     source: "RELAY";
     isPublic: boolean;
+    /** Canonical `relay_tier_id` when gated (not Prisma `Tier.id`). */
     requiredTierId: string | null;
   };
   /** API uses snake_case on `version` (see `src/server.ts` relay/posts handler). */
@@ -1322,11 +2975,13 @@ export type RelayNativeCreatePostData = {
     description: string | null;
     published_at: string;
     tag_ids: string[];
+    /** Persisted `relay_tier_id` values — same namespace as gallery facets / entitlement. */
     tier_ids: string[];
     media_ids: string[];
   };
 };
 
+/** `POST /api/v1/relay/posts` — request may send compose `Tier.id`; **response** `version.tier_ids` are relay keys. */
 export async function relayNativeCreatePost(
   params: RelayNativeCreatePostParams
 ): Promise<RelayNativeCreatePostData> {
@@ -1351,6 +3006,25 @@ export async function relayNativeCreatePost(
     method: "POST",
     body: JSON.stringify(body)
   });
+}
+
+export type RelayNativeDeletePostData = {
+  post_id: string;
+  upstream_status: "deleted";
+};
+
+/**
+ * `DELETE /api/v1/relay/posts/:post_id` — unpublish (soft delete) a Relay-native post.
+ * Only `source = RELAY` posts; Patreon/SubscribeStar mirrors return 404.
+ */
+export async function relayNativeDeletePost(
+  postId: string,
+  creatorId: string
+): Promise<RelayNativeDeletePostData> {
+  return relayFetch<RelayNativeDeletePostData>(
+    `/api/v1/relay/posts/${encodeURIComponent(postId)}?creator_id=${encodeURIComponent(creatorId)}`,
+    { method: "DELETE" }
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -1388,34 +3062,105 @@ export type DiscordStagingItem = {
   mime_type: string | null;
   ingested_at: string;
   content_url_path?: string;
+  /** Image WebP thumb (`/thumb`); empty for non-images. */
+  thumb_url_path?: string;
   discord_capture: unknown;
 };
 
-export type DiscordStagingListData = {
-  items: DiscordStagingItem[];
+// ---------------------------------------------------------------------------
+// Library staging (Discord + Relay upload) — GET/DELETE `/api/v1/relay/library/staging`
+// ---------------------------------------------------------------------------
+
+/** Values of `ingest_origin` on unified staging items (see Prisma `MediaIngestOrigin`). */
+export type RelayLibraryStagingIngestOrigin = "DISCORD" | "RELAY_UPLOAD";
+
+export type RelayLibraryStagingItem = {
+  media_id: string;
+  mime_type: string | null;
+  ingested_at: string;
+  content_url_path?: string;
+  /** Image WebP thumb (`/thumb`); empty for non-images. */
+  thumb_url_path?: string;
+  ingest_origin: RelayLibraryStagingIngestOrigin;
+  /** Discord attachment metadata; `null` when `ingest_origin` is `RELAY_UPLOAD`. */
+  discord_capture: unknown | null;
+  /** Manual Relay Import staged access envelope (`v`) when uploads were scoped to an access bin before compose. */
+  manual_import_staging?: unknown | null;
 };
 
-export async function fetchDiscordStaging(creatorId: string): Promise<DiscordStagingListData> {
+export type RelayLibraryStagingListData = {
+  items: RelayLibraryStagingItem[];
+};
+
+export type ManualImportCommitToLibraryData = {
+  committed_count: number;
+  committed_at: string;
+  media_ids: string[];
+};
+
+/** Unified staged media: Discord captures and committed direct Relay uploads (`primaryPostId` unset, READY). */
+export async function fetchRelayLibraryStaging(
+  creatorId: string
+): Promise<RelayLibraryStagingListData> {
   const q = new URLSearchParams();
   q.set("creator_id", creatorId);
-  return relayFetch<DiscordStagingListData>(`/api/v1/relay/discord/staging?${q.toString()}`);
+  return relayFetch<RelayLibraryStagingListData>(`/api/v1/relay/library/staging?${q.toString()}`);
 }
 
-export type DiscordStagingDeleteData = {
+/** Manual Import bin-local uploads that have not yet been committed into the Library Import Bay. */
+export async function fetchManualImportStaging(
+  creatorId: string
+): Promise<RelayLibraryStagingListData> {
+  const q = new URLSearchParams();
+  q.set("creator_id", creatorId);
+  return relayFetch<RelayLibraryStagingListData>(
+    `/api/v1/relay/studio/import/staging?${q.toString()}`
+  );
+}
+
+/** Move all pending Manual Import bin uploads into the Library Import Bay. */
+export async function commitManualImportStagingToLibrary(
+  creatorId: string
+): Promise<ManualImportCommitToLibraryData> {
+  return relayFetch<ManualImportCommitToLibraryData>(
+    "/api/v1/relay/studio/import/commit-to-library",
+    {
+      method: "POST",
+      body: JSON.stringify({ creator_id: creatorId.trim() })
+    }
+  );
+}
+
+export type RelayLibraryStagingDeleteData = {
   deleted: boolean;
   media_id: string;
 };
 
-export async function deleteDiscordStagingMedia(
+/** Discard unified staged media; enqueues R2 purge when the asset has a storage key. */
+export async function deleteRelayLibraryStagingMedia(
   creatorId: string,
   mediaId: string
-): Promise<DiscordStagingDeleteData> {
+): Promise<RelayLibraryStagingDeleteData> {
   const q = new URLSearchParams();
   q.set("creator_id", creatorId);
-  return relayFetch<DiscordStagingDeleteData>(
-    `/api/v1/relay/discord/staging/${encodeURIComponent(mediaId)}?${q.toString()}`,
+  return relayFetch<RelayLibraryStagingDeleteData>(
+    `/api/v1/relay/library/staging/${encodeURIComponent(mediaId)}?${q.toString()}`,
     { method: "DELETE" }
   );
+}
+
+/** Discord captures from unified Library staging (Studio / Discord-only surfaces). */
+export function discordStagingItemsFromUnifiedLibrary(list: RelayLibraryStagingListData): DiscordStagingItem[] {
+  return list.items
+    .filter((i) => i.ingest_origin === "DISCORD")
+    .map((i) => ({
+      media_id: i.media_id,
+      mime_type: i.mime_type,
+      ingested_at: i.ingested_at,
+      content_url_path: i.content_url_path,
+      thumb_url_path: i.thumb_url_path,
+      discord_capture: i.discord_capture
+    }));
 }
 
 export function buildGalleryCollectionsQuery(creatorId: string, visitor?: boolean): string {
@@ -1526,6 +3271,19 @@ export type LastMemberSyncHealthData = {
   error?: SyncHealthErrorData;
 };
 
+/** Rollup from `GET /api/v1/patreon/sync-state` (`sync_health`); matches server `SyncHealthWebDto`. */
+export type SyncHealthWebLastErrorData = SyncHealthErrorData & {
+  source: "post_scrape" | "member_sync";
+};
+
+export type SyncHealthWebDto = {
+  status: "unknown" | "healthy" | "degraded" | "failed";
+  last_success_at: string | null;
+  last_error: SyncHealthWebLastErrorData | null;
+  campaign_id: string | null;
+  message_key: string;
+};
+
 /** Patreon OAuth campaign snapshot (avatar, banner, patron count). */
 export type CampaignDisplayData = {
   patreon_campaign_id: string;
@@ -1557,6 +3315,8 @@ export type PatreonSyncStateData = {
   oauth: PatreonOAuthHealthData;
   last_post_scrape: LastPostScrapeHealthData | null;
   last_member_sync: LastMemberSyncHealthData | null;
+  /** Normalized rollup for banners / gates (P5-sync-002). */
+  sync_health: SyncHealthWebDto;
   campaign_display: CampaignDisplayData | null;
   /** Patreon platform webhook registration (member/post delivery). */
   webhook_registration?: WebhookRegistrationSummaryData | null;
@@ -1574,6 +3334,12 @@ export function syncStateNeedsAttention(s: PatreonSyncStateData): boolean {
   if (s.last_member_sync && !s.last_member_sync.ok) return true;
   if (s.webhook_registration?.registration_status === "failed") return true;
   return false;
+}
+
+/** True when Patreon sync rollup blocks studio mutations (matches API **423 SYNC_DEGRADED**). */
+export function syncHealthBlocksStudioWrites(s: PatreonSyncStateData): boolean {
+  const st = s.sync_health?.status;
+  return st === "failed" || st === "degraded";
 }
 
 /** One-line summary for the top bar when something needs attention. */
@@ -1603,6 +3369,37 @@ export function formatSyncHealthBanner(s: PatreonSyncStateData): string | null {
     return "Patreon token expires soon — refresh or reconnect.";
   }
   return null;
+}
+
+/** True when the Library should show the P5-sync-003 rollup banner (not shown for `healthy`). */
+export function shouldShowSyncHealthBanner(s: PatreonSyncStateData): boolean {
+  const st = s.sync_health?.status;
+  return st === "failed" || st === "degraded" || st === "unknown";
+}
+
+/** Copy for the rollup banner: OAuth/cookie/webhook/scrape hints first, then `sync_health.message_key` fallbacks. */
+export function formatSyncHealthRollupBanner(s: PatreonSyncStateData): string {
+  const fromLegacy = formatSyncHealthBanner(s);
+  if (fromLegacy) return fromLegacy;
+  const key = s.sync_health?.message_key;
+  if (key === "sync_health.post_scrape_warnings") {
+    return "Patreon import finished with warnings — open details for more.";
+  }
+  if (key === "sync_health.member_sync_failed") {
+    const hint = s.last_member_sync?.error?.hint;
+    return hint ? `Member sync: ${hint}` : "Member sync failed — open details for more.";
+  }
+  if (key === "sync_health.post_scrape_failed") {
+    const hint = s.last_post_scrape?.error?.hint;
+    return hint ?? "Patreon import failed — open details for more.";
+  }
+  if (key === "sync_health.unknown") {
+    return "Patreon sync health not recorded yet — run Patreon sync when ready.";
+  }
+  if (key === "sync_health.healthy") {
+    return "Patreon sync is healthy.";
+  }
+  return "Review Patreon sync in the menu.";
 }
 
 export type TierAccessSummaryData = {
@@ -1680,6 +3477,104 @@ export async function registerPatreonWebhooks(
   });
 }
 
+/** POST /api/v1/patreon/sync-members — requires Bearer session + creator scope. */
+export type PatreonMemberSyncResultData = {
+  creator_id: string;
+  patreon_campaign_id: string;
+  members_synced: number;
+  pages_fetched: number;
+  warnings: string[];
+};
+
+export async function postPatreonSyncMembers(body: {
+  creator_id: string;
+  campaign_id?: string;
+  max_pages?: number;
+}): Promise<PatreonMemberSyncResultData> {
+  return relayFetch<PatreonMemberSyncResultData>("/api/v1/patreon/sync-members", {
+    method: "POST",
+    body: JSON.stringify(body)
+  });
+}
+
+/** POST /api/v1/patreon/sync-post-access — OAuth tier gate diff (no media scrape). */
+export type PatreonSyncPostAccessResultData = {
+  creator_id: string;
+  patreon_campaign_id: string;
+  pages_fetched: number;
+  oauth_posts_seen: number;
+  relay_posts_matched: number;
+  posts_updated: number;
+  posts_unchanged: number;
+  warnings: string[];
+};
+
+export async function postPatreonSyncPostAccess(body: {
+  creator_id: string;
+  campaign_id?: string;
+  max_post_pages?: number;
+}): Promise<PatreonSyncPostAccessResultData> {
+  return relayFetch<PatreonSyncPostAccessResultData>("/api/v1/patreon/sync-post-access", {
+    method: "POST",
+    body: JSON.stringify(body)
+  });
+}
+
+/** PUX — rewind the faux onboarding creator to Patreon-disconnected signup state. */
+export async function postPilotUxOnboardingWalkthroughReset(): Promise<{ ok: true }> {
+  const auth = pilotUxDevBearerHeaders();
+  return relayFetch<{ ok: true }>("/api/v1/pilot-ux/dev/onboarding-walkthrough/reset", {
+    method: "POST",
+    body: JSON.stringify({}),
+    headers: auth
+  });
+}
+
+/** PUX — rewind the faux supporter onboarding account to fresh pre-link state. */
+export async function postPilotUxPatronOnboardingReset(): Promise<{ ok: true }> {
+  const auth = pilotUxDevBearerHeaders();
+  return relayFetch<{ ok: true }>("/api/v1/pilot-ux/dev/patron-onboarding/reset", {
+    method: "POST",
+    body: JSON.stringify({}),
+    headers: auth
+  });
+}
+
+/** PUX — fake Patreon creator connect for the onboarding walkthrough account (no OAuth). */
+export async function postPilotUxSimulatePatreonConnect(): Promise<{ ok: true }> {
+  const auth = pilotUxDevBearerHeaders();
+  return relayFetch<{ ok: true }>(
+    "/api/v1/pilot-ux/dev/onboarding-walkthrough/simulate-patreon-connect",
+    {
+      method: "POST",
+      body: JSON.stringify({}),
+      headers: auth
+    }
+  );
+}
+
+/** PUX — fake media import for the onboarding walkthrough account (no extension / scrape). */
+export async function postPilotUxSimulateMediaImport(): Promise<{
+  ok: true;
+  relay_creator_id: string;
+  posts_written: number;
+  export_media_count: number;
+  media_ids: string[];
+}> {
+  const auth = pilotUxDevBearerHeaders();
+  return relayFetch<{
+    ok: true;
+    relay_creator_id: string;
+    posts_written: number;
+    export_media_count: number;
+    media_ids: string[];
+  }>("/api/v1/pilot-ux/dev/onboarding-walkthrough/simulate-media-import", {
+    method: "POST",
+    body: JSON.stringify({}),
+    headers: auth
+  });
+}
+
 /** Short user-facing summary after a live scrape (media path + tier OAuth stats). */
 export function formatPatreonSyncResult(data: PatreonScrapeResultData): string {
   const tas = data.tier_access_summary;
@@ -1731,7 +3626,7 @@ export type ActionCenterCardsData = {
 
 export async function fetchActionCenterCards(creatorId: string): Promise<ActionCenterCardsData> {
   const q = new URLSearchParams({ creator_id: creatorId });
-  return relayFetch<ActionCenterCardsData>(`/api/v1/action-center/cards?${q.toString()}`);
+  return relayFetch<ActionCenterCardsData>(`/api/v1/studio/actions/cards?${q.toString()}`);
 }
 
 export async function postAnalyticsGenerate(creatorId: string): Promise<{
@@ -1753,7 +3648,7 @@ export async function postActionCenterAccept(
   notes?: string
 ): Promise<{ recommendation_id: string; status: string }> {
   return relayFetch<{ recommendation_id: string; status: string }>(
-    `/api/v1/action-center/cards/${encodeURIComponent(recommendationId)}/accept`,
+    `/api/v1/studio/actions/cards/${encodeURIComponent(recommendationId)}/accept`,
     {
       method: "POST",
       body: JSON.stringify({ creator_id: creatorId, notes })
@@ -1767,7 +3662,7 @@ export async function postActionCenterDismiss(
   reasonCode?: string
 ): Promise<{ recommendation_id: string; status: string }> {
   return relayFetch<{ recommendation_id: string; status: string }>(
-    `/api/v1/action-center/cards/${encodeURIComponent(recommendationId)}/dismiss`,
+    `/api/v1/studio/actions/cards/${encodeURIComponent(recommendationId)}/dismiss`,
     {
       method: "POST",
       body: JSON.stringify({
@@ -1793,6 +3688,117 @@ export type AnalyticsHealthData = {
 
 export async function fetchAnalyticsHealth(): Promise<AnalyticsHealthData> {
   return relayFetch<AnalyticsHealthData>("/api/v1/health/analytics");
+}
+
+export type PlatformMetricRegistryData = {
+  generatedAt: string;
+  prismaConfigured: boolean;
+  sections: Array<{
+    key: string;
+    title: string;
+    description: string;
+  }>;
+  metrics: Array<{
+    key: string;
+    label: string;
+    section: string;
+    phase: string;
+    status: string;
+    scope: string;
+    definition: string;
+    formula: string;
+    source: string;
+    value: number | string | null;
+    displayValue: string;
+    freshnessState: string;
+    lastUpdatedAt: string | null;
+    priority: "P0" | "P1";
+    trends?: {
+      dod: {
+        direction: string;
+        delta: number | null;
+        deltaPercent: number | null;
+        priorValue: number | null;
+        currentValue: number | null;
+        sufficientHistory: boolean;
+      };
+      wow: {
+        direction: string;
+        delta: number | null;
+        deltaPercent: number | null;
+        priorValue: number | null;
+        currentValue: number | null;
+        sufficientHistory: boolean;
+      };
+      mom: {
+        direction: string;
+        delta: number | null;
+        deltaPercent: number | null;
+        priorValue: number | null;
+        currentValue: number | null;
+        sufficientHistory: boolean;
+      };
+    };
+  }>;
+  coverage: {
+    total: number;
+    live: number;
+    collecting: number;
+    not_wired: number;
+    estimated: number;
+    manual_import: number;
+    deferred: number;
+  };
+  alerts: Array<{
+    key: string;
+    severity: "warning" | "critical";
+    title: string;
+    message: string;
+    relatedMetricKey: string;
+    relatedSection: string;
+    sourceContext: string;
+  }>;
+  operatingReview: {
+    generatedAt: string;
+    checklist: string[];
+    totals: {
+      needsReview: number;
+      notWired: number;
+      pendingInstrumentation: number;
+      deferred: number;
+      stale: number;
+      activeAlerts: number;
+    };
+    items: Array<{
+      metricKey: string;
+      label: string;
+      section: string;
+      status: string;
+      freshnessState: string;
+      phase: string;
+      priority: "P0" | "P1";
+      recommendedAction: "wire" | "defer" | "remove" | "monitor";
+      reason: string;
+    }>;
+    bySection: Array<{
+      section: string;
+      items: Array<{
+        metricKey: string;
+        label: string;
+        section: string;
+        status: string;
+        freshnessState: string;
+        phase: string;
+        priority: "P0" | "P1";
+        recommendedAction: "wire" | "defer" | "remove" | "monitor";
+        reason: string;
+      }>;
+    }>;
+  };
+};
+
+export async function fetchPlatformMetricRegistry(): Promise<PlatformMetricRegistryData> {
+  return relayFetch<PlatformMetricRegistryData>("/api/v1/platform-metrics/registry");
 }
 
 // ---------------------------------------------------------------------------
@@ -1849,6 +3855,8 @@ export type PatronCommentRecord = {
   deletedAt: string | null;
   modState: CommentModState;
   reactions: CommentReactionAggregate[];
+  /** MB-14 — live Curator badge for the author. */
+  is_curator?: boolean;
 };
 
 export type CreateCommentInput = {
@@ -1905,8 +3913,288 @@ export type PostPresentationRecord = {
   relay_description: string | null;
   media_order: string[];
   tier_preview_settings: unknown | null;
+  promo_preview_media_id?: string | null;
   updated_at: string;
 };
+
+/** GET `/api/v1/gallery/posts/:post_id/audience-simulation` — creator read; not sync-write gated. */
+export type AudienceSimulationPersonaOutcome = {
+  persona_key: string;
+  label: string;
+  outcome: "allow" | "deny" | "locked_preview" | "missing_post";
+  reason?: string;
+  effective_promo?: {
+    headline: string;
+    cta_text: string;
+    code: string | null;
+    percent_off: number | null;
+    tracked_url: string | null;
+    source: "explicit" | "tier_default";
+  } | null;
+};
+
+export type AudienceSimulationEnvelope = {
+  post_id: string;
+  creator_id: string;
+  gate: { is_public: boolean; tier_ids: string[] };
+  relay_visibility: PostVisibility;
+  is_mature: boolean;
+  catalog_tiers: Array<{
+    relay_tier_id: string;
+    title: string;
+    amount_cents: number | null;
+  }>;
+  simulation: {
+    personas: AudienceSimulationPersonaOutcome[];
+    gate_tier_ids: string[];
+    relay_visibility: PostVisibility | null;
+  };
+  tier_preview_settings: unknown | null;
+};
+
+export async function fetchAudienceSimulation(args: {
+  relayCreatorId: string;
+  postId: string;
+}): Promise<AudienceSimulationEnvelope> {
+  const q = new URLSearchParams({ creator_id: args.relayCreatorId.trim() });
+  return relayFetch<AudienceSimulationEnvelope>(
+    `/api/v1/gallery/posts/${encodeURIComponent(args.postId)}/audience-simulation?${q.toString()}`,
+    { cache: "no-store" }
+  );
+}
+
+/** Slice 4 — creator-supplied Patreon discount codes (Relay does not create coupons). */
+export type CreatorDiscountCodeRecord = {
+  id: string;
+  creator_id: string;
+  label: string | null;
+  code: string;
+  percent_off: number;
+  active: boolean;
+  created_at: string;
+  updated_at: string;
+};
+
+export type PostMarketingOfferRecord = {
+  id: string;
+  creator_id: string;
+  post_id: string;
+  audience_key: string;
+  discount_code_id: string | null;
+  headline: string;
+  cta_text: string;
+  patreon_destination_url: string | null;
+  redirect_slug?: string | null;
+  active: boolean;
+  created_at: string;
+  updated_at: string;
+  discount_code?: {
+    id: string;
+    code: string;
+    percent_off: number;
+    active: boolean;
+    label: string | null;
+  } | null;
+  code_missing?: boolean;
+};
+
+export async function listCreatorDiscountCodes(
+  creatorId: string
+): Promise<CreatorDiscountCodeRecord[]> {
+  const q = new URLSearchParams({ creator_id: creatorId.trim() });
+  const data = await relayFetch<{ codes: CreatorDiscountCodeRecord[] }>(
+    `/api/v1/creator/discount-codes?${q.toString()}`,
+    { cache: "no-store" }
+  );
+  return data.codes;
+}
+
+export async function createCreatorDiscountCode(input: {
+  creatorId: string;
+  code: string;
+  percent_off: number;
+  label?: string | null;
+}): Promise<CreatorDiscountCodeRecord> {
+  const data = await relayFetch<{ code: CreatorDiscountCodeRecord }>(
+    "/api/v1/creator/discount-codes",
+    {
+      method: "POST",
+      body: JSON.stringify({
+        creator_id: input.creatorId,
+        code: input.code,
+        percent_off: input.percent_off,
+        label: input.label ?? null
+      })
+    }
+  );
+  return data.code;
+}
+
+export async function patchCreatorDiscountCode(input: {
+  creatorId: string;
+  codeId: string;
+  label?: string | null;
+  percent_off?: number;
+  active?: boolean;
+}): Promise<CreatorDiscountCodeRecord> {
+  const body: Record<string, unknown> = { creator_id: input.creatorId };
+  if (input.label !== undefined) body.label = input.label;
+  if (input.percent_off !== undefined) body.percent_off = input.percent_off;
+  if (input.active !== undefined) body.active = input.active;
+  const data = await relayFetch<{ code: CreatorDiscountCodeRecord }>(
+    `/api/v1/creator/discount-codes/${encodeURIComponent(input.codeId)}`,
+    { method: "PATCH", body: JSON.stringify(body) }
+  );
+  return data.code;
+}
+
+export async function listPostMarketingOffers(args: {
+  creatorId: string;
+  postId: string;
+}): Promise<PostMarketingOfferRecord[]> {
+  const q = new URLSearchParams({ creator_id: args.creatorId.trim() });
+  const data = await relayFetch<{ offers: PostMarketingOfferRecord[] }>(
+    `/api/v1/gallery/posts/${encodeURIComponent(args.postId)}/marketing-offers?${q.toString()}`,
+    { cache: "no-store" }
+  );
+  return data.offers;
+}
+
+export async function upsertPostMarketingOffer(input: {
+  creatorId: string;
+  postId: string;
+  audience_key: string;
+  discount_code_id?: string | null;
+  headline?: string;
+  cta_text?: string;
+  patreon_destination_url?: string | null;
+  active?: boolean;
+}): Promise<PostMarketingOfferRecord> {
+  const body: Record<string, unknown> = {
+    creator_id: input.creatorId,
+    audience_key: input.audience_key
+  };
+  if (input.discount_code_id !== undefined) body.discount_code_id = input.discount_code_id;
+  if (input.headline !== undefined) body.headline = input.headline;
+  if (input.cta_text !== undefined) body.cta_text = input.cta_text;
+  if (input.patreon_destination_url !== undefined) {
+    body.patreon_destination_url = input.patreon_destination_url;
+  }
+  if (input.active !== undefined) body.active = input.active;
+  const data = await relayFetch<{ offer: PostMarketingOfferRecord }>(
+    `/api/v1/gallery/posts/${encodeURIComponent(input.postId)}/marketing-offers`,
+    { method: "PUT", body: JSON.stringify(body) }
+  );
+  return data.offer;
+}
+
+export type TierPromotionDefaultRecord = {
+  id: string;
+  creator_id: string;
+  gate_relay_tier_id: string;
+  segment: string;
+  discount_code_id: string | null;
+  headline: string;
+  cta_text: string;
+  patreon_destination_url: string | null;
+  redirect_slug: string | null;
+  active: boolean;
+  created_at: string;
+  updated_at: string;
+  discount_code?: {
+    id: string;
+    code: string;
+    percent_off: number;
+    active: boolean;
+    label: string | null;
+  } | null;
+  code_missing?: boolean;
+};
+
+export async function listCreatorTierPromotionDefaults(
+  creatorId: string
+): Promise<TierPromotionDefaultRecord[]> {
+  const q = new URLSearchParams({ creator_id: creatorId.trim() });
+  const data = await relayFetch<{ defaults: TierPromotionDefaultRecord[] }>(
+    `/api/v1/creator/tier-promotion-defaults?${q.toString()}`,
+    { cache: "no-store" }
+  );
+  return data.defaults;
+}
+
+export async function upsertCreatorTierPromotionDefault(input: {
+  creatorId: string;
+  gate_relay_tier_id: string;
+  segment?: string;
+  discount_code_id?: string | null;
+  headline?: string;
+  cta_text?: string;
+  patreon_destination_url?: string | null;
+  active?: boolean;
+}): Promise<TierPromotionDefaultRecord> {
+  const data = await relayFetch<{ default: TierPromotionDefaultRecord }>(
+    "/api/v1/creator/tier-promotion-defaults",
+    {
+      method: "PUT",
+      body: JSON.stringify({
+        creator_id: input.creatorId,
+        gate_relay_tier_id: input.gate_relay_tier_id,
+        segment: input.segment,
+        discount_code_id: input.discount_code_id,
+        headline: input.headline,
+        cta_text: input.cta_text,
+        patreon_destination_url: input.patreon_destination_url,
+        active: input.active
+      })
+    }
+  );
+  return data.default;
+}
+
+export async function deleteCreatorTierPromotionDefault(args: {
+  creatorId: string;
+  defaultId: string;
+}): Promise<void> {
+  const q = new URLSearchParams({ creator_id: args.creatorId.trim() });
+  await relayFetch<{ deleted: boolean }>(
+    `/api/v1/creator/tier-promotion-defaults/${encodeURIComponent(args.defaultId)}?${q.toString()}`,
+    { method: "DELETE" }
+  );
+}
+
+export async function ensureTierDefaultTrackedLink(args: {
+  creatorId: string;
+  defaultId: string;
+}): Promise<{ redirect_slug: string; public_path: string }> {
+  return relayFetch<{ redirect_slug: string; public_path: string }>(
+    `/api/v1/creator/tier-promotion-defaults/${encodeURIComponent(args.defaultId)}/tracked-link`,
+    {
+      method: "POST",
+      body: JSON.stringify({ creator_id: args.creatorId })
+    }
+  );
+}
+
+/** POST mint/return immutable tracked-link slug for an offer. */
+export async function ensureOfferTrackedLink(args: {
+  creatorId: string;
+  postId: string;
+  offerId: string;
+}): Promise<{ redirect_slug: string; public_path: string }> {
+  return relayFetch<{ redirect_slug: string; public_path: string }>(
+    `/api/v1/gallery/posts/${encodeURIComponent(args.postId)}/marketing-offers/${encodeURIComponent(args.offerId)}/tracked-link`,
+    {
+      method: "POST",
+      body: JSON.stringify({ creator_id: args.creatorId })
+    }
+  );
+}
+
+/** Absolute public tracked-link URL (API `/go/:slug`). */
+export function buildOfferTrackedLinkUrl(redirectSlug: string): string {
+  const slug = redirectSlug.trim();
+  return `${RELAY_API_BASE}/go/${encodeURIComponent(slug)}`;
+}
 
 /** PATCH `/api/v1/gallery/posts/:post_id/presentation` — include at least one overlay field beside `relayCreatorId` / `postId`. */
 export type PatchPostPresentationInput = {
@@ -1916,6 +4204,8 @@ export type PatchPostPresentationInput = {
   relay_description?: string | null;
   media_order?: string[];
   tier_preview_settings?: unknown | null;
+  /** Soft teaser pointer; null clears. Never written into media_order. */
+  promo_preview_media_id?: string | null;
 };
 
 export async function patchPostPresentation(
@@ -1926,6 +4216,9 @@ export async function patchPostPresentation(
   if (input.relay_description !== undefined) body.relay_description = input.relay_description;
   if (input.media_order !== undefined) body.media_order = input.media_order;
   if (input.tier_preview_settings !== undefined) body.tier_preview_settings = input.tier_preview_settings;
+  if (input.promo_preview_media_id !== undefined) {
+    body.promo_preview_media_id = input.promo_preview_media_id;
+  }
   return relayFetch<{ presentation: PostPresentationRecord }>(
     `/api/v1/gallery/posts/${encodeURIComponent(input.postId)}/presentation`,
     {
@@ -1933,6 +4226,40 @@ export async function patchPostPresentation(
       body: JSON.stringify(body)
     }
   );
+}
+
+export type PatchPostAudienceAccessInput = {
+  relayCreatorId: string;
+  postId: string;
+  is_public: boolean;
+  /** Prisma `Tier.id` or `relayTierId` from compose-tiers / gallery facets. */
+  tier_ids?: string[];
+};
+
+export type PostAudienceAccessRecord = {
+  post_id: string;
+  is_public: boolean;
+  tier_ids: string[];
+  source?: string;
+};
+
+/** PATCH `/api/v1/gallery/posts/:post_id/audience-access` — canonical tier gate (not presentation overlay). */
+export async function patchPostAudienceAccess(
+  input: PatchPostAudienceAccessInput
+): Promise<{ audience: PostAudienceAccessRecord }> {
+  const body: Record<string, unknown> = {
+    creator_id: input.relayCreatorId,
+    is_public: input.is_public
+  };
+  if (input.tier_ids !== undefined) body.tier_ids = input.tier_ids;
+  const data = await relayFetch<PostAudienceAccessRecord>(
+    `/api/v1/gallery/posts/${encodeURIComponent(input.postId)}/audience-access`,
+    {
+      method: "PATCH",
+      body: JSON.stringify(body)
+    }
+  );
+  return { audience: data };
 }
 
 /** POST /api/v1/patron/posts/:post_id/comments */
@@ -2112,11 +4439,11 @@ export async function unblockAccount(
 
 // ---------------------------------------------------------------------------
 // PE-F (BO-P3-02) — Discovery v1 API client.
-// Backend service: src/patron/discover-service.ts; routes in src/server.ts.
+// Backend service: src/discover-service.ts; routes in src/server.ts.
 // ---------------------------------------------------------------------------
 
 /**
- * Mirror of `DiscoverItem` from src/patron/discover-service.ts. The wire format is the same
+ * Mirror of `DiscoverItem` from src/discover-service.ts. The wire format is the same
  * shape; we keep field names snake_case to match the envelope rather than renaming on the
  * client.
  */
@@ -2133,7 +4460,56 @@ export type DiscoverItem = {
 export type DiscoverPageResult = {
   items: DiscoverItem[];
   next_cursor: string | null;
+  tip_gated?: TipGatedDiscoverItem[];
+  tips_beta?: boolean;
 };
+
+export type TipsWalletWire = {
+  granted_balance: number;
+  purchased_balance: number;
+  next_grant_period: string;
+  monthly_grant?: number;
+  beta: boolean;
+  plan?: "free" | "supporter" | "curator";
+  monthly_allowance?: number;
+  rollover_cap?: number | null;
+  next_grant_at?: string;
+};
+
+export type TipRevealResult = {
+  reveal_id: string;
+  expires_at: string;
+  media: { media_ids: string[] };
+};
+
+export async function fetchTipsWallet(): Promise<TipsWalletWire> {
+  return relayFetch<TipsWalletWire>("/api/v1/tips/wallet");
+}
+
+export type PatronSupportSummaryWire = {
+  plan: "free" | "supporter" | "curator";
+  is_curator: boolean;
+  period_start: string;
+  tips_spent: number;
+  artists_supported: number;
+  cents_routed_to_artists: number;
+  boosts_coming_copy: string | null;
+};
+
+/** MB-14 — GET /api/v1/patron/me/support-summary */
+export async function fetchPatronSupportSummary(): Promise<PatronSupportSummaryWire> {
+  return relayFetch<PatronSupportSummaryWire>("/api/v1/patron/me/support-summary");
+}
+
+export async function createTipReveal(args: {
+  post_id: string;
+  surface: "discover" | "artist_page" | string;
+}): Promise<TipRevealResult> {
+  return relayFetch<TipRevealResult>("/api/v1/tips/reveals", {
+    method: "POST",
+    body: JSON.stringify(args)
+  });
+}
 
 /**
  * GET /api/v1/patron/discover — recency-DESC cross-creator feed of opted-in free posts.
@@ -2197,11 +4573,21 @@ export type NotificationKind =
   | "new_follower"
   | "tier_changed"
   | "new_post_followed"
-  | "mention";
+  | "mention"
+  | "post_commented"
+  | "post_favorited"
+  | "post_collected"
+  | "new_subscriber"
+  | "distribution_schedule_reminder"
+  | "reveal_expiring"
+  | "tips_granted"
+  | "automation_no_new_post"
+  | "automation_approval_expired";
 
 export type NotificationRecord = {
   id: string;
-  recipientMembershipId: string;
+  recipientMembershipId: string | null;
+  recipientCreatorAccountId: string | null;
   relayCreatorId: string;
   kind: NotificationKind;
   /** Kind-shaped; see backend mapper for canonical fields per kind. */
@@ -2311,4 +4697,1544 @@ export async function setPatronNotificationPreference(args: {
       })
     }
   );
+}
+
+// ---------------------------------------------------------------------------
+// Autopost WI-6 — Style Profile + draft workspace (creator session scope)
+// ---------------------------------------------------------------------------
+
+export type StyleTonePresetId =
+  | "none"
+  | "friendly"
+  | "professional"
+  | "warm"
+  | "playful"
+  | "formal";
+
+export type StyleTonePresetWire = {
+  id: StyleTonePresetId;
+  label: string;
+  sample: string;
+  voice_instruction: string;
+};
+
+export type CreatorStyleProfileWire = {
+  creator_id: string;
+  profile_id: string;
+  label: string;
+  tone_preset: StyleTonePresetId;
+  user_prompt: string | null;
+  voice_script: string;
+  updated_at: string;
+};
+
+export type AutopostDraftWorkspace = {
+  selected_destinations?: string[];
+  planned_format?: string;
+  source_post_id?: string;
+  automation_rule_id?: string;
+  transform_mode?: string;
+  tags?: string[];
+  tier_ids?: string[];
+  is_public?: boolean;
+  campaign_id?: string | null;
+  needs_preview?: boolean | null;
+};
+
+export type AutopostDraftWire = {
+  draft_id: string;
+  creator_id: string;
+  status: string;
+  media_ids: string[];
+  title: string | null;
+  body_text: string | null;
+  style_profile_id: string | null;
+  intent: string | null;
+  performance_goal_id: string | null;
+  composer_step: string;
+  workspace: AutopostDraftWorkspace;
+  enhancements: Record<string, unknown>;
+  distribution_log: Record<string, unknown>;
+  published_post_id: string | null;
+  /** Rail-linked Relay post when this draft backs a scheduled distribution plan. */
+  linked_post_id?: string | null;
+  created_at: string;
+  updated_at: string;
+  source_preview?: {
+    post_id: string;
+    title: string | null;
+    body_text: string | null;
+    media_ids: string[];
+    published_at: string | null;
+  } | null;
+};
+
+export type AutopostDraftPublishInput = {
+  campaign_id?: string | null;
+  is_public: boolean;
+  required_tier_id?: string | null;
+  tier_ids?: string[];
+  tag_ids?: string[];
+  title?: string | null;
+  description?: string | null;
+};
+
+export type AutopostDistributionDestination = "patreon" | "x" | "bluesky" | "deviantart" | "relay";
+
+/** GET /api/v1/creator/style-profile/presets */
+export async function fetchStyleProfilePresets(): Promise<{ presets: StyleTonePresetWire[] }> {
+  return relayFetch<{ presets: StyleTonePresetWire[] }>("/api/v1/creator/style-profile/presets");
+}
+
+/** GET /api/v1/creator/style-profile */
+export async function fetchCreatorStyleProfile(): Promise<{ profile: CreatorStyleProfileWire | null }> {
+  return relayFetch<{ profile: CreatorStyleProfileWire | null }>("/api/v1/creator/style-profile");
+}
+
+/** PUT /api/v1/creator/style-profile */
+export async function putCreatorStyleProfile(body: {
+  tone_preset: StyleTonePresetId;
+  user_prompt?: string | null;
+  label?: string;
+}): Promise<{ profile: CreatorStyleProfileWire }> {
+  return relayFetch<{ profile: CreatorStyleProfileWire }>("/api/v1/creator/style-profile", {
+    method: "PUT",
+    body: JSON.stringify(body)
+  });
+}
+
+export type CreatorPostingGoalWire = {
+  creator_id: string;
+  monthly_post_target: number;
+  bonus_nudges_enabled: boolean;
+  timezone: string;
+  enabled: boolean;
+  remind_me_global: boolean;
+  is_default: boolean;
+  updated_at: string | null;
+};
+
+export type CreatorPostingGoalPutInput = {
+  monthly_post_target?: number;
+  bonus_nudges_enabled?: boolean;
+  timezone?: string | null;
+  enabled?: boolean;
+  remind_me_global?: boolean;
+};
+
+/** GET /api/v1/creator/posting-goal */
+export async function fetchCreatorPostingGoal(): Promise<{ goal: CreatorPostingGoalWire }> {
+  return relayFetch<{ goal: CreatorPostingGoalWire }>("/api/v1/creator/posting-goal");
+}
+
+/** PUT /api/v1/creator/posting-goal */
+export async function putCreatorPostingGoal(
+  body: CreatorPostingGoalPutInput
+): Promise<{ goal: CreatorPostingGoalWire }> {
+  return relayFetch<{ goal: CreatorPostingGoalWire }>("/api/v1/creator/posting-goal", {
+    method: "PUT",
+    body: JSON.stringify(body)
+  });
+}
+
+export type PostingGoalPaceStatus = "on_track" | "behind" | "complete" | "bonus_available";
+export type PostingGoalNudgeType = "posting_goal" | "bonus_post";
+export type PostingGoalNudgeStatus = "active" | "snoozed" | "skipped" | "resolved";
+
+export type CreatorPostingGoalStatusWire = {
+  goal: {
+    monthly_post_target: number;
+    bonus_nudges_enabled: boolean;
+    timezone: string;
+    enabled: boolean;
+  };
+  period: {
+    key: string;
+    start: string;
+    end: string;
+  };
+  posts_this_month: number;
+  remaining: number;
+  staged_media_count: number;
+  pace_status: PostingGoalPaceStatus;
+  active_nudge: null | {
+    nudge_id: string;
+    nudge_type: PostingGoalNudgeType;
+    status: PostingGoalNudgeStatus;
+    snoozed_until: string | null;
+  };
+};
+
+export type CreatorPostingNudgeWire = {
+  nudge_id: string;
+  creator_id: string;
+  period_key: string;
+  nudge_type: PostingGoalNudgeType;
+  status: PostingGoalNudgeStatus;
+  snoozed_until: string | null;
+  updated_at: string;
+};
+
+/** GET /api/v1/creator/posting-goal/status */
+export async function fetchCreatorPostingGoalStatus(): Promise<{
+  status: CreatorPostingGoalStatusWire;
+}> {
+  return relayFetch<{ status: CreatorPostingGoalStatusWire }>(
+    "/api/v1/creator/posting-goal/status"
+  );
+}
+
+/** POST /api/v1/creator/posting-goal/nudge/current/snooze */
+export async function snoozeCurrentCreatorPostingGoalNudge(
+  snoozedUntil?: string | null
+): Promise<{ nudge: CreatorPostingNudgeWire }> {
+  return relayFetch<{ nudge: CreatorPostingNudgeWire }>(
+    "/api/v1/creator/posting-goal/nudge/current/snooze",
+    {
+      method: "POST",
+      body: JSON.stringify(
+        snoozedUntil === undefined ? {} : { snoozed_until: snoozedUntil }
+      ),
+    }
+  );
+}
+
+/** POST /api/v1/creator/posting-goal/nudge/current/skip */
+export async function skipCurrentCreatorPostingGoalNudge(): Promise<{
+  nudge: CreatorPostingNudgeWire;
+}> {
+  return relayFetch<{ nudge: CreatorPostingNudgeWire }>(
+    "/api/v1/creator/posting-goal/nudge/current/skip",
+    { method: "POST", body: JSON.stringify({}) }
+  );
+}
+
+/** POST /api/v1/creator/posting-goal/nudge/:nudge_id/snooze */
+export async function snoozeCreatorPostingGoalNudge(
+  nudgeId: string,
+  snoozedUntil?: string | null
+): Promise<{ nudge: CreatorPostingNudgeWire }> {
+  return relayFetch<{ nudge: CreatorPostingNudgeWire }>(
+    `/api/v1/creator/posting-goal/nudge/${encodeURIComponent(nudgeId)}/snooze`,
+    {
+      method: "POST",
+      body: JSON.stringify(
+        snoozedUntil === undefined ? {} : { snoozed_until: snoozedUntil }
+      ),
+    }
+  );
+}
+
+/** POST /api/v1/creator/posting-goal/nudge/:nudge_id/skip */
+export async function skipCreatorPostingGoalNudge(
+  nudgeId: string
+): Promise<{ nudge: CreatorPostingNudgeWire }> {
+  return relayFetch<{ nudge: CreatorPostingNudgeWire }>(
+    `/api/v1/creator/posting-goal/nudge/${encodeURIComponent(nudgeId)}/skip`,
+    { method: "POST", body: JSON.stringify({}) }
+  );
+}
+
+export type {
+  CoachPlanCreditStatus,
+  GoalCycleBreakMode,
+  GoalCycleCheckpointPatchInput,
+  GoalCycleDetail,
+  GoalCycleGoalKind,
+  GoalCycleLearningProposal,
+  GoalCycleListResult,
+  GoalCycleOutcomeSummary,
+  GoalCyclePhase,
+  GoalCyclePlan,
+  GoalCyclePlannerGenerateInput,
+  GoalCyclePlannerManualEditInput,
+  GoalCyclePlannerReviseInput,
+  GoalCycleQuestion,
+  GoalCycleStartInput,
+  GoalCycleState,
+  GoalCycleSummary
+} from "./goal-cycle-types";
+
+import type {
+  CoachPlanCreditStatus,
+  GoalCycleCheckpointPatchInput,
+  GoalCycleDetail,
+  GoalCycleLearningProposal,
+  GoalCycleListResult,
+  GoalCycleMaterializationReceipt,
+  GoalCycleOutcomeSummary,
+  GoalCyclePlan,
+  GoalCycleQuestion,
+  GoalCycleStartInput
+} from "./goal-cycle-types";
+
+/** POST /api/v1/creator/goal-cycles */
+export async function startCreatorGoalCycle(
+  body: GoalCycleStartInput,
+  opts?: { idempotencyKey?: string }
+): Promise<{ cycle: GoalCycleDetail }> {
+  const headers: Record<string, string> = {};
+  const key = opts?.idempotencyKey?.trim() || body.idempotency_key?.trim();
+  if (key) headers["Idempotency-Key"] = key;
+  return relayFetch<{ cycle: GoalCycleDetail }>("/api/v1/creator/goal-cycles", {
+    method: "POST",
+    headers,
+    body: JSON.stringify(body)
+  });
+}
+
+/** GET /api/v1/creator/goal-cycles/active */
+export async function fetchActiveCreatorGoalCycle(): Promise<{
+  cycle: GoalCycleDetail | null;
+}> {
+  return relayFetch<{ cycle: GoalCycleDetail | null }>("/api/v1/creator/goal-cycles/active");
+}
+
+/** GET /api/v1/creator/goal-cycles */
+export async function listCreatorGoalCycles(opts?: {
+  cursor?: string | null;
+  limit?: number;
+}): Promise<GoalCycleListResult> {
+  const params = new URLSearchParams();
+  if (opts?.cursor) params.set("cursor", opts.cursor);
+  if (typeof opts?.limit === "number") params.set("limit", String(opts.limit));
+  const qs = params.toString();
+  return relayFetch<GoalCycleListResult>(
+    `/api/v1/creator/goal-cycles${qs ? `?${qs}` : ""}`
+  );
+}
+
+/** GET /api/v1/creator/goal-cycles/:id */
+export async function fetchCreatorGoalCycle(
+  cycleId: string
+): Promise<{ cycle: GoalCycleDetail }> {
+  return relayFetch<{ cycle: GoalCycleDetail }>(
+    `/api/v1/creator/goal-cycles/${encodeURIComponent(cycleId)}`
+  );
+}
+
+/** PATCH /api/v1/creator/goal-cycles/:id/checkpoint */
+export async function patchCreatorGoalCycleCheckpoint(
+  cycleId: string,
+  body: GoalCycleCheckpointPatchInput,
+  opts?: { idempotencyKey?: string }
+): Promise<{ cycle: GoalCycleDetail }> {
+  const headers: Record<string, string> = {};
+  if (opts?.idempotencyKey?.trim()) {
+    headers["Idempotency-Key"] = opts.idempotencyKey.trim();
+  }
+  return relayFetch<{ cycle: GoalCycleDetail }>(
+    `/api/v1/creator/goal-cycles/${encodeURIComponent(cycleId)}/checkpoint`,
+    {
+      method: "PATCH",
+      headers,
+      body: JSON.stringify(body)
+    }
+  );
+}
+
+/** POST /api/v1/creator/goal-cycles/:id/cancel */
+export async function cancelCreatorGoalCycle(
+  cycleId: string,
+  reason?: string | null
+): Promise<{ cycle: GoalCycleDetail }> {
+  return relayFetch<{ cycle: GoalCycleDetail }>(
+    `/api/v1/creator/goal-cycles/${encodeURIComponent(cycleId)}/cancel`,
+    {
+      method: "POST",
+      body: JSON.stringify(reason === undefined ? {} : { reason })
+    }
+  );
+}
+
+/** POST /api/v1/creator/goal-cycles/:id/suggest-completion (service/internal path) */
+export async function suggestCreatorGoalCycleCompletion(
+  cycleId: string,
+  opts: { allow_review?: boolean } = {}
+): Promise<{ cycle: GoalCycleDetail }> {
+  return relayFetch<{ cycle: GoalCycleDetail }>(
+    `/api/v1/creator/goal-cycles/${encodeURIComponent(cycleId)}/suggest-completion`,
+    {
+      method: "POST",
+      body: JSON.stringify(
+        opts.allow_review ? { allow_review: true } : {}
+      )
+    }
+  );
+}
+
+/** POST /api/v1/creator/goal-cycles/:id/dismiss-completion — reject suggestion, return to active */
+export async function dismissCreatorGoalCycleCompletion(
+  cycleId: string
+): Promise<{ cycle: GoalCycleDetail }> {
+  return relayFetch<{ cycle: GoalCycleDetail }>(
+    `/api/v1/creator/goal-cycles/${encodeURIComponent(cycleId)}/dismiss-completion`,
+    { method: "POST", body: JSON.stringify({}) }
+  );
+}
+
+/** POST /api/v1/creator/goal-cycles/:id/confirm-completion */
+export async function confirmCreatorGoalCycleCompletion(
+  cycleId: string
+): Promise<{ cycle: GoalCycleDetail }> {
+  return relayFetch<{ cycle: GoalCycleDetail }>(
+    `/api/v1/creator/goal-cycles/${encodeURIComponent(cycleId)}/confirm-completion`,
+    { method: "POST", body: JSON.stringify({}) }
+  );
+}
+
+/** GET /api/v1/creator/goal-cycles/:id/outcome */
+export async function fetchCreatorGoalCycleOutcome(cycleId: string): Promise<{
+  cycle_id: string;
+  summary: GoalCycleOutcomeSummary | null;
+  snapshot: unknown;
+  reflection: string | null;
+  learning: GoalCycleLearningProposal | null;
+}> {
+  return relayFetch(
+    `/api/v1/creator/goal-cycles/${encodeURIComponent(cycleId)}/outcome`
+  );
+}
+
+/** POST /api/v1/creator/goal-cycles/:id/outcome/refresh */
+export async function refreshCreatorGoalCycleOutcome(
+  cycleId: string
+): Promise<{
+  cycle: GoalCycleDetail;
+  snapshot: unknown;
+  summary: GoalCycleOutcomeSummary;
+}> {
+  return relayFetch(
+    `/api/v1/creator/goal-cycles/${encodeURIComponent(cycleId)}/outcome/refresh`,
+    { method: "POST", body: JSON.stringify({}) }
+  );
+}
+
+/** POST /api/v1/creator/goal-cycles/:id/reflection */
+export async function saveCreatorGoalCycleReflection(
+  cycleId: string,
+  reflection: string | null
+): Promise<{ cycle: GoalCycleDetail; reflection: string | null }> {
+  return relayFetch(
+    `/api/v1/creator/goal-cycles/${encodeURIComponent(cycleId)}/reflection`,
+    { method: "POST", body: JSON.stringify({ reflection }) }
+  );
+}
+
+/** GET /api/v1/creator/goal-cycles/:id/learning */
+export async function fetchCreatorGoalCycleLearning(
+  cycleId: string
+): Promise<{ learning: GoalCycleLearningProposal | null }> {
+  return relayFetch(
+    `/api/v1/creator/goal-cycles/${encodeURIComponent(cycleId)}/learning`
+  );
+}
+
+/** POST /api/v1/creator/goal-cycles/:id/learning/propose */
+export async function proposeCreatorGoalCycleLearning(
+  cycleId: string
+): Promise<{ cycle: GoalCycleDetail; learning: GoalCycleLearningProposal }> {
+  return relayFetch(
+    `/api/v1/creator/goal-cycles/${encodeURIComponent(cycleId)}/learning/propose`,
+    { method: "POST", body: JSON.stringify({}) }
+  );
+}
+
+/** POST /api/v1/creator/goal-cycles/:id/learning/accept */
+export async function acceptCreatorGoalCycleLearning(
+  cycleId: string
+): Promise<{ cycle: GoalCycleDetail; learning: GoalCycleLearningProposal }> {
+  return relayFetch(
+    `/api/v1/creator/goal-cycles/${encodeURIComponent(cycleId)}/learning/accept`,
+    { method: "POST", body: JSON.stringify({}) }
+  );
+}
+
+/** POST /api/v1/creator/goal-cycles/:id/learning/reject */
+export async function rejectCreatorGoalCycleLearning(
+  cycleId: string
+): Promise<{ cycle: GoalCycleDetail; learning: GoalCycleLearningProposal }> {
+  return relayFetch(
+    `/api/v1/creator/goal-cycles/${encodeURIComponent(cycleId)}/learning/reject`,
+    { method: "POST", body: JSON.stringify({}) }
+  );
+}
+
+/** GET /api/v1/creator/goal-cycles/:id/planner — hydrate plan + progress */
+export async function fetchCreatorGoalCyclePlanner(
+  cycleId: string
+): Promise<{ cycle: GoalCycleDetail; plan: GoalCyclePlan | null; progress: GoalCycleDetail["progress"] }> {
+  return relayFetch(
+    `/api/v1/creator/goal-cycles/${encodeURIComponent(cycleId)}/planner`
+  );
+}
+
+/** POST /api/v1/creator/goal-cycles/:id/planner/questions */
+export async function proposeCreatorGoalCyclePlannerQuestions(
+  cycleId: string,
+  body: {
+    idempotency_key?: string;
+    expected_version?: number;
+    deterministic_only?: boolean;
+  } = {},
+  opts?: { idempotencyKey?: string }
+): Promise<{
+  questions: GoalCycleQuestion[];
+  cycle: GoalCycleDetail;
+  idempotent: boolean;
+}> {
+  const headers: Record<string, string> = {};
+  const key = opts?.idempotencyKey?.trim() || body.idempotency_key?.trim();
+  if (key) headers["Idempotency-Key"] = key;
+  return relayFetch(
+    `/api/v1/creator/goal-cycles/${encodeURIComponent(cycleId)}/planner/questions`,
+    { method: "POST", headers, body: JSON.stringify(body) }
+  );
+}
+
+/** POST /api/v1/creator/goal-cycles/:id/planner/answers */
+export async function answerCreatorGoalCyclePlannerQuestions(
+  cycleId: string,
+  body: {
+    expected_version: number;
+    answers: Array<{ id: string; answer: string }>;
+  },
+  opts?: { idempotencyKey?: string }
+): Promise<{ cycle: GoalCycleDetail }> {
+  const headers: Record<string, string> = {};
+  if (opts?.idempotencyKey?.trim()) {
+    headers["Idempotency-Key"] = opts.idempotencyKey.trim();
+  }
+  return relayFetch(
+    `/api/v1/creator/goal-cycles/${encodeURIComponent(cycleId)}/planner/answers`,
+    { method: "POST", headers, body: JSON.stringify(body) }
+  );
+}
+
+/** POST /api/v1/creator/goal-cycles/:id/planner/generate */
+export async function generateCreatorGoalCyclePlan(
+  cycleId: string,
+  body: {
+    idempotency_key?: string;
+    expected_version?: number;
+    skip_questions?: boolean;
+    force_fallback?: boolean;
+  } = {},
+  opts?: { idempotencyKey?: string }
+): Promise<{
+  plan: GoalCyclePlan;
+  cycle: GoalCycleDetail;
+  ai_used: boolean;
+  fallback: boolean;
+  idempotent: boolean;
+}> {
+  const headers: Record<string, string> = {};
+  const key = opts?.idempotencyKey?.trim() || body.idempotency_key?.trim();
+  if (key) headers["Idempotency-Key"] = key;
+  return relayFetch(
+    `/api/v1/creator/goal-cycles/${encodeURIComponent(cycleId)}/planner/generate`,
+    { method: "POST", headers, body: JSON.stringify(body) }
+  );
+}
+
+/** POST /api/v1/creator/goal-cycles/:id/planner/revise */
+export async function reviseCreatorGoalCyclePlan(
+  cycleId: string,
+  body: {
+    revision_note: string;
+    idempotency_key?: string;
+    expected_version?: number;
+    force_fallback?: boolean;
+  },
+  opts?: { idempotencyKey?: string }
+): Promise<{
+  plan: GoalCyclePlan;
+  cycle: GoalCycleDetail;
+  ai_used: boolean;
+  fallback: boolean;
+  ai_revision_count: number;
+  idempotent: boolean;
+}> {
+  const headers: Record<string, string> = {};
+  const key = opts?.idempotencyKey?.trim() || body.idempotency_key?.trim();
+  if (key) headers["Idempotency-Key"] = key;
+  return relayFetch(
+    `/api/v1/creator/goal-cycles/${encodeURIComponent(cycleId)}/planner/revise`,
+    { method: "POST", headers, body: JSON.stringify(body) }
+  );
+}
+
+/** POST /api/v1/creator/goal-cycles/:id/planner/manual-edit */
+export async function manualEditCreatorGoalCyclePlan(
+  cycleId: string,
+  body: {
+    plan: GoalCyclePlan;
+    idempotency_key?: string;
+    expected_version?: number;
+  },
+  opts?: { idempotencyKey?: string }
+): Promise<{ plan: GoalCyclePlan; cycle: GoalCycleDetail; idempotent: boolean }> {
+  const headers: Record<string, string> = {};
+  const key = opts?.idempotencyKey?.trim() || body.idempotency_key?.trim();
+  if (key) headers["Idempotency-Key"] = key;
+  return relayFetch(
+    `/api/v1/creator/goal-cycles/${encodeURIComponent(cycleId)}/planner/manual-edit`,
+    { method: "POST", headers, body: JSON.stringify(body) }
+  );
+}
+
+/** POST /api/v1/creator/goal-cycles/:id/approve — materialize Plan (VS7). */
+export async function approveCreatorGoalCycle(
+  cycleId: string,
+  body: {
+    expected_version: number;
+    approval_key?: string;
+    idempotency_key?: string;
+  },
+  opts?: { idempotencyKey?: string }
+): Promise<{
+  receipt: GoalCycleMaterializationReceipt;
+  cycle: GoalCycleDetail;
+  idempotent: boolean;
+}> {
+  const headers: Record<string, string> = {};
+  const key =
+    opts?.idempotencyKey?.trim() ||
+    body.approval_key?.trim() ||
+    body.idempotency_key?.trim();
+  if (key) headers["Idempotency-Key"] = key;
+  return relayFetch(
+    `/api/v1/creator/goal-cycles/${encodeURIComponent(cycleId)}/approve`,
+    { method: "POST", headers, body: JSON.stringify(body) }
+  );
+}
+
+/** POST /api/v1/creator/goal-cycles/:id/materialization/repair */
+export async function repairCreatorGoalCycleMaterialization(
+  cycleId: string,
+  body?: {
+    approval_key?: string;
+    repair?: boolean;
+  },
+  opts?: { idempotencyKey?: string }
+): Promise<{
+  report: {
+    cycle_id: string;
+    status: "healthy" | "complete_unreceipted" | "partial" | "empty" | "conflict";
+    receipt: GoalCycleMaterializationReceipt | null;
+    slots_observed: Array<{
+      slot_key: string;
+      status: string;
+      post_id: string | null;
+      plan_id: string | null;
+      variant_ids: string[];
+      task_ids: string[];
+      issues: string[];
+    }>;
+    can_safely_retry_approve: boolean;
+    message: string;
+  };
+}> {
+  const headers: Record<string, string> = {};
+  if (opts?.idempotencyKey?.trim()) {
+    headers["Idempotency-Key"] = opts.idempotencyKey.trim();
+  }
+  return relayFetch(
+    `/api/v1/creator/goal-cycles/${encodeURIComponent(cycleId)}/materialization/repair`,
+    { method: "POST", headers, body: JSON.stringify(body ?? {}) }
+  );
+}
+
+/** Frozen research status wire (VS3/VS5 routes — VS6 client append). */
+export type GoalCycleResearchStatusWire = {
+  cycle_id: string;
+  request_id: string | null;
+  status: "not_started" | "pending" | "complete" | "failed";
+  mode: string;
+  progress: GoalCycleDetail["progress"];
+  error_code: string | null;
+  strength: string | null;
+  confidence: string | null;
+};
+
+/** POST /api/v1/creator/goal-cycles/:id/research */
+export async function startCreatorGoalCycleResearch(
+  cycleId: string,
+  body: {
+    topic: string;
+    locale?: string | null;
+    geography?: string | null;
+    window?: string;
+    request_id?: string;
+    creator_context?: Record<string, unknown>;
+    inline?: boolean;
+  },
+  opts?: { idempotencyKey?: string }
+): Promise<{ research: GoalCycleResearchStatusWire }> {
+  const headers: Record<string, string> = {};
+  if (opts?.idempotencyKey?.trim()) {
+    headers["Idempotency-Key"] = opts.idempotencyKey.trim();
+  }
+  return relayFetch(
+    `/api/v1/creator/goal-cycles/${encodeURIComponent(cycleId)}/research`,
+    { method: "POST", headers, body: JSON.stringify(body) }
+  );
+}
+
+/** GET /api/v1/creator/goal-cycles/:id/research */
+export async function fetchCreatorGoalCycleResearch(
+  cycleId: string,
+  opts?: { requestId?: string | null }
+): Promise<{ research: GoalCycleResearchStatusWire }> {
+  const params = new URLSearchParams();
+  if (opts?.requestId) params.set("request_id", opts.requestId);
+  const qs = params.toString();
+  return relayFetch(
+    `/api/v1/creator/goal-cycles/${encodeURIComponent(cycleId)}/research${
+      qs ? `?${qs}` : ""
+    }`
+  );
+}
+
+/** GET /api/v1/creator/coach-plan-credits */
+export async function fetchCreatorCoachPlanCredits(): Promise<{
+  credits: CoachPlanCreditStatus;
+}> {
+  return relayFetch<{ credits: CoachPlanCreditStatus }>("/api/v1/creator/coach-plan-credits");
+}
+
+/** GET /api/v1/creator/autopost/drafts */
+export async function listAutopostDrafts(opts?: {
+  status?: "active" | "published" | "all";
+  limit?: number;
+}): Promise<{ drafts: AutopostDraftWire[] }> {
+  const params = new URLSearchParams();
+  if (opts?.status) params.set("status", opts.status);
+  if (opts?.limit != null) params.set("limit", String(opts.limit));
+  const q = params.toString();
+  return relayFetch<{ drafts: AutopostDraftWire[] }>(
+    `/api/v1/creator/autopost/drafts${q ? `?${q}` : ""}`
+  );
+}
+
+/** GET /api/v1/creator/autopost/draft — active draft or null */
+export async function fetchActiveAutopostDraft(): Promise<{ draft: AutopostDraftWire | null }> {
+  return relayFetch<{ draft: AutopostDraftWire | null }>("/api/v1/creator/autopost/draft");
+}
+
+/** GET /api/v1/creator/autopost/draft/:draft_id */
+export async function fetchAutopostDraft(
+  draftId: string
+): Promise<{ draft: AutopostDraftWire }> {
+  return relayFetch<{ draft: AutopostDraftWire }>(
+    `/api/v1/creator/autopost/draft/${encodeURIComponent(draftId)}`
+  );
+}
+
+/** POST /api/v1/creator/autopost/draft */
+export async function createAutopostDraft(body: {
+  media_ids: string[];
+  title?: string | null;
+  body_text?: string | null;
+  generate?: boolean;
+  intent?: string | null;
+  performance_goal_id?: string | null;
+  status?: "nudged" | "drafting" | "previewing";
+  composer_step?: string;
+  workspace?: AutopostDraftWorkspace;
+}): Promise<{ draft: AutopostDraftWire }> {
+  return relayFetch<{ draft: AutopostDraftWire }>("/api/v1/creator/autopost/draft", {
+    method: "POST",
+    body: JSON.stringify(body)
+  });
+}
+
+/** PATCH /api/v1/creator/autopost/draft/:draft_id */
+export async function patchAutopostDraft(
+  draftId: string,
+  body: {
+    title?: string | null;
+    body_text?: string | null;
+    regenerate?: boolean;
+    status?: string;
+    intent?: string | null;
+    performance_goal_id?: string | null;
+    composer_step?: string;
+    workspace?: AutopostDraftWorkspace;
+    media_ids?: string[];
+  }
+): Promise<{ draft: AutopostDraftWire }> {
+  return relayFetch<{ draft: AutopostDraftWire }>(
+    `/api/v1/creator/autopost/draft/${encodeURIComponent(draftId)}`,
+    {
+      method: "PATCH",
+      body: JSON.stringify(body)
+    }
+  );
+}
+
+/** POST /api/v1/creator/autopost/draft/:draft_id/publish */
+export async function publishAutopostDraft(
+  draftId: string,
+  body: AutopostDraftPublishInput
+): Promise<{ draft: AutopostDraftWire; post_id: string }> {
+  return relayFetch<{ draft: AutopostDraftWire; post_id: string }>(
+    `/api/v1/creator/autopost/draft/${encodeURIComponent(draftId)}/publish`,
+    {
+      method: "POST",
+      body: JSON.stringify(body)
+    }
+  );
+}
+
+/** DELETE /api/v1/creator/autopost/draft/:draft_id */
+export async function discardAutopostDraft(
+  draftId: string,
+  opts?: { force?: boolean }
+): Promise<{ draft: AutopostDraftWire }> {
+  const q = opts?.force ? "?force=true" : "";
+  return relayFetch<{ draft: AutopostDraftWire }>(
+    `/api/v1/creator/autopost/draft/${encodeURIComponent(draftId)}${q}`,
+    { method: "DELETE" }
+  );
+}
+
+/** POST /api/v1/creator/autopost/draft/:draft_id/distribution */
+export async function recordAutopostDistribution(
+  draftId: string,
+  destination: AutopostDistributionDestination
+): Promise<{ draft: AutopostDraftWire }> {
+  return relayFetch<{ draft: AutopostDraftWire }>(
+    `/api/v1/creator/autopost/draft/${encodeURIComponent(draftId)}/distribution`,
+    {
+      method: "POST",
+      body: JSON.stringify({ destination })
+    }
+  );
+}
+
+// ---------------------------------------------------------------------------
+// WI-8 — Bluesky credential + API publish; extension X uses cross-post package route
+// ---------------------------------------------------------------------------
+
+export type CreatorBlueskyCredentialWire = {
+  creator_id: string;
+  handle: string;
+  connected: true;
+  updated_at: string;
+};
+
+export async function fetchCreatorBlueskyCredential(): Promise<{
+  credential: CreatorBlueskyCredentialWire | null;
+}> {
+  return relayFetch<{ credential: CreatorBlueskyCredentialWire | null }>(
+    "/api/v1/creator/bluesky/credential"
+  );
+}
+
+export async function putCreatorBlueskyCredential(body: {
+  handle: string;
+  app_password: string;
+}): Promise<{ credential: CreatorBlueskyCredentialWire }> {
+  return relayFetch<{ credential: CreatorBlueskyCredentialWire }>(
+    "/api/v1/creator/bluesky/credential",
+    {
+      method: "PUT",
+      body: JSON.stringify(body)
+    }
+  );
+}
+
+export async function deleteCreatorBlueskyCredential(): Promise<{ removed: true }> {
+  return relayFetch<{ removed: true }>("/api/v1/creator/bluesky/credential", {
+    method: "DELETE"
+  });
+}
+
+export type BlueskyCrossPostData = {
+  relay_post_id: string;
+  uri: string;
+  cid: string;
+  post_text: string;
+};
+
+/** POST /api/v1/creator/cross-post/bluesky/:post_id — server-side ATProto publish. */
+export async function crossPostBlueskyPost(postId: string): Promise<BlueskyCrossPostData> {
+  return relayFetch<BlueskyCrossPostData>(
+    `/api/v1/creator/cross-post/bluesky/${encodeURIComponent(postId)}`,
+    { method: "POST", body: "{}" }
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Post distribution plan / variants / attempts
+// ---------------------------------------------------------------------------
+
+export type DistributionDestination = "patreon" | "x" | "deviantart" | "bluesky";
+
+export type ConnectedPlatformWire = {
+  destination: DistributionDestination;
+  label: string;
+  readiness: "available" | "needs_extension" | "needs_credential" | "disabled" | "unsupported";
+  handoff: "extension" | "api";
+  detail?: string | null;
+};
+
+export type DistributionAttemptWire = {
+  attempt_id: string;
+  variant_id: string;
+  post_id: string;
+  destination: DistributionDestination;
+  status: string;
+  extension_tab_id: number | null;
+  fill_result: Record<string, unknown>;
+  external_url: string | null;
+  external_id: string | null;
+  error_code: string | null;
+  error_detail: string | null;
+  started_at: string;
+  completed_at: string | null;
+};
+
+export type DistributionVariantWire = {
+  variant_id: string;
+  plan_id: string;
+  post_id: string;
+  destination: DistributionDestination;
+  status: string;
+  assistant_enabled: boolean;
+  title: string | null;
+  body_text: string | null;
+  post_text: string | null;
+  tags: string[];
+  locale: string | null;
+  scheduled_for: string | null;
+  remind_me: boolean;
+  reminder_sent_at: string | null;
+  platform_fields: Record<string, unknown>;
+  advice: Record<string, unknown>;
+  approved_at: string | null;
+  latest_attempt: DistributionAttemptWire | null;
+  postbot_tasks?: PostbotTaskWire[];
+};
+
+export type PostbotTaskWire = {
+  task_id: string;
+  creator_id: string;
+  post_id: string;
+  plan_id: string | null;
+  variant_id: string;
+  destination: DistributionDestination;
+  action: "post" | "repost" | "pin_comment" | "schedule";
+  rationale: string;
+  suggested_time: string | null;
+  link: string | null;
+  status: "pending" | "done" | "dismissed";
+  created_at: string;
+  updated_at: string;
+};
+
+export type CreatorFeatureFlagsWire = {
+  creator_id: string;
+  posting_assistant_enabled: boolean;
+  posting_assistant_allowed: boolean;
+  updated_at: string | null;
+};
+
+export type PostTemplateWire = {
+  template_id: string;
+  creator_id: string;
+  name: string;
+  body: string;
+  tags: string[];
+  created_at: string;
+  updated_at: string;
+};
+
+/** Creator-owned Previewizer overlay/settings template (max 3). */
+export type PreviewTemplateWire = {
+  template_id: string;
+  creator_id: string;
+  name: string;
+  config: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+};
+
+export type DistributionPlanWire = {
+  plan_id: string;
+  post_id: string;
+  creator_id: string;
+  status: string;
+  assistant_mode: string;
+  assistant_context: Record<string, unknown>;
+  assistant_plan: Record<string, unknown>;
+  variants: DistributionVariantWire[];
+  created_at: string;
+  updated_at: string;
+};
+
+export type DistributionSummaryWire = {
+  post_id: string;
+  destinations: Array<{
+    destination: DistributionDestination;
+    variant_status: string | null;
+    attempt_status: string | null;
+    attempt_id: string | null;
+    external_url: string | null;
+    external_id: string | null;
+  }>;
+};
+
+export type ExternalPostMetricLatestWire = {
+  snapshot_id: string;
+  metric_type: string;
+  value: number | null;
+  source: string;
+  captured_at: string;
+};
+
+export type ExternalPostDestinationMetricsWire = {
+  destination: DistributionDestination;
+  attempt_id: string;
+  external_url: string;
+  external_id: string | null;
+  metrics: ExternalPostMetricLatestWire[];
+};
+
+export type PostExternalMetricsWire = {
+  post_id: string;
+  destinations: ExternalPostDestinationMetricsWire[];
+};
+
+export async function fetchConnectedPlatforms(): Promise<{ platforms: ConnectedPlatformWire[] }> {
+  return relayFetch<{ platforms: ConnectedPlatformWire[] }>("/api/v1/creator/connected-platforms");
+}
+
+export async function fetchCreatorFeatureFlags(): Promise<{ flags: CreatorFeatureFlagsWire }> {
+  return relayFetch<{ flags: CreatorFeatureFlagsWire }>("/api/v1/creator/feature-flags");
+}
+
+/** MB-15A — unified creator plan/capability presentation wire. */
+export type CreatorCapabilityReason =
+  | "included"
+  | "operator_grant"
+  | "pilot"
+  | "legacy_feature_flag"
+  | "plan_required"
+  | "billing_past_due"
+  | "feature_not_shipped";
+
+export type CreatorCapabilityWire = {
+  allowed: boolean;
+  required_plan: "studio_core" | "autopost" | "growth_engine";
+  reason: CreatorCapabilityReason;
+};
+
+export type CreatorPlanAccessWire = {
+  effective_plan: "studio_core" | "autopost" | "growth_engine" | null;
+  entitlement_source: "stripe" | "operator_grant" | "pilot" | null;
+  entitlement_expires_at: string | null;
+  billing: {
+    plan: "studio_core" | "autopost" | "growth_engine" | null;
+    status: "active" | "past_due" | "canceled" | "incomplete" | "trialing" | null;
+    current_period_end: string | null;
+    cancel_at_period_end: boolean;
+  };
+  capabilities: {
+    studio_core: CreatorCapabilityWire;
+    autopost: CreatorCapabilityWire;
+    posting_assistant: CreatorCapabilityWire;
+    growth_engine: CreatorCapabilityWire;
+  };
+};
+
+export async function fetchCreatorPlanAccess(): Promise<CreatorPlanAccessWire> {
+  return relayFetch<CreatorPlanAccessWire>("/api/v1/creator/plan-access");
+}
+
+export function isPlanRequiredApiError(err: unknown): err is RelayApiError {
+  return err instanceof RelayApiError && err.status === 402;
+}
+
+export type StudioBriefWire = {
+  creator_id: string;
+  goals: Array<
+    | "engagement_optimization"
+    | "new_audience_testing"
+    | "format_optimization"
+    | "language_outreach"
+    | "trend_riding"
+  >;
+  user_notes: string | null;
+  locale: string | null;
+  trend_note: string | null;
+  updated_at: string | null;
+};
+
+export async function fetchCreatorStudioBrief(): Promise<{ brief: StudioBriefWire }> {
+  return relayFetch<{ brief: StudioBriefWire }>("/api/v1/creator/studio-brief");
+}
+
+export async function patchCreatorStudioBrief(body: {
+  goals?: StudioBriefWire["goals"];
+  user_notes?: string | null;
+  locale?: string | null;
+  trend_note?: string | null;
+}): Promise<{ brief: StudioBriefWire }> {
+  return relayFetch<{ brief: StudioBriefWire }>("/api/v1/creator/studio-brief", {
+    method: "PATCH",
+    body: JSON.stringify(body)
+  });
+}
+
+export async function fetchPostTemplates(): Promise<{ templates: PostTemplateWire[] }> {
+  return relayFetch<{ templates: PostTemplateWire[] }>("/api/v1/creator/post-templates");
+}
+
+export async function createPostTemplate(body: {
+  name: string;
+  body: string;
+  tags?: string[];
+}): Promise<{ template: PostTemplateWire }> {
+  return relayFetch<{ template: PostTemplateWire }>("/api/v1/creator/post-templates", {
+    method: "POST",
+    body: JSON.stringify(body)
+  });
+}
+
+export async function updatePostTemplate(
+  templateId: string,
+  body: { name?: string; body?: string; tags?: string[] }
+): Promise<{ template: PostTemplateWire }> {
+  return relayFetch<{ template: PostTemplateWire }>(
+    `/api/v1/creator/post-templates/${encodeURIComponent(templateId)}`,
+    { method: "PATCH", body: JSON.stringify(body) }
+  );
+}
+
+export async function deletePostTemplate(
+  templateId: string
+): Promise<{ template_id: string }> {
+  return relayFetch<{ template_id: string }>(
+    `/api/v1/creator/post-templates/${encodeURIComponent(templateId)}`,
+    { method: "DELETE" }
+  );
+}
+
+export async function fetchPreviewTemplates(): Promise<{ templates: PreviewTemplateWire[] }> {
+  return relayFetch<{ templates: PreviewTemplateWire[] }>("/api/v1/creator/preview-templates");
+}
+
+export async function createPreviewTemplate(body: {
+  name: string;
+  config: unknown;
+  replace_template_id?: string | null;
+}): Promise<{ template: PreviewTemplateWire }> {
+  return relayFetch<{ template: PreviewTemplateWire }>("/api/v1/creator/preview-templates", {
+    method: "POST",
+    body: JSON.stringify(body)
+  });
+}
+
+export async function updatePreviewTemplate(
+  templateId: string,
+  body: { name?: string; config?: unknown }
+): Promise<{ template: PreviewTemplateWire }> {
+  return relayFetch<{ template: PreviewTemplateWire }>(
+    `/api/v1/creator/preview-templates/${encodeURIComponent(templateId)}`,
+    { method: "PATCH", body: JSON.stringify(body) }
+  );
+}
+
+export async function deletePreviewTemplate(
+  templateId: string
+): Promise<{ template_id: string }> {
+  return relayFetch<{ template_id: string }>(
+    `/api/v1/creator/preview-templates/${encodeURIComponent(templateId)}`,
+    { method: "DELETE" }
+  );
+}
+
+/**
+ * X/Twitter's web intent compose URL — prefills the platform's own composer client-side.
+ * No extension or API access required; the creator still clicks "Post" themselves on x.com.
+ */
+export function buildXIntentTweetUrl(text: string): string {
+  return `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}`;
+}
+
+export type CreatePostDistributionPlanBody = {
+  destinations: string[];
+  assistant_by_destination?: Record<string, boolean>;
+  assistant_context?: Record<string, unknown>;
+  source_draft_id?: string | null;
+  needs_preview?: boolean;
+  media_routing_by_destination?: Record<string, "full" | "preview">;
+  preview_media_id?: string | null;
+};
+
+export async function createPostDistributionPlan(
+  postId: string,
+  body: CreatePostDistributionPlanBody
+): Promise<{ plan: DistributionPlanWire }> {
+  return relayFetch<{ plan: DistributionPlanWire }>(
+    `/api/v1/relay/posts/${encodeURIComponent(postId)}/distribution-plan`,
+    { method: "POST", body: JSON.stringify(body) }
+  );
+}
+
+/** Revise an active Rail-linked plan without archiving it. */
+export async function reviseScheduledPostDistributionPlan(
+  postId: string,
+  body: CreatePostDistributionPlanBody
+): Promise<{ plan: DistributionPlanWire }> {
+  return relayFetch<{ plan: DistributionPlanWire }>(
+    `/api/v1/relay/posts/${encodeURIComponent(postId)}/distribution-plan/revise`,
+    { method: "POST", body: JSON.stringify(body) }
+  );
+}
+
+export type CoachFindingSourceWire =
+  | "history"
+  | "post"
+  | "goals"
+  | "moment"
+  | "locale"
+  | "performance"
+  | "coverage";
+
+export type CoachFindingChipWire = {
+  id: string;
+  label: string;
+  source: CoachFindingSourceWire;
+};
+
+export type CoachCopyVariantWire = {
+  id: string;
+  formula_id: string;
+  recommended: boolean;
+  label: string;
+  fit_reason: string;
+  title: string | null;
+  body_text: string;
+};
+
+export type CoachFactPackWire = {
+  coverage: {
+    as_of: string;
+    range: string;
+    stale: boolean;
+    with_metrics: string[];
+    without_metrics: string[];
+    sources: string[];
+  };
+  this_post: null | {
+    reach: number;
+    likes: number;
+    comments: number;
+    by_destination: Array<{
+      dest: string;
+      reach: number;
+      likes: number;
+      comments: number;
+      engagement_rate: number;
+    }>;
+  };
+  destination_mix: Array<{ dest: string; reach_share: number }>;
+  tags: Array<{ tag: string; reach: number; vs_median: "above" | "below" | "unknown" }>;
+  contrast: null | { label: string; reach: number; top_destination: string | null };
+  structure: null | { role: string | null; gaps: string[] };
+  insight_codes: Array<{ code: string; evidence: string }>;
+  goals: Array<{
+    id: string;
+    metric: string;
+    label: string;
+    current: number;
+    target: number;
+    progress_ratio: number;
+    pace_status: string;
+  }>;
+  cadence: {
+    monthly_post_target: number;
+    posts_this_month: number;
+    historical_hour_of_day: number | null;
+    sample_size: number;
+    timing_confidence: "high" | "low";
+    timezone: string;
+  };
+  reason_codes: string[];
+};
+
+export type CoachProposeResultWire = {
+  path_id: string;
+  findings: { chips: CoachFindingChipWire[] };
+  by_destination: Partial<
+    Record<
+      DistributionDestination,
+      {
+        variants: CoachCopyVariantWire[];
+      }
+    >
+  >;
+  ai_used: boolean;
+  facts: Record<string, unknown>;
+  fact_pack: CoachFactPackWire;
+};
+
+export type ProposeCoachAttackPlansBody = {
+  destinations: DistributionDestination[];
+  assistant_by_destination?: Partial<Record<DistributionDestination, boolean>>;
+  assistant_context?: Record<string, unknown>;
+};
+
+/** Gather findings + copy variants; persists a coach_review checkpoint stub. */
+export async function proposeCoachAttackPlans(
+  postId: string,
+  body: ProposeCoachAttackPlansBody
+): Promise<{ proposal: CoachProposeResultWire; plan_id: string }> {
+  return relayFetch<{ proposal: CoachProposeResultWire; plan_id: string }>(
+    `/api/v1/relay/posts/${encodeURIComponent(postId)}/coach/propose`,
+    { method: "POST", body: JSON.stringify(body) }
+  );
+}
+
+export type PatchCoachReviewProgressBody = {
+  coach_phase?: "findings" | "platformReview" | "gathering";
+  platform_review_index?: number;
+  accepted_copy_by_destination?: Record<
+    string,
+    {
+      title?: string | null;
+      body_text: string;
+      formula_id?: string;
+      variant_id?: string;
+    }
+  >;
+};
+
+/** PATCH mid-review Coach progress onto the coach_review stub plan. */
+export async function patchCoachReviewProgress(
+  postId: string,
+  body: PatchCoachReviewProgressBody
+): Promise<{ plan: DistributionPlanWire }> {
+  return relayFetch<{ plan: DistributionPlanWire }>(
+    `/api/v1/relay/posts/${encodeURIComponent(postId)}/coach/progress`,
+    { method: "PATCH", body: JSON.stringify(body) }
+  );
+}
+
+/** DELETE / archive active coach_review checkpoint (“Run Coach again”). */
+export async function clearCoachReviewCheckpoint(
+  postId: string
+): Promise<{ archived: boolean; plan_id: string | null }> {
+  return relayFetch<{ archived: boolean; plan_id: string | null }>(
+    `/api/v1/relay/posts/${encodeURIComponent(postId)}/coach/checkpoint`,
+    { method: "DELETE" }
+  );
+}
+
+export async function fetchPostDistributionPlan(
+  postId: string
+): Promise<{ plan: DistributionPlanWire | null }> {
+  return relayFetch<{ plan: DistributionPlanWire | null }>(
+    `/api/v1/relay/posts/${encodeURIComponent(postId)}/distribution-plan`
+  );
+}
+
+export async function fetchPostDistributionSummary(
+  postId: string
+): Promise<{ summary: DistributionSummaryWire }> {
+  return relayFetch<{ summary: DistributionSummaryWire }>(
+    `/api/v1/relay/posts/${encodeURIComponent(postId)}/distribution-summary`
+  );
+}
+
+export async function fetchPostExternalMetrics(
+  postId: string
+): Promise<{ metrics: PostExternalMetricsWire }> {
+  return relayFetch<{ metrics: PostExternalMetricsWire }>(
+    `/api/v1/relay/posts/${encodeURIComponent(postId)}/external-metrics`
+  );
+}
+
+export async function patchDistributionVariant(
+  variantId: string,
+  body: Partial<{
+    title: string | null;
+    body_text: string | null;
+    post_text: string | null;
+    tags: string[];
+    locale: string | null;
+    scheduled_for: string | null;
+    remind_me: boolean;
+    platform_fields: Record<string, unknown>;
+  }>
+): Promise<{ variant: DistributionVariantWire }> {
+  return relayFetch<{ variant: DistributionVariantWire }>(
+    `/api/v1/relay/distribution-variants/${encodeURIComponent(variantId)}`,
+    { method: "PATCH", body: JSON.stringify(body) }
+  );
+}
+
+export async function approveDistributionVariant(
+  variantId: string
+): Promise<{ variant: DistributionVariantWire }> {
+  return relayFetch<{ variant: DistributionVariantWire }>(
+    `/api/v1/relay/distribution-variants/${encodeURIComponent(variantId)}/approve`,
+    { method: "POST", body: "{}" }
+  );
+}
+
+export async function patchPostbotTask(
+  taskId: string,
+  body: { status?: "done" | "dismissed"; remind_me?: boolean }
+): Promise<{ task: PostbotTaskWire }> {
+  return relayFetch<{ task: PostbotTaskWire }>(
+    `/api/v1/creator/postbot-tasks/${encodeURIComponent(taskId)}`,
+    { method: "PATCH", body: JSON.stringify(body) }
+  );
+}
+
+export async function startDistributionHandoff(
+  variantId: string,
+  body?: { extension_installation_id?: string | null; extension_tab_id?: number | null }
+): Promise<{ attempt: DistributionAttemptWire }> {
+  return relayFetch<{ attempt: DistributionAttemptWire }>(
+    `/api/v1/relay/distribution-variants/${encodeURIComponent(variantId)}/handoff`,
+    { method: "POST", body: JSON.stringify(body ?? {}) }
+  );
+}
+
+export async function fetchDistributionAttempt(
+  attemptId: string
+): Promise<{ attempt: DistributionAttemptWire }> {
+  return relayFetch<{ attempt: DistributionAttemptWire }>(
+    `/api/v1/relay/distribution-attempts/${encodeURIComponent(attemptId)}`
+  );
+}
+
+export async function completeDistributionAttempt(
+  attemptId: string,
+  body: {
+    external_url?: string | null;
+    external_id?: string | null;
+    status?: "posted" | "abandoned" | "failed";
+  }
+): Promise<{ attempt: DistributionAttemptWire }> {
+  return relayFetch<{ attempt: DistributionAttemptWire }>(
+    `/api/v1/relay/distribution-attempts/${encodeURIComponent(attemptId)}/complete`,
+    { method: "POST", body: JSON.stringify(body) }
+  );
+}
+
+/** Artist SaaS billing (Phase 1) — null plan when no subscription. */
+export type CreatorBillingSubscription =
+  | {
+      scope: string;
+      plan: "studio_core" | "autopost" | "growth_engine" | null;
+      status: string;
+      current_period_end: string;
+      cancel_at_period_end: boolean;
+    }
+  | { plan: null };
+
+export async function fetchCreatorBillingSubscription(): Promise<CreatorBillingSubscription> {
+  return relayFetch<CreatorBillingSubscription>("/api/v1/billing/subscription");
+}
+
+export async function createCreatorBillingCheckout(
+  plan: "studio_core" | "autopost" | "growth_engine"
+): Promise<{ checkout_url: string }> {
+  return relayFetch<{ checkout_url: string }>("/api/v1/billing/checkout", {
+    method: "POST",
+    body: JSON.stringify({ plan })
+  });
+}
+
+export async function createFanBillingCheckout(
+  plan: "supporter" | "curator"
+): Promise<{ checkout_url: string }> {
+  return relayFetch<{ checkout_url: string }>("/api/v1/billing/checkout", {
+    method: "POST",
+    body: JSON.stringify({ plan })
+  });
+}
+
+export async function createReloadPackCheckout(): Promise<{ checkout_url: string }> {
+  return relayFetch<{ checkout_url: string }>("/api/v1/billing/checkout", {
+    method: "POST",
+    body: JSON.stringify({ reload_pack: true })
+  });
+}
+
+export async function createCreatorBillingPortal(): Promise<{ portal_url: string }> {
+  return relayFetch<{ portal_url: string }>("/api/v1/billing/portal", {
+    method: "POST",
+    body: JSON.stringify({})
+  });
+}
+
+export type CreatorEarningsWire = {
+  available_cents: number;
+  lifetime_cents: number;
+  this_month: { tips: number; earned_cents: number };
+  bill_credits: Array<{
+    id: string;
+    amount_cents: number;
+    stripe_ref: string | null;
+    created_at: string;
+  }>;
+  entries: Array<{
+    id: string;
+    entry_kind: string;
+    amount_cents: number;
+    reveal_id: string | null;
+    created_at: string;
+  }>;
+  payout_threshold_cents?: number;
+  payouts_enabled?: boolean;
+  /** Server Connect status: pending | complete | restricted; null = not started. */
+  onboarding_status?: string | null;
+};
+
+export type CreatorPayoutStatus = "requested" | "in_transit" | "settled" | "failed" | string;
+
+/** Stable payout-history row from GET /api/v1/creator/payouts. */
+export type CreatorPayoutWire = {
+  payout_id: string;
+  amount_cents: number;
+  status: CreatorPayoutStatus;
+  requested_at: string;
+  settled_at: string | null;
+  failure_reason: string | null;
+};
+
+export type CreatorPayoutsListWire = {
+  payouts: CreatorPayoutWire[];
+};
+
+export async function fetchCreatorEarnings(): Promise<CreatorEarningsWire> {
+  return relayFetch<CreatorEarningsWire>("/api/v1/creator/earnings");
+}
+
+export async function fetchCreatorPayouts(): Promise<CreatorPayoutsListWire> {
+  return relayFetch<CreatorPayoutsListWire>("/api/v1/creator/payouts");
+}
+
+export async function startCreatorPayoutOnboarding(): Promise<{ onboarding_url: string }> {
+  return relayFetch<{ onboarding_url: string }>("/api/v1/creator/payouts/onboard", {
+    method: "POST",
+    body: JSON.stringify({})
+  });
+}
+
+export async function requestCreatorPayout(): Promise<{
+  payout_id: string;
+  amount_cents: number;
+}> {
+  return relayFetch<{ payout_id: string; amount_cents: number }>("/api/v1/creator/payouts", {
+    method: "POST",
+    body: JSON.stringify({})
+  });
 }

@@ -1,6 +1,8 @@
 /**
  * PE-K (BO-P2-05) — Idempotency middleware.
  *
+ * @fileoverview Express middleware for safe retries via `Idempotency-Key` + body hash replay.
+ *
  * Express middleware that wraps mutating routes so that retries with the same
  * `Idempotency-Key` header replay the original response instead of re-executing the
  * operation. Optional per-route enablement so we can opt in conservatively.
@@ -114,8 +116,9 @@ export interface IdempotencyMiddlewareOptions {
 }
 
 /**
- * Build a middleware that gates ONE route. Reuse the same store across routes; pass a
- * unique `scope` per route (typically the HTTP path or a short logical name).
+ * @description Builds middleware that gates one route; reuse `store` with distinct `scope` per path.
+ * @param {IdempotencyMiddlewareOptions} options
+ * @returns {import("express").RequestHandler}
  */
 export function buildIdempotencyMiddleware(options: IdempotencyMiddlewareOptions): RequestHandler {
   const { store, scope } = options;

@@ -6,6 +6,7 @@ import { galleryItemKey } from "@/lib/gallery-group";
 import {
   RELAY_API_BASE,
   galleryItemExportVisibleToVisitor,
+  galleryItemImageGridSrc,
   galleryItemPreviewSrc,
   type GalleryItem,
   type TierFacet
@@ -17,9 +18,10 @@ import { designerUnlockLabelFromFacets } from "@/lib/tier-access";
 import { visitorMediaTierGateLocked } from "@/lib/visitor-tier-gate";
 import {
   VisitorTierGateBackdrop,
-  VisitorTierGateOverlay,
   type VisitorTierGateOverlayVariant
 } from "@/app/components/visitor/VisitorTierGateOverlay";
+import { LockedPromoOverlay } from "@/app/components/visitor/LockedPromoOverlay";
+import type { EffectivePromo } from "@/lib/effective-promo";
 import {
   VisitorPatronTileEngageCluster,
   type VisitorPatronTileSnipProps,
@@ -60,8 +62,11 @@ export type VisitorBatchSlideMediaProps = {
   patronMembershipUrl?: string | null;
   accentColor?: string;
   lockedOverlayVariant?: VisitorTierGateOverlayVariant;
+  /** Slice 9 — resolved locked promo for this post when available. */
+  effectivePromo?: EffectivePromo | null;
   visitorPatronStar?: VisitorPatronTileStarProps;
   visitorPatronSnip?: VisitorPatronTileSnipProps;
+  onVisitorTierReveal?: (args: { postId: string; mediaId?: string }) => void;
 };
 
 /**
@@ -81,8 +86,10 @@ export function VisitorBatchSlideMedia({
   patronMembershipUrl = null,
   accentColor = "#00aa6f",
   lockedOverlayVariant = "blurred",
+  effectivePromo = null,
   visitorPatronStar,
-  visitorPatronSnip
+  visitorPatronSnip,
+  onVisitorTierReveal
 }: VisitorBatchSlideMediaProps) {
   const n = items.length;
   const [carouselIdx, setCarouselIdx] = useState(0);
@@ -147,11 +154,18 @@ export function VisitorBatchSlideMedia({
         visitorMediaTierGateLocked(current) ? (
           <div className="absolute inset-0 overflow-hidden bg-[var(--lib-muted)]">
             <VisitorTierGateBackdrop previewSrc={galleryItemPreviewSrc(current)} />
-            <VisitorTierGateOverlay
+            <LockedPromoOverlay
               unlockLabel={designerUnlockLabelFromFacets(current, tierOrderIds, tierTitleById)}
               accentColor={accentColor}
               membershipUrl={patronMembershipUrl}
+              effectivePromo={effectivePromo}
               variant={lockedOverlayVariant}
+              onUpgradeClick={() =>
+                onVisitorTierReveal?.({
+                  postId: current.post_id,
+                  mediaId: current.media_id
+                })
+              }
             />
           </div>
         ) : (
@@ -172,7 +186,13 @@ export function VisitorBatchSlideMedia({
             const locked = !galleryItemExportVisibleToVisitor(item);
             const isActive = idx === displayIdx;
             const isVideo = Boolean(item.mime_type?.startsWith("video/"));
-            const src = item.content_url_path ? `${RELAY_API_BASE}${item.content_url_path}` : "";
+            const src = isVideo
+              ? item.content_url_path
+                ? `${RELAY_API_BASE}${item.content_url_path}`
+                : ""
+              : item.content_url_path
+                ? `${RELAY_API_BASE}${item.content_url_path}`
+                : galleryItemImageGridSrc(item) ?? "";
 
               if (locked) {
                 return visitorMediaTierGateLocked(item) ? (
@@ -190,11 +210,18 @@ export function VisitorBatchSlideMedia({
                     }}
                   >
                     <VisitorTierGateBackdrop previewSrc={galleryItemPreviewSrc(item)} />
-                    <VisitorTierGateOverlay
+                    <LockedPromoOverlay
                       unlockLabel={designerUnlockLabelFromFacets(item, tierOrderIds, tierTitleById)}
                       accentColor={accentColor}
                       membershipUrl={patronMembershipUrl}
+                      effectivePromo={effectivePromo}
                       variant={lockedOverlayVariant}
+                      onUpgradeClick={() =>
+                        onVisitorTierReveal?.({
+                          postId: item.post_id,
+                          mediaId: item.media_id
+                        })
+                      }
                     />
                   </div>
                 ) : (

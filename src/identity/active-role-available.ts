@@ -1,4 +1,11 @@
 /**
+ * @fileoverview PE-I — which roles an account may switch into for UI (`relay_active_role` lens).
+ * @description Never authz; filters the role switcher by DB-backed `Account` + membership counts.
+ * @see ./active-role-default.js
+ * @see src/jsdoc-core-entities.ts
+ */
+
+/**
  * PE-I (BO-P4-01) — resolve which roles an account is allowed to switch into.
  *
  * The `relay_active_role` cookie is a UI lens, never an authz signal (see GR-T0-2). But the
@@ -30,9 +37,10 @@ const EMPTY: AvailableRoles = {
 };
 
 /**
- * Resolve roles available to an account. Returns an empty list when prisma is unavailable
- * (file-backed identity stores can't enumerate memberships) -- the caller should treat that as
- * "no role switcher available" and let the legacy cookie path stand.
+ * @param {import("@prisma/client").PrismaClient | null | undefined} prisma
+ * @param {string} accountId
+ * @returns {Promise<AvailableRoles>}
+ * @async
  */
 export async function resolveAvailableRolesForAccount(
   prisma: PrismaClient | null | undefined,

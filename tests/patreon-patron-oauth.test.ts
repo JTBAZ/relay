@@ -92,7 +92,7 @@ describe("Patreon patron OAuth exchange", () => {
         creator_id: "cr_patron_test",
         patreon_campaign_numeric_id: "555555",
         code: "oauth_code_xyz",
-        redirect_uri: "http://localhost:3000/patreon/patron/callback"
+        redirect_uri: "http://localhost:3000/connect/patreon/patron/callback"
       });
 
     expect(res.status).toBe(200);

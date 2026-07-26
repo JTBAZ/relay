@@ -3,9 +3,11 @@
 import type { CSSProperties, MouseEvent as ReactMouseEvent } from "react";
 import { useEffect, useRef, useState } from "react";
 import { EyeOff, Play, Search } from "lucide-react";
+import { galleryItemKey } from "@/lib/gallery-group";
 import {
   RELAY_API_BASE,
   relayFetch,
+  galleryItemImageGridSrc,
   type GalleryItem,
   type PostVisibility,
   type TierFacet
@@ -20,6 +22,40 @@ import {
 } from "./PostAssetCarouselStrip";
 
 const SEL = "#00aa6f";
+
+const DISTRIBUTION_DEST_LABEL: Record<string, string> = {
+  patreon: "Patreon",
+  x: "X",
+  deviantart: "DA",
+  bluesky: "Bluesky"
+};
+
+function distributionChipLabel(
+  destination: string,
+  attemptStatus: string | null | undefined,
+  externalUrl: string | null | undefined
+): string {
+  const name = DISTRIBUTION_DEST_LABEL[destination] ?? destination;
+  if (attemptStatus === "posted" || externalUrl) {
+    return externalUrl ? `${name} ↗` : `${name} · Posted`;
+  }
+  if (attemptStatus?.startsWith("fill_")) {
+    return `${name} · Sent`;
+  }
+  return name;
+}
+
+function distributionBadgeChips(item: GalleryItem): { key: string; label: string; href?: string }[] {
+  const summary = item.distribution_summary;
+  if (!summary?.destinations?.length) return [];
+  return summary.destinations
+    .filter((d) => d.variant_status || d.attempt_status || d.external_url)
+    .map((d) => ({
+      key: `dist:${d.destination}`,
+      label: distributionChipLabel(d.destination, d.attempt_status, d.external_url),
+      href: d.external_url ?? undefined
+    }));
+}
 
 function libraryPlaceholderLabel(item: GalleryItem): string {
   if (item.processing_status === "FAILED") return "Media unavailable";
@@ -71,7 +107,10 @@ function LibraryUniformMeta({
       : null;
   const tierLabel = tierId ? accessChipLabel(tierId, tierTitleById) : null;
 
-  const chips: { key: string; label: string }[] = [];
+  const chips: { key: string; label: string; href?: string }[] = [];
+  for (const chip of distributionBadgeChips(item)) {
+    chips.push(chip);
+  }
   if (items.length > 1) {
     chips.push({ key: "__assets", label: `${items.length} assets` });
   }
@@ -114,11 +153,25 @@ function LibraryUniformMeta({
         {chips.length === 0 ? (
           <span className="text-[9px] text-white/[0.12]">&nbsp;</span>
         ) : (
-          chips.map((c) => (
-            <span key={c.key} className={chipLow} title={c.label}>
-              {c.label}
-            </span>
-          ))
+          chips.map((c) =>
+            c.href ? (
+              <a
+                key={c.key}
+                href={c.href}
+                target="_blank"
+                rel="noopener noreferrer"
+                className={chipLow}
+                title={c.label}
+                onClick={(e) => e.stopPropagation()}
+              >
+                {c.label}
+              </a>
+            ) : (
+              <span key={c.key} className={chipLow} title={c.label}>
+                {c.label}
+              </span>
+            )
+          )
         )}
       </div>
     </div>
@@ -245,12 +298,13 @@ export default function GalleryGridTile({
     ? "relative min-h-0 w-full flex-1 overflow-hidden bg-[var(--lib-muted)]"
     : `${thumbClass} relative overflow-hidden bg-[var(--lib-muted)]`;
 
+  /** Focused carousel asset (or sole asset) — multi-asset retry no longer requires PostBatchModal (G8). */
   const showExportFail =
-    items.length === 1 && !item.has_export && Boolean(item.export_error) && Boolean(creatorId);
+    !item.has_export && Boolean(item.export_error) && Boolean(creatorId);
 
   const runExportRetry = async (e: ReactMouseEvent<HTMLButtonElement>) => {
     e.stopPropagation();
-    if (!creatorId || items.length !== 1 || exportRetryBusy) return;
+    if (!creatorId || exportRetryBusy) return;
     setExportRetryBusy(true);
     try {
       await relayFetch<unknown>("/api/v1/export/media", {
@@ -300,7 +354,8 @@ export default function GalleryGridTile({
       data-gallery-tile
       role="listitem"
       className={`group flex h-full min-h-0 w-full min-w-0 flex-col overflow-hidden rounded-2xl bg-[var(--lib-tile)] outline-none transition-all duration-200 ${borderRing} ${keyboardFocusRingClass} ${
-        hovered ? "z-10 scale-[1.028] shadow-xl shadow-black/40" : "z-0 scale-100"
+        // Avoid idle `transform` — Chromium often treats composited GIF/WebP animations as paused or flat when ancestors have a transform stack.
+        hovered ? "z-10 scale-[1.028] shadow-xl shadow-black/40" : "z-0"
       }`}
       style={borderColorStyle}
       tabIndex={0}
@@ -348,7 +403,7 @@ export default function GalleryGridTile({
           >
             {/* eslint-disable-next-line @next/next/no-img-element -- relay-served export URLs */}
             <img
-              src={`${RELAY_API_BASE}${item.content_url_path}`}
+              src={galleryItemImageGridSrc(item) ?? `${RELAY_API_BASE}${item.content_url_path}`}
               alt=""
               className="block h-full w-full object-cover object-center"
             />
@@ -470,19 +525,12 @@ export default function GalleryGridTile({
             </div>
 
             <div className="absolute inset-0 z-[1] overflow-hidden rounded-xl">
-              {items.map((media, index) => {
+              {(() => {
+                const media = items[Math.min(carouselIdx, items.length - 1)];
+                if (!media) return null;
                 const main = postCarouselMainVisual(media);
-                const active = index === carouselIdx;
                 return (
-                  <div
-                    key={`${media.media_id}:${index}`}
-                    aria-hidden={!active}
-                    className="absolute inset-0 transition-all duration-300 ease-out"
-                    style={{
-                      opacity: active ? 1 : 0,
-                      transform: active ? "translateX(0)" : `translateX(${index < carouselIdx ? "-8%" : "8%"})`
-                    }}
-                  >
+                  <div key={galleryItemKey(media)} className="absolute inset-0">
                     {main.relayProcessing ? (
                       <div className="flex h-full w-full items-center justify-center bg-[var(--lib-muted)] px-4 text-center">
                         <span className="text-[11px] font-medium leading-tight text-[var(--lib-fg-muted)]">
@@ -510,7 +558,7 @@ export default function GalleryGridTile({
                     )}
                   </div>
                 );
-              })}
+              })()}
             </div>
 
             <button

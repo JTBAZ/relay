@@ -1,3 +1,9 @@
+/**
+ * @fileoverview File-backed ingest dead-letter queue (`ingest_dlq.json`).
+ * @description Append-only JSON array of failed jobs with full batch payloads.
+ * @see ./dlq-db.js
+ */
+
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import type { SyncBatchInput } from "./types.js";
@@ -20,6 +26,9 @@ export interface DeadLetterQueue {
   count(): Promise<number>;
 }
 
+/**
+ * @description File-backed dead-letter JSON array for failed ingest jobs.
+ */
 export class FileDeadLetterQueue implements DeadLetterQueue {
   private readonly filePath: string;
 

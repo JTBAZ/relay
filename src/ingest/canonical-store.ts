@@ -1,3 +1,10 @@
+/**
+ * @fileoverview Canonical snapshot row types + file-backed `CanonicalStore`.
+ * @description Nested maps per `creator_id` for campaigns/tiers/posts/media and ingest idempotency keys.
+ * @see ./canonical-store-db.js
+ * @see src/jsdoc-core-entities.ts
+ */
+
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 
@@ -35,11 +42,13 @@ export type PostVersionRow = {
 export type PostRow = {
   post_id: string;
   creator_id: string;
+  /** DB round-trip: true when the post is readable without patron tier membership. */
+  is_public?: boolean;
   current: PostVersionRow;
   versions: PostVersionRow[];
   upstream_status: "active" | "deleted";
-  /// DB round-trip: omit or PATREON = mirrored from Patreon; RELAY = native (skipped on Patreon saveForCreator).
-  source?: "PATREON" | "RELAY";
+  /// DB round-trip: omit or PATREON = mirrored ingest; RELAY = native (skipped by mirrored save lanes); SUBSCRIBESTAR = SubscribeStar ingest.
+  source?: "PATREON" | "RELAY" | "SUBSCRIBESTAR";
 };
 
 export type MediaVersionRow = {
@@ -118,6 +127,9 @@ export interface CanonicalStore {
   ): Promise<void>;
 }
 
+/**
+ * @description Loads/saves `canonical.json` and implements global mutate (no per-creator slice in file mode).
+ */
 export class FileCanonicalStore implements CanonicalStore {
   private readonly filePath: string;
 

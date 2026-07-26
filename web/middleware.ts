@@ -10,16 +10,28 @@ import { NextResponse, type NextRequest } from "next/server";
 
 /**
  * Logged-out users are redirected to /login?returnTo=…
- * Public marketing and legal routes stay out of this list (e.g. `/legal/*`).
+ * Public marketing and legal routes stay out of this list (e.g. `/legal/*`, `/[handle]`, `/u/[handle]`).
  */
 const APP_ROUTES: RegExp[] = [
-  /^\/designer(\/|$)/,
-  /^\/action-center(\/|$)/,
+  /^\/studio$/,
+  /^\/studio\/designer(\/|$)/,
+  /^\/studio\/analytics(\/|$)/,
+  /^\/studio\/actions(\/|$)/,
+  /^\/studio\/new-post(\/|$)/,
+  /^\/studio\/autopost(\/|$)/,
+  /^\/studio\/import(\/|$)/,
+  /^\/studio\/moderation(\/|$)/,
+  /^\/feed(\/|$)/,
+  /^\/discover(\/|$)/,
+  /^\/library(\/|$)/,
+  /^\/notifications(\/|$)/,
+  /^\/settings(\/|$)/,
+  /^\/profile(\/|$)/,
   /^\/collections(\/|$)/,
-  /** All `/patron/*` except public creator profiles `/patron/c/[handle]`. */
-  /^\/patron\/(?!c\/)/,
+  /^\/commission-hub(\/|$)/,
+  /^\/former-subscriptions(\/|$)/,
   /^\/dev\//,
-  /^\/creator\/connect(\/|$)/,
+  /^\/connect\/creator(\/|$)/,
   /^\/extension\/authorize(\/|$)/,
   /^\/settings\/connected-extensions(\/|$)/
 ];
@@ -27,100 +39,163 @@ const APP_ROUTES: RegExp[] = [
 /** Logged-in users are redirected away from marketing / auth entry (not onboarding — setup continues while signed in). */
 const AUTH_ENTRY_ROUTES: RegExp[] = [/^\/login(\/|$)/, /^\/landing(\/|$)/];
 
-/** Same logic as `resolvePostAuthPath` in `web/lib/post-login-redirect.ts`. */
-function safeReturnTo(raw: string | null): string {
+type ActiveRole = "creator" | "supporter";
+
+/** Same path rules as `resolvePostAuthPath` in `web/lib/post-login-redirect.ts`. */
+function safeReturnTo(raw: string | null, fallback = "/"): string {
   const r = raw?.trim();
-  if (!r) return "/";
-  if (!r.startsWith("/")) return "/";
-  if (r.startsWith("//")) return "/";
+  if (!r) return fallback;
+  if (!r.startsWith("/")) return fallback;
+  if (r.startsWith("//")) return fallback;
   return r;
+}
+
+function readActiveRoleFromRequest(req: NextRequest): ActiveRole | null {
+  const raw = req.cookies.get("relay_active_role")?.value?.trim();
+  return raw === "creator" || raw === "supporter" ? raw : null;
+}
+
+/** Role-aware default when a signed-in user hits an auth entry route without returnTo. */
+function defaultSignedInLanding(req: NextRequest): string {
+  return readActiveRoleFromRequest(req) === "creator" ? "/studio" : "/feed";
+}
+
+/** PUX-001 — dev account switcher must stay reachable while signed in. */
+function isPilotUxDevLoginRoute(path: string): boolean {
+  return path === "/login/pilot-ux";
 }
 
 function isAppRoute(path: string): boolean {
   return APP_ROUTES.some((re) => re.test(path));
 }
 
-/**
- * Narrow dev-only carve-out: `/patron/library?state=...` is the BO-P2-02 skeletal-UI
- * design fixture entry point. When the patron-feed dev tools flag is on, allow
- * unauthenticated viewing so designers/QA can inspect the gated states without a session.
- * Production builds never set this flag, so the route stays auth-gated.
- */
+function devToolsEnabled(): boolean {
+  return (
+    (process.env.NEXT_PUBLIC_RELAY_PATRON_FEED_DEV_TOOLS ?? "").toString().toLowerCase() ===
+    "true"
+  );
+}
+
+function isDevFixture(path: string, expected: string, search: URLSearchParams): boolean {
+  if (path !== expected) return false;
+  if (!search.has("state")) return false;
+  return devToolsEnabled();
+}
+
 function isPatronLibraryDevFixture(path: string, search: URLSearchParams): boolean {
-  if (path !== "/patron/library") return false;
-  if (!search.has("state")) return false;
-  const flag =
-    (process.env.NEXT_PUBLIC_RELAY_PATRON_FEED_DEV_TOOLS ?? "")
-      .toString()
-      .toLowerCase();
-  return flag === "true";
+  return isDevFixture(path, "/library", search);
 }
 
-/**
- * PE-E (BO-P2-04) — sibling carve-out for `/patron/feed?state=...`. Lets designers/QA review
- * the live-wired comment surface (mixed thread, empty, error, moderating, auto-mod-blocked)
- * without an authenticated session. Same flag-gated pattern as the library fixture.
- */
 function isPatronFeedDevFixture(path: string, search: URLSearchParams): boolean {
-  if (path !== "/patron/feed") return false;
-  if (!search.has("state")) return false;
-  const flag =
-    (process.env.NEXT_PUBLIC_RELAY_PATRON_FEED_DEV_TOOLS ?? "")
-      .toString()
-      .toLowerCase();
-  return flag === "true";
+  return isDevFixture(path, "/feed", search);
 }
 
-/**
- * PE-F (BO-P3-02) — sibling carve-out for `/patron/discover?state=...`. Same flag-gated
- * pattern; lets design/QA review the Discover grid states (mixed / empty / error / searched)
- * without seeded backend rows.
- */
 function isPatronDiscoverDevFixture(path: string, search: URLSearchParams): boolean {
-  if (path !== "/patron/discover") return false;
-  if (!search.has("state")) return false;
-  const flag =
-    (process.env.NEXT_PUBLIC_RELAY_PATRON_FEED_DEV_TOOLS ?? "")
-      .toString()
-      .toLowerCase();
-  return flag === "true";
+  return isDevFixture(path, "/discover", search);
 }
 
-/**
- * PE-G (BO-P3-04) — sibling carve-out for `/patron/notifications?state=...` and
- * `/patron/notifications/preferences?state=...`. Same flag-gated pattern; covers both the
- * inbox and the preferences settings page.
- */
 function isPatronNotificationsDevFixture(path: string, search: URLSearchParams): boolean {
-  if (path !== "/patron/notifications" && path !== "/patron/notifications/preferences") {
-    return false;
-  }
-  if (!search.has("state")) return false;
-  const flag =
-    (process.env.NEXT_PUBLIC_RELAY_PATRON_FEED_DEV_TOOLS ?? "")
-      .toString()
-      .toLowerCase();
-  return flag === "true";
+  return (
+    isDevFixture(path, "/notifications", search) ||
+    isDevFixture(path, "/notifications/preferences", search)
+  );
 }
 
-/**
- * PE-J (BO-P4-03) — sibling carve-out for `/patron/settings?state=...`. Same flag-gated
- * pattern; lets design / QA review the settings page states (mixed / empty / error /
- * pending-deletion) without seeded backend rows. Destructive actions in the dev preview
- * mutate the local fixture only.
- */
 function isPatronSettingsDevFixture(path: string, search: URLSearchParams): boolean {
-  if (path !== "/patron/settings") return false;
-  if (!search.has("state")) return false;
-  const flag =
-    (process.env.NEXT_PUBLIC_RELAY_PATRON_FEED_DEV_TOOLS ?? "")
-      .toString()
-      .toLowerCase();
-  return flag === "true";
+  return isDevFixture(path, "/settings", search);
+}
+
+/** Patron profile layout draft at `/dev/patron-profile` — inspectable from pilot UX dev login. */
+function isPatronProfileDevDraft(path: string): boolean {
+  if (path !== "/dev/patron-profile" && !path.startsWith("/dev/patron-profile/")) return false;
+  if (process.env.NODE_ENV !== "production") return true;
+  return (
+    (process.env.NEXT_PUBLIC_RELAY_PILOT_UX_DEV_LOGIN ?? "").trim().toLowerCase() === "true"
+  );
 }
 
 function isAuthEntryRoute(path: string): boolean {
   return AUTH_ENTRY_ROUTES.some((re) => re.test(path));
+}
+
+function redirectPreservingQuery(req: NextRequest, pathname: string): NextResponse {
+  const dest = new URL(req.url);
+  dest.pathname = pathname;
+  return NextResponse.redirect(dest);
+}
+
+function legacyRedirectPath(path: string): string | null {
+  if (path === "/patron") return "/feed";
+  if (path === "/designer" || path.startsWith("/designer/")) {
+    return `/studio${path}`;
+  }
+  if (path === "/analytics" || path.startsWith("/analytics/")) {
+    return `/studio${path}`;
+  }
+  if (path === "/action-center" || path.startsWith("/action-center/")) {
+    return path.replace(/^\/action-center/, "/studio/actions");
+  }
+  if (path === "/new-post" || path.startsWith("/new-post/")) {
+    return `/studio${path}`;
+  }
+  if (path === "/manual-import" || path.startsWith("/manual-import/")) {
+    return path.replace(/^\/manual-import/, "/studio/import");
+  }
+  if (path === "/visitor" || path.startsWith("/visitor/")) {
+    return path.replace(/^\/visitor/, "/studio/preview");
+  }
+  if (path === "/creator/connect" || path.startsWith("/creator/connect/")) {
+    return path.replace(/^\/creator\/connect/, "/connect/creator");
+  }
+  if (path === "/patreon" || path.startsWith("/patreon/")) {
+    return path.replace(/^\/patreon/, "/connect/patreon");
+  }
+  if (path === "/subscribestar/creator" || path.startsWith("/subscribestar/creator/")) {
+    return path.replace(/^\/subscribestar\/creator/, "/connect/subscribestar/creator");
+  }
+  if (path === "/p" || path.startsWith("/p/")) {
+    return path === "/p" ? "/u" : path.replace(/^\/p/, "/u");
+  }
+  if (path === "/patron/c" || path.startsWith("/patron/c/")) {
+    return path === "/patron/c" ? "/" : path.replace(/^\/patron\/c/, "");
+  }
+  if (path === "/patron/onboarding" || path.startsWith("/patron/onboarding/")) {
+    return path.replace(/^\/patron\/onboarding/, "/onboarding/patron");
+  }
+  if (path === "/patron/collections" || path.startsWith("/patron/collections/")) {
+    return path.replace(/^\/patron\/collections/, "/collections");
+  }
+  if (path === "/patron/feed/post" || path.startsWith("/patron/feed/post/")) {
+    return path.replace(/^\/patron\/feed\/post/, "/feed/post");
+  }
+  if (path === "/patron/feed" || path.startsWith("/patron/feed/")) {
+    return path.replace(/^\/patron\/feed/, "/feed");
+  }
+  if (path === "/patron/discover" || path.startsWith("/patron/discover/")) {
+    return path.replace(/^\/patron\/discover/, "/discover");
+  }
+  if (path === "/patron/library" || path.startsWith("/patron/library/")) {
+    return path.replace(/^\/patron\/library/, "/library");
+  }
+  if (path === "/patron/notifications" || path.startsWith("/patron/notifications/")) {
+    return path.replace(/^\/patron\/notifications/, "/notifications");
+  }
+  if (path === "/patron/settings" || path.startsWith("/patron/settings/")) {
+    return path.replace(/^\/patron\/settings/, "/settings");
+  }
+  if (path === "/patron/profile" || path.startsWith("/patron/profile/")) {
+    return path.replace(/^\/patron\/profile/, "/profile");
+  }
+  if (path === "/patron/commission-hub" || path.startsWith("/patron/commission-hub/")) {
+    return path.replace(/^\/patron\/commission-hub/, "/commission-hub");
+  }
+  if (
+    path === "/patron/former-subscriptions" ||
+    path.startsWith("/patron/former-subscriptions/")
+  ) {
+    return path.replace(/^\/patron\/former-subscriptions/, "/former-subscriptions");
+  }
+  return null;
 }
 
 export function middleware(req: NextRequest) {
@@ -135,11 +210,21 @@ export function middleware(req: NextRequest) {
     return NextResponse.next();
   }
 
+  const legacyPath = legacyRedirectPath(path);
+  if (legacyPath) {
+    return redirectPreservingQuery(req, legacyPath);
+  }
+
   const signedIn = Boolean(req.cookies.get("relay_session")?.value);
 
   /** Logged-out visitors to the marketing home or legacy landing should start at onboarding. */
   if (!signedIn && (path === "/" || path === "/landing")) {
     return NextResponse.redirect(new URL("/onboarding", req.url));
+  }
+
+  /** Signed-in users hitting `/` land on role-appropriate home. */
+  if (signedIn && path === "/") {
+    return NextResponse.redirect(new URL(defaultSignedInLanding(req), req.url));
   }
 
   if (
@@ -149,15 +234,19 @@ export function middleware(req: NextRequest) {
     !isPatronFeedDevFixture(path, url.searchParams) &&
     !isPatronDiscoverDevFixture(path, url.searchParams) &&
     !isPatronNotificationsDevFixture(path, url.searchParams) &&
-    !isPatronSettingsDevFixture(path, url.searchParams)
+    !isPatronSettingsDevFixture(path, url.searchParams) &&
+    !isPatronProfileDevDraft(path)
   ) {
     const dest = new URL("/login", req.url);
     dest.searchParams.set("returnTo", path + url.search);
     return NextResponse.redirect(dest);
   }
 
-  if (signedIn && isAuthEntryRoute(path)) {
-    const target = safeReturnTo(url.searchParams.get("returnTo"));
+  if (signedIn && isAuthEntryRoute(path) && !isPilotUxDevLoginRoute(path)) {
+    const target = safeReturnTo(
+      url.searchParams.get("returnTo"),
+      defaultSignedInLanding(req)
+    );
     const dest = new URL(target, req.url);
     return NextResponse.redirect(dest);
   }

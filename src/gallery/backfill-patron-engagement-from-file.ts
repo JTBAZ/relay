@@ -1,3 +1,7 @@
+/**
+ * @fileoverview Migration: patron favorites + patron saved collections JSON → Prisma tables.
+ */
+
 import type { PrismaClient } from "@prisma/client";
 import { PatronFavoriteTargetKind as PrismaFavoriteKind } from "@prisma/client";
 import { FilePatronCollectionsStore } from "./patron-collections-store.js";
@@ -7,6 +11,17 @@ function toPrismaKind(kind: "post" | "media"): PrismaFavoriteKind {
   return kind === "post" ? PrismaFavoriteKind.post : PrismaFavoriteKind.media;
 }
 
+/**
+ * @description Upserts patron favorites and patron collections/entries from legacy JSON stores.
+ * @param args.prisma Prisma client.
+ * @param args.favoritesPath JSON favorites file path.
+ * @param args.collectionsPath JSON collections aggregate path.
+ * @returns Counts for logging.
+ * @async
+ * @throws Propagates JSON read/parse errors and Prisma upsert failures.
+ * @see prisma/schema.prisma `PatronFavorite`, `PatronSavedCollection`
+ * @security-audit-required Migration scripts must run in trusted contexts—IDs in files become authoritative rows.
+ */
 export async function backfillPatronEngagementFromFiles(args: {
   prisma: PrismaClient;
   favoritesPath: string;

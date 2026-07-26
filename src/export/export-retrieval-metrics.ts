@@ -1,4 +1,8 @@
 /**
+ * @fileoverview In-process counters for export retrieval, delivery, and integrity endpoints (Workstream C).
+ */
+
+/**
  * Workstream C (T-013): in-process counters for export retrieval + integrity signals.
  * Reset on process restart — pair with logs/APM for rolling 7d SLO proof.
  */
@@ -21,6 +25,7 @@ const state = {
   integrity_sample_fail: 0
 };
 
+/** @description Zeroes all export retrieval counters (tests). */
 export function resetExportRetrievalMetricsForTests(): void {
   state.export_media_attempts = 0;
   state.export_media_successes = 0;
@@ -35,44 +40,54 @@ export function resetExportRetrievalMetricsForTests(): void {
   state.integrity_sample_fail = 0;
 }
 
+/** @description Counts export media POST attempts. */
 export function recordExportMediaAttempt(): void {
   state.export_media_attempts += 1;
 }
 
+/** @description Successful export media completion. */
 export function recordExportMediaSuccess(): void {
   state.export_media_successes += 1;
 }
 
+/** @description Failed export media POST. */
 export function recordExportMediaFailure(): void {
   state.export_media_failures += 1;
 }
 
+/** @description Successful GET content byte delivery. */
 export function recordContentDeliverySuccess(): void {
   state.content_delivery_successes += 1;
 }
 
+/** @description Failed GET content delivery. */
 export function recordContentDeliveryFailure(): void {
   state.content_delivery_failures += 1;
 }
 
+/** @description Successful preview endpoint response. */
 export function recordPreviewDeliverySuccess(): void {
   state.preview_delivery_successes += 1;
 }
 
+/** @description Failed preview endpoint response. */
 export function recordPreviewDeliveryFailure(): void {
   state.preview_delivery_failures += 1;
 }
 
+/** @description Records checksum verify match/mismatch. */
 export function recordVerifyResult(match: boolean): void {
   if (match) state.verify_match_true += 1;
   else state.verify_match_false += 1;
 }
 
+/** @description Adds integrity sample pass/fail increments. */
 export function recordIntegritySampleResults(ok: number, fail: number): void {
   state.integrity_sample_ok += ok;
   state.integrity_sample_fail += fail;
 }
 
+/** @description Counters plus derived ratios for health evaluation. */
 export type ExportRetrievalMetricsSnapshot = typeof state & {
   content_retrieval_ratio: number | null;
   /** (successes) / (successes + failures) for GET content */
@@ -80,6 +95,10 @@ export type ExportRetrievalMetricsSnapshot = typeof state & {
   verify_match_ratio: number | null;
 };
 
+/**
+ * @description Aggregates raw counter state with derived percentages.
+ * @returns Snapshot including null ratios when denominators are zero.
+ */
 export function getExportRetrievalMetricsSnapshot(): ExportRetrievalMetricsSnapshot {
   const cDen = state.content_delivery_successes + state.content_delivery_failures;
   const pDen = state.preview_delivery_successes + state.preview_delivery_failures;
@@ -108,6 +127,7 @@ function envFloat(name: string, fallback: number): number {
   return Number.isFinite(n) ? n : fallback;
 }
 
+/** @description Health payload for export SLO monitoring. */
 export type ExportHealthEvaluation = {
   metrics: ExportRetrievalMetricsSnapshot;
   alerts: string[];
@@ -117,6 +137,8 @@ export type ExportHealthEvaluation = {
 /**
  * Optional env: RELAY_EXPORT_HEALTH_MIN_SAMPLES (default 30),
  * RELAY_EXPORT_HEALTH_MAX_CONTENT_FAILURE_RATIO (default 0.001 = 0.1% miss vs 99.9% target).
+ * @description Computes alert strings from export delivery ratios.
+ * @returns Metrics snapshot with operator documentation.
  */
 export function evaluateExportRetrievalHealth(): ExportHealthEvaluation {
   const metrics = getExportRetrievalMetricsSnapshot();

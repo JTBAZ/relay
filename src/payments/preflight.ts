@@ -1,7 +1,20 @@
+/**
+ * @fileoverview Static validation: payment tier mappings vs clone site tiers and registered provider adapters.
+ * @description Pure function — no I/O.
+ * @see {@link ../jsdoc-core-entities.ts}
+ * @see prisma/schema.prisma N/A (validates in-memory config only)
+ */
 import type { CloneTierRule } from "../clone/types.js";
 import type { ProviderAdapter } from "./provider-adapter.js";
 import type { PaymentConfig, PreflightIssue, PreflightResult } from "./types.js";
 
+/**
+ * Cross-checks payment mappings against clone tiers and adapter `validateMapping` hooks.
+ * @param config Creator payment configuration.
+ * @param cloneTiers Tier rules from the latest clone site snapshot.
+ * @param adapters Map of provider id → adapter instance.
+ * @returns Pass/fail with structured issues.
+ */
 export function runPreflight(
   config: PaymentConfig,
   cloneTiers: CloneTierRule[],

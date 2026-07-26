@@ -1,3 +1,9 @@
+/**
+ * @fileoverview Patron experience module load-patron-relay-feed-bundle.ts — see exported symbols.
+ * @see {@link ../jsdoc-core-entities.ts}
+ * @see prisma/schema.prisma Account, TenantMembership, and related patron tables
+ * @security-audit-required Patron PII or entitlement paths — audit responses and logs.
+ */
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 

@@ -1,0 +1,65 @@
+{
+  "creator_id": "cr_eh_relay",
+  "media": {
+    "m_relay": {
+      "media_id": "m_relay",
+      "creator_id": "cr_eh_relay",
+      "sha256": "47ee847f578d5cc56737bf838c48d4801d51508b3103086c6f908c069392e7b7",
+      "byte_length": 205,
+      "relative_blob_path": "blobs/m_relay.svg",
+      "upstream_revision": "mr1",
+      "mime_type": "image/svg+xml",
+      "exported_at": "2026-07-01T12:00:00.000Z"
+    },
+    "m_relay_gold": {
+      "media_id": "m_relay_gold",
+      "creator_id": "cr_eh_relay",
+      "sha256": "d448020918a01cab55885ae08e3be7ac3dc358303bcad0bbcbef5780b606818e",
+      "byte_length": 203,
+      "relative_blob_path": "blobs/m_relay_gold.svg",
+      "upstream_revision": "mr2",
+      "mime_type": "image/svg+xml",
+      "exported_at": "2026-07-02T12:00:00.000Z"
+    },
+    "m_missing_blob": {
+      "media_id": "m_missing_blob",
+      "creator_id": "cr_eh_relay",
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "byte_length": 1,
+      "relative_blob_path": "blobs/m_missing_blob.svg",
+      "upstream_revision": "mr_missing",
+      "mime_type": "image/svg+xml",
+      "exported_at": "2026-07-04T12:00:00.000Z"
+    },
+    "m_video_stub": {
+      "media_id": "m_video_stub",
+      "creator_id": "cr_eh_relay",
+      "sha256": "68e37f057723fb30683f0b63d676783d337fad9d2ce641df19eba1b165f1e99b",
+      "byte_length": 63,
+      "relative_blob_path": "blobs/m_video_stub.txt",
+      "upstream_revision": "mr_video",
+      "mime_type": "video/mp4",
+      "exported_at": "2026-07-05T12:00:00.000Z"
+    },
+    "m_audio_stub": {
+      "media_id": "m_audio_stub",
+      "creator_id": "cr_eh_relay",
+      "sha256": "81221f1f5f5232160c80902c6acada730b6a6032cfa0990b955855422eb0eab2",
+      "byte_length": 63,
+      "relative_blob_path": "blobs/m_audio_stub.txt",
+      "upstream_revision": "mr_audio",
+      "mime_type": "audio/mpeg",
+      "exported_at": "2026-07-05T12:00:00.000Z"
+    },
+    "m_embed_stub": {
+      "media_id": "m_embed_stub",
+      "creator_id": "cr_eh_relay",
+      "sha256": "3dca761463ef432eb35c1e4c0d4f178a7fbbeead3669e9f700e0b7fc81c7be2a",
+      "byte_length": 65,
+      "relative_blob_path": "blobs/m_embed_stub.txt",
+      "upstream_revision": "mr_embed",
+      "mime_type": "text/html",
+      "exported_at": "2026-07-05T12:00:00.000Z"
+    }
+  }
+}

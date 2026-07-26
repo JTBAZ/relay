@@ -1,4 +1,10 @@
 /**
+ * @fileoverview Patron experience module account-block-service.ts — see exported symbols.
+ * @see {@link ../jsdoc-core-entities.ts}
+ * @see prisma/schema.prisma Account, TenantMembership, and related patron tables
+ * @security-audit-required Patron PII or entitlement paths — audit responses and logs.
+ */
+/**
  * PE-E (D14) — account-level block. Future-only semantics: a block hides content authored by
  * the blocked account AFTER the block timestamp; historical content is unaffected. This avoids
  * retroactively rewriting threads people have already seen and keeps the block primarily a

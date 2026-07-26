@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="400" height="300" viewBox="0 0 400 300">
+  <rect width="400" height="300" fill="#1e1f22"/>
+  <rect x="24" y="24" width="352" height="252" rx="12" fill="#2b2d31"/>
+  <text x="200" y="145" text-anchor="middle" fill="#ed4245" font-family="Segoe UI, sans-serif" font-size="24" font-weight="600">Missing export</text>
+  <text x="200" y="180" text-anchor="middle" fill="#99aab5" font-family="Segoe UI, sans-serif" font-size="14">has_export=false placeholder</text>
+</svg>

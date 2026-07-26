@@ -1,5 +1,5 @@
 /**
- * Patreon OAuth **Client ID** for `/patreon/connect` pages.
+ * Patreon OAuth **Client ID** for `/connect/patreon/connect` pages.
  *
  * Prefer **`PATREON_CLIENT_ID`** (read at **server runtime**) so Docker/Coolify can inject the
  * value without rebuilding — `NEXT_PUBLIC_*` is inlined at `next build` and is often empty in

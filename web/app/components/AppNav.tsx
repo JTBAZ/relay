@@ -5,15 +5,20 @@ import { usePathname, useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import {
   Activity,
+  BarChart2,
+  Coins,
+  CreditCard,
   FlaskConical,
   Home,
   Images,
+  Megaphone,
   Palette,
   User
 } from "lucide-react";
 import { fetchPatronSessionIfPresent, type PatronSessionMe } from "@/lib/relay-api";
 import { performRelayLogout } from "@/lib/relay-session-logout";
 import { useStudioSession } from "@/lib/studio-session-context";
+import RelayUnifiedLogoV0 from "./relay-unified-logo-v0";
 import { RoleSwitcher } from "./RoleSwitcher";
 
 const baseNavItems: ReadonlyArray<{
@@ -21,11 +26,15 @@ const baseNavItems: ReadonlyArray<{
   label: string;
   Icon: typeof Home;
 }> = [
-  { href: "/", label: "Library", Icon: Home },
-  { href: "/designer", label: "Designer", Icon: Palette },
-  { href: "/designer/profile", label: "Profile", Icon: User },
-  { href: "/action-center", label: "Action Center", Icon: Activity },
-  { href: "/visitor", label: "Gallery", Icon: Images }
+  { href: "/studio", label: "Library", Icon: Home },
+  { href: "/studio/designer", label: "Designer", Icon: Palette },
+  { href: "/studio/designer/profile", label: "Profile", Icon: User },
+  { href: "/studio/analytics", label: "Analytics", Icon: BarChart2 },
+  { href: "/studio/earnings", label: "Earnings", Icon: Coins },
+  { href: "/studio/promos", label: "Promos", Icon: Megaphone },
+  { href: "/studio/actions", label: "Action Center", Icon: Activity },
+  { href: "/studio/preview", label: "Gallery", Icon: Images },
+  { href: "/studio/settings/billing", label: "Billing", Icon: CreditCard }
 ] as const;
 
 const devBenchNav =
@@ -48,7 +57,9 @@ function AccountLogoutDevStrip({
   const [me, setMe] = useState<PatronSessionMe | null | "loading">("loading");
 
   const refreshMe = useCallback(() => {
-    void fetchPatronSessionIfPresent().then((m) => setMe(m ?? null));
+    void fetchPatronSessionIfPresent()
+      .then((m) => setMe(m ?? null))
+      .catch(() => setMe(null));
   }, []);
 
   useEffect(() => {
@@ -109,31 +120,36 @@ export default function AppNav() {
   return (
     <nav
       aria-label="Studio primary"
-      className="sticky top-0 z-50 flex h-12 shrink-0 items-center gap-2 border-b border-[#1F1F1F] bg-[#0A0A0A]/95 px-3 backdrop-blur-md sm:px-6"
+      className="sticky top-0 z-50 flex h-14 shrink-0 items-center gap-3 border-b border-[#123026]/80 bg-[#050807]/92 px-3 shadow-[0_16px_40px_-34px_rgba(0,170,111,0.8)] backdrop-blur-xl sm:px-6"
     >
       <Link
-        href="/"
-        className="mr-3 shrink-0 select-none font-bold tracking-tight text-[16px] text-[#C5B358] transition-colors hover:text-[#d4c47a]"
+        href="/studio"
+        className="mr-2 inline-flex h-10 shrink-0 select-none items-center gap-2 rounded-full border border-[#103c2e] bg-[#06110d] px-2.5 pr-4 text-[#00AA6F] shadow-[inset_0_0_28px_rgba(0,170,111,0.08)] transition-colors hover:border-[#1a5f48] hover:bg-[#081711]"
         aria-label="Relay studio home"
       >
-        Relay
+        <RelayUnifiedLogoV0 size={22} variant="header" />
+        <span className="hidden text-sm font-semibold tracking-tight sm:inline">Relay</span>
       </Link>
 
-      <ul className="flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto">
+      <ul className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto rounded-full border border-[#111f19] bg-[#070a09]/80 p-1">
         {[...baseNavItems, ...devBenchNav].map((item) => {
           const isActive =
-            item.href === "/"
-              ? pathname === "/"
-              : item.href === "/action-center"
-                ? pathname === "/action-center" || pathname.startsWith("/action-center/")
-                : item.href === "/visitor"
-                  ? pathname === "/visitor" || pathname === "/visitor/"
-                  : item.href === "/new-post"
-                    ? pathname === "/new-post" || pathname.startsWith("/new-post/")
+            item.href === "/studio"
+              ? pathname === "/studio"
+              : item.href === "/studio/actions"
+                ? pathname === "/studio/actions" || pathname.startsWith("/studio/actions/")
+                : item.href === "/studio/promos"
+                  ? pathname === "/studio/promos" || pathname.startsWith("/studio/promos/")
+                : item.href === "/studio/analytics"
+                  ? pathname === "/studio/analytics" || pathname.startsWith("/studio/analytics/")
+                : item.href === "/studio/preview"
+                  ? pathname === "/studio/preview" || pathname === "/studio/preview/"
+                  : item.href === "/studio/new-post"
+                    ? pathname === "/studio/new-post" || pathname.startsWith("/studio/new-post/")
                   : item.href === "/dev/bench"
                     ? pathname === "/dev/bench" || pathname.startsWith("/dev/bench/")
-                    : item.href === "/designer"
-                      ? pathname === "/designer"
+                    : item.href === "/studio/designer"
+                      ? pathname === "/studio/designer"
                       : pathname.startsWith(item.href);
           return (
             <li key={item.href} className="shrink-0">
@@ -141,10 +157,10 @@ export default function AppNav() {
                 href={item.href}
                 aria-current={isActive ? "page" : undefined}
                 className={[
-                  "relative inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-[12px] font-medium transition-colors",
+                  "relative inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] font-medium transition-colors",
                   isActive
-                    ? "bg-[#0D1F17] text-[#9bf0c4]"
-                    : "text-[#888] hover:bg-[#141414] hover:text-[#E0E0E0]"
+                    ? "bg-[#00AA6F] text-[#03120d] shadow-[0_0_22px_rgba(0,170,111,0.24)]"
+                    : "text-[#8fa39b] hover:bg-[#101815] hover:text-[#E0E0E0]"
                 ].join(" ")}
               >
                 <item.Icon size={13} aria-hidden />

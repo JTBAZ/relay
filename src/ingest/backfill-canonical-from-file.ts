@@ -1,3 +1,9 @@
+/**
+ * @fileoverview Canonical snapshot backfill + parity helpers from `canonical.json`.
+ * @description Uses `DbCanonicalStore.save` semantics; includes sampling helpers for large files.
+ * @see ./canonical-store-db.js
+ */
+
 import { readFile } from "node:fs/promises";
 import type { PrismaClient } from "@prisma/client";
 import type { CanonicalSnapshot, PostRow } from "./canonical-store.js";

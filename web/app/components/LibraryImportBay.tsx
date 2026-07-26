@@ -1,11 +1,10 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   CheckCircle2,
   ChevronDown,
   ChevronUp,
-  ChevronsDown,
   FileText,
   Film,
   Hash,
@@ -20,13 +19,21 @@ import {
   X
 } from "lucide-react";
 import {
-  deleteDiscordStagingMedia,
-  fetchDiscordStaging,
+  deleteRelayLibraryStagingMedia,
+  fetchRelayLibraryStaging,
   RELAY_API_BASE,
   RelayApiError,
-  type DiscordStagingItem
+  type RelayLibraryStagingItem
 } from "@/lib/relay-api";
+import { uploadFilesToRelayStaging } from "@/lib/relay-native-staging-upload";
+import { RELAY_LIBRARY_STAGING_REFRESH } from "@/lib/library-staging-events";
+import LibraryUploadZone from "@/app/components/library/LibraryUploadZone";
 import LibrarySectionEyebrow from "./LibrarySectionEyebrow";
+import {
+  RELAY_STAGED_MEDIA_MIME,
+  serializeStagedMediaDrag,
+  type StagedMediaDragPayload,
+} from "@/lib/staged-media-dnd";
 
 export type ImportSource = "discord" | "upload" | "url";
 
@@ -37,13 +44,17 @@ export type ImportBinItem = {
   filename: string;
   timestamp: Date;
   source: ImportSource;
+  /** Set when `id` is a server `media_id` (Discord capture or committed Relay upload). */
+  serverStaged?: boolean;
 };
 
 type Props = {
   creatorId: string;
   onError?: (message: string) => void;
-  /** After beam animation: pass selected Discord-staged items into compose modal (parent owns navigation). */
+  /** After beam animation: pass selected server-staged items into compose modal (parent owns navigation). */
   onAddToNewPost?: (items: ImportBinItem[]) => void;
+  /** Navigate to Autopost with selected staged media. */
+  onAutopost?: (items: ImportBinItem[]) => void;
 };
 
 function itemCaption(dc: unknown): string {
@@ -61,15 +72,38 @@ function absoluteRelayUrl(path: string | undefined): string | null {
   return `${RELAY_API_BASE}${p.startsWith("/") ? p : `/${p}`}`;
 }
 
-function stagingToBinItem(item: DiscordStagingItem): ImportBinItem {
-  const cap = itemCaption(item.discord_capture);
+function manualImportStagingLabel(staging: unknown): string | null {
+  if (!staging || typeof staging !== "object") return null;
+  const o = staging as Record<string, unknown>;
+  if (typeof o.bin_title !== "string" || !o.bin_title.trim()) return null;
+  return o.bin_title.trim();
+}
+
+function unifiedStagingToBinItem(item: RelayLibraryStagingItem): ImportBinItem {
+  const isDiscord = item.ingest_origin === "DISCORD";
+  const cap = isDiscord ? itemCaption(item.discord_capture) : "";
+  const fallbackName =
+    item.media_id.length > 18 ? `${item.media_id.slice(0, 14)}…` : item.media_id;
+  const pathForThumb =
+    item.mime_type?.toLowerCase() === "image/gif" && item.content_url_path?.trim()
+      ? item.content_url_path
+      : item.mime_type?.startsWith("image/") && item.thumb_url_path?.trim()
+        ? item.thumb_url_path
+        : item.content_url_path;
+
+  const manualLabel =
+    item.ingest_origin === "RELAY_UPLOAD" ? manualImportStagingLabel(item.manual_import_staging) : null;
+  const relayUploadTitle = manualLabel
+    ? `Upload · ${manualLabel}`
+    : `Upload · ${fallbackName}`;
   return {
     id: item.media_id,
-    src: absoluteRelayUrl(item.content_url_path),
+    src: absoluteRelayUrl(pathForThumb),
     mimeType: item.mime_type || "application/octet-stream",
-    filename: cap || item.media_id.slice(0, 14) + (item.media_id.length > 14 ? "…" : ""),
+    filename: isDiscord ? cap || fallbackName : relayUploadTitle,
     timestamp: new Date(item.ingested_at),
-    source: "discord"
+    source: isDiscord ? "discord" : "upload",
+    serverStaged: true
   };
 }
 
@@ -105,18 +139,36 @@ function BinCard({
   selected,
   onToggle,
   onDiscard,
-  beaming
+  beaming,
+  onDragStartPayload,
 }: {
   item: ImportBinItem;
   selected: boolean;
   onToggle: () => void;
   onDiscard: () => void;
   beaming?: boolean;
+  /** When set and item is server-staged, card is draggable into Drop Assets. */
+  onDragStartPayload?: () => StagedMediaDragPayload | null;
 }) {
+  const canDrag = item.serverStaged === true && typeof onDragStartPayload === "function";
+
   return (
     <div
       role="button"
       tabIndex={0}
+      draggable={canDrag}
+      onDragStart={(e) => {
+        if (!canDrag) return;
+        const payload = onDragStartPayload();
+        if (!payload || payload.media_ids.length === 0) {
+          e.preventDefault();
+          return;
+        }
+        const raw = serializeStagedMediaDrag(payload);
+        e.dataTransfer.setData(RELAY_STAGED_MEDIA_MIME, raw);
+        e.dataTransfer.setData("text/plain", raw);
+        e.dataTransfer.effectAllowed = "copy";
+      }}
       onClick={onToggle}
       onKeyDown={(e) => {
         if (e.key === "Enter" || e.key === " ") {
@@ -190,58 +242,6 @@ function DiscordStagingNote() {
   );
 }
 
-function UploadZone({ onFiles }: { onFiles: (files: File[]) => void }) {
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const [dragging, setDragging] = useState(false);
-  return (
-    <div
-      onDragOver={(e) => {
-        e.preventDefault();
-        setDragging(true);
-      }}
-      onDragLeave={() => setDragging(false)}
-      onDrop={(e) => {
-        e.preventDefault();
-        setDragging(false);
-        onFiles(Array.from(e.dataTransfer.files));
-      }}
-      onClick={() => fileInputRef.current?.click()}
-      onKeyDown={(e) => {
-        if (e.key === "Enter" || e.key === " ") {
-          e.preventDefault();
-          fileInputRef.current?.click();
-        }
-      }}
-      role="button"
-      tabIndex={0}
-      className={`flex h-28 cursor-pointer flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed transition-all duration-200 ${
-        dragging
-          ? "border-[var(--lib-primary)] bg-[color-mix(in_srgb,var(--lib-primary)_8%,transparent)]"
-          : "border-[var(--lib-border)] hover:border-[color-mix(in_srgb,var(--lib-primary)_45%,var(--lib-border))] hover:bg-[var(--lib-muted)]/30"
-      }`}
-    >
-      <Upload className={`h-[22px] w-[22px] ${dragging ? "text-[var(--lib-primary)]" : "text-[var(--lib-fg-muted)]"}`} aria-hidden />
-      <div className="text-center">
-        <p className="text-[12px] font-semibold text-[var(--lib-fg)]">
-          Drop files here or <span className="text-[var(--lib-primary)]">browse</span>
-        </p>
-        <p className="mt-0.5 text-[10px] text-[var(--lib-fg-muted)]">Preview only here — wire to Relay upload in a later phase.</p>
-      </div>
-      <input
-        ref={fileInputRef}
-        type="file"
-        multiple
-        accept="image/*,video/*,audio/*"
-        className="sr-only"
-        onChange={(e) => {
-          onFiles(Array.from(e.target.files ?? []));
-          e.target.value = "";
-        }}
-      />
-    </div>
-  );
-}
-
 function URLInput({ onAdd }: { onAdd: (url: string) => void }) {
   const [val, setVal] = useState("");
   return (
@@ -279,25 +279,26 @@ function URLInput({ onAdd }: { onAdd: (url: string) => void }) {
   );
 }
 
-export default function LibraryImportBay({ creatorId, onError, onAddToNewPost }: Props) {
+export default function LibraryImportBay({ creatorId, onError, onAddToNewPost, onAutopost }: Props) {
   const [expanded, setExpanded] = useState(true);
   const [items, setItems] = useState<ImportBinItem[]>([]);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
   const [activeSource, setActiveSource] = useState<ImportSource>("discord");
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [uploadBusy, setUploadBusy] = useState(false);
   const [beamingIds, setBeamingIds] = useState<Set<string>>(() => new Set());
   const [beamActive, setBeamActive] = useState(false);
 
-  const loadDiscord = useCallback(async () => {
+  const loadStaging = useCallback(async () => {
     if (!creatorId.trim()) return;
     setLoading(true);
     try {
-      const list = await fetchDiscordStaging(creatorId.trim());
-      const mapped = list.items.map(stagingToBinItem);
+      const list = await fetchRelayLibraryStaging(creatorId.trim());
+      const mapped = list.items.map(unifiedStagingToBinItem);
       setItems((prev) => {
-        const local = prev.filter((it) => it.source !== "discord");
-        const nextItems = [...mapped, ...local];
+        const urlLocals = prev.filter((it) => it.source === "url");
+        const nextItems = [...mapped, ...urlLocals];
         const validIds = new Set(nextItems.map((it) => it.id));
         setSelectedIds((selPrev) => new Set(Array.from(selPrev).filter((id) => validIds.has(id))));
         return nextItems;
@@ -311,13 +312,24 @@ export default function LibraryImportBay({ creatorId, onError, onAddToNewPost }:
   }, [creatorId, onError]);
 
   useEffect(() => {
-    void loadDiscord();
-  }, [loadDiscord]);
+    void loadStaging();
+  }, [loadStaging]);
+
+  useEffect(() => {
+    const onRefresh = () => {
+      void loadStaging();
+    };
+    window.addEventListener(RELAY_LIBRARY_STAGING_REFRESH, onRefresh);
+    return () => window.removeEventListener(RELAY_LIBRARY_STAGING_REFRESH, onRefresh);
+  }, [loadStaging]);
 
   const selectedItems = useMemo(() => items.filter((it) => selectedIds.has(it.id)), [items, selectedIds]);
   const selectedCount = selectedItems.length;
-  const selectedDiscordItems = useMemo(() => selectedItems.filter((it) => it.source === "discord"), [selectedItems]);
-  const canComposeToPost = selectedDiscordItems.length > 0;
+  const selectedComposableItems = useMemo(
+    () => selectedItems.filter((it) => it.serverStaged === true),
+    [selectedItems]
+  );
+  const canComposeToPost = selectedComposableItems.length > 0;
 
   const handleToggle = useCallback((id: string) => {
     setSelectedIds((prev) => {
@@ -332,10 +344,10 @@ export default function LibraryImportBay({ creatorId, onError, onAddToNewPost }:
     async (id: string) => {
       const item = items.find((it) => it.id === id);
       if (!item) return;
-      if (item.source === "discord") {
+      if (item.serverStaged === true) {
         if (!creatorId.trim()) return;
         try {
-          await deleteDiscordStagingMedia(creatorId.trim(), id);
+          await deleteRelayLibraryStagingMedia(creatorId.trim(), id);
           setItems((prev) => prev.filter((it) => it.id !== id));
           setSelectedIds((prev) => {
             const n = new Set(prev);
@@ -359,34 +371,54 @@ export default function LibraryImportBay({ creatorId, onError, onAddToNewPost }:
   );
 
   const handleRefresh = useCallback(async () => {
-    if (activeSource !== "discord") return;
+    if (activeSource !== "discord" && activeSource !== "upload") return;
     setRefreshing(true);
     try {
-      await loadDiscord();
+      await loadStaging();
     } finally {
       setRefreshing(false);
     }
-  }, [activeSource, loadDiscord]);
+  }, [activeSource, loadStaging]);
 
-  const handleFiles = useCallback((files: File[]) => {
-    files.forEach((file) => {
-      const reader = new FileReader();
-      reader.onload = (ev) => {
-        setItems((prev) => [
-          {
-            id: `upload-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
-            src: ev.target?.result as string,
-            mimeType: file.type || "application/octet-stream",
-            filename: file.name,
-            timestamp: new Date(),
-            source: "upload"
-          },
-          ...prev
-        ]);
-      };
-      reader.readAsDataURL(file);
-    });
-  }, []);
+  const handleFiles = useCallback(
+    async (files: File[]) => {
+      if (!creatorId.trim()) {
+        onError?.("Sign in to upload files to your Library.");
+        return;
+      }
+      if (files.length === 0) return;
+      setUploadBusy(true);
+      const cid = creatorId.trim();
+      try {
+        const { uploaded, errors } = await uploadFilesToRelayStaging({
+          creatorId: cid,
+          files,
+        });
+        for (const item of uploaded) {
+          const contentPath = `/api/v1/export/media/${encodeURIComponent(cid)}/${encodeURIComponent(item.media_id)}/content`;
+          setItems((prev) => {
+            const filtered = prev.filter((it) => it.id !== item.media_id);
+            const newItem: ImportBinItem = {
+              id: item.media_id,
+              src: absoluteRelayUrl(contentPath),
+              mimeType: item.content_type,
+              filename: item.filename,
+              timestamp: new Date(),
+              source: "upload",
+              serverStaged: true,
+            };
+            return [newItem, ...filtered];
+          });
+        }
+        for (const msg of errors) {
+          onError?.(msg);
+        }
+      } finally {
+        setUploadBusy(false);
+      }
+    },
+    [creatorId, onError]
+  );
 
   const handleAddURL = useCallback((url: string) => {
     setItems((prev) => [
@@ -404,17 +436,23 @@ export default function LibraryImportBay({ creatorId, onError, onAddToNewPost }:
 
   const handleAddToNewPost = useCallback(() => {
     if (!canComposeToPost) return;
-    const ids = new Set(selectedDiscordItems.map((it) => it.id));
+    const ids = new Set(selectedComposableItems.map((it) => it.id));
     setBeamingIds(ids);
     setBeamActive(true);
     window.setTimeout(() => {
-      onAddToNewPost?.(selectedDiscordItems);
+      onAddToNewPost?.(selectedComposableItems);
       setItems((prev) => prev.filter((it) => !ids.has(it.id)));
       setSelectedIds(new Set());
       setBeamingIds(new Set());
       setBeamActive(false);
     }, 560);
-  }, [canComposeToPost, onAddToNewPost, selectedDiscordItems]);
+  }, [canComposeToPost, onAddToNewPost, selectedComposableItems]);
+
+  const handleAutopost = useCallback(() => {
+    if (!canComposeToPost || !onAutopost) return;
+    onAutopost(selectedComposableItems);
+    setSelectedIds(new Set());
+  }, [canComposeToPost, onAutopost, selectedComposableItems]);
 
   const visibleItems = items.filter((it) =>
     activeSource === "url" ? it.source === "url" : activeSource === "upload" ? it.source === "upload" : it.source === "discord"
@@ -522,7 +560,9 @@ export default function LibraryImportBay({ creatorId, onError, onAddToNewPost }:
                       </div>
                     </>
                   )}
-                  {activeSource === "upload" && <UploadZone onFiles={handleFiles} />}
+                  {activeSource === "upload" && (
+                    <LibraryUploadZone onFiles={(f) => void handleFiles(f)} disabled={uploadBusy} />
+                  )}
                   {activeSource === "url" && <URLInput onAdd={handleAddURL} />}
                 </div>
 
@@ -533,7 +573,7 @@ export default function LibraryImportBay({ creatorId, onError, onAddToNewPost }:
                         Staged <span className="tabular-nums text-[var(--lib-primary)]">{visibleItems.length}</span>
                       </span>
                       <div className="flex items-center gap-2">
-                        {activeSource === "discord" ? (
+                        {(activeSource === "discord" || activeSource === "upload") && (
                           <button
                             type="button"
                             onClick={() => void handleRefresh()}
@@ -543,7 +583,7 @@ export default function LibraryImportBay({ creatorId, onError, onAddToNewPost }:
                             <RefreshCw className={`h-2.5 w-2.5 ${refreshing ? "animate-spin" : ""}`} aria-hidden />
                             Refresh
                           </button>
-                        ) : null}
+                        )}
                         {selectedCount > 0 ? (
                           <button
                             type="button"
@@ -565,6 +605,25 @@ export default function LibraryImportBay({ creatorId, onError, onAddToNewPost }:
                           beaming={beamingIds.has(item.id)}
                           onToggle={() => handleToggle(item.id)}
                           onDiscard={() => void handleDiscard(item.id)}
+                          onDragStartPayload={() => {
+                            if (item.serverStaged !== true) return null;
+                            const selectedComposable = items.filter(
+                              (it) => selectedIds.has(it.id) && it.serverStaged === true
+                            );
+                            const dragItems =
+                              selectedComposable.length > 0 && selectedIds.has(item.id)
+                                ? selectedComposable
+                                : [item];
+                            return {
+                              media_ids: dragItems.map((it) => it.id),
+                              items: dragItems.map((it) => ({
+                                id: it.id,
+                                src: it.src,
+                                filename: it.filename,
+                                mimeType: it.mimeType,
+                              })),
+                            };
+                          }}
                         />
                       ))}
                     </div>
@@ -578,7 +637,9 @@ export default function LibraryImportBay({ creatorId, onError, onAddToNewPost }:
                           ? "Loading staged Discord media…"
                           : "Nothing staged yet. When your bot drops media into Discord, it will show up here."
                         : activeSource === "upload"
-                          ? "No local previews yet. Uploads stay in this bay until Relay upload wiring lands."
+                          ? uploadBusy
+                            ? "Uploading to Relay…"
+                            : "No uploads staged yet. Drop files above to add server-backed assets."
                           : "Add a URL above to preview it here."}
                     </p>
                   </div>
@@ -587,63 +648,40 @@ export default function LibraryImportBay({ creatorId, onError, onAddToNewPost }:
             </div>
           </div>
 
-          <div className="relative flex flex-col items-center py-3">
+          <div className="relative flex flex-col items-center gap-2 py-3">
             <div
-              className={`transition-all duration-300 ${
+              className={`flex flex-col items-center gap-2 transition-all duration-300 ${
                 canComposeToPost ? "translate-y-0 opacity-100" : "pointer-events-none translate-y-2 opacity-0"
               }`}
             >
+              {onAutopost ? (
+                <button
+                  type="button"
+                  onClick={handleAutopost}
+                  disabled={!canComposeToPost || beamActive}
+                  className="flex items-center gap-2 rounded-full border border-[var(--lib-primary)] bg-[var(--lib-primary)] px-6 py-2.5 text-[12px] font-bold text-[var(--lib-primary-fg)] shadow-lg shadow-[color-mix(in_srgb,var(--lib-primary)_28%,transparent)] transition-all hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-45"
+                >
+                  <Sparkles className="h-3.5 w-3.5" aria-hidden />
+                  Autopost {selectedComposableItems.length > 0 ? selectedComposableItems.length : ""} selected
+                </button>
+              ) : null}
               <button
                 type="button"
                 onClick={handleAddToNewPost}
                 disabled={!canComposeToPost || beamActive}
                 title={
                   selectedCount > 0 && !canComposeToPost
-                    ? "Select Discord-staged assets to compose a post (upload/URL previews are not wired to Relay yet)."
+                    ? "Select staged Discord or uploaded assets to compose. URL previews cannot be published yet."
                     : undefined
                 }
-                className="flex items-center gap-2 rounded-full border border-[var(--lib-primary)] bg-[var(--lib-primary)] px-6 py-2.5 text-[12px] font-bold text-[var(--lib-primary-fg)] shadow-lg shadow-[color-mix(in_srgb,var(--lib-primary)_28%,transparent)] transition-all hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-45"
+                className="flex items-center gap-2 rounded-full border border-[var(--lib-border)] bg-[var(--lib-card)] px-6 py-2.5 text-[12px] font-bold text-[var(--lib-fg)] transition-all hover:border-[var(--lib-primary)]/50 disabled:cursor-not-allowed disabled:opacity-45"
               >
-                <Sparkles className="h-3.5 w-3.5" aria-hidden />
-                Add {selectedDiscordItems.length > 0 ? selectedDiscordItems.length : ""} to new post
+                Add {selectedComposableItems.length > 0 ? selectedComposableItems.length : ""} to new post
               </button>
-            </div>
-
-            <div className="relative mt-2 flex flex-col items-center">
-              <div
-                className="w-px bg-gradient-to-b from-[var(--lib-primary)]/40 to-[var(--lib-primary)]/10"
-                style={{ height: beamActive ? "48px" : "24px", transition: "height 0.3s ease" }}
-              />
-              {beamActive ? (
-                <div
-                  aria-hidden
-                  className="absolute top-0 h-2 w-2 rounded-full bg-[var(--lib-primary)] shadow-md shadow-[var(--lib-primary)]/60"
-                  style={{ animation: "libraryBeamDrop 0.52s ease-in forwards" }}
-                />
-              ) : null}
-              <div
-                className={`flex h-8 w-8 items-center justify-center rounded-full border transition-all duration-300 ${
-                  beamActive
-                    ? "border-[var(--lib-primary)]/60 bg-[color-mix(in_srgb,var(--lib-primary)_15%,transparent)] shadow-md shadow-[color-mix(in_srgb,var(--lib-primary)_30%,transparent)]"
-                    : "border-[var(--lib-primary)]/25 bg-[var(--lib-muted)]"
-                }`}
-              >
-                <ChevronsDown className={`h-3.5 w-3.5 ${beamActive ? "text-[var(--lib-primary)]" : "text-[var(--lib-primary)]/55"}`} />
-              </div>
-              <div className="h-5 w-px bg-gradient-to-b from-[var(--lib-primary)]/10 to-transparent" />
             </div>
           </div>
         </div>
       </div>
-
-      {/* beam keyframes */}
-      <style>{`
-        @keyframes libraryBeamDrop {
-          0% { transform: translateY(0); opacity: 1; }
-          80% { transform: translateY(48px); opacity: 0.7; }
-          100% { transform: translateY(52px); opacity: 0; }
-        }
-      `}</style>
     </div>
   );
 }

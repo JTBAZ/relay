@@ -1,3 +1,9 @@
+/**
+ * @fileoverview Patron session auth context: multi-creator `relay_creator_id` allowlist from DB.
+ * @description Maps opaque `TenantMembership` to `Account`-scoped patron memberships when Prisma is available.
+ * @see src/jsdoc-core-entities.ts
+ */
+
 import type { PrismaClient } from "@prisma/client";
 import { TenantRole } from "@prisma/client";
 import type { SessionToken } from "./types.js";
@@ -12,8 +18,11 @@ export type PatronAuthContext = {
 };
 
 /**
- * From the session’s `TenantMembership` row, load every patron membership for the same `Account`
- * and collect `relay_creator_id` values. File-backed identity falls back to the single `session.creator_id`.
+ * @description Loads cross-creator patron allowlist from DB or falls back to `session.creator_id`.
+ * @param {import("@prisma/client").PrismaClient | null | undefined} prisma
+ * @param {import("./types.js").SessionToken} session
+ * @returns {Promise<PatronAuthContext>}
+ * @async
  */
 export async function loadPatronAuthContext(
   prisma: PrismaClient | null | undefined,
@@ -43,11 +52,42 @@ export async function loadPatronAuthContext(
     where: { accountId: m.accountId, role: TenantRole.patron },
     include: { tenant: true }
   });
-  const ids = rows
-    .map((r) => r.tenant.relayCreatorId)
-    .filter((id): id is string => Boolean(id && id.length > 0));
+  const allowed = new Set<string>();
+  for (const r of rows) {
+    const id = r.tenant.relayCreatorId?.trim();
+    if (id) allowed.add(id);
+  }
 
-  const allowedRelayCreatorIds = ids.length > 0 ? ids : [session.creator_id];
+  // Option B: patrons usually have one platform `TenantMembership`; creator scope comes from
+  // follows + entitlement snapshots (same signals as assemblePatronFeed), and studio owners
+  // from `Account.primaryRelayCreatorId` (see post-detail / permission routes).
+  const [follows, snapshots, account] = await Promise.all([
+    prisma.patronFollow.findMany({
+      where: { patronMembershipId: session.user_id },
+      select: { relayCreatorId: true }
+    }),
+    prisma.patronEntitlementSnapshot.findMany({
+      where: { patronMembershipId: session.user_id },
+      select: { relayCreatorId: true }
+    }),
+    prisma.account.findUnique({
+      where: { id: m.accountId },
+      select: { primaryRelayCreatorId: true }
+    })
+  ]);
+  for (const f of follows) {
+    const id = f.relayCreatorId?.trim();
+    if (id) allowed.add(id);
+  }
+  for (const s of snapshots) {
+    const id = s.relayCreatorId?.trim();
+    if (id) allowed.add(id);
+  }
+  const studioId = account?.primaryRelayCreatorId?.trim();
+  if (studioId) allowed.add(studioId);
+
+  const allowedRelayCreatorIds =
+    allowed.size > 0 ? [...allowed] : [session.creator_id];
 
   return {
     session,
@@ -56,6 +96,11 @@ export async function loadPatronAuthContext(
   };
 }
 
+/**
+ * @param {PatronAuthContext} ctx
+ * @param {string} relayCreatorId
+ * @returns {boolean}
+ */
 export function patronMayAccessCreator(
   ctx: PatronAuthContext,
   relayCreatorId: string
@@ -63,7 +108,13 @@ export function patronMayAccessCreator(
   return ctx.allowedRelayCreatorIds.includes(relayCreatorId);
 }
 
-/** Resolve `Account.id` for the session’s `TenantMembership` row (opaque `session.user_id`). */
+/**
+ * @description Resolves `Account.id` for the membership row `session.user_id`.
+ * @param {import("@prisma/client").PrismaClient} prisma
+ * @param {import("./types.js").SessionToken} session
+ * @returns {Promise<string | null>}
+ * @async
+ */
 export async function getAccountIdForSession(
   prisma: PrismaClient,
   session: SessionToken

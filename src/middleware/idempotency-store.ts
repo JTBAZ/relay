@@ -1,6 +1,8 @@
 /**
  * PE-K (BO-P2-05) — Idempotency store.
  *
+ * @fileoverview Idempotency reservation/record contract and bounded in-memory implementation.
+ *
  * Contract used by `idempotency-middleware.ts` to safely replay mutating requests when the
  * caller passes an `Idempotency-Key` header (RFC draft `idempotency-key-header-01`).
  *

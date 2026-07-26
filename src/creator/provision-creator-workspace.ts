@@ -7,6 +7,16 @@ import {
 } from "@prisma/client";
 import { allocateUniquePublicSlug } from "./public-slug.js";
 
+/**
+ * @fileoverview Idempotent multi-tenant bootstrap for Relay creator workspaces (tenant + creator user + profile).
+ * @description Implements MT-032 `Account.primaryRelayCreatorId` wiring with transactional slug allocation.
+ * @see prisma/schema.prisma Tenant, User, CreatorProfile, Account
+ * @see ./public-slug.js
+ */
+
+/**
+ * @description Return shape for `provisionCreatorWorkspace` describing studio linkage and slug.
+ */
 export type ProvisionCreatorWorkspaceResult = {
   relay_creator_id: string;
   account_id: string;
@@ -24,6 +34,13 @@ function newRelayCreatorId(): string {
  * Idempotent: ensures the account has an artist studio (`Tenant` + creator `User` + `CreatorProfile`)
  * and `Account.primaryRelayCreatorId` (MT-032). Assigns an opaque unique `public_slug` (`slugSource`
  * allocated); Patreon campaign vanity is applied later in `promoteSnapshotToProfile`.
+ * @description Creates or returns existing workspace for `accountId` with retry on serialization failures.
+ * @param prisma Shared Prisma client.
+ * @param accountId Relay `Account.id` being provisioned.
+ * @returns Creator ids, account id, created flag, and public slug segment.
+ * @async
+ * @throws {Error} Account missing, allocation failure, or exhausted retries.
+ * @security-audit-required Binds multi-tenant rows; HTTP routes must ensure caller owns `accountId`.
  */
 export async function provisionCreatorWorkspace(
   prisma: PrismaClient,

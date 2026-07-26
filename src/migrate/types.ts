@@ -1,3 +1,9 @@
+/**
+ * @fileoverview Domain types for audience migration campaigns (tiers, recipients, signed links).
+ * @description File/DB roots and preflight/send batch result shapes.
+ * @see ./migration-store.js
+ */
+
 export type TierMapping = {
   source_tier_id: string;
   destination_tier_id: string;

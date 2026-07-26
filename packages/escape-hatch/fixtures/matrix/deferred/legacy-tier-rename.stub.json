@@ -1,0 +1,19 @@
+{
+  "id": "legacy-tier-rename",
+  "status": "present",
+  "schemaNote": "EH-011 importer conflict queue covers legacy tier_mappings and title/amount drift.",
+  "scenario": {
+    "prior_tier_id": "t_gold_legacy",
+    "prior_title": "Gold (legacy)",
+    "prior_amount_cents": 900,
+    "current_tier_id": "t_gold",
+    "current_title": "Gold",
+    "current_amount_cents": 1000,
+    "legacy_patron_ids": ["fixture_patron_legacy_1"]
+  },
+  "paths": [
+    "relay-dump/canonical.json",
+    "matrix/deferred/legacy-tier-rename.stub.json"
+  ],
+  "reason": "Importer emits tier_remap conflict items when local tier_mappings reference absent source tiers or when provenance title/amount drifts. Patron grant remapping UI remains later."
+}

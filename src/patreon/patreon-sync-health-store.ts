@@ -1,3 +1,11 @@
+/**
+ * @fileoverview File-backed store for last Patreon post scrape and member sync health snapshots per creator.
+ * @description Human-readable JSON for operators; superseded in multi-node by `DbPatreonSyncHealthStore` where configured.
+ * @async All API methods.
+ * @throws {Error} Disk failures.
+ * @see {@link ../jsdoc-core-entities.ts}
+ * @see prisma/schema.prisma `CreatorSyncState` for DB analogue
+ */
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 

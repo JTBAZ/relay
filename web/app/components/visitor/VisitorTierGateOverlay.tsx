@@ -13,6 +13,8 @@ type Props = {
   membershipUrl?: string | null;
   variant?: VisitorTierGateOverlayVariant;
   className?: string;
+  /** PMD-042 — tier reveal / upgrade interaction telemetry */
+  onUpgradeClick?: () => void;
 };
 
 /**
@@ -23,7 +25,8 @@ export function VisitorTierGateOverlay({
   accentColor,
   membershipUrl,
   variant = "blurred",
-  className = ""
+  className = "",
+  onUpgradeClick
 }: Props) {
   const href = membershipUrl?.trim() || "https://www.patreon.com";
 
@@ -40,6 +43,7 @@ export function VisitorTierGateOverlay({
           href={href}
           target="_blank"
           rel="noopener noreferrer"
+          onClick={() => onUpgradeClick?.()}
           className="pointer-events-auto rounded-md px-3.5 py-2 text-xs font-semibold text-[#0a0a0a] transition-opacity hover:opacity-90"
           style={{ background: accentColor }}
         >
@@ -62,7 +66,7 @@ export function VisitorTierGateOverlay({
         href={href}
         target="_blank"
         rel="noopener noreferrer"
-        className="pointer-events-auto rounded-md px-3.5 py-2 text-xs font-semibold text-[#0a0a0a] transition-opacity hover:opacity-90"
+        onClick={() => onUpgradeClick?.()}
         style={{ background: accentColor }}
       >
         Upgrade

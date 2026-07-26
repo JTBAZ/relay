@@ -1,5 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
-import { InProcessNotificationDeliveryRunner } from "../../src/patron/notification-delivery-worker.js";
+import {
+  InProcessNotificationDeliveryRunner,
+  notificationDeliveryRepeatEveryMsFromEnv,
+  processNotificationOutboxOnce
+} from "../../src/patron/notification-delivery-worker.js";
 import { PEG_EVENT_NAMES } from "../../src/patron/notification-mapper.js";
 
 /**
@@ -19,6 +23,7 @@ interface OutboxRow {
 
 function buildPrismaStub(rows: OutboxRow[], existingNotifications: unknown[] = []) {
   const findManyOutbox = vi.fn().mockResolvedValue(rows);
+  const findFirstOutbox = vi.fn().mockResolvedValue(null);
   const findFirstNotification = vi.fn().mockResolvedValue(null); // no clustering
   const findFirstSourceMatch = vi.fn().mockResolvedValue(null); // not yet delivered
   const createNotification = vi.fn().mockImplementation(async (args: { data: unknown }) => ({
@@ -47,7 +52,7 @@ function buildPrismaStub(rows: OutboxRow[], existingNotifications: unknown[] = [
   });
 
   const prisma = {
-    outboxEvent: { findMany: findManyOutbox },
+    outboxEvent: { findMany: findManyOutbox, findFirst: findFirstOutbox },
     notification: {
       create: createNotification,
       findFirst: notificationFindFirst,
@@ -60,11 +65,14 @@ function buildPrismaStub(rows: OutboxRow[], existingNotifications: unknown[] = [
     },
     comment: { findUnique: findUniqueComment },
     tenantMembership: { findMany: findManyMembership },
-    notificationPreference: { findUnique: vi.fn().mockResolvedValue(null) }
+    notificationPreference: { findUnique: vi.fn().mockResolvedValue(null) },
+    // resolveCreatorAccountIdForRelayCreator (called for new-subscriber creator notifications)
+    account: { findFirst: vi.fn().mockResolvedValue(null) }
   };
   return {
     prisma,
     findManyOutbox,
+    findFirstOutbox,
     createNotification,
     cursorUpdate,
     findUniqueComment,
@@ -187,5 +195,35 @@ describe("InProcessNotificationDeliveryRunner.processOnce", () => {
     );
     expect(hasGtBranch).toBe(true);
     expect(hasTieBreaker).toBe(true);
+  });
+});
+
+describe("notificationDeliveryRepeatEveryMsFromEnv", () => {
+  it("returns null when disabled with 0", () => {
+    expect(
+      notificationDeliveryRepeatEveryMsFromEnv({
+        RELAY_NOTIFICATION_DELIVERY_MS: "0"
+      })
+    ).toBe(null);
+  });
+
+  it("applies poll floor like in-process runner", () => {
+    expect(
+      notificationDeliveryRepeatEveryMsFromEnv({
+        RELAY_NOTIFICATION_DELIVERY_MS: "100"
+      })
+    ).toBe(250);
+  });
+});
+
+describe("processNotificationOutboxOnce", () => {
+  it("idempotent with empty outbox (zero stats, no cursor update)", async () => {
+    const stubs = buildPrismaStub([]);
+    const a = await processNotificationOutboxOnce(stubs.prisma as never);
+    const b = await processNotificationOutboxOnce(stubs.prisma as never);
+    expect(a).toEqual({ scanned: 0, written: 0, cursorAdvancedTo: null });
+    expect(b).toEqual(a);
+    expect(stubs.cursorUpdate).not.toHaveBeenCalled();
+    expect(stubs.findManyOutbox).toHaveBeenCalledTimes(2);
   });
 });

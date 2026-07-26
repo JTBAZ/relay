@@ -1,0 +1,170 @@
+{
+  "contract_version": "site-bundle/1.0.0",
+  "site_id": "site_fixture_access_matrix",
+  "creator_id": "cr_fixture_matrix",
+  "generated_at": "2026-07-22T16:00:00.000Z",
+  "base_url": "http://localhost:3001",
+  "creator": {
+    "display_name": "Fixture Creator",
+    "handle": "fixture-creator"
+  },
+  "theme": {
+    "color_scheme": "dark",
+    "accent_color": "#5865f2",
+    "paywall_style": "blur",
+    "hero": {
+      "title": "Fixture Creator",
+      "subtitle": "EH-010 access matrix",
+      "bio": "Sanitized SiteBundle covering public, member_only, exact, tier-or-higher, gallery, and free vs paid personas."
+    }
+  },
+  "demo_personas": [
+    { "id": "public", "label": "Public visitor", "tier_ids": [] },
+    { "id": "free_follower", "label": "Free follower", "tier_ids": ["t_free"] },
+    { "id": "patron_silver", "label": "Silver member", "tier_ids": ["t_silver"] },
+    { "id": "patron_gold", "label": "Gold member", "tier_ids": ["t_gold"] },
+    { "id": "patron_platinum", "label": "Platinum member", "tier_ids": ["t_platinum"] }
+  ],
+  "tiers": [
+    {
+      "tier_id": "t_free",
+      "title": "Free",
+      "access_level": "tier_gated",
+      "amount_cents": 0
+    },
+    {
+      "tier_id": "t_silver",
+      "title": "Silver",
+      "access_level": "tier_gated",
+      "amount_cents": 500
+    },
+    {
+      "tier_id": "t_gold",
+      "title": "Gold",
+      "access_level": "tier_gated",
+      "amount_cents": 1000
+    },
+    {
+      "tier_id": "t_platinum",
+      "title": "Platinum",
+      "access_level": "tier_gated",
+      "amount_cents": 2000
+    }
+  ],
+  "posts": [
+    {
+      "post_id": "p_public_text",
+      "slug": "welcome-public-text",
+      "title": "Welcome (Public Text Only)",
+      "published_at": "2026-07-01T12:00:00.000Z",
+      "tag_ids": ["intro"],
+      "access": { "level": "public", "tier_ids": [] },
+      "media": []
+    },
+    {
+      "post_id": "p_all_patrons",
+      "slug": "all-patrons-sketch",
+      "title": "All Patrons Sketch",
+      "published_at": "2026-07-02T12:00:00.000Z",
+      "tag_ids": ["sketch"],
+      "access": { "level": "member_only", "tier_ids": [] },
+      "media": [
+        {
+          "media_id": "m_members",
+          "mime_type": "image/svg+xml",
+          "has_export": true,
+          "content_path": "/media/m_members.svg"
+        }
+      ]
+    },
+    {
+      "post_id": "p_exact_gold",
+      "slug": "exact-gold-only",
+      "title": "Exact Gold Only",
+      "published_at": "2026-07-03T12:00:00.000Z",
+      "tag_ids": ["exclusive"],
+      "access": {
+        "level": "tier_gated",
+        "tier_ids": ["t_gold"],
+        "match_mode": "exact"
+      },
+      "media": [
+        {
+          "media_id": "m_gold",
+          "mime_type": "image/svg+xml",
+          "has_export": true,
+          "content_path": "/media/m_gold.svg"
+        }
+      ]
+    },
+    {
+      "post_id": "p_tier_or_higher_silver",
+      "slug": "silver-or-higher",
+      "title": "Silver Or Higher Archive",
+      "published_at": "2026-07-04T12:00:00.000Z",
+      "tag_ids": ["archive"],
+      "access": {
+        "level": "tier_gated",
+        "tier_ids": ["t_silver"],
+        "match_mode": "tier_or_higher"
+      },
+      "media": [
+        {
+          "media_id": "m_public",
+          "mime_type": "image/svg+xml",
+          "has_export": true,
+          "content_path": "/media/m_public.svg"
+        }
+      ]
+    },
+    {
+      "post_id": "p_gallery",
+      "slug": "multi-image-gallery",
+      "title": "Multi Image Gallery",
+      "published_at": "2026-07-05T12:00:00.000Z",
+      "tag_ids": ["gallery"],
+      "access": {
+        "level": "tier_gated",
+        "tier_ids": ["t_gold"],
+        "match_mode": "tier_or_higher"
+      },
+      "media": [
+        {
+          "media_id": "m_gallery_a",
+          "mime_type": "image/svg+xml",
+          "has_export": true,
+          "content_path": "/media/m_gallery_a.svg"
+        },
+        {
+          "media_id": "m_gallery_b",
+          "mime_type": "image/svg+xml",
+          "has_export": true,
+          "content_path": "/media/m_gallery_b.svg"
+        },
+        {
+          "media_id": "m_gallery_c",
+          "mime_type": "image/svg+xml",
+          "has_export": true,
+          "content_path": "/media/m_gallery_c.svg"
+        }
+      ]
+    },
+    {
+      "post_id": "p_export_missing",
+      "slug": "export-missing-blob",
+      "title": "Export Missing Blob",
+      "published_at": "2026-07-06T12:00:00.000Z",
+      "tag_ids": ["media"],
+      "access": { "level": "public", "tier_ids": [] },
+      "media": [
+        {
+          "media_id": "m_missing_export",
+          "mime_type": "image/svg+xml",
+          "has_export": false,
+          "content_path": "/media/m_missing_export.svg"
+        }
+      ]
+    }
+  ],
+  "total_media": 7
+}

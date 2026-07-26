@@ -6,9 +6,12 @@ import request from "supertest";
 import { describe, expect, it, vi } from "vitest";
 import { createApp } from "../src/server.js";
 import {
+  createRelayPostTransaction,
   isMediaEligibleForRelayNativePost,
   RelayCreatePostError,
-  resolveCampaignIdForRelayPost
+  resolveCampaignIdForRelayPost,
+  resolveRelayPostTier,
+  resolveRelayPostTierKey
 } from "../src/relay/create-relay-post.js";
 import { MediaIngestOrigin } from "@prisma/client";
 
@@ -147,11 +150,223 @@ describe("isMediaEligibleForRelayNativePost", () => {
   });
 });
 
+describe("resolveRelayPostTier", () => {
+  it("returns id and relayTierId when input is Tier.id", async () => {
+    const prisma = prismaStub({
+      tier: {
+        findFirst: vi.fn().mockResolvedValue({
+          id: "cr::pat_1",
+          relayTierId: "pat_1",
+          campaignId: "camp"
+        }),
+        findMany: vi.fn()
+      }
+    });
+    const r = await resolveRelayPostTier(prisma, "cr", "cr::pat_1", "camp");
+    expect(r).toEqual({ id: "cr::pat_1", relayTierId: "pat_1" });
+    expect(prisma.tier.findMany).not.toHaveBeenCalled();
+  });
+
+  it("returns id and relayTierId when input matches relayTierId", async () => {
+    const prisma = prismaStub({
+      tier: {
+        findFirst: vi.fn().mockResolvedValue(null),
+        findMany: vi.fn().mockResolvedValue([
+          { id: "cr::patreon_tier_99", relayTierId: "patreon_tier_99", campaignId: "camp" }
+        ])
+      }
+    });
+    const r = await resolveRelayPostTier(prisma, "cr", "patreon_tier_99", "camp");
+    expect(r).toEqual({ id: "cr::patreon_tier_99", relayTierId: "patreon_tier_99" });
+  });
+});
+
+describe("resolveRelayPostTierKey", () => {
+  it("returns Tier.id when input is already the primary key", async () => {
+    const prisma = prismaStub({
+      tier: {
+        findFirst: vi.fn().mockResolvedValue({
+          id: "cr::pat_1",
+          relayTierId: "pat_1",
+          campaignId: "camp"
+        }),
+        findMany: vi.fn()
+      }
+    });
+    const id = await resolveRelayPostTierKey(prisma, "cr", "cr::pat_1", "camp");
+    expect(id).toBe("cr::pat_1");
+    expect(prisma.tier.findMany).not.toHaveBeenCalled();
+  });
+
+  it("resolves relayTierId to Tier.id when pk lookup misses", async () => {
+    const prisma = prismaStub({
+      tier: {
+        findFirst: vi.fn().mockResolvedValue(null),
+        findMany: vi.fn().mockResolvedValue([
+          { id: "cr::patreon_tier_99", relayTierId: "patreon_tier_99", campaignId: "camp" }
+        ])
+      }
+    });
+    const id = await resolveRelayPostTierKey(prisma, "cr", "patreon_tier_99", "camp");
+    expect(id).toBe("cr::patreon_tier_99");
+  });
+
+  it("throws when multiple tiers share the relayTierId match", async () => {
+    const prisma = prismaStub({
+      tier: {
+        findFirst: vi.fn().mockResolvedValue(null),
+        findMany: vi
+          .fn()
+          .mockResolvedValue([
+            { id: "cr::a", relayTierId: "ambiguous_relay", campaignId: "camp" },
+            { id: "cr::b", relayTierId: "ambiguous_relay", campaignId: "camp" }
+          ])
+      }
+    });
+    await expect(
+      resolveRelayPostTierKey(prisma, "cr", "ambiguous_relay", "camp")
+    ).rejects.toMatchObject({ code: "INVALID_TIER_REF" });
+  });
+
+  it("throws when campaign mismatches", async () => {
+    const prisma = prismaStub({
+      tier: {
+        findFirst: vi.fn().mockResolvedValue({
+          id: "cr::x",
+          relayTierId: "x",
+          campaignId: "other_camp"
+        }),
+        findMany: vi.fn()
+      }
+    });
+    await expect(resolveRelayPostTierKey(prisma, "cr", "cr::x", "camp")).rejects.toMatchObject({
+      code: "INVALID_TIER_REF"
+    });
+  });
+});
+
 describe("RelayCreatePostError", () => {
   it("exposes code and statusCode", () => {
     const e = new RelayCreatePostError("INVALID_TIER_REF", "bad", 400);
     expect(e.code).toBe("INVALID_TIER_REF");
     expect(e.statusCode).toBe(400);
+  });
+});
+
+describe("createRelayPostTransaction manual campaign", () => {
+  it("publishes a gated Relay post against explicit manual campaign and manual tier", async () => {
+    const manualCampaignId = "relay_manual_campaign_creator_1";
+    const manualTierPk = "creator_1::relay_manual_tier_basic";
+    const manualRelayTierId = "relay_manual_tier_basic";
+    const media = {
+      id: "relay_m_1",
+      creatorId: "creator_1",
+      ingestOrigin: MediaIngestOrigin.RELAY_UPLOAD,
+      currentStorageKey: "relay/tenants/creator_1/media/relay_m_1/original",
+      postIds: [],
+      primaryPostId: null
+    };
+    const postCreate = vi.fn().mockResolvedValue({
+      id: "relay_p_1",
+      campaignId: manualCampaignId,
+      creatorId: "creator_1",
+      isPublic: false,
+      requiredTierId: manualRelayTierId,
+      versions: [
+        {
+          id: "pv_1",
+          versionSeq: 1,
+          upstreamRevision: "relay:v1:test",
+          title: "Manual drop",
+          description: null,
+          publishedAt: new Date("2026-05-13T00:00:00.000Z"),
+          tagIds: ["archive"],
+          tierIds: [manualRelayTierId],
+          mediaIds: ["relay_m_1"]
+        }
+      ]
+    });
+    const postTierUpsert = vi.fn().mockResolvedValue({});
+    const mediaUpdate = vi.fn().mockResolvedValue({});
+    const prisma = prismaStub({
+      campaign: {
+        findFirst: vi.fn().mockResolvedValue({ id: manualCampaignId, creatorId: "creator_1" })
+      },
+      tier: {
+        findFirst: vi.fn().mockImplementation(({ where }: { where: { id: string } }) =>
+          where.id === manualTierPk
+            ? { id: manualTierPk, relayTierId: manualRelayTierId, campaignId: manualCampaignId }
+            : null
+        ),
+        findMany: vi.fn()
+      },
+      mediaAsset: {
+        findFirst: vi.fn().mockResolvedValue(media)
+      },
+      $transaction: vi.fn().mockImplementation(async (fn: any) =>
+        fn({
+          post: { create: postCreate },
+          postTier: { upsert: postTierUpsert },
+          mediaAsset: {
+            findUniqueOrThrow: vi.fn().mockResolvedValue(media),
+            update: mediaUpdate
+          },
+          creativeWorkMember: {
+            findUnique: vi.fn().mockResolvedValue(null),
+            create: vi.fn().mockResolvedValue({})
+          },
+          creativeWork: {
+            upsert: vi.fn().mockResolvedValue({})
+          },
+          platformInstance: {
+            findUnique: vi.fn().mockResolvedValue(null),
+            upsert: vi.fn().mockResolvedValue({})
+          }
+        })
+      )
+    });
+
+    const out = await createRelayPostTransaction(prisma, "relay_p_1", {
+      creatorId: "creator_1",
+      campaignId: manualCampaignId,
+      title: "Manual drop",
+      description: null,
+      isPublic: false,
+      requiredTierId: manualTierPk,
+      tierIds: [manualTierPk],
+      tagIds: ["archive"],
+      mediaIds: ["relay_m_1"],
+      publish: true,
+      publishedAtInput: "2026-05-13T00:00:00.000Z"
+    });
+
+    expect(out.post.campaignId).toBe(manualCampaignId);
+    expect(out.post.requiredTierId).toBe(manualRelayTierId);
+    expect(out.version.tierIds).toEqual([manualRelayTierId]);
+    expect(postCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          campaignId: manualCampaignId,
+          requiredTierId: manualRelayTierId,
+          versions: expect.objectContaining({
+            create: expect.objectContaining({
+              tierIds: [manualRelayTierId],
+              mediaIds: ["relay_m_1"]
+            })
+          })
+        })
+      })
+    );
+    expect(postTierUpsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { postId_tierId: { postId: "relay_p_1", tierId: manualTierPk } }
+      })
+    );
+    expect(mediaUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ postIds: ["relay_p_1"], primaryPostId: "relay_p_1" })
+      })
+    );
   });
 });
 

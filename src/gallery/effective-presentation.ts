@@ -1,17 +1,28 @@
+/**
+ * @fileoverview Merge canonical post presentation with Relay `PostPresentation` overlay fields.
+ * @description Pure helpers used by gallery build and API responses (no I/O).
+ * @see prisma/schema.prisma `PostPresentation`
+ * @see src/jsdoc-core-entities.ts Artist/Gallery/SyncStatus mapping notes
+ */
+
 import type { Prisma } from "@prisma/client";
+import { sanitizeOptionalPostDescriptionHtml } from "../security/sanitize-post-html.js";
 
 /**
- * Relay-only presentation overlay for a post (mirrors `PostPresentation` without Prisma types).
- * Loaded from DB and merged at read time with canonical / `PostVersion` snapshot data.
+ * @description Relay-only presentation overlay for a post (mirrors `PostPresentation` without Prisma types). Loaded from DB and merged at read time with canonical / `PostVersion` snapshot data.
  */
 export type PostPresentationOverlay = {
   relay_title?: string | null;
   relay_description?: string | null;
   media_order?: string[];
   tier_preview_settings?: Prisma.JsonValue | null;
+  /** Soft teaser pointer — never merged into `media_ids_ordered`. */
+  promo_preview_media_id?: string | null;
 };
 
-/** Ingest-aligned base for merging (snapshot `PostRow.current` subset). */
+/**
+ * @description Ingest-aligned base for merging (snapshot `PostRow.current` subset).
+ */
 export type SnapshotPresentationBase = {
   title: string;
   description?: string;
@@ -19,17 +30,22 @@ export type SnapshotPresentationBase = {
   media_ids: string[];
 };
 
-/** Result of merging Patreon-origin base + optional Relay overlay. */
+/**
+ * @description Result of merging Patreon-origin base + optional Relay overlay.
+ */
 export type EffectiveMergedPostPresentation = {
   title: string;
   description?: string;
   media_ids_ordered: string[];
   tier_preview_settings?: Prisma.JsonValue | null;
+  promo_preview_media_id?: string | null;
 };
 
 /**
- * Order media ids: Relay `media_order` wins for ids present in base; trailing base ids preserve
- * newly ingested assets not listed in the overlay.
+ * @description Orders media ids so Relay `media_order` wins for ids present in base; trailing base ids preserve newly ingested assets not listed in the overlay.
+ * @param baseMediaIds Canonical attachment order.
+ * @param overlayOrder Optional curator order from overlay.
+ * @returns Stable merged order array.
  */
 export function effectiveMediaIdsOrder(baseMediaIds: string[], overlayOrder: string[] | undefined): string[] {
   if (!overlayOrder || overlayOrder.length === 0) {
@@ -52,8 +68,10 @@ export function effectiveMediaIdsOrder(baseMediaIds: string[], overlayOrder: str
 }
 
 /**
- * Merge append-only ingest fields with optional Relay `PostPresentation`.
- * Unset overlay fields inherit from base; `tier_preview_settings` only appears when overlay supplies it.
+ * @description Merge append-only ingest fields with optional Relay `PostPresentation`. Unset overlay fields inherit from base; `tier_preview_settings` only appears when overlay supplies it.
+ * @param base Snapshot-derived titles/descriptions/media ids.
+ * @param overlay Optional DB overlay row materialization.
+ * @returns Effective merged presentation for gallery/export.
  */
 export function mergePostPresentation(
   base: SnapshotPresentationBase,
@@ -79,10 +97,24 @@ export function mergePostPresentation(
     hasTierPreview = true;
   }
 
+  let promo_preview_media_id: EffectiveMergedPostPresentation["promo_preview_media_id"];
+  let hasPromoPreview = false;
+  if (overlay && "promo_preview_media_id" in overlay) {
+    const raw = overlay.promo_preview_media_id;
+    promo_preview_media_id =
+      raw === null || raw === undefined || String(raw).trim() === ""
+        ? null
+        : String(raw).trim();
+    hasPromoPreview = true;
+  }
+
+  const sanitizedDescription = sanitizeOptionalPostDescriptionHtml(description);
+
   return {
     title,
-    ...(description !== undefined ? { description } : {}),
+    ...(sanitizedDescription !== undefined ? { description: sanitizedDescription } : {}),
     media_ids_ordered,
-    ...(hasTierPreview ? { tier_preview_settings } : {})
+    ...(hasTierPreview ? { tier_preview_settings } : {}),
+    ...(hasPromoPreview ? { promo_preview_media_id } : {})
   };
 }

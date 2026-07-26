@@ -11,6 +11,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const getCreatorProfile = vi.fn();
 const patchCreatorProfile = vi.fn();
+const fetchCreatorPostingGoal = vi.fn();
+const putCreatorPostingGoal = vi.fn();
 
 vi.mock("@/lib/relay-api", async () => {
   class StubRelayApiError extends Error {
@@ -26,11 +28,13 @@ vi.mock("@/lib/relay-api", async () => {
   return {
     getCreatorProfile: (...args: unknown[]) => getCreatorProfile(...args),
     patchCreatorProfile: (...args: unknown[]) => patchCreatorProfile(...args),
+    fetchCreatorPostingGoal: (...args: unknown[]) => fetchCreatorPostingGoal(...args),
+    putCreatorPostingGoal: (...args: unknown[]) => putCreatorPostingGoal(...args),
     RelayApiError: StubRelayApiError
   };
 });
 
-import CreatorProfileClient from "../../web/app/designer/profile/CreatorProfileClient";
+import CreatorProfileClient from "../../web/app/studio/designer/profile/CreatorProfileClient";
 
 const baseIdentity = {
   public_slug: "my-studio",
@@ -50,6 +54,31 @@ describe("<CreatorProfileClient />", () => {
   beforeEach(() => {
     getCreatorProfile.mockReset();
     patchCreatorProfile.mockReset();
+    fetchCreatorPostingGoal.mockReset();
+    putCreatorPostingGoal.mockReset();
+    getCreatorProfile.mockResolvedValue({ ...baseIdentity });
+    fetchCreatorPostingGoal.mockResolvedValue({
+      goal: {
+        creator_id: "cr1",
+        monthly_post_target: 1,
+        bonus_nudges_enabled: false,
+        timezone: "UTC",
+        enabled: true,
+        is_default: true,
+        updated_at: null,
+      },
+    });
+    putCreatorPostingGoal.mockResolvedValue({
+      goal: {
+        creator_id: "cr1",
+        monthly_post_target: 3,
+        bonus_nudges_enabled: true,
+        timezone: "UTC",
+        enabled: true,
+        is_default: false,
+        updated_at: new Date().toISOString(),
+      },
+    });
   });
   afterEach(() => {
     cleanup();
@@ -76,6 +105,7 @@ describe("<CreatorProfileClient />", () => {
       "Illustration"
     );
     expect(screen.getByRole("link", { name: /view public page/i })).toBeTruthy();
+    expect((screen.getByLabelText(/relay posts per month/i) as HTMLInputElement).value).toBe("1");
   });
 
   it("links to Action Center when public slug differs from @username URL form", async () => {
@@ -87,7 +117,7 @@ describe("<CreatorProfileClient />", () => {
     render(<CreatorProfileClient />);
     await waitFor(() => expect(getCreatorProfile).toHaveBeenCalledTimes(1));
     const ac = await screen.findByRole("link", { name: /edit public url in action center/i });
-    expect(ac.getAttribute("href")).toBe("/action-center");
+    expect(ac.getAttribute("href")).toBe("/studio/actions");
   });
 
   it("Save is disabled when nothing changed; PATCH only sends dirty fields", async () => {
@@ -184,5 +214,38 @@ describe("<CreatorProfileClient />", () => {
     // The sanitized preview span renders the normalized form alongside the @ prefix.
     const previewSpan = screen.getByText("@coolartist42");
     expect(previewSpan).toBeTruthy();
+  });
+
+  it("saves posting rhythm independently from profile identity", async () => {
+    render(<CreatorProfileClient />);
+    await waitFor(() => expect(fetchCreatorPostingGoal).toHaveBeenCalledTimes(1));
+
+    const postsInput = await screen.findByLabelText(/relay posts per month/i);
+    fireEvent.change(postsInput, { target: { value: "3" } });
+    fireEvent.click(screen.getByRole("checkbox", { name: /suggest an extra post/i }));
+    fireEvent.click(screen.getByRole("button", { name: /save posting rhythm/i }));
+
+    await waitFor(() => expect(putCreatorPostingGoal).toHaveBeenCalledTimes(1));
+    expect(putCreatorPostingGoal).toHaveBeenCalledWith(
+      expect.objectContaining({
+        monthly_post_target: 3,
+        bonus_nudges_enabled: true,
+        timezone: expect.any(String),
+      })
+    );
+    expect(patchCreatorProfile).not.toHaveBeenCalled();
+    expect(screen.getByText(/posting rhythm saved/i)).toBeTruthy();
+  });
+
+  it("clamps monthly target to max 31 when user enters a higher value", async () => {
+    render(<CreatorProfileClient />);
+    await waitFor(() => expect(fetchCreatorPostingGoal).toHaveBeenCalledTimes(1));
+
+    fireEvent.change(await screen.findByLabelText(/relay posts per month/i), {
+      target: { value: "99" },
+    });
+    expect((screen.getByLabelText(/relay posts per month/i) as HTMLInputElement).value).toBe("31");
+    const save = screen.getByRole("button", { name: /save posting rhythm/i });
+    expect((save as HTMLButtonElement).disabled).toBe(false);
   });
 });

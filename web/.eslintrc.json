@@ -33,6 +33,54 @@
       "rules": {
         "@next/next/no-img-element": "off"
       }
+    },
+    {
+      "files": ["app/**/*.{ts,tsx}", "components/**/*.{ts,tsx}"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "paths": [
+              {
+                "name": "@/components/ui",
+                "message": "Barrel import banned — use @/components/ui/<component> (deep path). See docs/web-components-ui-policy.md (P3-web-005)."
+              }
+            ],
+            "patterns": [
+              {
+                "group": ["**/*b_i0ofEW9bMcy*", "**/b_i0ofEW9bMcy/**"],
+                "message": "Do not import from quarantine tree b_i0ofEW9bMcy. Use canonical web/app and web/components. See docs/web-quarantine-trees.md (P3-web-003). Exception: components/quarantine-import-allowlist.ts."
+              },
+              {
+                "group": ["**/*onboarding_enhancement*", "**/onboarding_enhancement/**"],
+                "message": "Do not import from quarantine tree onboarding_enhancement. Use canonical web/app and web/components. See docs/web-quarantine-trees.md (P3-web-003). Exception: components/quarantine-import-allowlist.ts."
+              },
+              {
+                "group": [
+                  "**/components/ui/index",
+                  "**/components/ui/index.ts",
+                  "**/components/ui/index.tsx"
+                ],
+                "message": "Barrel file import banned — use deep paths under components/ui/. See docs/web-components-ui-policy.md (P3-web-005)."
+              },
+              {
+                "group": [
+                  "**/components/patron-mock/ui/index",
+                  "**/components/patron-mock/ui/index.ts",
+                  "**/components/patron-mock/ui/index.tsx"
+                ],
+                "message": "Barrel file import banned — use @/components/patron-mock/ui/<component>. See docs/web-components-ui-policy.md (P3-web-005)."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": ["components/quarantine-import-allowlist.ts"],
+      "rules": {
+        "no-restricted-imports": "off"
+      }
     }
   ]
 }

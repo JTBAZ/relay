@@ -1,7 +1,17 @@
+/**
+ * @fileoverview Account ↔ creator ownership and tenant existence helpers (MT-034).
+ * @description Validates `primaryRelayCreatorId` and known `Tenant.relayCreatorId` before persisting client ids.
+ * @see src/jsdoc-core-entities.ts
+ */
+
 import type { PrismaClient } from "@prisma/client";
 
 /**
- * MT-034: True when `Account.primaryRelayCreatorId` matches the studio scope string (after workspace provisioning).
+ * @param {import("@prisma/client").PrismaClient} prisma
+ * @param {string} accountId
+ * @param {string} relayCreatorId
+ * @returns {Promise<boolean>}
+ * @async
  */
 export async function accountOwnsRelayCreatorId(
   prisma: PrismaClient,
@@ -18,9 +28,10 @@ export async function accountOwnsRelayCreatorId(
 }
 
 /**
- * True when a `Tenant` row exists with `relayCreatorId === id` (case-sensitive, trimmed).
- * Used to reject opaque/typo `creator_id` values from clients (e.g. legacy `dev_creator`)
- * before they get persisted under the wrong key. Caller must guard `prisma` is non-null.
+ * @param {import("@prisma/client").PrismaClient} prisma
+ * @param {string} relayCreatorId
+ * @returns {Promise<boolean>}
+ * @async
  */
 export async function relayCreatorIdExists(
   prisma: PrismaClient,

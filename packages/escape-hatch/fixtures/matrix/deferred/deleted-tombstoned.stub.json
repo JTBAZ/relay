@@ -1,0 +1,18 @@
+{
+  "id": "deleted-tombstoned",
+  "status": "present",
+  "schemaNote": "Covered by EH-011 importer against relay-dump p_tombstone (upstream_status=deleted).",
+  "expectedCanonicalShape": {
+    "post_id": "p_tombstone",
+    "upstream_status": "deleted",
+    "current": {
+      "upstream_revision": "r_tombstone_2",
+      "title": "Relay Dump Tombstoned"
+    },
+    "versions": []
+  },
+  "paths": [
+    "relay-dump/canonical.json"
+  ],
+  "reason": "EH-011 accounts tombstones as exclusions (or conflicts when local posts are protected). SiteBundle still has no publish-state field."
+}

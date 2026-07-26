@@ -1,4 +1,9 @@
 /**
+ * @fileoverview Patron experience module comment-auto-mod.ts — see exported symbols.
+ * @see {@link ../jsdoc-core-entities.ts}
+ * @see prisma/schema.prisma Account, TenantMembership, and related patron tables
+ */
+/**
  * PE-E (D22) — hand-rolled comment auto-mod.
  *
  * Deterministic ruleset. No external API. Each rule produces a `flag` row that the service

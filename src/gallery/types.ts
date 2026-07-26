@@ -1,9 +1,26 @@
+/**
+ * @fileoverview Wire TypeScript types for gallery APIs: list rows, filters, overrides, layouts, patron engagement.
+ * @description Aligns with ingest/export pipelines and Prisma-backed stores where applicable.
+ * @see prisma/schema.prisma `PostOverride`, `PageLayout`, `PatronFavorite`, `LibraryCollection`, etc.
+ * @see src/jsdoc-core-entities.ts Artist/Gallery/SyncStatus mapping notes
+ */
+
 import type { MediaProcessingState } from "../ingest/canonical-store.js";
 
+/**
+ * @description Re-export of ingest media processing enum surfaced on {@link GalleryItem} rows.
+ */
 export type { MediaProcessingState };
 
+/**
+ * @description Creator-controlled visibility tri-state for Library / visitor surfaces (`review` = moderation lane).
+ */
 export type PostVisibility = "visible" | "hidden" | "review";
 
+/**
+ * @description Flattened Library grid row: one entry per media attachment or synthetic text-only placeholder.
+ * @see {@link GalleryListParams} Filtering inputs that consume these rows
+ */
 export type GalleryItem = {
   media_id: string;
   post_id: string;
@@ -12,6 +29,8 @@ export type GalleryItem = {
   published_at: string;
   tag_ids: string[];
   tier_ids: string[];
+  /** True when the source post is readable without patron tier membership. */
+  is_public?: boolean;
   mime_type?: string;
   media_role?: string;
   has_export: boolean;
@@ -27,21 +46,85 @@ export type GalleryItem = {
    * Tier-redacted rows keep this path while `content_url_path` is cleared.
    */
   preview_url_path: string;
+  /**
+   * Sharp WebP thumbnail for grid/list (images with export only). Same tier gate as
+   * `content_url_path` when enforced. Empty for video/synthetic rows until poster support.
+   */
+  thumb_url_path: string;
   visibility: PostVisibility;
   collection_ids: string[];
   /** Theme tags from collections that include this post (for search / UI). */
   collection_theme_tag_ids: string[];
   /**
+   * Soft pointer to Audience & Promotion teaser media (`PostPresentation.promoPreviewMediaId`).
+   * Not part of post media_order / version media ids.
+   */
+  promo_preview_media_id?: string | null;
+  /**
    * Patreon often ships the same binary as both `cover` and attachment with different signed URLs.
    * When true, UI may hide this row by default; it remains in API/search for recovery.
    */
   shadow_cover?: boolean;
+  /** Creator library: cross-post status per destination (owner list only). */
+  distribution_summary?: {
+    post_id: string;
+    destinations: Array<{
+      destination: string;
+      variant_status: string | null;
+      attempt_status: string | null;
+      attempt_id: string | null;
+      external_url: string | null;
+      external_id: string | null;
+    }>;
+  };
+  /** Creator library: linked platform instances when `include_instances=true` (owner list only). */
+  platform_instances?: Array<{
+    platform_instance_id: string;
+    destination: string;
+    external_url: string | null;
+    status: string;
+    last_refreshed_at: string | null;
+    variant_role: string;
+    refresh_eligible: boolean;
+  }>;
+  /** Creator library: CreativeWork membership (owner list only). */
+  creative_work_id?: string;
+  is_default_bundle?: boolean;
+  creative_work_member_count?: number;
+  member_label?: string | null;
+  variant_role?: string | null;
+  creative_work_sort_order?: number;
+  /**
+   * Owner-only: true when this post is in the creator's Promo Pool (`CreatorPromoSlot`).
+   * Never set on visitor_catalog / patron DTOs.
+   */
+  is_promo_piece?: boolean;
+  /** Owner-only stable Promo Piece id (`CreatorPromoSlot.id`). */
+  promo_piece_id?: string;
+  /** Owner-only compact rank 1…5 in the Promo Pool. */
+  promo_slot_rank?: 1 | 2 | 3 | 4 | 5;
 };
 
+/**
+ * @description Tier facet payload for Access Review UI (id + human title + optional pledge cents).
+ */
 export type GalleryTierFacet = {
   tier_id: string;
   title: string;
   amount_cents?: number;
+};
+
+/**
+ * @description Single-post gallery detail response including tier facets and ordered media rows.
+ */
+/** Patron-safe locked-viewer promo (Slice 9). Never includes raw destinations or code libraries. */
+export type GalleryEffectivePromo = {
+  headline: string;
+  cta_text: string;
+  code: string | null;
+  percent_off: number | null;
+  tracked_url: string | null;
+  source: "explicit" | "tier_default";
 };
 
 export type GalleryPostDetail = {
@@ -54,15 +137,31 @@ export type GalleryPostDetail = {
   media: GalleryItem[];
   /** Relay Inspect tier previews + CTA JSON when `PostPresentation.tierPreviewSettings` exists. */
   tier_preview_settings?: unknown;
+  /** Soft teaser pointer when `PostPresentation.promoPreviewMediaId` is set. */
+  promo_preview_media_id?: string | null;
+  /** Present only for locked visitors (`deny` / `locked_preview`). */
+  effective_promo?: GalleryEffectivePromo | null;
 };
 
+/**
+ * @description Library sort strategy for gallery list comparators in `query.ts`.
+ */
 export type GallerySortMode = "published" | "visibility";
 
+/**
+ * @description Whether list APIs expand all media rows vs collapse to post-primary hero selection.
+ */
 export type GalleryDisplayMode = "all_media" | "post_primary";
 
-/** Synthetic `post_only_*` gallery rows (no media assets). Default API behavior excludes them. */
+/**
+ * @description Handling for synthetic `post_only_*` gallery rows (no media assets); default APIs exclude them.
+ */
 export type GalleryTextOnlyPostsMode = "exclude" | "include";
 
+/**
+ * @description HTTP/query envelope for gallery listing (filters, visitor mode, pagination cursor).
+ * @security-audit-required `creator_id` is not a tenant guard—routes must authenticate creator scope separately.
+ */
 export type GalleryListParams = {
   creator_id: string;
   q?: string;
@@ -90,11 +189,17 @@ export type GalleryListParams = {
   limit: number;
 };
 
+/**
+ * @description Paginated gallery list payload (`next_cursor` opaque to clients).
+ */
 export type GalleryListResult = {
   items: GalleryItem[];
   next_cursor: string | null;
 };
 
+/**
+ * @description Per-media override deltas stored under a post override bucket.
+ */
 export type MediaOverride = {
   visibility?: PostVisibility;
   /** Added on top of post-level row tags for this asset only (Library / search). */
@@ -103,7 +208,9 @@ export type MediaOverride = {
   remove_tag_ids?: string[];
 };
 
-/** Deltas applied on top of canonical post data; not overwritten by Patreon ingest. */
+/**
+ * @description Deltas applied on top of canonical post data; not overwritten by Patreon ingest.
+ */
 export type PostOverride = {
   /** Tags to add to effective tag list (Library / search); stored only in overrides file. */
   add_tag_ids: string[];
@@ -120,9 +227,15 @@ export type PostOverride = {
   media?: Record<string, MediaOverride>;
 };
 
-/** @deprecated Use PostOverride instead */
+/**
+ * @description Historical alias for {@link PostOverride} retained for JSON compatibility.
+ * @deprecated Use {@link PostOverride} instead. Potential vestigial—verify in Dependency Pass.
+ */
 export type PostTagOverride = PostOverride;
 
+/**
+ * @description Aggregate overrides document keyed by creator id then post id (legacy JSON + DB flatten target).
+ */
 export type GalleryOverridesRoot = {
   creators: Record<
     string,
@@ -132,6 +245,9 @@ export type GalleryOverridesRoot = {
   >;
 };
 
+/**
+ * @description Saved Library filter row (creator-owned named query preset).
+ */
 export type SavedFilterRecord = {
   filter_id: string;
   creator_id: string;
@@ -147,12 +263,18 @@ export type SavedFilterRecord = {
   created_at: string;
 };
 
+/**
+ * @description JSON root `{ filters: SavedFilterRecord[] }` for file-backed store migrations.
+ */
 export type SavedFiltersRoot = {
   filters: SavedFilterRecord[];
 };
 
 // --- Collections ---
 
+/**
+ * @description Creator library collection with ordered post membership + optional access ceiling tier.
+ */
 export type Collection = {
   collection_id: string;
   creator_id: string;
@@ -172,14 +294,23 @@ export type Collection = {
   updated_at: string;
 };
 
+/**
+ * @description File-backed `{ collections: Collection[] }` aggregate root.
+ */
 export type CollectionsRoot = {
   collections: Collection[];
 };
 
 // --- Page Layout ---
 
+/**
+ * @description Section layout mode selector for designer-rendered grids/lists.
+ */
 export type LayoutMode = "grid" | "masonry" | "list" | "featured";
 
+/**
+ * @description Single profile layout section sourcing posts from collection, filter, or manual ids.
+ */
 export type PageSection = {
   section_id: string;
   title: string;
@@ -193,9 +324,15 @@ export type PageSection = {
   sort_order: number;
 };
 
-/** Saved with page layout — controls section item ordering on profile + designer preview */
+/**
+ * @description Saved with page layout — controls section item ordering on profile + designer preview.
+ */
 export type GalleryArrangement = "chronological" | "tier";
 
+/**
+ * @description Published profile layout document (theme, hero, ordered sections, publish timestamp semantics).
+ * @see prisma/schema.prisma `PageLayout` column merge rules for `published_at`
+ */
 export type PageLayout = {
   creator_id: string;
   theme: {
@@ -226,16 +363,32 @@ export type PageLayout = {
   };
   sections: PageSection[];
   updated_at: string;
+  /**
+   * ISO timestamp when the gallery was first (or last) published to the public surface.
+   * Omitted or undefined means never published (draft-only). In DB-backed mode this
+   * is stored in `page_layouts.published_at` and merged on load; it may still appear
+   * on wire when read from the API.
+   */
+  published_at?: string;
 };
 
+/**
+ * @description Legacy JSON root mapping creator id → {@link PageLayout} for file migrations.
+ */
 export type PageLayoutRoot = {
   layouts: Record<string, PageLayout>;
 };
 
 // --- Patron favorites (Relay-only; not synced to Patreon) ---
 
+/**
+ * @description Whether a patron favorite targets a whole post vs a single media asset.
+ */
 export type PatronFavoriteTargetKind = "post" | "media";
 
+/**
+ * @description Stored patron favorite row (`user_id` holds patron membership id in DB-backed mode).
+ */
 export type PatronFavoriteRecord = {
   user_id: string;
   creator_id: string;
@@ -250,12 +403,18 @@ export type PatronFavoriteRecord = {
   snapshot_tier_ids?: string[];
 };
 
+/**
+ * @description JSON aggregate `{ favorites: PatronFavoriteRecord[] }`.
+ */
 export type PatronFavoritesRoot = {
   favorites: PatronFavoriteRecord[];
 };
 
 // --- Patron collections (snips; Relay-only) ---
 
+/**
+ * @description Patron-owned saved collection metadata (snips board).
+ */
 export type PatronCollectionRecord = {
   collection_id: string;
   user_id: string;
@@ -271,6 +430,9 @@ export type PatronCollectionRecord = {
   is_public?: boolean;
 };
 
+/**
+ * @description Single saved clip referencing a post/media pair inside a patron collection.
+ */
 export type PatronCollectionEntryRecord = {
   entry_id: string;
   collection_id: string;
@@ -287,25 +449,27 @@ export type PatronCollectionEntryRecord = {
   snapshot_tier_ids?: string[];
 };
 
+/**
+ * @description JSON aggregate `{ collections, entries }` for patron snips file store.
+ */
 export type PatronCollectionsRoot = {
   collections: PatronCollectionRecord[];
   entries: PatronCollectionEntryRecord[];
 };
 
 /**
- * PE-D / D29 — viewer-aware render contract. Computed LIVE at every render against the viewer's
- * current `PatronEntitlementSnapshot` for the source creator. The 'unlockable' slot is reserved
- * for PE-L (tip-to-unlock) and stays dormant until that lane ships, but is part of the API shape
- * from day one to avoid a second response-shape migration later.
+ * @description PE-D / D29 — viewer-aware render contract. Computed LIVE at every render against the viewer's current `PatronEntitlementSnapshot` for the source creator. The 'unlockable' slot is reserved for PE-L (tip-to-unlock) and stays dormant until that lane ships, but is part of the API shape from day one to avoid a second response-shape migration later.
  *
  * - 'visible'    — viewer's current entitlement covers the post's required tiers (or post is free).
- * - 'preview'    — post permits a free preview slice and viewer lacks full access (reserved; PE-D
- *                  emits 'visible' for free posts and 'locked' otherwise until PE-L lands).
+ * - 'preview'    — post permits a free preview slice and viewer lacks full access (reserved; PE-D emits 'visible' for free posts and 'locked' otherwise until PE-L lands).
  * - 'unlockable' — viewer can pay a one-off tip to unlock viewing for a bounded window (PE-L; dormant).
  * - 'locked'     — viewer cannot view and has no tip path; show blurred teaser + upgrade CTA.
  */
 export type ViewerEntitlementState = "visible" | "preview" | "unlockable" | "locked";
 
+/**
+ * @description Structured entitlement evaluation attached to favorites/snips API payloads.
+ */
 export type ViewerEntitlementDecision = {
   state: ViewerEntitlementState;
   /** Tier ids required to fully view the source post (empty = free / no tier required). */
@@ -314,13 +478,19 @@ export type ViewerEntitlementDecision = {
    * Optional debug breadcrumb: which kind of snapshot we consulted. Helpful in QA and metrics
    * but never surfaced to end users.
    */
-  source: "free_post" | "active_snapshot" | "missing_snapshot" | "inactive_snapshot";
+  source: "free_post" | "active_snapshot" | "missing_snapshot" | "inactive_snapshot" | "tip_reveal";
 };
 
+/**
+ * @description Patron favorite row augmented with live viewer entitlement decision for PE-D surfaces.
+ */
 export type PatronFavoriteWithViewerEntitlement = PatronFavoriteRecord & {
   viewer_entitlement: ViewerEntitlementDecision;
 };
 
+/**
+ * @description Patron collection entry augmented with live viewer entitlement decision.
+ */
 export type PatronCollectionEntryWithViewerEntitlement = PatronCollectionEntryRecord & {
   viewer_entitlement: ViewerEntitlementDecision;
 };

@@ -4,9 +4,10 @@ import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { Copy, Loader2, MessageCircle, Trash2 } from "lucide-react";
 import {
-  deleteDiscordStagingMedia,
+  deleteRelayLibraryStagingMedia,
+  discordStagingItemsFromUnifiedLibrary,
   fetchDiscordConnection,
-  fetchDiscordStaging,
+  fetchRelayLibraryStaging,
   mintDiscordLinkCode,
   RelayApiError,
   type DiscordConnectionData,
@@ -52,12 +53,12 @@ export function DiscordCaptureCard() {
     setLoadError(null);
     setLoadingMeta(true);
     try {
-      const [conn, list] = await Promise.all([
+      const [conn, unified] = await Promise.all([
         fetchDiscordConnection(creatorId.trim()),
-        fetchDiscordStaging(creatorId.trim())
+        fetchRelayLibraryStaging(creatorId.trim())
       ]);
       setConnection(conn);
-      setStaging(list.items);
+      setStaging(discordStagingItemsFromUnifiedLibrary(unified));
     } catch (e) {
       setLoadError(e instanceof RelayApiError ? e.message : String(e));
     } finally {
@@ -98,7 +99,7 @@ export function DiscordCaptureCard() {
     setDeletingId(mediaId);
     setLoadError(null);
     try {
-      await deleteDiscordStagingMedia(creatorId.trim(), mediaId);
+      await deleteRelayLibraryStagingMedia(creatorId.trim(), mediaId);
       setStaging((prev) => prev.filter((x) => x.media_id !== mediaId));
     } catch (e) {
       setLoadError(e instanceof RelayApiError ? e.message : String(e));
@@ -126,7 +127,7 @@ export function DiscordCaptureCard() {
           <h2 className="text-sm font-semibold text-[var(--lib-fg)]">Discord capture</h2>
           <p className="mt-1 text-xs text-[var(--lib-fg-muted)]">
             Stage attachments from Discord (via the Relay bot), then publish them like any upload from{" "}
-            <Link href="/new-post" className="font-medium text-[#2D6A4F] underline-offset-4 hover:underline">
+            <Link href="/studio/new-post" className="font-medium text-[#2D6A4F] underline-offset-4 hover:underline">
               New post
             </Link>
             .
@@ -237,7 +238,7 @@ export function DiscordCaptureCard() {
                   </div>
                   <div className="flex shrink-0 flex-wrap gap-2">
                     <Link
-                      href={`/new-post?media_ids=${encodeURIComponent(item.media_id)}`}
+                      href={`/studio/new-post?media_ids=${encodeURIComponent(item.media_id)}`}
                       className="inline-flex h-8 items-center rounded-md border border-[var(--lib-primary)]/50 bg-[var(--lib-primary)]/15 px-3 text-xs font-medium text-[var(--lib-fg)] hover:bg-[var(--lib-primary)]/25"
                     >
                       Use in new post

@@ -1,3 +1,10 @@
+/**
+ * @fileoverview Prisma-backed `AnalyticsStore` for Action Center metrics and recommendations.
+ * @description Maps domain types to `AnalyticsSnapshotRow`, `RecommendationRecord`, `AnalyticsActionExecution`, and `AnalyticsOutcome` tables.
+ * @see ./analytics-store.js
+ * @see prisma/schema.prisma AnalyticsSnapshotRow, RecommendationRecord, AnalyticsActionExecution, AnalyticsOutcome
+ */
+
 import type { Prisma } from "@prisma/client";
 import type { PrismaClient } from "@prisma/client";
 import type { AnalyticsStore } from "./analytics-store.js";
@@ -175,11 +182,22 @@ function cardToUpsert(
 }
 
 /**
- * Postgres-backed analytics / Action Center store. Matches `FileAnalyticsStore` behavior.
+ * @description Postgres-backed analytics / Action Center store; behavior matches `FileAnalyticsStore`.
+ * @security-audit-required Reads and writes creator-scoped rows; callers must ensure Prisma/queries enforce tenant isolation where applicable.
  */
 export class DbAnalyticsStore implements AnalyticsStore {
+  /**
+   * @description Creates a store that uses the shared Prisma client for analytics tables.
+   * @param prisma Prisma client (`PrismaClient`).
+   */
   public constructor(private readonly prisma: PrismaClient) {}
 
+  /**
+   * @description Loads full aggregate by scanning analytics-related tables ordered by timestamps.
+   * @returns Root mirroring JSON file layout.
+   * @async
+   * @throws {Error} Prisma query errors (connection, RLS, timeout).
+   */
   public async load(): Promise<AnalyticsStoreRoot> {
     const [snapshots, recs, actions, outcomes] = await Promise.all([
       this.prisma.analyticsSnapshotRow.findMany({ orderBy: { generatedAt: "asc" } }),
@@ -227,6 +245,13 @@ export class DbAnalyticsStore implements AnalyticsStore {
     };
   }
 
+  /**
+   * @description Transactionally replaces all analytics rows with the provided root (destructive full sync).
+   * @param root Authoritative in-memory snapshot to persist.
+   * @async
+   * @throws {Error} Transaction failure, constraint violation, or DB connectivity errors.
+   * @todo Consider incremental merge instead of global delete to reduce blast radius on large datasets.
+   */
   public async save(root: AnalyticsStoreRoot): Promise<void> {
     await this.prisma.$transaction(async (tx) => {
       await tx.analyticsOutcome.deleteMany({});
@@ -275,12 +300,25 @@ export class DbAnalyticsStore implements AnalyticsStore {
     });
   }
 
+  /**
+   * @description Inserts a single snapshot row.
+   * @param snap Snapshot to persist.
+   * @async
+   * @throws {Error} On Prisma `create` failure.
+   */
   public async appendSnapshot(snap: AnalyticsSnapshot): Promise<void> {
     await this.prisma.analyticsSnapshotRow.create({
       data: snapshotToCreate(snap)
     });
   }
 
+  /**
+   * @description Fetches the latest snapshot for a creator by `generatedAt` descending.
+   * @param creatorId Creator key.
+   * @returns Row mapped to `AnalyticsSnapshot` or `null`.
+   * @async
+   * @throws {Error} On Prisma query failure.
+   */
   public async latestSnapshot(creatorId: string): Promise<AnalyticsSnapshot | null> {
     const row = await this.prisma.analyticsSnapshotRow.findFirst({
       where: { creatorId },
@@ -289,12 +327,27 @@ export class DbAnalyticsStore implements AnalyticsStore {
     return row ? rowToSnapshot(row) : null;
   }
 
+  /**
+   * @description Upserts each recommendation by `recommendationId`.
+   * @param cards Cards to upsert.
+   * @async
+   * @throws {Error} On Prisma `upsert` failure.
+   * @todo Batch upserts in a transaction for large card lists to improve atomicity and performance.
+   */
   public async upsertRecommendations(cards: RecommendationCard[]): Promise<void> {
     for (const card of cards) {
       await this.prisma.recommendationRecord.upsert(cardToUpsert(card));
     }
   }
 
+  /**
+   * @description Queries open recommendations for a creator and applies in-memory filters and pagination.
+   * @param creatorId Creator key.
+   * @param filters Optional filters.
+   * @returns Page of cards and next cursor.
+   * @async
+   * @throws {Error} On Prisma `findMany` failure.
+   */
   public async listCards(
     creatorId: string,
     filters?: {
@@ -333,6 +386,14 @@ export class DbAnalyticsStore implements AnalyticsStore {
     return { items: slice, next_cursor };
   }
 
+  /**
+   * @description Loads a card matching both recommendation and creator id.
+   * @param creatorId Creator key.
+   * @param recommendationId Card id.
+   * @returns Card or `null`.
+   * @async
+   * @throws {Error} On Prisma query failure.
+   */
   public async getCard(
     creatorId: string,
     recommendationId: string
@@ -343,6 +404,16 @@ export class DbAnalyticsStore implements AnalyticsStore {
     return row ? rowToCard(row) : null;
   }
 
+  /**
+   * @description Updates status and optional note fields when the row exists for the creator.
+   * @param creatorId Creator key.
+   * @param recommendationId Card id.
+   * @param status New status.
+   * @param extra Optional fields.
+   * @returns Updated card or `null` if none matched.
+   * @async
+   * @throws {Error} On Prisma `update` failure (including if another process deleted the row between read and write).
+   */
   public async updateCardStatus(
     creatorId: string,
     recommendationId: string,
@@ -369,6 +440,12 @@ export class DbAnalyticsStore implements AnalyticsStore {
     return rowToCard(updated);
   }
 
+  /**
+   * @description Inserts an action execution row.
+   * @param action Execution record.
+   * @async
+   * @throws {Error} On Prisma `create` failure.
+   */
   public async appendAction(action: ActionExecution): Promise<void> {
     await this.prisma.analyticsActionExecution.create({
       data: {
@@ -383,6 +460,12 @@ export class DbAnalyticsStore implements AnalyticsStore {
     });
   }
 
+  /**
+   * @description Inserts an outcome evaluation row.
+   * @param outcome Outcome record.
+   * @async
+   * @throws {Error} On Prisma `create` failure.
+   */
   public async appendOutcome(outcome: RecommendationOutcome): Promise<void> {
     await this.prisma.analyticsOutcome.create({
       data: {

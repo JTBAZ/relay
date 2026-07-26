@@ -1,15 +1,15 @@
 import { resolvePostAuthPath } from "./post-login-redirect";
 import { fetchPatronSessionIfPresent } from "./relay-api";
 
-const DEFAULT_SUPPORTER_CONNECT = "/patreon/patron/connect";
+const DEFAULT_SUPPORTER_CONNECT = "/connect/patreon/patron/connect";
 
 /**
  * After `bootstrapSupporterAfterSupabase`, choose where to send the user.
  *
  * - If Patreon is not linked yet, the connect step wins; do not let stale returnTo bypass setup.
  * - If Patreon is linked and `returnTo` is set to something other than the default connect step,
- *   that path wins (e.g. `?returnTo=/patron/settings`).
- * - Otherwise linked supporters go to `/patron/feed`.
+ *   that path wins (e.g. `?returnTo=/settings`).
+ * - Otherwise linked supporters go to `/feed`.
  */
 export async function resolveSupporterPostAuthDestination(
   returnToFromQuery: string | null
@@ -22,5 +22,5 @@ export async function resolveSupporterPostAuthDestination(
   if (r && r !== DEFAULT_SUPPORTER_CONNECT) {
     return resolvePostAuthPath(r);
   }
-  return "/patron/feed";
+  return "/feed";
 }

@@ -1,4 +1,9 @@
 /**
+ * @fileoverview T-007 / T-008 — incremental autosync worker: scheduled fallback watermark-aware `scrapeOrSync` per creator.
+ * @description Interval worker complements Patreon webhooks; `runIncrementalAutosyncOnce` batches creators (alias: `runIncrementalAutosyncCycle`). Idempotent ingest via existing watermarks. **Single entry module** — the old `incremental-autosync-worker.ts` re-export shim was removed (P1-queue-018); import this file only.
+ * @see {@link ../jsdoc-core-entities.ts}
+ * @see prisma/schema.prisma `CreatorProfile`, ingest posts/media tiers via `PatreonSyncService`
+ *
  * **T-007 / T-008 — Incremental autosync & fallback cadence**
  *
  * The interval worker (`startIncrementalAutosyncWorker`) is the **scheduled fallback** when Patreon
@@ -97,6 +102,11 @@ async function runPool<T>(
 export type RunIncrementalAutosyncCycleOptions = {
   tokenStore: PatreonTokenStore;
   patreonSyncService: PatreonSyncService;
+  /**
+   * When set, run the sync pass for this Relay creator id only (BullMQ targeted job).
+   * Skips `listCreatorIds`; does not apply `maxCreatorsPerCycle` cap.
+   */
+  creatorId?: string;
   /** When set, success/failure is recorded like `POST /api/v1/patreon/scrape`. */
   syncHealthStore?: PatreonSyncHealthStoreAPI;
   /** When set, campaign id is upserted for webhook routing (same as manual scrape). */
@@ -126,10 +136,11 @@ type CycleOutcome =
   | { kind: "fail"; message: string };
 
 /**
- * One pass: list creators with stored OAuth, run incremental `scrapeOrSync` for each
- * (watermark-aware; no `force_refresh_post_access`). Failures are captured per creator.
+ * One full autosync pass: watermark-aware incremental `scrapeOrSync` per creator
+ * (no `force_refresh_post_access`). Failures are captured per creator.
+ * Use from interval worker, CLI, or BullMQ processor.
  */
-export async function runIncrementalAutosyncCycle(
+export async function runIncrementalAutosyncOnce(
   opts: RunIncrementalAutosyncCycleOptions
 ): Promise<IncrementalAutosyncCycleResult> {
   const started = new Date().toISOString();
@@ -164,9 +175,15 @@ export async function runIncrementalAutosyncCycle(
         "1"
     );
 
-  let creatorIds = await opts.tokenStore.listCreatorIds();
-  if (maxCreators > 0 && creatorIds.length > maxCreators) {
-    creatorIds = creatorIds.slice(0, maxCreators);
+  const targeted = opts.creatorId?.trim();
+  let creatorIds: string[];
+  if (targeted) {
+    creatorIds = [targeted];
+  } else {
+    creatorIds = await opts.tokenStore.listCreatorIds();
+    if (maxCreators > 0 && creatorIds.length > maxCreators) {
+      creatorIds = creatorIds.slice(0, maxCreators);
+    }
   }
 
   const errors: Array<{ creator_id: string; message: string }> = [];
@@ -289,6 +306,11 @@ export async function runIncrementalAutosyncCycle(
   };
 }
 
+/**
+ * @deprecated Use {@link runIncrementalAutosyncOnce}; name retained for existing imports.
+ */
+export const runIncrementalAutosyncCycle = runIncrementalAutosyncOnce;
+
 export type StartIncrementalAutosyncWorkerOptions = {
   tokenStore: PatreonTokenStore;
   patreonSyncService: PatreonSyncService;
@@ -299,19 +321,43 @@ export type StartIncrementalAutosyncWorkerOptions = {
 };
 
 /**
+ * Whether incremental autosync would be enabled (shared with [src/main.ts](../main.ts) / BullMQ repeat on the API).
+ */
+export function shouldScheduleIncrementalAutosyncFromEnv(
+  env: NodeJS.ProcessEnv = process.env
+): boolean {
+  if (envTruthy(env.RELAY_AUTOSYNC_ENABLED)) return true;
+  const raw = env.RELAY_PATREON_INCREMENTAL_AUTOSYNC_MS?.trim();
+  if (!raw) return false;
+  const n = Number(raw);
+  return Number.isFinite(n) && n >= 10_000;
+}
+
+/**
+ * Fixed BullMQ `repeat.every` ms matching {@link parseAutosyncIntervalMs} base cadence (no jitter/backoff).
+ * `null` when autosync would not run for this env.
+ */
+export function incrementalAutosyncRepeatEveryMsFromEnv(
+  env: NodeJS.ProcessEnv = process.env
+): number | null {
+  if (!shouldScheduleIncrementalAutosyncFromEnv(env)) return null;
+  return parseAutosyncIntervalMs(env);
+}
+
+/**
  * Background **fallback cadence** (webhook safety net). Set `RELAY_AUTOSYNC_ENABLED=1` or
  * `RELAY_PATREON_INCREMENTAL_AUTOSYNC_MS` and tune interval via env.
  * Returns a disposer (clear timers).
  */
-function parseAutosyncIntervalMs(): number {
-  const raw = process.env.RELAY_PATREON_INCREMENTAL_AUTOSYNC_MS?.trim();
+function parseAutosyncIntervalMs(env: NodeJS.ProcessEnv = process.env): number {
+  const raw = env.RELAY_PATREON_INCREMENTAL_AUTOSYNC_MS?.trim();
   if (raw) {
     const n = Number(raw);
     if (Number.isFinite(n) && n >= 10_000) return n;
   }
   return Math.max(
     60_000,
-    parsePositiveInt(process.env.RELAY_AUTOSYNC_INTERVAL_MS, 900_000)
+    parsePositiveInt(env.RELAY_AUTOSYNC_INTERVAL_MS, 900_000)
   );
 }
 
@@ -356,7 +402,7 @@ export function startIncrementalAutosyncWorker(
   opts: StartIncrementalAutosyncWorkerOptions
 ): () => void {
   const log = opts.log ?? ((line: string) => console.log(line));
-  const baseIntervalMs = parseAutosyncIntervalMs();
+  const baseIntervalMs = parseAutosyncIntervalMs(process.env);
   const runOnStart = resolveAutosyncRunOnStart();
   const backoffEnabled = parseAutosyncFallbackBackoffEnabled();
   const maxBackoffMultiplier = parseAutosyncBackoffMaxMultiplier();
@@ -388,7 +434,7 @@ export function startIncrementalAutosyncWorker(
     cycleRunning = true;
     let r: IncrementalAutosyncCycleResult | undefined;
     try {
-      r = await runIncrementalAutosyncCycle({
+      r = await runIncrementalAutosyncOnce({
         tokenStore: opts.tokenStore,
         patreonSyncService: opts.patreonSyncService,
         syncHealthStore: opts.syncHealthStore,

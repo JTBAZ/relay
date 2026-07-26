@@ -1,3 +1,11 @@
+/**
+ * @fileoverview Prisma implementation of {@link PatreonSyncHealthStoreAPI} using `CreatorSyncState` JSON columns.
+ * @description Persists last post scrape + member sync summaries for Library diagnostics.
+ * @async
+ * @throws {Error} Prisma upsert/read failures.
+ * @see {@link ../jsdoc-core-entities.ts}
+ * @see prisma/schema.prisma `CreatorSyncState`
+ */
 import type { PrismaClient } from "@prisma/client";
 import type {
   CreatorSyncHealthState,

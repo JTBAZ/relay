@@ -6,9 +6,11 @@
 
 export type MediaType = "writing" | "photo" | "audio" | "video";
 export type FeedItemKind = "followed" | "discovery";
+export type PatronFeedItemSource = "subscribed" | "discover";
 /** Feed list presentation — `inlineMedia` shows hero + pins in the card (A/B vs `classic`). */
 export type FeedCardLayout = "classic" | "inlineMedia";
-export type TierLabel = "Free" | "Supporter" | "Studio";
+/** Patron feed / sidebar badge — `Tier.title` from API when live; fixtures may use shorthand. */
+export type TierLabel = string;
 
 export interface Creator {
   id: string;
@@ -33,6 +35,8 @@ export interface Creator {
 export interface FeedPost {
   id: string;
   kind: FeedItemKind;
+  /** P6-patron-003 — from API (`GET /api/v1/patron/relay_feed`). Falls back to `kind` in the UI when missing. */
+  feed_item_source?: PatronFeedItemSource;
   creator: Creator;
   title: string;
   excerpt: string;
@@ -47,6 +51,15 @@ export interface FeedPost {
   highResImageUrl?: string; // Playback URL: full export `/content`
   /** Full gallery set — when multiple URLs, zoom shows a stacked deck (wheel to cycle). */
   galleryImageUrls?: string[];
+  /** Primary media id for media-level actions like Snip. Favorite remains post-level. */
+  primaryMediaId?: string;
+  /** Media-level payload preserving the id for each image/page in a multi-media post. */
+  mediaItems?: Array<{
+    mediaId: string;
+    url?: string;
+    previewUrl?: string;
+    mimeType?: string | null;
+  }>;
   publishedAt: string;
   readTimeLabel?: string;
   likeCount: number;
@@ -57,6 +70,24 @@ export interface FeedPost {
   communityTags?: string[];
   /** Defaults to `classic` (text + small thumb). */
   feedCardLayout?: FeedCardLayout;
+}
+
+export interface LockedFeedPost {
+  id: string;
+  creator: Creator;
+  title: string;
+  mediaType: MediaType;
+  publishedAt: string;
+  tierLabel: TierLabel;
+  /** Slice 9 — discount-backed locked promo when resolved by the feed assembler. */
+  effective_promo?: {
+    headline: string;
+    cta_text: string;
+    code: string | null;
+    percent_off: number | null;
+    tracked_url: string | null;
+    source: "explicit" | "tier_default";
+  } | null;
 }
 
 export interface CurrentViewer {
@@ -83,6 +114,8 @@ export interface PositionalComment {
     displayName: string;
     handle: string;
     avatarUrl: string;
+    /** MB-14 — live Curator badge when present. */
+    isCurator?: boolean;
   };
   text: string;
   position: { x: number; y: number }; // 0-100 percentage
@@ -510,22 +543,35 @@ export function sortFollowedForSidebar(creators: Creator[]): Creator[] {
 export function mapPatronFollowApiItemToCreator(item: {
   relay_creator_id: string;
   created_at: string;
+  creator?: {
+    display_name: string;
+    handle: string;
+    public_slug: string | null;
+    avatar_url: string | null;
+    discipline: string | null;
+  };
+  entitlement?: {
+    tier_label: string;
+  };
 }): Creator {
   const id = item.relay_creator_id.trim();
   const short =
     id.length > 14 ? `${id.slice(0, 8)}…${id.slice(-4)}` : id || "creator";
   const handleBase = short.replace(/[^a-zA-Z0-9_]/g, "_").replace(/_+/g, "_");
+  const handle = item.creator?.handle?.trim() || (handleBase || "creator").slice(0, 32);
+  const displayName = item.creator?.display_name?.trim() || short;
+  const avatarUrl = item.creator?.avatar_url?.trim() || "/placeholder.svg?height=40&width=40";
   return {
     id,
-    handle: (handleBase || "creator").slice(0, 32),
-    displayName: short,
-    discipline: "",
-    avatarUrl: "/placeholder.svg?height=40&width=40",
+    handle,
+    displayName,
+    discipline: item.creator?.discipline?.trim() || "",
+    avatarUrl,
     isFollowed: true,
     followerCount: 0,
     postCount: 0,
     onRelay: true,
-    patronTierLabel: "Free"
+    patronTierLabel: (item.entitlement?.tier_label?.trim() as TierLabel | undefined) ?? "Free"
   };
 }
 
@@ -755,24 +801,60 @@ export const NOTIFICATIONS: Notification[] = [
 
 export type PatronFeedDataSource = "fixtures" | "live";
 
-/** Shape returned by `GET /api/v1/patron/relay_feed` and `GET /api/v1/patron/feed` (see `patron-feed-api.ts`). */
+/** Shape returned by `GET /api/v1/patron/relay_feed` and `GET /api/v1/patron/relay_feed` (see `patron-feed-api.ts`). */
 export interface PatronFeedBundle {
   feedPosts: FeedPost[];
+  lockedPosts?: LockedFeedPost[];
   discoverItems: DiscoverItem[];
   currentViewer: CurrentViewer;
   followedCreators: Creator[];
   notifications: Notification[];
   /** PE-B: present when the API returns paginated DB-backed results. */
   next_cursor?: string | null;
+  /** P6-patron-004 — missing or expired entitlement snapshots for followed creators (DB feed only). */
+  entitlement_degraded: boolean;
+  /** Earliest overdue `stale_after` among snapshots (ISO), or null when only a snapshot is missing. */
+  entitlement_stale_since: string | null;
 }
 
 export function getPatronFeedFixtureBundle(): PatronFeedBundle {
   return {
-    feedPosts: FEED_POSTS,
+    feedPosts: FEED_POSTS.map((p) => ({
+      ...p,
+      feed_item_source: p.kind === "discovery" ? "discover" : "subscribed"
+    })),
+    lockedPosts: [
+      {
+        id: "locked_mara_contact_sheet",
+        creator: CREATORS.mara,
+        title: "Contact sheet: Lisbon night market",
+        mediaType: "photo",
+        publishedAt: "2 days ago",
+        tierLabel: "Studio"
+      },
+      {
+        id: "locked_james_breakdown",
+        creator: CREATORS.james,
+        title: "Track breakdown: low-end texture pass",
+        mediaType: "audio",
+        publishedAt: "4 days ago",
+        tierLabel: "Producer"
+      },
+      {
+        id: "locked_elena_notes",
+        creator: CREATORS.elena,
+        title: "Notebook: the economics of attention",
+        mediaType: "writing",
+        publishedAt: "Last week",
+        tierLabel: "Studio"
+      }
+    ],
     discoverItems: DISCOVER_ITEMS,
     currentViewer: CURRENT_VIEWER,
     followedCreators: sortFollowedForSidebar(FOLLOWED_CREATORS),
     notifications: NOTIFICATIONS,
+    entitlement_degraded: false,
+    entitlement_stale_since: null
   };
 }
 

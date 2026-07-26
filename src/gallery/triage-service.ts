@@ -1,7 +1,17 @@
+/**
+ * @fileoverview Creator Library triage heuristics (text-only posts, duplicates, small exports, cover roles).
+ * @description Read-heavy analysis + optional auto-flag via overrides store.
+ * @see ./overrides-store.js Visibility mutations
+ * @see src/jsdoc-core-entities.ts Artist/Gallery/SyncStatus mapping notes
+ */
+
 import type { CanonicalStore } from "../ingest/canonical-store.js";
 import type { FileExportIndex } from "../export/export-index.js";
 import type { GalleryOverridesStore } from "./overrides-store.js";
 
+/**
+ * @description Summary payload returned by {@link TriageService.analyze}.
+ */
 export type TriageResult = {
   text_only_post_ids: string[];
   duplicate_groups: { canonical_post_id: string; duplicate_post_ids: string[] }[];
@@ -11,12 +21,18 @@ export type TriageResult = {
   total_review_items: number;
 };
 
+/**
+ * @description Category keys accepted by auto-flag normalization.
+ */
 export const TRIAGE_CATEGORY_KEYS = [
   "text_only",
   "duplicates",
   "small_media",
   "cover_images"
 ] as const;
+/**
+ * @description Union of triage category slugs.
+ */
 export type TriageCategory = (typeof TRIAGE_CATEGORY_KEYS)[number];
 
 const SMALL_BYTE_THRESHOLD = 5_120; // 5 KB
@@ -85,7 +101,14 @@ function pickCanonical(posts: PostDupDigest[]): PostDupDigest {
   return best;
 }
 
-/** Exported for unit tests. */
+/**
+ * @description Builds duplicate post clusters sharing normalized title and export SHA overlap (exported for tests).
+ * @param posts Creator post map subset.
+ * @param mediaMap Creator media map subset.
+ * @param index Export index with `sha256` per media.
+ * @returns Canonical vs duplicate group list.
+ * @todo Heuristic may false-positive on intentional multi-asset posts—tune thresholds if noisy.
+ */
 export function buildDuplicateGroupsByTitleAndSha(
   posts: Record<string, { upstream_status?: string; current: { title: string; published_at: string; media_ids: string[] } }>,
   mediaMap: Record<string, { upstream_status?: string; current: { role?: string } }>,
@@ -194,6 +217,10 @@ export function buildDuplicateGroupsByTitleAndSha(
   return groupsOut;
 }
 
+/**
+ * @description Runs triage scans and optional bulk visibility updates toward `review`.
+ * @security-audit-required `creatorId` must match authenticated creator; overrides mutate cross-post visibility.
+ */
 export class TriageService {
   private readonly canonical: CanonicalStore;
   private readonly exportIndex: FileExportIndex;
@@ -206,6 +233,13 @@ export class TriageService {
     this.exportIndex = exportIndex;
   }
 
+  /**
+   * @description Computes triage buckets without mutating overrides.
+   * @param creatorId Creator partition.
+   * @returns Structured triage summary.
+   * @async
+   * @throws Propagates canonical/export load failures.
+   */
   public async analyze(creatorId: string): Promise<TriageResult> {
     const snapshot = await this.canonical.load();
     const index = await this.exportIndex.load(creatorId);
@@ -254,6 +288,15 @@ export class TriageService {
     };
   }
 
+  /**
+   * @description Runs {@link analyze} then applies `review` visibility for selected categories via overrides store.
+   * @param creatorId Creator partition.
+   * @param overrides Overrides store for mutations.
+   * @param categories Optional subset of {@link TRIAGE_CATEGORY_KEYS}; defaults to all.
+   * @returns Same shape as analyze (post-mutation summary).
+   * @async
+   * @throws Propagates store failures from analyze or overrides writes.
+   */
   public async autoFlag(
     creatorId: string,
     overrides: GalleryOverridesStore,

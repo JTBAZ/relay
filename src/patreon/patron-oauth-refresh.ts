@@ -1,3 +1,10 @@
+/**
+ * @fileoverview Patron OAuth refresh: exchanges stored refresh token for new Patreon tokens and re-persists encrypted credentials.
+ * @description BO-DP-R04 / PE-H — intended for workers when entitlements are stale.
+ * @see {@link ../jsdoc-core-entities.ts}
+ * @see prisma/schema.prisma `PatronOAuthCredential`, `Account`
+ * @security-audit-required Operates on patron tokens and refresh material — never log token bodies.
+ */
 import type { PrismaClient } from "@prisma/client";
 import type { PatreonClient, PatreonTokenResponse } from "../auth/patreon-client.js";
 import {
@@ -9,6 +16,8 @@ import type { TokenEncryption } from "../lib/crypto.js";
 /**
  * BO-DP-R04 / PE-H — Uses stored refresh token (`patron_oauth_credentials`) to obtain new tokens and
  * re-persist. A scheduled/worker job can call this per account when snapshots are stale.
+ * @async
+ * @throws {Error} Patreon `refreshToken` failures or Prisma upsert errors.
  */
 export async function refreshPatronOAuthTokensWithStoredRefreshToken(args: {
   prisma: PrismaClient;

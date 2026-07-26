@@ -3,12 +3,16 @@ import { vi } from "vitest";
 /** Mutable state for tests; reset in `beforeEach`. */
 export const nextNavigationMock = {
   replace: vi.fn(),
+  push: vi.fn(),
   pathname: "/gallery",
   search: new URLSearchParams("foo=bar")
 };
 
 export function useRouter() {
-  return { replace: nextNavigationMock.replace };
+  return {
+    replace: nextNavigationMock.replace,
+    push: nextNavigationMock.push
+  };
 }
 
 export function usePathname() {

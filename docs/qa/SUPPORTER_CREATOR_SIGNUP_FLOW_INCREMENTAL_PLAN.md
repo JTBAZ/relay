@@ -25,7 +25,7 @@
 | Verified email opens wrong host / broken session | Supabase allowlist vs `emailRedirectTo` vs where user runs Next | [`web/app/components/auth/SupporterSignInPanel.tsx`](../../web/app/components/auth/SupporterSignInPanel.tsx), Supabase Dashboard → URL configuration |
 | Supporter ends up on **Creator Library** (`/`) | **`/auth/confirm`** always calls **`bootstrapStudioAfterSupabase`** (provisions workspace + `localStorage` creator id) and defaults to **`/`** | [`web/app/auth/confirm/page.tsx`](../../web/app/auth/confirm/page.tsx), [`web/lib/relay-auth-bootstrap.ts`](../../web/lib/relay-auth-bootstrap.ts), [`web/lib/post-login-redirect.ts`](../../web/lib/post-login-redirect.ts) |
 | Signed-in visit to `/login` sends wrong home | Middleware `safeReturnTo` default **`/`** | [`web/middleware.ts`](../../web/middleware.ts) |
-| Patreon connect “hangs” after success | **`router.replace`** skipped if effect cleanup sets `cancelled`; or unfinished `relayFetch`; or origin/cookie | [`web/app/patreon/patron/callback/page.tsx`](../../web/app/patreon/patron/callback/page.tsx) |
+| Patreon connect “hangs” after success | **`router.replace`** skipped if effect cleanup sets `cancelled`; or unfinished `relayFetch`; or origin/cookie | [`web/app/connect/patreon/patron/callback/page.tsx`](../../web/app/connect/patreon/patron/callback/page.tsx) |
 
 ---
 
@@ -54,7 +54,7 @@
 **Confirm page behavior:**
 
 - Parse `intent` (or path).
-- **Supporter:** `bootstrapSupporterAfterSupabase` → `emitStudioSessionUpdate` → `router.replace('/patreon/patron/connect')` (or `/patron/feed` if API reports Patreon already linked — optional follow-up).
+- **Supporter:** `bootstrapSupporterAfterSupabase` → `emitStudioSessionUpdate` → `router.replace('/connect/patreon/patron/connect')` (or `/patron/feed` if API reports Patreon already linked — optional follow-up).
 - **Creator/default:** keep current `bootstrapStudioAfterSupabase` → existing onboarding vs `/` logic.
 
 **Supabase allowlist:** add any new query-string variant if the dashboard treats URLs literally.
@@ -69,9 +69,9 @@
 
 **Incremental options (in order of invasiveness):**
 
-1. **Low:** Only change **supporter** flows to always pass **`returnTo`** (e.g. `/patreon/patron/connect`) from links to `/login`.
+1. **Low:** Only change **supporter** flows to always pass **`returnTo`** (e.g. `/connect/patreon/patron/connect`) from links to `/login`.
 2. **Medium:** Extend [`resolvePostAuthPath`](../../web/lib/post-login-redirect.ts) (and **duplicate** `safeReturnTo` in [`middleware.ts`](../../web/middleware.ts) per file header) with a **documented** default when `returnTo` empty:
-   - e.g. read **non-authz** hint cookie `relay_active_role=supporter` → default `/patreon/patron/connect` or `/patron/feed`.
+   - e.g. read **non-authz** hint cookie `relay_active_role=supporter` → default `/connect/patreon/patron/connect` or `/patron/feed`.
    - **Must** stay consistent between middleware and client helpers.
 3. **Higher (Tier 2):** Server “home” resolution (`GET /api/v1/me/home` or extend `/me/session`) — **authz-safe** default path from DB; edge/client only redirect there.
 
@@ -83,8 +83,8 @@
 
 **Outcome:** After successful `POST /api/v1/auth/patreon/patron/link`, user always reaches **`/patron/feed`** or a clear error state.
 
-- [ ] **Strict Mode:** Refactor [`CallbackInner` effect](../../web/app/patreon/patron/callback/page.tsx) so navigation runs even when React double-invokes (e.g. `void linkThenRedirect()` without `cancelled` skipping `router.replace` on success, or use a ref “completed” flag).
-- [ ] **Timeout / UX:** If link hangs beyond N seconds, show retry + link to `/patreon/patron/connect`.
+- [ ] **Strict Mode:** Refactor [`CallbackInner` effect](../../web/app/connect/patreon/patron/callback/page.tsx) so navigation runs even when React double-invokes (e.g. `void linkThenRedirect()` without `cancelled` skipping `router.replace` on success, or use a ref “completed” flag).
+- [ ] **Timeout / UX:** If link hangs beyond N seconds, show retry + link to `/connect/patreon/patron/connect`.
 - [ ] **Logging:** Optional `console.info` / client metric for “link success → navigate” in dev.
 
 ---
@@ -99,7 +99,7 @@
 ## Verification checklist (after each phase)
 
 - [ ] New supporter: sign-up → email link → **no** auto `POST /creator/workspace` unless creator path chosen.
-- [ ] After confirm: lands on **`/patreon/patron/connect`** (or agreed default), not `/`.
+- [ ] After confirm: lands on **`/connect/patreon/patron/connect`** (or agreed default), not `/`.
 - [ ] Patreon connect completes → **`/patron/feed`** within one navigation; no stuck spinner.
 - [ ] Same flow on **single** dev origin; repeat with other origin **fails fast** with documented setup note.
 - [ ] Existing creator: email confirm / studio path still provisions workspace and reaches `/` or onboarding as today.
@@ -114,7 +114,7 @@
 | Confirm handler | [`web/app/auth/confirm/page.tsx`](../../web/app/auth/confirm/page.tsx) |
 | Bootstrap | [`web/lib/relay-auth-bootstrap.ts`](../../web/lib/relay-auth-bootstrap.ts) |
 | Post-auth paths | [`web/lib/post-login-redirect.ts`](../../web/lib/post-login-redirect.ts), [`web/middleware.ts`](../../web/middleware.ts) |
-| Patreon callback | [`web/app/patreon/patron/callback/page.tsx`](../../web/app/patreon/patron/callback/page.tsx) |
+| Patreon callback | [`web/app/connect/patreon/patron/callback/page.tsx`](../../web/app/connect/patreon/patron/callback/page.tsx) |
 | Optional role hint | [`web/lib/active-role.ts`](../../web/lib/active-role.ts), [`src/identity/set-active-role-cookie-for-session.ts`](../../src/identity/set-active-role-cookie-for-session.ts) (if setting default on bootstrap) |
 
 ---

@@ -1,4 +1,9 @@
 /**
+ * @fileoverview Patron experience module comment-tag-service.ts — see exported symbols.
+ * @see {@link ../jsdoc-core-entities.ts}
+ * @see prisma/schema.prisma Account, TenantMembership, and related patron tables
+ */
+/**
  * PE-E (D27) — mirror Comment.tagIds into TagSuggestion(source='patron_comment').
  *
  * Contract (see docs/architecture/SEARCH_AND_TAGS_SHARED_KERNEL.md §3.1, §4.3):

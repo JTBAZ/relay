@@ -37,21 +37,22 @@ Relay is **two intentional products** that share one **access and content model*
 
 Use this roadmap as the execution sequence and use the reference docs for deeper implementation decisions:
 
-- **Managed agent swarms (Airtable queue + strict roles):** [.docs/anthropic/README.md](.docs/anthropic/README.md), [.docs/anthropic/BUILD_BRIEF.md](.docs/anthropic/BUILD_BRIEF.md), and **[.docs/anthropic/CURRENT_LEDGER_QUEUE.md](.docs/anthropic/CURRENT_LEDGER_QUEUE.md)** (live queued rows + record IDs) — operational ground truth is the **Production Ledger** in Airtable (see [.docs/anthropic/AIRTABLE_LEDGER.md](.docs/anthropic/AIRTABLE_LEDGER.md)); this file is strategic narrative, not the live task queue by itself.
+- **Managed agent swarms (Airtable queue + strict roles):** start with [AGENTS.md](AGENTS.md) for the current operational pointers and use the **Production Ledger** in Airtable as queue truth; this file is strategic narrative, not the live task queue by itself.
 - **Coding agents / anyone touching Patreon ingest or gallery duplicate behavior:** read [AGENTS.md](AGENTS.md), [docs/patreon-ingest-canonical.md](docs/patreon-ingest-canonical.md), and [docs/relay-artist-metadata.md](docs/relay-artist-metadata.md) so canonical vs overrides stay aligned (artist tags/visibility survive re-ingest).
 - **Relational backend (PostgreSQL + Prisma, migration from file-backed stores):** [docs/database/README.md](docs/database/README.md) — schema, migrations, per-domain `RELAY_DB_STORE_*` flags; **M10** verification and handoff — [docs/database/M10_VERIFICATION.md](docs/database/M10_VERIFICATION.md). **Not** the Airtable Production Ledger (operational queue only).
 - Library + Designer UX ideals, workflows, gaps, and phased UI backlog:
   - [docs/pattern-library.md](docs/pattern-library.md)
   - **Publish-preflight UI snapshot (not production):** [design-archive/preflight/PREFLIGHT.txt](design-archive/preflight/PREFLIGHT.txt) — reserved Next.js archive (`relay-preflight-archive`); see [builder reference under Workstream D](#workstream-d-gallery-experience). Search repo: `preflight`.
+- **Relay Goal Cycle (Library-first goal → research → Plan → schedule → execute → outcomes):** the authoritative dependency graph, locked decisions, worker packs, human gates, and Dream-flow traceability are in [docs/studio/goal-cycle-build-plans/00-README.md](docs/studio/goal-cycle-build-plans/00-README.md). Build from those slices; do not treat this strategic roadmap as the task pack.
 - **Sync & access hardening (Slices 1–4, shipped):** [docs/part1-sync-hardening-ledger.md](docs/part1-sync-hardening-ledger.md) — export retries, tier alignment, watermark + re-sync UI, sync health; one ledger for APIs, env vars, and tests.
 - Standardized build contracts, quality gates, and traceability:
-  - [builder-boost-pack/README.md](c:\Users\jorda\Documents\Coding Projects\Rescue\builder-boost-pack\README.md)
+  - [builder-boost-pack/README.md](builder-boost-pack/README.md)
 - Analytics decisioning, action cards, data contracts, and execution APIs:
-  - [analytics-action-center-spec.md](c:\Users\jorda\Documents\Coding Projects\Rescue\analytics-action-center-spec.md)
+  - [analytics-action-center-spec.md](analytics-action-center-spec.md)
 - **Long-term growth analytics loop** (first-party truth → optional omni-channel → diagnosis → coach → goals): strategy and phased vision in [docs/growth-analytics-features.md](docs/growth-analytics-features.md). **Near-term** delivery remains Workstream E and Action Center contracts.
 - **Third-party metrics when APIs are insufficient** (aggregators, optional extractors, Relay Link / first-party supplements): tiered strategy and compliance posture in [docs/third-party-metrics-sourcing.md](docs/third-party-metrics-sourcing.md). **Not** a substitute for first-party Relay telemetry.
 - Pricing model, COGS guardrails, hosting modes, and post-independence operations:
-  - [monetization-scheme-infrastructure-plan.md](c:\Users\jorda\Documents\Coding Projects\Rescue\monetization-scheme-infrastructure-plan.md)
+  - [monetization-scheme-infrastructure-plan.md](monetization-scheme-infrastructure-plan.md)
 - **Canonical business model, revenue streams, unit economics, projections, and ruled-out decisions:**
   - [docs/financial-atlas.md](docs/financial-atlas.md)
 - **Audience Premium, daily paywalled promos, and boost tokens** — strategic constraints and agent prompt for roadmap/plan edits:
@@ -310,32 +311,53 @@ Operational assets:
 
 Enable creators to transition from Patreon dependency to a creator-owned subscription site with minimal audience loss.
 
+**Escape Hatch v1 product cut:** the dependency-ordered construction contract lives in [`docs/studio/escape-hatch-build-plans/`](docs/studio/escape-hatch-build-plans/00-README.md). It packages Workstreams F, G, H, and J as a paid one-time independence wizard: extracted Patreon posts/tiers/media become a creator-owned Next.js application, private R2 library, independent accounts/billing, generated admin, deployment, and ownership packet. Comments, favorites, community hosting, and Workstream I Re-Populate campaigns are outside the v1 cut.
+
+Creators own the generated site, domain, hosting, database, storage, billing relationship, and credentials. Relay retains the reusable generator/chassis. Optional Relay services must remain disclosed, revocable, and replaceable.
+
 ### Workstream F: Replica Model and Clone Generation
 
 - Extend schema to represent clone-ready posts, media relations, tiers, and access constraints.
 - Generate clone site content model from canonical dataset.
 - Support preview environment with deterministic URL structure before launch.
+- Materialize a complete Next.js TypeScript application, not a static soft-gate page.
+- Preserve post bodies, images, video, audio, attachments, publication dates, and access provenance.
+- Copy media to creator-owned R2 with resumable checksums and a creator-readable parity report.
+- Generate source/data/media manifests and an ownership packet.
 
 Exit gate:
 - Clone preview parity reaches 98 percent on sampled pages.
 - Tier rule evaluation is deterministic and test-covered.
+- 100 percent of source items are imported, failed with a reason, or explicitly excluded.
+- Generated application builds and runs without optional Relay runtime credentials.
 
 ### Workstream G: Access and Identity
 
 - Implement access control for public, member-only, and tier-specific content.
 - Support Patreon-auth fallback during transition window.
 - Add independent account creation for post-migration continuity.
+- Treat the independent site account as durable identity and link Patreon/billing identities to it.
+- Grant access when either current Patreon or independent billing entitlement matches; prevent accidental duplicate billing.
+- Offer creator-owned Patreon OAuth and an optional Relay-managed Patreon verification add-on. The managed path returns short-lived, site-scoped entitlement assertions and is billed monthly through Relay.
+- Make managed verification replaceable by creator-owned OAuth without rebuilding or losing native site accounts.
+- Deliver premium media only through server-side authorization and short-lived private-object access.
 
 Exit gate:
 - Unauthorized tier content access rate equals zero in test suite and staging attack tests.
+- Creator-owned and Relay-managed Patreon paths pass refresh, replay, rotation, cancellation, and migration tests.
+- Removing Relay optional services does not break native admin, independent billing, or media access granted by other active sources.
 
 ### Workstream H: Payment Provider Handoff
 
-- Initial providers: Stripe and PayPal (additional providers after launch).
+- Creators own the processor account and customer relationship; Relay does not take a percentage of independent-site subscription revenue in v1.
+- Stripe is the initial adapter only for eligible creator businesses. Provider policy eligibility is checked before account setup or live checkout.
+- Use a replaceable billing-provider contract. A lawful alternate-content adapter may ship only after official-policy review, sandbox lifecycle proof, and human approval; never disguise content or route an ineligible business through Stripe.
 - Create tier-to-product mapping wizard with preflight checks:
   - Currency consistency
   - Tax behavior
   - Billing interval compatibility
+  - Provider policy and capability eligibility
+  - Patreon/independent duplicate-access safeguards
 - Add dry-run mode before live charge enablement.
 
 Builder reference:
@@ -345,8 +367,12 @@ Builder reference:
 Exit gate:
 - 100 percent of configured tiers can be validated in preflight mode.
 - Payment checkout success rate at or above 97 percent in pilot.
+- Every advertised adapter passes sandbox checkout, signed webhook, cancellation, failed-renewal, recovery, portal, and entitlement tests.
+- The wizard blocks live launch when no validated processor fits the declared lawful use.
 
 ### Workstream I: Re-Populate Audience Recovery
+
+**Escape Hatch v1 boundary:** deferred. The v1 package preserves existing Patreon access and provides patron-directed billing migration, but it does not send migration campaigns or operate community outreach.
 
 - Build consent-safe invite pipeline that maps prior membership tier to destination tier.
 - Create signed, expiring re-subscribe links per recipient and tier.
@@ -372,7 +398,9 @@ Exit gate:
 
 ### Workstream J: One-Click Deploy and Rollback
 
-- Integrate deploy APIs (Vercel first, optional Netlify second).
+- Integrate a Vercel + creator-owned Supabase + creator-owned R2 golden path.
+- Ship a portable Docker/Postgres path plus one currently policy-validated hosting recipe for lawful creators who cannot use the primary path.
+- Add creator-owned transactional email, backup/restore, health, and credential-rotation guidance.
 - Release flow:
   - Build clone
   - Preview approval
@@ -383,6 +411,8 @@ Exit gate:
 Exit gate:
 - Median production deployment time under 2 minutes after approval.
 - Verified rollback completes in under 5 minutes.
+- Provider URL, custom-domain callbacks, transactional email, private media, backup, and isolated restore checks pass.
+- The creator can operate posts, media, tiers, patrons, branding, and site health through the generated admin without daily provider-dashboard use.
 
 ### Required Assets for Part 2
 
@@ -391,11 +421,16 @@ Technical assets:
 - Payment provider adapter layer.
 - Email infrastructure with domain authentication (SPF, DKIM, DMARC).
 - Migration orchestration service with audit log storage.
+- Relay-managed Patreon verification service with tenant isolation, signed assertions, key rotation, monitoring, cancellation, and creator-owned OAuth migration.
+- Versioned generated-app manifest, private R2 media delivery, Supabase/portable identity adapters, and sanitized real-shape Patreon fixture suite.
 
 Operational assets:
 - Legal/compliance review checklist for outreach and migration communications.
 - Domain and DNS setup guide for creators.
 - Incident runbook for migration failures and rollback recovery.
+- Dated hosting, storage, email, and billing provider-policy matrix.
+- Clear one-time product, optional OAuth surcharge, 90-day defect warranty, and paid-maintenance service boundaries.
+- Master-agent browser signoff for every UI slice and complete desktop/mobile journey.
 
 ## Part 3 Delivery Track: Patron Network
 

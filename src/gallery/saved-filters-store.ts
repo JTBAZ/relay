@@ -1,9 +1,18 @@
+/**
+ * @fileoverview Persisted gallery search filters (creator-scoped saved Library queries).
+ * @description JSON file implementation; see {@link DbSavedFiltersStore} for Postgres.
+ * @see prisma/schema.prisma `SavedFilter`
+ * @see src/jsdoc-core-entities.ts Artist-owned personalization surfaces (conceptual)
+ */
+
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import { randomUUID } from "node:crypto";
 import type { SavedFilterRecord, SavedFiltersRoot } from "./types.js";
 
-/** Postgres / file implementations share this contract (see `saved-filters-store-db.ts`). */
+/**
+ * @description Contract for CRUD on `{ filters: [] }` aggregate root.
+ */
 export interface SavedFiltersStore {
   load(): Promise<SavedFiltersRoot>;
   save(root: SavedFiltersRoot): Promise<void>;
@@ -16,6 +25,10 @@ export interface SavedFiltersStore {
   delete(creatorId: string, filterId: string): Promise<boolean>;
 }
 
+/**
+ * @description File-backed {@link SavedFiltersStore}.
+ * @security-audit-required `creatorId` arguments must match authenticated creator context.
+ */
 export class FileSavedFiltersStore implements SavedFiltersStore {
   private readonly filePath: string;
 

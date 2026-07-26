@@ -1,9 +1,19 @@
+/**
+ * @fileoverview Creator library collections — curated post groupings with optional access ceiling + theme tags.
+ * @description File-backed implementation of {@link RelayCollectionsStore}; pairs with {@link DbCollectionsStore}.
+ * @see prisma/schema.prisma `LibraryCollection`, `CollectionPost`
+ * @see src/jsdoc-core-entities.ts Gallery-related conceptual mapping
+ */
+
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import { randomUUID } from "node:crypto";
 import type { Collection, CollectionsRoot } from "./types.js";
 
-/** Postgres / file implementations share this contract (see `collections-store-db.ts`). */
+/**
+ * @description Async API for CRUD + membership ops on gallery collections.
+ * @see ./collections-store-db.ts Postgres-backed variant
+ */
 export interface RelayCollectionsStore {
   load(): Promise<CollectionsRoot>;
   listForCreator(creatorId: string): Promise<Collection[]>;
@@ -36,10 +46,16 @@ export interface RelayCollectionsStore {
   reorder(creatorId: string, orderedIds: string[]): Promise<void>;
 }
 
+/**
+ * @description JSON persistence for `{ collections: [] }` root document.
+ */
 function emptyRoot(): CollectionsRoot {
   return { collections: [] };
 }
 
+/**
+ * @description Ensures `theme_tag_ids` is always an array on read/write boundaries.
+ */
 function normalizeCollection(c: Collection): Collection {
   return {
     ...c,
@@ -47,6 +63,10 @@ function normalizeCollection(c: Collection): Collection {
   };
 }
 
+/**
+ * @description File-backed {@link RelayCollectionsStore}.
+ * @security-audit-required Collection ids + creator ids are caller-scoped; HTTP routes must verify creator ownership.
+ */
 export class FileCollectionsStore implements RelayCollectionsStore {
   private readonly filePath: string;
 

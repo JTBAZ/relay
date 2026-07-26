@@ -11,7 +11,7 @@ import {
 
 export type InstallExtensionPromptProps = {
   className?: string;
-  /** `cookie` matches `/patreon/cookie` emerald card; `relay` uses studio CSS variables. */
+  /** `cookie` matches `/connect/patreon/cookie` emerald card; `relay` uses studio CSS variables. */
   variant?: "cookie" | "relay";
   /** Smaller padding for dense layouts (e.g. designer). */
   compact?: boolean;
@@ -116,7 +116,7 @@ export function InstallExtensionPrompt({
         </Link>{" "}
         from Relay (or open the extension popup).{" "}
         <Link
-          href="/patreon/cookie"
+          href="/connect/patreon/cookie"
           className={
             variant === "cookie"
               ? "text-amber-200/90 underline underline-offset-2 hover:text-amber-100"

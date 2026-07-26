@@ -1,6 +1,15 @@
+/**
+ * @fileoverview Postgres `syncCursor` implementation of watermark API.
+ * @description Upserts `lastSyncedAt` / `updatedAt` per creator+campaign compound key.
+ * @see ./sync-watermark-store.js
+ */
+
 import type { PrismaClient } from "@prisma/client";
 import type { SyncWatermarkStoreAPI, WatermarkRow } from "./sync-watermark-store.js";
 
+/**
+ * @description Postgres `syncCursor` rows backing {@link SyncWatermarkStoreAPI}.
+ */
 export class DbSyncWatermarkStore implements SyncWatermarkStoreAPI {
   public constructor(private readonly prisma: PrismaClient) {}
 

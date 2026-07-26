@@ -1,0 +1,23 @@
+{
+  "id": "video-audio-embed",
+  "status": "present",
+  "schemaNote": "EH-012 migrates present AV/embed mime placeholder blobs into private object keys; no visitor players.",
+  "expectedShapes": [
+    {
+      "role": "video",
+      "mime_type": "video/mp4",
+      "placeholder_policy": "Tiny text placeholder only; no real video bytes."
+    },
+    {
+      "role": "audio",
+      "mime_type": "audio/mpeg",
+      "placeholder_policy": "Tiny text placeholder only; no live audio."
+    },
+    {
+      "role": "embed",
+      "mime_type": "text/html",
+      "placeholder_policy": "Local placeholder only; Escape Hatch must not fetch third-party embeds."
+    }
+  ],
+  "reason": "Migration engine accounts present AV/embed blobs with checksum + private-read ledger entries. Visitor streaming players and signed-URL delivery remain EH-033."
+}

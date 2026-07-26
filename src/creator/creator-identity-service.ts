@@ -1,3 +1,11 @@
+/**
+ * @fileoverview Creator-facing identity reads/patches and Patreon snapshot promotion into `CreatorProfile`.
+ * @description Validation helpers for usernames; Prisma persistence for profile fields and slugs.
+ * @see ../patreon/creator-campaign-display-store.js
+ * @see prisma/schema.prisma CreatorProfile
+ * @see src/jsdoc-core-entities.ts Artist
+ */
+
 import {
   PublicSlugSource,
   type CreatorProfile,
@@ -10,13 +18,16 @@ import {
   normalizePublicSlugCandidate,
   RESERVED_PUBLIC_SLUGS
 } from "./public-slug.js";
+import {
+  normalizeRelayUsername,
+  setRelayUsernameForAccount,
+  validateRelayUsernameFormat
+} from "../identity/relay-username-service.js";
 
 const MAX_BIO = 280;
 const MAX_DISPLAY = 120;
 const MAX_DISCIPLINE = 120;
 const MAX_URL = 2048;
-const USERNAME_RE = /^[a-z0-9_]{3,32}$/;
-
 const RESERVED_USERNAMES = new Set([
   ...RESERVED_PUBLIC_SLUGS,
   "admin",
@@ -31,10 +42,16 @@ const RESERVED_USERNAMES = new Set([
   "undefined"
 ]);
 
+/**
+ * @description Read model for Relay creator profile cards (slug, Patreon ids, persona fields).
+ * @security-audit-required Exposes patron-facing persona data; callers must scope by authorized account id.
+ */
 export type CreatorIdentityView = {
   public_slug: string;
   slug_source: PublicSlugSource;
   patreon_campaign_id: string | null;
+  /** Set after SubscribeStar creator OAuth exchange when profile id is persisted. */
+  subscribestar_profile_id: string | null;
   username: string | null;
   username_norm: string | null;
   display_name: string | null;
@@ -43,37 +60,52 @@ export type CreatorIdentityView = {
   bio: string | null;
   discipline: string | null;
   needs_setup: boolean;
+  /** Opaque JSON from last SubscribeStar supplemental GraphQL sync (subscriptions/payments roots). */
+  subscribestar_provider_snapshot: Prisma.JsonValue | null;
+  subscribestar_provider_snapshot_at: string | null;
 };
 
-function toView(row: CreatorProfile): CreatorIdentityView {
+function toView(
+  row: CreatorProfile,
+  account?: { username: string | null; usernameNorm: string | null } | null
+): CreatorIdentityView {
+  const username = account?.username ?? row.username;
+  const usernameNorm = account?.usernameNorm ?? row.usernameNorm;
   return {
     public_slug: row.publicSlug,
     slug_source: row.slugSource,
     patreon_campaign_id: row.patreonCampaignId,
-    username: row.username,
-    username_norm: row.usernameNorm,
+    subscribestar_profile_id: row.subscribestarProfileId,
+    username,
+    username_norm: usernameNorm,
     display_name: row.displayName,
     avatar_url: row.avatarUrl,
     banner_url: row.bannerUrl,
     bio: row.bio,
     discipline: row.discipline,
-    needs_setup: !row.displayName || !row.avatarUrl
+    needs_setup: !row.displayName || !row.avatarUrl,
+    subscribestar_provider_snapshot: row.subscribestarProviderSnapshot ?? null,
+    subscribestar_provider_snapshot_at: row.subscribestarProviderSnapshotAt?.toISOString() ?? null
   };
 }
 
+/**
+ * @description Normalizes inbound username candidates to lowercase alphanumeric + underscore form.
+ * @param raw Raw username text.
+ */
 export function normalizeCreatorUsername(raw: string): string {
-  return raw.trim().toLowerCase().replace(/[^a-z0-9_]/g, "");
+  return normalizeRelayUsername(raw);
 }
 
+/**
+ * @description Validates normalized username constraints and reserved word list.
+ * @param norm Already normalized username.
+ */
 export function validateCreatorUsernameFormat(
   norm: string
 ): { ok: true } | { ok: false; message: string } {
-  if (!USERNAME_RE.test(norm)) {
-    return {
-      ok: false,
-      message: "Username must be 3–32 characters: lowercase letters, numbers, and underscores only."
-    };
-  }
+  const fmt = validateRelayUsernameFormat(norm);
+  if (!fmt.ok) return fmt;
   if (RESERVED_USERNAMES.has(norm)) {
     return { ok: false, message: "That username is reserved." };
   }
@@ -95,15 +127,29 @@ async function findCreatorProfileForAccount(
   });
 }
 
+/**
+ * @description Loads identity view derived from creator profile linked via `account.primaryRelayCreatorId`.
+ * @param prisma Shared Prisma client.
+ * @param accountId Caller account scope.
+ * @returns View or `null` when no linked studio exists.
+ * @async
+ * @throws {Error} Prisma failures propagate.
+ * @security-audit-required Caller must own `accountId`.
+ */
 export async function getCreatorIdentity(
   prisma: PrismaClient,
   accountId: string
 ): Promise<CreatorIdentityView | null> {
   const row = await findCreatorProfileForAccount(prisma, accountId);
   if (!row) return null;
-  return toView(row);
+  const account = await prisma.account.findUnique({
+    where: { id: accountId },
+    select: { username: true, usernameNorm: true }
+  });
+  return toView(row, account);
 }
 
+/** @description Writable subset for `patchCreatorIdentity`. */
 export type PatchCreatorIdentityInput = {
   username?: string | null;
   display_name?: string | null;
@@ -113,10 +159,20 @@ export type PatchCreatorIdentityInput = {
   discipline?: string | null;
 };
 
+/** @description Result union for patched identity mutations. */
 export type PatchCreatorIdentityResult =
   | { ok: true; profile: CreatorIdentityView }
   | { ok: false; message: string; code: "VALIDATION_ERROR" | "CONFLICT" | "NOT_FOUND" };
 
+/**
+ * @description Applies validated field patches to creator profile backing the account's primary studio.
+ * @param prisma Prisma client.
+ * @param accountId Owning Relay account id.
+ * @param patch Partial profile updates (null clears where allowed).
+ * @returns Success with updated view or typed failure envelope.
+ * @async
+ * @throws {Error} Unexpected Prisma errors beyond handled conflict/validation branches.
+ */
 export async function patchCreatorIdentity(
   prisma: PrismaClient,
   accountId: string,
@@ -183,41 +239,63 @@ export async function patchCreatorIdentity(
 
   if (patch.username !== undefined) {
     if (patch.username === null) {
-      data.username = null;
-      data.usernameNorm = null;
+      return {
+        ok: false,
+        code: "VALIDATION_ERROR",
+        message: "Username cannot be cleared. Choose a new Relay username instead."
+      };
     } else {
-      const norm = normalizeCreatorUsername(patch.username);
-      const fmt = validateCreatorUsernameFormat(norm);
-      if (!fmt.ok) {
-        return { ok: false, code: "VALIDATION_ERROR", message: fmt.message };
+      try {
+        const next = await setRelayUsernameForAccount(prisma, {
+          accountId,
+          username: patch.username
+        });
+        data.username = next.username;
+        data.usernameNorm = next.usernameNorm;
+      } catch (err: unknown) {
+        const code =
+          typeof err === "object" && err !== null && "code" in err
+            ? (err as { code: string }).code
+            : "VALIDATION_ERROR";
+        return {
+          ok: false,
+          code: code === "CONFLICT" ? "CONFLICT" : "VALIDATION_ERROR",
+          message: err instanceof Error ? err.message : "Invalid username."
+        };
       }
-      const clash = await prisma.creatorProfile.findFirst({
-        where: { usernameNorm: norm, NOT: { id: row.id } },
-        select: { id: true }
-      });
-      if (clash) {
-        return { ok: false, code: "CONFLICT", message: "That username is already taken." };
-      }
-      data.username = patch.username.trim();
-      data.usernameNorm = norm;
     }
   }
 
   if (Object.keys(data).length === 0) {
-    return { ok: true, profile: toView(row) };
+    const account = await prisma.account.findUnique({
+      where: { id: accountId },
+      select: { username: true, usernameNorm: true }
+    });
+    return { ok: true, profile: toView(row, account) };
   }
 
   const updated = await prisma.creatorProfile.update({
     where: { id: row.id },
     data
   });
-  return { ok: true, profile: toView(updated) };
+  const account = await prisma.account.findUnique({
+    where: { id: accountId },
+    select: { username: true, usernameNorm: true }
+  });
+  return { ok: true, profile: toView(updated, account) };
 }
 
 /**
  * Idempotent: when `CreatorProfile` identity fields are null, fill them
  * from the `CampaignDisplaySnapshot` captured during Patreon OAuth/sync.
  * Never overwrites creator-authored edits.
+ * @description Fills nullable profile identity fields using Patreon-backed snapshot when safe.
+ * @param prisma Shared Prisma client.
+ * @param snapshotStore Cached campaign display rows from OAuth/sync pipeline.
+ * @param relayCreatorId Relay legacy creator identifier.
+ * @returns Whether any profile mutation occurred.
+ * @async
+ * @throws {Error} Database failures propagate.
  */
 export async function promoteSnapshotToProfile(
   prisma: PrismaClient,

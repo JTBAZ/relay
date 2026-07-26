@@ -1,18 +1,35 @@
+/**
+ * @fileoverview Postgres-backed patron favorites (`patron_favorites`).
+ * @description Uses patron membership id as wire `user_id` column analogue.
+ * @see ./patron-favorites-store.ts Legacy JSON implementation
+ * @see prisma/schema.prisma `PatronFavorite`, `TenantMembership`
+ */
+
 import type { PrismaClient } from "@prisma/client";
 import { PatronFavoriteTargetKind as PrismaFavoriteKind } from "@prisma/client";
 import type {
   PatronFavoriteRecord,
   PatronFavoriteTargetKind
 } from "./types.js";
+import { emitPatronFavoriteAddedEvent } from "../patron/notification-event-emit.js";
 
+/**
+ * @description Maps TS favorite kind to Prisma enum.
+ */
 function toPrismaKind(kind: PatronFavoriteTargetKind): PrismaFavoriteKind {
   return kind === "post" ? PrismaFavoriteKind.post : PrismaFavoriteKind.media;
 }
 
+/**
+ * @description Maps Prisma enum to TS literal union.
+ */
 function fromPrismaKind(kind: PrismaFavoriteKind): PatronFavoriteTargetKind {
   return kind === PrismaFavoriteKind.post ? "post" : "media";
 }
 
+/**
+ * @description Converts DB row to {@link PatronFavoriteRecord} wire shape.
+ */
 function rowToRecord(row: {
   patronMembershipId: string;
   creatorId: string;
@@ -31,6 +48,11 @@ function rowToRecord(row: {
   };
 }
 
+/**
+ * @description Prisma favorites CRUD helpers.
+ * @async Relevant methods reject on DB failures.
+ * @security-audit-required Cross-account listing (`listAllForAccount`) requires verified `accountId`; row ops must pair membership+creator correctly.
+ */
 export class DbPatronFavoritesStore {
   public constructor(private readonly prisma: PrismaClient) {}
 
@@ -96,6 +118,20 @@ export class DbPatronFavoritesStore {
         snapshotTierIds: record.snapshot_tier_ids ?? []
       }
     });
+    const membership = await this.prisma.tenantMembership.findUnique({
+      where: { id: record.user_id },
+      select: { accountId: true }
+    });
+    if (membership?.accountId) {
+      await emitPatronFavoriteAddedEvent(this.prisma, {
+        relayCreatorId: record.creator_id,
+        targetKind: record.target_kind,
+        targetId: record.target_id,
+        postId: record.target_kind === "post" ? record.target_id : null,
+        actorAccountId: membership.accountId,
+        actorMembershipId: record.user_id
+      });
+    }
     return rowToRecord(row);
   }
 

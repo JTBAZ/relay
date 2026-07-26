@@ -4,11 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AuthBootSplash } from "@/app/components/auth/AuthBootSplash";
 import { getSupabaseBrowserClient } from "@/lib/supabase-browser";
-import {
-  bootstrapStudioAfterSupabase,
-  bootstrapSupporterAfterSupabase
-} from "@/lib/relay-auth-bootstrap";
-import { resolveCreatorPostAuthDestination } from "@/lib/creator-post-login-redirect";
+import { bootstrapAccountAfterSupabase } from "@/lib/relay-auth-bootstrap";
 import { resolveSupporterPostAuthDestination } from "@/lib/supporter-post-login-redirect";
 import { emitStudioSessionUpdate } from "@/lib/studio-session-context";
 
@@ -83,13 +79,14 @@ export default function AuthConfirmPage() {
           if (exchErr) throw exchErr;
           const token = data.session?.access_token;
           if (!token) throw new Error("No session after code exchange.");
+          // Unified bootstrap — no workspace provisioned here regardless of intent.
+          // Creator workspace is deferred to the Patreon connect step in onboarding.
+          await bootstrapAccountAfterSupabase(token, intent);
+          emitStudioSessionUpdate();
           if (intent === "creator") {
-            const boot = await bootstrapStudioAfterSupabase(token);
-            emitStudioSessionUpdate();
-            router.replace(await resolveCreatorPostAuthDestination(boot, null));
+            // No workspace yet — route to username step (step 2) of creator onboarding.
+            router.replace("/onboarding?path=creator&step=2");
           } else {
-            await bootstrapSupporterAfterSupabase(token);
-            emitStudioSessionUpdate();
             router.replace(await resolveSupporterPostAuthDestination(null));
           }
           return;
@@ -104,13 +101,11 @@ export default function AuthConfirmPage() {
           if (sessErr) throw sessErr;
           const token = data.session?.access_token;
           if (!token) throw new Error("No session found from email link.");
+          await bootstrapAccountAfterSupabase(token, intent);
+          emitStudioSessionUpdate();
           if (intent === "creator") {
-            const boot = await bootstrapStudioAfterSupabase(token);
-            emitStudioSessionUpdate();
-            router.replace(await resolveCreatorPostAuthDestination(boot, null));
+            router.replace("/onboarding?path=creator&step=2");
           } else {
-            await bootstrapSupporterAfterSupabase(token);
-            emitStudioSessionUpdate();
             router.replace(await resolveSupporterPostAuthDestination(null));
           }
           return;

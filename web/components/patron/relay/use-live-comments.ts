@@ -30,6 +30,7 @@ import {
   type PatronCommentRecord
 } from "@/lib/relay-api";
 import type { PositionalComment } from "@/lib/relay-fixtures";
+import { emitRelayInteractionTelemetryEvent } from "@/lib/relay-interaction-telemetry";
 
 /**
  * Scope passed from `<GalleryView>`. When `null`, the hook is dormant and the parent
@@ -100,7 +101,8 @@ function adaptToPositional(record: PatronCommentRecord): PositionalComment {
       // Skeletal-UI placeholder — display name resolution lives in PE-K notification copy lookup.
       displayName: `Patron · ${record.patronUserId.slice(-6)}`,
       handle: record.patronUserId,
-      avatarUrl: "/placeholder.svg?height=32&width=32"
+      avatarUrl: "/placeholder.svg?height=32&width=32",
+      isCurator: record.is_curator === true
     },
     text: record.body,
     position: { x, y },
@@ -179,6 +181,15 @@ export function useLiveComments(scope: LiveCommentsScope | null): UseLiveComment
         tagIds: input.tagIds ?? []
       });
       setLastAutoModFlags(result.auto_mod_flags);
+      emitRelayInteractionTelemetryEvent({
+        event_name: "comment_created",
+        surface: input.mediaId ? "post_detail_media_comment" : "post_detail_thread",
+        creator_id: scope.relayCreatorId,
+        post_id: scope.postId,
+        media_id: input.mediaId ?? null,
+        comment_id: result.item.id,
+        actor_key: scope.viewerAccountId
+      });
       await refresh();
     },
     [scope, refresh]
@@ -202,10 +213,21 @@ export function useLiveComments(scope: LiveCommentsScope | null): UseLiveComment
 
   const react = useCallback<UseLiveCommentsResult["react"]>(
     async (commentId, kind) => {
-      await apiToggleCommentReaction(commentId, kind);
+      const result = await apiToggleCommentReaction(commentId, kind);
+      if (result.active) {
+        emitRelayInteractionTelemetryEvent({
+          event_name: "comment_reaction_created",
+          surface: "comment_thread",
+          creator_id: scope?.relayCreatorId,
+          post_id: scope?.postId,
+          comment_id: commentId,
+          reaction_kind: kind,
+          actor_key: scope?.viewerAccountId
+        });
+      }
       await refresh();
     },
-    [refresh]
+    [refresh, scope]
   );
 
   const pin = useCallback<UseLiveCommentsResult["pin"]>(

@@ -7,7 +7,6 @@ import {
   useMemo,
   useCallback,
   useEffect,
-  useRef,
   type MouseEvent,
   type ReactNode,
 } from "react";
@@ -16,7 +15,6 @@ import {
   Compass,
   Store,
   Settings,
-  Bell,
   Menu,
   X,
   Search,
@@ -24,22 +22,26 @@ import {
   Plus,
   ExternalLink,
   History,
-  ChevronDown,
-  LogOut,
 } from "lucide-react";
+import {
+  isPatronPrimaryNavItemActive,
+  PatronPrimaryTopNav,
+} from "@/components/patron/PatronPrimaryTopNav";
 import { DiscoverGrid } from "./discover-grid";
 import { FeedCard } from "./feed-card";
 import { FeedSectionDivider } from "./feed-section-divider";
 import { EmptyState } from "./empty-state";
 import { ErrorBanner } from "./error-banner";
+import { PatronEntitlementStaleBanner } from "./patron-entitlement-stale-banner";
+import { PatronEmptyFeedState } from "./patron-empty-feed-state";
 import { CommandPalette } from "./command-palette";
 import { GalleryView } from "./gallery-view";
 import { ConnectCampaignModal } from "./connect-campaign-modal";
 import { SettingsModal } from "./settings-modal";
-import { NotificationsTray } from "./notifications-tray";
-import { FilterChips, type FeedFilter } from "./filter-chips";
+import type { FeedFilter } from "./filter-chips";
 import { PatronFeedDevTools } from "./patron-feed-dev-tools";
 import { RelayMarkIcon } from "./relay-mark-icon";
+import { WhatYouMissedCarousel } from "./what-you-missed-carousel";
 import {
   getPatronFeedFixtureBundle,
   mapPatronFollowApiItemToCreator,
@@ -67,6 +69,7 @@ import {
   type PatronSessionMe,
   RelayApiError,
 } from "@/lib/relay-api";
+import { emitPatronFeedTelemetryEvent } from "@/lib/patron-feed-telemetry";
 import { performRelayLogout } from "@/lib/relay-session-logout";
 
 export interface RelayAppProps {
@@ -78,13 +81,9 @@ export interface RelayAppProps {
 }
 
 type AppView = "home" | "discover";
+type FeedPostIntent = "comment" | "snip";
 
 type TransitionState = "idle" | "exiting" | "entering";
-
-function truncateMiddleId(s: string): string {
-  if (s.length <= 14) return s;
-  return `${s.slice(0, 8)}…${s.slice(-4)}`;
-}
 
 const DEMO_EMPTY_FOLLOWS = false;
 const DEMO_ERROR_BANNER = false;
@@ -154,7 +153,7 @@ function FollowingCreatorRow({ creator }: { creator: Creator }) {
     return (
       <div className="flex w-full items-center gap-1 pr-1">
         <Link
-          href={`/patron/c/${encodeURIComponent(creator.handle)}`}
+          href={`/${encodeURIComponent(creator.handle)}`}
           className="flex min-w-0 flex-1 items-center gap-3 rounded-lg px-2 py-2 text-xs transition-colors duration-150 hover:bg-[#141414]"
         >
           {avatar}
@@ -202,10 +201,13 @@ function FollowingCreatorRow({ creator }: { creator: Creator }) {
 function emptyLiveShell(fixture: PatronFeedBundle): PatronFeedBundle {
   return {
     feedPosts: [],
+    lockedPosts: [],
     discoverItems: [],
     currentViewer: fixture.currentViewer,
     followedCreators: [],
     notifications: [],
+    entitlement_degraded: false,
+    entitlement_stale_since: null
   };
 }
 
@@ -232,7 +234,7 @@ function filterPosts(posts: FeedPost[], filter: FeedFilter): FeedPost[] {
   }
 }
 
-/** Maps UI chip → `GET /api/v1/patron/feed?filter=` (omit for `all`). */
+/** Maps UI chip → `GET /api/v1/patron/relay_feed?filter=` (omit for `all`). */
 function feedFilterToApiParam(filter: FeedFilter): string | undefined {
   if (filter === "all") return undefined;
   return filter;
@@ -242,6 +244,7 @@ function discoverItemToPost(item: DiscoverItem): FeedPost {
   return {
     id: item.id,
     kind: "discovery",
+    feed_item_source: "discover",
     creator: item.creator,
     title: item.title,
     excerpt: `A ${item.mediaType} by ${item.creator.displayName}`,
@@ -396,6 +399,19 @@ export function RelayApp({ initialDataSource }: RelayAppProps = {}) {
     };
   }, [dataSource, liveFetchGen, activeFilter]);
 
+  useEffect(() => {
+    if (dataSource !== "live" || liveLoading || liveFeedError || !liveBundle) return;
+    void fetchPatronSessionMe()
+      .then((session) => {
+        emitPatronFeedTelemetryEvent({
+          event_name: "feed_open",
+          actor_key: session.user_id,
+          surface: "patron_feed"
+        });
+      })
+      .catch(() => {});
+  }, [dataSource, liveLoading, liveFeedError, liveBundle]);
+
   const loadMoreLiveFeed = useCallback(() => {
     if (dataSource !== "live" || !liveBundle?.next_cursor?.trim()) return;
     const cursor = liveBundle.next_cursor.trim();
@@ -442,11 +458,8 @@ export function RelayApp({ initialDataSource }: RelayAppProps = {}) {
   const [connectCampaignOpen, setConnectCampaignOpen] = useState(false);
   const [connectCampaignPayload, setConnectCampaignPayload] =
     useState<PatronConnectCampaignPayload | null>(null);
-  const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const router = useRouter();
-  const accountMenuRef = useRef<HTMLDivElement>(null);
-  const [accountMenuOpen, setAccountMenuOpen] = useState(false);
   const [sessionMe, setSessionMe] = useState<PatronSessionMe | null>(null);
 
   /** PE-A: Supabase email must be confirmed before session-first Patreon `/link` (when API reports false). */
@@ -456,6 +469,40 @@ export function RelayApp({ initialDataSource }: RelayAppProps = {}) {
     sessionMe &&
       sessionMe.email_verified !== false &&
       !(sessionMe.patreon_user_id && sessionMe.patreon_user_id.trim().length > 0)
+  );
+
+  /** Dismissal state for the "become a creator" banner. Initialise from localStorage on mount. */
+  const [creatorCtaDismissed, setCreatorCtaDismissed] = useState(false);
+  useEffect(() => {
+    try {
+      if (localStorage.getItem("relay_dismiss_creator_cta") === "1") {
+        setCreatorCtaDismissed(true);
+      }
+    } catch { /* ignore */ }
+  }, []);
+
+  const dismissCreatorCta = () => {
+    setCreatorCtaDismissed(true);
+    try { localStorage.setItem("relay_dismiss_creator_cta", "1"); } catch { /* ignore */ }
+  };
+
+  /**
+   * Show a "build your gallery" CTA for supporter-only accounts who:
+   * - Have completed supporter onboarding (flag set by StepSupporterReady)
+   * - Have linked Patreon (so we know they're a real Patreon user)
+   * - Do not yet have a creator role (available_roles excludes "creator")
+   * - Haven't dismissed the banner
+   */
+  const showBecomeCreatorBanner = Boolean(
+    sessionMe &&
+      !peAShowVerifyEmailBanner &&
+      !peAShowConnectPatreonBanner &&
+      sessionMe.patreon_user_id &&
+      sessionMe.patreon_user_id.trim().length > 0 &&
+      sessionMe.available_roles &&
+      !sessionMe.available_roles.includes("creator") &&
+      !creatorCtaDismissed &&
+      (() => { try { return localStorage.getItem("relay_supporter_onboarding_done") === "1"; } catch { return false; } })()
   );
 
   const loadSessionMe = useCallback(() => {
@@ -483,27 +530,6 @@ export function RelayApp({ initialDataSource }: RelayAppProps = {}) {
       setConnectCampaignOpen(true);
     }
   }, []);
-
-  useEffect(() => {
-    if (!accountMenuOpen) return;
-    const onDocMouseDown = (e: globalThis.MouseEvent) => {
-      const el = accountMenuRef.current;
-      if (el && !el.contains(e.target as Node)) {
-        setAccountMenuOpen(false);
-      }
-    };
-    document.addEventListener("mousedown", onDocMouseDown);
-    return () => document.removeEventListener("mousedown", onDocMouseDown);
-  }, [accountMenuOpen]);
-
-  useEffect(() => {
-    if (!accountMenuOpen) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setAccountMenuOpen(false);
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [accountMenuOpen]);
 
   const openCommand = () => setCommandOpen(true);
 
@@ -553,8 +579,12 @@ export function RelayApp({ initialDataSource }: RelayAppProps = {}) {
 
   const enrichedPosts = useMemo(() => {
     let dividerInserted = false;
+    let sawSubscribed = false;
     return filteredPosts.map((post) => {
-      const showDivider = post.kind === "discovery" && !dividerInserted;
+      const isDiscover = post.kind === "discovery";
+      if (!isDiscover) sawSubscribed = true;
+      const showDivider =
+        isDiscover && sawSubscribed && !dividerInserted;
       if (showDivider) dividerInserted = true;
       return { post, showDivider };
     });
@@ -581,10 +611,26 @@ export function RelayApp({ initialDataSource }: RelayAppProps = {}) {
     setSelectedPost(post);
   };
 
+  const openLivePostDetail = useCallback(
+    (args: { creatorId: string; postId: string; mediaId?: string; intent?: FeedPostIntent }) => {
+      const base = `/feed/post/${encodeURIComponent(args.creatorId)}/${encodeURIComponent(
+        args.postId
+      )}`;
+      const query = new URLSearchParams();
+      if (args.mediaId?.trim()) {
+        query.set("media_id", args.mediaId.trim());
+      }
+      if (args.intent) {
+        query.set("intent", args.intent);
+      }
+      const suffix = query.toString();
+      router.push(suffix ? `${base}?${suffix}` : base);
+    },
+    [router]
+  );
+
   const handleSignOut = useCallback(async () => {
-    setAccountMenuOpen(false);
     setSettingsOpen(false);
-    setNotificationsOpen(false);
     await performRelayLogout();
     router.replace("/login?role=supporter");
   }, [router]);
@@ -609,8 +655,6 @@ export function RelayApp({ initialDataSource }: RelayAppProps = {}) {
   }, [loadSessionMe]);
 
   const isDiscover = currentView === "discover";
-  const viewer = effectiveBundle.currentViewer;
-  const unreadNotifications = effectiveBundle.notifications.filter((n) => !n.read).length;
 
   return (
     <>
@@ -663,9 +707,9 @@ export function RelayApp({ initialDataSource }: RelayAppProps = {}) {
                   setMobileSidebarOpen(false);
                 }}
                 className={[
-                  "flex items-center gap-2.5 rounded-lg px-1.5 py-1.5 text-[#C5B358] transition-colors duration-150",
-                  "hover:bg-[#141414] hover:text-[#d4c47a]",
-                  "focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#C5B358]/35",
+                  "flex items-center gap-2.5 rounded-lg px-1.5 py-1.5 text-[#40916C] transition-colors duration-150",
+                  "hover:bg-[#141414] hover:text-[#9bf0c4]",
+                  "focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#40916C]/35",
                   isDiscover ? "lg:gap-0 lg:px-0 lg:py-2" : "",
                 ].join(" ")}
                 aria-label="Relay home"
@@ -678,7 +722,7 @@ export function RelayApp({ initialDataSource }: RelayAppProps = {}) {
                 <span
                   style={{ transition: "all 400ms cubic-bezier(0.25, 0.1, 0.25, 1)" }}
                   className={[
-                    "select-none font-bold tracking-tight text-[#C5B358]",
+                    "select-none font-bold tracking-tight text-[#40916C]",
                     isDiscover ? "text-[18px] lg:hidden" : "text-[20px]",
                   ].join(" ")}
                 >
@@ -731,7 +775,7 @@ export function RelayApp({ initialDataSource }: RelayAppProps = {}) {
                   return (
                     <Link
                       key={item.id}
-                      href="/patron/commission-hub"
+                      href="/commission-hub"
                       onClick={() => setMobileSidebarOpen(false)}
                       style={{ transition: "all 400ms cubic-bezier(0.25, 0.1, 0.25, 1)" }}
                       className={navItemClass}
@@ -849,7 +893,7 @@ export function RelayApp({ initialDataSource }: RelayAppProps = {}) {
               ].join(" ")} 
             />
 
-            {/* Footer: settings + viewer */}
+            {/* Footer: settings */}
             <div 
               style={{ transition: "all 400ms cubic-bezier(0.25, 0.1, 0.25, 1)" }}
               className={[
@@ -858,7 +902,7 @@ export function RelayApp({ initialDataSource }: RelayAppProps = {}) {
               ].join(" ")}
             >
               <Link
-                href="/patron/former-subscriptions"
+                href="/former-subscriptions"
                 style={{ transition: "all 400ms cubic-bezier(0.25, 0.1, 0.25, 1)" }}
                 className={[
                   "w-full flex items-center rounded-lg text-sm text-[#5A5A5A] hover:bg-[#141414] hover:text-[#9CA3AF]",
@@ -901,42 +945,6 @@ export function RelayApp({ initialDataSource }: RelayAppProps = {}) {
                   Settings
                 </span>
               </button>
-              <Link
-                href="/patron/profile"
-                style={{ transition: "all 400ms cubic-bezier(0.25, 0.1, 0.25, 1)" }}
-                className={[
-                  "w-full flex items-center rounded-lg hover:bg-[#141414]",
-                  isDiscover ? "lg:justify-center lg:px-0 lg:py-2 gap-3 px-3 py-2.5" : "gap-3 px-3 py-2.5",
-                ].join(" ")}
-                title="Your profile"
-              >
-                <div
-                  className="w-7 h-7 rounded-full overflow-hidden bg-[#2A2A2A] shrink-0"
-                  aria-hidden="true"
-                >
-                  <img
-                    src={viewer.avatarUrl}
-                    alt=""
-                    className="w-full h-full object-cover"
-                    width={28}
-                    height={28}
-                  />
-                </div>
-                <div 
-                  style={{ transition: "all 400ms cubic-bezier(0.25, 0.1, 0.25, 1)" }}
-                  className={[
-                    "flex-1 text-left overflow-hidden",
-                    isDiscover ? "lg:hidden" : "",
-                  ].join(" ")}
-                >
-                  <div className="text-xs text-[#C8C8C8] truncate font-medium">
-                    {viewer.displayName}
-                  </div>
-                  <div className="text-[10px] text-[#444444] truncate">
-                    @{viewer.handle}
-                  </div>
-                </div>
-              </Link>
             </div>
           </div>
         </aside>
@@ -963,153 +971,30 @@ export function RelayApp({ initialDataSource }: RelayAppProps = {}) {
               <button
                 type="button"
                 onClick={() => navigateTo("home")}
-                className="pointer-events-auto flex items-center gap-2 rounded-lg px-1.5 py-1 text-[#C5B358] transition-colors duration-150 hover:bg-[#141414] hover:text-[#d4c47a] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#C5B358]/35"
+                className="pointer-events-auto flex items-center gap-2 rounded-lg px-1.5 py-1 text-[#40916C] transition-colors duration-150 hover:bg-[#141414] hover:text-[#9bf0c4] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#40916C]/35"
                 aria-label="Relay home"
                 title="Home"
               >
                 <RelayMarkIcon size={30} className="shrink-0" />
-                <span className="select-none font-bold tracking-tight text-[18px] text-[#C5B358]">
+                <span className="select-none font-bold tracking-tight text-[18px] text-[#40916C]">
                   Relay
                 </span>
               </button>
             </div>
 
-            {/* Search trigger — inset so it clears centered brand */}
-            <div className="relative z-20 flex min-w-0 flex-1 justify-center pl-[7.5rem] pr-2 sm:pl-32 sm:pr-4 lg:pl-0">
-              <button
-                onClick={openCommand}
-                className={[
-                  "flex items-center gap-2.5 px-3.5 py-2 bg-[#111111] border border-[#222222] rounded-lg text-sm text-[#444444] hover:border-[#2E2E2E] hover:text-[#666666] transition-colors duration-150 group",
-                  isDiscover ? "w-auto" : "w-full max-w-[480px]",
-                ].join(" ")}
-                aria-label="Open search (Command K)"
-              >
-                <Search size={13} aria-hidden="true" />
-                <span className={[
-                  "text-left text-sm",
-                  isDiscover ? "hidden sm:inline" : "flex-1",
-                ].join(" ")}>
-                  {isDiscover ? "Search" : "Search creators and posts…"}
-                </span>
-                <span className="hidden sm:flex items-center gap-0.5 px-1.5 py-0.5 rounded border border-[#222222] text-[10px] font-mono text-[#333333] group-hover:border-[#2E2E2E] transition-colors duration-150">
-                  <Command size={8} aria-hidden="true" />K
-                </span>
-              </button>
-            </div>
-
-            {/* Right controls */}
-            <div className="relative z-20 flex shrink-0 items-center gap-1">
-              <Link
-                href="/patron/commission-hub"
-                className="p-2 text-[#4B5563] hover:text-[#9CA3AF] transition-colors duration-150 rounded-lg hover:bg-[#111111]"
-                aria-label="Marketplace — Commission Hub"
-                title="Marketplace"
-              >
-                <Store size={17} aria-hidden="true" />
-              </Link>
-
-              <button
-                onClick={() => setNotificationsOpen(!notificationsOpen)}
-                className="relative p-2 text-[#4B5563] hover:text-[#9CA3AF] transition-colors duration-150 rounded-lg hover:bg-[#111111]"
-                aria-label={`Notifications (${unreadNotifications} unread)`}
-                title="Notifications"
-              >
-                <Bell size={17} aria-hidden="true" />
-                {unreadNotifications > 0 && (
-                  <span
-                    className="absolute top-2 right-2 w-1.5 h-1.5 rounded-full bg-[#2D6A4F]"
-                    aria-hidden="true"
-                  />
-                )}
-              </button>
-
-              <button
-                onClick={() => setSettingsOpen(!settingsOpen)}
-                className="p-2 text-[#4B5563] hover:text-[#9CA3AF] transition-colors duration-150 rounded-lg hover:bg-[#111111]"
-                aria-label="Settings"
-                title="Settings"
-              >
-                <Settings size={17} aria-hidden="true" />
-              </button>
-
-              <div className="relative shrink-0" ref={accountMenuRef}>
-                <button
-                  type="button"
-                  onClick={() => setAccountMenuOpen((o) => !o)}
-                  className="flex items-center gap-0.5 rounded-lg p-0.5 pr-1 text-[#4B5563] transition-colors hover:bg-[#111111] hover:text-[#9CA3AF]"
-                  aria-expanded={accountMenuOpen}
-                  aria-haspopup="menu"
-                  aria-label="Account menu"
-                >
-                  <span className="relative h-8 w-8 shrink-0 overflow-hidden rounded-full border border-[#222222] bg-[#2A2A2A]">
-                    <img
-                      src={viewer.avatarUrl}
-                      alt=""
-                      className="h-full w-full object-cover"
-                      width={32}
-                      height={32}
-                    />
-                  </span>
-                  <ChevronDown
-                    className={`h-4 w-4 shrink-0 transition-transform ${accountMenuOpen ? "rotate-180" : ""}`}
-                    aria-hidden
-                  />
-                </button>
-                {accountMenuOpen ? (
-                  <div
-                    className="absolute right-0 top-full z-50 mt-1 w-64 rounded-lg border border-[#222222] bg-[#141414] py-1 shadow-xl"
-                    role="menu"
-                  >
-                    <div className="border-b border-[#222222] px-3 py-2">
-                      <p className="truncate text-xs font-medium text-[#E0E0E0]">
-                        {sessionMe?.email?.trim() || "Patreon session"}
-                      </p>
-                      <p className="mt-0.5 font-mono text-[10px] text-[#555555]">
-                        {sessionMe
-                          ? `User ${truncateMiddleId(sessionMe.user_id)}`
-                          : "Sign in to see account details"}
-                      </p>
-                    </div>
-                    <button
-                      type="button"
-                      role="menuitem"
-                      onClick={() => void handleSignOut()}
-                      className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-[#888888] transition-colors hover:bg-[#1f1f1f] hover:text-[#E0E0E0]"
-                    >
-                      <LogOut size={14} aria-hidden />
-                      Sign out
-                    </button>
-                  </div>
-                ) : null}
-              </div>
-            </div>
+            <PatronPrimaryTopNav
+              as="div"
+              showBrand={false}
+              className="relative z-20 min-w-0 flex-1 border-0 bg-transparent p-0 h-auto gap-1"
+              navClassName="hidden lg:flex"
+              isNavItemActive={(pathname, href) => {
+                if (href === "/feed") {
+                  return currentView === "home";
+                }
+                return isPatronPrimaryNavItemActive(pathname, href);
+              }}
+            />
           </header>
-
-          {/* Notifications Tray */}
-          {notificationsOpen && (
-            <div className="absolute top-[56px] right-4 z-30">
-              <NotificationsTray
-                notifications={effectiveBundle.notifications}
-                isOpen={notificationsOpen}
-              />
-            </div>
-          )}
-
-          {/* Filter subnav - only for Home */}
-          {!isDiscover && (
-            <div className="flex items-center justify-between gap-4 px-4 lg:px-5 py-3 border-b border-[#151515] bg-[#0A0A0A] shrink-0">
-              <FilterChips value={activeFilter} onChange={setActiveFilter} />
-              <div className="hidden sm:flex items-center gap-1.5 shrink-0">
-                <span
-                  className="w-1.5 h-1.5 rounded-full bg-[#2D6A4F]"
-                  aria-hidden="true"
-                />
-                <span className="text-[11px] text-[#3A3A3A] font-medium whitespace-nowrap">
-                  Chronological
-                </span>
-              </div>
-            </div>
-          )}
 
           {/* PE-A skeletal: verified-email gate + connect Patreon before a linked identity exists */}
           {currentView === "home" && peAShowVerifyEmailBanner ? (
@@ -1138,11 +1023,41 @@ export function RelayApp({ initialDataSource }: RelayAppProps = {}) {
                   creators you support and load your feed.
                 </p>
                 <Link
-                  href="/patreon/patron/connect"
+                  href="/connect/patreon/patron/connect"
                   className="inline-flex shrink-0 items-center justify-center rounded-lg bg-[#2D6A4F] px-4 py-2 text-sm font-medium text-[#F9FAFB] transition-colors hover:bg-[#40916C]"
                 >
                   Continue to Patreon
                 </Link>
+              </div>
+            </div>
+          ) : null}
+          {currentView === "home" && showBecomeCreatorBanner ? (
+            <div
+              className="shrink-0 border-b border-[var(--relay-electric)]/20 bg-[var(--relay-green-950)]/60 px-4 py-3 lg:px-5"
+              role="region"
+              aria-label="Build your Relay gallery"
+            >
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+                <p className="text-sm text-[#C8C8C8]">
+                  <span className="font-medium text-[#E5E7EB]">Also create on Patreon?</span>{" "}
+                  Build your Relay gallery and give your supporters a better way to browse your work.
+                </p>
+                <div className="flex shrink-0 items-center gap-2">
+                  <Link
+                    href="/onboarding?path=creator&step=3"
+                    className="inline-flex items-center justify-center rounded-lg bg-[#2D6A4F] px-4 py-2 text-sm font-medium text-[#F9FAFB] transition-colors hover:bg-[#40916C]"
+                  >
+                    Build my gallery
+                  </Link>
+                  <button
+                    type="button"
+                    onClick={dismissCreatorCta}
+                    className="rounded-lg border border-[var(--relay-border)] px-2.5 py-2 text-xs text-[var(--relay-fg-muted)] transition-colors hover:text-[var(--relay-fg)]"
+                    aria-label="Dismiss creator gallery prompt"
+                  >
+                    Not now
+                  </button>
+                </div>
               </div>
             </div>
           ) : null}
@@ -1158,7 +1073,20 @@ export function RelayApp({ initialDataSource }: RelayAppProps = {}) {
               ].join(" ")}
             >
               {currentView === "home" ? (
-                <div className="max-w-[880px] mx-auto px-4 lg:px-6 py-6">
+                <div className="max-w-[820px] mx-auto px-4 lg:px-6 py-5">
+                  <button
+                    onClick={openCommand}
+                    className="group mb-4 flex w-full items-center gap-2.5 rounded-lg border border-[#222222] bg-[#111111] px-3.5 py-2 text-sm text-[#555555] transition-colors duration-150 hover:border-[#2E2E2E] hover:text-[#888888]"
+                    aria-label="Open search (Command K)"
+                  >
+                    <Search size={13} aria-hidden="true" />
+                    <span className="flex-1 text-left text-sm">
+                      Search creators and posts…
+                    </span>
+                    <span className="hidden items-center gap-0.5 rounded border border-[#222222] px-1.5 py-0.5 font-mono text-[10px] text-[#333333] transition-colors duration-150 group-hover:border-[#2E2E2E] sm:flex">
+                      <Command size={8} aria-hidden="true" />K
+                    </span>
+                  </button>
                   <div className="space-y-3">
                     {DEMO_ERROR_BANNER && <ErrorBanner />}
                     {dataSource === "live" && liveFeedError ? (
@@ -1168,13 +1096,20 @@ export function RelayApp({ initialDataSource }: RelayAppProps = {}) {
                         actionSlot={
                           liveFeedError.status === 401 ? (
                             <Link
-                              href="/patreon/patron/connect"
+                              href="/connect/patreon/patron/connect"
                               className="whitespace-nowrap text-xs font-medium text-[#2D6A4F] transition-colors hover:text-[#40916C]"
                             >
                               Connect Patreon
                             </Link>
                           ) : undefined
                         }
+                      />
+                    ) : null}
+                    {dataSource === "live" &&
+                    !liveFeedError &&
+                    effectiveBundle.entitlement_degraded ? (
+                      <PatronEntitlementStaleBanner
+                        staleSinceIso={effectiveBundle.entitlement_stale_since ?? null}
                       />
                     ) : null}
 
@@ -1185,39 +1120,23 @@ export function RelayApp({ initialDataSource }: RelayAppProps = {}) {
                     ) : DEMO_EMPTY_FOLLOWS ? (
                       <EmptyState onSearch={openCommand} />
                     ) : filteredPosts.length === 0 ? (
-                      liveFeedError && activeFilter === "all" ? null : (
-                        <div className="flex flex-col items-center gap-3 py-20 text-center max-w-md mx-auto">
-                          <p className="text-sm text-[#5A5A5A]">
-                            {activeFilter !== "all"
-                              ? "No posts match this filter."
-                              : dataSource === "live"
-                                ? "No posts to show yet. Link Patreon and follow creators — posts from creators you follow appear here once they’re on Relay and you have access."
-                                : "No posts match this filter."}
-                          </p>
-                          {dataSource === "live" && activeFilter === "all" ? (
-                            <p className="text-xs text-[#4B5563]">
-                              Tip: the feed lists creators you follow in Relay. Patreon memberships are synced on link;
-                              automatic follow-from-membership is coming next (PE-C).
-                            </p>
-                          ) : null}
-                          {activeFilter !== "all" ? (
-                            <button
-                              type="button"
-                              onClick={() => setActiveFilter("all")}
-                              className="mt-2 text-sm text-[#2D6A4F] hover:text-[#40916C] transition-colors duration-150"
-                            >
-                              Show all posts
-                            </button>
-                          ) : null}
-                          {dataSource === "live" && activeFilter === "all" ? (
-                            <Link
-                              href="/patreon/patron/connect"
-                              className="text-sm font-medium text-[#2D6A4F] hover:text-[#40916C] transition-colors"
-                            >
-                              Connect Patreon
-                            </Link>
-                          ) : null}
-                        </div>
+                      liveFeedError && activeFilter === "all" ? null : activeFilter !== "all" ? (
+                        <PatronEmptyFeedState
+                          variant="filter_mismatch"
+                          onShowAll={() => setActiveFilter("all")}
+                        />
+                      ) : dataSource === "live" ? (
+                        <PatronEmptyFeedState
+                          variant={
+                            peAShowConnectPatreonBanner
+                              ? "live_oauth"
+                              : effectiveBundle.followedCreators.length === 0
+                                ? "live_no_follows"
+                                : "live_no_posts"
+                          }
+                        />
+                      ) : (
+                        <PatronEmptyFeedState variant="fixtures_empty" />
                       )
                     ) : (
                       enrichedPosts.map(({ post, showDivider }) => (
@@ -1228,7 +1147,48 @@ export function RelayApp({ initialDataSource }: RelayAppProps = {}) {
                               sublabel="Creators you don't follow yet"
                             />
                           )}
-                          <FeedCard post={post} onClick={() => setSelectedPost(post)} />
+                          <FeedCard
+                            post={post}
+                            onClick={
+                              dataSource === "live"
+                                ? () =>
+                                    openLivePostDetail({
+                                      creatorId: post.creator.id,
+                                      postId: post.id
+                                    })
+                                : () => setSelectedPost(post)
+                            }
+                            onCommentClick={
+                              dataSource === "live"
+                                ? ({ creatorId, postId, mediaId }) =>
+                                    openLivePostDetail({
+                                      creatorId,
+                                      postId,
+                                      mediaId,
+                                      intent: "comment"
+                                    })
+                                : undefined
+                            }
+                            onSnipClick={
+                              dataSource === "live"
+                                ? ({ creatorId, postId, mediaId }) =>
+                                    openLivePostDetail({
+                                      creatorId,
+                                      postId,
+                                      mediaId,
+                                      intent: "snip"
+                                    })
+                                : undefined
+                            }
+                            liveCommentCountScope={
+                              dataSource === "live"
+                                ? {
+                                    relayCreatorId: post.creator.id,
+                                    postId: post.id,
+                                  }
+                                : null
+                            }
+                          />
                         </div>
                       ))
                     )}
@@ -1246,6 +1206,9 @@ export function RelayApp({ initialDataSource }: RelayAppProps = {}) {
                           {liveLoadingMore ? "Loading…" : "Load more"}
                         </button>
                       </div>
+                    ) : null}
+                    {!liveLoading && !liveFeedError ? (
+                      <WhatYouMissedCarousel posts={effectiveBundle.lockedPosts ?? []} />
                     ) : null}
                   </div>
                 </div>
@@ -1293,6 +1256,7 @@ export function RelayApp({ initialDataSource }: RelayAppProps = {}) {
       <CommandPalette
         open={commandOpen}
         onClose={() => setCommandOpen(false)}
+        followedCreators={sidebarFollowedList}
       />
 
       {showPatronFeedDevTools ? (

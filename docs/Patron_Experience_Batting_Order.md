@@ -191,7 +191,7 @@ Everything in P2+ follows §3 in order.
 | Multi-creator membership upsert | `IdentityService.completeUnifiedPatreonPatronOAuth` + `DbIdentityStore.findRelayCreatorIdsByPatreonCampaignIds`. |
 | Session-first link API | `POST /api/v1/auth/patreon/patron/link` — requires Bearer or `relay_session` cookie; body `{ code, redirect_uri }`; merges into the signed-in `Account`; returns `linked_relay_creator_ids`, `owned_relay_creator_id`, `unmapped_patreon_campaign_ids` for UI (e.g. “Connect your Campaign”). |
 | Token persistence | `src/auth/patron-oauth-credential-store.ts` — AES-GCM payload keyed like creator OAuth; **`/link`** persists on every successful link. Legacy **`/patron/exchange`** (rollback only) also persists when enabled and DB identity is on. |
-| Web callback | `web/app/patreon/patron/callback` — if no Relay session, redirects to **`/login`** (does not call `/exchange`). With session, **`POST .../patron/link`**. |
+| Web callback | `web/app/connect/patreon/patron/callback` — if no Relay session, redirects to **`/login`** (does not call `/exchange`). With session, **`POST .../patron/link`**. |
 | Legacy exchange | Off by default; `Deprecation` header points successors to `/link`. |
 
 ### Product checklist (PE-A attach lifecycle)

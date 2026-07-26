@@ -63,6 +63,27 @@ describe("evaluatePostPermission (MIG-41)", () => {
     ).toEqual({ outcome: "allow" });
   });
 
+  it("deny — patron with hide-mature pref on Adult (18+) post", () => {
+    const snapshot = snap([RELAY_TIER_PUBLIC], { x: tier("x", 0) });
+    const session: SessionToken = {
+      token: "t",
+      user_id: "patron1",
+      creator_id: creatorId,
+      tier_ids: [],
+      expires_at: "2099-01-01T00:00:00.000Z"
+    };
+    expect(
+      evaluatePostPermission({
+        snapshot,
+        creatorId,
+        postId: "post_p1",
+        session,
+        hideMatureContent: true,
+        isPostMature: true
+      })
+    ).toEqual({ outcome: "deny", reason: "18+ content hidden by your settings." });
+  });
+
   it("deny — anonymous on paid post", () => {
     const snapshot = snap(["patreon_tier_low"], {
       patreon_tier_low: tier("patreon_tier_low", 500)
@@ -74,6 +95,28 @@ describe("evaluatePostPermission (MIG-41)", () => {
       session: null
     });
     expect(r).toEqual({ outcome: "deny", reason: "Authentication required." });
+  });
+
+  it("deny — tier-entitled patron when creator hid post via Relay visibility", () => {
+    const snapshot = snap(["patreon_tier_low"], {
+      patreon_tier_low: tier("patreon_tier_low", 500)
+    });
+    const session: SessionToken = {
+      token: "t",
+      user_id: "patron1",
+      creator_id: creatorId,
+      tier_ids: ["patreon_tier_low"],
+      expires_at: "2099-01-01T00:00:00.000Z"
+    };
+    expect(
+      evaluatePostPermission({
+        snapshot,
+        creatorId,
+        postId: "post_p1",
+        session,
+        relayPostVisibility: "hidden"
+      })
+    ).toEqual({ outcome: "deny", reason: "Post hidden by creator." });
   });
 
   it("locked_preview — session for creator but insufficient tier", () => {

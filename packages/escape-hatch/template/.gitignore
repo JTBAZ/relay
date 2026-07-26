@@ -1,0 +1,7 @@
+# Generated site — replace via Escape Hatch CLI
+node_modules/
+.next/
+.env
+.env.local
+.env.*.local
+!.env.example

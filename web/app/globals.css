@@ -9,6 +9,26 @@
   --relay-app-nav-height: 2.75rem;
 }
 
+@keyframes fadeInScale {
+  0% {
+    opacity: 0.4;
+    transform: scale(0.9);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes fadeIn {
+  0% {
+    opacity: 0;
+  }
+  100% {
+    opacity: 1;
+  }
+}
+
 body {
   color: var(--foreground);
   background: var(--background);
@@ -56,6 +76,31 @@ body {
   background: oklch(0.35 0.008 160);
 }
 
+/* Previewizer studio: thin dark scrollbars that match the black UI. */
+.previewizer-shell,
+.previewizer-shell * {
+  scrollbar-width: thin;
+  scrollbar-color: #2a2a2a transparent;
+}
+
+.previewizer-shell ::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.previewizer-shell ::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.previewizer-shell ::-webkit-scrollbar-thumb {
+  background: #2a2a2a;
+  border-radius: 3px;
+}
+
+.previewizer-shell ::-webkit-scrollbar-thumb:hover {
+  background: #3a3a3a;
+}
+
 /* Creator library: keep scroll behavior, hide chrome by default. */
 .library-shell.library-hide-scrollbars,
 .library-shell.library-hide-scrollbars * {
@@ -89,6 +134,21 @@ body {
 
   .animate-post-batch-modal {
     animation: postBatchModalIn 0.22s ease-out;
+  }
+
+  .animate-popover-in {
+    animation: schedulePopoverIn 160ms ease-out forwards;
+  }
+}
+
+@keyframes schedulePopoverIn {
+  from {
+    opacity: 0;
+    transform: scale(0.96) translateY(2px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
   }
 }
 
@@ -129,6 +189,28 @@ body {
 
 .onboarding-shell {
   --relay-bg: #000000;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.onboarding-shell::-webkit-scrollbar,
+.onboarding-shell *::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none;
+}
+
+html:has(.onboarding-shell),
+body:has(.onboarding-shell) {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+html:has(.onboarding-shell)::-webkit-scrollbar,
+body:has(.onboarding-shell)::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none;
 }
 
 @keyframes onboardingPanelIn {
@@ -176,6 +258,27 @@ body {
 
 .relay-shimmer {
   background-size: 200% auto;
+  animation: relay-shimmer-kf 2.4s linear infinite;
+}
+
+@keyframes ctaShimmer {
+  0% {
+    background-position: -200% center;
+  }
+  100% {
+    background-position: 200% center;
+  }
+}
+
+/* v0 Autopost composer loading shimmer. */
+.shimmer {
+  background: linear-gradient(
+    105deg,
+    transparent 40%,
+    rgba(0, 170, 111, 0.08) 50%,
+    transparent 60%
+  );
+  background-size: 200% 100%;
   animation: relay-shimmer-kf 2.4s linear infinite;
 }
 
@@ -284,7 +387,8 @@ body {
   }
 }
 
-.designer-site-shell {
+.designer-site-shell,
+.public-profile-wysiwyg-shell {
   --relay-bg: #0a0a0a;
   --relay-surface-1: #111111;
   --relay-surface-2: #1a1a1a;
@@ -299,4 +403,87 @@ body {
   --relay-fg: #f9fafb;
   --relay-fg-muted: #9ca3af;
   --relay-fg-subtle: #6b7280;
+}
+
+/* Lab2 v0 chassis — scoped tokens + motion (do not leak globally) */
+.studio-lab2-v0 {
+  --lab2-bg: #050706;
+  --lab2-mint: #9bf0c4;
+  --lab2-mint-dim: #5fb98f;
+  color-scheme: dark;
+}
+
+@keyframes lab2-runway-pulse {
+  0%,
+  100% {
+    opacity: 0.25;
+    transform: translateX(0);
+  }
+  50% {
+    opacity: 1;
+    transform: translateX(2px);
+  }
+}
+
+@keyframes lab2-thumb-preview-in {
+  0% {
+    opacity: 0;
+    transform: translateX(-50%) translateY(6px) scale(0.94);
+  }
+  100% {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0) scale(1);
+  }
+}
+
+@keyframes lab2-choice-settle {
+  0% {
+    opacity: 0;
+    transform: translateY(-6px) scale(0.97);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes lab2-event-spawn {
+  0% {
+    opacity: 0;
+    transform: scale(0.5) translateY(-6px);
+  }
+  55% {
+    opacity: 1;
+    transform: scale(1.12) translateY(0);
+  }
+  75% {
+    transform: scale(0.96);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+@keyframes lab2-drop-pulse {
+  0%,
+  100% {
+    box-shadow: inset 0 0 0 0 #9bf0c408;
+  }
+  50% {
+    box-shadow: inset 0 0 0 3px #9bf0c418;
+  }
+}
+
+.studio-lab2-v0 .lab2-animate-drop-pulse {
+  animation: lab2-drop-pulse 1.6s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .studio-lab2-v0 .lab2-animate-drop-pulse,
+  .studio-lab2-v0 [style*="lab2-runway-pulse"],
+  .studio-lab2-v0 [style*="lab2-thumb-preview-in"],
+  .studio-lab2-v0 [style*="lab2-choice-settle"],
+  .studio-lab2-v0 [style*="lab2-event-spawn"] {
+    animation: none !important;
+  }
 }

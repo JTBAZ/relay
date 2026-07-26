@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import type { PositionalComment } from "@/lib/relay-fixtures";
+import { CuratorBadge } from "@/components/patron/CuratorBadge";
 
 interface CommentPinProps {
   comment: PositionalComment;
@@ -26,11 +27,12 @@ export function CommentPin({
 }: CommentPinProps) {
   const [isHovered, setIsHovered] = useState(false);
   const ghost = variant === "ghost";
+  const tooltipOpensUp = comment.position.y > 58;
 
   return (
     <div
       className={[
-        "absolute z-10 group transition-opacity duration-300 ease-out",
+        "absolute z-30 group transition-opacity duration-300 ease-out",
         layerVisible ? "opacity-100" : "opacity-0 pointer-events-none",
       ].join(" ")}
       style={{
@@ -70,10 +72,13 @@ export function CommentPin({
       {/* Hover tooltip */}
       <div
         className={[
-          "absolute left-1/2 -translate-x-1/2 mt-2 w-72 transition-all duration-200 pointer-events-none",
+          "absolute left-1/2 z-50 w-72 -translate-x-1/2 transition-all duration-200 pointer-events-none",
+          tooltipOpensUp ? "bottom-full mb-2" : "top-full mt-2",
           isHovered
             ? "opacity-100 translate-y-0"
-            : "opacity-0 -translate-y-2",
+            : tooltipOpensUp
+              ? "opacity-0 translate-y-2"
+              : "opacity-0 -translate-y-2",
         ].join(" ")}
         role="tooltip"
       >
@@ -90,8 +95,9 @@ export function CommentPin({
               />
             </div>
             <div className="min-w-0">
-              <span className="text-xs font-medium text-[#E0E0E0] block truncate">
-                {comment.author.displayName}
+              <span className="flex items-center gap-1.5 text-xs font-medium text-[#E0E0E0]">
+                <span className="block truncate">{comment.author.displayName}</span>
+                {comment.author.isCurator ? <CuratorBadge /> : null}
               </span>
               <span className="text-[10px] text-[#555555]">
                 {comment.createdAt}
@@ -119,7 +125,11 @@ export function CommentPin({
           )}
         </div>
         {/* Arrow pointer */}
-        <div className="absolute -top-1 left-1/2 -translate-x-1/2 w-2 h-2 rotate-45 bg-[#161616] border-l border-t border-[#2A2A2A]" />
+        {tooltipOpensUp ? (
+          <div className="absolute -bottom-1 left-1/2 h-2 w-2 -translate-x-1/2 rotate-45 border-b border-r border-[#2A2A2A] bg-[#161616]" />
+        ) : (
+          <div className="absolute -top-1 left-1/2 h-2 w-2 -translate-x-1/2 rotate-45 border-l border-t border-[#2A2A2A] bg-[#161616]" />
+        )}
       </div>
     </div>
   );

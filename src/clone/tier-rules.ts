@@ -1,3 +1,11 @@
+/**
+ * @fileoverview Tier access helpers for static clone generation and patron gating semantics.
+ * @description Implements Patreon-aligned distinctions between public, free followers, free tiers, and paid tiers.
+ * @see ../ingest/canonical-store.js TierRow
+ * @see ../patreon/relay-access-tiers.js
+ * @see src/jsdoc-core-entities.ts Artist (tier catalog context)
+ */
+
 import type { TierRow } from "../ingest/canonical-store.js";
 import {
   RELAY_TIER_ALL_PATRONS,
@@ -5,6 +13,11 @@ import {
 } from "../patreon/relay-access-tiers.js";
 import type { AccessLevel, CloneTierRule } from "./types.js";
 
+/**
+ * @description Converts canonical tier rows into clone tier rules while excluding synthetic relay tiers.
+ * @param tiers Tier catalog keyed by id.
+ * @returns Clone tier metadata list.
+ */
 export function evaluateTierRules(
   tiers: Record<string, TierRow>
 ): CloneTierRule[] {
@@ -33,6 +46,10 @@ export function evaluateTierRules(
  * still has the legacy null amount (P1 ingest gap), fall back to a tier-title heuristic
  * to avoid letting Free Tier members through. Defaults to *paid* on ambiguity so a real
  * paying patron whose `amount_cents` was never synced doesn't get locked out.
+ *
+ * @description Detects free-tier rows using amount or title heuristics.
+ * @param row Tier catalog row.
+ * @returns Whether the tier should be treated as free (non-paying).
  */
 const FREE_TIER_TITLE_RE = /^\s*(free(\s*tier|\s*member|\s*access|\s*follower)?)\s*$/i;
 
@@ -52,6 +69,11 @@ export function isFreeTier(row: TierRow | undefined): boolean {
  * - Patreon Free Tier ids (per {@link isFreeTier}).
  * - Tier ids absent from the catalog (creator hasn't synced that tier yet — conservative
  *   default is to **keep** them so a paying patron isn't denied due to catalog lag).
+ *
+ * @description Filters entitled tier ids down to paid pledges per Patreon semantics.
+ * @param userTierIds Patron entitled tier ids.
+ * @param tierCatalog Creator tier catalog for classification.
+ * @returns Paid tier id subset.
  */
 export function paidUserTierIds(
   userTierIds: readonly string[],
@@ -70,6 +92,11 @@ export function paidUserTierIds(
 /**
  * Pledge floor for ordering (cents). Synthetic tiers: public = 0, all_patrons = 1.
  * Unknown Patreon tier rows return `null` (fall back to id match in gate checks).
+ *
+ * @description Numeric pledge floor used for “tier or higher” comparisons.
+ * @param tiers Tier catalog.
+ * @param tierId Tier id to evaluate.
+ * @returns Floor cents, synthetic low values, or `null` when unknown.
  */
 export function tierFloorCents(
   tiers: Record<string, TierRow>,
@@ -86,6 +113,12 @@ export function tierFloorCents(
 /**
  * “Tier or higher” semantics: for each required tier, the patron qualifies if they hold
  * **that** tier id **or** any tier whose pledge floor is **≥** the required floor (when both floors are known).
+ *
+ * @description Evaluates ordered tier gating using floors when both sides are known.
+ * @param requiredTierIds Post-required tier ids.
+ * @param userTierIds Patron tier ids.
+ * @param tiers Catalog for floor lookup.
+ * @returns Whether any requirement is satisfied.
  */
 export function userMeetsTierGatesWithOrdering(
   requiredTierIds: string[],
@@ -104,6 +137,12 @@ export function userMeetsTierGatesWithOrdering(
   return false;
 }
 
+/**
+ * @description Maps raw Patreon tier id lists + rules into coarse `AccessLevel` for clone posts.
+ * @param tier_ids Upstream tier ids on the post.
+ * @param tierRules Evaluated tier metadata list.
+ * @returns Access envelope for clone serialization.
+ */
 export function resolvePostAccessLevel(
   tierIds: string[],
   tierRules: CloneTierRule[]
@@ -133,6 +172,13 @@ export function resolvePostAccessLevel(
   return { level: "tier_gated", tier_ids: known.map((r) => r.tier_id) };
 }
 
+/**
+ * @description Runtime access check aligning with Patreon PE semantics (`member_only` requires paid pledges unless catalog unavailable).
+ * @param postAccess Resolved access envelope.
+ * @param userTierIds Patron tier ids (may include free tiers/followers).
+ * @param tierCatalog Optional tier catalog—when omitted, behaves like legacy checks.
+ * @returns Whether the viewer may access the post content.
+ */
 export function canAccessPost(
   postAccess: { level: AccessLevel; tier_ids: string[] },
   userTierIds: string[],

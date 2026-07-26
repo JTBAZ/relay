@@ -1,10 +1,20 @@
+/**
+ * @fileoverview Postgres-backed patron saved collections + entries (snips feature).
+ * @see ./patron-collections-store.ts JSON twin
+ * @see prisma/schema.prisma `PatronSavedCollection`, `PatronSavedCollectionEntry`
+ */
+
 import { randomUUID } from "node:crypto";
 import type { PrismaClient } from "@prisma/client";
 import type {
   PatronCollectionEntryRecord,
   PatronCollectionRecord
 } from "./types.js";
+import { emitPatronCollectionEntryAddedEvent } from "../patron/notification-event-emit.js";
 
+/**
+ * @description Maps patron saved collection row to wire {@link PatronCollectionRecord}.
+ */
 function colRowToRecord(row: {
   id: string;
   patronMembershipId: string;
@@ -27,6 +37,9 @@ function colRowToRecord(row: {
   };
 }
 
+/**
+ * @description Maps patron saved collection entry row to wire {@link PatronCollectionEntryRecord}.
+ */
 function entryRowToRecord(row: {
   id: string;
   collectionId: string;
@@ -49,6 +62,12 @@ function entryRowToRecord(row: {
   };
 }
 
+/**
+ * @description Prisma implementation for patron snips stores.
+ * @async Methods reject on DB errors.
+ * @throws {"Collection not found."} From {@link addEntry} when collection guard fails.
+ * @security-audit-required Account-wide listing requires trusted `accountId`; per-row ops must align membership ids with session.
+ */
 export class DbPatronCollectionsStore {
   public constructor(private readonly prisma: PrismaClient) {}
 
@@ -79,6 +98,37 @@ export class DbPatronCollectionsStore {
       ...colRowToRecord(c),
       entries: byCol.get(c.id) ?? []
     }));
+  }
+
+  /** Owner-scoped collection detail for authenticated account (any patron membership). */
+  public async getCollectionWithEntriesForAccount(
+    accountId: string,
+    collectionId: string
+  ): Promise<
+    (PatronCollectionRecord & { entries: PatronCollectionEntryRecord[] }) | null
+  > {
+    const memberships = await this.prisma.tenantMembership.findMany({
+      where: { accountId },
+      select: { id: true }
+    });
+    if (memberships.length === 0) {
+      return null;
+    }
+    const membershipIds = memberships.map((m) => m.id);
+    const col = await this.prisma.patronSavedCollection.findFirst({
+      where: { id: collectionId, patronMembershipId: { in: membershipIds } }
+    });
+    if (!col) {
+      return null;
+    }
+    const entries = await this.prisma.patronSavedCollectionEntry.findMany({
+      where: { collectionId, patronMembershipId: { in: membershipIds } },
+      orderBy: { createdAt: "desc" }
+    });
+    return {
+      ...colRowToRecord(col),
+      entries: entries.map(entryRowToRecord)
+    };
   }
 
   /**
@@ -241,6 +291,14 @@ export class DbPatronCollectionsStore {
     await this.prisma.patronSavedCollection.update({
       where: { id: collectionId },
       data: { updatedAt: now }
+    });
+    await emitPatronCollectionEntryAddedEvent(this.prisma, {
+      relayCreatorId: creatorId,
+      collectionId,
+      entryId: row.id,
+      postId,
+      mediaId,
+      actorMembershipId: userId
     });
     return entryRowToRecord(row);
   }

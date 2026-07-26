@@ -1,3 +1,9 @@
+/**
+ * @fileoverview Patreon OAuth2 v2 webhooks API client (list + create) for campaign-scoped webhook registration.
+ * @description Requires `w:campaigns.webhook` on the creator token. Mutates Patreon-side webhook resources.
+ * @see {@link ../jsdoc-core-entities.ts}
+ * @see prisma/schema.prisma Local registration audit may live in file metadata stores — see `patreon-webhook-metadata-store.ts`
+ */
 import type { JsonApiDocument } from "./jsonapi-types.js";
 import type { PatreonFetchOptions } from "./patreon-resource-api.js";
 
@@ -27,11 +33,17 @@ async function patreonJson(
 const WEBHOOK_FIELDS =
   "fields[webhook]=last_attempted_at,num_consecutive_times_failed,paused,secret,triggers,uri";
 
+/**
+ * GET registered webhooks for the token’s accessible campaigns.
+ * @async
+ * @throws {Error} Patreon HTTP / parse failures.
+ */
 export async function listWebhooks(opts: PatreonFetchOptions): Promise<JsonApiDocument> {
   const url = `${API_ROOT}/webhooks?${WEBHOOK_FIELDS}`;
   return patreonJson("GET", url, opts);
 }
 
+/** Body for {@link createWebhook}. */
 export type CreateWebhookInput = {
   triggers: string[];
   uri: string;
@@ -40,6 +52,8 @@ export type CreateWebhookInput = {
 
 /**
  * POST /api/oauth2/v2/webhooks — create a webhook on the given campaign.
+ * @async
+ * @throws {Error} Patreon validation / scope / HTTP failures.
  */
 export async function createWebhook(
   opts: PatreonFetchOptions,

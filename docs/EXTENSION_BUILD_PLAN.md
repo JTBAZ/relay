@@ -516,6 +516,7 @@ URL after deploy: `https://relayapp.me/legal/extension-privacy`. **This URL is r
   - `host_permissions: relayapp.me` — "Sends the cookie to the user's own Relay account."
   - `alarms` — "Periodically checks if the cookie has refreshed (12h interval)."
   - `storage` — "Stores the per-installation grant token locally so the user does not have to re-authorize."
+  - `scripting` — "When the creator clicks **Publish to Patreon** in Relay, injects a short script into Patreon's post editor tab to pre-fill title, body, and (best-effort) images from their Relay post. The creator reviews the draft and publishes manually in Patreon; the extension never clicks Publish or changes paywall/audience settings automatically."
   - `externally_connectable: relayapp.me` — "Used by the Relay consent page to deliver the one-time authorization code."
 - `extension/store/firefox/description.md`, `extension/store/firefox/justifications.md` — adapted for AMO.
 
@@ -533,6 +534,59 @@ URL after deploy: `https://relayapp.me/legal/extension-privacy`. **This URL is r
 ### 6.D — Phase 6 verification gate
 
 > **HUMAN ACTION REQUIRED:** All three submissions reach "in review" status without immediate rejection. Reviewer questions about permissions are answered using the pre-written justifications in 6.B. Typical review: 1–3 business days for Chrome, 1–7 days for AMO. The `cookies` permission may extend Chrome review to 1–2 weeks.
+
+---
+
+## Phase 8 — Cross-post bridge (v1)
+
+> **Goal:** Let creators click **Publish to Patreon** in Relay web; the official extension fetches an owner-authorized draft package, opens Patreon's post editor, fills title/body, attempts image attach, then stops. The creator reviews and publishes manually in Patreon.
+>
+> **Detailed build plan:** [`docs/EXTENSION_CROSS_POST_BUILD_PLAN.md`](EXTENSION_CROSS_POST_BUILD_PLAN.md)
+
+### 8.A — Architecture (shipped behavior)
+
+| Layer | Responsibility |
+|---|---|
+| Relay web | Sends only `{ type: "RELAY_CROSS_POST", relay_post_id }` to configured extension IDs |
+| Extension background | Validates sender origin, loads extension grant, `GET /api/v1/extension/cross-post/patreon/:post_id`, stores pending package, opens `https://www.patreon.com/posts/new`, injects fill script |
+| Relay API | Assembles `PatreonCrossPostPackage` after extension bearer + creator ownership checks |
+| Content script | Reads pending package from storage, fills title/body, best-effort image attach via Patreon file input, shows review banner, clears pending package |
+
+**Hard boundaries (v1):**
+
+- Extension never clicks Patreon's Publish, Schedule, Paywall, or audience controls.
+- Text fill is required; image attach is best-effort (Patreon React upload may reject synthetic events).
+- Relay web never sends title, body, or media URLs to the extension.
+- No raw Patreon cookie, extension bearer token, or `relay_session` in DOM or logs.
+
+### 8.B — New permissions and store copy
+
+- `scripting` permission on Chrome/Firefox manifests (see cross-post build item 1).
+- Store justifications and long descriptions updated in `extension/store/chrome/` and `extension/store/firefox/` to describe cross-post pre-fill and manual publish review.
+
+### 8.C — Web integration
+
+- `web/lib/relay-extension-messaging.ts` — tries all `NEXT_PUBLIC_RELAY_EXTENSION_IDS`.
+- `PublishToPatreonButton` on Relay-native compose success (`CreatorRelayPostComposer.tsx`).
+
+### 8.D — Phase 8 verification gate
+
+**Automated:**
+
+```bash
+npm run test -- tests/extension-cross-post-package.test.ts tests/extension-cors.test.ts
+cd extension && npm run build:chrome:dev && npm run build:chrome:prod && npm run build:firefox:prod
+```
+
+**Manual:** Run [`docs/Airtable Drops/Extension Cross-Post/XPOST-16-e2e-manual-checklist.md`](Airtable%20Drops/Extension%20Cross-Post/XPOST-16-e2e-manual-checklist.md) with a real Patreon creator login.
+
+### 8.E — Post-v1 follow-ups (not blocking store submission)
+
+Documented in the cross-post build plan **Return to** section and the E2E checklist:
+
+- **Package route CORS** — confirm extension background fetch to `/api/v1/extension/cross-post/*` in prod builds.
+- **Audience / tier mapping** — Relay sync already holds Patreon tier catalog; a future best-effort content-script pass could select **Paid access** when the Relay post is tier-gated. Requires its own E2E gate (wrong audience is higher risk than missing media).
+- **Canonical image placement** — user preference for gallery vs body vs cover (future profile setting).
 
 ---
 

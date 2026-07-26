@@ -1,8 +1,13 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { config as loadEnv } from "dotenv";
 import { defineConfig } from "vitest/config";
 
+loadEnv();
+
 const root = path.dirname(fileURLToPath(import.meta.url));
+
+const useSingleFork = Boolean(process.env.DATABASE_URL?.trim());
 
 export default defineConfig({
   resolve: {
@@ -15,6 +20,8 @@ export default defineConfig({
       // Same story for next/link: bare RTL render lacks the AppRouter context provider, so
       // we ship a plain <a> stub. Tests asserting client-side routing should mock useRouter.
       "next/link": path.resolve(root, "tests/mocks/next-link.tsx"),
+      // web/node_modules/framer-motion resolves its own React copy → invalid hook call in root vitest.
+      "framer-motion": path.resolve(root, "tests/mocks/framer-motion.tsx"),
       // Mirror Next.js' tsconfig path mapping (`web/tsconfig.json` → "@/*": ["./*"]) so
       // tests that touch web/lib modules (which use `@/lib/*` imports) resolve correctly.
       "@/lib": path.resolve(root, "web/lib"),
@@ -23,10 +30,20 @@ export default defineConfig({
     }
   },
   esbuild: {
-    jsx: "automatic"
+    jsx: "automatic",
+    define: {
+      __EXT_ENV__: JSON.stringify("dev")
+    }
   },
   test: {
     environment: "node",
+    /** Shared Postgres pilot/dev fixtures collide when DB integration files run in parallel. */
+    pool: useSingleFork ? "forks" : "threads",
+    poolOptions: {
+      forks: {
+        singleFork: useSingleFork
+      }
+    },
     /** `web/__tests__/*` imports `next/server`; root `npm test` must resolve `next` (see web/package.json). */
     server: {
       deps: {

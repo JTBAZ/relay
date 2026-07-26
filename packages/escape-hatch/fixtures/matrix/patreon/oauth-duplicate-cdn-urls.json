@@ -1,0 +1,41 @@
+{
+  "data": [
+    {
+      "type": "post",
+      "id": "fixture_post_dup_cdn",
+      "attributes": {
+        "title": "Fixture Duplicate CDN URLs",
+        "content": "<p>Two media rows share the same sanitized CDN URL.</p>",
+        "published_at": "2026-04-06T12:00:00.000Z",
+        "is_public": true,
+        "is_paid": false,
+        "tiers": []
+      },
+      "relationships": {
+        "images": {
+          "data": [
+            { "type": "media", "id": "fixture_media_dup_a" },
+            { "type": "media", "id": "fixture_media_dup_b" }
+          ]
+        }
+      }
+    }
+  ],
+  "included": [
+    {
+      "type": "media",
+      "id": "fixture_media_dup_a",
+      "attributes": {
+        "download_url": "https://cdn.fixture.example/shared-asset.png"
+      }
+    },
+    {
+      "type": "media",
+      "id": "fixture_media_dup_b",
+      "attributes": {
+        "download_url": "https://cdn.fixture.example/shared-asset.png"
+      }
+    }
+  ],
+  "links": {}
+}

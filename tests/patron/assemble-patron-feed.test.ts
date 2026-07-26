@@ -1,5 +1,32 @@
 import { describe, expect, it, vi } from "vitest";
+import { GalleryVisibility } from "@prisma/client";
 import { assemblePatronFeed } from "../../src/patron/assemble-patron-feed.js";
+
+function emptyHiddenPostOverrides() {
+  return { postOverride: { findMany: vi.fn().mockResolvedValue([]) } };
+}
+
+function healthyEntitlementSnapshot(args: {
+  relayCreatorId: string;
+  patronMembershipId: string;
+  entitledTierIds?: string[];
+  staleAfter?: Date | null;
+}) {
+  const {
+    relayCreatorId,
+    patronMembershipId,
+    entitledTierIds = [],
+    staleAfter = new Date("2099-01-01T00:00:00.000Z")
+  } = args;
+  return {
+    patronMembershipId,
+    relayCreatorId,
+    entitledTierIds,
+    active: true,
+    asOf: new Date("2026-01-01T00:00:00.000Z"),
+    staleAfter
+  };
+}
 
 describe("assemblePatronFeed", () => {
   it("returns empty feed when there are no follows", async () => {
@@ -23,6 +50,8 @@ describe("assemblePatronFeed", () => {
     expect(bundle.discoverItems).toEqual([]);
     expect(bundle.notifications).toEqual([]);
     expect(bundle.currentViewer.handle).toBe("a");
+    expect(bundle.entitlement_degraded).toBe(false);
+    expect(bundle.entitlement_stale_since).toBeNull();
     expect(prisma.post.findMany).not.toHaveBeenCalled();
   });
 
@@ -62,7 +91,17 @@ describe("assemblePatronFeed", () => {
           { relayCreatorId: "rc_relaytest", createdAt: new Date() }
         ])
       },
-      patronEntitlementSnapshot: { findMany: vi.fn().mockResolvedValue([]) },
+      patronEntitlementSnapshot: {
+        findMany: vi
+          .fn()
+          .mockResolvedValue([
+            healthyEntitlementSnapshot({
+              relayCreatorId: "rc_relaytest",
+              patronMembershipId: "mem1",
+              entitledTierIds: []
+            })
+          ])
+      },
       tier: { findMany: vi.fn().mockResolvedValue([]) },
       creatorProfile: {
         findMany: vi.fn().mockResolvedValue([
@@ -70,7 +109,8 @@ describe("assemblePatronFeed", () => {
         ])
       },
       post: { findMany: vi.fn().mockResolvedValue([post]) },
-      patronProfile: { findUnique: vi.fn().mockResolvedValue(null) }
+      patronProfile: { findUnique: vi.fn().mockResolvedValue(null) },
+      ...emptyHiddenPostOverrides()
     };
   }
 
@@ -97,6 +137,8 @@ describe("assemblePatronFeed", () => {
     // would 403/404 because Patreon CDN gates by Patreon session cookie.
     expect(post.coverImageUrl).not.toContain("patreon.example");
     expect(post.highResImageUrl).not.toContain("patreon.example");
+    expect(post.feed_item_source).toBe("subscribed");
+    expect(post.kind).toBe("followed");
   });
 
   it("omits coverImageUrl for video (UI uses poster or video thumb)", async () => {
@@ -128,7 +170,17 @@ describe("assemblePatronFeed", () => {
           { relayCreatorId: "rc_relaytest", createdAt: new Date() }
         ])
       },
-      patronEntitlementSnapshot: { findMany: vi.fn().mockResolvedValue([]) },
+      patronEntitlementSnapshot: {
+        findMany: vi
+          .fn()
+          .mockResolvedValue([
+            healthyEntitlementSnapshot({
+              relayCreatorId: "rc_relaytest",
+              patronMembershipId: "mem1",
+              entitledTierIds: []
+            })
+          ])
+      },
       tier: { findMany: vi.fn().mockResolvedValue([]) },
       creatorProfile: {
         findMany: vi.fn().mockResolvedValue([
@@ -136,7 +188,8 @@ describe("assemblePatronFeed", () => {
         ])
       },
       post: { findMany: vi.fn().mockResolvedValue([post]) },
-      patronProfile: { findUnique: vi.fn().mockResolvedValue(null) }
+      patronProfile: { findUnique: vi.fn().mockResolvedValue(null) },
+      ...emptyHiddenPostOverrides()
     };
     const bundle = await assemblePatronFeed({
       prisma: prisma as never,
@@ -182,7 +235,7 @@ describe("assemblePatronFeed", () => {
   // PE-C P0 — davoicework's regression: a Free Tier member sees only public posts,
   // sidebar shows "Free", and `relay_tier_all_patrons` posts are hidden from her.
   it("Free Tier member: public visible, all_patrons hidden, sidebar label is Free", async () => {
-    const now = new Date("2026-04-11T20:18:50.000Z");
+    const now = new Date();
     const publicPost = {
       id: "p_public",
       creatorId: "rc_relaytest",
@@ -240,7 +293,9 @@ describe("assemblePatronFeed", () => {
             patronMembershipId: "mem1",
             relayCreatorId: "rc_relaytest",
             entitledTierIds: ["patreon_tier_free"],
-            active: true
+            active: true,
+            asOf: now,
+            staleAfter: new Date("2099-01-01T00:00:00.000Z")
           }
         ])
       },
@@ -274,7 +329,8 @@ describe("assemblePatronFeed", () => {
       post: {
         findMany: vi.fn().mockResolvedValue([publicPost, allPatronsPost, advancedPost])
       },
-      patronProfile: { findUnique: vi.fn().mockResolvedValue(null) }
+      patronProfile: { findUnique: vi.fn().mockResolvedValue(null) },
+      ...emptyHiddenPostOverrides()
     };
 
     const bundle = await assemblePatronFeed({
@@ -287,13 +343,221 @@ describe("assemblePatronFeed", () => {
     expect(ids).toContain("p_public");
     expect(ids).not.toContain("p_all"); // member_only blocked
     expect(ids).not.toContain("p_advanced"); // tier_gated blocked
+    expect(bundle.lockedPosts.map((p) => p.id)).toEqual(["p_all", "p_advanced"]);
+    expect(bundle.lockedPosts[0]).toEqual(
+      expect.objectContaining({
+        title: "Test post 7",
+        mediaType: "writing",
+        tierLabel: "Advanced"
+      })
+    );
+    expect(bundle.lockedPosts[0]).not.toHaveProperty("coverImageUrl");
+    expect(bundle.lockedPosts[0]).not.toHaveProperty("highResImageUrl");
+    expect(bundle.lockedPosts[0]).not.toHaveProperty("description");
+    const pub = bundle.feedPosts.find((p) => p.id === "p_public");
+    expect(pub?.feed_item_source).toBe("subscribed");
+    expect(pub?.kind).toBe("followed");
     expect(bundle.followedCreators).toHaveLength(1);
     expect(bundle.followedCreators[0]!.patronTierLabel).toBe("Free");
   });
 
+  it("creator-hidden tier-gated post absent from feed and lockedPosts upsell stubs", async () => {
+    const now = new Date();
+    const allPatronsPost = {
+      id: "p_all",
+      creatorId: "rc_relaytest",
+      isPublic: false,
+      versions: [
+        {
+          versionSeq: 1,
+          publishedAt: now,
+          title: "Members only",
+          description: "Members only",
+          tierIds: ["relay_tier_all_patrons"]
+        }
+      ],
+      mediaAssets: []
+    };
+    const hiddenAdvancedPost = {
+      id: "p_advanced",
+      creatorId: "rc_relaytest",
+      isPublic: false,
+      versions: [
+        {
+          versionSeq: 1,
+          publishedAt: now,
+          title: "Hidden advanced",
+          description: "$10 only",
+          tierIds: ["patreon_tier_advanced"]
+        }
+      ],
+      mediaAssets: []
+    };
+    const prisma = {
+      patronFollow: {
+        findMany: vi
+          .fn()
+          .mockResolvedValue([{ relayCreatorId: "rc_relaytest", createdAt: now }])
+      },
+      patronEntitlementSnapshot: {
+        findMany: vi.fn().mockResolvedValue([
+          healthyEntitlementSnapshot({
+            patronMembershipId: "mem1",
+            relayCreatorId: "rc_relaytest",
+            entitledTierIds: ["patreon_tier_free"]
+          })
+        ])
+      },
+      tier: {
+        findMany: vi.fn().mockResolvedValue([
+          {
+            relayTierId: "patreon_tier_free",
+            creatorId: "rc_relaytest",
+            campaignId: "patreon_campaign_x",
+            title: "Free",
+            amountCents: 0,
+            upstreamUpdatedAt: now,
+            versionSeq: 1
+          },
+          {
+            relayTierId: "patreon_tier_advanced",
+            creatorId: "rc_relaytest",
+            campaignId: "patreon_campaign_x",
+            title: "Advanced",
+            amountCents: 1000,
+            upstreamUpdatedAt: now,
+            versionSeq: 1
+          }
+        ])
+      },
+      creatorProfile: {
+        findMany: vi.fn().mockResolvedValue([
+          { tenant: { relayCreatorId: "rc_relaytest" }, publicSlug: "relaytest" }
+        ])
+      },
+      post: {
+        findMany: vi.fn().mockResolvedValue([allPatronsPost, hiddenAdvancedPost])
+      },
+      patronProfile: { findUnique: vi.fn().mockResolvedValue(null) },
+      postOverride: {
+        findMany: vi.fn().mockResolvedValue([
+          {
+            creatorId: "rc_relaytest",
+            postId: "p_advanced",
+            mediaId: "",
+            visibility: "hidden",
+            addTagIds: [],
+            removeTagIds: [],
+            discoveryEligible: false
+          }
+        ])
+      }
+    };
+
+    const bundle = await assemblePatronFeed({
+      prisma: prisma as never,
+      patronMembershipId: "mem1",
+      viewerEmail: "patron@example.com"
+    });
+
+    expect(bundle.feedPosts.map((p) => p.id)).toEqual([]);
+    expect(bundle.lockedPosts.map((p) => p.id)).toEqual(["p_all"]);
+    expect(bundle.lockedPosts.map((p) => p.id)).not.toContain("p_advanced");
+  });
+
+  it("media-level hidden override excludes post from patron feed and lockedPosts", async () => {
+    const now = new Date();
+    const publicPost = {
+      id: "p_public",
+      creatorId: "rc_relaytest",
+      isPublic: true,
+      versions: [
+        {
+          versionSeq: 1,
+          publishedAt: now,
+          title: "Public intro",
+          description: "Welcome",
+          tierIds: ["relay_tier_public"]
+        }
+      ],
+      mediaAssets: [{ id: "media_intro", currentMimeType: "text/plain", currentStorageKey: null }]
+    };
+    const prisma = {
+      patronFollow: {
+        findMany: vi
+          .fn()
+          .mockResolvedValue([{ relayCreatorId: "rc_relaytest", createdAt: now }])
+      },
+      patronEntitlementSnapshot: {
+        findMany: vi.fn().mockResolvedValue([
+          healthyEntitlementSnapshot({
+            patronMembershipId: "mem1",
+            relayCreatorId: "rc_relaytest",
+            entitledTierIds: ["patreon_tier_free"]
+          })
+        ])
+      },
+      tier: {
+        findMany: vi.fn().mockResolvedValue([
+          {
+            relayTierId: "relay_tier_public",
+            creatorId: "rc_relaytest",
+            campaignId: "patreon_campaign_x",
+            title: "Free",
+            amountCents: 0,
+            upstreamUpdatedAt: now,
+            versionSeq: 1
+          }
+        ])
+      },
+      creatorProfile: {
+        findMany: vi.fn().mockResolvedValue([
+          { tenant: { relayCreatorId: "rc_relaytest" }, publicSlug: "relaytest" }
+        ])
+      },
+      post: {
+        findMany: vi.fn().mockImplementation((args: { select?: { mediaAssets?: unknown } }) => {
+          if (args?.select?.mediaAssets) {
+            return Promise.resolve([
+              {
+                id: "p_public",
+                creatorId: "rc_relaytest",
+                mediaAssets: [{ id: "media_intro" }]
+              }
+            ]);
+          }
+          return Promise.resolve([publicPost]);
+        })
+      },
+      patronProfile: { findUnique: vi.fn().mockResolvedValue(null) },
+      postOverride: {
+        findMany: vi.fn().mockResolvedValue([
+          {
+            creatorId: "rc_relaytest",
+            postId: "p_public",
+            mediaId: "media_intro",
+            visibility: "hidden",
+            addTagIds: [],
+            removeTagIds: [],
+            discoveryEligible: false
+          }
+        ])
+      }
+    };
+
+    const bundle = await assemblePatronFeed({
+      prisma: prisma as never,
+      patronMembershipId: "mem1",
+      viewerEmail: "patron@example.com"
+    });
+
+    expect(bundle.feedPosts.map((p) => p.id)).toEqual([]);
+    expect(bundle.lockedPosts).toEqual([]);
+  });
+
   // Companion: paying patron at Advanced sees everything they're entitled to,
-  // sidebar shows "Supporter".
-  it("Paying patron at Advanced: sees public + all_patrons + advanced; sidebar is Supporter", async () => {
+  // sidebar shows catalog title "Advanced".
+  it("Paying patron at Advanced: sees public + all_patrons + advanced; sidebar uses Tier.title", async () => {
     const now = new Date("2026-04-11T20:18:50.000Z");
     const prisma = {
       patronFollow: {
@@ -307,7 +571,9 @@ describe("assemblePatronFeed", () => {
             patronMembershipId: "mem1",
             relayCreatorId: "rc_relaytest",
             entitledTierIds: ["patreon_tier_advanced"],
-            active: true
+            active: true,
+            asOf: now,
+            staleAfter: new Date("2099-01-01T00:00:00.000Z")
           }
         ])
       },
@@ -348,7 +614,8 @@ describe("assemblePatronFeed", () => {
           }
         ])
       },
-      patronProfile: { findUnique: vi.fn().mockResolvedValue(null) }
+      patronProfile: { findUnique: vi.fn().mockResolvedValue(null) },
+      ...emptyHiddenPostOverrides()
     };
 
     const bundle = await assemblePatronFeed({
@@ -357,7 +624,11 @@ describe("assemblePatronFeed", () => {
       viewerEmail: "supporter@example.com"
     });
     expect(bundle.feedPosts.map((p) => p.id)).toEqual(["p_all"]);
-    expect(bundle.followedCreators[0]!.patronTierLabel).toBe("Supporter");
+    expect(bundle.feedPosts[0]!.feed_item_source).toBe("subscribed");
+    expect(bundle.feedPosts[0]!.kind).toBe("followed");
+    expect(bundle.followedCreators[0]!.patronTierLabel).toBe("Advanced");
+    expect(bundle.feedPosts[0]!.creator.patronTierLabel).toBe("Advanced");
+    expect(bundle.lockedPosts).toEqual([]);
   });
 
   it("uses CreatorProfile identity fields for feed cards and sidebar (APD-S2)", async () => {
@@ -444,5 +715,95 @@ describe("assemblePatronFeed", () => {
     const post = bundle.feedPosts[0]!.creator;
     expect(post.handle).toBe("onlyslug");
     expect(post.displayName).toBe("onlyslug");
+  });
+
+  it("P6-patron-004: marks entitlement_degraded with null stale_since when a follow has no snapshot", async () => {
+    const prisma = buildPrismaWithOnePost({
+      mediaId: "media_xyz",
+      storageKey: "media/media_xyz/asset"
+    });
+    prisma.patronEntitlementSnapshot.findMany = vi.fn().mockResolvedValue([]);
+    const bundle = await assemblePatronFeed({
+      prisma: prisma as never,
+      patronMembershipId: "mem1",
+      viewerEmail: "a@b.com"
+    });
+    expect(bundle.entitlement_degraded).toBe(true);
+    expect(bundle.entitlement_stale_since).toBeNull();
+  });
+
+  it("P6-patron-004: sets entitlement_stale_since to earliest overdue stale_after", async () => {
+    const past = new Date("2020-06-01T12:00:00.000Z");
+    const newerStale = new Date("2021-01-01T00:00:00.000Z");
+    const prisma = buildPrismaWithOnePost({
+      mediaId: "media_xyz",
+      storageKey: "media/media_xyz/asset"
+    });
+    prisma.patronFollow.findMany = vi.fn().mockResolvedValue([
+      { relayCreatorId: "rc_a", createdAt: new Date() },
+      { relayCreatorId: "rc_b", createdAt: new Date() }
+    ]);
+    prisma.patronEntitlementSnapshot.findMany = vi.fn().mockResolvedValue([
+      healthyEntitlementSnapshot({
+        relayCreatorId: "rc_a",
+        patronMembershipId: "mem1",
+        entitledTierIds: [],
+        staleAfter: newerStale
+      }),
+      healthyEntitlementSnapshot({
+        relayCreatorId: "rc_b",
+        patronMembershipId: "mem1",
+        entitledTierIds: [],
+        staleAfter: past
+      })
+    ]);
+    prisma.creatorProfile.findMany = vi.fn().mockResolvedValue([
+      { tenant: { relayCreatorId: "rc_a" }, publicSlug: "a" },
+      { tenant: { relayCreatorId: "rc_b" }, publicSlug: "b" }
+    ]);
+    prisma.post.findMany = vi.fn().mockResolvedValue([]);
+    const bundle = await assemblePatronFeed({
+      prisma: prisma as never,
+      patronMembershipId: "mem1",
+      viewerEmail: "a@b.com"
+    });
+    expect(bundle.entitlement_degraded).toBe(true);
+    expect(bundle.entitlement_stale_since).toBe(past.toISOString());
+  });
+
+  it("excludes mature posts when hideMatureContent is true", async () => {
+    const prisma = buildPrismaWithOnePost({
+      mediaId: "media_xyz",
+      storageKey: "media/media_xyz/asset"
+    });
+    prisma.postOverride = {
+      findMany: vi.fn().mockResolvedValue([
+        {
+          creatorId: "rc_relaytest",
+          postId: "post_orbitals",
+          mediaId: "",
+          visibility: GalleryVisibility.review,
+          addTagIds: [],
+          removeTagIds: [],
+          discoveryEligible: false
+        }
+      ])
+    };
+
+    const hidden = await assemblePatronFeed({
+      prisma: prisma as never,
+      patronMembershipId: "mem1",
+      viewerEmail: "a@b.com",
+      hideMatureContent: true
+    });
+    expect(hidden.feedPosts).toHaveLength(0);
+
+    const shown = await assemblePatronFeed({
+      prisma: prisma as never,
+      patronMembershipId: "mem1",
+      viewerEmail: "a@b.com",
+      hideMatureContent: false
+    });
+    expect(shown.feedPosts).toHaveLength(1);
   });
 });

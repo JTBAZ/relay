@@ -41,7 +41,9 @@ function bundleWithPost(post: Partial<FeedPost>): PatronFeedBundle {
       notificationCount: 0
     },
     followedCreators: [],
-    notifications: []
+    notifications: [],
+    entitlement_degraded: false,
+    entitlement_stale_since: null
   };
 }
 
@@ -86,6 +88,30 @@ describe("absolutizeMediaUrls", () => {
       `${RELAY_API_BASE}/api/v1/export/media/rc1/m1/content`,
       "/placeholder.svg",
       "https://example.com/keep.jpg"
+    ]);
+  });
+
+  it("rewrites media item URLs while preserving media ids", () => {
+    const out = absolutizeMediaUrls(
+      bundleWithPost({
+        primaryMediaId: "m1",
+        mediaItems: [
+          {
+            mediaId: "m1",
+            url: "/api/v1/export/media/rc1/m1/content",
+            previewUrl: "/api/v1/export/media/rc1/m1/preview",
+            mimeType: "image/png"
+          }
+        ]
+      })
+    );
+    expect(out.feedPosts[0]!.mediaItems).toEqual([
+      {
+        mediaId: "m1",
+        url: `${RELAY_API_BASE}/api/v1/export/media/rc1/m1/content`,
+        previewUrl: `${RELAY_API_BASE}/api/v1/export/media/rc1/m1/preview`,
+        mimeType: "image/png"
+      }
     ]);
   });
 });

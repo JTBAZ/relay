@@ -1,4 +1,10 @@
 /**
+ * @fileoverview Patron experience module data-export-service.ts — see exported symbols.
+ * @see {@link ../jsdoc-core-entities.ts}
+ * @see prisma/schema.prisma Account, TenantMembership, and related patron tables
+ * @security-audit-required Patron PII or entitlement paths — audit responses and logs.
+ */
+/**
  * PE-J (BO-P4-02) — patron data export.
  *
  * Returns a single JSON-serializable bundle with everything we hold for a given Account:

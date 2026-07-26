@@ -1,0 +1,11 @@
+{
+  "id": "mature-metadata",
+  "status": "deferred-to-EH-033",
+  "schemaNote": "EH-011 excludes mature/legal-adult posts from the live SiteBundle as accounted exclusions; no SiteBundle mature field is invented.",
+  "expectedSourceFields": [
+    "is_mature",
+    "legal_adult",
+    "content_flags"
+  ],
+  "reason": "EH-011 accounted exclusion is real (post omitted from bundle.posts + report.posts.excluded). Private/legal enforcement and product UX remain deferred to EH-033+."
+}

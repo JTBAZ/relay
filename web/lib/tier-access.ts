@@ -1,5 +1,14 @@
 import type { FacetsData, GalleryItem, TierFacet } from "./relay-api";
 
+/**
+ * Tier **semantics for gallery UI** (facet-backed relay ids, chips, designer preview, analytics
+ * buckets). Facet `tier_id` values match `GalleryItem.tier_ids`, not Prisma `Tier.id`.
+ *
+ * **Do not** use `isFreePublicAccessTier` / `freePublicTierIdsFromFacets` to build Relay **compose**
+ * tier pickers or `POST /api/v1/relay/posts` payloads. For that, use `fetchRelayComposeTiers` /
+ * `GET /api/v1/relay/compose-tiers` (Prisma ids + access ladder).
+ */
+
 export const RELAY_TIER_PUBLIC = "relay_tier_public";
 /** Any logged-in patron; not a priced tier chip. */
 export const RELAY_TIER_ALL_PATRONS = "relay_tier_all_patrons";
@@ -8,7 +17,8 @@ const RELAY_ALL = RELAY_TIER_ALL_PATRONS;
 
 /**
  * Tiers we collapse into one Access chip and one analytics bucket labeled "Free"
- * (Patreon public + free follower access; $0).
+ * (Patreon public + free follower access; $0). **Facet rows only** — not for Relay compose
+ * tier selection (see file header).
  */
 export function isFreePublicAccessTier(t: TierFacet): boolean {
   if (t.tier_id === RELAY_PUBLIC) return true;

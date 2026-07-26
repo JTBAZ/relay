@@ -1,3 +1,9 @@
+/**
+ * @fileoverview Prisma-backed `DeployStore` using `Deployment` + `CreatorActiveDeployment` tables.
+ * @see ./deploy-store.js
+ * @see prisma/schema.prisma Deployment, CreatorActiveDeployment
+ */
+
 import type { Prisma } from "@prisma/client";
 import type { PrismaClient } from "@prisma/client";
 import type { DeployStore } from "./deploy-store.js";
@@ -79,9 +85,22 @@ function deploymentToCreateInput(dep: Deployment): Prisma.DeploymentUncheckedCre
   };
 }
 
+/**
+ * @description Maps `DeployStore` operations onto Prisma models.
+ * @security-audit-required Deployment rows reference creator/site metadata; enforce API authz.
+ */
 export class DbDeployStore implements DeployStore {
+  /**
+   * @param prisma Shared Prisma client.
+   */
   public constructor(private readonly prisma: PrismaClient) {}
 
+  /**
+   * @description Upserts deployment row keyed by `deploymentId`.
+   * @param deployment Domain snapshot.
+   * @async
+   * @throws {Error} Prisma `upsert` failures.
+   */
   public async upsert(deployment: Deployment): Promise<void> {
     const data = deploymentToCreateInput(deployment);
     await this.prisma.deployment.upsert({
@@ -106,6 +125,12 @@ export class DbDeployStore implements DeployStore {
     });
   }
 
+  /**
+   * @description Loads deployment by id.
+   * @param deploymentId Stable deployment id.
+   * @async
+   * @throws {Error} Prisma read failures.
+   */
   public async get(deploymentId: string): Promise<Deployment | null> {
     const row = await this.prisma.deployment.findUnique({
       where: { deploymentId }
@@ -113,6 +138,13 @@ export class DbDeployStore implements DeployStore {
     return row ? rowToDeployment(row) : null;
   }
 
+  /**
+   * @description Upserts `CreatorActiveDeployment` pointer.
+   * @param creatorId Creator key.
+   * @param deploymentId Active deployment id.
+   * @async
+   * @throws {Error} Prisma upsert failures.
+   */
   public async setActive(creatorId: string, deploymentId: string): Promise<void> {
     await this.prisma.creatorActiveDeployment.upsert({
       where: { creatorId },
@@ -121,6 +153,12 @@ export class DbDeployStore implements DeployStore {
     });
   }
 
+  /**
+   * @description Follows active pointer then loads deployment row.
+   * @param creatorId Creator key.
+   * @async
+   * @throws {Error} Prisma read failures.
+   */
   public async getActive(creatorId: string): Promise<Deployment | null> {
     const active = await this.prisma.creatorActiveDeployment.findUnique({
       where: { creatorId }
@@ -131,6 +169,12 @@ export class DbDeployStore implements DeployStore {
     return this.get(active.deploymentId);
   }
 
+  /**
+   * @description Lists deployments for creator ordered by `createdAt` desc.
+   * @param creatorId Creator key.
+   * @async
+   * @throws {Error} Prisma `findMany` failures.
+   */
   public async listByCreator(creatorId: string): Promise<Deployment[]> {
     const rows = await this.prisma.deployment.findMany({
       where: { creatorId },

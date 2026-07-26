@@ -3,8 +3,10 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { useStudioSession } from "@/lib/studio-session-context";
+import { studioAuthDisabled } from "@/lib/dev-auth-flags";
 
-const authDisabled = process.env.NEXT_PUBLIC_RELAY_STUDIO_AUTH_DISABLED === "1";
+// [R-SEC-08 @security-review 2026-06] Hard-ignored in production builds; dev behavior unchanged.
+const authDisabled = studioAuthDisabled();
 
 /**
  * MT-036: Require a Relay session for studio routes unless
@@ -23,7 +25,10 @@ export function StudioRouteGuard({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!mounted || !ready || authDisabled) return;
     if (hasRelaySession) return;
-    router.replace(`/login?returnTo=${encodeURIComponent(pathname || "/")}`);
+    // Preserve query string (e.g. event_id on scheduled-post review) across login.
+    const qs = typeof window !== "undefined" ? window.location.search : "";
+    const returnTo = `${pathname || "/"}${qs}`;
+    router.replace(`/login?returnTo=${encodeURIComponent(returnTo)}`);
   }, [mounted, ready, hasRelaySession, router, pathname]);
 
   if (!mounted || !ready) {

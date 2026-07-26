@@ -1,3 +1,10 @@
+/**
+ * @fileoverview Audience migration orchestration: create, preflight, batch send, engagement metrics.
+ * @description Emits bus events for campaign lifecycle; integrates signed link generation.
+ * @see ./signed-links.js
+ * @see ../events/event-bus.js
+ */
+
 import { randomUUID } from "node:crypto";
 import type { RelayEventBus } from "../events/event-bus.js";
 import { generateSignedLink } from "./signed-links.js";
@@ -13,6 +20,9 @@ import type {
 const BOUNCE_PAUSE_THRESHOLD = 0.05;
 const COMPLAINT_PAUSE_THRESHOLD = 0.001;
 
+/**
+ * @description Audience migration workflow: create, preflight, send batches, track engagement.
+ */
 export class CampaignService {
   private readonly store: MigrationStore;
   private readonly eventBus: RelayEventBus;

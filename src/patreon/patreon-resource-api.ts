@@ -1,7 +1,14 @@
+/**
+ * @fileoverview Patreon OAuth2 v2 REST helpers: campaigns, posts paging, members paging, and JSON:API helpers.
+ * @description All network I/O uses injected `fetch`; throws on non-2xx with truncated body text.
+ * @see {@link ../jsdoc-core-entities.ts}
+ * @see prisma/schema.prisma Ingest outcomes land in `Post`, `Tier`, `Campaign`, membership tables via sync — not in this module
+ */
 import type { JsonApiDocument, JsonApiResource } from "./jsonapi-types.js";
 
 const API_ROOT = "https://www.patreon.com/api/oauth2/v2";
 
+/** Bearer token + fetch implementation (testable / worker injectable). */
 export type PatreonFetchOptions = {
   access_token: string;
   fetch_impl: typeof fetch;
@@ -23,7 +30,11 @@ async function patreonGet(
   return JSON.parse(text) as JsonApiDocument;
 }
 
-/** List campaigns owned by the token user, including tier objects. */
+/**
+ * List campaigns owned by the token grant, including tier includes.
+ * @async
+ * @throws {Error} Patreon HTTP failures and JSON parse errors.
+ */
 export async function fetchCampaignsWithTiers(
   opts: PatreonFetchOptions
 ): Promise<JsonApiDocument> {
@@ -43,7 +54,11 @@ export async function fetchCampaignsWithTiers(
   return patreonGet(url, opts);
 }
 
-/** One page of posts for a campaign (`links.next` for pagination). */
+/**
+ * Builds absolute URL for one page of posts (or follows `links.next` when provided).
+ * @param campaignId Patreon campaign id.
+ * @param nextFullUrl Patreon-returned full next URL or null for first page.
+ */
 export function postsPageUrl(campaignId: string, nextFullUrl?: string | null): string {
   if (nextFullUrl) return nextFullUrl;
   const params = new URLSearchParams();
@@ -54,6 +69,11 @@ export function postsPageUrl(campaignId: string, nextFullUrl?: string | null): s
   return `${API_ROOT}/campaigns/${encodeURIComponent(campaignId)}/posts?${params.toString()}`;
 }
 
+/**
+ * Fetches one posts page JSON:API document.
+ * @async
+ * @throws {Error} Patreon HTTP / parse failures.
+ */
 export async function fetchPostsPage(
   opts: PatreonFetchOptions,
   campaignId: string,
@@ -63,13 +83,18 @@ export async function fetchPostsPage(
 }
 
 /**
- * Single post (OAuth2 v2). Patreon’s www cookie `/api/posts` often returns
- * `attributes.content: null`; the creator access token usually still receives HTML here.
+ * Single-post URL (`GET` via {@link fetchPostById}).
+ * Patreon’s www cookie `/api/posts` often returns `attributes.content: null`; the creator access token usually still receives HTML here.
  */
 export function singlePostUrl(postId: string): string {
   return `${API_ROOT}/posts/${encodeURIComponent(postId)}`;
 }
 
+/**
+ * Fetch one post by id with creator token.
+ * @async
+ * @throws {Error} Patreon HTTP / parse failures.
+ */
 export async function fetchPostById(
   opts: PatreonFetchOptions,
   postId: string
@@ -78,10 +103,10 @@ export async function fetchPostById(
 }
 
 /**
- * One page of members for a campaign.
- * Requires creator authorize scopes `campaigns.members`; add `campaigns.members[email]` when
- * `fields[member]` includes `email` (see `PATREON_CREATOR_OAUTH_SCOPES` in
- * `patreon-creator-oauth-scopes.ts`).
+ * Members list URL for a campaign (first page or `links.next`).
+ * Requires creator scopes `campaigns.members`; add `campaigns.members[email]` when
+ * `fields[member]` includes `email` (see `PATREON_CREATOR_OAUTH_SCOPES`).
+ * @security-audit-required Member payloads may include PII (`email`, `full_name`) — do not log raw documents.
  */
 export function membersPageUrl(campaignId: string, nextFullUrl?: string | null): string {
   if (nextFullUrl) return nextFullUrl;
@@ -99,6 +124,11 @@ export function membersPageUrl(campaignId: string, nextFullUrl?: string | null):
   return `${API_ROOT}/campaigns/${encodeURIComponent(campaignId)}/members?${params.toString()}`;
 }
 
+/**
+ * One page of campaign members.
+ * @async
+ * @throws {Error} Patreon HTTP / parse failures.
+ */
 export async function fetchCampaignMembers(
   opts: PatreonFetchOptions,
   campaignId: string,
@@ -107,6 +137,10 @@ export async function fetchCampaignMembers(
   return patreonGet(membersPageUrl(campaignId, nextUrl), opts);
 }
 
+/**
+ * Indexes `included[]` by `type:id` for relationship walks.
+ * @param doc Patreon JSON:API document.
+ */
 export function indexIncluded(doc: JsonApiDocument): Map<string, JsonApiResource> {
   const map = new Map<string, JsonApiResource>();
   for (const r of doc.included ?? []) {
@@ -115,6 +149,10 @@ export function indexIncluded(doc: JsonApiDocument): Map<string, JsonApiResource
   return map;
 }
 
+/**
+ * Normalizes `data` to a resource array (empty when null/undefined).
+ * @param data JSON:API `data` field.
+ */
 export function asDataArray(data: JsonApiDocument["data"]): JsonApiResource[] {
   if (data === null || data === undefined) return [];
   return Array.isArray(data) ? data : [data];

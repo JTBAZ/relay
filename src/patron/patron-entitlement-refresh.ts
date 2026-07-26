@@ -1,6 +1,13 @@
+/**
+ * @fileoverview Patron experience module patron-entitlement-refresh.ts — see exported symbols.
+ * @see {@link ../jsdoc-core-entities.ts}
+ * @see prisma/schema.prisma Account, TenantMembership, and related patron tables
+ * @security-audit-required Patron PII or entitlement paths — audit responses and logs.
+ */
 import { EntitlementSource, type PrismaClient } from "@prisma/client";
-import type { PatreonClient } from "../auth/patreon-client.js";
+import type { SubscribeStarOAuthClient } from "../subscribestar/subscribestar-client.js";
 import { getPatronOAuthTokensForAccount } from "../auth/patron-oauth-credential-store.js";
+import type { PatreonClient } from "../auth/patreon-client.js";
 import type { TokenEncryption } from "../lib/crypto.js";
 import { upsertPatronEntitlementSnapshot } from "../identity/patron-entitlement-snapshot.js";
 import { refreshPatronOAuthTokensWithStoredRefreshToken } from "../patreon/patron-oauth-refresh.js";
@@ -9,6 +16,7 @@ import {
   fetchPatronIdentity,
   type PatreonIdentityDocument
 } from "../patreon/patreon-user-identity.js";
+import { syncSubscribeStarPatronEntitlements } from "../subscribestar/subscribestar-patron-entitlement-sync.js";
 
 async function resolvePatreonCampaignNumericId(
   prisma: PrismaClient,
@@ -112,10 +120,56 @@ export async function refreshPatronEntitlementSnapshotFromPatreon(args: {
     relayCreatorId: args.relayCreatorId,
     entitledTierIds: sync.tier_ids,
     source: args.source,
-    campaignId: args.snapshotCampaignId
+    campaignId: args.snapshotCampaignId,
+    crossProviderMergeSource: "patreon"
   });
 
   return { ok: true };
+}
+
+/**
+ * PE-H — Stale refresh path for SubscribeStar subscriber OAuth (mirrors
+ * {@link refreshPatronEntitlementSnapshotFromPatreon}).
+ */
+export async function refreshPatronEntitlementSnapshotFromSubscribeStar(args: {
+  prisma: PrismaClient;
+  encryption: TokenEncryption;
+  subscribeStarOAuthClient: SubscribeStarOAuthClient;
+  fetchImpl: typeof fetch;
+  graphqlUrl: string;
+  patronMembershipId: string;
+  relayCreatorId: string;
+  snapshotCampaignId: string | null;
+  source: EntitlementSource;
+}): Promise<{ ok: true } | { ok: false; reason: string }> {
+  if (
+    args.source !== EntitlementSource.scheduled_refresh &&
+    args.source !== EntitlementSource.webhook
+  ) {
+    return { ok: false, reason: "invalid_source_for_refresh" };
+  }
+
+  const m = await args.prisma.tenantMembership.findUnique({
+    where: { id: args.patronMembershipId },
+    select: { accountId: true }
+  });
+  if (!m) {
+    return { ok: false, reason: "membership_not_found" };
+  }
+
+  const r = await syncSubscribeStarPatronEntitlements({
+    prisma: args.prisma,
+    encryption: args.encryption,
+    fetchImpl: args.fetchImpl,
+    graphqlUrl: args.graphqlUrl,
+    patronMembershipId: args.patronMembershipId,
+    relayCreatorId: args.relayCreatorId,
+    accountId: m.accountId,
+    subscribeStarOAuthClient: args.subscribeStarOAuthClient,
+    source: args.source,
+    snapshotCampaignId: args.snapshotCampaignId
+  });
+  return r.ok ? { ok: true } : r;
 }
 
 /**

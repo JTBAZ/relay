@@ -1,0 +1,42 @@
+{
+  "name": "@relay/escape-hatch",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": "^20.19.0 || ^22.12.0 || >=24.0.0"
+  },
+  "scripts": {
+    "fixture": "tsx src/cli.ts fixture",
+    "wizard": "tsx src/cli.ts wizard",
+    "build-site": "tsx src/cli.ts build",
+    "from-relay": "tsx src/cli.ts from-relay",
+    "import-relay-dump": "tsx src/cli.ts import-relay-dump",
+    "migrate-media": "tsx src/cli.ts migrate-media",
+    "library-truth": "tsx src/cli.ts library-truth",
+    "parity-report": "tsx src/cli.ts parity-report",
+    "zip": "tsx src/cli.ts zip",
+    "status": "tsx src/cli.ts status",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.1029.0",
+    "@aws-sdk/s3-request-presigner": "^3.1029.0",
+    "archiver": "^7.0.1",
+    "relay": "file:../..",
+    "stripe": "^22.3.2"
+  },
+  "devDependencies": {
+    "@supabase/ssr": "^0.6.1",
+    "@supabase/supabase-js": "^2.49.8",
+    "@types/archiver": "^6.0.3",
+    "@types/node": "^20",
+    "@types/pg": "^8.15.4",
+    "next": "15.5.21",
+    "pg": "^8.16.0",
+    "tsx": "^4.19.3",
+    "typescript": "^5",
+    "vitest": "^3.0.5"
+  }
+}

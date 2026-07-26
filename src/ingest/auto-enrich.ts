@@ -1,3 +1,9 @@
+/**
+ * @fileoverview Pre-apply ingest enrichments (e.g. `relay_tier_all_patrons` expansion).
+ * @description Mutates batch posts in place and emits human-readable `ingest_notes` lines.
+ * @see ../patreon/expand-all-patrons-tiers.js
+ */
+
 import {
   expandAllPatronsTierIds,
   hasCampaignPatreonTierRows,
@@ -12,8 +18,9 @@ export type EnrichBatchResult = {
 };
 
 /**
- * Pre-apply ingest rules: expands `relay_tier_all_patrons` to concrete `patreon_tier_*`
- * ids when the batch includes a campaign tier catalog (see `expand-all-patrons-tiers.ts`).
+ * @description Returns possibly mutated batch and human-facing ingest notes.
+ * @param {import("./types.js").SyncBatchInput} batch
+ * @returns {EnrichBatchResult}
  */
 export function enrichBatch(batch: SyncBatchInput): EnrichBatchResult {
   const notes: string[] = [];

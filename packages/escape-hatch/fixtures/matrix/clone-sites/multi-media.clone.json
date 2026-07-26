@@ -1,0 +1,72 @@
+{
+  "contract_version": "clone-site-model/1.0.0",
+  "site_id": "site_fixture_multi_media",
+  "creator_id": "cr_fixture_gallery",
+  "generated_at": "2026-07-22T16:15:00.000Z",
+  "base_url": "http://localhost:3001",
+  "tiers": [
+    {
+      "tier_id": "t_silver",
+      "title": "Silver",
+      "access_level": "tier_gated",
+      "amount_cents": 500
+    },
+    {
+      "tier_id": "t_gold",
+      "title": "Gold",
+      "access_level": "tier_gated",
+      "amount_cents": 1000
+    }
+  ],
+  "posts": [
+    {
+      "post_id": "p_gallery_clone",
+      "slug": "gallery-clone",
+      "title": "Gallery Clone",
+      "published_at": "2026-07-09T12:00:00.000Z",
+      "tag_ids": ["gallery"],
+      "access": {
+        "level": "tier_gated",
+        "tier_ids": ["t_silver"],
+        "match_mode": "tier_or_higher"
+      },
+      "media": [
+        {
+          "media_id": "m_gallery_a",
+          "mime_type": "image/svg+xml",
+          "has_export": true,
+          "content_path": "/media/m_gallery_a.svg"
+        },
+        {
+          "media_id": "m_gallery_b",
+          "mime_type": "image/svg+xml",
+          "has_export": true,
+          "content_path": "/media/m_gallery_b.svg"
+        },
+        {
+          "media_id": "m_gallery_c",
+          "mime_type": "image/svg+xml",
+          "has_export": true,
+          "content_path": "/media/m_gallery_c.svg"
+        }
+      ]
+    },
+    {
+      "post_id": "p_attachment_only",
+      "slug": "attachment-no-cover",
+      "title": "Attachment Without Cover",
+      "published_at": "2026-07-09T13:00:00.000Z",
+      "tag_ids": ["attachment"],
+      "access": { "level": "public", "tier_ids": [] },
+      "media": [
+        {
+          "media_id": "m_attachment",
+          "mime_type": "application/pdf",
+          "has_export": true,
+          "content_path": "/media/m_attachment.svg"
+        }
+      ]
+    }
+  ],
+  "total_media": 4
+}

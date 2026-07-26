@@ -12,6 +12,10 @@ import {
   parseRelayExtensionOrigins,
   RELAY_EXTENSION_AUTH_API_PREFIX
 } from "../src/lib/relay-extension-origins.js";
+import {
+  isCredentialedCorsOrigin,
+  parseAllowedWebOrigins
+} from "../src/lib/relay-cors.js";
 import { createApp } from "../src/server.js";
 
 function fileBackedConfig(tempDir: string) {
@@ -110,7 +114,20 @@ describe("Extension API CORS (EXT-0E)", () => {
     expect(res.status).toBe(403);
   });
 
-  it("OPTIONS /api/v1/patreon/cookie: reflects arbitrary Origin with credentials (unchanged)", async () => {
+  it("OPTIONS consent/start: localhost web origin gets 204 with credentials in dev", async () => {
+    process.env.RELAY_EXTENSION_ORIGINS = "chrome-extension://listedid";
+    const tempDir = await mkdtemp(join(tmpdir(), "relay-ext-cors-web-start-"));
+    const { app } = createApp(fileBackedConfig(tempDir));
+    const res = await request(app)
+      .options("/api/v1/auth/extension/consent/start")
+      .set("Origin", "http://localhost:3000")
+      .set("Access-Control-Request-Method", "POST");
+    expect(res.status).toBe(204);
+    expect(res.headers["access-control-allow-origin"]).toBe("http://localhost:3000");
+    expect(res.headers["access-control-allow-credentials"]).toBe("true");
+  });
+
+  it("OPTIONS /api/v1/patreon/cookie: non-allowlisted origin receives wildcard, no credentials", async () => {
     const tempDir = await mkdtemp(join(tmpdir(), "relay-cookie-cors-"));
     const { app } = createApp(fileBackedConfig(tempDir));
     const res = await request(app)
@@ -118,7 +135,42 @@ describe("Extension API CORS (EXT-0E)", () => {
       .set("Origin", "https://any.example")
       .set("Access-Control-Request-Method", "POST");
     expect(res.status).toBe(204);
-    expect(res.headers["access-control-allow-origin"]).toBe("https://any.example");
+    expect(res.headers["access-control-allow-origin"]).toBe("*");
+    expect(res.headers["access-control-allow-credentials"]).toBeUndefined();
+  });
+
+  it("OPTIONS /api/v1/patreon/cookie: allowlisted origin receives credentials header", async () => {
+    const tempDir = await mkdtemp(join(tmpdir(), "relay-cookie-cors-ok-"));
+    const { app } = createApp(fileBackedConfig(tempDir));
+    const res = await request(app)
+      .options("/api/v1/patreon/cookie")
+      .set("Origin", "http://localhost:3000")
+      .set("Access-Control-Request-Method", "POST");
+    expect(res.status).toBe(204);
+    // localhost is trusted in dev (NODE_ENV !== "production")
+    expect(res.headers["access-control-allow-origin"]).toBe("http://localhost:3000");
     expect(res.headers["access-control-allow-credentials"]).toBe("true");
+  });
+});
+
+describe("relay-cors allowlist helpers (R-SEC-03)", () => {
+  it("parseAllowedWebOrigins parses comma-separated origins", () => {
+    const set = parseAllowedWebOrigins({
+      RELAY_ALLOWED_WEB_ORIGINS: "https://app.relayapp.me, https://www.relayapp.me"
+    });
+    expect(set).toEqual(new Set(["https://app.relayapp.me", "https://www.relayapp.me"]));
+  });
+
+  it("isCredentialedCorsOrigin trusts configured origins in production", () => {
+    const allowed = new Set(["https://app.relayapp.me"]);
+    expect(isCredentialedCorsOrigin("https://app.relayapp.me", allowed, true)).toBe(true);
+    expect(isCredentialedCorsOrigin("https://evil.example", allowed, true)).toBe(false);
+  });
+
+  it("isCredentialedCorsOrigin trusts localhost in development only", () => {
+    const empty = new Set<string>();
+    expect(isCredentialedCorsOrigin("http://localhost:3000", empty, false)).toBe(true);
+    expect(isCredentialedCorsOrigin("http://127.0.0.1:8787", empty, false)).toBe(true);
+    expect(isCredentialedCorsOrigin("http://localhost:3000", empty, true)).toBe(false);
   });
 });

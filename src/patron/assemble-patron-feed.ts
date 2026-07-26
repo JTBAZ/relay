@@ -1,18 +1,31 @@
+/**
+ * @fileoverview Patron experience module assemble-patron-feed.ts — see exported symbols.
+ * @see {@link ../jsdoc-core-entities.ts}
+ * @see prisma/schema.prisma Account, TenantMembership, and related patron tables
+ * @security-audit-required Patron PII or entitlement paths — audit responses and logs.
+ */
 import type { CreatorProfile, PrismaClient, Tier } from "@prisma/client";
 import { MediaUpstreamStatus, PostUpstreamStatus } from "@prisma/client";
 import type { TierRow } from "../ingest/canonical-store.js";
 import {
   evaluateTierRules,
-  paidUserTierIds,
   resolvePostAccessLevel,
   canAccessPost
 } from "../clone/tier-rules.js";
-import type { AccessLevel } from "../clone/types.js";
-import type { PatronFeedBundleJson, PatronFeedTierLabel } from "./patron-feed-types.js";
+import type { PatronFeedBundleJson } from "./patron-feed-types.js";
+import { loadHiddenPostIdsByCreator } from "../gallery/hidden-post-ids.js";
+import { loadMaturePostIdsByCreator } from "../gallery/mature-post-ids.js";
+import {
+  resolvePatronEntitlementDisplayLabel,
+  resolvePostTierDisplayLabel
+} from "../gallery/tier-display-label.js";
+import { loadEffectivePromoForViewer } from "../marketing/load-effective-promo.js";
 
 const MAX_POSTS_SCAN = 800;
 const DEFAULT_LIMIT = 30;
 const MAX_LIMIT = 100;
+const LOCKED_POSTS_LIMIT = 10;
+const LOCKED_POSTS_RECENT_MS = 30 * 24 * 60 * 60 * 1000;
 
 export type PatronFeedFilter =
   | "all"
@@ -29,6 +42,7 @@ export type AssemblePatronFeedArgs = {
   limit?: number;
   cursor?: string | null;
   filter?: PatronFeedFilter | null;
+  hideMatureContent?: boolean;
 };
 
 type CursorPayload = { t: number; id: string };
@@ -78,16 +92,6 @@ function mimeToMediaType(mime: string | null | undefined): "writing" | "photo" |
   return "writing";
 }
 
-function accessLevelToTierLabel(
-  level: AccessLevel,
-  tierIds: string[]
-): PatronFeedTierLabel {
-  if (level === "public") return "Free";
-  const joined = tierIds.join(" ").toLowerCase();
-  if (joined.includes("studio")) return "Studio";
-  return "Supporter";
-}
-
 function excerptFromDescription(raw: string | null | undefined, title: string): string {
   const s = (raw ?? "").replace(/\s+/g, " ").trim();
   if (!s) return title;
@@ -133,6 +137,7 @@ function parseFilter(raw: string | null | undefined): PatronFeedFilter {
  */
 export async function assemblePatronFeed(args: AssemblePatronFeedArgs): Promise<PatronFeedBundleJson> {
   const { prisma, patronMembershipId, viewerEmail } = args;
+  const now = new Date();
   const limit = Math.min(
     Math.max(1, args.limit ?? DEFAULT_LIMIT),
     MAX_LIMIT
@@ -175,6 +180,17 @@ export async function assemblePatronFeed(args: AssemblePatronFeedArgs): Promise<
       .map((p) => [p.tenant.relayCreatorId as string, p])
   );
 
+  const hiddenPostIdsByCreator =
+    followedIds.length === 0
+      ? new Map<string, Set<string>>()
+      : await loadHiddenPostIdsByCreator(prisma, followedIds);
+
+  const hideMatureContent = args.hideMatureContent === true;
+  const maturePostIdsByCreator =
+    hideMatureContent && followedIds.length > 0
+      ? await loadMaturePostIdsByCreator(prisma, followedIds)
+      : new Map<string, Set<string>>();
+
   const postsRaw =
     followedIds.length === 0
       ? []
@@ -191,7 +207,6 @@ export async function assemblePatronFeed(args: AssemblePatronFeedArgs): Promise<
             },
             mediaAssets: {
               where: { upstreamStatus: MediaUpstreamStatus.active },
-              take: 1,
               orderBy: { currentIngestedAt: "desc" }
             }
           },
@@ -210,14 +225,36 @@ export async function assemblePatronFeed(args: AssemblePatronFeedArgs): Promise<
     primaryMimeType: string | null;
     /** Full export blob (`/content`); patron feed avoids blurred `/preview` for entitled rows. */
     coverContentPath: string | null;
+    primaryMediaId: string | null;
+    mediaItems: Array<{
+      mediaId: string;
+      mimeType: string | null;
+      contentPath: string | null;
+      previewPath: string | null;
+    }>;
     isPublicPost: boolean;
   };
 
   const candidates: Row[] = [];
+  const lockedCandidates: Row[] = [];
 
   for (const post of postsRaw) {
     const v = post.versions[0];
-    if (!v) continue;
+    if (!v?.publishedAt) continue;
+    if (hiddenPostIdsByCreator.get(post.creatorId)?.has(post.id)) {
+      continue;
+    }
+    if (hideMatureContent && maturePostIdsByCreator.get(post.creatorId)?.has(post.id)) {
+      continue;
+    }
+    const postMediaAssets = post.mediaAssets ?? [];
+    const mediaById = new Map(postMediaAssets.map((m) => [m.id, m]));
+    const orderedMedia = (v.mediaIds ?? [])
+      .map((id) => mediaById.get(id))
+      .filter((m): m is (typeof postMediaAssets)[number] => Boolean(m));
+    const displayMedia =
+      orderedMedia.length > 0 ? orderedMedia : postMediaAssets.length > 0 ? [postMediaAssets[0]!] : [];
+    const media = displayMedia[0];
     const snap = snapByCreator.get(post.creatorId);
     const entitled = snap?.entitledTierIds ?? [];
     const tierCatalog = tiersByCreator.get(post.creatorId) ?? {};
@@ -231,10 +268,30 @@ export async function assemblePatronFeed(args: AssemblePatronFeedArgs): Promise<
     const allowed =
       post.isPublic || canAccessPost(postAccess, entitled, tierCatalog);
     if (!allowed) {
+      const stale = !snap || (snap.staleAfter != null && snap.staleAfter.getTime() < now.getTime());
+      const publishedRecently =
+        v.publishedAt.getTime() >= now.getTime() - LOCKED_POSTS_RECENT_MS;
+      if (!stale && publishedRecently) {
+        const media = post.mediaAssets[0];
+        const mime = media?.currentMimeType;
+        lockedCandidates.push({
+          postId: post.id,
+          creatorId: post.creatorId,
+          publishedAt: v.publishedAt,
+          title: v.title,
+          description: null,
+          tierIds: v.tierIds,
+          mediaType: mimeToMediaType(mime),
+          primaryMimeType: mime ?? null,
+          coverContentPath: null,
+          primaryMediaId: media?.id ?? null,
+          mediaItems: [],
+          isPublicPost: post.isPublic
+        });
+      }
       continue;
     }
 
-    const media = post.mediaAssets[0];
     const mime = media?.currentMimeType;
 
     // PE-B / PE-C — never expose `currentUpstreamUrl` (Patreon CDN, gated by Patreon's own
@@ -243,10 +300,23 @@ export async function assemblePatronFeed(args: AssemblePatronFeedArgs): Promise<
     // (when `RELAY_EXPORT_REQUIRE_TIER_ACCESS=1`). `currentStorageKey` is the signal that
     // an export blob has actually been materialized; without it, the export endpoints would
     // 404 and we'd render a broken-image icon — fall back to a placeholder instead.
-    const hasExportedBlob = Boolean(media?.id && media.currentStorageKey);
-    const coverContentPath = hasExportedBlob
-      ? `/api/v1/export/media/${encodeURIComponent(post.creatorId)}/${encodeURIComponent(media!.id)}/content`
-      : null;
+    const mediaItems = displayMedia.map((item) => {
+      const hasExportedBlob = Boolean(item.id && item.currentStorageKey);
+      const contentPath = hasExportedBlob
+        ? `/api/v1/export/media/${encodeURIComponent(post.creatorId)}/${encodeURIComponent(item.id)}/content`
+        : null;
+      const previewPath =
+        hasExportedBlob && item.currentMimeType?.startsWith("image/")
+          ? `/api/v1/export/media/${encodeURIComponent(post.creatorId)}/${encodeURIComponent(item.id)}/preview`
+          : null;
+      return {
+        mediaId: item.id,
+        mimeType: item.currentMimeType ?? null,
+        contentPath,
+        previewPath
+      };
+    });
+    const coverContentPath = mediaItems[0]?.contentPath ?? null;
 
     candidates.push({
       postId: post.id,
@@ -258,11 +328,20 @@ export async function assemblePatronFeed(args: AssemblePatronFeedArgs): Promise<
       mediaType: mimeToMediaType(mime),
       primaryMimeType: mime ?? null,
       coverContentPath,
+      primaryMediaId: media?.id ?? null,
+      mediaItems,
       isPublicPost: post.isPublic
     });
   }
 
   candidates.sort((a, b) => {
+    const ar = { publishedAt: a.publishedAt, id: a.postId };
+    const br = { publishedAt: b.publishedAt, id: b.postId };
+    if (isNewer(ar, br)) return -1;
+    if (isNewer(br, ar)) return 1;
+    return 0;
+  });
+  lockedCandidates.sort((a, b) => {
     const ar = { publishedAt: a.publishedAt, id: a.postId };
     const br = { publishedAt: b.publishedAt, id: b.postId };
     if (isNewer(ar, br)) return -1;
@@ -305,6 +384,30 @@ export async function assemblePatronFeed(args: AssemblePatronFeedArgs): Promise<
     nextCursor = encodeCursor({ publishedAt: tail.publishedAt, id: tail.postId });
   }
 
+  let entitlement_degraded = false;
+  let entitlement_stale_since: string | null = null;
+  if (followedIds.length > 0) {
+    let earliestStaleMs: number | null = null;
+    for (const rid of followedIds) {
+      const s = snapByCreator.get(rid);
+      if (!s) {
+        entitlement_degraded = true;
+        continue;
+      }
+      const sa = s.staleAfter;
+      if (sa != null && sa.getTime() < now.getTime()) {
+        entitlement_degraded = true;
+        const m = sa.getTime();
+        if (earliestStaleMs == null || m < earliestStaleMs) {
+          earliestStaleMs = m;
+        }
+      }
+    }
+    if (earliestStaleMs != null) {
+      entitlement_stale_since = new Date(earliestStaleMs).toISOString();
+    }
+  }
+
   const patronProfile = await prisma.patronProfile.findUnique({
     where: { tenantMembershipId: patronMembershipId },
     select: {
@@ -336,9 +439,7 @@ export async function assemblePatronFeed(args: AssemblePatronFeedArgs): Promise<
     // (Patreon Free Tier members do not unlock paid posts, so labelling them as Supporter
     // would mis-signal access). A future "Free member" badge (Roadmap P3) can split these.
     const catalog = tiersByCreator.get(relayCreatorId) ?? {};
-    const paid = paidUserTierIds(tierIds, catalog);
-    const tierLabel: PatronFeedTierLabel =
-      paid.length === 0 ? "Free" : "Supporter";
+    const tierLabel = resolvePatronEntitlementDisplayLabel(tierIds, catalog);
     return {
       id: relayCreatorId,
       handle,
@@ -360,11 +461,19 @@ export async function assemblePatronFeed(args: AssemblePatronFeedArgs): Promise<
       c.creatorId
     );
     const tierCatalog = tiersByCreator.get(c.creatorId) ?? {};
-    const tierRules = evaluateTierRules(tierCatalog);
-    const postAccess = resolvePostAccessLevel(c.tierIds, tierRules);
-    const tierLabel: PatronFeedTierLabel = c.isPublicPost
-      ? "Free"
-      : accessLevelToTierLabel(postAccess.level, postAccess.tier_ids);
+    const snap = snapByCreator.get(c.creatorId);
+    const patronTierLabel = resolvePatronEntitlementDisplayLabel(
+      snap?.entitledTierIds ?? [],
+      tierCatalog
+    );
+    const tierLabel = resolvePostTierDisplayLabel({
+      tierIds: c.tierIds,
+      tierCatalog,
+      isPublicPost: c.isPublicPost
+    });
+
+    const feed_item_source = "subscribed" as const;
+    const kind = "followed" as const;
 
     const creator = {
       id: c.creatorId,
@@ -376,12 +485,13 @@ export async function assemblePatronFeed(args: AssemblePatronFeedArgs): Promise<
       followerCount: 0,
       postCount: 0,
       onRelay: true as const,
-      patronTierLabel: tierLabel
+      patronTierLabel
     };
 
     const placeholder = "/placeholder.svg?height=600&width=1200";
-    const content = c.coverContentPath;
-    const mimeLower = (c.primaryMimeType ?? "").toLowerCase();
+    const primaryMedia = c.mediaItems[0];
+    const content = primaryMedia?.contentPath ?? c.coverContentPath;
+    const mimeLower = (primaryMedia?.mimeType ?? c.primaryMimeType ?? "").toLowerCase();
     let coverImageUrl: string | undefined;
     if (!content) {
       coverImageUrl = placeholder;
@@ -393,18 +503,43 @@ export async function assemblePatronFeed(args: AssemblePatronFeedArgs): Promise<
       coverImageUrl = placeholder;
     }
     const highResImageUrl = content ?? placeholder;
+    const mediaItems =
+      c.mediaItems.length > 0
+        ? c.mediaItems.map((item) => ({
+            mediaId: item.mediaId,
+            url: item.contentPath ?? undefined,
+            previewUrl: item.previewPath ?? undefined,
+            mimeType: item.mimeType
+          }))
+        : c.primaryMediaId && content
+          ? [
+              {
+                mediaId: c.primaryMediaId,
+                url: content,
+                mimeType: c.primaryMimeType
+              }
+            ]
+          : undefined;
+    const galleryImageUrls = c.mediaItems
+      .map((item) => item.contentPath)
+      .filter((u): u is string => Boolean(u));
 
     return {
       id: c.postId,
-      kind: "followed" as const,
+      kind,
+      feed_item_source,
       creator,
       title: c.title,
       excerpt: excerptFromDescription(c.description, c.title),
       description: c.description ?? undefined,
       mediaType: c.mediaType,
-      primaryMimeType: c.primaryMimeType,
+      primaryMimeType: primaryMedia?.mimeType ?? c.primaryMimeType,
       coverImageUrl,
       highResImageUrl,
+      galleryImageUrls: galleryImageUrls.length > 0 ? galleryImageUrls : undefined,
+      primaryMediaId: primaryMedia?.mediaId ?? c.primaryMediaId ?? undefined,
+      mediaItems,
+      mediaCount: mediaItems?.length,
       publishedAt: c.publishedAt.toISOString(),
       likeCount: 0,
       commentCount: 0,
@@ -413,8 +548,73 @@ export async function assemblePatronFeed(args: AssemblePatronFeedArgs): Promise<
     };
   });
 
+  const lockedSlice = lockedCandidates.slice(0, LOCKED_POSTS_LIMIT);
+  const lockedPosts = await Promise.all(
+    lockedSlice.map(async (c) => {
+      const prof = profileByCreator.get(c.creatorId);
+      const { handle, displayName, discipline, avatarUrl } = creatorIdentityFromProfile(
+        prof,
+        c.creatorId
+      );
+      const tierCatalog = tiersByCreator.get(c.creatorId) ?? {};
+      const snap = snapByCreator.get(c.creatorId);
+      const patronTierLabel = resolvePatronEntitlementDisplayLabel(
+        snap?.entitledTierIds ?? [],
+        tierCatalog
+      );
+      const tierLabel = resolvePostTierDisplayLabel({
+        tierIds: c.tierIds,
+        tierCatalog,
+        isPublicPost: c.isPublicPost
+      });
+      const entitled = snap?.entitledTierIds ?? [];
+      const audienceKeys =
+        entitled.length > 0 ? entitled.map((t) => `tier:${t}`) : ["anonymous"];
+      const catalogTiers = Object.values(tierCatalog).map((t) => ({
+        relay_tier_id: t.tier_id,
+        amount_cents: typeof t.amount_cents === "number" ? t.amount_cents : null
+      }));
+      let effective_promo = null;
+      try {
+        effective_promo = await loadEffectivePromoForViewer({
+          prisma,
+          creatorId: c.creatorId,
+          postId: c.postId,
+          audienceKeys,
+          permissionOutcome: "locked_preview",
+          postTierIds: c.tierIds,
+          catalogTiers
+        });
+      } catch {
+        effective_promo = null;
+      }
+
+      return {
+        id: c.postId,
+        creator: {
+          id: c.creatorId,
+          handle,
+          displayName,
+          discipline,
+          avatarUrl,
+          isFollowed: true,
+          followerCount: 0,
+          postCount: 0,
+          onRelay: true as const,
+          patronTierLabel
+        },
+        title: c.title,
+        mediaType: c.mediaType,
+        publishedAt: c.publishedAt.toISOString(),
+        tierLabel,
+        effective_promo
+      };
+    })
+  );
+
   return {
     feedPosts,
+    lockedPosts,
     discoverItems: [],
     currentViewer: {
       id: patronMembershipId,
@@ -426,7 +626,9 @@ export async function assemblePatronFeed(args: AssemblePatronFeedArgs): Promise<
     },
     followedCreators,
     notifications: [],
-    next_cursor: nextCursor
+    next_cursor: nextCursor,
+    entitlement_degraded,
+    entitlement_stale_since
   };
 }
 

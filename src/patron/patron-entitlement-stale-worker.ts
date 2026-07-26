@@ -1,11 +1,23 @@
 /**
+ * @fileoverview Patron experience module patron-entitlement-stale-worker.ts — see exported symbols.
+ * @see {@link ../jsdoc-core-entities.ts}
+ * @see prisma/schema.prisma Account, TenantMembership, and related patron tables
+ * @security-audit-required Patron PII or entitlement paths — audit responses and logs.
+ */
+/**
  * PE-H — Interval worker: refresh patron entitlement snapshots past `staleAfter` using stored
  * Patreon OAuth (no BullMQ; same operational pattern as `incremental-sync-worker`).
  */
 import { EntitlementSource, type PrismaClient } from "@prisma/client";
+import type { SubscribeStarOAuthClient } from "../subscribestar/subscribestar-client.js";
+import { getPatronOAuthTokensForAccount } from "../auth/patron-oauth-credential-store.js";
+import { getPatronSubscribestarOAuthTokensForAccount } from "../auth/patron-subscribestar-oauth-credential-store.js";
 import type { PatreonClient } from "../auth/patreon-client.js";
 import type { TokenEncryption } from "../lib/crypto.js";
-import { refreshPatronEntitlementSnapshotFromPatreon } from "./patron-entitlement-refresh.js";
+import {
+  refreshPatronEntitlementSnapshotFromPatreon,
+  refreshPatronEntitlementSnapshotFromSubscribeStar
+} from "./patron-entitlement-refresh.js";
 
 export type PatronEntitlementStaleCycleResult = {
   cycle_started_at: string;
@@ -15,6 +27,24 @@ export type PatronEntitlementStaleCycleResult = {
   failed: number;
 };
 
+export type RunPatronEntitlementStaleRefreshOnceArgs = {
+  prisma: PrismaClient;
+  encryption: TokenEncryption;
+  patreonClient: PatreonClient;
+  fetchImpl: typeof fetch;
+  batchSize: number;
+  now?: Date;
+  /**
+   * When set, only consider this `PatronEntitlementSnapshot.patronMembershipId` (BullMQ targeted job).
+   * Still requires `staleAfter < now` to match batch semantics.
+   */
+  patronMembershipId?: string;
+  /** Optional SubscribeStar subscriber OAuth client for dual-provider refresh. */
+  subscribeStarPatronOAuthClient?: SubscribeStarOAuthClient;
+  /** e.g. `https://subscribestar.adult/api/graphql/v1`; required when `subscribeStarPatronOAuthClient` is set. */
+  subscribeStarPatronGraphqlUrl?: string;
+};
+
 function parsePositiveInt(raw: string | undefined, fallback: number): number {
   if (raw === undefined || raw.trim() === "") return fallback;
   const n = Number(raw);
@@ -22,18 +52,18 @@ function parsePositiveInt(raw: string | undefined, fallback: number): number {
   return Math.floor(n);
 }
 
-export async function runPatronEntitlementStaleRefreshCycle(args: {
-  prisma: PrismaClient;
-  encryption: TokenEncryption;
-  patreonClient: PatreonClient;
-  fetchImpl: typeof fetch;
-  batchSize: number;
-  now?: Date;
-}): Promise<PatronEntitlementStaleCycleResult> {
+/**
+ * One batch: load stale entitlement snapshots (optional single membership), refresh each via Patreon OAuth.
+ */
+export async function runPatronEntitlementStaleRefreshOnce(
+  args: RunPatronEntitlementStaleRefreshOnceArgs
+): Promise<PatronEntitlementStaleCycleResult> {
   const now = args.now ?? new Date();
+  const targeted = args.patronMembershipId?.trim();
   const rows = await args.prisma.patronEntitlementSnapshot.findMany({
     where: {
-      staleAfter: { lt: now }
+      staleAfter: { lt: now },
+      ...(targeted ? { patronMembershipId: targeted } : {})
     },
     take: args.batchSize,
     orderBy: { staleAfter: "asc" }
@@ -44,19 +74,64 @@ export async function runPatronEntitlementStaleRefreshCycle(args: {
   let failed = 0;
 
   for (const row of rows) {
-    const r = await refreshPatronEntitlementSnapshotFromPatreon({
-      prisma: args.prisma,
-      encryption: args.encryption,
-      patreonClient: args.patreonClient,
-      fetchImpl: args.fetchImpl,
-      patronMembershipId: row.patronMembershipId,
-      relayCreatorId: row.relayCreatorId,
-      snapshotCampaignId: row.campaignId,
-      source: EntitlementSource.scheduled_refresh
+    const m = await args.prisma.tenantMembership.findUnique({
+      where: { id: row.patronMembershipId },
+      select: { accountId: true }
     });
-    if (r.ok) {
+    if (!m) {
+      failed += 1;
+      continue;
+    }
+
+    const patreonTok = await getPatronOAuthTokensForAccount(
+      args.prisma,
+      m.accountId,
+      args.encryption
+    );
+    const substarTok = await getPatronSubscribestarOAuthTokensForAccount(
+      args.prisma,
+      m.accountId,
+      args.encryption
+    );
+
+    let anyOk = false;
+
+    if (patreonTok?.access_token?.trim()) {
+      const r = await refreshPatronEntitlementSnapshotFromPatreon({
+        prisma: args.prisma,
+        encryption: args.encryption,
+        patreonClient: args.patreonClient,
+        fetchImpl: args.fetchImpl,
+        patronMembershipId: row.patronMembershipId,
+        relayCreatorId: row.relayCreatorId,
+        snapshotCampaignId: row.campaignId,
+        source: EntitlementSource.scheduled_refresh
+      });
+      if (r.ok) anyOk = true;
+    }
+
+    if (
+      substarTok?.access_token?.trim() &&
+      args.subscribeStarPatronOAuthClient &&
+      args.subscribeStarPatronGraphqlUrl?.trim()
+    ) {
+      const sr = await refreshPatronEntitlementSnapshotFromSubscribeStar({
+        prisma: args.prisma,
+        encryption: args.encryption,
+        subscribeStarOAuthClient: args.subscribeStarPatronOAuthClient,
+        fetchImpl: args.fetchImpl,
+        graphqlUrl: args.subscribeStarPatronGraphqlUrl.trim(),
+        patronMembershipId: row.patronMembershipId,
+        relayCreatorId: row.relayCreatorId,
+        snapshotCampaignId: row.campaignId,
+        source: EntitlementSource.scheduled_refresh
+      });
+      if (sr.ok) anyOk = true;
+    }
+
+    if (anyOk) {
       refreshed += 1;
-    } else if (r.reason === "no_credential" || r.reason === "no_campaign_id") {
+    } else if (!patreonTok?.access_token?.trim() && !substarTok?.access_token?.trim()) {
       skipped += 1;
     } else {
       failed += 1;
@@ -73,6 +148,11 @@ export async function runPatronEntitlementStaleRefreshCycle(args: {
 }
 
 /**
+ * @deprecated Use {@link runPatronEntitlementStaleRefreshOnce}; retained for existing imports.
+ */
+export const runPatronEntitlementStaleRefreshCycle = runPatronEntitlementStaleRefreshOnce;
+
+/**
  * @param intervalMs Minimum 60_000. When 0 or env unset at call site, do not start.
  */
 export function startPatronEntitlementStaleRefreshWorker(args: {
@@ -82,6 +162,8 @@ export function startPatronEntitlementStaleRefreshWorker(args: {
   fetchImpl: typeof fetch;
   intervalMs: number;
   batchSize: number;
+  subscribeStarPatronOAuthClient?: SubscribeStarOAuthClient;
+  subscribeStarPatronGraphqlUrl?: string;
 }): () => void {
   const intervalMs = Math.max(60_000, args.intervalMs);
   let timer: ReturnType<typeof setInterval> | undefined;
@@ -89,12 +171,14 @@ export function startPatronEntitlementStaleRefreshWorker(args: {
 
   const tick = (): void => {
     if (stopped) return;
-    void runPatronEntitlementStaleRefreshCycle({
+    void runPatronEntitlementStaleRefreshOnce({
       prisma: args.prisma,
       encryption: args.encryption,
       patreonClient: args.patreonClient,
       fetchImpl: args.fetchImpl,
-      batchSize: args.batchSize
+      batchSize: args.batchSize,
+      subscribeStarPatronOAuthClient: args.subscribeStarPatronOAuthClient,
+      subscribeStarPatronGraphqlUrl: args.subscribeStarPatronGraphqlUrl
     }).catch((err: unknown) => {
       // eslint-disable-next-line no-console -- background worker diagnostics
       console.error("Relay: patron entitlement stale refresh cycle error", err);
@@ -110,8 +194,10 @@ export function startPatronEntitlementStaleRefreshWorker(args: {
   };
 }
 
-export function patronEntitlementStaleRefreshIntervalFromEnv(): number {
-  const raw = process.env.RELAY_PATRON_ENTITLEMENT_REFRESH_MS?.trim();
+export function patronEntitlementStaleRefreshIntervalFromEnv(
+  env: NodeJS.ProcessEnv = process.env
+): number {
+  const raw = env.RELAY_PATRON_ENTITLEMENT_REFRESH_MS?.trim();
   if (!raw) return 0;
   const n = Number(raw);
   if (!Number.isFinite(n) || n < 60_000) return 0;

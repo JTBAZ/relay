@@ -1,0 +1,25 @@
+# Optional local Postgres for Path B portable identity (EH-031).
+# Not required for `npm run build` or soft-preview.
+# Do not put production credentials here.
+# Password is deliberately dev-only — never expose this profile on a public interface.
+#
+# Path B init applies 0001_preview_chassis + 0003_portable_identity (no auth.users).
+# Path A (Supabase) does not use this profile — apply 0001+0002 in the Supabase SQL editor.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    profiles: ["db"]
+    environment:
+      POSTGRES_USER: escape_hatch
+      POSTGRES_PASSWORD: escape_hatch_dev_only
+      POSTGRES_DB: escape_hatch
+    ports:
+      # Loopback only — do not bind 0.0.0.0 for the profile database.
+      - "127.0.0.1:5433:5432"
+    volumes:
+      - eh_pg_data:/var/lib/postgresql/data
+      - ./db/docker-init:/docker-entrypoint-initdb.d:ro
+
+volumes:
+  eh_pg_data:

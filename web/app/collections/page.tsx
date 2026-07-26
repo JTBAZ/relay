@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { CollectionsPageClient } from "../components/collections/collections-page-client";
+import { CollectionsPageClient } from "@/app/components/collections/collections-page-client";
 
 export const metadata: Metadata = {
   title: "Relay — Collections",

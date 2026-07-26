@@ -5,6 +5,12 @@ import { useEffect, useState } from "react";
 
 const steps = [
   {
+    href: "/dev/previewizer",
+    title: "Previewizer (dev)",
+    description:
+      "Canvas 2D focal crop, blur/pixelate/censor presets, text overlay, and local export.",
+  },
+  {
     href: "/dev/pipeline-parity",
     title: "Pipeline parity (truth matrix)",
     description:
@@ -16,23 +22,23 @@ const steps = [
     description: "Creator staging — collections, visibility, media. Same creator as below.",
   },
   {
-    href: "/designer",
+    href: "/studio/designer",
     title: "Dev Site Designer",
     description: "Compose hero, sections, and theme; saves to the layout API for this creator.",
   },
   {
-    href: "/visitor",
+    href: "/studio/preview",
     title: "Dev public profile",
     description: "Patron-facing gallery — curated layout + full library toggle, merged hero.",
   },
   {
-    href: "/patron/feed",
+    href: "/feed",
     title: "Supporter home (mock)",
     description:
       "Relay shell: following list (on-Relay vs Patreon-only), Discover, Library; optional live API via dev tools + env.",
   },
   {
-    href: "/patron/former-subscriptions",
+    href: "/former-subscriptions",
     title: "Former subscriptions (mock)",
     description: "Ended pledges with Patreon re-subscribe links — fixtures only.",
   },

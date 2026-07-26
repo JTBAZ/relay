@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Suspense } from "react";
 import { OnboardingWizard } from "@/app/components/onboarding/onboarding-wizard";
 import { resolvePatreonOAuthClientId } from "@/lib/resolve-patreon-oauth-client-id";
+import { resolveSubscribeStarCreatorOAuthClientId } from "@/lib/resolve-subscribestar-oauth-client-id";
 
 export const metadata: Metadata = {
   title: "Relay · Get started",
@@ -11,6 +12,7 @@ export const metadata: Metadata = {
 
 export default function OnboardingPage() {
   const initialPatronClientId = resolvePatreonOAuthClientId();
+  const initialSubscribeStarClientId = resolveSubscribeStarCreatorOAuthClientId();
   return (
     <div className="onboarding-shell min-h-dvh flex-1">
       <Suspense
@@ -24,7 +26,10 @@ export default function OnboardingPage() {
           </div>
         }
       >
-        <OnboardingWizard initialPatronClientId={initialPatronClientId} />
+        <OnboardingWizard
+          initialPatronClientId={initialPatronClientId}
+          initialSubscribeStarClientId={initialSubscribeStarClientId}
+        />
       </Suspense>
     </div>
   );

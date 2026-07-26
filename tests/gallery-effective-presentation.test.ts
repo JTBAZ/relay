@@ -68,4 +68,17 @@ describe("mergePostPresentation", () => {
     expect(m.description).toBe(undefined);
     expect("tier_preview_settings" in m).toBe(false);
   });
+
+  it("surfaces promo_preview_media_id without changing media_ids_ordered", () => {
+    const m = mergePostPresentation(
+      { title: "T", media_ids: ["a", "b"] },
+      {
+        media_order: ["b", "a"],
+        promo_preview_media_id: "staged_teaser"
+      }
+    );
+    expect(m.media_ids_ordered).toEqual(["b", "a"]);
+    expect(m.promo_preview_media_id).toBe("staged_teaser");
+    expect(m.media_ids_ordered).not.toContain("staged_teaser");
+  });
 });

@@ -1,3 +1,10 @@
+/**
+ * @fileoverview Discord bridge ingest: validate payload, fetch attachments with bot token, upload to R2, persist `MediaAsset`.
+ * @description Executes under HMAC-gated internal routes; binds guild/channel via `DiscordChannelBinding`.
+ * @see ../storage/relay-upload-r2.js
+ * @see prisma/schema.prisma DiscordChannelBinding, DiscordMediaIngestKey, MediaAsset
+ */
+
 import { randomUUID } from "node:crypto";
 import {
   MediaIngestOrigin,
@@ -16,6 +23,7 @@ import {
   putR2ObjectBuffer
 } from "../storage/relay-upload-r2.js";
 
+/** @description Attachment slice coming from Discord bridge JSON. */
 export type DiscordIngestAttachmentInput = {
   id: string;
   url: string;
@@ -23,6 +31,7 @@ export type DiscordIngestAttachmentInput = {
   byte_size?: number | null;
 };
 
+/** @description Normalized ingest envelope after JSON validation. */
 export type DiscordIngestPayload = {
   discord_guild_id: string;
   discord_channel_id: string;
@@ -32,6 +41,7 @@ export type DiscordIngestPayload = {
   attachments: DiscordIngestAttachmentInput[];
 };
 
+/** @description Per-attachment processing outcome for operator responses. */
 export type DiscordIngestResultRow = {
   discord_attachment_id: string;
   status: "created" | "idempotent" | "skipped" | "error";
@@ -39,6 +49,7 @@ export type DiscordIngestResultRow = {
   message?: string;
 };
 
+/** @description Batch response summarizing attachment processing. */
 export type DiscordIngestOutcome = {
   relay_creator_id: string;
   results: DiscordIngestResultRow[];
@@ -48,7 +59,12 @@ function isNonEmptyString(v: unknown): v is string {
   return typeof v === "string" && v.trim().length > 0;
 }
 
-/** Validate and normalize JSON body from the Discord bridge. */
+/**
+ * @description Strictly parses unknown JSON into `DiscordIngestPayload`.
+ * Validate and normalize JSON body from the Discord bridge.
+ * @param body Parsed JSON value.
+ * @returns Normalized payload or `null`.
+ */
 export function parseDiscordIngestPayload(body: unknown): DiscordIngestPayload | null {
   if (!body || typeof body !== "object") {
     return null;
@@ -106,6 +122,10 @@ export function parseDiscordIngestPayload(body: unknown): DiscordIngestPayload |
   };
 }
 
+/**
+ * @description Reads `RELAY_DISCORD_BOT_TOKEN` for authenticated attachment downloads.
+ * @returns Token or `null` when unset.
+ */
 export function getDiscordBotTokenFromEnv(): string | null {
   const t = process.env.RELAY_DISCORD_BOT_TOKEN?.trim();
   return t || null;
@@ -135,6 +155,14 @@ async function fetchDiscordAttachment(
 
 /**
  * HMAC-authenticated Discord bridge → download attachment(s) → R2 → `MediaAsset` + `DiscordMediaIngestKey`.
+ * @description Idempotent per `(guild, channel, message, attachment)`; enforces MIME/size policy.
+ * @param prisma Prisma client.
+ * @param r2 Cloudflare R2 config for object writes.
+ * @param payload Validated ingest envelope.
+ * @param fetchImpl Injectable `fetch` for Discord CDN URLs.
+ * @returns Per-attachment results plus `relay_creator_id`, or `{ error: "binding_not_found" }`.
+ * @async
+ * @throws {Error} Transaction failures after R2 writes may leave orphan objects — operators should reconcile.
  */
 export async function executeDiscordIngest(
   prisma: PrismaClient,

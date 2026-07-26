@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { PositionalComment } from "@/lib/relay-fixtures";
 import { CommentPin } from "./comment-pin";
 
@@ -33,7 +33,16 @@ type Props = {
   onClick?: (e: React.MouseEvent<HTMLDivElement>) => void;
   onMouseEnter?: () => void;
   onMouseLeave?: () => void;
+  onMouseMove?: (e: React.MouseEvent<HTMLDivElement>) => void;
   onKeyDown?: (e: React.KeyboardEvent<HTMLDivElement>) => void;
+  /**
+   * Optional interactive "peek cards" behavior:
+   * - back card 1 => next media
+   * - back card 2 => skip ahead by two media
+   */
+  peekInteractive?: boolean;
+  onPeekBack1Click?: () => void;
+  onPeekBack2Click?: () => void;
   role?: string;
   tabIndex?: number;
   "aria-label"?: string;
@@ -91,7 +100,11 @@ export function GalleryMediaStack({
   onClick,
   onMouseEnter,
   onMouseLeave,
+  onMouseMove,
   onKeyDown,
+  peekInteractive = false,
+  onPeekBack1Click,
+  onPeekBack2Click,
   role,
   tabIndex,
   "aria-label": ariaLabel,
@@ -112,6 +125,25 @@ export function GalleryMediaStack({
   const back1Src = urls[(safeIndex + 1) % n];
   const back2Src = n > 2 ? urls[(safeIndex + 2) % n] : undefined;
   const showDeck = visualStack && n > 1;
+  const [visibleSrc, setVisibleSrc] = useState(frontSrc);
+  const [incomingSrc, setIncomingSrc] = useState<string | null>(null);
+  const [incomingReady, setIncomingReady] = useState(false);
+
+  useEffect(() => {
+    if (showDeck || frontSrc === visibleSrc || frontSrc === incomingSrc) return;
+    setIncomingSrc(frontSrc);
+    setIncomingReady(false);
+  }, [frontSrc, incomingSrc, showDeck, visibleSrc]);
+
+  useEffect(() => {
+    if (!incomingSrc || !incomingReady) return;
+    const timer = setTimeout(() => {
+      setVisibleSrc(incomingSrc);
+      setIncomingSrc(null);
+      setIncomingReady(false);
+    }, 220);
+    return () => clearTimeout(timer);
+  }, [incomingReady, incomingSrc]);
 
   const cycleFromWheel = useCallback(
     (e: WheelEvent) => {
@@ -143,6 +175,7 @@ export function GalleryMediaStack({
       onClick={onClick}
       onMouseEnter={onMouseEnter}
       onMouseLeave={onMouseLeave}
+      onMouseMove={onMouseMove}
       onKeyDown={onKeyDown}
       aria-label={ariaLabel}
       style={style}
@@ -159,7 +192,7 @@ export function GalleryMediaStack({
         className={
           showDeck
             ? "relative inline-flex max-w-full min-w-0 items-center justify-center"
-            : "relative flex w-full min-w-0 max-w-full items-center justify-center"
+            : "relative flex h-full w-full min-w-0 max-w-full items-center justify-center overflow-hidden"
         }
         style={{ isolation: "isolate" }}
       >
@@ -178,8 +211,19 @@ export function GalleryMediaStack({
              * Instead they match the front exactly in box size (100% × 100%) and
              * object-fit contains the actual image pixels within that box.
              */
-            className="pointer-events-none absolute inset-0 m-auto w-full h-full object-contain"
+            className={[
+              "absolute inset-0 m-auto w-full h-full object-contain",
+              peekInteractive ? "pointer-events-auto cursor-pointer" : "pointer-events-none"
+            ].join(" ")}
             style={{ ...BACK_2, zIndex: 0 }}
+            onClick={
+              peekInteractive && onPeekBack2Click
+                ? (e) => {
+                    e.stopPropagation();
+                    onPeekBack2Click();
+                  }
+                : undefined
+            }
           />
         )}
         {showDeck && (
@@ -191,20 +235,53 @@ export function GalleryMediaStack({
             aria-hidden
             draggable={false}
             crossOrigin="anonymous"
-            className="pointer-events-none absolute inset-0 m-auto w-full h-full object-contain"
+            className={[
+              "absolute inset-0 m-auto w-full h-full object-contain",
+              peekInteractive ? "pointer-events-auto cursor-pointer" : "pointer-events-none"
+            ].join(" ")}
             style={{ ...BACK_1, zIndex: 1 }}
+            onClick={
+              peekInteractive && onPeekBack1Click
+                ? (e) => {
+                    e.stopPropagation();
+                    onPeekBack1Click();
+                  }
+                : undefined
+            }
           />
         )}
         {/* eslint-disable-next-line @next/next/no-img-element -- fixture / relay URLs */}
         <img
-          key={`front-${frontSrc}`}
-          src={frontSrc}
+          key={showDeck ? `front-${frontSrc}` : `visible-${visibleSrc}`}
+          src={showDeck ? frontSrc : visibleSrc}
           alt={title}
           draggable={false}
           crossOrigin="anonymous"
-          className={`pointer-events-none block ${imgClassName}`}
+          className={[
+            "pointer-events-none block transition-opacity duration-200 ease-out",
+            !showDeck && incomingReady ? "opacity-0" : "opacity-100",
+            imgClassName
+          ].join(" ")}
           style={{ position: "relative", zIndex: 2 }}
         />
+        {!showDeck && incomingSrc ? (
+          // eslint-disable-next-line @next/next/no-img-element -- fixture / relay URLs
+          <img
+            key={`incoming-${incomingSrc}`}
+            src={incomingSrc}
+            alt=""
+            aria-hidden
+            draggable={false}
+            crossOrigin="anonymous"
+            onLoad={() => setIncomingReady(true)}
+            className={[
+              "pointer-events-none absolute inset-0 m-auto block transition-opacity duration-200 ease-out",
+              incomingReady ? "opacity-100" : "opacity-0",
+              imgClassName
+            ].join(" ")}
+            style={{ zIndex: 3 }}
+          />
+        ) : null}
       </div>
 
       {/* Pin layer — fills the outer surfaceClassName box which is always `relative` */}

@@ -4,10 +4,13 @@ import { getPublicPatronProfileByHandle } from "../../src/patron/public-patron-p
 function buildPrismaStub(overrides: Record<string, unknown> = {}) {
   return {
     patronProfile: {
-      findUnique: vi.fn().mockResolvedValue(null)
+      findFirst: vi.fn().mockResolvedValue(null)
     },
     patronSavedCollection: {
       findMany: vi.fn().mockResolvedValue([])
+    },
+    tenantMembership: {
+      findUnique: vi.fn().mockResolvedValue(null)
     },
     ...overrides
   };
@@ -17,28 +20,22 @@ describe("getPublicPatronProfileByHandle", () => {
   it("returns null for an empty handle (defensive guard)", async () => {
     const prisma = buildPrismaStub();
     expect(await getPublicPatronProfileByHandle(prisma as never, "")).toBeNull();
-    expect(prisma.patronProfile.findUnique).not.toHaveBeenCalled();
+    expect(prisma.patronProfile.findFirst).not.toHaveBeenCalled();
   });
 
   it("returns null when no profile exists for the handle", async () => {
     const prisma = buildPrismaStub({
-      patronProfile: { findUnique: vi.fn().mockResolvedValue(null) }
+      patronProfile: { findFirst: vi.fn().mockResolvedValue(null) }
     });
     expect(await getPublicPatronProfileByHandle(prisma as never, "ghost")).toBeNull();
   });
 
   it("returns null for a private profile (enumeration resistance)", async () => {
+    // Source queries with isPublic:true in the where clause, so a private profile
+    // would not match and findFirst returns null (same null-return path).
     const prisma = buildPrismaStub({
       patronProfile: {
-        findUnique: vi.fn().mockResolvedValue({
-          tenantMembershipId: "m1",
-          handle: "private_user",
-          displayName: null,
-          bio: null,
-          avatarUrl: null,
-          bannerUrl: null,
-          isPublic: false
-        })
+        findFirst: vi.fn().mockResolvedValue(null)
       }
     });
     expect(
@@ -49,14 +46,15 @@ describe("getPublicPatronProfileByHandle", () => {
   it("returns null when handle is missing on the profile row (defensive)", async () => {
     const prisma = buildPrismaStub({
       patronProfile: {
-        findUnique: vi.fn().mockResolvedValue({
+        findFirst: vi.fn().mockResolvedValue({
           tenantMembershipId: "m1",
           handle: null,
           displayName: null,
           bio: null,
           avatarUrl: null,
           bannerUrl: null,
-          isPublic: true
+          isPublic: true,
+          tenantMembership: { account: { username: null } }
         })
       }
     });
@@ -66,26 +64,27 @@ describe("getPublicPatronProfileByHandle", () => {
   });
 
   it("normalizes the handle to lowercase before lookup", async () => {
-    const findUnique = vi.fn().mockResolvedValue(null);
+    const findFirst = vi.fn().mockResolvedValue(null);
     const prisma = buildPrismaStub({
-      patronProfile: { findUnique }
+      patronProfile: { findFirst }
     });
     await getPublicPatronProfileByHandle(prisma as never, "MixedCase");
-    expect(findUnique).toHaveBeenCalledWith({
-      where: { handleNorm: "mixedcase" },
+    expect(findFirst).toHaveBeenCalledWith({
+      where: { isPublic: true, tenantMembership: { account: { usernameNorm: "mixedcase" } } },
       select: expect.any(Object)
     });
   });
 
   it("returns the public profile + only PUBLIC collections", async () => {
-    const findUnique = vi.fn().mockResolvedValue({
+    const findFirst = vi.fn().mockResolvedValue({
       tenantMembershipId: "m1",
       handle: "alice",
       displayName: "Alice",
       bio: "Hello world",
       avatarUrl: "https://cdn/a.png",
       bannerUrl: null,
-      isPublic: true
+      isPublic: true,
+      tenantMembership: { account: { username: "alice" } }
     });
     const findMany = vi.fn().mockResolvedValue([
       {
@@ -102,7 +101,7 @@ describe("getPublicPatronProfileByHandle", () => {
       }
     ]);
     const prisma = buildPrismaStub({
-      patronProfile: { findUnique },
+      patronProfile: { findFirst },
       patronSavedCollection: { findMany }
     });
     const out = await getPublicPatronProfileByHandle(prisma as never, "Alice");
@@ -112,6 +111,7 @@ describe("getPublicPatronProfileByHandle", () => {
       bio: "Hello world",
       avatar_url: "https://cdn/a.png",
       banner_url: null,
+      is_curator: false,
       public_collections: [
         {
           id: "col1",

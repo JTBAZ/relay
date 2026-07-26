@@ -16,6 +16,7 @@ function makeProfile(overrides: Record<string, unknown> = {}) {
     publicSlug: "test-creator",
     slugSource: PublicSlugSource.user_chosen,
     patreonCampaignId: null,
+    subscribestarProfileId: null,
     username: null,
     usernameNorm: null,
     displayName: null,
@@ -25,6 +26,8 @@ function makeProfile(overrides: Record<string, unknown> = {}) {
     discipline: null,
     createdAt: new Date(),
     updatedAt: new Date(),
+    subscribestarProviderSnapshot: null,
+    subscribestarProviderSnapshotAt: null,
     ...overrides
   };
 }
@@ -44,7 +47,18 @@ function makePrisma(opts: {
   return {
     account: {
       findUnique: vi.fn(async () => ({
-        primaryRelayCreatorId: relayId
+        id: "acc_1",
+        primaryRelayCreatorId: relayId,
+        username: null,
+        usernameNorm: null
+      })),
+      findFirst: vi.fn(async ({ where }: { where?: { usernameNorm?: string } }) => {
+        if (where?.usernameNorm && opts.clashOnUsername) return { id: "other_acc" };
+        return null;
+      }),
+      update: vi.fn(async ({ data }: { data: { username?: string; usernameNorm?: string } }) => ({
+        username: data.username ?? null,
+        usernameNorm: data.usernameNorm ?? null
       }))
     },
     tenant: {
@@ -79,10 +93,10 @@ function makePrisma(opts: {
 }
 
 describe("normalizeCreatorUsername", () => {
-  it("lowercases and strips non-alphanumeric/underscore", () => {
+  it("lowercases and keeps valid Relay username punctuation", () => {
     expect(normalizeCreatorUsername("Hello_World123")).toBe("hello_world123");
-    expect(normalizeCreatorUsername("  MixedCase!  ")).toBe("mixedcase");
-    expect(normalizeCreatorUsername("a-b-c")).toBe("abc");
+    expect(normalizeCreatorUsername("  @Mixed-Case!  ")).toBe("mixed-case!");
+    expect(normalizeCreatorUsername("a-b-c")).toBe("a-b-c");
   });
 });
 
@@ -102,9 +116,9 @@ describe("validateCreatorUsernameFormat", () => {
     if (!r.ok) expect(r.message).toMatch(/reserved/i);
   });
 
-  it("rejects hyphens (only underscores allowed)", () => {
+  it("accepts hyphens", () => {
     const r = validateCreatorUsernameFormat("my-name");
-    expect(r.ok).toBe(false);
+    expect(r.ok).toBe(true);
   });
 });
 
@@ -130,6 +144,31 @@ describe("getCreatorIdentity", () => {
     });
     const result = await getCreatorIdentity(prisma as never, "acc_1");
     expect(result!.needs_setup).toBe(false);
+  });
+
+  it("exposes patreon_campaign_id and subscribestar_profile_id from the backing row", async () => {
+    const prisma = makePrisma({
+      profile: makeProfile({
+        patreonCampaignId: "15782831",
+        subscribestarProfileId: "ss_profile_404"
+      })
+    });
+    const result = await getCreatorIdentity(prisma as never, "acc_1");
+    expect(result).not.toBeNull();
+    expect(result!.patreon_campaign_id).toBe("15782831");
+    expect(result!.subscribestar_profile_id).toBe("ss_profile_404");
+  });
+
+  it("exposes subscribestar_provider_snapshot when stored", async () => {
+    const prisma = makePrisma({
+      profile: makeProfile({
+        subscribestarProviderSnapshot: { subscriptionMetrics: { n: 3 } },
+        subscribestarProviderSnapshotAt: new Date("2026-05-01T12:00:00.000Z")
+      })
+    });
+    const result = await getCreatorIdentity(prisma as never, "acc_1");
+    expect(result!.subscribestar_provider_snapshot).toEqual({ subscriptionMetrics: { n: 3 } });
+    expect(result!.subscribestar_provider_snapshot_at).toBe("2026-05-01T12:00:00.000Z");
   });
 });
 
@@ -207,14 +246,15 @@ describe("patchCreatorIdentity", () => {
     if (!result.ok) expect(result.code).toBe("CONFLICT");
   });
 
-  it("allows clearing username to null", async () => {
+  it("rejects clearing username to null", async () => {
     const prisma = makePrisma({
       profile: makeProfile({ username: "old_name", usernameNorm: "old_name" })
     });
     const result = await patchCreatorIdentity(prisma as never, "acc_1", {
       username: null
     });
-    expect(result.ok).toBe(true);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.code).toBe("VALIDATION_ERROR");
   });
 
   it("succeeds with valid fields", async () => {

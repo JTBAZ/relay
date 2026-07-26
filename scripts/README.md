@@ -58,10 +58,19 @@ PowerShell 7 (`pwsh`) loads a different profile path than Windows PowerShell (`p
 - **Command:** `powershell -ExecutionPolicy Bypass -File .\scripts\db-up.ps1`
 - **Prereq:** Docker Desktop (or Docker Engine) with Compose v2. Copy root `.env.example` → `.env` and set `DATABASE_URL` to match compose (see `.env.example`).
 
+## `dev-stack-restart.ps1`
+- **Use when:** `dev:stack` is stale (old API code still running, port already in use, zombie node).
+- **Runs:** kills Relay API + web port listeners and repo node processes, then **`npm run dev:stack`** in the **current** terminal (build + API + web via `concurrently`).
+- **Command:** `npm run dev:stack:restart`
+
 ## `dev-restart.ps1`
-- **Use when:** backend/frontend terminals are stale and you want a quick restart.
-- **Runs:** stops repo node processes, opens backend `npm start`, opens web `npm run dev`.
-- **Command:** `powershell -ExecutionPolicy Bypass -File .\scripts\dev-restart.ps1`
+- **Use when:** you prefer separate terminal windows for API and web.
+- **Runs:** same port/process cleanup, then opens backend `npm start` and web `npm run dev` in new windows.
+- **Command:** `npm run dev:restart` or `powershell -ExecutionPolicy Bypass -File .\scripts\dev-restart.ps1`
+
+## `kill-relay-dev-ports.ps1`
+- **Use when:** you only want to free ports 8787 (or `PORT` from `.env`) and 3000 without starting servers.
+- **Command:** `powershell -ExecutionPolicy Bypass -File .\scripts\kill-relay-dev-ports.ps1`
 
 ## `maintenance-backup.ps1`
 - **Use when:** before resets, migrations, or test-bed experiments.

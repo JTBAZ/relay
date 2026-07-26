@@ -1,11 +1,21 @@
+/**
+ * @fileoverview HMAC-signed short-lived consent codes for browser extension handshake flows.
+ * @description Uses `RELAY_EXTENSION_CONSENT_SECRET` and in-process single-use hashing (per process).
+ * @security-audit-required Codes bind `accountId` + `installationId`; HTTP handlers must verify session ownership before minting.
+ */
+
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 
 const CODE_VERSION = "1";
+
+/** @description Default lifetime for signed consent codes (ms). */
 export const EXTENSION_CONSENT_CODE_TTL_MS = 60_000;
 
 /**
  * HMAC secret for `POST /api/v1/auth/extension/consent/start` → `consent_code` payloads.
  * Separate from Patreon OAuth state (`RELAY_PATREON_OAUTH_STATE_SECRET`).
+ * @description Reads env secret with minimum entropy requirements.
+ * @returns Configured secret or `null`.
  */
 export function getExtensionConsentSecret(): string | null {
   const s = process.env.RELAY_EXTENSION_CONSENT_SECRET?.trim();
@@ -25,12 +35,21 @@ function hashConsentCodeOpaque(code: string): string {
   return createHash("sha256").update(code, "utf8").digest("hex");
 }
 
+/**
+ * @description Whether a hashed code remains in the per-process replay table.
+ * @param code Raw consent code from client.
+ * @returns `true` if previously marked consumed within retention window.
+ */
 export function isExtensionConsentCodeConsumed(code: string): boolean {
   const now = Date.now();
   pruneUsedCodes(now);
   return usedConsentCodeHashes.has(hashConsentCodeOpaque(code));
 }
 
+/**
+ * @description Marks a code as consumed to mitigate replay within TTL window.
+ * @param code Raw consent code from client.
+ */
 export function markExtensionConsentCodeConsumed(code: string): void {
   const now = Date.now();
   pruneUsedCodes(now);
@@ -40,6 +59,13 @@ export function markExtensionConsentCodeConsumed(code: string): void {
   );
 }
 
+/**
+ * @description Mints signed consent payload with expiry.
+ * @param args.accountId Authenticated Relay account attaching extension.
+ * @param args.installationId Extension installation discriminator.
+ * @returns Opaque consent code plus ISO expiry.
+ * @throws {Error} When `RELAY_EXTENSION_CONSENT_SECRET` missing or too short.
+ */
 export function signExtensionConsentCode(args: {
   accountId: string;
   installationId: string;
@@ -63,6 +89,7 @@ export function signExtensionConsentCode(args: {
   return { consent_code, expires_at: new Date(exp).toISOString() };
 }
 
+/** @description Discriminated union for consent verification outcomes. */
 export type VerifyExtensionConsentCodeResult =
   | { ok: true; accountId: string; installationId: string }
   | { ok: false; reason: string };
@@ -70,6 +97,10 @@ export type VerifyExtensionConsentCodeResult =
 /**
  * Verify HMAC and expiry. Does not check single-use — caller must call
  * {@link isExtensionConsentCodeConsumed} / {@link markExtensionConsentCodeConsumed}.
+ *
+ * @description Cryptographic verification only; replay protection is separate.
+ * @param code Opaque consent code string.
+ * @returns Parsed ids on success or failure reason code.
  */
 export function verifyExtensionConsentCode(code: string): VerifyExtensionConsentCodeResult {
   const secret = getExtensionConsentSecret();

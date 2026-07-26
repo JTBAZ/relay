@@ -1,3 +1,10 @@
+/**
+ * @fileoverview Event bus that mirrors in-memory events while best-effort persisting to `outbox_events`.
+ * @description Async Prisma insert keeps `publish` synchronous for callers; duplicates ignored via P2002.
+ * @see ./event-bus.js
+ * @see prisma/schema.prisma OutboxEvent
+ */
+
 import type { Prisma } from "@prisma/client";
 import type { PrismaClient } from "@prisma/client";
 import { randomUUID } from "node:crypto";
@@ -11,12 +18,21 @@ import type {
  * Persists each publish to `outbox_events` (best-effort async) while keeping an in-memory
  * copy for `getAll()` so existing tests and callers stay synchronous.
  * Dedupe collisions on `(event_name, tenant_id, primary_id, occurred_at)` are ignored (P2002).
+ * @description Implements `RelayEventBus` with mirrored memory + async persistence.
+ * @security-audit-required Writes tenant-scoped JSON payloads; upstream must validate authz before publish.
  */
 export class DbEventBus implements RelayEventBus {
   private readonly events: StoredEvent[] = [];
 
+  /**
+   * @param prisma Prisma client targeting `outboxEvent` model.
+   */
   public constructor(private readonly prisma: PrismaClient) {}
 
+  /**
+   * @inheritdoc
+   * @description Inserts asynchronously via `void prisma...create().catch` after capturing in-memory copy.
+   */
   public publish<TPayload extends { primary_id: string }>(
     eventName: string,
     tenantId: string,
@@ -68,6 +84,9 @@ export class DbEventBus implements RelayEventBus {
     return event;
   }
 
+  /**
+   * @inheritdoc
+   */
   public getAll(): StoredEvent[] {
     return [...this.events];
   }

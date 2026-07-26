@@ -1,6 +1,12 @@
 import type { AppConfig } from "../server.js";
 import { resolvePublicWebhookBaseFromEnv } from "../patreon/patreon-webhook-registration.js";
 
+/**
+ * @fileoverview Describes effective backing stores (Postgres vs file) for parity/debug surfaces.
+ * @description Mirrors env toggles honored by `createApp` in `server.ts`.
+ * @see ../server.js AppConfig
+ */
+
 /** Matches `relayEnvTruthy` in `server.ts`. */
 function relayEnvTruthy(raw: string | undefined): boolean {
   if (raw === undefined || raw.trim() === "") {
@@ -18,14 +24,17 @@ function flagDb(config: AppConfig, key: keyof AppConfig, envName: string): boole
   return relayEnvTruthy(process.env[envName]);
 }
 
+/** @description Whether a subsystem reads Postgres vs legacy files. */
 export type StoreReadPath = "postgres" | "file";
 
+/** @description One DB-backed toggle with resolved env mirror. */
 export type FlaggedDomain = {
   envVar: string;
   effective: boolean;
   readPath: StoreReadPath;
 };
 
+/** @description Aggregate manifest returned to pipeline parity tooling. */
 export type RelayRuntimeManifest = {
   /** Effective `RELAY_DB_STORE_*` resolutions (same logic as `createApp` in `server.ts`). */
   relay_db_store: {
@@ -62,6 +71,9 @@ export type RelayRuntimeManifest = {
 
 /**
  * Echoes which backing store `createApp` would select — source for honest pipeline-parity UI.
+ * @description Builds manifest from `AppConfig` fields and process env fallbacks.
+ * @param config Partial app configuration object from server bootstrap.
+ * @returns Effective store routing metadata.
  */
 export function buildRelayRuntimeManifest(config: AppConfig): RelayRuntimeManifest {
   const identity = flagDb(config, "relay_db_store_identity", "RELAY_DB_STORE_IDENTITY");

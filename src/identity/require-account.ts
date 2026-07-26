@@ -1,3 +1,11 @@
+/**
+ * @fileoverview Tier 1.1 `requireAccount` middleware helpers and RelayAuth wiring.
+ * @description Cookie/Bearer session resolution, `AccountContext` load, and Supabase RLS session variable.
+ * @see ./relay-auth-error.js
+ * @see ../lib/supabase-rls-context.js
+ * @see src/jsdoc-core-entities.ts
+ */
+
 import type { PrismaClient } from "@prisma/client";
 import { TenantRole } from "@prisma/client";
 import type { Request, Response } from "express";
@@ -28,7 +36,11 @@ function extractBearer(req: Request): string | null {
 }
 
 /**
- * Load `AccountContext` from a validated opaque session and set Postgres `relay.account_id`.
+ * @description Load `AccountContext` for a validated session row (RLS `relay.account_id` key material).
+ * @param {import("@prisma/client").PrismaClient} prisma
+ * @param {import("./types.js").SessionToken} session
+ * @returns {Promise<import("./account-context.js").AccountContext | null>}
+ * @async
  */
 export async function loadAccountContextForSession(
   prisma: PrismaClient,
@@ -59,8 +71,11 @@ export async function loadAccountContextForSession(
 }
 
 /**
- * After a session is validated, apply RLS account context when the session maps to an Account.
- * No-op when unlinked (legacy / transitional sessions).
+ * @description Sets `relay.account_id` for RLS when the session maps to a linked Account.
+ * @param {import("@prisma/client").PrismaClient} prisma
+ * @param {import("./types.js").SessionToken} session
+ * @returns {Promise<void>}
+ * @async
  */
 export async function applyRelayAccountRlsIfPresent(
   prisma: PrismaClient,
@@ -76,8 +91,12 @@ export async function applyRelayAccountRlsIfPresent(
 }
 
 /**
- * Tier 1.1 — resolve Account or throw `RelayAuthError`.
- * Cookie first, then `Authorization: Bearer` opaque token.
+ * @description Resolves Account from cookie or Bearer opaque token; applies RLS context.
+ * @param {import("express").Request} req
+ * @param {RequireAccountDeps} deps
+ * @returns {Promise<RequireAccountResult>}
+ * @throws {RelayAuthError} On missing session or unlinked account.
+ * @async
  */
 export async function requireAccount(
   req: Request,
@@ -103,6 +122,15 @@ export async function requireAccount(
   return { context: ctx, session };
 }
 
+/**
+ * @description Like {@link requireAccount} but enforces creator workspace or patron membership.
+ * @param {import("express").Request} req
+ * @param {RequireAccountDeps} deps
+ * @param {"creator" | "supporter"} role
+ * @returns {Promise<RequireAccountResult>}
+ * @throws {RelayAuthError}
+ * @async
+ */
 export async function requireAccountWithRole(
   req: Request,
   deps: RequireAccountDeps,
@@ -126,6 +154,13 @@ export async function requireAccountWithRole(
   return out;
 }
 
+/**
+ * @description If `err` is `RelayAuthError`, sends JSON envelope and returns true.
+ * @param {import("express").Response} res
+ * @param {unknown} err
+ * @param {string} traceId
+ * @returns {boolean}
+ */
 export function sendRelayAuthError(
   res: Response,
   err: unknown,

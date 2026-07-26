@@ -1,0 +1,63 @@
+.patron-profile-draft {
+  --background: #0a0a0a;
+  --foreground: #ede5da;
+  --muted-foreground: #888888;
+  --primary: #40916c;
+  --role-label: #52b788;
+  --border: #242424;
+  --card: #141414;
+  --gradient-fade: linear-gradient(to bottom, transparent 0%, rgb(10 10 10 / 0.55) 55%, #0a0a0a 100%);
+  --ease-elegant: cubic-bezier(0.22, 1, 0.36, 1);
+  --shadow-glow: 0 0 12px rgb(64 145 108 / 0.35);
+  --shadow-elevated: 0 8px 32px rgb(0 0 0 / 0.4);
+  background: var(--background);
+  color: var(--foreground);
+}
+
+.patron-profile-draft .text-foreground {
+  color: var(--foreground);
+}
+
+.patron-profile-draft .text-muted-foreground {
+  color: var(--muted-foreground);
+}
+
+.patron-profile-draft .text-primary {
+  color: var(--primary);
+}
+
+.patron-profile-draft .text-role-label {
+  color: var(--role-label);
+}
+
+.patron-profile-draft .bg-background {
+  background-color: var(--background);
+}
+
+.patron-profile-draft .bg-card {
+  background-color: var(--card);
+}
+
+.patron-profile-draft .bg-muted {
+  background-color: #1a1a1a;
+}
+
+.patron-profile-draft .bg-primary {
+  background-color: var(--primary);
+}
+
+.patron-profile-draft .border-border {
+  border-color: var(--border);
+}
+
+.patron-profile-draft .ring-background {
+  --tw-ring-color: var(--background);
+}
+
+.patron-profile-draft .ring-border {
+  --tw-ring-color: var(--border);
+}
+
+.patron-profile-draft .ring-primary {
+  --tw-ring-color: var(--primary);
+}

@@ -118,4 +118,134 @@ describe("Patron collections API", () => {
       .set("Authorization", `Bearer ${token}`);
     expect(delCol.status).toBe(200);
   });
+
+  it("PATCH toggles is_public; GET /collections/all round-trips enriched collections", async () => {
+    const tempDir = await mkdtemp(join(tmpdir(), "relay-pcol-api-"));
+    const { app, token } = await seedAndAuth(tempDir);
+
+    const mk = await request(app)
+      .post("/api/v1/patron/collections")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ creator_id: "cpc", title: "Shelf" });
+    expect(mk.status).toBe(201);
+    const colId = mk.body.data.collection.collection_id as string;
+
+    const pub = await request(app)
+      .patch(`/api/v1/patron/collections/${colId}`)
+      .set("Authorization", `Bearer ${token}`)
+      .send({ creator_id: "cpc", is_public: true });
+    expect(pub.status).toBe(200);
+    expect(pub.body.data.collection.is_public).toBe(true);
+
+    const add = await request(app)
+      .post(`/api/v1/patron/collections/${colId}/entries`)
+      .set("Authorization", `Bearer ${token}`)
+      .send({ creator_id: "cpc", post_id: "p_c", media_id: "m_1" });
+    expect(add.status).toBe(200);
+
+    const list = await request(app)
+      .get("/api/v1/patron/collections?creator_id=cpc")
+      .set("Authorization", `Bearer ${token}`);
+    expect(list.status).toBe(200);
+    expect(list.body.data.collections).toHaveLength(1);
+    expect(list.body.data.collections[0].collection_id).toBe(colId);
+    expect(list.body.data.collections[0].is_public).toBe(true);
+    expect(list.body.data.collections[0].entries).toHaveLength(1);
+    expect(list.body.data.collections[0].entries[0].viewer_entitlement).toMatchObject({
+      state: "visible"
+    });
+
+    const all = await request(app)
+      .get("/api/v1/patron/collections/all")
+      .set("Authorization", `Bearer ${token}`);
+    expect(all.status).toBe(200);
+    expect(Array.isArray(all.body.data.collections)).toBe(true);
+    expect(all.body.data.collections).toHaveLength(1);
+    expect(all.body.data.collections[0].collection_id).toBe(colId);
+    expect(all.body.data.collections[0].entries).toHaveLength(1);
+    expect(all.body.data.collections[0].entries[0].viewer_entitlement).toMatchObject({
+      state: "visible"
+    });
+  });
+
+  it("rejects PATCH with foreign creator_id (403)", async () => {
+    const tempDir = await mkdtemp(join(tmpdir(), "relay-pcol-api-"));
+    const { app, token } = await seedAndAuth(tempDir);
+
+    const mk = await request(app)
+      .post("/api/v1/patron/collections")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ creator_id: "cpc", title: "Mine" });
+    const colId = mk.body.data.collection.collection_id as string;
+
+    const foreign = await request(app)
+      .patch(`/api/v1/patron/collections/${colId}`)
+      .set("Authorization", `Bearer ${token}`)
+      .send({ creator_id: "other_creator", is_public: true });
+    expect(foreign.status).toBe(403);
+    expect(foreign.body.error?.code).toBe("FORBIDDEN");
+  });
+
+  it("GET /collections/:id returns owner detail with thumb for visible entries", async () => {
+    const tempDir = await mkdtemp(join(tmpdir(), "relay-pcol-api-"));
+    const { app, token } = await seedAndAuth(tempDir);
+
+    const mk = await request(app)
+      .post("/api/v1/patron/collections")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ creator_id: "cpc", title: "Gallery" });
+    const colId = mk.body.data.collection.collection_id as string;
+
+    await request(app)
+      .post(`/api/v1/patron/collections/${colId}/entries`)
+      .set("Authorization", `Bearer ${token}`)
+      .send({ creator_id: "cpc", post_id: "p_c", media_id: "m_1" });
+
+    const detail = await request(app)
+      .get(`/api/v1/patron/collections/${colId}`)
+      .set("Authorization", `Bearer ${token}`);
+    expect(detail.status).toBe(200);
+    expect(detail.body.data.collection.collection_id).toBe(colId);
+    expect(detail.body.data.collection.title).toBe("Gallery");
+    expect(detail.body.data.collection.entries).toHaveLength(1);
+    expect(detail.body.data.collection.entries[0]).toMatchObject({
+      media_id: "m_1",
+      source_post_title: "Batch",
+      mime_type: "image/png",
+      viewer_entitlement: { state: "visible" },
+      thumb_url_path: "/api/v1/export/media/cpc/m_1/thumb",
+      // The owner is entitled, so the full content URL is now included.
+      content_url_path: "/api/v1/export/media/cpc/m_1/content"
+    });
+  });
+
+  it("GET /collections/:id returns 404 for another patron's collection", async () => {
+    const tempDir = await mkdtemp(join(tmpdir(), "relay-pcol-api-"));
+    const { app, token } = await seedAndAuth(tempDir);
+
+    const mk = await request(app)
+      .post("/api/v1/patron/collections")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ creator_id: "cpc", title: "Private shelf" });
+    const colId = mk.body.data.collection.collection_id as string;
+
+    await request(app).post("/api/v1/identity/register").send({
+      creator_id: "cpc",
+      email: "other@example.com",
+      password: "hunter2hunter2",
+      tier_ids: [RELAY_TIER_PUBLIC],
+    });
+    const otherLogin = await request(app).post("/api/v1/identity/login").send({
+      creator_id: "cpc",
+      email: "other@example.com",
+      password: "hunter2hunter2",
+    });
+    const otherToken = otherLogin.body.data.token as string;
+
+    const foreign = await request(app)
+      .get(`/api/v1/patron/collections/${colId}`)
+      .set("Authorization", `Bearer ${otherToken}`);
+    expect(foreign.status).toBe(404);
+    expect(foreign.body.error?.code).toBe("NOT_FOUND");
+  });
 });

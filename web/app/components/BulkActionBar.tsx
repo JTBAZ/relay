@@ -1,83 +1,156 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import {
   ChevronDown,
-  Download,
   Eye,
-  EyeOff,
-  FileText,
   FolderPlus,
-  ShieldAlert,
-  ShieldCheck,
+  Link2,
+  Plus,
   Tag,
+  Trash2,
   X
 } from "lucide-react";
 import {
-  RELAY_API_BASE,
   buildGalleryVisibilityBody,
   bucketItemsByVisibilityAfterAction,
   relayFetch,
+  relayNativeDeletePost,
   type Collection,
   type GalleryItem,
   type PostVisibility,
+  type TierFacet,
   type VisibilityAxisAction
 } from "@/lib/relay-api";
+import {
+  buildVisibilityTierSwitchboard,
+  type TierAccessBucket
+} from "@/lib/visibility-tier-switchboard";
+import { visibilityItemsTriState } from "@/lib/visibility-toggle-state";
+import { VisibilitySwitchRow } from "@/app/components/studio/VisibilitySwitchRow";
 
 type Panel = "none" | "tags" | "visibility" | "collection";
 
-const SEL = "#00aa6f";
+const SEL = "#9bf0c4";
 
 type Props = {
-  selectedCount: number;
+  /** Distinct selected post ids (for copy); bar mounts when ≥1. */
+  selectedPostIds: string[];
   creatorId: string;
   selectedItems: GalleryItem[];
-  selectedPostIds: string[];
   collections: Collection[];
+  /** Creator tier catalog (facets) for the Access switchboard. */
+  tiers?: TierFacet[];
   onClearSelection: () => void;
   onListRefresh: () => void;
   onCollectionsReload: () => void;
   onApplyBulkTagDelta: (delta: {
     add: string[];
     remove: string[];
-    /** Tag only selected asset rows (overrides), not whole posts. */
     perAsset?: boolean;
   }) => Promise<void>;
-  /** Facet tag ids for quick pick (optional). */
   suggestedTags?: string[];
-  /** Open post inspector (e.g. PostBatchModal) for the current selection. */
-  onInspectPost: () => void;
   onError?: (message: string) => void;
+  studioWriteBlocked?: boolean;
+  onLinkPosts?: (postIds: string[]) => void;
 };
 
+function tierBucketLabel(bucket: TierAccessBucket): string {
+  if (bucket === "access") return "Can access";
+  if (bucket === "mixed") return "Mixed";
+  return "No access";
+}
+
+function tierBucketTone(bucket: TierAccessBucket): string {
+  if (bucket === "access") return SEL;
+  if (bucket === "mixed") return "#e0b35a";
+  return "#555";
+}
+
+function parseTagList(raw: string): string[] {
+  return raw
+    .split(",")
+    .map((t) => t.trim())
+    .filter(Boolean);
+}
+
+/**
+ * Selection action bar for Active Posts / Library (≥1 post).
+ * Link posts stays multi-post only; Visibility is a compact switchboard.
+ */
 export default function BulkActionBar({
-  selectedCount,
+  selectedPostIds,
   creatorId,
   selectedItems,
-  selectedPostIds,
   collections,
+  tiers = [],
   onClearSelection,
   onListRefresh,
   onCollectionsReload,
   onApplyBulkTagDelta,
   suggestedTags = [],
-  onInspectPost,
-  onError
+  onError,
+  studioWriteBlocked = false,
+  onLinkPosts
 }: Props) {
   const [panel, setPanel] = useState<Panel>("none");
   const [tagAddDraft, setTagAddDraft] = useState("");
   const [tagRemoveDraft, setTagRemoveDraft] = useState("");
-  /** Which tag field Quick pick writes to; follows focus, default Add. */
   const [tagFieldFocus, setTagFieldFocus] = useState<"add" | "remove">("add");
-  const [tagRemoveExpanded, setTagRemoveExpanded] = useState(false);
-  /** When set, bulk tag API uses `media_targets` (per-asset overrides) instead of post-level tags. */
+  const [tagAdvancedExpanded, setTagAdvancedExpanded] = useState(false);
   const [tagPerAsset, setTagPerAsset] = useState(false);
   const [tagBusy, setTagBusy] = useState(false);
   const [collBusy, setCollBusy] = useState<string | null>(null);
+  const [newCollectionOpen, setNewCollectionOpen] = useState(false);
+  const [newCollectionTitle, setNewCollectionTitle] = useState("");
   const [visBusy, setVisBusy] = useState(false);
+  const [deleteBusy, setDeleteBusy] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
 
   const closePanel = useCallback(() => setPanel("none"), []);
+  const postCount = selectedPostIds.length;
+
+  const allSelectedAreRelayNative =
+    selectedPostIds.length > 0 && selectedPostIds.every((id) => id.startsWith("relay_p_"));
+
+  const deleteSelectedRelayPosts = useCallback(async () => {
+    if (studioWriteBlocked || deleteBusy || !allSelectedAreRelayNative) return;
+    const n = selectedPostIds.length;
+    const ok = window.confirm(
+      `Delete ${n} Relay posts? They will disappear from your Library and patron feeds. Media files are kept.`
+    );
+    if (!ok) return;
+    setDeleteBusy(true);
+    try {
+      for (const postId of selectedPostIds) {
+        await relayNativeDeletePost(postId, creatorId);
+      }
+      closePanel();
+      onClearSelection();
+      onListRefresh();
+    } catch (e) {
+      onError?.(e instanceof Error ? e.message : String(e));
+    } finally {
+      setDeleteBusy(false);
+    }
+  }, [
+    studioWriteBlocked,
+    deleteBusy,
+    allSelectedAreRelayNative,
+    selectedPostIds,
+    creatorId,
+    closePanel,
+    onClearSelection,
+    onListRefresh,
+    onError
+  ]);
+
+  const triggerLinkPosts = useCallback(() => {
+    if (selectedPostIds.length < 2) return;
+    closePanel();
+    onLinkPosts?.(selectedPostIds);
+  }, [closePanel, onLinkPosts, selectedPostIds]);
 
   useEffect(() => {
     if (panel === "none") return;
@@ -100,9 +173,21 @@ export default function BulkActionBar({
   useEffect(() => {
     if (panel === "tags") {
       setTagFieldFocus("add");
-      setTagRemoveExpanded(false);
+      setTagAdvancedExpanded(false);
       setTagPerAsset(false);
     }
+  }, [panel]);
+
+  useEffect(() => {
+    if (panel !== "collection") {
+      setNewCollectionOpen(false);
+      setNewCollectionTitle("");
+    }
+  }, [panel]);
+
+  useEffect(() => {
+    if (panel === "collection") onCollectionsReload();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- avoid reload loop on every parent render
   }, [panel]);
 
   const postVisibilityUpdate = async (items: GalleryItem[], visibility: PostVisibility) => {
@@ -115,6 +200,7 @@ export default function BulkActionBar({
   };
 
   const applyVisibilityAxis = async (action: VisibilityAxisAction) => {
+    if (studioWriteBlocked) return;
     setVisBusy(true);
     try {
       const buckets = bucketItemsByVisibilityAfterAction(selectedItems, action);
@@ -122,8 +208,6 @@ export default function BulkActionBar({
         if (group.length === 0) continue;
         await postVisibilityUpdate(group, vis);
       }
-      closePanel();
-      onClearSelection();
       onListRefresh();
     } catch (e) {
       onError?.(e instanceof Error ? e.message : String(e));
@@ -132,53 +216,87 @@ export default function BulkActionBar({
     }
   };
 
-  const onExport = () => {
-    const exportable = selectedItems.filter((i) => i.has_export && i.content_url_path);
-    if (exportable.length === 0) {
-      onError?.("No exportable files in the current selection.");
-      return;
-    }
-    for (const it of exportable) {
-      const url = `${RELAY_API_BASE}${it.content_url_path}`;
-      const a = document.createElement("a");
-      a.href = url;
-      a.target = "_blank";
-      a.rel = "noopener noreferrer";
-      a.download = "";
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-    }
+  const hiddenState = useMemo(
+    () => visibilityItemsTriState(selectedItems, (v) => v === "hidden"),
+    [selectedItems]
+  );
+  const matureState = useMemo(
+    () => visibilityItemsTriState(selectedItems, (v) => v === "review"),
+    [selectedItems]
+  );
+  const tierBoard = useMemo(
+    () => buildVisibilityTierSwitchboard(selectedItems, tiers),
+    [selectedItems, tiers]
+  );
+  const accessTiers = useMemo(
+    () => tierBoard.tiers.filter((t) => t.bucket === "access"),
+    [tierBoard.tiers]
+  );
+  const lockedTiers = useMemo(
+    () => tierBoard.tiers.filter((t) => t.bucket === "locked"),
+    [tierBoard.tiers]
+  );
+  const mixedTiers = useMemo(
+    () => tierBoard.tiers.filter((t) => t.bucket === "mixed"),
+    [tierBoard.tiers]
+  );
+  const allHidden = hiddenState === "on";
+  const onHiddenToggle = (nextOn: boolean) => {
+    void applyVisibilityAxis(nextOn ? "set_hidden" : "set_visible");
+  };
+  const onMatureToggle = (nextOn: boolean) => {
+    void applyVisibilityAxis(nextOn ? "set_mature" : "set_general");
   };
 
-  const addToCollection = async (collectionId: string) => {
+  const addPostsToCollection = async (collectionId: string) => {
     if (selectedPostIds.length === 0) return;
     setCollBusy(collectionId);
     try {
       await relayFetch<unknown>(
-        `/api/v1/gallery/collections/${collectionId}/posts`,
+        `/api/v1/gallery/collections/${encodeURIComponent(collectionId)}/posts`,
         {
           method: "POST",
           body: JSON.stringify({ post_ids: selectedPostIds })
         }
       );
+      setNewCollectionOpen(false);
+      setNewCollectionTitle("");
       closePanel();
       onCollectionsReload();
       onListRefresh();
+    } catch (e) {
+      onError?.(e instanceof Error ? e.message : String(e));
     } finally {
       setCollBusy(null);
     }
   };
 
-  const parseTagList = (raw: string) =>
-    Array.from(new Set(raw.split(",").map((t) => t.trim()).filter(Boolean)));
+  const createCollectionAndAdd = async () => {
+    const title = newCollectionTitle.trim();
+    if (!title || selectedPostIds.length === 0) return;
+    setCollBusy("new");
+    try {
+      const created = await relayFetch<Collection>("/api/v1/gallery/collections", {
+        method: "POST",
+        body: JSON.stringify({ title })
+      });
+      const newId = created.collection_id;
+      setNewCollectionTitle("");
+      setNewCollectionOpen(false);
+      await addPostsToCollection(newId);
+    } catch (e) {
+      onError?.(e instanceof Error ? e.message : String(e));
+      setCollBusy(null);
+    }
+  };
 
   const submitTags = async () => {
+    if (studioWriteBlocked) return;
     const add = parseTagList(tagAddDraft);
     const remove = parseTagList(tagRemoveDraft);
     if (add.length === 0 && remove.length === 0) return;
     if (tagPerAsset) {
-      const real = selectedItems.filter((i) => !i.media_id.startsWith("post_only_"));
+      const real = selectedItems.filter((i) => i.media_id && !i.shadow_cover);
       if (real.length === 0) {
         onError?.("Per-asset tags need at least one image/video row (not text-only posts).");
         return;
@@ -202,309 +320,484 @@ export default function BulkActionBar({
     else setTagRemoveDraft(tag);
   };
 
-  if (selectedCount === 0) return null;
+  if (postCount < 1) return null;
 
   const toggle = (next: Panel) => setPanel((p) => (p === next ? "none" : next));
 
-  const visRow =
-    "flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left text-xs font-medium text-[var(--lib-fg)] transition-colors hover:bg-[var(--lib-muted)] disabled:opacity-45";
-
-  return (
+  const mint = "#9bf0c4";
+  const bar = (
     <div
       ref={rootRef}
-      className="pointer-events-none absolute bottom-6 left-1/2 z-30 w-[min(100vw-1.5rem,52rem)] -translate-x-1/2 px-3"
+      className="pointer-events-none fixed bottom-6 left-1/2 z-[45] flex -translate-x-1/2 flex-col items-center"
+      data-bulk-action-bar
     >
-      <div className="pointer-events-auto relative flex flex-col items-center" data-bulk-action-bar>
+      <div className="pointer-events-auto relative flex flex-col items-center">
         {panel === "tags" ? (
           <div
-            className="mb-2 w-full max-w-md rounded-xl border border-[var(--lib-border)] bg-[var(--lib-card)] p-3 shadow-2xl"
-            style={{ boxShadow: `0 0 0 1px color-mix(in srgb, ${SEL} 22%, transparent)` }}
+            className="mb-2 w-[min(100vw-2rem,20rem)] rounded-2xl border p-3 shadow-2xl"
+            style={{ background: "#0e0e0e", borderColor: "#2a2a2a" }}
           >
-            <label className="flex cursor-pointer items-start gap-2 text-[10px] text-[var(--lib-fg)]">
-              <input
-                type="checkbox"
-                checked={tagPerAsset}
-                onChange={(e) => setTagPerAsset(e.target.checked)}
-                className="mt-0.5 rounded border-[var(--lib-border)]"
-              />
-              <span>
-                <span className="font-medium">Selected assets only</span>
-                <span className="block text-[var(--lib-fg-muted)]">
-                  {tagPerAsset
-                    ? "Tags apply to each chosen row only (good for character / prop labels inside one post). Default off = whole post."
-                    : "Turn on to tag individual files without adding tags to siblings in the same post."}
-                </span>
-              </span>
-            </label>
-            {!tagPerAsset ? (
-              <p className="mt-2 text-[10px] text-[var(--lib-fg-muted)]">
-                Applies to every post that has selected media (post-level overrides).
+            {studioWriteBlocked ? (
+              <p className="mb-2 rounded-lg border border-[var(--lib-warning)]/35 bg-[var(--lib-warning)]/10 px-2.5 py-2 text-[10px] text-[var(--lib-fg)]">
+                Patreon sync must be healthy before editing tags.
               </p>
             ) : null}
-            <p className="mt-3 text-[10px] font-semibold uppercase tracking-wider text-[var(--lib-fg-muted)]">
-              Add tags
+            <p className="text-[10px] leading-snug" style={{ color: "#666" }}>
+              Tags apply to the whole post for each selected item.
             </p>
-            <input
-              value={tagAddDraft}
-              onChange={(e) => setTagAddDraft(e.target.value)}
-              onFocus={() => setTagFieldFocus("add")}
-              placeholder="tag_a, tag_b"
-              className="mt-1 w-full rounded-lg border border-[var(--lib-border)] bg-[var(--lib-input)] px-2.5 py-2 text-xs text-[var(--lib-fg)] placeholder:text-[var(--lib-fg-muted)]"
-              onKeyDown={(e) => {
-                if (e.key === "Enter") void submitTags();
-              }}
-            />
+            <div className="mt-3 flex gap-2">
+              <input
+                value={tagAddDraft}
+                onChange={(e) => setTagAddDraft(e.target.value)}
+                onFocus={() => setTagFieldFocus("add")}
+                disabled={studioWriteBlocked}
+                placeholder="Add tags (comma-separated)"
+                aria-label="Add tags"
+                className="min-w-0 flex-1 rounded-xl border px-2.5 py-2 text-xs outline-none disabled:opacity-45"
+                style={{ background: "#111", borderColor: "#2a2a2a", color: "#e8e8e0" }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") void submitTags();
+                }}
+              />
+              <button
+                type="button"
+                disabled={
+                  studioWriteBlocked ||
+                  tagBusy ||
+                  (parseTagList(tagAddDraft).length === 0 &&
+                    parseTagList(tagRemoveDraft).length === 0)
+                }
+                onClick={() => void submitTags()}
+                className="shrink-0 rounded-xl px-3 py-2 text-xs font-semibold disabled:opacity-45"
+                style={{
+                  background: "rgba(155,240,196,0.14)",
+                  color: mint,
+                  border: "1px solid rgba(155,240,196,0.35)"
+                }}
+              >
+                {tagBusy ? "…" : "Apply"}
+              </button>
+            </div>
             {suggestedTags.length > 0 ? (
-              <div className="mt-3 space-y-1.5">
-                <p className="text-[10px] font-semibold uppercase tracking-wider text-[var(--lib-fg-muted)]">
-                  Quick pick
-                </p>
-                <p className="text-[9px] leading-snug text-[var(--lib-fg-muted)]">
-                  Fills the field you last focused (defaults to Add). Click a chip to replace its text.
-                </p>
-                <div className="flex flex-wrap gap-1">
-                  {suggestedTags.slice(0, 24).map((tag) => (
-                    <button
-                      key={tag}
-                      type="button"
-                      title={`Use “${tag}” in the ${tagFieldFocus === "add" ? "Add" : "Remove"} field`}
-                      onClick={() => applyQuickPickTag(tag)}
-                      className="rounded border border-[var(--lib-border)] bg-[var(--lib-sidebar-accent)] px-2 py-0.5 text-[10px] text-[var(--lib-fg)] hover:border-[color-mix(in_srgb,var(--lib-selection)_45%,var(--lib-border))]"
-                    >
-                      {tag}
-                    </button>
-                  ))}
-                </div>
+              <div className="mt-2.5 flex flex-wrap gap-1">
+                {suggestedTags.slice(0, 24).map((tag) => (
+                  <button
+                    key={tag}
+                    type="button"
+                    title={`Add “${tag}”`}
+                    onClick={() => applyQuickPickTag(tag)}
+                    className="rounded-lg border px-2 py-0.5 text-[10px] transition-colors"
+                    style={{ borderColor: "#2a2a2a", color: "#888", background: "#111" }}
+                  >
+                    {tag}
+                  </button>
+                ))}
               </div>
             ) : null}
             <div className="mt-3">
               <button
                 type="button"
-                aria-expanded={tagRemoveExpanded}
-                onClick={() => setTagRemoveExpanded((o) => !o)}
-                className="flex items-center gap-1 text-[10px] font-medium text-[var(--lib-fg-muted)] transition-colors hover:text-[var(--lib-fg)]"
+                aria-expanded={tagAdvancedExpanded}
+                onClick={() => setTagAdvancedExpanded((o) => !o)}
+                className="flex items-center gap-1 text-[10px] font-medium transition-colors"
+                style={{ color: "#666" }}
               >
-                More
                 <ChevronDown
-                  className={`h-3.5 w-3.5 shrink-0 transition-transform ${tagRemoveExpanded ? "rotate-180" : ""}`}
-                  aria-hidden
+                  className={`h-3 w-3 transition-transform ${tagAdvancedExpanded ? "rotate-180" : ""}`}
                 />
+                Advanced
               </button>
-              {tagRemoveExpanded ? (
-                <div className="mt-2 rounded-lg border border-[var(--lib-border)] bg-[var(--lib-muted)]/35 p-2.5">
-                  <p className="text-[10px] font-semibold uppercase tracking-wider text-[var(--lib-fg-muted)]">
-                    Remove tags
-                  </p>
+              {tagAdvancedExpanded ? (
+                <div className="mt-2 space-y-2 border-t pt-2" style={{ borderColor: "#1a1a1a" }}>
                   <input
                     value={tagRemoveDraft}
                     onChange={(e) => setTagRemoveDraft(e.target.value)}
                     onFocus={() => setTagFieldFocus("remove")}
-                    placeholder="tag_a, tag_b"
-                    className="mt-1 w-full rounded-lg border border-[var(--lib-border)] bg-[var(--lib-input)] px-2.5 py-2 text-xs text-[var(--lib-fg)] placeholder:text-[var(--lib-fg-muted)]"
+                    disabled={studioWriteBlocked}
+                    placeholder="Remove tags (comma-separated)"
+                    aria-label="Remove tags"
+                    className="w-full rounded-xl border px-2.5 py-2 text-xs outline-none disabled:opacity-45"
+                    style={{ background: "#111", borderColor: "#2a2a2a", color: "#e8e8e0" }}
                     onKeyDown={(e) => {
                       if (e.key === "Enter") void submitTags();
                     }}
                   />
-                  <p className="mt-2 text-[9px] leading-snug text-[var(--lib-fg-muted)]">
-                    If the same tag is in both Add and Remove, remove wins for this request.
-                  </p>
+                  <label className="flex items-center gap-2 text-[10px]" style={{ color: "#666" }}>
+                    <input
+                      type="checkbox"
+                      checked={tagPerAsset}
+                      onChange={(e) => setTagPerAsset(e.target.checked)}
+                      className="rounded"
+                    />
+                    Tags apply only to the selected files — other media in the same post stay
+                    unchanged
+                  </label>
                 </div>
               ) : null}
-            </div>
-            <div className="mt-3 flex justify-end gap-2">
-              <button
-                type="button"
-                onClick={() => {
-                  setTagAddDraft("");
-                  setTagRemoveDraft("");
-                  closePanel();
-                }}
-                className="rounded-lg px-3 py-1.5 text-xs text-[var(--lib-fg-muted)] hover:bg-[var(--lib-muted)] hover:text-[var(--lib-fg)]"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                disabled={
-                  tagBusy ||
-                  (parseTagList(tagAddDraft).length === 0 && parseTagList(tagRemoveDraft).length === 0)
-                }
-                onClick={() => void submitTags()}
-                className="rounded-lg px-3 py-1.5 text-xs font-semibold text-neutral-950 disabled:opacity-45"
-                style={{ backgroundColor: SEL }}
-              >
-                {tagBusy ? "…" : "Apply"}
-              </button>
             </div>
           </div>
         ) : null}
 
         {panel === "visibility" ? (
           <div
-            className="mb-2 w-[min(100%,16rem)] overflow-hidden rounded-xl border border-[var(--lib-border)] bg-[var(--lib-card)] py-1 shadow-2xl"
-            style={{ boxShadow: `0 0 0 1px color-mix(in srgb, ${SEL} 22%, transparent)` }}
-            role="menu"
-            aria-label="Visibility actions"
+            className="mb-2 w-[min(100vw-2rem,20rem)] overflow-hidden rounded-2xl border shadow-2xl"
+            style={{ background: "#0e0e0e", borderColor: "#2a2a2a" }}
+            data-visibility-switchboard
+            aria-label="Visibility"
           >
-            <button
-              type="button"
-              role="menuitem"
-              disabled={visBusy}
-              onClick={() => void applyVisibilityAxis("set_visible")}
-              className={visRow}
+            <div
+              className="flex items-center justify-between border-b px-3 py-2"
+              style={{ borderColor: "#1a1a1a" }}
             >
-              <Eye className="h-4 w-4 shrink-0" style={{ color: SEL }} aria-hidden />
-              Set Visible
-            </button>
-            <button
-              type="button"
-              role="menuitem"
-              disabled={visBusy}
-              onClick={() => void applyVisibilityAxis("set_hidden")}
-              className={visRow}
-            >
-              <EyeOff className="h-4 w-4 shrink-0 text-[var(--lib-fg-muted)]" aria-hidden />
-              Set Hidden
-            </button>
-            <div className="my-1 h-px bg-[var(--lib-border)]" role="separator" />
-            <button
-              type="button"
-              role="menuitem"
-              disabled={visBusy}
-              onClick={() => void applyVisibilityAxis("set_mature")}
-              className={visRow}
-            >
-              <ShieldAlert className="h-4 w-4 shrink-0 text-amber-400" aria-hidden />
-              Set Mature
-            </button>
-            <button
-              type="button"
-              role="menuitem"
-              disabled={visBusy}
-              onClick={() => void applyVisibilityAxis("set_general")}
-              className={visRow}
-            >
-              <ShieldCheck className="h-4 w-4 shrink-0 text-[var(--lib-fg-muted)]" aria-hidden />
-              Set General
-            </button>
+              <p
+                className="text-[10px] font-semibold uppercase tracking-[0.14em]"
+                style={{ color: "#68706c" }}
+              >
+                Visibility
+              </p>
+              <p className="text-[10px] tabular-nums" style={{ color: "#555" }}>
+                {postCount} {postCount === 1 ? "post" : "posts"}
+              </p>
+            </div>
+
+            {studioWriteBlocked ? (
+              <p
+                className="mx-3 mt-2 rounded-lg border px-2.5 py-2 text-[10px]"
+                style={{
+                  borderColor: "rgba(224,179,90,0.35)",
+                  background: "rgba(224,179,90,0.08)",
+                  color: "#e8e0d0"
+                }}
+              >
+                Sync must be healthy before changing visibility.
+              </p>
+            ) : null}
+
+            <VisibilitySwitchRow
+              label="Hidden"
+              state={hiddenState}
+              busy={visBusy}
+              disabled={studioWriteBlocked}
+              accentColor={SEL}
+              onToggle={onHiddenToggle}
+            />
+            <div className="mx-3 h-px" style={{ background: "#1a1a1a" }} role="separator" />
+            <VisibilitySwitchRow
+              label="Adult (18+)"
+              state={matureState}
+              busy={visBusy}
+              disabled={studioWriteBlocked || allHidden}
+              accentColor={SEL}
+              title={allHidden ? "Unhide first" : undefined}
+              onToggle={onMatureToggle}
+            />
+
+            <div className="border-t" style={{ borderColor: "#1a1a1a" }}>
+              <p
+                className="px-3 pb-1 pt-2.5 text-[10px] font-semibold uppercase tracking-[0.14em]"
+                style={{ color: "#68706c" }}
+              >
+                Tier access
+              </p>
+
+              <div className="px-3 pb-1.5">
+                <div className="flex items-center justify-between gap-2 py-1">
+                  <span className="text-[12px] font-medium" style={{ color: "#edf2ef" }}>
+                    Public (open web)
+                  </span>
+                  <span
+                    className="text-[10px] font-semibold uppercase tracking-wide"
+                    style={{ color: tierBucketTone(tierBoard.publicAccess) }}
+                  >
+                    {tierBucketLabel(tierBoard.publicAccess)}
+                  </span>
+                </div>
+              </div>
+
+              {tiers.length === 0 ? (
+                <p className="px-3 pb-3 text-[11px]" style={{ color: "#555" }}>
+                  No tiers synced yet.
+                </p>
+              ) : (
+                <div className="max-h-44 space-y-2.5 overflow-y-auto px-3 pb-3">
+                  {accessTiers.length > 0 ? (
+                    <div>
+                      <p
+                        className="mb-1 text-[10px] font-medium uppercase tracking-wide"
+                        style={{ color: SEL }}
+                      >
+                        Can access
+                      </p>
+                      <ul className="space-y-0.5">
+                        {accessTiers.map((t) => (
+                          <li
+                            key={t.tier_id}
+                            className="flex items-center gap-2 rounded-md px-2 py-1.5 text-[12px]"
+                            style={{ background: "rgba(155,240,196,0.06)", color: "#edf2ef" }}
+                          >
+                            <span
+                              className="h-1.5 w-1.5 shrink-0 rounded-full"
+                              style={{ background: SEL }}
+                              aria-hidden
+                            />
+                            <span className="min-w-0 truncate">{t.label}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  ) : null}
+
+                  {mixedTiers.length > 0 ? (
+                    <div>
+                      <p
+                        className="mb-1 text-[10px] font-medium uppercase tracking-wide"
+                        style={{ color: "#e0b35a" }}
+                      >
+                        Mixed
+                      </p>
+                      <ul className="space-y-0.5">
+                        {mixedTiers.map((t) => (
+                          <li
+                            key={t.tier_id}
+                            className="flex items-center gap-2 rounded-md px-2 py-1.5 text-[12px]"
+                            style={{ background: "rgba(224,179,90,0.08)", color: "#d8c9a8" }}
+                          >
+                            <span
+                              className="h-1.5 w-1.5 shrink-0 rounded-full"
+                              style={{ background: "#e0b35a" }}
+                              aria-hidden
+                            />
+                            <span className="min-w-0 truncate">{t.label}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  ) : null}
+
+                  {lockedTiers.length > 0 ? (
+                    <div>
+                      <p
+                        className="mb-1 text-[10px] font-medium uppercase tracking-wide"
+                        style={{ color: "#555" }}
+                      >
+                        No access
+                      </p>
+                      <ul className="space-y-0.5">
+                        {lockedTiers.map((t) => (
+                          <li
+                            key={t.tier_id}
+                            className="flex items-center gap-2 rounded-md px-2 py-1.5 text-[12px]"
+                            style={{ background: "#121212", color: "#6a726e" }}
+                          >
+                            <span
+                              className="h-1.5 w-1.5 shrink-0 rounded-full"
+                              style={{ background: "#3a3a3a" }}
+                              aria-hidden
+                            />
+                            <span className="min-w-0 truncate">{t.label}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  ) : null}
+                </div>
+              )}
+            </div>
           </div>
         ) : null}
 
         {panel === "collection" ? (
-          <div className="mb-2 max-h-52 w-full max-w-sm overflow-y-auto rounded-xl border border-[var(--lib-border)] bg-[var(--lib-card)] p-2 shadow-2xl">
-            <p className="px-2 pb-1 text-[10px] font-semibold uppercase tracking-wider text-[var(--lib-fg-muted)]">
-              Add posts to collection
-            </p>
-            {collections.length === 0 ? (
-              <p className="px-2 py-3 text-xs text-[var(--lib-fg-muted)]">No collections yet.</p>
-            ) : (
-              <ul className="space-y-0.5">
-                {collections.map((c) => (
-                  <li key={c.collection_id}>
-                    <button
-                      type="button"
-                      disabled={collBusy !== null}
-                      onClick={() => void addToCollection(c.collection_id)}
-                      className="flex w-full items-center justify-between rounded-lg px-2 py-2 text-left text-xs text-[var(--lib-fg)] hover:bg-[var(--lib-sidebar-accent)] disabled:opacity-50"
-                    >
-                      <span className="truncate">{c.title}</span>
-                      <span className="shrink-0 tabular-nums text-[10px] text-[var(--lib-fg-muted)]">
-                        {collBusy === c.collection_id ? "…" : `${c.post_ids.length}`}
-                      </span>
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            )}
+          <div
+            className="mb-2 w-[min(100vw-2rem,18rem)] overflow-hidden rounded-2xl border shadow-2xl"
+            style={{ background: "#0e0e0e", borderColor: "#2a2a2a" }}
+            aria-label="Add to collection"
+          >
+            <div className="border-b px-3 py-2" style={{ borderColor: "#1a1a1a" }}>
+              <p
+                className="text-[10px] font-semibold uppercase tracking-wider"
+                style={{ color: "#666" }}
+              >
+                Add to collection
+              </p>
+              <p className="mt-0.5 text-[10px] leading-snug" style={{ color: "#555" }}>
+                {postCount} posts selected
+              </p>
+            </div>
+            <div className="max-h-40 overflow-y-auto py-1">
+              {collections.length === 0 ? (
+                <p className="px-3 py-2 text-[11px]" style={{ color: "#555" }}>
+                  No collections yet — create one below.
+                </p>
+              ) : (
+                <ul className="space-y-0.5 px-1">
+                  {collections.map((c) => (
+                    <li key={c.collection_id}>
+                      <button
+                        type="button"
+                        disabled={collBusy !== null}
+                        onClick={() => void addPostsToCollection(c.collection_id)}
+                        className="flex w-full items-center justify-between gap-2 rounded-lg px-2 py-2 text-left text-xs disabled:opacity-50"
+                        style={{ color: "#ccc" }}
+                      >
+                        <span className="min-w-0 truncate font-medium">{c.title}</span>
+                        <span className="shrink-0 text-[10px]" style={{ color: "#555" }}>
+                          {collBusy === c.collection_id ? "Adding…" : `Add · ${c.post_ids.length}`}
+                        </span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+            <div className="border-t" style={{ borderColor: "#1a1a1a" }}>
+              <button
+                type="button"
+                disabled={collBusy !== null}
+                onClick={() => setNewCollectionOpen((v) => !v)}
+                className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-xs font-medium disabled:opacity-50"
+                style={{ color: "#ccc" }}
+              >
+                <Plus className="h-3.5 w-3.5 shrink-0" style={{ color: mint }} aria-hidden />
+                New Collection
+              </button>
+              {newCollectionOpen ? (
+                <div className="border-t px-3 py-3" style={{ borderColor: "#1a1a1a", background: "#0a0a0a" }}>
+                  <label className="sr-only" htmlFor="bulk-new-coll-title">
+                    New collection name
+                  </label>
+                  <input
+                    id="bulk-new-coll-title"
+                    value={newCollectionTitle}
+                    onChange={(e) => setNewCollectionTitle(e.target.value)}
+                    placeholder="Collection name"
+                    disabled={collBusy !== null}
+                    className="mb-2 w-full rounded-xl border px-2.5 py-2 text-xs outline-none disabled:opacity-45"
+                    style={{ background: "#111", borderColor: "#2a2a2a", color: "#e8e8e0" }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        void createCollectionAndAdd();
+                      }
+                    }}
+                  />
+                  <button
+                    type="button"
+                    disabled={
+                      collBusy !== null || !newCollectionTitle.trim() || selectedPostIds.length === 0
+                    }
+                    onClick={() => void createCollectionAndAdd()}
+                    className="w-full rounded-xl py-2 text-xs font-semibold disabled:opacity-40"
+                    style={{
+                      background: "rgba(155,240,196,0.14)",
+                      color: mint,
+                      border: "1px solid rgba(155,240,196,0.35)"
+                    }}
+                  >
+                    {collBusy === "new" ? "Creating…" : `Create & add ${postCount} posts`}
+                  </button>
+                </div>
+              ) : null}
+            </div>
           </div>
         ) : null}
 
+        {/* v0 LinkPostsFloatingBar chrome — fixed bottom-center */}
         <div
-          className="flex w-full items-center gap-0.5 rounded-full border-2 bg-[var(--lib-card)]/98 py-1 pl-1 pr-1 shadow-[0_12px_40px_rgba(0,0,0,0.55)] backdrop-blur-md sm:gap-1 sm:pl-1.5 sm:pr-2"
-          style={{ borderColor: SEL }}
+          className="flex items-center gap-3 rounded-2xl border px-4 py-3 shadow-2xl"
+          style={{
+            background: "#0e0e0e",
+            borderColor: "#2a2a2a",
+            boxShadow: "0 8px 40px rgba(0,0,0,0.6)"
+          }}
         >
-          <div className="flex min-w-0 items-center gap-1.5 border-r border-[var(--lib-border)] pr-2 pl-1">
-            <span
-              className="flex h-7 min-w-[2.25rem] items-center justify-center rounded-md px-2 text-xs font-bold tabular-nums text-neutral-950"
-              style={{ backgroundColor: SEL }}
-            >
-              {selectedCount}
-            </span>
-            <span className="hidden text-[11px] font-medium text-[var(--lib-fg-muted)] sm:inline">
-              selected
-            </span>
+          <span className="text-[12px]" style={{ color: "#666" }}>
+            <span className="font-semibold tabular-nums" style={{ color: "#ccc" }}>
+              {postCount}
+            </span>{" "}
+            {postCount === 1 ? "post selected" : "posts selected"}
+          </span>
+          <div className="h-4 w-px" style={{ background: "#2a2a2a" }} />
+          {onLinkPosts ? (
             <button
               type="button"
-              onClick={onClearSelection}
-              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[var(--lib-fg-muted)] hover:bg-[var(--lib-muted)] hover:text-[var(--lib-fg)]"
-              aria-label="Clear selection"
+              onClick={triggerLinkPosts}
+              disabled={postCount < 2}
+              title={postCount < 2 ? "Select at least two posts to link" : "Link posts"}
+              className="flex items-center gap-2 rounded-xl px-3.5 py-2 text-[12px] font-semibold transition-all duration-150 disabled:cursor-not-allowed disabled:opacity-40"
+              style={{
+                background: "rgba(155,240,196,0.14)",
+                color: mint,
+                border: "1px solid rgba(155,240,196,0.35)"
+              }}
             >
-              <X className="h-4 w-4" />
+              <Link2 className="h-3.5 w-3.5" />
+              Link posts
             </button>
-          </div>
-
+          ) : null}
           <button
             type="button"
             onClick={() => toggle("tags")}
-            className={`flex h-8 shrink-0 items-center gap-1.5 rounded-full px-2.5 text-xs font-medium sm:px-3 ${
-              panel === "tags"
-                ? "text-neutral-950"
-                : "text-[var(--lib-fg-muted)] hover:bg-[var(--lib-muted)] hover:text-[var(--lib-fg)]"
-            }`}
-            style={panel === "tags" ? { backgroundColor: SEL } : undefined}
+            className="flex items-center gap-1.5 rounded-xl px-2.5 py-2 text-[12px] font-medium transition-colors"
+            style={{
+              color: panel === "tags" ? mint : "#666",
+              background: panel === "tags" ? "rgba(155,240,196,0.08)" : "transparent"
+            }}
           >
             <Tag className="h-3.5 w-3.5" />
-            <span className="hidden sm:inline">Tags</span>
+            Tags
           </button>
           <button
             type="button"
             onClick={() => toggle("visibility")}
-            className={`flex h-8 shrink-0 items-center gap-1.5 rounded-full px-2.5 text-xs font-medium sm:px-3 ${
-              panel === "visibility"
-                ? "text-neutral-950"
-                : "text-[var(--lib-fg-muted)] hover:bg-[var(--lib-muted)] hover:text-[var(--lib-fg)]"
-            }`}
-            style={panel === "visibility" ? { backgroundColor: SEL } : undefined}
+            className="flex items-center gap-1.5 rounded-xl px-2.5 py-2 text-[12px] font-medium transition-colors"
+            style={{
+              color: panel === "visibility" ? mint : "#666",
+              background: panel === "visibility" ? "rgba(155,240,196,0.08)" : "transparent"
+            }}
           >
             <Eye className="h-3.5 w-3.5" />
-            <span className="hidden sm:inline">Visibility</span>
+            Visibility
           </button>
           <button
             type="button"
             onClick={() => toggle("collection")}
-            className={`flex h-8 shrink-0 items-center gap-1.5 rounded-full px-2.5 text-xs font-medium sm:px-3 ${
-              panel === "collection"
-                ? "text-neutral-950"
-                : "text-[var(--lib-fg-muted)] hover:bg-[var(--lib-muted)] hover:text-[var(--lib-fg)]"
-            }`}
-            style={panel === "collection" ? { backgroundColor: SEL } : undefined}
+            className="flex items-center gap-1.5 rounded-xl px-2.5 py-2 text-[12px] font-medium transition-colors"
+            style={{
+              color: panel === "collection" ? mint : "#666",
+              background: panel === "collection" ? "rgba(155,240,196,0.08)" : "transparent"
+            }}
           >
             <FolderPlus className="h-3.5 w-3.5" />
-            <span className="hidden sm:inline">Collection</span>
+            Collection
           </button>
+          {allSelectedAreRelayNative ? (
+            <button
+              type="button"
+              onClick={() => void deleteSelectedRelayPosts()}
+              disabled={studioWriteBlocked || deleteBusy}
+              title={`Delete ${postCount} Relay posts`}
+              className="flex items-center gap-1.5 rounded-xl px-2.5 py-2 text-[12px] font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-45"
+              style={{ color: "#f87171" }}
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+              {deleteBusy ? "Deleting…" : "Delete"}
+            </button>
+          ) : null}
           <button
             type="button"
-            onClick={onExport}
-            className="flex h-8 shrink-0 items-center gap-1.5 rounded-full px-2.5 text-xs font-medium text-[var(--lib-fg-muted)] hover:bg-[var(--lib-muted)] hover:text-[var(--lib-fg)] sm:px-3"
+            onClick={onClearSelection}
+            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border transition-all duration-150"
+            style={{ borderColor: "#2a2a2a", color: "#555", background: "transparent" }}
+            aria-label="Clear selection"
+            title="Clear selection"
           >
-            <Download className="h-3.5 w-3.5" />
-            <span className="hidden sm:inline">Export</span>
-          </button>
-
-          <span className="mx-0.5 hidden h-5 w-px bg-[var(--lib-border)] sm:inline" aria-hidden />
-
-          <button
-            type="button"
-            onClick={onInspectPost}
-            className="ml-auto flex h-8 shrink-0 items-center justify-center gap-1.5 rounded-full px-2.5 text-xs font-medium text-[var(--lib-fg-muted)] hover:bg-[var(--lib-muted)] hover:text-[var(--lib-fg)] sm:ml-0 sm:px-3"
-            aria-label="Inspect post"
-            title="Open full post (first selected asset’s post)"
-          >
-            <FileText className="h-3.5 w-3.5" />
-            <span className="hidden sm:inline">Inspect Post</span>
+            <X className="h-3 w-3" />
           </button>
         </div>
       </div>
     </div>
   );
+
+  if (typeof document === "undefined") return bar;
+  return createPortal(bar, document.body);
 }

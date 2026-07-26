@@ -1,4 +1,16 @@
-import browser from "./browser";
+import browser from "./browser.js";
+import {
+  CrossPostSchemaError,
+  parseDeviantArtCrossPostPackage,
+  parsePatreonCrossPostPackage,
+  parseXCrossPostPackage,
+  PENDING_CROSS_POST_STORAGE_KEY,
+  type DeviantArtCrossPostPackage,
+  type PatreonCrossPostPackage,
+  type PendingCrossPostPackage,
+  type XCrossPostPackage
+} from "./cross-post-types.js";
+import type { ExternalMetricsDestination } from "./messages.js";
 
 /** Thrown when stored JSON does not match the expected schema; corrupt keys are cleared first. */
 export class StorageSchemaError extends Error {
@@ -181,4 +193,142 @@ export async function setConsentLastError(message: string | undefined): Promise<
     return;
   }
   await browser.storage.local.set({ [K_CONSENT_ERR]: message.trim() });
+}
+
+export type { DeviantArtCrossPostPackage, PatreonCrossPostPackage, XCrossPostPackage, PendingCrossPostPackage };
+
+/** Backend-authorized package awaiting compose fill after background fetch. */
+export async function getPendingCrossPost(): Promise<PatreonCrossPostPackage | undefined> {
+  const r = await browser.storage.local.get(PENDING_CROSS_POST_STORAGE_KEY);
+  const raw = r[PENDING_CROSS_POST_STORAGE_KEY];
+  if (raw === undefined || raw === null) return undefined;
+  try {
+    return parsePatreonCrossPostPackage(raw);
+  } catch (e) {
+    await removeKeys([PENDING_CROSS_POST_STORAGE_KEY]);
+    if (e instanceof CrossPostSchemaError) {
+      throw new StorageSchemaError(e.message);
+    }
+    throw new StorageSchemaError("pending_cross_post: parse failed");
+  }
+}
+
+export async function getPendingXCrossPost(): Promise<XCrossPostPackage | undefined> {
+  const r = await browser.storage.local.get(PENDING_CROSS_POST_STORAGE_KEY);
+  const raw = r[PENDING_CROSS_POST_STORAGE_KEY];
+  if (raw === undefined || raw === null) return undefined;
+  try {
+    return parseXCrossPostPackage(raw);
+  } catch (e) {
+    await removeKeys([PENDING_CROSS_POST_STORAGE_KEY]);
+    if (e instanceof CrossPostSchemaError) {
+      throw new StorageSchemaError(e.message);
+    }
+    throw new StorageSchemaError("pending_cross_post: parse failed");
+  }
+}
+
+export async function getPendingDeviantArtCrossPost(): Promise<
+  DeviantArtCrossPostPackage | undefined
+> {
+  const r = await browser.storage.local.get(PENDING_CROSS_POST_STORAGE_KEY);
+  const raw = r[PENDING_CROSS_POST_STORAGE_KEY];
+  if (raw === undefined || raw === null) return undefined;
+  try {
+    return parseDeviantArtCrossPostPackage(raw);
+  } catch (e) {
+    await removeKeys([PENDING_CROSS_POST_STORAGE_KEY]);
+    if (e instanceof CrossPostSchemaError) {
+      throw new StorageSchemaError(e.message);
+    }
+    throw new StorageSchemaError("pending_cross_post: parse failed");
+  }
+}
+
+function normalizePendingCrossPost(pkg: PendingCrossPostPackage): PendingCrossPostPackage {
+  if ("post_text" in pkg && typeof pkg.post_text === "string") {
+    return parseXCrossPostPackage(pkg);
+  }
+  if ("tags" in pkg && Array.isArray(pkg.tags)) {
+    return parseDeviantArtCrossPostPackage(pkg);
+  }
+  return parsePatreonCrossPostPackage(pkg);
+}
+
+export async function setPendingCrossPost(
+  pkg: PendingCrossPostPackage,
+  attemptId?: string | null
+): Promise<void> {
+  const normalized = normalizePendingCrossPost(pkg);
+  const payload: Record<string, unknown> = { [PENDING_CROSS_POST_STORAGE_KEY]: normalized };
+  if (attemptId?.trim()) {
+    payload.pending_cross_post_attempt_id = attemptId.trim();
+  }
+  await browser.storage.local.set(payload);
+}
+
+export async function getPendingCrossPostAttemptId(): Promise<string | null> {
+  const raw = await browser.storage.local.get("pending_cross_post_attempt_id");
+  const id = raw.pending_cross_post_attempt_id;
+  return typeof id === "string" && id.trim() ? id.trim() : null;
+}
+
+export async function clearPendingCrossPost(): Promise<void> {
+  await removeKeys([PENDING_CROSS_POST_STORAGE_KEY, "pending_cross_post_attempt_id"]);
+}
+
+export const PENDING_EXTERNAL_METRICS_SCRAPE_KEY = "pending_external_metrics_scrape" as const;
+
+export type PendingExternalMetricsScrape = {
+  attempt_id: string;
+  post_id: string;
+  destination: ExternalMetricsDestination;
+  external_url: string;
+};
+
+function parsePendingExternalMetricsScrape(raw: unknown): PendingExternalMetricsScrape | null {
+  if (raw === null || typeof raw !== "object" || Array.isArray(raw)) return null;
+  const o = raw as Record<string, unknown>;
+  const attemptId = typeof o.attempt_id === "string" ? o.attempt_id.trim() : "";
+  const postId = typeof o.post_id === "string" ? o.post_id.trim() : "";
+  const externalUrl = typeof o.external_url === "string" ? o.external_url.trim() : "";
+  const destination = o.destination;
+  if (
+    !attemptId ||
+    !postId ||
+    !externalUrl ||
+    (destination !== "patreon" && destination !== "x" && destination !== "deviantart")
+  ) {
+    return null;
+  }
+  return {
+    attempt_id: attemptId,
+    post_id: postId,
+    destination,
+    external_url: externalUrl
+  };
+}
+
+export async function setPendingExternalMetricsScrape(
+  context: PendingExternalMetricsScrape
+): Promise<void> {
+  const parsed = parsePendingExternalMetricsScrape(context);
+  if (!parsed) {
+    throw new StorageSchemaError("pending_external_metrics_scrape: invalid shape");
+  }
+  await browser.storage.local.set({ [PENDING_EXTERNAL_METRICS_SCRAPE_KEY]: parsed });
+}
+
+export async function getPendingExternalMetricsScrape(): Promise<PendingExternalMetricsScrape | null> {
+  const raw = await browser.storage.local.get(PENDING_EXTERNAL_METRICS_SCRAPE_KEY);
+  const parsed = parsePendingExternalMetricsScrape(raw[PENDING_EXTERNAL_METRICS_SCRAPE_KEY]);
+  if (!parsed) {
+    await removeKeys([PENDING_EXTERNAL_METRICS_SCRAPE_KEY]);
+    return null;
+  }
+  return parsed;
+}
+
+export async function clearPendingExternalMetricsScrape(): Promise<void> {
+  await removeKeys([PENDING_EXTERNAL_METRICS_SCRAPE_KEY]);
 }

@@ -1,0 +1,54 @@
+{
+  "contract_version": "clone-site-model/1.0.0",
+  "site_id": "site_fixture_export_fail",
+  "creator_id": "cr_fixture_export",
+  "generated_at": "2026-07-22T16:10:00.000Z",
+  "base_url": "http://localhost:3001",
+  "tiers": [
+    {
+      "tier_id": "t_gold",
+      "title": "Gold",
+      "access_level": "tier_gated",
+      "amount_cents": 1000
+    }
+  ],
+  "posts": [
+    {
+      "post_id": "p_export_fail",
+      "slug": "failed-export-post",
+      "title": "Failed Export Post",
+      "published_at": "2026-07-08T12:00:00.000Z",
+      "tag_ids": [],
+      "access": {
+        "level": "tier_gated",
+        "tier_ids": ["t_gold"],
+        "match_mode": "tier_or_higher"
+      },
+      "media": [
+        {
+          "media_id": "m_export_fail",
+          "mime_type": "image/jpeg",
+          "has_export": false,
+          "content_path": "/api/v1/export/media/cr_fixture_export/m_export_fail/content"
+        }
+      ]
+    },
+    {
+      "post_id": "p_export_ok",
+      "slug": "successful-export-sibling",
+      "title": "Successful Export Sibling",
+      "published_at": "2026-07-08T13:00:00.000Z",
+      "tag_ids": [],
+      "access": { "level": "public", "tier_ids": [] },
+      "media": [
+        {
+          "media_id": "m_public",
+          "mime_type": "image/svg+xml",
+          "has_export": true,
+          "content_path": "/media/m_public.svg"
+        }
+      ]
+    }
+  ],
+  "total_media": 2
+}

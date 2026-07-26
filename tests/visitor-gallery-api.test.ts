@@ -166,8 +166,10 @@ describe("Visitor gallery API", () => {
     const paid = list.body.data.items.find((i: { post_id: string }) => i.post_id === "p_paid");
     expect(pub?.has_export).toBe(true);
     expect(String(pub?.content_url_path ?? "")).toContain("/export/media/");
+    expect(String(pub?.thumb_url_path ?? "")).toContain("/thumb");
     expect(paid?.has_export).toBe(false);
     expect(paid?.content_url_path).toBe("");
+    expect(paid?.thumb_url_path ?? "").toBe("");
     expect(String(paid?.preview_url_path ?? "")).toContain("/preview");
   });
 
@@ -219,6 +221,75 @@ describe("Visitor gallery API", () => {
     expect(pr.status).toBe(200);
     expect(String(pr.headers["content-type"] ?? "")).toContain("image/jpeg");
     expect(pr.body.length).toBeGreaterThan(80);
+  });
+
+  it("GET export thumb returns WebP for exported image; tier-gated without session matches content gate", async () => {
+    const tempDir = await mkdtemp(join(tmpdir(), "relay-thumb-"));
+    const png = Buffer.from(
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
+      "base64"
+    );
+    const fetchImpl = vi.fn(async () => new Response(png, { status: 200 })) as unknown as typeof fetch;
+    const { app } = testApp(tempDir, fetchImpl);
+
+    await request(app)
+      .post("/api/v1/ingest/batches?process_sync=true")
+      .send({
+        creator_id: "cv_thumb",
+        tiers: [
+          {
+            tier_id: "t_paid",
+            title: "Paid",
+            upstream_updated_at: "2026-03-30T12:00:00.000Z"
+          }
+        ],
+        posts: [
+          {
+            post_id: "p_pub",
+            title: "Public",
+            published_at: "2026-03-10T12:00:00.000Z",
+            tag_ids: [],
+            tier_ids: [RELAY_TIER_PUBLIC],
+            upstream_revision: "a",
+            media: [
+              {
+                media_id: "m_pub",
+                mime_type: "image/png",
+                upstream_revision: "mp",
+                upstream_url: "https://cdn.example/pub.png"
+              }
+            ]
+          },
+          {
+            post_id: "p_paid",
+            title: "Paid only",
+            published_at: "2026-03-11T12:00:00.000Z",
+            tag_ids: [],
+            tier_ids: ["t_paid"],
+            upstream_revision: "b",
+            media: [
+              {
+                media_id: "m_paid",
+                mime_type: "image/png",
+                upstream_revision: "mz",
+                upstream_url: "https://cdn.example/paid.png"
+              }
+            ]
+          }
+        ]
+      });
+
+    await request(app).post("/api/v1/export/media").send({ creator_id: "cv_thumb", media_id: "m_pub" });
+    await request(app).post("/api/v1/export/media").send({ creator_id: "cv_thumb", media_id: "m_paid" });
+
+    const pub = await request(app).get("/api/v1/export/media/cv_thumb/m_pub/thumb");
+    expect(pub.status).toBe(200);
+    expect(String(pub.headers["content-type"] ?? "")).toContain("image/webp");
+    expect(pub.body.length).toBeGreaterThan(10);
+
+    const paidNoSess = await request(app).get("/api/v1/export/media/cv_thumb/m_paid/thumb");
+    const paidContentNoSess = await request(app).get("/api/v1/export/media/cv_thumb/m_paid/content");
+    expect(paidNoSess.status).toBe(paidContentNoSess.status);
   });
 
   it("visitor=true collections drop hidden posts from post_ids", async () => {

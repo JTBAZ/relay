@@ -131,7 +131,7 @@ function Card({
 // ── Main component ───────────────────────────────────────────────────────────
 
 export interface ProfilePageProps {
-  /** When embedded in RelayApp, switches home/discover. Otherwise links to `/patron/feed`. */
+  /** When embedded in RelayApp, switches home/discover. Otherwise links to `/feed`. */
   onNavigate?: (view: "home" | "discover") => void;
 }
 
@@ -163,14 +163,14 @@ export function ProfilePage({ onNavigate }: ProfilePageProps) {
   ) : (
     <div className="flex shrink-0 items-center gap-2">
       <Link
-        href="/patron/feed"
+        href="/feed"
         className="flex items-center gap-1.5 rounded-lg border border-[#242424] bg-[#141414] px-3 py-1.5 text-xs text-[#888888] transition-colors duration-150 hover:border-[#333333] hover:text-[#C8C8C8]"
       >
         Go to feed
         <ArrowRight size={11} aria-hidden="true" />
       </Link>
       <Link
-        href="/patron/feed"
+        href="/feed"
         className="flex items-center gap-1.5 rounded-lg border border-[#242424] bg-[#141414] px-3 py-1.5 text-xs text-[#888888] transition-colors duration-150 hover:border-[#333333] hover:text-[#C8C8C8]"
       >
         Discover
@@ -335,7 +335,7 @@ export function ProfilePage({ onNavigate }: ProfilePageProps) {
             {SUPPORTED_CREATORS.map((creator) => (
               <Link
                 key={creator.id}
-                href={`/patron/c/${encodeURIComponent(creator.handle)}`}
+                href={`/${encodeURIComponent(creator.handle)}`}
                 className="group flex w-full items-center gap-4 rounded-xl border border-[#1A1A1A] bg-[#0E0E0E] px-4 py-3.5 transition-colors duration-150 hover:border-[#2A2A2A]"
               >
                 <div className="h-9 w-9 shrink-0 overflow-hidden rounded-full border border-[#222222] bg-[#1A1A1A]">
@@ -388,7 +388,7 @@ export function ProfilePage({ onNavigate }: ProfilePageProps) {
           </div>
 
           <Link
-            href="/patron/former-subscriptions"
+            href="/former-subscriptions"
             className="mt-3 inline-block text-xs text-[#3A3A3A] transition-colors duration-150 hover:text-[#555555]"
           >
             Former subscriptions
@@ -453,7 +453,7 @@ export function ProfilePage({ onNavigate }: ProfilePageProps) {
                   You have 1 bookmarked brief and 1 draft inquiry.
                 </p>
                 <Link
-                  href="/patron/commission-hub"
+                  href="/commission-hub"
                   className="mt-2 inline-block text-xs text-[#C5B358] transition-colors duration-150 hover:text-[#d4c370]"
                 >
                   Browse marketplace

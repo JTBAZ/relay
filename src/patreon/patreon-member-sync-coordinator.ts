@@ -1,3 +1,11 @@
+/**
+ * @fileoverview Debounced scheduler coalescing Patreon `members:*` webhook bursts into one `syncMembers` call per creator/campaign key.
+ * @description In-memory timers; records health via `PatreonSyncHealthStoreAPI`.
+ * @async Internal `runMemberSync` awaits Patreon + DB.
+ * @throws Errors swallowed per design — classified into health store failures best-effort.
+ * @see {@link ../jsdoc-core-entities.ts}
+ * @see prisma/schema.prisma Identity / membership targets inside `PatreonSyncService.syncMembers`
+ */
 import type { PatreonSyncHealthStoreAPI } from "./patreon-sync-health-store.js";
 import type { PatreonSyncService } from "./patreon-sync-service.js";
 import { classifySyncError } from "./sync-error-copy.js";

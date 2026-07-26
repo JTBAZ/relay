@@ -1,0 +1,18 @@
+# Escape Hatch Path B — Caddy reverse-proxy / TLS sample (EH-071)
+#
+# Replace example.art with the creator domain. Run Caddy on the host or as a
+# sibling container. This file does not prove live ACME/DNS — operators must
+# verify certificates in their environment.
+#
+# productionSafe: false
+
+{$ESCAPE_HATCH_SITE_HOST:localhost} {
+	encode gzip
+	reverse_proxy app:3001
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+		X-Content-Type-Options nosniff
+		Referrer-Policy strict-origin-when-cross-origin
+	}
+}

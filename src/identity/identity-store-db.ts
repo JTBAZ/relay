@@ -1,3 +1,9 @@
+/**
+ * @fileoverview Prisma implementation of `IdentityStore` (accounts, patron memberships, hashed sessions).
+ * @description Patreon merge rules, platform tenant bootstrap, entitlement snapshots on tier changes, and campaign→creator resolution for unified OAuth.
+ * @see src/jsdoc-core-entities.ts
+ */
+
 import {
   IdentityAuthProvider,
   PrismaClient,
@@ -23,7 +29,9 @@ function mapAuthProviderFromDb(a: IdentityAuthProvider): AuthProvider {
   return a === IdentityAuthProvider.independent ? "independent" : "patreon";
 }
 
-/** Same Patreon user id cannot be merged onto a different `Account` than the email row (see `createUser`). */
+/**
+ * @description Thrown when Patreon user id cannot be merged without splitting two `Account` rows.
+ */
 export class PatreonAccountLinkConflictError extends Error {
   public override readonly name = "PatreonAccountLinkConflictError";
   constructor(message?: string) {
@@ -45,6 +53,8 @@ function membershipToAccount(
     user_id: m.id,
     creator_id: rid,
     email: m.account.emailNorm ?? "",
+    username: m.account.username ?? null,
+    username_norm: m.account.usernameNorm ?? null,
     password_hash: m.account.passwordHash ?? "",
     auth_provider: mapAuthProviderFromDb(m.account.identityAuthProvider),
     patreon_user_id: m.account.patronPatreonUserId ?? undefined,
@@ -54,6 +64,10 @@ function membershipToAccount(
   };
 }
 
+/**
+ * @description Postgres-backed identity store implementing {@link IdentityStore}.
+ * @see ./identity-store.js
+ */
 export class DbIdentityStore implements IdentityStore {
   public constructor(private readonly prisma: PrismaClient) {}
 
@@ -109,6 +123,8 @@ export class DbIdentityStore implements IdentityStore {
         account = await tx.account.create({
           data: {
             emailNorm: emailNorm.length > 0 ? emailNorm : null,
+            username: user.username ?? null,
+            usernameNorm: user.username_norm ?? null,
             passwordHash: user.password_hash || null,
             identityAuthProvider: mapAuthProvider(user.auth_provider),
             patronPatreonUserId: user.patreon_user_id ?? null,
@@ -120,6 +136,8 @@ export class DbIdentityStore implements IdentityStore {
           where: { id: account.id },
           data: {
             emailNorm: emailNorm.length > 0 ? emailNorm : account.emailNorm,
+            username: user.username ?? account.username,
+            usernameNorm: user.username_norm ?? account.usernameNorm,
             passwordHash: user.password_hash || null,
             identityAuthProvider: mapAuthProvider(user.auth_provider),
             patronPatreonUserId: user.patreon_user_id ?? account.patronPatreonUserId,

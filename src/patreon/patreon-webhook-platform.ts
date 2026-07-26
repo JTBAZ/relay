@@ -1,3 +1,11 @@
+/**
+ * @fileoverview Routes verified Patreon v2 webhook events to post sync (`scrapeOrSync`) or debounced member sync scheduling.
+ * @description Assumes caller verified `X-Patreon-Signature` and resolved `creator_id` for opaque URLs.
+ * @async
+ * @throws {Error} From `scrapeOrSync` when post-shaped events fire.
+ * @see {@link ../webhooks/patreon-webhook.js}
+ * @see prisma/schema.prisma Indirect via sync + member pipelines
+ */
 import type { PatreonMemberSyncCoordinator } from "./patreon-member-sync-coordinator.js";
 import type { PatreonSyncService } from "./patreon-sync-service.js";
 import {

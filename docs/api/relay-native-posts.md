@@ -17,7 +17,7 @@ Contract for **M3** implementation (`T-4.2` transactional create). Aligns with P
 | **Explicit** | If the client sends `campaign_id`, it must be a `Campaign.id` where `Campaign.creatorId` equals the request `creator_id`. Otherwise **`400`**. |
 | **Not in v1** | A free-floating “synthetic” Relay campaign with no Patreon link is **out of scope** for this design; add a separate spike/migration if product requires Relay-only creators with no Patreon campaign. |
 
-**Tier validation (from Airtable T-4.2):** every id in `tier_ids` must be a `Tier.id` with `Tier.campaignId` equal to the resolved `Post.campaignId` (and `Tier.creatorId` = creator). Otherwise **`400 INVALID_TIER_REF`**.
+**Tier validation (T-4.2 / Option B):** each value in `tier_ids` (and `required_tier_id` when set) must resolve to exactly one `Tier` for the request `creator_id` whose `Tier.campaignId` matches the resolved `Post.campaignId`. The request may send **Prisma `Tier.id`** or **`Tier.relayTierId`** (same disambiguation rules as `resolveRelayPostTier` in `src/relay/create-relay-post.ts`). Otherwise **`400 INVALID_TIER_REF`**. **Persisted rows:** `PostVersion.tierIds` and `Post.requiredTierId` store canonical **`tiers.relay_tier_id`**; **`PostTier`** junction rows continue to reference **`Tier.id`** only.
 
 ## Request
 
@@ -36,8 +36,8 @@ Content-Type: application/json
 | `title` | string | **yes** | `PostVersion.title` (v1, non-empty; max length TBD in `T-4.2`, suggest 500). |
 | `description` | string \| null | no | HTML or plain per product; `PostVersion.description`. |
 | `is_public` | boolean | **yes** | Maps to `Post.isPublic`. If `true`, `Post.requiredTierId` is null. |
-| `required_tier_id` | string \| null | no | `Post.requiredTierId` — single tier for “must have this tier (or public)” RLS/feed; **null** when `is_public` is true or for “followers” semantics per `T-4.2` product. |
-| `tier_ids` | string[] | **yes** | Version-level access: `PostVersion.tierIds` and drives `PostTier` rows. Each id must be a stable **catalog** tier id: same strings as `TierFacet.tier_id` from `GET /api/v1/gallery/facets?creator_id=…` (Prisma `Tier.id`). **Web (T-6.2):** `CreatorTierCatalogMultiselect` + `fetchCreatorGalleryFacets` in `web/lib/relay-api.ts`. |
+| `required_tier_id` | string \| null | no | **Request:** same resolution as `tier_ids` (**`Tier.id`** or **`relayTierId`**). **Persisted:** `Post.requiredTierId` is the canonical **`relay_tier_id`** (RLS / membership); **null** when `is_public` is true or for “followers” semantics per product. **`201` response:** gate field is relay-key space (see envelope note below). |
+| `tier_ids` | string[] | **yes** | **Request:** pass **Prisma `Tier.id`** from `GET /api/v1/relay/compose-tiers` (`tier_id` on each row), *or* a **`relayTierId`**. **Do not** use `GET /api/v1/gallery/facets` `tiers[].tier_id` for compose unless you intend relay keys (also accepted when they resolve uniquely). **Persisted:** `PostVersion.tierIds` holds **`relay_tier_id`** values (gallery snapshot / entitlement / facet titles). **`PostTier`** rows are still created from Prisma **`Tier.id`**. **`201`:** `version.tier_ids` reflects persisted **relay** keys, not necessarily the strings sent in the request. Open-web: `is_public: true` and `tier_ids: []`. |
 | `tag_ids` | string[] | no | `PostVersion.tagIds`; default `[]`. |
 | `media_ids` | string[] | no | References `MediaAsset.id` (same `creatorId`). Must be **`RELAY_UPLOAD`** + committed (`currentStorageKey` set) for v1, or as relaxed in `T-4.2`. |
 | `publish` | boolean | **yes** | `false` = draft. **`PostVersion.publishedAt` is non-null in Prisma today** — `T-4.2` must either (a) use an agreed **sentinel** datetime for “not yet published,” (b) add a migration to make `published_at` nullable, or (c) ship v1 with **`publish: true` only** until drafts are unblocked. |
@@ -55,11 +55,11 @@ Content-Type: application/json
   "data": {
     "post": {
       "id": "string",
-      "creator_id": "string",
-      "campaign_id": "string",
+      "campaignId": "string",
+      "creatorId": "string",
       "source": "RELAY",
-      "is_public": false,
-      "required_tier_id": null
+      "isPublic": false,
+      "requiredTierId": null
     },
     "version": {
       "id": "string",
@@ -77,6 +77,8 @@ Content-Type: application/json
 ```
 
 Wrapped in the same `success` / `trace_id` pattern as other Relay API JSON (`src/server.ts` `successEnvelope`).
+
+**Option B — tier id space in `201`:** `version.tier_ids` are **`relay_tier_id`** strings. `post.requiredTierId` when set is **`relay_tier_id`** space, not Prisma `Tier.id`.
 
 ## Error responses
 
@@ -96,10 +98,21 @@ Wrapped in the same `success` / `trace_id` pattern as other Relay API JSON (`src
 ## Web client (T-4.1 agreement)
 
 - Types should mirror **`docs/api/schemas/relay-posts.request.schema.json`** and **`docs/api/schemas/relay-posts.response.schema.json`** (or a single bundle).
-- `web/lib/relay-api.ts` (or follow-on `T-6.3`) will call this route after `upload/init` + `upload/commit` + `media_id` is known.
+- `web/lib/relay-api.ts` calls this route after `upload/init` + `upload/commit` when `media_id` values are known.
+
+### Tier ids: compose vs gallery facets vs create response
+
+| Surface | Endpoint / data | `tier_id` / tier list meaning |
+|---------|----------------|------------------------------|
+| **Relay compose** (request body) | `GET /api/v1/relay/compose-tiers` | Response `tier_id` = Prisma **`Tier.id`** — convenient for `POST /relay/posts` **`tier_ids`**; `relay_tier_id` on the same row is the canonical key persisted on `PostVersion` / returned on **`201`**. |
+| **Gallery filters / chips** | `GET /api/v1/gallery/facets` → `tiers[]` | Relay keys — same namespace as **`GalleryItem.tier_ids`**. |
+| **Create post success** | **`201`** `data.version.tier_ids` | **`relay_tier_id`** strings (aligned with facets / entitlement), regardless of whether the client sent Prisma ids or relay keys in the request. |
+
+Analytics helpers in `web/lib/tier-access.ts` may bucket “free/public” tiers for chips; they must **not** replace the compose catalog above.
 
 ## Related
 
 - Prisma: `Post`, `PostVersion`, `PostTier`, `Campaign`, `Tier`, `MediaAsset`, `PostSource`, `MediaIngestOrigin`
+- **Compose tier catalog:** `GET /api/v1/relay/compose-tiers` in `src/server.ts` (same session/guard pattern as `POST /api/v1/relay/posts`).
 - **Shipped (T-4.2):** `POST /api/v1/relay/posts` in `src/server.ts`; domain logic in `src/relay/create-relay-post.ts` (`createRelayPostTransaction`, `resolveCampaignIdForRelayPost`, `RelayCreatePostError`). Tests: `tests/relay-create-post.test.ts`.
 - ADR: `docs/architecture/adr/002-r2-creator-uploads-presigned-vs-server.md` (upload) — R2 + native post read path; write path is Relay HTTP + Prisma.

@@ -1,13 +1,14 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import {
   RELAY_API_BASE,
   galleryItemExportVisibleToVisitor,
   galleryItemPreviewSrc,
   type GalleryItem,
   type PageLayout,
-  type TierFacet
+  type TierFacet,
+  type TipGatedDiscoverItem
 } from "@/lib/relay-api";
 import { accessChipLabel } from "@/app/components/GalleryGridTile";
 import { groupGalleryItemsByPost } from "@/lib/gallery-group";
@@ -17,14 +18,15 @@ import { visitorMediaTierGateLocked } from "@/lib/visitor-tier-gate";
 import { VisitorBatchSlideMedia } from "@/app/components/VisitorBatchSlideMedia";
 import {
   VisitorTierGateBackdrop,
-  VisitorTierGateOverlay,
   type VisitorTierGateOverlayVariant
 } from "@/app/components/visitor/VisitorTierGateOverlay";
+import { LockedPromoOverlay } from "@/app/components/visitor/LockedPromoOverlay";
 import {
   VisitorPatronTileEngageCluster,
   visitorPatronStarSnipFromEngagement,
   type VisitorPatronEngagementCallbacks
 } from "@/app/components/visitor/VisitorPatronTileEngage";
+import { TipBlurredTile } from "@/components/patron/TipRevealModal";
 
 type Props = {
   layout: PageLayout;
@@ -43,6 +45,18 @@ type Props = {
   lockedOverlayVariant?: VisitorTierGateOverlayVariant;
   /** Visitor star (whole post) + snip (visible slide’s media); omit in designer-only contexts */
   patronEngagement?: VisitorPatronEngagementCallbacks;
+  onVisitorTierReveal?: (args: { postId: string; mediaId?: string }) => void;
+  /** Tip beta (MB-6): eligible locked promo posts → Tip blur tile. */
+  tipGatedByPostId?: Map<string, TipGatedDiscoverItem>;
+  onTipSelect?: (item: TipGatedDiscoverItem) => void;
+  /**
+   * Site Designer canvas: wrap each API section body (title + grid) for selection chrome.
+   * When set, the outer `<section>` wrapper is omitted — use `children` only inside your frame.
+   */
+  renderDesignerSectionChrome?: (ctx: {
+    apiSectionId: string;
+    children: React.ReactNode;
+  }) => React.ReactNode;
 };
 
 function tierBadgeLabel(
@@ -71,6 +85,9 @@ function SectionGroupTile({
   accentColor,
   lockedOverlayVariant,
   patronEngagement,
+  onVisitorTierReveal,
+  tipItem,
+  onTipSelect,
   imgClass = "aspect-square",
 }: {
   items: GalleryItem[];
@@ -83,6 +100,9 @@ function SectionGroupTile({
   accentColor: string;
   lockedOverlayVariant: VisitorTierGateOverlayVariant;
   patronEngagement?: VisitorPatronEngagementCallbacks;
+  onVisitorTierReveal?: (args: { postId: string; mediaId?: string }) => void;
+  tipItem?: TipGatedDiscoverItem;
+  onTipSelect?: (item: TipGatedDiscoverItem) => void;
   imgClass?: string;
 }) {
   const n = items.length;
@@ -115,6 +135,10 @@ function SectionGroupTile({
     ? visitorPatronStarSnipFromEngagement(primary.post_id, patronEngagement)
     : null;
 
+  if (tipItem && soloGateLocked && onTipSelect) {
+    return <TipBlurredTile item={tipItem} onSelect={onTipSelect} />;
+  }
+
   return (
     <div className="group relative overflow-hidden rounded-lg bg-current/[0.06] motion-safe:transition-[transform,box-shadow] motion-safe:duration-300 motion-safe:ease-out hover:z-[1] hover:-translate-y-0.5 hover:shadow-[0_12px_40px_-12px_rgba(0,0,0,0.55)]">
       {hasMulti ? (
@@ -132,6 +156,7 @@ function SectionGroupTile({
           lockedOverlayVariant={lockedOverlayVariant}
           visitorPatronStar={engage?.visitorPatronStar}
           visitorPatronSnip={engage?.visitorPatronSnip}
+          onVisitorTierReveal={onVisitorTierReveal}
           onActivateItem={(item) => onOpenItem(item)}
         />
       ) : (
@@ -143,11 +168,17 @@ function SectionGroupTile({
           {soloGateLocked ? (
             <div className="relative h-full w-full min-h-[8rem]">
               <VisitorTierGateBackdrop previewSrc={galleryItemPreviewSrc(solo)} />
-              <VisitorTierGateOverlay
+              <LockedPromoOverlay
                 unlockLabel={designerUnlockLabelFromFacets(solo, tierOrderIds, tierTitleById)}
                 accentColor={accentColor}
                 membershipUrl={membershipUrl}
                 variant={lockedOverlayVariant}
+                onUpgradeClick={() =>
+                  onVisitorTierReveal?.({
+                    postId: solo.post_id,
+                    mediaId: solo.media_id
+                  })
+                }
               />
             </div>
           ) : soloImage ? (
@@ -286,7 +317,11 @@ export default function PatronLayoutSections({
   membershipUrl = null,
   accentColor = "#00aa6f",
   lockedOverlayVariant = "blurred",
-  patronEngagement
+  patronEngagement,
+  onVisitorTierReveal,
+  tipGatedByPostId,
+  onTipSelect,
+  renderDesignerSectionChrome
 }: Props) {
   const showTierBadges = layout.theme.show_tier_badges ?? true;
   const arrMode = layout.theme.gallery_arrangement ?? "chronological";
@@ -306,7 +341,9 @@ export default function PatronLayoutSections({
     membershipUrl,
     accentColor,
     lockedOverlayVariant,
-    patronEngagement
+    patronEngagement,
+    onVisitorTierReveal,
+    onTipSelect
   };
 
   return (
@@ -319,8 +356,8 @@ export default function PatronLayoutSections({
         const displayGroups = sec.max_items ? groups.slice(0, sec.max_items) : groups;
         const cols = Math.max(1, Math.min(sec.columns ?? 3, 3));
 
-        return (
-          <section key={sec.section_id} className="mb-10 last:mb-0">
+        const sectionBody = (
+          <>
             <div className="mb-4 flex items-end gap-3 border-b border-[var(--lib-border)] pb-3">
               <h2
                 className="font-[family-name:var(--font-display)] text-xl font-medium tracking-tight text-[var(--lib-fg)] md:text-2xl"
@@ -343,16 +380,15 @@ export default function PatronLayoutSections({
               </div>
             ) : sec.layout === "featured" ? (
               <div className="flex flex-col gap-3 md:gap-4">
-                {/* Lead post — 16:9 full-width */}
                 {displayGroups[0] ? (
                   <SectionGroupTile
                     key={displayGroups[0].post_id}
                     items={displayGroups[0].items}
                     imgClass="aspect-[16/9] w-full"
+                    tipItem={tipGatedByPostId?.get(displayGroups[0].post_id)}
                     {...sectionGroupProps}
                   />
                 ) : null}
-                {/* Remaining posts — square grid */}
                 {displayGroups.length > 1 ? (
                   <div
                     className="w-full min-w-0 gap-3 md:gap-4"
@@ -366,6 +402,7 @@ export default function PatronLayoutSections({
                         key={group.post_id}
                         items={group.items}
                         imgClass="aspect-square"
+                        tipItem={tipGatedByPostId?.get(group.post_id)}
                         {...sectionGroupProps}
                       />
                     ))}
@@ -373,7 +410,6 @@ export default function PatronLayoutSections({
                 ) : null}
               </div>
             ) : (
-              /* Grid and masonry layouts */
               <div
                 className="w-full min-w-0 gap-3 md:gap-4"
                 style={{
@@ -385,6 +421,7 @@ export default function PatronLayoutSections({
                   <SectionGroupTile
                     key={group.post_id}
                     items={group.items}
+                    tipItem={tipGatedByPostId?.get(group.post_id)}
                     imgClass={
                       sec.layout === "masonry"
                         ? "max-h-80 min-h-[10rem] h-auto w-full"
@@ -395,6 +432,20 @@ export default function PatronLayoutSections({
                 ))}
               </div>
             )}
+          </>
+        );
+
+        if (renderDesignerSectionChrome) {
+          return (
+            <Fragment key={sec.section_id}>
+              {renderDesignerSectionChrome({ apiSectionId: sec.section_id, children: sectionBody })}
+            </Fragment>
+          );
+        }
+
+        return (
+          <section key={sec.section_id} className="mb-10 last:mb-0">
+            {sectionBody}
           </section>
         );
       })}

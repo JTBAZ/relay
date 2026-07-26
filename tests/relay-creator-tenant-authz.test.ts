@@ -329,3 +329,79 @@ describe("T-5.2 — Relay mutating routes reject spoofed creator_id (Postgres id
     expect(res.body.error?.code).toBe("FORBIDDEN");
   });
 });
+
+/**
+ * P8-sec-003 — Gallery mutate routes use `requireAccountMatchesCreator`; a patron-only account
+ * (`primaryRelayCreatorId` null) must get 403, including when auth is the `relay_session` cookie.
+ */
+describe("P8-sec-003 — Patron-only session cannot mutate creator gallery routes", () => {
+  const prevSecret = process.env.RELAY_PATREON_OAUTH_STATE_SECRET;
+
+  beforeEach(() => {
+    mockGetSupabaseUser.mockReset();
+    process.env.RELAY_PATREON_OAUTH_STATE_SECRET = "0123456789abcdef0123456789abcdef";
+  });
+
+  afterEach(() => {
+    process.env.RELAY_PATREON_OAUTH_STATE_SECRET = prevSecret;
+  });
+
+  async function patronOnlyOpaqueToken(app: import("express").Application): Promise<string> {
+    mockGetSupabaseUser.mockResolvedValue({
+      ok: true,
+      user: { id: TEST_SUPA_ID, email: TEST_EMAIL }
+    });
+    const sync = await request(app)
+      .post("/api/v1/auth/supabase/sync")
+      .set("Authorization", "Bearer supa_jwt")
+      .send({});
+    expect(sync.status).toBe(200);
+    const relay = await request(app)
+      .post("/api/v1/auth/supabase/relay-session")
+      .set("Authorization", "Bearer supa_jwt")
+      .send({});
+    expect(relay.status).toBe(200);
+    return relay.body.data.token as string;
+  }
+
+  it("POST /api/v1/gallery/collections — 403 with Bearer (no creator studio)", async () => {
+    const tempDir = await mkdtemp(join(tmpdir(), "relay-p8-gal-col-"));
+    const { app } = createApp(prismaBaseConfig(tempDir, createRelayAuthzPrismaStub()));
+    const token = await patronOnlyOpaqueToken(app);
+    const res = await request(app)
+      .post("/api/v1/gallery/collections")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ creator_id: "cr_not_a_studio", title: "Should not create" });
+    expect(res.status).toBe(403);
+    expect(res.body.error?.code).toBe("FORBIDDEN");
+  });
+
+  it("POST /api/v1/gallery/collections — 403 with relay_session cookie (no creator studio)", async () => {
+    const tempDir = await mkdtemp(join(tmpdir(), "relay-p8-gal-cook-"));
+    const { app } = createApp(prismaBaseConfig(tempDir, createRelayAuthzPrismaStub()));
+    const token = await patronOnlyOpaqueToken(app);
+    const res = await request(app)
+      .post("/api/v1/gallery/collections")
+      .set("Cookie", `relay_session=${encodeURIComponent(token)}`)
+      .send({ creator_id: "cr_not_a_studio", title: "Should not create" });
+    expect(res.status).toBe(403);
+    expect(res.body.error?.code).toBe("FORBIDDEN");
+  });
+
+  it("POST /api/v1/gallery/media/bulk-tags — 403 for patron-only session", async () => {
+    const tempDir = await mkdtemp(join(tmpdir(), "relay-p8-gal-tags-"));
+    const { app } = createApp(prismaBaseConfig(tempDir, createRelayAuthzPrismaStub()));
+    const token = await patronOnlyOpaqueToken(app);
+    const res = await request(app)
+      .post("/api/v1/gallery/media/bulk-tags")
+      .set("Authorization", `Bearer ${token}`)
+      .send({
+        creator_id: "cr_not_a_studio",
+        add_tag_ids: [],
+        remove_tag_ids: [],
+        media_targets: [{ post_id: "p1", media_id: "m1" }]
+      });
+    expect(res.status).toBe(403);
+    expect(res.body.error?.code).toBe("FORBIDDEN");
+  });
+});

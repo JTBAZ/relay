@@ -1,8 +1,12 @@
+/**
+ * @fileoverview In-process ingest observability counters and optional alert thresholds (T-009).
+ * @description Feeds `GET /api/v1/health/ingest` and gate evaluation helpers.
+ */
+
 import type { ApplyBatchResult } from "./types.js";
 
 /**
- * In-process counters for Workstream B observability (T-009). Reset on process restart.
- * Use `GET /api/v1/health/ingest` for JSON; operators can also scrape logs or aggregate in APM.
+ * @description In-process counters for Workstream B observability (T-009). Reset on process restart.
  */
 const state = {
   batches_completed: 0,
@@ -78,7 +82,10 @@ export type IngestHealthGateEvaluation = {
 };
 
 /**
- * Evaluates optional env thresholds (Workstream B gates). See `.env.example` and Delta Out for T-009.
+ * @description Evaluates optional env thresholds for duplicate ratio and DLQ rates.
+ * @param {{ pendingRetryJobs: number; dlqRecordCount: number }} args
+ * @returns {Promise<IngestHealthGateEvaluation>}
+ * @async
  */
 export async function evaluateIngestHealthGates(args: {
   pendingRetryJobs: number;

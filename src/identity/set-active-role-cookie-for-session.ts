@@ -1,3 +1,9 @@
+/**
+ * @fileoverview Sets `relay_active_role` after session mint from DB-backed account state.
+ * @description Pairs login responses with `defaultActiveRoleForAccount` membership/creator hints.
+ * @see ./session-cookie.js
+ */
+
 import type { PrismaClient } from "@prisma/client";
 import type { Response } from "express";
 import { defaultActiveRoleForAccount } from "./active-role-default.js";
@@ -6,8 +12,13 @@ import { setActiveRoleCookie } from "./session-cookie.js";
 import type { SessionToken } from "./types.js";
 
 /**
- * After minting an opaque session, set `relay_active_role` from DB-backed Account state.
- * No-op if Prisma is unavailable or the session cannot be mapped to an Account.
+ * @description Sets `relay_active_role` after login from `Account` + membership counts.
+ * @param {import("express").Response} res
+ * @param {import("@prisma/client").PrismaClient | null | undefined} prisma
+ * @param {import("./types.js").SessionToken} session
+ * @param {string} expiresAtIso
+ * @returns {Promise<void>}
+ * @async
  */
 export async function setActiveRoleCookieForNewSession(
   res: Response,

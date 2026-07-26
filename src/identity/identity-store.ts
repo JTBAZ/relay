@@ -1,3 +1,9 @@
+/**
+ * @fileoverview File-backed identity store (`identity.json`) and shared `IdentityStore` interface.
+ * @description Development / migration fallback without PostgreSQL; does not support unified Patreon OAuth campaign resolution.
+ * @see src/jsdoc-core-entities.ts
+ */
+
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import { EXTENSION_SESSION_TTL_MS } from "./session-constants.js";
@@ -34,6 +40,9 @@ export interface IdentityStore {
   ): Promise<Map<string, string>>;
 }
 
+/**
+ * @description JSON-backed identity document for local dev and migration.
+ */
 export class FileIdentityStore implements IdentityStore {
   private readonly filePath: string;
 

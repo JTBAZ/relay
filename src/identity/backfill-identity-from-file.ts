@@ -1,3 +1,9 @@
+/**
+ * @fileoverview One-time migration: `identity.json` → Prisma tenants, accounts, memberships, sessions (hashed tokens).
+ * @description Idempotent upsert suitable for local/dev cutover; wraps work in a transaction.
+ * @see src/jsdoc-core-entities.ts
+ */
+
 import { readFile } from "node:fs/promises";
 import {
   IdentityAuthProvider,
@@ -18,8 +24,11 @@ function mapAuthProvider(a: AuthProvider): IdentityAuthProvider {
 }
 
 /**
- * Idempotent upsert from `identity.json` into Postgres (tenants, accounts, memberships, sessions with token hashes).
- * Intended for one-time migration; safe to re-run (same file → same rows).
+ * @description Idempotent upsert from `identity.json` into Postgres (tenants, accounts, memberships, sessions with token hashes).
+ * @param {{ prisma: PrismaClient; filePath: string }} args
+ * @returns {Promise<{ usersUpserted: number; sessionsUpserted: number }>}
+ * @async
+ * @throws {Error} On file/JSON failures; Prisma errors propagate from `$transaction`.
  */
 export async function backfillIdentityFromFile(args: {
   prisma: PrismaClient;

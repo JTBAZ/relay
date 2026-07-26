@@ -7,6 +7,7 @@ import { galleryItemKey } from "@/lib/gallery-group";
 import {
   RELAY_API_BASE,
   galleryItemExportVisibleToVisitor,
+  galleryItemImageGridSrc,
   galleryItemPreviewSrc,
   type GalleryItem,
   type TierFacet
@@ -16,9 +17,10 @@ import { visitorMediaTierGateLocked } from "@/lib/visitor-tier-gate";
 import SnipIcon from "@/app/components/icons/SnipIcon";
 import {
   VisitorTierGateBackdrop,
-  VisitorTierGateOverlay,
   type VisitorTierGateOverlayVariant
 } from "@/app/components/visitor/VisitorTierGateOverlay";
+import { LockedPromoOverlay } from "@/app/components/visitor/LockedPromoOverlay";
+import type { EffectivePromo } from "@/lib/effective-promo";
 import { mediaTypeLabel, visDot } from "./GalleryGridTile";
 import PostAssetCarouselStrip, {
   postCarouselMainVisual,
@@ -55,6 +57,10 @@ type Props = {
   visitorMembershipUrl?: string | null;
   visitorAccentColor?: string;
   visitorLockedOverlayVariant?: VisitorTierGateOverlayVariant;
+  /** Slice 9 — resolved locked promo when the parent has post-detail context. */
+  visitorEffectivePromo?: EffectivePromo | null;
+  /** PMD-042 — tier gate Upgrade click telemetry */
+  onVisitorTierReveal?: (args: { postId: string; mediaId?: string }) => void;
 };
 
 function StackLayer({
@@ -90,7 +96,7 @@ function StackLayer({
           {item.has_export && item.mime_type?.startsWith("image/") ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img
-              src={`${RELAY_API_BASE}${item.content_url_path}`}
+              src={galleryItemImageGridSrc(item) ?? `${RELAY_API_BASE}${item.content_url_path}`}
               alt=""
               className="h-full w-full object-cover object-center"
             />
@@ -172,7 +178,9 @@ function VisitorMultiAssetSlideCell({
   tierOrderIds,
   membershipUrl,
   accentColor,
-  lockedOverlayVariant
+  lockedOverlayVariant,
+  effectivePromo,
+  onVisitorTierReveal
 }: {
   items: GalleryItem[];
   startFlatIndex: number;
@@ -190,6 +198,8 @@ function VisitorMultiAssetSlideCell({
   membershipUrl: string | null | undefined;
   accentColor: string;
   lockedOverlayVariant: VisitorTierGateOverlayVariant;
+  effectivePromo?: EffectivePromo | null;
+  onVisitorTierReveal?: Props["onVisitorTierReveal"];
 }) {
   const n = items.length;
   const [carouselIdx, setCarouselIdx] = useState(0);
@@ -288,11 +298,18 @@ function VisitorMultiAssetSlideCell({
           visitorMediaTierGateLocked(current) ? (
             <div className="absolute inset-0 overflow-hidden bg-[var(--lib-muted)]">
               <VisitorTierGateBackdrop previewSrc={galleryItemPreviewSrc(current)} />
-              <VisitorTierGateOverlay
+              <LockedPromoOverlay
                 unlockLabel={designerUnlockLabelFromFacets(current, tierOrderIds, tierTitleById)}
                 accentColor={accentColor}
                 membershipUrl={membershipUrl}
+                effectivePromo={effectivePromo}
                 variant={lockedOverlayVariant}
+                onUpgradeClick={() =>
+                  onVisitorTierReveal?.({
+                    postId: current.post_id,
+                    mediaId: current.media_id
+                  })
+                }
               />
             </div>
           ) : (
@@ -313,9 +330,13 @@ function VisitorMultiAssetSlideCell({
               const locked = !galleryItemExportVisibleToVisitor(item);
               const isActive = idx === displayIdx;
               const isVideo = Boolean(item.mime_type?.startsWith("video/"));
-              const src = item.content_url_path
-                ? `${RELAY_API_BASE}${item.content_url_path}`
-                : "";
+              const src = isVideo
+                ? item.content_url_path
+                  ? `${RELAY_API_BASE}${item.content_url_path}`
+                  : ""
+                : item.content_url_path
+                  ? `${RELAY_API_BASE}${item.content_url_path}`
+                  : galleryItemImageGridSrc(item) ?? "";
 
               const transition =
                 "transform 0.4s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.4s cubic-bezier(0.4, 0, 0.2, 1)";
@@ -336,11 +357,18 @@ function VisitorMultiAssetSlideCell({
                     }}
                   >
                     <VisitorTierGateBackdrop previewSrc={galleryItemPreviewSrc(item)} />
-                    <VisitorTierGateOverlay
+                    <LockedPromoOverlay
                       unlockLabel={designerUnlockLabelFromFacets(item, tierOrderIds, tierTitleById)}
                       accentColor={accentColor}
                       membershipUrl={membershipUrl}
+                      effectivePromo={effectivePromo}
                       variant={lockedOverlayVariant}
+                      onUpgradeClick={() =>
+                        onVisitorTierReveal?.({
+                          postId: item.post_id,
+                          mediaId: item.media_id
+                        })
+                      }
                     />
                   </div>
                 ) : (
@@ -574,7 +602,9 @@ export default function PostBatchGridCell({
   visitorTierOrderIds = [],
   visitorMembershipUrl = null,
   visitorAccentColor = "#00aa6f",
-  visitorLockedOverlayVariant = "blurred"
+  visitorLockedOverlayVariant = "blurred",
+  visitorEffectivePromo = null,
+  onVisitorTierReveal
 }: Props) {
   const n = items.length;
   const primary = items[0]!;
@@ -649,6 +679,8 @@ export default function PostBatchGridCell({
         membershipUrl={visitorMembershipUrl}
         accentColor={visitorAccentColor}
         lockedOverlayVariant={visitorLockedOverlayVariant}
+        effectivePromo={visitorEffectivePromo}
+        onVisitorTierReveal={onVisitorTierReveal}
       />
     );
   }

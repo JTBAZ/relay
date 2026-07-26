@@ -77,6 +77,41 @@ Picks the next **Production Ledger** row where **`Status`** is in **`LEDGER_STAT
   - If the Airtable fetch fails, the script **logs a warning** and sends **`Prompt Draft`** only (no fail-hard).
   - **`npm run ledger-to-v0:dry`** shows whether the appendix was applied and prints a longer message prefix for review.
 
+## Push **existing repo source** to v0 (patron feed)
+
+**`repo-to-v0`** is the inverse of **`ledger-pull-v0-copy-block`**: it bundles real Relay files into the same markdown shape (path + fenced code) so you can paste into v0 or load **`Prompt Draft`** before editing in place.
+
+```powershell
+Set-Location Automation
+
+# Preview stats + first 2.5k chars
+npm run repo-to-v0:patron-feed:dry
+
+# Visual slice (fixture-driven; default for v0)
+npm run repo-to-v0:patron-feed
+
+# Production RelayApp slice (large — always use --write-file)
+node scripts/repo-to-v0.mjs patron-feed --scope=production --write-file=./exports/patron-feed-production.md
+
+# Include omitted large files (relay-api.ts; gallery-view for visual scope)
+node scripts/repo-to-v0.mjs patron-feed --scope=production --include-large --write-file=./exports/patron-feed-full.md
+
+# Write Airtable Prompt Draft on a Production Ledger row (truncated to COPY_BLOCK_MAX_CHARS)
+node scripts/repo-to-v0.mjs patron-feed --scope=visual --patch-prompt=recXXXXXXXXXXXXXX
+
+# Custom edit ask
+node scripts/repo-to-v0.mjs patron-feed --edit-task="Tighten feed card density" --write-file=./exports/patron-feed-edit.md
+```
+
+**Scopes**
+
+| Scope | Use when |
+|-------|----------|
+| `visual` (default) | v0 visual edits — `patron-home-client`, feed cards, fixtures |
+| `production` | Full `/patron/feed` (`RelayApp` + API libs). Omits `web/lib/relay-api.ts` unless `--include-large`. |
+
+**Workflow:** `repo-to-v0` → paste bundle into **one** v0 chat (or set **`Prompt Draft`** + `ledger-to-v0`) → iterate in that chat → `ledger-pull-v0-copy-block` → Cursor integrates.
+
 ## Pull **v0 Copy Block** from the API (no manual code-block pasting)
 
 v0 stores generated **files per version**. **`ledger-pull-v0-copy-block`** loads the latest completed version (or falls back to concatenating assistant **messages** if files are not available yet), formats them as one markdown blob (path + fenced code per file), and PATCHes **`v0 Copy Block`** on a Production Ledger row. If the v0 API returns **`latestVersion.demoUrl`**, it also PATCHes **`v0 Preview URL`** on the same row.

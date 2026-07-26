@@ -5,7 +5,10 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Loader2 } from "lucide-react";
 import { getSupabaseBrowserClient } from "@/lib/supabase-browser";
-import { bootstrapStudioAfterSupabase } from "@/lib/relay-auth-bootstrap";
+import {
+  bootstrapAccountAfterSupabase,
+  bootstrapStudioAfterSupabase,
+} from "@/lib/relay-auth-bootstrap";
 import { resolveCreatorPostAuthDestination } from "@/lib/creator-post-login-redirect";
 import { emitStudioSessionUpdate } from "@/lib/studio-session-context";
 import { getWebAppOrigin } from "@/lib/site-origin";
@@ -82,6 +85,15 @@ export function StudioSupabaseSignInPanel({
           );
           return;
         }
+        // Onboarding: unified bootstrap — no workspace provisioned yet. Workspace is deferred
+        // to the Patreon connect step (step 3) via StepConnectPatreonCreator.ensureWorkspace().
+        // Login: full studio bootstrap for returning creators who already have a workspace.
+        if (variant === "onboarding") {
+          await bootstrapAccountAfterSupabase(token, "creator");
+          emitStudioSessionUpdate();
+          onSuccess?.();
+          return;
+        }
         const boot = await bootstrapStudioAfterSupabase(token);
         emitStudioSessionUpdate();
         if (onSuccess) { onSuccess(); return; }
@@ -92,6 +104,12 @@ export function StudioSupabaseSignInPanel({
       if (inErr) throw inErr;
       const token = data.session?.access_token;
       if (!token) throw new Error("No access token from Supabase.");
+      if (variant === "onboarding") {
+        await bootstrapAccountAfterSupabase(token, "creator");
+        emitStudioSessionUpdate();
+        onSuccess?.();
+        return;
+      }
       const boot = await bootstrapStudioAfterSupabase(token);
       emitStudioSessionUpdate();
       if (onSuccess) { onSuccess(); return; }
@@ -106,24 +124,20 @@ export function StudioSupabaseSignInPanel({
   const boxStyle =
     variant === "onboarding"
       ? "rounded-lg border border-[var(--relay-border)] bg-[var(--relay-surface-1)] p-5"
-      : "rounded-xl border p-5";
-  const borderColor = variant === "login" ? "#2A2A2A" : undefined;
+      : "rounded-2xl border p-6 shadow-[0_8px_32px_-8px_rgba(0,0,0,0.6)]";
+  const borderColor = variant === "login" ? "var(--relay-border)" : undefined;
 
   return (
-    <div className={boxStyle} style={variant === "login" ? { background: "#111111", borderColor } : undefined}>
+    <div className={boxStyle} style={variant === "login" ? { background: "var(--relay-surface-1)", borderColor } : undefined}>
       <div className="mb-4 space-y-1">
         <h3
           className="text-sm font-semibold"
-          style={{ color: variant === "login" ? "#F9FAFB" : "var(--relay-fg)" }}
+          style={{ color: "var(--relay-fg)" }}
         >
-          Relay studio (Supabase)
+          Creator account
         </h3>
-        <p className="text-xs leading-relaxed" style={{ color: variant === "login" ? "#9CA3AF" : "var(--relay-fg-muted)" }}>
-          Signs you in, syncs your account, and creates your studio workspace (
-          <code className="rounded px-0.5" style={{ background: "#1a1a1a" }}>
-            relay_creator_id
-          </code>
-          ).
+        <p className="text-xs leading-relaxed" style={{ color: "var(--relay-fg-muted)" }}>
+          Use the email connected to your Relay studio.
         </p>
       </div>
 
@@ -138,10 +152,10 @@ export function StudioSupabaseSignInPanel({
       )}
 
       <div
-        className="mb-3 flex gap-0.5 rounded-lg p-0.5"
+        className="mb-3 flex gap-0.5 rounded-xl p-1"
         style={
           variant === "login"
-            ? { background: "#111111", border: "1px solid #2A2A2A" }
+            ? { background: "var(--relay-bg)", border: "1px solid var(--relay-border)" }
             : { background: "var(--relay-bg)", border: "1px solid var(--relay-border)" }
         }
         role="tablist"
@@ -157,11 +171,11 @@ export function StudioSupabaseSignInPanel({
               setError(null);
               setInfo(null);
             }}
-            className="flex-1 rounded-md py-2 text-xs font-medium transition-colors"
+            className="flex-1 rounded-lg py-2 text-xs font-medium transition-colors"
             style={
               mode === m
-                ? { background: "#1A1A1A", color: "#F9FAFB", border: "1px solid #2A2A2A" }
-                : { color: "#9CA3AF", border: "1px solid transparent" }
+                ? { background: "var(--relay-surface-2)", color: "var(--relay-fg)", border: "1px solid var(--relay-border)" }
+                : { color: "var(--relay-fg-muted)", border: "1px solid transparent" }
             }
           >
             {m === "sign-in" ? "Sign in" : "Create account"}
@@ -177,7 +191,7 @@ export function StudioSupabaseSignInPanel({
           value={email}
           onChange={(e) => setEmail(e.target.value)}
           placeholder="Email"
-          className="w-full rounded-lg border border-[#2A2A2A] bg-[#0d0d0d] px-3 py-2.5 text-sm text-[#F9FAFB] placeholder:text-[#6B7280] focus:border-[#2D6A4F] focus:outline-none"
+          className="w-full rounded-xl border border-[var(--relay-border)] bg-[var(--relay-bg)] px-3 py-2.5 text-sm text-[var(--relay-fg)] placeholder:text-[var(--relay-gray-500)] focus:border-[var(--relay-green-600)] focus:outline-none"
         />
         <input
           type="password"
@@ -186,7 +200,7 @@ export function StudioSupabaseSignInPanel({
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           placeholder="Password"
-          className="w-full rounded-lg border border-[#2A2A2A] bg-[#0d0d0d] px-3 py-2.5 text-sm text-[#F9FAFB] placeholder:text-[#6B7280] focus:border-[#2D6A4F] focus:outline-none"
+          className="w-full rounded-xl border border-[var(--relay-border)] bg-[var(--relay-bg)] px-3 py-2.5 text-sm text-[var(--relay-fg)] placeholder:text-[var(--relay-gray-500)] focus:border-[var(--relay-green-600)] focus:outline-none"
         />
         {info && (
           <p className="text-xs text-emerald-200/90" role="status">
@@ -201,8 +215,8 @@ export function StudioSupabaseSignInPanel({
         <button
           type="submit"
           disabled={busy}
-          className="flex w-full items-center justify-center gap-2 rounded-lg py-2.5 text-sm font-medium text-[#F9FAFB] transition-colors disabled:opacity-50"
-          style={{ background: "#2D6A4F" }}
+          className="flex w-full items-center justify-center gap-2 rounded-xl py-2.5 text-sm font-medium text-[var(--relay-fg)] transition-colors disabled:opacity-50"
+          style={{ background: "var(--relay-green-600)" }}
         >
           {busy ? (
             <>
@@ -212,7 +226,7 @@ export function StudioSupabaseSignInPanel({
           ) : mode === "sign-in" ? (
             "Continue to Library"
           ) : (
-            "Create studio workspace"
+            "Create account"
           )}
         </button>
       </form>

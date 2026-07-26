@@ -1,7 +1,7 @@
 /**
- * Patreon post `attributes.content` is usually an HTML string, but some responses
- * use a small object wrapper or Quill delta format. Normalizes to a single string
- * for description and image URL scraping.
+ * @fileoverview Normalizers for Patreon post body fields (`attributes.content`): HTML strings, wrappers, Quill deltas, ProseMirror JSON.
+ * @description Produces single HTML-ish strings suitable for ingest / description pipelines. Patreon usually returns HTML, but variants include object wrappers or Quill/ProseMirror shapes.
+ * @see {@link ../jsdoc-core-entities.ts}
  */
 export function normalizePatreonPostContent(raw: unknown): string {
   if (typeof raw === "string") {
@@ -61,6 +61,7 @@ function flattenQuillDelta(obj: Record<string, unknown>): string | null {
  * ProseMirror / Tiptap document format used by Patreon's `content_json_string`.
  * Shape: `{ type: "doc", content: [ { type: "paragraph", content: [ { type: "text", text: "..." } ] } ] }`
  * Recursively extracts text nodes, wraps paragraph-level blocks in `<p>` tags.
+ * @param raw JSON object or JSON string of a ProseMirror doc.
  */
 export function flattenProseMirrorDoc(raw: unknown): string {
   if (typeof raw === "string") {

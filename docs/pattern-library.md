@@ -2,6 +2,8 @@
 
 Single source of truth for **product ideals**, **artist vs viewer workflows**, and **UX/UI patterns** in this repo. It informs code and UI work; it does not replace inline documentation in individual modules.
 
+**Visual + code style rules** (tokens, color grammar, canonical post media card, state display) live in [RELAY_DESIGN_CODE.md](RELAY_DESIGN_CODE.md) — link that doc to any agent building front-end components.
+
 **Governing principle:** harden the **Library** (find, tag, curate, collections) before investing heavily in **visitor-facing** polish. Designer, **public pages**, and **fan surfaces** should consume **stable data contracts** from Library work and a **single viewer entitlement pipeline**—otherwise they churn or desync.
 
 ### Agents / builders: Patreon ingest (read before editing)

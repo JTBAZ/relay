@@ -1,3 +1,11 @@
+/**
+ * @fileoverview Orchestrates snapshot generation, recommendation scoring, and Action Center mutations with event publishing.
+ * @description Combines `CanonicalStore`, `AnalyticsStore`, and `RelayEventBus` for Workstream E flows.
+ * @see ./analytics-store.js
+ * @see ../ingest/canonical-store.js
+ * @see ../events/event-bus.js
+ */
+
 import { randomUUID } from "node:crypto";
 import type { RelayEventBus } from "../events/event-bus.js";
 import type { CanonicalStore } from "../ingest/canonical-store.js";
@@ -10,12 +18,23 @@ import type {
   RecommendationCard
 } from "./types.js";
 
+/**
+ * @description Application service for generating analytics snapshots and managing recommendation lifecycle + events.
+ * @security-audit-required All entrypoints are `creatorId`-scoped; callers must verify the authenticated creator matches `creatorId`.
+ */
 export class ActionCenterService {
   private readonly analyticsStore: AnalyticsStore;
   private readonly canonicalStore: CanonicalStore;
   private readonly eventBus: RelayEventBus;
   private readonly engineConfig: EngineConfig;
 
+  /**
+   * @description Constructs the service with configurable scoring thresholds.
+   * @param analyticsStore Persistent analytics adapter.
+   * @param canonicalStore Source canonical Patreon-sourced snapshot.
+   * @param eventBus Outbound domain events.
+   * @param engineConfig Optional confidence threshold for `scoreRecommendations`.
+   */
   public constructor(
     analyticsStore: AnalyticsStore,
     canonicalStore: CanonicalStore,
@@ -28,6 +47,14 @@ export class ActionCenterService {
     this.engineConfig = engineConfig ?? { confidence_threshold: 0.5 };
   }
 
+  /**
+   * @description Builds a snapshot from canonical data, persists it, scores recommendations, and emits `recommendation_shown` events.
+   * @param creatorId Target creator.
+   * @param traceId Correlation id for telemetry.
+   * @returns New snapshot id and created card count.
+   * @async
+   * @throws {Error} Canonical load, DB/file store, or event bus failures propagate.
+   */
   public async generateAndStore(creatorId: string, traceId: string): Promise<{
     snapshot_id: string;
     recommendations_created: number;
@@ -69,6 +96,14 @@ export class ActionCenterService {
     };
   }
 
+  /**
+   * @description Delegates to `analyticsStore.listCards`.
+   * @param creatorId Creator scope.
+   * @param filters Optional pagination and filters.
+   * @returns Page envelope.
+   * @async
+   * @throws {Error} Store failures propagate.
+   */
   public async listCards(
     creatorId: string,
     filters?: {
@@ -84,6 +119,16 @@ export class ActionCenterService {
     return this.analyticsStore.listCards(creatorId, filters);
   }
 
+  /**
+   * @description Marks a recommendation accepted and publishes `recommendation_accepted`.
+   * @param creatorId Creator scope.
+   * @param recommendationId Target card.
+   * @param notes Optional operator notes.
+   * @param traceId Correlation id.
+   * @returns Updated card or `null`.
+   * @async
+   * @throws {Error} On store or bus failure.
+   */
   public async accept(
     creatorId: string,
     recommendationId: string,
@@ -114,6 +159,17 @@ export class ActionCenterService {
     return card;
   }
 
+  /**
+   * @description Marks executed, appends a queued action row, and emits `recommendation_executed`.
+   * @param creatorId Creator scope.
+   * @param recommendationId Target card.
+   * @param actionType Action classifier.
+   * @param options Opaque options bag.
+   * @param traceId Correlation id.
+   * @returns Created `ActionExecution` or `null` if card missing.
+   * @async
+   * @throws {Error} On store persistence failure.
+   */
   public async execute(
     creatorId: string,
     recommendationId: string,
@@ -155,6 +211,17 @@ export class ActionCenterService {
     return action;
   }
 
+  /**
+   * @description Dismisses with a reason code and returns the updated row.
+   * @param creatorId Creator scope.
+   * @param recommendationId Target card.
+   * @param reasonCode Dismiss taxonomy code.
+   * @param traceId Currently unused (reserved); correlation for future event emission.
+   * @returns Updated card or `null`.
+   * @async
+   * @throws {Error} On store failure.
+   * @todo Emit a `recommendation_dismissed` domain event (mirroring accept/execute) instead of no-op `void traceId`.
+   */
   public async dismiss(
     creatorId: string,
     recommendationId: string,
@@ -173,6 +240,14 @@ export class ActionCenterService {
     return card;
   }
 
+  /**
+   * @description Returns explainability payload for a recommendation if present.
+   * @param creatorId Creator scope.
+   * @param recommendationId Card id.
+   * @returns Structured reasons and evidence or `null`.
+   * @async
+   * @throws {Error} On store read failure.
+   */
   public async explain(
     creatorId: string,
     recommendationId: string
@@ -192,6 +267,13 @@ export class ActionCenterService {
     };
   }
 
+  /**
+   * @description Builds an ephemeral snapshot and counts open recommendations for dashboard summaries.
+   * @param creatorId Creator scope.
+   * @returns `MetricsSummary` aggregate.
+   * @async
+   * @throws {Error} On canonical load or store list failure.
+   */
   public async metricsSummary(creatorId: string): Promise<MetricsSummary> {
     const canonical = await this.canonicalStore.load();
     const snapshot = generateSnapshot(creatorId, canonical);

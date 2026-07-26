@@ -88,7 +88,21 @@ Scheduled **`RELAY_PATREON_INCREMENTAL_AUTOSYNC_MS`** / **`RELAY_AUTOSYNC_ENABLE
 
 - `tests/patreon-platform-webhook-route.test.ts` — signature, 202 for ignored events, campaign mismatch **409**.
 - `tests/patreon-webhook-signature.test.ts` — HMAC helpers.
+- `tests/patreon-webhooks-register-route.test.ts` — `POST .../webhooks/register` validation and missing public base URL.
+- `tests/patreon-sync-state-watermark.test.ts` — sync-state scrape/watermark paths.
+- `tests/incremental-autosync-worker.test.ts` — `RELAY_PATREON_INCREMENTAL_AUTOSYNC_MS` / BullMQ repeat interval helpers.
+- `tests/bullmq-repeat-scheduler.integration.test.ts` — repeatable `relay-tick` on `patreon_incremental_autosync` queue (requires Redis when `SKIP_REDIS_IT=0`).
 
 ```bash
-npx vitest run patreon-platform-webhook-route patreon-webhook-signature
+npx vitest run patreon-platform-webhook-route patreon-webhook-signature patreon-webhooks-register-route patreon-sync-state-watermark incremental-autosync-worker
 ```
+
+---
+
+## 8. PILOT-005 exit checklist (operator)
+
+1. **Env (API host):** `RELAY_PUBLIC_WEBHOOK_BASE_URL` set (HTTPS, no trailing slash). For background fallback, set **`RELAY_PATREON_INCREMENTAL_AUTOSYNC_MS`** (≥ 10000) or **`RELAY_AUTOSYNC_ENABLED=1`**. With BullMQ: **`RELAY_JOB_BACKEND=bullmq`**, **`REDIS_URL`**, API registers repeats via `src/jobs/schedule-bullmq-repeat.ts`; workers consume via `src/jobs/register-workers.ts` (`npm run worker` when split).
+2. **Register:** Creator OAuth (best-effort) or **Library → Patreon menu → Register webhooks** (`POST /api/v1/patreon/webhooks/register`).
+3. **Observe:** `GET /api/v1/patreon/sync-state?creator_id=…` — `webhook_registration.registration_status`, `public_webhook_base_configured`, `sync_health` rollup.
+4. **E2E:** Publish a test post on Patreon; confirm scrape/ingest activity (logs, `last_post_scrape`, Library).
+5. **Automated gate:** `npm run build` and the vitest command in §7.

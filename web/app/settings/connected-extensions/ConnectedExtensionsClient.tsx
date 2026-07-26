@@ -72,7 +72,7 @@ export function ConnectedExtensionsClient() {
         <p className="text-stone-200">
           No connected extensions. Install the{" "}
           <Link
-            href="/patreon/cookie"
+            href="/connect/patreon/cookie"
             className="text-amber-400 underline decoration-amber-400/60 hover:text-amber-300"
           >
             Relay browser extension

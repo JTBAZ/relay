@@ -1,14 +1,56 @@
+/** Keep in sync with web/lib/relay-api-env.ts (this file must stay plain JS for Node). */
+function resolveRelayApiBaseFromEnv(envValue) {
+  const DEFAULT_RELAY_API_BASE = "http://127.0.0.1:8787";
+  const fromEnv = (envValue ?? "").trim();
+  const raw = fromEnv.length > 0 ? fromEnv : DEFAULT_RELAY_API_BASE;
+  const trimmed = raw.replace(/\/+$/, "");
+  const candidate = trimmed.length > 0 ? trimmed : DEFAULT_RELAY_API_BASE;
+  let u;
+  try {
+    u = new URL(candidate);
+  } catch {
+    throw new Error(
+      `Invalid NEXT_PUBLIC_RELAY_API_URL: "${raw}". Expected an absolute URL such as http://127.0.0.1:8787. See web/.env.local.example.`
+    );
+  }
+  if (u.protocol !== "http:" && u.protocol !== "https:") {
+    throw new Error(
+      `NEXT_PUBLIC_RELAY_API_URL must use http: or https: (got "${u.protocol}"). See web/.env.local.example.`
+    );
+  }
+  return candidate;
+}
+
+// [R-SEC-11 Medium @security-review 2026-06, Tier B] Baseline headers only — strict CSP deferred to
+// report-only rollout. Keep values in sync with src/security/baseline-response-headers.ts.
+const BASELINE_SECURITY_HEADERS = [
+  { key: "X-Content-Type-Options", value: "nosniff" },
+  { key: "X-Frame-Options", value: "SAMEORIGIN" },
+  { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" }
+];
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  async headers() {
+    return [
+      {
+        source: "/:path*",
+        headers: BASELINE_SECURITY_HEADERS
+      }
+    ];
+  },
   async rewrites() {
-    const relay = (process.env.NEXT_PUBLIC_RELAY_API_URL ?? "http://127.0.0.1:8787").replace(
-      /\/+$/,
-      ""
-    );
+    const relay = resolveRelayApiBaseFromEnv(process.env.NEXT_PUBLIC_RELAY_API_URL);
     return [
       {
         source: "/api/relay/library-zip",
         destination: `${relay}/api/v1/export/library-zip`
+      },
+      // Same-origin media bytes: browser <img>/fetch → Next → Relay. Avoids CORS + no-cors
+      // HTTP-cache poisoning when Previewizer credential-fetches a URL already used as <img src>.
+      {
+        source: "/api/v1/export/media/:path*",
+        destination: `${relay}/api/v1/export/media/:path*`
       }
     ];
   }

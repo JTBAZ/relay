@@ -1,15 +1,28 @@
+/**
+ * @fileoverview Parses Discord bind payloads and persists `DiscordChannelBinding` after link token validation.
+ * @description Bridges bot-issued link codes to creator channel wiring.
+ * @see ./discord-link-code.js
+ * @see prisma/schema.prisma DiscordChannelBinding, DiscordLinkToken
+ */
+
 import type { PrismaClient } from "@prisma/client";
 import {
   hashDiscordLinkCode,
   normalizeDiscordLinkCodeInput
 } from "./discord-link-code.js";
 
+/** @description Bot-to-API payload binding a link code to Discord guild + channel ids. */
 export type DiscordBindPayload = {
   code: string;
   discord_guild_id: string;
   discord_channel_id: string;
 };
 
+/**
+ * @description Extracts bind fields from unknown JSON bodies.
+ * @param body Parsed JSON object.
+ * @returns Payload or `null` when required strings missing.
+ */
 export function parseDiscordBindPayload(body: unknown): DiscordBindPayload | null {
   if (!body || typeof body !== "object") {
     return null;
@@ -31,6 +44,12 @@ export function parseDiscordBindPayload(body: unknown): DiscordBindPayload | nul
 /**
  * Exchange a minted link token for a `DiscordChannelBinding`. Idempotent if code already consumed
  * but same guild/channel (returns ok).
+ * @description Validates link token, upserts binding, marks token consumed.
+ * @param prisma Prisma client.
+ * @param payload Guild/channel + code tuple.
+ * @returns Success with `relay_creator_id` or structured failure.
+ * @async
+ * @throws {Error} Unexpected Prisma failures outside handled branches.
  */
 export async function executeDiscordBind(
   prisma: PrismaClient,

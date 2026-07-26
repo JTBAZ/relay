@@ -63,7 +63,8 @@ describe("shadow_cover gallery flags", () => {
       media_id: "relay_m_1",
       has_export: true,
       export_status: "ready",
-      content_url_path: "/api/v1/export/media/c1/relay_m_1/content"
+      content_url_path: "/api/v1/export/media/c1/relay_m_1/content",
+      thumb_url_path: ""
     });
   });
 

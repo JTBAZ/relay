@@ -22,6 +22,10 @@ Periodically checks if the cookie has refreshed (12h interval).
 
 Stores the per-installation grant token locally so the user does not have to re-authorize.
 
+## `scripting`
+
+When the creator clicks **Publish to Patreon** in Relay, injects a short script into Patreon's post editor tab to pre-fill title, body, and (best-effort) images from their Relay post. The creator reviews the draft and publishes manually in Patreon; the extension never clicks Publish or changes paywall/audience settings automatically.
+
 ## `externally_connectable: relayapp.me`
 
 Used by the Relay consent page to deliver the one-time authorization code.

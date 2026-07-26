@@ -43,7 +43,7 @@ const postsDoc = {
         title: "Sketch drop",
         published_at: "2026-03-15T18:00:00.000Z",
         content:
-          '<p>Hi</p><img src="https://cdn.example.com/art.png?token=abc" alt="x" />',
+          '<p>Hi</p><img src="https://cdn.example.com/art.png?token=abc" alt="x">',
         embed_url: "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
         tiers: ["555"]
       }
@@ -163,7 +163,7 @@ describe("Patreon scrape → ingest", () => {
       .query({ creator_id: "cr_mock", post_id: "patreon_post_111" });
     expect(detail.status).toBe(200);
     expect(detail.body.data.description).toBe(
-      '<p>Hi</p><img src="https://cdn.example.com/art.png?token=abc" alt="x" />'
+      '<p>Hi</p><img src="https://cdn.example.com/art.png?token=abc" alt="x">'
     );
   });
 

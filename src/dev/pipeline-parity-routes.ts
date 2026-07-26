@@ -7,6 +7,14 @@ import type { PatreonCampaignCreatorIndex } from "../patreon/patreon-campaign-cr
 import type { AppConfig } from "../server.js";
 import { buildRelayRuntimeManifest } from "./relay-runtime-manifest.js";
 
+/**
+ * @fileoverview Secret-gated dev diagnostics for pipeline parity UI (manifest, accounts snapshot).
+ * @description Registers Express routes guarded by `RELAY_PIPELINE_PARITY_SECRET` header; may return PII-heavy account lists.
+ * @see ./relay-runtime-manifest.js
+ * @see ../contracts/api.js
+ * @security-audit-required Operators only; leaks account emails and studio mapping when enabled.
+ */
+
 const PARITY_HEADER = "x-relay-pipeline-parity-secret";
 
 function traceIdFrom(req: Request): string {
@@ -31,6 +39,9 @@ function sendParityDisabled(res: Response, traceId: string): void {
   );
 }
 
+/**
+ * @description Dependency bundle for registering pipeline parity routes onto Express.
+ */
 export type PipelineParityRouteContext = {
   config: AppConfig;
   prisma: PrismaClient | undefined;
@@ -45,6 +56,9 @@ export type PipelineParityRouteContext = {
 /**
  * Dev-only: account list + runtime manifest + per-creator diagnostic snapshot for pipeline parity UI.
  * Requires `RELAY_PIPELINE_PARITY_SECRET` and matching `X-Relay-Pipeline-Parity-Secret` header.
+ * @description Wires parity endpoints for manifests, lightweight account catalogs, and per-creator snapshots.
+ * @param app Express application instance.
+ * @param ctx Resolved dependencies and paths used by parity snapshot route.
  */
 export function registerPipelineParityRoutes(
   app: import("express").Application,

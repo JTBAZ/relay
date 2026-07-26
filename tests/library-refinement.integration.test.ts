@@ -46,6 +46,7 @@ describe("library refinement integration", () => {
         export_status: "missing",
         content_url_path: "",
         preview_url_path: "",
+        thumb_url_path: "",
         visibility: "visible",
         collection_ids: [],
         collection_theme_tag_ids: []
@@ -63,6 +64,7 @@ describe("library refinement integration", () => {
         mime_type: "image/png",
         content_url_path: "/x",
         preview_url_path: "",
+        thumb_url_path: "",
         visibility: "visible",
         collection_ids: [],
         collection_theme_tag_ids: []
