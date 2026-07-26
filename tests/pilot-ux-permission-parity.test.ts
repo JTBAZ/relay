@@ -722,6 +722,14 @@ describe.skipIf(!hasDatabaseUrl)("PUX-004 gate D — aggregated patron feed walk
       expect(expectedPatronPostIds).toContain(PILOT_POST_IDS.miloBackstage);
       expect(expectedPatronPostIds).toContain(PILOT_POST_IDS.quinnUnsubLab);
 
+      // Locked stubs only include posts published within ~30 days (assemblePatronFeed).
+      // Pilot seed uses a fixed May 2026 publishedAt — bump Studio archive so the miss
+      // stub still appears as calendar time moves past that window.
+      await prisma.postVersion.updateMany({
+        where: { postId: PILOT_POST_IDS.avaStudio },
+        data: { publishedAt: new Date() }
+      });
+
       const feedBundle = await assemblePatronFeed({
         prisma,
         patronMembershipId: seeded.patron.membershipId,
