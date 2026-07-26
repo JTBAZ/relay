@@ -49,7 +49,8 @@ describe("getCreatorOnboardingForStudio", () => {
         last_error: null,
         campaign_id: null,
         message_key: "sync_health.healthy"
-      }
+      },
+      media_import_status: "complete"
     });
     expect(create).not.toHaveBeenCalled();
   });

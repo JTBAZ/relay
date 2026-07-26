@@ -77,6 +77,19 @@ async function seedWebToken(tempDir: string): Promise<string> {
   return session.token;
 }
 
+function platformInstanceStub() {
+  return {
+    findUnique: vi.fn().mockResolvedValue(null),
+    upsert: vi.fn().mockResolvedValue({}),
+    updateMany: vi.fn().mockResolvedValue({ count: 1 })
+  };
+}
+
+/** Callback-style $transaction used by recordExternalPostMetricSnapshots. */
+function interactiveTransaction(tx: Record<string, unknown>) {
+  return vi.fn(async (fn: (client: typeof tx) => Promise<unknown>) => fn(tx));
+}
+
 function authPrismaStub(metricsPrisma: Record<string, unknown>): PrismaClient {
   return {
     $executeRawUnsafe: vi.fn(async () => 0),
@@ -175,12 +188,18 @@ describe("POST /api/v1/relay/distribution-attempts/:attempt_id/metrics", () => {
       .fn()
       .mockResolvedValueOnce(snapshotRow("likes", 12, "epms_likes"))
       .mockResolvedValueOnce(snapshotRow("comments", 3, "epms_comments"));
+    const platformInstance = platformInstanceStub();
+    const tx = {
+      platformInstance,
+      externalPostMetricSnapshot: { create }
+    };
     const prisma = authPrismaStub({
       postDistributionAttempt: {
         findFirst: vi.fn().mockResolvedValue(postedAttempt())
       },
+      platformInstance,
       externalPostMetricSnapshot: { create },
-      $transaction: vi.fn(async (ops: Promise<unknown>[]) => Promise.all(ops))
+      $transaction: interactiveTransaction(tx)
     });
     const extToken = await seedExtensionToken(tempDir);
     const { app } = createApp(baseAppConfig(tempDir, prisma));
@@ -265,6 +284,9 @@ describe("GET /api/v1/relay/posts/:post_id/external-metrics", () => {
           snapshotRow("likes", 10, "epms_likes_old"),
           snapshotRow("comments", 4, "epms_comments")
         ])
+      },
+      patreonInsightsPostMetric: {
+        findMany: vi.fn().mockResolvedValue([])
       }
     });
     const webToken = await seedWebToken(tempDir);

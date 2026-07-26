@@ -45,6 +45,31 @@ function snapshotRow(overrides: Record<string, unknown> = {}) {
   };
 }
 
+function platformInstanceStub() {
+  return {
+    findUnique: vi.fn().mockResolvedValue(null),
+    upsert: vi.fn().mockResolvedValue({}),
+    updateMany: vi.fn().mockResolvedValue({ count: 1 })
+  };
+}
+
+/** Callback-style $transaction used by recordExternalPostMetricSnapshots. */
+function writePrismaWithCreate(create: ReturnType<typeof vi.fn>) {
+  const platformInstance = platformInstanceStub();
+  const tx = {
+    platformInstance,
+    externalPostMetricSnapshot: { create }
+  };
+  return {
+    postDistributionAttempt: {
+      findFirst: vi.fn().mockResolvedValue(postedAttempt())
+    },
+    platformInstance,
+    externalPostMetricSnapshot: { create },
+    $transaction: vi.fn(async (fn: (client: typeof tx) => Promise<unknown>) => fn(tx))
+  } as unknown as PrismaClient;
+}
+
 describe("recordExternalPostMetricSnapshots", () => {
   it("inserts one snapshot row per metric for a posted linked attempt", async () => {
     const create = vi
@@ -54,13 +79,7 @@ describe("recordExternalPostMetricSnapshots", () => {
         snapshotRow({ id: "epms_comments", metricType: "comments", value: 3 })
       );
 
-    const prisma = {
-      postDistributionAttempt: {
-        findFirst: vi.fn().mockResolvedValue(postedAttempt())
-      },
-      externalPostMetricSnapshot: { create },
-      $transaction: vi.fn(async (ops: Promise<unknown>[]) => Promise.all(ops))
-    } as unknown as PrismaClient;
+    const prisma = writePrismaWithCreate(create);
 
     const snapshots = await recordExternalPostMetricSnapshots(
       prisma,
@@ -150,13 +169,7 @@ describe("recordExternalPostMetricSnapshots", () => {
       snapshotRow({ metricType: "views", value: null, raw: { parse_error: "counter_not_found" } })
     );
 
-    const prisma = {
-      postDistributionAttempt: {
-        findFirst: vi.fn().mockResolvedValue(postedAttempt())
-      },
-      externalPostMetricSnapshot: { create },
-      $transaction: vi.fn(async (ops: Promise<unknown>[]) => Promise.all(ops))
-    } as unknown as PrismaClient;
+    const prisma = writePrismaWithCreate(create);
 
     const snapshots = await recordExternalPostMetricSnapshots(
       prisma,

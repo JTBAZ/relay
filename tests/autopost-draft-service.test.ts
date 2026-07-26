@@ -11,7 +11,12 @@ import {
 import { StyleProfileValidationError } from "../src/autopost/style-profile-service.js";
 
 function prismaStub(over: Record<string, unknown>) {
-  return over as any;
+  // resolveLinkedPostIds always queries postDistributionPlan; default empty so unit
+  // stubs without distribution setup still round-trip draft mapping.
+  return {
+    postDistributionPlan: { findMany: vi.fn().mockResolvedValue([]) },
+    ...over
+  } as any;
 }
 
 function baseDraft(over: Record<string, unknown> = {}) {

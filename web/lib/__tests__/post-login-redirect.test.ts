@@ -2,21 +2,21 @@ import { describe, expect, it } from "vitest";
 import { resolvePostAuthPath } from "../post-login-redirect";
 
 describe("resolvePostAuthPath", () => {
-  it("returns / for null/undefined/empty/whitespace", () => {
-    expect(resolvePostAuthPath(null)).toBe("/");
-    expect(resolvePostAuthPath(undefined)).toBe("/");
-    expect(resolvePostAuthPath("")).toBe("/");
-    expect(resolvePostAuthPath("   ")).toBe("/");
+  it("returns /studio for null/undefined/empty/whitespace", () => {
+    expect(resolvePostAuthPath(null)).toBe("/studio");
+    expect(resolvePostAuthPath(undefined)).toBe("/studio");
+    expect(resolvePostAuthPath("")).toBe("/studio");
+    expect(resolvePostAuthPath("   ")).toBe("/studio");
   });
 
   it("rejects protocol-relative URLs (//evil.com)", () => {
-    expect(resolvePostAuthPath("//evil.com/x")).toBe("/");
-    expect(resolvePostAuthPath("//evil.com")).toBe("/");
+    expect(resolvePostAuthPath("//evil.com/x")).toBe("/studio");
+    expect(resolvePostAuthPath("//evil.com")).toBe("/studio");
   });
 
   it("rejects absolute URLs", () => {
-    expect(resolvePostAuthPath("http://evil.com/x")).toBe("/");
-    expect(resolvePostAuthPath("https://evil.com/x")).toBe("/");
+    expect(resolvePostAuthPath("http://evil.com/x")).toBe("/studio");
+    expect(resolvePostAuthPath("https://evil.com/x")).toBe("/studio");
   });
 
   it("accepts same-origin paths starting with single /", () => {

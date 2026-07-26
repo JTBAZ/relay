@@ -10,7 +10,7 @@ export function getCreatorPublicProfilePathFromStorage(): string | null {
 
 /**
  * Where to send the user after Supabase sign-in / email confirm.
- * Honors `returnTo` when safe; otherwise studio Library at `/`.
+ * Honors `returnTo` when safe; otherwise studio home at `/studio`.
  */
 export function resolvePostAuthPath(returnTo: string | null | undefined): string {
   const r = returnTo?.trim();
