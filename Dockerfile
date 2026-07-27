@@ -25,6 +25,8 @@ COPY prisma ./prisma
 
 # Same dummy URL as nixpacks.toml — satisfies prisma.config.ts env("DATABASE_URL")
 ENV DATABASE_URL="postgresql://build:build@127.0.0.1:5432/relay_build?schema=public"
+# Cap V8 heap so tsc can finish on ~2GB Coolify hosts (Nixpacks OOM'd near ~950MB default).
+ENV NODE_OPTIONS="--max-old-space-size=1536"
 
 RUN npm ci
 
