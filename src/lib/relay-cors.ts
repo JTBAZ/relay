@@ -21,8 +21,15 @@
 export function parseAllowedWebOrigins(
   env: NodeJS.ProcessEnv = process.env
 ): ReadonlySet<string> {
-  const raw = env.RELAY_ALLOWED_WEB_ORIGINS?.trim();
+  let raw = env.RELAY_ALLOWED_WEB_ORIGINS?.trim() ?? "";
   if (!raw) return new Set();
+  // Coolify "literal" envs may wrap the whole value in single/double quotes.
+  if (
+    (raw.startsWith("'") && raw.endsWith("'")) ||
+    (raw.startsWith('"') && raw.endsWith('"'))
+  ) {
+    raw = raw.slice(1, -1).trim();
+  }
   return new Set(
     raw
       .split(",")
