@@ -2503,10 +2503,23 @@ export function createApp(config: AppConfig): CreateAppResult {
     // Configure: RELAY_ALLOWED_WEB_ORIGINS=https://app.relayapp.me (comma-separated).
     const isProduction = process.env.NODE_ENV === "production";
     const allowedWebOrigins = parseAllowedWebOrigins();
-    if (origin && isCredentialedCorsOrigin(origin, allowedWebOrigins, isProduction)) {
-      res.setHeader("Access-Control-Allow-Origin", origin);
+    const credentialed = Boolean(
+      origin && isCredentialedCorsOrigin(origin, allowedWebOrigins, isProduction)
+    );
+    // Avoid caching distinct preflight variants (ACRH spacing/order) onto the wrong ACAO.
+    res.setHeader(
+      "Vary",
+      "Origin, Access-Control-Request-Method, Access-Control-Request-Headers"
+    );
+    res.setHeader("Cache-Control", "private, no-store");
+    if (credentialed) {
+      res.setHeader("Access-Control-Allow-Origin", origin!);
       res.setHeader("Access-Control-Allow-Credentials", "true");
-      res.setHeader("Vary", "Origin");
+    } else if (req.method === "OPTIONS" && origin) {
+      // Credentialed browser preflights must not see ACAO:* (fails as a generic "Network error").
+      res.setHeader("Access-Control-Allow-Methods", corsMethods);
+      res.setHeader("Access-Control-Allow-Headers", corsAllowHeaders);
+      return res.sendStatus(403);
     } else {
       // Unauthenticated public requests (no credentials header means browsers can still use the response).
       res.setHeader("Access-Control-Allow-Origin", "*");
