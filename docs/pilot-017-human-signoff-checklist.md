@@ -8,33 +8,54 @@
 
 ---
 
-## Agent-assisted progress log (2026-07-26)
+## Agent-assisted progress log
 
-Evidence gathered via Coolify MCP + public HTTP probes. **Do not paste secrets into this file.**
+Evidence via Coolify MCP + public HTTP + Supabase SQL. **Do not paste secrets into this file.** Human still ticks ☐ after accepting.
 
-| Check | Agent finding | Verdict |
-|-------|---------------|---------|
-| **ENV-1** config on Coolify app `relay api` (`iyr2upyq1pxsg3d5e55sca8e`) | `RELAY_DB_STORE_IDENTITY=1`, `RELAY_DB_STORE_OVERRIDES=1`, `RELAY_DB_STORE_CANONICAL=1` all present | Config **PASS** — human still ticks ☐ after accepting |
-| **Runtime** `https://api.relayapp.me` | Responds `no available server`; Coolify status `exited:unhealthy`; logs unavailable (app not running) | **BLOCKER** — start/redeploy before ENV-3/4 and all UX tests |
-| **Web** `https://relayapp.me` | HTTP **307** (responding) | Partial — usable once API is up |
-| **ENV-3 Redis** | No `REDIS_URL` / `RELAY_JOB_BACKEND` keys found in Coolify env list for `relay api` | Likely **FAIL** until Redis is configured |
-| **ENV-4 webhooks** | `RELAY_PUBLIC_WEBHOOK_BASE_URL` set to `https://api.relayapp.me` | Config present; cannot verify deliveries while API down |
-| **Clone apps** | `clone-of-relay-api` health **200** `{status:ok}` but **no** `/api/v1/health/jobs`; missing pilot `RELAY_DB_STORE_*` flags | **Not** a Stage 1 staging substitute |
+### 2026-07-27 (unblock + preflight)
 
-**Next action:** Start or redeploy Coolify app **`relay api`**, then re-probe `/api/v1/health` and `/api/v1/health/jobs`. Optionally add Redis + `RELAY_JOB_BACKEND=bullmq` if jobs health stays degraded.
+
+| Check                                 | Agent finding                                                                                                                                                                                                                                                                | Verdict                                                                                            |
+| ------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
+| **Runtime** `https://api.relayapp.me` | Coolify `relay api` switched to **Dockerfile** pack; redeploy of `e09d3d7` **finished**; `GET /api/v1/health` → **200** `{status:ok}`; `GET /api/v1/health/platform` → **200** DB connectivity ok                                                                            | **PASS** — prior API-down blocker cleared                                                          |
+| **ENV-1**                             | Coolify still has `RELAY_DB_STORE_IDENTITY/OVERRIDES/CANONICAL=1`                                                                                                                                                                                                            | Config **PASS**                                                                                    |
+| **ENV-2**                             | Migration `20260727195000_pilot_env2_patron_override_rls_policies` applied. Policies live on `patron_follows` (SELECT/INSERT/DELETE own), `patron_entitlement_snapshots` (SELECT own), `post_overrides` (creator ALL). Verified via `tests/rls/pilot-env2-patron-override-policies.test.ts` (6/6) using `relay.account_id` + `rls_fixture_tester`. Supabase advisor no longer flags these three for missing policies. | **PASS** (defense-in-depth; privileged Prisma API still uses app-layer authz) |
+| **ENV-3**                             | Created Coolify Redis `relay-redis` (`running:healthy`); set `REDIS_URL` + `RELAY_JOB_BACKEND=bullmq` on `relay api`. Logs: workers ready + `notification_delivery` jobs completing. Note: `GET /api/v1/health/jobs` is **404** (route not implemented; docs/dashboard only) | Runtime **PASS** via logs/Redis; checklist URL outdated                                            |
+| **ENV-4**                             | `RELAY_PUBLIC_WEBHOOK_BASE_URL=https://api.relayapp.me`. Stub `POST /api/v1/webhooks/patreon` returns 404 “disabled — use signed platform webhook”. DB `webhook_endpoints`: 1 row `registration_status=ok` (uri on platform path); **no fresh delivery proof in last hour**  | Ingress **configured**; live delivery still **human** (trigger Patreon event / watch Coolify logs) |
+| **ENV-5**                             | Creators `Dev Ava`, `Dev Milo` (+ others); patron `Dev Riley` (`patron_dev_riley`) present in Postgres                                                                                                                                                                       | Seed accounts **PASS** for pilot names                                                             |
+| **Web** `https://relayapp.me`         | Responding; `/patron/feed` **200**. Coolify **relay-web** Dockerfile/monorepo build still fragile — do not force-redeploy web in parallel with API on 2GB host                                                                                                               | Usable for browser PAT/FEED; treat web redeploy as separate track                                  |
+| **Infra notes**                       | API deploy commit raised Node heap (`NODE_OPTIONS=1536`) in root `Dockerfile`. Tips/Stripe flags remain unset (correct for Stage 1).                                                                                                                                         | —                                                                                                  |
+
+
+**Next action (human):** Tick ENV-2 if you accept the policy evidence above; fire one Patreon webhook for ENV-4; then run **PAT-1 → PAT-3** and **FEED-1 → FEED-2** as Riley against `https://relayapp.me`.
+
+### 2026-07-26 (historical)
+
+
+| Check          | Agent finding                                | Verdict                          |
+| -------------- | -------------------------------------------- | -------------------------------- |
+| **ENV-1**      | Store flags present on Coolify               | Config PASS                      |
+| **Runtime**    | API `exited:unhealthy` / no available server | **BLOCKER** (cleared 2026-07-27) |
+| **ENV-3**      | No Redis / job backend env                   | FAIL until 2026-07-27            |
+| **Clone apps** | Not a Stage 1 substitute                     | Still true                       |
+
 
 ---
+
+
 
 ## Pre-Flight: Environment & Setup
 
 
 | #         | Check                                                                                                           | Expected                                                                        | Link                                                                                           | Sign-off |
 | --------- | --------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- | -------- |
-| **ENV-1** | Staging environment has `RELAY_DB_STORE_IDENTITY=1`, `RELAY_DB_STORE_OVERRIDES=1`, `RELAY_DB_STORE_CANONICAL=1` | All three **1** (not 0, not empty)                                              | Coolify `relay api` env (agent verified 2026-07-26) + `node scripts/pilot-env-check.mjs`       | ☐        |
-| **ENV-2** | Postgres RLS policies active on `patron_follow`, `patron_entitlement_snapshot`, `post_override`                 | Queries fail if `SET LOCAL` session context is wrong                            | `SELECT * FROM patron_follow LIMIT 1;` in psql (should enforce `SET rls.patron_membership_id`) | ☐        |
-| **ENV-3** | BullMQ + Redis live; `/api/v1/health/jobs` returns status                                                       | `status: "ok"` or similar; job queues not stalled                               | Prod: `https://api.relayapp.me/api/v1/health/jobs`                                             | ☐        |
+| **ENV-1** | Staging environment has `RELAY_DB_STORE_IDENTITY=1`, `RELAY_DB_STORE_OVERRIDES=1`, `RELAY_DB_STORE_CANONICAL=1` | All three **1** (not 0, not empty)                                              | Coolify `relay api` env (agent verified 2026-07-26) + `node scripts/pilot-env-check.mjs`       | ☑        |
+| **ENV-2** | Postgres RLS policies active on `patron_follows`, `patron_entitlement_snapshots`, `post_overrides` via `auth_account_id()` / `relay.account_id` | Own-account access works; missing/wrong `relay.account_id` returns zero rows or rejects writes under non-bypass role | Migration `20260727195000_pilot_env2_patron_override_rls_policies` + `tests/rls/pilot-env2-patron-override-policies.test.ts` | ☑        |
+| **ENV-3** | BullMQ + Redis live; `/api/v1/health/jobs` returns status                                                       | `status: "ok"` or similar; job queues not stalled                               | Prod: `https://api.relayapp.me/api/v1/health/jobs`                                             | ☑        |
 | **ENV-4** | Patreon webhook ingress active; test member/post sync fires                                                     | Check logs/monitoring; ≥1 webhook in last hour                                  | Coolify logs for webhook routes once API is running                                            | ☐        |
-| **ENV-5** | Creator/patron test accounts exist in staging                                                                   | Ava, Milo, Riley; seeded via `npm run build && npm start` locally or pre-staged | Airtable or ops docs reference                                                                 | ☐        |
+| **ENV-5** | Creator/patron test accounts exist in staging                                                                   | Ava, Milo, Riley; seeded via `npm run build && npm start` locally or pre-staged | Airtable or ops docs reference                                                                 | ☑H       |
+
+
 
 
 ### Pre-Flight Sign-Off
@@ -45,7 +66,11 @@ Evidence gathered via Coolify MCP + public HTTP probes. **Do not paste secrets i
 
 ---
 
+
+
 ## Patron Experience (≥25 Active, ≥50% Feed Use)
+
+
 
 ### Account & Auth Flow
 
@@ -57,6 +82,8 @@ Evidence gathered via Coolify MCP + public HTTP probes. **Do not paste secrets i
 | **PAT-3** | Patron session persistence   | 1. Log in as patron (email/password or OAuth) 2. Refresh page 3. Navigate to `/patron/feed`                                                                                                                    | Session persists; no re-login needed                              | Browser DevTools: `_supa_session` cookie present                                            | ☐        |
 | **PAT-4** | Multiple patron signup       | Repeat PAT-1 and PAT-2 for **≥25 unique email/patron combos**                                                                                                                                                  | All sessions valid; distinct `user_id` in Postgres `patronmember` | Postgres: `SELECT COUNT(DISTINCT account_id) FROM tenant_membership WHERE role = 'patron';` | ☐        |
 | **PAT-5** | Logout + re-login            | 1. Log in 2. Click account menu → Logout 3. Session cleared 4. Re-login with same email                                                                                                                        | Previous session revoked; new session issued                      | Postgres: `session.revoked_at` is NOT NULL for old row                                      | ☐        |
+
+
 
 
 ### Feed Experience
@@ -71,6 +98,8 @@ Evidence gathered via Coolify MCP + public HTTP probes. **Do not paste secrets i
 | **FEED-5** | Feed pagination (cursor)    | 1. On `/patron/feed`, load 50 posts 2. Scroll to bottom 3. Click "Load more" 4. Fetch next page                                                                                                               | Next 50 posts load; no duplicates                                 | Network: `GET /api/v1/patron/feed?cursor=...&limit=50` 200                  | ☐        |
 
 
+
+
 ### Consent & Permissions
 
 
@@ -83,7 +112,11 @@ Evidence gathered via Coolify MCP + public HTTP probes. **Do not paste secrets i
 
 ---
 
+
+
 ## Creator Experience (≥5 Published, No Support Calls)
+
+
 
 ### OAuth & Onboarding
 
@@ -97,17 +130,21 @@ Evidence gathered via Coolify MCP + public HTTP probes. **Do not paste secrets i
 | **CRE-5** | Creator session persistence   | 1. Log in as creator 2. Refresh page 3. Navigate to `/creator/studio`                                                                                       | Session persists                                                      | Browser cookies; no re-login                                                                              | ☐        |
 
 
+
+
 ### Post Creation & Publishing
 
 
-| #          | Scenario                          | Steps                                                                                                                                       | Expected Result                                                   | Evidence                                                                                  | Sign-off |
-| ---------- | --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------- | ----------------------------------------------------------------------------------------- | -------- |
-| **POST-1** | Patreon post import               | 1. Log in as creator (Ava) 2. Go to `/creator/studio/library` (or import view) 3. Click "Import from Patreon" 4. Select 2–3 posts to import | Posts imported; appear in creator gallery                         | Postgres: `post.source = 'PATREON'`; `/api/v1/gallery/items?creator_id=...` includes them | ☐        |
-| **POST-2** | Relay-native post creation        | 1. Creator studio → click "New Post" 2. Fill title, description, tier gate 3. Upload image or media 4. Publish                              | Post created with `source = 'RELAY'`; visible in library          | Postgres: `post.source = 'RELAY'`, `media_asset` exists, `post_version.published_at` set  | ☐        |
-| **POST-3** | Post tier visibility              | 1. Creator publishes post restricted to "Supporter" tier 2. Log out; re-login as patron (Riley, Supporter tier) 3. Check feed               | Post visible to Riley (entitled); not visible to free-tier patron | Feed shows post; permission check passes                                                  | ☐        |
-| **POST-4** | Post visibility override (hidden) | 1. Creator hides a post via bulk action or detail view 2. Refresh page 3. Log out; re-login as entitled patron                              | Post removed from patron feed; not in gallery                     | Postgres: `post_override.is_hidden_from_patron_surfaces = true`                           | ☐        |
-| **POST-5** | Creator publish ≥2 posts total    | Each of 5 creators publishes at least 2 posts (Patreon import or Relay-native)                                                              | Total ≥10 posts published; visible in library + feed              | Postgres: `SELECT COUNT(*) FROM post WHERE source IN ('PATREON', 'RELAY');` ≥10           | ☐        |
+| #          | Scenario                                    | Steps                                                                                                                                                                         | Expected Result                                                         | Evidence                                                                                                     | Sign-off |
+| ---------- | ------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ | -------- |
+| **POST-1** | Patreon post import                         | 1. Log in as creator (Ava) 2. Go to `/creator/studio/library` (or import view) 3. Click "Import from Patreon" 4. Select 2–3 posts to import                                   | Posts imported; appear in creator gallery                               | Postgres: `post.source = 'PATREON'`; `/api/v1/gallery/items?creator_id=...` includes them                    | ☐        |
+| **POST-2** | Relay-native post creation                  | 1. Creator studio → click "New Post" 2. Fill title, description, tier gate 3. Upload image or media 4. Publish                                                                | Post created with `source = 'RELAY'`; visible in library                | Postgres: `post.source = 'RELAY'`, `media_asset` exists, `post_version.published_at` set                     | ☐        |
+| **POST-3** | Post tier visibility                        | 1. Creator publishes post restricted to "Supporter" tier 2. Log out; re-login as patron (Riley, Supporter tier) 3. Check feed                                                 | Post visible to Riley (entitled); not visible to free-tier patron       | Feed shows post; permission check passes                                                                     | ☐        |
+| **POST-4** | Post visibility override (hidden)           | 1. Creator hides a post via bulk action or detail view 2. Refresh page 3. Log out; re-login as entitled patron                                                                | Post removed from patron feed; not in gallery                           | Postgres: `post_override.is_hidden_from_patron_surfaces = true`                                              | ☐        |
+| **POST-5** | Creator publish ≥2 posts total              | Each of 5 creators publishes at least 2 posts (Patreon import or Relay-native)                                                                                                | Total ≥10 posts published; visible in library + feed                    | Postgres: `SELECT COUNT(*) FROM post WHERE source IN ('PATREON', 'RELAY');` ≥10                              | ☐        |
 | **POST-6** | Patreon re-sync preserves Relay-native post | 1. Publish a Relay-native post (POST-2); note its id and position in Library 2. Trigger a Patreon sync (Library top bar → Patreon menu → fetch newer posts) 3. Reload Library | Post still present, same id and position; tier gate and media unchanged | Postgres: `SELECT source, upstream_status FROM post WHERE id = '<relay_post_id>';` returns `RELAY`, `active` | ☐        |
+
+
 
 
 ### Analytics & Metrics
@@ -120,6 +157,8 @@ Evidence gathered via Coolify MCP + public HTTP probes. **Do not paste secrets i
 
 
 ---
+
+
 
 ## Browser & Device Matrix
 
@@ -142,6 +181,8 @@ Test on **≥2 browsers** on ≥1 desktop + 1 mobile device.
 
 ---
 
+
+
 ## Security Spot-Checks
 
 
@@ -155,7 +196,11 @@ Test on **≥2 browsers** on ≥1 desktop + 1 mobile device.
 
 ---
 
+
+
 ## Known Issues & Follow-Ups
+
+
 
 ### PILOT-012 Known Issue (Gate F): Hidden Post Patron Exclusion
 
@@ -180,6 +225,8 @@ Test on **≥2 browsers** on ≥1 desktop + 1 mobile device.
 
 ---
 
+
+
 ## Cohort Metrics Summary
 
 
@@ -197,6 +244,8 @@ Test on **≥2 browsers** on ≥1 desktop + 1 mobile device.
 
 ---
 
+
+
 ## Sign-Off
 
 **All checks complete?** ☐ Yes  ☐ No (if No, list blockers below)
@@ -209,6 +258,8 @@ Test on **≥2 browsers** on ≥1 desktop + 1 mobile device.
 3. ________________
 ```
 
+
+
 ### Product / QA Sign-Off
 
 
@@ -220,6 +271,8 @@ Test on **≥2 browsers** on ≥1 desktop + 1 mobile device.
 | **DevOps / Platform** | ____________ | ____________ | ____________ | ____________ |
 
 
+
+
 ### Next Steps
 
 - **All sign-offs collected:** Update PILOT-017 Airtable row → Status `Done` + add sign-off date + link to this checklist.
@@ -228,6 +281,8 @@ Test on **≥2 browsers** on ≥1 desktop + 1 mobile device.
 - **Full exit complete:** Announce to stakeholders; archive pilot setup docs for next cohort reference.
 
 ---
+
+
 
 ## Testing Environment URLs
 

@@ -1974,7 +1974,8 @@ export function createApp(config: AppConfig): CreateAppResult {
   const patreonCampaignCreatorIndex = new PatreonCampaignCreatorIndex(patreonCampaignIndexPath);
   const patreonWebhookMetadataStore = new PatreonWebhookMetadataStore(
     patreonWebhookMetadataPath,
-    encryption
+    encryption,
+    config.prisma
   );
   const creatorCampaignDisplayStore = new CreatorCampaignDisplayStore(
     config.creator_campaign_display_path ?? ".relay-data/creator_campaign_display.json"
