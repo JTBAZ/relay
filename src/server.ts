@@ -402,7 +402,10 @@ import {
   buildTierMap
 } from "./export/manifests.js";
 import { GalleryService } from "./gallery/gallery-service.js";
-import { getGalleryPlatformInstanceSummariesForPosts } from "./gallery/platform-instance-enrichment.js";
+import {
+  getGalleryPlatformInstanceSummariesForPosts,
+  mergeActivePlatformInstancesIntoDistributionSummary
+} from "./gallery/platform-instance-enrichment.js";
 import { getCreativeWorkMembershipForPosts } from "./gallery/creative-work-enrichment.js";
 import {
   derivePresentationUpsertFragments,
@@ -6267,17 +6270,18 @@ export function createApp(config: AppConfig): CreateAppResult {
     if (!visitor && config.prisma && result.items.length > 0) {
       try {
         const postIds = [...new Set(result.items.map((item) => item.post_id))];
-        const summaries = await getDistributionSummariesForPosts(
-          config.prisma,
-          creatorId,
-          postIds
-        );
-        if (summaries.size > 0) {
-          result.items = result.items.map((item) => {
-            const summary = summaries.get(item.post_id);
-            return summary ? { ...item, distribution_summary: summary } : item;
-          });
-        }
+        const [summaries, instanceSummariesForPresence] = await Promise.all([
+          getDistributionSummariesForPosts(config.prisma, creatorId, postIds),
+          getGalleryPlatformInstanceSummariesForPosts(config.prisma, creatorId, postIds)
+        ]);
+        result.items = result.items.map((item) => {
+          const merged = mergeActivePlatformInstancesIntoDistributionSummary(
+            summaries.get(item.post_id),
+            instanceSummariesForPresence.get(item.post_id) ?? [],
+            item.post_id
+          );
+          return merged ? { ...item, distribution_summary: merged } : item;
+        });
       } catch (error) {
         serverLog.warn(
           { err: error, creator_id: creatorId, trace_id: traceId },

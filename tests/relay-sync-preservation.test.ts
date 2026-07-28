@@ -221,6 +221,11 @@ describe.skipIf(!hasDatabaseUrl)("Patreon re-sync preserves Relay-native posts",
         expect(galleryPostIds).toContain(relayPostId);
       } finally {
         // Clean up so repeated runs / sibling suites see the seeded baseline.
+        await prisma.platformInstance.deleteMany({ where: { postId: syntheticPatreonPostId } });
+        await prisma.creativeWorkMember.deleteMany({ where: { postId: syntheticPatreonPostId } });
+        await prisma.creativeWork.deleteMany({
+          where: { id: `cw_default_${syntheticPatreonPostId}` }
+        }).catch(() => undefined);
         await prisma.postTier.deleteMany({ where: { postId: syntheticPatreonPostId } });
         await prisma.postVersion.deleteMany({ where: { postId: syntheticPatreonPostId } });
         await prisma.post.deleteMany({ where: { id: syntheticPatreonPostId } });

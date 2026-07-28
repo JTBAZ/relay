@@ -14,6 +14,8 @@ import {
   Prisma,
   type PrismaClient
 } from "@prisma/client";
+import { ensureDefaultCreativeWorkForPost } from "../analytics/creative-work-service.js";
+import { ensurePatreonPlatformInstanceForIngestedPost } from "../analytics/platform-instance-service.js";
 import type {
   CampaignRow,
   CanonicalSnapshot,
@@ -725,6 +727,26 @@ export class DbCanonicalStore implements CanonicalStore {
                 processingError: null
               };
             })
+          });
+        }
+
+        // Packaging identity for Patreon imports: Creative Work + Patreon Platform Instance.
+        // Runs for preserved and newly materialised posts so a sync also backfills older rows.
+        for (const post of postEntriesPatreon) {
+          const title =
+            post.current?.title?.trim() ||
+            post.versions[post.versions.length - 1]?.title?.trim() ||
+            post.post_id;
+          await ensureDefaultCreativeWorkForPost(tx, {
+            postId: post.post_id,
+            creatorId,
+            title,
+            createdAt: earliestPublishedAt(post)
+          });
+          await ensurePatreonPlatformInstanceForIngestedPost(tx, {
+            postId: post.post_id,
+            creatorId,
+            linkedAt: earliestPublishedAt(post)
           });
         }
       },

@@ -1,5 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
-import { getGalleryPlatformInstanceSummariesForPosts } from "../src/gallery/platform-instance-enrichment.js";
+import {
+  getGalleryPlatformInstanceSummariesForPosts,
+  mergeActivePlatformInstancesIntoDistributionSummary
+} from "../src/gallery/platform-instance-enrichment.js";
+import type { DistributionSummaryWire } from "../src/distribution/post-distribution-service.js";
+import { summaryToPresence } from "../web/lib/active-post-presence.js";
 
 const CREATOR_ID = "creator_a";
 const NOW = new Date("2026-07-01T12:00:00.000Z");
@@ -136,5 +141,106 @@ describe("getGalleryPlatformInstanceSummariesForPosts", () => {
         variant_role: "promo"
       })
     ]);
+  });
+});
+
+describe("mergeActivePlatformInstancesIntoDistributionSummary", () => {
+  it("fills Patreon external_url from active instance when no distribution rows exist", () => {
+    const merged = mergeActivePlatformInstancesIntoDistributionSummary(
+      undefined,
+      [
+        {
+          platform_instance_id: "pi_manual_patreon_post_1_patreon",
+          destination: "patreon",
+          external_url: "https://www.patreon.com/posts/1",
+          status: "active",
+          last_refreshed_at: null,
+          variant_role: "standalone",
+          refresh_eligible: true
+        }
+      ],
+      "patreon_post_1"
+    );
+
+    expect(merged).toEqual(
+      expect.objectContaining({
+        post_id: "patreon_post_1",
+        destinations: expect.arrayContaining([
+          expect.objectContaining({
+            destination: "patreon",
+            attempt_status: null,
+            external_url: "https://www.patreon.com/posts/1"
+          })
+        ])
+      })
+    );
+
+    const presence = summaryToPresence(merged);
+    expect(presence.present.map((p) => p.destination)).toContain("patreon");
+    expect(presence.missing).not.toContain("patreon");
+  });
+
+  it("does not overwrite a posted attempt URL", () => {
+    const summary: DistributionSummaryWire = {
+      post_id: "post_a",
+      destinations: [
+        {
+          destination: "patreon",
+          variant_status: "ready",
+          attempt_status: "posted",
+          attempt_id: "att_1",
+          external_url: "https://www.patreon.com/posts/posted",
+          external_id: "posted"
+        },
+        {
+          destination: "x",
+          variant_status: null,
+          attempt_status: null,
+          attempt_id: null,
+          external_url: null,
+          external_id: null
+        },
+        {
+          destination: "deviantart",
+          variant_status: null,
+          attempt_status: null,
+          attempt_id: null,
+          external_url: null,
+          external_id: null
+        },
+        {
+          destination: "bluesky",
+          variant_status: null,
+          attempt_status: null,
+          attempt_id: null,
+          external_url: null,
+          external_id: null
+        }
+      ]
+    };
+
+    const merged = mergeActivePlatformInstancesIntoDistributionSummary(
+      summary,
+      [
+        {
+          platform_instance_id: "pi_1",
+          destination: "patreon",
+          external_url: "https://www.patreon.com/posts/instance",
+          status: "active",
+          last_refreshed_at: null,
+          variant_role: "standalone",
+          refresh_eligible: true
+        }
+      ],
+      "post_a"
+    );
+
+    expect(merged?.destinations.find((d) => d.destination === "patreon")?.external_url).toBe(
+      "https://www.patreon.com/posts/posted"
+    );
+  });
+
+  it("returns null when there is nothing to merge", () => {
+    expect(mergeActivePlatformInstancesIntoDistributionSummary(undefined, [], "post_z")).toBeNull();
   });
 });

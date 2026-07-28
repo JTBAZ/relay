@@ -65,7 +65,17 @@ function mockTx() {
       upsert: vi.fn().mockResolvedValue({}),
       delete: vi.fn().mockResolvedValue({})
     },
-    ingestIdempotencyKey: { deleteMany: vi.fn().mockResolvedValue({}), createMany: vi.fn().mockResolvedValue({}) }
+    ingestIdempotencyKey: { deleteMany: vi.fn().mockResolvedValue({}), createMany: vi.fn().mockResolvedValue({}) },
+    creativeWorkMember: {
+      findUnique: vi.fn().mockResolvedValue({ id: "cwm_existing", creativeWorkId: "cw_existing" }),
+      create: vi.fn().mockResolvedValue({})
+    },
+    creativeWork: { upsert: vi.fn().mockResolvedValue({}) },
+    platformInstance: {
+      findUnique: vi.fn().mockResolvedValue(null),
+      create: vi.fn().mockResolvedValue({}),
+      update: vi.fn().mockResolvedValue({})
+    }
   };
   return { tx, postCreate };
 }
@@ -152,5 +162,87 @@ describe("DbCanonicalStore.save duplicate version_seq", () => {
     } finally {
       warnSpy.mockRestore();
     }
+  });
+
+  it("ensures Creative Work + Patreon Platform Instance for ingested Patreon posts", async () => {
+    const { tx } = mockTx();
+    tx.creativeWorkMember.findUnique = vi.fn().mockResolvedValue(null);
+    tx.creativeWork.upsert = vi.fn().mockResolvedValue({});
+    tx.creativeWorkMember.create = vi.fn().mockResolvedValue({});
+    tx.platformInstance.findUnique = vi.fn().mockResolvedValue(null);
+    tx.platformInstance.create = vi.fn().mockResolvedValue({});
+
+    const prisma = mockPrisma(() => ({ tx }));
+    const store = new DbCanonicalStore(prisma as never);
+    const vBase: PostVersionRow = {
+      version_seq: 1,
+      upstream_revision: "patreon:x",
+      title: "TEST",
+      published_at: "2026-04-01T12:00:00.000Z",
+      tag_ids: [],
+      tier_ids: ["relay_tier_public"],
+      media_ids: [],
+      ingested_at: "2026-04-01T12:00:00.000Z"
+    };
+
+    await store.saveForCreator("cr1", {
+      ingest_idempotency: {},
+      campaigns: {
+        cr1: {
+          patreon_campaign_1: {
+            campaign_id: "patreon_campaign_1",
+            creator_id: "cr1",
+            name: "C",
+            upstream_updated_at: "2026-01-01T00:00:00.000Z",
+            version_seq: 1
+          }
+        }
+      },
+      tiers: {
+        cr1: {
+          relay_tier_public: {
+            tier_id: "relay_tier_public",
+            creator_id: "cr1",
+            campaign_id: "patreon_campaign_1",
+            title: "Public",
+            upstream_updated_at: "2026-01-01T00:00:00.000Z",
+            version_seq: 1
+          }
+        }
+      },
+      posts: {
+        cr1: {
+          patreon_post_165070564: {
+            post_id: "patreon_post_165070564",
+            creator_id: "cr1",
+            current: vBase,
+            versions: [vBase],
+            upstream_status: "active",
+            source: "PATREON"
+          }
+        }
+      },
+      media: {}
+    });
+
+    expect(tx.creativeWork.upsert).toHaveBeenCalled();
+    expect(tx.creativeWorkMember.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          postId: "patreon_post_165070564",
+          creatorId: "cr1",
+          variantRole: "standalone"
+        })
+      })
+    );
+    expect(tx.platformInstance.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        postId: "patreon_post_165070564",
+        destination: "patreon",
+        externalUrl: "https://www.patreon.com/posts/165070564",
+        linkSource: "api_identity",
+        status: "active"
+      })
+    });
   });
 });

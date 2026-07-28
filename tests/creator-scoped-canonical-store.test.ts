@@ -126,7 +126,16 @@ function createMockTx(): MockTx {
       delete: vi.fn().mockResolvedValue({})
     },
     ingestIdempotencyKey: { deleteMany: vi.fn().mockResolvedValue({}), createMany: vi.fn().mockResolvedValue({}) },
-    postPresentation: { findMany: vi.fn().mockResolvedValue([]), deleteMany: vi.fn().mockResolvedValue({}) }
+    postPresentation: { findMany: vi.fn().mockResolvedValue([]), deleteMany: vi.fn().mockResolvedValue({}) },
+    creativeWorkMember: {
+      findUnique: vi.fn().mockResolvedValue({ id: "cwm_existing", creativeWorkId: "cw_existing" })
+    },
+    creativeWork: { upsert: vi.fn().mockResolvedValue({}) },
+    platformInstance: {
+      findUnique: vi.fn().mockResolvedValue(null),
+      create: vi.fn().mockResolvedValue({}),
+      update: vi.fn().mockResolvedValue({})
+    }
   };
 }
 

@@ -118,6 +118,98 @@ export async function upsertPlatformInstanceFromAttempt(
   };
 }
 
+const PATREON_POST_ID_RE = /^patreon_post_(\d+)$/i;
+
+/**
+ * Build a stable Patreon post URL from a Relay ingest post id (`patreon_post_{numericId}`).
+ * @returns Canonical URL + external id, or `null` when the post id is not Patreon-shaped.
+ */
+export function patreonIngestExternalIdentity(
+  postId: string
+): { externalId: string; externalUrl: string } | null {
+  const m = PATREON_POST_ID_RE.exec(postId.trim());
+  if (!m?.[1]) return null;
+  const externalId = m[1];
+  return {
+    externalId,
+    externalUrl: `https://www.patreon.com/posts/${externalId}`
+  };
+}
+
+/**
+ * Ensures a Patreon Platform Instance exists for an ingested Patreon post.
+ * Idempotent: does not replace an autopost/manual instance that already has a URL.
+ */
+export async function ensurePatreonPlatformInstanceForIngestedPost(
+  db: PlatformInstanceDb,
+  args: { postId: string; creatorId: string; linkedAt?: Date }
+): Promise<UpsertPlatformInstanceResult | null> {
+  const postId = args.postId.trim();
+  const creatorId = args.creatorId.trim();
+  const identity = patreonIngestExternalIdentity(postId);
+  if (!postId || !creatorId || !identity) {
+    return null;
+  }
+
+  const linkedAt = args.linkedAt ?? new Date();
+  const id = platformInstanceIdForManualLink(postId, "patreon");
+  const existing = await db.platformInstance.findUnique({
+    where: { postId_destination: { postId, destination: "patreon" } },
+    select: {
+      id: true,
+      externalUrl: true,
+      externalId: true,
+      linkSource: true,
+      status: true
+    }
+  });
+
+  if (existing) {
+    const hasUrl = Boolean(existing.externalUrl?.trim());
+    // Keep stronger provenance (posted attempt / creator-confirmed URL) intact.
+    if (hasUrl && existing.linkSource !== "api_identity" && existing.linkSource !== "inferred_only") {
+      if (existing.status !== "active") {
+        await db.platformInstance.update({
+          where: { id: existing.id },
+          data: { status: "active", updatedAt: new Date() }
+        });
+      }
+      return { platformInstanceId: existing.id, created: false };
+    }
+
+    await db.platformInstance.update({
+      where: { id: existing.id },
+      data: {
+        creatorId,
+        externalUrl: existing.externalUrl?.trim() || identity.externalUrl,
+        externalId: existing.externalId?.trim() || identity.externalId,
+        linkSource: hasUrl && existing.linkSource !== "inferred_only" ? existing.linkSource : "api_identity",
+        status: "active",
+        updatedAt: new Date()
+      }
+    });
+    return { platformInstanceId: existing.id, created: false };
+  }
+
+  await db.platformInstance.create({
+    data: {
+      id,
+      creatorId,
+      postId,
+      destination: "patreon",
+      externalUrl: identity.externalUrl,
+      externalId: identity.externalId,
+      attemptId: null,
+      linkSource: "api_identity",
+      status: "active",
+      refreshPolicy: DEFAULT_REFRESH_POLICY,
+      linkedAt
+    }
+  });
+
+  return { platformInstanceId: id, created: true };
+}
+
 /**
  * Ensures a Relay-native Platform Instance exists for first-party engagement metrics.
  */
