@@ -181,7 +181,8 @@ export type SendRelayExternalMetricsRefreshResult =
       extensionId: string;
       response: {
         ok: true;
-        attempt_id: string;
+        attempt_id: string | null;
+        platform_instance_id?: string | null;
         post_id: string;
         destination: CrossPostDestination;
         snapshot_count: number;
