@@ -8,6 +8,7 @@ import {
   RELAY_PUBLIC_SLUG_STORAGE_KEY,
   RelayApiError,
   buildPatreonCreatorAuthorizeUrl,
+  fetchPatronSessionIfPresent,
   hasRelaySignedInCookie,
   postCreatorWorkspace,
   postPatreonCreatorPrepare
@@ -23,6 +24,7 @@ type Props = {
 /**
  * Creator Patreon OAuth: production flow uses `prepare` + signed `state` (MT-035).
  * Set `NEXT_PUBLIC_RELAY_PATREON_LEGACY_CONNECT=1` for the old manual creator_id-as-state dev UX.
+ * Studio id prefers `/me/session` projection; localStorage is dual-write soak only.
  */
 export default function PatreonConnectClient({ initialClientId }: Props) {
   const legacyConnect = process.env.NEXT_PUBLIC_RELAY_PATREON_LEGACY_CONNECT === "1";
@@ -36,7 +38,24 @@ export default function PatreonConnectClient({ initialClientId }: Props) {
   useEffect(() => {
     setOrigin(getWebAppOrigin());
     setHasSession(hasRelaySignedInCookie());
-    setStoredCreatorId(window.localStorage.getItem(RELAY_CREATOR_ID_STORAGE_KEY)?.trim() ?? "");
+    const local =
+      window.localStorage.getItem(RELAY_CREATOR_ID_STORAGE_KEY)?.trim() ?? "";
+    setStoredCreatorId(local);
+    if (!hasRelaySignedInCookie()) return;
+    void fetchPatronSessionIfPresent().then((me) => {
+      const fromSession =
+        me?.primary_relay_creator_id?.trim() ||
+        me?.studios?.find((s) => s.is_primary)?.relay_creator_id?.trim() ||
+        "";
+      if (fromSession) {
+        setStoredCreatorId(fromSession);
+        try {
+          window.localStorage.setItem(RELAY_CREATOR_ID_STORAGE_KEY, fromSession);
+        } catch {
+          /* ignore */
+        }
+      }
+    });
   }, []);
 
   const clientId = initialClientId;

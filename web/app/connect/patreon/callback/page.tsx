@@ -4,7 +4,6 @@ import { Suspense, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
-  RELAY_CREATOR_ID_STORAGE_KEY,
   hasRelaySignedInCookie,
   isPreparedPatreonOAuthState,
   relayFetch
@@ -66,36 +65,26 @@ function CallbackInner() {
     (async () => {
       try {
         const prepared = isPreparedPatreonOAuthState(state);
-        const storedCreatorId =
-          window.localStorage.getItem(RELAY_CREATOR_ID_STORAGE_KEY)?.trim() ?? "";
-
-        let creatorId: string;
         const headers: Record<string, string> = { "content-type": "application/json" };
+
+        // Prepared flow: studio id is bound in server-signed `state` / OAuth transaction.
+        // Do not read localStorage — refresh/Strict Mode must not depend on browser-local authority.
         if (prepared) {
-          if (!storedCreatorId) {
-            throw new Error(
-              "Missing relay_creator_id in localStorage — run Create workspace on /connect/patreon/connect first."
-            );
-          }
           if (!hasRelaySignedInCookie()) {
             throw new Error(
               "Missing Relay session — sign in before OAuth (same browser tab)."
             );
           }
-          creatorId = storedCreatorId;
-        } else {
-          creatorId = state;
         }
 
         const data = await relayFetch<PatreonExchangeSuccessData>("/api/v1/auth/patreon/exchange", {
           method: "POST",
           headers,
-          body: JSON.stringify({
-            creator_id: creatorId,
-            code,
-            redirect_uri: redirectUri,
-            ...(prepared ? { state } : {})
-          })
+          body: JSON.stringify(
+            prepared
+              ? { code, redirect_uri: redirectUri, state }
+              : { creator_id: state, code, redirect_uri: redirectUri }
+          )
         });
         if (cancelled) return;
         setStatus("done");

@@ -49,18 +49,16 @@ export function signCreatorPatreonOAuthState(args: {
   return { state, expiresAtIso: new Date(exp).toISOString() };
 }
 
+type CreatorPatreonOAuthPayload = { v: number; a: string; c: string; exp: number };
+
 /**
- * @description Validates HMAC, expiry version, and account/creator binding for a returning OAuth redirect.
- * @param state Serialized state from Patreon redirect.
- * @param expectedAccountId Account id encoded at mint time.
- * @param expectedCreatorId Creator id encoded at mint time.
- * @returns Success marker or `{ ok:false, reason }` diagnostic code.
+ * Validate HMAC + expiry and return the bound account/creator ids from a prepare-issued state.
+ * Prefer this when the client should not supply `creator_id` (server-authoritative studio bind).
  */
-export function verifyCreatorPatreonOAuthState(
+export function parseCreatorPatreonOAuthState(
   state: string,
-  expectedAccountId: string,
-  expectedCreatorId: string
-): { ok: true } | { ok: false; reason: string } {
+  expectedAccountId: string
+): { ok: true; creatorId: string; accountId: string } | { ok: false; reason: string } {
   const secret = getPatreonOAuthStateSecret();
   if (!secret) {
     return { ok: false, reason: "secret_unconfigured" };
@@ -79,9 +77,9 @@ export function verifyCreatorPatreonOAuthState(
   if (sigBuf.length !== expBuf.length || !timingSafeEqual(sigBuf, expBuf)) {
     return { ok: false, reason: "signature" };
   }
-  let parsed: { v: number; a: string; c: string; exp: number };
+  let parsed: CreatorPatreonOAuthPayload;
   try {
-    parsed = JSON.parse(Buffer.from(payloadB64, "base64url").toString("utf8")) as typeof parsed;
+    parsed = JSON.parse(Buffer.from(payloadB64, "base64url").toString("utf8")) as CreatorPatreonOAuthPayload;
   } catch {
     return { ok: false, reason: "payload" };
   }
@@ -91,7 +89,28 @@ export function verifyCreatorPatreonOAuthState(
   if (parsed.a !== expectedAccountId) {
     return { ok: false, reason: "account" };
   }
-  if (parsed.c !== expectedCreatorId.trim()) {
+  const creatorId = typeof parsed.c === "string" ? parsed.c.trim() : "";
+  if (!creatorId) {
+    return { ok: false, reason: "creator" };
+  }
+  return { ok: true, creatorId, accountId: parsed.a };
+}
+
+/**
+ * @description Validates HMAC, expiry version, and account/creator binding for a returning OAuth redirect.
+ * @param state Serialized state from Patreon redirect.
+ * @param expectedAccountId Account id encoded at mint time.
+ * @param expectedCreatorId Creator id encoded at mint time.
+ * @returns Success marker or `{ ok:false, reason }` diagnostic code.
+ */
+export function verifyCreatorPatreonOAuthState(
+  state: string,
+  expectedAccountId: string,
+  expectedCreatorId: string
+): { ok: true } | { ok: false; reason: string } {
+  const parsed = parseCreatorPatreonOAuthState(state, expectedAccountId);
+  if (!parsed.ok) return parsed;
+  if (parsed.creatorId !== expectedCreatorId.trim()) {
     return { ok: false, reason: "creator" };
   }
   return { ok: true };

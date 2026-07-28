@@ -26,7 +26,7 @@
 
 | Rule | Expected behavior |
 |------|-------------------|
-| **Creator vs patron OAuth** | Creator flows use creator connect/callback; patron flows use patron connect/callback — do not swap routes (**`web/app/patreon/`**, **`web/app/connect/patreon/patron/`**). |
+| **Creator vs patron OAuth** | Session-first **Connect Patreon** uses patron identity/membership scopes; **Enable Studio / Reconnect Studio sync** uses elevated creator scopes. Do not request webhook/member-email scopes on the identity link. Routes: **`web/app/connect/patreon/patron/`** then optional **`web/app/connect/patreon/connect`**. |
 | **Callback handling** | OAuth callbacks should surface errors readably; silent failure on token exchange → **fail** for QA unless spec says otherwise. |
 
 ---

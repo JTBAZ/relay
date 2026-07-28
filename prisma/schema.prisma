@@ -32,6 +32,27 @@ enum OAuthPurpose {
   patron_entitlement
 }
 
+/// Durable Patreon OAuth authorize/exchange transaction (Unified Relay Identity).
+enum OAuthTransactionPurpose {
+  patron_link
+  creator_ingest
+}
+
+enum OAuthTransactionStatus {
+  pending
+  in_progress
+  completed
+  failed
+}
+
+enum IdentityAuditOutcome {
+  already_correct
+  safe_claim
+  conflict
+  insufficient_proof
+  dry_run
+}
+
 enum CredentialHealth {
   healthy
   degraded
@@ -207,6 +228,8 @@ model Account {
   discordLinkTokens                  DiscordLinkToken[]
   discordBindingsLinked              DiscordChannelBinding[]             @relation("DiscordChannelBindingLinker")
   creatorNotifications               Notification[]                      @relation("CreatorNotificationRecipient")
+  oauthTransactions                  OAuthTransaction[]
+  identityAuditEvents                IdentityAuditEvent[]
 
   @@map("accounts")
 }
@@ -2851,6 +2874,57 @@ model PatronOAuthCredential {
   updatedAt        DateTime         @updatedAt @map("updated_at")
 
   @@map("patron_oauth_credentials")
+}
+
+/// Server-authoritative Patreon OAuth authorize/callback transaction.
+/// Stores only hashes of state/code — never plaintext tokens or authorization codes.
+model OAuthTransaction {
+  id              String                  @id @default(cuid())
+  accountId       String                  @map("account_id")
+  account         Account                 @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  purpose         OAuthTransactionPurpose
+  status          OAuthTransactionStatus  @default(pending)
+  /// HMAC/sha256 fingerprint of OAuth `state` (unique when set).
+  stateHash       String?                 @unique @map("state_hash")
+  /// sha256 of authorization `code` for single-use / replay detection (unique when set).
+  codeHash        String?                 @unique @map("code_hash")
+  /// Studio `relay_creator_id` for creator_ingest transactions.
+  relayCreatorId  String?                 @map("relay_creator_id")
+  redirectUri     String?                 @map("redirect_uri")
+  returnPath      String?                 @map("return_path")
+  /// Redacted JSON outcome for completed/failed exchanges (no tokens).
+  resultJson      Json?                   @map("result_json")
+  errorCode       String?                 @map("error_code")
+  expiresAt       DateTime                @map("expires_at")
+  consumedAt      DateTime?               @map("consumed_at")
+  completedAt     DateTime?               @map("completed_at")
+  createdAt       DateTime                @default(now()) @map("created_at")
+  updatedAt       DateTime                @updatedAt @map("updated_at")
+
+  @@index([accountId, purpose, status])
+  @@index([expiresAt])
+  @@map("oauth_transactions")
+}
+
+/// Append-only identity reconciliation / studio-claim audit trail (no secrets).
+model IdentityAuditEvent {
+  id               String               @id @default(cuid())
+  accountId        String?              @map("account_id")
+  account          Account?             @relation(fields: [accountId], references: [id], onDelete: SetNull)
+  actorAccountId   String?              @map("actor_account_id")
+  relayCreatorId   String?              @map("relay_creator_id")
+  patreonCampaignId String?             @map("patreon_campaign_id")
+  outcome          IdentityAuditOutcome
+  reason           String
+  beforeJson       Json?                @map("before_json")
+  afterJson        Json?                @map("after_json")
+  traceId          String?              @map("trace_id")
+  createdAt        DateTime             @default(now()) @map("created_at")
+
+  @@index([accountId, createdAt(sort: Desc)])
+  @@index([relayCreatorId])
+  @@index([outcome, createdAt(sort: Desc)])
+  @@map("identity_audit_events")
 }
 
 /// Patron SubscribeStar subscriber OAuth tokens (separate app registration / scopes from creator ingest).

@@ -7,11 +7,11 @@
  */
 
 import type { PrismaClient } from "@prisma/client";
-import { TenantRole } from "@prisma/client";
 import type { Request, Response } from "express";
 import { setSupabaseRlsContext } from "../lib/supabase-rls-context.js";
 import type { IdentityService } from "./identity-service.js";
 import { getAccountIdForSession } from "./patron-auth-context.js";
+import { hasMeaningfulSupporterActivity } from "./meaningful-supporter-signal.js";
 import { readSessionCookie } from "./session-cookie.js";
 import type { AccountContext } from "./account-context.js";
 import { RelayAuthError } from "./relay-auth-error.js";
@@ -49,9 +49,6 @@ export async function loadAccountContextForSession(
   const accountId = await getAccountIdForSession(prisma, session);
   if (!accountId) return null;
 
-  const patronCount = await prisma.tenantMembership.count({
-    where: { accountId, role: TenantRole.patron }
-  });
   const account = await prisma.account.findUnique({
     where: { id: accountId },
     select: {
@@ -62,11 +59,13 @@ export async function loadAccountContextForSession(
   });
   if (!account) return null;
 
+  const hasSupporterMemberships = await hasMeaningfulSupporterActivity(prisma, accountId);
+
   return {
     accountId: account.id,
     supabaseUserId: account.supabaseUserId,
     primaryRelayCreatorId: account.primaryRelayCreatorId,
-    hasSupporterMemberships: patronCount > 0
+    hasSupporterMemberships
   };
 }
 

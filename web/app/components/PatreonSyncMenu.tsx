@@ -7,6 +7,7 @@ import { patreonScrapePreset, PATREON_SYNC_POST_ACCESS_MAX_PAGES } from "@/lib/p
 import {
   fetchPatreonSyncState,
   formatSyncHealthRollupBanner,
+  patreonOAuthReconnectNeeded,
   postPatreonScrape,
   postPatreonSyncMembers,
   postPatreonSyncPostAccess,
@@ -294,6 +295,28 @@ export default function PatreonSyncMenu({
   const webhookRegistered =
     state?.webhook_registration?.registration_status === "ok";
 
+  const showReconnectCta = patreonOAuthReconnectNeeded(state, [
+    stateError,
+    actionError,
+    memberSyncError,
+    webhookRegisterError
+  ]);
+
+  const reconnectPatreonCta = showReconnectCta ? (
+    <div className="mt-2">
+      <Link
+        href="/connect/patreon/connect"
+        className="flex w-full items-center justify-center rounded-md bg-[var(--lib-destructive)] px-3 py-2 text-xs font-medium text-white transition-opacity hover:opacity-90"
+      >
+        Reconnect Patreon
+      </Link>
+      <p className="mt-1.5 text-[10px] leading-snug text-[var(--lib-fg-muted)]">
+        Sync actions need a valid creator OAuth session. Reconnect, then retry scrape or
+        re-register webhooks.
+      </p>
+    </div>
+  ) : null;
+
   const webhookRegisterControls = state != null ? (
     <div className="mt-2">
       <button
@@ -367,6 +390,7 @@ export default function PatreonSyncMenu({
           {stateError && (
             <p className="mt-2 text-xs text-[var(--lib-destructive)]">{stateError}</p>
           )}
+          {!state && !loadingState && reconnectPatreonCta}
           {state && !loadingState && (
             <dl className="mt-2 space-y-1.5 text-xs text-[var(--lib-fg)]">
                   <div className="flex justify-between gap-2">
@@ -429,6 +453,7 @@ export default function PatreonSyncMenu({
                   <p className="mt-0.5 text-[10px] text-[var(--lib-fg-muted)]">
                     Token expires {fmtIso(state.oauth.access_token_expires_at)}
                   </p>
+                  {reconnectPatreonCta}
                   {(() => {
                     const line = cookieSessionLine(state);
                     if (!line) return null;
@@ -445,12 +470,14 @@ export default function PatreonSyncMenu({
                     );
                   })()}
                   <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[11px]">
-                    <Link
-                      href="/connect/patreon/connect"
-                      className="text-[var(--lib-primary)] underline-offset-2 hover:underline"
-                    >
-                      Creator OAuth
-                    </Link>
+                    {!showReconnectCta && (
+                      <Link
+                        href="/connect/patreon/connect"
+                        className="text-[var(--lib-primary)] underline-offset-2 hover:underline"
+                      >
+                        Creator OAuth
+                      </Link>
+                    )}
                     <Link
                       href="/connect/patreon/cookie"
                       className="text-[var(--lib-primary)] underline-offset-2 hover:underline"
@@ -648,7 +675,17 @@ export default function PatreonSyncMenu({
                 </p>
               </div>
           {actionError && (
-            <p className="mt-2 text-xs text-[var(--lib-destructive)]">{actionError}</p>
+            <div className="mt-2 space-y-1.5">
+              <p className="text-xs text-[var(--lib-destructive)]">{actionError}</p>
+              {showReconnectCta && (
+                <Link
+                  href="/connect/patreon/connect"
+                  className="inline-flex text-xs font-medium text-[var(--lib-primary)] underline-offset-2 hover:underline"
+                >
+                  Reconnect Patreon
+                </Link>
+              )}
+            </div>
           )}
         </div>
       )}

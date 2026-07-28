@@ -12,21 +12,24 @@
  * UI shouldn't offer a switch into a role the account can't legitimately occupy:
  *
  *   - "creator"  available iff the account owns a studio (`Account.primaryRelayCreatorId` set).
- *   - "supporter" available iff the account holds at least one TenantMembership.
+ *   - "supporter" available iff the account has meaningful non-platform supporter activity
+ *     (platform bootstrap membership alone does not count).
  *
  * Either / both / neither is possible; defaultActiveRoleForAccount picks the landing role.
+ * Feed remains available to every authenticated Account regardless of available_roles.
  */
 
 import type { PrismaClient } from "@prisma/client";
 
 import type { ActiveRole } from "./active-role-default.js";
+import { hasMeaningfulSupporterActivity } from "./meaningful-supporter-signal.js";
 
 export interface AvailableRoles {
   /** Roles the account may render. */
   roles: ActiveRole[];
   /** Convenience: account owns a studio workspace. */
   hasCreatorRole: boolean;
-  /** Convenience: account has at least one supporter membership. */
+  /** Convenience: meaningful non-platform supporter activity. */
   hasSupporterRole: boolean;
 }
 
@@ -52,11 +55,8 @@ export async function resolveAvailableRolesForAccount(
     select: { primaryRelayCreatorId: true }
   });
   if (!account) return EMPTY;
-  const membershipCount = await prisma.tenantMembership.count({
-    where: { accountId }
-  });
   const hasCreator = Boolean(account.primaryRelayCreatorId);
-  const hasSupporter = membershipCount > 0;
+  const hasSupporter = await hasMeaningfulSupporterActivity(prisma, accountId);
   const roles: ActiveRole[] = [];
   if (hasCreator) roles.push("creator");
   if (hasSupporter) roles.push("supporter");

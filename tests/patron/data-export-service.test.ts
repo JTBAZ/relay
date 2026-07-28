@@ -34,6 +34,12 @@ function prismaForMinimalExport(accountId: string) {
     notificationPreference: { findMany: vi.fn() },
     contentReport: {
       findMany: vi.fn().mockResolvedValue([])
+    },
+    oAuthTransaction: {
+      findMany: vi.fn().mockResolvedValue([])
+    },
+    identityAuditEvent: {
+      findMany: vi.fn().mockResolvedValue([])
     }
   } as never;
 }

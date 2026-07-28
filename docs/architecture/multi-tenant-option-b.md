@@ -11,9 +11,11 @@ Relay treats **one person** as a global **`Account`**. Access to each creator’
 | Creator/staff login | `User` | Belongs to `Tenant`; `UserKind` creator/staff; holds creator-side `ProviderAccount` + `OAuthCredential` (e.g. Patreon ingest). |
 | Patron in a creator’s audience | `TenantMembership` | Links `Account` → `Tenant` with `TenantRole` (e.g. patron); `tierIds`; `Session` rows attach here for patron sessions. |
 | Patreon campaign ownership | `CreatorProfile` | One per creator `User`; **`patreonCampaignId`** is the canonical “this creator owns Patreon campaign Z” key for webhooks, ingest, and patron matching. |
-| Artist studio (claim) | `Account.primaryRelayCreatorId` | Optional FK to `Tenant.relayCreatorId` — at most one creator workspace per account (MT-031); null for patron-only accounts until onboarding provisions a studio. |
+| Artist studio (claim) | `Account.primaryRelayCreatorId` | Optional FK to `Tenant.relayCreatorId` — at most one creator workspace per account (MT-031); null for patron-only accounts until onboarding provisions a studio. Forward-compatible session field `studios[]` prepares for multi-studio without activating it yet. |
 
-**Sessions:** Patron sessions use `Session` → `TenantMembership` (not a global user row for patrons). Creator sessions use `User`-level patterns per existing server wiring.
+**Sessions:** Patron sessions use `Session` → `TenantMembership` (not a global user row for patrons). Studio API auth uses the **same opaque Relay session** plus `Account.primaryRelayCreatorId` ownership checks (`requirePatronBearerSession` + `accountOwnsRelayCreatorId` / `requireAccountWithRole`). Do not introduce a second session type for creators.
+
+**Capability projection (Unified Relay Identity):** `GET /api/v1/me/session` returns additive fields — `primary_relay_creator_id`, `studios[]`, `surfaces.{feed,studio}`, `activity.has_supporter_activity`, redacted `patreon.*` health, `suggested_home`. Feed is universal for authenticated accounts; platform bootstrap membership (`__relay_platform`) does **not** count as supporter activity. See [`coin-model-audit.md`](coin-model-audit.md) capability matrix.
 
 **Account-first email/password (MT-007):** `POST /api/v1/auth/signup` and `POST /api/v1/auth/login` create or resolve a global `Account` and a patron `TenantMembership` on a reserved **platform** tenant (`Tenant.relay_creator_id` = `RELAY_PLATFORM_CREATOR_ID`, default `__relay_platform`) so signup does not require a fan `creator_id`. Legacy `POST /api/v1/identity/register` / `login` remain; prefer `/api/v1/auth/*` for new clients.
 

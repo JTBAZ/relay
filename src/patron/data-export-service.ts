@@ -130,6 +130,25 @@ export interface PatronExportBundle {
     status: string;
     created_at: string;
   }>;
+  /** Redacted OAuth callback transactions (hashes/status only — never codes/tokens). */
+  oauth_transactions: Array<{
+    id: string;
+    purpose: string;
+    status: string;
+    relay_creator_id: string | null;
+    error_code: string | null;
+    created_at: string;
+    completed_at: string | null;
+  }>;
+  /** Identity claim/reconciliation audit trail for this account. */
+  identity_audit_events: Array<{
+    id: string;
+    outcome: string;
+    reason: string;
+    relay_creator_id: string | null;
+    patreon_campaign_id: string | null;
+    created_at: string;
+  }>;
 }
 
 /** Build the bundle for an account. Caller is responsible for authz (route-level). */
@@ -238,7 +257,9 @@ export async function buildPatronExportBundle(
     reactions,
     notifications,
     notificationPrefs,
-    reportsFiled
+    reportsFiled,
+    oauthTransactions,
+    identityAuditEvents
   ] = await Promise.all([
     membershipIds.length > 0
       ? prisma.patronFavorite.findMany({
@@ -280,6 +301,33 @@ export async function buildPatronExportBundle(
     prisma.contentReport.findMany({
       where: { reporterAccountId: accountId },
       orderBy: { createdAt: "desc" }
+    }),
+    prisma.oAuthTransaction.findMany({
+      where: { accountId },
+      orderBy: { createdAt: "desc" },
+      take: 100,
+      select: {
+        id: true,
+        purpose: true,
+        status: true,
+        relayCreatorId: true,
+        errorCode: true,
+        createdAt: true,
+        completedAt: true
+      }
+    }),
+    prisma.identityAuditEvent.findMany({
+      where: { accountId },
+      orderBy: { createdAt: "desc" },
+      take: 100,
+      select: {
+        id: true,
+        outcome: true,
+        reason: true,
+        relayCreatorId: true,
+        patreonCampaignId: true,
+        createdAt: true
+      }
     })
   ]);
 
@@ -395,6 +443,23 @@ export async function buildPatronExportBundle(
       body: r.body,
       status: r.status,
       created_at: r.createdAt.toISOString()
+    })),
+    oauth_transactions: oauthTransactions.map((t) => ({
+      id: t.id,
+      purpose: t.purpose,
+      status: t.status,
+      relay_creator_id: t.relayCreatorId,
+      error_code: t.errorCode,
+      created_at: t.createdAt.toISOString(),
+      completed_at: t.completedAt ? t.completedAt.toISOString() : null
+    })),
+    identity_audit_events: identityAuditEvents.map((e) => ({
+      id: e.id,
+      outcome: e.outcome,
+      reason: e.reason,
+      relay_creator_id: e.relayCreatorId,
+      patreon_campaign_id: e.patreonCampaignId,
+      created_at: e.createdAt.toISOString()
     }))
   };
 }

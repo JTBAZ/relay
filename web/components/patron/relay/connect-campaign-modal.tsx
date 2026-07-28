@@ -19,6 +19,10 @@ interface ConnectCampaignModalProps {
   onClose: () => void;
 }
 
+/**
+ * Post-Patreon-link branching for owned / unmapped campaigns (Unified Relay Identity).
+ * Owned campaign ≠ automatic studio ownership — Enable Studio is an explicit next step.
+ */
 export function ConnectCampaignModal({ isOpen, payload, onClose }: ConnectCampaignModalProps) {
   if (!isOpen) return null;
 
@@ -41,7 +45,7 @@ export function ConnectCampaignModal({ isOpen, payload, onClose }: ConnectCampai
             id="connect-campaign-title"
             className="text-lg font-semibold text-[#E0E0E0]"
           >
-            Connect your Patreon campaign
+            {ownedId ? "Studio available" : "Enable Studio?"}
           </h2>
           <button
             type="button"
@@ -56,17 +60,17 @@ export function ConnectCampaignModal({ isOpen, payload, onClose }: ConnectCampai
         <div className="space-y-3 text-sm leading-relaxed text-[#A1A1A1]">
           {!hasDetail ? (
             <p>
-              Link your Patreon creator account in Relay when you&apos;re ready to publish as an
-              artist. You can connect from creator onboarding anytime.
+              When you own a Patreon campaign, you can enable Relay Studio. That requires a
+              separate creator consent for sync and webhooks — supporters never get those
+              permissions automatically.
             </p>
           ) : (
             <>
               {unmapped.length > 0 ? (
                 <p>
                   Relay found Patreon campaign
-                  {unmapped.length === 1 ? "" : "s"} that aren&apos;t linked to a Relay creator
-                  profile yet. When you publish on Patreon, connect your campaign so Relay can treat
-                  you as a creator.
+                  {unmapped.length === 1 ? "" : "s"} that aren&apos;t linked to a Relay studio
+                  yet. Enable Studio to claim your campaign and connect creator sync.
                 </p>
               ) : null}
               {unmapped.length > 0 ? (
@@ -78,9 +82,9 @@ export function ConnectCampaignModal({ isOpen, payload, onClose }: ConnectCampai
               ) : null}
               {ownedId ? (
                 <p>
-                  Your Patreon campaign is linked to Relay as creator{" "}
-                  <span className="text-[#C8C8C8]">{truncateId(ownedId)}</span>. Open Relay Studio to
-                  manage your page and posts.
+                  Your Patreon campaign maps to Relay studio{" "}
+                  <span className="text-[#C8C8C8]">{truncateId(ownedId)}</span>. Open Studio or
+                  reconnect creator sync if posts or webhooks stopped updating.
                 </p>
               ) : null}
             </>
@@ -93,23 +97,32 @@ export function ConnectCampaignModal({ isOpen, payload, onClose }: ConnectCampai
             onClick={onClose}
             className="rounded-lg border border-[#2A2A2A] px-4 py-2 text-xs font-medium text-[#C8C8C8] transition-colors hover:bg-[#141414]"
           >
-            Not now
+            Stay on Feed
           </button>
           {ownedId ? (
-            <Link
-              href="/studio/designer"
-              className="rounded-lg bg-[#2D6A4F] px-4 py-2 text-xs font-medium text-white transition-colors hover:bg-[#40916C]"
-              onClick={onClose}
-            >
-              Open Relay Studio
-            </Link>
+            <>
+              <Link
+                href="/connect/patreon/connect"
+                className="rounded-lg border border-[#2A2A2A] px-4 py-2 text-xs font-medium text-[#C8C8C8] transition-colors hover:bg-[#141414]"
+                onClick={onClose}
+              >
+                Reconnect Studio sync
+              </Link>
+              <Link
+                href="/studio"
+                className="rounded-lg bg-[#2D6A4F] px-4 py-2 text-xs font-medium text-white transition-colors hover:bg-[#40916C]"
+                onClick={onClose}
+              >
+                Open Studio
+              </Link>
+            </>
           ) : (
             <Link
-              href="/connect/creator"
+              href="/connect/patreon/connect"
               className="rounded-lg bg-[#2D6A4F] px-4 py-2 text-xs font-medium text-white transition-colors hover:bg-[#40916C]"
               onClick={onClose}
             >
-              Creator connect
+              Enable Studio
             </Link>
           )}
         </div>

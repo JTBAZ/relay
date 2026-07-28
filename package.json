@@ -26,6 +26,7 @@
     "ledger-to-v0:dry": "npm --prefix Automation run ledger-to-v0:dry",
     "ledger-pull-v0-copy-block": "npm --prefix Automation run ledger-pull-v0-copy-block",
     "backfill:identity": "npm run build && node scripts/backfill-identity.mjs",
+    "audit:identity-ownership": "npm run build && node scripts/audit-identity-ownership.mjs",
     "backfill:supabase-user-ids": "npm run build && node scripts/backfill-supabase-user-ids.mjs",
     "backfill:canonical": "npm run build && node scripts/backfill-canonical.mjs",
     "backfill:overrides": "npm run build && node scripts/backfill-gallery-overrides.mjs",

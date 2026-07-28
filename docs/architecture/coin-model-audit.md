@@ -22,3 +22,17 @@
 ## Unified identity rule
 
 All author-attributed rows (comments, likes, follows, favorites) must key on **`Account.id`**, not on `relay_active_role` or a “current side” discriminator. Active role is a **UI lens** only (`relay_active_role` cookie); authz remains **API + RLS + DB** (`Account`, `TenantMembership`).
+
+## Capability matrix (Unified Relay Identity)
+
+| Capability | Meaning | Source |
+|------------|---------|--------|
+| `can_enter_feed` / `surfaces.feed` | Every authenticated `Account` may enter Feed | Session present |
+| `has_supporter_activity` / `activity.has_supporter_activity` | Meaningful non-platform patronage | Non-platform `TenantMembership` (patron), or `PatronFollow` / `PatronEntitlementSnapshot` targeting a non-platform creator. **Platform bootstrap membership alone is false.** |
+| `has_studio` / `surfaces.studio` | Server-verified studio ownership | `Account.primaryRelayCreatorId` set |
+| `patreon.identity_linked` | Patreon person linked to Account | `Account.patronPatreonUserId` (+ optional `PatronOAuthCredential` health) |
+| `patreon.creator_sync_connected` | Creator ingest OAuth present for owned studio | `OAuthCredential` purpose `creator_ingest` on studio creator `User` |
+
+`GET /api/v1/me/session` returns these additively (`primary_relay_creator_id`, `studios[]`, `surfaces`, `activity`, `patreon`, `suggested_home`). Never infer studio ownership from `Session.creator_id` (often `__relay_platform`). `available_roles` remains for RoleSwitcher compatibility but must not treat platform membership as supporter activity.
+
+Implementation: [`src/identity/meaningful-supporter-signal.ts`](../../src/identity/meaningful-supporter-signal.ts), [`src/identity/account-session-projection.ts`](../../src/identity/account-session-projection.ts).

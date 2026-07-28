@@ -10,6 +10,8 @@
 3. **One canonical browser origin** in dev (`localhost` *or* `127.0.0.1`, not both ad hoc) so Supabase redirects, `relay_session`, and `relayFetch` behave consistently.
 4. **Patreon patron callback** reliably navigates to **`/patron/feed`** after success (no indefinite “waiting” due to Strict Mode / cancelled async).
 
+**Unified Relay Identity (2026-07):** First-run Patreon entry is session-first **Connect Patreon** (`/connect/patreon/patron/connect` → `/patron/link`). Studio elevation remains an explicit **Enable Studio** / creator OAuth step. Prefer `/me/session` `primary_relay_creator_id` over localStorage for studio authority (dual-read soak; `NEXT_PUBLIC_RELAY_STUDIO_FROM_SESSION=0` rolls back).
+
 ## Non-goals (later product / Tier 2)
 
 - Full **Tier 2** “role flip” middleware and per-route authz at the edge (see AUTH_GUARDRAILS §5).

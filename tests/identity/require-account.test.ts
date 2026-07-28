@@ -75,8 +75,11 @@ describe("require-account", () => {
     const prisma = {
       tenantMembership: {
         findUnique: vi.fn().mockResolvedValue({ accountId: "acc_1" }),
-        count: vi.fn().mockResolvedValue(2)
+        count: vi.fn().mockResolvedValue(2),
+        findMany: vi.fn().mockResolvedValue([])
       },
+      patronFollow: { count: vi.fn().mockResolvedValue(0) },
+      patronEntitlementSnapshot: { count: vi.fn().mockResolvedValue(0) },
       account: {
         findUnique: vi.fn().mockResolvedValue({
           id: "acc_1",
@@ -95,6 +98,30 @@ describe("require-account", () => {
     });
   });
 
+  it("loadAccountContextForSession treats platform-only membership as no supporter activity", async () => {
+    const prisma = {
+      tenantMembership: {
+        findUnique: vi.fn().mockResolvedValue({ accountId: "acc_1" }),
+        count: vi.fn().mockResolvedValue(0),
+        findMany: vi.fn().mockResolvedValue([
+          { id: "tm_p", tenant: { relayCreatorId: "__relay_platform" } }
+        ])
+      },
+      patronFollow: { count: vi.fn().mockResolvedValue(0) },
+      patronEntitlementSnapshot: { count: vi.fn().mockResolvedValue(0) },
+      account: {
+        findUnique: vi.fn().mockResolvedValue({
+          id: "acc_1",
+          supabaseUserId: null,
+          primaryRelayCreatorId: null
+        })
+      },
+      $executeRawUnsafe: vi.fn().mockResolvedValue(0)
+    } as unknown as PrismaClient;
+    const ctx = await loadAccountContextForSession(prisma, session);
+    expect(ctx?.hasSupporterMemberships).toBe(false);
+  });
+
   it("requireAccountWithRole creator returns 403 for supporter-only account", async () => {
     const req = mockReq(undefined, "tok");
     const identityService = {
@@ -103,8 +130,11 @@ describe("require-account", () => {
     const prisma = {
       tenantMembership: {
         findUnique: vi.fn().mockResolvedValue({ accountId: "acc_1" }),
-        count: vi.fn().mockResolvedValue(0)
+        count: vi.fn().mockResolvedValue(0),
+        findMany: vi.fn().mockResolvedValue([])
       },
+      patronFollow: { count: vi.fn().mockResolvedValue(0) },
+      patronEntitlementSnapshot: { count: vi.fn().mockResolvedValue(0) },
       account: {
         findUnique: vi.fn().mockResolvedValue({
           id: "acc_1",
@@ -127,8 +157,11 @@ describe("require-account", () => {
     const prisma = {
       tenantMembership: {
         findUnique: vi.fn().mockResolvedValue({ accountId: "acc_1" }),
-        count: vi.fn().mockResolvedValue(0)
+        count: vi.fn().mockResolvedValue(0),
+        findMany: vi.fn().mockResolvedValue([])
       },
+      patronFollow: { count: vi.fn().mockResolvedValue(0) },
+      patronEntitlementSnapshot: { count: vi.fn().mockResolvedValue(0) },
       account: {
         findUnique: vi.fn().mockResolvedValue({
           id: "acc_1",

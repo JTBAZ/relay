@@ -54,6 +54,8 @@ Relay uses **two Bearer schemes** that must not be confused in production. The s
 
 **Optional future bridge:** One middleware could try Supabase JWT first (resolve `Account` via `supabaseUserId`), then fall back to `resolveSession`, for a single client-facing Bearer. That is **not** implemented by default; add it as a deliberate feature with tests.
 
+**Studio API auth (Unified Relay Identity):** Creator Library / sync routes use the **same opaque Relay session** as patron APIs, then authorize via `Account.primaryRelayCreatorId` (session also returns forward-compatible `studios[]`). There is no separate creator session type. See [`coin-model-audit.md`](coin-model-audit.md) and [`adr/002-multi-studio-account-ownership.md`](adr/002-multi-studio-account-ownership.md).
+
 ---
 
 ## Flow 2 — Creator connection (ownership)

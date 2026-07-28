@@ -8,11 +8,13 @@ import type { PrismaClient } from "@prisma/client";
 import type { Response } from "express";
 import { defaultActiveRoleForAccount } from "./active-role-default.js";
 import { getAccountIdForSession } from "./patron-auth-context.js";
+import { hasMeaningfulSupporterActivity } from "./meaningful-supporter-signal.js";
 import { setActiveRoleCookie } from "./session-cookie.js";
 import type { SessionToken } from "./types.js";
 
 /**
- * @description Sets `relay_active_role` after login from `Account` + membership counts.
+ * @description Sets `relay_active_role` after login from `Account` + meaningful supporter activity.
+ * Platform bootstrap membership alone does not force the supporter lens preference.
  * @param {import("express").Response} res
  * @param {import("@prisma/client").PrismaClient | null | undefined} prisma
  * @param {import("./types.js").SessionToken} session
@@ -36,13 +38,11 @@ export async function setActiveRoleCookieForNewSession(
   });
   if (!account) return;
 
-  const membershipCount = await prisma.tenantMembership.count({
-    where: { accountId }
-  });
+  const hasSupporterMemberships = await hasMeaningfulSupporterActivity(prisma, accountId);
 
   const role = defaultActiveRoleForAccount({
     primaryRelayCreatorId: account.primaryRelayCreatorId,
-    hasSupporterMemberships: membershipCount > 0
+    hasSupporterMemberships
   });
 
   setActiveRoleCookie(res, role, { expiresAtIso });

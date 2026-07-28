@@ -35,7 +35,12 @@
  *     - PatronSubscribestarOAuthCredential (1:1 on accountId)
  *     - AccountFollow (both follower + followed sides)
  *     - AccountBlock (both blocker + blocked sides)
+ *     - OAuthTransaction (hashed OAuth callback records; cascade)
+ *     - IdentityAuditEvent.accountId (SetNull — append-only audit survives account purge)
  *     - Tenant.primaryAccount (set to null via SetNull -- account loses claim, tenant survives)
+ *
+ *   Studio content (Tenant / posts / media) is NOT deleted by account purge — ownership is
+ *   detached; studio rows remain for support recovery unless a separate studio-deletion path runs.
  *
  *   The cascade does NOT touch the soft-FK tables (PatronFavorite, PatronSavedCollection,
  *   Comment, CommentReaction, ContentReport) because those reference patronUserId / accountId

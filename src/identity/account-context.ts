@@ -16,7 +16,11 @@ export type AccountContext = {
   supabaseUserId: string | null;
   /** Creator workspace scope (`cr_*`) when this account owns a studio. */
   primaryRelayCreatorId: string | null;
-  /** True when at least one `TenantMembership` exists (any role). */
+  /**
+   * True when the account has meaningful non-platform supporter activity
+   * (patron membership / follow / entitlement outside `__relay_platform`).
+   * Platform bootstrap membership alone is false. Feed access does not require this flag.
+   */
   hasSupporterMemberships: boolean;
 };
 

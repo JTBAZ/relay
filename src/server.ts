@@ -22,8 +22,8 @@ import {
 } from "./auth/extension-consent-code.js";
 import {
   getPatreonOAuthStateSecret,
-  signCreatorPatreonOAuthState,
-  verifyCreatorPatreonOAuthState
+  parseCreatorPatreonOAuthState,
+  signCreatorPatreonOAuthState
 } from "./auth/patreon-creator-oauth-state.js";
 import { FilePatreonCookieStore } from "./auth/cookie-store.js";
 import { PatreonClient } from "./auth/patreon-client.js";
@@ -806,6 +806,20 @@ import {
 } from "./identity/session-cookie.js";
 import { setActiveRoleCookieForNewSession } from "./identity/set-active-role-cookie-for-session.js";
 import { resolveAvailableRolesForAccount } from "./identity/active-role-available.js";
+import { buildAccountSessionCapabilities } from "./identity/account-session-projection.js";
+import {
+  beginOAuthTransaction,
+  claimOAuthCodeExchange,
+  completeOAuthTransaction,
+  hashOAuthSecret,
+  OAuthTransactionPurpose
+} from "./identity/oauth-transaction.js";
+import { classifyPatreonOAuthError } from "./patreon/patreon-oauth-errors.js";
+import {
+  recordOAuthCallbackInFlight,
+  recordOAuthCallbackReplay,
+  recordOAuthClaimConflict
+} from "./auth/part1a-gate-metrics.js";
 import { setActiveRoleCookie } from "./identity/session-cookie.js";
 import type { ActiveRole } from "./identity/active-role-default.js";
 import { resolveTenantBySlug } from "./identity/resolve-tenant.js";
@@ -2842,6 +2856,21 @@ export function createApp(config: AppConfig): CreateAppResult {
     }
     try {
       const { state, expiresAtIso } = signCreatorPatreonOAuthState({ accountId, creatorId });
+      if (config.prisma) {
+        try {
+          await beginOAuthTransaction(config.prisma, {
+            accountId,
+            purpose: OAuthTransactionPurpose.creator_ingest,
+            state,
+            relayCreatorId: creatorId
+          });
+        } catch (err) {
+          serverLog.warn(
+            { err, traceId, accountId, creatorId },
+            "beginOAuthTransaction for creator prepare failed (non-fatal)"
+          );
+        }
+      }
       return res.status(200).json(
         successEnvelope(
           {
@@ -3754,14 +3783,17 @@ export function createApp(config: AppConfig): CreateAppResult {
   app.post("/api/v1/auth/patreon/exchange", async (req: Request, res: Response) => {
     const traceId = traceIdFrom(req);
     const body = (req.body ?? {}) as Record<string, unknown>;
-    const details = validateRequiredFields(body, ["creator_id", "code", "redirect_uri"]);
+    const details = validateRequiredFields(body, ["code", "redirect_uri"]);
     if (details.length > 0) {
       return res
         .status(400)
         .json(errorEnvelope("VALIDATION_ERROR", "Invalid request payload.", traceId, details));
     }
 
-    const creatorId = String(body.creator_id).trim();
+    let creatorId =
+      typeof body.creator_id === "string" ? body.creator_id.trim() : "";
+    let exchangeAccountId: string | null = null;
+    let stateHashForTx: string | null = null;
 
     if (relayEnvTruthy(process.env.RELAY_ENFORCE_CREATOR_OAUTH_BIND)) {
       if (!relayCreatorSecretBypassesOAuthBind(req)) {
@@ -3784,6 +3816,7 @@ export function createApp(config: AppConfig): CreateAppResult {
             .status(403)
             .json(errorEnvelope("FORBIDDEN", "Session is not linked to an account.", traceId));
         }
+        exchangeAccountId = accountId;
         const stateRaw = typeof body.state === "string" ? body.state.trim() : "";
         if (!stateRaw) {
           return res.status(400).json(
@@ -3792,16 +3825,28 @@ export function createApp(config: AppConfig): CreateAppResult {
             ])
           );
         }
-        const v = verifyCreatorPatreonOAuthState(stateRaw, accountId, creatorId);
-        if (!v.ok) {
+        stateHashForTx = hashOAuthSecret(stateRaw);
+        // Studio bind is server-authoritative from prepare-issued state (no localStorage required).
+        const parsedState = parseCreatorPatreonOAuthState(stateRaw, accountId);
+        if (!parsedState.ok) {
           return res.status(403).json(
             errorEnvelope(
               "FORBIDDEN",
-              `OAuth state verification failed (${v.reason}).`,
+              `OAuth state verification failed (${parsedState.reason}).`,
               traceId
             )
           );
         }
+        if (creatorId && creatorId !== parsedState.creatorId) {
+          return res.status(403).json(
+            errorEnvelope(
+              "FORBIDDEN",
+              "OAuth state verification failed (creator).",
+              traceId
+            )
+          );
+        }
+        creatorId = parsedState.creatorId;
         const ownsExchange = await accountOwnsRelayCreatorId(
           config.prisma,
           accountId,
@@ -3818,6 +3863,71 @@ export function createApp(config: AppConfig): CreateAppResult {
           );
         }
       }
+    }
+
+    if (!creatorId) {
+      return res.status(400).json(
+        errorEnvelope("VALIDATION_ERROR", "Invalid request payload.", traceId, [
+          { field: "creator_id", issue: "missing" }
+        ])
+      );
+    }
+
+    let oauthTxId: string | null = null;
+    if (config.prisma && exchangeAccountId) {
+      const claim = await claimOAuthCodeExchange(config.prisma, {
+        accountId: exchangeAccountId,
+        purpose: OAuthTransactionPurpose.creator_ingest,
+        code: String(body.code),
+        redirectUri: String(body.redirect_uri),
+        relayCreatorId: creatorId,
+        stateHash: stateHashForTx
+      });
+      if (claim.kind === "replay") {
+        recordOAuthCallbackReplay();
+        if (claim.status === "failed") {
+          const classified = classifyPatreonOAuthError(
+            new Error(claim.errorCode ?? "unknown")
+          );
+          return res
+            .status(classified.httpStatus)
+            .json(
+              errorEnvelope(
+                claim.errorCode ?? classified.publicCode.toUpperCase(),
+                classified.clientMessage,
+                traceId
+              )
+            );
+        }
+        return res.status(200).json(
+          successEnvelope(
+            {
+              ...(typeof claim.resultJson === "object" && claim.resultJson !== null
+                ? (claim.resultJson as Record<string, unknown>)
+                : { creator_id: creatorId, credential_health_status: "healthy" }),
+              oauth_replayed: true
+            },
+            traceId
+          )
+        );
+      }
+      if (claim.kind === "in_flight") {
+        recordOAuthCallbackInFlight();
+        return res.status(409).json(
+          errorEnvelope(
+            "IN_FLIGHT",
+            "Another Patreon connect request is already in progress. Retry shortly.",
+            traceId
+          )
+        );
+      }
+      if (claim.kind === "conflict") {
+        recordOAuthClaimConflict();
+        return res
+          .status(409)
+          .json(errorEnvelope("CONFLICT", "OAuth code conflict.", traceId));
+      }
+      oauthTxId = claim.transactionId;
     }
 
     try {
@@ -3904,11 +4014,34 @@ export function createApp(config: AppConfig): CreateAppResult {
               }
           : { status: "skipped" as const }
       };
+      if (config.prisma && oauthTxId) {
+        await completeOAuthTransaction(config.prisma, {
+          transactionId: oauthTxId,
+          ok: true,
+          resultJson: {
+            creator_id: payload.creator_id,
+            credential_health_status: payload.credential_health_status,
+            ...(patreonCampaignId != null ? { patreon_campaign_id: patreonCampaignId } : {})
+          }
+        });
+      }
       return res.status(200).json(successEnvelope(payload, traceId));
     } catch (error) {
+      const classified = classifyPatreonOAuthError(error);
+      if (config.prisma && oauthTxId) {
+        await completeOAuthTransaction(config.prisma, {
+          transactionId: oauthTxId,
+          ok: false,
+          errorCode: classified.publicCode
+        }).catch(() => {});
+      }
+      serverLog.warn(
+        { err: error instanceof Error ? error.message : String(error), traceId, publicCode: classified.publicCode },
+        "creator Patreon OAuth exchange failed"
+      );
       return res
-        .status(502)
-        .json(errorEnvelope("UPSTREAM_AUTH_ERROR", (error as Error).message, traceId));
+        .status(classified.httpStatus)
+        .json(errorEnvelope(classified.publicCode.toUpperCase(), classified.clientMessage, traceId));
     }
   });
 
@@ -4278,6 +4411,53 @@ export function createApp(config: AppConfig): CreateAppResult {
         .json(errorEnvelope(emailGate.code, emailGate.message, traceId));
     }
     const fetchImpl = config.fetch_impl ?? globalThis.fetch;
+    const claim = await claimOAuthCodeExchange(config.prisma, {
+      accountId: linkAccountId,
+      purpose: OAuthTransactionPurpose.patron_link,
+      code: String(body.code),
+      redirectUri: String(body.redirect_uri)
+    });
+    if (claim.kind === "replay") {
+      recordOAuthCallbackReplay();
+      if (claim.status === "failed") {
+        const classified = classifyPatreonOAuthError(new Error(claim.errorCode ?? "unknown"));
+        return res
+          .status(classified.httpStatus)
+          .json(
+            errorEnvelope(
+              claim.errorCode ?? classified.publicCode.toUpperCase(),
+              classified.clientMessage,
+              traceId
+            )
+          );
+      }
+      return res.status(200).json(
+        successEnvelope(
+          {
+            ...(typeof claim.resultJson === "object" && claim.resultJson !== null
+              ? (claim.resultJson as Record<string, unknown>)
+              : {}),
+            oauth_replayed: true
+          },
+          traceId
+        )
+      );
+    }
+    if (claim.kind === "in_flight") {
+      recordOAuthCallbackInFlight();
+      return res.status(409).json(
+        errorEnvelope(
+          "IN_FLIGHT",
+          "Another Patreon connect request is already in progress. Retry shortly.",
+          traceId
+        )
+      );
+    }
+    if (claim.kind === "conflict") {
+      recordOAuthClaimConflict();
+      return res.status(409).json(errorEnvelope("CONFLICT", "OAuth code conflict.", traceId));
+    }
+    const oauthTxId = claim.transactionId;
     try {
       const result = await exchangePatreonPatronOAuthUnified({
         code: body.code as string,
@@ -4298,35 +4478,59 @@ export function createApp(config: AppConfig): CreateAppResult {
         result.session,
         result.session.expires_at
       );
-      return res.status(200).json(
-        successEnvelope(
-          applyDualWriteToken({
-            token: result.session.token,
-            user_id: result.session.user_id,
-            tier_ids: result.session.tier_ids,
-            expires_at: result.session.expires_at,
-            auth_provider: result.user.auth_provider,
-            patreon_user_id: result.user.patreon_user_id,
-            linked_relay_creator_ids: result.linkedRelayCreatorIds,
-            paid_membership_relay_creator_ids: result.paidMembershipRelayCreatorIds,
-            declined_patron_relay_creator_ids: result.declinedPatronRelayCreatorIds,
-            former_patron_relay_creator_ids: result.formerPatronRelayCreatorIds,
-            free_follower_relay_creator_ids: result.freeFollowerRelayCreatorIds,
-            owned_relay_creator_id: result.ownedRelayCreatorId,
-            unmapped_patreon_campaign_ids: result.unmappedPatreonCampaignIds
-          }),
-          traceId
-        )
-      );
+      const successPayload = applyDualWriteToken({
+        token: result.session.token,
+        user_id: result.session.user_id,
+        tier_ids: result.session.tier_ids,
+        expires_at: result.session.expires_at,
+        auth_provider: result.user.auth_provider,
+        patreon_user_id: result.user.patreon_user_id,
+        linked_relay_creator_ids: result.linkedRelayCreatorIds,
+        paid_membership_relay_creator_ids: result.paidMembershipRelayCreatorIds,
+        declined_patron_relay_creator_ids: result.declinedPatronRelayCreatorIds,
+        former_patron_relay_creator_ids: result.formerPatronRelayCreatorIds,
+        free_follower_relay_creator_ids: result.freeFollowerRelayCreatorIds,
+        owned_relay_creator_id: result.ownedRelayCreatorId,
+        unmapped_patreon_campaign_ids: result.unmappedPatreonCampaignIds
+      });
+      // Redacted replay payload — omit opaque session token from durable store.
+      const { token: _omitToken, ...redacted } = successPayload as typeof successPayload & {
+        token?: string;
+      };
+      await completeOAuthTransaction(config.prisma, {
+        transactionId: oauthTxId,
+        ok: true,
+        resultJson: redacted
+      });
+      return res.status(200).json(successEnvelope(successPayload, traceId));
     } catch (error) {
       if (error instanceof PatreonAccountLinkConflictError) {
+        await completeOAuthTransaction(config.prisma, {
+          transactionId: oauthTxId,
+          ok: false,
+          errorCode: "account_link_conflict"
+        }).catch(() => {});
         return res
           .status(409)
           .json(errorEnvelope("CONFLICT", (error as Error).message, traceId));
       }
+      const classified = classifyPatreonOAuthError(error);
+      await completeOAuthTransaction(config.prisma, {
+        transactionId: oauthTxId,
+        ok: false,
+        errorCode: classified.publicCode
+      }).catch(() => {});
+      serverLog.warn(
+        {
+          err: error instanceof Error ? error.message : String(error),
+          traceId,
+          publicCode: classified.publicCode
+        },
+        "patron Patreon OAuth link failed"
+      );
       return res
-        .status(502)
-        .json(errorEnvelope("UPSTREAM_AUTH_ERROR", (error as Error).message, traceId));
+        .status(classified.httpStatus)
+        .json(errorEnvelope(classified.publicCode.toUpperCase(), classified.clientMessage, traceId));
     }
   });
 
@@ -6658,13 +6862,23 @@ export function createApp(config: AppConfig): CreateAppResult {
         : true;
     // PE-I (BO-P4-01) — enrich with role-switcher data: which roles the account is allowed to
     // occupy + which one is currently active per the relay_active_role cookie. UI lens only.
+    // Unified Relay Identity — additive capability projection (studio ownership, surfaces, Patreon health).
     let activeRole: ActiveRole | null = null;
     let availableRoles: ActiveRole[] = [];
+    let capabilities: Awaited<ReturnType<typeof buildAccountSessionCapabilities>> | null = null;
     if (config.prisma) {
       const accountId = await getAccountIdForSession(config.prisma, session);
       if (accountId) {
         const resolved = await resolveAvailableRolesForAccount(config.prisma, accountId);
         availableRoles = resolved.roles;
+        try {
+          capabilities = await buildAccountSessionCapabilities(config.prisma, accountId);
+        } catch (err) {
+          serverLog.warn(
+            { err, traceId, accountId },
+            "buildAccountSessionCapabilities failed (non-fatal)"
+          );
+        }
       }
     }
     const cookieRole = req.header("cookie")?.match(/(?:^|;\s*)relay_active_role=(creator|supporter)/);
@@ -6685,7 +6899,17 @@ export function createApp(config: AppConfig): CreateAppResult {
           email_verified: emailVerified,
           expires_at: session.expires_at,
           active_role: activeRole,
-          available_roles: availableRoles
+          available_roles: availableRoles,
+          ...(capabilities
+            ? {
+                primary_relay_creator_id: capabilities.primary_relay_creator_id,
+                studios: capabilities.studios,
+                surfaces: capabilities.surfaces,
+                activity: capabilities.activity,
+                patreon: capabilities.patreon,
+                suggested_home: capabilities.suggested_home
+              }
+            : {})
         },
         traceId
       )
@@ -6895,6 +7119,71 @@ export function createApp(config: AppConfig): CreateAppResult {
         return res.status(404).json(errorEnvelope("NOT_FOUND", msg, traceId));
       }
       return res.status(500).json(errorEnvelope("INTERNAL_ERROR", msg, traceId));
+    }
+  });
+
+  /**
+   * Explicit studio claim from verified Patreon provider identity (Unified Relay Identity).
+   * Never merges by email. Conflicts return 409 with recovery guidance.
+   */
+  app.post("/api/v1/creator/studio/claim-from-patreon", async (req: Request, res: Response) => {
+    const traceId = traceIdFrom(req);
+    if (!config.prisma) {
+      return res.status(503).json(
+        errorEnvelope("SERVICE_UNAVAILABLE", "Database not configured.", traceId)
+      );
+    }
+    const session = await requirePatronBearerSession(req, res, traceId);
+    if (!session) return;
+    const accountId = await getAccountIdForSession(config.prisma, session);
+    if (!accountId) {
+      return res
+        .status(403)
+        .json(errorEnvelope("FORBIDDEN", "Session is not linked to an account.", traceId));
+    }
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const details = validateRequiredFields(body, ["relay_creator_id"]);
+    if (details.length > 0) {
+      return res
+        .status(400)
+        .json(errorEnvelope("VALIDATION_ERROR", "Invalid request payload.", traceId, details));
+    }
+    const dryRun = body.dry_run === true;
+    try {
+      const { claimStudioFromPatreonOwnership } = await import(
+        "./identity/identity-reconciliation.js"
+      );
+      const result = await claimStudioFromPatreonOwnership(config.prisma, {
+        accountId,
+        relayCreatorId: String(body.relay_creator_id),
+        actorAccountId: accountId,
+        traceId,
+        dryRun
+      });
+      if (result.outcome === "conflict") {
+        return res.status(409).json(
+          errorEnvelope("CONFLICT", result.message, traceId, [
+            { field: "relay_creator_id", issue: "owned_by_other_account" }
+          ])
+        );
+      }
+      if (result.outcome === "insufficient_proof") {
+        return res.status(403).json(errorEnvelope("FORBIDDEN", result.message, traceId));
+      }
+      return res.status(200).json(
+        successEnvelope(
+          {
+            outcome: result.outcome,
+            relay_creator_id: result.relayCreatorId,
+            dry_run: dryRun
+          },
+          traceId
+        )
+      );
+    } catch (err) {
+      return res
+        .status(500)
+        .json(errorEnvelope("INTERNAL_ERROR", err instanceof Error ? err.message : String(err), traceId));
     }
   });
 

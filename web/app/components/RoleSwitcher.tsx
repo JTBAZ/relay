@@ -38,7 +38,7 @@ const LANDING_BY_ROLE: Record<ActiveRole, string> = {
 
 const LABEL_BY_ROLE: Record<ActiveRole, string> = {
   creator: "Studio",
-  supporter: "Supporter"
+  supporter: "Feed"
 };
 
 export interface RoleSwitcherProps {

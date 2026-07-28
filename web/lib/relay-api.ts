@@ -273,6 +273,13 @@ export async function relayFetchWithoutAuthRedirect<T>(
   return envelope.data;
 }
 
+/** Redacted Patreon connection health on `/me/session` (Unified Relay Identity). */
+export type PatreonConnectionHealth =
+  | "none"
+  | "healthy"
+  | "degraded"
+  | "reconnect_required";
+
 /** `GET /api/v1/me/session` — opaque Bearer + optional linked `UserAccount`. */
 export type PatronSessionMe = {
   user_id: string;
@@ -293,8 +300,26 @@ export type PatronSessionMe = {
   /**
    * PE-I (BO-P4-01) — roles the account is allowed to occupy (creator / supporter / both).
    * Drives the role switcher visibility: hide when length <= 1. Omitted on older API builds.
+   * Supporter requires meaningful non-platform activity (not platform bootstrap alone).
    */
   available_roles?: ActiveRole[];
+  /** Server-authoritative studio id (`Account.primaryRelayCreatorId`). Omitted on older API builds. */
+  primary_relay_creator_id?: string | null;
+  /** Forward-compatible owned studios list (0–1 today). Omitted on older API builds. */
+  studios?: Array<{ relay_creator_id: string; is_primary: boolean }>;
+  /** Product surfaces the account may enter. Feed is always true when present. */
+  surfaces?: { feed: true; studio: boolean };
+  /** Meaningful supporter activity (excludes platform bootstrap membership). */
+  activity?: { has_supporter_activity: boolean };
+  /** Redacted Patreon identity + creator-sync connection health. Never includes tokens. */
+  patreon?: {
+    identity_linked: boolean;
+    identity_health: PatreonConnectionHealth;
+    creator_sync_connected: boolean;
+    creator_sync_health: PatreonConnectionHealth;
+  };
+  /** Suggested landing path after auth. UI hint only. */
+  suggested_home?: "/studio" | "/feed";
 };
 
 export type ActiveRole = "creator" | "supporter";
@@ -3323,6 +3348,57 @@ export type PatreonSyncStateData = {
   /** From Relay API env: public webhook base URL configured (RELAY_PUBLIC_WEBHOOK_BASE_URL). */
   public_webhook_base_configured?: boolean;
 };
+
+/** Sync error codes that mean creator OAuth must be reconnected (see server `classifySyncError`). */
+const PATREON_OAUTH_RECONNECT_CODES = new Set([
+  "no_tokens",
+  "token_expired",
+  "refresh_failed"
+]);
+
+/** Heuristic for live scrape/member errors when tokens look healthy locally but Patreon rejects them. */
+export function looksLikePatreonOAuthFailure(message: string): boolean {
+  const m = message.toLowerCase();
+  return (
+    m.includes("invalid_grant") ||
+    m.includes("unauthorized") ||
+    /\b401\b/.test(m) ||
+    m.includes("refresh_failed") ||
+    m.includes("no patreon tokens") ||
+    m.includes("creator credentials not found") ||
+    m.includes("app suspended") ||
+    m.includes("publicapiclientappsuspended") ||
+    m.includes("token refresh failed") ||
+    m.includes("access expired") ||
+    m.includes("reconnect patreon")
+  );
+}
+
+/**
+ * True when the Patreon connection panel should show a primary Reconnect Patreon CTA.
+ * Covers expired/refresh-failed OAuth health, classified sync errors, and runtime action errors.
+ */
+export function patreonOAuthReconnectNeeded(
+  s: PatreonSyncStateData | null | undefined,
+  runtimeErrors?: Array<string | null | undefined>
+): boolean {
+  if (s) {
+    if (s.oauth.access_token_expired) return true;
+    if (s.oauth.credential_health_status === "refresh_failed") return true;
+    const codes = [
+      s.last_post_scrape?.ok === false ? s.last_post_scrape.error?.code : undefined,
+      s.last_member_sync?.ok === false ? s.last_member_sync.error?.code : undefined,
+      s.sync_health?.last_error?.code
+    ];
+    if (codes.some((c) => c != null && PATREON_OAUTH_RECONNECT_CODES.has(c))) return true;
+  }
+  if (runtimeErrors) {
+    for (const err of runtimeErrors) {
+      if (err && looksLikePatreonOAuthFailure(err)) return true;
+    }
+  }
+  return false;
+}
 
 /** True when the Library should show a sync-issue pill without opening the menu. */
 export function syncStateNeedsAttention(s: PatreonSyncStateData): boolean {

@@ -70,6 +70,31 @@ export function recordPatronOAuthFailure(): void {
   state.patron_oauth_failure += 1;
 }
 
+/** Callback replay / in-flight counters (Unified Relay Identity). */
+let oauth_callback_replays = 0;
+let oauth_callback_in_flight = 0;
+let oauth_claim_conflicts = 0;
+
+export function recordOAuthCallbackReplay(): void {
+  oauth_callback_replays += 1;
+}
+
+export function recordOAuthCallbackInFlight(): void {
+  oauth_callback_in_flight += 1;
+}
+
+export function recordOAuthClaimConflict(): void {
+  oauth_claim_conflicts += 1;
+}
+
+export function getOAuthTransactionMetrics(): {
+  oauth_callback_replays: number;
+  oauth_callback_in_flight: number;
+  oauth_claim_conflicts: number;
+} {
+  return { oauth_callback_replays, oauth_callback_in_flight, oauth_claim_conflicts };
+}
+
 /** @description Records proactive or reactive token refresh attempt. */
 export function recordTokenRefreshAttempt(): void {
   state.token_refresh_attempts += 1;

@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   getPatreonOAuthStateSecret,
+  parseCreatorPatreonOAuthState,
   signCreatorPatreonOAuthState,
   verifyCreatorPatreonOAuthState
 } from "../src/auth/patreon-creator-oauth-state.js";
@@ -46,5 +47,17 @@ describe("patreon-creator-oauth-state (MT-011)", () => {
     });
     const v = verifyCreatorPatreonOAuthState(state, "acc_1", "creator_b");
     expect(v.ok).toBe(false);
+  });
+
+  it("parseCreatorPatreonOAuthState returns bound studio without client creator_id", () => {
+    const { state } = signCreatorPatreonOAuthState({
+      accountId: "acc_1",
+      creatorId: "creator_a"
+    });
+    const parsed = parseCreatorPatreonOAuthState(state, "acc_1");
+    expect(parsed.ok).toBe(true);
+    if (parsed.ok) {
+      expect(parsed.creatorId).toBe("creator_a");
+    }
   });
 });
