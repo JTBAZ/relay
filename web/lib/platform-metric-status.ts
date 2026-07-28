@@ -1,6 +1,7 @@
 /**
  * Web re-export of platform metric status taxonomy (PMD-001).
- * Canonical implementation: `src/platform-metrics/metric-status-taxonomy.ts`
+ * Canonical: `src/platform-metrics/metric-status-taxonomy.ts`
+ * Vendored for Coolify Nixpacks (`base_directory=/web`): `web/_shared/...`
  */
 export {
   METRIC_STATUS_UI,
@@ -14,4 +15,4 @@ export {
   type PlatformMetricFreshnessState,
   type PlatformMetricStatus,
   type ResolvedMetricDisplay
-} from "../../src/platform-metrics/metric-status-taxonomy";
+} from "../_shared/platform-metrics/metric-status-taxonomy";

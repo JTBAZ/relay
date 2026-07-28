@@ -20,4 +20,4 @@ export {
   type NotificationDeliveryModeId,
   type NotificationDigestCadenceId,
   type NotificationDigestSlotId,
-} from "../../src/patron/notification-digest-preferences";
+} from "../_shared/patron/notification-digest-preferences";
