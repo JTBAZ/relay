@@ -15,6 +15,7 @@ import { join, relative, resolve } from "node:path";
 import type { Writable } from "node:stream";
 import type { CanonicalStore } from "../ingest/canonical-store.js";
 import { applyStorageKeyToCanonicalSnapshot } from "../ingest/media-storage-key.js";
+import { decodeHtmlEscapedUrl } from "../patreon/media-url-normalize.js";
 import { getR2ClientConfigFromEnv } from "../storage/r2-config.js";
 import { getR2ObjectBuffer } from "../storage/relay-upload-r2.js";
 import { FileExportIndex } from "./export-index.js";
@@ -185,8 +186,8 @@ export class ExportService {
       throw new Error(`Media not found: ${mediaId}`);
     }
     const row = mediaMap[mediaId];
-    const url = row.current.upstream_url;
-    if (!url || url.trim() === "") {
+    const url = decodeHtmlEscapedUrl((row.current.upstream_url ?? "").trim());
+    if (!url) {
       throw new Error("upstream_url is required to export media.");
     }
 
@@ -533,9 +534,10 @@ export class ExportService {
   }
 
   private async fetchUpstreamMediaBuffer(creatorId: string, url: string): Promise<Buffer> {
-    const fetchOpts = await this.buildPatreonUpstreamFetchOpts(creatorId, url);
+    const fetchUrl = decodeHtmlEscapedUrl(url.trim());
+    const fetchOpts = await this.buildPatreonUpstreamFetchOpts(creatorId, fetchUrl);
     const response = await fetchUpstreamWithRetries(
-      url,
+      fetchUrl,
       this.fetchImpl,
       this.retryPolicy,
       this.sleepFn,

@@ -22,11 +22,23 @@ const SIZING_PARAM_NAMES = new Set([
 ]);
 
 /**
+ * Decode common HTML entities that appear when media URLs are scraped from post HTML.
+ * Patreon CDN signed URLs with literal `&amp;` in the query string return **403**.
+ * @param url Raw or HTML-escaped absolute URL.
+ */
+export function decodeHtmlEscapedUrl(url: string): string {
+  return url
+    .replace(/&amp;/gi, "&")
+    .replace(/&#0*38;/g, "&")
+    .replace(/&#x0*26;/gi, "&");
+}
+
+/**
  * Strips hash, normalizes host case, and drops sizing query params on Patreon CDN hosts.
  * @param url Raw media URL.
  */
 export function normalizePatreonMediaUrl(url: string): string {
-  const trimmed = url.trim();
+  const trimmed = decodeHtmlEscapedUrl(url.trim());
   if (!trimmed) return trimmed;
 
   let parsed: URL;
@@ -67,7 +79,7 @@ const PATREON_POST_ASSET_PATH_RE = /\/p\/post\/(\d+)\/([0-9a-f]{32})\//i;
 export function patreonPostMediaStableKey(url: string | undefined): string | null {
   if (!url?.trim()) return null;
   try {
-    const pathname = new URL(url.trim()).pathname;
+    const pathname = new URL(decodeHtmlEscapedUrl(url.trim())).pathname;
     const m = pathname.match(PATREON_POST_ASSET_PATH_RE);
     if (!m?.[1] || !m?.[2]) return null;
     return `${m[1]}:${m[2].toLowerCase()}`;

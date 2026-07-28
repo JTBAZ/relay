@@ -13,7 +13,7 @@ import {
   RELAY_TIER_PUBLIC
 } from "./relay-access-tiers.js";
 import { finalizePatreonPostMedia } from "./merge-ingest-media.js";
-import { normalizePatreonMediaUrl } from "./media-url-normalize.js";
+import { decodeHtmlEscapedUrl, normalizePatreonMediaUrl } from "./media-url-normalize.js";
 import { flattenProseMirrorDoc, normalizePatreonPostContent } from "./post-content.js";
 import { sanitizeOptionalPostDescriptionHtml } from "../security/sanitize-post-html.js";
 
@@ -278,14 +278,15 @@ export function mapPatreonPostToIngest(resource: JsonApiResource): IngestPost {
   let mediaSeq = 0;
 
   const pushUrl = (url: string, idSuffix: string, revPrefix: string) => {
-    const dedupeKey = normalizePatreonMediaUrl(url);
+    const fetchableUrl = decodeHtmlEscapedUrl(url.trim());
+    const dedupeKey = normalizePatreonMediaUrl(fetchableUrl);
     if (seenUrls.has(dedupeKey)) return;
     seenUrls.add(dedupeKey);
     mediaSeq += 1;
     media.push({
       media_id: `patreon_${id}_${idSuffix}`,
-      mime_type: guessMimeFromUrl(url) ?? "application/octet-stream",
-      upstream_url: url,
+      mime_type: guessMimeFromUrl(fetchableUrl) ?? "application/octet-stream",
+      upstream_url: fetchableUrl,
       upstream_revision: `${revPrefix}:${revBase}`
     });
   };

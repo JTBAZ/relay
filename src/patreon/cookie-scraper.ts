@@ -15,6 +15,7 @@ import {
   tierIdsFromPatreonPost
 } from "./map-patreon-to-ingest.js";
 import { finalizePatreonPostMedia } from "./merge-ingest-media.js";
+import { decodeHtmlEscapedUrl } from "./media-url-normalize.js";
 import { flattenProseMirrorDoc, normalizePatreonPostContent } from "./post-content.js";
 
 const SITE_URL = "https://www.patreon.com";
@@ -120,12 +121,13 @@ export function mapCookiePostToIngest(
   let seq = 0;
 
   const pushUrl = (url: string, mediaId: string, mime?: string, role?: string) => {
-    if (!url) return;
+    const fetchableUrl = decodeHtmlEscapedUrl((url ?? "").trim());
+    if (!fetchableUrl) return;
     seq += 1;
     media.push({
       media_id: mediaId,
-      mime_type: mime ?? guessMime(url) ?? "application/octet-stream",
-      upstream_url: url,
+      mime_type: mime ?? guessMime(fetchableUrl) ?? "application/octet-stream",
+      upstream_url: fetchableUrl,
       upstream_revision: `patreon_cookie_media:${id}:${seq}:${publishedAt}`,
       role
     });

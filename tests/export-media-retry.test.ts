@@ -272,6 +272,37 @@ describe("ExportService.exportMedia", () => {
     }
   });
 
+  it("decodes HTML-escaped ampersands in CDN URLs before fetch", async () => {
+    const root = await mkdtemp(join(tmpdir(), "relay-export-test-"));
+    try {
+      const snap = minimalSnapshot();
+      snap.media.c1!.m1!.current.upstream_url =
+        "https://c10.patreonusercontent.com/4/patreon-media/p/post/1.jpg?token-hash=abc&amp;token-time=1";
+      const canonPath = join(root, "canonical.json");
+      await writeFile(canonPath, JSON.stringify(snap), "utf8");
+      const canonicalStore = new FileCanonicalStore(canonPath);
+      const exportRoot = join(root, "exports");
+      const exportIndex = new FileExportIndex(exportRoot);
+      let fetchedUrl = "";
+      const fetchImpl = async (url: string) => {
+        fetchedUrl = String(url);
+        return new Response(new Uint8Array([9]), { status: 200 });
+      };
+      const svc = new ExportService(
+        canonicalStore,
+        exportIndex,
+        exportRoot,
+        fetchImpl as unknown as typeof fetch,
+        { max_attempts: 2, base_delay_ms: 1, timeout_ms: 5000 }
+      );
+      await svc.exportMedia("c1", "m1");
+      expect(fetchedUrl).toContain("token-hash=abc&token-time=1");
+      expect(fetchedUrl).not.toContain("&amp;");
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   it("clears export_failures on successful export after prior failure file exists", async () => {
     const root = await mkdtemp(join(tmpdir(), "relay-export-test-"));
     try {
