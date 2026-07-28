@@ -18,6 +18,8 @@ import {
 
   isExternalMetricsRefreshMessage,
 
+  externalMetricsRefreshCorrelationId,
+
   MSG_RELAY_EXTERNAL_METRICS_REFRESH,
 
   type ExternalMetricsRefreshMessage,
@@ -634,7 +636,9 @@ export async function runExternalMetricsRefreshFlow(
 
   logMetricsRefresh("refresh_start", {
 
-    attempt_id: message.attempt_id,
+    attempt_id: message.attempt_id ?? null,
+
+    platform_instance_id: message.platform_instance_id ?? null,
 
     post_id: message.post_id,
 
@@ -644,7 +648,17 @@ export async function runExternalMetricsRefreshFlow(
 
 
 
-  startPatreonApiMetricsFetch(message.attempt_id, externalUrl);
+  const correlationId = externalMetricsRefreshCorrelationId(message);
+
+  if (!correlationId) {
+
+    return failureResponse("invalid_message", "attempt_id or platform_instance_id is required.");
+
+  }
+
+
+
+  startPatreonApiMetricsFetch(correlationId, externalUrl);
 
 
 
@@ -684,9 +698,19 @@ export async function runExternalMetricsRefreshFlow(
 
 
 
+  const attemptId = typeof message.attempt_id === "string" ? message.attempt_id.trim() : "";
+
+  const platformInstanceId =
+
+    typeof message.platform_instance_id === "string" ? message.platform_instance_id.trim() : "";
+
+
+
   await storage.setPendingExternalMetricsScrape({
 
-    attempt_id: message.attempt_id,
+    attempt_id: attemptId,
+
+    ...(platformInstanceId ? { platform_instance_id: platformInstanceId } : {}),
 
     post_id: message.post_id,
 
@@ -698,7 +722,7 @@ export async function runExternalMetricsRefreshFlow(
 
 
 
-  const resultPromise = waitForRefreshResult(message.attempt_id);
+  const resultPromise = waitForRefreshResult(correlationId);
 
   const injected = await injectPatreonMetricsScraper(tabId);
 
@@ -706,7 +730,7 @@ export async function runExternalMetricsRefreshFlow(
 
     const response = failureResponse("inject_failed");
 
-    completePendingRefresh(message.attempt_id, response);
+    completePendingRefresh(correlationId, response);
 
     return response;
 
@@ -714,7 +738,7 @@ export async function runExternalMetricsRefreshFlow(
 
 
 
-  logMetricsRefresh("scraper_injected", { tabId, attempt_id: message.attempt_id });
+  logMetricsRefresh("scraper_injected", { tabId, correlation_id: correlationId });
 
   return resultPromise;
 
@@ -727,6 +751,8 @@ export async function handleExternalMetricsResultMessage(raw: {
   type: typeof MSG_EXTERNAL_METRICS_RESULT;
 
   attempt_id: string;
+
+  platform_instance_id?: string | null;
 
   post_id: string;
 
@@ -746,11 +772,19 @@ export async function handleExternalMetricsResultMessage(raw: {
 
 }): Promise<void> {
 
-  const attemptId = raw.attempt_id.trim();
+  const attemptId = typeof raw.attempt_id === "string" ? raw.attempt_id.trim() : "";
+
+  const platformInstanceId =
+
+    typeof raw.platform_instance_id === "string" ? raw.platform_instance_id.trim() : "";
+
+  const correlationId = attemptId || platformInstanceId;
+
+  if (!correlationId) return;
 
   const domMetrics = Array.isArray(raw.metrics) ? raw.metrics : [];
 
-  const apiResult = await resolveApiFetchResult(attemptId);
+  const apiResult = await resolveApiFetchResult(correlationId);
 
   const apiMetrics = apiResult?.metrics ?? [];
 
@@ -762,7 +796,11 @@ export async function handleExternalMetricsResultMessage(raw: {
 
   logMetricsRefresh("result_received", {
 
-    attemptId,
+    correlationId,
+
+    attemptId: attemptId || null,
+
+    platformInstanceId: platformInstanceId || null,
 
     dom_metric_types: domMetrics.map((metric) => metric.metric_type),
 
@@ -788,7 +826,9 @@ export async function handleExternalMetricsResultMessage(raw: {
 
     const report = await reportExternalPostMetrics({
 
-      attempt_id: attemptId,
+      attempt_id: attemptId || null,
+
+      platform_instance_id: platformInstanceId || null,
 
       source,
 
@@ -802,7 +842,7 @@ export async function handleExternalMetricsResultMessage(raw: {
 
     logMetricsRefresh("metrics_post", {
 
-      attemptId,
+      correlationId,
 
       ok: report.ok,
 
@@ -822,11 +862,13 @@ export async function handleExternalMetricsResultMessage(raw: {
 
     void notifyRelayWebExternalMetricsUpdated();
 
-    completePendingRefresh(attemptId, {
+    completePendingRefresh(correlationId, {
 
       ok: true,
 
-      attempt_id: attemptId,
+      attempt_id: attemptId || null,
+
+      platform_instance_id: platformInstanceId || null,
 
       post_id: raw.post_id,
 
@@ -870,7 +912,7 @@ export async function handleExternalMetricsResultMessage(raw: {
 
 
 
-  completePendingRefresh(attemptId, {
+  completePendingRefresh(correlationId, {
 
     ok: false,
 

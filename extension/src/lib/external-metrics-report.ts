@@ -10,7 +10,9 @@ export type ExternalMetricSource =
   | "third_party";
 
 export type ExternalMetricsReportInput = {
-  attempt_id: string;
+  /** Prefer attempt when present; otherwise report by platform instance. */
+  attempt_id?: string | null;
+  platform_instance_id?: string | null;
   source: ExternalMetricSource;
   metrics: ExternalMetricsScrapeMetric[];
 };
@@ -27,34 +29,35 @@ export async function reportExternalPostMetrics(
   opts?: { relayApiBase?: string }
 ): Promise<ExternalMetricsReportResult> {
   const grant = await storage.getGrant();
-  const attemptId = input.attempt_id.trim();
+  const attemptId = input.attempt_id?.trim() ?? "";
+  const platformInstanceId = input.platform_instance_id?.trim() ?? "";
   const metrics = input.metrics.filter((metric) => metric.metric_type.trim().length > 0);
-  if (!grant?.token.trim() || !attemptId || metrics.length === 0) {
+  if (!grant?.token.trim() || metrics.length === 0 || (!attemptId && !platformInstanceId)) {
     return { ok: false, snapshot_count: 0 };
   }
 
   const relayApiBase = (opts?.relayApiBase ?? RELAY_API_BASE).replace(/\/$/, "");
+  const path = attemptId
+    ? `${relayApiBase}/api/v1/relay/distribution-attempts/${encodeURIComponent(attemptId)}/metrics`
+    : `${relayApiBase}/api/v1/creator/analytics/platform-instances/${encodeURIComponent(platformInstanceId)}/metrics`;
 
   try {
-    const res = await fetch(
-      `${relayApiBase}/api/v1/relay/distribution-attempts/${encodeURIComponent(attemptId)}/metrics`,
-      {
-        method: "POST",
-        headers: {
-          Accept: "application/json",
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${grant.token.trim()}`
-        },
-        body: JSON.stringify({
-          source: input.source,
-          metrics: metrics.map((metric) => ({
-            metric_type: metric.metric_type.trim(),
-            value: metric.value ?? null,
-            raw: metric.raw ?? {}
-          }))
-        })
-      }
-    );
+    const res = await fetch(path, {
+      method: "POST",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${grant.token.trim()}`
+      },
+      body: JSON.stringify({
+        source: input.source,
+        metrics: metrics.map((metric) => ({
+          metric_type: metric.metric_type.trim(),
+          value: metric.value ?? null,
+          raw: metric.raw ?? {}
+        }))
+      })
+    });
     if (!res.ok) {
       const errorBody = await res.text().catch(() => "");
       return {

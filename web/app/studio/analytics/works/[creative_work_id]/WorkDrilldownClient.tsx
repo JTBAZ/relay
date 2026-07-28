@@ -97,6 +97,7 @@ export default function WorkDrilldownClient({ creativeWorkId }: { creativeWorkId
           const handoff = await sendRelayExternalMetricsRefreshToExtension({
             postId: result.handoff.post_id,
             attemptId: result.handoff.attempt_id,
+            platformInstanceId: result.handoff.platform_instance_id,
             destination,
             externalUrl: result.handoff.external_url
           });

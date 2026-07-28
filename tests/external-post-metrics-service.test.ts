@@ -3,13 +3,15 @@ import type { PrismaClient } from "@prisma/client";
 import {
   ExternalPostMetricsValidationError,
   getPostExternalMetrics,
-  recordExternalPostMetricSnapshots
+  recordExternalPostMetricSnapshots,
+  recordExternalPostMetricSnapshotsForPlatformInstance
 } from "../src/distribution/external-post-metrics-service.js";
 import { PostDistributionNotFoundError } from "../src/distribution/post-distribution-service.js";
 
 const CREATOR_ID = "rcx_pilot_dev_ava";
 const POST_ID = "post_test_001";
 const ATTEMPT_ID = "pda_6f0d6302-0e6c-4e87-a7b0-a6a6234979e4";
+const INSTANCE_ID = "pi_manual_patreon_post_1_patreon";
 const EXTERNAL_URL = "https://www.patreon.com/RelayTEST/posts/test-162544992";
 const EXTERNAL_ID = "162544992";
 
@@ -31,6 +33,7 @@ function snapshotRow(overrides: Record<string, unknown> = {}) {
   return {
     id: "epms_001",
     attemptId: ATTEMPT_ID,
+    platformInstanceId: null,
     postId: POST_ID,
     creatorId: CREATOR_ID,
     destination: "patreon",
@@ -205,6 +208,65 @@ describe("recordExternalPostMetricSnapshots", () => {
         metrics: [{ metric_type: "likes", value: 1 }]
       })
     ).rejects.toBeInstanceOf(ExternalPostMetricsValidationError);
+  });
+});
+
+describe("recordExternalPostMetricSnapshotsForPlatformInstance", () => {
+  it("inserts snapshots without a distribution attempt", async () => {
+    const create = vi.fn().mockResolvedValue(
+      snapshotRow({
+        id: "epms_instance",
+        attemptId: null,
+        platformInstanceId: INSTANCE_ID,
+        metricType: "comments",
+        value: 2
+      })
+    );
+    const updateMany = vi.fn().mockResolvedValue({ count: 1 });
+    const tx = {
+      externalPostMetricSnapshot: { create },
+      platformInstance: { updateMany }
+    };
+    const prisma = {
+      platformInstance: {
+        findFirst: vi.fn().mockResolvedValue({
+          id: INSTANCE_ID,
+          postId: POST_ID,
+          creatorId: CREATOR_ID,
+          destination: "patreon",
+          externalUrl: EXTERNAL_URL,
+          externalId: EXTERNAL_ID,
+          attemptId: null
+        })
+      },
+      $transaction: vi.fn(async (fn: (client: typeof tx) => Promise<unknown>) => fn(tx))
+    } as unknown as PrismaClient;
+
+    const snapshots = await recordExternalPostMetricSnapshotsForPlatformInstance(
+      prisma,
+      CREATOR_ID,
+      INSTANCE_ID,
+      {
+        source: "extension_dom",
+        metrics: [{ metric_type: "comments", value: 2 }]
+      }
+    );
+
+    expect(snapshots).toHaveLength(1);
+    expect(snapshots[0]).toMatchObject({
+      attempt_id: null,
+      platform_instance_id: INSTANCE_ID,
+      metric_type: "comments",
+      value: 2
+    });
+    expect(create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        attemptId: null,
+        platformInstanceId: INSTANCE_ID,
+        postId: POST_ID
+      })
+    });
+    expect(updateMany).toHaveBeenCalled();
   });
 });
 

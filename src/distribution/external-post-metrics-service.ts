@@ -32,7 +32,8 @@ export type RecordExternalMetricsInput = {
 
 export type ExternalPostMetricSnapshotWire = {
   snapshot_id: string;
-  attempt_id: string;
+  attempt_id: string | null;
+  platform_instance_id: string | null;
   post_id: string;
   creator_id: string;
   destination: string;
@@ -164,7 +165,8 @@ function parseMetrics(metrics: unknown): ExternalMetricInput[] {
 
 function mapSnapshot(row: {
   id: string;
-  attemptId: string;
+  attemptId: string | null;
+  platformInstanceId: string | null;
   postId: string;
   creatorId: string;
   destination: string;
@@ -179,6 +181,7 @@ function mapSnapshot(row: {
   return {
     snapshot_id: row.id,
     attempt_id: row.attemptId,
+    platform_instance_id: row.platformInstanceId,
     post_id: row.postId,
     creator_id: row.creatorId,
     destination: row.destination,
@@ -265,6 +268,77 @@ export async function recordExternalPostMetricSnapshots(
       await touchPlatformInstanceLastRefreshed(tx, platformInstanceId);
     }
 
+    return created;
+  });
+
+  return rows.map(mapSnapshot);
+}
+
+/**
+ * Record external metrics against a Platform Instance (no distribution attempt required).
+ * Used for Patreon ingest identity rows where `attemptId` is null.
+ */
+export async function recordExternalPostMetricSnapshotsForPlatformInstance(
+  prisma: PrismaClient,
+  creatorId: string,
+  platformInstanceId: string,
+  input: RecordExternalMetricsInput
+): Promise<ExternalPostMetricSnapshotWire[]> {
+  const cid = creatorId.trim();
+  const iid = platformInstanceId.trim();
+  if (!cid || !iid) {
+    throw new ExternalPostMetricsValidationError("Missing platform instance context.", [
+      { field: "platform_instance_id", issue: "creator and platform instance id are required" }
+    ]);
+  }
+
+  const source = parseSource(input.source);
+  const metrics = parseMetrics(input.metrics);
+
+  const instance = await prisma.platformInstance.findFirst({
+    where: { id: iid, creatorId: cid },
+    select: {
+      id: true,
+      postId: true,
+      creatorId: true,
+      destination: true,
+      externalUrl: true,
+      externalId: true,
+      attemptId: true
+    }
+  });
+  if (!instance) {
+    throw new PostDistributionNotFoundError("Platform instance not found.");
+  }
+  const externalUrl = instance.externalUrl?.trim() ?? "";
+  if (!externalUrl) {
+    throw new ExternalPostMetricsValidationError("Platform instance has no external URL.", [
+      { field: "platform_instance_id", issue: "external_url must be set before metrics ingest" }
+    ]);
+  }
+
+  const rows = await prisma.$transaction(async (tx) => {
+    const created = await Promise.all(
+      metrics.map((metric) =>
+        tx.externalPostMetricSnapshot.create({
+          data: {
+            attemptId: instance.attemptId?.trim() || null,
+            platformInstanceId: instance.id,
+            postId: instance.postId,
+            creatorId: instance.creatorId,
+            destination: instance.destination,
+            externalUrl,
+            externalId: instance.externalId?.trim() || null,
+            metricType: metric.metric_type,
+            value: metric.value,
+            raw: (metric.raw ?? {}) as Prisma.InputJsonValue,
+            source
+          }
+        })
+      )
+    );
+
+    await touchPlatformInstanceLastRefreshed(tx, instance.id);
     return created;
   });
 

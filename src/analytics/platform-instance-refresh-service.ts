@@ -35,7 +35,10 @@ export type PlatformInstanceRefreshStatus =
 
 export type PlatformInstanceRefreshHandoffWire = {
   post_id: string;
-  attempt_id: string;
+  /** Present when metrics were captured against a distribution attempt. */
+  attempt_id: string | null;
+  /** Always set for handoff so the extension can report instance-scoped metrics. */
+  platform_instance_id: string;
   destination: string;
   external_url: string;
 };
@@ -443,7 +446,9 @@ export async function requestPlatformInstanceManualRefresh(
   });
   base.last_manual_refresh_requested_at = now.toISOString();
 
-  if (externalUrl && attemptId) {
+  // Prefer extension handoff whenever a linked URL exists — attempt is optional
+  // (Patreon ingest creates api_identity instances with null attemptId).
+  if (externalUrl) {
     return {
       ok: true,
       result: {
@@ -452,14 +457,16 @@ export async function requestPlatformInstanceManualRefresh(
         method: "extension_dom",
         handoff: {
           post_id: instance.postId,
-          attempt_id: attemptId,
+          attempt_id: attemptId || null,
+          platform_instance_id: instance.id,
           destination: instance.destination,
           external_url: externalUrl
         },
         cooldown: null,
         rollup_upserted: null,
-        message:
-          "Open the Relay extension handoff to capture fresh platform metrics (API preferred when available)."
+        message: attemptId
+          ? "Open the Relay extension handoff to capture fresh platform metrics (API preferred when available)."
+          : "Open the Relay extension to capture fresh platform metrics for this linked post."
       }
     };
   }
@@ -469,14 +476,12 @@ export async function requestPlatformInstanceManualRefresh(
     ok: true,
     result: {
       ...base,
-      status: externalUrl ? "missing_link" : "completed",
+      status: "completed",
       method: "csv_rollup_overlay",
       handoff: null,
       cooldown: null,
       rollup_upserted: upserted,
-      message: externalUrl
-        ? "Linked attempt is missing — only CSV/rollup overlay was applied."
-        : "Applied Patreon Insights CSV rollup overlay."
+      message: "Applied Patreon Insights CSV rollup overlay."
     }
   };
 }

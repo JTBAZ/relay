@@ -894,24 +894,25 @@ model PostDistributionAttempt {
 
 /// Time-series engagement captured from an external post URL (Slice 2).
 model ExternalPostMetricSnapshot {
-  id                 String                  @id @default(cuid())
-  attemptId          String                  @map("attempt_id")
-  attempt            PostDistributionAttempt @relation(fields: [attemptId], references: [id], onDelete: Cascade)
-  platformInstanceId String?                 @map("platform_instance_id")
-  platformInstance   PlatformInstance?       @relation(fields: [platformInstanceId], references: [id], onDelete: SetNull)
-  postId             String                  @map("post_id")
-  post               Post                    @relation(fields: [postId], references: [id], onDelete: Cascade)
-  creatorId          String                  @map("creator_id")
+  id                 String                   @id @default(cuid())
+  /// Nullable when metrics were captured against a Platform Instance without a distribution attempt (e.g. Patreon ingest).
+  attemptId          String?                  @map("attempt_id")
+  attempt            PostDistributionAttempt? @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+  platformInstanceId String?                  @map("platform_instance_id")
+  platformInstance   PlatformInstance?        @relation(fields: [platformInstanceId], references: [id], onDelete: SetNull)
+  postId             String                   @map("post_id")
+  post               Post                     @relation(fields: [postId], references: [id], onDelete: Cascade)
+  creatorId          String                   @map("creator_id")
   destination        String
-  externalUrl        String                  @map("external_url")
-  externalId         String?                 @map("external_id")
+  externalUrl        String                   @map("external_url")
+  externalId         String?                  @map("external_id")
   /// views | likes | favorites | comments | reposts | quotes | bookmarks | impressions | …
-  metricType         String                  @map("metric_type")
+  metricType         String                   @map("metric_type")
   value              Int?
-  raw                Json                    @default("{}")
+  raw                Json                     @default("{}")
   /// extension_dom | public_scrape | platform_api | manual | third_party
   source             String
-  capturedAt         DateTime                @default(now()) @map("captured_at")
+  capturedAt         DateTime                 @default(now()) @map("captured_at")
 
   @@index([attemptId, metricType, capturedAt])
   @@index([platformInstanceId, metricType, capturedAt])

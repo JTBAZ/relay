@@ -73,6 +73,7 @@ async function runScrape(context: PendingExternalMetricsScrape): Promise<void> {
     await browser.runtime.sendMessage({
       type: MSG_EXTERNAL_METRICS_RESULT,
       attempt_id: context.attempt_id,
+      platform_instance_id: context.platform_instance_id ?? null,
       post_id: context.post_id,
       destination: context.destination,
       external_url: context.external_url,
@@ -87,6 +88,7 @@ async function runScrape(context: PendingExternalMetricsScrape): Promise<void> {
       await browser.runtime.sendMessage({
         type: MSG_EXTERNAL_METRICS_RESULT,
         attempt_id: context.attempt_id,
+        platform_instance_id: context.platform_instance_id ?? null,
         post_id: context.post_id,
         destination: context.destination,
         external_url: context.external_url,

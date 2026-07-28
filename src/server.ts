@@ -368,7 +368,8 @@ import {
 import {
   ExternalPostMetricsValidationError,
   getPostExternalMetrics,
-  recordExternalPostMetricSnapshots
+  recordExternalPostMetricSnapshots,
+  recordExternalPostMetricSnapshotsForPlatformInstance
 } from "./distribution/external-post-metrics-service.js";
 import {
   assertPilotUxPatronOnboardingWalkthroughAccount,
@@ -14839,6 +14840,92 @@ export function createApp(config: AppConfig): CreateAppResult {
         res.setHeader("Cache-Control", "private, no-store");
         return res.status(200).json(successEnvelope(out.result, traceId));
       } catch (err) {
+        if (sendRelayAuthError(res, err, traceId)) return;
+        return res.status(500).json(errorEnvelope("INTERNAL", (err as Error).message, traceId));
+      }
+    }
+  );
+
+  app.post(
+    "/api/v1/creator/analytics/platform-instances/:platform_instance_id/metrics",
+    async (req: Request, res: Response) => {
+      const traceId = traceIdFrom(req);
+      if (!config.prisma) {
+        return res.status(503).json(
+          errorEnvelope("SERVICE_UNAVAILABLE", "Database not configured.", traceId)
+        );
+      }
+      const platformInstanceId = String(req.params.platform_instance_id ?? "").trim();
+      const body = (req.body ?? {}) as Record<string, unknown>;
+      const session = await requirePatronBearerSession(req, res, traceId);
+      if (!session) return;
+      const accountId = await getAccountIdForSession(config.prisma, session);
+      if (!accountId) {
+        return res
+          .status(403)
+          .json(errorEnvelope("FORBIDDEN", "Session is not linked to an account.", traceId));
+      }
+      const account = await config.prisma.account.findUnique({
+        where: { id: accountId },
+        select: { primaryRelayCreatorId: true }
+      });
+      const relayCreatorId = account?.primaryRelayCreatorId?.trim() ?? "";
+      if (!relayCreatorId) {
+        return res.status(403).json(errorEnvelope("FORBIDDEN", "No creator studio.", traceId));
+      }
+      const sourceRaw = typeof body.source === "string" ? body.source.trim() : "";
+      const metricsRaw = Array.isArray(body.metrics) ? body.metrics : null;
+      if (!sourceRaw || !metricsRaw) {
+        return res.status(400).json(
+          errorEnvelope("VALIDATION_ERROR", "source and metrics are required.", traceId)
+        );
+      }
+      try {
+        const snapshots = await recordExternalPostMetricSnapshotsForPlatformInstance(
+          config.prisma,
+          relayCreatorId,
+          platformInstanceId,
+          {
+            source: sourceRaw as "extension_dom",
+            metrics: metricsRaw.map((entry) => {
+              const row =
+                entry && typeof entry === "object" && !Array.isArray(entry)
+                  ? (entry as Record<string, unknown>)
+                  : {};
+              return {
+                metric_type:
+                  typeof row.metric_type === "string"
+                    ? row.metric_type
+                    : typeof row.metricType === "string"
+                      ? row.metricType
+                      : "",
+                value:
+                  row.value === null || row.value === undefined
+                    ? null
+                    : typeof row.value === "number"
+                      ? row.value
+                      : undefined,
+                raw:
+                  row.raw &&
+                  typeof row.raw === "object" &&
+                  !Array.isArray(row.raw)
+                    ? (row.raw as Record<string, unknown>)
+                    : undefined
+              };
+            })
+          }
+        );
+        res.setHeader("Cache-Control", "private, no-store");
+        return res.status(200).json(successEnvelope({ snapshots }, traceId));
+      } catch (err) {
+        if (err instanceof ExternalPostMetricsValidationError) {
+          return res.status(400).json(
+            errorEnvelope("VALIDATION_ERROR", err.message, traceId, err.details)
+          );
+        }
+        if (err instanceof PostDistributionNotFoundError) {
+          return res.status(404).json(errorEnvelope("NOT_FOUND", err.message, traceId));
+        }
         if (sendRelayAuthError(res, err, traceId)) return;
         return res.status(500).json(errorEnvelope("INTERNAL", (err as Error).message, traceId));
       }

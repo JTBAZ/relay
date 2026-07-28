@@ -75,7 +75,7 @@ Requires `RELAY_JOB_BACKEND=bullmq`, `REDIS_URL`, and worker process for schedul
 
 ## Client handoff flow (extension destinations)
 
-Applies to **`patreon`**, **`x`**, and **`deviantart`** when a linked URL + attempt exist.
+Applies to **`patreon`**, **`x`**, and **`deviantart`** when a linked URL exists. A distribution `attempt_id` is preferred when present; imported Patreon posts may hand off with only `platform_instance_id` (instance-scoped metrics POST).
 
 1. POST refresh → `handoff_required`
 2. Studio calls `sendRelayExternalMetricsRefreshToExtension(handoff)` ([`web/lib/relay-extension-messaging.ts`](../../web/lib/relay-extension-messaging.ts))

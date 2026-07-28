@@ -1556,7 +1556,8 @@ export type PlatformInstanceRefreshStatus =
 
 export type PlatformInstanceRefreshHandoffWire = {
   post_id: string;
-  attempt_id: string;
+  attempt_id: string | null;
+  platform_instance_id: string;
   destination: string;
   external_url: string;
 };

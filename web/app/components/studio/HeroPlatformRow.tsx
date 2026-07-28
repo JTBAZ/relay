@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { motion } from "framer-motion";
 import { Check, ExternalLink, RefreshCw } from "lucide-react";
 import {
@@ -37,6 +38,14 @@ function fmtPresent(n: number | undefined): string {
   return v.toLocaleString();
 }
 
+function formatRetryHint(seconds: number | undefined): string {
+  const s = Math.max(0, Math.floor(seconds ?? 0));
+  if (s <= 0) return "Refresh cooling down";
+  if (s < 60) return `Try again in ${s}s`;
+  const mins = Math.ceil(s / 60);
+  return `Try again in ${mins}m`;
+}
+
 export function HeroPresentRow({
   row,
   delay = 0,
@@ -56,6 +65,13 @@ export function HeroPresentRow({
   const config = platformMeta(row.destination);
   const url = row.external_url?.trim() || null;
   const impressions = row.stats.impressions ?? row.stats.reach ?? 0;
+  const showRefresh = Boolean(row.platform_instance_id) &&
+    (Boolean(row.refresh_eligible) || Boolean(row.cooldown_active));
+  const refreshDisabled =
+    Boolean(refreshBusy) || Boolean(row.cooldown_active) || !row.refresh_eligible;
+  const refreshTitle = row.cooldown_active
+    ? formatRetryHint(row.retry_after_seconds)
+    : `Refresh ${config.label}`;
 
   useEffect(() => {
     if (wasBusyRef.current && !refreshBusy) {
@@ -98,11 +114,12 @@ export function HeroPresentRow({
               <Check size={10} />
             </span>
           ) : null}
-          {row.refresh_eligible && row.platform_instance_id ? (
+          {showRefresh ? (
             <button
               type="button"
-              disabled={refreshBusy}
-              aria-label={`Refresh ${config.label}`}
+              disabled={refreshDisabled}
+              title={refreshTitle}
+              aria-label={refreshTitle}
               className="flex items-center justify-center rounded-lg transition-all duration-150 disabled:opacity-40"
               style={{
                 width: 24,
@@ -112,11 +129,11 @@ export function HeroPresentRow({
                 color: refreshBusy ? "#9bf0c4" : "#555"
               }}
               onClick={() => {
-                if (!row.platform_instance_id || !onRefresh) return;
+                if (!row.platform_instance_id || !onRefresh || refreshDisabled) return;
                 onRefresh(row.platform_instance_id);
               }}
               onMouseEnter={(e) => {
-                if (!refreshBusy) e.currentTarget.style.color = "#9bf0c4";
+                if (!refreshDisabled) e.currentTarget.style.color = "#9bf0c4";
               }}
               onMouseLeave={(e) => {
                 if (!refreshBusy) e.currentTarget.style.color = "#555";
@@ -170,6 +187,19 @@ export function HeroPresentRow({
           </div>
         ))}
       </div>
+      {row.stats_missing && row.destination === "patreon" ? (
+        <p className="px-3 pb-2.5 text-[10px] leading-snug" style={{ color: "#666" }}>
+          No Insights data yet —{" "}
+          <Link
+            href="/studio/analytics"
+            className="underline underline-offset-2 transition-colors"
+            style={{ color: "#888" }}
+          >
+            upload a Patreon Insights CSV
+          </Link>{" "}
+          or refresh with the Relay extension.
+        </p>
+      ) : null}
     </motion.div>
   );
 }

@@ -280,7 +280,9 @@ export async function clearPendingCrossPost(): Promise<void> {
 export const PENDING_EXTERNAL_METRICS_SCRAPE_KEY = "pending_external_metrics_scrape" as const;
 
 export type PendingExternalMetricsScrape = {
+  /** Present for distribution-attempt metrics; may be empty when instance-scoped. */
   attempt_id: string;
+  platform_instance_id?: string;
   post_id: string;
   destination: ExternalMetricsDestination;
   external_url: string;
@@ -290,11 +292,13 @@ function parsePendingExternalMetricsScrape(raw: unknown): PendingExternalMetrics
   if (raw === null || typeof raw !== "object" || Array.isArray(raw)) return null;
   const o = raw as Record<string, unknown>;
   const attemptId = typeof o.attempt_id === "string" ? o.attempt_id.trim() : "";
+  const platformInstanceId =
+    typeof o.platform_instance_id === "string" ? o.platform_instance_id.trim() : "";
   const postId = typeof o.post_id === "string" ? o.post_id.trim() : "";
   const externalUrl = typeof o.external_url === "string" ? o.external_url.trim() : "";
   const destination = o.destination;
   if (
-    !attemptId ||
+    (!attemptId && !platformInstanceId) ||
     !postId ||
     !externalUrl ||
     (destination !== "patreon" && destination !== "x" && destination !== "deviantart")
@@ -303,6 +307,7 @@ function parsePendingExternalMetricsScrape(raw: unknown): PendingExternalMetrics
   }
   return {
     attempt_id: attemptId,
+    ...(platformInstanceId ? { platform_instance_id: platformInstanceId } : {}),
     post_id: postId,
     destination,
     external_url: externalUrl

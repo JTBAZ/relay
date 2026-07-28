@@ -199,16 +199,20 @@ export type SendRelayExternalMetricsRefreshResult =
 
 function isExternalMetricsRefreshSuccess(value: unknown): value is {
   ok: true;
-  attempt_id: string;
+  attempt_id: string | null;
+  platform_instance_id?: string | null;
   post_id: string;
   destination: CrossPostDestination;
   snapshot_count: number;
 } {
   if (value === null || typeof value !== "object") return false;
   const v = value as Record<string, unknown>;
+  const hasAttempt = typeof v.attempt_id === "string" && v.attempt_id.trim().length > 0;
+  const hasInstance =
+    typeof v.platform_instance_id === "string" && v.platform_instance_id.trim().length > 0;
   return (
     v.ok === true &&
-    typeof v.attempt_id === "string" &&
+    (hasAttempt || hasInstance || v.attempt_id === null) &&
     typeof v.post_id === "string" &&
     typeof v.snapshot_count === "number"
   );
@@ -278,14 +282,16 @@ export function describeRelayExternalMetricsRefreshExtensionFailure(
 
 export async function sendRelayExternalMetricsRefreshToExtension(input: {
   postId: string;
-  attemptId: string;
+  attemptId?: string | null;
+  platformInstanceId?: string | null;
   destination: CrossPostDestination;
   externalUrl: string;
 }): Promise<SendRelayExternalMetricsRefreshResult> {
   const postId = input.postId.trim();
-  const attemptId = input.attemptId.trim();
+  const attemptId = input.attemptId?.trim() ?? "";
+  const platformInstanceId = input.platformInstanceId?.trim() ?? "";
   const externalUrl = input.externalUrl.trim();
-  if (!postId || !attemptId || !externalUrl) {
+  if (!postId || !externalUrl || (!attemptId && !platformInstanceId)) {
     return { ok: false, reason: "invalid_context" };
   }
 
@@ -305,7 +311,8 @@ export async function sendRelayExternalMetricsRefreshToExtension(input: {
       const response = await sendExtensionMessage(runtime, extensionId, {
         type: RELAY_EXTERNAL_METRICS_REFRESH_MESSAGE_TYPE,
         post_id: postId,
-        attempt_id: attemptId,
+        ...(attemptId ? { attempt_id: attemptId } : {}),
+        ...(platformInstanceId ? { platform_instance_id: platformInstanceId } : {}),
         destination: input.destination,
         external_url: externalUrl
       });

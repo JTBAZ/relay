@@ -93,9 +93,44 @@ describe("requestPlatformInstanceManualRefresh", () => {
     expect(out.result.handoff).toMatchObject({
       post_id: "post_a",
       attempt_id: "attempt_1",
+      platform_instance_id: INSTANCE_ID,
       destination: "patreon"
     });
     expect(update).toHaveBeenCalled();
+  });
+
+  it("returns handoff_required for ingest Patreon instance without attemptId", async () => {
+    const update = vi.fn().mockResolvedValue({});
+    const prisma = {
+      tenant: { findUnique: vi.fn().mockResolvedValue({ id: "tenant_1" }) },
+      platformInstance: {
+        findFirst: vi.fn().mockResolvedValue(
+          baseInstance({
+            id: "pi_manual_patreon_post_1_patreon",
+            attemptId: null,
+            linkSource: "api_identity",
+            externalUrl: "https://www.patreon.com/posts/1"
+          })
+        ),
+        update
+      }
+    };
+
+    const out = await requestPlatformInstanceManualRefresh(
+      prisma as never,
+      CREATOR_ID,
+      "pi_manual_patreon_post_1_patreon"
+    );
+    expect(out.ok).toBe(true);
+    if (!out.ok) return;
+    expect(out.result.status).toBe("handoff_required");
+    expect(out.result.handoff).toEqual({
+      post_id: "post_a",
+      attempt_id: null,
+      platform_instance_id: "pi_manual_patreon_post_1_patreon",
+      destination: "patreon",
+      external_url: "https://www.patreon.com/posts/1"
+    });
   });
 
   it("returns cooldown without updating when still cooling down", async () => {
@@ -175,6 +210,7 @@ describe("requestPlatformInstanceManualRefresh", () => {
     expect(out.result.handoff).toMatchObject({
       post_id: "post_a",
       attempt_id: "attempt_1",
+      platform_instance_id: INSTANCE_ID,
       destination: "x"
     });
     expect(update).toHaveBeenCalled();

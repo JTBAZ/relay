@@ -10,7 +10,10 @@ export const MSG_RELAY_EXTERNAL_METRICS_REFRESH = "RELAY_EXTERNAL_METRICS_REFRES
 /** Relay web → extension externally-connectable refresh trigger. */
 export type ExternalMetricsRefreshMessage = {
   type: typeof MSG_RELAY_EXTERNAL_METRICS_REFRESH;
-  attempt_id: string;
+  /** Distribution attempt id when available; omit/empty for ingest-linked instances. */
+  attempt_id?: string | null;
+  /** Platform instance id — preferred report target when attempt is missing. */
+  platform_instance_id?: string | null;
   post_id: string;
   destination: CrossPostDestination;
   external_url: string;
@@ -24,7 +27,8 @@ export type ExternalMetricsScrapeMetric = {
 
 export type ExternalMetricsRefreshSuccess = {
   ok: true;
-  attempt_id: string;
+  attempt_id: string | null;
+  platform_instance_id: string | null;
   post_id: string;
   destination: CrossPostDestination;
   snapshot_count: number;
@@ -53,6 +57,19 @@ function isNonEmptyString(v: unknown): v is string {
   return typeof v === "string" && v.trim().length > 0;
 }
 
+/** Stable correlation key for in-flight refresh maps. */
+export function externalMetricsRefreshCorrelationId(
+  message: Pick<ExternalMetricsRefreshMessage, "attempt_id" | "platform_instance_id">
+): string | null {
+  const attemptId =
+    typeof message.attempt_id === "string" ? message.attempt_id.trim() : "";
+  const instanceId =
+    typeof message.platform_instance_id === "string"
+      ? message.platform_instance_id.trim()
+      : "";
+  return attemptId || instanceId || null;
+}
+
 export function isExternalMetricsRefreshMessage(
   v: unknown
 ): v is ExternalMetricsRefreshMessage {
@@ -60,16 +77,18 @@ export function isExternalMetricsRefreshMessage(
   const m = v as {
     type: unknown;
     attempt_id?: unknown;
+    platform_instance_id?: unknown;
     post_id?: unknown;
     destination?: unknown;
     external_url?: unknown;
   };
   if (m.type !== MSG_RELAY_EXTERNAL_METRICS_REFRESH) return false;
-  if (
-    !isNonEmptyString(m.attempt_id) ||
-    !isNonEmptyString(m.post_id) ||
-    !isNonEmptyString(m.external_url)
-  ) {
+  if (!isNonEmptyString(m.post_id) || !isNonEmptyString(m.external_url)) {
+    return false;
+  }
+  const hasAttempt = isNonEmptyString(m.attempt_id);
+  const hasInstance = isNonEmptyString(m.platform_instance_id);
+  if (!hasAttempt && !hasInstance) {
     return false;
   }
   return (

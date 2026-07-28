@@ -275,5 +275,34 @@ describe("hero-inspect-data", () => {
       likes: 0,
       comments: 0
     });
+    expect(daRow?.stats_missing).toBe(true);
+  });
+
+  it("marks Patreon zeros as stats_missing and threads cooldown fields", () => {
+    const bundle = fixtureBundle();
+    bundle.variants[0]!.by_destination = [
+      { destination: "patreon", impressions: 0, seen: 0, likes: 0, comments: 0, views: 0 }
+    ];
+    const instances = fixtureInstances();
+    instances.posts[0]!.platform_instances[0] = {
+      ...instances.posts[0]!.platform_instances[0]!,
+      refresh_eligible: false,
+      cooldown_active: true,
+      retry_after_seconds: 420
+    };
+    const model = buildHeroInspectModel({
+      key: { creative_work_id: "work_1", post_id: "post_a" },
+      bundle,
+      instances,
+      instancesOk: true
+    });
+    expect(model.rows[0]).toMatchObject({
+      destination: "patreon",
+      stats_missing: true,
+      refresh_eligible: false,
+      cooldown_active: true,
+      retry_after_seconds: 420,
+      platform_instance_id: "pi_a_patreon"
+    });
   });
 });

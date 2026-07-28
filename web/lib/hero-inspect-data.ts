@@ -28,7 +28,11 @@ export type HeroPlatformRow = {
     likes?: number;
     comments?: number;
   };
+  /** True when metrics appear zero-filled with no rollup evidence (not proven zero engagement). */
+  stats_missing?: boolean;
   refresh_eligible?: boolean;
+  cooldown_active?: boolean;
+  retry_after_seconds?: number;
   platform_instance_id?: string | null;
 };
 
@@ -279,17 +283,26 @@ export function buildHeroInspectModel(args: {
     const fromVariant = variant.platform_instances.find(
       (pi) => pi.destination === destRow.destination
     );
+    const impressions = destRow.impressions ?? 0;
+    const likes = destRow.likes ?? 0;
+    const comments = destRow.comments ?? 0;
+    const reach = reachFromTotals(destRow);
+    const statsMissing =
+      impressions === 0 && likes === 0 && comments === 0 && (reach ?? 0) === 0;
     rows.push({
       destination: destRow.destination,
       present: true,
       external_url: inst?.external_url ?? fromVariant?.external_url ?? null,
       stats: {
-        reach: reachFromTotals(destRow),
+        reach,
         impressions: destRow.impressions,
         likes: destRow.likes,
         comments: destRow.comments
       },
+      stats_missing: statsMissing,
       refresh_eligible: inst?.refresh_eligible,
+      cooldown_active: inst?.cooldown_active,
+      retry_after_seconds: inst?.retry_after_seconds,
       platform_instance_id: inst?.platform_instance_id ?? fromVariant?.platform_instance_id ?? null
     });
   }
@@ -309,7 +322,10 @@ export function buildHeroInspectModel(args: {
         likes: 0,
         comments: 0
       },
+      stats_missing: true,
       refresh_eligible: inst.refresh_eligible,
+      cooldown_active: inst.cooldown_active,
+      retry_after_seconds: inst.retry_after_seconds,
       platform_instance_id: inst.platform_instance_id
     });
   }
