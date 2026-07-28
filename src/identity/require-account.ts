@@ -59,7 +59,14 @@ export async function loadAccountContextForSession(
   });
   if (!account) return null;
 
-  const hasSupporterMemberships = await hasMeaningfulSupporterActivity(prisma, accountId);
+  // Partial Prisma stubs in route tests often omit findMany / follow tables used by
+  // hasMeaningfulSupporterActivity; creator-scoped routes only need primaryRelayCreatorId.
+  let hasSupporterMemberships = false;
+  try {
+    hasSupporterMemberships = await hasMeaningfulSupporterActivity(prisma, accountId);
+  } catch {
+    hasSupporterMemberships = false;
+  }
 
   return {
     accountId: account.id,

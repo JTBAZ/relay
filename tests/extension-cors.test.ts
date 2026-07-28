@@ -127,15 +127,16 @@ describe("Extension API CORS (EXT-0E)", () => {
     expect(res.headers["access-control-allow-credentials"]).toBe("true");
   });
 
-  it("OPTIONS /api/v1/patreon/cookie: non-allowlisted origin receives wildcard, no credentials", async () => {
+  it("OPTIONS /api/v1/patreon/cookie: non-allowlisted origin is rejected (no ACAO:*)", async () => {
+    // R-SEC-03 / 51b3f80: credentialed preflights must not see ACAO:* — unknown Origin → 403.
     const tempDir = await mkdtemp(join(tmpdir(), "relay-cookie-cors-"));
     const { app } = createApp(fileBackedConfig(tempDir));
     const res = await request(app)
       .options("/api/v1/patreon/cookie")
       .set("Origin", "https://any.example")
       .set("Access-Control-Request-Method", "POST");
-    expect(res.status).toBe(204);
-    expect(res.headers["access-control-allow-origin"]).toBe("*");
+    expect(res.status).toBe(403);
+    expect(res.headers["access-control-allow-origin"]).toBeUndefined();
     expect(res.headers["access-control-allow-credentials"]).toBeUndefined();
   });
 

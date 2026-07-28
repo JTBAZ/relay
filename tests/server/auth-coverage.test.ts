@@ -15,12 +15,16 @@ const here = dirname(fileURLToPath(import.meta.url));
 const serverPath = join(here, "..", "..", "src", "server.ts");
 
 const AUTH_PATTERN =
-  /requirePatronBearerSession|requireAccount\s*\(|requireAccountWithRole\s*\(|requireAccountMatchesCreator|assertCreatorRelayMutationAllowed|requirePlatformOperatorForRequest|RELAY_OPS_FEATURE_FLAG_SECRET|identityService\.resolveSession|readSessionCookie\s*\(|getSupabaseUserFromAccessToken|checkPostAccess|evaluatePostPermission|verifyDiscordIngestHmac/;
+  /requirePatronBearerSession|requireAccount\s*\(|requireAccountWithRole\s*\(|requireAccountMatchesCreator|assertCreatorRelayMutationAllowed|authorizeCreatorMutationSecretOrSession|requirePlatformOperatorForRequest|RELAY_OPS_FEATURE_FLAG_SECRET|identityService\.resolveSession|readSessionCookie\s*\(|getSupabaseUserFromAccessToken|checkPostAccess|evaluatePostPermission|verifyDiscordIngestHmac/;
 
 /** Intentionally unauthenticated or OAuth-only; not creator session–scoped. */
 const LEGACY_CREATOR_SCOPED = new Set([
   "/api/v1/webhooks/patreon/platform/:opaqueToken",
   "/api/v1/auth/patreon/patron/exchange",
+  // Token refresh still keyed by creator_id body (migrate to session ownership).
+  "/api/v1/auth/patreon/refresh",
+  // Sync-state read still keyed by creator_id query (migrate to session ownership).
+  "/api/v1/patreon/sync-state",
   "/api/v1/auth/signup",
   "/api/v1/auth/login",
   "/api/v1/identity/register",
