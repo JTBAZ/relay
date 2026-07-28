@@ -470,6 +470,7 @@ export async function getPostExternalMetrics(
 
   const snapshotsByAttempt = new Map<string, typeof snapshots>();
   for (const row of snapshots) {
+    if (!row.attemptId) continue;
     const list = snapshotsByAttempt.get(row.attemptId) ?? [];
     list.push(row);
     snapshotsByAttempt.set(row.attemptId, list);
