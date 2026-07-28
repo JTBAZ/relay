@@ -18,7 +18,7 @@ import {
   type GalleryPostLifecycle
 } from "@/lib/active-post-presence";
 import { pickPrimaryAccessTierIdForChip } from "@/lib/tier-access";
-import type { GalleryItem, TierFacet } from "@/lib/relay-api";
+import { relayFetch, type GalleryItem, type TierFacet } from "@/lib/relay-api";
 
 /** v0 PostGridCard mint */
 const MINT = "#9bf0c4";
@@ -35,6 +35,9 @@ type Props = {
   aspectRatio?: string;
   /** lab2 adds v0 status pill chrome over live media. */
   presentation?: "default" | "lab2";
+  /** Owning studio — required for export Retry when media download failed. */
+  creatorId?: string;
+  onExportRetryComplete?: () => void;
   onToggleSelect: (items: GalleryItem[]) => void;
   /** Open packaging hero for this post (body / Enter). */
   onOpen: (items: GalleryItem[]) => void;
@@ -56,6 +59,8 @@ export default function ActivePostPresenceCard({
   flatIndex,
   aspectRatio = "3 / 4",
   presentation = "default",
+  creatorId,
+  onExportRetryComplete,
   onToggleSelect,
   onOpen,
   onFocusIndex,
@@ -66,6 +71,7 @@ export default function ActivePostPresenceCard({
   const slideItems = mediaItems.length > 0 ? mediaItems : items;
   const [hovered, setHovered] = useState(false);
   const [activeSlide, setActiveSlide] = useState(0);
+  const [exportRetryBusy, setExportRetryBusy] = useState(false);
   const selectCheckboxRef = useRef<HTMLInputElement>(null);
 
   const isMultiMedia = slideItems.length > 1;
@@ -116,6 +122,24 @@ export default function ActivePostPresenceCard({
       : `Select ${primary.title}`;
 
   const main = postCarouselMainVisual(item);
+  const showExportFail =
+    !item.has_export && Boolean(item.export_error) && Boolean(creatorId);
+
+  const runExportRetry = async (e: ReactMouseEvent<HTMLButtonElement>) => {
+    e.stopPropagation();
+    if (!creatorId || exportRetryBusy) return;
+    setExportRetryBusy(true);
+    try {
+      await relayFetch<unknown>("/api/v1/export/media", {
+        method: "POST",
+        body: JSON.stringify({ creator_id: creatorId, media_id: item.media_id })
+      });
+      onExportRetryComplete?.();
+    } finally {
+      setExportRetryBusy(false);
+    }
+  };
+
   const primaryDest = presentDests[0] ?? null;
   const cardHue = lab2HueFromSeed(primary.post_id || primary.title || String(flatIndex));
 
@@ -354,10 +378,35 @@ export default function ActivePostPresenceCard({
           />
         ) : (
           <div className="flex h-full w-full items-center justify-center px-3 text-center">
-            <span className="text-[11px] text-[#666]">No preview</span>
+            <span className="text-[11px] text-[#666]">
+              {showExportFail ? "Couldn't fetch file" : "No preview"}
+            </span>
           </div>
         )}
       </div>
+
+      {showExportFail ? (
+        <div
+          className="absolute bottom-0 left-0 right-0 z-30 flex items-center justify-between gap-2 border-t border-amber-500/35 bg-black/85 px-2 py-1.5"
+          onClick={(e) => e.stopPropagation()}
+          role="status"
+        >
+          <span
+            className="min-w-0 flex-1 truncate text-[10px] leading-tight text-amber-100/90"
+            title={item.export_error}
+          >
+            Couldn&apos;t fetch file
+          </span>
+          <button
+            type="button"
+            disabled={exportRetryBusy}
+            onClick={runExportRetry}
+            className="shrink-0 rounded border border-amber-500/50 bg-amber-500/15 px-2 py-0.5 text-[10px] font-medium text-amber-100 transition-colors hover:bg-amber-500/25 disabled:opacity-50"
+          >
+            {exportRetryBusy ? "…" : "Retry"}
+          </button>
+        </div>
+      ) : null}
 
       {/* Bottom gradient */}
       <div

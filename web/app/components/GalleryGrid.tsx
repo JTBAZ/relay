@@ -93,7 +93,9 @@ function GalleryGrid({
   onPresentClick,
   onGhostClick,
   onOpenLinkedSet,
-  onOpenPost
+  onOpenPost,
+  creatorId,
+  onExportRetryComplete
 }: Props) {
   const cards = useMemo(() => collapsePostGroupsToGridCards(groups), [groups]);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -221,6 +223,8 @@ function GalleryGrid({
                       flatIndex={idx}
                       aspectRatio={tileAspect}
                       presentation={isLab2Grid ? "lab2" : "default"}
+                      creatorId={creatorId}
+                      onExportRetryComplete={onExportRetryComplete}
                       onToggleSelect={onToggleSelectGroup}
                       onFocusIndex={onFocusIndex}
                       onOpen={onOpenPost}

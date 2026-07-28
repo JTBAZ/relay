@@ -6,7 +6,8 @@ import type { CanonicalSnapshot } from "../src/ingest/canonical-store.js";
 import { FileCanonicalStore } from "../src/ingest/canonical-store.js";
 import {
   ExportService,
-  upstreamUrlLooksLikePatreonHosted
+  upstreamUrlLooksLikePatreonHosted,
+  upstreamUrlNeedsPatreonOAuthBearer
 } from "../src/export/export-service.js";
 import { FileExportIndex } from "../src/export/export-index.js";
 import {
@@ -25,6 +26,18 @@ describe("upstreamUrlLooksLikePatreonHosted", () => {
     ).toBe(true);
     expect(upstreamUrlLooksLikePatreonHosted("https://www.patreon.com/file")).toBe(true);
     expect(upstreamUrlLooksLikePatreonHosted("https://example.com/x")).toBe(false);
+  });
+});
+
+describe("upstreamUrlNeedsPatreonOAuthBearer", () => {
+  it("requires Bearer only for patreon.com hosts, not signed CDN", () => {
+    expect(
+      upstreamUrlNeedsPatreonOAuthBearer("https://c10.patreonusercontent.com/4/patreon-media/p/post/1.jpg")
+    ).toBe(false);
+    expect(upstreamUrlNeedsPatreonOAuthBearer("https://patreonusercontent.com/x")).toBe(false);
+    expect(upstreamUrlNeedsPatreonOAuthBearer("https://www.patreon.com/file")).toBe(true);
+    expect(upstreamUrlNeedsPatreonOAuthBearer("https://patreon.com/file")).toBe(true);
+    expect(upstreamUrlNeedsPatreonOAuthBearer("https://example.com/x")).toBe(false);
   });
 });
 
@@ -156,12 +169,48 @@ describe("ExportService.exportMedia", () => {
     }
   });
 
-  it("sends creator OAuth Bearer token for Patreon-hosted upstream URLs", async () => {
+  it("does not send OAuth Bearer for signed patreonusercontent CDN URLs", async () => {
     const root = await mkdtemp(join(tmpdir(), "relay-export-test-"));
     try {
       const snap = minimalSnapshot();
       snap.media.c1!.m1!.current.upstream_url =
-        "https://c10.patreonusercontent.com/3/abc.jpeg";
+        "https://c10.patreonusercontent.com/4/patreon-media/p/post/165070564/1.jpg?token-hash=abc&token-time=1";
+      const canonPath = join(root, "canonical.json");
+      await writeFile(canonPath, JSON.stringify(snap), "utf8");
+      const canonicalStore = new FileCanonicalStore(canonPath);
+      const exportRoot = join(root, "exports");
+      const exportIndex = new FileExportIndex(exportRoot);
+      let authHeader: string | null = null;
+      let sawHeaders = false;
+      const fetchImpl = async (_url: string, init?: RequestInit) => {
+        sawHeaders = true;
+        authHeader = new Headers(init?.headers as HeadersInit | undefined).get(
+          "authorization"
+        );
+        return new Response(new Uint8Array([9]), { status: 200 });
+      };
+      const svc = new ExportService(
+        canonicalStore,
+        exportIndex,
+        exportRoot,
+        fetchImpl as unknown as typeof fetch,
+        { max_attempts: 2, base_delay_ms: 1, timeout_ms: 5000 },
+        undefined,
+        async () => "creator_oauth_token"
+      );
+      await svc.exportMedia("c1", "m1");
+      expect(sawHeaders).toBe(true);
+      expect(authHeader).toBeNull();
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("sends creator OAuth Bearer token for patreon.com upstream URLs", async () => {
+    const root = await mkdtemp(join(tmpdir(), "relay-export-test-"));
+    try {
+      const snap = minimalSnapshot();
+      snap.media.c1!.m1!.current.upstream_url = "https://www.patreon.com/file";
       const canonPath = join(root, "canonical.json");
       await writeFile(canonPath, JSON.stringify(snap), "utf8");
       const canonicalStore = new FileCanonicalStore(canonPath);
@@ -190,11 +239,47 @@ describe("ExportService.exportMedia", () => {
     }
   });
 
+  it("never sends Patreon OAuth Bearer for non-Patreon upstream URLs", async () => {
+    const root = await mkdtemp(join(tmpdir(), "relay-export-test-"));
+    try {
+      const snap = minimalSnapshot();
+      snap.media.c1!.m1!.current.upstream_url = "https://cdn.example.com/asset.png";
+      const canonPath = join(root, "canonical.json");
+      await writeFile(canonPath, JSON.stringify(snap), "utf8");
+      const canonicalStore = new FileCanonicalStore(canonPath);
+      const exportRoot = join(root, "exports");
+      const exportIndex = new FileExportIndex(exportRoot);
+      let authHeader: string | null = null;
+      const fetchImpl = async (_url: string, init?: RequestInit) => {
+        authHeader = new Headers(init?.headers as HeadersInit | undefined).get(
+          "authorization"
+        );
+        return new Response(new Uint8Array([9]), { status: 200 });
+      };
+      const svc = new ExportService(
+        canonicalStore,
+        exportIndex,
+        exportRoot,
+        fetchImpl as unknown as typeof fetch,
+        { max_attempts: 2, base_delay_ms: 1, timeout_ms: 5000 },
+        undefined,
+        async () => "creator_oauth_token"
+      );
+      await svc.exportMedia("c1", "m1");
+      expect(authHeader).toBeNull();
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   it("clears export_failures on successful export after prior failure file exists", async () => {
     const root = await mkdtemp(join(tmpdir(), "relay-export-test-"));
     try {
+      const snap = minimalSnapshot();
+      snap.media.c1!.m1!.current.upstream_url =
+        "https://c10.patreonusercontent.com/4/patreon-media/p/post/1.jpg?token-hash=abc";
       const canonPath = join(root, "canonical.json");
-      await writeFile(canonPath, JSON.stringify(minimalSnapshot()), "utf8");
+      await writeFile(canonPath, JSON.stringify(snap), "utf8");
       const canonicalStore = new FileCanonicalStore(canonPath);
       const exportRoot = join(root, "exports");
       const exportIndex = new FileExportIndex(exportRoot);
@@ -204,22 +289,36 @@ describe("ExportService.exportMedia", () => {
         JSON.stringify({
           creator_id: "c1",
           media: {},
-          export_failures: { m1: { message: "old", failed_at: "2026-01-01T00:00:00.000Z" } }
+          export_failures: {
+            m1: {
+              message: "Download failed with status 403",
+              failed_at: "2026-01-01T00:00:00.000Z"
+            }
+          }
         }),
         "utf8"
       );
       let calls = 0;
-      const fetchImpl = async () => {
+      let authHeader: string | null = "unset";
+      const fetchImpl = async (_url: string, init?: RequestInit) => {
         calls += 1;
+        authHeader = new Headers(init?.headers as HeadersInit | undefined).get(
+          "authorization"
+        );
         return new Response(new Uint8Array([9]), { status: 200 });
       };
-      const svc = new ExportService(canonicalStore, exportIndex, exportRoot, fetchImpl, {
-        max_attempts: 2,
-        base_delay_ms: 1,
-        timeout_ms: 5000
-      });
+      const svc = new ExportService(
+        canonicalStore,
+        exportIndex,
+        exportRoot,
+        fetchImpl as unknown as typeof fetch,
+        { max_attempts: 2, base_delay_ms: 1, timeout_ms: 5000 },
+        undefined,
+        async () => "creator_oauth_token"
+      );
       await svc.exportMedia("c1", "m1");
       expect(calls).toBe(1);
+      expect(authHeader).toBeNull();
       const raw = await readFile(join(exportRoot, "c1", "export_index.json"), "utf8");
       const idx = JSON.parse(raw) as CreatorExportIndex;
       expect(idx.media.m1).toBeDefined();

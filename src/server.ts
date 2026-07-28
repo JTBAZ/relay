@@ -5563,15 +5563,7 @@ export function createApp(config: AppConfig): CreateAppResult {
     }
     recordExportMediaAttempt();
     const exportCreatorId = (body.creator_id as string).trim();
-    if (
-      !(await assertCreatorRelayMutationAllowed(
-        req,
-        res,
-        traceId,
-        config.prisma,
-        exportCreatorId
-      ))
-    ) {
+    if (!(await authorizeCreatorMutationSecretOrSession(req, res, traceId, exportCreatorId))) {
       return;
     }
     try {

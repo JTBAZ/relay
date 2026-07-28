@@ -85,8 +85,7 @@ type MediaAssetExportSelect = {
 };
 
 /**
- * Patreon media URLs often return 403 without the creator OAuth token; plain `fetch(url)` is not enough.
- * @description Hostname heuristic to decide when to attach Patreon OAuth headers during export fetch.
+ * @description Hostname heuristic for any Patreon-controlled media host (API or signed CDN).
  * @param urlStr Absolute URL string.
  * @returns `true` when host appears to be Patreon-controlled.
  */
@@ -100,6 +99,22 @@ export function upstreamUrlLooksLikePatreonHosted(urlStr: string): boolean {
       h === "patreonusercontent.com" ||
       h.endsWith(".patreonusercontent.com")
     );
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Signed `*.patreonusercontent.com` CDN URLs already carry token-hash/time query params and return
+ * **403** when an OAuth `Authorization` header is attached. Only `patreon.com` file/API URLs need Bearer.
+ * @description Decide whether export fetch should attach the creator OAuth token.
+ * @param urlStr Absolute URL string.
+ * @returns `true` only for patreon.com hosts (not the CDN).
+ */
+export function upstreamUrlNeedsPatreonOAuthBearer(urlStr: string): boolean {
+  try {
+    const h = new URL(urlStr).hostname.toLowerCase();
+    return h === "patreon.com" || h.endsWith(".patreon.com");
   } catch {
     return false;
   }
@@ -206,14 +221,7 @@ export class ExportService {
     }
 
     try {
-      let fetchOpts: FetchUpstreamOptions | undefined;
-      if (upstreamUrlLooksLikePatreonHosted(url) && this.getCreatorPatreonAccessToken) {
-        const token = await this.getCreatorPatreonAccessToken(creatorId);
-        const t = token?.trim();
-        if (t) {
-          fetchOpts = { headers: { authorization: `Bearer ${t}` } };
-        }
-      }
+      const fetchOpts = await this.buildPatreonUpstreamFetchOpts(creatorId, url);
       const response = await fetchUpstreamWithRetries(
         url,
         this.fetchImpl,
@@ -508,15 +516,24 @@ export class ExportService {
     return null;
   }
 
-  private async fetchUpstreamMediaBuffer(creatorId: string, url: string): Promise<Buffer> {
-    let fetchOpts: FetchUpstreamOptions | undefined;
-    if (upstreamUrlLooksLikePatreonHosted(url) && this.getCreatorPatreonAccessToken) {
-      const token = await this.getCreatorPatreonAccessToken(creatorId);
-      const t = token?.trim();
-      if (t) {
-        fetchOpts = { headers: { authorization: `Bearer ${t}` } };
-      }
+  /**
+   * Attach creator OAuth Bearer only for `patreon.com` hosts. Signed CDN URLs must be fetched bare.
+   */
+  private async buildPatreonUpstreamFetchOpts(
+    creatorId: string,
+    url: string
+  ): Promise<FetchUpstreamOptions | undefined> {
+    if (!upstreamUrlNeedsPatreonOAuthBearer(url) || !this.getCreatorPatreonAccessToken) {
+      return undefined;
     }
+    const token = await this.getCreatorPatreonAccessToken(creatorId);
+    const t = token?.trim();
+    if (!t) return undefined;
+    return { headers: { authorization: `Bearer ${t}` } };
+  }
+
+  private async fetchUpstreamMediaBuffer(creatorId: string, url: string): Promise<Buffer> {
+    const fetchOpts = await this.buildPatreonUpstreamFetchOpts(creatorId, url);
     const response = await fetchUpstreamWithRetries(
       url,
       this.fetchImpl,
