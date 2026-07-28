@@ -63,4 +63,23 @@ describe("POST /api/v1/patreon/webhooks/register", () => {
     expect(res.body?.error?.code).toBe("CONFIG_ERROR");
     expect(String(res.body?.error?.message ?? "")).toMatch(/RELAY_PUBLIC_WEBHOOK_BASE_URL/i);
   });
+
+  it("in production without secret, rejects unauthenticated register (session required)", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("RELAY_CREATOR_ROUTE_SECRET", "");
+    vi.stubEnv("RELAY_PUBLIC_WEBHOOK_BASE_URL", "https://api.example.com");
+    const tempDir = await mkdtemp(join(tmpdir(), "relay-wh-reg-prod-"));
+    const key = randomBytes(32).toString("base64");
+    const { app } = createApp({
+      ...baseConfig(tempDir),
+      relay_token_encryption_key: key,
+      public_webhook_base_url: "https://api.example.com"
+    });
+    const res = await request(app)
+      .post("/api/v1/patreon/webhooks/register")
+      .send({ creator_id: "creator_a" });
+    expect(res.status).toBeGreaterThanOrEqual(401);
+    expect(res.status).toBeLessThan(500);
+    expect(String(res.body?.error?.message ?? "")).not.toMatch(/X-Relay-Creator-Secret/i);
+  });
 });

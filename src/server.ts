@@ -728,7 +728,9 @@ import { DbCloneSiteStore } from "./clone/clone-store-db.js";
 import { FileCloneSiteStore } from "./clone/clone-store.js";
 import {
   assertCreatorRelayMutationAllowed,
-  relayCreatorSecretBypassesOAuthBind
+  relayCreatorRouteSecretMatches,
+  relayCreatorSecretBypassesOAuthBind,
+  relayTenantExists
 } from "./identity/creator-route-guard.js";
 import { IdentityService } from "./identity/identity-service.js";
 import { DbIdentityStore, PatreonAccountLinkConflictError } from "./identity/identity-store-db.js";
@@ -4825,15 +4827,7 @@ export function createApp(config: AppConfig): CreateAppResult {
         : undefined;
     const forceRefreshPostAccess = body.force_refresh_post_access === true;
 
-    if (
-      !(await assertCreatorRelayMutationAllowed(
-        req,
-        res,
-        traceId,
-        config.prisma,
-        creatorId.trim()
-      ))
-    ) {
+    if (!(await authorizeCreatorMutationSecretOrSession(req, res, traceId, creatorId.trim()))) {
       return;
     }
 
@@ -4957,15 +4951,7 @@ export function createApp(config: AppConfig): CreateAppResult {
         .json(errorEnvelope("VALIDATION_ERROR", "Invalid request payload.", traceId, details));
     }
     const syncCreatorId = (body.creator_id as string).trim();
-    if (
-      !(await assertCreatorRelayMutationAllowed(
-        req,
-        res,
-        traceId,
-        config.prisma,
-        syncCreatorId
-      ))
-    ) {
+    if (!(await authorizeCreatorMutationSecretOrSession(req, res, traceId, syncCreatorId))) {
       return;
     }
     try {
@@ -5036,15 +5022,7 @@ export function createApp(config: AppConfig): CreateAppResult {
         .json(errorEnvelope("VALIDATION_ERROR", "Invalid request payload.", traceId, details));
     }
     const accessCreatorId = (body.creator_id as string).trim();
-    if (
-      !(await assertCreatorRelayMutationAllowed(
-        req,
-        res,
-        traceId,
-        config.prisma,
-        accessCreatorId
-      ))
-    ) {
+    if (!(await authorizeCreatorMutationSecretOrSession(req, res, traceId, accessCreatorId))) {
       return;
     }
     if (!config.prisma) {
@@ -5094,15 +5072,7 @@ export function createApp(config: AppConfig): CreateAppResult {
         .json(errorEnvelope("VALIDATION_ERROR", "Invalid request payload.", traceId, details));
     }
     const creatorId = (body.creator_id as string).trim();
-    if (
-      !(await assertCreatorRelayMutationAllowed(
-        req,
-        res,
-        traceId,
-        config.prisma,
-        creatorId
-      ))
-    ) {
+    if (!(await authorizeCreatorMutationSecretOrSession(req, res, traceId, creatorId))) {
       return;
     }
     try {
@@ -6822,6 +6792,40 @@ export function createApp(config: AppConfig): CreateAppResult {
       if (sendRelayAuthError(res, err, traceId)) return false;
       throw err;
     }
+  }
+
+  /**
+   * Studio UI sends Bearer/session only. Operator/headless may send `X-Relay-Creator-Secret`.
+   * When the secret env is unset, non-production still fails open via the secret guard; production
+   * falls through to session ownership so creators can re-register webhooks / sync without an
+   * operator header the browser never has.
+   */
+  async function authorizeCreatorMutationSecretOrSession(
+    req: Request,
+    res: Response,
+    traceId: string,
+    creatorId: string
+  ): Promise<boolean> {
+    if (relayCreatorRouteSecretMatches(req)) {
+      return assertCreatorRelayMutationAllowed(req, res, traceId, config.prisma, creatorId);
+    }
+    const session = await requirePatronBearerSession(req, res, traceId);
+    if (!session) {
+      return false;
+    }
+    if (!(await requireAccountMatchesCreator(req, res, traceId, creatorId))) {
+      return false;
+    }
+    if (config.prisma && process.env.RELAY_ENFORCE_CREATOR_TENANT === "1") {
+      const ok = await relayTenantExists(config.prisma, creatorId.trim());
+      if (!ok) {
+        res
+          .status(404)
+          .json(errorEnvelope("NOT_FOUND", "No tenant for this creator_id.", traceId));
+        return false;
+      }
+    }
+    return true;
   }
 
   /**
