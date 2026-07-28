@@ -29,8 +29,25 @@ export type ClaimOAuthCodeResult =
   | { kind: "in_flight" }
   | { kind: "conflict"; reason: string };
 
+function replayFromRow(row: {
+  resultJson: Prisma.JsonValue | null;
+  errorCode: string | null;
+  status: OAuthTransactionStatus;
+}): ClaimOAuthCodeResult {
+  return {
+    kind: "replay",
+    resultJson: row.resultJson,
+    errorCode: row.errorCode,
+    status: row.status
+  };
+}
+
 /**
  * Atomically claim an authorization code for exchange, or return a prior completed outcome.
+ *
+ * When `stateHash` is provided (creator prepare / signed-state flows), prefer the pending
+ * prepare row and attach `codeHash` to it. Creating a second row with the same `state_hash`
+ * violates the unique constraint and previously left the HTTP request failing mid-handler.
  */
 export async function claimOAuthCodeExchange(
   prisma: PrismaClient,
@@ -45,6 +62,65 @@ export async function claimOAuthCodeExchange(
   }
 ): Promise<ClaimOAuthCodeResult> {
   const codeHash = hashOAuthSecret(args.code);
+  const stateHash = args.stateHash?.trim() || null;
+
+  if (stateHash) {
+    const byState = await prisma.oAuthTransaction.findUnique({
+      where: { stateHash }
+    });
+    if (byState) {
+      if (byState.accountId !== args.accountId) {
+        return { kind: "conflict", reason: "state_bound_to_other_account" };
+      }
+      if (
+        byState.status === OAuthTransactionStatus.completed ||
+        byState.status === OAuthTransactionStatus.failed
+      ) {
+        if (byState.codeHash && byState.codeHash !== codeHash) {
+          return { kind: "conflict", reason: "state_already_consumed" };
+        }
+        return replayFromRow(byState);
+      }
+      if (byState.status === OAuthTransactionStatus.in_progress) {
+        return { kind: "in_flight" };
+      }
+      if (byState.status === OAuthTransactionStatus.pending) {
+        if (byState.expiresAt.getTime() < Date.now()) {
+          return { kind: "conflict", reason: "state_expired" };
+        }
+        try {
+          const updated = await prisma.oAuthTransaction.updateMany({
+            where: {
+              id: byState.id,
+              status: OAuthTransactionStatus.pending
+            },
+            data: {
+              status: OAuthTransactionStatus.in_progress,
+              codeHash,
+              consumedAt: new Date(),
+              redirectUri: args.redirectUri,
+              relayCreatorId: args.relayCreatorId ?? byState.relayCreatorId
+            }
+          });
+          if (updated.count === 0) return { kind: "in_flight" };
+          return { kind: "claimed", transactionId: byState.id };
+        } catch {
+          const racedCode = await prisma.oAuthTransaction.findUnique({ where: { codeHash } });
+          if (racedCode) {
+            if (
+              racedCode.status === OAuthTransactionStatus.completed ||
+              racedCode.status === OAuthTransactionStatus.failed
+            ) {
+              return replayFromRow(racedCode);
+            }
+            return { kind: "in_flight" };
+          }
+          return { kind: "conflict", reason: "state_claim_failed" };
+        }
+      }
+    }
+  }
+
   const existing = await prisma.oAuthTransaction.findUnique({
     where: { codeHash }
   });
@@ -53,12 +129,7 @@ export async function claimOAuthCodeExchange(
       existing.status === OAuthTransactionStatus.completed ||
       existing.status === OAuthTransactionStatus.failed
     ) {
-      return {
-        kind: "replay",
-        resultJson: existing.resultJson,
-        errorCode: existing.errorCode,
-        status: existing.status
-      };
+      return replayFromRow(existing);
     }
     if (existing.status === OAuthTransactionStatus.in_progress) {
       return { kind: "in_flight" };
@@ -93,7 +164,7 @@ export async function claimOAuthCodeExchange(
         purpose: args.purpose,
         status: OAuthTransactionStatus.in_progress,
         codeHash,
-        stateHash: args.stateHash ?? null,
+        stateHash,
         relayCreatorId: args.relayCreatorId ?? null,
         redirectUri: args.redirectUri,
         expiresAt,
@@ -102,21 +173,47 @@ export async function claimOAuthCodeExchange(
     });
     return { kind: "claimed", transactionId: created.id };
   } catch (err) {
-    // Unique race on code_hash — re-read for replay/in-flight.
-    const raced = await prisma.oAuthTransaction.findUnique({ where: { codeHash } });
-    if (raced) {
+    // Unique race on code_hash or state_hash — re-read for replay/in-flight.
+    const racedCode = await prisma.oAuthTransaction.findUnique({ where: { codeHash } });
+    if (racedCode) {
       if (
-        raced.status === OAuthTransactionStatus.completed ||
-        raced.status === OAuthTransactionStatus.failed
+        racedCode.status === OAuthTransactionStatus.completed ||
+        racedCode.status === OAuthTransactionStatus.failed
       ) {
-        return {
-          kind: "replay",
-          resultJson: raced.resultJson,
-          errorCode: raced.errorCode,
-          status: raced.status
-        };
+        return replayFromRow(racedCode);
       }
       return { kind: "in_flight" };
+    }
+    if (stateHash) {
+      const racedState = await prisma.oAuthTransaction.findUnique({ where: { stateHash } });
+      if (racedState) {
+        if (
+          racedState.status === OAuthTransactionStatus.completed ||
+          racedState.status === OAuthTransactionStatus.failed
+        ) {
+          return replayFromRow(racedState);
+        }
+        if (racedState.status === OAuthTransactionStatus.in_progress) {
+          return { kind: "in_flight" };
+        }
+        if (
+          racedState.status === OAuthTransactionStatus.pending &&
+          racedState.accountId === args.accountId
+        ) {
+          const updated = await prisma.oAuthTransaction.updateMany({
+            where: { id: racedState.id, status: OAuthTransactionStatus.pending },
+            data: {
+              status: OAuthTransactionStatus.in_progress,
+              codeHash,
+              consumedAt: new Date(),
+              redirectUri: args.redirectUri,
+              relayCreatorId: args.relayCreatorId ?? racedState.relayCreatorId
+            }
+          });
+          if (updated.count === 0) return { kind: "in_flight" };
+          return { kind: "claimed", transactionId: racedState.id };
+        }
+      }
     }
     throw err;
   }

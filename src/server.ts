@@ -3875,14 +3875,26 @@ export function createApp(config: AppConfig): CreateAppResult {
 
     let oauthTxId: string | null = null;
     if (config.prisma && exchangeAccountId) {
-      const claim = await claimOAuthCodeExchange(config.prisma, {
-        accountId: exchangeAccountId,
-        purpose: OAuthTransactionPurpose.creator_ingest,
-        code: String(body.code),
-        redirectUri: String(body.redirect_uri),
-        relayCreatorId: creatorId,
-        stateHash: stateHashForTx
-      });
+      let claim: Awaited<ReturnType<typeof claimOAuthCodeExchange>>;
+      try {
+        claim = await claimOAuthCodeExchange(config.prisma, {
+          accountId: exchangeAccountId,
+          purpose: OAuthTransactionPurpose.creator_ingest,
+          code: String(body.code),
+          redirectUri: String(body.redirect_uri),
+          relayCreatorId: creatorId,
+          stateHash: stateHashForTx
+        });
+      } catch (err) {
+        serverLog.error({ err, traceId }, "claimOAuthCodeExchange failed");
+        return res.status(500).json(
+          errorEnvelope(
+            "INTERNAL",
+            "Could not start Patreon OAuth exchange. Retry from Connect.",
+            traceId
+          )
+        );
+      }
       if (claim.kind === "replay") {
         recordOAuthCallbackReplay();
         if (claim.status === "failed") {

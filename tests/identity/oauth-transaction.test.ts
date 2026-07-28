@@ -86,4 +86,51 @@ describe("oauth-transaction", () => {
     });
     expect(claim).toEqual({ kind: "in_flight" });
   });
+
+  it("attaches codeHash to prepare-issued pending row by stateHash", async () => {
+    const stateHash = hashOAuthSecret("signed-state");
+    const pending = {
+      id: "tx_prepare",
+      accountId: "acc_1",
+      status: OAuthTransactionStatus.pending,
+      stateHash,
+      codeHash: null,
+      relayCreatorId: "cr_1",
+      expiresAt: new Date(Date.now() + 60_000),
+      resultJson: null,
+      errorCode: null
+    };
+    const prisma = {
+      oAuthTransaction: {
+        findUnique: vi.fn().mockImplementation(async ({ where }: { where: Record<string, string> }) => {
+          if (where.stateHash === stateHash) return pending;
+          return null;
+        }),
+        updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+        create: vi.fn(),
+        update: vi.fn()
+      }
+    } as never;
+
+    const claim = await claimOAuthCodeExchange(prisma, {
+      accountId: "acc_1",
+      purpose: OAuthTransactionPurpose.creator_ingest,
+      code: "patreon-code",
+      redirectUri: "https://relayapp.me/connect/patreon/callback",
+      relayCreatorId: "cr_1",
+      stateHash
+    });
+
+    expect(claim).toEqual({ kind: "claimed", transactionId: "tx_prepare" });
+    expect(prisma.oAuthTransaction.create).not.toHaveBeenCalled();
+    expect(prisma.oAuthTransaction.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: "tx_prepare", status: OAuthTransactionStatus.pending },
+        data: expect.objectContaining({
+          status: OAuthTransactionStatus.in_progress,
+          codeHash: hashOAuthSecret("patreon-code")
+        })
+      })
+    );
+  });
 });
