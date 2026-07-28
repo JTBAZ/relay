@@ -102,7 +102,7 @@ export default function WorkDrilldownClient({ creativeWorkId }: { creativeWorkId
             externalUrl: result.handoff.external_url
           });
           if (handoff.ok) {
-            setRefreshMessage("Extension refresh started — reload shortly to see updated stats.");
+            setRefreshMessage("Extension refresh finished — stats updated.");
             await loadBundle(performanceRange);
           } else {
             setRefreshMessage(handoff.detail ?? "Extension refresh could not start.");

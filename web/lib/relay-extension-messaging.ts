@@ -224,7 +224,7 @@ export function describeRelayExternalMetricsRefreshFailure(
 ): string {
   switch (result.reason) {
     case "no_extension_ids":
-      return "No official Relay extension is configured for this site.";
+      return "No Relay extension ID is configured for this site (NEXT_PUBLIC_RELAY_EXTENSION_IDS).";
     case "no_runtime":
       return "Could not reach the Relay extension from this page.";
     case "invalid_context":
@@ -245,9 +245,25 @@ function externalMetricsRefreshFailureReason(value: unknown): string | undefined
   return undefined;
 }
 
+function isChromeExtensionReceivingEndMissing(message: string): boolean {
+  const lower = message.toLowerCase();
+  return (
+    lower.includes("receiving end does not exist") ||
+    lower.includes("could not establish connection")
+  );
+}
+
 export function describeRelayExternalMetricsRefreshExtensionFailure(
   response: unknown
 ): string {
+  if (typeof response === "string" && response.trim()) {
+    const text = response.trim();
+    if (isChromeExtensionReceivingEndMissing(text)) {
+      return "Relay could not reach the installed extension. Rebuild/load the pinned chrome-prod build and ensure its ID matches NEXT_PUBLIC_RELAY_EXTENSION_IDS.";
+    }
+    return text;
+  }
+
   const detail =
     response !== null &&
     typeof response === "object" &&
@@ -255,9 +271,17 @@ export function describeRelayExternalMetricsRefreshExtensionFailure(
     typeof (response as { detail?: unknown }).detail === "string"
       ? String((response as { detail: string }).detail).trim()
       : "";
-  if (detail) return detail;
+  if (detail) {
+    if (isChromeExtensionReceivingEndMissing(detail)) {
+      return "Relay could not reach the installed extension. Rebuild/load the pinned chrome-prod build and ensure its ID matches NEXT_PUBLIC_RELAY_EXTENSION_IDS.";
+    }
+    return detail;
+  }
 
   const reason = externalMetricsRefreshFailureReason(response);
+  if (typeof reason === "string" && isChromeExtensionReceivingEndMissing(reason)) {
+    return "Relay could not reach the installed extension. Rebuild/load the pinned chrome-prod build and ensure its ID matches NEXT_PUBLIC_RELAY_EXTENSION_IDS.";
+  }
   switch (reason) {
     case "not_connected":
       return "Connect the Relay extension first (popup or Settings → Connected extensions).";

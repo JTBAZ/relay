@@ -3,6 +3,7 @@
   "name": "Relay — Patreon connector",
   "version": "0.1.0",
   "description": "Connect Patreon to Relay for backups and cross-post drafts. You review and publish manually in Patreon.",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA0H8VDLItuorTORDbSthIih+pATNm4k7s5opONXFTXYrWxBNwHXXQOV9x4x7BwZgPZaeZSy+PepTjVSekQRxyn8hB20z2C1jUs6gIqp9ActkdBMWRi8VnafDeaKOxMfKaX2T78sjEFgs4IVt6kRdA8Xw+s1JDhCHHkcpd8gz+QoV9Fe6TwqGmGeTsViSguGOQYwqifN+b6dtsvGkTJtVihMcMaMFhRwHar3nALk7cpOkpHsjM6RjUyOgLsDtPNXfQOpVN16+4rIwAZWgjA2C8giSNz9aKZTYfN81g6ihpx04NFbKx4JKbvZtf12UvemFw8N51LxT/e+OTIi+qd6WQrQIDAQAB",
   "icons": {
     "16": "icons/16.png",
     "48": "icons/48.png",

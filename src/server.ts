@@ -371,6 +371,7 @@ import {
   recordExternalPostMetricSnapshots,
   recordExternalPostMetricSnapshotsForPlatformInstance
 } from "./distribution/external-post-metrics-service.js";
+import { refreshCreatorExternalMetricRollups } from "./analytics/platform-instance-refresh-service.js";
 import {
   assertPilotUxPatronOnboardingWalkthroughAccount,
   assertPilotUxOnboardingWalkthroughAccount,
@@ -13400,12 +13401,17 @@ export function createApp(config: AppConfig): CreateAppResult {
             })
           }
         );
+        const rollupUpserted = await refreshCreatorExternalMetricRollups(
+          config.prisma,
+          relayCreatorId
+        );
         const attempt = await getDistributionAttempt(config.prisma, relayCreatorId, attemptId);
         res.setHeader("Cache-Control", "private, no-store");
         return res.status(201).json(
           successEnvelope(
             {
               snapshots,
+              rollup_upserted: rollupUpserted,
               attempt: attempt
                 ? {
                     attempt_id: attempt.attempt_id,
@@ -14915,8 +14921,14 @@ export function createApp(config: AppConfig): CreateAppResult {
             })
           }
         );
+        const rollupUpserted = await refreshCreatorExternalMetricRollups(
+          config.prisma,
+          relayCreatorId
+        );
         res.setHeader("Cache-Control", "private, no-store");
-        return res.status(200).json(successEnvelope({ snapshots }, traceId));
+        return res
+          .status(200)
+          .json(successEnvelope({ snapshots, rollup_upserted: rollupUpserted }, traceId));
       } catch (err) {
         if (err instanceof ExternalPostMetricsValidationError) {
           return res.status(400).json(

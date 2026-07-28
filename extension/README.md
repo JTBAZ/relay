@@ -48,9 +48,18 @@ npm run verify:phase2
 
 Operator: load **`dist/chrome-dev/`** in Chrome and confirm no service-worker errors ([`EXT-2V-phase2-verify-prompt.md`](../docs/Airtable%20Drops/Extension/EXT-2V-phase2-verify-prompt.md)).
 
-## Pinned extension ID (Phase 6)
+## Pinned extension ID
 
-Chrome can use an optional top-level **`key`** field in the manifest (public key) so the extension ID stays stable across unpacked vs store builds. **Do not add in Phase 2** — operator / Phase 6.C per [`EXTENSION_BUILD_PLAN.md`](../docs/EXTENSION_BUILD_PLAN.md).
+Chrome **`key`** (public) is set in `manifests/manifest.chrome.dev.json` and `manifests/manifest.chrome.prod.json` so unpacked and packaged builds share a stable ID:
+
+**`bhnphlohdpinngabohfpogekcgppglgd`**
+
+Mirror that ID in:
+
+- Web: `NEXT_PUBLIC_RELAY_EXTENSION_IDS`
+- API: `RELAY_EXTENSION_ORIGINS=chrome-extension://bhnphlohdpinngabohfpogekcgppglgd`
+
+The matching **private** PEM must **not** be committed (repo `.gitignore` covers `*.pem`). Store it in the operator secret store / OS keychain as `extension/.chrome-extension-private.pem` (local only) for Chrome Web Store signing later. Never paste the private key into Airtable or chat logs.
 
 ## Load unpacked (Chrome)
 

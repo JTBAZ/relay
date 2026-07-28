@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   describeRelayCrossPostExtensionFailure,
   describeRelayCrossPostFailure,
+  describeRelayExternalMetricsRefreshExtensionFailure,
   isRelayCrossPostSuccess
 } from "./relay-extension-messaging";
 
@@ -30,5 +31,15 @@ describe("describeRelayCrossPostExtensionFailure", () => {
     expect(describeRelayCrossPostExtensionFailure({ ok: false, reason: "not_connected" })).toMatch(
       /Connect the Relay extension/i
     );
+  });
+});
+
+describe("describeRelayExternalMetricsRefreshExtensionFailure", () => {
+  it("maps Chrome receiving-end missing to ID allowlist guidance", () => {
+    expect(
+      describeRelayExternalMetricsRefreshExtensionFailure(
+        "Could not establish connection. Receiving end does not exist."
+      )
+    ).toMatch(/NEXT_PUBLIC_RELAY_EXTENSION_IDS/i);
   });
 });

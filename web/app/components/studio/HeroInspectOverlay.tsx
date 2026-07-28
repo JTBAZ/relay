@@ -248,7 +248,7 @@ export default function HeroInspectOverlay({
             externalUrl: result.handoff.external_url
           });
           if (handoff.ok) {
-            setRefreshMessage("Extension refresh started — reload shortly to see updated stats.");
+            setRefreshMessage("Extension refresh finished — stats updated.");
             await load();
           } else {
             setRefreshMessage(handoff.detail ?? "Extension refresh could not start.");

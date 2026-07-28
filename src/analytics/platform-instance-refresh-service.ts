@@ -288,11 +288,12 @@ export async function getPlatformInstanceRefreshStatus(
   return { ok: true, status: mapRefreshStatus(instance) };
 }
 
-async function runCreatorRollupRefresh(
+/** Recompute external daily rollups for a creator (used after metrics ingest + Relay refresh). */
+export async function refreshCreatorExternalMetricRollups(
   prisma: PrismaClient,
   creatorId: string,
-  now: Date,
-  env: NodeJS.ProcessEnv
+  now: Date = new Date(),
+  env: NodeJS.ProcessEnv = process.env
 ): Promise<number> {
   const lookbackDays = rollupLookbackDaysFromEnv(env);
   const since = new Date(now.getTime());
@@ -305,6 +306,16 @@ async function runCreatorRollupRefresh(
     computedAt: now
   });
   return result.upserted;
+}
+
+/** @deprecated Prefer {@link refreshCreatorExternalMetricRollups}. */
+async function runCreatorRollupRefresh(
+  prisma: PrismaClient,
+  creatorId: string,
+  now: Date,
+  env: NodeJS.ProcessEnv
+): Promise<number> {
+  return refreshCreatorExternalMetricRollups(prisma, creatorId, now, env);
 }
 
 export async function refreshRelayPlatformInstanceRollup(

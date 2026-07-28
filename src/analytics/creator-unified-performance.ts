@@ -157,7 +157,8 @@ export function aggregateRollupRows(rows: RollupRow[]): {
       rollupComputedAt = row.computedAt;
     }
 
-    const delta = row.deltaFromPrior ?? 0;
+    // First observation has null delta — use absolute value so baseline likes/comments show.
+    const delta = row.deltaFromPrior ?? row.value;
     addToTotals(totals, row.metricType, delta);
 
     const destinationTotals = byDestination.get(row.destination) ?? emptyMetricTotals();

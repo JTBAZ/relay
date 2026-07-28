@@ -67,6 +67,33 @@ describe("aggregateRollupRows", () => {
       totalReach: 20
     });
   });
+
+  it("uses absolute value when deltaFromPrior is null (first baseline)", () => {
+    const aggregated = aggregateRollupRows([
+      {
+        postId: "post_1",
+        destination: "patreon",
+        metricType: "comments",
+        day: new Date("2026-07-28T00:00:00.000Z"),
+        value: 3,
+        deltaFromPrior: null,
+        computedAt: new Date("2026-07-28T12:00:00.000Z")
+      },
+      {
+        postId: "post_1",
+        destination: "patreon",
+        metricType: "likes",
+        day: new Date("2026-07-28T00:00:00.000Z"),
+        value: 10,
+        deltaFromPrior: null,
+        computedAt: new Date("2026-07-28T12:00:00.000Z")
+      }
+    ]);
+
+    expect(aggregated.totals.comments).toBe(3);
+    expect(aggregated.totals.likes).toBe(10);
+    expect(aggregated.by_destination[0]?.comments).toBe(3);
+  });
 });
 
 describe("getCreatorUnifiedPerformance", () => {
