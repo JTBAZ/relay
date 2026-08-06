@@ -15,6 +15,7 @@
     "start": "node dist/src/main.js",
     "worker": "node dist/src/worker.js",
     "dev:web": "npm run dev --prefix web",
+    "dev:profile-ui": "npm run dev --prefix relay-profile-tsx",
     "dev:stack": "npm run build && concurrently -k -n api,web -c blue,magenta \"npm run start\" \"npm run dev:web\"",
     "dev:stack:restart": "powershell -ExecutionPolicy Bypass -File ./scripts/dev-stack-restart.ps1",
     "dev:restart": "powershell -ExecutionPolicy Bypass -File ./scripts/dev-restart.ps1",
