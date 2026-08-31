@@ -11,7 +11,7 @@ function Fallback() {
 
 export default function StudioLab2Page() {
   return (
-    <div className="flex min-h-0 flex-1 flex-col bg-[#050706] text-[#e8e8e8]">
+    <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-[#050706] text-[#e8e8e8]">
       <Suspense fallback={<Fallback />}>
         <StudioLab2PageClient />
       </Suspense>

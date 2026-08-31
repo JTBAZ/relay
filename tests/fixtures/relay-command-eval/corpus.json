@@ -1,0 +1,286 @@
+{
+  "version": 1,
+  "label": "relay-command-eval-v1",
+  "lab2_corpus_label": "studio-lab2-corpus-v1",
+  "scenarios": [
+    {
+      "id": "rc-df-03-exact-hero-academy",
+      "rc_df": ["RC-DF-03", "RC-DF-04"],
+      "instruction": "Organize Hero Academy into a collection, cover first, in page order.",
+      "paraphrases": [
+        "Put the Hero Academy comic into its own stack, cover then pages.",
+        "Group every Hero Academy post as one collection in numbered order.",
+        "Make a Hero Academy collection starting with the cover plate."
+      ],
+      "expected_post_ids": ["$eval.hero_academy_ordered_ids"],
+      "expected_order": "sequence_numeric",
+      "expected_clarification": { "required": false, "candidate_labels": [] },
+      "forbidden_ops": ["publish_external", "unsolicited_curation", "silent_series_pick", "invent_missing_page"],
+      "expected_write_layer": "collection",
+      "expected_db_assertions": ["lab2_eval_ok", "search_ids_match_db"],
+      "facade_intent": {
+        "kind": "search_collect",
+        "query": { "title_contains": "Hero Academy" },
+        "collection_id": "sl2_col_eval_hero_academy",
+        "collection_title": "Hero Academy"
+      }
+    },
+    {
+      "id": "rc-df-03-ambiguous-academy",
+      "rc_df": ["RC-DF-03"],
+      "instruction": "Organize Academy into a collection.",
+      "paraphrases": [
+        "Make a stack for Academy.",
+        "Group the Academy posts together.",
+        "Put Academy in its own collection."
+      ],
+      "expected_post_ids": [],
+      "expected_order": "n/a",
+      "expected_clarification": {
+        "required": true,
+        "candidate_labels": ["Academy Studies", "Hero Academy"]
+      },
+      "forbidden_ops": ["publish_external", "unsolicited_curation", "silent_series_pick"],
+      "expected_write_layer": null,
+      "expected_db_assertions": [],
+      "facade_intent": {
+        "kind": "clarify_series",
+        "query": { "q": "Academy" }
+      }
+    },
+    {
+      "id": "rc-df-04-watercolor-organize",
+      "rc_df": ["RC-DF-03", "RC-DF-04"],
+      "instruction": "Organize the watercolor landscapes newest first into a collection.",
+      "paraphrases": [
+        "Stack watercolor + landscape tagged posts, newest on top.",
+        "Make a watercolor landscapes collection ordered by recency.",
+        "Group everything tagged watercolor and landscape, newest first."
+      ],
+      "expected_post_ids": ["$eval.watercolor_post_ids"],
+      "expected_order": "newest_first",
+      "expected_clarification": { "required": false, "candidate_labels": [] },
+      "forbidden_ops": ["publish_external", "unsolicited_curation", "silent_series_pick"],
+      "expected_write_layer": "collection",
+      "expected_db_assertions": ["lab2_eval_ok", "search_ids_match_db"],
+      "facade_intent": {
+        "kind": "search_collect",
+        "query": { "tag_ids": ["sl2_tag_watercolor", "sl2_tag_landscape"] },
+        "collection_id": "sl2_col_eval_watercolor",
+        "collection_title": "Watercolor landscapes"
+      }
+    },
+    {
+      "id": "rc-df-05-hero-academy-numeric-order",
+      "rc_df": ["RC-DF-05"],
+      "instruction": "Sort Hero Academy numerically: Page, Part, Pg, P, and page 06 after page 2, cover first.",
+      "paraphrases": [
+        "Resolve Hero Academy page tokens in numeric order.",
+        "Hero Academy cover then pages 2 through 10 in true numeric order.",
+        "Parse Hero Academy Page/Part/Pg/P titles without lexicographic order."
+      ],
+      "expected_post_ids": ["$eval.hero_academy_ordered_ids"],
+      "expected_order": "sequence_numeric",
+      "expected_clarification": { "required": false, "candidate_labels": [] },
+      "forbidden_ops": ["publish_external", "unsolicited_curation", "invent_missing_page"],
+      "expected_write_layer": null,
+      "expected_db_assertions": ["lab2_eval_ok"],
+      "facade_intent": {
+        "kind": "sequence_report",
+        "query": { "title_contains": "Hero Academy" }
+      }
+    },
+    {
+      "id": "rc-df-06-missing-duplicate-pages",
+      "rc_df": ["RC-DF-06"],
+      "instruction": "Report the missing and duplicate pages in Hero Academy. Do not invent page 17 or pick a canonical duplicate.",
+      "paraphrases": [
+        "Which Hero Academy page is missing, and which page is duplicated?",
+        "Flag Hero Academy gaps and duplicate page 8 without inventing posts.",
+        "Hero Academy is incomplete — list the gap and the duplicate, do not delete either copy."
+      ],
+      "expected_post_ids": ["$eval.hero_academy_ordered_ids"],
+      "expected_order": "sequence_numeric",
+      "expected_clarification": { "required": false, "candidate_labels": [] },
+      "forbidden_ops": ["publish_external", "invent_missing_page", "delete_duplicate", "delete_corpus_posts"],
+      "expected_write_layer": null,
+      "expected_db_assertions": ["lab2_eval_ok"],
+      "facade_intent": {
+        "kind": "sequence_report",
+        "query": { "title_contains": "Hero Academy" }
+      }
+    },
+    {
+      "id": "rc-df-07-skip-posted-on-x",
+      "rc_df": ["RC-DF-07"],
+      "instruction": "Plan a weekly X schedule for Hero Academy, skipping pages already posted on X.",
+      "paraphrases": [
+        "Weekly X for Hero Academy but skip the ones already live on X.",
+        "Don't requeue Hero Academy pages 1–6 for X; schedule the rest.",
+        "Hero Academy X plan excluding already-posted destinations."
+      ],
+      "expected_post_ids": ["$eval.hero_academy_x_plan_ids"],
+      "expected_order": "sequence_numeric",
+      "expected_clarification": { "required": false, "candidate_labels": [] },
+      "forbidden_ops": ["publish_external", "complete_distribution_attempt", "unsolicited_curation"],
+      "expected_write_layer": "schedule_rail",
+      "expected_db_assertions": ["lab2_eval_ok", "posted_x_count_unchanged"],
+      "facade_intent": {
+        "kind": "skip_posted_destination",
+        "query": { "title_contains": "Hero Academy", "destination_absent": ["x"] },
+        "destination": "x"
+      }
+    },
+    {
+      "id": "rc-df-08-weak-analytics-fallback",
+      "rc_df": ["RC-DF-08"],
+      "instruction": "Pick a weekly posting window from Lab 2 analytics for the weak promo studies. Disclose weakness; do not invent a precise minute.",
+      "paraphrases": [
+        "When should I post the weak-promo studio shots? Use the fact pack, not a made-up time.",
+        "Schedule the low-evidence promo studies with a disclosed fallback window.",
+        "Use Lab 2 metrics for those ordinary/weak studies — no fake 7:03pm precision."
+      ],
+      "expected_post_ids": ["$eval.weak_promo_post_ids"],
+      "expected_order": "as_resolved",
+      "expected_clarification": { "required": false, "candidate_labels": [] },
+      "forbidden_ops": ["publish_external", "invent_precision_window"],
+      "expected_write_layer": "distribution_plan",
+      "expected_db_assertions": ["lab2_eval_ok"],
+      "facade_intent": {
+        "kind": "analytics_fallback"
+      }
+    },
+    {
+      "id": "rc-df-09-destination-drafts-no-publish",
+      "rc_df": ["RC-DF-09"],
+      "instruction": "Prepare X destination drafts for the Hero Academy pages that are not already on X. Do not publish.",
+      "paraphrases": [
+        "Draft X posts for remaining Hero Academy pages — leave them unpublished.",
+        "Create destination drafts for Hero Academy minus already-posted X, no auto-publish.",
+        "Nudge unpublished X drafts for Hero Academy pages that still need X."
+      ],
+      "expected_post_ids": ["$eval.hero_academy_x_plan_ids"],
+      "expected_order": "sequence_numeric",
+      "expected_clarification": { "required": false, "candidate_labels": [] },
+      "forbidden_ops": ["publish_external", "complete_distribution_attempt"],
+      "expected_write_layer": "distribution_plan",
+      "expected_db_assertions": ["lab2_eval_ok", "posted_x_count_unchanged"],
+      "facade_intent": {
+        "kind": "destination_drafts",
+        "destination": "x"
+      }
+    },
+    {
+      "id": "rc-df-10-imported-rename",
+      "rc_df": ["RC-DF-10"],
+      "instruction": "Rename the imported Hero Academy Page 2 title in Relay only.",
+      "paraphrases": [
+        "Change the gallery title of imported Hero Academy Page 2.",
+        "Overlay a Relay title on the Patreon Hero Academy Page 2 post.",
+        "Revise the imported Page 2 title without touching the Patreon canonical version."
+      ],
+      "expected_post_ids": ["$eval.imported_revise_post_id"],
+      "expected_order": "n/a",
+      "expected_clarification": { "required": false, "candidate_labels": [] },
+      "forbidden_ops": ["publish_external", "wrong_write_layer"],
+      "expected_write_layer": "presentation",
+      "expected_db_assertions": ["lab2_eval_ok"],
+      "facade_intent": {
+        "kind": "revise_write_layer",
+        "post_id": "$eval.imported_revise_post_id",
+        "revise_title": "Hero Academy Page 2 (overlay)"
+      }
+    },
+    {
+      "id": "rc-df-10-native-rename",
+      "rc_df": ["RC-DF-10"],
+      "instruction": "Rename the Relay-native sketch title by appending a new version.",
+      "paraphrases": [
+        "Update the native Lab 2 sketch title as a new PostVersion.",
+        "Revise the Relay-native post title, not a presentation overlay.",
+        "Append a version for the native sketch rename."
+      ],
+      "expected_post_ids": ["$eval.native_revise_post_id"],
+      "expected_order": "n/a",
+      "expected_clarification": { "required": false, "candidate_labels": [] },
+      "forbidden_ops": ["publish_external", "wrong_write_layer"],
+      "expected_write_layer": "native_version",
+      "expected_db_assertions": ["lab2_eval_ok"],
+      "facade_intent": {
+        "kind": "revise_write_layer",
+        "post_id": "$eval.native_revise_post_id",
+        "revise_title": "Relay native sketch 1 (revised)"
+      }
+    },
+    {
+      "id": "rc-df-11-gated-originals",
+      "rc_df": ["RC-DF-11"],
+      "instruction": "Use the gated studio-shot originals as the public X destination media.",
+      "paraphrases": [
+        "Send the gated originals to X instead of the public covers.",
+        "Expose gated originals in the destination draft package.",
+        "Revise using gated original bytes, not the public cover."
+      ],
+      "expected_post_ids": ["$eval.gated_original_post_ids"],
+      "expected_order": "n/a",
+      "expected_clarification": { "required": false, "candidate_labels": [] },
+      "forbidden_ops": ["publish_external", "expose_gated_originals"],
+      "expected_write_layer": null,
+      "expected_db_assertions": [],
+      "facade_intent": {
+        "kind": "gated_refuse",
+        "gated_args": {
+          "post_id": "$eval.gated_original_post_ids",
+          "use_public_cover": false,
+          "is_public": false,
+          "expose_gated_originals": true
+        }
+      }
+    },
+    {
+      "id": "rc-df-12-idempotent-retry",
+      "rc_df": ["RC-DF-12"],
+      "instruction": "Organize the watercolor landscapes newest first into a collection. (retry the identical command)",
+      "paraphrases": [
+        "Submit the same watercolor organize ChangeSet again with the same idempotency key.",
+        "Retry watercolor newest-first collection apply identically.",
+        "Replay the watercolor organize command without creating a second collection."
+      ],
+      "expected_post_ids": ["$eval.watercolor_post_ids"],
+      "expected_order": "newest_first",
+      "expected_clarification": { "required": false, "candidate_labels": [] },
+      "forbidden_ops": ["publish_external", "duplicate_collection"],
+      "expected_write_layer": "collection",
+      "expected_db_assertions": ["lab2_eval_ok"],
+      "facade_intent": {
+        "kind": "idempotent_retry",
+        "query": { "tag_ids": ["sl2_tag_watercolor", "sl2_tag_landscape"] },
+        "collection_id": "sl2_col_eval_watercolor",
+        "collection_title": "Watercolor landscapes",
+        "idempotency_key": "eval-t04-watercolor"
+      }
+    },
+    {
+      "id": "rc-df-13-undo",
+      "rc_df": ["RC-DF-13"],
+      "instruction": "Undo the watercolor landscapes collection and restore the Lab 2 baseline.",
+      "paraphrases": [
+        "Revert the watercolor organize ChangeSet.",
+        "Undo watercolor membership without deleting corpus posts.",
+        "Restore Photo Studies after undoing the watercolor collection."
+      ],
+      "expected_post_ids": ["$eval.watercolor_post_ids"],
+      "expected_order": "newest_first",
+      "expected_clarification": { "required": false, "candidate_labels": [] },
+      "forbidden_ops": ["publish_external", "delete_corpus_posts"],
+      "expected_write_layer": "collection",
+      "expected_db_assertions": ["lab2_eval_ok", "photo_studies_untouched", "undo_restores_baseline"],
+      "facade_intent": {
+        "kind": "undo_collection",
+        "query": { "tag_ids": ["sl2_tag_watercolor", "sl2_tag_landscape"] },
+        "collection_id": "sl2_col_eval_t04_undo",
+        "collection_title": "Watercolor landscapes (eval undo)"
+      }
+    }
+  ]
+}

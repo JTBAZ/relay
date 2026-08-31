@@ -1,0 +1,3640 @@
+{
+  "version": 1,
+  "label": "studio-lab2-corpus-v1",
+  "creator": {
+    "relayCreatorId": "rcx_studio_lab2",
+    "accountKey": "studio_lab2",
+    "email": "studio-lab2@relay.test",
+    "displayName": "Studio Lab 2",
+    "campaignId": "sl2_campaign",
+    "devPasswordEnv": "RELAY_STUDIO_LAB2_DEV_PASSWORD",
+    "defaultDevPassword": "studio-lab2-dev-only"
+  },
+  "tags": [
+    {
+      "tag_id": "sl2_tag_watercolor",
+      "label": "watercolor"
+    },
+    {
+      "tag_id": "sl2_tag_comic",
+      "label": "comic"
+    },
+    {
+      "tag_id": "sl2_tag_sketch",
+      "label": "sketch"
+    },
+    {
+      "tag_id": "sl2_tag_wip",
+      "label": "wip"
+    },
+    {
+      "tag_id": "sl2_tag_landscape",
+      "label": "landscape"
+    }
+  ],
+  "tiers": [
+    {
+      "relay_tier_id": "sl2_tier_studio",
+      "title": "Studio",
+      "amount_cents": 1200
+    }
+  ],
+  "posts": [
+    {
+      "post_id": "sl2_ha_cover",
+      "title": "Hero Academy Cover",
+      "description": "Hero Academy cover plate.",
+      "source": "PATREON",
+      "published_at": "2025-01-01T12:00:00.000Z",
+      "is_public": true,
+      "access": "public",
+      "series_id": "sl2_series_hero_academy",
+      "series_sort_order": 0,
+      "tag_ids": [
+        "sl2_tag_comic"
+      ],
+      "media_type": "photo",
+      "media": [
+        {
+          "media_id": "sl2_ha_cover_media",
+          "role": "original",
+          "visibility": "public",
+          "mime_type": "image/jpeg"
+        }
+      ],
+      "tier_ids": []
+    },
+    {
+      "post_id": "sl2_ha_p01",
+      "title": "Hero Academy Page 1",
+      "description": "Hero Academy page 1.",
+      "source": "PATREON",
+      "published_at": "2025-01-01T15:00:00.000Z",
+      "is_public": true,
+      "access": "public",
+      "series_id": "sl2_series_hero_academy",
+      "series_sort_order": 1,
+      "tag_ids": [
+        "sl2_tag_comic"
+      ],
+      "media_type": "photo",
+      "media": [
+        {
+          "media_id": "sl2_ha_p01_media",
+          "role": "original",
+          "visibility": "public",
+          "mime_type": "image/jpeg"
+        }
+      ],
+      "tier_ids": []
+    },
+    {
+      "post_id": "sl2_ha_p02",
+      "title": "Hero Academy Page 2",
+      "description": "Hero Academy page 2.",
+      "source": "PATREON",
+      "published_at": "2025-01-02T15:00:00.000Z",
+      "is_public": true,
+      "access": "public",
+      "series_id": "sl2_series_hero_academy",
+      "series_sort_order": 2,
+      "tag_ids": [
+        "sl2_tag_comic"
+      ],
+      "media_type": "photo",
+      "media": [
+        {
+          "media_id": "sl2_ha_p02_media",
+          "role": "original",
+          "visibility": "public",
+          "mime_type": "image/jpeg"
+        }
+      ],
+      "tier_ids": []
+    },
+    {
+      "post_id": "sl2_ha_p03",
+      "title": "Hero Academy Part 3",
+      "description": "Hero Academy page 3.",
+      "source": "PATREON",
+      "published_at": "2025-01-03T15:00:00.000Z",
+      "is_public": true,
+      "access": "public",
+      "series_id": "sl2_series_hero_academy",
+      "series_sort_order": 3,
+      "tag_ids": [
+        "sl2_tag_comic"
+      ],
+      "media_type": "photo",
+      "media": [
+        {
+          "media_id": "sl2_ha_p03_media",
+          "role": "original",
+          "visibility": "public",
+          "mime_type": "image/jpeg"
+        }
+      ],
+      "tier_ids": []
+    },
+    {
+      "post_id": "sl2_ha_p04",
+      "title": "Hero Academy Pg. 4",
+      "description": "Hero Academy page 4.",
+      "source": "PATREON",
+      "published_at": "2025-01-04T15:00:00.000Z",
+      "is_public": true,
+      "access": "public",
+      "series_id": "sl2_series_hero_academy",
+      "series_sort_order": 4,
+      "tag_ids": [
+        "sl2_tag_comic"
+      ],
+      "media_type": "photo",
+      "media": [
+        {
+          "media_id": "sl2_ha_p04_media",
+          "role": "original",
+          "visibility": "public",
+          "mime_type": "image/jpeg"
+        }
+      ],
+      "tier_ids": []
+    },
+    {
+      "post_id": "sl2_ha_p05",
+      "title": "Hero Academy P. 5",
+      "description": "Hero Academy page 5.",
+      "source": "PATREON",
+      "published_at": "2025-01-05T15:00:00.000Z",
+      "is_public": true,
+      "access": "public",
+      "series_id": "sl2_series_hero_academy",
+      "series_sort_order": 5,
+      "tag_ids": [
+        "sl2_tag_comic"
+      ],
+      "media_type": "photo",
+      "media": [
+        {
+          "media_id": "sl2_ha_p05_media",
+          "role": "original",
+          "visibility": "public",
+          "mime_type": "image/jpeg"
+        }
+      ],
+      "tier_ids": []
+    },
+    {
+      "post_id": "sl2_ha_p06",
+      "title": "Hero Academy page 06",
+      "description": "Hero Academy page 6.",
+      "source": "PATREON",
+      "published_at": "2025-01-06T15:00:00.000Z",
+      "is_public": true,
+      "access": "public",
+      "series_id": "sl2_series_hero_academy",
+      "series_sort_order": 6,
+      "tag_ids": [
+        "sl2_tag_comic"
+      ],
+      "media_type": "photo",
+      "media": [
+        {
+          "media_id": "sl2_ha_p06_media",
+          "role": "original",
+          "visibility": "public",
+          "mime_type": "image/jpeg"
+        }
+      ],
+      "tier_ids": []
+    },
+    {
+      "post_id": "sl2_ha_p07",
+      "title": "Hero Academy Page 7",
+      "description": "Hero Academy page 7.",
+      "source": "PATREON",
+      "published_at": "2025-01-07T15:00:00.000Z",
+      "is_public": true,
+      "access": "public",
+      "series_id": "sl2_series_hero_academy",
+      "series_sort_order": 7,
+      "tag_ids": [
+        "sl2_tag_comic"
+      ],
+      "media_type": "photo",
+      "media": [
+        {
+          "media_id": "sl2_ha_p07_media",
+          "role": "original",
+          "visibility": "public",
+          "mime_type": "image/jpeg"
+        }
+      ],
+      "tier_ids": []
+    },
+    {
+      "post_id": "sl2_ha_p08",
+      "title": "Hero Academy Page 8",
+      "description": "Hero Academy page 8.",
+      "source": "PATREON",
+      "published_at": "2025-01-08T15:00:00.000Z",
+      "is_public": true,
+      "access": "public",
+      "series_id": "sl2_series_hero_academy",
+      "series_sort_order": 8,
+      "tag_ids": [
+        "sl2_tag_comic"
+      ],
+      "media_type": "photo",
+      "media": [
+        {
+          "media_id": "sl2_ha_p08_media",
+          "role": "original",
+          "visibility": "public",
+          "mime_type": "image/jpeg"
+        }
+      ],
+      "tier_ids": []
+    },
+    {
+      "post_id": "sl2_ha_p09",
+      "title": "Hero Academy Page 9",
+      "description": "Hero Academy page 9.",
+      "source": "PATREON",
+      "published_at": "2025-01-09T15:00:00.000Z",
+      "is_public": true,
+      "access": "public",
+      "series_id": "sl2_series_hero_academy",
+      "series_sort_order": 9,
+      "tag_ids": [
+        "sl2_tag_comic"
+      ],
+      "media_type": "photo",
+      "media": [
+        {
+          "media_id": "sl2_ha_p09_media",
+          "role": "original",
+          "visibility": "public",
+          "mime_type": "image/jpeg"
+        }
+      ],
+      "tier_ids": []
+    },
+    {
+      "post_id": "sl2_ha_p10",
+      "title": "Hero Academy Page 10",
+      "description": "Hero Academy page 10.",
+      "source": "PATREON",
+      "published_at": "2025-01-10T15:00:00.000Z",
+      "is_public": true,
+      "access": "public",
+      "series_id": "sl2_series_hero_academy",
+      "series_sort_order": 10,
+      "tag_ids": [
+        "sl2_tag_comic"
+      ],
+      "media_type": "photo",
+      "media": [
+        {
+          "media_id": "sl2_ha_p10_media",
+          "role": "original",
+          "visibility": "public",
+          "mime_type": "image/jpeg"
+        }
+      ],
+      "tier_ids": []
+    },
+    {
+      "post_id": "sl2_ha_p11",
+      "title": "Hero Academy Page 11",
+      "description": "Hero Academy page 11.",
+      "source": "PATREON",
+      "published_at": "2025-01-11T15:00:00.000Z",
+      "is_public": true,
+      "access": "public",
+      "series_id": "sl2_series_hero_academy",
+      "series_sort_order": 11,
+      "tag_ids": [
+        "sl2_tag_comic"
+      ],
+      "media_type": "photo",
+      "media": [
+        {
+          "media_id": "sl2_ha_p11_media",
+          "role": "original",
+          "visibility": "public",
+          "mime_type": "image/jpeg"
+        }
+      ],
+      "tier_ids": []
+    },
+    {
+      "post_id": "sl2_ha_p12",
+      "title": "Hero Academy Page 12",
+      "description": "Hero Academy page 12.",
+      "source": "PATREON",
+      "published_at": "2025-01-12T15:00:00.000Z",
+      "is_public": true,
+      "access": "public",
+      "series_id": "sl2_series_hero_academy",
+      "series_sort_order": 12,
+      "tag_ids": [
+        "sl2_tag_comic"
+      ],
+      "media_type": "photo",
+      "media": [
+        {
+          "media_id": "sl2_ha_p12_media",
+          "role": "original",
+          "visibility": "public",
+          "mime_type": "image/jpeg"
+        }
+      ],
+      "tier_ids": []
+    },
+    {
+      "post_id": "sl2_ha_p13",
+      "title": "Hero Academy Page 13",
+      "description": "Hero Academy page 13.",
+      "source": "PATREON",
+      "published_at": "2025-01-13T15:00:00.000Z",
+      "is_public": true,
+      "access": "public",
+      "series_id": "sl2_series_hero_academy",
+      "series_sort_order": 13,
+      "tag_ids": [
+        "sl2_tag_comic"
+      ],
+      "media_type": "photo",
+      "media": [
+        {
+          "media_id": "sl2_ha_p13_media",
+          "role": "original",
+          "visibility": "public",
+          "mime_type": "image/jpeg"
+        }
+      ],
+      "tier_ids": []
+    },
+    {
+      "post_id": "sl2_ha_p14",
+      "title": "Hero Academy Page 14",
+      "description": "Hero Academy page 14.",
+      "source": "PATREON",
+      "published_at": "2025-01-14T15:00:00.000Z",
+      "is_public": true,
+      "access": "public",
+      "series_id": "sl2_series_hero_academy",
+      "series_sort_order": 14,
+      "tag_ids": [
+        "sl2_tag_comic"
+      ],
+      "media_type": "photo",
+      "media": [
+        {
+          "media_id": "sl2_ha_p14_media",
+          "role": "original",
+          "visibility": "public",
+          "mime_type": "image/jpeg"
+        }
+      ],
+      "tier_ids": []
+    },
+    {
+      "post_id": "sl2_ha_p15",
+      "title": "Hero Academy Page 15",
+      "description": "Hero Academy page 15.",
+      "source": "PATREON",
+      "published_at": "2025-01-15T15:00:00.000Z",
+      "is_public": true,
+      "access": "public",
+      "series_id": "sl2_series_hero_academy",
+      "series_sort_order": 15,
+      "tag_ids": [
+        "sl2_tag_comic"
+      ],
+      "media_type": "photo",
+      "media": [
+        {
+          "media_id": "sl2_ha_p15_media",
+          "role": "original",
+          "visibility": "public",
+          "mime_type": "image/jpeg"
+        }
+      ],
+      "tier_ids": []
+    },
+    {
+      "post_id": "sl2_ha_p16",
+      "title": "Hero Academy Page 16",
+      "description": "Hero Academy page 16.",
+      "source": "PATREON",
+      "published_at": "2025-01-16T15:00:00.000Z",
+      "is_public": true,
+      "access": "public",
+      "series_id": "sl2_series_hero_academy",
+      "series_sort_order": 16,
+      "tag_ids": [
+        "sl2_tag_comic"
+      ],
+      "media_type": "photo",
+      "media": [
+        {
+          "media_id": "sl2_ha_p16_media",
+          "role": "original",
+          "visibility": "public",
+          "mime_type": "image/jpeg"
+        }
+      ],
+      "tier_ids": []
+    },
+    {
+      "post_id": "sl2_ha_p18",
+      "title": "Hero Academy Page 18",
+      "description": "Hero Academy page 18.",
+      "source": "PATREON",
+      "published_at": "2025-01-18T15:00:00.000Z",
+      "is_public": true,
+      "access": "public",
+      "series_id": "sl2_series_hero_academy",
+      "series_sort_order": 18,
+      "tag_ids": [
+        "sl2_tag_comic"
+      ],
+      "media_type": "photo",
+      "media": [
+        {
+          "media_id": "sl2_ha_p18_media",
+          "role": "original",
+          "visibility": "public",
+          "mime_type": "image/jpeg"
+        }
+      ],
+      "tier_ids": []
+    },
+    {
+      "post_id": "sl2_ha_p19",
+      "title": "Hero Academy Page 19",
+      "description": "Hero Academy page 19.",
+      "source": "PATREON",
+      "published_at": "2025-01-19T15:00:00.000Z",
+      "is_public": true,
+      "access": "public",
+      "series_id": "sl2_series_hero_academy",
+      "series_sort_order": 19,
+      "tag_ids": [
+        "sl2_tag_comic"
+      ],
+      "media_type": "photo",
+      "media": [
+        {
+          "media_id": "sl2_ha_p19_media",
+          "role": "original",
+          "visibility": "public",
+          "mime_type": "image/jpeg"
+        }
+      ],
+      "tier_ids": []
+    },
+    {
+      "post_id": "sl2_ha_p20",
+      "title": "Hero Academy Page 20",
+      "description": "Hero Academy page 20.",
+      "source": "PATREON",
+      "published_at": "2025-01-20T15:00:00.000Z",
+      "is_public": true,
+      "access": "public",
+      "series_id": "sl2_series_hero_academy",
+      "series_sort_order": 20,
+      "tag_ids": [
+        "sl2_tag_comic"
+      ],
+      "media_type": "photo",
+      "media": [
+        {
+          "media_id": "sl2_ha_p20_media",
+          "role": "original",
+          "visibility": "public",
+          "mime_type": "image/jpeg"
+        }
+      ],
+      "tier_ids": []
+    },
+    {
+      "post_id": "sl2_ha_p08_dup",
+      "title": "Hero Academy Page 8",
+      "description": "Duplicate page-8 label (later published_at).",
+      "source": "PATREON",
+      "published_at": "2025-01-08T18:00:00.000Z",
+      "is_public": true,
+      "access": "public",
+      "series_id": "sl2_series_hero_academy",
+      "series_sort_order": 8,
+      "tag_ids": [
+        "sl2_tag_comic"
+      ],
+      "media_type": "photo",
+      "media": [
+        {
+          "media_id": "sl2_ha_p08_dup_media",
+          "role": "original",
+          "visibility": "public",
+          "mime_type": "image/jpeg"
+        }
+      ],
+      "tier_ids": []
+    },
+    {
+      "post_id": "sl2_sh_p01",
+      "title": "Starlight Harbor Part 1",
+      "description": "Starlight Harbor part 1.",
+      "source": "PATREON",
+      "published_at": "2025-02-01T15:00:00.000Z",
+      "is_public": true,
+      "access": "public",
+      "series_id": "sl2_series_starlight_harbor",
+      "series_sort_order": 1,
+      "tag_ids": [
+        "sl2_tag_comic"
+      ],
+      "media_type": "photo",
+      "media": [
+        {
+          "media_id": "sl2_sh_p01_media",
+          "role": "original",
+          "visibility": "public",
+          "mime_type": "image/jpeg"
+        }
+      ],
+      "tier_ids": []
+    },
+    {
+      "post_id": "sl2_sh_p02",
+      "title": "Starlight Harbor Part 2",
+      "description": "Starlight Harbor part 2.",
+      "source": "PATREON",
+      "published_at": "2025-02-02T15:00:00.000Z",
+      "is_public": true,
+      "access": "public",
+      "series_id": "sl2_series_starlight_harbor",
+      "series_sort_order": 2,
+      "tag_ids": [
+        "sl2_tag_comic"
+      ],
+      "media_type": "photo",
+      "media": [
+        {
+          "media_id": "sl2_sh_p02_media",
+          "role": "original",
+          "visibility": "public",
+          "mime_type": "image/jpeg"
+        }
+      ],
+      "tier_ids": []
+    },
+    {
+      "post_id": "sl2_sh_p03",
+      "title": "Starlight Harbor Part 3",
+      "description": "Starlight Harbor part 3.",
+      "source": "PATREON",
+      "published_at": "2025-02-03T15:00:00.000Z",
+      "is_public": true,
+      "access": "public",
+      "series_id": "sl2_series_starlight_harbor",
+      "series_sort_order": 3,
+      "tag_ids": [
+        "sl2_tag_comic"
+      ],
+      "media_type": "photo",
+      "media": [
+        {
+          "media_id": "sl2_sh_p03_media",
+          "role": "original",
+          "visibility": "public",
+          "mime_type": "image/jpeg"
+        }
+      ],
+      "tier_ids": []
+    },
+    {
+      "post_id": "sl2_sh_p04",
+      "title": "Starlight Harbor Part 4",
+      "description": "Starlight Harbor part 4.",
+      "source": "PATREON",
+      "published_at": "2025-02-04T15:00:00.000Z",
+      "is_public": true,
+      "access": "public",
+      "series_id": "sl2_series_starlight_harbor",
+      "series_sort_order": 4,
+      "tag_ids": [
+        "sl2_tag_comic"
+      ],
+      "media_type": "photo",
+      "media": [
+        {
+          "media_id": "sl2_sh_p04_media",
+          "role": "original",
+          "visibility": "public",
+          "mime_type": "image/jpeg"
+        }
+      ],
+      "tier_ids": []
+    },
+    {
+      "post_id": "sl2_sh_p05",
+      "title": "Starlight Harbor Part 5",
+      "description": "Starlight Harbor part 5.",
+      "source": "PATREON",
+      "published_at": "2025-02-05T15:00:00.000Z",
+      "is_public": true,
+      "access": "public",
+      "series_id": "sl2_series_starlight_harbor",
+      "series_sort_order": 5,
+      "tag_ids": [
+        "sl2_tag_comic"
+      ],
+      "media_type": "photo",
+      "media": [
+        {
+          "media_id": "sl2_sh_p05_media",
+          "role": "original",
+          "visibility": "public",
+          "mime_type": "image/jpeg"
+        }
+      ],
+      "tier_ids": []
+    },
+    {
+      "post_id": "sl2_sh_p06",
+      "title": "Starlight Harbor Part 6",
+      "description": "Starlight Harbor part 6.",
+      "source": "PATREON",
+      "published_at": "2025-02-06T15:00:00.000Z",
+      "is_public": true,
+      "access": "public",
+      "series_id": "sl2_series_starlight_harbor",
+      "series_sort_order": 6,
+      "tag_ids": [
+        "sl2_tag_comic"
+      ],
+      "media_type": "photo",
+      "media": [
+        {
+          "media_id": "sl2_sh_p06_media",
+          "role": "original",
+          "visibility": "public",
+          "mime_type": "image/jpeg"
+        }
+      ],
+      "tier_ids": []
+    },
+    {
+      "post_id": "sl2_sh_p07",
+      "title": "Starlight Harbor Part 7",
+      "description": "Starlight Harbor part 7.",
+      "source": "PATREON",
+      "published_at": "2025-02-07T15:00:00.000Z",
+      "is_public": true,
+      "access": "public",
+      "series_id": "sl2_series_starlight_harbor",
+      "series_sort_order": 7,
+      "tag_ids": [
+        "sl2_tag_comic"
+      ],
+      "media_type": "photo",
+      "media": [
+        {
+          "media_id": "sl2_sh_p07_media",
+          "role": "original",
+          "visibility": "public",
+          "mime_type": "image/jpeg"
+        }
+      ],
+      "tier_ids": []
+    },
+    {
+      "post_id": "sl2_sh_p08",
+      "title": "Starlight Harbor Part 8",
+      "description": "Starlight Harbor part 8.",
+      "source": "PATREON",
+      "published_at": "2025-02-08T15:00:00.000Z",
+      "is_public": true,
+      "access": "public",
+      "series_id": "sl2_series_starlight_harbor",
+      "series_sort_order": 8,
+      "tag_ids": [
+        "sl2_tag_comic"
+      ],
+      "media_type": "photo",
+      "media": [
+        {
+          "media_id": "sl2_sh_p08_media",
+          "role": "original",
+          "visibility": "public",
+          "mime_type": "image/jpeg"
+        }
+      ],
+      "tier_ids": []
+    },
+    {
+      "post_id": "sl2_sh_p09",
+      "title": "Starlight Harbor Part 9",
+      "description": "Starlight Harbor part 9.",
+      "source": "PATREON",
+      "published_at": "2025-02-09T15:00:00.000Z",
+      "is_public": true,
+      "access": "public",
+      "series_id": "sl2_series_starlight_harbor",
+      "series_sort_order": 9,
+      "tag_ids": [
+        "sl2_tag_comic"
+      ],
+      "media_type": "photo",
+      "media": [
+        {
+          "media_id": "sl2_sh_p09_media",
+          "role": "original",
+          "visibility": "public",
+          "mime_type": "image/jpeg"
+        }
+      ],
+      "tier_ids": []
+    },
+    {
+      "post_id": "sl2_sh_p10",
+      "title": "Starlight Harbor Part 10",
+      "description": "Starlight Harbor part 10.",
+      "source": "PATREON",
+      "published_at": "2025-02-10T15:00:00.000Z",
+      "is_public": true,
+      "access": "public",
+      "series_id": "sl2_series_starlight_harbor",
+      "series_sort_order": 10,
+      "tag_ids": [
+        "sl2_tag_comic"
+      ],
+      "media_type": "photo",
+      "media": [
+        {
+          "media_id": "sl2_sh_p10_media",
+          "role": "original",
+          "visibility": "public",
+          "mime_type": "image/jpeg"
+        }
+      ],
+      "tier_ids": []
+    },
+    {
+      "post_id": "sl2_sh_p11",
+      "title": "Starlight Harbor Part 11",
+      "description": "Starlight Harbor part 11.",
+      "source": "PATREON",
+      "published_at": "2025-02-11T15:00:00.000Z",
+      "is_public": true,
+      "access": "public",
+      "series_id": "sl2_series_starlight_harbor",
+      "series_sort_order": 11,
+      "tag_ids": [
+        "sl2_tag_comic"
+      ],
+      "media_type": "photo",
+      "media": [
+        {
+          "media_id": "sl2_sh_p11_media",
+          "role": "original",
+          "visibility": "public",
+          "mime_type": "image/jpeg"
+        }
+      ],
+      "tier_ids": []
+    },
+    {
+      "post_id": "sl2_sh_p12",
+      "title": "Starlight Harbor Part 12",
+      "description": "Starlight Harbor part 12.",
+      "source": "PATREON",
+      "published_at": "2025-02-12T15:00:00.000Z",
+      "is_public": true,
+      "access": "public",
+      "series_id": "sl2_series_starlight_harbor",
+      "series_sort_order": 12,
+      "tag_ids": [
+        "sl2_tag_comic"
+      ],
+      "media_type": "photo",
+      "media": [
+        {
+          "media_id": "sl2_sh_p12_media",
+          "role": "original",
+          "visibility": "public",
+          "mime_type": "image/jpeg"
+        }
+      ],
+      "tier_ids": []
+    },
+    {
+      "post_id": "sl2_nm_01",
+      "title": "Night Market Pg. 1",
+      "description": "Night Market sketch 1.",
+      "source": "PATREON",
+      "published_at": "2025-03-01T16:00:00.000Z",
+      "is_public": true,
+      "access": "public",
+      "series_id": null,
+      "series_sort_order": null,
+      "tag_ids": [
+        "sl2_tag_sketch"
+      ],
+      "media_type": "photo",
+      "media": [
+        {
+          "media_id": "sl2_nm_01_media",
+          "role": "original",
+          "visibility": "public",
+          "mime_type": "image/jpeg"
+        }
+      ],
+      "tier_ids": []
+    },
+    {
+      "post_id": "sl2_nm_02",
+      "title": "Night Market sketch 2",
+      "description": "Night Market sketch 2.",
+      "source": "PATREON",
+      "published_at": "2025-03-02T16:00:00.000Z",
+      "is_public": true,
+      "access": "public",
+      "series_id": null,
+      "series_sort_order": null,
+      "tag_ids": [
+        "sl2_tag_sketch"
+      ],
+      "media_type": "photo",
+      "media": [
+        {
+          "media_id": "sl2_nm_02_media",
+          "role": "original",
+          "visibility": "public",
+          "mime_type": "image/jpeg"
+        }
+      ],
+      "tier_ids": []
+    },
+    {
+      "post_id": "sl2_nm_03",
+      "title": "Night Market Pg. 3",
+      "description": "Night Market sketch 3.",
+      "source": "PATREON",
+      "published_at": "2025-03-03T16:00:00.000Z",
+      "is_public": true,
+      "access": "public",
+      "series_id": null,
+      "series_sort_order": null,
+      "tag_ids": [
+        "sl2_tag_sketch"
+      ],
+      "media_type": "photo",
+      "media": [
+        {
+          "media_id": "sl2_nm_03_media",
+          "role": "original",
+          "visibility": "public",
+          "mime_type": "image/jpeg"
+        }
+      ],
+      "tier_ids": []
+    },
+    {
+      "post_id": "sl2_nm_04",
+      "title": "Night Market sketch 4",
+      "description": "Night Market sketch 4.",
+      "source": "PATREON",
+      "published_at": "2025-03-04T16:00:00.000Z",
+      "is_public": true,
+      "access": "public",
+      "series_id": null,
+      "series_sort_order": null,
+      "tag_ids": [
+        "sl2_tag_sketch"
+      ],
+      "media_type": "photo",
+      "media": [
+        {
+          "media_id": "sl2_nm_04_media",
+          "role": "original",
+          "visibility": "public",
+          "mime_type": "image/jpeg"
+        }
+      ],
+      "tier_ids": []
+    },
+    {
+      "post_id": "sl2_nm_05",
+      "title": "Night Market Pg. 5",
+      "description": "Night Market sketch 5.",
+      "source": "PATREON",
+      "published_at": "2025-03-05T16:00:00.000Z",
+      "is_public": true,
+      "access": "public",
+      "series_id": null,
+      "series_sort_order": null,
+      "tag_ids": [
+        "sl2_tag_sketch"
+      ],
+      "media_type": "photo",
+      "media": [
+        {
+          "media_id": "sl2_nm_05_media",
+          "role": "original",
+          "visibility": "public",
+          "mime_type": "image/jpeg"
+        }
+      ],
+      "tier_ids": []
+    },
+    {
+      "post_id": "sl2_nm_06",
+      "title": "Night Market sketch 6",
+      "description": "Night Market sketch 6.",
+      "source": "PATREON",
+      "published_at": "2025-03-06T16:00:00.000Z",
+      "is_public": true,
+      "access": "public",
+      "series_id": null,
+      "series_sort_order": null,
+      "tag_ids": [
+        "sl2_tag_sketch"
+      ],
+      "media_type": "photo",
+      "media": [
+        {
+          "media_id": "sl2_nm_06_media",
+          "role": "original",
+          "visibility": "public",
+          "mime_type": "image/jpeg"
+        }
+      ],
+      "tier_ids": []
+    },
+    {
+      "post_id": "sl2_nm_07",
+      "title": "Night Market Pg. 7",
+      "description": "Night Market sketch 7.",
+      "source": "PATREON",
+      "published_at": "2025-03-07T16:00:00.000Z",
+      "is_public": true,
+      "access": "public",
+      "series_id": null,
+      "series_sort_order": null,
+      "tag_ids": [
+        "sl2_tag_sketch"
+      ],
+      "media_type": "photo",
+      "media": [
+        {
+          "media_id": "sl2_nm_07_media",
+          "role": "original",
+          "visibility": "public",
+          "mime_type": "image/jpeg"
+        }
+      ],
+      "tier_ids": []
+    },
+    {
+      "post_id": "sl2_nm_08",
+      "title": "Night Market sketch 8",
+      "description": "Night Market sketch 8.",
+      "source": "PATREON",
+      "published_at": "2025-03-08T16:00:00.000Z",
+      "is_public": true,
+      "access": "public",
+      "series_id": null,
+      "series_sort_order": null,
+      "tag_ids": [
+        "sl2_tag_sketch"
+      ],
+      "media_type": "photo",
+      "media": [
+        {
+          "media_id": "sl2_nm_08_media",
+          "role": "original",
+          "visibility": "public",
+          "mime_type": "image/jpeg"
+        }
+      ],
+      "tier_ids": []
+    },
+    {
+      "post_id": "sl2_nm_09",
+      "title": "Night Market Pg. 9",
+      "description": "Night Market sketch 9.",
+      "source": "PATREON",
+      "published_at": "2025-03-09T16:00:00.000Z",
+      "is_public": true,
+      "access": "public",
+      "series_id": null,
+      "series_sort_order": null,
+      "tag_ids": [
+        "sl2_tag_sketch"
+      ],
+      "media_type": "photo",
+      "media": [
+        {
+          "media_id": "sl2_nm_09_media",
+          "role": "original",
+          "visibility": "public",
+          "mime_type": "image/jpeg"
+        }
+      ],
+      "tier_ids": []
+    },
+    {
+      "post_id": "sl2_nm_10",
+      "title": "Night Market sketch 10",
+      "description": "Night Market sketch 10.",
+      "source": "PATREON",
+      "published_at": "2025-03-10T16:00:00.000Z",
+      "is_public": true,
+      "access": "public",
+      "series_id": null,
+      "series_sort_order": null,
+      "tag_ids": [
+        "sl2_tag_sketch"
+      ],
+      "media_type": "photo",
+      "media": [
+        {
+          "media_id": "sl2_nm_10_media",
+          "role": "original",
+          "visibility": "public",
+          "mime_type": "image/jpeg"
+        }
+      ],
+      "tier_ids": []
+    },
+    {
+      "post_id": "sl2_wc_01",
+      "title": "Watercolor landscape 1",
+      "description": "Watercolor landscape study 1.",
+      "source": "PATREON",
+      "published_at": "2025-04-01T19:00:00.000Z",
+      "is_public": true,
+      "access": "public",
+      "series_id": null,
+      "series_sort_order": null,
+      "tag_ids": [
+        "sl2_tag_watercolor",
+        "sl2_tag_landscape"
+      ],
+      "media_type": "photo",
+      "media": [
+        {
+          "media_id": "sl2_wc_01_media",
+          "role": "original",
+          "visibility": "public",
+          "mime_type": "image/jpeg"
+        }
+      ],
+      "tier_ids": []
+    },
+    {
+      "post_id": "sl2_wc_02",
+      "title": "Watercolor landscape 2",
+      "description": "Watercolor landscape study 2.",
+      "source": "PATREON",
+      "published_at": "2025-04-02T19:00:00.000Z",
+      "is_public": true,
+      "access": "public",
+      "series_id": null,
+      "series_sort_order": null,
+      "tag_ids": [
+        "sl2_tag_watercolor",
+        "sl2_tag_landscape"
+      ],
+      "media_type": "photo",
+      "media": [
+        {
+          "media_id": "sl2_wc_02_media",
+          "role": "original",
+          "visibility": "public",
+          "mime_type": "image/jpeg"
+        }
+      ],
+      "tier_ids": []
+    },
+    {
+      "post_id": "sl2_wc_03",
+      "title": "Watercolor landscape 3",
+      "description": "Watercolor landscape study 3.",
+      "source": "PATREON",
+      "published_at": "2025-04-03T19:00:00.000Z",
+      "is_public": true,
+      "access": "public",
+      "series_id": null,
+      "series_sort_order": null,
+      "tag_ids": [
+        "sl2_tag_watercolor",
+        "sl2_tag_landscape"
+      ],
+      "media_type": "photo",
+      "media": [
+        {
+          "media_id": "sl2_wc_03_media",
+          "role": "original",
+          "visibility": "public",
+          "mime_type": "image/jpeg"
+        }
+      ],
+      "tier_ids": []
+    },
+    {
+      "post_id": "sl2_wc_04",
+      "title": "Watercolor landscape 4",
+      "description": "Watercolor landscape study 4.",
+      "source": "PATREON",
+      "published_at": "2025-04-04T19:00:00.000Z",
+      "is_public": true,
+      "access": "public",
+      "series_id": null,
+      "series_sort_order": null,
+      "tag_ids": [
+        "sl2_tag_watercolor",
+        "sl2_tag_landscape"
+      ],
+      "media_type": "photo",
+      "media": [
+        {
+          "media_id": "sl2_wc_04_media",
+          "role": "original",
+          "visibility": "public",
+          "mime_type": "image/jpeg"
+        }
+      ],
+      "tier_ids": []
+    },
+    {
+      "post_id": "sl2_wc_05",
+      "title": "Watercolor landscape 5",
+      "description": "Watercolor landscape study 5.",
+      "source": "PATREON",
+      "published_at": "2025-04-05T19:00:00.000Z",
+      "is_public": true,
+      "access": "public",
+      "series_id": null,
+      "series_sort_order": null,
+      "tag_ids": [
+        "sl2_tag_watercolor",
+        "sl2_tag_landscape"
+      ],
+      "media_type": "photo",
+      "media": [
+        {
+          "media_id": "sl2_wc_05_media",
+          "role": "original",
+          "visibility": "public",
+          "mime_type": "image/jpeg"
+        }
+      ],
+      "tier_ids": []
+    },
+    {
+      "post_id": "sl2_wc_06",
+      "title": "Watercolor landscape 6",
+      "description": "Watercolor landscape study 6.",
+      "source": "PATREON",
+      "published_at": "2025-04-06T19:00:00.000Z",
+      "is_public": true,
+      "access": "public",
+      "series_id": null,
+      "series_sort_order": null,
+      "tag_ids": [
+        "sl2_tag_watercolor",
+        "sl2_tag_landscape"
+      ],
+      "media_type": "photo",
+      "media": [
+        {
+          "media_id": "sl2_wc_06_media",
+          "role": "original",
+          "visibility": "public",
+          "mime_type": "image/jpeg"
+        }
+      ],
+      "tier_ids": []
+    },
+    {
+      "post_id": "sl2_wc_07",
+      "title": "Watercolor landscape 7",
+      "description": "Watercolor landscape study 7.",
+      "source": "PATREON",
+      "published_at": "2025-04-07T19:00:00.000Z",
+      "is_public": true,
+      "access": "public",
+      "series_id": null,
+      "series_sort_order": null,
+      "tag_ids": [
+        "sl2_tag_watercolor",
+        "sl2_tag_landscape"
+      ],
+      "media_type": "photo",
+      "media": [
+        {
+          "media_id": "sl2_wc_07_media",
+          "role": "original",
+          "visibility": "public",
+          "mime_type": "image/jpeg"
+        }
+      ],
+      "tier_ids": []
+    },
+    {
+      "post_id": "sl2_wc_08",
+      "title": "Watercolor landscape 8",
+      "description": "Watercolor landscape study 8.",
+      "source": "PATREON",
+      "published_at": "2025-04-08T19:00:00.000Z",
+      "is_public": true,
+      "access": "public",
+      "series_id": null,
+      "series_sort_order": null,
+      "tag_ids": [
+        "sl2_tag_watercolor",
+        "sl2_tag_landscape"
+      ],
+      "media_type": "photo",
+      "media": [
+        {
+          "media_id": "sl2_wc_08_media",
+          "role": "original",
+          "visibility": "public",
+          "mime_type": "image/jpeg"
+        }
+      ],
+      "tier_ids": []
+    },
+    {
+      "post_id": "sl2_wc_09",
+      "title": "Watercolor landscape 9",
+      "description": "Watercolor landscape study 9.",
+      "source": "PATREON",
+      "published_at": "2025-04-09T19:00:00.000Z",
+      "is_public": true,
+      "access": "public",
+      "series_id": null,
+      "series_sort_order": null,
+      "tag_ids": [
+        "sl2_tag_watercolor",
+        "sl2_tag_landscape"
+      ],
+      "media_type": "photo",
+      "media": [
+        {
+          "media_id": "sl2_wc_09_media",
+          "role": "original",
+          "visibility": "public",
+          "mime_type": "image/jpeg"
+        }
+      ],
+      "tier_ids": []
+    },
+    {
+      "post_id": "sl2_wc_10",
+      "title": "Watercolor landscape 10",
+      "description": "Watercolor landscape study 10.",
+      "source": "PATREON",
+      "published_at": "2025-04-10T19:00:00.000Z",
+      "is_public": true,
+      "access": "public",
+      "series_id": null,
+      "series_sort_order": null,
+      "tag_ids": [
+        "sl2_tag_watercolor",
+        "sl2_tag_landscape"
+      ],
+      "media_type": "photo",
+      "media": [
+        {
+          "media_id": "sl2_wc_10_media",
+          "role": "original",
+          "visibility": "public",
+          "mime_type": "image/jpeg"
+        }
+      ],
+      "tier_ids": []
+    },
+    {
+      "post_id": "sl2_wc_11",
+      "title": "Watercolor landscape 11",
+      "description": "Watercolor landscape study 11.",
+      "source": "PATREON",
+      "published_at": "2025-04-11T19:00:00.000Z",
+      "is_public": true,
+      "access": "public",
+      "series_id": null,
+      "series_sort_order": null,
+      "tag_ids": [
+        "sl2_tag_watercolor",
+        "sl2_tag_landscape"
+      ],
+      "media_type": "photo",
+      "media": [
+        {
+          "media_id": "sl2_wc_11_media",
+          "role": "original",
+          "visibility": "public",
+          "mime_type": "image/jpeg"
+        }
+      ],
+      "tier_ids": []
+    },
+    {
+      "post_id": "sl2_wc_12",
+      "title": "Watercolor landscape 12",
+      "description": "Watercolor landscape study 12.",
+      "source": "PATREON",
+      "published_at": "2025-04-12T19:00:00.000Z",
+      "is_public": true,
+      "access": "public",
+      "series_id": null,
+      "series_sort_order": null,
+      "tag_ids": [
+        "sl2_tag_watercolor",
+        "sl2_tag_landscape"
+      ],
+      "media_type": "photo",
+      "media": [
+        {
+          "media_id": "sl2_wc_12_media",
+          "role": "original",
+          "visibility": "public",
+          "mime_type": "image/jpeg"
+        }
+      ],
+      "tier_ids": []
+    },
+    {
+      "post_id": "sl2_wc_13",
+      "title": "Watercolor landscape 13",
+      "description": "Watercolor landscape study 13.",
+      "source": "PATREON",
+      "published_at": "2025-04-13T19:00:00.000Z",
+      "is_public": true,
+      "access": "public",
+      "series_id": null,
+      "series_sort_order": null,
+      "tag_ids": [
+        "sl2_tag_watercolor",
+        "sl2_tag_landscape"
+      ],
+      "media_type": "photo",
+      "media": [
+        {
+          "media_id": "sl2_wc_13_media",
+          "role": "original",
+          "visibility": "public",
+          "mime_type": "image/jpeg"
+        }
+      ],
+      "tier_ids": []
+    },
+    {
+      "post_id": "sl2_wc_14",
+      "title": "Watercolor landscape 14",
+      "description": "Watercolor landscape study 14.",
+      "source": "PATREON",
+      "published_at": "2025-04-14T19:00:00.000Z",
+      "is_public": true,
+      "access": "public",
+      "series_id": null,
+      "series_sort_order": null,
+      "tag_ids": [
+        "sl2_tag_watercolor",
+        "sl2_tag_landscape"
+      ],
+      "media_type": "photo",
+      "media": [
+        {
+          "media_id": "sl2_wc_14_media",
+          "role": "original",
+          "visibility": "public",
+          "mime_type": "image/jpeg"
+        }
+      ],
+      "tier_ids": []
+    },
+    {
+      "post_id": "sl2_wc_15",
+      "title": "Watercolor landscape 15",
+      "description": "Watercolor landscape study 15.",
+      "source": "PATREON",
+      "published_at": "2025-04-15T19:00:00.000Z",
+      "is_public": true,
+      "access": "public",
+      "series_id": null,
+      "series_sort_order": null,
+      "tag_ids": [
+        "sl2_tag_watercolor",
+        "sl2_tag_landscape"
+      ],
+      "media_type": "photo",
+      "media": [
+        {
+          "media_id": "sl2_wc_15_media",
+          "role": "original",
+          "visibility": "public",
+          "mime_type": "image/jpeg"
+        }
+      ],
+      "tier_ids": []
+    },
+    {
+      "post_id": "sl2_wc_16",
+      "title": "Watercolor landscape 16",
+      "description": "Watercolor landscape study 16.",
+      "source": "PATREON",
+      "published_at": "2025-04-16T19:00:00.000Z",
+      "is_public": true,
+      "access": "public",
+      "series_id": null,
+      "series_sort_order": null,
+      "tag_ids": [
+        "sl2_tag_watercolor",
+        "sl2_tag_landscape"
+      ],
+      "media_type": "photo",
+      "media": [
+        {
+          "media_id": "sl2_wc_16_media",
+          "role": "original",
+          "visibility": "public",
+          "mime_type": "image/jpeg"
+        }
+      ],
+      "tier_ids": []
+    },
+    {
+      "post_id": "sl2_wc_17",
+      "title": "Watercolor landscape 17",
+      "description": "Watercolor landscape study 17.",
+      "source": "PATREON",
+      "published_at": "2025-04-17T19:00:00.000Z",
+      "is_public": true,
+      "access": "public",
+      "series_id": null,
+      "series_sort_order": null,
+      "tag_ids": [
+        "sl2_tag_watercolor",
+        "sl2_tag_landscape"
+      ],
+      "media_type": "photo",
+      "media": [
+        {
+          "media_id": "sl2_wc_17_media",
+          "role": "original",
+          "visibility": "public",
+          "mime_type": "image/jpeg"
+        }
+      ],
+      "tier_ids": []
+    },
+    {
+      "post_id": "sl2_wc_18",
+      "title": "Watercolor landscape 18",
+      "description": "Watercolor landscape study 18.",
+      "source": "PATREON",
+      "published_at": "2025-04-18T19:00:00.000Z",
+      "is_public": true,
+      "access": "public",
+      "series_id": null,
+      "series_sort_order": null,
+      "tag_ids": [
+        "sl2_tag_watercolor",
+        "sl2_tag_landscape"
+      ],
+      "media_type": "photo",
+      "media": [
+        {
+          "media_id": "sl2_wc_18_media",
+          "role": "original",
+          "visibility": "public",
+          "mime_type": "image/jpeg"
+        }
+      ],
+      "tier_ids": []
+    },
+    {
+      "post_id": "sl2_car_01",
+      "title": "Carousel WIP 1",
+      "description": "Multi-media WIP carousel 1.",
+      "source": "PATREON",
+      "published_at": "2025-05-01T14:00:00.000Z",
+      "is_public": true,
+      "access": "public",
+      "series_id": null,
+      "series_sort_order": null,
+      "tag_ids": [
+        "sl2_tag_wip"
+      ],
+      "media_type": "photo",
+      "media": [
+        {
+          "media_id": "sl2_car_01_m1",
+          "role": "attachment",
+          "visibility": "public",
+          "mime_type": "image/jpeg"
+        },
+        {
+          "media_id": "sl2_car_01_m2",
+          "role": "attachment",
+          "visibility": "public",
+          "mime_type": "image/jpeg"
+        },
+        {
+          "media_id": "sl2_car_01_m3",
+          "role": "attachment",
+          "visibility": "public",
+          "mime_type": "image/jpeg"
+        }
+      ],
+      "tier_ids": []
+    },
+    {
+      "post_id": "sl2_car_02",
+      "title": "Carousel WIP 2",
+      "description": "Multi-media WIP carousel 2.",
+      "source": "PATREON",
+      "published_at": "2025-05-02T14:00:00.000Z",
+      "is_public": true,
+      "access": "public",
+      "series_id": null,
+      "series_sort_order": null,
+      "tag_ids": [
+        "sl2_tag_wip"
+      ],
+      "media_type": "photo",
+      "media": [
+        {
+          "media_id": "sl2_car_02_m1",
+          "role": "attachment",
+          "visibility": "public",
+          "mime_type": "image/jpeg"
+        },
+        {
+          "media_id": "sl2_car_02_m2",
+          "role": "attachment",
+          "visibility": "public",
+          "mime_type": "image/jpeg"
+        },
+        {
+          "media_id": "sl2_car_02_m3",
+          "role": "attachment",
+          "visibility": "public",
+          "mime_type": "image/jpeg"
+        }
+      ],
+      "tier_ids": []
+    },
+    {
+      "post_id": "sl2_car_03",
+      "title": "Carousel WIP 3",
+      "description": "Multi-media WIP carousel 3.",
+      "source": "PATREON",
+      "published_at": "2025-05-03T14:00:00.000Z",
+      "is_public": true,
+      "access": "public",
+      "series_id": null,
+      "series_sort_order": null,
+      "tag_ids": [
+        "sl2_tag_wip"
+      ],
+      "media_type": "photo",
+      "media": [
+        {
+          "media_id": "sl2_car_03_m1",
+          "role": "attachment",
+          "visibility": "public",
+          "mime_type": "image/jpeg"
+        },
+        {
+          "media_id": "sl2_car_03_m2",
+          "role": "attachment",
+          "visibility": "public",
+          "mime_type": "image/jpeg"
+        },
+        {
+          "media_id": "sl2_car_03_m3",
+          "role": "attachment",
+          "visibility": "public",
+          "mime_type": "image/jpeg"
+        }
+      ],
+      "tier_ids": []
+    },
+    {
+      "post_id": "sl2_car_04",
+      "title": "Carousel WIP 4",
+      "description": "Multi-media WIP carousel 4.",
+      "source": "PATREON",
+      "published_at": "2025-05-04T14:00:00.000Z",
+      "is_public": true,
+      "access": "public",
+      "series_id": null,
+      "series_sort_order": null,
+      "tag_ids": [
+        "sl2_tag_wip"
+      ],
+      "media_type": "photo",
+      "media": [
+        {
+          "media_id": "sl2_car_04_m1",
+          "role": "attachment",
+          "visibility": "public",
+          "mime_type": "image/jpeg"
+        },
+        {
+          "media_id": "sl2_car_04_m2",
+          "role": "attachment",
+          "visibility": "public",
+          "mime_type": "image/jpeg"
+        },
+        {
+          "media_id": "sl2_car_04_m3",
+          "role": "attachment",
+          "visibility": "public",
+          "mime_type": "image/jpeg"
+        }
+      ],
+      "tier_ids": []
+    },
+    {
+      "post_id": "sl2_car_05",
+      "title": "Carousel WIP 5",
+      "description": "Multi-media WIP carousel 5.",
+      "source": "PATREON",
+      "published_at": "2025-05-05T14:00:00.000Z",
+      "is_public": true,
+      "access": "public",
+      "series_id": null,
+      "series_sort_order": null,
+      "tag_ids": [
+        "sl2_tag_wip"
+      ],
+      "media_type": "photo",
+      "media": [
+        {
+          "media_id": "sl2_car_05_m1",
+          "role": "attachment",
+          "visibility": "public",
+          "mime_type": "image/jpeg"
+        },
+        {
+          "media_id": "sl2_car_05_m2",
+          "role": "attachment",
+          "visibility": "public",
+          "mime_type": "image/jpeg"
+        },
+        {
+          "media_id": "sl2_car_05_m3",
+          "role": "attachment",
+          "visibility": "public",
+          "mime_type": "image/jpeg"
+        }
+      ],
+      "tier_ids": []
+    },
+    {
+      "post_id": "sl2_car_06",
+      "title": "Carousel WIP 6",
+      "description": "Multi-media WIP carousel 6.",
+      "source": "PATREON",
+      "published_at": "2025-05-06T14:00:00.000Z",
+      "is_public": true,
+      "access": "public",
+      "series_id": null,
+      "series_sort_order": null,
+      "tag_ids": [
+        "sl2_tag_wip"
+      ],
+      "media_type": "photo",
+      "media": [
+        {
+          "media_id": "sl2_car_06_m1",
+          "role": "attachment",
+          "visibility": "public",
+          "mime_type": "image/jpeg"
+        },
+        {
+          "media_id": "sl2_car_06_m2",
+          "role": "attachment",
+          "visibility": "public",
+          "mime_type": "image/jpeg"
+        },
+        {
+          "media_id": "sl2_car_06_m3",
+          "role": "attachment",
+          "visibility": "public",
+          "mime_type": "image/jpeg"
+        }
+      ],
+      "tier_ids": []
+    },
+    {
+      "post_id": "sl2_car_07",
+      "title": "Carousel WIP 7",
+      "description": "Multi-media WIP carousel 7.",
+      "source": "PATREON",
+      "published_at": "2025-05-07T14:00:00.000Z",
+      "is_public": true,
+      "access": "public",
+      "series_id": null,
+      "series_sort_order": null,
+      "tag_ids": [
+        "sl2_tag_wip"
+      ],
+      "media_type": "photo",
+      "media": [
+        {
+          "media_id": "sl2_car_07_m1",
+          "role": "attachment",
+          "visibility": "public",
+          "mime_type": "image/jpeg"
+        },
+        {
+          "media_id": "sl2_car_07_m2",
+          "role": "attachment",
+          "visibility": "public",
+          "mime_type": "image/jpeg"
+        },
+        {
+          "media_id": "sl2_car_07_m3",
+          "role": "attachment",
+          "visibility": "public",
+          "mime_type": "image/jpeg"
+        }
+      ],
+      "tier_ids": []
+    },
+    {
+      "post_id": "sl2_car_08",
+      "title": "Carousel WIP 8",
+      "description": "Multi-media WIP carousel 8.",
+      "source": "PATREON",
+      "published_at": "2025-05-08T14:00:00.000Z",
+      "is_public": true,
+      "access": "public",
+      "series_id": null,
+      "series_sort_order": null,
+      "tag_ids": [
+        "sl2_tag_wip"
+      ],
+      "media_type": "photo",
+      "media": [
+        {
+          "media_id": "sl2_car_08_m1",
+          "role": "attachment",
+          "visibility": "public",
+          "mime_type": "image/jpeg"
+        },
+        {
+          "media_id": "sl2_car_08_m2",
+          "role": "attachment",
+          "visibility": "public",
+          "mime_type": "image/jpeg"
+        },
+        {
+          "media_id": "sl2_car_08_m3",
+          "role": "attachment",
+          "visibility": "public",
+          "mime_type": "image/jpeg"
+        }
+      ],
+      "tier_ids": []
+    },
+    {
+      "post_id": "sl2_gt_01",
+      "title": "Gated studio shot 1",
+      "description": "Gated original with public cover 1.",
+      "source": "PATREON",
+      "published_at": "2025-06-01T13:00:00.000Z",
+      "is_public": false,
+      "access": "gated",
+      "series_id": null,
+      "series_sort_order": null,
+      "tag_ids": [],
+      "media_type": "photo",
+      "media": [
+        {
+          "media_id": "sl2_gt_01_cover",
+          "role": "cover",
+          "visibility": "public",
+          "mime_type": "image/jpeg"
+        },
+        {
+          "media_id": "sl2_gt_01_orig",
+          "role": "original",
+          "visibility": "gated",
+          "mime_type": "image/png"
+        }
+      ],
+      "tier_ids": [
+        "sl2_tier_studio"
+      ]
+    },
+    {
+      "post_id": "sl2_gt_02",
+      "title": "Gated studio shot 2",
+      "description": "Gated original with public cover 2.",
+      "source": "PATREON",
+      "published_at": "2025-06-02T13:00:00.000Z",
+      "is_public": false,
+      "access": "gated",
+      "series_id": null,
+      "series_sort_order": null,
+      "tag_ids": [],
+      "media_type": "photo",
+      "media": [
+        {
+          "media_id": "sl2_gt_02_cover",
+          "role": "cover",
+          "visibility": "public",
+          "mime_type": "image/jpeg"
+        },
+        {
+          "media_id": "sl2_gt_02_orig",
+          "role": "original",
+          "visibility": "gated",
+          "mime_type": "image/png"
+        }
+      ],
+      "tier_ids": [
+        "sl2_tier_studio"
+      ]
+    },
+    {
+      "post_id": "sl2_gt_03",
+      "title": "Gated studio shot 3",
+      "description": "Gated original with public cover 3.",
+      "source": "PATREON",
+      "published_at": "2025-06-03T13:00:00.000Z",
+      "is_public": false,
+      "access": "gated",
+      "series_id": null,
+      "series_sort_order": null,
+      "tag_ids": [],
+      "media_type": "photo",
+      "media": [
+        {
+          "media_id": "sl2_gt_03_cover",
+          "role": "cover",
+          "visibility": "public",
+          "mime_type": "image/jpeg"
+        },
+        {
+          "media_id": "sl2_gt_03_orig",
+          "role": "original",
+          "visibility": "gated",
+          "mime_type": "image/png"
+        }
+      ],
+      "tier_ids": [
+        "sl2_tier_studio"
+      ]
+    },
+    {
+      "post_id": "sl2_gt_04",
+      "title": "Gated studio shot 4",
+      "description": "Gated original with public cover 4.",
+      "source": "PATREON",
+      "published_at": "2025-06-04T13:00:00.000Z",
+      "is_public": false,
+      "access": "gated",
+      "series_id": null,
+      "series_sort_order": null,
+      "tag_ids": [],
+      "media_type": "photo",
+      "media": [
+        {
+          "media_id": "sl2_gt_04_cover",
+          "role": "cover",
+          "visibility": "public",
+          "mime_type": "image/jpeg"
+        },
+        {
+          "media_id": "sl2_gt_04_orig",
+          "role": "original",
+          "visibility": "gated",
+          "mime_type": "image/png"
+        }
+      ],
+      "tier_ids": [
+        "sl2_tier_studio"
+      ]
+    },
+    {
+      "post_id": "sl2_gt_05",
+      "title": "Gated studio shot 5",
+      "description": "Gated original with public cover 5.",
+      "source": "PATREON",
+      "published_at": "2025-06-05T13:00:00.000Z",
+      "is_public": false,
+      "access": "gated",
+      "series_id": null,
+      "series_sort_order": null,
+      "tag_ids": [],
+      "media_type": "photo",
+      "media": [
+        {
+          "media_id": "sl2_gt_05_cover",
+          "role": "cover",
+          "visibility": "public",
+          "mime_type": "image/jpeg"
+        },
+        {
+          "media_id": "sl2_gt_05_orig",
+          "role": "original",
+          "visibility": "gated",
+          "mime_type": "image/png"
+        }
+      ],
+      "tier_ids": [
+        "sl2_tier_studio"
+      ]
+    },
+    {
+      "post_id": "sl2_gt_06",
+      "title": "Gated studio shot 6",
+      "description": "Gated original with public cover 6.",
+      "source": "PATREON",
+      "published_at": "2025-06-06T13:00:00.000Z",
+      "is_public": false,
+      "access": "gated",
+      "series_id": null,
+      "series_sort_order": null,
+      "tag_ids": [],
+      "media_type": "photo",
+      "media": [
+        {
+          "media_id": "sl2_gt_06_cover",
+          "role": "cover",
+          "visibility": "public",
+          "mime_type": "image/jpeg"
+        },
+        {
+          "media_id": "sl2_gt_06_orig",
+          "role": "original",
+          "visibility": "gated",
+          "mime_type": "image/png"
+        }
+      ],
+      "tier_ids": [
+        "sl2_tier_studio"
+      ]
+    },
+    {
+      "post_id": "sl2_gt_07",
+      "title": "Gated studio shot 7",
+      "description": "Gated original with public cover 7.",
+      "source": "PATREON",
+      "published_at": "2025-06-07T13:00:00.000Z",
+      "is_public": false,
+      "access": "gated",
+      "series_id": null,
+      "series_sort_order": null,
+      "tag_ids": [],
+      "media_type": "photo",
+      "media": [
+        {
+          "media_id": "sl2_gt_07_cover",
+          "role": "cover",
+          "visibility": "public",
+          "mime_type": "image/jpeg"
+        },
+        {
+          "media_id": "sl2_gt_07_orig",
+          "role": "original",
+          "visibility": "gated",
+          "mime_type": "image/png"
+        }
+      ],
+      "tier_ids": [
+        "sl2_tier_studio"
+      ]
+    },
+    {
+      "post_id": "sl2_gt_08",
+      "title": "Gated studio shot 8",
+      "description": "Gated original with public cover 8.",
+      "source": "PATREON",
+      "published_at": "2025-06-08T13:00:00.000Z",
+      "is_public": false,
+      "access": "gated",
+      "series_id": null,
+      "series_sort_order": null,
+      "tag_ids": [],
+      "media_type": "photo",
+      "media": [
+        {
+          "media_id": "sl2_gt_08_cover",
+          "role": "cover",
+          "visibility": "public",
+          "mime_type": "image/jpeg"
+        },
+        {
+          "media_id": "sl2_gt_08_orig",
+          "role": "original",
+          "visibility": "gated",
+          "mime_type": "image/png"
+        }
+      ],
+      "tier_ids": [
+        "sl2_tier_studio"
+      ]
+    },
+    {
+      "post_id": "sl2_rn_01",
+      "title": "Relay native sketch 1",
+      "description": "Relay-native sketch 1.",
+      "source": "RELAY",
+      "published_at": "2025-07-01T11:00:00.000Z",
+      "is_public": true,
+      "access": "public",
+      "series_id": null,
+      "series_sort_order": null,
+      "tag_ids": [
+        "sl2_tag_sketch"
+      ],
+      "media_type": "photo",
+      "media": [
+        {
+          "media_id": "sl2_rn_01_media",
+          "role": "original",
+          "visibility": "public",
+          "mime_type": "image/jpeg"
+        }
+      ],
+      "tier_ids": []
+    },
+    {
+      "post_id": "sl2_rn_02",
+      "title": "Relay native sketch 2",
+      "description": "Relay-native sketch 2.",
+      "source": "RELAY",
+      "published_at": "2025-07-02T11:00:00.000Z",
+      "is_public": true,
+      "access": "public",
+      "series_id": null,
+      "series_sort_order": null,
+      "tag_ids": [
+        "sl2_tag_sketch"
+      ],
+      "media_type": "photo",
+      "media": [
+        {
+          "media_id": "sl2_rn_02_media",
+          "role": "original",
+          "visibility": "public",
+          "mime_type": "image/jpeg"
+        }
+      ],
+      "tier_ids": []
+    },
+    {
+      "post_id": "sl2_rn_03",
+      "title": "Relay native sketch 3",
+      "description": "Relay-native sketch 3.",
+      "source": "RELAY",
+      "published_at": "2025-07-03T11:00:00.000Z",
+      "is_public": true,
+      "access": "public",
+      "series_id": null,
+      "series_sort_order": null,
+      "tag_ids": [
+        "sl2_tag_sketch"
+      ],
+      "media_type": "photo",
+      "media": [
+        {
+          "media_id": "sl2_rn_03_media",
+          "role": "original",
+          "visibility": "public",
+          "mime_type": "image/jpeg"
+        }
+      ],
+      "tier_ids": []
+    },
+    {
+      "post_id": "sl2_rn_04",
+      "title": "Relay native sketch 4",
+      "description": "Relay-native sketch 4.",
+      "source": "RELAY",
+      "published_at": "2025-07-04T11:00:00.000Z",
+      "is_public": true,
+      "access": "public",
+      "series_id": null,
+      "series_sort_order": null,
+      "tag_ids": [
+        "sl2_tag_sketch"
+      ],
+      "media_type": "photo",
+      "media": [
+        {
+          "media_id": "sl2_rn_04_media",
+          "role": "original",
+          "visibility": "public",
+          "mime_type": "image/jpeg"
+        }
+      ],
+      "tier_ids": []
+    },
+    {
+      "post_id": "sl2_rn_05",
+      "title": "Relay native sketch 5",
+      "description": "Relay-native sketch 5.",
+      "source": "RELAY",
+      "published_at": "2025-07-05T11:00:00.000Z",
+      "is_public": true,
+      "access": "public",
+      "series_id": null,
+      "series_sort_order": null,
+      "tag_ids": [
+        "sl2_tag_sketch"
+      ],
+      "media_type": "photo",
+      "media": [
+        {
+          "media_id": "sl2_rn_05_media",
+          "role": "original",
+          "visibility": "public",
+          "mime_type": "image/jpeg"
+        }
+      ],
+      "tier_ids": []
+    },
+    {
+      "post_id": "sl2_rn_06",
+      "title": "Relay native sketch 6",
+      "description": "Relay-native sketch 6.",
+      "source": "RELAY",
+      "published_at": "2025-07-06T11:00:00.000Z",
+      "is_public": true,
+      "access": "public",
+      "series_id": null,
+      "series_sort_order": null,
+      "tag_ids": [
+        "sl2_tag_sketch"
+      ],
+      "media_type": "photo",
+      "media": [
+        {
+          "media_id": "sl2_rn_06_media",
+          "role": "original",
+          "visibility": "public",
+          "mime_type": "image/jpeg"
+        }
+      ],
+      "tier_ids": []
+    },
+    {
+      "post_id": "sl2_as_01",
+      "title": "Academy Studies Page 1",
+      "description": "Academy Studies page 1.",
+      "source": "PATREON",
+      "published_at": "2025-08-01T10:00:00.000Z",
+      "is_public": true,
+      "access": "public",
+      "series_id": "sl2_series_academy_studies",
+      "series_sort_order": 1,
+      "tag_ids": [
+        "sl2_tag_sketch"
+      ],
+      "media_type": "photo",
+      "media": [
+        {
+          "media_id": "sl2_as_01_media",
+          "role": "original",
+          "visibility": "public",
+          "mime_type": "image/jpeg"
+        }
+      ],
+      "tier_ids": []
+    },
+    {
+      "post_id": "sl2_as_02",
+      "title": "Academy Studies Page 2",
+      "description": "Academy Studies page 2.",
+      "source": "PATREON",
+      "published_at": "2025-08-02T10:00:00.000Z",
+      "is_public": true,
+      "access": "public",
+      "series_id": "sl2_series_academy_studies",
+      "series_sort_order": 2,
+      "tag_ids": [
+        "sl2_tag_sketch"
+      ],
+      "media_type": "photo",
+      "media": [
+        {
+          "media_id": "sl2_as_02_media",
+          "role": "original",
+          "visibility": "public",
+          "mime_type": "image/jpeg"
+        }
+      ],
+      "tier_ids": []
+    },
+    {
+      "post_id": "sl2_as_03",
+      "title": "Academy Studies Page 3",
+      "description": "Academy Studies page 3.",
+      "source": "PATREON",
+      "published_at": "2025-08-03T10:00:00.000Z",
+      "is_public": true,
+      "access": "public",
+      "series_id": "sl2_series_academy_studies",
+      "series_sort_order": 3,
+      "tag_ids": [
+        "sl2_tag_sketch"
+      ],
+      "media_type": "photo",
+      "media": [
+        {
+          "media_id": "sl2_as_03_media",
+          "role": "original",
+          "visibility": "public",
+          "mime_type": "image/jpeg"
+        }
+      ],
+      "tier_ids": []
+    },
+    {
+      "post_id": "sl2_as_04",
+      "title": "Academy Studies Page 4",
+      "description": "Academy Studies page 4.",
+      "source": "PATREON",
+      "published_at": "2025-08-04T10:00:00.000Z",
+      "is_public": true,
+      "access": "public",
+      "series_id": "sl2_series_academy_studies",
+      "series_sort_order": 4,
+      "tag_ids": [
+        "sl2_tag_sketch"
+      ],
+      "media_type": "photo",
+      "media": [
+        {
+          "media_id": "sl2_as_04_media",
+          "role": "original",
+          "visibility": "public",
+          "mime_type": "image/jpeg"
+        }
+      ],
+      "tier_ids": []
+    },
+    {
+      "post_id": "sl2_st_01",
+      "title": "Standalone photo 1",
+      "description": "Mixed standalone 1.",
+      "source": "PATREON",
+      "published_at": "2025-09-01T12:00:00.000Z",
+      "is_public": true,
+      "access": "public",
+      "series_id": null,
+      "series_sort_order": null,
+      "tag_ids": [],
+      "media_type": "photo",
+      "media": [
+        {
+          "media_id": "sl2_st_01_media",
+          "role": "original",
+          "visibility": "public",
+          "mime_type": "image/jpeg"
+        }
+      ],
+      "tier_ids": []
+    },
+    {
+      "post_id": "sl2_st_02",
+      "title": "Standalone photo 2",
+      "description": "Mixed standalone 2.",
+      "source": "PATREON",
+      "published_at": "2025-09-02T12:00:00.000Z",
+      "is_public": true,
+      "access": "public",
+      "series_id": null,
+      "series_sort_order": null,
+      "tag_ids": [],
+      "media_type": "photo",
+      "media": [
+        {
+          "media_id": "sl2_st_02_media",
+          "role": "original",
+          "visibility": "public",
+          "mime_type": "image/jpeg"
+        }
+      ],
+      "tier_ids": []
+    },
+    {
+      "post_id": "sl2_st_03",
+      "title": "Standalone photo 3",
+      "description": "Mixed standalone 3.",
+      "source": "PATREON",
+      "published_at": "2025-09-03T12:00:00.000Z",
+      "is_public": true,
+      "access": "public",
+      "series_id": null,
+      "series_sort_order": null,
+      "tag_ids": [],
+      "media_type": "photo",
+      "media": [
+        {
+          "media_id": "sl2_st_03_media",
+          "role": "original",
+          "visibility": "public",
+          "mime_type": "image/jpeg"
+        }
+      ],
+      "tier_ids": []
+    },
+    {
+      "post_id": "sl2_st_04",
+      "title": "Standalone photo 4",
+      "description": "Mixed standalone 4.",
+      "source": "PATREON",
+      "published_at": "2025-09-04T12:00:00.000Z",
+      "is_public": true,
+      "access": "public",
+      "series_id": null,
+      "series_sort_order": null,
+      "tag_ids": [],
+      "media_type": "photo",
+      "media": [
+        {
+          "media_id": "sl2_st_04_media",
+          "role": "original",
+          "visibility": "public",
+          "mime_type": "image/jpeg"
+        }
+      ],
+      "tier_ids": []
+    },
+    {
+      "post_id": "sl2_st_05",
+      "title": "Standalone photo 5",
+      "description": "Mixed standalone 5.",
+      "source": "PATREON",
+      "published_at": "2025-09-05T12:00:00.000Z",
+      "is_public": true,
+      "access": "public",
+      "series_id": null,
+      "series_sort_order": null,
+      "tag_ids": [],
+      "media_type": "photo",
+      "media": [
+        {
+          "media_id": "sl2_st_05_media",
+          "role": "original",
+          "visibility": "public",
+          "mime_type": "image/jpeg"
+        }
+      ],
+      "tier_ids": []
+    },
+    {
+      "post_id": "sl2_st_06",
+      "title": "Standalone photo 6",
+      "description": "Mixed standalone 6.",
+      "source": "PATREON",
+      "published_at": "2025-09-06T12:00:00.000Z",
+      "is_public": true,
+      "access": "public",
+      "series_id": null,
+      "series_sort_order": null,
+      "tag_ids": [],
+      "media_type": "photo",
+      "media": [
+        {
+          "media_id": "sl2_st_06_media",
+          "role": "original",
+          "visibility": "public",
+          "mime_type": "image/jpeg"
+        }
+      ],
+      "tier_ids": []
+    },
+    {
+      "post_id": "sl2_st_07",
+      "title": "Standalone photo 7",
+      "description": "Mixed standalone 7.",
+      "source": "PATREON",
+      "published_at": "2025-09-07T12:00:00.000Z",
+      "is_public": true,
+      "access": "public",
+      "series_id": null,
+      "series_sort_order": null,
+      "tag_ids": [],
+      "media_type": "photo",
+      "media": [
+        {
+          "media_id": "sl2_st_07_media",
+          "role": "original",
+          "visibility": "public",
+          "mime_type": "image/jpeg"
+        }
+      ],
+      "tier_ids": []
+    },
+    {
+      "post_id": "sl2_st_08",
+      "title": "Standalone photo 8",
+      "description": "Mixed standalone 8.",
+      "source": "PATREON",
+      "published_at": "2025-09-08T12:00:00.000Z",
+      "is_public": true,
+      "access": "public",
+      "series_id": null,
+      "series_sort_order": null,
+      "tag_ids": [],
+      "media_type": "photo",
+      "media": [
+        {
+          "media_id": "sl2_st_08_media",
+          "role": "original",
+          "visibility": "public",
+          "mime_type": "image/jpeg"
+        }
+      ],
+      "tier_ids": []
+    },
+    {
+      "post_id": "sl2_st_09",
+      "title": "Standalone photo 9",
+      "description": "Mixed standalone 9.",
+      "source": "PATREON",
+      "published_at": "2025-09-09T12:00:00.000Z",
+      "is_public": true,
+      "access": "public",
+      "series_id": null,
+      "series_sort_order": null,
+      "tag_ids": [],
+      "media_type": "photo",
+      "media": [
+        {
+          "media_id": "sl2_st_09_media",
+          "role": "original",
+          "visibility": "public",
+          "mime_type": "image/jpeg"
+        }
+      ],
+      "tier_ids": []
+    },
+    {
+      "post_id": "sl2_st_10",
+      "title": "Standalone photo 10",
+      "description": "Mixed standalone 10.",
+      "source": "PATREON",
+      "published_at": "2025-09-10T12:00:00.000Z",
+      "is_public": true,
+      "access": "public",
+      "series_id": null,
+      "series_sort_order": null,
+      "tag_ids": [],
+      "media_type": "photo",
+      "media": [
+        {
+          "media_id": "sl2_st_10_media",
+          "role": "original",
+          "visibility": "public",
+          "mime_type": "image/jpeg"
+        }
+      ],
+      "tier_ids": []
+    },
+    {
+      "post_id": "sl2_st_11",
+      "title": "Standalone photo 11",
+      "description": "Mixed standalone 11.",
+      "source": "PATREON",
+      "published_at": "2025-09-11T12:00:00.000Z",
+      "is_public": true,
+      "access": "public",
+      "series_id": null,
+      "series_sort_order": null,
+      "tag_ids": [],
+      "media_type": "photo",
+      "media": [
+        {
+          "media_id": "sl2_st_11_media",
+          "role": "original",
+          "visibility": "public",
+          "mime_type": "image/jpeg"
+        }
+      ],
+      "tier_ids": []
+    },
+    {
+      "post_id": "sl2_st_12",
+      "title": "Standalone photo 12",
+      "description": "Mixed standalone 12.",
+      "source": "PATREON",
+      "published_at": "2025-09-12T12:00:00.000Z",
+      "is_public": true,
+      "access": "public",
+      "series_id": null,
+      "series_sort_order": null,
+      "tag_ids": [],
+      "media_type": "photo",
+      "media": [
+        {
+          "media_id": "sl2_st_12_media",
+          "role": "original",
+          "visibility": "public",
+          "mime_type": "image/jpeg"
+        }
+      ],
+      "tier_ids": []
+    },
+    {
+      "post_id": "sl2_st_13",
+      "title": "Standalone photo 13",
+      "description": "Mixed standalone 13.",
+      "source": "PATREON",
+      "published_at": "2025-09-13T12:00:00.000Z",
+      "is_public": true,
+      "access": "public",
+      "series_id": null,
+      "series_sort_order": null,
+      "tag_ids": [],
+      "media_type": "photo",
+      "media": [
+        {
+          "media_id": "sl2_st_13_media",
+          "role": "original",
+          "visibility": "public",
+          "mime_type": "image/jpeg"
+        }
+      ],
+      "tier_ids": []
+    },
+    {
+      "post_id": "sl2_st_14",
+      "title": "Standalone photo 14",
+      "description": "Mixed standalone 14.",
+      "source": "PATREON",
+      "published_at": "2025-09-14T12:00:00.000Z",
+      "is_public": true,
+      "access": "public",
+      "series_id": null,
+      "series_sort_order": null,
+      "tag_ids": [],
+      "media_type": "photo",
+      "media": [
+        {
+          "media_id": "sl2_st_14_media",
+          "role": "original",
+          "visibility": "public",
+          "mime_type": "image/jpeg"
+        }
+      ],
+      "tier_ids": []
+    },
+    {
+      "post_id": "sl2_st_15",
+      "title": "Standalone photo 15",
+      "description": "Mixed standalone 15.",
+      "source": "PATREON",
+      "published_at": "2025-09-15T12:00:00.000Z",
+      "is_public": true,
+      "access": "public",
+      "series_id": null,
+      "series_sort_order": null,
+      "tag_ids": [],
+      "media_type": "photo",
+      "media": [
+        {
+          "media_id": "sl2_st_15_media",
+          "role": "original",
+          "visibility": "public",
+          "mime_type": "image/jpeg"
+        }
+      ],
+      "tier_ids": []
+    },
+    {
+      "post_id": "sl2_st_16",
+      "title": "Standalone writing 16",
+      "description": "Mixed standalone 16.",
+      "source": "PATREON",
+      "published_at": "2025-09-16T12:00:00.000Z",
+      "is_public": true,
+      "access": "public",
+      "series_id": null,
+      "series_sort_order": null,
+      "tag_ids": [],
+      "media_type": "writing",
+      "media": [
+        {
+          "media_id": "sl2_st_16_media",
+          "role": "original",
+          "visibility": "public",
+          "mime_type": "text/plain"
+        }
+      ],
+      "tier_ids": []
+    },
+    {
+      "post_id": "sl2_st_17",
+      "title": "Standalone writing 17",
+      "description": "Mixed standalone 17.",
+      "source": "PATREON",
+      "published_at": "2025-09-17T12:00:00.000Z",
+      "is_public": true,
+      "access": "public",
+      "series_id": null,
+      "series_sort_order": null,
+      "tag_ids": [],
+      "media_type": "writing",
+      "media": [
+        {
+          "media_id": "sl2_st_17_media",
+          "role": "original",
+          "visibility": "public",
+          "mime_type": "text/plain"
+        }
+      ],
+      "tier_ids": []
+    },
+    {
+      "post_id": "sl2_st_18",
+      "title": "Standalone writing 18",
+      "description": "Mixed standalone 18.",
+      "source": "PATREON",
+      "published_at": "2025-09-18T12:00:00.000Z",
+      "is_public": true,
+      "access": "public",
+      "series_id": null,
+      "series_sort_order": null,
+      "tag_ids": [],
+      "media_type": "writing",
+      "media": [
+        {
+          "media_id": "sl2_st_18_media",
+          "role": "original",
+          "visibility": "public",
+          "mime_type": "text/plain"
+        }
+      ],
+      "tier_ids": []
+    },
+    {
+      "post_id": "sl2_st_19",
+      "title": "Standalone writing 19",
+      "description": "Mixed standalone 19.",
+      "source": "PATREON",
+      "published_at": "2025-09-19T12:00:00.000Z",
+      "is_public": true,
+      "access": "public",
+      "series_id": null,
+      "series_sort_order": null,
+      "tag_ids": [],
+      "media_type": "writing",
+      "media": [
+        {
+          "media_id": "sl2_st_19_media",
+          "role": "original",
+          "visibility": "public",
+          "mime_type": "text/plain"
+        }
+      ],
+      "tier_ids": []
+    },
+    {
+      "post_id": "sl2_st_20",
+      "title": "Standalone writing 20",
+      "description": "Mixed standalone 20.",
+      "source": "PATREON",
+      "published_at": "2025-09-20T12:00:00.000Z",
+      "is_public": true,
+      "access": "public",
+      "series_id": null,
+      "series_sort_order": null,
+      "tag_ids": [],
+      "media_type": "writing",
+      "media": [
+        {
+          "media_id": "sl2_st_20_media",
+          "role": "original",
+          "visibility": "public",
+          "mime_type": "text/plain"
+        }
+      ],
+      "tier_ids": []
+    },
+    {
+      "post_id": "sl2_st_21",
+      "title": "Standalone video 21",
+      "description": "Mixed standalone 21.",
+      "source": "PATREON",
+      "published_at": "2025-09-21T12:00:00.000Z",
+      "is_public": true,
+      "access": "public",
+      "series_id": null,
+      "series_sort_order": null,
+      "tag_ids": [],
+      "media_type": "video",
+      "media": [
+        {
+          "media_id": "sl2_st_21_media",
+          "role": "original",
+          "visibility": "public",
+          "mime_type": "video/mp4"
+        }
+      ],
+      "tier_ids": []
+    },
+    {
+      "post_id": "sl2_st_22",
+      "title": "Standalone video 22",
+      "description": "Mixed standalone 22.",
+      "source": "PATREON",
+      "published_at": "2025-09-22T12:00:00.000Z",
+      "is_public": true,
+      "access": "public",
+      "series_id": null,
+      "series_sort_order": null,
+      "tag_ids": [],
+      "media_type": "video",
+      "media": [
+        {
+          "media_id": "sl2_st_22_media",
+          "role": "original",
+          "visibility": "public",
+          "mime_type": "video/mp4"
+        }
+      ],
+      "tier_ids": []
+    },
+    {
+      "post_id": "sl2_st_23",
+      "title": "Standalone video 23",
+      "description": "Mixed standalone 23.",
+      "source": "PATREON",
+      "published_at": "2025-09-23T12:00:00.000Z",
+      "is_public": true,
+      "access": "public",
+      "series_id": null,
+      "series_sort_order": null,
+      "tag_ids": [],
+      "media_type": "video",
+      "media": [
+        {
+          "media_id": "sl2_st_23_media",
+          "role": "original",
+          "visibility": "public",
+          "mime_type": "video/mp4"
+        }
+      ],
+      "tier_ids": []
+    },
+    {
+      "post_id": "sl2_st_24",
+      "title": "Standalone video 24",
+      "description": "Mixed standalone 24.",
+      "source": "PATREON",
+      "published_at": "2025-09-24T12:00:00.000Z",
+      "is_public": true,
+      "access": "public",
+      "series_id": null,
+      "series_sort_order": null,
+      "tag_ids": [],
+      "media_type": "video",
+      "media": [
+        {
+          "media_id": "sl2_st_24_media",
+          "role": "original",
+          "visibility": "public",
+          "mime_type": "video/mp4"
+        }
+      ],
+      "tier_ids": []
+    },
+    {
+      "post_id": "sl2_st_25",
+      "title": "Standalone video 25",
+      "description": "Mixed standalone 25.",
+      "source": "PATREON",
+      "published_at": "2025-09-25T12:00:00.000Z",
+      "is_public": true,
+      "access": "public",
+      "series_id": null,
+      "series_sort_order": null,
+      "tag_ids": [],
+      "media_type": "video",
+      "media": [
+        {
+          "media_id": "sl2_st_25_media",
+          "role": "original",
+          "visibility": "public",
+          "mime_type": "video/mp4"
+        }
+      ],
+      "tier_ids": []
+    }
+  ],
+  "distribution": [
+    {
+      "post_id": "sl2_ha_p01",
+      "destination": "x",
+      "attempt_status": "posted",
+      "external_url": "https://x.example/sl2_ha_p01",
+      "external_id": "x_sl2_ha_p01"
+    },
+    {
+      "post_id": "sl2_ha_p02",
+      "destination": "x",
+      "attempt_status": "posted",
+      "external_url": "https://x.example/sl2_ha_p02",
+      "external_id": "x_sl2_ha_p02"
+    },
+    {
+      "post_id": "sl2_ha_p03",
+      "destination": "x",
+      "attempt_status": "posted",
+      "external_url": "https://x.example/sl2_ha_p03",
+      "external_id": "x_sl2_ha_p03"
+    },
+    {
+      "post_id": "sl2_ha_p04",
+      "destination": "x",
+      "attempt_status": "posted",
+      "external_url": "https://x.example/sl2_ha_p04",
+      "external_id": "x_sl2_ha_p04"
+    },
+    {
+      "post_id": "sl2_ha_p05",
+      "destination": "x",
+      "attempt_status": "posted",
+      "external_url": "https://x.example/sl2_ha_p05",
+      "external_id": "x_sl2_ha_p05"
+    },
+    {
+      "post_id": "sl2_ha_p06",
+      "destination": "x",
+      "attempt_status": "posted",
+      "external_url": "https://x.example/sl2_ha_p06",
+      "external_id": "x_sl2_ha_p06"
+    }
+  ],
+  "metrics": [
+    {
+      "post_id": "sl2_wc_01",
+      "pattern": "timing_cluster",
+      "weekday": "Tuesday",
+      "local_window": "19:00-21:00"
+    },
+    {
+      "post_id": "sl2_wc_02",
+      "pattern": "timing_cluster",
+      "weekday": "Tuesday",
+      "local_window": "19:00-21:00"
+    },
+    {
+      "post_id": "sl2_wc_03",
+      "pattern": "timing_cluster",
+      "weekday": "Tuesday",
+      "local_window": "19:00-21:00"
+    },
+    {
+      "post_id": "sl2_wc_04",
+      "pattern": "timing_cluster",
+      "weekday": "Tuesday",
+      "local_window": "19:00-21:00"
+    },
+    {
+      "post_id": "sl2_wc_05",
+      "pattern": "timing_cluster",
+      "weekday": "Tuesday",
+      "local_window": "19:00-21:00"
+    },
+    {
+      "post_id": "sl2_wc_06",
+      "pattern": "timing_cluster",
+      "weekday": "Tuesday",
+      "local_window": "19:00-21:00"
+    },
+    {
+      "post_id": "sl2_ha_p07",
+      "pattern": "timing_cluster",
+      "weekday": "Tuesday",
+      "local_window": "19:00-21:00"
+    },
+    {
+      "post_id": "sl2_ha_p08",
+      "pattern": "timing_cluster",
+      "weekday": "Tuesday",
+      "local_window": "19:00-21:00"
+    },
+    {
+      "post_id": "sl2_st_01",
+      "pattern": "weak_promo",
+      "weekday": null,
+      "local_window": null
+    },
+    {
+      "post_id": "sl2_st_02",
+      "pattern": "weak_promo",
+      "weekday": null,
+      "local_window": null
+    },
+    {
+      "post_id": "sl2_st_03",
+      "pattern": "weak_promo",
+      "weekday": null,
+      "local_window": null
+    },
+    {
+      "post_id": "sl2_st_04",
+      "pattern": "weak_promo",
+      "weekday": null,
+      "local_window": null
+    },
+    {
+      "post_id": "sl2_st_05",
+      "pattern": "weak_promo",
+      "weekday": null,
+      "local_window": null
+    },
+    {
+      "post_id": "sl2_st_06",
+      "pattern": "weak_promo",
+      "weekday": null,
+      "local_window": null
+    },
+    {
+      "post_id": "sl2_st_07",
+      "pattern": "weak_promo",
+      "weekday": null,
+      "local_window": null
+    },
+    {
+      "post_id": "sl2_st_08",
+      "pattern": "weak_promo",
+      "weekday": null,
+      "local_window": null
+    },
+    {
+      "post_id": "sl2_st_09",
+      "pattern": "weak_promo",
+      "weekday": null,
+      "local_window": null
+    },
+    {
+      "post_id": "sl2_st_10",
+      "pattern": "weak_promo",
+      "weekday": null,
+      "local_window": null
+    },
+    {
+      "post_id": "sl2_st_23",
+      "pattern": "forbidden_primary",
+      "weekday": null,
+      "local_window": null
+    },
+    {
+      "post_id": "sl2_st_24",
+      "pattern": "forbidden_primary",
+      "weekday": null,
+      "local_window": null
+    },
+    {
+      "post_id": "sl2_st_25",
+      "pattern": "forbidden_primary",
+      "weekday": null,
+      "local_window": null
+    },
+    {
+      "post_id": "sl2_ha_cover",
+      "pattern": "ordinary",
+      "weekday": null,
+      "local_window": null
+    },
+    {
+      "post_id": "sl2_ha_p01",
+      "pattern": "ordinary",
+      "weekday": null,
+      "local_window": null
+    },
+    {
+      "post_id": "sl2_ha_p02",
+      "pattern": "ordinary",
+      "weekday": null,
+      "local_window": null
+    },
+    {
+      "post_id": "sl2_ha_p03",
+      "pattern": "ordinary",
+      "weekday": null,
+      "local_window": null
+    },
+    {
+      "post_id": "sl2_ha_p04",
+      "pattern": "ordinary",
+      "weekday": null,
+      "local_window": null
+    },
+    {
+      "post_id": "sl2_ha_p05",
+      "pattern": "ordinary",
+      "weekday": null,
+      "local_window": null
+    },
+    {
+      "post_id": "sl2_ha_p06",
+      "pattern": "ordinary",
+      "weekday": null,
+      "local_window": null
+    },
+    {
+      "post_id": "sl2_ha_p09",
+      "pattern": "ordinary",
+      "weekday": null,
+      "local_window": null
+    },
+    {
+      "post_id": "sl2_ha_p10",
+      "pattern": "ordinary",
+      "weekday": null,
+      "local_window": null
+    },
+    {
+      "post_id": "sl2_ha_p11",
+      "pattern": "ordinary",
+      "weekday": null,
+      "local_window": null
+    },
+    {
+      "post_id": "sl2_ha_p12",
+      "pattern": "ordinary",
+      "weekday": null,
+      "local_window": null
+    },
+    {
+      "post_id": "sl2_ha_p13",
+      "pattern": "ordinary",
+      "weekday": null,
+      "local_window": null
+    },
+    {
+      "post_id": "sl2_ha_p14",
+      "pattern": "ordinary",
+      "weekday": null,
+      "local_window": null
+    },
+    {
+      "post_id": "sl2_ha_p15",
+      "pattern": "ordinary",
+      "weekday": null,
+      "local_window": null
+    },
+    {
+      "post_id": "sl2_ha_p16",
+      "pattern": "ordinary",
+      "weekday": null,
+      "local_window": null
+    },
+    {
+      "post_id": "sl2_ha_p18",
+      "pattern": "ordinary",
+      "weekday": null,
+      "local_window": null
+    },
+    {
+      "post_id": "sl2_ha_p19",
+      "pattern": "ordinary",
+      "weekday": null,
+      "local_window": null
+    },
+    {
+      "post_id": "sl2_ha_p20",
+      "pattern": "ordinary",
+      "weekday": null,
+      "local_window": null
+    },
+    {
+      "post_id": "sl2_ha_p08_dup",
+      "pattern": "ordinary",
+      "weekday": null,
+      "local_window": null
+    },
+    {
+      "post_id": "sl2_sh_p01",
+      "pattern": "ordinary",
+      "weekday": null,
+      "local_window": null
+    },
+    {
+      "post_id": "sl2_sh_p02",
+      "pattern": "ordinary",
+      "weekday": null,
+      "local_window": null
+    },
+    {
+      "post_id": "sl2_sh_p03",
+      "pattern": "ordinary",
+      "weekday": null,
+      "local_window": null
+    },
+    {
+      "post_id": "sl2_sh_p04",
+      "pattern": "ordinary",
+      "weekday": null,
+      "local_window": null
+    },
+    {
+      "post_id": "sl2_sh_p05",
+      "pattern": "ordinary",
+      "weekday": null,
+      "local_window": null
+    },
+    {
+      "post_id": "sl2_sh_p06",
+      "pattern": "ordinary",
+      "weekday": null,
+      "local_window": null
+    },
+    {
+      "post_id": "sl2_sh_p07",
+      "pattern": "ordinary",
+      "weekday": null,
+      "local_window": null
+    },
+    {
+      "post_id": "sl2_sh_p08",
+      "pattern": "ordinary",
+      "weekday": null,
+      "local_window": null
+    },
+    {
+      "post_id": "sl2_sh_p09",
+      "pattern": "ordinary",
+      "weekday": null,
+      "local_window": null
+    },
+    {
+      "post_id": "sl2_sh_p10",
+      "pattern": "ordinary",
+      "weekday": null,
+      "local_window": null
+    },
+    {
+      "post_id": "sl2_sh_p11",
+      "pattern": "ordinary",
+      "weekday": null,
+      "local_window": null
+    },
+    {
+      "post_id": "sl2_sh_p12",
+      "pattern": "ordinary",
+      "weekday": null,
+      "local_window": null
+    },
+    {
+      "post_id": "sl2_nm_01",
+      "pattern": "ordinary",
+      "weekday": null,
+      "local_window": null
+    },
+    {
+      "post_id": "sl2_nm_02",
+      "pattern": "ordinary",
+      "weekday": null,
+      "local_window": null
+    },
+    {
+      "post_id": "sl2_nm_03",
+      "pattern": "ordinary",
+      "weekday": null,
+      "local_window": null
+    },
+    {
+      "post_id": "sl2_nm_04",
+      "pattern": "ordinary",
+      "weekday": null,
+      "local_window": null
+    },
+    {
+      "post_id": "sl2_nm_05",
+      "pattern": "ordinary",
+      "weekday": null,
+      "local_window": null
+    },
+    {
+      "post_id": "sl2_nm_06",
+      "pattern": "ordinary",
+      "weekday": null,
+      "local_window": null
+    },
+    {
+      "post_id": "sl2_nm_07",
+      "pattern": "ordinary",
+      "weekday": null,
+      "local_window": null
+    },
+    {
+      "post_id": "sl2_nm_08",
+      "pattern": "ordinary",
+      "weekday": null,
+      "local_window": null
+    },
+    {
+      "post_id": "sl2_nm_09",
+      "pattern": "ordinary",
+      "weekday": null,
+      "local_window": null
+    },
+    {
+      "post_id": "sl2_nm_10",
+      "pattern": "ordinary",
+      "weekday": null,
+      "local_window": null
+    },
+    {
+      "post_id": "sl2_wc_07",
+      "pattern": "ordinary",
+      "weekday": null,
+      "local_window": null
+    },
+    {
+      "post_id": "sl2_wc_08",
+      "pattern": "ordinary",
+      "weekday": null,
+      "local_window": null
+    },
+    {
+      "post_id": "sl2_wc_09",
+      "pattern": "ordinary",
+      "weekday": null,
+      "local_window": null
+    },
+    {
+      "post_id": "sl2_wc_10",
+      "pattern": "ordinary",
+      "weekday": null,
+      "local_window": null
+    },
+    {
+      "post_id": "sl2_wc_11",
+      "pattern": "ordinary",
+      "weekday": null,
+      "local_window": null
+    },
+    {
+      "post_id": "sl2_wc_12",
+      "pattern": "ordinary",
+      "weekday": null,
+      "local_window": null
+    },
+    {
+      "post_id": "sl2_wc_13",
+      "pattern": "ordinary",
+      "weekday": null,
+      "local_window": null
+    },
+    {
+      "post_id": "sl2_wc_14",
+      "pattern": "ordinary",
+      "weekday": null,
+      "local_window": null
+    },
+    {
+      "post_id": "sl2_wc_15",
+      "pattern": "ordinary",
+      "weekday": null,
+      "local_window": null
+    },
+    {
+      "post_id": "sl2_wc_16",
+      "pattern": "ordinary",
+      "weekday": null,
+      "local_window": null
+    },
+    {
+      "post_id": "sl2_wc_17",
+      "pattern": "ordinary",
+      "weekday": null,
+      "local_window": null
+    },
+    {
+      "post_id": "sl2_wc_18",
+      "pattern": "ordinary",
+      "weekday": null,
+      "local_window": null
+    },
+    {
+      "post_id": "sl2_car_01",
+      "pattern": "ordinary",
+      "weekday": null,
+      "local_window": null
+    },
+    {
+      "post_id": "sl2_car_02",
+      "pattern": "ordinary",
+      "weekday": null,
+      "local_window": null
+    },
+    {
+      "post_id": "sl2_car_03",
+      "pattern": "ordinary",
+      "weekday": null,
+      "local_window": null
+    },
+    {
+      "post_id": "sl2_car_04",
+      "pattern": "ordinary",
+      "weekday": null,
+      "local_window": null
+    },
+    {
+      "post_id": "sl2_car_05",
+      "pattern": "ordinary",
+      "weekday": null,
+      "local_window": null
+    },
+    {
+      "post_id": "sl2_car_06",
+      "pattern": "ordinary",
+      "weekday": null,
+      "local_window": null
+    },
+    {
+      "post_id": "sl2_car_07",
+      "pattern": "ordinary",
+      "weekday": null,
+      "local_window": null
+    },
+    {
+      "post_id": "sl2_car_08",
+      "pattern": "ordinary",
+      "weekday": null,
+      "local_window": null
+    },
+    {
+      "post_id": "sl2_gt_01",
+      "pattern": "ordinary",
+      "weekday": null,
+      "local_window": null
+    },
+    {
+      "post_id": "sl2_gt_02",
+      "pattern": "ordinary",
+      "weekday": null,
+      "local_window": null
+    },
+    {
+      "post_id": "sl2_gt_03",
+      "pattern": "ordinary",
+      "weekday": null,
+      "local_window": null
+    },
+    {
+      "post_id": "sl2_gt_04",
+      "pattern": "ordinary",
+      "weekday": null,
+      "local_window": null
+    },
+    {
+      "post_id": "sl2_gt_05",
+      "pattern": "ordinary",
+      "weekday": null,
+      "local_window": null
+    },
+    {
+      "post_id": "sl2_gt_06",
+      "pattern": "ordinary",
+      "weekday": null,
+      "local_window": null
+    },
+    {
+      "post_id": "sl2_gt_07",
+      "pattern": "ordinary",
+      "weekday": null,
+      "local_window": null
+    },
+    {
+      "post_id": "sl2_gt_08",
+      "pattern": "ordinary",
+      "weekday": null,
+      "local_window": null
+    },
+    {
+      "post_id": "sl2_rn_01",
+      "pattern": "ordinary",
+      "weekday": null,
+      "local_window": null
+    },
+    {
+      "post_id": "sl2_rn_02",
+      "pattern": "ordinary",
+      "weekday": null,
+      "local_window": null
+    },
+    {
+      "post_id": "sl2_rn_03",
+      "pattern": "ordinary",
+      "weekday": null,
+      "local_window": null
+    },
+    {
+      "post_id": "sl2_rn_04",
+      "pattern": "ordinary",
+      "weekday": null,
+      "local_window": null
+    },
+    {
+      "post_id": "sl2_rn_05",
+      "pattern": "ordinary",
+      "weekday": null,
+      "local_window": null
+    },
+    {
+      "post_id": "sl2_rn_06",
+      "pattern": "ordinary",
+      "weekday": null,
+      "local_window": null
+    },
+    {
+      "post_id": "sl2_as_01",
+      "pattern": "ordinary",
+      "weekday": null,
+      "local_window": null
+    },
+    {
+      "post_id": "sl2_as_02",
+      "pattern": "ordinary",
+      "weekday": null,
+      "local_window": null
+    },
+    {
+      "post_id": "sl2_as_03",
+      "pattern": "ordinary",
+      "weekday": null,
+      "local_window": null
+    },
+    {
+      "post_id": "sl2_as_04",
+      "pattern": "ordinary",
+      "weekday": null,
+      "local_window": null
+    },
+    {
+      "post_id": "sl2_st_11",
+      "pattern": "ordinary",
+      "weekday": null,
+      "local_window": null
+    },
+    {
+      "post_id": "sl2_st_12",
+      "pattern": "ordinary",
+      "weekday": null,
+      "local_window": null
+    },
+    {
+      "post_id": "sl2_st_13",
+      "pattern": "ordinary",
+      "weekday": null,
+      "local_window": null
+    },
+    {
+      "post_id": "sl2_st_14",
+      "pattern": "ordinary",
+      "weekday": null,
+      "local_window": null
+    },
+    {
+      "post_id": "sl2_st_15",
+      "pattern": "ordinary",
+      "weekday": null,
+      "local_window": null
+    },
+    {
+      "post_id": "sl2_st_16",
+      "pattern": "ordinary",
+      "weekday": null,
+      "local_window": null
+    },
+    {
+      "post_id": "sl2_st_17",
+      "pattern": "ordinary",
+      "weekday": null,
+      "local_window": null
+    },
+    {
+      "post_id": "sl2_st_18",
+      "pattern": "ordinary",
+      "weekday": null,
+      "local_window": null
+    },
+    {
+      "post_id": "sl2_st_19",
+      "pattern": "ordinary",
+      "weekday": null,
+      "local_window": null
+    },
+    {
+      "post_id": "sl2_st_20",
+      "pattern": "ordinary",
+      "weekday": null,
+      "local_window": null
+    },
+    {
+      "post_id": "sl2_st_21",
+      "pattern": "ordinary",
+      "weekday": null,
+      "local_window": null
+    },
+    {
+      "post_id": "sl2_st_22",
+      "pattern": "ordinary",
+      "weekday": null,
+      "local_window": null
+    }
+  ],
+  "eval": {
+    "min_published_posts": 100,
+    "hero_academy_series_id": "sl2_series_hero_academy",
+    "hero_academy_ordered_ids": [
+      "sl2_ha_cover",
+      "sl2_ha_p01",
+      "sl2_ha_p02",
+      "sl2_ha_p03",
+      "sl2_ha_p04",
+      "sl2_ha_p05",
+      "sl2_ha_p06",
+      "sl2_ha_p07",
+      "sl2_ha_p08",
+      "sl2_ha_p09",
+      "sl2_ha_p10",
+      "sl2_ha_p11",
+      "sl2_ha_p12",
+      "sl2_ha_p13",
+      "sl2_ha_p14",
+      "sl2_ha_p15",
+      "sl2_ha_p16",
+      "sl2_ha_p18",
+      "sl2_ha_p19",
+      "sl2_ha_p20"
+    ],
+    "hero_academy_missing_page": 17,
+    "hero_academy_duplicate_page": 8,
+    "hero_academy_duplicate_ids": [
+      "sl2_ha_p08",
+      "sl2_ha_p08_dup"
+    ],
+    "watercolor_post_ids": [
+      "sl2_wc_01",
+      "sl2_wc_02",
+      "sl2_wc_03",
+      "sl2_wc_04",
+      "sl2_wc_05",
+      "sl2_wc_06",
+      "sl2_wc_07",
+      "sl2_wc_08",
+      "sl2_wc_09",
+      "sl2_wc_10",
+      "sl2_wc_11",
+      "sl2_wc_12",
+      "sl2_wc_13",
+      "sl2_wc_14",
+      "sl2_wc_15",
+      "sl2_wc_16",
+      "sl2_wc_17",
+      "sl2_wc_18"
+    ],
+    "already_on_x_post_ids": [
+      "sl2_ha_p01",
+      "sl2_ha_p02",
+      "sl2_ha_p03",
+      "sl2_ha_p04",
+      "sl2_ha_p05",
+      "sl2_ha_p06"
+    ],
+    "imported_revise_post_id": "sl2_ha_p02",
+    "native_revise_post_id": "sl2_rn_01",
+    "gated_original_post_ids": [
+      "sl2_gt_01",
+      "sl2_gt_02",
+      "sl2_gt_03",
+      "sl2_gt_04",
+      "sl2_gt_05",
+      "sl2_gt_06",
+      "sl2_gt_07",
+      "sl2_gt_08"
+    ],
+    "academy_ambiguous_labels": [
+      "Hero Academy",
+      "Academy Studies"
+    ],
+    "pagination_requires_second_page": true
+  },
+  "fixture_hash": "7e36b9b4fec4d2e84d12ddad79ce083002747cd0e3cb35aaae4ae0121dffa61a"
+}

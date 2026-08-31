@@ -1,0 +1,1896 @@
+{
+  "contract": "relay-command-wire-v1",
+  "forbidden": [
+    "publish_external"
+  ],
+  "tools": [
+    {
+      "name": "search_library",
+      "access": "read",
+      "required_scopes": [
+        "library:read"
+      ],
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "query": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "q": {
+                "type": "string"
+              },
+              "tag_ids": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "title_contains": {
+                "type": "string"
+              },
+              "title_pattern": {
+                "type": "string"
+              },
+              "description_contains": {
+                "type": "string"
+              },
+              "source": {
+                "type": "string",
+                "enum": [
+                  "PATREON",
+                  "SUBSCRIBESTAR",
+                  "RELAY"
+                ]
+              },
+              "visibility": {
+                "type": "string",
+                "enum": [
+                  "visible",
+                  "hidden",
+                  "review"
+                ]
+              },
+              "date_from": {
+                "type": "string"
+              },
+              "date_to": {
+                "type": "string"
+              },
+              "collection_id": {
+                "type": "string"
+              },
+              "destination_present": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "destination_absent": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "exclude_post_ids": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "tier_ids": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "media_type": {
+                "type": "string"
+              },
+              "publish_state": {
+                "type": "string",
+                "enum": [
+                  "published",
+                  "draft"
+                ]
+              },
+              "creative_work_id": {
+                "type": "string"
+              },
+              "text_only_posts": {
+                "type": "string",
+                "enum": [
+                  "exclude",
+                  "include",
+                  "only"
+                ]
+              },
+              "numbered_sequence": {
+                "type": "boolean"
+              },
+              "all": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "q": {
+                      "type": "string"
+                    },
+                    "tag_ids": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "title_contains": {
+                      "type": "string"
+                    },
+                    "title_pattern": {
+                      "type": "string"
+                    },
+                    "description_contains": {
+                      "type": "string"
+                    },
+                    "source": {
+                      "type": "string",
+                      "enum": [
+                        "PATREON",
+                        "SUBSCRIBESTAR",
+                        "RELAY"
+                      ]
+                    },
+                    "visibility": {
+                      "type": "string",
+                      "enum": [
+                        "visible",
+                        "hidden",
+                        "review"
+                      ]
+                    },
+                    "date_from": {
+                      "type": "string"
+                    },
+                    "date_to": {
+                      "type": "string"
+                    },
+                    "collection_id": {
+                      "type": "string"
+                    },
+                    "destination_present": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "destination_absent": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "exclude_post_ids": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "tier_ids": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "media_type": {
+                      "type": "string"
+                    },
+                    "publish_state": {
+                      "type": "string",
+                      "enum": [
+                        "published",
+                        "draft"
+                      ]
+                    },
+                    "creative_work_id": {
+                      "type": "string"
+                    },
+                    "text_only_posts": {
+                      "type": "string",
+                      "enum": [
+                        "exclude",
+                        "include",
+                        "only"
+                      ]
+                    },
+                    "numbered_sequence": {
+                      "type": "boolean"
+                    },
+                    "all": {
+                      "type": "array",
+                      "minItems": 1,
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "q": {
+                            "type": "string"
+                          },
+                          "tag_ids": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "title_contains": {
+                            "type": "string"
+                          },
+                          "title_pattern": {
+                            "type": "string"
+                          },
+                          "description_contains": {
+                            "type": "string"
+                          },
+                          "source": {
+                            "type": "string",
+                            "enum": [
+                              "PATREON",
+                              "SUBSCRIBESTAR",
+                              "RELAY"
+                            ]
+                          },
+                          "visibility": {
+                            "type": "string",
+                            "enum": [
+                              "visible",
+                              "hidden",
+                              "review"
+                            ]
+                          },
+                          "date_from": {
+                            "type": "string"
+                          },
+                          "date_to": {
+                            "type": "string"
+                          },
+                          "collection_id": {
+                            "type": "string"
+                          },
+                          "destination_present": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "destination_absent": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "exclude_post_ids": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "tier_ids": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "media_type": {
+                            "type": "string"
+                          },
+                          "publish_state": {
+                            "type": "string",
+                            "enum": [
+                              "published",
+                              "draft"
+                            ]
+                          },
+                          "creative_work_id": {
+                            "type": "string"
+                          },
+                          "text_only_posts": {
+                            "type": "string",
+                            "enum": [
+                              "exclude",
+                              "include",
+                              "only"
+                            ]
+                          },
+                          "numbered_sequence": {
+                            "type": "boolean"
+                          }
+                        }
+                      }
+                    },
+                    "any": {
+                      "type": "array",
+                      "minItems": 1,
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "q": {
+                            "type": "string"
+                          },
+                          "tag_ids": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "title_contains": {
+                            "type": "string"
+                          },
+                          "title_pattern": {
+                            "type": "string"
+                          },
+                          "description_contains": {
+                            "type": "string"
+                          },
+                          "source": {
+                            "type": "string",
+                            "enum": [
+                              "PATREON",
+                              "SUBSCRIBESTAR",
+                              "RELAY"
+                            ]
+                          },
+                          "visibility": {
+                            "type": "string",
+                            "enum": [
+                              "visible",
+                              "hidden",
+                              "review"
+                            ]
+                          },
+                          "date_from": {
+                            "type": "string"
+                          },
+                          "date_to": {
+                            "type": "string"
+                          },
+                          "collection_id": {
+                            "type": "string"
+                          },
+                          "destination_present": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "destination_absent": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "exclude_post_ids": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "tier_ids": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "media_type": {
+                            "type": "string"
+                          },
+                          "publish_state": {
+                            "type": "string",
+                            "enum": [
+                              "published",
+                              "draft"
+                            ]
+                          },
+                          "creative_work_id": {
+                            "type": "string"
+                          },
+                          "text_only_posts": {
+                            "type": "string",
+                            "enum": [
+                              "exclude",
+                              "include",
+                              "only"
+                            ]
+                          },
+                          "numbered_sequence": {
+                            "type": "boolean"
+                          }
+                        }
+                      }
+                    },
+                    "not": {
+                      "type": "array",
+                      "minItems": 1,
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "q": {
+                            "type": "string"
+                          },
+                          "tag_ids": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "title_contains": {
+                            "type": "string"
+                          },
+                          "title_pattern": {
+                            "type": "string"
+                          },
+                          "description_contains": {
+                            "type": "string"
+                          },
+                          "source": {
+                            "type": "string",
+                            "enum": [
+                              "PATREON",
+                              "SUBSCRIBESTAR",
+                              "RELAY"
+                            ]
+                          },
+                          "visibility": {
+                            "type": "string",
+                            "enum": [
+                              "visible",
+                              "hidden",
+                              "review"
+                            ]
+                          },
+                          "date_from": {
+                            "type": "string"
+                          },
+                          "date_to": {
+                            "type": "string"
+                          },
+                          "collection_id": {
+                            "type": "string"
+                          },
+                          "destination_present": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "destination_absent": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "exclude_post_ids": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "tier_ids": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "media_type": {
+                            "type": "string"
+                          },
+                          "publish_state": {
+                            "type": "string",
+                            "enum": [
+                              "published",
+                              "draft"
+                            ]
+                          },
+                          "creative_work_id": {
+                            "type": "string"
+                          },
+                          "text_only_posts": {
+                            "type": "string",
+                            "enum": [
+                              "exclude",
+                              "include",
+                              "only"
+                            ]
+                          },
+                          "numbered_sequence": {
+                            "type": "boolean"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              },
+              "any": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "q": {
+                      "type": "string"
+                    },
+                    "tag_ids": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "title_contains": {
+                      "type": "string"
+                    },
+                    "title_pattern": {
+                      "type": "string"
+                    },
+                    "description_contains": {
+                      "type": "string"
+                    },
+                    "source": {
+                      "type": "string",
+                      "enum": [
+                        "PATREON",
+                        "SUBSCRIBESTAR",
+                        "RELAY"
+                      ]
+                    },
+                    "visibility": {
+                      "type": "string",
+                      "enum": [
+                        "visible",
+                        "hidden",
+                        "review"
+                      ]
+                    },
+                    "date_from": {
+                      "type": "string"
+                    },
+                    "date_to": {
+                      "type": "string"
+                    },
+                    "collection_id": {
+                      "type": "string"
+                    },
+                    "destination_present": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "destination_absent": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "exclude_post_ids": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "tier_ids": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "media_type": {
+                      "type": "string"
+                    },
+                    "publish_state": {
+                      "type": "string",
+                      "enum": [
+                        "published",
+                        "draft"
+                      ]
+                    },
+                    "creative_work_id": {
+                      "type": "string"
+                    },
+                    "text_only_posts": {
+                      "type": "string",
+                      "enum": [
+                        "exclude",
+                        "include",
+                        "only"
+                      ]
+                    },
+                    "numbered_sequence": {
+                      "type": "boolean"
+                    },
+                    "all": {
+                      "type": "array",
+                      "minItems": 1,
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "q": {
+                            "type": "string"
+                          },
+                          "tag_ids": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "title_contains": {
+                            "type": "string"
+                          },
+                          "title_pattern": {
+                            "type": "string"
+                          },
+                          "description_contains": {
+                            "type": "string"
+                          },
+                          "source": {
+                            "type": "string",
+                            "enum": [
+                              "PATREON",
+                              "SUBSCRIBESTAR",
+                              "RELAY"
+                            ]
+                          },
+                          "visibility": {
+                            "type": "string",
+                            "enum": [
+                              "visible",
+                              "hidden",
+                              "review"
+                            ]
+                          },
+                          "date_from": {
+                            "type": "string"
+                          },
+                          "date_to": {
+                            "type": "string"
+                          },
+                          "collection_id": {
+                            "type": "string"
+                          },
+                          "destination_present": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "destination_absent": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "exclude_post_ids": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "tier_ids": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "media_type": {
+                            "type": "string"
+                          },
+                          "publish_state": {
+                            "type": "string",
+                            "enum": [
+                              "published",
+                              "draft"
+                            ]
+                          },
+                          "creative_work_id": {
+                            "type": "string"
+                          },
+                          "text_only_posts": {
+                            "type": "string",
+                            "enum": [
+                              "exclude",
+                              "include",
+                              "only"
+                            ]
+                          },
+                          "numbered_sequence": {
+                            "type": "boolean"
+                          }
+                        }
+                      }
+                    },
+                    "any": {
+                      "type": "array",
+                      "minItems": 1,
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "q": {
+                            "type": "string"
+                          },
+                          "tag_ids": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "title_contains": {
+                            "type": "string"
+                          },
+                          "title_pattern": {
+                            "type": "string"
+                          },
+                          "description_contains": {
+                            "type": "string"
+                          },
+                          "source": {
+                            "type": "string",
+                            "enum": [
+                              "PATREON",
+                              "SUBSCRIBESTAR",
+                              "RELAY"
+                            ]
+                          },
+                          "visibility": {
+                            "type": "string",
+                            "enum": [
+                              "visible",
+                              "hidden",
+                              "review"
+                            ]
+                          },
+                          "date_from": {
+                            "type": "string"
+                          },
+                          "date_to": {
+                            "type": "string"
+                          },
+                          "collection_id": {
+                            "type": "string"
+                          },
+                          "destination_present": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "destination_absent": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "exclude_post_ids": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "tier_ids": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "media_type": {
+                            "type": "string"
+                          },
+                          "publish_state": {
+                            "type": "string",
+                            "enum": [
+                              "published",
+                              "draft"
+                            ]
+                          },
+                          "creative_work_id": {
+                            "type": "string"
+                          },
+                          "text_only_posts": {
+                            "type": "string",
+                            "enum": [
+                              "exclude",
+                              "include",
+                              "only"
+                            ]
+                          },
+                          "numbered_sequence": {
+                            "type": "boolean"
+                          }
+                        }
+                      }
+                    },
+                    "not": {
+                      "type": "array",
+                      "minItems": 1,
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "q": {
+                            "type": "string"
+                          },
+                          "tag_ids": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "title_contains": {
+                            "type": "string"
+                          },
+                          "title_pattern": {
+                            "type": "string"
+                          },
+                          "description_contains": {
+                            "type": "string"
+                          },
+                          "source": {
+                            "type": "string",
+                            "enum": [
+                              "PATREON",
+                              "SUBSCRIBESTAR",
+                              "RELAY"
+                            ]
+                          },
+                          "visibility": {
+                            "type": "string",
+                            "enum": [
+                              "visible",
+                              "hidden",
+                              "review"
+                            ]
+                          },
+                          "date_from": {
+                            "type": "string"
+                          },
+                          "date_to": {
+                            "type": "string"
+                          },
+                          "collection_id": {
+                            "type": "string"
+                          },
+                          "destination_present": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "destination_absent": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "exclude_post_ids": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "tier_ids": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "media_type": {
+                            "type": "string"
+                          },
+                          "publish_state": {
+                            "type": "string",
+                            "enum": [
+                              "published",
+                              "draft"
+                            ]
+                          },
+                          "creative_work_id": {
+                            "type": "string"
+                          },
+                          "text_only_posts": {
+                            "type": "string",
+                            "enum": [
+                              "exclude",
+                              "include",
+                              "only"
+                            ]
+                          },
+                          "numbered_sequence": {
+                            "type": "boolean"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              },
+              "not": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "q": {
+                      "type": "string"
+                    },
+                    "tag_ids": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "title_contains": {
+                      "type": "string"
+                    },
+                    "title_pattern": {
+                      "type": "string"
+                    },
+                    "description_contains": {
+                      "type": "string"
+                    },
+                    "source": {
+                      "type": "string",
+                      "enum": [
+                        "PATREON",
+                        "SUBSCRIBESTAR",
+                        "RELAY"
+                      ]
+                    },
+                    "visibility": {
+                      "type": "string",
+                      "enum": [
+                        "visible",
+                        "hidden",
+                        "review"
+                      ]
+                    },
+                    "date_from": {
+                      "type": "string"
+                    },
+                    "date_to": {
+                      "type": "string"
+                    },
+                    "collection_id": {
+                      "type": "string"
+                    },
+                    "destination_present": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "destination_absent": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "exclude_post_ids": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "tier_ids": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "media_type": {
+                      "type": "string"
+                    },
+                    "publish_state": {
+                      "type": "string",
+                      "enum": [
+                        "published",
+                        "draft"
+                      ]
+                    },
+                    "creative_work_id": {
+                      "type": "string"
+                    },
+                    "text_only_posts": {
+                      "type": "string",
+                      "enum": [
+                        "exclude",
+                        "include",
+                        "only"
+                      ]
+                    },
+                    "numbered_sequence": {
+                      "type": "boolean"
+                    },
+                    "all": {
+                      "type": "array",
+                      "minItems": 1,
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "q": {
+                            "type": "string"
+                          },
+                          "tag_ids": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "title_contains": {
+                            "type": "string"
+                          },
+                          "title_pattern": {
+                            "type": "string"
+                          },
+                          "description_contains": {
+                            "type": "string"
+                          },
+                          "source": {
+                            "type": "string",
+                            "enum": [
+                              "PATREON",
+                              "SUBSCRIBESTAR",
+                              "RELAY"
+                            ]
+                          },
+                          "visibility": {
+                            "type": "string",
+                            "enum": [
+                              "visible",
+                              "hidden",
+                              "review"
+                            ]
+                          },
+                          "date_from": {
+                            "type": "string"
+                          },
+                          "date_to": {
+                            "type": "string"
+                          },
+                          "collection_id": {
+                            "type": "string"
+                          },
+                          "destination_present": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "destination_absent": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "exclude_post_ids": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "tier_ids": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "media_type": {
+                            "type": "string"
+                          },
+                          "publish_state": {
+                            "type": "string",
+                            "enum": [
+                              "published",
+                              "draft"
+                            ]
+                          },
+                          "creative_work_id": {
+                            "type": "string"
+                          },
+                          "text_only_posts": {
+                            "type": "string",
+                            "enum": [
+                              "exclude",
+                              "include",
+                              "only"
+                            ]
+                          },
+                          "numbered_sequence": {
+                            "type": "boolean"
+                          }
+                        }
+                      }
+                    },
+                    "any": {
+                      "type": "array",
+                      "minItems": 1,
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "q": {
+                            "type": "string"
+                          },
+                          "tag_ids": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "title_contains": {
+                            "type": "string"
+                          },
+                          "title_pattern": {
+                            "type": "string"
+                          },
+                          "description_contains": {
+                            "type": "string"
+                          },
+                          "source": {
+                            "type": "string",
+                            "enum": [
+                              "PATREON",
+                              "SUBSCRIBESTAR",
+                              "RELAY"
+                            ]
+                          },
+                          "visibility": {
+                            "type": "string",
+                            "enum": [
+                              "visible",
+                              "hidden",
+                              "review"
+                            ]
+                          },
+                          "date_from": {
+                            "type": "string"
+                          },
+                          "date_to": {
+                            "type": "string"
+                          },
+                          "collection_id": {
+                            "type": "string"
+                          },
+                          "destination_present": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "destination_absent": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "exclude_post_ids": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "tier_ids": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "media_type": {
+                            "type": "string"
+                          },
+                          "publish_state": {
+                            "type": "string",
+                            "enum": [
+                              "published",
+                              "draft"
+                            ]
+                          },
+                          "creative_work_id": {
+                            "type": "string"
+                          },
+                          "text_only_posts": {
+                            "type": "string",
+                            "enum": [
+                              "exclude",
+                              "include",
+                              "only"
+                            ]
+                          },
+                          "numbered_sequence": {
+                            "type": "boolean"
+                          }
+                        }
+                      }
+                    },
+                    "not": {
+                      "type": "array",
+                      "minItems": 1,
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "q": {
+                            "type": "string"
+                          },
+                          "tag_ids": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "title_contains": {
+                            "type": "string"
+                          },
+                          "title_pattern": {
+                            "type": "string"
+                          },
+                          "description_contains": {
+                            "type": "string"
+                          },
+                          "source": {
+                            "type": "string",
+                            "enum": [
+                              "PATREON",
+                              "SUBSCRIBESTAR",
+                              "RELAY"
+                            ]
+                          },
+                          "visibility": {
+                            "type": "string",
+                            "enum": [
+                              "visible",
+                              "hidden",
+                              "review"
+                            ]
+                          },
+                          "date_from": {
+                            "type": "string"
+                          },
+                          "date_to": {
+                            "type": "string"
+                          },
+                          "collection_id": {
+                            "type": "string"
+                          },
+                          "destination_present": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "destination_absent": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "exclude_post_ids": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "tier_ids": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "media_type": {
+                            "type": "string"
+                          },
+                          "publish_state": {
+                            "type": "string",
+                            "enum": [
+                              "published",
+                              "draft"
+                            ]
+                          },
+                          "creative_work_id": {
+                            "type": "string"
+                          },
+                          "text_only_posts": {
+                            "type": "string",
+                            "enum": [
+                              "exclude",
+                              "include",
+                              "only"
+                            ]
+                          },
+                          "numbered_sequence": {
+                            "type": "boolean"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "resolve_numbered_sequence",
+      "access": "read",
+      "required_scopes": [
+        "library:read"
+      ],
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "post_id",
+                "title"
+              ],
+              "properties": {
+                "post_id": {
+                  "type": "string"
+                },
+                "title": {
+                  "type": "string"
+                },
+                "member_label": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "preview_collection",
+      "access": "read",
+      "required_scopes": [
+        "library:read"
+      ],
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "collection_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "title": {
+            "type": "string"
+          },
+          "post_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "ordered_post_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "create_or_update_collection",
+      "access": "write",
+      "required_scopes": [
+        "command:apply",
+        "collections:write"
+      ],
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "collection_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "title": {
+            "type": "string"
+          },
+          "post_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "ordered_post_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "set_collection_order",
+      "access": "write",
+      "required_scopes": [
+        "command:apply",
+        "collections:write"
+      ],
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "collection_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "title": {
+            "type": "string"
+          },
+          "post_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "ordered_post_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "add_post_tags",
+      "access": "write",
+      "required_scopes": [
+        "command:apply"
+      ],
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "post_ids",
+          "tag_ids"
+        ],
+        "properties": {
+          "post_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "tag_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "remove_post_tags",
+      "access": "write",
+      "required_scopes": [
+        "command:apply"
+      ],
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "post_ids",
+          "tag_ids"
+        ],
+        "properties": {
+          "post_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "tag_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "create_saved_filter",
+      "access": "write",
+      "required_scopes": [
+        "command:apply"
+      ],
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "query": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "q": {
+                "type": "string"
+              },
+              "tag_ids": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "tier_ids": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "media_type": {
+                "type": "string"
+              },
+              "published_after": {
+                "type": "string"
+              },
+              "published_before": {
+                "type": "string"
+              }
+            }
+          },
+          "post_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "preview_post_revision",
+      "access": "read",
+      "required_scopes": [
+        "library:read"
+      ],
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "post_id",
+          "source",
+          "fields"
+        ],
+        "properties": {
+          "post_id": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "PATREON",
+              "SUBSCRIBESTAR",
+              "RELAY"
+            ]
+          },
+          "fields": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "title": {
+                "type": "string"
+              },
+              "description": {
+                "type": "string"
+              }
+            }
+          },
+          "requested_layer": {
+            "type": "string",
+            "enum": [
+              "presentation",
+              "native_version",
+              "collection",
+              "distribution_plan",
+              "schedule_rail"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "name": "revise_post",
+      "access": "write",
+      "required_scopes": [
+        "command:apply"
+      ],
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "post_id",
+          "source",
+          "fields"
+        ],
+        "properties": {
+          "post_id": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "PATREON",
+              "SUBSCRIBESTAR",
+              "RELAY"
+            ]
+          },
+          "fields": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "title": {
+                "type": "string"
+              },
+              "description": {
+                "type": "string"
+              }
+            }
+          },
+          "requested_layer": {
+            "type": "string",
+            "enum": [
+              "presentation",
+              "native_version",
+              "collection",
+              "distribution_plan",
+              "schedule_rail"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "name": "preview_release_plan",
+      "access": "read",
+      "required_scopes": [
+        "library:read"
+      ],
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "post_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "destination": {
+            "type": "string"
+          },
+          "cadence": {
+            "type": "string"
+          },
+          "skip_already_posted": {
+            "type": "boolean"
+          }
+        }
+      }
+    },
+    {
+      "name": "create_release_plan",
+      "access": "write",
+      "required_scopes": [
+        "command:apply",
+        "schedule:write"
+      ],
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "post_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "destination": {
+            "type": "string"
+          },
+          "cadence": {
+            "type": "string"
+          },
+          "skip_already_posted": {
+            "type": "boolean"
+          }
+        }
+      }
+    },
+    {
+      "name": "materialize_schedule",
+      "access": "write",
+      "required_scopes": [
+        "command:apply",
+        "schedule:write"
+      ],
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "post_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "destination": {
+            "type": "string"
+          },
+          "cadence": {
+            "type": "string"
+          },
+          "skip_already_posted": {
+            "type": "boolean"
+          }
+        }
+      }
+    },
+    {
+      "name": "prepare_destination_drafts",
+      "access": "write",
+      "required_scopes": [
+        "command:apply",
+        "drafts:write"
+      ],
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "post_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "destination": {
+            "type": "string"
+          },
+          "cadence": {
+            "type": "string"
+          },
+          "skip_already_posted": {
+            "type": "boolean"
+          }
+        }
+      }
+    },
+    {
+      "name": "preview_change_set",
+      "access": "read",
+      "required_scopes": [
+        "library:read"
+      ],
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "change_set_id": {
+            "type": "string"
+          },
+          "idempotency_key": {
+            "type": "string"
+          },
+          "instruction": {
+            "type": "string"
+          },
+          "resolved_post_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "ops": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          },
+          "expected_revisions": {
+            "type": "object"
+          },
+          "before_snapshot_ref": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "access_implications": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "apply_change_set",
+      "access": "write",
+      "required_scopes": [
+        "command:apply"
+      ],
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "change_set_id",
+          "resolved_post_ids"
+        ],
+        "properties": {
+          "change_set_id": {
+            "type": "string"
+          },
+          "resolved_post_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "undo_change_set",
+      "access": "write",
+      "required_scopes": [
+        "command:apply"
+      ],
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "change_set_id"
+        ],
+        "properties": {
+          "change_set_id": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  ]
+}

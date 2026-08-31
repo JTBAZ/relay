@@ -8,6 +8,8 @@
 
 **Not a substitute for:** [`road map.md`](../../road%20map.md) (strategy), **`AGENTS.md`** (repo map), or deep specs (**`docs/pattern-library.md`**, **`analytics-action-center-spec.md`**). Use this doc for **holistic UI/UX** and **cross-route** rules.
 
+**Relay Command Layer (Lab 2 organize / schedule commands):** numbered pass/fail scenarios live in [`RELAY_COMMAND_DREAM_FLOW_ACCEPTANCE.md`](RELAY_COMMAND_DREAM_FLOW_ACCEPTANCE.md). Conversational Lab 3 expansion: [`../studio/relay-command-mcp-build-plans/CONVERSATION-CONTRACT.md`](../studio/relay-command-mcp-build-plans/CONVERSATION-CONTRACT.md). Do not treat a database-only assertion as UX pass when that contract requires visible stacks, labels, order, or rail slices.
+
 **Automated checks today:** repo root **`npm run test`**, **`npm run build`**, **`node scripts/m10-token-log-scan.mjs`** (M10: no obvious token material in `console.*` under `src/`); **`web/`** **`npm run lint`**, **`npm run build`**. Full parity: root **`npm run verify:m10`**. There is **no** default root **`npm run test:e2e`** — do not require Playwright unless the project adds it.
 
 ---
@@ -16,7 +18,7 @@
 
 | Persona | Typical routes | Auth |
 |---------|----------------|------|
-| **Artist (creator)** | `/`, Library-adjacent flows, **`/designer`**, **`/collections`**, creator Patreon connect | Session per product rules |
+| **Artist (creator)** | `/`, Library-adjacent flows, **`/studio/lab2`** (Command Layer fixture playground), **`/studio/lab3`** (conversational playground), **`/designer`**, **`/collections`**, creator Patreon connect | Session per product rules |
 | **Fan (patron)** | **`/visitor`**, **`/visitor/favorites`**, patron Patreon connect | Patron OAuth / session per product rules |
 | **New user** | **`/landing`**, **`/onboarding`**, **`/login`** | As implemented |
 
@@ -41,6 +43,8 @@
 | **`/patreon/connect`**, **`/patreon/callback`** | Clear states for connect vs error vs success. | Infinite redirect loops (**fail**). |
 | **`/connect/patreon/patron/connect`**, **`/connect/patreon/patron/callback`** | Same clarity as creator flows, patron-specific copy where required. | — |
 | **`/dev/bench`** | Dev-only tooling — must not be required for production acceptance unless a ledger row says so. | — |
+| **`/studio/lab2`** | Command Layer playground when that program is in test: seeded Postgres corpus, rail mounted, lenses over the same post IDs. | Static `fixtures.ts` thumbs as the corpus; unsolicited auto-curation; autonomous publish. |
+| **`/studio/lab3`** | Conversational Command playground (P5–P10): production-shaped gallery + instrument. Selection review must not mutate Gallery until a later apply. | Treat fixture-only exact phrases as “natural language done”; mount production `/studio` CommandBox without HUMAN-FLAG. |
 
 ---
 

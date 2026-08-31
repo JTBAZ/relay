@@ -26,8 +26,9 @@ The Library top bar exposes a **Patreon** control: load **sync state** (watermar
 ### Artist surface (Library)
 
 - **Role:** **Source of truth** for curation—everything ingested, with fast find, filters, and **per-asset** decisions (visibility, tags, collections, triage). This is where the artist defines *what Relay may show* (subject to patron tier and platform rules), not a casual file dump.
-- **Mental model:** **Control room**, not the final “story” visitors read.
-- **Entry:** [`web/app/page.tsx`](../web/app/page.tsx) renders [`GalleryView`](../web/app/GalleryView.tsx).
+- **Mental model:** **Control room**, not the final “story” visitors read. **User supplies semantics; Relay executes organization** — the artist names series, membership, and intent; Relay runs collections, presentation vs native version writes, and unpublished plans against the same Library rows. Relay does not guess which works “belong together.”
+- **Lenses (Studio):** chronological Active Posts, named **Collections** stacks, and **Posting schedule** (rail / planned releases) are presentations of the **same** post IDs — not three inventories. Final chrome is productized in the Command Layer program; capacity lands in Studio Lab 2 first.
+- **Entry:** [`web/app/page.tsx`](../web/app/page.tsx) renders [`GalleryView`](../web/app/studio/GalleryView.tsx). Command-layer fixture playground: [`/studio/lab2`](../web/app/studio/lab2/lab2-page-client.tsx). Conversational playground: [`/studio/lab3`](../web/app/studio/lab3/) — see [relay-command-mcp-build-plans](studio/relay-command-mcp-build-plans/00-README.md).
 
 ### Artist viewer surface (Designer + public / clone)
 
@@ -195,6 +196,7 @@ Each pattern: **ideal** → **current behavior** → **gap** → **synergy** →
 ### What we want (directional)
 
 - **Post batch affordance** (stack / expand) without merging selection or visibility to “whole post” unless explicit.
+- **Natural-language organization** of the Library (collections, correct-layer revise, unpublished schedules) via the Command Layer program — artist meaning in, Relay mechanics out; not unsolicited cleanup.
 - **Explicit cover and display order** for posts/collections as they appear on Designer / public pages.
 - **Bridge copy** in Library: what changing visibility or sections implies for the published page.
 - **Richer tagging UX** (remove tags, suggestions, aliases) where API allows or after API extensions.
@@ -271,6 +273,7 @@ Ordered so **Library contracts** stabilize before **visitor** investment.
 ## 8. Out of scope (named deferrals)
 
 - **AI auto-tagging (Smart Tag Assistant)** — deferred; full scope and guardrails live under [road map.md](../road%20map.md) → **Ledger (Part 1, post-stabilization): Smart Tag Assistant**. Not required for current pattern compliance.
+- **Unsolicited AI curation / similarity clustering** — out of pattern; Command Layer organizes only what the artist named ([relay-command-mcp-build-plans](studio/relay-command-mcp-build-plans/PRODUCT-CONTRACT.md)).
 - **Full design-system extraction** — document tokens conceptually; implement in a dedicated UI pass.
 
 ---

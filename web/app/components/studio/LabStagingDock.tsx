@@ -42,6 +42,8 @@ type Props = {
   onAutopost?: (items: ImportBinItem[]) => void;
   /** studio = lab2 material runway with Bay→Rail corridor cue. */
   variant?: "default" | "studio";
+  /** Lab 3 modal: upload + new post only — no Autopost or schedule-drop cues. */
+  libraryOnly?: boolean;
   /** Lab2: bay media drag session — arms the Scheduler intake corridor. */
   onCorridorDragChange?: (dragging: boolean) => void;
 };
@@ -471,6 +473,7 @@ export function LabStagingDock({
   onAddToNewPost,
   onAutopost,
   variant = "default",
+  libraryOnly = false,
   onCorridorDragChange
 }: Props) {
   const isStudio = variant === "studio";
@@ -671,6 +674,7 @@ export function LabStagingDock({
 
   const dragPayloadFor = useCallback(
     (item: ImportBinItem): StagedMediaDragPayload | null => {
+      if (libraryOnly) return null;
       if (item.serverStaged !== true) return null;
       const selectedComposableItems = items.filter(
         (it) => selectedIds.has(it.id) && it.serverStaged === true
@@ -689,7 +693,7 @@ export function LabStagingDock({
         }))
       };
     },
-    [items, selectedIds]
+    [items, selectedIds, libraryOnly]
   );
 
   const discordAria = discordLoading
@@ -715,7 +719,7 @@ export function LabStagingDock({
           </button>
         ) : null}
 
-        {canCompose && onAutopost ? (
+        {canCompose && onAutopost && !libraryOnly ? (
           <button
             type="button"
             onClick={() => {
@@ -1070,7 +1074,7 @@ export function LabStagingDock({
 
             <div className="flex min-w-0 flex-1 flex-col gap-1.5">
                 <p className="text-[10px] font-medium uppercase tracking-[0.08em] text-[#3e4e48]">
-                  Drag to Schedule
+                  {libraryOnly ? "Staged work" : "Drag to Schedule"}
                 </p>
               <div className="flex min-h-[88px] flex-1 items-stretch gap-2 overflow-x-auto library-hide-scrollbars">
                 {items.length === 0 ? (
@@ -1078,7 +1082,9 @@ export function LabStagingDock({
                     <p className="text-[12px] leading-relaxed text-[#3e4742]">
                       {loading
                         ? "Loading staged media…"
-                        : "Nothing staged yet. Drop files here or wait for Discord captures — then drag thumbs to the Schedule Rail."}
+                        : libraryOnly
+                          ? "Nothing staged yet. Drop files here or wait for Discord captures."
+                          : "Nothing staged yet. Drop files here or wait for Discord captures — then drag thumbs to the Schedule Rail."}
                     </p>
                   </div>
                 ) : (

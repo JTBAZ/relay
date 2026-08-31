@@ -18,6 +18,7 @@ Relay is **two intentional products** that share one **access and content model*
 
 - After **register** and **Patreon connect** (OAuth plus ingest/scrape as implemented), the artist lands in the **Library**: a chronological or tier-aware inventory of Patreon-sourced content.
 - The Library is the **curation hub and source of truth** for what Relay may expose: visibility (including hiding duplicates or legacy work), retagging, hygiene, and **Collections** that shape how viewers browse.
+- **Art Post Centralizer (durable moat):** the artist supplies meaning; Relay executes mechanics. Natural-language commands organize the real Library and schedule (collections, correct-layer edits, release plans, destination drafts) against PostgreSQL — not an AI curator that guesses related works, and not a second CMS. Execution pack: [docs/studio/relay-command-mcp-build-plans/00-README.md](docs/studio/relay-command-mcp-build-plans/00-README.md).
 - The **homepage / public gallery** is a **projection** of that policy plus **layout** (Designer): not a separate inventory. Patreon-side changes should **flow in continuously** after initial setup; curation is overlays, not re-entry of every post.
 - **Tier and access rules** from Patreon remain authoritative for paywalled material; Relay applies **artist overrides** on top of canonical ingested rows.
 
@@ -44,6 +45,7 @@ Use this roadmap as the execution sequence and use the reference docs for deeper
   - [docs/pattern-library.md](docs/pattern-library.md)
   - **Publish-preflight UI snapshot (not production):** [design-archive/preflight/PREFLIGHT.txt](design-archive/preflight/PREFLIGHT.txt) — reserved Next.js archive (`relay-preflight-archive`); see [builder reference under Workstream D](#workstream-d-gallery-experience). Search repo: `preflight`.
 - **Relay Goal Cycle (Library-first goal → research → Plan → schedule → execute → outcomes):** the authoritative dependency graph, locked decisions, worker packs, human gates, and Dream-flow traceability are in [docs/studio/goal-cycle-build-plans/00-README.md](docs/studio/goal-cycle-build-plans/00-README.md). Build from those slices; do not treat this strategic roadmap as the task pack.
+- **Relay Command Layer + MCP (Art Post Centralizer):** natural-language organize / revise / plan against the live Library. P1–P4 (Lab 2 fixture NL) are Done. Conversational expansion P5–P10 (Lab 3) starts at selection truth: [docs/studio/relay-command-mcp-build-plans/00-README.md](docs/studio/relay-command-mcp-build-plans/00-README.md). This program does not use the Airtable Production Ledger.
 - **Sync & access hardening (Slices 1–4, shipped):** [docs/part1-sync-hardening-ledger.md](docs/part1-sync-hardening-ledger.md) — export retries, tier alignment, watermark + re-sync UI, sync health; one ledger for APIs, env vars, and tests.
 - Standardized build contracts, quality gates, and traceability:
   - [builder-boost-pack/README.md](builder-boost-pack/README.md)
@@ -605,6 +607,8 @@ Builder reference:
 8. Part 3 foundation: patron identity, follow graph, feed assembly with strict entitlements.
 9. Part 3 growth: discovery and creator-opt-in promos, Browse ranking, patron engagement (comments, favorites, collections), pledge upgrade path, instrumentation, abuse controls.
 10. Part 3 optional monetization: premium viewer and disclosed boost surfaces after policy review and baseline engagement.
+
+**Art Post Centralizer (parallel Part 1 moat, not a replacement numbered step):** natural-language organization of the Library and schedule — user supplies semantics; Relay executes collections, correct-layer edits, and unpublished release plans. Worker program: [docs/studio/relay-command-mcp-build-plans/00-README.md](docs/studio/relay-command-mcp-build-plans/00-README.md). Does not reopen Goal Cycle, Automations, Escape Hatch, or Smart Tag Assistant.
 
 ### Publish-preflight archive vs milestone sequence
 
