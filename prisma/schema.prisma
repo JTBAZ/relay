@@ -230,6 +230,8 @@ model Account {
   creatorNotifications               Notification[]                      @relation("CreatorNotificationRecipient")
   oauthTransactions                  OAuthTransaction[]
   identityAuditEvents                IdentityAuditEvent[]
+  commandGrants                      CommandGrant[]
+  commandAuditEvents                 CommandAuditEvent[]
 
   @@map("accounts")
 }
@@ -2929,6 +2931,115 @@ model IdentityAuditEvent {
 }
 
 /// Patron SubscribeStar subscriber OAuth tokens (separate app registration / scopes from creator ingest).
+/// Command Layer MCP grants — distinct from web/extension `Session` rows. Token hash only at rest.
+/// Hosted apply is HUMAN-MIGRATE / HUMAN-SECURITY (do not enable PostgREST client access).
+model CommandGrant {
+  id          String    @id @default(cuid())
+  accountId   String    @map("account_id")
+  account     Account   @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  creatorId   String    @map("creator_id")
+  tokenHash   String    @unique @map("token_hash")
+  scopes      String[]  @default([])
+  clientLabel String    @map("client_label")
+  expiresAt   DateTime  @map("expires_at")
+  revokedAt   DateTime? @map("revoked_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  @@index([accountId, creatorId])
+  @@index([creatorId, expiresAt])
+  @@map("command_grants")
+}
+
+/// Command Layer tool audit. No prompts, tokens, private URLs, or patron identity.
+model CommandAuditEvent {
+  id          String   @id @default(cuid())
+  accountId   String?  @map("account_id")
+  account     Account? @relation(fields: [accountId], references: [id], onDelete: SetNull)
+  creatorId   String   @map("creator_id")
+  tool        String
+  inputHash   String   @map("input_hash")
+  changeSetId String?  @map("change_set_id")
+  outcome     String
+  traceId     String   @map("trace_id")
+  origin      String
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@index([creatorId, createdAt])
+  @@index([traceId])
+  @@map("command_audit_events")
+}
+
+/// Lab 3 / production-shaped selection proposal. One open row per creator. Hosted apply HUMAN-MIGRATE.
+model CommandSelectionProposal {
+  id               String   @id @map("id")
+  creatorId        String   @unique @map("creator_id")
+  stage            String
+  instruction      String
+  snapshotJson     Json     @map("snapshot_json")
+  recordsJson      Json     @map("records_json")
+  excludePostIds   String[]  @default([]) @map("exclude_post_ids")
+  frozenPostIds    String[]  @default([]) @map("frozen_post_ids")
+  frozenRevision   String?  @map("frozen_revision")
+  snapshotRevision String   @map("snapshot_revision")
+  createdAt        DateTime @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  @@index([creatorId, stage])
+  @@map("command_selection_proposals")
+}
+
+/// ChangeSet envelope + frozen resolved_post_ids. Undo payload is a sibling row.
+model CommandChangeSet {
+  id                    String                @id @map("id")
+  creatorId             String                @map("creator_id")
+  idempotencyKey        String                @map("idempotency_key")
+  instruction           String
+  status                String
+  resolvedPostIds       String[]              @map("resolved_post_ids")
+  opsJson               Json                 @map("ops_json")
+  expectedRevisionsJson Json                 @map("expected_revisions_json")
+  beforeSnapshotRef     String?               @map("before_snapshot_ref")
+  afterSummary          String?               @map("after_summary")
+  accessImplications     String[]              @default([]) @map("access_implications")
+  createdAt             DateTime             @map("created_at")
+  updatedAt             DateTime             @updatedAt @map("updated_at")
+  undo                  CommandChangeSetUndo?
+
+  @@index([creatorId, status])
+  @@index([creatorId, idempotencyKey])
+  @@map("command_change_sets")
+}
+
+/// Engine undo snapshots (collections, presentations, versions, tags, saved filters).
+model CommandChangeSetUndo {
+  changeSetId String           @id @map("change_set_id")
+  changeSet   CommandChangeSet  @relation(fields: [changeSetId], references: [id], onDelete: Cascade)
+  creatorId   String            @map("creator_id")
+  stateJson   Json             @map("state_json")
+  createdAt   DateTime          @default(now()) @map("created_at")
+  updatedAt   DateTime          @updatedAt @map("updated_at")
+
+  @@index([creatorId])
+  @@map("command_change_set_undos")
+}
+
+/// Command Layer HTTP/MCP idempotency snapshots (RC-P8-T05). Hosted apply HUMAN-MIGRATE.
+model CommandIdempotencyKey {
+  storageKey        String    @id @map("storage_key")
+  bodyHash          String    @default("") @map("body_hash")
+  status            Int?
+  responseJson      Json?     @map("response_json")
+  headersJson       Json?     @map("headers_json")
+  lockedUntil       DateTime? @map("locked_until")
+  snapshotExpiresAt DateTime? @map("snapshot_expires_at")
+  createdAt         DateTime  @default(now()) @map("created_at")
+  updatedAt         DateTime  @updatedAt @map("updated_at")
+
+  @@index([snapshotExpiresAt])
+  @@map("command_idempotency_keys")
+}
+
 model PatronSubscribestarOAuthCredential {
   id               String           @id @default(cuid())
   accountId        String           @unique @map("account_id")

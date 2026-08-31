@@ -973,6 +973,8 @@ import { registerGoalCyclePlannerRoutes } from "./goal-cycle/planner/planner-rou
 import { registerGoalCycleMaterializationRoutes } from "./goal-cycle/materialization/materialization-routes.js";
 import { registerGoalCycleOutcomeRoutes } from "./goal-cycle/outcomes/outcome-routes.js";
 import { registerCoachPlanCreditRoutes } from "./usage/coach-plan-credit-routes.js";
+import { registerRelayCommandHttpRoutes } from "./studio/command/http-routes.js";
+import { registerRelayCommandMcpHttpRoutes } from "./studio/command/mcp/http-routes.js";
 import {
   createManagedVerifyService,
   registerManagedVerifyRoutes
@@ -21835,6 +21837,16 @@ export function createApp(config: AppConfig): CreateAppResult {
     prisma: config.prisma,
     identityService,
     buildIdem
+  });
+
+  registerRelayCommandHttpRoutes(app, {
+    prisma: config.prisma,
+    identityService
+  });
+
+  registerRelayCommandMcpHttpRoutes(app, {
+    prisma: config.prisma,
+    identityService
   });
 
   registerCoachPlanCreditRoutes(app, {

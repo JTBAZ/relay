@@ -60,9 +60,9 @@ function defaultSignedInLanding(req: NextRequest): string {
   return readActiveRoleFromRequest(req) === "creator" ? "/studio" : "/feed";
 }
 
-/** PUX-001 — dev account switcher must stay reachable while signed in. */
+/** PUX-001 / Lab 2 — local playground logins must stay reachable while signed in. */
 function isPilotUxDevLoginRoute(path: string): boolean {
-  return path === "/login/pilot-ux";
+  return path === "/login/pilot-ux" || path === "/login/studio-lab2";
 }
 
 function isAppRoute(path: string): boolean {

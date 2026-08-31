@@ -6315,3 +6315,288 @@ export async function requestCreatorPayout(): Promise<{
     body: JSON.stringify({})
   });
 }
+
+export type CommandChangeSetClientEnvelope = {
+  change_set_id: string;
+  status: string;
+  resolved_post_ids: string[];
+  after_summary?: string | null;
+};
+
+export async function previewCreatorCommand(body: Record<string, unknown>): Promise<{
+  envelope: CommandChangeSetClientEnvelope;
+}> {
+  return relayFetch("/api/v1/creator/command/preview", {
+    method: "POST",
+    body: JSON.stringify(body)
+  });
+}
+
+export async function applyCreatorCommand(
+  body: Record<string, unknown>,
+  idempotencyKey?: string
+): Promise<{ envelope: CommandChangeSetClientEnvelope }> {
+  return relayFetch("/api/v1/creator/command/apply", {
+    method: "POST",
+    headers: idempotencyKey ? { "Idempotency-Key": idempotencyKey } : undefined,
+    body: JSON.stringify(body)
+  });
+}
+
+export async function undoCreatorCommand(body: {
+  creator_id: string;
+  change_set_id: string;
+}): Promise<{ undo: { change_set_id: string } }> {
+  return relayFetch("/api/v1/creator/command/undo", {
+    method: "POST",
+    body: JSON.stringify(body)
+  });
+}
+
+export type Lab2HarnessInterpretResult =
+  | {
+      kind: "clarification";
+      scenario_id: string;
+      prompt: string;
+      candidate_labels: string[];
+    }
+  | {
+      kind: "preview";
+      scenario_id: string;
+      change_set_id: string;
+      instruction: string;
+      resolved_post_ids: string[];
+      ops: Array<{
+        op_id: string;
+        capability: string;
+        risk_class: string;
+        target_ids: string[];
+        payload: Record<string, unknown>;
+      }>;
+      write_layer: string | null;
+      warnings: string[];
+      summary: string;
+      lens_hint: "collections" | "schedule" | null;
+      apply_ready: boolean;
+    }
+  | {
+      kind: "error";
+      code: string;
+      message: string;
+    };
+
+export type CommandRuntimeFlags = {
+  layer_enabled: boolean;
+  apply_enabled: boolean;
+  mcp_enabled: boolean;
+  studio_ux_enabled: boolean;
+  selection_ux_enabled: boolean;
+  schedule_plan_enabled: boolean;
+};
+
+export type CommandSelectionProposalClient = {
+  proposal_id: string;
+  creator_id: string;
+  stage: "selection_review" | "selection_approved" | "plan_shaping";
+  instruction: string;
+  snapshot: {
+    post_ids: string[];
+    explanation: string;
+    warnings: string[];
+    revision: string;
+    complete: true;
+    creator_id: string;
+    created_at: string;
+  };
+  records: Array<{
+    post_id: string;
+    title: string;
+    member_label: string | null;
+    page_number: number | null;
+    destination_flags: Partial<Record<"patreon" | "x" | "deviantart" | "bluesky", boolean>>;
+  }>;
+  exclude_post_ids: string[];
+  frozen_post_ids: string[];
+  frozen_revision: string | null;
+  plan?: {
+    version: number;
+    time_zone: string;
+    weekday: number;
+    interval_days: number;
+    start_local: string;
+    exclude_post_ids: string[];
+    skip_post_ids: string[];
+    slot_overrides: Record<string, string>;
+  } | null;
+};
+
+export type CommandSelectionProposalPatchOp =
+  | "exclude"
+  | "restore"
+  | "select_all"
+  | "select_none"
+  | "approve";
+
+export async function fetchActiveSelectionProposal(body: {
+  creator_id: string;
+}): Promise<{ proposal: CommandSelectionProposalClient | null }> {
+  const query = new URLSearchParams({ creator_id: body.creator_id });
+  return relayFetch(`/api/v1/creator/command/selection-proposal?${query.toString()}`);
+}
+
+export async function createSelectionProposal(body: {
+  creator_id: string;
+  instruction: string;
+  post_ids: string[];
+  warnings?: string[];
+  explanation?: string;
+  revision?: string;
+}): Promise<{ proposal: CommandSelectionProposalClient }> {
+  return relayFetch("/api/v1/creator/command/selection-proposal", {
+    method: "POST",
+    body: JSON.stringify(body)
+  });
+}
+
+export async function cancelSelectionProposal(body: {
+  creator_id: string;
+  proposal_id: string;
+}): Promise<{ cancelled: boolean; proposal_id: string }> {
+  return relayFetch("/api/v1/creator/command/selection-proposal/cancel", {
+    method: "POST",
+    body: JSON.stringify(body)
+  });
+}
+
+export async function patchSelectionProposal(body: {
+  creator_id: string;
+  proposal_id: string;
+  op: CommandSelectionProposalPatchOp;
+  post_ids?: string[];
+}): Promise<{ proposal: CommandSelectionProposalClient }> {
+  return relayFetch("/api/v1/creator/command/selection-proposal/patch", {
+    method: "POST",
+    body: JSON.stringify(body)
+  });
+}
+
+export async function refineSelectionProposal(body: {
+  creator_id: string;
+  proposal_id: string;
+  instruction: string;
+}): Promise<{
+  proposal: CommandSelectionProposalClient;
+  summary: string;
+  op: "exclude" | "restore";
+  post_ids: string[];
+}> {
+  return relayFetch("/api/v1/creator/command/selection-proposal/refine", {
+    method: "POST",
+    body: JSON.stringify(body)
+  });
+}
+
+export type CommandPlanPatchOp =
+  | "set_weekday"
+  | "set_interval_days"
+  | "set_start"
+  | "move_slot"
+  | "exclude_post_id"
+  | "restore_post_id";
+
+export type CommandFinitePlanSlotClient = {
+  post_id: string;
+  due_at: string;
+};
+
+export async function fetchCommandPlanProposal(body: {
+  creator_id: string;
+  proposal_id?: string;
+  time_zone?: string;
+  start_local?: string;
+  weekday?: string;
+}): Promise<{
+  proposal_id: string;
+  stage: CommandSelectionProposalClient["stage"];
+  persisted: boolean;
+  plan: NonNullable<CommandSelectionProposalClient["plan"]>;
+  slots: CommandFinitePlanSlotClient[];
+}> {
+  const query = new URLSearchParams({ creator_id: body.creator_id });
+  if (body.proposal_id) query.set("proposal_id", body.proposal_id);
+  if (body.time_zone) query.set("time_zone", body.time_zone);
+  if (body.start_local) query.set("start_local", body.start_local);
+  if (body.weekday) query.set("weekday", body.weekday);
+  return relayFetch(`/api/v1/creator/command/plan-proposal?${query.toString()}`);
+}
+
+export async function patchCommandPlanProposal(body: {
+  creator_id: string;
+  proposal_id: string;
+  op: CommandPlanPatchOp;
+  expected_version?: number;
+  weekday?: number | string;
+  interval_days?: number;
+  start_local?: string;
+  time_zone?: string;
+  post_id?: string;
+  due_at?: string;
+}): Promise<{
+  proposal: CommandSelectionProposalClient;
+  plan: NonNullable<CommandSelectionProposalClient["plan"]>;
+  slots: CommandFinitePlanSlotClient[];
+}> {
+  return relayFetch("/api/v1/creator/command/plan-proposal/patch", {
+    method: "POST",
+    body: JSON.stringify(body)
+  });
+}
+
+export async function refineCommandPlanProposal(body: {
+  creator_id: string;
+  proposal_id: string;
+  instruction: string;
+}): Promise<{
+  proposal: CommandSelectionProposalClient;
+  plan: NonNullable<CommandSelectionProposalClient["plan"]>;
+  slots: CommandFinitePlanSlotClient[];
+  summary: string;
+  op: "set_weekday" | "set_interval_days" | "set_start";
+}> {
+  return relayFetch("/api/v1/creator/command/plan-proposal/refine", {
+    method: "POST",
+    body: JSON.stringify(body)
+  });
+}
+
+export async function fetchCommandFlags(): Promise<CommandRuntimeFlags> {
+  const out = await relayFetchWithoutAuthRedirect<{ flags: CommandRuntimeFlags }>(
+    "/api/v1/creator/command/flags"
+  );
+  return out.flags;
+}
+
+export async function interpretLab2Command(body: {
+  creator_id: string;
+  instruction: string;
+  clarification_choice?: string;
+  surface?: "lab2" | "lab3" | "studio";
+}): Promise<{ result: Lab2HarnessInterpretResult }> {
+  return relayFetch("/api/v1/creator/command/harness/interpret", {
+    method: "POST",
+    body: JSON.stringify(body)
+  });
+}
+
+export async function resetLab2PlaygroundBaseline(body: { creator_id: string }): Promise<{
+  restored: {
+    creator_id: string;
+    collection_count: number;
+    removed_collection_ids: string[];
+  };
+}> {
+  return relayFetch("/api/v1/creator/command/lab2/reset-baseline", {
+    method: "POST",
+    body: JSON.stringify(body)
+  });
+}
