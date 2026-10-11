@@ -193,6 +193,32 @@ describe.skipIf(!databaseUrl)("Gallery editor — PostgreSQL atomic execution", 
     expect(await db.galleryEditorCommit.count({ where: { creatorId } })).toBe(1);
   });
 
+  it("concurrent sessions cannot commit competing previews for the same post", async () => {
+    const first = await draft([{ id: "first", kind: "rename_post", postId: postA, title: "First proposal" }]);
+    const second = await draft([{ id: "second", kind: "rename_post", postId: postA, title: "Second proposal" }]);
+    // Hold both real database transactions after reading the absent overlay.
+    // This exercises PostgreSQL's unique-insert race deterministically.
+    let readers = 0, release!: () => void;
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    const timeout = setTimeout(release, 2000);
+    const synchronizedDb = db.$extends({ query: { postPresentation: { async findMany({ args, query }) {
+      const rows = await query(args);
+      if (args.where?.creatorId === creatorId && readers < 2) {
+        readers += 1; if (readers === 2) release(); await gate;
+      }
+      return rows;
+    } } } });
+    const concurrentEditor = new GalleryEditorService(synchronizedDb as unknown as PrismaClient);
+    const results = await Promise.allSettled([
+      concurrentEditor.apply(creatorId, actorId, first.id, 1, newId()), concurrentEditor.apply(creatorId, actorId, second.id, 1, newId())
+    ]);
+    clearTimeout(timeout);
+    expect(readers).toBe(2);
+    expect(results.filter(r => r.status === "fulfilled")).toHaveLength(1);
+    expect((results.find(r => r.status === "rejected") as PromiseRejectedResult).reason).toMatchObject({ code: "STALE_PREVIEW" });
+    expect(await db.galleryEditorCommit.count({ where: { creatorId } })).toBe(1);
+  });
+
   it("new family members invalidate the preview and prevent partial Apply", async () => {
     const session = await draft([{ id: "rename", kind: "rename_work", workId, title: "Stale" }]);
     await seedPost(creatorId, campaignId, workId);
