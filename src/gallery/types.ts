@@ -24,6 +24,8 @@ export type PostVisibility = "visible" | "hidden" | "review";
 export type GalleryItem = {
   media_id: string;
   post_id: string;
+  /** Owner-only naming provenance; omitted from public/patron representations. */
+  naming?: import("../gallery-editor/types.js").NamingProvenance;
   title: string;
   description?: string;
   published_at: string;

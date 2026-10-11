@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-vi.mock("../src/gallery-editor/naming.js", () => ({ loadPostNaming: vi.fn(async () => ({})) }));
+vi.mock("../src/gallery-editor/naming.js", async (importOriginal) => ({ ...await importOriginal<typeof import("../src/gallery-editor/naming.js")>(), loadPostNaming: vi.fn(async () => ({})) }));
 import {
   expandLibraryFamily, LibraryReadBudget, readLibraryCollections, readLibraryCollectionPosts, readLibraryMedia,
   resolveLibraryImageReferences, resolveLibraryPosts, retrieveLibraryThumbnails,

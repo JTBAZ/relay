@@ -37,6 +37,10 @@ import {
   verifyCreatorSubscribeStarOAuthState
 } from "./auth/subscribestar-creator-oauth-state.js";
 import { errorEnvelope, successEnvelope } from "./contracts/api.js";
+import { registerGalleryEditorRoutes } from "./gallery-editor/routes.js";
+import { GalleryEditorService } from "./gallery-editor/service.js";
+import { loadPostNaming } from "./gallery-editor/naming.js";
+import { EditorError } from "./gallery-editor/types.js";
 import { RELAY_TIER_ALL_PATRONS, RELAY_TIER_PUBLIC } from "./patreon/relay-access-tiers.js";
 import { DbEventBus } from "./events/event-bus-db.js";
 import { InMemoryEventBus, type RelayEventBus } from "./events/event-bus.js";
@@ -6297,6 +6301,8 @@ export function createApp(config: AppConfig): CreateAppResult {
           creatorId,
           postIds
         );
+        const naming = await loadPostNaming(config.prisma, creatorId, postIds);
+        result.items = result.items.map(item => ({ ...item, naming: naming[item.post_id] }));
         if (memberships.size > 0) {
           result.items = result.items.map((item) => {
             const membership = memberships.get(item.post_id);
@@ -19299,6 +19305,27 @@ export function createApp(config: AppConfig): CreateAppResult {
     return res.redirect(302, resolved.location);
   });
 
+  if (config.prisma) {
+    registerGalleryEditorRoutes(app, {
+      prisma: config.prisma,
+      storageRoot: exportStorageRoot,
+      traceId: traceIdFrom,
+      authorize: async (req, res, mutation) => {
+        const traceId = traceIdFrom(req);
+        try {
+          const { context } = await requireAccount(req, { prisma: config.prisma!, identityService });
+          const creatorId = context.primaryRelayCreatorId?.trim();
+          if (!creatorId) { res.status(403).json(errorEnvelope("FORBIDDEN", "A creator account is required.", traceId)); return null; }
+          if (mutation && (!(await assertCreatorRelayMutationAllowed(req, res, traceId, config.prisma, creatorId)) || !(await guardStudioSyncWritable(res, traceId, creatorId)))) return null;
+          return { creatorId, actorId: context.accountId };
+        } catch (err) {
+          if (sendRelayAuthError(res, err, traceId)) return null;
+          throw err;
+        }
+      }
+    });
+  }
+
   /**
    * BO-RPB-04 — Relay `PostPresentation` upsert (titles, descriptions, media order, tier preview JSON).
    * Does not touch canonical ingest; auth parity with `gallery/media/bulk-tags` (+ MT-010 secret / tenant guard).
@@ -19396,41 +19423,17 @@ export function createApp(config: AppConfig): CreateAppResult {
     if (!owned) {
       return res.status(404).json(errorEnvelope("NOT_FOUND", "Post not found.", traceId));
     }
-    const createPayload: Prisma.PostPresentationUncheckedCreateInput = {
-      creatorId,
-      postId,
-      relayTitle: fragments.relayTitle ?? null,
-      relayDescription: fragments.relayDescription ?? null,
-      mediaOrder: fragments.mediaOrder ?? [],
-      ...(fragments.tierPreviewSettings !== undefined
-        ? {
-            tierPreviewSettings:
-              fragments.tierPreviewSettings === null
-                ? Prisma.DbNull
-                : fragments.tierPreviewSettings
-          }
-        : {}),
-      ...(fragments.promoPreviewMediaId !== undefined
-        ? { promoPreviewMediaId: fragments.promoPreviewMediaId }
-        : {})
-    };
-    const updatePayload: Prisma.PostPresentationUncheckedUpdateInput = {};
-    if (fragments.relayTitle !== undefined) updatePayload.relayTitle = fragments.relayTitle;
-    if (fragments.relayDescription !== undefined)
-      updatePayload.relayDescription = fragments.relayDescription;
-    if (fragments.mediaOrder !== undefined) updatePayload.mediaOrder = fragments.mediaOrder;
-    if (fragments.tierPreviewSettings !== undefined) {
-      updatePayload.tierPreviewSettings =
-        fragments.tierPreviewSettings === null ? Prisma.DbNull : fragments.tierPreviewSettings;
+    let row: Awaited<ReturnType<typeof prisma.postPresentation.upsert>>;
+    let receipt: unknown;
+    try {
+      const { context } = await requireAccount(req, { prisma, identityService });
+      const committed = await new GalleryEditorService(prisma).applyManualPresentation(creatorId, context.accountId, postId, fragments);
+      row = committed.presentation;
+      receipt = committed.receipt;
+    } catch (error) {
+      if (error instanceof EditorError) return res.status(error.status).json(errorEnvelope(error.code, error.message, traceId));
+      throw error;
     }
-    if (fragments.promoPreviewMediaId !== undefined) {
-      updatePayload.promoPreviewMediaId = fragments.promoPreviewMediaId;
-    }
-    const row = await prisma.postPresentation.upsert({
-      where: { postId },
-      create: createPayload,
-      update: updatePayload
-    });
     res.setHeader("Cache-Control", "private, no-store");
     return res.status(200).json(
       successEnvelope(
@@ -19438,12 +19441,14 @@ export function createApp(config: AppConfig): CreateAppResult {
           presentation: {
             post_id: row.postId,
             relay_title: row.relayTitle,
+            title_mode: row.titleMode,
             relay_description: row.relayDescription,
             media_order: row.mediaOrder,
             tier_preview_settings: row.tierPreviewSettings ?? null,
             promo_preview_media_id: row.promoPreviewMediaId ?? null,
             updated_at: row.updatedAt.toISOString()
-          }
+          },
+          receipt
         },
         traceId
       )

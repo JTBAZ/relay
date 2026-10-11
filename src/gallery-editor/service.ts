@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { Prisma, type PrismaClient } from "@prisma/client";
 import { EditorError, RENAME_NOTICE, type CommitReceipt, type EditorContext, type EditorSession, type EditAction, type ChangeCart } from "./types.js";
 import { buildChangeCart, clone, dependencies, fingerprint, loadEditorState, rowKey, s, simulateEditorActions, TABLES, type EditorDb, type EditorState, type Row, type Table } from "./state.js";
+import type { PostPresentationUpsertPayload } from "../gallery/post-presentation-mutate.js";
 
 const json = (value: unknown) => clone(value) as Prisma.InputJsonValue;
 const WRITABLE: Table[] = ["series", "works", "seriesMembers", "workMembers", "presentations", "overrides", "collections", "collectionPosts"];
@@ -35,7 +36,8 @@ function checkDependencies(expected:Record<string,string>,state:EditorState){if(
 export async function serializable<T>(prisma:PrismaClient,fn:(tx:Prisma.TransactionClient)=>Promise<T>):Promise<T>{
   for(let attempt=0;;attempt++)try{return await prisma.$transaction(fn,{isolationLevel:Prisma.TransactionIsolationLevel.Serializable,maxWait:5000,timeout:20000});}catch(error){
     const code=error && typeof error==="object" && "code"in error ? String(error.code):"";
-    if((code==="P2034"||code==="40001")&&attempt<2)continue;
+    const meta=error&&typeof error==="object"&&"meta"in error?error.meta as Record<string,unknown>|undefined:undefined;
+    if((code==="P2034"||code==="40001"||code==="P2010"&&meta?.code==="40001")&&attempt<2)continue;
     throw error;
   }
 }
@@ -44,6 +46,39 @@ function sessionWire(row:{id:string;creatorId:string;revision:number;context:unk
 }
 export class GalleryEditorService {
   constructor(readonly prisma:PrismaClient){}
+  /** Existing Inspect Save is an explicit manual commit; uses the same journal/transaction as AI Apply. */
+  async applyManualPresentation(creatorId:string,actorId:string,postId:string,fragments:PostPresentationUpsertPayload){
+    return serializable(this.prisma,async tx=>{
+      const seed:EditAction={id:randomUUID(),kind:"source_post_title",postId};
+      const before=await loadEditorState(tx,creatorId,[seed]);
+      const old=before.tables.presentations.find(p=>s(p,"postId")===postId);
+      const mode=fragments.titleMode??s(old,"titleMode")??"source";
+      const actions:EditAction[]=[];
+      if(fragments.titleMode!==undefined||fragments.relayTitle!==undefined){
+        if(mode==="custom")actions.push({id:randomUUID(),kind:"rename_post",postId,title:fragments.relayTitle??s(old,"relayTitle")});
+        else actions.push({id:randomUUID(),kind:mode==="inherit_work"?"inherit_post_title":"source_post_title",postId});
+      }
+      if(fragments.relayDescription!==undefined)actions.push({id:randomUUID(),kind:"set_description",postId,description:fragments.relayDescription});
+      const after=simulateEditorActions(before,creatorId,actions);
+      let presentation=after.tables.presentations.find(p=>s(p,"postId")===postId);
+      if(!presentation){presentation={id:randomUUID(),creatorId,postId,titleMode:"source",relayTitle:null,relayDescription:null,mediaOrder:[],tierPreviewSettings:null,promoPreviewMediaId:null};after.tables.presentations.push(presentation);}
+      if(fragments.mediaOrder!==undefined){
+        const ids=fragments.mediaOrder;
+        const assets=await tx.mediaAsset.findMany({where:{creatorId,id:{in:ids}}});
+        if(new Set(ids).size!==ids.length||assets.length!==ids.length||assets.some(a=>a.primaryPostId!==postId&&!a.postIds.includes(postId)))throw new EditorError("INVALID_MEDIA","Media must belong to this post.");
+        presentation.mediaOrder=ids;
+      }
+      if(fragments.promoPreviewMediaId){const asset=await tx.mediaAsset.findFirst({where:{id:fragments.promoPreviewMediaId,creatorId,upstreamStatus:"active"}});if(!asset)throw new EditorError("INVALID_MEDIA","Preview media is unavailable.");}
+      if(fragments.tierPreviewSettings!==undefined)presentation.tierPreviewSettings=fragments.tierPreviewSettings;
+      if(fragments.promoPreviewMediaId!==undefined)presentation.promoPreviewMediaId=fragments.promoPreviewMediaId;
+      await persistEditorState(tx,before,after);
+      const committed=await loadEditorState(tx,creatorId,[seed],true,before.scope),id=randomUUID(),commitId=randomUUID();
+      const receipt:CommitReceipt={id:commitId,sessionId:id,committedAt:new Date().toISOString(),actionCount:Math.max(actions.length,1),affectedPostIds:[postId],preservedExceptions:[],notice:RENAME_NOTICE};
+      await tx.galleryEditorSession.create({data:{id,creatorId,actorId,revision:1,context:{selectedPostIds:[postId]},messages:[],cart:json({revision:1,actions:[],items:[],dependencies:{},conflicts:[],notice:RENAME_NOTICE,origin:"manual"})}});
+      await tx.galleryEditorCommit.create({data:{id:commitId,creatorId,actorId,sessionId:id,idempotencyKey:`manual:${commitId}`,origin:"manual",scope:"post_presentation",actions:json([seed]),before:json(before),after:json(committed),dependencies:json(dependencies(before)),receipt:json(receipt)}});
+      return {presentation:await tx.postPresentation.findUniqueOrThrow({where:{postId}}),receipt};
+    });
+  }
   async create(creatorId:string,actorId:string,context:EditorContext):Promise<EditorSession>{
     if(context.selectedPostIds.length){const count=await this.prisma.post.count({where:{creatorId,id:{in:context.selectedPostIds}}});if(count!==new Set(context.selectedPostIds).size)throw new EditorError("INVALID_TARGET","Selection contains unavailable posts.",404);}
     const cart:ChangeCart={revision:0,actions:[],items:[],dependencies:{},conflicts:[],notice:RENAME_NOTICE};
