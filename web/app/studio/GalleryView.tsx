@@ -10,6 +10,7 @@ import {
   type GalleryViewMode
 } from "@/lib/gallery-view-mode";
 import LibraryEmptyState from "@/app/components/studio/LibraryEmptyState";
+import LibraryEditorPanel from "@/app/components/studio/LibraryEditorPanel";
 import { galleryItemKey, groupGalleryItemsByPost } from "@/lib/gallery-group";
 import { collapsePostGroupsToGridCards } from "@/lib/active-post-linked-sets";
 import {
@@ -1226,6 +1227,30 @@ export default function GalleryView({ floorspace = "classic" }: GalleryViewProps
       <SyncHealthBanner
         syncState={syncHealth}
         onViewDetails={() => setPatreonDetailsSignal((n) => n + 1)}
+      />
+
+      <LibraryEditorPanel
+        creatorId={creatorId}
+        context={{
+          selectedPostIds,
+          selectedMediaIds: selectedItems.map((item) => item.media_id),
+          ...(activeCollectionId ? { activeCollectionId } : {}),
+          filters: {
+            query: q,
+            tags: tagPick.join(","),
+            tiers: tierPick.join(","),
+            mediaTypes: mediaTypes.join(","),
+            includeHidden: visibility.hidden,
+            includeMature: visibility.mature
+          }
+        }}
+        selectedItems={selectedItems}
+        writeBlocked={studioWriteBlocked}
+        onChanged={() => {
+          refreshList();
+          void fetchFacets();
+          setCollectionsReloadToken((value) => value + 1);
+        }}
       />
 
       {!isLab ? (
