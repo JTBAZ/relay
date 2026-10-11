@@ -7,11 +7,15 @@
 
 import type { Prisma } from "@prisma/client";
 import { sanitizeOptionalPostDescriptionHtml } from "../security/sanitize-post-html.js";
+import { resolvePostNaming, type NamingWork } from "../gallery-editor/naming.js";
+import type { NamingProvenance, PostTitleMode } from "../gallery-editor/types.js";
 
 /**
  * @description Relay-only presentation overlay for a post (mirrors `PostPresentation` without Prisma types). Loaded from DB and merged at read time with canonical / `PostVersion` snapshot data.
  */
 export type PostPresentationOverlay = {
+  title_mode?: PostTitleMode;
+  naming_work?: NamingWork | null;
   relay_title?: string | null;
   relay_description?: string | null;
   media_order?: string[];
@@ -34,6 +38,7 @@ export type SnapshotPresentationBase = {
  * @description Result of merging Patreon-origin base + optional Relay overlay.
  */
 export type EffectiveMergedPostPresentation = {
+  naming: NamingProvenance;
   title: string;
   description?: string;
   media_ids_ordered: string[];
@@ -77,10 +82,12 @@ export function mergePostPresentation(
   base: SnapshotPresentationBase,
   overlay: PostPresentationOverlay | null | undefined
 ): EffectiveMergedPostPresentation {
-  const title =
-    overlay?.relay_title != null && String(overlay.relay_title).trim() !== ""
-      ? String(overlay.relay_title)
-      : base.title;
+  const naming = resolvePostNaming({
+    sourceTitle: base.title,
+    presentation: overlay ? { titleMode: overlay.title_mode, relayTitle: overlay.relay_title } : null,
+    work: overlay?.naming_work
+  });
+  const title = naming.effectiveTitle;
 
   let description = base.description;
   if (overlay && "relay_description" in overlay && overlay.relay_description != null) {
@@ -111,6 +118,7 @@ export function mergePostPresentation(
   const sanitizedDescription = sanitizeOptionalPostDescriptionHtml(description);
 
   return {
+    naming,
     title,
     ...(sanitizedDescription !== undefined ? { description: sanitizedDescription } : {}),
     media_ids_ordered,

@@ -4,7 +4,7 @@
  * @see ./effective-presentation.js Overlay wire shape
  */
 
-import type { PrismaClient } from "@prisma/client";
+import { namingWorkSelect, scopedNamingWork, type NamingDb } from "../gallery-editor/naming.js";
 
 import type { PostPresentationOverlay } from "./effective-presentation.js";
 
@@ -18,13 +18,15 @@ import type { PostPresentationOverlay } from "./effective-presentation.js";
  * @security-audit-required Caller must ensure route authorized this `creatorId`; no separate `tenant_id` argument.
  */
 export async function loadPostPresentationOverlaysFromDb(
-  prisma: PrismaClient,
+  prisma: NamingDb,
   creatorId: string
 ): Promise<Record<string, PostPresentationOverlay>> {
   const rows = await prisma.postPresentation.findMany({
     where: { creatorId },
     select: {
       postId: true,
+      titleMode: true,
+      post: { select: { creatorId: true, creativeWorkMember: { select: { creatorId: true, creativeWork: { select: namingWorkSelect } } } } },
       relayTitle: true,
       relayDescription: true,
       mediaOrder: true,
@@ -34,7 +36,10 @@ export async function loadPostPresentationOverlaysFromDb(
   });
   const out: Record<string, PostPresentationOverlay> = {};
   for (const r of rows) {
+    if (r.post.creatorId !== creatorId) continue;
     out[r.postId] = {
+      title_mode: r.titleMode,
+      naming_work: scopedNamingWork(creatorId, r.post.creativeWorkMember),
       relay_title: r.relayTitle,
       relay_description: r.relayDescription,
       media_order: r.mediaOrder ?? [],

@@ -15,6 +15,7 @@ describe("DbCanonicalStore — PostPresentation survives Patreon stomp", () => {
         id: "pp_row_1",
         creatorId: "cr_pres",
         postId: "patreon_post_stomp_me",
+        titleMode: "inherit_work",
         relayTitle: "Relay-only title",
         relayDescription: null,
         mediaOrder: [],
@@ -75,6 +76,8 @@ describe("DbCanonicalStore — PostPresentation survives Patreon stomp", () => {
       },
       ingestIdempotencyKey: { deleteMany: vi.fn().mockResolvedValue({}), createMany: vi.fn().mockResolvedValue({}) },
       creativeWorkMember: {
+        findMany: vi.fn().mockResolvedValue([{ id: "cwm_existing", creativeWorkId: "cw_existing", creatorId: "cr_pres", postId: "patreon_post_stomp_me", variantRole: "full", memberLabel: "Page 1", sortOrder: 3, linkedAt: new Date("2026-01-01T00:00:00.000Z") }]),
+        create: vi.fn().mockResolvedValue({}),
         findUnique: vi.fn().mockResolvedValue({ id: "cwm_existing", creativeWorkId: "cw_existing" })
       },
       creativeWork: { upsert: vi.fn().mockResolvedValue({}) },
@@ -159,8 +162,12 @@ describe("DbCanonicalStore — PostPresentation survives Patreon stomp", () => {
         id: "pp_row_1",
         creatorId: "cr_pres",
         postId: "patreon_post_stomp_me",
+        titleMode: "inherit_work",
         relayTitle: "Relay-only title"
       })
     });
+    expect(tx.creativeWorkMember.create).toHaveBeenCalledWith({ data: expect.objectContaining({
+      id: "cwm_existing", creativeWorkId: "cw_existing", creatorId: "cr_pres", postId: "patreon_post_stomp_me", memberLabel: "Page 1", sortOrder: 3
+    }) });
   });
 });

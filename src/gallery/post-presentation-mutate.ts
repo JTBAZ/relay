@@ -8,11 +8,13 @@ import type { Prisma, PrismaClient } from "@prisma/client";
 import { MediaUpstreamStatus } from "@prisma/client";
 import { sanitizeOptionalPostDescriptionHtml } from "../security/sanitize-post-html.js";
 import { normalizeTierPreviewSettings } from "./tier-preview-settings.js";
+import type { PostTitleMode } from "../gallery-editor/types.js";
 
 /**
  * @description Normalized PATCH body fragment for presentation handlers.
  */
 export type PostPresentationUpsertPayload = {
+  titleMode?: PostTitleMode;
   relayTitle?: string | null;
   relayDescription?: string | null;
   mediaOrder?: string[];
@@ -121,6 +123,21 @@ export function derivePresentationUpsertFragments(
       throw new Error("VALIDATION:relay_title");
     }
     out.relayTitle = v === null || v === undefined || String(v).trim() === "" ? null : String(v);
+    // A manual title edit is an explicit exception; clearing returns to canonical source.
+    out.titleMode = out.relayTitle === null ? "source" : "custom";
+  }
+  if (touched.has("title_mode")) {
+    const mode = body.title_mode;
+    if (mode !== "source" && mode !== "inherit_work" && mode !== "custom") {
+      throw new Error("VALIDATION:title_mode");
+    }
+    if (touched.has("relay_title") && mode === "custom" && out.relayTitle === null) {
+      throw new Error("VALIDATION:custom_title_required");
+    }
+    if (touched.has("relay_title") && mode !== "custom" && out.relayTitle !== null) {
+      throw new Error("VALIDATION:title_mode_conflict");
+    }
+    out.titleMode = mode;
   }
   if (touched.has("relay_description")) {
     const v = body.relay_description;
@@ -180,6 +197,7 @@ export function derivePresentationUpsertFragments(
  */
 export function presentationPatchTouches(body: Record<string, unknown>): Set<string> {
   const keys = [
+    "title_mode",
     "relay_title",
     "relay_description",
     "media_order",

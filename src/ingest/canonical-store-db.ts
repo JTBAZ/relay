@@ -383,6 +383,9 @@ export class DbCanonicalStore implements CanonicalStore {
             stompPostIds.length > 0
               ? await tx.postPresentation.findMany({ where: { postId: { in: stompPostIds } } })
               : [];
+          const workMembershipBackup = stompPostIds.length > 0
+            ? await tx.creativeWorkMember.findMany({ where: { creatorId, postId: { in: stompPostIds } } })
+            : [];
           if (stompPostIds.length > 0) {
             await tx.postTier.deleteMany({ where: { postId: { in: stompPostIds } } });
             await tx.mediaAsset.deleteMany({
@@ -394,7 +397,7 @@ export class DbCanonicalStore implements CanonicalStore {
             await tx.postVersion.deleteMany({ where: { postId: { in: stompPostIds } } });
             await tx.post.deleteMany({ where: { id: { in: stompPostIds } } });
           }
-          return { preservePostIds, relayPresentationBackup };
+          return { preservePostIds, relayPresentationBackup, workMembershipBackup };
         }
 
         const lanePatreon = await mirrorLane(
@@ -413,6 +416,7 @@ export class DbCanonicalStore implements CanonicalStore {
           ...lanePatreon.relayPresentationBackup,
           ...laneSubscribestar.relayPresentationBackup
         ];
+        const workMembershipBackup = [...lanePatreon.workMembershipBackup, ...laneSubscribestar.workMembershipBackup];
         await tx.ingestIdempotencyKey.deleteMany({ where: { creatorId } });
 
         // Orphaned campaigns/tiers for this creator: not in the incoming snapshot, no remaining posts.
@@ -655,6 +659,13 @@ export class DbCanonicalStore implements CanonicalStore {
           await tx.postTier.createMany({ data: postTierRows });
         }
 
+        // Post recreation must retain curator-owned variant/page membership and
+        // inherited naming; source ingest never chooses a new naming parent.
+        for (const member of workMembershipBackup) {
+          if (postIdsToMaterialize.has(member.postId)) {
+            await tx.creativeWorkMember.create({ data: member });
+          }
+        }
         if (relayPresentationBackup.length > 0) {
           for (const pr of relayPresentationBackup) {
             if (!postIdsToMaterialize.has(pr.postId)) {
@@ -665,6 +676,7 @@ export class DbCanonicalStore implements CanonicalStore {
                 id: pr.id,
                 creatorId: pr.creatorId,
                 postId: pr.postId,
+                titleMode: pr.titleMode,
                 relayTitle: pr.relayTitle,
                 relayDescription: pr.relayDescription,
                 mediaOrder: pr.mediaOrder,

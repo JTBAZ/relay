@@ -9,6 +9,52 @@ datasource db {
   provider = "postgresql"
 }
 
+/// Authenticated editor drafts are scoped to a creator partition and actor.
+model GalleryEditorSession {
+  id        String @id
+  creatorId String @map("creator_id")
+  actorId   String @map("actor_id")
+  revision  Int @default(0)
+  context   Json
+  messages  Json
+  cart      Json
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  commits   GalleryEditorCommit[]
+
+  @@unique([id, creatorId, actorId])
+  @@index([creatorId, actorId, updatedAt(sort: Desc)])
+  @@map("gallery_editor_sessions")
+}
+
+/// Durable commit/reversal journal; snapshots and receipts are server-owned.
+model GalleryEditorCommit {
+  id             String @id
+  creatorId      String @map("creator_id")
+  actorId        String @map("actor_id")
+  sessionId      String @map("session_id")
+  session        GalleryEditorSession @relation(fields: [sessionId, creatorId, actorId], references: [id, creatorId, actorId], onDelete: Restrict)
+  idempotencyKey String @map("idempotency_key")
+  origin         String
+  scope          String?
+  actions        Json
+  before         Json
+  after          Json
+  dependencies   Json
+  receipt        Json
+  reversalOfId   String? @unique @map("reversal_of_id")
+  reversalOf     GalleryEditorCommit? @relation("EditorReversal", fields: [reversalOfId, creatorId, actorId], references: [id, creatorId, actorId], onDelete: Restrict)
+  reversal       GalleryEditorCommit? @relation("EditorReversal")
+  reversedAt     DateTime? @map("reversed_at")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  @@unique([id, creatorId, actorId])
+  @@unique([creatorId, idempotencyKey])
+  @@unique([reversalOfId, creatorId, actorId])
+  @@index([creatorId, actorId, createdAt(sort: Desc)])
+  @@map("gallery_editor_commits")
+}
+
 // --- Identity & multi-tenancy (M2.1) ---
 
 /// In-app role for rows in `users` (creator/staff). Patron authorization uses `TenantMembership` + `TenantRole`.
@@ -559,6 +605,7 @@ model Post {
   /// Manual Schedule Rail social events (URL-only or post-linked).
   creatorScheduleEvents       CreatorScheduleEvent[]
 
+  @@unique([id, creatorId])
   @@unique([campaignId, providerPostId])
   @@index([campaignId, createdAt(sort: Desc)])
   @@index([creatorId, source])
@@ -951,7 +998,51 @@ enum CreativeWorkVariantRole {
   standalone
 }
 
+enum CreativeWorkTitleMode {
+  independent
+  inherit_series
+}
+
+enum PostPresentationTitleMode {
+  source
+  inherit_work
+  custom
+}
+
+/// Naming hierarchy only: variants/pages remain CreativeWorkMember rows.
+model CreativeSeries {
+  id        String @id
+  creatorId String @map("creator_id")
+  title     String
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  members   CreativeSeriesMember[]
+
+  @@unique([id, creatorId])
+  @@index([creatorId, createdAt(sort: Desc)])
+  @@map("creative_series")
+}
+
+model CreativeSeriesMember {
+  id               String @id
+  creatorId        String @map("creator_id")
+  creativeSeriesId String @map("creative_series_id")
+  creativeSeries   CreativeSeries @relation(fields: [creativeSeriesId, creatorId], references: [id, creatorId], onDelete: Cascade)
+  creativeWorkId   String @unique @map("creative_work_id")
+  creativeWork     CreativeWork @relation(fields: [creativeWorkId, creatorId], references: [id, creatorId], onDelete: Cascade)
+  partLabel        String @map("part_label")
+  sortOrder        Int @default(0) @map("sort_order")
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  @@index([creatorId, creativeSeriesId, sortOrder])
+  @@unique([creativeWorkId, creatorId])
+  @@map("creative_series_members")
+}
+
 model CreativeWork {
+  titleMode              CreativeWorkTitleMode @default(independent) @map("title_mode")
+  seriesMember           CreativeSeriesMember?
   id                     String   @id
   creatorId              String   @map("creator_id")
   title                  String
@@ -967,6 +1058,7 @@ model CreativeWork {
   members                   CreativeWorkMember[]
   incomingBundleSuggestions CreativeWorkBundleSuggestionDismissal[] @relation("DismissedTargetWork")
 
+  @@unique([id, creatorId])
   @@index([creatorId, createdAt(sort: Desc)])
   @@index([creatorId, analyticsCampaignLabel])
   @@map("creative_works")
@@ -976,9 +1068,9 @@ model CreativeWork {
 model CreativeWorkMember {
   id             String                  @id
   creativeWorkId String                  @map("creative_work_id")
-  creativeWork   CreativeWork            @relation(fields: [creativeWorkId], references: [id], onDelete: Cascade)
+  creativeWork   CreativeWork            @relation(fields: [creativeWorkId, creatorId], references: [id, creatorId], onDelete: Cascade)
   postId         String                  @unique @map("post_id")
-  post           Post                    @relation(fields: [postId], references: [id], onDelete: Cascade)
+  post           Post                    @relation(fields: [postId, creatorId], references: [id, creatorId], onDelete: Cascade)
   creatorId      String                  @map("creator_id")
   variantRole    CreativeWorkVariantRole @default(standalone) @map("variant_role")
   /// Optional page / variant label for Linked Sets (e.g. "Page 3", "Teaser").
@@ -987,6 +1079,7 @@ model CreativeWorkMember {
   linkedAt       DateTime                @default(now()) @map("linked_at")
 
   @@index([creativeWorkId, sortOrder])
+  @@unique([postId, creatorId])
   @@index([creatorId])
   @@map("creative_work_members")
 }
@@ -1944,10 +2037,11 @@ model PostOverride {
 ///
 /// At most one row per `Post`; `creator_id` matches `Post.creator_id` and is indexed for scoped APIs.
 model PostPresentation {
+  titleMode           PostPresentationTitleMode @default(source) @map("title_mode")
   id                  String   @id @default(cuid())
   creatorId           String   @map("creator_id")
   postId              String   @unique @map("post_id")
-  post                Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+  post                Post     @relation(fields: [postId, creatorId], references: [id, creatorId], onDelete: Cascade)
   relayTitle          String?  @map("relay_title")
   relayDescription    String?  @map("relay_description") @db.Text
   /// Canonical `media_id` order overlay; empty ⇒ inherit ingest order from applicable `PostVersion.mediaIds`.
@@ -1960,6 +2054,7 @@ model PostPresentation {
   updatedAt           DateTime @updatedAt @map("updated_at")
 
   @@index([creatorId])
+  @@unique([postId, creatorId])
   @@index([creatorId, postId])
   @@map("post_presentations")
 }
