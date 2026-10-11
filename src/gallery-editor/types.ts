@@ -57,6 +57,7 @@ export interface CartItem {
   exception?: boolean;
 }
 export interface ChangeCart {
+  origin?: "manual" | "ai" | "mixed";
   revision: number;
   actions: EditAction[];
   items: CartItem[];

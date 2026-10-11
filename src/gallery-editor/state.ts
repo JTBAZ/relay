@@ -31,7 +31,7 @@ function title(value: string): string { const t = value.trim(); if (!t || t.leng
 function get(state: EditorState, table: Table, id: string): Row { return required(state.tables[table].find(r => s(r,"id") === id), `${table} target is unavailable.`); }
 
 /** Capture the entire dependency closure of touched families, not merely the loaded UI page. */
-export async function loadEditorState(db: EditorDb, creatorId: string, actions: EditAction[], allowCreatedExisting=false): Promise<EditorState> {
+export async function loadEditorState(db: EditorDb, creatorId: string, actions: EditAction[], allowCreatedExisting=false, previousScope?:EditorState["scope"]): Promise<EditorState> {
   const postIds = new Set<string>(), workIds = new Set<string>(), seriesIds = new Set<string>(), collectionIds = new Set<string>();
   const createdSeries = new Set(actions.filter(a => a.kind === "create_series").map(a => a.seriesId));
   const createdCollections = new Set(actions.filter(a => a.kind === "create_collection").map(a => a.collectionId));
@@ -44,6 +44,7 @@ export async function loadEditorState(db: EditorDb, creatorId: string, actions: 
   }
   const directPosts = new Set(postIds), directWorks = new Set(workIds);
   const directSeries = new Set(seriesIds), directCollections = new Set(collectionIds);
+  previousScope?.posts.forEach(id=>postIds.add(id));previousScope?.works.forEach(id=>workIds.add(id));previousScope?.series.forEach(id=>seriesIds.add(id));previousScope?.collections.forEach(id=>collectionIds.add(id));
   // Expand in both directions until all inherited descendants and parents are known.
   for (let round = 0; round < 4; round++) {
     const members = await db.creativeWorkMember.findMany({ where: { creatorId, OR: [{ postId: { in: sorted(postIds) } }, { creativeWorkId: { in: sorted(workIds) } }] } });
@@ -182,17 +183,31 @@ export function simulateEditorActions(before: EditorState, creatorId: string, ac
 }
 export function buildChangeCart(before: EditorState, after: EditorState, actions: EditAction[], revision: number): ChangeCart {
   const items: ChangeCart["items"]=[];
+  function postView(state:EditorState,id:string){
+    const p=state.tables.presentations.find(r=>s(r,"postId")===id),v=state.tables.versions.find(r=>s(r,"postId")===id);
+    const delta=state.tables.overrides.find(r=>s(r,"postId")===id&&s(r,"mediaId")==="");
+    const work=state.tables.workMembers.find(r=>s(r,"postId")===id),series=state.tables.seriesMembers.find(r=>s(r,"creativeWorkId")===s(work,"creativeWorkId"));
+    return {title:effectivePostTitle(state,id),sourceTitle:s(v,"title"),titleMode:s(p,"titleMode")||"source",description:p?.relayDescription??v?.description??null,mediaIds:list(p,"mediaOrder").length?list(p,"mediaOrder"):list(v,"mediaIds"),tags:[...new Set([...list(v,"tagIds").filter(t=>!list(delta,"removeTagIds").includes(t)),...list(delta,"addTagIds")])],mediaTags:state.tables.overrides.filter(r=>s(r,"postId")===id&&s(r,"mediaId")).map(r=>({mediaId:r.mediaId,add:r.addTagIds,remove:r.removeTagIds})),workId:s(work,"creativeWorkId"),memberLabel:work?.memberLabel??null,sortOrder:work?.sortOrder??0,seriesId:s(series,"creativeSeriesId"),collectionIds:state.tables.collectionPosts.filter(r=>s(r,"postId")===id).map(r=>s(r,"collectionId"))};
+  }
+  function affects(action:EditAction,id:string){
+    if("postId"in action)return action.postId===id;
+    if("postIds"in action)return action.postIds.includes(id);
+    const members=[...before.tables.workMembers,...after.tables.workMembers].filter(r=>s(r,"postId")===id),workIds=members.map(r=>s(r,"creativeWorkId"));
+    if("workId"in action)return workIds.includes(action.workId);
+    if("seriesId"in action)return [...before.tables.seriesMembers,...after.tables.seriesMembers].some(r=>workIds.includes(s(r,"creativeWorkId"))&&s(r,"creativeSeriesId")===action.seriesId);
+    return false;
+  }
   for(const p of before.tables.posts){
     const id=s(p,"id"), b=effectivePostTitle(before,id),a=effectivePostTitle(after,id);
     const bp=before.tables.presentations.find(r=>s(r,"postId")===id),ap=after.tables.presentations.find(r=>s(r,"postId")===id);
     const exception=s(ap,"titleMode")==="custom";
     const changed=b!==a||fingerprint(bp??null)!==fingerprint(ap??null)||fingerprint(before.tables.overrides.filter(r=>s(r,"postId")===id))!==fingerprint(after.tables.overrides.filter(r=>s(r,"postId")===id));
-    const familyAction=actions.some(x=>["rename_work","rename_series","link_series_work","link_work_post","unlink_series_work"].includes(x.kind));
-    const actionIds=actions.filter(x=>("postId"in x&&x.postId===id)||("postIds"in x&&x.postIds.includes(id))||familyAction).map(x=>x.id);
-    if(changed || (exception&&familyAction) || actionIds.length) items.push({targetId:id,targetType:"post",title:b,before:{title:b,presentation:bp??null,tags:before.tables.overrides.filter(r=>s(r,"postId")===id)},after:{title:a,presentation:ap??null,tags:after.tables.overrides.filter(r=>s(r,"postId")===id)},actionIds,exception,inherited:s(ap,"titleMode")==="inherit_work"});
+    const actionIds=actions.filter(x=>affects(x,id)).map(x=>x.id);
+    if(changed || actionIds.length) items.push({targetId:id,targetType:"post",title:b,before:postView(before,id),after:postView(after,id),actionIds,exception,inherited:s(ap,"titleMode")==="inherit_work"});
   }
   for(const [table,targetType] of [["works","work"],["series","series"],["collections","collection"]] as const){
-    for(const row of after.tables[table]){const id=s(row,"id"),old=before.tables[table].find(r=>s(r,"id")===id);const relationChanged=table==="collections"&&fingerprint(before.tables.collectionPosts.filter(r=>s(r,"collectionId")===id))!==fingerprint(after.tables.collectionPosts.filter(r=>s(r,"collectionId")===id));if(fingerprint(old??null)!==fingerprint(row)||relationChanged){items.push({targetId:id,targetType,title:s(old,"title")||s(row,"title"),before:old??null,after:{...row,...(table==="collections"?{postIds:after.tables.collectionPosts.filter(r=>s(r,"collectionId")===id).sort((a,b)=>Number(a.sortIndex)-Number(b.sortIndex)).map(r=>s(r,"postId"))}:{})},actionIds:actions.filter(a=>("workId"in a&&a.workId===id)||("seriesId"in a&&a.seriesId===id)||("collectionId"in a&&a.collectionId===id)).map(a=>a.id)});}}
+    const view=(state:EditorState,row:Row)=>{const id=s(row,"id");if(table==="collections")return {title:row.title,postIds:state.tables.collectionPosts.filter(r=>s(r,"collectionId")===id).sort((a,b)=>Number(a.sortIndex)-Number(b.sortIndex)).map(r=>s(r,"postId"))};if(table==="works"){const member=state.tables.seriesMembers.find(r=>s(r,"creativeWorkId")===id);return {title:effectiveWorkTitle(state,id),titleMode:row.titleMode,seriesId:s(member,"creativeSeriesId"),partLabel:member?.partLabel??null,sortOrder:member?.sortOrder??0,postIds:state.tables.workMembers.filter(r=>s(r,"creativeWorkId")===id).map(r=>s(r,"postId"))};}return {title:row.title,workIds:state.tables.seriesMembers.filter(r=>s(r,"creativeSeriesId")===id).map(r=>s(r,"creativeWorkId"))};};
+    for(const row of after.tables[table]){const id=s(row,"id"),old=before.tables[table].find(r=>s(r,"id")===id),b=old?view(before,old):null,a=view(after,row);if(fingerprint(b)!==fingerprint(a)){items.push({targetId:id,targetType,title:old?s(b as Row,"title"):s(row,"title"),before:b,after:a,actionIds:actions.filter(x=>("workId"in x&&x.workId===id)||("seriesId"in x&&x.seriesId===id)||("collectionId"in x&&x.collectionId===id)).map(x=>x.id)});}}
   }
   return {revision,actions,items,dependencies:dependencies(before),conflicts:[],notice:RENAME_NOTICE};
 }
