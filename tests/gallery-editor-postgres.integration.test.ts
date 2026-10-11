@@ -106,7 +106,7 @@ describe.skipIf(!databaseUrl)("Gallery editor — PostgreSQL atomic execution", 
 
   it("mixed presentation, tags and collection edits commit in one journal and safely undo", async () => {
     const collectionId = newId();
-    const receipt = await commit([
+    const session = await draft([
       { id: "rename", kind: "rename_post", postId: postA, title: "Curated" },
       { id: "description", kind: "set_description", postId: postA, description: "<p>Clean</p><script>bad()</script>" },
       { id: "tags", kind: "tags", postId: postA, add: ["curated"], remove: [] },
@@ -114,6 +114,10 @@ describe.skipIf(!databaseUrl)("Gallery editor — PostgreSQL atomic execution", 
       { id: "member", kind: "collection_membership", collectionId, postIds: [postA, postB], operation: "add" },
       { id: "order", kind: "reorder_collection", collectionId, postIds: [postB, postA] }
     ]);
+    const postItem = session.cart.items.find(i => i.targetType === "post" && i.targetId === postA)!;
+    expect(postItem.before).toMatchObject({ titleMode: "source", tags: [], collectionIds: [] });
+    expect(postItem.after).toMatchObject({ title: "Curated", titleMode: "custom", description: "<p>Clean</p>", tags: ["curated"], collectionIds: [collectionId] });
+    const receipt = await editor.apply(creatorId, actorId, session.id, 1, newId());
     expect(await db.galleryEditorCommit.count({ where: { creatorId } })).toBe(1);
     expect((await db.postPresentation.findUniqueOrThrow({ where: { postId: postA } })).relayDescription).toBe("<p>Clean</p>");
     expect((await db.postOverride.findFirstOrThrow({ where: { creatorId, postId: postA } })).addTagIds).toEqual(["curated"]);
@@ -168,6 +172,30 @@ describe.skipIf(!databaseUrl)("Gallery editor — PostgreSQL atomic execution", 
     expect(await db.creativeSeries.findUnique({ where: { id: seriesId } })).toBeNull();
     expect(await db.creativeSeriesMember.findUnique({ where: { creativeWorkId: replacementWork } })).toBeNull();
     expect((await db.creativeWork.findUniqueOrThrow({ where: { id: replacementWork } })).titleMode).toBe("independent");
+  });
+
+  it("Undo after reparenting cannot overwrite later edits to the old family", async () => {
+    const destination = newId();
+    await db.creativeWork.create({ data: { id: destination, creatorId, title: "Destination" } });
+    const receipt = await commit([{ id: "move", kind: "link_work_post", postId: postA, workId: destination, titleMode: "inherit_work", sortOrder: 0 }]);
+    await db.creativeWork.update({ where: { id: workId }, data: { title: "Old family edited later" } });
+    await expect(editor.undo(creatorId, actorId, receipt.id)).rejects.toMatchObject({ code: "STALE_PREVIEW" });
+    expect((await db.creativeWork.findUniqueOrThrow({ where: { id: workId } })).title).toBe("Old family edited later");
+    expect((await db.creativeWorkMember.findUniqueOrThrow({ where: { postId: postA } })).creativeWorkId).toBe(destination);
+    expect(await db.galleryEditorCommit.count({ where: { creatorId, reversalOfId: receipt.id } })).toBe(0);
+  });
+
+  it("cart exposes changed part label and ordering even when the work row stays inherited", async () => {
+    const seriesId = newId();
+    await commit([
+      { id: "series", kind: "create_series", seriesId, title: "Series" },
+      { id: "link", kind: "link_series_work", seriesId, workId, partLabel: "Old part", titleMode: "inherit_series", sortOrder: 1 }
+    ]);
+    const session = await draft([{ id: "relabel", kind: "link_series_work", seriesId, workId, partLabel: "New part", titleMode: "inherit_series", sortOrder: 4 }]);
+    const item = session.cart.items.find(i => i.targetType === "work" && i.targetId === workId)!;
+    expect(item.before).toMatchObject({ title: "Series — Old part", seriesId, partLabel: "Old part", sortOrder: 1 });
+    expect(item.after).toMatchObject({ title: "Series — New part", seriesId, partLabel: "New part", sortOrder: 4 });
+    expect((await db.creativeSeriesMember.findUniqueOrThrow({ where: { creativeWorkId: workId } })).partLabel).toBe("Old part");
   });
 
   it("same-key concurrent Apply returns one receipt and one atomic journal", async () => {
