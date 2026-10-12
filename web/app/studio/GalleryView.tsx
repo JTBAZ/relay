@@ -1233,6 +1233,7 @@ export default function GalleryView({ floorspace = "classic" }: GalleryViewProps
         creatorId={creatorId}
         context={{
           selectedPostIds,
+          loadedPostIds: [...new Set(displayItems.map((item) => item.post_id))].slice(0, 100),
           selectedMediaIds: selectedItems.map((item) => item.media_id),
           ...(activeCollectionId ? { activeCollectionId } : {}),
           filters: {

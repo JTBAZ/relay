@@ -92,6 +92,14 @@ describe("confirmMergeCreativeWorkBundle", () => {
       .mockResolvedValueOnce(2);
     const deleteMany = vi.fn().mockResolvedValue({ count: 0 });
     const deleteWork = vi.fn().mockResolvedValue({});
+    const upsertPresentation = vi.fn().mockResolvedValue({});
+    const findNamingPosts = vi.fn().mockResolvedValue([{
+      id: "post_a", versions: [{ title: "Source title" }],
+      presentation: { creatorId: "creator_a", titleMode: "inherit_work", relayTitle: null },
+      creativeWorkMember: { creatorId: "creator_a", creativeWork: {
+        id: "cw_default_post_a", creatorId: "creator_a", title: "Displayed old family", titleMode: "independent", seriesMember: null
+      } }
+    }]);
 
     const prisma = {
       tenant: { findUnique: vi.fn().mockResolvedValue({ id: "tenant_1" }) },
@@ -116,8 +124,10 @@ describe("confirmMergeCreativeWorkBundle", () => {
       creativeWorkBundleSuggestionDismissal: { deleteMany },
       $transaction: vi.fn(async (fn: (tx: unknown) => Promise<unknown>) =>
         fn({
-          creativeWorkMember: { update: updateMember, count },
-          creativeWork: { update: updateWork, delete: deleteWork },
+          post: { findMany: findNamingPosts },
+          postPresentation: { upsert: upsertPresentation },
+          creativeWorkMember: { findFirst: prisma.creativeWorkMember.findFirst, update: updateMember, count },
+          creativeWork: { findFirst: prisma.creativeWork.findFirst, update: updateWork, delete: deleteWork },
           creativeWorkBundleSuggestionDismissal: { deleteMany }
         })
       )
@@ -134,6 +144,52 @@ describe("confirmMergeCreativeWorkBundle", () => {
     expect(out.result.variant_role).toBe("teaser");
     expect(out.result.member_count).toBe(2);
     expect(updateMember).toHaveBeenCalled();
+    expect(upsertPresentation).toHaveBeenCalledWith({
+      where: { postId: "post_a" },
+      create: { creatorId: "creator_a", postId: "post_a", titleMode: "custom", relayTitle: "Displayed old family" },
+      update: { titleMode: "custom", relayTitle: "Displayed old family" }
+    });
+    expect(updateMember.mock.invocationCallOrder[0]).toBeLessThan(upsertPresentation.mock.invocationCallOrder[0]!);
+  });
+});
+
+describe("splitCreativeWorkMember", () => {
+  it("copies the inherited displayed title into an independent default work and preserves the post title", async () => {
+    const createMember = vi.fn().mockResolvedValue({});
+    const upsertWork = vi.fn().mockResolvedValue({});
+    const upsertPresentation = vi.fn().mockResolvedValue({});
+    const tx = {
+      post: { findMany: vi.fn().mockResolvedValue([{
+        id: "post_a", versions: [{ title: "Source title" }],
+        presentation: { creatorId: "creator_a", titleMode: "inherit_work", relayTitle: null },
+        creativeWorkMember: { creatorId: "creator_a", creativeWork: { id: "work_old", creatorId: "creator_a", title: "Displayed family title", titleMode: "independent", seriesMember: null } }
+      }]) },
+      postPresentation: { upsert: upsertPresentation },
+      creativeWorkMember: {
+        findFirst: vi.fn().mockResolvedValue({
+          id: "member_a", creativeWorkId: "work_old", variantRole: "full",
+          creativeWork: { id: "work_old", title: "Displayed family title", isDefaultBundle: false, members: [{ postId: "post_a" }, { postId: "post_b" }] },
+          post: { versions: [{ title: "Source title" }] }
+        }),
+        delete: vi.fn().mockResolvedValue({}), count: vi.fn().mockResolvedValue(1),
+        findUnique: vi.fn().mockResolvedValue(null), create: createMember
+      },
+      creativeWork: { findUnique: vi.fn().mockResolvedValue(null), update: vi.fn().mockResolvedValue({}), upsert: upsertWork, delete: vi.fn() }
+    };
+    const prisma = {
+      tenant: { findUnique: vi.fn().mockResolvedValue({ id: "tenant_1" }) },
+      creativeWorkMember: { findFirst: vi.fn().mockResolvedValue({
+        id: "member_a", creativeWorkId: "work_old", variantRole: "full",
+        creativeWork: { id: "work_old", title: "Displayed family title", isDefaultBundle: false, members: [{ postId: "post_a" }, { postId: "post_b" }] },
+        post: { versions: [{ title: "Source title" }] }
+      }) },
+      $transaction: vi.fn(async (fn: (client: unknown) => Promise<unknown>) => fn(tx))
+    };
+    const out = await splitCreativeWorkMember(prisma as never, "creator_a", "post_a");
+    expect(out).toMatchObject({ ok: true, result: { creative_work_id: "cw_default_post_a" } });
+    expect(upsertWork).toHaveBeenCalledWith(expect.objectContaining({ create: expect.objectContaining({ title: "Displayed family title", isDefaultBundle: true }) }));
+    expect(upsertPresentation).toHaveBeenCalledWith(expect.objectContaining({ update: { titleMode: "custom", relayTitle: "Displayed family title" } }));
+    expect(tx.creativeWorkMember.delete.mock.invocationCallOrder[0]).toBeLessThan(upsertPresentation.mock.invocationCallOrder[0]!);
   });
 });
 
@@ -159,6 +215,16 @@ describe("linkCreativeWorkMembers", () => {
       { id: "post_a", versions: [{ title: "Page 1" }] },
       { id: "post_b", versions: [{ title: "Page 2" }] }
     ]);
+    const findNamingPosts = vi.fn().mockResolvedValue([
+      { id: "post_a", versions: [{ title: "Page 1" }], presentation: { creatorId: "creator_a", titleMode: "inherit_work", relayTitle: null },
+        creativeWorkMember: { creatorId: "creator_a", creativeWork: { id: "cw_default_post_a", creatorId: "creator_a", title: "Old set", titleMode: "independent", seriesMember: null } } },
+      { id: "post_b", versions: [{ title: "Page 2" }], presentation: { creatorId: "creator_a", titleMode: "custom", relayTitle: "Special page" }, creativeWorkMember: null }
+    ]);
+    const findPostsInTransaction = vi.fn().mockResolvedValueOnce([
+      { id: "post_a", versions: [{ title: "Page 1" }] },
+      { id: "post_b", versions: [{ title: "Page 2" }] }
+    ]).mockResolvedValueOnce(await findNamingPosts());
+    const upsertPresentation = vi.fn().mockResolvedValue({});
     const findManyMembers = vi.fn().mockResolvedValue([
       {
         id: "cwm_a",
@@ -194,8 +260,10 @@ describe("linkCreativeWorkMembers", () => {
       },
       $transaction: vi.fn(async (fn: (tx: unknown) => Promise<unknown>) =>
         fn({
+          post: { findMany: findPostsInTransaction },
+          postPresentation: { upsert: upsertPresentation },
           creativeWork: { create: createWork, delete: deleteWork, update: vi.fn() },
-          creativeWorkMember: { update: updateMember, count }
+          creativeWorkMember: { findMany: findManyMembers, update: updateMember, count }
         })
       )
     };
@@ -219,5 +287,7 @@ describe("linkCreativeWorkMembers", () => {
     });
     expect(createWork).toHaveBeenCalled();
     expect(updateMember).toHaveBeenCalledTimes(2);
+    expect(upsertPresentation).toHaveBeenCalledTimes(1);
+    expect(upsertPresentation).toHaveBeenCalledWith(expect.objectContaining({ where: { postId: "post_a" }, update: { titleMode: "custom", relayTitle: "Old set" } }));
   });
 });

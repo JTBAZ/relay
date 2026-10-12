@@ -56,6 +56,17 @@ function fixture() {
     }), count: vi.fn(async (args: RecordRow) => data.filter((row) => match(row, args.where)).length)
   }]));
   client.$queryRawUnsafe = vi.fn(async (query: string, collectionId: string, creatorId: string, limit?: number, offset?: number) => {
+    if (query.includes("FROM posts p")) {
+      const text = creatorId.slice(1, -1).replace(/\\([\\%_])/g, "$1").toLowerCase();
+      return records.post.filter((p) => {
+        if (p.creatorId !== collectionId) return false;
+        const latest = [...p.versions].sort((a, b) => b.versionSeq - a.versionSeq)[0];
+        const overlay = records.postPresentation.find((pp) => pp.postId === p.id && pp.creatorId === collectionId);
+        const delta = records.postOverride.find((po) => po.postId === p.id && po.creatorId === collectionId && po.mediaId === "");
+        const tags = [...(latest?.tagIds ?? []).filter((tag: string) => !(delta?.removeTagIds ?? []).includes(tag)), ...(delta?.addTagIds ?? [])];
+        return String(overlay?.relayDescription ?? latest?.description ?? "").toLowerCase().includes(text) || tags.some((tag: string) => tag.toLowerCase().includes(text));
+      }).map((p) => ({ postId: p.id }));
+    }
     const collection = records.libraryCollection.find((c) => c.id === collectionId && c.creatorId === creatorId);
     const owned = collection ? collection.posts.map((p: RecordRow) => p.postId).filter((id: string) => records.post.some((p) => p.id === id && p.creatorId === creatorId)) : [];
     return query.includes("COUNT(*)") ? [{ total: BigInt(owned.length) }] : owned.slice(offset ?? 0, (offset ?? 0) + (limit ?? owned.length)).map((postId: string) => ({ postId }));
@@ -99,6 +110,25 @@ describe("Library context retrieval", () => {
     expect(history.search).toHaveBeenCalledWith("alice", "Old shared title");
     expect(result.historicalRelayTitlesAvailable).toBe(true);
     expect((await searchLibraryPosts(db, "alice", "Old shared title")).historicalRelayTitlesAvailable).toBe(false);
+  });
+
+  it("paginates effective tag/description matches without resurrecting removed or historical metadata", async () => {
+    const { db, records } = fixture();
+    records.post[1].versions[0].tagIds = ["coast"];
+    records.post[2].versions[0].tagIds = ["coast"];
+    records.post[3].versions[1].tagIds = ["coast"];
+    records.postOverride.push({ creatorId: "alice", postId: "p002", mediaId: "", addTagIds: [], removeTagIds: ["coast"] });
+    records.postOverride.push({ creatorId: "alice", postId: "p004", mediaId: "", addTagIds: ["Coast"], removeTagIds: [] });
+    records.postOverride.push({ creatorId: "bob", postId: "p005", mediaId: "", addTagIds: ["coast"], removeTagIds: [] });
+    records.post.at(-1)!.versions[0].tagIds = ["coast"];
+    const first = await searchLibraryPosts(db, "alice", "coast", { limit: 1 });
+    expect(first.total).toBe(2);
+    expect(first.items.map((p) => p.postId)).toEqual(["p001"]);
+    const second = await searchLibraryPosts(db, "alice", "coast", { limit: 1, cursor: first.nextCursor! });
+    expect(second.items.map((p) => p.postId)).toEqual(["p004"]);
+    expect(second.hasMore).toBe(false);
+    expect(second.matches).toEqual([]);
+    expect((await searchLibraryPosts(db, "alice", "Original")).items.some((p) => p.postId === "p000")).toBe(false);
   });
 
   it("expands exact owned work families and rejects cross-creator target IDs", async () => {

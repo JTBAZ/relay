@@ -15403,6 +15403,7 @@ export function createApp(config: AppConfig): CreateAppResult {
         }
 
         const out = await confirmMergeCreativeWorkBundle(config.prisma, relayCreatorId, {
+          actorId: context.accountId,
           sourcePostId,
           targetCreativeWorkId,
           variantRole
@@ -15497,6 +15498,7 @@ export function createApp(config: AppConfig): CreateAppResult {
         }
 
         const out = await linkCreativeWorkMembers(config.prisma, relayCreatorId, {
+          actorId: context.accountId,
           title,
           members
         });
@@ -15552,6 +15554,7 @@ export function createApp(config: AppConfig): CreateAppResult {
         }
 
         const out = await splitCreativeWorkMember(config.prisma, relayCreatorId, postId, {
+          actorId: context.accountId,
           title
         });
 
@@ -19309,6 +19312,7 @@ export function createApp(config: AppConfig): CreateAppResult {
     registerGalleryEditorRoutes(app, {
       prisma: config.prisma,
       storageRoot: exportStorageRoot,
+      storesReady: useDbIdentityStore(config) && useDbCanonicalStore(config) && useDbGalleryOverridesStore(config) && useDbCollectionsStore(config),
       traceId: traceIdFrom,
       authorize: async (req, res, mutation) => {
         const traceId = traceIdFrom(req);

@@ -32,6 +32,45 @@ describe('Library intent protocol (mocked transport, no model-accuracy claim)', 
     expect(history).toContainEqual(reasoning);
     expect(history.filter((item: ResponseItem) => item.type === 'function_call_output')).toHaveLength(3);
     expect(provider.respond).toHaveBeenCalledTimes(4);
+    expect(provider.respond.mock.calls.slice(0, 3).every(([request]) => request.tools.length === 6)).toBe(true);
+    expect(provider.respond.mock.calls[3][0].tools).toEqual([]);
+    expect(history.at(-1)).toMatchObject({ role: 'developer' });
+    expect(history.at(-1).content).toContain('fourth and final model call');
+    expect(history.at(-1).content).toContain('current actions unchanged');
+  });
+
+  it('can finish a selected-post family proposal in two model calls without a separate resolve read', async () => {
+    const provider = script(
+      { output: [call('expandLibraryFamily', { kind: 'post', id: 'p1', cursor: null, limit: 100 })] },
+      final([{ id: 'a1', kind: 'rename_work', workId: 'w1', title: 'After Rain' }]),
+    );
+    const reads = vi.fn<EditorReadTools>(async () => ({ data: {
+      items: [{ postId: 'p1', naming: { workId: 'w1', mode: 'source', sourceTitle: 'Rain', effectiveTitle: 'Rain', exception: false } }],
+      workIds: ['w1'], total: 1, complete: true, hasMore: false, nextCursor: null,
+    } }));
+    const result = await runEditorIntent(session(), 'Rename this whole work After Rain', provider, reads);
+    expect(result.actions).toEqual([{ id: 'a1', kind: 'rename_work', workId: 'w1', title: 'After Rain' }]);
+    expect(reads).toHaveBeenCalledTimes(1);
+    expect(reads.mock.calls[0][0]).toBe('expandLibraryFamily');
+    expect(provider.respond).toHaveBeenCalledTimes(2);
+    expect(provider.respond.mock.calls[0][0].input[0].content).toContain('a separate resolveLibraryPosts call is unnecessary');
+  });
+
+  it('reserves the final call for clarification when the retrieved family is incomplete', async () => {
+    const manual: EditAction = { id: 'manual', kind: 'rename_post', postId: 'p2', title: 'Keep my title' };
+    const current = session([manual]);
+    const snapshot = structuredClone(current);
+    const provider = script(
+      ...Array.from({ length: 3 }, (_, i) => ({ output: [call('expandLibraryFamily', { kind: 'post', id: 'p1', cursor: i ? `page-${i}` : null, limit: 1 }, `call${i}`)] })),
+      { output: [{ type: 'message', content: [{ type: 'output_text', text: JSON.stringify({ message: 'The family is larger than I could resolve. Which work should I focus on?', actions: [manual], disposition: 'clarification' }) }] }] },
+    );
+    const reads = vi.fn<EditorReadTools>(async () => ({ data: { items: [], complete: false, hasMore: true, nextCursor: 'more' } }));
+    const result = await runEditorIntent(current, 'Rename the entire family', provider, reads);
+    expect(result).toMatchObject({ actions: [manual], disposition: 'clarification' });
+    expect(reads).toHaveBeenCalledTimes(3);
+    expect(provider.respond.mock.calls[3][0].tools).toEqual([]);
+    expect(provider.respond.mock.calls[3][0].input.at(-1).content).toContain('family membership');
+    expect(current).toEqual(snapshot);
   });
 
   it('supplies the latest manual cart after obsolete history and does not mutate session', async () => {
@@ -88,10 +127,13 @@ describe('Library intent protocol (mocked transport, no model-accuracy claim)', 
     await expect(runEditorIntent(session(), 'Read p1', { respond: () => new Promise(() => {}) }, emptyRead, { timeoutMs: 15 })).rejects.toMatchObject({ code: 'intent_timeout' });
   });
 
-  it('never runs a fifth model call', async () => {
+  it('rejects an injected provider that requests another read on the final call, without a fourth read or fifth model call', async () => {
     const provider = script(...Array.from({ length: 4 }, (_, i) => ({ output: [call('resolveLibraryPosts', { postIds: ['p1'] }, `call${i}`)] })));
-    await expect(runEditorIntent(session(), 'Keep reading', provider, emptyRead)).rejects.toMatchObject({ code: 'intent_call_limit' });
+    const reads = vi.fn(emptyRead);
+    await expect(runEditorIntent(session(), 'Keep reading', provider, reads)).rejects.toMatchObject({ code: 'intent_call_limit' });
     expect(provider.respond).toHaveBeenCalledTimes(4);
+    expect(provider.respond.mock.calls[3][0].tools).toEqual([]);
+    expect(reads).toHaveBeenCalledTimes(3);
   });
 
   it('passes only authorized resolver thumbnails as actual images', async () => {
@@ -155,6 +197,19 @@ describe('Responses transport with explicit model prices and durable budget hook
     const fetch = vi.fn<typeof globalThis.fetch>();
     await expect(createResponsesProvider({ pricing, budget: budget(), fetch }).respond(request())).rejects.toMatchObject({ code: 'provider_disabled' });
     expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it('accounts for image pixels separately from a large base64 transport payload', async () => {
+    const ledger = budget();
+    const imageUrl = 'data:image/png;base64,' + 'A'.repeat(300000);
+    const fetch = vi.fn<typeof globalThis.fetch>(async (_url, init) => {
+      expect(JSON.parse(init!.body as string).input[0].content[0].image_url).toBe(imageUrl);
+      return success();
+    });
+    await createResponsesProvider({ apiKey: 'test-key', pricing: { ...pricing, maxImageInputTokens: 2048 }, budget: ledger, fetch, maxOutputTokens: 1000 }).respond({ ...request(), input: [{ role: 'user', content: [{ type: 'input_image', image_url: imageUrl, detail: 'low' }] }] });
+    expect(fetch).toHaveBeenCalledOnce();
+    expect(ledger.reserve.mock.calls[0][0].amountUsd).toBeLessThan(0.1);
+    expect(ledger.settle).toHaveBeenCalledWith('reserved', 0.0006);
   });
 
   it('fails closed without configured prices or durable reservation', async () => {

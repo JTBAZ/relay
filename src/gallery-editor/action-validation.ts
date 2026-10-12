@@ -31,7 +31,7 @@ const variants: Record<EditAction['kind'], Record<string, Schema>> = {
   link_work_post: { workId: id, postId: id, titleMode: postMode, customTitle: nullable(title), memberLabel: nullable(text(500)), sortOrder },
 };
 export const ACTION_SCHEMA: Schema = { anyOf: Object.entries(variants).map(([kind, properties]) => objectSchema({ id, kind: { type: 'string', enum: [kind] }, ...properties })) };
-export const PROPOSAL_SCHEMA = objectSchema({ message: { type: 'string', minLength: 1, maxLength: 20000 }, actions: { type: 'array', items: ACTION_SCHEMA, maxItems: 100 } });
+export const PROPOSAL_SCHEMA = objectSchema({ message: { type: 'string', minLength: 1, maxLength: 20000 }, disposition: {type:'string',enum:['proposal','clarification','limitation']}, actions: { type: 'array', items: ACTION_SCHEMA, maxItems: 100 } });
 
 /** The same schema governs model output and runtime checking; no permissive coercions. */
 export function matchesSchema(value: unknown, schema: Schema): boolean {
@@ -70,9 +70,9 @@ export function validateActions(value: unknown): EditAction[] {
   });
 }
 
-export function validateProposal(value: unknown): { message: string; actions: EditAction[] } {
+export function validateProposal(value: unknown): { message: string; actions: EditAction[]; disposition?: 'proposal'|'clarification'|'limitation' } {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new EditorError('invalid_proposal', 'The editor returned an invalid proposal.');
   const obj = value as Record<string, unknown>;
-  if (Object.keys(obj).some(key => !['message', 'actions'].includes(key)) || typeof obj.message !== 'string' || !obj.message.trim() || obj.message.length > 20000) throw new EditorError('invalid_proposal', 'The editor returned an invalid proposal.');
-  return { message: obj.message, actions: validateActions(obj.actions) };
+  if (Object.keys(obj).some(key => !['message', 'actions','disposition'].includes(key)) || typeof obj.message !== 'string' || !obj.message.trim() || obj.message.length > 20000 || (obj.disposition!==undefined&&!['proposal','clarification','limitation'].includes(String(obj.disposition)))) throw new EditorError('invalid_proposal', 'The editor returned an invalid proposal.');
+  return { message: obj.message, actions: validateActions(obj.actions),...(obj.disposition?{disposition:obj.disposition as 'proposal'|'clarification'|'limitation'}:{}) };
 }

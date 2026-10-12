@@ -45,6 +45,23 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe("Library editor panel", () => {
+  it("rebuilds a conflicting preview while preserving the authoritative cart", async () => {
+    current = fixtureSession([{id:"a1",kind:"rename_post",postId:"post1",title:"Draft"}]);
+    current.cart.conflicts=["Content was undone. Refresh this cart before Apply."];
+    await open();
+    fireEvent.click(screen.getByRole("button",{name:"Refresh draft"}));
+    await waitFor(()=>expect(api.reviseLibraryEditorSession).toHaveBeenCalledWith(expect.objectContaining({revision:1}),[{id:"a1",kind:"rename_post",postId:"post1",title:"Draft"}],context));
+    expect(api.applyLibraryEditorSession).not.toHaveBeenCalled();
+  });
+  it("shows collection order, media tags, and membership positions before Apply", async () => {
+    current=fixtureSession([{id:"order",kind:"reorder_collection",collectionId:"collection1",postIds:["b","a"]}]);
+    current.cart.items=[{targetId:"collection1",targetType:"collection",title:"Portfolio",before:{title:"Portfolio",postIds:["a","b"],mediaTags:[{mediaId:"m1",add:["old"],remove:[]}],sortOrder:1},after:{title:"Portfolio",postIds:["b","a"],mediaTags:[{mediaId:"m1",add:["new"],remove:[]}],sortOrder:0},actionIds:["order"]}];
+    await open();
+    expect(screen.getByText(/Post order: a, b/)).toBeTruthy();
+    expect(screen.getByText(/Post order: b, a/)).toBeTruthy();
+    expect(screen.getByText(/Position: 2/)).toBeTruthy();
+    expect(api.applyLibraryEditorSession).not.toHaveBeenCalled();
+  });
   it("hides completely when capability is disabled", async () => {
     api.fetchLibraryEditorCapabilities.mockResolvedValue({ enabled: false, aiAvailable: false, notice });
     const { container } = render(<LibraryEditorPanel creatorId="alice" context={context} selectedItems={selectedItems} onChanged={onChanged} />);
@@ -105,7 +122,7 @@ describe("Library editor panel", () => {
     current.cart.conflicts = ["Post changed since preview"];
     await open();
     expect((screen.getByRole("button", { name: "Apply 1 change" }) as HTMLButtonElement).disabled).toBe(true);
-    fireEvent.click(screen.getByRole("button", { name: "Remove changes for Old title" }));
+    fireEvent.click(screen.getByRole("button", { name: "Remove actions affecting Old title" }));
     await waitFor(() => expect(api.reviseLibraryEditorSession).toHaveBeenCalled());
     expect(api.reviseLibraryEditorSession.mock.calls[0][1]).toEqual([]);
     expect(api.applyLibraryEditorSession).not.toHaveBeenCalled();

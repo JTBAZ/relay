@@ -35,14 +35,32 @@ function checkRevision(actual:number,expected:number){if(!Number.isInteger(expec
 function checkDependencies(expected:Record<string,string>,state:EditorState){if(fingerprint(expected)!==fingerprint(dependencies(state)))throw new EditorError("STALE_PREVIEW","Related content changed since this preview. Refresh the cart before applying.",409);}
 export async function serializable<T>(prisma:PrismaClient,fn:(tx:Prisma.TransactionClient)=>Promise<T>):Promise<T>{
   for(let attempt=0;;attempt++)try{return await prisma.$transaction(fn,{isolationLevel:Prisma.TransactionIsolationLevel.Serializable,maxWait:5000,timeout:20000});}catch(error){
-    const code=error && typeof error==="object" && "code"in error ? String(error.code):"";
-    const meta=error&&typeof error==="object"&&"meta"in error?error.meta as Record<string,unknown>|undefined:undefined;
-    if((code==="P2034"||code==="40001"||code==="P2010"&&meta?.code==="40001")&&attempt<2)continue;
+    if(isRetryableTransactionError(error)&&attempt<2)continue;
     throw error;
   }
 }
+/** Prisma adapter raw errors can wrap SQLSTATE under meta.driverAdapterError.cause. */
+export function isRetryableTransactionError(error:unknown):boolean{
+  const seen=new Set<object>();
+  function inspect(value:unknown,depth:number):boolean{
+    if(!value||typeof value!=="object"||depth>5||seen.has(value))return false;
+    seen.add(value);const row=value as Record<string,unknown>;
+    if([row.code,row.originalCode,row.sqlState].some(code=>code==="40001"||code==="40P01"||code==="P2034"))return true;
+    return ["meta","driverAdapterError","cause"].some(key=>inspect(row[key],depth+1));
+  }
+  return inspect(error,0);
+}
 function sessionWire(row:{id:string;creatorId:string;revision:number;context:unknown;messages:unknown;cart:unknown}):EditorSession{
   return {id:row.id,creatorId:row.creatorId,revision:row.revision,context:row.context as EditorContext,messages:row.messages as EditorSession["messages"],cart:row.cart as ChangeCart};
+}
+/** Caller supplies committed snapshots and the existing transaction; never starts a nested transaction. */
+export async function recordManualStateChange(tx:Prisma.TransactionClient,input:{creatorId:string;actorId:string;before:EditorState;after:EditorState;actions:EditAction[];scope:string}):Promise<CommitReceipt>{
+  const {creatorId,actorId,before,after,actions,scope}=input,id=randomUUID(),commitId=randomUUID();
+  const preview=buildChangeCart(before,after,actions,1);
+  const receipt:CommitReceipt={id:commitId,sessionId:id,committedAt:new Date().toISOString(),actionCount:Math.max(actions.length,1),affectedPostIds:preview.items.filter(i=>i.targetType==="post"&&fingerprint(i.before)!==fingerprint(i.after)).map(i=>i.targetId),preservedExceptions:preview.items.filter(i=>i.targetType==="post"&&(i.exception||i.preservedReason)&&fingerprint(i.before)===fingerprint(i.after)).map(i=>i.targetId),notice:RENAME_NOTICE};
+  await tx.galleryEditorSession.create({data:{id,creatorId,actorId,revision:1,context:{selectedPostIds:before.scope.posts},messages:[],cart:json({revision:1,actions:[],items:[],dependencies:{},conflicts:[],notice:RENAME_NOTICE,origin:"manual"})}});
+  await tx.galleryEditorCommit.create({data:{id:commitId,creatorId,actorId,sessionId:id,idempotencyKey:`manual:${commitId}`,origin:"manual",scope,actions:json(actions),before:json(before),after:json(after),dependencies:json(dependencies(before)),receipt:json(receipt)}});
+  return receipt;
 }
 export class GalleryEditorService {
   constructor(readonly prisma:PrismaClient){}
@@ -75,20 +93,21 @@ export class GalleryEditorService {
       const committed=await loadEditorState(tx,creatorId,[seed],true,before.scope),id=randomUUID(),commitId=randomUUID();
       const receipt:CommitReceipt={id:commitId,sessionId:id,committedAt:new Date().toISOString(),actionCount:Math.max(actions.length,1),affectedPostIds:[postId],preservedExceptions:[],notice:RENAME_NOTICE};
       await tx.galleryEditorSession.create({data:{id,creatorId,actorId,revision:1,context:{selectedPostIds:[postId]},messages:[],cart:json({revision:1,actions:[],items:[],dependencies:{},conflicts:[],notice:RENAME_NOTICE,origin:"manual"})}});
-      await tx.galleryEditorCommit.create({data:{id:commitId,creatorId,actorId,sessionId:id,idempotencyKey:`manual:${commitId}`,origin:"manual",scope:"post_presentation",actions:json([seed]),before:json(before),after:json(committed),dependencies:json(dependencies(before)),receipt:json(receipt)}});
+      await tx.galleryEditorCommit.create({data:{id:commitId,creatorId,actorId,sessionId:id,idempotencyKey:`manual:${commitId}`,origin:"manual",scope:"post_presentation",actions:json(actions),before:json(before),after:json(committed),dependencies:json(dependencies(before)),receipt:json(receipt)}});
       return {presentation:await tx.postPresentation.findUniqueOrThrow({where:{postId}}),receipt};
     });
   }
   async create(creatorId:string,actorId:string,context:EditorContext):Promise<EditorSession>{
     if(context.selectedPostIds.length){const count=await this.prisma.post.count({where:{creatorId,id:{in:context.selectedPostIds}}});if(count!==new Set(context.selectedPostIds).size)throw new EditorError("INVALID_TARGET","Selection contains unavailable posts.",404);}
     const cart:ChangeCart={revision:0,actions:[],items:[],dependencies:{},conflicts:[],notice:RENAME_NOTICE};
-    return sessionWire(await this.prisma.galleryEditorSession.create({data:{id:randomUUID(),creatorId,actorId,revision:0,context:json(context),messages:[],cart:json(cart)}}));
+    const row=await this.prisma.galleryEditorSession.create({data:{id:randomUUID(),creatorId,actorId,revision:0,context:json(context),messages:[],cart:json(cart)}});
+    return this.read(creatorId,actorId,row.id);
   }
   async read(creatorId:string,actorId:string,id:string,db:EditorDb=this.prisma):Promise<EditorSession>{
     const row=await db.galleryEditorSession.findFirst({where:{id,creatorId,actorId}});
     if(!row)throw new EditorError("NOT_FOUND","Editor session not found.",404);
     const session=sessionWire(row);
-    const receipt=await db.galleryEditorCommit.findFirst({where:{sessionId:id,creatorId,actorId,reversalOfId:null},orderBy:{createdAt:"desc"}});
+    const receipt=await db.galleryEditorCommit.findFirst({where:{creatorId,actorId,reversalOfId:null},orderBy:{createdAt:"desc"}});
     if(receipt)session.lastReceipt={...(receipt.receipt as unknown as CommitReceipt),...(receipt.reversedAt?{reversedAt:receipt.reversedAt.toISOString()}:{})};
     return session;
   }
@@ -121,7 +140,7 @@ export class GalleryEditorService {
       const commitId=randomUUID();
       const preview=buildChangeCart(before,after,session.cart.actions,revision);
       const changedPosts=preview.items.filter(i=>i.targetType==="post"&&fingerprint(i.before)!==fingerprint(i.after));
-      const receipt:CommitReceipt & {revision:number}={id:commitId,sessionId:id,revision,committedAt:new Date().toISOString(),actionCount:session.cart.actions.length,affectedPostIds:changedPosts.map(i=>i.targetId),preservedExceptions:preview.items.filter(i=>i.targetType==="post"&&i.exception&&fingerprint(i.before)===fingerprint(i.after)).map(i=>i.targetId),notice:RENAME_NOTICE};
+      const receipt:CommitReceipt & {revision:number}={id:commitId,sessionId:id,revision,committedAt:new Date().toISOString(),actionCount:session.cart.actions.length,affectedPostIds:changedPosts.map(i=>i.targetId),preservedExceptions:preview.items.filter(i=>i.targetType==="post"&&(i.exception||i.preservedReason)&&fingerprint(i.before)===fingerprint(i.after)).map(i=>i.targetId),notice:RENAME_NOTICE};
       await tx.galleryEditorCommit.create({data:{id:commitId,creatorId,actorId,sessionId:id,idempotencyKey,origin:origin??session.cart.origin??"manual",actions:json(session.cart.actions),before:json(before),after:json(after),dependencies:json(session.cart.dependencies),receipt:json(receipt)}});
       const empty:ChangeCart={revision:revision+1,actions:[],items:[],dependencies:{},conflicts:[],notice:RENAME_NOTICE};
       await tx.galleryEditorSession.update({where:{id},data:{revision:revision+1,cart:json(empty)}});

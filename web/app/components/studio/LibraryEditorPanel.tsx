@@ -38,10 +38,18 @@ function readable(value: unknown): string {
   if (Array.isArray(fields.tags)) parts.push(`Tags: ${readable(fields.tags)}`);
   if (Array.isArray(fields.mediaIds)) parts.push(`Media order: ${readable(fields.mediaIds)}`);
   if (Array.isArray(fields.collectionIds)) parts.push(`Collections: ${readable(fields.collectionIds)}`);
+  if (Array.isArray(fields.postIds)) parts.push(`Post order: ${readable(fields.postIds)}`);
+  if (Array.isArray(fields.workIds)) parts.push(`Works: ${readable(fields.workIds)}`);
+  if (Array.isArray(fields.mediaTags)) for (const delta of fields.mediaTags as Array<Record<string, unknown>>) parts.push(`Media ${readable(delta.mediaId)} tags: +${readable(delta.add)}; −${readable(delta.remove)}`);
+  if (typeof fields.workId === "string" && fields.workId) parts.push(`Work: ${fields.workId}`);
+  if (typeof fields.seriesId === "string" && fields.seriesId) parts.push(`Series: ${fields.seriesId}`);
+  if (typeof fields.partLabel === "string") parts.push(`Part: ${fields.partLabel}`);
+  if (typeof fields.memberLabel === "string") parts.push(`Variant: ${fields.memberLabel}`);
+  if (typeof fields.sortOrder === "number") parts.push(`Position: ${fields.sortOrder + 1}`);
   if (typeof fields.titleMode === "string") parts.push(fields.titleMode === "custom" ? "Custom title" : fields.titleMode === "source" ? "Source title" : fields.titleMode === "inherit_work" ? "Inherits work title" : fields.titleMode === "inherit_series" ? "Inherits series title" : "Independent title");
   return parts.join("\n") || "No change";
 }
-function CartRow({ item, busy, onRemove }: { item: CartItem; busy: boolean; onRemove: () => void }) {
+function CartRow({ item, busy, onRemove, onKeepTitle, onFamilyTitle }: { item: CartItem; busy: boolean; onRemove: () => void; onKeepTitle?: () => void; onFamilyTitle?: () => void }) {
   const thumbnail = cartThumbnail(item.thumbnailUrl);
   return (
     <li className="rounded-lg border border-[var(--lib-border)] bg-[var(--lib-bg)] p-3">
@@ -52,14 +60,16 @@ function CartRow({ item, busy, onRemove }: { item: CartItem; busy: boolean; onRe
         ) : null}
         <div className="min-w-0 flex-1">
           <p className="break-words text-xs font-semibold">{item.title || "Untitled"}</p>
-          <p className="mt-1 text-[10px] text-[var(--lib-fg-muted)]">{item.targetType}{item.inherited ? " · Inherited change" : ""}{item.exception ? " · Custom title preserved" : ""}</p>
+          <p className="mt-1 text-[10px] text-[var(--lib-fg-muted)]">{item.targetType}{item.preservedReason === "source_post_title" ? " · Last synced title preserved" : item.preservedReason === "independent_work" ? " · Independent work title preserved" : ""}{item.related ? " · Related post unchanged" : ""}{item.inherited ? " · Inherits family title" : ""}{item.exception ? readable(item.before) === readable(item.after) ? " · Custom title preserved" : " · Custom post title" : ""}</p>
         </div>
-        {item.actionIds.length ? <button type="button" className="rounded p-1 text-[var(--lib-fg-muted)] hover:text-[var(--lib-fg)] disabled:opacity-40" aria-label={`Remove changes for ${item.title || "Untitled"}`} disabled={busy} onClick={onRemove}><Trash2 className="h-3.5 w-3.5" /></button> : null}
+        {item.actionIds.length ? <button type="button" className="rounded p-1 text-[var(--lib-fg-muted)] hover:text-[var(--lib-fg)] disabled:opacity-40" aria-label={`Remove actions affecting ${item.title || "Untitled"}`} disabled={busy} onClick={onRemove}><Trash2 className="h-3.5 w-3.5" /></button> : null}
       </div>
       <dl className="mt-3 grid grid-cols-2 gap-3 text-[11px]">
         <div><dt className="mb-1 text-[var(--lib-fg-muted)]">Before</dt><dd className="whitespace-pre-wrap break-words">{readable(item.before)}</dd></div>
         <div><dt className="mb-1 text-[var(--lib-primary)]">After</dt><dd className="whitespace-pre-wrap break-words">{readable(item.after)}</dd></div>
       </dl>
+      {onKeepTitle ? <button type="button" className={`${button} mt-2`} disabled={busy} onClick={onKeepTitle}>Keep this post title as an exception</button> : null}
+      {onFamilyTitle ? <button type="button" className={`${button} mt-2`} disabled={busy} onClick={onFamilyTitle}>Use family title</button> : null}
     </li>
   );
 }
@@ -175,6 +185,11 @@ export default function LibraryEditorPanel({ creatorId, context, selectedItems, 
     setReceipt(result.receipt); onChanged();
     if (sessionRef.current) { const next = await fetchLibraryEditorSession(sessionRef.current.id); acceptSession(next); setReceipt(result.receipt); }
   });
+  const refreshDraft = () => void operate("Refreshing draft", async () => {
+    if (!sessionRef.current) return;
+    const latest = await fetchLibraryEditorSession(sessionRef.current.id);
+    acceptSession(await reviseLibraryEditorSession(latest, latest.cart.actions, contextRef.current));
+  });
 
   if (!capabilities?.enabled) return null;
   const actions = session?.cart.actions ?? [];
@@ -195,7 +210,7 @@ export default function LibraryEditorPanel({ creatorId, context, selectedItems, 
             <p className="text-[11px] text-[var(--lib-fg-muted)]">{context.selectedPostIds.length} selected posts · {context.selectedMediaIds?.length ?? 0} selected assets{context.activeCollectionId ? " · Collection selected" : ""}</p>
             <p className="mt-2 text-[11px] text-[var(--lib-fg-muted)]">{capabilities.notice || notice}</p>
             {writeBlocked ? <p role="status" className="mt-3 rounded border border-[var(--lib-warning)]/40 p-2 text-xs text-[var(--lib-warning)]">Resolve the studio sync issue before applying changes.</p> : null}
-            {error ? <div role="alert" className="mt-3 rounded border border-[var(--lib-destructive)]/40 p-3 text-xs text-[var(--lib-destructive)]"><p>{error}</p><button className={`${button} mt-2`} type="button" disabled={Boolean(busy)} onClick={() => void operate("Refreshing draft", async () => { if (sessionRef.current) acceptSession(await fetchLibraryEditorSession(sessionRef.current.id)); })}>Refresh draft</button></div> : null}
+            {error ? <div role="alert" className="mt-3 rounded border border-[var(--lib-destructive)]/40 p-3 text-xs text-[var(--lib-destructive)]"><p>{error}</p><button className={`${button} mt-2`} type="button" disabled={Boolean(busy)} onClick={refreshDraft}>Refresh draft</button></div> : null}
 
             <section className="mt-4" aria-label="Conversation">
               {session?.messages.length ? <ol className="space-y-2">{session.messages.map((entry, index) => <li key={index} className={`whitespace-pre-wrap break-words rounded-lg border border-[var(--lib-border)] p-3 text-xs ${entry.role === "user" ? "bg-[var(--lib-muted)]" : "bg-[var(--lib-bg)]"}`}><span className="mb-1 block text-[10px] font-medium text-[var(--lib-fg-muted)]">{entry.role === "user" ? "You" : "Library assistant"}</span>{entry.text}</li>)}</ol> : <p className="rounded-lg border border-dashed border-[var(--lib-border)] p-3 text-xs text-[var(--lib-fg-muted)]">Select posts and describe the change. You can find work anywhere in your Library.</p>}
@@ -218,11 +233,11 @@ export default function LibraryEditorPanel({ creatorId, context, selectedItems, 
 
             <section className="mt-5 border-t border-[var(--lib-border)] pt-4" aria-labelledby="library-change-cart-heading">
               <div className="flex items-center justify-between"><h3 id="library-change-cart-heading" className="text-xs font-semibold">Change cart · {session?.cart.items.length ?? 0} items</h3>{actions.length ? <button type="button" className="text-[11px] text-[var(--lib-fg-muted)] hover:text-[var(--lib-fg)] disabled:opacity-40" disabled={disabled} onClick={() => reviseActions([])}>Discard all</button> : null}</div>
-              {conflicts.length ? <ul role="alert" className="mt-2 space-y-1 text-xs text-[var(--lib-warning)]">{conflicts.map((conflict, index) => <li key={index}>{conflict}</li>)}</ul> : null}
-              {session?.cart.items.length ? <ul className="mt-3 space-y-2">{session.cart.items.map((item, index) => <CartRow key={`${item.targetType}:${item.targetId}:${index}`} item={item} busy={disabled} onRemove={() => reviseActions(actions.filter((action) => !item.actionIds.includes(action.id)))} />)}</ul> : <p className="mt-3 rounded-lg border border-dashed border-[var(--lib-border)] p-3 text-xs text-[var(--lib-fg-muted)]">No pending changes. Nothing is saved until you apply the cart.</p>}
+              {conflicts.length ? <div><ul role="alert" className="mt-2 space-y-1 text-xs text-[var(--lib-warning)]">{conflicts.map((conflict, index) => <li key={index}>{conflict}</li>)}</ul><button className={`${button} mt-2`} type="button" disabled={Boolean(busy)} onClick={refreshDraft}>Refresh draft</button></div> : null}
+              {session?.cart.items.length ? <ul className="mt-3 space-y-2">{session.cart.items.map((item, index) => <CartRow key={`${item.targetType}:${item.targetId}:${index}`} item={item} busy={disabled} onRemove={() => reviseActions(actions.filter((action) => !item.actionIds.includes(action.id)))} onKeepTitle={item.targetType === "post" && item.inherited && (item.before as { title?: string })?.title !== (item.after as { title?: string })?.title ? () => reviseActions([...actions, { id: crypto.randomUUID(), kind: "rename_post", postId: item.targetId, title: (item.before as { title: string }).title }]) : undefined} onFamilyTitle={item.targetType === "post" && item.exception && Boolean((item.after as { workId?: string })?.workId) ? () => reviseActions([...actions, { id: crypto.randomUUID(), kind: "inherit_post_title", postId: item.targetId }]) : undefined} />)}</ul> : <p className="mt-3 rounded-lg border border-dashed border-[var(--lib-border)] p-3 text-xs text-[var(--lib-fg-muted)]">No pending changes. Nothing is saved until you apply the cart.</p>}
               {actions.some((a) => a.kind === "rename_post" || a.kind === "rename_work" || a.kind === "rename_series") ? <details className="mt-3 text-xs"><summary className="cursor-pointer text-[var(--lib-fg-muted)]">Revise a proposed title</summary><ul className="mt-2 space-y-1">{actions.filter((a): a is Extract<EditAction, { title: string }> => a.kind === "rename_post" || a.kind === "rename_work" || a.kind === "rename_series").map((action) => <li key={action.id}><button type="button" className="text-left text-[var(--lib-primary)] disabled:opacity-40" disabled={disabled} onClick={() => { setEditingActionId(action.id); setTitle(action.title); }}>{action.title}</button></li>)}</ul></details> : null}
             </section>
-            {receipt ? <section role="status" className="mt-4 rounded-lg border border-[var(--lib-primary)]/35 bg-[var(--lib-primary)]/10 p-3 text-xs"><p className="font-medium">{receipt.reversedAt ? "Changes undone" : `Applied ${receipt.actionCount} ${receipt.actionCount === 1 ? "change" : "changes"}`}</p><p className="mt-1 text-[11px]">{receipt.affectedPostIds.length} affected posts{receipt.preservedExceptions.length ? ` · ${receipt.preservedExceptions.length} custom titles preserved` : ""}</p>{!receipt.reversedAt ? <button type="button" className={`${button} mt-2`} disabled={disabled} onClick={undo}><RotateCcw className="h-3.5 w-3.5" />Undo this batch</button> : null}</section> : null}
+            {receipt ? <section role="status" className="mt-4 rounded-lg border border-[var(--lib-primary)]/35 bg-[var(--lib-primary)]/10 p-3 text-xs"><p className="font-medium">{receipt.reversedAt ? "Changes undone" : `Applied ${receipt.actionCount} ${receipt.actionCount === 1 ? "change" : "changes"}`}</p><p className="mt-1 text-[11px]">{receipt.affectedPostIds.length} affected posts{receipt.preservedExceptions.length ? ` · ${receipt.preservedExceptions.length} title exceptions preserved` : ""}</p>{!receipt.reversedAt ? <button type="button" className={`${button} mt-2`} disabled={disabled} onClick={undo}><RotateCcw className="h-3.5 w-3.5" />Undo this batch</button> : null}</section> : null}
           </div>
           <footer className="shrink-0 border-t border-[var(--lib-border)] p-4">
             {busy ? <p role="status" className="mb-2 flex items-center gap-2 text-xs text-[var(--lib-fg-muted)]"><Loader2 className="h-3.5 w-3.5 animate-spin" />{busy}…</p> : null}

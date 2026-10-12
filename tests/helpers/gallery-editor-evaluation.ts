@@ -28,9 +28,20 @@ export async function evaluateEditorCorpus(
       if (!lastTurn || lastTurn.role !== 'user') throw new Error('Corpus case must end with a user turn.');
       const actions = validateActions(item.context.existingCart.map((raw, index) => {
         const { targetId, source: _source, ...action } = raw;
-        // CE02 uses targetId for pre-existing post actions. This is fixture normalization,
-        // not language interpretation or a model-accuracy oracle.
-        return { ...action, id: `fixture-${index}`, postId: targetId };
+        // CE02 targetId is a fixture-facing reference. Normalize it to the native field
+        // for that action kind before applying the same strict contract as production.
+        const targetField: Record<string, string> = {
+          rename_post: 'postId', inherit_post_title: 'postId', source_post_title: 'postId',
+          set_description: 'postId', tags: 'postId', reorder_media: 'postId',
+          rename_work: 'workId', unlink_series_work: 'workId',
+          rename_series: 'seriesId', create_series: 'seriesId', link_series_work: 'seriesId',
+          create_collection: 'collectionId', rename_collection: 'collectionId',
+          collection_membership: 'collectionId', reorder_collection: 'collectionId',
+          link_work_post: 'workId',
+        };
+        const field = targetField[String(action.kind)];
+        if (!field || typeof targetId !== 'string') throw new Error('Invalid fixture cart target.');
+        return { ...action, id: `fixture-${index}`, [field]: targetId };
       }));
       const session: EditorSession = {
         id: `eval-${item.id}`, creatorId: 'evaluation-owner', revision: 1,

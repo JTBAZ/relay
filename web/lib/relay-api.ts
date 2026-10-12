@@ -1939,6 +1939,8 @@ export type MediaProcessingState =
   | "FAILED";
 
 export type GalleryItem = {
+  /** Creator-only naming provenance; public gallery responses omit source titles. */
+  naming?: import("../../src/gallery-editor/types").NamingProvenance;
   media_id: string;
   post_id: string;
   title: string;

@@ -4,6 +4,10 @@ import { PrismaClient } from "@prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { GalleryEditorService } from "../src/gallery-editor/service.js";
 import { loadPostNaming } from "../src/gallery-editor/naming.js";
+import { searchLibraryPosts } from "../src/gallery-editor/context.js";
+import { editorHistoryReader } from "../src/gallery-editor/routes.js";
+import { confirmMergeCreativeWorkBundle, linkCreativeWorkMembers, splitCreativeWorkMember } from "../src/analytics/creative-work-bundling-service.js";
+import { defaultCreativeWorkIdForPost } from "../src/analytics/creative-work-service.js";
 import type { EditAction } from "../src/gallery-editor/types.js";
 
 // Never run against the ordinary DATABASE_URL. This suite requires deliberate
@@ -64,9 +68,32 @@ describe.skipIf(!databaseUrl)("Gallery editor — PostgreSQL atomic execution", 
       await db.creativeWork.deleteMany({ where: { creatorId: creator } });
       await db.creativeSeries.deleteMany({ where: { creatorId: creator } });
       await db.campaign.deleteMany({ where: { creatorId: creator } });
+      await db.tenant.deleteMany({ where: { relayCreatorId: creator } });
+      await db.tenant.deleteMany({where:{relayCreatorId:creator}});
     }
   });
   afterAll(async () => { await db?.$disconnect(); });
+
+  it.each(["merge","link","split"] as const)("legacy manual %s preserves displayed names, journals mode changes, and supports Undo",async operation=>{
+    await db.tenant.create({data:{relayCreatorId:creatorId}});
+    await commit([{id:"canonical",kind:"rename_work",workId,title:"Shared canonical title"}]);
+    const original=await db.creativeWorkMember.findUniqueOrThrow({where:{postId:postA}});
+    if(operation==="merge"){
+      const target=newId();await db.creativeWork.create({data:{id:target,creatorId,title:"Other work"}});
+      expect((await confirmMergeCreativeWorkBundle(db,creatorId,{actorId,sourcePostId:postA,targetCreativeWorkId:target})).ok).toBe(true);
+    }else if(operation==="link"){
+      expect((await linkCreativeWorkMembers(db,creatorId,{actorId,title:"Linked work",members:[{postId:postA},{postId:customPost}]})).ok).toBe(true);
+    }else expect((await splitCreativeWorkMember(db,creatorId,postA,{actorId})).ok).toBe(true);
+    expect((await loadPostNaming(db,creatorId))[postA]).toMatchObject({mode:"custom",effectiveTitle:"Shared canonical title"});
+    const current=await editor.create(creatorId,actorId,{selectedPostIds:[postA]});
+    const receipt=current.lastReceipt!;
+    const journal=await db.galleryEditorCommit.findUniqueOrThrow({where:{id:receipt.id}});
+    expect(journal.scope).toBe(`manual_work_${operation}_preserve_titles`);
+    expect(journal.actions).toEqual(expect.arrayContaining([expect.objectContaining({kind:"link_work_post",postId:postA,titleMode:"custom",customTitle:"Shared canonical title"})]));
+    await editor.undo(creatorId,actorId,receipt.id);
+    expect((await loadPostNaming(db,creatorId))[postA]).toMatchObject({mode:"inherit_work",effectiveTitle:"Shared canonical title"});
+    expect(await db.creativeWorkMember.findUniqueOrThrow({where:{postId:postA}})).toEqual(original);
+  });
 
   it("preview writes only the session; family commit inherits source titles and preserves custom exceptions", async () => {
     const sourceVersions = await db.postVersion.findMany({ where: { postId: { in: [postA, postB, customPost] } } });
@@ -91,6 +118,30 @@ describe.skipIf(!databaseUrl)("Gallery editor — PostgreSQL atomic execution", 
     expect((await loadPostNaming(db, creatorId))[customPost].effectiveTitle).toBe("New special title");
   });
 
+  it("journals an Inspect Save rename and exposes its receipt to old and new sessions before Undo", async () => {
+    const prior = await editor.create(creatorId, actorId, { selectedPostIds: [postB] });
+    const sourceTitle = `Source ${postA}`;
+    const result = await editor.applyManualPresentation(creatorId, actorId, postA, {
+      titleMode: "custom", relayTitle: "Saved from Inspect", relayDescription: "<p>Artist note</p>"
+    });
+    expect(result.presentation).toMatchObject({ postId: postA, titleMode: "custom", relayTitle: "Saved from Inspect", relayDescription: "<p>Artist note</p>" });
+    const journal = await db.galleryEditorCommit.findUniqueOrThrow({ where: { id: result.receipt.id } });
+    expect(journal).toMatchObject({ creatorId, actorId, origin: "manual", scope: "post_presentation" });
+    expect(journal.actions).toEqual(expect.arrayContaining([
+      expect.objectContaining({ kind: "rename_post", postId: postA, title: "Saved from Inspect" })
+    ]));
+    expect(journal.actions).not.toEqual(expect.arrayContaining([expect.objectContaining({ kind: "source_post_title" })]));
+    expect((await editor.read(creatorId, actorId, prior.id)).lastReceipt?.id).toBe(result.receipt.id);
+    const fresh = await editor.create(creatorId, actorId, { selectedPostIds: [] });
+    expect(fresh.lastReceipt?.id).toBe(result.receipt.id);
+    expect((await loadPostNaming(db, creatorId))[postA].effectiveTitle).toBe("Saved from Inspect");
+    const undone = await editor.undo(creatorId, actorId, result.receipt.id);
+    expect(undone.reversedAt).toBeTruthy();
+    expect(await db.postPresentation.findUnique({ where: { postId: postA } })).toBeNull();
+    expect((await loadPostNaming(db, creatorId))[postA].effectiveTitle).toBe(sourceTitle);
+    expect((await editor.read(creatorId, actorId, fresh.id)).lastReceipt?.reversedAt).toBeTruthy();
+  });
+
   it("creates a series with ordered part labels and resolves the live inherited title", async () => {
     const seriesId = newId();
     await commit([
@@ -102,6 +153,32 @@ describe.skipIf(!databaseUrl)("Gallery editor — PostgreSQL atomic execution", 
     await commit([{ id: "rename", kind: "rename_series", seriesId, title: "Renamed tales" }]);
     expect((await loadPostNaming(db, creatorId))[postA].effectiveTitle).toBe("Renamed tales — Part II");
     expect((await db.creativeSeriesMember.findUniqueOrThrow({ where: { creativeWorkId: workId } })).sortOrder).toBe(1);
+  });
+
+  it("searches current and historical composed series titles containing quotes", async () => {
+    const seriesId = newId();
+    const oldTitle = 'O\'Brien\'s "Field" Notes';
+    const newTitle = 'New "Field" Notes';
+    const partLabel = "Part I";
+    await commit([
+      { id: "series", kind: "create_series", seriesId, title: oldTitle },
+      { id: "link", kind: "link_series_work", seriesId, workId, partLabel, titleMode: "inherit_series", sortOrder: 0 },
+      { id: "inherit", kind: "inherit_post_title", postId: postA }
+    ]);
+    const history = editorHistoryReader(db);
+    const oldComposed = `${oldTitle} — ${partLabel}`;
+    const current = await searchLibraryPosts(db, creatorId, oldComposed, { history });
+    expect(current.items.map(item => item.postId)).toContain(postA);
+    expect(current.matches).toContainEqual({ postId: postA, matchedTitle: oldComposed, provenance: "current" });
+    await commit([{ id: "rename", kind: "rename_series", seriesId, title: newTitle }]);
+    const newComposed = `${newTitle} — ${partLabel}`;
+    const renamed = await searchLibraryPosts(db, creatorId, newComposed, { history });
+    expect(renamed.matches).toContainEqual({ postId: postA, matchedTitle: newComposed, provenance: "current" });
+    const historical = await searchLibraryPosts(db, creatorId, oldComposed, { history });
+    expect(historical.items.map(item => item.postId)).toContain(postA);
+    expect(historical.matches).toContainEqual({ postId: postA, matchedTitle: oldComposed, provenance: "historical" });
+    const other = await otherCreator();
+    expect((await searchLibraryPosts(db, other.creator, oldComposed, { history })).items).toEqual([]);
   });
 
   it("mixed presentation, tags and collection edits commit in one journal and safely undo", async () => {
@@ -183,6 +260,83 @@ describe.skipIf(!databaseUrl)("Gallery editor — PostgreSQL atomic execution", 
     expect((await db.creativeWork.findUniqueOrThrow({ where: { id: workId } })).title).toBe("Old family edited later");
     expect((await db.creativeWorkMember.findUniqueOrThrow({ where: { postId: postA } })).creativeWorkId).toBe(destination);
     expect(await db.galleryEditorCommit.count({ where: { creatorId, reversalOfId: receipt.id } })).toBe(0);
+  });
+
+  it("shows destination siblings in a reparent preview without changing their titles", async () => {
+    const destination = newId();
+    await db.creativeWork.create({ data: { id: destination, creatorId, title: "Destination work" } });
+    const destinationSibling = await seedPost(creatorId, campaignId, destination);
+    await db.postPresentation.create({ data: { creatorId, postId: destinationSibling, titleMode: "inherit_work" } });
+    const session = await draft([{ id: "move", kind: "link_work_post", postId: postA, workId: destination, titleMode: "inherit_work", sortOrder: 1 }]);
+    const sibling = session.cart.items.find(item => item.targetType === "post" && item.targetId === destinationSibling);
+    expect(sibling).toMatchObject({ related: true, before: { title: "Destination work" }, after: { title: "Destination work" } });
+    expect(session.cart.items.find(item => item.targetType === "post" && item.targetId === postA)?.after).toMatchObject({ title: "Destination work", workId: destination });
+    expect((await db.creativeWorkMember.findUniqueOrThrow({ where: { postId: postA } })).creativeWorkId).toBe(workId);
+  });
+
+  it("links an unbundled post atomically and Undo restores its absent membership", async () => {
+    await db.tenant.create({ data: { id: newId(), relayCreatorId: creatorId } });
+    await db.creativeWorkMember.delete({ where: { postId: postA } });
+    const failedDb = db.$extends({ query: { galleryEditorCommit: { async create({ args, query }) {
+      if (args.data.creatorId === creatorId) throw new Error("Injected bundle journal failure");
+      return query(args);
+    } } } });
+    await expect(linkCreativeWorkMembers(failedDb as unknown as PrismaClient, creatorId, {
+      actorId, members: [{ postId: postA, isCover: true }, { postId: postB }]
+    })).rejects.toThrow("Injected bundle journal failure");
+    expect(await db.creativeWorkMember.findUnique({ where: { postId: postA } })).toBeNull();
+    expect((await db.creativeWorkMember.findUniqueOrThrow({ where: { postId: postB } })).creativeWorkId).toBe(workId);
+    expect(await db.creativeWork.count({ where: { creatorId } })).toBe(1);
+    expect(await db.galleryEditorCommit.count({ where: { creatorId } })).toBe(0);
+
+    const linked = await linkCreativeWorkMembers(db, creatorId, {
+      actorId, members: [{ postId: postA, isCover: true }, { postId: postB }]
+    });
+    expect(linked.ok).toBe(true);
+    if (!linked.ok) return;
+    const receipt = await db.galleryEditorCommit.findFirstOrThrow({ where: { creatorId, scope: "manual_work_link_preserve_titles" } });
+    expect((await db.creativeWorkMember.findUniqueOrThrow({ where: { postId: postA } })).creativeWorkId).toBe(linked.result.creative_work_id);
+    await editor.undo(creatorId, actorId, receipt.id);
+    expect(await db.creativeWorkMember.findUnique({ where: { postId: postA } })).toBeNull();
+    expect((await db.creativeWorkMember.findUniqueOrThrow({ where: { postId: postB } })).creativeWorkId).toBe(workId);
+    expect(await db.creativeWork.findUnique({ where: { id: linked.result.creative_work_id } })).toBeNull();
+  });
+
+  it("splits into a fresh work when the deterministic default is occupied and leaves its family intact", async () => {
+    await db.tenant.create({ data: { id: newId(), relayCreatorId: creatorId } });
+    await db.postPresentation.create({ data: { creatorId, postId: postA, titleMode: "inherit_work" } });
+    const occupiedId = defaultCreativeWorkIdForPost(postA);
+    await db.creativeWork.create({ data: { id: occupiedId, creatorId, title: "Occupant family" } });
+    const occupant = await seedPost(creatorId, campaignId, occupiedId);
+    const split = await splitCreativeWorkMember(db, creatorId, postA, { actorId });
+    expect(split.ok).toBe(true);
+    if (!split.ok) return;
+    expect(split.result.creative_work_id).not.toBe(occupiedId);
+    expect((await db.creativeWork.findUniqueOrThrow({ where: { id: split.result.creative_work_id } })).title).toBe("Original work");
+    expect((await loadPostNaming(db, creatorId))[postA].effectiveTitle).toBe("Original work");
+    expect((await db.creativeWorkMember.findUniqueOrThrow({ where: { postId: occupant } })).creativeWorkId).toBe(occupiedId);
+    const receipt = await db.galleryEditorCommit.findFirstOrThrow({ where: { creatorId, scope: "manual_work_split_preserve_titles" } });
+    await editor.undo(creatorId, actorId, receipt.id);
+    expect((await db.creativeWorkMember.findUniqueOrThrow({ where: { postId: postA } })).creativeWorkId).toBe(workId);
+    expect((await db.creativeWorkMember.findUniqueOrThrow({ where: { postId: occupant } })).creativeWorkId).toBe(occupiedId);
+    expect((await db.creativeWork.findUniqueOrThrow({ where: { id: occupiedId } })).title).toBe("Occupant family");
+  });
+
+  it("journals both source and destination family closure for a manual merge", async () => {
+    await db.tenant.create({ data: { id: newId(), relayCreatorId: creatorId } });
+    const destination = newId();
+    await db.creativeWork.create({ data: { id: destination, creatorId, title: "Destination" } });
+    const sibling = await seedPost(creatorId, campaignId, destination);
+    await db.postPresentation.create({ data: { creatorId, postId: postA, titleMode: "inherit_work" } });
+    const merged = await confirmMergeCreativeWorkBundle(db, creatorId, { actorId, sourcePostId: postA, targetCreativeWorkId: destination });
+    expect(merged.ok).toBe(true);
+    const receipt = await db.galleryEditorCommit.findFirstOrThrow({ where: { creatorId, scope: "manual_work_merge_preserve_titles" } });
+    const before = receipt.before as unknown as { scope: { posts: string[]; works: string[] } };
+    expect(before.scope.posts).toEqual(expect.arrayContaining([postA, postB, sibling]));
+    expect(before.scope.works).toEqual(expect.arrayContaining([workId, destination]));
+    expect((await loadPostNaming(db, creatorId))[postA].effectiveTitle).toBe("Original work");
+    await db.postPresentation.create({ data: { creatorId, postId: sibling, titleMode: "custom", relayTitle: "Later destination edit" } });
+    await expect(editor.undo(creatorId, actorId, receipt.id)).rejects.toMatchObject({ code: "STALE_PREVIEW" });
   });
 
   it("cart exposes changed part label and ordering even when the work row stays inherited", async () => {

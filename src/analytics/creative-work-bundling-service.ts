@@ -3,11 +3,33 @@
  * @see docs/analytics/SUGGESTED_BUNDLING.md
  */
 
-import type { CreativeWorkVariantRole, PrismaClient } from "@prisma/client";
+import type { CreativeWorkVariantRole, Prisma, PrismaClient } from "@prisma/client";
+import { loadPostNaming } from "../gallery-editor/naming.js";
+import { recordManualStateChange, serializable } from "../gallery-editor/service.js";
+import { loadEditorState } from "../gallery-editor/state.js";
+import type { EditAction } from "../gallery-editor/types.js";
 import {
   defaultCreativeWorkIdForPost,
   ensureDefaultCreativeWorkForPost
 } from "./creative-work-service.js";
+
+/** Keep a post's displayed title stable when a legacy Work action changes its parent. */
+async function preserveInheritedTitles(
+  tx: Prisma.TransactionClient,
+  creatorId: string,
+  naming: Awaited<ReturnType<typeof loadPostNaming>>,
+  postIds: string[]
+): Promise<void> {
+  for (const postId of postIds) {
+    const current = naming[postId];
+    if (current?.mode !== "inherit_work") continue;
+    await tx.postPresentation.upsert({
+      where: { postId },
+      create: { creatorId, postId, titleMode: "custom", relayTitle: current.effectiveTitle },
+      update: { titleMode: "custom", relayTitle: current.effectiveTitle }
+    });
+  }
+}
 
 export type BundlingErrorCode =
   | "NO_TENANT"
@@ -420,6 +442,7 @@ export async function dismissCreativeWorkBundleSuggestion(
 }
 
 export type ConfirmMergeCreativeWorkInput = {
+  actorId?: string;
   sourcePostId: string;
   targetCreativeWorkId: string;
   variantRole?: CreativeWorkVariantRole;
@@ -454,8 +477,9 @@ export async function confirmMergeCreativeWorkBundle(
   });
   if (!tenant) return { ok: false, code: "NO_TENANT" };
 
-  const [sourceMember, targetWork] = await Promise.all([
-    prisma.creativeWorkMember.findFirst({
+  return serializable(prisma,async (tx) => {
+    const [sourceMember, targetWork] = await Promise.all([
+    tx.creativeWorkMember.findFirst({
       where: { postId: sourcePostId, creatorId },
       select: {
         id: true,
@@ -464,14 +488,14 @@ export async function confirmMergeCreativeWorkBundle(
         creativeWork: { select: { isDefaultBundle: true, members: { select: { postId: true } } } }
       }
     }),
-    prisma.creativeWork.findFirst({
+    tx.creativeWork.findFirst({
       where: { id: targetCreativeWorkId, creatorId },
       select: {
         id: true,
         members: { select: { postId: true, sortOrder: true }, orderBy: { sortOrder: "asc" } }
       }
     })
-  ]);
+    ]);
 
   if (!sourceMember || !targetWork) return { ok: false, code: "NOT_FOUND" };
   if (sourceMember.creativeWorkId === targetCreativeWorkId) {
@@ -483,7 +507,10 @@ export async function confirmMergeCreativeWorkBundle(
   const nextSortOrder =
     targetWork.members.reduce((max, member) => Math.max(max, member.sortOrder), -1) + 1;
 
-  await prisma.$transaction(async (tx) => {
+    const naming = await loadPostNaming(tx, creatorId, [sourcePostId]);
+    const current=naming[sourcePostId];
+    const action:EditAction={id:crypto.randomUUID(),kind:"link_work_post",postId:sourcePostId,workId:targetCreativeWorkId,titleMode:current?.mode==="inherit_work"?"custom":current?.mode??"source",...(current?.mode!=="source"&&current?{customTitle:current.effectiveTitle}:{}),sortOrder:nextSortOrder};
+    const before=input.actorId?await loadEditorState(tx,creatorId,[action]):undefined;
     await tx.creativeWorkMember.update({
       where: { id: sourceMember.id },
       data: {
@@ -493,6 +520,7 @@ export async function confirmMergeCreativeWorkBundle(
         linkedAt: new Date()
       }
     });
+    await preserveInheritedTitles(tx, creatorId, naming, [sourcePostId]);
 
     await tx.creativeWork.update({
       where: { id: targetCreativeWorkId },
@@ -513,13 +541,9 @@ export async function confirmMergeCreativeWorkBundle(
         targetCreativeWorkId
       }
     });
-  });
-
-  const memberCount = await prisma.creativeWorkMember.count({
-    where: { creativeWorkId: targetCreativeWorkId }
-  });
-
-  return {
+    if(before&&input.actorId)await recordManualStateChange(tx,{creatorId,actorId:input.actorId,before,after:await loadEditorState(tx,creatorId,[action],true,before.scope),actions:[action],scope:"manual_work_merge_preserve_titles"});
+    const memberCount = await tx.creativeWorkMember.count({ where: { creativeWorkId: targetCreativeWorkId } });
+    return {
     ok: true,
     result: {
       creative_work_id: targetCreativeWorkId,
@@ -529,7 +553,8 @@ export async function confirmMergeCreativeWorkBundle(
       merged_from_creative_work_id:
         mergedFromCreativeWorkId === targetCreativeWorkId ? null : mergedFromCreativeWorkId
     }
-  };
+    };
+  });
 }
 
 export type SplitCreativeWorkMemberResult = {
@@ -544,7 +569,7 @@ export async function splitCreativeWorkMember(
   prisma: PrismaClient,
   relayCreatorId: string,
   postId: string,
-  options?: { title?: string }
+  options?: { title?: string; actorId?: string }
 ): Promise<
   { ok: true; result: SplitCreativeWorkMemberResult } | { ok: false; code: BundlingErrorCode }
 > {
@@ -558,7 +583,8 @@ export async function splitCreativeWorkMember(
   });
   if (!tenant) return { ok: false, code: "NO_TENANT" };
 
-  const member = await prisma.creativeWorkMember.findFirst({
+  return serializable(prisma,async (tx) => {
+  const member = await tx.creativeWorkMember.findFirst({
     where: { postId: normalizedPostId, creatorId },
     select: {
       id: true,
@@ -591,8 +617,7 @@ export async function splitCreativeWorkMember(
 
   if (
     member.creativeWork.isDefaultBundle &&
-    previousMemberCount === 1 &&
-    member.creativeWorkId === defaultCreativeWorkIdForPost(normalizedPostId)
+    previousMemberCount === 1
   ) {
     return {
       ok: true,
@@ -606,13 +631,13 @@ export async function splitCreativeWorkMember(
     };
   }
 
-  const title =
-    options?.title?.trim() ||
-    member.post.versions[0]?.title?.trim() ||
-    member.creativeWork.title ||
-    normalizedPostId;
-
-  const result = await prisma.$transaction(async (tx) => {
+    const naming = await loadPostNaming(tx, creatorId, [normalizedPostId]);
+    const anchor:EditAction={id:crypto.randomUUID(),kind:"source_post_title",postId:normalizedPostId};
+    const before=options?.actorId?await loadEditorState(tx,creatorId,[anchor]):undefined;
+    const title = options?.title?.trim() || naming[normalizedPostId]?.effectiveTitle ||
+      member.post.versions[0]?.title?.trim() || member.creativeWork.title || normalizedPostId;
+    const defaultId=defaultCreativeWorkIdForPost(normalizedPostId);
+    const occupiedDefault=await tx.creativeWork.findUnique({where:{id:defaultId},select:{id:true}});
     await tx.creativeWorkMember.delete({ where: { id: member.id } });
 
     const remaining = await tx.creativeWorkMember.count({
@@ -625,30 +650,34 @@ export async function splitCreativeWorkMember(
       });
     }
 
-    const split = await ensureDefaultCreativeWorkForPost(tx, {
-      postId: normalizedPostId,
-      creatorId,
-      title,
-      variantRole: "standalone"
-    });
+    const split = occupiedDefault
+      ? await (async () => {
+          const creativeWorkId=`cw_split_${crypto.randomUUID().replace(/-/g,"")}`;
+          const linkedAt=new Date();
+          await tx.creativeWork.create({data:{id:creativeWorkId,creatorId,title,titleMode:"independent",isDefaultBundle:true,createdAt:linkedAt,updatedAt:linkedAt}});
+          const memberId=`cwm_split_${crypto.randomUUID().replace(/-/g,"")}`;
+          await tx.creativeWorkMember.create({data:{id:memberId,creatorId,postId:normalizedPostId,creativeWorkId,variantRole:"standalone",sortOrder:0,linkedAt}});
+          return {creativeWorkId,memberId,created:true};
+        })()
+      : await ensureDefaultCreativeWorkForPost(tx, {postId:normalizedPostId,creatorId,title,variantRole:"standalone"});
+    await preserveInheritedTitles(tx, creatorId, naming, [normalizedPostId]);
 
     if (remaining === 0) {
       await tx.creativeWork.delete({ where: { id: previousCreativeWorkId } });
     }
+    if(before&&options?.actorId){const current=naming[normalizedPostId];const action:EditAction={id:crypto.randomUUID(),kind:"link_work_post",postId:normalizedPostId,workId:split.creativeWorkId,titleMode:current?.mode==="inherit_work"?"custom":current?.mode??"source",...(current&&current.mode!=="source"?{customTitle:current.effectiveTitle}:{}),sortOrder:0};await recordManualStateChange(tx,{creatorId,actorId:options.actorId,before,after:await loadEditorState(tx,creatorId,[action],true,before.scope),actions:[action],scope:"manual_work_split_preserve_titles"});}
 
-    return split;
-  });
-
-  return {
+    return {
     ok: true,
     result: {
       post_id: normalizedPostId,
-      creative_work_id: result.creativeWorkId,
+      creative_work_id: split.creativeWorkId,
       variant_role: "standalone",
       previous_creative_work_id: previousCreativeWorkId,
       previous_member_count: previousMemberCount
     }
-  };
+    };
+  });
 }
 
 export type LinkCreativeWorkMemberSpec = {
@@ -659,6 +688,7 @@ export type LinkCreativeWorkMemberSpec = {
 };
 
 export type LinkCreativeWorkMembersInput = {
+  actorId?: string;
   title?: string;
   members: LinkCreativeWorkMemberSpec[];
 };
@@ -729,7 +759,8 @@ export async function linkCreativeWorkMembers(
   });
   if (!tenant) return { ok: false, code: "NO_TENANT" };
 
-  const posts = await prisma.post.findMany({
+  return serializable(prisma,async (tx) => {
+  const posts = await tx.post.findMany({
     where: { id: { in: uniquePostIds }, creatorId },
     select: {
       id: true,
@@ -748,16 +779,7 @@ export async function linkCreativeWorkMembers(
     posts.map((post) => [post.id, post.versions[0]?.title?.trim() || post.id] as const)
   );
 
-  // Ensure every post has a membership row before moving.
-  for (const postId of uniquePostIds) {
-    await ensureDefaultCreativeWorkForPost(prisma, {
-      postId,
-      creatorId,
-      title: titleByPost.get(postId) ?? postId
-    });
-  }
-
-  const existingMembers = await prisma.creativeWorkMember.findMany({
+  const existingMembers = await tx.creativeWorkMember.findMany({
     where: { postId: { in: uniquePostIds }, creatorId },
     select: {
       id: true,
@@ -767,13 +789,9 @@ export async function linkCreativeWorkMembers(
       memberLabel: true
     }
   });
-  if (existingMembers.length !== uniquePostIds.length) {
-    return { ok: false, code: "NOT_FOUND" };
-  }
-
   const memberByPost = new Map(existingMembers.map((m) => [m.postId, m]));
 
-  let coverPostId =
+  const coverPostId =
     uniquePostIds.find((id) => byPost.get(id)?.isCover) ??
     uniquePostIds.find((id) => {
       const role = byPost.get(id)?.variantRole ?? memberByPost.get(id)?.variantRole;
@@ -787,36 +805,38 @@ export async function linkCreativeWorkMembers(
   ];
 
   const coverTitle = titleByPost.get(coverPostId) ?? coverPostId;
-  const workTitle = input.title?.trim() || coverTitle;
   const newWorkId = newLinkedCreativeWorkId();
   const now = new Date();
   const sourceWorkIds = new Set(existingMembers.map((m) => m.creativeWorkId));
 
   const planned = orderedPostIds.map((postId, index) => {
     const spec = byPost.get(postId)!;
-    const existing = memberByPost.get(postId)!;
+    const existing = memberByPost.get(postId);
     const variantRole =
       (spec.variantRole && VARIANT_ROLES.has(spec.variantRole)
         ? spec.variantRole
-        : undefined) ?? existing.variantRole;
+        : undefined) ?? existing?.variantRole ?? "standalone";
     const memberLabel =
-      spec.memberLabel !== undefined ? spec.memberLabel : existing.memberLabel ?? null;
+      spec.memberLabel !== undefined ? spec.memberLabel : existing?.memberLabel ?? null;
     return {
-      memberId: existing.id,
+      memberId: existing?.id,
       postId,
       variantRole,
       memberLabel,
       sortOrder: index,
-      previousWorkId: existing.creativeWorkId
+      previousWorkId: existing?.creativeWorkId
     };
   });
 
-  await prisma.$transaction(async (tx) => {
+    const naming = await loadPostNaming(tx, creatorId, uniquePostIds);
+    const anchors:EditAction[]=uniquePostIds.map(postId=>({id:crypto.randomUUID(),kind:"source_post_title",postId}));
+    const before=input.actorId?await loadEditorState(tx,creatorId,anchors):undefined;
+    const title = input.title?.trim() || naming[coverPostId]?.effectiveTitle || coverTitle;
     await tx.creativeWork.create({
       data: {
         id: newWorkId,
         creatorId,
-        title: workTitle,
+        title,
         isDefaultBundle: false,
         createdAt: now,
         updatedAt: now
@@ -824,17 +844,10 @@ export async function linkCreativeWorkMembers(
     });
 
     for (const row of planned) {
-      await tx.creativeWorkMember.update({
-        where: { id: row.memberId },
-        data: {
-          creativeWorkId: newWorkId,
-          variantRole: row.variantRole,
-          memberLabel: row.memberLabel,
-          sortOrder: row.sortOrder,
-          linkedAt: now
-        }
-      });
+      if(row.memberId)await tx.creativeWorkMember.update({where:{id:row.memberId},data:{creativeWorkId:newWorkId,variantRole:row.variantRole,memberLabel:row.memberLabel,sortOrder:row.sortOrder,linkedAt:now}});
+      else await tx.creativeWorkMember.create({data:{id:`cwm_linked_${crypto.randomUUID().replace(/-/g,"")}`,creatorId,postId:row.postId,creativeWorkId:newWorkId,variantRole:row.variantRole,memberLabel:row.memberLabel,sortOrder:row.sortOrder,linkedAt:now}});
     }
+    await preserveInheritedTitles(tx, creatorId, naming, uniquePostIds);
 
     for (const sourceWorkId of sourceWorkIds) {
       if (sourceWorkId === newWorkId) continue;
@@ -850,13 +863,12 @@ export async function linkCreativeWorkMembers(
         });
       }
     }
-  });
-
-  return {
+    if(before&&input.actorId){const actions:EditAction[]=planned.map(row=>{const current=naming[row.postId];return {id:crypto.randomUUID(),kind:"link_work_post",postId:row.postId,workId:newWorkId,titleMode:current?.mode==="inherit_work"?"custom":current?.mode??"source",...(current&&current.mode!=="source"?{customTitle:current.effectiveTitle}:{}),memberLabel:row.memberLabel??undefined,sortOrder:row.sortOrder};});await recordManualStateChange(tx,{creatorId,actorId:input.actorId,before,after:await loadEditorState(tx,creatorId,actions,true,before.scope),actions,scope:"manual_work_link_preserve_titles"});}
+    return {
     ok: true,
     result: {
       creative_work_id: newWorkId,
-      title: workTitle,
+      title,
       member_count: planned.length,
       members: planned.map((row) => ({
         post_id: row.postId,
@@ -865,5 +877,6 @@ export async function linkCreativeWorkMembers(
         sort_order: row.sortOrder
       }))
     }
-  };
+    };
+  });
 }

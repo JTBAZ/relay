@@ -12,7 +12,7 @@ export interface ProviderBudget {
   /** null means unknown billing: hold the complete reservation until reconciliation. */
   settle(id: string, actualUsd: number | null): Promise<void>;
 }
-export interface ModelPricing { inputUsdPerMillion: number; outputUsdPerMillion: number; maxImageInputTokens?: number }
+export interface ModelPricing { inputUsdPerMillion: number; outputUsdPerMillion: number; cachedInputUsdPerMillion?: number; maxImageInputTokens?: number }
 export interface ResponsesProviderOptions {
   apiKey?: string;
   model?: string;
@@ -34,16 +34,27 @@ export function createResponsesProvider(options: ResponsesProviderOptions): Edit
     async respond({ input, tools, signal }) {
       if (!options.apiKey?.trim()) throw new EditorError('provider_disabled', 'The conversational editor is not configured. Manual editing remains available.', 503);
       if (!options.budget || !options.pricing || !validRate(options.pricing.inputUsdPerMillion) || !validRate(options.pricing.outputUsdPerMillion)) throw new EditorError('provider_unpriced', 'The editor requires configured model pricing and a durable spending budget.', 503);
+      if(options.pricing.cachedInputUsdPerMillion!==undefined&&(!validRate(options.pricing.cachedInputUsdPerMillion)||options.pricing.cachedInputUsdPerMillion>options.pricing.inputUsdPerMillion))throw new EditorError('provider_config','The cached-token rate is invalid.',503);
       if (!Number.isSafeInteger(maxOutputTokens) || maxOutputTokens < 256 || maxOutputTokens > 16000) throw new EditorError('provider_config', 'The editor output limit is invalid.', 503);
       signal.throwIfAborted();
       const body = { model, store: false, input, tools, parallel_tool_calls: false, max_output_tokens: maxOutputTokens, include: ['reasoning.encrypted_content'], text: { format: { type: 'json_schema', name: 'library_edit_proposal', strict: true, schema: PROPOSAL_SCHEMA } } };
       let images = 0;
       // Account conservatively at one token per UTF-8 byte, plus explicit image allowance.
-      const serialized = JSON.stringify(body, (_key, value) => { if (value && typeof value === 'object' && value.type === 'input_image') images++; return value; });
+      const serialized = JSON.stringify(body, (_key, value) => {
+        if (value && typeof value === 'object' && value.type === 'input_image') {
+          images++;
+          // Pixel tokens are reserved separately; base64 encoding is transport data,
+          // not text prompt tokens. Keep surrounding structural fields accounted for.
+          return { ...value, image_url: '[authorized image]' };
+        }
+        return value;
+      });
       if (images > 24) throw new EditorError('image_limit', 'The editor can inspect at most 24 images per turn.');
       if (images && (!tokenCount(options.pricing.maxImageInputTokens) || options.pricing.maxImageInputTokens < 1)) throw new EditorError('provider_unpriced_images', 'Image inspection requires a configured model image token ceiling.', 503);
       const inputCeiling = Buffer.byteLength(serialized, 'utf8') + images * (options.pricing.maxImageInputTokens ?? 0) + 1024;
-      const price = (inTokens: number, outTokens: number) => (inTokens * options.pricing!.inputUsdPerMillion + outTokens * options.pricing!.outputUsdPerMillion) / 1000000;
+      // Keep configured short-context rates applicable; long-context pricing needs separate configuration.
+      if(inputCeiling>272000)throw new EditorError('provider_context_limit','Narrow the request to fit the priced editor context.',413);
+      const price = (inTokens: number, outTokens: number, cachedTokens=0) => ((inTokens-cachedTokens) * options.pricing!.inputUsdPerMillion + cachedTokens * (options.pricing!.cachedInputUsdPerMillion??options.pricing!.inputUsdPerMillion) + outTokens * options.pricing!.outputUsdPerMillion) / 1000000;
       const reservation = await options.budget.reserve({ model, phase: options.phase ?? 'development', amountUsd: price(inputCeiling, maxOutputTokens), signal });
       let settlement: number | null = null;
       let sent = false;
@@ -51,15 +62,17 @@ export function createResponsesProvider(options: ResponsesProviderOptions): Edit
         signal.throwIfAborted();
         sent = true;
         const response = await (options.fetch ?? globalThis.fetch)('https://api.openai.com/v1/responses', {
-          method: 'POST', signal, headers: { Authorization: `Bearer ${options.apiKey}`, 'Content-Type': 'application/json' }, body: serialized,
+          method: 'POST', signal, headers: { Authorization: `Bearer ${options.apiKey}`, 'Content-Type': 'application/json' }, body: JSON.stringify(body),
         });
         // Do not expose provider error bodies, request IDs, URLs, metadata, or credentials.
         if (!response.ok) throw new EditorError('provider_error', 'The editor provider could not complete this request.', 502);
-        const result = await response.json() as { status?: string; output?: unknown; usage?: { input_tokens?: unknown; output_tokens?: unknown } };
+        const result = await response.json() as { status?: string; output?: unknown; usage?: { input_tokens?: unknown; output_tokens?: unknown; input_tokens_details?:{cached_tokens?:unknown} } };
         const inputTokens = result.usage?.input_tokens;
         const outputTokens = result.usage?.output_tokens;
         if (!tokenCount(inputTokens) || !tokenCount(outputTokens)) throw new EditorError('provider_usage_missing', 'The editor provider returned incomplete usage accounting.', 502);
-        settlement = price(inputTokens, outputTokens);
+        const cached=result.usage?.input_tokens_details?.cached_tokens??0;
+        if(!tokenCount(cached)||cached>inputTokens)throw new EditorError('provider_usage_missing','The provider returned invalid cached-token accounting.',502);
+        settlement = price(inputTokens, outputTokens,cached);
         if (inputTokens > inputCeiling || outputTokens > maxOutputTokens) throw new EditorError('provider_budget_overrun', 'The editor exceeded its configured token allowance. Review model pricing before retrying.', 503);
         if (result.status !== 'completed' || !Array.isArray(result.output) || result.output.some(item => !item || typeof item !== 'object' || Array.isArray(item))) throw new EditorError('provider_incomplete', 'The editor did not finish a proposal. Try a smaller request.', 502);
         return { output: result.output as ResponseItem[], usage: { inputTokens, outputTokens, costUsd: settlement, calls: 1 } };

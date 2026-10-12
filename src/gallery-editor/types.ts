@@ -21,6 +21,8 @@ export type EditAction =
   | { id: string; kind: "link_work_post"; workId: string; postId: string; titleMode: PostTitleMode; customTitle?: string; memberLabel?: string; sortOrder: number };
 export interface EditorContext {
   selectedPostIds: string[];
+  /** Visible posts in the current Library page, in display order; distinct from selection. */
+  loadedPostIds?: string[];
   selectedMediaIds?: string[];
   activeCollectionId?: string;
   filters?: Record<string, string | boolean>;
@@ -55,6 +57,8 @@ export interface CartItem {
   actionIds: string[];
   inherited?: boolean;
   exception?: boolean;
+  related?: boolean;
+  preservedReason?: "source_post_title" | "independent_work";
 }
 export interface ChangeCart {
   origin?: "manual" | "ai" | "mixed";

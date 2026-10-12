@@ -128,7 +128,9 @@ export async function resolveLibraryPosts(db: LibraryReadClient, creatorId: stri
   return { resolvedPosts: postIds.flatMap((id) => resolved.has(id) ? [resolved.get(id)!] : []), missingPostIds: postIds.filter((id) => !resolved.has(id)) };
 }
 
-/** Searches the database, independent of the UI's loaded page. Older source titles are searchable. */
+/** Searches titles (including history), current effective tags, and current effective descriptions,
+ * independent of the UI's loaded page. Removed/obsolete tags and cleared descriptions do not match.
+ */
 export async function searchLibraryPosts(db: LibraryReadClient, creatorId: string, query: string, options: LibraryReadOptions = {}): Promise<LibrarySearchResult> {
   if (typeof query !== "string") throw new EditorError("invalid_query", "Supply a Library search string.");
   const text = query.trim();
@@ -136,6 +138,27 @@ export async function searchLibraryPosts(db: LibraryReadClient, creatorId: strin
   const input = pageInput(creatorId, ["posts", text], options);
   const client = readDb(db);
   const history = text && options.history ? await options.history.search(creatorId, text) : [];
+  // Prisma cannot express concatenated inherited names as a relation contains filter.
+  const derived = text ? await client.$queryRawUnsafe<{postId:string}[]>(`SELECT cwm.post_id AS "postId" FROM creative_work_members cwm JOIN creative_works cw ON cw.id = cwm.creative_work_id AND cw.creator_id = cwm.creator_id JOIN creative_series_members sm ON sm.creative_work_id = cw.id AND sm.creator_id = cw.creator_id JOIN creative_series cs ON cs.id = sm.creative_series_id AND cs.creator_id = sm.creator_id WHERE cw.creator_id = $1 AND ((cs.title || ' — ' || sm.part_label) ILIKE $2 OR sm.part_label ILIKE $2) ORDER BY cwm.post_id LIMIT 10001`,creatorId,`%${text.replace(/[\\%_]/g,"\\$&")}%`) : [];
+  if(derived.length>10000)throw new EditorError("search_limit","Narrow the series-title search to retrieve complete results.");
+  // Prisma cannot filter only the latest related version's array after applying scoped tag deltas.
+  // Every value is a bound parameter. Additions win over source removals, matching effectiveTags.
+  const metadata = text ? await client.$queryRawUnsafe<{ postId: string }[]>(`
+    SELECT p.id AS "postId" FROM posts p
+    LEFT JOIN LATERAL (
+      SELECT pv.description, pv.tag_ids FROM post_versions pv
+      WHERE pv.post_id = p.id ORDER BY pv.version_seq DESC LIMIT 1
+    ) latest ON TRUE
+    LEFT JOIN post_presentations pp ON pp.post_id = p.id AND pp.creator_id = p.creator_id
+    LEFT JOIN post_overrides po ON po.post_id = p.id AND po.creator_id = p.creator_id AND po.media_id = ''
+    WHERE p.creator_id = $1 AND (
+      COALESCE(pp.relay_description, latest.description, '') ILIKE $2
+      OR EXISTS (SELECT 1 FROM unnest(COALESCE(latest.tag_ids, ARRAY[]::text[])) AS source_tag(tag)
+        WHERE source_tag.tag ILIKE $2 AND NOT source_tag.tag = ANY(COALESCE(po.remove_tag_ids, ARRAY[]::text[])))
+      OR EXISTS (SELECT 1 FROM unnest(COALESCE(po.add_tag_ids, ARRAY[]::text[])) AS added_tag(tag)
+        WHERE added_tag.tag ILIKE $2)
+    ) ORDER BY p.id LIMIT 10001`, creatorId, `%${text.replace(/[\\%_]/g, "\\$&")}%`) : [];
+  if (metadata.length > 10000) throw new EditorError("search_limit", "Narrow the tag or description search to retrieve complete results.");
   const contains = { contains: text, mode: "insensitive" };
   const where = { creatorId, ...(text ? { OR: [
     { id: contains }, { versions: { some: { title: contains } } },
@@ -143,6 +166,8 @@ export async function searchLibraryPosts(db: LibraryReadClient, creatorId: strin
     { creativeWorkMember: { is: { creatorId, creativeWork: { is: { creatorId, title: contains } } } } },
     { creativeWorkMember: { is: { creatorId, creativeWork: { is: { creatorId, seriesMember: { is: { creatorId, creativeSeries: { is: { creatorId, title: contains } } } } } } } } },
     ...(history.length ? [{ id: { in: history.map((m) => m.postId) } }] : [])
+    ,...(derived.length ? [{ id: { in: derived.map(m=>m.postId) } }] : [])
+    ,...(metadata.length ? [{ id: { in: metadata.map(m=>m.postId) } }] : [])
   ] } : {}) };
   const [total, found] = await Promise.all([
     client.post.count({ where }),
