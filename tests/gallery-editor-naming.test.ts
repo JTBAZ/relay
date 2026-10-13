@@ -18,9 +18,10 @@ describe("naming inheritance", () => {
     const result = resolvePostNaming({ sourceTitle: "Patreon", presentation: { titleMode: "inherit_work" }, work });
     expect(result).toEqual({
       mode: "inherit_work", sourceTitle: "Patreon", effectiveTitle: "Series — Chapter 1",
-      workId: "w", workTitle: "Series — Chapter 1", seriesId: "s", seriesTitle: "Series", partLabel: "Chapter 1", exception: false
+      workId: "w", workTitle: "Series — Chapter 1", workTitleMode: "inherit_series", seriesId: "s", seriesTitle: "Series", partLabel: "Chapter 1", exception: false
     });
     expect(resolveWorkTitle({ ...work, titleMode: "independent" })).toBe("Existing work");
+    expect(resolvePostNaming({ sourceTitle: "Source", work: { ...work, titleMode: "independent" } })).toMatchObject({ workTitle: "Existing work", workTitleMode: "independent", seriesId: "s" });
   });
 
   it("rename inheritance is live while source/custom exceptions stay intact", () => {

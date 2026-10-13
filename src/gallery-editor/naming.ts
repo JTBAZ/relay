@@ -38,7 +38,7 @@ export function resolvePostNaming(input: NamingInput): NamingProvenance {
   const series = work?.seriesMember;
   return {
     mode, effectiveTitle, sourceTitle,
-    ...(work ? { workId: work.id, workTitle } : {}),
+    ...(work ? { workId: work.id, workTitle, workTitleMode: work.titleMode ?? "independent" } : {}),
     ...(series ? {
       seriesId: series.creativeSeries.id,
       seriesTitle: series.creativeSeries.title,

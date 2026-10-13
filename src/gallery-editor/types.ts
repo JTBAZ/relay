@@ -33,6 +33,7 @@ export interface NamingProvenance {
   sourceTitle: string;
   workId?: string;
   workTitle?: string;
+  workTitleMode?: WorkTitleMode;
   seriesId?: string;
   seriesTitle?: string;
   partLabel?: string;

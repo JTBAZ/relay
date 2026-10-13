@@ -27,6 +27,7 @@ const selfTest = args.includes('--self-test');
 const model = option('--model') || (selfTest ? 'self-test' : undefined);
 const split = option('--split') || (selfTest ? 'development' : undefined);
 const family = option('--family');
+const caseId = option('--case');
 const corpusPath = resolve(option('--corpus') || join(root, 'tests/fixtures/gallery-editor-ce02.json'));
 const corpusBytes = await readFile(corpusPath);
 const fixture = JSON.parse(corpusBytes.toString('utf8'));
@@ -46,6 +47,7 @@ if (family && !['metadata', 'vision'].includes(family)) fail('--family must be m
 if (!['ce02.v1', 'ce02.v2'].includes(fixture.schemaVersion)) fail('Unsupported CE02 schema.');
 
 const cases = fixture.cases.filter(item => item.split === split);
+if (caseId && !cases.some(item => item.id === caseId)) fail('--case must identify a case in the selected split.');
 const requiredCounts = { development: 40, heldout: 20 };
 if (cases.length !== requiredCounts[split]) fail('CE02 split size changed; review the fixture before running.');
 const sha256 = value => createHash('sha256').update(value).digest('hex');
@@ -111,7 +113,7 @@ function resolvedPost(post) {
   const work = works.get(post.workId);
   const parentSeries = series.get(work?.seriesId);
   const naming = { mode: post.titleMode, effectiveTitle: post.title, sourceTitle: post.sourceTitle,
-    ...(work ? { workId: work.id, workTitle: work.title } : {}),
+    ...(work ? { workId: work.id, workTitle: work.title, workTitleMode: work.titleMode } : {}),
     ...(parentSeries ? { seriesId: parentSeries.id, seriesTitle: parentSeries.title } : {}),
     exception: post.titleMode === 'custom' };
   return { postId: post.id, title: post.title, description: post.description, mediaIds: post.mediaIds, tags: post.tags, naming };
@@ -255,6 +257,10 @@ if (live) {
 const records = [];
 let stoppedReason;
 for (const item of cases) {
+  if (caseId && item.id !== caseId) {
+    records.push({ caseId: item.id, family: item.family, status: 'excluded', reason: 'case_filtered' });
+    continue;
+  }
   if (family && (family === 'vision') !== (item.family === 'vision')) {
     records.push({ caseId: item.id, family: item.family, status: 'excluded', reason: 'family_filtered' });
     continue;
@@ -308,7 +314,7 @@ const completed = records.filter(row => row.status === 'completed');
 const usage = completed.map(row => row.usage).filter(Boolean);
 const artifacts = Object.fromEntries(await Promise.all(Object.entries(artifactPaths).map(async ([name, path]) => [name, { sha256: await hashFile(path, live && ['productionIntent', 'productionProvider'].includes(name)) }])));
 const report = { schemaVersion: 'ce10.v1', generatedAt: new Date().toISOString(), mode: live ? 'live' : 'dry-run', model, split,
-  familyFilter: family ?? null, includeGeneratedMessages, modelSettings: { model, maxOutputTokens, phase: split, imageDetail: 'low', store: false },
+  familyFilter: family ?? null, caseFilter: caseId ?? null, includeGeneratedMessages, modelSettings: { model, maxOutputTokens, phase: split, imageDetail: 'low', store: false },
   provenance: { artifacts, mappedImageSha256: imageHashes },
   fixtureSchemaVersion: fixture.schemaVersion, counts: { total: cases.length, planned: records.filter(row => row.status === 'planned').length, completed: completed.length, failed: records.filter(row => row.status === 'failed').length, excluded: records.filter(row => row.status === 'excluded').length,
     visionInspected: completed.filter(row => row.family === 'vision' && row.visualEvidenceSatisfied).length,
