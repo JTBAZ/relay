@@ -2,6 +2,8 @@ import { describe, expect, it, vi } from "vitest";
 import type { CanonicalSnapshot, PostVersionRow } from "../src/ingest/canonical-store.js";
 import { InMemoryEventBus } from "../src/events/event-bus.js";
 import { applySyncBatchToSnapshot } from "../src/ingest/apply-batch.js";
+import { enrichBatch } from "../src/ingest/auto-enrich.js";
+import type { SyncBatchInput } from "../src/ingest/types.js";
 import {
   DbCanonicalStore,
   deduplicatePostVersionsForSave
@@ -95,6 +97,51 @@ function mockPrisma(txFactory: () => { tx: ReturnType<typeof mockTx>["tx"] }) {
     })
   };
 }
+
+describe("DbCanonicalStore expanded all-paid access", () => {
+  it("rebuilds tier links for changed legacy access and preserves the resulting replay", async () => {
+    const { tx } = mockTx();
+    const snapshot: CanonicalSnapshot = { ingest_idempotency: {}, campaigns: {}, tiers: {}, posts: {}, media: {} };
+    const bus = new InMemoryEventBus();
+    const input: SyncBatchInput = {
+      creator_id: "cr1",
+      campaigns: [{ campaign_id: "camp1", name: "Main", upstream_updated_at: "2026-10-01T00:00:00Z" }],
+      tiers: [1000, 100].map((amount, i) => ({
+        tier_id: `patreon_tier_${i}`, title: `Tier ${i}`, amount_cents: amount,
+        campaign_id: "camp1", upstream_updated_at: "2026-10-01T00:00:00Z"
+      })),
+      posts: [{ post_id: "patreon_post_123", title: "Paid", published_at: "2026-10-01T00:00:00Z",
+        tag_ids: [], tier_ids: ["patreon_tier_0"], upstream_revision: "r1:tier_expand", media: [] }]
+    };
+    applySyncBatchToSnapshot(snapshot, input, "legacy", "trace", bus);
+    let persistedVersions = [{ versionSeq: 1, upstreamRevision: "r1:tier_expand" }];
+    tx.post.findMany.mockImplementation(async ({ where }: { where: { creatorId: unknown; source: string } }) =>
+      where.creatorId === "cr1" && where.source === "PATREON"
+        ? [{ id: "patreon_post_123", campaignId: "camp1", upstreamStatus: "active", versions: persistedVersions }]
+        : []
+    );
+    input.posts![0]!.tier_ids = ["relay_tier_all_patrons"];
+    input.posts![0]!.upstream_revision = "r1";
+    const expanded = enrichBatch(input).batch;
+    expect(applySyncBatchToSnapshot(snapshot, expanded, "changed", "trace", bus)).toMatchObject({ posts_written: 1 });
+    const store = new DbCanonicalStore(mockPrisma(() => ({ tx })) as never);
+    await store.saveForCreator("cr1", snapshot);
+    expect(tx.postTier.createMany).toHaveBeenCalledWith({ data: [
+      { postId: "patreon_post_123", tierId: "cr1::patreon_tier_0" },
+      { postId: "patreon_post_123", tierId: "cr1::patreon_tier_1" }
+    ] });
+    persistedVersions = tx.post.create.mock.calls[0]![0].data.versions.create;
+    expect(persistedVersions).toHaveLength(2);
+    expect(persistedVersions[1]).toMatchObject({ versionSeq: 2, tierIds: ["patreon_tier_0", "patreon_tier_1"] });
+    tx.post.create.mockClear();
+    tx.postTier.createMany.mockClear();
+    expect(applySyncBatchToSnapshot(snapshot, expanded, "replay", "trace", bus)).toMatchObject({ posts_written: 0, events_emitted: 0 });
+    await store.saveForCreator("cr1", snapshot);
+    expect(tx.post.create).not.toHaveBeenCalled();
+    expect(tx.postTier.createMany).not.toHaveBeenCalled();
+    expect(bus.getAll()).toHaveLength(2);
+  });
+});
 
 describe("DbCanonicalStore.save duplicate version_seq", () => {
   it("does not throw when post.versions has duplicate version_seq", async () => {

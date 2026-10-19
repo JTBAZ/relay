@@ -7,6 +7,7 @@
 
 import type { RelayEventBus } from "../events/event-bus.js";
 import type { MediaRow, PostRow, CanonicalSnapshot } from "./canonical-store.js";
+import { getTierExpansionReplayState } from "./auto-enrich.js";
 import { ingestDeletionIdempotencyKey, ingestIdempotencyKey } from "./idempotency.js";
 import type { ApplyBatchResult, SyncBatchInput } from "./types.js";
 import { mirrorSnapshotSourceForIngestPostId } from "./mirror-post-source.js";
@@ -119,7 +120,8 @@ export function applySyncBatchToSnapshot(
       p.post_id,
       p.upstream_revision
     ]);
-    if (snapshot.ingest_idempotency[idemKey]) {
+    const expansionState = getTierExpansionReplayState(p, snapshot.posts[creatorId]?.[p.post_id]);
+    if (expansionState === "replay" || (snapshot.ingest_idempotency[idemKey] && expansionState !== "changed")) {
       const mediaIds = new Set(snapshot.posts[creatorId]?.[p.post_id]?.current.media_ids);
       for (const m of p.media) {
         const media = snapshot.media[creatorId]?.[m.media_id];
@@ -134,7 +136,8 @@ export function applySyncBatchToSnapshot(
       result.idempotent_skips += 1;
       continue;
     }
-    snapshot.ingest_idempotency[idemKey] = { first_seen_at: nowIso() };
+    // A current provider revision can return to a tier set seen before; retain its marker.
+    snapshot.ingest_idempotency[idemKey] ??= { first_seen_at: nowIso() };
 
     const posts = ensureNested(snapshot.posts, creatorId);
     const existingPost = posts[p.post_id] as PostRow | undefined;

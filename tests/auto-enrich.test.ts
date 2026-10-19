@@ -18,6 +18,21 @@ const tier = (id: string, amount_cents?: number): IngestTier => ({
 });
 
 describe("enrichBatch", () => {
+  it("changes expanded identity with the tier set, but ignores ordering and duplicate tier rows", () => {
+    const make = (tiers: IngestTier[]) => makeBatch({
+      tiers,
+      posts: [{ post_id: "p1", title: "Paid", published_at: "2026-10-01T00:00:00Z", tag_ids: [],
+        tier_ids: [RELAY_TIER_ALL_PATRONS], upstream_revision: "r1", media: [] }]
+    });
+    const onlyA = enrichBatch(make([tier("patreon_tier_a", 1000)])).batch.posts![0]!;
+    const both = enrichBatch(make([tier("patreon_tier_a", 1000), tier("patreon_tier_b", 100)])).batch.posts![0]!;
+    const reordered = enrichBatch(make([tier("patreon_tier_b", 100), tier("patreon_tier_a", 1000), tier("patreon_tier_a", 1000)])).batch.posts![0]!;
+    const repriced = enrichBatch(make([tier("patreon_tier_a", 100), tier("patreon_tier_b", 1000)])).batch.posts![0]!;
+    expect(onlyA.upstream_revision).not.toBe(both.upstream_revision);
+    expect(reordered.upstream_revision).toBe(both.upstream_revision);
+    expect(repriced.upstream_revision).toBe(both.upstream_revision);
+  });
+
   it("does not add post-level 'cover' tag (gallery derives cover chip per media row)", () => {
     const batch = makeBatch({
       posts: [

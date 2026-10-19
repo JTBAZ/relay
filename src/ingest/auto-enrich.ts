@@ -4,18 +4,46 @@
  * @see ../patreon/expand-all-patrons-tiers.js
  */
 
+import { createHash } from "node:crypto";
 import {
   expandAllPatronsTierIds,
   hasCampaignPatreonTierRows,
   listCampaignPaidPatreonTierIds
 } from "../patreon/expand-all-patrons-tiers.js";
 import { RELAY_TIER_ALL_PATRONS } from "../patreon/relay-access-tiers.js";
-import type { SyncBatchInput } from "./types.js";
+import type { PostRow, PostVersionRow } from "./canonical-store.js";
+import type { IngestPost, SyncBatchInput } from "./types.js";
 
 export type EnrichBatchResult = {
   batch: SyncBatchInput;
   notes: string[];
 };
+
+function tierSetFingerprint(tierIds: string[]): string {
+  return createHash("sha256").update(JSON.stringify([...new Set(tierIds)].sort())).digest("hex");
+}
+
+/** Compare expanded access against the current provider revision, including legacy rows. */
+export function getTierExpansionReplayState(
+  post: IngestPost,
+  existing: PostRow | undefined
+): "replay" | "changed" | undefined {
+  if (!existing || !post.upstream_revision.includes(":tier_expand:v2:")) return undefined;
+  const fingerprint = tierSetFingerprint(post.tier_ids);
+  const suffix = `:tier_expand:v2:${fingerprint}`;
+  if (!post.upstream_revision.endsWith(suffix)) return undefined;
+  const baseRevision = post.upstream_revision.slice(0, -suffix.length);
+  const matchesBase = (version: PostVersionRow): boolean =>
+    version.upstream_revision === `${baseRevision}:tier_expand` ||
+    (version.upstream_revision.startsWith(`${baseRevision}:tier_expand:v2:`) &&
+      version.upstream_revision === `${baseRevision}:tier_expand:v2:${tierSetFingerprint(version.tier_ids)}`);
+
+  if (matchesBase(existing.current)) {
+    return tierSetFingerprint(existing.current.tier_ids) === fingerprint ? "replay" : "changed";
+  }
+  // An older provider revision must not replace newer content through a new tier set.
+  return existing.versions.some(matchesBase) ? "replay" : undefined;
+}
 
 /**
  * @description Returns possibly mutated batch and human-facing ingest notes.
@@ -39,7 +67,7 @@ export function enrichBatch(batch: SyncBatchInput): EnrichBatchResult {
       after.length !== before.length || after.some((t, i) => t !== before[i]);
     if (changed) {
       p.tier_ids = after;
-      p.upstream_revision = `${p.upstream_revision}:tier_expand`;
+      p.upstream_revision = `${p.upstream_revision}:tier_expand:v2:${tierSetFingerprint(after)}`;
       expanded += 1;
     }
   }

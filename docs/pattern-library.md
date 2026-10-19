@@ -14,6 +14,7 @@ Single source of truth for **product ideals**, **artist vs viewer workflows**, a
 - Replaying a post can refresh its current media URLs without adding versions or events; older media revisions cannot replace the current download URL. See the canonical contract's sync-batch section.
 - Deletion retries retain their original deletion time and cannot reapply an already-processed deletion to restored content. The canonical contract describes required timestamps and the limits of deletion replay protection.
 - Accepting a fresh media revision restores a deleted asset's gallery row; duplicate revisions and URL refreshes keep it deleted. See the canonical contract's sync-batch section.
+- Incoming all-paid posts update access when the supplied paid-tier set changes, even under the same provider revision. Equivalent sets and unchanged legacy expansions remain replays; see the canonical contract's sync-batch section.
 - **Relay-only metadata (tags, visibility, collections, layout):** [docs/relay-artist-metadata.md](relay-artist-metadata.md)  
 - **Repo pointer:** [AGENTS.md](../AGENTS.md)  
 - **Recent handoff notes:** [docs/agent-handoff-library-v2.md](agent-handoff-library-v2.md)
