@@ -33,6 +33,11 @@ function entryDupKey(
   return `${userId}\0${creatorId}\0${collectionId}\0${mediaId}`;
 }
 
+function hasStringFields(row: unknown, fields: readonly string[]): boolean {
+  return row !== null && typeof row === "object" &&
+    fields.every((field) => typeof (row as Record<string, unknown>)[field] === "string");
+}
+
 /**
  * @description JSON persistence for patron collections + entries.
  * @security-audit-required Caller-supplied `userId` must equal authenticated patron membership id.
@@ -44,11 +49,26 @@ export class FilePatronCollectionsStore {
     this.filePath = filePath;
   }
 
-  public async load(): Promise<PatronCollectionsRoot> {
+  /** Strict reads preserve uncertainty for entry saves and owner read-back. */
+  public async load(options: { strict?: boolean } = {}): Promise<PatronCollectionsRoot> {
     try {
       const raw = await readFile(this.filePath, "utf8");
-      return JSON.parse(raw) as PatronCollectionsRoot;
-    } catch {
+      const root = JSON.parse(raw) as PatronCollectionsRoot;
+      if (options.strict && (
+        !root || !Array.isArray(root.collections) || !Array.isArray(root.entries) ||
+        root.collections.some((c) => !hasStringFields(c, [
+          "collection_id", "user_id", "creator_id", "title", "created_at", "updated_at"
+        ]) || !Number.isFinite(c.sort_order)) ||
+        root.entries.some((e) => !hasStringFields(e, [
+          "entry_id", "collection_id", "user_id", "creator_id", "post_id", "media_id", "created_at"
+        ]))
+      )) {
+        throw new Error("Invalid patron collections data.");
+      }
+      return root;
+    } catch (error) {
+      // Strict readers treat only a missing file as an empty store.
+      if (options.strict && (error as NodeJS.ErrnoException)?.code !== "ENOENT") throw error;
       return emptyRoot();
     }
   }
@@ -81,7 +101,7 @@ export class FilePatronCollectionsStore {
   ): Promise<
     (PatronCollectionRecord & { entries: PatronCollectionEntryRecord[] }) | null
   > {
-    const root = await this.load();
+    const root = await this.load({ strict: true });
     const col = root.collections.find(
       (c) => c.collection_id === collectionId && c.user_id === userId
     );
@@ -186,7 +206,7 @@ export class FilePatronCollectionsStore {
     return root.collections.length < before;
   }
 
-  /** Idempotent: returns existing entry if duplicate media in same collection. */
+  /** Returns the existing entry for duplicate media, or null for a missing scoped collection. Errors reject. */
   public async addEntry(
     creatorId: string,
     userId: string,
@@ -194,8 +214,8 @@ export class FilePatronCollectionsStore {
     postId: string,
     mediaId: string,
     options?: { snapshot_tier_ids?: readonly string[] }
-  ): Promise<PatronCollectionEntryRecord> {
-    const root = await this.load();
+  ): Promise<PatronCollectionEntryRecord | null> {
+    const root = await this.load({ strict: true });
     const col = root.collections.find(
       (c) =>
         c.collection_id === collectionId &&
@@ -203,7 +223,7 @@ export class FilePatronCollectionsStore {
         c.user_id === userId
     );
     if (!col) {
-      throw new Error("Collection not found.");
+      return null;
     }
     const key = entryDupKey(userId, creatorId, collectionId, mediaId);
     const existing = root.entries.find(

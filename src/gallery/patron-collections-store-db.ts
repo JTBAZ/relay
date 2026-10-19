@@ -65,7 +65,6 @@ function entryRowToRecord(row: {
 /**
  * @description Prisma implementation for patron snips stores.
  * @async Methods reject on DB errors.
- * @throws {"Collection not found."} From {@link addEntry} when collection guard fails.
  * @security-audit-required Account-wide listing requires trusted `accountId`; per-row ops must align membership ids with session.
  */
 export class DbPatronCollectionsStore {
@@ -247,6 +246,7 @@ export class DbPatronCollectionsStore {
     return res.count > 0;
   }
 
+  /** Returns null for a missing scoped collection; persistence and follow-up errors reject. */
   public async addEntry(
     creatorId: string,
     userId: string,
@@ -254,12 +254,12 @@ export class DbPatronCollectionsStore {
     postId: string,
     mediaId: string,
     options?: { snapshot_tier_ids?: readonly string[] }
-  ): Promise<PatronCollectionEntryRecord> {
+  ): Promise<PatronCollectionEntryRecord | null> {
     const col = await this.prisma.patronSavedCollection.findFirst({
       where: { id: collectionId, creatorId, patronMembershipId: userId }
     });
     if (!col) {
-      throw new Error("Collection not found.");
+      return null;
     }
     const dup = await this.prisma.patronSavedCollectionEntry.findUnique({
       where: {

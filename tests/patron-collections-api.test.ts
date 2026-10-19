@@ -1,4 +1,4 @@
-import { mkdtemp } from "node:fs/promises";
+import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { randomBytes } from "node:crypto";
@@ -120,14 +120,98 @@ describe("Patron collections API", () => {
       .set("Authorization", `Bearer ${token}`).set("Idempotency-Key", "uncertain-entry")
       .send({ creator_id: "cpc", post_id: "p_c", media_id: "m_1" });
     const failed = await send();
-    expect(failed.status).toBe(404);
+    expect(failed.status).toBe(500);
+    expect(failed.body.error.code).toBe("INTERNAL");
+    expect(JSON.stringify(failed.body)).not.toContain("Follow-up failed after saving");
+    const detail = await request(app)
+      .get(`/api/v1/patron/collections/${created.body.data.collection.collection_id}`)
+      .set("Authorization", `Bearer ${token}`);
+    expect(detail.status).toBe(200);
+    expect(detail.body.data.collection.entries).toHaveLength(1);
+    expect(detail.body.data.collection.entries[0]).toMatchObject({ media_id: "m_1", viewer_entitlement: { state: "visible" } });
     const replay = await send();
-    expect(replay.status).toBe(404);
+    expect(replay.status).toBe(500);
     expect(replay.headers["idempotency-replayed"]).toBe("true");
     expect(replay.body).toEqual(failed.body);
     expect(write).toHaveBeenCalledTimes(1);
     const persisted = new FilePatronCollectionsStore(join(tempDir, "patron_collections.json"));
     expect((await persisted.load()).entries).toHaveLength(1);
+  });
+
+  it("keeps an unconfirmed storage failure protected after the store recovers", async () => {
+    const tempDir = await mkdtemp(join(tmpdir(), "relay-pcol-corrupt-retry-"));
+    const { app, token } = await seedAndAuth(tempDir);
+    const created = await request(app).post("/api/v1/patron/collections")
+      .set("Authorization", `Bearer ${token}`).send({ creator_id: "cpc", title: "Saved art" });
+    expect(created.status).toBe(201);
+    const url = `/api/v1/patron/collections/${created.body.data.collection.collection_id}`;
+    const path = join(tempDir, "patron_collections.json");
+    const original = await readFile(path, "utf8");
+    await writeFile(path, "not-json");
+    const write = vi.spyOn(FilePatronCollectionsStore.prototype, "save");
+    const send = () => request(app).post(`${url}/entries`)
+      .set("Authorization", `Bearer ${token}`).set("Idempotency-Key", "unknown-save")
+      .send({ creator_id: "cpc", post_id: "p_c", media_id: "m_1" });
+    const failed = await send();
+    expect(failed.status).toBe(500);
+    expect(failed.body.error.code).toBe("INTERNAL");
+    const unreadable = await request(app).get(url).set("Authorization", `Bearer ${token}`);
+    expect(unreadable.status).toBe(500);
+    expect(unreadable.body.error.code).toBe("INTERNAL");
+    expect(unreadable.body.data).toBeUndefined();
+    expect(write).not.toHaveBeenCalled();
+    expect(await readFile(path, "utf8")).toBe("not-json");
+    await writeFile(path, original);
+    const detail = await request(app).get(url).set("Authorization", `Bearer ${token}`);
+    expect(detail.status).toBe(200);
+    expect(detail.body.data.collection.entries).toHaveLength(0);
+    const replay = await send();
+    expect(replay.status).toBe(500);
+    expect(replay.headers["idempotency-replayed"]).toBe("true");
+    expect(replay.body).toEqual(failed.body);
+    expect(write).not.toHaveBeenCalled();
+    expect(await readFile(path, "utf8")).toBe(original);
+  });
+
+  it("reports an unavailable detail read and recovers without writing", async () => {
+    const tempDir = await mkdtemp(join(tmpdir(), "relay-pcol-detail-recovery-"));
+    const { app, token } = await seedAndAuth(tempDir);
+    const created = await request(app).post("/api/v1/patron/collections")
+      .set("Authorization", `Bearer ${token}`).send({ creator_id: "cpc", title: "Saved art" });
+    expect(created.status).toBe(201);
+    const url = `/api/v1/patron/collections/${created.body.data.collection.collection_id}`;
+    const read = vi.spyOn(FilePatronCollectionsStore.prototype, "load")
+      .mockRejectedValueOnce(new Error("EACCES sensitive-storage-path"));
+    const write = vi.spyOn(FilePatronCollectionsStore.prototype, "save");
+    const failed = await request(app).get(url).set("Authorization", `Bearer ${token}`);
+    expect(failed.status).toBe(500);
+    expect(failed.body.error.code).toBe("INTERNAL");
+    expect(JSON.stringify(failed.body)).not.toContain("sensitive-storage-path");
+    expect(read).toHaveBeenCalledWith({ strict: true });
+    const recovered = await request(app).get(url).set("Authorization", `Bearer ${token}`);
+    expect(recovered.status).toBe(200);
+    expect(recovered.body.data.collection.entries).toHaveLength(0);
+    expect(write).not.toHaveBeenCalled();
+  });
+
+  it("returns replayable 404 only for a confirmed missing collection", async () => {
+    const tempDir = await mkdtemp(join(tmpdir(), "relay-pcol-missing-"));
+    const { app, token } = await seedAndAuth(tempDir);
+    const send = () => request(app).post("/api/v1/patron/collections/pcol_missing/entries")
+      .set("Authorization", `Bearer ${token}`).set("Idempotency-Key", "missing-entry")
+      .send({ creator_id: "cpc", post_id: "p_c", media_id: "m_1" });
+    const first = await send();
+    expect(first.status).toBe(404);
+    expect(first.body.error.code).toBe("NOT_FOUND");
+    const replay = await send();
+    expect(replay.status).toBe(404);
+    expect(replay.headers["idempotency-replayed"]).toBe("true");
+    expect(replay.body).toEqual(first.body);
+    const detail = await request(app).get("/api/v1/patron/collections/pcol_missing")
+      .set("Authorization", `Bearer ${token}`);
+    expect(detail.status).toBe(404);
+    const persisted = new FilePatronCollectionsStore(join(tempDir, "patron_collections.json"));
+    expect((await persisted.load()).entries).toHaveLength(0);
   });
 
   it("isolates authenticated callers sharing a retry key and rejects unauthenticated replay", async () => {
@@ -361,5 +445,17 @@ describe("Patron collections API", () => {
       .set("Authorization", `Bearer ${otherToken}`);
     expect(foreign.status).toBe(404);
     expect(foreign.body.error?.code).toBe("NOT_FOUND");
+    expect(foreign.body.data).toBeUndefined();
+    const foreignSave = await request(app).post(`/api/v1/patron/collections/${colId}/entries`)
+      .set("Authorization", `Bearer ${otherToken}`).set("Idempotency-Key", "foreign-entry")
+      .send({ creator_id: "cpc", post_id: "p_c", media_id: "m_1" });
+    expect(foreignSave.status).toBe(404);
+    expect(foreignSave.body.error.code).toBe("NOT_FOUND");
+    const unauthenticated = await request(app).get(`/api/v1/patron/collections/${colId}`);
+    expect(unauthenticated.status).toBe(401);
+    const owned = await request(app).get(`/api/v1/patron/collections/${colId}`)
+      .set("Authorization", `Bearer ${token}`);
+    expect(owned.status).toBe(200);
+    expect(owned.body.data.collection.entries).toHaveLength(0);
   });
 });

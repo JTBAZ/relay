@@ -17430,10 +17430,13 @@ export function createApp(config: AppConfig): CreateAppResult {
         mediaId,
         { snapshot_tier_ids: snapshotTierIds }
       );
+      if (!entry) {
+        return res.status(404).json(errorEnvelope("NOT_FOUND", "Collection not found.", traceId));
+      }
       res.setHeader("Cache-Control", "private, no-store");
       return res.status(200).json(successEnvelope({ entry }, traceId));
     } catch {
-      return res.status(404).json(errorEnvelope("NOT_FOUND", "Collection not found.", traceId));
+      return res.status(500).json(errorEnvelope("INTERNAL", "Unable to confirm whether the entry was saved. Check your collection before trying again.", traceId));
     }
     }
   );
@@ -17589,70 +17592,74 @@ export function createApp(config: AppConfig): CreateAppResult {
       return;
     }
 
-    let collection:
-      | (PatronCollectionRecord & { entries: PatronCollectionEntryRecord[] })
-      | null = null;
-    if (patronCollectionsStore instanceof FilePatronCollectionsStore) {
-      collection = await patronCollectionsStore.getCollectionWithEntriesForUser(
-        session.user_id,
-        collectionId
-      );
-    } else if (patronCollectionsStore instanceof DbPatronCollectionsStore) {
+    try {
+      let collection:
+        | (PatronCollectionRecord & { entries: PatronCollectionEntryRecord[] })
+        | null = null;
+      if (patronCollectionsStore instanceof FilePatronCollectionsStore) {
+        collection = await patronCollectionsStore.getCollectionWithEntriesForUser(
+          session.user_id,
+          collectionId
+        );
+      } else if (patronCollectionsStore instanceof DbPatronCollectionsStore) {
+        if (config.prisma) {
+          const accountId = await getAccountIdForSession(config.prisma, session);
+          if (accountId) {
+            collection = await patronCollectionsStore.getCollectionWithEntriesForAccount(
+              accountId,
+              collectionId
+            );
+          }
+        }
+      }
+
+      if (!collection) {
+        return res.status(404).json(errorEnvelope("NOT_FOUND", "Collection not found.", traceId));
+      }
+
+      const [enriched] = await enrichCollectionsWithViewerEntitlement([collection], session);
+      let collectionEntries = enriched.entries;
       if (config.prisma) {
-        const accountId = await getAccountIdForSession(config.prisma, session);
-        if (accountId) {
-          collection = await patronCollectionsStore.getCollectionWithEntriesForAccount(
-            accountId,
-            collectionId
+        const hideMatureContent = await loadPatronHideMatureContent(
+          config.prisma,
+          session.user_id
+        );
+        if (hideMatureContent) {
+          const matureCreatorIds = [...new Set(collectionEntries.map((e) => e.creator_id))];
+          const maturePostIdsByCreator = await loadMaturePostIdsByCreator(
+            config.prisma,
+            matureCreatorIds
+          );
+          collectionEntries = collectionEntries.filter(
+            (entry) =>
+              !isPostExcludedByPatronMaturePref({
+                hideMatureContent: true,
+                maturePostIdsByCreator,
+                creatorId: entry.creator_id,
+                postId: entry.post_id
+              })
           );
         }
       }
-    }
-
-    if (!collection) {
-      return res.status(404).json(errorEnvelope("NOT_FOUND", "Collection not found.", traceId));
-    }
-
-    const [enriched] = await enrichCollectionsWithViewerEntitlement([collection], session);
-    let collectionEntries = enriched.entries;
-    if (config.prisma) {
-      const hideMatureContent = await loadPatronHideMatureContent(
-        config.prisma,
-        session.user_id
+      const snapshot = await canonicalStore.load();
+      const creatorIds = collectionEntries.map((entry) => entry.creator_id);
+      const profileByCreator = config.prisma
+        ? await loadCreatorProfilesForPatronCollection(config.prisma, creatorIds)
+        : new Map();
+      const hydratedEntries = hydratePatronCollectionDetailEntries(
+        snapshot,
+        collectionEntries,
+        profileByCreator
       );
-      if (hideMatureContent) {
-        const matureCreatorIds = [...new Set(collectionEntries.map((e) => e.creator_id))];
-        const maturePostIdsByCreator = await loadMaturePostIdsByCreator(
-          config.prisma,
-          matureCreatorIds
-        );
-        collectionEntries = collectionEntries.filter(
-          (entry) =>
-            !isPostExcludedByPatronMaturePref({
-              hideMatureContent: true,
-              maturePostIdsByCreator,
-              creatorId: entry.creator_id,
-              postId: entry.post_id
-            })
-        );
-      }
+      const detail = toPatronOwnerCollectionDetail(
+        { ...enriched, entries: collectionEntries },
+        hydratedEntries
+      );
+      res.setHeader("Cache-Control", "private, no-store");
+      return res.status(200).json(successEnvelope({ collection: detail }, traceId));
+    } catch {
+      return res.status(500).json(errorEnvelope("INTERNAL", "Unable to read your collection. Its saved entries could not be confirmed.", traceId));
     }
-    const snapshot = await canonicalStore.load();
-    const creatorIds = collectionEntries.map((entry) => entry.creator_id);
-    const profileByCreator = config.prisma
-      ? await loadCreatorProfilesForPatronCollection(config.prisma, creatorIds)
-      : new Map();
-    const hydratedEntries = hydratePatronCollectionDetailEntries(
-      snapshot,
-      collectionEntries,
-      profileByCreator
-    );
-    const detail = toPatronOwnerCollectionDetail(
-      { ...enriched, entries: collectionEntries },
-      hydratedEntries
-    );
-    res.setHeader("Cache-Control", "private, no-store");
-    return res.status(200).json(successEnvelope({ collection: detail }, traceId));
   });
 
   // ---------------------------------------------------------------------------
