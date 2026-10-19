@@ -70,6 +70,60 @@ async function seedAndAuth(tempDir: string) {
 }
 
 describe("Patron collections API", () => {
+  it("isolates authenticated callers sharing a retry key and rejects unauthenticated replay", async () => {
+    const tempDir = await mkdtemp(join(tmpdir(), "relay-pcol-retry-"));
+    const { app, token } = await seedAndAuth(tempDir);
+    await request(app).post("/api/v1/identity/register").send({
+      creator_id: "cpc", email: "other@example.com", password: "hunter2hunter2", tier_ids: [RELAY_TIER_PUBLIC]
+    });
+    const login = await request(app).post("/api/v1/identity/login").send({
+      creator_id: "cpc", email: "other@example.com", password: "hunter2hunter2"
+    });
+    expect(login.status).toBe(200);
+    const body = { creator_id: "cpc", title: "Characters" };
+    const first = await request(app).post("/api/v1/patron/collections")
+      .set("Authorization", `Bearer ${token}`).set("Idempotency-Key", "shared-create").send(body);
+    expect(first.status).toBe(201);
+    const second = await request(app).post("/api/v1/patron/collections")
+      .set("Authorization", `Bearer ${login.body.data.token}`).set("Idempotency-Key", "shared-create").send(body);
+    expect(second.status).toBe(201);
+    expect(second.body.data.collection.collection_id).not.toBe(first.body.data.collection.collection_id);
+    expect(second.body.data.collection.user_id).not.toBe(first.body.data.collection.user_id);
+    expect(second.headers["idempotency-replayed"]).toBeUndefined();
+    const replay = await request(app).post("/api/v1/patron/collections")
+      .set("Authorization", `Bearer ${token}`).set("Idempotency-Key", "shared-create").send(body);
+    expect(replay.status).toBe(201);
+    expect(replay.body).toEqual(first.body);
+    expect(replay.headers["idempotency-replayed"]).toBe("true");
+    const unauthorized = await request(app).post("/api/v1/patron/collections")
+      .set("Idempotency-Key", "shared-create").send(body);
+    expect(unauthorized.status).toBe(401);
+  });
+
+  it("writes entries to both collection targets when their retry key and body match", async () => {
+    const tempDir = await mkdtemp(join(tmpdir(), "relay-pcol-target-retry-"));
+    const { app, token } = await seedAndAuth(tempDir);
+    const collectionIds: string[] = [];
+    for (const title of ["First", "Second"]) {
+      const created = await request(app).post("/api/v1/patron/collections")
+        .set("Authorization", `Bearer ${token}`).send({ creator_id: "cpc", title });
+      expect(created.status).toBe(201);
+      collectionIds.push(created.body.data.collection.collection_id);
+    }
+    for (const collectionId of collectionIds) {
+      const added = await request(app).post(`/api/v1/patron/collections/${collectionId}/entries`)
+        .set("Authorization", `Bearer ${token}`).set("Idempotency-Key", "shared-add")
+        .send({ creator_id: "cpc", post_id: "p_c", media_id: "m_1" });
+      expect(added.status).toBe(200);
+      expect(added.body.data.entry.collection_id).toBe(collectionId);
+      expect(added.headers["idempotency-replayed"]).toBeUndefined();
+    }
+    const listed = await request(app).get("/api/v1/patron/collections?creator_id=cpc")
+      .set("Authorization", `Bearer ${token}`);
+    expect(listed.body.data.collections).toHaveLength(2);
+    expect(listed.body.data.collections.every((collection: { entries: unknown[] }) => collection.entries.length === 1)).toBe(true);
+  });
+
   it("401 without Bearer; CRUD collection; add/remove entry; rejects bad link", async () => {
     const tempDir = await mkdtemp(join(tmpdir(), "relay-pcol-api-"));
     const { app, token } = await seedAndAuth(tempDir);

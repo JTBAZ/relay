@@ -1,6 +1,6 @@
 import express from "express";
 import type { AddressInfo } from "node:net";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import {
   InMemoryIdempotencyStore
 } from "../../src/middleware/idempotency-store.js";
@@ -16,13 +16,20 @@ interface ServerHandle {
 
 async function startServer(opts: {
   store: InMemoryIdempotencyStore;
+  callerId?: (req: express.Request) => string | undefined;
   handler?: (req: express.Request, res: express.Response) => void;
 }): Promise<ServerHandle> {
   const app = express();
   app.use(express.json());
+  app.use((req, _res, next) => {
+    (req as express.Request & { relayRateLimitKey?: string }).relayRateLimitKey =
+      opts.callerId ? opts.callerId(req) : "account-1";
+    next();
+  });
   let calls = 0;
-  app.post(
-    "/echo",
+  const router = express.Router();
+  router.all(
+    ["/echo", "/collections/:collection_id/entries"],
     buildIdempotencyMiddleware({ store: opts.store, scope: "echo" }),
     (req, res) => {
       calls += 1;
@@ -35,6 +42,9 @@ async function startServer(opts: {
       res.status(201).json({ ok: true, n: calls, body: req.body });
     }
   );
+  app.use("/first", router);
+  app.use("/second", router);
+  app.use(router);
   const server = app.listen(0);
   await new Promise<void>((resolve) => server.once("listening", () => resolve()));
   const port = (server.address() as AddressInfo).port;
@@ -151,20 +161,101 @@ describe("idempotency middleware", () => {
 
   it("returns 409 IDEMPOTENCY_IN_FLIGHT when a concurrent request still holds the lock", async () => {
     const store = new InMemoryIdempotencyStore();
-    // Pre-reserve the slot manually so the next request sees a held lock.
-    await store.tryReserve("echo\0concurrent-key", 60_000);
-    handle = await startServer({ store });
-    const r = await fetch(`${handle.url}/echo`, {
+    let finishFirst!: () => void;
+    let started!: () => void;
+    const pending = new Promise<void>((resolve) => { started = resolve; });
+    handle = await startServer({ store, handler: (_req, res) => {
+      finishFirst = () => res.status(201).json({ ok: true });
+      started();
+    } });
+    const options = {
       method: "POST",
       headers: {
         "content-type": "application/json",
         "Idempotency-Key": "concurrent-key"
       },
       body: "{}"
+    };
+    const first = fetch(`${handle.url}/echo`, options);
+    await pending;
+    try {
+      const r = await fetch(`${handle.url}/echo`, options);
+      expect(r.status).toBe(409);
+      const body = (await r.json()) as { error?: { code?: string } };
+      expect(body.error?.code).toBe("IDEMPOTENCY_IN_FLIGHT");
+      expect(r.headers.get("retry-after")).toBe("1");
+      expect(handle.callCount()).toBe(1);
+    } finally {
+      finishFirst();
+      await first;
+    }
+  });
+
+  it.each(["{}", '{"different":true}'])("isolates another caller from replay and body mismatch (%s)", async (body) => {
+    handle = await startServer({ store: new InMemoryIdempotencyStore(), callerId: req => req.header("x-test-caller") });
+    const headers = { "content-type": "application/json", "Idempotency-Key": "shared-key" };
+    const first = await fetch(`${handle.url}/echo`, {
+      method: "POST", headers: { ...headers, "x-test-caller": "alice" }, body: "{}"
     });
-    expect(r.status).toBe(409);
-    const body = (await r.json()) as { error?: { code?: string } };
-    expect(body.error?.code).toBe("IDEMPOTENCY_IN_FLIGHT");
-    expect(r.headers.get("retry-after")).toBe("1");
+    expect(first.status).toBe(201);
+    const second = await fetch(`${handle.url}/echo`, {
+      method: "POST", headers: { ...headers, "x-test-caller": "bob" }, body
+    });
+    expect(second.status).toBe(201);
+    expect(second.headers.get("idempotency-replayed")).toBeNull();
+    expect(handle.callCount()).toBe(2);
+  });
+
+  it("does not share in-flight reservations across callers", async () => {
+    let finishAlice!: () => void;
+    let started!: () => void;
+    const pending = new Promise<void>((resolve) => { started = resolve; });
+    handle = await startServer({
+      store: new InMemoryIdempotencyStore(), callerId: req => req.header("x-test-caller"),
+      handler: (req, res) => {
+        if (req.header("x-test-caller") === "alice") {
+          finishAlice = () => res.status(201).json({ owner: "alice" });
+          started();
+        } else res.status(201).json({ owner: "bob" });
+      }
+    });
+    const headers = { "content-type": "application/json", "Idempotency-Key": "shared-key" };
+    const alice = fetch(`${handle.url}/echo`, { method: "POST", headers: { ...headers, "x-test-caller": "alice" }, body: "{}" });
+    await pending;
+    try {
+      const bob = await fetch(`${handle.url}/echo`, { method: "POST", headers: { ...headers, "x-test-caller": "bob" }, body: "{}" });
+      expect(bob.status).toBe(201);
+      expect(await bob.json()).toEqual({ owner: "bob" });
+      expect(handle.callCount()).toBe(2);
+    } finally {
+      finishAlice();
+      await alice;
+    }
+  });
+
+  it.each([
+    ["POST", "/collections/a/entries", "POST", "/collections/b/entries"],
+    ["POST", "/echo", "PUT", "/echo"],
+    ["POST", "/first/echo", "POST", "/second/echo"]
+  ])("isolates %s %s from %s %s", async (firstMethod, firstPath, secondMethod, secondPath) => {
+    handle = await startServer({ store: new InMemoryIdempotencyStore() });
+    const options = { headers: { "content-type": "application/json", "Idempotency-Key": "shared-key" }, body: "{}" };
+    expect((await fetch(`${handle.url}${firstPath}`, { ...options, method: firstMethod })).status).toBe(201);
+    const second = await fetch(`${handle.url}${secondPath}`, { ...options, method: secondMethod });
+    expect(second.status).toBe(201);
+    expect(second.headers.get("idempotency-replayed")).toBeNull();
+    expect(handle.callCount()).toBe(2);
+  });
+
+  it("requires trusted caller context only when a replay key is supplied", async () => {
+    handle = await startServer({ store: new InMemoryIdempotencyStore(), callerId: () => undefined });
+    const keyed = await fetch(`${handle.url}/echo`, {
+      method: "POST", headers: { "content-type": "application/json", "Idempotency-Key": "shared-key" }, body: "{}"
+    });
+    expect(keyed.status).toBe(500);
+    expect((await keyed.json()).error.code).toBe("INTERNAL");
+    expect(handle.callCount()).toBe(0);
+    expect((await fetch(`${handle.url}/echo`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" })).status).toBe(201);
+    expect(handle.callCount()).toBe(1);
   });
 });

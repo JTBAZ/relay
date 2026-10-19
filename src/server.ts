@@ -989,6 +989,7 @@ import { VercelAdapter, NetlifyAdapter } from "./deploy/deploy-adapter.js";
 import type { DeployProvider } from "./deploy/types.js";
 import { registerPipelineParityRoutes } from "./dev/pipeline-parity-routes.js";
 import { registerGoalCycleRoutes } from "./goal-cycle/goal-cycle-routes.js";
+import { getGoalCycleFeatureFlags } from "./goal-cycle/contracts.js";
 import { registerGoalCyclePlannerRoutes } from "./goal-cycle/planner/planner-routes.js";
 import { registerGoalCycleMaterializationRoutes } from "./goal-cycle/materialization/materialization-routes.js";
 import { registerGoalCycleOutcomeRoutes } from "./goal-cycle/outcomes/outcome-routes.js";
@@ -22019,28 +22020,48 @@ export function createApp(config: AppConfig): CreateAppResult {
     }
   );
 
+  // Goal Cycle handlers authenticate internally; establish caller identity before replay, too.
+  const buildGoalCycleIdem = (scope: string) => {
+    const idem = buildIdem(scope);
+    return async (req: Request, res: Response, next: express.NextFunction) => {
+      if (!req.header("idempotency-key") || !getGoalCycleFeatureFlags().enabled || !config.prisma) {
+        return next();
+      }
+      try {
+        const { context } = await requireAccountWithRole(
+          req, { prisma: config.prisma, identityService }, "creator"
+        );
+        (req as Request & { relayRateLimitKey?: string }).relayRateLimitKey = context.accountId;
+      } catch (err) {
+        if (sendRelayAuthError(res, err, traceIdFrom(req))) return;
+        return res.status(500).json(errorEnvelope("INTERNAL", (err as Error).message, traceIdFrom(req)));
+      }
+      return idem(req, res, next);
+    };
+  };
+
   registerGoalCycleRoutes(app, {
     prisma: config.prisma,
     identityService,
-    buildIdem
+    buildIdem: buildGoalCycleIdem
   });
 
   registerGoalCyclePlannerRoutes(app, {
     prisma: config.prisma,
     identityService,
-    buildIdem
+    buildIdem: buildGoalCycleIdem
   });
 
   registerGoalCycleMaterializationRoutes(app, {
     prisma: config.prisma,
     identityService,
-    buildIdem
+    buildIdem: buildGoalCycleIdem
   });
 
   registerGoalCycleOutcomeRoutes(app, {
     prisma: config.prisma,
     identityService,
-    buildIdem
+    buildIdem: buildGoalCycleIdem
   });
 
   registerCoachPlanCreditRoutes(app, {

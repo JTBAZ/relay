@@ -14,7 +14,9 @@
  *     can use whatever their stack produces.
  *   - When absent, the middleware is a no-op (no behavior change). This keeps clients that
  *     don't speak the header working.
- *   - When present, the middleware reserves the key, executes the wrapped handler chain,
+ *   - When present, prior authentication must set `relayRateLimitKey` to the caller identity.
+ *     Reservations are scoped to that caller, HTTP method, and concrete target path.
+ *     The middleware reserves the key, executes the wrapped handler chain,
  *     captures the final response, and records it under the key. Concurrent retries see
  *     "in_flight" and 409. Subsequent retries see "replay" and get the cached response.
  *
@@ -88,9 +90,9 @@ function isHeaderKeyValid(raw: string): boolean {
   return true;
 }
 
-/** Namespaces the key in storage so a leak between routes is impossible. */
-function storageKey(scope: string, key: string): string {
-  return `${scope}\0${key}`;
+/** Include the mount path so router-local paths cannot share a reservation. */
+function storageKey(scope: string, callerId: string, req: Request, key: string): string {
+  return JSON.stringify([scope, callerId, req.method, req.baseUrl + req.path, key]);
 }
 
 function applyReplayHeaders(res: Response, snapshot: IdempotencyResponseSnapshot): void {
@@ -150,7 +152,14 @@ export function buildIdempotencyMiddleware(options: IdempotencyMiddlewareOptions
         );
       return;
     }
-    const key = storageKey(scope, headerValue);
+    const callerId = (req as Request & { relayRateLimitKey?: string }).relayRateLimitKey;
+    if (typeof callerId !== "string" || !callerId.trim()) {
+      res.status(500).json(
+        errorEnvelope("INTERNAL", "Authenticated caller context is required for retries.", traceIdFromRequest(req))
+      );
+      return;
+    }
+    const key = storageKey(scope, callerId, req, headerValue);
     const bodyHash = hashBody(req.body);
 
     const reserve = await store.tryReserve(key, lockTtl);

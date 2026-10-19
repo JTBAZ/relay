@@ -5,6 +5,10 @@ import { randomBytes } from "node:crypto";
 import request from "supertest";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createApp } from "../../src/server.js";
+import type { PrismaClient } from "@prisma/client";
+import * as accountAuth from "../../src/identity/require-account.js";
+import { RelayAuthError } from "../../src/identity/relay-auth-error.js";
+import * as goalCycleService from "../../src/goal-cycle/goal-cycle-service.js";
 import {
   GOAL_CYCLE_ACTIVE_EXISTS_FIXTURE,
   GOAL_CYCLE_API_CLIENT_FIXTURES,
@@ -13,8 +17,9 @@ import {
   GOAL_CYCLE_VERSION_CONFLICT_FIXTURE
 } from "../../src/goal-cycle/fixtures/api-client.js";
 
-function fileIdentityApp(tempDir: string) {
+function fileIdentityApp(tempDir: string, prisma?: PrismaClient) {
   return createApp({
+    prisma,
     patreon_client_id: "c",
     patreon_client_secret: "s",
     relay_token_encryption_key: randomBytes(32).toString("base64"),
@@ -112,8 +117,43 @@ describe("creator goal-cycle routes", () => {
   const prevEnabled = process.env.RELAY_GOAL_CYCLE_ENABLED;
 
   afterEach(() => {
+    vi.restoreAllMocks();
     if (prevEnabled === undefined) delete process.env.RELAY_GOAL_CYCLE_ENABLED;
     else process.env.RELAY_GOAL_CYCLE_ENABLED = prevEnabled;
+  });
+
+  it("authenticates Goal Cycle retries before replay and isolates their caller", async () => {
+    process.env.RELAY_GOAL_CYCLE_ENABLED = "1";
+    const auth = vi.spyOn(accountAuth, "requireAccountWithRole").mockImplementation(async (req) => {
+      const accountId = new Map([["Bearer alice-session", "alice"], ["Bearer bob-session", "bob"]])
+        .get(req.header("authorization") ?? "");
+      if (!accountId) throw new RelayAuthError(401, "AUTH_ERROR", "Invalid session.");
+      return {
+        context: { accountId, primaryRelayCreatorId: accountId, supabaseUserId: null, hasSupporterMemberships: false },
+        session: { token: "unused", user_id: accountId, creator_id: accountId, tier_ids: [], expires_at: "2099-01-01T00:00:00Z" }
+      };
+    });
+    const start = vi.spyOn(goalCycleService, "startGoalCycle").mockImplementation(async (_db, creatorId) => ({
+      ...GOAL_CYCLE_RESUME_DETAIL_FIXTURE, cycle_id: `cycle_${creatorId}`
+    }));
+    const tempDir = await mkdtemp(join(tmpdir(), "relay-goal-cycle-retry-"));
+    const { app } = fileIdentityApp(tempDir, {} as PrismaClient);
+    const send = (session: string) => request(app).post("/api/v1/creator/goal-cycles")
+      .set("Authorization", `Bearer ${session}`).set("Idempotency-Key", "shared-start")
+      .send({ goal_kind: "engagement" });
+    const alice = await send("alice-session");
+    expect(alice.status).toBe(200);
+    const bob = await send("bob-session");
+    expect(bob.status).toBe(200);
+    expect(bob.body.data.cycle.cycle_id).toBe("cycle_bob");
+    expect(bob.headers["idempotency-replayed"]).toBeUndefined();
+    const replay = await send("alice-session");
+    expect(replay.status).toBe(200);
+    expect(replay.body).toEqual(alice.body);
+    expect(replay.headers["idempotency-replayed"]).toBe("true");
+    expect((await send("expired-session")).status).toBe(401);
+    expect(start).toHaveBeenCalledTimes(2);
+    expect(auth).toHaveBeenCalled();
   });
 
   it("returns 404 for inventory when feature flag is off", async () => {
@@ -123,6 +163,9 @@ describe("creator goal-cycle routes", () => {
     const res = await request(app).get("/api/v1/creator/goal-cycles/active");
     expect(res.status).toBe(404);
     expect(res.body?.error?.code).toBe("NOT_FOUND");
+    const mutation = await request(app).post("/api/v1/creator/goal-cycles")
+      .set("Idempotency-Key", "disabled").send({ goal_kind: "engagement" });
+    expect(mutation.status).toBe(404);
   });
 
   it("returns 503 when enabled but DB is not configured", async () => {
@@ -131,7 +174,7 @@ describe("creator goal-cycle routes", () => {
     const { app } = fileIdentityApp(tempDir);
 
     for (const route of ROUTES) {
-      const req = request(app)[route.method](route.path);
+      const req = request(app)[route.method](route.path).set("Idempotency-Key", "no-db");
       const res = route.body ? await req.send(route.body) : await req;
       expect(res.status, route.path).toBe(503);
       expect(res.body?.error?.code, route.path).toBe("SERVICE_UNAVAILABLE");
