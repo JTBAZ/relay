@@ -59,7 +59,8 @@ function mockTx() {
       deleteMany: vi.fn().mockResolvedValue({}),
       findMany: vi.fn().mockResolvedValue([]),
       count: vi.fn().mockResolvedValue(0),
-      create: postCreate
+      create: postCreate,
+      update: vi.fn().mockResolvedValue({})
     },
     tier: {
       deleteMany: vi.fn().mockResolvedValue({}),
@@ -182,6 +183,141 @@ describe("DbCanonicalStore legacy replay compatibility", () => {
   });
 });
 
+describe("DbCanonicalStore refreshed-post relationships", () => {
+  it.each(["PATREON", "SUBSCRIBESTAR"] as const)("retains confirmed links, metrics and parent identity through %s refresh and replay", async (source) => {
+    const { tx } = mockTx();
+    const timestamp = "2026-10-01T00:00:00.000Z";
+    const postId = source === "PATREON" ? "patreon_post_123" : "substar_post_123";
+    const original: SyncBatchInput = {
+      creator_id: "cr1",
+      campaigns: [{ campaign_id: "camp1", name: "Main", upstream_updated_at: timestamp }],
+      tiers: [{ tier_id: "tier1", campaign_id: "camp1", title: "Paid", upstream_updated_at: timestamp }],
+      posts: [{ post_id: postId, upstream_revision: "r1", title: "Original", published_at: timestamp,
+        tag_ids: [], tier_ids: [], media: [] }]
+    };
+    const snapshot: CanonicalSnapshot = { ingest_idempotency: {}, campaigns: {}, tiers: {}, posts: {}, media: {} };
+    applySyncBatchToSnapshot(snapshot, original, "seed", "trace", new InMemoryEventBus());
+    const parent = {
+      id: postId, creatorId: "cr1", campaignId: "camp1", providerPostId: postId, source,
+      upstreamStatus: "active", isPublic: true, requiredTierId: "tier1", createdAt: new Date(timestamp),
+      versions: [{ versionSeq: 1, upstreamRevision: "r1", title: "Original", description: null,
+        publishedAt: new Date(timestamp), tagIds: [] as string[], tierIds: [] as string[], mediaIds: [] as string[],
+        ingestedAt: new Date(timestamp) }]
+    };
+    const posts = [parent];
+    const links = [
+      { id: "pi_x", creatorId: "cr1", postId, destination: "x", externalUrl: "https://x.com/artist/status/123",
+        externalId: "123", linkSource: "manual_url_confirm", status: "active" },
+      { id: "pi_provider", creatorId: "cr1", postId, destination: "patreon", externalUrl: "https://www.patreon.com/posts/123",
+        externalId: "123", linkSource: "manual_url_confirm", status: "active" }
+    ];
+    const metrics = [{ id: "metric_1", creatorId: "cr1", postId, platformInstanceId: "pi_x", metricType: "views", value: 42 }];
+    const beforeLinks = structuredClone(links);
+    const beforeMetrics = structuredClone(metrics);
+    let keys = Object.entries(snapshot.ingest_idempotency).map(([batchKey, meta]) => ({ batchKey, firstSeenAt: new Date(meta.first_seen_at) }));
+    let tierLinks: { postId: string; tierId: string }[] = [];
+    tx.post.findMany.mockImplementation(async ({ where }) =>
+      where.creatorId === "cr1" ? posts.filter((p) => p.source === where.source) : []
+    );
+    tx.post.deleteMany.mockImplementation(async () => {
+      posts.length = 0;
+      links.length = 0;
+      metrics.length = 0;
+      return { count: 1 };
+    });
+    tx.postVersion.deleteMany.mockImplementation(async () => { parent.versions = []; });
+    tx.post.create.mockImplementation(async ({ data }) => { posts.push(data); return data; });
+    tx.post.update.mockImplementation(async ({ data }) => {
+      const { versions, ...fields } = data;
+      Object.assign(parent, fields, { versions: versions.create });
+      return parent;
+    });
+    tx.postTier.deleteMany.mockImplementation(async () => { tierLinks = []; });
+    tx.postTier.createMany.mockImplementation(async ({ data }) => { tierLinks.push(...data); });
+    tx.ingestIdempotencyKey.createMany.mockImplementation(async ({ data }) => { keys = data; });
+    tx.platformInstance.findUnique.mockImplementation(async ({ where }) =>
+      links.find((link) => link.postId === where.postId_destination.postId && link.destination === where.postId_destination.destination) ?? null
+    );
+    const prisma = {
+      ...mockPrisma(() => ({ tx })),
+      campaign: { findMany: vi.fn().mockResolvedValue([{ id: "camp1", creatorId: "cr1", name: "Main", upstreamUpdatedAt: new Date(timestamp), versionSeq: 1 }]) },
+      tier: { findMany: vi.fn().mockResolvedValue([{ id: "cr1::tier1", relayTierId: "tier1", creatorId: "cr1", campaignId: "camp1", title: "Paid", upstreamUpdatedAt: new Date(timestamp), versionSeq: 1 }]) },
+      post: { findMany: vi.fn(async () => posts) },
+      postVersion: { findMany: vi.fn(async () => posts.flatMap((p) => p.versions.map((v) => ({ ...v, postId: p.id })))) },
+      mediaAsset: { findMany: vi.fn().mockResolvedValue([]) },
+      ingestIdempotencyKey: { findMany: vi.fn(async () => keys) }
+    };
+    const store = new DbCanonicalStore(prisma as never);
+    const bus = new InMemoryEventBus();
+    const service = new IngestService(store, bus);
+    const fresh = structuredClone(original);
+    Object.assign(fresh.posts![0]!, { upstream_revision: "r2", title: "Refreshed", tier_ids: ["tier1"] });
+    expect(await service.runBatch(fresh, "trace")).toMatchObject({ posts_written: 1, events_emitted: 1 });
+
+    expect(tx.post.deleteMany).not.toHaveBeenCalled();
+    expect(tx.post.create).not.toHaveBeenCalled();
+    expect(tx.post.update).toHaveBeenCalledTimes(1);
+    expect(posts[0]).toBe(parent);
+    expect(parent).toMatchObject({ creatorId: "cr1", campaignId: "camp1", source, providerPostId: postId, isPublic: true, requiredTierId: "tier1" });
+    expect(links).toEqual(beforeLinks);
+    expect(metrics).toEqual(beforeMetrics);
+    expect(tx.platformInstance.create).not.toHaveBeenCalled();
+    expect(tx.platformInstance.update).not.toHaveBeenCalled();
+    expect(tierLinks).toEqual([{ postId, tierId: "cr1::tier1" }]);
+    const loaded = await store.loadForCreator("cr1");
+    expect(loaded.posts.cr1![postId]!.current).toMatchObject({ upstream_revision: "r2", title: "Refreshed", tier_ids: ["tier1"] });
+    expect(loaded.posts.cr1![postId]!.versions.map((v) => v.upstream_revision)).toEqual(["r1", "r2"]);
+
+    expect(await service.runBatch(structuredClone(fresh), "replay")).toMatchObject({ posts_written: 0, events_emitted: 0 });
+    expect(tx.post.update).toHaveBeenCalledTimes(1);
+    expect(tx.postTier.createMany).toHaveBeenCalledTimes(1);
+    expect(parent.versions).toHaveLength(2);
+    expect(links).toEqual(beforeLinks);
+    expect(metrics).toEqual(beforeMetrics);
+    expect(bus.getAll()).toHaveLength(1);
+
+    expect(await service.runBatch({ creator_id: "cr1", tombstones: [
+      { entity_type: "post", id: postId, deleted_at: "2026-10-02T00:00:00.000Z" }
+    ] }, "deleted")).toMatchObject({ events_emitted: 0 });
+    expect((await store.loadForCreator("cr1")).posts.cr1![postId]!.upstream_status).toBe("deleted");
+    expect(parent.versions).toHaveLength(2);
+    expect(posts[0]).toBe(parent);
+    expect(tx.post.deleteMany).not.toHaveBeenCalled();
+    expect(links).toEqual(beforeLinks);
+    expect(metrics).toEqual(beforeMetrics);
+  });
+
+  it("moves refreshed posts before removing their orphaned campaign and only deletes omitted posts", async () => {
+    const { tx } = mockTx();
+    const oldCampaign = { id: "old_camp" };
+    const snapshot: CanonicalSnapshot = { ingest_idempotency: {}, campaigns: {}, tiers: {}, posts: {}, media: {} };
+    applySyncBatchToSnapshot(snapshot, {
+      creator_id: "cr1", campaigns: [{ campaign_id: "new_camp", name: "Main", upstream_updated_at: "2026-10-01T00:00:00Z" }],
+      posts: [{ post_id: "patreon_post_123", upstream_revision: "r2", title: "Refreshed", published_at: "2026-10-01T00:00:00Z",
+        tag_ids: [], tier_ids: [], media: [] }]
+    }, "seed", "trace", new InMemoryEventBus());
+    const kept = { id: "patreon_post_123", campaignId: oldCampaign.id, upstreamStatus: "active", versions: [{ versionSeq: 1, upstreamRevision: "r1" }] };
+    tx.post.findMany.mockImplementation(async ({ where }) => where.creatorId === "cr1" && where.source === "PATREON"
+      ? [kept, { ...kept, id: "omitted_post" }] : []
+    );
+    tx.campaign.findMany.mockImplementation(async ({ where }) => where.creatorId === "cr1" ? [oldCampaign] : []);
+    tx.post.count.mockImplementation(async ({ where }) => kept.campaignId === where.campaignId ? 1 : 0);
+    tx.campaign.delete.mockImplementation(async () => {
+      if (kept.campaignId === oldCampaign.id) throw new Error("Campaign still referenced by refreshed post");
+      return oldCampaign;
+    });
+    tx.post.update.mockImplementation(async ({ data }) => { kept.campaignId = data.campaignId; return kept; });
+
+    await new DbCanonicalStore(mockPrisma(() => ({ tx })) as never).saveForCreator("cr1", snapshot);
+
+    expect(kept.campaignId).toBe("new_camp");
+    expect(tx.campaign.delete).toHaveBeenCalledWith({ where: { id: "old_camp" } });
+    expect(tx.post.deleteMany).toHaveBeenCalledExactlyOnceWith({ where: { id: { in: ["omitted_post"] } } });
+    expect(tx.postTier.deleteMany).toHaveBeenCalledWith({ where: { postId: { in: [kept.id, "omitted_post"] } } });
+    expect(tx.post.create).not.toHaveBeenCalled();
+  });
+});
+
 describe("DbCanonicalStore expanded all-paid access", () => {
   it("rebuilds tier links for changed legacy access and preserves the resulting replay", async () => {
     const { tx } = mockTx();
@@ -214,14 +350,16 @@ describe("DbCanonicalStore expanded all-paid access", () => {
       { postId: "patreon_post_123", tierId: "cr1::patreon_tier_0" },
       { postId: "patreon_post_123", tierId: "cr1::patreon_tier_1" }
     ] });
-    persistedVersions = tx.post.create.mock.calls[0]![0].data.versions.create;
+    persistedVersions = tx.post.update.mock.calls[0]![0].data.versions.create;
     expect(persistedVersions).toHaveLength(2);
     expect(persistedVersions[1]).toMatchObject({ versionSeq: 2, tierIds: ["patreon_tier_0", "patreon_tier_1"] });
     tx.post.create.mockClear();
+    tx.post.update.mockClear();
     tx.postTier.createMany.mockClear();
     expect(applySyncBatchToSnapshot(snapshot, expanded, "replay", "trace", bus)).toMatchObject({ posts_written: 0, events_emitted: 0 });
     await store.saveForCreator("cr1", snapshot);
     expect(tx.post.create).not.toHaveBeenCalled();
+    expect(tx.post.update).not.toHaveBeenCalled();
     expect(tx.postTier.createMany).not.toHaveBeenCalled();
     expect(bus.getAll()).toHaveLength(2);
   });
@@ -558,6 +696,6 @@ describe("DbCanonicalStore fresh media reactivation", () => {
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({ id: "asset1", creatorId: "cr1", upstreamStatus: "active", currentUpstreamRevision: "m2", currentVersionSeq: 2, ingestOrigin: source });
     expect(rows[0].versionsJson.map((version: { upstream_revision: string }) => version.upstream_revision)).toEqual(["m1", "m2"]);
-    expect(tx.post.create.mock.calls[0]![0].data.versions.create).toHaveLength(2);
+    expect(tx.post.update.mock.calls[0]![0].data.versions.create).toHaveLength(2);
   });
 });

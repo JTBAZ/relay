@@ -595,11 +595,10 @@ describe("PK conflict resolution (workspace migration)", () => {
     const deleteCalls: { table: string; where: unknown }[] = [];
     const tx = createMockTx();
 
-    // 1) No campaigns for creator_new. 2) Pre-existing campaign under creator_old (migration path).
-    tx.campaign.findMany = vi
-      .fn()
-      .mockResolvedValueOnce([])
-      .mockResolvedValueOnce([{ id: "patreon_campaign_123", creatorId: "creator_old" }]);
+    // Only the cross-creator conflict query finds the legacy campaign.
+    tx.campaign.findMany = vi.fn().mockImplementation(async ({ where }) =>
+      where.creatorId?.not === "creator_new" ? [{ id: "patreon_campaign_123", creatorId: "creator_old" }] : []
+    );
     // No local patreon posts; no cross-tenant orphan post query hits
     tx.post.findMany = vi.fn().mockResolvedValue([]);
 

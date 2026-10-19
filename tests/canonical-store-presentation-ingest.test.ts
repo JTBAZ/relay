@@ -4,12 +4,11 @@ import type { CanonicalSnapshot } from "../src/ingest/canonical-store.js";
 import { DbCanonicalStore } from "../src/ingest/canonical-store-db.js";
 
 /**
- * Validates that when Patreon posts are stomped and recreated (`post.deleteMany` +
- * `post.create`), Relay `PostPresentation` rows backed up beforehand are recreated so
- * merge-at-read overlays survive ingest (BO-RPB-03).
+ * Validates that Patreon refreshes retain the parent post so Relay presentation
+ * overlays and curator-owned creative-work membership survive ingest (BO-RPB-03).
  */
-describe("DbCanonicalStore — PostPresentation survives Patreon stomp", () => {
-  it("backups Relay presentation rows before deletes and restores after post recreation", async () => {
+describe("DbCanonicalStore — creator-owned relationships survive Patreon refresh", () => {
+  it("retains presentation and creative-work membership without recreating the post", async () => {
     const relayPresentationBackup = [
       {
         id: "pp_row_1",
@@ -39,10 +38,11 @@ describe("DbCanonicalStore — PostPresentation survives Patreon stomp", () => {
       if (w.id && (w as { creatorId?: { not?: string } }).creatorId?.not) {
         return [];
       }
-      return [existingPatreonRow];
+      return w.source === "PATREON" ? [existingPatreonRow] : [];
     });
     const postDeleteMany = vi.fn().mockResolvedValue({ count: 1 });
     const postCreate = vi.fn().mockResolvedValue({});
+    const postUpdate = vi.fn().mockResolvedValue({});
 
     const tx = {
       postTier: {
@@ -56,6 +56,7 @@ describe("DbCanonicalStore — PostPresentation survives Patreon stomp", () => {
         findMany: postFindMany,
         deleteMany: postDeleteMany,
         create: postCreate,
+        update: postUpdate,
         count: vi.fn().mockResolvedValue(0)
       },
       postPresentation: {
@@ -69,7 +70,9 @@ describe("DbCanonicalStore — PostPresentation survives Patreon stomp", () => {
         delete: vi.fn().mockResolvedValue({})
       },
       campaign: {
-        findMany: vi.fn().mockResolvedValue([{ id: "patreon_campaign_1" }]),
+        findMany: vi.fn().mockImplementation(async ({ where }) =>
+          where.creatorId === "cr_pres" ? [{ id: "patreon_campaign_1" }] : []
+        ),
         upsert: vi.fn().mockResolvedValue({}),
         deleteMany: vi.fn().mockResolvedValue({}),
         delete: vi.fn().mockResolvedValue({})
@@ -153,21 +156,14 @@ describe("DbCanonicalStore — PostPresentation survives Patreon stomp", () => {
       }
     });
 
-    expect(findPresentation).toHaveBeenCalledWith({
-      where: { postId: { in: ["patreon_post_stomp_me"] } }
+    expect(postUpdate).toHaveBeenCalledWith({
+      where: { id: "patreon_post_stomp_me", creatorId: "cr_pres", source: "PATREON" },
+      data: expect.objectContaining({ versions: { create: [expect.objectContaining({ upstreamRevision: "rev_after" })] } })
     });
-    expect(postDeleteMany).toHaveBeenCalled();
-    expect(createPresentation).toHaveBeenCalledWith({
-      data: expect.objectContaining({
-        id: "pp_row_1",
-        creatorId: "cr_pres",
-        postId: "patreon_post_stomp_me",
-        titleMode: "inherit_work",
-        relayTitle: "Relay-only title"
-      })
-    });
-    expect(tx.creativeWorkMember.create).toHaveBeenCalledWith({ data: expect.objectContaining({
-      id: "cwm_existing", creativeWorkId: "cw_existing", creatorId: "cr_pres", postId: "patreon_post_stomp_me", memberLabel: "Page 1", sortOrder: 3
-    }) });
+    expect(postDeleteMany).not.toHaveBeenCalled();
+    expect(postCreate).not.toHaveBeenCalled();
+    expect(findPresentation).not.toHaveBeenCalled();
+    expect(createPresentation).not.toHaveBeenCalled();
+    expect(tx.creativeWorkMember.create).not.toHaveBeenCalled();
   });
 });

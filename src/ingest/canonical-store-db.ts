@@ -1,6 +1,6 @@
 /**
  * @fileoverview Prisma persistence for canonical ingest snapshots (posts, media, tiers, campaigns).
- * @description `saveForCreator` replaces Patreon-sourced rows while preserving Relay-native posts (T-2.1).
+ * @description `saveForCreator` refreshes imported posts in place while preserving Relay-native posts (T-2.1).
  * @see ./canonical-store.js
  * @see src/jsdoc-core-entities.ts
  */
@@ -28,7 +28,7 @@ import type {
   TierRow
 } from "./canonical-store.js";
 
-/** Snapshot rows ingest replaces (`Post.source=PATREON` or SUBSCRIBESTAR); Relay-native posts are preserved (T-2.1). */
+/** Snapshot rows ingest synchronizes (`Post.source=PATREON` or SUBSCRIBESTAR); Relay-native posts are preserved (T-2.1). */
 function isMirroredIngestSnapshotPost(p: PostRow): boolean {
   return p.source !== "RELAY";
 }
@@ -160,7 +160,7 @@ function pickWinner<T extends { version_seq: number; creator_id: string }>(
 }
 
 /**
- * @description Postgres implementation: `saveForCreator()` replaces mirrored ingest posts (`Post.source=PATREON`
+ * @description Postgres implementation: `saveForCreator()` synchronizes mirrored ingest posts (`Post.source=PATREON`
  * or `SUBSCRIBESTAR`) in separate persistence lanes so Patreon ↔ SubscribeStar do not wipe one another.
  * Rows with `Post.source=RELAY` remain intact (T-2.1). Global `save()` delegates per-creator for backward compat.
  * @see ./canonical-store.js
@@ -332,9 +332,7 @@ export class DbCanonicalStore implements CanonicalStore {
   // Creator-scoped save — only touches rows for `creatorId`
   //
   // Relay presentation (`post_presentations`) is NEVER written from ingest payload.
-  // When Patreon snapshot rows are stomped (`post.deleteMany`), FK CASCADE would drop overlays;
-  // we snapshot/restorePresentation rows **before** deletes for posts we are about to recreate
-  // (`postIdsToMaterialize`). See `.cursor/rules/patreon-origin-relay-bedrock.mdc`.
+  // Existing imported posts are updated in place so their creator-owned relationships survive.
   // ---------------------------------------------------------------------------
   public async saveForCreator(creatorId: string, snapshot: CanonicalSnapshot): Promise<void> {
     await this.prisma.$transaction(
@@ -380,13 +378,8 @@ export class DbCanonicalStore implements CanonicalStore {
             }
           }
           const stompPostIds: string[] = existingMirror.map((p) => p.id).filter((id) => !preservePostIds.has(id));
-          const relayPresentationBackup =
-            stompPostIds.length > 0
-              ? await tx.postPresentation.findMany({ where: { postId: { in: stompPostIds } } })
-              : [];
-          const workMembershipBackup = stompPostIds.length > 0
-            ? await tx.creativeWorkMember.findMany({ where: { creatorId, postId: { in: stompPostIds } } })
-            : [];
+          const incomingPostIds = new Set(postEntries.map((p) => p.post_id));
+          const removedPostIds = stompPostIds.filter((id) => !incomingPostIds.has(id));
           if (stompPostIds.length > 0) {
             await tx.postTier.deleteMany({ where: { postId: { in: stompPostIds } } });
             await tx.mediaAsset.deleteMany({
@@ -396,9 +389,11 @@ export class DbCanonicalStore implements CanonicalStore {
               }
             });
             await tx.postVersion.deleteMany({ where: { postId: { in: stompPostIds } } });
-            await tx.post.deleteMany({ where: { id: { in: stompPostIds } } });
           }
-          return { preservePostIds, relayPresentationBackup, workMembershipBackup };
+          if (removedPostIds.length > 0) {
+            await tx.post.deleteMany({ where: { id: { in: removedPostIds } } });
+          }
+          return { preservePostIds, existingPostIds: new Set(existingById.keys()) };
         }
 
         const lanePatreon = await mirrorLane(
@@ -413,34 +408,7 @@ export class DbCanonicalStore implements CanonicalStore {
         );
         const preservePostIdsPat = lanePatreon.preservePostIds;
         const preservePostIdsSs = laneSubscribestar.preservePostIds;
-        const relayPresentationBackup = [
-          ...lanePatreon.relayPresentationBackup,
-          ...laneSubscribestar.relayPresentationBackup
-        ];
-        const workMembershipBackup = [...lanePatreon.workMembershipBackup, ...laneSubscribestar.workMembershipBackup];
         await tx.ingestIdempotencyKey.deleteMany({ where: { creatorId } });
-
-        // Orphaned campaigns/tiers for this creator: not in the incoming snapshot, no remaining posts.
-        const dbOurCampaigns = await tx.campaign.findMany({ where: { creatorId }, select: { id: true } });
-        for (const c of dbOurCampaigns) {
-          if (snapCampaignIds.has(c.id)) {
-            continue;
-          }
-          const n = await tx.post.count({ where: { campaignId: c.id } });
-          if (n === 0) {
-            await tx.campaign.delete({ where: { id: c.id } });
-          }
-        }
-        const dbOurTiers = await tx.tier.findMany({ where: { creatorId }, select: { id: true } });
-        for (const t of dbOurTiers) {
-          if (snapTierIds.has(t.id)) {
-            continue;
-          }
-          const n = await tx.postTier.count({ where: { tierId: t.id } });
-          if (n === 0) {
-            await tx.tier.delete({ where: { id: t.id } });
-          }
-        }
 
         // --- Cross-tenant reassign: same upstream PKs must land on the saving creator. ---
         const incomingCampaignIds = (Object.values(campaignMap) as CampaignRow[]).map((r) => r.campaign_id);
@@ -537,7 +505,7 @@ export class DbCanonicalStore implements CanonicalStore {
           }
         }
 
-        // --- Idempotency + upsert campaigns/tiers, then (re)insert changed Patreon posts + media. ---
+        // --- Idempotency + upsert campaigns/tiers, then synchronize changed imported posts + media. ---
         const idemEntries = Object.entries(snapshot.ingest_idempotency);
         if (idemEntries.length > 0) {
           await tx.ingestIdempotencyKey.createMany({
@@ -598,12 +566,14 @@ export class DbCanonicalStore implements CanonicalStore {
         const mirrorLanes: Array<{
           entries: PostRow[];
           preserve: Set<string>;
+          existing: Set<string>;
           source: PostSource;
         }> = [
-          { entries: postEntriesPatreon, preserve: preservePostIdsPat, source: PostSource.PATREON },
+          { entries: postEntriesPatreon, preserve: preservePostIdsPat, existing: lanePatreon.existingPostIds, source: PostSource.PATREON },
           {
             entries: postEntriesSubscribestar,
             preserve: preservePostIdsSs,
+            existing: laneSubscribestar.existingPostIds,
             source: PostSource.SUBSCRIBESTAR
           }
         ];
@@ -627,23 +597,19 @@ export class DbCanonicalStore implements CanonicalStore {
             }
             const createdAt = earliestPublishedAt({ ...post, versions: versionsForDb });
 
-            await tx.post.create({
-              data: {
-                id: post.post_id,
-                campaignId,
-                creatorId,
-                providerPostId: post.post_id,
-                source: lane.source,
-                upstreamStatus:
-                  post.upstream_status === "deleted"
-                    ? PostUpstreamStatus.deleted
-                    : PostUpstreamStatus.active,
-                createdAt,
-                versions: {
-                  create: versionsForDb.map((v) => mapVersionRow(v))
-                }
-              }
-            });
+            const data = {
+              campaignId,
+              upstreamStatus: snapshotToUpstreamStatus(post),
+              createdAt,
+              versions: { create: versionsForDb.map((v) => mapVersionRow(v)) }
+            };
+            if (lane.existing.has(post.post_id)) {
+              await tx.post.update({ where: { id: post.post_id, creatorId, source: lane.source }, data });
+            } else {
+              await tx.post.create({
+                data: { ...data, id: post.post_id, creatorId, providerPostId: post.post_id, source: lane.source }
+              });
+            }
 
             const tierSource = versionsForDb[versionsForDb.length - 1] ?? post.current;
             const tierIds = new Set(tierSource.tier_ids);
@@ -660,34 +626,25 @@ export class DbCanonicalStore implements CanonicalStore {
           await tx.postTier.createMany({ data: postTierRows });
         }
 
-        // Post recreation must retain curator-owned variant/page membership and
-        // inherited naming; source ingest never chooses a new naming parent.
-        for (const member of workMembershipBackup) {
-          if (postIdsToMaterialize.has(member.postId)) {
-            await tx.creativeWorkMember.create({ data: member });
+        // Clean up only after refreshed posts have moved to their current campaigns and tiers.
+        const dbOurCampaigns = await tx.campaign.findMany({ where: { creatorId }, select: { id: true } });
+        for (const c of dbOurCampaigns) {
+          if (snapCampaignIds.has(c.id)) {
+            continue;
+          }
+          const n = await tx.post.count({ where: { campaignId: c.id } });
+          if (n === 0) {
+            await tx.campaign.delete({ where: { id: c.id } });
           }
         }
-        if (relayPresentationBackup.length > 0) {
-          for (const pr of relayPresentationBackup) {
-            if (!postIdsToMaterialize.has(pr.postId)) {
-              continue;
-            }
-            await tx.postPresentation.create({
-              data: {
-                id: pr.id,
-                creatorId: pr.creatorId,
-                postId: pr.postId,
-                titleMode: pr.titleMode,
-                relayTitle: pr.relayTitle,
-                relayDescription: pr.relayDescription,
-                mediaOrder: pr.mediaOrder,
-                tierPreviewSettings:
-                  pr.tierPreviewSettings === null || pr.tierPreviewSettings === undefined
-                    ? undefined
-                    : (pr.tierPreviewSettings as Prisma.InputJsonValue),
-                updatedAt: pr.updatedAt
-              }
-            });
+        const dbOurTiers = await tx.tier.findMany({ where: { creatorId }, select: { id: true } });
+        for (const t of dbOurTiers) {
+          if (snapTierIds.has(t.id)) {
+            continue;
+          }
+          const n = await tx.postTier.count({ where: { tierId: t.id } });
+          if (n === 0) {
+            await tx.tier.delete({ where: { id: t.id } });
           }
         }
 
