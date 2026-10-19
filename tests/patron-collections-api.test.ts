@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { randomBytes } from "node:crypto";
@@ -73,6 +73,99 @@ async function seedAndAuth(tempDir: string) {
 
 describe("Patron collections API", () => {
   afterEach(() => vi.restoreAllMocks());
+
+  it.each(["create", "edit", "delete", "remove"] as const)(
+    "reports a failed store read during %s without writing or exposing storage details", async (operation) => {
+      const tempDir = await mkdtemp(join(tmpdir(), "relay-pcol-write-read-failure-"));
+      const { app, token } = await seedAndAuth(tempDir);
+      const created = await request(app).post("/api/v1/patron/collections")
+        .set("Authorization", `Bearer ${token}`).send({ creator_id: "cpc", title: "Mine" });
+      expect(created.status).toBe(201);
+      const collectionId = created.body.data.collection.collection_id;
+      const url = `/api/v1/patron/collections/${collectionId}`;
+      const added = await request(app).post(`${url}/entries`).set("Authorization", `Bearer ${token}`)
+        .send({ creator_id: "cpc", post_id: "p_c", media_id: "m_1" });
+      expect(added.status).toBe(200);
+      const path = join(tempDir, "patron_collections.json");
+      const original = await readFile(path, "utf8");
+      const save = vi.spyOn(FilePatronCollectionsStore.prototype, "save");
+      const send = () => {
+        const req = operation === "create" ? request(app).post("/api/v1/patron/collections")
+          : operation === "edit" ? request(app).patch(url)
+          : operation === "delete" ? request(app).delete(`${url}?creator_id=cpc`)
+          : request(app).delete(`${url}/entries`);
+        return req.set("Authorization", `Bearer ${token}`).set("Idempotency-Key", "failed-mutation")
+          .send({ creator_id: "cpc", title: "Changed", post_id: "p_c", media_id: "m_1" });
+      };
+      await writeFile(path, "not-json");
+      const failed = await send();
+      expect(failed.status).toBe(500);
+      expect(failed.body.error.code).toBe("INTERNAL");
+      expect(failed.body.data).toBeUndefined();
+      expect(JSON.stringify(failed.body)).not.toContain(path);
+      expect(save).not.toHaveBeenCalled();
+      expect(await readFile(path, "utf8")).toBe("not-json");
+      await writeFile(path, original);
+      const detail = await request(app).get(url).set("Authorization", `Bearer ${token}`);
+      expect(detail.status).toBe(200);
+      expect(detail.body.data.collection.entries).toHaveLength(1);
+      if (operation === "create") {
+        const replay = await send();
+        expect(replay.status).toBe(500);
+        expect(replay.headers["idempotency-replayed"]).toBe("true");
+        expect(replay.body).toEqual(failed.body);
+      }
+      expect(save).not.toHaveBeenCalled();
+      expect(await readFile(path, "utf8")).toBe(original);
+    }
+  );
+
+  it("keeps a possibly committed collection creation protected after a reported failure", async () => {
+    const tempDir = await mkdtemp(join(tmpdir(), "relay-pcol-create-uncertain-"));
+    const { app, token } = await seedAndAuth(tempDir);
+    const create = FilePatronCollectionsStore.prototype.createCollection;
+    const mutation = vi.spyOn(FilePatronCollectionsStore.prototype, "createCollection").mockImplementationOnce(
+      async function (this: FilePatronCollectionsStore, ...args: Parameters<typeof create>) {
+        await create.apply(this, args);
+        throw new Error("Sensitive post-write storage detail");
+      }
+    );
+    const send = () => request(app).post("/api/v1/patron/collections")
+      .set("Authorization", `Bearer ${token}`).set("Idempotency-Key", "uncertain-create")
+      .send({ creator_id: "cpc", title: "Mine" });
+    const failed = await send();
+    expect(failed.status).toBe(500);
+    expect(JSON.stringify(failed.body)).not.toContain("Sensitive post-write storage detail");
+    const replay = await send();
+    expect(replay.status).toBe(500);
+    expect(replay.headers["idempotency-replayed"]).toBe("true");
+    expect(replay.body).toEqual(failed.body);
+    expect(mutation).toHaveBeenCalledTimes(1);
+    const persisted = new FilePatronCollectionsStore(join(tempDir, "patron_collections.json"));
+    expect((await persisted.load({ strict: true })).collections).toHaveLength(1);
+  });
+
+  it("keeps first-run creation and missing-file mutation responses", async () => {
+    const tempDir = await mkdtemp(join(tmpdir(), "relay-pcol-first-run-"));
+    const { app, token } = await seedAndAuth(tempDir);
+    const path = join(tempDir, "patron_collections.json");
+    for (const operation of ["edit", "delete", "remove"] as const) {
+      const url = "/api/v1/patron/collections/pcol_missing";
+      const req = operation === "edit" ? request(app).patch(url)
+        : operation === "delete" ? request(app).delete(`${url}?creator_id=cpc`)
+        : request(app).delete(`${url}/entries`);
+      const missing = await req.set("Authorization", `Bearer ${token}`)
+        .send({ creator_id: "cpc", title: "Missing", post_id: "p_c", media_id: "m_1" });
+      expect(missing.status).toBe(404);
+      expect(missing.body.error.code).toBe("NOT_FOUND");
+      await unlink(path).catch(error => { if (error.code !== "ENOENT") throw error; });
+    }
+    const created = await request(app).post("/api/v1/patron/collections")
+      .set("Authorization", `Bearer ${token}`).send({ creator_id: "cpc", title: "First" });
+    expect(created.status).toBe(201);
+    const persisted = new FilePatronCollectionsStore(path);
+    expect((await persisted.load({ strict: true })).collections).toHaveLength(1);
+  });
 
   it("retries a failed catalog read with the same key and persists one entry after recovery", async () => {
     const tempDir = await mkdtemp(join(tmpdir(), "relay-pcol-read-retry-"));
@@ -426,6 +519,11 @@ describe("Patron collections API", () => {
       .set("Authorization", `Bearer ${token}`)
       .send({ creator_id: "cpc", title: "Private shelf" });
     const colId = mk.body.data.collection.collection_id as string;
+    const added = await request(app).post(`/api/v1/patron/collections/${colId}/entries`)
+      .set("Authorization", `Bearer ${token}`).send({ creator_id: "cpc", post_id: "p_c", media_id: "m_1" });
+    expect(added.status).toBe(200);
+    const path = join(tempDir, "patron_collections.json");
+    const original = await readFile(path, "utf8");
 
     await request(app).post("/api/v1/identity/register").send({
       creator_id: "cpc",
@@ -453,9 +551,24 @@ describe("Patron collections API", () => {
     expect(foreignSave.body.error.code).toBe("NOT_FOUND");
     const unauthenticated = await request(app).get(`/api/v1/patron/collections/${colId}`);
     expect(unauthenticated.status).toBe(401);
+    for (const operation of ["create", "edit", "delete", "remove"] as const) {
+      const send = (auth: string | undefined, creatorId: string) => {
+        const url = `/api/v1/patron/collections/${colId}`;
+        const req = operation === "create" ? request(app).post("/api/v1/patron/collections")
+          : operation === "edit" ? request(app).patch(url)
+          : operation === "delete" ? request(app).delete(`${url}?creator_id=${creatorId}`)
+          : request(app).delete(`${url}/entries`);
+        if (auth) req.set("Authorization", `Bearer ${auth}`);
+        return req.send({ creator_id: creatorId, title: "Changed", post_id: "p_c", media_id: "m_1" });
+      };
+      if (operation !== "create") expect((await send(otherToken, "cpc")).status).toBe(404);
+      expect((await send(token, "another-creator")).status).toBe(403);
+      expect((await send(undefined, "cpc")).status).toBe(401);
+    }
+    expect(await readFile(path, "utf8")).toBe(original);
     const owned = await request(app).get(`/api/v1/patron/collections/${colId}`)
       .set("Authorization", `Bearer ${token}`);
     expect(owned.status).toBe(200);
-    expect(owned.body.data.collection.entries).toHaveLength(0);
+    expect(owned.body.data.collection.entries).toHaveLength(1);
   });
 });

@@ -26,8 +26,25 @@ Other authentication, permission, and rate-limit responses retain their existing
 
 With the same caller, target, body, and original key, retrying an uncertain save replays its original error with `Idempotency-Replayed: true`; it does not call the write again while the snapshot remains available. Reading the saved entry does not turn that replay into a success response. Requests originally sent without a key have no replay protection; adding a key afterward cannot recover it.
 
+## Other patron collection changes
+
+The same read-before-write protection applies to these file-backed operations:
+
+| Operation | Route |
+| --- | --- |
+| Create a collection | `POST /api/v1/patron/collections` |
+| Edit a collection | `PATCH /api/v1/patron/collections/:collection_id` |
+| Delete a collection | `DELETE /api/v1/patron/collections/:collection_id` |
+| Remove an entry | `DELETE /api/v1/patron/collections/:collection_id/entries` |
+
+A failed read, invalid JSON, or malformed collection data stops the mutation before any save. The handler returns a generic INTERNAL 500 and leaves the stored data untouched. A genuinely missing file still represents an empty store: initial collection creation can succeed, while edits or removals of missing resources retain their 404 responses.
+
+The error handlers also cover failures after a write may have happened. A 500 therefore remains an unconfirmed outcome. Collection creation retains its existing same-key replay protection for such errors. Collection editing, deletion, and entry removal do not gain retry middleware or automatic retries through this change.
+
+Where a collection ID is known, use authenticated owner detail to check its current state. A failed creation with no returned ID may require operator confirmation. This change adds no request-outcome tracker, and an empty legacy listing is not proof that creation never committed.
+
 ## Limits
 
 This procedure checks current collection state. It does not identify the historical outcome of a particular request or repair a failed notification. The existing in-memory retry limits remain: process restart, cache eviction, response expiry, and running-reservation expiry can allow re-execution. There is no new durable or cross-process exactly-once guarantee.
 
-Strict collection-store reads apply to entry saves and authenticated owner detail. Other legacy file-store operations retain their existing behavior.
+Strict collection-store reads apply to all patron collection mutations and authenticated owner detail. Other read-only listing helpers retain their legacy fallback behavior, so they cannot establish an uncertain operation's historical outcome. Concurrent writes, interrupted file writes, and backup recovery remain outside this protection.

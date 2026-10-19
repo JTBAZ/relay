@@ -49,7 +49,7 @@ export class FilePatronCollectionsStore {
     this.filePath = filePath;
   }
 
-  /** Strict reads preserve uncertainty for entry saves and owner read-back. */
+  /** Strict reads preserve uncertainty for mutations and owner read-back. */
   public async load(options: { strict?: boolean } = {}): Promise<PatronCollectionsRoot> {
     try {
       const raw = await readFile(this.filePath, "utf8");
@@ -137,7 +137,7 @@ export class FilePatronCollectionsStore {
     userId: string,
     title: string
   ): Promise<PatronCollectionRecord> {
-    const root = await this.load();
+    const root = await this.load({ strict: true });
     const now = new Date().toISOString();
     const maxOrder = root.collections
       .filter((c) => c.creator_id === creatorId && c.user_id === userId)
@@ -162,7 +162,7 @@ export class FilePatronCollectionsStore {
     collectionId: string,
     patch: { title?: string; sort_order?: number; is_public?: boolean }
   ): Promise<PatronCollectionRecord | null> {
-    const root = await this.load();
+    const root = await this.load({ strict: true });
     const c = root.collections.find(
       (x) =>
         x.collection_id === collectionId &&
@@ -189,7 +189,7 @@ export class FilePatronCollectionsStore {
     userId: string,
     collectionId: string
   ): Promise<boolean> {
-    const root = await this.load();
+    const root = await this.load({ strict: true });
     const before = root.collections.length;
     root.collections = root.collections.filter(
       (c) =>
@@ -255,7 +255,7 @@ export class FilePatronCollectionsStore {
     postId: string,
     mediaId: string
   ): Promise<boolean> {
-    const root = await this.load();
+    const root = await this.load({ strict: true });
     const before = root.entries.length;
     root.entries = root.entries.filter(
       (e) =>

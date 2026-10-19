@@ -17245,13 +17245,17 @@ export function createApp(config: AppConfig): CreateAppResult {
     if (!(await requirePatronForCreatorId(req, res, traceId, session, creatorId))) {
       return;
     }
-    const created = await patronCollectionsStore.createCollection(
-      creatorId,
-      session.user_id,
-      title
-    );
-    res.setHeader("Cache-Control", "private, no-store");
-    return res.status(201).json(successEnvelope({ collection: created }, traceId));
+    try {
+      const created = await patronCollectionsStore.createCollection(
+        creatorId,
+        session.user_id,
+        title
+      );
+      res.setHeader("Cache-Control", "private, no-store");
+      return res.status(201).json(successEnvelope({ collection: created }, traceId));
+    } catch {
+      return res.status(500).json(errorEnvelope("INTERNAL", "Unable to confirm the collection change. Check your collections before trying again.", traceId));
+    }
     }
   );
 
@@ -17309,17 +17313,21 @@ export function createApp(config: AppConfig): CreateAppResult {
         ])
       );
     }
-    const updated = await patronCollectionsStore.updateCollection(
-      creatorId,
-      session.user_id,
-      req.params.collection_id,
-      patch
-    );
-    if (!updated) {
-      return res.status(404).json(errorEnvelope("NOT_FOUND", "Collection not found.", traceId));
+    try {
+      const updated = await patronCollectionsStore.updateCollection(
+        creatorId,
+        session.user_id,
+        req.params.collection_id,
+        patch
+      );
+      if (!updated) {
+        return res.status(404).json(errorEnvelope("NOT_FOUND", "Collection not found.", traceId));
+      }
+      res.setHeader("Cache-Control", "private, no-store");
+      return res.status(200).json(successEnvelope({ collection: updated }, traceId));
+    } catch {
+      return res.status(500).json(errorEnvelope("INTERNAL", "Unable to confirm the collection change. Check your collections before trying again.", traceId));
     }
-    res.setHeader("Cache-Control", "private, no-store");
-    return res.status(200).json(successEnvelope({ collection: updated }, traceId));
     }
   );
 
@@ -17356,16 +17364,20 @@ export function createApp(config: AppConfig): CreateAppResult {
     if (!(await requirePatronForCreatorId(req, res, traceId, session, creatorId))) {
       return;
     }
-    const ok = await patronCollectionsStore.deleteCollection(
-      creatorId,
-      session.user_id,
-      req.params.collection_id
-    );
-    if (!ok) {
-      return res.status(404).json(errorEnvelope("NOT_FOUND", "Collection not found.", traceId));
+    try {
+      const ok = await patronCollectionsStore.deleteCollection(
+        creatorId,
+        session.user_id,
+        req.params.collection_id
+      );
+      if (!ok) {
+        return res.status(404).json(errorEnvelope("NOT_FOUND", "Collection not found.", traceId));
+      }
+      res.setHeader("Cache-Control", "private, no-store");
+      return res.status(200).json(successEnvelope({ deleted: true }, traceId));
+    } catch {
+      return res.status(500).json(errorEnvelope("INTERNAL", "Unable to confirm the collection change. Check your collections before trying again.", traceId));
     }
-    res.setHeader("Cache-Control", "private, no-store");
-    return res.status(200).json(successEnvelope({ deleted: true }, traceId));
     }
   );
 
@@ -17492,18 +17504,22 @@ export function createApp(config: AppConfig): CreateAppResult {
     if (!(await requirePatronForCreatorId(req, res, traceId, session, creatorId))) {
       return;
     }
-    const removed = await patronCollectionsStore.removeEntry(
-      creatorId,
-      session.user_id,
-      req.params.collection_id,
-      postId,
-      mediaId
-    );
-    if (!removed) {
-      return res.status(404).json(errorEnvelope("NOT_FOUND", "Entry not found.", traceId));
+    try {
+      const removed = await patronCollectionsStore.removeEntry(
+        creatorId,
+        session.user_id,
+        req.params.collection_id,
+        postId,
+        mediaId
+      );
+      if (!removed) {
+        return res.status(404).json(errorEnvelope("NOT_FOUND", "Entry not found.", traceId));
+      }
+      res.setHeader("Cache-Control", "private, no-store");
+      return res.status(200).json(successEnvelope({ deleted: true }, traceId));
+    } catch {
+      return res.status(500).json(errorEnvelope("INTERNAL", "Unable to confirm the collection change. Check your collections before trying again.", traceId));
     }
-    res.setHeader("Cache-Control", "private, no-store");
-    return res.status(200).json(successEnvelope({ deleted: true }, traceId));
     }
   );
 

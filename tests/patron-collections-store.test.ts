@@ -1,10 +1,59 @@
-import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rename, rmdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { FilePatronCollectionsStore } from "../src/gallery/patron-collections-store.js";
 
 describe("FilePatronCollectionsStore", () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it.each(["create", "edit", "delete", "remove"] as const)(
+    "does not save after failed reads during %s, and preserves other patrons on recovery", async (operation) => {
+      const dir = await mkdtemp(join(tmpdir(), "relay-pcol-mutate-read-"));
+      const path = join(dir, "pc.json");
+      const store = new FilePatronCollectionsStore(path);
+      const mine = await store.createCollection("c1", "u1", "Mine");
+      const theirs = await store.createCollection("c2", "u2", "Theirs");
+      await store.addEntry("c1", "u1", mine.collection_id, "p1", "m1");
+      await store.addEntry("c2", "u2", theirs.collection_id, "p2", "m2");
+      const original = await readFile(path, "utf8");
+      const originalRoot = await store.load({ strict: true });
+      const mutate = {
+        create: () => store.createCollection("c1", "u1", "New"),
+        edit: () => store.updateCollection("c1", "u1", mine.collection_id, { title: "Edited" }),
+        delete: () => store.deleteCollection("c1", "u1", mine.collection_id),
+        remove: () => store.removeEntry("c1", "u1", mine.collection_id, "p1", "m1")
+      }[operation];
+      const save = vi.spyOn(store, "save");
+      for (const contents of ["not-json", '{"collections":[],"entries":null}', '{"collections":[{}],"entries":[]}']) {
+        await writeFile(path, contents);
+        await expect(mutate()).rejects.toThrow();
+        expect(save).not.toHaveBeenCalled();
+        expect(await readFile(path, "utf8")).toBe(contents);
+        await writeFile(path, original);
+        expect(await store.load({ strict: true })).toEqual(originalRoot);
+      }
+      const backup = join(dir, "original.json");
+      await rename(path, backup);
+      await mkdir(path);
+      try {
+        await expect(mutate()).rejects.toThrow();
+        expect(save).not.toHaveBeenCalled();
+        expect(await readFile(backup, "utf8")).toBe(original);
+      } finally {
+        await rmdir(path);
+        await rename(backup, path);
+      }
+      expect(await readFile(path, "utf8")).toBe(original);
+      expect(await mutate()).toBeTruthy();
+      expect(save).toHaveBeenCalledTimes(1);
+      const recovered = await store.load({ strict: true });
+      expect(recovered.collections.find(c => c.collection_id === theirs.collection_id))
+        .toEqual(originalRoot.collections.find(c => c.collection_id === theirs.collection_id));
+      expect(recovered.entries.filter(e => e.user_id === "u2")).toEqual(originalRoot.entries.filter(e => e.user_id === "u2"));
+    }
+  );
+
   it.each(["not-json", '{"collections":[],"entries":null}', '{"collections":[{}],"entries":[]}'])(
     "rejects corrupt collection data in reconciliation reads (%s)", async (contents) => {
       const dir = await mkdtemp(join(tmpdir(), "relay-pcol-corrupt-"));
