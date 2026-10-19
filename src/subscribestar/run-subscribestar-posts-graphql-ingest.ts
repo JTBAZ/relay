@@ -3,6 +3,7 @@
  */
 
 import { validateIngestBatchBody } from "../ingest/validate-body.js";
+import { IngestOwnershipConflict } from "../ingest/ownership-conflict.js";
 import type { ApplyBatchResult, SyncBatchInput } from "../ingest/types.js";
 import { buildSubscribeStarSyncBatch } from "./map-subscribestar-to-ingest.js";
 import { fetchSubscribeStarPostsGraphqlPage } from "./subscribestar-graphql-ingest-fetch.js";
@@ -136,6 +137,7 @@ export async function runSubscribeStarPostsGraphqlPagedIngest(input: {
     try {
       lastApply = await input.deps.runBatch(ingestParsed.batch, input.traceId);
     } catch (e) {
+      if (e instanceof IngestOwnershipConflict) throw e;
       const msg = e instanceof Error ? e.message : String(e);
       return {
         ok: false,

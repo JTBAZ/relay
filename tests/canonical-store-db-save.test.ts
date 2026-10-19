@@ -64,6 +64,8 @@ function mockTx() {
       update: vi.fn().mockResolvedValue({})
     },
     tier: {
+      create: vi.fn().mockResolvedValue({}),
+      updateMany: vi.fn().mockResolvedValue({ count: 0 }),
       deleteMany: vi.fn().mockResolvedValue({}),
       createMany: vi.fn().mockResolvedValue({}),
       findMany: vi.fn().mockResolvedValue([]),
@@ -71,6 +73,8 @@ function mockTx() {
       delete: vi.fn().mockResolvedValue({})
     },
     campaign: {
+      create: vi.fn().mockResolvedValue({}),
+      updateMany: vi.fn().mockResolvedValue({ count: 0 }),
       deleteMany: vi.fn().mockResolvedValue({}),
       createMany: vi.fn().mockResolvedValue({}),
       findMany: vi.fn().mockResolvedValue([]),
@@ -555,9 +559,9 @@ describe("DbCanonicalStore preserved-post media URLs", () => {
         ? [{ id: postId, campaignId: "camp1", upstreamStatus: "active", versions: [{ versionSeq: 1, upstreamRevision: "r1" }] }]
         : []
     );
-    tx.mediaAsset.findMany.mockResolvedValue([
+    tx.mediaAsset.findMany.mockImplementation(async ({ where }) => where.creatorId === "cr1" ? [
       { id: "asset1", primaryPostId: postId, currentUpstreamRevision: "m1", currentUpstreamUrl: "https://cdn.example/original" }
-    ]);
+    ] : []);
     input.posts[0]!.media[0]!.upstream_url = "https://cdn.example/refreshed";
     applySyncBatchToSnapshot(snapshot, input, "j2", "trace", bus);
     const store = new DbCanonicalStore(mockPrisma(() => ({ tx })) as never);
@@ -581,15 +585,15 @@ describe("DbCanonicalStore preserved-post media URLs", () => {
     expect(bus.getAll()).toHaveLength(1);
 
     tx.mediaAsset.updateMany.mockClear();
-    tx.mediaAsset.findMany.mockResolvedValue([
+    tx.mediaAsset.findMany.mockImplementation(async ({ where }) => where.creatorId === "cr1" ? [
       { id: "asset1", primaryPostId: postId, currentUpstreamRevision: "m1", currentUpstreamUrl: "https://cdn.example/refreshed" }
-    ]);
+    ] : []);
     await store.saveForCreator("cr1", snapshot);
     expect(tx.mediaAsset.updateMany).not.toHaveBeenCalled();
 
-    tx.mediaAsset.findMany.mockResolvedValue([
+    tx.mediaAsset.findMany.mockImplementation(async ({ where }) => where.creatorId === "cr1" ? [
       { id: "asset1", primaryPostId: postId, currentUpstreamRevision: "m2", currentUpstreamUrl: "https://cdn.example/m2" }
-    ]);
+    ] : []);
     await store.saveForCreator("cr1", snapshot);
     expect(tx.mediaAsset.updateMany).not.toHaveBeenCalled();
   });
@@ -642,7 +646,7 @@ describe("DbCanonicalStore deletion replay", () => {
         : []
     );
     const dbMedia = { id: "asset1", primaryPostId: postId, currentUpstreamRevision: "m1", currentUpstreamUrl: null, upstreamStatus: "active" };
-    tx.mediaAsset.findMany.mockResolvedValue([dbMedia]);
+    tx.mediaAsset.findMany.mockImplementation(async ({ where }) => where.creatorId === "cr1" ? [dbMedia] : []);
     const store = new DbCanonicalStore(mockPrisma(() => ({ tx })) as never);
     await store.saveForCreator("cr1", snapshot);
     expect(tx.mediaAsset.updateMany).toHaveBeenCalledTimes(1);
@@ -654,7 +658,7 @@ describe("DbCanonicalStore deletion replay", () => {
     expect(tx.mediaAsset.createMany).not.toHaveBeenCalled();
 
     tx.mediaAsset.updateMany.mockClear();
-    tx.mediaAsset.findMany.mockResolvedValue([{ ...dbMedia, currentUpstreamRevision: "different-stored-revision" }]);
+    tx.mediaAsset.findMany.mockImplementation(async ({ where }) => where.creatorId === "cr1" ? [{ ...dbMedia, currentUpstreamRevision: "different-stored-revision" }] : []);
     await store.saveForCreator("cr1", snapshot);
     expect(tx.mediaAsset.updateMany.mock.calls[0]![0]).toMatchObject({
       where: { currentUpstreamRevision: "different-stored-revision" }, data: { upstreamStatus: "deleted" }
@@ -663,7 +667,7 @@ describe("DbCanonicalStore deletion replay", () => {
     // Model a later restored revision for this store-level replay check.
     snapshot.media.cr1!.asset1!.upstream_status = "active";
     snapshot.media.cr1!.asset1!.current.upstream_revision = "m2";
-    tx.mediaAsset.findMany.mockResolvedValue([{ ...dbMedia, currentUpstreamRevision: "m2" }]);
+    tx.mediaAsset.findMany.mockImplementation(async ({ where }) => where.creatorId === "cr1" ? [{ ...dbMedia, currentUpstreamRevision: "m2" }] : []);
     tx.mediaAsset.updateMany.mockClear();
     const replay = applySyncBatchToSnapshot(snapshot, deletion, "j3", "trace", bus);
     expect(replay).toMatchObject({ tombstones_applied: 0, idempotent_skips: 1 });

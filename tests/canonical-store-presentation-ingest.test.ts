@@ -64,12 +64,18 @@ describe("DbCanonicalStore — creator-owned relationships survive Patreon refre
         create: createPresentation
       },
       tier: {
+        create: vi.fn().mockResolvedValue({}),
+        updateMany: vi.fn().mockResolvedValue({ count: 0 }),
         deleteMany: vi.fn().mockResolvedValue({}),
-        findMany: vi.fn().mockResolvedValue([{ id: "cr_pres::relay_tier_public" }]),
+        findMany: vi.fn().mockImplementation(async ({ where }) =>
+          where.creatorId === "cr_pres" ? [{ id: "cr_pres::relay_tier_public" }] : []
+        ),
         upsert: vi.fn().mockResolvedValue({}),
         delete: vi.fn().mockResolvedValue({})
       },
       campaign: {
+        create: vi.fn().mockResolvedValue({}),
+        updateMany: vi.fn().mockResolvedValue({ count: 0 }),
         findMany: vi.fn().mockImplementation(async ({ where }) =>
           where.creatorId === "cr_pres" ? [{ id: "patreon_campaign_1" }] : []
         ),

@@ -7,6 +7,7 @@
 import type { DeadLetterQueue } from "./dlq.js";
 import { recordDlqAppend, recordRetryFailure } from "./ingest-health-metrics.js";
 import type { SyncBatchInput } from "./types.js";
+import { IngestOwnershipConflict } from "./ownership-conflict.js";
 
 export type IngestJob = {
   id: string;
@@ -75,7 +76,9 @@ export class IngestRetryQueue {
         attempt += 1;
         job.attempts = attempt;
         recordRetryFailure();
-        const message = err instanceof Error ? err.message : String(err);
+        const message = err instanceof IngestOwnershipConflict
+          ? `${err.code}: ${err.message} ${JSON.stringify(err.conflict)}`
+          : err instanceof Error ? err.message : String(err);
         if (attempt >= this.policy.max_attempts) {
           await this.dlq.append({
             job_id: job.id,

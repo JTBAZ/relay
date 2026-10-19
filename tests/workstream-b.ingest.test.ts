@@ -7,6 +7,7 @@ import request from "supertest";
 import { describe, expect, it, vi } from "vitest";
 import type { CanonicalSnapshot } from "../src/ingest/canonical-store.js";
 import { IngestService } from "../src/ingest/ingest-service.js";
+import { IngestOwnershipConflict } from "../src/ingest/ownership-conflict.js";
 import { ingestIdempotencyKey, legacyIngestIdempotencyKey } from "../src/ingest/idempotency.js";
 import { createApp } from "../src/server.js";
 
@@ -48,6 +49,32 @@ const samplePost = (revision: string) => ({
 });
 
 describe("Workstream B ingest", () => {
+  it.each(["canonical", "subscribestar"])("returns a private ownership conflict for synchronous %s ingest", async (provider) => {
+    const tempDir = await mkdtemp(join(tmpdir(), "relay-ownership-http-"));
+    const conflict = new IngestOwnershipConflict({ entity_type: "post", entity_id: "private_post_id", owner_creator_id: "private_owner_id" });
+    const failure = vi.spyOn(IngestService.prototype, "runBatch").mockRejectedValueOnce(conflict);
+    vi.stubEnv("SUBSCRIBESTAR_INGEST_ENABLED", "1");
+    vi.stubEnv("RELAY_PILOT_PATREON_ONLY", "");
+    try {
+      const { app } = createApp(baseConfig(tempDir));
+      const endpoint = provider === "canonical" ? "/api/v1/ingest/batches" : "/api/v1/subscribestar/creator/ingest/batch";
+      const body = provider === "canonical" ? { creator_id: "c1", posts: [samplePost("r1")] } : {
+        creator_id: "c1", campaign: { external_campaign_id: "profile1", name: "Main" },
+        posts: [{ external_post_id: "post1", title: "Post", published_at: "2026-10-01T00:00:00Z", upstream_revision: "r1", media: [] }]
+      };
+      const response = await request(app).post(`${endpoint}?process_sync=true`).send(body);
+      expect(response.status).toBe(409);
+      expect(response.body.error).toMatchObject({ code: conflict.code, message: conflict.message });
+      expect(JSON.stringify(response.body)).not.toContain("private_owner_id");
+      expect(JSON.stringify(response.body)).not.toContain("private_post_id");
+      expect(response.body.error.trace_id).toBeTruthy();
+    } finally {
+      failure.mockRestore();
+      vi.unstubAllEnvs();
+      await rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
   it("stops an ambiguous legacy replay before HTTP batch writes or events and ignores wire overrides", async () => {
     const tempDir = await mkdtemp(join(tmpdir(), "relay-b-replay-conflict-"));
     try {

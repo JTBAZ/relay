@@ -103,7 +103,7 @@ function createMockTx(): MockTx {
       count: vi.fn().mockResolvedValue(0),
       createMany: vi.fn().mockResolvedValue({})
     },
-    mediaAsset: { deleteMany: vi.fn().mockResolvedValue({}), createMany: vi.fn().mockResolvedValue({}) },
+    mediaAsset: { deleteMany: vi.fn().mockResolvedValue({}), createMany: vi.fn().mockResolvedValue({}), findMany: vi.fn().mockResolvedValue([]) },
     postVersion: { deleteMany: vi.fn().mockResolvedValue({}) },
     post: {
       deleteMany: vi.fn().mockResolvedValue({}),
@@ -112,6 +112,8 @@ function createMockTx(): MockTx {
       create: vi.fn().mockResolvedValue({})
     },
     tier: {
+      create: vi.fn().mockResolvedValue({}),
+      updateMany: vi.fn().mockResolvedValue({ count: 0 }),
       deleteMany: vi.fn().mockResolvedValue({}),
       createMany: vi.fn().mockResolvedValue({}),
       findMany: vi.fn().mockResolvedValue([]),
@@ -119,6 +121,8 @@ function createMockTx(): MockTx {
       delete: vi.fn().mockResolvedValue({})
     },
     campaign: {
+      create: vi.fn().mockResolvedValue({}),
+      updateMany: vi.fn().mockResolvedValue({ count: 0 }),
       deleteMany: vi.fn().mockResolvedValue({}),
       createMany: vi.fn().mockResolvedValue({}),
       findMany: vi.fn().mockResolvedValue([]),
@@ -198,11 +202,8 @@ describe("DbCanonicalStore creator-scoped operations", () => {
 
     await store.saveForCreator("creator_B", snap);
 
-    const campaignUpsert = tx.campaign.upsert;
-    expect(campaignUpsert).toHaveBeenCalledTimes(1);
-    const cArg = campaignUpsert.mock.calls[0]![0] as { create: { id: string; creatorId: string } };
-    expect(cArg.create.id).toBe("campaign_B");
-    expect(cArg.create.creatorId).toBe("creator_B");
+    expect(tx.campaign.updateMany).toHaveBeenCalledWith(expect.objectContaining({ where: { id: "campaign_B", creatorId: "creator_B" } }));
+    expect(tx.campaign.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ id: "campaign_B", creatorId: "creator_B" }) }));
 
     const postCreate = tx.post.create;
     expect(postCreate).toHaveBeenCalledTimes(1);
@@ -594,286 +595,60 @@ describe("Account hierarchy contract", () => {
 });
 
 /* ------------------------------------------------------------------ */
-/*  Test: PK conflict resolution — orphan eviction from other creators */
+/*  Test: Ownership conflicts never authorize automatic reassignment   */
 /* ------------------------------------------------------------------ */
 
-describe("PK conflict resolution (workspace migration)", () => {
-  it("evicts orphan campaigns owned by another creator before inserting", async () => {
-    const deleteCalls: { table: string; where: unknown }[] = [];
+describe("Canonical imports preserve foreign ownership", () => {
+  it.each(["campaign", "post", "mediaAsset", "tier"])("rejects a foreign-owned %s before persistence writes", async (model) => {
     const tx = createMockTx();
-
-    // Only the cross-creator conflict query finds the legacy campaign.
-    tx.campaign.findMany = vi.fn().mockImplementation(async ({ where }) =>
-      where.creatorId?.not === "creator_new" ? [{ id: "patreon_campaign_123", creatorId: "creator_old" }] : []
+    const snapshot = creatorSnapshot("creator_new", "shared_campaign");
+    snapshot.posts.creator_new!.fresh_post = post("creator_new", "fresh_post");
+    const ids: Record<string, string> = { campaign: "shared_campaign", post: "post_creator_new_1", mediaAsset: "media_creator_new_1", tier: "creator_new::relay_tier_public" };
+    tx[model].findMany.mockImplementation(async ({ where }) =>
+      where.creatorId?.not === "creator_new" ? [{ id: ids[model], creatorId: "active_owner" }] : []
     );
-    // No local patreon posts; no cross-tenant orphan post query hits
-    tx.post.findMany = vi.fn().mockResolvedValue([]);
-
-    for (const [table, methods] of Object.entries(tx)) {
-      const dm = methods.deleteMany;
-      if (dm) {
-        dm.mockImplementation(async (args?: { where?: unknown }) => {
-          deleteCalls.push({ table, where: args?.where });
-          return {};
-        });
+    const prisma = { $transaction: vi.fn(async (work: (tx: unknown) => Promise<void>) => work(tx)) };
+    await expect(new DbCanonicalStore(prisma as never).saveForCreator("creator_new", snapshot))
+      .rejects.toMatchObject({ name: "IngestOwnershipConflict", conflict: { entity_id: ids[model], owner_creator_id: "active_owner" } });
+    expect(tx[model].findMany).toHaveBeenCalledWith({ where: { id: { in: expect.arrayContaining([ids[model]]) }, creatorId: { not: "creator_new" } }, select: { id: true, creatorId: true } });
+    for (const methods of Object.values(tx)) {
+      for (const name of ["deleteMany", "delete", "createMany", "create", "update", "updateMany", "upsert"]) {
+        if (methods[name]) expect(methods[name]).not.toHaveBeenCalled();
       }
-    }
-
-    const prisma = {
-      $transaction: vi.fn(async (fn: (tx: unknown) => Promise<void>, _opts?: unknown) => fn(tx))
-    };
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
-
-    try {
-      const store = new DbCanonicalStore(prisma as never);
-      const snap = creatorSnapshot("creator_new", "patreon_campaign_123");
-      await store.saveForCreator("creator_new", snap);
-
-      // Should have deleted the orphan campaign from creator_old
-      const orphanCampaignDelete = deleteCalls.find(
-        (c) =>
-          c.table === "campaign" &&
-          JSON.stringify(c.where).includes("patreon_campaign_123") &&
-          !JSON.stringify(c.where).includes("creator_new")
-      );
-      expect(orphanCampaignDelete).toBeDefined();
-    } finally {
-      warnSpy.mockRestore();
     }
   });
 
-  it("evicts orphan posts owned by another creator and logs a warning", async () => {
-    const deleteCalls: { table: string; where: unknown }[] = [];
+  it("does not treat dev_creator as permission to reassign content", async () => {
     const tx = createMockTx();
-
-    // Campaign findMany returns no orphan campaigns
-    tx.campaign.findMany = vi.fn().mockResolvedValue([]);
-
-    // Post findMany: first call returns this creator's posts (phase 1),
-    // second call finds orphan posts from another creator (phase 2)
-    const postFindMany = vi.fn(async (args?: { where?: Record<string, unknown> }) => {
-      const where = args?.where ?? {};
-      const creatorIdFilter = where.creatorId;
-      if (
-        where.source === "PATREON" &&
-        typeof creatorIdFilter === "object" &&
-        creatorIdFilter !== null &&
-        "not" in creatorIdFilter
-      ) {
-        return [{ id: "patreon_post_999", creatorId: "creator_old" }];
-      }
-      const idIn = (where.id as { in?: string[] } | undefined)?.in;
-      if (Array.isArray(idIn)) {
-        return idIn.map((id) => ({ id }));
-      }
-      return [];
-    });
-    tx.post.findMany = postFindMany;
-
-    for (const [table, methods] of Object.entries(tx)) {
-      const dm = methods.deleteMany;
-      if (dm) {
-        dm.mockImplementation(async (args?: { where?: unknown }) => {
-          deleteCalls.push({ table, where: args?.where });
-          return {};
-        });
-      }
-    }
-
-    const prisma = {
-      $transaction: vi.fn(async (fn: (tx: unknown) => Promise<void>, _opts?: unknown) => fn(tx))
-    };
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
-
-    try {
-      const store = new DbCanonicalStore(prisma as never);
-      const snap: CanonicalSnapshot = {
-        ingest_idempotency: {},
-        campaigns: {
-          creator_new: {
-            camp_1: campaign("creator_new", "camp_1")
-          }
-        },
-        tiers: {
-          creator_new: {
-            relay_tier_public: tier("creator_new", "relay_tier_public", "camp_1")
-          }
-        },
-        posts: {
-          creator_new: {
-            patreon_post_999: post("creator_new", "patreon_post_999")
-          }
-        },
-        media: {}
-      };
-
-      await store.saveForCreator("creator_new", snap);
-
-      // Should log workspace migration warning
-      expect(warnSpy).toHaveBeenCalledWith(
-        expect.stringContaining("workspace migration")
-      );
-      expect(warnSpy).toHaveBeenCalledWith(
-        expect.stringContaining("creator_old")
-      );
-      expect(warnSpy).toHaveBeenCalledWith(
-        expect.stringContaining("creator_new")
-      );
-
-      // Orphan post's dependents should be cascade-deleted
-      const postTierDelete = deleteCalls.find(
-        (c) =>
-          c.table === "postTier" &&
-          JSON.stringify(c.where).includes("patreon_post_999")
-      );
-      expect(postTierDelete).toBeDefined();
-    } finally {
-      warnSpy.mockRestore();
-    }
+    tx.campaign.findMany.mockResolvedValue([{ id: "shared_campaign", creatorId: "dev_creator" }]);
+    const prisma = { $transaction: vi.fn(async (work: (tx: unknown) => Promise<void>) => work(tx)) };
+    await expect(new DbCanonicalStore(prisma as never).saveForCreator("creator_new", creatorSnapshot("creator_new", "shared_campaign")))
+      .rejects.toMatchObject({ name: "IngestOwnershipConflict", conflict: { owner_creator_id: "dev_creator" } });
+    expect(tx.campaign.deleteMany).not.toHaveBeenCalled();
+    expect(tx.campaign.upsert).not.toHaveBeenCalled();
   });
 
-  it("full workspace migration: same Patreon data, old → new creator_id", async () => {
-    const inserted: { table: string; data: unknown }[] = [];
-    const deleted: { table: string; where: unknown }[] = [];
+  it.each(["campaign_reference", "post_reference", "latest_tier_reference", "embedded_owner"])("rejects inconsistent %s ownership", async (kind) => {
     const tx = createMockTx();
-
-    // 1) DB campaigns for new_creator (orphan cleanup) — none. 2) Migration: campaign on another creator.
-    tx.campaign.findMany = vi.fn()
-      .mockResolvedValueOnce([])
-      .mockResolvedValueOnce([{ id: "camp_shared", creatorId: "old_creator" }])
-      .mockResolvedValue([]);
-
-    // Orphan posts exist under old creator (PATREON + SUBSCRIBESTAR mirror passes).
-    tx.post.findMany = vi.fn(async (args?: { where?: Record<string, unknown> }) => {
-      const where = args?.where ?? {};
-      const creatorIdFilter = where.creatorId;
-      if (
-        where.source === "PATREON" &&
-        typeof creatorIdFilter === "object" &&
-        creatorIdFilter !== null &&
-        "not" in creatorIdFilter
-      ) {
-        return [
-          { id: "post_shared_1", creatorId: "old_creator" },
-          { id: "post_shared_2", creatorId: "old_creator" }
-        ];
-      }
-      const idIn = (where.id as { in?: string[] } | undefined)?.in;
-      if (Array.isArray(idIn)) {
-        return idIn.map((id) => ({ id }));
-      }
-      return [];
-    });
-
-    for (const [table, methods] of Object.entries(tx)) {
-      const dm = methods.deleteMany;
-      if (dm) {
-        dm.mockImplementation(async (args?: { where?: unknown }) => {
-          deleted.push({ table, where: args?.where });
-          return {};
-        });
-      }
-      const cm = methods.createMany;
-      if (cm) {
-        cm.mockImplementation(async (args?: { data?: unknown }) => {
-          inserted.push({ table, data: args?.data });
-          return {};
-        });
-      }
+    const snapshot = creatorSnapshot("creator_new", "own_campaign");
+    if (kind === "embedded_owner") snapshot.campaigns.creator_new!.own_campaign!.creator_id = "another_owner";
+    else if (kind === "campaign_reference") {
+      snapshot.tiers.creator_new!.relay_tier_public!.campaign_id = "foreign_campaign";
+      tx.campaign.findMany.mockImplementation(async ({ where }) => where.id?.in?.includes("foreign_campaign")
+        ? [{ id: "foreign_campaign", creatorId: "another_owner" }] : []);
+    } else if (kind === "latest_tier_reference") {
+      snapshot.posts.creator_new!.post_creator_new_1!.versions.push(versionRow({ version_seq: 2, tier_ids: ["foreign_tier"] }));
+      tx.tier.findMany.mockImplementation(async ({ where }) => where.id?.in?.includes("creator_new::foreign_tier")
+        ? [{ id: "creator_new::foreign_tier", creatorId: "another_owner" }] : []);
+    } else {
+      snapshot.media.creator_new!.media_creator_new_1!.post_ids.push("foreign_post");
+      tx.post.findMany.mockImplementation(async ({ where }) => where.id?.in?.includes("foreign_post")
+        ? [{ id: "foreign_post", creatorId: "another_owner" }] : []);
     }
-    tx.campaign.upsert = vi.fn().mockImplementation(async (args?: { create?: unknown }) => {
-      inserted.push({ table: "campaign", data: args?.create });
-      return {};
-    });
-    tx.tier.upsert = vi.fn().mockImplementation(async (args?: { create?: unknown }) => {
-      inserted.push({ table: "tier", data: args?.create });
-      return {};
-    });
-    tx.post.create = vi.fn().mockImplementation(async (args?: { data?: unknown }) => {
-      inserted.push({ table: "post", data: args?.data });
-      return {};
-    });
-
-    const prisma = {
-      $transaction: vi.fn(async (fn: (tx: unknown) => Promise<void>, _opts?: unknown) => fn(tx))
-    };
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
-
-    try {
-      const store = new DbCanonicalStore(prisma as never);
-      const snap: CanonicalSnapshot = {
-        ingest_idempotency: {},
-        campaigns: {
-          new_creator: { camp_shared: campaign("new_creator", "camp_shared") }
-        },
-        tiers: {
-          new_creator: { relay_tier_public: tier("new_creator", "relay_tier_public", "camp_shared") }
-        },
-        posts: {
-          new_creator: {
-            post_shared_1: post("new_creator", "post_shared_1"),
-            post_shared_2: post("new_creator", "post_shared_2")
-          }
-        },
-        media: {}
-      };
-
-      await store.saveForCreator("new_creator", snap);
-
-      // Campaign should be upserted under new_creator
-      const campaignInsert = inserted.find((i) => i.table === "campaign");
-      expect(campaignInsert).toBeDefined();
-      const campData = campaignInsert!.data as { creatorId: string };
-      expect(campData.creatorId).toBe("new_creator");
-
-      // Posts should be inserted under new_creator
-      const postInserts = inserted.filter((i) => i.table === "post");
-      expect(postInserts).toHaveLength(2);
-      for (const pi of postInserts) {
-        expect((pi.data as { creatorId: string }).creatorId).toBe("new_creator");
-      }
-
-      // No constraint errors (if we got here, the mocks accepted everything)
-    } finally {
-      warnSpy.mockRestore();
-    }
-  });
-
-  it("does nothing when there are no PK conflicts", async () => {
-    const deleteCalls: { table: string; where: unknown }[] = [];
-    const tx = createMockTx();
-
-    // No orphans anywhere
-    tx.campaign.findMany = vi.fn().mockResolvedValue([]);
-    tx.post.findMany = vi.fn().mockResolvedValue([]);
-
-    for (const [table, methods] of Object.entries(tx)) {
-      const dm = methods.deleteMany;
-      if (dm) {
-        dm.mockImplementation(async (args?: { where?: unknown }) => {
-          deleteCalls.push({ table, where: args?.where });
-          return {};
-        });
-      }
-    }
-
-    const prisma = {
-      $transaction: vi.fn(async (fn: (tx: unknown) => Promise<void>, _opts?: unknown) => fn(tx))
-    };
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
-
-    try {
-      const store = new DbCanonicalStore(prisma as never);
-      const snap = creatorSnapshot("creator_clean", "campaign_clean");
-      await store.saveForCreator("creator_clean", snap);
-
-      // No migration warnings
-      const migrationWarns = warnSpy.mock.calls.filter((c) =>
-        String(c[0]).includes("workspace migration")
-      );
-      expect(migrationWarns).toHaveLength(0);
-    } finally {
-      warnSpy.mockRestore();
-    }
+    const prisma = { $transaction: vi.fn(async (work: (tx: unknown) => Promise<void>) => work(tx)) };
+    await expect(new DbCanonicalStore(prisma as never).saveForCreator("creator_new", snapshot))
+      .rejects.toMatchObject({ name: "IngestOwnershipConflict", conflict: { owner_creator_id: "another_owner" } });
+    expect(tx.ingestIdempotencyKey.deleteMany).not.toHaveBeenCalled();
+    expect(tx.post.deleteMany).not.toHaveBeenCalled();
   });
 });

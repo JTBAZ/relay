@@ -81,6 +81,7 @@ import {
 import { publishRelayPostToBluesky } from "./extension/bluesky-publish-service.js";
 import { evaluateIngestHealthGates } from "./ingest/ingest-health-metrics.js";
 import { IngestService } from "./ingest/ingest-service.js";
+import { IngestOwnershipConflict } from "./ingest/ownership-conflict.js";
 import { IngestRetryQueue } from "./ingest/retry-queue.js";
 import { SyncWatermarkStore } from "./ingest/sync-watermark-store.js";
 import { DbSyncWatermarkStore } from "./ingest/sync-watermark-store-db.js";
@@ -5049,6 +5050,10 @@ export function createApp(config: AppConfig): CreateAppResult {
       } catch {
         /* best-effort */
       }
+      if (err instanceof IngestOwnershipConflict) {
+        serverLog.error({ err, traceId }, "Patreon ingest ownership conflict");
+        return res.status(409).json(errorEnvelope(err.code, err.message, traceId));
+      }
       return res
         .status(notFound ? 404 : 502)
         .json(errorEnvelope(notFound ? "NOT_FOUND" : "PATREON_SCRAPE_ERROR", msg, traceId));
@@ -5420,6 +5425,9 @@ export function createApp(config: AppConfig): CreateAppResult {
         return res.status(200).json(successEnvelope(result, traceId));
       } catch (err) {
         serverLog.error({ err, traceId }, "Synchronous ingest batch failed");
+        if (err instanceof IngestOwnershipConflict) {
+          return res.status(409).json(errorEnvelope(err.code, err.message, traceId));
+        }
         return res.status(500).json(errorEnvelope("INTERNAL", "Unable to apply ingest batch.", traceId));
       }
     }
@@ -5531,6 +5539,10 @@ export function createApp(config: AppConfig): CreateAppResult {
       }
       return res.status(200).json(successEnvelope(ingestResult, traceId));
     } catch (ingestErr) {
+      if (ingestErr instanceof IngestOwnershipConflict) {
+        serverLog.error({ err: ingestErr, traceId }, "SubscribeStar ingest ownership conflict");
+        return res.status(409).json(errorEnvelope(ingestErr.code, ingestErr.message, traceId));
+      }
       return res
         .status(502)
         .json(errorEnvelope("INGEST_ERROR", (ingestErr as Error).message, traceId));
@@ -5665,6 +5677,10 @@ export function createApp(config: AppConfig): CreateAppResult {
       );
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
+      if (e instanceof IngestOwnershipConflict) {
+        serverLog.error({ err: e, traceId }, "SubscribeStar paged ingest ownership conflict");
+        return res.status(409).json(errorEnvelope(e.code, e.message, traceId));
+      }
       return res
         .status(502)
         .json(errorEnvelope("SUBSCRIBESTAR_GRAPHQL_SYNC_ERROR", msg, traceId));

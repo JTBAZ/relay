@@ -5,10 +5,25 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { FileDeadLetterQueue } from "../src/ingest/dlq.js";
 import { resetIngestHealthMetrics } from "../src/ingest/ingest-health-metrics.js";
 import { IngestRetryQueue } from "../src/ingest/retry-queue.js";
+import { IngestOwnershipConflict } from "../src/ingest/ownership-conflict.js";
 
 describe("Workstream B retry and DLQ", () => {
   beforeEach(() => {
     resetIngestHealthMetrics();
+  });
+
+  it("retains ownership diagnostics and the original batch after bounded retries", async () => {
+    const append = vi.fn().mockResolvedValue(undefined);
+    const conflict = new IngestOwnershipConflict({ entity_type: "campaign", entity_id: "shared", owner_creator_id: "original_owner" });
+    const runBatch = vi.fn().mockRejectedValue(conflict);
+    const queue = new IngestRetryQueue({ max_attempts: 2, base_delay_ms: 0 }, runBatch, { append, readAll: vi.fn(), count: vi.fn() }, async () => {});
+    const batch = { creator_id: "incoming", posts: [] };
+    queue.enqueue({ id: "ownership_job", creator_id: "incoming", trace_id: "trace", batch, attempts: 0 });
+    await queue.drain();
+    expect(runBatch).toHaveBeenCalledTimes(2);
+    expect(append).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({
+      batch, attempts: 2, error_message: expect.stringContaining('"owner_creator_id":"original_owner"')
+    }));
   });
 
   it("exhausts retries and records dead-letter entry", async () => {

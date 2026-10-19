@@ -5,6 +5,7 @@ import { dirname, join } from "node:path";
 
 import { runSubscribeStarPostsGraphqlPagedIngest } from "../src/subscribestar/run-subscribestar-posts-graphql-ingest.js";
 import type { ApplyBatchResult, SyncBatchInput } from "../src/ingest/types.js";
+import { IngestOwnershipConflict } from "../src/ingest/ownership-conflict.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -25,6 +26,16 @@ function loadFixture(name: string): unknown {
 }
 
 describe("runSubscribeStarPostsGraphqlPagedIngest", () => {
+  it("keeps ownership conflicts typed for HTTP conflict handling", async () => {
+    process.env.SUBSCRIBESTAR_INGEST_POSTS_GRAPHQL_QUERY = "query { contentProviderProfile { id } }";
+    const conflict = new IngestOwnershipConflict({ entity_type: "post", entity_id: "shared", owner_creator_id: "owner" });
+    await expect(runSubscribeStarPostsGraphqlPagedIngest({ creator_id: "incoming", traceId: "trace", max_pages: 1, deps: {
+      graphqlUrl: "https://subscribestar.adult/api/graphql/v1", getAccessToken: async () => "token",
+      fetchImpl: async () => new Response(JSON.stringify(loadFixture("subscribestar-hypothesis-posts-graphql.json")), { status: 200, headers: { "content-type": "application/json" } }),
+      runBatch: async () => { throw conflict; }
+    } })).rejects.toBe(conflict);
+  });
+
   afterEach(() => {
     delete process.env.SUBSCRIBESTAR_INGEST_POSTS_GRAPHQL_QUERY;
   });

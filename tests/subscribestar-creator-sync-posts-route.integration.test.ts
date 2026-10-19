@@ -52,6 +52,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { TokenEncryption } from "../src/lib/crypto.js";
 import { createApp } from "../src/server.js";
 import type { ApplyBatchResult } from "../src/ingest/types.js";
+import { IngestOwnershipConflict } from "../src/ingest/ownership-conflict.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -180,6 +181,19 @@ describe("SubscribeStar creator sync/posts HTTP route — integration-shaped env
         where: { creatorId_provider: { creatorId: string } };
       };
       expect(upsertArgs.where.creatorId_provider.creatorId).toBe(creatorId);
+
+      const conflict = new IngestOwnershipConflict({ entity_type: "post", entity_id: "private_post", owner_creator_id: "private_owner" });
+      runBatchSpy.mockRejectedValueOnce(conflict);
+      fetchMock.mockResolvedValue(new Response(JSON.stringify(gqlFixtureRaw), {
+        status: 200, headers: { "content-type": "application/json" }
+      }));
+      const blocked = await request(app).post("/api/v1/subscribestar/creator/sync/posts")
+        .send({ creator_id: creatorId, max_pages: 5 });
+      expect(blocked.status).toBe(409);
+      expect(blocked.body.error).toMatchObject({ code: conflict.code, message: conflict.message });
+      expect(JSON.stringify(blocked.body)).not.toContain("private_owner");
+      expect(JSON.stringify(blocked.body)).not.toContain("private_post");
+      expect(creatorProviderSyncStateUpsertMock).toHaveBeenCalledOnce();
     } finally {
       runBatchSpy.mockRestore();
     }

@@ -7,6 +7,7 @@ import { applySyncBatchToSnapshot } from "../src/ingest/apply-batch.js";
 import { IngestService } from "../src/ingest/ingest-service.js";
 import { InMemoryEventBus } from "../src/events/event-bus.js";
 import { ingestIdempotencyKey } from "../src/ingest/idempotency.js";
+import { IngestOwnershipConflict } from "../src/ingest/ownership-conflict.js";
 import type { SyncBatchInput } from "../src/ingest/types.js";
 
 // Opt in only against a disposable loopback database; never use the ordinary DATABASE_URL.
@@ -101,7 +102,7 @@ describe.skipIf(!targetUrl)("DbCanonicalStore concurrent PostgreSQL imports", ()
     }
     expect(loaded.posts[creatorId]![b.posts![0]!.post_id]!.source).toBe(source === "substar" ? "SUBSCRIBESTAR" : "PATREON");
     expect(bus.getAll()).toHaveLength(1);
-  });
+  }, 30_000);
 
   it.each(["apply", "save", "commit"] as const)("rolls back a failed %s and releases the creator for a waiting import and retry", async (failure) => {
     const creatorId = `rollback_${randomUUID()}`;
@@ -145,7 +146,7 @@ describe.skipIf(!targetUrl)("DbCanonicalStore concurrent PostgreSQL imports", ()
     expect(await service.runBatch(a, "retry")).toMatchObject({ posts_written: 1 });
     expect(Object.keys((await store.loadForCreator(creatorId)).posts[creatorId]!)).toHaveLength(2);
     expect(await service.runBatch(a, "replay")).toMatchObject({ posts_written: 0, events_emitted: 0 });
-  });
+  }, 30_000);
 
   it("lets another creator finish while the first creator is reserved", async () => {
     const creatorA = `creator_a_${randomUUID()}`;
@@ -174,5 +175,101 @@ describe.skipIf(!targetUrl)("DbCanonicalStore concurrent PostgreSQL imports", ()
     await firstOperation;
     expect(Object.keys((await store.loadForCreator(creatorA)).posts[creatorA]!)).toHaveLength(1);
     expect((await store.loadForCreator(creatorA)).posts[creatorB]).toBeUndefined();
-  });
+  }, 30_000);
+
+  it.each(["campaign", "post", "media", "native_post", "native_media"])("preserves both creators and dependent records after a %s conflict", async (kind) => {
+    const owner = `owner_${randomUUID()}`;
+    const target = `target_${randomUUID()}`;
+    const a = batch(owner, "original");
+    const b = batch(target, "existing");
+    const assetId = `asset_${randomUUID()}`;
+    a.posts![0]!.media = [{ media_id: assetId, upstream_revision: "m1" }];
+    a.tiers = [{ tier_id: "paid", campaign_id: a.campaigns![0]!.campaign_id, title: "Paid", upstream_updated_at: "2026-10-01T00:00:00Z" }];
+    a.posts![0]!.tier_ids = ["paid"];
+    const store = new DbCanonicalStore(first);
+    const service = new IngestService(store, new InMemoryEventBus());
+    await service.runBatch(a, "seed_a");
+    await service.runBatch(b, "seed_b");
+    const postId = a.posts![0]!.post_id;
+    if (kind === "native_post") await first.post.update({ where: { id: postId }, data: { source: "RELAY" } });
+    if (kind === "native_media") await first.mediaAsset.update({ where: { id: assetId }, data: { ingestOrigin: "RELAY_UPLOAD" } });
+    const linkId = `link_${randomUUID()}`;
+    await first.platformInstance.create({ data: { id: linkId, creatorId: owner, postId, destination: "x", externalUrl: "https://x.com/artist/status/123", linkSource: "manual_url_confirm" } });
+    await first.externalPostMetricSnapshot.create({ data: { creatorId: owner, postId, platformInstanceId: linkId, destination: "x", externalUrl: "https://x.com/artist/status/123", metricType: "views", value: 42, source: "manual" } });
+    await first.postPresentation.create({ data: { creatorId: owner, postId, relayTitle: "Keep this title" } });
+    const state = () => Promise.all([
+      store.loadForCreator(owner), store.loadForCreator(target),
+      first.platformInstance.findMany({ where: { creatorId: owner }, orderBy: { id: "asc" } }),
+      first.externalPostMetricSnapshot.findMany({ where: { creatorId: owner }, orderBy: { id: "asc" } }),
+      first.postPresentation.findMany({ where: { creatorId: owner } }),
+      first.creativeWorkMember.findMany({ where: { creatorId: owner } }),
+      first.postTier.findMany({ where: { post: { creatorId: owner } } })
+    ]);
+    const before = await state();
+    const incoming = batch(target, "fresh");
+    if (kind === "campaign") incoming.campaigns = a.campaigns;
+    else if (kind.endsWith("post") || kind === "post") incoming.posts!.push({ ...a.posts![0]!, media: [], tier_ids: [] });
+    else incoming.posts![0]!.media = [{ media_id: assetId, upstream_revision: "m2" }];
+    await expect(service.runBatch(incoming, "conflict")).rejects.toBeInstanceOf(IngestOwnershipConflict);
+    expect(await state()).toEqual(before);
+    expect((await store.loadForCreator(target)).ingest_idempotency[marker(incoming)]).toBeUndefined();
+  }, 30_000);
+
+  it.each(["campaign", "tier", "post", "media", "campaign_reference"] as const)("rejects another creator winning a new %s ID after preflight", async (kind) => {
+    const target = `race_${randomUUID()}`;
+    const owner = kind === "tier" ? `${target}::tier` : `owner_${randomUUID()}`;
+    const a = batch(owner, "a");
+    const b = batch(target, "b");
+    const shared = `shared_${randomUUID()}`;
+    if (kind === "campaign") a.campaigns![0]!.campaign_id = b.campaigns![0]!.campaign_id = shared;
+    if (kind === "post") a.posts![0]!.post_id = b.posts![0]!.post_id = shared;
+    if (kind === "media") {
+      a.posts![0]!.media = b.posts![0]!.media = [{ media_id: shared, upstream_revision: "m1" }];
+    }
+    if (kind === "tier") {
+      a.tiers = [{ tier_id: "part", title: "Owner tier", upstream_updated_at: "2026-10-01T00:00:00Z" }];
+      b.tiers = [{ tier_id: "tier::part", title: "Incoming tier", upstream_updated_at: "2026-10-01T00:00:00Z" }];
+    }
+    if (kind === "campaign_reference") {
+      a.campaigns![0]!.campaign_id = shared;
+      b.tiers = [{ tier_id: "paid", campaign_id: shared, title: "Incoming tier", upstream_updated_at: "2026-10-01T00:00:00Z" }];
+    }
+    const reachedWrite = gate();
+    const releaseWrite = gate();
+    const model = kind === "media" ? "mediaAsset" : kind === "campaign_reference" ? "tier" : kind;
+    const method = kind === "campaign" || kind === "tier" || kind === "campaign_reference" ? "updateMany" : kind === "post" ? "create" : "createMany";
+    const intercepted = new Proxy(second, {
+      get(client, property) {
+        if (property !== "$transaction") return Reflect.get(client, property);
+        return (work: (tx: Prisma.TransactionClient) => Promise<void>, options: object) => client.$transaction(async (tx) => work(new Proxy(tx, {
+          get(transaction, key) {
+            if (key !== model) return Reflect.get(transaction, key);
+            const delegate = Reflect.get(transaction, key);
+            return new Proxy(delegate, { get(table, operation) {
+              if (operation !== method) return Reflect.get(table, operation);
+              return async (args: unknown) => { reachedWrite.open(); await releaseWrite.promise; return Reflect.apply(Reflect.get(table, operation), table, [args]); };
+            } });
+          }
+        })), options);
+      }
+    });
+    const losingOperation = new IngestService(new DbCanonicalStore(intercepted), new InMemoryEventBus()).runBatch(b, "race_b");
+    const outcome = losingOperation.then(() => null, (error: unknown) => error);
+    await reachedWrite.promise;
+    try {
+      await new IngestService(new DbCanonicalStore(first), new InMemoryEventBus()).runBatch(a, "race_a");
+    } finally {
+      releaseWrite.open();
+      await outcome;
+    }
+    expect(await outcome).toBeInstanceOf(IngestOwnershipConflict);
+    const store = new DbCanonicalStore(first);
+    expect(Object.keys((await store.loadForCreator(owner)).posts[owner]!)).toHaveLength(1);
+    const targetState = await store.loadForCreator(target);
+    expect(targetState.posts[target]).toBeUndefined();
+    expect(targetState.campaigns[target]).toBeUndefined();
+    expect(targetState.ingest_idempotency[marker(b)]).toBeUndefined();
+    if (kind === "campaign") expect(await first.campaign.findUnique({ where: { id: shared } })).toMatchObject({ creatorId: owner });
+    if (kind === "tier") expect(await first.tier.findUnique({ where: { id: `${target}::tier::part` } })).toMatchObject({ creatorId: owner, title: "Owner tier" });
+  }, 30_000);
 });

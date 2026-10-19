@@ -16,6 +16,7 @@ import {
 } from "@prisma/client";
 import { ensureDefaultCreativeWorkForPost } from "../analytics/creative-work-service.js";
 import { ensurePatreonPlatformInstanceForIngestedPost } from "../analytics/platform-instance-service.js";
+import { IngestOwnershipConflict } from "./ownership-conflict.js";
 import type {
   CampaignRow,
   CanonicalSnapshot,
@@ -335,10 +336,61 @@ export class DbCanonicalStore implements CanonicalStore {
   // Existing imported posts are updated in place so their creator-owned relationships survive.
   // ---------------------------------------------------------------------------
   public async saveForCreator(creatorId: string, snapshot: CanonicalSnapshot): Promise<void> {
-    await this.prisma.$transaction(
-      (tx) => this.saveForCreatorInTransaction(creatorId, snapshot, tx),
-      { timeout: 30_000 }
-    );
+    try {
+      await this.prisma.$transaction(
+        (tx) => this.saveForCreatorInTransaction(creatorId, snapshot, tx),
+        { timeout: 30_000, isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted }
+      );
+    } catch (error) {
+      await this.checkOwnershipAfterUniqueConflict(error, creatorId, snapshot);
+      throw error;
+    }
+  }
+
+  private async assertNoForeignOwners(creatorId: string, snapshot: CanonicalSnapshot, db: Prisma.TransactionClient): Promise<void> {
+    const campaigns = Object.values(snapshot.campaigns[creatorId] ?? {});
+    const tiers = Object.values(snapshot.tiers[creatorId] ?? {});
+    const posts = Object.values(snapshot.posts[creatorId] ?? {});
+    const media = Object.values(snapshot.media[creatorId] ?? {});
+    const groups = [
+      { kind: "campaign", rows: campaigns.map((r) => ({ id: r.campaign_id, owner: r.creator_id })) },
+      { kind: "tier", rows: tiers.map((r) => ({ id: tierStableId(creatorId, r.tier_id), owner: r.creator_id })) },
+      { kind: "post", rows: posts.map((r) => ({ id: r.post_id, owner: r.creator_id })) },
+      { kind: "media", rows: media.map((r) => ({ id: r.media_id, owner: r.creator_id })) }
+    ] as const;
+    for (const group of groups) {
+      for (const row of group.rows) {
+        if (row.owner !== creatorId) {
+          throw new IngestOwnershipConflict({ entity_type: group.kind, entity_id: row.id, owner_creator_id: row.owner });
+        }
+      }
+    }
+    const ids = groups.map((group) => new Set(group.rows.map((r) => r.id)));
+    for (const tier of tiers) if (tier.campaign_id) ids[0]!.add(tier.campaign_id);
+    for (const post of posts) {
+      const version = deduplicatePostVersionsForSave(post.versions).at(-1) ?? post.current;
+      for (const tierId of version.tier_ids) ids[1]!.add(tierStableId(creatorId, tierId));
+    }
+    for (const asset of media) for (const postId of asset.post_ids) ids[2]!.add(postId);
+    const where = (index: number) => ({ id: { in: [...ids[index]!] }, creatorId: { not: creatorId } });
+    const select = { id: true, creatorId: true } as const;
+    const owners = await Promise.all([
+      ids[0]!.size ? db.campaign.findMany({ where: where(0), select }) : [],
+      ids[1]!.size ? db.tier.findMany({ where: where(1), select }) : [],
+      ids[2]!.size ? db.post.findMany({ where: where(2), select }) : [],
+      ids[3]!.size ? db.mediaAsset.findMany({ where: where(3), select }) : []
+    ]);
+    for (let index = 0; index < owners.length; index++) {
+      const owner = owners[index]!.find((row) => row.creatorId !== creatorId);
+      if (owner) throw new IngestOwnershipConflict({ entity_type: groups[index]!.kind, entity_id: owner.id, owner_creator_id: owner.creatorId });
+    }
+  }
+
+  private async checkOwnershipAfterUniqueConflict(error: unknown, creatorId: string, snapshot: CanonicalSnapshot): Promise<void> {
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+      // A different creator can claim a previously unused ID after our preflight.
+      await this.assertNoForeignOwners(creatorId, snapshot, this.prisma);
+    }
   }
 
   private async saveForCreatorInTransaction(
@@ -361,6 +413,7 @@ export class DbCanonicalStore implements CanonicalStore {
       (Object.values(tierMap) as TierRow[]).map((r) => tierStableId(r.creator_id, r.tier_id))
     );
     const snapCampaignIds = new Set(Object.keys(campaignMap));
+    await this.assertNoForeignOwners(creatorId, snapshot, tx);
 
     async function mirrorLane(
       postSource: PostSource,
@@ -419,101 +472,6 @@ export class DbCanonicalStore implements CanonicalStore {
     const preservePostIdsSs = laneSubscribestar.preservePostIds;
     await tx.ingestIdempotencyKey.deleteMany({ where: { creatorId } });
 
-    // --- Cross-tenant reassign: same upstream PKs must land on the saving creator. ---
-    const incomingCampaignIds = (Object.values(campaignMap) as CampaignRow[]).map((r) => r.campaign_id);
-    const incomingPostIds = (Object.values(postMap) as PostRow[]).map((r) => r.post_id);
-    const incomingMediaIds = (Object.values(mediaMap) as MediaRow[]).map((r) => r.media_id);
-    const incomingTierIds = (Object.values(tierMap) as TierRow[]).map(
-      (r) => tierStableId(r.creator_id, r.tier_id)
-    );
-
-    if (incomingPostIds.length > 0) {
-      for (const mirrorSource of [PostSource.PATREON, PostSource.SUBSCRIBESTAR] as const) {
-        const orphanPosts = await tx.post.findMany({
-          where: {
-            id: { in: incomingPostIds },
-            creatorId: { not: creatorId },
-            source: mirrorSource
-          },
-          select: { id: true, creatorId: true }
-        });
-        if (orphanPosts.length === 0) {
-          continue;
-        }
-        const ingestOriginXfer =
-          mirrorSource === PostSource.PATREON
-            ? MediaIngestOrigin.PATREON
-            : MediaIngestOrigin.SUBSCRIBESTAR;
-        const orphanPostIds = orphanPosts.map((p) => p.id);
-        const orphanCreators = [...new Set(orphanPosts.map((p) => p.creatorId))];
-        // eslint-disable-next-line no-console -- ops visibility for workspace migration
-        console.warn(
-          `[canonical-store-db] workspace migration: reassigning ${orphanPosts.length} post(s) ` +
-            `(${mirrorSource}) from ${orphanCreators.join(", ")} → ${creatorId}`
-        );
-        await tx.postTier.deleteMany({ where: { postId: { in: orphanPostIds } } });
-        await tx.mediaAsset.deleteMany({
-          where: {
-            primaryPostId: { in: orphanPostIds },
-            ingestOrigin: ingestOriginXfer
-          }
-        });
-        await tx.postVersion.deleteMany({ where: { postId: { in: orphanPostIds } } });
-        await tx.post.deleteMany({ where: { id: { in: orphanPostIds } } });
-      }
-    }
-
-    if (incomingMediaIds.length > 0) {
-      for (const mirrorSource of [PostSource.PATREON, PostSource.SUBSCRIBESTAR] as const) {
-        await tx.mediaAsset.deleteMany({
-          where: {
-            id: { in: incomingMediaIds },
-            creatorId: { not: creatorId },
-            post: { source: mirrorSource }
-          }
-        });
-      }
-    }
-
-    if (incomingTierIds.length > 0) {
-      await tx.tier.deleteMany({
-        where: { id: { in: incomingTierIds }, creatorId: { not: creatorId } }
-      });
-    }
-
-    if (incomingCampaignIds.length > 0) {
-      const orphanCampaigns = await tx.campaign.findMany({
-        where: { id: { in: incomingCampaignIds }, creatorId: { not: creatorId } },
-        select: { id: true, creatorId: true }
-      });
-      if (orphanCampaigns.length > 0) {
-        const orphanCampIds = orphanCampaigns.map((c) => c.id);
-        for (const mirrorSource of [PostSource.PATREON, PostSource.SUBSCRIBESTAR] as const) {
-          const leftoverPosts = await tx.post.findMany({
-            where: { campaignId: { in: orphanCampIds }, source: mirrorSource },
-            select: { id: true }
-          });
-          if (leftoverPosts.length === 0) continue;
-          const ingestOriginXfer =
-            mirrorSource === PostSource.PATREON
-              ? MediaIngestOrigin.PATREON
-              : MediaIngestOrigin.SUBSCRIBESTAR;
-          const lpIds = leftoverPosts.map((p) => p.id);
-          await tx.postTier.deleteMany({ where: { postId: { in: lpIds } } });
-          await tx.mediaAsset.deleteMany({
-            where: {
-              primaryPostId: { in: lpIds },
-              ingestOrigin: ingestOriginXfer
-            }
-          });
-          await tx.postVersion.deleteMany({ where: { postId: { in: lpIds } } });
-          await tx.post.deleteMany({ where: { id: { in: lpIds } } });
-        }
-        await tx.tier.deleteMany({ where: { campaignId: { in: orphanCampIds } } });
-        await tx.campaign.deleteMany({ where: { id: { in: orphanCampIds } } });
-      }
-    }
-
     // --- Idempotency + upsert campaigns/tiers, then synchronize changed imported posts + media. ---
     const idemEntries = Object.entries(snapshot.ingest_idempotency);
     if (idemEntries.length > 0) {
@@ -529,47 +487,30 @@ export class DbCanonicalStore implements CanonicalStore {
 
     const campaignRows = Object.values(campaignMap) as CampaignRow[];
     for (const row of campaignRows) {
-      await tx.campaign.upsert({
-        where: { id: row.campaign_id },
-        create: {
-          id: row.campaign_id,
-          creatorId: row.creator_id,
-          name: row.name,
-          upstreamUpdatedAt: new Date(row.upstream_updated_at),
-          versionSeq: row.version_seq
-        },
-        update: {
-          name: row.name,
-          upstreamUpdatedAt: new Date(row.upstream_updated_at),
-          versionSeq: row.version_seq
-        }
+      const data = { name: row.name, upstreamUpdatedAt: new Date(row.upstream_updated_at), versionSeq: row.version_seq };
+      const updated = await tx.campaign.updateMany({
+        where: { id: row.campaign_id, creatorId },
+        data
       });
+      if (updated.count === 0) {
+        await tx.campaign.create({ data: { ...data, id: row.campaign_id, creatorId } });
+      }
     }
 
     const tierRows = Object.values(tierMap) as TierRow[];
     for (const row of tierRows) {
       const id = tierStableId(row.creator_id, row.tier_id);
-      await tx.tier.upsert({
-        where: { id },
-        create: {
-          id,
-          creatorId: row.creator_id,
-          relayTierId: row.tier_id,
-          providerTierId: row.tier_id,
-          campaignId: row.campaign_id ?? null,
-          title: row.title,
-          amountCents: row.amount_cents ?? null,
-          upstreamUpdatedAt: new Date(row.upstream_updated_at),
-          versionSeq: row.version_seq
-        },
-        update: {
-          title: row.title,
-          amountCents: row.amount_cents ?? null,
-          campaignId: row.campaign_id ?? null,
-          upstreamUpdatedAt: new Date(row.upstream_updated_at),
-          versionSeq: row.version_seq
-        }
+      const data = {
+        title: row.title, amountCents: row.amount_cents ?? null, campaignId: row.campaign_id ?? null,
+        upstreamUpdatedAt: new Date(row.upstream_updated_at), versionSeq: row.version_seq
+      };
+      const updated = await tx.tier.updateMany({
+        where: { id, creatorId },
+        data
       });
+      if (updated.count === 0) {
+        await tx.tier.create({ data: { ...data, id, creatorId, relayTierId: row.tier_id, providerTierId: row.tier_id } });
+      }
     }
 
     const mirrorLanes: Array<{
@@ -758,6 +699,8 @@ export class DbCanonicalStore implements CanonicalStore {
         linkedAt: earliestPublishedAt(post)
       });
     }
+    // Recheck references after FK writes, which may have waited for another creator's commit.
+    await this.assertNoForeignOwners(creatorId, snapshot, tx);
   }
 
   // ---------------------------------------------------------------------------
@@ -779,12 +722,18 @@ export class DbCanonicalStore implements CanonicalStore {
     creatorId: string,
     fn: (snapshot: CanonicalSnapshot) => void | Promise<void>
   ): Promise<void> {
-    await this.prisma.$transaction(async (tx) => {
-      // Reserve before reading so another import cannot save a stale creator snapshot.
-      await tx.$queryRaw`SELECT 1 AS locked FROM pg_advisory_xact_lock(hashtextextended(${"canonical-store:" + creatorId}, 0))`;
-      const snapshot = await this.loadImpl(creatorId, tx);
-      await fn(snapshot);
-      await this.saveForCreatorInTransaction(creatorId, snapshot, tx);
-    }, { timeout: 30_000, isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted });
+    let snapshot: CanonicalSnapshot | undefined;
+    try {
+      await this.prisma.$transaction(async (tx) => {
+        // Reserve before reading so another import cannot save a stale creator snapshot.
+        await tx.$queryRaw`SELECT 1 AS locked FROM pg_advisory_xact_lock(hashtextextended(${"canonical-store:" + creatorId}, 0))`;
+        snapshot = await this.loadImpl(creatorId, tx);
+        await fn(snapshot);
+        await this.saveForCreatorInTransaction(creatorId, snapshot, tx);
+      }, { timeout: 30_000, isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted });
+    } catch (error) {
+      if (snapshot) await this.checkOwnershipAfterUniqueConflict(error, creatorId, snapshot);
+      throw error;
+    }
   }
 }
