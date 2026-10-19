@@ -71,7 +71,9 @@ function mockTx() {
       delete: vi.fn().mockResolvedValue({})
     },
     ingestIdempotencyKey: { deleteMany: vi.fn().mockResolvedValue({}), createMany: vi.fn().mockResolvedValue({}) },
+    postPresentation: { findMany: vi.fn().mockResolvedValue([]), create: vi.fn().mockResolvedValue({}) },
     creativeWorkMember: {
+      findMany: vi.fn().mockResolvedValue([]),
       findUnique: vi.fn().mockResolvedValue({ id: "cwm_existing", creativeWorkId: "cw_existing" }),
       create: vi.fn().mockResolvedValue({})
     },
@@ -378,7 +380,7 @@ describe("DbCanonicalStore deletion replay", () => {
       where: { currentUpstreamRevision: "different-stored-revision" }, data: { upstreamStatus: "deleted" }
     });
 
-    // Model a later restored revision without implementing ticket 03's restoration logic.
+    // Model a later restored revision for this store-level replay check.
     snapshot.media.cr1!.asset1!.upstream_status = "active";
     snapshot.media.cr1!.asset1!.current.upstream_revision = "m2";
     tx.mediaAsset.findMany.mockResolvedValue([{ ...dbMedia, currentUpstreamRevision: "m2" }]);
@@ -391,5 +393,40 @@ describe("DbCanonicalStore deletion replay", () => {
     snapshot.media.cr1!.asset1!.upstream_status = "deleted";
     tx.mediaAsset.updateMany.mockResolvedValueOnce({ count: 0 });
     await expect(store.saveForCreator("cr1", snapshot)).rejects.toThrow("Media changed while applying deletion");
+  });
+});
+
+describe("DbCanonicalStore fresh media reactivation", () => {
+  it.each(["PATREON", "SUBSCRIBESTAR"] as const)("saves active m2 and its history with a fresh %s post revision", async (source) => {
+    const { tx } = mockTx();
+    const postId = source === "PATREON" ? "patreon_post_123" : "substar_post_123";
+    const snapshot: CanonicalSnapshot = { ingest_idempotency: {}, campaigns: {}, tiers: {}, posts: {}, media: {} };
+    const bus = new InMemoryEventBus();
+    const input = {
+      creator_id: "cr1",
+      campaigns: [{ campaign_id: "camp1", name: "Main", upstream_updated_at: "2026-10-01T00:00:00.000Z" }],
+      posts: [{ post_id: postId, title: "Original", published_at: "2026-10-01T00:00:00.000Z", tag_ids: [], tier_ids: [], upstream_revision: "r1",
+        media: [{ media_id: "asset1", upstream_revision: "m1" }] }]
+    };
+    applySyncBatchToSnapshot(snapshot, input, "j1", "trace", bus);
+    applySyncBatchToSnapshot(snapshot, {
+      creator_id: "cr1", tombstones: [{ entity_type: "media", id: "asset1", deleted_at: "2026-10-02T00:00:00.000Z" }]
+    }, "j2", "trace", bus);
+    input.posts[0]!.upstream_revision = "r2";
+    input.posts[0]!.media[0]!.upstream_revision = "m2";
+    applySyncBatchToSnapshot(snapshot, input, "j3", "trace", bus);
+    tx.post.findMany.mockImplementation(async ({ where }: { where: { creatorId: unknown; source: string } }) =>
+      where.creatorId === "cr1" && where.source === source
+        ? [{ id: postId, campaignId: "camp1", upstreamStatus: "active", versions: [{ versionSeq: 1, upstreamRevision: "r1" }] }]
+        : []
+    );
+
+    await new DbCanonicalStore(mockPrisma(() => ({ tx })) as never).saveForCreator("cr1", snapshot);
+
+    const rows = tx.mediaAsset.createMany.mock.calls[0]![0].data;
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ id: "asset1", creatorId: "cr1", upstreamStatus: "active", currentUpstreamRevision: "m2", currentVersionSeq: 2, ingestOrigin: source });
+    expect(rows[0].versionsJson.map((version: { upstream_revision: string }) => version.upstream_revision)).toEqual(["m1", "m2"]);
+    expect(tx.post.create.mock.calls[0]![0].data.versions.create).toHaveLength(2);
   });
 });

@@ -295,6 +295,7 @@ function upsertMediaForPost(
     ingested_at: nowIso()
   };
   existing.current = mv;
+  existing.upstream_status = "active";
   existing.versions.push(mv);
   result.media_upserted += 1;
 }

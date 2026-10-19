@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { InMemoryEventBus } from "../src/events/event-bus.js";
+import { buildGalleryItems } from "../src/gallery/query.js";
 import { FileExportIndex } from "../src/export/export-index.js";
 import { ExportService } from "../src/export/export-service.js";
 import { applySyncBatchToSnapshot } from "../src/ingest/apply-batch.js";
@@ -32,6 +33,99 @@ function batch(postId = "p1", mediaRevision = "m1", url = "https://cdn.example/m
 function apply(snapshot: CanonicalSnapshot, input: SyncBatchInput, bus = new InMemoryEventBus()) {
   return applySyncBatchToSnapshot(snapshot, input, "job", "trace", bus);
 }
+
+const mediaDeletion: SyncBatchInput = {
+  creator_id: "c1",
+  tombstones: [{ entity_type: "media", id: "asset1", deleted_at: "2026-10-02T00:00:00.000Z" }]
+};
+
+describe("media reactivation on fresh revisions", () => {
+  it("restores the asset and gallery row once, preserving metadata and history", () => {
+    const snapshot = emptySnapshot();
+    const bus = new InMemoryEventBus();
+    const initial = batch();
+    Object.assign(initial.posts![0]!.media[0]!, { mime_type: "image/png", storage_key: "existing/blob", role: "attachment" });
+    apply(snapshot, initial, bus);
+    const oldVersion = structuredClone(snapshot.media.c1!.asset1!.current);
+    apply(snapshot, mediaDeletion, bus);
+    const newer = batch("p1", "m2", "https://cdn.example/m2");
+    newer.posts![0]!.upstream_revision = "r2";
+
+    const result = apply(snapshot, newer, bus);
+
+    const media = snapshot.media.c1!.asset1!;
+    expect(media.upstream_status).toBe("active");
+    expect(media.current).toMatchObject({ version_seq: 2, upstream_revision: "m2", mime_type: "image/png", storage_key: "existing/blob", role: "attachment" });
+    expect(media.versions).toHaveLength(2);
+    expect(media.versions[0]).toEqual(oldVersion);
+    expect(media.post_ids).toEqual(["p1"]);
+    expect(result).toMatchObject({ media_upserted: 1, posts_written: 1, events_emitted: 1 });
+    const gallery = buildGalleryItems("c1", snapshot, { creator_id: "c1", media: {} }, { creators: {} });
+    expect(gallery.map((item) => item.media_id)).toEqual(["asset1"]);
+    const expected = structuredClone(snapshot);
+    expect(apply(snapshot, newer, bus)).toMatchObject({ media_upserted: 0, posts_written: 0, events_emitted: 0 });
+    expect(snapshot).toEqual(expected);
+    expect(bus.getAll()).toHaveLength(2);
+  });
+
+  it.each(["m1", "m2"])("does not restore deleted media from already-seen %s on a new post", (revision) => {
+    const snapshot = emptySnapshot();
+    apply(snapshot, batch());
+    apply(snapshot, batch("p2", "m2", "https://cdn.example/m2"));
+    apply(snapshot, mediaDeletion);
+    const result = apply(snapshot, batch("p3", revision, "https://cdn.example/refreshed"));
+    expect(snapshot.media.c1!.asset1!.upstream_status).toBe("deleted");
+    expect(snapshot.media.c1!.asset1!.current.upstream_revision).toBe("m2");
+    expect(snapshot.media.c1!.asset1!.versions).toHaveLength(2);
+    expect(result).toMatchObject({ media_upserted: 0, posts_written: 1 });
+  });
+
+  it("does not import a fresh media revision from a duplicate post", () => {
+    const snapshot = emptySnapshot();
+    apply(snapshot, batch());
+    apply(snapshot, mediaDeletion);
+    const expected = structuredClone(snapshot);
+    expect(apply(snapshot, batch("p1", "m2"))).toMatchObject({ media_upserted: 0, posts_written: 0, events_emitted: 0 });
+    expect(snapshot).toEqual(expected);
+  });
+
+  it("keeps an explicit later media deletion in the same batch", () => {
+    const snapshot = emptySnapshot();
+    apply(snapshot, batch());
+    const newer = batch("p1", "m2");
+    newer.posts![0]!.upstream_revision = "r2";
+    const result = apply(snapshot, { ...newer, tombstones: mediaDeletion.tombstones });
+    expect(snapshot.media.c1!.asset1!.upstream_status).toBe("deleted");
+    expect(snapshot.media.c1!.asset1!.current.upstream_revision).toBe("m2");
+    expect(result).toMatchObject({ media_upserted: 1, tombstones_applied: 1 });
+  });
+
+  it("does not reactivate a deleted post when another post accepts fresh shared media", () => {
+    const snapshot = emptySnapshot();
+    apply(snapshot, batch());
+    apply(snapshot, mediaDeletion);
+    apply(snapshot, { creator_id: "c1", tombstones: [{ entity_type: "post", id: "p1", deleted_at: "2026-10-02T00:00:00.000Z" }] });
+    apply(snapshot, batch("p2", "m2"));
+    expect(snapshot.posts.c1!.p1!.upstream_status).toBe("deleted");
+    expect(snapshot.media.c1!.asset1!.upstream_status).toBe("active");
+    const gallery = buildGalleryItems("c1", snapshot, { creator_id: "c1", media: {} }, { creators: {} });
+    expect(gallery.map((item) => item.post_id)).toEqual(["p2"]);
+  });
+
+  it("reactivates only the owning creator's media", () => {
+    const snapshot = emptySnapshot();
+    apply(snapshot, batch());
+    apply(snapshot, { ...batch(), creator_id: "c2" });
+    apply(snapshot, mediaDeletion);
+    apply(snapshot, { ...mediaDeletion, creator_id: "c2" });
+    const other = structuredClone(snapshot.media.c2);
+    const newer = batch("p1", "m2");
+    newer.posts![0]!.upstream_revision = "r2";
+    apply(snapshot, newer);
+    expect(snapshot.media.c1!.asset1!.upstream_status).toBe("active");
+    expect(snapshot.media.c2).toEqual(other);
+  });
+});
 
 describe("ingest media URL replay", () => {
   it("keeps old version URLs intact and ignores old media URLs on a new post", () => {

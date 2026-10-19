@@ -62,8 +62,7 @@ describe("deletion replay", () => {
     expect(snapshot.ingest_idempotency).toMatchObject(oldMarkers);
     expect(Object.keys(snapshot.ingest_idempotency)).toHaveLength(Object.keys(oldMarkers).length + 1);
     apply(snapshot, postBatch("r2"), bus);
-    // Restored media is fixture setup; automatic media reactivation belongs to ticket 03.
-    if (entityType === "media") snapshot.media.c1!.m1!.upstream_status = "active";
+    expect(snapshot.media.c1!.m1!.upstream_status).toBe("active");
     const restored = structuredClone(snapshot);
     const events = bus.getAll();
 

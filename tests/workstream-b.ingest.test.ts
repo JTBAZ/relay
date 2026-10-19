@@ -6,7 +6,6 @@ import { randomBytes } from "node:crypto";
 import request from "supertest";
 import { describe, expect, it, vi } from "vitest";
 import type { CanonicalSnapshot } from "../src/ingest/canonical-store.js";
-import { FileCanonicalStore } from "../src/ingest/canonical-store.js";
 import { IngestService } from "../src/ingest/ingest-service.js";
 import { createApp } from "../src/server.js";
 
@@ -104,13 +103,10 @@ describe("Workstream B ingest", () => {
       const newer = samplePost("r2");
       newer.media[0]!.upstream_revision = "mrev_2";
       await request(app).post(endpoint).send({ creator_id: "c1", posts: [newer] }).expect(200);
-      if (entityType === "media") {
-        // Automatic media reactivation is ticket 03; seed an already-restored asset here.
-        await new FileCanonicalStore(join(tempDir, "canonical.json")).mutate((snapshot) => {
-          snapshot.media.c1!.media_1!.upstream_status = "active";
-        });
-      }
       const before = await readFile(join(tempDir, "canonical.json"), "utf8");
+      const restored = JSON.parse(before) as CanonicalSnapshot;
+      expect(restored.media.c1!.media_1!.upstream_status).toBe("active");
+      expect(restored.media.c1!.media_1!.current.upstream_revision).toBe("mrev_2");
       deletion.tombstones[0]!.deleted_at = "2026-10-01T02:00:00+02:00";
       const replay = await request(app).post(endpoint).send(deletion).expect(200);
       expect(replay.body.data).toMatchObject({ tombstones_applied: 0, idempotent_skips: 1, events_emitted: 0 });
