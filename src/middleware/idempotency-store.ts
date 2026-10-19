@@ -7,13 +7,13 @@
  * caller passes an `Idempotency-Key` header (RFC draft `idempotency-key-header-01`).
  *
  * Lifecycle per key:
- *   1. tryReserve(key, ttl) — atomic. Returns "fresh" the first time, "in_flight" if another
+ *   1. tryReserve(key, ttl) — atomic. Returns "fresh" with a reservation id, "in_flight" if another
  *      request is currently executing under the same key, or "replay" if a final response is
  *      already cached.
- *   2. recordResponse(key, snapshot, ttl) — caller stores the final response after success or
+ *   2. recordResponse(key, reservationId, snapshot, ttl) — the current owner stores the response after success or
  *      after a deterministic 4xx so a retry returns the same body + status.
  *   3. getResponse(key) — replay path; returns the recorded snapshot or null.
- *   4. release(key) — releases the in-flight lock without recording a response (used when the
+ *   4. release(key, reservationId) — the current owner releases the lock without recording a response (used when the
  *      handler throws and we don't want to cache a 5xx).
  *
  * # Why an interface?
@@ -38,6 +38,8 @@
  *   the in-flight verdict and 409 the second caller.
  */
 
+import { randomUUID } from "node:crypto";
+
 export interface IdempotencyResponseSnapshot {
   status: number;
   /** Response body the route emitted (typically the success/error envelope). */
@@ -51,7 +53,7 @@ export interface IdempotencyResponseSnapshot {
 }
 
 export type ReserveOutcome =
-  | { state: "fresh" }
+  | { state: "fresh"; reservationId: string }
   | { state: "in_flight" }
   | { state: "replay"; snapshot: IdempotencyResponseSnapshot };
 
@@ -68,19 +70,21 @@ export interface IdempotencyStore {
    * - "replay" -> the snapshot already exists; caller MUST replay it (after body-hash check).
    */
   tryReserve(key: string, lockTtlMs: number): Promise<ReserveOutcome>;
-  /** Persist the final response and TTL it. Releases the in-flight lock implicitly. */
+  /** Persist the response and release the lock only if this request still owns the reservation. */
   recordResponse(
     key: string,
+    reservationId: string,
     snapshot: IdempotencyResponseSnapshot,
     responseTtlMs: number
   ): Promise<void>;
   /** Read-only fetch of an existing snapshot (used after a fresh reserve loses a race). */
   getResponse(key: string): Promise<IdempotencyResponseSnapshot | null>;
-  /** Release an in-flight lock without recording (used when the handler throws). */
-  release(key: string): Promise<void>;
+  /** Release an owned in-flight lock without removing a completed response. */
+  release(key: string, reservationId: string): Promise<void>;
 }
 
 interface MemoryEntry {
+  reservationId: string;
   /** When set, request is in-flight. Wall-clock ms when the lock auto-expires. */
   lockedUntil?: number;
   /** When set, response has been recorded. */
@@ -99,9 +103,9 @@ interface MemoryEntry {
  * the deploy is single-node; when that changes, swap to a Redis-backed implementation:
  *
  *   - tryReserve  -> Lua script: SETNX lock; if exists -> GET snapshot; else SET lock with PX TTL.
- *   - recordResponse -> SET snapshot with PX responseTtl; DEL lock.
+ *   - recordResponse -> compare reservation id, then SET snapshot with PX responseTtl; DEL lock.
  *   - getResponse -> GET snapshot; JSON.parse.
- *   - release -> DEL lock (no snapshot touched).
+ *   - release -> compare reservation id, then DEL lock (no snapshot touched).
  *
  * Same interface, same call sites. No consumer code changes.
  */
@@ -123,21 +127,25 @@ export class InMemoryIdempotencyStore implements IdempotencyStore {
     if (entry?.lockedUntil && entry.lockedUntil > now) {
       return { state: "in_flight" };
     }
-    // Stale entry (expired snapshot or expired lock) is treated as a fresh slot.
-    this.touch(key, { lockedUntil: now + lockTtlMs });
-    return { state: "fresh" };
+    // Replace expired state so an older snapshot cannot survive in a new reservation.
+    const reservationId = randomUUID();
+    this.touch(key, { reservationId, lockedUntil: now + lockTtlMs });
+    return { state: "fresh", reservationId };
   }
 
   public async recordResponse(
     key: string,
+    reservationId: string,
     snapshot: IdempotencyResponseSnapshot,
     responseTtlMs: number
   ): Promise<void> {
+    const entry = this.map.get(key);
+    if (!entry || entry.reservationId !== reservationId) return;
     const expiresAt = Date.now() + responseTtlMs;
     // Clear the in-flight lock at the same time we record the snapshot. The operation has
     // finished, so a parallel retry should immediately see "replay" rather than waiting for
     // the lock TTL to lapse.
-    this.touch(key, { snapshot, snapshotExpiresAt: expiresAt, lockedUntil: undefined });
+    this.touch(key, { reservationId, snapshot, snapshotExpiresAt: expiresAt });
   }
 
   public async getResponse(key: string): Promise<IdempotencyResponseSnapshot | null> {
@@ -150,14 +158,9 @@ export class InMemoryIdempotencyStore implements IdempotencyStore {
     return entry.snapshot;
   }
 
-  public async release(key: string): Promise<void> {
+  public async release(key: string, reservationId: string): Promise<void> {
     const entry = this.map.get(key);
-    if (!entry) return;
-    if (entry.snapshot) {
-      // Don't clobber a recorded snapshot just because a later request released the lock.
-      this.map.set(key, { snapshot: entry.snapshot, snapshotExpiresAt: entry.snapshotExpiresAt });
-      return;
-    }
+    if (!entry || entry.reservationId !== reservationId || entry.snapshot) return;
     this.map.delete(key);
   }
 
@@ -166,11 +169,10 @@ export class InMemoryIdempotencyStore implements IdempotencyStore {
     return this.map.size;
   }
 
-  private touch(key: string, patch: Partial<MemoryEntry>): void {
-    const existing = this.map.get(key) ?? {};
+  private touch(key: string, entry: MemoryEntry): void {
     // Re-insert to move to the tail (insertion-order LRU approximation).
     this.map.delete(key);
-    this.map.set(key, { ...existing, ...patch });
+    this.map.set(key, entry);
     if (this.map.size > this.maxEntries) {
       const firstKey = this.map.keys().next().value;
       if (firstKey !== undefined) this.map.delete(firstKey);

@@ -3,7 +3,7 @@ import type { AddressInfo } from "node:net";
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { FilePatronCollectionsStore } from "../../src/gallery/patron-collections-store.js";
 import {
   InMemoryIdempotencyStore
@@ -67,6 +67,7 @@ describe("idempotency middleware", () => {
 
   afterEach(async () => {
     if (handle) await handle.close();
+    vi.restoreAllMocks();
   });
 
   it("absent header is a no-op pass-through (handler runs normally)", async () => {
@@ -250,6 +251,62 @@ describe("idempotency middleware", () => {
     } finally {
       releaseWrite();
       await writeFinished;
+    }
+  });
+
+  it.each(["before", "after"])("ignores an expired request completing %s the newer request", async (order) => {
+    const now = Date.now();
+    const clock = vi.spyOn(Date, "now").mockReturnValue(now);
+    let startedA!: () => void;
+    let startedB!: () => void;
+    let finishA = () => {};
+    let finishB = () => {};
+    const pendingA = new Promise<void>((resolve) => { startedA = resolve; });
+    const pendingB = new Promise<void>((resolve) => { startedB = resolve; });
+    handle = await startServer({
+      store: new InMemoryIdempotencyStore(),
+      handler: (req, res) => {
+        const finish = () => { if (!res.writableEnded) res.status(201).json({ owner: req.body.owner }); };
+        if (req.body.owner === "A") { finishA = finish; startedA(); }
+        else { finishB = finish; startedB(); }
+      }
+    });
+    const send = (owner: string) => fetch(`${handle.url}/echo`, {
+      method: "POST", headers: { "content-type": "application/json", "Idempotency-Key": "expired-key" },
+      body: JSON.stringify({ owner })
+    });
+    const a = send("A");
+    let b: Promise<Response> | undefined;
+    await pendingA;
+    try {
+      clock.mockReturnValue(now + 60_001);
+      b = send("B");
+      await pendingB;
+      if (order === "before") {
+        finishA();
+        expect((await a).status).toBe(201);
+        const retry = await send("B");
+        expect(retry.status).toBe(409);
+        expect((await retry.json()).error.code).toBe("IDEMPOTENCY_IN_FLIGHT");
+      }
+      finishB();
+      expect((await b).status).toBe(201);
+      if (order === "after") {
+        finishA();
+        expect((await a).status).toBe(201);
+      }
+      const replay = await send("B");
+      expect(replay.status).toBe(201);
+      expect(replay.headers.get("idempotency-replayed")).toBe("true");
+      expect(await replay.json()).toEqual({ owner: "B" });
+      const changedBody = await send("A");
+      expect(changedBody.status).toBe(422);
+      expect((await changedBody.json()).error.code).toBe("IDEMPOTENCY_KEY_REUSE");
+      expect(handle.callCount()).toBe(2);
+    } finally {
+      finishA();
+      finishB();
+      await Promise.all([a, b]);
     }
   });
 

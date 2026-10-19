@@ -227,6 +227,7 @@ export function buildIdempotencyMiddleware(options: IdempotencyMiddlewareOptions
       void store
         .recordResponse(
           key,
+          reserve.reservationId,
           {
             status: capturedStatus,
             body: capturedBody,
