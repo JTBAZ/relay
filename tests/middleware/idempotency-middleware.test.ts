@@ -1,6 +1,10 @@
 import express from "express";
 import type { AddressInfo } from "node:net";
+import { mkdtemp } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { FilePatronCollectionsStore } from "../../src/gallery/patron-collections-store.js";
 import {
   InMemoryIdempotencyStore
 } from "../../src/middleware/idempotency-store.js";
@@ -188,6 +192,64 @@ describe("idempotency middleware", () => {
     } finally {
       finishFirst();
       await first;
+    }
+  });
+
+  it("keeps a running write reserved after disconnect and replays its eventual result", async () => {
+    const tempDir = await mkdtemp(join(tmpdir(), "relay-idem-disconnect-"));
+    const collections = new FilePatronCollectionsStore(join(tempDir, "collections.json"));
+    let started!: () => void;
+    let disconnected!: () => void;
+    let releaseWrite!: () => void;
+    let finished!: () => void;
+    const pending = new Promise<void>((resolve) => { started = resolve; });
+    const closed = new Promise<void>((resolve) => { disconnected = resolve; });
+    const writeAllowed = new Promise<void>((resolve) => { releaseWrite = resolve; });
+    const writeFinished = new Promise<void>((resolve) => { finished = resolve; });
+    handle = await startServer({
+      store: new InMemoryIdempotencyStore(),
+      handler: async (_req, res) => {
+        const first = handle.callCount() === 1;
+        if (first) {
+          res.once("close", disconnected);
+          started();
+          await writeAllowed;
+        }
+        const collection = await collections.createCollection("creator-1", "account-1", "Saved art");
+        res.status(201).json({ collection });
+        if (first) finished();
+      }
+    });
+    const controller = new AbortController();
+    const options = {
+      method: "POST",
+      headers: { "content-type": "application/json", "Idempotency-Key": "create-collection" },
+      body: "{}"
+    };
+    const original = fetch(`${handle.url}/echo`, { ...options, signal: controller.signal }).catch(error => error);
+    await pending;
+    controller.abort();
+    expect(await original).toMatchObject({ name: "AbortError" });
+    await closed;
+    try {
+      const retry = await fetch(`${handle.url}/echo`, options);
+      expect(retry.status).toBe(409);
+      expect((await retry.json()).error.code).toBe("IDEMPOTENCY_IN_FLIGHT");
+      expect(handle.callCount()).toBe(1);
+      expect((await collections.load()).collections).toHaveLength(0);
+      releaseWrite();
+      await writeFinished;
+      const saved = (await collections.load()).collections;
+      expect(saved).toHaveLength(1);
+      const replay = await fetch(`${handle.url}/echo`, options);
+      expect(replay.status).toBe(201);
+      expect(replay.headers.get("idempotency-replayed")).toBe("true");
+      expect(await replay.json()).toEqual({ collection: saved[0] });
+      expect(handle.callCount()).toBe(1);
+      expect((await collections.load()).collections).toHaveLength(1);
+    } finally {
+      releaseWrite();
+      await writeFinished;
     }
   });
 

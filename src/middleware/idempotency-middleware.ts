@@ -199,7 +199,7 @@ export function buildIdempotencyMiddleware(options: IdempotencyMiddlewareOptions
     }
 
     // Fresh reservation: capture the response so we can record it after the handler runs.
-    let recorded = false;
+    // Client disconnects do not cancel writes; retain the reservation until a result or expiry.
     const capturedHeaders: Record<string, string> = {};
     let capturedStatus = 200;
     let capturedBody: unknown = undefined;
@@ -239,19 +239,8 @@ export function buildIdempotencyMiddleware(options: IdempotencyMiddlewareOptions
         .catch(() => {
           /* swallow: store-write failures must not break the response */
         });
-      recorded = true;
       return result;
     };
-
-    res.on("close", () => {
-      if (!recorded) {
-        // Handler ended without sending a JSON body (error mid-write, client disconnect, etc.).
-        // Release the lock so a retry can proceed instead of waiting for the lock TTL.
-        void store.release(key).catch(() => {
-          /* swallow */
-        });
-      }
-    });
 
     next();
   };
