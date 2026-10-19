@@ -5415,8 +5415,13 @@ export function createApp(config: AppConfig): CreateAppResult {
 
     const processSync = String(req.query.process_sync) === "true";
     if (processSync) {
-      const result = await ingestService.runBatch(parsed.batch, traceId);
-      return res.status(200).json(successEnvelope(result, traceId));
+      try {
+        const result = await ingestService.runBatch(parsed.batch, traceId);
+        return res.status(200).json(successEnvelope(result, traceId));
+      } catch (err) {
+        serverLog.error({ err, traceId }, "Synchronous ingest batch failed");
+        return res.status(500).json(errorEnvelope("INTERNAL", "Unable to apply ingest batch.", traceId));
+      }
     }
 
     const jobId = `job_${randomUUID()}`;

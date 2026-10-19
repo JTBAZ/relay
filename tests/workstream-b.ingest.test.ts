@@ -1,11 +1,13 @@
 import { readFile } from "node:fs/promises";
-import { mkdtemp } from "node:fs/promises";
+import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { randomBytes } from "node:crypto";
 import request from "supertest";
 import { describe, expect, it, vi } from "vitest";
 import type { CanonicalSnapshot } from "../src/ingest/canonical-store.js";
+import { FileCanonicalStore } from "../src/ingest/canonical-store.js";
+import { IngestService } from "../src/ingest/ingest-service.js";
 import { createApp } from "../src/server.js";
 
 function baseConfig(tempDir: string) {
@@ -46,6 +48,81 @@ const samplePost = (revision: string) => ({
 });
 
 describe("Workstream B ingest", () => {
+  it("returns a generic failure when synchronous deletion persistence rejects", async () => {
+    const tempDir = await mkdtemp(join(tmpdir(), "relay-b-deletion-failure-"));
+    const failure = vi.spyOn(IngestService.prototype, "runBatch").mockRejectedValueOnce(new Error("private storage detail"));
+    try {
+      const { app } = createApp(baseConfig(tempDir));
+      const response = await request(app).post("/api/v1/ingest/batches?process_sync=true").send({
+        creator_id: "c1", tombstones: [{ entity_type: "post", id: "post_1", deleted_at: "2026-10-01T00:00:00Z" }]
+      });
+      expect(response.status).toBe(500);
+      expect(response.body.error).toMatchObject({ code: "INTERNAL", message: "Unable to apply ingest batch." });
+      expect(JSON.stringify(response.body)).not.toContain("private storage detail");
+    } finally {
+      failure.mockRestore();
+      await rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects missing deletion metadata before writing or queuing any batch content", async () => {
+    const tempDir = await mkdtemp(join(tmpdir(), "relay-b-deletion-validation-"));
+    try {
+      const { app } = createApp(baseConfig(tempDir));
+      const endpoint = "/api/v1/ingest/batches";
+      await request(app).post(`${endpoint}?process_sync=true`).send({ creator_id: "c1", posts: [samplePost("r1")] }).expect(200);
+      const canonicalPath = join(tempDir, "canonical.json");
+      const before = await readFile(canonicalPath, "utf8");
+      for (const query of ["", "?process_sync=true"]) {
+        const response = await request(app).post(`${endpoint}${query}`).send({
+          creator_id: "c1", posts: [samplePost("r2")],
+          tombstones: [
+            { entity_type: "post", id: "post_1", deleted_at: "2026-10-01T00:00:00Z" },
+            { entity_type: "media", id: "media_1" }
+          ]
+        });
+        expect(response.status).toBe(400);
+        expect(response.body.error.details).toContainEqual({ field: "tombstones[1].deleted_at", issue: "missing" });
+        expect(await readFile(canonicalPath, "utf8")).toBe(before);
+      }
+    } finally {
+      await rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it.each(["post", "media"] as const)("keeps a restored %s visible after replaying a persisted deletion", async (entityType) => {
+    const tempDir = await mkdtemp(join(tmpdir(), "relay-b-deletion-replay-"));
+    try {
+      const { app, eventBus } = createApp(baseConfig(tempDir));
+      const endpoint = "/api/v1/ingest/batches?process_sync=true";
+      await request(app).post(endpoint).send({ creator_id: "c1", posts: [samplePost("r1")] }).expect(200);
+      const deletion = {
+        creator_id: "c1", tombstones: [{ entity_type: entityType, id: entityType === "post" ? "post_1" : "media_1", deleted_at: "2026-10-01T00:00:00Z" }]
+      };
+      const first = await request(app).post(endpoint).send(deletion).expect(200);
+      expect(first.body.data.tombstones_applied).toBe(1);
+      const newer = samplePost("r2");
+      newer.media[0]!.upstream_revision = "mrev_2";
+      await request(app).post(endpoint).send({ creator_id: "c1", posts: [newer] }).expect(200);
+      if (entityType === "media") {
+        // Automatic media reactivation is ticket 03; seed an already-restored asset here.
+        await new FileCanonicalStore(join(tempDir, "canonical.json")).mutate((snapshot) => {
+          snapshot.media.c1!.media_1!.upstream_status = "active";
+        });
+      }
+      const before = await readFile(join(tempDir, "canonical.json"), "utf8");
+      deletion.tombstones[0]!.deleted_at = "2026-10-01T02:00:00+02:00";
+      const replay = await request(app).post(endpoint).send(deletion).expect(200);
+      expect(replay.body.data).toMatchObject({ tombstones_applied: 0, idempotent_skips: 1, events_emitted: 0 });
+      expect(await readFile(join(tempDir, "canonical.json"), "utf8")).toBe(before);
+      expect(eventBus.getAll().filter((event) => event.event_name === "post_published")).toHaveLength(2);
+      const gallery = await request(app).get("/api/v1/gallery/items").query({ creator_id: "c1" }).expect(200);
+      expect(gallery.body.data.items.some((item: { media_id: string }) => item.media_id === "media_1")).toBe(true);
+    } finally {
+      await rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
   it("idempotent batch, media-centric links, post_published events, revision history", async () => {
     const tempDir = await mkdtemp(join(tmpdir(), "relay-b-"));
     const { app, eventBus } = createApp(baseConfig(tempDir));

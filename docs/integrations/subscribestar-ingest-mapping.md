@@ -156,7 +156,7 @@ Types are defined in [`src/ingest/types.ts`](../../src/ingest/types.ts). Below: 
 |-------------|----------------|-------|
 | `entity_type` | `"post"` / `"media"` |
 | `id` | Same prefixed id as ingest |
-| `deleted_at` | ISO time from API or detection time |
+| `deleted_at` | Required ISO date-time with timezone from API or detection time; retain the original time on retries. Normalized to UTC milliseconds; at most three fractional second digits. |
 
 After mapping is confirmed, implement **`map-subscribestar-to-ingest.ts`** (pure functions + Vitest fixtures), patterned on Patreon mapper.
 

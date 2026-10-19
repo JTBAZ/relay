@@ -7,7 +7,7 @@
 
 import type { RelayEventBus } from "../events/event-bus.js";
 import type { MediaRow, PostRow, CanonicalSnapshot } from "./canonical-store.js";
-import { ingestIdempotencyKey } from "./idempotency.js";
+import { ingestDeletionIdempotencyKey, ingestIdempotencyKey } from "./idempotency.js";
 import type { ApplyBatchResult, SyncBatchInput } from "./types.js";
 import { mirrorSnapshotSourceForIngestPostId } from "./mirror-post-source.js";
 
@@ -196,6 +196,12 @@ export function applySyncBatchToSnapshot(
   }
 
   for (const tomb of batch.tombstones ?? []) {
+    const key = ingestDeletionIdempotencyKey(creatorId, tomb);
+    if (snapshot.ingest_idempotency[key]) {
+      result.idempotent_skips += 1;
+      continue;
+    }
+    snapshot.ingest_idempotency[key] = { first_seen_at: nowIso() };
     if (tomb.entity_type === "post") {
       const posts = ensureNested(snapshot.posts, creatorId);
       const row = posts[tomb.id] as PostRow | undefined;

@@ -1,6 +1,6 @@
 /**
  * @fileoverview Request body validation for `SyncBatchInput` JSON.
- * @description Lenient defaults for optional timestamps; returns field-scoped error details.
+ * @description Requires stable deletion timestamps; other optional timestamps retain lenient defaults.
  * @see ./types.js
  */
 
@@ -222,13 +222,22 @@ export function validateIngestBatchBody(body: unknown): {
           details: [{ field: `tombstones[${i}].id`, issue: "missing" }]
         };
       }
+      if (typeof o.deleted_at !== "string" || !o.deleted_at.trim()) {
+        return { ok: false, details: [{ field: `tombstones[${i}].deleted_at`, issue: "missing" }] };
+      }
+      const deletedAt = o.deleted_at.trim();
+      const deletedAtMs = Date.parse(deletedAt);
+      if (
+        !/^\d{4}-\d{2}-\d{2}T(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d{1,3})?(?:Z|[+-]\d{2}:\d{2})$/.test(deletedAt) ||
+        !Number.isFinite(deletedAtMs) ||
+        new Date(`${deletedAt.slice(0, 10)}T00:00:00Z`).toISOString().slice(0, 10) !== deletedAt.slice(0, 10)
+      ) {
+        return { ok: false, details: [{ field: `tombstones[${i}].deleted_at`, issue: "invalid" }] };
+      }
       batch.tombstones.push({
         entity_type: o.entity_type,
         id: o.id.trim(),
-        deleted_at:
-          typeof o.deleted_at === "string" && o.deleted_at
-            ? o.deleted_at
-            : new Date().toISOString()
+        deleted_at: new Date(deletedAtMs).toISOString()
       });
     }
   }

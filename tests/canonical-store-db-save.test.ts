@@ -283,7 +283,7 @@ describe("DbCanonicalStore preserved-post media URLs", () => {
 
     expect(tx.mediaAsset.findMany).toHaveBeenCalledWith({
       where: { creatorId: "cr1", ingestOrigin: source, primaryPostId: { in: [postId] } },
-      select: { id: true, primaryPostId: true, currentUpstreamRevision: true, currentUpstreamUrl: true }
+      select: { id: true, primaryPostId: true, currentUpstreamRevision: true, currentUpstreamUrl: true, upstreamStatus: true }
     });
     expect(tx.mediaAsset.updateMany).toHaveBeenCalledTimes(1);
     expect(tx.mediaAsset.updateMany).toHaveBeenCalledWith({
@@ -310,5 +310,86 @@ describe("DbCanonicalStore preserved-post media URLs", () => {
     ]);
     await store.saveForCreator("cr1", snapshot);
     expect(tx.mediaAsset.updateMany).not.toHaveBeenCalled();
+  });
+});
+
+describe("DbCanonicalStore deletion replay", () => {
+  it("round-trips deletion markers for absent targets through existing storage", async () => {
+    const { tx } = mockTx();
+    const snapshot: CanonicalSnapshot = { ingest_idempotency: {}, campaigns: {}, tiers: {}, posts: {}, media: {} };
+    const deletion = { creator_id: "cr1", tombstones: [{ entity_type: "post" as const, id: "absent", deleted_at: "2026-10-01T00:00:00.000Z" }] };
+    applySyncBatchToSnapshot(snapshot, deletion, "j1", "trace", new InMemoryEventBus());
+    const prisma = {
+      ...mockPrisma(() => ({ tx })),
+      campaign: { findMany: vi.fn().mockResolvedValue([]) },
+      tier: { findMany: vi.fn().mockResolvedValue([]) },
+      post: { findMany: vi.fn().mockResolvedValue([]) },
+      postVersion: { findMany: vi.fn().mockResolvedValue([]) },
+      mediaAsset: { findMany: vi.fn().mockResolvedValue([]) },
+      ingestIdempotencyKey: { findMany: vi.fn().mockResolvedValue([]) }
+    };
+    const store = new DbCanonicalStore(prisma as never);
+    await store.saveForCreator("cr1", snapshot);
+    expect(tx.ingestIdempotencyKey.createMany).toHaveBeenCalledTimes(1);
+    const rows = tx.ingestIdempotencyKey.createMany.mock.calls[0]![0].data;
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ creatorId: "cr1", batchKey: expect.stringMatching(/^ingest_deletion:v1:/) });
+    prisma.ingestIdempotencyKey.findMany.mockResolvedValue(rows);
+    const reloaded = await store.loadForCreator("cr1");
+    expect(reloaded.ingest_idempotency).toEqual(snapshot.ingest_idempotency);
+    expect(applySyncBatchToSnapshot(reloaded, deletion, "j2", "trace", new InMemoryEventBus()))
+      .toMatchObject({ tombstones_applied: 0, idempotent_skips: 1 });
+  });
+
+  it.each(["PATREON", "SUBSCRIBESTAR"] as const)("persists a media deletion under an unchanged %s post without rewriting its history", async (source) => {
+    const { tx } = mockTx();
+    const postId = source === "PATREON" ? "patreon_post_123" : "substar_post_123";
+    const snapshot: CanonicalSnapshot = { ingest_idempotency: {}, campaigns: {}, tiers: {}, posts: {}, media: {} };
+    const bus = new InMemoryEventBus();
+    applySyncBatchToSnapshot(snapshot, {
+      creator_id: "cr1",
+      campaigns: [{ campaign_id: "camp1", name: "Main", upstream_updated_at: "2026-10-01T00:00:00.000Z" }],
+      posts: [{ post_id: postId, title: "Original", published_at: "2026-10-01T00:00:00.000Z", tag_ids: [], tier_ids: [], upstream_revision: "r1",
+        media: [{ media_id: "asset1", upstream_revision: "m1" }] }]
+    }, "j1", "trace", bus);
+    const deletion = { creator_id: "cr1", tombstones: [{ entity_type: "media" as const, id: "asset1", deleted_at: "2026-10-02T00:00:00.000Z" }] };
+    applySyncBatchToSnapshot(snapshot, deletion, "j2", "trace", bus);
+    tx.post.findMany.mockImplementation(async ({ where }: { where: { creatorId: unknown; source: string } }) =>
+      where.creatorId === "cr1" && where.source === source
+        ? [{ id: postId, campaignId: "camp1", upstreamStatus: "active", versions: [{ versionSeq: 1, upstreamRevision: "r1" }] }]
+        : []
+    );
+    const dbMedia = { id: "asset1", primaryPostId: postId, currentUpstreamRevision: "m1", currentUpstreamUrl: null, upstreamStatus: "active" };
+    tx.mediaAsset.findMany.mockResolvedValue([dbMedia]);
+    const store = new DbCanonicalStore(mockPrisma(() => ({ tx })) as never);
+    await store.saveForCreator("cr1", snapshot);
+    expect(tx.mediaAsset.updateMany).toHaveBeenCalledTimes(1);
+    expect(tx.mediaAsset.updateMany.mock.calls[0]![0]).toMatchObject({
+      where: { id: "asset1", creatorId: "cr1", primaryPostId: postId, ingestOrigin: source, currentUpstreamRevision: "m1", upstreamStatus: "active" },
+      data: { upstreamStatus: "deleted" }
+    });
+    expect(tx.post.create).not.toHaveBeenCalled();
+    expect(tx.mediaAsset.createMany).not.toHaveBeenCalled();
+
+    tx.mediaAsset.updateMany.mockClear();
+    tx.mediaAsset.findMany.mockResolvedValue([{ ...dbMedia, currentUpstreamRevision: "different-stored-revision" }]);
+    await store.saveForCreator("cr1", snapshot);
+    expect(tx.mediaAsset.updateMany.mock.calls[0]![0]).toMatchObject({
+      where: { currentUpstreamRevision: "different-stored-revision" }, data: { upstreamStatus: "deleted" }
+    });
+
+    // Model a later restored revision without implementing ticket 03's restoration logic.
+    snapshot.media.cr1!.asset1!.upstream_status = "active";
+    snapshot.media.cr1!.asset1!.current.upstream_revision = "m2";
+    tx.mediaAsset.findMany.mockResolvedValue([{ ...dbMedia, currentUpstreamRevision: "m2" }]);
+    tx.mediaAsset.updateMany.mockClear();
+    const replay = applySyncBatchToSnapshot(snapshot, deletion, "j3", "trace", bus);
+    expect(replay).toMatchObject({ tombstones_applied: 0, idempotent_skips: 1 });
+    await store.saveForCreator("cr1", snapshot);
+    expect(tx.mediaAsset.updateMany).not.toHaveBeenCalled();
+
+    snapshot.media.cr1!.asset1!.upstream_status = "deleted";
+    tx.mediaAsset.updateMany.mockResolvedValueOnce({ count: 0 });
+    await expect(store.saveForCreator("cr1", snapshot)).rejects.toThrow("Media changed while applying deletion");
   });
 });

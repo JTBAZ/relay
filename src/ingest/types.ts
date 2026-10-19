@@ -43,6 +43,7 @@ export type IngestPost = {
 export type IngestTombstone = {
   entity_type: "post" | "media";
   id: string;
+  /** Stable source deletion time, normalized to UTC milliseconds by wire validation. */
   deleted_at: string;
 };
 

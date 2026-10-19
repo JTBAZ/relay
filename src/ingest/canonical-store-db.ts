@@ -38,7 +38,7 @@ function snapshotMirrorDbSource(p: PostRow): PostSource {
 }
 
 /**
- * `ingest_idempotency` in `canonical.json` is keyed only by SHA-256 hex; the DB row also
+ * `ingest_idempotency` in `canonical.json` stores legacy digests and namespaced deletion keys; the DB row also
  * requires `creator_id`. We use a sentinel for rows restored from a flat snapshot map.
  */
 export const RELAY_IDEMPOTENCY_CREATOR_SENTINEL = "_relay_snapshot_";
@@ -696,26 +696,33 @@ export class DbCanonicalStore implements CanonicalStore {
             lane.source === PostSource.PATREON
               ? MediaIngestOrigin.PATREON
               : MediaIngestOrigin.SUBSCRIBESTAR;
-          // Unchanged posts still carry refreshed URLs for their current media revision.
+          // Preserved posts can still have media URL refreshes or deletions.
           if (lane.preserve.size > 0) {
             const preservedMedia = await tx.mediaAsset.findMany({
               where: { creatorId, ingestOrigin: ingestOriginLane, primaryPostId: { in: [...lane.preserve] } },
-              select: { id: true, primaryPostId: true, currentUpstreamRevision: true, currentUpstreamUrl: true }
+              select: { id: true, primaryPostId: true, currentUpstreamRevision: true, currentUpstreamUrl: true, upstreamStatus: true }
             });
             for (const row of preservedMedia) {
-              const current = mediaMap[row.id]?.current;
-              if (
-                current?.upstream_url?.trim() &&
-                current.upstream_revision === row.currentUpstreamRevision &&
-                current.upstream_url !== row.currentUpstreamUrl
-              ) {
-                await tx.mediaAsset.updateMany({
+              const media = mediaMap[row.id];
+              if (!media) continue;
+              const refreshUrl = media.current.upstream_revision === row.currentUpstreamRevision &&
+                media.current.upstream_url?.trim() && media.current.upstream_url !== row.currentUpstreamUrl;
+              const deleteMedia = media.upstream_status === "deleted" && row.upstreamStatus !== MediaUpstreamStatus.deleted;
+              if (refreshUrl || deleteMedia) {
+                const updated = await tx.mediaAsset.updateMany({
                   where: {
                     id: row.id, creatorId, primaryPostId: row.primaryPostId, ingestOrigin: ingestOriginLane,
-                    currentUpstreamRevision: row.currentUpstreamRevision, currentUpstreamUrl: row.currentUpstreamUrl
+                    currentUpstreamRevision: row.currentUpstreamRevision, currentUpstreamUrl: row.currentUpstreamUrl,
+                    ...(deleteMedia ? { upstreamStatus: row.upstreamStatus } : {})
                   },
-                  data: { currentUpstreamUrl: current.upstream_url }
+                  data: {
+                    ...(refreshUrl ? { currentUpstreamUrl: media.current.upstream_url } : {}),
+                    ...(deleteMedia ? { upstreamStatus: MediaUpstreamStatus.deleted } : {})
+                  }
                 });
+                if (deleteMedia && updated.count !== 1) {
+                  throw new Error("Media changed while applying deletion; retry the ingest batch.");
+                }
               }
             }
           }
