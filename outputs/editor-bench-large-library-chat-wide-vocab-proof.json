@@ -1,0 +1,63 @@
+{
+  "date": "2026-10-18",
+  "ticket": "BLC-03",
+  "status": "accepted_byte_bounded_mock_connector_with_112_entry_proof",
+  "roles": { "plan": "Sol High", "implementation": "Luna High", "reviewAndPaidProof": "root" },
+  "change": "Removed only the vocabulary entry-count refusal; complete vocabulary, 8 KiB vocabulary bytes, 16 KiB full input/tools/schema, one model call, date protocol and exact selection/refinement guards remain.",
+  "fixture": { "posts": [40, 1001], "profile": "wide_vocab", "vocabularyEntries": 112, "vocabularyBytes": 1443, "coastalTagPosition": 98, "cityHeroesFlattenedPosition": 101, "duplicateUnrelatedSeriesName": "Twin Lantern" },
+  "checks": {
+    "rootBackendBench": { "filesPassed": 15, "testsPassed": 102 },
+    "workerFocusedTestsPassed": 9,
+    "backendBuild": "passed",
+    "noCostPreflight": "all three complete-snapshot selected/excluded oracles matched",
+    "serializedRequestBytes": [11138, 11138, 9128],
+    "initial40And1001ModelInputIdentical": true,
+    "compactRequestUnchanged": { "bytes": 9878, "sha256": "d3f45e03a1c8024d7ffe31521d0c2268b8c897d28e26715a6889bbd11534bf88" },
+    "duplicateAndInventedIdentifiers": "clarification without changing prior state",
+    "byteOverflow": "whole turn refused before provider",
+    "liveProof": "C:\\Users\\jorda\\Documents\\Codex\\2026-10-11\\c\\work\\relay\\outputs\\editor-bench-large-library-chat-wide-vocab-blc03.json",
+    "liveCasesPassed": 3,
+    "allExplicitCriteriaAndExactSelectedExcludedArrays": true,
+    "initialInputTokens": [2135, 2135],
+    "followupInputTokens": 1766,
+    "initialInputTokenDelta": 0
+  },
+  "normalizedUncachedCostGate": {
+    "ratesUsdPerMillion": { "input": 0.20, "output": 1.20 },
+    "maximumCostRatio": 1.5,
+    "maximumInputTokenRatio": 2,
+    "initial": { "baselineUsd": 0.0005002, "wideUsd": 0.0005818, "increasePercent": 16.31 },
+    "followup": { "baselineUsd": 0.000394, "wideUsd": 0.0004756, "increasePercent": 20.71 },
+    "passed": true,
+    "note": "Cached billing is excluded from the relative-cost comparison. Lower actual spend does not establish that the larger vocabulary is cheaper."
+  },
+  "budget": {
+    "model": "gpt-5.6-luna",
+    "reasoningEffort": "none",
+    "calls": 3,
+    "settledActualCostUsd": 0.0007716,
+    "actualProviderReservationsUsd": 0.0178212,
+    "conservativeProofReservationsUsd": 0.0218592,
+    "proofReservationCeilingUsd": 0.03,
+    "retryOrFallback": false,
+    "ledgerRecords": 888,
+    "developmentRemainingUsd": 0.36732308,
+    "heldoutRemainingUsd": 8.9690346,
+    "ledger": "C:\\Users\\jorda\\Documents\\Codex\\2026-10-11\\c\\work\\relay\\.relay-data\\gallery-editor-budget.json",
+    "historicalPrefix885RowsSha256": "98ac4505b8ab58a44cadb5668107b9ec9d04ad2e815394d329a5871e82aa94c7"
+  },
+  "preservedReportsSha256": {
+    "editor-bench-large-library-chat-live.json": "41d0e1d5718d4babc4e0a90352f1e412f16de112631fb40379dbf2f314b84225",
+    "editor-bench-large-library-chat-proof.json": "96c9905881c812bf2c77d01d7a1f2d3ed8e73146ec79023648be078b61554a48",
+    "editor-bench-large-library-chat-date-recheck-blc02.json": "fdd6858a86fc9cb55fca33335529e91ec528dfd913f4267c8062291fc192d698",
+    "editor-bench-large-library-chat-date-fix-proof.json": "94ae59530f63747521ff7648a946e3f63b413657aaf3af3a2908a15923460a16"
+  },
+  "limits": [
+    "There is no replacement entry-count ceiling; vocabulary and full-request byte limits remain finite and refuse overflow without truncation.",
+    "The 112-entry profile demonstrates observed quality and controlled cost in these fixed requests, not general reliability for arbitrary vocabularies or vague requests.",
+    "Mock connector only; no existing page, Next bridge, real Library or production activation.",
+    "Frontend testing, lint, typecheck, build and browser QA remain deferred.",
+    "Source local/uncommitted on codex/conversational-gallery-editor; no business DB write, environment file edit, API restart, migration, publication, commit, push or new chat."
+  ],
+  "continuation": "No further ticket or paid calls dispatched."
+}

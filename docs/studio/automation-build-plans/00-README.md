@@ -7,6 +7,8 @@ This program builds **Automations** as a thin composition chassis over Relay's e
 **Builder preamble:** [`BUILDER-ORIENTATION.md`](BUILDER-ORIENTATION.md)  
 **Traceability:** [`TRACEABILITY.md`](TRACEABILITY.md)
 
+**Proposed follow-up:** [Posting Recipes](../posting-recipe-build-plans/00-README.md) defines a scoped row editor and linked release stages. It is a separate proposed program; the existing presets and human-confirmed publishing contract below remain unchanged.
+
 ## Final codebase-synergy review
 
 The original theory was directionally correct but would have duplicated established orchestration. The implementation must use this ownership model:

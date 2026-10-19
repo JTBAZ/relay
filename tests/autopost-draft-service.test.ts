@@ -1,7 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   AUTOPOST_ACTIVE_DRAFT_SOFT_CAP,
+  AutopostDraftValidationError,
   AutopostDraftDiscardWarningError,
+  ConversationalDraftReservationError,
   discardAutopostDraft,
   getAutopostDraft,
   listAutopostDrafts,
@@ -274,5 +276,47 @@ describe("autopost-draft-service", () => {
       name: "AutopostDraftValidationError",
       details: [{ field: "media_ids", issue: "required" }]
     });
+  });
+
+  it("rejects a save when the transactional media claim no longer matches the precheck", async () => {
+    const draft = baseDraft({ mediaIds: ["m1"] });
+    const prisma = prismaStub({
+      mediaAsset: {
+        findMany: vi.fn().mockResolvedValue([{ id: "m1", discordCaptureJson: null }]),
+        updateMany: vi.fn().mockResolvedValueOnce({ count: 0 }).mockResolvedValueOnce({ count: 0 })
+      },
+      autopostDraft: { count: vi.fn().mockResolvedValue(0), create: vi.fn().mockResolvedValue(draft) },
+      $transaction: vi.fn(async (fn: (tx: unknown) => unknown) => fn(prisma))
+    });
+
+    await expect(saveAutopostDraft(prisma, "cr1", { media_ids: ["m1"], generate: false }))
+      .rejects.toBeInstanceOf(ConversationalDraftReservationError);
+    expect(prisma.mediaAsset.updateMany).toHaveBeenNthCalledWith(2, expect.objectContaining({ where: expect.objectContaining({
+      creatorId: "cr1", id: { in: ["m1"] }, ingestOrigin: { in: ["DISCORD", "RELAY_UPLOAD"] },
+      processingStatus: "READY", primaryPostId: null
+    }) }));
+  });
+
+  it("rejects a media-changing patch when the transactional claim fails after releasing prior reservations", async () => {
+    const row = baseDraft({ mediaIds: ["old-media"] });
+    const prisma = prismaStub({
+      mediaAsset: {
+        findMany: vi.fn().mockResolvedValue([{ id: "new-media", discordCaptureJson: null }]),
+        updateMany: vi.fn().mockResolvedValueOnce({ count: 1 }).mockResolvedValueOnce({ count: 0 })
+      },
+      autopostDraft: {
+        findFirst: vi.fn().mockResolvedValue(row),
+        update: vi.fn().mockResolvedValue({ ...row, mediaIds: ["new-media"] })
+      },
+      $transaction: vi.fn(async (fn: (tx: unknown) => unknown) => fn(prisma))
+    });
+
+    await expect(patchAutopostDraft(prisma, "cr1", "d1", { media_ids: ["new-media"] }))
+      .rejects.toBeInstanceOf(AutopostDraftValidationError);
+    expect(prisma.mediaAsset.updateMany).toHaveBeenNthCalledWith(2, expect.objectContaining({ where: expect.objectContaining({
+      creatorId: "cr1", id: { in: ["new-media"] }, ingestOrigin: { in: ["DISCORD", "RELAY_UPLOAD"] },
+      processingStatus: "READY", primaryPostId: null
+    }) }));
+    expect(prisma.autopostDraft.update).not.toHaveBeenCalled();
   });
 });

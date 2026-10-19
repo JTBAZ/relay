@@ -1,0 +1,11 @@
+{
+  "checkedAt": "2026-10-13T20:09:05.245Z",
+  "architecture": "compiled",
+  "model": "gpt-6-sol",
+  "authenticated": true,
+  "realProvider": true,
+  "transport": "isolated local authenticated API; default pilot process unchanged",
+  "guided": true,
+  "openEnded": true,
+  "originalDemoStateRestored": true
+}

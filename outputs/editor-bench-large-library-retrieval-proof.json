@@ -1,0 +1,40 @@
+{
+  "date": "2026-10-18",
+  "ticket": "BLR-01",
+  "status": "accepted_backend_connector_only",
+  "roles": { "plan": "Sol High", "implementation": "Luna High", "acceptance": "root" },
+  "scope": "Model-free exhaustive retrieval and refinement for already-grounded selectors; larger free-text activation deferred.",
+  "limits": { "posts": 1024, "distinctCurrentMedia": 4096, "normalizedMetadataBytes": 16777216, "sourcePageSize": 100, "requestBytes": 262144 },
+  "workerEvidence": { "focusedTestsPassed": 37, "backendBuild": "npm run build: exit 0; final source frozen" },
+  "rootEvidence": {
+    "backendBench": { "command": "npx vitest run tests/editor-bench", "filesPassed": 14, "testsPassed": 93 },
+    "afterFinalOwnershipCorrection": { "filesPassed": 2, "testsPassed": 11 },
+    "syntheticRetrieval": {
+      "posts": 1001,
+      "checks": ["late series and description matches", "full-snapshot match membership comparison", "sticky exclusions through remove and add", "effective tag deltas and empty description override", "late duplicate titles and family names", "same-data bounded interpreter parity", "owner-scoped revision", "whole refusal at post/media/byte limits", "pre-abort", "foreign relation rejection"]
+    },
+    "syntheticHttp": { "status": "passed", "selectionIds": 1024, "bodyBytes": 133348, "checks": ["200 bounded state above global 100KiB", "409 stale state", "400 extra authority before snapshot load", "404 production"] },
+    "localDatabase": { "status": "passed", "scope": "nonexistent synthetic account and creator only", "transaction": "RepeatableRead and SET TRANSACTION READ ONLY", "postsRead": 0, "writes": 0 },
+    "existingModelBoundary": { "unchanged": true, "inputToolsSchemaSha256": "0b35d231b5a1e63886a6667faa15c802daebe3f7f2e409d4c8f44fe2e3e5f3af", "networkCalls": 0 },
+    "harnessCorrection": "The first standalone HTTP proof omitted the dedicated parser on its synthetic production app and got 413 instead of 404. Mounting the parser as the real server does passed; no product-source correction was needed."
+  },
+  "budget": {
+    "modelCalls": 0,
+    "modelCostUsd": 0,
+    "ledgerUnchanged": true,
+    "ledgerSha256": "8b0d13cb05c7f093098dc9aad816258f1c6bb432bf77a4cb62c077ed0c71bc17",
+    "records": 881,
+    "developmentRemainingUsd": 0.36966876,
+    "heldoutRemainingUsd": 8.9690346,
+    "authoritativeLedger": "C:\\Users\\jorda\\Documents\\Codex\\2026-10-11\\c\\work\\relay\\.relay-data\\gallery-editor-budget.json"
+  },
+  "limitations": [
+    "Existing natural-language real catalog path remains capped at 40 posts; this connector accepts already-grounded criteria.",
+    "No new model parser, Next bridge, client wiring, live gallery, production activation, or result page was added.",
+    "Exact supported metadata matching is covered; vague unseen-vocabulary interpretation is unproven and remains gated.",
+    "Database work increases with metadata size; production latency and infrastructure cost were not benchmarked.",
+    "Frontend tests, lint, typecheck, build, and browser QA remain deferred.",
+    "Running API was not restarted for this route; local source changes are uncommitted.",
+    "Previous BLS post-fix additive live-model behavior remains unverified; original failed evidence is preserved."
+  ]
+}

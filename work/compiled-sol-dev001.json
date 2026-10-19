@@ -1,0 +1,343 @@
+{
+  "schemaVersion": "ce10.v1",
+  "architecture": "compiled",
+  "generatedAt": "2026-10-13T19:56:38.908Z",
+  "mode": "live",
+  "model": "gpt-6-sol",
+  "split": "development",
+  "familyFilter": null,
+  "caseFilter": "v2-dev001",
+  "includeGeneratedMessages": false,
+  "modelSettings": {
+    "model": "gpt-6-sol",
+    "maxOutputTokens": 4000,
+    "phase": "development",
+    "imageDetail": "low",
+    "store": false
+  },
+  "provenance": {
+    "artifacts": {
+      "runner": {
+        "sha256": "8a3d6ebe05513ffbc3e20b3a43492f745064cc6a352fa7558a9cb8678b146394"
+      },
+      "corpus": {
+        "sha256": "4bb2eb9053e4f29c3d64b6d331c141c24bb7864d9a2ea2f8bd23e7c4f3bb7da7"
+      },
+      "productionIntent": {
+        "sha256": "7ba894a2d4fb654b053032b7ba955a6ed99eb045131222f0a41adb1f7761b8bd"
+      },
+      "productionProvider": {
+        "sha256": "8510b858af028fc39979b70889eb17f45dcbd1f159f1d7e0bf290d68e1a7f2cd"
+      }
+    },
+    "mappedImageSha256": {}
+  },
+  "fixtureSchemaVersion": "ce02.v2",
+  "counts": {
+    "total": 40,
+    "planned": 0,
+    "completed": 1,
+    "failed": 0,
+    "excluded": 39,
+    "visionInspected": 0,
+    "visionNotInspected": 0
+  },
+  "accounting": {
+    "completedCaseReportedCostUsd": 0.00888,
+    "completedCaseReportedCalls": 1,
+    "casesWithoutReportedUsage": 0,
+    "failedCasesMayHaveReservedCharges": false,
+    "authoritativeLedgerPath": "C:\\Users\\jorda\\Documents\\Codex\\2026-10-11\\c\\work\\relay\\.relay-data\\gallery-editor-budget.json"
+  },
+  "semanticAccuracy": null,
+  "semanticReview": "Required before threshold claims; actionExactMatch is a mechanical comparison only.",
+  "records": [
+    {
+      "caseId": "v2-dev001",
+      "family": "metadata_paraphrase",
+      "status": "completed",
+      "latencyMs": 4854,
+      "visualEvidence": "not_applicable",
+      "visualEvidenceSatisfied": true,
+      "readToolNames": [
+        "expandLibraryFamily"
+      ],
+      "inspectedMediaIds": [],
+      "imageInspectionCount": 0,
+      "usage": {
+        "inputTokens": 3655,
+        "outputTokens": 157,
+        "costUsd": 0.00888,
+        "calls": 1
+      },
+      "routing": {
+        "repairs": 0,
+        "escalations": 0,
+        "reads": 1,
+        "images": 0
+      },
+      "actionExactMatch": true,
+      "expectedOutcome": "actions",
+      "expectedTargetIds": [
+        "w-full-1"
+      ],
+      "expectedSemanticLabels": [
+        "metadata_only",
+        "relay_scope"
+      ],
+      "expectedActions": [
+        {
+          "kind": "rename_work",
+          "targetId": "w-full-1",
+          "title": "After Rain"
+        }
+      ],
+      "proposedDisposition": "proposal",
+      "proposedMessageSha256": "39c7dbae93af71def856b9ca9505ac1f558f0dee0e28efd362ede0db0a498faa",
+      "proposedMessageLength": 54,
+      "proposedActions": [
+        {
+          "id": "94e68ef0-a151-4797-8c52-751a7cc3981e",
+          "kind": "rename_work",
+          "workId": "w-full-1",
+          "title": "After Rain"
+        }
+      ],
+      "review": "pending_human_semantic_review"
+    },
+    {
+      "caseId": "v2-dev002",
+      "family": "metadata_paraphrase",
+      "status": "excluded",
+      "reason": "case_filtered"
+    },
+    {
+      "caseId": "v2-dev003",
+      "family": "metadata_paraphrase",
+      "status": "excluded",
+      "reason": "case_filtered"
+    },
+    {
+      "caseId": "v2-dev004",
+      "family": "metadata_paraphrase",
+      "status": "excluded",
+      "reason": "case_filtered"
+    },
+    {
+      "caseId": "v2-dev005",
+      "family": "metadata_paraphrase",
+      "status": "excluded",
+      "reason": "case_filtered"
+    },
+    {
+      "caseId": "v2-dev006",
+      "family": "iterative_add_remove",
+      "status": "excluded",
+      "reason": "case_filtered"
+    },
+    {
+      "caseId": "v2-dev007",
+      "family": "iterative_add_remove",
+      "status": "excluded",
+      "reason": "case_filtered"
+    },
+    {
+      "caseId": "v2-dev008",
+      "family": "iterative_add_remove",
+      "status": "excluded",
+      "reason": "case_filtered"
+    },
+    {
+      "caseId": "v2-dev009",
+      "family": "iterative_add_remove",
+      "status": "excluded",
+      "reason": "case_filtered"
+    },
+    {
+      "caseId": "v2-dev010",
+      "family": "iterative_add_remove",
+      "status": "excluded",
+      "reason": "case_filtered"
+    },
+    {
+      "caseId": "v2-dev011",
+      "family": "manual_cart_preservation",
+      "status": "excluded",
+      "reason": "case_filtered"
+    },
+    {
+      "caseId": "v2-dev012",
+      "family": "manual_cart_preservation",
+      "status": "excluded",
+      "reason": "case_filtered"
+    },
+    {
+      "caseId": "v2-dev013",
+      "family": "manual_cart_preservation",
+      "status": "excluded",
+      "reason": "case_filtered"
+    },
+    {
+      "caseId": "v2-dev014",
+      "family": "manual_cart_preservation",
+      "status": "excluded",
+      "reason": "case_filtered"
+    },
+    {
+      "caseId": "v2-dev015",
+      "family": "manual_cart_preservation",
+      "status": "excluded",
+      "reason": "case_filtered"
+    },
+    {
+      "caseId": "v2-dev016",
+      "family": "rename_scope",
+      "status": "excluded",
+      "reason": "case_filtered"
+    },
+    {
+      "caseId": "v2-dev017",
+      "family": "rename_scope",
+      "status": "excluded",
+      "reason": "case_filtered"
+    },
+    {
+      "caseId": "v2-dev018",
+      "family": "rename_scope",
+      "status": "excluded",
+      "reason": "case_filtered"
+    },
+    {
+      "caseId": "v2-dev019",
+      "family": "rename_scope",
+      "status": "excluded",
+      "reason": "case_filtered"
+    },
+    {
+      "caseId": "v2-dev020",
+      "family": "rename_scope",
+      "status": "excluded",
+      "reason": "case_filtered"
+    },
+    {
+      "caseId": "v2-dev021",
+      "family": "ambiguous_scope",
+      "status": "excluded",
+      "reason": "case_filtered"
+    },
+    {
+      "caseId": "v2-dev022",
+      "family": "ambiguous_scope",
+      "status": "excluded",
+      "reason": "case_filtered"
+    },
+    {
+      "caseId": "v2-dev023",
+      "family": "ambiguous_scope",
+      "status": "excluded",
+      "reason": "case_filtered"
+    },
+    {
+      "caseId": "v2-dev024",
+      "family": "ambiguous_scope",
+      "status": "excluded",
+      "reason": "case_filtered"
+    },
+    {
+      "caseId": "v2-dev025",
+      "family": "ambiguous_scope",
+      "status": "excluded",
+      "reason": "case_filtered"
+    },
+    {
+      "caseId": "v2-dev026",
+      "family": "external_patron",
+      "status": "excluded",
+      "reason": "case_filtered"
+    },
+    {
+      "caseId": "v2-dev027",
+      "family": "external_patron",
+      "status": "excluded",
+      "reason": "case_filtered"
+    },
+    {
+      "caseId": "v2-dev028",
+      "family": "external_patron",
+      "status": "excluded",
+      "reason": "case_filtered"
+    },
+    {
+      "caseId": "v2-dev029",
+      "family": "external_patron",
+      "status": "excluded",
+      "reason": "case_filtered"
+    },
+    {
+      "caseId": "v2-dev030",
+      "family": "external_patron",
+      "status": "excluded",
+      "reason": "case_filtered"
+    },
+    {
+      "caseId": "v2-dev031",
+      "family": "injection",
+      "status": "excluded",
+      "reason": "case_filtered"
+    },
+    {
+      "caseId": "v2-dev032",
+      "family": "injection",
+      "status": "excluded",
+      "reason": "case_filtered"
+    },
+    {
+      "caseId": "v2-dev033",
+      "family": "injection",
+      "status": "excluded",
+      "reason": "case_filtered"
+    },
+    {
+      "caseId": "v2-dev034",
+      "family": "injection",
+      "status": "excluded",
+      "reason": "case_filtered"
+    },
+    {
+      "caseId": "v2-dev035",
+      "family": "injection",
+      "status": "excluded",
+      "reason": "case_filtered"
+    },
+    {
+      "caseId": "v2-dev036",
+      "family": "vision",
+      "status": "excluded",
+      "reason": "case_filtered"
+    },
+    {
+      "caseId": "v2-dev037",
+      "family": "vision",
+      "status": "excluded",
+      "reason": "case_filtered"
+    },
+    {
+      "caseId": "v2-dev038",
+      "family": "vision",
+      "status": "excluded",
+      "reason": "case_filtered"
+    },
+    {
+      "caseId": "v2-dev039",
+      "family": "vision",
+      "status": "excluded",
+      "reason": "case_filtered"
+    },
+    {
+      "caseId": "v2-dev040",
+      "family": "vision",
+      "status": "excluded",
+      "reason": "case_filtered"
+    }
+  ]
+}

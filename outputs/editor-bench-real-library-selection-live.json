@@ -1,0 +1,126 @@
+{
+  "date": "2026-10-18T08:13:54.499Z",
+  "scope": "Synthetic metadata through real Library selection engine and configured one-call runtime; actual authenticated DB/HTTP evidence is separate.",
+  "containsPrivateLibraryMetadata": false,
+  "frontendVerification": "deferred",
+  "model": "gpt-5.6-luna",
+  "effort": "none",
+  "capUsd": 0.03,
+  "preflightReservations": [
+    0.0058314,
+    0.005915
+  ],
+  "before": {
+    "records": 879,
+    "developmentRemainingUsd": 0.37067156,
+    "heldoutRemainingUsd": 8.9690346
+  },
+  "turns": [
+    {
+      "turn": 1,
+      "status": 200,
+      "selectionStatus": "selected",
+      "message": "Selected 2 Library posts.",
+      "selectedPostIds": [
+        "library_coast_final",
+        "library_coast_process"
+      ],
+      "excludedPostIds": [
+        "library_coast_sketch",
+        "library_orchard_sketch"
+      ],
+      "selector": {
+        "base": "catalog",
+        "all": [
+          {
+            "field": "tag",
+            "value": "coast",
+            "requestQuote": "coast"
+          }
+        ],
+        "any": [],
+        "none": [
+          {
+            "field": "tag",
+            "value": "sketch",
+            "requestQuote": "sketch"
+          }
+        ]
+      },
+      "usage": {
+        "calls": 1,
+        "known": true,
+        "inputTokens": 1903,
+        "outputTokens": 85,
+        "costUsd": 0.0004826
+      },
+      "passed": true
+    },
+    {
+      "turn": 2,
+      "status": 200,
+      "selectionStatus": "unchanged",
+      "message": "Selection unchanged.",
+      "selectedPostIds": [
+        "library_coast_final",
+        "library_coast_process"
+      ],
+      "excludedPostIds": [
+        "library_coast_sketch",
+        "library_orchard_sketch"
+      ],
+      "selector": {
+        "base": "selection",
+        "all": [],
+        "any": [
+          {
+            "field": "series_id",
+            "value": "series_four_seasons",
+            "requestQuote": "full Four seasons series"
+          },
+          {
+            "field": "description",
+            "value": "blue",
+            "requestQuote": "description mentions blue"
+          }
+        ],
+        "none": []
+      },
+      "usage": {
+        "calls": 1,
+        "known": true,
+        "inputTokens": 2019,
+        "outputTokens": 97,
+        "costUsd": 0.0005202000000000001
+      },
+      "passed": false
+    }
+  ],
+  "passed": false,
+  "error": "Bounded live case failed; no retry",
+  "calls": [
+    {
+      "id": "956bfb2f-7ed5-4b80-81d7-4190416c7ca2",
+      "model": "gpt-5.6-luna",
+      "phase": "development",
+      "reservedUsd": 0.0058314,
+      "actualUsd": 0.0004826,
+      "settled": true
+    },
+    {
+      "id": "27e93f36-ca6a-4602-9869-de911226fbc2",
+      "model": "gpt-5.6-luna",
+      "phase": "development",
+      "reservedUsd": 0.005915,
+      "actualUsd": 0.0005202000000000001,
+      "settled": true
+    }
+  ],
+  "totalReservedUsd": 0.0117464,
+  "totalActualUsd": 0.0010028,
+  "after": {
+    "records": 881,
+    "developmentRemainingUsd": 0.36966876,
+    "heldoutRemainingUsd": 8.9690346
+  }
+}

@@ -10,7 +10,7 @@
 
 import type { Logger } from "pino";
 import express, { Request, Response } from "express";
-import { randomUUID } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 import { dirname, join } from "node:path";
 import { PatreonAuthService } from "./auth/auth-service.js";
 import {
@@ -38,9 +38,18 @@ import {
 } from "./auth/subscribestar-creator-oauth-state.js";
 import { errorEnvelope, successEnvelope } from "./contracts/api.js";
 import { registerGalleryEditorRoutes } from "./gallery-editor/routes.js";
+import { FileProviderBudget } from "./gallery-editor/budget.js";
+import type { ModelPricing } from "./gallery-editor/provider.js";
 import { GalleryEditorService } from "./gallery-editor/service.js";
 import { loadPostNaming } from "./gallery-editor/naming.js";
 import { EditorError } from "./gallery-editor/types.js";
+import { createPlanningContextSource } from "./conversational-planning/context.js";
+import { createConversationalPlanRepository, createConversationalPreparationRepository } from "./conversational-planning/persistence.js";
+import { createPlanPreparationAdapter } from "./conversational-planning/materializer.js";
+import { createConversationalPlanningService } from "./conversational-planning/service.js";
+import { createPlanningProvider } from "./conversational-planning/intent.js";
+import { CONVERSATIONAL_PLANNING_BASE, createConversationalPlanningJsonBodyParser, registerConversationalPlanningRoutes } from "./conversational-planning/routes.js";
+import type { ProviderBudget } from "./gallery-editor/provider.js";
 import { RELAY_TIER_ALL_PATRONS, RELAY_TIER_PUBLIC } from "./patreon/relay-access-tiers.js";
 import { DbEventBus } from "./events/event-bus-db.js";
 import { InMemoryEventBus, type RelayEventBus } from "./events/event-bus.js";
@@ -62,6 +71,7 @@ import { applyBaselineSecurityHeaders } from "./security/baseline-response-heade
 import { exportRequireTierAccessFromEnv } from "./security/production-env-defaults.js";
 import { evaluatePart1aGates } from "./auth/part1a-gate-metrics.js";
 import { buildDeviantArtCrossPostPackage, buildPatreonCrossPostPackage, buildXCrossPostPackage } from "./extension/cross-post-package.js";
+import { buildScheduleEventCrossPostPackage } from "./extension/schedule-event-cross-post-package.js";
 import {
   BlueskyCredentialValidationError,
   deleteCreatorBlueskyCredential,
@@ -674,6 +684,12 @@ import {
   listScheduleLibraryPosts,
   patchCreatorScheduleEvent
 } from "./distribution/creator-schedule-event-service.js";
+import { getLibraryScheduleSource, validateLibraryScheduleAttachment } from "./distribution/library-schedule-source.js";
+import { registerBenchScheduleRoutes } from "./editor-bench/schedule-routes.js";
+import { createEditorBenchRuntime } from "./editor-bench/runtime.js";
+import { createBenchDistributionVariantAdapter, loadBenchVariantSource } from "./editor-bench/distribution-variant-adapter.js";
+import { loadLargeRealLibrarySnapshot, loadRealLibraryCatalog } from "./editor-bench/library-selection-catalog.js";
+import { mountGroundedLibrarySelectionBodyParser, registerGroundedLibrarySelectionRoute, registerRealLibrarySelectionCatalogRoute } from "./editor-bench/real-library-selection-routes.js";
 import {
   isCreatorScheduleDestination,
   isCreatorScheduleEventType
@@ -1200,6 +1216,51 @@ export type CreateAppResult = {
   /** Same GraphQL endpoint patrons use with subscriber-scoped bearer tokens. */
   subscribeStarPatronGraphqlUrl?: string;
 };
+
+/** The CP prefix must get its transport bound before the shared parser consumes the stream. */
+export function mountRelayJsonBodyParsers(app: express.Application): void {
+  app.use(CONVERSATIONAL_PLANNING_BASE, createConversationalPlanningJsonBodyParser());
+  mountGroundedLibrarySelectionBodyParser(app);
+  app.use("/api/v1/editor-bench/schedule", express.json({ limit: "112kb", strict: true }), (error: unknown, req: Request, res: Response, next: express.NextFunction) => {
+    if (!error) return next();
+    const traceId = traceIdFrom(req);
+    if ((error as { type?: string }).type === "entity.too.large") return res.status(413).json(errorEnvelope("REQUEST_TOO_LARGE", "The schedule review request is too large.", traceId));
+    return res.status(400).json(errorEnvelope("INVALID_REQUEST", "The schedule review request must contain valid JSON.", traceId));
+  });
+  app.use(express.json());
+}
+
+function exactPlanningPricing(modelId: string, raw: string | undefined): ModelPricing | null {
+  if (!raw) return null;
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
+    const entry = (parsed as Record<string, unknown>)[modelId];
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) return null;
+    const pricing = entry as Record<string, unknown>;
+    if (typeof pricing.inputUsdPerMillion !== "number" || !Number.isFinite(pricing.inputUsdPerMillion) || pricing.inputUsdPerMillion <= 0 ||
+        typeof pricing.outputUsdPerMillion !== "number" || !Number.isFinite(pricing.outputUsdPerMillion) || pricing.outputUsdPerMillion <= 0) return null;
+    if (pricing.cachedInputUsdPerMillion !== undefined && (typeof pricing.cachedInputUsdPerMillion !== "number" || !Number.isFinite(pricing.cachedInputUsdPerMillion) || pricing.cachedInputUsdPerMillion <= 0 || pricing.cachedInputUsdPerMillion > pricing.inputUsdPerMillion)) return null;
+    return {
+      inputUsdPerMillion: pricing.inputUsdPerMillion,
+      outputUsdPerMillion: pricing.outputUsdPerMillion,
+      ...(pricing.cachedInputUsdPerMillion === undefined ? {} : { cachedInputUsdPerMillion: pricing.cachedInputUsdPerMillion })
+    };
+  } catch { return null; }
+}
+
+/** Constructs only the explicitly priced interpreter; returns null unless every opt-in is exact. */
+export function createConfiguredPlanningProvider(budget: ProviderBudget, env: NodeJS.ProcessEnv = process.env, fetch?: typeof globalThis.fetch) {
+  const creatorIds = new Set((env.RELAY_CONVERSATIONAL_PLANNING_ALLOWLIST ?? "").split(",").map(value => value.trim()).filter(Boolean));
+  const optedIn = env.RELAY_CONVERSATIONAL_PLANNING_ENABLED === "1" && env.RELAY_CONVERSATIONAL_PLANNING_AI_ENABLED === "1" && creatorIds.size > 0 && !creatorIds.has("*");
+  const modelId = env.LIBRARY_EDITOR_INTERPRETER_MODEL;
+  const apiKey = env.OPENAI_API_KEY?.trim();
+  if (!optedIn || !modelId || modelId.trim() !== modelId || !modelId.trim() || !apiKey) return null;
+  const pricing = exactPlanningPricing(modelId, env.LIBRARY_EDITOR_MODEL_PRICING_JSON);
+  if (!pricing) return null;
+  try { return createPlanningProvider({ modelId, pricing, budget, apiKey, phase: "development", ...(fetch ? { fetch } : {}) }); }
+  catch { return null; }
+}
 
 /**
  * @description Asserts a required string config value is present.
@@ -2475,7 +2536,15 @@ export function createApp(config: AppConfig): CreateAppResult {
     );
   });
 
-  app.use(express.json());
+  mountRelayJsonBodyParsers(app);
+  if (!config.prisma) {
+    app.use(CONVERSATIONAL_PLANNING_BASE, (req, res) => {
+      const traceId = traceIdFrom(req);
+      res.setHeader("Cache-Control", "private, no-store");
+      res.setHeader("X-Trace-Id", traceId);
+      return res.status(503).json(errorEnvelope("DATABASE_IDENTITY_REQUIRED", "Database-backed account identity is unavailable.", traceId));
+    });
+  }
   app.use((req, res, next) => {
     const origin = req.header("Origin")?.trim();
     const path = req.path;
@@ -3509,6 +3578,41 @@ export function createApp(config: AppConfig): CreateAppResult {
     }
     return relayCreatorId;
   }
+
+  /** Read-only extension transport for a confirmed real-Library X schedule cue. */
+  app.get("/api/v1/extension/cross-post/schedule-events/:event_id", async (req: Request, res: Response) => {
+    const traceId = traceIdFrom(req);
+    res.setHeader("Cache-Control", "private, no-store");
+    if (process.env.NODE_ENV !== "development") return res.status(404).json(errorEnvelope("NOT_FOUND", "Not found.", traceId));
+    if (!config.prisma) return res.status(503).json(errorEnvelope("SERVICE_UNAVAILABLE", "Database required.", traceId));
+
+    const authorization = req.header("authorization")?.trim() ?? "";
+    const bearer = /^Bearer\s+(.+)$/i.exec(authorization)?.[1]?.trim() ?? "";
+    if (!bearer) return res.status(401).json(errorEnvelope("AUTH_ERROR", "Bearer token required.", traceId));
+    let session: Awaited<ReturnType<typeof identityService.resolveSession>>;
+    try { session = await identityService.resolveSession(bearer, { cleanupExpired: false }); }
+    catch { return res.status(401).json(errorEnvelope("AUTH_ERROR", "Invalid or expired session.", traceId)); }
+    if (!session) return res.status(401).json(errorEnvelope("AUTH_ERROR", "Invalid or expired session.", traceId));
+    if (session.kind !== SessionKind.extension) return res.status(403).json(errorEnvelope("FORBIDDEN", "Extension grant required.", traceId));
+
+    try {
+      await applyRelayAccountRlsIfPresent(config.prisma, session);
+      const accountId = await getAccountIdForSession(config.prisma, session);
+      if (!accountId) return res.status(403).json(errorEnvelope("FORBIDDEN", "Session is not linked to an account.", traceId));
+      const account = await config.prisma.account.findUnique({ where: { id: accountId }, select: { primaryRelayCreatorId: true } });
+      const creatorId = account?.primaryRelayCreatorId?.trim();
+      if (!creatorId) return res.status(404).json(errorEnvelope("NOT_FOUND", "No creator studio for this grant.", traceId));
+      const plan = await requireCreatorPlanAtLeast(config.prisma, creatorId, CreatorPlan.studio_core);
+      if (!plan.ok) return res.status(402).json({ error: "plan_required", required_plan: "studio_core", trace_id: traceId });
+      const eventId = typeof req.params.event_id === "string" ? req.params.event_id : "";
+      const result = await buildScheduleEventCrossPostPackage(config.prisma, creatorId, eventId);
+      if (result.status === "not_found") return res.status(404).json(errorEnvelope("NOT_FOUND", "Schedule event not found.", traceId));
+      if (result.status === "ineligible") return res.status(409).json(errorEnvelope("CONFLICT", "This schedule event or its selected Library media is no longer eligible for X compose.", traceId));
+      return res.status(200).json(successEnvelope(result.data, traceId));
+    } catch {
+      return res.status(500).json(errorEnvelope("INTERNAL", "The schedule event package could not be loaded.", traceId));
+    }
+  });
 
   app.post(
     "/api/v1/extension/schedule-reminders/:reminder_id/dismiss",
@@ -19308,10 +19412,78 @@ export function createApp(config: AppConfig): CreateAppResult {
     return res.redirect(302, resolved.location);
   });
 
+  const sharedProviderBudget = new FileProviderBudget(join(process.env.RELAY_GALLERY_EDITOR_DATA_DIR ?? ".relay-data", "gallery-editor-budget.json"));
   if (config.prisma) {
+    registerGroundedLibrarySelectionRoute(app, {
+      development: process.env.NODE_ENV === "development",
+      traceId: traceIdFrom,
+      authenticateCreator: async (req, { readonlySession }) => {
+        const { context } = await requireAccountWithRole(req, { prisma: config.prisma!, identityService, readonlySession }, "creator");
+        return { creatorId: context.primaryRelayCreatorId!.trim(), accountId: context.accountId };
+      },
+      loadSnapshot: (accountId, creatorId, signal) => loadLargeRealLibrarySnapshot(config.prisma!, accountId, creatorId, signal)
+    });
+    registerRealLibrarySelectionCatalogRoute(app, {
+      development: process.env.NODE_ENV === "development",
+      traceId: traceIdFrom,
+      authenticateCreator: async (req, { readonlySession }) => {
+        const { context } = await requireAccountWithRole(req, { prisma: config.prisma!, identityService, readonlySession }, "creator");
+        return { creatorId: context.primaryRelayCreatorId!.trim(), accountId: context.accountId };
+      },
+      loadCatalog: (accountId, creatorId) => loadRealLibraryCatalog(config.prisma!, accountId, creatorId)
+    });
+    let benchVariantChatRuntime: ReturnType<typeof createEditorBenchRuntime> | null = null;
+    registerBenchScheduleRoutes(app, {
+      development: process.env.NODE_ENV === "development",
+      ...(process.env.NODE_ENV === "development" ? {
+        distributionVariantAdapter: createBenchDistributionVariantAdapter(),
+        loadBenchVariantSource: async (_creatorId: string, postId: string, mediaIds: string[]) => loadBenchVariantSource(postId, mediaIds),
+        getVariantEditProvider: async () => {
+          benchVariantChatRuntime ??= createEditorBenchRuntime({ repoRoot: process.cwd(), env: process.env, fetch: config.fetch_impl });
+          return (await benchVariantChatRuntime).editorProvider;
+        },
+      } : {}),
+      signingSecret: randomBytes(32),
+      traceId: traceIdFrom,
+      authenticateCreator: async (req, { readonlySession }) => {
+        const { context } = await requireAccountWithRole(req, { prisma: config.prisma!, identityService, readonlySession }, "creator");
+        return { creatorId: context.primaryRelayCreatorId!.trim(), accountId: context.accountId };
+      },
+      guardMutation: async (req, res, traceId, creatorId) => {
+        if (!(await assertCreatorRelayMutationAllowed(req, res, traceId, config.prisma!, creatorId))) return false;
+        return guardStudioSyncWritable(res, traceId, creatorId);
+      },
+      assertCorePlan: async creatorId => {
+        const gate = await requireCreatorPlanAtLeast(config.prisma!, creatorId, CreatorPlan.studio_core);
+        if (!gate.ok) throw new CreatorScheduleEventPlanRequiredError();
+      },
+      getLibrarySource: async (creatorId, postId) => getLibraryScheduleSource(config.prisma!, creatorId, postId),
+      validateLibraryAttachment: async (creatorId, attachment) => validateLibraryScheduleAttachment(config.prisma!, creatorId, attachment),
+      createEvent: async (creatorId, payload, eventId, attachment) => {
+        const out = await createCreatorScheduleEvent(config.prisma!, creatorId, payload, { trustedEventId: eventId, ...(attachment ? { trustedLibraryAttachment: attachment } : {}) });
+        if (!out.ok) throw new Error("unexpected_missing_link");
+        return out.event;
+      },
+      readEvent: async (creatorId, eventId) => {
+        const row = await config.prisma!.creatorScheduleEvent.findFirst({
+          where: { id: eventId, creatorId },
+          select: { id: true, eventType: true, destination: true, title: true, note: true, dueAt: true, postId: true, mediaIds: true, externalUrl: true, remindMe: true, status: true, createdAt: true, updatedAt: true }
+        });
+        if (!row) return null;
+        const event = {
+          id: row.id, source: "manual_event" as const, event_type: row.eventType as "make_post", action: "post" as const,
+          destination: row.destination as "patreon" | "x" | "deviantart" | "bluesky", title: row.title, note: row.note, due_at: row.dueAt.toISOString(),
+          post_id: row.postId, media_ids: row.mediaIds, external_url: row.externalUrl, remind_me: row.remindMe, status: row.status,
+          created_at: row.createdAt.toISOString(), updated_at: row.updatedAt.toISOString()
+        };
+        return { event, facts: { eventType: row.eventType, destination: row.destination, title: row.title, note: row.note, dueAt: row.dueAt, postId: row.postId, externalUrl: row.externalUrl, remindMe: row.remindMe, mediaIds: row.mediaIds } };
+      }
+    });
+
     registerGalleryEditorRoutes(app, {
       prisma: config.prisma,
       storageRoot: exportStorageRoot,
+      providerBudget: sharedProviderBudget,
       storesReady: useDbIdentityStore(config) && useDbCanonicalStore(config) && useDbGalleryOverridesStore(config) && useDbCollectionsStore(config),
       traceId: traceIdFrom,
       authorize: async (req, res, mutation) => {
@@ -19327,6 +19499,31 @@ export function createApp(config: AppConfig): CreateAppResult {
           throw err;
         }
       }
+    });
+
+    const planningContext = createPlanningContextSource(config.prisma);
+    const planningRepository = createConversationalPlanRepository(config.prisma, planningContext.loadContext);
+    const preparationOutputs = createConversationalPreparationRepository(config.prisma);
+    const preparation = createPlanPreparationAdapter({ repository: planningRepository, outputs: preparationOutputs });
+    const planningProvider = createConfiguredPlanningProvider(sharedProviderBudget, process.env, config.fetch_impl);
+    registerConversationalPlanningRoutes(app, {
+      prisma: config.prisma,
+      identityService,
+      service: createConversationalPlanningService({ repository: planningRepository, context: planningContext, preparation, ...(planningProvider ? { provider: planningProvider } : {}) }),
+      lookup: planningContext.lookup,
+      databaseIdentityReady: useDbIdentityStore(config),
+      settings: {
+        enabled: process.env.RELAY_CONVERSATIONAL_PLANNING_ENABLED,
+        allowlist: process.env.RELAY_CONVERSATIONAL_PLANNING_ALLOWLIST,
+        aiEnabled: process.env.RELAY_CONVERSATIONAL_PLANNING_AI_ENABLED,
+        aiAvailable: planningProvider !== null,
+        preparationAvailable: true
+      },
+      assertStudioMutationAllowed: async (req, res, traceId, creatorId) => {
+        if (!(await assertCreatorRelayMutationAllowed(req, res, traceId, config.prisma!, creatorId))) return false;
+        return guardStudioSyncWritable(res, traceId, creatorId);
+      },
+      logInfrastructureFailure: ({ traceId, operation }) => serverLog.warn({ traceId, operation }, "conversational_planning_unavailable")
     });
   }
 

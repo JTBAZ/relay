@@ -42,6 +42,7 @@ import {
   normalizeMediaRoutingByDestination,
   resolveMediaVersionForDestination
 } from "./media-binding.js";
+import { buildDistributionPlanCreateData, buildDistributionVariantCreateData } from "./distribution-row-builders.js";
 
 const COACH_REVIEW_ASSISTANT_MODE = "coach_review";
 
@@ -506,15 +507,9 @@ export async function createPostDistributionPlan(
       planId = existing.id;
     } else {
       const created = await tx.postDistributionPlan.create({
-        data: {
-          creatorId,
-          postId,
-          sourceDraftId: input.source_draft_id?.trim() || null,
-          status: "active",
-          assistantMode,
-          assistantContext: assistantContext as object,
-          assistantPlan: assistantPlan as object
-        }
+        data: buildDistributionPlanCreateData({ creatorId, postId,
+          sourceDraftId: input.source_draft_id?.trim() || null, status: "active", assistantMode,
+          assistantContext: assistantContext as object, assistantPlan: assistantPlan as object })
       });
       planId = created.id;
     }
@@ -528,20 +523,8 @@ export async function createPostDistributionPlan(
 
     for (const variant of formatted) {
       const row = await tx.postDistributionVariant.create({
-        data: {
-          planId,
-          postId,
-          creatorId,
-          destination: variant.destination,
-          status: "draft",
-          assistantEnabled: assistantEnabledSet.has(variant.destination),
-          title: variant.title,
-          bodyText: variant.bodyText,
-          postText: variant.postText,
-          tags: variant.tags,
-          platformFields: variant.platformFields as object,
-          advice: variant.advice as object
-        }
+        data: buildDistributionVariantCreateData({ planId, postId, creatorId, variant,
+          status: "draft", assistantEnabled: assistantEnabledSet.has(variant.destination) })
       });
       createdVariants.push(row);
     }

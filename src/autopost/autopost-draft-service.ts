@@ -7,7 +7,7 @@
 import {
   MediaIngestOrigin,
   MediaProcessingStatus,
-  type Prisma,
+  Prisma,
   type PrismaClient
 } from "@prisma/client";
 import { randomUUID } from "node:crypto";
@@ -151,6 +151,16 @@ export class AutopostDraftValidationError extends Error {
     public readonly details: Array<{ field: string; issue: string }>
   ) {
     super(message);
+  }
+}
+
+export class ConversationalDraftReservationError extends AutopostDraftValidationError {
+  public readonly code = "media_not_available" as const;
+
+  public constructor() {
+    super("One or more media_ids are not available in the staging bin.", [
+      { field: "media_ids", issue: "not_staging_ready" }
+    ]);
   }
 }
 
@@ -346,13 +356,13 @@ async function findActiveDraft(prisma: PrismaClient, creatorId: string) {
   });
 }
 
-async function countActiveDrafts(prisma: PrismaClient, creatorId: string): Promise<number> {
+async function countActiveDrafts(prisma: Pick<PrismaClient, "autopostDraft">, creatorId: string): Promise<number> {
   return prisma.autopostDraft.count({
     where: { creatorId, status: { in: [...AUTOPOST_ACTIVE_STATUSES] } }
   });
 }
 
-async function assertUnderActiveSoftCap(prisma: PrismaClient, creatorId: string) {
+async function assertUnderActiveSoftCap(prisma: Pick<PrismaClient, "autopostDraft">, creatorId: string) {
   const count = await countActiveDrafts(prisma, creatorId);
   if (count >= AUTOPOST_ACTIVE_DRAFT_SOFT_CAP) {
     throw new AutopostDraftValidationError(
@@ -363,7 +373,7 @@ async function assertUnderActiveSoftCap(prisma: PrismaClient, creatorId: string)
 }
 
 async function loadStagingMedia(
-  prisma: PrismaClient,
+  prisma: Pick<PrismaClient, "mediaAsset">,
   creatorId: string,
   mediaIds: string[],
   opts?: { allowDraftId?: string; allowEmpty?: boolean }
@@ -406,15 +416,148 @@ async function reserveMediaForDraft(
     data: { autopostDraftId: null }
   });
   if (mediaIds.length === 0) return;
-  await tx.mediaAsset.updateMany({
+  const claimed = await tx.mediaAsset.updateMany({
     where: {
       id: { in: mediaIds },
       creatorId,
+      ingestOrigin: { in: STAGING_ORIGINS },
+      processingStatus: MediaProcessingStatus.READY,
       primaryPostId: null,
       OR: [{ autopostDraftId: null }, { autopostDraftId: draftId }]
     },
     data: { autopostDraftId: draftId }
   });
+  if (claimed.count !== mediaIds.length) throw new ConversationalDraftReservationError();
+}
+
+type NormalizedDraftCreateInput = Readonly<{
+  creatorId: string;
+  status: string;
+  mediaIds: readonly string[];
+  title: string | null;
+  bodyText: string | null;
+  styleProfileId: string | null;
+  intent: string | null;
+  performanceGoalId: string | null;
+  composerStep: string;
+  workspace: AutopostDraftWorkspace;
+  conversationalStepKey?: string;
+}>;
+
+async function createNormalizedDraftRow(tx: Prisma.TransactionClient, input: NormalizedDraftCreateInput) {
+  return tx.autopostDraft.create({
+    data: {
+      creatorId: input.creatorId,
+      status: input.status,
+      mediaIds: [...input.mediaIds],
+      title: input.title,
+      bodyText: input.bodyText,
+      styleProfileId: input.styleProfileId,
+      intent: input.intent,
+      performanceGoalId: input.performanceGoalId,
+      composerStep: input.composerStep,
+      workspace: input.workspace as Prisma.InputJsonValue,
+      ...(input.conversationalStepKey ? { conversationalStepKey: input.conversationalStepKey } : {})
+    }
+  });
+}
+
+export type ConversationalDraftInput = Readonly<{
+  creatorId: string;
+  stepKey: string;
+  mediaIds: readonly string[];
+  title: string;
+}>;
+
+export type ConversationalDraftResult =
+  | { kind: "ready"; draftId: string; reused: boolean }
+  | { kind: "blocked"; code: "media_not_available" | "active_draft_limit" | "title_normalization_gap" }
+  | { kind: "conflict"; code: "authority_conflict" };
+
+function invalidConversationalDraftInput(field: string, issue: string): AutopostDraftValidationError {
+  return new AutopostDraftValidationError("Invalid conversational draft input.", [{ field, issue }]);
+}
+
+function validateConversationalDraftInput(input: unknown): asserts input is ConversationalDraftInput {
+  if (!input || typeof input !== "object" || Array.isArray(input)) throw invalidConversationalDraftInput("input", "invalid");
+  const record = input as Record<string, unknown>;
+  const keys = Object.keys(record).sort();
+  if (keys.length !== 4 || keys.join(",") !== "creatorId,mediaIds,stepKey,title") throw invalidConversationalDraftInput("input", "invalid");
+  const validId = (value: unknown): value is string => typeof value === "string" && value.length > 0 && value.length <= 160 && value.trim() === value;
+  if (!validId(record.creatorId)) throw invalidConversationalDraftInput("creator_id", "invalid");
+  if (!Array.isArray(record.mediaIds) || record.mediaIds.length < 1 || record.mediaIds.length > 3 ||
+    record.mediaIds.some(id => !validId(id)) || new Set(record.mediaIds).size !== record.mediaIds.length) {
+    throw invalidConversationalDraftInput("media_ids", "invalid");
+  }
+  if (typeof record.stepKey !== "string" || record.stepKey.length > 331 || record.stepKey.trim() !== record.stepKey) {
+    throw invalidConversationalDraftInput("conversational_step_key", "invalid");
+  }
+  const match = /^plan:(.{1,160}):step:(.{1,160})$/.exec(record.stepKey);
+  if (!match || !validId(match[1]) || !validId(match[2]) || `plan:${match[1]}:step:${match[2]}` !== record.stepKey) {
+    throw invalidConversationalDraftInput("conversational_step_key", "invalid");
+  }
+}
+
+/** Server-only draft writer for the plan owner; caller supplies its already-open transaction. */
+export async function saveConversationalDraftInTransaction(
+  tx: Prisma.TransactionClient,
+  input: ConversationalDraftInput
+): Promise<ConversationalDraftResult> {
+  validateConversationalDraftInput(input);
+  const mediaIds = [...input.mediaIds];
+  const lockMediaIds = [...mediaIds].sort();
+  const current = await tx.autopostDraft.findFirst({
+    where: { conversationalStepKey: input.stepKey },
+    select: { id: true, creatorId: true }
+  });
+  if (current) {
+    return current.creatorId === input.creatorId
+      ? { kind: "ready", draftId: current.id, reused: true }
+      : { kind: "conflict", code: "authority_conflict" };
+  }
+
+  if (typeof input.title !== "string" || input.title.length < 1 || input.title.length > 500 || input.title.trim() !== input.title) {
+    return { kind: "blocked", code: "title_normalization_gap" };
+  }
+  if (await countActiveDrafts(tx, input.creatorId) >= AUTOPOST_ACTIVE_DRAFT_SOFT_CAP) {
+    return { kind: "blocked", code: "active_draft_limit" };
+  }
+
+  const lockedRows = await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
+    SELECT "id"
+    FROM "public"."media_assets"
+    WHERE "creator_id" = ${input.creatorId}
+      AND "id" IN (${Prisma.join(lockMediaIds)})
+      AND "ingest_origin" IN ('DISCORD'::"public"."MediaIngestOrigin", 'RELAY_UPLOAD'::"public"."MediaIngestOrigin")
+      AND "processing_status" = 'READY'::"public"."MediaProcessingStatus"
+      AND "primary_post_id" IS NULL
+      AND "autopost_draft_id" IS NULL
+    ORDER BY "id"
+    FOR UPDATE
+  `);
+  if (lockedRows.length !== lockMediaIds.length) return { kind: "blocked", code: "media_not_available" };
+  try {
+    await loadStagingMedia(tx, input.creatorId, mediaIds);
+  } catch (error) {
+    if (error instanceof AutopostDraftValidationError) return { kind: "blocked", code: "media_not_available" };
+    throw error;
+  }
+
+  const created = await createNormalizedDraftRow(tx, {
+    creatorId: input.creatorId,
+    status: "drafting",
+    mediaIds,
+    title: input.title,
+    bodyText: null,
+    styleProfileId: null,
+    intent: null,
+    performanceGoalId: null,
+    composerStep: "draft-post",
+    workspace: {},
+    conversationalStepKey: input.stepKey
+  });
+  await reserveMediaForDraft(tx, created.id, input.creatorId, mediaIds);
+  return { kind: "ready", draftId: created.id, reused: false };
 }
 
 async function releaseMediaForDraft(
@@ -596,19 +739,17 @@ export async function saveAutopostDraft(
     : null;
 
   const draft = await prisma.$transaction(async (tx) => {
-    const created = await tx.autopostDraft.create({
-      data: {
-        creatorId,
-        status,
-        mediaIds,
-        title: title?.trim() ? title.trim() : null,
-        bodyText: bodyText?.trim() ? bodyText : null,
-        styleProfileId: styleProfile?.profile_id ?? null,
-        intent,
-        performanceGoalId,
-        composerStep,
-        workspace: workspace as Prisma.InputJsonValue
-      }
+    const created = await createNormalizedDraftRow(tx, {
+      creatorId,
+      status,
+      mediaIds,
+      title: title?.trim() ? title.trim() : null,
+      bodyText: bodyText?.trim() ? bodyText : null,
+      styleProfileId: styleProfile?.profile_id ?? null,
+      intent,
+      performanceGoalId,
+      composerStep,
+      workspace
     });
     await reserveMediaForDraft(tx, created.id, creatorId, mediaIds);
     return created;

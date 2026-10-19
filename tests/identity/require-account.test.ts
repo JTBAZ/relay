@@ -14,6 +14,7 @@ import type { SessionToken } from "../../src/identity/types.js";
 function mockReq(cookie?: string, bearer?: string): Request {
   const headers: Record<string, string> = {};
   if (bearer) headers.authorization = `Bearer ${bearer}`;
+  if (cookie) headers.cookie = `relay_session=${encodeURIComponent(cookie)}`;
   return {
     headers,
     header(name: string) {
@@ -53,6 +54,18 @@ describe("require-account", () => {
     await expect(requireAccount(req, { prisma, identityService })).rejects.toMatchObject({
       status: 401
     });
+  });
+
+  it("forwards read-only session lookup and preserves cookie precedence over Bearer", async () => {
+    const req = mockReq("cookie-token", "bearer-token");
+    const identityService = { resolveSession: vi.fn().mockResolvedValue(null) } as unknown as IdentityService;
+    await expect(requireAccount(req, { prisma: {} as PrismaClient, identityService, readonlySession: true })).rejects.toMatchObject({ status: 401 });
+    expect(identityService.resolveSession).toHaveBeenCalledWith("cookie-token", { cleanupExpired: false });
+
+    const bearerIdentity = { resolveSession: vi.fn().mockResolvedValue(null) } as unknown as IdentityService;
+    await expect(requireAccount(mockReq(undefined, "bearer-token"), { prisma: {} as PrismaClient, identityService: bearerIdentity })).rejects.toMatchObject({ status: 401 });
+    expect(bearerIdentity.resolveSession).toHaveBeenCalledTimes(1);
+    expect(bearerIdentity.resolveSession).toHaveBeenCalledWith("bearer-token");
   });
 
   it("requireAccount returns 401 when session not linked to account", async () => {

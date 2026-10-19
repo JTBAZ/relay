@@ -1,0 +1,22 @@
+{
+  "checks": [
+    {
+      "destination": "x",
+      "savedDestination": "x",
+      "noPost": true,
+      "noUrl": true,
+      "reminderOff": true,
+      "railDestination": "x"
+    },
+    {
+      "destination": "deviantart",
+      "savedDestination": "deviantart",
+      "noPost": true,
+      "noUrl": true,
+      "reminderOff": true,
+      "railDestination": "deviantart"
+    }
+  ],
+  "rolledBack": true,
+  "remainingTestEvents": 0
+}

@@ -1,5 +1,24 @@
 # Relay browser extension
 
+## Current local X handoff build — 2026-10-18
+
+The built Chrome development extension is at `C:\Users\jorda\Documents\Codex\2026-10-11\c\work\relay\extension\dist\chrome-dev`, using API `http://localhost:8788` and web `http://localhost:3000`. Its stable ID is `bhnphlohdpinngabohfpogekcgppglgd`; local web recognition, API extension-origin allowlist and local consent configuration now match. The local configuration files are ignored/untracked; no secret value belongs in this document.
+
+To try it in Chrome: open `chrome://extensions`, enable Developer mode, then reload an existing unpacked development copy or choose **Load unpacked** and select that directory. Open the Relay extension popup, choose **Connect**, and approve its normal Relay consent page (sign in if prompted). Refresh `http://localhost:3000/editor-bench` in Chrome, use Mock posting → Real Library, confirm an X event, and separately click **Open X with extension**. Review on X and publish manually. Loading/consent needs the user in Chrome; neither the installed extension nor a successful fill is claimed.
+
+Known limitation: API preflight from `https://x.com` to the existing media-byte route returns 403, and the current injected X script fetches those bytes directly. [Chrome documents that content-script requests use the page origin](https://developer.chrome.com/docs/extensions/develop/concepts/network-requests). Image autofill therefore remains blocked/unverified in this local setup; use the existing manual-upload fallback during the trial. A media-transport rewrite was not added to the build request. Frontend/browser testing remains deferred; no external publication occurred.
+
+Rebuild this same artifact from the repository root in PowerShell:
+
+```powershell
+$env:RELAY_EXTENSION_DEV_API_PORT = "8788"
+npm run build:chrome:dev --prefix extension
+Remove-Item Env:RELAY_EXTENSION_DEV_API_PORT
+```
+
+The override is build-only, validated as a local port, and shared by background/popup and all injected bundles. Without it, the existing dev default is 8787; production stays on its hosted origin. [Build evidence](../outputs/editor-bench-extension-dev-build.json), [local alignment and limitation](../outputs/editor-bench-extension-local-alignment.json).
+
+
 Vite + [@crxjs/vite-plugin](https://crxjs.dev/vite-plugin) workspace for the Relay Patreon connector. Phase 2 provides manifests, build targets, and loadable stubs; Phase 3+ add the service worker and UI.
 
 ## Prerequisites

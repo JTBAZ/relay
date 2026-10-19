@@ -1,0 +1,7 @@
+# CP-09c1 — Existing server preparation wiring
+
+Root accepted 2026-10-17. Luna High changed only `src/server.ts` and its planning registration test. The existing database-backed mount constructs the reviewed output repository from its Prisma client, constructs the materializer from that output repository and the existing plan repository, and injects the exact adapter into the existing service. Preparation availability now reflects that adapter at this mount. Feature defaults and environment configuration were not changed.
+
+Root inspected the bounded mount diff, independently passed 56 focused registration/service/route/materializer/client tests (39 registration/service/route), and passed `npm run build`. Worker strict direct registration-test TypeScript passed. Wiring spies prove dependency identity, not real database output behavior. A separate actual-route test proves the disabled-feature guard prevents service/adapter invocation despite configured preparation. Existing parser-size, missing-database, provider configuration and shared-budget checks remain passing.
+
+CP-09 as a whole still requires c2 real PostgreSQL preparation, reservation, rollback and retry evidence. The ordinary database is unmigrated; no feature flag, model default, budget ledger, schema, paid call or external publication changed. This code connects confirmation to source/attention preparation only; it does not complete preview or social handoffs.

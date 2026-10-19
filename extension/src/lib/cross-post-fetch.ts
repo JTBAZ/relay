@@ -4,12 +4,15 @@ import {
   crossPostDestinationFromMessage,
   type CrossPostContentOverride,
   type CrossPostDestination,
-  type ExternalCrossPostMessage
+  type ExternalCrossPostMessage,
+  type ScheduleEventExternalCrossPostMessage
 } from "./cross-post-types";
+import { parseXCrossPostPackage } from "./cross-post-types";
 import * as storage from "./storage";
 
 export type CrossPostFetchResult =
-  | { ok: true; relay_post_id: string; destination: CrossPostDestination }
+  | { ok: true; relay_post_id: string; destination: CrossPostDestination; schedule_event_id?: never }
+  | { ok: true; relay_post_id: string; destination: "x"; schedule_event_id: string }
   | {
       ok: false;
       reason:
@@ -128,10 +131,53 @@ export async function fetchAndStoreCrossPostPackage(
 export async function fetchAndStoreCrossPostPackageFromMessage(
   message: ExternalCrossPostMessage
 ): Promise<CrossPostFetchResult> {
+  if ("schedule_event_id" in message) return fetchAndStoreScheduleEventCrossPostPackage(message);
   return fetchAndStoreCrossPostPackage(
     message.relay_post_id,
     crossPostDestinationFromMessage(message),
     message.content_override,
     message.distribution_attempt_id
   );
+}
+
+/** Fetch and store the immutable X package for one confirmed schedule event. */
+export async function fetchAndStoreScheduleEventCrossPostPackage(
+  message: ScheduleEventExternalCrossPostMessage
+): Promise<CrossPostFetchResult> {
+  const eventId = message.schedule_event_id.trim();
+  if (!/^bench_event_[a-f0-9]{64}$/.test(eventId)) return { ok: false, reason: "invalid_message" };
+  const grant = await storage.getGrant();
+  if (!grant?.token.trim()) return { ok: false, reason: "not_connected" };
+  await storage.clearPendingCrossPost();
+
+  let res: Response;
+  try {
+    res = await fetch(`${RELAY_API_BASE}/api/v1/extension/cross-post/schedule-events/${encodeURIComponent(eventId)}`, {
+      method: "GET",
+      headers: { Accept: "application/json", Authorization: `Bearer ${grant.token.trim()}` },
+      signal: AbortSignal.timeout(15_000)
+    });
+  } catch {
+    return { ok: false, reason: "package_fetch_failed", detail: "network_error" };
+  }
+  if (res.status === 401) {
+    await storage.clearGrant();
+    return { ok: false, reason: "grant_revoked" };
+  }
+  if (!res.ok) return { ok: false, reason: "package_fetch_failed", detail: String(res.status) };
+
+  try {
+    const json = await res.json() as { data?: { schedule_event_id?: unknown; destination?: unknown; package?: unknown } };
+    if (json.data?.schedule_event_id !== eventId || json.data.destination !== "x") {
+      return { ok: false, reason: "package_fetch_failed", detail: "event_mismatch" };
+    }
+    const pkg = parseXCrossPostPackage(json.data.package);
+    if (!pkg.relay_post_id.trim()) return { ok: false, reason: "package_fetch_failed", detail: "invalid_package" };
+    // Clear any distribution-attempt identity immediately before storing the event package.
+    await storage.clearPendingCrossPost();
+    await storage.setPendingCrossPost(pkg);
+    return { ok: true, schedule_event_id: eventId, relay_post_id: pkg.relay_post_id, destination: "x" };
+  } catch {
+    return { ok: false, reason: "package_fetch_failed", detail: "invalid_package" };
+  }
 }

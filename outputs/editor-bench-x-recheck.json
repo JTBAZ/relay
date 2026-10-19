@@ -1,0 +1,76 @@
+{
+  "latestRequest": "Schedule a manual posting event on X for the selected artwork titled \"Aurora X Demo\" on 2026-10-26 at 10:00 Europe/London.",
+  "httpStatus": 200,
+  "response": {
+    "mode": "mock_posting",
+    "provenance": "model_interpretation",
+    "status": "clarification",
+    "interpreted": {
+      "kind": "manual_posting_event",
+      "destination": "x",
+      "source_ref": {
+        "mode": "selection",
+        "id": null
+      },
+      "title_text": "Aurora X Demo",
+      "time_kind": "absolute_local",
+      "local_date": "2026-10-26",
+      "weekday": null,
+      "weekday_qualifier": null,
+      "local_time": "10:00",
+      "timezone": "Europe/London",
+      "time_text": "on 2026-10-26 at 10:00 Europe/London"
+    },
+    "result": {
+      "selector": {
+        "base": "catalog",
+        "all": [],
+        "any": [
+          {
+            "field": "post_id",
+            "value": "bench_post_aurora",
+            "requestQuote": "selected artwork"
+          }
+        ],
+        "none": []
+      },
+      "matchedPostIds": []
+    },
+    "beforeAfter": [],
+    "selection": {
+      "postIds": [
+        "bench_post_aurora"
+      ],
+      "mediaIds": [
+        "bench_media_aurora_1"
+      ],
+      "changed": false
+    },
+    "usage": {
+      "calls": 1,
+      "known": true,
+      "inputTokens": 5502,
+      "outputTokens": 151,
+      "costUsd": 0.0012816000000000001
+    },
+    "diagnostics": [
+      "unknown_selector_value",
+      "A post ID selector must be grounded by that post’s unique visible name. Please clarify the post."
+    ],
+    "message": "A post ID selector must be grounded by that post’s unique visible name. Please clarify the post.",
+    "runtime": {
+      "enabled": true,
+      "model": "gpt-5.6-luna",
+      "reasoningEffort": "none",
+      "remainingUsd": 0.38688558,
+      "reason": null
+    }
+  },
+  "confirmed": false,
+  "addedLedgerRecords": 1,
+  "allSettled": true,
+  "actualUsd": 0.0012816,
+  "records": 869,
+  "developmentRemainingUsd": 0.38688558,
+  "heldoutRemainingUsd": 8.9690346
+}

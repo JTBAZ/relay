@@ -1,0 +1,110 @@
+[dotenv@17.3.1] injecting env (14) from .env -- tip: ⚡️ secrets for agents: https://dotenvx.com/as2
+[dotenv@17.3.1] injecting env (0) from .env -- tip: ⚙️  load multiple .env files with { path: ['.env.local', '.env'] }
+[11:11:32.105] [33mWARN[39m (relay-api/4500): [36mRelay: RELAY_SPLIT_WORKER_PROCESS=1 — background timers are not started in this process; run `npm run worker` alongside `npm start`.[39m
+[11:11:32.111] [32mINFO[39m (relay-api/4500): [36mRelay API listening[39m
+    [35mport[39m: 8788
+[11:11:32.042] [33mWARN[39m (relay-server/4500): [36m[relay] RELAY_PUBLIC_WEBHOOK_BASE_URL is not set — Patreon platform webhooks cannot be registered. Set RELAY_PUBLIC_WEBHOOK_BASE_URL (or PUBLIC_WEBHOOK_BASE_URL) to your public Relay API origin in production.[39m
+[11:11:32.645] [32mINFO[39m (relay-http/4500): [36mhttp_request[39m
+    [35mtraceId[39m: "trace_a0184477-7e61-4708-8c82-f8d2504fb08f"
+    [35mmethod[39m: "GET"
+    [35mpath[39m: "/health"
+    [35mstatus[39m: 404
+    [35mdurationMs[39m: 29
+[11:11:33.611] [32mINFO[39m (relay-http/4500): [36mhttp_request[39m
+    [35mtraceId[39m: "trace_b14ab58c-df0f-49ec-9c93-85719f17a24b"
+    [35mmethod[39m: "POST"
+    [35mpath[39m: "/api/v1/auth/login"
+    [35mstatus[39m: 200
+    [35mdurationMs[39m: 947
+[11:11:34.449] [32mINFO[39m (relay-http/4500): [36mhttp_request[39m
+    [35mtraceId[39m: "trace_72541206-d46f-41e6-abb2-3dc007601f62"
+    [35mmethod[39m: "POST"
+    [35mpath[39m: "/api/v1/gallery/editor/commits/27399173-e1bd-406a-83df-e71f497a4af5/undo"
+    [35mstatus[39m: 200
+    [35mdurationMs[39m: 228
+[11:11:34.450] [32mINFO[39m (relay-gallery-editor/4500): [36mgallery_editor_metric[39m
+    [35mevent[39m: "editor_request"
+    [35moperation[39m: "undo"
+    [35mmethod[39m: "post"
+    [35mstatus[39m: 200
+    [35mdurationMs[39m: 227
+[11:11:34.469] [32mINFO[39m (relay-gallery-editor/4500): [36mgallery_editor_metric[39m
+    [35mevent[39m: "editor_request"
+    [35moperation[39m: "capabilities"
+    [35mmethod[39m: "get"
+    [35mstatus[39m: 200
+    [35mdurationMs[39m: 16
+[11:11:34.469] [32mINFO[39m (relay-http/4500): [36mhttp_request[39m
+    [35mtraceId[39m: "trace_d453d39d-d02a-45dc-bea7-458564448235"
+    [35mmethod[39m: "GET"
+    [35mpath[39m: "/api/v1/gallery/editor/capabilities"
+    [35mstatus[39m: 200
+    [35mdurationMs[39m: 17
+[11:11:34.538] [32mINFO[39m (relay-http/4500): [36mhttp_request[39m
+    [35mtraceId[39m: "trace_272afb50-841c-41cb-9f9c-fc5fc6c42b65"
+    [35mmethod[39m: "POST"
+    [35mpath[39m: "/api/v1/gallery/editor/sessions"
+    [35mstatus[39m: 200
+    [35mdurationMs[39m: 29
+[11:11:34.538] [32mINFO[39m (relay-gallery-editor/4500): [36mgallery_editor_metric[39m
+    [35mevent[39m: "editor_request"
+    [35moperation[39m: "sessions"
+    [35mmethod[39m: "post"
+    [35mstatus[39m: 200
+    [35mdurationMs[39m: 28
+[11:11:54.906] [32mINFO[39m (relay-gallery-editor/4500): [36mgallery_editor_metric[39m
+    [35mevent[39m: "editor_turn"
+    [35mdisposition[39m: "proposal"
+    [35mactionCount[39m: 1
+    [35minputTokens[39m: 4517
+    [35moutputTokens[39m: 109
+    [35mcostUsd[39m: 0.031044999999999996
+    [35mcalls[39m: 2
+[11:11:55.108] [32mINFO[39m (relay-gallery-editor/4500): [36mgallery_editor_metric[39m
+    [35mevent[39m: "editor_request"
+    [35moperation[39m: "turn"
+    [35mmethod[39m: "post"
+    [35mstatus[39m: 200
+    [35mdurationMs[39m: 20566
+[11:11:55.108] [32mINFO[39m (relay-http/4500): [36mhttp_request[39m
+    [35mtraceId[39m: "trace_03bf9428-701f-4f47-8433-1e6c068ffbf2"
+    [35mmethod[39m: "POST"
+    [35mpath[39m: "/api/v1/gallery/editor/sessions/d340129d-f5bf-43d9-9606-d16c52c0d101/turn"
+    [35mstatus[39m: 200
+    [35mdurationMs[39m: 20567
+[11:11:55.510] [32mINFO[39m (relay-gallery-editor/4500): [36mgallery_editor_metric[39m
+    [35mevent[39m: "editor_request"
+    [35moperation[39m: "apply"
+    [35mmethod[39m: "post"
+    [35mstatus[39m: 200
+    [35mdurationMs[39m: 217
+[11:11:55.510] [32mINFO[39m (relay-http/4500): [36mhttp_request[39m
+    [35mtraceId[39m: "trace_e658a172-54da-4391-899c-5df3da09fb1b"
+    [35mmethod[39m: "POST"
+    [35mpath[39m: "/api/v1/gallery/editor/sessions/d340129d-f5bf-43d9-9606-d16c52c0d101/apply"
+    [35mstatus[39m: 200
+    [35mdurationMs[39m: 217
+[11:11:55.591] [32mINFO[39m (relay-gallery-editor/4500): [36mgallery_editor_metric[39m
+    [35mevent[39m: "editor_request"
+    [35moperation[39m: ":id"
+    [35mmethod[39m: "get"
+    [35mstatus[39m: 200
+    [35mdurationMs[39m: 42
+[11:11:55.591] [32mINFO[39m (relay-http/4500): [36mhttp_request[39m
+    [35mtraceId[39m: "trace_1ac95fa1-8c34-4f2e-b867-4d85514062c8"
+    [35mmethod[39m: "GET"
+    [35mpath[39m: "/api/v1/gallery/editor/sessions/d340129d-f5bf-43d9-9606-d16c52c0d101"
+    [35mstatus[39m: 200
+    [35mdurationMs[39m: 43
+[11:11:55.660] [32mINFO[39m (relay-http/4500): [36mhttp_request[39m
+    [35mtraceId[39m: "trace_6603a2cb-7d56-4179-b0a1-44a05a39d38c"
+    [35mmethod[39m: "POST"
+    [35mpath[39m: "/api/v1/gallery/editor/commits/768dd6a8-d82a-4623-9096-4f6c6a5ad3e3/undo"
+    [35mstatus[39m: 200
+    [35mdurationMs[39m: 65
+[11:11:55.660] [32mINFO[39m (relay-gallery-editor/4500): [36mgallery_editor_metric[39m
+    [35mevent[39m: "editor_request"
+    [35moperation[39m: "undo"
+    [35mmethod[39m: "post"
+    [35mstatus[39m: 200
+    [35mdurationMs[39m: 64

@@ -1,0 +1,44 @@
+{
+  "date": "2026-10-18",
+  "ticket": "BLC-01",
+  "status": "implemented_mock_only_quality_gate_failed_not_accepted_for_activation",
+  "roles": { "planning": "Sol High", "implementation": "Luna High", "reviewAndLiveProof": "root" },
+  "implementation": [
+    "One cheap-model interpretation over complete bounded vocabulary, then shared exhaustive metadata matcher and refinement.",
+    "Server-owned 40/1001 synthetic snapshots only; no DB, Next, client, or existing route changes.",
+    "Explicit canned offline, no-cost preflight, live request, interactive in-memory selection, and capped live-proof CLI modes."
+  ],
+  "limits": { "vocabularyEntries": 64, "vocabularyBytes": 8192, "inputToolsSchemaBytes": 16384, "liveProofMaxCalls": 3, "liveProofReservationCeilingUsd": 0.03 },
+  "workerChecks": { "focusedTestFiles": 5, "focusedTestsPassed": 41, "backendBuild": "passed", "cliSyntax": "passed" },
+  "rootChecks": {
+    "backendBench": { "filesPassed": 15, "testsPassed": 97 },
+    "offlineCanned": "exact full-snapshot selected and excluded arrays matched",
+    "preflight": { "identical40And1001ModelInput": true, "serializedBytes": [9863, 9863], "initialSelected40": ["large_post_0005", "large_post_0035"], "initialSelected1001": ["large_post_0005", "large_post_0035", "large_post_0750"] },
+    "providerIgnoringAbort": "selection and state unchanged; zero network calls"
+  },
+  "liveGate": {
+    "result": "failed_first_case_then_stopped",
+    "report": "C:\\Users\\jorda\\Documents\\Codex\\2026-10-11\\c\\work\\relay\\outputs\\editor-bench-large-library-chat-live.json",
+    "model": "gpt-5.6-luna",
+    "reasoningEffort": "none",
+    "networkCalls": 1,
+    "case": "initial_40",
+    "status": "clarification",
+    "reason": "A date criterion is unsupported or ungrounded.",
+    "selectionChanged": false,
+    "inputTokens": 1670,
+    "outputTokens": 130,
+    "settledActualCostUsd": 0.00049,
+    "actualProviderReservationUsd": 0.0058194,
+    "conservativeProofReservationUsd": 0.0072864,
+    "remainingPlannedCalls": "canceled; no retry or repair loop",
+    "diagnosticLimit": "The handler discarded the rejected selector, so the exact date term is not retained and no specific date-generation error is inferred.",
+    "unmeasured": ["live 1001-post token/cost scale", "live additive series-or-description refinement"]
+  },
+  "ledger": { "records": 882, "developmentRemainingUsd": 0.36917876, "heldoutRemainingUsd": 8.9690346, "newRecords": 1, "settled": true, "historicalReservationsPreserved": true, "path": "C:\\Users\\jorda\\Documents\\Codex\\2026-10-11\\c\\work\\relay\\.relay-data\\gallery-editor-budget.json" },
+  "continuationBoundary": "Keep the new connector experimental and mock-only. Stabilize the date interpretation protocol and retain bounded rejected-selector diagnostics before any separately bounded live recheck. No further work or spend dispatched.",
+  "frontendVerification": "deferred",
+  "existingPageAndInterpreter": "unchanged",
+  "sourceState": "local uncommitted codex/conversational-gallery-editor",
+  "sideEffects": "No business DB write, environment file change, live gallery read, API restart, publication, migration, commit, push, or new chat."
+}

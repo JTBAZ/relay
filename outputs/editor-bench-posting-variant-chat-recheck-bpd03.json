@@ -1,0 +1,111 @@
+{
+  "ticket": "BPD-03",
+  "mode": "live_mock_http",
+  "date": "2026-10-18",
+  "passed": true,
+  "cases": [
+    {
+      "destination": "x",
+      "expectedRevision": 0,
+      "decision": "review",
+      "diagnostic": "review_ready",
+      "requestSha256": "cd19e0dd69f7e1c4325beba6f0136641c96790b0995492b24f6f6439607b8178",
+      "replacementSha256": "84d5b7bfd3a4663d3e19b87b0da09c4d07c2c83108e584aa27605441b08ba3cb",
+      "passed": true
+    },
+    {
+      "destination": "x",
+      "expectedRevision": 1,
+      "decision": "review",
+      "diagnostic": "review_ready",
+      "requestSha256": "e422afbf3950439e65af0ba137815829c89574c195bb5ab52eb49b0df7ef675a",
+      "replacementSha256": "249861121c40e19bdbbb9d3af7bc881fe8dcdee8a8b4f2d3d44b8b34fc01b0e3",
+      "passed": true
+    }
+  ],
+  "calls": [
+    {
+      "inputSha256": "6c21cdc6a039f7f576f3f6c87679b1de2d52a69b66213365d730f954b97169a7",
+      "candidateCount": 2,
+      "candidateBytes": 232,
+      "inputBytes": 3557,
+      "providerDecision": "edit",
+      "decisionGroundingValid": true,
+      "targetQuoteSha256": "4b68ab3847feda7d6c62c1fbcbeebfa35eab7351ed5e78f4ddadea5df64b8015",
+      "replacementSha256": "84d5b7bfd3a4663d3e19b87b0da09c4d07c2c83108e584aa27605441b08ba3cb",
+      "usage": {
+        "inputTokens": 613,
+        "outputTokens": 82,
+        "costUsd": 0.000221,
+        "calls": 1
+      }
+    },
+    {
+      "inputSha256": "1cdea443d79fd1afad0420ad7adc0ba2030fa4c7eb0b0d0db119959872c27e41",
+      "candidateCount": 2,
+      "candidateBytes": 279,
+      "inputBytes": 3679,
+      "providerDecision": "edit",
+      "decisionGroundingValid": true,
+      "targetQuoteSha256": "4b68ab3847feda7d6c62c1fbcbeebfa35eab7351ed5e78f4ddadea5df64b8015",
+      "replacementSha256": "249861121c40e19bdbbb9d3af7bc881fe8dcdee8a8b4f2d3d44b8b34fc01b0e3",
+      "usage": {
+        "inputTokens": 638,
+        "outputTokens": 97,
+        "costUsd": 0.000244,
+        "calls": 1
+      }
+    }
+  ],
+  "limitations": [
+    "Mock ephemeral API state only",
+    "Frontend execution deferred",
+    "No publishing or database operation"
+  ],
+  "checks": {
+    "singleCallPerChat": true,
+    "reviewReadOnly": true,
+    "confirmationSeparate": true,
+    "currentRevisionFollowup": true,
+    "literalUnicodePreserved": true,
+    "originalsAndProvenancePreserved": true,
+    "scheduleAndMediaUnchanged": true,
+    "appendOnlyHistory": true,
+    "retryReuse": true,
+    "databaseAndPublishCalls": 0
+  },
+  "ledger": {
+    "initialRows": 892,
+    "finalRows": 894,
+    "previousRowsUnchanged": true,
+    "callsAttempted": 2,
+    "reservationsUsd": 0.009140800000000001,
+    "actualUsd": 0.000465,
+    "ledgerSha256": "2547cf374d109bfaff77a91acc472b07f287aa50d69e219c972188599f8e0a4d",
+    "newRows": [
+      {
+        "id": "29faa7e4-cfd9-4863-af67-dcffffa5ef66",
+        "model": "gpt-5.6-luna",
+        "phase": "development",
+        "reservedUsd": 0.0045582,
+        "actualUsd": 0.000221,
+        "settled": true
+      },
+      {
+        "id": "a150193f-758e-46b9-bd2b-52fb6e7a2976",
+        "model": "gpt-5.6-luna",
+        "phase": "development",
+        "reservedUsd": 0.0045826,
+        "actualUsd": 0.000244,
+        "settled": true
+      }
+    ]
+  },
+  "previousFailurePreserved": {
+    "path": "outputs/editor-bench-posting-variant-chat-live-bpd03.json",
+    "sha256": "6dc80db092d9518bd4b43b27712096e701a3c9e0ce3673aace0ec03a1238e77f",
+    "historicalCause": "unknown; model output was not retained",
+    "cumulativeCallsAttempted": 3,
+    "cumulativeReservationsUsd": 0.013560000000000001
+  }
+}

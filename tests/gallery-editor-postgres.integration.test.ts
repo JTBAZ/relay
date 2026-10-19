@@ -74,6 +74,25 @@ describe.skipIf(!databaseUrl)("Gallery editor — PostgreSQL atomic execution", 
   });
   afterAll(async () => { await db?.$disconnect(); });
 
+  it('merges compiled patches against the transaction cart, preserving manual provenance and rejecting stale revisions',async()=>{
+    const manual:EditAction={id:'manual',kind:'rename_post',postId:customPost,title:'Manual exception'};
+    const original=await draft([manual]);
+    const ai:EditAction={id:'ai',kind:'rename_work',workId,title:'Compiled name'};
+    const patch={revision:original.cart.revision,changes:[{kind:'add' as const,action:ai}]};
+    const next=await editor.revise(creatorId,actorId,original.id,original.revision,[],undefined,[{role:'user',text:'Rename this work'},{role:'assistant',text:'UNTRUSTED MODEL CLAIM'}],'ai',{patch,factualPreview:true});
+    expect(next.cart.actions).toEqual([manual,ai]);
+    expect(next.cart.actionOrigins).toEqual({manual:'manual',ai:'ai'});
+    expect(next.messages.at(-1)?.text).toContain('No Library changes have been applied');
+    expect(next.messages.at(-1)?.text).not.toContain('UNTRUSTED MODEL CLAIM');
+    expect((await db.creativeWork.findUniqueOrThrow({where:{id:workId}})).title).toBe('Original work');
+    await expect(editor.revise(creatorId,actorId,original.id,original.revision,[],undefined,undefined,'ai',{patch,factualPreview:true})).rejects.toMatchObject({code:'STALE_CART'});
+    const receipt=await editor.apply(creatorId,actorId,next.id,next.revision,newId());
+    expect(receipt.summary).toContain('Applied:');
+    const undone=await editor.undo(creatorId,actorId,receipt.id);
+    expect(undone.summary).toContain('Undone:');
+    expect((await db.creativeWork.findUniqueOrThrow({where:{id:workId}})).title).toBe('Original work');
+  });
+
   it.each(["merge","link","split"] as const)("legacy manual %s preserves displayed names, journals mode changes, and supports Undo",async operation=>{
     await db.tenant.create({data:{relayCreatorId:creatorId}});
     await commit([{id:"canonical",kind:"rename_work",workId,title:"Shared canonical title"}]);

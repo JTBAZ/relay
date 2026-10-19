@@ -1,6 +1,8 @@
 import { EditorError, type EditAction, type EditorSession } from './types.js';
 import { matchesSchema, objectSchema, validateProposal } from './action-validation.js';
 import type { EditorProvider, ProviderUsage, ResponseItem } from './provider.js';
+import { runCompiledIntent } from './compiled-intent.js';
+import type { CartPatch } from './cart-patch.js';
 
 const id = { type: 'string', minLength: 1, maxLength: 200 };
 const ids = { type: 'array', items: id, maxItems: 100 };
@@ -22,8 +24,8 @@ export interface EditorReadToolResult {
   images?: Array<{ url: string; mediaId: string; postId?: string }>;
 }
 export type EditorReadTools = (name: EditorReadToolName, args: Record<string, unknown>, options: { signal: AbortSignal }) => Promise<EditorReadToolResult>;
-export interface IntentOptions { signal?: AbortSignal; timeoutMs?: number }
-export interface IntentResult { message: string; actions: EditAction[]; disposition?: 'proposal'|'clarification'|'limitation'; usage?: ProviderUsage }
+export interface IntentOptions { signal?: AbortSignal; timeoutMs?: number; architecture?: 'legacy'|'compiled'; escalationProvider?: EditorProvider }
+export interface IntentResult { message: string; actions: EditAction[]; disposition?: 'proposal'|'clarification'|'limitation'|'no_change'; usage?: ProviderUsage; patch?: CartPatch; factualPreview?: boolean; uninspectedMediaCount?:number; routing?: {repairs:number;escalations:number;reads:number;images:number} }
 export const EDITOR_READ_TOOLS: ResponseItem[] = Object.entries(definitions).map(([name, spec]) => ({ type: 'function', name, description: spec.description, strict: true, parameters: objectSchema(spec.properties) }));
 
 const INSTRUCTIONS = `You are the Relay Library conversational editor. Interpret natural language in context using read tools, then produce a complete revised proposed action cart and a concise user-facing response. You cannot apply, commit, publish, call Patreon, or modify external systems. Only the separate explicit Apply control changes Library data.
@@ -55,6 +57,7 @@ function imageIsSafe(url: string): boolean {
 
 /** Pure proposal generation: never mutates session/cart or calls a write service. */
 export async function runEditorIntent(session: EditorSession, message: string, provider: EditorProvider, readTools: EditorReadTools, options: IntentOptions = {}): Promise<IntentResult> {
+  if (options.architecture === 'compiled') return runCompiledIntent(session,message,provider,readTools,options);
   if (typeof message !== 'string' || !message.trim() || message.length > 20000) throw new EditorError('invalid_message', 'Enter a message of at most 20,000 characters.');
   const timeout = options.timeoutMs ?? 90000;
   if (!Number.isFinite(timeout) || timeout <= 0 || timeout > 90000) throw new EditorError('invalid_timeout', 'Editor deadlines must be at most 90 seconds.');

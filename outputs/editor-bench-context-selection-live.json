@@ -1,0 +1,189 @@
+{
+  "date": "2026-10-18",
+  "model": "gpt-5.6-luna",
+  "reasoningEffort": "none",
+  "phase": "development",
+  "requestClock": "2026-10-18T12:00:00.000Z",
+  "frontendTested": false,
+  "libraryWrites": false,
+  "scheduledEventsCreated": false,
+  "networkCalls": 2,
+  "reservationCapUsd": 0.03,
+  "reservedUsd": 0.0239956,
+  "actualCostUsd": 0.0027440600000000004,
+  "recordsBefore": 870,
+  "recordsAfter": 872,
+  "developmentRemainingUsd": 0.38286972,
+  "heldoutRemainingUsd": 8.9690346,
+  "allNewCallsSettled": true,
+  "cases": [
+    {
+      "id": "published-month-description-exclusion",
+      "request": "Select posts published in September 2026 whose descriptions contain \"study\", excluding posts tagged \"coast\".",
+      "expectedPostIds": [
+        "bench_post_clockwork_final"
+      ],
+      "passed": true,
+      "allCriteriaRepresented": true,
+      "editCorrect": true,
+      "httpStatus": 200,
+      "status": "selected",
+      "selection": {
+        "postIds": [
+          "bench_post_clockwork_final"
+        ],
+        "mediaIds": [
+          "bench_media_clockwork_final_1",
+          "bench_media_clockwork_final_2"
+        ],
+        "changed": true
+      },
+      "modelEnvelope": {
+        "selection": {
+          "mode": "replace",
+          "requestQuote": "Select posts published in September 2026 whose descriptions contain \"study\", excluding posts tagged \"coast\".",
+          "selector": {
+            "base": "catalog",
+            "all": [
+              {
+                "field": "published_date",
+                "value": "2026-09",
+                "requestQuote": "September 2026",
+                "op": "in_month"
+              },
+              {
+                "field": "description",
+                "value": "study",
+                "requestQuote": "descriptions contain \"study\""
+              }
+            ],
+            "any": [],
+            "none": [
+              {
+                "field": "tag",
+                "value": "coast",
+                "requestQuote": "tagged \"coast\""
+              }
+            ]
+          }
+        },
+        "intent": {
+          "revision": 7,
+          "outcome": "proposal",
+          "question": null,
+          "unresolved": [],
+          "observations": [],
+          "operations": []
+        }
+      },
+      "actions": [],
+      "diagnostics": [
+        "selection_updated: Fixture selection only; no edit or plan was created."
+      ],
+      "usage": {
+        "calls": 1,
+        "known": true,
+        "inputTokens": 7644,
+        "outputTokens": 149,
+        "costUsd": 0.0017076
+      }
+    },
+    {
+      "id": "relative-created-description-edit",
+      "request": "Tag character posts created last month whose descriptions contain \"study notes\", excluding concept posts, with \"reviewed\".",
+      "expectedPostIds": [
+        "bench_post_ember_court_portrait",
+        "bench_post_clockwork_final"
+      ],
+      "passed": false,
+      "allCriteriaRepresented": false,
+      "editCorrect": false,
+      "httpStatus": 200,
+      "status": "rejected",
+      "selection": {
+        "postIds": [
+          "bench_post_aurora"
+        ],
+        "mediaIds": [
+          "bench_media_aurora_1"
+        ],
+        "changed": false
+      },
+      "modelEnvelope": {
+        "selection": {
+          "mode": "replace",
+          "requestQuote": "Tag character posts created last month whose descriptions contain \"study notes\", excluding concept posts",
+          "selector": {
+            "base": "catalog",
+            "all": [
+              {
+                "field": "tag",
+                "value": "character",
+                "requestQuote": "character"
+              },
+              {
+                "field": "created_date",
+                "value": "2026-09",
+                "requestQuote": "last month",
+                "op": "in_month"
+              },
+              {
+                "field": "description",
+                "value": "study notes",
+                "requestQuote": "descriptions contain \"study notes\""
+              }
+            ],
+            "any": [],
+            "none": [
+              {
+                "field": "stage",
+                "value": "concept",
+                "requestQuote": "concept posts"
+              }
+            ]
+          }
+        },
+        "intent": {
+          "revision": 7,
+          "outcome": "proposal",
+          "question": null,
+          "unresolved": [],
+          "observations": [],
+          "operations": [
+            {
+              "operation": "tags",
+              "scope": "post",
+              "target": {
+                "source": "selection",
+                "ids": []
+              },
+              "excludeIds": [],
+              "unresolved": [],
+              "scopeBasis": "conversation",
+              "requestQuote": "with \"reviewed\"",
+              "change": "add",
+              "actionId": null,
+              "add": [
+                "reviewed"
+              ],
+              "remove": [],
+              "observationMediaIds": []
+            }
+          ]
+        }
+      },
+      "actions": [],
+      "diagnostics": [
+        "invalid_selector",
+        "The created date criterion has an unsupported or ungrounded date. Clarify its exact date, month, or supported relative period."
+      ],
+      "usage": {
+        "calls": 1,
+        "known": true,
+        "inputTokens": 7645,
+        "outputTokens": 217,
+        "costUsd": 0.0010364600000000001
+      }
+    }
+  ]
+}

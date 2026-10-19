@@ -1,0 +1,24 @@
+{
+  "httpStatus": 200,
+  "status": "rejected",
+  "provenance": "model_interpretation",
+  "usage": {
+    "calls": 1,
+    "known": true,
+    "inputTokens": 4805,
+    "outputTokens": 248,
+    "costUsd": 0.0012586
+  },
+  "reviewKind": null,
+  "review": null,
+  "refusal": [
+    "invalid_interpretation",
+    "The interpreted request did not produce a plan."
+  ],
+  "confirmed": false,
+  "createdEvent": false,
+  "addedLedgerRecords": 1,
+  "settled": true,
+  "actualUsd": 0.0012586,
+  "developmentRemainingUsd": 0.39675626
+}

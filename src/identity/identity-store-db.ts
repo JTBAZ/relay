@@ -13,7 +13,7 @@ import {
   type Tenant,
   type TenantMembership
 } from "@prisma/client";
-import type { IdentityStore } from "./identity-store.js";
+import type { IdentityStore, SessionReadOptions } from "./identity-store.js";
 import { hashPassword, verifyPassword } from "./password.js";
 import { getPlatformRelayCreatorId } from "./platform-tenant.js";
 import { hashOpaqueSessionToken } from "./session-token-hash.js";
@@ -403,7 +403,7 @@ export class DbIdentityStore implements IdentityStore {
     });
   }
 
-  public async getSession(token: string): Promise<SessionToken | null> {
+  public async getSession(token: string, options?: SessionReadOptions): Promise<SessionToken | null> {
     const hash = hashOpaqueSessionToken(token);
     const row = await this.prisma.session.findUnique({
       where: { tokenHash: hash },
@@ -413,7 +413,7 @@ export class DbIdentityStore implements IdentityStore {
     });
     if (!row || row.revokedAt) return null;
     if (row.expiresAt && row.expiresAt.getTime() < Date.now()) {
-      await this.prisma.session.delete({ where: { id: row.id } });
+      if (options?.cleanupExpired !== false) await this.prisma.session.delete({ where: { id: row.id } });
       return null;
     }
     const acc = membershipToAccount(row.tenantMembership);

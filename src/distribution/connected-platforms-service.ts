@@ -18,8 +18,11 @@ export type ConnectedPlatformWire = {
   detail?: string | null;
 };
 
+export type ConnectedPlatformReadDb = Pick<PrismaClient,
+  "creatorBlueskyCredential" | "creatorProfile">;
+
 export async function listConnectedPlatforms(
-  prisma: PrismaClient,
+  prisma: ConnectedPlatformReadDb,
   creatorId: string
 ): Promise<ConnectedPlatformWire[]> {
   const cid = creatorId.trim();

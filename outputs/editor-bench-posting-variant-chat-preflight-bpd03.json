@@ -1,0 +1,82 @@
+{
+  "ticket": "BPD-03",
+  "mode": "canned_mock_http",
+  "date": "2026-10-18",
+  "passed": true,
+  "cases": [
+    {
+      "destination": "x",
+      "expectedRevision": 0,
+      "decision": "review",
+      "requestSha256": "cd19e0dd69f7e1c4325beba6f0136641c96790b0995492b24f6f6439607b8178",
+      "replacementSha256": "84d5b7bfd3a4663d3e19b87b0da09c4d07c2c83108e584aa27605441b08ba3cb",
+      "passed": true
+    },
+    {
+      "destination": "deviantart",
+      "expectedRevision": 0,
+      "decision": "review",
+      "requestSha256": "f495b33623480c01aeff54fa960b8941399ff185e7771d8ec12ec95c1ad29df3",
+      "replacementSha256": "0a1bf133d81f23f077c7ab7a76827789f72d43885bf12d8812d5bcac90f5e6a8",
+      "passed": true
+    },
+    {
+      "destination": "x",
+      "expectedRevision": 1,
+      "decision": "review",
+      "requestSha256": "e422afbf3950439e65af0ba137815829c89574c195bb5ab52eb49b0df7ef675a",
+      "replacementSha256": "249861121c40e19bdbbb9d3af7bc881fe8dcdee8a8b4f2d3d44b8b34fc01b0e3",
+      "passed": true
+    }
+  ],
+  "calls": [
+    {
+      "inputSha256": "4cdb8dd44e2cf629e7177a03b7e2b3d6d4aa7686b9eba87b992c861577a7ca56",
+      "candidateCount": 2,
+      "candidateBytes": 232,
+      "inputBytes": 2862,
+      "usage": null
+    },
+    {
+      "inputSha256": "5c9bda71d2416119b7635a9afc69f750b4e0c4ea84bee34925afa797916dcbd2",
+      "candidateCount": 2,
+      "candidateBytes": 279,
+      "inputBytes": 2891,
+      "usage": null
+    },
+    {
+      "inputSha256": "1364f84674146fd87f1e7647761d677c6f101b2f373cdb126aee5aa5e30ae87a",
+      "candidateCount": 2,
+      "candidateBytes": 300,
+      "inputBytes": 3005,
+      "usage": null
+    }
+  ],
+  "limitations": [
+    "Mock ephemeral API state only",
+    "Frontend execution deferred",
+    "No publishing or database operation"
+  ],
+  "checks": {
+    "singleCallPerChat": true,
+    "reviewReadOnly": true,
+    "confirmationSeparate": true,
+    "currentRevisionFollowup": true,
+    "literalUnicodePreserved": true,
+    "originalsAndProvenancePreserved": true,
+    "scheduleAndMediaUnchanged": true,
+    "appendOnlyHistory": true,
+    "retryReuse": true,
+    "databaseAndPublishCalls": 0
+  },
+  "ledger": {
+    "initialRows": 891,
+    "finalRows": 891,
+    "previousRowsUnchanged": true,
+    "callsAttempted": 3,
+    "reservationsUsd": 0,
+    "actualUsd": 0,
+    "ledgerSha256": "9bac2e7527a1b69fe281e8af02596105261937dc41622e1b005b26c57f89a589",
+    "newRows": []
+  }
+}

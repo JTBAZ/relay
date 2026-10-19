@@ -1,0 +1,37 @@
+{
+  "mode": "live-proof",
+  "capUsd": 0.03,
+  "conservativeReservationPerCall": 0.0072864,
+  "conservativeReservedUsd": 0.0072864,
+  "calls": 1,
+  "preflightBytes": [
+    9863,
+    9863,
+    9878
+  ],
+  "cases": [
+    {
+      "caseId": "initial_40",
+      "responseStatus": "clarification",
+      "message": "A date criterion is unsupported or ungrounded. Your selection is unchanged; clarify the request.",
+      "actualSelector": null,
+      "actualSelectedPostIds": [],
+      "actualExcludedPostIds": [],
+      "expectedSelectedPostIds": [
+        "large_post_0005",
+        "large_post_0035"
+      ],
+      "expectedExcludedPostIds": [
+        "large_post_0006"
+      ],
+      "selectorCriteriaPassed": null,
+      "usage": {
+        "calls": 1,
+        "known": true,
+        "inputTokens": 1670,
+        "outputTokens": 130,
+        "costUsd": 0.00049
+      }
+    }
+  ]
+}

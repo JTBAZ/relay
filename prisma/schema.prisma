@@ -208,6 +208,33 @@ enum SessionKind {
   extension @map("extension")
 }
 
+enum CreatorConversationalPlanReview {
+  proposed
+  approved_for_preparation
+  cancelled
+}
+
+enum CreatorConversationalPlanPointerSlot {
+  draft
+  attention_event
+  relay_post
+  preview_media
+  distribution_plan
+  variant
+  current_attempt
+  engagement_event
+}
+
+enum CreatorConversationalPlanAuthorityKind {
+  autopost_draft
+  schedule_event
+  relay_post
+  preview_media
+  distribution_plan
+  distribution_variant
+  distribution_attempt
+}
+
 model Tenant {
   id             String   @id @default(cuid())
   /// Relay `creator_id` (e.g. ingest / gallery scope) — unique tenant for DbIdentityStore.
@@ -221,6 +248,7 @@ model Tenant {
   primaryAccount Account?           @relation("AccountPrimaryStudio")
   /// M1-lite / P7 — append-only usage metering (`docs/database/usage-events-rollups.md`).
   usageEvents    UsageEvent[]
+  conversationalPlans CreatorConversationalPlan[]
 
   @@map("tenants")
 }
@@ -812,6 +840,7 @@ model CreatorStyleProfile {
 model AutopostDraft {
   id                String               @id @default(cuid())
   creatorId         String               @map("creator_id")
+  conversationalStepKey String?          @unique(map: "autopost_drafts_conversational_step_key_key") @map("conversational_step_key")
   /// nudged | drafting | previewing | published | discarded
   status            String               @default("drafting")
   mediaIds          String[]             @default([]) @map("media_ids")
@@ -857,6 +886,7 @@ model PostDistributionPlan {
   assistantPlan        Json           @default("{}") @map("assistant_plan")
   /// Opaque Goal Cycle campaign key (VS4). Nullable for legacy plans.
   goalCycleCampaignKey String?        @map("goal_cycle_campaign_key")
+  conversationalGroupKey String?      @unique(map: "post_distribution_plans_conversational_group_key_key") @map("conversational_group_key")
   createdAt            DateTime       @default(now()) @map("created_at")
   updatedAt            DateTime       @updatedAt @map("updated_at")
 
@@ -1654,6 +1684,8 @@ model CreatorScheduleEvent {
   /// Optional linked Relay post (Library target). Null for URL-only / new-draft reminders.
   postId         String?                    @map("post_id")
   post           Post?                      @relation(fields: [postId], references: [id], onDelete: SetNull)
+  /// Ordered event-owned references to Library media; does not mutate the source post.
+  mediaIds       String[]                   @default([]) @map("media_ids")
   /// Validated/canonical external URL. Data only — never log or put in audit metadata.
   /// Custom: any safe http(s) URL. Platform events: destination published-post pattern when linking.
   externalUrl    String?                    @map("external_url")
@@ -1663,6 +1695,7 @@ model CreatorScheduleEvent {
   status         CreatorScheduleEventStatus @default(pending)
   createdAt      DateTime                   @default(now()) @map("created_at")
   updatedAt      DateTime                   @updatedAt @map("updated_at")
+  conversationalStepKey String?             @unique(map: "creator_schedule_events_conversational_step_key_key") @map("conversational_step_key")
 
   /// Automation-owned distribution runs that materialized this rail event (VS1+).
   distributionRuleRuns CreatorDistributionRuleRun[]
@@ -3466,6 +3499,68 @@ model ArtistPayout {
   @@index([creatorId, requestedAt])
   @@index([status])
   @@map("artist_payouts")
+}
+
+/// Current conversational composition proposal. This stores configuration and review state only;
+/// preparation/publication status remains on the existing authority rows.
+model CreatorConversationalPlan {
+  id              String                           @id @default(cuid())
+  creatorId       String                           @map("creator_id")
+  schemaVersion   Int                              @map("schema_version")
+  revision        Int                              @default(0)
+  review          CreatorConversationalPlanReview
+  sourceRef       Json                             @map("source_ref")
+  snapshot        Json
+  clientCreateKey String                           @map("client_create_key")
+  createdAt       DateTime                         @default(now()) @map("created_at")
+  updatedAt       DateTime                         @updatedAt @map("updated_at")
+
+  tenant    Tenant                              @relation(fields: [creatorId], references: [relayCreatorId], onDelete: Restrict, onUpdate: Cascade)
+  revisions CreatorConversationalPlanRevision[]
+  pointers  CreatorConversationalPlanPointer[]
+
+  @@unique([id, creatorId])
+  @@unique([creatorId, clientCreateKey], map: "creator_conversational_plans_creator_id_client_create_key_key")
+  @@index([creatorId, updatedAt(sort: Desc)], map: "creator_conversational_plans_creator_id_updated_at_idx")
+  @@map("creator_conversational_plans")
+}
+
+/// Immutable validated composition snapshot for one accepted plan revision.
+model CreatorConversationalPlanRevision {
+  id                String   @id @default(cuid())
+  planId            String   @map("plan_id")
+  creatorId         String   @map("creator_id")
+  revision          Int
+  clientMutationKey String   @map("client_mutation_key")
+  requestHash       String   @map("request_hash")
+  snapshot          Json
+  createdAt         DateTime @default(now()) @map("created_at")
+
+  plan CreatorConversationalPlan @relation(fields: [planId, creatorId], references: [id, creatorId], onDelete: Cascade, onUpdate: Cascade)
+
+  @@unique([planId, revision], map: "creator_conversational_plan_revisions_plan_id_revision_key")
+  @@unique([creatorId, clientMutationKey], map: "ccp_rev_creator_mutation_key_uq")
+  @@index([creatorId, planId, createdAt], map: "ccp_rev_creator_plan_created_idx")
+  @@map("creator_conversational_plan_revisions")
+}
+
+/// Identity-only pointers to existing execution authority rows.
+model CreatorConversationalPlanPointer {
+  id            String                                 @id @default(cuid())
+  planId        String                                 @map("plan_id")
+  creatorId     String                                 @map("creator_id")
+  nodeId        String                                 @map("node_id")
+  slot          CreatorConversationalPlanPointerSlot
+  authorityKind CreatorConversationalPlanAuthorityKind @map("authority_kind")
+  authorityId   String                                 @map("authority_id")
+  createdAt     DateTime                               @default(now()) @map("created_at")
+
+  plan CreatorConversationalPlan @relation(fields: [planId, creatorId], references: [id, creatorId], onDelete: Cascade, onUpdate: Cascade)
+
+  @@unique([planId, nodeId, slot], map: "creator_conversational_plan_pointers_plan_id_node_id_slot_key")
+  @@index([creatorId, authorityKind, authorityId], map: "ccp_ptr_creator_authority_idx")
+  @@index([planId, nodeId], map: "creator_conversational_plan_pointers_plan_id_node_id_idx")
+  @@map("creator_conversational_plan_pointers")
 }
 
 /// Narrow replacement target for `patreon_webhook_metadata.json` (encrypted secret + key id only).

@@ -1,0 +1,7 @@
+# CP-09b — Minimal preparation orchestrator
+
+Root accepted 2026-10-17. Luna High authored the new materializer and its focused test. It reads the exact current approved composition, traverses its bounded dependency graph, and delegates source-post/draft and absolute-time attention outputs exclusively to the accepted closed repository operation. It never reconstructs authority payloads, interprets source intent, calculates dates or publishes.
+
+Unsupported enabled preview/distribution/engagement work remains an authority gap after supported source preparation. Blocked source output prevents later attention/writes; existing committed work is retained. Missing plan/creator/infrastructure maps to preparation unavailable; finite content, source, revision and authority failures remain authority gaps. Repeated calls delegate to authoritative repository checks rather than cache success.
+
+Root independently passed 12 focused tests and `npm run build`; worker strict direct test-file TypeScript passed. Tests cover selected existing-post reuse, staged draft, attention order, unsupported work, disabled/no-source paths, exact approval identity, repeated delegation, partial cancellation, malformed input, finite failure mapping and mismatched checked pointers. These are mocked orchestration tests, not PostgreSQL uniqueness or rollback proof. C1 mount and c2 real preparation proof remain separate gates. No paid call, schema change, ordinary database migration or external publication occurred.

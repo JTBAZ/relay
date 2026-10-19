@@ -1,0 +1,11 @@
+{
+  "migration": "20261018120000_creator_schedule_event_media_ids",
+  "localDatabase": true,
+  "columnAdded": true,
+  "unrelatedCpColumnPresent": false,
+  "migrationMarkedApplied": true,
+  "appliedMigrationCount": 107,
+  "pendingMigrations": [
+    "20261015120000_creator_conversational_plans"
+  ]
+}

@@ -1,0 +1,76 @@
+{
+  "date": "2026-10-18T08:07:31.657Z",
+  "backendSuite": {
+    "passed": 88,
+    "files": 13
+  },
+  "rootBackendBuild": "passed",
+  "offlineBoundaryChecks": {
+    "invalidOrStaleRequests": 6,
+    "alreadyCancelled": 1,
+    "providerFactoriesCalled": 0,
+    "invalidModelSelectionsRetainExactState": 4,
+    "providerFailureRetainsExactState": true,
+    "networkCalls": 0
+  },
+  "frontendVerification": "deferred; source review only",
+  "localAuthenticatedHttp": {
+    "passed": true,
+    "apiCatalogs": {
+      "status": [
+        200,
+        200
+      ],
+      "activePostCounts": [
+        11,
+        3
+      ],
+      "complete": true,
+      "ownedOnly": true,
+      "ownerPartitionedRevision": true,
+      "repeatedRevisionStable": true,
+      "queryCannotRetargetOwner": true
+    },
+    "nextCatalogStatus": 200,
+    "authRefusals": {
+      "api": 401,
+      "invalidSession": 401,
+      "next": 401
+    },
+    "modelFreeOperations": {
+      "reset": 200,
+      "select": 200,
+      "exclude": 200,
+      "addRetainsExclusions": 200
+    },
+    "preProviderRefusals": {
+      "foreignOwner": 409,
+      "foreignId": 400,
+      "stale": 409,
+      "invalidBody": 400,
+      "origin": 403,
+      "oversizedBody": 413
+    },
+    "cachePrivateNoStore": true,
+    "libraryAndEventEditorStateUnchanged": true,
+    "authenticationSessionRowsUnchanged": true,
+    "modelLedgerUnchanged": true,
+    "ledgerRecords": 879,
+    "mediaBytesRead": 0,
+    "temporarySessionsRemoved": 2,
+    "temporarySessionsRemaining": 0
+  },
+  "finalCorrection": {
+    "realAddSearchBase": "catalog required by schema and runtime",
+    "rootAffectedBackendTestsPassed": 32,
+    "finalBackendBuild": "passed (Luna)",
+    "postFixLiveModelCheck": "not run; cancelled after user capability-only clarification",
+    "liveGalleryAcceptance": "not required; mock-first demo for later assembly",
+    "furtherPaidCallsDispatched": false
+  },
+  "latestLedger": {
+    "records": 881,
+    "developmentRemainingUsd": 0.36966876,
+    "heldoutRemainingUsd": 8.9690346
+  }
+}

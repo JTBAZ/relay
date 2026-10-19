@@ -112,6 +112,8 @@ export type CreatorScheduleEventWire = {
   note: string | null;
   due_at: string;
   post_id: string | null;
+  /** Ordered event-owned Library references; absent on older integrations. */
+  media_ids?: string[];
   external_url: string | null;
   remind_me: boolean;
   status: CreatorScheduleEventStatusWire;

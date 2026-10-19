@@ -501,6 +501,46 @@ export function countMediaIds(mediaIds: string[] | null | undefined): number {
   return mediaIds.filter((id) => id.trim().length > 0).length;
 }
 
+export function projectManualEventMediaReadiness(
+  mediaIds: string[] | null | undefined,
+  mediaRows: Array<{
+    id: string;
+    upstreamStatus: string;
+    processingStatus: string;
+  }>
+): {
+  needs_media: boolean;
+  media_count: number;
+  media_ids: string[];
+  media_state: "missing" | "partial" | "ready" | "not_required";
+  readiness_errors: string[];
+} {
+  const ids = (mediaIds ?? []).filter((mediaId) => mediaId.trim());
+  const availableIds = new Set(
+    mediaRows
+      .filter((row) => row.upstreamStatus === "active" && row.processingStatus === "READY")
+      .map((row) => row.id)
+  );
+  const unavailableCount = ids.filter((mediaId) => !availableIds.has(mediaId)).length;
+  const mediaState = ids.length === 0
+    ? "not_required"
+    : unavailableCount === 0
+      ? "ready"
+      : unavailableCount === ids.length
+        ? "missing"
+        : "partial";
+  return {
+    needs_media: ids.length > 0 && unavailableCount > 0,
+    media_count: ids.length,
+    media_ids: ids,
+    media_state: mediaState,
+    readiness_errors: [
+      ...buildMediaReadinessErrors(mediaState),
+      ...(unavailableCount > 0 ? ["library_media_unavailable"] : [])
+    ]
+  };
+}
+
 /** Exported for unit tests — Phase 8 drop-bin gate. */
 export function computeNeedsMedia(args: {
   action: PostbotTaskAction | ScheduleRailAction;
@@ -817,8 +857,21 @@ export async function getCreatorScheduleRail(
       status: { in: ["pending", "done"] },
       dueAt: { gte: window.start, lt: window.end }
     },
-    orderBy: { dueAt: "asc" }
+    orderBy: { dueAt: "asc" },
+    select: {
+      id: true, eventType: true, destination: true, title: true, note: true, dueAt: true,
+      postId: true, mediaIds: true, externalUrl: true, remindMe: true, status: true,
+      createdAt: true, updatedAt: true
+    }
   });
+
+  const manualMediaIds = [...new Set(manualRows.flatMap((row) => row.mediaIds ?? []))];
+  const manualMediaRows = manualMediaIds.length
+    ? await prisma.mediaAsset.findMany({
+        where: { creatorId: id, id: { in: manualMediaIds }, upstreamStatus: "active" },
+        select: { id: true, upstreamStatus: true, processingStatus: true }
+      })
+    : [];
 
   for (const m of manualRows) {
     const eventType = m.eventType as ScheduleRailExactEventType;
@@ -830,6 +883,7 @@ export async function getCreatorScheduleRail(
         : m.dueAt.getTime() < now.getTime()
           ? ("overdue" as const)
           : ("pending" as const);
+    const mediaProjection = projectManualEventMediaReadiness(m.mediaIds, manualMediaRows);
     events.push({
       id: m.id,
       source: "manual_event",
@@ -843,11 +897,7 @@ export async function getCreatorScheduleRail(
       plan_label: null,
       post_id: m.postId ?? undefined,
       status: railStatus,
-      needs_media: false,
-      media_count: 0,
-      media_ids: [],
-      media_state: "not_required",
-      readiness_errors: [],
+      ...mediaProjection,
       task_kind:
         eventType === "make_post"
           ? "publish"

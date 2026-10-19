@@ -9,6 +9,8 @@ import { dirname } from "node:path";
 import { EXTENSION_SESSION_TTL_MS } from "./session-constants.js";
 import type { IdentityStoreRoot, SessionToken, UserAccount } from "./types.js";
 
+export type SessionReadOptions = Readonly<{ cleanupExpired?: boolean }>;
+
 function emptyRoot(): IdentityStoreRoot {
   return { users: {}, sessions: {} };
 }
@@ -23,7 +25,7 @@ export interface IdentityStore {
   getUser(userId: string): Promise<UserAccount | null>;
   updateTiers(userId: string, tierIds: string[]): Promise<void>;
   createSession(session: SessionToken): Promise<void>;
-  getSession(token: string): Promise<SessionToken | null>;
+  getSession(token: string, options?: SessionReadOptions): Promise<SessionToken | null>;
   deleteSession(token: string): Promise<void>;
   /** Sliding TTL for `kind === "extension"` only; no-op for web. */
   touchSessionExpiry(token: string): Promise<void>;
@@ -121,13 +123,15 @@ export class FileIdentityStore implements IdentityStore {
     await this.save(root);
   }
 
-  public async getSession(token: string): Promise<SessionToken | null> {
+  public async getSession(token: string, options?: SessionReadOptions): Promise<SessionToken | null> {
     const root = await this.load();
     const s = root.sessions[token];
     if (!s) return null;
     if (new Date(s.expires_at).getTime() < Date.now()) {
-      delete root.sessions[token];
-      await this.save(root);
+      if (options?.cleanupExpired !== false) {
+        delete root.sessions[token];
+        await this.save(root);
+      }
       return null;
     }
     return s;

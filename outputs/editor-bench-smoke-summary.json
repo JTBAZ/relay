@@ -1,0 +1,72 @@
+{
+  "candidate": "gpt-5.6-luna",
+  "reasoningEffort": "none",
+  "pricingUsdPerMillion": {
+    "inputUsdPerMillion": 0.2,
+    "cachedInputUsdPerMillion": 0.02,
+    "outputUsdPerMillion": 1.2
+  },
+  "phase": "development",
+  "reservationCapUsd": 0.03,
+  "ledgerPath": "C:\\Users\\jorda\\Documents\\Codex\\2026-10-11\\c\\work\\relay\\.relay-data\\gallery-editor-budget.json",
+  "maxNetworkCalls": 8,
+  "networkCalls": 3,
+  "actualCost": {
+    "reservedUsd": 0.0249482,
+    "knownActualUsd": 0.00129152,
+    "conservativeUsd": 0.00129152,
+    "unknownChargesHeld": 0
+  },
+  "cases": [
+    {
+      "caseId": "curation_rename_selected_post",
+      "status": "passed",
+      "benchStatus": "proposal",
+      "diagnosticCode": "none",
+      "latencyMs": 6224,
+      "networkCalls": 2,
+      "reservedUsd": 0.0166444,
+      "knownActualUsd": 0.00107708,
+      "conservativeUsd": 0.00107708,
+      "unknownChargesHeld": 0
+    },
+    {
+      "caseId": "curation_ambiguous_artwork_rename",
+      "status": "passed",
+      "benchStatus": "clarification",
+      "diagnosticCode": "none",
+      "latencyMs": 2130,
+      "networkCalls": 1,
+      "reservedUsd": 0.0083038,
+      "knownActualUsd": 0.00021444,
+      "conservativeUsd": 0.00021444,
+      "unknownChargesHeld": 0
+    },
+    {
+      "caseId": "curation_image_only_limitation",
+      "status": "failed",
+      "benchStatus": "rejected",
+      "diagnosticCode": "BUDGET_EXHAUSTED",
+      "latencyMs": 4,
+      "networkCalls": 0,
+      "reservedUsd": 0,
+      "knownActualUsd": 0,
+      "conservativeUsd": 0,
+      "unknownChargesHeld": 0
+    },
+    {
+      "caseId": "mock_posting_patreon_creator_handoff",
+      "status": "skipped",
+      "diagnosticCode": "stopped_after_infrastructure_failure",
+      "latencyMs": 0,
+      "networkCalls": 0
+    }
+  ],
+  "counts": {
+    "passed": 2,
+    "failed": 1,
+    "skipped": 1
+  },
+  "diagnosticCode": "reservation_or_network_cap",
+  "reservationAttempts": 4
+}

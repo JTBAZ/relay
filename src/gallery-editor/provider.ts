@@ -4,7 +4,7 @@ import { PROPOSAL_SCHEMA } from './action-validation.js';
 export type ResponseItem = Record<string, unknown>;
 export interface ProviderUsage { inputTokens: number; outputTokens: number; costUsd?: number; calls?: number }
 export interface EditorProvider {
-  respond(request: { input: ResponseItem[]; tools: ResponseItem[]; signal: AbortSignal }): Promise<{ output: ResponseItem[]; usage?: ProviderUsage }>;
+  respond(request: { input: ResponseItem[]; tools: ResponseItem[]; signal: AbortSignal; responseSchema?: typeof PROPOSAL_SCHEMA }): Promise<{ output: ResponseItem[]; usage?: ProviderUsage }>;
 }
 /** Implement with an atomic durable ledger shared by all workers; never a process-local counter. */
 export interface ProviderBudget {
@@ -31,13 +31,13 @@ export function createResponsesProvider(options: ResponsesProviderOptions): Edit
   const model = options.model?.trim() || 'gpt-6-astra';
   const maxOutputTokens = options.maxOutputTokens ?? 4000;
   return {
-    async respond({ input, tools, signal }) {
+    async respond({ input, tools, signal, responseSchema }) {
       if (!options.apiKey?.trim()) throw new EditorError('provider_disabled', 'The conversational editor is not configured. Manual editing remains available.', 503);
       if (!options.budget || !options.pricing || !validRate(options.pricing.inputUsdPerMillion) || !validRate(options.pricing.outputUsdPerMillion)) throw new EditorError('provider_unpriced', 'The editor requires configured model pricing and a durable spending budget.', 503);
       if(options.pricing.cachedInputUsdPerMillion!==undefined&&(!validRate(options.pricing.cachedInputUsdPerMillion)||options.pricing.cachedInputUsdPerMillion>options.pricing.inputUsdPerMillion))throw new EditorError('provider_config','The cached-token rate is invalid.',503);
       if (!Number.isSafeInteger(maxOutputTokens) || maxOutputTokens < 256 || maxOutputTokens > 16000) throw new EditorError('provider_config', 'The editor output limit is invalid.', 503);
       signal.throwIfAborted();
-      const body = { model, store: false, input, tools, parallel_tool_calls: false, max_output_tokens: maxOutputTokens, include: ['reasoning.encrypted_content'], text: { format: { type: 'json_schema', name: 'library_edit_proposal', strict: true, schema: PROPOSAL_SCHEMA } } };
+      const body = { model, store: false, input, tools, parallel_tool_calls: false, max_output_tokens: maxOutputTokens, include: ['reasoning.encrypted_content'], text: { format: { type: 'json_schema', name: 'library_edit_proposal', strict: true, schema: responseSchema ?? PROPOSAL_SCHEMA } } };
       let images = 0;
       // Account conservatively at one token per UTF-8 byte, plus explicit image allowance.
       const serialized = JSON.stringify(body, (_key, value) => {

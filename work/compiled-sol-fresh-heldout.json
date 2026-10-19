@@ -1,0 +1,1272 @@
+{
+  "schemaVersion": "ce10.v1",
+  "architecture": "compiled",
+  "generatedAt": "2026-10-13T20:10:32.049Z",
+  "mode": "live",
+  "model": "gpt-6-sol",
+  "split": "heldout",
+  "familyFilter": null,
+  "caseFilter": null,
+  "includeGeneratedMessages": false,
+  "modelSettings": {
+    "model": "gpt-6-sol",
+    "maxOutputTokens": 4000,
+    "phase": "heldout",
+    "imageDetail": "low",
+    "store": false
+  },
+  "provenance": {
+    "artifacts": {
+      "runner": {
+        "sha256": "64921899d5f4e72e7266d482687d52fe0222f5ff6737eb286d59e21eb875282a"
+      },
+      "corpus": {
+        "sha256": "1445429e2a10dfdec03f78a01c517500a9cadf296e0ff7f3bb870192b4e71ba3"
+      },
+      "productionIntent": {
+        "sha256": "7ba894a2d4fb654b053032b7ba955a6ed99eb045131222f0a41adb1f7761b8bd"
+      },
+      "productionProvider": {
+        "sha256": "8510b858af028fc39979b70889eb17f45dcbd1f159f1d7e0bf290d68e1a7f2cd"
+      }
+    },
+    "mappedImageSha256": {
+      "v-cover-1": "d9ae8bfcfea236c30516fbff772172997bf950e3285e875e0db2910a0dd38fb5",
+      "v-cover-2": "e2fb54d7898474c6478ec5b0dedb83bb6494c7d87e1b3c88277bfd455b053907"
+    }
+  },
+  "fixtureSchemaVersion": "ce02.v2",
+  "counts": {
+    "total": 20,
+    "planned": 0,
+    "completed": 20,
+    "failed": 0,
+    "excluded": 0,
+    "visionInspected": 5,
+    "visionNotInspected": 0
+  },
+  "accounting": {
+    "allAttemptKnownUsageUsd": 0.09453160000000002,
+    "allAttemptConservativeUsd": 0.09453160000000002,
+    "unresolvedReservations": 0,
+    "completedCaseReportedCostUsd": 0.09453160000000002,
+    "completedCaseReportedCalls": 32,
+    "casesWithoutReportedUsage": 0,
+    "failedCasesMayHaveReservedCharges": false,
+    "authoritativeLedgerPath": "C:\\Users\\jorda\\Documents\\Codex\\2026-10-11\\c\\work\\relay\\.relay-data\\gallery-editor-budget.json"
+  },
+  "semanticAccuracy": null,
+  "semanticReview": "Required before threshold claims; actionExactMatch is a mechanical comparison only.",
+  "records": [
+    {
+      "caseId": "compiled-held001",
+      "family": "metadata",
+      "status": "completed",
+      "latencyMs": 21275,
+      "visualEvidence": "not_applicable",
+      "visualEvidenceSatisfied": true,
+      "readToolNames": [
+        "expandLibraryFamily"
+      ],
+      "inspectedMediaIds": [],
+      "imageInspectionCount": 0,
+      "usage": {
+        "inputTokens": 3906,
+        "outputTokens": 214,
+        "costUsd": 0.0036915999999999997,
+        "calls": 1
+      },
+      "attemptAccounting": {
+        "calls": 1,
+        "knownUsageUsd": 0.0036915999999999997,
+        "conservativeUsd": 0.0036915999999999997,
+        "unresolvedReservations": 0
+      },
+      "routing": {
+        "repairs": 0,
+        "escalations": 0,
+        "reads": 1,
+        "images": 0
+      },
+      "actionExactMatch": true,
+      "expectedOutcome": "actions",
+      "finalStateExactMatch": true,
+      "finalStateSha256": "466f7dd7fed97127138572a35f19e82a1591070c7acb266d1259e763248f7b13",
+      "expectedStateSha256": "466f7dd7fed97127138572a35f19e82a1591070c7acb266d1259e763248f7b13",
+      "expectedTargetIds": [],
+      "expectedSemanticLabels": [],
+      "expectedActions": [
+        {
+          "kind": "rename_work",
+          "targetId": "w-full-1",
+          "title": "Weather Windows"
+        }
+      ],
+      "proposedDisposition": "proposal",
+      "proposedMessageSha256": "39c7dbae93af71def856b9ca9505ac1f558f0dee0e28efd362ede0db0a498faa",
+      "proposedMessageLength": 54,
+      "proposedActions": [
+        {
+          "id": "e2ed9053-3c8c-4fd8-b5eb-4bdfc0792770",
+          "kind": "rename_work",
+          "workId": "w-full-1",
+          "title": "Weather Windows"
+        }
+      ],
+      "review": "pending_human_semantic_review"
+    },
+    {
+      "caseId": "compiled-held002",
+      "family": "metadata",
+      "status": "completed",
+      "latencyMs": 5266,
+      "visualEvidence": "not_applicable",
+      "visualEvidenceSatisfied": true,
+      "readToolNames": [
+        "expandLibraryFamily"
+      ],
+      "inspectedMediaIds": [],
+      "imageInspectionCount": 0,
+      "usage": {
+        "inputTokens": 3905,
+        "outputTokens": 206,
+        "costUsd": 0.0036095999999999997,
+        "calls": 1
+      },
+      "attemptAccounting": {
+        "calls": 1,
+        "knownUsageUsd": 0.0036095999999999997,
+        "conservativeUsd": 0.0036095999999999997,
+        "unresolvedReservations": 0
+      },
+      "routing": {
+        "repairs": 0,
+        "escalations": 0,
+        "reads": 1,
+        "images": 0
+      },
+      "actionExactMatch": true,
+      "expectedOutcome": "actions",
+      "finalStateExactMatch": true,
+      "finalStateSha256": "97665d3e968251a22bbe658bcceedd8d8039594cd0209526e5a54d8d8548e911",
+      "expectedStateSha256": "97665d3e968251a22bbe658bcceedd8d8039594cd0209526e5a54d8d8548e911",
+      "expectedTargetIds": [],
+      "expectedSemanticLabels": [],
+      "expectedActions": [
+        {
+          "kind": "tags",
+          "targetId": "p-full-1",
+          "add": [
+            "quiet"
+          ],
+          "remove": [
+            "urban"
+          ]
+        }
+      ],
+      "proposedDisposition": "proposal",
+      "proposedMessageSha256": "39c7dbae93af71def856b9ca9505ac1f558f0dee0e28efd362ede0db0a498faa",
+      "proposedMessageLength": 54,
+      "proposedActions": [
+        {
+          "id": "3d29c61e-9885-4b99-b1e0-89f35a5e8581",
+          "kind": "tags",
+          "postId": "p-full-1",
+          "add": [
+            "quiet"
+          ],
+          "remove": [
+            "urban"
+          ]
+        }
+      ],
+      "review": "pending_human_semantic_review"
+    },
+    {
+      "caseId": "compiled-held003",
+      "family": "metadata",
+      "status": "completed",
+      "latencyMs": 3780,
+      "visualEvidence": "not_applicable",
+      "visualEvidenceSatisfied": true,
+      "readToolNames": [
+        "expandLibraryFamily"
+      ],
+      "inspectedMediaIds": [],
+      "imageInspectionCount": 0,
+      "usage": {
+        "inputTokens": 3925,
+        "outputTokens": 145,
+        "costUsd": 0.0030396,
+        "calls": 1
+      },
+      "attemptAccounting": {
+        "calls": 1,
+        "knownUsageUsd": 0.0030396,
+        "conservativeUsd": 0.0030396,
+        "unresolvedReservations": 0
+      },
+      "routing": {
+        "repairs": 0,
+        "escalations": 0,
+        "reads": 1,
+        "images": 0
+      },
+      "actionExactMatch": true,
+      "expectedOutcome": "actions",
+      "finalStateExactMatch": true,
+      "finalStateSha256": "bd24f77ba3d951a6486d7761ce249bbcc78db1610e596cb16647e351873d3799",
+      "expectedStateSha256": "bd24f77ba3d951a6486d7761ce249bbcc78db1610e596cb16647e351873d3799",
+      "expectedTargetIds": [],
+      "expectedSemanticLabels": [],
+      "expectedActions": [
+        {
+          "kind": "rename_post",
+          "targetId": "p-full-2",
+          "title": "My Harbor caption"
+        },
+        {
+          "kind": "set_description",
+          "targetId": "p-full-1",
+          "description": "A window after the storm."
+        }
+      ],
+      "proposedDisposition": "proposal",
+      "proposedMessageSha256": "39c7dbae93af71def856b9ca9505ac1f558f0dee0e28efd362ede0db0a498faa",
+      "proposedMessageLength": 54,
+      "proposedActions": [
+        {
+          "kind": "rename_post",
+          "postId": "p-full-2",
+          "title": "My Harbor caption",
+          "id": "fixture-0"
+        },
+        {
+          "id": "71aaaf2d-9557-445f-a615-4819989c0046",
+          "kind": "set_description",
+          "postId": "p-full-1",
+          "description": "A window after the storm."
+        }
+      ],
+      "review": "pending_human_semantic_review"
+    },
+    {
+      "caseId": "compiled-held004",
+      "family": "metadata",
+      "status": "completed",
+      "latencyMs": 3579,
+      "visualEvidence": "not_applicable",
+      "visualEvidenceSatisfied": true,
+      "readToolNames": [
+        "expandLibraryFamily"
+      ],
+      "inspectedMediaIds": [],
+      "imageInspectionCount": 0,
+      "usage": {
+        "inputTokens": 3925,
+        "outputTokens": 171,
+        "costUsd": 0.0032995999999999998,
+        "calls": 1
+      },
+      "attemptAccounting": {
+        "calls": 1,
+        "knownUsageUsd": 0.0032995999999999998,
+        "conservativeUsd": 0.0032995999999999998,
+        "unresolvedReservations": 0
+      },
+      "routing": {
+        "repairs": 0,
+        "escalations": 0,
+        "reads": 1,
+        "images": 0
+      },
+      "actionExactMatch": true,
+      "expectedOutcome": "actions",
+      "finalStateExactMatch": true,
+      "finalStateSha256": "f719aacab1b888be36e4491eb3a204fc3df2a20938c355e4e6cf71324cae19dd",
+      "expectedStateSha256": "f719aacab1b888be36e4491eb3a204fc3df2a20938c355e4e6cf71324cae19dd",
+      "expectedTargetIds": [],
+      "expectedSemanticLabels": [],
+      "expectedActions": [
+        {
+          "kind": "rename_post",
+          "targetId": "p-full-1",
+          "title": "Window Light"
+        }
+      ],
+      "proposedDisposition": "proposal",
+      "proposedMessageSha256": "39c7dbae93af71def856b9ca9505ac1f558f0dee0e28efd362ede0db0a498faa",
+      "proposedMessageLength": 54,
+      "proposedActions": [
+        {
+          "id": "fixture-0",
+          "kind": "rename_post",
+          "postId": "p-full-1",
+          "title": "Window Light"
+        }
+      ],
+      "review": "pending_human_semantic_review"
+    },
+    {
+      "caseId": "compiled-held005",
+      "family": "metadata",
+      "status": "completed",
+      "latencyMs": 3299,
+      "visualEvidence": "not_applicable",
+      "visualEvidenceSatisfied": true,
+      "readToolNames": [
+        "expandLibraryFamily"
+      ],
+      "inspectedMediaIds": [],
+      "imageInspectionCount": 0,
+      "usage": {
+        "inputTokens": 3946,
+        "outputTokens": 130,
+        "costUsd": 0.0029316,
+        "calls": 1
+      },
+      "attemptAccounting": {
+        "calls": 1,
+        "knownUsageUsd": 0.0029316,
+        "conservativeUsd": 0.0029316,
+        "unresolvedReservations": 0
+      },
+      "routing": {
+        "repairs": 0,
+        "escalations": 0,
+        "reads": 1,
+        "images": 0
+      },
+      "actionExactMatch": true,
+      "expectedOutcome": "actions",
+      "finalStateExactMatch": true,
+      "finalStateSha256": "47c9b07e4cba8eda7038325be3867bfd4993ba39f6858aeb64ed43bb30cdaeb1",
+      "expectedStateSha256": "47c9b07e4cba8eda7038325be3867bfd4993ba39f6858aeb64ed43bb30cdaeb1",
+      "expectedTargetIds": [],
+      "expectedSemanticLabels": [],
+      "expectedActions": [
+        {
+          "kind": "rename_post",
+          "targetId": "p-full-2",
+          "title": "My Harbor caption"
+        }
+      ],
+      "proposedDisposition": "proposal",
+      "proposedMessageSha256": "39c7dbae93af71def856b9ca9505ac1f558f0dee0e28efd362ede0db0a498faa",
+      "proposedMessageLength": 54,
+      "proposedActions": [
+        {
+          "kind": "rename_post",
+          "postId": "p-full-2",
+          "title": "My Harbor caption",
+          "id": "fixture-1"
+        }
+      ],
+      "review": "pending_human_semantic_review"
+    },
+    {
+      "caseId": "compiled-held006",
+      "family": "metadata",
+      "status": "completed",
+      "latencyMs": 7228,
+      "visualEvidence": "not_applicable",
+      "visualEvidenceSatisfied": true,
+      "readToolNames": [
+        "expandLibraryFamily",
+        "searchLibraryPosts"
+      ],
+      "inspectedMediaIds": [],
+      "imageInspectionCount": 0,
+      "usage": {
+        "inputTokens": 8520,
+        "outputTokens": 210,
+        "costUsd": 0.0058902,
+        "calls": 2
+      },
+      "attemptAccounting": {
+        "calls": 2,
+        "knownUsageUsd": 0.0058902,
+        "conservativeUsd": 0.0058902,
+        "unresolvedReservations": 0
+      },
+      "routing": {
+        "repairs": 0,
+        "escalations": 0,
+        "reads": 2,
+        "images": 0
+      },
+      "actionExactMatch": true,
+      "expectedOutcome": "clarification",
+      "finalStateExactMatch": true,
+      "finalStateSha256": "5ff7e150cfae4bde360177b7ed5b5fa6c04b39005a892f31d4757d0ad24e75b3",
+      "expectedStateSha256": "5ff7e150cfae4bde360177b7ed5b5fa6c04b39005a892f31d4757d0ad24e75b3",
+      "expectedTargetIds": [],
+      "expectedSemanticLabels": [],
+      "expectedActions": [],
+      "proposedDisposition": "clarification",
+      "proposedMessageSha256": "096e2c811ebd39ed69adab85debccc777d967456451b8e93db33e809576d7628",
+      "proposedMessageLength": 137,
+      "proposedActions": [],
+      "review": "pending_human_semantic_review"
+    },
+    {
+      "caseId": "compiled-held007",
+      "family": "metadata",
+      "status": "completed",
+      "latencyMs": 4117,
+      "visualEvidence": "not_applicable",
+      "visualEvidenceSatisfied": true,
+      "readToolNames": [
+        "expandLibraryFamily"
+      ],
+      "inspectedMediaIds": [],
+      "imageInspectionCount": 0,
+      "usage": {
+        "inputTokens": 3886,
+        "outputTokens": 114,
+        "costUsd": 0.0026516,
+        "calls": 1
+      },
+      "attemptAccounting": {
+        "calls": 1,
+        "knownUsageUsd": 0.0026516,
+        "conservativeUsd": 0.0026516,
+        "unresolvedReservations": 0
+      },
+      "routing": {
+        "repairs": 0,
+        "escalations": 0,
+        "reads": 1,
+        "images": 0
+      },
+      "actionExactMatch": true,
+      "expectedOutcome": "clarification",
+      "finalStateExactMatch": true,
+      "finalStateSha256": "5ff7e150cfae4bde360177b7ed5b5fa6c04b39005a892f31d4757d0ad24e75b3",
+      "expectedStateSha256": "5ff7e150cfae4bde360177b7ed5b5fa6c04b39005a892f31d4757d0ad24e75b3",
+      "expectedTargetIds": [],
+      "expectedSemanticLabels": [],
+      "expectedActions": [],
+      "proposedDisposition": "clarification",
+      "proposedMessageSha256": "096e2c811ebd39ed69adab85debccc777d967456451b8e93db33e809576d7628",
+      "proposedMessageLength": 137,
+      "proposedActions": [],
+      "review": "pending_human_semantic_review"
+    },
+    {
+      "caseId": "compiled-held008",
+      "family": "metadata",
+      "status": "completed",
+      "latencyMs": 12932,
+      "visualEvidence": "not_applicable",
+      "visualEvidenceSatisfied": true,
+      "readToolNames": [
+        "expandLibraryFamily",
+        "expandLibraryFamily"
+      ],
+      "inspectedMediaIds": [],
+      "imageInspectionCount": 0,
+      "usage": {
+        "inputTokens": 8285,
+        "outputTokens": 250,
+        "costUsd": 0.0058166,
+        "calls": 2
+      },
+      "attemptAccounting": {
+        "calls": 2,
+        "knownUsageUsd": 0.0058166,
+        "conservativeUsd": 0.0058166,
+        "unresolvedReservations": 0
+      },
+      "routing": {
+        "repairs": 0,
+        "escalations": 0,
+        "reads": 2,
+        "images": 0
+      },
+      "actionExactMatch": true,
+      "expectedOutcome": "actions",
+      "finalStateExactMatch": true,
+      "finalStateSha256": "8d447bebe7de118be88bd605c3231638daa0f180720b7703b8d25195eae30163",
+      "expectedStateSha256": "8d447bebe7de118be88bd605c3231638daa0f180720b7703b8d25195eae30163",
+      "expectedTargetIds": [],
+      "expectedSemanticLabels": [],
+      "expectedActions": [
+        {
+          "kind": "rename_series",
+          "targetId": "s-field",
+          "title": "Pocket Journal"
+        }
+      ],
+      "proposedDisposition": "proposal",
+      "proposedMessageSha256": "39c7dbae93af71def856b9ca9505ac1f558f0dee0e28efd362ede0db0a498faa",
+      "proposedMessageLength": 54,
+      "proposedActions": [
+        {
+          "id": "30c52f9a-ad49-4817-8f8e-aac01132364b",
+          "kind": "rename_series",
+          "seriesId": "s-field",
+          "title": "Pocket Journal"
+        }
+      ],
+      "review": "pending_human_semantic_review"
+    },
+    {
+      "caseId": "compiled-held009",
+      "family": "metadata",
+      "status": "completed",
+      "latencyMs": 3892,
+      "visualEvidence": "not_applicable",
+      "visualEvidenceSatisfied": true,
+      "readToolNames": [
+        "expandLibraryFamily"
+      ],
+      "inspectedMediaIds": [],
+      "imageInspectionCount": 0,
+      "usage": {
+        "inputTokens": 3893,
+        "outputTokens": 128,
+        "costUsd": 0.0028056,
+        "calls": 1
+      },
+      "attemptAccounting": {
+        "calls": 1,
+        "knownUsageUsd": 0.0028056,
+        "conservativeUsd": 0.0028056,
+        "unresolvedReservations": 0
+      },
+      "routing": {
+        "repairs": 0,
+        "escalations": 0,
+        "reads": 1,
+        "images": 0
+      },
+      "actionExactMatch": true,
+      "expectedOutcome": "actions",
+      "finalStateExactMatch": true,
+      "finalStateSha256": "6aabac608a3fb6fa379e28acbe863608d974cb19268fb8cbca18fd12c28024e9",
+      "expectedStateSha256": "6aabac608a3fb6fa379e28acbe863608d974cb19268fb8cbca18fd12c28024e9",
+      "expectedTargetIds": [],
+      "expectedSemanticLabels": [],
+      "expectedActions": [
+        {
+          "kind": "source_post_title",
+          "targetId": "p-full-1"
+        }
+      ],
+      "proposedDisposition": "proposal",
+      "proposedMessageSha256": "39c7dbae93af71def856b9ca9505ac1f558f0dee0e28efd362ede0db0a498faa",
+      "proposedMessageLength": 54,
+      "proposedActions": [
+        {
+          "id": "aaa6026c-5d1c-4d4d-8697-46f32cd198ef",
+          "kind": "source_post_title",
+          "postId": "p-full-1"
+        }
+      ],
+      "review": "pending_human_semantic_review"
+    },
+    {
+      "caseId": "compiled-held010",
+      "family": "metadata",
+      "status": "completed",
+      "latencyMs": 7675,
+      "visualEvidence": "not_applicable",
+      "visualEvidenceSatisfied": true,
+      "readToolNames": [
+        "expandLibraryFamily"
+      ],
+      "inspectedMediaIds": [],
+      "imageInspectionCount": 0,
+      "usage": {
+        "inputTokens": 7818,
+        "outputTokens": 360,
+        "costUsd": 0.005971799999999999,
+        "calls": 2
+      },
+      "attemptAccounting": {
+        "calls": 2,
+        "knownUsageUsd": 0.005971799999999999,
+        "conservativeUsd": 0.005971799999999999,
+        "unresolvedReservations": 0
+      },
+      "routing": {
+        "repairs": 1,
+        "escalations": 0,
+        "reads": 1,
+        "images": 0
+      },
+      "actionExactMatch": true,
+      "expectedOutcome": "actions",
+      "finalStateExactMatch": true,
+      "finalStateSha256": "01908b2a69c9116c90596bbf6e1d3a1dfccc689fcd9931185cc7062d603529ec",
+      "expectedStateSha256": "01908b2a69c9116c90596bbf6e1d3a1dfccc689fcd9931185cc7062d603529ec",
+      "expectedTargetIds": [],
+      "expectedSemanticLabels": [],
+      "expectedActions": [
+        {
+          "kind": "rename_post",
+          "targetId": "p-full-1",
+          "title": "Morning Glass"
+        }
+      ],
+      "proposedDisposition": "proposal",
+      "proposedMessageSha256": "39c7dbae93af71def856b9ca9505ac1f558f0dee0e28efd362ede0db0a498faa",
+      "proposedMessageLength": 54,
+      "proposedActions": [
+        {
+          "id": "8101972a-b2a6-4d5a-8866-8015962c4db1",
+          "kind": "rename_post",
+          "postId": "p-full-1",
+          "title": "Morning Glass"
+        }
+      ],
+      "review": "pending_human_semantic_review"
+    },
+    {
+      "caseId": "compiled-held011",
+      "family": "metadata",
+      "status": "completed",
+      "latencyMs": 6539,
+      "visualEvidence": "not_applicable",
+      "visualEvidenceSatisfied": true,
+      "readToolNames": [
+        "expandLibraryFamily",
+        "searchLibraryPosts",
+        "readLibraryCollections"
+      ],
+      "inspectedMediaIds": [],
+      "imageInspectionCount": 0,
+      "usage": {
+        "inputTokens": 13348,
+        "outputTokens": 188,
+        "costUsd": 0.007327,
+        "calls": 3
+      },
+      "attemptAccounting": {
+        "calls": 3,
+        "knownUsageUsd": 0.007327,
+        "conservativeUsd": 0.007327,
+        "unresolvedReservations": 0
+      },
+      "routing": {
+        "repairs": 0,
+        "escalations": 0,
+        "reads": 3,
+        "images": 0
+      },
+      "actionExactMatch": true,
+      "expectedOutcome": "actions",
+      "finalStateExactMatch": true,
+      "finalStateSha256": "7faa27da47262928806292642ac7fe09c1c5338fc6d99c477ae3a9933640e9b7",
+      "expectedStateSha256": "7faa27da47262928806292642ac7fe09c1c5338fc6d99c477ae3a9933640e9b7",
+      "expectedTargetIds": [],
+      "expectedSemanticLabels": [],
+      "expectedActions": [
+        {
+          "kind": "collection_membership",
+          "targetId": "c-featured",
+          "postIds": [
+            "p-custom"
+          ],
+          "operation": "add"
+        }
+      ],
+      "proposedDisposition": "proposal",
+      "proposedMessageSha256": "39c7dbae93af71def856b9ca9505ac1f558f0dee0e28efd362ede0db0a498faa",
+      "proposedMessageLength": 54,
+      "proposedActions": [
+        {
+          "id": "1b4da55a-3387-4705-b7ec-7784b5503bf1",
+          "kind": "collection_membership",
+          "collectionId": "c-featured",
+          "postIds": [
+            "p-custom"
+          ],
+          "operation": "add"
+        }
+      ],
+      "review": "pending_human_semantic_review"
+    },
+    {
+      "caseId": "compiled-held012",
+      "family": "metadata",
+      "status": "completed",
+      "latencyMs": 6868,
+      "visualEvidence": "not_applicable",
+      "visualEvidenceSatisfied": true,
+      "readToolNames": [
+        "expandLibraryFamily",
+        "readLibraryCollections",
+        "resolveLibraryPosts"
+      ],
+      "inspectedMediaIds": [],
+      "imageInspectionCount": 0,
+      "usage": {
+        "inputTokens": 13199,
+        "outputTokens": 221,
+        "costUsd": 0.0074832,
+        "calls": 3
+      },
+      "attemptAccounting": {
+        "calls": 3,
+        "knownUsageUsd": 0.0074832,
+        "conservativeUsd": 0.0074832,
+        "unresolvedReservations": 0
+      },
+      "routing": {
+        "repairs": 0,
+        "escalations": 0,
+        "reads": 3,
+        "images": 0
+      },
+      "actionExactMatch": true,
+      "expectedOutcome": "actions",
+      "finalStateExactMatch": true,
+      "finalStateSha256": "14e2b5453c7e7cc65f3965633b7d444ffc45bfe6d378e306ed7fb7aa9233b978",
+      "expectedStateSha256": "14e2b5453c7e7cc65f3965633b7d444ffc45bfe6d378e306ed7fb7aa9233b978",
+      "expectedTargetIds": [],
+      "expectedSemanticLabels": [],
+      "expectedActions": [
+        {
+          "kind": "reorder_collection",
+          "targetId": "c-featured",
+          "postIds": [
+            "p-full-2",
+            "p-full-1"
+          ]
+        }
+      ],
+      "proposedDisposition": "proposal",
+      "proposedMessageSha256": "39c7dbae93af71def856b9ca9505ac1f558f0dee0e28efd362ede0db0a498faa",
+      "proposedMessageLength": 54,
+      "proposedActions": [
+        {
+          "id": "e4957dcc-1c61-43eb-8e8c-d08d34e206c7",
+          "kind": "reorder_collection",
+          "collectionId": "c-featured",
+          "postIds": [
+            "p-full-2",
+            "p-full-1"
+          ]
+        }
+      ],
+      "review": "pending_human_semantic_review"
+    },
+    {
+      "caseId": "compiled-held013",
+      "family": "metadata",
+      "status": "completed",
+      "latencyMs": 4071,
+      "visualEvidence": "not_applicable",
+      "visualEvidenceSatisfied": true,
+      "readToolNames": [
+        "expandLibraryFamily"
+      ],
+      "inspectedMediaIds": [],
+      "imageInspectionCount": 0,
+      "usage": {
+        "inputTokens": 3896,
+        "outputTokens": 118,
+        "costUsd": 0.0027115999999999998,
+        "calls": 1
+      },
+      "attemptAccounting": {
+        "calls": 1,
+        "knownUsageUsd": 0.0027115999999999998,
+        "conservativeUsd": 0.0027115999999999998,
+        "unresolvedReservations": 0
+      },
+      "routing": {
+        "repairs": 0,
+        "escalations": 0,
+        "reads": 1,
+        "images": 0
+      },
+      "actionExactMatch": true,
+      "expectedOutcome": "blocked",
+      "finalStateExactMatch": true,
+      "finalStateSha256": "5ff7e150cfae4bde360177b7ed5b5fa6c04b39005a892f31d4757d0ad24e75b3",
+      "expectedStateSha256": "5ff7e150cfae4bde360177b7ed5b5fa6c04b39005a892f31d4757d0ad24e75b3",
+      "expectedTargetIds": [],
+      "expectedSemanticLabels": [],
+      "expectedActions": [],
+      "proposedDisposition": "limitation",
+      "proposedMessageSha256": "d63f6db5e2765382e4956d28f84f62e81d65d6b3259dd7abe1142747fb1a4335",
+      "proposedMessageLength": 135,
+      "proposedActions": [],
+      "review": "pending_human_semantic_review"
+    },
+    {
+      "caseId": "compiled-held014",
+      "family": "metadata",
+      "status": "completed",
+      "latencyMs": 2353,
+      "visualEvidence": "not_applicable",
+      "visualEvidenceSatisfied": true,
+      "readToolNames": [
+        "expandLibraryFamily"
+      ],
+      "inspectedMediaIds": [],
+      "imageInspectionCount": 0,
+      "usage": {
+        "inputTokens": 3920,
+        "outputTokens": 70,
+        "costUsd": 0.0022796,
+        "calls": 1
+      },
+      "attemptAccounting": {
+        "calls": 1,
+        "knownUsageUsd": 0.0022796,
+        "conservativeUsd": 0.0022796,
+        "unresolvedReservations": 0
+      },
+      "routing": {
+        "repairs": 0,
+        "escalations": 0,
+        "reads": 1,
+        "images": 0
+      },
+      "actionExactMatch": true,
+      "expectedOutcome": "actions",
+      "finalStateExactMatch": true,
+      "finalStateSha256": "9c793083901a80125fb46a7ba3c075042f216b932e4b8e081813044785ceb591",
+      "expectedStateSha256": "9c793083901a80125fb46a7ba3c075042f216b932e4b8e081813044785ceb591",
+      "expectedTargetIds": [],
+      "expectedSemanticLabels": [],
+      "expectedActions": [
+        {
+          "kind": "tags",
+          "targetId": "p-full-1",
+          "add": [
+            "quiet"
+          ],
+          "remove": []
+        }
+      ],
+      "proposedDisposition": "no_change",
+      "proposedMessageSha256": "e83d8df77f015ec5f2dacc2a13912ab25a6d67fb294c9a9af960d0f7890abcc4",
+      "proposedMessageLength": 48,
+      "proposedActions": [
+        {
+          "add": [
+            "quiet"
+          ],
+          "kind": "tags",
+          "postId": "p-full-1",
+          "remove": [],
+          "id": "fixture-0"
+        }
+      ],
+      "review": "pending_human_semantic_review"
+    },
+    {
+      "caseId": "compiled-held015",
+      "family": "metadata",
+      "status": "completed",
+      "latencyMs": 3713,
+      "visualEvidence": "not_applicable",
+      "visualEvidenceSatisfied": true,
+      "readToolNames": [
+        "expandLibraryFamily"
+      ],
+      "inspectedMediaIds": [],
+      "imageInspectionCount": 0,
+      "usage": {
+        "inputTokens": 3904,
+        "outputTokens": 175,
+        "costUsd": 0.0032976,
+        "calls": 1
+      },
+      "attemptAccounting": {
+        "calls": 1,
+        "knownUsageUsd": 0.0032976,
+        "conservativeUsd": 0.0032976,
+        "unresolvedReservations": 0
+      },
+      "routing": {
+        "repairs": 0,
+        "escalations": 0,
+        "reads": 1,
+        "images": 0
+      },
+      "actionExactMatch": true,
+      "expectedOutcome": "actions",
+      "finalStateExactMatch": true,
+      "finalStateSha256": "fb955b29b3f4bbfb5aa1524af173529f2f04f345bf329644be6d441b173c0067",
+      "expectedStateSha256": "fb955b29b3f4bbfb5aa1524af173529f2f04f345bf329644be6d441b173c0067",
+      "expectedTargetIds": [],
+      "expectedSemanticLabels": [],
+      "expectedActions": [
+        {
+          "kind": "tags",
+          "targetId": "p-full-1",
+          "add": [
+            "evening-notes"
+          ],
+          "remove": []
+        }
+      ],
+      "proposedDisposition": "proposal",
+      "proposedMessageSha256": "39c7dbae93af71def856b9ca9505ac1f558f0dee0e28efd362ede0db0a498faa",
+      "proposedMessageLength": 54,
+      "proposedActions": [
+        {
+          "id": "f9045637-068f-4458-a34e-5d4e00faf05c",
+          "kind": "tags",
+          "postId": "p-full-1",
+          "add": [
+            "evening-notes"
+          ],
+          "remove": []
+        }
+      ],
+      "review": "pending_human_semantic_review"
+    },
+    {
+      "caseId": "compiled-held016",
+      "family": "vision",
+      "status": "completed",
+      "latencyMs": 7359,
+      "visualEvidence": "inspected",
+      "visualEvidenceSatisfied": true,
+      "readToolNames": [
+        "expandLibraryFamily",
+        "resolveLibraryImageReferences"
+      ],
+      "inspectedMediaIds": [
+        "m-rain-1"
+      ],
+      "imageInspectionCount": 1,
+      "usage": {
+        "inputTokens": 8293,
+        "outputTokens": 285,
+        "costUsd": 0.0061448,
+        "calls": 2
+      },
+      "attemptAccounting": {
+        "calls": 2,
+        "knownUsageUsd": 0.0061448,
+        "conservativeUsd": 0.0061448,
+        "unresolvedReservations": 0
+      },
+      "routing": {
+        "repairs": 0,
+        "escalations": 0,
+        "reads": 2,
+        "images": 1
+      },
+      "actionExactMatch": false,
+      "expectedOutcome": "actions",
+      "finalStateExactMatch": false,
+      "finalStateSha256": "c481446045efce07f3495c57ff2044fc286313c04dd7bcb2fc554199af42bf02",
+      "expectedStateSha256": "f19feaec605a55f9c52144514cf24e86d4e346e117a254beab28d69c4c78fc09",
+      "expectedTargetIds": [],
+      "expectedSemanticLabels": [],
+      "expectedActions": [
+        {
+          "kind": "tags",
+          "targetId": "p-full-1",
+          "add": [
+            "blue",
+            "red square",
+            "upper left"
+          ],
+          "remove": []
+        }
+      ],
+      "proposedDisposition": "proposal",
+      "proposedMessageSha256": "39c7dbae93af71def856b9ca9505ac1f558f0dee0e28efd362ede0db0a498faa",
+      "proposedMessageLength": 54,
+      "proposedActions": [
+        {
+          "id": "d91691ad-3361-421a-8e99-77aacb550c40",
+          "kind": "tags",
+          "postId": "p-full-1",
+          "add": [
+            "blue",
+            "red square",
+            "upper-left"
+          ],
+          "remove": []
+        }
+      ],
+      "review": "pending_human_semantic_review"
+    },
+    {
+      "caseId": "compiled-held017",
+      "family": "vision",
+      "status": "completed",
+      "latencyMs": 7944,
+      "visualEvidence": "inspected",
+      "visualEvidenceSatisfied": true,
+      "readToolNames": [
+        "expandLibraryFamily",
+        "resolveLibraryImageReferences"
+      ],
+      "inspectedMediaIds": [
+        "m-shore"
+      ],
+      "imageInspectionCount": 1,
+      "usage": {
+        "inputTokens": 7782,
+        "outputTokens": 339,
+        "costUsd": 0.0059724,
+        "calls": 2
+      },
+      "attemptAccounting": {
+        "calls": 2,
+        "knownUsageUsd": 0.0059724,
+        "conservativeUsd": 0.0059724,
+        "unresolvedReservations": 0
+      },
+      "routing": {
+        "repairs": 0,
+        "escalations": 0,
+        "reads": 2,
+        "images": 1
+      },
+      "actionExactMatch": false,
+      "expectedOutcome": "actions",
+      "finalStateExactMatch": false,
+      "finalStateSha256": "39d9deccc9efaa9879b54cf560fab0155a8fb25f0ec6ff458a16a5735db1424f",
+      "expectedStateSha256": "ef1d3e1995bc9afa61c4bb340a668bfbc3f20e8ec65a259d3005263841f91ff4",
+      "expectedTargetIds": [],
+      "expectedSemanticLabels": [],
+      "expectedActions": [
+        {
+          "kind": "tags",
+          "targetId": "p-custom",
+          "mediaId": "m-shore",
+          "add": [
+            "green",
+            "orange rectangle",
+            "center"
+          ],
+          "remove": []
+        }
+      ],
+      "proposedDisposition": "proposal",
+      "proposedMessageSha256": "39c7dbae93af71def856b9ca9505ac1f558f0dee0e28efd362ede0db0a498faa",
+      "proposedMessageLength": 54,
+      "proposedActions": [
+        {
+          "id": "3a207398-fc1e-48ba-9479-eae3c62941de",
+          "kind": "tags",
+          "postId": "p-custom",
+          "mediaId": "m-shore",
+          "add": [
+            "green field",
+            "orange mark",
+            "horizontal rectangle",
+            "centered mark"
+          ],
+          "remove": []
+        }
+      ],
+      "review": "pending_human_semantic_review"
+    },
+    {
+      "caseId": "compiled-held018",
+      "family": "vision",
+      "status": "completed",
+      "latencyMs": 7214,
+      "visualEvidence": "inspected",
+      "visualEvidenceSatisfied": true,
+      "readToolNames": [
+        "expandLibraryFamily",
+        "resolveLibraryImageReferences"
+      ],
+      "inspectedMediaIds": [
+        "m-shore"
+      ],
+      "imageInspectionCount": 1,
+      "usage": {
+        "inputTokens": 7793,
+        "outputTokens": 342,
+        "costUsd": 0.0060262,
+        "calls": 2
+      },
+      "attemptAccounting": {
+        "calls": 2,
+        "knownUsageUsd": 0.0060262,
+        "conservativeUsd": 0.0060262,
+        "unresolvedReservations": 0
+      },
+      "routing": {
+        "repairs": 0,
+        "escalations": 0,
+        "reads": 2,
+        "images": 1
+      },
+      "actionExactMatch": false,
+      "expectedOutcome": "actions",
+      "finalStateExactMatch": false,
+      "finalStateSha256": "07ea586a18060dd6da5931d75779e28b72fe63c92676d45007fe0164ddb6c2f4",
+      "expectedStateSha256": "0e5516f360d764cffebdbec239c0af2d244f5912a12df98f3ffda24d00d9a250",
+      "expectedTargetIds": [],
+      "expectedSemanticLabels": [],
+      "expectedActions": [
+        {
+          "kind": "tags",
+          "targetId": "p-custom",
+          "add": [
+            "green",
+            "rectangle",
+            "horizontal",
+            "center"
+          ],
+          "remove": []
+        }
+      ],
+      "proposedDisposition": "proposal",
+      "proposedMessageSha256": "39c7dbae93af71def856b9ca9505ac1f558f0dee0e28efd362ede0db0a498faa",
+      "proposedMessageLength": 54,
+      "proposedActions": [
+        {
+          "id": "05355a73-215a-4f64-867e-ad4c50e04745",
+          "kind": "tags",
+          "postId": "p-custom",
+          "add": [
+            "orange",
+            "rectangular mark",
+            "horizontal mark",
+            "centered mark"
+          ],
+          "remove": []
+        }
+      ],
+      "review": "pending_human_semantic_review"
+    },
+    {
+      "caseId": "compiled-held019",
+      "family": "vision",
+      "status": "completed",
+      "latencyMs": 8904,
+      "visualEvidence": "inspected",
+      "visualEvidenceSatisfied": true,
+      "readToolNames": [
+        "expandLibraryFamily",
+        "resolveLibraryImageReferences"
+      ],
+      "inspectedMediaIds": [
+        "m-rain-1"
+      ],
+      "imageInspectionCount": 1,
+      "usage": {
+        "inputTokens": 8345,
+        "outputTokens": 386,
+        "costUsd": 0.007249799999999999,
+        "calls": 2
+      },
+      "attemptAccounting": {
+        "calls": 2,
+        "knownUsageUsd": 0.007249799999999999,
+        "conservativeUsd": 0.007249799999999999,
+        "unresolvedReservations": 0
+      },
+      "routing": {
+        "repairs": 0,
+        "escalations": 0,
+        "reads": 2,
+        "images": 1
+      },
+      "actionExactMatch": false,
+      "expectedOutcome": "actions",
+      "finalStateExactMatch": false,
+      "finalStateSha256": "5ff7e150cfae4bde360177b7ed5b5fa6c04b39005a892f31d4757d0ad24e75b3",
+      "expectedStateSha256": "f19feaec605a55f9c52144514cf24e86d4e346e117a254beab28d69c4c78fc09",
+      "expectedTargetIds": [],
+      "expectedSemanticLabels": [],
+      "expectedActions": [
+        {
+          "kind": "tags",
+          "targetId": "p-full-1",
+          "add": [
+            "blue",
+            "red square",
+            "upper left"
+          ],
+          "remove": []
+        }
+      ],
+      "proposedDisposition": "clarification",
+      "proposedMessageSha256": "1abf5cba08e1e3465c32c9d87b8868fc539b55b6f1b573c3ec54d032a71536f3",
+      "proposedMessageLength": 120,
+      "proposedActions": [],
+      "review": "pending_human_semantic_review"
+    },
+    {
+      "caseId": "compiled-held020",
+      "family": "vision",
+      "status": "completed",
+      "latencyMs": 7653,
+      "visualEvidence": "inspected",
+      "visualEvidenceSatisfied": true,
+      "readToolNames": [
+        "expandLibraryFamily",
+        "resolveLibraryImageReferences"
+      ],
+      "inspectedMediaIds": [
+        "m-rain-1"
+      ],
+      "imageInspectionCount": 1,
+      "usage": {
+        "inputTokens": 8281,
+        "outputTokens": 305,
+        "costUsd": 0.0063316,
+        "calls": 2
+      },
+      "attemptAccounting": {
+        "calls": 2,
+        "knownUsageUsd": 0.0063316,
+        "conservativeUsd": 0.0063316,
+        "unresolvedReservations": 0
+      },
+      "routing": {
+        "repairs": 0,
+        "escalations": 0,
+        "reads": 2,
+        "images": 1
+      },
+      "actionExactMatch": false,
+      "expectedOutcome": "actions",
+      "finalStateExactMatch": false,
+      "finalStateSha256": "150a299389fe916266084d25707f07875a59bdfc5856da7a007a896ebe6f6235",
+      "expectedStateSha256": "a047e1c7cf9e554d84098351ac051054d3a5ce7b485f2ad71f3b8cc9cdd076f5",
+      "expectedTargetIds": [],
+      "expectedSemanticLabels": [],
+      "expectedActions": [
+        {
+          "kind": "tags",
+          "targetId": "p-full-1",
+          "mediaId": "m-rain-1",
+          "add": [
+            "blue",
+            "red square",
+            "upper left"
+          ],
+          "remove": []
+        }
+      ],
+      "proposedDisposition": "proposal",
+      "proposedMessageSha256": "39c7dbae93af71def856b9ca9505ac1f558f0dee0e28efd362ede0db0a498faa",
+      "proposedMessageLength": 54,
+      "proposedActions": [
+        {
+          "id": "29ca6cc4-fec6-4b33-887f-3963cefd59c5",
+          "kind": "tags",
+          "postId": "p-full-1",
+          "mediaId": "m-rain-1",
+          "add": [
+            "dominant blue",
+            "red square",
+            "upper-left"
+          ],
+          "remove": []
+        }
+      ],
+      "review": "pending_human_semantic_review"
+    }
+  ]
+}

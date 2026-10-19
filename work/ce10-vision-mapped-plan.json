@@ -1,0 +1,288 @@
+{
+  "schemaVersion": "ce10.v1",
+  "generatedAt": "2026-10-12T21:19:11.936Z",
+  "mode": "dry-run",
+  "model": "placeholder",
+  "split": "development",
+  "familyFilter": "vision",
+  "modelSettings": {
+    "model": "placeholder",
+    "maxOutputTokens": 1000,
+    "phase": "development",
+    "imageDetail": "low",
+    "store": false
+  },
+  "provenance": {
+    "artifacts": {
+      "runner": {
+        "sha256": "79ebfb1de75428a0c41c94e653754663124d3550100b4f8b73299007f71a7d0f"
+      },
+      "corpus": {
+        "sha256": "6797e2d656cfb4750a4c7a82926522477e664ed99bc4dc16ceb7e9a91880ddf9"
+      },
+      "productionIntent": {
+        "sha256": "36c7a668ab800433bd5123873ad8a7346f2886ac88c1c82f025f031c7f772eda"
+      },
+      "productionProvider": {
+        "sha256": "7799f7b99fce1c1aa212b56691553a57a572d79bf491a3e718f423c5c8529aca"
+      }
+    },
+    "mappedImageSha256": {
+      "v-cover-1": "d9ae8bfcfea236c30516fbff772172997bf950e3285e875e0db2910a0dd38fb5",
+      "v-cover-2": "e2fb54d7898474c6478ec5b0dedb83bb6494c7d87e1b3c88277bfd455b053907"
+    }
+  },
+  "fixtureSchemaVersion": "ce02.v1",
+  "counts": {
+    "total": 40,
+    "planned": 5,
+    "completed": 0,
+    "failed": 0,
+    "excluded": 35
+  },
+  "accounting": null,
+  "semanticAccuracy": null,
+  "semanticReview": "Required before threshold claims; actionExactMatch is a mechanical comparison only.",
+  "records": [
+    {
+      "caseId": "CE02-001",
+      "family": "metadata_paraphrase",
+      "status": "excluded",
+      "reason": "family_filtered"
+    },
+    {
+      "caseId": "CE02-002",
+      "family": "metadata_paraphrase",
+      "status": "excluded",
+      "reason": "family_filtered"
+    },
+    {
+      "caseId": "CE02-003",
+      "family": "metadata_paraphrase",
+      "status": "excluded",
+      "reason": "family_filtered"
+    },
+    {
+      "caseId": "CE02-004",
+      "family": "metadata_paraphrase",
+      "status": "excluded",
+      "reason": "family_filtered"
+    },
+    {
+      "caseId": "CE02-005",
+      "family": "metadata_paraphrase",
+      "status": "excluded",
+      "reason": "family_filtered"
+    },
+    {
+      "caseId": "CE02-006",
+      "family": "iterative_add_remove",
+      "status": "excluded",
+      "reason": "family_filtered"
+    },
+    {
+      "caseId": "CE02-007",
+      "family": "iterative_add_remove",
+      "status": "excluded",
+      "reason": "family_filtered"
+    },
+    {
+      "caseId": "CE02-008",
+      "family": "iterative_add_remove",
+      "status": "excluded",
+      "reason": "family_filtered"
+    },
+    {
+      "caseId": "CE02-009",
+      "family": "iterative_add_remove",
+      "status": "excluded",
+      "reason": "family_filtered"
+    },
+    {
+      "caseId": "CE02-010",
+      "family": "iterative_add_remove",
+      "status": "excluded",
+      "reason": "family_filtered"
+    },
+    {
+      "caseId": "CE02-011",
+      "family": "manual_cart_preservation",
+      "status": "excluded",
+      "reason": "family_filtered"
+    },
+    {
+      "caseId": "CE02-012",
+      "family": "manual_cart_preservation",
+      "status": "excluded",
+      "reason": "family_filtered"
+    },
+    {
+      "caseId": "CE02-013",
+      "family": "manual_cart_preservation",
+      "status": "excluded",
+      "reason": "family_filtered"
+    },
+    {
+      "caseId": "CE02-014",
+      "family": "manual_cart_preservation",
+      "status": "excluded",
+      "reason": "family_filtered"
+    },
+    {
+      "caseId": "CE02-015",
+      "family": "manual_cart_preservation",
+      "status": "excluded",
+      "reason": "family_filtered"
+    },
+    {
+      "caseId": "CE02-016",
+      "family": "rename_scope",
+      "status": "excluded",
+      "reason": "family_filtered"
+    },
+    {
+      "caseId": "CE02-017",
+      "family": "rename_scope",
+      "status": "excluded",
+      "reason": "family_filtered"
+    },
+    {
+      "caseId": "CE02-018",
+      "family": "rename_scope",
+      "status": "excluded",
+      "reason": "family_filtered"
+    },
+    {
+      "caseId": "CE02-019",
+      "family": "rename_scope",
+      "status": "excluded",
+      "reason": "family_filtered"
+    },
+    {
+      "caseId": "CE02-020",
+      "family": "rename_scope",
+      "status": "excluded",
+      "reason": "family_filtered"
+    },
+    {
+      "caseId": "CE02-021",
+      "family": "ambiguous_scope",
+      "status": "excluded",
+      "reason": "family_filtered"
+    },
+    {
+      "caseId": "CE02-022",
+      "family": "ambiguous_scope",
+      "status": "excluded",
+      "reason": "family_filtered"
+    },
+    {
+      "caseId": "CE02-023",
+      "family": "ambiguous_scope",
+      "status": "excluded",
+      "reason": "family_filtered"
+    },
+    {
+      "caseId": "CE02-024",
+      "family": "ambiguous_scope",
+      "status": "excluded",
+      "reason": "family_filtered"
+    },
+    {
+      "caseId": "CE02-025",
+      "family": "ambiguous_scope",
+      "status": "excluded",
+      "reason": "family_filtered"
+    },
+    {
+      "caseId": "CE02-026",
+      "family": "external_patron",
+      "status": "excluded",
+      "reason": "family_filtered"
+    },
+    {
+      "caseId": "CE02-027",
+      "family": "external_patron",
+      "status": "excluded",
+      "reason": "family_filtered"
+    },
+    {
+      "caseId": "CE02-028",
+      "family": "external_patron",
+      "status": "excluded",
+      "reason": "family_filtered"
+    },
+    {
+      "caseId": "CE02-029",
+      "family": "external_patron",
+      "status": "excluded",
+      "reason": "family_filtered"
+    },
+    {
+      "caseId": "CE02-030",
+      "family": "external_patron",
+      "status": "excluded",
+      "reason": "family_filtered"
+    },
+    {
+      "caseId": "CE02-031",
+      "family": "injection",
+      "status": "excluded",
+      "reason": "family_filtered"
+    },
+    {
+      "caseId": "CE02-032",
+      "family": "injection",
+      "status": "excluded",
+      "reason": "family_filtered"
+    },
+    {
+      "caseId": "CE02-033",
+      "family": "injection",
+      "status": "excluded",
+      "reason": "family_filtered"
+    },
+    {
+      "caseId": "CE02-034",
+      "family": "injection",
+      "status": "excluded",
+      "reason": "family_filtered"
+    },
+    {
+      "caseId": "CE02-035",
+      "family": "injection",
+      "status": "excluded",
+      "reason": "family_filtered"
+    },
+    {
+      "caseId": "CE02-036",
+      "family": "vision",
+      "status": "planned",
+      "visualEvidence": "mapped_image"
+    },
+    {
+      "caseId": "CE02-037",
+      "family": "vision",
+      "status": "planned",
+      "visualEvidence": "mapped_image"
+    },
+    {
+      "caseId": "CE02-038",
+      "family": "vision",
+      "status": "planned",
+      "visualEvidence": "mapped_image"
+    },
+    {
+      "caseId": "CE02-039",
+      "family": "vision",
+      "status": "planned",
+      "visualEvidence": "mapped_image"
+    },
+    {
+      "caseId": "CE02-040",
+      "family": "vision",
+      "status": "planned",
+      "visualEvidence": "mapped_image"
+    }
+  ]
+}

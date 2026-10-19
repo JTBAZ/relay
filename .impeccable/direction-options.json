@@ -1,0 +1,233 @@
+{
+  "title": "Choose how recipes are arranged",
+  "question": "Each layout keeps routing, timing and edits distinct. Choose the structure that makes a reusable release sequence easiest to understand.",
+  "buildPath": {
+    "value": "code",
+    "toggle": true
+  },
+  "canon": true,
+  "steer": true,
+  "reroll": {
+    "registers": [
+      "safer",
+      "bolder"
+    ]
+  },
+  "options": [
+    {
+      "id": "release-outline",
+      "kind": "assigned",
+      "label": "Release outline",
+      "lineage": "Artist edition catalogues",
+      "thesis": "A clear sequence on the left, focused editing in the middle, and the recipe outcome always visible.",
+      "palette": [
+        "#101720",
+        "#192635",
+        "#81a9d7",
+        "#73d4aa"
+      ],
+      "materials": [
+        "Indexed sequence",
+        "Quiet blue-gray surfaces",
+        "Readable compact forms"
+      ],
+      "viewport": "Source trigger above an indexed release list; the selected release opens beside it with destination, timing and description controls.",
+      "risk": "Focuses on one release at a time; comparing detailed descriptions requires switching releases.",
+      "html": ".impeccable/mocks/decision/release-outline.html",
+      "comp": ".impeccable/mocks/decision/release-outline.png",
+      "raised": [
+        {
+          "from": "jet-age-ticket-wallet",
+          "raise": "Every release retains a readable place and publication reference."
+        },
+        {
+          "from": "botanical-folio",
+          "raise": "Source and treatment context stay registered while settings change."
+        },
+        {
+          "from": "star-atlas",
+          "raise": "The selected release carries the strongest emphasis; supporting details recede."
+        }
+      ]
+    },
+    {
+      "id": "studio-sheet",
+      "kind": "pick",
+      "label": "Studio sheet",
+      "kicker": "IMPECCABLE\u2019S PICK",
+      "lineage": "Photographic contact sheets",
+      "thesis": "Keep the whole recipe in one column, expanding only the release being edited.",
+      "palette": [
+        "#101720",
+        "#1c2935",
+        "#9bb5d0",
+        "#73d4aa"
+      ],
+      "materials": [
+        "Aligned rows",
+        "Shared summaries",
+        "One open editing region"
+      ],
+      "viewport": "Compact source strip, vertically connected release rows, one expanded form and a persistent save bar.",
+      "risk": "Familiar and efficient; closer to a conventional workflow editor than a distinct workspace.",
+      "html": ".impeccable/mocks/decision/studio-sheet.html",
+      "comp": ".impeccable/mocks/decision/studio-sheet.png"
+    },
+    {
+      "id": "schedule-lanes",
+      "kind": "challenger",
+      "catalogId": "vernacular-ephemera-jet-age-ticket-wallet",
+      "verdict": "competitive",
+      "label": "Schedule lanes",
+      "lineage": "Journey legs and publication schedules",
+      "thesis": "Lead with when each release happens, then edit its content in a dedicated panel.",
+      "palette": [
+        "#111c2d",
+        "#24354b",
+        "#89a9ce",
+        "#73d4aa"
+      ],
+      "materials": [
+        "Chronological lanes",
+        "Account labels",
+        "Bound release summaries"
+      ],
+      "viewport": "Source on the left, release timing across the work area, selected release settings below and save at the edge.",
+      "case": "Stronger time comparison, but less direct than an outline for everyday recipe editing.",
+      "risk": "An unfamiliar schedule rule can make the time-led overview less useful.",
+      "html": ".impeccable/mocks/decision/schedule-lanes.html",
+      "comp": ".impeccable/mocks/decision/schedule-lanes.png",
+      "board": "https://impeccable.style/worlds/cards/vernacular-ephemera-jet-age-ticket-wallet.webp",
+      "hero": "https://impeccable.style/worlds/cards/vernacular-ephemera-jet-age-ticket-wallet-hero.webp"
+    },
+    {
+      "id": "ikeda-datamatics",
+      "kind": "challenger",
+      "catalogId": "ikeda-datamatics",
+      "verdict": "declined",
+      "label": "Data field",
+      "thesis": "A working-screen translation of data field.",
+      "palette": [
+        "#000000",
+        "#ffffff"
+      ],
+      "materials": [
+        "Translated product typography",
+        "Standard controls"
+      ],
+      "viewport": "Product shell with source, release editing and save areas.",
+      "risk": "Its source vocabulary competes with the familiar task.",
+      "case": "Strong scan hierarchy, but the numeric/barcode vocabulary does not help artists publish.",
+      "kept": "Precise alignment and readable density.",
+      "hero": "https://impeccable.style/worlds/cards/ikeda-datamatics-hero.webp"
+    },
+    {
+      "id": "notation-diagram-systems-star-atlas",
+      "kind": "challenger",
+      "catalogId": "notation-diagram-systems-star-atlas",
+      "verdict": "declined",
+      "label": "Star atlas",
+      "thesis": "A working-screen translation of star atlas.",
+      "palette": [
+        "#111c31",
+        "#e5edf7",
+        "#adbcce"
+      ],
+      "materials": [
+        "Translated product typography",
+        "Standard controls"
+      ],
+      "viewport": "Product shell with source, release editing and save areas.",
+      "risk": "Its source vocabulary competes with the familiar task.",
+      "case": "Artistic association is strong; coordinate navigation adds interpretation to a routine task.",
+      "kept": "Clear emphasis for the selected release.",
+      "hero": "https://impeccable.style/worlds/cards/notation-diagram-systems-star-atlas-hero.webp"
+    },
+    {
+      "id": "aww2-zoo-gardens-guide-map",
+      "kind": "challenger",
+      "catalogId": "aww2-zoo-gardens-guide-map",
+      "verdict": "declined",
+      "label": "Guide map",
+      "thesis": "A working-screen translation of guide map.",
+      "palette": [
+        "#8ed462",
+        "#f5f1e4",
+        "#2c2e2a"
+      ],
+      "materials": [
+        "Translated product typography",
+        "Standard controls"
+      ],
+      "viewport": "Product shell with source, release editing and save areas.",
+      "risk": "Its source vocabulary competes with the familiar task.",
+      "case": "Playful organic regions conflict with the requested restrained working screen.",
+      "kept": "Distinct functional regions without extra headings.",
+      "hero": "https://impeccable.style/worlds/cards/aww2-zoo-gardens-guide-map-hero.webp"
+    },
+    {
+      "id": "editorial-sequence-montage-botanical-folio-season",
+      "kind": "challenger",
+      "catalogId": "editorial-sequence-montage-botanical-folio-season",
+      "verdict": "declined",
+      "label": "Seasonal folio",
+      "thesis": "A working-screen translation of seasonal folio.",
+      "palette": [
+        "#e9e3d8",
+        "#34523d",
+        "#333a38"
+      ],
+      "materials": [
+        "Translated product typography",
+        "Standard controls"
+      ],
+      "viewport": "Product shell with source, release editing and save areas.",
+      "risk": "Its source vocabulary competes with the familiar task.",
+      "case": "Transformation comparison transfers well; seasonal navigation does not fit posting rules.",
+      "kept": "Stable source-versus-treatment context.",
+      "hero": "https://impeccable.style/worlds/cards/editorial-sequence-montage-botanical-folio-season-hero.webp"
+    },
+    {
+      "id": "design-annual-s-plate-section",
+      "kind": "challenger",
+      "catalogId": "design-annual-s-plate-section",
+      "verdict": "declined",
+      "label": "Design annual",
+      "thesis": "A working-screen translation of design annual.",
+      "palette": [
+        "#f5f4f6",
+        "#16181a",
+        "#dcddf3"
+      ],
+      "materials": [
+        "Translated product typography",
+        "Standard controls"
+      ],
+      "viewport": "Product shell with source, release editing and save areas.",
+      "risk": "Its source vocabulary competes with the familiar task.",
+      "case": "The attribution-led composition gives secondary metadata too much authority.",
+      "kept": "Consistent alignment between content and metadata.",
+      "hero": "https://impeccable.style/worlds/cards/design-annual-s-plate-section-hero.webp"
+    }
+  ],
+  "canonCard": {
+    "kind": "canon",
+    "label": "Compact workflow table",
+    "thesis": "Keep all releases in a familiar, carefully spaced table with inline editors.",
+    "palette": [
+      "#0d1117",
+      "#161b22",
+      "#8b949e",
+      "#73d4aa"
+    ],
+    "materials": [
+      "Standard table",
+      "Inline forms",
+      "Quiet GitHub-style borders"
+    ],
+    "viewport": "Source above destination, schedule and modification columns, with contextual sections below each row.",
+    "risk": "Fast to scan, but repeating complex descriptions can recreate the current hierarchy problem.",
+    "html": ".impeccable/mocks/decision/canon.html",
+    "comp": ".impeccable/mocks/decision/canon.png"
+  }
+}

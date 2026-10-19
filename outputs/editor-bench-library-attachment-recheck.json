@@ -1,0 +1,50 @@
+{
+  "scenario": "real Library media; three destinations after provider schema envelope fix",
+  "startedAt": "2026-10-18T05:03:34.944Z",
+  "frontendTesting": "deferred",
+  "checks": {
+    "fixture_account": true,
+    "existing_fixture_login": true,
+    "login_http": true,
+    "new_check_session": true,
+    "owned_picker_http": true,
+    "owned_ready_source_http": true,
+    "cheap_model_reaches_review": true,
+    "all_destinations_reviewed": true,
+    "exact_review_source_title_time": true,
+    "review_zero_writes": true,
+    "no_model_review_again": true,
+    "first_explicit_confirmation": true,
+    "one_click_one_event": true,
+    "exact_retry_reuses": true,
+    "confirm_x": true,
+    "confirm_deviantart": true,
+    "exact_persisted_attachments": true,
+    "rail_http": true,
+    "rail_exact_ready_attachments": true,
+    "source_post_and_media_unchanged": true,
+    "no_drafts_or_tasks_created": true,
+    "review_confirm_rail_zero_additional_calls": true
+  },
+  "cleanup": {
+    "removedEvents": 3,
+    "remainingEvents": 0,
+    "removedSessions": 1,
+    "remainingSessions": 0
+  },
+  "selectedMediaCount": 1,
+  "liveHttpStatus": 200,
+  "passed": true,
+  "budget": {
+    "records": 877,
+    "sliceCalls": 2,
+    "knownActualUsd": 0.0004176,
+    "unknownBillingCalls": 1,
+    "accountedUsd": 0.004918,
+    "cumulativeReservations": 0.0090322,
+    "developmentRemaining": 0.37334648,
+    "heldoutRemaining": 8.9690346,
+    "heldoutUntouched": true
+  },
+  "finishedAt": "2026-10-18T05:03:40.226Z"
+}

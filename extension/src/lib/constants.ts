@@ -36,9 +36,9 @@ export const RELAY_WEB_BASE = IS_EXTENSION_DEV_BUILD ? "http://localhost:3000" :
 
 
 
-/** Express API (extension bearer routes). Dev: :8787; prod: relayapp.me. */
+/** Express API (extension bearer routes). Dev defaults to :8787 and supports a build-only local port override; prod: relayapp.me. */
 
-export const RELAY_API_BASE = IS_EXTENSION_DEV_BUILD ? "http://localhost:8787" : RELAY_HOSTED;
+export const RELAY_API_BASE = IS_EXTENSION_DEV_BUILD ? `http://localhost:${__EXT_DEV_API_PORT__}` : RELAY_HOSTED;
 
 
 

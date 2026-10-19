@@ -1,0 +1,38 @@
+{
+  "extensionId": "bhnphlohdpinngabohfpogekcgppglgd",
+  "buildApiBase": "http://localhost:8788",
+  "webApiMatches": true,
+  "webFirstIdMatches": true,
+  "apiOriginAllowed": true,
+  "consentConfigured": true,
+  "checks": {
+    "backgroundApiDependencyTargets8788": true,
+    "backgroundApiDependencyExcludes8787": true,
+    "xFillBundleTargets8788": true,
+    "xFillBundleExcludes8787": true
+  },
+  "extensionConsentCors": {
+    "status": 204,
+    "allowOrigin": "chrome-extension://bhnphlohdpinngabohfpogekcgppglgd"
+  },
+  "webConsentCors": {
+    "status": 204,
+    "allowOrigin": "http://localhost:3000"
+  },
+  "unknownExtensionCors": {
+    "status": 403,
+    "allowOrigin": null
+  },
+  "xMediaCors": {
+    "status": 403,
+    "allowOrigin": null
+  },
+  "eventEndpointAuthStatus": 401,
+  "frontendTesting": "deferred",
+  "setupReadyForManualTrial": true,
+  "absoluteExtensionDirectory": "C:\\Users\\jorda\\Documents\\Codex\\2026-10-11\\c\\work\\relay\\extension\\dist\\chrome-dev",
+  "extensionLoaded": false,
+  "browserFillVerified": false,
+  "knownLimitation": "The existing X content-script media fetch is blocked by the local API CORS preflight (403 for https://x.com). Image autofill is not established; the existing manual-upload fallback remains. No browser/UI test or media byte fetch occurred.",
+  "documentation": "https://developer.chrome.com/docs/extensions/develop/concepts/network-requests"
+}

@@ -1,0 +1,39 @@
+{
+  "scenario": "owned real Library media; Patreon/X/DeviantArt manual events",
+  "startedAt": "2026-10-18T05:01:35.753Z",
+  "frontendTesting": "deferred",
+  "checks": {
+    "fixture_account": true,
+    "existing_fixture_login": true,
+    "login_http": true,
+    "new_check_session": true,
+    "owned_picker_http": true,
+    "owned_ready_source_http": true,
+    "synthetic_media_refused_before_model": true,
+    "invalid_source_zero_calls": true,
+    "cheap_model_reaches_review": false
+  },
+  "cleanup": {
+    "removedSessions": 1,
+    "remainingSessions": 0
+  },
+  "selectedMediaCount": 1,
+  "liveHttpStatus": 503,
+  "failureCode": "library_review_unavailable",
+  "passed": false,
+  "failure": "cheap_model_reaches_review",
+  "budget": {
+    "records": 876,
+    "callsAdded": 1,
+    "allSettled": true,
+    "actualUsd": null,
+    "reservedUsd": 0.0045004,
+    "developmentRemaining": 0.37376408,
+    "heldoutRemaining": 8.9690346,
+    "heldoutUntouched": true,
+    "knownActualUsd": 0,
+    "unknownBillingCalls": 1
+  },
+  "finishedAt": "2026-10-18T05:01:40.541Z",
+  "failureAnalysis": "The provider schema had a root-level anyOf, unsupported by the documented Structured Outputs contract. The route hid the raw provider error, so its exact rejection response was not retained. A focused schema-envelope correction and one bounded recheck are pending."
+}

@@ -1,0 +1,58 @@
+{
+  "ticket": "BPD-03",
+  "mode": "live_mock_http",
+  "date": "2026-10-18",
+  "passed": false,
+  "cases": [
+    {
+      "destination": "x",
+      "expectedRevision": 0,
+      "decision": "clarification",
+      "requestSha256": "cd19e0dd69f7e1c4325beba6f0136641c96790b0995492b24f6f6439607b8178",
+      "replacementSha256": "84d5b7bfd3a4663d3e19b87b0da09c4d07c2c83108e584aa27605441b08ba3cb",
+      "passed": false
+    }
+  ],
+  "calls": [
+    {
+      "inputSha256": "4cdb8dd44e2cf629e7177a03b7e2b3d6d4aa7686b9eba87b992c861577a7ca56",
+      "candidateCount": 2,
+      "candidateBytes": 232,
+      "inputBytes": 2862,
+      "usage": {
+        "inputTokens": 476,
+        "outputTokens": 59,
+        "costUsd": 0.000166,
+        "calls": 1
+      }
+    }
+  ],
+  "limitations": [
+    "Mock ephemeral API state only",
+    "Frontend execution deferred",
+    "No publishing or database operation"
+  ],
+  "failure": {
+    "name": "AssertionError",
+    "message": "ERR_ASSERTION"
+  },
+  "ledger": {
+    "initialRows": 891,
+    "finalRows": 892,
+    "previousRowsUnchanged": true,
+    "callsAttempted": 1,
+    "reservationsUsd": 0.0044192,
+    "actualUsd": 0.000166,
+    "ledgerSha256": "b3f18ed2b31f1f7844f01e371704b85eca654d02bd00aef31835ede60d4cdbc6",
+    "newRows": [
+      {
+        "id": "acc8b0cf-41dd-4dba-923e-6709248e5263",
+        "model": "gpt-5.6-luna",
+        "phase": "development",
+        "reservedUsd": 0.0044192,
+        "actualUsd": 0.000166,
+        "settled": true
+      }
+    ]
+  }
+}

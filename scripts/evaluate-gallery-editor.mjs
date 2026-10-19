@@ -8,6 +8,7 @@ import { performance } from 'node:perf_hooks';
 import { createHash } from 'node:crypto';
 import assert from 'node:assert/strict';
 import { config as loadEnv } from 'dotenv';
+import { projectEvaluationState } from './gallery-editor-eval-state.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 loadEnv({ path: join(root, '.env'), quiet: true });
@@ -24,10 +25,13 @@ if (args.includes('--help')) {
   process.exit(0);
 }
 const selfTest = args.includes('--self-test');
+const architecture = option('--architecture') || 'legacy';
+if (!['legacy', 'compiled'].includes(architecture)) fail('--architecture must be legacy or compiled.');
 const model = option('--model') || (selfTest ? 'self-test' : undefined);
 const split = option('--split') || (selfTest ? 'development' : undefined);
 const family = option('--family');
 const caseId = option('--case');
+const caseIds = caseId?.split(',');
 const corpusPath = resolve(option('--corpus') || join(root, 'tests/fixtures/gallery-editor-ce02.json'));
 const corpusBytes = await readFile(corpusPath);
 const fixture = JSON.parse(corpusBytes.toString('utf8'));
@@ -47,7 +51,7 @@ if (family && !['metadata', 'vision'].includes(family)) fail('--family must be m
 if (!['ce02.v1', 'ce02.v2'].includes(fixture.schemaVersion)) fail('Unsupported CE02 schema.');
 
 const cases = fixture.cases.filter(item => item.split === split);
-if (caseId && !cases.some(item => item.id === caseId)) fail('--case must identify a case in the selected split.');
+if (caseIds && caseIds.some(id => !cases.some(item => item.id === id))) fail('--case must identify cases in the selected split.');
 const requiredCounts = { development: 40, heldout: 20 };
 if (cases.length !== requiredCounts[split]) fail('CE02 split size changed; review the fixture before running.');
 const sha256 = value => createHash('sha256').update(value).digest('hex');
@@ -238,6 +242,8 @@ function actionComparison(actual, expected) {
 
 let runtime;
 let provider;
+let attemptReservations = [];
+const attemptAccounting = () => ({calls:attemptReservations.length,knownUsageUsd:attemptReservations.reduce((sum,row)=>sum+(row.actualUsd??0),0),conservativeUsd:attemptReservations.reduce((sum,row)=>sum+(row.actualUsd??row.reservedUsd),0),unresolvedReservations:attemptReservations.filter(row=>row.actualUsd===null).length});
 if (live) {
   if (!process.env.OPENAI_API_KEY?.trim()) fail('Live evaluation requires OPENAI_API_KEY.');
   if (process.env.LIBRARY_EDITOR_MODEL_PRICING_VERIFIED !== '1') fail('Live evaluation requires LIBRARY_EDITOR_MODEL_PRICING_VERIFIED=1 after checking current rates.');
@@ -251,13 +257,18 @@ if (live) {
     import('../dist/src/gallery-editor/action-validation.js'),
     import('../dist/src/gallery-editor/types.js'),
   ]).catch(() => fail('Build the application first with npm run build.'));
-  provider = runtime[1].createResponsesProvider({ apiKey: process.env.OPENAI_API_KEY, model, pricing, budget: new runtime[2].FileProviderBudget(resolve(ledgerPath)), phase: split, maxOutputTokens });
+  const durable = new runtime[2].FileProviderBudget(resolve(ledgerPath));
+  const budget = {
+    async reserve(input) { const id=await durable.reserve(input);attemptReservations.push({id,reservedUsd:input.amountUsd,actualUsd:null});return id; },
+    async settle(id,actualUsd) { await durable.settle(id,actualUsd);const row=attemptReservations.find(row=>row.id===id);if(row)row.actualUsd=actualUsd; },
+  };
+  provider = runtime[1].createResponsesProvider({ apiKey: process.env.OPENAI_API_KEY, model, pricing, budget, phase: split, maxOutputTokens });
 }
 
 const records = [];
 let stoppedReason;
 for (const item of cases) {
-  if (caseId && item.id !== caseId) {
+  if (caseIds && !caseIds.includes(item.id)) {
     records.push({ caseId: item.id, family: item.family, status: 'excluded', reason: 'case_filtered' });
     continue;
   }
@@ -280,6 +291,7 @@ for (const item of cases) {
     continue;
   }
   const began = performance.now();
+  attemptReservations = [];
   const trace = { readToolNames: [], inspectedMediaIds: [] };
   try {
     const current = item.context.existingCart.map((action, index) => ({ ...normalized(action), id: `fixture-${index}` }));
@@ -289,13 +301,18 @@ for (const item of cases) {
       messages: structuredClone(item.turns.slice(0, -1)),
       cart: { revision: 1, actions, items: [], dependencies: {}, conflicts: [], notice: runtime[4].RENAME_NOTICE } };
     const readTools = makeAdapter(trace);
-    const result = await runtime[0].runEditorIntent(session, item.turns.at(-1).text, provider, async (name, toolArgs) => readTools(name, toolArgs));
+    const result = await runtime[0].runEditorIntent(session, item.turns.at(-1).text, provider, async (name, toolArgs) => readTools(name, toolArgs), {architecture});
     const visualEvidenceSatisfied = !visual || trace.inspectedMediaIds.includes(visualIds.get(item.expected.visionFixtureId));
+    const actualState=await projectEvaluationState(catalog,result.actions);
+    const expectedState=await projectEvaluationState(catalog,runtime[3].validateActions(item.expected.actions.map((action,index)=>({...normalized(action),id:`expected-${index}`}))));
     records.push({ caseId: item.id, family: item.family, status: 'completed', latencyMs: Math.round(performance.now() - began),
       visualEvidence: visual ? (visualEvidenceSatisfied ? 'inspected' : 'not_inspected') : 'not_applicable', visualEvidenceSatisfied,
       readToolNames: trace.readToolNames, inspectedMediaIds: [...new Set(trace.inspectedMediaIds)], imageInspectionCount: trace.inspectedMediaIds.length,
       usage: result.usage ?? null,
+      attemptAccounting: attemptAccounting(),
+      routing: result.routing ?? null,
       actionExactMatch: actionComparison(result.actions, item.expected.actions), expectedOutcome: item.expected.outcome,
+      finalStateExactMatch: JSON.stringify(actualState)===JSON.stringify(expectedState),finalStateSha256:sha256(JSON.stringify(actualState)),expectedStateSha256:sha256(JSON.stringify(expectedState)),
       expectedTargetIds: item.expected.targetIds, expectedSemanticLabels: item.expected.semanticLabels,
       expectedActions: item.expected.actions, proposedDisposition: result.disposition ?? null,
       proposedMessageSha256: sha256(result.message), proposedMessageLength: result.message.length,
@@ -303,6 +320,7 @@ for (const item of cases) {
       proposedActions: result.actions, review: visualEvidenceSatisfied ? 'pending_human_semantic_review' : 'vision_evidence_missing' });
   } catch (error) {
     records.push({ caseId: item.id, family: item.family, status: 'failed', latencyMs: Math.round(performance.now() - began), errorCode: error?.code || 'evaluation_error',
+      attemptAccounting: attemptAccounting(),
       readToolNames: trace.readToolNames, inspectedMediaIds: [...new Set(trace.inspectedMediaIds)], imageInspectionCount: trace.inspectedMediaIds.length,
       review: 'pending_human_semantic_review' });
     // Unknown provider charges remain reserved. Stop instead of spending the remaining
@@ -313,13 +331,13 @@ for (const item of cases) {
 const completed = records.filter(row => row.status === 'completed');
 const usage = completed.map(row => row.usage).filter(Boolean);
 const artifacts = Object.fromEntries(await Promise.all(Object.entries(artifactPaths).map(async ([name, path]) => [name, { sha256: await hashFile(path, live && ['productionIntent', 'productionProvider'].includes(name)) }])));
-const report = { schemaVersion: 'ce10.v1', generatedAt: new Date().toISOString(), mode: live ? 'live' : 'dry-run', model, split,
+const report = { schemaVersion: 'ce10.v1', architecture, generatedAt: new Date().toISOString(), mode: live ? 'live' : 'dry-run', model, split,
   familyFilter: family ?? null, caseFilter: caseId ?? null, includeGeneratedMessages, modelSettings: { model, maxOutputTokens, phase: split, imageDetail: 'low', store: false },
   provenance: { artifacts, mappedImageSha256: imageHashes },
   fixtureSchemaVersion: fixture.schemaVersion, counts: { total: cases.length, planned: records.filter(row => row.status === 'planned').length, completed: completed.length, failed: records.filter(row => row.status === 'failed').length, excluded: records.filter(row => row.status === 'excluded').length,
     visionInspected: completed.filter(row => row.family === 'vision' && row.visualEvidenceSatisfied).length,
     visionNotInspected: completed.filter(row => row.family === 'vision' && !row.visualEvidenceSatisfied).length },
-  accounting: live ? { completedCaseReportedCostUsd: usage.reduce((n, row) => n + (row.costUsd ?? 0), 0), completedCaseReportedCalls: usage.reduce((n, row) => n + (row.calls ?? 0), 0), casesWithoutReportedUsage: completed.length - usage.length, failedCasesMayHaveReservedCharges: records.some(row => row.status === 'failed'), authoritativeLedgerPath: resolve(ledgerPath) } : null,
+  accounting: live ? { allAttemptKnownUsageUsd:records.reduce((n,row)=>n+(row.attemptAccounting?.knownUsageUsd??0),0),allAttemptConservativeUsd:records.reduce((n,row)=>n+(row.attemptAccounting?.conservativeUsd??0),0),unresolvedReservations:records.reduce((n,row)=>n+(row.attemptAccounting?.unresolvedReservations??0),0),completedCaseReportedCostUsd: usage.reduce((n, row) => n + (row.costUsd ?? 0), 0), completedCaseReportedCalls: usage.reduce((n, row) => n + (row.calls ?? 0), 0), casesWithoutReportedUsage: completed.length - usage.length, failedCasesMayHaveReservedCharges: records.some(row => row.status === 'failed'), authoritativeLedgerPath: resolve(ledgerPath) } : null,
   semanticAccuracy: null, semanticReview: 'Required before threshold claims; actionExactMatch is a mechanical comparison only.', records };
 if (out) { await mkdir(dirname(resolve(out)), { recursive: true }); await writeFile(resolve(out), JSON.stringify(report, null, 2) + '\n'); console.log(resolve(out)); }
 else console.log(JSON.stringify(report, null, 2));

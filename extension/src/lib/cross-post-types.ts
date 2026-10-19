@@ -13,8 +13,8 @@ export type CrossPostContentOverride = {
   tags?: string[];
 };
 
-/** Relay web → extension externally-connectable trigger (post id only). */
-export type ExternalCrossPostMessage = {
+/** Legacy Relay web → extension trigger (post ID / approved distribution attempt). */
+export type LegacyExternalCrossPostMessage = {
   type: typeof MSG_RELAY_CROSS_POST;
   relay_post_id: string;
   /** Defaults to patreon when omitted (backward compatible). */
@@ -24,6 +24,15 @@ export type ExternalCrossPostMessage = {
   /** When set, extension fetches package from distribution attempt route. */
   distribution_attempt_id?: string;
 };
+
+/** Explicit handoff from one already-saved Schedule Rail event. */
+export type ScheduleEventExternalCrossPostMessage = {
+  type: typeof MSG_RELAY_CROSS_POST;
+  schedule_event_id: string;
+  destination: "x";
+};
+
+export type ExternalCrossPostMessage = LegacyExternalCrossPostMessage | ScheduleEventExternalCrossPostMessage;
 
 export type PatreonCrossPostMediaItem = {
   media_id: string;
@@ -86,9 +95,16 @@ function isString(v: unknown): v is string {
 }
 
 export function isExternalCrossPostMessage(v: unknown): v is ExternalCrossPostMessage {
-  if (v === null || typeof v !== "object" || !("type" in v) || !("relay_post_id" in v)) {
+  if (v === null || typeof v !== "object" || Array.isArray(v) || !("type" in v)) {
     return false;
   }
+  const raw = v as Record<string, unknown>;
+  if (raw.type !== MSG_RELAY_CROSS_POST) return false;
+  if (Object.hasOwn(raw, "schedule_event_id")) {
+    return Object.keys(raw).length === 3 && Object.hasOwn(raw, "destination") &&
+      typeof raw.schedule_event_id === "string" && /^bench_event_[a-f0-9]{64}$/.test(raw.schedule_event_id) && raw.destination === "x";
+  }
+  if (!("relay_post_id" in v)) return false;
   const m = v as {
     type: unknown;
     relay_post_id: unknown;
@@ -137,6 +153,7 @@ export function isExternalCrossPostMessage(v: unknown): v is ExternalCrossPostMe
 export function crossPostDestinationFromMessage(
   message: ExternalCrossPostMessage
 ): CrossPostDestination {
+  if ("schedule_event_id" in message) return "x";
   if (message.destination === "x") return "x";
   if (message.destination === "deviantart") return "deviantart";
   return "patreon";

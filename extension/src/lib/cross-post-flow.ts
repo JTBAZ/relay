@@ -12,7 +12,8 @@ import {
 } from "./cross-post-types";
 
 export type CrossPostFlowResult =
-  | { ok: true; tab_id: number; relay_post_id: string; destination: CrossPostDestination }
+  | { ok: true; tab_id: number; relay_post_id: string; destination: CrossPostDestination; schedule_event_id?: never }
+  | { ok: true; tab_id: number; relay_post_id: string; destination: "x"; schedule_event_id: string }
   | {
       ok: false;
       reason:
@@ -30,10 +31,19 @@ export type CrossPostFlowResult =
 export async function runRelayCrossPostFlow(
   message: ExternalCrossPostMessage
 ): Promise<CrossPostFlowResult> {
-  const destination = crossPostDestinationFromMessage(message);
+  const requestedDestination = crossPostDestinationFromMessage(message);
   const fetched = await fetchAndStoreCrossPostPackageFromMessage(message);
   if (!fetched.ok) {
     return fetched;
+  }
+  let destination = requestedDestination;
+  let checkedScheduleEventId: string | undefined;
+  if ("schedule_event_id" in message) {
+    if (!("schedule_event_id" in fetched) || fetched.schedule_event_id !== message.schedule_event_id || fetched.destination !== "x" || requestedDestination !== "x") {
+      return { ok: false, reason: "package_fetch_failed", detail: "event_mismatch" };
+    }
+    checkedScheduleEventId = fetched.schedule_event_id;
+    destination = fetched.destination;
   }
 
   let tabId: number;
@@ -58,12 +68,11 @@ export async function runRelayCrossPostFlow(
     return { ok: false, reason: "inject_failed" };
   }
 
-  return {
-    ok: true,
-    tab_id: tabId,
-    relay_post_id: fetched.relay_post_id,
-    destination
-  };
+  if ("schedule_event_id" in message) {
+    if (!checkedScheduleEventId) return { ok: false, reason: "package_fetch_failed", detail: "event_mismatch" };
+    return { ok: true, tab_id: tabId, relay_post_id: fetched.relay_post_id, destination: "x", schedule_event_id: checkedScheduleEventId };
+  }
+  return { ok: true, tab_id: tabId, relay_post_id: fetched.relay_post_id, destination };
 }
 
 /** @deprecated Use {@link runRelayCrossPostFlow} with a full message. */

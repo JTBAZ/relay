@@ -3,6 +3,8 @@ import { Prisma, type PrismaClient } from "@prisma/client";
 import { EditorError, RENAME_NOTICE, type CommitReceipt, type EditorContext, type EditorSession, type EditAction, type ChangeCart } from "./types.js";
 import { buildChangeCart, clone, dependencies, fingerprint, loadEditorState, rowKey, s, simulateEditorActions, TABLES, type EditorDb, type EditorState, type Row, type Table } from "./state.js";
 import type { PostPresentationUpsertPayload } from "../gallery/post-presentation-mutate.js";
+import { mergeCartPatch, type CartPatch } from './cart-patch.js';
+import { previewCopy, receiptCopy } from './factual-copy.js';
 
 const json = (value: unknown) => clone(value) as Prisma.InputJsonValue;
 const WRITABLE: Table[] = ["series", "works", "seriesMembers", "workMembers", "presentations", "overrides", "collections", "collectionPosts"];
@@ -108,15 +110,21 @@ export class GalleryEditorService {
     if(!row)throw new EditorError("NOT_FOUND","Editor session not found.",404);
     const session=sessionWire(row);
     const receipt=await db.galleryEditorCommit.findFirst({where:{creatorId,actorId,reversalOfId:null},orderBy:{createdAt:"desc"}});
-    if(receipt)session.lastReceipt={...(receipt.receipt as unknown as CommitReceipt),...(receipt.reversedAt?{reversedAt:receipt.reversedAt.toISOString()}:{})};
+    if(receipt){session.lastReceipt={...(receipt.receipt as unknown as CommitReceipt),...(receipt.reversedAt?{reversedAt:receipt.reversedAt.toISOString()}:{})};session.lastReceipt.summary=receiptCopy(session.lastReceipt);}
     return session;
   }
-  async revise(creatorId:string,actorId:string,id:string,revision:number,actions:EditAction[],context?:EditorContext,messages?:EditorSession["messages"],origin:"manual"|"ai"="manual"):Promise<EditorSession>{
+  async revise(creatorId:string,actorId:string,id:string,revision:number,actions:EditAction[],context?:EditorContext,messages?:EditorSession["messages"],origin:"manual"|"ai"="manual",compiled?:{patch:CartPatch;factualPreview:boolean;uninspectedMediaCount?:number}):Promise<EditorSession>{
     return serializable(this.prisma,async tx=>{
       const session=await this.read(creatorId,actorId,id,tx);checkRevision(session.revision,revision);
+      if(compiled)actions=mergeCartPatch(session.cart,compiled.patch);
       const before=await loadEditorState(tx,creatorId,actions),after=simulateEditorActions(before,creatorId,actions);
       const next=revision+1,cart=buildChangeCart(before,after,actions,next);
       cart.origin=session.cart.actions.length && session.cart.origin && session.cart.origin!==origin ? "mixed" : origin;
+      cart.actionOrigins=Object.fromEntries(actions.map(action=>{
+        const prior=session.cart.actions.find(a=>a.id===action.id);
+        return [action.id,prior&&fingerprint(prior)===fingerprint(action)?session.cart.actionOrigins?.[action.id]??(session.cart.origin==='ai'?'ai':'manual'):origin];
+      }));
+      if(compiled?.factualPreview&&messages?.length)messages=[...messages.slice(0,-1),{role:'assistant',text:previewCopy(cart)+(compiled.uninspectedMediaCount?` ${compiled.uninspectedMediaCount} requested media could not be inspected. Visual observations cover only inspected images.`:'')}];
       const ctx=context??session.context;
       if(ctx.selectedPostIds.length){const count=await tx.post.count({where:{creatorId,id:{in:ctx.selectedPostIds}}});if(count!==new Set(ctx.selectedPostIds).size)throw new EditorError("INVALID_TARGET","Selection contains unavailable posts.",404);}
       const changed=await tx.galleryEditorSession.updateMany({where:{id,creatorId,actorId,revision},data:{revision:next,cart:json(cart),context:json(ctx),...(messages?{messages:json(messages.slice(-40))}:{})}});
@@ -141,6 +149,15 @@ export class GalleryEditorService {
       const preview=buildChangeCart(before,after,session.cart.actions,revision);
       const changedPosts=preview.items.filter(i=>i.targetType==="post"&&fingerprint(i.before)!==fingerprint(i.after));
       const receipt:CommitReceipt & {revision:number}={id:commitId,sessionId:id,revision,committedAt:new Date().toISOString(),actionCount:session.cart.actions.length,affectedPostIds:changedPosts.map(i=>i.targetId),preservedExceptions:preview.items.filter(i=>i.targetType==="post"&&(i.exception||i.preservedReason)&&fingerprint(i.before)===fingerprint(i.after)).map(i=>i.targetId),notice:RENAME_NOTICE};
+      receipt.titleModeCounts={};
+      for(const item of preview.items)if(item.targetType==='post'||item.targetType==='work'){
+        const mode=(item.after as {titleMode?:string}|null)?.titleMode;
+        if(mode&&['source','inherit_work','custom','independent','inherit_series'].includes(mode)){
+          const key=mode as keyof NonNullable<CommitReceipt['titleModeCounts']>;
+          receipt.titleModeCounts[key]=(receipt.titleModeCounts[key]??0)+1;
+        }
+      }
+      receipt.summary=receiptCopy(receipt);
       await tx.galleryEditorCommit.create({data:{id:commitId,creatorId,actorId,sessionId:id,idempotencyKey,origin:origin??session.cart.origin??"manual",actions:json(session.cart.actions),before:json(before),after:json(after),dependencies:json(session.cart.dependencies),receipt:json(receipt)}});
       const empty:ChangeCart={revision:revision+1,actions:[],items:[],dependencies:{},conflicts:[],notice:RENAME_NOTICE};
       await tx.galleryEditorSession.update({where:{id},data:{revision:revision+1,cart:json(empty)}});
@@ -158,12 +175,13 @@ export class GalleryEditorService {
       const commit=await tx.galleryEditorCommit.findFirst({where:{id:commitId,creatorId,actorId}});
       if(!commit)throw new EditorError("NOT_FOUND","Commit not found.",404);
       if(commit.reversalOfId)throw new EditorError("INVALID_UNDO","A reversal cannot itself be undone.",409);
-      if(commit.reversedAt)return {...(commit.receipt as unknown as CommitReceipt),reversedAt:commit.reversedAt.toISOString()};
+      if(commit.reversedAt){const receipt={...(commit.receipt as unknown as CommitReceipt),reversedAt:commit.reversedAt.toISOString()};return {...receipt,summary:receiptCopy(receipt)};}
       const actions=commit.actions as unknown as EditAction[],before=commit.before as unknown as EditorState,after=commit.after as unknown as EditorState;
       const current=await loadEditorState(tx,creatorId,actions,true,after.scope);
       checkDependencies(dependencies(after),current);
       await persistEditorState(tx,current,before);
       const now=new Date(),receipt={...(commit.receipt as unknown as CommitReceipt),reversedAt:now.toISOString()};
+      receipt.summary=receiptCopy(receipt);
       await tx.galleryEditorCommit.create({data:{id:randomUUID(),creatorId,actorId,sessionId:commit.sessionId,idempotencyKey:`undo:${commitId}`,origin:"manual",reversalOfId:commitId,actions:[],before:json(current),after:json(before),dependencies:json(dependencies(current)),receipt:json(receipt)}});
       await tx.galleryEditorCommit.update({where:{id:commitId},data:{reversedAt:now}});
       const session=await this.read(creatorId,actorId,commit.sessionId,tx);

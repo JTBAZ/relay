@@ -20,6 +20,8 @@ import type { SessionToken } from "./types.js";
 export type RequireAccountDeps = {
   prisma: PrismaClient;
   identityService: IdentityService;
+  /** Route opt-in for an authentication read that never cleans up expired session rows. */
+  readonlySession?: boolean;
 };
 
 /** Opaque session + loaded account context (Tier 1.1). */
@@ -112,7 +114,9 @@ export async function requireAccount(
   if (!token) {
     throw new RelayAuthError(401, "AUTH_ERROR", "Authentication required.");
   }
-  const session = await deps.identityService.resolveSession(token);
+  const session = deps.readonlySession
+    ? await deps.identityService.resolveSession(token, { cleanupExpired: false })
+    : await deps.identityService.resolveSession(token);
   if (!session) {
     throw new RelayAuthError(401, "AUTH_ERROR", "Invalid or expired session.");
   }

@@ -1,0 +1,114 @@
+
+> relay@0.1.0 typecheck
+> tsc -p tsconfig.json --noEmit
+
+extension/src/lib/browser.ts(1,21): error TS2307: Cannot find module 'webextension-polyfill' or its corresponding type declarations.
+extension/src/lib/constants.ts(30,32): error TS2304: Cannot find name '__EXT_ENV__'.
+extension/src/lib/patreon-post-metrics-fetch.ts(144,26): error TS2488: Type '{}' must have a '[Symbol.iterator]()' method that returns an iterator.
+extension/src/lib/patreon-post-metrics-fetch.ts(228,26): error TS2488: Type '{}' must have a '[Symbol.iterator]()' method that returns an iterator.
+tests/analytics/goal-cycle-attribution.test.ts(205,9): error TS2322: Type 'null' is not assignable to type 'NullableJsonNullValueInput | InputJsonValue | undefined'.
+tests/audience-promotion/audience-simulation-client.test.ts(6,8): error TS2835: Relative import paths need explicit file extensions in ECMAScript imports when '--moduleResolution' is 'node16' or 'nodenext'. Did you mean '../../web/lib/audience-simulation-client.js'?
+tests/audience-promotion/audience-simulation-client.test.ts(7,49): error TS2835: Relative import paths need explicit file extensions in ECMAScript imports when '--moduleResolution' is 'node16' or 'nodenext'. Did you mean '../../web/lib/relay-api.js'?
+tests/audience-promotion/audience-simulation-client.test.ts(31,26): error TS7006: Parameter 'p' implicitly has an 'any' type.
+tests/audience-promotion/audience-simulation-client.test.ts(41,26): error TS7006: Parameter 'p' implicitly has an 'any' type.
+tests/audience-promotion/audience-simulation-client.test.ts(42,27): error TS7006: Parameter 'p' implicitly has an 'any' type.
+tests/audience-promotion/legacy-characterization.test.ts(13,8): error TS2835: Relative import paths need explicit file extensions in ECMAScript imports when '--moduleResolution' is 'node16' or 'nodenext'. Did you mean '../../web/lib/relay-api.js'?
+tests/audience-promotion/legacy-characterization.test.ts(20,8): error TS2835: Relative import paths need explicit file extensions in ECMAScript imports when '--moduleResolution' is 'node16' or 'nodenext'. Did you mean '../../web/lib/audience-access-tier-diff.js'?
+tests/audience-promotion/legacy-characterization.test.ts(21,53): error TS2835: Relative import paths need explicit file extensions in ECMAScript imports when '--moduleResolution' is 'node16' or 'nodenext'. Did you mean '../../web/lib/relay-api.js'?
+tests/audience-promotion/legacy-characterization.test.ts(27,8): error TS2835: Relative import paths need explicit file extensions in ECMAScript imports when '--moduleResolution' is 'node16' or 'nodenext'. Did you mean '../../web/lib/previewizer-session.js'?
+tests/audience-promotion/legacy-characterization.test.ts(33,8): error TS2835: Relative import paths need explicit file extensions in ECMAScript imports when '--moduleResolution' is 'node16' or 'nodenext'. Did you mean '../../web/lib/audience-promotion-contracts.js'?
+tests/audience-promotion/minimum-tier-ladder.test.ts(10,8): error TS2835: Relative import paths need explicit file extensions in ECMAScript imports when '--moduleResolution' is 'node16' or 'nodenext'. Did you mean '../../web/lib/minimum-tier-ladder.js'?
+tests/audience-promotion/minimum-tier-ladder.test.ts(11,35): error TS2835: Relative import paths need explicit file extensions in ECMAScript imports when '--moduleResolution' is 'node16' or 'nodenext'. Did you mean '../../web/lib/tier-access.js'?
+tests/audience-promotion/minimum-tier-ladder.test.ts(64,22): error TS7006: Parameter 'r' implicitly has an 'any' type.
+tests/audience-promotion/minimum-tier-ladder.test.ts(69,24): error TS7006: Parameter 'r' implicitly has an 'any' type.
+tests/audience-promotion/minimum-tier-ladder.test.ts(74,23): error TS7006: Parameter 'r' implicitly has an 'any' type.
+tests/audience-promotion/minimum-tier-ladder.test.ts(75,23): error TS7006: Parameter 'r' implicitly has an 'any' type.
+tests/audience-promotion/minimum-tier-ladder.test.ts(76,23): error TS7006: Parameter 'r' implicitly has an 'any' type.
+tests/audience-promotion/minimum-tier-ladder.test.ts(81,22): error TS7006: Parameter 'r' implicitly has an 'any' type.
+tests/audience-promotion/minimum-tier-ladder.test.ts(82,23): error TS7006: Parameter 'r' implicitly has an 'any' type.
+tests/audience-promotion/relay-visibility-post-adapter.test.ts(5,34): error TS2835: Relative import paths need explicit file extensions in ECMAScript imports when '--moduleResolution' is 'node16' or 'nodenext'. Did you mean '../../web/lib/relay-api.js'?
+tests/audience-promotion/relay-visibility-post-adapter.test.ts(11,8): error TS2835: Relative import paths need explicit file extensions in ECMAScript imports when '--moduleResolution' is 'node16' or 'nodenext'. Did you mean '../../web/lib/relay-visibility-post-adapter.js'?
+tests/audience-promotion/relay-visibility-post-adapter.test.ts(71,47): error TS7006: Parameter 'r' implicitly has an 'any' type.
+tests/audience-promotion/relay-visibility-post-adapter.test.ts(71,79): error TS7006: Parameter 't' implicitly has an 'any' type.
+tests/automations/automation-service.test.ts(518,13): error TS2339: Property 'creatorAutomation' does not exist on type 'never'.
+tests/automations/delayed-release.test.ts(201,33): error TS2345: Argument of type 'string' is not assignable to parameter of type '"preview_tpl_automations_qa_001"'.
+tests/automations/delayed-release.test.ts(391,13): error TS2339: Property 'post' does not exist on type 'never'.
+tests/automations/delayed-release.test.ts(419,13): error TS2339: Property 'post' does not exist on type 'never'.
+tests/coach-checkpoint-service.test.ts(78,7): error TS2353: Object literal may only specify known properties, and 'timing_confidence' does not exist in type 'PostingAssistantFacts'.
+tests/coach-fact-pack.test.ts(269,57): error TS2345: Argument of type '{ ok: true; report: { creator_id: string; as_of: string; range: "30d"; time_range: { start: string; end: string; }; source: "rollup"; hierarchy: { creative_work_count: number; post_count: number; platform_instance_count: number; }; posting_goal: { ...; }; performance: { ...; }; freshness: { ...; }; source_summary: {...' is not assignable to parameter of type '{ ok: true; report: PerformanceOverviewReport; } | { ok: false; code: PerformanceReadErrorCode; }'.
+  Type '{ ok: true; report: { creator_id: string; as_of: string; range: "30d"; time_range: { start: string; end: string; }; source: "rollup"; hierarchy: { creative_work_count: number; post_count: number; platform_instance_count: number; }; posting_goal: { ...; }; performance: { ...; }; freshness: { ...; }; source_summary: {...' is not assignable to type '{ ok: true; report: PerformanceOverviewReport; }'.
+    The types of 'report.source_summary' are incompatible between these types.
+      Type '{ destination: string; source: string; confidence: string; }[]' is not assignable to type 'PerformanceSourceSummaryWire[]'.
+        Type '{ destination: string; source: string; confidence: string; }' is not assignable to type 'PerformanceSourceSummaryWire'.
+          Types of property 'confidence' are incompatible.
+            Type 'string' is not assignable to type 'PerformanceConfidenceWire'.
+tests/coach-fact-pack.test.ts(270,60): error TS2345: Argument of type '{ ok: true; report: { post_id: string; title: string; creative_work: { creative_work_id: string; title: string; variant_role: string; is_default_bundle: boolean; } | null; as_of: string; range: "30d"; ... 7 more ...; source_summary: { ...; }[]; }; }' is not assignable to parameter of type '{ ok: true; report: PerformancePostVariantReport; } | { ok: false; code: PerformanceReadErrorCode; }'.
+  Type '{ ok: true; report: { post_id: string; title: string; creative_work: { creative_work_id: string; title: string; variant_role: string; is_default_bundle: boolean; } | null; as_of: string; range: "30d"; ... 7 more ...; source_summary: { ...; }[]; }; }' is not assignable to type '{ ok: true; report: PerformancePostVariantReport; }'.
+    The types of 'report.source_summary' are incompatible between these types.
+      Type '{ destination: string; source: string; confidence: string; }[]' is not assignable to type 'PerformanceSourceSummaryWire[]'.
+        Type '{ destination: string; source: string; confidence: string; }' is not assignable to type 'PerformanceSourceSummaryWire'.
+          Types of property 'confidence' are incompatible.
+            Type 'string' is not assignable to type 'PerformanceConfidenceWire'.
+tests/coach-fact-pack.test.ts(543,13): error TS2352: Conversion of type 'PrismaClient<PrismaClientOptions, never, DefaultArgs>' to type '{ post: { findMany: Mock<Procedure>; }; }' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.
+  The types of 'post.findMany' are incompatible between these types.
+    Type '<T extends PostFindManyArgs>(args?: SelectSubset<T, PostFindManyArgs<DefaultArgs>> | undefined) => PrismaPromise<GetFindResult<$PostPayload<DefaultArgs>, T, PrismaClientOptions>[]>' is missing the following properties from type 'Mock<Procedure>': getMockName, mockName, mock, mockClear, and 14 more.
+tests/coach-fact-pack.test.ts(567,7): error TS2345: Argument of type '{ ok: true; report: { post_id: string; title: string; creative_work: { creative_work_id: string; title: string; variant_role: string; is_default_bundle: boolean; } | null; as_of: string; range: "30d"; ... 7 more ...; source_summary: { ...; }[]; }; }' is not assignable to parameter of type '{ ok: true; report: PerformancePostVariantReport; } | { ok: false; code: PerformanceReadErrorCode; }'.
+  Type '{ ok: true; report: { post_id: string; title: string; creative_work: { creative_work_id: string; title: string; variant_role: string; is_default_bundle: boolean; } | null; as_of: string; range: "30d"; ... 7 more ...; source_summary: { ...; }[]; }; }' is not assignable to type '{ ok: true; report: PerformancePostVariantReport; }'.
+    The types of 'report.source_summary' are incompatible between these types.
+      Type '{ destination: string; source: string; confidence: string; }[]' is not assignable to type 'PerformanceSourceSummaryWire[]'.
+        Type '{ destination: string; source: string; confidence: string; }' is not assignable to type 'PerformanceSourceSummaryWire'.
+          Types of property 'confidence' are incompatible.
+            Type 'string' is not assignable to type 'PerformanceConfidenceWire'.
+tests/coach-fact-pack.test.ts(617,7): error TS2345: Argument of type '{ ok: true; report: { creator_id: string; as_of: string; range: "30d"; time_range: { start: string; end: string; }; source: "rollup"; hierarchy: { creative_work_count: number; post_count: number; platform_instance_count: number; }; posting_goal: { ...; }; performance: { ...; }; freshness: { ...; }; source_summary: {...' is not assignable to parameter of type '{ ok: true; report: PerformanceOverviewReport; } | { ok: false; code: PerformanceReadErrorCode; }'.
+  Type '{ ok: true; report: { creator_id: string; as_of: string; range: "30d"; time_range: { start: string; end: string; }; source: "rollup"; hierarchy: { creative_work_count: number; post_count: number; platform_instance_count: number; }; posting_goal: { ...; }; performance: { ...; }; freshness: { ...; }; source_summary: {...' is not assignable to type '{ ok: true; report: PerformanceOverviewReport; }'.
+    The types of 'report.source_summary' are incompatible between these types.
+      Type '{ destination: string; source: string; confidence: string; }[]' is not assignable to type 'PerformanceSourceSummaryWire[]'.
+        Type '{ destination: string; source: string; confidence: string; }' is not assignable to type 'PerformanceSourceSummaryWire'.
+          Types of property 'confidence' are incompatible.
+            Type 'string' is not assignable to type 'PerformanceConfidenceWire'.
+tests/coach-propose-service.test.ts(196,45): error TS2367: This comparison appears to be unintentional because the types 'AttackFormulaId' and '"not_real"' have no overlap.
+tests/creator-plan-entitlement-service.test.ts(40,19): error TS2339: Property 'account' does not exist on type 'never'.
+tests/curator-perks-payload.test.ts(61,19): error TS2339: Property 'tipLedgerEntry' does not exist on type 'never'.
+tests/curator-perks-payload.test.ts(69,19): error TS2339: Property 'artistLedgerEntry' does not exist on type 'never'.
+tests/extension/goal-cycle-reminder.test.ts(17,8): error TS2835: Relative import paths need explicit file extensions in ECMAScript imports when '--moduleResolution' is 'node16' or 'nodenext'. Did you mean '../../extension/src/lib/goal-cycle-reminder.js'?
+tests/extension/goal-cycle-reminder.test.ts(18,45): error TS2835: Relative import paths need explicit file extensions in ECMAScript imports when '--moduleResolution' is 'node16' or 'nodenext'. Did you mean '../../extension/src/lib/schedule-reminder-types.js'?
+tests/gallery-editor-context.test.ts(58,3): error TS2739: Type 'Mock<(query: string, collectionId: string, creatorId: string, limit?: number | undefined, offset?: number | undefined) => Promise<any>>' is missing the following properties from type '{ findMany: Mock<(args: RecordRow) => Promise<RecordRow[]>>; count: Mock<(args: RecordRow) => Promise<number>>; }': findMany, count
+tests/gallery-editor-preview.test.ts(6,83): error TS2352: Conversion of type '{ [k: string]: never[]; }' to type 'Record<Table, Row[]>' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.
+  Type '{ [k: string]: never[]; }' is missing the following properties from type 'Record<Table, Row[]>': versions, posts, series, collections, and 6 more.
+tests/gallery-view-mode.test.ts(5,8): error TS2835: Relative import paths need explicit file extensions in ECMAScript imports when '--moduleResolution' is 'node16' or 'nodenext'. Did you mean '../web/lib/gallery-view-mode.js'?
+tests/hero-inspect-data.test.ts(8,8): error TS2835: Relative import paths need explicit file extensions in ECMAScript imports when '--moduleResolution' is 'node16' or 'nodenext'. Did you mean '../web/lib/hero-inspect-data.js'?
+tests/hero-inspect-data.test.ts(12,8): error TS2835: Relative import paths need explicit file extensions in ECMAScript imports when '--moduleResolution' is 'node16' or 'nodenext'. Did you mean '../web/lib/relay-api.js'?
+tests/hero-inspect-data.test.ts(181,24): error TS7006: Parameter 'r' implicitly has an 'any' type.
+tests/hero-inspect-data.test.ts(183,24): error TS7006: Parameter 'r' implicitly has an 'any' type.
+tests/hero-inspect-data.test.ts(270,29): error TS7006: Parameter 'r' implicitly has an 'any' type.
+tests/hero-inspect-data.test.ts(271,36): error TS7006: Parameter 'r' implicitly has an 'any' type.
+tests/identity/identity-reconciliation.test.ts(41,19): error TS2339: Property 'identityAuditEvent' does not exist on type 'never'.
+tests/identity/identity-reconciliation.test.ts(74,19): error TS2339: Property 'account' does not exist on type 'never'.
+tests/identity/identity-reconciliation.test.ts(103,19): error TS2339: Property 'account' does not exist on type 'never'.
+tests/identity/oauth-transaction.test.ts(43,19): error TS2339: Property 'oAuthTransaction' does not exist on type 'never'.
+tests/identity/oauth-transaction.test.ts(125,19): error TS2339: Property 'oAuthTransaction' does not exist on type 'never'.
+tests/identity/oauth-transaction.test.ts(126,19): error TS2339: Property 'oAuthTransaction' does not exist on type 'never'.
+tests/linked-set-drilldown-data.test.ts(6,8): error TS2835: Relative import paths need explicit file extensions in ECMAScript imports when '--moduleResolution' is 'node16' or 'nodenext'. Did you mean '../web/lib/linked-set-drilldown-data.js'?
+tests/linked-set-drilldown-data.test.ts(10,8): error TS2835: Relative import paths need explicit file extensions in ECMAScript imports when '--moduleResolution' is 'node16' or 'nodenext'. Did you mean '../web/lib/relay-api.js'?
+tests/linked-set-drilldown-data.test.ts(200,37): error TS7006: Parameter 'l' implicitly has an 'any' type.
+tests/linked-set-drilldown-data.test.ts(201,34): error TS7006: Parameter 'l' implicitly has an 'any' type.
+tests/linked-set-drilldown-data.test.ts(208,22): error TS7006: Parameter 'g' implicitly has an 'any' type.
+tests/linked-set-drilldown-data.test.ts(212,45): error TS7006: Parameter 'l' implicitly has an 'any' type.
+tests/linked-set-drilldown-data.test.ts(240,35): error TS7006: Parameter 'l' implicitly has an 'any' type.
+tests/media-export-access-context.test.ts(24,11): error TS2353: Object literal may only specify known properties, and 'patron_count' does not exist in type 'TierRow'.
+tests/plan-gating-routes.test.ts(119,80): error TS2339: Property 'owner' does not exist on type '{ patron: "patron"; }'.
+tests/previewizer/blur-plug-export-paint.test.ts(7,8): error TS2835: Relative import paths need explicit file extensions in ECMAScript imports when '--moduleResolution' is 'node16' or 'nodenext'. Did you mean '../../web/app/components/previewizer/compositions/blur-plug-export-paint.js'?
+tests/reveal-window-days.test.ts(50,19): error TS2339: Property 'planSubscription' does not exist on type 'never'.
+tests/schedule-date-presets.test.ts(5,8): error TS2835: Relative import paths need explicit file extensions in ECMAScript imports when '--moduleResolution' is 'node16' or 'nodenext'. Did you mean '../web/lib/schedule-date-presets.js'?
+tests/settlement-worker.test.ts(88,19): error TS2339: Property 'planSubscription' does not exist on type 'never'.
+web/lib/automation-approval.ts(6,46): error TS2307: Cannot find module '@/lib/relay-api' or its corresponding type declarations.
+web/lib/automation-approval.ts(7,48): error TS2307: Cannot find module '@/lib/distribution-media-routing' or its corresponding type declarations.
+web/lib/automation-approval.ts(8,46): error TS2307: Cannot find module '@/lib/distribution-media-routing' or its corresponding type declarations.
+web/lib/automation-approval.ts(9,44): error TS2307: Cannot find module '@/lib/automation-api' or its corresponding type declarations.
+web/lib/previewizer-template-config.ts(9,8): error TS2307: Cannot find module '@/app/components/previewizer/previewizer-overlay-layers' or its corresponding type declarations.
+web/lib/previewizer-template-config.ts(13,8): error TS2307: Cannot find module '@/app/components/previewizer/previewizer-design-templates' or its corresponding type declarations.
+web/lib/previewizer-template-config.ts(18,8): error TS2307: Cannot find module '@/app/components/previewizer/previewizer-template-compositions' or its corresponding type declarations.
+web/lib/previewizer-template-config.ts(19,47): error TS2307: Cannot find module '@/app/components/previewizer/previewizer-presets' or its corresponding type declarations.
+web/lib/previewizer-template-config.ts(156,53): error TS7006: Parameter 'l' implicitly has an 'any' type.
+web/lib/previewizer-template-config.ts(157,59): error TS7006: Parameter 'l' implicitly has an 'any' type.
+web/lib/previewizer-template-config.ts(158,53): error TS7006: Parameter 'l' implicitly has an 'any' type.

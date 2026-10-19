@@ -1,0 +1,144 @@
+{
+  "ticket": "BLC-04",
+  "accepted": "bounded mock-only allowance metadata capability",
+  "date": "2026-10-18",
+  "branch": "codex/conversational-gallery-editor",
+  "ownership": {
+    "plan": "Sol High",
+    "implementation": "Luna High",
+    "review": "root"
+  },
+  "allowances": {
+    "includedPosts": 100,
+    "expandedPosts": 500,
+    "status": "provisional engineering targets; no quotas, billing or storage allowance implemented"
+  },
+  "checks": {
+    "backendBenchTests": 104,
+    "files": 15,
+    "focusedTests": 11,
+    "backendBuild": "passed by Luna",
+    "rootNoCostPreflights": [
+      "compact",
+      "wide_vocab",
+      "gallery_allowance"
+    ],
+    "sharedPublicSchemaUnchanged": true,
+    "publicSchemaHash": "2a7efcc09ff7aad16263f867a4b16fd91f8ebb174a07754922bb73b2b2b2f89e"
+  },
+  "fixtures": [
+    {
+      "posts": 100,
+      "uniqueWorks": 100,
+      "uniqueSeries": 52,
+      "uniqueCollections": 5
+    },
+    {
+      "posts": 500,
+      "uniqueWorks": 500,
+      "uniqueSeries": 52,
+      "uniqueCollections": 5
+    }
+  ],
+  "metadata": {
+    "categoryCounts": {
+      "tags": 83,
+      "mentionedWorks": 0,
+      "mentionedSeries": 0,
+      "mentionedCollections": 0,
+      "publishStates": 2,
+      "mediaTypes": 4,
+      "mediaRoles": 1,
+      "processingStatuses": 1,
+      "mentionedPosts": 0
+    },
+    "vocabularyBytes": 1634,
+    "rawFullFamilyBytes": [
+      13599,
+      55199
+    ],
+    "serializedRequestBytes": [
+      11485,
+      11485,
+      9535
+    ],
+    "limits": {
+      "vocabularyBytes": 8192,
+      "requestBytes": 16384
+    },
+    "compactRequest": {
+      "bytes": 9965,
+      "sha256": "8da68cfc9d012d090fe6e498eae1c575ee51485e885aedae0f48869a92bdc5dd",
+      "intentionallyChanged": true
+    }
+  },
+  "live": {
+    "report": "C:\\Users\\jorda\\Documents\\Codex\\2026-10-11\\c\\work\\relay\\outputs\\editor-bench-gallery-allowance-blc04.json",
+    "calls": 3,
+    "cases": [
+      {
+        "id": "initial_100",
+        "selected": 3,
+        "excluded": 3,
+        "allCriteriaAndExactOraclePassed": true,
+        "inputTokens": 2133,
+        "outputTokens": 129,
+        "normalizedUncachedCostUsd": 0.0005814,
+        "normalizedGrowthPercent": 16.2335065974
+      },
+      {
+        "id": "initial_500",
+        "selected": 4,
+        "excluded": 4,
+        "allCriteriaAndExactOraclePassed": true,
+        "inputTokens": 2133,
+        "outputTokens": 129,
+        "normalizedUncachedCostUsd": 0.0005814,
+        "normalizedGrowthPercent": 16.2335065974
+      },
+      {
+        "id": "followup_500",
+        "selected": 10,
+        "excluded": 4,
+        "allCriteriaAndExactOraclePassed": true,
+        "inputTokens": 1778,
+        "outputTokens": 101,
+        "normalizedUncachedCostUsd": 0.0004768,
+        "normalizedGrowthPercent": 21.0152284264
+      }
+    ],
+    "actualUsd": 0.0012562,
+    "actualReservedUsd": 0.0180414,
+    "conservativeReservedUsd": 0.0218592,
+    "noRetry": true
+  },
+  "ledger": {
+    "absolutePath": "C:\\Users\\jorda\\Documents\\Codex\\2026-10-11\\c\\work\\relay\\.relay-data\\gallery-editor-budget.json",
+    "rows": 891,
+    "developmentRemainingUsd": 0.36606688,
+    "heldoutRemainingUsd": 8.9690346,
+    "previous888Unchanged": true,
+    "prefix888Sha256": "c70b46753cf38c7e0f5345ea9f0e7016eed9e886cbcb2a6c71c840fcdb4a10cd"
+  },
+  "preservedReportHashes": {
+    "outputs/editor-bench-large-library-chat-live.json": "41d0e1d5718d4babc4e0a90352f1e412f16de112631fb40379dbf2f314b84225",
+    "outputs/editor-bench-large-library-chat-proof.json": "96c9905881c812bf2c77d01d7a1f2d3ed8e73146ec79023648be078b61554a48",
+    "outputs/editor-bench-large-library-chat-date-recheck-blc02.json": "fdd6858a86fc9cb55fca33335529e91ec528dfd913f4267c8062291fc192d698",
+    "outputs/editor-bench-large-library-chat-date-fix-proof.json": "94ae59530f63747521ff7648a946e3f63b413657aaf3af3a2908a15923460a16",
+    "outputs/editor-bench-large-library-chat-wide-vocab-blc03.json": "25a4c3398eca68d29391eb96d83ea2caf33b2f27f7875d57897abf536751f064",
+    "outputs/editor-bench-large-library-chat-wide-vocab-proof.json": "7c28ff900fb23eeaed88683bda1ef80d08ac0dfd50bd769b9c6bdb60e5f38763"
+  },
+  "limitations": [
+    "Mock-only; no webpage or live-Library activation.",
+    "Full literal family name or ID required under existing grounding; vague family inference unproven.",
+    "Complete generic facets or too many mentioned names can exceed byte caps; whole turn clarifies without truncation or state change.",
+    "Three cases do not prove broad natural-language reliability for every 500-post gallery.",
+    "Frontend testing, billing, quota enforcement, storage sizing and publishing deferred."
+  ],
+  "sourceHashes": {
+    "src/editor-bench/large-library-chat.ts": "deb0265dd677642a59dcd3315aa7719278b5f1663bff3bcee0be054f6b567f49",
+    "src/editor-bench/large-library-chat-fixture.ts": "77b7bf001a441820b18e6d3fc744ff270191414e685b0f5c6df50d95b3b20aa9",
+    "tests/editor-bench/large-library-chat.test.ts": "e18e30c8a13d8807a2f14b05f242f5c5006e15ee85a3fbbc3408fb05038c3052",
+    "scripts/editor-bench-large-library-chat-demo.mjs": "5b85aafff05d3559a3510097b40961aa1ec4e6a0097d93d926b8f75049e0dbe3"
+  }
+}

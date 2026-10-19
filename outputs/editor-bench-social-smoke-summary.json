@@ -1,0 +1,79 @@
+{
+  "checks": [
+    {
+      "destination": "x",
+      "confirmed": false,
+      "createdEvent": false,
+      "httpStatus": 200,
+      "status": "rejected",
+      "provenance": "model_interpretation",
+      "interpreted": null,
+      "diagnostics": [
+        "invalid_model_output: The response contained invalid selector shape or quote grounding."
+      ],
+      "usage": {
+        "calls": 1,
+        "known": true,
+        "inputTokens": 5486,
+        "outputTokens": 120,
+        "costUsd": 0.0012412
+      },
+      "reviewKind": null,
+      "review": null
+    },
+    {
+      "destination": "deviantart",
+      "confirmed": false,
+      "createdEvent": false,
+      "httpStatus": 200,
+      "status": "proposal",
+      "provenance": "model_interpretation",
+      "interpreted": {
+        "kind": "manual_posting_event",
+        "destination": "deviantart",
+        "source_ref": {
+          "mode": "selection",
+          "id": null
+        },
+        "title_text": "Aurora DA Demo",
+        "time_kind": "weekday",
+        "local_date": null,
+        "weekday": "sunday",
+        "weekday_qualifier": "next",
+        "local_time": "11:00",
+        "timezone": "Europe/London",
+        "time_text": "next Sunday at 11:00 Europe/London"
+      },
+      "diagnostics": [
+        "manual_event_proposal: One manual Schedule Rail event is proposed; nothing has been saved or published."
+      ],
+      "usage": {
+        "calls": 1,
+        "known": true,
+        "inputTokens": 5482,
+        "outputTokens": 111,
+        "costUsd": 0.0008328800000000001
+      },
+      "reviewKind": "review",
+      "review": {
+        "destination": "deviantart",
+        "title": "Aurora DA Demo",
+        "dueAt": {
+          "local": "2026-10-25T11:00",
+          "timezone": "Europe/London",
+          "utc": "2026-10-25T11:00:00.000Z"
+        },
+        "noPost": true,
+        "noUrl": true,
+        "reminderOff": true
+      }
+    }
+  ],
+  "addedLedgerRecords": 2,
+  "allSettled": true,
+  "actualUsd": 0.00207408,
+  "records": 865,
+  "developmentRemainingUsd": 0.39112994,
+  "heldoutRemainingUsd": 8.9690346,
+  "noFurtherCalls": true
+}

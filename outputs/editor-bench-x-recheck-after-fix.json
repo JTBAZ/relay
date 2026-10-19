@@ -1,0 +1,94 @@
+{
+  "latestRequest": "Schedule a manual posting event on X for the selected artwork titled \"Aurora X Demo\" on 2026-10-26 at 10:00 Europe/London.",
+  "httpStatus": 200,
+  "response": {
+    "mode": "mock_posting",
+    "provenance": "model_interpretation",
+    "status": "proposal",
+    "interpreted": {
+      "kind": "manual_posting_event",
+      "destination": "x",
+      "source_ref": {
+        "mode": "selection",
+        "id": null
+      },
+      "title_text": "Aurora X Demo",
+      "time_kind": "absolute_local",
+      "local_date": "2026-10-26",
+      "weekday": null,
+      "weekday_qualifier": null,
+      "local_time": "10:00",
+      "timezone": "Europe/London",
+      "time_text": "on 2026-10-26 at 10:00 Europe/London"
+    },
+    "result": {
+      "manualPostingEvent": {
+        "source": {
+          "title": "Aurora study",
+          "mediaLabel": "Aurora study image"
+        },
+        "destination": "x",
+        "title": "Aurora X Demo",
+        "dueAt": {
+          "local": "2026-10-26T10:00",
+          "timezone": "Europe/London",
+          "utc": "2026-10-26T10:00:00.000Z"
+        },
+        "warning": "This creates one manual Schedule Rail posting event. The source and media are sample fixtures; no media attachment, draft, export, handoff, publication, or reminder is created.",
+        "createPayload": {
+          "event_type": "make_post",
+          "destination": "x",
+          "title": "Aurora X Demo",
+          "note": "Posting cue for the “Aurora study” sample in the editor bench. Sample media is not attached to this event.",
+          "due_at": "2026-10-26T10:00:00.000Z",
+          "remind_me": false,
+          "target_mode": "new_post",
+          "post_id": null,
+          "external_url": null,
+          "create_relay_draft": false
+        }
+      },
+      "selector": {
+        "selector": null,
+        "matchedPostIds": [
+          "bench_post_aurora"
+        ]
+      }
+    },
+    "beforeAfter": [],
+    "selection": {
+      "postIds": [
+        "bench_post_aurora"
+      ],
+      "mediaIds": [
+        "bench_media_aurora_1"
+      ],
+      "changed": false
+    },
+    "usage": {
+      "calls": 1,
+      "known": true,
+      "inputTokens": 5645,
+      "outputTokens": 119,
+      "costUsd": 0.0012718
+    },
+    "diagnostics": [
+      "manual_event_proposal: One manual Schedule Rail event is proposed; nothing has been saved or published."
+    ],
+    "message": "Review the manual posting event before confirming it.",
+    "runtime": {
+      "enabled": true,
+      "model": "gpt-5.6-luna",
+      "reasoningEffort": "none",
+      "remainingUsd": 0.38561378,
+      "reason": null
+    }
+  },
+  "confirmed": false,
+  "addedLedgerRecords": 1,
+  "allSettled": true,
+  "actualUsd": 0.0012718,
+  "records": 870,
+  "developmentRemainingUsd": 0.38561378,
+  "heldoutRemainingUsd": 8.9690346
+}

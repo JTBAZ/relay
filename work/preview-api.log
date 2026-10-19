@@ -1,0 +1,6 @@
+[dotenv@17.3.1] injecting env (14) from .env -- tip: ⚙️  enable debug logging with { debug: true }
+[dotenv@17.3.1] injecting env (0) from .env -- tip: 🤖 agentic secret storage: https://dotenvx.com/as2
+[11:14:45.223] [33mWARN[39m (relay-api/22728): [36mRelay: RELAY_SPLIT_WORKER_PROCESS=1 — background timers are not started in this process; run `npm run worker` alongside `npm start`.[39m
+[11:14:45.232] [32mINFO[39m (relay-api/22728): [36mRelay API listening[39m
+    [35mport[39m: 8788
+[11:14:45.160] [33mWARN[39m (relay-server/22728): [36m[relay] RELAY_PUBLIC_WEBHOOK_BASE_URL is not set — Patreon platform webhooks cannot be registered. Set RELAY_PUBLIC_WEBHOOK_BASE_URL (or PUBLIC_WEBHOOK_BASE_URL) to your public Relay API origin in production.[39m

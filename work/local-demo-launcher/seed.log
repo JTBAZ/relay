@@ -1,0 +1,21 @@
+[dotenv@17.3.1] injecting env (0) from .env -- tip: 🔐 prevent committing .env to code: https://dotenvx.com/precommit
+(node:4332) DeprecationWarning: Calling client.query() when the client is already executing a query is deprecated and will be removed in pg@9.0. Use async/await or an external async flow control mechanism instead.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+gallery-editor-demo: already present; preserved existing edits (20 matching rows)
+Creator: rcx_pilot_dev_ava (pilot Ava; /login/pilot-ux)
+Guided goal: rename work ‘Green study — Part 1’ to ‘Meadow study’; switch its main post to the source title; check the custom close-up and Part 2 stay unchanged.
+Then try an open-ended request: organize the green posts, inspect a thumbnail, or adjust tags. Review the cart before Apply.
+[dotenv@17.3.1] injecting env (0) from .env -- tip: 🛡️ auth for agents: https://vestauth.com
+(node:14472) DeprecationWarning: Calling client.query() when the client is already executing a query is deprecated and will be removed in pg@9.0. Use async/await or an external async flow control mechanism instead.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+gallery-editor-demo: already present; preserved existing edits (20 matching rows)
+Creator: rcx_pilot_dev_ava (pilot Ava; /login/pilot-ux)
+Guided goal: rename work ‘Green study — Part 1’ to ‘Meadow study’; check main and teaser inherit it, while the custom close-up and Part 2 stay unchanged. Undo restores the original names and modes.
+Then try an open-ended request: organize the green posts, inspect a thumbnail, or adjust tags. Review the cart before Apply.
+[dotenv@17.3.1] injecting env (0) from .env -- tip: 🔐 encrypt with Dotenvx: https://dotenvx.com
+(node:25536) DeprecationWarning: Calling client.query() when the client is already executing a query is deprecated and will be removed in pg@9.0. Use async/await or an external async flow control mechanism instead.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+gallery-editor-demo: already present; preserved existing edits (20 matching rows)
+Creator: rcx_pilot_dev_ava (pilot Ava; /login/pilot-ux)
+Guided goal: rename work ‘Green study — Part 1’ to ‘Meadow study’; check main and teaser inherit it, while the custom close-up and Part 2 stay unchanged. Undo restores the original names and modes.
+Then try an open-ended request: organize the green posts, inspect a thumbnail, or adjust tags. Review the cart before Apply.

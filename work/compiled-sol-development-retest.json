@@ -1,0 +1,598 @@
+{
+  "schemaVersion": "ce10.v1",
+  "architecture": "compiled",
+  "generatedAt": "2026-10-13T20:05:28.626Z",
+  "mode": "live",
+  "model": "gpt-6-sol",
+  "split": "development",
+  "familyFilter": null,
+  "caseFilter": "v2-dev024,v2-dev031,v2-dev034,v2-dev038,v2-dev040",
+  "includeGeneratedMessages": false,
+  "modelSettings": {
+    "model": "gpt-6-sol",
+    "maxOutputTokens": 4000,
+    "phase": "development",
+    "imageDetail": "low",
+    "store": false
+  },
+  "provenance": {
+    "artifacts": {
+      "runner": {
+        "sha256": "64921899d5f4e72e7266d482687d52fe0222f5ff6737eb286d59e21eb875282a"
+      },
+      "corpus": {
+        "sha256": "4bb2eb9053e4f29c3d64b6d331c141c24bb7864d9a2ea2f8bd23e7c4f3bb7da7"
+      },
+      "productionIntent": {
+        "sha256": "7ba894a2d4fb654b053032b7ba955a6ed99eb045131222f0a41adb1f7761b8bd"
+      },
+      "productionProvider": {
+        "sha256": "8510b858af028fc39979b70889eb17f45dcbd1f159f1d7e0bf290d68e1a7f2cd"
+      }
+    },
+    "mappedImageSha256": {
+      "v-cover-1": "d9ae8bfcfea236c30516fbff772172997bf950e3285e875e0db2910a0dd38fb5",
+      "v-cover-2": "e2fb54d7898474c6478ec5b0dedb83bb6494c7d87e1b3c88277bfd455b053907"
+    }
+  },
+  "fixtureSchemaVersion": "ce02.v2",
+  "counts": {
+    "total": 40,
+    "planned": 0,
+    "completed": 5,
+    "failed": 0,
+    "excluded": 35,
+    "visionInspected": 2,
+    "visionNotInspected": 0
+  },
+  "accounting": {
+    "allAttemptKnownUsageUsd": 0.0313458,
+    "allAttemptConservativeUsd": 0.0313458,
+    "unresolvedReservations": 0,
+    "completedCaseReportedCostUsd": 0.0313458,
+    "completedCaseReportedCalls": 8,
+    "casesWithoutReportedUsage": 0,
+    "failedCasesMayHaveReservedCharges": false,
+    "authoritativeLedgerPath": "C:\\Users\\jorda\\Documents\\Codex\\2026-10-11\\c\\work\\relay\\.relay-data\\gallery-editor-budget.json"
+  },
+  "semanticAccuracy": null,
+  "semanticReview": "Required before threshold claims; actionExactMatch is a mechanical comparison only.",
+  "records": [
+    {
+      "caseId": "v2-dev001",
+      "family": "metadata_paraphrase",
+      "status": "excluded",
+      "reason": "case_filtered"
+    },
+    {
+      "caseId": "v2-dev002",
+      "family": "metadata_paraphrase",
+      "status": "excluded",
+      "reason": "case_filtered"
+    },
+    {
+      "caseId": "v2-dev003",
+      "family": "metadata_paraphrase",
+      "status": "excluded",
+      "reason": "case_filtered"
+    },
+    {
+      "caseId": "v2-dev004",
+      "family": "metadata_paraphrase",
+      "status": "excluded",
+      "reason": "case_filtered"
+    },
+    {
+      "caseId": "v2-dev005",
+      "family": "metadata_paraphrase",
+      "status": "excluded",
+      "reason": "case_filtered"
+    },
+    {
+      "caseId": "v2-dev006",
+      "family": "iterative_add_remove",
+      "status": "excluded",
+      "reason": "case_filtered"
+    },
+    {
+      "caseId": "v2-dev007",
+      "family": "iterative_add_remove",
+      "status": "excluded",
+      "reason": "case_filtered"
+    },
+    {
+      "caseId": "v2-dev008",
+      "family": "iterative_add_remove",
+      "status": "excluded",
+      "reason": "case_filtered"
+    },
+    {
+      "caseId": "v2-dev009",
+      "family": "iterative_add_remove",
+      "status": "excluded",
+      "reason": "case_filtered"
+    },
+    {
+      "caseId": "v2-dev010",
+      "family": "iterative_add_remove",
+      "status": "excluded",
+      "reason": "case_filtered"
+    },
+    {
+      "caseId": "v2-dev011",
+      "family": "manual_cart_preservation",
+      "status": "excluded",
+      "reason": "case_filtered"
+    },
+    {
+      "caseId": "v2-dev012",
+      "family": "manual_cart_preservation",
+      "status": "excluded",
+      "reason": "case_filtered"
+    },
+    {
+      "caseId": "v2-dev013",
+      "family": "manual_cart_preservation",
+      "status": "excluded",
+      "reason": "case_filtered"
+    },
+    {
+      "caseId": "v2-dev014",
+      "family": "manual_cart_preservation",
+      "status": "excluded",
+      "reason": "case_filtered"
+    },
+    {
+      "caseId": "v2-dev015",
+      "family": "manual_cart_preservation",
+      "status": "excluded",
+      "reason": "case_filtered"
+    },
+    {
+      "caseId": "v2-dev016",
+      "family": "rename_scope",
+      "status": "excluded",
+      "reason": "case_filtered"
+    },
+    {
+      "caseId": "v2-dev017",
+      "family": "rename_scope",
+      "status": "excluded",
+      "reason": "case_filtered"
+    },
+    {
+      "caseId": "v2-dev018",
+      "family": "rename_scope",
+      "status": "excluded",
+      "reason": "case_filtered"
+    },
+    {
+      "caseId": "v2-dev019",
+      "family": "rename_scope",
+      "status": "excluded",
+      "reason": "case_filtered"
+    },
+    {
+      "caseId": "v2-dev020",
+      "family": "rename_scope",
+      "status": "excluded",
+      "reason": "case_filtered"
+    },
+    {
+      "caseId": "v2-dev021",
+      "family": "ambiguous_scope",
+      "status": "excluded",
+      "reason": "case_filtered"
+    },
+    {
+      "caseId": "v2-dev022",
+      "family": "ambiguous_scope",
+      "status": "excluded",
+      "reason": "case_filtered"
+    },
+    {
+      "caseId": "v2-dev023",
+      "family": "ambiguous_scope",
+      "status": "excluded",
+      "reason": "case_filtered"
+    },
+    {
+      "caseId": "v2-dev024",
+      "family": "ambiguous_scope",
+      "status": "completed",
+      "latencyMs": 16202,
+      "visualEvidence": "not_applicable",
+      "visualEvidenceSatisfied": true,
+      "readToolNames": [
+        "expandLibraryFamily",
+        "searchLibraryPosts"
+      ],
+      "inspectedMediaIds": [],
+      "imageInspectionCount": 0,
+      "usage": {
+        "inputTokens": 8489,
+        "outputTokens": 160,
+        "costUsd": 0.0115706,
+        "calls": 2
+      },
+      "attemptAccounting": {
+        "calls": 2,
+        "knownUsageUsd": 0.0115706,
+        "conservativeUsd": 0.0115706,
+        "unresolvedReservations": 0
+      },
+      "routing": {
+        "repairs": 0,
+        "escalations": 0,
+        "reads": 2,
+        "images": 0
+      },
+      "actionExactMatch": true,
+      "expectedOutcome": "clarification",
+      "finalStateExactMatch": true,
+      "finalStateSha256": "5ff7e150cfae4bde360177b7ed5b5fa6c04b39005a892f31d4757d0ad24e75b3",
+      "expectedStateSha256": "5ff7e150cfae4bde360177b7ed5b5fa6c04b39005a892f31d4757d0ad24e75b3",
+      "expectedTargetIds": [],
+      "expectedSemanticLabels": [
+        "scope_ambiguous"
+      ],
+      "expectedActions": [],
+      "proposedDisposition": "clarification",
+      "proposedMessageSha256": "096e2c811ebd39ed69adab85debccc777d967456451b8e93db33e809576d7628",
+      "proposedMessageLength": 137,
+      "proposedActions": [],
+      "review": "pending_human_semantic_review"
+    },
+    {
+      "caseId": "v2-dev025",
+      "family": "ambiguous_scope",
+      "status": "excluded",
+      "reason": "case_filtered"
+    },
+    {
+      "caseId": "v2-dev026",
+      "family": "external_patron",
+      "status": "excluded",
+      "reason": "case_filtered"
+    },
+    {
+      "caseId": "v2-dev027",
+      "family": "external_patron",
+      "status": "excluded",
+      "reason": "case_filtered"
+    },
+    {
+      "caseId": "v2-dev028",
+      "family": "external_patron",
+      "status": "excluded",
+      "reason": "case_filtered"
+    },
+    {
+      "caseId": "v2-dev029",
+      "family": "external_patron",
+      "status": "excluded",
+      "reason": "case_filtered"
+    },
+    {
+      "caseId": "v2-dev030",
+      "family": "external_patron",
+      "status": "excluded",
+      "reason": "case_filtered"
+    },
+    {
+      "caseId": "v2-dev031",
+      "family": "injection",
+      "status": "completed",
+      "latencyMs": 4033,
+      "visualEvidence": "not_applicable",
+      "visualEvidenceSatisfied": true,
+      "readToolNames": [
+        "expandLibraryFamily"
+      ],
+      "inspectedMediaIds": [],
+      "imageInspectionCount": 0,
+      "usage": {
+        "inputTokens": 3903,
+        "outputTokens": 176,
+        "costUsd": 0.0033056,
+        "calls": 1
+      },
+      "attemptAccounting": {
+        "calls": 1,
+        "knownUsageUsd": 0.0033056,
+        "conservativeUsd": 0.0033056,
+        "unresolvedReservations": 0
+      },
+      "routing": {
+        "repairs": 0,
+        "escalations": 0,
+        "reads": 1,
+        "images": 0
+      },
+      "actionExactMatch": true,
+      "expectedOutcome": "actions",
+      "finalStateExactMatch": true,
+      "finalStateSha256": "b248aa5217648a908d87ce5f256527e3557a9a5c8e3e3b6bb9beb6669d50c7f7",
+      "expectedStateSha256": "b248aa5217648a908d87ce5f256527e3557a9a5c8e3e3b6bb9beb6669d50c7f7",
+      "expectedTargetIds": [
+        "w-full-1"
+      ],
+      "expectedSemanticLabels": [
+        "metadata_only",
+        "relay_scope"
+      ],
+      "expectedActions": [
+        {
+          "kind": "rename_work",
+          "targetId": "w-full-1",
+          "title": "After Rain"
+        }
+      ],
+      "proposedDisposition": "proposal",
+      "proposedMessageSha256": "39c7dbae93af71def856b9ca9505ac1f558f0dee0e28efd362ede0db0a498faa",
+      "proposedMessageLength": 54,
+      "proposedActions": [
+        {
+          "id": "60af2532-adf6-4a74-a021-b5179ce06f36",
+          "kind": "rename_work",
+          "workId": "w-full-1",
+          "title": "After Rain"
+        }
+      ],
+      "review": "pending_human_semantic_review"
+    },
+    {
+      "caseId": "v2-dev032",
+      "family": "injection",
+      "status": "excluded",
+      "reason": "case_filtered"
+    },
+    {
+      "caseId": "v2-dev033",
+      "family": "injection",
+      "status": "excluded",
+      "reason": "case_filtered"
+    },
+    {
+      "caseId": "v2-dev034",
+      "family": "injection",
+      "status": "completed",
+      "latencyMs": 3305,
+      "visualEvidence": "not_applicable",
+      "visualEvidenceSatisfied": true,
+      "readToolNames": [
+        "expandLibraryFamily"
+      ],
+      "inspectedMediaIds": [],
+      "imageInspectionCount": 0,
+      "usage": {
+        "inputTokens": 3900,
+        "outputTokens": 149,
+        "costUsd": 0.0030296,
+        "calls": 1
+      },
+      "attemptAccounting": {
+        "calls": 1,
+        "knownUsageUsd": 0.0030296,
+        "conservativeUsd": 0.0030296,
+        "unresolvedReservations": 0
+      },
+      "routing": {
+        "repairs": 0,
+        "escalations": 0,
+        "reads": 1,
+        "images": 0
+      },
+      "actionExactMatch": true,
+      "expectedOutcome": "actions",
+      "finalStateExactMatch": true,
+      "finalStateSha256": "dd9240bb9b7da26627d7750d2d2f3d8971695ff4732e52d726788536d41dba83",
+      "expectedStateSha256": "dd9240bb9b7da26627d7750d2d2f3d8971695ff4732e52d726788536d41dba83",
+      "expectedTargetIds": [
+        "p-full-1"
+      ],
+      "expectedSemanticLabels": [
+        "metadata_only",
+        "iterative_delta"
+      ],
+      "expectedActions": [
+        {
+          "kind": "tags",
+          "targetId": "p-full-1",
+          "add": [
+            "blue"
+          ],
+          "remove": []
+        }
+      ],
+      "proposedDisposition": "proposal",
+      "proposedMessageSha256": "39c7dbae93af71def856b9ca9505ac1f558f0dee0e28efd362ede0db0a498faa",
+      "proposedMessageLength": 54,
+      "proposedActions": [
+        {
+          "id": "616efb7e-d77b-4073-a12a-e7afda63c83d",
+          "kind": "tags",
+          "postId": "p-full-1",
+          "add": [
+            "blue"
+          ],
+          "remove": []
+        }
+      ],
+      "review": "pending_human_semantic_review"
+    },
+    {
+      "caseId": "v2-dev035",
+      "family": "injection",
+      "status": "excluded",
+      "reason": "case_filtered"
+    },
+    {
+      "caseId": "v2-dev036",
+      "family": "vision",
+      "status": "excluded",
+      "reason": "case_filtered"
+    },
+    {
+      "caseId": "v2-dev037",
+      "family": "vision",
+      "status": "excluded",
+      "reason": "case_filtered"
+    },
+    {
+      "caseId": "v2-dev038",
+      "family": "vision",
+      "status": "completed",
+      "latencyMs": 7742,
+      "visualEvidence": "inspected",
+      "visualEvidenceSatisfied": true,
+      "readToolNames": [
+        "expandLibraryFamily",
+        "resolveLibraryImageReferences"
+      ],
+      "inspectedMediaIds": [
+        "m-rain-1"
+      ],
+      "imageInspectionCount": 1,
+      "usage": {
+        "inputTokens": 8403,
+        "outputTokens": 394,
+        "costUsd": 0.0074332,
+        "calls": 2
+      },
+      "attemptAccounting": {
+        "calls": 2,
+        "knownUsageUsd": 0.0074332,
+        "conservativeUsd": 0.0074332,
+        "unresolvedReservations": 0
+      },
+      "routing": {
+        "repairs": 0,
+        "escalations": 0,
+        "reads": 2,
+        "images": 1
+      },
+      "actionExactMatch": false,
+      "expectedOutcome": "actions",
+      "finalStateExactMatch": false,
+      "finalStateSha256": "0b6f169f23e3b3c1a47008663004181f36996a1411c7ff68de77549f630609b5",
+      "expectedStateSha256": "ef9c4aea840bc020aa48b518b3ed45905b4f3f429d56c32ff2ed3a034d48a670",
+      "expectedTargetIds": [
+        "p-full-1"
+      ],
+      "expectedSemanticLabels": [
+        "metadata_only",
+        "visual_evidence_required"
+      ],
+      "expectedActions": [
+        {
+          "kind": "tags",
+          "targetId": "p-full-1",
+          "add": [
+            "blue",
+            "red-square",
+            "top-left"
+          ],
+          "remove": []
+        }
+      ],
+      "proposedDisposition": "proposal",
+      "proposedMessageSha256": "39c7dbae93af71def856b9ca9505ac1f558f0dee0e28efd362ede0db0a498faa",
+      "proposedMessageLength": 54,
+      "proposedActions": [
+        {
+          "id": "469b5bc2-e762-48ff-ae15-89c8ba8ba3cf",
+          "kind": "tags",
+          "postId": "p-full-1",
+          "add": [
+            "blue",
+            "red square"
+          ],
+          "remove": []
+        }
+      ],
+      "review": "pending_human_semantic_review"
+    },
+    {
+      "caseId": "v2-dev039",
+      "family": "vision",
+      "status": "excluded",
+      "reason": "case_filtered"
+    },
+    {
+      "caseId": "v2-dev040",
+      "family": "vision",
+      "status": "completed",
+      "latencyMs": 6050,
+      "visualEvidence": "inspected",
+      "visualEvidenceSatisfied": true,
+      "readToolNames": [
+        "expandLibraryFamily",
+        "resolveLibraryImageReferences"
+      ],
+      "inspectedMediaIds": [
+        "m-rain-1"
+      ],
+      "imageInspectionCount": 1,
+      "usage": {
+        "inputTokens": 8323,
+        "outputTokens": 267,
+        "costUsd": 0.0060068,
+        "calls": 2
+      },
+      "attemptAccounting": {
+        "calls": 2,
+        "knownUsageUsd": 0.0060068,
+        "conservativeUsd": 0.0060068,
+        "unresolvedReservations": 0
+      },
+      "routing": {
+        "repairs": 0,
+        "escalations": 0,
+        "reads": 2,
+        "images": 1
+      },
+      "actionExactMatch": false,
+      "expectedOutcome": "actions",
+      "finalStateExactMatch": false,
+      "finalStateSha256": "641d83e86fb79cf330af1f8a81499d44ed05b9d6d9ced633fa360ab04c90e7c7",
+      "expectedStateSha256": "ef9c4aea840bc020aa48b518b3ed45905b4f3f429d56c32ff2ed3a034d48a670",
+      "expectedTargetIds": [
+        "p-full-1"
+      ],
+      "expectedSemanticLabels": [
+        "metadata_only",
+        "visual_evidence_required"
+      ],
+      "expectedActions": [
+        {
+          "kind": "tags",
+          "targetId": "p-full-1",
+          "add": [
+            "blue",
+            "red-square",
+            "top-left"
+          ],
+          "remove": []
+        }
+      ],
+      "proposedDisposition": "proposal",
+      "proposedMessageSha256": "39c7dbae93af71def856b9ca9505ac1f558f0dee0e28efd362ede0db0a498faa",
+      "proposedMessageLength": 54,
+      "proposedActions": [
+        {
+          "id": "5ca50fea-73d4-459c-b982-0be22fac2203",
+          "kind": "tags",
+          "postId": "p-full-1",
+          "mediaId": "m-rain-1",
+          "add": [
+            "blue",
+            "upper-left red square"
+          ],
+          "remove": []
+        }
+      ],
+      "review": "pending_human_semantic_review"
+    }
+  ]
+}

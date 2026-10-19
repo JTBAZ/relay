@@ -1,0 +1,28 @@
+{
+  "frontendTested": false,
+  "modelCallsDuringConfirmation": 0,
+  "manualPublishing": true,
+  "createdTestEvent": true,
+  "loginStatus": 200,
+  "reviewStatus": 200,
+  "review": {
+    "destination": "x",
+    "title": "Aurora X Demo",
+    "dueAt": {
+      "local": "2026-10-26T10:00",
+      "timezone": "Europe/London",
+      "utc": "2026-10-26T10:00:00.000Z"
+    }
+  },
+  "eventWasPreexisting": false,
+  "confirmStatus": 201,
+  "confirmed": true,
+  "retryStatus": 200,
+  "retryReused": true,
+  "persistedExactly": true,
+  "railStatus": 200,
+  "visibleOnRail": true,
+  "removedTestEvent": true,
+  "remainingTestEvents": 0,
+  "remainingTestSessions": 0
+}

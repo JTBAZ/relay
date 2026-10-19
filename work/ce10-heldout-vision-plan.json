@@ -1,0 +1,165 @@
+{
+  "schemaVersion": "ce10.v1",
+  "generatedAt": "2026-10-12T21:17:36.149Z",
+  "mode": "dry-run",
+  "model": "evaluation-placeholder",
+  "split": "heldout",
+  "familyFilter": "vision",
+  "modelSettings": {
+    "model": "evaluation-placeholder",
+    "maxOutputTokens": 4000,
+    "phase": "heldout",
+    "imageDetail": "low",
+    "store": false
+  },
+  "provenance": {
+    "artifacts": {
+      "runner": {
+        "sha256": "899a1a69ffcf462859892afd1aae1a0eb6b487910c45c1ba6050289bd57d67fa"
+      },
+      "corpus": {
+        "sha256": "6797e2d656cfb4750a4c7a82926522477e664ed99bc4dc16ceb7e9a91880ddf9"
+      },
+      "productionIntent": {
+        "sha256": "36c7a668ab800433bd5123873ad8a7346f2886ac88c1c82f025f031c7f772eda"
+      },
+      "productionProvider": {
+        "sha256": "7799f7b99fce1c1aa212b56691553a57a572d79bf491a3e718f423c5c8529aca"
+      }
+    },
+    "mappedImageSha256": {}
+  },
+  "fixtureSchemaVersion": "ce02.v1",
+  "counts": {
+    "total": 20,
+    "planned": 0,
+    "completed": 0,
+    "failed": 0,
+    "excluded": 20
+  },
+  "accounting": null,
+  "semanticAccuracy": null,
+  "semanticReview": "Required before threshold claims; actionExactMatch is a mechanical comparison only.",
+  "records": [
+    {
+      "caseId": "CE02-041",
+      "family": "pagination",
+      "status": "excluded",
+      "reason": "family_filtered"
+    },
+    {
+      "caseId": "CE02-042",
+      "family": "pagination",
+      "status": "excluded",
+      "reason": "family_filtered"
+    },
+    {
+      "caseId": "CE02-043",
+      "family": "pagination",
+      "status": "excluded",
+      "reason": "family_filtered"
+    },
+    {
+      "caseId": "CE02-044",
+      "family": "pagination",
+      "status": "excluded",
+      "reason": "family_filtered"
+    },
+    {
+      "caseId": "CE02-045",
+      "family": "pagination",
+      "status": "excluded",
+      "reason": "family_filtered"
+    },
+    {
+      "caseId": "CE02-046",
+      "family": "title_exception",
+      "status": "excluded",
+      "reason": "family_filtered"
+    },
+    {
+      "caseId": "CE02-047",
+      "family": "title_exception",
+      "status": "excluded",
+      "reason": "family_filtered"
+    },
+    {
+      "caseId": "CE02-048",
+      "family": "title_exception",
+      "status": "excluded",
+      "reason": "family_filtered"
+    },
+    {
+      "caseId": "CE02-049",
+      "family": "title_exception",
+      "status": "excluded",
+      "reason": "family_filtered"
+    },
+    {
+      "caseId": "CE02-050",
+      "family": "title_exception",
+      "status": "excluded",
+      "reason": "family_filtered"
+    },
+    {
+      "caseId": "CE02-051",
+      "family": "metadata_visual_boundary",
+      "status": "excluded",
+      "reason": "family_filtered"
+    },
+    {
+      "caseId": "CE02-052",
+      "family": "metadata_visual_boundary",
+      "status": "excluded",
+      "reason": "family_filtered"
+    },
+    {
+      "caseId": "CE02-053",
+      "family": "metadata_visual_boundary",
+      "status": "excluded",
+      "reason": "family_filtered"
+    },
+    {
+      "caseId": "CE02-054",
+      "family": "metadata_visual_boundary",
+      "status": "excluded",
+      "reason": "family_filtered"
+    },
+    {
+      "caseId": "CE02-055",
+      "family": "metadata_visual_boundary",
+      "status": "excluded",
+      "reason": "family_filtered"
+    },
+    {
+      "caseId": "CE02-056",
+      "family": "series_link",
+      "status": "excluded",
+      "reason": "family_filtered"
+    },
+    {
+      "caseId": "CE02-057",
+      "family": "series_link",
+      "status": "excluded",
+      "reason": "family_filtered"
+    },
+    {
+      "caseId": "CE02-058",
+      "family": "series_link",
+      "status": "excluded",
+      "reason": "family_filtered"
+    },
+    {
+      "caseId": "CE02-059",
+      "family": "series_link",
+      "status": "excluded",
+      "reason": "family_filtered"
+    },
+    {
+      "caseId": "CE02-060",
+      "family": "series_link",
+      "status": "excluded",
+      "reason": "family_filtered"
+    }
+  ]
+}

@@ -1,0 +1,193 @@
+{
+  "mode": "live-proof",
+  "capUsd": 0.03,
+  "conservativeReservationPerCall": 0.0072864,
+  "conservativeReservedUsd": 0.0218592,
+  "calls": 3,
+  "preflightBytes": [
+    9878,
+    9878,
+    7868
+  ],
+  "cases": [
+    {
+      "caseId": "initial_40",
+      "responseStatus": "selected",
+      "message": "Selected 2 Library posts.",
+      "actualSelector": {
+        "base": "catalog",
+        "all": [
+          {
+            "field": "media_type",
+            "value": "image",
+            "requestQuote": "images"
+          },
+          {
+            "field": "tag",
+            "value": "coastal",
+            "requestQuote": "coast"
+          },
+          {
+            "field": "published_date",
+            "value": "this_month",
+            "requestQuote": "this month",
+            "op": "in_month"
+          }
+        ],
+        "any": [],
+        "none": [
+          {
+            "field": "tag",
+            "value": "sketch",
+            "requestQuote": "sketches"
+          }
+        ]
+      },
+      "actualSelectedPostIds": [
+        "large_post_0005",
+        "large_post_0035"
+      ],
+      "actualExcludedPostIds": [
+        "large_post_0006"
+      ],
+      "diagnostic": null,
+      "expectedSelectedPostIds": [
+        "large_post_0005",
+        "large_post_0035"
+      ],
+      "expectedExcludedPostIds": [
+        "large_post_0006"
+      ],
+      "selectorCriteriaPassed": true,
+      "usage": {
+        "calls": 1,
+        "known": true,
+        "inputTokens": 1727,
+        "outputTokens": 129,
+        "costUsd": 0.0005002
+      }
+    },
+    {
+      "caseId": "initial_1001",
+      "responseStatus": "selected",
+      "message": "Selected 3 Library posts.",
+      "actualSelector": {
+        "base": "catalog",
+        "all": [
+          {
+            "field": "media_type",
+            "value": "image",
+            "requestQuote": "images"
+          },
+          {
+            "field": "tag",
+            "value": "coastal",
+            "requestQuote": "coast"
+          },
+          {
+            "field": "published_date",
+            "value": "this_month",
+            "requestQuote": "this month",
+            "op": "in_month"
+          }
+        ],
+        "any": [],
+        "none": [
+          {
+            "field": "tag",
+            "value": "sketch",
+            "requestQuote": "sketches"
+          }
+        ]
+      },
+      "actualSelectedPostIds": [
+        "large_post_0005",
+        "large_post_0035",
+        "large_post_0750"
+      ],
+      "actualExcludedPostIds": [
+        "large_post_0006",
+        "large_post_0740",
+        "large_post_1000"
+      ],
+      "diagnostic": null,
+      "expectedSelectedPostIds": [
+        "large_post_0005",
+        "large_post_0035",
+        "large_post_0750"
+      ],
+      "expectedExcludedPostIds": [
+        "large_post_0006",
+        "large_post_0740",
+        "large_post_1000"
+      ],
+      "selectorCriteriaPassed": true,
+      "usage": {
+        "calls": 1,
+        "known": true,
+        "inputTokens": 1727,
+        "outputTokens": 129,
+        "costUsd": 0.00018988
+      }
+    },
+    {
+      "caseId": "followup_1001",
+      "responseStatus": "selected",
+      "message": "Selected 7 Library posts.",
+      "actualSelector": {
+        "base": "catalog",
+        "all": [],
+        "any": [
+          {
+            "field": "series_id",
+            "value": "series_city_heroes",
+            "requestQuote": "full City of Heroes series"
+          },
+          {
+            "field": "description",
+            "value": "Wonder Woman",
+            "requestQuote": "description mentions Wonder Woman"
+          }
+        ],
+        "none": []
+      },
+      "actualSelectedPostIds": [
+        "large_post_0005",
+        "large_post_0010",
+        "large_post_0011",
+        "large_post_0035",
+        "large_post_0750",
+        "large_post_0999",
+        "large_post_1001"
+      ],
+      "actualExcludedPostIds": [
+        "large_post_0006",
+        "large_post_0740",
+        "large_post_1000"
+      ],
+      "diagnostic": null,
+      "expectedSelectedPostIds": [
+        "large_post_0005",
+        "large_post_0010",
+        "large_post_0011",
+        "large_post_0035",
+        "large_post_0750",
+        "large_post_0999",
+        "large_post_1001"
+      ],
+      "expectedExcludedPostIds": [
+        "large_post_0006",
+        "large_post_0740",
+        "large_post_1000"
+      ],
+      "selectorCriteriaPassed": true,
+      "usage": {
+        "calls": 1,
+        "known": true,
+        "inputTokens": 1358,
+        "outputTokens": 102,
+        "costUsd": 0.000394
+      }
+    }
+  ]
+}

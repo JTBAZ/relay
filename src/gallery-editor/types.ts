@@ -62,6 +62,8 @@ export interface CartItem {
   preservedReason?: "source_post_title" | "independent_work";
 }
 export interface ChangeCart {
+  /** Server-captured last editor for each staged action; old sessions may omit this. */
+  actionOrigins?: Record<string, 'manual'|'ai'>;
   origin?: "manual" | "ai" | "mixed";
   revision: number;
   actions: EditAction[];
@@ -82,6 +84,8 @@ export interface EditorSession {
   lastReceipt?: CommitReceipt;
 }
 export interface CommitReceipt {
+  summary?: string;
+  titleModeCounts?: Partial<Record<'source'|'inherit_work'|'custom'|'independent'|'inherit_series',number>>;
   id: string;
   sessionId: string;
   committedAt: string;

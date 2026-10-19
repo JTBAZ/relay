@@ -1,0 +1,140 @@
+{
+  "schemaVersion": "ce10.v1",
+  "generatedAt": "2026-10-11T20:45:08.024Z",
+  "mode": "dry-run",
+  "model": "evaluation-placeholder",
+  "split": "heldout",
+  "fixtureSchemaVersion": "ce02.v1",
+  "counts": {
+    "total": 20,
+    "planned": 20,
+    "completed": 0,
+    "failed": 0,
+    "excluded": 0
+  },
+  "accounting": null,
+  "semanticAccuracy": null,
+  "semanticReview": "Required before threshold claims; actionExactMatch is a mechanical comparison only.",
+  "records": [
+    {
+      "caseId": "CE02-041",
+      "family": "pagination",
+      "status": "planned",
+      "visualEvidence": "not_applicable"
+    },
+    {
+      "caseId": "CE02-042",
+      "family": "pagination",
+      "status": "planned",
+      "visualEvidence": "not_applicable"
+    },
+    {
+      "caseId": "CE02-043",
+      "family": "pagination",
+      "status": "planned",
+      "visualEvidence": "not_applicable"
+    },
+    {
+      "caseId": "CE02-044",
+      "family": "pagination",
+      "status": "planned",
+      "visualEvidence": "not_applicable"
+    },
+    {
+      "caseId": "CE02-045",
+      "family": "pagination",
+      "status": "planned",
+      "visualEvidence": "not_applicable"
+    },
+    {
+      "caseId": "CE02-046",
+      "family": "title_exception",
+      "status": "planned",
+      "visualEvidence": "not_applicable"
+    },
+    {
+      "caseId": "CE02-047",
+      "family": "title_exception",
+      "status": "planned",
+      "visualEvidence": "not_applicable"
+    },
+    {
+      "caseId": "CE02-048",
+      "family": "title_exception",
+      "status": "planned",
+      "visualEvidence": "not_applicable"
+    },
+    {
+      "caseId": "CE02-049",
+      "family": "title_exception",
+      "status": "planned",
+      "visualEvidence": "not_applicable"
+    },
+    {
+      "caseId": "CE02-050",
+      "family": "title_exception",
+      "status": "planned",
+      "visualEvidence": "not_applicable"
+    },
+    {
+      "caseId": "CE02-051",
+      "family": "metadata_visual_boundary",
+      "status": "planned",
+      "visualEvidence": "not_applicable"
+    },
+    {
+      "caseId": "CE02-052",
+      "family": "metadata_visual_boundary",
+      "status": "planned",
+      "visualEvidence": "not_applicable"
+    },
+    {
+      "caseId": "CE02-053",
+      "family": "metadata_visual_boundary",
+      "status": "planned",
+      "visualEvidence": "not_applicable"
+    },
+    {
+      "caseId": "CE02-054",
+      "family": "metadata_visual_boundary",
+      "status": "planned",
+      "visualEvidence": "not_applicable"
+    },
+    {
+      "caseId": "CE02-055",
+      "family": "metadata_visual_boundary",
+      "status": "planned",
+      "visualEvidence": "not_applicable"
+    },
+    {
+      "caseId": "CE02-056",
+      "family": "series_link",
+      "status": "planned",
+      "visualEvidence": "not_applicable"
+    },
+    {
+      "caseId": "CE02-057",
+      "family": "series_link",
+      "status": "planned",
+      "visualEvidence": "not_applicable"
+    },
+    {
+      "caseId": "CE02-058",
+      "family": "series_link",
+      "status": "planned",
+      "visualEvidence": "not_applicable"
+    },
+    {
+      "caseId": "CE02-059",
+      "family": "series_link",
+      "status": "planned",
+      "visualEvidence": "not_applicable"
+    },
+    {
+      "caseId": "CE02-060",
+      "family": "series_link",
+      "status": "planned",
+      "visualEvidence": "not_applicable"
+    }
+  ]
+}

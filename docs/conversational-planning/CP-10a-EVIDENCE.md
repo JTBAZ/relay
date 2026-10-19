@@ -1,0 +1,7 @@
+# CP-10a — Typed planning transport
+
+Root accepted 2026-10-17. Luna Medium authored `web/lib/conversational-planning-api.ts` and its focused test. The wrappers reuse `relayFetch` for capabilities, list/detail/preview, create/revise/approve/cancel/confirm and explicit approved-revision resume. IDs are URL encoded; pagination uses bounded UTF-8 base64url. Caller-supplied exact text and mutation bodies are preserved. Backend contracts are type-only imports. Errors propagate without implicit retry.
+
+Root independently passed all five focused tests, covering encoded paths/cursor, accepted typed request bodies, abort signals and exact rejection identity with one transport call. Root strict bundler TypeScript checking included both new source and test and passed. Worker strict source checking also passed. No new transport/authentication stack, browser storage, component or production UI mount was introduced. This accepts transport only, not a browser journey or preparation authority proof.
+
+Commands: `npx vitest run tests/conversational-planning/materializer.test.ts tests/web/conversational-planning-api.test.ts` (17 combined tests, five client); `npx tsc --noEmit --strict --skipLibCheck --target ES2017 --lib dom,dom.iterable,esnext --module esnext --moduleResolution bundler --esModuleInterop --isolatedModules --jsx preserve web/lib/conversational-planning-api.ts tests/web/conversational-planning-api.test.ts` (zero diagnostics).

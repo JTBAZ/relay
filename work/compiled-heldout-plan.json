@@ -1,0 +1,173 @@
+{
+  "schemaVersion": "ce10.v1",
+  "architecture": "compiled",
+  "generatedAt": "2026-10-13T20:07:53.615Z",
+  "mode": "dry-run",
+  "model": "gpt-6-sol",
+  "split": "heldout",
+  "familyFilter": null,
+  "caseFilter": null,
+  "includeGeneratedMessages": false,
+  "modelSettings": {
+    "model": "gpt-6-sol",
+    "maxOutputTokens": 4000,
+    "phase": "heldout",
+    "imageDetail": "low",
+    "store": false
+  },
+  "provenance": {
+    "artifacts": {
+      "runner": {
+        "sha256": "64921899d5f4e72e7266d482687d52fe0222f5ff6737eb286d59e21eb875282a"
+      },
+      "corpus": {
+        "sha256": "1445429e2a10dfdec03f78a01c517500a9cadf296e0ff7f3bb870192b4e71ba3"
+      },
+      "productionIntent": {
+        "sha256": "7ba894a2d4fb654b053032b7ba955a6ed99eb045131222f0a41adb1f7761b8bd"
+      },
+      "productionProvider": {
+        "sha256": "8510b858af028fc39979b70889eb17f45dcbd1f159f1d7e0bf290d68e1a7f2cd"
+      }
+    },
+    "mappedImageSha256": {
+      "v-cover-1": "d9ae8bfcfea236c30516fbff772172997bf950e3285e875e0db2910a0dd38fb5",
+      "v-cover-2": "e2fb54d7898474c6478ec5b0dedb83bb6494c7d87e1b3c88277bfd455b053907"
+    }
+  },
+  "fixtureSchemaVersion": "ce02.v2",
+  "counts": {
+    "total": 20,
+    "planned": 20,
+    "completed": 0,
+    "failed": 0,
+    "excluded": 0,
+    "visionInspected": 0,
+    "visionNotInspected": 0
+  },
+  "accounting": null,
+  "semanticAccuracy": null,
+  "semanticReview": "Required before threshold claims; actionExactMatch is a mechanical comparison only.",
+  "records": [
+    {
+      "caseId": "compiled-held001",
+      "family": "metadata",
+      "status": "planned",
+      "visualEvidence": "not_applicable"
+    },
+    {
+      "caseId": "compiled-held002",
+      "family": "metadata",
+      "status": "planned",
+      "visualEvidence": "not_applicable"
+    },
+    {
+      "caseId": "compiled-held003",
+      "family": "metadata",
+      "status": "planned",
+      "visualEvidence": "not_applicable"
+    },
+    {
+      "caseId": "compiled-held004",
+      "family": "metadata",
+      "status": "planned",
+      "visualEvidence": "not_applicable"
+    },
+    {
+      "caseId": "compiled-held005",
+      "family": "metadata",
+      "status": "planned",
+      "visualEvidence": "not_applicable"
+    },
+    {
+      "caseId": "compiled-held006",
+      "family": "metadata",
+      "status": "planned",
+      "visualEvidence": "not_applicable"
+    },
+    {
+      "caseId": "compiled-held007",
+      "family": "metadata",
+      "status": "planned",
+      "visualEvidence": "not_applicable"
+    },
+    {
+      "caseId": "compiled-held008",
+      "family": "metadata",
+      "status": "planned",
+      "visualEvidence": "not_applicable"
+    },
+    {
+      "caseId": "compiled-held009",
+      "family": "metadata",
+      "status": "planned",
+      "visualEvidence": "not_applicable"
+    },
+    {
+      "caseId": "compiled-held010",
+      "family": "metadata",
+      "status": "planned",
+      "visualEvidence": "not_applicable"
+    },
+    {
+      "caseId": "compiled-held011",
+      "family": "metadata",
+      "status": "planned",
+      "visualEvidence": "not_applicable"
+    },
+    {
+      "caseId": "compiled-held012",
+      "family": "metadata",
+      "status": "planned",
+      "visualEvidence": "not_applicable"
+    },
+    {
+      "caseId": "compiled-held013",
+      "family": "metadata",
+      "status": "planned",
+      "visualEvidence": "not_applicable"
+    },
+    {
+      "caseId": "compiled-held014",
+      "family": "metadata",
+      "status": "planned",
+      "visualEvidence": "not_applicable"
+    },
+    {
+      "caseId": "compiled-held015",
+      "family": "metadata",
+      "status": "planned",
+      "visualEvidence": "not_applicable"
+    },
+    {
+      "caseId": "compiled-held016",
+      "family": "vision",
+      "status": "planned",
+      "visualEvidence": "mapped_image"
+    },
+    {
+      "caseId": "compiled-held017",
+      "family": "vision",
+      "status": "planned",
+      "visualEvidence": "mapped_image"
+    },
+    {
+      "caseId": "compiled-held018",
+      "family": "vision",
+      "status": "planned",
+      "visualEvidence": "mapped_image"
+    },
+    {
+      "caseId": "compiled-held019",
+      "family": "vision",
+      "status": "planned",
+      "visualEvidence": "mapped_image"
+    },
+    {
+      "caseId": "compiled-held020",
+      "family": "vision",
+      "status": "planned",
+      "visualEvidence": "mapped_image"
+    }
+  ]
+}

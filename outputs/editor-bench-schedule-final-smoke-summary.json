@@ -1,0 +1,65 @@
+{
+  "httpStatus": 200,
+  "status": "rejected",
+  "provenance": "model_interpretation",
+  "interpreted": {
+    "base_revision": 7,
+    "outcome": "proposal",
+    "question": null,
+    "requests": [
+      {
+        "command": "add",
+        "target_handle": null,
+        "changed_fields": [],
+        "kind": "primary_draft",
+        "source_ref": {
+          "mode": "selection",
+          "id": null
+        },
+        "destination": "patreon",
+        "title_mode": "literal",
+        "title_text": "Aurora Calendar Demo",
+        "template_ref": {
+          "mode": "none",
+          "value": null
+        },
+        "enabled": true,
+        "delivery_intent": "prepare_for_creator_handoff",
+        "social_action": null,
+        "time_kind": "absolute_local",
+        "local_date": "2026-10-25",
+        "weekday": null,
+        "weekday_qualifier": null,
+        "timezone": "Europe/London",
+        "day_offset": null,
+        "target_destination": null,
+        "local_time": "10:00",
+        "time_text": "2026-10-25 at 10:00 Europe/London",
+        "request_quote": "Prepare a Patreon post from the selected artwork titled \"Aurora Calendar Demo\" on 2026-10-25 at 10:00 Europe/London."
+      }
+    ]
+  },
+  "diagnostics": [
+    "invalid_interpretation",
+    "The interpreted request did not produce a plan."
+  ],
+  "usage": {
+    "calls": 1,
+    "known": true,
+    "inputTokens": 5076,
+    "outputTokens": 229,
+    "costUsd": 0.00129
+  },
+  "reviewKind": null,
+  "review": null,
+  "confirmed": false,
+  "createdEvent": false,
+  "addedLedgerRecords": 1,
+  "finalCallUsd": 0.00129,
+  "sliceCalls": 3,
+  "sliceKnownUsd": 0.00350684,
+  "allSettled": true,
+  "records": 862,
+  "developmentRemainingUsd": 0.39450802,
+  "heldoutRemainingUsd": 8.9690346
+}

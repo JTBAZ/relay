@@ -32,7 +32,8 @@ export default defineConfig({
   esbuild: {
     jsx: "automatic",
     define: {
-      __EXT_ENV__: JSON.stringify("dev")
+      __EXT_ENV__: JSON.stringify("dev"),
+      __EXT_DEV_API_PORT__: "8787"
     }
   },
   test: {

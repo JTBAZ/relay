@@ -3,6 +3,7 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { crx } from "@crxjs/vite-plugin";
 import { defineConfig } from "vite";
+import { extensionDevApiPort } from "./dev-api-port.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -32,7 +33,8 @@ export default defineConfig({
   // Firefox prod uses `background.scripts` (MV3) — not in Chrome's ManifestV3 typedef.
   plugins: [crx({ manifest: loadManifest() as unknown as chrome.runtime.ManifestV3 })],
   define: {
-    __EXT_ENV__: JSON.stringify(env)
+    __EXT_ENV__: JSON.stringify(env),
+    __EXT_DEV_API_PORT__: String(env === "dev" ? extensionDevApiPort() : 8787)
   },
   build: {
     outDir,

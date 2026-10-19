@@ -1,0 +1,449 @@
+{
+  "date": "2026-10-18",
+  "model": "gpt-5.6-luna",
+  "reasoningEffort": "none",
+  "phase": "development",
+  "frontendTested": false,
+  "manualPublishing": true,
+  "libraryWrites": false,
+  "scheduledEventsCreated": false,
+  "networkCalls": 2,
+  "reservationCapUsd": 0.04,
+  "reservedUsd": 0.0218338,
+  "actualCostUsd": 0.00278344,
+  "recordsBefore": 873,
+  "recordsAfter": 875,
+  "developmentRemainingUsd": 0.37826448,
+  "heldoutRemainingUsd": 8.9690346,
+  "allNewCallsSettled": true,
+  "cases": [
+    {
+      "id": "three-destinations-shared-copy-time",
+      "request": "Schedule manual posting events for the selected artwork on Patreon, X and DeviantArt titled \"Aurora Multi Demo\" on 2026-10-28 at 10:00 Europe/London.",
+      "passed": true,
+      "expected": [
+        [
+          "deviantart",
+          "Aurora Multi Demo",
+          "2026-10-28T10:00:00.000Z"
+        ],
+        [
+          "patreon",
+          "Aurora Multi Demo",
+          "2026-10-28T10:00:00.000Z"
+        ],
+        [
+          "x",
+          "Aurora Multi Demo",
+          "2026-10-28T10:00:00.000Z"
+        ]
+      ],
+      "observed": [
+        [
+          "deviantart",
+          "Aurora Multi Demo",
+          "2026-10-28T10:00:00.000Z"
+        ],
+        [
+          "patreon",
+          "Aurora Multi Demo",
+          "2026-10-28T10:00:00.000Z"
+        ],
+        [
+          "x",
+          "Aurora Multi Demo",
+          "2026-10-28T10:00:00.000Z"
+        ]
+      ],
+      "httpStatus": 200,
+      "status": "proposal",
+      "selection": {
+        "postIds": [
+          "bench_post_aurora"
+        ],
+        "mediaIds": [
+          "bench_media_aurora_1"
+        ],
+        "changed": false
+      },
+      "modelEnvelope": {
+        "selection": {
+          "mode": "preserve",
+          "requestQuote": null,
+          "selector": null
+        },
+        "intent": {
+          "kind": "manual_posting_batch",
+          "source_ref": {
+            "mode": "selection",
+            "id": null
+          },
+          "events": [
+            {
+              "destination": "patreon",
+              "title_text": "Aurora Multi Demo",
+              "time_kind": "absolute_local",
+              "local_date": "2026-10-28",
+              "weekday": null,
+              "weekday_qualifier": null,
+              "local_time": "10:00",
+              "timezone": "Europe/London",
+              "time_text": "2026-10-28 at 10:00 Europe/London"
+            },
+            {
+              "destination": "x",
+              "title_text": "Aurora Multi Demo",
+              "time_kind": "absolute_local",
+              "local_date": "2026-10-28",
+              "weekday": null,
+              "weekday_qualifier": null,
+              "local_time": "10:00",
+              "timezone": "Europe/London",
+              "time_text": "2026-10-28 at 10:00 Europe/London"
+            },
+            {
+              "destination": "deviantart",
+              "title_text": "Aurora Multi Demo",
+              "time_kind": "absolute_local",
+              "local_date": "2026-10-28",
+              "weekday": null,
+              "weekday_qualifier": null,
+              "local_time": "10:00",
+              "timezone": "Europe/London",
+              "time_text": "2026-10-28 at 10:00 Europe/London"
+            }
+          ]
+        }
+      },
+      "candidate": {
+        "latestRequest": "Schedule manual posting events for the selected artwork on Patreon, X and DeviantArt titled \"Aurora Multi Demo\" on 2026-10-28 at 10:00 Europe/London.",
+        "structuredIntent": {
+          "kind": "manual_posting_batch",
+          "source_ref": {
+            "mode": "selection",
+            "id": null
+          },
+          "events": [
+            {
+              "destination": "patreon",
+              "title_text": "Aurora Multi Demo",
+              "time_kind": "absolute_local",
+              "local_date": "2026-10-28",
+              "weekday": null,
+              "weekday_qualifier": null,
+              "local_time": "10:00",
+              "timezone": "Europe/London",
+              "time_text": "2026-10-28 at 10:00 Europe/London"
+            },
+            {
+              "destination": "x",
+              "title_text": "Aurora Multi Demo",
+              "time_kind": "absolute_local",
+              "local_date": "2026-10-28",
+              "weekday": null,
+              "weekday_qualifier": null,
+              "local_time": "10:00",
+              "timezone": "Europe/London",
+              "time_text": "2026-10-28 at 10:00 Europe/London"
+            },
+            {
+              "destination": "deviantart",
+              "title_text": "Aurora Multi Demo",
+              "time_kind": "absolute_local",
+              "local_date": "2026-10-28",
+              "weekday": null,
+              "weekday_qualifier": null,
+              "local_time": "10:00",
+              "timezone": "Europe/London",
+              "time_text": "2026-10-28 at 10:00 Europe/London"
+            }
+          ]
+        },
+        "selectedPostIds": [
+          "bench_post_aurora"
+        ],
+        "selectedMediaIds": [
+          "bench_media_aurora_1"
+        ]
+      },
+      "review": {
+        "kind": "batch_review",
+        "reviews": [
+          {
+            "source": {
+              "title": "Aurora study",
+              "mediaLabel": "Aurora study image"
+            },
+            "destination": "patreon",
+            "title": "Aurora Multi Demo",
+            "dueAt": {
+              "local": "2026-10-28T10:00",
+              "timezone": "Europe/London",
+              "utc": "2026-10-28T10:00:00.000Z"
+            },
+            "warning": "This creates one manual Schedule Rail posting event. The source and media are sample fixtures; no media attachment, draft, export, handoff, publication, or reminder is created.",
+            "createPayload": {
+              "event_type": "make_post",
+              "destination": "patreon",
+              "title": "Aurora Multi Demo",
+              "note": "Posting cue for the “Aurora study” sample in the editor bench. Sample media is not attached to this event.",
+              "due_at": "2026-10-28T10:00:00.000Z",
+              "remind_me": false,
+              "target_mode": "new_post",
+              "post_id": null,
+              "external_url": null,
+              "create_relay_draft": false
+            }
+          },
+          {
+            "source": {
+              "title": "Aurora study",
+              "mediaLabel": "Aurora study image"
+            },
+            "destination": "x",
+            "title": "Aurora Multi Demo",
+            "dueAt": {
+              "local": "2026-10-28T10:00",
+              "timezone": "Europe/London",
+              "utc": "2026-10-28T10:00:00.000Z"
+            },
+            "warning": "This creates one manual Schedule Rail posting event. The source and media are sample fixtures; no media attachment, draft, export, handoff, publication, or reminder is created.",
+            "createPayload": {
+              "event_type": "make_post",
+              "destination": "x",
+              "title": "Aurora Multi Demo",
+              "note": "Posting cue for the “Aurora study” sample in the editor bench. Sample media is not attached to this event.",
+              "due_at": "2026-10-28T10:00:00.000Z",
+              "remind_me": false,
+              "target_mode": "new_post",
+              "post_id": null,
+              "external_url": null,
+              "create_relay_draft": false
+            }
+          },
+          {
+            "source": {
+              "title": "Aurora study",
+              "mediaLabel": "Aurora study image"
+            },
+            "destination": "deviantart",
+            "title": "Aurora Multi Demo",
+            "dueAt": {
+              "local": "2026-10-28T10:00",
+              "timezone": "Europe/London",
+              "utc": "2026-10-28T10:00:00.000Z"
+            },
+            "warning": "This creates one manual Schedule Rail posting event. The source and media are sample fixtures; no media attachment, draft, export, handoff, publication, or reminder is created.",
+            "createPayload": {
+              "event_type": "make_post",
+              "destination": "deviantart",
+              "title": "Aurora Multi Demo",
+              "note": "Posting cue for the “Aurora study” sample in the editor bench. Sample media is not attached to this event.",
+              "due_at": "2026-10-28T10:00:00.000Z",
+              "remind_me": false,
+              "target_mode": "new_post",
+              "post_id": null,
+              "external_url": null,
+              "create_relay_draft": false
+            }
+          }
+        ]
+      },
+      "diagnostics": [
+        "manual_event_batch_proposal: 3 manual Schedule Rail events are proposed; nothing has been saved or published."
+      ],
+      "usage": {
+        "calls": 1,
+        "known": true,
+        "inputTokens": 7108,
+        "outputTokens": 266,
+        "costUsd": 0.0017408000000000002
+      }
+    },
+    {
+      "id": "two-destinations-distinct-copy-time",
+      "request": "Schedule manual posting events for the selected artwork: X titled \"Aurora X Evening\" on 2026-10-29 at 18:00 Europe/London; DeviantArt titled \"Aurora DA Morning\" on 2026-10-30 at 09:00 Europe/London.",
+      "passed": true,
+      "expected": [
+        [
+          "deviantart",
+          "Aurora DA Morning",
+          "2026-10-30T09:00:00.000Z"
+        ],
+        [
+          "x",
+          "Aurora X Evening",
+          "2026-10-29T18:00:00.000Z"
+        ]
+      ],
+      "observed": [
+        [
+          "deviantart",
+          "Aurora DA Morning",
+          "2026-10-30T09:00:00.000Z"
+        ],
+        [
+          "x",
+          "Aurora X Evening",
+          "2026-10-29T18:00:00.000Z"
+        ]
+      ],
+      "httpStatus": 200,
+      "status": "proposal",
+      "selection": {
+        "postIds": [
+          "bench_post_aurora"
+        ],
+        "mediaIds": [
+          "bench_media_aurora_1"
+        ],
+        "changed": false
+      },
+      "modelEnvelope": {
+        "selection": {
+          "mode": "preserve",
+          "requestQuote": null,
+          "selector": null
+        },
+        "intent": {
+          "kind": "manual_posting_batch",
+          "source_ref": {
+            "mode": "selection",
+            "id": null
+          },
+          "events": [
+            {
+              "destination": "x",
+              "title_text": "Aurora X Evening",
+              "time_kind": "absolute_local",
+              "local_date": "2026-10-29",
+              "weekday": null,
+              "weekday_qualifier": null,
+              "local_time": "18:00",
+              "timezone": "Europe/London",
+              "time_text": "18:00 Europe/London"
+            },
+            {
+              "destination": "deviantart",
+              "title_text": "Aurora DA Morning",
+              "time_kind": "absolute_local",
+              "local_date": "2026-10-30",
+              "weekday": null,
+              "weekday_qualifier": null,
+              "local_time": "09:00",
+              "timezone": "Europe/London",
+              "time_text": "09:00 Europe/London"
+            }
+          ]
+        }
+      },
+      "candidate": {
+        "latestRequest": "Schedule manual posting events for the selected artwork: X titled \"Aurora X Evening\" on 2026-10-29 at 18:00 Europe/London; DeviantArt titled \"Aurora DA Morning\" on 2026-10-30 at 09:00 Europe/London.",
+        "structuredIntent": {
+          "kind": "manual_posting_batch",
+          "source_ref": {
+            "mode": "selection",
+            "id": null
+          },
+          "events": [
+            {
+              "destination": "x",
+              "title_text": "Aurora X Evening",
+              "time_kind": "absolute_local",
+              "local_date": "2026-10-29",
+              "weekday": null,
+              "weekday_qualifier": null,
+              "local_time": "18:00",
+              "timezone": "Europe/London",
+              "time_text": "18:00 Europe/London"
+            },
+            {
+              "destination": "deviantart",
+              "title_text": "Aurora DA Morning",
+              "time_kind": "absolute_local",
+              "local_date": "2026-10-30",
+              "weekday": null,
+              "weekday_qualifier": null,
+              "local_time": "09:00",
+              "timezone": "Europe/London",
+              "time_text": "09:00 Europe/London"
+            }
+          ]
+        },
+        "selectedPostIds": [
+          "bench_post_aurora"
+        ],
+        "selectedMediaIds": [
+          "bench_media_aurora_1"
+        ]
+      },
+      "review": {
+        "kind": "batch_review",
+        "reviews": [
+          {
+            "source": {
+              "title": "Aurora study",
+              "mediaLabel": "Aurora study image"
+            },
+            "destination": "x",
+            "title": "Aurora X Evening",
+            "dueAt": {
+              "local": "2026-10-29T18:00",
+              "timezone": "Europe/London",
+              "utc": "2026-10-29T18:00:00.000Z"
+            },
+            "warning": "This creates one manual Schedule Rail posting event. The source and media are sample fixtures; no media attachment, draft, export, handoff, publication, or reminder is created.",
+            "createPayload": {
+              "event_type": "make_post",
+              "destination": "x",
+              "title": "Aurora X Evening",
+              "note": "Posting cue for the “Aurora study” sample in the editor bench. Sample media is not attached to this event.",
+              "due_at": "2026-10-29T18:00:00.000Z",
+              "remind_me": false,
+              "target_mode": "new_post",
+              "post_id": null,
+              "external_url": null,
+              "create_relay_draft": false
+            }
+          },
+          {
+            "source": {
+              "title": "Aurora study",
+              "mediaLabel": "Aurora study image"
+            },
+            "destination": "deviantart",
+            "title": "Aurora DA Morning",
+            "dueAt": {
+              "local": "2026-10-30T09:00",
+              "timezone": "Europe/London",
+              "utc": "2026-10-30T09:00:00.000Z"
+            },
+            "warning": "This creates one manual Schedule Rail posting event. The source and media are sample fixtures; no media attachment, draft, export, handoff, publication, or reminder is created.",
+            "createPayload": {
+              "event_type": "make_post",
+              "destination": "deviantart",
+              "title": "Aurora DA Morning",
+              "note": "Posting cue for the “Aurora study” sample in the editor bench. Sample media is not attached to this event.",
+              "due_at": "2026-10-30T09:00:00.000Z",
+              "remind_me": false,
+              "target_mode": "new_post",
+              "post_id": null,
+              "external_url": null,
+              "create_relay_draft": false
+            }
+          }
+        ]
+      },
+      "diagnostics": [
+        "manual_event_batch_proposal: 2 manual Schedule Rail events are proposed; nothing has been saved or published."
+      ],
+      "usage": {
+        "calls": 1,
+        "known": true,
+        "inputTokens": 7129,
+        "outputTokens": 179,
+        "costUsd": 0.00104264
+      }
+    }
+  ]
+}

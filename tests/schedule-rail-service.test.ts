@@ -9,6 +9,7 @@ import {
   createScheduledPostForRail,
   groupScheduleRailItems,
   isPostMediaEmpty,
+  projectManualEventMediaReadiness,
   resolveTaskDueAt,
   ScheduleRailNotFoundError,
   ScheduleRailValidationError,
@@ -106,6 +107,22 @@ describe("schedule-rail-service helpers", () => {
   it("countMediaIds ignores blanks", () => {
     expect(countMediaIds(null)).toBe(0);
     expect(countMediaIds(["", "a", "  ", "b"])).toBe(2);
+  });
+
+  it.each([
+    { upstreamStatus: "active", processingStatus: "READY", needsMedia: false, state: "ready" },
+    { upstreamStatus: "deleted", processingStatus: "READY", needsMedia: true, state: "missing" },
+    { upstreamStatus: "active", processingStatus: "PENDING", needsMedia: true, state: "missing" }
+  ])("keeps an unavailable manual-event media reference visible and diagnostic ($upstreamStatus/$processingStatus)", ({ upstreamStatus, processingStatus, needsMedia, state }) => {
+    expect(projectManualEventMediaReadiness(["m1"], [{
+      id: "m1", upstreamStatus, processingStatus
+    }])).toMatchObject({
+      needs_media: needsMedia,
+      media_count: 1,
+      media_ids: ["m1"],
+      media_state: state,
+      readiness_errors: needsMedia ? ["attach_media", "library_media_unavailable"] : []
+    });
   });
 });
 

@@ -1,0 +1,231 @@
+{
+  "mode": "gallery-allowance-live-proof",
+  "capUsd": 0.03,
+  "conservativeReservationPerCall": 0.0072864,
+  "conservativeReservedUsd": 0.0218592,
+  "calls": 3,
+  "vocabularyEntries": 91,
+  "vocabularyCategoryCounts": {
+    "tags": 83,
+    "mentionedWorks": 0,
+    "mentionedSeries": 0,
+    "mentionedCollections": 0,
+    "publishStates": 2,
+    "mediaTypes": 4,
+    "mediaRoles": 1,
+    "processingStatuses": 1,
+    "mentionedPosts": 0
+  },
+  "vocabularyBytes": 1634,
+  "rawFamilyBytes": [
+    13599,
+    55199
+  ],
+  "preflightBytes": [
+    11485,
+    11485,
+    9535
+  ],
+  "cases": [
+    {
+      "caseId": "initial_100",
+      "responseStatus": "selected",
+      "message": "Selected 3 Library posts.",
+      "actualSelector": {
+        "base": "catalog",
+        "all": [
+          {
+            "field": "media_type",
+            "value": "image",
+            "requestQuote": "images"
+          },
+          {
+            "field": "tag",
+            "value": "coastal",
+            "requestQuote": "coast"
+          },
+          {
+            "field": "published_date",
+            "value": "this_month",
+            "requestQuote": "this month",
+            "op": "in_month"
+          }
+        ],
+        "any": [],
+        "none": [
+          {
+            "field": "tag",
+            "value": "sketch",
+            "requestQuote": "sketches"
+          }
+        ]
+      },
+      "actualSelectedPostIds": [
+        "gallery_005",
+        "gallery_035",
+        "gallery_095"
+      ],
+      "actualExcludedPostIds": [
+        "gallery_006",
+        "gallery_040",
+        "gallery_100"
+      ],
+      "diagnostic": null,
+      "expectedSelectedPostIds": [
+        "gallery_005",
+        "gallery_035",
+        "gallery_095"
+      ],
+      "expectedExcludedPostIds": [
+        "gallery_006",
+        "gallery_040",
+        "gallery_100"
+      ],
+      "selectorCriteriaPassed": true,
+      "usage": {
+        "calls": 1,
+        "known": true,
+        "inputTokens": 2133,
+        "outputTokens": 129,
+        "costUsd": 0.0005813999999999999
+      },
+      "normalizedUncachedCostUsd": 0.0005814
+    },
+    {
+      "caseId": "initial_500",
+      "responseStatus": "selected",
+      "message": "Selected 4 Library posts.",
+      "actualSelector": {
+        "base": "catalog",
+        "all": [
+          {
+            "field": "media_type",
+            "value": "image",
+            "requestQuote": "images"
+          },
+          {
+            "field": "tag",
+            "value": "coastal",
+            "requestQuote": "coast"
+          },
+          {
+            "field": "published_date",
+            "value": "this_month",
+            "requestQuote": "this month",
+            "op": "in_month"
+          }
+        ],
+        "any": [],
+        "none": [
+          {
+            "field": "tag",
+            "value": "sketch",
+            "requestQuote": "sketches"
+          }
+        ]
+      },
+      "actualSelectedPostIds": [
+        "gallery_005",
+        "gallery_035",
+        "gallery_095",
+        "gallery_498"
+      ],
+      "actualExcludedPostIds": [
+        "gallery_006",
+        "gallery_040",
+        "gallery_100",
+        "gallery_490"
+      ],
+      "diagnostic": null,
+      "expectedSelectedPostIds": [
+        "gallery_005",
+        "gallery_035",
+        "gallery_095",
+        "gallery_498"
+      ],
+      "expectedExcludedPostIds": [
+        "gallery_006",
+        "gallery_040",
+        "gallery_100",
+        "gallery_490"
+      ],
+      "selectorCriteriaPassed": true,
+      "usage": {
+        "calls": 1,
+        "known": true,
+        "inputTokens": 2133,
+        "outputTokens": 129,
+        "costUsd": 0.000198
+      },
+      "normalizedUncachedCostUsd": 0.0005814
+    },
+    {
+      "caseId": "followup_500",
+      "responseStatus": "selected",
+      "message": "Selected 10 Library posts.",
+      "actualSelector": {
+        "base": "catalog",
+        "all": [],
+        "any": [
+          {
+            "field": "series_id",
+            "value": "series_city_heroes",
+            "requestQuote": "City of Heroes series"
+          },
+          {
+            "field": "description",
+            "value": "Wonder Woman",
+            "requestQuote": "description mentions Wonder Woman"
+          }
+        ],
+        "none": []
+      },
+      "actualSelectedPostIds": [
+        "gallery_005",
+        "gallery_010",
+        "gallery_011",
+        "gallery_035",
+        "gallery_095",
+        "gallery_150",
+        "gallery_450",
+        "gallery_498",
+        "gallery_499",
+        "gallery_500"
+      ],
+      "actualExcludedPostIds": [
+        "gallery_006",
+        "gallery_040",
+        "gallery_100",
+        "gallery_490"
+      ],
+      "diagnostic": null,
+      "expectedSelectedPostIds": [
+        "gallery_005",
+        "gallery_010",
+        "gallery_011",
+        "gallery_035",
+        "gallery_095",
+        "gallery_150",
+        "gallery_450",
+        "gallery_498",
+        "gallery_499",
+        "gallery_500"
+      ],
+      "expectedExcludedPostIds": [
+        "gallery_006",
+        "gallery_040",
+        "gallery_100",
+        "gallery_490"
+      ],
+      "selectorCriteriaPassed": true,
+      "usage": {
+        "calls": 1,
+        "known": true,
+        "inputTokens": 1778,
+        "outputTokens": 101,
+        "costUsd": 0.0004768
+      },
+      "normalizedUncachedCostUsd": 0.0004768
+    }
+  ]
+}

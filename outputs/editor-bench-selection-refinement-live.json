@@ -1,0 +1,204 @@
+{
+  "date": "2026-10-18T05:57:26.562Z",
+  "scenario": "Initial coast selection excludes sketches; additive full-series OR description query preserves old selection and exclusions.",
+  "transport": "Next API HTTP only; frontend testing deferred",
+  "model": "gpt-5.6-luna",
+  "effort": "none",
+  "capUsd": 0.03,
+  "preflightReservations": [
+    0.0124718,
+    0.0125466
+  ],
+  "before": {
+    "records": 877,
+    "developmentRemainingUsd": 0.37334648,
+    "heldoutRemainingUsd": 8.9690346
+  },
+  "turns": [
+    {
+      "turn": 1,
+      "http": 200,
+      "status": "selected",
+      "message": "Selected Tide pools, Tide process.",
+      "selection": {
+        "postIds": [
+          "bench_post_tide",
+          "bench_post_tide_process"
+        ],
+        "mediaIds": [
+          "bench_media_tide_1",
+          "bench_media_tide_process_1"
+        ],
+        "changed": true
+      },
+      "refinementState": {
+        "v": 1,
+        "fixtureRevision": 7,
+        "selectedPostIds": [
+          "bench_post_tide",
+          "bench_post_tide_process"
+        ],
+        "excludedPostIds": [
+          "bench_post_tide_sketch",
+          "bench_post_orchard_sketch"
+        ]
+      },
+      "selector": {
+        "base": "catalog",
+        "all": [
+          {
+            "field": "tag",
+            "value": "coast",
+            "requestQuote": "coast"
+          }
+        ],
+        "any": [],
+        "none": [
+          {
+            "field": "stage",
+            "value": "sketch",
+            "requestQuote": "sketches"
+          }
+        ]
+      },
+      "refinement": {
+        "operation": "replace",
+        "newlyMatchedPostIds": [
+          "bench_post_tide",
+          "bench_post_tide_process"
+        ],
+        "excludedPostIds": [
+          "bench_post_tide_sketch",
+          "bench_post_orchard_sketch"
+        ]
+      },
+      "diagnostics": [
+        "selection_updated: Fixture selection only; no edit or plan was created."
+      ],
+      "usage": {
+        "calls": 1,
+        "known": true,
+        "inputTokens": 8099,
+        "outputTokens": 102,
+        "costUsd": 0.0017422000000000002
+      },
+      "passed": true
+    },
+    {
+      "turn": 2,
+      "http": 200,
+      "status": "selected",
+      "message": "Selected Blue fragment, Tide pools, Tide process, Autumn Orchard print.",
+      "selection": {
+        "postIds": [
+          "bench_post_ember",
+          "bench_post_tide",
+          "bench_post_tide_process",
+          "bench_post_orchard_print"
+        ],
+        "mediaIds": [
+          "bench_media_ember_1",
+          "bench_media_tide_1",
+          "bench_media_tide_process_1",
+          "bench_media_orchard_print_1"
+        ],
+        "changed": true
+      },
+      "refinementState": {
+        "v": 1,
+        "fixtureRevision": 7,
+        "selectedPostIds": [
+          "bench_post_ember",
+          "bench_post_tide",
+          "bench_post_tide_process",
+          "bench_post_orchard_print"
+        ],
+        "excludedPostIds": [
+          "bench_post_tide_sketch",
+          "bench_post_orchard_sketch"
+        ]
+      },
+      "selector": {
+        "base": "catalog",
+        "all": [],
+        "any": [
+          {
+            "field": "series_id",
+            "value": "bench_series_seasons",
+            "requestQuote": "Four seasons"
+          },
+          {
+            "field": "description",
+            "value": "blue",
+            "requestQuote": "description mentions blue"
+          }
+        ],
+        "none": []
+      },
+      "refinement": {
+        "operation": "add",
+        "newlyMatchedPostIds": [
+          "bench_post_ember",
+          "bench_post_tide_sketch",
+          "bench_post_orchard_sketch",
+          "bench_post_orchard_print"
+        ],
+        "excludedPostIds": [
+          "bench_post_tide_sketch",
+          "bench_post_orchard_sketch"
+        ]
+      },
+      "diagnostics": [
+        "selection_updated: Fixture selection only; no edit or plan was created."
+      ],
+      "usage": {
+        "calls": 1,
+        "known": true,
+        "inputTokens": 8188,
+        "outputTokens": 111,
+        "costUsd": 0.0009327200000000001
+      },
+      "passed": true
+    }
+  ],
+  "passed": true,
+  "reset": {
+    "http": 200,
+    "empty": true,
+    "noNewLedgerRows": true
+  },
+  "calls": [
+    {
+      "id": "f699a286-f832-4b9e-a3fc-1e99e430210a",
+      "model": "gpt-5.6-luna",
+      "phase": "development",
+      "reservedUsd": 0.012471800000000002,
+      "actualUsd": 0.0017422000000000002,
+      "settled": true
+    },
+    {
+      "id": "06da75e5-5e0f-4d85-a4ad-70c92e755a46",
+      "model": "gpt-5.6-luna",
+      "phase": "development",
+      "reservedUsd": 0.0125466,
+      "actualUsd": 0.0009327200000000001,
+      "settled": true
+    }
+  ],
+  "totalReservedUsd": 0.025018400000000003,
+  "totalActualUsd": 0.0026749200000000003,
+  "after": {
+    "records": 879,
+    "developmentRemainingUsd": 0.37067156,
+    "heldoutRemainingUsd": 8.9690346
+  },
+  "offlineEvidence": {
+    "rootBackendBenchTests": 82,
+    "rootFinalTouchedBackendTests": 35,
+    "backendBuild": "passed (Luna final)",
+    "malformedOuterSelectionShapesRejectedBeforeProvider": 3,
+    "deliberateProviderFailurePreservesSelection": true,
+    "noNetworkResetAddsNoProviderCall": true,
+    "frontendVerification": "deferred; source review only"
+  }
+}

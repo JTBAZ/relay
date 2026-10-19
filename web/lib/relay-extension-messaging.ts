@@ -41,6 +41,17 @@ export type SendRelayCrossPostResult =
       detail?: string;
     };
 
+export type RelayScheduleEventExtensionResponse = {
+  ok: true;
+  schedule_event_id: string;
+  destination: "x";
+  tab_id: number;
+  relay_post_id: string;
+};
+export type SendRelayScheduleEventResult =
+  | { ok: true; extensionId: string; response: RelayScheduleEventExtensionResponse }
+  | { ok: false; error: string };
+
 export function getExtensionRuntime(): ExtensionRuntime | null {
   if (typeof window === "undefined") return null;
   const w = window as Window & {
@@ -173,6 +184,61 @@ export async function sendRelayCrossPostToExtension(
     reason: "all_failed",
     detail: describeRelayCrossPostExtensionFailure(lastFailure)
   };
+}
+
+/** Starts X Compose from one saved Schedule Rail event, without post/attempt fallbacks. */
+export async function sendRelayScheduleEventToExtension(eventId: string): Promise<SendRelayScheduleEventResult> {
+  const scheduleEventId = eventId.trim();
+  if (!scheduleEventId) return { ok: false, error: "This saved Schedule Rail event has no id." };
+
+  const extensionId = Array.from(parseRelayExtensionIds())[0];
+  if (!extensionId) return { ok: false, error: "No official Relay extension is configured for this site. Set NEXT_PUBLIC_RELAY_EXTENSION_IDS or install the Relay extension." };
+
+  const runtime = getExtensionRuntime();
+  if (!runtime?.sendMessage) return { ok: false, error: "Could not reach a browser extension from this page. Use Chrome or Firefox with the Relay extension installed." };
+
+  try {
+    const response = await sendExtensionMessage(runtime, extensionId, {
+      type: RELAY_CROSS_POST_MESSAGE_TYPE,
+      schedule_event_id: scheduleEventId,
+      destination: "x"
+    });
+    if (isRelayScheduleEventSuccess(response, scheduleEventId)) {
+      return { ok: true, extensionId, response };
+    }
+    return { ok: false, error: describeRelayScheduleEventFailure(response) };
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    return { ok: false, error: describeRelayScheduleEventFailure(detail) };
+  }
+}
+
+function isRelayScheduleEventSuccess(value: unknown, eventId: string): value is RelayScheduleEventExtensionResponse {
+  if (value === null || typeof value !== "object") return false;
+  const row = value as Record<string, unknown>;
+  return row.ok === true && row.schedule_event_id === eventId && row.destination === "x" &&
+    typeof row.tab_id === "number" && Number.isFinite(row.tab_id) &&
+    typeof row.relay_post_id === "string" && row.relay_post_id.trim().length > 0;
+}
+
+function describeRelayScheduleEventFailure(value: unknown): string {
+  const reason = crossPostFailureReason(value);
+  const detail = value !== null && typeof value === "object" && "detail" in value && typeof (value as { detail?: unknown }).detail === "string"
+    ? (value as { detail: string }).detail.trim()
+    : "";
+  switch (reason) {
+    case "not_connected": return "Connect the Relay extension first (extension popup or Settings → Connected extensions).";
+    case "grant_revoked": return "Your Relay extension session expired. Reconnect the extension and try again.";
+    case "package_fetch_failed": return "Relay could not load this saved event and its selected images. Check your connection and try again.";
+    case "tab_open_failed": return "Relay could not open X Compose.";
+    case "tab_load_timeout": return "X Compose took too long to open. Check your browser before retrying.";
+    case "inject_failed": return "Relay opened X but could not start the compose handoff. Check your browser before retrying.";
+    case "invalid_message": return "The Relay extension rejected this saved-event handoff.";
+    default:
+      if (detail) return detail;
+      if (typeof value === "string" && value.trim()) return value.trim();
+      return "The Relay extension returned an unexpected response. Check whether X opened before retrying.";
+  }
 }
 
 export type SendRelayExternalMetricsRefreshResult =

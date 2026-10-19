@@ -1,0 +1,9 @@
+{
+  "path": "tests/fixtures/gallery-editor-compiled-heldout.json",
+  "sha256": "1445429e2a10dfdec03f78a01c517500a9cadf296e0ff7f3bb870192b4e71ba3",
+  "cases": 20,
+  "metadata": 15,
+  "visual": 5,
+  "independentReviewer": false,
+  "rule": "Do not tune on these cases or pool them with development; report small sample and reused images."
+}

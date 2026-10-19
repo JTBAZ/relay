@@ -6,7 +6,7 @@ import { EditorError, RENAME_NOTICE, type EditorContext } from "./types.js";
 import { GalleryEditorService } from "./service.js";
 import { validateActions } from "./action-validation.js";
 import { FileProviderBudget } from "./budget.js";
-import { responsesProviderFromEnv, type EditorProvider } from "./provider.js";
+import { responsesProviderFromEnv, type EditorProvider, type ProviderBudget } from "./provider.js";
 import { runEditorIntent, type EditorReadTools } from "./intent.js";
 import { expandLibraryFamily, LibraryReadBudget, readLibraryCollectionPosts, readLibraryCollections, readLibraryMedia, resolveLibraryPosts, retrieveLibraryThumbnails, searchLibraryPosts, type LibraryHistoryReader, type LibraryTitleMatch } from "./context.js";
 import { ownedStorageReader } from "./media-reader.js";
@@ -21,6 +21,10 @@ export interface EditorRouteOptions {
   storageRoot:string;
   storesReady?:boolean;
   provider?:EditorProvider;
+  providerBudget?:ProviderBudget;
+}
+export function providerBudgetForRoute(options:Pick<EditorRouteOptions,"providerBudget">):ProviderBudget{
+  return options.providerBudget??new FileProviderBudget(join(process.env.RELAY_GALLERY_EDITOR_DATA_DIR??".relay-data","gallery-editor-budget.json"));
 }
 function enabled(creatorId:string){
   return process.env.RELAY_GALLERY_EDITOR_ENABLED==="1" && (process.env.RELAY_GALLERY_EDITOR_ALLOWLIST??"").split(",").map(x=>x.trim()).filter(Boolean).includes(creatorId);
@@ -67,7 +71,10 @@ export function editorHistoryReader(prisma:PrismaClient):LibraryHistoryReader{
 export function registerGalleryEditorRoutes(app:Express,options:EditorRouteOptions):void{
   const metrics=createLogger({name:"relay-gallery-editor"});
   const service=new GalleryEditorService(options.prisma);
-  const provider=options.provider??responsesProviderFromEnv(new FileProviderBudget(join(process.env.RELAY_GALLERY_EDITOR_DATA_DIR??".relay-data","gallery-editor-budget.json")));
+  const providerBudget=providerBudgetForRoute(options);
+  const compiled=process.env.LIBRARY_EDITOR_ARCHITECTURE==='compiled';
+  const provider=options.provider??responsesProviderFromEnv(providerBudget,compiled?{...process.env,LIBRARY_EDITOR_MODEL:process.env.LIBRARY_EDITOR_INTERPRETER_MODEL??'gpt-6-sol'}:process.env);
+  const escalationProvider=compiled&&process.env.LIBRARY_EDITOR_ESCALATION_MODEL?responsesProviderFromEnv(providerBudget,{...process.env,LIBRARY_EDITOR_MODEL:process.env.LIBRARY_EDITOR_ESCALATION_MODEL}):undefined;
   const history=editorHistoryReader(options.prisma);
   const route=(method:"get"|"post"|"patch",path:string,mutation:boolean,fn:(req:Request,principal:EditorPrincipal)=>Promise<unknown>,requireEnabled=true)=>{
     app[method](path,async(req:Request,res:Response)=>{
@@ -110,8 +117,8 @@ export function registerGalleryEditorRoutes(app:Express,options:EditorRouteOptio
         case "resolveLibraryImageReferences":{const result=await retrieveLibraryThumbnails(options.prisma,p.creatorId,args.mediaIds as string[],ownedStorageReader(options.storageRoot,signal),{budget});return {data:{inspectedMediaIds:result.images.map(i=>i.mediaId),unsupported:result.unsupported},images:result.images.map(i=>({mediaId:i.mediaId,url:`data:${i.mimeType};base64,${i.bytes.toString("base64")}`}))};}
       }
     };
-    const result=await runEditorIntent(session,req.body?.message,provider,readTools);
-    metrics.info({event:"editor_turn",disposition:result.disposition??"unclassified",actionCount:result.actions.length,inputTokens:result.usage?.inputTokens,outputTokens:result.usage?.outputTokens,costUsd:result.usage?.costUsd,calls:result.usage?.calls},"gallery_editor_metric");
-    return service.revise(p.creatorId,p.actorId,session.id,session.revision,result.actions,session.context,[...session.messages,{role:"user",text:req.body.message},{role:"assistant",text:result.message}],"ai");
+    const result=await runEditorIntent(session,req.body?.message,provider,readTools,{architecture:compiled?'compiled':'legacy',escalationProvider});
+    metrics.info({event:"editor_turn",disposition:result.disposition??"unclassified",actionCount:result.actions.length,inputTokens:result.usage?.inputTokens,outputTokens:result.usage?.outputTokens,costUsd:result.usage?.costUsd,calls:result.usage?.calls,...result.routing},"gallery_editor_metric");
+    return service.revise(p.creatorId,p.actorId,session.id,session.revision,result.actions,session.context,[...session.messages,{role:"user",text:req.body.message},{role:"assistant",text:result.message}],"ai",result.patch?{patch:result.patch,factualPreview:result.factualPreview===true,uninspectedMediaCount:result.uninspectedMediaCount}:undefined);
   });
 }

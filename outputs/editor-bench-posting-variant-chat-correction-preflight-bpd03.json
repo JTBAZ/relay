@@ -1,0 +1,84 @@
+{
+  "ticket": "BPD-03",
+  "mode": "canned_mock_http",
+  "date": "2026-10-18",
+  "passed": true,
+  "cases": [
+    {
+      "destination": "x",
+      "expectedRevision": 0,
+      "decision": "review",
+      "diagnostic": "review_ready",
+      "requestSha256": "cd19e0dd69f7e1c4325beba6f0136641c96790b0995492b24f6f6439607b8178",
+      "replacementSha256": "84d5b7bfd3a4663d3e19b87b0da09c4d07c2c83108e584aa27605441b08ba3cb",
+      "passed": true
+    },
+    {
+      "destination": "x",
+      "expectedRevision": 1,
+      "decision": "review",
+      "diagnostic": "review_ready",
+      "requestSha256": "e422afbf3950439e65af0ba137815829c89574c195bb5ab52eb49b0df7ef675a",
+      "replacementSha256": "249861121c40e19bdbbb9d3af7bc881fe8dcdee8a8b4f2d3d44b8b34fc01b0e3",
+      "passed": true
+    }
+  ],
+  "calls": [
+    {
+      "inputSha256": "6c21cdc6a039f7f576f3f6c87679b1de2d52a69b66213365d730f954b97169a7",
+      "candidateCount": 2,
+      "candidateBytes": 232,
+      "inputBytes": 3557,
+      "providerDecision": "edit",
+      "decisionGroundingValid": true,
+      "targetQuoteSha256": "4b68ab3847feda7d6c62c1fbcbeebfa35eab7351ed5e78f4ddadea5df64b8015",
+      "replacementSha256": "84d5b7bfd3a4663d3e19b87b0da09c4d07c2c83108e584aa27605441b08ba3cb",
+      "usage": null
+    },
+    {
+      "inputSha256": "1cdea443d79fd1afad0420ad7adc0ba2030fa4c7eb0b0d0db119959872c27e41",
+      "candidateCount": 2,
+      "candidateBytes": 279,
+      "inputBytes": 3679,
+      "providerDecision": "edit",
+      "decisionGroundingValid": true,
+      "targetQuoteSha256": "84d5b7bfd3a4663d3e19b87b0da09c4d07c2c83108e584aa27605441b08ba3cb",
+      "replacementSha256": "249861121c40e19bdbbb9d3af7bc881fe8dcdee8a8b4f2d3d44b8b34fc01b0e3",
+      "usage": null
+    }
+  ],
+  "limitations": [
+    "Mock ephemeral API state only",
+    "Frontend execution deferred",
+    "No publishing or database operation"
+  ],
+  "checks": {
+    "singleCallPerChat": true,
+    "reviewReadOnly": true,
+    "confirmationSeparate": true,
+    "currentRevisionFollowup": true,
+    "literalUnicodePreserved": true,
+    "originalsAndProvenancePreserved": true,
+    "scheduleAndMediaUnchanged": true,
+    "appendOnlyHistory": true,
+    "retryReuse": true,
+    "databaseAndPublishCalls": 0
+  },
+  "ledger": {
+    "initialRows": 892,
+    "finalRows": 892,
+    "previousRowsUnchanged": true,
+    "callsAttempted": 2,
+    "reservationsUsd": 0,
+    "actualUsd": 0,
+    "ledgerSha256": "b3f18ed2b31f1f7844f01e371704b85eca654d02bd00aef31835ede60d4cdbc6",
+    "newRows": []
+  },
+  "previousFailurePreserved": {
+    "path": "outputs/editor-bench-posting-variant-chat-live-bpd03.json",
+    "sha256": "6dc80db092d9518bd4b43b27712096e701a3c9e0ce3673aace0ec03a1238e77f",
+    "historicalCause": "unknown; model output was not retained",
+    "cumulativeCallsAttempted": 1,
+    "cumulativeReservationsUsd": 0.0044192
+  }
+}

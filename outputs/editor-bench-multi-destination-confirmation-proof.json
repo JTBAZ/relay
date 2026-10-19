@@ -1,0 +1,54 @@
+{
+  "frontendTested": false,
+  "modelCallsDuringConfirmation": 0,
+  "manualPublishing": true,
+  "reviewWasReadOnly": true,
+  "confirmedOnlyChosenEvent": true,
+  "tokenRetryReused": true,
+  "persistedExactly": true,
+  "visibleOnRail": true,
+  "removedTestEvents": 3,
+  "remainingTestEvents": 0,
+  "remainingTestSessions": 0,
+  "loginStatus": 200,
+  "reviewStatus": 200,
+  "review": [
+    {
+      "destination": "patreon",
+      "title": "Aurora Multi Demo",
+      "dueAt": {
+        "local": "2026-10-28T10:00",
+        "timezone": "Europe/London",
+        "utc": "2026-10-28T10:00:00.000Z"
+      }
+    },
+    {
+      "destination": "x",
+      "title": "Aurora Multi Demo",
+      "dueAt": {
+        "local": "2026-10-28T10:00",
+        "timezone": "Europe/London",
+        "utc": "2026-10-28T10:00:00.000Z"
+      }
+    },
+    {
+      "destination": "deviantart",
+      "title": "Aurora Multi Demo",
+      "dueAt": {
+        "local": "2026-10-28T10:00",
+        "timezone": "Europe/London",
+        "utc": "2026-10-28T10:00:00.000Z"
+      }
+    }
+  ],
+  "firstConfirmStatus": 201,
+  "rowsAfterFirst": 1,
+  "retryStatus": 200,
+  "rowsAfterRetry": 1,
+  "remainingConfirmStatuses": [
+    201,
+    201
+  ],
+  "railStatus": 200,
+  "passed": true
+}

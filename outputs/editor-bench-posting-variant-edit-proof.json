@@ -1,0 +1,124 @@
+{
+  "ticket": "BPD-02",
+  "date": "2026-10-18",
+  "branch": "codex/conversational-gallery-editor",
+  "scope": "Literal X postText / DeviantArt title edits on ephemeral draft variants with explicit review and confirmation",
+  "checks": {
+    "rootBackendTests": 141,
+    "testFiles": 19,
+    "lunaFocusedTests": 23,
+    "backendBuild": "passed by Luna",
+    "readOnlyReview": true,
+    "explicitConfirmation": true,
+    "stableOriginalAndCreationProvenance": true,
+    "stableIdsAndUnrelatedFields": true,
+    "appendOnlyRevisionHistory": true,
+    "exactEditRetryReturnsOwnReceipt": true,
+    "creationRetryDoesNotUndoEdits": true,
+    "pinnedSourceNotReloaded": true,
+    "noOpHasNoTokenOrHistory": true,
+    "atomicFailureLeavesStateUnchanged": true,
+    "competingStaleEditConflicts": true,
+    "ownedCurrentRevisionReported": true,
+    "foreignAndUnknownIndistinguishable": true,
+    "editAndCreateTokensDisjoint": true,
+    "cloneIsolation": true,
+    "fixtureAndManualActionUnchanged": true,
+    "modelCalls": 0,
+    "databaseAndPublishCalls": 0,
+    "draftPendingAndLinkGuards": [
+      {
+        "case": "non_draft",
+        "reviewStatus": 409,
+        "confirmStatus": 409,
+        "stateUnchanged": true
+      },
+      {
+        "case": "non_pending",
+        "reviewStatus": 409,
+        "confirmStatus": 409,
+        "stateUnchanged": true
+      },
+      {
+        "case": "mismatched_link",
+        "reviewStatus": 409,
+        "confirmStatus": 409,
+        "stateUnchanged": true
+      }
+    ]
+  },
+  "example": {
+    "variantId": "bench_variant_9b32d8e566beb1c70bf878294d662c8ae0c6f7f77efde5cbc2b82ea39b1789bf",
+    "sourceVersion": "bench_source_v1:7:bench_post_aurora",
+    "sourceFingerprint": "b3c0a1e6641611b43dad7d6ad29b30ced7c92293a1ae3960cafaabf001e3d4ec",
+    "revisionHistory": [
+      {
+        "revision": 0,
+        "field": "postText",
+        "value": "Aurora Teaser",
+        "sourceVersionKey": "bench_source_v1:7:bench_post_aurora",
+        "sourceFingerprint": "b3c0a1e6641611b43dad7d6ad29b30ced7c92293a1ae3960cafaabf001e3d4ec",
+        "confirmedAt": "2026-10-18T20:56:15.812Z"
+      },
+      {
+        "revision": 1,
+        "field": "postText",
+        "before": "Aurora Teaser",
+        "after": "Aurora at dawn",
+        "sourceVersionKey": "bench_source_v1:7:bench_post_aurora",
+        "sourceFingerprint": "b3c0a1e6641611b43dad7d6ad29b30ced7c92293a1ae3960cafaabf001e3d4ec",
+        "confirmedAt": "2026-10-18T20:56:15.851Z",
+        "editIdentity": "12f859223229442f1645947275ae70452403a3576d8e38c3834761112ed0c6c2"
+      },
+      {
+        "revision": 2,
+        "field": "postText",
+        "before": "Aurora at dawn",
+        "after": "Aurora — final caption",
+        "sourceVersionKey": "bench_source_v1:7:bench_post_aurora",
+        "sourceFingerprint": "b3c0a1e6641611b43dad7d6ad29b30ced7c92293a1ae3960cafaabf001e3d4ec",
+        "confirmedAt": "2026-10-18T20:56:15.861Z",
+        "editIdentity": "1140dcae0a2b111748e61507cf18a857a1d66f43500bedc59aa8185fd846daf5"
+      },
+      {
+        "revision": 3,
+        "field": "postText",
+        "before": "Aurora — final caption",
+        "after": "Aurora pinned-source edit",
+        "sourceVersionKey": "bench_source_v1:7:bench_post_aurora",
+        "sourceFingerprint": "b3c0a1e6641611b43dad7d6ad29b30ced7c92293a1ae3960cafaabf001e3d4ec",
+        "confirmedAt": "2026-10-18T20:56:15.884Z",
+        "editIdentity": "2a778aff63f2fb14463f4132ba9b11dc702d62de58053dde75d62e557f54d9bd"
+      },
+      {
+        "revision": 4,
+        "field": "postText",
+        "before": "Aurora pinned-source edit",
+        "after": "First competing caption",
+        "sourceVersionKey": "bench_source_v1:7:bench_post_aurora",
+        "sourceFingerprint": "b3c0a1e6641611b43dad7d6ad29b30ced7c92293a1ae3960cafaabf001e3d4ec",
+        "confirmedAt": "2026-10-18T20:56:15.920Z",
+        "editIdentity": "791f748bccc3b0164f60f49f88dbe7638f1b53be6d6d437731b3760db419b3e9"
+      }
+    ],
+    "deviantArtRevision": 1
+  },
+  "ledger": {
+    "path": "C:\\Users\\jorda\\Documents\\Codex\\2026-10-11\\c\\work\\relay\\.relay-data\\gallery-editor-budget.json",
+    "rows": 891,
+    "sha256": "9bac2e7527a1b69fe281e8af02596105261937dc41622e1b005b26c57f89a589",
+    "developmentRemainingUsd": 0.36606688,
+    "heldoutRemainingUsd": 8.9690346
+  },
+  "limitations": [
+    "Ephemeral per-API mock state; no durable database audit/history.",
+    "Literal text edits only, <=200 UTF-16 code units; no AI rewrite interpretation or chat UI integration.",
+    "No tag/media/date/schedule/destination edits, undo, automatic rebase or publish operation.",
+    "Frontend testing and browser QA deferred; running API not restarted."
+  ],
+  "sourceHashes": {
+    "src/editor-bench/distribution-variant-adapter.ts": "9584294231acdbbbf0d025adeeec2e514f23670c9af01c8ba6184dc499b13415",
+    "src/editor-bench/schedule-routes.ts": "d250d77de8cff2b31391348bd1b413f864dfa9fe02e543899fb42fd2111a438d",
+    "tests/editor-bench/schedule-routes.test.ts": "68e68bf8c81769895d94c9d9c474e04cd9c56837d2a0fc46664e0539782d3b56"
+  }
+}

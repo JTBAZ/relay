@@ -1,0 +1,30 @@
+{
+  "phase": "stopped",
+  "updatedAt": "2026-10-15T02:22:13.502Z",
+  "dbReused": false,
+  "apiPort": 8788,
+  "webPort": 3001,
+  "dbPort": 5433,
+  "children": [
+    {
+      "name": "postgres",
+      "pid": 19572,
+      "log": "C:\\Users\\jorda\\Documents\\Codex\\2026-10-11\\c\\work\\relay\\work\\local-demo-launcher\\postgres.log"
+    },
+    {
+      "name": "seed",
+      "pid": 25536,
+      "log": "C:\\Users\\jorda\\Documents\\Codex\\2026-10-11\\c\\work\\relay\\work\\local-demo-launcher\\seed.log"
+    },
+    {
+      "name": "api",
+      "pid": 13064,
+      "log": "C:\\Users\\jorda\\Documents\\Codex\\2026-10-11\\c\\work\\relay\\work\\local-demo-launcher\\api.log"
+    },
+    {
+      "name": "web",
+      "pid": 20456,
+      "log": "C:\\Users\\jorda\\Documents\\Codex\\2026-10-11\\c\\work\\relay\\work\\local-demo-launcher\\web.log"
+    }
+  ]
+}

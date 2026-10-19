@@ -1,0 +1,31 @@
+{
+  "builtAt": "2026-10-18T05:22:52.285Z",
+  "buildCommand": "npm run build:chrome:dev --prefix extension",
+  "buildOnlyOverride": {
+    "RELAY_EXTENSION_DEV_API_PORT": 8788
+  },
+  "output": "extension/dist/chrome-dev",
+  "extensionId": "bhnphlohdpinngabohfpogekcgppglgd",
+  "apiBase": "http://localhost:8788",
+  "backgroundServiceWorker": "extension/dist/chrome-dev/service-worker-loader.js",
+  "backgroundBundle": "extension/dist/chrome-dev/assets/background.ts-Begw6K6D.js",
+  "backgroundApiDependency": "extension/dist/chrome-dev/assets/messages-COfuPZCP.js",
+  "xFillBundle": "extension/dist/chrome-dev/assets/fill-x-compose.js",
+  "manifestReferencedFiles": [
+    "icons/128.png",
+    "icons/16.png",
+    "icons/48.png",
+    "service-worker-loader.js",
+    "src/popup.html"
+  ],
+  "checks": {
+    "manifestKeyPresent": true,
+    "backgroundLoaderResolvesBundle": true,
+    "backgroundDependencyAndXFillUseExpectedApi": true,
+    "backgroundDependencyAndXFillExcludeDefaultPort": true,
+    "scheduleEventMessageInBackground": true,
+    "manifestReferencesPresent": true
+  },
+  "missingManifestReferencedFiles": [],
+  "frontendAndBrowserQa": "deferred"
+}

@@ -1,0 +1,52 @@
+{
+  "date": "2026-10-18",
+  "ticket": "BLC-02",
+  "status": "accepted_mock_chat_connector_only",
+  "roles": { "plan": "Sol High", "implementation": "Luna High", "reviewAndLiveProof": "root" },
+  "change": "Mock-only request-local date schemas couple supported operations with request-grounded values and exact quotes; existing calendar resolution and full-Library matching remain unchanged. Rejected dates have bounded diagnostics; proof paths are reserved exclusively before model dispatch.",
+  "verification": {
+    "rootBackendBench": { "filesPassed": 15, "testsPassed": 100 },
+    "workerFocusedTestsPassed": 7,
+    "backendBuild": "passed",
+    "offlinePreflight": { "same40And1001Input": true, "serializedInputToolsSchemaBytes": [9878, 9878] },
+    "liveReport": "C:\\Users\\jorda\\Documents\\Codex\\2026-10-11\\c\\work\\relay\\outputs\\editor-bench-large-library-chat-date-recheck-blc02.json",
+    "liveCasesPassed": ["initial_40", "initial_1001", "followup_1001"],
+    "allCriteriaAndExactSelectedExcludedArrays": true,
+    "initialInputTokens": [1727, 1727],
+    "initialInputTokenDelta": 0,
+    "followupInputTokens": 1358,
+    "followupSelectedPosts": 7,
+    "stickyExclusionsRetained": 3
+  },
+  "spend": {
+    "model": "gpt-5.6-luna",
+    "reasoningEffort": "none",
+    "calls": 3,
+    "settledActualCostUsd": 0.00108408,
+    "actualProviderReservationsUsd": 0.0170652,
+    "conservativeProofReservationUsd": 0.0218592,
+    "reservationCapUsd": 0.03,
+    "retryOrFallback": false,
+    "ledgerRecords": 885,
+    "developmentRemainingUsd": 0.36809468,
+    "heldoutRemainingUsd": 8.9690346,
+    "ledger": "C:\\Users\\jorda\\Documents\\Codex\\2026-10-11\\c\\work\\relay\\.relay-data\\gallery-editor-budget.json",
+    "historicalPrefix882RowsSha256": "8c88c2f61e005a835daf70ccf32717aa888af1b81d9dc00b74d46f74dfc22d00"
+  },
+  "preservation": {
+    "originalFailedLiveReportSha256": "41d0e1d5718d4babc4e0a90352f1e412f16de112631fb40379dbf2f314b84225",
+    "originalFailedRootEvidenceSha256": "96c9905881c812bf2c77d01d7a1f2d3ed8e73146ec79023648be078b61554a48",
+    "publicSchemaSha256": "2a7efcc09ff7aad16263f867a4b16fd91f8ebb174a07754922bb73b2b2b2f89e",
+    "sharedSelectorSourceSha256": "d67df1557e71976cb765d36df31e5595b46752c5c67784ec9c620c01d90c8cb3",
+    "allUnchanged": true,
+    "originalFailureCause": "Exact historical rejected date term remains unknown; no reconstruction claimed."
+  },
+  "limits": [
+    "Accepted for the isolated mock connector and bounded proof; no live Library, existing page, Next bridge, or production activation.",
+    "Complete vocabulary cap64 entries/8KiB, request-specific date candidates cap16, and full input/tools/schema cap16KiB remain; overflow refuses the whole turn.",
+    "Same-vocabulary cost scale is demonstrated by these 40/1001 cases; arbitrary vocabulary and broad natural-language quality remain unmeasured.",
+    "Frontend tests, lint, typecheck, build, and browser QA remain deferred.",
+    "Source is local/uncommitted on codex/conversational-gallery-editor. No DB business write, migration, environment file change, API restart, publication, push, or new chat."
+  ],
+  "continuation": "No further implementation or paid calls dispatched."
+}

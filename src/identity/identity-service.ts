@@ -6,7 +6,7 @@
  */
 
 import { randomUUID } from "node:crypto";
-import type { IdentityStore } from "./identity-store.js";
+import type { IdentityStore, SessionReadOptions } from "./identity-store.js";
 import { hashPassword, verifyPassword } from "./password.js";
 import { EXTENSION_SESSION_TTL_MS, WEB_SESSION_TTL_MS } from "./session-constants.js";
 import type { SessionToken, UserAccount } from "./types.js";
@@ -366,9 +366,10 @@ export class IdentityService {
   }
 
   public async resolveSession(
-    token: string
+    token: string,
+    options?: SessionReadOptions
   ): Promise<SessionToken | null> {
-    return this.store.getSession(token);
+    return this.store.getSession(token, options);
   }
 
   public async logout(token: string): Promise<void> {

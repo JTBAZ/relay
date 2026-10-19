@@ -1,0 +1,143 @@
+{
+  "date": "2026-10-18",
+  "model": "gpt-5.6-luna",
+  "reasoningEffort": "none",
+  "phase": "development",
+  "requestClock": "2026-10-18T12:00:00.000Z",
+  "initialEvidence": "outputs/editor-bench-context-selection-live.json",
+  "request": "Tag character posts created last month whose descriptions contain \"study notes\", excluding concept posts, with \"reviewed\".",
+  "expectedPostIds": [
+    "bench_post_ember_court_portrait",
+    "bench_post_clockwork_final"
+  ],
+  "passed": true,
+  "allCriteriaRepresented": true,
+  "editCorrect": true,
+  "httpStatus": 200,
+  "status": "proposal",
+  "selection": {
+    "postIds": [
+      "bench_post_ember_court_portrait",
+      "bench_post_clockwork_final"
+    ],
+    "mediaIds": [
+      "bench_media_ember_portrait_1",
+      "bench_media_clockwork_final_1",
+      "bench_media_clockwork_final_2"
+    ],
+    "changed": true
+  },
+  "modelEnvelope": {
+    "selection": {
+      "mode": "replace",
+      "requestQuote": "Tag character posts created last month whose descriptions contain \"study notes\", excluding concept posts",
+      "selector": {
+        "base": "catalog",
+        "all": [
+          {
+            "field": "tag",
+            "value": "character",
+            "requestQuote": "character"
+          },
+          {
+            "field": "created_date",
+            "value": "last_month",
+            "requestQuote": "last month",
+            "op": "in_month"
+          },
+          {
+            "field": "description",
+            "value": "study notes",
+            "requestQuote": "descriptions contain \"study notes\""
+          }
+        ],
+        "any": [],
+        "none": [
+          {
+            "field": "stage",
+            "value": "concept",
+            "requestQuote": "concept posts"
+          }
+        ]
+      }
+    },
+    "intent": {
+      "revision": 7,
+      "outcome": "proposal",
+      "question": null,
+      "unresolved": [],
+      "observations": [],
+      "operations": [
+        {
+          "operation": "tags",
+          "scope": "post",
+          "target": {
+            "source": "selection",
+            "ids": []
+          },
+          "excludeIds": [],
+          "unresolved": [],
+          "scopeBasis": "conversation",
+          "requestQuote": "Tag character posts created last month whose descriptions contain \"study notes\", excluding concept posts, with \"reviewed\".",
+          "change": "add",
+          "actionId": null,
+          "add": [
+            "reviewed"
+          ],
+          "remove": [],
+          "observationMediaIds": []
+        }
+      ]
+    }
+  },
+  "actions": [
+    {
+      "id": "bench_manual_description",
+      "kind": "set_description",
+      "postId": "bench_post_tide",
+      "description": "Manual note kept as-is."
+    },
+    {
+      "id": "70c6c1ec-274a-473b-a64a-d3a6cfebe142",
+      "kind": "tags",
+      "postId": "bench_post_ember_court_portrait",
+      "add": [
+        "reviewed"
+      ],
+      "remove": []
+    },
+    {
+      "id": "962b7902-2e23-4490-96df-d7cdd4536e60",
+      "kind": "tags",
+      "postId": "bench_post_clockwork_final",
+      "add": [
+        "reviewed"
+      ],
+      "remove": []
+    }
+  ],
+  "diagnostics": [
+    "simulation_only: Nothing has been applied."
+  ],
+  "usage": {
+    "calls": 1,
+    "known": true,
+    "inputTokens": 7717,
+    "outputTokens": 232,
+    "costUsd": 0.0018218000000000002
+  },
+  "frontendTested": false,
+  "libraryWrites": false,
+  "scheduledEventsCreated": false,
+  "networkCalls": 1,
+  "totalTaskCalls": 3,
+  "reservationCapUsd": 0.04,
+  "totalTaskReservedUsd": 0.036064399999999996,
+  "actualCostUsd": 0.0018218000000000002,
+  "totalTaskActualCostUsd": 0.00456586,
+  "recordsBefore": 872,
+  "recordsAfter": 873,
+  "developmentRemainingUsd": 0.38104792,
+  "heldoutRemainingUsd": 8.9690346,
+  "allNewCallsSettled": true
+}

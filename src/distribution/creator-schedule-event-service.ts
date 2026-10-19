@@ -8,6 +8,7 @@
 import type {
   CreatorScheduleEventStatus,
   CreatorScheduleEventType,
+  Prisma,
   PrismaClient
 } from "@prisma/client";
 import { CreatorPlan } from "@prisma/client";
@@ -35,6 +36,11 @@ import {
   type MissingPlatformLinkPayload,
   type PatchCreatorScheduleEventBody
 } from "./creator-schedule-event-contract.js";
+import {
+  LibraryScheduleSourceError,
+  validateLibraryScheduleAttachment,
+  type LibraryScheduleAttachment
+} from "./library-schedule-source.js";
 
 export class CreatorScheduleEventValidationError extends Error {
   public override readonly name = "CreatorScheduleEventValidationError";
@@ -194,6 +200,7 @@ function toWire(row: {
   note: string | null;
   dueAt: Date;
   postId: string | null;
+  mediaIds?: string[];
   externalUrl: string | null;
   remindMe: boolean;
   status: CreatorScheduleEventStatus;
@@ -215,6 +222,7 @@ function toWire(row: {
     note: row.note,
     due_at: row.dueAt.toISOString(),
     post_id: row.postId,
+    media_ids: row.mediaIds ?? [],
     external_url: row.externalUrl,
     remind_me: row.remindMe,
     status: row.status,
@@ -280,7 +288,11 @@ export type CreateCreatorScheduleEventResult =
 export async function createCreatorScheduleEvent(
   prisma: PrismaClient,
   creatorId: string,
-  body: CreateCreatorScheduleEventBody
+  body: CreateCreatorScheduleEventBody,
+  internal?: {
+    trustedEventId?: string;
+    trustedLibraryAttachment?: LibraryScheduleAttachment;
+  }
 ): Promise<CreateCreatorScheduleEventResult> {
   const id = creatorId.trim();
   await assertStudioCore(prisma, id);
@@ -315,6 +327,66 @@ export async function createCreatorScheduleEvent(
   const remindMe = body.remind_me !== false;
   const note = body.note?.trim() || null;
   const title = (body.title?.trim() || defaultTitle(eventType, destination)).slice(0, 200);
+  const trustedEventId = internal?.trustedEventId;
+  if (trustedEventId !== undefined && !/^bench_event_[a-f0-9]{64}$/.test(trustedEventId)) {
+    throw new CreatorScheduleEventValidationError("Invalid internal schedule event ID.");
+  }
+
+  const trustedLibraryAttachment = internal?.trustedLibraryAttachment;
+  if (trustedLibraryAttachment) {
+    if (
+      eventType !== "make_post" ||
+      body.target_mode !== "existing_post" ||
+      !postId ||
+      postId !== trustedLibraryAttachment.postId ||
+      (body.external_url?.trim() ?? "") !== "" ||
+      body.remind_me !== false ||
+      body.create_relay_draft === true
+    ) {
+      throw new CreatorScheduleEventValidationError("Invalid manual Library attachment event.");
+    }
+
+    try {
+      const row = await prisma.$transaction(async (tx) => {
+        const source = await validateLibraryScheduleAttachment(
+          tx,
+          id,
+          trustedLibraryAttachment
+        );
+        if (source.postId !== postId) {
+          throw new CreatorScheduleEventNotFoundError("Post not found.");
+        }
+        return tx.creatorScheduleEvent.create({
+          data: {
+            ...(trustedEventId ? { id: trustedEventId } : {}),
+            creatorId: id,
+            eventType,
+            destination,
+            title,
+            note,
+            dueAt,
+            postId,
+            mediaIds: trustedLibraryAttachment.mediaIds,
+            externalUrl: null,
+            remindMe: false,
+            status: "pending"
+          },
+          select: {
+            id: true, eventType: true, destination: true, title: true, note: true, dueAt: true,
+            postId: true, mediaIds: true, externalUrl: true, remindMe: true, status: true,
+            createdAt: true, updatedAt: true
+          }
+        });
+      });
+      return { ok: true, event: toWire(row) };
+    } catch (error) {
+      if (error instanceof LibraryScheduleSourceError) {
+        if (error.statusCode === 404) throw new CreatorScheduleEventNotFoundError(error.message);
+        throw new CreatorScheduleEventValidationError(error.message);
+      }
+      throw error;
+    }
+  }
 
   let externalUrl: string | null = null;
 
@@ -378,6 +450,7 @@ export async function createCreatorScheduleEvent(
 
   const row = await prisma.creatorScheduleEvent.create({
     data: {
+      ...(trustedEventId ? { id: trustedEventId } : {}),
       creatorId: id,
       eventType,
       destination,
@@ -388,10 +461,120 @@ export async function createCreatorScheduleEvent(
       externalUrl,
       remindMe,
       status: "pending"
+    },
+    select: {
+      id: true, eventType: true, destination: true, title: true, note: true, dueAt: true,
+      postId: true, externalUrl: true, remindMe: true, status: true, createdAt: true, updatedAt: true
     }
   });
 
   return { ok: true, event: toWire(row) };
+}
+
+export type ConversationalAttentionSource =
+  | Readonly<{ kind: "existing_post"; postId: string }>
+  | Readonly<{ kind: "staged_draft"; draftId: string }>;
+
+export type ConversationalAttentionInput = Readonly<{
+  creatorId: string;
+  stepKey: string;
+  dueAtUtc: string;
+  note: string | null;
+  source: ConversationalAttentionSource;
+}>;
+
+export type ConversationalAttentionResult =
+  | { kind: "ready"; eventId: string; reused: boolean }
+  | { kind: "blocked"; code: "missing_absolute_time" | "note_normalization_gap" | "authority_gap" }
+  | { kind: "conflict"; code: "authority_conflict" };
+
+function invalidConversationalAttentionInput(field: string): CreatorScheduleEventValidationError {
+  return new CreatorScheduleEventValidationError(`Invalid conversational attention ${field}.`);
+}
+
+function validateConversationalAttentionInput(input: unknown): asserts input is ConversationalAttentionInput {
+  if (!input || typeof input !== "object" || Array.isArray(input)) throw invalidConversationalAttentionInput("input");
+  const record = input as Record<string, unknown>;
+  const keys = Object.keys(record).sort();
+  if (keys.length !== 5 || keys.join(",") !== "creatorId,dueAtUtc,note,source,stepKey") throw invalidConversationalAttentionInput("input");
+  const validId = (value: unknown): value is string => typeof value === "string" && value.length > 0 && value.length <= 160 && value.trim() === value;
+  if (!validId(record.creatorId)) throw invalidConversationalAttentionInput("creator id");
+  if (typeof record.stepKey !== "string" || record.stepKey.length > 331 || record.stepKey.trim() !== record.stepKey) throw invalidConversationalAttentionInput("step key");
+  const keyMatch = /^plan:(.{1,160}):step:(.{1,160})$/.exec(record.stepKey);
+  if (!keyMatch || !validId(keyMatch[1]) || !validId(keyMatch[2]) || `plan:${keyMatch[1]}:step:${keyMatch[2]}` !== record.stepKey) throw invalidConversationalAttentionInput("step key");
+  if (!record.source || typeof record.source !== "object" || Array.isArray(record.source)) throw invalidConversationalAttentionInput("source");
+  const source = record.source as Record<string, unknown>;
+  if (source.kind === "existing_post") {
+    if (Object.keys(source).length !== 2 || !validId(source.postId)) throw invalidConversationalAttentionInput("source");
+  } else if (source.kind === "staged_draft") {
+    if (Object.keys(source).length !== 2 || !validId(source.draftId)) throw invalidConversationalAttentionInput("source");
+  } else {
+    throw invalidConversationalAttentionInput("source");
+  }
+}
+
+function canonicalAttentionDueAt(value: unknown): Date | null {
+  if (typeof value !== "string" || !/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z$/.test(value)) return null;
+  const date = new Date(value);
+  return Number.isFinite(date.getTime()) && date.toISOString() === value ? date : null;
+}
+
+/** Creates or reuses the fixed Patreon review reminder inside its caller's transaction. */
+export async function createConversationalAttentionEventInTransaction(
+  tx: Prisma.TransactionClient,
+  input: ConversationalAttentionInput
+): Promise<ConversationalAttentionResult> {
+  validateConversationalAttentionInput(input);
+  const dueAt = canonicalAttentionDueAt(input.dueAtUtc);
+  if (!dueAt) return { kind: "blocked", code: "missing_absolute_time" };
+  if (input.note !== null && (typeof input.note !== "string" || input.note.length > 2_000)) {
+    return { kind: "blocked", code: "note_normalization_gap" };
+  }
+
+  let postId: string | null;
+  if (input.source.kind === "existing_post") {
+    const post = await tx.post.findFirst({ where: { id: input.source.postId, creatorId: input.creatorId }, select: { id: true } });
+    if (!post) return { kind: "conflict", code: "authority_conflict" };
+    postId = post.id;
+  } else {
+    const draft = await tx.autopostDraft.findFirst({
+      where: { id: input.source.draftId, creatorId: input.creatorId, conversationalStepKey: input.stepKey },
+      select: { id: true, creatorId: true, conversationalStepKey: true, publishedPostId: true }
+    });
+    if (!draft || draft.id !== input.source.draftId || draft.creatorId !== input.creatorId || draft.conversationalStepKey !== input.stepKey) {
+      return { kind: "conflict", code: "authority_conflict" };
+    }
+    if (draft.publishedPostId) return { kind: "blocked", code: "authority_gap" };
+    postId = null;
+  }
+
+  const existing = await tx.creatorScheduleEvent.findFirst({
+    where: { creatorId: input.creatorId, conversationalStepKey: input.stepKey }
+  });
+  if (existing) {
+    if (existing.creatorId !== input.creatorId || existing.conversationalStepKey !== input.stepKey ||
+      existing.eventType !== "make_post" || existing.destination !== "patreon" || existing.postId !== postId) {
+      return { kind: "conflict", code: "authority_conflict" };
+    }
+    return { kind: "ready", eventId: existing.id, reused: true };
+  }
+
+  const created = await tx.creatorScheduleEvent.create({
+    data: {
+      creatorId: input.creatorId,
+      conversationalStepKey: input.stepKey,
+      eventType: "make_post",
+      destination: "patreon",
+      title: "Review Patreon post",
+      note: input.note,
+      dueAt,
+      postId,
+      externalUrl: null,
+      status: "pending",
+      remindMe: true
+    }
+  });
+  return { kind: "ready", eventId: created.id, reused: false };
 }
 
 function mapLinkError(
