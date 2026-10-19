@@ -430,14 +430,18 @@ describe("DbCanonicalStore.mutateForCreator", () => {
       }
     }
 
+    const lock = vi.fn().mockResolvedValue([{ locked: 1 }]);
+    const transactionClient = { ...tx, $queryRaw: lock };
+    for (const model of ["campaign", "tier", "post", "postVersion", "mediaAsset", "ingestIdempotencyKey"]) {
+      const read = mockFindMany(model);
+      tx[model].findMany = vi.fn().mockImplementation(async (args) => {
+        if (args.select || args.include) return [];
+        expect(lock).toHaveBeenCalledTimes(1);
+        return read(args);
+      });
+    }
     const prisma = {
-      campaign: { findMany: mockFindMany("campaign") },
-      tier: { findMany: mockFindMany("tier") },
-      post: { findMany: mockFindMany("post") },
-      postVersion: { findMany: mockFindMany("postVersion") },
-      mediaAsset: { findMany: mockFindMany("mediaAsset") },
-      ingestIdempotencyKey: { findMany: mockFindMany("ingestIdempotencyKey") },
-      $transaction: vi.fn(async (fn: (tx: unknown) => Promise<void>, _opts?: unknown) => fn(tx))
+      $transaction: vi.fn(async (fn: (tx: unknown) => Promise<void>, _opts?: unknown) => fn(transactionClient))
     };
 
     const store = new DbCanonicalStore(prisma as never);
@@ -448,6 +452,9 @@ describe("DbCanonicalStore.mutateForCreator", () => {
     });
 
     expect(mutatedSnapshot).toBeDefined();
+    expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+    expect(prisma.$transaction).toHaveBeenCalledWith(expect.any(Function), { timeout: 30_000, isolationLevel: "ReadCommitted" });
+    expect(lock.mock.calls[0]![1]).toBe("canonical-store:creator_Z");
 
     const campaignLoad = loadCalls.find((c) => c.model === "campaign");
     expect((campaignLoad!.args as { where: { creatorId: string } }).where.creatorId).toBe("creator_Z");

@@ -182,7 +182,7 @@ export class DbCanonicalStore implements CanonicalStore {
     return this.loadImpl(creatorId);
   }
 
-  private async loadImpl(creatorId?: string): Promise<CanonicalSnapshot> {
+  private async loadImpl(creatorId?: string, db: Prisma.TransactionClient = this.prisma): Promise<CanonicalSnapshot> {
     const where = creatorId ? { creatorId } : undefined;
     const [
       campaigns,
@@ -192,17 +192,17 @@ export class DbCanonicalStore implements CanonicalStore {
       mediaRows,
       idemRows
     ] = await Promise.all([
-      this.prisma.campaign.findMany({ where }),
-      this.prisma.tier.findMany({ where }),
-      this.prisma.post.findMany({ where }),
-      this.prisma.postVersion.findMany({
+      db.campaign.findMany({ where }),
+      db.tier.findMany({ where }),
+      db.post.findMany({ where }),
+      db.postVersion.findMany({
         where: where
           ? { post: { creatorId } }
           : undefined,
         orderBy: { versionSeq: "asc" }
       }),
-      this.prisma.mediaAsset.findMany({ where }),
-      this.prisma.ingestIdempotencyKey.findMany({
+      db.mediaAsset.findMany({ where }),
+      db.ingestIdempotencyKey.findMany({
         where: creatorId ? { creatorId } : undefined
       })
     ]);
@@ -336,422 +336,428 @@ export class DbCanonicalStore implements CanonicalStore {
   // ---------------------------------------------------------------------------
   public async saveForCreator(creatorId: string, snapshot: CanonicalSnapshot): Promise<void> {
     await this.prisma.$transaction(
-      async (tx) => {
-        const campaignMap = snapshot.campaigns[creatorId] ?? {};
-        const postMap = snapshot.posts[creatorId] ?? {};
-        const mediaMap = snapshot.media[creatorId] ?? {};
-        const tierMap = snapshot.tiers[creatorId] ?? {};
-        const mirrorPosts = (Object.values(postMap) as PostRow[]).filter(isMirroredIngestSnapshotPost);
-        const postEntriesPatreon = mirrorPosts.filter(
-          (p) => snapshotMirrorDbSource(p) === PostSource.PATREON
-        );
-        const postEntriesSubscribestar = mirrorPosts.filter(
-          (p) => snapshotMirrorDbSource(p) === PostSource.SUBSCRIBESTAR
-        );
-        const snapTierIds = new Set(
-          (Object.values(tierMap) as TierRow[]).map((r) => tierStableId(r.creator_id, r.tier_id))
-        );
-        const snapCampaignIds = new Set(Object.keys(campaignMap));
-
-        async function mirrorLane(
-          postSource: PostSource,
-          ingestOrigin: MediaIngestOrigin,
-          postEntries: PostRow[]
-        ) {
-          const existingMirror = await tx.post.findMany({
-            where: { creatorId, source: postSource },
-            include: { versions: { orderBy: { versionSeq: "asc" } } }
-          });
-          const existingById = new Map(existingMirror.map((p) => [p.id, p]));
-          const preservePostIds = new Set<string>();
-          for (const post of postEntries) {
-            const dbP = existingById.get(post.post_id);
-            if (!dbP) continue;
-            if (snapshotToUpstreamStatus(post) !== dbP.upstreamStatus) continue;
-            if (inferCampaignIdForPost(creatorId, post, snapshot) !== dbP.campaignId) continue;
-            const wantFp = patreonVersionFingerprintFromSnapshot(post.versions);
-            const haveFp = versionListFingerprint(
-              (dbP.versions ?? []).map((v) => ({ versionSeq: v.versionSeq, upstreamRevision: v.upstreamRevision }))
-            );
-            if (wantFp === haveFp) {
-              preservePostIds.add(post.post_id);
-            }
-          }
-          const stompPostIds: string[] = existingMirror.map((p) => p.id).filter((id) => !preservePostIds.has(id));
-          const incomingPostIds = new Set(postEntries.map((p) => p.post_id));
-          const removedPostIds = stompPostIds.filter((id) => !incomingPostIds.has(id));
-          if (stompPostIds.length > 0) {
-            await tx.postTier.deleteMany({ where: { postId: { in: stompPostIds } } });
-            await tx.mediaAsset.deleteMany({
-              where: {
-                primaryPostId: { in: stompPostIds },
-                ingestOrigin
-              }
-            });
-            await tx.postVersion.deleteMany({ where: { postId: { in: stompPostIds } } });
-          }
-          if (removedPostIds.length > 0) {
-            await tx.post.deleteMany({ where: { id: { in: removedPostIds } } });
-          }
-          return { preservePostIds, existingPostIds: new Set(existingById.keys()) };
-        }
-
-        const lanePatreon = await mirrorLane(
-          PostSource.PATREON,
-          MediaIngestOrigin.PATREON,
-          postEntriesPatreon
-        );
-        const laneSubscribestar = await mirrorLane(
-          PostSource.SUBSCRIBESTAR,
-          MediaIngestOrigin.SUBSCRIBESTAR,
-          postEntriesSubscribestar
-        );
-        const preservePostIdsPat = lanePatreon.preservePostIds;
-        const preservePostIdsSs = laneSubscribestar.preservePostIds;
-        await tx.ingestIdempotencyKey.deleteMany({ where: { creatorId } });
-
-        // --- Cross-tenant reassign: same upstream PKs must land on the saving creator. ---
-        const incomingCampaignIds = (Object.values(campaignMap) as CampaignRow[]).map((r) => r.campaign_id);
-        const incomingPostIds = (Object.values(postMap) as PostRow[]).map((r) => r.post_id);
-        const incomingMediaIds = (Object.values(mediaMap) as MediaRow[]).map((r) => r.media_id);
-        const incomingTierIds = (Object.values(tierMap) as TierRow[]).map(
-          (r) => tierStableId(r.creator_id, r.tier_id)
-        );
-
-        if (incomingPostIds.length > 0) {
-          for (const mirrorSource of [PostSource.PATREON, PostSource.SUBSCRIBESTAR] as const) {
-            const orphanPosts = await tx.post.findMany({
-              where: {
-                id: { in: incomingPostIds },
-                creatorId: { not: creatorId },
-                source: mirrorSource
-              },
-              select: { id: true, creatorId: true }
-            });
-            if (orphanPosts.length === 0) {
-              continue;
-            }
-            const ingestOriginXfer =
-              mirrorSource === PostSource.PATREON
-                ? MediaIngestOrigin.PATREON
-                : MediaIngestOrigin.SUBSCRIBESTAR;
-            const orphanPostIds = orphanPosts.map((p) => p.id);
-            const orphanCreators = [...new Set(orphanPosts.map((p) => p.creatorId))];
-            // eslint-disable-next-line no-console -- ops visibility for workspace migration
-            console.warn(
-              `[canonical-store-db] workspace migration: reassigning ${orphanPosts.length} post(s) ` +
-                `(${mirrorSource}) from ${orphanCreators.join(", ")} → ${creatorId}`
-            );
-            await tx.postTier.deleteMany({ where: { postId: { in: orphanPostIds } } });
-            await tx.mediaAsset.deleteMany({
-              where: {
-                primaryPostId: { in: orphanPostIds },
-                ingestOrigin: ingestOriginXfer
-              }
-            });
-            await tx.postVersion.deleteMany({ where: { postId: { in: orphanPostIds } } });
-            await tx.post.deleteMany({ where: { id: { in: orphanPostIds } } });
-          }
-        }
-
-        if (incomingMediaIds.length > 0) {
-          for (const mirrorSource of [PostSource.PATREON, PostSource.SUBSCRIBESTAR] as const) {
-            await tx.mediaAsset.deleteMany({
-              where: {
-                id: { in: incomingMediaIds },
-                creatorId: { not: creatorId },
-                post: { source: mirrorSource }
-              }
-            });
-          }
-        }
-
-        if (incomingTierIds.length > 0) {
-          await tx.tier.deleteMany({
-            where: { id: { in: incomingTierIds }, creatorId: { not: creatorId } }
-          });
-        }
-
-        if (incomingCampaignIds.length > 0) {
-          const orphanCampaigns = await tx.campaign.findMany({
-            where: { id: { in: incomingCampaignIds }, creatorId: { not: creatorId } },
-            select: { id: true, creatorId: true }
-          });
-          if (orphanCampaigns.length > 0) {
-            const orphanCampIds = orphanCampaigns.map((c) => c.id);
-            for (const mirrorSource of [PostSource.PATREON, PostSource.SUBSCRIBESTAR] as const) {
-              const leftoverPosts = await tx.post.findMany({
-                where: { campaignId: { in: orphanCampIds }, source: mirrorSource },
-                select: { id: true }
-              });
-              if (leftoverPosts.length === 0) continue;
-              const ingestOriginXfer =
-                mirrorSource === PostSource.PATREON
-                  ? MediaIngestOrigin.PATREON
-                  : MediaIngestOrigin.SUBSCRIBESTAR;
-              const lpIds = leftoverPosts.map((p) => p.id);
-              await tx.postTier.deleteMany({ where: { postId: { in: lpIds } } });
-              await tx.mediaAsset.deleteMany({
-                where: {
-                  primaryPostId: { in: lpIds },
-                  ingestOrigin: ingestOriginXfer
-                }
-              });
-              await tx.postVersion.deleteMany({ where: { postId: { in: lpIds } } });
-              await tx.post.deleteMany({ where: { id: { in: lpIds } } });
-            }
-            await tx.tier.deleteMany({ where: { campaignId: { in: orphanCampIds } } });
-            await tx.campaign.deleteMany({ where: { id: { in: orphanCampIds } } });
-          }
-        }
-
-        // --- Idempotency + upsert campaigns/tiers, then synchronize changed imported posts + media. ---
-        const idemEntries = Object.entries(snapshot.ingest_idempotency);
-        if (idemEntries.length > 0) {
-          await tx.ingestIdempotencyKey.createMany({
-            skipDuplicates: true,
-            data: idemEntries.map(([batchKey, meta]) => ({
-              creatorId,
-              batchKey,
-              firstSeenAt: new Date(meta.first_seen_at)
-            }))
-          });
-        }
-
-        const campaignRows = Object.values(campaignMap) as CampaignRow[];
-        for (const row of campaignRows) {
-          await tx.campaign.upsert({
-            where: { id: row.campaign_id },
-            create: {
-              id: row.campaign_id,
-              creatorId: row.creator_id,
-              name: row.name,
-              upstreamUpdatedAt: new Date(row.upstream_updated_at),
-              versionSeq: row.version_seq
-            },
-            update: {
-              name: row.name,
-              upstreamUpdatedAt: new Date(row.upstream_updated_at),
-              versionSeq: row.version_seq
-            }
-          });
-        }
-
-        const tierRows = Object.values(tierMap) as TierRow[];
-        for (const row of tierRows) {
-          const id = tierStableId(row.creator_id, row.tier_id);
-          await tx.tier.upsert({
-            where: { id },
-            create: {
-              id,
-              creatorId: row.creator_id,
-              relayTierId: row.tier_id,
-              providerTierId: row.tier_id,
-              campaignId: row.campaign_id ?? null,
-              title: row.title,
-              amountCents: row.amount_cents ?? null,
-              upstreamUpdatedAt: new Date(row.upstream_updated_at),
-              versionSeq: row.version_seq
-            },
-            update: {
-              title: row.title,
-              amountCents: row.amount_cents ?? null,
-              campaignId: row.campaign_id ?? null,
-              upstreamUpdatedAt: new Date(row.upstream_updated_at),
-              versionSeq: row.version_seq
-            }
-          });
-        }
-
-        const mirrorLanes: Array<{
-          entries: PostRow[];
-          preserve: Set<string>;
-          existing: Set<string>;
-          source: PostSource;
-        }> = [
-          { entries: postEntriesPatreon, preserve: preservePostIdsPat, existing: lanePatreon.existingPostIds, source: PostSource.PATREON },
-          {
-            entries: postEntriesSubscribestar,
-            preserve: preservePostIdsSs,
-            existing: laneSubscribestar.existingPostIds,
-            source: PostSource.SUBSCRIBESTAR
-          }
-        ];
-
-        const postIdsToMaterialize = new Set<string>();
-        const postTierRows: Prisma.PostTierCreateManyInput[] = [];
-        for (const lane of mirrorLanes) {
-          for (const post of lane.entries) {
-            if (lane.preserve.has(post.post_id)) {
-              continue;
-            }
-            postIdsToMaterialize.add(post.post_id);
-            const campaignId = inferCampaignIdForPost(creatorId, post, snapshot);
-            const versionsForDb = deduplicatePostVersionsForSave(post.versions);
-            if (versionsForDb.length < post.versions.length) {
-              // eslint-disable-next-line no-console -- ops visibility
-              console.warn(
-                `[canonical-store-db] post ${post.post_id}: deduplicated ` +
-                  `${post.versions.length - versionsForDb.length} version(s) with colliding version_seq`
-              );
-            }
-            const createdAt = earliestPublishedAt({ ...post, versions: versionsForDb });
-
-            const data = {
-              campaignId,
-              upstreamStatus: snapshotToUpstreamStatus(post),
-              createdAt,
-              versions: { create: versionsForDb.map((v) => mapVersionRow(v)) }
-            };
-            if (lane.existing.has(post.post_id)) {
-              await tx.post.update({ where: { id: post.post_id, creatorId, source: lane.source }, data });
-            } else {
-              await tx.post.create({
-                data: { ...data, id: post.post_id, creatorId, providerPostId: post.post_id, source: lane.source }
-              });
-            }
-
-            const tierSource = versionsForDb[versionsForDb.length - 1] ?? post.current;
-            const tierIds = new Set(tierSource.tier_ids);
-            for (const tid of tierIds) {
-              const tierKey = tierStableId(creatorId, tid);
-              postTierRows.push({
-                postId: post.post_id,
-                tierId: tierKey
-              });
-            }
-          }
-        }
-        if (postTierRows.length > 0) {
-          await tx.postTier.createMany({ data: postTierRows });
-        }
-
-        // Clean up only after refreshed posts have moved to their current campaigns and tiers.
-        const dbOurCampaigns = await tx.campaign.findMany({ where: { creatorId }, select: { id: true } });
-        for (const c of dbOurCampaigns) {
-          if (snapCampaignIds.has(c.id)) {
-            continue;
-          }
-          const n = await tx.post.count({ where: { campaignId: c.id } });
-          if (n === 0) {
-            await tx.campaign.delete({ where: { id: c.id } });
-          }
-        }
-        const dbOurTiers = await tx.tier.findMany({ where: { creatorId }, select: { id: true } });
-        for (const t of dbOurTiers) {
-          if (snapTierIds.has(t.id)) {
-            continue;
-          }
-          const n = await tx.postTier.count({ where: { tierId: t.id } });
-          if (n === 0) {
-            await tx.tier.delete({ where: { id: t.id } });
-          }
-        }
-
-        const mediaEntriesAll = Object.values(mediaMap) as MediaRow[];
-        for (const lane of mirrorLanes) {
-          const ingestOriginLane =
-            lane.source === PostSource.PATREON
-              ? MediaIngestOrigin.PATREON
-              : MediaIngestOrigin.SUBSCRIBESTAR;
-          // Preserved posts can still have media URL refreshes or deletions.
-          if (lane.preserve.size > 0) {
-            const preservedMedia = await tx.mediaAsset.findMany({
-              where: { creatorId, ingestOrigin: ingestOriginLane, primaryPostId: { in: [...lane.preserve] } },
-              select: { id: true, primaryPostId: true, currentUpstreamRevision: true, currentUpstreamUrl: true, upstreamStatus: true }
-            });
-            for (const row of preservedMedia) {
-              const media = mediaMap[row.id];
-              if (!media) continue;
-              const refreshUrl = media.current.upstream_revision === row.currentUpstreamRevision &&
-                media.current.upstream_url?.trim() && media.current.upstream_url !== row.currentUpstreamUrl;
-              const deleteMedia = media.upstream_status === "deleted" && row.upstreamStatus !== MediaUpstreamStatus.deleted;
-              if (refreshUrl || deleteMedia) {
-                const updated = await tx.mediaAsset.updateMany({
-                  where: {
-                    id: row.id, creatorId, primaryPostId: row.primaryPostId, ingestOrigin: ingestOriginLane,
-                    currentUpstreamRevision: row.currentUpstreamRevision, currentUpstreamUrl: row.currentUpstreamUrl,
-                    ...(deleteMedia ? { upstreamStatus: row.upstreamStatus } : {})
-                  },
-                  data: {
-                    ...(refreshUrl ? { currentUpstreamUrl: media.current.upstream_url } : {}),
-                    ...(deleteMedia ? { upstreamStatus: MediaUpstreamStatus.deleted } : {})
-                  }
-                });
-                if (deleteMedia && updated.count !== 1) {
-                  throw new Error("Media changed while applying deletion; retry the ingest batch.");
-                }
-              }
-            }
-          }
-          const mediaEntries = mediaEntriesAll.filter((m) => {
-            const primary = m.post_ids[0];
-            if (!primary || !postIdsToMaterialize.has(primary)) {
-              return false;
-            }
-            const prow = postMap[primary] as PostRow | undefined;
-            if (!prow || prow.source === "RELAY") {
-              return false;
-            }
-            return snapshotMirrorDbSource(prow) === lane.source;
-          });
-          if (mediaEntries.length === 0) {
-            continue;
-          }
-          await tx.mediaAsset.createMany({
-            data: mediaEntries.map((m) => {
-              const primary =
-                m.post_ids[0] ??
-                (() => {
-                  throw new Error(`DbCanonicalStore.saveForCreator: media ${m.media_id} has empty post_ids`);
-                })();
-              return {
-                id: m.media_id,
-                creatorId: m.creator_id,
-                postIds: [...m.post_ids],
-                primaryPostId: primary,
-                upstreamStatus:
-                  m.upstream_status === "deleted"
-                    ? MediaUpstreamStatus.deleted
-                    : MediaUpstreamStatus.active,
-                currentVersionSeq: m.current.version_seq,
-                currentUpstreamRevision: m.current.upstream_revision,
-                currentMimeType: m.current.mime_type ?? null,
-                currentUpstreamUrl: m.current.upstream_url ?? null,
-                currentRole: m.current.role ?? null,
-                currentStorageKey: m.current.storage_key ?? null,
-                currentIngestedAt: new Date(m.current.ingested_at),
-                versionsJson: m.versions as unknown as Prisma.InputJsonValue,
-                ingestOrigin: ingestOriginLane,
-                processingStatus: MediaProcessingStatus.READY,
-                processingError: null
-              };
-            })
-          });
-        }
-
-        // Packaging identity for Patreon imports: Creative Work + Patreon Platform Instance.
-        // Runs for preserved and newly materialised posts so a sync also backfills older rows.
-        for (const post of postEntriesPatreon) {
-          const title =
-            post.current?.title?.trim() ||
-            post.versions[post.versions.length - 1]?.title?.trim() ||
-            post.post_id;
-          await ensureDefaultCreativeWorkForPost(tx, {
-            postId: post.post_id,
-            creatorId,
-            title,
-            createdAt: earliestPublishedAt(post)
-          });
-          await ensurePatreonPlatformInstanceForIngestedPost(tx, {
-            postId: post.post_id,
-            creatorId,
-            linkedAt: earliestPublishedAt(post)
-          });
-        }
-      },
+      (tx) => this.saveForCreatorInTransaction(creatorId, snapshot, tx),
       { timeout: 30_000 }
     );
+  }
+
+  private async saveForCreatorInTransaction(
+    creatorId: string,
+    snapshot: CanonicalSnapshot,
+    tx: Prisma.TransactionClient
+  ): Promise<void> {
+    const campaignMap = snapshot.campaigns[creatorId] ?? {};
+    const postMap = snapshot.posts[creatorId] ?? {};
+    const mediaMap = snapshot.media[creatorId] ?? {};
+    const tierMap = snapshot.tiers[creatorId] ?? {};
+    const mirrorPosts = (Object.values(postMap) as PostRow[]).filter(isMirroredIngestSnapshotPost);
+    const postEntriesPatreon = mirrorPosts.filter(
+      (p) => snapshotMirrorDbSource(p) === PostSource.PATREON
+    );
+    const postEntriesSubscribestar = mirrorPosts.filter(
+      (p) => snapshotMirrorDbSource(p) === PostSource.SUBSCRIBESTAR
+    );
+    const snapTierIds = new Set(
+      (Object.values(tierMap) as TierRow[]).map((r) => tierStableId(r.creator_id, r.tier_id))
+    );
+    const snapCampaignIds = new Set(Object.keys(campaignMap));
+
+    async function mirrorLane(
+      postSource: PostSource,
+      ingestOrigin: MediaIngestOrigin,
+      postEntries: PostRow[]
+    ) {
+      const existingMirror = await tx.post.findMany({
+        where: { creatorId, source: postSource },
+        include: { versions: { orderBy: { versionSeq: "asc" } } }
+      });
+      const existingById = new Map(existingMirror.map((p) => [p.id, p]));
+      const preservePostIds = new Set<string>();
+      for (const post of postEntries) {
+        const dbP = existingById.get(post.post_id);
+        if (!dbP) continue;
+        if (snapshotToUpstreamStatus(post) !== dbP.upstreamStatus) continue;
+        if (inferCampaignIdForPost(creatorId, post, snapshot) !== dbP.campaignId) continue;
+        const wantFp = patreonVersionFingerprintFromSnapshot(post.versions);
+        const haveFp = versionListFingerprint(
+          (dbP.versions ?? []).map((v) => ({ versionSeq: v.versionSeq, upstreamRevision: v.upstreamRevision }))
+        );
+        if (wantFp === haveFp) {
+          preservePostIds.add(post.post_id);
+        }
+      }
+      const stompPostIds: string[] = existingMirror.map((p) => p.id).filter((id) => !preservePostIds.has(id));
+      const incomingPostIds = new Set(postEntries.map((p) => p.post_id));
+      const removedPostIds = stompPostIds.filter((id) => !incomingPostIds.has(id));
+      if (stompPostIds.length > 0) {
+        await tx.postTier.deleteMany({ where: { postId: { in: stompPostIds } } });
+        await tx.mediaAsset.deleteMany({
+          where: {
+            primaryPostId: { in: stompPostIds },
+            ingestOrigin
+          }
+        });
+        await tx.postVersion.deleteMany({ where: { postId: { in: stompPostIds } } });
+      }
+      if (removedPostIds.length > 0) {
+        await tx.post.deleteMany({ where: { id: { in: removedPostIds } } });
+      }
+      return { preservePostIds, existingPostIds: new Set(existingById.keys()) };
+    }
+
+    const lanePatreon = await mirrorLane(
+      PostSource.PATREON,
+      MediaIngestOrigin.PATREON,
+      postEntriesPatreon
+    );
+    const laneSubscribestar = await mirrorLane(
+      PostSource.SUBSCRIBESTAR,
+      MediaIngestOrigin.SUBSCRIBESTAR,
+      postEntriesSubscribestar
+    );
+    const preservePostIdsPat = lanePatreon.preservePostIds;
+    const preservePostIdsSs = laneSubscribestar.preservePostIds;
+    await tx.ingestIdempotencyKey.deleteMany({ where: { creatorId } });
+
+    // --- Cross-tenant reassign: same upstream PKs must land on the saving creator. ---
+    const incomingCampaignIds = (Object.values(campaignMap) as CampaignRow[]).map((r) => r.campaign_id);
+    const incomingPostIds = (Object.values(postMap) as PostRow[]).map((r) => r.post_id);
+    const incomingMediaIds = (Object.values(mediaMap) as MediaRow[]).map((r) => r.media_id);
+    const incomingTierIds = (Object.values(tierMap) as TierRow[]).map(
+      (r) => tierStableId(r.creator_id, r.tier_id)
+    );
+
+    if (incomingPostIds.length > 0) {
+      for (const mirrorSource of [PostSource.PATREON, PostSource.SUBSCRIBESTAR] as const) {
+        const orphanPosts = await tx.post.findMany({
+          where: {
+            id: { in: incomingPostIds },
+            creatorId: { not: creatorId },
+            source: mirrorSource
+          },
+          select: { id: true, creatorId: true }
+        });
+        if (orphanPosts.length === 0) {
+          continue;
+        }
+        const ingestOriginXfer =
+          mirrorSource === PostSource.PATREON
+            ? MediaIngestOrigin.PATREON
+            : MediaIngestOrigin.SUBSCRIBESTAR;
+        const orphanPostIds = orphanPosts.map((p) => p.id);
+        const orphanCreators = [...new Set(orphanPosts.map((p) => p.creatorId))];
+        // eslint-disable-next-line no-console -- ops visibility for workspace migration
+        console.warn(
+          `[canonical-store-db] workspace migration: reassigning ${orphanPosts.length} post(s) ` +
+            `(${mirrorSource}) from ${orphanCreators.join(", ")} → ${creatorId}`
+        );
+        await tx.postTier.deleteMany({ where: { postId: { in: orphanPostIds } } });
+        await tx.mediaAsset.deleteMany({
+          where: {
+            primaryPostId: { in: orphanPostIds },
+            ingestOrigin: ingestOriginXfer
+          }
+        });
+        await tx.postVersion.deleteMany({ where: { postId: { in: orphanPostIds } } });
+        await tx.post.deleteMany({ where: { id: { in: orphanPostIds } } });
+      }
+    }
+
+    if (incomingMediaIds.length > 0) {
+      for (const mirrorSource of [PostSource.PATREON, PostSource.SUBSCRIBESTAR] as const) {
+        await tx.mediaAsset.deleteMany({
+          where: {
+            id: { in: incomingMediaIds },
+            creatorId: { not: creatorId },
+            post: { source: mirrorSource }
+          }
+        });
+      }
+    }
+
+    if (incomingTierIds.length > 0) {
+      await tx.tier.deleteMany({
+        where: { id: { in: incomingTierIds }, creatorId: { not: creatorId } }
+      });
+    }
+
+    if (incomingCampaignIds.length > 0) {
+      const orphanCampaigns = await tx.campaign.findMany({
+        where: { id: { in: incomingCampaignIds }, creatorId: { not: creatorId } },
+        select: { id: true, creatorId: true }
+      });
+      if (orphanCampaigns.length > 0) {
+        const orphanCampIds = orphanCampaigns.map((c) => c.id);
+        for (const mirrorSource of [PostSource.PATREON, PostSource.SUBSCRIBESTAR] as const) {
+          const leftoverPosts = await tx.post.findMany({
+            where: { campaignId: { in: orphanCampIds }, source: mirrorSource },
+            select: { id: true }
+          });
+          if (leftoverPosts.length === 0) continue;
+          const ingestOriginXfer =
+            mirrorSource === PostSource.PATREON
+              ? MediaIngestOrigin.PATREON
+              : MediaIngestOrigin.SUBSCRIBESTAR;
+          const lpIds = leftoverPosts.map((p) => p.id);
+          await tx.postTier.deleteMany({ where: { postId: { in: lpIds } } });
+          await tx.mediaAsset.deleteMany({
+            where: {
+              primaryPostId: { in: lpIds },
+              ingestOrigin: ingestOriginXfer
+            }
+          });
+          await tx.postVersion.deleteMany({ where: { postId: { in: lpIds } } });
+          await tx.post.deleteMany({ where: { id: { in: lpIds } } });
+        }
+        await tx.tier.deleteMany({ where: { campaignId: { in: orphanCampIds } } });
+        await tx.campaign.deleteMany({ where: { id: { in: orphanCampIds } } });
+      }
+    }
+
+    // --- Idempotency + upsert campaigns/tiers, then synchronize changed imported posts + media. ---
+    const idemEntries = Object.entries(snapshot.ingest_idempotency);
+    if (idemEntries.length > 0) {
+      await tx.ingestIdempotencyKey.createMany({
+        skipDuplicates: true,
+        data: idemEntries.map(([batchKey, meta]) => ({
+          creatorId,
+          batchKey,
+          firstSeenAt: new Date(meta.first_seen_at)
+        }))
+      });
+    }
+
+    const campaignRows = Object.values(campaignMap) as CampaignRow[];
+    for (const row of campaignRows) {
+      await tx.campaign.upsert({
+        where: { id: row.campaign_id },
+        create: {
+          id: row.campaign_id,
+          creatorId: row.creator_id,
+          name: row.name,
+          upstreamUpdatedAt: new Date(row.upstream_updated_at),
+          versionSeq: row.version_seq
+        },
+        update: {
+          name: row.name,
+          upstreamUpdatedAt: new Date(row.upstream_updated_at),
+          versionSeq: row.version_seq
+        }
+      });
+    }
+
+    const tierRows = Object.values(tierMap) as TierRow[];
+    for (const row of tierRows) {
+      const id = tierStableId(row.creator_id, row.tier_id);
+      await tx.tier.upsert({
+        where: { id },
+        create: {
+          id,
+          creatorId: row.creator_id,
+          relayTierId: row.tier_id,
+          providerTierId: row.tier_id,
+          campaignId: row.campaign_id ?? null,
+          title: row.title,
+          amountCents: row.amount_cents ?? null,
+          upstreamUpdatedAt: new Date(row.upstream_updated_at),
+          versionSeq: row.version_seq
+        },
+        update: {
+          title: row.title,
+          amountCents: row.amount_cents ?? null,
+          campaignId: row.campaign_id ?? null,
+          upstreamUpdatedAt: new Date(row.upstream_updated_at),
+          versionSeq: row.version_seq
+        }
+      });
+    }
+
+    const mirrorLanes: Array<{
+      entries: PostRow[];
+      preserve: Set<string>;
+      existing: Set<string>;
+      source: PostSource;
+    }> = [
+      { entries: postEntriesPatreon, preserve: preservePostIdsPat, existing: lanePatreon.existingPostIds, source: PostSource.PATREON },
+      {
+        entries: postEntriesSubscribestar,
+        preserve: preservePostIdsSs,
+        existing: laneSubscribestar.existingPostIds,
+        source: PostSource.SUBSCRIBESTAR
+      }
+    ];
+
+    const postIdsToMaterialize = new Set<string>();
+    const postTierRows: Prisma.PostTierCreateManyInput[] = [];
+    for (const lane of mirrorLanes) {
+      for (const post of lane.entries) {
+        if (lane.preserve.has(post.post_id)) {
+          continue;
+        }
+        postIdsToMaterialize.add(post.post_id);
+        const campaignId = inferCampaignIdForPost(creatorId, post, snapshot);
+        const versionsForDb = deduplicatePostVersionsForSave(post.versions);
+        if (versionsForDb.length < post.versions.length) {
+          // eslint-disable-next-line no-console -- ops visibility
+          console.warn(
+            `[canonical-store-db] post ${post.post_id}: deduplicated ` +
+              `${post.versions.length - versionsForDb.length} version(s) with colliding version_seq`
+          );
+        }
+        const createdAt = earliestPublishedAt({ ...post, versions: versionsForDb });
+
+        const data = {
+          campaignId,
+          upstreamStatus: snapshotToUpstreamStatus(post),
+          createdAt,
+          versions: { create: versionsForDb.map((v) => mapVersionRow(v)) }
+        };
+        if (lane.existing.has(post.post_id)) {
+          await tx.post.update({ where: { id: post.post_id, creatorId, source: lane.source }, data });
+        } else {
+          await tx.post.create({
+            data: { ...data, id: post.post_id, creatorId, providerPostId: post.post_id, source: lane.source }
+          });
+        }
+
+        const tierSource = versionsForDb[versionsForDb.length - 1] ?? post.current;
+        const tierIds = new Set(tierSource.tier_ids);
+        for (const tid of tierIds) {
+          const tierKey = tierStableId(creatorId, tid);
+          postTierRows.push({
+            postId: post.post_id,
+            tierId: tierKey
+          });
+        }
+      }
+    }
+    if (postTierRows.length > 0) {
+      await tx.postTier.createMany({ data: postTierRows });
+    }
+
+    // Clean up only after refreshed posts have moved to their current campaigns and tiers.
+    const dbOurCampaigns = await tx.campaign.findMany({ where: { creatorId }, select: { id: true } });
+    for (const c of dbOurCampaigns) {
+      if (snapCampaignIds.has(c.id)) {
+        continue;
+      }
+      const n = await tx.post.count({ where: { campaignId: c.id } });
+      if (n === 0) {
+        await tx.campaign.delete({ where: { id: c.id } });
+      }
+    }
+    const dbOurTiers = await tx.tier.findMany({ where: { creatorId }, select: { id: true } });
+    for (const t of dbOurTiers) {
+      if (snapTierIds.has(t.id)) {
+        continue;
+      }
+      const n = await tx.postTier.count({ where: { tierId: t.id } });
+      if (n === 0) {
+        await tx.tier.delete({ where: { id: t.id } });
+      }
+    }
+
+    const mediaEntriesAll = Object.values(mediaMap) as MediaRow[];
+    for (const lane of mirrorLanes) {
+      const ingestOriginLane =
+        lane.source === PostSource.PATREON
+          ? MediaIngestOrigin.PATREON
+          : MediaIngestOrigin.SUBSCRIBESTAR;
+      // Preserved posts can still have media URL refreshes or deletions.
+      if (lane.preserve.size > 0) {
+        const preservedMedia = await tx.mediaAsset.findMany({
+          where: { creatorId, ingestOrigin: ingestOriginLane, primaryPostId: { in: [...lane.preserve] } },
+          select: { id: true, primaryPostId: true, currentUpstreamRevision: true, currentUpstreamUrl: true, upstreamStatus: true }
+        });
+        for (const row of preservedMedia) {
+          const media = mediaMap[row.id];
+          if (!media) continue;
+          const refreshUrl = media.current.upstream_revision === row.currentUpstreamRevision &&
+            media.current.upstream_url?.trim() && media.current.upstream_url !== row.currentUpstreamUrl;
+          const deleteMedia = media.upstream_status === "deleted" && row.upstreamStatus !== MediaUpstreamStatus.deleted;
+          if (refreshUrl || deleteMedia) {
+            const updated = await tx.mediaAsset.updateMany({
+              where: {
+                id: row.id, creatorId, primaryPostId: row.primaryPostId, ingestOrigin: ingestOriginLane,
+                currentUpstreamRevision: row.currentUpstreamRevision, currentUpstreamUrl: row.currentUpstreamUrl,
+                ...(deleteMedia ? { upstreamStatus: row.upstreamStatus } : {})
+              },
+              data: {
+                ...(refreshUrl ? { currentUpstreamUrl: media.current.upstream_url } : {}),
+                ...(deleteMedia ? { upstreamStatus: MediaUpstreamStatus.deleted } : {})
+              }
+            });
+            if (deleteMedia && updated.count !== 1) {
+              throw new Error("Media changed while applying deletion; retry the ingest batch.");
+            }
+          }
+        }
+      }
+      const mediaEntries = mediaEntriesAll.filter((m) => {
+        const primary = m.post_ids[0];
+        if (!primary || !postIdsToMaterialize.has(primary)) {
+          return false;
+        }
+        const prow = postMap[primary] as PostRow | undefined;
+        if (!prow || prow.source === "RELAY") {
+          return false;
+        }
+        return snapshotMirrorDbSource(prow) === lane.source;
+      });
+      if (mediaEntries.length === 0) {
+        continue;
+      }
+      await tx.mediaAsset.createMany({
+        data: mediaEntries.map((m) => {
+          const primary =
+            m.post_ids[0] ??
+            (() => {
+              throw new Error(`DbCanonicalStore.saveForCreator: media ${m.media_id} has empty post_ids`);
+            })();
+          return {
+            id: m.media_id,
+            creatorId: m.creator_id,
+            postIds: [...m.post_ids],
+            primaryPostId: primary,
+            upstreamStatus:
+              m.upstream_status === "deleted"
+                ? MediaUpstreamStatus.deleted
+                : MediaUpstreamStatus.active,
+            currentVersionSeq: m.current.version_seq,
+            currentUpstreamRevision: m.current.upstream_revision,
+            currentMimeType: m.current.mime_type ?? null,
+            currentUpstreamUrl: m.current.upstream_url ?? null,
+            currentRole: m.current.role ?? null,
+            currentStorageKey: m.current.storage_key ?? null,
+            currentIngestedAt: new Date(m.current.ingested_at),
+            versionsJson: m.versions as unknown as Prisma.InputJsonValue,
+            ingestOrigin: ingestOriginLane,
+            processingStatus: MediaProcessingStatus.READY,
+            processingError: null
+          };
+        })
+      });
+    }
+
+    // Packaging identity for Patreon imports: Creative Work + Patreon Platform Instance.
+    // Runs for preserved and newly materialised posts so a sync also backfills older rows.
+    for (const post of postEntriesPatreon) {
+      const title =
+        post.current?.title?.trim() ||
+        post.versions[post.versions.length - 1]?.title?.trim() ||
+        post.post_id;
+      await ensureDefaultCreativeWorkForPost(tx, {
+        postId: post.post_id,
+        creatorId,
+        title,
+        createdAt: earliestPublishedAt(post)
+      });
+      await ensurePatreonPlatformInstanceForIngestedPost(tx, {
+        postId: post.post_id,
+        creatorId,
+        linkedAt: earliestPublishedAt(post)
+      });
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -773,8 +779,12 @@ export class DbCanonicalStore implements CanonicalStore {
     creatorId: string,
     fn: (snapshot: CanonicalSnapshot) => void | Promise<void>
   ): Promise<void> {
-    const snapshot = await this.loadForCreator(creatorId);
-    await fn(snapshot);
-    await this.saveForCreator(creatorId, snapshot);
+    await this.prisma.$transaction(async (tx) => {
+      // Reserve before reading so another import cannot save a stale creator snapshot.
+      await tx.$queryRaw`SELECT 1 AS locked FROM pg_advisory_xact_lock(hashtextextended(${"canonical-store:" + creatorId}, 0))`;
+      const snapshot = await this.loadImpl(creatorId, tx);
+      await fn(snapshot);
+      await this.saveForCreatorInTransaction(creatorId, snapshot, tx);
+    }, { timeout: 30_000, isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted });
   }
 }

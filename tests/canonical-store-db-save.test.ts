@@ -45,6 +45,7 @@ describe("deduplicatePostVersionsForSave", () => {
 function mockTx() {
   const postCreate = vi.fn().mockResolvedValue({});
   const tx = {
+    $queryRaw: vi.fn().mockResolvedValue([{ locked: 1 }]),
     postTier: {
       deleteMany: vi.fn().mockResolvedValue({}),
       count: vi.fn().mockResolvedValue(0),
@@ -54,7 +55,7 @@ function mockTx() {
       deleteMany: vi.fn().mockResolvedValue({}), createMany: vi.fn().mockResolvedValue({}),
       findMany: vi.fn().mockResolvedValue([]), updateMany: vi.fn().mockResolvedValue({ count: 1 })
     },
-    postVersion: { deleteMany: vi.fn().mockResolvedValue({}) },
+    postVersion: { deleteMany: vi.fn().mockResolvedValue({}), findMany: vi.fn().mockResolvedValue([]) },
     post: {
       deleteMany: vi.fn().mockResolvedValue({}),
       findMany: vi.fn().mockResolvedValue([]),
@@ -76,7 +77,7 @@ function mockTx() {
       upsert: vi.fn().mockResolvedValue({}),
       delete: vi.fn().mockResolvedValue({})
     },
-    ingestIdempotencyKey: { deleteMany: vi.fn().mockResolvedValue({}), createMany: vi.fn().mockResolvedValue({}) },
+    ingestIdempotencyKey: { deleteMany: vi.fn().mockResolvedValue({}), createMany: vi.fn().mockResolvedValue({}), findMany: vi.fn().mockResolvedValue([]) },
     postPresentation: { findMany: vi.fn().mockResolvedValue([]), create: vi.fn().mockResolvedValue({}) },
     creativeWorkMember: {
       findMany: vi.fn().mockResolvedValue([]),
@@ -132,10 +133,13 @@ describe("DbCanonicalStore legacy replay compatibility", () => {
       ingestIdempotencyKey: { findMany: vi.fn(async () => keys) }
     };
     tx.post.findMany.mockImplementation(async ({ where }: { where: { creatorId: unknown; source: string } }) =>
-      where.creatorId === "cr1" ? posts.filter((p) => p.source === where.source).map((p) => ({
+      where.creatorId === "cr1" ? posts.filter((p) => !where.source || p.source === where.source).map((p) => ({
         ...p, versions: versions.filter((v: { postId: string }) => v.postId === p.id)
       })) : []
     );
+    tx.campaign.findMany.mockImplementation(async ({ select }) => select ? [] : prisma.campaign.findMany());
+    tx.postVersion.findMany = prisma.postVersion.findMany;
+    tx.ingestIdempotencyKey.findMany = prisma.ingestIdempotencyKey.findMany;
     const store = new DbCanonicalStore(prisma as never);
     const bus = new InMemoryEventBus();
     const service = new IngestService(store, bus);
@@ -147,8 +151,10 @@ describe("DbCanonicalStore legacy replay compatibility", () => {
     const incoming: SyncBatchInput = { creator_id: "cr1", posts: [{ ...original.posts![0]!, post_id: "post", upstream_revision: "part|r1", title: "Distinct" }] };
     const identity: ReplayIdentity = ["ingest_post", "cr1", "post", "part|r1"];
     const callsBeforeConflict = prisma.$transaction.mock.calls.length;
+    const savesBeforeConflict = tx.ingestIdempotencyKey.deleteMany.mock.calls.length;
     await expect(service.runBatch(structuredClone(incoming), "trace")).rejects.toThrow(IngestReplayConflict);
-    expect(prisma.$transaction).toHaveBeenCalledTimes(callsBeforeConflict);
+    expect(prisma.$transaction).toHaveBeenCalledTimes(callsBeforeConflict + 1);
+    expect(tx.ingestIdempotencyKey.deleteMany).toHaveBeenCalledTimes(savesBeforeConflict);
     expect(bus.getAll()).toEqual([]);
     expect(await service.runBatch(structuredClone(incoming), "trace", undefined, [{ parts: identity, action: "import_once" }]))
       .toMatchObject({ posts_written: 1, events_emitted: 1 });
@@ -174,12 +180,13 @@ describe("DbCanonicalStore legacy replay compatibility", () => {
       tier: { findMany: vi.fn().mockResolvedValue([]) }, post: { findMany: vi.fn().mockResolvedValue([]) },
       postVersion: { findMany: vi.fn().mockResolvedValue([]) }, mediaAsset: { findMany: vi.fn().mockResolvedValue([]) },
       ingestIdempotencyKey: { findMany: vi.fn().mockResolvedValue([{ batchKey: legacyIngestIdempotencyKey(identity), firstSeenAt: new Date(timestamp) }]) },
-      $transaction: vi.fn()
+      $queryRaw: vi.fn().mockResolvedValue([{ locked: 1 }]),
+      $transaction: vi.fn(async (work: (tx: unknown) => Promise<void>) => work(prisma))
     };
     const input = { creator_id: "cr1", campaigns: [{ campaign_id: "camp|part", name: "New", upstream_updated_at: timestamp }] };
     await expect(new IngestService(new DbCanonicalStore(prisma as never), new InMemoryEventBus()).runBatch(input, "trace"))
       .rejects.toThrow(IngestReplayConflict);
-    expect(prisma.$transaction).not.toHaveBeenCalled();
+    expect(prisma.$transaction).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -217,7 +224,7 @@ describe("DbCanonicalStore refreshed-post relationships", () => {
     let keys = Object.entries(snapshot.ingest_idempotency).map(([batchKey, meta]) => ({ batchKey, firstSeenAt: new Date(meta.first_seen_at) }));
     let tierLinks: { postId: string; tierId: string }[] = [];
     tx.post.findMany.mockImplementation(async ({ where }) =>
-      where.creatorId === "cr1" ? posts.filter((p) => p.source === where.source) : []
+      where.creatorId === "cr1" ? posts.filter((p) => !where.source || p.source === where.source) : []
     );
     tx.post.deleteMany.mockImplementation(async () => {
       posts.length = 0;
@@ -247,6 +254,10 @@ describe("DbCanonicalStore refreshed-post relationships", () => {
       mediaAsset: { findMany: vi.fn().mockResolvedValue([]) },
       ingestIdempotencyKey: { findMany: vi.fn(async () => keys) }
     };
+    tx.campaign.findMany.mockImplementation(async ({ select }) => select ? [] : prisma.campaign.findMany());
+    tx.tier.findMany.mockImplementation(async ({ select }) => select ? [] : prisma.tier.findMany());
+    tx.postVersion.findMany = prisma.postVersion.findMany;
+    tx.ingestIdempotencyKey.findMany = prisma.ingestIdempotencyKey.findMany;
     const store = new DbCanonicalStore(prisma as never);
     const bus = new InMemoryEventBus();
     const service = new IngestService(store, bus);
