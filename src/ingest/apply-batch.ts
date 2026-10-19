@@ -11,6 +11,7 @@ import { getTierExpansionReplayState } from "./auto-enrich.js";
 import { ingestDeletionIdempotencyKey, ingestIdempotencyKey } from "./idempotency.js";
 import type { ApplyBatchResult, SyncBatchInput } from "./types.js";
 import { mirrorSnapshotSourceForIngestPostId } from "./mirror-post-source.js";
+import { prepareReplayChecks, type ReplayResolution, type ReplayCheck } from "./replay-compatibility.js";
 
 function ensureNested<T extends Record<string, Record<string, unknown>>>(
   root: T,
@@ -33,6 +34,7 @@ function nowIso(): string {
  * @param {string} jobId
  * @param {string} traceId
  * @param {import("../events/event-bus.js").RelayEventBus} eventBus
+ * @param {ReplayResolution[]} [resolutions] Operator-only exact identity decisions.
  * @returns {import("./types.js").ApplyBatchResult}
  */
 export function applySyncBatchToSnapshot(
@@ -40,8 +42,15 @@ export function applySyncBatchToSnapshot(
   batch: SyncBatchInput,
   jobId: string,
   traceId: string,
-  eventBus: RelayEventBus
+  eventBus: RelayEventBus,
+  resolutions: ReplayResolution[] = []
 ): ApplyBatchResult {
+  const replayChecks = prepareReplayChecks(snapshot, batch, resolutions);
+  const isReplay = (key: string): boolean => {
+    const check = replayChecks.get(key)!;
+    if (check.legacy) snapshot.ingest_idempotency[key] ??= check.legacy;
+    return check.replay || !!snapshot.ingest_idempotency[key];
+  };
   const result: ApplyBatchResult = {
     job_id: jobId,
     idempotent_skips: 0,
@@ -62,7 +71,7 @@ export function applySyncBatchToSnapshot(
       c.campaign_id,
       c.upstream_updated_at
     ]);
-    if (snapshot.ingest_idempotency[cKey]) {
+    if (isReplay(cKey)) {
       result.idempotent_skips += 1;
       continue;
     }
@@ -87,7 +96,7 @@ export function applySyncBatchToSnapshot(
       t.tier_id,
       t.upstream_updated_at
     ]);
-    if (snapshot.ingest_idempotency[tKey]) {
+    if (isReplay(tKey)) {
       result.idempotent_skips += 1;
       continue;
     }
@@ -121,7 +130,8 @@ export function applySyncBatchToSnapshot(
       p.upstream_revision
     ]);
     const expansionState = getTierExpansionReplayState(p, snapshot.posts[creatorId]?.[p.post_id]);
-    if (expansionState === "replay" || (snapshot.ingest_idempotency[idemKey] && expansionState !== "changed")) {
+    const replay = isReplay(idemKey);
+    if (expansionState === "replay" || (replay && expansionState !== "changed")) {
       const mediaIds = new Set(snapshot.posts[creatorId]?.[p.post_id]?.current.media_ids);
       for (const m of p.media) {
         const media = snapshot.media[creatorId]?.[m.media_id];
@@ -148,7 +158,9 @@ export function applySyncBatchToSnapshot(
     const mediaIds: string[] = [];
     for (const m of p.media) {
       mediaIds.push(m.media_id);
-      upsertMediaForPost(snapshot, creatorId, p.post_id, m, result);
+      upsertMediaForPost(snapshot, creatorId, p.post_id, m, result, replayChecks.get(ingestIdempotencyKey([
+        "ingest_media_rev", creatorId, m.media_id, m.upstream_revision
+      ]))!);
     }
 
     // tag_ids: upstream (Patreon) only for this version. Relay-only tags live in
@@ -236,16 +248,14 @@ function upsertMediaForPost(
     storage_key?: string;
     role?: string;
   },
-  result: ApplyBatchResult
+  result: ApplyBatchResult,
+  replayCheck: ReplayCheck
 ): void {
   const mediaMap = ensureNested(snapshot.media, creatorId);
   const existing = mediaMap[m.media_id] as MediaRow | undefined;
-  const mediaIdemKey = ingestIdempotencyKey([
-    "ingest_media_rev",
-    creatorId,
-    m.media_id,
-    m.upstream_revision
-  ]);
+  const mediaIdemKey = replayCheck.key;
+  if (replayCheck.legacy) snapshot.ingest_idempotency[mediaIdemKey] ??= replayCheck.legacy;
+  if (!existing && (replayCheck.replay || snapshot.ingest_idempotency[mediaIdemKey])) return;
 
   if (!existing) {
     const mv = {
@@ -273,13 +283,14 @@ function upsertMediaForPost(
   existing.post_ids = uniquePush(existing.post_ids, postId);
 
   if (existing.current.upstream_revision === m.upstream_revision) {
+    snapshot.ingest_idempotency[mediaIdemKey] ??= { first_seen_at: nowIso() };
     if (m.upstream_url?.trim()) {
       existing.current.upstream_url = m.upstream_url;
     }
     return;
   }
 
-  if (snapshot.ingest_idempotency[mediaIdemKey]) {
+  if (replayCheck.replay || snapshot.ingest_idempotency[mediaIdemKey]) {
     return;
   }
   snapshot.ingest_idempotency[mediaIdemKey] = { first_seen_at: nowIso() };

@@ -12,6 +12,7 @@ import { enrichBatch } from "./auto-enrich.js";
 import type { CanonicalStore } from "./canonical-store.js";
 import { recordIngestBatchResult } from "./ingest-health-metrics.js";
 import type { ApplyBatchResult, SyncBatchInput } from "./types.js";
+import type { ReplayResolution } from "./replay-compatibility.js";
 
 export class IngestService {
   private readonly store: CanonicalStore;
@@ -27,20 +28,22 @@ export class IngestService {
    * @param {import("./types.js").SyncBatchInput} batch
    * @param {string} traceId
    * @param {string} [jobId]
+   * @param {ReplayResolution[]} [resolutions] Operator-only exact identity decisions.
    * @returns {Promise<import("./types.js").ApplyBatchResult>}
    * @async
    */
   public async runBatch(
     batch: SyncBatchInput,
     traceId: string,
-    jobId?: string
+    jobId?: string,
+    resolutions: ReplayResolution[] = []
   ): Promise<ApplyBatchResult> {
     const id = jobId ?? `job_${randomUUID()}`;
     const creatorId = batch.creator_id;
     const { batch: enriched, notes } = enrichBatch(batch);
     let result!: ApplyBatchResult;
     await this.store.mutateForCreator(creatorId, (snapshot) => {
-      result = applySyncBatchToSnapshot(snapshot, enriched, id, traceId, this.eventBus);
+      result = applySyncBatchToSnapshot(snapshot, enriched, id, traceId, this.eventBus, resolutions);
     });
     if (notes.length > 0) {
       result = { ...result, ingest_notes: notes };

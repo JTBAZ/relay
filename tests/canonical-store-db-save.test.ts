@@ -4,6 +4,9 @@ import { InMemoryEventBus } from "../src/events/event-bus.js";
 import { applySyncBatchToSnapshot } from "../src/ingest/apply-batch.js";
 import { enrichBatch } from "../src/ingest/auto-enrich.js";
 import type { SyncBatchInput } from "../src/ingest/types.js";
+import { IngestService } from "../src/ingest/ingest-service.js";
+import { ingestIdempotencyKey, legacyIngestIdempotencyKey } from "../src/ingest/idempotency.js";
+import { IngestReplayConflict, type ReplayIdentity } from "../src/ingest/replay-compatibility.js";
 import {
   DbCanonicalStore,
   deduplicatePostVersionsForSave
@@ -97,6 +100,87 @@ function mockPrisma(txFactory: () => { tx: ReturnType<typeof mockTx>["tx"] }) {
     })
   };
 }
+
+describe("DbCanonicalStore legacy replay compatibility", () => {
+  it("round-trips legacy proof, unresolved collisions and exact reconciliation without a schema change", async () => {
+    const { tx } = mockTx();
+    const snapshot: CanonicalSnapshot = { ingest_idempotency: {}, campaigns: {}, tiers: {}, posts: {}, media: {} };
+    const timestamp = "2026-10-01T00:00:00.000Z";
+    const original: SyncBatchInput = {
+      creator_id: "cr1", campaigns: [{ campaign_id: "camp1", name: "Main", upstream_updated_at: timestamp }],
+      posts: [{ post_id: "post|part", upstream_revision: "r1", title: "Original", published_at: timestamp, tag_ids: [], tier_ids: [], media: [] }]
+    };
+    applySyncBatchToSnapshot(snapshot, original, "seed", "trace", new InMemoryEventBus());
+    const legacyIdentity: ReplayIdentity = ["ingest_post", "cr1", "post|part", "r1"];
+    const legacyKey = legacyIngestIdempotencyKey(legacyIdentity);
+    delete snapshot.ingest_idempotency[ingestIdempotencyKey(legacyIdentity)];
+    snapshot.ingest_idempotency[legacyKey] = { first_seen_at: timestamp };
+    const storeForSeed = new DbCanonicalStore(mockPrisma(() => ({ tx })) as never);
+    await storeForSeed.saveForCreator("cr1", snapshot);
+    let keys = tx.ingestIdempotencyKey.createMany.mock.calls.at(-1)![0].data;
+    const posts = [{ id: "post|part", creatorId: "cr1", campaignId: "camp1", source: "PATREON", upstreamStatus: "active", isPublic: false }];
+    const versions = tx.post.create.mock.calls[0]![0].data.versions.create.map((v: object) => ({ ...v, postId: "post|part" }));
+    tx.post.create.mockClear();
+    const prisma = {
+      ...mockPrisma(() => ({ tx })),
+      campaign: { findMany: vi.fn().mockResolvedValue([{ id: "camp1", creatorId: "cr1", name: "Main", upstreamUpdatedAt: new Date(timestamp), versionSeq: 1 }]) },
+      tier: { findMany: vi.fn().mockResolvedValue([]) },
+      post: { findMany: vi.fn(async () => posts) },
+      postVersion: { findMany: vi.fn(async () => versions) },
+      mediaAsset: { findMany: vi.fn().mockResolvedValue([]) },
+      ingestIdempotencyKey: { findMany: vi.fn(async () => keys) }
+    };
+    tx.post.findMany.mockImplementation(async ({ where }: { where: { creatorId: unknown; source: string } }) =>
+      where.creatorId === "cr1" ? posts.filter((p) => p.source === where.source).map((p) => ({
+        ...p, versions: versions.filter((v: { postId: string }) => v.postId === p.id)
+      })) : []
+    );
+    const store = new DbCanonicalStore(prisma as never);
+    const bus = new InMemoryEventBus();
+    const service = new IngestService(store, bus);
+    expect((await store.loadForCreator("cr1")).ingest_idempotency[legacyKey]).toEqual({ first_seen_at: timestamp });
+    expect(await service.runBatch(structuredClone(original), "trace")).toMatchObject({ posts_written: 0, events_emitted: 0 });
+    keys = tx.ingestIdempotencyKey.createMany.mock.calls.at(-1)![0].data;
+    expect(keys.some((row: { batchKey: string }) => row.batchKey === legacyKey)).toBe(true);
+    expect(keys.some((row: { batchKey: string }) => row.batchKey === ingestIdempotencyKey(legacyIdentity))).toBe(true);
+    const incoming: SyncBatchInput = { creator_id: "cr1", posts: [{ ...original.posts![0]!, post_id: "post", upstream_revision: "part|r1", title: "Distinct" }] };
+    const identity: ReplayIdentity = ["ingest_post", "cr1", "post", "part|r1"];
+    const callsBeforeConflict = prisma.$transaction.mock.calls.length;
+    await expect(service.runBatch(structuredClone(incoming), "trace")).rejects.toThrow(IngestReplayConflict);
+    expect(prisma.$transaction).toHaveBeenCalledTimes(callsBeforeConflict);
+    expect(bus.getAll()).toEqual([]);
+    expect(await service.runBatch(structuredClone(incoming), "trace", undefined, [{ parts: identity, action: "import_once" }]))
+      .toMatchObject({ posts_written: 1, events_emitted: 1 });
+    expect(tx.post.create).toHaveBeenCalledTimes(1);
+    const saved = tx.post.create.mock.calls[0]![0].data;
+    expect(saved).toMatchObject({ id: "post", creatorId: "cr1" });
+    versions.push(...saved.versions.create.map((v: object) => ({ ...v, postId: "post" })));
+    posts.push({ ...posts[0]!, id: "post" });
+    keys = tx.ingestIdempotencyKey.createMany.mock.calls.at(-1)![0].data;
+    tx.post.create.mockClear();
+    expect(await new IngestService(new DbCanonicalStore(prisma as never), bus).runBatch(structuredClone(incoming), "trace"))
+      .toMatchObject({ posts_written: 0, events_emitted: 0 });
+    expect(tx.post.create).not.toHaveBeenCalled();
+    expect((await store.loadForCreator("cr1")).ingest_idempotency[legacyKey]).toEqual({ first_seen_at: timestamp });
+    expect(bus.getAll()).toHaveLength(1);
+  });
+
+  it("does not use normalized database campaign timestamps as exact legacy identity evidence", async () => {
+    const timestamp = "2026-10-01T00:00:00.000Z";
+    const identity: ReplayIdentity = ["ingest_campaign", "cr1", "camp|part", timestamp];
+    const prisma = {
+      campaign: { findMany: vi.fn().mockResolvedValue([{ id: "camp|part", creatorId: "cr1", name: "Main", upstreamUpdatedAt: new Date(timestamp), versionSeq: 1 }]) },
+      tier: { findMany: vi.fn().mockResolvedValue([]) }, post: { findMany: vi.fn().mockResolvedValue([]) },
+      postVersion: { findMany: vi.fn().mockResolvedValue([]) }, mediaAsset: { findMany: vi.fn().mockResolvedValue([]) },
+      ingestIdempotencyKey: { findMany: vi.fn().mockResolvedValue([{ batchKey: legacyIngestIdempotencyKey(identity), firstSeenAt: new Date(timestamp) }]) },
+      $transaction: vi.fn()
+    };
+    const input = { creator_id: "cr1", campaigns: [{ campaign_id: "camp|part", name: "New", upstream_updated_at: timestamp }] };
+    await expect(new IngestService(new DbCanonicalStore(prisma as never), new InMemoryEventBus()).runBatch(input, "trace"))
+      .rejects.toThrow(IngestReplayConflict);
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+});
 
 describe("DbCanonicalStore expanded all-paid access", () => {
   it("rebuilds tier links for changed legacy access and preserves the resulting replay", async () => {

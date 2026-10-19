@@ -38,7 +38,7 @@ function snapshotMirrorDbSource(p: PostRow): PostSource {
 }
 
 /**
- * `ingest_idempotency` in `canonical.json` stores legacy digests and namespaced deletion keys; the DB row also
+ * `ingest_idempotency` stores legacy digests, v2 tuple keys and namespaced deletion keys; the DB row also
  * requires `creator_id`. We use a sentinel for rows restored from a flat snapshot map.
  */
 export const RELAY_IDEMPOTENCY_CREATOR_SENTINEL = "_relay_snapshot_";
@@ -208,6 +208,7 @@ export class DbCanonicalStore implements CanonicalStore {
     ]);
 
     const snapshot = emptySnapshot();
+    if (campaigns.length || tiers.length) snapshot.legacy_timestamps_normalized = true;
 
     for (const r of idemRows) {
       snapshot.ingest_idempotency[r.batchKey] = {

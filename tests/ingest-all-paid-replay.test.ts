@@ -6,7 +6,7 @@ import { canAccessPost } from "../src/clone/tier-rules.js";
 import { InMemoryEventBus } from "../src/events/event-bus.js";
 import { applySyncBatchToSnapshot } from "../src/ingest/apply-batch.js";
 import { FileCanonicalStore, type CanonicalSnapshot } from "../src/ingest/canonical-store.js";
-import { ingestIdempotencyKey } from "../src/ingest/idempotency.js";
+import { ingestIdempotencyKey, legacyIngestIdempotencyKey } from "../src/ingest/idempotency.js";
 import { IngestService } from "../src/ingest/ingest-service.js";
 import type { IngestTier, SyncBatchInput } from "../src/ingest/types.js";
 import { RELAY_TIER_ALL_PATRONS } from "../src/patreon/relay-access-tiers.js";
@@ -39,6 +39,14 @@ async function fixture(legacy = false) {
     const input = batch([a, free], "r1:tier_expand");
     input.posts![0]!.tier_ids = [a.tier_id];
     applySyncBatchToSnapshot(snapshot, input, "legacy", "trace", bus);
+    const identities = [
+      ...input.campaigns!.map((c) => ["ingest_campaign", "c1", c.campaign_id, c.upstream_updated_at]),
+      ...input.tiers!.map((t) => ["ingest_tier", "c1", t.tier_id, t.upstream_updated_at]),
+      ["ingest_post", "c1", "p1", "r1:tier_expand"], ["ingest_media_rev", "c1", "m1", "m1"]
+    ];
+    snapshot.ingest_idempotency = Object.fromEntries(identities.map((identity) => [
+      legacyIngestIdempotencyKey(identity), snapshot.ingest_idempotency[ingestIdempotencyKey(identity)]!
+    ]));
     await store.save(snapshot);
   }
   return { root, path, store, bus, ingest: new IngestService(store, bus) };
@@ -69,12 +77,15 @@ describe("all-paid expanded replay", () => {
   it("keeps unchanged legacy suffixes, content and markers without republishing on rollout", async () => {
     const f = await fixture(true);
     try {
-      const before = await readFile(f.path, "utf8");
+      const before = await f.store.load();
       const input = batch([free, a, a]);
       input.posts![0]!.title = "Duplicate content must not overwrite the legacy post";
       const result = await f.ingest.runBatch(input, "trace");
       expect(result).toMatchObject({ posts_written: 0, events_emitted: 0 });
-      expect(await readFile(f.path, "utf8")).toBe(before);
+      const after = await f.store.load();
+      expect(after.posts).toEqual(before.posts);
+      expect(after.media).toEqual(before.media);
+      expect(after.ingest_idempotency).toMatchObject(before.ingest_idempotency);
       expect((await f.store.load()).posts.c1!.p1!.current.upstream_revision).toBe("r1:tier_expand");
       expect(f.bus.getAll()).toHaveLength(1);
     } finally { await rm(f.root, { recursive: true, force: true }); }
@@ -135,7 +146,7 @@ describe("all-paid expanded replay", () => {
       expect(await f.ingest.runBatch(foreign, "trace")).toMatchObject({ posts_written: 1 });
       expect((await f.store.load()).posts.c1).toEqual(before);
       expect((await f.store.load()).posts.c2!.p1!.current.tier_ids).toEqual([a.tier_id, b.tier_id]);
-      const legacyKey = ingestIdempotencyKey(["ingest_post", "c1", "p1", "r1:tier_expand"]);
+      const legacyKey = legacyIngestIdempotencyKey(["ingest_post", "c1", "p1", "r1:tier_expand"]);
       expect((await f.store.load()).ingest_idempotency[legacyKey]).toBeDefined();
     } finally { await rm(f.root, { recursive: true, force: true }); }
   });

@@ -1,4 +1,4 @@
-import { readFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -7,6 +7,7 @@ import request from "supertest";
 import { describe, expect, it, vi } from "vitest";
 import type { CanonicalSnapshot } from "../src/ingest/canonical-store.js";
 import { IngestService } from "../src/ingest/ingest-service.js";
+import { ingestIdempotencyKey, legacyIngestIdempotencyKey } from "../src/ingest/idempotency.js";
 import { createApp } from "../src/server.js";
 
 function baseConfig(tempDir: string) {
@@ -47,6 +48,32 @@ const samplePost = (revision: string) => ({
 });
 
 describe("Workstream B ingest", () => {
+  it("stops an ambiguous legacy replay before HTTP batch writes or events and ignores wire overrides", async () => {
+    const tempDir = await mkdtemp(join(tmpdir(), "relay-b-replay-conflict-"));
+    try {
+      const { app, eventBus } = createApp(baseConfig(tempDir));
+      const endpoint = "/api/v1/ingest/batches?process_sync=true";
+      const owner = { ...samplePost("r1"), post_id: "post|part", media: [] };
+      await request(app).post(endpoint).send({ creator_id: "c1", posts: [owner] }).expect(200);
+      const path = join(tempDir, "canonical.json");
+      const snapshot = JSON.parse(await readFile(path, "utf8")) as CanonicalSnapshot;
+      const identity = ["ingest_post", "c1", "post|part", "r1"];
+      snapshot.ingest_idempotency[legacyIngestIdempotencyKey(identity)] = snapshot.ingest_idempotency[ingestIdempotencyKey(identity)]!;
+      delete snapshot.ingest_idempotency[ingestIdempotencyKey(identity)];
+      await writeFile(path, JSON.stringify(snapshot));
+      const before = await readFile(path, "utf8");
+      const eventCount = eventBus.getAll().length;
+      const response = await request(app).post(endpoint).send({
+        creator_id: "c1", posts: [samplePost("new"), { ...owner, post_id: "post", upstream_revision: "part|r1" }],
+        replay_resolutions: [{ parts: ["ingest_post", "c1", "post", "part|r1"], action: "import_once" }]
+      });
+      expect(response.status).toBe(500);
+      expect(response.body.error).toMatchObject({ code: "INTERNAL", message: "Unable to apply ingest batch." });
+      expect(await readFile(path, "utf8")).toBe(before);
+      expect(eventBus.getAll()).toHaveLength(eventCount);
+    } finally { await rm(tempDir, { recursive: true, force: true }); }
+  });
+
   it("returns a generic failure when synchronous deletion persistence rejects", async () => {
     const tempDir = await mkdtemp(join(tmpdir(), "relay-b-deletion-failure-"));
     const failure = vi.spyOn(IngestService.prototype, "runBatch").mockRejectedValueOnce(new Error("private storage detail"));

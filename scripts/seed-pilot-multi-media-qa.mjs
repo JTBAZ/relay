@@ -68,7 +68,7 @@ const SEED_POSTS = [
 ];
 
 const { prisma } = await import("../dist/src/lib/db.js");
-const { ingestIdempotencyKey } = await import("../dist/src/ingest/idempotency.js");
+const { ingestIdempotencyKey, legacyIngestIdempotencyKey } = await import("../dist/src/ingest/idempotency.js");
 
 function multiMediaIdempotencyKeys() {
   const keys = [];
@@ -85,6 +85,13 @@ function multiMediaIdempotencyKeys() {
           media.upstream_revision
         ])
       );
+    }
+  }
+  // Seed identities contain no delimiters, so these legacy keys have one owner.
+  for (const post of SEED_POSTS) {
+    keys.push(legacyIngestIdempotencyKey(["ingest_post", CREATOR_ID, post.post_id, post.upstream_revision]));
+    for (const media of post.media) {
+      keys.push(legacyIngestIdempotencyKey(["ingest_media_rev", CREATOR_ID, media.media_id, media.upstream_revision]));
     }
   }
   return keys;

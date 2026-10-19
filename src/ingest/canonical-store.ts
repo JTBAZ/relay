@@ -81,6 +81,8 @@ export type MediaRow = {
 };
 
 export type CanonicalSnapshot = {
+  /** DB DateTime round trips cannot prove the original campaign/tier identity strings. */
+  legacy_timestamps_normalized?: true;
   ingest_idempotency: Record<string, { first_seen_at: string }>;
   campaigns: Record<string, Record<string, CampaignRow>>;
   tiers: Record<string, Record<string, TierRow>>;
@@ -141,8 +143,9 @@ export class FileCanonicalStore implements CanonicalStore {
     try {
       const raw = await readFile(this.filePath, "utf8");
       return JSON.parse(raw) as CanonicalSnapshot;
-    } catch {
-      return emptySnapshot();
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return emptySnapshot();
+      throw error;
     }
   }
 
