@@ -9,7 +9,8 @@ import {
   InMemoryIdempotencyStore
 } from "../../src/middleware/idempotency-store.js";
 import {
-  buildIdempotencyMiddleware
+  buildIdempotencyMiddleware,
+  markIdempotencyPreWriteFailure
 } from "../../src/middleware/idempotency-middleware.js";
 
 interface ServerHandle {
@@ -103,6 +104,28 @@ describe("idempotency middleware", () => {
     expect(body.error?.code).toBe("VALIDATION_ERROR");
   });
 
+  it("retries an explicitly known pre-write failure after recovery", async () => {
+    handle = await startServer({ store: new InMemoryIdempotencyStore(), handler: (_req, res) => {
+      if (handle.callCount() === 1) {
+        markIdempotencyPreWriteFailure(res);
+        res.status(503).json({ error: "Read unavailable" });
+        return;
+      }
+      res.status(201).json({ ok: true });
+    } });
+    const options = {
+      method: "POST", headers: { "content-type": "application/json", "Idempotency-Key": "read-recovery" }, body: "{}"
+    };
+    expect((await fetch(`${handle.url}/echo`, options)).status).toBe(503);
+    const retry = await fetch(`${handle.url}/echo`, options);
+    expect(retry.status).toBe(201);
+    expect(retry.headers.get("idempotency-replayed")).toBeNull();
+    const replay = await fetch(`${handle.url}/echo`, options);
+    expect(replay.status).toBe(201);
+    expect(replay.headers.get("idempotency-replayed")).toBe("true");
+    expect(handle.callCount()).toBe(2);
+  });
+
   it("replays the original response on retry with the same key + body", async () => {
     handle = await startServer({ store: new InMemoryIdempotencyStore() });
     const headers = {
@@ -120,6 +143,59 @@ describe("idempotency middleware", () => {
     expect(j2.n).toBe(j1.n);
     expect(handle.callCount()).toBe(1);
     expect(r2.headers.get("idempotency-replayed")).toBe("true");
+  });
+
+  it.each([201, 400])("still replays status %s if a handler marks it as pre-write", async (status) => {
+    handle = await startServer({ store: new InMemoryIdempotencyStore(), handler: (_req, res) => {
+      markIdempotencyPreWriteFailure(res);
+      res.status(status).json({ status });
+    } });
+    const options = { method: "POST", headers: { "Idempotency-Key": "status-guard" } };
+    expect((await fetch(`${handle.url}/echo`, options)).status).toBe(status);
+    const replay = await fetch(`${handle.url}/echo`, options);
+    expect(replay.status).toBe(status);
+    expect(replay.headers.get("idempotency-replayed")).toBe("true");
+    expect(handle.callCount()).toBe(1);
+  });
+
+  it("keeps the reservation protected if releasing a pre-write failure fails", async () => {
+    const store = new InMemoryIdempotencyStore();
+    vi.spyOn(store, "release").mockRejectedValue(new Error("Store unavailable"));
+    handle = await startServer({ store, handler: (_req, res) => {
+      markIdempotencyPreWriteFailure(res);
+      res.status(503).json({ error: "Read unavailable" });
+    } });
+    const options = { method: "POST", headers: { "Idempotency-Key": "release-failure" } };
+    expect((await fetch(`${handle.url}/echo`, options)).status).toBe(503);
+    expect((await fetch(`${handle.url}/echo`, options)).status).toBe(409);
+    expect(handle.callCount()).toBe(1);
+  });
+
+  it.each([false, true])("protects an unclassified 500, including a committed write (%s)", async (committed) => {
+    const tempDir = await mkdtemp(join(tmpdir(), "relay-idem-uncertain-"));
+    const collections = new FilePatronCollectionsStore(join(tempDir, "collections.json"));
+    handle = await startServer({ store: new InMemoryIdempotencyStore(), handler: async (_req, res) => {
+      try {
+        if (committed) await collections.createCollection("creator-1", "account-1", "Saved art");
+        throw new Error("Follow-up unavailable");
+      } catch {
+        res.status(500).json({ error: "Follow-up unavailable" });
+      }
+    } });
+    const options = {
+      method: "POST",
+      headers: { "content-type": "application/json", "Idempotency-Key": "uncertain", "Idempotency-Pre-Write-Failure": "true" },
+      body: JSON.stringify({ idempotencyPreWriteFailure: true })
+    };
+    const first = await fetch(`${handle.url}/echo`, options);
+    expect(first.status).toBe(500);
+    const original = await first.json();
+    const retry = await fetch(`${handle.url}/echo`, options);
+    expect(retry.status).toBe(500);
+    expect(retry.headers.get("idempotency-replayed")).toBe("true");
+    expect(await retry.json()).toEqual(original);
+    expect(handle.callCount()).toBe(1);
+    expect((await collections.load()).collections).toHaveLength(committed ? 1 : 0);
   });
 
   it("rejects same-key + different-body with 422 IDEMPOTENCY_KEY_REUSE", async () => {
@@ -254,7 +330,12 @@ describe("idempotency middleware", () => {
     }
   });
 
-  it.each(["before", "after"])("ignores an expired request completing %s the newer request", async (order) => {
+  it.each([
+    { order: "before", preWriteFailure: false },
+    { order: "after", preWriteFailure: false },
+    { order: "before", preWriteFailure: true },
+    { order: "after", preWriteFailure: true }
+  ])("ignores an expired request completing $order the newer request (pre-write failure: $preWriteFailure)", async ({ order, preWriteFailure }) => {
     const now = Date.now();
     const clock = vi.spyOn(Date, "now").mockReturnValue(now);
     let startedA!: () => void;
@@ -266,7 +347,12 @@ describe("idempotency middleware", () => {
     handle = await startServer({
       store: new InMemoryIdempotencyStore(),
       handler: (req, res) => {
-        const finish = () => { if (!res.writableEnded) res.status(201).json({ owner: req.body.owner }); };
+        const finish = () => {
+          if (res.writableEnded) return;
+          const failed = req.body.owner === "A" && preWriteFailure;
+          if (failed) markIdempotencyPreWriteFailure(res);
+          res.status(failed ? 503 : 201).json({ owner: req.body.owner });
+        };
         if (req.body.owner === "A") { finishA = finish; startedA(); }
         else { finishB = finish; startedB(); }
       }
@@ -284,7 +370,7 @@ describe("idempotency middleware", () => {
       await pendingB;
       if (order === "before") {
         finishA();
-        expect((await a).status).toBe(201);
+        expect((await a).status).toBe(preWriteFailure ? 503 : 201);
         const retry = await send("B");
         expect(retry.status).toBe(409);
         expect((await retry.json()).error.code).toBe("IDEMPOTENCY_IN_FLIGHT");
@@ -293,7 +379,7 @@ describe("idempotency middleware", () => {
       expect((await b).status).toBe(201);
       if (order === "after") {
         finishA();
-        expect((await a).status).toBe(201);
+        expect((await a).status).toBe(preWriteFailure ? 503 : 201);
       }
       const replay = await send("B");
       expect(replay.status).toBe(201);

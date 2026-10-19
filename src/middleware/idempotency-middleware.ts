@@ -19,6 +19,10 @@
  *     The middleware reserves the key, executes the wrapped handler chain,
  *     captures the final response, and records it under the key. Concurrent retries see
  *     "in_flight" and 409. Subsequent retries see "replay" and get the cached response.
+ *   - A handler may mark a failure known to precede its mutation with
+ *     `markIdempotencyPreWriteFailure(res)` immediately before returning a JSON 5xx.
+ *     Only that outcome releases the owned reservation. Unmarked errors (including 5xx)
+ *     replay their original status and body for 24h by default, with Idempotency-Replayed: true.
  *
  * Body-fingerprint enforcement:
  *
@@ -50,6 +54,12 @@ const DEFAULT_LOCK_TTL_MS = 60_000;
 const DEFAULT_RESPONSE_TTL_MS = 24 * 60 * 60 * 1000;
 /** Headers we replay verbatim on cache hit. Anything not on this allow-list is dropped. */
 const REPLAY_HEADER_ALLOWLIST = new Set(["content-type", "cache-control", "x-trace-id"]);
+const preWriteFailures = new WeakSet<Response>();
+
+/** Use only after proving no mutation occurred; immediately return a JSON 5xx after marking. */
+export function markIdempotencyPreWriteFailure(res: Response): void {
+  preWriteFailures.add(res);
+}
 
 function traceIdFromRequest(req: Request): string {
   const v = req.header("x-trace-id");
@@ -215,6 +225,12 @@ export function buildIdempotencyMiddleware(options: IdempotencyMiddlewareOptions
     res.json = function patchedJson(body: unknown) {
       capturedBody = body;
       const result = originalJson(body);
+      if (res.statusCode >= 500 && res.statusCode < 600 && preWriteFailures.has(res)) {
+        void store.release(key, reserve.reservationId).catch(() => {
+          /* Retain the lock if release fails; a retry must not bypass the store. */
+        });
+        return result;
+      }
       // Snapshot only allow-listed headers (anything else is intentionally dropped on replay).
       for (const name of REPLAY_HEADER_ALLOWLIST) {
         const v = res.getHeader(name);
@@ -223,7 +239,7 @@ export function buildIdempotencyMiddleware(options: IdempotencyMiddlewareOptions
         else if (typeof v === "number") capturedHeaders[name] = String(v);
       }
       // Don't await here -- recording happens off the response path. Errors are swallowed
-      // because failing to cache is non-fatal; the next retry will simply re-execute.
+      // because failing to cache must not break the response; the lock remains until expiry.
       void store
         .recordResponse(
           key,

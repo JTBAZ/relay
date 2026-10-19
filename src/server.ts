@@ -53,7 +53,7 @@ import type { ProviderBudget } from "./gallery-editor/provider.js";
 import { RELAY_TIER_ALL_PATRONS, RELAY_TIER_PUBLIC } from "./patreon/relay-access-tiers.js";
 import { DbEventBus } from "./events/event-bus-db.js";
 import { InMemoryEventBus, type RelayEventBus } from "./events/event-bus.js";
-import { FileCanonicalStore } from "./ingest/canonical-store.js";
+import { FileCanonicalStore, type CanonicalSnapshot } from "./ingest/canonical-store.js";
 import { DbCanonicalStore } from "./ingest/canonical-store-db.js";
 import { DbDeadLetterQueue } from "./ingest/dlq-db.js";
 import { FileDeadLetterQueue, type DeadLetterQueue } from "./ingest/dlq.js";
@@ -150,7 +150,7 @@ import {
   scheduleLibraryZipUsage
 } from "./usage/usage-events.js";
 import { InMemoryIdempotencyStore } from "./middleware/idempotency-store.js";
-import { buildIdempotencyMiddleware } from "./middleware/idempotency-middleware.js";
+import { buildIdempotencyMiddleware, markIdempotencyPreWriteFailure } from "./middleware/idempotency-middleware.js";
 import { buildDiscoverPage } from "./patron/discover-service.js";
 import {
   listNotifications,
@@ -17402,7 +17402,14 @@ export function createApp(config: AppConfig): CreateAppResult {
     if (!(await requirePatronForCreatorId(req, res, traceId, session, creatorId))) {
       return;
     }
-    const snapshot = await canonicalStore.load();
+    let snapshot: CanonicalSnapshot;
+    try {
+      snapshot = await canonicalStore.load();
+    } catch {
+      // Catalog loading only reads; no collection entry write has been attempted.
+      markIdempotencyPreWriteFailure(res);
+      return res.status(503).json(errorEnvelope("INTERNAL", "Unable to load collection items. Retry shortly.", traceId));
+    }
     const v = validatePatronCollectionEntry(snapshot, creatorId, postId, mediaId);
     if (!v.ok) {
       return res.status(400).json(

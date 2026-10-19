@@ -3,8 +3,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { randomBytes } from "node:crypto";
 import request from "supertest";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { createApp } from "../src/server.js";
+import { FileCanonicalStore } from "../src/ingest/canonical-store.js";
+import { FilePatronCollectionsStore } from "../src/gallery/patron-collections-store.js";
 import { RELAY_TIER_PUBLIC } from "../src/patreon/relay-access-tiers.js";
 
 function testApp(tempDir: string) {
@@ -70,6 +72,64 @@ async function seedAndAuth(tempDir: string) {
 }
 
 describe("Patron collections API", () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it("retries a failed catalog read with the same key and persists one entry after recovery", async () => {
+    const tempDir = await mkdtemp(join(tmpdir(), "relay-pcol-read-retry-"));
+    const { app, token } = await seedAndAuth(tempDir);
+    const created = await request(app).post("/api/v1/patron/collections")
+      .set("Authorization", `Bearer ${token}`).send({ creator_id: "cpc", title: "Saved art" });
+    expect(created.status).toBe(201);
+    const collectionId = created.body.data.collection.collection_id;
+    const load = vi.spyOn(FileCanonicalStore.prototype, "load").mockRejectedValueOnce(new Error("Catalog unavailable"));
+    const write = vi.spyOn(FilePatronCollectionsStore.prototype, "addEntry");
+    const send = () => request(app).post(`/api/v1/patron/collections/${collectionId}/entries`)
+      .set("Authorization", `Bearer ${token}`).set("Idempotency-Key", "catalog-recovery")
+      .send({ creator_id: "cpc", post_id: "p_c", media_id: "m_1" });
+    const failed = await send();
+    expect(failed.status).toBe(503);
+    expect(load).toHaveBeenCalledTimes(1);
+    expect(write).not.toHaveBeenCalled();
+    const persisted = new FilePatronCollectionsStore(join(tempDir, "patron_collections.json"));
+    expect((await persisted.load()).entries).toHaveLength(0);
+    const retry = await send();
+    expect(retry.status).toBe(200);
+    expect(retry.headers["idempotency-replayed"]).toBeUndefined();
+    const replay = await send();
+    expect(replay.status).toBe(200);
+    expect(replay.headers["idempotency-replayed"]).toBe("true");
+    expect(replay.body).toEqual(retry.body);
+    expect(write).toHaveBeenCalledTimes(1);
+    expect((await persisted.load()).entries).toHaveLength(1);
+  });
+
+  it("protects an entry committed before its store call reports a failure", async () => {
+    const tempDir = await mkdtemp(join(tmpdir(), "relay-pcol-uncertain-retry-"));
+    const { app, token } = await seedAndAuth(tempDir);
+    const created = await request(app).post("/api/v1/patron/collections")
+      .set("Authorization", `Bearer ${token}`).send({ creator_id: "cpc", title: "Saved art" });
+    expect(created.status).toBe(201);
+    const addEntry = FilePatronCollectionsStore.prototype.addEntry;
+    const write = vi.spyOn(FilePatronCollectionsStore.prototype, "addEntry").mockImplementationOnce(
+      async function (this: FilePatronCollectionsStore, ...args: Parameters<typeof addEntry>) {
+        await addEntry.apply(this, args);
+        throw new Error("Follow-up failed after saving");
+      }
+    );
+    const send = () => request(app).post(`/api/v1/patron/collections/${created.body.data.collection.collection_id}/entries`)
+      .set("Authorization", `Bearer ${token}`).set("Idempotency-Key", "uncertain-entry")
+      .send({ creator_id: "cpc", post_id: "p_c", media_id: "m_1" });
+    const failed = await send();
+    expect(failed.status).toBe(404);
+    const replay = await send();
+    expect(replay.status).toBe(404);
+    expect(replay.headers["idempotency-replayed"]).toBe("true");
+    expect(replay.body).toEqual(failed.body);
+    expect(write).toHaveBeenCalledTimes(1);
+    const persisted = new FilePatronCollectionsStore(join(tempDir, "patron_collections.json"));
+    expect((await persisted.load()).entries).toHaveLength(1);
+  });
+
   it("isolates authenticated callers sharing a retry key and rejects unauthenticated replay", async () => {
     const tempDir = await mkdtemp(join(tmpdir(), "relay-pcol-retry-"));
     const { app, token } = await seedAndAuth(tempDir);

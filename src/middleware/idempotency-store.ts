@@ -10,11 +10,11 @@
  *   1. tryReserve(key, ttl) — atomic. Returns "fresh" with a reservation id, "in_flight" if another
  *      request is currently executing under the same key, or "replay" if a final response is
  *      already cached.
- *   2. recordResponse(key, reservationId, snapshot, ttl) — the current owner stores the response after success or
- *      after a deterministic 4xx so a retry returns the same body + status.
+ *   2. recordResponse(key, reservationId, snapshot, ttl) — the current owner stores successes, client errors,
+ *      and unclassified server errors so a retry returns the same body + status without repeating a possible write.
  *   3. getResponse(key) — replay path; returns the recorded snapshot or null.
- *   4. release(key, reservationId) — the current owner releases the lock without recording a response (used when the
- *      handler throws and we don't want to cache a 5xx).
+ *   4. release(key, reservationId) — the current owner releases the lock without recording a response only after
+ *      an explicitly classified pre-write failure. A 5xx or disconnect alone does not prove a write failed.
  *
  * # Why an interface?
  *
