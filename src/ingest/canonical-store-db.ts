@@ -696,6 +696,29 @@ export class DbCanonicalStore implements CanonicalStore {
             lane.source === PostSource.PATREON
               ? MediaIngestOrigin.PATREON
               : MediaIngestOrigin.SUBSCRIBESTAR;
+          // Unchanged posts still carry refreshed URLs for their current media revision.
+          if (lane.preserve.size > 0) {
+            const preservedMedia = await tx.mediaAsset.findMany({
+              where: { creatorId, ingestOrigin: ingestOriginLane, primaryPostId: { in: [...lane.preserve] } },
+              select: { id: true, primaryPostId: true, currentUpstreamRevision: true, currentUpstreamUrl: true }
+            });
+            for (const row of preservedMedia) {
+              const current = mediaMap[row.id]?.current;
+              if (
+                current?.upstream_url?.trim() &&
+                current.upstream_revision === row.currentUpstreamRevision &&
+                current.upstream_url !== row.currentUpstreamUrl
+              ) {
+                await tx.mediaAsset.updateMany({
+                  where: {
+                    id: row.id, creatorId, primaryPostId: row.primaryPostId, ingestOrigin: ingestOriginLane,
+                    currentUpstreamRevision: row.currentUpstreamRevision, currentUpstreamUrl: row.currentUpstreamUrl
+                  },
+                  data: { currentUpstreamUrl: current.upstream_url }
+                });
+              }
+            }
+          }
           const mediaEntries = mediaEntriesAll.filter((m) => {
             const primary = m.post_ids[0];
             if (!primary || !postIdsToMaterialize.has(primary)) {

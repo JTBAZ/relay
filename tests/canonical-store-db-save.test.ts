@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
-import type { PostVersionRow } from "../src/ingest/canonical-store.js";
+import type { CanonicalSnapshot, PostVersionRow } from "../src/ingest/canonical-store.js";
+import { InMemoryEventBus } from "../src/events/event-bus.js";
+import { applySyncBatchToSnapshot } from "../src/ingest/apply-batch.js";
 import {
   DbCanonicalStore,
   deduplicatePostVersionsForSave
@@ -43,7 +45,10 @@ function mockTx() {
       count: vi.fn().mockResolvedValue(0),
       createMany: vi.fn().mockResolvedValue({})
     },
-    mediaAsset: { deleteMany: vi.fn().mockResolvedValue({}), createMany: vi.fn().mockResolvedValue({}) },
+    mediaAsset: {
+      deleteMany: vi.fn().mockResolvedValue({}), createMany: vi.fn().mockResolvedValue({}),
+      findMany: vi.fn().mockResolvedValue([]), updateMany: vi.fn().mockResolvedValue({ count: 1 })
+    },
     postVersion: { deleteMany: vi.fn().mockResolvedValue({}) },
     post: {
       deleteMany: vi.fn().mockResolvedValue({}),
@@ -244,5 +249,66 @@ describe("DbCanonicalStore.save duplicate version_seq", () => {
         status: "active"
       })
     });
+  });
+});
+
+describe("DbCanonicalStore preserved-post media URLs", () => {
+  it.each(["PATREON", "SUBSCRIBESTAR"] as const)("persists a URL-only replay for %s without recreating posts or media", async (source) => {
+    const { tx } = mockTx();
+    const postId = source === "PATREON" ? "patreon_post_123" : "substar_post_123";
+    const snapshot: CanonicalSnapshot = { ingest_idempotency: {}, campaigns: {}, tiers: {}, posts: {}, media: {} };
+    const bus = new InMemoryEventBus();
+    const input = {
+      creator_id: "cr1",
+      campaigns: [{ campaign_id: "camp1", name: "Main", upstream_updated_at: "2026-10-01T00:00:00.000Z" }],
+      posts: [{
+        post_id: postId, title: "Original", published_at: "2026-10-01T00:00:00.000Z",
+        tag_ids: [], tier_ids: [], upstream_revision: "r1",
+        media: [{ media_id: "asset1", upstream_revision: "m1", upstream_url: "https://cdn.example/original" }]
+      }]
+    };
+    applySyncBatchToSnapshot(snapshot, input, "j1", "trace", bus);
+    tx.post.findMany.mockImplementation(async ({ where }: { where: { creatorId: unknown; source: string } }) =>
+      where.creatorId === "cr1" && where.source === source
+        ? [{ id: postId, campaignId: "camp1", upstreamStatus: "active", versions: [{ versionSeq: 1, upstreamRevision: "r1" }] }]
+        : []
+    );
+    tx.mediaAsset.findMany.mockResolvedValue([
+      { id: "asset1", primaryPostId: postId, currentUpstreamRevision: "m1", currentUpstreamUrl: "https://cdn.example/original" }
+    ]);
+    input.posts[0]!.media[0]!.upstream_url = "https://cdn.example/refreshed";
+    applySyncBatchToSnapshot(snapshot, input, "j2", "trace", bus);
+    const store = new DbCanonicalStore(mockPrisma(() => ({ tx })) as never);
+    await store.saveForCreator("cr1", snapshot);
+
+    expect(tx.mediaAsset.findMany).toHaveBeenCalledWith({
+      where: { creatorId: "cr1", ingestOrigin: source, primaryPostId: { in: [postId] } },
+      select: { id: true, primaryPostId: true, currentUpstreamRevision: true, currentUpstreamUrl: true }
+    });
+    expect(tx.mediaAsset.updateMany).toHaveBeenCalledTimes(1);
+    expect(tx.mediaAsset.updateMany).toHaveBeenCalledWith({
+      where: {
+        id: "asset1", creatorId: "cr1", primaryPostId: postId, ingestOrigin: source,
+        currentUpstreamRevision: "m1", currentUpstreamUrl: "https://cdn.example/original"
+      },
+      data: { currentUpstreamUrl: "https://cdn.example/refreshed" }
+    });
+    expect(tx.post.create).not.toHaveBeenCalled();
+    expect(tx.post.deleteMany).not.toHaveBeenCalled();
+    expect(tx.mediaAsset.createMany).not.toHaveBeenCalled();
+    expect(bus.getAll()).toHaveLength(1);
+
+    tx.mediaAsset.updateMany.mockClear();
+    tx.mediaAsset.findMany.mockResolvedValue([
+      { id: "asset1", primaryPostId: postId, currentUpstreamRevision: "m1", currentUpstreamUrl: "https://cdn.example/refreshed" }
+    ]);
+    await store.saveForCreator("cr1", snapshot);
+    expect(tx.mediaAsset.updateMany).not.toHaveBeenCalled();
+
+    tx.mediaAsset.findMany.mockResolvedValue([
+      { id: "asset1", primaryPostId: postId, currentUpstreamRevision: "m2", currentUpstreamUrl: "https://cdn.example/m2" }
+    ]);
+    await store.saveForCreator("cr1", snapshot);
+    expect(tx.mediaAsset.updateMany).not.toHaveBeenCalled();
   });
 });

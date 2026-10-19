@@ -11,6 +11,7 @@ Single source of truth for **product ideals**, **artist vs viewer workflows**, a
 **Do not** revert to legacy ingest: dropping duplicate **cover** rows in canonical storage, or adding URL `seenUrls` short-circuiting on the **cookie** path before `finalizePatreonPostMedia`. That breaks cover vs attachment reconciliation and `shadow_cover` / post-batch behavior.
 
 - **Canonical contract:** [docs/patreon-ingest-canonical.md](patreon-ingest-canonical.md)  
+- Replaying a post can refresh its current media URLs without adding versions or events; older media revisions cannot replace the current download URL. See the canonical contract's sync-batch section.
 - **Relay-only metadata (tags, visibility, collections, layout):** [docs/relay-artist-metadata.md](relay-artist-metadata.md)  
 - **Repo pointer:** [AGENTS.md](../AGENTS.md)  
 - **Recent handoff notes:** [docs/agent-handoff-library-v2.md](agent-handoff-library-v2.md)

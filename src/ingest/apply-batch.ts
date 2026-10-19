@@ -120,6 +120,17 @@ export function applySyncBatchToSnapshot(
       p.upstream_revision
     ]);
     if (snapshot.ingest_idempotency[idemKey]) {
+      const mediaIds = new Set(snapshot.posts[creatorId]?.[p.post_id]?.current.media_ids);
+      for (const m of p.media) {
+        const media = snapshot.media[creatorId]?.[m.media_id];
+        if (
+          mediaIds.has(m.media_id) &&
+          media?.current.upstream_revision === m.upstream_revision &&
+          m.upstream_url?.trim()
+        ) {
+          media.current.upstream_url = m.upstream_url;
+        }
+      }
       result.idempotent_skips += 1;
       continue;
     }
@@ -252,11 +263,10 @@ function upsertMediaForPost(
 
   existing.post_ids = uniquePush(existing.post_ids, postId);
 
-  if (m.upstream_url && m.upstream_url !== existing.current.upstream_url) {
-    existing.current.upstream_url = m.upstream_url;
-  }
-
   if (existing.current.upstream_revision === m.upstream_revision) {
+    if (m.upstream_url?.trim()) {
+      existing.current.upstream_url = m.upstream_url;
+    }
     return;
   }
 

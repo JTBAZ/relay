@@ -69,6 +69,8 @@ HTTP ingest (`POST /api/v1/ingest/batches`) applies Patreon-shaped **`SyncBatchI
 
 Replaying the **same** campaign/tier/post revision **increments `idempotent_skips`** and **does not** append duplicate post versions, re-emit duplicate `post_published` for that revision, or re-count media rows already tied to that revision. New **`upstream_revision`** on a post (or new media revision) is required to append history. **MIG-32** — contract tests: [`tests/ingest-idempotency-apply-batch.test.ts`](../tests/ingest-idempotency-apply-batch.test.ts); HTTP slice: [`tests/workstream-b.ingest.test.ts`](../tests/workstream-b.ingest.test.ts).
 
+A duplicate post may refresh a nonempty upstream URL for media already in its current media list, provided the incoming media revision matches the stored current media revision. This changes only the current URL; it does not import media, change post content or access, restore deleted entities, or add versions or events. An older, already-seen media revision cannot replace the current revision's URL, even when it arrives through a new post. File and database stores retain URL-only refreshes; database writes preserve unchanged posts and update only the matching media URL. These rules leave the stored replay-key format unchanged. Regression coverage: [`tests/ingest-media-url-replay.test.ts`](../tests/ingest-media-url-replay.test.ts) and [`tests/canonical-store-db-save.test.ts`](../tests/canonical-store-db-save.test.ts).
+
 ---
 
 ## Tests (read or run before changing ingest)
