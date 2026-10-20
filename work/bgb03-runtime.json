@@ -1,0 +1,25 @@
+{
+  "port": 8788,
+  "previousPid": 47096,
+  "pid": 32960,
+  "startedAt": "2026-10-20T05:25:38.5756226Z",
+  "health": 200,
+  "protectedPosts": {
+    "conversation/cell/skip": 401,
+    "conversation/cell/restore": 401,
+    "conversation/deviantart-draft/review": 401,
+    "conversation/x-draft/review": 401
+  },
+  "backgroundWorkersDisabled": true,
+  "temporarySessionsCleared": true,
+  "browserTested": false,
+  "processOnlyOverrides": [
+    "LOG_PRETTY=0",
+    "RELAY_DB_STORE_PATREON_COOKIE=1"
+  ],
+  "configurationFilesChanged": false,
+  "startupFailures": [
+    "work/bgb03-reload-attempt-01.json",
+    "work/bgb03-reload-attempt-02.json"
+  ]
+}

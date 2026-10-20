@@ -1,0 +1,123 @@
+
+> web@0.1.0 build
+> next build
+
+  ▲ Next.js 14.2.35
+  - Environments: .env.local
+
+   Creating an optimized production build ...
+
+warn - The class `duration-[1200ms]` is ambiguous and matches multiple utilities.
+warn - If this is content and not a class, replace it with `duration-&lsqb;1200ms&rsqb;` to silence this warning.
+
+warn - The class `ease-[cubic-bezier(0.19,1,0.22,1)]` is ambiguous and matches multiple utilities.
+warn - If this is content and not a class, replace it with `ease-&lsqb;cubic-bezier(0.19,1,0.22,1)&rsqb;` to silence this warning.
+
+warn - The class `ease-[cubic-bezier(0.22,1,0.36,1)]` is ambiguous and matches multiple utilities.
+warn - If this is content and not a class, replace it with `ease-&lsqb;cubic-bezier(0.22,1,0.36,1)&rsqb;` to silence this warning.
+Browserslist: caniuse-lite is outdated. Please run:
+  npx update-browserslist-db@latest
+  Why you should do it regularly: https://github.com/browserslist/update-db#readme
+ ✓ Compiled successfully
+   Linting and checking validity of types ...
+
+Failed to compile.
+
+./app/components/conversational-planning/use-conversational-planning.ts
+37:7  Error: 'emptyList' is assigned a value but never used.  @typescript-eslint/no-unused-vars
+
+./app/components/distribution/TransformerNodePage.tsx
+1772:6  Warning: React Hook useEffect has missing dependencies: 'assistantContext.goals.length', 'coachEnabled', 'handleGeneratePlan', and 'startCoachGather'. Either include them or remove the dependency array.  react-hooks/exhaustive-deps
+
+./app/components/previewizer/previewizer-client.tsx
+981:6  Warning: React Hook useCallback has an unnecessary dependency: 'framedCompositionUrl'. Either exclude it or remove the dependency array.  react-hooks/exhaustive-deps
+
+./app/components/studio/AudienceSimulatorSection.tsx
+136:6  Warning: React Hook useEffect has a missing dependency: 'active'. Either include it or remove the dependency array.  react-hooks/exhaustive-deps
+
+./app/editor-bench/EditorBenchClient.tsx
+26:33  Error: Unexpected any. Specify a different type.  @typescript-eslint/no-explicit-any
+45:32  Error: Unexpected any. Specify a different type.  @typescript-eslint/no-explicit-any
+97:10  Error: 'isBatchReview' is defined but never used.  @typescript-eslint/no-unused-vars
+183:34  Error: Use relayFetch or relayRequest from @/lib/relay-api instead of raw fetch for same-origin /api/* paths.  no-restricted-syntax
+195:31  Warning: The ref value 'generation.current' will likely have changed by the time this effect cleanup function runs. If this ref points to a node rendered by React, copy 'generation.current' to a variable inside the effect, and use that variable in the cleanup function.  react-hooks/exhaustive-deps
+195:61  Warning: The ref value 'scheduleGeneration.current' will likely have changed by the time this effect cleanup function runs. If this ref points to a node rendered by React, copy 'scheduleGeneration.current' to a variable inside the effect, and use that variable in the cleanup function.  react-hooks/exhaustive-deps
+198:9  Warning: The 'visibleCards' conditional could make the dependencies of useMemo Hook (at line 206) change on every render. To fix this, wrap the initialization of 'visibleCards' in its own useMemo() Hook.  react-hooks/exhaustive-deps
+557:34  Error: Use relayFetch or relayRequest from @/lib/relay-api instead of raw fetch for same-origin /api/* paths.  no-restricted-syntax
+590:15  Error: Unexpected any. Specify a different type.  @typescript-eslint/no-explicit-any
+718:34  Error: Use relayFetch or relayRequest from @/lib/relay-api instead of raw fetch for same-origin /api/* paths.  no-restricted-syntax
+875:547  Error: Unexpected any. Specify a different type.  @typescript-eslint/no-explicit-any
+875:720  Error: Unexpected any. Specify a different type.  @typescript-eslint/no-explicit-any
+875:816  Error: Unexpected any. Specify a different type.  @typescript-eslint/no-explicit-any
+875:908  Error: Unexpected any. Specify a different type.  @typescript-eslint/no-explicit-any
+875:1047  Error: Unexpected any. Specify a different type.  @typescript-eslint/no-explicit-any
+875:1115  Error: Unexpected any. Specify a different type.  @typescript-eslint/no-explicit-any
+875:1238  Error: Unexpected any. Specify a different type.  @typescript-eslint/no-explicit-any
+875:1328  Error: Unexpected any. Specify a different type.  @typescript-eslint/no-explicit-any
+887:264  Error: `'` can be escaped with `&apos;`, `&lsquo;`, `&#39;`, `&rsquo;`.  react/no-unescaped-entities
+991:371  Error: Unexpected any. Specify a different type.  @typescript-eslint/no-explicit-any
+1021:45  Error: Unexpected any. Specify a different type.  @typescript-eslint/no-explicit-any
+1022:72  Error: Unexpected any. Specify a different type.  @typescript-eslint/no-explicit-any
+1027:259  Error: Unexpected any. Specify a different type.  @typescript-eslint/no-explicit-any
+
+./app/studio/actions/ActionCenterView.tsx
+871:13  Warning: Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element  @next/next/no-img-element
+1069:25  Warning: Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element  @next/next/no-img-element
+
+./app/studio/import/manual-import-page-client.tsx
+327:9  Warning: Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element  @next/next/no-img-element
+
+./components/dev/patron-profile/Collections.tsx
+461:19  Warning: Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element  @next/next/no-img-element
+567:21  Warning: Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element  @next/next/no-img-element
+
+./components/patron/relay/comment-pin.tsx
+89:15  Warning: Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element  @next/next/no-img-element
+
+./components/patron/relay/discover-grid.tsx
+71:9  Warning: Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element  @next/next/no-img-element
+95:15  Warning: Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element  @next/next/no-img-element
+
+./components/patron/relay/feed-card.tsx
+619:6  Warning: React Hook useEffect has a missing dependency: 'liveCommentCountScope'. Either include it or remove the dependency array.  react-hooks/exhaustive-deps
+680:6  Warning: React Hook useMemo has a missing dependency: 'post'. Either include it or remove the dependency array.  react-hooks/exhaustive-deps
+751:6  Warning: React Hook useEffect has a missing dependency: 'liveCommentCountScope'. Either include it or remove the dependency array.  react-hooks/exhaustive-deps
+946:15  Warning: Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element  @next/next/no-img-element
+
+./components/patron/relay/gallery-view.tsx
+253:6  Warning: React Hook useMemo has a missing dependency: 'post'. Either include it or remove the dependency array.  react-hooks/exhaustive-deps
+742:17  Warning: Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element  @next/next/no-img-element
+
+./components/patron/relay/library-modal.tsx
+97:17  Warning: Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element  @next/next/no-img-element
+
+./components/patron/relay/notifications-tray.tsx
+65:21  Warning: Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element  @next/next/no-img-element
+
+./components/patron/relay/patron-search-creator-picker.tsx
+84:13  Warning: Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element  @next/next/no-img-element
+166:21  Warning: Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element  @next/next/no-img-element
+
+./components/patron/relay/patron-search-result-row.tsx
+96:11  Warning: Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element  @next/next/no-img-element
+138:15  Warning: Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element  @next/next/no-img-element
+198:11  Warning: Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element  @next/next/no-img-element
+
+./components/patron/relay/relay-app.tsx
+121:7  Warning: Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element  @next/next/no-img-element
+
+./components/patron/relay/relay-shell.tsx
+178:21  Warning: Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element  @next/next/no-img-element
+214:15  Warning: Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element  @next/next/no-img-element
+296:15  Warning: Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element  @next/next/no-img-element
+
+./components/patron/relay/what-you-missed-carousel.tsx
+152:17  Warning: Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element  @next/next/no-img-element
+
+./lib/editor-bench.ts
+29:114  Error: Unexpected any. Specify a different type.  @typescript-eslint/no-explicit-any
+61:66  Error: Unexpected any. Specify a different type.  @typescript-eslint/no-explicit-any
+144:197  Error: Unexpected any. Specify a different type.  @typescript-eslint/no-explicit-any
+160:32  Error: Use relayFetch or relayRequest from @/lib/relay-api instead of raw fetch for same-origin /api/* paths.  no-restricted-syntax
+
+info  - Need to disable some ESLint rules? Learn more here: https://nextjs.org/docs/basic-features/eslint#disabling-rules

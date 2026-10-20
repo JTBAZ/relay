@@ -1,0 +1,7 @@
+{
+  "initialProbeStatus": 404,
+  "reason": "Root reload harness used the wrong health URL; API was already running. No second restart needed.",
+  "errorLog": "work/bgb01-api.err.log",
+  "outputLog": "work/bgb01-api.out.log",
+  "initialProbePath": "/health"
+}

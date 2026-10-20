@@ -5,7 +5,7 @@ import type { EditorError, EditAction } from '../gallery-editor/types.js';
 import { compileIntent, type StructuredIntent } from '../gallery-editor/structured-intent.js';
 import { buildChangeCart, effectivePostTitle, simulateEditorActions } from '../gallery-editor/state.js';
 import { previewCopy } from '../gallery-editor/factual-copy.js';
-import { BENCH_IDS, createBenchFixture, createBenchReadTools, createBenchSession, CURATION_EXAMPLES } from './fixtures.js';
+import { BENCH_IDS, createBenchFixture, createBenchReadTools, createBenchSession, CURATION_EXAMPLES, type BenchFixture } from './fixtures.js';
 import type { BenchRuntimeStatus } from './runtime.js';
 
 export type BenchRequest = {
@@ -35,7 +35,7 @@ export interface BenchResponse {
   refinementState?: BenchRefinementState | null;
   usage?: { calls: number; known: boolean; inputTokens: number | null; outputTokens: number | null; costUsd: number | null };
 }
-export interface RunCurationOptions { provider?: EditorProvider; signal?: AbortSignal; fullFixtureEvidence?: boolean }
+export interface RunCurationOptions { provider?: EditorProvider; signal?: AbortSignal; fullFixtureEvidence?: boolean; fixture?: BenchFixture }
 
 const fail = (request: BenchRequest['mode'], message: string): BenchResponse => ({ mode: request, provenance: 'none', status: 'rejected', interpreted: null, result: null, beforeAfter: [], diagnostics: [message] });
 const exactKeys = (value: Record<string, unknown>, keys: string[]) => Object.keys(value).length === keys.length && keys.every(key => Object.hasOwn(value, key));
@@ -56,7 +56,7 @@ function validRequest(value: unknown): value is BenchRequest {
   if (x.kind === 'selection_reset') return exactKeys(x, ['kind']);
   return false;
 }
-function metadataEvidence(readTools: ReturnType<typeof createBenchReadTools>, session: ReturnType<typeof createBenchSession>, selectedPostIds: string[], selectedMediaIds: string[], targetCollectionIds: string[], fullFixtureEvidence = false) {
+function metadataEvidence(readTools: ReturnType<typeof createBenchReadTools>, session: ReturnType<typeof createBenchSession>, selectedPostIds: string[], selectedMediaIds: string[], targetCollectionIds: string[], fullFixtureEvidence = false, fixture?: BenchFixture) {
   const evidence = new IntentEvidence();
   const record = async (name: 'expandLibraryFamily' | 'resolveLibraryPosts' | 'readLibraryMedia' | 'readLibraryCollections', args: Record<string, unknown>) => {
     const result = await readTools(name, args, { signal: new AbortController().signal });
@@ -64,10 +64,10 @@ function metadataEvidence(readTools: ReturnType<typeof createBenchReadTools>, se
   };
   return (async () => {
     if (fullFixtureEvidence) {
-      const fixture = createBenchFixture();
+      const evidenceFixture = fixture ?? createBenchFixture();
       await record('resolveLibraryPosts', { postIds: [...BENCH_IDS.posts] });
-      for (const work of fixture.state.tables.works) await record('expandLibraryFamily', { kind: 'work', id: String(work.id), cursor: null, limit: 100 });
-      for (const series of fixture.state.tables.series) await record('expandLibraryFamily', { kind: 'series', id: String(series.id), cursor: null, limit: 100 });
+      for (const work of evidenceFixture.state.tables.works) await record('expandLibraryFamily', { kind: 'work', id: String(work.id), cursor: null, limit: 100 });
+      for (const series of evidenceFixture.state.tables.series) await record('expandLibraryFamily', { kind: 'series', id: String(series.id), cursor: null, limit: 100 });
       await record('readLibraryCollections', { collectionId: null, cursor: null, limit: 100 });
       await record('readLibraryMedia', { mediaIds: [...BENCH_IDS.media] });
       return evidence;
@@ -101,7 +101,7 @@ export async function runCurationBench(value: unknown, options: RunCurationOptio
   if (new Set(request.selectedPostIds).size !== request.selectedPostIds.length || new Set(request.selectedMediaIds).size !== request.selectedMediaIds.length) return fail(request.mode, 'invalid_selection: Select distinct fixture IDs.');
   if (request.selectedPostIds.some(id => !(BENCH_IDS.posts as readonly string[]).includes(id)) || request.selectedMediaIds.some(id => !(BENCH_IDS.media as readonly string[]).includes(id))) return fail(request.mode, 'foreign_selection: Selection must use owned synthetic fixture IDs.');
 
-  const fixture = createBenchFixture();
+  const fixture = options.fixture ?? createBenchFixture();
   const replay = request.replay;
   let latestRequest: string;
   let structuredIntent: unknown;
@@ -144,7 +144,7 @@ export async function runCurationBench(value: unknown, options: RunCurationOptio
       const operations = Array.isArray(intentObject.operations) ? intentObject.operations as Array<Record<string, unknown>> : [];
       const targetCollectionIds = operations.filter(op => op.scope === 'collection' && op.target && typeof op.target === 'object')
         .flatMap(op => { const target = op.target as Record<string, unknown>; return target.source === 'ids' && Array.isArray(target.ids) ? target.ids.filter((id): id is string => typeof id === 'string' && (BENCH_IDS.collections as readonly string[]).includes(id)) : []; });
-      const evidence = await metadataEvidence(reads, session, request.selectedPostIds, request.selectedMediaIds, [...new Set(targetCollectionIds)], options.fullFixtureEvidence);
+      const evidence = await metadataEvidence(reads, session, request.selectedPostIds, request.selectedMediaIds, [...new Set(targetCollectionIds)], options.fullFixtureEvidence, fixture);
       const compiled = compileIntent(structuredIntent, session, latestRequest, evidence, { metadataOnly: true });
       actions = compiled.actions;
       disposition = compiled.disposition;

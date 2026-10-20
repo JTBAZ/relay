@@ -1,0 +1,40 @@
+{
+  "ticket": "BCT-01",
+  "date": "2026-10-19",
+  "mode": "canned_mock_http",
+  "passed": false,
+  "calls": [],
+  "turns": [
+    {
+      "requestSha256": "0719f605180b8c8abe39d9cb62c4e91e4ce4ac4d5cd15a4140c4ce330a62b99a",
+      "httpStatus": 503,
+      "outcome": null,
+      "diagnostic": null,
+      "message": null,
+      "passed": false
+    }
+  ],
+  "checks": {},
+  "limitations": [
+    "Synthetic fixture only",
+    "Ephemeral API-instance session and posting records",
+    "Frontend execution deferred",
+    "No real Library, database or platform operations"
+  ],
+  "failure": {
+    "name": "AssertionError",
+    "code": "ERR_ASSERTION",
+    "message": "Proof stopped at first failure without retry"
+  },
+  "budget": {
+    "initialRows": 894,
+    "finalRows": 894,
+    "previousRowsUnchanged": true,
+    "providerCalls": 1,
+    "paidCalls": 0,
+    "reservationsUsd": 0,
+    "actualUsd": 0,
+    "ledgerSha256": "2547cf374d109bfaff77a91acc472b07f287aa50d69e219c972188599f8e0a4d",
+    "newRows": []
+  }
+}

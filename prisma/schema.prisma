@@ -249,8 +249,23 @@ model Tenant {
   /// M1-lite / P7 — append-only usage metering (`docs/database/usage-events-rollups.md`).
   usageEvents    UsageEvent[]
   conversationalPlans CreatorConversationalPlan[]
+  patreonSession PatreonSession?
 
   @@map("tenants")
+}
+
+/// Encrypted browser credential only; storage does not prove Patreon account ownership.
+/// Empty rows retain deletion/expiry state so a resumed file migration cannot restore a removed credential.
+model PatreonSession {
+  creatorId String @id @map("creator_id")
+  tenant Tenant @relation(fields: [creatorId], references: [relayCreatorId], onDelete: Cascade, onUpdate: Cascade)
+  encryptedSessionId String? @map("encrypted_session_id")
+  storedAt DateTime? @map("stored_at")
+  rejectedAt DateTime? @map("rejected_at")
+  keyId String @default("RELAY_TOKEN_ENCRYPTION_KEY") @map("key_id")
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at")
+
+  @@map("patreon_sessions")
 }
 
 /// P7 M1-lite — append-only per-tenant (or unattributed) usage events for metering and rollups.
@@ -659,6 +674,7 @@ model PostVersion {
   @@unique([postId, versionSeq])
   @@index([postId])
   @@map("post_versions")
+  @@index([ingestedAt, id])
 }
 
 /// Media — `id` is stable `media_id` from `MediaRow`. `primary_post_id` indexes the canonical post link; `post_ids` mirrors file M:N.
@@ -886,6 +902,7 @@ model PostDistributionPlan {
   assistantPlan        Json           @default("{}") @map("assistant_plan")
   /// Opaque Goal Cycle campaign key (VS4). Nullable for legacy plans.
   goalCycleCampaignKey String?        @map("goal_cycle_campaign_key")
+  rhythmActionId String? @unique @map("rhythm_action_id")
   conversationalGroupKey String?      @unique(map: "post_distribution_plans_conversational_group_key_key") @map("conversational_group_key")
   createdAt            DateTime       @default(now()) @map("created_at")
   updatedAt            DateTime       @updatedAt @map("updated_at")
@@ -1846,6 +1863,8 @@ model CreatorDistributionRule {
   runs       CreatorDistributionRuleRun[]
   /// Optional one-to-one Automations connector ownership (null = legacy / unowned rule).
   automation CreatorAutomation?
+  rhythmId String? @map("rhythm_id")
+  rhythm CreatorPostingRhythm? @relation(fields: [rhythmId], references: [id], onDelete: Restrict)
 
   @@index([creatorId, status])
   @@map("creator_distribution_rules")
@@ -1857,6 +1876,11 @@ model CreatorDistributionRuleRun {
   rule                    CreatorDistributionRule          @relation(fields: [ruleId], references: [id], onDelete: Cascade)
   creatorId               String                           @map("creator_id")
   sourcePostId            String                           @map("source_post_id")
+  rhythmEnrollmentId String? @map("rhythm_enrollment_id")
+  rhythmEnrollment CreatorPostingRhythmEnrollment? @relation(fields: [rhythmEnrollmentId], references: [id], onDelete: Restrict)
+  rhythmRouteId String? @map("rhythm_route_id")
+  receiptAt DateTime? @map("receipt_at")
+  receiptUrl String? @map("receipt_url")
   sourcePublishedAt       DateTime                         @map("source_published_at")
   dueAt                   DateTime                         @map("due_at")
   status                  CreatorDistributionRuleRunStatus @default(pending)
@@ -3579,4 +3603,69 @@ model WebhookEndpoint {
   updatedAt                DateTime @updatedAt @map("updated_at")
 
   @@map("webhook_endpoints")
+}
+
+/// Reusable Posting Rhythms configuration. Execution stays on distribution rule runs.
+model CreatorPostingRhythm {
+  id String @id @default(cuid())
+  creatorId String @map("creator_id")
+  version Int @default(1)
+  name String
+  status String @default("active")
+  config Json
+  isDefault Boolean @default(false) @map("is_default")
+  alwaysOn Boolean @default(false) @map("always_on")
+  armed Boolean @default(false)
+  eligibleFrom DateTime @default(now()) @map("eligible_from")
+  cursor Json?
+  lastCheckedAt DateTime @default(now()) @map("last_checked_at")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  rules CreatorDistributionRule[]
+  windows CreatorPostingRhythmWindow[]
+  enrollments CreatorPostingRhythmEnrollment[]
+  @@index([creatorId, status])
+  @@map("creator_posting_rhythms")
+}
+
+/// Immutable source/configuration acceptance; action status lives on canonical runs.
+model CreatorPostingRhythmEnrollment {
+  id String @id @default(cuid())
+  rhythmId String @map("rhythm_id")
+  rhythm CreatorPostingRhythm @relation(fields: [rhythmId], references: [id], onDelete: Restrict)
+  creatorId String @map("creator_id")
+  sourcePostId String @map("source_post_id")
+  snapshot Json
+  createdAt DateTime @default(now()) @map("created_at")
+  runs CreatorDistributionRuleRun[]
+  @@unique([rhythmId, sourcePostId])
+  @@index([creatorId, createdAt])
+  @@map("creator_posting_rhythm_enrollments")
+}
+
+/// Immutable reusable description versions; editing creates another version.
+model CreatorPostingRhythmDraft {
+  id String @id @default(cuid())
+  creatorId String @map("creator_id")
+  name String
+  fields Json
+  createdAt DateTime @default(now()) @map("created_at")
+  @@index([creatorId, createdAt])
+  @@map("creator_posting_rhythm_drafts")
+}
+
+/// Configuration/activation windows preserve unpublished discovery backlog across edits and pauses.
+model CreatorPostingRhythmWindow {
+  id String @id @default(cuid())
+  rhythmId String @map("rhythm_id")
+  rhythm CreatorPostingRhythm @relation(fields: [rhythmId], references: [id], onDelete: Restrict)
+  version Int
+  config Json
+  eligibleFrom DateTime @map("eligible_from")
+  eligibleTo DateTime? @map("eligible_to")
+  alwaysOn Boolean @map("always_on")
+  nextMatch Boolean @default(false) @map("next_match")
+  cursor Json?
+  @@index([rhythmId, eligibleFrom])
+  @@map("creator_posting_rhythm_windows")
 }

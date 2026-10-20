@@ -6,6 +6,7 @@
  * @security-audit-required Env contains live API secrets (`patreon_client_secret`, `stripe_secret_key`, `paypal_client_secret`, `relay_token_encryption_key`); never log return value.
  */
 import type { AppConfig } from "./server.js";
+import { relaySplitWorkerProcessFromEnv } from "./jobs/relay-job-backend.js";
 
 /**
  * Constructs `AppConfig` from environment variables (see root `.env.example`).
@@ -18,6 +19,8 @@ export function relayServerConfigFromEnv(): AppConfig {
     patreon_token_url: process.env.PATREON_TOKEN_URL,
     relay_token_encryption_key: process.env.RELAY_TOKEN_ENCRYPTION_KEY,
     credential_store_path: process.env.RELAY_CREDENTIAL_STORE_PATH,
+    cookie_store_path: process.env.RELAY_PATREON_COOKIE_STORE_PATH,
+    relay_require_shared_patreon_cookie: relaySplitWorkerProcessFromEnv(),
     ingest_canonical_path: process.env.RELAY_INGEST_CANONICAL_PATH,
     ingest_dlq_path: process.env.RELAY_INGEST_DLQ_PATH,
     patreon_sync_watermark_path: process.env.RELAY_PATREON_SYNC_WATERMARK_PATH,

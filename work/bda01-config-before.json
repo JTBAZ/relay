@@ -1,0 +1,32 @@
+{
+  "hashes": {
+    ".env": "571d97784c24067a3c4f20f68d2aff18dd5ebd708c4a1ec1294a64cd79bbf603",
+    "web/.env.local": "c20a35e6de6fd419554fa2bc00d4aecb8a8f1a75cfb6170fa0bdfa46a367d96b",
+    "extension/manifests/manifest.chrome.dev.json": "76751aa55901a32cca925d1eeefa423bdaa6b3b01078df42d5887e5e566fa917",
+    "extension/manifests/manifest.chrome.prod.json": "127e2f25a59003ece179c1e9da6f9624d1a0a257c14e0f194fe5fd94bee6b5fa",
+    "extension/manifests/manifest.firefox.prod.json": "811b31e27833c5a268d02b14306d2c71afb22aa66e22431043ecdcf800e00629"
+  },
+  "devIdentity": {
+    "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA0H8VDLItuorTORDbSthIih+pATNm4k7s5opONXFTXYrWxBNwHXXQOV9x4x7BwZgPZaeZSy+PepTjVSekQRxyn8hB20z2C1jUs6gIqp9ActkdBMWRi8VnafDeaKOxMfKaX2T78sjEFgs4IVt6kRdA8Xw+s1JDhCHHkcpd8gz+QoV9Fe6TwqGmGeTsViSguGOQYwqifN+b6dtsvGkTJtVihMcMaMFhRwHar3nALk7cpOkpHsjM6RjUyOgLsDtPNXfQOpVN16+4rIwAZWgjA2C8giSNz9aKZTYfN81g6ihpx04NFbKx4JKbvZtf12UvemFw8N51LxT/e+OTIi+qd6WQrQIDAQAB",
+    "permissions": [
+      "cookies",
+      "alarms",
+      "storage",
+      "scripting"
+    ],
+    "host_permissions": [
+      "https://www.patreon.com/*",
+      "https://x.com/*",
+      "https://twitter.com/*",
+      "https://www.deviantart.com/*",
+      "https://relayapp.me/*",
+      "http://localhost:*/*"
+    ],
+    "externally_connectable": {
+      "matches": [
+        "https://relayapp.me/*",
+        "http://localhost:*/*"
+      ]
+    }
+  }
+}

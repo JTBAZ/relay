@@ -32,7 +32,23 @@ export type ScheduleEventExternalCrossPostMessage = {
   destination: "x";
 };
 
-export type ExternalCrossPostMessage = LegacyExternalCrossPostMessage | ScheduleEventExternalCrossPostMessage;
+/** Temporary mock handoff from one confirmed Conversation receipt. */
+export type BenchXHandoffExternalMessage = {
+  type: typeof MSG_RELAY_CROSS_POST;
+  session_id: string;
+  handoff_id: string;
+  destination: "x";
+};
+
+/** Temporary mock DeviantArt handoff from one confirmed Conversation receipt. */
+export type BenchDeviantArtHandoffExternalMessage = {
+  type: typeof MSG_RELAY_CROSS_POST;
+  session_id: string;
+  handoff_id: string;
+  destination: "deviantart";
+};
+
+export type ExternalCrossPostMessage = LegacyExternalCrossPostMessage | ScheduleEventExternalCrossPostMessage | BenchXHandoffExternalMessage | BenchDeviantArtHandoffExternalMessage;
 
 export type PatreonCrossPostMediaItem = {
   media_id: string;
@@ -100,6 +116,7 @@ export function isExternalCrossPostMessage(v: unknown): v is ExternalCrossPostMe
   }
   const raw = v as Record<string, unknown>;
   if (raw.type !== MSG_RELAY_CROSS_POST) return false;
+  if (Object.hasOwn(raw, "handoff_id") || Object.hasOwn(raw, "session_id")) return Object.keys(raw).length === 4 && typeof raw.session_id === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(raw.session_id) && typeof raw.handoff_id === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(raw.handoff_id) && (raw.destination === "x" || raw.destination === "deviantart");
   if (Object.hasOwn(raw, "schedule_event_id")) {
     return Object.keys(raw).length === 3 && Object.hasOwn(raw, "destination") &&
       typeof raw.schedule_event_id === "string" && /^bench_event_[a-f0-9]{64}$/.test(raw.schedule_event_id) && raw.destination === "x";
@@ -153,6 +170,7 @@ export function isExternalCrossPostMessage(v: unknown): v is ExternalCrossPostMe
 export function crossPostDestinationFromMessage(
   message: ExternalCrossPostMessage
 ): CrossPostDestination {
+  if ("handoff_id" in message) return message.destination;
   if ("schedule_event_id" in message) return "x";
   if (message.destination === "x") return "x";
   if (message.destination === "deviantart") return "deviantart";

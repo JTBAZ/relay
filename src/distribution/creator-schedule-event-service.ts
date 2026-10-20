@@ -328,7 +328,7 @@ export async function createCreatorScheduleEvent(
   const note = body.note?.trim() || null;
   const title = (body.title?.trim() || defaultTitle(eventType, destination)).slice(0, 200);
   const trustedEventId = internal?.trustedEventId;
-  if (trustedEventId !== undefined && !/^bench_event_[a-f0-9]{64}$/.test(trustedEventId)) {
+  if (trustedEventId !== undefined && !/^(?:bench|rhythm)_event_[a-f0-9]{64}$/.test(trustedEventId)) {
     throw new CreatorScheduleEventValidationError("Invalid internal schedule event ID.");
   }
 

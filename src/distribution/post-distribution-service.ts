@@ -1,3 +1,4 @@
+import { validRhythmReceipt } from "../posting-rhythms/contract.js";
 /**
  * @fileoverview Post-level distribution plans, variants, attempts, and library summaries.
  */
@@ -461,7 +462,7 @@ export async function createPostDistributionPlan(
   };
 
   const existing = await prisma.postDistributionPlan.findFirst({
-    where: { postId, creatorId, status: "active" },
+    where: { postId, creatorId, status: "active", rhythmActionId: null },
     include: { _count: { select: { variants: true } } }
   });
 
@@ -555,13 +556,19 @@ export async function createPostDistributionPlan(
   return mapPlan(plan);
 }
 
+/** Exact plan lookup for independently scoped Rhythm actions. */
+export async function getDistributionPlanById(prisma: PrismaClient, creatorId: string, planId: string): Promise<DistributionPlanWire | null> {
+  const plan=await prisma.postDistributionPlan.findFirst({where:{id:planId,creatorId,status:"active"},include:{variants:{include:{attempts:{orderBy:{createdAt:"desc"},take:1},postbotTasks:{orderBy:{createdAt:"asc"}}}}}});
+  return plan?mapPlan(plan):null;
+}
+
 export async function getPostDistributionPlan(
   prisma: PrismaClient,
   creatorId: string,
   postId: string
 ): Promise<DistributionPlanWire | null> {
   const plan = await prisma.postDistributionPlan.findFirst({
-    where: { postId, creatorId, status: "active" },
+    where: { postId, creatorId, status: "active", rhythmActionId: null },
     include: {
       variants: {
         include: {
@@ -595,7 +602,7 @@ export async function reviseScheduledPostDistributionPlan(
   }
 
   const existing = await prisma.postDistributionPlan.findFirst({
-    where: { postId, creatorId, status: "active" },
+    where: { postId, creatorId, status: "active", rhythmActionId: null },
     include: {
       variants: {
         include: {
@@ -881,7 +888,17 @@ export async function startDistributionHandoff(
     ]);
   }
 
+  const rhythmPlan=await prisma.postDistributionPlan.findFirst({where:{id:variant.planId,creatorId,rhythmActionId:{not:null}},select:{rhythmActionId:true}});
+  if(rhythmPlan?.rhythmActionId){
+    const {rhythmAction}=await import("../posting-rhythms/service.js");await rhythmAction(prisma,creatorId,rhythmPlan.rhythmActionId);
+    if(variant.destination==="x"?(!variant.postText?.trim()||variant.postText.length>280):(!variant.title?.trim()||!variant.bodyText?.trim()))throw new PostDistributionValidationError("Complete the destination text before handoff.",[{field:"copy",issue:"invalid"}]);
+  }
   const attempt = await prisma.$transaction(async (tx) => {
+    if(rhythmPlan?.rhythmActionId){
+      await tx.$queryRaw`SELECT 1 AS locked FROM pg_advisory_xact_lock(hashtextextended(${"rhythm-handoff:"+variant.id},0))`;
+      const prior=await tx.postDistributionAttempt.findFirst({where:{variantId,creatorId,status:{notIn:["failed","fill_failed","abandoned"]}},orderBy:{createdAt:"desc"}});
+      if(prior)throw new PostDistributionValidationError("Confirm the existing publication or reconcile its outcome before retrying.",[{field:"attempt",issue:"outcome_unknown"}]);
+    }
     if (variant.status === "draft") {
       await tx.postDistributionVariant.update({
         where: { id: variantId },
@@ -969,12 +986,18 @@ export async function completeDistributionAttempt(
     where: { id: attemptId, creatorId },
     include: {
       variant: {
-        select: { platformFields: true }
+        select: { platformFields: true, plan: { select: { rhythmActionId: true, assistantPlan: true } } }
       }
     }
   });
   if (!attempt) {
     throw new PostDistributionNotFoundError("Attempt not found.");
+  }
+
+  if(attempt.variant?.plan?.rhythmActionId && (input.status??"posted")==="posted"){
+    const fields=attempt.variant.plan.assistantPlan as Record<string,unknown>;
+    if(!validRhythmReceipt(attempt.destination,input.external_url??"",String(fields.rhythm_account_handle??"")))throw new PostDistributionValidationError("Paste the published post URL for the account selected in this Rhythm.", [{field:"external_url",issue:"required_matching_account"}]);
+    if(attempt.status==="posted" && attempt.completedAt)return mapAttempt(attempt);
   }
 
   const variantPlatformFields =

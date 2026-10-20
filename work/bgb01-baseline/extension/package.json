@@ -1,0 +1,41 @@
+{
+  "name": "@relay/extension",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": "^20.19.0 || ^22.12.0 || >=24.0.0"
+  },
+  "scripts": {
+    "dev": "node build.mjs chrome dev",
+    "build": "node build.mjs chrome prod",
+    "build:chrome:dev": "node build.mjs chrome dev",
+    "build:chrome:prod": "node build.mjs chrome prod",
+    "build:firefox:prod": "node build.mjs firefox prod",
+    "verify:p12": "npm run build:chrome:prod && node scripts/assert-chrome-prod-no-localhost.mjs",
+    "verify:dev-localhost": "npm run build:chrome:dev && node scripts/assert-chrome-dev-has-localhost.mjs",
+    "verify:phase2": "npm run verify:p12 && npm run verify:dev-localhost && npm run build:firefox:prod",
+    "pack:chrome": "node scripts/package-store-zips.mjs chrome",
+    "pack:firefox": "node scripts/package-store-zips.mjs firefox",
+    "pack:store": "node scripts/package-store-zips.mjs all",
+    "format": "prettier --write ."
+  },
+  "overrides": {
+    "@crxjs/vite-plugin": {
+      "rollup": "2.80.0"
+    },
+    "vite": {
+      "rollup": "4.60.2"
+    }
+  },
+  "devDependencies": {
+    "@crxjs/vite-plugin": "^2.4.0",
+    "@types/chrome": "^0.0.287",
+    "@types/firefox-webext-browser": "^120.0.3",
+    "prettier": "^3.5.3",
+    "rollup": "4.60.2",
+    "typescript": "^5.8.3",
+    "vite": "^6.2.0",
+    "webextension-polyfill": "^0.12.0"
+  }
+}

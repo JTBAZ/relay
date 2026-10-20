@@ -1,0 +1,48 @@
+{
+  "ticket": "BPS-01",
+  "passed": true,
+  "scope": "canned_authenticated_mock_http",
+  "paidCalls": 0,
+  "steps": [
+    {
+      "variantId": "bench_variant_6276ec01204a8de4d55c38c0f90d32ecd5245ff2f8b307705b6a99572cb812c8",
+      "scheduledFor": "2030-07-10T16:30:00.000Z",
+      "samePlanAndVariant": true,
+      "creationReceiptUnchanged": true,
+      "previewOnly": true,
+      "staleTokenRejected": true,
+      "rescheduleRejected": true
+    },
+    {
+      "variantId": "bench_variant_251378eb9c2dfe3c5b64b6ee652d37d6ef77a13ca0243ba023a74976fe1cf095",
+      "scheduledFor": "2030-12-12T17:30:00.000Z",
+      "samePlanAndVariant": true,
+      "creationReceiptUnchanged": true,
+      "previewOnly": true,
+      "staleTokenRejected": true,
+      "rescheduleRejected": true
+    }
+  ],
+  "checks": {
+    "twoSchedulesOnExistingDraftIds": true,
+    "exactPreviewAndCopy": true,
+    "noProductionWrites": true,
+    "creationReceiptsAndOriginalsUnchanged": true,
+    "currentContextOnReplay": true,
+    "goalCancellationAndExclusionsPreserved": true,
+    "londonSummerAndWinterResolved": true,
+    "invalidPastForeignRejected": true,
+    "pendingReviewDoesNotCommit": true,
+    "ledgerUnchanged": true,
+    "priorReportsPreserved": 57,
+    "inputBytes": [
+      22575,
+      22682,
+      22704
+    ]
+  },
+  "limits": [
+    "Temporary mock manual cues, not durable Schedule Rail",
+    "No browser/front-end test or paid language-quality proof"
+  ]
+}

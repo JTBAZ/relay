@@ -1,1 +1,8 @@
-{"origin": "Native in-app browser screenshot of local Relay recipe prototype, 2026-10-19", "viewport": {"height": 572, "pageHeight": 1393, "pageWidth": 862, "scrollY": 0, "width": 885}, "processing": "Crop padded browser canvas to verified CSS bounds. No scaling or altered UI pixels."}
+{
+  "origin": "Native in-app-browser loopback screenshot; padding cropped to actual CSS innerWidth and viewport/document height, no scaling or UI changes.",
+  "raw": "user-885-full-raw.jpg",
+  "viewport": {
+    "width": 885,
+    "height": 572
+  }
+}

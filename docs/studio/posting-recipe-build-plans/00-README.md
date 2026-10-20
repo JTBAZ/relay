@@ -1,8 +1,8 @@
 # Posting Recipes — product and delivery plan
 
-Status: proposed implementation contract; no production feature implemented by this document set. Grounded in the working tree inspected on **2026-10-18**.
+Status: the approved **Posting Rhythms** editor is integrated into the local Relay app as of **2026-10-19**. See [Integration status, capabilities and verification](INTEGRATION.md). This plan directory retains its historical Posting Recipes name. The remaining program includes capabilities beyond the implemented creator-reviewed Patreon → X/DeviantArt lane; it is not a claim that every milestone below has shipped.
 
-Revision 6 uses compact timing/date dropdowns (including bounded first/last current/following-month choices), a dedicated source-aware Description panel, and a versioned reusable description library. “And then…” initially chains to the preceding publication. Teaser and Coach remain independent. Revision 3 introduced simple elapsed-day timers. Revision 2 replaced the fixed two-stage example with a trigger-first editor: filter incoming publications, compose independent or linked route rows, then confirm a one-shot plan or save a selectable/Default/Always-on recipe. First release keeps narrow connectors and creator-reviewed publishing.
+Revision 8 places Recipes above the whole trigger-and-release flow. Destination tags with platform logos now lead each numbered row directly after “Also send it to…”. A right-side Details control opens timing, treatment and Description; collapsed rows retain destinations and timing. Reusable recipes remain primary. The demo offers two templates and its existing single saved-recipe slot. First release keeps narrow connectors and creator-reviewed publishing.
 
 ## Read order
 
@@ -32,6 +32,6 @@ R1 does **not** promise that the sample X/DeviantArt workflow runs unattended. D
 
 ## Execution hygiene
 
-The implementation queue has **not** been claimed or refreshed. The `.docs/anthropic/BUILD_BRIEF.md` and `CURRENT_LEDGER_QUEUE.md` files named by AGENTS.md are absent from this checkout, and Airtable MCP tools are unavailable in this session. Before production implementation, a builder must refresh the Production Ledger and use Session Lock under AGENTS.md. The IDs in this plan are local proposed work-item IDs, not Airtable record IDs or completion claims.
+The implementation queue has **not** been claimed or refreshed. The `.docs/anthropic/BUILD_BRIEF.md` and `CURRENT_LEDGER_QUEUE.md` files named by AGENTS.md are absent from this checkout, and Airtable MCP tools were unavailable. The local integration follows the directly authorized UI task; it makes no ledger completion claim. Future ledger-driven work must use the Production Ledger and Session Lock under AGENTS.md. The IDs in this plan are local proposed work-item IDs, not Airtable record IDs.
 
-The inspected working tree has unrelated modified/untracked code, including conversational-plan and schedule-event work. Preserve it. Recheck the code map before implementation; do not assume those changes have merged or shipped. No schema, runtime, connector, account, feature flag, or external service was changed for D0.
+The working tree has unrelated modified/untracked code, including conversational-plan and schedule-event work. Preserve it. Do not assume those changes have merged or shipped. D0 changed no runtime; the later local integration's schema, runtime and verification changes are recorded in [INTEGRATION.md](INTEGRATION.md).

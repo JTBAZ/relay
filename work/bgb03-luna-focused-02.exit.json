@@ -1,0 +1,5 @@
+{
+  "exitCode": 0,
+  "command": "npm run test -- tests/editor-bench/conversation.test.ts --testTimeout=30000",
+  "log": "C:\\Users\\jorda\\Documents\\Codex\\2026-10-11\\c\\work\\relay\\work\\bgb03-luna-focused-02.log"
+}

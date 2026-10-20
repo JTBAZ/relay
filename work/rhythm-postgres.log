@@ -1,0 +1,2 @@
+2026-10-19 15:26:21.912 EDT [48908] FATAL:  lock file "postmaster.pid" already exists
+2026-10-19 15:26:21.912 EDT [48908] HINT:  Is another postmaster (PID 19664) running in data directory "C:/Users/jorda/Documents/Codex/2026-10-11/c/work/postgres-data"?

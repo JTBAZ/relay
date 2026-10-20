@@ -55,6 +55,10 @@ const nextConfig = {
       {
         source: "/api/v1/export/media/:path*",
         destination: `${relay}/api/v1/export/media/:path*`
+      },
+      {
+        source: "/api/v1/editor-bench/schedule/conversation/session/:sessionId/preview-media/:previewMediaId",
+        destination: `${relay}/api/v1/editor-bench/schedule/conversation/session/:sessionId/preview-media/:previewMediaId`
       }
     ];
   }

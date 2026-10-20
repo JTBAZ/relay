@@ -1,0 +1,8 @@
+{
+  "rootRelevantBackendSuite": {"passed":157,"files":20,"command":"npx vitest run tests/editor-bench tests/distribution-platform-formatters.test.ts tests/distribution-media-binding.test.ts tests/distribution-package.test.ts tests/post-distribution-identity.test.ts"},
+  "rootFinalAffectedSuite": {"passed":39,"files":2,"command":"npx vitest run tests/editor-bench/conversation.test.ts tests/editor-bench/schedule-routes.test.ts"},
+  "distinctBackendChecks":157,
+  "lunaFinalBackendBuild": {"command":"npm run build","passed":true},
+  "frontendExecution":"Deferred: tests, lint, typecheck, build, detector and browser/render QA",
+  "realDatabasePlatformOperations":0
+}

@@ -15,6 +15,10 @@ flowchart LR
 
 (Read as product clarity sequence, not a strict code dependency graph.)
 
+## Planned reliability follow-up
+
+The [Patreon sync reliability and metadata build plan](studio/patreon-sync-build-plans/00-README.md) continues from these shipped slices. It accounts for the completed import-parent preservation fix (`7cb5c70`), reuses the remaining import-persistence tickets, and sequences durable updates, resumable imports, media repair, and verified health before new metadata and product features. Its planned work does not change the shipped status below.
+
 ---
 
 ## Slice 1 — Export fetch reliability + Library retry

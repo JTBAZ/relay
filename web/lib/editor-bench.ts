@@ -1,4 +1,5 @@
 import { relayFetch } from "@/lib/relay-api";
+import type { PreviewTemplateConfigV1 } from "@/lib/previewizer-template-config";
 
 export type BenchMode = 'curation' | 'mock_posting';
 export type BenchRefinementState = { v: 1; fixtureRevision: number; selectedPostIds: string[]; excludedPostIds: string[] };
@@ -52,6 +53,16 @@ export type RealLibraryReviewResult = { reviewKind: "real_library_manual"; sourc
 export type ScheduleReviewResponse = ScheduleReviewResult | ScheduleBatchReviewResult | RealLibraryReviewResult;
 export type RealLibraryReviewResponse = RealLibraryReviewResult | { kind: "clarification"; question: string; usage?: unknown };
 export type ScheduleConfirmResult = { event: ScheduleEvent; reused: boolean };
+export type BenchConversationDestination = "x" | "deviantart";
+export type BenchConversationMatrixCell = { postId: string; destination: BenchConversationDestination; key: string; status: "needs_preview" | "ready_to_review" | "confirmed" | "skipped" | "blocked"; reason?: string; variantId?: string; copyText?: string; previewMediaId?: string };
+export type BenchConversationPreparation = { goal: "preview_first_x_drafts" | "preview_first_deviantart_drafts"; destination: BenchConversationDestination; destinations: BenchConversationDestination[]; templateId: "bench_template_square" | null; copyChoice: null | { kind: "existing_titles" } | { kind: "literal"; text: string }; pendingRequirements: string[] };
+export type BenchConversationPreviewReceipt = { postId: string; sourceMediaId: string; templateId: string; previewMediaId: string; exportHash: string; size: number; completionRevision: number; completedAt: string; initialTemplateId: string; initialTemplateConfigHash: string };
+export type BenchConversationDraftReceipt = { identity: string; creatorId: string; sessionId: string; destination: "x" | "deviantart"; postId: string; sourceMediaId: string; previewMediaId: string; exportHash: string; copyText: string; createdAt: string; plan: Record<string, any>; variant: Record<string, any> };
+export type BenchConversationConfirmedDraft = { variantId: string; planId: string; postId: string; destination: "x" | "deviantart"; sourceTitle: string; copyText: string; previewMediaId: string; previewUrl: string; scheduledFor: string | null; handoff?: { handoffId: string; confirmedAt: string } | null };
+export type BenchConversationSnapshot = { sessionId: string; revision: number; selection: { postIds: string[]; excludedPostIds: string[] }; preparation: BenchConversationPreparation | null; cards: BenchCard[]; media: (BenchMedia & { label?: string })[]; previewStatus?: Record<string, { status: "pending" | "in_progress" | "complete"; attemptId?: string; receipt?: BenchConversationPreviewReceipt }>; draftStatus?: Record<string, { status: "created"; variantId: string; previewMediaId: string; createdAt: string; copyText: string }>; matrixCells?: BenchConversationMatrixCell[]; confirmedDrafts?: BenchConversationConfirmedDraft[]; draftReviewStatus?: { postId: string; destination: BenchConversationDestination; expiresAt: string } | null; previewState?: "pending" | "mock_previews_ready"; pending: Record<string, unknown> | null };
+export type BenchConversationPreviewOpen = BenchConversationSnapshot & { creatorId: string; attempt: { id: string; postId: string; sourceMediaId: string; sourceFingerprint: string; expiresAt: string }; initialTemplate: { id: string; config: PreviewTemplateConfigV1 }; sourceImageUrl: string; sourceLabel: string };
+export type BenchConversationTurn = BenchConversationSnapshot & { status: "clarification" | "selected" | "preparation_updated" | "preparation_cancelled" | "review"; message?: string; operation?: string; preview?: Record<string, unknown>; reviewToken?: string; expiresAt?: string; usage?: unknown };
+export type BenchConversationConfirm = { receipt: Record<string, any> } & BenchConversationSnapshot;
 
 export class RealLibrarySelectionApiError extends Error {
   constructor(message: string, public readonly status: number, public readonly code: string | null) { super(message); }
@@ -93,7 +104,80 @@ export function reviewBenchSchedule(input: { latestRequest: string; structuredIn
 export function confirmBenchSchedule(reviewToken: string) {
   return scheduleRequest<ScheduleConfirmResult>("/api/v1/editor-bench/schedule/confirm", { reviewToken });
 }
-
+export function startBenchConversation(signal?: AbortSignal) {
+  return scheduleRequest<BenchConversationSnapshot>("/api/v1/editor-bench/schedule/conversation/session", {}, signal);
+}
+export function getBenchConversation(sessionId: string, signal?: AbortSignal) {
+  return relayFetch<BenchConversationSnapshot>(`/api/v1/editor-bench/schedule/conversation/session/${encodeURIComponent(sessionId)}`, { method: "GET", signal, cache: "no-store" });
+}
+export function toggleBenchConversationSelection(input: { sessionId: string; revision: number; postId: string }, signal?: AbortSignal) {
+  return scheduleRequest<BenchConversationSnapshot>("/api/v1/editor-bench/schedule/conversation/selection/toggle", input, signal);
+}
+export function updateBenchConversationCell(input: { sessionId: string; revision: number; postId: string; destination: BenchConversationDestination; action: "skip" | "restore" }, signal?: AbortSignal) {
+  const { action, ...body } = input;
+  return scheduleRequest<BenchConversationSnapshot>(`/api/v1/editor-bench/schedule/conversation/cell/${action}`, body, signal);
+}
+export function sendBenchConversationTurn(input: { sessionId: string; revision: number; latestRequest: string }, signal?: AbortSignal) {
+  return scheduleRequest<BenchConversationTurn>("/api/v1/editor-bench/schedule/conversation/turn", input, signal);
+}
+export function confirmBenchConversation(input: { sessionId: string; reviewToken: string }, signal?: AbortSignal) {
+  return scheduleRequest<BenchConversationConfirm>("/api/v1/editor-bench/schedule/conversation/confirm", input, signal);
+}
+export type BenchConversationXDraftReview = BenchConversationSnapshot & { review: { postId: string; destination: "x" | "deviantart"; sourceTitle: string; copyText: string; variant: Record<string, any>; fieldDiff: Record<string, { before: unknown; after: unknown }>; previewUrl: string; label: string }; reviewToken: string; expiresAt: string };
+export type BenchConversationXDraftConfirm = BenchConversationSnapshot & { receipt: BenchConversationDraftReceipt; reused: boolean };
+export function reviewBenchConversationXDraft(input: { sessionId: string; revision: number; postId: string }, signal?: AbortSignal) {
+  return scheduleRequest<BenchConversationXDraftReview>("/api/v1/editor-bench/schedule/conversation/x-draft/review", input, signal);
+}
+export function confirmBenchConversationXDraft(input: { sessionId: string; reviewToken: string }, signal?: AbortSignal) {
+  return scheduleRequest<BenchConversationXDraftConfirm>("/api/v1/editor-bench/schedule/conversation/x-draft/confirm", input, signal);
+}
+export function reviewBenchConversationDeviantArtDraft(input: { sessionId: string; revision: number; postId: string }, signal?: AbortSignal) {
+  return scheduleRequest<BenchConversationXDraftReview>("/api/v1/editor-bench/schedule/conversation/deviantart-draft/review", input, signal);
+}
+export function confirmBenchConversationDeviantArtDraft(input: { sessionId: string; reviewToken: string }, signal?: AbortSignal) {
+  return scheduleRequest<BenchConversationXDraftConfirm>("/api/v1/editor-bench/schedule/conversation/deviantart-draft/confirm", input, signal);
+}
+export type BenchConversationXDraftScheduleReview = BenchConversationSnapshot & { review: { variantId: string; destination: "x" | "deviantart"; sourceTitle: string; copyText: string; variant?: Record<string, any>; previewUrl: string; dueAt: { local: string; timezone: "Europe/London"; utc: string }; label: string }; reviewToken: string; expiresAt: string };
+export type BenchConversationXDraftScheduleConfirm = BenchConversationSnapshot & { receipt: { token: string; identity: string; variantId: string; planId: string; dueAt: { local: string; timezone: "Europe/London"; utc: string }; scheduledAt: string; event: Record<string, unknown> }; reused: boolean };
+export function reviewBenchConversationXDraftSchedule(input: { sessionId: string; revision: number; variantId: string; localDate: string; localTime: string }, signal?: AbortSignal) {
+  return scheduleRequest<BenchConversationXDraftScheduleReview>("/api/v1/editor-bench/schedule/conversation/x-draft/schedule/review", input, signal);
+}
+export function confirmBenchConversationXDraftSchedule(input: { sessionId: string; reviewToken: string }, signal?: AbortSignal) {
+  return scheduleRequest<BenchConversationXDraftScheduleConfirm>("/api/v1/editor-bench/schedule/conversation/x-draft/schedule/confirm", input, signal);
+}
+export function reviewBenchConversationDeviantArtDraftSchedule(input: { sessionId: string; revision: number; variantId: string; localDate: string; localTime: string }, signal?: AbortSignal) {
+  return scheduleRequest<BenchConversationXDraftScheduleReview>("/api/v1/editor-bench/schedule/conversation/deviantart-draft/schedule/review", input, signal);
+}
+export function confirmBenchConversationDeviantArtDraftSchedule(input: { sessionId: string; reviewToken: string }, signal?: AbortSignal) {
+  return scheduleRequest<BenchConversationXDraftScheduleConfirm>("/api/v1/editor-bench/schedule/conversation/deviantart-draft/schedule/confirm", input, signal);
+}
+export type BenchConversationXHandoffReview = BenchConversationSnapshot & { review: { variantId: string; destination: "x" | "deviantart"; sourceTitle: string; copyText: string; variant?: Record<string, any>; previewUrl: string; dueAt: { local: string; timezone: "Europe/London"; utc: string }; label: string }; reviewToken: string; expiresAt: string };
+export type BenchConversationXHandoffConfirm = BenchConversationSnapshot & { receipt: { token: string; handoffId: string; identity: string; variantId: string; planId: string; eventId: string; confirmedAt: string; postText: string; exportHash: string; dueAt: { local: string; timezone: "Europe/London"; utc: string }; sourceVersionKey: string; sourceFingerprint: string; variantHash: string }; reused: boolean };
+export function reviewBenchConversationXHandoff(input: { sessionId: string; revision: number; variantId: string }, signal?: AbortSignal) {
+  return scheduleRequest<BenchConversationXHandoffReview>("/api/v1/editor-bench/schedule/conversation/x-draft/handoff/review", input, signal);
+}
+export function confirmBenchConversationXHandoff(input: { sessionId: string; reviewToken: string }, signal?: AbortSignal) {
+  return scheduleRequest<BenchConversationXHandoffConfirm>("/api/v1/editor-bench/schedule/conversation/x-draft/handoff/confirm", input, signal);
+}
+export function reviewBenchConversationDeviantArtHandoff(input: { sessionId: string; revision: number; variantId: string }, signal?: AbortSignal) {
+  return scheduleRequest<BenchConversationXHandoffReview>("/api/v1/editor-bench/schedule/conversation/deviantart-draft/handoff/review", input, signal);
+}
+export type BenchConversationDeviantArtHandoffConfirm = BenchConversationSnapshot & { receipt: { token: string; handoffId: string; identity: string; variantId: string; planId: string; eventId: string; confirmedAt: string; title: string; bodyText: string; tags: string[]; exportHash: string; dueAt: { local: string; timezone: "Europe/London"; utc: string }; sourceVersionKey: string; sourceFingerprint: string; variantHash: string }; reused: boolean };
+export function confirmBenchConversationDeviantArtHandoff(input: { sessionId: string; reviewToken: string }, signal?: AbortSignal) {
+  return scheduleRequest<BenchConversationDeviantArtHandoffConfirm>("/api/v1/editor-bench/schedule/conversation/deviantart-draft/handoff/confirm", input, signal);
+}
+export function openBenchConversationPreview(input: { sessionId: string; revision: number; postId: string; mediaId: string }, signal?: AbortSignal) {
+  return scheduleRequest<BenchConversationPreviewOpen>("/api/v1/editor-bench/schedule/conversation/preview/open", input, signal);
+}
+export function uploadBenchConversationPreview(sessionId: string, attemptId: string, blob: Blob, signal?: AbortSignal) {
+  return relayFetch<{ previewMediaId: string; exportHash: string; size: number }>(`/api/v1/editor-bench/schedule/conversation/session/${encodeURIComponent(sessionId)}/preview/${encodeURIComponent(attemptId)}/upload`, { method: "POST", headers: { "content-type": "image/jpeg" }, body: blob, signal });
+}
+export function completeBenchConversationPreview(sessionId: string, attemptId: string, previewMediaId: string, signal?: AbortSignal) {
+  return scheduleRequest<{ receipt: BenchConversationPreviewReceipt } & BenchConversationSnapshot>(`/api/v1/editor-bench/schedule/conversation/session/${encodeURIComponent(sessionId)}/preview/${encodeURIComponent(attemptId)}/complete`, { previewMediaId }, signal);
+}
+export function cancelBenchConversationPreview(sessionId: string, attemptId: string, signal?: AbortSignal) {
+  return scheduleRequest<BenchConversationSnapshot>(`/api/v1/editor-bench/schedule/conversation/session/${encodeURIComponent(sessionId)}/preview/${encodeURIComponent(attemptId)}/cancel`, {}, signal);
+}
 export type BenchVariantEditChatResult = {
   decision: "clarification" | "unchanged" | "review";
   question?: string;

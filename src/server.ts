@@ -1,3 +1,4 @@
+import { registerPostingRhythmRoutes } from "./posting-rhythms/routes.js";
 /**
  * @fileoverview Express application factory (`createApp`) and the full Relay HTTP API route surface.
  * @description Selects file- versus database-backed stores from `AppConfig`, wires Patreon ingest, gallery, patron social, payments, webhooks, and export routes. Module intentionally monolithic; most business logic delegates to `src/*` services.
@@ -25,7 +26,7 @@ import {
   parseCreatorPatreonOAuthState,
   signCreatorPatreonOAuthState
 } from "./auth/patreon-creator-oauth-state.js";
-import { FilePatreonCookieStore } from "./auth/cookie-store.js";
+import { createPatreonCookieStore } from "./auth/cookie-store-selection.js";
 import { PatreonClient } from "./auth/patreon-client.js";
 import { DbPatreonTokenStore } from "./auth/token-store-db.js";
 import { FilePatreonTokenStore, type PatreonTokenStore } from "./auth/token-store.js";
@@ -1033,6 +1034,10 @@ export type AppConfig = {
   relay_token_encryption_key?: string;
   credential_store_path?: string;
   cookie_store_path?: string;
+  /** Shared encrypted Patreon sessions; defaults on for production with Prisma. */
+  relay_db_store_patreon_cookie?: boolean;
+  /** Runtime guard for a real API/worker split; factory-only local tests do not start workers. */
+  relay_require_shared_patreon_cookie?: boolean;
   ingest_canonical_path?: string;
   ingest_dlq_path?: string;
   patreon_sync_watermark_path?: string;
@@ -2045,10 +2050,11 @@ export function createApp(config: AppConfig): CreateAppResult {
   deployAdapters.set("netlify", new NetlifyAdapter());
   const deployService = new DeployService(deployStore, cloneService, deployAdapters);
 
-  const cookieStore = new FilePatreonCookieStore(
-    config.cookie_store_path ?? ".relay-data/patreon_cookies.json",
-    encryption
-  );
+  const cookieStore = createPatreonCookieStore({
+    filePath: config.cookie_store_path ?? ".relay-data/patreon_cookies.json",
+    encryption, prisma: config.prisma, dbEnabled: config.relay_db_store_patreon_cookie,
+    requireShared: config.relay_require_shared_patreon_cookie
+  });
   const watermarkStore = useDbSyncWatermarkStore(config)
     ? new DbSyncWatermarkStore(config.prisma!)
     : new SyncWatermarkStore(
@@ -3579,6 +3585,26 @@ export function createApp(config: AppConfig): CreateAppResult {
       return null;
     }
     return relayCreatorId;
+  }
+
+  async function resolveStrictExtensionCreatorId(req: Request, res: Response, traceId: string): Promise<string | null> {
+    if (!config.prisma) { res.status(503).json(errorEnvelope("SERVICE_UNAVAILABLE", "Database required.", traceId)); return null; }
+    const bearer = /^Bearer\s+(.+)$/i.exec(req.header("authorization")?.trim() ?? "")?.[1]?.trim() ?? "";
+    if (!bearer) { res.status(401).json(errorEnvelope("AUTH_ERROR", "Bearer token required.", traceId)); return null; }
+    let session: Awaited<ReturnType<typeof identityService.resolveSession>>;
+    try { session = await identityService.resolveSession(bearer, { cleanupExpired: false }); }
+    catch { res.status(401).json(errorEnvelope("AUTH_ERROR", "Invalid or expired session.", traceId)); return null; }
+    if (!session) { res.status(401).json(errorEnvelope("AUTH_ERROR", "Invalid or expired session.", traceId)); return null; }
+    if (session.kind !== SessionKind.extension) { res.status(403).json(errorEnvelope("FORBIDDEN", "Extension grant required.", traceId)); return null; }
+    try {
+      await applyRelayAccountRlsIfPresent(config.prisma, session);
+      const accountId = await getAccountIdForSession(config.prisma, session);
+      if (!accountId) { res.status(403).json(errorEnvelope("FORBIDDEN", "Session is not linked to an account.", traceId)); return null; }
+      const account = await config.prisma.account.findUnique({ where: { id: accountId }, select: { primaryRelayCreatorId: true } });
+      const creatorId = account?.primaryRelayCreatorId?.trim();
+      if (!creatorId) { res.status(404).json(errorEnvelope("NOT_FOUND", "No creator studio for this grant.", traceId)); return null; }
+      return creatorId;
+    } catch { res.status(403).json(errorEnvelope("FORBIDDEN", "Extension grant could not be authorized.", traceId)); return null; }
   }
 
   /** Read-only extension transport for a confirmed real-Library X schedule cue. */
@@ -5328,7 +5354,8 @@ export function createApp(config: AppConfig): CreateAppResult {
         );
       }
     }
-    await cookieStore.upsert(creatorId, sessionId);
+    try { await cookieStore.upsert(creatorId, sessionId); }
+    catch { return res.status(503).json(errorEnvelope("COOKIE_STORE_UNAVAILABLE", "Unable to store the Patreon session. Try again later.", traceId)); }
     return res.status(200).json(
       successEnvelope({ creator_id: creatorId, status: "stored" }, traceId)
     );
@@ -5367,7 +5394,9 @@ export function createApp(config: AppConfig): CreateAppResult {
         .json(errorEnvelope("VALIDATION_ERROR", "creator_id is required.", traceId, details));
     }
     const creatorId = (body.creator_id as string).trim();
-    const removed = await cookieStore.remove(creatorId);
+    let removed: boolean;
+    try { removed = await cookieStore.remove(creatorId); }
+    catch { return res.status(503).json(errorEnvelope("COOKIE_STORE_UNAVAILABLE", "Unable to remove the Patreon session. Try again later.", traceId)); }
     return res.status(200).json(
       successEnvelope({ creator_id: creatorId, removed }, traceId)
     );
@@ -5391,7 +5420,9 @@ export function createApp(config: AppConfig): CreateAppResult {
           { field: "creator_id", issue: "missing" }
         ]));
     }
-    const has = (await cookieStore.getSessionId(creatorId)) !== null;
+    let has: boolean;
+    try { has = (await cookieStore.getSessionId(creatorId)) !== null; }
+    catch { return res.status(503).json(errorEnvelope("COOKIE_STORE_UNAVAILABLE", "Unable to check the Patreon session. Try again later.", traceId)); }
     return res.status(200).json(
       successEnvelope({ creator_id: creatorId, has_cookie: has }, traceId)
     );
@@ -19501,6 +19532,7 @@ export function createApp(config: AppConfig): CreateAppResult {
         const { context } = await requireAccountWithRole(req, { prisma: config.prisma!, identityService, readonlySession }, "creator");
         return { creatorId: context.primaryRelayCreatorId!.trim(), accountId: context.accountId };
       },
+      authenticateExtensionCreator: async (req, res, traceId) => resolveStrictExtensionCreatorId(req, res, traceId),
       guardMutation: async (req, res, traceId, creatorId) => {
         if (!(await assertCreatorRelayMutationAllowed(req, res, traceId, config.prisma!, creatorId))) return false;
         return guardStudioSyncWritable(res, traceId, creatorId);
@@ -19550,6 +19582,21 @@ export function createApp(config: AppConfig): CreateAppResult {
           if (sendRelayAuthError(res, err, traceId)) return null;
           throw err;
         }
+      }
+    });
+
+    registerPostingRhythmRoutes(app, {
+      prisma: config.prisma,
+      traceId: traceIdFrom,
+      authorize: async (req, res, mutation) => {
+        const traceId=traceIdFrom(req);
+        try {
+          const {context}=await requireAccountWithRole(req,{prisma:config.prisma!,identityService},"creator");
+          const creatorId=context.primaryRelayCreatorId?.trim();
+          if(!creatorId){res.status(403).json(errorEnvelope("FORBIDDEN","A creator studio is required.",traceId));return null;}
+          if(mutation && (!(await assertCreatorRelayMutationAllowed(req,res,traceId,config.prisma!,creatorId)) || !(await guardStudioSyncWritable(res,traceId,creatorId))))return null;
+          return creatorId;
+        }catch(err){if(sendRelayAuthError(res,err,traceId))return null;throw err;}
       }
     });
 

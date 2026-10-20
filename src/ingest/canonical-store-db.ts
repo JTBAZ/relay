@@ -110,6 +110,21 @@ function mapVersionRow(v: PostVersionRow) {
   };
 }
 
+function mapMediaStateRow(media: MediaRow) {
+  return {
+    postIds: [...media.post_ids],
+    upstreamStatus: media.upstream_status === "deleted" ? MediaUpstreamStatus.deleted : MediaUpstreamStatus.active,
+    currentVersionSeq: media.current.version_seq,
+    currentUpstreamRevision: media.current.upstream_revision,
+    currentMimeType: media.current.mime_type ?? null,
+    currentUpstreamUrl: media.current.upstream_url ?? null,
+    currentRole: media.current.role ?? null,
+    currentStorageKey: media.current.storage_key ?? null,
+    currentIngestedAt: new Date(media.current.ingested_at),
+    versionsJson: media.versions as unknown as Prisma.InputJsonValue
+  };
+}
+
 /**
  * Ensures at most one row per `version_seq` before nested `PostVersion` creates.
  * Last occurrence wins when duplicates exist (defensive; DB @@unique([postId, versionSeq]) otherwise fails).
@@ -604,7 +619,7 @@ export class DbCanonicalStore implements CanonicalStore {
         lane.source === PostSource.PATREON
           ? MediaIngestOrigin.PATREON
           : MediaIngestOrigin.SUBSCRIBESTAR;
-      // Preserved posts can still have media URL refreshes or deletions.
+      // A preserved parent can share fresh media revisions with newly materialized posts.
       if (lane.preserve.size > 0) {
         const preservedMedia = await tx.mediaAsset.findMany({
           where: { creatorId, ingestOrigin: ingestOriginLane, primaryPostId: { in: [...lane.preserve] } },
@@ -613,23 +628,34 @@ export class DbCanonicalStore implements CanonicalStore {
         for (const row of preservedMedia) {
           const media = mediaMap[row.id];
           if (!media) continue;
+          const advanceRevision = media.current.upstream_revision !== row.currentUpstreamRevision &&
+            media.versions.some((v) => v.upstream_revision === row.currentUpstreamRevision &&
+              v.version_seq < media.current.version_seq);
+          const addReferences = media.post_ids.some((id) => postIdsToMaterialize.has(id));
+          if (addReferences && media.current.upstream_revision !== row.currentUpstreamRevision && !advanceRevision) {
+            throw new Error("Media revision changed since the snapshot; retry the ingest batch.");
+          }
           const refreshUrl = media.current.upstream_revision === row.currentUpstreamRevision &&
             media.current.upstream_url?.trim() && media.current.upstream_url !== row.currentUpstreamUrl;
           const deleteMedia = media.upstream_status === "deleted" && row.upstreamStatus !== MediaUpstreamStatus.deleted;
-          if (refreshUrl || deleteMedia) {
+          if (advanceRevision || addReferences || refreshUrl || deleteMedia) {
             const updated = await tx.mediaAsset.updateMany({
               where: {
                 id: row.id, creatorId, primaryPostId: row.primaryPostId, ingestOrigin: ingestOriginLane,
                 currentUpstreamRevision: row.currentUpstreamRevision, currentUpstreamUrl: row.currentUpstreamUrl,
-                ...(deleteMedia ? { upstreamStatus: row.upstreamStatus } : {})
+                ...(advanceRevision || deleteMedia ? { upstreamStatus: row.upstreamStatus } : {})
               },
-              data: {
+              data: advanceRevision ? mapMediaStateRow(media) : {
+                ...(addReferences ? { postIds: [...media.post_ids] } : {}),
                 ...(refreshUrl ? { currentUpstreamUrl: media.current.upstream_url } : {}),
                 ...(deleteMedia ? { upstreamStatus: MediaUpstreamStatus.deleted } : {})
               }
             });
             if (deleteMedia && updated.count !== 1) {
               throw new Error("Media changed while applying deletion; retry the ingest batch.");
+            }
+            if ((advanceRevision || addReferences) && updated.count !== 1) {
+              throw new Error("Media changed while saving shared state; retry the ingest batch.");
             }
           }
         }
@@ -658,20 +684,8 @@ export class DbCanonicalStore implements CanonicalStore {
           return {
             id: m.media_id,
             creatorId: m.creator_id,
-            postIds: [...m.post_ids],
             primaryPostId: primary,
-            upstreamStatus:
-              m.upstream_status === "deleted"
-                ? MediaUpstreamStatus.deleted
-                : MediaUpstreamStatus.active,
-            currentVersionSeq: m.current.version_seq,
-            currentUpstreamRevision: m.current.upstream_revision,
-            currentMimeType: m.current.mime_type ?? null,
-            currentUpstreamUrl: m.current.upstream_url ?? null,
-            currentRole: m.current.role ?? null,
-            currentStorageKey: m.current.storage_key ?? null,
-            currentIngestedAt: new Date(m.current.ingested_at),
-            versionsJson: m.versions as unknown as Prisma.InputJsonValue,
+            ...mapMediaStateRow(m),
             ingestOrigin: ingestOriginLane,
             processingStatus: MediaProcessingStatus.READY,
             processingError: null

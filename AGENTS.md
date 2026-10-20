@@ -64,30 +64,7 @@ Historical reference only; ignore this workflow for production execution. **`Aut
 
 ## Agent skills
 
-### Coding and code review
-
-Use **Ponytail** (`ponytail`) for coding work to produce the smallest complete implementation that meets the approved requirements. Read its `SKILL.md` before applying it. Preserve existing architecture, conventions, behavior outside the requested change, validation, security, accessibility, and necessary tests. Product requirements, explicit user instructions, Impeccable's applicable UI guidance, and required verification take precedence over minimizing code.
-
-Before completing code changes, run **Ponytail Review** (`ponytail-review`) on the current task's changes and the connected code needed to assess them. Identify the task's diff explicitly so unrelated working-tree changes or earlier commits are not swept into the review. Inspect callers and dependencies as needed to verify correctness and compatibility; reading connected code does not authorize changing it.
-
-- Fix defects introduced by the task and existing defects that must be corrected to meet its approved requirements. Include necessary caller, fixture, and test updates.
-- Report unrelated defects and cleanup opportunities separately without implementing them. Review findings are recommendations, not authorization to expand the task.
-- Do not refactor old code solely because it is nearby, duplicated, verbose, or flagged by a review. Broader refactoring, dependency replacement, and architecture changes require explicit user authorization.
-- Keep simplifications within the approved scope and preserve required behavior and safeguards. Re-run the relevant checks after review fixes; report any remaining findings or verification limits before claiming completion.
-
-### Copy and prose
-
-Use **Humanizer** (`humanizer`) when writing or editing user-facing copy, including UI labels, onboarding, help text, errors, marketing copy, and documentation. Read its `SKILL.md` and apply its guidance before delivering the final text. Preserve the writer's voice, product meaning, factual claims, and technical identifiers; remove filler and AI writing patterns without inventing details.
-
-### UI and UX
-
-Use **Impeccable** (`impeccable`) and **Web Design Guidelines** (`web-design-guidelines`) for UI and UX design, development, refinement, and review.
-
-- Apply Impeccable's context-loading workflow and relevant playbooks to planning, visual direction, implementation, and rendered verification. Preserve the product brief, established design system, and scope of the requested change.
-- Fetch the current Web Design Guidelines as its skill instructs, use them during development, and review changed UI against them before completion. Check accessibility, keyboard and focus behavior, forms, navigation, responsive layouts, motion, and performance. Verify the rendered result at the device sizes the changed surface supports.
-- For UI work that includes copy, also apply Humanizer. Product contracts and explicit user instructions take precedence over stylistic preferences in these skills.
-
-Resolve each skill's `SKILL.md` from the available-skills catalog; global installations normally live at `~/.agents/skills/<skill-name>/SKILL.md`.
+General coding, review, copy, and UI/UX skill usage is configured globally in `~/.codex/AGENTS.md`. The configuration below is specific to Relay.
 
 ### Issue tracker
 

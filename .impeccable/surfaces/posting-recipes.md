@@ -10,7 +10,7 @@ OWN-WORLD: Navy-tinted shell #0e141d, blue-gray surfaces #17212e, quiet #354354 
 
 STORY: Choose connected source and filters; arrange destination/timing/treatment per release; inspect the compact full sequence; save a review-first recipe. Default and Always on never authorize publishing.
 
-FIRST VIEWPORT: Slim Relay header and draft status; title/tools; compact two-part source/filter strip; connected numbered release rows with one expanded three-column editor and dedicated Description region; persistent save/review bar. Secondary releases remain readable summaries. At885px retain the same vertical composition;390px stacks fields without horizontal panning.
+FIRST VIEWPORT: Slim Relay header and draft status; title/tools with whole-recipe chooser; compact two-part source/filter strip; one Also send it to heading then platform-logo destination tags leading each numbered row; right-side Details opens timing/treatment in two columns and a dedicated Description region; persistent save/review bar. Secondary releases remain readable summaries. At885px retain the same vertical composition;390px stacks fields without horizontal panning.
 
 FORM: Studio contact sheet, own candidate1 (user chose pick over assigned5). seed:641ee8bd6773cf43. Signature interaction: opening a release keeps the rest of its sequence visible; insertion moves following releases along the connecting line.150–220ms exponential ease-out, visible defaults, reduced-motion bypass. Settings inspection never changes enabled state.
 
@@ -24,3 +24,7 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
 4. Move final save/notification/authority choices to explicit save entry; preserve one-time confirmation separately.
 5. Add working-draft recovery, reversible removal and reliable test/handoff focus. Stack simulator rows on mobile.
 6. Verify functional invariants, desktop1440, user885 and mobile390; run detector, fresh finish review and design-system documentation.
+
+## Annotated refinement, 2026-10-19
+
+User feedback makes destinations the leading row content in both open and collapsed states. Remove release-type titles, Editing badges and duplicate destination prompt. Recipes sits above the entire When/Also flow; its inline chooser loads complete templates or saved configuration. Source and targets use platform logos plus account text. Keep the existing palette, rounded geometry, independent settings, timing/receipt behavior and review authority.

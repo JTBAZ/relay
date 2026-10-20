@@ -1,0 +1,13 @@
+
+> web@0.1.0 lint
+> next lint --file app/studio/rhythms/PostingRhythms.tsx --file app/studio/rhythms/RhythmActionReview.tsx --file app/studio/rhythms/page.tsx --file lib/posting-rhythms-api.ts --file app/components/distribution/DistributionHandoffPanel.tsx --file app/components/automations/ScheduleRailAutomationsModal.tsx
+
+
+./app/studio/rhythms/PostingRhythms.tsx
+6:84  Error: 'Check' is defined but never used.  @typescript-eslint/no-unused-vars
+18:208  Warning: The ref value 'ref.current' will likely have changed by the time this effect cleanup function runs. If this ref points to a node rendered by React, copy 'ref.current' to a variable inside the effect, and use that variable in the cleanup function.  react-hooks/exhaustive-deps
+
+./app/studio/rhythms/RhythmActionReview.tsx
+24:886  Warning: Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element  @next/next/no-img-element
+
+info  - Need to disable some ESLint rules? Learn more here: https://nextjs.org/docs/basic-features/eslint#disabling-rules

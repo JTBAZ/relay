@@ -119,7 +119,8 @@ export async function runRelayWorkerProcess(
     subscribeStarPatronGraphqlUrl
   } = createApp({
     ...serverConfig,
-    prisma
+    prisma,
+    relay_require_shared_patreon_cookie: true
   });
 
   let stopAutosync: (() => void) | undefined;

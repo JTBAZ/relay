@@ -1,0 +1,835 @@
+{
+  "ticket": "BGB-02",
+  "mode": "live_synthetic_http",
+  "model": "gpt-5.6-luna",
+  "reasoningEffort": "none",
+  "passed": false,
+  "maxCalls": 6,
+  "maxReservationsUsd": 0.06,
+  "pricing": {
+    "inputUsdPerMillion": 0.2,
+    "cachedInputUsdPerMillion": 0.02,
+    "outputUsdPerMillion": 1.2,
+    "source": "https://developers.openai.com/api/docs/models/gpt-5.6-luna"
+  },
+  "cases": [
+    {
+      "id": "initial-dual-destination",
+      "passed": false,
+      "setup": "Fresh empty mock session; both turns use the model.",
+      "steps": [
+        {
+          "text": "Select my sketches for X and DeviantArt drafts. Run Previewizer first.",
+          "requestSha256": "98c802420e5e6cd6e8ca4b6a0c247df1f5dc416bc547028433c5a538aa494e69",
+          "before": {
+            "revision": 0,
+            "selection": {
+              "postIds": [],
+              "excludedPostIds": []
+            },
+            "preparation": null,
+            "matrixCells": [],
+            "confirmedDrafts": []
+          },
+          "passed": true,
+          "httpStatus": 200,
+          "status": "selected",
+          "diagnostic": null,
+          "message": "The posts are selected for preview-first draft preparation for X and DeviantArt. Use Previewizer and review each destination cell.",
+          "after": {
+            "revision": 1,
+            "selection": {
+              "postIds": [
+                "bench_post_tide_sketch",
+                "bench_post_orchard_sketch"
+              ],
+              "excludedPostIds": []
+            },
+            "preparation": {
+              "goal": "preview_first_x_drafts",
+              "destination": "x",
+              "destinations": [
+                "x",
+                "deviantart"
+              ],
+              "templateId": null,
+              "copyChoice": null,
+              "pendingRequirements": [
+                "template",
+                "copy_choice",
+                "previewizer",
+                "source_media_review"
+              ]
+            },
+            "matrixCells": [
+              {
+                "postId": "bench_post_tide_sketch",
+                "destination": "x",
+                "key": "bench_post_tide_sketch::x",
+                "status": "blocked",
+                "reason": "Choose the Square teaser template."
+              },
+              {
+                "postId": "bench_post_tide_sketch",
+                "destination": "deviantart",
+                "key": "bench_post_tide_sketch::deviantart",
+                "status": "blocked",
+                "reason": "Choose the Square teaser template."
+              },
+              {
+                "postId": "bench_post_orchard_sketch",
+                "destination": "x",
+                "key": "bench_post_orchard_sketch::x",
+                "status": "blocked",
+                "reason": "Choose the Square teaser template."
+              },
+              {
+                "postId": "bench_post_orchard_sketch",
+                "destination": "deviantart",
+                "key": "bench_post_orchard_sketch::deviantart",
+                "status": "blocked",
+                "reason": "Choose the Square teaser template."
+              }
+            ],
+            "confirmedDrafts": []
+          },
+          "callNumber": 1
+        },
+        {
+          "text": "Use Square teaser and keep their existing titles.",
+          "requestSha256": "74935dfb90ff6162f13eb98c8a3207a1b7ebdef609f459ad56032487fa45bf01",
+          "before": {
+            "revision": 1,
+            "selection": {
+              "postIds": [
+                "bench_post_tide_sketch",
+                "bench_post_orchard_sketch"
+              ],
+              "excludedPostIds": []
+            },
+            "preparation": {
+              "goal": "preview_first_x_drafts",
+              "destination": "x",
+              "destinations": [
+                "x",
+                "deviantart"
+              ],
+              "templateId": null,
+              "copyChoice": null,
+              "pendingRequirements": [
+                "template",
+                "copy_choice",
+                "previewizer",
+                "source_media_review"
+              ]
+            },
+            "matrixCells": [
+              {
+                "postId": "bench_post_tide_sketch",
+                "destination": "x",
+                "key": "bench_post_tide_sketch::x",
+                "status": "blocked",
+                "reason": "Choose the Square teaser template."
+              },
+              {
+                "postId": "bench_post_tide_sketch",
+                "destination": "deviantart",
+                "key": "bench_post_tide_sketch::deviantart",
+                "status": "blocked",
+                "reason": "Choose the Square teaser template."
+              },
+              {
+                "postId": "bench_post_orchard_sketch",
+                "destination": "x",
+                "key": "bench_post_orchard_sketch::x",
+                "status": "blocked",
+                "reason": "Choose the Square teaser template."
+              },
+              {
+                "postId": "bench_post_orchard_sketch",
+                "destination": "deviantart",
+                "key": "bench_post_orchard_sketch::deviantart",
+                "status": "blocked",
+                "reason": "Choose the Square teaser template."
+              }
+            ],
+            "confirmedDrafts": []
+          },
+          "passed": false,
+          "httpStatus": 200,
+          "status": "clarification",
+          "diagnostic": "schema",
+          "message": "Please make one clear selection, edit or posting request.",
+          "after": {
+            "revision": 1,
+            "selection": {
+              "postIds": [
+                "bench_post_tide_sketch",
+                "bench_post_orchard_sketch"
+              ],
+              "excludedPostIds": []
+            },
+            "preparation": {
+              "goal": "preview_first_x_drafts",
+              "destination": "x",
+              "destinations": [
+                "x",
+                "deviantart"
+              ],
+              "templateId": null,
+              "copyChoice": null,
+              "pendingRequirements": [
+                "template",
+                "copy_choice",
+                "previewizer",
+                "source_media_review"
+              ]
+            },
+            "matrixCells": [
+              {
+                "postId": "bench_post_tide_sketch",
+                "destination": "x",
+                "key": "bench_post_tide_sketch::x",
+                "status": "blocked",
+                "reason": "Choose the Square teaser template."
+              },
+              {
+                "postId": "bench_post_tide_sketch",
+                "destination": "deviantart",
+                "key": "bench_post_tide_sketch::deviantart",
+                "status": "blocked",
+                "reason": "Choose the Square teaser template."
+              },
+              {
+                "postId": "bench_post_orchard_sketch",
+                "destination": "x",
+                "key": "bench_post_orchard_sketch::x",
+                "status": "blocked",
+                "reason": "Choose the Square teaser template."
+              },
+              {
+                "postId": "bench_post_orchard_sketch",
+                "destination": "deviantart",
+                "key": "bench_post_orchard_sketch::deviantart",
+                "status": "blocked",
+                "reason": "Choose the Square teaser template."
+              }
+            ],
+            "confirmedDrafts": []
+          },
+          "callNumber": 2
+        }
+      ],
+      "drafts": [],
+      "failure": {
+        "name": "AssertionError",
+        "code": "ERR_ASSERTION",
+        "message": "Expected values to be strictly equal:\n+ actual - expected\n\n+ 'clarification'\n- 'preparation_updated'\n"
+      },
+      "actual": {
+        "revision": 1,
+        "selection": {
+          "postIds": [
+            "bench_post_tide_sketch",
+            "bench_post_orchard_sketch"
+          ],
+          "excludedPostIds": []
+        },
+        "preparation": {
+          "goal": "preview_first_x_drafts",
+          "destination": "x",
+          "destinations": [
+            "x",
+            "deviantart"
+          ],
+          "templateId": null,
+          "copyChoice": null,
+          "pendingRequirements": [
+            "template",
+            "copy_choice",
+            "previewizer",
+            "source_media_review"
+          ]
+        },
+        "matrixCells": [
+          {
+            "postId": "bench_post_tide_sketch",
+            "destination": "x",
+            "key": "bench_post_tide_sketch::x",
+            "status": "blocked",
+            "reason": "Choose the Square teaser template."
+          },
+          {
+            "postId": "bench_post_tide_sketch",
+            "destination": "deviantart",
+            "key": "bench_post_tide_sketch::deviantart",
+            "status": "blocked",
+            "reason": "Choose the Square teaser template."
+          },
+          {
+            "postId": "bench_post_orchard_sketch",
+            "destination": "x",
+            "key": "bench_post_orchard_sketch::x",
+            "status": "blocked",
+            "reason": "Choose the Square teaser template."
+          },
+          {
+            "postId": "bench_post_orchard_sketch",
+            "destination": "deviantart",
+            "key": "bench_post_orchard_sketch::deviantart",
+            "status": "blocked",
+            "reason": "Choose the Square teaser template."
+          }
+        ],
+        "confirmedDrafts": []
+      }
+    },
+    {
+      "id": "add-destination-and-artwork",
+      "passed": false,
+      "setup": "Canned selection and existing-title choices; only the following turns use the model.",
+      "steps": [
+        {
+          "text": "Also add DeviantArt.",
+          "requestSha256": "acfa470f2b2b5b7dae60072049d79cd04cbff03f4525820826bcd33baab4bd91",
+          "before": {
+            "revision": 2,
+            "selection": {
+              "postIds": [
+                "bench_post_tide_sketch"
+              ],
+              "excludedPostIds": [
+                "bench_post_orchard_sketch",
+                "bench_post_orchard_print"
+              ]
+            },
+            "preparation": {
+              "goal": "preview_first_x_drafts",
+              "destination": "x",
+              "destinations": [
+                "x"
+              ],
+              "templateId": "bench_template_square",
+              "copyChoice": {
+                "kind": "existing_titles"
+              },
+              "pendingRequirements": [
+                "previewizer",
+                "source_media_review"
+              ]
+            },
+            "matrixCells": [
+              {
+                "postId": "bench_post_tide_sketch",
+                "destination": "x",
+                "key": "bench_post_tide_sketch::x",
+                "status": "needs_preview"
+              }
+            ],
+            "confirmedDrafts": []
+          },
+          "passed": false,
+          "httpStatus": 200,
+          "status": "clarification",
+          "diagnostic": "schema",
+          "message": "Please make one clear selection, edit or posting request.",
+          "after": {
+            "revision": 2,
+            "selection": {
+              "postIds": [
+                "bench_post_tide_sketch"
+              ],
+              "excludedPostIds": [
+                "bench_post_orchard_sketch",
+                "bench_post_orchard_print"
+              ]
+            },
+            "preparation": {
+              "goal": "preview_first_x_drafts",
+              "destination": "x",
+              "destinations": [
+                "x"
+              ],
+              "templateId": "bench_template_square",
+              "copyChoice": {
+                "kind": "existing_titles"
+              },
+              "pendingRequirements": [
+                "previewizer",
+                "source_media_review"
+              ]
+            },
+            "matrixCells": [
+              {
+                "postId": "bench_post_tide_sketch",
+                "destination": "x",
+                "key": "bench_post_tide_sketch::x",
+                "status": "needs_preview"
+              }
+            ],
+            "confirmedDrafts": []
+          },
+          "callNumber": 3
+        }
+      ],
+      "drafts": [],
+      "failure": {
+        "name": "AssertionError",
+        "code": "ERR_ASSERTION",
+        "message": "Expected values to be strictly equal:\n+ actual - expected\n\n+ 'clarification'\n- 'selected'\n"
+      },
+      "actual": {
+        "revision": 2,
+        "selection": {
+          "postIds": [
+            "bench_post_tide_sketch"
+          ],
+          "excludedPostIds": [
+            "bench_post_orchard_sketch",
+            "bench_post_orchard_print"
+          ]
+        },
+        "preparation": {
+          "goal": "preview_first_x_drafts",
+          "destination": "x",
+          "destinations": [
+            "x"
+          ],
+          "templateId": "bench_template_square",
+          "copyChoice": {
+            "kind": "existing_titles"
+          },
+          "pendingRequirements": [
+            "previewizer",
+            "source_media_review"
+          ]
+        },
+        "matrixCells": [
+          {
+            "postId": "bench_post_tide_sketch",
+            "destination": "x",
+            "key": "bench_post_tide_sketch::x",
+            "status": "needs_preview"
+          }
+        ],
+        "confirmedDrafts": []
+      }
+    },
+    {
+      "id": "reverse-addition-and-narrowing",
+      "passed": false,
+      "setup": "Canned selection and existing-title choices; only the following turns use the model.",
+      "steps": [
+        {
+          "text": "Also add X.",
+          "requestSha256": "b07c33ef444c5e7fe12ee53786b47c13d9b8e73007e2b43c07f3e50a2a7b162d",
+          "before": {
+            "revision": 2,
+            "selection": {
+              "postIds": [
+                "bench_post_tide_sketch"
+              ],
+              "excludedPostIds": [
+                "bench_post_orchard_sketch",
+                "bench_post_orchard_print"
+              ]
+            },
+            "preparation": {
+              "goal": "preview_first_deviantart_drafts",
+              "destination": "deviantart",
+              "destinations": [
+                "deviantart"
+              ],
+              "templateId": "bench_template_square",
+              "copyChoice": {
+                "kind": "existing_titles"
+              },
+              "pendingRequirements": [
+                "previewizer",
+                "source_media_review"
+              ]
+            },
+            "matrixCells": [
+              {
+                "postId": "bench_post_tide_sketch",
+                "destination": "deviantart",
+                "key": "bench_post_tide_sketch::deviantart",
+                "status": "needs_preview"
+              }
+            ],
+            "confirmedDrafts": []
+          },
+          "passed": false,
+          "httpStatus": 200,
+          "status": "clarification",
+          "diagnostic": "schema",
+          "message": "Please make one clear selection, edit or posting request.",
+          "after": {
+            "revision": 2,
+            "selection": {
+              "postIds": [
+                "bench_post_tide_sketch"
+              ],
+              "excludedPostIds": [
+                "bench_post_orchard_sketch",
+                "bench_post_orchard_print"
+              ]
+            },
+            "preparation": {
+              "goal": "preview_first_deviantart_drafts",
+              "destination": "deviantart",
+              "destinations": [
+                "deviantart"
+              ],
+              "templateId": "bench_template_square",
+              "copyChoice": {
+                "kind": "existing_titles"
+              },
+              "pendingRequirements": [
+                "previewizer",
+                "source_media_review"
+              ]
+            },
+            "matrixCells": [
+              {
+                "postId": "bench_post_tide_sketch",
+                "destination": "deviantart",
+                "key": "bench_post_tide_sketch::deviantart",
+                "status": "needs_preview"
+              }
+            ],
+            "confirmedDrafts": []
+          },
+          "callNumber": 4
+        }
+      ],
+      "drafts": [],
+      "failure": {
+        "name": "AssertionError",
+        "code": "ERR_ASSERTION",
+        "message": "Expected values to be strictly equal:\n+ actual - expected\n\n+ 'clarification'\n- 'selected'\n"
+      },
+      "actual": {
+        "revision": 2,
+        "selection": {
+          "postIds": [
+            "bench_post_tide_sketch"
+          ],
+          "excludedPostIds": [
+            "bench_post_orchard_sketch",
+            "bench_post_orchard_print"
+          ]
+        },
+        "preparation": {
+          "goal": "preview_first_deviantart_drafts",
+          "destination": "deviantart",
+          "destinations": [
+            "deviantart"
+          ],
+          "templateId": "bench_template_square",
+          "copyChoice": {
+            "kind": "existing_titles"
+          },
+          "pendingRequirements": [
+            "previewizer",
+            "source_media_review"
+          ]
+        },
+        "matrixCells": [
+          {
+            "postId": "bench_post_tide_sketch",
+            "destination": "deviantart",
+            "key": "bench_post_tide_sketch::deviantart",
+            "status": "needs_preview"
+          }
+        ],
+        "confirmedDrafts": []
+      }
+    }
+  ],
+  "calls": [
+    {
+      "number": 1,
+      "inputBytes": 22895,
+      "inputSha256": "f66017d262c284e7f7023b51521362c9671c3bbd9d0a6bf09d6d235fdf071131",
+      "reserveCeilingUsd": 0.008425799999999999,
+      "currentPreparation": null,
+      "providerHttpStatus": 200,
+      "actualAction": {
+        "kind": "selection",
+        "selection": {
+          "mode": "replace",
+          "requestQuote": "Select my sketches for X and DeviantArt drafts. Run Previewizer first.",
+          "selector": {
+            "base": "catalog",
+            "all": [
+              {
+                "field": "stage",
+                "value": "sketch",
+                "requestQuote": "sketches"
+              }
+            ],
+            "any": [],
+            "none": []
+          }
+        },
+        "preparation": {
+          "destinations": [
+            "x",
+            "deviantart"
+          ],
+          "destinationQuotes": [
+            "X",
+            "DeviantArt"
+          ],
+          "previewFirst": true,
+          "previewQuote": "Run Previewizer first"
+        }
+      },
+      "usage": {
+        "inputTokens": 4445,
+        "outputTokens": 114,
+        "costUsd": 0.0010257999999999999,
+        "calls": 1
+      },
+      "elapsedMs": 3725
+    },
+    {
+      "number": 2,
+      "inputBytes": 23063,
+      "inputSha256": "c2be49d3eada2593f5ade7b62f51aa0bfebf4f2156d97d8b696927644d525ce6",
+      "reserveCeilingUsd": 0.0084594,
+      "currentPreparation": {
+        "goal": "preview_first_x_drafts",
+        "destination": "x",
+        "destinations": [
+          "x",
+          "deviantart"
+        ],
+        "template": null,
+        "copyChoice": null
+      },
+      "providerHttpStatus": 200,
+      "actualAction": {
+        "kind": "selection",
+        "selection": {
+          "mode": "replace",
+          "requestQuote": "Use Square teaser",
+          "selector": {
+            "base": "catalog",
+            "all": [
+              {
+                "field": "stage",
+                "value": "teaser",
+                "requestQuote": "teaser"
+              },
+              {
+                "field": "orientation",
+                "value": "square",
+                "requestQuote": "Square"
+              }
+            ],
+            "any": [],
+            "none": []
+          }
+        },
+        "preparation": {
+          "destinations": [
+            "x",
+            "deviantart"
+          ],
+          "destinationQuotes": [
+            "current preparation",
+            "their"
+          ],
+          "previewFirst": true,
+          "previewQuote": "current preparation"
+        }
+      },
+      "usage": {
+        "inputTokens": 4483,
+        "outputTokens": 110,
+        "costUsd": 0.00074942,
+        "calls": 1
+      },
+      "elapsedMs": 1867
+    },
+    {
+      "number": 3,
+      "inputBytes": 23086,
+      "inputSha256": "e6e37f4963f49c70da38b2a2670ce1038cf3371b7e4e3686dfd88e58344205b7",
+      "reserveCeilingUsd": 0.008464,
+      "currentPreparation": {
+        "goal": "preview_first_x_drafts",
+        "destination": "x",
+        "destinations": [
+          "x"
+        ],
+        "template": "Square teaser",
+        "copyChoice": {
+          "kind": "existing_titles"
+        }
+      },
+      "providerHttpStatus": 200,
+      "actualAction": {
+        "kind": "selection",
+        "selection": {
+          "mode": "preserve",
+          "requestQuote": "Also add DeviantArt.",
+          "selector": null
+        },
+        "preparation": {
+          "destinations": [
+            "x",
+            "deviantart"
+          ],
+          "destinationQuotes": [
+            "X",
+            "DeviantArt"
+          ],
+          "previewFirst": true,
+          "previewQuote": "Also add DeviantArt."
+        }
+      },
+      "usage": {
+        "inputTokens": 4487,
+        "outputTokens": 78,
+        "costUsd": 0.00071182,
+        "calls": 1
+      },
+      "elapsedMs": 1832
+    },
+    {
+      "number": 4,
+      "inputBytes": 23104,
+      "inputSha256": "d941e836bce0ba27556ad27d631ffd653e57ba8408e1081c664896d19a12729c",
+      "reserveCeilingUsd": 0.0084676,
+      "currentPreparation": {
+        "goal": "preview_first_deviantart_drafts",
+        "destination": "deviantart",
+        "destinations": [
+          "deviantart"
+        ],
+        "template": "Square teaser",
+        "copyChoice": {
+          "kind": "existing_titles"
+        }
+      },
+      "providerHttpStatus": 200,
+      "actualAction": {
+        "kind": "selection",
+        "selection": {
+          "mode": "add",
+          "requestQuote": "Also add X.",
+          "selector": null
+        },
+        "preparation": {
+          "destinations": [
+            "x",
+            "deviantart"
+          ],
+          "destinationQuotes": [
+            "X",
+            "DeviantArt"
+          ],
+          "previewFirst": true,
+          "previewQuote": "current goal: preview first for DeviantArt drafts"
+        }
+      },
+      "usage": {
+        "inputTokens": 4494,
+        "outputTokens": 79,
+        "costUsd": 0.00071442,
+        "calls": 1
+      },
+      "elapsedMs": 2246
+    }
+  ],
+  "baseline": {
+    "ledgerRows": 903,
+    "ledgerSha256": "699cab42ae296086d1b43a692edb047b8d9508b1343a3539a90e7fb94ab2fbf5",
+    "remaining": {
+      "development": 0.35674,
+      "heldout": 8.9690346
+    },
+    "hashes": {
+      "work/bgb02-model-check.mjs": "04eae5f30fb0f689a1628aa4ce8e3139f53d72deaab56a8f82dab92a04a9e1dc",
+      "src/editor-bench/conversation.ts": "adb02a03209fecb4c5c3201ec781db659d37c04c7050e5c1884d7802c2de5005",
+      "src/editor-bench/schedule-routes.ts": "4e75cc789d95f763a25630337cfa802c0be4c8e9d8d034d51c1f2197f26f16ee",
+      "src/editor-bench/runtime.ts": "3be02e56889256ed38f731ec6c17a76a4bfcab0f5ffdb35574341438a82ef0d8",
+      "src/gallery-editor/provider.ts": "b36f92fccd63134d1b95b3abc6ee6012eda96715d757d7baac171bc54ae79998",
+      "src/gallery-editor/budget.ts": "fac0d2aeee9f47250d45ec3d1ac90a5d3c528fb971334889df633649bb39fef0",
+      "src/editor-bench/distribution-variant-adapter.ts": "723770bf15fd913044b4f16ea41b1ba27fc87513162cb8647cffff6e174932a3",
+      "dist/src/editor-bench/conversation.js": "562706ddf375d759fb4348801529419672120363a9baf0877c2dcb1590127cbd",
+      "dist/src/editor-bench/schedule-routes.js": "6a411a874fb374f0efa407249166fbdc32ebaa7f6edd2c07094e19cc827f7235",
+      "dist/src/editor-bench/runtime.js": "8416200c68fc4ca1fb63b02bf76cf8cb233d7b6c7b6f537945243bde93b923a2",
+      ".env": "571d97784c24067a3c4f20f68d2aff18dd5ebd708c4a1ec1294a64cd79bbf603",
+      "web/.env.local": "c20a35e6de6fd419554fa2bc00d4aecb8a8f1a75cfb6170fa0bdfa46a367d96b"
+    }
+  },
+  "limits": [
+    "Six paid interpretation calls maximum; no automatic retries or prompt changes.",
+    "16 synthetic metadata posts only. Canned setup is labelled separately from live turns.",
+    "Generated JPEGs exercise mock export/draft routes; images are never sent to the model.",
+    "No production DB, real Library, scheduling, extension delivery or publishing; front-end testing deferred.",
+    "A failed turn stops only its dependent scenario; independent scenarios still run. This is a smoke check, not a language-quality benchmark."
+  ],
+  "failure": {
+    "name": "AssertionError",
+    "code": "ERR_ASSERTION",
+    "message": "A dependent turn was skipped after a scenario failure.\n\n4 !== 6\n"
+  },
+  "budget": {
+    "ledgerPath": ".relay-data/gallery-editor-budget.json",
+    "initialRows": 903,
+    "finalRows": 907,
+    "previousRowsUnchanged": true,
+    "heldoutRowsUnchanged": true,
+    "providerCalls": 4,
+    "networkCalls": 4,
+    "paidCalls": 4,
+    "reservationsUsd": 0.0338168,
+    "actualUsd": 0.0032014599999999997,
+    "remaining": {
+      "development": 0.35353854,
+      "heldout": 8.9690346
+    },
+    "ledgerSha256": "26fb8f72c28da4e9abbea6714f46b8d938e4a10a93ac52bb98a4891c1ea56f3c",
+    "newRows": [
+      {
+        "id": "92f39934-4f7a-4ed7-96c2-695ca220f913",
+        "model": "gpt-5.6-luna",
+        "phase": "development",
+        "reservedUsd": 0.008425799999999999,
+        "actualUsd": 0.0010257999999999999,
+        "settled": true
+      },
+      {
+        "id": "e5cba5f8-b8c4-461e-ba38-bec1e635a877",
+        "model": "gpt-5.6-luna",
+        "phase": "development",
+        "reservedUsd": 0.0084594,
+        "actualUsd": 0.00074942,
+        "settled": true
+      },
+      {
+        "id": "246b9d23-2ece-4b58-a72d-6be2230921db",
+        "model": "gpt-5.6-luna",
+        "phase": "development",
+        "reservedUsd": 0.008464,
+        "actualUsd": 0.00071182,
+        "settled": true
+      },
+      {
+        "id": "46ce8499-87e9-4d98-abdc-a0074ad19c83",
+        "model": "gpt-5.6-luna",
+        "phase": "development",
+        "reservedUsd": 0.0084676,
+        "actualUsd": 0.00071442,
+        "settled": true
+      }
+    ]
+  },
+  "protectedFilesUnchanged": true,
+  "priorReportsPreserved": 67
+}

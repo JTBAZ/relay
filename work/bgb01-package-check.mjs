@@ -1,0 +1,15 @@
+import fs from 'node:fs';
+import crypto from 'node:crypto';
+import path from 'node:path';
+import assert from 'node:assert/strict';
+const before=JSON.parse(fs.readFileSync('work/bda01-packaging-before.json','utf8'));
+const dev=JSON.parse(fs.readFileSync('extension/dist/chrome-dev/manifest.json','utf8'));
+assert.deepEqual({key:dev.key,permissions:dev.permissions,host_permissions:dev.host_permissions,externally_connectable:dev.externally_connectable},before.devIdentity);
+for(const[p,h]of Object.entries(before.production))assert.equal(crypto.createHash('sha256').update(fs.readFileSync(p)).digest('hex'),h);
+const js=[];for(const e of fs.readdirSync('extension/dist/chrome-dev',{recursive:true,withFileTypes:true}))if(e.isFile()&&e.name.endsWith('.js'))js.push(path.join(e.parentPath??e.path,e.name));
+const all=js.map(p=>fs.readFileSync(p,'utf8')).join('\n');
+assert(all.includes('http://localhost:8788'));
+assert(all.includes('handoff_id')&&all.includes('jpeg_base64')&&all.includes('__relayBenchDeviantArtHandoffPacket'));
+const x=fs.readFileSync('extension/dist/chrome-dev/assets/fill-deviantart-submit.js','utf8');assert(x.includes('__relayBenchDeviantArtHandoffPacket')&&x.includes('SHA-256'));
+const report={passed:true,artifact:path.resolve('extension/dist/chrome-dev'),developmentApiPort:8788,manifestIdentityAndPermissionsUnchanged:true,productionArtifactsUnchanged:Object.keys(before.production).length,jsFiles:js.length,protocolAndPinnedJpegTransportPackaged:true,installedExtensionReloaded:false,browserAndDomVerificationDeferred:true};
+fs.writeFileSync('work/bgb01-artifact.json',JSON.stringify(report,null,2)+'\n',{flag:'wx'});console.log(JSON.stringify(report));

@@ -1,0 +1,18 @@
+{
+  "verifiedAt": "2026-10-20T00:02:49.5974020Z",
+  "pid": 47096,
+  "protectedPosts": {
+    "conversation/x-draft/review": 401,
+    "conversation/cell/skip": 401,
+    "conversation/cell/restore": 401,
+    "conversation/deviantart-draft/review": 401
+  },
+  "previousPid": 13432,
+  "initialProbeEvidence": "work/bgb01-runtime-initial-probe.json",
+  "port": 8788,
+  "backgroundWorkersDisabled": true,
+  "health": 200,
+  "temporarySessionsCleared": true,
+  "healthPath": "/api/v1/health",
+  "browserTested": false
+}

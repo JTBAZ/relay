@@ -1,0 +1,10 @@
+{
+  "health": 200,
+  "backgroundWorkers": "disabled",
+  "reviewUnauthenticated": 401,
+  "previousPid": 49960,
+  "apiPid": 25800,
+  "confirmUnauthenticated": 401,
+  "temporaryStateReset": true,
+  "apiPort": 8788
+}

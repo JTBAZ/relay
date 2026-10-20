@@ -1,6 +1,6 @@
 # Posting Recipes — acceptance and evidence
 
-**Revision 6 · proposed scenarios, not a passing production test report.** Demo verification is separate in [demo/README.md](demo/README.md).
+**Revision 8 · proposed scenarios, not a passing production test report.** Demo verification is separate in [demo/README.md](demo/README.md).
 
 | ID | Scenario | Required observable result | Phase |
 | --- | --- | --- | --- |
@@ -33,10 +33,15 @@
 | AC-27 | Original/saved/custom base plus optional Coach | Saved/custom exact with Coach off; explicit Coach uses the chosen base; custom edits do not affect shared presets/sibling rows; edits seed once from real selected source and survive mode changes, no sample content leaks into live recipes; entitlement checked; Coach candidate generated once per destination then accepted; retry does not regenerate; creator delay unchanged | P3 |
 | AC-28 | Save/confirm toast, open/close trays, editing material payload | No alert/popup wizard, no unnecessary modal; concise feedback; hidden trays removed from focus order; entered config preserved | P5 |
 | AC-29 | Email opt-in, partial failure, recovery, log/failed transport, consent revoked | No premature completion, attention notice deduped, final route summary accurate; log Preview ≠ sent; current verified creator recipient/consent; independent retries | P6 |
-| AC-30 | Conversational post controls | Also send it to…; To → When → Modifications; compact date/Options dropdowns; Description owns its rounded panel with original/edit/saved selector; And then creates prior-receipt dependency; no required step names | P5 |
+| AC-30 | Conversational release controls | One Also send it to… heading directly precedes platform-logo destination tags; right-side Details opens timing → treatment; compact date/Options; dedicated Description region with original/edit/saved selector; And then creates prior-receipt dependency; no release-type/draft-name headings; destination tags remain visible/editable when collapsed, with timing/treatment beneath | P5 |
 | AC-31 | First/last day of current/following reference month | Correct local calendar date/hour, explicit clock override, leap year, December rollover; source/predecessor publication anchors; past-relative date holds only affected action, no silent rollover; duplicate receipts never recompute | P0/P4 |
 | AC-32 | Source text missing vs actual uploaded source | Edit original disabled without real text; real text seeds once; mode/destination changes retain edits; loss/version change of source does not apply an old draft automatically | P3/P5 |
 | AC-33 | Select/edit/create/cancel saved description | Multiple creator-owned versions; full field preview/editor; edit-as-new preserves original/siblings/pinned plans; unsaved edits block confirm; ownership/payload limits enforced; saving draft never enrolls/publishes | P2/P5 |
+
+| AC-34 | Inspect release/settings, recover draft, remove/reset/undo | Presentation changes preserve saved acknowledgement; recoverable working draft separate from saved revision; removal protection retained; Undo restores full configuration | P5 |
+| AC-35 | Test/review/handoff on mobile and keyboard | Focus enters revealed context; all actions remain visible without horizontal panning; persistent Save bar does not make document-end controls unreachable | P5 |
+
+| AC-36 | Whole-recipe chooser before source | Saved recipes and templates load the complete trigger/filter/release flow; source/account permissions rechecked; loading is reversible and never publishes/enrolls; recipe name stays at page level | P5 |
 
 ## Required R1 evidence
 

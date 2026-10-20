@@ -1,0 +1,114 @@
+{
+  "ticket": "BGB-01",
+  "branch": "codex/local-build-2026-10-19",
+  "head": "c82c9ed07f51e392c5f5383cc04d6502c9b5e45c",
+  "baselineHead": "4098b8cead0dc70dfcf666650d635c08c550a89e",
+  "scope": {
+    "src/editor-bench/conversation.ts": {
+      "sha256": "adb02a03209fecb4c5c3201ec781db659d37c04c7050e5c1884d7802c2de5005",
+      "hunks": [
+        "@@ -10,0 +11 @@ import { getBenchSquarePreviewTemplate } from './routing.js';",
+        "@@ -14,3 +15,4 @@ const tagSchema = objectSchema({ kind: { type: 'string', enum: ['tags'] }, targe",
+        "@@ -22 +24,7 @@ export const BENCH_CONVERSATION_SCHEMA = objectSchema({ result: { anyOf: [select",
+        "@@ -24 +32 @@ export type ConversationAction =",
+        "@@ -62 +70,2 @@ export type BenchConversationSession = {",
+        "@@ -189 +198 @@ export function createBenchConversationStore() {",
+        "@@ -222 +231,21 @@ export function conversationSnapshot(session: BenchConversationSession) {",
+        "@@ -223,0 +253 @@ export function conversationSnapshot(session: BenchConversationSession) {",
+        "@@ -252 +282 @@ function findTitleQuoteSpans(text: string) {",
+        "@@ -263,0 +294,12 @@ function actionFrom(text: string, latestRequest: string): ActionParse {",
+        "@@ -265,2 +307,30 @@ function actionFrom(text: string, latestRequest: string): ActionParse {",
+        "@@ -268 +337,0 @@ function actionFrom(text: string, latestRequest: string): ActionParse {",
+        "@@ -272 +341,3 @@ function actionFrom(text: string, latestRequest: string): ActionParse {",
+        "@@ -273,0 +345 @@ function actionFrom(text: string, latestRequest: string): ActionParse {",
+        "@@ -321 +393 @@ export function prepareBenchConversationPayload(latestRequest: string, session:",
+        "@@ -334 +406 @@ export async function interpretBenchConversation(latestRequest: string, session:"
+      ]
+    },
+    "src/editor-bench/schedule-routes.ts": {
+      "sha256": "4e75cc789d95f763a25630337cfa802c0be4c8e9d8d034d51c1f2197f26f16ee",
+      "hunks": [
+        "@@ -13 +13 @@ import { interpretBenchVariantEdit, resolveBenchVariantEditTarget, variantChatIn",
+        "@@ -467,0 +468,27 @@ export function registerBenchScheduleRoutes(app: express.Application, options: B",
+        "@@ -810,2 +837 @@ export function registerBenchScheduleRoutes(app: express.Application, options: B",
+        "@@ -861,2 +887 @@ export function registerBenchScheduleRoutes(app: express.Application, options: B",
+        "@@ -874,2 +899 @@ export function registerBenchScheduleRoutes(app: express.Application, options: B",
+        "@@ -947 +971,2 @@ export function registerBenchScheduleRoutes(app: express.Application, options: B",
+        "@@ -954 +979 @@ export function registerBenchScheduleRoutes(app: express.Application, options: B",
+        "@@ -958,0 +984 @@ export function registerBenchScheduleRoutes(app: express.Application, options: B",
+        "@@ -966,3 +992,6 @@ export function registerBenchScheduleRoutes(app: express.Application, options: B",
+        "@@ -971 +1000,4 @@ export function registerBenchScheduleRoutes(app: express.Application, options: B",
+        "@@ -974 +1006 @@ export function registerBenchScheduleRoutes(app: express.Application, options: B"
+      ]
+    },
+    "web/lib/editor-bench.ts": {
+      "sha256": "4bdac3047abe21b274d010f6f3e7070fdf1f7db165cd12afaac1924e7b61ae26",
+      "hunks": [
+        "@@ -56 +56,3 @@ export type ScheduleConfirmResult = { event: ScheduleEvent; reused: boolean };",
+        "@@ -60 +62 @@ export type BenchConversationConfirmedDraft = { variantId: string; planId: strin",
+        "@@ -113,0 +116,4 @@ export function toggleBenchConversationSelection(input: { sessionId: string; rev"
+      ]
+    },
+    "web/app/editor-bench/EditorBenchClient.tsx": {
+      "sha256": "682b975fdf7cc25c14759ec77c16a66e26e8b67735dd13c97b16d1ce6356d0bb",
+      "hunks": [
+        "@@ -10 +10 @@ import { sendRelayScheduleEventToExtension } from \"@/lib/relay-extension-messagi",
+        "@@ -118,0 +119 @@ export default function EditorBenchClient() {",
+        "@@ -122,0 +124,2 @@ export default function EditorBenchClient() {",
+        "@@ -215,0 +219,30 @@ export default function EditorBenchClient() {",
+        "@@ -293,0 +327 @@ export default function EditorBenchClient() {",
+        "@@ -298 +332 @@ export default function EditorBenchClient() {",
+        "@@ -304 +338,3 @@ export default function EditorBenchClient() {",
+        "@@ -306 +341,0 @@ export default function EditorBenchClient() {",
+        "@@ -316 +351,4 @@ export default function EditorBenchClient() {",
+        "@@ -319,0 +358 @@ export default function EditorBenchClient() {",
+        "@@ -323,0 +363,26 @@ export default function EditorBenchClient() {",
+        "@@ -335,0 +401 @@ export default function EditorBenchClient() {",
+        "@@ -341 +407,5 @@ export default function EditorBenchClient() {",
+        "@@ -544 +614 @@ export default function EditorBenchClient() {",
+        "@@ -1032 +1102 @@ export default function EditorBenchClient() {",
+        "@@ -1039 +1109 @@ export default function EditorBenchClient() {",
+        "@@ -1041 +1111 @@ export default function EditorBenchClient() {",
+        "@@ -1043 +1112,0 @@ export default function EditorBenchClient() {",
+        "@@ -1045,0 +1115,9 @@ export default function EditorBenchClient() {",
+        "@@ -1061 +1139,4 @@ export default function EditorBenchClient() {",
+        "@@ -1065 +1146 @@ export default function EditorBenchClient() {",
+        "@@ -1090 +1171,2 @@ export default function EditorBenchClient() {",
+        "@@ -1092 +1174 @@ export default function EditorBenchClient() {"
+      ]
+    },
+    "tests/editor-bench/conversation.test.ts": {
+      "sha256": "0b939f11788e2c4f865be584e232753db559c8c270aa8cd13a5745252e8e5e49",
+      "hunks": [
+        "@@ -70 +70 @@ function preparedPreviewSession() {",
+        "@@ -74,0 +75,48 @@ describe('mock editor-bench conversation', () => {",
+        "@@ -182 +230 @@ describe('mock editor-bench conversation', () => {",
+        "@@ -191 +239 @@ describe('mock editor-bench conversation', () => {",
+        "@@ -407 +455 @@ describe('mock editor-bench conversation', () => {",
+        "@@ -417 +465 @@ describe('mock editor-bench conversation', () => {"
+      ]
+    }
+  },
+  "changedOutsideScope": [
+    "src/server.ts"
+  ],
+  "protectedSourceCount": 174,
+  "tsxParseDiagnostics": 0,
+  "taskWhitespace": true,
+  "priorReportsPreserved": 64,
+  "ledger": {
+    "rows": 903,
+    "sha256": "699cab42ae296086d1b43a692edb047b8d9508b1343a3539a90e7fb94ab2fbf5",
+    "developmentRemainingUsd": 0.35674,
+    "heldoutRemainingUsd": 8.9690346
+  },
+  "unchangedEvidencePaths": [
+    "src/editor-bench/distribution-variant-adapter.ts",
+    "src/distribution/distribution-package.ts",
+    "tests/distribution-package.test.ts",
+    "web/lib/relay-extension-messaging.ts"
+  ],
+  "extensionSourcesUnchanged": 55,
+  "configurationHashesUnchanged": true,
+  "paidCalls": 0
+}

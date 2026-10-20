@@ -1,0 +1,16 @@
+[dotenv@17.3.1] injecting env (18) from .env -- tip: ⚙️  override existing env vars with { override: true }
+
+ RUN  v3.2.4 C:/Users/jorda/Documents/Codex/2026-10-11/c/work/relay
+
+ ✓ tests/automations/automation-materializer.test.ts (11 tests) 87ms
+ ✓ tests/automations/automation-reconcile.test.ts (10 tests) 70ms
+ ✓ tests/automations/spine-characterization.test.ts (10 tests) 17ms
+ ✓ tests/automations/delayed-release.test.ts (7 tests) 15ms
+ ✓ tests/web/automations-flow.test.tsx (7 tests) 217ms
+ ✓ tests/web/automations-modal.test.tsx (8 tests) 49ms
+
+ Test Files  6 passed (6)
+      Tests  53 passed (53)
+   Start at  21:54:17
+   Duration  5.45s (transform 1.26s, setup 54ms, collect 3.80s, tests 455ms, environment 405ms, prepare 216ms)
+

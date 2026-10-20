@@ -1,0 +1,27 @@
+import { relayFetch, type DistributionPlanWire } from "@/lib/relay-api";
+import type { RhythmConfig, RhythmRoute, DescriptionFields, RhythmDestination } from "../../src/posting-rhythms/contract";
+export type { RhythmConfig, RhythmRoute, DescriptionFields, RhythmDestination };
+export type SavedRhythm={id:string;version:number;name:string;status:'active'|'paused'|'archived';config:RhythmConfig;isDefault:boolean;alwaysOn:boolean;armed:boolean};
+export type RhythmDraft={id:string;name:string;fields:DescriptionFields};
+export type RhythmPost={id:string;title:string;description:string;mediaIds:string[]};
+export type RhythmBootstrap={source:{id:string;label:string}|null;templates:{id:string;name:string;config:unknown}[];rhythms:SavedRhythm[];drafts:RhythmDraft[];posts:RhythmPost[];coach:boolean;emailAvailable:boolean};
+export type RhythmRun={id:string;rhythmRouteId:string;status:string;dueAt:string;failureReason:string|null;planId:string|null;receiptAt:string|null;receiptUrl:string|null;rule:{targetDestinations:RhythmDestination[]}};
+export type RhythmEnrollment={id:string;rhythm:{name:string;status:string};snapshot:{title:string;config:RhythmConfig};runs:RhythmRun[]};
+export type RhythmAction={run:RhythmRun;route:RhythmRoute;destination:RhythmDestination;snapshot:{config:RhythmConfig;postId:string;mediaId:string;title:string;body:string;templates:Record<string,unknown>};plan:DistributionPlanWire|null};
+const base='/api/v1/creator/posting-rhythms';
+const send=<T>(url:string,method:string,body:unknown)=>relayFetch<T>(base+url,{method,headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+export const loadRhythms=()=>relayFetch<RhythmBootstrap>(base+'/bootstrap');
+export const saveRhythm=(config:RhythmConfig,current:SavedRhythm|null)=>current?send<{rhythm:SavedRhythm}>('/'+encodeURIComponent(current.id),'PUT',{config,version:current.version}):send<{rhythm:SavedRhythm}>('','POST',{config});
+export const setRhythmStatus=(current:SavedRhythm,status:string)=>send<{rhythm:SavedRhythm}>('/'+encodeURIComponent(current.id)+'/status','PATCH',{status,version:current.version});
+export const saveRhythmDraft=(name:string,fields:DescriptionFields)=>send<{draft:RhythmDraft}>('/drafts','POST',{name,fields});
+export const confirmRhythm=(current:SavedRhythm,postId:string|null)=>send('/'+encodeURIComponent(current.id)+'/confirm','POST',{version:current.version,postId});
+export const loadRhythmRuns=()=>relayFetch<{enrollments:RhythmEnrollment[]}>(base+'/runs');
+export const reconcileRhythms=()=>send('/reconcile','POST',{});
+export const loadRhythmAction=(id:string)=>relayFetch<RhythmAction>(base+'/actions/'+encodeURIComponent(id));
+export const prepareRhythmAction=(id:string,previewMediaId?:string)=>send<{plan:DistributionPlanWire}>('/actions/'+encodeURIComponent(id)+'/prepare','POST',{previewMediaId});
+export const emptyDescription=():DescriptionFields=>({title:'',body:'',x:'',tags:''});
+export const newRhythmRoute=(id:string):RhythmRoute=>({id,schedule:'delay',days:1,time:'same',anchor:'source',media:'original',templateId:null,copy:'source',description:null,descriptionName:'',coach:false,notes:'',destinations:[]});
+export const newRhythm=(source=''):RhythmConfig=>({name:'',source,timezone:Intl.DateTimeFormat().resolvedOptions().timeZone||'UTC',useDefault:false,alwaysOn:false,filters:{image:true,textOn:false,text:'',linkOn:false,link:''},accounts:{},routes:[newRhythmRoute('r1')]});
+export const rhythmTiming=(r:RhythmRoute,routes:RhythmRoute[])=>{const anchor=r.anchor==='source'?'source post':'Release '+(routes.findIndex(x=>x.id===r.anchor)+1);return (r.schedule==='delay'?`${r.days} day${r.days===1?'':'s'} after ${anchor}`:`${r.schedule.startsWith('first')?'First':'Last'} day of ${r.schedule.endsWith('next')?'next':'the same'} month as ${anchor}`)+(r.time==='same'?'':` · ${r.time}`);};
+
+export const retryRhythmAction=(id:string)=>send('/actions/'+encodeURIComponent(id)+'/retry','POST',{});

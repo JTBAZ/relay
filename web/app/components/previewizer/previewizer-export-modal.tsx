@@ -64,7 +64,7 @@ export function PreviewizerExportModal({
 }: Props) {
   if (!open) return null;
 
-  const isHostedExport = mode === "distribution";
+  const isHostedExport = mode === "distribution" || mode === "bench";
   const busy = exportBusy || uploadBusy || templateSaveBusy;
   const atCapacity = saveTemplateSlotsUsed >= MAX_CUSTOM_PREVIEW_TEMPLATES;
   const saveBlocked =
@@ -212,8 +212,9 @@ export function PreviewizerExportModal({
                   </p>
                 ) : null}
                 <p className="text-xs leading-relaxed text-[#6b7280]">
-                  Upload sends this to Relay for cross-post preview routing. Download keeps a local
-                  copy.
+                  {mode === "bench"
+                    ? "This JPEG stays in the temporary mock conversation. No draft will be created."
+                    : "Upload sends this to Relay for cross-post preview routing. Download keeps a local copy."}
                 </p>
               </>
             ) : (

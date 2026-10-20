@@ -127,8 +127,12 @@ export function createBenchPostCards(fixture: BenchFixture = createBenchFixture(
     const statePost = fixture.state.tables.posts.find(row => row.id === postId)!;
     const version = fixture.state.tables.versions.find(row => row.postId === postId);
     const presentation = fixture.state.tables.presentations.find(row => row.postId === postId);
+    const tagDelta = fixture.state.tables.overrides.find(row => row.postId === postId && row.mediaId === '');
+    const removedTags = Array.isArray(tagDelta?.removeTagIds) ? tagDelta.removeTagIds as string[] : [];
+    const addedTags = Array.isArray(tagDelta?.addTagIds) ? tagDelta.addTagIds as string[] : [];
+    const effectiveTags = [...new Set([...(version?.tagIds as string[] ?? definition.tags).filter(tag => !removedTags.includes(tag)), ...addedTags])];
     return { ...post, title: effectivePostTitle(fixture.state, postId), description: typeof presentation?.relayDescription === 'string' ? presentation.relayDescription : typeof version?.description === 'string' ? version.description : null,
-      createdDateLocal: londonDate(statePost.createdAt), publishedDateLocal: londonDate(statePost.publishedAt), workTitle: String(work.title), seriesTitle: series ? String(series.title) : null, tags: [...definition.tags], stage: definition.stage, publishState: statePost.status === 'published' ? 'published' as const : 'draft' as const, mediaLabels: descriptors.map(media => media.label), fixtureOnly: true as const };
+      createdDateLocal: londonDate(statePost.createdAt), publishedDateLocal: londonDate(statePost.publishedAt), workTitle: String(work.title), seriesTitle: series ? String(series.title) : null, tags: effectiveTags, stage: definition.stage, publishState: statePost.status === 'published' ? 'published' as const : 'draft' as const, mediaLabels: descriptors.map(media => media.label), fixtureOnly: true as const };
   });
 }
 
@@ -192,7 +196,7 @@ export function createBenchReadTools(fixture: BenchFixture): EditorReadTools {
     const effectiveTitle = titleMode === 'custom' ? String(presentation?.relayTitle) : titleMode === 'inherit_work' ? String(work?.title) : String(version?.title);
     return {
       postId, title: effectiveTitle, description: presentation?.relayDescription ?? version?.description ?? null, mediaIds,
-      tags: version?.tagIds ?? [],
+      tags: createBenchPostCards(fixture).find(card => card.postId === postId)?.tags ?? version?.tagIds ?? [],
       naming: {
         mode: titleMode, effectiveTitle, sourceTitle: String(version?.title), workId: member?.creativeWorkId,
         workTitle: work?.title, workTitleMode: work?.titleMode, seriesId: series?.id, seriesTitle: series?.title,

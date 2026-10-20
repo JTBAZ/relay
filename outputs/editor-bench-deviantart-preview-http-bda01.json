@@ -1,0 +1,34 @@
+{
+  "ticket": "BDA-01",
+  "passed": true,
+  "paidCalls": 0,
+  "scope": "Synthetic metadata and actual generated JPEG over isolated Express HTTP; no browser or DOM",
+  "checks": {
+    "xFlowAndReceiptsRetained": true,
+    "groundedDestinationSwitchPreservesSelectionAndChoices": true,
+    "distinctDestinationDraftsAndTokens": true,
+    "threeSeparateConfirmations": true,
+    "exactDaTitleBodyTagsAndPinnedJpeg": true,
+    "reviewReadOnly": true,
+    "unscheduledHandoffRefused": true,
+    "foreignAndCookieDenied": true,
+    "noOriginalMediaFallback": true,
+    "wrongDestinationHandoffDenied": true,
+    "staleReviewDeniedAndExactReplayImmutable": true,
+    "originalsAndAllCreationScheduleRowsUnchanged": true,
+    "confirmedDraftAfterDeselectionAndGoalCancel": true,
+    "productionAndExpiredSessionDenied": true,
+    "priorReportsPreserved": 62,
+    "ledgerUnchanged": true,
+    "inputBytes": [
+      22479,
+      22572,
+      22638,
+      22622
+    ]
+  },
+  "limits": [
+    "Extension identity stubbed at existing callback; live grants not exercised",
+    "No live DeviantArt upload/fill/publication or front-end testing"
+  ]
+}

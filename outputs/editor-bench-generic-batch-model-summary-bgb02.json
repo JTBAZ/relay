@@ -1,0 +1,176 @@
+{
+  "ticket": "BGB-02",
+  "date": "2026-10-20",
+  "scope": "Evaluation only; product source and runtime configuration unchanged.",
+  "branch": "codex/local-build-2026-10-19",
+  "head": "c82c9ed07f51e392c5f5383cc04d6502c9b5e45c",
+  "passed": false,
+  "model": "gpt-5.6-luna",
+  "reasoningEffort": "none",
+  "plannedMaximumCalls": 6,
+  "executedCalls": 4,
+  "successfulLiveTurns": 1,
+  "failedLiveTurns": 3,
+  "skippedDependentTurns": 2,
+  "passingEndToEndScenarios": 0,
+  "totalScenarios": 3,
+  "preflight": {
+    "passed": true,
+    "scenarios": 3,
+    "simulatedUnscheduledDrafts": 9,
+    "paidCalls": 0,
+    "report": "outputs/editor-bench-generic-batch-preflight-bgb02.json"
+  },
+  "live": {
+    "report": "outputs/editor-bench-generic-batch-live-bgb02.json",
+    "journal": "outputs/editor-bench-generic-batch-live-bgb02.ndjson",
+    "providerHttpStatuses": [
+      200,
+      200,
+      200,
+      200
+    ],
+    "inputBytes": [
+      22895,
+      23063,
+      23086,
+      23104
+    ],
+    "draftsCreated": 0
+  },
+  "findings": [
+    {
+      "result": "pass",
+      "behavior": "The initial sketch selection for X and DeviantArt produced the correct two artworks and four destination cells."
+    },
+    {
+      "result": "fail",
+      "behavior": "Use Square teaser and keep their existing titles was interpreted as a gallery selection for stage teaser and square orientation, instead of a preparation_update action."
+    },
+    {
+      "result": "fail",
+      "behavior": "Also add DeviantArt returned the full old+new target set, invented a current-turn X quote, and set previewFirst true with a non-Previewizer quote."
+    },
+    {
+      "result": "fail",
+      "behavior": "Also add X returned an unmentioned prior DeviantArt target/quote and a preview quote from context, instead of a grounded destination addition."
+    }
+  ],
+  "failureContainment": [
+    {
+      "case": "initial-dual-destination",
+      "text": "Use Square teaser and keep their existing titles.",
+      "diagnostic": "schema",
+      "selectionUnchanged": true,
+      "preparationUnchanged": true,
+      "revisionUnchanged": true
+    },
+    {
+      "case": "add-destination-and-artwork",
+      "text": "Also add DeviantArt.",
+      "diagnostic": "schema",
+      "selectionUnchanged": true,
+      "preparationUnchanged": true,
+      "revisionUnchanged": true
+    },
+    {
+      "case": "reverse-addition-and-narrowing",
+      "text": "Also add X.",
+      "diagnostic": "schema",
+      "selectionUnchanged": true,
+      "preparationUnchanged": true,
+      "revisionUnchanged": true
+    }
+  ],
+  "diagnosis": {
+    "observed": "Failures are in interpretation and quote grounding. All provider requests returned HTTP200. Semantic validation rejected the actions and retained the session facts.",
+    "possibleContributor": "prepareBenchConversationPayload computes template metadata for currentPreparation but does not send the available template list. Square teaser can therefore be confused with stage/orientation metadata. This is a hypothesis, not a proven cause.",
+    "followupWork": "Make active-goal template/copy and destination-change routing clear to the cheap model, retain strict latest-request grounding, and rerun a separately bounded check after a scoped fix.",
+    "implementationPerformed": false,
+    "retries": 0
+  },
+  "budget": {
+    "ledgerPath": ".relay-data/gallery-editor-budget.json",
+    "initialRows": 903,
+    "finalRows": 907,
+    "previousRowsUnchanged": true,
+    "heldoutRowsUnchanged": true,
+    "providerCalls": 4,
+    "networkCalls": 4,
+    "paidCalls": 4,
+    "reservationsUsd": 0.0338168,
+    "actualUsd": 0.0032014599999999997,
+    "remaining": {
+      "development": 0.35353854,
+      "heldout": 8.9690346
+    },
+    "ledgerSha256": "26fb8f72c28da4e9abbea6714f46b8d938e4a10a93ac52bb98a4891c1ea56f3c",
+    "newRows": [
+      {
+        "id": "92f39934-4f7a-4ed7-96c2-695ca220f913",
+        "model": "gpt-5.6-luna",
+        "phase": "development",
+        "reservedUsd": 0.008425799999999999,
+        "actualUsd": 0.0010257999999999999,
+        "settled": true
+      },
+      {
+        "id": "e5cba5f8-b8c4-461e-ba38-bec1e635a877",
+        "model": "gpt-5.6-luna",
+        "phase": "development",
+        "reservedUsd": 0.0084594,
+        "actualUsd": 0.00074942,
+        "settled": true
+      },
+      {
+        "id": "246b9d23-2ece-4b58-a72d-6be2230921db",
+        "model": "gpt-5.6-luna",
+        "phase": "development",
+        "reservedUsd": 0.008464,
+        "actualUsd": 0.00071182,
+        "settled": true
+      },
+      {
+        "id": "46ce8499-87e9-4d98-abdc-a0074ad19c83",
+        "model": "gpt-5.6-luna",
+        "phase": "development",
+        "reservedUsd": 0.0084676,
+        "actualUsd": 0.00071442,
+        "settled": true
+      }
+    ]
+  },
+  "originalEvidencePreserved": true,
+  "protectedFilesUnchanged": true,
+  "priorReportsPreserved": 67,
+  "review": {
+    "skill": "Ponytail Review",
+    "scope": [
+      "work/bgb02-model-check.mjs",
+      "work/bgb02-record-results.mjs"
+    ],
+    "connectedCode": [
+      "src/editor-bench/runtime.ts",
+      "src/gallery-editor/provider.ts",
+      "src/gallery-editor/budget.ts",
+      "src/editor-bench/conversation.ts",
+      "src/editor-bench/schedule-routes.ts",
+      "src/editor-bench/distribution-variant-adapter.ts"
+    ],
+    "checks": [
+      "Preflight with identical harness/source hashes before paid transport.",
+      "Six-call and $0.06 reservation ceiling, fixed cheap model/no reasoning/no tools/no image input, no retries.",
+      "Existing locked append-only budget ledger and settled provider usage, no credential/environment-value output.",
+      "Independent seeded scenarios continue after a failure; dependent turns stop.",
+      "Every paid response saved as synthetic structured action with HTTP status, usage and state snapshots; no encrypted reasoning or auth headers retained.",
+      "Product source, environment hashes, heldout rows and prior ledger prefix unchanged."
+    ],
+    "remainingTaskDefects": []
+  },
+  "deferred": [
+    "Frontend/browser/extension execution tests",
+    "New build or broad test suite; product code unchanged",
+    "Live-model-assisted draft completion, scheduling and manual extension handoff were not reached",
+    "No publishing or live Library access"
+  ]
+}

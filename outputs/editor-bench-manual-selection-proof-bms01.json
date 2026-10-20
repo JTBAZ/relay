@@ -1,0 +1,104 @@
+{
+  "ticket": "BMS-01",
+  "date": "2026-10-19",
+  "passed": true,
+  "objective": "Click mock gallery cards to select or deselect in the API-owned conversation",
+  "planner": "Sol High",
+  "implementer": "Luna Medium",
+  "baseline": "work/bms01-baseline/baseline.json",
+  "sourceScope": {
+    "src/editor-bench/schedule-routes.ts": {
+      "sha256": "5694b8b3a1aed909c84e9ec55e168720703f988aabf4c8d38f2cc3de8cc79329",
+      "hunks": [
+        "@@ -353,6 +353,34 @@ export function registerBenchScheduleRoutes(app: express.Application, options: B"
+      ]
+    },
+    "tests/editor-bench/conversation.test.ts": {
+      "sha256": "d77a147bbe9ade1dbc7d8d50f807dda134c3621d6c1378d51edfafd8989765ee",
+      "hunks": [
+        "@@ -42,6 +42,55 @@ function preparedPreviewSession() {",
+        "@@ -214,6 +263,28 @@ describe('mock editor-bench conversation', () => {",
+        "@@ -306,6 +377,12 @@ describe('mock editor-bench conversation', () => {"
+      ]
+    },
+    "web/lib/editor-bench.ts": {
+      "sha256": "8ff8e5ac86ddb88cda58feda9731b65739ada9169ffff6b5cfccde2fb45b82ad",
+      "hunks": [
+        "@@ -106,6 +106,9 @@ export function startBenchConversation(signal?: AbortSignal) {"
+      ]
+    },
+    "web/app/editor-bench/EditorBenchClient.tsx": {
+      "sha256": "24373555f3b77ec8860b483e8f8de2788d652b86acb67d71ecbc589dae9e4a91",
+      "hunks": [
+        "@@ -7,7 +7,7 @@ import { PreviewizerOverlay } from \"@/app/components/distribution/PreviewizerOve",
+        "@@ -141,6 +141,7 @@ export default function EditorBenchClient() {",
+        "@@ -155,6 +156,7 @@ export default function EditorBenchClient() {",
+        "@@ -273,6 +275,35 @@ export default function EditorBenchClient() {",
+        "@@ -840,7 +871,7 @@ export default function EditorBenchClient() {",
+        "@@ -887,7 +918,7 @@ export default function EditorBenchClient() {",
+        "@@ -895,7 +926,7 @@ export default function EditorBenchClient() {",
+        "@@ -912,7 +943,7 @@ export default function EditorBenchClient() {"
+      ]
+    }
+  },
+  "repository": {
+    "head": "9e86c0cb8400c1623bdb085ae466792b6081d88b",
+    "branch": "codex/local-build-2026-10-19",
+    "localUncommitted": true
+  },
+  "checks": {
+    "backendTests": {
+      "passed": 55,
+      "total": 55,
+      "files": 3,
+      "command": "npx vitest run tests/editor-bench/conversation.test.ts tests/editor-bench/schedule-routes.test.ts tests/editor-bench/routing.test.ts"
+    },
+    "workerFocusedTests": 18,
+    "backendBuild": {
+      "passed": true,
+      "command": "npm run build",
+      "reportedBy": "Luna Medium"
+    },
+    "singleFileSyntaxDiagnostics": 0,
+    "whitespace": true,
+    "originalReportsPreserved": 54,
+    "sharedGalleryAndConversationStoreUnchanged": true
+  },
+  "review": {
+    "skill": "Ponytail Review",
+    "scope": "Only the four listed task-file hunks and connected callbacks, store and API helpers",
+    "blockingFindings": [],
+    "uiGuidelines": "https://raw.githubusercontent.com/vercel-labs/web-interface-guidelines/main/command.md",
+    "sourceReviewedBehavior": [
+      "Card body/Enter and checkbox/Space call the same handler",
+      "Lazy first-click session; shared in-flight and response-generation guards",
+      "Typing cannot cancel a pending selection mutation",
+      "Deselection adds a sticky exclusion; reselection clears it",
+      "Canonical selection feeds the next model turn; pending reviews/provider responses invalidated",
+      "Preparation/copy and unrelated previews retained; deselected preview removed",
+      "Owned-session and current revision required; no automatic retry of a toggle"
+    ]
+  },
+  "budget": {
+    "authoritativeLedger": "C:/Users/jorda/Documents/Codex/2026-10-11/c/work/relay/.relay-data/gallery-editor-budget.json",
+    "paidCalls": 0,
+    "rows": 903,
+    "sha256": "699cab42ae296086d1b43a692edb047b8d9508b1343a3539a90e7fb94ab2fbf5",
+    "developmentRemainingUsd": 0.35674,
+    "heldoutRemainingUsd": 8.9690346,
+    "unchanged": true
+  },
+  "runtime": {
+    "apiPid": 39884,
+    "healthStatus": 200,
+    "protectedToggleStatus": 401,
+    "webPid": 46996,
+    "postgresPid": 19664,
+    "backgroundWorkersDisabled": true
+  },
+  "limits": [
+    "Frontend tests/lint/typecheck/build/browser/render/detector checks deferred; source review and one TSX syntax parse only",
+    "Mock in-memory session resets on API restart; refresh the bench",
+    "No model/runtime, publishing, live Library, database, migration, environment-file, commit or push changes"
+  ]
+}

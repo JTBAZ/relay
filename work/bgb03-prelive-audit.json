@@ -1,0 +1,33 @@
+{
+  "ticket": "BGB-03",
+  "branch": "codex/local-build-2026-10-19",
+  "head": "c82c9ed07f51e392c5f5383cc04d6502c9b5e45c",
+  "baselineHead": "c82c9ed07f51e392c5f5383cc04d6502c9b5e45c",
+  "scope": {
+    "src/editor-bench/conversation.ts": {
+      "sha256": "930f27e4e75f4388d4196cf28f425ef0c62a0fb311de6811720e252ec081774c",
+      "hunks": [
+        "@@ -24 +24 @@ export const BENCH_CONVERSATION_SCHEMA = objectSchema({ result: { anyOf: [select",
+        "@@ -391,0 +392 @@ export function prepareBenchConversationPayload(latestRequest: string, session:",
+        "@@ -399 +400 @@ export function prepareBenchConversationPayload(latestRequest: string, session:"
+      ]
+    },
+    "tests/editor-bench/conversation.test.ts": {
+      "sha256": "2f767a2193c301008136ecfba5c8cf8fbf552c37a42d4d1bd46dd3d3eca0feb8",
+      "hunks": [
+        "@@ -242,0 +243,65 @@ describe('mock editor-bench conversation', () => {"
+      ]
+    }
+  },
+  "unexpectedChanges": [],
+  "priorEvidenceFilesPreserved": 71,
+  "configurationUnchanged": true,
+  "ledgerBeforePaid": {
+    "rows": 907,
+    "sha256": "26fb8f72c28da4e9abbea6714f46b8d938e4a10a93ac52bb98a4891c1ea56f3c",
+    "developmentRemainingUsd": 0.35353854,
+    "heldoutRemainingUsd": 8.9690346
+  },
+  "extensionPathsUnchanged": 55,
+  "taskWhitespace": true
+}

@@ -365,6 +365,7 @@ export async function expireStaleAutomationRuns(
   const due = await prisma.creatorDistributionRuleRun.findMany({
     where: {
       status: "materialized",
+      rhythmEnrollmentId: null,
       expiresAt: { lte: now },
       ...(options?.creatorId ? { creatorId: options.creatorId } : {})
     },

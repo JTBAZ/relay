@@ -1,0 +1,10 @@
+{
+  "pid": 4332,
+  "previousPid": 47096,
+  "exitCode": 1,
+  "health": 0,
+  "error": "Reloaded API did not become healthy within the bounded polling window",
+  "stdout": "work/bgb03-api.out.log",
+  "stderr": "work/bgb03-api.err.log",
+  "recordedAt": "2026-10-20T05:24:27.2592905Z"
+}

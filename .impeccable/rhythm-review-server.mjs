@@ -1,0 +1,10 @@
+import {createRequire} from 'node:module';
+import {createServer} from 'node:http';
+import path from 'node:path';
+import {pathToFileURL} from 'node:url';
+const root=process.cwd(),web=path.join(root,'web'),require=createRequire(import.meta.url);
+const next=require(path.join(web,'node_modules/next'));
+const {default:config}=await import(pathToFileURL(path.join(web,'next.config.mjs')).href);
+process.chdir(web);
+const app=next({dev:true,dir:web,conf:{...config,distDir:'.next/rhythm-integration',webpack(c,ctx){c=config.webpack?config.webpack(c,ctx):c;c.devtool='source-map';return c;}}});
+await app.prepare();createServer(app.getRequestHandler()).listen(3002,'localhost',()=>console.log('Rhythm verification web ready on localhost:3002'));

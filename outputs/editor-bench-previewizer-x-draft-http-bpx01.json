@@ -1,0 +1,56 @@
+{
+  "ticket": "BPX-01",
+  "passed": true,
+  "scope": "synthetic_http_no_browser",
+  "paidCalls": 0,
+  "steps": [
+    {
+      "postId": "bench_post_tide_sketch",
+      "reviewOnlyNoWrite": true,
+      "exportHash": "c285f3b8e1bde9daa2c205910b27eb3b53f404a084bd1cbc51bbe4b05025fa6e",
+      "mediaIds": [
+        "bench_preview_1be935d1-da88-4ab7-a1b5-a00503b990b5"
+      ],
+      "confirmedStatus": 201,
+      "retryReused": true,
+      "staleUnconfirmedTokenRejected": true,
+      "unscheduled": true
+    },
+    {
+      "postId": "bench_post_orchard_sketch",
+      "reviewOnlyNoWrite": true,
+      "exportHash": "8b75083311aeb63a8f00c5bccfa7e946aca366e63b870b79411add102fd5888a",
+      "mediaIds": [
+        "bench_preview_03622a03-975f-4228-8fc4-fe10ea697c33"
+      ],
+      "confirmedStatus": 201,
+      "retryReused": true,
+      "staleUnconfirmedTokenRejected": true,
+      "unscheduled": true
+    }
+  ],
+  "checks": {
+    "twoConfirmedPreviewDrafts": true,
+    "copyChangeCreatesSeparateImmutableDraft": true,
+    "previewOnlyRouting": true,
+    "noEventsOrOriginalEdits": true,
+    "pinnedJpegSurvivesDeselection": true,
+    "retryReturnsCreationReceiptAndCurrentSelection": true,
+    "foreignMediaDenied": true,
+    "ledgerUnchanged": true,
+    "previousReportsUnchanged": 55
+  },
+  "limits": [
+    "Generated JPEG transport proof; no browser renderer or frontend testing",
+    "Temporary mock drafts only; publishing manual"
+  ],
+  "provider": {
+    "mode": "canned_no_network",
+    "calls": 3,
+    "payloadBytes": [
+      22575,
+      22682,
+      22709
+    ]
+  }
+}

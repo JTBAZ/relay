@@ -1,0 +1,24 @@
+[dotenv@17.3.1] injecting env (16) from .env -- tip: 🛡️ auth for agents: https://vestauth.com
+[dotenv@17.3.1] injecting env (0) from .env -- tip: 🛡️ auth for agents: https://vestauth.com
+[23:11:54.547] [33mWARN[39m (relay-server/25800): [36m[relay] RELAY_PUBLIC_WEBHOOK_BASE_URL is not set — Patreon platform webhooks cannot be registered. Set RELAY_PUBLIC_WEBHOOK_BASE_URL (or PUBLIC_WEBHOOK_BASE_URL) to your public Relay API origin in production.[39m
+[23:11:54.574] [33mWARN[39m (relay-api/25800): [36mRelay: RELAY_SPLIT_WORKER_PROCESS=1 — background timers are not started in this process; run `npm run worker` alongside `npm start`.[39m
+[23:11:54.577] [32mINFO[39m (relay-api/25800): [36mRelay API listening[39m
+    [35mport[39m: 8788
+[23:12:06.788] [32mINFO[39m (relay-http/25800): [36mhttp_request[39m
+    [35mtraceId[39m: "trace_813dcc03-6a21-486f-8538-d1df89db6876"
+    [35mmethod[39m: "GET"
+    [35mpath[39m: "/api/v1/health"
+    [35mstatus[39m: 200
+    [35mdurationMs[39m: 7
+[23:12:06.829] [32mINFO[39m (relay-http/25800): [36mhttp_request[39m
+    [35mtraceId[39m: "trace_e407714d-b7f6-486d-b7f5-18dc34564042"
+    [35mmethod[39m: "POST"
+    [35mpath[39m: "/api/v1/editor-bench/schedule/conversation/x-draft/schedule/review"
+    [35mstatus[39m: 401
+    [35mdurationMs[39m: 23
+[23:12:06.839] [32mINFO[39m (relay-http/25800): [36mhttp_request[39m
+    [35mtraceId[39m: "trace_46b0c719-53ab-4c9c-8b77-c476532561a0"
+    [35mmethod[39m: "POST"
+    [35mpath[39m: "/api/v1/editor-bench/schedule/conversation/x-draft/schedule/confirm"
+    [35mstatus[39m: 401
+    [35mdurationMs[39m: 7

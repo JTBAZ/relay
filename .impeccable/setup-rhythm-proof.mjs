@@ -1,0 +1,18 @@
+import 'dotenv/config';
+import {Client} from 'pg';
+import {randomBytes} from 'node:crypto';
+import {spawnSync} from 'node:child_process';
+import {writeFile,readFile} from 'node:fs/promises';
+const url=new URL(process.env.DATABASE_URL);
+if(!['127.0.0.1','localhost'].includes(url.hostname))throw Error('Rhythm proof requires loopback Postgres');
+const name='relay_rhythm_test_'+randomBytes(8).toString('hex');
+const adminUrl=new URL(url);adminUrl.pathname='/postgres';
+const admin=new Client({connectionString:adminUrl.toString()});await admin.connect();await admin.query('CREATE DATABASE '+name);await admin.end();
+url.pathname='/'+name;
+const env={...process.env,DATABASE_URL:url.toString()};
+const schema='.impeccable/integration-baseline/prisma__schema.prisma';
+const pushed=spawnSync(process.execPath,['node_modules/prisma/build/index.js','db','push','--schema',schema],{env,encoding:'utf8'});
+if(pushed.status!==0)throw Error(pushed.stderr||'Could not initialize isolated proof schema');
+const client=new Client({connectionString:url.toString()});await client.connect();await client.query(await readFile('prisma/migrations/20261019150000_posting_rhythms/migration.sql','utf8'));await client.end();
+await writeFile('work/rhythm-proof-target.json',JSON.stringify({name,host:url.hostname,port:url.port}));
+console.log(JSON.stringify({database:name,migration:'applied',isolated:true}));

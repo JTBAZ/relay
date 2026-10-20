@@ -1,0 +1,42 @@
+[dotenv@17.3.1] injecting env (16) from .env -- tip: ⚙️  load multiple .env files with { path: ['.env.local', '.env'] }
+[dotenv@17.3.1] injecting env (0) from .env -- tip: ⚙️  enable debug logging with { debug: true }
+[01:13:06.349] [33mWARN[39m (relay-server/13432): [36m[relay] RELAY_PUBLIC_WEBHOOK_BASE_URL is not set — Patreon platform webhooks cannot be registered. Set RELAY_PUBLIC_WEBHOOK_BASE_URL (or PUBLIC_WEBHOOK_BASE_URL) to your public Relay API origin in production.[39m
+[01:13:06.402] [33mWARN[39m (relay-api/13432): [36mRelay: RELAY_SPLIT_WORKER_PROCESS=1 — background timers are not started in this process; run `npm run worker` alongside `npm start`.[39m
+[01:13:06.406] [32mINFO[39m (relay-api/13432): [36mRelay API listening[39m
+    [35mport[39m: 8788
+[01:13:17.054] [32mINFO[39m (relay-http/13432): [36mhttp_request[39m
+    [35mtraceId[39m: "trace_7d522316-b974-489f-bb25-737140613ce6"
+    [35mmethod[39m: "GET"
+    [35mpath[39m: "/api/v1/health"
+    [35mstatus[39m: 200
+    [35mdurationMs[39m: 7
+[01:13:17.093] [32mINFO[39m (relay-http/13432): [36mhttp_request[39m
+    [35mtraceId[39m: "trace_d2294eae-6c3a-454d-8935-dc4432dc7425"
+    [35mmethod[39m: "POST"
+    [35mpath[39m: "/api/v1/editor-bench/schedule/conversation/deviantart-draft/review"
+    [35mstatus[39m: 401
+    [35mdurationMs[39m: 26
+[01:13:17.105] [32mINFO[39m (relay-http/13432): [36mhttp_request[39m
+    [35mtraceId[39m: "trace_35e2cb96-bbf2-4ddd-9487-4b66871c32f4"
+    [35mmethod[39m: "POST"
+    [35mpath[39m: "/api/v1/editor-bench/schedule/conversation/deviantart-draft/schedule/review"
+    [35mstatus[39m: 401
+    [35mdurationMs[39m: 9
+[01:13:17.115] [32mINFO[39m (relay-http/13432): [36mhttp_request[39m
+    [35mtraceId[39m: "trace_5f8c14eb-712b-4999-9a9b-7347ddc7d2c9"
+    [35mmethod[39m: "POST"
+    [35mpath[39m: "/api/v1/editor-bench/schedule/conversation/deviantart-draft/handoff/review"
+    [35mstatus[39m: 401
+    [35mdurationMs[39m: 1
+[01:13:17.123] [32mINFO[39m (relay-http/13432): [36mhttp_request[39m
+    [35mtraceId[39m: "trace_878bc987-07c0-43ea-a844-1ff18189713b"
+    [35mmethod[39m: "GET"
+    [35mpath[39m: "/api/v1/editor-bench/schedule/conversation/session/a1111111-1111-4111-8111-111111111111/deviantart-handoff/b1111111-1111-4111-8111-111111111111/package"
+    [35mstatus[39m: 401
+    [35mdurationMs[39m: 2
+[01:13:17.139] [32mINFO[39m (relay-http/13432): [36mhttp_request[39m
+    [35mtraceId[39m: "trace_6021fe2f-948b-445e-a99b-0e8348c23023"
+    [35mmethod[39m: "GET"
+    [35mpath[39m: "/api/v1/editor-bench/schedule/conversation/session/a1111111-1111-4111-8111-111111111111/deviantart-handoff/b1111111-1111-4111-8111-111111111111/media/bench_preview_fake"
+    [35mstatus[39m: 401
+    [35mdurationMs[39m: 1

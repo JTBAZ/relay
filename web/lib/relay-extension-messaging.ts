@@ -51,6 +51,7 @@ export type RelayScheduleEventExtensionResponse = {
 export type SendRelayScheduleEventResult =
   | { ok: true; extensionId: string; response: RelayScheduleEventExtensionResponse }
   | { ok: false; error: string };
+export type SendRelayBenchXHandoffResult = { ok: true; response: { ok: true; handoff_id: string; destination: "x"; tab_id: number; relay_post_id: string } } | { ok: false; error: string };
 
 export function getExtensionRuntime(): ExtensionRuntime | null {
   if (typeof window === "undefined") return null;
@@ -239,6 +240,38 @@ function describeRelayScheduleEventFailure(value: unknown): string {
       if (typeof value === "string" && value.trim()) return value.trim();
       return "The Relay extension returned an unexpected response. Check whether X opened before retrying.";
   }
+}
+
+/** Opens X for one confirmed mock Conversation handoff using only opaque IDs. */
+export async function sendRelayBenchXHandoffToExtension(sessionId: string, handoffId: string): Promise<SendRelayBenchXHandoffResult> {
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(sessionId) || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(handoffId)) return { ok: false, error: "This mock X handoff has an invalid id." };
+  const extensionId = Array.from(parseRelayExtensionIds())[0];
+  if (!extensionId) return { ok: false, error: "No official Relay extension is configured for this site." };
+  const runtime = getExtensionRuntime();
+  if (!runtime?.sendMessage) return { ok: false, error: "Could not reach the Relay extension from this page." };
+  try {
+    const response = await sendExtensionMessage(runtime, extensionId, { type: RELAY_CROSS_POST_MESSAGE_TYPE, session_id: sessionId, handoff_id: handoffId, destination: "x" });
+    const row = response !== null && typeof response === "object" ? response as Record<string, unknown> : null;
+    if (row?.ok === true && row.handoff_id === handoffId && row.destination === "x" && typeof row.tab_id === "number" && Number.isFinite(row.tab_id) && typeof row.relay_post_id === "string" && row.relay_post_id.startsWith("bench_handoff_")) return { ok: true, response: row as SendRelayBenchXHandoffResult["response"] };
+    return { ok: false, error: describeRelayScheduleEventFailure(response) };
+  } catch (error) { return { ok: false, error: describeRelayScheduleEventFailure(error instanceof Error ? error.message : String(error)) }; }
+}
+
+export type SendRelayBenchDeviantArtHandoffResult = { ok: true; response: { ok: true; handoff_id: string; destination: "deviantart"; tab_id: number; relay_post_id: string } } | { ok: false; error: string };
+
+/** Opens DeviantArt from one confirmed mock Conversation handoff using only opaque IDs. */
+export async function sendRelayBenchDeviantArtHandoffToExtension(sessionId: string, handoffId: string): Promise<SendRelayBenchDeviantArtHandoffResult> {
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(sessionId) || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(handoffId)) return { ok: false, error: "This mock DeviantArt handoff has an invalid id." };
+  const extensionId = Array.from(parseRelayExtensionIds())[0];
+  if (!extensionId) return { ok: false, error: "No official Relay extension is configured for this site." };
+  const runtime = getExtensionRuntime();
+  if (!runtime?.sendMessage) return { ok: false, error: "Could not reach the Relay extension from this page." };
+  try {
+    const response = await sendExtensionMessage(runtime, extensionId, { type: RELAY_CROSS_POST_MESSAGE_TYPE, session_id: sessionId, handoff_id: handoffId, destination: "deviantart" });
+    const row = response !== null && typeof response === "object" ? response as Record<string, unknown> : null;
+    if (row?.ok === true && row.handoff_id === handoffId && row.destination === "deviantart" && typeof row.tab_id === "number" && Number.isFinite(row.tab_id) && typeof row.relay_post_id === "string" && row.relay_post_id.startsWith("bench_handoff_")) return { ok: true, response: row as SendRelayBenchDeviantArtHandoffResult["response"] };
+    return { ok: false, error: describeRelayScheduleEventFailure(response) };
+  } catch (error) { return { ok: false, error: describeRelayScheduleEventFailure(error instanceof Error ? error.message : String(error)) }; }
 }
 
 export type SendRelayExternalMetricsRefreshResult =

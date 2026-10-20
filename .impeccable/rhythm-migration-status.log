@@ -1,0 +1,12 @@
+Loaded Prisma config from prisma.config.ts.
+
+Prisma schema loaded from prisma\schema.prisma.
+Datasource "db": PostgreSQL database "relay_dev", schema "public" at "127.0.0.1:5433"
+
+109 migrations found in prisma/migrations
+Following migrations have not yet been applied:
+20261015120000_creator_conversational_plans
+20261019150000_posting_rhythms
+
+To apply migrations in development run prisma migrate dev.
+To apply migrations in production run prisma migrate deploy.

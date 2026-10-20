@@ -1,0 +1,234 @@
+[dotenv@17.3.1] injecting env (16) from .env -- tip: ⚙️  load multiple .env files with { path: ['.env.local', '.env'] }
+[dotenv@17.3.1] injecting env (0) from .env -- tip: 🔐 prevent committing .env to code: https://dotenvx.com/precommit
+[02:01:37.779] [33mWARN[39m (relay-server/47096): [36m[relay] RELAY_PUBLIC_WEBHOOK_BASE_URL is not set — Patreon platform webhooks cannot be registered. Set RELAY_PUBLIC_WEBHOOK_BASE_URL (or PUBLIC_WEBHOOK_BASE_URL) to your public Relay API origin in production.[39m
+[02:01:37.838] [33mWARN[39m (relay-api/47096): [36mRelay: RELAY_SPLIT_WORKER_PROCESS=1 — background timers are not started in this process; run `npm run worker` alongside `npm start`.[39m
+[02:01:38.574] [32mINFO[39m (relay-http/47096): [36mhttp_request[39m
+    [35mtraceId[39m: "trace_ef703eed-3403-45aa-9959-81d108c99daa"
+    [35mmethod[39m: "GET"
+    [35mpath[39m: "/health"
+    [35mstatus[39m: 404
+    [35mdurationMs[39m: 17
+[02:01:37.841] [32mINFO[39m (relay-api/47096): [36mRelay API listening[39m
+    [35mport[39m: 8788
+[02:01:39.101] [32mINFO[39m (relay-http/47096): [36mhttp_request[39m
+    [35mtraceId[39m: "trace_af7054b6-d4d8-472b-b7b2-e31c0d030c57"
+    [35mmethod[39m: "GET"
+    [35mpath[39m: "/health"
+    [35mstatus[39m: 404
+    [35mdurationMs[39m: 19
+[02:01:39.604] [32mINFO[39m (relay-http/47096): [36mhttp_request[39m
+    [35mtraceId[39m: "trace_25d4e764-1266-432a-b71d-c5a5b8f0f830"
+    [35mmethod[39m: "GET"
+    [35mpath[39m: "/health"
+    [35mstatus[39m: 404
+    [35mdurationMs[39m: 2
+[02:01:40.111] [32mINFO[39m (relay-http/47096): [36mhttp_request[39m
+    [35mtraceId[39m: "trace_3e26f021-79d3-4d50-8d6b-df2a5c4d9f51"
+    [35mmethod[39m: "GET"
+    [35mpath[39m: "/health"
+    [35mstatus[39m: 404
+    [35mdurationMs[39m: 2
+[02:01:40.626] [32mINFO[39m (relay-http/47096): [36mhttp_request[39m
+    [35mtraceId[39m: "trace_58e4f4c7-b085-488c-8c66-61bddc3d9c70"
+    [35mmethod[39m: "GET"
+    [35mpath[39m: "/health"
+    [35mstatus[39m: 404
+    [35mdurationMs[39m: 3
+[02:01:41.138] [32mINFO[39m (relay-http/47096): [36mhttp_request[39m
+    [35mtraceId[39m: "trace_595127e1-9757-495c-a835-8cd5b5dbfb53"
+    [35mmethod[39m: "GET"
+    [35mpath[39m: "/health"
+    [35mstatus[39m: 404
+    [35mdurationMs[39m: 3
+[02:01:41.641] [32mINFO[39m (relay-http/47096): [36mhttp_request[39m
+    [35mtraceId[39m: "trace_fad6a3b0-463e-43d3-abe0-b924bf2a9297"
+    [35mmethod[39m: "GET"
+    [35mpath[39m: "/health"
+    [35mstatus[39m: 404
+    [35mdurationMs[39m: 2
+[02:01:42.153] [32mINFO[39m (relay-http/47096): [36mhttp_request[39m
+    [35mtraceId[39m: "trace_498f4ee9-8e22-4b52-9877-df91e469c9fa"
+    [35mmethod[39m: "GET"
+    [35mpath[39m: "/health"
+    [35mstatus[39m: 404
+    [35mdurationMs[39m: 2
+[02:01:42.663] [32mINFO[39m (relay-http/47096): [36mhttp_request[39m
+    [35mtraceId[39m: "trace_001c3c49-1f84-4889-b144-5d7f88b3d1ef"
+    [35mmethod[39m: "GET"
+    [35mpath[39m: "/health"
+    [35mstatus[39m: 404
+    [35mdurationMs[39m: 2
+[02:01:43.168] [32mINFO[39m (relay-http/47096): [36mhttp_request[39m
+    [35mtraceId[39m: "trace_41bd1719-60a7-44a5-883f-bb5c20dc20ca"
+    [35mmethod[39m: "GET"
+    [35mpath[39m: "/health"
+    [35mstatus[39m: 404
+    [35mdurationMs[39m: 2
+[02:01:43.671] [32mINFO[39m (relay-http/47096): [36mhttp_request[39m
+    [35mtraceId[39m: "trace_6bb5fc3b-b962-4b0c-9f56-d065572c618a"
+    [35mmethod[39m: "GET"
+    [35mpath[39m: "/health"
+    [35mstatus[39m: 404
+    [35mdurationMs[39m: 2
+[02:01:44.182] [32mINFO[39m (relay-http/47096): [36mhttp_request[39m
+    [35mtraceId[39m: "trace_1fb79446-3c56-44ef-89b5-0f90b5c1da76"
+    [35mmethod[39m: "GET"
+    [35mpath[39m: "/health"
+    [35mstatus[39m: 404
+    [35mdurationMs[39m: 2
+[02:01:44.698] [32mINFO[39m (relay-http/47096): [36mhttp_request[39m
+    [35mtraceId[39m: "trace_2b5ad347-7810-4587-aff6-1eae32bd6b34"
+    [35mmethod[39m: "GET"
+    [35mpath[39m: "/health"
+    [35mstatus[39m: 404
+    [35mdurationMs[39m: 2
+[02:01:45.214] [32mINFO[39m (relay-http/47096): [36mhttp_request[39m
+    [35mtraceId[39m: "trace_2f6643e2-473e-4500-b404-d0bc5ce442b6"
+    [35mmethod[39m: "GET"
+    [35mpath[39m: "/health"
+    [35mstatus[39m: 404
+    [35mdurationMs[39m: 2
+[02:01:45.731] [32mINFO[39m (relay-http/47096): [36mhttp_request[39m
+    [35mtraceId[39m: "trace_5fe0928c-d15c-4f52-90ef-6593c549766a"
+    [35mmethod[39m: "GET"
+    [35mpath[39m: "/health"
+    [35mstatus[39m: 404
+    [35mdurationMs[39m: 3
+[02:01:46.243] [32mINFO[39m (relay-http/47096): [36mhttp_request[39m
+    [35mtraceId[39m: "trace_adfa7dbc-7911-4d32-b9a8-0e810a8ee4a7"
+    [35mmethod[39m: "GET"
+    [35mpath[39m: "/health"
+    [35mstatus[39m: 404
+    [35mdurationMs[39m: 1
+[02:01:46.753] [32mINFO[39m (relay-http/47096): [36mhttp_request[39m
+    [35mtraceId[39m: "trace_6ab2cb65-54d8-4092-9289-e835ad7cace5"
+    [35mmethod[39m: "GET"
+    [35mpath[39m: "/health"
+    [35mstatus[39m: 404
+    [35mdurationMs[39m: 1
+[02:01:47.263] [32mINFO[39m (relay-http/47096): [36mhttp_request[39m
+    [35mtraceId[39m: "trace_7eddf73f-1a48-42ae-a529-4f2c09bac99e"
+    [35mmethod[39m: "GET"
+    [35mpath[39m: "/health"
+    [35mstatus[39m: 404
+    [35mdurationMs[39m: 1
+[02:01:47.773] [32mINFO[39m (relay-http/47096): [36mhttp_request[39m
+    [35mtraceId[39m: "trace_aae9bba1-7c1e-4a68-b660-5316e8ec086f"
+    [35mmethod[39m: "GET"
+    [35mpath[39m: "/health"
+    [35mstatus[39m: 404
+    [35mdurationMs[39m: 1
+[02:01:48.296] [32mINFO[39m (relay-http/47096): [36mhttp_request[39m
+    [35mtraceId[39m: "trace_af782fba-4f86-4656-bd38-fb916b583f79"
+    [35mmethod[39m: "GET"
+    [35mpath[39m: "/health"
+    [35mstatus[39m: 404
+    [35mdurationMs[39m: 1
+[02:01:48.814] [32mINFO[39m (relay-http/47096): [36mhttp_request[39m
+    [35mtraceId[39m: "trace_8aab7bf1-d0d2-404b-83e1-9a7d506aff4d"
+    [35mmethod[39m: "GET"
+    [35mpath[39m: "/health"
+    [35mstatus[39m: 404
+    [35mdurationMs[39m: 2
+[02:01:49.322] [32mINFO[39m (relay-http/47096): [36mhttp_request[39m
+    [35mtraceId[39m: "trace_5f1bf6f9-36f2-4951-a8ae-2b3be100f362"
+    [35mmethod[39m: "GET"
+    [35mpath[39m: "/health"
+    [35mstatus[39m: 404
+    [35mdurationMs[39m: 1
+[02:01:49.828] [32mINFO[39m (relay-http/47096): [36mhttp_request[39m
+    [35mtraceId[39m: "trace_1aa4cfc1-e314-4df8-b2fc-2f3a1f1e587b"
+    [35mmethod[39m: "GET"
+    [35mpath[39m: "/health"
+    [35mstatus[39m: 404
+    [35mdurationMs[39m: 1
+[02:01:50.335] [32mINFO[39m (relay-http/47096): [36mhttp_request[39m
+    [35mtraceId[39m: "trace_9a8152d0-3dae-499e-baec-6fa3f388f2de"
+    [35mmethod[39m: "GET"
+    [35mpath[39m: "/health"
+    [35mstatus[39m: 404
+    [35mdurationMs[39m: 1
+[02:01:50.844] [32mINFO[39m (relay-http/47096): [36mhttp_request[39m
+    [35mtraceId[39m: "trace_f29d6c57-1fcd-414b-ac13-be09871b3e7a"
+    [35mmethod[39m: "GET"
+    [35mpath[39m: "/health"
+    [35mstatus[39m: 404
+    [35mdurationMs[39m: 2
+[02:01:51.351] [32mINFO[39m (relay-http/47096): [36mhttp_request[39m
+    [35mtraceId[39m: "trace_3ddff1c4-b82b-4467-9931-51b4a9944c98"
+    [35mmethod[39m: "GET"
+    [35mpath[39m: "/health"
+    [35mstatus[39m: 404
+    [35mdurationMs[39m: 2
+[02:01:51.862] [32mINFO[39m (relay-http/47096): [36mhttp_request[39m
+    [35mtraceId[39m: "trace_9588152d-117a-4480-9494-7eb0d1b51473"
+    [35mmethod[39m: "GET"
+    [35mpath[39m: "/health"
+    [35mstatus[39m: 404
+    [35mdurationMs[39m: 1
+[02:01:52.371] [32mINFO[39m (relay-http/47096): [36mhttp_request[39m
+    [35mtraceId[39m: "trace_2abe5982-48c0-4dbb-a304-e3b23eadd2f2"
+    [35mmethod[39m: "GET"
+    [35mpath[39m: "/health"
+    [35mstatus[39m: 404
+    [35mdurationMs[39m: 2
+[02:01:52.897] [32mINFO[39m (relay-http/47096): [36mhttp_request[39m
+    [35mtraceId[39m: "trace_ae9ddafd-39a1-483a-bbcc-13e32156862f"
+    [35mmethod[39m: "GET"
+    [35mpath[39m: "/health"
+    [35mstatus[39m: 404
+    [35mdurationMs[39m: 1
+[02:01:53.407] [32mINFO[39m (relay-http/47096): [36mhttp_request[39m
+    [35mtraceId[39m: "trace_58d33131-dcc1-4e4a-8482-4689721ecbe4"
+    [35mmethod[39m: "GET"
+    [35mpath[39m: "/health"
+    [35mstatus[39m: 404
+    [35mdurationMs[39m: 1
+[02:01:53.932] [32mINFO[39m (relay-http/47096): [36mhttp_request[39m
+    [35mtraceId[39m: "trace_09aeb229-fc04-4c6c-975e-18ede540f532"
+    [35mmethod[39m: "GET"
+    [35mpath[39m: "/health"
+    [35mstatus[39m: 404
+    [35mdurationMs[39m: 1
+[02:01:54.442] [32mINFO[39m (relay-http/47096): [36mhttp_request[39m
+    [35mtraceId[39m: "trace_8fb0448f-43c0-4596-9039-0d82a31b54d0"
+    [35mmethod[39m: "GET"
+    [35mpath[39m: "/health"
+    [35mstatus[39m: 404
+    [35mdurationMs[39m: 1
+[02:01:54.961] [32mINFO[39m (relay-http/47096): [36mhttp_request[39m
+    [35mtraceId[39m: "trace_12dad8e7-cd5b-4a2d-a439-af9580adbe8a"
+    [35mmethod[39m: "GET"
+    [35mpath[39m: "/health"
+    [35mstatus[39m: 404
+    [35mdurationMs[39m: 2
+[02:02:47.450] [32mINFO[39m (relay-http/47096): [36mhttp_request[39m
+    [35mtraceId[39m: "trace_337bdfa1-6ab5-4cdc-934c-377087e0101a"
+    [35mmethod[39m: "GET"
+    [35mpath[39m: "/api/v1/health"
+    [35mstatus[39m: 200
+    [35mdurationMs[39m: 3
+[02:02:49.469] [32mINFO[39m (relay-http/47096): [36mhttp_request[39m
+    [35mtraceId[39m: "trace_a95bc011-df0c-41d6-a31f-6425abdfd266"
+    [35mmethod[39m: "POST"
+    [35mpath[39m: "/api/v1/editor-bench/schedule/conversation/cell/skip"
+    [35mstatus[39m: 401
+    [35mdurationMs[39m: 13
+[02:02:49.541] [32mINFO[39m (relay-http/47096): [36mhttp_request[39m
+    [35mtraceId[39m: "trace_8fc71fdb-4902-49a9-8501-014ce8e33162"
+    [35mmethod[39m: "POST"
+    [35mpath[39m: "/api/v1/editor-bench/schedule/conversation/cell/restore"
+    [35mstatus[39m: 401
+    [35mdurationMs[39m: 2
+[02:02:49.549] [32mINFO[39m (relay-http/47096): [36mhttp_request[39m
+    [35mtraceId[39m: "trace_b2944df6-2ebc-4897-ac73-12c600d332ab"
+    [35mmethod[39m: "POST"
+    [35mpath[39m: "/api/v1/editor-bench/schedule/conversation/x-draft/review"
+    [35mstatus[39m: 401
+    [35mdurationMs[39m: 2
+[02:02:49.553] [32mINFO[39m (relay-http/47096): [36mhttp_request[39m
+    [35mtraceId[39m: "trace_cf55c994-18d0-4051-b023-ba7c2b30db50"
+    [35mmethod[39m: "POST"
+    [35mpath[39m: "/api/v1/editor-bench/schedule/conversation/deviantart-draft/review"
+    [35mstatus[39m: 401
+    [35mdurationMs[39m: 2

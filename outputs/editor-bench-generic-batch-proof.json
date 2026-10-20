@@ -1,0 +1,324 @@
+{
+  "ticket": "BGB-01",
+  "accepted": true,
+  "date": "2026-10-20",
+  "planner": "Sol High",
+  "implementer": "Luna High",
+  "reviewer": "root",
+  "scope": {
+    "src/editor-bench/conversation.ts": {
+      "sha256": "adb02a03209fecb4c5c3201ec781db659d37c04c7050e5c1884d7802c2de5005",
+      "hunks": [
+        "@@ -10,0 +11 @@ import { getBenchSquarePreviewTemplate } from './routing.js';",
+        "@@ -14,3 +15,4 @@ const tagSchema = objectSchema({ kind: { type: 'string', enum: ['tags'] }, targe",
+        "@@ -22 +24,7 @@ export const BENCH_CONVERSATION_SCHEMA = objectSchema({ result: { anyOf: [select",
+        "@@ -24 +32 @@ export type ConversationAction =",
+        "@@ -62 +70,2 @@ export type BenchConversationSession = {",
+        "@@ -189 +198 @@ export function createBenchConversationStore() {",
+        "@@ -222 +231,21 @@ export function conversationSnapshot(session: BenchConversationSession) {",
+        "@@ -223,0 +253 @@ export function conversationSnapshot(session: BenchConversationSession) {",
+        "@@ -252 +282 @@ function findTitleQuoteSpans(text: string) {",
+        "@@ -263,0 +294,12 @@ function actionFrom(text: string, latestRequest: string): ActionParse {",
+        "@@ -265,2 +307,30 @@ function actionFrom(text: string, latestRequest: string): ActionParse {",
+        "@@ -268 +337,0 @@ function actionFrom(text: string, latestRequest: string): ActionParse {",
+        "@@ -272 +341,3 @@ function actionFrom(text: string, latestRequest: string): ActionParse {",
+        "@@ -273,0 +345 @@ function actionFrom(text: string, latestRequest: string): ActionParse {",
+        "@@ -321 +393 @@ export function prepareBenchConversationPayload(latestRequest: string, session:",
+        "@@ -334 +406 @@ export async function interpretBenchConversation(latestRequest: string, session:"
+      ]
+    },
+    "src/editor-bench/schedule-routes.ts": {
+      "sha256": "4e75cc789d95f763a25630337cfa802c0be4c8e9d8d034d51c1f2197f26f16ee",
+      "hunks": [
+        "@@ -13 +13 @@ import { interpretBenchVariantEdit, resolveBenchVariantEditTarget, variantChatIn",
+        "@@ -467,0 +468,27 @@ export function registerBenchScheduleRoutes(app: express.Application, options: B",
+        "@@ -810,2 +837 @@ export function registerBenchScheduleRoutes(app: express.Application, options: B",
+        "@@ -861,2 +887 @@ export function registerBenchScheduleRoutes(app: express.Application, options: B",
+        "@@ -874,2 +899 @@ export function registerBenchScheduleRoutes(app: express.Application, options: B",
+        "@@ -947 +971,2 @@ export function registerBenchScheduleRoutes(app: express.Application, options: B",
+        "@@ -954 +979 @@ export function registerBenchScheduleRoutes(app: express.Application, options: B",
+        "@@ -958,0 +984 @@ export function registerBenchScheduleRoutes(app: express.Application, options: B",
+        "@@ -966,3 +992,6 @@ export function registerBenchScheduleRoutes(app: express.Application, options: B",
+        "@@ -971 +1000,4 @@ export function registerBenchScheduleRoutes(app: express.Application, options: B",
+        "@@ -974 +1006 @@ export function registerBenchScheduleRoutes(app: express.Application, options: B"
+      ]
+    },
+    "web/lib/editor-bench.ts": {
+      "sha256": "4bdac3047abe21b274d010f6f3e7070fdf1f7db165cd12afaac1924e7b61ae26",
+      "hunks": [
+        "@@ -56 +56,3 @@ export type ScheduleConfirmResult = { event: ScheduleEvent; reused: boolean };",
+        "@@ -60 +62 @@ export type BenchConversationConfirmedDraft = { variantId: string; planId: strin",
+        "@@ -113,0 +116,4 @@ export function toggleBenchConversationSelection(input: { sessionId: string; rev"
+      ]
+    },
+    "web/app/editor-bench/EditorBenchClient.tsx": {
+      "sha256": "682b975fdf7cc25c14759ec77c16a66e26e8b67735dd13c97b16d1ce6356d0bb",
+      "hunks": [
+        "@@ -10 +10 @@ import { sendRelayScheduleEventToExtension } from \"@/lib/relay-extension-messagi",
+        "@@ -118,0 +119 @@ export default function EditorBenchClient() {",
+        "@@ -122,0 +124,2 @@ export default function EditorBenchClient() {",
+        "@@ -215,0 +219,30 @@ export default function EditorBenchClient() {",
+        "@@ -293,0 +327 @@ export default function EditorBenchClient() {",
+        "@@ -298 +332 @@ export default function EditorBenchClient() {",
+        "@@ -304 +338,3 @@ export default function EditorBenchClient() {",
+        "@@ -306 +341,0 @@ export default function EditorBenchClient() {",
+        "@@ -316 +351,4 @@ export default function EditorBenchClient() {",
+        "@@ -319,0 +358 @@ export default function EditorBenchClient() {",
+        "@@ -323,0 +363,26 @@ export default function EditorBenchClient() {",
+        "@@ -335,0 +401 @@ export default function EditorBenchClient() {",
+        "@@ -341 +407,5 @@ export default function EditorBenchClient() {",
+        "@@ -544 +614 @@ export default function EditorBenchClient() {",
+        "@@ -1032 +1102 @@ export default function EditorBenchClient() {",
+        "@@ -1039 +1109 @@ export default function EditorBenchClient() {",
+        "@@ -1041 +1111 @@ export default function EditorBenchClient() {",
+        "@@ -1043 +1112,0 @@ export default function EditorBenchClient() {",
+        "@@ -1045,0 +1115,9 @@ export default function EditorBenchClient() {",
+        "@@ -1061 +1139,4 @@ export default function EditorBenchClient() {",
+        "@@ -1065 +1146 @@ export default function EditorBenchClient() {",
+        "@@ -1090 +1171,2 @@ export default function EditorBenchClient() {",
+        "@@ -1092 +1174 @@ export default function EditorBenchClient() {"
+      ]
+    },
+    "tests/editor-bench/conversation.test.ts": {
+      "sha256": "0b939f11788e2c4f865be584e232753db559c8c270aa8cd13a5745252e8e5e49",
+      "hunks": [
+        "@@ -70 +70 @@ function preparedPreviewSession() {",
+        "@@ -74,0 +75,48 @@ describe('mock editor-bench conversation', () => {",
+        "@@ -182 +230 @@ describe('mock editor-bench conversation', () => {",
+        "@@ -191 +239 @@ describe('mock editor-bench conversation', () => {",
+        "@@ -407 +455 @@ describe('mock editor-bench conversation', () => {",
+        "@@ -417 +465 @@ describe('mock editor-bench conversation', () => {"
+      ]
+    }
+  },
+  "baselineHead": "4098b8cead0dc70dfcf666650d635c08c550a89e",
+  "branch": "codex/local-build-2026-10-19",
+  "head": "c82c9ed07f51e392c5f5383cc04d6502c9b5e45c",
+  "unrelatedChanges": [
+    "src/server.ts"
+  ],
+  "checks": {
+    "focused": {
+      "report": "work/bgb01-luna-focused-04.json",
+      "passed": 27,
+      "failed": 0
+    },
+    "backendBuild": {
+      "command": "npm run build",
+      "exitCode": 0,
+      "evidence": "work/bgb01-luna-build-01.exit.json"
+    },
+    "broader": {
+      "passed": 222,
+      "failed": 3,
+      "files": 30,
+      "report": "work/bgb01-tests.json",
+      "failures": [
+        {
+          "file": "C:/Users/jorda/Documents/Codex/2026-10-11/c/work/relay/tests/distribution-package.test.ts",
+          "test": "buildCrossPostPackageFromAttempt media resolution returns main media for Patreon full routing",
+          "error": "TypeError: Cannot read properties of undefined (reading 'findFirst')\n    at buildCrossPostPackageFromAttempt (C:\\Users\\jorda\\Documents\\Codex\\2026-10-11\\c\\work\\relay\\src\\distribution\\distribution-package.ts:155:54)\n    at processTicksAndRejections (node:internal/process/task_queues:103:5)\n    at C:\\Users\\jorda\\Documents\\Codex\\2026-10-11\\c\\work\\relay\\tests\\distribution-package.test.ts:37:20\n    at file:///C:/Users/jorda/Documents/Codex/2026-10-11/c/work/relay/node_modules/@vitest/runner/dist/chunk-hooks.js:752:20"
+        },
+        {
+          "file": "C:/Users/jorda/Documents/Codex/2026-10-11/c/work/relay/tests/distribution-package.test.ts",
+          "test": "buildCrossPostPackageFromAttempt media resolution returns preview media for X preview routing",
+          "error": "TypeError: Cannot read properties of undefined (reading 'findFirst')\n    at buildCrossPostPackageFromAttempt (C:\\Users\\jorda\\Documents\\Codex\\2026-10-11\\c\\work\\relay\\src\\distribution\\distribution-package.ts:155:54)\n    at processTicksAndRejections (node:internal/process/task_queues:103:5)\n    at C:\\Users\\jorda\\Documents\\Codex\\2026-10-11\\c\\work\\relay\\tests\\distribution-package.test.ts:65:20\n    at file:///C:/Users/jorda/Documents/Codex/2026-10-11/c/work/relay/node_modules/@vitest/runner/dist/chunk-hooks.js:752:20"
+        },
+        {
+          "file": "C:/Users/jorda/Documents/Codex/2026-10-11/c/work/relay/tests/distribution-package.test.ts",
+          "test": "buildCrossPostPackageFromAttempt media resolution returns invalid_media_binding when preview id missing from plan",
+          "error": "TypeError: Cannot read properties of undefined (reading 'findFirst')\n    at buildCrossPostPackageFromAttempt (C:\\Users\\jorda\\Documents\\Codex\\2026-10-11\\c\\work\\relay\\src\\distribution\\distribution-package.ts:155:54)\n    at processTicksAndRejections (node:internal/process/task_queues:103:5)\n    at C:\\Users\\jorda\\Documents\\Codex\\2026-10-11\\c\\work\\relay\\tests\\distribution-package.test.ts:97:20\n    at file:///C:/Users/jorda/Documents/Codex/2026-10-11/c/work/relay/node_modules/@vitest/runner/dist/chunk-hooks.js:752:20"
+        }
+      ]
+    },
+    "http": {
+      "report": "outputs/editor-bench-generic-batch-http-bgb01.json",
+      "checks": {
+        "twoArtworkByTwoDestinationMatrix": true,
+        "oneExportPerArtwork": true,
+        "explicitPerCellConfirmations": true,
+        "ownerAndRevisionGuards": true,
+        "skipRestoreAndContextSurviveDestinationNarrowing": true,
+        "partialFailureRetainsConfirmedCell": true,
+        "staleNeighborReviewRefused": true,
+        "unsupportedMixedTargetClarifiesUnchanged": true,
+        "copyChangesDoNotReuseOldConfirmation": true,
+        "immutableOriginalsAndCreationHistory": true,
+        "separateScheduleAndManualHandoffConfirmations": true,
+        "exactConfirmedCopyAndJpegPackages": true,
+        "untouchedNeighborScheduling": true,
+        "refreshReadbackAndExpiry": true,
+        "priorReportsPreserved": 64,
+        "ledgerUnchanged": true,
+        "modelCalls": 8,
+        "inputBytes": [
+          22943,
+          23077,
+          23105,
+          23092,
+          23116,
+          23111,
+          23121,
+          23110
+        ]
+      }
+    },
+    "tsxSyntax": {
+      "diagnostics": 0,
+      "scope": "EditorBenchClient.tsx only; no frontend typecheck/build/DOM testing"
+    },
+    "extension": {
+      "reused": true,
+      "evidence": "work/bgb01-artifact.json",
+      "sourcePathsUnchanged": 55,
+      "artifact": "C:\\Users\\jorda\\Documents\\Codex\\2026-10-11\\c\\work\\relay\\extension\\dist\\chrome-dev",
+      "developmentApiPort": 8788,
+      "protocolChanged": false,
+      "installedExtensionReloaded": false
+    },
+    "runtime": {
+      "verifiedAt": "2026-10-20T00:02:49.5974020Z",
+      "pid": 47096,
+      "protectedPosts": {
+        "conversation/x-draft/review": 401,
+        "conversation/cell/skip": 401,
+        "conversation/cell/restore": 401,
+        "conversation/deviantart-draft/review": 401
+      },
+      "previousPid": 13432,
+      "initialProbeEvidence": "work/bgb01-runtime-initial-probe.json",
+      "port": 8788,
+      "backgroundWorkersDisabled": true,
+      "health": 200,
+      "temporarySessionsCleared": true,
+      "healthPath": "/api/v1/health",
+      "browserTested": false
+    },
+    "review": {
+      "scope": "Only five implementation/test files and exact hunks versus work/bgb01-baseline, plus connected selection compiler, preview/source formatter and identity builder, existing review/confirm/schedule/handoff guards and extension client boundary.",
+      "ponytailReview": true,
+      "uiGuidelines": "https://raw.githubusercontent.com/vercel-labs/web-interface-guidelines/main/command.md",
+      "resolved": [
+        "Destination additions/removals retain unnamed targets deterministically with only latest-request grounded quotes.",
+        "Unsupported destination clauses clarify unchanged without rejecting quoted source/copy platform words.",
+        "Changed copy/source/export uses current full variant identity; older drafts remain saved history.",
+        "Skip/restore is owner/revision/generation guarded and does not overwrite completed neighbors.",
+        "One review token is active; every draft, schedule and handoff still requires its own confirmation.",
+        "Per-cell errors, skip/restore, busy state and saved-history labels use existing bench controls.",
+        "Resume stores only an opaque per-tab session ID; storage failures and stale/foreign sessions do not crash the bench.",
+        "Loading-resume typing cannot invalidate and strand the conversation lock.",
+        "Explicit goal cancellation clears unconfirmed skips while preserving confirmed records."
+      ],
+      "remainingTaskDefects": [],
+      "verificationLimit": "UI source inspection only; rendered behavior and installed extension are unverified."
+    }
+  },
+  "initialEvidence": [
+    {
+      "report": "work/bgb01-luna-focused-01.json",
+      "passed": 24,
+      "failed": 3,
+      "failures": [
+        {
+          "test": "mock editor-bench conversation builds a grouped destination matrix and applies grounded destination additions and removals",
+          "error": "AssertionError: expected [ 'blocked', 'blocked', …(2) ] to deeply equal [ 'needs_preview', …(3) ]\n    at C:\\Users\\jorda\\Documents\\Codex\\2026-10-11\\c\\work\\relay\\tests\\editor-bench\\conversation.test.ts:85:76\n    at processTicksAndRejections (node:internal/process/task_queues:103:5)\n    at file:///C:/Users/jorda/Documents/Codex/2026-10-11/c/work/relay/node_modules/@vitest/runner/dist/chunk-hooks.js:752:20"
+        },
+        {
+          "test": "mock editor-bench conversation records a preview-first X preparation goal, binds choices, and retains them after exclusion",
+          "error": "AssertionError: expected 'The posts are selected for preview-fi…' to contain 'Previewizer and review controls'\n    at C:\\Users\\jorda\\Documents\\Codex\\2026-10-11\\c\\work\\relay\\tests\\editor-bench\\conversation.test.ts:222:40\n    at processTicksAndRejections (node:internal/process/task_queues:103:5)\n    at file:///C:/Users/jorda/Documents/Codex/2026-10-11/c/work/relay/node_modules/@vitest/runner/dist/chunk-hooks.js:752:20"
+        },
+        {
+          "test": "mock editor-bench conversation grounds rename titles in one exact balanced quote and independently grounds the target",
+          "error": "AssertionError: expected 'payload_over_24k' to be 'request_length' // Object.is equality\n    at C:\\Users\\jorda\\Documents\\Codex\\2026-10-11\\c\\work\\relay\\tests\\editor-bench\\conversation.test.ts:455:77\n    at processTicksAndRejections (node:internal/process/task_queues:103:5)\n    at file:///C:/Users/jorda/Documents/Codex/2026-10-11/c/work/relay/node_modules/@vitest/runner/dist/chunk-hooks.js:752:20"
+        }
+      ]
+    },
+    {
+      "report": "work/bgb01-luna-focused-02.json",
+      "passed": 23,
+      "failed": 4,
+      "failures": [
+        {
+          "test": "mock editor-bench conversation builds a grouped destination matrix and applies grounded destination additions and removals",
+          "error": "AssertionError: expected 'blocked' to be 'needs_preview' // Object.is equality\n    at C:\\Users\\jorda\\Documents\\Codex\\2026-10-11\\c\\work\\relay\\tests\\editor-bench\\conversation.test.ts:92:140\n    at processTicksAndRejections (node:internal/process/task_queues:103:5)\n    at file:///C:/Users/jorda/Documents/Codex/2026-10-11/c/work/relay/node_modules/@vitest/runner/dist/chunk-hooks.js:752:20"
+        },
+        {
+          "test": "mock editor-bench conversation records a preview-first X preparation goal, binds choices, and retains them after exclusion",
+          "error": "AssertionError: expected [ 23112, 23244, 23247 ] to deeply equal [ 22522, 22629, 22632 ]\n    at C:\\Users\\jorda\\Documents\\Codex\\2026-10-11\\c\\work\\relay\\tests\\editor-bench\\conversation.test.ts:231:133\n    at processTicksAndRejections (node:internal/process/task_queues:103:5)\n    at file:///C:/Users/jorda/Documents/Codex/2026-10-11/c/work/relay/node_modules/@vitest/runner/dist/chunk-hooks.js:752:20"
+        },
+        {
+          "test": "mock editor-bench conversation confirms one direct X cue through the shared V3 adapter and reuses exact retries",
+          "error": "AssertionError: expected 'Handle one turn in the synthetic edit…' to contain 'literal title as posting copy (not a …'\n    at C:\\Users\\jorda\\Documents\\Codex\\2026-10-11\\c\\work\\relay\\tests\\editor-bench\\conversation.test.ts:310:20\n    at processTicksAndRejections (node:internal/process/task_queues:103:5)\n    at file:///C:/Users/jorda/Documents/Codex/2026-10-11/c/work/relay/node_modules/@vitest/runner/dist/chunk-hooks.js:752:20"
+        },
+        {
+          "test": "mock editor-bench conversation grounds rename titles in one exact balanced quote and independently grounds the target",
+          "error": "AssertionError: expected 'payload_over_24k' to be 'request_length' // Object.is equality\n    at C:\\Users\\jorda\\Documents\\Codex\\2026-10-11\\c\\work\\relay\\tests\\editor-bench\\conversation.test.ts:455:77\n    at processTicksAndRejections (node:internal/process/task_queues:103:5)\n    at file:///C:/Users/jorda/Documents/Codex/2026-10-11/c/work/relay/node_modules/@vitest/runner/dist/chunk-hooks.js:752:20"
+        }
+      ]
+    },
+    {
+      "report": "work/bgb01-luna-focused-03.json",
+      "passed": 26,
+      "failed": 1,
+      "failures": [
+        {
+          "test": "mock editor-bench conversation records a preview-first X preparation goal, binds choices, and retains them after exclusion",
+          "error": "AssertionError: expected [ 22938, 23070, 23073 ] to deeply equal [ 22522, 22629, 22632 ]\n    at C:\\Users\\jorda\\Documents\\Codex\\2026-10-11\\c\\work\\relay\\tests\\editor-bench\\conversation.test.ts:231:133\n    at processTicksAndRejections (node:internal/process/task_queues:103:5)\n    at file:///C:/Users/jorda/Documents/Codex/2026-10-11/c/work/relay/node_modules/@vitest/runner/dist/chunk-hooks.js:752:20"
+        }
+      ]
+    },
+    {
+      "report": "work/bgb01-luna-focused-04.json",
+      "passed": 27,
+      "failed": 0,
+      "failures": []
+    },
+    {
+      "report": "work/bgb01-luna-matrix-05.json",
+      "passed": 0,
+      "failed": 1,
+      "failures": [
+        {
+          "test": "mock editor-bench conversation builds a grouped destination matrix and applies grounded destination additions and removals",
+          "error": "AssertionError: expected { Object (goal, destination, ...) } to be null\n    at C:\\Users\\jorda\\Documents\\Codex\\2026-10-11\\c\\work\\relay\\tests\\editor-bench\\conversation.test.ts:101:45\n    at processTicksAndRejections (node:internal/process/task_queues:103:5)\n    at file:///C:/Users/jorda/Documents/Codex/2026-10-11/c/work/relay/node_modules/@vitest/runner/dist/chunk-hooks.js:752:20"
+        }
+      ]
+    },
+    {
+      "report": "work/bgb01-luna-matrix-06.json",
+      "passed": 0,
+      "failed": 1,
+      "failures": [
+        {
+          "test": "mock editor-bench conversation builds a grouped destination matrix and applies grounded destination additions and removals",
+          "error": "TypeError: Cannot read properties of undefined (reading 'status')\n    at C:\\Users\\jorda\\Documents\\Codex\\2026-10-11\\c\\work\\relay\\tests\\editor-bench\\conversation.test.ts:105:131\n    at processTicksAndRejections (node:internal/process/task_queues:103:5)\n    at file:///C:/Users/jorda/Documents/Codex/2026-10-11/c/work/relay/node_modules/@vitest/runner/dist/chunk-hooks.js:752:20"
+        }
+      ]
+    },
+    {
+      "report": "work/bgb01-luna-matrix-07.json",
+      "passed": 1,
+      "failed": 0,
+      "failures": []
+    }
+  ],
+  "taskWhitespace": true,
+  "configurationHashesUnchanged": true,
+  "priorReportsPreserved": 64,
+  "paidCalls": 0,
+  "ledger": {
+    "rows": 903,
+    "sha256": "699cab42ae296086d1b43a692edb047b8d9508b1343a3539a90e7fb94ab2fbf5",
+    "developmentRemainingUsd": 0.35674,
+    "heldoutRemainingUsd": 8.9690346,
+    "authoritativePath": "C:/Users/jorda/Documents/Codex/2026-10-11/c/work/relay/.relay-data/gallery-editor-budget.json"
+  },
+  "limits": [
+    "Synthetic 16-post bench, current two supported destinations, at most 32 active cells. New destinations need a real formatter, route/package and manual extension integration before selection.",
+    "Grouped worklist with per-cell confirmation, not bulk atomic confirmation. One valid export per artwork is reused; one date or handoff does not propagate to neighbors.",
+    "Existing 32 confirmed drafts/session, 64 successful draft token receipts, 1MiB JPEG, 4MiB/session, 32MiB/API, 1024 adapter draft rows, ten-minute reviews and two-hour idle expiry remain. History can exhaust capacity before active work completes.",
+    "Sessions, drafts, schedules and exports remain temporary API-instance state; reload clears them. No durable Rail/live Library or production writes.",
+    "No paid language-quality proof was run for the new batch schema. Canned provider evidence establishes validation and state behavior, not broad free-text accuracy.",
+    "Publishing manual. Frontend/extension testing, lint, typecheck, Next build, browser/render QA, detector and actual destination fill/upload/live-grant E2E remain deferred."
+  ]
+}

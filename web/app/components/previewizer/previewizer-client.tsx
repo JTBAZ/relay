@@ -151,9 +151,10 @@ export default function PreviewizerClient({
   onUploadPreview,
 }: PreviewizerClientProps = {}) {
   const isDistribution = mode === "distribution";
-  const isHostedSession = isDistribution;
+  const isBench = mode === "bench";
+  const isHostedSession = isDistribution || isBench;
   const { creatorId: studioCreatorId, ready: studioReadySession } = useStudioSession();
-  const creatorId = session?.creatorId?.trim() || studioCreatorId;
+  const creatorId = isBench ? session?.creatorId?.trim() || "" : session?.creatorId?.trim() || studioCreatorId;
   const [imageUrl, setImageUrl] = useState<string | null>(null);
   const [imageEl, setImageEl] = useState<HTMLImageElement | null>(null);
   const [studioReady, setStudioReady] = useState(false);
@@ -331,7 +332,7 @@ export default function PreviewizerClient({
   );
 
   useEffect(() => {
-    if (!studioReadySession || !creatorId) return;
+    if (isBench || !studioReadySession || !creatorId) return;
     let cancelled = false;
     setDestinationsLoading(true);
     void (async () => {
@@ -364,7 +365,7 @@ export default function PreviewizerClient({
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- load on creator identity
-  }, [studioReadySession, creatorId]);
+  }, [isBench, studioReadySession, creatorId]);
 
   useEffect(() => {
     setLinkDestinations(
@@ -439,7 +440,7 @@ export default function PreviewizerClient({
   }, [linkDestinations, selectedDestinationId, customDestinationUrl, compositionId]);
 
   const refreshSavedTemplates = useCallback(async () => {
-    if (!isHostedSession || !creatorId) return;
+    if (!isDistribution || !creatorId) return;
     setTemplatesLoading(true);
     setTemplatesListError(null);
     try {
@@ -450,17 +451,17 @@ export default function PreviewizerClient({
     } finally {
       setTemplatesLoading(false);
     }
-  }, [isHostedSession, creatorId]);
+  }, [isDistribution, creatorId]);
 
   useEffect(() => {
-    if (!isHostedSession || !creatorId || !studioReadySession) return;
+    if (!isDistribution || !creatorId || !studioReadySession) return;
     void refreshSavedTemplates();
-  }, [isHostedSession, creatorId, studioReadySession, refreshSavedTemplates]);
+  }, [isDistribution, creatorId, studioReadySession, refreshSavedTemplates]);
 
   useEffect(() => {
-    if (!exportModalOpen || !isHostedSession) return;
+    if (!exportModalOpen || !isDistribution) return;
     void refreshSavedTemplates();
-  }, [exportModalOpen, isHostedSession, refreshSavedTemplates]);
+  }, [exportModalOpen, isDistribution, refreshSavedTemplates]);
 
   const buildCurrentTemplateConfig = useCallback(() => {
     return serializePreviewTemplateConfig(
@@ -491,7 +492,7 @@ export default function PreviewizerClient({
   ]);
 
   const persistTemplateIfRequested = useCallback(async (): Promise<boolean> => {
-    if (!isHostedSession || !saveTemplateChecked) return true;
+    if (!isDistribution || !saveTemplateChecked) return true;
     const name = saveTemplateName.trim();
     if (!name) {
       setTemplateSaveError("Enter a template name.");
@@ -521,7 +522,7 @@ export default function PreviewizerClient({
       setTemplateSaveBusy(false);
     }
   }, [
-    isHostedSession,
+    isDistribution,
     saveTemplateChecked,
     saveTemplateName,
     savedTemplates.length,
@@ -820,11 +821,12 @@ export default function PreviewizerClient({
 
   const loadFile = useCallback(
     (file: File) => {
+      if (isBench) return;
       if (!file.type.startsWith("image/")) return;
       setSourceLoadError(null);
       mountImageFromUrl(URL.createObjectURL(file), true);
     },
-    [mountImageFromUrl]
+    [isBench, mountImageFromUrl]
   );
 
   const loadFromUrl = useCallback(
@@ -1070,16 +1072,22 @@ export default function PreviewizerClient({
 
   const requestCancel = useCallback(() => {
     if (!onCancel) return;
+    if (isBench && uploadBusy) return;
     const dirty = studioReady && undo.canUndo;
-    const confirmMsg = "Discard preview edits and return to distribution?";
+    const confirmMsg = isBench ? "Discard preview edits and return to the mock conversation?" : "Discard preview edits and return to distribution?";
     if (dirty && !window.confirm(confirmMsg)) {
       return;
     }
     onCancel();
-  }, [onCancel, studioReady, undo.canUndo]);
+  }, [isBench, onCancel, studioReady, undo.canUndo, uploadBusy]);
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
+      if (isBench && e.key === "Escape") {
+        e.preventDefault();
+        requestCancel();
+        return;
+      }
       if (!(e.ctrlKey || e.metaKey)) return;
       if (e.key === "z" && !e.shiftKey) {
         e.preventDefault();
@@ -1092,12 +1100,12 @@ export default function PreviewizerClient({
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [undo]);
+  }, [isBench, requestCancel, undo]);
 
   function onDrop(e: React.DragEvent) {
     e.preventDefault();
     const file = e.dataTransfer.files[0];
-    if (file) loadFile(file);
+    if (file && !isBench) loadFile(file);
   }
 
   const templateLabel = compositionId ? getCompositionTemplateMeta(compositionId).label : null;
@@ -1109,15 +1117,17 @@ export default function PreviewizerClient({
           {isHostedSession && onCancel ? (
             <button
               type="button"
+              disabled={isBench && uploadBusy}
               onClick={requestCancel}
               className="inline-flex items-center gap-1.5 rounded-lg border border-[#2a2a2a] px-3 py-1.5 text-sm text-[#9ca3af] hover:border-[#3a3a3a] hover:text-[#f9fafb]"
             >
               <ArrowLeft className="h-4 w-4" aria-hidden />
-              Back to distribution
+              {isBench ? "Back to conversation" : "Back to distribution"}
             </button>
           ) : null}
           <div>
             <h1 className="text-base font-bold tracking-tight lg:text-lg">Previewizer</h1>
+            {isBench ? <p className="text-[11px] text-[#6b7280]">{session?.sourceLabel ?? "Synthetic fixture artwork"}</p> : null}
             <p className="hidden text-xs text-[#6b7280] sm:block">
               {isDistribution
                 ? "Design a teaser for cross-post routing"
@@ -1138,7 +1148,7 @@ export default function PreviewizerClient({
         <div className="flex flex-wrap items-center justify-end gap-2">
           {studioReady ? (
             <>
-              {isHostedSession ? (
+              {isDistribution ? (
                 <button
                   type="button"
                   onClick={() => {
@@ -1233,7 +1243,7 @@ export default function PreviewizerClient({
         className="hidden"
         onChange={(e) => {
           const f = e.target.files?.[0];
-          if (f) loadFile(f);
+          if (f && !isBench) loadFile(f);
         }}
       />
 
@@ -1438,7 +1448,7 @@ export default function PreviewizerClient({
         mode={mode}
         uploadBusy={uploadBusy}
         uploadError={uploadError}
-        allowSaveTemplate={Boolean(isHostedSession && creatorId)}
+        allowSaveTemplate={Boolean(isDistribution && creatorId)}
         saveTemplateChecked={saveTemplateChecked}
         saveTemplateName={saveTemplateName}
         saveTemplateSlotsUsed={savedTemplates.length}

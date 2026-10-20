@@ -1,0 +1,16 @@
+{
+  "ticket": "BPS-01",
+  "passed": false,
+  "scope": "canned_authenticated_mock_http",
+  "paidCalls": 0,
+  "steps": [],
+  "checks": {},
+  "limits": [
+    "Temporary mock manual cues, not durable Schedule Rail",
+    "No browser/front-end test or paid language-quality proof"
+  ],
+  "error": {
+    "name": "AssertionError",
+    "message": "Expected values to be strictly equal:\n+ actual - expected\n\n+ {\n+   copyChoice: {\n+     kind: 'existing_titles'\n+   },\n+   destination: 'x',\n+   goal: 'preview_first_x_drafts',\n+   pendingRequirements: [\n+     'source_selection',\n+     'previewizer',\n+     'source_media_review'\n+   ],\n+   templateId: 'bench_template_square'\n+ }\n- null\n"
+  }
+}

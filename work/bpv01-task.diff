@@ -1,0 +1,1001 @@
+diff --git a/work/bpv01-baseline/src/editor-bench/conversation.ts b/src/editor-bench/conversation.ts
+index 923d7c3..9c4967b 100644
+--- a/work/bpv01-baseline/src/editor-bench/conversation.ts
++++ b/src/editor-bench/conversation.ts
+@@ -1,4 +1,4 @@
+-import { randomUUID } from 'node:crypto';
++import { createHash, randomUUID } from 'node:crypto';
+ import { objectSchema, matchesSchema } from '../gallery-editor/action-validation.js';
+ import type { EditorProvider, ProviderUsage } from '../gallery-editor/provider.js';
+ import { BENCH_IDS, createBenchFixture, createBenchMediaDescriptors, createBenchOwnedCatalog, createBenchPostCards, type BenchFixture } from './fixtures.js';
+@@ -6,6 +6,8 @@ import { METADATA_SELECTION_SCHEMA, resolveMetadataSelector, type MetadataSelect
+ import { applySelectionRefinement } from './selection-core.js';
+ import { buildBenchPlanningContext, currentBenchRequestClock } from './routing.js';
+ import { MANUAL_POSTING_EVENT_SCHEMA } from './manual-posting-event.js';
++import type { PreviewTemplateConfigV1 } from '../distribution/preview-template-config.js';
++import { getBenchSquarePreviewTemplate } from './routing.js';
+ 
+ const renameSchema = objectSchema({ kind: { type: 'string', enum: ['rename'] }, targetQuote: { type: 'string', minLength: 1, maxLength: 200 }, title: { type: 'string', minLength: 1, maxLength: 200 } });
+ const tagSchema = objectSchema({ kind: { type: 'string', enum: ['tags'] }, targetQuote: { type: 'string', minLength: 1, maxLength: 200 }, add: { type: 'array', items: { type: 'string', minLength: 1, maxLength: 100 }, maxItems: 8 }, remove: { type: 'array', items: { type: 'string', minLength: 1, maxLength: 100 }, maxItems: 8 }, requestQuote: { type: 'string', minLength: 1, maxLength: 1000 } });
+@@ -26,32 +28,137 @@ export type ConversationAction =
+   | { kind: 'tags'; targetQuote: string; add: string[]; remove: string[]; requestQuote: string }
+   | { kind: 'posting'; event: Record<string, unknown> }
+   | { kind: 'clarification'; question: string };
++export type BenchPreviewAttempt = {
++  id: string; creatorId: string; sessionId: string; postId: string; sourceMediaId: string; sourceFingerprint: string;
++  templateId: 'bench_template_square'; templateConfigHash: string; initialTemplateConfig: PreviewTemplateConfigV1;
++  revision: number; generation: number; expiresAt: number;
++  provisional: null | { mediaId: string; hash: string; bytes: Buffer };
++};
++export type BenchPreviewReceipt = {
++  attemptId: string; creatorId: string; sessionId: string; postId: string; sourceMediaId: string; sourceFingerprint: string;
++  templateId: 'bench_template_square'; templateConfigHash: string; previewMediaId: string;
++  exportHash: string; size: number; completionRevision: number; completedAt: string; bytes: Buffer;
++};
+ export type BenchConversationSession = {
+   id: string; creatorId: string; fixture: BenchFixture; selectedPostIds: string[]; excludedPostIds: string[];
+   revision: number; generation: number; pending: null | { id: string; revision: number; action: ConversationAction; token: string; preview: Record<string, unknown>; context?: Record<string, unknown> };
+   preparation: null | { goal: 'preview_first_x_drafts'; destination: 'x'; templateId: 'bench_template_square' | null; copyChoice: null | { kind: 'existing_titles' | 'literal'; text?: string } };
+-  receipts: Map<string, Record<string, unknown>>; touchedAt: number; confirming: boolean;
++  receipts: Map<string, Record<string, unknown>>; previewReceipts: Map<string, BenchPreviewReceipt>;
++  previewAttempt: BenchPreviewAttempt | null; touchedAt: number; confirming: boolean;
+ };
+ const MAX_PER_CREATOR = 12, MAX_TOTAL = 96, IDLE_MS = 2 * 60 * 60 * 1000;
++export const MAX_BENCH_PREVIEW_BYTES = 1024 * 1024;
++export const MAX_BENCH_PREVIEW_SESSION_BYTES = 4 * 1024 * 1024;
++export const MAX_BENCH_PREVIEW_TOTAL_BYTES = 32 * 1024 * 1024;
++const BENCH_PREVIEW_ATTEMPT_MS = 10 * 60 * 1000;
++const hash = (value: string | Buffer) => createHash('sha256').update(value).digest('hex');
++export function conversationPreviewSource(session: BenchConversationSession, postId: string, mediaId: string) {
++  const media = createBenchMediaDescriptors(session.fixture).find(item => item.id === mediaId && item.postId === postId);
++  const card = createBenchPostCards(session.fixture).find(item => item.postId === postId);
++  if (!media || !card || !session.fixture.posts.find(post => post.postId === postId)?.mediaIds.includes(mediaId)) return null;
++  const fingerprint = hash(JSON.stringify({ postId, mediaId, filename: media.filename, mimeType: media.mimeType, role: media.role, orientation: media.orientation, processingStatus: media.processingStatus, title: card.title }));
++  return { media, title: card.title, fingerprint };
++}
++function previewTemplateHash(config: PreviewTemplateConfigV1) { return hash(JSON.stringify(config)); }
++function releaseAttempt(session: BenchConversationSession) { session.previewAttempt = null; }
++function sessionPreviewBytes(session: BenchConversationSession) {
++  return [...session.previewReceipts.values()].reduce((sum, receipt) => sum + receipt.size, 0) + (session.previewAttempt?.provisional?.bytes.byteLength ?? 0);
++}
++export function reconcileConversationPreviews(session: BenchConversationSession) {
++  const templateId = session.preparation?.templateId;
++  const config = getBenchSquarePreviewTemplate().config;
++  if (!session.preparation) {
++    session.previewReceipts.clear();
++    releaseAttempt(session);
++    return;
++  }
++  for (const [postId, receipt] of session.previewReceipts) {
++    const source = conversationPreviewSource(session, postId, receipt.sourceMediaId);
++    if (!session.selectedPostIds.includes(postId) || !source || source.fingerprint !== receipt.sourceFingerprint || receipt.templateId !== templateId || receipt.templateConfigHash !== previewTemplateHash(config)) session.previewReceipts.delete(postId);
++  }
++  const attempt = session.previewAttempt;
++  if (attempt && (attempt.expiresAt <= Date.now() || attempt.revision !== session.revision || attempt.generation !== session.generation || !session.selectedPostIds.includes(attempt.postId) || templateId !== attempt.templateId || conversationPreviewSource(session, attempt.postId, attempt.sourceMediaId)?.fingerprint !== attempt.sourceFingerprint)) releaseAttempt(session);
++}
++export function beginConversationPreview(session: BenchConversationSession, postId: string, mediaId: string) {
++  reconcileConversationPreviews(session);
++  if (!session.preparation || session.preparation.templateId !== 'bench_template_square' || !session.selectedPostIds.includes(postId)) return null;
++  const source = conversationPreviewSource(session, postId, mediaId);
++  if (!source || source.media.processingStatus !== 'ready' || !source.media.mimeType.startsWith('image/')) return null;
++  releaseAttempt(session);
++  session.previewReceipts.delete(postId);
++  const template = getBenchSquarePreviewTemplate();
++  const attempt: BenchPreviewAttempt = {
++    id: randomUUID(), creatorId: session.creatorId, sessionId: session.id, postId, sourceMediaId: mediaId,
++    sourceFingerprint: source.fingerprint, templateId: template.id, templateConfigHash: previewTemplateHash(template.config),
++    initialTemplateConfig: template.config, revision: session.revision, generation: session.generation,
++    expiresAt: Date.now() + BENCH_PREVIEW_ATTEMPT_MS, provisional: null,
++  };
++  session.previewAttempt = attempt;
++  return { attempt, source };
++}
++export function currentConversationPreviewAttempt(session: BenchConversationSession, attemptId: string) {
++  reconcileConversationPreviews(session);
++  return session.previewAttempt?.id === attemptId ? session.previewAttempt : null;
++}
++export function storeConversationPreviewUpload(session: BenchConversationSession, attempt: BenchPreviewAttempt, bytes: Buffer, totalBytes: number) {
++  if (session.previewAttempt !== attempt || bytes.byteLength > MAX_BENCH_PREVIEW_BYTES) return null;
++  if (attempt.provisional) return attempt.provisional.hash === hash(bytes) ? attempt.provisional : null;
++  const retainedWithoutAttempt = sessionPreviewBytes(session);
++  if (retainedWithoutAttempt + bytes.byteLength > MAX_BENCH_PREVIEW_SESSION_BYTES || totalBytes + bytes.byteLength > MAX_BENCH_PREVIEW_TOTAL_BYTES) return null;
++  const stored = { mediaId: `bench_preview_${randomUUID()}`, hash: hash(bytes), bytes: Buffer.from(bytes) };
++  attempt.provisional = stored;
++  return stored;
++}
++export function completeConversationPreview(session: BenchConversationSession, attempt: BenchPreviewAttempt, previewMediaId: string) {
++  if (session.previewAttempt !== attempt || !attempt.provisional || attempt.provisional.mediaId !== previewMediaId) {
++    const replay = session.previewReceipts.get(attempt.postId);
++    return replay?.attemptId === attempt.id && replay.previewMediaId === previewMediaId ? replay : null;
++  }
++  const receipt: BenchPreviewReceipt = {
++    attemptId: attempt.id, creatorId: attempt.creatorId, sessionId: attempt.sessionId, postId: attempt.postId, sourceMediaId: attempt.sourceMediaId,
++    sourceFingerprint: attempt.sourceFingerprint, templateId: attempt.templateId, templateConfigHash: attempt.templateConfigHash,
++    previewMediaId, exportHash: attempt.provisional.hash, size: attempt.provisional.bytes.byteLength,
++    completionRevision: session.revision, completedAt: new Date().toISOString(), bytes: attempt.provisional.bytes,
++  };
++  session.previewReceipts.set(attempt.postId, receipt);
++  releaseAttempt(session);
++  return receipt;
++}
++export function publicConversationPreviewReceipt(receipt: BenchPreviewReceipt) {
++  return { postId: receipt.postId, sourceMediaId: receipt.sourceMediaId, templateId: receipt.templateId, previewMediaId: receipt.previewMediaId, exportHash: receipt.exportHash, size: receipt.size, completionRevision: receipt.completionRevision, completedAt: receipt.completedAt, initialTemplateId: receipt.templateId, initialTemplateConfigHash: receipt.templateConfigHash };
++}
+ export function createBenchConversationStore() {
+   const sessions = new Map<string, BenchConversationSession>();
+   const prune = (now: number) => { for (const [id, session] of sessions) if (now - session.touchedAt > IDLE_MS) sessions.delete(id); };
+   const create = (creatorId: string): BenchConversationSession => {
+     const now = Date.now(); prune(now);
+     if (sessions.size >= MAX_TOTAL || [...sessions.values()].filter(session => session.creatorId === creatorId).length >= MAX_PER_CREATOR) throw new Error('conversation_capacity');
+-    const session: BenchConversationSession = { id: randomUUID(), creatorId, fixture: createBenchFixture(), selectedPostIds: [], excludedPostIds: [], preparation: null, revision: 0, generation: 0, pending: null, receipts: new Map(), touchedAt: now, confirming: false };
++    const session: BenchConversationSession = { id: randomUUID(), creatorId, fixture: createBenchFixture(), selectedPostIds: [], excludedPostIds: [], preparation: null, revision: 0, generation: 0, pending: null, receipts: new Map(), previewReceipts: new Map(), previewAttempt: null, touchedAt: now, confirming: false };
+     sessions.set(session.id, session); return session;
+   };
+   const owned = (creatorId: string, id: unknown): BenchConversationSession | null => {
+     if (typeof id !== 'string') return null;
+     const session = sessions.get(id); if (!session || session.creatorId !== creatorId) return null;
+     if (Date.now() - session.touchedAt > IDLE_MS) { sessions.delete(id); return null; }
++    reconcileConversationPreviews(session);
+     session.touchedAt = Date.now(); return session;
+   };
+-  return { create, owned, size: () => sessions.size };
++  const retainedPreviewBytes = () => {
++    const now = Date.now(); prune(now);
++    for (const session of sessions.values()) reconcileConversationPreviews(session);
++    return [...sessions.values()].reduce((sum, session) => sum + sessionPreviewBytes(session), 0);
++  };
++  return { create, owned, size: () => sessions.size, retainedPreviewBytes };
+ }
+ export function conversationSnapshot(session: BenchConversationSession) {
+-  return { sessionId: session.id, revision: session.revision, selection: { postIds: [...session.selectedPostIds], excludedPostIds: [...session.excludedPostIds] }, preparation: session.preparation ? { ...structuredClone(session.preparation), pendingRequirements: [...(session.selectedPostIds.length ? [] : ['source_selection']), ...(session.preparation.templateId ? [] : ['template']), ...(session.preparation.copyChoice ? [] : ['copy_choice']), 'previewizer', 'source_media_review'] } : null, cards: createBenchPostCards(session.fixture), media: createBenchMediaDescriptors(session.fixture), pending: session.pending ? structuredClone(session.pending.preview) : null };
++  reconcileConversationPreviews(session);
++  const previewStatus = Object.fromEntries(session.selectedPostIds.map(postId => {
++    const receipt = session.previewReceipts.get(postId);
++    const attempt = session.previewAttempt?.postId === postId ? session.previewAttempt : null;
++    return [postId, receipt ? { status: 'complete', receipt: publicConversationPreviewReceipt(receipt) } : attempt ? { status: 'in_progress', attemptId: attempt.id } : { status: 'pending' }];
++  }));
++  const everyPreviewReady = session.selectedPostIds.length > 0 && session.selectedPostIds.every(postId => previewStatus[postId]?.status === 'complete');
++  return { sessionId: session.id, revision: session.revision, selection: { postIds: [...session.selectedPostIds], excludedPostIds: [...session.excludedPostIds] }, preparation: session.preparation ? { ...structuredClone(session.preparation), pendingRequirements: [...(session.selectedPostIds.length ? [] : ['source_selection']), ...(session.preparation.templateId ? [] : ['template']), ...(session.preparation.copyChoice ? [] : ['copy_choice']), ...(everyPreviewReady ? [] : ['previewizer', 'source_media_review'])] } : null, cards: createBenchPostCards(session.fixture), media: createBenchMediaDescriptors(session.fixture), previewStatus, previewState: everyPreviewReady ? 'mock_previews_ready_drafts_unavailable' : 'pending', pending: session.pending ? structuredClone(session.pending.preview) : null };
+ }
+ function outputText(output: Array<Record<string, unknown>>) {
+   return output.flatMap(item => item.type === 'message' && Array.isArray(item.content) ? item.content.flatMap(part => part && typeof part === 'object' && (part as Record<string, unknown>).type === 'output_text' && typeof (part as Record<string, unknown>).text === 'string' ? [(part as Record<string, unknown>).text as string] : []) : []).join('');
+diff --git a/work/bpv01-baseline/src/editor-bench/routing.ts b/src/editor-bench/routing.ts
+index 6de429c..9d5039d 100644
+--- a/work/bpv01-baseline/src/editor-bench/routing.ts
++++ b/src/editor-bench/routing.ts
+@@ -3,6 +3,7 @@ import { createCalendarResolver } from '../conversational-planning/calendar-reso
+ import { interpretRequest, type InterpretedRequest, type PlanningProvider, type PlanningProviderResponse } from '../conversational-planning/intent.js';
+ import { BENCH_CREATOR_ID, BENCH_IDS, createBenchFixture, createBenchMediaDescriptors, createBenchPostCards, type BenchExample } from './fixtures.js';
+ import type { BenchProvenance, BenchRequest, BenchResponse, BenchStatus } from './curation.js';
++import type { PreviewTemplateConfigV1 } from '../distribution/preview-template-config.js';
+ 
+ export type PostingExample = Omit<BenchExample, 'mode'> & { mode: 'mock_posting' };
+ export interface RunPostingOptions { provider?: PlanningProvider; signal?: AbortSignal; now?: () => Date; useCurrentClock?: boolean }
+@@ -24,6 +25,14 @@ const xRequest = 'create an X teaser titled Aurora square using Square teaser';
+ const daRequest = 'create a DeviantArt teaser titled Aurora gallery using Square teaser';
+ const replyRequest = 'prepare a disabled X reply block placeholder one day after publication at 10:00 Europe/London';
+ const checkRequest = 'prepare a disabled X engagement check placeholder two days after publication at 10:00 Europe/London';
++const squarePreviewTemplate: PreviewTemplateConfigV1 = {
++  schemaVersion: 1, preset: 'tight_crop', aspectKey: '1:1', compositionId: null, compositionProps: null,
++  compositionVariantIndex: null, overlayDoc: {}, templateOptions: {},
++  destination: { selectedDestinationId: 'x', customDestinationUrl: null },
++};
++export function getBenchSquarePreviewTemplate() {
++  return { id: 'bench_template_square' as const, name: 'Square teaser' as const, config: structuredClone(squarePreviewTemplate) };
++}
+ export const POSTING_EXAMPLES: PostingExample[] = [{
+   id: 'blocked-handoffs-and-paused-followups', mode: 'mock_posting', title: 'Blocked handoffs and paused follow-ups',
+   latestRequest: `${primaryRequest}, ${xRequest}, and ${daRequest}, then ${replyRequest} and ${checkRequest}.`,
+@@ -97,7 +106,7 @@ function fixtureLookup(): TrustedLookup {
+     const seriesMember = fixture.state.tables.seriesMembers.find(row => row.creativeWorkId === member.creativeWorkId);
+     return { id: post.postId, creatorId: BENCH_CREATOR_ID, publishState: statePost.status === 'published' ? 'published' as const : 'draft' as const, effectiveTitle: post.title, mediaIds: [...post.mediaIds], creativeWorkId: member.creativeWorkId as string, seriesMemberId: typeof seriesMember?.id === 'string' ? seriesMember.id : null, verifiedPartLabel: typeof seriesMember?.partLabel === 'string' ? seriesMember.partLabel : null };
+   });
+-  const template = { id: 'bench_template_square', creatorId: BENCH_CREATOR_ID, name: 'Square teaser', config: { schemaVersion: 1, preset: 'tight_crop', aspectKey: '1:1', compositionId: null, compositionProps: null, compositionVariantIndex: null, overlayDoc: {}, templateOptions: {}, destination: { selectedDestinationId: 'x', customDestinationUrl: null } }, updatedAt: '2026-10-15T10:00:00.000Z' };
++  const template = { ...getBenchSquarePreviewTemplate(), creatorId: BENCH_CREATOR_ID, updatedAt: '2026-10-15T10:00:00.000Z' };
+   return {
+     async loadMedia(_creator, ids) { return mediaRows.filter(row => ids.includes(row.id)); },
+     async loadPosts(_creator, ids) { return postRows.filter(row => ids.includes(row.id)); },
+diff --git a/work/bpv01-baseline/src/editor-bench/schedule-routes.ts b/src/editor-bench/schedule-routes.ts
+index b772fcc..f95ddea 100644
+--- a/work/bpv01-baseline/src/editor-bench/schedule-routes.ts
++++ b/src/editor-bench/schedule-routes.ts
+@@ -1,5 +1,6 @@
+ import { createHash, createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
+ import express, { type Request, type Response } from 'express';
++import sharp from 'sharp';
+ import type { CreateCreatorScheduleEventBody, CreatorScheduleEventWire } from '../distribution/creator-schedule-event-contract.js';
+ import { CreatorScheduleEventNotFoundError, CreatorScheduleEventPlanRequiredError, CreatorScheduleEventValidationError } from '../distribution/creator-schedule-event-service.js';
+ import type { LibraryScheduleAttachment, LibraryScheduleSource } from '../distribution/library-schedule-source.js';
+@@ -9,7 +10,7 @@ import { reviewBenchSchedule, type ScheduleReview, type ScheduleReviewPayload }
+ import { bindBenchVariantSource, commitBenchVariantV3, createBenchDistributionVariantAdapter, loadBenchVariantSource, reviewBenchVariantV3, sha256, type BenchVariantBinding, type BenchVariantEditClaims, type BenchVariantRows, type BenchVariantSource } from './distribution-variant-adapter.js';
+ import type { EditorProvider } from '../gallery-editor/provider.js';
+ import { interpretBenchVariantEdit, resolveBenchVariantEditTarget, variantChatInputBytes, type BenchVariantChatCandidate } from './variant-chat.js';
+-import { createBenchConversationStore, conversationSnapshot, interpretBenchConversation, resolveConversationSelection, conversationFixtureHash } from './conversation.js';
++import { beginConversationPreview, completeConversationPreview, conversationPreviewSource, createBenchConversationStore, conversationSnapshot, currentConversationPreviewAttempt, interpretBenchConversation, MAX_BENCH_PREVIEW_BYTES, publicConversationPreviewReceipt, reconcileConversationPreviews, resolveConversationSelection, conversationFixtureHash, storeConversationPreviewUpload } from './conversation.js';
+ import { runCurationBench } from './curation.js';
+ import { effectivePostTitle, simulateEditorActions, buildChangeCart } from '../gallery-editor/state.js';
+ import { createBenchPostCards } from './fixtures.js';
+@@ -352,6 +353,87 @@ export function registerBenchScheduleRoutes(app: express.Application, options: B
+     return res.status(200).json(successEnvelope(conversationSnapshot(session), traceId));
+   });
+ 
++  router.post('/conversation/preview/open', async (req, res) => {
++    const traceId = options.traceId(req), principal = await principalFor(req, res, traceId);
++    if (!principal) return;
++    if (!record(req.body) || !exactKeys(req.body, ['sessionId', 'revision', 'postId', 'mediaId']) || typeof req.body.sessionId !== 'string' || !Number.isSafeInteger(req.body.revision) || typeof req.body.postId !== 'string' || typeof req.body.mediaId !== 'string') return invalid(res, traceId, 'Choose one selected fixture image from the current conversation.');
++    const session = conversationStore.owned(principal.creatorId, req.body.sessionId);
++    if (!session) return res.status(404).json(errorEnvelope('NOT_FOUND', 'Conversation not found. Start a new mock conversation.', traceId));
++    if (req.body.revision !== session.revision) return res.status(409).json(errorEnvelope('CONFLICT', 'The conversation changed. Review its current cards and try again.', traceId));
++    if (!session.preparation || session.preparation.templateId !== 'bench_template_square') return res.status(409).json(errorEnvelope('CONFLICT', 'Choose Square teaser in the preview-first preparation choices first.', traceId));
++    if (!session.selectedPostIds.includes(req.body.postId)) return res.status(409).json(errorEnvelope('CONFLICT', 'Select this fixture post before opening Previewizer.', traceId));
++    const readyImages = (session.fixture.posts.find(post => post.postId === req.body.postId)?.mediaIds ?? []).map(mediaId => conversationPreviewSource(session, req.body.postId as string, mediaId)).filter((source): source is NonNullable<typeof source> => !!source && source.media.processingStatus === 'ready' && source.media.mimeType.startsWith('image/'));
++    if (!readyImages.length) return res.status(409).json(errorEnvelope('CONFLICT', 'This fixture post has no ready image for Previewizer.', traceId));
++    if (!readyImages.some(source => source.media.id === req.body.mediaId)) return res.status(409).json(errorEnvelope('CONFLICT', 'Choose a ready image that belongs to this selected fixture post.', traceId));
++    const opened = beginConversationPreview(session, req.body.postId, req.body.mediaId);
++    if (!opened) return res.status(409).json(errorEnvelope('CONFLICT', 'This fixture image is no longer available for Previewizer.', traceId));
++    const escapeXml = (value: string) => value.replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&apos;' })[char]!);
++    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="1200" viewBox="0 0 1200 1200"><rect width="1200" height="1200" fill="#16201d"/><circle cx="600" cy="520" r="290" fill="#335d4f"/><path d="M160 900 420 590l170 190 150-130 300 250H160Z" fill="#8ab89f"/><text x="600" y="1080" text-anchor="middle" fill="#f1f5f2" font-family="sans-serif" font-size="40">${escapeXml(opened.source.title)}</text></svg>`;
++    return res.status(200).json(successEnvelope({
++      ...conversationSnapshot(session), creatorId: principal.creatorId,
++      attempt: { id: opened.attempt.id, postId: opened.attempt.postId, sourceMediaId: opened.attempt.sourceMediaId, sourceFingerprint: opened.attempt.sourceFingerprint, expiresAt: new Date(opened.attempt.expiresAt).toISOString() },
++      initialTemplate: { id: opened.attempt.templateId, config: structuredClone(opened.attempt.initialTemplateConfig) },
++      sourceImageUrl: `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`,
++      sourceLabel: `${opened.source.title} · ${opened.source.media.filename} · synthetic fixture artwork`,
++    }, traceId));
++  });
++
++  const parsePreviewJpeg: express.RequestHandler = (req, res, next) => express.raw({ type: () => true, limit: MAX_BENCH_PREVIEW_BYTES })(req, res, error => {
++    if (!error) return next();
++    const traceId = options.traceId(req);
++    if ((error as { type?: string }).type === 'entity.too.large') return res.status(413).json(errorEnvelope('REQUEST_TOO_LARGE', 'Preview export must be at most 1 MiB.', traceId));
++    return res.status(400).json(errorEnvelope('INVALID_REQUEST', 'Upload one JPEG preview export.', traceId));
++  });
++  router.post('/conversation/session/:sessionId/preview/:attemptId/upload', parsePreviewJpeg, async (req, res) => {
++    const traceId = options.traceId(req), principal = await principalFor(req, res, traceId);
++    if (!principal) return;
++    if (req.headers['content-type']?.split(';', 1)[0]?.trim().toLowerCase() !== 'image/jpeg' || !Buffer.isBuffer(req.body) || !req.body.byteLength || req.body.byteLength > MAX_BENCH_PREVIEW_BYTES) return invalid(res, traceId, 'Upload one image/jpeg preview export no larger than 1 MiB.');
++    const session = conversationStore.owned(principal.creatorId, req.params.sessionId);
++    if (!session) return res.status(404).json(errorEnvelope('NOT_FOUND', 'Conversation not found. Start a new mock conversation.', traceId));
++    const attemptId = typeof req.params.attemptId === 'string' ? req.params.attemptId : '';
++    const attempt = currentConversationPreviewAttempt(session, attemptId);
++    if (!attempt || attempt.creatorId !== principal.creatorId || attempt.sessionId !== session.id || attempt.revision !== session.revision || attempt.generation !== session.generation || !session.selectedPostIds.includes(attempt.postId) || !session.preparation || session.preparation.templateId !== attempt.templateId || conversationPreviewSource(session, attempt.postId, attempt.sourceMediaId)?.fingerprint !== attempt.sourceFingerprint) return res.status(409).json(errorEnvelope('CONFLICT', 'This Previewizer attempt is stale. Open the selected fixture image again.', traceId));
++    if (req.body[0] !== 0xff || req.body[1] !== 0xd8) return invalid(res, traceId, 'The preview export must be a JPEG image.');
++    try {
++      const image = sharp(req.body, { failOn: 'error', limitInputPixels: 4_194_304, sequentialRead: true });
++      const metadata = await image.metadata();
++      if (metadata.format !== 'jpeg' || !metadata.width || !metadata.height) return invalid(res, traceId, 'The preview export must be a valid JPEG image.');
++      await image.resize({ width: 1, height: 1, fit: 'inside' }).jpeg().toBuffer();
++    } catch { return invalid(res, traceId, 'The preview export must be a valid JPEG image.'); }
++    if (res.destroyed || res.writableEnded) return;
++    if (currentConversationPreviewAttempt(session, attemptId) !== attempt || attempt.revision !== session.revision || attempt.generation !== session.generation) return res.status(409).json(errorEnvelope('CONFLICT', 'This Previewizer attempt became stale during upload. Open the selected fixture image again.', traceId));
++    const uploaded = storeConversationPreviewUpload(session, attempt, req.body, conversationStore.retainedPreviewBytes());
++    if (!uploaded) return res.status(409).json(errorEnvelope('CONFLICT', 'Preview storage is full or this attempt already has a different export. Start a fresh Previewizer attempt.', traceId));
++    return res.status(200).json(successEnvelope({ previewMediaId: uploaded.mediaId, exportHash: uploaded.hash, size: uploaded.bytes.byteLength }, traceId));
++  });
++
++  router.post('/conversation/session/:sessionId/preview/:attemptId/complete', async (req, res) => {
++    const traceId = options.traceId(req), principal = await principalFor(req, res, traceId);
++    if (!principal) return;
++    if (!record(req.body) || !exactKeys(req.body, ['previewMediaId']) || typeof req.body.previewMediaId !== 'string' || req.body.previewMediaId.length > 100) return invalid(res, traceId, 'Confirm the uploaded preview from this attempt.');
++    const session = conversationStore.owned(principal.creatorId, req.params.sessionId);
++    if (!session) return res.status(404).json(errorEnvelope('NOT_FOUND', 'Conversation not found. Start a new mock conversation.', traceId));
++    const attemptId = typeof req.params.attemptId === 'string' ? req.params.attemptId : '';
++    const replay = [...session.previewReceipts.values()].find(receipt => receipt.attemptId === attemptId && receipt.previewMediaId === req.body.previewMediaId);
++    if (replay) return res.status(200).json(successEnvelope({ receipt: publicConversationPreviewReceipt(replay), ...conversationSnapshot(session), reused: true }, traceId));
++    const attempt = currentConversationPreviewAttempt(session, attemptId);
++    if (!attempt || attempt.creatorId !== principal.creatorId || attempt.sessionId !== session.id || attempt.revision !== session.revision || attempt.generation !== session.generation) return res.status(409).json(errorEnvelope('CONFLICT', 'This Previewizer attempt is stale. Open the selected fixture image again.', traceId));
++    if (!session.selectedPostIds.includes(attempt.postId) || !session.preparation || session.preparation.templateId !== attempt.templateId || conversationPreviewSource(session, attempt.postId, attempt.sourceMediaId)?.fingerprint !== attempt.sourceFingerprint) return res.status(409).json(errorEnvelope('CONFLICT', 'The selected fixture source or template changed. Preview it again.', traceId));
++    const receipt = completeConversationPreview(session, attempt, req.body.previewMediaId);
++    if (!receipt) return res.status(409).json(errorEnvelope('CONFLICT', 'Upload this attempt’s JPEG export before confirming it.', traceId));
++    return res.status(200).json(successEnvelope({ receipt: publicConversationPreviewReceipt(receipt), ...conversationSnapshot(session) }, traceId));
++  });
++
++  router.post('/conversation/session/:sessionId/preview/:attemptId/cancel', async (req, res) => {
++    const traceId = options.traceId(req), principal = await principalFor(req, res, traceId);
++    if (!principal) return;
++    if (!record(req.body) || !exactKeys(req.body, [])) return invalid(res, traceId, 'Cancel the current Previewizer attempt without submitting data.');
++    const session = conversationStore.owned(principal.creatorId, req.params.sessionId);
++    if (!session) return res.status(404).json(errorEnvelope('NOT_FOUND', 'Conversation not found. Start a new mock conversation.', traceId));
++    if (session.previewAttempt?.id === req.params.attemptId) session.previewAttempt = null;
++    return res.status(200).json(successEnvelope(conversationSnapshot(session), traceId));
++  });
++
+   router.post('/conversation/turn', async (req, res) => {
+     const traceId = options.traceId(req), principal = await principalFor(req, res, traceId);
+     if (!principal) return;
+@@ -362,6 +444,7 @@ export function registerBenchScheduleRoutes(app: express.Application, options: B
+     if (req.body.revision !== session.revision) return res.status(409).json(errorEnvelope('CONFLICT', 'The conversation changed. Review its current cards and try again.', traceId));
+     session.generation += 1;
+     session.pending = null;
++    session.previewAttempt = null;
+     const generation = session.generation, revision = session.revision;
+     const latestRequest = req.body.latestRequest;
+     const requestClock = currentBenchRequestClock(new Date());
+@@ -402,12 +485,14 @@ export function registerBenchScheduleRoutes(app: express.Application, options: B
+       }
+       session.preparation = next;
+       session.revision += 1;
++      reconcileConversationPreviews(session);
+       return res.status(200).json(successEnvelope({ ...conversationSnapshot(session), status: 'preparation_updated', message: 'Preparation choices are recorded. They have not been applied, and no draft exists.', usage: interpreted.usage }, traceId));
+     }
+     if (action.kind === 'preparation_cancel') {
+       if (!session.preparation) return res.status(200).json(successEnvelope({ ...conversationSnapshot(session), status: 'clarification', message: 'There is no active preview-first preparation goal to cancel.', usage: interpreted.usage }, traceId));
+       session.preparation = null;
+       session.revision += 1;
++      reconcileConversationPreviews(session);
+       return res.status(200).json(successEnvelope({ ...conversationSnapshot(session), status: 'preparation_cancelled', message: 'The preview-first preparation goal was cancelled.', usage: interpreted.usage }, traceId));
+     }
+     if (action.kind === 'selection') {
+@@ -418,6 +503,7 @@ export function registerBenchScheduleRoutes(app: express.Application, options: B
+       session.excludedPostIds = refined.excludedPostIds;
+       if (action.preparation && !session.preparation) session.preparation = { goal: 'preview_first_x_drafts', destination: 'x', templateId: null, copyChoice: null };
+       session.revision += 1;
++      reconcileConversationPreviews(session);
+       return res.status(200).json(successEnvelope({ ...conversationSnapshot(session), status: 'selected', operation: refined.operation, ...(action.preparation ? { message: 'The posts are selected for preview-first X draft preparation. Previewizer has not run, and no draft exists.' } : {}), usage: interpreted.usage }, traceId));
+     }
+     if (action.kind === 'posting' && session.preparation) return res.status(200).json(successEnvelope({ ...conversationSnapshot(session), status: 'clarification', message: 'This preview-first preparation goal is still pending. Complete its Previewizer and draft requirements before creating any dated posting cue, or explicitly cancel the goal.', usage: interpreted.usage }, traceId));
+@@ -502,6 +588,7 @@ export function registerBenchScheduleRoutes(app: express.Application, options: B
+         session.fixture.state = simulateEditorActions(session.fixture.state, session.fixture.creatorId, [action]);
+         session.fixture.revision += 1;
+         session.revision += 1;
++      reconcileConversationPreviews(session);
+         receipt = { scope: 'development_mock_only', ephemeral: true, kind: 'edit', beforeAfter: pending.preview.beforeAfter, cards: createBenchPostCards(session.fixture) };
+       } else {
+         if (!options.distributionVariantAdapter || !pending.context || !pending.context.postId || !Array.isArray(pending.context.mediaIds)) return res.status(503).json(errorEnvelope('SERVICE_UNAVAILABLE', 'The mock distribution adapter is unavailable.', traceId));
+diff --git a/work/bpv01-baseline/tests/editor-bench/conversation.test.ts b/tests/editor-bench/conversation.test.ts
+index a1c1bc7..769163a 100644
+--- a/work/bpv01-baseline/tests/editor-bench/conversation.test.ts
++++ b/tests/editor-bench/conversation.test.ts
+@@ -1,7 +1,9 @@
+ import express from 'express';
+ import request from 'supertest';
+ import { describe, expect, it, vi } from 'vitest';
++import sharp from 'sharp';
+ import { BENCH_IDS, createBenchFixture } from '../../src/editor-bench/fixtures.js';
++import { beginConversationPreview, completeConversationPreview, createBenchConversationStore, MAX_BENCH_PREVIEW_BYTES, reconcileConversationPreviews, storeConversationPreviewUpload } from '../../src/editor-bench/conversation.js';
+ import { createBenchDistributionVariantAdapter } from '../../src/editor-bench/distribution-variant-adapter.js';
+ import { registerBenchScheduleRoutes } from '../../src/editor-bench/schedule-routes.js';
+ 
+@@ -31,6 +33,13 @@ async function turn(app: express.Express, session: any, latestRequest: string) {
+ }
+ const selectAurora = { kind: 'selection', preparation: null, selection: { mode: 'replace', requestQuote: 'Select Aurora study and exclude posts tagged sketch.', selector: { base: 'catalog', all: [{ field: 'title', value: 'Aurora study', requestQuote: 'Aurora study' }], any: [], none: [{ field: 'tag', value: 'sketch', requestQuote: 'tagged sketch' }] } } };
+ const rename = { kind: 'rename', targetQuote: 'selected post', title: 'Aurora Study Part 1' };
++function preparedPreviewSession() {
++  const store = createBenchConversationStore();
++  const session = store.create('creator-a');
++  session.selectedPostIds = [BENCH_IDS.posts[0]];
++  session.preparation = { goal: 'preview_first_x_drafts', destination: 'x', templateId: 'bench_template_square', copyChoice: { kind: 'existing_titles' } };
++  return { store, session };
++}
+ 
+ describe('mock editor-bench conversation', () => {
+   it('records a preview-first X preparation goal, binds choices, and retains them after exclusion', async () => {
+@@ -264,4 +273,108 @@ describe('mock editor-bench conversation', () => {
+       expect(current.body.data.pending).toBeNull();
+     }
+   });
++
++  it('stores only a verified JPEG after explicit preview completion and reuses that completion', async () => {
++    const selectionText = 'Select Aurora study for X draft preparation and run Previewizer first.';
++    const select = { kind: 'selection', preparation: { destination: 'x', destinationQuote: 'X', previewFirst: true, previewQuote: 'run Previewizer first' }, selection: { mode: 'replace', requestQuote: selectionText, selector: { base: 'catalog', all: [{ field: 'title', value: 'Aurora study', requestQuote: 'Aurora study' }], any: [], none: [] } } };
++    const choices = { kind: 'preparation_update', templateQuote: 'Square teaser', copyChoice: { kind: 'existing_titles', quote: 'keep their existing titles' } };
++    const state = setup([select, choices]);
++    const session = await start(state.app);
++    const selected = await turn(state.app, session, selectionText);
++    const prepared = await turn(state.app, selected.body.data, 'Use Square teaser and keep their existing titles.');
++    expect(prepared.body.data.preparation.templateId).toBe('bench_template_square');
++
++    const opened = await request(state.app).post('/api/v1/editor-bench/schedule/conversation/preview/open').send({ sessionId: session.sessionId, revision: prepared.body.data.revision, postId: BENCH_IDS.posts[0], mediaId: BENCH_IDS.media[0] });
++    expect(opened.status).toBe(200);
++    expect(opened.body.data.initialTemplate.id).toBe('bench_template_square');
++    expect(opened.body.data.sourceImageUrl).toContain('data:image/svg+xml');
++    expect(opened.body.data.sourceLabel).toContain('synthetic fixture artwork');
++
++    const jpeg = await sharp({ create: { width: 16, height: 16, channels: 3, background: '#123456' } }).jpeg().toBuffer();
++    const base = `/api/v1/editor-bench/schedule/conversation/session/${session.sessionId}/preview/${opened.body.data.attempt.id}`;
++    const upload = await request(state.app).post(`${base}/upload`).set('Content-Type', 'image/jpeg').send(jpeg);
++    expect(upload.status).toBe(200);
++    expect(upload.body.data).toMatchObject({ size: jpeg.byteLength });
++    const unconfirmed = await request(state.app).get(`/api/v1/editor-bench/schedule/conversation/session/${session.sessionId}`);
++    expect(unconfirmed.body.data.previewStatus[BENCH_IDS.posts[0]].status).toBe('in_progress');
++
++    const input = { previewMediaId: upload.body.data.previewMediaId };
++    const completed = await request(state.app).post(`${base}/complete`).send(input);
++    expect(completed.status).toBe(200);
++    expect(completed.body.data).toMatchObject({ previewState: 'mock_previews_ready_drafts_unavailable', receipt: { sourceMediaId: BENCH_IDS.media[0], templateId: 'bench_template_square', size: jpeg.byteLength } });
++    expect(completed.body.data.previewStatus[BENCH_IDS.posts[0]].receipt).not.toHaveProperty('bytes');
++    const retry = await request(state.app).post(`${base}/complete`).send(input);
++    expect(retry.status).toBe(200);
++    expect(retry.body.data.reused).toBe(true);
++  });
++
++  it('rejects non-JPEG and stale attempts and releases cancelled provisional bytes', async () => {
++    const selectionText = 'Select Aurora study for X draft preparation and run Previewizer first.';
++    const select = { kind: 'selection', preparation: { destination: 'x', destinationQuote: 'X', previewFirst: true, previewQuote: 'run Previewizer first' }, selection: { mode: 'replace', requestQuote: selectionText, selector: { base: 'catalog', all: [{ field: 'title', value: 'Aurora study', requestQuote: 'Aurora study' }], any: [], none: [] } } };
++    const state = setup([select, { kind: 'preparation_update', templateQuote: 'Square teaser', copyChoice: { kind: 'existing_titles', quote: 'keep their existing titles' } }, { kind: 'clarification', question: 'Please clarify.' }]);
++    const session = await start(state.app);
++    const selected = await turn(state.app, session, selectionText);
++    const prepared = await turn(state.app, selected.body.data, 'Use Square teaser and keep their existing titles.');
++    const opened = await request(state.app).post('/api/v1/editor-bench/schedule/conversation/preview/open').send({ sessionId: session.sessionId, revision: prepared.body.data.revision, postId: BENCH_IDS.posts[0], mediaId: BENCH_IDS.media[0] });
++    const base = `/api/v1/editor-bench/schedule/conversation/session/${session.sessionId}/preview/${opened.body.data.attempt.id}`;
++    const fake = await request(state.app).post(`${base}/upload`).set('Content-Type', 'image/jpeg').send(Buffer.from([0xff, 0xd8, 0xff, 0xd9]));
++    expect(fake.status).toBe(400);
++    const png = await sharp({ create: { width: 16, height: 16, channels: 3, background: '#123456' } }).png().toBuffer();
++    const wrongMime = await request(state.app).post(`${base}/upload`).set('Content-Type', 'image/png').send(png);
++    expect(wrongMime.status).toBe(400);
++    const jpeg = await sharp({ create: { width: 16, height: 16, channels: 3, background: '#123456' } }).jpeg().toBuffer();
++    const upload = await request(state.app).post(`${base}/upload`).set('Content-Type', 'image/jpeg').send(jpeg);
++    expect(upload.status).toBe(200);
++    const cancel = await request(state.app).post(`${base}/cancel`).send({});
++    expect(cancel.status).toBe(200);
++    expect(cancel.body.data.previewStatus[BENCH_IDS.posts[0]].status).toBe('pending');
++    const discarded = await request(state.app).post(`${base}/complete`).send({ previewMediaId: upload.body.data.previewMediaId });
++    expect(discarded.status).toBe(409);
++    const changed = await turn(state.app, cancel.body.data, 'Please clarify the next step.');
++    const stale = await request(state.app).post(`${base}/complete`).send({ previewMediaId: 'bench_preview_unknown' });
++    expect(changed.body.data.status).toBe('clarification');
++    expect(stale.status).toBe(409);
++  });
++
++  it('enforces preview byte caps, expires provisional bytes, and retains receipts across benign revision changes', async () => {
++    vi.useFakeTimers();
++    try {
++      vi.setSystemTime(new Date('2026-10-19T10:00:00Z'));
++      const { store, session } = preparedPreviewSession();
++      const opened = beginConversationPreview(session, BENCH_IDS.posts[0], BENCH_IDS.media[0])!;
++      expect(storeConversationPreviewUpload(session, opened.attempt, Buffer.alloc(MAX_BENCH_PREVIEW_BYTES + 1), store.retainedPreviewBytes())).toBeNull();
++      const jpeg = await sharp({ create: { width: 16, height: 16, channels: 3, background: '#123456' } }).jpeg().toBuffer();
++      expect(storeConversationPreviewUpload(session, opened.attempt, jpeg, store.retainedPreviewBytes())).not.toBeNull();
++      expect(store.retainedPreviewBytes()).toBe(jpeg.byteLength);
++      vi.advanceTimersByTime(10 * 60 * 1000 + 1);
++      reconcileConversationPreviews(session);
++      expect(session.previewAttempt).toBeNull();
++      expect(store.retainedPreviewBytes()).toBe(0);
++
++      const retry = beginConversationPreview(session, BENCH_IDS.posts[0], BENCH_IDS.media[0])!;
++      const uploaded = storeConversationPreviewUpload(session, retry.attempt, jpeg, store.retainedPreviewBytes())!;
++      expect(completeConversationPreview(session, retry.attempt, uploaded.mediaId)).not.toBeNull();
++      session.revision += 1;
++      session.generation += 1;
++      reconcileConversationPreviews(session);
++      expect(session.previewReceipts.has(BENCH_IDS.posts[0])).toBe(true);
++      const source = session.fixture.state.tables.versions.find(row => row.postId === BENCH_IDS.posts[0])!;
++      source.title = 'Changed synthetic source title';
++      reconcileConversationPreviews(session);
++      expect(session.previewReceipts.has(BENCH_IDS.posts[0])).toBe(false);
++      expect(store.retainedPreviewBytes()).toBe(0);
++    } finally { vi.useRealTimers(); }
++  });
++
++  it('invalidates a completed preview when the preparation template is removed', async () => {
++    const { store, session } = preparedPreviewSession();
++    const opened = beginConversationPreview(session, BENCH_IDS.posts[0], BENCH_IDS.media[0])!;
++    const jpeg = await sharp({ create: { width: 16, height: 16, channels: 3, background: '#123456' } }).jpeg().toBuffer();
++    const uploaded = storeConversationPreviewUpload(session, opened.attempt, jpeg, store.retainedPreviewBytes())!;
++    expect(completeConversationPreview(session, opened.attempt, uploaded.mediaId)).not.toBeNull();
++    session.preparation = null;
++    reconcileConversationPreviews(session);
++    expect(session.previewReceipts.size).toBe(0);
++    expect(store.retainedPreviewBytes()).toBe(0);
++  });
+ });
+diff --git a/work/bpv01-baseline/web/app/components/distribution/PreviewizerOverlay.tsx b/web/app/components/distribution/PreviewizerOverlay.tsx
+index 0e36242..53a8969 100644
+--- a/work/bpv01-baseline/web/app/components/distribution/PreviewizerOverlay.tsx
++++ b/web/app/components/distribution/PreviewizerOverlay.tsx
+@@ -2,7 +2,7 @@
+ 
+ import { Bebas_Neue, Playfair_Display } from "next/font/google";
+ import { createPortal } from "react-dom";
+-import { useEffect, useState } from "react";
++import { useEffect, useRef, useState } from "react";
+ import PreviewizerClient from "@/app/components/previewizer";
+ import type {
+   PreviewizerMode,
+@@ -32,6 +32,8 @@ type Props = {
+   mode?: PreviewizerMode;
+   onComplete: (result: PreviewizerResult) => void | Promise<void>;
+   onCancel: () => void;
++  /** The bench opener can be disabled while the open request is in flight. */
++  returnFocusTarget?: HTMLElement | null;
+   /** Adapter-owned upload — keeps Previewizer free of Relay staging imports. */
+   onUploadPreview: PreviewizerUploadPreview;
+ };
+@@ -43,8 +45,10 @@ export function PreviewizerOverlay({
+   onComplete,
+   onCancel,
+   onUploadPreview,
++  returnFocusTarget,
+ }: Props) {
+   const [mounted, setMounted] = useState(false);
++  const dialogRef = useRef<HTMLDivElement>(null);
+ 
+   useEffect(() => {
+     setMounted(true);
+@@ -59,14 +63,34 @@ export function PreviewizerOverlay({
+     };
+   }, [open]);
+ 
++  useEffect(() => {
++    if (!open || !mounted || mode !== "bench") return;
++    const previousFocus = returnFocusTarget ?? (document.activeElement instanceof HTMLElement ? document.activeElement : null);
++    const focusable = () => [...(dialogRef.current?.querySelectorAll<HTMLElement>('button:not([disabled]), a[href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])') ?? [])].filter(element => element.offsetParent !== null);
++    focusable()[0]?.focus();
++    return () => previousFocus?.focus();
++  }, [open, mounted, mode, returnFocusTarget]);
++
+   if (!open || !mounted) return null;
+ 
+   return createPortal(
+     <div
++      ref={dialogRef}
+       className={`previewizer-font-scope fixed inset-0 z-[120] ${bebasNeue.variable} ${playfairDisplay.variable}`}
+       role="dialog"
+       aria-modal="true"
+       aria-label="Previewizer"
++      onKeyDown={event => {
++        if (mode !== "bench" || event.key !== "Tab") return;
++        const items = [...(dialogRef.current?.querySelectorAll<HTMLElement>('button:not([disabled]), a[href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])') ?? [])].filter(element => element.offsetParent !== null);
++        if (!items.length) return;
++        const first = items[0], last = items[items.length - 1];
++        if (event.shiftKey && (document.activeElement === first || !dialogRef.current?.contains(document.activeElement))) {
++          event.preventDefault(); last?.focus();
++        } else if (!event.shiftKey && (document.activeElement === last || !dialogRef.current?.contains(document.activeElement))) {
++          event.preventDefault(); first?.focus();
++        }
++      }}
+     >
+       <PreviewizerClient
+         mode={mode}
+diff --git a/work/bpv01-baseline/web/app/components/previewizer/previewizer-client.tsx b/web/app/components/previewizer/previewizer-client.tsx
+index d148647..8040aca 100644
+--- a/work/bpv01-baseline/web/app/components/previewizer/previewizer-client.tsx
++++ b/web/app/components/previewizer/previewizer-client.tsx
+@@ -151,9 +151,10 @@ export default function PreviewizerClient({
+   onUploadPreview,
+ }: PreviewizerClientProps = {}) {
+   const isDistribution = mode === "distribution";
+-  const isHostedSession = isDistribution;
++  const isBench = mode === "bench";
++  const isHostedSession = isDistribution || isBench;
+   const { creatorId: studioCreatorId, ready: studioReadySession } = useStudioSession();
+-  const creatorId = session?.creatorId?.trim() || studioCreatorId;
++  const creatorId = isBench ? session?.creatorId?.trim() || "" : session?.creatorId?.trim() || studioCreatorId;
+   const [imageUrl, setImageUrl] = useState<string | null>(null);
+   const [imageEl, setImageEl] = useState<HTMLImageElement | null>(null);
+   const [studioReady, setStudioReady] = useState(false);
+@@ -331,7 +332,7 @@ export default function PreviewizerClient({
+   );
+ 
+   useEffect(() => {
+-    if (!studioReadySession || !creatorId) return;
++    if (isBench || !studioReadySession || !creatorId) return;
+     let cancelled = false;
+     setDestinationsLoading(true);
+     void (async () => {
+@@ -364,7 +365,7 @@ export default function PreviewizerClient({
+       cancelled = true;
+     };
+     // eslint-disable-next-line react-hooks/exhaustive-deps -- load on creator identity
+-  }, [studioReadySession, creatorId]);
++  }, [isBench, studioReadySession, creatorId]);
+ 
+   useEffect(() => {
+     setLinkDestinations(
+@@ -439,7 +440,7 @@ export default function PreviewizerClient({
+   }, [linkDestinations, selectedDestinationId, customDestinationUrl, compositionId]);
+ 
+   const refreshSavedTemplates = useCallback(async () => {
+-    if (!isHostedSession || !creatorId) return;
++    if (!isDistribution || !creatorId) return;
+     setTemplatesLoading(true);
+     setTemplatesListError(null);
+     try {
+@@ -450,17 +451,17 @@ export default function PreviewizerClient({
+     } finally {
+       setTemplatesLoading(false);
+     }
+-  }, [isHostedSession, creatorId]);
++  }, [isDistribution, creatorId]);
+ 
+   useEffect(() => {
+-    if (!isHostedSession || !creatorId || !studioReadySession) return;
++    if (!isDistribution || !creatorId || !studioReadySession) return;
+     void refreshSavedTemplates();
+-  }, [isHostedSession, creatorId, studioReadySession, refreshSavedTemplates]);
++  }, [isDistribution, creatorId, studioReadySession, refreshSavedTemplates]);
+ 
+   useEffect(() => {
+-    if (!exportModalOpen || !isHostedSession) return;
++    if (!exportModalOpen || !isDistribution) return;
+     void refreshSavedTemplates();
+-  }, [exportModalOpen, isHostedSession, refreshSavedTemplates]);
++  }, [exportModalOpen, isDistribution, refreshSavedTemplates]);
+ 
+   const buildCurrentTemplateConfig = useCallback(() => {
+     return serializePreviewTemplateConfig(
+@@ -491,7 +492,7 @@ export default function PreviewizerClient({
+   ]);
+ 
+   const persistTemplateIfRequested = useCallback(async (): Promise<boolean> => {
+-    if (!isHostedSession || !saveTemplateChecked) return true;
++    if (!isDistribution || !saveTemplateChecked) return true;
+     const name = saveTemplateName.trim();
+     if (!name) {
+       setTemplateSaveError("Enter a template name.");
+@@ -521,7 +522,7 @@ export default function PreviewizerClient({
+       setTemplateSaveBusy(false);
+     }
+   }, [
+-    isHostedSession,
++    isDistribution,
+     saveTemplateChecked,
+     saveTemplateName,
+     savedTemplates.length,
+@@ -820,11 +821,12 @@ export default function PreviewizerClient({
+ 
+   const loadFile = useCallback(
+     (file: File) => {
++      if (isBench) return;
+       if (!file.type.startsWith("image/")) return;
+       setSourceLoadError(null);
+       mountImageFromUrl(URL.createObjectURL(file), true);
+     },
+-    [mountImageFromUrl]
++    [isBench, mountImageFromUrl]
+   );
+ 
+   const loadFromUrl = useCallback(
+@@ -1070,16 +1072,22 @@ export default function PreviewizerClient({
+ 
+   const requestCancel = useCallback(() => {
+     if (!onCancel) return;
++    if (isBench && uploadBusy) return;
+     const dirty = studioReady && undo.canUndo;
+-    const confirmMsg = "Discard preview edits and return to distribution?";
++    const confirmMsg = isBench ? "Discard preview edits and return to the mock conversation?" : "Discard preview edits and return to distribution?";
+     if (dirty && !window.confirm(confirmMsg)) {
+       return;
+     }
+     onCancel();
+-  }, [onCancel, studioReady, undo.canUndo]);
++  }, [isBench, onCancel, studioReady, undo.canUndo, uploadBusy]);
+ 
+   useEffect(() => {
+     function onKey(e: KeyboardEvent) {
++      if (isBench && e.key === "Escape") {
++        e.preventDefault();
++        requestCancel();
++        return;
++      }
+       if (!(e.ctrlKey || e.metaKey)) return;
+       if (e.key === "z" && !e.shiftKey) {
+         e.preventDefault();
+@@ -1092,12 +1100,12 @@ export default function PreviewizerClient({
+     }
+     window.addEventListener("keydown", onKey);
+     return () => window.removeEventListener("keydown", onKey);
+-  }, [undo]);
++  }, [isBench, requestCancel, undo]);
+ 
+   function onDrop(e: React.DragEvent) {
+     e.preventDefault();
+     const file = e.dataTransfer.files[0];
+-    if (file) loadFile(file);
++    if (file && !isBench) loadFile(file);
+   }
+ 
+   const templateLabel = compositionId ? getCompositionTemplateMeta(compositionId).label : null;
+@@ -1109,15 +1117,17 @@ export default function PreviewizerClient({
+           {isHostedSession && onCancel ? (
+             <button
+               type="button"
++              disabled={isBench && uploadBusy}
+               onClick={requestCancel}
+               className="inline-flex items-center gap-1.5 rounded-lg border border-[#2a2a2a] px-3 py-1.5 text-sm text-[#9ca3af] hover:border-[#3a3a3a] hover:text-[#f9fafb]"
+             >
+               <ArrowLeft className="h-4 w-4" aria-hidden />
+-              Back to distribution
++              {isBench ? "Back to conversation" : "Back to distribution"}
+             </button>
+           ) : null}
+           <div>
+             <h1 className="text-base font-bold tracking-tight lg:text-lg">Previewizer</h1>
++            {isBench ? <p className="text-[11px] text-[#6b7280]">{session?.sourceLabel ?? "Synthetic fixture artwork"}</p> : null}
+             <p className="hidden text-xs text-[#6b7280] sm:block">
+               {isDistribution
+                 ? "Design a teaser for cross-post routing"
+@@ -1138,7 +1148,7 @@ export default function PreviewizerClient({
+         <div className="flex flex-wrap items-center justify-end gap-2">
+           {studioReady ? (
+             <>
+-              {isHostedSession ? (
++              {isDistribution ? (
+                 <button
+                   type="button"
+                   onClick={() => {
+@@ -1233,7 +1243,7 @@ export default function PreviewizerClient({
+         className="hidden"
+         onChange={(e) => {
+           const f = e.target.files?.[0];
+-          if (f) loadFile(f);
++          if (f && !isBench) loadFile(f);
+         }}
+       />
+ 
+@@ -1438,7 +1448,7 @@ export default function PreviewizerClient({
+         mode={mode}
+         uploadBusy={uploadBusy}
+         uploadError={uploadError}
+-        allowSaveTemplate={Boolean(isHostedSession && creatorId)}
++        allowSaveTemplate={Boolean(isDistribution && creatorId)}
+         saveTemplateChecked={saveTemplateChecked}
+         saveTemplateName={saveTemplateName}
+         saveTemplateSlotsUsed={savedTemplates.length}
+diff --git a/work/bpv01-baseline/web/app/components/previewizer/previewizer-export-modal.tsx b/web/app/components/previewizer/previewizer-export-modal.tsx
+index 1751b37..512a2d2 100644
+--- a/work/bpv01-baseline/web/app/components/previewizer/previewizer-export-modal.tsx
++++ b/web/app/components/previewizer/previewizer-export-modal.tsx
+@@ -64,7 +64,7 @@ export function PreviewizerExportModal({
+ }: Props) {
+   if (!open) return null;
+ 
+-  const isHostedExport = mode === "distribution";
++  const isHostedExport = mode === "distribution" || mode === "bench";
+   const busy = exportBusy || uploadBusy || templateSaveBusy;
+   const atCapacity = saveTemplateSlotsUsed >= MAX_CUSTOM_PREVIEW_TEMPLATES;
+   const saveBlocked =
+@@ -212,8 +212,9 @@ export function PreviewizerExportModal({
+                   </p>
+                 ) : null}
+                 <p className="text-xs leading-relaxed text-[#6b7280]">
+-                  Upload sends this to Relay for cross-post preview routing. Download keeps a local
+-                  copy.
++                  {mode === "bench"
++                    ? "This JPEG stays in the temporary mock conversation. No draft will be created."
++                    : "Upload sends this to Relay for cross-post preview routing. Download keeps a local copy."}
+                 </p>
+               </>
+             ) : (
+diff --git a/work/bpv01-baseline/web/app/editor-bench/EditorBenchClient.tsx b/web/app/editor-bench/EditorBenchClient.tsx
+index e2ca215..4532eeb 100644
+--- a/work/bpv01-baseline/web/app/editor-bench/EditorBenchClient.tsx
++++ b/web/app/editor-bench/EditorBenchClient.tsx
+@@ -3,10 +3,11 @@
+ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+ import GalleryGrid from "@/app/components/GalleryGrid";
+ import { groupGalleryItemsByPost } from "@/lib/gallery-group";
++import { PreviewizerOverlay } from "@/app/components/distribution/PreviewizerOverlay";
+ import type { GalleryItem } from "@/lib/relay-api";
+ import { RelayApiError } from "@/lib/relay-api";
+ import { sendRelayScheduleEventToExtension } from "@/lib/relay-extension-messaging";
+-import { chatBenchVariantEdit, confirmBenchVariantEdit, confirmBenchSchedule, fetchRealLibraryPost, fetchRealLibraryPosts, fetchRealLibrarySelectionCatalog, reviewRealLibraryAgain, reviewRealLibrarySchedule, reviewBenchSchedule, updateRealLibrarySelection, startBenchConversation, getBenchConversation, sendBenchConversationTurn, confirmBenchConversation, RealLibrarySelectionApiError, type BenchCatalog, type BenchExample, type BenchMode, type BenchRefinementState, type BenchResponse, type BenchRuntime, type BenchVariantEditChatResult, type BenchVariantEditConfirmResult, type BenchConversationSnapshot, type BenchConversationTurn, type BenchConversationConfirm, type RealLibraryPost, type RealLibrarySelectionCatalog, type RealLibraryRefinementState, type RealLibrarySelectionResult, type RealLibraryReviewResult, type ScheduleBatchReviewResult, type ScheduleConfirmResult, type ScheduleReviewResponse } from "@/lib/editor-bench";
++import { cancelBenchConversationPreview, chatBenchVariantEdit, completeBenchConversationPreview, confirmBenchVariantEdit, confirmBenchSchedule, fetchRealLibraryPost, fetchRealLibraryPosts, fetchRealLibrarySelectionCatalog, reviewRealLibraryAgain, reviewRealLibrarySchedule, reviewBenchSchedule, updateRealLibrarySelection, openBenchConversationPreview, startBenchConversation, getBenchConversation, sendBenchConversationTurn, confirmBenchConversation, uploadBenchConversationPreview, RealLibrarySelectionApiError, type BenchCatalog, type BenchExample, type BenchMode, type BenchRefinementState, type BenchResponse, type BenchRuntime, type BenchVariantEditChatResult, type BenchVariantEditConfirmResult, type BenchConversationSnapshot, type BenchConversationTurn, type BenchConversationConfirm, type BenchConversationPreviewOpen, type RealLibraryPost, type RealLibrarySelectionCatalog, type RealLibraryRefinementState, type RealLibrarySelectionResult, type RealLibraryReviewResult, type ScheduleBatchReviewResult, type ScheduleConfirmResult, type ScheduleReviewResponse } from "@/lib/editor-bench";
+ 
+ const statuses = ["proposal", "clarification", "limitation", "unchanged", "selected", "rejected", "unavailable"];
+ const provenances = ["example_replay", "edited_replay", "model_interpretation", "none"];
+@@ -112,6 +113,11 @@ export default function EditorBenchClient() {
+   const [conversationSession, setConversationSession] = useState<BenchConversationSnapshot | null>(null);
+   const [conversationTurn, setConversationTurn] = useState<BenchConversationTurn | null>(null);
+   const [conversationReceipt, setConversationReceipt] = useState<BenchConversationConfirm | null>(null);
++  const [previewOpen, setPreviewOpen] = useState<BenchConversationPreviewOpen | null>(null);
++  const [previewBusyMediaId, setPreviewBusyMediaId] = useState<string | null>(null);
++  const [previewError, setPreviewError] = useState("");
++  const previewReturnFocus = useRef<HTMLElement | null>(null);
++  const previewHandshakeInFlight = useRef(false);
+   const [sourceMode, setSourceMode] = useState<"fixture" | "real_library">("fixture");
+   const [editDraftMode, setEditDraftMode] = useState(false);
+   const [variantEditReview, setVariantEditReview] = useState<BenchVariantEditChatResult | null>(null);
+@@ -269,7 +275,7 @@ export default function EditorBenchClient() {
+   }
+   async function confirmConversation() {
+     const turn = conversationTurn;
+-    if (!conversationSession || !turn?.reviewToken || busy || turn.status !== "review") return;
++    if (!conversationSession || !turn?.reviewToken || busy || previewOpen || turn.status !== "review") return;
+     const token = ++generation.current, controller = new AbortController();
+     conversationAbort.current?.abort(); conversationAbort.current = controller;
+     setBusy(true); setRequestError("");
+@@ -290,6 +296,63 @@ export default function EditorBenchClient() {
+       if (token === generation.current) { setBusy(false); if (conversationAbort.current === controller) conversationAbort.current = null; }
+     }
+   }
++  async function openConversationPreview(postId: string, mediaId: string) {
++    if (!conversationSession || !conversationSession.preparation || busy || previewOpen || previewHandshakeInFlight.current) return;
++    previewReturnFocus.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
++    previewHandshakeInFlight.current = true;
++    const token = generation.current;
++    setPreviewBusyMediaId(mediaId); setPreviewError("");
++    setBusy(true);
++    try {
++      const opened = await openBenchConversationPreview({ sessionId: conversationSession.sessionId, revision: conversationSession.revision, postId, mediaId });
++      if (token !== generation.current) {
++        await cancelBenchConversationPreview(opened.sessionId, opened.attempt.id).catch(() => undefined);
++        return;
++      }
++      setConversationSession(opened);
++      setPreviewOpen(opened);
++    } catch (error) {
++      if (token === generation.current) setPreviewError(error instanceof Error ? error.message : "Previewizer could not open this fixture image.");
++    } finally {
++      previewHandshakeInFlight.current = false;
++      if (token === generation.current) { setPreviewBusyMediaId(null); setBusy(false); }
++    }
++  }
++  async function uploadConversationPreview(blob: Blob) {
++    if (!previewOpen) throw new Error("This Previewizer attempt has ended. Open the selected image again.");
++    const token = generation.current;
++    const uploaded = await uploadBenchConversationPreview(previewOpen.sessionId, previewOpen.attempt.id, blob);
++    if (token !== generation.current) throw new Error("The conversation changed. Open the selected fixture image again.");
++    return { mediaId: uploaded.previewMediaId };
++  }
++  async function completeConversationPreview(result: { previewMediaId: string }) {
++    if (!previewOpen) throw new Error("This Previewizer attempt has ended. Open the selected image again.");
++    const token = generation.current;
++    const completed = await completeBenchConversationPreview(previewOpen.sessionId, previewOpen.attempt.id, result.previewMediaId);
++    if (token !== generation.current) throw new Error("The conversation changed. Review its current preview status.");
++    setConversationSession(completed);
++    setPreviewOpen(null);
++    setPreviewError("");
++    setChat(messages => [...messages, "Mock preview export saved. X draft creation is still unavailable."]);
++  }
++  async function cancelConversationPreview() {
++    const current = previewOpen;
++    if (!current || previewHandshakeInFlight.current) return;
++    previewHandshakeInFlight.current = true;
++    const token = generation.current;
++    setPreviewOpen(null);
++    setPreviewBusyMediaId(current.attempt.sourceMediaId);
++    setBusy(true);
++    try {
++      const snapshot = await cancelBenchConversationPreview(current.sessionId, current.attempt.id);
++      if (token === generation.current && conversationSession?.sessionId === current.sessionId) setConversationSession(snapshot);
++    } catch (error) {
++      if (token === generation.current) setPreviewError(error instanceof Error ? error.message : "The Previewizer attempt could not be cancelled.");
++    } finally {
++      previewHandshakeInFlight.current = false;
++      if (token === generation.current) { setPreviewBusyMediaId(null); setBusy(false); }
++    }
++  }
+   function clearRealLibraryContext() {
+     realLibraryCatalogGeneration.current++;
+     realLibraryCatalogAbort.current?.abort();
+@@ -508,7 +571,7 @@ export default function EditorBenchClient() {
+   }
+ 
+   async function send() {
+-    if (!request.trim() || !catalog || busy || realLibraryBusyRef.current) return;
++    if (!request.trim() || !catalog || busy || previewOpen || realLibraryBusyRef.current) return;
+     const text = request;
+     if (conversationMode) {
+       if (conversationSendInFlight.current) return;
+@@ -741,7 +804,7 @@ export default function EditorBenchClient() {
+   return <main className="min-h-screen bg-[#f5f5f2] p-6 text-slate-900"><div className="mx-auto max-w-5xl">
+     <header className="mb-4 flex flex-wrap items-center justify-between gap-3"><div><h1 className="text-2xl font-semibold">Editor bench</h1><p className="text-xs text-slate-500">{conversationMode ? "Mock conversation · temporary synthetic state · not saved to the durable Schedule Rail." : mode === "curation" && curationSource === "real_library" ? "REAL LIBRARY CURATION · metadata-only selection · no edits or publishing." : mode === "mock_posting" && sourceMode === "real_library" ? "REAL LIBRARY SOURCE · selected owned media · manual Schedule Rail cues only · no automatic publishing." : "Demo · synthetic sample data · no real posts. Confirmed reviews save manual Schedule Rail events only."}</p></div><span className="rounded-full bg-white px-3 py-1 text-xs text-slate-600">{runtime?.enabled ? `${runtime.model ?? "Model ready"} · ${budgetLabel}` : `AI unavailable · ${budgetLabel}`}</span></header>
+     <section className="mb-5 rounded-2xl bg-white p-4 shadow-sm">
+-      <div className="mb-3 flex flex-wrap items-center justify-between gap-3"><div className="flex flex-wrap gap-2">{(["curation", "mock_posting"] as BenchMode[]).map(value => <button key={value} onClick={() => { invalidate(); setConversationMode(false); setEditDraftMode(false); clearRealLibraryContext(); setRefinementState(null); setCurationSource("fixture"); pair.current = null; setMode(value); setRequest(""); setIntent(""); }} className={`rounded-full px-3 py-1.5 text-sm ${!conversationMode && mode === value ? "bg-slate-900 text-white" : "bg-slate-100 text-slate-700"}`}>{value === "curation" ? "Curation" : "Mock posting"}</button>)}<button type="button" onClick={() => void enterConversation()} aria-pressed={conversationMode} className={`rounded-full px-3 py-1.5 text-sm ${conversationMode ? "bg-slate-900 text-white" : "bg-slate-100 text-slate-700"}`}>Conversation</button></div>{!conversationMode && <details className="text-sm"><summary className="cursor-pointer text-slate-600">Examples</summary>{mode === "curation" && curationSource === "real_library" && <p className="mt-2 text-xs text-slate-500">Loading an example switches back to synthetic fixtures.</p>}<div className="mt-2 flex flex-wrap gap-2">{catalog.examples.filter(example => example.mode === mode).map(example => <button key={example.id} onClick={() => loadExample(example)} className="rounded-lg border px-3 py-1.5">Load {example.title}</button>)}</div></details>}</div>
++      <div className="mb-3 flex flex-wrap items-center justify-between gap-3"><div className="flex flex-wrap gap-2">{(["curation", "mock_posting"] as BenchMode[]).map(value => <button key={value} disabled={busy || previewOpen !== null} onClick={() => { invalidate(); setConversationMode(false); setEditDraftMode(false); clearRealLibraryContext(); setRefinementState(null); setCurationSource("fixture"); pair.current = null; setMode(value); setRequest(""); setIntent(""); }} className={`rounded-full px-3 py-1.5 text-sm ${!conversationMode && mode === value ? "bg-slate-900 text-white" : "bg-slate-100 text-slate-700"} disabled:opacity-50`}>{value === "curation" ? "Curation" : "Mock posting"}</button>)}<button type="button" disabled={busy || previewOpen !== null} onClick={() => void enterConversation()} aria-pressed={conversationMode} className={`rounded-full px-3 py-1.5 text-sm ${conversationMode ? "bg-slate-900 text-white" : "bg-slate-100 text-slate-700"} disabled:opacity-50`}>Conversation</button></div>{!conversationMode && <details className="text-sm"><summary className="cursor-pointer text-slate-600">Examples</summary>{mode === "curation" && curationSource === "real_library" && <p className="mt-2 text-xs text-slate-500">Loading an example switches back to synthetic fixtures.</p>}<div className="mt-2 flex flex-wrap gap-2">{catalog.examples.filter(example => example.mode === mode).map(example => <button key={example.id} onClick={() => loadExample(example)} className="rounded-lg border px-3 py-1.5">Load {example.title}</button>)}</div></details>}</div>
+       {mode === "curation" && <div className="mb-3 rounded-xl border border-amber-300 bg-amber-50 p-3"><p className="text-sm font-semibold">Curation source</p><div className="mt-2 flex gap-2"><button onClick={() => { invalidate(); clearRealLibraryContext(); setRefinementState(null); setCurationSource("fixture"); }} className={`rounded-full px-3 py-1.5 text-sm ${curationSource === "fixture" ? "bg-slate-900 text-white" : "bg-white"}`}>Synthetic fixtures</button><button onClick={() => { invalidate(); clearRealLibraryContext(); setRefinementState(null); setCurationSource("real_library"); void loadRealLibraryCatalog(); }} className={`rounded-full px-3 py-1.5 text-sm ${curationSource === "real_library" ? "bg-amber-800 text-white" : "bg-white"}`}>Real Library</button></div></div>}
+       {mode === "mock_posting" && !conversationMode && <div className="mb-3 rounded-xl border border-amber-300 bg-amber-50 p-3">
+         <p className="text-sm font-semibold">Posting source</p><div className="mt-2 flex gap-2">
+@@ -758,9 +821,24 @@ export default function EditorBenchClient() {
+         </div>}
+       </div>}
+       <div aria-live="polite" className="mb-3 max-h-36 space-y-1 overflow-auto text-sm">{chat.map((message, index) => <p key={index} className={index % 2 === 0 ? "text-slate-800" : "text-indigo-800"}>{message}</p>)}</div>
+-      {conversationMode && conversationSession?.preparation && <div role="status" aria-live="polite" className="mb-3 break-words rounded-lg bg-indigo-50 p-3 text-sm text-slate-700"><p className="font-medium">Preview-first X draft preparation is pending.</p><p className="mt-1">{conversationSession.preparation.templateId ? "Square teaser recorded" : "Choose a template"} · {conversationSession.preparation.copyChoice?.kind === "existing_titles" ? "Keep current titles recorded" : conversationSession.preparation.copyChoice?.kind === "literal" ? `Copy recorded: “${conversationSession.preparation.copyChoice.text}”` : "Choose a copy option"}</p><p className="mt-1">Previewizer has not run, and no draft exists. Pending: {conversationSession.preparation.pendingRequirements.map(item => preparationRequirementLabels[item] ?? item).join(", ") || "none"}.</p></div>}
++      {conversationMode && conversationSession?.preparation && <div role="status" aria-live="polite" className="mb-3 break-words rounded-lg bg-indigo-50 p-3 text-sm text-slate-700"><p className="font-medium">Preview-first X draft preparation is pending.</p><p className="mt-1">{conversationSession.preparation.templateId ? "Square teaser recorded" : "Choose a template"} · {conversationSession.preparation.copyChoice?.kind === "existing_titles" ? "Keep current titles recorded" : conversationSession.preparation.copyChoice?.kind === "literal" ? `Copy recorded: “${conversationSession.preparation.copyChoice.text}”` : "Choose a copy option"}</p><p className="mt-1">{conversationSession.previewState === "mock_previews_ready_drafts_unavailable" ? "Mock previews are ready. X draft creation is still unavailable." : "No draft exists. Open Previewizer for each selected fixture image to complete its mock preview."} Pending: {conversationSession.preparation.pendingRequirements.map(item => preparationRequirementLabels[item] ?? item).join(", ") || "none"}.</p></div>}
++      {conversationMode && conversationSession?.preparation && conversationSession.selection.postIds.length > 0 && <section aria-label="Selected fixture previews" className="mb-3 space-y-2 rounded-lg border border-slate-200 p-3">
++        <h2 className="text-sm font-semibold">Selected fixture previews</h2>
++        {conversationSession.selection.postIds.map(postId => {
++          const card = conversationSession.cards.find(item => item.postId === postId);
++          const images = conversationSession.media.filter(item => item.postId === postId && item.processingStatus === "ready" && item.mimeType.startsWith("image/"));
++          const status = conversationSession.previewStatus?.[postId];
++          return <article key={postId} className="rounded-lg bg-slate-50 px-3 py-2">
++            <div className="flex min-w-0 flex-wrap items-center justify-between gap-2"><div className="min-w-0"><p className="break-words text-sm font-medium">{card?.title ?? postId}</p><p className="break-words text-xs text-slate-600">{status?.status === "complete" ? `Mock preview ready · ${status.receipt?.size ?? 0} bytes` : status?.status === "in_progress" ? "Previewizer open · export not confirmed" : images.length ? "Preview pending" : "No ready image for Previewizer"}</p></div>
++              {images.length === 1 && <button type="button" onClick={() => void openConversationPreview(postId, images[0]!.id)} disabled={previewBusyMediaId !== null || !conversationSession.preparation?.templateId} className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm hover:bg-slate-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-700 disabled:opacity-50">{previewBusyMediaId === images[0]!.id ? "Opening…" : status?.status === "complete" ? "Open Previewizer again" : "Open Previewizer"}</button>}
++            </div>
++            {images.length > 1 && <div className="mt-2 flex min-w-0 flex-wrap gap-2">{images.map(image => <button key={image.id} type="button" onClick={() => void openConversationPreview(postId, image.id)} disabled={previewBusyMediaId !== null || !conversationSession.preparation?.templateId} className="max-w-full break-words rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs hover:bg-slate-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-700 disabled:opacity-50">{previewBusyMediaId === image.id ? "Opening…" : `Open ${image.filename ?? image.title}`}</button>)}</div>}
++          </article>;
++        })}
++        {previewError && <p role="alert" className="rounded-md bg-red-50 p-2 text-sm text-red-800">{previewError}</p>}
++      </section>}
+       <label htmlFor="bench-request" className="sr-only">{conversationMode ? "Describe the selection, edit or posting request" : "Describe the edit"}</label>
+-      {conversationMode && <p className="mb-2 text-sm text-slate-600">Use the chat to select posts, set preview-first X draft choices, or make one quoted title or tag change. Previewizer and draft creation are still pending here.</p>}
++      {conversationMode && <p className="mb-2 text-sm text-slate-600">Use the chat to select posts, set preview-first X draft choices, or make one quoted title or tag change. Previewizer saves mock exports here; X draft creation is unavailable.</p>}
+       {mode === "mock_posting" && sourceMode === "fixture" && !conversationMode && <div className="mb-2 flex items-center gap-2 text-sm"><button onClick={() => { invalidate(); setEditDraftMode(value => !value); }} className={`rounded-full px-3 py-1.5 ${editDraftMode ? "bg-indigo-700 text-white" : "border bg-white"}`}>{editDraftMode ? "Edit draft mode · on" : "Edit draft"}</button>{editDraftMode && <span className="text-slate-600">Quote the exact replacement, for example: Change the X caption to “Aurora at dawn”. Unquoted rewrites need clarification.</span>}</div>}
+       <div className="flex gap-2"><textarea id="bench-request" name="bench-request" autoComplete="off" value={request} onChange={event => { setRequest(event.target.value); invalidate(); }} placeholder={conversationMode ? 'Select Aurora Study and exclude Tide pools.' : mode === "curation" && curationSource === "real_library" ? "Describe which Library posts to select…" : mode === "mock_posting" && sourceMode === "real_library" ? "Describe manual posting cues for the selected Library media…" : mode === "mock_posting" && editDraftMode ? "For Aurora in X, replace it with “Aurora at dawn”. Unquoted rewrite requests need clarification." : "Describe a change…"} className="min-h-12 min-w-0 flex-1 resize-y rounded-xl border p-3 focus-visible:outline focus-visible:outline-2 focus-visible:outline-indigo-700" /><button type="button" onClick={() => void send()} disabled={!catalog || busy || realLibraryBusy || !request.trim() || (mode === "curation" && curationSource === "real_library" && (!realLibraryCatalog || realLibraryLoading)) || (mode === "mock_posting" && sourceMode === "real_library" && (!libraryPost || libraryMediaIds.length < 1))} className="self-end rounded-xl bg-indigo-700 px-5 py-3 font-medium text-white hover:bg-indigo-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-700 disabled:opacity-50">{busy ? "Sending…" : "Send"}</button></div>
+       {conversationTurn?.status === "review" && conversationTurn.preview && <article className="mt-3 rounded-xl border border-indigo-200 bg-indigo-50 p-4"><p className="text-sm font-semibold">Review mock {conversationTurn.preview.kind === "posting" ? "posting cue" : "edit"} · revision {conversationTurn.revision}</p>{conversationTurn.preview.kind === "edit" ? <><p className="mt-2 text-sm">Post: {visibleCards.find(card => card.postId === conversationTurn.preview!.postId)?.title ?? "Selected post"}</p>{(conversationTurn.preview.beforeAfter as any[]).map((change, index) => <p key={index} className="mt-1 break-words text-sm">{String(change.before)} → {String(change.after)}</p>)}{(conversationTurn.preview.action as any)?.kind === "tags" && <p className="mt-2 text-sm">Add: {((conversationTurn.preview.action as any).add as string[]).join(", ") || "none"} · Remove: {((conversationTurn.preview.action as any).remove as string[]).join(", ") || "none"}</p>}</> : <><p className="mt-2 text-sm">Source: {String((conversationTurn.preview.review as any)?.source?.title)} · {String((conversationTurn.preview.review as any)?.destination).toUpperCase()}</p><p className="break-words text-sm">Title: {String((conversationTurn.preview.review as any)?.title)}</p><p className="text-sm">Time: {String((conversationTurn.preview.review as any)?.dueAt?.local)} Europe/London</p></>}<details className="mt-2 text-xs"><summary className="cursor-pointer">Full mock preview</summary><pre className="mt-2 max-h-48 overflow-auto whitespace-pre-wrap break-words">{JSON.stringify(conversationTurn.preview, null, 2)}</pre></details><div className="mt-3 flex gap-2"><button type="button" onClick={() => void confirmConversation()} disabled={busy || !conversationTurn.reviewToken} className="rounded-lg bg-indigo-700 px-4 py-2 text-sm text-white hover:bg-indigo-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-700 disabled:opacity-50">{conversationTurn.preview.kind === "posting" ? "Confirm posting cue" : "Confirm edit"}</button><button type="button" onClick={() => { invalidate(); }} disabled={busy} className="rounded-lg border px-4 py-2 text-sm hover:bg-slate-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-700">Cancel</button></div></article>}
+@@ -922,5 +1000,14 @@ export default function EditorBenchClient() {
+         <details className="mt-4"><summary>Debug</summary><pre className="mt-2 overflow-auto rounded bg-slate-950 p-4 text-xs text-white">{JSON.stringify(response, null, 2)}</pre></details>
+       </>}
+     </section>
++    {previewOpen && <PreviewizerOverlay
++      open
++      mode="bench"
++      session={{ creatorId: previewOpen.creatorId, postId: previewOpen.attempt.postId, sourceMediaId: previewOpen.attempt.sourceMediaId, sourceImageUrl: previewOpen.sourceImageUrl, sourceLabel: previewOpen.sourceLabel, initialTemplateConfig: previewOpen.initialTemplate.config }}
++      returnFocusTarget={previewReturnFocus.current}
++      onUploadPreview={uploadConversationPreview}
++      onComplete={completeConversationPreview}
++      onCancel={() => void cancelConversationPreview()}
++    />}
+   </div></main>;
+ }
+diff --git a/work/bpv01-baseline/web/lib/editor-bench.ts b/web/lib/editor-bench.ts
+index 12effaa..6e76241 100644
+--- a/work/bpv01-baseline/web/lib/editor-bench.ts
++++ b/web/lib/editor-bench.ts
+@@ -1,4 +1,5 @@
+ import { relayFetch } from "@/lib/relay-api";
++import type { PreviewTemplateConfigV1 } from "@/lib/previewizer-template-config";
+ 
+ export type BenchMode = 'curation' | 'mock_posting';
+ export type BenchRefinementState = { v: 1; fixtureRevision: number; selectedPostIds: string[]; excludedPostIds: string[] };
+@@ -53,7 +54,9 @@ export type ScheduleReviewResponse = ScheduleReviewResult | ScheduleBatchReviewR
+ export type RealLibraryReviewResponse = RealLibraryReviewResult | { kind: "clarification"; question: string; usage?: unknown };
+ export type ScheduleConfirmResult = { event: ScheduleEvent; reused: boolean };
+ export type BenchConversationPreparation = { goal: "preview_first_x_drafts"; destination: "x"; templateId: "bench_template_square" | null; copyChoice: null | { kind: "existing_titles" } | { kind: "literal"; text: string }; pendingRequirements: string[] };
+-export type BenchConversationSnapshot = { sessionId: string; revision: number; selection: { postIds: string[]; excludedPostIds: string[] }; preparation: BenchConversationPreparation | null; cards: BenchCard[]; media: (BenchMedia & { label?: string })[]; pending: Record<string, unknown> | null };
++export type BenchConversationPreviewReceipt = { postId: string; sourceMediaId: string; templateId: string; previewMediaId: string; exportHash: string; size: number; completionRevision: number; completedAt: string; initialTemplateId: string; initialTemplateConfigHash: string };
++export type BenchConversationSnapshot = { sessionId: string; revision: number; selection: { postIds: string[]; excludedPostIds: string[] }; preparation: BenchConversationPreparation | null; cards: BenchCard[]; media: (BenchMedia & { label?: string })[]; previewStatus?: Record<string, { status: "pending" | "in_progress" | "complete"; attemptId?: string; receipt?: BenchConversationPreviewReceipt }>; previewState?: "pending" | "mock_previews_ready_drafts_unavailable"; pending: Record<string, unknown> | null };
++export type BenchConversationPreviewOpen = BenchConversationSnapshot & { creatorId: string; attempt: { id: string; postId: string; sourceMediaId: string; sourceFingerprint: string; expiresAt: string }; initialTemplate: { id: string; config: PreviewTemplateConfigV1 }; sourceImageUrl: string; sourceLabel: string };
+ export type BenchConversationTurn = BenchConversationSnapshot & { status: "clarification" | "selected" | "preparation_updated" | "preparation_cancelled" | "review"; message?: string; operation?: string; preview?: Record<string, unknown>; reviewToken?: string; expiresAt?: string; usage?: unknown };
+ export type BenchConversationConfirm = { receipt: Record<string, any> } & BenchConversationSnapshot;
+ 
+@@ -109,6 +112,18 @@ export function sendBenchConversationTurn(input: { sessionId: string; revision:
+ export function confirmBenchConversation(input: { sessionId: string; reviewToken: string }, signal?: AbortSignal) {
+   return scheduleRequest<BenchConversationConfirm>("/api/v1/editor-bench/schedule/conversation/confirm", input, signal);
+ }
++export function openBenchConversationPreview(input: { sessionId: string; revision: number; postId: string; mediaId: string }, signal?: AbortSignal) {
++  return scheduleRequest<BenchConversationPreviewOpen>("/api/v1/editor-bench/schedule/conversation/preview/open", input, signal);
++}
++export function uploadBenchConversationPreview(sessionId: string, attemptId: string, blob: Blob, signal?: AbortSignal) {
++  return relayFetch<{ previewMediaId: string; exportHash: string; size: number }>(`/api/v1/editor-bench/schedule/conversation/session/${encodeURIComponent(sessionId)}/preview/${encodeURIComponent(attemptId)}/upload`, { method: "POST", headers: { "content-type": "image/jpeg" }, body: blob, signal });
++}
++export function completeBenchConversationPreview(sessionId: string, attemptId: string, previewMediaId: string, signal?: AbortSignal) {
++  return scheduleRequest<{ receipt: BenchConversationPreviewReceipt } & BenchConversationSnapshot>(`/api/v1/editor-bench/schedule/conversation/session/${encodeURIComponent(sessionId)}/preview/${encodeURIComponent(attemptId)}/complete`, { previewMediaId }, signal);
++}
++export function cancelBenchConversationPreview(sessionId: string, attemptId: string, signal?: AbortSignal) {
++  return scheduleRequest<BenchConversationSnapshot>(`/api/v1/editor-bench/schedule/conversation/session/${encodeURIComponent(sessionId)}/preview/${encodeURIComponent(attemptId)}/cancel`, {}, signal);
++}
+ 
+ export type BenchVariantEditChatResult = {
+   decision: "clarification" | "unchanged" | "review";
+diff --git a/work/bpv01-baseline/web/lib/previewizer-session.ts b/web/lib/previewizer-session.ts
+index 5412ed6..9d4765a 100644
+--- a/work/bpv01-baseline/web/lib/previewizer-session.ts
++++ b/web/lib/previewizer-session.ts
+@@ -10,6 +10,8 @@ export type PreviewizerSession = {
+   postId: string;
+   sourceMediaId: string;
+   sourceImageUrl: string;
++  /** Server-owned label for an explicitly selected synthetic bench fixture image. */
++  sourceLabel?: string;
+   /**
+    * Optional saved-template snapshot (Automations / approval preload).
+    * Applied once after source image mount; never includes crop/selection.
+@@ -25,13 +27,15 @@ export type PreviewizerResult = {
+ /** Injected by Autopost/adapter — Previewizer must not import Relay upload. */
+ export type PreviewizerUploadPreview = (blob: Blob) => Promise<{ mediaId: string }>;
+ 
+-export type PreviewizerMode = "standalone" | "distribution";
++export type PreviewizerMode = "standalone" | "distribution" | "bench";
+ 
+ export function buildPreviewizerSession(args: {
+   creatorId: string;
+   postId: string;
+   sourceMediaId: string;
+   sourceImageUrl: string;
++  /** Server-owned label for an explicitly selected synthetic bench fixture image. */
++  sourceLabel?: string;
+   initialTemplateConfig?: PreviewTemplateConfigV1;
+ }): PreviewizerSession {
+   const session: PreviewizerSession = {
+@@ -40,6 +44,9 @@ export function buildPreviewizerSession(args: {
+     sourceMediaId: args.sourceMediaId,
+     sourceImageUrl: args.sourceImageUrl
+   };
++  if (args.sourceLabel !== undefined) {
++    session.sourceLabel = args.sourceLabel;
++  }
+   if (args.initialTemplateConfig !== undefined) {
+     session.initialTemplateConfig = args.initialTemplateConfig;
+   }

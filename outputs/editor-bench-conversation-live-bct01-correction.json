@@ -1,0 +1,127 @@
+{
+  "ticket": "BCT-01",
+  "date": "2026-10-19",
+  "mode": "live_mock_http",
+  "passed": false,
+  "calls": [
+    {
+      "expectedKind": "selection",
+      "paid": false,
+      "actualKind": "selection",
+      "inputBytes": 22949,
+      "inputSha256": "a9f89316dd38fb11bf0becbdd187bdbbcc3b32bf2d5bcc0d14f2f1749aa3e5e8",
+      "catalogSize": 16,
+      "currentRevision": 0,
+      "groundedTargetQuote": null,
+      "replacementSha256": null,
+      "usage": null
+    },
+    {
+      "expectedKind": "rename",
+      "paid": true,
+      "actualKind": "rename",
+      "inputBytes": 23049,
+      "inputSha256": "7ad0ab2292d2759a66430048e7040a560c9790b7f881b360457b97414dd9f01f",
+      "catalogSize": 16,
+      "currentRevision": 1,
+      "groundedTargetQuote": "selected post",
+      "replacementSha256": "e6668054a3add820c69808fb75948e9dd4b73dc8c080c9c22e046ae29771f301",
+      "usage": {
+        "inputTokens": 4643,
+        "outputTokens": 32,
+        "costUsd": 0.000967,
+        "calls": 1
+      }
+    },
+    {
+      "expectedKind": "posting",
+      "paid": true,
+      "actualKind": "clarification",
+      "inputBytes": 23115,
+      "inputSha256": "dd6c27d539eb58ceb4b7a70a5111207d644fc183b05f5076b929a55bca204af4",
+      "catalogSize": 16,
+      "currentRevision": 2,
+      "groundedTargetQuote": null,
+      "replacementSha256": null,
+      "usage": {
+        "inputTokens": 4666,
+        "outputTokens": 39,
+        "costUsd": 0.00075932,
+        "calls": 1
+      }
+    }
+  ],
+  "turns": [
+    {
+      "requestSha256": "0719f605180b8c8abe39d9cb62c4e91e4ce4ac4d5cd15a4140c4ce330a62b99a",
+      "httpStatus": 200,
+      "outcome": "selected",
+      "diagnostic": null,
+      "renameValidation": null,
+      "message": null,
+      "passed": true
+    },
+    {
+      "requestSha256": "ede5d5afd4cecd5eefdd4ee75abfb2ac2aaa77a7e3d831b9f5406a65fe87a918",
+      "httpStatus": 200,
+      "outcome": "review",
+      "diagnostic": null,
+      "renameValidation": null,
+      "message": null,
+      "passed": true
+    },
+    {
+      "requestSha256": "192f509e7c0f0e31b52d36d9bfb1a78498bf6ce5ffa31af0eafa72e60ab17b73",
+      "httpStatus": 200,
+      "outcome": "clarification",
+      "diagnostic": null,
+      "renameValidation": null,
+      "message": "Should I schedule the selected artwork for X with the new title, or rename it only?",
+      "passed": false
+    }
+  ],
+  "checks": {},
+  "limitations": [
+    "Synthetic fixture only",
+    "Ephemeral API-instance session and posting records",
+    "Frontend execution deferred",
+    "No real Library, database or platform operations"
+  ],
+  "priorFailureSha256": "543a6df1f838985a882c71dc4ca4eebec2bbe07c27503b84838b3955f761ac6b",
+  "selectionProvenance": "Canned seed from prior passing live selection; corrective paid calls cover rename and posting only",
+  "failure": {
+    "name": "AssertionError",
+    "code": "ERR_ASSERTION",
+    "message": "Proof stopped at first failure without retry"
+  },
+  "budget": {
+    "initialRows": 896,
+    "finalRows": 898,
+    "previousRowsUnchanged": true,
+    "providerCalls": 3,
+    "paidCalls": 2,
+    "reservationsUsd": 0.0169264,
+    "actualUsd": 0.00172632,
+    "ledgerSha256": "778bac9576e0d6f408ed04236b520129b4ee969ab605abef7a102625a39aea89",
+    "newRows": [
+      {
+        "id": "67a2e2c5-371f-4ae8-b2e4-3bb9bb1876b7",
+        "model": "gpt-5.6-luna",
+        "phase": "development",
+        "reservedUsd": 0.0084566,
+        "actualUsd": 0.000967,
+        "settled": true
+      },
+      {
+        "id": "46033346-07a5-4247-b8f8-7f2eb43c88ce",
+        "model": "gpt-5.6-luna",
+        "phase": "development",
+        "reservedUsd": 0.0084698,
+        "actualUsd": 0.00075932,
+        "settled": true
+      }
+    ],
+    "combinedPaidCalls": 4,
+    "combinedReservationsUsd": 0.03387
+  }
+}

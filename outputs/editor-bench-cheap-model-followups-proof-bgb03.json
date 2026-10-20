@@ -1,0 +1,202 @@
+{
+  "ticket": "BGB-03",
+  "status": "accepted_for_mock_bench",
+  "date": "2026-10-20",
+  "branch": "codex/local-build-2026-10-19",
+  "head": "c82c9ed07f51e392c5f5383cc04d6502c9b5e45c",
+  "objective": "Correct template/copy and additive-destination follow-ups without relaxing grounding or confirmation.",
+  "roles": {
+    "plan": "Sol High",
+    "implementation": "Luna High",
+    "acceptance": "Root scoped review and bounded evaluation"
+  },
+  "plan": "docs/conversational-planning/BENCH-CHEAP-MODEL-FOLLOWUPS-PLAN.md",
+  "scope": {
+    "src/editor-bench/conversation.ts": {
+      "sha256": "930f27e4e75f4388d4196cf28f425ef0c62a0fb311de6811720e252ec081774c",
+      "hunks": [
+        "@@ -24 +24 @@ export const BENCH_CONVERSATION_SCHEMA = objectSchema({ result: { anyOf: [select",
+        "@@ -391,0 +392 @@ export function prepareBenchConversationPayload(latestRequest: string, session:",
+        "@@ -399 +400 @@ export function prepareBenchConversationPayload(latestRequest: string, session:"
+      ]
+    },
+    "tests/editor-bench/conversation.test.ts": {
+      "sha256": "2f767a2193c301008136ecfba5c8cf8fbf552c37a42d4d1bd46dd3d3eca0feb8",
+      "hunks": [
+        "@@ -242,0 +243,65 @@ describe('mock editor-bench conversation', () => {"
+      ]
+    }
+  },
+  "changes": [
+    "Expose only owned template IDs/names in model input.",
+    "Use concise paraphrased structured examples for preparation choices and destination additions/removals.",
+    "Keep arbitrary full quoted literal copy distinct from owned template names.",
+    "Add regression coverage for preserved choices, exclusions, destination changes and the three recorded invalid BGB-02 actions."
+  ],
+  "preserved": [
+    "Strict schema and exact latest-request quote grounding",
+    "Deterministic merge and 24 KiB payload cap",
+    "One cheap-model call per turn, tools empty, no retry or token-cap increase",
+    "Original metadata, selection/exclusion context and explicit per-draft confirmation",
+    "Existing separate scheduling and manual extension handoff confirmations"
+  ],
+  "review": {
+    "skill": "Ponytail Review",
+    "scope": "Only the two file/hunk sets above, compared with work/bgb03-baseline/, plus connected parser, routes, provider/budget and variant adapter.",
+    "remainingFindings": [],
+    "corrections": [
+      "Clarified that only templateQuote is restricted to owned templates; literal copy remains allowed.",
+      "Corrected negative replay setup to seed an actually valid active preparation before asserting unchanged state."
+    ],
+    "whitespaceClean": true
+  },
+  "verification": {
+    "backendTests": {
+      "passed": 35,
+      "failed": 0,
+      "files": 3,
+      "report": "work/bgb03-root-tests.json",
+      "exit": "work/bgb03-root-tests.exit.json"
+    },
+    "backendBuild": {
+      "exitCode": 0,
+      "evidence": "work/bgb03-luna-build-02.exit.json"
+    },
+    "preflight": {
+      "passed": true,
+      "scenarios": 3,
+      "confirmedMockDrafts": 9,
+      "paidCalls": 0,
+      "path": "outputs/editor-bench-generic-batch-preflight-bgb03.json"
+    },
+    "live": {
+      "passed": true,
+      "turns": 6,
+      "scenarios": 3,
+      "confirmedMockDrafts": 9,
+      "skippedDependentTurns": 0,
+      "path": "outputs/editor-bench-generic-batch-live-bgb03.json",
+      "journal": "outputs/editor-bench-generic-batch-live-bgb03.ndjson",
+      "model": "gpt-5.6-luna",
+      "reasoningEffort": "none"
+    },
+    "backendApi": {
+      "port": 8788,
+      "previousPid": 47096,
+      "pid": 32960,
+      "startedAt": "2026-10-20T05:25:38.5756226Z",
+      "health": 200,
+      "protectedPosts": {
+        "conversation/cell/skip": 401,
+        "conversation/cell/restore": 401,
+        "conversation/deviantart-draft/review": 401,
+        "conversation/x-draft/review": 401
+      },
+      "backgroundWorkersDisabled": true,
+      "temporarySessionsCleared": true,
+      "browserTested": false,
+      "processOnlyOverrides": [
+        "LOG_PRETTY=0",
+        "RELAY_DB_STORE_PATREON_COOKIE=1"
+      ],
+      "configurationFilesChanged": false,
+      "startupFailures": [
+        "work/bgb03-reload-attempt-01.json",
+        "work/bgb03-reload-attempt-02.json"
+      ]
+    }
+  },
+  "budget": {
+    "ledgerPath": ".relay-data/gallery-editor-budget.json",
+    "initialRows": 907,
+    "finalRows": 913,
+    "previousRowsUnchanged": true,
+    "heldoutRowsUnchanged": true,
+    "providerCalls": 6,
+    "networkCalls": 6,
+    "paidCalls": 6,
+    "reservationsUsd": 0.051995200000000005,
+    "actualUsd": 0.0045514,
+    "remaining": {
+      "development": 0.34898714,
+      "heldout": 8.9690346
+    },
+    "ledgerSha256": "a663ca114fd72a0f466dc3838faca944e1702a9b01e1ed4191baf39539366fce",
+    "newRows": [
+      {
+        "id": "8d58d797-a8e6-40f9-ac64-2be7d758914e",
+        "model": "gpt-5.6-luna",
+        "phase": "development",
+        "reservedUsd": 0.0086326,
+        "actualUsd": 0.001062,
+        "settled": true
+      },
+      {
+        "id": "cdd25534-0014-45ae-a9b4-2236d1ec2bdc",
+        "model": "gpt-5.6-luna",
+        "phase": "development",
+        "reservedUsd": 0.0086662,
+        "actualUsd": 0.0006736,
+        "settled": true
+      },
+      {
+        "id": "2ced290a-cc65-4553-b904-e154fdea98ef",
+        "model": "gpt-5.6-luna",
+        "phase": "development",
+        "reservedUsd": 0.0086708,
+        "actualUsd": 0.0007032,
+        "settled": true
+      },
+      {
+        "id": "ca3de53f-f85c-4e3c-92d7-59374e5ac4b7",
+        "model": "gpt-5.6-luna",
+        "phase": "development",
+        "reservedUsd": 0.0086742,
+        "actualUsd": 0.00071,
+        "settled": true
+      },
+      {
+        "id": "3c1e459b-2c82-4ec8-9258-76d287ede027",
+        "model": "gpt-5.6-luna",
+        "phase": "development",
+        "reservedUsd": 0.008674400000000002,
+        "actualUsd": 0.0006973999999999999,
+        "settled": true
+      },
+      {
+        "id": "d87cd3eb-7b62-49bd-83b3-7a81f9f05026",
+        "model": "gpt-5.6-luna",
+        "phase": "development",
+        "reservedUsd": 0.008677,
+        "actualUsd": 0.0007051999999999999,
+        "settled": true
+      }
+    ],
+    "authoritativeLedgerAbsolutePath": "C:\\Users\\jorda\\Documents\\Codex\\2026-10-11\\c\\work\\relay\\.relay-data\\gallery-editor-budget.json",
+    "independentlyVerifiedHistoricalPrefix": true
+  },
+  "evidence": {
+    "priorReportsAndJournalsUnchanged": 71,
+    "priorFailure": "outputs/editor-bench-generic-batch-live-bgb02.json",
+    "priorFailureJournal": "outputs/editor-bench-generic-batch-live-bgb02.ndjson",
+    "configurationUnchanged": true,
+    "extensionSourcePathsUnchanged": 55,
+    "sourceFrozenSinceReviewAndTests": true,
+    "baseline": "work/bgb03-baseline/baseline.json",
+    "preliveAudit": "work/bgb03-prelive-audit.json"
+  },
+  "limits": [
+    "Six fixed synthetic turns are a smoke check, not a broad language-quality benchmark.",
+    "Two additive scenarios have labelled canned setup; their follow-up turns are live.",
+    "No new scheduling or extension delivery proof in this check; existing flows were unchanged.",
+    "Frontend tests/build/lint/typecheck/browser/render and live extension execution remain deferred.",
+    "Broader suite not rerun; three historical distribution-package stub failures remain recorded in BGB-01.",
+    "Mock data only; no production Library or database writes; publishing remains manual.",
+    "API reload cleared temporary bench sessions; Next, database and extension were not restarted or rebuilt.",
+    "No further ticket dispatched; changes remain local and uncommitted."
+  ],
+  "referenceGuidance": [
+    "https://developers.openai.com/api/docs/guides/prompt-engineering",
+    "https://developers.openai.com/api/docs/models/gpt-5.6-luna"
+  ]
+}

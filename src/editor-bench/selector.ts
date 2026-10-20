@@ -126,8 +126,7 @@ const includes = (actual: string, query: string) => fold(actual).includes(fold(q
 // The fixture uses both labels for completed work; treat them as one selector-stage value.
 const canonicalStage = (value: string) => ['finished', 'final'].includes(fold(value)) ? 'completed' : fold(value);
 
-function catalogue() {
-  const fixture = createBenchFixture();
+function catalogue(fixture: ReturnType<typeof createBenchFixture> = createBenchFixture()) {
   const cards = createBenchPostCards(fixture);
   const assets = createBenchMediaDescriptors(fixture);
   const seriesPosts = new Map<string, string[]>();
@@ -274,7 +273,7 @@ function isDatePredicate(term: SelectorPredicate): term is DatePredicate {
 }
 
 /** Resolve the model's strict selector only against the bounded, server-owned fixture catalogue. */
-export function resolveMetadataSelector(value: unknown, request: string, selectedPostIds: string[], requestClock: BenchRequestClock): SelectorResolution {
+export function resolveMetadataSelector(value: unknown, request: string, selectedPostIds: string[], requestClock: BenchRequestClock, fixture?: ReturnType<typeof createBenchFixture>): SelectorResolution {
   if (!matchesSchema(value, METADATA_SELECTOR_SCHEMA)) return { ok: false, reason: 'invalid', message: 'The metadata selector did not match the required contract.' };
   const selector = value as MetadataSelector;
   const terms = [...selector.all, ...selector.any, ...selector.none];
@@ -282,7 +281,7 @@ export function resolveMetadataSelector(value: unknown, request: string, selecte
   if (selector.base === 'empty' && terms.length > 0) return { ok: false, reason: 'invalid', message: 'An empty selection base cannot include metadata filters.' };
   if (requestClock.timezone !== 'Europe/London' || !validDay(requestClock.localDate) || !Number.isFinite(Date.parse(requestClock.receivedAtUtc))) return { ok: false, reason: 'invalid', message: 'The trusted Europe/London request clock is invalid.' };
   const resolvedTerms = new Map<SelectorPredicate, ResolvedSelectorPredicate>();
-  const data = catalogue();
+  const data = catalogue(fixture);
   for (const term of terms) {
     if (!term.value.trim()) return { ok: false, reason: 'invalid', message: `The ${term.field.replaceAll('_', ' ')} criterion has a blank metadata value.` };
     if (!term.requestQuote.trim()) return { ok: false, reason: 'invalid', message: `The ${term.field.replaceAll('_', ' ')} criterion has a blank request quote.` };

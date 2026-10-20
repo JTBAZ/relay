@@ -1,0 +1,11 @@
+{
+  "passed": true,
+  "artifact": "C:\\Users\\jorda\\Documents\\Codex\\2026-10-11\\c\\work\\relay\\extension\\dist\\chrome-dev",
+  "developmentApiPort": 8788,
+  "manifestIdentityAndPermissionsUnchanged": true,
+  "productionArtifactsUnchanged": 0,
+  "jsFiles": 11,
+  "protocolAndPinnedJpegTransportPackaged": true,
+  "installedExtensionReloaded": false,
+  "browserAndDomVerificationDeferred": true
+}

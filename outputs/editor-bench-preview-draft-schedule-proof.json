@@ -1,0 +1,140 @@
+{
+  "ticket": "BPS-01",
+  "acceptedFor": "temporary mock scheduling and source-reviewed bench wiring",
+  "date": "2026-10-19",
+  "models": {
+    "plan": "Sol High",
+    "implementation": "Luna High",
+    "review": "root"
+  },
+  "branch": "codex/local-build-2026-10-19",
+  "head": "eb8e7ee7d386b52b821ce1a93427a90b78919c0f",
+  "baselineHead": "a4158c3c1005ffd823720caf5b6e7bb68f0831dd",
+  "concurrentCommitPaths": [
+    ".scratch/batch-replay-and-revisions/issues/04-update-all-paid-access-when-tier-catalog-changes.md",
+    "docs/patreon-ingest-canonical.md",
+    "docs/pattern-library.md",
+    "src/ingest/apply-batch.ts",
+    "src/ingest/auto-enrich.ts",
+    "tests/auto-enrich.test.ts",
+    "tests/canonical-store-db-save.test.ts",
+    "tests/ingest-all-paid-replay.test.ts"
+  ],
+  "taskScope": [
+    {
+      "path": "src/editor-bench/conversation.ts",
+      "before": "5de984447e042d2b93a60d255debca54b3f79823d4b1f198bda3821de30c5a8e",
+      "after": "e433b4f6818620eae9e94ebd2b6ad6d1f51c0633c4e3ddc50ef4792164c62cb4"
+    },
+    {
+      "path": "src/editor-bench/distribution-variant-adapter.ts",
+      "before": "17914d5a963fc16418cc8267bb44286eb0a68be62fcad7dea18a32edc0c46388",
+      "after": "0e84f3fa9825b204487e1f53e479dadaccb11f8cc477d5170ff94e8345ac1809"
+    },
+    {
+      "path": "src/editor-bench/schedule-routes.ts",
+      "before": "fdfe903aff6acf7c288706162f0629864742a8d10c3ae68a5b63f70b27904a39",
+      "after": "4165230413f7c869d10e6090ad20e1881130f2c1d61e65f5389bf5c15f4fbad1"
+    },
+    {
+      "path": "tests/editor-bench/conversation.test.ts",
+      "before": "968bc8981c9069052f70078dda4584794274e4effef59b327d430552fd3e30f1",
+      "after": "ad59b589da0b3f75bb8a8b0f4b37caac54a652430bff8266981bb6f1444a54d5"
+    },
+    {
+      "path": "web/app/editor-bench/EditorBenchClient.tsx",
+      "before": "c3075180c4640e3cf9b0dd49c7e952ecd34362cf8c1f305630a2332f001a6cd2",
+      "after": "c29612a936c52d4c80a1522bf3dcada6d423986edfed90dedeb133b716dfb839"
+    },
+    {
+      "path": "web/lib/editor-bench.ts",
+      "before": "e4f85d5b19c96fa1b8d8cc287f282d07a35695d18c5136c59222c66b19a0e451",
+      "after": "31854eab4dfd60aacc77c65a8a440bc5fd06d1fc6f4438091286031a22211553"
+    }
+  ],
+  "protectedSourcePathsUnchanged": 101,
+  "checks": {
+    "backendBuild": "Luna final build passed",
+    "broaderBackend": {
+      "files": 21,
+      "passed": 181,
+      "failed": 3,
+      "failures": [
+        {
+          "file": "tests/distribution-package.test.ts",
+          "tests": [
+            {
+              "name": "buildCrossPostPackageFromAttempt media resolution returns main media for Patreon full routing",
+              "error": "TypeError: Cannot read properties of undefined (reading 'findFirst')\n    at buildCrossPostPackageFromAttempt (C:\\Users\\jorda\\Documents\\Codex\\2026-10-11\\c\\work\\relay\\src\\distribution\\distribution-package.ts:155:54)\n    at processTicksAndRejections (node:internal/process/task_queues:103:5)\n    at C:\\Users\\jorda\\Documents\\Codex\\2026-10-11\\c\\work\\relay\\tests\\distribution-package.test.ts:37:20\n    at file:///C:/Users/jorda/Documents/Codex/2026-10-11/c/work/relay/node_modules/@vitest/runner/dist/chunk-hooks.js:752:20"
+            },
+            {
+              "name": "buildCrossPostPackageFromAttempt media resolution returns preview media for X preview routing",
+              "error": "TypeError: Cannot read properties of undefined (reading 'findFirst')\n    at buildCrossPostPackageFromAttempt (C:\\Users\\jorda\\Documents\\Codex\\2026-10-11\\c\\work\\relay\\src\\distribution\\distribution-package.ts:155:54)\n    at processTicksAndRejections (node:internal/process/task_queues:103:5)\n    at C:\\Users\\jorda\\Documents\\Codex\\2026-10-11\\c\\work\\relay\\tests\\distribution-package.test.ts:65:20\n    at file:///C:/Users/jorda/Documents/Codex/2026-10-11/c/work/relay/node_modules/@vitest/runner/dist/chunk-hooks.js:752:20"
+            },
+            {
+              "name": "buildCrossPostPackageFromAttempt media resolution returns invalid_media_binding when preview id missing from plan",
+              "error": "TypeError: Cannot read properties of undefined (reading 'findFirst')\n    at buildCrossPostPackageFromAttempt (C:\\Users\\jorda\\Documents\\Codex\\2026-10-11\\c\\work\\relay\\src\\distribution\\distribution-package.ts:155:54)\n    at processTicksAndRejections (node:internal/process/task_queues:103:5)\n    at C:\\Users\\jorda\\Documents\\Codex\\2026-10-11\\c\\work\\relay\\tests\\distribution-package.test.ts:97:20\n    at file:///C:/Users/jorda/Documents/Codex/2026-10-11/c/work/relay/node_modules/@vitest/runner/dist/chunk-hooks.js:752:20"
+            }
+          ]
+        }
+      ],
+      "knownFailureCause": "The pre-existing distribution-package stub lacks postDistributionPlan.findFirst used by separate posting-rhythm work. Production package and fixture remain byte-identical to this ticket baseline; not fixed here."
+    },
+    "httpProof": "outputs/editor-bench-preview-draft-schedule-http-bps01-recheck.json",
+    "httpChecks": {
+      "twoSchedulesOnExistingDraftIds": true,
+      "exactPreviewAndCopy": true,
+      "noProductionWrites": true,
+      "creationReceiptsAndOriginalsUnchanged": true,
+      "currentContextOnReplay": true,
+      "goalCancellationAndExclusionsPreserved": true,
+      "londonSummerAndWinterResolved": true,
+      "invalidPastForeignRejected": true,
+      "pendingReviewDoesNotCommit": true,
+      "ledgerUnchanged": true,
+      "priorReportsPreserved": 57,
+      "inputBytes": [
+        22575,
+        22682,
+        22704
+      ]
+    },
+    "tsxSyntaxOnly": "passed; zero parse diagnostics",
+    "whitespace": "six scoped diffs clean",
+    "scopedPonytailReview": "Reviewed only six task-file hunks versus work/bps01-baseline and connected calendar/media/event helpers. Same plan/variant IDs, immutable creation rows/receipts, current scheduled row, pinned preview-only media, exact copy, signed owner/session/token binding, one schedule per draft, expiry and future-time rechecks after awaits, atomic hook failure, stale-token rejection and current-snapshot replay checked. No remaining blocking task findings.",
+    "uiSourceReview": "Incumbent simple bench retained. Separate Review/Confirm, competing-review cleanup, labels/focus, disabled controls during confirmation, image alt/dimensions and wrapping checked. Frontend execution deferred."
+  },
+  "preservedFailure": {
+    "path": "outputs/editor-bench-preview-draft-schedule-http-bps01.json",
+    "cause": "Root canned cancellation omitted the existing schema-required requestQuote. Validator correctly clarified and retained goal. Root corrected its fixture only; no product change. Passing recheck is separate; original report preserved."
+  },
+  "runtime": {
+    "health": 200,
+    "backgroundWorkers": "disabled",
+    "reviewUnauthenticated": 401,
+    "previousPid": 49960,
+    "apiPid": 25800,
+    "confirmUnauthenticated": 401,
+    "temporaryStateReset": true,
+    "apiPort": 8788
+  },
+  "budget": {
+    "ledgerPath": "C:/Users/jorda/Documents/Codex/2026-10-11/c/work/relay/.relay-data/gallery-editor-budget.json",
+    "canonicalSha256": "699cab42ae296086d1b43a692edb047b8d9508b1343a3539a90e7fb94ab2fbf5",
+    "rows": 903,
+    "sha256": "699cab42ae296086d1b43a692edb047b8d9508b1343a3539a90e7fb94ab2fbf5",
+    "developmentRemainingUsd": 0.35674,
+    "heldoutRemainingUsd": 8.9690346,
+    "paidCalls": 0,
+    "priorReportsPreserved": 57
+  },
+  "limits": [
+    "Synthetic data and temporary in-memory manual events, not durable Schedule Rail or production DB writes",
+    "One explicitly selected confirmed draft, one schedule; existing Europe/London date/time resolver, resolved local and UTC shown",
+    "Originals, draft creation receipt, approved copy/export/source provenance preserved; current variant adds schedule only",
+    "32 draft identities/session and 1,024 adapter draft rows/API bound event growth; 64 schedule-token receipts/session; one pending schedule review, ten-minute expiry",
+    "JPEG limits unchanged:1 MiB each,4 MiB/session,32 MiB total; session idle expiry two hours/API restart loses access",
+    "Publishing remains manual; rescheduling, later editing, live Library/production persistence and extension handoff for these drafts remain separate work",
+    "No new model action/prompt/tool change or paid language-quality proof; no frontend tests/lint/typecheck/build/browser/render QA/detector"
+  ]
+}

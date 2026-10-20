@@ -1,6 +1,6 @@
 import { objectSchema, matchesSchema } from '../gallery-editor/action-validation.js';
 import { resolveAbsoluteTime } from '../conversational-planning/calendar-resolver.js';
-import { BENCH_IDS, createBenchMediaDescriptors, createBenchPostCards } from './fixtures.js';
+import { BENCH_IDS, createBenchFixture, createBenchMediaDescriptors, createBenchPostCards, type BenchFixture } from './fixtures.js';
 import { currentBenchRequestClock } from './routing.js';
 
 const nullable = (schema: Record<string, unknown>) => ({ anyOf: [schema, { type: 'null' }] });
@@ -54,10 +54,10 @@ const refuse = (code: string, message: string): ManualMapping => ({ kind: 'refus
 const refuseBatch = (code: string, message: string): ManualBatchMapping => ({ kind: 'refused', code, message });
 
 /** Pure, fixture-bounded mapping for one explicit X/DeviantArt posting cue. */
-export function mapManualPostingEvent(latestRequest: string, raw: unknown, postIds: string[], mediaIds: string[], now = new Date()): ManualMapping {
+export function mapManualPostingEvent(latestRequest: string, raw: unknown, postIds: string[], mediaIds: string[], now = new Date(), fixture: BenchFixture = createBenchFixture()): ManualMapping {
   if (!(now instanceof Date) || !Number.isFinite(now.getTime())) return refuse('invalid_clock', 'A valid server clock is required to review a future posting time.');
   if (!matchesSchema(raw, MANUAL_POSTING_EVENT_SCHEMA)) return refuse('invalid_manual_intent', 'The direct posting event did not match its strict shape.');
-  const mapped = mapManualEventDetails(latestRequest, raw as ManualPostingEventIntent, postIds, mediaIds, now);
+  const mapped = mapManualEventDetails(latestRequest, raw as ManualPostingEventIntent, postIds, mediaIds, now, fixture);
   return mapped.kind === 'proposal' ? { kind: 'proposal', proposal: mapped.proposal } : mapped;
 }
 
@@ -78,13 +78,13 @@ export function mapManualPostingBatch(latestRequest: string, raw: unknown, postI
   return { kind: 'proposal', proposals };
 }
 
-function mapManualEventDetails(latestRequest: string, intent: ManualPostingEventDetails, postIds: string[], mediaIds: string[], now: Date): ManualMapping {
+function mapManualEventDetails(latestRequest: string, intent: ManualPostingEventDetails, postIds: string[], mediaIds: string[], now: Date, fixture: BenchFixture = createBenchFixture()): ManualMapping {
   if (postIds.length !== 1 || !mediaIds.length || mediaIds.length > 3 || new Set(postIds).size !== 1 || new Set(mediaIds).size !== mediaIds.length ||
       !(BENCH_IDS.posts as readonly string[]).includes(postIds[0]!) || mediaIds.some(id => !(BENCH_IDS.media as readonly string[]).includes(id))) return refuse('single_fixture_required', 'Choose one sample post and one to three of its distinct sample media items.');
-  const media = mediaIds.map(id => createBenchMediaDescriptors().find(item => item.id === id));
+  const media = mediaIds.map(id => createBenchMediaDescriptors(fixture).find(item => item.id === id));
   if (media.some(item => !item || item.postId !== postIds[0])) return refuse('fixture_association_mismatch', 'The selected sample media must belong to the selected sample post.');
   if (intent.source_ref.mode === 'post_id' ? intent.source_ref.id !== postIds[0] : intent.source_ref.id !== null) return refuse('source_mismatch', 'The event source must be the currently selected sample post.');
-  const source = createBenchPostCards().find(post => post.postId === postIds[0]);
+  const source = createBenchPostCards(fixture).find(post => post.postId === postIds[0]);
   if (!source) return refuse('fixture_metadata_missing', 'The selected sample source could not be resolved.');
   return mapManualPostingCueItem(latestRequest, {
     destination: intent.destination, title_text: intent.title_text, time_kind: intent.time_kind, local_date: intent.local_date,

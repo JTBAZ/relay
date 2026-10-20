@@ -1,0 +1,4 @@
+{
+    "command":  "Scoped backend and pure Node transport suite; no frontend tests",
+    "exitCode":  1
+}

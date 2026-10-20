@@ -1,0 +1,200 @@
+{
+  "ticket": "BPV-01",
+  "date": "2026-10-19",
+  "passed": true,
+  "scope": "mock_previewizer_bridge",
+  "planner": "Sol High",
+  "implementer": "Luna High",
+  "paidCalls": 0,
+  "repository": {
+    "baselineHead": "cab68ef51d5930eee30f1098e680285185313f6f",
+    "currentHead": "6cabf841e38d8eece62fb7536efb1e2f260d9eb4",
+    "branch": "codex/local-build-2026-10-19",
+    "concurrentCommit": "Refresh replayed media URLs only for current revisions",
+    "concurrentPaths": [
+      ".scratch/batch-replay-and-revisions/issues/01-refresh-media-urls-without-crossing-revisions.md",
+      "docs/patreon-ingest-canonical.md",
+      "docs/pattern-library.md",
+      "src/ingest/apply-batch.ts",
+      "src/ingest/canonical-store-db.ts",
+      "tests/canonical-store-db-save.test.ts",
+      "tests/ingest-media-url-replay.test.ts"
+    ],
+    "taskScopeOverlap": false
+  },
+  "preservedAudit": "outputs/editor-bench-previewizer-bridge-proof.json",
+  "sourceScope": {
+    "src/editor-bench/conversation.ts": {
+      "sha256": "b904c4c299acb48e5a9b8d482d990d96a7b5a12dd24a57b6498ea988a906a2ea",
+      "hunks": [
+        "@@ -1,4 +1,4 @@",
+        "@@ -6,6 +6,8 @@ import { METADATA_SELECTION_SCHEMA, resolveMetadataSelector, type MetadataSelect",
+        "@@ -26,32 +28,137 @@ export type ConversationAction ="
+      ]
+    },
+    "src/editor-bench/routing.ts": {
+      "sha256": "8e0bc2c42a5b646f57fdfa9aae14974f9df49d6912c1acbf8ec177d821bb6073",
+      "hunks": [
+        "@@ -3,6 +3,7 @@ import { createCalendarResolver } from '../conversational-planning/calendar-reso",
+        "@@ -24,6 +25,14 @@ const xRequest = 'create an X teaser titled Aurora square using Square teaser';",
+        "@@ -97,7 +106,7 @@ function fixtureLookup(): TrustedLookup {"
+      ]
+    },
+    "src/editor-bench/schedule-routes.ts": {
+      "sha256": "ead78a2b08d7c91e2102b1a94fe8beca3cd1a7e6f8f947f0ea3b0b9cef4fb854",
+      "hunks": [
+        "@@ -1,5 +1,6 @@",
+        "@@ -9,7 +10,7 @@ import { reviewBenchSchedule, type ScheduleReview, type ScheduleReviewPayload }",
+        "@@ -352,6 +353,87 @@ export function registerBenchScheduleRoutes(app: express.Application, options: B",
+        "@@ -362,6 +444,7 @@ export function registerBenchScheduleRoutes(app: express.Application, options: B",
+        "@@ -402,12 +485,14 @@ export function registerBenchScheduleRoutes(app: express.Application, options: B",
+        "@@ -418,6 +503,7 @@ export function registerBenchScheduleRoutes(app: express.Application, options: B",
+        "@@ -502,6 +588,7 @@ export function registerBenchScheduleRoutes(app: express.Application, options: B"
+      ]
+    },
+    "tests/editor-bench/conversation.test.ts": {
+      "sha256": "96ae99fe20833b3c478c9424332f723ca193f679014648cc301d5f64f21559fe",
+      "hunks": [
+        "@@ -1,7 +1,9 @@",
+        "@@ -31,6 +33,13 @@ async function turn(app: express.Express, session: any, latestRequest: string) {",
+        "@@ -264,4 +273,108 @@ describe('mock editor-bench conversation', () => {"
+      ]
+    },
+    "web/app/components/distribution/PreviewizerOverlay.tsx": {
+      "sha256": "5602acdb5253560421882b0302028dc6c23e13a43cc631fbb58b0eca7221b96c",
+      "hunks": [
+        "@@ -2,7 +2,7 @@",
+        "@@ -32,6 +32,8 @@ type Props = {",
+        "@@ -43,8 +45,10 @@ export function PreviewizerOverlay({",
+        "@@ -59,14 +63,34 @@ export function PreviewizerOverlay({"
+      ]
+    },
+    "web/app/components/previewizer/previewizer-client.tsx": {
+      "sha256": "4b5139b78906b5d3aab635b2e51722f3166f8565eedf2e8369ca90db2b80dc4f",
+      "hunks": [
+        "@@ -151,9 +151,10 @@ export default function PreviewizerClient({",
+        "@@ -331,7 +332,7 @@ export default function PreviewizerClient({",
+        "@@ -364,7 +365,7 @@ export default function PreviewizerClient({",
+        "@@ -439,7 +440,7 @@ export default function PreviewizerClient({",
+        "@@ -450,17 +451,17 @@ export default function PreviewizerClient({",
+        "@@ -491,7 +492,7 @@ export default function PreviewizerClient({",
+        "@@ -521,7 +522,7 @@ export default function PreviewizerClient({",
+        "@@ -820,11 +821,12 @@ export default function PreviewizerClient({",
+        "@@ -1070,16 +1072,22 @@ export default function PreviewizerClient({",
+        "@@ -1092,12 +1100,12 @@ export default function PreviewizerClient({",
+        "@@ -1109,15 +1117,17 @@ export default function PreviewizerClient({",
+        "@@ -1138,7 +1148,7 @@ export default function PreviewizerClient({",
+        "@@ -1233,7 +1243,7 @@ export default function PreviewizerClient({",
+        "@@ -1438,7 +1448,7 @@ export default function PreviewizerClient({"
+      ]
+    },
+    "web/app/components/previewizer/previewizer-export-modal.tsx": {
+      "sha256": "f009bcc921777b88e0a4ffa0d3f86d40587ef5a6c0673fdb54215e24f726185e",
+      "hunks": [
+        "@@ -64,7 +64,7 @@ export function PreviewizerExportModal({",
+        "@@ -212,8 +212,9 @@ export function PreviewizerExportModal({"
+      ]
+    },
+    "web/app/editor-bench/EditorBenchClient.tsx": {
+      "sha256": "2132baa4037ea758e3e5e55ba9c00dd59a6d2c8e99d80ca07976888fa88d6a3c",
+      "hunks": [
+        "@@ -3,10 +3,11 @@",
+        "@@ -112,6 +113,11 @@ export default function EditorBenchClient() {",
+        "@@ -269,7 +275,7 @@ export default function EditorBenchClient() {",
+        "@@ -290,6 +296,63 @@ export default function EditorBenchClient() {",
+        "@@ -508,7 +571,7 @@ export default function EditorBenchClient() {",
+        "@@ -741,7 +804,7 @@ export default function EditorBenchClient() {",
+        "@@ -758,9 +821,24 @@ export default function EditorBenchClient() {",
+        "@@ -922,5 +1000,14 @@ export default function EditorBenchClient() {"
+      ]
+    },
+    "web/lib/editor-bench.ts": {
+      "sha256": "bfa705bcc01014192cbea266de6299f3e045b779b965df608b7da902ecc464be",
+      "hunks": [
+        "@@ -1,4 +1,5 @@",
+        "@@ -53,7 +54,9 @@ export type ScheduleReviewResponse = ScheduleReviewResult | ScheduleBatchReviewR",
+        "@@ -109,6 +112,18 @@ export function sendBenchConversationTurn(input: { sessionId: string; revision:"
+      ]
+    },
+    "web/lib/previewizer-session.ts": {
+      "sha256": "cbe21fccb3297b4fdbc207dff040bc6c52850243a3de250500bed54bcf4293b1",
+      "hunks": [
+        "@@ -10,6 +10,8 @@ export type PreviewizerSession = {",
+        "@@ -25,13 +27,15 @@ export type PreviewizerResult = {",
+        "@@ -40,6 +44,9 @@ export function buildPreviewizerSession(args: {"
+      ]
+    }
+  },
+  "checks": {
+    "backendTests": {
+      "passed": 164,
+      "total": 164,
+      "files": 20,
+      "command": "npx vitest run tests/editor-bench tests/distribution-platform-formatters.test.ts tests/distribution-media-binding.test.ts tests/distribution-package.test.ts tests/post-distribution-identity.test.ts"
+    },
+    "focusedWorkerTests": {
+      "passed": 14,
+      "total": 14
+    },
+    "backendBuild": {
+      "passed": true,
+      "command": "npm run build",
+      "reportedBy": "Luna High"
+    },
+    "syntaxGuard": {
+      "path": "web/app/editor-bench/EditorBenchClient.tsx",
+      "parseDiagnostics": 0
+    },
+    "httpProof": "outputs/editor-bench-previewizer-bridge-http-bpv01.json",
+    "whitespace": true,
+    "unchangedProtectedFiles": 76,
+    "preservedReports": 51,
+    "externalReportLinksPreserved": 4,
+    "branchUnchanged": true,
+    "concurrentCommitOutsideTask": true
+  },
+  "review": {
+    "skill": "Ponytail Review",
+    "baseline": "work/bpv01-baseline/baseline.json",
+    "scope": "Only the ten listed task-file hunks plus callers/dependencies; excludes unrelated working-tree changes",
+    "blockingFindings": [],
+    "fixed": [
+      "Stale upload returns a conflict instead of hanging",
+      "Expired attempts and sessions release storage before accounting",
+      "Bounded JPEG decoding rejects invalid bytes",
+      "Late UI responses cannot replace a newer conversation",
+      "Cancellation is blocked during explicit preview completion",
+      "Source label session types and nullable preparation access corrected",
+      "Bench-only focus containment and opener restoration"
+    ],
+    "uiGuidelinesSource": "https://raw.githubusercontent.com/vercel-labs/web-interface-guidelines/main/command.md",
+    "uiVerification": "Source only; retained existing visual design"
+  },
+  "budget": {
+    "authoritativeLedger": "C:/Users/jorda/Documents/Codex/2026-10-11/c/work/relay/.relay-data/gallery-editor-budget.json",
+    "rows": 903,
+    "sha256": "699cab42ae296086d1b43a692edb047b8d9508b1343a3539a90e7fb94ab2fbf5",
+    "developmentRemainingUsd": 0.35674,
+    "heldoutRemainingUsd": 8.9690346,
+    "unchanged": true
+  },
+  "runtime": {
+    "apiPid": 12316,
+    "apiPort": 8788,
+    "healthStatus": 200,
+    "protectedPreviewRouteStatus": 401,
+    "webPid": 46996,
+    "webPort": 3000,
+    "postgresPid": 19664,
+    "postgresPort": 5433,
+    "backgroundWorkersDisabled": true
+  },
+  "limits": [
+    "Mock source artwork and API-instance memory only; lost on restart or session expiry",
+    "HTTP proof generated JPEG bytes with sharp; no browser renderer proof",
+    "Frontend tests/lint/typecheck/build/browser/detector deferred; only single-file syntax parse ran",
+    "No real Library/database/media staging, publishing, migrations, environment-file changes, commits or push",
+    "No unscheduled X draft creation or production CP11 provenance; no next ticket dispatched",
+    "Model prompt/schema/runtime/cap unchanged; no new paid language-quality proof"
+  ]
+}

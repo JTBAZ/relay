@@ -1,0 +1,14 @@
+{
+  "origin": "Native loopback browser screenshot. Padding cropped only, no scaling or UI alteration.",
+  "raw": "mobile-viewport-raw.jpg",
+  "cssViewport": [
+    390,
+    845
+  ],
+  "crop": [
+    0,
+    0,
+    390,
+    845
+  ]
+}

@@ -1,0 +1,39 @@
+{
+  "ticket": "BGB-01",
+  "passed": true,
+  "paidCalls": 0,
+  "stage": "complete",
+  "checks": {
+    "twoArtworkByTwoDestinationMatrix": true,
+    "oneExportPerArtwork": true,
+    "explicitPerCellConfirmations": true,
+    "ownerAndRevisionGuards": true,
+    "skipRestoreAndContextSurviveDestinationNarrowing": true,
+    "partialFailureRetainsConfirmedCell": true,
+    "staleNeighborReviewRefused": true,
+    "unsupportedMixedTargetClarifiesUnchanged": true,
+    "copyChangesDoNotReuseOldConfirmation": true,
+    "immutableOriginalsAndCreationHistory": true,
+    "separateScheduleAndManualHandoffConfirmations": true,
+    "exactConfirmedCopyAndJpegPackages": true,
+    "untouchedNeighborScheduling": true,
+    "refreshReadbackAndExpiry": true,
+    "priorReportsPreserved": 64,
+    "ledgerUnchanged": true,
+    "modelCalls": 8,
+    "inputBytes": [
+      22943,
+      23077,
+      23105,
+      23092,
+      23116,
+      23111,
+      23121,
+      23110
+    ]
+  },
+  "limits": [
+    "Synthetic Express HTTP, canned provider and generated JPEG only; no browser or front-end testing.",
+    "Extension authentication callback is stubbed; installed extension and live platform filling are not exercised."
+  ]
+}

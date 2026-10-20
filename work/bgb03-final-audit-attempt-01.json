@@ -1,0 +1,8 @@
+{
+  "status": "failed_before_execution",
+  "nodeExitCode": 1,
+  "shellExitCode": 0,
+  "error": "Inline documentation audit had one extra closing parenthesis; Node rejected it before execution. Subsequent health probe returned 200.",
+  "productFilesChanged": false,
+  "correction": "Use work/bgb03-final-audit.mjs and preserve its result separately."
+}

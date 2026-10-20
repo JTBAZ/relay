@@ -16,6 +16,7 @@ describe("worker entry smoke", () => {
         env: {
           ...process.env,
           RELAY_JOB_BACKEND: "memory",
+          RELAY_DB_STORE_PATREON_COOKIE: "1",
           // Worker subprocess inherits NODE_ENV=test from Vitest; logger defaults to silent — allow banner assertion.
           LOG_LEVEL: "info",
           RELAY_TOKEN_ENCRYPTION_KEY:

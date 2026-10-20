@@ -1,0 +1,41 @@
+[dotenv@17.3.1] injecting env (18) from .env -- tip: 🔐 prevent building .env in docker: https://dotenvx.com/prebuild
+
+ RUN  v3.2.4 C:/Users/jorda/Documents/Codex/2026-10-11/c/work/relay
+
+ ✓ tests/automations/automation-materializer.test.ts (11 tests) 32ms
+ ❯ tests/automations/delayed-release.test.ts (7 tests | 1 failed) 16ms
+   ✓ delayed public release wrapper (B07) > creates owned delayed rule with locked trigger/transform/draftOnly and no series 2ms
+   ✓ delayed public release wrapper (B07) > retries create safely with client_mutation_key 1ms
+   ✓ delayed public release wrapper (B07) > syncs offset/destinations/remind/title and rejects stale version 2ms
+   ✓ delayed public release wrapper (B07) > preserves mutation-key rule title when patching display title 1ms
+   × delayed public release wrapper (B07) > blocks legacy patch/delete on automation-owned rules; legacy unowned still works 6ms
+     → Manage this rule in Posting Rhythms.
+   ✓ delayed public release wrapper (B07) > archive pauses owned rule; shared discover creates one run per published post 2ms
+   ✓ delayed public release wrapper (B07) > does not add a second delayed-release worker or discovery path 2ms
+ ✓ tests/automations/spine-characterization.test.ts (10 tests) 14ms
+ ✓ tests/posting-rhythms/contract.test.ts (7 tests) 7ms
+ ✓ tests/web/automations-flow.test.tsx (7 tests) 453ms
+ ✓ tests/web/automations-modal.test.tsx (8 tests) 114ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/automations/delayed-release.test.ts > delayed public release wrapper (B07) > blocks legacy patch/delete on automation-owned rules; legacy unowned still works
+DistributionRuleValidationError: Manage this rule in Posting Rhythms.
+ ❯ assertRuleNotOwnedByAutomation src/autopost/distribution-rule-service.ts:146:24
+    144| ): Promise<void> {
+    145|   const rhythmOwned=await prisma.creatorDistributionRule.findFirst({wh…
+    146|   if(rhythmOwned)throw new DistributionRuleValidationError("Manage thi…
+       |                        ^
+    147|   const owned = await prisma.creatorAutomation.findFirst({
+    148|     where: { distributionRuleId: ruleId, creatorId },
+ ❯ Module.patchDistributionRule src/autopost/distribution-rule-service.ts:264:3
+ ❯ tests/automations/delayed-release.test.ts:375:21
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed | 5 passed (6)
+      Tests  1 failed | 49 passed (50)
+   Start at  21:28:05
+   Duration  10.23s (transform 1.08s, setup 55ms, collect 8.46s, tests 636ms, environment 440ms, prepare 167ms)
+

@@ -1,0 +1,1 @@
+{"command":"npm exec vitest -- run tests/editor-bench/conversation.test.ts --testTimeout=30000 --reporter=json --outputFile=work/bgb01-luna-focused-02.json","exitCode":1}

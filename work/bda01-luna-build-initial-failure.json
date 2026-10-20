@@ -1,0 +1,5 @@
+{
+  "exitCode": 2,
+  "command": "npm run build",
+  "failure": "The first build reached TypeScript and failed because shared route `destination` values were inferred as string instead of the literal union. Relevant diagnostics were schedule-routes.ts line 594: pending handoff review destination incompatible with BenchConversationXHandoffReview; expected \"x\" | \"deviantart\", received string. Fixed by annotating the six destination route locals."
+}

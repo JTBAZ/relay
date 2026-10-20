@@ -1,0 +1,10 @@
+{
+  "ticket": "BPV-01",
+  "date": "2026-10-19",
+  "passed": false,
+  "scope": "mock_previewizer_bridge",
+  "planner": "Sol High",
+  "implementer": "Luna High",
+  "paidCalls": 0,
+  "error": "Expected values to be strictly equal:\n+ actual - expected\n\n+ '6cabf841e38d8eece62fb7536efb1e2f260d9eb4'\n- 'cab68ef51d5930eee30f1098e680285185313f6f'\n"
+}

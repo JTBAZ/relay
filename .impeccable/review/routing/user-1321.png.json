@@ -1,0 +1,17 @@
+{
+  "origin": "Native loopback browser screenshot; padding crop only, no scaling or UI alteration. Native output may be smaller than CSS viewport.",
+  "cssViewport": [
+    1321,
+    854
+  ],
+  "nativeSize": [
+    1937,
+    1273
+  ],
+  "crop": [
+    0,
+    0,
+    1321,
+    854
+  ]
+}

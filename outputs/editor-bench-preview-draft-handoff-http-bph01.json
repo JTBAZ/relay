@@ -1,0 +1,31 @@
+{
+  "ticket": "BPH-01",
+  "passed": true,
+  "scope": "canned_mock_http_no_browser",
+  "paidCalls": 0,
+  "checks": {
+    "unscheduledRefused": true,
+    "contextAfterExclusionAndGoalCancellation": true,
+    "reviewNoRowsChanged": true,
+    "explicitConfirmedReceipt": true,
+    "extensionGrantAndCreatorScoped": true,
+    "mixedSessionAndOriginalFallbackRejected": true,
+    "exactCopyAndPinnedJpeg": true,
+    "creationScheduleRowsAndReceiptsUnchanged": true,
+    "staleUnconfirmedTokenRejected": true,
+    "successfulReplayImmutableWithCurrentContext": true,
+    "production404": true,
+    "expiredSessionDeniesPackageAndBytes": true,
+    "inputBytes": [
+      22544,
+      22637,
+      22669
+    ],
+    "ledgerUnchanged": true,
+    "priorReportsPreserved": 60
+  },
+  "limits": [
+    "Mock data only; no browser, X fill or publication tested",
+    "Extension grants stubbed at injected auth seam; server wiring source-reviewed"
+  ]
+}

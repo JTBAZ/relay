@@ -1,0 +1,107 @@
+{
+  "ticket": "BCT-01",
+  "date": "2026-10-19",
+  "mode": "canned_mock_http",
+  "passed": true,
+  "calls": [
+    {
+      "expectedKind": "selection",
+      "paid": false,
+      "actualKind": "selection",
+      "inputBytes": 22949,
+      "inputSha256": "088f1a14829086cb26bc027411b82d8cbd14c05a49e77192272deaaf649ec40e",
+      "catalogSize": 16,
+      "currentRevision": 0,
+      "groundedTargetQuote": null,
+      "replacementSha256": null,
+      "usage": null
+    },
+    {
+      "expectedKind": "rename",
+      "paid": false,
+      "actualKind": "rename",
+      "inputBytes": 23049,
+      "inputSha256": "e2f451933bda9a26517048f6e1524abaccd356b9c882533fbca7bec44136e7f2",
+      "catalogSize": 16,
+      "currentRevision": 1,
+      "groundedTargetQuote": "selected post",
+      "replacementSha256": "e6668054a3add820c69808fb75948e9dd4b73dc8c080c9c22e046ae29771f301",
+      "usage": null
+    },
+    {
+      "expectedKind": "posting",
+      "paid": false,
+      "actualKind": "posting",
+      "inputBytes": 23115,
+      "inputSha256": "19178b3f3777fd4274ff6370bb0d7b8ca693b46e2e89309b0b3c2c03fa95f4b7",
+      "catalogSize": 16,
+      "currentRevision": 2,
+      "groundedTargetQuote": null,
+      "replacementSha256": null,
+      "usage": null
+    }
+  ],
+  "turns": [
+    {
+      "requestSha256": "0719f605180b8c8abe39d9cb62c4e91e4ce4ac4d5cd15a4140c4ce330a62b99a",
+      "httpStatus": 200,
+      "outcome": "selected",
+      "diagnostic": null,
+      "renameValidation": null,
+      "message": null,
+      "passed": true
+    },
+    {
+      "requestSha256": "ede5d5afd4cecd5eefdd4ee75abfb2ac2aaa77a7e3d831b9f5406a65fe87a918",
+      "httpStatus": 200,
+      "outcome": "review",
+      "diagnostic": null,
+      "renameValidation": null,
+      "message": null,
+      "passed": true
+    },
+    {
+      "requestSha256": "192f509e7c0f0e31b52d36d9bfb1a78498bf6ce5ffa31af0eafa72e60ab17b73",
+      "httpStatus": 200,
+      "outcome": "review",
+      "diagnostic": null,
+      "renameValidation": null,
+      "message": null,
+      "passed": true
+    }
+  ],
+  "checks": {
+    "selectionAndExclusionsPreserved": true,
+    "literalRenameSeparateConfirmation": true,
+    "currentNameInNextModelTurn": true,
+    "currentSourcePinnedToPosting": true,
+    "postingSeparateConfirmation": true,
+    "immutableReceiptRetryWithCurrentContext": true,
+    "ownedReadOnlySnapshotRecovery": true,
+    "foreignAndStaleNoProviderCall": true,
+    "originalFixtureUnchanged": true,
+    "linkedDraftAndPendingEvent": true,
+    "databaseAndPublishOperations": 0
+  },
+  "limitations": [
+    "Synthetic fixture only",
+    "Ephemeral API-instance session and posting records",
+    "Frontend execution deferred",
+    "No real Library, database or platform operations"
+  ],
+  "priorFailureSha256": "543a6df1f838985a882c71dc4ca4eebec2bbe07c27503b84838b3955f761ac6b",
+  "selectionProvenance": "Canned seed from prior passing live selection; corrective paid calls cover rename and posting only",
+  "budget": {
+    "initialRows": 896,
+    "finalRows": 896,
+    "previousRowsUnchanged": true,
+    "providerCalls": 3,
+    "paidCalls": 0,
+    "reservationsUsd": 0,
+    "actualUsd": 0,
+    "ledgerSha256": "aafac7652e40b925e35017b08d8c38318cddeb4027c680025735c03eedefeb6a",
+    "newRows": [],
+    "combinedPaidCalls": 2,
+    "combinedReservationsUsd": 0.016943599999999996
+  }
+}

@@ -1,0 +1,164 @@
+{
+  "ticket": "BPX-01",
+  "acceptedFor": "temporary mock backend and source-reviewed bench wiring",
+  "date": "2026-10-19",
+  "models": {
+    "plan": "Sol High",
+    "implementation": "Luna High",
+    "review": "root"
+  },
+  "branch": "codex/local-build-2026-10-19",
+  "baselineHead": "9e86c0cb8400c1623bdb085ae466792b6081d88b",
+  "head": "a4158c3c1005ffd823720caf5b6e7bb68f0831dd",
+  "concurrentCommitPaths": [
+    ".scratch/batch-replay-and-revisions/issues/03-reactivate-media-on-fresh-revisions.md",
+    "docs/patreon-ingest-canonical.md",
+    "docs/pattern-library.md",
+    "src/ingest/apply-batch.ts",
+    "tests/canonical-store-db-save.test.ts",
+    "tests/ingest-deletion-replay.test.ts",
+    "tests/ingest-media-url-replay.test.ts",
+    "tests/workstream-b.ingest.test.ts"
+  ],
+  "taskScope": [
+    {
+      "path": "src/editor-bench/conversation.ts",
+      "before": "b904c4c299acb48e5a9b8d482d990d96a7b5a12dd24a57b6498ea988a906a2ea",
+      "after": "5de984447e042d2b93a60d255debca54b3f79823d4b1f198bda3821de30c5a8e"
+    },
+    {
+      "path": "src/editor-bench/distribution-variant-adapter.ts",
+      "before": "959f7c60345987aea66ded02fa5746a712a64ce42403d55856d5b74183b5cd10",
+      "after": "17914d5a963fc16418cc8267bb44286eb0a68be62fcad7dea18a32edc0c46388"
+    },
+    {
+      "path": "src/editor-bench/schedule-routes.ts",
+      "before": "5694b8b3a1aed909c84e9ec55e168720703f988aabf4c8d38f2cc3de8cc79329",
+      "after": "fdfe903aff6acf7c288706162f0629864742a8d10c3ae68a5b63f70b27904a39"
+    },
+    {
+      "path": "tests/editor-bench/conversation.test.ts",
+      "before": "d77a147bbe9ade1dbc7d8d50f807dda134c3621d6c1378d51edfafd8989765ee",
+      "after": "968bc8981c9069052f70078dda4584794274e4effef59b327d430552fd3e30f1"
+    },
+    {
+      "path": "web/app/editor-bench/EditorBenchClient.tsx",
+      "before": "24373555f3b77ec8860b483e8f8de2788d652b86acb67d71ecbc589dae9e4a91",
+      "after": "c3075180c4640e3cf9b0dd49c7e952ecd34362cf8c1f305630a2332f001a6cd2"
+    },
+    {
+      "path": "web/lib/editor-bench.ts",
+      "before": "8ff8e5ac86ddb88cda58feda9731b65739ada9169ffff6b5cfccde2fb45b82ad",
+      "after": "e4f85d5b19c96fa1b8d8cc287f282d07a35695d18c5136c59222c66b19a0e451"
+    },
+    {
+      "path": "web/next.config.mjs",
+      "before": "2719c314b8adae83499f626f810367c75d9ffaa183aca130fd633472940748f4",
+      "after": "d81caef455d814b925d56597ecc19458fd919d6a04506d8b343b7e5d8a91c4b6"
+    }
+  ],
+  "protectedSourcePathsUnchanged": 92,
+  "checks": {
+    "focusedConversation": {
+      "passed": 21,
+      "failed": 0
+    },
+    "backendBuild": "passed by Luna after final source edits",
+    "broaderBackend": {
+      "files": 20,
+      "passedFiles": 19,
+      "failedFiles": 1,
+      "passed": 168,
+      "failed": 3,
+      "command": "npx vitest run tests/editor-bench tests/distribution-platform-formatters.test.ts tests/distribution-media-binding.test.ts tests/distribution-package.test.ts tests/post-distribution-identity.test.ts",
+      "failures": {
+        "file": "tests/distribution-package.test.ts",
+        "tests": [
+          "returns main media for Patreon full routing",
+          "returns preview media for X preview routing",
+          "returns invalid_media_binding when preview id missing from plan"
+        ],
+        "error": "TypeError: Cannot read properties of undefined (reading 'findFirst')",
+        "location": "src/distribution/distribution-package.ts:155",
+        "cause": "Separate uncommitted posting-rhythm integration calls prisma.postDistributionPlan.findFirst; existing stub does not define postDistributionPlan.",
+        "ownership": "Outside BPX-01; production package and fixture were not edited by this task. Timing relative to BPX baseline is unknown; not claimed as a baseline failure.",
+        "fixed": false
+      }
+    },
+    "compiledHttpProof": "outputs/editor-bench-previewizer-x-draft-http-bpx01.json",
+    "httpChecks": {
+      "twoConfirmedPreviewDrafts": true,
+      "copyChangeCreatesSeparateImmutableDraft": true,
+      "previewOnlyRouting": true,
+      "noEventsOrOriginalEdits": true,
+      "pinnedJpegSurvivesDeselection": true,
+      "retryReturnsCreationReceiptAndCurrentSelection": true,
+      "foreignMediaDenied": true,
+      "ledgerUnchanged": true,
+      "previousReportsUnchanged": 55
+    },
+    "tsxSyntaxOnly": "passed; zero TypeScript parser diagnostics for EditorBenchClient.tsx",
+    "whitespace": [
+      {
+        "file": "src/editor-bench/conversation.ts",
+        "clean": true
+      },
+      {
+        "file": "src/editor-bench/distribution-variant-adapter.ts",
+        "clean": true
+      },
+      {
+        "file": "src/editor-bench/schedule-routes.ts",
+        "clean": true
+      },
+      {
+        "file": "tests/editor-bench/conversation.test.ts",
+        "clean": true
+      },
+      {
+        "file": "web/app/editor-bench/EditorBenchClient.tsx",
+        "clean": true
+      },
+      {
+        "file": "web/lib/editor-bench.ts",
+        "clean": true
+      },
+      {
+        "file": "web/next.config.mjs",
+        "clean": true
+      }
+    ],
+    "scopedPonytailReview": "No remaining blocking findings in the seven task-file hunks versus work/bpx01-baseline and their callers. Checked owner and source/export binding, exact copy, pending review invalidation, successful-token replay, immutable receipts, failed-commit atomicity, confirmation races and bounded shared-byte retention.",
+    "uiSourceReview": "Semantic buttons, focus states, image dimensions/alt, text wrapping and readable field differences checked against current Web Design Guidelines; no rendered or browser check."
+  },
+  "runtime": {
+    "apiPort": 8788,
+    "previousPid": 48724,
+    "apiPid": 49960,
+    "health": 200,
+    "unauthenticatedReview": 401,
+    "unauthenticatedConfirm": 401,
+    "backgroundWorkers": "disabled",
+    "temporarySessionsReset": true
+  },
+  "budget": {
+    "ledgerPath": "C:/Users/jorda/Documents/Codex/2026-10-11/c/work/relay/.relay-data/gallery-editor-budget.json",
+    "canonicalSha256": "699cab42ae296086d1b43a692edb047b8d9508b1343a3539a90e7fb94ab2fbf5",
+    "rows": 903,
+    "sha256": "699cab42ae296086d1b43a692edb047b8d9508b1343a3539a90e7fb94ab2fbf5",
+    "developmentRemainingUsd": 0.35674,
+    "heldoutRemainingUsd": 8.9690346,
+    "paidCalls": 0,
+    "priorReportsPreserved": 55
+  },
+  "limits": [
+    "Mock fixtures and temporary API-instance records; no live Library or database draft persistence",
+    "One selected completed export per review; separate explicit Confirm creates an unscheduled draft, no event",
+    "Publishing remains manual; this ticket does not add extension handoff for unscheduled drafts",
+    "Initial template provenance and revision-0 history recorded; changing copy or export makes another immutable draft, not an edit of the earlier one",
+    "32 draft identities and 64 successful review-token receipts per session; 1,024 adapter draft rows per API instance",
+    "JPEG <=1 MiB; shared retained bytes <=4 MiB per session /32 MiB total; session expires after two idle hours; API restart clears state",
+    "Frontend tests, lint, typecheck, build, detector and browser/render QA deferred; real browser export and JPEG rewrite journey unverified",
+    "No paid-language proof; deterministic mock HTTP proof and existing prompt-size cap only"
+  ]
+}

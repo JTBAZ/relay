@@ -3,6 +3,7 @@ import { createCalendarResolver } from '../conversational-planning/calendar-reso
 import { interpretRequest, type InterpretedRequest, type PlanningProvider, type PlanningProviderResponse } from '../conversational-planning/intent.js';
 import { BENCH_CREATOR_ID, BENCH_IDS, createBenchFixture, createBenchMediaDescriptors, createBenchPostCards, type BenchExample } from './fixtures.js';
 import type { BenchProvenance, BenchRequest, BenchResponse, BenchStatus } from './curation.js';
+import type { PreviewTemplateConfigV1 } from '../distribution/preview-template-config.js';
 
 export type PostingExample = Omit<BenchExample, 'mode'> & { mode: 'mock_posting' };
 export interface RunPostingOptions { provider?: PlanningProvider; signal?: AbortSignal; now?: () => Date; useCurrentClock?: boolean }
@@ -24,6 +25,14 @@ const xRequest = 'create an X teaser titled Aurora square using Square teaser';
 const daRequest = 'create a DeviantArt teaser titled Aurora gallery using Square teaser';
 const replyRequest = 'prepare a disabled X reply block placeholder one day after publication at 10:00 Europe/London';
 const checkRequest = 'prepare a disabled X engagement check placeholder two days after publication at 10:00 Europe/London';
+const squarePreviewTemplate: PreviewTemplateConfigV1 = {
+  schemaVersion: 1, preset: 'tight_crop', aspectKey: '1:1', compositionId: null, compositionProps: null,
+  compositionVariantIndex: null, overlayDoc: {}, templateOptions: {},
+  destination: { selectedDestinationId: 'x', customDestinationUrl: null },
+};
+export function getBenchSquarePreviewTemplate() {
+  return { id: 'bench_template_square' as const, name: 'Square teaser' as const, config: structuredClone(squarePreviewTemplate) };
+}
 export const POSTING_EXAMPLES: PostingExample[] = [{
   id: 'blocked-handoffs-and-paused-followups', mode: 'mock_posting', title: 'Blocked handoffs and paused follow-ups',
   latestRequest: `${primaryRequest}, ${xRequest}, and ${daRequest}, then ${replyRequest} and ${checkRequest}.`,
@@ -97,7 +106,7 @@ function fixtureLookup(): TrustedLookup {
     const seriesMember = fixture.state.tables.seriesMembers.find(row => row.creativeWorkId === member.creativeWorkId);
     return { id: post.postId, creatorId: BENCH_CREATOR_ID, publishState: statePost.status === 'published' ? 'published' as const : 'draft' as const, effectiveTitle: post.title, mediaIds: [...post.mediaIds], creativeWorkId: member.creativeWorkId as string, seriesMemberId: typeof seriesMember?.id === 'string' ? seriesMember.id : null, verifiedPartLabel: typeof seriesMember?.partLabel === 'string' ? seriesMember.partLabel : null };
   });
-  const template = { id: 'bench_template_square', creatorId: BENCH_CREATOR_ID, name: 'Square teaser', config: { schemaVersion: 1, preset: 'tight_crop', aspectKey: '1:1', compositionId: null, compositionProps: null, compositionVariantIndex: null, overlayDoc: {}, templateOptions: {}, destination: { selectedDestinationId: 'x', customDestinationUrl: null } }, updatedAt: '2026-10-15T10:00:00.000Z' };
+  const template = { ...getBenchSquarePreviewTemplate(), creatorId: BENCH_CREATOR_ID, updatedAt: '2026-10-15T10:00:00.000Z' };
   return {
     async loadMedia(_creator, ids) { return mediaRows.filter(row => ids.includes(row.id)); },
     async loadPosts(_creator, ids) { return postRows.filter(row => ids.includes(row.id)); },

@@ -1,0 +1,20 @@
+
+> relay@0.1.0 test
+> vitest run tests/editor-bench/conversation.test.ts --testTimeout=30000
+
+[dotenv@17.3.1] injecting env (18) from .env -- tip: ⚙️  write to custom object with { processEnv: myObject }
+
+ RUN  v3.2.4 C:/Users/jorda/Documents/Codex/2026-10-11/c/work/relay
+
+ ✓ tests/editor-bench/conversation.test.ts (28 tests) 5908ms
+   ✓ mock editor-bench conversation > grounds rename titles in one exact balanced quote and independently grounds the target  923ms
+   ✓ mock editor-bench conversation > reviews and confirms one exact-copy X draft, rejects a superseded token, and retains its owned export  592ms
+   ✓ mock editor-bench conversation > schedules only an explicitly reviewed confirmed X draft and keeps creation receipts unchanged  505ms
+   ✓ mock editor-bench conversation > refuses a schedule review that expires during the adapter commit hook  393ms
+   ✓ mock editor-bench conversation > keeps DeviantArt title, empty description, tags and pinned JPEG exact through schedule and handoff  427ms
+
+ Test Files  1 passed (1)
+      Tests  28 passed (28)
+   Start at  07:14:57
+   Duration  8.35s (transform 579ms, setup 24ms, collect 2.10s, tests 5.91s, environment 0ms, prepare 86ms)
+

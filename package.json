@@ -21,6 +21,7 @@
     "test": "vitest run",
     "test:jobs": "vitest run tests/redis-connection.test.ts tests/bullmq-repeat-scheduler.integration.test.ts tests/bullmq-job-trace.integration.test.ts",
     "verify:m10": "npm run build && npm run test && node scripts/m10-token-log-scan.mjs && npm run lint --prefix web && npm run build --prefix web",
+    "verify:posting-rhythms": "node scripts/verify-posting-rhythms.mjs",
     "verify:pilot": "npm run build && npm run test && npm run lint --prefix web && npm run build --prefix web",
     "ledger-to-v0": "npm --prefix Automation run ledger-to-v0",
     "ledger-to-v0:dry": "npm --prefix Automation run ledger-to-v0:dry",
@@ -87,6 +88,7 @@
     "pg": "^8.20.0",
     "pino": "^10.3.1",
     "pino-std-serializers": "^7.1.0",
+    "proper-lockfile": "4.1.2",
     "qrcode": "^1.5.4",
     "sharp": "^0.34.2",
     "stripe": "^22.3.2"
@@ -100,6 +102,7 @@
     "@types/express": "^4.17.23",
     "@types/node": "^22.14.0",
     "@types/pg": "^8.20.0",
+    "@types/proper-lockfile": "^4.1.4",
     "@types/qrcode": "^1.5.6",
     "@types/react": "^18.3.18",
     "@types/react-dom": "^18.3.5",

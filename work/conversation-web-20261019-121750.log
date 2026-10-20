@@ -1,0 +1,114 @@
+  ▲ Next.js 14.2.35
+  - Local:        http://localhost:3000
+  - Environments: .env.local
+
+ ✓ Starting...
+ ✓ Ready in 12.4s
+ ○ Compiling /middleware ...
+ ✓ Compiled /middleware in 880ms (115 modules)
+ ○ Compiling /editor-bench ...
+ GET /editor-bench 500 in 28892ms
+ GET /editor-bench 500 in 65ms
+ GET /_next/static/webpack/b188ddca9ad3b2d8.webpack.hot-update.json 500 in 1833ms
+ GET /editor-bench 500 in 87ms
+ ✓ Compiled /favicon.ico in 7.2s (1906 modules)
+ GET /_next/static/webpack/b188ddca9ad3b2d8.webpack.hot-update.json 404 in 8533ms
+ GET /editor-bench 200 in 158ms
+ ○ Compiling /api/editor-bench ...
+ ✓ Compiled /api/editor-bench in 1132ms (1000 modules)
+ GET /api/editor-bench 200 in 9035ms
+ POST /api/editor-bench 200 in 3786ms
+ ✓ Compiled in 1328ms (1788 modules)
+ ✓ Compiled /api/editor-bench in 157ms (872 modules)
+ GET /api/editor-bench 200 in 616ms
+ ✓ Compiled in 1303ms (1834 modules)
+ GET /api/editor-bench 200 in 20ms
+ GET /api/editor-bench 200 in 35ms
+ ✓ Compiled in 1073ms (1834 modules)
+ ✓ Compiled in 0ms (872 modules)
+ ✓ Compiled in 0ms (872 modules)
+ ✓ Compiled in 1ms (872 modules)
+ GET /api/editor-bench 200 in 564ms
+ ○ Compiling /api/editor-bench ...
+ ✓ Compiled /api/editor-bench in 1658ms (1788 modules)
+ ✓ Compiled in 1ms (872 modules)
+ GET /api/editor-bench 200 in 1211ms
+ ✓ Compiled in 814ms (1834 modules)
+ GET /api/editor-bench 200 in 97ms
+ ✓ Compiled in 2.2s (1788 modules)
+ ✓ Compiled /api/editor-bench in 219ms (872 modules)
+ GET /api/editor-bench 200 in 537ms
+ ✓ Compiled in 1053ms (826 modules)
+ ✓ Compiled in 782ms (962 modules)
+ ✓ Compiled in 1648ms (1788 modules)
+ ✓ Compiled /api/editor-bench in 381ms (872 modules)
+ GET /api/editor-bench 200 in 908ms
+ ✓ Compiled in 496ms (962 modules)
+ ✓ Compiled in 537ms (962 modules)
+ ✓ Compiled in 589ms (962 modules)
+ ✓ Compiled in 547ms (962 modules)
+ ✓ Compiled in 488ms (962 modules)
+ ✓ Compiled in 1440ms (1788 modules)
+ ✓ Compiled /api/editor-bench in 122ms (872 modules)
+ GET /api/editor-bench 200 in 319ms
+ ✓ Compiled in 768ms (1834 modules)
+ GET /api/editor-bench 200 in 39ms
+ ✓ Compiled in 768ms (1834 modules)
+ GET /api/editor-bench 200 in 53ms
+ ✓ Compiled in 725ms (1834 modules)
+ ✓ Compiled in 1ms (872 modules)
+ ✓ Compiled in 0ms (872 modules)
+ ✓ Compiled in 0ms (872 modules)
+ GET /api/editor-bench 200 in 415ms
+ ✓ Compiled in 1753ms (2025 modules)
+ GET /editor-bench 200 in 327ms
+ GET /api/editor-bench 200 in 52ms
+ GET /api/editor-bench 200 in 35ms
+ ✓ Compiled in 1625ms (1980 modules)
+ ✓ Compiled in 1805ms (1980 modules)
+ ✓ Compiled in 2.2s (1980 modules)
+ ✓ Compiled in 3.8s (1980 modules)
+ ✓ Compiled in 2.1s (1980 modules)
+ ✓ Compiled in 4.4s (1039 modules)
+ ✓ Compiled in 1260ms (1039 modules)
+ ✓ Compiled in 1527ms (1039 modules)
+ ✓ Compiled in 6.7s (1980 modules)
+ ✓ Compiled in 3.7s (1980 modules)
+ ✓ Compiled in 2s (1980 modules)
+ ✓ Compiled in 17.2s (2095 modules)
+ ✓ Compiled in 4s (1039 modules)
+ ✓ Compiled in 1896ms (1039 modules)
+ ✓ Compiled in 2.8s (1039 modules)
+ ✓ Compiled in 3s (1039 modules)
+ ○ Compiling /studio/rhythms ...
+ ✓ Compiled /studio/rhythms in 5.1s (2084 modules)
+ GET /studio/rhythms 200 in 5932ms
+ GET /studio/rhythms 200 in 145ms
+ ○ Compiling /_not-found ...
+ ✓ Compiled /_not-found in 1314ms (2060 modules)
+ GET /_next/static/css/app/layout.css?v=1792438481438 404 in 1692ms
+ GET /_next/static/chunks/main-app.js?v=1792438481438 404 in 1534ms
+ GET /_next/static/chunks/app-pages-internals.js 404 in 1527ms
+ ✓ Compiled /login/pilot-ux in 467ms (2075 modules)
+ GET /login/pilot-ux 200 in 592ms
+ GET /_next/static/css/app/layout.css?v=1792438541269 404 in 28ms
+ GET /_next/static/chunks/main-app.js?v=1792438541269 404 in 35ms
+ GET /_next/static/chunks/app-pages-internals.js 404 in 34ms
+ ✓ Compiled in 1386ms (2042 modules)
+ GET /login/pilot-ux 200 in 138ms
+ GET /_next/static/css/app/layout.css?v=1792438591653 404 in 25ms
+ GET /_next/static/chunks/main-app.js?v=1792438591653 404 in 44ms
+ GET /_next/static/chunks/app-pages-internals.js 404 in 42ms
+ ✓ Compiled in 924ms (1089 modules)
+ ✓ Compiled in 1064ms (1089 modules)
+ ✓ Compiled in 2s (1089 modules)
+ ✓ Compiled in 1560ms (1089 modules)
+ ✓ Compiled in 1215ms (1089 modules)
+ ✓ Compiled in 1641ms (1089 modules)
+ ✓ Compiled in 4.1s (2030 modules)
+  ▲ Next.js 14.2.35
+  - Local:        http://localhost:3000
+  - Environments: .env.local
+
+ ✓ Starting...
+ ✓ Ready in 4.6s

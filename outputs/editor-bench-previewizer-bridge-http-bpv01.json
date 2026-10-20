@@ -1,0 +1,52 @@
+{
+  "ticket": "BPV-01",
+  "passed": true,
+  "scope": "synthetic_http_transport_only",
+  "steps": [
+    {
+      "postId": "bench_post_tide_sketch",
+      "sourceMediaId": "bench_media_tide_sketch_1",
+      "exportHash": "d275159d664c4ce46a7b2761fca0a540cf95cfd4890949ef8f35250ddc30970c",
+      "size": 282,
+      "openStatus": 200,
+      "uploadStatus": 200,
+      "completionStatus": 200,
+      "retryReused": true
+    },
+    {
+      "postId": "bench_post_orchard_sketch",
+      "sourceMediaId": "bench_media_orchard_sketch_1",
+      "exportHash": "d275159d664c4ce46a7b2761fca0a540cf95cfd4890949ef8f35250ddc30970c",
+      "size": 282,
+      "openStatus": 200,
+      "uploadStatus": 200,
+      "completionStatus": 200,
+      "retryReused": true
+    }
+  ],
+  "checks": {
+    "explicitCompletionRequired": true,
+    "ownedBoundBytes": true,
+    "idempotentRetry": true,
+    "unchangedSourceReceiptRetainedAcrossExclusion": true,
+    "removedSourceInvalidated": true,
+    "originalCardsUnchanged": true,
+    "ledgerUnchanged": true,
+    "previousReportsUnchanged": 51
+  },
+  "paidCalls": 0,
+  "limits": [
+    "JPEG bytes generated with sharp; browser Previewizer renderer not executed",
+    "Frontend testing deferred",
+    "No X drafts/events or publishing"
+  ],
+  "provider": {
+    "mode": "canned_no_network",
+    "calls": 3,
+    "inputBytes": [
+      22563,
+      22670,
+      22673
+    ]
+  }
+}

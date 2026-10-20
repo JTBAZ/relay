@@ -1,0 +1,12 @@
+[
+  "src/editor-bench/conversation.ts",
+  "src/editor-bench/routing.ts",
+  "src/editor-bench/schedule-routes.ts",
+  "tests/editor-bench/conversation.test.ts",
+  "web/app/components/distribution/PreviewizerOverlay.tsx",
+  "web/app/components/previewizer/previewizer-client.tsx",
+  "web/app/components/previewizer/previewizer-export-modal.tsx",
+  "web/app/editor-bench/EditorBenchClient.tsx",
+  "web/lib/editor-bench.ts",
+  "web/lib/previewizer-session.ts"
+]

@@ -152,6 +152,20 @@ export async function buildCrossPostPackageFromAttempt(
 
   const { variant, attempt, assistant_plan } = loaded;
   const destination = variant.destination;
+  const rhythmPlan=await prisma.postDistributionPlan.findFirst({where:{id:variant.plan_id,creatorId,rhythmActionId:{not:null}},select:{rhythmActionId:true}});
+  if(rhythmPlan?.rhythmActionId){
+    const {rhythmAction}=await import("../posting-rhythms/service.js");
+    try{
+      const action=await rhythmAction(prisma,creatorId,rhythmPlan.rhythmActionId);
+      if(action.run.planId!==variant.plan_id || action.destination!==destination)return {status:"forbidden"};
+      const mediaId=typeof assistant_plan.rhythm_media_id==="string"?assistant_plan.rhythm_media_id:"";
+      const asset=await prisma.mediaAsset.findFirst({where:{id:mediaId,creatorId,upstreamStatus:"active",processingStatus:"READY"}});
+      if(!asset || asset.currentUpstreamRevision!==assistant_plan.rhythm_output_revision)return {status:"invalid_media_binding",message:"The pinned image changed. Prepare this release again."};
+      const media=await buildMediaEntriesForPackage(prisma,creatorId,[mediaId]);
+      if(media.length!==1)return {status:"invalid_media_binding",message:"The selected image is unavailable."};
+      return {status:"ok",destination,variant,package:{relay_post_id:attempt.post_id,title:variant.title??"",body_text:variant.body_text??"",post_text:variant.post_text??"",tags:variant.tags,media}};
+    }catch{return {status:"invalid_media_binding",message:"This Rhythm release is no longer available for handoff."};}
+  }
   const input = { postId: attempt.post_id, accountId: accountId.trim() };
 
   if (destination === "patreon") {

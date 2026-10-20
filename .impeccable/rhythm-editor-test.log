@@ -1,0 +1,11 @@
+[dotenv@17.3.1] injecting env (18) from .env -- tip: ⚙️  load multiple .env files with { path: ['.env.local', '.env'] }
+
+ RUN  v3.2.4 C:/Users/jorda/Documents/Codex/2026-10-11/c/work/relay
+
+ ✓ tests/posting-rhythms/editor.test.tsx (3 tests) 218ms
+
+ Test Files  1 passed (1)
+      Tests  3 passed (3)
+   Start at  21:36:20
+   Duration  1.54s (transform 239ms, setup 20ms, collect 608ms, tests 218ms, environment 378ms, prepare 90ms)
+

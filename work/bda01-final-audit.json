@@ -1,0 +1,273 @@
+{
+  "branch": "codex/local-build-2026-10-19",
+  "head": "7cb5c70fcc56f82863fbe2f4165db4e49ed15279",
+  "baselineHead": "ed9b99e250da0aa96320241d9aed4c25e6b62844",
+  "source": [
+    "src/editor-bench/conversation.ts",
+    "src/editor-bench/distribution-variant-adapter.ts",
+    "src/editor-bench/schedule-routes.ts",
+    "tests/editor-bench/conversation.test.ts",
+    "web/app/editor-bench/EditorBenchClient.tsx",
+    "web/lib/editor-bench.ts",
+    "web/lib/relay-extension-messaging.ts",
+    "extension/src/content/fill-deviantart-submit.ts",
+    "extension/src/lib/cross-post-fetch.ts",
+    "extension/src/lib/cross-post-flow.ts",
+    "extension/src/lib/cross-post-tab-inject.ts",
+    "extension/src/lib/cross-post-types.ts",
+    "tests/extension/bench-x-handoff-contract.test.ts"
+  ],
+  "added": [
+    "extension/src/lib/bench-deviantart-handoff.ts",
+    "tests/extension/bench-deviantart-handoff-contract.test.ts",
+    "tests/extension/bench-deviantart-handoff-fetch.test.ts",
+    "tests/editor-bench/distribution-variant-adapter.test.ts"
+  ],
+  "docs": [
+    "docs/conversational-planning/DISPATCH.md",
+    "docs/conversational-planning/EDITOR-BENCH-PLAN.md",
+    "docs/conversational-planning/README.md",
+    "docs/conversational-planning/WORK-ITEMS.md",
+    "docs/relay-cheaper-model-handoff.md"
+  ],
+  "scope": {
+    "src/editor-bench/conversation.ts": {
+      "sha256": "8bd3e0e4082eb668c94d34f9909cc84e76966b5f880b71e172ccd0395bd8b23b",
+      "hunks": [
+        "@@ -14 +14 @@ const tagSchema = objectSchema({ kind: { type: 'string', enum: ['tags'] }, targe",
+        "@@ -22 +22 @@ export const BENCH_CONVERSATION_SCHEMA = objectSchema({ result: { anyOf: [select",
+        "@@ -24 +24 @@ export type ConversationAction =",
+        "@@ -43 +43 @@ export type BenchConversationDraftReview = {",
+        "@@ -49 +49 @@ export type BenchConversationDraftReceipt = {",
+        "@@ -53 +53 @@ export type BenchConversationDraftReceipt = {",
+        "@@ -55 +55 @@ export type BenchConversationDraftScheduleReceipt = { token: string; identity: s",
+        "@@ -56,0 +57 @@ export type BenchConversationXHandoffReceipt = { token: string; handoffId: strin",
+        "@@ -61 +62 @@ export type BenchConversationSession = {",
+        "@@ -66,0 +68 @@ export type BenchConversationSession = {",
+        "@@ -96,0 +99,2 @@ export function reconcileConversationPreviews(session: BenchConversationSession)",
+        "@@ -185 +189 @@ export function createBenchConversationStore() {",
+        "@@ -211 +215 @@ export function conversationSnapshot(session: BenchConversationSession) {",
+        "@@ -215,2 +219,2 @@ export function conversationSnapshot(session: BenchConversationSession) {",
+        "@@ -264 +268 @@ function actionFrom(text: string, latestRequest: string): ActionParse {"
+      ]
+    },
+    "src/editor-bench/distribution-variant-adapter.ts": {
+      "sha256": "723770bf15fd913044b4f16ea41b1ba27fc87513162cb8647cffff6e174932a3",
+      "hunks": [
+        "@@ -25,0 +26,3 @@ function canonical(value: unknown): string {",
+        "@@ -161 +164,3 @@ export function createBenchDistributionVariantAdapter(options: { beforeCommit?:",
+        "@@ -276 +281 @@ export function buildBenchVariantDraftRows(input: {",
+        "@@ -278,0 +284 @@ export function buildBenchVariantDraftRows(input: {",
+        "@@ -282 +288 @@ export function buildBenchVariantDraftRows(input: {",
+        "@@ -284,2 +290,2 @@ export function buildBenchVariantDraftRows(input: {",
+        "@@ -297 +303 @@ export function buildBenchVariantDraftRows(input: {",
+        "@@ -305,2 +311,2 @@ export function buildBenchVariantDraftRows(input: {",
+        "@@ -310 +316 @@ export function reviewBenchPreviewDraft(source: BenchVariantSource, copyText: st"
+      ]
+    },
+    "src/editor-bench/schedule-routes.ts": {
+      "sha256": "2998166887b4a1f20395bc6481437e129c90e7a2d7c735f94399d09af9e5cfef",
+      "hunks": [
+        "@@ -10 +10 @@ import { reviewBenchSchedule, type ScheduleReview, type ScheduleReviewPayload }",
+        "@@ -62,3 +62,3 @@ type SignedConversationReview = { kind: 'bench_conversation_pending_v1'; creator",
+        "@@ -119 +119 @@ function verifyConversationXHandoffToken(secret: Buffer, token: unknown): Signed",
+        "@@ -132 +132 @@ function verifyConversationDraftScheduleToken(secret: Buffer, token: unknown): S",
+        "@@ -145 +145 @@ function verifyConversationDraftToken(secret: Buffer, token: unknown): SignedCon",
+        "@@ -319,0 +320 @@ export function registerBenchScheduleRoutes(app: express.Application, options: B",
+        "@@ -326 +327 @@ export function registerBenchScheduleRoutes(app: express.Application, options: B",
+        "@@ -330 +331 @@ export function registerBenchScheduleRoutes(app: express.Application, options: B",
+        "@@ -334 +335,3 @@ export function registerBenchScheduleRoutes(app: express.Application, options: B",
+        "@@ -567 +570,2 @@ export function registerBenchScheduleRoutes(app: express.Application, options: B",
+        "@@ -570 +574 @@ export function registerBenchScheduleRoutes(app: express.Application, options: B",
+        "@@ -577,2 +581,3 @@ export function registerBenchScheduleRoutes(app: express.Application, options: B",
+        "@@ -582 +587 @@ export function registerBenchScheduleRoutes(app: express.Application, options: B",
+        "@@ -585 +590 @@ export function registerBenchScheduleRoutes(app: express.Application, options: B",
+        "@@ -588,2 +593,3 @@ export function registerBenchScheduleRoutes(app: express.Application, options: B",
+        "@@ -592 +598,2 @@ export function registerBenchScheduleRoutes(app: express.Application, options: B",
+        "@@ -597,2 +604,4 @@ export function registerBenchScheduleRoutes(app: express.Application, options: B",
+        "@@ -600,5 +609,5 @@ export function registerBenchScheduleRoutes(app: express.Application, options: B",
+        "@@ -607 +616 @@ export function registerBenchScheduleRoutes(app: express.Application, options: B",
+        "@@ -615,5 +624,10 @@ export function registerBenchScheduleRoutes(app: express.Application, options: B",
+        "@@ -657 +671,38 @@ export function registerBenchScheduleRoutes(app: express.Application, options: B",
+        "@@ -661 +712 @@ export function registerBenchScheduleRoutes(app: express.Application, options: B",
+        "@@ -669 +720 @@ export function registerBenchScheduleRoutes(app: express.Application, options: B",
+        "@@ -676 +727,2 @@ export function registerBenchScheduleRoutes(app: express.Application, options: B",
+        "@@ -686 +738 @@ export function registerBenchScheduleRoutes(app: express.Application, options: B",
+        "@@ -689,2 +741,2 @@ export function registerBenchScheduleRoutes(app: express.Application, options: B",
+        "@@ -693 +745,2 @@ export function registerBenchScheduleRoutes(app: express.Application, options: B",
+        "@@ -697 +750 @@ export function registerBenchScheduleRoutes(app: express.Application, options: B",
+        "@@ -701 +754 @@ export function registerBenchScheduleRoutes(app: express.Application, options: B",
+        "@@ -705 +758 @@ export function registerBenchScheduleRoutes(app: express.Application, options: B",
+        "@@ -708,0 +762 @@ export function registerBenchScheduleRoutes(app: express.Application, options: B",
+        "@@ -715 +769 @@ export function registerBenchScheduleRoutes(app: express.Application, options: B",
+        "@@ -725 +779 @@ export function registerBenchScheduleRoutes(app: express.Application, options: B",
+        "@@ -729 +783 @@ export function registerBenchScheduleRoutes(app: express.Application, options: B",
+        "@@ -743 +797,2 @@ export function registerBenchScheduleRoutes(app: express.Application, options: B",
+        "@@ -746 +801 @@ export function registerBenchScheduleRoutes(app: express.Application, options: B",
+        "@@ -755 +810,2 @@ export function registerBenchScheduleRoutes(app: express.Application, options: B",
+        "@@ -760 +816 @@ export function registerBenchScheduleRoutes(app: express.Application, options: B",
+        "@@ -763 +819 @@ export function registerBenchScheduleRoutes(app: express.Application, options: B",
+        "@@ -765 +821 @@ export function registerBenchScheduleRoutes(app: express.Application, options: B",
+        "@@ -774 +830 @@ export function registerBenchScheduleRoutes(app: express.Application, options: B",
+        "@@ -779 +835 @@ export function registerBenchScheduleRoutes(app: express.Application, options: B",
+        "@@ -783 +839 @@ export function registerBenchScheduleRoutes(app: express.Application, options: B",
+        "@@ -786 +842,2 @@ export function registerBenchScheduleRoutes(app: express.Application, options: B",
+        "@@ -794 +851 @@ export function registerBenchScheduleRoutes(app: express.Application, options: B",
+        "@@ -800 +857 @@ export function registerBenchScheduleRoutes(app: express.Application, options: B",
+        "@@ -804 +861,2 @@ export function registerBenchScheduleRoutes(app: express.Application, options: B",
+        "@@ -806 +864 @@ export function registerBenchScheduleRoutes(app: express.Application, options: B",
+        "@@ -809 +867 @@ export function registerBenchScheduleRoutes(app: express.Application, options: B",
+        "@@ -816 +874,2 @@ export function registerBenchScheduleRoutes(app: express.Application, options: B",
+        "@@ -818 +877 @@ export function registerBenchScheduleRoutes(app: express.Application, options: B",
+        "@@ -822 +881 @@ export function registerBenchScheduleRoutes(app: express.Application, options: B",
+        "@@ -825 +884 @@ export function registerBenchScheduleRoutes(app: express.Application, options: B",
+        "@@ -829 +888 @@ export function registerBenchScheduleRoutes(app: express.Application, options: B",
+        "@@ -876 +935 @@ export function registerBenchScheduleRoutes(app: express.Application, options: B",
+        "@@ -888 +947 @@ export function registerBenchScheduleRoutes(app: express.Application, options: B",
+        "@@ -907 +966,3 @@ export function registerBenchScheduleRoutes(app: express.Application, options: B",
+        "@@ -910 +971 @@ export function registerBenchScheduleRoutes(app: express.Application, options: B",
+        "@@ -913 +974 @@ export function registerBenchScheduleRoutes(app: express.Application, options: B"
+      ]
+    },
+    "tests/editor-bench/conversation.test.ts": {
+      "sha256": "26f017964cb113a3a37700d5a5e580a6e21a5ff37a2f1a78a0da3cf0a1fa0aed",
+      "hunks": [
+        "@@ -54,0 +55,9 @@ async function completeAuroraPreview(state: ReturnType<typeof setup>, session: a",
+        "@@ -182 +191 @@ describe('mock editor-bench conversation', () => {",
+        "@@ -669,0 +679,36 @@ describe('mock editor-bench conversation', () => {"
+      ]
+    },
+    "web/app/editor-bench/EditorBenchClient.tsx": {
+      "sha256": "08c201948b73bb6c2c0414c6e9f64642580033557f20a546cca37806393f67c5",
+      "hunks": [
+        "@@ -10,2 +10,2 @@ import { sendRelayScheduleEventToExtension } from \"@/lib/relay-extension-messagi",
+        "@@ -306 +306,4 @@ export default function EditorBenchClient() {",
+        "@@ -313 +316 @@ export default function EditorBenchClient() {",
+        "@@ -329 +332,2 @@ export default function EditorBenchClient() {",
+        "@@ -332 +336 @@ export default function EditorBenchClient() {",
+        "@@ -337 +341 @@ export default function EditorBenchClient() {",
+        "@@ -405 +409,2 @@ export default function EditorBenchClient() {",
+        "@@ -425 +430,3 @@ export default function EditorBenchClient() {",
+        "@@ -428 +435 @@ export default function EditorBenchClient() {",
+        "@@ -446 +453,3 @@ export default function EditorBenchClient() {",
+        "@@ -452 +461 @@ export default function EditorBenchClient() {",
+        "@@ -459 +468 @@ export default function EditorBenchClient() {",
+        "@@ -464,2 +473,4 @@ export default function EditorBenchClient() {",
+        "@@ -475 +486,3 @@ export default function EditorBenchClient() {",
+        "@@ -478,2 +491,2 @@ export default function EditorBenchClient() {",
+        "@@ -484 +497 @@ export default function EditorBenchClient() {",
+        "@@ -531 +544 @@ export default function EditorBenchClient() {",
+        "@@ -1019 +1032 @@ export default function EditorBenchClient() {",
+        "@@ -1028 +1041 @@ export default function EditorBenchClient() {",
+        "@@ -1030 +1043 @@ export default function EditorBenchClient() {",
+        "@@ -1036,2 +1049,2 @@ export default function EditorBenchClient() {",
+        "@@ -1040,2 +1053,2 @@ export default function EditorBenchClient() {",
+        "@@ -1043 +1056 @@ export default function EditorBenchClient() {",
+        "@@ -1046,2 +1059,2 @@ export default function EditorBenchClient() {",
+        "@@ -1049,3 +1062,3 @@ export default function EditorBenchClient() {",
+        "@@ -1059 +1072 @@ export default function EditorBenchClient() {",
+        "@@ -1061 +1074 @@ export default function EditorBenchClient() {",
+        "@@ -1066,2 +1079,2 @@ export default function EditorBenchClient() {",
+        "@@ -1070 +1083 @@ export default function EditorBenchClient() {",
+        "@@ -1073 +1086 @@ export default function EditorBenchClient() {",
+        "@@ -1077 +1090 @@ export default function EditorBenchClient() {"
+      ]
+    },
+    "web/lib/editor-bench.ts": {
+      "sha256": "17143e300972ec3f41388fc1edcb4893883fe155c8c9bf64007f3ebdd51482b6",
+      "hunks": [
+        "@@ -56 +56 @@ export type ScheduleConfirmResult = { event: ScheduleEvent; reused: boolean };",
+        "@@ -58,2 +58,2 @@ export type BenchConversationPreviewReceipt = { postId: string; sourceMediaId: s",
+        "@@ -120 +120 @@ export function confirmBenchConversation(input: { sessionId: string; reviewToken",
+        "@@ -128 +128,7 @@ export function confirmBenchConversationXDraft(input: { sessionId: string; revie",
+        "@@ -136 +142,7 @@ export function confirmBenchConversationXDraftSchedule(input: { sessionId: strin",
+        "@@ -143,0 +156,7 @@ export function confirmBenchConversationXHandoff(input: { sessionId: string; rev"
+      ]
+    },
+    "web/lib/relay-extension-messaging.ts": {
+      "sha256": "3fe67f6fe4811e2882c2a538f04ac4e55450acd639c1bb82d78abb620073ebd9",
+      "hunks": [
+        "@@ -256,0 +257,17 @@ export async function sendRelayBenchXHandoffToExtension(sessionId: string, hando"
+      ]
+    },
+    "extension/src/content/fill-deviantart-submit.ts": {
+      "sha256": "15c0b1656b5eed40a388f5a83194ff6d4230ab0bdf78a0f4af27653b6e055640",
+      "hunks": [
+        "@@ -16,0 +17,2 @@ import {",
+        "@@ -23,0 +26 @@ const GRANT_STORAGE_KEY = \"grant\";",
+        "@@ -728,0 +732,5 @@ async function runFill(): Promise<void> {",
+        "@@ -832,0 +841,57 @@ async function fillPhase2Fields(",
+        "@@ -834,0 +900 @@ void runFill().catch(async () => {"
+      ]
+    },
+    "extension/src/lib/cross-post-fetch.ts": {
+      "sha256": "8e045d489960dd4d85976e1c6d9ab3616cdf6579c894dcf037265e1be7d9daa7",
+      "hunks": [
+        "@@ -12,0 +13 @@ import { BENCH_X_HANDOFF_MAX_BYTES, BENCH_X_HANDOFF_PACKET_TTL_MS, encodeBenchXH",
+        "@@ -17,0 +19 @@ export type CrossPostFetchResult =",
+        "@@ -136 +138 @@ export async function fetchAndStoreCrossPostPackageFromMessage(",
+        "@@ -186,0 +189,23 @@ async function fetchBenchXHandoffPacket(message: Extract<ExternalCrossPostMessag"
+      ]
+    },
+    "extension/src/lib/cross-post-flow.ts": {
+      "sha256": "000ba494f75493ad85af44334dffb079d92f84cd54ad7902a57a3ea18a9b762b",
+      "hunks": [
+        "@@ -17,0 +18 @@ export type CrossPostFlowResult =",
+        "@@ -35 +36 @@ export async function runRelayCrossPostFlow(",
+        "@@ -95,0 +97,16 @@ async function runBenchXHandoffFlow(message: Extract<ExternalCrossPostMessage, {"
+      ]
+    },
+    "extension/src/lib/cross-post-tab-inject.ts": {
+      "sha256": "4b8a1defab288a680d48d2e4872aaee1dd87727d479b16ffac0a283888447f7e",
+      "hunks": [
+        "@@ -5,0 +6 @@ import { BENCH_X_HANDOFF_PACKET_KEY, type BenchXHandoffPacket } from \"./bench-x-",
+        "@@ -78 +79 @@ export async function injectCrossPostFillScript(",
+        "@@ -82,3 +83,2 @@ export async function injectCrossPostFillScript(",
+        "@@ -86 +86,6 @@ export async function injectCrossPostFillScript("
+      ]
+    },
+    "extension/src/lib/cross-post-types.ts": {
+      "sha256": "9c40f7bc96ed2c6243c3053ccfe75b8ed3319e166302822c5641230fbb06483c",
+      "hunks": [
+        "@@ -43 +43,9 @@ export type BenchXHandoffExternalMessage = {",
+        "@@ -111 +119 @@ export function isExternalCrossPostMessage(v: unknown): v is ExternalCrossPostMe",
+        "@@ -165 +173 @@ export function crossPostDestinationFromMessage("
+      ]
+    },
+    "tests/extension/bench-x-handoff-contract.test.ts": {
+      "sha256": "6262bb197ad92c23b12ca082a63aa389d8fa84c18b80b85e203974af9c1a5064",
+      "hunks": [
+        "@@ -14,0 +15 @@ const message = (handoff_id: string) => ({ type: \"RELAY_CROSS_POST\", session_id:",
+        "@@ -15,0 +17 @@ const packet = (handoff_id: string, text: string) => ({ version: 1 as const, han",
+        "@@ -53,0 +56,22 @@ describe(\"mock Conversation X handoff transport\", () => {"
+      ]
+    },
+    "extension/src/lib/bench-deviantart-handoff.ts": {
+      "sha256": "7fe5dcc092f3a5914ab26bc06bb488cc64d4f3c88a426f5805434caf078ba3d5",
+      "newFile": true
+    },
+    "tests/extension/bench-deviantart-handoff-contract.test.ts": {
+      "sha256": "72dd09a150a16bbd01ce5906a263c6ee30a45ef9a68a8a6a6da8954ebb87cfc4",
+      "newFile": true
+    },
+    "tests/extension/bench-deviantart-handoff-fetch.test.ts": {
+      "sha256": "5827838967af166654f7dc2de54cc2684f6ddd7cbef8930b29ff79693cf32a3a",
+      "newFile": true
+    },
+    "tests/editor-bench/distribution-variant-adapter.test.ts": {
+      "sha256": "0360403c1fb4d1fcc89538d1306695b695a7fb967fd223238f1e1919a8a1ecc7",
+      "newFile": true
+    }
+  },
+  "protectedSourceCount": 157,
+  "tsxParseDiagnostics": 0,
+  "taskWhitespace": true,
+  "priorReportsPreserved": 62,
+  "ledger": {
+    "rows": 903,
+    "sha256": "699cab42ae296086d1b43a692edb047b8d9508b1343a3539a90e7fb94ab2fbf5",
+    "developmentRemainingUsd": 0.35674,
+    "heldoutRemainingUsd": 8.9690346
+  },
+  "paidCalls": 0
+}

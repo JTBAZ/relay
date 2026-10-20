@@ -1,8 +1,38 @@
-# Recipe builder — interactive demo, revision 6
+# Posting Rhythms — Studio sheet, revision 11
+
+Posting Rhythms is now the stable workspace title. Preview rhythm sits beside Save rhythm and opens a native modal with a mock artwork, trigger conditions, destination logos, selected treatments and nested publication dependencies. The existing simulator is available under Sample execution inside the modal. Instagram, Bluesky and Tumblr appear as gray logos that open a connection invitation. Connect runs a local demo and Done closes it. Instagram is marked as planned support; no account access is requested and the mock cannot enter the destination configuration. Modify and Draft replace Changes and Snippet in the editor.
+
+The frontend layout was approved on 2026-10-19. Validation: all 21 behavioral tests pass. Desktop 1321×854 and mobile 390×845 inspected; native Escape dismissal and focus return verified. The preview illustrates treatments and does not generate an export or publish.
+
+## Earlier refinements
+
+The preview-type menu now anchors beside its trigger on desktop, using the space to the right without adding a row. Narrow screens use a bounded anchored fallback. Escape/outside dismissal and unchanged row height verified; all 17 behavioral tests pass.
+
+Earlier control refinement restores Only when all filters match and Coach’s Help me with goal picker. Destination tags are modestly larger, checkboxes use filled squares, and treatment labels sit closer to their toggles. Reusable prewritten description text is called a Snippet; persisted keys stay compatible. All 16 behavioral checks pass; desktop1321 and mobile390 inspected.
+
+Earlier copy polish removes the subtitle, description instructions, repeated source/treatment notes and duplicate Test action. Time replaces the generic timing Options label; preview type is displayed on its own selector. Current checks: 15 tests passed and rendered at 1321px and 390px. Visual approval is left to the user.
+
+Product naming: **Rhythm** is the user-facing name for the complete trigger, filters and release sequence. The editor consistently uses Rhythms, New rhythm, Test rhythm and Save rhythm. Existing filenames, storage keys and backend recipe identifiers stay compatible. Naming regression and existing behavior: 18 tests pass.
+
+## Earlier inspection path — 2026-10-19
+
+Reusable recipes for future posts are primary. **Recipes** opens an inline chooser above the complete source-and-release flow. Choose Art release rhythm (three releases), Share the original, New recipe, or the last recipe saved in this browser. Loading supports Undo and preserves the saved snapshot. The demo still uses one saved-recipe slot.
+
+Patreon, X and DeviantArt logos identify the source and destination account tags. One Also send it to… heading leads directly to destinations; the tags remain editable when collapsed. Details sits to the right and opens timing, treatment and Description. Route-type headings and Editing badges are removed; collapsed timing/treatment summaries use generic description modes. Teaser/Coach checkboxes apply behavior; the selected preview name opens direct type choices, and Notes opens Coach notes. Description supports original/edit/saved context and versioned drafts.
+
+The persistent Save recipe action opens final timezone, review, notification, name, Default and Always on choices. Saving never publishes. Confirm plan remains the separate one-time path. Working drafts recover under `relay-recipe-working-draft`, independently of saved configuration. Valid removal, Reset and template/recipe loading offer Undo. The simulator stacks into labeled mobile cards, and Test/review/handoff actions focus their revealed context.
+
+Run `node --test docs/studio/posting-recipe-build-plans/demo/recipe-editor.test.mjs`: 15 behavioral checks cover presentation-only settings, release selection, receipt dependencies, source editing, saved-version isolation, deletion/Undo, draft recovery, calendar edges and review authority. Script syntax passed. Browser inspection covered 1440×900, the current user's 1321×854 viewport, 885×572 and mobile 390×845, including collapsed destinations and the recipe chooser. No production runtime, real publication or email is verified.
+
+The selected Studio sheet direction, initial critique and independent finish review are recorded under `.impeccable/`. Root PRODUCT.md and DESIGN.md are scoped to this prototype. The earlier inspection instructions and verification below document revisions 2–6; their table arrangement and Continue flow have been superseded by the release accordions and save bar.
+
+The independent full review accepted the chosen visual hierarchy. Its validation/focus fixes and the later Saved/Draft and accessibility corrections were scored resolved in the final review. The scoped Ponytail and current Web Design Guidelines review is recorded in `.impeccable/review/code-and-guideline-review.md`. The editor preview below shows revision 10; connect-preview.jpg shows the revision 11 connection invitation.; earlier verification remains historical. Physical notched-device behavior and production integrations were not run.
 
 [Open the standalone HTML](recipe-editor.html). All CSS, JavaScript and icons are inline. No build, dependencies, login, network connection, model invocation, upload, publishing or email is required. The account identities and sample publications are fictional. The saved-recipe configuration uses browser storage under `relay-posting-recipe-demo-v2`; storage failure leaves editing available in the current tab.
 
-## Inspect
+Platform SVGs are inline: Patreon reuses `web/app/components/auth/auth-hub.tsx`; X and DeviantArt paths come from [Simple Icons](https://github.com/simple-icons/simple-icons/tree/develop/icons). No runtime icon request or dependency was added.
+
+## Earlier inspection path — historical revision 6
 
 Start blank to explore progressive disclosure, or choose **Load example** for a filtered three-route recipe.
 
@@ -71,7 +101,7 @@ The compact forms, neutral borders and contextual trays reference [GitHub Primer
 
 
 
-## Revision 6 feedback verification — 2026-10-18
+## Revision 6 feedback verification — historical, 2026-10-18
 
 - Full-width timing has been replaced by a compact date selector and anchored Options dropdown. Date choices are delay or first/last day of the reference month/following month. Calendar targets before the reference require attention, independently of sibling actions; no silent rollover.
 - Description occupies a dedicated panel with contextual original/edit/saved selection. Upcoming artwork disables Edit original. The separate saved-description library supports multiple drafts, preview, edit-as-new, creation and cancellation. And then initially waits for the prior post's publication receipt.

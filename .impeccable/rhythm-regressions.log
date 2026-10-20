@@ -1,0 +1,211 @@
+[dotenv@17.3.1] injecting env (18) from .env -- tip: ⚙️  suppress all logs with { quiet: true }
+
+ RUN  v3.2.4 C:/Users/jorda/Documents/Codex/2026-10-11/c/work/relay
+
+ ❯ tests/automations/trigger-series.test.ts (8 tests | 1 failed) 55ms
+   ✓ trigger-only series (AUT-VS4-T01) > serializes materialization_kind and creates planned ticks without posts 27ms
+   × trigger-only series (AUT-VS4-T01) > defaults ordinary create to post_draft and JIT path still materializes 11ms
+     → expected "spy" to not be called at all, but actually been called 1 times
+
+Received: 
+
+  1st spy call:
+
+    Array [
+      Object {
+        "creatorScheduleOccurrence": Object {
+          "create": [Function spy],
+          "deleteMany": [Function spy],
+          "findFirst": [Function spy],
+          "findMany": [Function spy],
+          "findUnique": [Function spy],
+          "update": [Function spy],
+          "updateMany": [Function spy],
+        },
+        "creatorScheduleSeries": Object {
+          "create": [Function spy],
+          "findFirst": [Function spy],
+          "findMany": [Function spy],
+          "findUnique": [Function spy],
+          "update": [Function spy],
+        },
+        "postbotTask": Object {
+          "findMany": [Function spy],
+        },
+      },
+      "creator_automations_qa_001",
+      Object {
+        "destinations": Array [
+          "x",
+        ],
+        "notify": true,
+        "planned_format": "mixed",
+        "scheduled_for": "2026-09-02T10:00:00.000Z",
+        "title": "Routine post",
+      },
+    ]
+
+
+Number of calls: 1
+
+   ✓ trigger-only series (AUT-VS4-T01) > rejects materializeOccurrence for automation_trigger 3ms
+   ✓ trigger-only series (AUT-VS4-T01) > reconcileAllActiveSeries ensures ticks for trigger series but never materializes posts 3ms
+   ✓ trigger-only series (AUT-VS4-T01) > pause stops new occurrence ensure; resume restores ticks 3ms
+   ✓ trigger-only series (AUT-VS4-T01) > ends_at caps horizon; ensure is idempotent on retry 2ms
+   ✓ trigger-only series (AUT-VS4-T01) > DST spring-forward still yields stable weekly keys in America/New_York 5ms
+   ✓ trigger-only series (AUT-VS4-T01) > rejects seed on automation_trigger create 1ms
+stdout | tests/automations/schema-relations.integration.test.ts
+[dotenv@17.3.1] injecting env (4) from .env -- tip: 🛡️ auth for agents: https://vestauth.com
+
+stdout | tests/automations/schema-relations.integration.test.ts > Automations schema relations (VS1-T02, real DB) > enforces one-to-one ownership on distribution_rule_id and schedule_series_id
+prisma:error 
+Invalid `prisma.creatorAutomation.create()` invocation in
+C:\Users\jorda\Documents\Codex\2026-10-11\c\work\relay\tests\automations\schema-relations.integration.test.ts:143:34
+
+  140 });
+  141 
+  142 await expect(
+→ 143   prisma.creatorAutomation.create(
+Unique constraint failed on the fields: (`distribution_rule_id`)
+
+stdout | tests/automations/schema-relations.integration.test.ts > Automations schema relations (VS1-T02, real DB) > enforces one-to-one ownership on distribution_rule_id and schedule_series_id
+prisma:error 
+Invalid `prisma.creatorAutomation.create()` invocation in
+C:\Users\jorda\Documents\Codex\2026-10-11\c\work\relay\tests\automations\schema-relations.integration.test.ts:155:34
+
+  152 ).rejects.toSatisfy(isUniqueViolation);
+  153 
+  154 await expect(
+→ 155   prisma.creatorAutomation.create(
+Unique constraint failed on the fields: (`schedule_series_id`)
+
+stdout | tests/automations/schema-relations.integration.test.ts > Automations schema relations (VS1-T02, real DB) > SetNulls preview template and series; Restricts deleting an owned rule
+prisma:error 
+Invalid `prisma.creatorDistributionRule.delete()` invocation in
+C:\Users\jorda\Documents\Codex\2026-10-11\c\work\relay\tests\automations\schema-relations.integration.test.ts:208:40
+
+  205 expect(afterSeries.scheduleSeriesId).toBeNull();
+  206 
+  207 await expect(
+→ 208   prisma.creatorDistributionRule.delete(
+Foreign key constraint violated on the constraint: `creator_automations_distribution_rule_id_fkey`
+
+stdout | tests/automations/schema-relations.integration.test.ts > Automations schema relations (VS1-T02, real DB) > rejects duplicate occurrence keys and duplicate action-run idempotency keys
+prisma:error 
+Invalid `prisma.creatorScheduleOccurrence.create()` invocation in
+C:\Users\jorda\Documents\Codex\2026-10-11\c\work\relay\tests\automations\schema-relations.integration.test.ts:273:42
+
+  270 });
+  271 
+  272 await expect(
+→ 273   prisma.creatorScheduleOccurrence.create(
+Unique constraint failed on the fields: (`series_id`, `occurrence_key`)
+
+stdout | tests/automations/schema-relations.integration.test.ts > Automations schema relations (VS1-T02, real DB) > rejects duplicate occurrence keys and duplicate action-run idempotency keys
+prisma:error 
+Invalid `prisma.creatorDistributionRuleRun.create()` invocation in
+C:\Users\jorda\Documents\Codex\2026-10-11\c\work\relay\tests\automations\schema-relations.integration.test.ts:299:43
+
+  296 });
+  297 
+  298 await expect(
+→ 299   prisma.creatorDistributionRuleRun.create(
+Unique constraint failed on the fields: (`idempotency_key`)
+
+stdout | tests/automations/schema-relations.integration.test.ts > Automations schema relations (VS1-T02, real DB) > rejects duplicate occurrence keys and duplicate action-run idempotency keys
+prisma:error 
+Invalid `prisma.creatorDistributionRuleRun.create()` invocation in
+C:\Users\jorda\Documents\Codex\2026-10-11\c\work\relay\tests\automations\schema-relations.integration.test.ts:314:43
+
+  311 ).rejects.toSatisfy(isUniqueViolation);
+  312 
+  313 await expect(
+→ 314   prisma.creatorDistributionRuleRun.create(
+Unique constraint failed on the fields: (`rule_id`, `source_post_id`)
+
+ ✓ tests/automations/schema-relations.integration.test.ts (6 tests) 1337ms
+ ✓ tests/posting-rhythms/routes.test.ts (3 tests) 85ms
+ ✓ tests/automations/automation-materializer.test.ts (11 tests) 59ms
+stdout | tests/automations/automation-api.test.ts
+[dotenv@17.3.1] injecting env (4) from .env -- tip: ⚙️  specify custom .env file path with { path: '/custom/path/.env' }
+
+ ✓ tests/automations/automation-api.test.ts (5 tests) 61ms
+ ✓ tests/automations/automation-reconcile.test.ts (10 tests) 40ms
+ ✓ tests/automations/automation-service.test.ts (13 tests) 16ms
+ ✓ tests/automations/spine-characterization.test.ts (10 tests) 12ms
+ ✓ tests/automations/delayed-release.test.ts (7 tests) 10ms
+ ✓ tests/automations/contracts.test.ts (22 tests) 12ms
+ ✓ tests/automations/integration.test.ts (14 tests) 12ms
+ ✓ tests/automations/automation-attention.test.ts (10 tests) 7ms
+ ✓ tests/automations/schema.test.ts (12 tests) 7ms
+ ✓ tests/automations/automation-approval.test.ts (6 tests) 10ms
+ ✓ tests/automations/automation-rail.test.ts (4 tests) 3ms
+ ✓ tests/automations/concurrency.test.ts (3 tests) 2ms
+ ✓ tests/posting-rhythms/contract.test.ts (7 tests) 9ms
+ ✓ tests/automations/source-resolver.test.ts (5 tests) 3ms
+ ✓ tests/posting-rhythms/editor.test.tsx (3 tests) 204ms
+ ✓ tests/web/automations-flow.test.tsx (7 tests) 150ms
+ ✓ tests/web/automations-modal.test.tsx (8 tests) 27ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/automations/trigger-series.test.ts > trigger-only series (AUT-VS4-T01) > defaults ordinary create to post_draft and JIT path still materializes
+AssertionError: expected "spy" to not be called at all, but actually been called 1 times
+
+Received: 
+
+  1st spy call:
+
+    Array [
+      Object {
+        "creatorScheduleOccurrence": Object {
+          "create": [Function spy],
+          "deleteMany": [Function spy],
+          "findFirst": [Function spy],
+          "findMany": [Function spy],
+          "findUnique": [Function spy],
+          "update": [Function spy],
+          "updateMany": [Function spy],
+        },
+        "creatorScheduleSeries": Object {
+          "create": [Function spy],
+          "findFirst": [Function spy],
+          "findMany": [Function spy],
+          "findUnique": [Function spy],
+          "update": [Function spy],
+        },
+        "postbotTask": Object {
+          "findMany": [Function spy],
+        },
+      },
+      "creator_automations_qa_001",
+      Object {
+        "destinations": Array [
+          "x",
+        ],
+        "notify": true,
+        "planned_format": "mixed",
+        "scheduled_for": "2026-09-02T10:00:00.000Z",
+        "title": "Routine post",
+      },
+    ]
+
+
+Number of calls: 1
+
+ ❯ tests/automations/trigger-series.test.ts:262:34
+    260| 
+    261|     expect(wire.materialization_kind).toBe("post_draft");
+    262|     expect(mockedCreatePost).not.toHaveBeenCalled();
+       |                                  ^
+    263| 
+    264|     const seriesId = wire.series_id;
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed | 20 passed (21)
+      Tests  1 failed | 173 passed (174)
+   Start at  21:40:02
+   Duration  14.34s (transform 4.09s, setup 70ms, collect 10.99s, tests 2.12s, environment 382ms, prepare 190ms)
+

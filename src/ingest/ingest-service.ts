@@ -6,7 +6,7 @@
  */
 
 import { randomUUID } from "node:crypto";
-import type { RelayEventBus } from "../events/event-bus.js";
+import { InMemoryEventBus, type RelayEventBus } from "../events/event-bus.js";
 import { applySyncBatchToSnapshot } from "./apply-batch.js";
 import { enrichBatch } from "./auto-enrich.js";
 import type { CanonicalStore } from "./canonical-store.js";
@@ -41,10 +41,16 @@ export class IngestService {
     const id = jobId ?? `job_${randomUUID()}`;
     const creatorId = batch.creator_id;
     const { batch: enriched, notes } = enrichBatch(batch);
+    const pendingEvents = new InMemoryEventBus();
     let result!: ApplyBatchResult;
     await this.store.mutateForCreator(creatorId, (snapshot) => {
-      result = applySyncBatchToSnapshot(snapshot, enriched, id, traceId, this.eventBus, resolutions);
+      result = applySyncBatchToSnapshot(snapshot, enriched, id, traceId, pendingEvents, resolutions);
     });
+    // shortcut: a process crash after commit can lose these events; durable delivery needs an atomic outbox.
+    for (const event of pendingEvents.getAll()) {
+      this.eventBus.publish(event.event_name, event.tenant_id, event.trace_id,
+        event.payload as { primary_id: string }, { producer: event.producer });
+    }
     if (notes.length > 0) {
       result = { ...result, ingest_notes: notes };
     }

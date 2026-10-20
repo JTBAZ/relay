@@ -1,0 +1,27 @@
+
+> relay@0.1.0 verify:posting-rhythms
+> node scripts/verify-posting-rhythms.mjs
+
+Loaded Prisma config from prisma.config.ts.
+
+Prisma schema loaded from prisma\schema.prisma.
+Datasource "db": PostgreSQL database "relay_rhythm_test_fca014bebda70b47", schema "public" at "127.0.0.1:5433"
+
+Your database is now in sync with your Prisma schema. Done in 2.06s
+
+[dotenv@17.3.1] injecting env (0) from .env -- tip: ⚙️  specify custom .env file path with { path: '/custom/path/.env' }
+
+ RUN  v3.2.4 C:/Users/jorda/Documents/Codex/2026-10-11/c/work/relay
+
+ ✓ tests/posting-rhythms/postgres.integration.test.ts (3 tests) 1545ms
+   ✓ Posting Rhythms on isolated Postgres > saves without enrollment; isolates plans; advances only on matching publication evidence  486ms
+ ✓ tests/posting-rhythms/routes.test.ts (3 tests) 54ms
+ ✓ tests/posting-rhythms/contract.test.ts (7 tests) 12ms
+ ✓ tests/posting-rhythms/editor.test.tsx (3 tests) 220ms
+
+ Test Files  4 passed (4)
+      Tests  16 passed (16)
+   Start at  21:48:08
+   Duration  5.98s (transform 736ms, setup 42ms, collect 3.12s, tests 1.83s, environment 401ms, prepare 179ms)
+
+Posting Rhythms: isolated Postgres and interface checks passed.

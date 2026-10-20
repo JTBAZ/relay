@@ -1,0 +1,98 @@
+{
+  "ticket": "BCT-01",
+  "date": "2026-10-19",
+  "mode": "live_mock_http",
+  "passed": false,
+  "calls": [
+    {
+      "expectedKind": "selection",
+      "actualKind": "selection",
+      "inputBytes": 23075,
+      "inputSha256": "d5adfadb972ca5f0f11a40710efef47697ac265a0f0b76dd64b069b86e7d47b6",
+      "catalogSize": 16,
+      "currentRevision": 0,
+      "groundedTargetQuote": null,
+      "replacementSha256": null,
+      "usage": {
+        "inputTokens": 4616,
+        "outputTokens": 86,
+        "costUsd": 0.0010264,
+        "calls": 1
+      }
+    },
+    {
+      "expectedKind": "rename",
+      "actualKind": "rename",
+      "inputBytes": 23175,
+      "inputSha256": "544e356f14241768743b6e9f78274c8b724f0ded4b9a8ddf38de15828ffd4812",
+      "catalogSize": 16,
+      "currentRevision": 1,
+      "groundedTargetQuote": "selected post",
+      "replacementSha256": "e6668054a3add820c69808fb75948e9dd4b73dc8c080c9c22e046ae29771f301",
+      "usage": {
+        "inputTokens": 4649,
+        "outputTokens": 60,
+        "costUsd": 0.0007800400000000001,
+        "calls": 1
+      }
+    }
+  ],
+  "turns": [
+    {
+      "requestSha256": "0719f605180b8c8abe39d9cb62c4e91e4ce4ac4d5cd15a4140c4ce330a62b99a",
+      "httpStatus": 200,
+      "outcome": "selected",
+      "diagnostic": null,
+      "message": null,
+      "passed": true
+    },
+    {
+      "requestSha256": "ede5d5afd4cecd5eefdd4ee75abfb2ac2aaa77a7e3d831b9f5406a65fe87a918",
+      "httpStatus": 200,
+      "outcome": "clarification",
+      "diagnostic": null,
+      "message": "Please make one clear selection, edit or posting request.",
+      "passed": false
+    }
+  ],
+  "checks": {},
+  "limitations": [
+    "Synthetic fixture only",
+    "Ephemeral API-instance session and posting records",
+    "Frontend execution deferred",
+    "No real Library, database or platform operations"
+  ],
+  "failure": {
+    "name": "AssertionError",
+    "code": "ERR_ASSERTION",
+    "message": "Proof stopped at first failure without retry"
+  },
+  "budget": {
+    "initialRows": 894,
+    "finalRows": 896,
+    "previousRowsUnchanged": true,
+    "providerCalls": 2,
+    "paidCalls": 2,
+    "reservationsUsd": 0.016943599999999996,
+    "actualUsd": 0.00180644,
+    "ledgerSha256": "aafac7652e40b925e35017b08d8c38318cddeb4027c680025735c03eedefeb6a",
+    "newRows": [
+      {
+        "id": "c6d95c62-f3ff-44e7-ad35-2754f5388f27",
+        "model": "gpt-5.6-luna",
+        "phase": "development",
+        "reservedUsd": 0.008461799999999998,
+        "actualUsd": 0.0010264,
+        "settled": true
+      },
+      {
+        "id": "b1c20e7a-176e-4594-bc4e-2bd12f3ad6d5",
+        "model": "gpt-5.6-luna",
+        "phase": "development",
+        "reservedUsd": 0.0084818,
+        "actualUsd": 0.0007800400000000001,
+        "settled": true
+      }
+    ]
+  }
+}

@@ -1,7 +1,7 @@
 import { matchesSchema } from '../gallery-editor/action-validation.js';
 import { INTERPRETED_REQUEST_SCHEMA, MAX_REQUEST_CHARS } from '../conversational-planning/intent.js';
 import type { PlanStep, TimeSpec } from '../conversational-planning/contract.js';
-import { BENCH_IDS, createBenchFixture, createBenchMediaDescriptors, createBenchPostCards } from './fixtures.js';
+import { BENCH_IDS, createBenchFixture, createBenchMediaDescriptors, createBenchPostCards, type BenchFixture } from './fixtures.js';
 import { runPostingBench } from './routing.js';
 import { mapManualPostingBatch, mapManualPostingEvent, MANUAL_POSTING_BATCH_SCHEMA, MANUAL_POSTING_EVENT_SCHEMA } from './manual-posting-event.js';
 
@@ -104,11 +104,11 @@ function isFutureAbsolute(time: TimeSpec | null, now: Date): time is Extract<Tim
 }
 
 /** Recompiles a strict interpreted request against server-owned fixture data and returns only the safe manual-event mapping. */
-export async function reviewBenchSchedule(value: unknown, options: { now?: () => Date } = {}): Promise<ScheduleReviewResult> {
+export async function reviewBenchSchedule(value: unknown, options: { now?: () => Date; fixture?: BenchFixture } = {}): Promise<ScheduleReviewResult> {
   const candidate = validateCandidate(value);
   if ('kind' in candidate) return candidate;
   if (matchesSchema(candidate.structuredIntent, MANUAL_POSTING_EVENT_SCHEMA)) {
-    const mapped = mapManualPostingEvent(candidate.latestRequest, candidate.structuredIntent, candidate.selectedPostIds, candidate.selectedMediaIds, (options.now ?? (() => new Date()))());
+    const mapped = mapManualPostingEvent(candidate.latestRequest, candidate.structuredIntent, candidate.selectedPostIds, candidate.selectedMediaIds, (options.now ?? (() => new Date()))(), options.fixture ?? createBenchFixture());
     if (mapped.kind !== 'proposal') return refused(mapped.code, mapped.message);
     const review = mapped.proposal;
     return { kind: 'review', review, reviewKind: 'direct_manual' };

@@ -5,6 +5,7 @@
  * Gated shell + real overview/forms/history. Approval via host callback.
  */
 
+import Link from "next/link";
 import { createPortal } from "react-dom";
 import { useEffect, useId, useRef } from "react";
 import { X } from "lucide-react";
@@ -100,6 +101,7 @@ export function ScheduleRailAutomationsModal({
         </div>
 
         <div className="min-h-0 flex-1 space-y-6 overflow-y-auto px-5 py-4">
+          <Link href="/studio/rhythms" onClick={onClose} className="flex items-center justify-between rounded-xl border border-white/15 px-4 py-3 text-sm font-semibold text-emerald-200">Posting Rhythms<span aria-hidden="true">→</span></Link>
           {!automationsFeatureEnabled ? (
             <p
               className="rounded-lg border border-[var(--lib-border)] px-3 py-3 text-sm text-[var(--lib-fg-muted)]"

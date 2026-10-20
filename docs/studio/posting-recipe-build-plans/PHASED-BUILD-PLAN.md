@@ -1,6 +1,6 @@
 # Posting Recipes — phased build plan
 
-**Revision 6 · 2026-10-18 · proposed backlog.** Includes compact month-boundary scheduling, uploaded-source editing and reusable saved descriptions. Supersedes the fixed two-row program. No production work is claimed/implemented by this document. Read [contract](PRODUCT-CONTRACT.md), [grounding](CODEBASE-MAP.md) and [acceptance](ACCEPTANCE.md).
+**Revision 8 · 2026-10-19 · proposed backlog.** Destination-first Studio sheet rows, whole-recipe chooser, reusable-first save flow, working-draft recovery and mobile action cards; timing and execution boundaries retained. Supersedes the fixed two-row program. No production work is claimed/implemented by this document. Read [contract](PRODUCT-CONTRACT.md), [grounding](CODEBASE-MAP.md) and [acceptance](ACCEPTANCE.md).
 
 ## Sequence and release boundaries
 
@@ -10,7 +10,7 @@ Optional follow-ups: `P7 API delivery/background render → P8 remote review →
 
 ## D0 — this design handoff
 
-Deliver revised documents and [standalone HTML](demo/recipe-editor.html): trigger/account choice, removable filter chips and match test, inline trays, up to 16 arbitrary supported route rows, conditional Previewizer/Coach/copy settings, destination chips, final notification/confirmation choices, separate saved Default/Always-on settings and an inline execution simulator. No backend calls, real account connections, model calls, publishing or emails.
+Deliver revised documents and [standalone HTML](demo/recipe-editor.html): trigger/account choice, removable filter chips and match test, connected release accordions (one active), up to 16 supported routes, separate treatment checkboxes/settings, account handles, dedicated description editing, persistent save entry, final notification/confirmation choices, independent Default/Always-on settings and a responsive execution simulator. Includes working-draft recovery and reversible removal/reset. No backend calls, real account connections, model calls, publishing or emails.
 
 ## P0 — freeze additive contracts and baselines
 
@@ -73,11 +73,11 @@ API surface: creator-scoped recipe/account-capability/history/saved-description 
 
 | ID | Scope / likely files | Exit evidence |
 | --- | --- | --- |
-| PR-501 | Recipes tab in existing Automations surface; new `PostingRecipeEditor` and API client | Existing presets/deep links/gates preserved; no parallel production app |
+| PR-501 | Recipes tab in existing Automations surface; whole-recipe chooser above source/filter/release editor; new `PostingRecipeEditor` and API client | Existing presets/deep links/gates preserved; templates load complete editable configurations, creator-owned saved revisions remain distinct from route details; no parallel production app |
 | PR-502 | Trigger-first filter tray, removable chips, shared-match dry run | Only capable accounts; failed filter reason; valid trigger reveals routes while preserving edits |
-| PR-503 | Destination → delay/calendar dropdown → Teaser/Coach; compact Options; dedicated Description panel with original/edit/saved selector | Four first/last month boundaries; no full-width timing tray; Edit original disabled without source text; saved library preview/edit-as-new/create/cancel; And then defaults to prior receipt and matching destinations; stable dependency protection and visible non-default timing |
-| PR-504 | Final tray: timezone, Review each post, notification, Confirm plan/Save recipe; saved Default/Always-on independent | Confirm target explicit; no save/default auto-activation; final acknowledgement invalidated on material edit; later authority modes disabled |
-| PR-505 | Primer-inspired dense forms, rounded geometry, short fade-ins, keyboard/focus and reduced motion | No popup wizard or browser alerts; focus/context preserved; mobile overflow contained; inline error and concise toast behavior |
+| PR-503 | Platform logo/handle tags lead each release and remain editable when collapsed; one right-side Details disclosure opens delay/calendar → independent Teaser/Coach checkboxes/settings; dedicated original/edit/saved Description region | Four first/last month boundaries; no full-width timing tray; Edit original disabled without source text; saved library preview/edit-as-new/create/cancel; And then defaults to prior receipt and matching destinations; stable dependency protection and visible non-default timing |
+| PR-504 | Persistent Save recipe entry → final timezone/review/notification/name/Default/Always-on; secondary Confirm plan path | Confirm target explicit; no save/default auto-activation; final acknowledgement invalidated on material edit; later authority modes disabled |
+| PR-505 | Studio sheet hierarchy, readable 14px forms/40px controls, rounded geometry, release insertion/reveal motion, keyboard focus, working-draft recovery/Undo and reduced motion | No popup wizard or browser alerts; focus/context preserved; mobile fields and simulator actions stack without panning; inline error and concise Undo toast behavior; active release/settings changes never dirty the configuration |
 
 **Gate:** AC-20–23, AC-28. Browser-review filtered intake → 3 routes → one-shot vs saved Default/Always on → review-first handoff. Run targeted web tests and web build, plus applicable repo verification for production edits.
 

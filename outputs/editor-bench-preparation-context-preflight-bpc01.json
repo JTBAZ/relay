@@ -1,0 +1,82 @@
+{
+  "ticket": "BPC-01",
+  "date": "2026-10-19",
+  "mode": "canned_synthetic_http",
+  "passed": true,
+  "calls": [
+    {
+      "expectedKind": "selection",
+      "actualKind": "selection",
+      "inputBytes": 22563,
+      "inputSha256": "4d3078e38852bca7c6353354b9a96a8a8193a9c47e23a5a37959d73ee150b012",
+      "usage": null
+    },
+    {
+      "expectedKind": "preparation_update",
+      "actualKind": "preparation_update",
+      "inputBytes": 22670,
+      "inputSha256": "50735d12e07ccffa7bc599650149cee5371f94f5b17df9042431d12bf5125b0e",
+      "usage": null
+    },
+    {
+      "expectedKind": "selection",
+      "actualKind": "selection",
+      "inputBytes": 22673,
+      "inputSha256": "888ede05ecdef31299fc5418335a6b2f1178bb296abeaedd3d079801295b95f9",
+      "usage": null
+    }
+  ],
+  "turns": [
+    {
+      "requestSha256": "1edae5128c72c675dd42a4dcf8e0ac92d52f7fe6127a47811687a0a43649e483",
+      "httpStatus": 200,
+      "status": "selected",
+      "diagnostic": null,
+      "message": "The posts are selected for preview-first X draft preparation. Previewizer has not run, and no draft exists.",
+      "passed": true
+    },
+    {
+      "requestSha256": "0cd1b240648887c52c91d5a23012bf5fc38b2ac2b160b00ac67b547432706c72",
+      "httpStatus": 200,
+      "status": "preparation_updated",
+      "diagnostic": null,
+      "message": "Preparation choices are recorded. They have not been applied, and no draft exists.",
+      "passed": true
+    },
+    {
+      "requestSha256": "9e793b1b4f2b9a20990898181343baac973f858c294ff82ce15970d13d3225a6",
+      "httpStatus": 200,
+      "status": "selected",
+      "diagnostic": null,
+      "message": null,
+      "passed": true
+    }
+  ],
+  "checks": {
+    "bothStageSketchesSelected": true,
+    "tagOnlyUnderselectionAvoided": true,
+    "templateAndExistingTitleChoicesPersist": true,
+    "followupExclusionsPersist": true,
+    "previewFirstXGoalPreserved": true,
+    "readOnlySnapshotRecovery": true,
+    "foreignAndStaleNoExtraCall": true,
+    "fixtureCardsUnchanged": true,
+    "previewExportDraftEventPublicationWrites": 0
+  },
+  "limits": [
+    "16 synthetic posts only",
+    "Context captured; no Previewizer/render/export/upload/draft/event/publication",
+    "Frontend execution deferred"
+  ],
+  "budget": {
+    "initialRows": 900,
+    "finalRows": 900,
+    "previousRowsUnchanged": true,
+    "providerCalls": 3,
+    "paidCalls": 0,
+    "reservationsUsd": 0,
+    "actualUsd": 0,
+    "ledgerSha256": "ab41cdc7a53d893fc4b77fc40d407ee715d9fa0277f1c6610a9ecb34c82f498e",
+    "newRows": []
+  }
+}

@@ -1,0 +1,12 @@
+[dotenv@17.3.1] injecting env (0) from .env -- tip: 🔐 prevent committing .env to code: https://dotenvx.com/precommit
+
+ RUN  v3.2.4 C:/Users/jorda/Documents/Codex/2026-10-11/c/work/relay
+
+ ✓ tests/posting-rhythms/postgres.integration.test.ts (2 tests) 1654ms
+   ✓ Posting Rhythms on isolated Postgres > saves without enrollment; isolates plans; advances only on matching publication evidence  531ms
+
+ Test Files  1 passed (1)
+      Tests  2 passed (2)
+   Start at  21:31:18
+   Duration  4.02s (transform 542ms, setup 25ms, collect 2.01s, tests 1.65s, environment 0ms, prepare 95ms)
+

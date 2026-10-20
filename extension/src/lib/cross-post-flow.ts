@@ -14,6 +14,8 @@ import {
 export type CrossPostFlowResult =
   | { ok: true; tab_id: number; relay_post_id: string; destination: CrossPostDestination; schedule_event_id?: never }
   | { ok: true; tab_id: number; relay_post_id: string; destination: "x"; schedule_event_id: string }
+  | { ok: true; tab_id: number; relay_post_id: string; destination: "x"; handoff_id: string }
+  | { ok: true; tab_id: number; relay_post_id: string; destination: "deviantart"; handoff_id: string }
   | {
       ok: false;
       reason:
@@ -31,6 +33,7 @@ export type CrossPostFlowResult =
 export async function runRelayCrossPostFlow(
   message: ExternalCrossPostMessage
 ): Promise<CrossPostFlowResult> {
+  if ("handoff_id" in message) return message.destination === "deviantart" ? runBenchDeviantArtHandoffFlow(message) : runBenchXHandoffFlow(message);
   const requestedDestination = crossPostDestinationFromMessage(message);
   const fetched = await fetchAndStoreCrossPostPackageFromMessage(message);
   if (!fetched.ok) {
@@ -73,6 +76,38 @@ export async function runRelayCrossPostFlow(
     return { ok: true, tab_id: tabId, relay_post_id: fetched.relay_post_id, destination: "x", schedule_event_id: checkedScheduleEventId };
   }
   return { ok: true, tab_id: tabId, relay_post_id: fetched.relay_post_id, destination };
+}
+
+async function runBenchXHandoffFlow(message: Extract<ExternalCrossPostMessage, { handoff_id: string }>): Promise<CrossPostFlowResult> {
+  const fetched = await fetchAndStoreCrossPostPackageFromMessage(message);
+  if (!fetched.ok) return fetched;
+  if (!("handoff_id" in fetched) || fetched.handoff_id !== message.handoff_id || fetched.destination !== "x") return { ok: false, reason: "package_fetch_failed", detail: "handoff_mismatch" };
+  let tabId: number;
+  try {
+    const opened = await openCrossPostTab("x");
+    if (opened === undefined) return { ok: false, reason: "tab_open_failed" };
+    tabId = opened;
+  } catch { return { ok: false, reason: "tab_open_failed" }; }
+  try { await waitForCrossPostTabReady(tabId, "x"); } catch { return { ok: false, reason: "tab_load_timeout" }; }
+  const injected = await injectCrossPostFillScript(tabId, "x", fetched.packet);
+  if (!injected) return { ok: false, reason: "inject_failed" };
+  return { ok: true, tab_id: tabId, relay_post_id: fetched.relay_post_id, destination: "x", handoff_id: fetched.handoff_id };
+}
+
+async function runBenchDeviantArtHandoffFlow(message: Extract<ExternalCrossPostMessage, { handoff_id: string; destination: "deviantart" }>): Promise<CrossPostFlowResult> {
+  const fetched = await fetchAndStoreCrossPostPackageFromMessage(message);
+  if (!fetched.ok) return fetched;
+  if (!("handoff_id" in fetched) || fetched.handoff_id !== message.handoff_id || fetched.destination !== "deviantart") return { ok: false, reason: "package_fetch_failed", detail: "handoff_mismatch" };
+  let tabId: number;
+  try {
+    const opened = await openCrossPostTab("deviantart");
+    if (opened === undefined) return { ok: false, reason: "tab_open_failed" };
+    tabId = opened;
+  } catch { return { ok: false, reason: "tab_open_failed" }; }
+  try { await waitForCrossPostTabReady(tabId, "deviantart"); } catch { return { ok: false, reason: "tab_load_timeout" }; }
+  const injected = await injectCrossPostFillScript(tabId, "deviantart", fetched.packet);
+  if (!injected) return { ok: false, reason: "inject_failed" };
+  return { ok: true, tab_id: tabId, relay_post_id: fetched.relay_post_id, destination: "deviantart", handoff_id: fetched.handoff_id };
 }
 
 /** @deprecated Use {@link runRelayCrossPostFlow} with a full message. */

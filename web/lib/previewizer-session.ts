@@ -10,6 +10,8 @@ export type PreviewizerSession = {
   postId: string;
   sourceMediaId: string;
   sourceImageUrl: string;
+  /** Server-owned label for an explicitly selected synthetic bench fixture image. */
+  sourceLabel?: string;
   /**
    * Optional saved-template snapshot (Automations / approval preload).
    * Applied once after source image mount; never includes crop/selection.
@@ -25,13 +27,15 @@ export type PreviewizerResult = {
 /** Injected by Autopost/adapter — Previewizer must not import Relay upload. */
 export type PreviewizerUploadPreview = (blob: Blob) => Promise<{ mediaId: string }>;
 
-export type PreviewizerMode = "standalone" | "distribution";
+export type PreviewizerMode = "standalone" | "distribution" | "bench";
 
 export function buildPreviewizerSession(args: {
   creatorId: string;
   postId: string;
   sourceMediaId: string;
   sourceImageUrl: string;
+  /** Server-owned label for an explicitly selected synthetic bench fixture image. */
+  sourceLabel?: string;
   initialTemplateConfig?: PreviewTemplateConfigV1;
 }): PreviewizerSession {
   const session: PreviewizerSession = {
@@ -40,6 +44,9 @@ export function buildPreviewizerSession(args: {
     sourceMediaId: args.sourceMediaId,
     sourceImageUrl: args.sourceImageUrl
   };
+  if (args.sourceLabel !== undefined) {
+    session.sourceLabel = args.sourceLabel;
+  }
   if (args.initialTemplateConfig !== undefined) {
     session.initialTemplateConfig = args.initialTemplateConfig;
   }

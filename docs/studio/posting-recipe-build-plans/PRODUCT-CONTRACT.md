@@ -1,6 +1,8 @@
-# Posting Recipes — product contract
+# Posting Rhythms — product contract
 
-**Revision 6 · 2026-10-18 · proposed implementation contract.** Incorporates compact calendar timing, source-aware description controls and saved-draft authoring. Supersedes the two-stage-only proposal. This document does not enable production functionality or change legacy Automations behavior.
+**Revision 8 · 2026-10-19 · proposed implementation contract.** Destination-first release rows and a top-level recipe chooser refine the Studio sheet flow. Reusable recipes, readable sequencing and recoverable editing remain primary. Retains compact calendar timing, source-aware descriptions and immutable saved drafts. Supersedes the two-stage-only proposal. This document does not enable production functionality or change legacy Automations behavior.
+
+The user-facing product term is **Rhythm**. It covers the complete trigger, filters and releases. Existing recipe identifiers in code and this implementation proposal refer to that same model; this naming change does not require a storage migration.
 
 ## 1. Product model
 
@@ -9,7 +11,7 @@ Creators compose release routes from a small supported set of operations. Preset
 - **Trigger:** a publication from a specific connected creator account, optionally narrowed by filters.
 - **Route:** a stable-ID row specifying timing, treatment of the source artwork, base description, optional Coach treatment, and one or more destination accounts. A route is configured once and expanded into independent destination actions.
 - **Plan:** one execution of a frozen configuration, for selected existing artwork or the next matching publication. The target is explicit before confirmation.
-- **Recipe:** reusable versioned configuration. It can be selected manually, offered as a Default, or enabled Always on.
+- **Rhythm:** reusable versioned configuration. It can be selected manually, offered as a Default, or enabled Always on.
 - **Enrollment:** immutable acceptance of one source publication into one plan/recipe revision. It correlates existing execution authorities; it is not a second posting-status ledger.
 - **Publication receipt:** API evidence or a labeled creator attestation of an actual external publication. Handoff, export, form fill and legacy automation completion are not receipts.
 
@@ -17,7 +19,7 @@ Creators compose release routes from a small supported set of operations. Preset
 
 | Area | R1: flexible, review-first | Separately gated follow-up |
 | --- | --- | --- |
-| Editor | Trigger → filters → repeatable route rows → final choices; inline trays | Node canvas, arbitrary graph programming |
+| Editor | Whole-recipe chooser → source/filter strip → destination-first releases with Details → save/final choices | Node canvas, arbitrary graph programming |
 | Sources | Specific connected Patreon creator account through existing ingest | Instagram and other source connectors |
 | Filters | Contains image, literal text/marker, structured link match; all conditions AND | OR groups, regex, AI/trend classifiers |
 | Media | Exactly one supported source image; Original or saved Previewizer template | Multiple images/video, transformations of an earlier rendered output, background rendering |
@@ -35,9 +37,13 @@ A source-relative route can select destinations independently of other routes. A
 
 ## 3. Progressive editor
 
+### Whole-recipe selection
+
+**Recipes** belongs above the source trigger. Its inline chooser loads a saved recipe or editable template covering the complete trigger, filters and releases; **New recipe** starts a fresh flow. Naming and saving apply to the whole configuration, never an individual destination row. Loading does not publish or enroll. Preserve the previous working configuration through Undo. The standalone demo exposes two templates and the existing single locally saved recipe slot; a production library lists creator-owned recipe revisions.
+
 ### Trigger first
 
-Initial surface: **When I post to [connected account]**, **+ Filter**, and **Continue**. Show actual account identity, not merely a platform name. A source selector lists only linked accounts with `monitor_publications` and media retrieval capabilities; supported unconnected accounts use a separate connection path. Instagram must not appear as a working source before its adapter exists.
+Initial surface: **When I post to [connected account]** and **+ Filter** in a compact source strip. With a valid sole connected account, expose the first release immediately; otherwise reveal releases after a valid source selection. Reusable future-post recipes are the primary path. Show actual account identity with its platform logo, not merely a platform name. A source selector lists only linked accounts with `monitor_publications` and media retrieval capabilities; supported unconnected accounts use a separate connection path. Instagram must not appear as a working source before its adapter exists.
 
 Filter controls open inline. Active filters remain visible as removable chips after the tray closes. R1 semantics:
 
@@ -50,26 +56,26 @@ Recent-post/sample testing shows Match / No match and which filter failed. It ne
 
 ### Routes next
 
-Completing the trigger reveals **Also send it to…**. Columns follow the sentence: **To**, **When**, **Modifications** (Teaser / Coach). Each route has a separate description section directly below its controls. There is no route-name column or required per-step label. The creator names only a saved recipe. Summaries derive descriptions from the selected image and destinations; stable route IDs remain internal.
+A valid trigger exposes one **Also send it to…** heading followed immediately by connected destination account tags. Each numbered release starts with those tags, including platform logos and handles; they remain editable when details are collapsed. **Details** sits to the right and reveals timing, image/assistance (Teaser / Coach), then Description. One release exposes details at a time; all may be collapsed. Collapsed rows show timing and treatment below their destinations. Preview release labels, Editing badges and saved-description names never become route headings. Opening another release changes presentation only; it never invalidates a saved recipe. There is no route-name column or required per-step label. The creator names only a saved recipe. Summaries derive descriptions from the selected image and destinations; stable route IDs remain internal.
 
 - Choose connected destination account chips first, then **After [1] day**, then optional modification buttons. Disabled/unconnected accounts are not selectable. New rows preserve the original image and description until a modifier is selected.
-- **Teaser** toggles Previewizer treatment and reveals its style tray. Turning it off restores the original image, preserving the selected style for later reuse.
-- **Description** is a dedicated rounded panel below each route, using the space formerly occupied by full-width timing. Its selector has **Keep original**, **Edit original**, **Use saved description**. The selected mode opens the relevant context directly within this panel.
+- **Teaser** is a checkbox applying Previewizer treatment; a separate disclosure shows the selected preview type and opens direct choices without changing enabled state. Turning it off restores the original image, preserving the selected style for later reuse.
+- **Description** is a divided, full-width region within the active release, visually distinct from compact timing controls. Its selector has **Keep original**, **Edit original**, **Use snippet**. The selected mode opens the relevant context directly within this panel.
 - Keep original previews actual source copy when available. With no uploaded source, it simply states that copy will be taken from the future post. **Edit original is disabled until actual source text exists**; uploaded/scheduled status alone is insufficient. Per-run review may edit after ingest. Changing to a context without source text returns selection to Keep original while retaining the old edit as an unapplied draft.
 - Edit original initializes once from the actual source, then preserves creator edits across mode/destination changes. It is a literal per-route replacement, not an automatic diff/merge for future posts. Upcoming/reusable recipes can instead use saved text or Coach; illustrative sample captions never enter production snapshots. A source-version change requires explicit reseeding/review, never a silent overwrite.
 - Use saved description lists creator-owned prior drafts, previews destination fields, and offers **Edit draft** / **New draft**. Edits open full name/title/body/X text/tags controls. Saving an edit creates a new immutable draft version/identity and selects it for this route; the old draft, sibling rows and accepted recipe revisions remain unchanged. Creating a draft does not publish or enroll anything. Cancel restores the prior selection. Unfinished edits require save/cancel before confirmation.
 - Saved-draft selection snapshots exact version/values into the recipe revision and enrollment. Later library edits never replace an accepted action's text. Multiple reusable drafts are supported; the demo has a 32-draft local budget and stores them independently of saving a recipe. Production requires creator/tenant ownership checks, additive persistence and bounded server validation.
-- **Coach** is an independent toggle with goal/notes in its inline tray. It can accompany Teaser and an edited/saved description. It works on the chosen base description and always requires review. With Coach off, saved and custom text remain exact.
-- Toggle states indicate applied behavior; disclosure state indicates which tray is open. Closing a tray never removes a selected modification. Relevant style and review requirement remain visible beneath the buttons; description selection stays visible in its own section.
+- **Coach** is an independent checkbox with an Engagement disclosure opening Help me with and optional notes; engagement remains the supported first-release goal. It can accompany Teaser and an edited/saved description. It works on the chosen base description and always requires review. With Coach off, saved and custom text remain exact.
+- Toggle states indicate applied behavior; disclosure state indicates which tray is open. Closing a tray never removes a selected modification. The selected style appears on its disclosure; review authority remains in the persistent bar; description selection stays visible in its own section.
 - A compact posting-date dropdown offers **After a delay**, **First/last day of this month**, and **First/last day of next month**. Day count appears only in delay mode. “This/next month” is relative to the source or predecessor publication in the recipe timezone, never the editor/discovery date. This is a one-off release rule per source, not monthly recurrence.
-- **Options** is a small anchored dropdown beside the timer, containing clock time/timezone and, for later rows, the reference selector. It does not reserve a full-width section. It closes on outside click/Escape, supports keyboard use and never changes timing merely by opening. An empty clock means elapsed time in delay mode or the reference's local hour/minute in calendar-boundary mode. **Clear time** removes the explicit clock. Selected clock/reference remain visible when closed.
+- **Time** is a small anchored dropdown beside the timer, containing clock time/timezone and, for later rows, the reference selector. It does not reserve a full-width section. It closes on outside click/Escape, supports keyboard use and never changes timing merely by opening. An empty clock means elapsed time in delay mode or the reference's local hour/minute in calendar-boundary mode. **Clear time** removes the explicit clock. Selected clock/reference remain visible when closed.
 - Later rows may count from **My original post** or a preceding **Post N goes live**. Stable IDs prevent cycles; the first row has no redundant reference choice. Only an actual per-destination publication receipt advances the chain.
 - Removing a predecessor requires first changing/removing its dependents. Removing a predecessor destination requires resolving dependent destinations. Never silently reanchor or drop work.
-- **And then…** creates an unnamed row initially anchored to the preceding post, copying its eligible destinations. The reference dropdown can make it source-relative/independent. Every route still transforms the original artwork. Compact desktop keeps three columns; mobile stacks them. Only style/Coach details use wider inline trays; timing uses the compact dropdown and Description owns its panel.
+- **And then…** creates an unnamed row initially anchored to the preceding post, copying its eligible destinations. The reference dropdown can make it source-relative/independent. Every route still transforms the original artwork. Destinations occupy the row header; timing and treatment use two desktop columns and stack on mobile. Only style/Coach details use contextual inline panels; timing stays compact. Collapsed releases retain the sequence context. Opening, inserting and removing releases uses restrained positional motion without repeating page-load animation.
 
 ### Final choices last
 
-After valid routes, reveal a final tray with timezone, review authority, notification preference, a compact plan summary, and **Confirm plan** / **Save recipe**.
+A persistent bottom bar exposes **Save recipe**, review authority and a Test shortcut. Save recipe first validates the configuration, then opens final choices with timezone, review authority, notification preference and recipe name/Default/Always on. Saving commits configuration only. A secondary **Confirm plan** path remains available for one-time preparation. Notifications appear only here, after route composition.
 
 | Final choice | Contract |
 | --- | --- |
@@ -80,19 +86,19 @@ After valid routes, reveal a final tray with timezone, review authority, notific
 | Notifications | In-app attention remains available; opt-in creator summary email. This choice does not grant delivery authority |
 | Review mode | R1: Review each post. Remote review, Automatic and Cancellation window are unavailable until capability/authority gates pass |
 
-Save Recipe opens a small inline tray for name, Default and Always on. It is distinct from confirmation. When both one-shot and Always-on use the same logical recipe/source, reuse the existing enrollment rather than accidentally posting twice. Explicitly repeating a release requires a separately named confirmed plan identity; no broad global source dedupe across intentional independent recipes.
+The final Save recipe action commits the inline name, Default and Always on fields; opening final choices alone does not save. It is distinct from confirmation. When both one-shot and Always-on use the same logical recipe/source, reuse the existing enrollment rather than accidentally posting twice. Explicitly repeating a release requires a separately named confirmed plan identity; no broad global source dedupe across intentional independent recipes.
 
 Editing a configured trigger or route invalidates the final review acknowledgement; preserve entered values, show the error near its field, and require renewed confirmation. Do not erase downstream work just because its tray is temporarily irrelevant. Saved recipe revisions do not mutate already accepted runs.
 
 ## 4. Visual / interaction contract
 
-Use GitHub Primer as interaction direction, while retaining Relay's dark neutrals and purposeful green primary action: compact forms, quiet borders, clear selected states, consistent spacing and contextual disclosure. Rounded surfaces (16–20px) and controls (10px or pill radius); no sharp rectangular panels. Sans-serif hierarchy; no hero headline or explanatory wall of copy in the editor.
+Use GitHub Primer as interaction direction, while retaining Relay's dark neutrals and purposeful green primary action: compact forms, quiet borders, clear selected states, consistent spacing and contextual disclosure. Rounded surfaces (13–14px), controls (9px) and pill-like account selections; no sharp rectangular panels. Sans-serif hierarchy; no hero headline or explanatory wall of copy in the editor.
 
 Primary guidance: [Primer progressive disclosure](https://primer.style/product/ui-patterns/progressive-disclosure/), [forms](https://primer.style/product/ui-patterns/forms/), and [notification messaging](https://primer.style/product/ui-patterns/notification-messaging/). Keep the user's context and pair disclosure icons with meaningful labels. These are references, not a dependency or a requirement to import Primer components into Relay.
 
 Use short fade/translate entrances (roughly 160–220ms), restrained hover transitions, and no forced scroll jumps during editing. Honor `prefers-reduced-motion`. Primary editing uses inline trays; no browser alerts, prompts, or modal wizard. Toasts acknowledge save/confirm; inline errors persist. Modals are reserved for exceptional destructive actions or a later focused review flow.
 
-Keyboard users can operate every disclosure, chip, input and final choice; maintain focus after row edits and removal, use `aria-expanded`/`aria-controls`, and hide inactive sections from the accessibility tree. Narrow layouts stack form fields and keep any table overflow inside its labeled scroll region. Essential controls must not rely on hover, color alone or drag gestures.
+Keyboard users can operate every disclosure, chip, input and final choice; maintain focus after row edits and removal, use `aria-expanded`/`aria-controls`, and hide inactive sections from the accessibility tree. Narrow layouts stack form fields and simulator actions into labeled cards, without horizontal panning. Controls target 40px with readable 14px functional text and 13px supporting text. Test and handoff actions move keyboard focus to the revealed context. Working drafts recover separately from saved recipes; valid removal, reset and example loading offer Undo. Essential controls must not rely on hover, color alone or drag gestures.
 
 ## 5. Capability and execution boundaries
 

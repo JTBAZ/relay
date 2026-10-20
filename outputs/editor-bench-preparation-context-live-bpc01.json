@@ -1,0 +1,122 @@
+{
+  "ticket": "BPC-01",
+  "date": "2026-10-19",
+  "mode": "live_synthetic_http",
+  "passed": true,
+  "calls": [
+    {
+      "expectedKind": "selection",
+      "actualKind": "selection",
+      "inputBytes": 22563,
+      "inputSha256": "4d9afaa19405c822ef30afac08e8872c80987e5943b784dbca1fef3520be8247",
+      "usage": {
+        "inputTokens": 4381,
+        "outputTokens": 93,
+        "costUsd": 0.0009878,
+        "calls": 1
+      }
+    },
+    {
+      "expectedKind": "preparation_update",
+      "actualKind": "preparation_update",
+      "inputBytes": 22670,
+      "inputSha256": "78b561742036c975a28c2eb623d6391f74151b369e3f617c0fee1f58a9460afe",
+      "usage": {
+        "inputTokens": 4407,
+        "outputTokens": 41,
+        "costUsd": 0.00066366,
+        "calls": 1
+      }
+    },
+    {
+      "expectedKind": "selection",
+      "actualKind": "selection",
+      "inputBytes": 22673,
+      "inputSha256": "200f4a3ebeb1602d98ce9648a9ac218e24a5c0ef9f51586c4c19a841f083d413",
+      "usage": {
+        "inputTokens": 4404,
+        "outputTokens": 74,
+        "costUsd": 0.0007026599999999999,
+        "calls": 1
+      }
+    }
+  ],
+  "turns": [
+    {
+      "requestSha256": "1edae5128c72c675dd42a4dcf8e0ac92d52f7fe6127a47811687a0a43649e483",
+      "httpStatus": 200,
+      "status": "selected",
+      "diagnostic": null,
+      "message": "The posts are selected for preview-first X draft preparation. Previewizer has not run, and no draft exists.",
+      "passed": true
+    },
+    {
+      "requestSha256": "0cd1b240648887c52c91d5a23012bf5fc38b2ac2b160b00ac67b547432706c72",
+      "httpStatus": 200,
+      "status": "preparation_updated",
+      "diagnostic": null,
+      "message": "Preparation choices are recorded. They have not been applied, and no draft exists.",
+      "passed": true
+    },
+    {
+      "requestSha256": "9e793b1b4f2b9a20990898181343baac973f858c294ff82ce15970d13d3225a6",
+      "httpStatus": 200,
+      "status": "selected",
+      "diagnostic": null,
+      "message": null,
+      "passed": true
+    }
+  ],
+  "checks": {
+    "bothStageSketchesSelected": true,
+    "tagOnlyUnderselectionAvoided": true,
+    "templateAndExistingTitleChoicesPersist": true,
+    "followupExclusionsPersist": true,
+    "previewFirstXGoalPreserved": true,
+    "readOnlySnapshotRecovery": true,
+    "foreignAndStaleNoExtraCall": true,
+    "fixtureCardsUnchanged": true,
+    "previewExportDraftEventPublicationWrites": 0
+  },
+  "limits": [
+    "16 synthetic posts only",
+    "Context captured; no Previewizer/render/export/upload/draft/event/publication",
+    "Frontend execution deferred"
+  ],
+  "budget": {
+    "initialRows": 900,
+    "finalRows": 903,
+    "previousRowsUnchanged": true,
+    "providerCalls": 3,
+    "paidCalls": 3,
+    "reservationsUsd": 0.0251216,
+    "actualUsd": 0.00235412,
+    "ledgerSha256": "699cab42ae296086d1b43a692edb047b8d9508b1343a3539a90e7fb94ab2fbf5",
+    "newRows": [
+      {
+        "id": "e0576004-a6f0-4b1c-9770-1614a5138749",
+        "model": "gpt-5.6-luna",
+        "phase": "development",
+        "reservedUsd": 0.008359400000000001,
+        "actualUsd": 0.0009878,
+        "settled": true
+      },
+      {
+        "id": "98eccc7b-e1e6-409f-9884-b4030f3f9813",
+        "model": "gpt-5.6-luna",
+        "phase": "development",
+        "reservedUsd": 0.008380799999999999,
+        "actualUsd": 0.00066366,
+        "settled": true
+      },
+      {
+        "id": "9aaa58e0-931a-4c34-ab0a-4c42f2e15f52",
+        "model": "gpt-5.6-luna",
+        "phase": "development",
+        "reservedUsd": 0.0083814,
+        "actualUsd": 0.0007026599999999999,
+        "settled": true
+      }
+    ]
+  }
+}

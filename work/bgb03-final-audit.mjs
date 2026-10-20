@@ -1,0 +1,17 @@
+import fs from 'node:fs';
+import {createHash} from 'node:crypto';
+const read = p => JSON.parse(fs.readFileSync(p,'utf8').replace(/^\uFEFF/,''));
+const hash = p => createHash('sha256').update(fs.readFileSync(p)).digest('hex');
+const baseline = read('work/bgb03-baseline/baseline.json');
+const report = read('outputs/editor-bench-cheap-model-followups-proof-bgb03.json');
+const check = (x, message) => { if (!x) throw Error(message); };
+for (const [p,h] of Object.entries(baseline.reports)) check(hash(p)===h,'Prior evidence changed: '+p);
+const handoff = fs.readFileSync('docs/relay-cheaper-model-handoff.md','utf8');
+const old = fs.readFileSync('work/bgb03-baseline/docs/relay-cheaper-model-handoff.md','utf8');
+const historicalBody = old.slice(old.indexOf('\n')+1).replace(/^\r?\n/,'');
+check(handoff.endsWith(historicalBody),'Historical handoff changed');
+for (const name of ['WORK-ITEMS.md','DISPATCH.md','README.md','EDITOR-BENCH-PLAN.md','BENCH-GENERIC-PREVIEW-BATCH-PLAN.md','BENCH-CHEAP-MODEL-FOLLOWUPS-PLAN.md']) check(fs.readFileSync('docs/conversational-planning/'+name,'utf8').includes('**BGB-03 accepted'),'Status missing: '+name);
+for (const [p,v] of Object.entries(report.scope)) check(hash(p)===v.sha256,'Reviewed source changed: '+p);
+const result = {passed:true,priorEvidenceFilesPreserved:Object.keys(baseline.reports).length,historicalHandoffPreserved:true,sourceFrozen:true,docsVerified:7};
+fs.writeFileSync('work/bgb03-final-audit.json',JSON.stringify(result,null,2)+'\n',{flag:'wx'});
+console.log(JSON.stringify(result));

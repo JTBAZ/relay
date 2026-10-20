@@ -1,0 +1,8 @@
+{
+  "pid": 48764,
+  "exitCode": 1,
+  "pollingStoppedAfterFatalExit": true,
+  "error": "Shared Patreon session storage is required in split-worker mode",
+  "stdout": "work/bgb03-api-02.out.log",
+  "stderr": "work/bgb03-api-02.err.log"
+}

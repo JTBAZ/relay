@@ -1,0 +1,18 @@
+{
+  "ticket": "BDA-01",
+  "source": "Root observed the initial work/bda01-luna-focused.json tool read before the worker overwrote that filename",
+  "originalRawReportPreserved": false,
+  "passed": 32,
+  "failed": 2,
+  "files": 5,
+  "failures": [
+    {
+      "test": "records a preview-first X preparation goal, binds choices, and retains them after exclusion",
+      "error": "Expected bytes [22587,22694,22697]; observed [22788,22895,22898] after destination instruction/schema growth"
+    },
+    {
+      "test": "grounds rename titles in one exact balanced quote and independently grounds the target",
+      "error": "Expected request_length; observed payload_over_24k for the already-invalid 2001-character rename request"
+    }
+  ]
+}

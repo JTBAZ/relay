@@ -1,0 +1,1 @@
+{"command":"npm exec vitest -- run tests/editor-bench/conversation.test.ts -t 'builds a grouped destination matrix' --testTimeout=30000 --reporter=json --outputFile=work/bgb01-luna-matrix-07.json","exitCode":0}

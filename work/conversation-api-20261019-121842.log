@@ -1,0 +1,18 @@
+[dotenv@17.3.1] injecting env (16) from .env -- tip: 🔐 prevent building .env in docker: https://dotenvx.com/prebuild
+[dotenv@17.3.1] injecting env (0) from .env -- tip: ⚙️  suppress all logs with { quiet: true }
+[12:18:48.229] [33mWARN[39m (relay-server/21760): [36m[relay] RELAY_PUBLIC_WEBHOOK_BASE_URL is not set — Patreon platform webhooks cannot be registered. Set RELAY_PUBLIC_WEBHOOK_BASE_URL (or PUBLIC_WEBHOOK_BASE_URL) to your public Relay API origin in production.[39m
+[12:18:48.271] [33mWARN[39m (relay-api/21760): [36mRelay: RELAY_SPLIT_WORKER_PROCESS=1 — background timers are not started in this process; run `npm run worker` alongside `npm start`.[39m
+[12:18:48.273] [32mINFO[39m (relay-api/21760): [36mRelay API listening[39m
+    [35mport[39m: 8788
+[12:19:00.158] [32mINFO[39m (relay-http/21760): [36mhttp_request[39m
+    [35mtraceId[39m: "trace_dc8e0613-a957-4b45-8ac1-3bbeb43f94ed"
+    [35mmethod[39m: "GET"
+    [35mpath[39m: "/api/v1/health"
+    [35mstatus[39m: 200
+    [35mdurationMs[39m: 6
+[12:19:00.222] [32mINFO[39m (relay-http/21760): [36mhttp_request[39m
+    [35mtraceId[39m: "trace_2d50a7d8-d302-435c-9587-9b76ebfbeb1e"
+    [35mmethod[39m: "GET"
+    [35mpath[39m: "/api/v1/editor-bench/schedule/conversation/session/not-a-session"
+    [35mstatus[39m: 401
+    [35mdurationMs[39m: 11

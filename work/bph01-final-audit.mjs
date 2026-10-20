@@ -1,0 +1,20 @@
+import fs from 'node:fs';
+import cp from 'node:child_process';
+import crypto from 'node:crypto';
+import ts from 'typescript';
+const baseline=JSON.parse(fs.readFileSync('work/bph01-baseline/baseline.json','utf8'));
+const hash=p=>crypto.createHash('sha256').update(fs.readFileSync(p)).digest('hex');
+const changed=Object.keys(baseline.source).filter(p=>hash(p)!==baseline.source[p]);
+const docs=changed.filter(p=>p.startsWith('docs/'));
+const source=changed.filter(p=>!p.startsWith('docs/'));
+const added=['extension/src/lib/bench-x-handoff.ts','tests/extension/bench-x-handoff-contract.test.ts','tests/extension/bench-x-handoff-fetch.test.ts'];
+const files=[...source,...added];
+const scope={};
+for(const p of source){const r=cp.spawnSync('git',['-c','safe.directory='+process.cwd().replaceAll('\\','/'),'-c','core.whitespace=cr-at-eol','diff','--no-index','--unified=0','--','work/bph01-baseline/'+p,p],{encoding:'utf8'});if(r.status!==1)throw Error('Expected task diff: '+p);const check=cp.spawnSync('git',['-c','safe.directory='+process.cwd().replaceAll('\\','/'),'-c','core.whitespace=cr-at-eol','diff','--no-index','--check','--','work/bph01-baseline/'+p,p],{encoding:'utf8'});if(check.stdout.trim()||check.status>1)throw Error('Whitespace failure: '+p);scope[p]={sha256:hash(p),hunks:r.stdout.split(/\r?\n/).filter(l=>l.startsWith('@@'))};}
+for(const p of added)scope[p]={sha256:hash(p),newFile:true};
+const parsed=ts.createSourceFile('EditorBenchClient.tsx',fs.readFileSync('web/app/editor-bench/EditorBenchClient.tsx','utf8'),ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX);if(parsed.parseDiagnostics.length)throw Error('Bench TSX syntax diagnostics');
+for(const[p,h]of Object.entries(baseline.reports))if(hash(p)!==h)throw Error('Prior report changed: '+p);
+const ledger=JSON.parse(fs.readFileSync('.relay-data/gallery-editor-budget.json','utf8'));const ledgerHash=crypto.createHash('sha256').update(JSON.stringify(ledger)).digest('hex');if(ledgerHash!==baseline.ledger.sha256)throw Error('Ledger changed');
+const git=a=>cp.execFileSync('git',['-c','safe.directory='+process.cwd().replaceAll('\\','/'),...a],{encoding:'utf8'}).trim();
+const result={branch:git(['branch','--show-current']),head:git(['rev-parse','HEAD']),baselineHead:baseline.head,source,added,docs,scope,protectedSourceCount:Object.keys(baseline.source).length-changed.length,tsxParseDiagnostics:0,taskWhitespace:true,priorReportsPreserved:Object.keys(baseline.reports).length,ledger:{...baseline.ledger,sha256:ledgerHash},paidCalls:0};
+fs.writeFileSync('work/bph01-final-audit.json',JSON.stringify(result,null,2)+'\n');console.log(JSON.stringify({branch:result.branch,head:result.head,changedExisting:source.length,added:added.length,docs:docs.length,protected:result.protectedSourceCount,priorReportsPreserved:result.priorReportsPreserved,tsxParseDiagnostics:0,ledgerUnchanged:true}));

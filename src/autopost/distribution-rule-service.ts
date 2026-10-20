@@ -3,6 +3,7 @@
  * draft-only preview Autopost drafts for other destinations after an offset.
  */
 
+import { reconcileRhythms } from "../posting-rhythms/service.js";
 import type { PrismaClient } from "@prisma/client";
 import { CreatorPlan, PostSource } from "@prisma/client";
 import { requireCreatorPlanAtLeast } from "../billing/creator-plan-entitlement-service.js";
@@ -141,6 +142,8 @@ async function assertRuleNotOwnedByAutomation(
   ruleId: string,
   creatorId: string
 ): Promise<void> {
+  const rhythmOwned=await prisma.creatorDistributionRule.findFirst({where:{id:ruleId,creatorId,rhythmId:{not:null}}});
+  if(rhythmOwned?.rhythmId)throw new DistributionRuleValidationError("Manage this rule in Posting Rhythms.");
   const owned = await prisma.creatorAutomation.findFirst({
     where: { distributionRuleId: ruleId, creatorId },
     select: { id: true }
@@ -241,7 +244,7 @@ export async function listDistributionRules(
 ): Promise<DistributionRuleWire[]> {
   await requireAutopost(prisma, creatorId);
   const rows = await prisma.creatorDistributionRule.findMany({
-    where: { creatorId },
+    where: { creatorId, rhythmId: null },
     orderBy: { updatedAt: "desc" }
   });
   return rows.map(mapRule);
@@ -325,6 +328,7 @@ export async function discoverDistributionRuleRuns(
   const rules = await prisma.creatorDistributionRule.findMany({
     where: {
       status: "active",
+      rhythmId: null,
       ...(options?.creatorId ? { creatorId: options.creatorId } : {})
     }
   });
@@ -387,6 +391,7 @@ export async function materializeDueDistributionRuns(
   const runs = await prisma.creatorDistributionRuleRun.findMany({
     where: {
       status: "pending",
+      rule: { rhythmId: null },
       dueAt: { lte: now },
       ...(options?.creatorId ? { creatorId: options.creatorId } : {})
     },
@@ -445,12 +450,13 @@ export async function reconcileDistributionRules(
   materialized: number;
   failed: number;
 }> {
+  const rhythms = await reconcileRhythms(prisma, options);
   const discovered = await discoverDistributionRuleRuns(prisma, options);
   const mat = await materializeDueDistributionRuns(prisma, options);
   return {
-    rules: discovered.rules,
-    runs_created: discovered.runs_created,
-    materialized: mat.materialized,
+    rules: discovered.rules + rhythms.rules,
+    runs_created: discovered.runs_created + rhythms.runs_created,
+    materialized: mat.materialized + rhythms.materialized,
     failed: mat.failed
   };
 }

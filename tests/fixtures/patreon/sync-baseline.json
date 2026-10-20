@@ -1,0 +1,62 @@
+{
+  "creator_id": "cr_sync_baseline",
+  "other_creator_id": "cr_sync_baseline_other",
+  "campaign_id": "9000",
+  "campaigns": {
+    "data": [{
+      "type": "campaign", "id": "9000",
+      "attributes": { "name": "Sync baseline fixture", "created_at": "2026-01-01T00:00:00.000Z", "published_at": "2026-01-01T00:00:00.000Z" },
+      "relationships": { "tiers": { "data": [{ "type": "tier", "id": "9100" }] } }
+    }],
+    "included": [{
+      "type": "tier", "id": "9100",
+      "attributes": { "title": "Supporter", "amount_cents": 500, "created_at": "2026-01-01T00:00:00.000Z", "edited_at": "2026-01-01T00:00:00.000Z", "published": true }
+    }]
+  },
+  "head": {
+    "data": [{
+      "type": "post", "id": "9002",
+      "attributes": { "title": "Newest original", "content": "<p>Newest body</p>", "published_at": "2026-10-19T12:00:00.000Z", "is_public": true, "tiers": [] }
+    }],
+    "links": { "next": "https://www.patreon.com/api/oauth2/v2/campaigns/9000/posts?page%5Bcursor%5D=baseline-tail" }
+  },
+  "tail": {
+    "data": [{
+      "type": "post", "id": "9001",
+      "attributes": { "title": "Older original", "content": "<p>Older body</p>", "published_at": "2026-09-01T12:00:00.000Z", "is_public": true, "tiers": [] }
+    }],
+    "links": {}
+  },
+  "updated_old_post": {
+    "type": "post", "id": "9001",
+    "attributes": { "title": "Older edited", "content": "<p>Older revised body</p>", "published_at": "2026-09-01T12:00:00.000Z", "edited_at": "2026-10-20T12:00:00.000Z", "is_public": false, "tiers": ["9100"] }
+  },
+  "cookie_head": {
+    "data": [{
+      "type": "post", "id": "9002",
+      "attributes": { "title": "Newest original", "content": "<p>Newest body</p>", "published_at": "2026-10-19T12:00:00.000Z", "is_public": true, "tiers": [] },
+      "relationships": { "images": { "data": [{ "type": "media", "id": "9200" }] } }
+    }],
+    "included": [{
+      "type": "media", "id": "9200",
+      "attributes": { "download_url": "https://cdn.fixture.example/sync-baseline/original.jpg", "mimetype": "image/jpeg" }
+    }],
+    "links": {}
+  },
+  "members": {
+    "active": {
+      "data": [{
+        "type": "member", "id": "baseline-member-1",
+        "attributes": { "patron_status": "active_patron", "currently_entitled_amount_cents": 500, "pledge_relationship_start": "2026-09-01T12:00:00.000Z" },
+        "relationships": { "user": { "data": { "type": "user", "id": "9300" } }, "currently_entitled_tiers": { "data": [{ "type": "tier", "id": "9100" }] } }
+      }],
+      "links": {}
+    },
+    "absent": { "data": [], "links": {} }
+  },
+  "credential_cases": [
+    { "name": "local_expiry", "browser_cookie_present": true, "server_cookie_status": "expired_local" },
+    { "name": "server_cookie_removed", "browser_cookie_present": true, "server_cookie_status": "none" },
+    { "name": "grant_expired", "browser_cookie_present": true, "grant_expires_at": "2026-10-01T00:00:00.000Z", "checked_at": "2026-10-20T12:00:00.000Z" }
+  ]
+}

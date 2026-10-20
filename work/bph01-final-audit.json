@@ -1,0 +1,174 @@
+{
+  "branch": "codex/local-build-2026-10-19",
+  "head": "ed9b99e250da0aa96320241d9aed4c25e6b62844",
+  "baselineHead": "eb8e7ee7d386b52b821ce1a93427a90b78919c0f",
+  "source": [
+    "src/editor-bench/conversation.ts",
+    "src/editor-bench/schedule-routes.ts",
+    "src/server.ts",
+    "tests/editor-bench/conversation.test.ts",
+    "web/app/editor-bench/EditorBenchClient.tsx",
+    "web/lib/editor-bench.ts",
+    "web/lib/relay-extension-messaging.ts",
+    "extension/src/content/fill-x-compose.ts",
+    "extension/src/lib/cross-post-fetch.ts",
+    "extension/src/lib/cross-post-flow.ts",
+    "extension/src/lib/cross-post-tab-inject.ts",
+    "extension/src/lib/cross-post-types.ts"
+  ],
+  "added": [
+    "extension/src/lib/bench-x-handoff.ts",
+    "tests/extension/bench-x-handoff-contract.test.ts",
+    "tests/extension/bench-x-handoff-fetch.test.ts"
+  ],
+  "docs": [
+    "docs/conversational-planning/DISPATCH.md",
+    "docs/conversational-planning/EDITOR-BENCH-PLAN.md",
+    "docs/conversational-planning/README.md",
+    "docs/conversational-planning/WORK-ITEMS.md",
+    "docs/relay-cheaper-model-handoff.md"
+  ],
+  "scope": {
+    "src/editor-bench/conversation.ts": {
+      "sha256": "5df280ff7af25537500db626f8d9b16b7327f30088c4c786d07b3b410747d166",
+      "hunks": [
+        "@@ -54,0 +55,2 @@ export type BenchConversationDraftScheduleReceipt = { token: string; identity: s",
+        "@@ -63,0 +66 @@ export type BenchConversationSession = {",
+        "@@ -91,0 +95,2 @@ export function reconcileConversationPreviews(session: BenchConversationSession)",
+        "@@ -122,0 +128 @@ export function beginConversationPreview(session: BenchConversationSession, post",
+        "@@ -179 +185 @@ export function createBenchConversationStore() {",
+        "@@ -208 +214,4 @@ export function conversationSnapshot(session: BenchConversationSession) {"
+      ]
+    },
+    "src/editor-bench/schedule-routes.ts": {
+      "sha256": "bd693cdbef43344cb02c2b2a9094bfa7b9aae9f8c1026b53cd55abb6d3fe816b",
+      "hunks": [
+        "@@ -13 +13 @@ import { interpretBenchVariantEdit, resolveBenchVariantEditTarget, variantChatIn",
+        "@@ -18,0 +19 @@ import { resolveAbsoluteTime } from '../conversational-planning/calendar-resolve",
+        "@@ -41,0 +43 @@ export type BenchScheduleRouteOptions = {",
+        "@@ -61,0 +64 @@ type SignedConversationDraftScheduleReview = { kind: 'bench_x_draft_schedule_rev",
+        "@@ -102,0 +106,17 @@ function conversationDraftScheduleTokenFor(secret: Buffer, claims: SignedConvers",
+        "@@ -294,0 +315,22 @@ export function registerBenchScheduleRoutes(app: express.Application, options: B",
+        "@@ -524,0 +567,90 @@ export function registerBenchScheduleRoutes(app: express.Application, options: B"
+      ]
+    },
+    "src/server.ts": {
+      "sha256": "9feb957a3e6ee9db0acc8712ca9df75ce68779d71fa710493f74e1b088c1d5f6",
+      "hunks": [
+        "@@ -3583,0 +3584,20 @@ export function createApp(config: AppConfig): CreateAppResult {",
+        "@@ -19488,0 +19509 @@ export function createApp(config: AppConfig): CreateAppResult {"
+      ]
+    },
+    "tests/editor-bench/conversation.test.ts": {
+      "sha256": "b14fc49a78a7c022c518f7fa6416f576eeeeb7a07f3fcbb7128a0b8b9b2a9745",
+      "hunks": [
+        "@@ -21,0 +22 @@ function setup(actions: unknown[], options: Record<string, unknown> = {}) {",
+        "@@ -64,0 +66,46 @@ describe('mock editor-bench conversation', () => {"
+      ]
+    },
+    "web/app/editor-bench/EditorBenchClient.tsx": {
+      "sha256": "e44bf560b7c9314ef12b60cc7354af89a7c9482548fa2c8ed53af82432203e87",
+      "hunks": [
+        "@@ -10 +10,2 @@ import { sendRelayScheduleEventToExtension } from \"@/lib/relay-extension-messagi",
+        "@@ -128,0 +130,4 @@ export default function EditorBenchClient() {",
+        "@@ -233,0 +239 @@ export default function EditorBenchClient() {",
+        "@@ -283 +289 @@ export default function EditorBenchClient() {",
+        "@@ -302 +308 @@ export default function EditorBenchClient() {",
+        "@@ -355 +361 @@ export default function EditorBenchClient() {",
+        "@@ -401 +407 @@ export default function EditorBenchClient() {",
+        "@@ -433,0 +440,51 @@ export default function EditorBenchClient() {",
+        "@@ -437,0 +495 @@ export default function EditorBenchClient() {",
+        "@@ -718 +776 @@ export default function EditorBenchClient() {",
+        "@@ -991,0 +1050 @@ export default function EditorBenchClient() {",
+        "@@ -1006,0 +1066,9 @@ export default function EditorBenchClient() {",
+        "@@ -1011 +1079 @@ export default function EditorBenchClient() {"
+      ]
+    },
+    "web/lib/editor-bench.ts": {
+      "sha256": "85429fd84d4e5f4e6ba4e860fb8fe60aa5a8fe2f4ff96a455291bde293da9259",
+      "hunks": [
+        "@@ -59 +59 @@ export type BenchConversationDraftReceipt = { identity: string; creatorId: strin",
+        "@@ -135,0 +136,8 @@ export function confirmBenchConversationXDraftSchedule(input: { sessionId: strin"
+      ]
+    },
+    "web/lib/relay-extension-messaging.ts": {
+      "sha256": "09b20d8b2608468c1c0ee93c8c7823a679ed3cdbfcb70d04c6fff5f355496f95",
+      "hunks": [
+        "@@ -53,0 +54 @@ export type SendRelayScheduleEventResult =",
+        "@@ -243,0 +245,15 @@ function describeRelayScheduleEventFailure(value: unknown): string {"
+      ]
+    },
+    "extension/src/content/fill-x-compose.ts": {
+      "sha256": "036eaab1db8bf49154d84e08f15d1a041d47966f10cea7ee6ef46523073571f7",
+      "hunks": [
+        "@@ -11,0 +12 @@ import {",
+        "@@ -742 +743,2 @@ async function attemptImageAttach(",
+        "@@ -756,2 +758,2 @@ async function attemptImageAttach(",
+        "@@ -764 +766 @@ async function attemptImageAttach(",
+        "@@ -796,0 +799,12 @@ async function attemptImageAttach(",
+        "@@ -846 +860,6 @@ void (async () => {",
+        "@@ -849 +868 @@ void (async () => {",
+        "@@ -859 +878 @@ void (async () => {",
+        "@@ -863 +882,2 @@ void (async () => {",
+        "@@ -869,2 +889,3 @@ void (async () => {",
+        "@@ -887,2 +908,3 @@ void (async () => {"
+      ]
+    },
+    "extension/src/lib/cross-post-fetch.ts": {
+      "sha256": "b23a93adb7b77c66e962c1d27e3da15120d79adb808187b9b19af74725fbba7d",
+      "hunks": [
+        "@@ -11,0 +12 @@ import * as storage from \"./storage\";",
+        "@@ -15,0 +17 @@ export type CrossPostFetchResult =",
+        "@@ -133,0 +136 @@ export async function fetchAndStoreCrossPostPackageFromMessage(",
+        "@@ -142,0 +146,43 @@ export async function fetchAndStoreCrossPostPackageFromMessage("
+      ]
+    },
+    "extension/src/lib/cross-post-flow.ts": {
+      "sha256": "cba15a2793d136c225cdeef7c182fdf1a3413ae2d7af2b67caef2434cc090cea",
+      "hunks": [
+        "@@ -16,0 +17 @@ export type CrossPostFlowResult =",
+        "@@ -33,0 +35 @@ export async function runRelayCrossPostFlow(",
+        "@@ -77,0 +80,16 @@ export async function runRelayCrossPostFlow("
+      ]
+    },
+    "extension/src/lib/cross-post-tab-inject.ts": {
+      "sha256": "6cd4ca9090b2e5eeda211085dcd58e28d4ef5b9c468e24c023d5f4bd7c80ecc7",
+      "hunks": [
+        "@@ -4,0 +5 @@ import type { CrossPostDestination } from \"./cross-post-types\";",
+        "@@ -76 +77,2 @@ export async function injectCrossPostFillScript(",
+        "@@ -79,0 +82,6 @@ export async function injectCrossPostFillScript("
+      ]
+    },
+    "extension/src/lib/cross-post-types.ts": {
+      "sha256": "9493fd86fc14b9dfd24fcc47ea8c1a4154f6b4c18e1dc0c436b313b168a0337a",
+      "hunks": [
+        "@@ -35 +35,9 @@ export type ScheduleEventExternalCrossPostMessage = {",
+        "@@ -102,0 +111 @@ export function isExternalCrossPostMessage(v: unknown): v is ExternalCrossPostMe",
+        "@@ -155,0 +165 @@ export function crossPostDestinationFromMessage("
+      ]
+    },
+    "extension/src/lib/bench-x-handoff.ts": {
+      "sha256": "e407a91dc895dd344bb5bd8e4e1f6a6a0bf35d555ee1cf0f8fdf0a5fda3bb7ad",
+      "newFile": true
+    },
+    "tests/extension/bench-x-handoff-contract.test.ts": {
+      "sha256": "72b1c7caf9294c2abd530674eee8ab14d402ce67e0a887e46265e75d6366797f",
+      "newFile": true
+    },
+    "tests/extension/bench-x-handoff-fetch.test.ts": {
+      "sha256": "9849bfa19bad5814a5af817a71c2cbf73b10b9731f04fa91d0b8958248ed2b5c",
+      "newFile": true
+    }
+  },
+  "protectedSourceCount": 154,
+  "tsxParseDiagnostics": 0,
+  "taskWhitespace": true,
+  "priorReportsPreserved": 60,
+  "ledger": {
+    "rows": 903,
+    "sha256": "699cab42ae296086d1b43a692edb047b8d9508b1343a3539a90e7fb94ab2fbf5",
+    "developmentRemainingUsd": 0.35674,
+    "heldoutRemainingUsd": 8.9690346
+  },
+  "paidCalls": 0
+}

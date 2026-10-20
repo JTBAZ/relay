@@ -1,0 +1,439 @@
+[dotenv@17.3.1] injecting env (18) from .env -- tip: 🛠️  run anywhere with `dotenvx run -- yourcommand`
+
+ RUN  v3.2.4 C:/Users/jorda/Documents/Codex/2026-10-11/c/work/relay
+
+ ✓ tests/automations/delayed-release.test.ts (7 tests) 17ms
+ ✓ tests/automations/automation-materializer.test.ts (11 tests) 69ms
+ ✓ tests/automations/spine-characterization.test.ts (10 tests) 18ms
+ ✓ tests/posting-rhythms/contract.test.ts (7 tests) 6ms
+ ✓ tests/posting-rhythms/routes.test.ts (3 tests) 98ms
+ ✓ tests/web/automations-flow.test.tsx (7 tests) 197ms
+ ✓ tests/web/automations-modal.test.tsx (8 tests) 43ms
+ ❯ tests/posting-rhythms/editor.test.tsx (3 tests | 1 failed) 174ms
+   ✓ Posting Rhythms app integration > uses the real source and never renders a fictional account 37ms
+   ✓ Posting Rhythms app integration > connects an explicitly confirmed extension account and sends the complete configuration to the server 83ms
+   × Posting Rhythms app integration > shows preview and unavailable platforms without creating jobs or pretending to connect 54ms
+     → Found multiple elements with the text: Preview rhythm
+
+Here are the matching elements:
+
+Ignored nodes: comments, script, style
+[36m<button[39m
+  [33mclass[39m=[32m"ghost"[39m
+[36m>[39m
+  [36m<svg[39m
+    [33mclass[39m=[32m"lucide lucide-play"[39m
+    [33mfill[39m=[32m"none"[39m
+    [33mheight[39m=[32m"17"[39m
+    [33mstroke[39m=[32m"currentColor"[39m
+    [33mstroke-linecap[39m=[32m"round"[39m
+    [33mstroke-linejoin[39m=[32m"round"[39m
+    [33mstroke-width[39m=[32m"2"[39m
+    [33mviewBox[39m=[32m"0 0 24 24"[39m
+    [33mwidth[39m=[32m"17"[39m
+    [33mxmlns[39m=[32m"http://www.w3.org/2000/svg"[39m
+  [36m>[39m
+    [36m<polygon[39m
+      [33mpoints[39m=[32m"6 3 20 12 6 21 6 3"[39m
+    [36m/>[39m
+  [36m</svg>[39m
+  [0mPreview rhythm[0m
+[36m</button>[39m
+
+Ignored nodes: comments, script, style
+[36m<h2>[39m
+  [0mPreview rhythm[0m
+[36m</h2>[39m
+
+(If this is intentional, then use the `*AllBy*` variant of the query (like `queryAllByText`, `getAllByText`, or `findAllByText`)).
+
+Ignored nodes: comments, script, style
+[36m<body>[39m
+  [36m<div>[39m
+    [36m<div[39m
+      [33mclass[39m=[32m"posting-rhythms"[39m
+    [36m>[39m
+      [36m<main>[39m
+        [36m<div[39m
+          [33mclass[39m=[32m"page-head"[39m
+        [36m>[39m
+          [36m<h1[39m
+            [33mclass[39m=[32m"rhythm-heading"[39m
+          [36m>[39m
+            [0mPosting Rhythms[0m
+          [36m</h1>[39m
+          [36m<div[39m
+            [33mclass[39m=[32m"row"[39m
+          [36m>[39m
+            [36m<span[39m
+              [33mclass[39m=[32m"badge"[39m
+            [36m>[39m
+              [0mDraft[0m
+            [36m</span>[39m
+            [36m<button[39m
+              [33maria-controls[39m=[32m"rhythm-hub"[39m
+              [33maria-expanded[39m=[32m"false"[39m
+              [33mclass[39m=[32m"ghost"[39m
+            [36m>[39m
+              [36m<svg[39m
+                [33mclass[39m=[32m"lucide lucide-library"[39m
+                [33mfill[39m=[32m"none"[39m
+                [33mheight[39m=[32m"17"[39m
+                [33mstroke[39m=[32m"currentColor"[39m
+                [33mstroke-linecap[39m=[32m"round"[39m
+                [33mstroke-linejoin[39m=[32m"round"[39m
+                [33mstroke-width[39m=[32m"2"[39m
+                [33mviewBox[39m=[32m"0 0 24 24"[39m
+                [33mwidth[39m=[32m"17"[39m
+                [33mxmlns[39m=[32m"http://www.w3.org/2000/svg"[39m
+              [36m>[39m
+                [36m<path[39m
+                  [33md[39m=[32m"m16 6 4 14"[39m
+                [36m/>[39m
+                [36m<path[39m
+                  [33md[39m=[32m"M12 6v14"[39m
+                [36m/>[39m
+                [36m<path[39m
+                  [33md[39m=[32m"M8 8v12"[39m
+                [36m/>[39m
+                [36m<path[39m
+                  [33md[39m=[32m"M4 4v16"[39m
+                [36m/>[39m
+              [36m</svg>[39m
+              [0mRhythms[0m
+              [36m<svg[39m
+                [33mclass[39m=[32m"lucide lucide-chevron-down"[39m
+                [33mfill[39m=[32m"none"[39m
+                [33mheight[39m=[32m"17"[39m
+                [33mstroke[39m=[32m"currentColor"[39m
+                [33mstroke-linecap[39m=[32m"round"[39m
+                [33mstroke-linejoin[39m=[32m"round"[39m
+                [33mstroke-width[39m=[32m"2"[39m
+                [33mviewBox[39m=[32m"0 0 24 24"[39m
+                [33mwidth[39m=[32m"17"[39m
+                [33mxmlns[39m=[32m"http://www.w3.org/2000/svg"[39m
+              [36m>[39m
+                [36m<path[39m
+                  [33md[39m=[32m"m6 9 6 6 6-6"[39m
+                [36m/>[39m
+              [36m</svg>[39m
+            [36m</button>[39m
+          [36m</div>[39m
+        [36m</div>[39m
+        [36m<div[39m
+          [33mclass[39m=[32m"builder"[39m
+        [36m>[39m
+          [36m<section[39m
+            [33maria-label[39m=[32m"Trigger"[39m
+            [33mclass[39m=[32m"panel source-panel"[39m
+          [36m>[39m
+            [36m<div[39m
+              [33mclass[39m=[32m"source-top"[39m
+            [36m>[39m
+              [36m<div[39m
+                [33mclass[39m=[32m"trigger-sentence"[39m
+              [36m>[39m
+                [36m<span>[39m
+                  [0mWhen I post to…[0m
+                [36m</span>[39m
+                [36m<div[39m
+                  [33mclass[39m=[32m"source-account"[39m
+                [36m>[39m
+                  [36m<span[39m
+                    [33maria-hidden[39m=[32m"true"[39m
+                    [33mclass[39m=[32m"source-logo"[39m
+                  [36m>[39m
+                    [36m<svg[39m
+                      [33maria-hidden[39m=[32m"true"[39m
+                      [33mclass[39m=[32m"platform-logo patreon"[39m
+                      [33mviewBox[39m=[32m"0 0 24 24"[39m
+                    [36m>[39m
+                      [36m<circle[39m
+                        [33mcx[39m=[32m"14.5"[39m
+                        [33mcy[39m=[32m"9.5"[39m
+                        [33mr[39m=[32m"6.5"[39m
+                      [36m/>[39m
+                      [36m<rect[39m
+                        [33mheight[39m=[32m"18"[39m
+                        [33mrx[39m=[32m"1"[39m
+                        [33mwidth[39m=[32m"3.5"[39m
+                        [33mx[39m=[32m"3"[39m
+                        [33my[39m=[32m"3"[39m
+                      [36m/>[39m
+                    [36m</svg>[39m
+                  [36m</span>[39m
+                  bound HTMLSelectElement {
+                    "0": [36m<option[39m
+                      [33mvalue[39m=[32m""[39m
+                    [36m>[39m
+                      [0mChoose an account[0m
+                    [36m</option>[39m,
+                    "1": [36m<option[39m
+                      [33mvalue[39m=[32m"patreon_campaign_a"[39m
+                    [36m>[39m
+                      [0mPatreon · [0m
+                      [0mArtist account[0m
+                    [36m</option>[39m,
+                  }
+                [36m</div>[39m
+              [36m</div>[39m
+              [36m<div[39m
+                [33mclass[39m=[32m"filter-block"[39m
+              [36m>[39m
+                [36m<span[39m
+                  [33mclass[39m=[32m"label"[39m
+                [36m>[39m
+                  [0mOnly when all filters match[0m
+                [36m</span>[39m
+                [36m<div[39m
+                  [33mclass[39m=[32m"filters"[39m
+                [36m>[39m
+                  [36m<button[39m
+                    [33maria-label[39m=[32m"Remove Contains image filter"[39m
+                    [33mclass[39m=[32m"chip ghost"[39m
+                  [36m>[39m
+                    [0mContains image[0m
+                    [36m<svg[39m
+                      [33mclass[39m=[32m"lucide lucide-x"[39m
+                      [33mfill[39m=[32m"none"[39m
+                      [33mheight[39m=[32m"13"[39m
+                      [33mstroke[39m=[32m"currentColor"[39m
+                      [33mstroke-linecap[39m=[32m"round"[39m
+                      [33mstroke-linejoin[39m=[32m"round"[39m
+                      [33mstroke-width[39m=[32m"2"[39m
+                      [33mviewBox[39m=[32m"0 0 24 24"[39m
+                      [33mwidth[39m=[32m"13"[39m
+                      [33mxmlns[39m=[32m"http://www.w3.org/2000/svg"[39m
+                    [36m>[39m
+                      [36m<path[39m
+                        [33md[39m=[32m"M18 6 6 18"[39m
+                      [36m/>[39m
+                      [36m<path[39m
+                        [33md[39m=[32m"m6 6 12 12"[39m
+                      [36m/>[39m
+                    [36m</svg>[39m
+                  [36m</button>[39m
+                  [36m<button[39m
+        ...
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/posting-rhythms/editor.test.tsx > Posting Rhythms app integration > shows preview and unavailable platforms without creating jobs or pretending to connect
+TestingLibraryElementError: Found multiple elements with the text: Preview rhythm
+
+Here are the matching elements:
+
+Ignored nodes: comments, script, style
+<button
+  class="ghost"
+>
+  <svg
+    class="lucide lucide-play"
+    fill="none"
+    height="17"
+    stroke="currentColor"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+    stroke-width="2"
+    viewBox="0 0 24 24"
+    width="17"
+    xmlns="http://www.w3.org/2000/svg"
+  >
+    <polygon
+      points="6 3 20 12 6 21 6 3"
+    />
+  </svg>
+  Preview rhythm
+</button>
+
+Ignored nodes: comments, script, style
+<h2>
+  Preview rhythm
+</h2>
+
+(If this is intentional, then use the `*AllBy*` variant of the query (like `queryAllByText`, `getAllByText`, or `findAllByText`)).
+
+Ignored nodes: comments, script, style
+<body>
+  <div>
+    <div
+      class="posting-rhythms"
+    >
+      <main>
+        <div
+          class="page-head"
+        >
+          <h1
+            class="rhythm-heading"
+          >
+            Posting Rhythms
+          </h1>
+          <div
+            class="row"
+          >
+            <span
+              class="badge"
+            >
+              Draft
+            </span>
+            <button
+              aria-controls="rhythm-hub"
+              aria-expanded="false"
+              class="ghost"
+            >
+              <svg
+                class="lucide lucide-library"
+                fill="none"
+                height="17"
+                stroke="currentColor"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                viewBox="0 0 24 24"
+                width="17"
+                xmlns="http://www.w3.org/2000/svg"
+              >
+                <path
+                  d="m16 6 4 14"
+                />
+                <path
+                  d="M12 6v14"
+                />
+                <path
+                  d="M8 8v12"
+                />
+                <path
+                  d="M4 4v16"
+                />
+              </svg>
+              Rhythms
+              <svg
+                class="lucide lucide-chevron-down"
+                fill="none"
+                height="17"
+                stroke="currentColor"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                viewBox="0 0 24 24"
+                width="17"
+                xmlns="http://www.w3.org/2000/svg"
+              >
+                <path
+                  d="m6 9 6 6 6-6"
+                />
+              </svg>
+            </button>
+          </div>
+        </div>
+        <div
+          class="builder"
+        >
+          <section
+            aria-label="Trigger"
+            class="panel source-panel"
+          >
+            <div
+              class="source-top"
+            >
+              <div
+                class="trigger-sentence"
+              >
+                <span>
+                  When I post to…
+                </span>
+                <div
+                  class="source-account"
+                >
+                  <span
+                    aria-hidden="true"
+                    class="source-logo"
+                  >
+                    <svg
+                      aria-hidden="true"
+                      class="platform-logo patreon"
+                      viewBox="0 0 24 24"
+                    >
+                      <circle
+                        cx="14.5"
+                        cy="9.5"
+                        r="6.5"
+                      />
+                      <rect
+                        height="18"
+                        rx="1"
+                        width="3.5"
+                        x="3"
+                        y="3"
+                      />
+                    </svg>
+                  </span>
+                  bound HTMLSelectElement {
+                    "0": <option
+                      value=""
+                    >
+                      Choose an account
+                    </option>,
+                    "1": <option
+                      value="patreon_campaign_a"
+                    >
+                      Patreon · 
+                      Artist account
+                    </option>,
+                  }
+                </div>
+              </div>
+              <div
+                class="filter-block"
+              >
+                <span
+                  class="label"
+                >
+                  Only when all filters match
+                </span>
+                <div
+                  class="filters"
+                >
+                  <button
+                    aria-label="Remove Contains image filter"
+                    class="chip ghost"
+                  >
+                    Contains image
+                    <svg
+                      class="lucide lucide-x"
+                      fill="none"
+                      height="13"
+                      stroke="currentColor"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      stroke-width="2"
+                      viewBox="0 0 24 24"
+                      width="13"
+                      xmlns="http://www.w3.org/2000/svg"
+                    >
+                      <path
+                        d="M18 6 6 18"
+                      />
+                      <path
+                        d="m6 6 12 12"
+                      />
+                    </svg>
+                  </button>
+                  <button
+        ...
+ ❯ Object.getElementError node_modules/@testing-library/dom/dist/config.js:37:19
+ ❯ getElementError node_modules/@testing-library/dom/dist/query-helpers.js:20:35
+ ❯ getMultipleElementsFoundError node_modules/@testing-library/dom/dist/query-helpers.js:23:10
+ ❯ node_modules/@testing-library/dom/dist/query-helpers.js:55:13
+ ❯ node_modules/@testing-library/dom/dist/query-helpers.js:95:19
+ ❯ tests/posting-rhythms/editor.test.tsx:17:141
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed | 7 passed (8)
+      Tests  1 failed | 55 passed (56)
+   Start at  21:33:09
+   Duration  5.99s (transform 1.44s, setup 64ms, collect 4.27s, tests 621ms, environment 309ms, prepare 171ms)
+

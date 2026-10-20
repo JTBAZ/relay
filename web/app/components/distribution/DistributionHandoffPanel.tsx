@@ -32,6 +32,7 @@ type VariantSendState = {
 
 type Props = {
   plan: DistributionPlanWire;
+  requirePublishedUrl?: boolean;
   onComplete: () => void;
   /**
    * Optional Automations hook: fires after a durable attempt exists
@@ -58,7 +59,7 @@ function formatScheduledFor(iso: string | null): string {
   });
 }
 
-export function DistributionHandoffPanel({ plan, onComplete, onDurableAttempt }: Props) {
+export function DistributionHandoffPanel({ plan, onComplete, onDurableAttempt, requirePublishedUrl = false }: Props) {
   const [sendState, setSendState] = useState<Record<string, VariantSendState>>({});
   const [fallbackVariant, setFallbackVariant] = useState<DistributionVariantWire | null>(null);
   const [manualUrl, setManualUrl] = useState("");
@@ -68,6 +69,14 @@ export function DistributionHandoffPanel({ plan, onComplete, onDurableAttempt }:
   useEffect(() => {
     setLocalVariants(plan.variants);
   }, [plan.variants]);
+  useEffect(()=>{
+    if(!requirePublishedUrl)return;
+    setSendState(previous=>{
+      const next={...previous};
+      for(const v of plan.variants){const a=v.latest_attempt;if(a&&!next[v.variant_id])next[v.variant_id]={busy:false,confirmBusy:false,error:null,attemptId:a.attempt_id,fillStatus:a.status,confirmExpanded:a.status!=='posted',confirmUrlDraft:a.external_url||''};}
+      return next;
+    });
+  },[plan.variants,requirePublishedUrl]);
 
   const setVariantState = useCallback((variantId: string, patch: Partial<VariantSendState>) => {
     setSendState((prev) => {
@@ -209,6 +218,7 @@ export function DistributionHandoffPanel({ plan, onComplete, onDurableAttempt }:
   async function confirmPosted(variant: DistributionVariantWire, url?: string) {
     const state = sendState[variant.variant_id];
     if (!state?.attemptId || state.confirmBusy) return;
+    if(requirePublishedUrl&&!url?.trim()){setVariantState(variant.variant_id,{error:"Paste the published post URL to confirm this release."});return;}
     setVariantState(variant.variant_id, { confirmBusy: true });
     try {
       const trimmedUrl = url?.trim() || null;
@@ -223,14 +233,15 @@ export function DistributionHandoffPanel({ plan, onComplete, onDurableAttempt }:
         confirmExpanded: false,
         confirmUrlDraft: ""
       });
-    } catch {
-      setVariantState(variant.variant_id, { confirmBusy: false });
+    } catch (e) {
+      setVariantState(variant.variant_id, { confirmBusy: false, ...(requirePublishedUrl?{error:e instanceof Error?e.message:"Could not confirm this publication."}:{}) });
     }
   }
 
   async function markManualComplete(variant: DistributionVariantWire) {
     const state = sendState[variant.variant_id];
     if (!state?.attemptId) return;
+    if(requirePublishedUrl&&!manualUrl.trim()){setVariantState(variant.variant_id,{error:"Paste the published post URL to confirm this release."});return;}
     await completeDistributionAttempt(state.attemptId, {
       external_url: manualUrl.trim() || null,
       status: "posted"
@@ -442,7 +453,9 @@ export function DistributionHandoffPanel({ plan, onComplete, onDurableAttempt }:
                       });
                     }
                   }}
-                  placeholder={`Paste the ${destLabel} post URL (optional)`}
+                  aria-label={`${destLabel} published post URL`}
+                  required={requirePublishedUrl}
+                  placeholder={`Paste the ${destLabel} post URL${requirePublishedUrl?"":" (optional)"}`}
                   className="min-w-0 flex-1 rounded border bg-transparent px-2 py-1.5 text-xs text-[#f9fafb]"
                   style={{ borderColor: "#2a2a2a" }}
                 />
@@ -496,7 +509,9 @@ export function DistributionHandoffPanel({ plan, onComplete, onDurableAttempt }:
           <input
             value={manualUrl}
             onChange={(e) => setManualUrl(e.target.value)}
-            placeholder="Paste published URL (optional)"
+            aria-label="Published post URL"
+            required={requirePublishedUrl}
+            placeholder={requirePublishedUrl?"Paste published URL":"Paste published URL (optional)"}
             className="w-full rounded border bg-transparent px-2 py-1 text-xs text-[#f9fafb]"
             style={{ borderColor: "#2a2a2a" }}
           />

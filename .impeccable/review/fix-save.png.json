@@ -1,0 +1,14 @@
+{
+  "origin": "Native loopback UI screenshot; unscaled excerpt of native capture.",
+  "raw": "fix-save-full-raw.jpg",
+  "crop": [
+    0,
+    1200,
+    885,
+    1866
+  ],
+  "viewport": {
+    "width": 885,
+    "height": 572
+  }
+}

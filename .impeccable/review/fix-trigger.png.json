@@ -1,0 +1,14 @@
+{
+  "origin": "Native loopback UI screenshot; unscaled excerpt of native capture.",
+  "raw": "fix-trigger-raw.jpg",
+  "crop": [
+    0,
+    0,
+    885,
+    572
+  ],
+  "viewport": {
+    "width": 885,
+    "height": 572
+  }
+}

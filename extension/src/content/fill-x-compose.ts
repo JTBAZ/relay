@@ -9,6 +9,7 @@ import {
   type PatreonCrossPostMediaItem,
   type XCrossPostPackage
 } from "../lib/cross-post-types";
+import { BENCH_X_HANDOFF_PACKET_KEY, decodeBenchXHandoffBytes, isBenchXHandoffPacket, type BenchXHandoffPacket } from "../lib/bench-x-handoff";
 import {
   notifyDistributionFillResult,
   readPendingAttemptId,
@@ -739,7 +740,8 @@ async function tryRevealFileInput(): Promise<HTMLInputElement | null> {
 
 async function attemptImageAttach(
   pkg: XCrossPostPackage,
-  composeField: HTMLElement | null
+  composeField: HTMLElement | null,
+  preparedFiles?: File[]
 ): Promise<ImageAttachOutcome> {
   const images = partitionImages(pkg.media);
   const outcome: ImageAttachOutcome = {
@@ -753,15 +755,15 @@ async function attemptImageAttach(
     return outcome;
   }
 
-  const token = await readGrantToken();
-  if (!token) {
+  const token = preparedFiles ? undefined : await readGrantToken();
+  if (!preparedFiles && !token) {
     for (const item of images) {
       pushImageFailure(outcome, item.filename || item.media_id, "fetch_failed:no_grant");
     }
     return outcome;
   }
 
-  const { files, failures: fetchFailures } = await fetchImageFiles(images, token);
+  const { files, failures: fetchFailures } = preparedFiles ? { files: preparedFiles, failures: [] } : await fetchImageFiles(images, token!);
   for (const failure of fetchFailures) {
     pushImageFailure(outcome, failure.filename, failure.reason);
   }
@@ -792,6 +794,18 @@ async function attemptImageAttach(
     pushImageFailure(outcome, file.name, fileInputResult.reason);
   }
   return outcome;
+}
+
+async function takeBenchHandoffPacket(): Promise<{ packet: BenchXHandoffPacket; bytes: Uint8Array } | null | "invalid"> {
+  const target = globalThis as typeof globalThis & Record<string, unknown>;
+  if (!Object.hasOwn(target, BENCH_X_HANDOFF_PACKET_KEY)) return null;
+  const raw = target[BENCH_X_HANDOFF_PACKET_KEY];
+  delete target[BENCH_X_HANDOFF_PACKET_KEY];
+  if (!isBenchXHandoffPacket(raw)) return "invalid";
+  const bytes = decodeBenchXHandoffBytes(raw.jpeg_base64);
+  if (!bytes) return "invalid";
+  const digest = Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", bytes)), value => value.toString(16).padStart(2, "0")).join("");
+  return digest === raw.sha256 ? { packet: raw, bytes } : "invalid";
 }
 
 function buildBannerMessage(textOk: boolean, imageOutcome: ImageAttachOutcome): {
@@ -843,10 +857,15 @@ async function waitForComposeField(): Promise<HTMLElement | null> {
 }
 
 void (async () => {
-  const pkg = await readPendingPackage();
+  const handoffPacket = await takeBenchHandoffPacket();
+  if (handoffPacket === "invalid") { showBanner("Relay could not verify the scheduled X draft image. Return to Relay and retry the handoff.", "error"); return; }
+  let pkg: XCrossPostPackage | null;
+  if (handoffPacket) {
+    pkg = { relay_post_id: handoffPacket.packet.relay_post_id, title: handoffPacket.packet.post_text, body_text: "", post_text: handoffPacket.packet.post_text, media: [{ media_id: handoffPacket.packet.media_id, filename: handoffPacket.packet.filename, mime_type: "image/jpeg", content_url: "" }] };
+  } else pkg = await readPendingPackage();
   if (!pkg || !isFillableXCrossPostPackage(pkg)) {
     showBanner("Relay could not load the X cross-post draft.", "error");
-    await clearPending();
+    if (!handoffPacket) await clearPending();
     return;
   }
 
@@ -856,18 +875,20 @@ void (async () => {
       "Relay opened X but could not find the compose field. Paste your draft manually.",
       "partial"
     );
-    await clearPending();
+    if (!handoffPacket) await clearPending();
     return;
   }
 
-  const imageOutcome = await attemptImageAttach(pkg, field);
+  const preparedFiles = handoffPacket ? [new File([handoffPacket.bytes], handoffPacket.packet.filename, { type: "image/jpeg" })] : undefined;
+  const imageOutcome = await attemptImageAttach(pkg, field, preparedFiles);
   const mediaAttached = imageOutcome.attachedCount > 0;
   const textFill = await fillComposeText(field, pkg.post_text, mediaAttached);
   const textOk = textFill.ok;
   const banner = buildBannerMessage(textOk, imageOutcome);
   showBanner(banner.message, banner.tone);
-  const attemptId = await readPendingAttemptId();
-  await notifyDistributionFillResult({
+  if (!handoffPacket) {
+    const attemptId = await readPendingAttemptId();
+    await notifyDistributionFillResult({
     attemptId,
     status:
       banner.tone === "success"
@@ -884,6 +905,7 @@ void (async () => {
       text_fill_mode: textFill.mode,
       page_url: window.location.href
     }
-  });
-  await clearPending();
+    });
+    await clearPending();
+  }
 })();

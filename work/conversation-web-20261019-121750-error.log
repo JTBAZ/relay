@@ -1,0 +1,115 @@
+
+warn - The class `duration-[1200ms]` is ambiguous and matches multiple utilities.
+warn - If this is content and not a class, replace it with `duration-&lsqb;1200ms&rsqb;` to silence this warning.
+
+warn - The class `ease-[cubic-bezier(0.19,1,0.22,1)]` is ambiguous and matches multiple utilities.
+warn - If this is content and not a class, replace it with `ease-&lsqb;cubic-bezier(0.19,1,0.22,1)&rsqb;` to silence this warning.
+
+warn - The class `ease-[cubic-bezier(0.22,1,0.36,1)]` is ambiguous and matches multiple utilities.
+warn - If this is content and not a class, replace it with `ease-&lsqb;cubic-bezier(0.22,1,0.36,1)&rsqb;` to silence this warning.
+ ⨯ ./app/editor-bench/EditorBenchClient.tsx
+Error: 
+  [31mx[0m Expected ',', got ';'
+     ,-[[36;1;4mC:\Users\jorda\Documents\Codex\2026-10-11\c\work\relay\web\app\editor-bench\EditorBenchClient.tsx[0m:190:1]
+ [2m190[0m |     tag_ids: card.tags ?? [], tier_ids: [], has_export: true, processing_status: "READY", export_status: "ready",
+ [2m191[0m |     content_url_path: thumbnail(card.title), preview_url_path: thumbnail(card.title), thumb_url_path: thumbnail(card.title),
+ [2m192[0m |     visibility: "visible", collection_ids: card.collectionIds, collection_theme_tag_ids: [], mime_type: "image/svg+xml", media_role: "image",
+ [2m193[0m |   } satisfies GalleryItem))), [visibleCards]);
+     : [31;1m                                             ^[0m
+ [2m194[0m |   const groups = useMemo(() => groupGalleryItemsByPost(items), [items]);
+ [2m195[0m | 
+ [2m196[0m |   function invalidate() {
+     `----
+
+Caused by:
+    Syntax Error
+
+Import trace for requested module:
+./app/editor-bench/EditorBenchClient.tsx
+./app/editor-bench/page.tsx
+ ⨯ ./app/editor-bench/EditorBenchClient.tsx
+Error: 
+  [31mx[0m Expected ',', got ';'
+     ,-[[36;1;4mC:\Users\jorda\Documents\Codex\2026-10-11\c\work\relay\web\app\editor-bench\EditorBenchClient.tsx[0m:190:1]
+ [2m190[0m |     tag_ids: card.tags ?? [], tier_ids: [], has_export: true, processing_status: "READY", export_status: "ready",
+ [2m191[0m |     content_url_path: thumbnail(card.title), preview_url_path: thumbnail(card.title), thumb_url_path: thumbnail(card.title),
+ [2m192[0m |     visibility: "visible", collection_ids: card.collectionIds, collection_theme_tag_ids: [], mime_type: "image/svg+xml", media_role: "image",
+ [2m193[0m |   } satisfies GalleryItem))), [visibleCards]);
+     : [31;1m                                             ^[0m
+ [2m194[0m |   const groups = useMemo(() => groupGalleryItemsByPost(items), [items]);
+ [2m195[0m | 
+ [2m196[0m |   function invalidate() {
+     `----
+
+Caused by:
+    Syntax Error
+
+Import trace for requested module:
+./app/editor-bench/EditorBenchClient.tsx
+./app/editor-bench/page.tsx
+ ⨯ ./app/editor-bench/EditorBenchClient.tsx
+Error: 
+  [31mx[0m Expected ',', got ';'
+     ,-[[36;1;4mC:\Users\jorda\Documents\Codex\2026-10-11\c\work\relay\web\app\editor-bench\EditorBenchClient.tsx[0m:190:1]
+ [2m190[0m |     tag_ids: card.tags ?? [], tier_ids: [], has_export: true, processing_status: "READY", export_status: "ready",
+ [2m191[0m |     content_url_path: thumbnail(card.title), preview_url_path: thumbnail(card.title), thumb_url_path: thumbnail(card.title),
+ [2m192[0m |     visibility: "visible", collection_ids: card.collectionIds, collection_theme_tag_ids: [], mime_type: "image/svg+xml", media_role: "image",
+ [2m193[0m |   } satisfies GalleryItem))), [visibleCards]);
+     : [31;1m                                             ^[0m
+ [2m194[0m |   const groups = useMemo(() => groupGalleryItemsByPost(items), [items]);
+ [2m195[0m | 
+ [2m196[0m |   function invalidate() {
+     `----
+
+Caused by:
+    Syntax Error
+
+Import trace for requested module:
+./app/editor-bench/EditorBenchClient.tsx
+./app/editor-bench/page.tsx
+<w> [webpack.cache.PackFileCacheStrategy] Restoring pack failed from C:\Users\jorda\Documents\Codex\2026-10-11\c\work\relay\web\.next\cache\webpack\client-development-fallback.pack.gz: Error: invalid code lengths set
+ ⨯ ./app/editor-bench/EditorBenchClient.tsx
+Error: 
+  [31mx[0m Expected ',', got ';'
+     ,-[[36;1;4mC:\Users\jorda\Documents\Codex\2026-10-11\c\work\relay\web\app\editor-bench\EditorBenchClient.tsx[0m:190:1]
+ [2m190[0m |     tag_ids: card.tags ?? [], tier_ids: [], has_export: true, processing_status: "READY", export_status: "ready",
+ [2m191[0m |     content_url_path: thumbnail(card.title), preview_url_path: thumbnail(card.title), thumb_url_path: thumbnail(card.title),
+ [2m192[0m |     visibility: "visible", collection_ids: card.collectionIds, collection_theme_tag_ids: [], mime_type: "image/svg+xml", media_role: "image",
+ [2m193[0m |   } satisfies GalleryItem))), [visibleCards]);
+     : [31;1m                                             ^[0m
+ [2m194[0m |   const groups = useMemo(() => groupGalleryItemsByPost(items), [items]);
+ [2m195[0m | 
+ [2m196[0m |   function invalidate() {
+     `----
+
+Caused by:
+    Syntax Error
+
+Import trace for requested module:
+./app/editor-bench/EditorBenchClient.tsx
+./app/editor-bench/page.tsx
+ ⨯ ./app/editor-bench/EditorBenchClient.tsx
+Error: 
+  [31mx[0m Expected ',', got ';'
+     ,-[[36;1;4mC:\Users\jorda\Documents\Codex\2026-10-11\c\work\relay\web\app\editor-bench\EditorBenchClient.tsx[0m:190:1]
+ [2m190[0m |     tag_ids: card.tags ?? [], tier_ids: [], has_export: true, processing_status: "READY", export_status: "ready",
+ [2m191[0m |     content_url_path: thumbnail(card.title), preview_url_path: thumbnail(card.title), thumb_url_path: thumbnail(card.title),
+ [2m192[0m |     visibility: "visible", collection_ids: card.collectionIds, collection_theme_tag_ids: [], mime_type: "image/svg+xml", media_role: "image",
+ [2m193[0m |   } satisfies GalleryItem))), [visibleCards]);
+     : [31;1m                                             ^[0m
+ [2m194[0m |   const groups = useMemo(() => groupGalleryItemsByPost(items), [items]);
+ [2m195[0m | 
+ [2m196[0m |   function invalidate() {
+     `----
+
+Caused by:
+    Syntax Error
+
+Import trace for requested module:
+./app/editor-bench/EditorBenchClient.tsx
+./app/editor-bench/page.tsx
+ ⚠ Fast Refresh had to perform a full reload due to a runtime error.
+ ⚠ Fast Refresh had to perform a full reload due to a runtime error.
+ ⚠ Fast Refresh had to perform a full reload. Read more: https://nextjs.org/docs/messages/fast-refresh-reload
+<w> [webpack.cache.PackFileCacheStrategy] Caching failed for pack: Error: ENOENT: no such file or directory, rename 'C:\Users\jorda\Documents\Codex\2026-10-11\c\work\relay\web\.next\cache\webpack\client-development\9.pack.gz_' -> 'C:\Users\jorda\Documents\Codex\2026-10-11\c\work\relay\web\.next\cache\webpack\client-development\9.pack.gz'
+ ⚠ Found a change in next.config.mjs. Restarting the server to apply the changes...

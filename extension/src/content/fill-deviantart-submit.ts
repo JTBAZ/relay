@@ -14,6 +14,8 @@ import {
   type DeviantArtCrossPostPackage,
   type PatreonCrossPostMediaItem
 } from "../lib/cross-post-types";
+import { BENCH_DEVIANTART_HANDOFF_PACKET_KEY, isBenchDeviantArtHandoffPacket, type BenchDeviantArtHandoffPacket } from "../lib/bench-deviantart-handoff";
+import { decodeBenchXHandoffBytes } from "../lib/bench-x-handoff";
 
 const WAIT_MS = 12_000;
 const PHASE2_WAIT_MS = 65_000;
@@ -21,6 +23,7 @@ const POLL_MS = 200;
 const BANNER_ID = "relay-cross-post-banner";
 const MAX_IMAGES = 1;
 const GRANT_STORAGE_KEY = "grant";
+let mockBenchHandoff = false;
 
 const BANNER_SUCCESS =
   "Draft filled from Relay. Review the deviation in DeviantArt, then publish manually.";
@@ -726,6 +729,11 @@ async function openLatestDraftEditor(): Promise<HTMLElement | null> {
 }
 
 async function runFill(): Promise<void> {
+  if (Object.hasOwn(globalThis, BENCH_DEVIANTART_HANDOFF_PACKET_KEY)) {
+    mockBenchHandoff = true;
+    await runBenchHandoffFill();
+    return;
+  }
   const pkg = await readPendingPackage();
   if (!pkg || !isFillableDeviantArtCrossPostPackage(pkg)) {
     showBanner(BANNER_ERROR, "error");
@@ -830,8 +838,66 @@ async function fillPhase2Fields(
   });
 }
 
+async function consumeBenchHandoffPacket(): Promise<BenchDeviantArtHandoffPacket | null> {
+  const key = BENCH_DEVIANTART_HANDOFF_PACKET_KEY;
+  const raw = Reflect.get(globalThis, key);
+  Reflect.deleteProperty(globalThis, key);
+  if (!isBenchDeviantArtHandoffPacket(raw)) return null;
+  const bytes = decodeBenchXHandoffBytes(raw.jpeg_base64);
+  if (!bytes || bytes[0] !== 0xff || bytes[1] !== 0xd8 || bytes[2] !== 0xff) return null;
+  const digest = Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", bytes)), value => value.toString(16).padStart(2, "0")).join("");
+  return digest === raw.sha256 ? raw : null;
+}
+
+async function attachBenchHandoffImage(packet: BenchDeviantArtHandoffPacket): Promise<boolean> {
+  const bytes = decodeBenchXHandoffBytes(packet.jpeg_base64);
+  if (!bytes) return false;
+  const input = await tryRevealFileInput();
+  if (!input) return false;
+  const baseline = countMediaPreviewMarkers();
+  if (!assignFilesToInput(input, [new File([bytes], packet.filename, { type: "image/jpeg" })])) return false;
+  return waitForIncreasedMediaMarkers(baseline);
+}
+
+function clearBenchDescription(el: HTMLElement): boolean {
+  if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) {
+    setNativeInputValue(el, "");
+    return el.value === "";
+  }
+  if (el.isContentEditable) {
+    fillContentEditable(el, "", "");
+    return !(el.textContent ?? "").trim() && !(el.innerHTML ?? "").trim();
+  }
+  return false;
+}
+
+async function runBenchHandoffFill(): Promise<void> {
+  const packet = await consumeBenchHandoffPacket();
+  if (!packet) { showBanner(BANNER_ERROR, "error"); return; }
+  const imageOk = await attachBenchHandoffImage(packet);
+  const titleEl = await waitForPhase2TitleField();
+  if (!titleEl) {
+    showBanner(imageOk ? "The Previewizer image is attached. Open the matching DeviantArt editor to fill the reviewed details." : "DeviantArt did not confirm the Previewizer image. Upload it manually, then enter the reviewed title and description.", "warn");
+    return;
+  }
+  const descriptionEl = packet.body_text.trim() ? await waitForCandidate(findDescriptionCandidate, 5000) : findDescriptionCandidate();
+  const tagsEl = packet.tags.length ? await waitForCandidate(findTagsCandidate, 5000) : null;
+  const titleOk = fillTitle(titleEl, packet.title);
+  const bodyOk = packet.body_text.trim() ? !!descriptionEl && fillDescription(descriptionEl, packet.body_text) : !descriptionEl || clearBenchDescription(descriptionEl);
+  const tagsOk = packet.tags.length ? !!tagsEl && await fillTags(tagsEl, packet.tags) : true;
+  if (!titleOk) markMissing(titleEl);
+  if (!bodyOk) markMissing(descriptionEl);
+  if (!tagsOk) markMissing(tagsEl);
+  if (!titleOk || !bodyOk || !tagsOk || !imageOk) {
+    showBanner(imageOk ? "Relay filled some reviewed details. Check the highlighted fields and confirm the image before continuing." : "Relay filled some reviewed details. The Previewizer image was not confirmed; upload it manually before continuing.", "warn");
+    return;
+  }
+  showBanner("Reviewed DeviantArt details and Previewizer image are filled. Check them in DeviantArt, then publish manually.", "success");
+}
+
 void runFill().catch(async () => {
   showBanner(BANNER_ERROR, "error");
+  if (mockBenchHandoff) return;
   await notifyDistributionFillResult({
     attemptId: await readPendingAttemptId(),
     status: "fill_failed",

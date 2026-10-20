@@ -1,6 +1,6 @@
 # Posting Recipes — codebase grounding
 
-Inspected **2026-10-18**, including uncommitted working-tree changes. Updated for contract revision 6: compact month-boundary timing, source-aware description panel and saved-draft library. Paths and symbols below are verified observations, not claims of deployed functionality. Recheck before implementation.
+Inspected **2026-10-18**, including uncommitted working-tree changes. Contract revision 8 adds a whole-recipe chooser and destination-first Studio sheet rows; backend observations remain the 2026-10-18 baseline. Compact month-boundary timing, source-aware descriptions and the saved-draft library remain proposed integration work. Paths and symbols below are verified observations, not claims of deployed functionality. Recheck before implementation.
 
 ## Existing authorities and required changes
 

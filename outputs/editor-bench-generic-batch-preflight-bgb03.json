@@ -1,0 +1,1239 @@
+{
+  "ticket": "BGB-03",
+  "mode": "canned_synthetic_preflight",
+  "model": "gpt-5.6-luna",
+  "reasoningEffort": "none",
+  "passed": true,
+  "maxCalls": 6,
+  "maxReservationsUsd": 0.06,
+  "pricing": {
+    "inputUsdPerMillion": 0.2,
+    "cachedInputUsdPerMillion": 0.02,
+    "outputUsdPerMillion": 1.2,
+    "source": "https://developers.openai.com/api/docs/models/gpt-5.6-luna"
+  },
+  "cases": [
+    {
+      "id": "initial-dual-destination",
+      "passed": true,
+      "setup": "Fresh empty mock session; both turns use the model.",
+      "steps": [
+        {
+          "text": "Select my sketches for X and DeviantArt drafts. Run Previewizer first.",
+          "requestSha256": "98c802420e5e6cd6e8ca4b6a0c247df1f5dc416bc547028433c5a538aa494e69",
+          "before": {
+            "revision": 0,
+            "selection": {
+              "postIds": [],
+              "excludedPostIds": []
+            },
+            "preparation": null,
+            "matrixCells": [],
+            "confirmedDrafts": []
+          },
+          "passed": true,
+          "httpStatus": 200,
+          "status": "selected",
+          "diagnostic": null,
+          "message": "The posts are selected for preview-first draft preparation for X and DeviantArt. Use Previewizer and review each destination cell.",
+          "after": {
+            "revision": 1,
+            "selection": {
+              "postIds": [
+                "bench_post_tide_sketch",
+                "bench_post_orchard_sketch"
+              ],
+              "excludedPostIds": []
+            },
+            "preparation": {
+              "goal": "preview_first_x_drafts",
+              "destination": "x",
+              "destinations": [
+                "x",
+                "deviantart"
+              ],
+              "templateId": null,
+              "copyChoice": null,
+              "pendingRequirements": [
+                "template",
+                "copy_choice",
+                "previewizer",
+                "source_media_review"
+              ]
+            },
+            "matrixCells": [
+              {
+                "postId": "bench_post_tide_sketch",
+                "destination": "x",
+                "key": "bench_post_tide_sketch::x",
+                "status": "blocked",
+                "reason": "Choose the Square teaser template."
+              },
+              {
+                "postId": "bench_post_tide_sketch",
+                "destination": "deviantart",
+                "key": "bench_post_tide_sketch::deviantart",
+                "status": "blocked",
+                "reason": "Choose the Square teaser template."
+              },
+              {
+                "postId": "bench_post_orchard_sketch",
+                "destination": "x",
+                "key": "bench_post_orchard_sketch::x",
+                "status": "blocked",
+                "reason": "Choose the Square teaser template."
+              },
+              {
+                "postId": "bench_post_orchard_sketch",
+                "destination": "deviantart",
+                "key": "bench_post_orchard_sketch::deviantart",
+                "status": "blocked",
+                "reason": "Choose the Square teaser template."
+              }
+            ],
+            "confirmedDrafts": []
+          },
+          "callNumber": 1
+        },
+        {
+          "text": "Use Square teaser and keep their existing titles.",
+          "requestSha256": "74935dfb90ff6162f13eb98c8a3207a1b7ebdef609f459ad56032487fa45bf01",
+          "before": {
+            "revision": 1,
+            "selection": {
+              "postIds": [
+                "bench_post_tide_sketch",
+                "bench_post_orchard_sketch"
+              ],
+              "excludedPostIds": []
+            },
+            "preparation": {
+              "goal": "preview_first_x_drafts",
+              "destination": "x",
+              "destinations": [
+                "x",
+                "deviantart"
+              ],
+              "templateId": null,
+              "copyChoice": null,
+              "pendingRequirements": [
+                "template",
+                "copy_choice",
+                "previewizer",
+                "source_media_review"
+              ]
+            },
+            "matrixCells": [
+              {
+                "postId": "bench_post_tide_sketch",
+                "destination": "x",
+                "key": "bench_post_tide_sketch::x",
+                "status": "blocked",
+                "reason": "Choose the Square teaser template."
+              },
+              {
+                "postId": "bench_post_tide_sketch",
+                "destination": "deviantart",
+                "key": "bench_post_tide_sketch::deviantart",
+                "status": "blocked",
+                "reason": "Choose the Square teaser template."
+              },
+              {
+                "postId": "bench_post_orchard_sketch",
+                "destination": "x",
+                "key": "bench_post_orchard_sketch::x",
+                "status": "blocked",
+                "reason": "Choose the Square teaser template."
+              },
+              {
+                "postId": "bench_post_orchard_sketch",
+                "destination": "deviantart",
+                "key": "bench_post_orchard_sketch::deviantart",
+                "status": "blocked",
+                "reason": "Choose the Square teaser template."
+              }
+            ],
+            "confirmedDrafts": []
+          },
+          "passed": true,
+          "httpStatus": 200,
+          "status": "preparation_updated",
+          "diagnostic": null,
+          "message": "Preparation choices are recorded. Review each completed preview and copy before confirming each destination draft.",
+          "after": {
+            "revision": 2,
+            "selection": {
+              "postIds": [
+                "bench_post_tide_sketch",
+                "bench_post_orchard_sketch"
+              ],
+              "excludedPostIds": []
+            },
+            "preparation": {
+              "goal": "preview_first_x_drafts",
+              "destination": "x",
+              "destinations": [
+                "x",
+                "deviantart"
+              ],
+              "templateId": "bench_template_square",
+              "copyChoice": {
+                "kind": "existing_titles"
+              },
+              "pendingRequirements": [
+                "previewizer",
+                "source_media_review"
+              ]
+            },
+            "matrixCells": [
+              {
+                "postId": "bench_post_tide_sketch",
+                "destination": "x",
+                "key": "bench_post_tide_sketch::x",
+                "status": "needs_preview"
+              },
+              {
+                "postId": "bench_post_tide_sketch",
+                "destination": "deviantart",
+                "key": "bench_post_tide_sketch::deviantart",
+                "status": "needs_preview"
+              },
+              {
+                "postId": "bench_post_orchard_sketch",
+                "destination": "x",
+                "key": "bench_post_orchard_sketch::x",
+                "status": "needs_preview"
+              },
+              {
+                "postId": "bench_post_orchard_sketch",
+                "destination": "deviantart",
+                "key": "bench_post_orchard_sketch::deviantart",
+                "status": "needs_preview"
+              }
+            ],
+            "confirmedDrafts": []
+          },
+          "callNumber": 2
+        }
+      ],
+      "drafts": [
+        {
+          "postId": "bench_post_tide_sketch",
+          "destination": "x",
+          "previewSha256": "86dadd520474367836b3a9cce1c662a4916277caa9ba2f371547e3bbd72b5918",
+          "copyText": "Tide line sketch",
+          "unscheduled": true,
+          "manualPublishing": true
+        },
+        {
+          "postId": "bench_post_tide_sketch",
+          "destination": "deviantart",
+          "previewSha256": "86dadd520474367836b3a9cce1c662a4916277caa9ba2f371547e3bbd72b5918",
+          "copyText": "Tide line sketch",
+          "unscheduled": true,
+          "manualPublishing": true
+        },
+        {
+          "postId": "bench_post_orchard_sketch",
+          "destination": "x",
+          "previewSha256": "86dadd520474367836b3a9cce1c662a4916277caa9ba2f371547e3bbd72b5918",
+          "copyText": "Autumn Orchard sketch",
+          "unscheduled": true,
+          "manualPublishing": true
+        },
+        {
+          "postId": "bench_post_orchard_sketch",
+          "destination": "deviantart",
+          "previewSha256": "86dadd520474367836b3a9cce1c662a4916277caa9ba2f371547e3bbd72b5918",
+          "copyText": "Autumn Orchard sketch",
+          "unscheduled": true,
+          "manualPublishing": true
+        }
+      ],
+      "final": {
+        "revision": 2,
+        "selection": {
+          "postIds": [
+            "bench_post_tide_sketch",
+            "bench_post_orchard_sketch"
+          ],
+          "excludedPostIds": []
+        },
+        "preparation": {
+          "goal": "preview_first_x_drafts",
+          "destination": "x",
+          "destinations": [
+            "x",
+            "deviantart"
+          ],
+          "templateId": "bench_template_square",
+          "copyChoice": {
+            "kind": "existing_titles"
+          },
+          "pendingRequirements": []
+        },
+        "matrixCells": [
+          {
+            "postId": "bench_post_tide_sketch",
+            "destination": "x",
+            "key": "bench_post_tide_sketch::x",
+            "status": "confirmed",
+            "variantId": "bench_variant_5b114ba7f72a973e213a21fcbf9d04a0e2887d603f9b0269c98bdc23a3371dda",
+            "copyText": "Tide line sketch",
+            "previewMediaId": "bench_preview_291a9604-3b7e-4ae7-bc71-3d93aaf11a49"
+          },
+          {
+            "postId": "bench_post_tide_sketch",
+            "destination": "deviantart",
+            "key": "bench_post_tide_sketch::deviantart",
+            "status": "confirmed",
+            "variantId": "bench_variant_5ef517db0c97e4e2c59928384ed6b335e405359bf06c9885e79f1c500974e291",
+            "copyText": "Tide line sketch",
+            "previewMediaId": "bench_preview_291a9604-3b7e-4ae7-bc71-3d93aaf11a49"
+          },
+          {
+            "postId": "bench_post_orchard_sketch",
+            "destination": "x",
+            "key": "bench_post_orchard_sketch::x",
+            "status": "confirmed",
+            "variantId": "bench_variant_506ffd8d9aecdabd5b42c03256dcfafa55ed086ba1281f179a62e74b9856eea8",
+            "copyText": "Autumn Orchard sketch",
+            "previewMediaId": "bench_preview_9588e5ec-7136-4733-a567-9dd8e156a94d"
+          },
+          {
+            "postId": "bench_post_orchard_sketch",
+            "destination": "deviantart",
+            "key": "bench_post_orchard_sketch::deviantart",
+            "status": "confirmed",
+            "variantId": "bench_variant_2207607b0748cb5ef3fe7ca723efb88919ac3b8a9a9c20c6b9962fd212952446",
+            "copyText": "Autumn Orchard sketch",
+            "previewMediaId": "bench_preview_9588e5ec-7136-4733-a567-9dd8e156a94d"
+          }
+        ],
+        "confirmedDrafts": [
+          {
+            "variantId": "bench_variant_5b114ba7f72a973e213a21fcbf9d04a0e2887d603f9b0269c98bdc23a3371dda",
+            "planId": "bench_plan_5b114ba7f72a973e213a21fcbf9d04a0e2887d603f9b0269c98bdc23a3371dda",
+            "postId": "bench_post_tide_sketch",
+            "destination": "x",
+            "sourceTitle": "Tide line sketch",
+            "copyText": "Tide line sketch",
+            "previewMediaId": "bench_preview_291a9604-3b7e-4ae7-bc71-3d93aaf11a49",
+            "previewUrl": "/api/v1/editor-bench/schedule/conversation/session/3c9e084c-b22b-4d3a-abeb-c8e7587af0ce/preview-media/bench_preview_291a9604-3b7e-4ae7-bc71-3d93aaf11a49",
+            "scheduledFor": null,
+            "handoff": null
+          },
+          {
+            "variantId": "bench_variant_5ef517db0c97e4e2c59928384ed6b335e405359bf06c9885e79f1c500974e291",
+            "planId": "bench_plan_5ef517db0c97e4e2c59928384ed6b335e405359bf06c9885e79f1c500974e291",
+            "postId": "bench_post_tide_sketch",
+            "destination": "deviantart",
+            "sourceTitle": "Tide line sketch",
+            "copyText": "Tide line sketch",
+            "previewMediaId": "bench_preview_291a9604-3b7e-4ae7-bc71-3d93aaf11a49",
+            "previewUrl": "/api/v1/editor-bench/schedule/conversation/session/3c9e084c-b22b-4d3a-abeb-c8e7587af0ce/preview-media/bench_preview_291a9604-3b7e-4ae7-bc71-3d93aaf11a49",
+            "scheduledFor": null,
+            "handoff": null
+          },
+          {
+            "variantId": "bench_variant_506ffd8d9aecdabd5b42c03256dcfafa55ed086ba1281f179a62e74b9856eea8",
+            "planId": "bench_plan_506ffd8d9aecdabd5b42c03256dcfafa55ed086ba1281f179a62e74b9856eea8",
+            "postId": "bench_post_orchard_sketch",
+            "destination": "x",
+            "sourceTitle": "Autumn Orchard sketch",
+            "copyText": "Autumn Orchard sketch",
+            "previewMediaId": "bench_preview_9588e5ec-7136-4733-a567-9dd8e156a94d",
+            "previewUrl": "/api/v1/editor-bench/schedule/conversation/session/3c9e084c-b22b-4d3a-abeb-c8e7587af0ce/preview-media/bench_preview_9588e5ec-7136-4733-a567-9dd8e156a94d",
+            "scheduledFor": null,
+            "handoff": null
+          },
+          {
+            "variantId": "bench_variant_2207607b0748cb5ef3fe7ca723efb88919ac3b8a9a9c20c6b9962fd212952446",
+            "planId": "bench_plan_2207607b0748cb5ef3fe7ca723efb88919ac3b8a9a9c20c6b9962fd212952446",
+            "postId": "bench_post_orchard_sketch",
+            "destination": "deviantart",
+            "sourceTitle": "Autumn Orchard sketch",
+            "copyText": "Autumn Orchard sketch",
+            "previewMediaId": "bench_preview_9588e5ec-7136-4733-a567-9dd8e156a94d",
+            "previewUrl": "/api/v1/editor-bench/schedule/conversation/session/3c9e084c-b22b-4d3a-abeb-c8e7587af0ce/preview-media/bench_preview_9588e5ec-7136-4733-a567-9dd8e156a94d",
+            "scheduledFor": null,
+            "handoff": null
+          }
+        ]
+      },
+      "originalsUnchanged": true,
+      "reviewReadOnly": true
+    },
+    {
+      "id": "add-destination-and-artwork",
+      "passed": true,
+      "setup": "Canned selection and existing-title choices; only the following turns use the model.",
+      "steps": [
+        {
+          "text": "Also add DeviantArt.",
+          "requestSha256": "acfa470f2b2b5b7dae60072049d79cd04cbff03f4525820826bcd33baab4bd91",
+          "before": {
+            "revision": 2,
+            "selection": {
+              "postIds": [
+                "bench_post_tide_sketch"
+              ],
+              "excludedPostIds": [
+                "bench_post_orchard_sketch",
+                "bench_post_orchard_print"
+              ]
+            },
+            "preparation": {
+              "goal": "preview_first_x_drafts",
+              "destination": "x",
+              "destinations": [
+                "x"
+              ],
+              "templateId": "bench_template_square",
+              "copyChoice": {
+                "kind": "existing_titles"
+              },
+              "pendingRequirements": [
+                "previewizer",
+                "source_media_review"
+              ]
+            },
+            "matrixCells": [
+              {
+                "postId": "bench_post_tide_sketch",
+                "destination": "x",
+                "key": "bench_post_tide_sketch::x",
+                "status": "needs_preview"
+              }
+            ],
+            "confirmedDrafts": []
+          },
+          "passed": true,
+          "httpStatus": 200,
+          "status": "selected",
+          "diagnostic": null,
+          "message": "The posts are selected for preview-first draft preparation for X and DeviantArt. Use Previewizer and review each destination cell.",
+          "after": {
+            "revision": 3,
+            "selection": {
+              "postIds": [
+                "bench_post_tide_sketch"
+              ],
+              "excludedPostIds": [
+                "bench_post_orchard_sketch",
+                "bench_post_orchard_print"
+              ]
+            },
+            "preparation": {
+              "goal": "preview_first_x_drafts",
+              "destination": "x",
+              "destinations": [
+                "x",
+                "deviantart"
+              ],
+              "templateId": "bench_template_square",
+              "copyChoice": {
+                "kind": "existing_titles"
+              },
+              "pendingRequirements": [
+                "previewizer",
+                "source_media_review"
+              ]
+            },
+            "matrixCells": [
+              {
+                "postId": "bench_post_tide_sketch",
+                "destination": "x",
+                "key": "bench_post_tide_sketch::x",
+                "status": "needs_preview"
+              },
+              {
+                "postId": "bench_post_tide_sketch",
+                "destination": "deviantart",
+                "key": "bench_post_tide_sketch::deviantart",
+                "status": "needs_preview"
+              }
+            ],
+            "confirmedDrafts": []
+          },
+          "callNumber": 3
+        },
+        {
+          "text": "Also add Aurora study.",
+          "requestSha256": "401c1b5c4dac9cba9c90deeb4166e4187294ca367365e32446524d7bee7aaf2e",
+          "before": {
+            "revision": 3,
+            "selection": {
+              "postIds": [
+                "bench_post_tide_sketch"
+              ],
+              "excludedPostIds": [
+                "bench_post_orchard_sketch",
+                "bench_post_orchard_print"
+              ]
+            },
+            "preparation": {
+              "goal": "preview_first_x_drafts",
+              "destination": "x",
+              "destinations": [
+                "x",
+                "deviantart"
+              ],
+              "templateId": "bench_template_square",
+              "copyChoice": {
+                "kind": "existing_titles"
+              },
+              "pendingRequirements": [
+                "previewizer",
+                "source_media_review"
+              ]
+            },
+            "matrixCells": [
+              {
+                "postId": "bench_post_tide_sketch",
+                "destination": "x",
+                "key": "bench_post_tide_sketch::x",
+                "status": "needs_preview"
+              },
+              {
+                "postId": "bench_post_tide_sketch",
+                "destination": "deviantart",
+                "key": "bench_post_tide_sketch::deviantart",
+                "status": "needs_preview"
+              }
+            ],
+            "confirmedDrafts": []
+          },
+          "passed": true,
+          "httpStatus": 200,
+          "status": "selected",
+          "diagnostic": null,
+          "message": null,
+          "after": {
+            "revision": 4,
+            "selection": {
+              "postIds": [
+                "bench_post_aurora",
+                "bench_post_tide_sketch"
+              ],
+              "excludedPostIds": [
+                "bench_post_orchard_sketch",
+                "bench_post_orchard_print"
+              ]
+            },
+            "preparation": {
+              "goal": "preview_first_x_drafts",
+              "destination": "x",
+              "destinations": [
+                "x",
+                "deviantart"
+              ],
+              "templateId": "bench_template_square",
+              "copyChoice": {
+                "kind": "existing_titles"
+              },
+              "pendingRequirements": [
+                "previewizer",
+                "source_media_review"
+              ]
+            },
+            "matrixCells": [
+              {
+                "postId": "bench_post_aurora",
+                "destination": "x",
+                "key": "bench_post_aurora::x",
+                "status": "needs_preview"
+              },
+              {
+                "postId": "bench_post_aurora",
+                "destination": "deviantart",
+                "key": "bench_post_aurora::deviantart",
+                "status": "needs_preview"
+              },
+              {
+                "postId": "bench_post_tide_sketch",
+                "destination": "x",
+                "key": "bench_post_tide_sketch::x",
+                "status": "needs_preview"
+              },
+              {
+                "postId": "bench_post_tide_sketch",
+                "destination": "deviantart",
+                "key": "bench_post_tide_sketch::deviantart",
+                "status": "needs_preview"
+              }
+            ],
+            "confirmedDrafts": []
+          },
+          "callNumber": 4
+        }
+      ],
+      "drafts": [
+        {
+          "postId": "bench_post_aurora",
+          "destination": "x",
+          "previewSha256": "86dadd520474367836b3a9cce1c662a4916277caa9ba2f371547e3bbd72b5918",
+          "copyText": "Aurora study",
+          "unscheduled": true,
+          "manualPublishing": true
+        },
+        {
+          "postId": "bench_post_aurora",
+          "destination": "deviantart",
+          "previewSha256": "86dadd520474367836b3a9cce1c662a4916277caa9ba2f371547e3bbd72b5918",
+          "copyText": "Aurora study",
+          "unscheduled": true,
+          "manualPublishing": true
+        },
+        {
+          "postId": "bench_post_tide_sketch",
+          "destination": "x",
+          "previewSha256": "86dadd520474367836b3a9cce1c662a4916277caa9ba2f371547e3bbd72b5918",
+          "copyText": "Tide line sketch",
+          "unscheduled": true,
+          "manualPublishing": true
+        },
+        {
+          "postId": "bench_post_tide_sketch",
+          "destination": "deviantart",
+          "previewSha256": "86dadd520474367836b3a9cce1c662a4916277caa9ba2f371547e3bbd72b5918",
+          "copyText": "Tide line sketch",
+          "unscheduled": true,
+          "manualPublishing": true
+        }
+      ],
+      "final": {
+        "revision": 4,
+        "selection": {
+          "postIds": [
+            "bench_post_aurora",
+            "bench_post_tide_sketch"
+          ],
+          "excludedPostIds": [
+            "bench_post_orchard_sketch",
+            "bench_post_orchard_print"
+          ]
+        },
+        "preparation": {
+          "goal": "preview_first_x_drafts",
+          "destination": "x",
+          "destinations": [
+            "x",
+            "deviantart"
+          ],
+          "templateId": "bench_template_square",
+          "copyChoice": {
+            "kind": "existing_titles"
+          },
+          "pendingRequirements": []
+        },
+        "matrixCells": [
+          {
+            "postId": "bench_post_aurora",
+            "destination": "x",
+            "key": "bench_post_aurora::x",
+            "status": "confirmed",
+            "variantId": "bench_variant_30e37e980f8ce07411e1bb229450185198baf4302c193c4f825fdc6502efd272",
+            "copyText": "Aurora study",
+            "previewMediaId": "bench_preview_8e1a0076-9e48-4dc3-ba33-d1fa03419076"
+          },
+          {
+            "postId": "bench_post_aurora",
+            "destination": "deviantart",
+            "key": "bench_post_aurora::deviantart",
+            "status": "confirmed",
+            "variantId": "bench_variant_1a8e127c1e4f6dfa3833ecbafd6106e3857d7d9ed873e996fd490c033470e71f",
+            "copyText": "Aurora study",
+            "previewMediaId": "bench_preview_8e1a0076-9e48-4dc3-ba33-d1fa03419076"
+          },
+          {
+            "postId": "bench_post_tide_sketch",
+            "destination": "x",
+            "key": "bench_post_tide_sketch::x",
+            "status": "confirmed",
+            "variantId": "bench_variant_498b3c9c4c81368d2a160ff887aaa601fb4655c9c6d6f8bdcfa193462c0694b0",
+            "copyText": "Tide line sketch",
+            "previewMediaId": "bench_preview_5ff653cd-82d7-4aee-9f60-65e4c6be25fc"
+          },
+          {
+            "postId": "bench_post_tide_sketch",
+            "destination": "deviantart",
+            "key": "bench_post_tide_sketch::deviantart",
+            "status": "confirmed",
+            "variantId": "bench_variant_52a995266579c12f07f71763feca4b0c8568530b0fcd17ea5ea75adc6ae1f0e2",
+            "copyText": "Tide line sketch",
+            "previewMediaId": "bench_preview_5ff653cd-82d7-4aee-9f60-65e4c6be25fc"
+          }
+        ],
+        "confirmedDrafts": [
+          {
+            "variantId": "bench_variant_30e37e980f8ce07411e1bb229450185198baf4302c193c4f825fdc6502efd272",
+            "planId": "bench_plan_30e37e980f8ce07411e1bb229450185198baf4302c193c4f825fdc6502efd272",
+            "postId": "bench_post_aurora",
+            "destination": "x",
+            "sourceTitle": "Aurora study",
+            "copyText": "Aurora study",
+            "previewMediaId": "bench_preview_8e1a0076-9e48-4dc3-ba33-d1fa03419076",
+            "previewUrl": "/api/v1/editor-bench/schedule/conversation/session/0166a9ba-16d7-4e03-9125-edcd4e5b9b4f/preview-media/bench_preview_8e1a0076-9e48-4dc3-ba33-d1fa03419076",
+            "scheduledFor": null,
+            "handoff": null
+          },
+          {
+            "variantId": "bench_variant_1a8e127c1e4f6dfa3833ecbafd6106e3857d7d9ed873e996fd490c033470e71f",
+            "planId": "bench_plan_1a8e127c1e4f6dfa3833ecbafd6106e3857d7d9ed873e996fd490c033470e71f",
+            "postId": "bench_post_aurora",
+            "destination": "deviantart",
+            "sourceTitle": "Aurora study",
+            "copyText": "Aurora study",
+            "previewMediaId": "bench_preview_8e1a0076-9e48-4dc3-ba33-d1fa03419076",
+            "previewUrl": "/api/v1/editor-bench/schedule/conversation/session/0166a9ba-16d7-4e03-9125-edcd4e5b9b4f/preview-media/bench_preview_8e1a0076-9e48-4dc3-ba33-d1fa03419076",
+            "scheduledFor": null,
+            "handoff": null
+          },
+          {
+            "variantId": "bench_variant_498b3c9c4c81368d2a160ff887aaa601fb4655c9c6d6f8bdcfa193462c0694b0",
+            "planId": "bench_plan_498b3c9c4c81368d2a160ff887aaa601fb4655c9c6d6f8bdcfa193462c0694b0",
+            "postId": "bench_post_tide_sketch",
+            "destination": "x",
+            "sourceTitle": "Tide line sketch",
+            "copyText": "Tide line sketch",
+            "previewMediaId": "bench_preview_5ff653cd-82d7-4aee-9f60-65e4c6be25fc",
+            "previewUrl": "/api/v1/editor-bench/schedule/conversation/session/0166a9ba-16d7-4e03-9125-edcd4e5b9b4f/preview-media/bench_preview_5ff653cd-82d7-4aee-9f60-65e4c6be25fc",
+            "scheduledFor": null,
+            "handoff": null
+          },
+          {
+            "variantId": "bench_variant_52a995266579c12f07f71763feca4b0c8568530b0fcd17ea5ea75adc6ae1f0e2",
+            "planId": "bench_plan_52a995266579c12f07f71763feca4b0c8568530b0fcd17ea5ea75adc6ae1f0e2",
+            "postId": "bench_post_tide_sketch",
+            "destination": "deviantart",
+            "sourceTitle": "Tide line sketch",
+            "copyText": "Tide line sketch",
+            "previewMediaId": "bench_preview_5ff653cd-82d7-4aee-9f60-65e4c6be25fc",
+            "previewUrl": "/api/v1/editor-bench/schedule/conversation/session/0166a9ba-16d7-4e03-9125-edcd4e5b9b4f/preview-media/bench_preview_5ff653cd-82d7-4aee-9f60-65e4c6be25fc",
+            "scheduledFor": null,
+            "handoff": null
+          }
+        ]
+      },
+      "originalsUnchanged": true,
+      "reviewReadOnly": true
+    },
+    {
+      "id": "reverse-addition-and-narrowing",
+      "passed": true,
+      "setup": "Canned selection and existing-title choices; only the following turns use the model.",
+      "steps": [
+        {
+          "text": "Also add X.",
+          "requestSha256": "b07c33ef444c5e7fe12ee53786b47c13d9b8e73007e2b43c07f3e50a2a7b162d",
+          "before": {
+            "revision": 2,
+            "selection": {
+              "postIds": [
+                "bench_post_tide_sketch"
+              ],
+              "excludedPostIds": [
+                "bench_post_orchard_sketch",
+                "bench_post_orchard_print"
+              ]
+            },
+            "preparation": {
+              "goal": "preview_first_deviantart_drafts",
+              "destination": "deviantart",
+              "destinations": [
+                "deviantart"
+              ],
+              "templateId": "bench_template_square",
+              "copyChoice": {
+                "kind": "existing_titles"
+              },
+              "pendingRequirements": [
+                "previewizer",
+                "source_media_review"
+              ]
+            },
+            "matrixCells": [
+              {
+                "postId": "bench_post_tide_sketch",
+                "destination": "deviantart",
+                "key": "bench_post_tide_sketch::deviantart",
+                "status": "needs_preview"
+              }
+            ],
+            "confirmedDrafts": []
+          },
+          "passed": true,
+          "httpStatus": 200,
+          "status": "selected",
+          "diagnostic": null,
+          "message": "The posts are selected for preview-first draft preparation for DeviantArt and X. Use Previewizer and review each destination cell.",
+          "after": {
+            "revision": 3,
+            "selection": {
+              "postIds": [
+                "bench_post_tide_sketch"
+              ],
+              "excludedPostIds": [
+                "bench_post_orchard_sketch",
+                "bench_post_orchard_print"
+              ]
+            },
+            "preparation": {
+              "goal": "preview_first_deviantart_drafts",
+              "destination": "deviantart",
+              "destinations": [
+                "deviantart",
+                "x"
+              ],
+              "templateId": "bench_template_square",
+              "copyChoice": {
+                "kind": "existing_titles"
+              },
+              "pendingRequirements": [
+                "previewizer",
+                "source_media_review"
+              ]
+            },
+            "matrixCells": [
+              {
+                "postId": "bench_post_tide_sketch",
+                "destination": "deviantart",
+                "key": "bench_post_tide_sketch::deviantart",
+                "status": "needs_preview"
+              },
+              {
+                "postId": "bench_post_tide_sketch",
+                "destination": "x",
+                "key": "bench_post_tide_sketch::x",
+                "status": "needs_preview"
+              }
+            ],
+            "confirmedDrafts": []
+          },
+          "callNumber": 5
+        },
+        {
+          "text": "Remove DeviantArt.",
+          "requestSha256": "df3c2764f842048f6471949faa61c546a7c7c1a063abd930a87153c3c30d1061",
+          "before": {
+            "revision": 3,
+            "selection": {
+              "postIds": [
+                "bench_post_tide_sketch"
+              ],
+              "excludedPostIds": [
+                "bench_post_orchard_sketch",
+                "bench_post_orchard_print"
+              ]
+            },
+            "preparation": {
+              "goal": "preview_first_deviantart_drafts",
+              "destination": "deviantart",
+              "destinations": [
+                "deviantart",
+                "x"
+              ],
+              "templateId": "bench_template_square",
+              "copyChoice": {
+                "kind": "existing_titles"
+              },
+              "pendingRequirements": [
+                "previewizer",
+                "source_media_review"
+              ]
+            },
+            "matrixCells": [
+              {
+                "postId": "bench_post_tide_sketch",
+                "destination": "deviantart",
+                "key": "bench_post_tide_sketch::deviantart",
+                "status": "needs_preview"
+              },
+              {
+                "postId": "bench_post_tide_sketch",
+                "destination": "x",
+                "key": "bench_post_tide_sketch::x",
+                "status": "needs_preview"
+              }
+            ],
+            "confirmedDrafts": []
+          },
+          "passed": true,
+          "httpStatus": 200,
+          "status": "selected",
+          "diagnostic": null,
+          "message": "The posts are selected for preview-first draft preparation for X. Use Previewizer and review each destination cell.",
+          "after": {
+            "revision": 4,
+            "selection": {
+              "postIds": [
+                "bench_post_tide_sketch"
+              ],
+              "excludedPostIds": [
+                "bench_post_orchard_sketch",
+                "bench_post_orchard_print"
+              ]
+            },
+            "preparation": {
+              "goal": "preview_first_x_drafts",
+              "destination": "x",
+              "destinations": [
+                "x"
+              ],
+              "templateId": "bench_template_square",
+              "copyChoice": {
+                "kind": "existing_titles"
+              },
+              "pendingRequirements": [
+                "previewizer",
+                "source_media_review"
+              ]
+            },
+            "matrixCells": [
+              {
+                "postId": "bench_post_tide_sketch",
+                "destination": "x",
+                "key": "bench_post_tide_sketch::x",
+                "status": "needs_preview"
+              }
+            ],
+            "confirmedDrafts": []
+          },
+          "callNumber": 6
+        }
+      ],
+      "drafts": [
+        {
+          "postId": "bench_post_tide_sketch",
+          "destination": "x",
+          "previewSha256": "86dadd520474367836b3a9cce1c662a4916277caa9ba2f371547e3bbd72b5918",
+          "copyText": "Tide line sketch",
+          "unscheduled": true,
+          "manualPublishing": true
+        }
+      ],
+      "final": {
+        "revision": 4,
+        "selection": {
+          "postIds": [
+            "bench_post_tide_sketch"
+          ],
+          "excludedPostIds": [
+            "bench_post_orchard_sketch",
+            "bench_post_orchard_print"
+          ]
+        },
+        "preparation": {
+          "goal": "preview_first_x_drafts",
+          "destination": "x",
+          "destinations": [
+            "x"
+          ],
+          "templateId": "bench_template_square",
+          "copyChoice": {
+            "kind": "existing_titles"
+          },
+          "pendingRequirements": []
+        },
+        "matrixCells": [
+          {
+            "postId": "bench_post_tide_sketch",
+            "destination": "x",
+            "key": "bench_post_tide_sketch::x",
+            "status": "confirmed",
+            "variantId": "bench_variant_45eb39c599f6bdb1951a8c94084446055f29e41539f87369a17c47115e269a51",
+            "copyText": "Tide line sketch",
+            "previewMediaId": "bench_preview_154f27b2-1fe6-403d-9508-372eb049aeb2"
+          }
+        ],
+        "confirmedDrafts": [
+          {
+            "variantId": "bench_variant_45eb39c599f6bdb1951a8c94084446055f29e41539f87369a17c47115e269a51",
+            "planId": "bench_plan_45eb39c599f6bdb1951a8c94084446055f29e41539f87369a17c47115e269a51",
+            "postId": "bench_post_tide_sketch",
+            "destination": "x",
+            "sourceTitle": "Tide line sketch",
+            "copyText": "Tide line sketch",
+            "previewMediaId": "bench_preview_154f27b2-1fe6-403d-9508-372eb049aeb2",
+            "previewUrl": "/api/v1/editor-bench/schedule/conversation/session/385a3285-3aea-48f5-ba2d-2a1da11045be/preview-media/bench_preview_154f27b2-1fe6-403d-9508-372eb049aeb2",
+            "scheduledFor": null,
+            "handoff": null
+          }
+        ]
+      },
+      "originalsUnchanged": true,
+      "reviewReadOnly": true
+    }
+  ],
+  "calls": [
+    {
+      "number": 1,
+      "inputBytes": 23929,
+      "inputSha256": "702d709a47d6d276ec1bcadc3c9b4e0a043d1935e258a441cb1117485ebcce93",
+      "reserveCeilingUsd": 0.0086326,
+      "currentPreparation": null,
+      "actualAction": {
+        "kind": "selection",
+        "preparation": {
+          "destinations": [
+            "x",
+            "deviantart"
+          ],
+          "destinationQuotes": [
+            "X",
+            "DeviantArt"
+          ],
+          "previewFirst": true,
+          "previewQuote": "Previewizer first"
+        },
+        "selection": {
+          "mode": "replace",
+          "requestQuote": "Select my sketches for X and DeviantArt drafts. Run Previewizer first.",
+          "selector": {
+            "base": "catalog",
+            "all": [
+              {
+                "field": "stage",
+                "value": "sketch",
+                "requestQuote": "sketches"
+              }
+            ],
+            "any": [],
+            "none": []
+          }
+        }
+      },
+      "usage": null,
+      "elapsedMs": 2
+    },
+    {
+      "number": 2,
+      "inputBytes": 24097,
+      "inputSha256": "8c03031e3f762cbaf1b03a2290c76ee22405896cc04af4499d6109efabbff10b",
+      "reserveCeilingUsd": 0.0086662,
+      "currentPreparation": {
+        "goal": "preview_first_x_drafts",
+        "destination": "x",
+        "destinations": [
+          "x",
+          "deviantart"
+        ],
+        "template": null,
+        "copyChoice": null
+      },
+      "actualAction": {
+        "kind": "preparation_update",
+        "templateQuote": "Square teaser",
+        "copyChoice": {
+          "kind": "existing_titles",
+          "quote": "keep their existing titles"
+        }
+      },
+      "usage": null,
+      "elapsedMs": 2
+    },
+    {
+      "number": 3,
+      "inputBytes": 24120,
+      "inputSha256": "32dcb3c3dee0c15d8d7ca2f08fa78d81c4c978edc98471a428aa494ffd654fae",
+      "reserveCeilingUsd": 0.0086708,
+      "currentPreparation": {
+        "goal": "preview_first_x_drafts",
+        "destination": "x",
+        "destinations": [
+          "x"
+        ],
+        "template": "Square teaser",
+        "copyChoice": {
+          "kind": "existing_titles"
+        }
+      },
+      "actualAction": {
+        "kind": "selection",
+        "selection": {
+          "mode": "preserve",
+          "requestQuote": null,
+          "selector": null
+        },
+        "preparation": {
+          "destinations": [
+            "deviantart"
+          ],
+          "destinationQuotes": [
+            "DeviantArt"
+          ],
+          "previewFirst": false,
+          "previewQuote": ""
+        }
+      },
+      "usage": null,
+      "elapsedMs": 1
+    },
+    {
+      "number": 4,
+      "inputBytes": 24137,
+      "inputSha256": "2c0c5e9f528037c7526653afd3a93e8e95ba97dd1f1550ec4db1a6cc980ca92b",
+      "reserveCeilingUsd": 0.0086742,
+      "currentPreparation": {
+        "goal": "preview_first_x_drafts",
+        "destination": "x",
+        "destinations": [
+          "x",
+          "deviantart"
+        ],
+        "template": "Square teaser",
+        "copyChoice": {
+          "kind": "existing_titles"
+        }
+      },
+      "actualAction": {
+        "kind": "selection",
+        "preparation": null,
+        "selection": {
+          "mode": "add",
+          "requestQuote": "Also add Aurora study.",
+          "selector": {
+            "base": "catalog",
+            "all": [
+              {
+                "field": "title",
+                "value": "Aurora study",
+                "requestQuote": "Aurora study"
+              }
+            ],
+            "any": [],
+            "none": []
+          }
+        }
+      },
+      "usage": null,
+      "elapsedMs": 2
+    },
+    {
+      "number": 5,
+      "inputBytes": 24138,
+      "inputSha256": "3f79ba251220141bbf95971d1d4ba0cfa921b31c46e9bbbe569f1a92a8eeeb63",
+      "reserveCeilingUsd": 0.008674400000000002,
+      "currentPreparation": {
+        "goal": "preview_first_deviantart_drafts",
+        "destination": "deviantart",
+        "destinations": [
+          "deviantart"
+        ],
+        "template": "Square teaser",
+        "copyChoice": {
+          "kind": "existing_titles"
+        }
+      },
+      "actualAction": {
+        "kind": "selection",
+        "selection": {
+          "mode": "preserve",
+          "requestQuote": null,
+          "selector": null
+        },
+        "preparation": {
+          "destinations": [
+            "x"
+          ],
+          "destinationQuotes": [
+            "X"
+          ],
+          "previewFirst": false,
+          "previewQuote": ""
+        }
+      },
+      "usage": null,
+      "elapsedMs": 2
+    },
+    {
+      "number": 6,
+      "inputBytes": 24151,
+      "inputSha256": "1f04e253dd34eb85c70ff76e07c2e4d147cac3c51686428ea5357268250bd4ae",
+      "reserveCeilingUsd": 0.008677,
+      "currentPreparation": {
+        "goal": "preview_first_deviantart_drafts",
+        "destination": "deviantart",
+        "destinations": [
+          "deviantart",
+          "x"
+        ],
+        "template": "Square teaser",
+        "copyChoice": {
+          "kind": "existing_titles"
+        }
+      },
+      "actualAction": {
+        "kind": "selection",
+        "selection": {
+          "mode": "preserve",
+          "requestQuote": null,
+          "selector": null
+        },
+        "preparation": {
+          "destinations": [
+            "deviantart"
+          ],
+          "destinationQuotes": [
+            "DeviantArt"
+          ],
+          "previewFirst": false,
+          "previewQuote": ""
+        }
+      },
+      "usage": null,
+      "elapsedMs": 1
+    }
+  ],
+  "baseline": {
+    "ledgerRows": 907,
+    "ledgerSha256": "26fb8f72c28da4e9abbea6714f46b8d938e4a10a93ac52bb98a4891c1ea56f3c",
+    "remaining": {
+      "development": 0.35353854,
+      "heldout": 8.9690346
+    },
+    "hashes": {
+      "work/bgb03-model-check.mjs": "90ff758dc08c2b1e5870c3fa77129013ce9f1b85a704b1a78c335342c99f73a2",
+      "src/editor-bench/conversation.ts": "930f27e4e75f4388d4196cf28f425ef0c62a0fb311de6811720e252ec081774c",
+      "src/editor-bench/schedule-routes.ts": "4e75cc789d95f763a25630337cfa802c0be4c8e9d8d034d51c1f2197f26f16ee",
+      "src/editor-bench/runtime.ts": "3be02e56889256ed38f731ec6c17a76a4bfcab0f5ffdb35574341438a82ef0d8",
+      "src/gallery-editor/provider.ts": "b36f92fccd63134d1b95b3abc6ee6012eda96715d757d7baac171bc54ae79998",
+      "src/gallery-editor/budget.ts": "fac0d2aeee9f47250d45ec3d1ac90a5d3c528fb971334889df633649bb39fef0",
+      "src/editor-bench/distribution-variant-adapter.ts": "723770bf15fd913044b4f16ea41b1ba27fc87513162cb8647cffff6e174932a3",
+      "dist/src/editor-bench/conversation.js": "98f47ac78867b0fd98263f8b6f85758c34c9ea3fd9a066009078278faf64c717",
+      "dist/src/editor-bench/schedule-routes.js": "6a411a874fb374f0efa407249166fbdc32ebaa7f6edd2c07094e19cc827f7235",
+      "dist/src/editor-bench/runtime.js": "8416200c68fc4ca1fb63b02bf76cf8cb233d7b6c7b6f537945243bde93b923a2",
+      ".env": "571d97784c24067a3c4f20f68d2aff18dd5ebd708c4a1ec1294a64cd79bbf603",
+      "web/.env.local": "c20a35e6de6fd419554fa2bc00d4aecb8a8f1a75cfb6170fa0bdfa46a367d96b"
+    }
+  },
+  "limits": [
+    "Six paid interpretation calls maximum; no automatic retries or prompt changes.",
+    "16 synthetic metadata posts only. Canned setup is labelled separately from live turns.",
+    "Generated JPEGs exercise mock export/draft routes; images are never sent to the model.",
+    "No production DB, real Library, scheduling, extension delivery or publishing; front-end testing deferred.",
+    "A failed turn stops only its dependent scenario; independent scenarios still run. This is a smoke check, not a language-quality benchmark."
+  ],
+  "skippedDependentTurns": 0,
+  "budget": {
+    "ledgerPath": ".relay-data/gallery-editor-budget.json",
+    "initialRows": 907,
+    "finalRows": 907,
+    "previousRowsUnchanged": true,
+    "heldoutRowsUnchanged": true,
+    "providerCalls": 6,
+    "networkCalls": 0,
+    "paidCalls": 0,
+    "reservationsUsd": 0,
+    "actualUsd": 0,
+    "remaining": {
+      "development": 0.35353854,
+      "heldout": 8.9690346
+    },
+    "ledgerSha256": "26fb8f72c28da4e9abbea6714f46b8d938e4a10a93ac52bb98a4891c1ea56f3c",
+    "newRows": []
+  },
+  "protectedFilesUnchanged": true,
+  "priorReportsPreserved": 69
+}

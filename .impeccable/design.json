@@ -1,0 +1,407 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-10-19T09:52:37.340998+00:00",
+  "title": "Design System: Relay Posting Recipe prototype",
+  "extensions": {
+    "colorMeta": {
+      "bg": {
+        "role": "neutral",
+        "displayName": "Navy shell",
+        "tonalRamp": [
+          "oklch(0.150 0.0206 258.33)",
+          "oklch(0.264 0.0206 258.33)",
+          "oklch(0.379 0.0206 258.33)",
+          "oklch(0.493 0.0206 258.33)",
+          "oklch(0.607 0.0206 258.33)",
+          "oklch(0.721 0.0206 258.33)",
+          "oklch(0.836 0.0206 258.33)",
+          "oklch(0.950 0.0206 258.33)"
+        ]
+      },
+      "surface": {
+        "role": "neutral",
+        "displayName": "Blue-gray surface",
+        "tonalRamp": [
+          "oklch(0.150 0.0288 255.24)",
+          "oklch(0.264 0.0288 255.24)",
+          "oklch(0.379 0.0288 255.24)",
+          "oklch(0.493 0.0288 255.24)",
+          "oklch(0.607 0.0288 255.24)",
+          "oklch(0.721 0.0288 255.24)",
+          "oklch(0.836 0.0288 255.24)",
+          "oklch(0.950 0.0288 255.24)"
+        ]
+      },
+      "subtle": {
+        "role": "neutral",
+        "displayName": "Inset navy",
+        "tonalRamp": [
+          "oklch(0.150 0.0277 253.46)",
+          "oklch(0.264 0.0277 253.46)",
+          "oklch(0.379 0.0277 253.46)",
+          "oklch(0.493 0.0277 253.46)",
+          "oklch(0.607 0.0277 253.46)",
+          "oklch(0.721 0.0277 253.46)",
+          "oklch(0.836 0.0277 253.46)",
+          "oklch(0.950 0.0277 253.46)"
+        ]
+      },
+      "input": {
+        "role": "neutral",
+        "displayName": "Field navy",
+        "tonalRamp": [
+          "oklch(0.150 0.0274 255.83)",
+          "oklch(0.264 0.0274 255.83)",
+          "oklch(0.379 0.0274 255.83)",
+          "oklch(0.493 0.0274 255.83)",
+          "oklch(0.607 0.0274 255.83)",
+          "oklch(0.721 0.0274 255.83)",
+          "oklch(0.836 0.0274 255.83)",
+          "oklch(0.950 0.0274 255.83)"
+        ]
+      },
+      "border": {
+        "role": "neutral",
+        "displayName": "Quiet rule",
+        "tonalRamp": [
+          "oklch(0.150 0.0345 253.55)",
+          "oklch(0.264 0.0345 253.55)",
+          "oklch(0.379 0.0345 253.55)",
+          "oklch(0.493 0.0345 253.55)",
+          "oklch(0.607 0.0345 253.55)",
+          "oklch(0.721 0.0345 253.55)",
+          "oklch(0.836 0.0345 253.55)",
+          "oklch(0.950 0.0345 253.55)"
+        ]
+      },
+      "border-hi": {
+        "role": "neutral",
+        "displayName": "Hover rule",
+        "tonalRamp": [
+          "oklch(0.150 0.0546 250.58)",
+          "oklch(0.264 0.0546 250.58)",
+          "oklch(0.379 0.0546 250.58)",
+          "oklch(0.493 0.0546 250.58)",
+          "oklch(0.607 0.0546 250.58)",
+          "oklch(0.721 0.0546 250.58)",
+          "oklch(0.836 0.0546 250.58)",
+          "oklch(0.950 0.0546 250.58)"
+        ]
+      },
+      "fg": {
+        "role": "neutral",
+        "displayName": "Readable white",
+        "tonalRamp": [
+          "oklch(0.150 0.0109 256.70)",
+          "oklch(0.264 0.0109 256.70)",
+          "oklch(0.379 0.0109 256.70)",
+          "oklch(0.493 0.0109 256.70)",
+          "oklch(0.607 0.0109 256.70)",
+          "oklch(0.721 0.0109 256.70)",
+          "oklch(0.836 0.0109 256.70)",
+          "oklch(0.950 0.0109 256.70)"
+        ]
+      },
+      "muted": {
+        "role": "neutral",
+        "displayName": "Supporting gray",
+        "tonalRamp": [
+          "oklch(0.150 0.0270 253.60)",
+          "oklch(0.264 0.0270 253.60)",
+          "oklch(0.379 0.0270 253.60)",
+          "oklch(0.493 0.0270 253.60)",
+          "oklch(0.607 0.0270 253.60)",
+          "oklch(0.721 0.0270 253.60)",
+          "oklch(0.836 0.0270 253.60)",
+          "oklch(0.950 0.0270 253.60)"
+        ]
+      },
+      "green": {
+        "role": "primary",
+        "displayName": "Action green",
+        "tonalRamp": [
+          "oklch(0.150 0.1094 157.84)",
+          "oklch(0.264 0.1094 157.84)",
+          "oklch(0.379 0.1094 157.84)",
+          "oklch(0.493 0.1094 157.84)",
+          "oklch(0.607 0.1094 157.84)",
+          "oklch(0.721 0.1094 157.84)",
+          "oklch(0.836 0.1094 157.84)",
+          "oklch(0.950 0.1094 157.84)"
+        ]
+      },
+      "green-ink": {
+        "role": "primary",
+        "displayName": "Green ink",
+        "tonalRamp": [
+          "oklch(0.150 0.0419 158.04)",
+          "oklch(0.264 0.0419 158.04)",
+          "oklch(0.379 0.0419 158.04)",
+          "oklch(0.493 0.0419 158.04)",
+          "oklch(0.607 0.0419 158.04)",
+          "oklch(0.721 0.0419 158.04)",
+          "oklch(0.836 0.0419 158.04)",
+          "oklch(0.950 0.0419 158.04)"
+        ]
+      },
+      "mint": {
+        "role": "primary",
+        "displayName": "Soft mint",
+        "tonalRamp": [
+          "oklch(0.150 0.0852 157.74)",
+          "oklch(0.264 0.0852 157.74)",
+          "oklch(0.379 0.0852 157.74)",
+          "oklch(0.493 0.0852 157.74)",
+          "oklch(0.607 0.0852 157.74)",
+          "oklch(0.721 0.0852 157.74)",
+          "oklch(0.836 0.0852 157.74)",
+          "oklch(0.950 0.0852 157.74)"
+        ]
+      },
+      "blue": {
+        "role": "secondary",
+        "displayName": "Selection blue",
+        "tonalRamp": [
+          "oklch(0.150 0.0923 254.74)",
+          "oklch(0.264 0.0923 254.74)",
+          "oklch(0.379 0.0923 254.74)",
+          "oklch(0.493 0.0923 254.74)",
+          "oklch(0.607 0.0923 254.74)",
+          "oklch(0.721 0.0923 254.74)",
+          "oklch(0.836 0.0923 254.74)",
+          "oklch(0.950 0.0923 254.74)"
+        ]
+      },
+      "amber": {
+        "role": "tertiary",
+        "displayName": "Attention amber",
+        "tonalRamp": [
+          "oklch(0.150 0.0952 77.87)",
+          "oklch(0.264 0.0952 77.87)",
+          "oklch(0.379 0.0952 77.87)",
+          "oklch(0.493 0.0952 77.87)",
+          "oklch(0.607 0.0952 77.87)",
+          "oklch(0.721 0.0952 77.87)",
+          "oklch(0.836 0.0952 77.87)",
+          "oklch(0.950 0.0952 77.87)"
+        ]
+      },
+      "red": {
+        "role": "tertiary",
+        "displayName": "Error rose",
+        "tonalRamp": [
+          "oklch(0.150 0.0871 23.41)",
+          "oklch(0.264 0.0871 23.41)",
+          "oklch(0.379 0.0871 23.41)",
+          "oklch(0.493 0.0871 23.41)",
+          "oklch(0.607 0.0871 23.41)",
+          "oklch(0.721 0.0871 23.41)",
+          "oklch(0.836 0.0871 23.41)",
+          "oklch(0.950 0.0871 23.41)"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "headline": {
+        "displayName": "Page heading",
+        "purpose": "Prototype recipe title; 25px at max-width 650px."
+      },
+      "title": {
+        "displayName": "Section heading",
+        "purpose": "Source, save and test regions."
+      },
+      "body": {
+        "displayName": "UI body",
+        "purpose": "System UI text and native forms; no display font is specified."
+      }
+    },
+    "shadows": [
+      {
+        "name": "local-popover",
+        "value": "0 12px 26px #0006",
+        "purpose": "Timing and demo-context menus only."
+      },
+      {
+        "name": "toast",
+        "value": "0 8px 24px #0006",
+        "purpose": "Transient status and Undo."
+      }
+    ],
+    "motion": [
+      {
+        "name": "ease",
+        "value": "cubic-bezier(.16,1,.3,1)",
+        "purpose": "Reveals only; matches --ease."
+      },
+      {
+        "name": "reveal",
+        "value": "200ms",
+        "purpose": "Opacity .7 to 1; translateY(4px) to 0."
+      },
+      {
+        "name": "new-release",
+        "value": "220ms",
+        "purpose": "Inserted release reveal."
+      },
+      {
+        "name": "popover",
+        "value": "160ms",
+        "purpose": "Timing popover reveal."
+      },
+      {
+        "name": "control-state",
+        "value": "160ms",
+        "purpose": "Button colors/transform and field border; CSS default ease."
+      },
+      {
+        "name": "release-border",
+        "value": "180ms",
+        "purpose": "Active release border; CSS default ease."
+      },
+      {
+        "name": "chevron",
+        "value": "200ms",
+        "purpose": "Disclosure rotation; CSS default ease."
+      },
+      {
+        "name": "reduced-motion",
+        "value": "prefers-reduced-motion: reduce",
+        "purpose": "No animation/transition; immediate scrolling."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "compact-editor-max",
+        "value": "1000px"
+      },
+      {
+        "name": "mobile-max",
+        "value": "650px"
+      },
+      {
+        "name": "saved-description-min",
+        "value": "1100px"
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary button",
+      "kind": "button",
+      "description": "Save or confirm an explicit local action.",
+      "html": "<button class=\"ds-primary\">Save recipe</button>",
+      "css": ".ds-primary{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:40px;padding:8px 13px;border:1px solid var(--border,#354354);border-radius:var(--control,9px);font:550 14px/1.4 -apple-system,BlinkMacSystemFont,\"Segoe UI\",sans-serif;cursor:pointer;transition:background .16s,border-color .16s,color .16s,transform .16s;background:var(--green,#83d9a8);color:var(--green-ink,#102a1c);border-color:transparent;}.ds-primary:hover{background:#a0e8bd;border-color:transparent;}.ds-primary:active{transform:translateY(1px)}.ds-primary:focus-visible{outline:2px solid var(--blue,#9bc7ff);outline-offset:3px;}.ds-primary:disabled{opacity:.5;cursor:not-allowed}@media(prefers-reduced-motion:reduce){.ds-primary{transition:none}.ds-primary:active{transform:none}}.ds-primary{touch-action:manipulation}",
+      "refersTo": "button-primary"
+    },
+    {
+      "name": "Ghost button",
+      "kind": "button",
+      "description": "Secondary tools retain a quiet border.",
+      "html": "<button class=\"ds-ghost\">Test recipe</button>",
+      "css": ".ds-ghost{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:40px;padding:8px 13px;border:1px solid var(--border,#354354);border-radius:var(--control,9px);font:550 14px/1.4 -apple-system,BlinkMacSystemFont,\"Segoe UI\",sans-serif;cursor:pointer;transition:background .16s,border-color .16s,color .16s,transform .16s;background:transparent;color:var(--fg,#e8edf4);}.ds-ghost:hover{background:#2a3c50;border-color:var(--border-hi,#637e9b);}.ds-ghost:active{transform:translateY(1px)}.ds-ghost:focus-visible{outline:2px solid var(--blue,#9bc7ff);outline-offset:3px;}.ds-ghost:disabled{opacity:.5;cursor:not-allowed}@media(prefers-reduced-motion:reduce){.ds-ghost{transition:none}.ds-ghost:active{transform:none}}.ds-ghost{touch-action:manipulation}",
+      "refersTo": "button-ghost"
+    },
+    {
+      "name": "Subtle button",
+      "kind": "button",
+      "description": "Contextual settings without a resting border.",
+      "html": "<button class=\"ds-subtle\">Settings</button>",
+      "css": ".ds-subtle{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:40px;padding:8px 13px;border:1px solid var(--border,#354354);border-radius:var(--control,9px);font:550 14px/1.4 -apple-system,BlinkMacSystemFont,\"Segoe UI\",sans-serif;cursor:pointer;transition:background .16s,border-color .16s,color .16s,transform .16s;background:transparent;border-color:transparent;color:var(--muted,#adbaca);}.ds-subtle:hover{color:var(--fg,#e8edf4);background:#26364a;border-color:var(--border-hi,#637e9b);}.ds-subtle:active{transform:translateY(1px)}.ds-subtle:focus-visible{outline:2px solid var(--blue,#9bc7ff);outline-offset:3px;}.ds-subtle:disabled{opacity:.5;cursor:not-allowed}@media(prefers-reduced-motion:reduce){.ds-subtle{transition:none}.ds-subtle:active{transform:none}}.ds-subtle{touch-action:manipulation}",
+      "refersTo": "button-subtle"
+    },
+    {
+      "name": "Labeled input",
+      "kind": "input",
+      "description": "Visible label, native editing, stronger hover border and keyboard outline.",
+      "html": "<label class=\"ds-field\"><span class=\"ds-label\">Recipe name</span><input class=\"ds-input\" placeholder=\"My release rhythm\"></label>",
+      "css": ".ds-field{display:block;font:14px/1.5 -apple-system,BlinkMacSystemFont,\"Segoe UI\",sans-serif;color:var(--fg,#e8edf4)}.ds-label{display:block;margin-bottom:8px;color:var(--muted,#adbaca);font-size:13px;font-weight:550}.ds-input{width:100%;min-height:40px;padding:9px 11px;border:1px solid var(--border,#354354);border-radius:var(--control,9px);background:var(--input,#101925);color:inherit;font:inherit;caret-color:var(--blue,#9bc7ff);transition:border-color .16s}.ds-input::placeholder{color:#97a8bb;opacity:1}.ds-input:hover{border-color:var(--border-hi,#637e9b)}.ds-input:focus-visible{outline:2px solid var(--blue,#9bc7ff);outline-offset:3px;}.ds-input[aria-invalid=true]{border-color:var(--red,#ffb5b0)}@media(max-width:650px){.ds-input{font-size:16px}}@media(prefers-reduced-motion:reduce){.ds-input{transition:none}}",
+      "refersTo": "input"
+    },
+    {
+      "name": "Filter chip",
+      "kind": "chip",
+      "description": "Compact removable filter with a release-independent accessible name.",
+      "html": "<button class=\"ds-chip\" aria-label=\"Remove Contains image filter\">Contains image <span class=\"ds-chip-x\" aria-hidden=\"true\">×</span></button>",
+      "css": ".ds-chip{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:40px;padding:8px 13px;border:1px solid var(--border,#354354);border-radius:var(--control,9px);font:550 14px/1.4 -apple-system,BlinkMacSystemFont,\"Segoe UI\",sans-serif;cursor:pointer;transition:background .16s,border-color .16s,color .16s,transform .16s;min-height:34px;padding:6px 10px;border-radius:8px;background:var(--subtle,#121c28);color:var(--fg,#e8edf4);font-size:13px;gap:7px;}.ds-chip:hover{background:#2a3c50;border-color:var(--border-hi,#637e9b);}.ds-chip:active{transform:translateY(1px)}.ds-chip:focus-visible{outline:2px solid var(--blue,#9bc7ff);outline-offset:3px;}.ds-chip:disabled{opacity:.5;cursor:not-allowed}@media(prefers-reduced-motion:reduce){.ds-chip{transition:none}.ds-chip:active{transform:none}}.ds-chip-x{font-size:17px;color:var(--muted,#adbaca);line-height:1}.ds-chip{touch-action:manipulation}",
+      "refersTo": "chip"
+    },
+    {
+      "name": "Work panel",
+      "kind": "card",
+      "description": "Flat bordered workspace; no resting shadow.",
+      "html": "<section class=\"ds-panel\"><h2 class=\"ds-panel-title\">Save this recipe</h2><p class=\"ds-panel-copy\">Review each post</p></section>",
+      "css": ".ds-panel{padding:22px 24px;border:1px solid var(--border,#354354);border-radius:var(--radius,14px);background:var(--surface,#17212e);color:var(--fg,#e8edf4);font:14px/1.5 -apple-system,BlinkMacSystemFont,\"Segoe UI\",sans-serif}.ds-panel-title{margin:0;font-size:18px;font-weight:650;line-height:1.4}.ds-panel-copy{margin:8px 0 0;color:var(--muted,#adbaca)}@media(max-width:650px){.ds-panel{padding:18px}}",
+      "refersTo": "panel"
+    },
+    {
+      "name": "Release disclosure",
+      "kind": "custom",
+      "description": "Destination chips lead the header; separate Details controls the two-column timing/treatment editor and Description. Source runtime manages disclosure state.",
+      "html": "<article class=\"ds-release ds-is-active\"><div class=\"ds-release-header\"><fieldset class=\"ds-release-destinations\"><legend class=\"ds-sr-only\">Destinations for release 1</legend><div class=\"ds-targets\"><button class=\"ds-target\" aria-pressed=\"true\" aria-label=\"X @moonstudio destination for release 1\"><svg class=\"ds-platform-logo ds-x\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M14.234 10.162 22.977 0h-2.072l-7.591 8.824L7.251 0H.258l9.168 13.343L.258 24H2.33l8.016-9.318L16.749 24h6.993zm-2.837 3.299-.929-1.329L3.076 1.56h3.182l5.965 8.532.929 1.329 7.754 11.09h-3.182z\"/></svg><span>X <span class=\"ds-handle\">@moonstudio</span></span></button></div></fieldset><button class=\"ds-release-toggle\" aria-label=\"Hide release 1 details. X @moonstudio. 1 day after the source post\" aria-expanded=\"true\" aria-controls=\"ds-release-content\"><span>Details</span><svg class=\"ds-chevron\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"m6 9 6 6 6-6\"/></svg></button></div><div id=\"ds-release-content\" class=\"ds-release-body\"><div class=\"ds-route-grid\"><div><span class=\"ds-field-label\">When</span><select class=\"ds-schedule\" aria-label=\"Release 1 posting date\"><option>After</option></select><p class=\"ds-reference\">After publication on Patreon.</p></div><div><span class=\"ds-field-label\">Image & assistance</span><label class=\"ds-check\"><input type=\"checkbox\">Teaser</label><label class=\"ds-check\"><input type=\"checkbox\">Coach</label><p class=\"ds-reference\">Original image · no treatment</p></div></div><section class=\"ds-description\"><h3>Description</h3><p>Uses your description when the post is uploaded.</p></section></div></article>",
+      "css": ".ds-target{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:40px;padding:8px 13px;border:1px solid var(--border,#354354);border-radius:var(--control,9px);font:550 14px/1.4 -apple-system,BlinkMacSystemFont,\"Segoe UI\",sans-serif;cursor:pointer;transition:background .16s,border-color .16s,color .16s,transform .16s;justify-content:flex-start;gap:8px;font-size:13px;padding:9px 10px;background:var(--input,#101925);color:var(--muted,#adbaca);text-align:left;}.ds-target:hover{background:#2a3c50;border-color:var(--border-hi,#637e9b);}.ds-target:active{transform:translateY(1px)}.ds-target:focus-visible{outline:2px solid var(--blue,#9bc7ff);outline-offset:3px;}.ds-target:disabled{opacity:.5;cursor:not-allowed}@media(prefers-reduced-motion:reduce){.ds-target{transition:none}.ds-target:active{transform:none}}.ds-target[aria-pressed=true]{border-color:#557266;background:#1d342a;color:var(--fg,#e8edf4)}.ds-handle{font-weight:400;color:var(--muted,#adbaca);font-size:13px}.ds-target{touch-action:manipulation}.ds-platform-logo{width:18px;height:18px;fill:currentColor;flex:none}.ds-x{color:#d6e7fb}@media(max-width:650px){.ds-target{padding:8px;max-width:100%}.ds-target>span{min-width:0;overflow-wrap:anywhere}.ds-handle{display:block}}.ds-release{border:1px solid var(--border,#354354);border-radius:13px;background:var(--surface,#17212e);color:var(--fg,#e8edf4);font:14px/1.5 -apple-system,BlinkMacSystemFont,\"Segoe UI\",sans-serif;transition:border-color .18s}.ds-release.ds-is-active{border-color:#6886a6}.ds-release-header{display:flex;align-items:center;flex-wrap:wrap;padding:16px 18px;gap:8px}.ds-release-destinations{flex:1;min-width:0;margin:0;border:0;padding:0}.ds-targets{display:flex;gap:7px;flex-wrap:wrap}.ds-sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0)}.ds-release-toggle{display:inline-flex;align-items:center;justify-content:space-between;gap:16px;flex:none;border:0;background:transparent;color:var(--blue,#9bc7ff);font:500 13px/1.4 -apple-system,BlinkMacSystemFont,\"Segoe UI\",sans-serif;padding:8px 10px;min-height:40px;border-radius:9px;cursor:pointer;touch-action:manipulation;transition:background .16s,transform .16s}.ds-release-toggle:hover{background:#26364a}.ds-release-toggle:focus-visible{outline:2px solid var(--blue,#9bc7ff);outline-offset:3px;}.ds-release-toggle:active{transform:translateY(1px)}.ds-chevron{width:17px;height:17px;fill:none;stroke:var(--muted,#adbaca);stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round;transition:transform .2s;flex:none}.ds-release-toggle[aria-expanded=true] .ds-chevron{transform:rotate(180deg)}.ds-release-body{padding:18px 20px 20px;border-top:1px solid var(--border,#354354)}.ds-route-grid{display:grid;grid-template-columns:1fr 1fr;gap:23px}.ds-field-label{display:block;margin-bottom:8px;font-size:13px;font-weight:550;color:var(--muted,#adbaca)}.ds-reference{font-size:13px;color:var(--muted,#adbaca);line-height:1.7}.ds-schedule{width:100%;min-height:40px;padding:9px 11px;background:var(--input,#101925);border:1px solid var(--border,#354354);border-radius:var(--control,9px);font:14px/1.5 -apple-system,BlinkMacSystemFont,\"Segoe UI\",sans-serif;color:inherit}.ds-schedule:hover{border-color:var(--border-hi,#637e9b)}.ds-schedule:focus-visible{outline:2px solid var(--blue,#9bc7ff);outline-offset:3px;}.ds-check{display:flex;gap:9px;align-items:center;min-height:40px}.ds-check input{width:17px;height:17px;accent-color:#4b9767}.ds-check input:focus-visible{outline:2px solid var(--blue,#9bc7ff);outline-offset:3px;}.ds-description{display:grid;grid-template-columns:145px minmax(0,1fr);gap:18px;margin-top:18px;border-top:1px solid var(--border,#354354);padding-top:18px}.ds-description h3{margin:0;font-size:15px;font-weight:600}.ds-description p{margin:0;color:var(--muted,#adbaca);font-size:14px}@media(max-width:1000px){.ds-route-grid{gap:20px}}@media(max-width:650px){.ds-release-header{padding:13px 12px;gap:6px}.ds-release-destinations{flex-basis:calc(100% - 88px)}.ds-targets{gap:6px}.ds-release-toggle{padding:8px;gap:5px}.ds-release-toggle>span:first-child{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0)}.ds-release-body{padding:16px 13px}.ds-route-grid,.ds-description{grid-template-columns:1fr}.ds-description{gap:13px}}@media(prefers-reduced-motion:reduce){.ds-release,.ds-chevron,.ds-release-toggle{transition:none}}",
+      "refersTo": "release"
+    },
+    {
+      "name": "Selected destination",
+      "kind": "chip",
+      "description": "Always-visible editable platform-logo and account-handle chip, including collapsed releases.",
+      "html": "<button class=\"ds-target\" aria-pressed=\"true\" aria-label=\"X @moonstudio destination for release 1\"><svg class=\"ds-platform-logo ds-x\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M14.234 10.162 22.977 0h-2.072l-7.591 8.824L7.251 0H.258l9.168 13.343L.258 24H2.33l8.016-9.318L16.749 24h6.993zm-2.837 3.299-.929-1.329L3.076 1.56h3.182l5.965 8.532.929 1.329 7.754 11.09h-3.182z\"/></svg><span>X <span class=\"ds-handle\">@moonstudio</span></span></button>",
+      "css": ".ds-target{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:40px;padding:8px 13px;border:1px solid var(--border,#354354);border-radius:var(--control,9px);font:550 14px/1.4 -apple-system,BlinkMacSystemFont,\"Segoe UI\",sans-serif;cursor:pointer;transition:background .16s,border-color .16s,color .16s,transform .16s;justify-content:flex-start;gap:8px;font-size:13px;padding:9px 10px;background:var(--input,#101925);color:var(--muted,#adbaca);text-align:left;}.ds-target:hover{background:#2a3c50;border-color:var(--border-hi,#637e9b);}.ds-target:active{transform:translateY(1px)}.ds-target:focus-visible{outline:2px solid var(--blue,#9bc7ff);outline-offset:3px;}.ds-target:disabled{opacity:.5;cursor:not-allowed}@media(prefers-reduced-motion:reduce){.ds-target{transition:none}.ds-target:active{transform:none}}.ds-target[aria-pressed=true]{border-color:#557266;background:#1d342a;color:var(--fg,#e8edf4)}.ds-handle{font-weight:400;color:var(--muted,#adbaca);font-size:13px}.ds-target{touch-action:manipulation}.ds-platform-logo{width:18px;height:18px;fill:currentColor;flex:none}.ds-x{color:#d6e7fb}@media(max-width:650px){.ds-target{padding:8px;max-width:100%}.ds-target>span{min-width:0;overflow-wrap:anywhere}.ds-handle{display:block}}"
+    },
+    {
+      "name": "Location header",
+      "kind": "custom",
+      "description": "Implemented location and draft status; no navigation menu is implied.",
+      "html": "<header class=\"ds-header\"><strong class=\"ds-brand\">Relay</strong><span class=\"ds-location\">Posting recipes</span><span class=\"ds-badge\">Draft</span></header>",
+      "css": ".ds-header{min-height:64px;padding:12px 24px;display:flex;align-items:center;gap:15px;border-bottom:1px solid #2a384b;background:#142031;color:var(--fg,#e8edf4);font:14px/1.5 -apple-system,BlinkMacSystemFont,\"Segoe UI\",sans-serif}.ds-brand{font-size:19px;font-weight:700}.ds-location{color:var(--muted,#adbaca)}.ds-badge{margin-left:auto;border:1px solid var(--border,#354354);border-radius:8px;padding:4px 9px;font-size:13px}@media(max-width:650px){.ds-header{padding:12px 18px;gap:9px}.ds-brand{font-size:18px}}"
+    },
+    {
+      "name": "Recipes hub",
+      "kind": "custom",
+      "description": "Inline hub above the trigger: one saved browser-local slot, two editable templates and New. Source runtime handles loading, Escape, focus restoration and Undo.",
+      "html": "<section class=\"ds-hub\" aria-label=\"Recipes and templates\"><div class=\"ds-hub-head\"><h2>Recipes & templates</h2><button class=\"ds-hub-close\" aria-label=\"Close recipes\"><svg class=\"ds-hub-close-icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"m6 6 12 12M6 18 18 6\"/></svg></button></div><div class=\"ds-recipe-list\"><button class=\"ds-recipe-choice\" disabled><span><strong>No saved recipe yet</strong><span class=\"ds-small\">Saved in this browser</span></span></button><span class=\"ds-template-label\">Start from a template</span><button class=\"ds-recipe-choice\"><span><strong>Art release rhythm</strong><span class=\"ds-small\">3 releases · preview, original & Coach</span></span></button><button class=\"ds-recipe-choice\"><span><strong>Share the original</strong><span class=\"ds-small\">Patreon → X + DeviantArt · after 1 day</span></span></button><button class=\"ds-new\">New recipe</button></div></section>",
+      "css": ".ds-recipe-choice{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:40px;padding:8px 13px;border:1px solid var(--border,#354354);border-radius:var(--control,9px);font:550 14px/1.4 -apple-system,BlinkMacSystemFont,\"Segoe UI\",sans-serif;cursor:pointer;transition:background .16s,border-color .16s,color .16s,transform .16s;background:transparent;color:var(--fg,#e8edf4);}.ds-recipe-choice:hover{background:#2a3c50;border-color:var(--border-hi,#637e9b);}.ds-recipe-choice:active{transform:translateY(1px)}.ds-recipe-choice:focus-visible{outline:2px solid var(--blue,#9bc7ff);outline-offset:3px;}.ds-recipe-choice:disabled{opacity:.5;cursor:not-allowed}@media(prefers-reduced-motion:reduce){.ds-recipe-choice{transition:none}.ds-recipe-choice:active{transform:none}}.ds-recipe-choice{touch-action:manipulation}.ds-hub{padding:22px 24px;border:1px solid var(--border,#354354);border-radius:var(--radius,14px);background:var(--surface,#17212e);color:var(--fg,#e8edf4);font:14px/1.5 -apple-system,BlinkMacSystemFont,\"Segoe UI\",sans-serif;margin-bottom:24px}.ds-hub h2{margin:0;font-size:18px;font-weight:650;line-height:1.4}.ds-recipe-list{display:grid;gap:8px;margin-top:18px}.ds-recipe-choice{width:100%;justify-content:space-between;padding:13px 15px;text-align:left}.ds-recipe-choice>span:first-child{display:grid;gap:4px;min-width:0}.ds-recipe-choice strong{font-size:14px;overflow-wrap:anywhere}.ds-small{font-size:13px;font-weight:400;overflow-wrap:anywhere;color:var(--muted,#adbaca)}.ds-template-label{font-size:13px;font-weight:550;color:var(--muted,#adbaca);margin:14px 0 0}.ds-new{justify-self:start;background:transparent;border:1px solid transparent;border-radius:9px;min-height:40px;padding:8px 13px;color:var(--muted,#adbaca);font:550 14px/1.4 -apple-system,BlinkMacSystemFont,\"Segoe UI\",sans-serif;cursor:pointer;touch-action:manipulation}.ds-new:hover{color:var(--fg,#e8edf4);background:#26364a}.ds-new:focus-visible{outline:2px solid var(--blue,#9bc7ff);outline-offset:3px;}.ds-new:active{transform:translateY(1px)}@media(max-width:650px){.ds-hub{padding:18px}.ds-recipe-choice{gap:12px}}.ds-hub-head{display:flex;align-items:center;justify-content:space-between;gap:10px}.ds-hub-close{display:inline-flex;align-items:center;justify-content:center;width:40px;height:40px;padding:10px;flex:none;background:transparent;color:var(--fg,#e8edf4);border:1px solid var(--border,#354354);border-radius:9px;cursor:pointer;touch-action:manipulation}.ds-hub-close:hover{background:#2a3c50;border-color:var(--border-hi,#637e9b)}.ds-hub-close:focus-visible{outline:2px solid var(--blue,#9bc7ff);outline-offset:3px}.ds-hub-close:active{transform:translateY(1px)}.ds-hub-close-icon{width:17px;height:17px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}"
+    }
+  ],
+  "narrative": {
+    "northStar": "Studio sheet",
+    "overview": "This document records the finished local Posting Recipe prototype at [recipe-editor.html](docs/studio/posting-recipe-build-plans/demo/recipe-editor.html). Its token authority is limited to that artifact and its future extensions. It does not redefine `web/`, other Relay surfaces, or production components. The implementation is a standalone HTML demo with fictional accounts, browser-local storage and a publication simulator.\n\nThe studio sheet uses a navy shell, bounded blue-gray work surfaces and compact forms. A numbered line holds the release sequence together. Editable destination account chips lead each release; a separate Details control opens timing, treatment and description. Native system text and restrained color keep account context readable.",
+    "keyCharacteristics": [
+      "A single broad workspace with an inline release sequence.",
+      "Rounded controls, native form affordances and visible keyboard focus.",
+      "Contextual detail that preserves the surrounding sequence.",
+      "A persistent save entry with explicit review authority."
+    ],
+    "rules": [
+      {
+        "name": "State Pairing",
+        "body": "Pair color with text or control state: errors have messages, destination choices use `aria-pressed`, and release editing uses `aria-expanded`.",
+        "section": "colors"
+      },
+      {
+        "name": "Local Depth",
+        "body": "Keep sequence and editor surfaces flat; reserve shadows for elements floating over the workspace.",
+        "section": "elevation"
+      },
+      {
+        "name": "Authority",
+        "body": "Saving, enrollment and sample handoff never imply publication. The final authority remains Review each post; the simulator advances dependent releases only after matching destination publication confirmation. Local demo copy must stay visible wherever outcomes could be mistaken for live delivery.",
+        "section": "components"
+      }
+    ],
+    "dos": [
+      "Do extend these tokens within the standalone Posting Recipe prototype's scope.",
+      "Do preserve account names, handles, timing references and review authority in compact summaries.",
+      "Do keep treatment enablement separate from settings inspection.",
+      "Do retain visible focus, inline validation and reduced-motion behavior in new prototype states.",
+      "Do derive future token changes from implemented, reviewed code."
+    ],
+    "donts": [
+      "Don't apply this prototype's tokens retroactively to other Relay surfaces.",
+      "Don't present local storage, fictional connections or simulated receipts as production delivery.",
+      "Don't grant publication authority through Default, Always on, saving or settings inspection.",
+      "Don't turn the studio-sheet composition into a mandatory layout for unrelated product surfaces.",
+      "Don't treat generated sidecar tonal ramps as an implemented palette expansion."
+    ]
+  }
+}

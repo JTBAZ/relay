@@ -5,7 +5,7 @@
  * @see prisma/schema.prisma `Post`, `MediaAsset`, `Tier`, `Campaign`, identity tables via `IdentityService`
  */
 import type { PrismaClient } from "@prisma/client";
-import type { FilePatreonCookieStore } from "../auth/cookie-store.js";
+import type { PatreonCookieStore } from "../auth/cookie-store.js";
 import type { ExportService } from "../export/export-service.js";
 import { enrichBatch } from "../ingest/auto-enrich.js";
 import type { IngestService } from "../ingest/ingest-service.js";
@@ -330,7 +330,7 @@ export type PatreonSyncStateOptions = {
  */
 export class PatreonSyncService {
   private readonly tokenStore: PatreonTokenStore;
-  private readonly cookieStore: FilePatreonCookieStore;
+  private readonly cookieStore: PatreonCookieStore;
   private readonly ingestService: IngestService;
   private readonly watermarkStore: SyncWatermarkStoreAPI;
   private readonly authService: PatreonAuthService;
@@ -344,7 +344,7 @@ export class PatreonSyncService {
 
   public constructor(
     tokenStore: PatreonTokenStore,
-    cookieStore: FilePatreonCookieStore,
+    cookieStore: PatreonCookieStore,
     ingestService: IngestService,
     watermarkStore: SyncWatermarkStoreAPI,
     authService: PatreonAuthService,
@@ -407,11 +407,7 @@ export class PatreonSyncService {
 
     const row = await this.watermarkStore.getRow(creatorId, patreonCampaignId);
     const cookieLocal = await this.cookieStore.getCookieLocalStatus(creatorId);
-    if (cookieLocal === "expired_local") {
-      await this.cookieStore.dropSessionRecord(creatorId);
-    }
-    const sessionId =
-      cookieLocal === "ok" ? await this.cookieStore.getSessionId(creatorId) : null;
+    const sessionId = await this.cookieStore.getSessionId(creatorId);
     const remoteRejection = await this.cookieStore.hasRemoteRejectionMarker(creatorId);
     const oauth = buildOauthHealthSnapshot(cred);
     const healthRow = this.syncHealthStore
@@ -423,7 +419,7 @@ export class PatreonSyncService {
 
     const hasCookie = Boolean(sessionId?.trim());
     if (hasCookie && remoteRejection) {
-      await this.cookieStore.clearPatreonRejectedSession(creatorId);
+      await this.cookieStore.clearPatreonRejectedSession(creatorId, sessionId!);
     }
     let cookie_session_status: PatreonSyncState["cookie_session_status"];
     if (hasCookie) {
@@ -622,11 +618,7 @@ export class PatreonSyncService {
     const stopBeforePublishedAt = options.force_refresh_post_access ? undefined : watermark;
 
     const cookieLocal = await this.cookieStore.getCookieLocalStatus(creatorId);
-    if (cookieLocal === "expired_local") {
-      await this.cookieStore.dropSessionRecord(creatorId);
-    }
-    const sessionId =
-      cookieLocal === "ok" ? await this.cookieStore.getSessionId(creatorId) : null;
+    const sessionId = await this.cookieStore.getSessionId(creatorId);
 
     let posts: IngestPost[] = [];
     let pages = 0;
@@ -665,8 +657,7 @@ export class PatreonSyncService {
         perPostOAuth = await enrichPostsFromOAuth(posts, fetchOpts, warnings);
       } catch (e) {
         if (e instanceof CookieSessionExpiredError) {
-          await this.cookieStore.dropSessionRecord(creatorId);
-          await this.cookieStore.markPatreonRejectedSession(creatorId);
+          await this.cookieStore.markPatreonRejectedSession(creatorId, sessionId);
           patreonRejectedCookie = true;
           warnings.push(
             "Session key rejected by Patreon — removed. Falling back to OAuth-only sync."

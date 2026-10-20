@@ -4,6 +4,7 @@ import { formatPlatformVariant, type FormattedPlatformVariant } from '../distrib
 import { PLATFORM_DESTINATION_META } from '../distribution/platform-destinations.js';
 import type { ScheduleReviewPayload } from './schedule-review.js';
 import { createBenchFixture, createBenchMediaDescriptors, createBenchPostCards } from './fixtures.js';
+import { buildPlanMediaAssistantFields, buildVariantMediaPlatformFields, parsePlanPreviewMediaId, parseVariantMediaBinding, resolveVariantMediaIds } from '../distribution/media-binding.js';
 
 export type BenchVariantSource = {
   revision: number;
@@ -22,11 +23,13 @@ function canonical(value: unknown): string {
   if (value && typeof value === 'object') return `{${Object.keys(value).sort().map(key => `${JSON.stringify(key)}:${canonical((value as Record<string, unknown>)[key])}`).join(',')}}`;
   return JSON.stringify(value) ?? 'null';
 }
+export function benchVariantCopyHash(variant: Record<string, unknown>): string {
+  return sha256({ title: variant.title, bodyText: variant.bodyText, postText: variant.postText, tags: variant.tags, platformFields: variant.platformFields });
+}
 export function sha256(value: unknown): string { return createHash('sha256').update(canonical(value)).digest('hex'); }
 
 /** Rebuild the effective server-owned fixture version and selected ordered media. */
-export function loadBenchVariantSource(postId: string, selectedMediaIds: string[]): BenchVariantSource | null {
-  const fixture = createBenchFixture();
+export function loadBenchVariantSource(postId: string, selectedMediaIds: string[], fixture: ReturnType<typeof createBenchFixture> = createBenchFixture()): BenchVariantSource | null {
   const state = fixture.state;
   const card = createBenchPostCards(fixture).find(row => row.postId === postId);
   const version = state.tables.versions.find(row => row.postId === postId);
@@ -72,7 +75,17 @@ export function exactBenchVariant(source: BenchVariantSource, destination: 'x' |
   return { baseline, approved, diff };
 }
 
+/** Shared V3 review compiler used by both the legacy schedule route and conversation posting. */
+export function reviewBenchVariantV3(source: BenchVariantSource, destination: 'x' | 'deviantart', title: string) {
+  const variant = exactBenchVariant(source, destination, title);
+  if (!variant) return null;
+  const binding = bindBenchVariantSource(source);
+  const variantHash = sha256(variant.approved);
+  return { source, variant, binding, variantHash };
+}
+
 export type BenchVariantRows = { plan: Record<string, any>; variant: Record<string, any>; event: Record<string, any> };
+export type BenchVariantDraftRows = { plan: Record<string, any>; variant: Record<string, any> };
 export type BenchVariantCommit = (identity: string, facts: Record<string, unknown>, create: () => BenchVariantRows) => Promise<{ rows: BenchVariantRows; reused: boolean }>;
 type SavedEditReceipt = { facts: Record<string, unknown>; rows: BenchVariantRows; revision: number };
 type SavedVariant = { facts: Record<string, unknown>; creationRows: BenchVariantRows; currentRows: BenchVariantRows; edits: Map<string, SavedEditReceipt> };
@@ -85,6 +98,7 @@ export type BenchVariantEditReceipt = { rows: BenchVariantRows; revision: number
 /** Per-router ephemeral storage; read/write boundaries always return independent copies. */
 export function createBenchDistributionVariantAdapter(options: { beforeCommit?: () => void | Promise<void> } = {}) {
   const saved = new Map<string, SavedVariant>();
+  const savedDrafts = new Map<string, { facts: Record<string, unknown>; rows: BenchVariantDraftRows; currentRows: BenchVariantDraftRows; event: Record<string, unknown> | null; scheduleFacts: Record<string, unknown> | null }>();
   const clone = <T>(value: T): T => structuredClone(value);
   const commit: BenchVariantCommit = async (identity, facts, create) => {
     const checkExisting = () => {
@@ -109,6 +123,51 @@ export function createBenchDistributionVariantAdapter(options: { beforeCommit?: 
       }
     }
     return null;
+  };
+  const commitDraft = async (identity: string, facts: Record<string, unknown>, create: () => BenchVariantDraftRows, stillValid: () => boolean = () => true) => {
+    const checkExisting = () => {
+      const existing = savedDrafts.get(identity);
+      if (!existing) return null;
+      if (canonical(existing.facts) !== canonical(facts)) throw Object.assign(new Error('Saved mock draft conflicts with this review identity.'), { code: 'CONFLICT' });
+      return { rows: clone(existing.rows), reused: true as const };
+    };
+    const first = checkExisting();
+    if (first) return first;
+    if (savedDrafts.size >= 1024) throw Object.assign(new Error('Mock X draft capacity is full until the API restarts.'), { code: 'CAPACITY' });
+    await options.beforeCommit?.();
+    if (!stillValid()) throw Object.assign(new Error('The mock X draft review became stale before commit.'), { code: 'STALE' });
+    const afterHook = checkExisting();
+    if (afterHook) return afterHook;
+    if (savedDrafts.size >= 1024) throw Object.assign(new Error('Mock X draft capacity is full until the API restarts.'), { code: 'CAPACITY' });
+    const rows = clone(create());
+    savedDrafts.set(identity, { facts: clone(facts), rows, currentRows: clone(rows), event: null, scheduleFacts: null });
+    return { rows: clone(rows), reused: false };
+  };
+  const readDraft = (creatorId: string, variantId: string) => {
+    for (const [identity, entry] of savedDrafts) if (entry.rows.variant.id === variantId && entry.rows.variant.creatorId === creatorId) return { identity, rows: clone(entry.rows) };
+    return null;
+  };
+  const readDraftState = (creatorId: string, variantId: string) => {
+    for (const [identity, entry] of savedDrafts) if (entry.rows.variant.id === variantId && entry.rows.variant.creatorId === creatorId) return { identity, facts: clone(entry.facts), creationRows: clone(entry.rows), currentRows: clone(entry.currentRows), event: clone(entry.event), scheduleFacts: clone(entry.scheduleFacts) };
+    return null;
+  };
+  const scheduleDraft = async (identity: string, facts: Record<string, unknown>, create: (rows: BenchVariantDraftRows) => { variant: Record<string, any>; event: Record<string, unknown> }, stillValid: () => boolean = () => true) => {
+    const existing = savedDrafts.get(identity);
+    const check = (entry: typeof existing) => !!entry && entry.scheduleFacts === null && entry.event === null && entry.currentRows.variant.scheduledFor == null && entry.currentRows.variant.id === entry.rows.variant.id;
+    if (!existing || !check(existing)) throw Object.assign(new Error('The confirmed mock draft is missing, changed, or already scheduled.'), { code: 'CONFLICT' });
+    const originalState = canonical(existing.currentRows);
+    await options.beforeCommit?.();
+    const latest = savedDrafts.get(identity);
+    if (!latest || !check(latest) || canonical(latest.currentRows) !== originalState || !stillValid()) throw Object.assign(new Error('The mock draft schedule review became stale before commit.'), { code: 'STALE' });
+    const created = create(clone(latest.currentRows));
+    const event = created?.event as Record<string, any> | undefined;
+    const destination = latest.currentRows.variant.destination;
+    const copyField = destination === 'x' ? 'postText' : destination === 'deviantart' ? 'title' : null;
+    if (!copyField || !created || created.variant.id !== latest.currentRows.variant.id || created.variant.planId !== latest.currentRows.variant.planId || created.variant.creatorId !== latest.currentRows.variant.creatorId || created.variant.status !== 'draft' || created.variant.destination !== destination || created.variant.scheduledFor == null || created.variant[copyField] !== latest.currentRows.variant[copyField] || (destination === 'deviantart' && benchVariantCopyHash(created.variant) !== benchVariantCopyHash(latest.currentRows.variant)) || !event || event.source !== 'manual_event' || event.event_type !== 'make_post' || event.action !== 'post' || event.destination !== destination || event.status !== 'pending' || event.title !== (destination === 'x' ? latest.currentRows.variant.postText : latest.currentRows.variant.title) || event.due_at !== created.variant.scheduledFor || event.post_id !== null || !Array.isArray(event.media_ids) || event.media_ids.length !== 0 || event.linkage?.plan_id !== created.variant.planId || event.linkage?.variant_id !== created.variant.id) throw Object.assign(new Error('The mock schedule record failed its draft-only checks.'), { code: 'CONFLICT' });
+    latest.currentRows = { ...clone(latest.currentRows), variant: clone(created.variant) };
+    latest.event = clone(created.event);
+    latest.scheduleFacts = clone(facts);
+    return { currentRows: clone(latest.currentRows), event: clone(latest.event) };
   };
   const listEditableVariants = (creatorId: string) => [...saved.values()].map(entry => entry.currentRows).filter(rows => {
     const { plan, variant, event } = rows;
@@ -172,7 +231,7 @@ export function createBenchDistributionVariantAdapter(options: { beforeCommit?: 
     latest.edits.set(editIdentity, { facts: clone(facts), rows: clone(next), revision });
     return { rows: clone(next), revision, reused: false };
   };
-  return { commit, readVariant, listEditableVariants, confirmEdit, snapshot: () => [...saved.values()].map(row => clone(row.currentRows)), size: () => saved.size };
+  return { commit, commitDraft, readDraft, readDraftState, scheduleDraft, draftSnapshot: () => [...savedDrafts.values()].map(row => clone(row.rows)), draftSize: () => savedDrafts.size, readVariant, listEditableVariants, confirmEdit, snapshot: () => [...saved.values()].map(row => clone(row.currentRows)), size: () => saved.size };
 }
 
 function currentText(variant: Record<string, any>, field: BenchVariantEditClaims['field']): string | null {
@@ -215,3 +274,65 @@ export function buildBenchVariantRows(input: {
   };
 }
 function cloneSelected(media: BenchVariantSource['media']) { return media.map(row => ({ ...row })); }
+
+export function buildBenchVariantDraftRows(input: {
+  creatorId: string; identity: string; source: BenchVariantSource; binding: BenchVariantBinding;
+  approved: FormattedPlatformVariant; diff: Record<string, { before: unknown; after: unknown }>;
+  variantHash: string; previewMediaId: string; exportHash: string; templateId: string; templateConfigHash: string; destination?: 'x' | 'deviantart'; now?: Date;
+}): BenchVariantDraftRows {
+  const { creatorId, identity, source, binding, approved, diff, variantHash, previewMediaId, exportHash, templateId, templateConfigHash } = input;
+  const destination = input.destination ?? 'x';
+  const now = (input.now ?? new Date()).toISOString();
+  const planId = `bench_plan_${identity}`;
+  const variantId = `bench_variant_${identity}`;
+  const routing = { [destination]: 'preview' as const };
+  const planMedia = buildPlanMediaAssistantFields({ previewMediaId, mediaRoutingByDestination: routing });
+  const platformFields = { ...approved.platformFields, ...buildVariantMediaPlatformFields({ mediaVersion: 'preview', destination }) };
+  if (parsePlanPreviewMediaId(planMedia) !== previewMediaId || resolveVariantMediaIds({ canonicalMediaIds: source.mediaIds, binding: parseVariantMediaBinding(platformFields, destination), planPreviewMediaId: parsePlanPreviewMediaId(planMedia) }).join() !== previewMediaId) throw new Error(`The mock export could not be bound as the ${destination} draft media.`);
+  const provenance = {
+    kind: 'bench_source_v1', source: { version_key: binding.versionKey, fingerprint: binding.fingerprint,
+      revision: source.revision, post_id: source.postId, title: source.title, description: source.description,
+      tag_labels: [...source.tagLabels], ordered_media_ids: [...source.mediaIds], selected_media: cloneSelected(source.media) },
+    approved_initial_variant: { hash: variantHash, fields: structuredClone(approved), media_ids: [previewMediaId], preview_media_id: previewMediaId, export_hash: exportHash },
+      field_diffs: structuredClone(diff), preview_export: { media_id: previewMediaId, sha256: exportHash, initial_template_id: templateId, initial_template_config_hash: templateConfigHash },
+  };
+  const planData = buildDistributionPlanCreateData({ creatorId, postId: source.postId, status: 'active', assistantMode: 'none', assistantContext: {}, assistantPlan: { bench_source_v1: provenance, ...planMedia } });
+  const variantData = buildDistributionVariantCreateData({ planId, postId: source.postId, creatorId, variant: approved, status: 'draft', assistantEnabled: false,
+    platformFields,
+    advice: { ...approved.advice, bench_source_v1: provenance,
+      bench_variant_revisions_v1: { currentRevision: 0, revisions: [{ revision: 0, field: destination === 'x' ? 'postText' : 'title', value: destination === 'x' ? approved.postText : approved.title,
+        sourceVersionKey: binding.versionKey, sourceFingerprint: binding.fingerprint, confirmedAt: now }] } } });
+  return {
+    plan: { id: planId, ...planData, createdAt: now, updatedAt: now },
+    variant: { id: variantId, ...variantData, locale: null, scheduledFor: null, remindMe: false, reminderSentAt: null, createdAt: now, updatedAt: now, attempts: [], postbotTasks: [] },
+  };
+}
+
+export function reviewBenchPreviewDraft(source: BenchVariantSource, copyText: string, destination: 'x' | 'deviantart' = 'x') {
+  const exact = exactBenchVariant(source, destination, copyText);
+  if (!exact) return null;
+  const approved: FormattedPlatformVariant = {
+    ...exact.approved,
+    platformFields: { ...exact.approved.platformFields, ...buildVariantMediaPlatformFields({ mediaVersion: 'preview', destination }) },
+  };
+  const diff = structuredClone(exact.diff);
+  if (canonical(exact.baseline.platformFields) !== canonical(approved.platformFields)) diff.platformFields = { before: exact.baseline.platformFields, after: approved.platformFields };
+  const binding = bindBenchVariantSource(source);
+  return { source, baseline: exact.baseline, approved, diff, binding, variantHash: sha256(approved) };
+}
+
+/** Shared V3 commit path; callers must perform their own authorization/CAS checks first. */
+export async function commitBenchVariantV3(
+  adapter: ReturnType<typeof createBenchDistributionVariantAdapter>,
+  creatorId: string,
+  payload: ScheduleReviewPayload,
+  reviewed: NonNullable<ReturnType<typeof reviewBenchVariantV3>>,
+) {
+  const identity = sha256({ namespace: 'bench-distribution-variant-v3', creatorId, payload, source: reviewed.binding, variantHash: reviewed.variantHash });
+  const facts = { creatorId, payload, source: reviewed.binding, variantHash: reviewed.variantHash };
+  const saved = await adapter.commit(identity, facts, () => buildBenchVariantRows({
+    creatorId, identity, payload, source: reviewed.source, binding: reviewed.binding,
+    approved: reviewed.variant.approved, diff: reviewed.variant.diff, variantHash: reviewed.variantHash,
+  }));
+  return { ...saved, identity };
+}
