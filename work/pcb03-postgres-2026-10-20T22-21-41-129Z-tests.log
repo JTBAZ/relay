@@ -1,0 +1,60 @@
+
+ RUN  v3.2.4 C:/Users/jorda/Documents/Codex/2026-10-11/c/work/relay
+
+ ✓ tests/editor-bench/real-library-conversation-postgres.integration.test.ts (1 test) 2322ms
+   ✓ durable Library conversation — PostgreSQL > persists selected context and confirms a literal source edit atomically, then replays the original receipt  1412ms
+ ❯ tests/editor-bench/real-library-preview-export-postgres.integration.test.ts (2 tests | 1 failed) 1649ms
+   × durable Library Previewizer export — PostgreSQL > rejects corrupt JPEGs, seals one exact owned export, and replays after a concurrent confirm and restart 563ms
+     → expected undefined to match object { …(2) }
+   ✓ durable Library Previewizer export — PostgreSQL > rejects missing, foreign, oversized, changed-template, changed-source, and changed-JPEG reviews  803ms
+
+ Test Files  1 failed | 1 passed (2)
+      Tests  1 failed | 2 passed (3)
+   Start at  00:21:50
+   Duration  10.11s (transform 1.01s, setup 60ms, collect 5.36s, tests 3.97s, environment 0ms, prepare 216ms)
+
+
+(node:51728) DeprecationWarning: Calling client.query() when the client is already executing a query is deprecated and will be removed in pg@9.0. Use async/await or an external async flow control mechanism instead.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/editor-bench/real-library-preview-export-postgres.integration.test.ts > durable Library Previewizer export — PostgreSQL > rejects corrupt JPEGs, seals one exact owned export, and replays after a concurrent confirm and restart
+AssertionError: expected undefined to match object { …(2) }
+
+- Expected: 
+{
+  "reviewId": "e3210323-1a5b-43a9-b97a-e2c71ec8d95d",
+  "templateConfig": {
+    "aspectKey": "1:1",
+    "compositionId": null,
+    "compositionProps": null,
+    "compositionVariantIndex": null,
+    "destination": {
+      "customDestinationUrl": null,
+      "selectedDestinationId": "x",
+    },
+    "overlayDoc": {
+      "graphicLayers": [],
+      "logoLayers": [],
+      "textLayers": [],
+    },
+    "preset": "tight_crop",
+    "schemaVersion": 1,
+    "templateOptions": {},
+  },
+}
+
++ Received: 
+undefined
+
+ ❯ tests/editor-bench/real-library-preview-export-postgres.integration.test.ts:118:52
+    116|     const expectedRevision = review.body.data.revision;
+    117|     const resumed = await request(instance).get(`${base}/session/${sta…
+    118|     expect(resumed.body.data.pendingPreviewReview).toMatchObject({ rev…
+       |                                                    ^
+    119|     expect(resumed.body.data.pendingPreviewReview.stagedContentUrl).to…
+    120|     const confirm = () => request(instance).post(`${base}/session/${st…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+

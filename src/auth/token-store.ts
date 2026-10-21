@@ -5,8 +5,10 @@
  * @see ../lib/crypto.js TokenEncryption
  */
 
-import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { dirname } from "node:path";
+import { lstat, mkdir, open, readFile, rename, unlink } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
+import { dirname, resolve } from "node:path";
+import lockfile from "proper-lockfile";
 import { TokenEncryption } from "../lib/crypto.js";
 
 /** @description High-level health markers for refresh automation. */
@@ -48,6 +50,8 @@ export type PersistedPatreonTokens = {
  * @security-audit-required Implementations must scope reads/writes to the authorized creator.
  */
 export interface PatreonTokenStore {
+  /** Serialize the read, provider rotation, and write across API/worker processes. */
+  updateForCreator(creatorId: string, update: (current: PersistedPatreonTokens | null) => Promise<PersistedPatreonTokens>): Promise<void>;
   /**
    * @description Persists rotated or newly issued tokens.
    * @param tokens Plaintext envelope to encrypt and write.
@@ -86,7 +90,7 @@ export class FilePatreonTokenStore implements PatreonTokenStore {
    * @param tokenEncryption Symmetric encryptor matching production key material.
    */
   public constructor(filePath: string, tokenEncryption: TokenEncryption) {
-    this.filePath = filePath;
+    this.filePath = resolve(filePath);
     this.tokenEncryption = tokenEncryption;
   }
 
@@ -97,17 +101,33 @@ export class FilePatreonTokenStore implements PatreonTokenStore {
    * @throws {Error} On `writeFile`/`mkdir` failure or encryption errors.
    */
   public async upsert(tokens: PersistedPatreonTokens): Promise<void> {
-    const data = await this.readStore();
-    data.records[tokens.creator_id] = {
-      creator_id: tokens.creator_id,
-      encrypted_access_token: this.tokenEncryption.encrypt(tokens.access_token),
-      encrypted_refresh_token: this.tokenEncryption.encrypt(tokens.refresh_token),
-      access_token_expires_at: tokens.access_token_expires_at,
-      provider_user_id: tokens.provider_user_id,
-      credential_health_status: tokens.credential_health_status,
-      updated_at: new Date().toISOString()
-    };
-    await this.writeStore(data);
+    await this.updateForCreator(tokens.creator_id, async () => tokens);
+  }
+
+  public async updateForCreator(creatorId: string, update: (current: PersistedPatreonTokens | null) => Promise<PersistedPatreonTokens>): Promise<void> {
+    await mkdir(dirname(this.filePath), { recursive: true, mode: 0o700 });
+    try {
+      if ((await lstat(this.filePath)).isSymbolicLink()) throw new Error("Patreon token store must use its regular file path.");
+    } catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; }
+    const release = await lockfile.lock(this.filePath, {
+      realpath: false, stale: 60_000, update: 10_000,
+      retries: { retries: 65, minTimeout: 100, maxTimeout: 1000, factor: 1.2 }
+    });
+    try {
+      const data = await this.readStore();
+      const tokens = await update(await this.getByCreatorId(creatorId));
+      if (tokens.creator_id !== creatorId) throw new Error("Patreon token scope mismatch.");
+      data.records[tokens.creator_id] = {
+        creator_id: tokens.creator_id,
+        encrypted_access_token: this.tokenEncryption.encrypt(tokens.access_token),
+        encrypted_refresh_token: this.tokenEncryption.encrypt(tokens.refresh_token),
+        access_token_expires_at: tokens.access_token_expires_at,
+        provider_user_id: tokens.provider_user_id,
+        credential_health_status: tokens.credential_health_status,
+        updated_at: new Date().toISOString()
+      };
+      await this.writeStore(data);
+    } finally { await release(); }
   }
 
   /**
@@ -115,12 +135,12 @@ export class FilePatreonTokenStore implements PatreonTokenStore {
    * @param creatorId Creator key.
    * @returns Decrypted tokens or `null`.
    * @async
-   * @throws {Error} On disk read failure; corrupt JSON returns empty store then `null` for missing keys.
+   * @throws {Error} On disk read failure or corrupt JSON.
    * @throws {Error} Decryption failures from `TokenEncryption` propagate.
    */
   public async getByCreatorId(creatorId: string): Promise<PersistedPatreonTokens | null> {
     const data = await this.readStore();
-    const record = data.records[creatorId];
+    const record = Object.hasOwn(data.records, creatorId) ? data.records[creatorId] : undefined;
     if (!record) {
       return null;
     }
@@ -148,14 +168,21 @@ export class FilePatreonTokenStore implements PatreonTokenStore {
   private async readStore(): Promise<TokenStoreData> {
     try {
       const raw = await readFile(this.filePath, "utf8");
-      return JSON.parse(raw) as TokenStoreData;
-    } catch {
-      return { records: {} };
+      const data = JSON.parse(raw) as TokenStoreData;
+      if (!data || !data.records || typeof data.records !== "object" || Array.isArray(data.records)) throw new Error();
+      return data;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return { records: {} };
+      throw new Error("Patreon token store cannot be read; restore it before retrying.");
     }
   }
 
   private async writeStore(data: TokenStoreData): Promise<void> {
-    await mkdir(dirname(this.filePath), { recursive: true });
-    await writeFile(this.filePath, JSON.stringify(data, null, 2), "utf8");
+    const temporary = `${this.filePath}.${randomUUID()}.tmp`;
+    try {
+      const file = await open(temporary, "wx", 0o600);
+      try { await file.writeFile(JSON.stringify(data, null, 2)); await file.sync(); } finally { await file.close(); }
+      await rename(temporary, this.filePath);
+    } finally { await unlink(temporary).catch((e: NodeJS.ErrnoException) => { if (e.code !== "ENOENT") throw e; }); }
   }
 }

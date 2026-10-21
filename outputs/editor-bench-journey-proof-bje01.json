@@ -1,0 +1,173 @@
+{
+  "ticket": "BJE-01",
+  "status": "accepted_bounded_mock_journey",
+  "date": "2026-10-20",
+  "branch": "codex/local-build-2026-10-19",
+  "head": "91a72d2f1ea18a7b1326305e6dd4b1d224fbcbd1",
+  "objective": "Demonstrate the existing connected selection, refinement, confirmed editing, preview, X/DeviantArt drafts, schedules and manual handoff package flow in one cheap-model conversation.",
+  "scope": {
+    "newEvaluator": "work/bje01-model-check.mjs",
+    "productFilesChanged": [],
+    "frontendExecution": false,
+    "implementationFixes": 0
+  },
+  "review": {
+    "skill": "Ponytail Review",
+    "scope": "New work/bje01-model-check.mjs only, with existing conversation/provider/adapter/routes and BGB/BCT harnesses read for compatibility.",
+    "remainingFindings": [],
+    "preflight": "outputs/editor-bench-journey-preflight-bje01-03.json",
+    "preflightScriptCorrections": [
+      "Use catalog.visibleName for the renamed metadata assertion.",
+      "Expect preview pendingRequirements to clear after explicit export completion."
+    ],
+    "productChanges": 0
+  },
+  "results": {
+    "liveInterpretationTurns": 6,
+    "passedLiveTurns": 6,
+    "oneFreshSession": true,
+    "cannedLiveSetup": false,
+    "explicitConfirmationSteps": 8,
+    "mockDrafts": 2,
+    "pendingMockSchedules": 2,
+    "manualHandoffPackages": 2,
+    "checks": {
+      "oneContinuousSession": true,
+      "allSixTurnsLive": true,
+      "selectionAndStickyExclusions": true,
+      "renameRequiresExplicitConfirmation": true,
+      "confirmedRenameInLaterModelInputAndPostingSource": true,
+      "sharedPreviewExportAndExactCopy": true,
+      "twoDraftsTwoPendingSchedulesTwoManualHandoffPackages": true,
+      "eightExplicitConfirmations": true,
+      "originalFixtureAndUnrelatedCardsPreserved": true,
+      "receiptReplayAndOwnedReadback": true,
+      "productionWritesAndPublicationCalls": 0
+    },
+    "maxModelPayloadBytes": 24137,
+    "payloadCapBytes": 24576,
+    "backendScheduleDatesIndependentlyVerified": true
+  },
+  "evidence": {
+    "raw": "outputs/editor-bench-journey-live-bje01-03.json",
+    "journal": "outputs/editor-bench-journey-live-bje01-03.ndjson",
+    "preflight": "outputs/editor-bench-journey-preflight-bje01-03.json",
+    "preflightJournal": "outputs/editor-bench-journey-preflight-bje01-03.ndjson",
+    "preservedPreflightFailures": [
+      "outputs/editor-bench-journey-preflight-bje01.json",
+      "outputs/editor-bench-journey-preflight-bje01-02.json"
+    ],
+    "baseline": "work/bje01-baseline.json",
+    "priorEvidenceFilesUnchanged": 82,
+    "priorSourcePathsUnchanged": 182,
+    "configurationFilesUnchanged": true
+  },
+  "failureAnalysis": [
+    {
+      "path": "outputs/editor-bench-journey-preflight-bje01.json",
+      "type": "evaluator_assertion",
+      "cause": "The initial script looked for title instead of the catalog visibleName field in later model inputs.",
+      "productGap": false,
+      "paidCalls": 0
+    },
+    {
+      "path": "outputs/editor-bench-journey-preflight-bje01-02.json",
+      "type": "evaluator_assertion",
+      "cause": "The script expected pending Previewizer requirements to remain unchanged after a confirmed export; completion correctly clears them.",
+      "productGap": false,
+      "paidCalls": 0
+    }
+  ],
+  "budget": {
+    "ledgerPath": ".relay-data/gallery-editor-budget.json",
+    "initialRows": 913,
+    "finalRows": 919,
+    "previousRowsUnchanged": true,
+    "heldoutRowsUnchanged": true,
+    "providerCalls": 6,
+    "networkCalls": 6,
+    "paidCalls": 6,
+    "reservationsUsd": 0.051899,
+    "actualUsd": 0.0041506,
+    "remaining": {
+      "development": 0.34483654,
+      "heldout": 8.9690346
+    },
+    "ledgerSha256": "969cc6310604f9c506f63d55056c0c9221297400570229d8ba6c50f5bd86b7d9",
+    "newRows": [
+      {
+        "id": "139f0db1-2732-4c77-b17f-673af012fc7b",
+        "model": "gpt-5.6-luna",
+        "phase": "development",
+        "reservedUsd": 0.008622400000000002,
+        "actualUsd": 0.000696,
+        "settled": true
+      },
+      {
+        "id": "6c93c279-7c9b-457d-8b4a-38095806a2eb",
+        "model": "gpt-5.6-luna",
+        "phase": "development",
+        "reservedUsd": 0.008638,
+        "actualUsd": 0.0007116000000000001,
+        "settled": true
+      },
+      {
+        "id": "24ef6a8b-867e-4d15-854f-c268e5884b1d",
+        "model": "gpt-5.6-luna",
+        "phase": "development",
+        "reservedUsd": 0.0086476,
+        "actualUsd": 0.0006564,
+        "settled": true
+      },
+      {
+        "id": "c59d4154-82b8-4704-aee1-6b240bec10cb",
+        "model": "gpt-5.6-luna",
+        "phase": "development",
+        "reservedUsd": 0.008649400000000002,
+        "actualUsd": 0.0007094,
+        "settled": true
+      },
+      {
+        "id": "28a688bb-5442-4f16-8e26-f0d5e5686767",
+        "model": "gpt-5.6-luna",
+        "phase": "development",
+        "reservedUsd": 0.0086698,
+        "actualUsd": 0.000674,
+        "settled": true
+      },
+      {
+        "id": "26b25263-165c-4495-aabf-994d2c73da94",
+        "model": "gpt-5.6-luna",
+        "phase": "development",
+        "reservedUsd": 0.008671799999999999,
+        "actualUsd": 0.0007032,
+        "settled": true
+      }
+    ],
+    "authoritativeLedgerAbsolutePath": "C:\\Users\\jorda\\Documents\\Codex\\2026-10-11\\c\\work\\relay\\.relay-data\\gallery-editor-budget.json",
+    "historicalPrefixIndependentlyVerified": true,
+    "correctedLiveRechecks": 0,
+    "heldoutUntouched": true
+  },
+  "verification": {
+    "preflightPassed": true,
+    "livePassed": true,
+    "productSourceAndCompiledBenchModulesUnchanged": true,
+    "backendBuildAndUnitSuiteRerun": false,
+    "reason": "No product implementation changed; the new evaluator self-check passed against compiled modules from the last accepted build.",
+    "historicalFailures": "The three previously recorded distribution-package stub failures were not rerun or changed."
+  },
+  "limits": [
+    "Six interpretation calls maximum per run, no automatic retry or fallback. One corrected recheck only after a reproduced gap; task total at most 12 calls/$0.12 reserved.",
+    "One fresh session with 16 mock metadata posts; all six submitted turns use the model in live mode.",
+    "Previewizer browser rendering is replaced with one generated JPEG explicitly confirmed through existing export routes; the model receives no image.",
+    "Creator and extension authentication are synthetic callbacks; manual handoff packages/bytes are inspected without a browser or extension execution.",
+    "Schedules and variants remain ephemeral mock adapter records, not durable Rail entries. No production DB, platform request, publication or front-end testing.",
+    "This fixed journey is bounded acceptance evidence, not a broad language-quality benchmark."
+  ],
+  "runtime": {
+    "apiRestarted": false,
+    "reason": "No product code changed; existing local runtime was left in place."
+  },
+  "dispatch": "No further ticket or paid run dispatched."
+}

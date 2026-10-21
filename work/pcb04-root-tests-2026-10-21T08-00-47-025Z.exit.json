@@ -1,0 +1,17 @@
+{
+  "files": [
+    "tests/editor-bench/real-library-conversation-routes.test.ts",
+    "tests/editor-bench/conversation.test.ts",
+    "tests/gallery-editor-routes.test.ts",
+    "tests/post-distribution-identity.test.ts",
+    "tests/post-distribution-promo-instance.test.ts",
+    "tests/coach-checkpoint-service.test.ts",
+    "tests/distribution-media-binding.test.ts",
+    "tests/schedule-rail-service.test.ts",
+    "tests/postbot-task-service.test.ts"
+  ],
+  "exitCode": 0,
+  "error": null,
+  "report": "work/pcb04-root-tests-2026-10-21T08-00-47-025Z.json",
+  "log": "work/pcb04-root-tests-2026-10-21T08-00-47-025Z.log"
+}

@@ -1,0 +1,4 @@
+{
+  "exitCode": 1,
+  "command": "npm test -- --run tests/editor-bench/real-library-conversation-routes.test.ts tests/editor-bench/real-library-review.test.ts tests/editor-bench/real-library-conversation-postgres.integration.test.ts"
+}

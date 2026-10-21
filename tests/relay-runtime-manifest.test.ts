@@ -1,7 +1,14 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { buildRelayRuntimeManifest } from "../src/dev/relay-runtime-manifest.js";
 
 describe("buildRelayRuntimeManifest", () => {
+  afterEach(() => vi.unstubAllEnvs());
+  it("reports the effective production cookie vault instead of always claiming file storage", () => {
+    vi.stubEnv("NODE_ENV", "production"); vi.stubEnv("RELAY_DB_STORE_PATREON_COOKIE", "");
+    const manifest = buildRelayRuntimeManifest({ prisma: {} as never });
+    expect(manifest.patreon_cookie_store?.readPath).toBe("postgres");
+    expect(manifest.always_file.patreon_session_cookies).toBe(false);
+  });
   it("maps effective flag to readPath for canonical", () => {
     const off = buildRelayRuntimeManifest({ relay_db_store_canonical: false });
     expect(off.relay_db_store.canonical.readPath).toBe("file");

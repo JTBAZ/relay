@@ -10,6 +10,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { PrismaClient } from "@prisma/client";
 import { IdentityAuthProvider, SessionKind, TenantRole } from "@prisma/client";
 import { getPlatformRelayCreatorId } from "../src/identity/platform-tenant.js";
+import { FilePatreonCookieStore } from "../src/auth/cookie-store.js";
 
 const mockGetSupabaseUser = vi.fn();
 
@@ -25,6 +26,7 @@ function baseConfig(tempDir: string, prisma: PrismaClient) {
     patreon_client_secret: "s",
     relay_token_encryption_key: randomBytes(32).toString("base64"),
     credential_store_path: join(tempDir, "patreon.json"),
+    cookie_store_path: join(tempDir, "cookies.json"),
     ingest_canonical_path: join(tempDir, "canonical.json"),
     ingest_dlq_path: join(tempDir, "dlq.json"),
     export_storage_root: join(tempDir, "exports"),
@@ -73,6 +75,7 @@ function createExtensionConsentPrismaStub(): PrismaClient {
   let membershipId = "";
   const sessionsByHash = new Map<string, SessionRow>();
   let sessionSeq = 0;
+  const oauthClaims = new Map<string, Record<string, unknown>>();
   const now = new Date();
 
   const membershipRow = () => ({
@@ -87,6 +90,14 @@ function createExtensionConsentPrismaStub(): PrismaClient {
   });
 
   const prismaStub: Record<string, unknown> = {
+    oAuthTransaction: {
+      findUnique: vi.fn(async ({ where }: { where: { codeHash: string } }) => oauthClaims.get(where.codeHash) ?? null),
+      create: vi.fn(async ({ data }: { data: Record<string, unknown> }) => {
+        if (oauthClaims.has(data.codeHash as string)) throw new Error("Unique claim");
+        const row = { ...data, id: `claim-${oauthClaims.size}` }; oauthClaims.set(data.codeHash as string, row); return row;
+      }),
+      deleteMany: vi.fn(async () => ({ count: 0 }))
+    },
     account: {
       findUnique: vi.fn(
         async (args: { where: Record<string, unknown>; select?: Record<string, boolean> }) => {
@@ -427,6 +438,36 @@ describe("Extension consent flow (EXT-0C)", () => {
     expect(relay.status).toBe(200);
     return relay.body.data.token as string;
   }
+
+  it.each([false, true])("PS13 fresh capture returns its outcome independently of grant issuance (failure=%s)", async (failure) => {
+    const tempDir = await mkdtemp(join(tmpdir(), "relay-ps13-consent-"));
+    const prisma = createExtensionConsentPrismaStub(), { app } = createApp(baseConfig(tempDir, prisma));
+    const opaque = await webSession(app);
+    await prisma.account.update({ where: { id: "fixture-account" }, data: { primaryRelayCreatorId: "ps13-workspace" } });
+    const store = vi.spyOn(FilePatreonCookieStore.prototype, "upsert");
+    if (failure) store.mockRejectedValueOnce(new Error("private-cookie-material")); else store.mockResolvedValueOnce(undefined);
+    try {
+      const start = await request(app).post("/api/v1/auth/extension/consent/start").set("Authorization", `Bearer ${opaque}`).send({ installation_id: "capture-installation" }).expect(200);
+      const exchange = await request(app).post("/api/v1/auth/extension/consent/exchange").send({ consent_code: start.body.data.consent_code, installation_id: "capture-installation", session_id: "current-browser-session" }).expect(200);
+      expect(exchange.body.data.token).toMatch(/^sess_/);
+      expect(exchange.body.data.credential_capture.status).toBe(failure ? "unavailable" : "stored");
+      expect(store).toHaveBeenCalledWith("ps13-workspace", "current-browser-session");
+      expect(JSON.stringify(exchange.body)).not.toContain("private-cookie-material");
+    } finally { store.mockRestore(); }
+  });
+  it("PS13 rejects a failed shared claim before grant or capture side effects", async () => {
+    const tempDir = await mkdtemp(join(tmpdir(), "relay-ps13-claim-fail-"));
+    const prisma = createExtensionConsentPrismaStub(), { app } = createApp(baseConfig(tempDir, prisma));
+    const opaque = await webSession(app);
+    const start = await request(app).post("/api/v1/auth/extension/consent/start").set("Authorization", `Bearer ${opaque}`).send({ installation_id: "claim-failure" }).expect(200);
+    const sessionCount = vi.mocked(prisma.session.create).mock.calls.length;
+    vi.mocked(prisma.oAuthTransaction.create).mockRejectedValueOnce(new Error("unavailable"));
+    const capture = vi.spyOn(FilePatreonCookieStore.prototype, "upsert");
+    try {
+      await request(app).post("/api/v1/auth/extension/consent/exchange").send({ consent_code: start.body.data.consent_code, installation_id: "claim-failure", session_id: "not-stored" }).expect(503);
+      expect(prisma.session.create).toHaveBeenCalledTimes(sessionCount); expect(capture).not.toHaveBeenCalled();
+    } finally { capture.mockRestore(); }
+  });
 
   it("consent/start returns 401 without Bearer", async () => {
     const tempDir = await mkdtemp(join(tmpdir(), "relay-ext-consent-401-"));

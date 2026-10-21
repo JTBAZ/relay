@@ -4,11 +4,11 @@
 
 import { EntitlementSource, TenantRole, type PrismaClient } from "@prisma/client";
 import {
-  getPatronSubscribestarOAuthTokensForAccount,
+  getPatronSubscribestarOAuthCredentialSnapshot,
   upsertPatronSubscribestarOAuthCredential
 } from "../auth/patron-subscribestar-oauth-credential-store.js";
 import type { TokenEncryption } from "../lib/crypto.js";
-import { upsertPatronEntitlementSnapshot } from "../identity/patron-entitlement-snapshot.js";
+import { upsertPatronProviderEntitlements } from "../identity/patron-entitlement-snapshot.js";
 import { fetchSubscribeStarPatronSubscriptionsGraphql } from "./fetch-subscribestar-patron-subscriptions.js";
 import { mapSubscribeStarPatronSubscriptionDataToRelayTierIds } from "./map-subscribestar-subscription-to-relay-tier-ids.js";
 import { subscribeStarPatronSubscriptionsGraphqlQueryFromEnv } from "./subscribestar-patron-subscriptions-query.js";
@@ -55,12 +55,12 @@ export async function syncSubscribeStarPatronEntitlements(args: {
     return { ok: false, reason: "no_creator_subscribestar_profile" };
   }
 
-  let tokens = await getPatronSubscribestarOAuthTokensForAccount(
+  let credential = await getPatronSubscribestarOAuthCredentialSnapshot(
     args.prisma,
     args.accountId,
     args.encryption
   );
-  if (!tokens?.access_token?.trim() || !tokens.refresh_token?.trim()) {
+  if (!credential?.tokens.access_token?.trim() || !credential.tokens.refresh_token?.trim()) {
     return { ok: false, reason: "no_credential" };
   }
 
@@ -68,7 +68,7 @@ export async function syncSubscribeStarPatronEntitlements(args: {
   try {
     dataRoot = await fetchSubscribeStarPatronSubscriptionsGraphql({
       graphqlUrl: args.graphqlUrl,
-      accessToken: tokens.access_token,
+      accessToken: credential.tokens.access_token,
       query,
       fetchImpl: args.fetchImpl
     });
@@ -77,13 +77,15 @@ export async function syncSubscribeStarPatronEntitlements(args: {
     if (!graphqlErrorLooksLikeAuth(msg)) {
       return { ok: false, reason: "subscription_fetch_failed" };
     }
-    const next = await args.subscribeStarOAuthClient.refreshToken(tokens.refresh_token);
+    const next = await args.subscribeStarOAuthClient.refreshToken(credential.tokens.refresh_token);
     await upsertPatronSubscribestarOAuthCredential(
       args.prisma,
       args.accountId,
       next,
       args.encryption
     );
+    credential = await getPatronSubscribestarOAuthCredentialSnapshot(args.prisma, args.accountId, args.encryption);
+    if (!credential || credential.tokens.access_token !== next.access_token) return { ok: false, reason: "credential_changed" };
     try {
       dataRoot = await fetchSubscribeStarPatronSubscriptionsGraphql({
         graphqlUrl: args.graphqlUrl,
@@ -100,7 +102,8 @@ export async function syncSubscribeStarPatronEntitlements(args: {
     creatorSubscribeStarProfileId: profileId
   });
 
-  await upsertPatronEntitlementSnapshot(args.prisma, {
+  await upsertPatronProviderEntitlements(args.prisma, {
+    expectedAccountId: args.accountId, expectedCredentialVersion: credential.version, provider: "subscribestar", expectedSubscribeStarProfileId: profileId,
     patronMembershipId: args.patronMembershipId,
     relayCreatorId: args.relayCreatorId,
     entitledTierIds: tierIds,
@@ -119,11 +122,6 @@ export async function syncSubscribeStarPatronEntitlements(args: {
     select: { entitledTierIds: true }
   });
   const final = snap?.entitledTierIds ?? tierIds;
-
-  await args.prisma.tenantMembership.update({
-    where: { id: args.patronMembershipId },
-    data: { tierIds: final }
-  });
 
   return { ok: true, tier_ids: final };
 }

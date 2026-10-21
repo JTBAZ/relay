@@ -7,6 +7,7 @@
  * @see prisma/schema.prisma `PatronOAuthCredential`, `TenantMembership`, `PatronFollowSeed`
  * @security-audit-required Handles patron emails / names from Patreon identity — treat as PII at rest.
  */
+import { assertPatreonIdentityObservation } from "../identity/patreon-identity-mutation.js";
 import { PatronFollowSeedSource, type PrismaClient } from "@prisma/client";
 import type { PatreonClient, PatreonTokenResponse } from "../auth/patreon-client.js";
 import { upsertPatronOAuthCredentialForMembership } from "../auth/patron-oauth-credential-store.js";
@@ -23,6 +24,7 @@ import { relayCreatorIdsForFollowSeed } from "../patron/patron-follow-service.js
 import { runPatronInitialFollowSeed } from "../patron/patron-initial-follow-seed.js";
 import {
   extractPatronSyncFromIdentity,
+  hasVerifiedCreatorMembershipRelationships,
   extractUnifiedPatreonIdentity,
   fetchPatronIdentity
 } from "./patreon-user-identity.js";
@@ -47,6 +49,8 @@ export async function exchangePatreonPatronOAuth(params: {
 }): Promise<{ user: UserAccount; session: SessionToken }> {
   recordPatronOAuthAttempt();
   try {
+    const observation = await params.identityService.capturePatreonObservation();
+    if (!observation) throw new Error("Patreon OAuth observation is required.");
     const tokenResponse = await params.patreonClient.exchangeCode(
       params.code,
       params.redirectUri
@@ -55,18 +59,23 @@ export async function exchangePatreonPatronOAuth(params: {
       tokenResponse.access_token,
       params.fetchImpl
     );
+    if (!hasVerifiedCreatorMembershipRelationships(doc, params.patreonCampaignNumericId)) throw new Error("identity_campaign_binding_unverified");
     const sync = extractPatronSyncFromIdentity(doc, params.patreonCampaignNumericId);
     const out = await params.identityService.completePatreonPatronOAuth(
       params.creatorId,
       sync.patreon_user_id,
       sync.email,
-      sync.tier_ids
+      sync.tier_ids,
+      observation,
+      params.patreonCampaignNumericId
     );
     await maybePersistPatronTokens(
       params.prisma,
       params.encryption,
       out.user.user_id,
-      tokenResponse
+      tokenResponse,
+      sync.patreon_user_id,
+      observation
     );
     if (params.prisma) {
       await runPatronInitialFollowSeed({
@@ -88,15 +97,18 @@ async function maybePersistPatronTokens(
   prisma: PrismaClient | null | undefined,
   encryption: TokenEncryption | null | undefined,
   tenantMembershipId: string,
-  tokenResponse: PatreonTokenResponse
+  tokenResponse: PatreonTokenResponse,
+  patreonUserId: string,
+  observation: string
 ): Promise<void> {
   if (!prisma || !encryption) return;
-  await upsertPatronOAuthCredentialForMembership(
-    prisma,
-    tenantMembershipId,
-    tokenResponse,
-    encryption
-  );
+  await prisma.$transaction(async (tx) => {
+    await tx.$queryRaw`SELECT 1 FROM pg_advisory_xact_lock(hashtextextended(${`patreon-identity:${patreonUserId}`}, 0))`;
+    const membership = await tx.tenantMembership.findUnique({ where: { id: tenantMembershipId }, include: { account: true } });
+    if (membership?.account.patronPatreonUserId !== patreonUserId) throw new Error("Patreon authorization was removed during collection.");
+    await assertPatreonIdentityObservation(tx, patreonUserId, observation);
+    await upsertPatronOAuthCredentialForMembership(tx, tenantMembershipId, tokenResponse, encryption);
+  });
 }
 
 export type UnifiedPatreonPatronOAuthResult = {
@@ -132,6 +144,8 @@ export async function exchangePatreonPatronOAuthUnified(params: {
 }): Promise<UnifiedPatreonPatronOAuthResult> {
   recordPatronOAuthAttempt();
   try {
+    const observation = await params.identityService.capturePatreonObservation();
+    if (!observation) throw new Error("Patreon OAuth observation is required.");
     const tokenResponse = await params.patreonClient.exchangeCode(
       params.code,
       params.redirectUri
@@ -142,6 +156,7 @@ export async function exchangePatreonPatronOAuthUnified(params: {
     );
     const unified = extractUnifiedPatreonIdentity(doc);
     const out = await params.identityService.completeUnifiedPatreonPatronOAuth({
+      observation,
       patreonUserId: unified.patreon_user_id,
       email: unified.email,
       ownedCampaignId: unified.owned_campaign_id,
@@ -172,7 +187,9 @@ export async function exchangePatreonPatronOAuthUnified(params: {
       params.prisma,
       params.encryption,
       out.user.user_id,
-      tokenResponse
+      tokenResponse,
+      unified.patreon_user_id,
+      observation
     );
     if (params.prisma) {
       const toSeed = relayCreatorIdsForFollowSeed({

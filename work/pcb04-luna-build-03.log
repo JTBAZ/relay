@@ -1,0 +1,13 @@
+
+> relay@0.1.0 build
+> prisma generate && tsc -p tsconfig.build.json && node scripts/copy-build-assets.mjs
+
+Loaded Prisma config from prisma.config.ts.
+
+Prisma schema loaded from prisma\schema.prisma.
+
+✔ Generated Prisma Client (v7.7.0) to .\node_modules\@prisma\client in 8.05s
+
+Start by importing your Prisma Client (See: https://pris.ly/d/importing-client)
+
+

@@ -1,0 +1,16 @@
+
+ RUN  v3.2.4 C:/Users/jorda/Documents/Codex/2026-10-11/c/work/relay
+
+ ✓ tests/editor-bench/real-library-conversation-postgres.integration.test.ts (1 test) 2522ms
+   ✓ durable Library conversation — PostgreSQL > persists selected context and confirms a literal source edit atomically, then replays the original receipt  1544ms
+ ✓ tests/editor-bench/real-library-preview-export-postgres.integration.test.ts (1 test) 980ms
+   ✓ durable Library Previewizer export — PostgreSQL > rejects corrupt JPEGs, seals one exact owned export, and replays after a concurrent confirm and restart  705ms
+
+ Test Files  2 passed (2)
+      Tests  2 passed (2)
+   Start at  00:19:23
+   Duration  9.99s (transform 987ms, setup 70ms, collect 5.69s, tests 3.50s, environment 0ms, prepare 212ms)
+
+
+(node:54996) DeprecationWarning: Calling client.query() when the client is already executing a query is deprecated and will be removed in pg@9.0. Use async/await or an external async flow control mechanism instead.
+(Use `node --trace-deprecation ...` to show where the warning was created)

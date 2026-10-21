@@ -1,7 +1,5 @@
 import browser from "./browser";
 
-import { PATREON_SESSION_COOKIE_NAME, PATREON_URL } from "./constants";
-
 import { describeExternalMetricsRefreshFailure } from "./external-metrics-failure-copy";
 
 import { SCRAPE_PATREON_METRICS_SCRIPT } from "./external-metrics-inject";
@@ -48,7 +46,7 @@ import {
 
 import { matchPublishedPostUrl } from "./post-link-patterns";
 
-import { fetchPatreonPostMetricsWithSession } from "./patreon-post-metrics-fetch";
+import { fetchPatreonPostMetricsWithSession, patreonMetricsCoverage } from "./patreon-post-metrics-fetch";
 
 import { patreonMetricsHaveNumericCounters } from "./patreon-metrics-parser";
 
@@ -75,6 +73,12 @@ type PendingRefresh = {
   resolve: (response: ExternalMetricsRefreshResponse) => void;
 
   timeoutId: ReturnType<typeof setTimeout>;
+
+  message: ExternalMetricsRefreshMessage;
+
+  tokenId: string;
+
+  creatorId: string;
 
 };
 
@@ -282,30 +286,6 @@ async function openOrFocusTab(externalUrl: string): Promise<number | undefined> 
 
 
 
-async function readPatreonSessionId(): Promise<string | null> {
-
-  try {
-
-    const cookie = await browser.cookies.get({
-
-      url: PATREON_URL,
-
-      name: PATREON_SESSION_COOKIE_NAME
-
-    });
-
-    return cookie?.value?.trim() || null;
-
-  } catch {
-
-    return null;
-
-  }
-
-}
-
-
-
 function startPatreonApiMetricsFetch(attemptId: string, externalUrl: string): void {
 
   const match = matchPublishedPostUrl("patreon", externalUrl);
@@ -324,29 +304,9 @@ function startPatreonApiMetricsFetch(attemptId: string, externalUrl: string): vo
 
   const promise = (async () => {
 
-    const sessionId = await readPatreonSessionId();
-
-    if (!sessionId) {
-
-      logMetricsRefresh("api_fetch_skipped", { reason: "no_patreon_cookie", postId });
-
-      return {
-
-        ok: false,
-
-        metrics: [],
-
-        diagnostics: { reason: "no_patreon_cookie" }
-
-      };
-
-    }
-
     logMetricsRefresh("api_fetch_start", { postId });
 
     const result = await fetchPatreonPostMetricsWithSession({
-
-      sessionId,
 
       postId
 
@@ -488,7 +448,7 @@ async function injectPatreonMetricsScraper(tabId: number): Promise<boolean> {
 
 
 
-function waitForRefreshResult(attemptId: string): Promise<ExternalMetricsRefreshResponse> {
+function waitForRefreshResult(attemptId: string, message: ExternalMetricsRefreshMessage, tokenId: string, creatorId: string): Promise<ExternalMetricsRefreshResponse> {
 
   return new Promise((resolve) => {
 
@@ -508,7 +468,7 @@ function waitForRefreshResult(attemptId: string): Promise<ExternalMetricsRefresh
 
     }, REFRESH_TIMEOUT_MS);
 
-    pendingRefreshes.set(attemptId, { resolve, timeoutId });
+    pendingRefreshes.set(attemptId, { resolve, timeoutId, message, tokenId, creatorId });
 
   });
 
@@ -626,7 +586,7 @@ export async function runExternalMetricsRefreshFlow(
 
   const externalUrl = normalizeExternalUrl(message.external_url);
 
-  if (!externalUrl) {
+  if (!matchPublishedPostUrl("patreon", externalUrl)?.external_id) {
 
     return failureResponse("invalid_message", "external_url is required.");
 
@@ -722,7 +682,7 @@ export async function runExternalMetricsRefreshFlow(
 
 
 
-  const resultPromise = waitForRefreshResult(correlationId);
+  const resultPromise = waitForRefreshResult(correlationId, message, grant.token_id, grant.relay_creator_id);
 
   const injected = await injectPatreonMetricsScraper(tabId);
 
@@ -781,6 +741,12 @@ export async function handleExternalMetricsResultMessage(raw: {
   const correlationId = attemptId || platformInstanceId;
 
   if (!correlationId) return;
+
+  const pending = pendingRefreshes.get(correlationId);
+  const grant = await storage.getGrant();
+  if (!pending || pending.message.post_id !== raw.post_id || pending.message.destination !== raw.destination ||
+      normalizeExternalUrl(pending.message.external_url) !== normalizeExternalUrl(raw.external_url) ||
+      pending.tokenId !== grant?.token_id || pending.creatorId !== grant?.relay_creator_id) return;
 
   const domMetrics = Array.isArray(raw.metrics) ? raw.metrics : [];
 
@@ -859,30 +825,22 @@ export async function handleExternalMetricsResultMessage(raw: {
 
 
   if (snapshotCount > 0) {
-
     void notifyRelayWebExternalMetricsUpdated();
-
-    completePendingRefresh(correlationId, {
-
-      ok: true,
-
-      attempt_id: attemptId || null,
-
-      platform_instance_id: platformInstanceId || null,
-
-      post_id: raw.post_id,
-
-      destination: raw.destination,
-
-      snapshot_count: snapshotCount
-
-    });
-
+    const coverage = patreonMetricsCoverage(mergedMetrics);
+    if (coverage.coverage !== "complete" || raw.ok !== true || raw.error) {
+      completePendingRefresh(correlationId, {
+        ok: false, reason: "partial_capture", snapshot_count: snapshotCount,
+        coverage: coverage.coverage === "complete" ? "partial" : coverage.coverage,
+        detail: coverage.missing.length ? `Some stats were captured. Missing: ${coverage.missing.join(", ")}. Open the Patreon stats panel and try again.` : "Stats were captured, but a Patreon panel failed. Try Refresh stats again."
+      });
+    } else {
+      completePendingRefresh(correlationId, {
+        ok: true, attempt_id: attemptId || null, platform_instance_id: platformInstanceId || null,
+        post_id: raw.post_id, destination: raw.destination, snapshot_count: snapshotCount
+      });
+    }
     return;
-
   }
-
-
 
   let detail = raw.error?.trim() || undefined;
 

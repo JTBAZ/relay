@@ -45,8 +45,11 @@ export type ExternalMetricsRefreshFailure = {
     | "inject_failed"
     | "scrape_failed"
     | "metrics_post_failed"
+    | "partial_capture"
     | "unknown";
   detail?: string;
+  coverage?: "partial" | "unavailable";
+  snapshot_count?: number;
 };
 
 export type ExternalMetricsRefreshResponse =

@@ -1,0 +1,37 @@
+
+ RUN  v3.2.4 C:/Users/jorda/Documents/Codex/2026-10-11/c/work/relay
+
+ ❯ tests/editor-bench/real-library-draft-variants-postgres.integration.test.ts (1 test | 1 failed) 8478ms
+   × durable Library Conversation destination drafts — PostgreSQL > creates, reuses, edits, replays and reads exact drafts after restart while legacy writers reject managed variants 5014ms
+     → Test timed out in 5000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+ ✓ tests/editor-bench/real-library-conversation-postgres.integration.test.ts (1 test) 4247ms
+   ✓ durable Library conversation — PostgreSQL > persists selected context and confirms a literal source edit atomically, then replays the original receipt  3144ms
+ ✓ tests/editor-bench/real-library-preview-export-postgres.integration.test.ts (2 tests) 6298ms
+   ✓ durable Library Previewizer export — PostgreSQL > rejects corrupt JPEGs, seals one exact owned export, and replays after a concurrent confirm and restart  2497ms
+   ✓ durable Library Previewizer export — PostgreSQL > rejects missing, foreign, oversized, changed-template, changed-source, and changed-JPEG reviews  2782ms
+
+ Test Files  1 failed | 2 passed (3)
+      Tests  1 failed | 3 passed (4)
+   Start at  10:16:39
+   Duration  42.90s (transform 10.64s, setup 79ms, collect 22.95s, tests 19.02s, environment 0ms, prepare 117ms)
+
+
+(node:8712) DeprecationWarning: Calling client.query() when the client is already executing a query is deprecated and will be removed in pg@9.0. Use async/await or an external async flow control mechanism instead.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/editor-bench/real-library-draft-variants-postgres.integration.test.ts > durable Library Conversation destination drafts — PostgreSQL > creates, reuses, edits, replays and reads exact drafts after restart while legacy writers reject managed variants
+Error: Test timed out in 5000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+ ❯ tests/editor-bench/real-library-draft-variants-postgres.integration.test.ts:88:3
+     86|   });
+     87| 
+     88|   it('creates, reuses, edits, replays and reads exact drafts after res…
+       |   ^
+     89|     const instance = app(), session = await createSession();
+     90|     const firstReview = await reviewCreate(instance, session.id, sessi…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+

@@ -129,6 +129,7 @@ describe("Post description leak diagnosis", () => {
   it("OAuth mapPatreonPostToIngest: same string vs non-string content behavior", () => {
     const rich = postResource("1", {
       title: "T",
+      is_public: true,
       content: gateHtml,
       published_at: "2026-01-01T00:00:00.000+00:00"
     });
@@ -136,6 +137,7 @@ describe("Post description leak diagnosis", () => {
 
     const noBody = postResource("2", {
       title: "T",
+      is_public: true,
       content: "",
       published_at: "2026-01-01T00:00:00.000+00:00"
     });
@@ -143,6 +145,7 @@ describe("Post description leak diagnosis", () => {
 
     const objectBody = postResource("3", {
       title: "T",
+      is_public: true,
       content: { foo: "bar" },
       published_at: "2026-01-01T00:00:00.000+00:00"
     });
@@ -150,6 +153,7 @@ describe("Post description leak diagnosis", () => {
 
     const deltaBody = postResource("4", {
       title: "T",
+      is_public: true,
       content: { delta: [{ insert: "delta text\n" }] },
       published_at: "2026-01-01T00:00:00.000+00:00"
     });
@@ -221,6 +225,7 @@ describe("Post description leak diagnosis", () => {
   it("OAuth mapper: content_json_string fallback when content null", () => {
     const r = postResource("1", {
       title: "T",
+      is_public: true,
       content: null,
       content_json_string: JSON.stringify({
         type: "doc",

@@ -16,6 +16,7 @@ export type CrossPostFlowResult =
   | { ok: true; tab_id: number; relay_post_id: string; destination: "x"; schedule_event_id: string }
   | { ok: true; tab_id: number; relay_post_id: string; destination: "x"; handoff_id: string }
   | { ok: true; tab_id: number; relay_post_id: string; destination: "deviantart"; handoff_id: string }
+  | { ok: true; tab_id: number; relay_post_id: string; destination: "x" | "deviantart"; attempt_id: string }
   | {
       ok: false;
       reason:
@@ -38,6 +39,20 @@ export async function runRelayCrossPostFlow(
   const fetched = await fetchAndStoreCrossPostPackageFromMessage(message);
   if (!fetched.ok) {
     return fetched;
+  }
+  if ("managed_attempt_id" in fetched) {
+    if (fetched.managed_attempt_id !== message.distribution_attempt_id || fetched.destination !== message.destination || fetched.relay_post_id !== message.relay_post_id) return { ok: false, reason: "package_fetch_failed", detail: "attempt_mismatch" };
+    let tabId: number;
+    try {
+      const opened = await openCrossPostTab(fetched.destination);
+      if (opened === undefined) return { ok: false, reason: "tab_open_failed" };
+      tabId = opened;
+    } catch { return { ok: false, reason: "tab_open_failed" }; }
+    try { await waitForCrossPostTabReady(tabId, fetched.destination); }
+    catch { return { ok: false, reason: "tab_load_timeout" }; }
+    const injected = await injectCrossPostFillScript(tabId, fetched.destination, undefined, fetched.packet);
+    if (!injected) return { ok: false, reason: "inject_failed" };
+    return { ok: true, tab_id: tabId, relay_post_id: fetched.relay_post_id, destination: fetched.destination, attempt_id: fetched.managed_attempt_id };
   }
   let destination = requestedDestination;
   let checkedScheduleEventId: string | undefined;

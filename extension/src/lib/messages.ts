@@ -107,6 +107,7 @@ export type ExternalStatusResponse = {
   patreonCookiePresent: boolean;
   lastSyncAt: string | null;
   lastSyncStatus: string | null;
+  credentialState?: import("./storage.js").CredentialStatus | null;
 };
 
 export function isInternalRequest(v: unknown): v is InternalRequest {

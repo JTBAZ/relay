@@ -1,0 +1,136 @@
+{
+  "ticket": "PCB-06",
+  "date": "2026-10-21",
+  "status": "accepted_backend_connector_and_statically_reviewed_extension_protocol_with_deferred_runtime_checks",
+  "planner": "Sol High; work/pcb-final-sol-plan.md",
+  "builder": "gpt-6-luna/high",
+  "reviewer": "root; exact-scope Ponytail Review",
+  "behavior": [
+    "Separate persisted handoff review and confirmation bind the current destination revision, literal copy, retained confirmed JPEG and pending Rail task.",
+    "Confirmation creates one owned distribution attempt and durable receipt atomically. Replay returns the receipt without opening a tab. A future client explicitly opens or reopens the existing attempt.",
+    "The existing active extension-grant package route validates owned attempt, approval/revision, copy journal, Rail cue, retained source/export provenance and bounded actual JPEG bytes/hash. Later Library presentation edits do not rebase confirmed drafts.",
+    "Managed extension payloads are isolated per tab and ignore browser copy overrides. X and DeviantArt use the confirmed JPEG and literal copy; fill reports cannot mark publication.",
+    "Managed fill and manual-completion reports reject stale draft revisions and completed-attempt regressions; manual completion remains distinct from successful or partial fill."
+  ],
+  "api": {
+    "base": "/api/v1/editor-bench/real-library-conversation",
+    "developmentOnly": true,
+    "review": "POST /session/:sessionId/draft/handoff/review {expectedRevision,variantId}",
+    "confirm": "POST /session/:sessionId/draft/handoff/confirm {expectedRevision,reviewId}",
+    "package": "GET /api/v1/extension/cross-post/attempts/:attempt_id with active owned extension grant",
+    "open": "Existing explicit RELAY_CROSS_POST message with relay_post_id, destination and distribution_attempt_id; the backend confirmation does not open a tab."
+  },
+  "persistence": "Existing PostDistributionAttempt, managed plan JSON and Conversation context. One attempt per confirmed draft revision; explicit Open again reuses it. No new table or migration. The journal remains application-enforced.",
+  "verification": {
+    "backend": {
+      "passed": 86,
+      "failed": 3,
+      "report": "work/pcb06-root-tests-2026-10-21T08-55-46-854Z.json",
+      "knownFailureBaseline": "work/pcb06-package-baseline-2026-10-21T08-26-38-829Z.json"
+    },
+    "postgres": {
+      "passed": 4,
+      "files": 3,
+      "evidence": "work/pcb06-postgres-2026-10-21T08-55-46-896Z.json",
+      "cleanup": "nonce-owned disposable database dropped",
+      "testLog": "C:\\Users\\jorda\\Documents\\Codex\\2026-10-11\\c\\work\\relay\\work\\pcb06-postgres-2026-10-21T08-55-46-896Z-tests.log"
+    },
+    "build": {
+      "exitCode": 0,
+      "evidence": "work/pcb06-luna-build-05.exit.json"
+    },
+    "review": {
+      "scope": "work/pcb06-review-2026-10-21T08-56-09-983Z.json",
+      "files": [
+        "src/distribution/conversation-draft-variants.ts",
+        "src/editor-bench/real-library-conversation-routes.ts",
+        "src/gallery-editor/types.ts",
+        "src/distribution/distribution-package.ts",
+        "src/distribution/post-distribution-service.ts",
+        "src/server.ts",
+        "src/extension/cross-post-media-entries.ts",
+        "extension/src/lib/cross-post-fetch.ts",
+        "extension/src/lib/cross-post-flow.ts",
+        "extension/src/lib/cross-post-tab-inject.ts",
+        "extension/src/lib/managed-cross-post-handoff.ts",
+        "extension/src/content/fill-x-compose.ts",
+        "extension/src/content/fill-deviantart-submit.ts",
+        "tests/editor-bench/real-library-draft-variants-postgres.integration.test.ts"
+      ],
+      "hunkScope": {
+        "src/server.ts": "Only existing /api/v1/extension/cross-post/attempts/:attempt_id route; concurrent Patreon/session hunks are excluded."
+      },
+      "whitespace": "clean",
+      "assumedLoad": "Several-hundred-post owned Library; one confirmed draft per source/export/destination; concurrent session confirmations and late browser reports.",
+      "findingsResolved": [
+        "Canonical DA copy hashing matches the server.",
+        "Confirmed drafts keep their retained source version after later Library edits.",
+        "Managed-only transactional stale-report guards preserve legacy completion and allow manual completion after successful/partial fill.",
+        "Per-tab payloads replace the shared pending slot only for managed handoffs.",
+        "Literal copy, conservative DA upload acknowledgment and manual fallback for tags that would change.",
+        "Destination-discriminated packet typing and valid task-status fixture."
+      ],
+      "remainingTaskFindings": [],
+      "notChecked": "All frontend/extension execution, build/typecheck and installed destination DOM behavior remain deferred; live storage/auth/product mounting not exercised."
+    }
+  },
+  "preservedFailures": [
+    {
+      "evidence": "work/pcb06-luna-build-01.exit.json",
+      "issue": "Five initial strict TypeScript errors; task-date null checks and destination/copy typing corrected."
+    },
+    {
+      "evidence": "work/pcb06-luna-build-02.exit.json",
+      "issue": "Remaining optional tags type error; corrected before final build."
+    },
+    {
+      "evidence": "work/pcb06-root-tests-2026-10-21T08-52-16-214Z.json",
+      "issue": "80 passed, seven failed: three known package fixtures and four newly affected legacy completion fixtures. Managed guard now runs only for managed completions; legacy behavior restored."
+    },
+    {
+      "evidence": "work/pcb06-postgres-2026-10-21T08-52-31-542Z.json",
+      "issue": "Three passed, one failed because the new fixture used an invalid PostbotTaskStatus. Changed fixture to the existing done value. Disposable database was dropped."
+    }
+  ],
+  "limits": [
+    "Product/client mounting, all front-end and installed-extension execution/build/typecheck remain deferred; static protocol review does not prove actual X/DeviantArt DOM or attachment behavior.",
+    "Synthetic records, injected authentication/storage only; no actual-account operation, live R2, paid model call, production migration, deployment, environment edit or API restart.",
+    "Three pre-existing distribution-package fixture failures remain: the unrelated Rhythm lookup requires postDistributionPlan.findFirst, absent from the old stub. The full backend suite is not claimed green.",
+    "The existing unrelated PostgreSQL concurrency error-classification failure remains outside this task.",
+    "Managed DeviantArt tags requiring platform normalization stay manual and report partial rather than silently changing approved tags.",
+    "No automatic publishing, new destination, rescheduling/cancellation, engagement/metrics, image recognition or billing implementation."
+  ],
+  "preservation": {
+    "priorReportsUnchanged": 88,
+    "configurationUnchanged": true,
+    "ledger": {
+      "rows": 919,
+      "sha256": "969cc6310604f9c506f63d55056c0c9221297400570229d8ba6c50f5bd86b7d9",
+      "unchanged": true
+    },
+    "developmentRemainingUsd": 0.34483654,
+    "heldoutRemainingUsd": 8.9690346,
+    "authoritativeLedger": "C:\\Users\\jorda\\Documents\\Codex\\2026-10-11\\c\\work\\relay\\.relay-data\\gallery-editor-budget.json",
+    "paidCalls": 0,
+    "priorTicketReports": {
+      "outputs/editor-bench-product-drafts-proof-pcb04.json": "af16e313edac0232d98911aaa2dc69ee230d4bc89c9ffd75b356fd1c18c4fcec",
+      "outputs/editor-bench-product-schedule-proof-pcb05.json": "f73e741ed09ca4f17b97fe223893a87ef9df6c510588891eab965052a058820d"
+    }
+  },
+  "sourceHashes": {
+    "src/distribution/conversation-draft-variants.ts": "2ea68093e49acff612f361efc5648abb9e03e56b05ee3e8fcf95dd58019ba00a",
+    "src/editor-bench/real-library-conversation-routes.ts": "33d533ea1d390f31434e00891b3a613ef84d77cebe5868beb81338864e8355f2",
+    "src/gallery-editor/types.ts": "b9cf587ddff5cd75f436a047881c287d5861bedc3bcce5c017c135ae9e15ad13",
+    "src/distribution/distribution-package.ts": "20e5c6808224939de226451563f9b49ed4c1b3cd46e3eda2d44e390fdf27bd21",
+    "src/distribution/post-distribution-service.ts": "d53c84a518231f715837374047b0df765fdbbede572d0e64ee2de2b2e4bd04fa",
+    "src/server.ts": "b7e3c358327949626ebcc3e537bd793f58781bc74bce5ea4c39c3f2879baf8e4",
+    "src/extension/cross-post-media-entries.ts": "a96ae6660e7b9590b5f14aa0c1f134d3c461972bfad8a65d0e0131ee4aab4d24",
+    "extension/src/lib/cross-post-fetch.ts": "d8524d05f1921a609ac81a2cbd3c99edbdb725544549158e802843a2867ebaea",
+    "extension/src/lib/cross-post-flow.ts": "401603576168cbe73921b287549c154a4569857ae7f229032dbeb7da29c68a68",
+    "extension/src/lib/cross-post-tab-inject.ts": "845864146459779dbaef593710ddfe43aa0fb7a7ca9de778f201880551b7b271",
+    "extension/src/lib/managed-cross-post-handoff.ts": "178d018e8ebe31bb0d429e3c23e76f83329c80b7956dde664d62bdc57c58c6e9",
+    "extension/src/content/fill-x-compose.ts": "3d50a70574777e6f46a75837d316152b02a3b71fe234adaa35fbdce64ea70d16",
+    "extension/src/content/fill-deviantart-submit.ts": "1b31f4e18bb391cd963c04e3a93b02882b2a4a3fd22eb9cd83ac0e78f0c8f2e1",
+    "tests/editor-bench/real-library-draft-variants-postgres.integration.test.ts": "caef0e29e0f3ac4abda9885a11728b12c2c64dbba4729d09975777e6ff7c98a8"
+  }
+}

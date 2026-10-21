@@ -86,7 +86,7 @@ describe("ExportService getExportContent (storage key + index + upstream)", () =
               media_id: "m1",
               creator_id: "c1",
               sha256: "abc",
-              byte_length: 8,
+              byte_length: 9,
               relative_blob_path: relative,
               upstream_revision: "r1",
               exported_at: "2026-01-01T00:00:00.000Z"
@@ -158,7 +158,8 @@ describe("ExportService getExportContent (storage key + index + upstream)", () =
       expect(c!.buffer.toString()).toBe("r2-payload");
       expect(hoistedR2.getR2ObjectBuffer).toHaveBeenCalledWith(
         expect.objectContaining({ bucket: "t" }),
-        r2Key
+        r2Key,
+        { timeoutMs: 60000 }
       );
     } finally {
       await rm(root, { recursive: true, force: true });

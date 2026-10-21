@@ -1,0 +1,17 @@
+{
+  "ledgerRows": 919,
+  "rootBackendPassed": 96,
+  "sourceHashesMatch": true,
+  "combinedPostgresPassed": 26,
+  "scopedFiles": 10,
+  "combinedPostgresFailure": "Existing intermittent competing-session error classification",
+  "frontendTesting": "deferred",
+  "accepted": "backend connector",
+  "combinedPostgresFailed": 1,
+  "newPostgresJourneyPassed": true,
+  "task": "PCB-02",
+  "passed": true,
+  "paidCalls": 0,
+  "nextTicket": "PCB-03 not dispatched",
+  "oldReportsPreserved": 86
+}

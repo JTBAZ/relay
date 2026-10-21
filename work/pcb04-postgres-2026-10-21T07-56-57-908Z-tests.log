@@ -1,0 +1,37 @@
+
+ RUN  v3.2.4 C:/Users/jorda/Documents/Codex/2026-10-11/c/work/relay
+
+
+ Test Files  3 failed (3)
+      Tests  no tests
+   Start at  09:57:15
+   Duration  10.30s (transform 3.73s, setup 93ms, collect 0ms, tests 0ms, environment 0ms, prepare 116ms)
+
+
+
+⎯⎯⎯⎯⎯⎯ Failed Suites 3 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/editor-bench/real-library-conversation-postgres.integration.test.ts [ tests/editor-bench/real-library-conversation-postgres.integration.test.ts ]
+ FAIL  tests/editor-bench/real-library-draft-variants-postgres.integration.test.ts [ tests/editor-bench/real-library-draft-variants-postgres.integration.test.ts ]
+ FAIL  tests/editor-bench/real-library-preview-export-postgres.integration.test.ts [ tests/editor-bench/real-library-preview-export-postgres.integration.test.ts ]
+Error: Transform failed with 1 error:
+C:/Users/jorda/Documents/Codex/2026-10-11/c/work/relay/src/distribution/conversation-draft-variants.ts:181:12: ERROR: The symbol "replay" has already been declared
+  Plugin: vite:esbuild
+  File: C:/Users/jorda/Documents/Codex/2026-10-11/c/work/relay/src/distribution/conversation-draft-variants.ts:181:12
+  
+  The symbol "replay" has already been declared
+  179 |        const state = object(object(plan.assistantPlan)[ns]) as ManagedState, entry = state.variants?.[input.destination];
+  180 |        if (!entry || entry.variantId !== found.id || state.sourcePostId !== input.sourcePostId || state.sourceVersionI...
+  181 |        const replay = entry.revisions.find(row => row.reviewId === input.reviewId);
+      |              ^
+  182 |        if (replay) return { receipt: { reviewId: input.reviewId, planId: plan.id, variantId: found.id, destination: in...
+  183 |        if (entry.revision !== input.expectedVariantRevision || found.status === 'posted' || found.status === 'handed_o...
+  
+ ❯ failureErrorWithLog node_modules/esbuild/lib/main.js:1748:15
+ ❯ node_modules/esbuild/lib/main.js:1017:50
+ ❯ responseCallbacks.<computed> node_modules/esbuild/lib/main.js:884:9
+ ❯ handleIncomingPacket node_modules/esbuild/lib/main.js:939:12
+ ❯ Socket.readFromStdout node_modules/esbuild/lib/main.js:862:7
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/3]⎯
+

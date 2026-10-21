@@ -20,7 +20,9 @@ import { createHash } from "node:crypto";
 import { tierStableId } from "../ingest/canonical-store-db.js";
 import { ensureCreatorOnboardingAtLeastImportStarted } from "../creator/onboarding-service.js";
 import { getPlatformRelayCreatorId } from "../identity/platform-tenant.js";
-import { FileExportIndex } from "../export/export-index.js";
+import type { ExportIndex } from "../export/export-index.js";
+import { getR2ClientConfigFromEnv } from "../storage/r2-config.js";
+import { getR2ObjectBuffer } from "../storage/relay-upload-r2.js";
 import type { CreatorExportIndex, ExportMediaRecord } from "../export/types.js";
 import { DbPatreonSyncHealthStore } from "../patreon/patreon-sync-health-store-db.js";
 import { mediaMimeForPilotPost } from "./pilot-ux-seed-spec.js";
@@ -475,9 +477,6 @@ function pilotWalkthroughStorageKey(creatorId: string, mediaId: string): string 
   return `pilot-ux/${creatorId}/${mediaId}/asset`;
 }
 
-function pilotWalkthroughExportSha256(mediaId: string): string {
-  return createHash("sha256").update(`pilot-ux-walkthrough:${mediaId}`).digest("hex");
-}
 
 async function upsertPilotUxWalkthroughMediaCatalog(
   prisma: PrismaClient,
@@ -579,28 +578,34 @@ async function upsertPilotUxWalkthroughMediaCatalog(
   return PILOT_UX_ONBOARDING_WALKTHROUGH_MEDIA_POSTS.length;
 }
 
+/** Fixture replay may attest only bytes already present in the seeded object store. */
+export async function readPilotUxSeedExportRecord(creatorId: string, mediaId: string, revision: string, mime: string): Promise<ExportMediaRecord | null> {
+  const config = getR2ClientConfigFromEnv();
+  if (!config) return null;
+  const key = pilotWalkthroughStorageKey(creatorId, mediaId);
+  const bytes = await getR2ObjectBuffer(config, key, { timeoutMs: 3000 }).catch(() => null);
+  return bytes ? { creator_id: creatorId, media_id: mediaId, upstream_revision: revision, relative_blob_path: key,
+    sha256: createHash("sha256").update(bytes).digest("hex"), byte_length: bytes.length, mime_type: mime, exported_at: new Date().toISOString() } : null;
+}
+
 async function upsertPilotUxWalkthroughExportIndex(
-  exportIndex: FileExportIndex,
+  prisma: PrismaClient,
+  exportIndex: ExportIndex,
   relayCreatorId: string
 ): Promise<number> {
   const index: CreatorExportIndex = await exportIndex.load(relayCreatorId);
   index.creator_id = relayCreatorId;
   index.media ??= {};
 
-  const exportedAt = new Date().toISOString();
   for (const post of PILOT_UX_ONBOARDING_WALKTHROUGH_MEDIA_POSTS) {
     const storageKey = pilotWalkthroughStorageKey(relayCreatorId, post.mediaId);
-    const record: ExportMediaRecord = {
-      media_id: post.mediaId,
-      creator_id: relayCreatorId,
-      sha256: pilotWalkthroughExportSha256(post.mediaId),
-      byte_length: 4096,
-      relative_blob_path: storageKey,
-      upstream_revision: "pilot-ux-walkthrough-v1",
-      mime_type: mediaMimeForPilotPost(post.mediaType),
-      exported_at: exportedAt
-    };
-    index.media[post.mediaId] = record;
+    const record = await readPilotUxSeedExportRecord(relayCreatorId, post.mediaId, "pilot-ux-walkthrough-v1", mediaMimeForPilotPost(post.mediaType));
+    if (!record) { delete index.media[post.mediaId]; continue; }
+    const accepted = await prisma.mediaAsset.updateMany({
+      where: { id: post.mediaId, creatorId: relayCreatorId, upstreamStatus: "active", currentVersionSeq: 1, currentUpstreamRevision: record.upstream_revision, currentStorageKey: storageKey },
+      data: { versionsJson: [{ version_seq: 1, upstream_revision: record.upstream_revision, mime_type: record.mime_type, storage_key: storageKey, ingested_at: WALKTHROUGH_SEED_NOW.toISOString(), export_record: record }] as unknown as Prisma.InputJsonValue }
+    });
+    if (accepted.count === 1) index.media[post.mediaId] = record;
   }
 
   await exportIndex.save(index);
@@ -619,7 +624,7 @@ export type SimulatePilotUxMediaImportResult = {
  */
 export async function simulatePilotUxMediaImport(
   prisma: PrismaClient,
-  exportIndex: FileExportIndex,
+  exportIndex: ExportIndex,
   relayCreatorId: string
 ): Promise<SimulatePilotUxMediaImportResult> {
   if (relayCreatorId !== PILOT_UX_ONBOARDING_RELAY_CREATOR_ID) {
@@ -628,6 +633,7 @@ export async function simulatePilotUxMediaImport(
 
   const postsWritten = await upsertPilotUxWalkthroughMediaCatalog(prisma, relayCreatorId);
   const exportMediaCount = await upsertPilotUxWalkthroughExportIndex(
+    prisma,
     exportIndex,
     relayCreatorId
   );

@@ -1,0 +1,565 @@
+diff --git "a/C:\\Users\\jorda\\Documents\\Codex\\2026-10-11\\c\\work\\relay\\work\\pcb04-accepted\\src\\distribution\\conversation-draft-variants.ts" "b/C:\\Users\\jorda\\Documents\\Codex\\2026-10-11\\c\\work\\relay\\src\\distribution\\conversation-draft-variants.ts"
+index 93a66e9..f8f8912 100644
+--- "a/C:\\Users\\jorda\\Documents\\Codex\\2026-10-11\\c\\work\\relay\\work\\pcb04-accepted\\src\\distribution\\conversation-draft-variants.ts"
++++ "b/C:\\Users\\jorda\\Documents\\Codex\\2026-10-11\\c\\work\\relay\\src\\distribution\\conversation-draft-variants.ts"
+@@ -5,6 +5,8 @@ import { resolveLibraryPosts } from '../gallery-editor/context.js';
+ import { buildDistributionPlanCreateData, buildDistributionVariantCreateData } from './distribution-row-builders.js';
+ import { buildVariantMediaPlatformFields } from './media-binding.js';
+ import type { FormattedPlatformVariant } from './platform-formatters.js';
++import { getCreatorPostingGoal, resolvePostingGoalTimezone } from '../autopost/posting-goal-service.js';
++import { parseStrictScheduledLocal, resolveZonedLocalDateTimeToUtc } from '../goal-cycle/planner/schedule-local.js';
+ 
+ export type ConversationDraftDestination = 'x' | 'deviantart';
+ export type ConversationDraftCopy = { postText: string } | { title: string; bodyText: string; tags: string[] };
+@@ -15,8 +17,9 @@ export type ConversationDraftIdentity = {
+   destination: ConversationDraftDestination; copy: ConversationDraftCopy;
+ };
+ type JournalEntry = { revision: number; reviewId: string; before: ConversationDraftCopy | null; after: ConversationDraftCopy; confirmedAt: string };
+-type ManagedState = { version: 1; sourcePostId: string; sourceVersionId: string; previewMediaId: string; exportHash: string; sourceDigest: string; variants: Record<string, { variantId: string; revision: number; revisions: JournalEntry[] }> };
++type ManagedState = { version: 1; sourcePostId: string; sourceVersionId: string; previewMediaId: string; exportHash: string; sourceDigest: string; variants: Record<string, { variantId: string; revision: number; revisions: JournalEntry[] }>; scheduleReceipts?: ConversationScheduleReceipt[] };
+ type Receipt = { reviewId: string; planId: string; variantId: string; destination: ConversationDraftDestination; sourcePostId: string; sourceVersionId: string; previewMediaId: string; revision: number; confirmedAt: string };
++export type ConversationScheduleReceipt = { reviewId: string; planId: string; variantId: string; taskId: string; destination: ConversationDraftDestination; sourcePostId: string; sourceVersionId: string; previewMediaId: string; scheduledLocal: string; timezone: string; scheduledFor: string; confirmedAt: string };
+ const ns = 'conversation_draft_v1';
+ const object = (v: unknown): Record<string, any> => v && typeof v === 'object' && !Array.isArray(v) ? v as Record<string, any> : {};
+ const validCopy = (destination: ConversationDraftDestination, copy: ConversationDraftCopy) => destination === 'x'
+@@ -47,6 +50,69 @@ export function createPrismaConversationDraftVariantStore(prisma: PrismaClient)
+     if (await currentSourceDigest(tx, input.creatorId, input.sourcePostId) !== input.sourceDigest) throw new ConversationDraftError('conflict', 'The Library source changed after draft review. Review the copy again.');
+   }
+ 
++  async function validatePinnedAssets(tx: Prisma.TransactionClient, creatorId: string, state: ManagedState) {
++    const [post, media] = await Promise.all([
++      tx.post.findFirst({ where: { id: state.sourcePostId, creatorId, upstreamStatus: PostUpstreamStatus.active }, select: { id: true, versions: { where: { id: state.sourceVersionId }, select: { id: true }, take: 1 } } }),
++      tx.mediaAsset.findFirst({ where: { id: state.previewMediaId, creatorId, primaryPostId: state.sourcePostId, upstreamStatus: MediaUpstreamStatus.active, processingStatus: MediaProcessingStatus.READY, currentMimeType: 'image/jpeg' }, select: { id: true, versionsJson: true, currentStorageKey: true } })
++    ]);
++    const provenance = Array.isArray(media?.versionsJson) ? object(media.versionsJson[0]) : {};
++    if (!post?.versions.length || !media || provenance.sha256 !== state.exportHash || provenance.source_version_id !== state.sourceVersionId || provenance.source_post_id !== state.sourcePostId || media.currentStorageKey !== provenance.storage_key) throw new ConversationDraftError('conflict', 'The selected source or confirmed Previewizer export is no longer available.');
++  }
++
++  async function recordScheduleReview(creatorId: string, variantId: string) {
++    const managed = await inspectManaged(creatorId, variantId);
++    if (!['draft', 'approved'].includes(managed.row.status)) throw new ConversationDraftError('conflict', 'This destination draft can no longer be scheduled.');
++    await serializable(prisma, tx => validatePinnedAssets(tx, creatorId, managed.state));
++    return managed;
++  }
++
++  async function confirmSchedule(input: {
++    reviewId: string; creatorId: string; actorId: string; sessionId: string; sessionRevision: number; nowMs: number;
++    expectedVariantRevision: number; variantId: string; planId: string; destination: ConversationDraftDestination;
++    sourcePostId: string; sourceVersionId: string; previewMediaId: string; exportHash: string;
++    scheduledLocal: string; timezone: string; scheduledFor: string;
++  }): Promise<{ receipt: ConversationScheduleReceipt; reused: boolean }> {
++    const scheduledFor = new Date(input.scheduledFor);
++    if (!Number.isFinite(scheduledFor.getTime()) || scheduledFor.toISOString() !== input.scheduledFor) throw new ConversationDraftError('invalid', 'The reviewed UTC schedule is invalid.');
++    return serializable(prisma, async tx => {
++      const replaySession = await tx.galleryEditorSession.findFirst({ where: { id: input.sessionId, creatorId: input.creatorId, actorId: input.actorId }, select: { context: true } });
++      const replayContext = object(replaySession?.context), replayConversation = object(replayContext.conversation);
++      const sessionReceipt = (Array.isArray(replayConversation.scheduleReceipts) ? replayConversation.scheduleReceipts : []).find((row: any) => row.reviewId === input.reviewId) as ConversationScheduleReceipt | undefined;
++      if (sessionReceipt) return { receipt: sessionReceipt, reused: true };
++
++      await tx.$queryRaw`SELECT id FROM gallery_editor_sessions WHERE id = ${input.sessionId} AND creator_id = ${input.creatorId} AND actor_id = ${input.actorId} FOR UPDATE`;
++      const session = await tx.galleryEditorSession.findFirst({ where: { id: input.sessionId, creatorId: input.creatorId, actorId: input.actorId } });
++      const context = object(session?.context), conversation = object(context.conversation), pending = object(conversation.pendingScheduleReview);
++      if (!session || session.revision !== input.sessionRevision || pending.id !== input.reviewId || pending.expectedRevision !== input.sessionRevision || pending.expiresAt <= input.nowMs || pending.expectedVariantRevision !== input.expectedVariantRevision || pending.variantId !== input.variantId || pending.planId !== input.planId || pending.destination !== input.destination || pending.sourcePostId !== input.sourcePostId || pending.sourceVersionId !== input.sourceVersionId || pending.previewMediaId !== input.previewMediaId || pending.exportHash !== input.exportHash || pending.scheduledLocal !== input.scheduledLocal || pending.timezone !== input.timezone || pending.scheduledFor !== input.scheduledFor || context.selectedPostIds?.length !== 1 || context.selectedPostIds[0] !== input.sourcePostId) throw new ConversationDraftError('conflict', 'The schedule review is stale. Review the date again.');
++
++      await tx.$queryRaw`SELECT id FROM post_distribution_plans WHERE id = ${input.planId} AND creator_id = ${input.creatorId} FOR UPDATE`;
++      const plan = await tx.postDistributionPlan.findFirst({ where: { id: input.planId, creatorId: input.creatorId } });
++      const state = object(object(plan?.assistantPlan)[ns]) as ManagedState;
++      const entry = state.variants?.[input.destination];
++      if (!plan?.conversationalGroupKey?.startsWith('conversation-draft:') || state.version !== 1 || state.sourcePostId !== input.sourcePostId || state.sourceVersionId !== input.sourceVersionId || state.previewMediaId !== input.previewMediaId || state.exportHash !== input.exportHash || !entry || entry.variantId !== input.variantId || entry.revision !== input.expectedVariantRevision) throw new ConversationDraftError('conflict', 'The destination draft changed after schedule review. Review it again.');
++      await validatePinnedAssets(tx, input.creatorId, state);
++      const timezone = resolvePostingGoalTimezone((await getCreatorPostingGoal(tx as unknown as PrismaClient, input.creatorId)).timezone);
++      const localParts = parseStrictScheduledLocal(input.scheduledLocal);
++      if (timezone !== input.timezone || !localParts || resolveZonedLocalDateTimeToUtc(localParts, timezone).toISOString() !== input.scheduledFor) throw new ConversationDraftError('conflict', 'The creator time zone or reviewed local date changed. Review the schedule again.');
++      const variant = await tx.postDistributionVariant.findFirst({ where: { id: input.variantId, creatorId: input.creatorId, planId: input.planId, postId: input.sourcePostId, destination: input.destination } });
++      if (!variant || !['draft', 'approved'].includes(variant.status)) throw new ConversationDraftError('conflict', 'The destination draft can no longer be scheduled.');
++      const priorTask = await tx.postbotTask.findFirst({ where: { creatorId: input.creatorId, planId: input.planId, variantId: input.variantId, action: 'post' } });
++      if (priorTask) throw new ConversationDraftError('conflict', 'This destination already has a Rail task. Review the current schedule.');
++      const changed = await tx.postDistributionVariant.updateMany({ where: { id: variant.id, creatorId: input.creatorId, updatedAt: variant.updatedAt, status: variant.status }, data: { scheduledFor, remindMe: false } });
++      if (changed.count !== 1) throw new ConversationDraftError('conflict', 'The destination draft changed while its schedule was confirmed.');
++      const task = await tx.postbotTask.create({ data: { creatorId: input.creatorId, postId: input.sourcePostId, planId: input.planId, variantId: input.variantId, destination: input.destination, action: 'post', rationale: 'Creator-confirmed schedule.', suggestedTime: scheduledFor, remindMe: false, status: 'pending' } });
++      const confirmedAt = new Date().toISOString();
++      const receipt: ConversationScheduleReceipt = { reviewId: input.reviewId, planId: input.planId, variantId: input.variantId, taskId: task.id, destination: input.destination, sourcePostId: input.sourcePostId, sourceVersionId: input.sourceVersionId, previewMediaId: input.previewMediaId, scheduledLocal: input.scheduledLocal, timezone: input.timezone, scheduledFor: scheduledFor.toISOString(), confirmedAt };
++      const priorReceipts = Array.isArray(state.scheduleReceipts) ? state.scheduleReceipts : [];
++      await tx.postDistributionPlan.update({ where: { id: plan.id }, data: { assistantPlan: { ...object(plan.assistantPlan), [ns]: { ...state, scheduleReceipts: [...priorReceipts, receipt] } } as Prisma.InputJsonValue } });
++      const cart = object(session.cart);
++      const nextConversation = { ...conversation, pendingScheduleReview: undefined, scheduleReceipts: [...(Array.isArray(conversation.scheduleReceipts) ? conversation.scheduleReceipts : []), receipt] };
++      const updated = await tx.galleryEditorSession.updateMany({ where: { id: input.sessionId, creatorId: input.creatorId, actorId: input.actorId, revision: input.sessionRevision }, data: { revision: input.sessionRevision + 1, context: { ...context, conversation: nextConversation } as Prisma.InputJsonValue, cart: { ...cart, revision: input.sessionRevision + 1 } as Prisma.InputJsonValue } });
++      if (updated.count !== 1) throw new ConversationDraftError('conflict', 'The conversation changed before the schedule was confirmed.');
++      return { receipt, reused: false };
++    });
++  }
++
+   async function lockSession(tx: Prisma.TransactionClient, input: ConversationDraftIdentity & { expectedVariantRevision?: number; variantId?: string }, expectedReviewKind: 'create' | 'edit') {
+     await tx.$queryRaw`SELECT id FROM gallery_editor_sessions WHERE id = ${input.sessionId} AND creator_id = ${input.creatorId} AND actor_id = ${input.actorId} FOR UPDATE`;
+     const session = await tx.galleryEditorSession.findFirst({ where: { id: input.sessionId, creatorId: input.creatorId, actorId: input.actorId } });
+@@ -200,5 +266,5 @@ export function createPrismaConversationDraftVariantStore(prisma: PrismaClient)
+     });
+   }
+ 
+-  return { confirmCreate, confirmEdit, inspectManaged, assertReceipt, readSourceDigest, readHistory };
++  return { confirmCreate, confirmEdit, inspectManaged, assertReceipt, readSourceDigest, readHistory, recordScheduleReview, confirmSchedule };
+ }
+diff --git "a/C:\\Users\\jorda\\Documents\\Codex\\2026-10-11\\c\\work\\relay\\work\\pcb04-accepted\\src\\editor-bench\\real-library-conversation-routes.ts" "b/C:\\Users\\jorda\\Documents\\Codex\\2026-10-11\\c\\work\\relay\\src\\editor-bench\\real-library-conversation-routes.ts"
+index dd4807a..47ac805 100644
+--- "a/C:\\Users\\jorda\\Documents\\Codex\\2026-10-11\\c\\work\\relay\\work\\pcb04-accepted\\src\\editor-bench\\real-library-conversation-routes.ts"
++++ "b/C:\\Users\\jorda\\Documents\\Codex\\2026-10-11\\c\\work\\relay\\src\\editor-bench\\real-library-conversation-routes.ts"
+@@ -12,6 +12,8 @@ import type { RetrievalRefinementState } from './real-library-selection.js';
+ import { previewConfigHash, previewExportErrorMessage, previewReviewExpiry, type PreviewExportStore } from './real-library-preview-export.js';
+ import { ConversationDraftError, createPrismaConversationDraftVariantStore, type ConversationDraftCopy, type ConversationDraftDestination, type ConversationDraftIdentity } from '../distribution/conversation-draft-variants.js';
+ import type { PrismaClient } from '@prisma/client';
++import { getCreatorPostingGoal, resolvePostingGoalTimezone } from '../autopost/posting-goal-service.js';
++import { parseStrictScheduledLocal, resolveZonedLocalDateTimeToUtc } from '../goal-cycle/planner/schedule-local.js';
+ 
+ const MAX_REQUEST_LENGTH = 4000;
+ 
+@@ -34,6 +36,8 @@ export type RealLibraryConversationView = {
+   previewExports?: Array<{ reviewId: string; sourcePostId: string; sourceVersionId: string; sourceMediaId: string; mediaId: string; exportHash: string; size: number; templateId: string; templateUpdatedAt: string; templateConfigHash: string; confirmedAt: string; mediaUrl: string }>;
+   draftReview?: { reviewId: string; kind: 'create' | 'edit'; expiresAt: string; expectedVariantRevision?: number; sourcePostId: string; sourceVersionId: string; previewMediaId: string; previewMediaUrl: string; destination: ConversationDraftDestination; variantId?: string; before: Record<string, unknown> | null; after: Record<string, unknown> };
+   draftReceipts?: Array<{ reviewId: string; planId: string; variantId: string; destination: ConversationDraftDestination; sourcePostId: string; sourceVersionId: string; previewMediaId: string; revision: number; confirmedAt: string }>;
++  scheduleReview?: { reviewId: string; expiresAt: string; expectedVariantRevision: number; planId: string; variantId: string; destination: ConversationDraftDestination; sourcePostId: string; sourceVersionId: string; previewMediaId: string; previewMediaUrl: string; scheduledLocal: string; timezone: string; scheduledFor: string };
++  scheduleReceipts?: Array<{ reviewId: string; planId: string; variantId: string; taskId: string; destination: ConversationDraftDestination; sourcePostId: string; sourceVersionId: string; previewMediaId: string; scheduledLocal: string; timezone: string; scheduledFor: string; confirmedAt: string }>;
+ };
+ function applyTagDelta(tags: string[], action: Extract<EditReviewAction, { kind: 'tags' }>): string[] {
+   return [...new Set([...tags.filter(tag => !action.remove.includes(tag)), ...action.add])].sort();
+@@ -94,6 +98,7 @@ function view(session: Session, snapshot: LargeRealLibrarySnapshot, status: Real
+   const pending = session.editor.context.conversation!.pendingReview;
+   const previewReview = session.editor.context.conversation!.pendingPreviewReview;
+   const draftReview = session.editor.context.conversation!.pendingDraftReview;
++  const scheduleReview = session.editor.context.conversation!.pendingScheduleReview;
+   const source = pending ? snapshot.posts.find(post => post.postId === pending.action.postId) : undefined;
+   const before = source ? { title: source.title, tags: [...source.tags] } : undefined;
+   let after: { title: string; tags: string[] } | undefined;
+@@ -125,6 +130,8 @@ function view(session: Session, snapshot: LargeRealLibrarySnapshot, status: Real
+       before: draftReview.before, after: draftReview.after
+     } } : {}),
+     ...(session.editor.context.conversation!.draftReceipts?.length ? { draftReceipts: session.editor.context.conversation!.draftReceipts } : {}),
++    ...(scheduleReview ? { scheduleReview: { reviewId: scheduleReview.id, ...scheduleReview, expiresAt: new Date(scheduleReview.expiresAt).toISOString(), previewMediaUrl: `/api/v1/export/media/${encodeURIComponent(session.principal.creatorId)}/${encodeURIComponent(scheduleReview.previewMediaId)}/content` } } : {}),
++    ...(session.editor.context.conversation!.scheduleReceipts?.length ? { scheduleReceipts: session.editor.context.conversation!.scheduleReceipts } : {}),
+     ...(pending && before && after ? { editReview: { reviewId: pending.id, revision: pending.expectedRevision, expiresAt: new Date(pending.expiresAt).toISOString(), before, after } } : {}),
+     ...(matchedPostIds ? { result: { matchedPostIds } } : {}), ...(usage ? { usage } : {})
+   };
+@@ -233,11 +240,75 @@ export function registerRealLibraryConversationRoutes(app: express.Application,
+     if (!draftVariants) return res.status(503).json(errorEnvelope('SERVICE_UNAVAILABLE', 'Destination drafts are unavailable.', traceId));
+     try {
+       const draftReceipts = session.editor.context.conversation?.draftReceipts ?? [];
++      const scheduleReceipts = session.editor.context.conversation?.scheduleReceipts ?? [];
+       const drafts = await draftVariants.readHistory(principal.creatorId, draftReceipts);
+-      return res.status(200).json(successEnvelope({ sessionId: session.editor.id, revision: session.editor.revision, draftReceipts, drafts }, traceId));
++      return res.status(200).json(successEnvelope({ sessionId: session.editor.id, revision: session.editor.revision, draftReceipts, drafts, scheduleReceipts }, traceId));
+     } catch { return res.status(503).json(errorEnvelope('SERVICE_UNAVAILABLE', 'Conversation drafts could not be loaded.', traceId)); }
+   });
+ 
++  app.post(`${basePath}/session/:sessionId/draft/schedule/review`, async (req, res) => {
++    const traceId = options.traceId(req); res.setHeader('Cache-Control', 'private, no-store');
++    const principal = await principalFor(req, res, traceId); if (!principal) return;
++    if (!record(req.body) || !exactKeys(req.body, ['expectedRevision', 'variantId', 'scheduledLocal']) || !Number.isSafeInteger(req.body.expectedRevision) || (req.body.expectedRevision as number) < 0 || typeof req.body.variantId !== 'string' || typeof req.body.scheduledLocal !== 'string') return invalid(res, traceId, 'Provide the current revision, destination draft, and creator-local date and time.');
++    const session = await owned(principal, req.params.sessionId, res, traceId);
++    if (!session) return res.headersSent ? undefined : res.status(404).json(errorEnvelope('NOT_FOUND', 'Library conversation not found.', traceId));
++    if (!draftVariants || !options.prisma) return res.status(503).json(errorEnvelope('SERVICE_UNAVAILABLE', 'Destination draft scheduling is unavailable.', traceId));
++    if (req.body.expectedRevision !== session.editor.revision) return res.status(409).json(errorEnvelope('CONFLICT', 'The conversation changed. Read it again before reviewing the schedule.', traceId));
++    const authorized = await editorMutationPrincipal(req, res, traceId, principal); if (!authorized) return;
++    const parts = parseStrictScheduledLocal(req.body.scheduledLocal);
++    if (!parts) return invalid(res, traceId, 'Use a valid local date and time in YYYY-MM-DDTHH:mm[:ss] format.');
++    try {
++      const managed = await draftVariants.recordScheduleReview(principal.creatorId, req.body.variantId);
++      if (session.editor.context.selectedPostIds.length !== 1 || session.editor.context.selectedPostIds[0] !== managed.state.sourcePostId) return res.status(409).json(errorEnvelope('CONFLICT', 'Select the destination draft’s source before reviewing its schedule.', traceId));
++      const timezone = resolvePostingGoalTimezone((await getCreatorPostingGoal(options.prisma, principal.creatorId)).timezone);
++      let scheduledFor: Date;
++      try { scheduledFor = resolveZonedLocalDateTimeToUtc(parts, timezone); }
++      catch (error) { return invalid(res, traceId, error instanceof RangeError ? error.message : 'The local date and time could not be resolved.'); }
++      const reviewId = randomUUID();
++      const review = {
++        id: reviewId, expectedRevision: session.editor.revision + 1, expectedVariantRevision: managed.entry.revision,
++        expiresAt: (options.nowMs ?? Date.now)() + 15 * 60 * 1000, variantId: managed.row.id, planId: managed.plan.id,
++        destination: managed.row.destination as ConversationDraftDestination, sourcePostId: managed.state.sourcePostId,
++        sourceVersionId: managed.state.sourceVersionId, previewMediaId: managed.state.previewMediaId,
++        exportHash: managed.state.exportHash, scheduledLocal: req.body.scheduledLocal.trim(), timezone,
++        scheduledFor: scheduledFor.toISOString()
++      };
++      const context: EditorContext = { ...session.editor.context, conversation: { ...session.editor.context.conversation!, pendingScheduleReview: review } };
++      session.editor = await options.editor.revise(principal.creatorId, principal.accountId, session.editor.id, session.editor.revision, session.editor.cart.actions, context, session.editor.messages, 'manual', undefined, true);
++      const copy = review.destination === 'x' ? { postText: managed.row.postText ?? '' } : { title: managed.row.title ?? '', bodyText: managed.row.bodyText ?? '', tags: managed.row.tags };
++      return res.status(200).json(successEnvelope({ scope: 'real_library_conversation_schedule_review', sessionId: session.editor.id, revision: session.editor.revision, review: { reviewId: review.id, ...review, expiresAt: new Date(review.expiresAt).toISOString(), copy, previewMediaUrl: `/api/v1/export/media/${encodeURIComponent(principal.creatorId)}/${encodeURIComponent(review.previewMediaId)}/content` } }, traceId));
++    } catch (error) { return sendDraftError(res, traceId, error); }
++  });
++
++  app.post(`${basePath}/session/:sessionId/draft/schedule/confirm`, async (req, res) => {
++    const traceId = options.traceId(req); res.setHeader('Cache-Control', 'private, no-store');
++    const principal = await principalFor(req, res, traceId); if (!principal) return;
++    if (!record(req.body) || !exactKeys(req.body, ['expectedRevision', 'reviewId']) || !Number.isSafeInteger(req.body.expectedRevision) || (req.body.expectedRevision as number) < 0 || typeof req.body.reviewId !== 'string' || !req.body.reviewId.trim()) return invalid(res, traceId, 'Provide the schedule review ID and current conversation revision.');
++    const session = await owned(principal, req.params.sessionId, res, traceId);
++    if (!session) return res.headersSent ? undefined : res.status(404).json(errorEnvelope('NOT_FOUND', 'Library conversation not found.', traceId));
++    if (!draftVariants || !options.prisma) return res.status(503).json(errorEnvelope('SERVICE_UNAVAILABLE', 'Destination draft scheduling is unavailable.', traceId));
++    const authorized = await editorMutationPrincipal(req, res, traceId, principal); if (!authorized) return;
++    const priorReceipt = session.editor.context.conversation?.scheduleReceipts?.find(receipt => receipt.reviewId === req.body.reviewId);
++    if (priorReceipt) return res.status(200).json(successEnvelope({ scope: 'real_library_conversation_schedule', status: 'confirmed', replayed: true, receipt: priorReceipt }, traceId));
++    const pending = session.editor.context.conversation?.pendingScheduleReview;
++    const nowMs = (options.nowMs ?? Date.now)();
++    if (req.body.expectedRevision !== session.editor.revision || !pending || pending.id !== req.body.reviewId || pending.expectedRevision !== session.editor.revision || pending.expiresAt <= nowMs) return res.status(409).json(errorEnvelope('CONFLICT', 'This schedule review is stale or unavailable. Review the date again.', traceId));
++    try {
++      const timezone = resolvePostingGoalTimezone((await getCreatorPostingGoal(options.prisma, principal.creatorId)).timezone);
++      if (timezone !== pending.timezone) return res.status(409).json(errorEnvelope('CONFLICT', 'The creator posting time zone changed after review. Review the date again.', traceId));
++      const parts = parseStrictScheduledLocal(pending.scheduledLocal);
++      if (!parts || resolveZonedLocalDateTimeToUtc(parts, timezone).toISOString() !== pending.scheduledFor) return res.status(409).json(errorEnvelope('CONFLICT', 'The reviewed local date and UTC time no longer match. Review the date again.', traceId));
++      const result = await draftVariants.confirmSchedule({
++        reviewId: pending.id, creatorId: principal.creatorId, actorId: principal.accountId, sessionId: session.editor.id,
++        sessionRevision: session.editor.revision, nowMs, expectedVariantRevision: pending.expectedVariantRevision,
++        variantId: pending.variantId, planId: pending.planId, destination: pending.destination,
++        sourcePostId: pending.sourcePostId, sourceVersionId: pending.sourceVersionId, previewMediaId: pending.previewMediaId,
++        exportHash: pending.exportHash, scheduledLocal: pending.scheduledLocal, timezone: pending.timezone, scheduledFor: pending.scheduledFor
++      });
++      return res.status(200).json(successEnvelope({ scope: 'real_library_conversation_schedule', status: 'confirmed', replayed: result.reused, receipt: result.receipt }, traceId));
++    } catch (error) { return sendDraftError(res, traceId, error); }
++  });
++
+   app.post(`${basePath}/session/:sessionId/preview/review`, async (req, res) => {
+     const traceId = options.traceId(req);
+     res.setHeader('Cache-Control', 'private, no-store');
+@@ -458,7 +529,7 @@ export function registerRealLibraryConversationRoutes(app: express.Application,
+     try {
+       const snapshot = await load(principal);
+       if (!await store.contains(session) || session.runtime.generation !== generation) return res.status(409).json(errorEnvelope('CONFLICT', 'The conversation changed before it could be refreshed.', traceId));
+-      const context: EditorContext = { ...session.editor.context, selectedPostIds: [], conversation: { catalogRevision: snapshot.catalogRevision, excludedPostIds: [], lastRequest: null, selectionInitialized: false, previewReceipts: session.editor.context.conversation?.previewReceipts ?? [], draftReceipts: session.editor.context.conversation?.draftReceipts ?? [] } };
++      const context: EditorContext = { ...session.editor.context, selectedPostIds: [], conversation: { catalogRevision: snapshot.catalogRevision, excludedPostIds: [], lastRequest: null, selectionInitialized: false, previewReceipts: session.editor.context.conversation?.previewReceipts ?? [], draftReceipts: session.editor.context.conversation?.draftReceipts ?? [], scheduleReceipts: session.editor.context.conversation?.scheduleReceipts ?? [] } };
+       session.editor = await options.editor.revise(principal.creatorId, principal.accountId, session.editor.id, session.editor.revision, session.editor.cart.actions, context, session.editor.messages, 'manual', undefined, true);
+       return res.status(200).json(successEnvelope(view(session, snapshot, 'ready', 'Library refreshed and selection cleared.'), traceId));
+     } catch (error) { return snapshotError(res, traceId, error); }
+diff --git "a/C:\\Users\\jorda\\Documents\\Codex\\2026-10-11\\c\\work\\relay\\work\\pcb04-accepted\\src\\gallery-editor\\types.ts" "b/C:\\Users\\jorda\\Documents\\Codex\\2026-10-11\\c\\work\\relay\\src\\gallery-editor\\types.ts"
+index 9d5a188..cabbbc8 100644
+--- "a/C:\\Users\\jorda\\Documents\\Codex\\2026-10-11\\c\\work\\relay\\work\\pcb04-accepted\\src\\gallery-editor\\types.ts"
++++ "b/C:\\Users\\jorda\\Documents\\Codex\\2026-10-11\\c\\work\\relay\\src\\gallery-editor\\types.ts"
+@@ -85,6 +85,36 @@ export interface EditorContext {
+       revision: number;
+       confirmedAt: string;
+     }>;
++    pendingScheduleReview?: {
++      id: string;
++      expectedRevision: number;
++      expectedVariantRevision: number;
++      expiresAt: number;
++      variantId: string;
++      planId: string;
++      destination: 'x' | 'deviantart';
++      sourcePostId: string;
++      sourceVersionId: string;
++      previewMediaId: string;
++      exportHash: string;
++      scheduledLocal: string;
++      timezone: string;
++      scheduledFor: string;
++    };
++    scheduleReceipts?: Array<{
++      reviewId: string;
++      planId: string;
++      variantId: string;
++      taskId: string;
++      destination: 'x' | 'deviantart';
++      sourcePostId: string;
++      sourceVersionId: string;
++      previewMediaId: string;
++      scheduledLocal: string;
++      timezone: string;
++      scheduledFor: string;
++      confirmedAt: string;
++    }>;
+     pendingReview?: {
+       id: string;
+       action: Extract<EditAction, { kind: "rename_post" | "tags" }>;
+diff --git "a/C:\\Users\\jorda\\Documents\\Codex\\2026-10-11\\c\\work\\relay\\work\\pcb04-accepted\\src\\distribution\\schedule-rail-service.ts" "b/C:\\Users\\jorda\\Documents\\Codex\\2026-10-11\\c\\work\\relay\\src\\distribution\\schedule-rail-service.ts"
+index e263636..7a3b721 100644
+--- "a/C:\\Users\\jorda\\Documents\\Codex\\2026-10-11\\c\\work\\relay\\work\\pcb04-accepted\\src\\distribution\\schedule-rail-service.ts"
++++ "b/C:\\Users\\jorda\\Documents\\Codex\\2026-10-11\\c\\work\\relay\\src\\distribution\\schedule-rail-service.ts"
+@@ -693,14 +693,50 @@ export async function getCreatorScheduleRail(
+ 
+   const planIds = [...new Set(classified.map((row) => row.planId).filter(Boolean))] as string[];
+   const draftByPlanId = new Map<string, string>();
++  const managedVariantIds = new Set<string>();
++  const previewMediaByVariantId = new Map<string, string | null>();
+   const plannedFormatByPlanId = new Map<string, PlannedPostFormat>();
+   const postDetailsStateByPlanId = new Map<string, "authored">();
+   const draftTagsByPlanId = new Map<string, string[]>();
++  const rowsByPlanId = new Map<string, Row[]>();
++  for (const row of classified) if (row.planId) {
++    const rows = rowsByPlanId.get(row.planId) ?? [];
++    rows.push(row);
++    rowsByPlanId.set(row.planId, rows);
++  }
+   if (planIds.length > 0) {
+     const plans = await prisma.postDistributionPlan.findMany({
+       where: { id: { in: planIds }, creatorId: id },
+-      select: { id: true, sourceDraftId: true, assistantPlan: true }
++      select: { id: true, sourceDraftId: true, assistantPlan: true, conversationalGroupKey: true }
+     });
++    const pinned = new Map<string, { mediaId: string; exportHash: string; sourcePostId: string; sourceVersionId: string }>();
++    for (const plan of plans) {
++      if (!plan.conversationalGroupKey?.startsWith("conversation-draft:")) continue;
++      const planRows = rowsByPlanId.get(plan.id) ?? [];
++      for (const row of planRows) managedVariantIds.add(row.variantId);
++      const assistantPlan = plan.assistantPlan && typeof plan.assistantPlan === "object" && !Array.isArray(plan.assistantPlan) ? plan.assistantPlan as Record<string, unknown> : {};
++      const state = assistantPlan.conversation_draft_v1 && typeof assistantPlan.conversation_draft_v1 === "object" && !Array.isArray(assistantPlan.conversation_draft_v1) ? assistantPlan.conversation_draft_v1 as Record<string, unknown> : {};
++      const previewMediaId = assistantPlan.preview_media_id;
++      const variants = state.variants && typeof state.variants === "object" && !Array.isArray(state.variants) ? state.variants as Record<string, unknown> : {};
++      if (state.version !== 1 || typeof previewMediaId !== "string" || typeof state.exportHash !== "string" || typeof state.sourcePostId !== "string" || typeof state.sourceVersionId !== "string") continue;
++      for (const row of planRows) {
++        const entry = variants[row.destination] && typeof variants[row.destination] === "object" && !Array.isArray(variants[row.destination]) ? variants[row.destination] as Record<string, unknown> : {};
++        if (entry.variantId !== row.variantId) continue;
++        if (assistantPlan.media_routing_by_destination && typeof assistantPlan.media_routing_by_destination === "object" && (assistantPlan.media_routing_by_destination as Record<string, unknown>)[row.destination] === "preview") {
++          pinned.set(row.variantId, { mediaId: previewMediaId, exportHash: state.exportHash, sourcePostId: state.sourcePostId, sourceVersionId: state.sourceVersionId });
++        }
++      }
++    }
++    const pinnedRows = pinned.size ? await prisma.mediaAsset.findMany({
++      where: { id: { in: [...new Set([...pinned.values()].map(value => value.mediaId))] }, creatorId: id, primaryPostId: { in: [...new Set([...pinned.values()].map(value => value.sourcePostId))] }, upstreamStatus: "active", processingStatus: "READY", currentMimeType: "image/jpeg" },
++      select: { id: true, currentStorageKey: true, versionsJson: true }
++    }) : [];
++    const pinnedById = new Map(pinnedRows.map(row => [row.id, row]));
++    for (const [variantId, receipt] of pinned) {
++      const media = pinnedById.get(receipt.mediaId);
++      const provenance = Array.isArray(media?.versionsJson) && media.versionsJson[0] && typeof media.versionsJson[0] === "object" ? media.versionsJson[0] as Record<string, unknown> : {};
++      previewMediaByVariantId.set(variantId, media && provenance.sha256 === receipt.exportHash && provenance.source_post_id === receipt.sourcePostId && provenance.source_version_id === receipt.sourceVersionId && media.currentStorageKey === provenance.storage_key ? receipt.mediaId : null);
++    }
+     const draftIds = [
+       ...new Set(
+         plans
+@@ -768,7 +804,9 @@ export async function getCreatorScheduleRail(
+     const action = mapAction(row.action);
+     const destination = mapDestination(row.destination);
+     const meta = row.planId ? planMeta.get(`${row.planId}:${row.id}`) : undefined;
+-    const mediaIds = mediaByPostId.get(row.postId) ?? [];
++    const mediaIds = managedVariantIds.has(row.variantId)
++      ? (previewMediaByVariantId.get(row.variantId) ? [previewMediaByVariantId.get(row.variantId)!] : [])
++      : (mediaByPostId.get(row.postId) ?? []);
+     const versionMeta = versionMetaByPostId.get(row.postId);
+     const plannedFormat = row.planId ? (plannedFormatByPlanId.get(row.planId) ?? null) : null;
+     const detailsState = row.planId
+@@ -1511,6 +1549,17 @@ export async function attachMediaToScheduleRailEvent(
+   }
+ 
+   const target = await resolveScheduleRailAttachTarget(prisma, id, tid);
++  if (target.plan_id) {
++    const plan = await prisma.postDistributionPlan.findFirst({
++      where: { id: target.plan_id, creatorId: id },
++      select: { conversationalGroupKey: true }
++    });
++    if (plan?.conversationalGroupKey?.startsWith("conversation-draft:")) {
++      throw new ScheduleRailValidationError(
++        "Manage this destination media through Conversation."
++      );
++    }
++  }
+   const postId = target.post_id;
+ 
+   const version = await prisma.postVersion.findFirst({
+diff --git "a/C:\\Users\\jorda\\Documents\\Codex\\2026-10-11\\c\\work\\relay\\work\\pcb04-accepted\\src\\goal-cycle\\planner\\schedule-local.ts" "b/C:\\Users\\jorda\\Documents\\Codex\\2026-10-11\\c\\work\\relay\\src\\goal-cycle\\planner\\schedule-local.ts"
+index 79dadfd..21a463e 100644
+--- "a/C:\\Users\\jorda\\Documents\\Codex\\2026-10-11\\c\\work\\relay\\work\\pcb04-accepted\\src\\goal-cycle\\planner\\schedule-local.ts"
++++ "b/C:\\Users\\jorda\\Documents\\Codex\\2026-10-11\\c\\work\\relay\\src\\goal-cycle\\planner\\schedule-local.ts"
+@@ -39,6 +39,15 @@ export function parseScheduledLocal(raw: string): ParsedScheduledLocal | null {
+   return { year, month, day, hour, minute, second };
+ }
+ 
++/** Strict Gregorian local-time parser for one-confirmation schedule inputs. */
++export function parseStrictScheduledLocal(raw: string): ParsedScheduledLocal | null {
++  const match = raw.trim().match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?$/);
++  if (!match) return null;
++  const parts = { year: Number(match[1]), month: Number(match[2]), day: Number(match[3]), hour: Number(match[4]), minute: Number(match[5]), second: Number(match[6] ?? 0) };
++  if (parts.year < 1 || parts.month < 1 || parts.month > 12 || parts.day < 1 || parts.day > 31 || parts.hour > 23 || parts.minute > 59 || parts.second > 59) return null;
++  return sameParts(localPartsFromUtc(parts), parts) ? parts : null;
++}
++
+ export function formatScheduledLocal(parts: ParsedScheduledLocal): string {
+   const pad = (n: number) => String(n).padStart(2, "0");
+   return `${parts.year}-${pad(parts.month)}-${pad(parts.day)}T${pad(parts.hour)}:${pad(parts.minute)}:${pad(parts.second)}`;
+@@ -87,6 +96,41 @@ function localPartsInZone(
+   };
+ }
+ 
++function utcMillis(parts: ParsedScheduledLocal): number {
++  const date = new Date(0);
++  date.setUTCFullYear(parts.year, parts.month - 1, parts.day);
++  date.setUTCHours(parts.hour, parts.minute, parts.second, 0);
++  return date.getTime();
++}
++
++function localPartsFromUtc(parts: ParsedScheduledLocal): ParsedScheduledLocal {
++  const date = new Date(utcMillis(parts));
++  return {
++    year: date.getUTCFullYear(), month: date.getUTCMonth() + 1, day: date.getUTCDate(),
++    hour: date.getUTCHours(), minute: date.getUTCMinutes(), second: date.getUTCSeconds()
++  };
++}
++
++function sameParts(a: ParsedScheduledLocal, b: ParsedScheduledLocal): boolean {
++  return a.year === b.year && a.month === b.month && a.day === b.day && a.hour === b.hour && a.minute === b.minute && a.second === b.second;
++}
++
++/** Resolve only an unambiguous wall time; reject DST gaps and folds. */
++export function resolveZonedLocalDateTimeToUtc(parts: ParsedScheduledLocal, timeZone: string): Date {
++  const desired = utcMillis(parts);
++  const offsets = new Set<number>();
++  // Sample across both sides of a transition; Intl preserves fractional-hour offsets.
++  for (let hours = -36; hours <= 36; hours += 6) {
++    const instant = new Date(desired + hours * 60 * 60 * 1000);
++    offsets.add(utcMillis(localPartsInZone(instant, timeZone)) - instant.getTime());
++  }
++  const candidates = [...offsets]
++    .map(offset => new Date(desired - offset))
++    .filter(candidate => sameParts(localPartsInZone(candidate, timeZone), parts));
++  if (candidates.length !== 1) throw new RangeError(candidates.length ? "Local time is ambiguous in this time zone." : "Local time does not exist in this time zone.");
++  return candidates[0]!;
++}
++
+ /**
+  * Resolve UTC instant for a wall-clock time in `timeZone`.
+  * Iterative offset correction (no date-fns-tz dependency).
+diff --git "a/C:\\Users\\jorda\\Documents\\Codex\\2026-10-11\\c\\work\\relay\\work\\pcb04-accepted\\tests\\editor-bench\\real-library-draft-variants-postgres.integration.test.ts" "b/C:\\Users\\jorda\\Documents\\Codex\\2026-10-11\\c\\work\\relay\\tests\\editor-bench\\real-library-draft-variants-postgres.integration.test.ts"
+index ca70909..129c1f2 100644
+--- "a/C:\\Users\\jorda\\Documents\\Codex\\2026-10-11\\c\\work\\relay\\work\\pcb04-accepted\\tests\\editor-bench\\real-library-draft-variants-postgres.integration.test.ts"
++++ "b/C:\\Users\\jorda\\Documents\\Codex\\2026-10-11\\c\\work\\relay\\tests\\editor-bench\\real-library-draft-variants-postgres.integration.test.ts"
+@@ -10,6 +10,7 @@ import { loadLargeRealLibrarySnapshot } from '../../src/editor-bench/library-sel
+ import { buildRelayR2ObjectKey } from '../../src/storage/relay-upload-r2.js';
+ import { approveDistributionVariant, patchDistributionVariant, startDistributionHandoff } from '../../src/distribution/post-distribution-service.js';
+ import { createPrismaConversationDraftVariantStore } from '../../src/distribution/conversation-draft-variants.js';
++import { getCreatorScheduleRail } from '../../src/distribution/schedule-rail-service.js';
+ 
+ const databaseUrl = process.env.GALLERY_EDITOR_TEST_DATABASE_URL?.trim();
+ if (databaseUrl && !['127.0.0.1', 'localhost', '[::1]'].includes(new URL(databaseUrl).hostname)) throw new Error('Conversation draft integration tests require an explicit local test database.');
+@@ -75,7 +76,9 @@ describe.skipIf(!databaseUrl)('durable Library Conversation destination drafts 
+     await db.galleryEditorCommit.deleteMany({ where: { creatorId } });
+     await db.galleryEditorSession.deleteMany({ where: { creatorId } });
+     await db.postDistributionAttempt.deleteMany({ where: { creatorId } });
++    await db.postbotTask.deleteMany({ where: { creatorId } });
+     await db.postDistributionPlan.deleteMany({ where: { creatorId } });
++    await db.creatorPostingGoal.deleteMany({ where: { creatorId } });
+     await db.mediaAsset.deleteMany({ where: { creatorId } });
+     await db.post.deleteMany({ where: { creatorId } });
+     await db.campaign.deleteMany({ where: { creatorId } });
+@@ -139,8 +142,53 @@ describe.skipIf(!databaseUrl)('durable Library Conversation destination drafts 
+     await confirm(app(), staleSourceSession.id, staleSourceReview.body.data.revision, staleSourceReview.body.data.review.reviewId).expect(409);
+     expect(await db.postDistributionVariant.count({ where: { planId: plan.id } })).toBe(2);
+     const durableSession = await editor.read(creatorId, accountId, session.id);
+-    const refreshed = await request(app()).post(`${base}/session/${session.id}/refresh`).send({ expectedRevision: durableSession.revision }).expect(200);
++    await db.creatorPostingGoal.create({ data: { creatorId, timezone: 'Europe/Berlin' } });
++    const scheduleReview = await request(app()).post(`${base}/session/${session.id}/draft/schedule/review`).send({ expectedRevision: durableSession.revision, variantId: xVariant.id, scheduledLocal: '2026-11-02T09:30' }).expect(200);
++    expect(scheduleReview.body.data.review).toMatchObject({ destination: 'x', sourcePostId: postId, sourceVersionId, previewMediaId, scheduledLocal: '2026-11-02T09:30', timezone: 'Europe/Berlin', scheduledFor: '2026-11-02T08:30:00.000Z', copy: { postText: 'Exact edited X copy.' } });
++    const scheduleBody = { expectedRevision: scheduleReview.body.data.revision, reviewId: scheduleReview.body.data.review.reviewId };
++    const [scheduleA, scheduleB] = await Promise.all([
++      request(app()).post(`${base}/session/${session.id}/draft/schedule/confirm`).send(scheduleBody),
++      request(app()).post(`${base}/session/${session.id}/draft/schedule/confirm`).send(scheduleBody)
++    ]);
++    expect([scheduleA.status, scheduleB.status]).toEqual([200, 200]);
++    expect(scheduleA.body.data.receipt.taskId).toBe(scheduleB.body.data.receipt.taskId);
++    expect([scheduleA.body.data.replayed, scheduleB.body.data.replayed].sort()).toEqual([false, true]);
++    expect(await db.postbotTask.count({ where: { creatorId, planId: plan.id, variantId: xVariant.id, action: 'post', status: 'pending' } })).toBe(1);
++    const scheduledVariant = await db.postDistributionVariant.findFirstOrThrow({ where: { id: xVariant.id } });
++    expect(scheduledVariant).toMatchObject({ scheduledFor: new Date('2026-11-02T08:30:00.000Z'), remindMe: false });
++    const scheduleJournal = (await db.postDistributionPlan.findFirstOrThrow({ where: { id: plan.id } })).assistantPlan as any;
++    expect(scheduleJournal.conversation_draft_v1.scheduleReceipts).toMatchObject([{ reviewId: scheduleBody.reviewId, taskId: scheduleA.body.data.receipt.taskId, timezone: 'Europe/Berlin', scheduledFor: '2026-11-02T08:30:00.000Z' }]);
++
++    editor = new GalleryEditorService(db);
++    const reopenedSession = await editor.read(creatorId, accountId, session.id);
++    expect((reopenedSession.context.conversation as any).scheduleReceipts).toMatchObject([{ taskId: scheduleA.body.data.receipt.taskId, previewMediaId, scheduledLocal: '2026-11-02T09:30' }]);
++    expect((await request(app()).get(`${base}/session/${session.id}/drafts`).expect(200)).body.data.scheduleReceipts).toHaveLength(1);
++    const rail = await getCreatorScheduleRail(db, creatorId, { month: '2026-11', now: new Date('2026-10-25T12:00:00.000Z') });
++    const railItem = [...rail.ready, ...rail.events].find(item => item.task_id === scheduleA.body.data.receipt.taskId);
++    expect(rail.timezone).toBe('Europe/Berlin');
++    expect(railItem).toMatchObject({ post_id: postId, variant_id: xVariant.id, at: '2026-11-02T08:30:00.000Z', media_ids: [previewMediaId], media_count: 1, needs_media: false });
++    expect([...rail.ready, ...rail.events].filter(item => item.task_id === scheduleA.body.data.receipt.taskId)).toHaveLength(1);
++
++    const daSession = await editor.read(creatorId, accountId, session.id);
++    const timezoneReview = await request(app()).post(`${base}/session/${session.id}/draft/schedule/review`).send({ expectedRevision: daSession.revision, variantId: daVariant.id, scheduledLocal: '2026-11-03T09:30' }).expect(200);
++    await db.creatorPostingGoal.update({ where: { creatorId }, data: { timezone: 'UTC' } });
++    const reviewedScheduleSession = await editor.read(creatorId, accountId, session.id);
++    const pendingSchedule = reviewedScheduleSession.context.conversation!.pendingScheduleReview!;
++    await expect(drafts.confirmSchedule({
++      reviewId: pendingSchedule.id, creatorId, actorId: accountId, sessionId: session.id,
++      sessionRevision: reviewedScheduleSession.revision, nowMs: Date.now(),
++      expectedVariantRevision: pendingSchedule.expectedVariantRevision, variantId: pendingSchedule.variantId,
++      planId: pendingSchedule.planId, destination: pendingSchedule.destination, sourcePostId: pendingSchedule.sourcePostId,
++      sourceVersionId: pendingSchedule.sourceVersionId, previewMediaId: pendingSchedule.previewMediaId,
++      exportHash: pendingSchedule.exportHash, scheduledLocal: pendingSchedule.scheduledLocal,
++      timezone: pendingSchedule.timezone, scheduledFor: pendingSchedule.scheduledFor
++    })).rejects.toMatchObject({ code: 'conflict' });
++    expect(await db.postbotTask.count({ where: { creatorId, planId: plan.id } })).toBe(1);
++    await db.creatorPostingGoal.update({ where: { creatorId }, data: { timezone: 'Europe/Berlin' } });
++
++    const refreshed = await request(app()).post(`${base}/session/${session.id}/refresh`).send({ expectedRevision: (await editor.read(creatorId, accountId, session.id)).revision }).expect(200);
+     expect(refreshed.body.data.draftReceipts).toHaveLength(3);
++    expect(refreshed.body.data.scheduleReceipts).toHaveLength(1);
+     const draftReceipts = await request(app()).get(`${base}/session/${session.id}/drafts`).expect(200);
+     expect(draftReceipts.body.data.drafts).toHaveLength(2);
+   });
+diff --git "a/C:\\Users\\jorda\\Documents\\Codex\\2026-10-11\\c\\work\\relay\\work\\pcb04-accepted\\tests\\goal-cycle\\schedule-local.test.ts" "b/C:\\Users\\jorda\\Documents\\Codex\\2026-10-11\\c\\work\\relay\\tests\\goal-cycle\\schedule-local.test.ts"
+index 86faad1..57a249e 100644
+--- "a/C:\\Users\\jorda\\Documents\\Codex\\2026-10-11\\c\\work\\relay\\work\\pcb04-accepted\\tests\\goal-cycle\\schedule-local.test.ts"
++++ "b/C:\\Users\\jorda\\Documents\\Codex\\2026-10-11\\c\\work\\relay\\tests\\goal-cycle\\schedule-local.test.ts"
+@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
+ import {
+   fromDatetimeLocalInputValue,
+   parseScheduledLocal,
++  parseStrictScheduledLocal,
++  resolveZonedLocalDateTimeToUtc,
+   syncSlotScheduledUtc,
+   toDatetimeLocalInputValue,
+   zonedLocalDateTimeToUtc
+@@ -20,6 +22,18 @@ describe("goal-cycle schedule-local", () => {
+     });
+   });
+ 
++  it("rejects malformed dates and nonexistent or ambiguous wall times", () => {
++    expect(parseStrictScheduledLocal("2026-02-30T10:00")).toBeNull();
++    expect(parseStrictScheduledLocal("2026-07-22T10:00Z")).toBeNull();
++    expect(() => resolveZonedLocalDateTimeToUtc({ year: 2026, month: 3, day: 8, hour: 2, minute: 30, second: 0 }, "America/New_York")).toThrow(/does not exist/);
++    expect(() => resolveZonedLocalDateTimeToUtc({ year: 2026, month: 11, day: 1, hour: 1, minute: 30, second: 0 }, "America/New_York")).toThrow(/ambiguous/);
++    expect(() => resolveZonedLocalDateTimeToUtc({ year: 2026, month: 4, day: 5, hour: 1, minute: 45, second: 0 }, "Australia/Lord_Howe")).toThrow(/ambiguous/);
++  });
++
++  it("resolves fractional-hour zone offsets by round trip", () => {
++    expect(resolveZonedLocalDateTimeToUtc({ year: 2026, month: 7, day: 22, hour: 15, minute: 0, second: 0 }, "Asia/Kathmandu").toISOString()).toBe("2026-07-22T09:15:00.000Z");
++  });
++
+   it("converts America/New_York wall time to UTC", () => {
+     // EDT in July: UTC-4
+     const utc = zonedLocalDateTimeToUtc(
+diff --git "a/C:\\Users\\jorda\\Documents\\Codex\\2026-10-11\\c\\work\\relay\\work\\pcb04-accepted\\tests\\schedule-rail-service.test.ts" "b/C:\\Users\\jorda\\Documents\\Codex\\2026-10-11\\c\\work\\relay\\tests\\schedule-rail-service.test.ts"
+index 967326e..47f86cd 100644
+--- "a/C:\\Users\\jorda\\Documents\\Codex\\2026-10-11\\c\\work\\relay\\work\\pcb04-accepted\\tests\\schedule-rail-service.test.ts"
++++ "b/C:\\Users\\jorda\\Documents\\Codex\\2026-10-11\\c\\work\\relay\\tests\\schedule-rail-service.test.ts"
+@@ -570,6 +570,37 @@ describe("attachMediaToScheduleRailEvent", () => {
+     ).rejects.toBeInstanceOf(ScheduleRailNotFoundError);
+   });
+ 
++  it("keeps managed Conversation media pinned by rejecting Rail attachment before source mutation", async () => {
++    const sourceVersion = { mediaIds: ["source-media"] };
++    const postVersionFindFirst = vi.fn().mockResolvedValue(sourceVersion);
++    const prisma = {
++      postbotTask: {
++        findFirst: vi.fn().mockResolvedValue({
++          id: "task1",
++          creatorId: "cr1",
++          postId: "post1",
++          planId: "plan1",
++          goalCycleCampaignKey: null,
++          action: "post",
++          status: "pending"
++        })
++      },
++      postDistributionPlan: {
++        findFirst: vi.fn().mockResolvedValue({
++          conversationalGroupKey: "conversation-draft:session1"
++        })
++      },
++      postVersion: { findFirst: postVersionFindFirst }
++    } as unknown as PrismaClient;
++
++    await expect(
++      attachMediaToScheduleRailEvent(prisma, "cr1", "task1", ["variant-media"])
++    ).rejects.toThrow("Manage this destination media through Conversation.");
++
++    expect(postVersionFindFirst).not.toHaveBeenCalled();
++    expect(sourceVersion.mediaIds).toEqual(["source-media"]);
++  });
++
+   it("materializes a planned routine occurrence then attaches media", async () => {
+     const seriesMod = await import("../src/autopost/schedule-series-service.js");
+     const spy = vi.spyOn(seriesMod, "materializeOccurrence").mockResolvedValue({

@@ -1,11 +1,22 @@
 # Patreon sync reliability and metadata build plan
 
-Status: PS-00 through PS-06 complete locally as of 2026-10-20. PS-01 to PS-03 were completed by the existing import-persistence work; PS-03 landed separately as `c82c9ed`. Import 04 and Import 05 record their persistence and publication fixes. [PS-06](PS-06-SESSION-VAULT.md) records the shared session vault and cutover. Production rollout and PS-07 onward remain pending.
+Status: PS-00 through PS-13 complete locally as of 2026-10-21, including the independently reviewed [PS-10 platform projection correction](PS-10-PLATFORM-PROJECTIONS.md), [PS-12 media repair](PS-12-MEDIA-REPAIR.md) and [PS-13 extension checks](PS-13-VERIFIED-EXTENSION.md). PS-14 is in progress. The latest combined production build passes; deployment and reliability release remain pending. PS-01 to PS-03 were completed by the existing import-persistence work; PS-03 landed separately as `c82c9ed`. The completion records below retain each item's checks and rollout limits.
 
 Keep Relay's hybrid Patreon connection. Make imports, updates, access changes, and media recovery dependable before adding more analytics. Use the extension for the remaining browser-dependent work, while the server owns scheduling, progress, retries, and access decisions.
 
 - [Phases and work items](PHASED-BUILD-PLAN.md)
 - [Acceptance and rollout](ACCEPTANCE.md)
+- [Deployment identity and isolated acceptance](DEPLOYMENT-READINESS.md)
+- [Supervised execution and current claims](PROGRAM-EXECUTION.md)
+- Completed reliability records: [PS-06 session vault](PS-06-SESSION-VAULT.md), [PS-07 OAuth](PS-07-OAUTH-RELIABILITY.md), [PS-08 durable work](PS-08-DURABLE-CHANGE-WORK.md), [PS-09 targeted posts](PS-09-TARGETED-POSTS.md), [PS-10 members](PS-10-MEMBER-RECONCILIATION.md), [PS-11 progress](PS-11-RESUMABLE-POSTS.md)
+- [PS-10 proposed reconciliation design](PS-10-DESIGN.md)
+- [PS-11 proposed archive and fairness design](PS-11-DESIGN.md)
+- [PS-12 media repair completion](PS-12-MEDIA-REPAIR.md)
+- [PS-12 proposed media repair design](PS-12-DESIGN.md)
+- [PS-13 proposed extension checks and collection design](PS-13-DESIGN.md)
+- [PS-13 verified extension checks](PS-13-VERIFIED-EXTENSION.md)
+- [PS-14 proposed completeness and repair design](PS-14-DESIGN.md)
+- [Metadata evidence readiness](METADATA-READINESS.md)
 - [PS-00 baseline, contracts, and regression ownership](BASELINE-CONTRACTS.md)
 - [Existing sync hardening ledger](../../part1-sync-hardening-ledger.md)
 - [Patreon ingest contract](../../patreon-ingest-canonical.md)
@@ -50,8 +61,8 @@ The extension does not acquire a second job scheduler, become the authority for 
 |---|---|---|---|
 | 0. Confirm baseline and contracts | PS-00 | Current fixes and data boundaries are recorded; reproductions cover the remaining failures. | Complete; see baseline record |
 | 1. Protect accepted data and credentials | PS-01 to PS-06 | Persistence survives overlap, conflicts, rollback, and session writes; existing import tickets are satisfied. | Complete locally; hosted migration/cutover and rollout verification remain pending |
-| 2. Keep posts and members current | PS-07 to PS-11 | Durable targeted updates, safe deletion, complete roster reconciliation, and resumable archive/catch-up work. | Planned |
-| 3. Recover media and verify health | PS-12 to PS-15 | Media recovery and extension checks work end to end; reliability acceptance passes. | Planned |
+| 2. Keep posts and members current | PS-07 to PS-11 | Durable targeted updates, safe deletion, complete roster reconciliation, and resumable archive/catch-up work. | Complete locally; production cutover and live acceptance remain pending |
+| 3. Recover media and verify health | PS-12 to PS-15 | Media recovery and extension checks work end to end; reliability acceptance passes. | PS-12/13 locally complete; PS-14 in progress; PS-15 pending |
 | 4. Collect useful evidence | PS-16 to PS-19 | Freshness, windows, conversions, member lifecycle, and asset metadata retain source meaning. | Waits for PS-15 |
 | 5. Use the evidence in existing products | PS-20 to PS-22 | Library and Coach use the evidence without changing attribution or publishing contracts. | Waits for Phase 4 |
 
@@ -61,7 +72,7 @@ The PS-03 migration-policy decision does not block independent work on PS-04, PS
 
 ## Working boundaries
 
-- Work one bounded item at a time. The existing ticket remains authoritative where one is linked. These are dependency instructions, not instructions to create a swarm or new chats.
+- Implement bounded items in dependency order. The user has authorized scoped implementation and review agents under one supervisor; [the execution record](PROGRAM-EXECUTION.md) tracks claims. The existing ticket remains authoritative where one is linked.
 - Serialize changes to `src/ingest/canonical-store-db.ts`, `src/patreon/patreon-sync-service.ts`, `src/server.ts`, job registration, `prisma/schema.prisma`, extension storage, and Library API contracts. Recheck adjacent workers' changes before merging.
 - Keep code, necessary fixtures, migrations, caller updates, and focused verification in the owning item. Report pre-existing failures without unrelated fixes.
 - Use Ponytail and scoped Ponytail Review for implementation. Apply the repository's UI and copy skills when an item reaches those surfaces. Verify changed UI at desktop and mobile sizes and test keyboard/focus behavior.
@@ -89,4 +100,4 @@ Recheck these when implementing a provider-facing item. Availability in a help a
 
 ## Next action
 
-PS-07 is the next planned implementation item, subject to a fresh concurrency check and authorization to proceed. The PS-06 migration and hosted cutover remain separate operator work. PS-06 does not start PS-07, amend ownership policy, or deploy these fixes. Phase 2 integration still requires Phase 1's exit conditions; metadata/product work still waits for PS-15.
+PS-14 is implementing persisted completeness and targeted repair after PS-13 passed independent review. Concurrent Library edits are preserved. The latest combined build passes; isolated staging, remaining checks and live acceptance still precede release. The supervisor continues through PS-22 as dependencies and checks pass. Ownership policy is unchanged; metadata/product implementation still waits for PS-15.

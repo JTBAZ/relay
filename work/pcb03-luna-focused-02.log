@@ -1,0 +1,12 @@
+[dotenv@17.3.1] injecting env (18) from .env -- tip: 🔐 prevent building .env in docker: https://dotenvx.com/prebuild
+
+ RUN  v3.2.4 C:/Users/jorda/Documents/Codex/2026-10-11/c/work/relay
+
+ ✓ tests/editor-bench/real-library-conversation-routes.test.ts (11 tests) 612ms
+ ✓ tests/relay-upload-r2.test.ts (10 tests) 31ms
+
+ Test Files  2 passed (2)
+      Tests  21 passed (21)
+   Start at  00:23:12
+   Duration  6.60s (transform 1.05s, setup 59ms, collect 5.14s, tests 643ms, environment 0ms, prepare 210ms)
+

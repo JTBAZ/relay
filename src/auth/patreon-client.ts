@@ -3,6 +3,7 @@
  * @description Posts `application/x-www-form-urlencoded` bodies to Patreon's token endpoint via injectable `fetch`.
  * @see Patreon OAuth documentation ({@link https://docs.patreon.com/})
  */
+import { patreonOAuthRequest } from "../patreon/oauth-request.js";
 
 /** @description Parsed token response envelope from Patreon's OAuth token endpoint. */
 export type PatreonTokenResponse = {
@@ -85,16 +86,17 @@ export class PatreonClient {
       ...params
     });
 
-    const response = await this.fetchImpl(this.tokenUrl, {
+    const response = await patreonOAuthRequest(this.tokenUrl, {
       method: "POST",
-      headers: { "content-type": "application/x-www-form-urlencoded" },
+      headers: { "content-type": "application/x-www-form-urlencoded", "user-agent": "Relay - Patreon Sync" },
       body: form.toString()
-    });
-
-    if (!response.ok) {
-      throw new Error(`Patreon token request failed with status ${response.status}`);
+    }, this.fetchImpl) as PatreonTokenResponse;
+    if (!response || typeof response.access_token !== "string" || !response.access_token.trim() ||
+      typeof response.refresh_token !== "string" || !response.refresh_token.trim() ||
+      typeof response.expires_in !== "number" || !Number.isFinite(response.expires_in) || response.expires_in <= 0 ||
+      !Number.isFinite(new Date(Date.now() + response.expires_in * 1000).getTime())) {
+      throw new Error("Patreon returned an invalid token response.");
     }
-
-    return (await response.json()) as PatreonTokenResponse;
+    return response;
   }
 }

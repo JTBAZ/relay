@@ -1,0 +1,5 @@
+{
+  "exitCode": 0,
+  "command": "npm run build",
+  "log": "work/pcb01-luna-build-01.log"
+}

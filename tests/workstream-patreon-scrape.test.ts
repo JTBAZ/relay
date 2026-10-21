@@ -53,6 +53,7 @@ const postsDoc = {
       id: "222",
       attributes: {
         title: "Text only",
+        is_public: true,
         published_at: "2026-03-16T12:00:00.000Z",
         content: "<p>No images</p>",
         tiers: []

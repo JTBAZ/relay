@@ -39,6 +39,15 @@ export function parseScheduledLocal(raw: string): ParsedScheduledLocal | null {
   return { year, month, day, hour, minute, second };
 }
 
+/** Strict Gregorian local-time parser for one-confirmation schedule inputs. */
+export function parseStrictScheduledLocal(raw: string): ParsedScheduledLocal | null {
+  const match = raw.trim().match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?$/);
+  if (!match) return null;
+  const parts = { year: Number(match[1]), month: Number(match[2]), day: Number(match[3]), hour: Number(match[4]), minute: Number(match[5]), second: Number(match[6] ?? 0) };
+  if (parts.year < 1 || parts.month < 1 || parts.month > 12 || parts.day < 1 || parts.day > 31 || parts.hour > 23 || parts.minute > 59 || parts.second > 59) return null;
+  return sameParts(localPartsFromUtc(parts), parts) ? parts : null;
+}
+
 export function formatScheduledLocal(parts: ParsedScheduledLocal): string {
   const pad = (n: number) => String(n).padStart(2, "0");
   return `${parts.year}-${pad(parts.month)}-${pad(parts.day)}T${pad(parts.hour)}:${pad(parts.minute)}:${pad(parts.second)}`;
@@ -85,6 +94,41 @@ function localPartsInZone(
     minute: read("minute"),
     second: read("second")
   };
+}
+
+function utcMillis(parts: ParsedScheduledLocal): number {
+  const date = new Date(0);
+  date.setUTCFullYear(parts.year, parts.month - 1, parts.day);
+  date.setUTCHours(parts.hour, parts.minute, parts.second, 0);
+  return date.getTime();
+}
+
+function localPartsFromUtc(parts: ParsedScheduledLocal): ParsedScheduledLocal {
+  const date = new Date(utcMillis(parts));
+  return {
+    year: date.getUTCFullYear(), month: date.getUTCMonth() + 1, day: date.getUTCDate(),
+    hour: date.getUTCHours(), minute: date.getUTCMinutes(), second: date.getUTCSeconds()
+  };
+}
+
+function sameParts(a: ParsedScheduledLocal, b: ParsedScheduledLocal): boolean {
+  return a.year === b.year && a.month === b.month && a.day === b.day && a.hour === b.hour && a.minute === b.minute && a.second === b.second;
+}
+
+/** Resolve only an unambiguous wall time; reject DST gaps and folds. */
+export function resolveZonedLocalDateTimeToUtc(parts: ParsedScheduledLocal, timeZone: string): Date {
+  const desired = utcMillis(parts);
+  const offsets = new Set<number>();
+  // Sample across both sides of a transition; Intl preserves fractional-hour offsets.
+  for (let hours = -36; hours <= 36; hours += 6) {
+    const instant = new Date(desired + hours * 60 * 60 * 1000);
+    offsets.add(utcMillis(localPartsInZone(instant, timeZone)) - instant.getTime());
+  }
+  const candidates = [...offsets]
+    .map(offset => new Date(desired - offset))
+    .filter(candidate => sameParts(localPartsInZone(candidate, timeZone), parts));
+  if (candidates.length !== 1) throw new RangeError(candidates.length ? "Local time is ambiguous in this time zone." : "Local time does not exist in this time zone.");
+  return candidates[0]!;
 }
 
 /**

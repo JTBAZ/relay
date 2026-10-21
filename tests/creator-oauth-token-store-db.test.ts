@@ -37,6 +37,7 @@ describe("DbPatreonTokenStore", () => {
     const prisma = {
       $transaction: vi.fn(async (fn: (tx: unknown) => Promise<void>) => {
         const tx = {
+          $executeRaw: vi.fn().mockResolvedValue(1),
           tenant: { upsert: tenantUpsert },
           user: { findFirst: userFindFirst, create: userCreate },
           creatorProfile: { create: creatorProfileCreate, findUnique: creatorProfileFindUnique },
@@ -46,7 +47,7 @@ describe("DbPatreonTokenStore", () => {
             create: providerCreate,
             update: providerUpdate
           },
-          oAuthCredential: { upsert: oauthUpsert }
+          oAuthCredential: { upsert: oauthUpsert, findFirst: vi.fn().mockResolvedValue(null) }
         };
         return fn(tx);
       })

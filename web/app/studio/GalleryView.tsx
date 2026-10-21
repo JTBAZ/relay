@@ -231,6 +231,8 @@ export default function GalleryView({ floorspace = "classic" }: GalleryViewProps
     "idle"
   );
   const [syncHealth, setSyncHealth] = useState<PatreonSyncStateData | null>(null);
+  const [syncHealthReadError, setSyncHealthReadError] = useState<string | null>(null);
+  const syncHealthReadGeneration = useRef(0);
   const [patreonDetailsSignal, setPatreonDetailsSignal] = useState(0);
   const [creatorProfile, setCreatorProfile] = useState<CreatorProfileIdentity | null>(null);
   const prevLibrarySyncPhase = useRef(librarySyncPhase);
@@ -253,19 +255,23 @@ export default function GalleryView({ floorspace = "classic" }: GalleryViewProps
   }, []);
 
   const refreshSyncHealth = useCallback(async () => {
+    const generation = ++syncHealthReadGeneration.current;
     try {
       const s = await fetchPatreonSyncState(creatorId, {
         campaignId: patreonCampaignIdEnv,
         probeUpstream: false
       });
-      setSyncHealth(s);
+      if (generation === syncHealthReadGeneration.current) { setSyncHealth(s); setSyncHealthReadError(null); }
     } catch {
-      setSyncHealth(null);
+      if (generation === syncHealthReadGeneration.current) setSyncHealthReadError("Saved Patreon status could not be refreshed. Previous status is shown when available.");
     }
   }, [creatorId]);
 
   useEffect(() => {
+    const requests = syncHealthReadGeneration;
+    setSyncHealth(null); setSyncHealthReadError(null);
     void refreshSyncHealth();
+    return () => { requests.current++; };
   }, [refreshSyncHealth]);
 
   const loadCreatorProfile = useCallback(async () => {
@@ -1226,6 +1232,7 @@ export default function GalleryView({ floorspace = "classic" }: GalleryViewProps
 
       <SyncHealthBanner
         syncState={syncHealth}
+        refreshError={syncHealthReadError}
         onViewDetails={() => setPatreonDetailsSignal((n) => n + 1)}
       />
 

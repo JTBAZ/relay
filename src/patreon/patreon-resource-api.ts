@@ -1,10 +1,11 @@
 /**
  * @fileoverview Patreon OAuth2 v2 REST helpers: campaigns, posts paging, members paging, and JSON:API helpers.
- * @description All network I/O uses injected `fetch`; throws on non-2xx with truncated body text.
+ * @description Bounded OAuth requests via injected `fetch`; errors exclude provider bodies.
  * @see {@link ../jsdoc-core-entities.ts}
  * @see prisma/schema.prisma Ingest outcomes land in `Post`, `Tier`, `Campaign`, membership tables via sync — not in this module
  */
 import type { JsonApiDocument, JsonApiResource } from "./jsonapi-types.js";
+import { patreonOAuthRequest, PatreonRequestError } from "./oauth-request.js";
 
 const API_ROOT = "https://www.patreon.com/api/oauth2/v2";
 
@@ -18,16 +19,31 @@ async function patreonGet(
   url: string,
   opts: PatreonFetchOptions
 ): Promise<JsonApiDocument> {
-  const res = await opts.fetch_impl(url, {
+  const doc = await patreonOAuthRequest(url, {
     headers: {
-      authorization: `Bearer ${opts.access_token}`
+      authorization: `Bearer ${opts.access_token}`,
+      "user-agent": "Relay - Patreon Sync"
     }
-  });
-  const text = await res.text();
-  if (!res.ok) {
-    throw new Error(`Patreon API ${res.status}: ${text.slice(0, 500)}`);
+  }, opts.fetch_impl);
+  const resource = (value: unknown): boolean => Boolean(value && typeof value === "object" &&
+    "type" in value && typeof value.type === "string" && "id" in value && typeof value.id === "string" && value.id.trim());
+  if (!doc || typeof doc !== "object" || !("data" in doc) ||
+    (doc.data !== null && !(Array.isArray(doc.data) ? doc.data.every(resource) : resource(doc.data)))) {
+    throw new PatreonRequestError("Patreon returned an invalid resource document.", true);
   }
-  return JSON.parse(text) as JsonApiDocument;
+  return doc as JsonApiDocument;
+}
+
+// Post v2 has no documented edited_at; content/access revisioning is local.
+const POST_FIELDS = "title,content,published_at,is_public,is_paid,tiers,embed_url,embed_data";
+
+function pagedUrl(path: string, nextFullUrl?: string | null): URL {
+  const base = new URL(`${API_ROOT}${path}`);
+  const url = nextFullUrl ? new URL(nextFullUrl) : base;
+  if (url.origin !== base.origin || url.pathname !== base.pathname || url.username || url.password || url.hash) {
+    throw new Error("Invalid Patreon pagination destination.");
+  }
+  return url;
 }
 
 /**
@@ -60,13 +76,14 @@ export async function fetchCampaignsWithTiers(
  * @param nextFullUrl Patreon-returned full next URL or null for first page.
  */
 export function postsPageUrl(campaignId: string, nextFullUrl?: string | null): string {
-  if (nextFullUrl) return nextFullUrl;
-  const params = new URLSearchParams();
+  const url = pagedUrl(`/campaigns/${encodeURIComponent(campaignId)}/posts`, nextFullUrl);
+  const params = url.searchParams;
   params.set("page[count]", "25");
-  // OAuth v2: metadata + tier/access for enrichment. Post media (images/attachments) comes from
+  params.set("include", "campaign");
+  // OAuth v2: body, embeds and access for enrichment. Rich images/attachments come from
   // the cookie session path (`cookie-scraper.ts` → www `/api/posts`), not this endpoint.
-  params.set("fields[post]", "title,content,published_at,is_public,is_paid,tiers");
-  return `${API_ROOT}/campaigns/${encodeURIComponent(campaignId)}/posts?${params.toString()}`;
+  params.set("fields[post]", POST_FIELDS);
+  return url.toString();
 }
 
 /**
@@ -87,7 +104,10 @@ export async function fetchPostsPage(
  * Patreon’s www cookie `/api/posts` often returns `attributes.content: null`; the creator access token usually still receives HTML here.
  */
 export function singlePostUrl(postId: string): string {
-  return `${API_ROOT}/posts/${encodeURIComponent(postId)}`;
+  const url = new URL(`${API_ROOT}/posts/${encodeURIComponent(postId)}`);
+  url.searchParams.set("fields[post]", POST_FIELDS);
+  url.searchParams.set("include", "campaign");
+  return url.toString();
 }
 
 /**
@@ -109,19 +129,29 @@ export async function fetchPostById(
  * @security-audit-required Member payloads may include PII (`email`, `full_name`) — do not log raw documents.
  */
 export function membersPageUrl(campaignId: string, nextFullUrl?: string | null): string {
-  if (nextFullUrl) return nextFullUrl;
-  const params = new URLSearchParams();
+  const url = pagedUrl(`/campaigns/${encodeURIComponent(campaignId)}/members`, nextFullUrl);
+  const params = url.searchParams;
   params.set("page[count]", "25");
-  params.set("include", "currently_entitled_tiers,user");
+  params.set("include", "campaign");
+  params.set("include", "campaign,currently_entitled_tiers,user");
   params.set(
     "fields[member]",
-    "full_name,email,patron_status,currently_entitled_amount_cents," +
-      "lifetime_support_cents,pledge_relationship_start"
+    "patron_status,currently_entitled_amount_cents,pledge_relationship_start"
   );
   // PE-C P1 — see `fetchCampaignsWithTiers` for rationale.
   params.set("fields[tier]", "title,amount_cents,created_at,edited_at,published");
-  params.set("fields[user]", "full_name,vanity,url");
-  return `${API_ROOT}/campaigns/${encodeURIComponent(campaignId)}/members?${params.toString()}`;
+  return url.toString();
+}
+
+export function singleMemberUrl(memberId: string): string {
+  const url = new URL(`${API_ROOT}/members/${encodeURIComponent(memberId)}`);
+  url.searchParams.set("include", "campaign,currently_entitled_tiers,user");
+  url.searchParams.set("fields[member]", "patron_status,currently_entitled_amount_cents,pledge_relationship_start");
+  return url.toString();
+}
+
+export async function fetchMemberById(opts: PatreonFetchOptions, memberId: string): Promise<JsonApiDocument> {
+  return patreonGet(singleMemberUrl(memberId), opts);
 }
 
 /**

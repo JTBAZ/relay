@@ -30,6 +30,7 @@ export function relayServerConfigFromEnv(): AppConfig {
     creator_campaign_display_path: process.env.RELAY_CREATOR_CAMPAIGN_DISPLAY_PATH,
     relay_creator_display_name: process.env.RELAY_CREATOR_DISPLAY_NAME,
     export_storage_root: process.env.RELAY_EXPORT_STORAGE_ROOT,
+    export_shared_local_root: process.env.RELAY_EXPORT_SHARED_LOCAL_ROOT === "1",
     gallery_post_overrides_path: process.env.RELAY_GALLERY_POST_OVERRIDES_PATH,
     gallery_saved_filters_path: process.env.RELAY_GALLERY_SAVED_FILTERS_PATH,
     collections_store_path: process.env.RELAY_COLLECTIONS_STORE_PATH,

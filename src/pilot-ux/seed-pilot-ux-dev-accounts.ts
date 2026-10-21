@@ -4,7 +4,6 @@
  */
 import {
   CreatorPlan,
-  EntitlementSource,
   IdentityAuthProvider,
   MediaIngestOrigin,
   MediaProcessingStatus,
@@ -15,15 +14,19 @@ import {
   PublicSlugSource,
   TenantRole,
   UserKind,
+  Prisma,
   type PrismaClient
 } from "@prisma/client";
 import {
+  readPilotUxSeedExportRecord,
   PILOT_UX_ONBOARDING_PUBLIC_SLUG
 } from "./pilot-ux-onboarding-walkthrough.js";
+import type { ExportMediaRecord } from "../export/types.js";
+import type { MediaVersionRow } from "../ingest/canonical-store.js";
 import { tierStableId } from "../ingest/canonical-store-db.js";
 import { hashPassword } from "../identity/password.js";
 import { getPlatformRelayCreatorId } from "../identity/platform-tenant.js";
-import { upsertPatronEntitlementSnapshot } from "../identity/patron-entitlement-snapshot.js";
+import { upsertPlatformPatronEntitlementProjection } from "../identity/patron-entitlement-snapshot.js";
 import { upsertPatronFollowsForMembership } from "../patron/patron-follow-service.js";
 import { runPatronInitialFollowSeed } from "../patron/patron-initial-follow-seed.js";
 import {
@@ -60,7 +63,8 @@ async function upsertCreatorStudio(
   tx: Parameters<Parameters<PrismaClient["$transaction"]>[0]>[0],
   spec: PilotUxSeedSpec,
   creator: PilotUxSeedCreator,
-  password: string
+  password: string,
+  exports: ReadonlyMap<string, ExportMediaRecord>
 ): Promise<{ accountId: string }> {
   const acctSpec = spec.accounts[creator.accountKey];
   if (!acctSpec) {
@@ -295,7 +299,7 @@ async function upsertCreatorStudio(
 
     const mime = mediaMimeForPilotPost(post.mediaType);
     const storageKey = pilotStorageKey(creator.relayCreatorId, post.mediaId);
-    await tx.mediaAsset.upsert({
+    const seeded = await tx.mediaAsset.upsert({
       where: { id: post.mediaId },
       create: {
         id: post.mediaId,
@@ -322,6 +326,15 @@ async function upsertCreatorStudio(
         processingStatus: MediaProcessingStatus.READY
       }
     });
+    const record = exports.get(post.mediaId);
+    if (record) {
+      const versions = Array.isArray(seeded.versionsJson) ? seeded.versionsJson as unknown as MediaVersionRow[] : [];
+      const current = { version_seq: 1, upstream_revision: "pilot-ux-v1", mime_type: mime, storage_key: storageKey, ingested_at: SEED_NOW.toISOString(), export_record: record };
+      await tx.mediaAsset.updateMany({
+        where: { id: post.mediaId, creatorId: creator.relayCreatorId, currentVersionSeq: 1, currentUpstreamRevision: "pilot-ux-v1", currentStorageKey: storageKey, versionsJson: { equals: seeded.versionsJson as Prisma.InputJsonValue } },
+        data: { versionsJson: [...versions.filter((v) => v.version_seq !== 1), current] as unknown as Prisma.InputJsonValue }
+      });
+    }
   }
 
   return { accountId: account.id };
@@ -432,11 +445,11 @@ async function upsertPatron(
     }
 
     for (const ent of spec.patron.entitlements) {
-      await upsertPatronEntitlementSnapshot(tx, {
+      await upsertPlatformPatronEntitlementProjection(tx, {
         patronMembershipId: membership.id,
         relayCreatorId: ent.relayCreatorId,
         entitledTierIds: [...ent.entitledTierIds],
-        source: EntitlementSource.manual_support,
+        inTransaction: true,
         campaignId:
           spec.creators.find((c) => c.relayCreatorId === ent.relayCreatorId)?.patreonCampaignId ??
           null,
@@ -520,10 +533,15 @@ export async function seedPilotUxDevAccounts(
 
   const resolvedSpecPath = specPath?.trim() || defaultPilotUxSeedFixturePath();
 
+  const exports = new Map<string, ExportMediaRecord>();
+  for (const creator of spec.creators) for (const post of creator.posts) {
+    const record = await readPilotUxSeedExportRecord(creator.relayCreatorId, post.mediaId, "pilot-ux-v1", mediaMimeForPilotPost(post.mediaType));
+    if (record) exports.set(post.mediaId, record);
+  }
   await prisma.$transaction(
     async (tx) => {
       for (const creator of spec.creators) {
-        const row = await upsertCreatorStudio(tx, spec, creator, password);
+        const row = await upsertCreatorStudio(tx, spec, creator, password, exports);
         creators.push({
           relayCreatorId: creator.relayCreatorId,
           accountId: row.accountId

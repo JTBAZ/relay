@@ -1,0 +1,193 @@
+{
+  "ticket": "PCB-02",
+  "status": "accepted_backend_connector_with_recorded_verification_limits",
+  "date": "2026-10-20",
+  "planner": "existing Sol High product connection plan",
+  "builder": "gpt-6-luna/high",
+  "reviewer": "root; scoped Ponytail Review",
+  "branch": "codex/local-build-2026-10-19",
+  "head": "91a72d2f1ea18a7b1326305e6dd4b1d224fbcbd1",
+  "committed": false,
+  "behavior": [
+    "Dedicated owned GalleryEditorSession persists selection, exclusions, initialization state, last request, recent messages, pending edit review and last confirmation reference.",
+    "One uniquely selected source can receive a literal quoted rename or grounded post-level tag delta; review stages only, separate confirmation applies through GalleryEditorService.",
+    "Library presentation/overrides, immutable GalleryEditorCommit history and next conversation catalog revision commit atomically. Original PostVersion and unrelated/manual staged work remain outside the edit.",
+    "Reopening by saved session ID survives router/service reconstruction and idle time; pending edit reviews expire after 15 minutes.",
+    "Exact successful review retry reads the original owner/actor/session-bound commit. Replay never rebases or rewinds newer context; changed catalog is reported without context substitution."
+  ],
+  "api": {
+    "base": "/api/v1/editor-bench/real-library-conversation",
+    "developmentOnly": true,
+    "selection": "POST /session/:sessionId/turn {sessionId, expectedRevision, latestRequest}; selection only",
+    "review": "POST /session/:sessionId/review {sessionId, expectedRevision, latestRequest}; one bounded cheap-provider call, no source edit",
+    "confirm": "POST /session/:sessionId/confirm {reviewId, expectedRevision}; no model call",
+    "read": "GET /session/:sessionId; saved selection/exclusions and pending before/after review",
+    "refresh": "POST /session/:sessionId/refresh {expectedRevision}; explicit selection/exclusion reset",
+    "sourceWriteGuards": [
+      "editor feature flag",
+      "creator allowlist",
+      "ready PostgreSQL stores",
+      "authenticated creator/account match",
+      "existing tenant mutation policy",
+      "Studio sync writable guard"
+    ],
+    "modelBoundary": "One selected title/current tags + latest request, tools empty, no images or source IDs, full interpreter request <=16 KiB. Literal rename grounding retains existing 2,000-character request limit."
+  },
+  "verification": {
+    "rootBackend": {
+      "passed": 96,
+      "failed": 0,
+      "files": 9,
+      "evidence": "work/pcb02-root-tests-2026-10-20T20-17-57-824Z.json"
+    },
+    "lunaBackend": {
+      "passed": 43,
+      "failed": 0,
+      "evidence": "work/pcb02-luna-test09.log"
+    },
+    "backendBuild": {
+      "exitCode": 0,
+      "evidence": "work/pcb02-luna-build-04.exit.json"
+    },
+    "postgres": {
+      "pcb02JourneyPassed": true,
+      "fixture": "fresh nonce-owned local disposable database; canonical migrations; synthetic posts and injected model responses",
+      "checked": [
+        "review does not edit source",
+        "durable selection and nonempty exclusions",
+        "confirmed rename and tag delta",
+        "new GalleryEditorService/router read-back",
+        "immutable receipt retry",
+        "exact canonical catalog hash after each edit",
+        "source + journal rollback if context callback throws"
+      ],
+      "combinedSuite": {
+        "passed": 26,
+        "failed": 1,
+        "total": 27
+      },
+      "evidence": "work/pcb02-postgres-2026-10-20T20-13-22-672Z.json",
+      "cleanup": "owned disposable database dropped"
+    },
+    "review": {
+      "scope": "work/pcb02-review-2026-10-20T20-18-15-707Z.json",
+      "files": [
+        "src/editor-bench/conversation.ts",
+        "src/editor-bench/library-selection-catalog.ts",
+        "src/editor-bench/real-library-conversation-routes.ts",
+        "src/editor-bench/real-library-edit-review.ts",
+        "src/gallery-editor/service.ts",
+        "src/gallery-editor/types.ts",
+        "src/gallery-editor/routes.ts",
+        "src/server.ts",
+        "tests/editor-bench/real-library-conversation-routes.test.ts",
+        "tests/editor-bench/real-library-conversation-postgres.integration.test.ts"
+      ],
+      "whitespace": "clean",
+      "assumedLoad": "several hundred owned posts, existing 1,024-post/4,096-media snapshot bounds, concurrent browser requests guarded by revision and existing serializable source transactions",
+      "connectedCode": [
+        "Gallery editor route context parser and callers",
+        "GalleryEditorService apply/revise/undo and source dependency snapshots",
+        "effective Library metadata normalization",
+        "existing editor authentication/mutation guards and source version boundary",
+        "mock Conversation quote diagnostics"
+      ],
+      "resolved": [
+        "JSONB key ordering broke action digest; reuse canonical fingerprint",
+        "first clarification must not initialize selection",
+        "same-ID manual action must not be discarded",
+        "confirmation context/catalog must commit atomically",
+        "preserve mock target-separation diagnostic",
+        "do not double-send mutation denial"
+      ],
+      "remainingTaskFindings": [],
+      "verdict": "Backend slice accepted within the recorded gates"
+    }
+  },
+  "failuresAndLimits": [
+    {
+      "issue": "First isolated PCB02 confirm returned 409 because JSONB reordered keys; fixed and regression tested",
+      "evidence": "work/pcb02-postgres-2026-10-20T20-11-32-050Z.json"
+    },
+    {
+      "issue": "Existing competing-session PostgreSQL assertion intermittently got P2002 rather than STALE_PREVIEW. Existing suite passed 26/26 in the first run, then 25/26 in the second; one winner and one rejected operation remained. This path does not supply the new callback; no unrelated retry/error handling was changed.",
+      "evidence": "work/pcb02-postgres-2026-10-20T20-13-22-672Z-tests.log"
+    },
+    {
+      "issue": "The full backend suite is not claimed green. Three previously recorded distribution-package fixture failures were outside this task and not rerun."
+    },
+    {
+      "issue": "No paid semantic evaluation, live account read/write, frontend mount/test/build/lint/typecheck/render, installed-extension execution, deployment or API restart. Browser bench remains the accepted separate mock lane."
+    },
+    {
+      "issue": "PCB-03 through PCB-06 are not dispatched. Stored previews, product variants, Rail and handoff connections remain separate tickets; publishing stays manual."
+    }
+  ],
+  "preservedFailureArtifacts": [
+    "work/pcb02-luna-build-01.exit.json",
+    "work/pcb02-luna-build-01.log",
+    "work/pcb02-luna-build-02.exit.json",
+    "work/pcb02-luna-build-02.log",
+    "work/pcb02-luna-build-03.exit.json",
+    "work/pcb02-luna-build-03.log",
+    "work/pcb02-luna-build-04.exit.json",
+    "work/pcb02-luna-build-04.log",
+    "work/pcb02-luna-test01.exit.json",
+    "work/pcb02-luna-test01.log",
+    "work/pcb02-luna-test02.exit.json",
+    "work/pcb02-luna-test02.log",
+    "work/pcb02-luna-test03.exit.json",
+    "work/pcb02-luna-test03.log",
+    "work/pcb02-luna-test04.exit.json",
+    "work/pcb02-luna-test04.log",
+    "work/pcb02-luna-test05.exit.json",
+    "work/pcb02-luna-test05.log",
+    "work/pcb02-luna-test06.exit.json",
+    "work/pcb02-luna-test06.log",
+    "work/pcb02-luna-test07.exit.json",
+    "work/pcb02-luna-test07.log",
+    "work/pcb02-luna-test08.exit.json",
+    "work/pcb02-luna-test08.log",
+    "work/pcb02-luna-test09.exit.json",
+    "work/pcb02-luna-test09.log",
+    "work/pcb02-postgres-2026-10-20T20-11-32-050Z-migrations.log",
+    "work/pcb02-postgres-2026-10-20T20-11-32-050Z-tests.log",
+    "work/pcb02-postgres-2026-10-20T20-11-32-050Z.json",
+    "work/pcb02-postgres-2026-10-20T20-13-22-672Z-migrations.log",
+    "work/pcb02-postgres-2026-10-20T20-13-22-672Z-tests.log",
+    "work/pcb02-postgres-2026-10-20T20-13-22-672Z.json",
+    "work/pcb02-root-tests-2026-10-20T20-16-12-230Z.exit.json",
+    "work/pcb02-root-tests-2026-10-20T20-16-12-230Z.json",
+    "work/pcb02-root-tests-2026-10-20T20-16-12-230Z.log",
+    "work/pcb02-root-tests-2026-10-20T20-17-57-824Z.exit.json",
+    "work/pcb02-root-tests-2026-10-20T20-17-57-824Z.json",
+    "work/pcb02-root-tests-2026-10-20T20-17-57-824Z.log"
+  ],
+  "preservation": {
+    "earlierReports": 86,
+    "reportsUnchanged": true,
+    "configUnchanged": true,
+    "schemaChange": false,
+    "ledger": {
+      "rows": 919,
+      "sha256": "969cc6310604f9c506f63d55056c0c9221297400570229d8ba6c50f5bd86b7d9",
+      "unchanged": true,
+      "developmentRemainingUsd": 0.34483654,
+      "heldoutRemainingUsd": 8.9690346,
+      "absolutePath": "C:\\Users\\jorda\\Documents\\Codex\\2026-10-11\\c\\work\\relay\\.relay-data\\gallery-editor-budget.json"
+    },
+    "paidCalls": 0
+  },
+  "sourceHashes": {
+    "src/editor-bench/conversation.ts": "510e4e94af98ce2cb724eb5359bb303b9b3ebd7871840b1e2f6b0472e57f8db0",
+    "src/editor-bench/library-selection-catalog.ts": "6c93bd4f34f9b08700a539d36f991b281ed92ba76a09361e595ea72eeb338765",
+    "src/editor-bench/real-library-conversation-routes.ts": "157e5aba2a00c7196bcb18b7465993a02191c875c35db5c0a0c8f2993050a084",
+    "src/editor-bench/real-library-edit-review.ts": "84fd8daed5c77d57ae922b88b5983133a30437c516251cb0883ce0d89cfa49f4",
+    "src/gallery-editor/service.ts": "ab9b4f2ffa3a316462db72e03093f24d410286c2fcf633c0b12f530a3b44ca14",
+    "src/gallery-editor/types.ts": "e50db2cd61f1b61e662d8a61854372a138f718f7a12317b592e88071dba79ef1",
+    "src/gallery-editor/routes.ts": "d92454460fdd723713b090bd80b6632ce35afbd9ac5ecd05e4743d8fe1062ade",
+    "src/server.ts": "60cc934042c8a972f513aabe905339f18961805878bc0b7c8056e496d6f81697",
+    "tests/editor-bench/real-library-conversation-routes.test.ts": "6b1f2d02c94a8e2355da41c0542732648180221113190b2350c27dc5b282172c",
+    "tests/editor-bench/real-library-conversation-postgres.integration.test.ts": "193580d5898a5bc69a66ef82786c7383c3e9ad009bf363b38f6c90fd9052d9c3"
+  }
+}

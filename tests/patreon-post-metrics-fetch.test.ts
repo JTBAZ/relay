@@ -1,6 +1,6 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
-  parsePatreonPostMetricsApiPayload
+  parsePatreonPostMetricsApiPayload, fetchPatreonPostMetricsWithSession
 } from "../extension/src/lib/patreon-post-metrics-fetch.js";
 
 const FIXTURE_WITH_POST_INSIGHTS = {
@@ -37,6 +37,24 @@ const FIXTURE_WITH_POST_INSIGHTS = {
 };
 
 describe("parsePatreonPostMetricsApiPayload", () => {
+  it("reports one counter and title-only captures as partial/unavailable", () => {
+    expect(parsePatreonPostMetricsApiPayload({ data: { type: "post", id: "1", attributes: { title: "Only title", like_count: 1 } } })).toMatchObject({ ok: false, coverage: "partial", missing: ["impressions", "seen", "comments"] });
+    expect(parsePatreonPostMetricsApiPayload({ data: { type: "post", id: "1", attributes: { title: "Only title" } } })).toMatchObject({ ok: false, coverage: "unavailable" });
+  });
+  it("uses browser credentials on one bounded linked-post request", async () => {
+    const fetch = vi.fn(async (_url: string | URL | Request, _init?: RequestInit) => new Response(JSON.stringify(FIXTURE_WITH_POST_INSIGHTS)));
+    expect(await fetchPatreonPostMetricsWithSession({ postId: "162544992", fetchImpl: fetch })).toMatchObject({ ok: true, coverage: "complete" });
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(fetch.mock.calls[0]?.[1]).toMatchObject({ credentials: "include", headers: { Accept: "application/json" } });
+    expect(fetch.mock.calls[0]?.[1]).not.toHaveProperty("headers.cookie");
+    expect(fetch.mock.calls[0]?.[1]).not.toHaveProperty("headers.user-agent");
+  });
+  it("rejects mismatched post responses and invalid IDs without probing alternate endpoints", async () => {
+    const fetch = vi.fn(async () => new Response(JSON.stringify(FIXTURE_WITH_POST_INSIGHTS)));
+    expect(await fetchPatreonPostMetricsWithSession({ postId: "1", fetchImpl: fetch })).toMatchObject({ ok: false, diagnostics: { reason: "post_mismatch" } });
+    expect(await fetchPatreonPostMetricsWithSession({ postId: "https://other.example", fetchImpl: fetch })).toMatchObject({ ok: false });
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
   it("maps post counters and included post_insights reach metrics", () => {
     const result = parsePatreonPostMetricsApiPayload(FIXTURE_WITH_POST_INSIGHTS, "fixture");
 

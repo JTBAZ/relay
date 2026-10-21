@@ -25,13 +25,14 @@ export type RelayRuntimeManifestPayload = {
     creator_oauth: { envVar: string; effective: boolean; readPath: string };
   };
   always_file: {
-    patreon_session_cookies: true;
+    patreon_session_cookies: boolean;
     patreon_webhook_metadata: true;
     patreon_campaign_creator_index: true;
   };
   webhook_endpoint_table: { wired_as_live: boolean };
   public_webhook_base_configured: boolean;
   prisma_configured: boolean;
+  patreon_cookie_store?: { readPath: "postgres" | "file" };
 };
 
 export type PipelineParitySnapshotPayload = {
@@ -311,11 +312,12 @@ export function evaluatePipelineParity(input: {
     });
   } else {
     const oauth = syncState.oauth;
+    const unavailable = oauth.availability === "unavailable" || oauth.credential_health_status === "unavailable";
     const expired = oauth.access_token_expired || oauth.credential_health_status === "refresh_failed";
-    let status: HonestStatus = expired ? "degraded" : "ok";
-    let summary = expired
+    let status: HonestStatus = unavailable ? "unknown" : expired ? "degraded" : "ok";
+    let summary = unavailable ? "Saved OAuth credentials are unavailable. Reconnect creator OAuth." : expired
       ? "Patreon access token unhealthy — reconnect creator OAuth."
-      : "OAuth credential healthy on live sync-state.";
+      : "Stored OAuth token has no local expiry or refresh error; this read does not contact Patreon.";
     if (manifest?.relay_db_store.creator_oauth.effective && snapshot?.oauth_credential_db) {
       const dbOk = snapshot.oauth_credential_db.health_status === "healthy";
       if (dbOk && expired) {
@@ -469,26 +471,27 @@ export function evaluatePipelineParity(input: {
     });
   }
 
-  /* --- Patreon cookies (always file) --- */
+  /* --- Patreon cookies (effective adapter) --- */
   if (syncState) {
     const c = syncState.cookie_session_status;
-    let st: HonestStatus = "ok";
+    let st: HonestStatus = syncState.has_cookie_session ? "ok" : "unknown";
     if (c === "expired_local" || c === "rejected_remote") st = "degraded";
     nodes.push({
       id: "patreon_cookies",
-      label: "Patreon session cookies (file store)",
+      label: `Patreon session cookies (${manifest?.patreon_cookie_store?.readPath ?? "unavailable"})`,
       status: st,
       severity_hint: st === "ok" ? 2 : 2,
       summary:
         st === "ok"
-          ? "Cookie session OK or not in error state (see sync-state)."
+          ? "Relay can read the stored session; Patreon identity and data completeness are separate."
+          : st === "unknown" ? "No readable stored Patreon session was acknowledged."
           : "Cookie session needs attention — re-enter session key if required for media.",
       prove: {
         has_cookie_session: syncState.has_cookie_session,
         cookie_session_status: c ?? null,
-        store: "FilePatreonCookieStore"
+        store: manifest?.patreon_cookie_store?.readPath ?? "unavailable"
       },
-      display: { cookie_store_file: snapshot?.paths.cookie_store_file }
+      display: manifest?.patreon_cookie_store?.readPath === "file" ? { cookie_store_file: snapshot?.paths.cookie_store_file } : {}
     });
   }
 

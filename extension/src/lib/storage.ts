@@ -24,6 +24,8 @@ export class StorageSchemaError extends Error {
 const K = {
   installationId: "installation_id",
   grant: "grant",
+  generation: "credential_generation",
+  credential: "credential_state",
   lastSyncAt: "last_sync_at",
   lastSyncHash: "last_sync_hash",
   lastSyncStatus: "last_sync_status"
@@ -48,6 +50,76 @@ export type LastSync = {
   hash: string;
   status: string;
 };
+
+export type CredentialContext = { grant: RelayGrant; installationId: string; binding: string };
+export type CredentialState = {
+  binding: string;
+  observed_at: string | null;
+  browser_session_present: boolean;
+  acknowledged_at: string | null;
+  uploaded_at: string | null;
+  data_sync_at: string | null;
+  hash: string | null;
+  status: string;
+};
+export type CredentialStatus = Omit<CredentialState, "binding" | "hash">;
+export async function getCredentialStatus(): Promise<CredentialStatus | null> {
+  const state = await getCredentialState();
+  if (!state) return null;
+  const { binding: _binding, hash: _hash, ...status } = state;
+  return status;
+}
+
+// All grant/binding/cache transitions share this queue; network work never holds it.
+let credentialWrites: Promise<unknown> = Promise.resolve();
+function credentialWrite<T>(operation: () => Promise<T>): Promise<T> {
+  const next = credentialWrites.then(operation, operation);
+  credentialWrites = next.catch(() => {});
+  return next;
+}
+function contextFrom(raw: Record<string, unknown>): CredentialContext | undefined {
+  if (!raw[K.grant] || !isNonEmptyString(raw[K.installationId]) || !isNonEmptyString(raw[K.generation])) return undefined;
+  const grant = parseGrant(raw[K.grant]);
+  const installationId = (raw[K.installationId] as string).trim();
+  return { grant, installationId, binding: JSON.stringify([installationId, grant.token_id, grant.account_id, grant.relay_creator_id, raw[K.generation]]) };
+}
+export async function getCredentialContext(): Promise<CredentialContext | undefined> {
+  return credentialWrite(async () => {
+    const raw = await browser.storage.local.get([K.grant, K.installationId, K.generation]);
+    if (raw[K.grant] && isNonEmptyString(raw[K.installationId]) && !isNonEmptyString(raw[K.generation])) {
+      parseGrant(raw[K.grant]);
+      raw[K.generation] = crypto.randomUUID();
+      await browser.storage.local.set({ [K.generation]: raw[K.generation] });
+      await removeKeys([K.credential, K.lastSyncAt, K.lastSyncHash, K.lastSyncStatus]);
+    }
+    return contextFrom(raw);
+  });
+}
+export async function getCredentialState(): Promise<CredentialState | undefined> {
+  const raw = await browser.storage.local.get([K.grant, K.installationId, K.generation, K.credential]);
+  const context = contextFrom(raw), value = raw[K.credential] as CredentialState | undefined;
+  return context && value?.binding === context.binding ? value : undefined;
+}
+export async function updateCredentialState(context: CredentialContext, patch: Partial<Omit<CredentialState, "binding">>): Promise<boolean> {
+  return credentialWrite(async () => {
+    const current = contextFrom(await browser.storage.local.get([K.grant, K.installationId, K.generation]));
+    if (!current || current.binding !== context.binding) return false;
+    const prior = await getCredentialState();
+    await browser.storage.local.set({ [K.credential]: {
+      observed_at: null, browser_session_present: false, acknowledged_at: null,
+      uploaded_at: null, data_sync_at: null, hash: null, status: "unknown",
+      ...prior, ...patch, binding: context.binding
+    } });
+    return true;
+  });
+}
+export async function clearGrantIfCurrent(context: CredentialContext): Promise<boolean> {
+  return credentialWrite(async () => {
+    if (contextFrom(await browser.storage.local.get([K.grant, K.installationId, K.generation]))?.binding !== context.binding) return false;
+    await removeKeys([K.grant, K.credential, K.generation, K.lastSyncAt, K.lastSyncHash, K.lastSyncStatus]);
+    return true;
+  });
+}
 
 function isNonEmptyString(v: unknown): v is string {
   return typeof v === "string" && v.trim().length > 0;
@@ -104,7 +176,10 @@ export async function setInstallationId(id: string): Promise<void> {
   if (!t) {
     throw new Error("installation_id must be non-empty");
   }
-  await browser.storage.local.set({ [K.installationId]: t });
+  await credentialWrite(async () => {
+    await browser.storage.local.set({ [K.installationId]: t, [K.generation]: crypto.randomUUID() });
+    await removeKeys([K.credential]);
+  });
 }
 
 /** Returns existing id or creates a new UUID and persists it. */
@@ -133,43 +208,23 @@ export async function getGrant(): Promise<RelayGrant | undefined> {
   }
 }
 
-export async function setGrant(grant: RelayGrant): Promise<void> {
+export async function setGrant(grant: RelayGrant, stillCurrent: () => boolean = () => true): Promise<boolean> {
   const g = parseGrant(grant);
-  await browser.storage.local.set({ [K.grant]: g });
+  return credentialWrite(async () => {
+    if (!stillCurrent()) return false;
+    await browser.storage.local.set({ [K.grant]: g, [K.generation]: crypto.randomUUID() });
+    await removeKeys([K.credential, K.lastSyncAt, K.lastSyncHash, K.lastSyncStatus]);
+    return true;
+  });
 }
 
 export async function clearGrant(): Promise<void> {
-  await removeKeys([K.grant]);
+  await credentialWrite(() => removeKeys([K.grant, K.credential, K.generation, K.lastSyncAt, K.lastSyncHash, K.lastSyncStatus]));
 }
 
 export async function getLastSync(): Promise<LastSync | undefined> {
-  const r = await browser.storage.local.get([
-    K.lastSyncAt,
-    K.lastSyncHash,
-    K.lastSyncStatus
-  ]);
-  const at = r[K.lastSyncAt];
-  const hash = r[K.lastSyncHash];
-  const status = r[K.lastSyncStatus];
-  if (at === undefined && hash === undefined && status === undefined) {
-    return undefined;
-  }
-  if (!isNonEmptyString(at) || !isNonEmptyString(hash) || !isNonEmptyString(status)) {
-    await removeKeys([K.lastSyncAt, K.lastSyncHash, K.lastSyncStatus]);
-    throw new StorageSchemaError("last_sync: corrupt partial record");
-  }
-  return { at: at.trim(), hash: hash.trim(), status: status.trim() };
-}
-
-export async function setLastSync(row: LastSync): Promise<void> {
-  if (!isNonEmptyString(row.at) || !isNonEmptyString(row.hash) || !isNonEmptyString(row.status)) {
-    throw new Error("setLastSync: at, hash, and status are required");
-  }
-  await browser.storage.local.set({
-    [K.lastSyncAt]: row.at.trim(),
-    [K.lastSyncHash]: row.hash.trim(),
-    [K.lastSyncStatus]: row.status.trim()
-  });
+  const state = await getCredentialState();
+  return state?.acknowledged_at ? { at: state.acknowledged_at, hash: state.hash ?? "", status: state.status } : undefined;
 }
 
 export async function clearLastSync(): Promise<void> {

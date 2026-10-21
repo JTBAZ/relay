@@ -53,7 +53,7 @@ These are semantic contracts, not names for new persisted columns or enums. The 
 
 [Baseline tests](../../../tests/patreon-sync-baseline.test.ts) use the real sync service, mapping, batch application, and event bus with in-memory persistence and injected network/export boundaries. Two ordinary controls prove that both pages and initially available cookie media can be imported.
 
-At PS-00, six `it.fails` assertions encoded unmet desired behavior. Their observations run in `beforeEach`, outside the expected-failure assertion, so setup, fetch, and unexpected service failures fail normally. They establish open defects, not acceptance passes. PS-05 later converted its assertion into a normal passing test; five expected failures remain for PS-09, PS-11, and PS-12. The owning fix removes its expected-failure marker and updates the setup for its new boundary; it must not weaken the desired result. Live store concurrency uses the existing PS-02 suite, not this in-memory adapter.
+At PS-00, six `it.fails` assertions encoded unmet desired behavior. Their observations run in `beforeEach`, outside the expected-failure assertion, so setup, fetch, and unexpected service failures fail normally. They establish historical defects, not acceptance passes. PS-05 converted its assertion into a normal passing test; PS-09 converted its two old-post assertions; PS-11 converted its capped-page assertion. PS-12 replaced its two media assertions with named ordinary-sync PostgreSQL integration cases below. No expected-failure marker remains. The controls and required outcomes are preserved. Live store concurrency uses the existing PS-02 suite, not this in-memory adapter.
 
 | Baseline behavior | Result observed at PS-00 | Expected result | Owner / acceptance |
 |---|---|---|---|
@@ -73,7 +73,7 @@ Every reliability finding has one implementation owner and a defined acceptance 
 | 1. Old updates/deletions | PS-09; durable dispatch PS-08 | R08, R09 | Executable baseline above; platform webhook route/payload suites need affected resource identity. |
 | 2. Archive page loss | PS-11 | R11 | Executable baseline; sync watermark and incremental-worker suites need restart/equal-time/creator-fairness cases. |
 | 3. Media after recovery | PS-12 | R12 | Executable baseline; export retries and media-source suites need durable repair restart cases. |
-| 4. Cached extension success | PS-13 | R13 | Pending: sync-now storage/browser mocks plus installed-browser checks, using fixture credential conditions. |
+| 4. Cached extension success | PS-13 | R13 | [Local PS-13 approval](PS-13-VERIFIED-EXTENSION.md): bound checks, real two-API consent replay, age and recovery proof pass. Installed-browser checks remain pending. |
 | 5. Cookie write overlap | PS-06 | R06 | Pending: two writers, corrupt vault, age-preserving migration; cookie-auth tests remain controls. |
 | 6. Volatile member timers | PS-08, PS-10 | R08, R10 | Pending: acknowledgment/restart and continuous-event maximum wait; member coordinator suite currently checks debounce. |
 | 7. Absent roster member | PS-10 | R10 | Pending: active/absent fixture with confirmed complete coverage; partial/empty anomaly response cannot mass-revoke. |
@@ -81,7 +81,7 @@ Every reliability finding has one implementation owner and a defined acceptance 
 | 9. Overlapping creator mutations | Existing Import 02 / PS-02 complete | R02 | Existing `canonical-store-concurrency.integration.test.ts`, adapter tests, and completion record. PS-15 retains deployment acceptance. |
 | 10. Shared-media persistence | Existing Import 04 / PS-04 | R04 | Pending: shared asset across unchanged p1/new p2, then real store reload and rollback. |
 | 11. Premature publication | Existing Import 05 / PS-05 | R05 | Executable baseline; owning fix adds commit rejection, retry, and replay cases. |
-| 12. Browser request authentication | PS-13 | R14 | Pending: installed Chrome/Firefox request evidence; parser mocks cannot establish authentication. |
+| 12. Browser request authentication | PS-13 | R14 | Local browser-managed request and partial-capture behavior pass [PS-13 checks](PS-13-VERIFIED-EXTENSION.md). Installed Chrome/Firefox authentication evidence remains pending. |
 | 13. OAuth fields | PS-07 | R07 | Resource API field tests need strict sparse-response fixtures; future PS-07 must not assume `edited_at` in public OAuth. |
 | 14. Per-asset global inventory reads | PS-12 | R12, R16 | Export suite needs creator-scoped reads and another creator's inventory as a boundary. |
 
@@ -108,3 +108,30 @@ A later request authorized PS-05 after a fresh ticket/diff/chat check; the separ
 ## Subsequent completion: PS-06 (2026-10-20)
 
 A fresh concurrency check found no vault owner. [PS-06](PS-06-SESSION-VAULT.md) now records encrypted database persistence, coordinated atomic file updates, compatible age/status transitions, shared runtime selection, and a restartable encrypted-file migration. Eight new PostgreSQL cases pass, including two actual writer processes and migration racing a hosted upload. The final connected run passes 146 checks with one Windows-permission skip; its five expected failures still belong to PS-09/11/12. Production cutover, full reliability rollout, and ownership policy remain separate.
+
+## Subsequent completion: PS-07 (2026-10-20)
+
+A fresh ticket/diff/chat check found PS-07 unclaimed at `91a72d2`. [PS-07](PS-07-OAUTH-RELIABILITY.md) records explicit bounded OAuth requests, content/access revision hashes with serialized occurrence handling, list-first enrichment, and coordinated creator-token rotation. The original baseline's five expected failures still belong to PS-09/11/12. Concurrent Library evaluation changes were preserved. Ownership policy and hosted deployment remain separate.
+
+## Subsequent completion: PS-08 (2026-10-20)
+
+PS-08 was unclaimed after a fresh chat/diff/plan check. [PS-08](PS-08-DURABLE-CHANGE-WORK.md) records transactional minimal webhook acceptance, shared coalesced generations, BullMQ recovery and leased execution, bounded retries, and receipt retention. Existing PS-07 changes and concurrent Library source, tests, and server hunks were preserved. The five baseline expected failures remain with PS-09/11/12. No ownership-policy change or hosted deployment is included.
+
+## PS-09 completion
+
+PS-09 was unclaimed after a fresh plan, diff, and chat check. [PS-09](PS-09-TARGETED-POSTS.md) records targeted current-source refresh, stable deletion observations, access-first persistence, and serialized observation checks against stale target, discovery, access-only, and shared-media writers. Media-linked comments and engagement records survive access changes, refresh, and soft deletion. Its two baseline assertions are now normal passing tests; the three remaining expected failures belong to PS-11/PS-12. Independent Sol High review, 261 connected checks, and the root production build pass. Existing credential/worker changes and concurrent Library work were preserved. Ownership policy and live rollout remain separate.
+
+## PS-11 local completion update
+
+PS-11 was unclaimed after a fresh plan, diff and chat check. [PS-11](PS-11-RESUMABLE-POSTS.md) records durable archive/catch-up checkpoints, verified older-post reconciliation, safe file replay and persisted creator fairness. Its capped-page baseline is now a normal passing assertion; two PS-12 media assertions remain expected failures. Independent Sol High review, 327 connected checks, 131 independent non-PG checks, nine independent PostgreSQL cases, seven final file checks and the root build pass. Existing PS-07 through PS-10 and unrelated Library changes were preserved. Production cutover, live acceptance and ownership policy remain separate.
+
+## PS-12 local completion update
+
+[PS-12](PS-12-MEDIA-REPAIR.md) is independently approved locally. Its durable PostgreSQL repair cases replace the two historical media expected failures while preserving the ordinary-sync outcome and PS-00/09/11 controls. No expected-failure marker remains in the baseline suite.
+
+| Historical gap | Passing PostgreSQL equivalent in `tests/patreon-media-repair.integration.test.ts` |
+|---|---|
+| Cookie added after OAuth import | `recovers old OAuth-only media after cookie consent through ordinary sync and serves R2 content/ZIP on another API` |
+| Exhausted download after source recovery | `retries exhausted downloads through ordinary sync from durable work after a fresh service starts` |
+
+Acceptance requires the explicit private PostgreSQL/Redis opt-ins and zero skipped cases. The final connected batch passed 474 checks, the final affected batch passed 56, and independent review passed 125, all without skips or blocked transport attempts. R2/provider transports are injected; these are local acceptance results. Prisma generation passed, but the combined build failed on nine unrelated concurrent Library diagnostics. Deployment, live provider/browser evidence and PS-15 remain open. Ownership policy and unrelated changes are preserved.

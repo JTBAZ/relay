@@ -11,7 +11,7 @@ import { registerPostingRhythmRoutes } from "./posting-rhythms/routes.js";
 
 import type { Logger } from "pino";
 import express, { Request, Response } from "express";
-import { randomBytes, randomUUID } from "node:crypto";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { dirname, join } from "node:path";
 import { PatreonAuthService } from "./auth/auth-service.js";
 import {
@@ -38,7 +38,7 @@ import {
   verifyCreatorSubscribeStarOAuthState
 } from "./auth/subscribestar-creator-oauth-state.js";
 import { errorEnvelope, successEnvelope } from "./contracts/api.js";
-import { registerGalleryEditorRoutes } from "./gallery-editor/routes.js";
+import { isGalleryEditorEnabled, registerGalleryEditorRoutes } from "./gallery-editor/routes.js";
 import { FileProviderBudget } from "./gallery-editor/budget.js";
 import type { ModelPricing } from "./gallery-editor/provider.js";
 import { GalleryEditorService } from "./gallery-editor/service.js";
@@ -412,7 +412,7 @@ import {
   parseAllowedWebOrigins
 } from "./lib/relay-cors.js";
 import { ExportService } from "./export/export-service.js";
-import { FileExportIndex } from "./export/export-index.js";
+import { DbExportIndex, FileExportIndex } from "./export/export-index.js";
 import { DEFAULT_EXPORT_FETCH_RETRY_POLICY } from "./export/types.js";
 import {
   buildMediaManifest,
@@ -692,6 +692,7 @@ import { createEditorBenchRuntime } from "./editor-bench/runtime.js";
 import { createBenchDistributionVariantAdapter, loadBenchVariantSource } from "./editor-bench/distribution-variant-adapter.js";
 import { loadLargeRealLibrarySnapshot, loadRealLibraryCatalog } from "./editor-bench/library-selection-catalog.js";
 import { mountGroundedLibrarySelectionBodyParser, registerGroundedLibrarySelectionRoute, registerRealLibrarySelectionCatalogRoute } from "./editor-bench/real-library-selection-routes.js";
+import { registerRealLibraryConversationRoutes } from "./editor-bench/real-library-conversation-routes.js";
 import {
   isCreatorScheduleDestination,
   isCreatorScheduleEventType
@@ -775,7 +776,7 @@ import {
   checkPatreonLinkEmailGate,
   getSessionEmailVerifiedForPatronLink
 } from "./identity/patreon-link-email-gate.js";
-import { invalidatePatronEntitlementSnapshotsForMemberships } from "./identity/patron-entitlement-snapshot.js";
+import { unlinkPatreonAccount } from "./identity/patreon-identity-mutation.js";
 import {
   addAccountFollowForAccount,
   listAccountFollowsForAccount,
@@ -809,10 +810,13 @@ import {
   getAllowedMimePrefixesFromEnv,
   getPresignExpiresSec,
   getRelayUploadMaxBytes,
+  getR2ObjectBuffer,
   headR2ObjectContentLength,
   isMimeTypeAllowed,
-  presignR2Put
+  presignR2Put,
+  putR2ObjectBufferIfAbsent
 } from "./storage/relay-upload-r2.js";
+import { createPrismaRealLibraryPreviewExportStore, MAX_REAL_PREVIEW_BYTES } from "./editor-bench/real-library-preview-export.js";
 import {
   IdentityAuthProvider,
   MediaIngestOrigin,
@@ -912,19 +916,21 @@ import {
 } from "./patreon/campaign-tenant-resolve.js";
 import { syncCreatorProfilePatreonCampaignFromOAuthToken } from "./patreon/creator-oauth-campaign-sync.js";
 import { PatreonCampaignCreatorIndex } from "./patreon/patreon-campaign-creator-index.js";
-import { PatreonMemberSyncCoordinator } from "./patreon/patreon-member-sync-coordinator.js";
 import {
   ensurePatreonPlatformWebhook,
   resolvePublicWebhookBaseFromEnv,
   type EnsureWebhookResult
 } from "./patreon/patreon-webhook-registration.js";
 import {
-  dispatchVerifiedPatreonPlatformPayload,
+  patreonChangeDescriptors,
   extractCampaignIdFromPatreonWebhookPayload
 } from "./patreon/patreon-webhook-platform.js";
 import { PatreonWebhookMetadataStore } from "./patreon/patreon-webhook-metadata-store.js";
 import { verifyPatreonWebhookSignature } from "./patreon/patreon-webhook-signature.js";
 import { processPatreonWebhookStub } from "./webhooks/patreon-webhook.js";
+import { PatreonChangeWorkStore } from "./patreon/patreon-change-work.js";
+import { MediaRepairStore } from "./export/media-repair-store.js";
+import { relayJobBackendFromEnv } from "./jobs/relay-job-backend.js";
 import { createBillingWebhookHandler } from "./billing/webhook-router.js";
 import { isBillingEnabled } from "./billing/config.js";
 import {
@@ -1061,6 +1067,8 @@ export type AppConfig = {
   relay_creator_display_name?: string;
   ingest_retry_policy?: { max_attempts: number; base_delay_ms: number };
   export_storage_root?: string;
+  /** Explicit operator assertion that API/worker share a persistent lock-capable local root. */
+  export_shared_local_root?: boolean;
   gallery_post_overrides_path?: string;
   gallery_saved_filters_path?: string;
   /** Patron favorites (post + media targets); default `.relay-data/patron_favorites.json`. */
@@ -1896,6 +1904,9 @@ export function createApp(config: AppConfig): CreateAppResult {
         "Import `prisma` from `./lib/db.js` in `main.ts` and pass it on AppConfig."
     );
   }
+  if (useDbSyncWatermarkStore(config) && (!useDbCanonicalStore(config) || !useDbCreatorOAuthStore(config))) {
+    throw new Error("Shared Patreon post progress requires RELAY_DB_STORE_CANONICAL=1, RELAY_DB_STORE_WATERMARK=1 and RELAY_DB_STORE_CREATOR_OAUTH=1 for API and workers.");
+  }
   registerUsageMeteringPrisma(() => config.prisma);
   const credentialStorePath = config.credential_store_path ?? ".relay-data/patreon_credentials.json";
   const relayDataDir = dirname(credentialStorePath);
@@ -1930,7 +1941,8 @@ export function createApp(config: AppConfig): CreateAppResult {
     dlq
   );
   const exportStorageRoot = config.export_storage_root ?? ".relay-data/exports";
-  const exportIndex = new FileExportIndex(exportStorageRoot);
+  const fileExportIndex = new FileExportIndex(exportStorageRoot);
+  const exportIndex = config.prisma && canonicalStore.supportsAtomicCreatorMutations ? new DbExportIndex(config.prisma, exportStorageRoot) : fileExportIndex;
   const exportFetchRetryPolicy = {
     ...DEFAULT_EXPORT_FETCH_RETRY_POLICY,
     ...config.export_fetch_retry_policy
@@ -1947,7 +1959,8 @@ export function createApp(config: AppConfig): CreateAppResult {
       const t = cred?.access_token?.trim();
       return t ? t : null;
     },
-    config.prisma
+    config.prisma,
+    config.export_shared_local_root === true && Boolean(config.export_storage_root?.trim())
   );
   const galleryOverridesStore = useDbGalleryOverridesStore(config)
     ? new DbGalleryOverridesStore(config.prisma!)
@@ -2053,7 +2066,7 @@ export function createApp(config: AppConfig): CreateAppResult {
   const cookieStore = createPatreonCookieStore({
     filePath: config.cookie_store_path ?? ".relay-data/patreon_cookies.json",
     encryption, prisma: config.prisma, dbEnabled: config.relay_db_store_patreon_cookie,
-    requireShared: config.relay_require_shared_patreon_cookie
+    requireShared: config.relay_require_shared_patreon_cookie || useDbSyncWatermarkStore(config)
   });
   const watermarkStore = useDbSyncWatermarkStore(config)
     ? new DbSyncWatermarkStore(config.prisma!)
@@ -2100,11 +2113,7 @@ export function createApp(config: AppConfig): CreateAppResult {
     creatorCampaignDisplayStore,
     config.prisma ?? null
   );
-  const patreonMemberSyncCoordinator = new PatreonMemberSyncCoordinator(
-    patreonSyncService,
-    patreonSyncHealthStore,
-    60_000
-  );
+  const patreonChangeWorkStore = config.prisma ? new PatreonChangeWorkStore(config.prisma) : null;
 
   const guardStudioSyncWritable = (res: Response, traceId: string, creatorId: string) =>
     assertCreatorSyncWritable(res, traceId, patreonSyncHealthStore, creatorId);
@@ -2247,85 +2256,92 @@ export function createApp(config: AppConfig): CreateAppResult {
     patreonPlatformRawBody,
     async (req: Request, res: Response) => {
       const traceId = traceIdFrom(req);
-      const opaque =
-        typeof req.params.opaqueToken === "string" ? req.params.opaqueToken.trim() : "";
-      if (!opaque) {
-        return res
-          .status(400)
-          .json(errorEnvelope("VALIDATION_ERROR", "Missing webhook token.", traceId));
-      }
-      const creatorId = await patreonWebhookMetadataStore.getCreatorIdForOpaqueToken(opaque);
-      if (!creatorId) {
-        return res
-          .status(404)
-          .json(errorEnvelope("NOT_FOUND", "Unknown webhook delivery token.", traceId));
-      }
-      const meta = await patreonWebhookMetadataStore.getByCreatorId(creatorId);
-      const secret = meta
-        ? patreonWebhookMetadataStore.decryptWebhookSecret(meta)
-        : null;
-      if (!secret) {
-        return res.status(503).json(
-          errorEnvelope(
-            "WEBHOOK_NOT_READY",
-            "Webhook is not registered or secret is missing. POST /api/v1/patreon/webhooks/register.",
-            traceId
-          )
-        );
-      }
-      const raw = req.body;
-      if (!Buffer.isBuffer(raw)) {
-        return res
-          .status(400)
-          .json(errorEnvelope("VALIDATION_ERROR", "Expected raw JSON body.", traceId));
-      }
-      const sig = req.header("x-patreon-signature");
-      if (!verifyPatreonWebhookSignature(raw, sig, secret)) {
-        return res
-          .status(401)
-          .json(errorEnvelope("UNAUTHORIZED", "Invalid Patreon webhook signature.", traceId));
-      }
-      let parsed: unknown;
       try {
-        parsed = JSON.parse(raw.toString("utf8"));
-      } catch {
-        return res
-          .status(400)
-          .json(errorEnvelope("VALIDATION_ERROR", "Invalid JSON body.", traceId));
-      }
-      const eventHeader = req.header("x-patreon-event");
-      const campaignFromPayload = extractCampaignIdFromPatreonWebhookPayload(parsed);
-      const ownership = await resolvePatreonWebhookCampaignOwnership({
-        creatorIdFromRoute: creatorId,
-        campaignNumericId: campaignFromPayload,
-        fileIndexGetCreatorId: (id) => patreonCampaignCreatorIndex.getCreatorId(id),
-        prisma: config.prisma
-      });
-      if (!ownership.ok) {
-        return res.status(409).json(
-          errorEnvelope(
-            "WEBHOOK_CAMPAIGN_MISMATCH",
-            ownership.reason === "creator_profile"
-              ? "Campaign in webhook payload does not match CreatorProfile ownership for this delivery URL."
-              : "Campaign in webhook payload does not match this delivery URL's creator.",
-            traceId
-          )
-        );
-      }
-      try {
-        await dispatchVerifiedPatreonPlatformPayload({
-          creatorId,
-          eventHeader,
-          campaignId: campaignFromPayload,
-          traceId,
-          syncService: patreonSyncService,
-          memberCoordinator: patreonMemberSyncCoordinator
+        const opaque =
+          typeof req.params.opaqueToken === "string" ? req.params.opaqueToken.trim() : "";
+        if (!opaque) {
+          return res
+            .status(400)
+            .json(errorEnvelope("VALIDATION_ERROR", "Missing webhook token.", traceId));
+        }
+        const creatorId = await patreonWebhookMetadataStore.getCreatorIdForOpaqueToken(opaque);
+        if (!creatorId) {
+          return res
+            .status(404)
+            .json(errorEnvelope("NOT_FOUND", "Unknown webhook delivery token.", traceId));
+        }
+        const meta = await patreonWebhookMetadataStore.getByCreatorId(creatorId);
+        const secret = meta
+          ? patreonWebhookMetadataStore.decryptWebhookSecret(meta)
+          : null;
+        if (!secret) {
+          return res.status(503).json(
+            errorEnvelope(
+              "WEBHOOK_NOT_READY",
+              "Webhook is not registered or secret is missing. POST /api/v1/patreon/webhooks/register.",
+              traceId
+            )
+          );
+        }
+        const raw = req.body;
+        if (!Buffer.isBuffer(raw)) {
+          return res
+            .status(400)
+            .json(errorEnvelope("VALIDATION_ERROR", "Expected raw JSON body.", traceId));
+        }
+        const sig = req.header("x-patreon-signature");
+        if (!verifyPatreonWebhookSignature(raw, sig, secret)) {
+          return res
+            .status(401)
+            .json(errorEnvelope("UNAUTHORIZED", "Invalid Patreon webhook signature.", traceId));
+        }
+        let parsed: unknown;
+        try {
+          parsed = JSON.parse(raw.toString("utf8"));
+        } catch {
+          return res
+            .status(400)
+            .json(errorEnvelope("VALIDATION_ERROR", "Invalid JSON body.", traceId));
+        }
+        const eventHeader = req.header("x-patreon-event");
+        const campaignFromPayload = extractCampaignIdFromPatreonWebhookPayload(parsed);
+        const ownership = await resolvePatreonWebhookCampaignOwnership({
+          creatorIdFromRoute: creatorId,
+          campaignNumericId: campaignFromPayload,
+          fileIndexGetCreatorId: (id) => patreonCampaignCreatorIndex.getCreatorId(id),
+          prisma: config.prisma
         });
+        if (!ownership.ok) {
+          return res.status(409).json(
+            errorEnvelope(
+              "WEBHOOK_CAMPAIGN_MISMATCH",
+              ownership.reason === "creator_profile"
+                ? "Campaign in webhook payload does not match CreatorProfile ownership for this delivery URL."
+                : "Campaign in webhook payload does not match this delivery URL's creator.",
+              traceId
+            )
+          );
+        }
+        let changes;
+        try { changes = patreonChangeDescriptors(creatorId, eventHeader, parsed); }
+        catch { return res.status(400).json(errorEnvelope("VALIDATION_ERROR", "Invalid Patreon change identity.", traceId)); }
+        for (const campaignId of new Set(changes.map((change) => change.campaignId))) {
+          if (campaignId === campaignFromPayload) continue;
+          const binding = await resolvePatreonWebhookCampaignOwnership({ creatorIdFromRoute: creatorId, campaignNumericId: campaignId,
+            fileIndexGetCreatorId: (id) => patreonCampaignCreatorIndex.getCreatorId(id), prisma: config.prisma });
+          if (!binding.ok) return res.status(409).json(errorEnvelope("WEBHOOK_CAMPAIGN_MISMATCH", "Campaign does not match this delivery URL.", traceId));
+        }
+        if (changes.length > 0) {
+          if (!patreonChangeWorkStore || relayJobBackendFromEnv() !== "bullmq" || (changes.some((change) => change.resourceType === "post") && !ingestService.supportsSharedPatreonPostRefresh) || (changes.some((change) => change.resourceType === "member") && !patreonSyncService.supportsSharedPatreonMembers)) {
+            return res.status(503).json(errorEnvelope("PATREON_CHANGE_WORK_UNAVAILABLE", "Durable Patreon change processing is unavailable; retry delivery.", traceId));
+          }
+          await patreonChangeWorkStore.accept(changes, createHash("sha256").update(raw).digest("hex"));
+        }
         return res.status(202).json(successEnvelope({ accepted: true }, traceId));
       } catch (err: unknown) {
         return res
-          .status(502)
-          .json(errorEnvelope("PATREON_WEBHOOK_ERROR", (err as Error).message, traceId));
+          .status(503)
+          .json(errorEnvelope("PATREON_CHANGE_WORK_UNAVAILABLE", "Patreon change was not accepted; retry delivery.", traceId));
       }
     }
   );
@@ -3068,6 +3084,9 @@ export function createApp(config: AppConfig): CreateAppResult {
     const traceId = traceIdFrom(req);
     const body = (req.body ?? {}) as Record<string, unknown>;
     const details = validateRequiredFields(body, ["consent_code", "installation_id"]);
+    if (body.session_id !== undefined && (typeof body.session_id !== "string" || body.session_id.length > 16384)) {
+      return res.status(400).json(errorEnvelope("VALIDATION_ERROR", "Invalid Patreon session capture.", traceId));
+    }
     if (details.length > 0) {
       return res
         .status(400)
@@ -3121,6 +3140,19 @@ export function createApp(config: AppConfig): CreateAppResult {
         )
       );
     }
+    // Shared unique code hash is claimed before grant issuance or fresh session capture.
+    // Failed/abandoned claims remain consumed; authorization must be started again.
+    try {
+      await config.prisma.oAuthTransaction.deleteMany({ where: { purpose: OAuthTransactionPurpose.extension_consent, expiresAt: { lt: new Date(Date.now() - 10_000) } } });
+      if (verifiedEx.expiresAt <= Date.now()) return res.status(410).json(errorEnvelope("CONSENT_CODE_EXPIRED", "Consent code has expired.", traceId));
+      const claim = await claimOAuthCodeExchange(config.prisma, {
+        accountId: verifiedEx.accountId, purpose: OAuthTransactionPurpose.extension_consent,
+        code: `extension-consent:${consentCodeRaw}`, redirectUri: "relay-extension-consent",
+        ttlMs: Math.max(1, verifiedEx.expiresAt - Date.now())
+      });
+      if (claim.kind !== "claimed") return res.status(409).json(errorEnvelope("CONSENT_CODE_USED", "This consent code was already used. Authorize again.", traceId));
+      if (verifiedEx.expiresAt <= Date.now()) return res.status(410).json(errorEnvelope("CONSENT_CODE_EXPIRED", "Consent code has expired.", traceId));
+    } catch { return res.status(503).json(errorEnvelope("SERVICE_UNAVAILABLE", "Unable to accept authorization. Connect again to retry.", traceId)); }
     const uaRaw = req.headers["user-agent"];
     const ua = typeof uaRaw === "string" ? uaRaw.trim() : "";
     const label = [installationIdEx, ua].filter(Boolean).join(" · ") || installationIdEx;
@@ -3157,6 +3189,14 @@ export function createApp(config: AppConfig): CreateAppResult {
       where: { id: verifiedEx.accountId },
       select: { primaryRelayCreatorId: true }
     });
+    let credentialCapture: { status: "stored" | "missing_browser_session" | "unavailable"; checked_at?: string } = { status: "missing_browser_session" };
+    const capturedSession = typeof body.session_id === "string" ? body.session_id.trim() : "";
+    if (capturedSession && accountEx?.primaryRelayCreatorId) {
+      try {
+        await cookieStore.upsert(accountEx.primaryRelayCreatorId, capturedSession);
+        credentialCapture = { status: "stored", checked_at: new Date().toISOString() };
+      } catch { credentialCapture = { status: "unavailable" }; }
+    } else if (capturedSession) credentialCapture = { status: "unavailable" };
     return res.status(200).json(
       successEnvelope(
         {
@@ -3165,7 +3205,8 @@ export function createApp(config: AppConfig): CreateAppResult {
           expires_at: sessionToken.expires_at,
           label: sessionToken.label ?? label,
           account_id: verifiedEx.accountId,
-          relay_creator_id: accountEx?.primaryRelayCreatorId ?? null
+          relay_creator_id: accountEx?.primaryRelayCreatorId ?? null,
+          credential_capture: credentialCapture
         },
         traceId
       )
@@ -3450,13 +3491,18 @@ export function createApp(config: AppConfig): CreateAppResult {
         .status(403)
         .json(errorEnvelope("FORBIDDEN", "Session is not linked to an account.", traceId));
     }
+    const extensionAccount = await config.prisma.account.findUnique({ where: { id: accountId }, select: { primaryRelayCreatorId: true } });
+    const extensionCreatorId = extensionAccount?.primaryRelayCreatorId?.trim() ?? "";
     const attemptId = typeof req.params.attempt_id === "string" ? req.params.attempt_id.trim() : "";
     if (!attemptId) {
       return res
         .status(400)
         .json(errorEnvelope("VALIDATION_ERROR", "attempt_id is required.", traceId));
     }
-    const result = await buildCrossPostPackageFromAttempt(config.prisma, accountId, attemptId);
+    const handoffR2 = getR2ClientConfigFromEnv();
+    const result = await buildCrossPostPackageFromAttempt(config.prisma, accountId, attemptId, handoffR2
+      ? (key, maxBytes) => getR2ObjectBuffer(handoffR2, key, { timeoutMs: 10_000, maxBytes })
+      : undefined);
     switch (result.status) {
       case "no_primary_creator":
         return res.status(403).json(
@@ -3479,8 +3525,8 @@ export function createApp(config: AppConfig): CreateAppResult {
           errorEnvelope("VALIDATION_ERROR", result.message, traceId)
         );
       case "ok":
-        await config.prisma.postDistributionAttempt.update({
-          where: { id: attemptId },
+        await config.prisma.postDistributionAttempt.updateMany({
+          where: { id: attemptId, creatorId: extensionCreatorId, status: "started" },
           data: { status: "package_fetched" }
         });
         res.setHeader("Cache-Control", "private, no-store");
@@ -3489,7 +3535,8 @@ export function createApp(config: AppConfig): CreateAppResult {
             {
               destination: result.destination,
               package: result.package,
-              attempt_id: attemptId
+              attempt_id: attemptId,
+              ...(result.managed_handoff_v1 ? { managed_handoff_v1: result.managed_handoff_v1 } : {})
             },
             traceId
           )
@@ -4735,33 +4782,7 @@ export function createApp(config: AppConfig): CreateAppResult {
       );
     }
 
-    const memberships = await prisma.tenantMembership.findMany({
-      where: { accountId },
-      select: { id: true }
-    });
-    const patronMembershipIds = memberships.map((m) => m.id);
-
-    const credResult = await prisma.patronOAuthCredential.deleteMany({
-      where: { accountId }
-    });
-
-    const snapshotCount = await invalidatePatronEntitlementSnapshotsForMemberships(
-      prisma,
-      patronMembershipIds
-    );
-
-    await prisma.tenantMembership.updateMany({
-      where: { accountId, role: TenantRole.patron },
-      data: { tierIds: [] }
-    });
-
-    await prisma.account.update({
-      where: { id: accountId },
-      data: {
-        patronPatreonUserId: null,
-        identityAuthProvider: IdentityAuthProvider.independent
-      }
-    });
+    const { credResult, snapshotCount } = await unlinkPatreonAccount(prisma, accountId);
 
     return res.status(200).json(
       successEnvelope(
@@ -4890,8 +4911,28 @@ export function createApp(config: AppConfig): CreateAppResult {
     }
   });
 
+  app.post("/api/v1/patreon/repair", async (req: Request, res: Response) => {
+    const traceId = traceIdFrom(req), body = (req.body ?? {}) as Record<string, unknown>;
+    const creatorId = typeof body.creator_id === "string" ? body.creator_id.trim() : "";
+    if (!creatorId || !["post", "media", "change"].includes(String(body.kind)) || typeof body.resource_id !== "string" || body.resource_id.length > 512 || !body.resource_id.trim() || typeof body.head !== "string" || !/^[a-f0-9]{64}$/.test(body.head) || !Number.isSafeInteger(body.generation) || Number(body.generation) < 1) {
+      return res.status(400).json(errorEnvelope("VALIDATION_ERROR", "Current repair resource, head and generation are required.", traceId));
+    }
+    if (!(await requirePatronBearerSession(req, res, traceId)) || !(await requireAccountMatchesCreator(req, res, traceId, creatorId))) return;
+    if (!config.prisma || !patreonChangeWorkStore) return res.status(503).json(errorEnvelope("SERVICE_UNAVAILABLE", "Shared repair work is unavailable. Use the existing media Retry control or reconnect Patreon.", traceId));
+    try {
+      const campaignId = await getCreatorProfilePatreonCampaignIdForRelayCreatorDb(config.prisma, creatorId);
+      if (!campaignId) return res.status(409).json(errorEnvelope("REPAIR_CHANGED", "Patreon campaign binding is unavailable. Refresh sync details.", traceId));
+      const outcome = body.kind === "change"
+        ? await patreonChangeWorkStore.retryPost(body.resource_id, creatorId, campaignId, Number(body.generation), body.head) ? "accepted" : "changed"
+        : await new MediaRepairStore(config.prisma).retryResource(creatorId, campaignId, body.kind as "post" | "media", body.resource_id, body.head, Number(body.generation));
+      if (outcome === "changed") return res.status(409).json(errorEnvelope("REPAIR_CHANGED", "This item changed. Refresh sync details before retrying.", traceId));
+      return res.status(202).json(successEnvelope({ status: outcome, completed: false }, traceId));
+    } catch { return res.status(503).json(errorEnvelope("SERVICE_UNAVAILABLE", "Repair could not be scheduled. Try again after refreshing sync details.", traceId)); }
+  });
+
   app.get("/api/v1/patreon/sync-state", async (req: Request, res: Response) => {
     const traceId = traceIdFrom(req);
+    res.setHeader("Cache-Control", "private, no-store");
     const creatorId =
       typeof req.query.creator_id === "string" ? req.query.creator_id.trim() : "";
     if (!creatorId) {
@@ -4910,16 +4951,10 @@ export function createApp(config: AppConfig): CreateAppResult {
       req.query.probe_upstream === "true" || req.query.probe_upstream === "1";
 
     try {
-      const fallbackCampaignId =
-        !campaignId && config.prisma
-          ? (await getCreatorProfilePatreonCampaignIdForRelayCreatorDb(
-              config.prisma,
-              creatorId
-            )) ?? undefined
-          : undefined;
+      if (!(await requirePatronBearerSession(req, res, traceId, true))) return;
+      if (!(await requireAccountMatchesCreator(req, res, traceId, creatorId, true))) return;
       const state = await patreonSyncService.getSyncState(creatorId, {
         campaign_id: campaignId || undefined,
-        fallback_campaign_id: fallbackCampaignId,
         probe_upstream: probeUpstream,
         traceId
       });
@@ -5109,7 +5144,10 @@ export function createApp(config: AppConfig): CreateAppResult {
         }
       );
       try {
-        await patreonSyncHealthStore.recordMemberSyncSuccess({
+        if (result.coverage && result.coverage !== "complete") {
+          await patreonSyncHealthStore.recordMemberSyncFailure({ creator_id: String(body.creator_id), patreon_campaign_id: result.patreon_campaign_id,
+            error: { code: "member_roster_partial", message: "Patreon roster reconciliation is incomplete.", hint: "Continue member sync to verify the remaining roster." } });
+        } else await patreonSyncHealthStore.recordMemberSyncSuccess({
           creator_id: body.creator_id as string,
           patreon_campaign_id: result.patreon_campaign_id,
           members_synced: result.members_synced
@@ -5319,6 +5357,11 @@ export function createApp(config: AppConfig): CreateAppResult {
       if (!(await requireAccountMatchesCreator(req, res, traceId, creatorIdEarly))) {
         return;
       }
+      if (sessionPost.kind === "extension" &&
+          (typeof body.installation_id !== "string" || sessionPost.label?.split(" · ")[0] !== body.installation_id.trim())) {
+        return res.status(403).json(errorEnvelope("FORBIDDEN", "Reconnect this extension installation.", traceId));
+      }
+      res.locals.patreonCookieSessionKind = sessionPost.kind;
       const rateKey =
         config.prisma != null
           ? ((await getAccountIdForSession(config.prisma, sessionPost)) ?? sessionPost.user_id)
@@ -5354,10 +5397,20 @@ export function createApp(config: AppConfig): CreateAppResult {
         );
       }
     }
-    try { await cookieStore.upsert(creatorId, sessionId); }
+    let storedAt: string | null = null;
+    try {
+      if (res.locals.patreonCookieSessionKind === "extension") {
+        const check = await cookieStore.rotateCredential(creatorId, sessionId);
+        if (check.status !== "ok") return res.status(409).json(successEnvelope({ creator_id: creatorId, status: check.status, requires_consent: true }, traceId));
+        storedAt = check.stored_at;
+      } else {
+        await cookieStore.upsert(creatorId, sessionId);
+        storedAt = (await cookieStore.checkCredential(creatorId)).stored_at;
+      }
+    }
     catch { return res.status(503).json(errorEnvelope("COOKIE_STORE_UNAVAILABLE", "Unable to store the Patreon session. Try again later.", traceId)); }
     return res.status(200).json(
-      successEnvelope({ creator_id: creatorId, status: "stored" }, traceId)
+      successEnvelope({ creator_id: creatorId, status: "stored", checked_at: new Date().toISOString(), stored_at: storedAt }, traceId)
     );
   }
   );
@@ -5403,14 +5456,34 @@ export function createApp(config: AppConfig): CreateAppResult {
   }
   );
 
+  app.post("/api/v1/patreon/cookie/check", async (req: Request, res: Response, next) => {
+    const traceId = traceIdFrom(req), body = (req.body ?? {}) as Record<string, unknown>;
+    const creatorId = typeof body.creator_id === "string" ? body.creator_id.trim() : "";
+    const session = await requirePatronBearerSession(req, res, traceId);
+    if (!session || !(await requireAccountMatchesCreator(req, res, traceId, creatorId))) return;
+    if (session.kind === "extension" && (typeof body.installation_id !== "string" || session.label?.split(" · ")[0] !== body.installation_id.trim())) {
+      return res.status(403).json(errorEnvelope("FORBIDDEN", "Reconnect this extension installation.", traceId));
+    }
+    (req as Request & { relayRateLimitKey?: string }).relayRateLimitKey = config.prisma
+      ? ((await getAccountIdForSession(config.prisma, session)) ?? session.user_id) : session.user_id;
+    next();
+  }, cookieWrite, async (req: Request, res: Response) => {
+    const traceId = traceIdFrom(req), creatorId = typeof req.body?.creator_id === "string" ? req.body.creator_id.trim() : "";
+    if (!creatorId) return res.status(400).json(errorEnvelope("VALIDATION_ERROR", "creator_id is required.", traceId));
+    try {
+      const check = await cookieStore.checkCredential(creatorId);
+      return res.status(200).json(successEnvelope({ creator_id: creatorId, ...check, checked_at: new Date().toISOString(), requires_consent: check.status !== "ok" }, traceId));
+    } catch { return res.status(503).json(errorEnvelope("COOKIE_STORE_UNAVAILABLE", "Unable to check the Patreon session. Try again later.", traceId)); }
+  });
+
   app.get("/api/v1/patreon/cookie/status", async (req: Request, res: Response) => {
     const traceId = traceIdFrom(req);
     const creatorId = typeof req.query.creator_id === "string" ? req.query.creator_id.trim() : "";
-    const sessionStatus = await requirePatronBearerSession(req, res, traceId);
+    const sessionStatus = await requirePatronBearerSession(req, res, traceId, true);
     if (!sessionStatus) {
       return;
     }
-    if (!(await requireAccountMatchesCreator(req, res, traceId, creatorId))) {
+    if (!(await requireAccountMatchesCreator(req, res, traceId, creatorId, true))) {
       return;
     }
     if (!creatorId) {
@@ -5421,7 +5494,7 @@ export function createApp(config: AppConfig): CreateAppResult {
         ]));
     }
     let has: boolean;
-    try { has = (await cookieStore.getSessionId(creatorId)) !== null; }
+    try { has = (await cookieStore.checkCredential(creatorId)).status === "ok"; }
     catch { return res.status(503).json(errorEnvelope("COOKIE_STORE_UNAVAILABLE", "Unable to check the Patreon session. Try again later.", traceId)); }
     return res.status(200).json(
       successEnvelope({ creator_id: creatorId, has_cookie: has }, traceId)
@@ -6866,7 +6939,8 @@ export function createApp(config: AppConfig): CreateAppResult {
   async function requirePatronBearerSession(
     req: Request,
     res: Response,
-    traceId: string
+    traceId: string,
+    readonlySession = false
   ): Promise<SessionToken | null> {
     const bearer = req.header("authorization")?.replace(/^Bearer\s+/i, "").trim() ?? "";
     const fromCookie = readSessionCookie(req)?.trim() ?? "";
@@ -6877,14 +6951,14 @@ export function createApp(config: AppConfig): CreateAppResult {
         .json(errorEnvelope("AUTH_ERROR", "Bearer token required.", traceId));
       return null;
     }
-    const session = await identityService.resolveSession(opaque);
+    const session = await identityService.resolveSession(opaque, readonlySession ? { cleanupExpired: false } : undefined);
     if (!session) {
       res
         .status(401)
         .json(errorEnvelope("AUTH_ERROR", "Invalid or expired session.", traceId));
       return null;
     }
-    if (session.kind === "extension") {
+    if (session.kind === "extension" && !readonlySession) {
       void identityService.touchSessionExpiry(opaque).catch(() => {});
     }
     if (config.prisma) {
@@ -6926,7 +7000,8 @@ export function createApp(config: AppConfig): CreateAppResult {
     req: Request,
     res: Response,
     traceId: string,
-    relayCreatorId: string
+    relayCreatorId: string,
+    readonlySession = false
   ): Promise<boolean> {
     if (!config.prisma) {
       return true;
@@ -6934,7 +7009,8 @@ export function createApp(config: AppConfig): CreateAppResult {
     try {
       const { context } = await requireAccount(req, {
         prisma: config.prisma,
-        identityService
+        identityService,
+        readonlySession
       });
       const want = relayCreatorId.trim();
       const got = context.primaryRelayCreatorId?.trim() ?? "";
@@ -13271,6 +13347,7 @@ export function createApp(config: AppConfig): CreateAppResult {
     } catch (err) {
       if (sendRelayAuthError(res, err, traceId)) return;
       if (err instanceof PostDistributionValidationError) {
+        if (err.details.some(detail => detail.field === "conversation_managed")) return res.status(409).json(errorEnvelope("CONFLICT", err.message, traceId, err.details));
         return res.status(400).json(
           errorEnvelope("VALIDATION_ERROR", err.message, traceId, err.details)
         );
@@ -13311,6 +13388,7 @@ export function createApp(config: AppConfig): CreateAppResult {
         return res.status(200).json(successEnvelope({ variant }, traceId));
       } catch (err) {
         if (sendRelayAuthError(res, err, traceId)) return;
+        if (err instanceof PostDistributionValidationError && err.details.some(detail => detail.field === "conversation_managed")) return res.status(409).json(errorEnvelope("CONFLICT", err.message, traceId, err.details));
         if (err instanceof PostDistributionNotFoundError) {
           return res.status(404).json(errorEnvelope("NOT_FOUND", err.message, traceId));
         }
@@ -13353,6 +13431,7 @@ export function createApp(config: AppConfig): CreateAppResult {
       } catch (err) {
         if (sendRelayAuthError(res, err, traceId)) return;
         if (err instanceof PostDistributionValidationError) {
+          if (err.details.some(detail => detail.field === "conversation_managed")) return res.status(409).json(errorEnvelope("CONFLICT", err.message, traceId, err.details));
           return res.status(400).json(
             errorEnvelope("VALIDATION_ERROR", err.message, traceId, err.details)
           );
@@ -13981,7 +14060,7 @@ export function createApp(config: AppConfig): CreateAppResult {
         );
         const result = await simulatePilotUxMediaImport(
           config.prisma,
-          exportIndex,
+          fileExportIndex,
           relayCreatorId
         );
         return res.status(200).json(
@@ -19515,6 +19594,38 @@ export function createApp(config: AppConfig): CreateAppResult {
       },
       loadCatalog: (accountId, creatorId) => loadRealLibraryCatalog(config.prisma!, accountId, creatorId)
     });
+    if (process.env.NODE_ENV === "development") {
+      let realLibraryConversationRuntime: ReturnType<typeof createEditorBenchRuntime> | null = null;
+      const previewR2 = getR2ClientConfigFromEnv();
+      registerRealLibraryConversationRoutes(app, {
+        development: true,
+        traceId: traceIdFrom,
+        prisma: config.prisma!,
+        editor: new GalleryEditorService(config.prisma!),
+        previewExports: previewR2 ? createPrismaRealLibraryPreviewExportStore(config.prisma!, {
+          read: (key, maxBytes) => getR2ObjectBuffer(previewR2, key, { timeoutMs: 10_000, maxBytes }),
+          putIfAbsent: (key, bytes, contentType) => putR2ObjectBufferIfAbsent(previewR2, key, bytes, contentType, AbortSignal.timeout(10_000))
+        }) : undefined,
+        editorEnabled: isGalleryEditorEnabled,
+        editorStoresReady: useDbIdentityStore(config) && useDbCanonicalStore(config) && useDbGalleryOverridesStore(config) && useDbCollectionsStore(config),
+        authenticateCreator: async (req, { readonlySession }) => {
+          const { context } = await requireAccountWithRole(req, { prisma: config.prisma!, identityService, readonlySession }, "creator");
+          return { creatorId: context.primaryRelayCreatorId!.trim(), accountId: context.accountId };
+        },
+        authorizeMutation: async (req, res) => {
+          const { context } = await requireAccount(req, { prisma: config.prisma!, identityService });
+          const creatorId = context.primaryRelayCreatorId?.trim();
+          if (!creatorId) { res.status(403).json(errorEnvelope("FORBIDDEN", "A creator account is required.", traceIdFrom(req))); return null; }
+          if (!(await assertCreatorRelayMutationAllowed(req, res, traceIdFrom(req), config.prisma, creatorId)) || !(await guardStudioSyncWritable(res, traceIdFrom(req), creatorId))) return null;
+          return { creatorId, accountId: context.accountId };
+        },
+        loadSnapshot: (accountId, creatorId, signal) => loadLargeRealLibrarySnapshot(config.prisma!, accountId, creatorId, signal),
+        getProvider: async () => {
+          realLibraryConversationRuntime ??= createEditorBenchRuntime({ repoRoot: process.cwd(), env: process.env, fetch: config.fetch_impl });
+          return (await realLibraryConversationRuntime).editorProvider;
+        }
+      });
+    }
     let benchVariantChatRuntime: ReturnType<typeof createEditorBenchRuntime> | null = null;
     registerBenchScheduleRoutes(app, {
       development: process.env.NODE_ENV === "development",

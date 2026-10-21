@@ -1,0 +1,42 @@
+{
+  "changedBaselineSource": [
+    "src/editor-bench/real-library-conversation-routes.ts",
+    "src/gallery-editor/types.ts",
+    "src/distribution/coach-checkpoint-service.ts",
+    "src/distribution/distribution-package.ts",
+    "src/distribution/post-distribution-service.ts",
+    "src/distribution/schedule-rail-service.ts",
+    "src/extension/cross-post-media-entries.ts",
+    "extension/src/background.ts",
+    "extension/src/content/fill-deviantart-submit.ts",
+    "extension/src/content/fill-x-compose.ts",
+    "extension/src/lib/cross-post-fetch.ts",
+    "extension/src/lib/cross-post-flow.ts",
+    "extension/src/lib/cross-post-tab-inject.ts",
+    "extension/src/lib/external-metrics-refresh-flow.ts",
+    "extension/src/lib/external-metrics-types.ts",
+    "extension/src/lib/messages.ts",
+    "extension/src/lib/patreon-post-metrics-fetch.ts",
+    "extension/src/lib/storage.ts",
+    "extension/src/lib/sync-now.ts",
+    "extension/src/popup.ts",
+    "docs/conversational-planning/DISPATCH.md",
+    "docs/conversational-planning/EDITOR-BENCH-PLAN.md",
+    "docs/conversational-planning/PRODUCT-CONVERSATION-CONNECTION-PLAN.md",
+    "docs/conversational-planning/README.md",
+    "docs/conversational-planning/WORK-ITEMS.md",
+    "src/server.ts",
+    "prisma/schema.prisma",
+    "docs/relay-cheaper-model-handoff.md",
+    "tests/extension-consent-flow.test.ts",
+    "tests/schedule-rail-service.test.ts"
+  ],
+  "priorReportCount": 88,
+  "changedPriorReports": [],
+  "changedConfiguration": [],
+  "ledger": {
+    "rows": 919,
+    "sha256": "969cc6310604f9c506f63d55056c0c9221297400570229d8ba6c50f5bd86b7d9",
+    "unchanged": true
+  }
+}

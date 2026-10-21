@@ -4,6 +4,11 @@
  * @see {@link ../jsdoc-core-entities.ts}
  * @see prisma/schema.prisma `Post`, `MediaAsset`, `Tier`, `Campaign`, identity tables via `IdentityService`
  */
+import { MediaRepairStore } from "../export/media-repair-store.js";
+import { postCollectionHead } from "../export/media-repair-state.js";
+import { patreonPostState } from "./post-refresh-state.js";
+import { resumePostSync } from "./resume-post-sync.js";
+import { reconcileMembers, refreshMember } from "./reconcile-members.js";
 import type { PrismaClient } from "@prisma/client";
 import type { PatreonCookieStore } from "../auth/cookie-store.js";
 import type { ExportService } from "../export/export-service.js";
@@ -13,7 +18,7 @@ import type { SyncWatermarkStoreAPI } from "../ingest/sync-watermark-store.js";
 import type { ApplyBatchResult, IngestPost, SyncBatchInput } from "../ingest/types.js";
 import type { PatreonAuthService } from "../auth/auth-service.js";
 import type { PatreonTokenStore, PersistedPatreonTokens } from "../auth/token-store.js";
-import { CookieSessionExpiredError, scrapeByCookie } from "./cookie-scraper.js";
+import { CookieSessionExpiredError, scrapeByCookie, scrapePostByCookieWithCompleteness } from "./cookie-scraper.js";
 import {
   CreatorCampaignDisplayStore,
   type CampaignDisplaySnapshot
@@ -32,52 +37,56 @@ import {
 import type { PatreonFetchOptions } from "./patreon-resource-api.js";
 import {
   asDataArray,
-  fetchCampaignMembers,
   fetchCampaignsWithTiers,
   fetchPostById,
   fetchPostsPage,
-  indexIncluded,
-  membersPageUrl,
   postsPageUrl
 } from "./patreon-resource-api.js";
 import type { IdentityService } from "../identity/identity-service.js";
 import { createExclusivePerKeyRunner } from "../lib/run-exclusive-per-key.js";
+import { patreonPostContentHash, patreonMediaContentHash } from "./post-content-revision.js";
+import { normalizePatreonPostContent, flattenProseMirrorDoc } from "./post-content.js";
+import { sanitizeOptionalPostDescriptionHtml } from "../security/sanitize-post-html.js";
 import type {
   LastMemberSyncHealth,
   LastPostScrapeHealth,
   PatreonSyncHealthStoreAPI
 } from "./patreon-sync-health-store.js";
 import {
-  appendMembershipLedgerEvents,
-  loadCreatorTierAmountMap,
-  maxTierFloorFromMap,
-  parsePledgeRelationshipStart,
-  planMembershipLedgerEvents
-} from "./membership-ledger-sync.js";
-import {
   syncPostAccessFromOAuth,
+  oauthPostAccessGateFromResource,
   type SyncPostAccessFromOAuthOptions,
   type SyncPostAccessFromOAuthResult
 } from "./sync-post-access-from-oauth.js";
+
+import { PatreonRequestError } from "./oauth-request.js";
+import type { PatreonPostRefresh } from "./post-refresh-state.js";
+import { listCampaignPaidPatreonTierIds } from "./expand-all-patrons-tiers.js";
+import { RELAY_TIER_PUBLIC } from "./relay-access-tiers.js";
+import { getCreatorProfilePatreonCampaignIdForRelayCreatorDb } from "./campaign-tenant-resolve.js";
+import { readSyncCompleteness, type SyncCompleteness } from "./sync-completeness.js";
 
 export type { SyncPostAccessFromOAuthOptions, SyncPostAccessFromOAuthResult };
 
 /** Creator OAuth token health slice for Library / sync-state consumers. */
 export type PatreonOAuthHealthSnapshot = {
-  credential_health_status: PersistedPatreonTokens["credential_health_status"];
-  access_token_expires_at: string;
-  access_token_expired: boolean;
+  availability?: "available" | "unavailable";
+  credential_health_status: PersistedPatreonTokens["credential_health_status"] | "unavailable";
+  access_token_expires_at: string | null;
+  access_token_expired: boolean | null;
   /** True when token expires within the next 24 hours (and is not already expired). */
-  access_token_expires_soon: boolean;
+  access_token_expires_soon: boolean | null;
 };
 
 function buildOauthHealthSnapshot(cred: PersistedPatreonTokens): PatreonOAuthHealthSnapshot {
   const now = Date.now();
   const expMs = Date.parse(cred.access_token_expires_at);
+  if (!Number.isFinite(expMs)) return { availability: "unavailable", credential_health_status: "unavailable", access_token_expires_at: null, access_token_expired: null, access_token_expires_soon: null };
   const expired = Number.isFinite(expMs) && expMs <= now;
   const soon =
     !expired && Number.isFinite(expMs) && expMs - now < 24 * 60 * 60 * 1000;
   return {
+    availability: "available",
     credential_health_status: cred.credential_health_status,
     access_token_expires_at: cred.access_token_expires_at,
     access_token_expired: expired,
@@ -88,10 +97,6 @@ function buildOauthHealthSnapshot(cred: PersistedPatreonTokens): PatreonOAuthHea
 function numericPostIdFromRelay(postId: string): string | null {
   const m = /^patreon_post_(\d+)$/.exec(postId);
   return m?.[1] ?? null;
-}
-
-function hasSyntheticTiersOnly(tierIds: string[]): boolean {
-  return tierIds.length > 0 && tierIds.every((t) => t.startsWith("relay_tier_"));
 }
 
 type PerPostOAuthStats = {
@@ -110,11 +115,12 @@ type PerPostOAuthStats = {
 async function enrichPostsFromOAuth(
   posts: IngestPost[],
   fetchOpts: PatreonFetchOptions,
-  warnings: string[]
+  warnings: string[],
+  resolvedAccess: Set<string>
 ): Promise<PerPostOAuthStats> {
   const needsEnrich = posts.filter((p) => {
     const noBody = !(p.description && p.description.trim());
-    const unreliableTiers = p.tier_ids.length === 0 || hasSyntheticTiersOnly(p.tier_ids);
+    const unreliableTiers = !resolvedAccess.has(p.post_id);
     return noBody || unreliableTiers;
   });
   if (needsEnrich.length === 0) {
@@ -129,33 +135,21 @@ async function enrichPostsFromOAuth(
   for (const p of needsEnrich) {
     const numId = numericPostIdFromRelay(p.post_id);
     if (!numId) continue;
-    try {
-      const doc = await fetchPostById(fetchOpts, numId);
-      const resources = asDataArray(doc.data);
-      const resource = resources.find((r) => r.type === "post" && r.id === numId);
-      if (!resource) continue;
-      const fromOAuth = mapPatreonPostToIngest(resource);
-      let enriched = false;
-      if (!(p.description && p.description.trim()) && fromOAuth.description?.trim()) {
-        p.description = fromOAuth.description;
-        enriched = true;
-        filledBody += 1;
+    const doc = await fetchPostById(fetchOpts, numId);
+    const resources = asDataArray(doc.data);
+    const resource = resources.find((r) => r.type === "post" && r.id === numId);
+    if (!resource) throw new Error("Patreon returned no metadata for the requested post; retry required.");
+    const fromOAuth = mapPatreonPostToIngest(resource);
+    if (!(p.description && p.description.trim()) && fromOAuth.description?.trim()) {
+      p.description = fromOAuth.description;
+      filledBody += 1;
+    }
+    if (fromOAuth.tier_ids.length > 0) {
+      const changed = JSON.stringify(fromOAuth.tier_ids) !== JSON.stringify(p.tier_ids);
+      if (changed) {
+        p.tier_ids = fromOAuth.tier_ids;
+        filledTiers += 1;
       }
-      if (fromOAuth.tier_ids.length > 0) {
-        const changed = JSON.stringify(fromOAuth.tier_ids) !== JSON.stringify(p.tier_ids);
-        if (changed) {
-          p.tier_ids = fromOAuth.tier_ids;
-          enriched = true;
-          filledTiers += 1;
-        }
-      }
-      if (enriched) {
-        p.upstream_revision = `${p.upstream_revision}:oauth_enrich`;
-      }
-    } catch (e) {
-      warnings.push(
-        `OAuth enrich ${numId} failed: ${(e as Error).message.slice(0, 200)}`
-      );
     }
   }
   if (filledBody > 0 || filledTiers > 0) {
@@ -184,6 +178,7 @@ type OAuthListTierStats = {
   pagesFetched: number;
   /** True when at least one `fetchPostsPage` ran (posts had mappable Patreon ids). */
   attempted: boolean;
+  resolvedAccess: Set<string>;
 };
 
 async function enrichTiersFromCampaignPostsList(
@@ -193,13 +188,14 @@ async function enrichTiersFromCampaignPostsList(
   maxPages: number,
   warnings: string[]
 ): Promise<OAuthListTierStats> {
+  const resolvedAccess = new Set<string>();
   const byNumId = new Map<string, IngestPost>();
   for (const p of posts) {
     const numId = numericPostIdFromRelay(p.post_id);
     if (numId) byNumId.set(numId, p);
   }
   if (byNumId.size === 0) {
-    return { postsUpdated: 0, pagesFetched: 0, attempted: false };
+    return { postsUpdated: 0, pagesFetched: 0, attempted: false, resolvedAccess };
   }
   let pages = 0;
   let enriched = 0;
@@ -213,12 +209,18 @@ async function enrichTiersFromCampaignPostsList(
       if (!existing) continue;
       const baseTiers = tierIdsFromPatreonPost(r);
       const oauthTiers = applyPatreonAccessToTierIds(baseTiers, r.attributes ?? {});
+      if (oauthTiers.length > 0) resolvedAccess.add(existing.post_id);
+      if (!existing.description?.trim()) {
+        const body = normalizePatreonPostContent(r.attributes?.content) || flattenProseMirrorDoc(r.attributes?.content_json_string);
+        if (body) existing.description = sanitizeOptionalPostDescriptionHtml(body);
+      }
       if (oauthTiers.length > 0 && JSON.stringify(oauthTiers) !== JSON.stringify(existing.tier_ids)) {
         existing.tier_ids = oauthTiers;
-        existing.upstream_revision = `${existing.upstream_revision}:oauth_tier`;
         enriched += 1;
       }
+      byNumId.delete(r.id);
     }
+    if (byNumId.size === 0) break;
     nextUrl = doc.links?.next ?? undefined;
     if (!nextUrl) {
       const cursor = doc.meta?.pagination?.cursors?.next;
@@ -232,7 +234,7 @@ async function enrichTiersFromCampaignPostsList(
       `OAuth tier enrichment (campaign posts list): updated ${enriched} of ${posts.length} post(s) across ${pages} page(s).`
     );
   }
-  return { postsUpdated: enriched, pagesFetched: pages, attempted: true };
+  return { postsUpdated: enriched, pagesFetched: pages, attempted: true, resolvedAccess };
 }
 
 /** Statistics on tier/body enrichment passes (cookie + OAuth list + per-post GET). */
@@ -259,6 +261,7 @@ export type PatreonScrapeResult = {
   /** Patreon campaign avatar, banner URLs, and patron_count from OAuth campaigns doc. */
   campaign_display?: CampaignDisplaySnapshot;
   apply_result?: ApplyBatchResult;
+  post_coverage?: { archive: "unknown" | "partial" | "complete"; catchup: "unknown" | "partial" | "complete" };
 };
 
 /** Options for {@link PatreonSyncService.scrapeOrSync}. */
@@ -276,6 +279,8 @@ export type PatreonSyncOptions = {
    * Patreon content hash is unchanged (idempotent ingest otherwise skips posts).
    */
   force_refresh_post_access?: boolean;
+  /** Opt local single-writer imports into persisted continuation; hosted DB sync uses it automatically. */
+  resume_archive?: boolean;
 };
 
 /** Result summary for {@link PatreonSyncService.syncMembers}. */
@@ -285,10 +290,17 @@ export type MemberSyncResult = {
   members_synced: number;
   pages_fetched: number;
   warnings: string[];
+  coverage?: "complete" | "partial" | "blocked";
+  roster?: { phase: string; last_complete_at: string | null; started_at: string; unverified_legacy_count: number; reason: string | null };
 };
 
 /** Library-facing sync snapshot: watermarks, cookie session, OAuth health, last health rows. */
 export type PatreonSyncState = {
+  availability?: "available" | "unavailable";
+  unavailable_reason?: "missing_tokens" | "missing_binding" | "binding_mismatch";
+  server_checked_at?: string;
+  upstream_probe?: { availability: "available" | "unavailable"; observed_at: string | null };
+  completeness?: SyncCompleteness;
   creator_id: string;
   patreon_campaign_id: string;
   /** Max `published_at` from the last applied sync batch (incremental cutoff). */
@@ -328,6 +340,12 @@ export type PatreonSyncStateOptions = {
  * Facade for creator Patreon connectivity: posts ingest, member sync, sync-state reads.
  * @security-audit-required Member sync paths process patron email/name from Patreon — flow through `IdentityService` only.
  */
+class MediaCollectionError extends Error {
+  public constructor(public readonly code: "cookie_required" | "media_collection_incomplete") {
+    super(code === "cookie_required" ? "A current Patreon session is required to recover this media." : "Patreon did not provide a complete media collection.");
+  }
+}
+
 export class PatreonSyncService {
   private readonly tokenStore: PatreonTokenStore;
   private readonly cookieStore: PatreonCookieStore;
@@ -366,14 +384,49 @@ export class PatreonSyncService {
     this.syncHealthStore = syncHealthStore ?? null;
     this.campaignDisplayStore = campaignDisplayStore ?? null;
     this.prisma = prisma ?? null;
+    this.exportService?.setSourceRefresher?.((creatorId, mediaId) => this.refreshSourceForMedia(creatorId, mediaId));
   }
 
-  /**
-   * Read watermark and optionally probe Patreon's newest post time (first OAuth page).
-   * @async
-   * @throws {Error} Missing tokens, campaign resolution failures, or Patreon HTTP errors.
-   */
+  public get supportsResumablePosts(): boolean { return this.watermarkStore.postProgress?.shared === true && this.ingestService.supportsSharedPatreonPostRefresh; }
+
+  public async selectAutosyncCreators(ids: string[], cap: number): Promise<string[]> {
+    return this.watermarkStore.postProgress ? this.watermarkStore.postProgress.selectCreators(ids, cap) : [...ids].sort().slice(0, cap > 0 ? cap : ids.length);
+  }
+
+  /** Persisted, creator-scoped read. Legacy probe_upstream only selects saved probe evidence. */
   public async getSyncState(
+    creatorId: string,
+    options: PatreonSyncStateOptions = {}
+  ): Promise<PatreonSyncState> {
+    const health = await this.syncHealthStore?.getForCreator(creatorId);
+    const cred = await this.tokenStore.getByCreatorId(creatorId);
+    const binding = this.prisma
+      ? await getCreatorProfilePatreonCampaignIdForRelayCreatorDb(this.prisma, creatorId)
+      : health?.upstream_probe?.campaign_id ?? health?.last_post_scrape?.last_verified_campaign_id ?? (health?.last_post_scrape?.ok ? health.last_post_scrape.patreon_campaign_id : null) ?? health?.last_member_sync?.last_verified_campaign_id ?? (health?.last_member_sync?.ok ? health.last_member_sync.patreon_campaign_id : null);
+    const mismatch = Boolean(binding && options.campaign_id && binding !== options.campaign_id.trim());
+    const campaignId = mismatch ? "" : binding ?? "";
+    const cookie = await this.cookieStore.checkCredential(creatorId);
+    const row = campaignId ? await this.watermarkStore.getRow(creatorId, campaignId) : null;
+    const probe = health?.upstream_probe?.campaign_id === campaignId ? health.upstream_probe : null;
+    return {
+      availability: cred && campaignId ? "available" : "unavailable",
+      ...(!cred ? { unavailable_reason: "missing_tokens" as const } : !campaignId ? { unavailable_reason: mismatch ? "binding_mismatch" as const : "missing_binding" as const } : {}),
+      server_checked_at: new Date().toISOString(),
+      creator_id: creatorId, patreon_campaign_id: campaignId,
+      watermark_published_at: row?.last_synced_at ?? null, watermark_updated_at: row?.updated_at ?? null,
+      has_cookie_session: cookie.status === "ok",
+      ...(cookie.status !== "none" ? { cookie_session_status: cookie.status } : {}),
+      oauth: cred ? buildOauthHealthSnapshot(cred) : { availability: "unavailable", credential_health_status: "unavailable", access_token_expires_at: null, access_token_expired: null, access_token_expires_soon: null },
+      last_post_scrape: health?.last_post_scrape ?? null, last_member_sync: health?.last_member_sync ?? null,
+      campaign_display: await this.campaignDisplayStore?.get(creatorId) ?? null,
+      upstream_probe: { availability: probe ? "available" : "unavailable", observed_at: probe?.observed_at ?? null },
+      completeness: await readSyncCompleteness(this.prisma, this.watermarkStore.postProgress, creatorId, campaignId),
+      ...(probe ? { upstream_newest_published_at: probe.newest_published_at, likely_has_newer_posts: Boolean(row?.last_synced_at && probe.newest_published_at && probe.newest_published_at > row.last_synced_at) } : {})
+    };
+  }
+
+  /** Worker/mutation-only upstream maintenance and bounded discovery probe. Never call from GET. */
+  public async prepareSyncStateForAutomation(
     creatorId: string,
     options: PatreonSyncStateOptions = {}
   ): Promise<PatreonSyncState> {
@@ -460,6 +513,9 @@ export class PatreonSyncService {
     const wm = base.watermark_published_at;
     const likely =
       Boolean(wm && upstreamNewest && upstreamNewest > wm);
+
+    await this.syncHealthStore?.recordUpstreamProbe?.(creatorId, { campaign_id: patreonCampaignId,
+      observed_at: new Date().toISOString(), newest_published_at: upstreamNewest });
 
     return {
       ...base,
@@ -554,9 +610,14 @@ export class PatreonSyncService {
     options: PatreonSyncOptions = {}
   ): Promise<PatreonScrapeResult> {
     const id = creatorId.trim();
-    return this.runScrapeOrSyncExclusive(id, () =>
-      this.scrapeOrSyncImpl(id, traceId, options)
-    );
+    return this.runScrapeOrSyncExclusive(id, async () => {
+      const result = await this.scrapeOrSyncImpl(id, traceId, options);
+      if (!options.dry_run && this.prisma && this.exportService?.supportsHostedRepair) {
+        try { await this.repairMediaForCreator(id, 2); }
+        catch { result.warnings.push("Media repair remains pending; server repair will retry."); }
+      }
+      return result;
+    });
   }
 
   private async scrapeOrSyncImpl(
@@ -565,6 +626,7 @@ export class PatreonSyncService {
     options: PatreonSyncOptions = {}
   ): Promise<PatreonScrapeResult> {
     const warnings: string[] = [];
+    const expectedPatreonPostStates = options.dry_run ? undefined : await this.ingestService.getPatreonPostStates(creatorId);
     await this.authService.ensureFreshAccessForAutomation(creatorId, traceId);
     const cred = await this.tokenStore.getByCreatorId(creatorId);
     if (!cred) {
@@ -610,6 +672,12 @@ export class PatreonSyncService {
 
     const { campaign, tiers } = mapped;
     const maxPages = Math.min(Math.max(options.max_post_pages ?? 20, 1), 100);
+    if (!options.dry_run && this.watermarkStore.postProgress && (this.watermarkStore.postProgress.shared || this.ingestService.supportsSharedPatreonPostRefresh || options.resume_archive)) {
+      return resumePostSync({ creatorId, campaignId: patreonCampaignId, campaign, tiers, traceId, fetchOpts,
+        ingest: this.ingestService, watermarks: this.watermarkStore, maxPages, hasCookie: Boolean(await this.cookieStore.getSessionId(creatorId)), forceAccess: options.force_refresh_post_access,
+        refresh: (postId, reconciliation) => this.refreshPost(creatorId, traceId, patreonCampaignId, postId, reconciliation ? "reconciliation" : false).then(() => {}),
+        ...(this.exportService ? { exportMedia: (id: string) => this.exportService!.exportMedia(creatorId, id) } : {}) });
+    }
     const watermark = await this.watermarkStore.get(creatorId, patreonCampaignId);
     // When force_refresh_post_access is set, bypass the watermark so that posts
     // ingested before the tier-mapping code was deployed are re-fetched and
@@ -633,8 +701,8 @@ export class PatreonSyncService {
 
     // Cookie scrape tier/access pipeline (OAuth wins when both paths run):
     // 1) Cookie post list — tier_ids / is_paid often unreliable for creators.
-    // 2) enrichPostsFromOAuth — per-post GET when description or tiers are empty/synthetic.
-    // 3) enrichTiersFromCampaignPostsList — runs for cookie and OAuth-only paths (same normalization).
+    // 2) OAuth list fills missing body and authoritative access; stop when targets are found.
+    // 3) Per-post GET only for remaining body/access gaps. OAuth-only imports already have metadata.
     // 4) buildSyncBatchFromParts → IngestService.runBatch → enrichBatch (expand relay_tier_all_patrons).
     if (sessionId) {
       try {
@@ -654,7 +722,6 @@ export class PatreonSyncService {
           const totalMedia = posts.reduce((n, p) => n + p.media.length, 0);
           warnings.push(`Cookie scrape: ${posts.length} posts, ${totalMedia} media items.`);
         }
-        perPostOAuth = await enrichPostsFromOAuth(posts, fetchOpts, warnings);
       } catch (e) {
         if (e instanceof CookieSessionExpiredError) {
           await this.cookieStore.markPatreonRejectedSession(creatorId, sessionId);
@@ -689,10 +756,11 @@ export class PatreonSyncService {
 
     let listStats: OAuthListTierStats = {
       postsUpdated: 0,
-      pagesFetched: 0,
-      attempted: false
+      pagesFetched: !usedCookiePath ? pages : 0,
+      attempted: !usedCookiePath && posts.length > 0,
+      resolvedAccess: new Set()
     };
-    if (posts.length > 0) {
+    if (usedCookiePath && posts.length > 0) {
       listStats = await enrichTiersFromCampaignPostsList(
         posts,
         patreonCampaignId,
@@ -700,6 +768,11 @@ export class PatreonSyncService {
         maxPages,
         warnings
       );
+      perPostOAuth = await enrichPostsFromOAuth(posts, fetchOpts, warnings, listStats.resolvedAccess);
+      for (const post of posts) {
+        post.upstream_revision += `:sha256:${patreonPostContentHash(post)}`;
+        for (const media of post.media) media.upstream_revision += `:sha256:${patreonMediaContentHash(media)}`;
+      }
     }
 
     const tier_access_summary: TierAccessSummary = {
@@ -741,7 +814,7 @@ export class PatreonSyncService {
       };
     }
 
-    const apply_result = await this.ingestService.runBatch(batch, traceId);
+    const apply_result = await this.ingestService.runBatch(batch, traceId, undefined, [], { currentPatreonSnapshot: true, expectedPatreonPostStates });
     if (apply_result.ingest_notes?.length) {
       warnings.push(...apply_result.ingest_notes);
     }
@@ -792,6 +865,122 @@ export class PatreonSyncService {
     };
   }
 
+  /** Refresh signed post work from current upstream state, independently of discovery. */
+  public async refreshPost(creatorId: string, traceId: string, campaignId: string, resourceId: string, signedDeletion: boolean | "reconciliation" = false, repairOptions: { skipExport?: boolean; requireCompleteMedia?: boolean } = {}): Promise<{ head: string; collection: "empty" | "media" } | undefined> {
+    if (!this.ingestService.supportsSharedPatreonPostRefresh) throw new Error("Targeted Patreon post work requires the shared atomic canonical store.");
+    if (!/^[a-zA-Z0-9_-]{1,128}$/.test(resourceId) || !/^\d{1,32}$/.test(campaignId)) throw new Error("Invalid Patreon post identity.");
+    const postId = `patreon_post_${resourceId}`;
+    const refresh: PatreonPostRefresh = { postId, campaignId: `patreon_campaign_${campaignId}`, state: await this.ingestService.getPatreonPostState(creatorId, postId), accessSource: signedDeletion === "reconciliation" ? "reconciliation" : "targeted" };
+    await this.authService.ensureFreshAccessForAutomation(creatorId, traceId);
+    const cred = await this.tokenStore.getByCreatorId(creatorId);
+    if (!cred) throw new Error("No Patreon tokens for this creator_id.");
+    const fetchOpts = { access_token: cred.access_token, fetch_impl: this.fetchImpl };
+    const campaignsDoc = await fetchCampaignsWithTiers(fetchOpts);
+    const mapped = buildCampaignAndTiersFromCampaignsDoc(campaignsDoc, creatorId, campaignId);
+    if (!mapped) throw new Error("Patreon campaign is unavailable for this token.");
+    let doc;
+    try {
+      doc = await fetchPostById(fetchOpts, resourceId);
+    } catch (error) {
+      if (!signedDeletion || !(error instanceof PatreonRequestError) || (error.status !== 404 && error.status !== 410)) throw error;
+      refresh.deletion = true;
+      refresh.requireVerifiedBinding = signedDeletion === "reconciliation";
+      await this.ingestService.runBatch({ creator_id: creatorId }, traceId, undefined, [], { patreonPostRefresh: refresh });
+      return;
+    }
+    const resource = asDataArray(doc.data).find((row) => row.type === "post" && row.id === resourceId);
+    const campaign = resource?.relationships?.campaign?.data;
+    if (!resource || !campaign || Array.isArray(campaign) || campaign.type !== "campaign" || campaign.id !== campaignId) throw new Error("Patreon post campaign could not be verified.");
+    const post = mapPatreonPostToIngest(resource);
+    const gate = oauthPostAccessGateFromResource(resource, listCampaignPaidPatreonTierIds(mapped.tiers));
+    post.tier_ids = gate.isPublic ? [RELAY_TIER_PUBLIC] : gate.tierIds;
+    const batch = buildSyncBatchFromParts(creatorId, mapped.campaign, mapped.tiers, [post]);
+    // Close stale public access before any cookie request or blob download can wait or fail.
+    refresh.preserveMedia = true;
+    await this.ingestService.runBatch(structuredClone(batch), traceId, undefined, [], { suppressPublicationEvents: repairOptions.requireCompleteMedia === true, currentPatreonSnapshot: true, patreonPostRefresh: refresh, verifiedPatreonCampaign: refresh.campaignId });
+    const sessionId = await this.cookieStore.getSessionId(creatorId);
+    if (!sessionId && repairOptions.requireCompleteMedia) throw new MediaCollectionError("cookie_required");
+    if (!sessionId && post.media.length === 0) return;
+    let mediaComplete = false;
+    if (sessionId) {
+      try {
+        const cookieResult = await scrapePostByCookieWithCompleteness(sessionId, campaignId, resourceId, this.fetchImpl);
+        const cookiePost = cookieResult.post;
+        mediaComplete = cookieResult.complete;
+        if (repairOptions.requireCompleteMedia && !mediaComplete) throw new MediaCollectionError("media_collection_incomplete");
+        post.media = cookiePost.media;
+        post.tag_ids = cookiePost.tag_ids;
+        if (!post.description && cookiePost.description) post.description = sanitizeOptionalPostDescriptionHtml(cookiePost.description);
+      } catch (error) {
+        if (error instanceof CookieSessionExpiredError) await this.cookieStore.markPatreonRejectedSession(creatorId, sessionId);
+        throw error;
+      }
+    }
+    post.upstream_revision = post.upstream_revision.replace(/:sha256:.*$/, "") + `:sha256:${patreonPostContentHash(post)}`;
+    for (const media of post.media) media.upstream_revision = media.upstream_revision.replace(/:sha256:.*$/, "") + `:sha256:${patreonMediaContentHash(media)}`;
+    refresh.preserveMedia = Boolean(sessionId) && !mediaComplete;
+    await this.ingestService.runBatch(batch, traceId, undefined, [], { suppressPublicationEvents: repairOptions.requireCompleteMedia === true, currentPatreonSnapshot: true, patreonPostRefresh: refresh, verifiedPatreonCampaign: refresh.campaignId });
+    let sourceProof: { head: string; collection: "empty" | "media" } | undefined;
+    if (mediaComplete) {
+      const accepted = await this.ingestService.getPatreonSnapshot(creatorId);
+      if (patreonPostState(accepted, creatorId, postId) !== refresh.state) throw new Error("Post changed during media collection.");
+      const row = accepted.posts[creatorId]?.[postId];
+      if (row) sourceProof = { head: postCollectionHead(row), collection: row.current.media_ids.length ? "media" : "empty" };
+    }
+    if (this.exportService && !repairOptions.skipExport) {
+      for (const media of post.media) if (media.upstream_url) await this.exportService.exportMedia(creatorId, media.media_id);
+    }
+    return sourceProof;
+  }
+
+  private async refreshSourceForMedia(creatorId: string, mediaId: string): Promise<void> {
+    if (!this.prisma || !this.ingestService.supportsSharedPatreonPostRefresh) throw new Error("Current-source repair requires shared canonical storage.");
+    const media = await this.prisma.mediaAsset.findFirst({ where: { id: mediaId, creatorId, ingestOrigin: "PATREON", upstreamStatus: "active" }, select: { postIds: true } });
+    const post = media ? await this.prisma.post.findFirst({ where: { id: { in: media.postIds }, creatorId, source: "PATREON", upstreamStatus: "active" }, select: { id: true, campaignId: true } }) : null;
+    if (!post?.campaignId.startsWith("patreon_campaign_")) throw new Error("Current media source is unavailable.");
+    await this.refreshPost(creatorId, "patreon-media-url-renewal", post.campaignId.slice(17), post.id.replace(/^patreon_post_/, ""), false, { skipExport: true, requireCompleteMedia: true });
+  }
+
+  /** Server-capable repair is independent of archive progress and newest-post probes. */
+  public async repairMediaForCreator(creatorId: string, budget = 4): Promise<{ sources: number; blobs: number }> {
+    if (!this.prisma || !this.ingestService.supportsSharedPatreonPostRefresh || !this.exportService?.supportsHostedRepair) throw new Error("Hosted media repair requires shared canonical storage and persistent export storage.");
+    const work = new MediaRepairStore(this.prisma), hasCookie = Boolean(await this.cookieStore.getSessionId(creatorId));
+    await work.seed(creatorId, hasCookie);
+    let sources = 0, blobs = 0;
+    const deadline = Date.now() + 90_000;
+    for (let count = 0; count < Math.min(10, Math.max(1, budget)) && Date.now() < deadline; count++) {
+      const source = count % 2 === 0 ? await work.claim(creatorId, "post") : null;
+      if (source) {
+        try {
+          if (await work.retireIfObsolete(source)) continue;
+          const row = await this.prisma.post.findFirst({ where: { id: source.resourceId, creatorId, source: "PATREON", upstreamStatus: "active" }, select: { campaignId: true } });
+          if (!row || !row.campaignId.startsWith("patreon_campaign_")) throw new Error("media_source_unavailable");
+          const result = await this.refreshPost(creatorId, "patreon-media-repair", row.campaignId.slice("patreon_campaign_".length), source.resourceId.replace(/^patreon_post_/, ""), false, { skipExport: true, requireCompleteMedia: true });
+          if (!result) throw new MediaCollectionError("media_collection_incomplete");
+          await work.acceptSource(source, result.head, result.collection); sources++;
+          await work.seed(creatorId, hasCookie);
+        } catch (error) { await work.fail(source, error instanceof MediaCollectionError ? error.code : "media_source_retry_required"); }
+      } else {
+        const media = await work.claim(creatorId, "media"); if (!media) continue;
+        try {
+          if (await work.retireIfObsolete(media)) continue;
+          await this.exportService.exportMedia(creatorId, media.resourceId, media); blobs++;
+        } catch (error) {
+          await work.fail(media, "media_download_retry_required");
+        }
+      }
+    }
+    return { sources, blobs };
+  }
+
+  public async repairMediaCampaigns(): Promise<void> {
+    if (!this.prisma || !this.ingestService.supportsSharedPatreonPostRefresh || !this.exportService?.supportsHostedRepair) throw new Error("Hosted media repair requires shared persistence and durable export storage.");
+    const work = new MediaRepairStore(this.prisma);
+    for (const creatorId of await work.selectCreators(await this.tokenStore.listCreatorIds())) {
+      try { await this.repairMediaForCreator(creatorId); } catch {}
+    }
+  }
+
   /**
    * OAuth-only tier/access refresh: paginates Patreon post metadata, diffs against Relay DB,
    * patches only changed gates — no cookie scrape, full ingest, or media export.
@@ -827,184 +1016,59 @@ export class PatreonSyncService {
    * @throws {Error} When `IdentityService` unwired, tokens missing, or Patreon/DB failures.
    * @security-audit-required Processes patron email/name — must stay within `IdentityService` retention rules.
    */
-  public async syncMembers(
-    creatorId: string,
-    options: {
-      campaign_id?: string;
-      fallback_campaign_id?: string;
-      max_pages?: number;
-      traceId?: string;
-    } = {}
-  ): Promise<MemberSyncResult> {
-    const warnings: string[] = [];
-    if (!this.identityService) {
-      throw new Error("IdentityService not wired — cannot sync members.");
-    }
-    const traceForRefresh = options.traceId?.trim() || "patreon_sync_members";
-    await this.authService.ensureFreshAccessForAutomation(creatorId, traceForRefresh);
+  public get supportsSharedPatreonMembers(): boolean { return this.identityService?.supportsSharedPatreonMembers === true; }
+
+  private async memberContext(creatorId: string, options: { campaign_id?: string; fallback_campaign_id?: string; traceId?: string }) {
+    if (!this.identityService) throw new Error("IdentityService not wired — cannot sync members.");
+    await this.authService.ensureFreshAccessForAutomation(creatorId, options.traceId ?? "patreon_sync_members");
     const cred = await this.tokenStore.getByCreatorId(creatorId);
-    if (!cred) {
-      throw new Error("No Patreon tokens for this creator_id.");
-    }
-    const fetchOpts: PatreonFetchOptions = {
-      access_token: cred.access_token,
-      fetch_impl: this.fetchImpl
-    };
+    if (!cred) throw new Error("No Patreon tokens for this creator_id.");
+    const fetchOpts = { access_token: cred.access_token, fetch_impl: this.fetchImpl };
     const campaignsDoc = await fetchCampaignsWithTiers(fetchOpts);
-    let campaignId = options.campaign_id?.trim() || options.fallback_campaign_id?.trim();
-    if (!campaignId) {
-      const only = pickDefaultCampaignId(campaignsDoc);
-      if (!only) {
-        throw new Error(patreonCampaignListResolutionErrorMessage(campaignsDoc));
+    const campaignId = options.campaign_id?.trim() || options.fallback_campaign_id?.trim() || pickDefaultCampaignId(campaignsDoc);
+    if (!campaignId) throw new Error(patreonCampaignListResolutionErrorMessage(campaignsDoc));
+    const mapped = buildCampaignAndTiersFromCampaignsDoc(campaignsDoc, creatorId, campaignId);
+    if (!mapped) throw new Error("Patreon member campaign is unavailable for this token.");
+    return { identity: this.identityService, creatorId, campaignId, paidTiers: new Set(listCampaignPaidPatreonTierIds(mapped.tiers)), fetch: fetchOpts };
+  }
+
+  public async refreshMember(creatorId: string, traceId: string, campaignId: string, memberId: string, signedDeletion = false): Promise<void> {
+    if (!this.supportsSharedPatreonMembers) throw new Error("Signed Patreon member work requires shared transactional identity storage.");
+    if (!/^[a-zA-Z0-9_-]{1,128}$/.test(memberId) || !/^\d{1,32}$/.test(campaignId)) throw new Error("Invalid Patreon member identity.");
+    const context = await this.memberContext(creatorId, { campaign_id: campaignId, traceId });
+    await refreshMember(context, memberId, signedDeletion);
+  }
+
+  /** Periodic roster work is independent of discovery, with per-campaign saved continuation. */
+  public async reconcileMemberCampaigns(creatorId: string): Promise<Array<{ campaignId: string; result?: MemberSyncResult; error?: string }>> {
+    if (!this.supportsSharedPatreonMembers || !this.identityService) throw new Error("Patreon roster jobs require shared transactional identity storage.");
+    await this.authService.ensureFreshAccessForAutomation(creatorId, "patreon_member_reconciliation");
+    const credential = await this.tokenStore.getByCreatorId(creatorId);
+    if (!credential) throw new Error("No Patreon tokens for this creator_id.");
+    const doc = await fetchCampaignsWithTiers({ access_token: credential.access_token, fetch_impl: this.fetchImpl });
+    const campaigns = asDataArray(doc.data);
+    if (campaigns.some((row) => row.type !== "campaign") || campaigns.length > 100) throw new Error("Patreon campaign list could not be verified.");
+    const results: Array<{ campaignId: string; result?: MemberSyncResult; error?: string }> = [];
+    for (const campaign of campaigns) {
+      const prior = await this.identityService.mutatePatreonMembers(creatorId, campaign.id, (tx) => tx.roster());
+      if (prior?.phase === "complete" && prior.lastCompleteAt && Date.parse(prior.lastCompleteAt) > Date.now() - 6 * 60 * 60 * 1000) continue;
+      try {
+        const result = await this.syncMembers(creatorId, { campaign_id: campaign.id, max_pages: 2, source: "scheduled_refresh" });
+        results.push({ campaignId: campaign.id, result });
+        if (result.coverage === "complete") await this.syncHealthStore?.recordMemberSyncSuccess({ creator_id: creatorId, patreon_campaign_id: campaign.id, members_synced: result.members_synced });
+        else await this.syncHealthStore?.recordMemberSyncFailure({ creator_id: creatorId, patreon_campaign_id: campaign.id,
+          error: { code: `member_roster_${result.coverage}`, message: "Patreon roster reconciliation is incomplete.", hint: "Continue member sync or resolve the reported member binding." } });
+      } catch {
+        results.push({ campaignId: campaign.id, error: "member_reconciliation_retry_required" });
+        await this.syncHealthStore?.recordMemberSyncFailure({ creator_id: creatorId, patreon_campaign_id: campaign.id,
+          error: { code: "member_reconciliation_retry_required", message: "Patreon member reconciliation needs a retry.", hint: "Retry member sync after checking the Patreon connection." } });
       }
-      campaignId = only;
     }
-    const maxPages = Math.min(Math.max(options.max_pages ?? 20, 1), 100);
-    const batchStartedAt = new Date();
-    const tierAmountMap =
-      this.prisma != null
-        ? await loadCreatorTierAmountMap(this.prisma, creatorId)
-        : null;
-    let pages = 0;
-    let synced = 0;
-    let nextUrl: string | null | undefined = null;
-    do {
-      const doc = await fetchCampaignMembers(fetchOpts, campaignId, nextUrl);
-      pages += 1;
-      const included = indexIncluded(doc);
-      const members = asDataArray(doc.data).filter((r) => r.type === "member");
-      for (const m of members) {
-        const a = m.attributes ?? {};
-        const patronStatusRaw = a.patron_status;
-        const status =
-          typeof patronStatusRaw === "string" ? patronStatusRaw : "";
-        const isActive = status === "active_patron";
-        const memberResourceId =
-          typeof m.id === "string" && m.id.trim() ? m.id.trim() : "";
-        const tierLinks = m.relationships?.currently_entitled_tiers?.data;
-        const tierIds: string[] = [];
-        if (Array.isArray(tierLinks)) {
-          for (const link of tierLinks) {
-            if (link?.type === "tier" && link.id) {
-              tierIds.push(`patreon_tier_${link.id}`);
-            }
-          }
-        }
-        const userLink = m.relationships?.user?.data;
-        const patreonUserId =
-          userLink && !Array.isArray(userLink) && userLink.type === "user"
-            ? userLink.id
-            : undefined;
-        if (!patreonUserId || !memberResourceId) continue;
-        const email =
-          typeof a.email === "string" && a.email.includes("@")
-            ? a.email
-            : `patreon_${patreonUserId}@relay.local`;
-        const fullName =
-          typeof a.full_name === "string"
-            ? a.full_name
-            : (included.get(`user:${patreonUserId}`)?.attributes?.full_name as
-                | string
-                | undefined) ?? "";
+    return results;
+  }
 
-        const prior = await this.identityService!.getPatronAccountByPatreonUserId(
-          creatorId,
-          patreonUserId
-        );
-        const priorTierIds = prior?.tier_ids ?? [];
-        const priorExisted = prior != null;
-        const priorFloor =
-          tierAmountMap != null
-            ? maxTierFloorFromMap(tierAmountMap, priorTierIds)
-            : 0;
-
-        const entitledRaw = a.currently_entitled_amount_cents;
-        const entitledAmountCents =
-          typeof entitledRaw === "number" && Number.isFinite(entitledRaw)
-            ? Math.trunc(entitledRaw)
-            : null;
-        const pledgeStart = parsePledgeRelationshipStart(
-          a.pledge_relationship_start
-        );
-
-        if (isActive) {
-          try {
-            await this.identityService!.registerPatreonFallback(
-              creatorId,
-              patreonUserId,
-              email,
-              tierIds
-            );
-            synced += 1;
-          } catch (e) {
-            warnings.push(
-              `Member ${patreonUserId} (${fullName}): ${(e as Error).message.slice(0, 200)}`
-            );
-            continue;
-          }
-          if (this.prisma && tierIds.length > 0) {
-            const planned = planMembershipLedgerEvents({
-              creatorId,
-              patreonMemberResourceId: memberResourceId,
-              patronStatus: status || null,
-              newTierIds: tierIds,
-              entitledAmountCents,
-              pledgeRelationshipStart: pledgeStart,
-              priorExisted,
-              priorTierIds,
-              priorTierFloorCents: priorFloor,
-              batchStartedAt
-            });
-            await appendMembershipLedgerEvents(this.prisma, planned);
-          }
-        } else if (priorTierIds.length > 0) {
-          try {
-            await this.identityService!.registerPatreonFallback(
-              creatorId,
-              patreonUserId,
-              email,
-              []
-            );
-          } catch (e) {
-            warnings.push(
-              `Member ${patreonUserId} (${fullName}): ${(e as Error).message.slice(0, 200)}`
-            );
-            continue;
-          }
-          if (this.prisma) {
-            const planned = planMembershipLedgerEvents({
-              creatorId,
-              patreonMemberResourceId: memberResourceId,
-              patronStatus:
-                typeof patronStatusRaw === "string" ? patronStatusRaw : null,
-              newTierIds: [],
-              entitledAmountCents,
-              pledgeRelationshipStart: pledgeStart,
-              priorExisted,
-              priorTierIds,
-              priorTierFloorCents: priorFloor,
-              batchStartedAt
-            });
-            await appendMembershipLedgerEvents(this.prisma, planned);
-          }
-        }
-      }
-      nextUrl = doc.links?.next ?? undefined;
-      if (!nextUrl) {
-        const cursor = doc.meta?.pagination?.cursors?.next;
-        if (cursor) {
-          nextUrl =
-            membersPageUrl(campaignId) +
-            `&page%5Bcursor%5D=${encodeURIComponent(cursor)}`;
-        }
-      }
-    } while (nextUrl && pages < maxPages);
-    return {
-      creator_id: creatorId,
-      patreon_campaign_id: campaignId,
-      members_synced: synced,
-      pages_fetched: pages,
-      warnings
-    };
+  public async syncMembers(creatorId: string, options: { campaign_id?: string; fallback_campaign_id?: string; max_pages?: number; traceId?: string; source?: "scheduled_refresh" | "webhook" | "manual_support" } = {}): Promise<MemberSyncResult> {
+    const context = { ...await this.memberContext(creatorId, options), source: options.source ?? "manual_support" as const };
+    return reconcileMembers(context, Math.min(Math.max(options.max_pages ?? 20, 1), 100));
   }
 }

@@ -4,11 +4,13 @@
  * @see ./sync-watermark-store-db.js
  */
 
+import { FilePatreonPostProgressStore } from "../patreon/post-sync-progress-file.js";
+import type { PatreonPostProgressStore } from "../patreon/post-sync-progress.js";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 
 export type WatermarkRow = {
-  last_synced_at: string;
+  last_synced_at: string | null;
   updated_at: string;
 };
 
@@ -22,6 +24,7 @@ function keyFor(creatorId: string, campaignId: string): string {
 
 /** Implemented by `SyncWatermarkStore` and `DbSyncWatermarkStore` (`sync-watermark-store-db.ts`). */
 export interface SyncWatermarkStoreAPI {
+  readonly postProgress?: PatreonPostProgressStore;
   get(creatorId: string, campaignId: string): Promise<string | null>;
   getRow(creatorId: string, campaignId: string): Promise<WatermarkRow | null>;
   set(creatorId: string, campaignId: string, lastSyncedAt: string): Promise<void>;
@@ -32,9 +35,11 @@ export interface SyncWatermarkStoreAPI {
  */
 export class SyncWatermarkStore implements SyncWatermarkStoreAPI {
   private readonly filePath: string;
+  public readonly postProgress: FilePatreonPostProgressStore;
 
   public constructor(filePath: string) {
     this.filePath = filePath;
+    this.postProgress = new FilePatreonPostProgressStore(filePath + ".post-progress.json");
   }
 
   public async get(

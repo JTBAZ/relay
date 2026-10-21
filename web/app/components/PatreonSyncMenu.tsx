@@ -11,12 +11,15 @@ import {
   postPatreonScrape,
   postPatreonSyncMembers,
   postPatreonSyncPostAccess,
+  postPatreonRepair,
   registerPatreonWebhooks,
   type PatreonOAuthHealthData,
+  type PatreonRepairTargetData,
   type PatreonSyncStateData
 } from "@/lib/relay-api";
 
 type SyncPhase = "idle" | "syncing" | "error";
+const verificationSources: Record<string, string> = { targeted: "post refresh", reconciliation: "scheduled recheck", access_only: "tier access update", catchup: "post scan" };
 
 type Props = {
   creatorId: string;
@@ -44,6 +47,7 @@ function fmtIso(iso: string | null | undefined): string {
 }
 
 function oauthLine(oauth: PatreonOAuthHealthData): { className: string; text: string } {
+  if (oauth.availability === "unavailable") return { className: "text-[var(--lib-warning)]", text: "OAuth unavailable. Reconnect Patreon." };
   if (oauth.access_token_expired) {
     return { className: "text-[var(--lib-destructive)]", text: "Access expired — reconnect." };
   }
@@ -53,7 +57,7 @@ function oauthLine(oauth: PatreonOAuthHealthData): { className: string; text: st
   if (oauth.access_token_expires_soon) {
     return { className: "text-[var(--lib-warning)]", text: "Token expires soon." };
   }
-  return { className: "text-[var(--lib-success)]", text: "OAuth healthy." };
+  return { className: "text-[var(--lib-success)]", text: "Token has not expired locally." };
 }
 
 function syncHealthLine(
@@ -141,25 +145,44 @@ export default function PatreonSyncMenu({
   const [memberSyncError, setMemberSyncError] = useState<string | null>(null);
   const [memberSyncOk, setMemberSyncOk] = useState<string | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const statusRefreshRef = useRef<HTMLButtonElement>(null);
+  const binding = `${creatorId}\0${campaignId ?? ""}`;
+  const currentBinding = useRef(binding);
+  currentBinding.current = binding;
+  const readGeneration = useRef(0);
+  const repairInFlight = useRef(false);
+  const repairFocusBinding = useRef<string | null>(null);
+  const [repairing, setRepairing] = useState<string | null>(null);
+  const [repairMessage, setRepairMessage] = useState<string | null>(null);
 
   const panelId = "patreon-sync-menu-panel";
 
   const loadState = useCallback(async () => {
+    if (currentBinding.current !== binding) return;
+    const generation = ++readGeneration.current;
     setLoadingState(true);
     setStateError(null);
     try {
       const s = await fetchPatreonSyncState(creatorId, {
         campaignId: campaignId?.trim() || undefined,
-        probeUpstream: true
+        probeUpstream: false
       });
-      setState(s);
+      if (generation === readGeneration.current) setState(s);
     } catch (e) {
-      setState(null);
-      setStateError(e instanceof Error ? e.message : String(e));
+      if (generation === readGeneration.current) setStateError(e instanceof Error ? e.message : String(e));
     } finally {
-      setLoadingState(false);
+      if (generation === readGeneration.current) setLoadingState(false);
     }
-  }, [creatorId, campaignId]);
+  }, [creatorId, campaignId, binding]);
+
+  useEffect(() => { const requests = readGeneration; setState(null); setRepairMessage(null); return () => { requests.current++; }; }, [creatorId, campaignId]);
+
+  useEffect(() => {
+    if (repairFocusBinding.current !== binding || repairing !== null || loadingState) return;
+    repairFocusBinding.current = null;
+    statusRefreshRef.current?.focus();
+  }, [binding, repairing, loadingState]);
 
   const prevDetailsSignal = useRef(0);
   useEffect(() => {
@@ -276,7 +299,7 @@ export default function PatreonSyncMenu({
         creator_id: creatorId,
         campaign_id: campaignId?.trim() || undefined
       });
-      setMemberSyncOk(`Synced ${out.members_synced} member(s).`);
+      setMemberSyncOk(`Accepted ${out.members_synced} member observation(s). Saved coverage shows scan progress.`);
       await loadState();
       onSyncActivity?.("idle");
     } catch (e) {
@@ -286,6 +309,18 @@ export default function PatreonSyncMenu({
     } finally {
       setSyncingMembers(false);
     }
+  };
+
+  const runRepair = async (target: PatreonRepairTargetData) => {
+    if (repairInFlight.current) return;
+    repairInFlight.current = true; setRepairing(target.resource_id); setRepairMessage(null); setActionError(null);
+    try {
+      await postPatreonRepair({ creator_id: creatorId, ...target });
+      if (currentBinding.current !== binding) return;
+      setRepairMessage("Repair accepted. Existing backoff still applies; completion appears after the worker verifies this item.");
+      await loadState();
+    } catch (error) { if (currentBinding.current === binding) setActionError(error instanceof Error ? error.message : String(error)); }
+    finally { repairInFlight.current = false; if (currentBinding.current === binding) repairFocusBinding.current = binding; setRepairing(null); }
   };
 
   /**
@@ -346,8 +381,9 @@ export default function PatreonSyncMenu({
   ) : null;
 
   return (
-    <div className="relative" ref={rootRef}>
+    <div className="relative" ref={rootRef} onKeyDown={(event) => { if (open && event.key === "Escape") { event.stopPropagation(); setOpen(false); triggerRef.current?.focus(); } }}>
       <button
+        ref={triggerRef}
         type="button"
         aria-expanded={open}
         aria-haspopup="dialog"
@@ -370,28 +406,30 @@ export default function PatreonSyncMenu({
       {open && (
         <div
           id={panelId}
-          className="absolute right-0 z-50 mt-1 w-[min(22rem,calc(100vw-2rem))] rounded-lg border border-[var(--lib-border)] bg-[var(--lib-card)] p-3 shadow-lg"
+          className="absolute right-0 z-50 mt-1 max-h-[calc(100dvh-5rem)] w-[min(22rem,calc(100vw-2rem))] overflow-y-auto overscroll-contain break-words rounded-lg border border-[var(--lib-border)] bg-[var(--lib-card)] p-3 shadow-lg"
           role="dialog"
           aria-label="Patreon sync"
         >
+          <div className="mb-2 flex justify-end"><button type="button" className="rounded px-2 py-1 text-xs text-[var(--lib-fg-muted)] hover:text-[var(--lib-fg)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--lib-primary)]" onClick={() => { setOpen(false); triggerRef.current?.focus(); }}>Close</button></div>
           <p className="text-[11px] leading-snug text-[var(--lib-fg-muted)]">
             Pulls from Patreon into your Library. What you curate here (visibility, collections)
             controls what visitors see on your public page — layout is in Designer.
           </p>
+          <button ref={statusRefreshRef} type="button" disabled={loadingState} className="mt-2 rounded border border-[var(--lib-border)] px-2 py-1 text-[11px] text-[var(--lib-fg)] hover:border-[var(--lib-primary)] disabled:opacity-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--lib-primary)]" onClick={() => void loadState()}>Refresh saved status</button>
           <p className="mt-3 text-[11px] font-semibold uppercase tracking-wide text-[var(--lib-fg-muted)]">
             Sync state
           </p>
           {loadingState && (
-            <div className="mt-2 flex items-center gap-2 text-xs text-[var(--lib-fg-muted)]">
+            <div role="status" className="mt-2 flex items-center gap-2 text-xs text-[var(--lib-fg-muted)]">
               <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
               Loading…
             </div>
           )}
           {stateError && (
-            <p className="mt-2 text-xs text-[var(--lib-destructive)]">{stateError}</p>
+            <p role="alert" className="mt-2 text-xs text-[var(--lib-destructive)]">{stateError} {state && "Showing the previous saved status."}</p>
           )}
           {!state && !loadingState && reconnectPatreonCta}
-          {state && !loadingState && (
+          {state && (
             <dl className="mt-2 space-y-1.5 text-xs text-[var(--lib-fg)]">
                   <div className="flex justify-between gap-2">
                     <dt className="text-[var(--lib-fg-muted)]">Campaign</dt>
@@ -409,6 +447,10 @@ export default function PatreonSyncMenu({
                     <dt className="text-[var(--lib-fg-muted)]">Cookie session</dt>
                     <dd>{state.has_cookie_session ? "Yes" : "No"}</dd>
                   </div>
+                  <div className="flex justify-between gap-2">
+                    <dt className="text-[var(--lib-fg-muted)]">Saved upstream check</dt>
+                    <dd className="text-right">{fmtIso(state.upstream_probe?.observed_at)}</dd>
+                  </div>
                   {state.likely_has_newer_posts && (
                     <p className="rounded-md border border-[var(--lib-warning)]/40 bg-[var(--lib-warning)]/10 px-2 py-1.5 text-[11px] text-[var(--lib-fg)]">
                       Patreon may have posts newer than your last sync — use{" "}
@@ -416,6 +458,34 @@ export default function PatreonSyncMenu({
                     </p>
                   )}
                 </dl>
+              )}
+
+              {state?.completeness && (
+                <section className="mt-3 border-t border-[var(--lib-border)] pt-2" aria-label="Saved Patreon coverage">
+                  <p className="text-xs font-medium text-[var(--lib-fg)]">Saved coverage</p>
+                  <p className="mt-1 text-[11px] text-[var(--lib-fg-muted)]">Status read {fmtIso(state.server_checked_at)}. Opening this menu does not contact Patreon.</p>
+                  <dl className="mt-2 space-y-3 text-[11px]">
+                    {([["archive", "Archive"], ["posts_access", "Posts and access"], ["members", "Members"], ["media", "Media"]] as const).map(([key, label]) => {
+                      const item = state.completeness![key];
+                      return <div key={key}>
+                        <dt className="font-medium text-[var(--lib-fg)]">{label}: {item.status}</dt>
+                        <dd className="mt-0.5 text-[var(--lib-fg-muted)]">
+                          <p>Verified {fmtIso(item.last_verified_at)}{item.scope === "bounded" ? " · bounded scope" : ""}</p>
+                          {item.sources?.length ? <p>Source: {item.sources.map((source) => verificationSources[source] ?? "saved verification").join(", ")}</p> : null}
+                          {item.last_attempt_at && <p>Last attempt {fmtIso(item.last_attempt_at)}</p>}
+                          <p>{item.counts ? Object.entries(item.counts).map(([name, count]) => `${name.replaceAll("_", " ")}: ${count}`).join(" · ") : "Counts unavailable."}</p>
+                          {item.next_action === "sync_members" && <p>Use Update patron list below.</p>}
+                          {item.next_action === "continue_sync" && <p>Use Check for new posts below to continue bounded work.</p>}
+                          {item.next_action === "retry_change" && !item.repairs?.length && <p>A current repair target is unavailable. Check the connection, then continue post sync.</p>}
+                          {item.repairs?.map((target) => <div key={`${target.kind}:${target.resource_id}`} className="mt-1">
+                            <button type="button" disabled={repairing !== null || loadingState} className="min-w-0 max-w-full whitespace-normal rounded border border-[var(--lib-border)] px-2 py-1 text-left text-[var(--lib-fg)] hover:border-[var(--lib-primary)] disabled:opacity-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--lib-primary)]" onClick={() => void runRepair(target)}>{repairing === target.resource_id ? "Scheduling…" : <>Retry {target.kind} <span className="break-all">{target.resource_id}</span></>}</button>
+                          </div>)}
+                        </dd>
+                      </div>;
+                    })}
+                  </dl>
+                  {repairMessage && <p role="status" className="mt-2 text-xs text-[var(--lib-fg)]">{repairMessage}</p>}
+                </section>
               )}
 
               {state && !loadingState && (
@@ -676,7 +746,7 @@ export default function PatreonSyncMenu({
               </div>
           {actionError && (
             <div className="mt-2 space-y-1.5">
-              <p className="text-xs text-[var(--lib-destructive)]">{actionError}</p>
+              <p role="alert" className="text-xs text-[var(--lib-destructive)]">{actionError}</p>
               {showReconnectCta && (
                 <Link
                   href="/connect/patreon/connect"

@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   fromDatetimeLocalInputValue,
   parseScheduledLocal,
+  parseStrictScheduledLocal,
+  resolveZonedLocalDateTimeToUtc,
   syncSlotScheduledUtc,
   toDatetimeLocalInputValue,
   zonedLocalDateTimeToUtc
@@ -18,6 +20,18 @@ describe("goal-cycle schedule-local", () => {
       hour: 15,
       minute: 30
     });
+  });
+
+  it("rejects malformed dates and nonexistent or ambiguous wall times", () => {
+    expect(parseStrictScheduledLocal("2026-02-30T10:00")).toBeNull();
+    expect(parseStrictScheduledLocal("2026-07-22T10:00Z")).toBeNull();
+    expect(() => resolveZonedLocalDateTimeToUtc({ year: 2026, month: 3, day: 8, hour: 2, minute: 30, second: 0 }, "America/New_York")).toThrow(/does not exist/);
+    expect(() => resolveZonedLocalDateTimeToUtc({ year: 2026, month: 11, day: 1, hour: 1, minute: 30, second: 0 }, "America/New_York")).toThrow(/ambiguous/);
+    expect(() => resolveZonedLocalDateTimeToUtc({ year: 2026, month: 4, day: 5, hour: 1, minute: 45, second: 0 }, "Australia/Lord_Howe")).toThrow(/ambiguous/);
+  });
+
+  it("resolves fractional-hour zone offsets by round trip", () => {
+    expect(resolveZonedLocalDateTimeToUtc({ year: 2026, month: 7, day: 22, hour: 15, minute: 0, second: 0 }, "Asia/Kathmandu").toISOString()).toBe("2026-07-22T09:15:00.000Z");
   });
 
   it("converts America/New_York wall time to UTC", () => {

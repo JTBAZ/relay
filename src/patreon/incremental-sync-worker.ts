@@ -181,11 +181,11 @@ export async function runIncrementalAutosyncOnce(
     creatorIds = [targeted];
   } else {
     creatorIds = await opts.tokenStore.listCreatorIds();
-    if (maxCreators > 0 && creatorIds.length > maxCreators) {
-      creatorIds = creatorIds.slice(0, maxCreators);
-    }
+    if (opts.patreonSyncService.selectAutosyncCreators) creatorIds = await opts.patreonSyncService.selectAutosyncCreators(creatorIds, maxCreators);
+    else if (maxCreators > 0 && creatorIds.length > maxCreators) creatorIds = creatorIds.slice(0, maxCreators);
   }
 
+  if (opts.prisma && opts.patreonSyncService.supportsResumablePosts === false) throw new Error("Hosted Patreon autosync requires shared canonical and watermark stores.");
   const errors: Array<{ creator_id: string; message: string }> = [];
   const outcomes: CycleOutcome[] = [];
 
@@ -205,15 +205,14 @@ export async function runIncrementalAutosyncOnce(
         : undefined;
       let campaignIdForSync: string | undefined;
       if (probeSkipWhenCaughtUp) {
-        const state = await opts.patreonSyncService.getSyncState(creatorId, {
+        const state = await opts.patreonSyncService.prepareSyncStateForAutomation(creatorId, {
           traceId,
           probe_upstream: true,
           fallback_campaign_id: fallbackCampaignId
         });
         campaignIdForSync = state.patreon_campaign_id;
         if (state.watermark_published_at && state.likely_has_newer_posts === false) {
-          outcomes.push({ kind: "skip_probe" });
-          return;
+          if (!opts.patreonSyncService.supportsResumablePosts) { outcomes.push({ kind: "skip_probe" }); return; }
         }
       }
 

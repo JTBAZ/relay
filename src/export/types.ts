@@ -25,6 +25,7 @@ export type ExportFailureRecord = {
   message: string;
   failed_at: string;
   attempts?: number;
+  upstream_revision?: string;
 };
 
 /** @description Per-creator aggregate index for export service and manifests. */

@@ -29,18 +29,14 @@ const POST_METRICS_FIELDS = [
   "url"
 ].join(",");
 
-const FETCH_HEADERS = {
-  cookie: "",
-  "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-  accept: "application/json"
-};
-
 export type PatreonPostMetricsFetchResult = {
   ok: boolean;
   metrics: ExternalMetricsScrapeMetric[];
   diagnostics: Record<string, unknown>;
   endpoint?: string;
   http_status?: number;
+  coverage?: "complete" | "partial" | "unavailable";
+  missing?: string[];
 };
 
 type JsonRecord = Record<string, unknown>;
@@ -106,47 +102,6 @@ export function buildPatreonPostMetricsUrl(postId: string): string {
   url.searchParams.set("fields[post_insight]", "impressions,seen,likes,comments,last_updated_at");
   url.searchParams.set("json-api-version", "1.0");
   return url.toString();
-}
-
-export function buildPatreonPostInsightsCandidateUrls(
-  postId: string,
-  campaignId?: string | null
-): string[] {
-  const urls = [
-    buildPatreonPostMetricsUrl(postId),
-    `${SITE_URL}/api/post_insights/${encodeURIComponent(postId)}?json-api-version=1.0`,
-    `${SITE_URL}/api/posts/${encodeURIComponent(postId)}/post_insights?json-api-version=1.0`
-  ];
-  if (campaignId) {
-    const filtered = new URL(`${SITE_URL}/api/post_insights`);
-    filtered.searchParams.set("filter[campaign_id]", campaignId);
-    filtered.searchParams.set("filter[post_id]", postId);
-    filtered.searchParams.set("json-api-version", "1.0");
-    urls.push(filtered.toString());
-  }
-  return urls;
-}
-
-function campaignIdFromDocument(doc: JsonRecord): string | null {
-  const post = getPostResource(doc);
-  const rel = post?.relationships;
-  if (!isRecord(rel)) return null;
-  const campaign = rel.campaign;
-  if (!isRecord(campaign)) return null;
-  const data = campaign.data;
-  if (Array.isArray(data)) {
-    const first = data.find((entry) => isRecord(entry) && entry.type === "campaign");
-    return typeof first?.id === "string" ? first.id : null;
-  }
-  if (isRecord(data) && data.type === "campaign" && typeof data.id === "string") {
-    return data.id;
-  }
-  for (const included of doc.included ?? []) {
-    if (isRecord(included) && included.type === "campaign" && typeof included.id === "string") {
-      return included.id;
-    }
-  }
-  return null;
 }
 
 const IMPRESSION_KEYS = new Set([
@@ -225,7 +180,7 @@ function parseMetricsFromJsonApiDocument(
     source: "platform_api"
   });
 
-  for (const included of doc.included ?? []) {
+  for (const included of Array.isArray(doc.included) ? doc.included : []) {
     if (!isRecord(included)) continue;
     const includedAttrs = isRecord(included.attributes) ? included.attributes : {};
     const type = included.type;
@@ -339,144 +294,52 @@ export function parsePatreonPostMetricsApiPayload(
     };
   }
   const parsed = parseMetricsFromJsonApiDocument(payload, endpoint);
-  const hasNumeric = parsed.metrics.some((metric) => typeof metric.value === "number");
+  const coverage = patreonMetricsCoverage(parsed.metrics);
   return {
-    ok: parsed.metrics.length > 0 && hasNumeric,
+    ok: coverage.coverage === "complete",
+    ...coverage,
     metrics: parsed.metrics,
     diagnostics: parsed.diagnostics,
     endpoint
   };
 }
 
-async function fetchJsonWithSession(
-  url: string,
-  sessionId: string,
-  fetchImpl: typeof fetch
-): Promise<{ ok: boolean; status: number; json: unknown | null; error?: string }> {
-  try {
-    const res = await fetchImpl(url, {
-      headers: {
-        ...FETCH_HEADERS,
-        cookie: `session_id=${sessionId}`
-      }
-    });
-    const text = await res.text();
-    if (!res.ok) {
-      return { ok: false, status: res.status, json: null, error: text.slice(0, 200) };
-    }
-    try {
-      return { ok: true, status: res.status, json: JSON.parse(text) as unknown };
-    } catch {
-      return { ok: false, status: res.status, json: null, error: "invalid_json" };
-    }
-  } catch (error) {
-    return {
-      ok: false,
-      status: 0,
-      json: null,
-      error: error instanceof Error ? error.message : String(error)
-    };
-  }
+export function patreonMetricsCoverage(metrics: ExternalMetricsScrapeMetric[]): { coverage: "complete" | "partial" | "unavailable"; missing: string[] } {
+  const counters = new Set(metrics.filter((m) => typeof m.value === "number" && Number.isFinite(m.value)).map((m) => m.metric_type));
+  const missing = ["impressions", "seen", "likes", "comments"].filter((type) => !counters.has(type));
+  return { coverage: missing.length === 0 ? "complete" : counters.size ? "partial" : "unavailable", missing };
 }
 
+/** Extension background only: host permissions and the browser cookie jar supply authentication. */
 export async function fetchPatreonPostMetricsWithSession(opts: {
-  sessionId: string;
   postId: string;
   fetchImpl?: typeof fetch;
 }): Promise<PatreonPostMetricsFetchResult> {
-  const sessionId = opts.sessionId.trim();
   const postId = opts.postId.trim();
-  const fetchImpl = opts.fetchImpl ?? fetch;
-  if (!sessionId || !postId) {
-    return {
-      ok: false,
-      metrics: [],
-      diagnostics: { reason: "missing_session_or_post_id" }
-    };
-  }
-
-  const attempts: Array<{ endpoint: string; result: PatreonPostMetricsFetchResult }> = [];
-  const primaryUrl = buildPatreonPostMetricsUrl(postId);
-  const primary = await fetchJsonWithSession(primaryUrl, sessionId, fetchImpl);
-  if (primary.ok && isRecord(primary.json)) {
-    const parsed = parsePatreonPostMetricsApiPayload(primary.json, primaryUrl);
-    parsed.http_status = primary.status;
-    attempts.push({ endpoint: primaryUrl, result: parsed });
-    if (
-      parsed.metrics.some(
-        (metric) =>
-          metric.metric_type === "impressions" ||
-          metric.metric_type === "seen" ||
-          metric.metric_type === "likes" ||
-          metric.metric_type === "comments"
-      )
-    ) {
-      return {
-        ...parsed,
-        diagnostics: {
-          ...parsed.diagnostics,
-          attempts: attempts.map((entry) => ({
-            endpoint: entry.endpoint,
-            metric_types: entry.result.metrics.map((metric) => metric.metric_type)
-          }))
-        }
-      };
-    }
-
-    const campaignId = campaignIdFromDocument(primary.json);
-    for (const candidateUrl of buildPatreonPostInsightsCandidateUrls(postId, campaignId)) {
-      if (candidateUrl === primaryUrl) continue;
-      const candidate = await fetchJsonWithSession(candidateUrl, sessionId, fetchImpl);
-      if (!candidate.ok || !isRecord(candidate.json)) continue;
-      const candidateParsed = parsePatreonPostMetricsApiPayload(candidate.json, candidateUrl);
-      candidateParsed.http_status = candidate.status;
-      attempts.push({ endpoint: candidateUrl, result: candidateParsed });
-      if (
-        candidateParsed.metrics.some(
-          (metric) => metric.metric_type === "impressions" || metric.metric_type === "seen"
-        )
-      ) {
-        return {
-          ...candidateParsed,
-          diagnostics: {
-            ...candidateParsed.diagnostics,
-            attempts: attempts.map((entry) => ({
-              endpoint: entry.endpoint,
-              metric_types: entry.result.metrics.map((metric) => metric.metric_type)
-            }))
-          }
-        };
+  if (!/^\d{1,32}$/.test(postId)) return { ok: false, metrics: [], coverage: "unavailable", diagnostics: { reason: "invalid_post_id" } };
+  const endpoint = buildPatreonPostMetricsUrl(postId);
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 10_000);
+  try {
+    const response = await (opts.fetchImpl ?? fetch)(endpoint, { credentials: "include", headers: { Accept: "application/json" }, signal: controller.signal });
+    if (!response.ok) return { ok: false, metrics: [], coverage: "unavailable", http_status: response.status, diagnostics: { reason: "http_error", http_status: response.status } };
+    const reader = response.body?.getReader();
+    if (!reader) return { ok: false, metrics: [], coverage: "unavailable", diagnostics: { reason: "empty_body" } };
+    const decoder = new TextDecoder(); let text = "", bytes = 0;
+    try {
+      for (;;) {
+        const chunk = await reader.read();
+        if (chunk.done) break;
+        bytes += chunk.value.byteLength;
+        if (bytes > 1_048_576) throw new Error("response_limit");
+        text += decoder.decode(chunk.value, { stream: true });
       }
-    }
-
-    if (parsed.metrics.length > 0) {
-      return {
-        ...parsed,
-        ok: parsed.metrics.some((metric) => typeof metric.value === "number"),
-        diagnostics: {
-          ...parsed.diagnostics,
-          attempts: attempts.map((entry) => ({
-            endpoint: entry.endpoint,
-            metric_types: entry.result.metrics.map((metric) => metric.metric_type)
-          }))
-        }
-      };
-    }
-  }
-
-  return {
-    ok: false,
-    metrics: [],
-    diagnostics: {
-      reason: primary.error ?? "fetch_failed",
-      http_status: primary.status,
-      endpoint: primaryUrl,
-      attempts: attempts.map((entry) => ({
-        endpoint: entry.endpoint,
-        metric_types: entry.result.metrics.map((metric) => metric.metric_type)
-      }))
-    },
-    endpoint: primaryUrl,
-    http_status: primary.status
-  };
+      text += decoder.decode();
+    } finally { await reader.cancel().catch(() => {}); }
+    const payload: unknown = JSON.parse(text);
+    if (!isRecord(payload) || !isRecord(payload.data) || payload.data.type !== "post" || payload.data.id !== postId) return { ok: false, metrics: [], coverage: "unavailable", diagnostics: { reason: "post_mismatch" } };
+    return { ...parsePatreonPostMetricsApiPayload(payload, endpoint), http_status: response.status };
+  } catch {
+    return { ok: false, metrics: [], coverage: "unavailable", diagnostics: { reason: controller.signal.aborted ? "timeout" : "unavailable" } };
+  } finally { clearTimeout(timeout); }
 }

@@ -1,0 +1,770 @@
+
+NEW FILE src/distribution/conversation-draft-variants.ts
+import { MediaProcessingStatus, MediaUpstreamStatus, PostUpstreamStatus, Prisma, type PrismaClient } from '@prisma/client';
+import { fingerprint } from '../gallery-editor/state.js';
+import { serializable } from '../gallery-editor/service.js';
+import { resolveLibraryPosts } from '../gallery-editor/context.js';
+import { buildDistributionPlanCreateData, buildDistributionVariantCreateData } from './distribution-row-builders.js';
+import { buildVariantMediaPlatformFields } from './media-binding.js';
+import type { FormattedPlatformVariant } from './platform-formatters.js';
+
+export type ConversationDraftDestination = 'x' | 'deviantart';
+export type ConversationDraftCopy = { postText: string } | { title: string; bodyText: string; tags: string[] };
+export type ConversationDraftIdentity = {
+  reviewId: string; creatorId: string; actorId: string; sessionId: string; sessionRevision: number;
+  sourcePostId: string; sourceVersionId: string; previewMediaId: string; exportHash: string;
+  sourceDigest: string;
+  destination: ConversationDraftDestination; copy: ConversationDraftCopy;
+};
+type JournalEntry = { revision: number; reviewId: string; before: ConversationDraftCopy | null; after: ConversationDraftCopy; confirmedAt: string };
+type ManagedState = { version: 1; sourcePostId: string; sourceVersionId: string; previewMediaId: string; exportHash: string; sourceDigest: string; variants: Record<string, { variantId: string; revision: number; revisions: JournalEntry[] }> };
+type Receipt = { reviewId: string; planId: string; variantId: string; destination: ConversationDraftDestination; sourcePostId: string; sourceVersionId: string; previewMediaId: string; revision: number; confirmedAt: string };
+const ns = 'conversation_draft_v1';
+const object = (v: unknown): Record<string, any> => v && typeof v === 'object' && !Array.isArray(v) ? v as Record<string, any> : {};
+const validCopy = (destination: ConversationDraftDestination, copy: ConversationDraftCopy) => destination === 'x'
+  ? 'postText' in copy && copy.postText.trim().length > 0 && copy.postText.length <= 280
+  : 'title' in copy && 'bodyText' in copy && Array.isArray(copy.tags) && Boolean(copy.title.trim()) && Boolean(copy.bodyText.trim()) && copy.tags.length <= 30;
+const same = (a: unknown, b: unknown) => fingerprint(a) === fingerprint(b);
+
+export class ConversationDraftError extends Error {
+  constructor(public readonly code: 'invalid' | 'conflict' | 'not_found' | 'unavailable', message: string) { super(message); }
+}
+
+export function createPrismaConversationDraftVariantStore(prisma: PrismaClient) {
+  async function currentSourceDigest(tx: Prisma.TransactionClient, creatorId: string, sourcePostId: string) {
+    const post = await tx.post.findFirst({ where: { id: sourcePostId, creatorId, upstreamStatus: PostUpstreamStatus.active }, select: { id: true, versions: { orderBy: { versionSeq: 'desc' }, take: 1, select: { id: true } } } });
+    const resolved = await resolveLibraryPosts(tx, creatorId, [sourcePostId]);
+    const current = resolved.resolvedPosts[0];
+    if (!post?.versions[0] || !current) throw new ConversationDraftError('conflict', 'The selected source is no longer available.');
+    return fingerprint({ versionId: post.versions[0].id, current });
+  }
+
+  async function validateReceipt(tx: Prisma.TransactionClient, input: Pick<ConversationDraftIdentity, 'creatorId' | 'sourcePostId' | 'sourceVersionId' | 'previewMediaId' | 'exportHash' | 'sourceDigest'>) {
+    const [post, media] = await Promise.all([
+      tx.post.findFirst({ where: { id: input.sourcePostId, creatorId: input.creatorId, upstreamStatus: PostUpstreamStatus.active }, select: { id: true, versions: { where: { id: input.sourceVersionId }, select: { id: true }, take: 1 } } }),
+      tx.mediaAsset.findFirst({ where: { id: input.previewMediaId, creatorId: input.creatorId, primaryPostId: input.sourcePostId, upstreamStatus: MediaUpstreamStatus.active, processingStatus: MediaProcessingStatus.READY, currentMimeType: 'image/jpeg' }, select: { id: true, versionsJson: true, currentStorageKey: true } })
+    ]);
+    const provenance = Array.isArray(media?.versionsJson) ? object(media.versionsJson[0]) : {};
+    if (!post || !post.versions.length || !media || provenance.sha256 !== input.exportHash || provenance.source_version_id !== input.sourceVersionId || provenance.source_post_id !== input.sourcePostId || media.currentStorageKey !== provenance.storage_key) throw new ConversationDraftError('conflict', 'The selected source or confirmed Previewizer export is no longer available.');
+    if (await currentSourceDigest(tx, input.creatorId, input.sourcePostId) !== input.sourceDigest) throw new ConversationDraftError('conflict', 'The Library source changed after draft review. Review the copy again.');
+  }
+
+  async function lockSession(tx: Prisma.TransactionClient, input: ConversationDraftIdentity & { expectedVariantRevision?: number; variantId?: string }, expectedReviewKind: 'create' | 'edit') {
+    await tx.$queryRaw`SELECT id FROM gallery_editor_sessions WHERE id = ${input.sessionId} AND creator_id = ${input.creatorId} AND actor_id = ${input.actorId} FOR UPDATE`;
+    const session = await tx.galleryEditorSession.findFirst({ where: { id: input.sessionId, creatorId: input.creatorId, actorId: input.actorId } });
+    const context = object(session?.context), conversation = object(context.conversation), pending = object(conversation.pendingDraftReview);
+    if (!session || session.revision !== input.sessionRevision || pending.id !== input.reviewId || pending.kind !== expectedReviewKind || pending.expectedRevision !== input.sessionRevision || pending.expiresAt <= Date.now() || context.selectedPostIds?.length !== 1 || context.selectedPostIds[0] !== input.sourcePostId || pending.sourcePostId !== input.sourcePostId || pending.sourceVersionId !== input.sourceVersionId || pending.previewMediaId !== input.previewMediaId || pending.exportHash !== input.exportHash || pending.sourceDigest !== input.sourceDigest || pending.destination !== input.destination || fingerprint(pending.after) !== fingerprint(input.copy) || (expectedReviewKind === 'create' && (pending.before !== null || pending.variantId !== undefined)) || (expectedReviewKind === 'edit' && (pending.expectedVariantRevision !== input.expectedVariantRevision || pending.variantId !== (input as ConversationDraftIdentity & { variantId?: string }).variantId))) throw new ConversationDraftError('conflict', 'The draft review is stale. Review the copy again.');
+    return { session, context, conversation };
+  }
+
+  async function findReplay(tx: Prisma.TransactionClient, input: ConversationDraftIdentity, groupKey: string, variantId?: string): Promise<Receipt | null> {
+    const session = await tx.galleryEditorSession.findFirst({ where: { id: input.sessionId, creatorId: input.creatorId, actorId: input.actorId }, select: { context: true } });
+    const context = object(session?.context), conversation = object(context.conversation);
+    const receipt = (Array.isArray(conversation.draftReceipts) ? conversation.draftReceipts : []).find((item: any) => item.reviewId === input.reviewId);
+    if (receipt) return receipt as Receipt;
+    const plan = variantId
+      ? await tx.postDistributionPlan.findFirst({ where: { creatorId: input.creatorId, conversationalGroupKey: groupKey }, include: { variants: true } })
+      : await tx.postDistributionPlan.findFirst({ where: { creatorId: input.creatorId, postId: input.sourcePostId, conversationalGroupKey: groupKey }, include: { variants: true } });
+    if (!plan) return null;
+    const state = object(object(plan.assistantPlan)[ns]) as ManagedState;
+    const entry = state.variants?.[input.destination];
+    if (!entry || (variantId && entry.variantId !== variantId)) return null;
+    const revision = entry.revisions.find(row => row.reviewId === input.reviewId);
+    return revision ? { reviewId: input.reviewId, planId: plan.id, variantId: entry.variantId, destination: input.destination, sourcePostId: state.sourcePostId, sourceVersionId: state.sourceVersionId, previewMediaId: state.previewMediaId, revision: revision.revision, confirmedAt: revision.confirmedAt } : null;
+  }
+
+  async function appendReceiptAndAdvanceSession(tx: Prisma.TransactionClient, input: ConversationDraftIdentity, context: Record<string, any>, conversation: Record<string, any>, receipt: Receipt) {
+    const nextConversation = { ...conversation, draftReceipts: [...(Array.isArray(conversation.draftReceipts) ? conversation.draftReceipts : []), receipt] };
+    delete nextConversation.pendingDraftReview;
+    const nextContext = { ...context, conversation: nextConversation };
+    const session = await tx.galleryEditorSession.findFirstOrThrow({ where: { id: input.sessionId, creatorId: input.creatorId, actorId: input.actorId } });
+    const cart = object(session.cart);
+    const changed = await tx.galleryEditorSession.updateMany({ where: { id: input.sessionId, creatorId: input.creatorId, actorId: input.actorId, revision: input.sessionRevision }, data: {
+      revision: input.sessionRevision + 1, context: nextContext as Prisma.InputJsonValue,
+      cart: { ...cart, revision: input.sessionRevision + 1 } as Prisma.InputJsonValue
+    } });
+    if (changed.count !== 1) throw new ConversationDraftError('conflict', 'The conversation changed before the draft was confirmed.');
+  }
+
+  async function confirmCreate(input: ConversationDraftIdentity): Promise<{ receipt: Receipt; reused: boolean }> {
+    if (!validCopy(input.destination, input.copy)) throw new ConversationDraftError('invalid', 'The copy is empty or exceeds the destination limits.');
+    const groupKey = `conversation-draft:${fingerprint({ creatorId: input.creatorId, sourcePostId: input.sourcePostId, sourceVersionId: input.sourceVersionId, previewMediaId: input.previewMediaId, exportHash: input.exportHash })}`;
+    return serializable(prisma, async tx => {
+      const replay = await findReplay(tx, input, groupKey);
+      if (replay) return { receipt: replay, reused: true };
+      await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtextextended(${groupKey}, 0))`;
+      const { context, conversation } = await lockSession(tx, input, 'create');
+      await validateReceipt(tx, input);
+      const post = await tx.post.findFirstOrThrow({ where: { id: input.sourcePostId, creatorId: input.creatorId }, select: { id: true } });
+      let plan = await tx.postDistributionPlan.findFirst({ where: { creatorId: input.creatorId, postId: post.id, conversationalGroupKey: groupKey }, include: { variants: true } });
+      let state: ManagedState;
+      if (plan) {
+        const planData = object(plan.assistantPlan), stored = object(planData[ns]);
+        if (stored.version !== 1 || stored.sourcePostId !== input.sourcePostId || stored.sourceVersionId !== input.sourceVersionId || stored.previewMediaId !== input.previewMediaId || stored.exportHash !== input.exportHash) throw new ConversationDraftError('conflict', 'A conflicting managed draft already exists.');
+        state = stored as ManagedState;
+      } else {
+        state = { version: 1, sourcePostId: input.sourcePostId, sourceVersionId: input.sourceVersionId, previewMediaId: input.previewMediaId, exportHash: input.exportHash, sourceDigest: input.sourceDigest, variants: {} };
+        const data = buildDistributionPlanCreateData({ creatorId: input.creatorId, postId: post.id, status: 'active', assistantMode: 'none', assistantContext: {}, assistantPlan: { preview_media_id: input.previewMediaId, media_routing_by_destination: { [input.destination]: 'preview' }, [ns]: state } });
+        plan = await tx.postDistributionPlan.create({ data: { ...data, conversationalGroupKey: groupKey }, include: { variants: true } });
+      }
+      const existing = plan.variants?.find(row => row.destination === input.destination);
+      let variantId: string, revision: number, reused = false, confirmedAt = new Date().toISOString();
+      if (existing) {
+        const entry = state.variants[input.destination];
+        if (!entry || entry.variantId !== existing.id) throw new ConversationDraftError('conflict', 'The destination draft needs review in Conversation.');
+        const previous = entry.revisions.find(row => row.reviewId === input.reviewId);
+        if (previous) {
+          const receipt = { reviewId: input.reviewId, planId: plan.id, variantId: existing.id, destination: input.destination, sourcePostId: input.sourcePostId, sourceVersionId: input.sourceVersionId, previewMediaId: input.previewMediaId, revision: previous.revision, confirmedAt: previous.confirmedAt };
+          return { receipt, reused: true };
+        }
+        const currentCopy = input.destination === 'x' ? { postText: existing.postText ?? '' } : { title: existing.title ?? '', bodyText: existing.bodyText ?? '', tags: existing.tags };
+        if (!same(currentCopy, input.copy)) throw new ConversationDraftError('conflict', 'A draft already exists for this source and export. Review it through the edit flow.');
+        variantId = existing.id; revision = entry.revision; reused = true;
+      } else {
+        const daCopy = input.copy as Extract<ConversationDraftCopy, { title: string }>;
+        const formatted: FormattedPlatformVariant = input.destination === 'x'
+          ? { destination: 'x', title: null, bodyText: null, postText: (input.copy as Extract<ConversationDraftCopy, { postText: string }>).postText, tags: [], platformFields: buildVariantMediaPlatformFields({ mediaVersion: 'preview', destination: 'x' }), advice: { warnings: [] } }
+          : { destination: 'deviantart', title: daCopy.title, bodyText: daCopy.bodyText, postText: null, tags: [...daCopy.tags], platformFields: { mature: false, no_ai: false, created_using_ai: false, ...buildVariantMediaPlatformFields({ mediaVersion: 'preview', destination: 'deviantart' }) }, advice: { warnings: [] } };
+        const row = await tx.postDistributionVariant.create({ data: buildDistributionVariantCreateData({ planId: plan.id, postId: post.id, creatorId: input.creatorId, variant: formatted, status: 'draft', assistantEnabled: false }) });
+        variantId = row.id; revision = 0;
+        state.variants[input.destination] = { variantId, revision, revisions: [{ revision, reviewId: input.reviewId, before: null, after: input.copy, confirmedAt }] };
+        const nextPlan = { ...object(plan.assistantPlan), preview_media_id: input.previewMediaId, media_routing_by_destination: { ...object(object(plan.assistantPlan).media_routing_by_destination), [input.destination]: 'preview' }, [ns]: state };
+        await tx.postDistributionPlan.update({ where: { id: plan.id }, data: { assistantPlan: nextPlan as Prisma.InputJsonValue } });
+        plan = { ...plan, assistantPlan: nextPlan, variants: [...(plan.variants ?? []), row] };
+      }
+      const receipt: Receipt = { reviewId: input.reviewId, planId: plan.id, variantId, destination: input.destination, sourcePostId: input.sourcePostId, sourceVersionId: input.sourceVersionId, previewMediaId: input.previewMediaId, revision, confirmedAt };
+      await appendReceiptAndAdvanceSession(tx, input, context, conversation, receipt);
+      return { receipt, reused };
+    });
+  }
+
+  async function inspectManaged(creatorId: string, variantId: string) {
+    const row = await prisma.postDistributionVariant.findFirst({ where: { id: variantId, creatorId }, include: { plan: true } });
+    if (!row) throw new ConversationDraftError('not_found', 'Destination draft not found.');
+    const state = object(object(row.plan.assistantPlan)[ns]) as ManagedState;
+    const entry = state.variants?.[row.destination];
+    if (!row.plan.conversationalGroupKey?.startsWith('conversation-draft:') || state.version !== 1 || !entry || entry.variantId !== row.id) throw new ConversationDraftError('not_found', 'Destination draft is not managed by Conversation.');
+    return { row, plan: row.plan, state, entry };
+  }
+
+  async function readHistory(creatorId: string, receipts: Receipt[]) {
+    const uniqueReceipts = [...new Map(receipts.map(receipt => [receipt.variantId, receipt])).values()];
+    const rows = await Promise.all(uniqueReceipts.map(async receipt => {
+      const managed = await inspectManaged(creatorId, receipt.variantId);
+      if (managed.plan.id !== receipt.planId || managed.state.sourcePostId !== receipt.sourcePostId || managed.state.sourceVersionId !== receipt.sourceVersionId || managed.state.previewMediaId !== receipt.previewMediaId) return null;
+      const currentCopy = receipt.destination === 'x'
+        ? { postText: managed.row.postText ?? '' }
+        : { title: managed.row.title ?? '', bodyText: managed.row.bodyText ?? '', tags: managed.row.tags };
+      return { ...receipt, currentRevision: managed.entry.revision, currentCopy, revisions: managed.entry.revisions };
+    }));
+    return rows.filter((row): row is NonNullable<typeof row> => row !== null);
+  }
+
+  async function assertReceipt(input: Pick<ConversationDraftIdentity, 'creatorId' | 'sourcePostId' | 'sourceVersionId' | 'previewMediaId' | 'exportHash'>) {
+    await serializable(prisma, async tx => validateReceipt(tx, { ...input, sourceDigest: await currentSourceDigest(tx, input.creatorId, input.sourcePostId) }));
+  }
+
+  async function readSourceDigest(creatorId: string, sourcePostId: string) { return serializable(prisma, tx => currentSourceDigest(tx, creatorId, sourcePostId)); }
+
+  async function confirmEdit(input: ConversationDraftIdentity & { variantId: string; expectedVariantRevision: number }): Promise<{ receipt: Receipt; reused: boolean }> {
+    if (!validCopy(input.destination, input.copy)) throw new ConversationDraftError('invalid', 'The copy is empty or exceeds the destination limits.');
+    const groupKey = `conversation-draft:${fingerprint({ creatorId: input.creatorId, sourcePostId: input.sourcePostId, sourceVersionId: input.sourceVersionId, previewMediaId: input.previewMediaId, exportHash: input.exportHash })}`;
+    return serializable(prisma, async tx => {
+      const replay = await findReplay(tx, input, groupKey, input.variantId);
+      if (replay) return { receipt: replay, reused: true };
+      const { context, conversation } = await lockSession(tx, input, 'edit');
+      await validateReceipt(tx, input);
+      const found = await tx.postDistributionVariant.findFirst({ where: { id: input.variantId, creatorId: input.creatorId }, include: { plan: true } });
+      if (!found) throw new ConversationDraftError('not_found', 'Destination draft not found.');
+      await tx.$queryRaw`SELECT id FROM post_distribution_plans WHERE id = ${found.planId} AND creator_id = ${input.creatorId} FOR UPDATE`;
+      const plan = await tx.postDistributionPlan.findFirstOrThrow({ where: { id: found.planId, creatorId: input.creatorId } });
+      const state = object(object(plan.assistantPlan)[ns]) as ManagedState, entry = state.variants?.[input.destination];
+      if (!entry || entry.variantId !== found.id || state.sourcePostId !== input.sourcePostId || state.sourceVersionId !== input.sourceVersionId || state.previewMediaId !== input.previewMediaId || state.exportHash !== input.exportHash || found.destination !== input.destination) throw new ConversationDraftError('not_found', 'Destination draft is not managed by Conversation.');
+      const replay = entry.revisions.find(row => row.reviewId === input.reviewId);
+      if (replay) return { receipt: { reviewId: input.reviewId, planId: plan.id, variantId: found.id, destination: input.destination, sourcePostId: state.sourcePostId, sourceVersionId: state.sourceVersionId, previewMediaId: state.previewMediaId, revision: replay.revision, confirmedAt: replay.confirmedAt }, reused: true };
+      if (entry.revision !== input.expectedVariantRevision || found.status === 'posted' || found.status === 'handed_off' || found.status === 'skipped') throw new ConversationDraftError('conflict', 'The destination draft changed or can no longer be edited. Review it again.');
+      const before: ConversationDraftCopy = input.destination === 'x' ? { postText: found.postText ?? '' } : { title: found.title ?? '', bodyText: found.bodyText ?? '', tags: found.tags };
+      if (fingerprint(before) !== fingerprint(object(object(conversation.pendingDraftReview).before))) throw new ConversationDraftError('conflict', 'The destination copy changed after review. Review it again.');
+      const confirmedAt = new Date().toISOString(), revision = entry.revision + 1;
+      const afterEntry: JournalEntry = { revision, reviewId: input.reviewId, before, after: input.copy, confirmedAt };
+      const nextState: ManagedState = { ...state, variants: { ...state.variants, [input.destination]: { ...entry, revision, revisions: [...entry.revisions, afterEntry] } } };
+      const daCopy = input.copy as Extract<ConversationDraftCopy, { title: string }>;
+      const formatted: FormattedPlatformVariant = input.destination === 'x'
+        ? { destination: 'x', title: null, bodyText: null, postText: (input.copy as Extract<ConversationDraftCopy, { postText: string }>).postText, tags: [], platformFields: object(found.platformFields), advice: {} }
+        : { destination: 'deviantart', title: daCopy.title, bodyText: daCopy.bodyText, postText: null, tags: [...daCopy.tags], platformFields: object(found.platformFields), advice: {} };
+      const data = buildDistributionVariantCreateData({ planId: found.planId, postId: found.postId, creatorId: found.creatorId, variant: formatted, status: 'draft', assistantEnabled: false });
+      const { planId: _planId, postId: _postId, creatorId: _creatorId, destination: _destination, ...variantData } = data;
+      const update = await tx.postDistributionVariant.updateMany({ where: { id: found.id, creatorId: input.creatorId, updatedAt: found.updatedAt, status: found.status }, data: { ...variantData, approvedAt: null } });
+      if (update.count !== 1) throw new ConversationDraftError('conflict', 'The destination draft changed while the edit was confirmed.');
+      const nextPlan = { ...object(plan.assistantPlan), [ns]: nextState };
+      await tx.postDistributionPlan.update({ where: { id: plan.id }, data: { assistantPlan: nextPlan as Prisma.InputJsonValue } });
+      const receipt: Receipt = { reviewId: input.reviewId, planId: plan.id, variantId: found.id, destination: input.destination, sourcePostId: state.sourcePostId, sourceVersionId: state.sourceVersionId, previewMediaId: state.previewMediaId, revision, confirmedAt };
+      await appendReceiptAndAdvanceSession(tx, input, context, conversation, receipt);
+      return { receipt, reused: false };
+    });
+  }
+
+  return { confirmCreate, confirmEdit, inspectManaged, assertReceipt, readSourceDigest, readHistory };
+}
+
+diff --git "a/C:\\Users\\jorda\\Documents\\Codex\\2026-10-11\\c\\work\\relay\\work\\pcb-final-baseline\\src\\editor-bench\\real-library-conversation-routes.ts" "b/C:\\Users\\jorda\\Documents\\Codex\\2026-10-11\\c\\work\\relay\\src\\editor-bench\\real-library-conversation-routes.ts"
+index 56c2f8f..dd4807a 100644
+--- "a/C:\\Users\\jorda\\Documents\\Codex\\2026-10-11\\c\\work\\relay\\work\\pcb-final-baseline\\src\\editor-bench\\real-library-conversation-routes.ts"
++++ "b/C:\\Users\\jorda\\Documents\\Codex\\2026-10-11\\c\\work\\relay\\src\\editor-bench\\real-library-conversation-routes.ts"
+@@ -10,6 +10,8 @@ import { runBoundedLargeLibrarySelection } from './large-library-chat.js';
+ import { editActionDigest, reviewRealLibraryEdit, sourceEditDigest, type EditReviewAction } from './real-library-edit-review.js';
+ import type { RetrievalRefinementState } from './real-library-selection.js';
+ import { previewConfigHash, previewExportErrorMessage, previewReviewExpiry, type PreviewExportStore } from './real-library-preview-export.js';
++import { ConversationDraftError, createPrismaConversationDraftVariantStore, type ConversationDraftCopy, type ConversationDraftDestination, type ConversationDraftIdentity } from '../distribution/conversation-draft-variants.js';
++import type { PrismaClient } from '@prisma/client';
+ 
+ const MAX_REQUEST_LENGTH = 4000;
+ 
+@@ -30,6 +32,8 @@ export type RealLibraryConversationView = {
+   usage?: { calls: number; known: boolean; inputTokens: number | null; outputTokens: number | null; costUsd: number | null };
+   previewReview?: { reviewId: string; expiresAt: string; sourcePostId: string; sourceVersionId: string; sourceMediaId: string; templateId: string; templateUpdatedAt: string; templateConfig: Record<string, unknown>; templateConfigHash: string; stagedMediaId: string; stagedContentUrl: string; exportHash: string; size: number; contentType: 'image/jpeg' };
+   previewExports?: Array<{ reviewId: string; sourcePostId: string; sourceVersionId: string; sourceMediaId: string; mediaId: string; exportHash: string; size: number; templateId: string; templateUpdatedAt: string; templateConfigHash: string; confirmedAt: string; mediaUrl: string }>;
++  draftReview?: { reviewId: string; kind: 'create' | 'edit'; expiresAt: string; expectedVariantRevision?: number; sourcePostId: string; sourceVersionId: string; previewMediaId: string; previewMediaUrl: string; destination: ConversationDraftDestination; variantId?: string; before: Record<string, unknown> | null; after: Record<string, unknown> };
++  draftReceipts?: Array<{ reviewId: string; planId: string; variantId: string; destination: ConversationDraftDestination; sourcePostId: string; sourceVersionId: string; previewMediaId: string; revision: number; confirmedAt: string }>;
+ };
+ function applyTagDelta(tags: string[], action: Extract<EditReviewAction, { kind: 'tags' }>): string[] {
+   return [...new Set([...tags.filter(tag => !action.remove.includes(tag)), ...action.add])].sort();
+@@ -73,6 +77,13 @@ function record(value: unknown): value is Record<string, unknown> {
+ function exactKeys(value: Record<string, unknown>, keys: string[]): boolean {
+   return Object.keys(value).length === keys.length && keys.every(key => Object.hasOwn(value, key));
+ }
++function draftDestination(value: unknown): value is ConversationDraftDestination { return value === 'x' || value === 'deviantart'; }
++function draftCopy(destination: ConversationDraftDestination, value: unknown): ConversationDraftCopy | null {
++  if (!record(value)) return null;
++  if (destination === 'x' && exactKeys(value, ['postText']) && typeof value.postText === 'string' && value.postText.trim() && value.postText.length <= 280) return { postText: value.postText };
++  if (destination === 'deviantart' && exactKeys(value, ['title', 'bodyText', 'tags']) && typeof value.title === 'string' && value.title.trim() && typeof value.bodyText === 'string' && value.bodyText.trim() && Array.isArray(value.tags) && value.tags.length <= 30 && value.tags.every(tag => typeof tag === 'string')) return { title: value.title, bodyText: value.bodyText, tags: [...value.tags] };
++  return null;
++}
+ function state(session: Session): RetrievalRefinementState {
+   const data = session.editor.context.conversation!;
+   return { v: 2, scope: 'real_library_retrieval', catalogRevision: data.catalogRevision, selectedPostIds: session.editor.context.selectedPostIds, excludedPostIds: data.excludedPostIds };
+@@ -82,6 +93,7 @@ function view(session: Session, snapshot: LargeRealLibrarySnapshot, status: Real
+   const excludedPostIds = session.editor.context.conversation!.excludedPostIds;
+   const pending = session.editor.context.conversation!.pendingReview;
+   const previewReview = session.editor.context.conversation!.pendingPreviewReview;
++  const draftReview = session.editor.context.conversation!.pendingDraftReview;
+   const source = pending ? snapshot.posts.find(post => post.postId === pending.action.postId) : undefined;
+   const before = source ? { title: source.title, tags: [...source.tags] } : undefined;
+   let after: { title: string; tags: string[] } | undefined;
+@@ -104,6 +116,15 @@ function view(session: Session, snapshot: LargeRealLibrarySnapshot, status: Real
+       stagedMediaId: previewReview.stagedMediaId, stagedContentUrl: `/api/v1/export/media/${encodeURIComponent(session.principal.creatorId)}/${encodeURIComponent(previewReview.stagedMediaId)}/content`,
+       exportHash: previewReview.exportHash, size: previewReview.size, contentType: 'image/jpeg' as const
+     } } : {}),
++    ...(draftReview ? { draftReview: {
++      reviewId: draftReview.id, kind: draftReview.kind, expiresAt: new Date(draftReview.expiresAt).toISOString(),
++      ...(draftReview.expectedVariantRevision !== undefined ? { expectedVariantRevision: draftReview.expectedVariantRevision } : {}),
++      sourcePostId: draftReview.sourcePostId, sourceVersionId: draftReview.sourceVersionId, previewMediaId: draftReview.previewMediaId,
++      previewMediaUrl: `/api/v1/export/media/${encodeURIComponent(session.principal.creatorId)}/${encodeURIComponent(draftReview.previewMediaId)}/content`,
++      destination: draftReview.destination, ...(draftReview.variantId ? { variantId: draftReview.variantId } : {}),
++      before: draftReview.before, after: draftReview.after
++    } } : {}),
++    ...(session.editor.context.conversation!.draftReceipts?.length ? { draftReceipts: session.editor.context.conversation!.draftReceipts } : {}),
+     ...(pending && before && after ? { editReview: { reviewId: pending.id, revision: pending.expectedRevision, expiresAt: new Date(pending.expiresAt).toISOString(), before, after } } : {}),
+     ...(matchedPostIds ? { result: { matchedPostIds } } : {}), ...(usage ? { usage } : {})
+   };
+@@ -111,6 +132,11 @@ function view(session: Session, snapshot: LargeRealLibrarySnapshot, status: Real
+ function invalid(res: Response, traceId: string, message: string) {
+   return res.status(400).json(errorEnvelope('INVALID_REQUEST', message, traceId));
+ }
++function sendDraftError(res: Response, traceId: string, error: unknown) {
++  if (!(error instanceof ConversationDraftError)) return res.status(503).json(errorEnvelope('SERVICE_UNAVAILABLE', 'The destination draft could not be saved.', traceId));
++  const status = error.code === 'invalid' ? 400 : error.code === 'not_found' ? 404 : error.code === 'conflict' ? 409 : 503;
++  return res.status(status).json(errorEnvelope(error.code.toUpperCase(), error.message, traceId));
++}
+ 
+ export function registerRealLibraryConversationRoutes(app: express.Application, options: {
+   development: boolean;
+@@ -122,6 +148,8 @@ export function registerRealLibraryConversationRoutes(app: express.Application,
+   editorEnabled: (creatorId: string) => boolean;
+   editorStoresReady: boolean;
+   previewExports?: PreviewExportStore;
++  draftVariants?: ReturnType<typeof createPrismaConversationDraftVariantStore>;
++  prisma?: PrismaClient;
+   traceId: (req: Request) => string;
+   now?: () => Date;
+   nowMs?: () => number;
+@@ -129,6 +157,7 @@ export function registerRealLibraryConversationRoutes(app: express.Application,
+ }): void {
+   if (!options.development) return;
+   const store = options.store ?? createRealLibraryConversationStore(options.editor);
++  const draftVariants = options.draftVariants ?? (options.prisma ? createPrismaConversationDraftVariantStore(options.prisma) : undefined);
+   const clock = options.now ?? (() => new Date());
+   const principalFor = async (req: Request, res: Response, traceId: string): Promise<Principal | null> => {
+     try {
+@@ -196,6 +225,19 @@ export function registerRealLibraryConversationRoutes(app: express.Application,
+     })) }, traceId));
+   });
+ 
++  app.get(`${basePath}/session/:sessionId/drafts`, async (req, res) => {
++    const traceId = options.traceId(req); res.setHeader('Cache-Control', 'private, no-store');
++    const principal = await principalFor(req, res, traceId); if (!principal) return;
++    const session = await owned(principal, req.params.sessionId, res, traceId);
++    if (!session) return res.headersSent ? undefined : res.status(404).json(errorEnvelope('NOT_FOUND', 'Library conversation not found.', traceId));
++    if (!draftVariants) return res.status(503).json(errorEnvelope('SERVICE_UNAVAILABLE', 'Destination drafts are unavailable.', traceId));
++    try {
++      const draftReceipts = session.editor.context.conversation?.draftReceipts ?? [];
++      const drafts = await draftVariants.readHistory(principal.creatorId, draftReceipts);
++      return res.status(200).json(successEnvelope({ sessionId: session.editor.id, revision: session.editor.revision, draftReceipts, drafts }, traceId));
++    } catch { return res.status(503).json(errorEnvelope('SERVICE_UNAVAILABLE', 'Conversation drafts could not be loaded.', traceId)); }
++  });
++
+   app.post(`${basePath}/session/:sessionId/preview/review`, async (req, res) => {
+     const traceId = options.traceId(req);
+     res.setHeader('Cache-Control', 'private, no-store');
+@@ -281,6 +323,94 @@ export function registerRealLibraryConversationRoutes(app: express.Application,
+     }
+   });
+ 
++  app.post(`${basePath}/session/:sessionId/draft/review`, async (req, res) => {
++    const traceId = options.traceId(req); res.setHeader('Cache-Control', 'private, no-store');
++    const principal = await principalFor(req, res, traceId); if (!principal) return;
++    if (!record(req.body) || !exactKeys(req.body, ['expectedRevision', 'sourcePostId', 'previewReviewId', 'destination', 'copy']) || !Number.isSafeInteger(req.body.expectedRevision) || (req.body.expectedRevision as number) < 0 || typeof req.body.sourcePostId !== 'string' || typeof req.body.previewReviewId !== 'string' || !draftDestination(req.body.destination)) return invalid(res, traceId, 'Provide the current revision, selected source, confirmed Previewizer export, destination, and exact copy.');
++    const copy = draftCopy(req.body.destination, req.body.copy); if (!copy) return invalid(res, traceId, 'Provide exact X copy within 280 characters, or a DeviantArt title, description, and up to 30 tags.');
++    const session = await owned(principal, req.params.sessionId, res, traceId);
++    if (!session) return res.headersSent ? undefined : res.status(404).json(errorEnvelope('NOT_FOUND', 'Library conversation not found.', traceId));
++    if (!draftVariants) return res.status(503).json(errorEnvelope('SERVICE_UNAVAILABLE', 'Destination drafts are unavailable.', traceId));
++    if (req.body.expectedRevision !== session.editor.revision) return res.status(409).json(errorEnvelope('CONFLICT', 'The conversation changed. Read it again before reviewing the draft.', traceId));
++    if (session.editor.context.selectedPostIds.length !== 1 || session.editor.context.selectedPostIds[0] !== req.body.sourcePostId) return res.status(409).json(errorEnvelope('CONFLICT', 'Select exactly one source post before reviewing a destination draft.', traceId));
++    const authorized = await editorMutationPrincipal(req, res, traceId, principal); if (!authorized) return;
++    const conversation = session.editor.context.conversation!;
++    const exportReceipt = conversation.previewReceipts?.find(receipt => receipt.reviewId === req.body.previewReviewId && receipt.sourcePostId === req.body.sourcePostId);
++    if (!exportReceipt) return res.status(409).json(errorEnvelope('CONFLICT', 'Choose a confirmed Previewizer export for the selected source.', traceId));
++    try {
++      await draftVariants.assertReceipt({ creatorId: principal.creatorId, sourcePostId: exportReceipt.sourcePostId, sourceVersionId: exportReceipt.sourceVersionId, previewMediaId: exportReceipt.mediaId, exportHash: exportReceipt.exportHash });
++      const sourceDigest = await draftVariants.readSourceDigest(principal.creatorId, exportReceipt.sourcePostId);
++      const reviewId = randomUUID();
++      const pendingDraftReview = { id: reviewId, kind: 'create' as const, expectedRevision: session.editor.revision + 1, expiresAt: (options.nowMs ?? Date.now)() + 15 * 60 * 1000, sourcePostId: exportReceipt.sourcePostId, sourceVersionId: exportReceipt.sourceVersionId, previewMediaId: exportReceipt.mediaId, exportHash: exportReceipt.exportHash, sourceDigest, destination: req.body.destination, before: null, after: copy };
++      const nextConversation = { ...conversation, pendingDraftReview };
++      delete nextConversation.pendingPreviewReview;
++      const context: EditorContext = { ...session.editor.context, conversation: nextConversation };
++      session.editor = await options.editor.revise(principal.creatorId, principal.accountId, session.editor.id, session.editor.revision, session.editor.cart.actions, context, session.editor.messages, 'manual', undefined, true);
++      return res.status(200).json(successEnvelope({ scope: 'real_library_conversation_draft_review', sessionId: session.editor.id, revision: session.editor.revision, review: { reviewId, expiresAt: new Date(pendingDraftReview.expiresAt).toISOString(), sourcePostId: pendingDraftReview.sourcePostId, sourceVersionId: pendingDraftReview.sourceVersionId, previewMediaId: pendingDraftReview.previewMediaId, previewMediaUrl: `/api/v1/export/media/${encodeURIComponent(principal.creatorId)}/${encodeURIComponent(pendingDraftReview.previewMediaId)}/content`, destination: pendingDraftReview.destination, before: null, after: copy } }, traceId));
++    } catch (error) { return sendDraftError(res, traceId, error); }
++  });
++
++  app.post(`${basePath}/session/:sessionId/draft/confirm`, async (req, res) => {
++    const traceId = options.traceId(req); res.setHeader('Cache-Control', 'private, no-store');
++    const principal = await principalFor(req, res, traceId); if (!principal) return;
++    if (!record(req.body) || !exactKeys(req.body, ['expectedRevision', 'reviewId']) || !Number.isSafeInteger(req.body.expectedRevision) || (req.body.expectedRevision as number) < 0 || typeof req.body.reviewId !== 'string' || !req.body.reviewId.trim()) return invalid(res, traceId, 'Provide the draft review ID and current conversation revision.');
++    const session = await owned(principal, req.params.sessionId, res, traceId);
++    if (!session) return res.headersSent ? undefined : res.status(404).json(errorEnvelope('NOT_FOUND', 'Library conversation not found.', traceId));
++    if (!draftVariants) return res.status(503).json(errorEnvelope('SERVICE_UNAVAILABLE', 'Destination drafts are unavailable.', traceId));
++    const authorized = await editorMutationPrincipal(req, res, traceId, principal); if (!authorized) return;
++    const priorReceipt = session.editor.context.conversation?.draftReceipts?.find(receipt => receipt.reviewId === req.body.reviewId);
++    if (priorReceipt) return res.status(200).json(successEnvelope({ scope: 'real_library_conversation_draft', status: 'confirmed', replayed: true, receipt: priorReceipt }, traceId));
++    const pending = session.editor.context.conversation?.pendingDraftReview;
++    if (req.body.expectedRevision !== session.editor.revision || !pending || pending.id !== req.body.reviewId || pending.expectedRevision !== session.editor.revision || pending.kind !== 'create' || pending.expiresAt <= (options.nowMs ?? Date.now)()) return res.status(409).json(errorEnvelope('CONFLICT', 'This draft review is stale or unavailable. Review the copy again.', traceId));
++    try {
++      const result = await draftVariants.confirmCreate({ reviewId: pending.id, creatorId: principal.creatorId, actorId: principal.accountId, sessionId: session.editor.id, sessionRevision: session.editor.revision, sourcePostId: pending.sourcePostId, sourceVersionId: pending.sourceVersionId, previewMediaId: pending.previewMediaId, exportHash: pending.exportHash, sourceDigest: pending.sourceDigest, destination: pending.destination, copy: pending.after as ConversationDraftCopy });
++      return res.status(200).json(successEnvelope({ scope: 'real_library_conversation_draft', status: 'confirmed', replayed: result.reused, receipt: result.receipt }, traceId));
++    } catch (error) { return sendDraftError(res, traceId, error); }
++  });
++
++  app.post(`${basePath}/session/:sessionId/draft/edit/review`, async (req, res) => {
++    const traceId = options.traceId(req); res.setHeader('Cache-Control', 'private, no-store');
++    const principal = await principalFor(req, res, traceId); if (!principal) return;
++    if (!record(req.body) || !exactKeys(req.body, ['expectedRevision', 'expectedVariantRevision', 'variantId', 'copy']) || !Number.isSafeInteger(req.body.expectedRevision) || (req.body.expectedRevision as number) < 0 || !Number.isSafeInteger(req.body.expectedVariantRevision) || (req.body.expectedVariantRevision as number) < 0 || typeof req.body.variantId !== 'string') return invalid(res, traceId, 'Provide the current conversation and variant revisions, destination draft, and exact replacement copy.');
++    const session = await owned(principal, req.params.sessionId, res, traceId);
++    if (!session) return res.headersSent ? undefined : res.status(404).json(errorEnvelope('NOT_FOUND', 'Library conversation not found.', traceId));
++    if (!draftVariants) return res.status(503).json(errorEnvelope('SERVICE_UNAVAILABLE', 'Destination drafts are unavailable.', traceId));
++    if (req.body.expectedRevision !== session.editor.revision) return res.status(409).json(errorEnvelope('CONFLICT', 'The conversation changed. Read it again before reviewing the edit.', traceId));
++    const authorized = await editorMutationPrincipal(req, res, traceId, principal); if (!authorized) return;
++    try {
++      const managed = await draftVariants.inspectManaged(principal.creatorId, req.body.variantId);
++      const destination = managed.row.destination as ConversationDraftDestination;
++      if (!draftDestination(destination) || managed.entry.revision !== req.body.expectedVariantRevision || session.editor.context.selectedPostIds.length !== 1 || session.editor.context.selectedPostIds[0] !== managed.state.sourcePostId) return res.status(409).json(errorEnvelope('CONFLICT', 'Select the draft source and read its current revision before editing.', traceId));
++      const copy = draftCopy(destination, req.body.copy); if (!copy) return invalid(res, traceId, 'Provide exact X copy within 280 characters, or a DeviantArt title, description, and up to 30 tags.');
++      await draftVariants.assertReceipt({ creatorId: principal.creatorId, sourcePostId: managed.state.sourcePostId, sourceVersionId: managed.state.sourceVersionId, previewMediaId: managed.state.previewMediaId, exportHash: managed.state.exportHash });
++      const sourceDigest = await draftVariants.readSourceDigest(principal.creatorId, managed.state.sourcePostId);
++      const before = destination === 'x' ? { postText: managed.row.postText ?? '' } : { title: managed.row.title ?? '', bodyText: managed.row.bodyText ?? '', tags: managed.row.tags };
++      const reviewId = randomUUID();
++      const pendingDraftReview = { id: reviewId, kind: 'edit' as const, expectedRevision: session.editor.revision + 1, expectedVariantRevision: managed.entry.revision, expiresAt: (options.nowMs ?? Date.now)() + 15 * 60 * 1000, sourcePostId: managed.state.sourcePostId, sourceVersionId: managed.state.sourceVersionId, previewMediaId: managed.state.previewMediaId, exportHash: managed.state.exportHash, sourceDigest, destination, variantId: managed.row.id, before, after: copy };
++      const context: EditorContext = { ...session.editor.context, conversation: { ...session.editor.context.conversation!, pendingDraftReview } };
++      session.editor = await options.editor.revise(principal.creatorId, principal.accountId, session.editor.id, session.editor.revision, session.editor.cart.actions, context, session.editor.messages, 'manual', undefined, true);
++      return res.status(200).json(successEnvelope({ scope: 'real_library_conversation_draft_review', sessionId: session.editor.id, revision: session.editor.revision, review: { reviewId, expiresAt: new Date(pendingDraftReview.expiresAt).toISOString(), sourcePostId: pendingDraftReview.sourcePostId, sourceVersionId: pendingDraftReview.sourceVersionId, previewMediaId: pendingDraftReview.previewMediaId, previewMediaUrl: `/api/v1/export/media/${encodeURIComponent(principal.creatorId)}/${encodeURIComponent(pendingDraftReview.previewMediaId)}/content`, destination, variantId: managed.row.id, expectedVariantRevision: managed.entry.revision, before, after: copy } }, traceId));
++    } catch (error) { return sendDraftError(res, traceId, error); }
++  });
++
++  app.post(`${basePath}/session/:sessionId/draft/edit/confirm`, async (req, res) => {
++    const traceId = options.traceId(req); res.setHeader('Cache-Control', 'private, no-store');
++    const principal = await principalFor(req, res, traceId); if (!principal) return;
++    if (!record(req.body) || !exactKeys(req.body, ['expectedRevision', 'reviewId']) || !Number.isSafeInteger(req.body.expectedRevision) || (req.body.expectedRevision as number) < 0 || typeof req.body.reviewId !== 'string' || !req.body.reviewId.trim()) return invalid(res, traceId, 'Provide the draft edit review ID and current conversation revision.');
++    const session = await owned(principal, req.params.sessionId, res, traceId);
++    if (!session) return res.headersSent ? undefined : res.status(404).json(errorEnvelope('NOT_FOUND', 'Library conversation not found.', traceId));
++    if (!draftVariants) return res.status(503).json(errorEnvelope('SERVICE_UNAVAILABLE', 'Destination drafts are unavailable.', traceId));
++    const authorized = await editorMutationPrincipal(req, res, traceId, principal); if (!authorized) return;
++    const priorReceipt = session.editor.context.conversation?.draftReceipts?.find(receipt => receipt.reviewId === req.body.reviewId);
++    if (priorReceipt) return res.status(200).json(successEnvelope({ scope: 'real_library_conversation_draft', status: 'confirmed', replayed: true, receipt: priorReceipt }, traceId));
++    const pending = session.editor.context.conversation?.pendingDraftReview;
++    if (req.body.expectedRevision !== session.editor.revision || !pending || pending.id !== req.body.reviewId || pending.expectedRevision !== session.editor.revision || pending.kind !== 'edit' || pending.expiresAt <= (options.nowMs ?? Date.now)() || !pending.variantId || pending.expectedVariantRevision === undefined) return res.status(409).json(errorEnvelope('CONFLICT', 'This draft edit review is stale or unavailable. Review the copy again.', traceId));
++    try {
++      const result = await draftVariants.confirmEdit({ reviewId: pending.id, creatorId: principal.creatorId, actorId: principal.accountId, sessionId: session.editor.id, sessionRevision: session.editor.revision, sourcePostId: pending.sourcePostId, sourceVersionId: pending.sourceVersionId, previewMediaId: pending.previewMediaId, exportHash: pending.exportHash, sourceDigest: pending.sourceDigest, destination: pending.destination, copy: pending.after as ConversationDraftCopy, variantId: pending.variantId, expectedVariantRevision: pending.expectedVariantRevision });
++      return res.status(200).json(successEnvelope({ scope: 'real_library_conversation_draft', status: 'confirmed', replayed: result.reused, receipt: result.receipt }, traceId));
++    } catch (error) { return sendDraftError(res, traceId, error); }
++  });
++
+   app.post(`${basePath}/session`, async (req, res) => {
+     const traceId = options.traceId(req);
+     res.setHeader('Cache-Control', 'private, no-store');
+@@ -328,7 +458,7 @@ export function registerRealLibraryConversationRoutes(app: express.Application,
+     try {
+       const snapshot = await load(principal);
+       if (!await store.contains(session) || session.runtime.generation !== generation) return res.status(409).json(errorEnvelope('CONFLICT', 'The conversation changed before it could be refreshed.', traceId));
+-      const context: EditorContext = { ...session.editor.context, selectedPostIds: [], conversation: { catalogRevision: snapshot.catalogRevision, excludedPostIds: [], lastRequest: null, selectionInitialized: false, previewReceipts: session.editor.context.conversation?.previewReceipts ?? [] } };
++      const context: EditorContext = { ...session.editor.context, selectedPostIds: [], conversation: { catalogRevision: snapshot.catalogRevision, excludedPostIds: [], lastRequest: null, selectionInitialized: false, previewReceipts: session.editor.context.conversation?.previewReceipts ?? [], draftReceipts: session.editor.context.conversation?.draftReceipts ?? [] } };
+       session.editor = await options.editor.revise(principal.creatorId, principal.accountId, session.editor.id, session.editor.revision, session.editor.cart.actions, context, session.editor.messages, 'manual', undefined, true);
+       return res.status(200).json(successEnvelope(view(session, snapshot, 'ready', 'Library refreshed and selection cleared.'), traceId));
+     } catch (error) { return snapshotError(res, traceId, error); }
+diff --git "a/C:\\Users\\jorda\\Documents\\Codex\\2026-10-11\\c\\work\\relay\\work\\pcb-final-baseline\\src\\gallery-editor\\types.ts" "b/C:\\Users\\jorda\\Documents\\Codex\\2026-10-11\\c\\work\\relay\\src\\gallery-editor\\types.ts"
+index 30c7595..9d5a188 100644
+--- "a/C:\\Users\\jorda\\Documents\\Codex\\2026-10-11\\c\\work\\relay\\work\\pcb-final-baseline\\src\\gallery-editor\\types.ts"
++++ "b/C:\\Users\\jorda\\Documents\\Codex\\2026-10-11\\c\\work\\relay\\src\\gallery-editor\\types.ts"
+@@ -58,6 +58,33 @@ export interface EditorContext {
+       templateConfigHash: string;
+       confirmedAt: string;
+     }>;
++    pendingDraftReview?: {
++      id: string;
++      kind: 'create' | 'edit';
++      expectedRevision: number;
++      expectedVariantRevision?: number;
++      expiresAt: number;
++      sourcePostId: string;
++      sourceVersionId: string;
++      previewMediaId: string;
++      exportHash: string;
++      sourceDigest: string;
++      destination: 'x' | 'deviantart';
++      variantId?: string;
++      before: Record<string, unknown> | null;
++      after: Record<string, unknown>;
++    };
++    draftReceipts?: Array<{
++      reviewId: string;
++      planId: string;
++      variantId: string;
++      destination: 'x' | 'deviantart';
++      sourcePostId: string;
++      sourceVersionId: string;
++      previewMediaId: string;
++      revision: number;
++      confirmedAt: string;
++    }>;
+     pendingReview?: {
+       id: string;
+       action: Extract<EditAction, { kind: "rename_post" | "tags" }>;
+diff --git "a/C:\\Users\\jorda\\Documents\\Codex\\2026-10-11\\c\\work\\relay\\work\\pcb-final-baseline\\src\\distribution\\post-distribution-service.ts" "b/C:\\Users\\jorda\\Documents\\Codex\\2026-10-11\\c\\work\\relay\\src\\distribution\\post-distribution-service.ts"
+index a3d7c3b..3717e49 100644
+--- "a/C:\\Users\\jorda\\Documents\\Codex\\2026-10-11\\c\\work\\relay\\work\\pcb-final-baseline\\src\\distribution\\post-distribution-service.ts"
++++ "b/C:\\Users\\jorda\\Documents\\Codex\\2026-10-11\\c\\work\\relay\\src\\distribution\\post-distribution-service.ts"
+@@ -462,7 +462,7 @@ export async function createPostDistributionPlan(
+   };
+ 
+   const existing = await prisma.postDistributionPlan.findFirst({
+-    where: { postId, creatorId, status: "active", rhythmActionId: null },
++    where: { postId, creatorId, status: "active", rhythmActionId: null, OR: [{ conversationalGroupKey: null }, { conversationalGroupKey: { not: { startsWith: "conversation-draft:" } } }] },
+     include: { _count: { select: { variants: true } } }
+   });
+ 
+@@ -568,7 +568,7 @@ export async function getPostDistributionPlan(
+   postId: string
+ ): Promise<DistributionPlanWire | null> {
+   const plan = await prisma.postDistributionPlan.findFirst({
+-    where: { postId, creatorId, status: "active", rhythmActionId: null },
++    where: { postId, creatorId, status: "active", rhythmActionId: null, OR: [{ conversationalGroupKey: null }, { conversationalGroupKey: { not: { startsWith: "conversation-draft:" } } }] },
+     include: {
+       variants: {
+         include: {
+@@ -602,7 +602,7 @@ export async function reviseScheduledPostDistributionPlan(
+   }
+ 
+   const existing = await prisma.postDistributionPlan.findFirst({
+-    where: { postId, creatorId, status: "active", rhythmActionId: null },
++    where: { postId, creatorId, status: "active", rhythmActionId: null, OR: [{ conversationalGroupKey: null }, { conversationalGroupKey: { not: { startsWith: "conversation-draft:" } } }] },
+     include: {
+       variants: {
+         include: {
+@@ -792,6 +792,7 @@ export async function patchDistributionVariant(
+   const row = await prisma.postDistributionVariant.findFirst({
+     where: { id: variantId, creatorId },
+     include: {
++      plan: true,
+       attempts: { orderBy: { createdAt: "desc" }, take: 1 },
+       postbotTasks: { orderBy: { createdAt: "asc" } }
+     }
+@@ -799,6 +800,7 @@ export async function patchDistributionVariant(
+   if (!row) {
+     throw new PostDistributionNotFoundError("Variant not found.");
+   }
++  if (row.plan.conversationalGroupKey?.startsWith("conversation-draft:")) throw new PostDistributionValidationError("Edit this Conversation draft through its confirmed review flow.", [{ field: "conversation_managed", issue: "use_conversation" }]);
+   if (row.status === "posted") {
+     throw new PostDistributionValidationError("Posted variants cannot be edited.", [
+       { field: "variant_id", issue: "locked" }
+@@ -854,11 +856,12 @@ export async function approveDistributionVariant(
+   variantId: string
+ ): Promise<DistributionVariantWire> {
+   const row = await prisma.postDistributionVariant.findFirst({
+-    where: { id: variantId, creatorId }
++    where: { id: variantId, creatorId }, include: { plan: { select: { conversationalGroupKey: true } } }
+   });
+   if (!row) {
+     throw new PostDistributionNotFoundError("Variant not found.");
+   }
++  if (row.plan.conversationalGroupKey?.startsWith("conversation-draft:")) throw new PostDistributionValidationError("Review Conversation drafts through their confirmed flow before approval.", [{ field: "conversation_managed", issue: "use_conversation" }]);
+   const updated = await prisma.postDistributionVariant.update({
+     where: { id: variantId },
+     data: { status: "approved", approvedAt: new Date() },
+@@ -877,11 +880,12 @@ export async function startDistributionHandoff(
+   opts?: { extension_installation_id?: string | null; extension_tab_id?: number | null }
+ ): Promise<DistributionAttemptWire> {
+   const variant = await prisma.postDistributionVariant.findFirst({
+-    where: { id: variantId, creatorId }
++    where: { id: variantId, creatorId }, include: { plan: { select: { conversationalGroupKey: true } } }
+   });
+   if (!variant) {
+     throw new PostDistributionNotFoundError("Variant not found.");
+   }
++  if (variant.plan.conversationalGroupKey?.startsWith("conversation-draft:")) throw new PostDistributionValidationError("Conversation drafts are not ready for handoff through this route.", [{ field: "conversation_managed", issue: "use_conversation" }]);
+   if (variant.status !== "approved" && variant.status !== "handed_off" && variant.status !== "draft") {
+     throw new PostDistributionValidationError("Variant is not ready for handoff.", [
+       { field: "variant_id", issue: "invalid_status" }
+diff --git "a/C:\\Users\\jorda\\Documents\\Codex\\2026-10-11\\c\\work\\relay\\work\\pcb-final-baseline\\src\\distribution\\coach-checkpoint-service.ts" "b/C:\\Users\\jorda\\Documents\\Codex\\2026-10-11\\c\\work\\relay\\src\\distribution\\coach-checkpoint-service.ts"
+index 31e9916..cbdf2b8 100644
+--- "a/C:\\Users\\jorda\\Documents\\Codex\\2026-10-11\\c\\work\\relay\\work\\pcb-final-baseline\\src\\distribution\\coach-checkpoint-service.ts"
++++ "b/C:\\Users\\jorda\\Documents\\Codex\\2026-10-11\\c\\work\\relay\\src\\distribution\\coach-checkpoint-service.ts"
+@@ -45,7 +45,7 @@ async function findActivePlanRow(
+   postId: string
+ ) {
+   return prisma.postDistributionPlan.findFirst({
+-    where: { postId, creatorId, status: "active" },
++    where: { postId, creatorId, status: "active", OR: [{ conversationalGroupKey: null }, { conversationalGroupKey: { not: { startsWith: "conversation-draft:" } } }] },
+     include: {
+       _count: { select: { variants: true } }
+     }
+diff --git "a/C:\\Users\\jorda\\Documents\\Codex\\2026-10-11\\c\\work\\relay\\work\\pcb-final-baseline\\src\\distribution\\schedule-rail-service.ts" "b/C:\\Users\\jorda\\Documents\\Codex\\2026-10-11\\c\\work\\relay\\src\\distribution\\schedule-rail-service.ts"
+index ebfc523..c3a0190 100644
+--- "a/C:\\Users\\jorda\\Documents\\Codex\\2026-10-11\\c\\work\\relay\\work\\pcb-final-baseline\\src\\distribution\\schedule-rail-service.ts"
++++ "b/C:\\Users\\jorda\\Documents\\Codex\\2026-10-11\\c\\work\\relay\\src\\distribution\\schedule-rail-service.ts"
+@@ -1740,6 +1740,20 @@ export async function updateScheduleRailEventPostDetails(
+   const target = await resolveScheduleRailAttachTarget(prisma, id, tid);
+   const postId = target.post_id;
+ 
++  let planId = target.plan_id;
++  if (!planId) {
++    const plan = await prisma.postDistributionPlan.findFirst({
++      where: { postId, creatorId: id, status: "active", OR: [{ conversationalGroupKey: null }, { conversationalGroupKey: { not: { startsWith: "conversation-draft:" } } }] },
++      orderBy: { createdAt: "desc" },
++      select: { id: true }
++    });
++    planId = plan?.id ?? null;
++  }
++  if (planId) {
++    const plan = await prisma.postDistributionPlan.findFirst({ where: { id: planId, creatorId: id }, select: { conversationalGroupKey: true } });
++    if (plan?.conversationalGroupKey?.startsWith("conversation-draft:")) throw new ScheduleRailValidationError("Edit this destination draft through its confirmed Conversation review.");
++  }
++
+   const post = await prisma.post.findFirst({
+     where: { id: postId, creatorId: id },
+     select: { id: true, publishState: true }
+@@ -1774,16 +1788,6 @@ export async function updateScheduleRailEventPostDetails(
+       ? normalizePostDetailTags(input.tags)
+       : normalizePostDetailTags(version.tagIds);
+ 
+-  let planId = target.plan_id;
+-  if (!planId) {
+-    const plan = await prisma.postDistributionPlan.findFirst({
+-      where: { postId, creatorId: id, status: "active" },
+-      orderBy: { createdAt: "desc" },
+-      select: { id: true }
+-    });
+-    planId = plan?.id ?? null;
+-  }
+-
+   const variantsRows = planId
+     ? await prisma.postDistributionVariant.findMany({
+         where: { planId, creatorId: id },
+diff --git "a/C:\\Users\\jorda\\Documents\\Codex\\2026-10-11\\c\\work\\relay\\work\\pcb-final-baseline\\src\\server.ts" "b/C:\\Users\\jorda\\Documents\\Codex\\2026-10-11\\c\\work\\relay\\src\\server.ts"
+index 41e1450..7160692 100644
+--- "a/C:\\Users\\jorda\\Documents\\Codex\\2026-10-11\\c\\work\\relay\\work\\pcb-final-baseline\\src\\server.ts"
++++ "b/C:\\Users\\jorda\\Documents\\Codex\\2026-10-11\\c\\work\\relay\\src\\server.ts"
+@@ -13263,6 +13263,7 @@ export function createApp(config: AppConfig): CreateAppResult {
+     } catch (err) {
+       if (sendRelayAuthError(res, err, traceId)) return;
+       if (err instanceof PostDistributionValidationError) {
++        if (err.details.some(detail => detail.field === "conversation_managed")) return res.status(409).json(errorEnvelope("CONFLICT", err.message, traceId, err.details));
+         return res.status(400).json(
+           errorEnvelope("VALIDATION_ERROR", err.message, traceId, err.details)
+         );
+@@ -13303,6 +13304,7 @@ export function createApp(config: AppConfig): CreateAppResult {
+         return res.status(200).json(successEnvelope({ variant }, traceId));
+       } catch (err) {
+         if (sendRelayAuthError(res, err, traceId)) return;
++        if (err instanceof PostDistributionValidationError && err.details.some(detail => detail.field === "conversation_managed")) return res.status(409).json(errorEnvelope("CONFLICT", err.message, traceId, err.details));
+         if (err instanceof PostDistributionNotFoundError) {
+           return res.status(404).json(errorEnvelope("NOT_FOUND", err.message, traceId));
+         }
+@@ -13345,6 +13347,7 @@ export function createApp(config: AppConfig): CreateAppResult {
+       } catch (err) {
+         if (sendRelayAuthError(res, err, traceId)) return;
+         if (err instanceof PostDistributionValidationError) {
++          if (err.details.some(detail => detail.field === "conversation_managed")) return res.status(409).json(errorEnvelope("CONFLICT", err.message, traceId, err.details));
+           return res.status(400).json(
+             errorEnvelope("VALIDATION_ERROR", err.message, traceId, err.details)
+           );
+@@ -19513,6 +19516,7 @@ export function createApp(config: AppConfig): CreateAppResult {
+       registerRealLibraryConversationRoutes(app, {
+         development: true,
+         traceId: traceIdFrom,
++        prisma: config.prisma!,
+         editor: new GalleryEditorService(config.prisma!),
+         previewExports: previewR2 ? createPrismaRealLibraryPreviewExportStore(config.prisma!, {
+           read: (key, maxBytes) => getR2ObjectBuffer(previewR2, key, { timeoutMs: 10_000, maxBytes }),
+
+NEW FILE tests/editor-bench/real-library-draft-variants-postgres.integration.test.ts
+import { randomUUID, createHash } from 'node:crypto';
+import express from 'express';
+import request from 'supertest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { MediaIngestOrigin, MediaProcessingStatus, MediaUpstreamStatus, PrismaClient } from '@prisma/client';
+import { PrismaPg } from '@prisma/adapter-pg';
+import { GalleryEditorService } from '../../src/gallery-editor/service.js';
+import { registerRealLibraryConversationRoutes } from '../../src/editor-bench/real-library-conversation-routes.js';
+import { loadLargeRealLibrarySnapshot } from '../../src/editor-bench/library-selection-catalog.js';
+import { buildRelayR2ObjectKey } from '../../src/storage/relay-upload-r2.js';
+import { approveDistributionVariant, patchDistributionVariant, startDistributionHandoff } from '../../src/distribution/post-distribution-service.js';
+import { createPrismaConversationDraftVariantStore } from '../../src/distribution/conversation-draft-variants.js';
+
+const databaseUrl = process.env.GALLERY_EDITOR_TEST_DATABASE_URL?.trim();
+if (databaseUrl && !['127.0.0.1', 'localhost', '[::1]'].includes(new URL(databaseUrl).hostname)) throw new Error('Conversation draft integration tests require an explicit local test database.');
+
+describe.skipIf(!databaseUrl)('durable Library Conversation destination drafts — PostgreSQL', () => {
+  let db: PrismaClient;
+  let editor: GalleryEditorService;
+  let drafts: ReturnType<typeof createPrismaConversationDraftVariantStore>;
+  const creatorId = `draft_it_${randomUUID()}`, accountId = `draft_account_${randomUUID()}`, campaignId = `draft_campaign_${randomUUID()}`;
+  const postId = `draft_post_${randomUUID()}`, sourceMediaId = `draft_source_${randomUUID()}`, previewMediaId = `relay_m_${randomUUID()}`;
+  const sourceVersionId = `draft_version_${randomUUID()}`, exportHash = createHash('sha256').update('synthetic-pcb04-jpeg').digest('hex');
+  const previewReviewId = `preview_${randomUUID()}`, previewKey = buildRelayR2ObjectKey(creatorId, previewMediaId);
+  const base = '/api/v1/editor-bench/real-library-conversation';
+  const copyX = { postText: 'Exact X teaser copy, with punctuation.' };
+  const copyDa = { title: 'Exact DeviantArt title', bodyText: 'Exact DeviantArt description.', tags: ['coast', 'study'] };
+
+  const app = () => {
+    const instance = express(); instance.use(express.json());
+    registerRealLibraryConversationRoutes(instance, {
+      development: true, traceId: () => 'pcb04-postgres-proof', editor, prisma: db, draftVariants: drafts,
+      authenticateCreator: async () => ({ creatorId, accountId }),
+      loadSnapshot: (_account, owner, signal) => loadLargeRealLibrarySnapshot(db, accountId, owner, signal),
+      getProvider: async () => null, authorizeMutation: async () => ({ creatorId, accountId }),
+      editorEnabled: () => true, editorStoresReady: true
+    });
+    return instance;
+  };
+
+  const createSession = async () => {
+    const snapshot = await loadLargeRealLibrarySnapshot(db, accountId, creatorId);
+    return editor.create(creatorId, accountId, { selectedPostIds: [postId], conversation: {
+      catalogRevision: snapshot.catalogRevision, excludedPostIds: [], lastRequest: null, selectionInitialized: true,
+      previewReceipts: [{ reviewId: previewReviewId, sourcePostId: postId, sourceVersionId, sourceMediaId, sourceMediaFingerprint: 'source-fingerprint-v1', mediaId: previewMediaId, exportHash, size: 21, templateId: 'template_1', templateUpdatedAt: new Date().toISOString(), templateConfigHash: 'template-hash', confirmedAt: new Date().toISOString() }]
+    } });
+  };
+  const reviewCreate = (instance: express.Express, sessionId: string, revision: number, destination: 'x' | 'deviantart', copy: unknown) =>
+    request(instance).post(`${base}/session/${sessionId}/draft/review`).send({ expectedRevision: revision, sourcePostId: postId, previewReviewId, destination, copy });
+  const confirm = (instance: express.Express, sessionId: string, revision: number, reviewId: string) =>
+    request(instance).post(`${base}/session/${sessionId}/draft/confirm`).send({ expectedRevision: revision, reviewId });
+
+  beforeAll(async () => {
+    db = new PrismaClient({ adapter: new PrismaPg({ connectionString: databaseUrl! }) });
+    editor = new GalleryEditorService(db); drafts = createPrismaConversationDraftVariantStore(db);
+    await db.campaign.create({ data: { id: campaignId, creatorId, name: 'Draft fixture', upstreamUpdatedAt: new Date(), versionSeq: 1 } });
+    await db.post.create({ data: { id: postId, creatorId, campaignId, upstreamStatus: 'active', source: 'PATREON', createdAt: new Date(), versions: { create: {
+      id: sourceVersionId, versionSeq: 1, upstreamRevision: 'draft-source-1', title: 'Source artwork', publishedAt: new Date(), ingestedAt: new Date(), mediaIds: [sourceMediaId], tagIds: ['tag_coast'], tierIds: []
+    } } } });
+    await db.mediaAsset.create({ data: {
+      id: sourceMediaId, creatorId, postIds: [postId], primaryPostId: postId, upstreamStatus: MediaUpstreamStatus.active,
+      currentVersionSeq: 1, currentUpstreamRevision: 'draft-source-media-1', currentMimeType: 'image/png', currentUpstreamUrl: 'https://example.invalid/source.png', currentRole: 'main', currentStorageKey: null,
+      currentIngestedAt: new Date(), versionsJson: [], ingestOrigin: MediaIngestOrigin.PATREON, processingStatus: MediaProcessingStatus.READY, processingError: null
+    } });
+    await db.mediaAsset.create({ data: {
+      id: previewMediaId, creatorId, postIds: [postId], primaryPostId: postId, upstreamStatus: MediaUpstreamStatus.active,
+      currentVersionSeq: 1, currentUpstreamRevision: `relay:preview-export:${previewReviewId}`, currentMimeType: 'image/jpeg', currentUpstreamUrl: null, currentRole: 'preview', currentStorageKey: previewKey,
+      currentIngestedAt: new Date(), versionsJson: [{ sha256: exportHash, size: 21, storage_key: previewKey, source_post_id: postId, source_version_id: sourceVersionId, review_id: previewReviewId }],
+      ingestOrigin: MediaIngestOrigin.RELAY_UPLOAD, processingStatus: MediaProcessingStatus.READY, processingError: null
+    } });
+  });
+
+  afterAll(async () => {
+    if (!db) return;
+    await db.galleryEditorCommit.deleteMany({ where: { creatorId } });
+    await db.galleryEditorSession.deleteMany({ where: { creatorId } });
+    await db.postDistributionAttempt.deleteMany({ where: { creatorId } });
+    await db.postDistributionPlan.deleteMany({ where: { creatorId } });
+    await db.mediaAsset.deleteMany({ where: { creatorId } });
+    await db.post.deleteMany({ where: { creatorId } });
+    await db.campaign.deleteMany({ where: { creatorId } });
+    await db.$disconnect();
+  });
+
+  it('creates, reuses, edits, replays and reads exact drafts after restart while legacy writers reject managed variants', async () => {
+    const instance = app(), session = await createSession();
+    const firstReview = await reviewCreate(instance, session.id, session.revision, 'x', copyX).expect(200);
+    const firstConfirmedRevision = firstReview.body.data.revision;
+    const confirmed = await confirm(instance, session.id, firstConfirmedRevision, firstReview.body.data.review.reviewId).expect(200);
+    const xReceipt = confirmed.body.data.receipt;
+    expect(xReceipt).toMatchObject({ sourcePostId: postId, sourceVersionId, previewMediaId, destination: 'x', revision: 0 });
+    const plan = await db.postDistributionPlan.findFirstOrThrow({ where: { id: xReceipt.planId } });
+    const xVariant = await db.postDistributionVariant.findFirstOrThrow({ where: { id: xReceipt.variantId } });
+    expect(plan.conversationalGroupKey).toMatch(/^conversation-draft:/);
+    expect((plan.assistantPlan as any)).toMatchObject({ preview_media_id: previewMediaId, media_routing_by_destination: { x: 'preview' } });
+    expect((plan.assistantPlan as any).conversation_draft_v1.variants.x.revisions[0]).toMatchObject({ revision: 0, before: null, after: copyX });
+    expect(xVariant).toMatchObject({ destination: 'x', status: 'draft', postText: copyX.postText, platformFields: { media_version: 'preview', analytics_content_role: 'promo' } });
+    await expect(patchDistributionVariant(db, creatorId, xVariant.id, { post_text: 'Bypass' })).rejects.toMatchObject({ details: [{ field: 'conversation_managed' }] });
+    await expect(approveDistributionVariant(db, creatorId, xVariant.id)).rejects.toMatchObject({ details: [{ field: 'conversation_managed' }] });
+    await expect(startDistributionHandoff(db, creatorId, xVariant.id)).rejects.toMatchObject({ details: [{ field: 'conversation_managed' }] });
+    await request(instance).post(`${base}/session/${session.id}/draft/review`).send({ expectedRevision: firstConfirmedRevision + 1, sourcePostId: postId, previewReviewId: 'foreign-preview-receipt', destination: 'x', copy: copyX }).expect(409);
+    await reviewCreate(instance, session.id, firstConfirmedRevision + 1, 'x', { postText: 'x'.repeat(281) }).expect(400);
+
+    await db.postDistributionVariant.update({ where: { id: xVariant.id }, data: { status: 'approved', approvedAt: new Date() } });
+    const editRead = await request(instance).post(`${base}/session/${session.id}/draft/edit/review`).send({ expectedRevision: firstConfirmedRevision + 1, expectedVariantRevision: 0, variantId: xVariant.id, copy: { postText: 'Exact edited X copy.' } }).expect(200);
+    const editConfirm = await request(instance).post(`${base}/session/${session.id}/draft/edit/confirm`).send({ expectedRevision: editRead.body.data.revision, reviewId: editRead.body.data.review.reviewId }).expect(200);
+    expect(editConfirm.body.data.receipt.revision).toBe(1);
+    const edited = await db.postDistributionVariant.findFirstOrThrow({ where: { id: xVariant.id } });
+    expect(edited).toMatchObject({ status: 'draft', approvedAt: null, postText: 'Exact edited X copy.' });
+    const history = (await db.postDistributionPlan.findFirstOrThrow({ where: { id: plan.id } })).assistantPlan as any;
+    expect(history.conversation_draft_v1.variants.x.revisions).toMatchObject([
+      { revision: 0, before: null, after: copyX },
+      { revision: 1, before: copyX, after: { postText: 'Exact edited X copy.' } }
+    ]);
+    await request(instance).post(`${base}/session/${session.id}/draft/edit/review`).send({ expectedRevision: editRead.body.data.revision + 1, expectedVariantRevision: 0, variantId: xVariant.id, copy: { postText: 'Stale revision.' } }).expect(409);
+
+    const daReviewA = await reviewCreate(instance, session.id, editRead.body.data.revision + 1, 'deviantart', copyDa).expect(200);
+    const otherSession = await createSession();
+    const daReviewB = await reviewCreate(instance, otherSession.id, otherSession.revision, 'deviantart', copyDa).expect(200);
+    const [daFirst, daSecond] = await Promise.all([
+      confirm(instance, session.id, daReviewA.body.data.revision, daReviewA.body.data.review.reviewId),
+      confirm(instance, otherSession.id, daReviewB.body.data.revision, daReviewB.body.data.review.reviewId)
+    ]);
+    expect([daFirst.status, daSecond.status].sort()).toEqual([200, 200]);
+    expect(daFirst.body.data.receipt.variantId).toBe(daSecond.body.data.receipt.variantId);
+    const daVariant = await db.postDistributionVariant.findFirstOrThrow({ where: { id: daFirst.body.data.receipt.variantId } });
+    expect(daVariant).toMatchObject({ destination: 'deviantart', title: copyDa.title, bodyText: copyDa.bodyText, tags: copyDa.tags, status: 'draft', platformFields: { media_version: 'preview', analytics_content_role: 'promo' } });
+    expect(await db.postDistributionVariant.count({ where: { planId: plan.id } })).toBe(2);
+
+    editor = new GalleryEditorService(db);
+    const reopened = await request(app()).get(`${base}/session/${session.id}/drafts`).expect(200);
+    expect(reopened.body.data.drafts.find((row: any) => row.variantId === xVariant.id)).toMatchObject({ currentRevision: 1, currentCopy: { postText: 'Exact edited X copy.' }, revisions: [{ revision: 0 }, { revision: 1 }] });
+    const exactReplay = await confirm(app(), session.id, editRead.body.data.revision + 1, editRead.body.data.review.reviewId).expect(200);
+    expect(exactReplay.body.data.replayed).toBe(true);
+    const durableSession = await editor.read(creatorId, accountId, session.id);
+    const refreshed = await request(app()).post(`${base}/session/${session.id}/refresh`).send({ expectedRevision: durableSession.revision }).expect(200);
+    expect(refreshed.body.data.draftReceipts).toHaveLength(3);
+    const draftReceipts = await request(app()).get(`${base}/session/${session.id}/drafts`).expect(200);
+    expect(draftReceipts.body.data.drafts).toHaveLength(2);
+  });
+});
+

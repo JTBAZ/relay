@@ -7,6 +7,7 @@
  * @see {@link ../jsdoc-core-entities.ts}
  * @see prisma/schema.prisma Ingest output models via `PatreonSyncService` / `IngestService`
  */
+import { patreonOAuthRequest, PatreonRequestError } from "./oauth-request.js";
 import type { IngestPost } from "../ingest/types.js";
 import type { JsonApiDocument, JsonApiResource } from "./jsonapi-types.js";
 import {
@@ -201,6 +202,22 @@ async function cookieFetch(
   return JSON.parse(text) as JsonApiDocument;
 }
 
+/** One cookie-source page; continuations never cross into OAuth pagination. */
+export async function fetchCookiePostsPage(opts: { sessionId: string; campaignId: string; next?: string | null; fetchImpl?: typeof fetch }): Promise<{ document: JsonApiDocument; next: string | null; terminal: boolean }> {
+  const validate = (value: string): string => {
+    const url = new URL(value);
+    if (url.origin !== SITE_URL || url.pathname !== "/api/posts" || url.username || url.password || url.hash || (url.searchParams.has("filter[campaign_id]") && url.searchParams.get("filter[campaign_id]") !== opts.campaignId)) throw new Error("Invalid Patreon cookie page continuation.");
+    url.searchParams.set("filter[campaign_id]", opts.campaignId);
+    return url.toString();
+  };
+  const document = await cookieFetch(validate(opts.next ?? buildPostsUrl(opts.campaignId)), opts.sessionId, opts.fetchImpl ?? fetch);
+  if (document.links !== undefined && document.links !== null && (typeof document.links !== "object" || Array.isArray(document.links))) throw new Error("Invalid Patreon cookie page continuation.");
+  const rawNext: unknown = document.links?.next;
+  if (rawNext !== undefined && rawNext !== null && (typeof rawNext !== "string" || !rawNext.trim() || rawNext.length > 8192)) throw new Error("Invalid Patreon cookie page continuation.");
+  const next = typeof rawNext === "string" ? validate(rawNext) : null;
+  return { document, next, terminal: next === null };
+}
+
 export type CookieScrapeResult = {
   posts: IngestPost[];
   pages_fetched: number;
@@ -225,8 +242,8 @@ export async function scrapeByCookie(opts: {
   let reachedStopBefore = false;
 
   do {
-    const url = nextUrl ?? buildPostsUrl(campaignId);
-    const doc = await cookieFetch(url, sessionId, fetchImpl);
+    const page = await fetchCookiePostsPage({ sessionId, campaignId, next: nextUrl, fetchImpl });
+    const doc = page.document;
     pages += 1;
     const included = indexIncluded(doc);
 
@@ -257,7 +274,7 @@ export async function scrapeByCookie(opts: {
       nextUrl = null;
       break;
     }
-    nextUrl = doc.links?.next ?? null;
+    nextUrl = page.next;
   } while (nextUrl && pages < maxPages);
 
   return { posts, pages_fetched: pages, posts_fetched: posts.length, warnings };
@@ -287,6 +304,45 @@ export function buildPostDetailUrl(postId: string): string {
   urlObj.searchParams.set("fields[user_defined_tag]", "value,tag_type");
   urlObj.searchParams.set("json-api-version", "1.0");
   return urlObj.toString();
+}
+
+/** Targeted media collection; a failed cookie request never establishes source deletion. */
+export async function scrapePostByCookieWithCompleteness(sessionId: string, campaignId: string, postId: string, fetchImpl: typeof fetch): Promise<{ post: IngestPost; complete: boolean }> {
+  let doc: JsonApiDocument;
+  try {
+    doc = await patreonOAuthRequest(buildPostDetailUrl(postId), { headers: { cookie: `session_id=${sessionId}` } }, fetchImpl) as JsonApiDocument;
+  } catch (error) {
+    if (error instanceof PatreonRequestError && (error.status === 401 || error.status === 403)) throw new CookieSessionExpiredError(error.status);
+    throw error;
+  }
+  const rows = doc.data == null ? [] : Array.isArray(doc.data) ? doc.data : [doc.data];
+  const resource = rows.find((row) => row.type === "post" && row.id === postId);
+  const campaign = resource?.relationships?.campaign?.data;
+  if (!resource || !campaign || Array.isArray(campaign) || campaign.type !== "campaign" || campaign.id !== campaignId) {
+    throw new Error("Patreon cookie post campaign could not be verified.");
+  }
+  const included = indexIncluded(doc);
+  const relationships = ["images", "attachments_media", "media", "audio"];
+  let complete = relationships.every((name) => {
+    const relationship = resource.relationships?.[name];
+    if (!relationship || !Object.prototype.hasOwnProperty.call(relationship, "data")) return false;
+    const links = relationship.data == null ? [] : Array.isArray(relationship.data) ? relationship.data : [relationship.data];
+    return links.every((link) => {
+      const item = included.get(link.type + ":" + link.id);
+      return Boolean(item && decodeHtmlEscapedUrl((mediaUrlFromIncludedResource(item.attributes ?? {}) ?? "").trim()));
+    });
+  });
+  const attributes = resource.attributes ?? {};
+  complete = complete && Object.prototype.hasOwnProperty.call(attributes, "image") && Object.prototype.hasOwnProperty.call(attributes, "embed_url");
+  if (attributes.image != null) complete = complete && Boolean(decodeHtmlEscapedUrl((coverImageUrl(attributes) ?? "").trim()));
+  complete = complete && (attributes.embed_url == null || typeof attributes.embed_url === "string");
+  return { post: mapCookiePostToIngest(resource, included), complete };
+}
+
+
+/** Compatibility for existing callers; collection proof is available separately. */
+export async function scrapePostByCookie(sessionId: string, campaignId: string, postId: string, fetchImpl: typeof fetch): Promise<IngestPost> {
+  return (await scrapePostByCookieWithCompleteness(sessionId, campaignId, postId, fetchImpl)).post;
 }
 
 function postContentIsMissing(resource: JsonApiResource): boolean {

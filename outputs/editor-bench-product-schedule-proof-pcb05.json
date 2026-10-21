@@ -1,0 +1,109 @@
+{
+  "ticket": "PCB-05",
+  "date": "2026-10-21",
+  "status": "accepted_backend_connector_with_recorded_verification_limits",
+  "planner": "Sol High; work/pcb-final-sol-plan.md",
+  "builder": "gpt-6-luna/high",
+  "reviewer": "root; scoped Ponytail Review",
+  "behavior": [
+    "A separate persisted review shows exact draft copy, confirmed preview, creator-local date, saved timezone and resolved UTC.",
+    "Confirmation rechecks timezone inside the transaction, pins the current owned draft revision and retained preview, and atomically writes scheduledFor, one pending variant-linked PostbotTask, a receipt and Conversation revision.",
+    "Exact successful replay returns the prior task; concurrent confirmations create one cue. Publishing and reminders remain manual/disabled respectively.",
+    "The real Rail projects the pinned preview for managed drafts and fails closed if its metadata is missing or changed. Legacy projections remain unchanged.",
+    "Managed Rail media attachment rejects before source PostVersion mutation. Confirmed receipts survive restart and refresh."
+  ],
+  "api": {
+    "base": "/api/v1/editor-bench/real-library-conversation",
+    "developmentOnly": true,
+    "review": "POST /session/:sessionId/draft/schedule/review {expectedRevision, variantId, scheduledLocal}",
+    "confirm": "POST /session/:sessionId/draft/schedule/confirm {expectedRevision, reviewId}",
+    "read": "Session view and GET /session/:sessionId/drafts include durable schedule receipts"
+  },
+  "persistence": "Existing variant.scheduledFor + PostbotTask(action=post,status=pending), linked to the existing plan/variant/source. Existing plan JSON and Conversation context retain the receipt. No new post, AutopostDraft, CreatorScheduleEvent, table or migration.",
+  "timezone": "Side-effect-free getCreatorPostingGoal and existing timezone authority; opt-in strict Gregorian parser plus bounded Intl offset resolution reject invalid, nonexistent and ambiguous wall times. Legacy Goal Cycle parser/converter behavior is preserved.",
+  "verification": {
+    "rootBackend": {
+      "passed": 89,
+      "files": 6,
+      "report": "work/pcb05-root-tests-2026-10-21T08-16-29-772Z.json"
+    },
+    "finalRailDelta": {
+      "passed": 33,
+      "report": "work/pcb04-rail-tests-2026-10-21T08-20-27-841Z.json"
+    },
+    "postgres": {
+      "passed": 4,
+      "files": 3,
+      "evidence": "work/pcb05-postgres-2026-10-21T08-20-27-877Z.json",
+      "cleanup": "fresh nonce-owned disposable database dropped",
+      "checked": [
+        "PCB02/03 regression",
+        "PCB04 exact drafts/history regression",
+        "creator timezone to UTC",
+        "DST gap/fold and fractional-hour unit checks",
+        "concurrent confirmation, one pending task, restart and receipt replay",
+        "real Rail preview/source/variant read-back",
+        "transaction rejects changed timezone without task creation"
+      ]
+    },
+    "build": {
+      "exitCode": 0,
+      "evidence": "work/pcb05-luna-build-02.exit.json"
+    },
+    "review": {
+      "scope": "work/pcb05-review-2026-10-21T08-20-41-886Z.json",
+      "files": [
+        "src/distribution/conversation-draft-variants.ts",
+        "src/editor-bench/real-library-conversation-routes.ts",
+        "src/gallery-editor/types.ts",
+        "src/distribution/schedule-rail-service.ts",
+        "src/goal-cycle/planner/schedule-local.ts",
+        "tests/editor-bench/real-library-draft-variants-postgres.integration.test.ts",
+        "tests/goal-cycle/schedule-local.test.ts",
+        "tests/schedule-rail-service.test.ts"
+      ],
+      "whitespace": "clean",
+      "findingsResolved": [
+        "preserve shared parser behavior",
+        "transaction-level timezone authority",
+        "no source-media fallback for managed cues",
+        "block Rail media attachment from rewriting source originals"
+      ],
+      "remainingTaskFindings": []
+    }
+  },
+  "preservedFailure": {
+    "evidence": "work/pcb05-postgres-2026-10-21T08-16-30-361Z.json",
+    "issue": "Expanded integration journey exceeded Vitest default five-second test limit while build/regressions ran. No assertion failure was reported. Only the disposable PostgreSQL runner now allows 30 seconds per test; application/model limits are unchanged."
+  },
+  "limits": [
+    "One initial schedule per variant; rescheduling and cancellation deferred.",
+    "Synthetic records and injected authentication only; no live account/cloud, paid model, production migration, deployment, env edit or API restart.",
+    "Product mounting, frontend and installed-extension verification remain deferred. Publishing stays manual.",
+    "Previously recorded unrelated package fixtures and generic PostgreSQL concurrency error-code failure are outside this ticket; full backend suite is not claimed green."
+  ],
+  "preservation": {
+    "priorReportsUnchanged": 88,
+    "configurationUnchanged": true,
+    "ledger": {
+      "rows": 919,
+      "sha256": "969cc6310604f9c506f63d55056c0c9221297400570229d8ba6c50f5bd86b7d9",
+      "unchanged": true
+    },
+    "developmentRemainingUsd": 0.34483654,
+    "heldoutRemainingUsd": 8.9690346,
+    "authoritativeLedger": "C:\\Users\\jorda\\Documents\\Codex\\2026-10-11\\c\\work\\relay\\.relay-data\\gallery-editor-budget.json",
+    "paidCalls": 0,
+    "pcb04ReportSha256": "af16e313edac0232d98911aaa2dc69ee230d4bc89c9ffd75b356fd1c18c4fcec"
+  },
+  "sourceHashes": {
+    "src/distribution/conversation-draft-variants.ts": "9934b92cb43e5c2c98d71c6e07f0737a425ae07c82137ce33377854249347c7a",
+    "src/editor-bench/real-library-conversation-routes.ts": "522e129dc23fa81c3ae431452418c5448329888af3d5591e2255906b93e44e9a",
+    "src/gallery-editor/types.ts": "a556a689eedfbdb298d79ba8cbc6dd399181e61f2fee9b34d468f965c8497a53",
+    "src/distribution/schedule-rail-service.ts": "81ea3c187c502cc972e6f688ba8db89556daf80dd2fd9bfb547fecff841e39ce",
+    "src/goal-cycle/planner/schedule-local.ts": "d248cd56e1a8f9374ddbf149fb46508f4a3ffec845348e7be9845b44ca113c06",
+    "tests/editor-bench/real-library-draft-variants-postgres.integration.test.ts": "2cebc92d2d239c49ed73ec01ba976b9aa0f82842d2f09ab770f43b5e0eef32c6",
+    "tests/goal-cycle/schedule-local.test.ts": "c29e92e87b4b232d8463a72385f34c8e663df0bd2988beb4d733cde3786b4212",
+    "tests/schedule-rail-service.test.ts": "f8bf787f9a320aeeebfe89b810a86c5cd5c87bf6ae0c1e75645ee1de4b101028"
+  }
+}

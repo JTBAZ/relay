@@ -10,6 +10,7 @@ export type CrossPostPackageMediaEntry = {
   filename: string;
   mime_type: string;
   content_url: string;
+  sha256?: string;
 };
 
 /** Relay export route used by the extension to fetch media bytes with its bearer token. */

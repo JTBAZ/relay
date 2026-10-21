@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { S3Client } from "@aws-sdk/client-s3";
 import {
   buildRelayR2ObjectKey,
   getAllowedMimePrefixesFromEnv,
@@ -6,7 +7,8 @@ import {
   getRelayUploadMaxBytes,
   isMimeTypeAllowed,
   isPresignedUrlExpired,
-  presignedUrlSigningExpiresAt
+  presignedUrlSigningExpiresAt,
+  putR2ObjectBufferIfAbsent
 } from "../src/storage/relay-upload-r2.js";
 
 describe("relay-upload-r2", () => {
@@ -38,6 +40,21 @@ describe("relay-upload-r2", () => {
   it("getAllowedMimePrefixesFromEnv supports comma list", () => {
     vi.stubEnv("RELAY_UPLOAD_ALLOWED_MIME_PREFIXES", "model/,text/");
     expect(getAllowedMimePrefixesFromEnv()).toEqual(["model/", "text/"]);
+  });
+
+  it("uses an atomic create-only R2 put and treats only 412 as an existing object", async () => {
+    const send = vi.spyOn(S3Client.prototype, "send").mockResolvedValue({} as never);
+    const cfg = { endpoint: "https://example.invalid", credentials: { accessKeyId: "test", secretAccessKey: "test" }, bucket: "test", region: "auto" };
+    expect(await putR2ObjectBufferIfAbsent(cfg, "sealed/key", Buffer.from("jpeg"), "image/jpeg")).toBe(true);
+    const command = send.mock.calls[0]![0] as { input: { IfNoneMatch?: string } };
+    expect(command.input.IfNoneMatch).toBe("*");
+
+    send.mockRejectedValueOnce(Object.assign(new Error("already exists"), { $metadata: { httpStatusCode: 412 } }));
+    await expect(putR2ObjectBufferIfAbsent(cfg, "sealed/key", Buffer.from("jpeg"), "image/jpeg")).resolves.toBe(false);
+    const failure = Object.assign(new Error("storage unavailable"), { $metadata: { httpStatusCode: 503 } });
+    send.mockRejectedValueOnce(failure);
+    await expect(putR2ObjectBufferIfAbsent(cfg, "sealed/key", Buffer.from("jpeg"), "image/jpeg")).rejects.toBe(failure);
+    send.mockRestore();
   });
 });
 

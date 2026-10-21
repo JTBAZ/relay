@@ -12,6 +12,7 @@ export type ClassifiedSyncError = {
     | "token_expired"
     | "refresh_failed"
     | "patreon_unreachable"
+    | "patreon_retry_required"
     | "campaign_ambiguous"
     | "no_creator_campaigns"
     | "campaign_not_found"
@@ -26,6 +27,12 @@ export type ClassifiedSyncError = {
  */
 export function classifySyncError(message: string): ClassifiedSyncError {
   const m = message.trim();
+  if (m.includes("Patreon") && (m.includes("retry required") || m.includes("retry after source metadata"))) {
+    return {
+      code: "patreon_retry_required",
+      hint: "Patreon sync is incomplete. Wait for any retry delay in the error, then retry."
+    };
+  }
 
   if (
     m.includes("No Patreon tokens") ||

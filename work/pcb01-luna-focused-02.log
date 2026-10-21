@@ -1,0 +1,70 @@
+
+> relay@0.1.0 test
+> vitest run --pool=forks --maxWorkers=1 --minWorkers=1 tests/editor-bench/real-library-conversation-routes.test.ts tests/editor-bench/real-library-retrieval.test.ts tests/editor-bench/real-library-selection.test.ts tests/editor-bench/large-library-chat.test.ts tests/editor-bench/conversation.test.ts
+
+[dotenv@17.3.1] injecting env (18) from .env -- tip: ⚙️  enable debug logging with { debug: true }
+
+ RUN  v3.2.4 C:/Users/jorda/Documents/Codex/2026-10-11/c/work/relay
+
+ ❯ tests/editor-bench/real-library-conversation-routes.test.ts (5 tests | 1 failed) 162ms
+   ✓ real Library Conversation routes > selects beyond forty posts, keeps exclusions across add, and reads current owned metadata back 89ms
+   ✓ real Library Conversation routes > keeps account-bound ownership, rejects client state, and refuses mixed edits before the model call 21ms
+   ✓ real Library Conversation routes > requires explicit refresh after catalog change and clears old intent only after refreshing 22ms
+   × real Library Conversation routes > prevents an older refresh from clearing state after a newer refresh wins 24ms
+     → newRefreshPromise.expect is not a function
+   ✓ real Library Conversation routes > does not register the real Library connector outside development 5ms
+ ❯ tests/editor-bench/large-library-chat.test.ts (11 tests | 1 failed) 385ms
+   × large synthetic Library chat > keeps full-catalog matches, all requested criteria, and input cost independent of 40 vs 1,001 rows 31ms
+     → expected 'a44792a67e4732ba7bcae9c773b41be15adba…' to be '8da68cfc9d012d090fe6e498eae1c575ee514…' // Object.is equality
+   ✓ large synthetic Library chat > adds a full-catalog OR union over the long description and late series while keeping prior exclusions 25ms
+   ✓ large synthetic Library chat > refuses invented values, duplicate visible family names, stale state, and provider failures without changing state 26ms
+   ✓ large synthetic Library chat > refuses vocabulary overflow before dispatch and keeps the input free of state IDs 42ms
+   ✓ large synthetic Library chat > offers only grounded date candidates with London-relative values and enforces the same request schema 4ms
+   ✓ large synthetic Library chat > rejects computed dates and candidate overflow without changing prior state, with bounded diagnostics 22ms
+   ✓ large synthetic Library chat > creates and updates only a fresh proof report path, preserving an existing report byte-for-byte 19ms
+   ✓ large synthetic Library chat > offers the complete 112-entry wide vocabulary and preserves matching, exclusions, and late additions 52ms
+   ✓ large synthetic Library chat > clarifies duplicate visible family names and invented wide-vocabulary identifiers without changing selection 26ms
+   ✓ large synthetic Library chat > grounds only request-mentioned gallery families across 100 and 500 posts 123ms
+   ✓ large synthetic Library chat > clarifies duplicate, partial, and prefix-colliding family names without changing state 13ms
+ ✓ tests/editor-bench/conversation.test.ts (29 tests) 5669ms
+   ✓ mock editor-bench conversation > reviews and confirms a scheduled X handoff for a deselected draft, then serves only its owned pinned JPEG  384ms
+   ✓ mock editor-bench conversation > grounds rename titles in one exact balanced quote and independently grounds the target  968ms
+   ✓ mock editor-bench conversation > reviews and confirms one exact-copy X draft, rejects a superseded token, and retains its owned export  375ms
+   ✓ mock editor-bench conversation > schedules only an explicitly reviewed confirmed X draft and keeps creation receipts unchanged  433ms
+   ✓ mock editor-bench conversation > keeps DeviantArt title, empty description, tags and pinned JPEG exact through schedule and handoff  317ms
+ ✓ tests/editor-bench/real-library-retrieval.test.ts (5 tests) 898ms
+   ✓ large real Library grounded connector > pages all 1,001 posts and matches late series, description, exclusion, removal, and later add against the full snapshot  351ms
+   ✓ large real Library grounded connector > rejects foreign, stale, ambiguous-name, and ungrounded selectors without changing IDs  312ms
+ ✓ tests/editor-bench/real-library-selection.test.ts (6 tests) 65ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/editor-bench/large-library-chat.test.ts > large synthetic Library chat > keeps full-catalog matches, all requested criteria, and input cost independent of 40 vs 1,001 rows
+AssertionError: expected 'a44792a67e4732ba7bcae9c773b41be15adba…' to be '8da68cfc9d012d090fe6e498eae1c575ee514…' // Object.is equality
+
+Expected: "8da68cfc9d012d090fe6e498eae1c575ee51485e885aedae0f48869a92bdc5dd"
+Received: "a44792a67e4732ba7bcae9c773b41be15adba188d41fae95c18ff64953185800"
+
+ ❯ tests/editor-bench/large-library-chat.test.ts:74:151
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  tests/editor-bench/real-library-conversation-routes.test.ts > real Library Conversation routes > prevents an older refresh from clearing state after a newer refresh wins
+TypeError: newRefreshPromise.expect is not a function
+ ❯ tests/editor-bench/real-library-conversation-routes.test.ts:129:48
+    127|     while (refreshLoads.length < 2) await new Promise(resolve => setTi…
+    128|     refreshLoads[1]!(newer);
+    129|     const newRefresh = await newRefreshPromise.expect(200);
+       |                                                ^
+    130|     refreshLoads[0]!(older);
+    131|     const oldRefresh = await oldRefreshPromise.expect(409);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+
+ Test Files  2 failed | 3 passed (5)
+      Tests  2 failed | 54 passed (56)
+   Start at  08:06:57
+   Duration  11.06s (transform 953ms, setup 39ms, collect 3.39s, tests 7.18s, environment 0ms, prepare 121ms)
+

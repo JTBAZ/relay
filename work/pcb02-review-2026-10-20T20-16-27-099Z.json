@@ -1,0 +1,16 @@
+{
+  "files": [
+    "src/editor-bench/conversation.ts",
+    "src/editor-bench/library-selection-catalog.ts",
+    "src/editor-bench/real-library-conversation-routes.ts",
+    "src/editor-bench/real-library-edit-review.ts",
+    "src/gallery-editor/service.ts",
+    "src/gallery-editor/types.ts",
+    "src/gallery-editor/routes.ts",
+    "src/server.ts",
+    "tests/editor-bench/real-library-conversation-routes.test.ts",
+    "tests/editor-bench/real-library-conversation-postgres.integration.test.ts"
+  ],
+  "patch": "work/pcb02-review-2026-10-20T20-16-27-099Z.diff",
+  "whitespace": ""
+}

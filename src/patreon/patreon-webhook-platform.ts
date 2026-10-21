@@ -1,5 +1,5 @@
 /**
- * @fileoverview Routes verified Patreon v2 webhook events to post sync (`scrapeOrSync`) or debounced member sync scheduling.
+ * @fileoverview Validates minimal signed change identities and executes claimed Patreon work.
  * @description Assumes caller verified `X-Patreon-Signature` and resolved `creator_id` for opaque URLs.
  * @async
  * @throws {Error} From `scrapeOrSync` when post-shaped events fire.
@@ -8,10 +8,10 @@
  */
 import type { PatreonMemberSyncCoordinator } from "./patreon-member-sync-coordinator.js";
 import type { PatreonSyncService } from "./patreon-sync-service.js";
+import type { PatreonChangeDescriptor } from "./patreon-change-work.js";
 import {
   isPatreonMemberFamilyTrigger,
-  isPatreonPostEventTrigger,
-  scrapeOrSyncFromVerifiedPlatform
+  isPatreonPostEventTrigger
 } from "../webhooks/patreon-webhook.js";
 
 function campaignIdFromResourceRelationships(resource: unknown): string | null {
@@ -51,6 +51,23 @@ export function extractCampaignIdFromPatreonWebhookPayload(parsed: unknown): str
   return null;
 }
 
+/** Validate every accumulated resource before accepting any work; attributes and patron PII are discarded. */
+export function patreonChangeDescriptors(creatorId: string, event: string | undefined, parsed: unknown): PatreonChangeDescriptor[] {
+  const eventType = event?.trim().toLowerCase() ?? "";
+  const resourceType = isPatreonPostEventTrigger(eventType) ? "post" : isPatreonMemberFamilyTrigger(eventType) ? "member" : null;
+  if (!resourceType) return [];
+  if (!/^(posts:(publish|update|delete)|members:(create|update|delete|pledge:(create|update|delete)))$/.test(eventType)) throw new Error("Unsupported Patreon change event.");
+  const data = (parsed as { data?: unknown } | null)?.data;
+  const rows = Array.isArray(data) ? data : [data];
+  if (rows.length === 0 || rows.length > 1000) throw new Error("Invalid Patreon change resource count.");
+  return rows.map((row) => {
+    const value = row as { id?: unknown; type?: unknown } | null;
+    const campaignId = campaignIdFromResourceRelationships(row);
+    if (value?.type !== resourceType || typeof value.id !== "string" || !/^[a-zA-Z0-9_-]{1,128}$/.test(value.id) || !campaignId || !/^\d{1,32}$/.test(campaignId)) throw new Error("Patreon change requires a resource and campaign identity.");
+    return { creatorId, campaignId, resourceType, resourceId: value.id, eventType };
+  });
+}
+
 export async function dispatchVerifiedPatreonPlatformPayload(args: {
   creatorId: string;
   eventHeader: string | undefined;
@@ -59,20 +76,21 @@ export async function dispatchVerifiedPatreonPlatformPayload(args: {
   traceId: string;
   syncService: PatreonSyncService;
   memberCoordinator: PatreonMemberSyncCoordinator;
-}): Promise<{ action: "post_sync" | "member_sync_scheduled" | "ignored" }> {
+  resourceId?: string;
+}): Promise<{ action: "post_sync" | "member_sync" | "ignored" }> {
   const ev = args.eventHeader?.trim() ?? "";
   const campaignId = args.campaignId;
 
   if (isPatreonPostEventTrigger(ev)) {
-    await scrapeOrSyncFromVerifiedPlatform(args.syncService, args.creatorId, args.traceId, {
-      campaign_id: campaignId ?? undefined
-    });
+    if (!args.resourceId || !campaignId) throw new Error("Signed Patreon post work requires a resource and campaign identity.");
+    await args.syncService.refreshPost(args.creatorId, args.traceId, campaignId, args.resourceId, ev.toLowerCase() === "posts:delete");
     return { action: "post_sync" };
   }
 
   if (isPatreonMemberFamilyTrigger(ev)) {
-    args.memberCoordinator.scheduleMemberSync(args.creatorId, campaignId ?? undefined);
-    return { action: "member_sync_scheduled" };
+    if (!args.resourceId || !campaignId) throw new Error("Signed Patreon member work requires a resource and campaign identity.");
+    await args.syncService.refreshMember(args.creatorId, args.traceId, campaignId, args.resourceId, ev.toLowerCase().endsWith(":delete"));
+    return { action: "member_sync" };
   }
 
   return { action: "ignored" };

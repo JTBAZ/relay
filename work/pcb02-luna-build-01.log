@@ -1,0 +1,29 @@
+
+> relay@0.1.0 build
+> prisma generate && tsc -p tsconfig.build.json && node scripts/copy-build-assets.mjs
+
+Loaded Prisma config from prisma.config.ts.
+
+Prisma schema loaded from prisma\schema.prisma.
+
+✔ Generated Prisma Client (v7.7.0) to .\node_modules\@prisma\client in 1.20s
+
+Start by importing your Prisma Client (See: https://pris.ly/d/importing-client)
+
+
+src/editor-bench/real-library-conversation-routes.ts(82,94): error TS2339: Property 'remove' does not exist on type '{ id: string; kind: "rename_post"; postId: string; title: string; } | { id: string; kind: "tags"; postId: string; mediaId?: string | undefined; add: string[]; remove: string[]; }'.
+  Property 'remove' does not exist on type '{ id: string; kind: "rename_post"; postId: string; title: string; }'.
+src/editor-bench/real-library-conversation-routes.ts(229,14): error TS18048: 'context.conversation' is possibly 'undefined'.
+src/editor-bench/real-library-conversation-routes.ts(267,14): error TS18048: 'context.conversation' is possibly 'undefined'.
+src/editor-bench/real-library-conversation-routes.ts(304,16): error TS18048: 'context.conversation' is possibly 'undefined'.
+src/editor-bench/real-library-conversation-routes.ts(305,146): error TS2345: Argument of type '{ role: string; text: string; }[]' is not assignable to parameter of type 'EditorMessage[]'.
+  Type '{ role: string; text: string; }' is not assignable to type 'EditorMessage'.
+    Types of property 'role' are incompatible.
+      Type 'string' is not assignable to type '"user" | "assistant"'.
+src/editor-bench/real-library-conversation-routes.ts(323,147): error TS2322: Type '{ id: `${string}-${string}-${string}-${string}-${string}`; action: EditAction; actionDigest: string; sourceDigest: string; expectedRevision: number; expiresAt: number; }' is not assignable to type '{ id: string; action: { id: string; kind: "rename_post"; postId: string; title: string; } | { id: string; kind: "tags"; postId: string; mediaId?: string | undefined; add: string[]; remove: string[]; }; actionDigest: string; sourceDigest: string; expectedRevision: number; expiresAt: number; }'.
+  Types of property 'action' are incompatible.
+    Type 'EditAction' is not assignable to type '{ id: string; kind: "rename_post"; postId: string; title: string; } | { id: string; kind: "tags"; postId: string; mediaId?: string | undefined; add: string[]; remove: string[]; }'.
+      Type '{ id: string; kind: "inherit_post_title"; postId: string; }' is not assignable to type '{ id: string; kind: "rename_post"; postId: string; title: string; } | { id: string; kind: "tags"; postId: string; mediaId?: string | undefined; add: string[]; remove: string[]; }'.
+        Type '{ id: string; kind: "inherit_post_title"; postId: string; }' is missing the following properties from type '{ id: string; kind: "tags"; postId: string; mediaId?: string | undefined; add: string[]; remove: string[]; }': add, remove
+src/editor-bench/real-library-conversation-routes.ts(361,89): error TS2339: Property 'remove' does not exist on type '{ id: string; kind: "rename_post"; postId: string; title: string; } | { id: string; kind: "tags"; postId: string; mediaId?: string | undefined; add: string[]; remove: string[]; }'.
+  Property 'remove' does not exist on type '{ id: string; kind: "rename_post"; postId: string; title: string; }'.

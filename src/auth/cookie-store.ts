@@ -11,6 +11,7 @@ import { createExclusivePerKeyRunner } from "../lib/run-exclusive-per-key.js";
 
 export type PatreonCookieRecord = { creator_id: string; encrypted_session_id: string; stored_at: string };
 export type CookieSessionLocalStatus = "none" | "ok" | "expired_local";
+export type PatreonCookieCheck = { status: CookieSessionLocalStatus | "rejected_remote"; stored_at: string | null };
 export type CookieStoreData = {
   records: Record<string, PatreonCookieRecord>;
   last_remote_rejections?: Record<string, { at: string }>;
@@ -19,6 +20,8 @@ export type CookieState = { record?: PatreonCookieRecord; rejectedAt?: string };
 export type FilePatreonCookieStoreOptions = { maxAgeDays?: number };
 
 export interface PatreonCookieStore {
+  checkCredential(creatorId: string): Promise<PatreonCookieCheck>;
+  rotateCredential(creatorId: string, sessionId: string): Promise<PatreonCookieCheck>;
   getCookieLocalStatus(creatorId: string): Promise<CookieSessionLocalStatus>;
   getSessionId(creatorId: string): Promise<string | null>;
   upsert(creatorId: string, sessionId: string): Promise<void>;
@@ -45,6 +48,23 @@ export abstract class PatreonCookieVault implements PatreonCookieStore {
     const state = await this.readState(creatorId);
     if (!state.record || state.rejectedAt) return "none";
     return this.isExpired(state.record) ? "expired_local" : "ok";
+  }
+  private credentialCheck(state: CookieState): PatreonCookieCheck {
+    const status = state.rejectedAt ? "rejected_remote" : !state.record ? "none" : this.isExpired(state.record) ? "expired_local" : "ok";
+    if (status === "ok" && !this.encryption.decrypt(state.record!.encrypted_session_id).trim()) throw new Error("Patreon session record is unreadable.");
+    return { status, stored_at: state.record?.stored_at ?? null };
+  }
+  /** Acknowledges Relay storage only; never probes Patreon, prunes, or renews storage age. */
+  public async checkCredential(creatorId: string): Promise<PatreonCookieCheck> {
+    return this.credentialCheck(await this.readState(creatorId));
+  }
+  /** An existing grant cannot resurrect a removed/rejected/expired browser credential. */
+  public async rotateCredential(creatorId: string, sessionId: string): Promise<PatreonCookieCheck> {
+    return this.mutateState(creatorId, (state) => {
+      const check = this.credentialCheck(state);
+      if (check.status === "ok") state.record!.encrypted_session_id = this.encryption.encrypt(sessionId);
+      return check;
+    });
   }
   public async getSessionId(creatorId: string): Promise<string | null> {
     const state = await this.readState(creatorId);

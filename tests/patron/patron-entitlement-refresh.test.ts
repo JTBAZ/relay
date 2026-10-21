@@ -2,28 +2,29 @@ import { EntitlementSource } from "@prisma/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const hoisted = vi.hoisted(() => ({
-  getPatronOAuthTokensForAccount: vi.fn(),
+  getPatronOAuthCredentialSnapshot: vi.fn(),
   refreshPatronOAuthTokensWithStoredRefreshToken: vi.fn(),
   fetchPatronIdentity: vi.fn(),
   extractPatronSyncFromIdentity: vi.fn(),
-  upsertPatronEntitlementSnapshot: vi.fn()
+  upsertPatronProviderEntitlements: vi.fn()
 }));
 
 vi.mock("../../src/auth/patron-oauth-credential-store.js", () => ({
-  getPatronOAuthTokensForAccount: hoisted.getPatronOAuthTokensForAccount
+  getPatronOAuthCredentialSnapshot: hoisted.getPatronOAuthCredentialSnapshot
 }));
 
 vi.mock("../../src/patreon/patreon-oauth-refresh.js", () => ({
   refreshPatronOAuthTokensWithStoredRefreshToken: hoisted.refreshPatronOAuthTokensWithStoredRefreshToken
 }));
 
-vi.mock("../../src/patreon/patreon-user-identity.js", () => ({
+vi.mock("../../src/patreon/patreon-user-identity.js", async (importOriginal) => ({
+  ...await importOriginal<typeof import("../../src/patreon/patreon-user-identity.js")>(),
   fetchPatronIdentity: hoisted.fetchPatronIdentity,
   extractPatronSyncFromIdentity: hoisted.extractPatronSyncFromIdentity
 }));
 
 vi.mock("../../src/identity/patron-entitlement-snapshot.js", () => ({
-  upsertPatronEntitlementSnapshot: hoisted.upsertPatronEntitlementSnapshot
+  upsertPatronProviderEntitlements: hoisted.upsertPatronProviderEntitlements
 }));
 
 import {
@@ -53,9 +54,9 @@ describe("refreshPatronEntitlementSnapshotFromPatreon", () => {
   });
 
   it("refreshes snapshot on happy path", async () => {
-    hoisted.getPatronOAuthTokensForAccount.mockResolvedValue({
-      access_token: "at",
-      refresh_token: "rt"
+    hoisted.getPatronOAuthCredentialSnapshot.mockResolvedValue({
+      version: "revision", tokens: { access_token: "at",
+      refresh_token: "rt" }
     });
     hoisted.fetchPatronIdentity.mockResolvedValue({ data: null } as never);
     hoisted.extractPatronSyncFromIdentity.mockReturnValue({
@@ -65,8 +66,9 @@ describe("refreshPatronEntitlementSnapshotFromPatreon", () => {
     });
 
     const prisma = {
+      $queryRaw: vi.fn().mockResolvedValue([{ value: 1n }]),
       tenantMembership: {
-        findUnique: vi.fn().mockResolvedValue({ accountId: "acc1" })
+        findUnique: vi.fn().mockResolvedValue({ accountId: "acc1", account: { patronPatreonUserId: "pu" } })
       },
       creatorProfile: {
         findFirst: vi.fn().mockResolvedValue({ patreonCampaignId: "99" })
@@ -85,29 +87,31 @@ describe("refreshPatronEntitlementSnapshotFromPatreon", () => {
     });
 
     expect(r).toEqual({ ok: true });
-    expect(hoisted.upsertPatronEntitlementSnapshot).toHaveBeenCalledWith(prisma, {
+    expect(hoisted.upsertPatronProviderEntitlements).toHaveBeenCalledWith(prisma, {
+      expectedAccountId: "acc1", expectedPatreonUserId: "pu", expectedCredentialVersion: "revision", provider: "patreon",
       patronMembershipId: "mem",
       relayCreatorId: "creator_x",
       entitledTierIds: ["patreon_tier_1"],
       source: EntitlementSource.scheduled_refresh,
-      campaignId: null,
-      crossProviderMergeSource: "patreon"
+      campaignId: "99",
+      crossProviderMergeSource: "patreon", patreonObservation: "1", patreonCredentialAccountId: "acc1", patreonCampaignScope: "99"
     });
     expect(hoisted.refreshPatronOAuthTokensWithStoredRefreshToken).not.toHaveBeenCalled();
   });
 
   it("returns identity_fetch_failed on non-auth Patreon errors (no token refresh)", async () => {
-    hoisted.getPatronOAuthTokensForAccount.mockResolvedValue({
-      access_token: "at",
-      refresh_token: "rt"
+    hoisted.getPatronOAuthCredentialSnapshot.mockResolvedValue({
+      version: "revision", tokens: { access_token: "at",
+      refresh_token: "rt" }
     });
     hoisted.fetchPatronIdentity.mockRejectedValue(
       new Error("Patreon identity request failed (500): x")
     );
 
     const prisma = {
+      $queryRaw: vi.fn().mockResolvedValue([{ value: 1n }]),
       tenantMembership: {
-        findUnique: vi.fn().mockResolvedValue({ accountId: "acc1" })
+        findUnique: vi.fn().mockResolvedValue({ accountId: "acc1", account: { patronPatreonUserId: "pu" } })
       },
       creatorProfile: {
         findFirst: vi.fn().mockResolvedValue({ patreonCampaignId: "99" })
@@ -139,6 +143,7 @@ describe("refreshPatronEntitlementSnapshotIfStale (PE-H pre-action)", () => {
     const now = new Date("2026-06-01T12:00:00.000Z");
     const future = new Date(now.getTime() + 60 * 60 * 1000);
     const prisma = {
+      $queryRaw: vi.fn().mockResolvedValue([{ value: 1n }]),
       patronEntitlementSnapshot: {
         findUnique: vi.fn().mockResolvedValue({ staleAfter: future, campaignId: "99" })
       },
@@ -158,15 +163,15 @@ describe("refreshPatronEntitlementSnapshotIfStale (PE-H pre-action)", () => {
 
     expect(r).toEqual({ refreshed: false, reason: "fresh" });
     expect(prisma.tenantMembership.findUnique).not.toHaveBeenCalled();
-    expect(hoisted.upsertPatronEntitlementSnapshot).not.toHaveBeenCalled();
+    expect(hoisted.upsertPatronProviderEntitlements).not.toHaveBeenCalled();
   });
 
   it("refreshes with source=webhook when snapshot is stale", async () => {
     const now = new Date("2026-06-01T12:00:00.000Z");
     const past = new Date(now.getTime() - 60 * 1000);
-    hoisted.getPatronOAuthTokensForAccount.mockResolvedValue({
-      access_token: "at",
-      refresh_token: "rt"
+    hoisted.getPatronOAuthCredentialSnapshot.mockResolvedValue({
+      version: "revision", tokens: { access_token: "at",
+      refresh_token: "rt" }
     });
     hoisted.fetchPatronIdentity.mockResolvedValue({ data: null } as never);
     hoisted.extractPatronSyncFromIdentity.mockReturnValue({
@@ -176,11 +181,12 @@ describe("refreshPatronEntitlementSnapshotIfStale (PE-H pre-action)", () => {
     });
 
     const prisma = {
+      $queryRaw: vi.fn().mockResolvedValue([{ value: 1n }]),
       patronEntitlementSnapshot: {
         findUnique: vi.fn().mockResolvedValue({ staleAfter: past, campaignId: "99" })
       },
       tenantMembership: {
-        findUnique: vi.fn().mockResolvedValue({ accountId: "acc1" })
+        findUnique: vi.fn().mockResolvedValue({ accountId: "acc1", account: { patronPatreonUserId: "pu" } })
       },
       creatorProfile: {
         findFirst: vi.fn().mockResolvedValue({ patreonCampaignId: "99" })
@@ -198,27 +204,29 @@ describe("refreshPatronEntitlementSnapshotIfStale (PE-H pre-action)", () => {
     });
 
     expect(r).toEqual({ refreshed: true });
-    expect(hoisted.upsertPatronEntitlementSnapshot).toHaveBeenCalledWith(prisma, {
+    expect(hoisted.upsertPatronProviderEntitlements).toHaveBeenCalledWith(prisma, {
+      expectedAccountId: "acc1", expectedPatreonUserId: "pu", expectedCredentialVersion: "revision", provider: "patreon",
       patronMembershipId: "mem",
       relayCreatorId: "creator_x",
       entitledTierIds: ["patreon_tier_2"],
       source: EntitlementSource.webhook,
       campaignId: "99",
-      crossProviderMergeSource: "patreon"
+      crossProviderMergeSource: "patreon", patreonObservation: "1", patreonCredentialAccountId: "acc1", patreonCampaignScope: "99"
     });
   });
 
   it("returns reason from refresh failure (no credential)", async () => {
     const now = new Date("2026-06-01T12:00:00.000Z");
     const past = new Date(now.getTime() - 60 * 1000);
-    hoisted.getPatronOAuthTokensForAccount.mockResolvedValue(null);
+    hoisted.getPatronOAuthCredentialSnapshot.mockResolvedValue(null);
 
     const prisma = {
+      $queryRaw: vi.fn().mockResolvedValue([{ value: 1n }]),
       patronEntitlementSnapshot: {
         findUnique: vi.fn().mockResolvedValue({ staleAfter: past, campaignId: null })
       },
       tenantMembership: {
-        findUnique: vi.fn().mockResolvedValue({ accountId: "acc1" })
+        findUnique: vi.fn().mockResolvedValue({ accountId: "acc1", account: { patronPatreonUserId: "pu" } })
       },
       creatorProfile: {
         findFirst: vi.fn().mockResolvedValue({ patreonCampaignId: "99" })

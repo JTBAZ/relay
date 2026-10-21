@@ -1,0 +1,17 @@
+# CP-08a2 production context evidence
+
+CP-08a2 adds `createPlanningContextSource(prisma)` in `src/conversational-planning/context.ts`. It composes the accepted read-only trusted lookup with the persistence `ContextLoader` contract and a bounded model-context builder. This remains a server-side seam; it does not call a model or write a plan.
+
+The loader validates the candidate snapshot and creator before fresh reads. Selected media, source posts, target posts, linked media, source relations, work/series parents, retained templates, readiness, entitlement, and creator timezone are reloaded through creator-scoped queries. Query sizes are bounded and exact expected row counts are checked; media that is not `READY`, foreign/missing parents, missing selected templates, ambiguous source associations, over-limit input, or stale saved template configuration fail closed or request narrower user selection. Template catalogs above three entries require an explicit selection; the implementation never chooses a positional subset or deletes saved templates.
+
+The versioned `src1_` SHA-256 fingerprint canonicalizes sorted source media, linked source/target post versions and publish state, verified presentation/work/series metadata, and actual media/post associations. Reservation fields and generic update timestamps are excluded. Media processing readiness remains fingerprinted and non-ready selected media is rejected. Snapshot fingerprints are compared on fresh load and never copied into model context. Retained template configuration is independently parsed and checked by `validatePlanWithContext` before a snapshot-backed context can be built.
+
+The request projection contains only bounded text metadata: at most three media, four posts, three templates, four destination summaries, eight editable nodes, and 12 KiB of serialized context. It omits media bytes, storage identifiers/URLs, credentials, full template configuration, and raw step IDs. The existing media lookup has no authoritative filename field and therefore projects `filename: null`; this remains an explicit schema/source gap rather than a guessed field. Edit handles are restart-stable `node_` aliases derived from the canonical version-1 binding of creator, plan, revision, and step. The server-only map retains the binding; model descriptors expose only aliases. Time provenance is always null because no persisted confirmation proof exists. When creator timezone is absent, the structural date uses the received UTC date and does not infer a local zone.
+
+Focused mocked-Prisma coverage verifies deterministic and change-sensitive fingerprints, stable reservation state, post-only linked-media changes, post publish-state transitions, creator scoping, stale template/source rejection, ambiguity and bounds, selected-template ordering, readiness, handle restart stability/scope, no raw IDs or URLs in projected context, and missing-timezone behavior. It also verifies that an unrelated large template catalog does not block a bounded existing-plan edit, while a selected X distribution retains its preview template. The mocks assert no entitlement upsert/delete side effects. No runtime database, migration, provider, or paid call was used.
+
+Validation:
+
+- `npx vitest run tests/conversational-planning/context.test.ts` — 11 tests passed.
+- Direct strict TypeScript check of `tests/conversational-planning/context.test.ts` — passed.
+- Serial backend `npm run build` — passed (Prisma generate, backend TypeScript build, and build-asset copy).

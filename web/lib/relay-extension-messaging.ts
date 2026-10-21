@@ -468,6 +468,7 @@ export type RelayExtensionStatusProbeSuccess = {
   patreonCookiePresent: boolean;
   lastSyncAt: string | null;
   lastSyncStatus: string | null;
+  credentialState?: { observed_at: string | null; acknowledged_at: string | null; uploaded_at: string | null; data_sync_at: string | null; status: string } | null;
 };
 
 export type RelayExtensionStatusProbeFailure = {
@@ -519,7 +520,8 @@ export async function probeRelayExtensionStatus(): Promise<RelayExtensionStatusP
           relayCreatorId: typeof r.relayCreatorId === "string" ? r.relayCreatorId : null,
           patreonCookiePresent: Boolean(r.patreonCookiePresent),
           lastSyncAt: typeof r.lastSyncAt === "string" ? r.lastSyncAt : null,
-          lastSyncStatus: typeof r.lastSyncStatus === "string" ? r.lastSyncStatus : null
+          lastSyncStatus: typeof r.lastSyncStatus === "string" ? r.lastSyncStatus : null,
+          ...(r.credentialState && typeof r.credentialState === "object" ? { credentialState: r.credentialState as RelayExtensionStatusProbeSuccess["credentialState"] } : {})
         };
       }
     } catch (e) {
@@ -550,7 +552,7 @@ export function describeRelayExtensionProbeFailure(result: RelayExtensionStatusP
 // ---------------------------------------------------------------------------
 
 export type ConsentExchangeResult =
-  | { ok: true }
+  | { ok: true; credentialCapture?: "stored" | "unavailable" | "missing_browser_session" }
   | { ok: false; error: string };
 
 /**
@@ -574,12 +576,10 @@ export async function sendConsentCodeToExtension(
   // Extension returns { ok: true } or { ok: false, error: string }
   if (raw !== null && typeof raw === "object" && "ok" in raw) {
     const r = raw as Record<string, unknown>;
-    if (r.ok === true) return { ok: true };
+    if (r.ok === true) return { ok: true, ...(r.credentialCapture === "stored" || r.credentialCapture === "unavailable" || r.credentialCapture === "missing_browser_session" ? { credentialCapture: r.credentialCapture } : {}) };
     if (r.ok === false && typeof r.error === "string") {
       return { ok: false, error: r.error };
     }
   }
-  // If the extension doesn't return a structured result, treat as success
-  // (backward-compatible with older extension builds that returned void/undefined).
-  return { ok: true };
+  return { ok: false, error: "The extension did not acknowledge authorization. Open its popup and connect again." };
 }

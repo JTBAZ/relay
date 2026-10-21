@@ -1,0 +1,18 @@
+{
+  "migrations": {
+    "exitCode": 0,
+    "signal": null,
+    "error": null,
+    "log": "C:\\Users\\jorda\\Documents\\Codex\\2026-10-11\\c\\work\\relay\\work\\pcb02-postgres-2026-10-20T20-11-32-050Z-migrations.log"
+  },
+  "tests": {
+    "exitCode": 1,
+    "signal": null,
+    "error": null,
+    "log": "C:\\Users\\jorda\\Documents\\Codex\\2026-10-11\\c\\work\\relay\\work\\pcb02-postgres-2026-10-20T20-11-32-050Z-tests.log"
+  },
+  "cleanup": {
+    "kind": "dropped",
+    "databaseName": "relay_cp07_test_4f74db0109667a333a9eca92e14bbdb9"
+  }
+}

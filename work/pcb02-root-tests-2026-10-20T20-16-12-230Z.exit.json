@@ -1,0 +1,17 @@
+{
+  "files": [
+    "tests/editor-bench/real-library-conversation-routes.test.ts",
+    "tests/editor-bench/large-library-chat.test.ts",
+    "tests/editor-bench/real-library-retrieval.test.ts",
+    "tests/editor-bench/real-library-chat.test.ts",
+    "tests/editor-bench/real-library-review.test.ts",
+    "tests/editor-bench/conversation.test.ts",
+    "tests/gallery-editor-routes.test.ts",
+    "tests/gallery-editor-cart-patch.test.ts",
+    "tests/gallery-editor-context.test.ts"
+  ],
+  "exitCode": 1,
+  "error": null,
+  "report": "work/pcb02-root-tests-2026-10-20T20-16-12-230Z.json",
+  "log": "work/pcb02-root-tests-2026-10-20T20-16-12-230Z.log"
+}

@@ -179,6 +179,7 @@ export function applySyncBatchToSnapshot(
 
     const postRow: PostRow = {
       post_id: p.post_id,
+      campaign_id: batch.campaigns?.length === 1 ? batch.campaigns[0]!.campaign_id : existingPost?.campaign_id,
       creator_id: creatorId,
       current: versionRow,
       versions: existingPost ? [...existingPost.versions, versionRow] : [versionRow],

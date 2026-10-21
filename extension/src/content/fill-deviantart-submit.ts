@@ -16,6 +16,7 @@ import {
 } from "../lib/cross-post-types";
 import { BENCH_DEVIANTART_HANDOFF_PACKET_KEY, isBenchDeviantArtHandoffPacket, type BenchDeviantArtHandoffPacket } from "../lib/bench-deviantart-handoff";
 import { decodeBenchXHandoffBytes } from "../lib/bench-x-handoff";
+import { decodeManagedHandoffJpeg, isManagedCrossPostHandoffPacket, MANAGED_CROSS_POST_HANDOFF_PACKET_KEY, type ManagedCrossPostHandoffPacket } from "../lib/managed-cross-post-handoff";
 
 const WAIT_MS = 12_000;
 const PHASE2_WAIT_MS = 65_000;
@@ -24,6 +25,7 @@ const BANNER_ID = "relay-cross-post-banner";
 const MAX_IMAGES = 1;
 const GRANT_STORAGE_KEY = "grant";
 let mockBenchHandoff = false;
+let managedHandoffAttemptId: string | null = null;
 
 const BANNER_SUCCESS =
   "Draft filled from Relay. Review the deviation in DeviantArt, then publish manually.";
@@ -222,29 +224,31 @@ function fillContentEditable(el: HTMLElement, text: string, html?: string): bool
   return Boolean((el.textContent ?? "").trim() || (el.innerHTML ?? "").trim());
 }
 
-function fillTitle(el: HTMLElement, title: string): boolean {
-  const value = title.trim();
+function fillTitle(el: HTMLElement, title: string, preserveWhitespace = false): boolean {
+  const value = preserveWhitespace ? title : title.trim();
   if (!value) return false;
   if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) {
     setNativeInputValue(el, value);
-    return el.value.trim() === value;
+    return preserveWhitespace ? el.value === value : el.value.trim() === value;
   }
   if (el.isContentEditable) {
-    return fillContentEditable(el, value);
+    const filled = fillContentEditable(el, value);
+    return preserveWhitespace ? filled && (el.textContent ?? "") === value : filled;
   }
   return false;
 }
 
-function fillDescription(el: HTMLElement, bodyText: string, bodyHtml?: string): boolean {
-  const text = bodyText.trim();
+function fillDescription(el: HTMLElement, bodyText: string, bodyHtml?: string, preserveWhitespace = false): boolean {
+  const text = preserveWhitespace ? bodyText : bodyText.trim();
   const html = bodyHtml?.trim();
   if (!text && !html) return false;
   if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) {
     setNativeInputValue(el, text);
-    return el.value.trim().length > 0;
+    return preserveWhitespace ? el.value === text : el.value.trim().length > 0;
   }
   if (el.isContentEditable) {
-    return fillContentEditable(el, text, html);
+    const filled = fillContentEditable(el, text, html);
+    return preserveWhitespace ? filled && (el.textContent ?? "") === text : filled;
   }
   return false;
 }
@@ -580,7 +584,7 @@ async function waitForIncreasedMediaMarkers(baseline: number, timeoutMs = 8000):
   return false;
 }
 
-async function attemptImageAttach(pkg: DeviantArtCrossPostPackage): Promise<ImageAttachOutcome> {
+async function attemptImageAttach(pkg: DeviantArtCrossPostPackage, preparedFiles?: File[]): Promise<ImageAttachOutcome> {
   const images = partitionImages(pkg.media);
   const outcome: ImageAttachOutcome = {
     imageCount: images.length,
@@ -591,26 +595,34 @@ async function attemptImageAttach(pkg: DeviantArtCrossPostPackage): Promise<Imag
     return outcome;
   }
 
-  const token = await readGrantToken();
-  if (!token) {
+  const token = preparedFiles ? undefined : await readGrantToken();
+  if (!preparedFiles && !token) {
     outcome.failedFilenames = images.map((i) => i.filename || i.media_id);
     return outcome;
   }
 
-  const { files, failedFilenames: fetchFailures } = await fetchImageFiles(images, token);
+  const { files, failedFilenames: fetchFailures } = preparedFiles ? { files: preparedFiles, failedFilenames: [] } : await fetchImageFiles(images, token!);
   outcome.failedFilenames.push(...fetchFailures);
   if (files.length === 0) {
     return outcome;
   }
 
+  const baseline = preparedFiles ? countMediaPreviewMarkers() : undefined;
   const input = await tryRevealFileInput();
   if (!input || !assignFilesToInput(input, files)) {
     outcome.failedFilenames = files.map((f) => f.name);
     return outcome;
   }
 
-  const baseline = countMediaPreviewMarkers();
-  await waitForIncreasedMediaMarkers(baseline);
+  if (preparedFiles) {
+    if (!await waitForIncreasedMediaMarkers(baseline!)) {
+      outcome.failedFilenames = files.map((f) => f.name);
+      return outcome;
+    }
+  } else {
+    const legacyBaseline = countMediaPreviewMarkers();
+    await waitForIncreasedMediaMarkers(legacyBaseline);
+  }
   outcome.attachedCount = files.length;
   outcome.failedFilenames = [];
   return outcome;
@@ -728,7 +740,36 @@ async function openLatestDraftEditor(): Promise<HTMLElement | null> {
   return waitForPhase2TitleField();
 }
 
+async function consumeManagedHandoffPacket(): Promise<{ packet: ManagedCrossPostHandoffPacket & { destination: "deviantart" }; bytes: Uint8Array } | null | "invalid"> {
+  const key = MANAGED_CROSS_POST_HANDOFF_PACKET_KEY;
+  if (!Object.hasOwn(globalThis, key)) return null;
+  const raw = Reflect.get(globalThis, key);
+  Reflect.deleteProperty(globalThis, key);
+  if (!isManagedCrossPostHandoffPacket(raw) || raw.destination !== "deviantart") return "invalid";
+  const bytes = decodeManagedHandoffJpeg(raw.jpeg_base64);
+  if (!bytes) return "invalid";
+  const digest = Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", bytes)), value => value.toString(16).padStart(2, "0")).join("");
+  return digest === raw.sha256 ? { packet: raw, bytes } : "invalid";
+}
+
+async function runManagedHandoffFill(packet: ManagedCrossPostHandoffPacket & { destination: "deviantart" }, bytes: Uint8Array): Promise<void> {
+  managedHandoffAttemptId = packet.attempt_id;
+  const pkg: DeviantArtCrossPostPackage = { relay_post_id: packet.relay_post_id, title: packet.title, body_text: packet.body_text, tags: [...packet.tags], media: [{ media_id: packet.media_id, filename: packet.filename, mime_type: "image/jpeg", content_url: "" }] };
+  const imageOutcome = await attemptImageAttach(pkg, [new File([bytes], packet.filename, { type: "image/jpeg" })]);
+  const titleEl = await waitForPhase2TitleField();
+  const editor = titleEl ?? await openLatestDraftEditor();
+  if (!editor) {
+    showBanner(imageOutcome.attachedCount ? "The confirmed image is attached. Open the matching DeviantArt editor to fill the reviewed details." : "DeviantArt did not confirm the confirmed image. Upload it manually, then enter the reviewed details.", "warn");
+    await notifyDistributionFillResult({ attemptId: packet.attempt_id, status: "fill_partial", fillResult: { title_ok: false, body_ok: false, tags_ok: false, images_attached: imageOutcome.attachedCount, images_failed: imageOutcome.failedFilenames, page_url: window.location.href }, errorCode: "editor_not_ready" });
+    return;
+  }
+  await fillPhase2Fields(pkg, editor, packet.attempt_id, true, imageOutcome);
+}
+
 async function runFill(): Promise<void> {
+  const managed = await consumeManagedHandoffPacket();
+  if (managed === "invalid") { showBanner(BANNER_ERROR, "error"); return; }
+  if (managed) { await runManagedHandoffFill(managed.packet, managed.bytes); return; }
   if (Object.hasOwn(globalThis, BENCH_DEVIANTART_HANDOFF_PACKET_KEY)) {
     mockBenchHandoff = true;
     await runBenchHandoffFill();
@@ -788,7 +829,10 @@ async function runFill(): Promise<void> {
 
 async function fillPhase2Fields(
   pkg: DeviantArtCrossPostPackage,
-  titleEl: HTMLElement | null
+  titleEl: HTMLElement | null,
+  attemptIdOverride?: string | null,
+  preserveCopyWhitespace = false,
+  suppliedImageOutcome?: ImageAttachOutcome
 ): Promise<void> {
   // Small delay to let DA's editor fully initialize
   await new Promise((r) => window.setTimeout(r, 500));
@@ -802,19 +846,20 @@ async function fillPhase2Fields(
     ? await waitForCandidate(findTagsCandidate, 5000)
     : null;
 
-  const titleOk = actualTitleEl ? fillTitle(actualTitleEl, pkg.title) : false;
+  const titleOk = actualTitleEl ? fillTitle(actualTitleEl, pkg.title, preserveCopyWhitespace) : false;
   const bodyOk = hasDescriptionContent(pkg)
     ? descriptionEl
-      ? fillDescription(descriptionEl, pkg.body_text, pkg.body_html)
+      ? fillDescription(descriptionEl, pkg.body_text, pkg.body_html, preserveCopyWhitespace)
       : false
     : true;
-  const tagsOk = pkg.tags.length > 0 ? (tagsEl ? await fillTags(tagsEl, pkg.tags) : false) : true;
+  const managedTagsLiteral = !preserveCopyWhitespace || pkg.tags.every((tag) => tag === toDeviantArtTag(tag));
+  const tagsOk = pkg.tags.length > 0 ? (tagsEl && managedTagsLiteral ? await fillTags(tagsEl, pkg.tags) : false) : true;
 
   if (!titleOk) markMissing(actualTitleEl);
   if (!bodyOk) markMissing(descriptionEl);
   if (!tagsOk) markMissing(tagsEl);
 
-  const imageOutcome: ImageAttachOutcome = {
+  const imageOutcome: ImageAttachOutcome = suppliedImageOutcome ?? {
     imageCount: partitionImages(pkg.media).length,
     attachedCount: partitionImages(pkg.media).length,
     failedFilenames: []
@@ -822,9 +867,10 @@ async function fillPhase2Fields(
   const banner = buildBanner({ titleOk, bodyOk, tagsOk, imageOutcome });
   showBanner(banner.message, banner.tone);
 
-  const attemptId = await readPendingAttemptId();
-  const allOk = titleOk && bodyOk && tagsOk;
-  const anyOk = titleOk || bodyOk || tagsOk;
+  const attemptId = attemptIdOverride ?? await readPendingAttemptId();
+  const imageOk = imageOutcome.imageCount === imageOutcome.attachedCount && imageOutcome.failedFilenames.length === 0;
+  const allOk = titleOk && bodyOk && tagsOk && imageOk;
+  const anyOk = titleOk || bodyOk || tagsOk || imageOutcome.attachedCount > 0;
   await notifyDistributionFillResult({
     attemptId,
     status: allOk ? "fill_succeeded" : anyOk ? "fill_partial" : "fill_failed",
@@ -899,10 +945,10 @@ void runFill().catch(async () => {
   showBanner(BANNER_ERROR, "error");
   if (mockBenchHandoff) return;
   await notifyDistributionFillResult({
-    attemptId: await readPendingAttemptId(),
+    attemptId: managedHandoffAttemptId ?? await readPendingAttemptId(),
     status: "fill_failed",
     fillResult: { page_url: window.location.href },
     errorCode: "script_error"
   });
-  void clearPendingPackage();
+  if (!managedHandoffAttemptId) void clearPendingPackage();
 });

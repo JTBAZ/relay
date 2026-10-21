@@ -68,7 +68,9 @@ export const DESTINATION_HOSTS: Record<ScheduleReminderDestination, string[]> = 
 /** All product social hosts (any destination). */
 export const ALL_SOCIAL_HOSTS: string[] = Object.values(DESTINATION_HOSTS).flat();
 
-export const RELAY_WEB_HOSTS = ["localhost", "127.0.0.1", "relayapp.me"] as const;
+export const RELAY_WEB_HOSTS = __EXT_ENV__ === "dev"
+  ? ["localhost", "127.0.0.1", "relayapp.me"] as const
+  : ["relayapp.me"] as const;
 
 export function hostMatchesDestination(
   hostname: string,

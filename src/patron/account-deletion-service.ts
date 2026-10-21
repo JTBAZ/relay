@@ -47,6 +47,7 @@
  *   as raw strings rather than via @relation. We purge those manually first.
  */
 
+import { advancePatreonIdentityFence } from "../identity/patreon-identity-mutation.js";
 import { Prisma, type PrismaClient } from "@prisma/client";
 
 import { emitNotificationOutboxEvent } from "./notification-event-emit.js";
@@ -233,11 +234,17 @@ export async function executeDeletion(
   const accountId = row.accountId;
 
   const result = await prisma.$transaction(async (tx) => {
+    const memberIdentity = await tx.account.findUnique({ where: { id: accountId }, select: { patronPatreonUserId: true } });
+    if (memberIdentity?.patronPatreonUserId) await tx.$queryRaw`SELECT 1 FROM pg_advisory_xact_lock(hashtextextended(${`patreon-identity:${memberIdentity.patronPatreonUserId}`}, 0))`;
+    if (memberIdentity?.patronPatreonUserId) await advancePatreonIdentityFence(tx, memberIdentity.patronPatreonUserId);
     // Resolve membership ids ONCE for soft-FK queries that key on patronMembershipId.
     const memberships = await tx.tenantMembership.findMany({
       where: { accountId },
-      select: { id: true }
+      select: { id: true, tenant: { select: { relayCreatorId: true } } }
     });
+    const projectionTargets = await tx.patronEntitlementSnapshot.findMany({ where: { patronMembershipId: { in: memberships.map((membership) => membership.id) } }, select: { relayCreatorId: true } });
+    const creatorIds = [...new Set([...memberships.map((membership) => membership.tenant.relayCreatorId), ...projectionTargets.map((snapshot) => snapshot.relayCreatorId)].filter((id): id is string => Boolean(id)))].sort();
+    for (const creatorId of creatorIds) await tx.$queryRaw`SELECT 1 FROM pg_advisory_xact_lock(hashtextextended(${`entitlements:${creatorId}`}, 0))`;
     const membershipIds = memberships.map((m) => m.id);
 
     // Soft-FK purge -- order chosen so child references go before parents, even though most

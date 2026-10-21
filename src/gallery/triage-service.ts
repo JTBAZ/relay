@@ -6,7 +6,7 @@
  */
 
 import type { CanonicalStore } from "../ingest/canonical-store.js";
-import type { FileExportIndex } from "../export/export-index.js";
+import type { ExportIndex } from "../export/export-index.js";
 import type { GalleryOverridesStore } from "./overrides-store.js";
 
 /**
@@ -223,11 +223,11 @@ export function buildDuplicateGroupsByTitleAndSha(
  */
 export class TriageService {
   private readonly canonical: CanonicalStore;
-  private readonly exportIndex: FileExportIndex;
+  private readonly exportIndex: ExportIndex;
 
   public constructor(
     canonical: CanonicalStore,
-    exportIndex: FileExportIndex
+    exportIndex: ExportIndex
   ) {
     this.canonical = canonical;
     this.exportIndex = exportIndex;
@@ -241,10 +241,14 @@ export class TriageService {
    * @throws Propagates canonical/export load failures.
    */
   public async analyze(creatorId: string): Promise<TriageResult> {
-    const snapshot = await this.canonical.load();
+    const snapshot = await this.canonical.loadForCreator(creatorId);
     const index = await this.exportIndex.load(creatorId);
     const posts = snapshot.posts[creatorId] ?? {};
     const mediaMap = snapshot.media[creatorId] ?? {};
+    for (const [id, record] of Object.entries(index.media)) {
+      const current = mediaMap[id];
+      if (current && (current.upstream_status !== "active" || current.current.upstream_revision !== record.upstream_revision)) delete index.media[id];
+    }
 
     const textOnlyIds: string[] = [];
     const smallMediaIds: string[] = [];
@@ -324,7 +328,7 @@ export class TriageService {
     const smallSet = cat.has("small_media") ? new Set(result.small_media_ids) : null;
     const coverSet = cat.has("cover_images") ? new Set(result.cover_media_ids) : null;
     if (smallSet?.size || coverSet?.size) {
-      const snapshot = await this.canonical.load();
+      const snapshot = await this.canonical.loadForCreator(creatorId);
       const posts = snapshot.posts[creatorId] ?? {};
       for (const [postId, row] of Object.entries(posts)) {
         if (row.upstream_status === "deleted") continue;

@@ -30,6 +30,7 @@ export function AuthorizeClient() {
 
   const [status, setStatus] = useState<AuthorizeStatus>("idle");
   const [message, setMessage] = useState<string | null>(null);
+  const [credentialCapture, setCredentialCapture] = useState<string | undefined>();
 
   const onAuthorize = useCallback(async () => {
     setMessage(null);
@@ -52,6 +53,7 @@ export function AuthorizeClient() {
         setMessage(exchangeResult.error);
         return;
       }
+      setCredentialCapture(exchangeResult.credentialCapture);
       setStatus("connected");
     } catch (e) {
       setStatus("error");
@@ -117,9 +119,10 @@ export function AuthorizeClient() {
         <h1 className="font-[family-name:var(--font-display)] text-2xl text-stone-50">
           Connect extension
         </h1>
-        <p className="rounded border border-emerald-500/40 bg-emerald-950/40 p-4 text-emerald-100">
-          Connected ✓ — you can close this tab.
+        <p role="status" aria-live="polite" className="rounded border border-emerald-500/40 bg-emerald-950/40 p-4 text-emerald-100">
+          Extension authorized. {credentialCapture === "stored" ? "Your current browser session was stored on Relay." : credentialCapture === "missing_browser_session" ? "Log into Patreon in this browser, then authorize again to capture its session." : "Session capture was not confirmed. Open the extension popup to check the connection or authorize again."}
         </p>
+        <p className="text-sm text-stone-400" role="status">Check Library sync status on Relay for imported posts and media.</p>
       </main>
     );
   }
@@ -130,7 +133,7 @@ export function AuthorizeClient() {
         <h1 className="font-[family-name:var(--font-display)] text-2xl text-stone-50">
           Connect extension
         </h1>
-        <div className="rounded border border-red-500/40 bg-red-950/40 p-4 text-sm text-red-100">
+        <div role="alert" className="rounded border border-red-500/40 bg-red-950/40 p-4 text-sm text-red-100">
           <p className="font-medium text-red-50">Extension authorization failed.</p>
           {message && <p className="mt-2 text-red-200/90">{message}</p>}
           <p className="mt-2 text-red-200/90">
@@ -188,7 +191,7 @@ export function AuthorizeClient() {
       </div>
 
       {status === "error" && message && (
-        <pre className="whitespace-pre-wrap rounded border border-red-500/40 bg-red-950/50 p-3 text-sm text-red-200">
+        <pre role="alert" className="whitespace-pre-wrap rounded border border-red-500/40 bg-red-950/50 p-3 text-sm text-red-200">
           {message}
         </pre>
       )}

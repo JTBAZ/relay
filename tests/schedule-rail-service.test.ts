@@ -570,6 +570,37 @@ describe("attachMediaToScheduleRailEvent", () => {
     ).rejects.toBeInstanceOf(ScheduleRailNotFoundError);
   });
 
+  it("keeps managed Conversation media pinned by rejecting Rail attachment before source mutation", async () => {
+    const sourceVersion = { mediaIds: ["source-media"] };
+    const postVersionFindFirst = vi.fn().mockResolvedValue(sourceVersion);
+    const prisma = {
+      postbotTask: {
+        findFirst: vi.fn().mockResolvedValue({
+          id: "task1",
+          creatorId: "cr1",
+          postId: "post1",
+          planId: "plan1",
+          goalCycleCampaignKey: null,
+          action: "post",
+          status: "pending"
+        })
+      },
+      postDistributionPlan: {
+        findFirst: vi.fn().mockResolvedValue({
+          conversationalGroupKey: "conversation-draft:session1"
+        })
+      },
+      postVersion: { findFirst: postVersionFindFirst }
+    } as unknown as PrismaClient;
+
+    await expect(
+      attachMediaToScheduleRailEvent(prisma, "cr1", "task1", ["variant-media"])
+    ).rejects.toThrow("Manage this destination media through Conversation.");
+
+    expect(postVersionFindFirst).not.toHaveBeenCalled();
+    expect(sourceVersion.mediaIds).toEqual(["source-media"]);
+  });
+
   it("materializes a planned routine occurrence then attaches media", async () => {
     const seriesMod = await import("../src/autopost/schedule-series-service.js");
     const spy = vi.spyOn(seriesMod, "materializeOccurrence").mockResolvedValue({
@@ -994,6 +1025,45 @@ describe("updateScheduleRailEventPostDetails", () => {
         description: "Body"
       })
     ).rejects.toBeInstanceOf(ScheduleRailValidationError);
+  });
+
+  it("does not seed a managed Conversation draft when the rail task has no plan id", async () => {
+    const planFind = vi.fn().mockResolvedValue({ id: "managed-plan" });
+    const versionFind = vi.fn();
+    const transaction = vi.fn();
+    const prisma = {
+      postbotTask: {
+        findFirst: vi.fn().mockResolvedValue({
+          id: "task1",
+          creatorId: "cr1",
+          postId: "post1",
+          planId: null,
+          goalCycleCampaignKey: null,
+          action: "post",
+          status: "pending"
+        })
+      },
+      post: {
+        findFirst: vi.fn().mockResolvedValue({ id: "post1", publishState: "draft" })
+      },
+      postDistributionPlan: { findFirst: planFind },
+      postVersion: { findFirst: versionFind },
+      $transaction: transaction
+    } as unknown as PrismaClient;
+
+    await expect(
+      updateScheduleRailEventPostDetails(prisma, "cr1", "task1", {
+        title: "Hello",
+        description: "Body"
+      })
+    ).rejects.toBeInstanceOf(ScheduleRailValidationError);
+
+    expect(planFind).toHaveBeenCalledWith({
+      where: { postId: "post1", creatorId: "cr1", conversationalGroupKey: { startsWith: "conversation-draft:" } },
+      select: { id: true }
+    });
+    expect(versionFind).not.toHaveBeenCalled();
+    expect(transaction).not.toHaveBeenCalled();
   });
 
   it("seeds the same authored text on every draft variant by default", async () => {

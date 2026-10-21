@@ -1,0 +1,18 @@
+
+> relay@0.1.0 test
+> vitest run --run tests/editor-bench/conversation.test.ts tests/editor-bench/real-library-conversation-routes.test.ts tests/editor-bench/real-library-review.test.ts
+
+[dotenv@17.3.1] injecting env (18) from .env -- tip: 🔐 prevent building .env in docker: https://dotenvx.com/prebuild
+
+ RUN  v3.2.4 C:/Users/jorda/Documents/Codex/2026-10-11/c/work/relay
+
+ ✓ tests/editor-bench/conversation.test.ts (29 tests) 2832ms
+   ✓ mock editor-bench conversation > grounds rename titles in one exact balanced quote and independently grounds the target  383ms
+ ✓ tests/editor-bench/real-library-conversation-routes.test.ts (11 tests) 162ms
+ ✓ tests/editor-bench/real-library-review.test.ts (3 tests) 5ms
+
+ Test Files  3 passed (3)
+      Tests  43 passed (43)
+   Start at  22:17:43
+   Duration  5.55s (transform 667ms, setup 28ms, collect 2.21s, tests 3.00s, environment 0ms, prepare 88ms)
+

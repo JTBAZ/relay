@@ -99,22 +99,23 @@ export class PatreonAuthService {
         this.fetchImpl
       );
 
-      const previous = await this.tokenStore.getByCreatorId(creatorId);
-      const prevPid = previous?.provider_user_id?.trim();
-      if (prevPid && prevPid !== patreonUserId) {
-        throw new Error(
-          "The Patreon account you used doesn’t match the one already connected to this studio. " +
-            "Double-check you’re logged into the correct Patreon account, then try again."
-        );
-      }
+      await this.tokenStore.updateForCreator(creatorId, async (previous) => {
+        const prevPid = previous?.provider_user_id?.trim();
+        if (prevPid && prevPid !== patreonUserId) {
+          throw new Error(
+            "The Patreon account you used doesn’t match the one already connected to this studio. " +
+              "Double-check you’re logged into the correct Patreon account, then try again."
+          );
+        }
 
-      await this.tokenStore.upsert({
-        creator_id: creatorId,
-        access_token: tokenResponse.access_token,
-        refresh_token: tokenResponse.refresh_token,
-        access_token_expires_at: addSecondsToNow(tokenResponse.expires_in),
-        credential_health_status: "healthy",
-        provider_user_id: patreonUserId
+        return {
+          creator_id: creatorId,
+          access_token: tokenResponse.access_token,
+          refresh_token: tokenResponse.refresh_token,
+          access_token_expires_at: addSecondsToNow(tokenResponse.expires_in),
+          credential_health_status: "healthy",
+          provider_user_id: patreonUserId
+        };
       });
 
       this.eventBus.publish("patreon_oauth_connected", creatorId, traceId, {
@@ -145,32 +146,43 @@ export class PatreonAuthService {
    */
   public async refreshAndRotate(
     creatorId: string,
-    traceId: string
+    traceId: string,
+    onlyIfNeeded = false
   ): Promise<{ creator_id: string; credential_health_status: "healthy" }> {
     const current = await this.tokenStore.getByCreatorId(creatorId);
     if (!current) {
       throw new Error("Creator credentials not found.");
     }
 
-    recordTokenRefreshAttempt();
+    let rotated = false;
     try {
-      const refreshed = await this.patreonClient.refreshToken(current.refresh_token);
+      await this.tokenStore.updateForCreator(creatorId, async (latest) => {
+        if (!latest) throw new Error("Creator credentials not found.");
+        if (onlyIfNeeded && !needsProactivePatreonRefresh(latest)) return latest;
+        // Another process may have rotated while this caller waited for the shared lock.
+        if (latest.refresh_token !== current.refresh_token || latest.access_token !== current.access_token ||
+          latest.access_token_expires_at !== current.access_token_expires_at) return latest;
+        recordTokenRefreshAttempt();
+        const refreshed = await this.patreonClient.refreshToken(latest.refresh_token);
+        rotated = true;
 
-      await this.tokenStore.upsert({
-        creator_id: creatorId,
-        access_token: refreshed.access_token,
-        refresh_token: refreshed.refresh_token,
-        access_token_expires_at: addSecondsToNow(refreshed.expires_in),
-        credential_health_status: "healthy"
+        return {
+          ...latest,
+          creator_id: creatorId,
+          access_token: refreshed.access_token,
+          refresh_token: refreshed.refresh_token,
+          access_token_expires_at: addSecondsToNow(refreshed.expires_in),
+          credential_health_status: "healthy"
+        };
       });
 
-      this.eventBus.publish("patreon_token_refreshed", creatorId, traceId, {
+      if (rotated) this.eventBus.publish("patreon_token_refreshed", creatorId, traceId, {
         primary_id: creatorId,
         creator_id: creatorId,
         credential_health_status: "healthy"
       });
 
-      recordTokenRefreshSuccess();
+      if (rotated) recordTokenRefreshSuccess();
 
       return {
         creator_id: creatorId,
@@ -199,12 +211,12 @@ export class PatreonAuthService {
       return;
     }
     try {
-      await this.refreshAndRotate(creatorId, traceId);
+      await this.refreshAndRotate(creatorId, traceId, true);
     } catch (err) {
       // eslint-disable-next-line no-console -- ops visibility for silent automation failures
       console.error(
         `[patreon_oauth] Proactive refresh failed creator_id=${creatorId} trace_id=${traceId}`,
-        err
+        err instanceof Error ? err.name : "Error"
       );
       throw err;
     }

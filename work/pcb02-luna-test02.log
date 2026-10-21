@@ -1,0 +1,87 @@
+
+> relay@0.1.0 test
+> vitest run tests/editor-bench/real-library-conversation-routes.test.ts
+
+[dotenv@17.3.1] injecting env (18) from .env -- tip: ⚙️  specify custom .env file path with { path: '/custom/path/.env' }
+
+ RUN  v3.2.4 C:/Users/jorda/Documents/Codex/2026-10-11/c/work/relay
+
+ ❯ tests/editor-bench/real-library-conversation-routes.test.ts (8 tests | 3 failed) 421ms
+   × real Library Conversation routes > selects hundreds of posts, keeps exclusions across add, and reads current owned metadata back 272ms
+     → expected [] to have a length of 498 but got +0
+   × real Library Conversation routes > keeps selection through router reconstruction and applies one reviewed rename with an exact durable retry 12ms
+     → expected [] to deeply equal [ 'post_000' ]
+   × real Library Conversation routes > keeps account-bound ownership, rejects client state, and fails closed on a mixed edit request 11ms
+     → expected 404 "Not Found", got 503 "Service Unavailable"
+   ✓ real Library Conversation routes > keeps the durable conversation readable after overnight idle 14ms
+   ✓ real Library Conversation routes > requires explicit refresh after catalog change and clears old intent only after refreshing 42ms
+   ✓ real Library Conversation routes > does not commit a model result when the Library changes during interpretation 21ms
+   ✓ real Library Conversation routes > prevents an older refresh from clearing state after a newer refresh wins 41ms
+   ✓ real Library Conversation routes > does not register the real Library connector outside development 6ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 3 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/editor-bench/real-library-conversation-routes.test.ts > real Library Conversation routes > selects hundreds of posts, keeps exclusions across add, and reads current owned metadata back
+AssertionError: expected [] to have a length of 498 but got +0
+
+- Expected
++ Received
+
+- 498
++ 0
+
+ ❯ tests/editor-bench/real-library-conversation-routes.test.ts:108:47
+    106|     expect(started.body.data.selection).toEqual({ postIds: [], exclude…
+    107|     const first = await request(app).post(turnPath(sessionId)).send({ …
+    108|     expect(first.body.data.selection.postIds).toHaveLength(498);
+       |                                               ^
+    109|     expect(first.body.data.selection.excludedPostIds).toEqual(['post_0…
+    110|     expect(first.body.data.selection.postIds).not.toContain('post_054'…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/3]⎯
+
+ FAIL  tests/editor-bench/real-library-conversation-routes.test.ts > real Library Conversation routes > keeps selection through router reconstruction and applies one reviewed rename with an exact durable retry
+AssertionError: expected [] to deeply equal [ 'post_000' ]
+
+- Expected
++ Received
+
+- [
+-   "post_000",
+- ]
++ []
+
+ ❯ tests/editor-bench/real-library-conversation-routes.test.ts:150:50
+    148|     const id = started.body.data.sessionId as string;
+    149|     const selected = await request(app).post(turnPath(id)).send({ sess…
+    150|     expect(selected.body.data.selection.postIds).toEqual(['post_000']);
+       |                                                  ^
+    151|     const reviewApp = appFor({ getSnapshot: async () => current, provi…
+    152|     const readback = await request(reviewApp).get(`${base}/session/${i…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/3]⎯
+
+ FAIL  tests/editor-bench/real-library-conversation-routes.test.ts > real Library Conversation routes > keeps account-bound ownership, rejects client state, and fails closed on a mixed edit request
+Error: expected 404 "Not Found", got 503 "Service Unavailable"
+ ❯ tests/editor-bench/real-library-conversation-routes.test.ts:176:83
+    174|     const started = await request(app).post(`${base}/session`).send({}…
+    175|     const id = started.body.data.sessionId as string;
+    176|     await request(app).get(`${base}/session/${id}`).set('x-account', '…
+       |                                                                                   ^
+    177|     await request(app).post(turnPath(id)).send({ sessionId: id, expect…
+    178|     const mixed = await request(app).post(turnPath(id)).send({ session…
+ ❯ Test._assertStatus node_modules/supertest/lib/test.js:309:14
+ ❯ node_modules/supertest/lib/test.js:365:13
+ ❯ Test._assertFunction node_modules/supertest/lib/test.js:342:13
+ ❯ Test.assert node_modules/supertest/lib/test.js:195:23
+ ❯ localAssert node_modules/supertest/lib/test.js:138:14
+ ❯ Server.<anonymous> node_modules/supertest/lib/test.js:152:11
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/3]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  3 failed | 5 passed (8)
+   Start at  22:06:08
+   Duration  3.34s (transform 450ms, setup 25ms, collect 2.56s, tests 421ms, environment 0ms, prepare 102ms)
+

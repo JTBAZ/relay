@@ -26,11 +26,11 @@ export interface EditorRouteOptions {
 export function providerBudgetForRoute(options:Pick<EditorRouteOptions,"providerBudget">):ProviderBudget{
   return options.providerBudget??new FileProviderBudget(join(process.env.RELAY_GALLERY_EDITOR_DATA_DIR??".relay-data","gallery-editor-budget.json"));
 }
-function enabled(creatorId:string){
+export function isGalleryEditorEnabled(creatorId:string){
   return process.env.RELAY_GALLERY_EDITOR_ENABLED==="1" && (process.env.RELAY_GALLERY_EDITOR_ALLOWLIST??"").split(",").map(x=>x.trim()).filter(Boolean).includes(creatorId);
 }
 function aiAvailable(creatorId:string){
-  return enabled(creatorId)&&process.env.RELAY_GALLERY_EDITOR_AI_ENABLED!=="0"&&Boolean(process.env.OPENAI_API_KEY?.trim())&&Boolean(process.env.LIBRARY_EDITOR_MODEL_PRICING_JSON?.trim());
+  return isGalleryEditorEnabled(creatorId)&&process.env.RELAY_GALLERY_EDITOR_AI_ENABLED!=="0"&&Boolean(process.env.OPENAI_API_KEY?.trim())&&Boolean(process.env.LIBRARY_EDITOR_MODEL_PRICING_JSON?.trim());
 }
 function context(value:unknown):EditorContext{
   if(!value||typeof value!=="object"||Array.isArray(value))throw new EditorError("INVALID_CONTEXT","Supply editor selection context.");
@@ -84,7 +84,7 @@ export function registerGalleryEditorRoutes(app:Express,options:EditorRouteOptio
       try{
         const principal=await options.authorize(req,res,mutation);if(!principal)return;
         const supplied=req.body?.creator_id??req.query.creator_id;if(supplied!==undefined&&supplied!==principal.creatorId)throw new EditorError("FORBIDDEN","Creator scope does not match your account.",403);
-        if(requireEnabled&&(!enabled(principal.creatorId)||!options.storesReady))throw new EditorError("EDITOR_DISABLED","The Library editor requires an enabled account and PostgreSQL Library stores.",403);
+        if(requireEnabled&&(!isGalleryEditorEnabled(principal.creatorId)||!options.storesReady))throw new EditorError("EDITOR_DISABLED","The Library editor requires an enabled account and PostgreSQL Library stores.",403);
         return res.json(successEnvelope(await fn(req,principal),traceId));
       }catch(error){
         if(error instanceof EditorError)return res.status(error.status).json(errorEnvelope(error.code,error.message,traceId));
@@ -93,7 +93,7 @@ export function registerGalleryEditorRoutes(app:Express,options:EditorRouteOptio
     });
   };
   const base="/api/v1/gallery/editor";
-  route("get",`${base}/capabilities`,false,async(_req,p)=>({enabled:enabled(p.creatorId)&&Boolean(options.storesReady),aiAvailable:Boolean(options.storesReady)&&(aiAvailable(p.creatorId)||Boolean(options.provider)&&enabled(p.creatorId)),notice:RENAME_NOTICE}),false);
+  route("get",`${base}/capabilities`,false,async(_req,p)=>({enabled:isGalleryEditorEnabled(p.creatorId)&&Boolean(options.storesReady),aiAvailable:Boolean(options.storesReady)&&(aiAvailable(p.creatorId)||Boolean(options.provider)&&isGalleryEditorEnabled(p.creatorId)),notice:RENAME_NOTICE}),false);
   route("post",`${base}/sessions`,true,(req,p)=>service.create(p.creatorId,p.actorId,context(req.body?.context)));
   route("get",`${base}/sessions/:id`,false,(req,p)=>service.read(p.creatorId,p.actorId,String(req.params.id)),false);
   route("patch",`${base}/sessions/:id`,true,(req,p)=>service.revise(p.creatorId,p.actorId,String(req.params.id),revision(req.body?.revision),validateActions(req.body?.actions),req.body?.context?context(req.body.context):undefined));

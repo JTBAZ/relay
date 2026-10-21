@@ -1,0 +1,230 @@
+{
+  "ticket": "PCB-01",
+  "date": "2026-10-20",
+  "status": "accepted_read_only_backend_connector",
+  "branch": "codex/local-build-2026-10-19",
+  "head": "91a72d2f1ea18a7b1326305e6dd4b1d224fbcbd1",
+  "baselineHead": "91a72d2f1ea18a7b1326305e6dd4b1d224fbcbd1",
+  "plannedBy": "Sol High",
+  "implementedBy": "Luna High",
+  "reviewedBy": "Root scoped Ponytail Review",
+  "scope": {
+    "src/editor-bench/large-library-chat.ts": {
+      "sha256": "3b4af25170b869d1d0b2fb0dfef60a6544edd2f55a31c4da85d107cafa747c02",
+      "hunks": [
+        "@@ -35,0 +36,4 @@ export type LargeLibraryChatResult = { status: number; body: LargeLibraryChatRes",
+        "@@ -37 +41 @@ export type LargeLibraryChatResult = { status: number; body: LargeLibraryChatRes",
+        "@@ -133,2 +137,2 @@ function usageInfo(usage: ProviderUsage | undefined) {",
+        "@@ -136 +140 @@ function response(body: GroundedSelectionResponse, provenance: LargeLibraryChatR",
+        "@@ -138 +142 @@ function unchanged(snapshot: LargeRealLibrarySnapshot, state: RetrievalRefinemen",
+        "@@ -240 +244 @@ function extractOutput(output: unknown): string {",
+        "@@ -243 +247 @@ export async function runMockLargeLibraryChat(options: {",
+        "@@ -250 +254 @@ export async function runMockLargeLibraryChat(options: {",
+        "@@ -254 +258 @@ export async function runMockLargeLibraryChat(options: {",
+        "@@ -311,0 +316,7 @@ export async function runMockLargeLibraryChat(options: {"
+      ],
+      "taskHunks": [
+        "@@ -35,0 +36,4 @@ export type LargeLibraryChatResult = { status: number; body: LargeLibraryChatRes",
+        "@@ -37 +41 @@ export type LargeLibraryChatResult = { status: number; body: LargeLibraryChatRes",
+        "@@ -133,2 +137,2 @@ function usageInfo(usage: ProviderUsage | undefined) {",
+        "@@ -136 +140 @@ function response(body: GroundedSelectionResponse, provenance: LargeLibraryChatR",
+        "@@ -138 +142 @@ function unchanged(snapshot: LargeRealLibrarySnapshot, state: RetrievalRefinemen",
+        "@@ -240 +244 @@ function extractOutput(output: unknown): string {",
+        "@@ -243 +247 @@ export async function runMockLargeLibraryChat(options: {",
+        "@@ -250 +254 @@ export async function runMockLargeLibraryChat(options: {",
+        "@@ -254 +258 @@ export async function runMockLargeLibraryChat(options: {",
+        "@@ -311,0 +316,7 @@ export async function runMockLargeLibraryChat(options: {"
+      ]
+    },
+    "src/server.ts": {
+      "sha256": "5a69758d8d9c5487851451ce5daeea3652e5e6d21fda78459fe3129de1485321",
+      "hunks": [
+        "@@ -14 +14 @@ import express, { Request, Response } from \"express\";",
+        "@@ -694,0 +695 @@ import { mountGroundedLibrarySelectionBodyParser, registerGroundedLibrarySelecti",
+        "@@ -915 +915,0 @@ import { PatreonCampaignCreatorIndex } from \"./patreon/patreon-campaign-creator-",
+        "@@ -922 +922 @@ import {",
+        "@@ -927,0 +928,2 @@ import { processPatreonWebhookStub } from \"./webhooks/patreon-webhook.js\";",
+        "@@ -2103,5 +2105 @@ export function createApp(config: AppConfig): CreateAppResult {",
+        "@@ -2250,65 +2247,0 @@ export function createApp(config: AppConfig): CreateAppResult {",
+        "@@ -2316,7 +2249,53 @@ export function createApp(config: AppConfig): CreateAppResult {",
+        "@@ -2323,0 +2303,26 @@ export function createApp(config: AppConfig): CreateAppResult {",
+        "@@ -2327,2 +2332,2 @@ export function createApp(config: AppConfig): CreateAppResult {",
+        "@@ -19517,0 +19523,16 @@ export function createApp(config: AppConfig): CreateAppResult {"
+      ],
+      "taskHunks": [
+        "@@ -694,0 +695 @@ import { mountGroundedLibrarySelectionBodyParser, registerGroundedLibrarySelecti",
+        "@@ -19517,0 +19523,16 @@ export function createApp(config: AppConfig): CreateAppResult {"
+      ],
+      "taskImportSha256": "09bd69ce01c47e2f3b1253794e899444c414d58cc218c97d4b39422368c53f4e",
+      "taskRegistrationSha256": "bccbea6daef09dadd6bc09399a2c894a05148671d525f413608b623323047081",
+      "fullFileSha256AtAcceptance": "5a69758d8d9c5487851451ce5daeea3652e5e6d21fda78459fe3129de1485321",
+      "excludedHunks": [
+        "@@ -14 +14 @@ import express, { Request, Response } from \"express\";",
+        "@@ -915 +915,0 @@ import { PatreonCampaignCreatorIndex } from \"./patreon/patreon-campaign-creator-",
+        "@@ -922 +922 @@ import {",
+        "@@ -927,0 +928,2 @@ import { processPatreonWebhookStub } from \"./webhooks/patreon-webhook.js\";",
+        "@@ -2103,5 +2105 @@ export function createApp(config: AppConfig): CreateAppResult {",
+        "@@ -2250,65 +2247,0 @@ export function createApp(config: AppConfig): CreateAppResult {",
+        "@@ -2316,7 +2249,53 @@ export function createApp(config: AppConfig): CreateAppResult {",
+        "@@ -2323,0 +2303,26 @@ export function createApp(config: AppConfig): CreateAppResult {",
+        "@@ -2327,2 +2332,2 @@ export function createApp(config: AppConfig): CreateAppResult {"
+      ]
+    },
+    "tests/editor-bench/large-library-chat.test.ts": {
+      "sha256": "d19f7703856ed765385d05ca9722dac0f7fe1b1a223a511c594c58b14e4dd9ed",
+      "hunks": [
+        "@@ -73,2 +73,2 @@ describe('large synthetic Library chat', () => {"
+      ],
+      "taskHunks": [
+        "@@ -73,2 +73,2 @@ describe('large synthetic Library chat', () => {"
+      ]
+    },
+    "src/editor-bench/real-library-conversation-routes.ts": {
+      "sha256": "3175885ce3d5723310ae36f96d04ac576a34cfc3e0142cf274bc3d6d040e9312",
+      "newFile": true,
+      "lines": 247
+    },
+    "tests/editor-bench/real-library-conversation-routes.test.ts": {
+      "sha256": "d9d5a608b3b500b27aefc3caae1dea3bf8fd6440268d12b3af23fd757fbcf135",
+      "newFile": true,
+      "lines": 176
+    }
+  },
+  "capability": "Authenticated development-only Conversation sessions over the existing complete owned Library snapshot and bounded cheap-model selector, with server-owned selection and exclusions.",
+  "api": {
+    "base": "/api/v1/editor-bench/real-library-conversation",
+    "routes": [
+      {
+        "method": "POST",
+        "path": "/session",
+        "body": {}
+      },
+      {
+        "method": "GET",
+        "path": "/session/:sessionId"
+      },
+      {
+        "method": "POST",
+        "path": "/session/:sessionId/turn",
+        "body": {
+          "sessionId": "opaque returned ID",
+          "expectedRevision": "current returned revision",
+          "latestRequest": "selection-only request"
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/session/:sessionId/refresh",
+        "body": {
+          "expectedRevision": "current returned revision"
+        },
+        "effect": "Explicitly clears selection/exclusions and adopts the current catalog."
+      }
+    ],
+    "writes": "In-memory selection context only. No Library edit, preview upload, variant, schedule or handoff write authority."
+  },
+  "verification": {
+    "root": {
+      "passed": 62,
+      "failed": 0,
+      "files": 6,
+      "report": "work/pcb01-root-tests.json",
+      "exit": "work/pcb01-root-tests.exit.json"
+    },
+    "workerFinal": {
+      "passed": 57,
+      "files": 5,
+      "log": "work/pcb01-luna-focused-05.log",
+      "exitRecord": "work/pcb01-luna-focused-05.exit.json"
+    },
+    "backendBuild": {
+      "exitCode": 0,
+      "log": "work/pcb01-luna-build-01.log",
+      "exitRecord": "work/pcb01-luna-build-01.exit.json"
+    },
+    "observed": [
+      "Complete 500-post owned snapshot through the new HTTP routes",
+      "Semantic offered tag coast to coastal retained",
+      "A previously unselected item is added; a later add cannot reintroduce an excluded item",
+      "Current metadata/readiness read back from the loader",
+      "Account/creator isolation and client-state rejection",
+      "Mixed request model clarification returns no edit review or write receipt",
+      "Catalog changes before or during interpretation block stale results",
+      "Older refresh cannot overwrite a newer refresh",
+      "Routes absent outside development",
+      "Existing 40/1001-post retrieval, date/vocabulary, mock Conversation and budgeted runtime regressions pass"
+    ],
+    "frontendTests": false,
+    "paidCalls": 0,
+    "actualAccountLibraryRead": false,
+    "actualDatabaseWrites": false
+  },
+  "review": {
+    "scope": "Three existing file hunk sets and two new files against work/pcb01-baseline/, plus the shared matcher, snapshot loader, runtime/auth callers and mock wrapper consumers. Only the import and development registration hunks in server.ts belong to PCB-01.",
+    "remainingFindings": [],
+    "resolved": [
+      "Require exact refresh generation after awaiting the snapshot.",
+      "Abort an in-flight model result on response disconnect.",
+      "Remove the lexical action gate that would reject legitimate metadata words such as schedule.",
+      "Preserve offered semantic tag equivalents by using the shared pipeline rather than re-running literal-only grounding.",
+      "Preserve legacy mock response scope and update only exact payload byte/digest expectations after removing the word synthetic from the shared prompt."
+    ],
+    "promptChange": "synthetic Library becomes Library; no fresh live language-quality claim."
+  },
+  "failureEvidence": {
+    "attempts": [
+      {
+        "log": "work/pcb01-luna-focused-01.log",
+        "exitRecord": "work/pcb01-luna-focused-01.exit.json",
+        "exitCode": 1
+      },
+      {
+        "log": "work/pcb01-luna-focused-02.log",
+        "exitRecord": "work/pcb01-luna-focused-02.exit.json",
+        "exitCode": 1
+      },
+      {
+        "log": "work/pcb01-luna-focused-03.log",
+        "exitRecord": "work/pcb01-luna-focused-03.exit.json",
+        "exitCode": 1
+      },
+      {
+        "log": "work/pcb01-luna-focused-04.log",
+        "exitRecord": "work/pcb01-luna-focused-04.exit.json",
+        "exitCode": 0
+      },
+      {
+        "log": "work/pcb01-luna-focused-05.log",
+        "exitRecord": "work/pcb01-luna-focused-05.exit.json",
+        "exitCode": 0
+      }
+    ],
+    "diagnosis": "Attempts 01–03 retained prompt byte/digest expectation failures and asynchronous test-harness timeout/Promise handling failures; corrected attempts 04–05 passed. No raw log was overwritten."
+  },
+  "preservation": {
+    "priorReportsAndJournalsUnchanged": 85,
+    "ledgerUnchanged": true,
+    "configFilesUnchanged": true,
+    "extensionAndFrontendSourceUnchanged": true,
+    "concurrentServerHunks": "Unrelated Patreon work changed other server.ts hunks after the baseline; those hunks were excluded from this task review and left untouched."
+  },
+  "budget": {
+    "rows": 919,
+    "paidCalls": 0,
+    "developmentRemainingUsd": 0.34483654,
+    "heldoutRemainingUsd": 8.9690346,
+    "canonicalSha256": "969cc6310604f9c506f63d55056c0c9221297400570229d8ba6c50f5bd86b7d9",
+    "authoritativeLedgerAbsolutePath": "C:\\Users\\jorda\\Documents\\Codex\\2026-10-11\\c\\work\\relay\\.relay-data\\gallery-editor-budget.json"
+  },
+  "limits": [
+    "Backend connection capability only; no product UI/client mount or live gallery demo added.",
+    "Creator/account-bound state expires after two hours idle or API restart; 12 sessions per owner pair and 96 globally. PCB-02 durability remains separate.",
+    "Existing snapshot limits 1024 posts/4096 current media/16 MiB normalized metadata; vocabulary 8 KiB and model request 16 KiB. No truncation or increased cap.",
+    "Real metadata has no fixture stage/filename/orientation/media-label field; unsupported requests clarify. Date meanings and Europe/London selector grammar unchanged.",
+    "Selection-only schema/prompt plus grounding cannot prove perfect natural-language intent; no paid model check was run. Real writes are absent from this lane.",
+    "No schema/migration/environment change or real account business write. No automated publishing.",
+    "Frontend tests/build/lint/typecheck/browser/render and installed-extension execution remain deferred.",
+    "Broader suite not rerun; the three historical distribution-package stub failures remain separately recorded.",
+    "API was not restarted; new routes require the next local API restart. No PCB-02 implementation dispatched."
+  ]
+}

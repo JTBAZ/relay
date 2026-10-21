@@ -45,7 +45,7 @@ async function findActivePlanRow(
   postId: string
 ) {
   return prisma.postDistributionPlan.findFirst({
-    where: { postId, creatorId, status: "active" },
+    where: { postId, creatorId, status: "active", OR: [{ conversationalGroupKey: null }, { conversationalGroupKey: { not: { startsWith: "conversation-draft:" } } }] },
     include: {
       _count: { select: { variants: true } }
     }

@@ -10,6 +10,7 @@ import {
   type XCrossPostPackage
 } from "../lib/cross-post-types";
 import { BENCH_X_HANDOFF_PACKET_KEY, decodeBenchXHandoffBytes, isBenchXHandoffPacket, type BenchXHandoffPacket } from "../lib/bench-x-handoff";
+import { decodeManagedHandoffJpeg, isManagedCrossPostHandoffPacket, MANAGED_CROSS_POST_HANDOFF_PACKET_KEY, type ManagedCrossPostHandoffPacket } from "../lib/managed-cross-post-handoff";
 import {
   notifyDistributionFillResult,
   readPendingAttemptId,
@@ -31,6 +32,7 @@ const POLL_MS = 200;
 const BANNER_ID = "relay-cross-post-banner";
 const GRANT_STORAGE_KEY = "grant";
 const MAX_IMAGES = 4;
+let managedHandoffAttemptId: string | null = null;
 
 const COMPOSE_SELECTORS = [
   '[data-testid="tweetTextarea_0"]',
@@ -213,12 +215,14 @@ async function waitForExpectedText(
   return composeFieldMatchesExpected(el.textContent ?? "", expectedText);
 }
 
-async function settleComposeAfterInsert(el: HTMLElement, expectedText: string): Promise<boolean> {
-  if (textTriggersHashtagTypeahead(expectedText)) {
+async function settleComposeAfterInsert(el: HTMLElement, expectedText: string, exactLiteral = false): Promise<boolean> {
+  if (!exactLiteral && textTriggersHashtagTypeahead(expectedText)) {
     await waitForTypeaheadClosed(el, typeaheadSettleTimeoutMs(expectedText));
   }
-  const matched = await waitForExpectedText(el, expectedText, verifyTimeoutMsForText(expectedText));
-  if (matched && textTriggersHashtagTypeahead(expectedText)) {
+  const matched = exactLiteral
+    ? (await waitForExpectedText(el, expectedText, verifyTimeoutMsForText(expectedText))) && (el.textContent ?? "") === expectedText
+    : await waitForExpectedText(el, expectedText, verifyTimeoutMsForText(expectedText));
+  if (!exactLiteral && matched && textTriggersHashtagTypeahead(expectedText)) {
     el.focus();
     moveComposeCursorToEnd(el);
     try {
@@ -251,6 +255,7 @@ type InsertComposeSegmentOptions = {
   append: boolean;
   expectedFull: string;
   expectedPartial?: string;
+  exactLiteral?: boolean;
 };
 
 async function pasteSegmentIntoCompose(el: HTMLElement, segment: string): Promise<boolean> {
@@ -284,6 +289,7 @@ function segmentVerifyTarget(opts: InsertComposeSegmentOptions): string {
 
 function segmentMatchesTarget(el: HTMLElement, opts: InsertComposeSegmentOptions): boolean {
   const target = segmentVerifyTarget(opts);
+  if (opts.exactLiteral) return (el.textContent ?? "") === target;
   if (opts.expectedPartial) {
     return composeFieldMatchesExpected(el.textContent ?? "", target);
   }
@@ -312,13 +318,13 @@ async function insertComposeSegment(
   const verifyTarget = segmentVerifyTarget(opts);
 
   if (await pasteSegmentIntoCompose(el, segment)) {
-    if (await settleComposeAfterInsert(el, verifyTarget)) {
+    if (await settleComposeAfterInsert(el, verifyTarget, Boolean(opts.exactLiteral))) {
       return segmentMatchesTarget(el, opts);
     }
   }
 
   if (shouldSkipInsertFallback(el, opts.expectedFull)) {
-    return settleComposeAfterInsert(el, opts.expectedFull);
+    return settleComposeAfterInsert(el, opts.expectedFull, Boolean(opts.exactLiteral));
   }
 
   if (opts.append || !opts.clearFirst) {
@@ -327,13 +333,13 @@ async function insertComposeSegment(
 
   if (await insertTextSegmentIntoCompose(el, segment)) {
     el.dispatchEvent(new InputEvent("input", { bubbles: true }));
-    if (await settleComposeAfterInsert(el, verifyTarget)) {
+    if (await settleComposeAfterInsert(el, verifyTarget, Boolean(opts.exactLiteral))) {
       return segmentMatchesTarget(el, opts);
     }
   }
 
   if (shouldSkipInsertFallback(el, opts.expectedFull)) {
-    return settleComposeAfterInsert(el, opts.expectedFull);
+    return settleComposeAfterInsert(el, opts.expectedFull, Boolean(opts.exactLiteral));
   }
 
   return false;
@@ -450,30 +456,33 @@ async function clearComposeField(el: HTMLElement): Promise<void> {
 async function fillComposeField(
   el: HTMLElement,
   text: string,
-  options: { clearFirst?: boolean; allowTextContentFallback?: boolean } = {}
+  options: { clearFirst?: boolean; allowTextContentFallback?: boolean; preserveWhitespace?: boolean } = {}
 ): Promise<boolean> {
   const clearFirst = options.clearFirst ?? true;
   const allowTextContentFallback = options.allowTextContentFallback ?? true;
   el.focus();
   if (!el.isContentEditable) return false;
   el.click();
-  const pasteText = text.trim();
+  const pasteText = options.preserveWhitespace ? text : text.trim();
 
   if (shouldSkipInsertFallback(el, pasteText)) {
-    return true;
+    return options.preserveWhitespace ? (el.textContent ?? "") === pasteText : true;
   }
 
   const segmentOk = await insertComposeSegment(el, pasteText, {
     clearFirst,
     append: false,
-    expectedFull: pasteText
+    expectedFull: pasteText,
+    exactLiteral: options.preserveWhitespace
   });
   if (segmentOk) {
     return true;
   }
 
   if (!allowTextContentFallback) {
-    return shouldSkipInsertFallback(el, pasteText);
+    return options.preserveWhitespace
+      ? (el.textContent ?? "") === pasteText
+      : shouldSkipInsertFallback(el, pasteText);
   }
 
   if (clearFirst) {
@@ -491,7 +500,7 @@ async function fillComposeField(
       })
     );
     el.dispatchEvent(new InputEvent("input", { bubbles: true }));
-    return settleComposeAfterInsert(el, pasteText);
+    return settleComposeAfterInsert(el, pasteText, Boolean(options.preserveWhitespace));
   } catch {
     return false;
   }
@@ -500,8 +509,13 @@ async function fillComposeField(
 async function fillComposeText(
   el: HTMLElement,
   postText: string,
-  mediaAttached: boolean
+  mediaAttached: boolean,
+  preserveWhitespace = false
 ): Promise<{ ok: boolean; mode: "split" | "single" }> {
+  if (preserveWhitespace) {
+    const ok = await fillComposeField(el, postText, { clearFirst: !mediaAttached, allowTextContentFallback: !textTriggersHashtagTypeahead(postText), preserveWhitespace: true });
+    return { ok, mode: "single" };
+  }
   const split = splitXPostTextForFill(postText);
   const clearFirst = !mediaAttached;
 
@@ -808,6 +822,18 @@ async function takeBenchHandoffPacket(): Promise<{ packet: BenchXHandoffPacket; 
   return digest === raw.sha256 ? { packet: raw, bytes } : "invalid";
 }
 
+async function takeManagedHandoffPacket(): Promise<{ packet: ManagedCrossPostHandoffPacket; bytes: Uint8Array } | null | "invalid"> {
+  const target = globalThis as typeof globalThis & Record<string, unknown>;
+  if (!Object.hasOwn(target, MANAGED_CROSS_POST_HANDOFF_PACKET_KEY)) return null;
+  const raw = target[MANAGED_CROSS_POST_HANDOFF_PACKET_KEY];
+  delete target[MANAGED_CROSS_POST_HANDOFF_PACKET_KEY];
+  if (!isManagedCrossPostHandoffPacket(raw) || raw.destination !== "x") return "invalid";
+  const bytes = decodeManagedHandoffJpeg(raw.jpeg_base64);
+  if (!bytes) return "invalid";
+  const digest = Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", bytes)), value => value.toString(16).padStart(2, "0")).join("");
+  return digest === raw.sha256 ? { packet: raw, bytes } : "invalid";
+}
+
 function buildBannerMessage(textOk: boolean, imageOutcome: ImageAttachOutcome): {
   message: string;
   tone: "success" | "error" | "partial";
@@ -857,15 +883,22 @@ async function waitForComposeField(): Promise<HTMLElement | null> {
 }
 
 void (async () => {
+  const managedHandoff = await takeManagedHandoffPacket();
+  if (managedHandoff === "invalid") { showBanner("Relay could not verify the confirmed X draft. Return to Relay and open the handoff again.", "error"); return; }
+  if (managedHandoff) managedHandoffAttemptId = managedHandoff.packet.attempt_id;
   const handoffPacket = await takeBenchHandoffPacket();
   if (handoffPacket === "invalid") { showBanner("Relay could not verify the scheduled X draft image. Return to Relay and retry the handoff.", "error"); return; }
   let pkg: XCrossPostPackage | null;
-  if (handoffPacket) {
+  if (managedHandoff) {
+    const postText = "post_text" in managedHandoff.packet ? managedHandoff.packet.post_text : "";
+    pkg = { relay_post_id: managedHandoff.packet.relay_post_id, title: postText, body_text: "", post_text: postText, media: [{ media_id: managedHandoff.packet.media_id, filename: managedHandoff.packet.filename, mime_type: "image/jpeg", content_url: "" }] };
+  } else if (handoffPacket) {
     pkg = { relay_post_id: handoffPacket.packet.relay_post_id, title: handoffPacket.packet.post_text, body_text: "", post_text: handoffPacket.packet.post_text, media: [{ media_id: handoffPacket.packet.media_id, filename: handoffPacket.packet.filename, mime_type: "image/jpeg", content_url: "" }] };
   } else pkg = await readPendingPackage();
   if (!pkg || !isFillableXCrossPostPackage(pkg)) {
     showBanner("Relay could not load the X cross-post draft.", "error");
-    if (!handoffPacket) await clearPending();
+    if (!handoffPacket && !managedHandoff) await clearPending();
+    if (managedHandoff) await notifyDistributionFillResult({ attemptId: managedHandoff.packet.attempt_id, status: "fill_failed", fillResult: { page_url: window.location.href }, errorCode: "package_missing" });
     return;
   }
 
@@ -875,19 +908,20 @@ void (async () => {
       "Relay opened X but could not find the compose field. Paste your draft manually.",
       "partial"
     );
-    if (!handoffPacket) await clearPending();
+    if (!handoffPacket && !managedHandoff) await clearPending();
+    if (managedHandoff) await notifyDistributionFillResult({ attemptId: managedHandoff.packet.attempt_id, status: "fill_partial", fillResult: { post_text_ok: false, images_attached: 0, page_url: window.location.href }, errorCode: "compose_field_missing" });
     return;
   }
 
-  const preparedFiles = handoffPacket ? [new File([handoffPacket.bytes], handoffPacket.packet.filename, { type: "image/jpeg" })] : undefined;
+  const preparedFiles = managedHandoff ? [new File([managedHandoff.bytes], managedHandoff.packet.filename, { type: "image/jpeg" })] : handoffPacket ? [new File([handoffPacket.bytes], handoffPacket.packet.filename, { type: "image/jpeg" })] : undefined;
   const imageOutcome = await attemptImageAttach(pkg, field, preparedFiles);
   const mediaAttached = imageOutcome.attachedCount > 0;
-  const textFill = await fillComposeText(field, pkg.post_text, mediaAttached);
+  const textFill = await fillComposeText(field, pkg.post_text, mediaAttached, Boolean(managedHandoff));
   const textOk = textFill.ok;
   const banner = buildBannerMessage(textOk, imageOutcome);
   showBanner(banner.message, banner.tone);
-  if (!handoffPacket) {
-    const attemptId = await readPendingAttemptId();
+  if (!handoffPacket || managedHandoff) {
+    const attemptId = managedHandoff?.packet.attempt_id ?? await readPendingAttemptId();
     await notifyDistributionFillResult({
     attemptId,
     status:
@@ -906,6 +940,8 @@ void (async () => {
       page_url: window.location.href
     }
     });
-    await clearPending();
+    if (!managedHandoff) await clearPending();
   }
-})();
+})().catch(async () => {
+  if (managedHandoffAttemptId) await notifyDistributionFillResult({ attemptId: managedHandoffAttemptId, status: "fill_failed", fillResult: { page_url: window.location.href }, errorCode: "script_error" });
+});

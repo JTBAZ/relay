@@ -1,0 +1,23 @@
+import { spawnSync } from 'node:child_process';
+import { writeFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+const root = resolve(import.meta.dirname, '..');
+const prefix = `work/pcb03-root-tests-${new Date().toISOString().replaceAll(/[:.]/g, '-')}`;
+const files = [
+  'tests/editor-bench/real-library-conversation-routes.test.ts',
+  'tests/editor-bench/conversation.test.ts',
+  'tests/gallery-editor-routes.test.ts',
+  'tests/relay-upload-r2.test.ts',
+  'tests/relay-upload-route.test.ts',
+  'tests/preview-template-service.test.ts',
+  'tests/editor-bench/real-library-retrieval.test.ts',
+  'tests/editor-bench/large-library-chat.test.ts'
+];
+const env = { ...process.env, OPENAI_API_KEY: '', DOTENV_CONFIG_QUIET: 'true' };
+delete env.GALLERY_EDITOR_TEST_DATABASE_URL;
+const result = spawnSync(process.execPath, [resolve(root, 'node_modules/vitest/vitest.mjs'), 'run', ...files, '--reporter=json', `--outputFile=${prefix}.json`], { cwd: root, env, shell: false, windowsHide: true, encoding: 'utf8', timeout: 180000, maxBuffer: 4 * 1024 * 1024 });
+writeFileSync(resolve(root, `${prefix}.log`), `${result.stdout ?? ''}\n${result.stderr ?? ''}`, { flag: 'wx' });
+const record = { files, exitCode: result.status, error: result.error?.code ?? null, report: `${prefix}.json`, log: `${prefix}.log` };
+writeFileSync(resolve(root, `${prefix}.exit.json`), JSON.stringify(record, null, 2), { flag: 'wx' });
+console.log(JSON.stringify(record));
+if (result.status !== 0) process.exitCode = 1;

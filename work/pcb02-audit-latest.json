@@ -1,0 +1,25 @@
+{
+  "changedBaselineSource": [
+    "docs/conversational-planning/DISPATCH.md",
+    "docs/conversational-planning/EDITOR-BENCH-PLAN.md",
+    "docs/conversational-planning/README.md",
+    "docs/conversational-planning/WORK-ITEMS.md",
+    "docs/relay-cheaper-model-handoff.md",
+    "src/editor-bench/conversation.ts",
+    "src/editor-bench/library-selection-catalog.ts",
+    "src/server.ts",
+    "src/editor-bench/real-library-conversation-routes.ts",
+    "src/gallery-editor/types.ts",
+    "src/gallery-editor/service.ts",
+    "src/gallery-editor/routes.ts",
+    "tests/editor-bench/real-library-conversation-routes.test.ts"
+  ],
+  "priorReportCount": 86,
+  "changedPriorReports": [],
+  "changedConfiguration": [],
+  "ledger": {
+    "rows": 919,
+    "sha256": "969cc6310604f9c506f63d55056c0c9221297400570229d8ba6c50f5bd86b7d9",
+    "unchanged": true
+  }
+}

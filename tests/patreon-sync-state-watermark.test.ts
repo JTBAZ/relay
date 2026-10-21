@@ -55,6 +55,7 @@ const postsDoc = {
       id: "222",
       attributes: {
         title: "Text only",
+        is_public: true,
         published_at: "2026-03-16T12:00:00.000Z",
         content: "<p>No images</p>",
         tiers: []
@@ -124,11 +125,16 @@ function mockFetch(): typeof fetch {
   }) as unknown as typeof fetch;
 }
 
+async function auth(identity: ReturnType<typeof createApp>["identityService"], creatorId: string) {
+  const now = new Date().toISOString();
+  return `Bearer ${(await identity.issueSessionForUser({ user_id: "fixture", creator_id: creatorId, email: "fixture@example.test", password_hash: "fixture", auth_provider: "independent", tier_ids: [], created_at: now, updated_at: now })).token}`;
+}
+
 describe("GET /api/v1/patreon/sync-state", () => {
   it("returns watermark fields and skips posts fetch without probe_upstream", async () => {
     const tempDir = await mkdtemp(join(tmpdir(), "relay-sync-state-"));
     const fetchImpl = mockFetch();
-    const { app } = createApp(testConfig(tempDir, fetchImpl));
+    const { app, identityService } = createApp(testConfig(tempDir, fetchImpl));
 
     await request(app).post("/api/v1/auth/patreon/exchange").send({
       creator_id: "cr_state",
@@ -138,10 +144,12 @@ describe("GET /api/v1/patreon/sync-state", () => {
 
     const res = await request(app)
       .get("/api/v1/patreon/sync-state")
+      .set("Authorization", await auth(identityService, "cr_state"))
       .query({ creator_id: "cr_state", campaign_id: "999" });
     expect(res.status).toBe(200);
     expect(res.body.data.creator_id).toBe("cr_state");
-    expect(res.body.data.patreon_campaign_id).toBe("999");
+    expect(res.body.data.patreon_campaign_id).toBe("");
+    expect(res.body.data.unavailable_reason).toBe("missing_binding");
     expect(res.body.data.watermark_published_at).toBeNull();
     expect(res.body.data.has_cookie_session).toBe(false);
     expect(res.body.data.upstream_newest_published_at).toBeUndefined();
@@ -164,7 +172,7 @@ describe("GET /api/v1/patreon/sync-state", () => {
     expect(postsCalls.length).toBe(0);
   });
 
-  it("probe_upstream sets newest published_at and likely_has_newer_posts vs watermark", async () => {
+  it("probe_upstream returns saved probe evidence without contacting Patreon", async () => {
     const tempDir = await mkdtemp(join(tmpdir(), "relay-sync-probe-"));
     const wmPath = join(tempDir, "watermarks.json");
     await writeFile(
@@ -181,7 +189,8 @@ describe("GET /api/v1/patreon/sync-state", () => {
     );
 
     const fetchImpl = mockFetch();
-    const { app } = createApp(testConfig(tempDir, fetchImpl));
+    const { app, identityService, patreonSyncHealthStore } = createApp(testConfig(tempDir, fetchImpl));
+    await patreonSyncHealthStore.recordUpstreamProbe?.("cr_probe", { campaign_id: "999", observed_at: "2026-03-17T00:00:00.000Z", newest_published_at: "2026-03-16T12:00:00.000Z" });
 
     await request(app).post("/api/v1/auth/patreon/exchange").send({
       creator_id: "cr_probe",
@@ -191,6 +200,7 @@ describe("GET /api/v1/patreon/sync-state", () => {
 
     const res = await request(app)
       .get("/api/v1/patreon/sync-state")
+      .set("Authorization", await auth(identityService, "cr_probe"))
       .query({ creator_id: "cr_probe", campaign_id: "999", probe_upstream: "true" });
 
     expect(res.status).toBe(200);
@@ -219,7 +229,7 @@ describe("Patreon watermark advancement and force_refresh", () => {
   it("advances watermark last_synced_at to max post published_at after live scrape", async () => {
     const tempDir = await mkdtemp(join(tmpdir(), "relay-wm-adv-"));
     const fetchImpl = mockFetch();
-    const { app } = createApp(testConfig(tempDir, fetchImpl));
+    const { app, identityService } = createApp(testConfig(tempDir, fetchImpl));
 
     await request(app).post("/api/v1/auth/patreon/exchange").send({
       creator_id: "cr_wm",
@@ -238,6 +248,7 @@ describe("Patreon watermark advancement and force_refresh", () => {
 
     const st = await request(app)
       .get("/api/v1/patreon/sync-state")
+      .set("Authorization", await auth(identityService, "cr_wm"))
       .query({ creator_id: "cr_wm", campaign_id: "999" });
     expect(st.status).toBe(200);
     expect(st.body.data.campaign_display?.patron_count).toBe(42);

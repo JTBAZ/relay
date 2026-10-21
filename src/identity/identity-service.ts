@@ -42,6 +42,19 @@ export class IdentityService {
     this.store = store;
   }
 
+  public async capturePatreonObservation(): Promise<string> {
+    if (!this.store.capturePatreonObservation) throw new Error("Identity adapter does not support ordered Patreon observations.");
+    return this.store.capturePatreonObservation();
+  }
+
+  public get supportsSharedPatreonMembers(): boolean { return this.store.supportsSharedPatreonMembers === true; }
+
+  public get mutatePatreonMembers(): import("../patreon/member-reconciliation.js").PatreonMemberMutationRunner {
+    const run = this.store.mutatePatreonMembers;
+    if (!run) throw new Error("Identity adapter does not support durable Patreon member reconciliation.");
+    return run;
+  }
+
   /** `DbIdentityStore` implements account-first email/password (MT-007). */
   public supportsAccountScopedEmailAuth(): boolean {
     return typeof this.store.registerAccountEmailPassword === "function";
@@ -136,8 +149,11 @@ export class IdentityService {
     creatorId: string,
     patreonUserId: string,
     email: string,
-    tierIds: string[]
+    tierIds: string[],
+    observation?: string,
+    campaignScope?: string
   ): Promise<UserAccount> {
+    if (this.store.registerPatreonUser) return this.store.registerPatreonUser(creatorId, patreonUserId, email, tierIds, observation, campaignScope);
     const existing = await this.store.findByPatreonId(patreonUserId, creatorId);
     if (existing) {
       await this.store.updateTiers(existing.user_id, tierIds);
@@ -205,13 +221,18 @@ export class IdentityService {
     creatorId: string,
     patreonUserId: string,
     email: string,
-    tierIds: string[]
+    tierIds: string[],
+    observation: string,
+    campaignScope?: string
   ): Promise<{ user: UserAccount; session: SessionToken }> {
+    if (!observation) throw new Error("Patreon OAuth observation is required.");
     const user = await this.registerPatreonFallback(
       creatorId,
       patreonUserId,
       email,
-      tierIds
+      tierIds,
+      observation,
+      campaignScope
     );
     const session = await this.createSessionForUser(user);
     return { user, session };
@@ -234,6 +255,7 @@ export class IdentityService {
    * path.
    */
   public async completeUnifiedPatreonPatronOAuth(args: {
+    observation: string;
     patreonUserId: string;
     email: string;
     ownedCampaignId: string | null;
@@ -261,6 +283,7 @@ export class IdentityService {
     /** Patreon `campaign_id`s (memberships + owned) that have no `CreatorProfile` on Relay yet. */
     unmappedPatreonCampaignIds: string[];
   }> {
+    if (!args.observation) throw new Error("Patreon OAuth observation is required.");
     const storeWithLookup = this.store as IdentityStore & {
       findRelayCreatorIdsByPatreonCampaignIds?: (
         ids: readonly string[]
@@ -305,7 +328,8 @@ export class IdentityService {
         relayCreatorId,
         args.patreonUserId,
         args.email,
-        m.tier_ids
+        args.memberships.filter((membership) => map.get(membership.patreon_campaign_id) === relayCreatorId).flatMap((membership) => membership.tier_ids),
+        args.observation
       );
       linkedRelayCreatorIds.push(relayCreatorId);
       switch (m.status) {
@@ -340,7 +364,8 @@ export class IdentityService {
         getPlatformRelayCreatorId(),
         args.patreonUserId,
         args.email,
-        []
+        [],
+        args.observation
       );
     }
 

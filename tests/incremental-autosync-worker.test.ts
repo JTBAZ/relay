@@ -9,6 +9,23 @@ import type { PatreonSyncService } from "../src/patreon/patreon-sync-service.js"
 import type { PatreonTokenStore } from "../src/auth/token-store.js";
 
 describe("runIncrementalAutosyncCycle", () => {
+  it("keeps shared archive/reconciliation running after a caught-up probe", async () => {
+    const scrapeOrSync = vi.fn().mockResolvedValue({ patreon_campaign_id: "camp", posts_fetched: 0, warnings: [] });
+    const selectAutosyncCreators = vi.fn().mockResolvedValue(["c2"]);
+    const service = { supportsResumablePosts: true, selectAutosyncCreators, scrapeOrSync,
+      prepareSyncStateForAutomation: vi.fn().mockResolvedValue({ patreon_campaign_id: "camp", watermark_published_at: "2026-01-01T00:00:00Z", likely_has_newer_posts: false }) } as unknown as PatreonSyncService;
+    const result = await runIncrementalAutosyncOnce({ tokenStore: { listCreatorIds: async () => ["c1", "c2"] } as PatreonTokenStore,
+      patreonSyncService: service, maxCreatorsPerCycle: 1 });
+    expect(selectAutosyncCreators).toHaveBeenCalledWith(["c1", "c2"], 1);
+    expect(scrapeOrSync).toHaveBeenCalledWith("c2", expect.any(String), { campaign_id: "camp", max_post_pages: 20 });
+    expect(result.creators_skipped_probe).toBe(0); expect(result.creators_succeeded).toBe(1);
+  });
+
+  it("rejects hosted autosync without shared canonical/progress stores", async () => {
+    await expect(runIncrementalAutosyncOnce({ creatorId: "c1", prisma: {} as never,
+      tokenStore: {} as PatreonTokenStore, patreonSyncService: { supportsResumablePosts: false } as PatreonSyncService })).rejects.toThrow("Hosted Patreon autosync requires shared canonical and watermark stores");
+  });
+
   it("invokes scrapeOrSync per creator with incremental options", async () => {
     const scrapeOrSync = vi.fn().mockResolvedValue({
       patreon_campaign_id: "camp",
@@ -16,12 +33,12 @@ describe("runIncrementalAutosyncCycle", () => {
       warnings: [],
       apply_result: { posts_written: 0 }
     });
-    const getSyncState = vi.fn().mockResolvedValue({
+    const prepareSyncStateForAutomation = vi.fn().mockResolvedValue({
       patreon_campaign_id: "camp",
       watermark_published_at: null,
       likely_has_newer_posts: false
     });
-    const sync = { scrapeOrSync, getSyncState } as unknown as PatreonSyncService;
+    const sync = { scrapeOrSync, prepareSyncStateForAutomation } as unknown as PatreonSyncService;
     const tokenStore = {
       listCreatorIds: async () => ["c1", "c2"],
       getByCreatorId: vi.fn()
@@ -36,7 +53,7 @@ describe("runIncrementalAutosyncCycle", () => {
 
     expect(r.creators_attempted).toBe(2);
     expect(r.creators_succeeded).toBe(2);
-    expect(getSyncState).toHaveBeenCalled();
+    expect(prepareSyncStateForAutomation).toHaveBeenCalled();
     expect(scrapeOrSync).toHaveBeenCalledTimes(2);
     expect(scrapeOrSync.mock.calls[0]![2]).toEqual({
       campaign_id: "camp",
@@ -68,12 +85,12 @@ describe("runIncrementalAutosyncCycle", () => {
       )
     } as unknown as PatreonTokenStore;
 
-    const getSyncState = vi.fn().mockResolvedValue({
+    const prepareSyncStateForAutomation = vi.fn().mockResolvedValue({
       patreon_campaign_id: "camp",
       watermark_published_at: null,
       likely_has_newer_posts: false
     });
-    const syncWithProbe = { scrapeOrSync, getSyncState } as unknown as PatreonSyncService;
+    const syncWithProbe = { scrapeOrSync, prepareSyncStateForAutomation } as unknown as PatreonSyncService;
 
     const r = await runIncrementalAutosyncCycle({
       tokenStore,
@@ -89,12 +106,12 @@ describe("runIncrementalAutosyncCycle", () => {
 
   it("skips scrape when probe says caught up (watermark + no newer posts)", async () => {
     const scrapeOrSync = vi.fn().mockResolvedValue({});
-    const getSyncState = vi.fn().mockResolvedValue({
+    const prepareSyncStateForAutomation = vi.fn().mockResolvedValue({
       patreon_campaign_id: "camp",
       watermark_published_at: "2026-01-01T00:00:00.000Z",
       likely_has_newer_posts: false
     });
-    const sync = { scrapeOrSync, getSyncState } as unknown as PatreonSyncService;
+    const sync = { scrapeOrSync, prepareSyncStateForAutomation } as unknown as PatreonSyncService;
     const tokenStore = {
       listCreatorIds: async () => ["c1"],
       getByCreatorId: vi.fn()
@@ -119,12 +136,12 @@ describe("runIncrementalAutosyncCycle", () => {
       warnings: [],
       apply_result: { posts_written: 0 }
     });
-    const getSyncState = vi.fn().mockResolvedValue({
+    const prepareSyncStateForAutomation = vi.fn().mockResolvedValue({
       patreon_campaign_id: "camp",
       watermark_published_at: "2026-01-01T00:00:00.000Z",
       likely_has_newer_posts: false
     });
-    const sync = { scrapeOrSync, getSyncState } as unknown as PatreonSyncService;
+    const sync = { scrapeOrSync, prepareSyncStateForAutomation } as unknown as PatreonSyncService;
     const tokenStore = {
       listCreatorIds: async () => ["c1"],
       getByCreatorId: vi.fn()
@@ -144,7 +161,7 @@ describe("runIncrementalAutosyncCycle", () => {
     });
 
     expect(scrapeOrSync).not.toHaveBeenCalled();
-    expect(getSyncState).toHaveBeenCalledTimes(2);
+    expect(prepareSyncStateForAutomation).toHaveBeenCalledTimes(2);
   });
 });
 
@@ -160,12 +177,12 @@ describe("runIncrementalAutosyncOnce", () => {
       warnings: [],
       apply_result: { posts_written: 0 }
     });
-    const getSyncState = vi.fn().mockResolvedValue({
+    const prepareSyncStateForAutomation = vi.fn().mockResolvedValue({
       patreon_campaign_id: "camp",
       watermark_published_at: null,
       likely_has_newer_posts: false
     });
-    const sync = { scrapeOrSync, getSyncState } as unknown as PatreonSyncService;
+    const sync = { scrapeOrSync, prepareSyncStateForAutomation } as unknown as PatreonSyncService;
     const listCreatorIds = vi.fn().mockResolvedValue(["c1", "c2", "c3"]);
     const tokenStore = {
       listCreatorIds,

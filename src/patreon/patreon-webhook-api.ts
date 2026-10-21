@@ -10,7 +10,7 @@ import type { PatreonFetchOptions } from "./patreon-resource-api.js";
 const API_ROOT = "https://www.patreon.com/api/oauth2/v2";
 
 async function patreonJson(
-  method: "GET" | "POST",
+  method: "GET" | "POST" | "PATCH",
   url: string,
   opts: PatreonFetchOptions,
   body?: unknown
@@ -75,4 +75,10 @@ export async function createWebhook(
     }
   };
   return patreonJson("POST", url, opts, body);
+}
+
+
+export async function updateWebhook(opts: PatreonFetchOptions, webhookId: string, triggers: string[]): Promise<JsonApiDocument> {
+  return patreonJson("PATCH", `${API_ROOT}/webhooks/${encodeURIComponent(webhookId)}?${WEBHOOK_FIELDS}`, opts,
+    { data: { id: webhookId, type: "webhook", attributes: { triggers } } });
 }

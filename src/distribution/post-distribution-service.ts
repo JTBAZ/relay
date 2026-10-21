@@ -44,6 +44,7 @@ import {
   resolveMediaVersionForDestination
 } from "./media-binding.js";
 import { buildDistributionPlanCreateData, buildDistributionVariantCreateData } from "./distribution-row-builders.js";
+import { fingerprint } from "../gallery-editor/state.js";
 
 const COACH_REVIEW_ASSISTANT_MODE = "coach_review";
 
@@ -462,7 +463,7 @@ export async function createPostDistributionPlan(
   };
 
   const existing = await prisma.postDistributionPlan.findFirst({
-    where: { postId, creatorId, status: "active", rhythmActionId: null },
+    where: { postId, creatorId, status: "active", rhythmActionId: null, OR: [{ conversationalGroupKey: null }, { conversationalGroupKey: { not: { startsWith: "conversation-draft:" } } }] },
     include: { _count: { select: { variants: true } } }
   });
 
@@ -568,7 +569,7 @@ export async function getPostDistributionPlan(
   postId: string
 ): Promise<DistributionPlanWire | null> {
   const plan = await prisma.postDistributionPlan.findFirst({
-    where: { postId, creatorId, status: "active", rhythmActionId: null },
+    where: { postId, creatorId, status: "active", rhythmActionId: null, OR: [{ conversationalGroupKey: null }, { conversationalGroupKey: { not: { startsWith: "conversation-draft:" } } }] },
     include: {
       variants: {
         include: {
@@ -602,7 +603,7 @@ export async function reviseScheduledPostDistributionPlan(
   }
 
   const existing = await prisma.postDistributionPlan.findFirst({
-    where: { postId, creatorId, status: "active", rhythmActionId: null },
+    where: { postId, creatorId, status: "active", rhythmActionId: null, OR: [{ conversationalGroupKey: null }, { conversationalGroupKey: { not: { startsWith: "conversation-draft:" } } }] },
     include: {
       variants: {
         include: {
@@ -792,6 +793,7 @@ export async function patchDistributionVariant(
   const row = await prisma.postDistributionVariant.findFirst({
     where: { id: variantId, creatorId },
     include: {
+      plan: true,
       attempts: { orderBy: { createdAt: "desc" }, take: 1 },
       postbotTasks: { orderBy: { createdAt: "asc" } }
     }
@@ -799,6 +801,7 @@ export async function patchDistributionVariant(
   if (!row) {
     throw new PostDistributionNotFoundError("Variant not found.");
   }
+  if (row.plan.conversationalGroupKey?.startsWith("conversation-draft:")) throw new PostDistributionValidationError("Edit this Conversation draft through its confirmed review flow.", [{ field: "conversation_managed", issue: "use_conversation" }]);
   if (row.status === "posted") {
     throw new PostDistributionValidationError("Posted variants cannot be edited.", [
       { field: "variant_id", issue: "locked" }
@@ -854,11 +857,12 @@ export async function approveDistributionVariant(
   variantId: string
 ): Promise<DistributionVariantWire> {
   const row = await prisma.postDistributionVariant.findFirst({
-    where: { id: variantId, creatorId }
+    where: { id: variantId, creatorId }, include: { plan: { select: { conversationalGroupKey: true } } }
   });
   if (!row) {
     throw new PostDistributionNotFoundError("Variant not found.");
   }
+  if (row.plan.conversationalGroupKey?.startsWith("conversation-draft:")) throw new PostDistributionValidationError("Review Conversation drafts through their confirmed flow before approval.", [{ field: "conversation_managed", issue: "use_conversation" }]);
   const updated = await prisma.postDistributionVariant.update({
     where: { id: variantId },
     data: { status: "approved", approvedAt: new Date() },
@@ -877,11 +881,12 @@ export async function startDistributionHandoff(
   opts?: { extension_installation_id?: string | null; extension_tab_id?: number | null }
 ): Promise<DistributionAttemptWire> {
   const variant = await prisma.postDistributionVariant.findFirst({
-    where: { id: variantId, creatorId }
+    where: { id: variantId, creatorId }, include: { plan: { select: { conversationalGroupKey: true } } }
   });
   if (!variant) {
     throw new PostDistributionNotFoundError("Variant not found.");
   }
+  if (variant.plan.conversationalGroupKey?.startsWith("conversation-draft:")) throw new PostDistributionValidationError("Conversation drafts are not ready for handoff through this route.", [{ field: "conversation_managed", issue: "use_conversation" }]);
   if (variant.status !== "approved" && variant.status !== "handed_off" && variant.status !== "draft") {
     throw new PostDistributionValidationError("Variant is not ready for handoff.", [
       { field: "variant_id", issue: "invalid_status" }
@@ -934,20 +939,47 @@ export type FillResultInput = {
   error_detail?: string | null;
 };
 
+async function assertCurrentManagedAttempt(tx: any, attemptId: string, creatorId: string, mode: "fill" | "complete") {
+  const initial = await tx.postDistributionAttempt.findFirst({
+    where: { id: attemptId, creatorId },
+    include: { variant: { include: { plan: true } } }
+  });
+  if (!initial) throw new PostDistributionNotFoundError("Attempt not found.");
+  if (!initial.variant?.plan?.conversationalGroupKey?.startsWith("conversation-draft:")) return initial;
+  await tx.$queryRaw`SELECT id FROM post_distribution_plans WHERE id = ${initial.variant.planId} AND creator_id = ${creatorId} FOR UPDATE`;
+  await tx.$queryRaw`SELECT id FROM post_distribution_variants WHERE id = ${initial.variantId} AND creator_id = ${creatorId} AND plan_id = ${initial.variant.planId} FOR UPDATE`;
+  const current = await tx.postDistributionAttempt.findFirst({ where: { id: attemptId, creatorId }, include: { variant: { include: { plan: true } } } });
+  if (!current) throw new PostDistributionNotFoundError("Attempt not found.");
+  const plan = current.variant?.plan;
+  if (!plan?.conversationalGroupKey?.startsWith("conversation-draft:")) return current;
+  const journal = (plan.assistantPlan as any)?.conversation_draft_v1;
+  const entry = journal?.variants?.[current.destination];
+  const receipt = Array.isArray(journal?.handoffReceipts)
+    ? journal.handoffReceipts.find((row: any) => row?.attemptId === current.id)
+    : null;
+  const copy = current.destination === "x"
+    ? { postText: current.variant.postText ?? "" }
+    : { title: current.variant.title ?? "", bodyText: current.variant.bodyText ?? "", tags: current.variant.tags };
+  const latest = Array.isArray(entry?.revisions)
+    ? [...entry.revisions].reverse().find((row: any) => row?.revision === entry.revision)
+    : null;
+  if (!receipt || !entry || receipt.variantId !== current.variantId || receipt.revision !== entry.revision || receipt.planId !== current.variant.planId || receipt.destination !== current.destination || receipt.sourcePostId !== current.postId || receipt.copyHash !== fingerprint(copy) || !latest || fingerprint(latest.after) !== receipt.copyHash || !current.variant.approvedAt || !["handed_off", "fill_failed"].includes(current.variant.status)) {
+    throw new PostDistributionValidationError("This handoff belongs to an older confirmed draft. Review the current copy before continuing.", [{ field: "conversation_managed", issue: "stale_attempt" }]);
+  }
+  if (["posted", "abandoned", "failed"].includes(current.status) || (mode === "fill" && ["fill_partial", "fill_succeeded"].includes(current.status))) {
+    throw new PostDistributionValidationError("This handoff already has a recorded outcome.", [{ field: "attempt", issue: "terminal_outcome" }]);
+  }
+  return current;
+}
+
 export async function recordDistributionFillResult(
   prisma: PrismaClient,
   creatorId: string,
   attemptId: string,
   input: FillResultInput
 ): Promise<DistributionAttemptWire> {
-  const attempt = await prisma.postDistributionAttempt.findFirst({
-    where: { id: attemptId, creatorId }
-  });
-  if (!attempt) {
-    throw new PostDistributionNotFoundError("Attempt not found.");
-  }
-
   const updated = await prisma.$transaction(async (tx) => {
+    const attempt = await assertCurrentManagedAttempt(tx, attemptId, creatorId, "fill");
     const row = await tx.postDistributionAttempt.update({
       where: { id: attemptId },
       data: {
@@ -959,10 +991,7 @@ export async function recordDistributionFillResult(
       }
     });
     if (input.status === "fill_failed") {
-      await tx.postDistributionVariant.update({
-        where: { id: attempt.variantId },
-        data: { status: "fill_failed" }
-      });
+      await tx.postDistributionVariant.update({ where: { id: attempt.variantId }, data: { status: "fill_failed" } });
     }
     return row;
   });
@@ -986,7 +1015,7 @@ export async function completeDistributionAttempt(
     where: { id: attemptId, creatorId },
     include: {
       variant: {
-        select: { platformFields: true, plan: { select: { rhythmActionId: true, assistantPlan: true } } }
+        select: { platformFields: true, plan: { select: { rhythmActionId: true, assistantPlan: true, conversationalGroupKey: true } } }
       }
     }
   });
@@ -1015,6 +1044,9 @@ export async function completeDistributionAttempt(
     input.external_id
   );
   const updated = await prisma.$transaction(async (tx) => {
+    if (attempt.variant?.plan?.conversationalGroupKey?.startsWith("conversation-draft:")) {
+      await assertCurrentManagedAttempt(tx, attemptId, creatorId, "complete");
+    }
     const row = await tx.postDistributionAttempt.update({
       where: { id: attemptId },
       data: {
@@ -1154,13 +1186,14 @@ export async function loadVariantForPackage(
   attempt: DistributionAttemptWire;
   variant: DistributionVariantWire;
   assistant_plan: Record<string, unknown>;
+  plan_conversational_group_key: string | null;
 } | null> {
   const attemptRow = await prisma.postDistributionAttempt.findFirst({
     where: { id: attemptId, creatorId },
     include: {
       variant: {
         include: {
-          plan: { select: { assistantPlan: true } },
+          plan: { select: { assistantPlan: true, conversationalGroupKey: true } },
           attempts: { orderBy: { createdAt: "desc" }, take: 1 },
           postbotTasks: { orderBy: { createdAt: "asc" } }
         }
@@ -1177,7 +1210,8 @@ export async function loadVariantForPackage(
   return {
     attempt: mapAttempt(attemptRow),
     variant: mapVariant(attemptRow.variant),
-    assistant_plan: assistantPlan
+    assistant_plan: assistantPlan,
+    plan_conversational_group_key: attemptRow.variant.plan.conversationalGroupKey
   };
 }
 

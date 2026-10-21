@@ -279,6 +279,21 @@ function findTitleQuoteSpans(text: string) {
   }
   return { spans, ambiguous: false };
 }
+/** Shared exact-quote and target-separation gate for literal rename proposals. */
+export function literalRenameGroundingFailure(latestRequest: string, title: string, targetQuote: string): 'quote_span' | 'target_separation' | null {
+  if (latestRequest.length > 2000 || !title.trim() || title !== title.trim() || title.length > 200 || !targetQuote.trim()) return 'quote_span';
+  const quoteResult = findTitleQuoteSpans(latestRequest);
+  const matches = quoteResult.spans.filter(span => span.title === title);
+  if (quoteResult.ambiguous || matches.length !== 1) return 'quote_span';
+  const replacement = matches[0]!;
+  for (let at = latestRequest.indexOf(targetQuote); at >= 0; at = latestRequest.indexOf(targetQuote, at + 1)) {
+    if (at + targetQuote.length <= replacement.start || at >= replacement.end) return null;
+  }
+  return 'target_separation';
+}
+export function validateLiteralRenameGrounding(latestRequest: string, title: string, targetQuote: string): boolean {
+  return literalRenameGroundingFailure(latestRequest, title, targetQuote) === null;
+}
 function actionFrom(text: string, latestRequest: string, currentPreparation: BenchConversationSession['preparation']): ActionParse {
   const flags = (): RenameValidationFlags => ({ schema: false, quoteSpan: false, targetSeparation: false, requestLength: false });
   let parsed: unknown; try { parsed = JSON.parse(text); } catch { return { action: null, diagnostic: 'schema' }; }
@@ -366,17 +381,8 @@ function actionFrom(text: string, latestRequest: string, currentPreparation: Ben
     const action = result as Extract<ConversationAction, { kind: 'rename' }>;
     const validation = flags();
     if (latestRequest.length > 2000) { validation.requestLength = true; return { action: null, diagnostic: 'request_length', renameValidation: validation }; }
-    const quoteResult = findTitleQuoteSpans(latestRequest);
-    const matching = quoteResult.spans.filter(span => span.title === action.title);
-    if (quoteResult.ambiguous || matching.length !== 1 || !action.title.trim() || action.title !== action.title.trim() || action.title.length > 200) {
-      validation.quoteSpan = true; return { action: null, diagnostic: 'quote_span', renameValidation: validation };
-    }
-    const replacement = matching[0]!;
-    let targetOutside = false;
-    for (let at = latestRequest.indexOf(action.targetQuote); at >= 0; at = latestRequest.indexOf(action.targetQuote, at + 1)) {
-      if (at + action.targetQuote.length <= replacement.start || at >= replacement.end) { targetOutside = true; break; }
-    }
-    if (!targetOutside) { validation.targetSeparation = true; return { action: null, diagnostic: 'target_separation', renameValidation: validation }; }
+    const groundingFailure = literalRenameGroundingFailure(latestRequest, action.title, action.targetQuote);
+    if (groundingFailure) { validation[groundingFailure === 'quote_span' ? 'quoteSpan' : 'targetSeparation'] = true; return { action: null, diagnostic: groundingFailure, renameValidation: validation }; }
     return { action: { ...action, requestQuote: latestRequest }, diagnostic: 'ok' };
   }
   if ((result as any).kind === 'tags') {

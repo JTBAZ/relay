@@ -1,0 +1,18 @@
+{
+  "files": {
+    "src/distribution/conversation-draft-variants.ts": "2ea68093e49acff612f361efc5648abb9e03e56b05ee3e8fcf95dd58019ba00a",
+    "src/editor-bench/real-library-conversation-routes.ts": "33d533ea1d390f31434e00891b3a613ef84d77cebe5868beb81338864e8355f2",
+    "src/gallery-editor/types.ts": "b9cf587ddff5cd75f436a047881c287d5861bedc3bcce5c017c135ae9e15ad13",
+    "src/distribution/distribution-package.ts": "20e5c6808224939de226451563f9b49ed4c1b3cd46e3eda2d44e390fdf27bd21",
+    "src/distribution/post-distribution-service.ts": "d53c84a518231f715837374047b0df765fdbbede572d0e64ee2de2b2e4bd04fa",
+    "src/server.ts": "b7e3c358327949626ebcc3e537bd793f58781bc74bce5ea4c39c3f2879baf8e4",
+    "src/extension/cross-post-media-entries.ts": "a96ae6660e7b9590b5f14aa0c1f134d3c461972bfad8a65d0e0131ee4aab4d24",
+    "extension/src/lib/cross-post-fetch.ts": "d8524d05f1921a609ac81a2cbd3c99edbdb725544549158e802843a2867ebaea",
+    "extension/src/lib/cross-post-flow.ts": "401603576168cbe73921b287549c154a4569857ae7f229032dbeb7da29c68a68",
+    "extension/src/lib/cross-post-tab-inject.ts": "845864146459779dbaef593710ddfe43aa0fb7a7ca9de778f201880551b7b271",
+    "extension/src/lib/managed-cross-post-handoff.ts": "178d018e8ebe31bb0d429e3c23e76f83329c80b7956dde664d62bdc57c58c6e9",
+    "extension/src/content/fill-x-compose.ts": "3d50a70574777e6f46a75837d316152b02a3b71fe234adaa35fbdce64ea70d16",
+    "extension/src/content/fill-deviantart-submit.ts": "1b31f4e18bb391cd963c04e3a93b02882b2a4a3fd22eb9cd83ac0e78f0c8f2e1",
+    "tests/editor-bench/real-library-draft-variants-postgres.integration.test.ts": "caef0e29e0f3ac4abda9885a11728b12c2c64dbba4729d09975777e6ff7c98a8"
+  }
+}

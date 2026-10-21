@@ -50,9 +50,11 @@ describe("upsertPatronEntitlementSnapshot", () => {
     const findUnique = vi.fn().mockResolvedValue(null);
     const outboxCreate = vi.fn().mockResolvedValue({});
     const prisma = {
+      $queryRaw: vi.fn().mockResolvedValue([{ value: 1n }]),
+      tenantMembership: { findMany: vi.fn().mockResolvedValue([]), findUnique: vi.fn().mockResolvedValue({ role: "patron", accountId: "account", account: { patronPatreonUserId: null }, tenant: { relayCreatorId: "creator_a" }, tierIds: [], patreonObservation: 0n }), update: vi.fn().mockResolvedValue({}) },
       patronEntitlementSnapshot: { upsert, findUnique },
       creatorProfile: { findFirst: vi.fn().mockResolvedValue(null) },
-      outboxEvent: { create: outboxCreate }
+      outboxEvent: { createMany: outboxCreate }
     };
     const now = new Date("2026-06-01T12:00:00.000Z");
     await upsertPatronEntitlementSnapshot(prisma as never, {
@@ -77,9 +79,11 @@ describe("upsertPatronEntitlementSnapshot", () => {
       .mockResolvedValue({ entitledTierIds: ["t1"], active: true });
     const outboxCreate = vi.fn().mockResolvedValue({});
     const prisma = {
+      $queryRaw: vi.fn().mockResolvedValue([{ value: 1n }]),
+      tenantMembership: { findMany: vi.fn().mockResolvedValue([]), findUnique: vi.fn().mockResolvedValue({ role: "patron", accountId: "account", account: { patronPatreonUserId: null }, tenant: { relayCreatorId: "creator_a" }, tierIds: [], patreonObservation: 0n }), update: vi.fn().mockResolvedValue({}) },
       patronEntitlementSnapshot: { upsert, findUnique },
       creatorProfile: { findFirst: vi.fn().mockResolvedValue(null) },
-      outboxEvent: { create: outboxCreate }
+      outboxEvent: { createMany: outboxCreate }
     };
     const now = new Date("2026-06-01T12:00:00.000Z");
 
@@ -111,9 +115,11 @@ describe("upsertPatronEntitlementSnapshot", () => {
       .mockResolvedValue({ entitledTierIds: ["t1"], active: true });
     const outboxCreate = vi.fn().mockResolvedValue({});
     const prisma = {
+      $queryRaw: vi.fn().mockResolvedValue([{ value: 1n }]),
+      tenantMembership: { findMany: vi.fn().mockResolvedValue([]), findUnique: vi.fn().mockResolvedValue({ role: "patron", accountId: "account", account: { patronPatreonUserId: null }, tenant: { relayCreatorId: "creator_a" }, tierIds: [], patreonObservation: 0n }), update: vi.fn().mockResolvedValue({}) },
       patronEntitlementSnapshot: { upsert, findUnique },
       creatorProfile: { findFirst: vi.fn().mockResolvedValue(null) },
-      outboxEvent: { create: outboxCreate }
+      outboxEvent: { createMany: outboxCreate }
     };
 
     await upsertPatronEntitlementSnapshot(prisma as never, {
@@ -137,9 +143,11 @@ describe("upsertPatronEntitlementSnapshot", () => {
       .mockResolvedValue({ entitledTierIds: ["t1", "t2"], active: true });
     const outboxCreate = vi.fn().mockResolvedValue({});
     const prisma = {
+      $queryRaw: vi.fn().mockResolvedValue([{ value: 1n }]),
+      tenantMembership: { findMany: vi.fn().mockResolvedValue([]), findUnique: vi.fn().mockResolvedValue({ role: "patron", accountId: "account", account: { patronPatreonUserId: null }, tenant: { relayCreatorId: "creator_a" }, tierIds: [], patreonObservation: 0n }), update: vi.fn().mockResolvedValue({}) },
       patronEntitlementSnapshot: { upsert, findUnique },
       creatorProfile: { findFirst: vi.fn().mockResolvedValue(null) },
-      outboxEvent: { create: outboxCreate }
+      outboxEvent: { createMany: outboxCreate }
     };
 
     await upsertPatronEntitlementSnapshot(prisma as never, {
@@ -157,9 +165,11 @@ describe("upsertPatronEntitlementSnapshot", () => {
     const findUnique = vi.fn().mockResolvedValue(null);
     const outboxCreate = vi.fn().mockResolvedValue({});
     const prisma = {
+      $queryRaw: vi.fn().mockResolvedValue([{ value: 1n }]),
+      tenantMembership: { findMany: vi.fn().mockResolvedValue([]), findUnique: vi.fn().mockResolvedValue({ role: "patron", accountId: "account", account: { patronPatreonUserId: null }, tenant: { relayCreatorId: "creator_a" }, tierIds: [], patreonObservation: 0n }), update: vi.fn().mockResolvedValue({}) },
       patronEntitlementSnapshot: { upsert, findUnique },
       creatorProfile: { findFirst: vi.fn().mockResolvedValue(null) },
-      outboxEvent: { create: outboxCreate }
+      outboxEvent: { createMany: outboxCreate }
     };
 
     await upsertPatronEntitlementSnapshot(prisma as never, {
@@ -180,9 +190,11 @@ describe("upsertPatronEntitlementSnapshotForOAuth", () => {
     const findFirst = vi.fn().mockResolvedValue({ patreonCampaignId: "999", subscribestarProfileId: null });
     const outboxCreate = vi.fn().mockResolvedValue({});
     const prisma = {
+      $queryRaw: vi.fn().mockResolvedValue([{ value: 1n }]),
+      tenantMembership: { findMany: vi.fn().mockResolvedValue([]), findUnique: vi.fn().mockResolvedValue({ role: "patron", accountId: "account", account: { patronPatreonUserId: null }, tenant: { relayCreatorId: "creator_a" }, tierIds: [], patreonObservation: 0n }), update: vi.fn().mockResolvedValue({}) },
       patronEntitlementSnapshot: { upsert, findUnique },
       creatorProfile: { findFirst },
-      outboxEvent: { create: outboxCreate }
+      outboxEvent: { createMany: outboxCreate }
     };
     const now = new Date("2026-06-01T12:00:00.000Z");
 
@@ -228,9 +240,11 @@ describe("upsertPatronEntitlementSnapshotForOAuth", () => {
     const findUnique = vi.fn().mockResolvedValue(null);
     const outboxCreate = vi.fn().mockResolvedValue({});
     const prisma = {
+      $queryRaw: vi.fn().mockResolvedValue([{ value: 1n }]),
+      tenantMembership: { findMany: vi.fn().mockResolvedValue([]), findUnique: vi.fn().mockResolvedValue({ role: "patron", accountId: "account", account: { patronPatreonUserId: null }, tenant: { relayCreatorId: "creator_a" }, tierIds: [], patreonObservation: 0n }), update: vi.fn().mockResolvedValue({}) },
       patronEntitlementSnapshot: { upsert, findUnique },
       creatorProfile: { findFirst: vi.fn().mockResolvedValue(null) },
-      outboxEvent: { create: outboxCreate }
+      outboxEvent: { createMany: outboxCreate }
     };
     await upsertPatronEntitlementSnapshotForOAuth(prisma as never, {
       patronMembershipId: "mem_1",

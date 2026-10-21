@@ -250,7 +250,7 @@ describe("Cookie scrape + OAuth post body backfill", () => {
         : oauthUrl instanceof URL
           ? oauthUrl.href
           : (oauthUrl as Request).url;
-    expect(urlStr).not.toContain("include=");
+    expect(new URL(urlStr).searchParams.get("include")).toBe("campaign");
     expect(urlStr).toMatch(/\/api\/oauth2\/v2\/posts\/111(?:\?|$)/);
 
     expect(dry.body.data.tier_access_summary).toMatchObject({

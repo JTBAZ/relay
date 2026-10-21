@@ -9,6 +9,7 @@ import { DeleteObjectCommand, GetObjectCommand, HeadObjectCommand, PutObjectComm
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import type { R2ClientConfig } from "./r2-config.js";
 import { createR2S3Client } from "./r2-s3-client.js";
+import { readExportBody } from "../export/fetch-retry.js";
 
 /** Object key tail segment per ADR 002. */
 export const RELAY_R2_KEY_SEGMENT = "asset";
@@ -150,12 +151,11 @@ export async function presignR2Put(
  */
 export async function headR2ObjectContentLength(
   cfg: R2ClientConfig,
-  key: string
+  key: string,
+  signal?: AbortSignal
 ): Promise<{ contentLength: number; contentType: string | undefined; etag: string | undefined }> {
   const client = createR2S3Client(cfg);
-  const out = await client.send(
-    new HeadObjectCommand({ Bucket: cfg.bucket, Key: key })
-  );
+  const out = await client.send(new HeadObjectCommand({ Bucket: cfg.bucket, Key: key }), { abortSignal: signal });
   return {
     contentLength: out.ContentLength ?? 0,
     contentType: out.ContentType,
@@ -178,12 +178,14 @@ export async function deleteR2Object(cfg: R2ClientConfig, key: string): Promise<
  * @async
  * @throws {Error} Missing body or GET failures.
  */
-export async function getR2ObjectBuffer(cfg: R2ClientConfig, key: string): Promise<Buffer> {
+export async function getR2ObjectBuffer(cfg: R2ClientConfig, key: string, bounds?: { timeoutMs: number; maxBytes?: number; signal?: AbortSignal }): Promise<Buffer> {
   const client = createR2S3Client(cfg);
-  const out = await client.send(new GetObjectCommand({ Bucket: cfg.bucket, Key: key }));
+  const signal = bounds ? AbortSignal.any([AbortSignal.timeout(bounds.timeoutMs), ...(bounds.signal ? [bounds.signal] : [])]) : undefined;
+  const out = await client.send(new GetObjectCommand({ Bucket: cfg.bucket, Key: key }), signal ? { abortSignal: signal } : undefined);
   if (!out.Body) {
     throw new Error("R2 object has no body");
   }
+  if (bounds) return readExportBody(new Response(out.Body.transformToWebStream(), { headers: out.ContentLength === undefined ? {} : { "content-length": String(out.ContentLength) } }), bounds.timeoutMs, bounds.maxBytes, signal);
   return Buffer.from(await out.Body.transformToByteArray());
 }
 
@@ -196,7 +198,8 @@ export async function putR2ObjectBuffer(
   cfg: R2ClientConfig,
   key: string,
   body: Buffer,
-  contentType: string
+  contentType: string,
+  signal?: AbortSignal
 ): Promise<void> {
   const client = createR2S3Client(cfg);
   await client.send(
@@ -205,6 +208,26 @@ export async function putR2ObjectBuffer(
       Key: key,
       Body: body,
       ContentType: contentType
-    })
+    }), { abortSignal: signal }
   );
+}
+
+/** Server-side immutable create. Returns false only when the key already exists. */
+export async function putR2ObjectBufferIfAbsent(
+  cfg: R2ClientConfig,
+  key: string,
+  body: Buffer,
+  contentType: string,
+  signal?: AbortSignal
+): Promise<boolean> {
+  const client = createR2S3Client(cfg);
+  try {
+    await client.send(new PutObjectCommand({ Bucket: cfg.bucket, Key: key, Body: body, ContentType: contentType, IfNoneMatch: "*" }),
+      { abortSignal: signal });
+    return true;
+  } catch (error) {
+    const value = error as { name?: unknown; Code?: unknown; code?: unknown; $metadata?: { httpStatusCode?: number } };
+    if (value.$metadata?.httpStatusCode === 412 || value.name === "PreconditionFailed" || value.Code === "PreconditionFailed" || value.code === "PreconditionFailed") return false;
+    throw error;
+  }
 }

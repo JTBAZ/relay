@@ -6,13 +6,14 @@
  */
 import { EntitlementSource, type PrismaClient } from "@prisma/client";
 import type { SubscribeStarOAuthClient } from "../subscribestar/subscribestar-client.js";
-import { getPatronOAuthTokensForAccount } from "../auth/patron-oauth-credential-store.js";
+import { getPatronOAuthCredentialSnapshot } from "../auth/patron-oauth-credential-store.js";
 import type { PatreonClient } from "../auth/patreon-client.js";
 import type { TokenEncryption } from "../lib/crypto.js";
-import { upsertPatronEntitlementSnapshot } from "../identity/patron-entitlement-snapshot.js";
+import { upsertPatronProviderEntitlements } from "../identity/patron-entitlement-snapshot.js";
 import { refreshPatronOAuthTokensWithStoredRefreshToken } from "../patreon/patron-oauth-refresh.js";
 import {
   extractPatronSyncFromIdentity,
+  hasVerifiedCreatorMembershipRelationships,
   fetchPatronIdentity,
   type PatreonIdentityDocument
 } from "../patreon/patreon-user-identity.js";
@@ -60,18 +61,20 @@ export async function refreshPatronEntitlementSnapshotFromPatreon(args: {
 
   const m = await args.prisma.tenantMembership.findUnique({
     where: { id: args.patronMembershipId },
-    select: { accountId: true }
+    select: { accountId: true, account: { select: { patronPatreonUserId: true } } }
   });
   if (!m) {
     return { ok: false, reason: "membership_not_found" };
   }
 
-  let tokens = await getPatronOAuthTokensForAccount(
+  const providerUserId = m.account.patronPatreonUserId;
+  if (!providerUserId) return { ok: false, reason: "no_patreon_binding" };
+  let credential = await getPatronOAuthCredentialSnapshot(
     args.prisma,
     m.accountId,
     args.encryption
   );
-  if (!tokens?.access_token?.trim()) {
+  if (!credential?.tokens.access_token?.trim()) {
     return { ok: false, reason: "no_credential" };
   }
 
@@ -84,9 +87,10 @@ export async function refreshPatronEntitlementSnapshotFromPatreon(args: {
     return { ok: false, reason: "no_campaign_id" };
   }
 
+  const fence = await args.prisma.$queryRaw<Array<{ value: bigint }>>`SELECT nextval('patreon_member_observation_seq') AS value`;
   let doc: PatreonIdentityDocument;
   try {
-    doc = await fetchPatronIdentity(tokens.access_token, args.fetchImpl);
+    doc = await fetchPatronIdentity(credential.tokens.access_token, args.fetchImpl);
   } catch (firstErr) {
     const msg = (firstErr as Error).message;
     if (!identityHttpErrorIndicatesAuthFailure(msg)) {
@@ -101,6 +105,8 @@ export async function refreshPatronEntitlementSnapshotFromPatreon(args: {
     if (!next?.access_token?.trim()) {
       return { ok: false, reason: "token_refresh_failed" };
     }
+    credential = await getPatronOAuthCredentialSnapshot(args.prisma, m.accountId, args.encryption);
+    if (!credential || credential.tokens.access_token !== next.access_token) return { ok: false, reason: "credential_changed" };
     try {
       doc = await fetchPatronIdentity(next.access_token, args.fetchImpl);
     } catch {
@@ -108,6 +114,7 @@ export async function refreshPatronEntitlementSnapshotFromPatreon(args: {
     }
   }
 
+  if (!hasVerifiedCreatorMembershipRelationships(doc, campaignId)) return { ok: false, reason: "identity_campaign_binding_unverified" };
   let sync: ReturnType<typeof extractPatronSyncFromIdentity>;
   try {
     sync = extractPatronSyncFromIdentity(doc, campaignId);
@@ -115,13 +122,18 @@ export async function refreshPatronEntitlementSnapshotFromPatreon(args: {
     return { ok: false, reason: "identity_parse_failed" };
   }
 
-  await upsertPatronEntitlementSnapshot(args.prisma, {
+  if (sync.patreon_user_id !== providerUserId) return { ok: false, reason: "identity_binding_mismatch" };
+  await upsertPatronProviderEntitlements(args.prisma, {
+    expectedAccountId: m.accountId, expectedPatreonUserId: providerUserId, expectedCredentialVersion: credential.version, provider: "patreon",
     patronMembershipId: args.patronMembershipId,
     relayCreatorId: args.relayCreatorId,
     entitledTierIds: sync.tier_ids,
     source: args.source,
-    campaignId: args.snapshotCampaignId,
-    crossProviderMergeSource: "patreon"
+    campaignId,
+    crossProviderMergeSource: "patreon",
+    patreonObservation: fence[0]!.value.toString(),
+    patreonCredentialAccountId: m.accountId,
+    patreonCampaignScope: campaignId
   });
 
   return { ok: true };

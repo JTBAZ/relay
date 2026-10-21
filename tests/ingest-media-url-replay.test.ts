@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { InMemoryEventBus } from "../src/events/event-bus.js";
 import { buildGalleryItems } from "../src/gallery/query.js";
-import { FileExportIndex } from "../src/export/export-index.js";
+import { exportBlobPath, FileExportIndex } from "../src/export/export-index.js";
 import { ExportService } from "../src/export/export-service.js";
 import { applySyncBatchToSnapshot } from "../src/ingest/apply-batch.js";
 import { FileCanonicalStore, type CanonicalSnapshot } from "../src/ingest/canonical-store.js";
@@ -263,7 +263,8 @@ describe("ingest media URL replay", () => {
       expect(exported.idempotent_skip).toBe(false);
       expect(fetchImpl).toHaveBeenCalledTimes(1);
       expect(fetchImpl.mock.calls[0]![0]).toBe(expectedUrl);
-      expect(await readFile(join(exportRoot, "c1", "media", "asset1", "asset"))).toEqual(payload);
+      const accepted = (await exportIndex.load("c1")).media.asset1!;
+      expect(await readFile(exportBlobPath(exportRoot, "c1", accepted.relative_blob_path))).toEqual(payload);
       expect((await exportIndex.load("c1")).media.asset1!.upstream_revision).toBe(oldRevision ? "m2" : "m1");
     } finally {
       await rm(root, { recursive: true, force: true });

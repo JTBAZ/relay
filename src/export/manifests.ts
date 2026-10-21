@@ -71,7 +71,7 @@ export function buildMediaManifest(
   const items: MediaManifestJson["items"] = [];
   for (const [mediaId, row] of Object.entries(mediaMap)) {
     const exp = exportIndex.media[mediaId];
-    if (!exp) {
+    if (!exp || row.upstream_status === "deleted" || exp.upstream_revision !== row.current.upstream_revision) {
       continue;
     }
     items.push({

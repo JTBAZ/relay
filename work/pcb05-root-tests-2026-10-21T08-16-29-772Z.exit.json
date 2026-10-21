@@ -1,0 +1,14 @@
+{
+  "files": [
+    "tests/editor-bench/real-library-conversation-routes.test.ts",
+    "tests/editor-bench/conversation.test.ts",
+    "tests/schedule-rail-service.test.ts",
+    "tests/schedule-rail-timezone.test.ts",
+    "tests/postbot-task-service.test.ts",
+    "tests/goal-cycle/schedule-local.test.ts"
+  ],
+  "exitCode": 0,
+  "error": null,
+  "report": "work/pcb05-root-tests-2026-10-21T08-16-29-772Z.json",
+  "log": "work/pcb05-root-tests-2026-10-21T08-16-29-772Z.log"
+}

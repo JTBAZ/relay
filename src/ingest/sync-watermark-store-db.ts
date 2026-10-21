@@ -4,6 +4,7 @@
  * @see ./sync-watermark-store.js
  */
 
+import { DbPatreonPostProgressStore } from "../patreon/post-sync-progress-db.js";
 import type { PrismaClient } from "@prisma/client";
 import type { SyncWatermarkStoreAPI, WatermarkRow } from "./sync-watermark-store.js";
 
@@ -11,7 +12,8 @@ import type { SyncWatermarkStoreAPI, WatermarkRow } from "./sync-watermark-store
  * @description Postgres `syncCursor` rows backing {@link SyncWatermarkStoreAPI}.
  */
 export class DbSyncWatermarkStore implements SyncWatermarkStoreAPI {
-  public constructor(private readonly prisma: PrismaClient) {}
+  public readonly postProgress: DbPatreonPostProgressStore;
+  public constructor(private readonly prisma: PrismaClient) { this.postProgress = new DbPatreonPostProgressStore(prisma); }
 
   public async get(
     creatorId: string,
@@ -32,7 +34,7 @@ export class DbSyncWatermarkStore implements SyncWatermarkStoreAPI {
     });
     if (!row) return null;
     return {
-      last_synced_at: row.lastSyncedAt.toISOString(),
+      last_synced_at: row.lastSyncedAt?.toISOString() ?? null,
       updated_at: row.updatedAt.toISOString()
     };
   }

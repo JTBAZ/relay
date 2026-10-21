@@ -1,0 +1,4 @@
+{
+  "command": "npm test -- --run tests/editor-bench/real-library-conversation-routes.test.ts",
+  "exitCode": 0
+}

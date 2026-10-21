@@ -1,8 +1,8 @@
 /**
- * @fileoverview Debounced scheduler coalescing Patreon `members:*` webhook bursts into one `syncMembers` call per creator/campaign key.
- * @description In-memory timers; records health via `PatreonSyncHealthStoreAPI`.
+ * @fileoverview Member sync execution and health reporting for durable Patreon change workers.
+ * @description Scheduling and coalescing belong to the shared change work store.
  * @async Internal `runMemberSync` awaits Patreon + DB.
- * @throws Errors swallowed per design — classified into health store failures best-effort.
+ * @throws Sync failures propagate so durable work remains retryable.
  * @see {@link ../jsdoc-core-entities.ts}
  * @see prisma/schema.prisma Identity / membership targets inside `PatreonSyncService.syncMembers`
  */
@@ -11,50 +11,24 @@ import type { PatreonSyncService } from "./patreon-sync-service.js";
 import { classifySyncError } from "./sync-error-copy.js";
 
 /**
- * Debounces member sync webhook bursts into a single `syncMembers` per (creator, campaign).
+ * Runs member sync after a durable work claim.
  */
 export class PatreonMemberSyncCoordinator {
-  private readonly timers = new Map<string, ReturnType<typeof setTimeout>>();
-  private readonly debounceMs: number;
-
   public constructor(
     private readonly syncService: PatreonSyncService,
-    private readonly healthStore: PatreonSyncHealthStoreAPI,
-    debounceMs = 60_000
-  ) {
-    this.debounceMs = debounceMs;
-  }
+    private readonly healthStore?: PatreonSyncHealthStoreAPI
+  ) {}
 
-  private key(creatorId: string, campaignId: string | undefined): string {
-    return `${creatorId.trim()}\t${campaignId ?? ""}`;
-  }
-
-  /**
-   * Schedule a member roster sync after the debounce window. Multiple calls coalesce.
-   * When `campaignId` is omitted, `syncMembers` picks the default campaign (single-campaign tokens).
-   */
-  public scheduleMemberSync(creatorId: string, campaignId?: string): void {
-    const k = this.key(creatorId, campaignId);
-    const prev = this.timers.get(k);
-    if (prev) {
-      clearTimeout(prev);
-    }
-    const t = setTimeout(() => {
-      this.timers.delete(k);
-      void this.runMemberSync(creatorId, campaignId ?? undefined);
-    }, this.debounceMs);
-    this.timers.set(k, t);
-  }
-
-  private async runMemberSync(creatorId: string, campaignId: string | undefined): Promise<void> {
+  public async runMemberSync(creatorId: string, campaignId: string | undefined): Promise<void> {
     try {
       const result = await this.syncService.syncMembers(creatorId, {
         ...(campaignId ? { campaign_id: campaignId } : {}),
-        max_pages: 100,
+        max_pages: 2,
         traceId: `patreon_webhook_member_sync:${creatorId}`
       });
+      if (result.coverage && result.coverage !== "complete") throw new Error(`Patreon member roster remains ${result.coverage}; continuation retained.`);
       try {
-        await this.healthStore.recordMemberSyncSuccess({
+        await this.healthStore?.recordMemberSyncSuccess({
           creator_id: creatorId,
           patreon_campaign_id: result.patreon_campaign_id,
           members_synced: result.members_synced
@@ -66,7 +40,7 @@ export class PatreonMemberSyncCoordinator {
       const msg = (err as Error).message;
       const classified = classifySyncError(msg);
       try {
-        await this.healthStore.recordMemberSyncFailure({
+        await this.healthStore?.recordMemberSyncFailure({
           creator_id: creatorId,
           patreon_campaign_id: campaignId ?? undefined,
           error: {
@@ -78,6 +52,7 @@ export class PatreonMemberSyncCoordinator {
       } catch {
         /* best-effort */
       }
+      throw err;
     }
   }
 }

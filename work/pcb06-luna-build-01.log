@@ -1,0 +1,19 @@
+
+> relay@0.1.0 build
+> prisma generate && tsc -p tsconfig.build.json && node scripts/copy-build-assets.mjs
+
+Loaded Prisma config from prisma.config.ts.
+
+Prisma schema loaded from prisma\schema.prisma.
+
+✔ Generated Prisma Client (v7.7.0) to .\node_modules\@prisma\client in 2.92s
+
+Start by importing your Prisma Client (See: https://pris.ly/d/importing-client)
+
+
+src/distribution/conversation-draft-variants.ts(130,20): error TS18047: 'task.suggestedTime' is possibly 'null'.
+src/distribution/conversation-draft-variants.ts(172,81): error TS18047: 'task.suggestedTime' is possibly 'null'.
+src/distribution/distribution-package.ts(171,85): error TS18047: 'task.suggestedTime' is possibly 'null'.
+src/distribution/distribution-package.ts(187,101): error TS2488: Type 'string[] | undefined' must have a '[Symbol.iterator]()' method that returns an iterator.
+src/distribution/distribution-package.ts(190,81): error TS2322: Type '"patreon" | "x" | "deviantart" | "bluesky"' is not assignable to type '"x" | "deviantart"'.
+  Type '"patreon"' is not assignable to type '"x" | "deviantart"'.

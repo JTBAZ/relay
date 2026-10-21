@@ -1,0 +1,20 @@
+
+> relay@0.1.0 test
+> vitest run --pool=forks --maxWorkers=1 --minWorkers=1 tests/editor-bench/real-library-conversation-routes.test.ts tests/editor-bench/real-library-retrieval.test.ts tests/editor-bench/real-library-selection.test.ts tests/editor-bench/large-library-chat.test.ts tests/editor-bench/conversation.test.ts
+
+[dotenv@17.3.1] injecting env (18) from .env -- tip: ⚙️  override existing env vars with { override: true }
+
+ RUN  v3.2.4 C:/Users/jorda/Documents/Codex/2026-10-11/c/work/relay
+
+ ✓ tests/editor-bench/conversation.test.ts (29 tests) 2652ms
+   ✓ mock editor-bench conversation > grounds rename titles in one exact balanced quote and independently grounds the target  367ms
+ ✓ tests/editor-bench/real-library-retrieval.test.ts (5 tests) 551ms
+ ✓ tests/editor-bench/large-library-chat.test.ts (11 tests) 356ms
+ ✓ tests/editor-bench/real-library-conversation-routes.test.ts (6 tests) 121ms
+ ✓ tests/editor-bench/real-library-selection.test.ts (6 tests) 61ms
+
+ Test Files  5 passed (5)
+      Tests  57 passed (57)
+   Start at  08:08:55
+   Duration  6.56s (transform 718ms, setup 34ms, collect 2.43s, tests 3.74s, environment 0ms, prepare 85ms)
+

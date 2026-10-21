@@ -1,0 +1,69 @@
+
+> relay@0.1.0 test
+> vitest run --pool=forks --maxWorkers=1 --minWorkers=1 tests/editor-bench/real-library-conversation-routes.test.ts tests/editor-bench/real-library-retrieval.test.ts tests/editor-bench/real-library-selection.test.ts tests/editor-bench/large-library-chat.test.ts tests/editor-bench/conversation.test.ts
+
+[dotenv@17.3.1] injecting env (18) from .env -- tip: 🛠️  run anywhere with `dotenvx run -- yourcommand`
+
+ RUN  v3.2.4 C:/Users/jorda/Documents/Codex/2026-10-11/c/work/relay
+
+ ✓ tests/editor-bench/conversation.test.ts (29 tests) 2709ms
+   ✓ mock editor-bench conversation > grounds rename titles in one exact balanced quote and independently grounds the target  366ms
+ ✓ tests/editor-bench/real-library-retrieval.test.ts (5 tests) 455ms
+ ❯ tests/editor-bench/large-library-chat.test.ts (11 tests | 1 failed) 275ms
+   × large synthetic Library chat > keeps full-catalog matches, all requested criteria, and input cost independent of 40 vs 1,001 rows 26ms
+     → expected 9955 to be 9965 // Object.is equality
+   ✓ large synthetic Library chat > adds a full-catalog OR union over the long description and late series while keeping prior exclusions 24ms
+   ✓ large synthetic Library chat > refuses invented values, duplicate visible family names, stale state, and provider failures without changing state 25ms
+   ✓ large synthetic Library chat > refuses vocabulary overflow before dispatch and keeps the input free of state IDs 25ms
+   ✓ large synthetic Library chat > offers only grounded date candidates with London-relative values and enforces the same request schema 2ms
+   ✓ large synthetic Library chat > rejects computed dates and candidate overflow without changing prior state, with bounded diagnostics 13ms
+   ✓ large synthetic Library chat > creates and updates only a fresh proof report path, preserving an existing report byte-for-byte 12ms
+   ✓ large synthetic Library chat > offers the complete 112-entry wide vocabulary and preserves matching, exclusions, and late additions 30ms
+   ✓ large synthetic Library chat > clarifies duplicate visible family names and invented wide-vocabulary identifiers without changing selection 20ms
+   ✓ large synthetic Library chat > grounds only request-mentioned gallery families across 100 and 500 posts 84ms
+   ✓ large synthetic Library chat > clarifies duplicate, partial, and prefix-colliding family names without changing state 12ms
+ ✓ tests/editor-bench/real-library-selection.test.ts (6 tests) 50ms
+ ❯ tests/editor-bench/real-library-conversation-routes.test.ts (5 tests | 1 failed) 5068ms
+   ✓ real Library Conversation routes > selects beyond forty posts, keeps exclusions across add, and reads current owned metadata back 19ms
+   ✓ real Library Conversation routes > keeps account-bound ownership, rejects client state, and refuses mixed edits before the model call 10ms
+   ✓ real Library Conversation routes > requires explicit refresh after catalog change and clears old intent only after refreshing 14ms
+   × real Library Conversation routes > prevents an older refresh from clearing state after a newer refresh wins 5019ms
+     → Test timed out in 5000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+   ✓ real Library Conversation routes > does not register the real Library connector outside development 6ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/editor-bench/large-library-chat.test.ts > large synthetic Library chat > keeps full-catalog matches, all requested criteria, and input cost independent of 40 vs 1,001 rows
+AssertionError: expected 9955 to be 9965 // Object.is equality
+
+- Expected
++ Received
+
+- 9965
++ 9955
+
+ ❯ tests/editor-bench/large-library-chat.test.ts:73:135
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  tests/editor-bench/real-library-conversation-routes.test.ts > real Library Conversation routes > prevents an older refresh from clearing state after a newer refresh wins
+Error: Test timed out in 5000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+ ❯ tests/editor-bench/real-library-conversation-routes.test.ts:113:3
+    111|   });
+    112| 
+    113|   it('prevents an older refresh from clearing state after a newer refr…
+       |   ^
+    114|     const first = makeSnapshot('catalog-1'), older = makeSnapshot('cat…
+    115|     const refreshLoads: Array<(value: LargeRealLibrarySnapshot) => voi…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+
+ Test Files  2 failed | 3 passed (5)
+      Tests  2 failed | 54 passed (56)
+   Start at  08:06:31
+   Duration  11.18s (transform 660ms, setup 33ms, collect 2.26s, tests 8.56s, environment 0ms, prepare 83ms)
+

@@ -2,8 +2,8 @@
  * PUX-003 — programmatic paywall mutations on pilot UX seed (no Patreon OAuth).
  * Updates PostVersion.tierIds / PostTier / patron entitlement snapshots for gate tests.
  */
-import { EntitlementSource, type PrismaClient } from "@prisma/client";
-import { upsertPatronEntitlementSnapshot } from "../identity/patron-entitlement-snapshot.js";
+import { type PrismaClient } from "@prisma/client";
+import { upsertPlatformPatronEntitlementProjection } from "../identity/patron-entitlement-snapshot.js";
 import { updatePostAudienceTierGate } from "../relay/update-post-audience-tier-gate.js";
 
 const PILOT_UX_DEV_ENTITLEMENT_STALE_AFTER = new Date("2099-01-01T00:00:00.000Z");
@@ -35,11 +35,10 @@ export async function mutatePilotUxPatronEntitlement(
     campaignId?: string | null;
   }
 ): Promise<void> {
-  await upsertPatronEntitlementSnapshot(prisma, {
+  await upsertPlatformPatronEntitlementProjection(prisma, {
     patronMembershipId: args.patronMembershipId,
     relayCreatorId: args.relayCreatorId,
     entitledTierIds: [...args.entitledTierIds],
-    source: EntitlementSource.manual_support,
     campaignId: args.campaignId ?? null
   });
   await prisma.patronEntitlementSnapshot.update({

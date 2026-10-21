@@ -1,0 +1,30 @@
+{
+  "date": "2026-10-21",
+  "accepted": [
+    "PCB-04",
+    "PCB-05",
+    "PCB-06"
+  ],
+  "sourceSnapshotFiles": 14,
+  "priorReportCount": 88,
+  "priorReportsUnchanged": true,
+  "phase04And05ReportsAndSnapshotsUnchanged": true,
+  "environmentUnchanged": true,
+  "ledger": {
+    "rows": 919,
+    "sha256": "969cc6310604f9c506f63d55056c0c9221297400570229d8ba6c50f5bd86b7d9",
+    "unchanged": true
+  },
+  "documentationFiles": [
+    "docs/relay-cheaper-model-handoff.md",
+    "docs/conversational-planning/README.md",
+    "docs/conversational-planning/DISPATCH.md",
+    "docs/conversational-planning/EDITOR-BENCH-PLAN.md",
+    "docs/conversational-planning/WORK-ITEMS.md",
+    "docs/conversational-planning/PRODUCT-CONVERSATION-CONNECTION-PLAN.md"
+  ],
+  "externalReportLinksPreserved": true,
+  "concurrentExcludedWork": "Patreon/auth/extension and schema changes outside the PCB task were preserved; only the scoped route/protocol hunks are accepted.",
+  "deferred": "Product mounting, frontend/extension build/typecheck/runtime, actual-account/live R2 and installed destination validation.",
+  "paidCalls": 0
+}

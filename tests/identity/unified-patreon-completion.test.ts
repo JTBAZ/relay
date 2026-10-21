@@ -97,6 +97,7 @@ describe("IdentityService.completeUnifiedPatreonPatronOAuth", () => {
     store.campaignToCreator.set("200", "cr_beta");
 
     const out = await service.completeUnifiedPatreonPatronOAuth({
+      observation: "1",
       patreonUserId: "u_42",
       email: "multi@example.com",
       ownedCampaignId: null,
@@ -130,6 +131,7 @@ describe("IdentityService.completeUnifiedPatreonPatronOAuth", () => {
     store.campaignToCreator.set("400", "cr_declined");
 
     const out = await service.completeUnifiedPatreonPatronOAuth({
+      observation: "1",
       patreonUserId: "u_mixed",
       email: "mix@example.com",
       ownedCampaignId: null,
@@ -160,6 +162,7 @@ describe("IdentityService.completeUnifiedPatreonPatronOAuth", () => {
     store.campaignToCreator.set("777", "cr_free_only");
 
     const out = await service.completeUnifiedPatreonPatronOAuth({
+      observation: "1",
       patreonUserId: "u_free_only",
       email: "free@example.com",
       ownedCampaignId: null,
@@ -179,6 +182,7 @@ describe("IdentityService.completeUnifiedPatreonPatronOAuth", () => {
     store.campaignToCreator.set("9001", "cr_owner");
 
     const out = await service.completeUnifiedPatreonPatronOAuth({
+      observation: "1",
       patreonUserId: "u_creator",
       email: "c@x.com",
       ownedCampaignId: "9001",
@@ -197,6 +201,7 @@ describe("IdentityService.completeUnifiedPatreonPatronOAuth", () => {
     store.campaignToCreator.set("100", "cr_alpha");
 
     const out = await service.completeUnifiedPatreonPatronOAuth({
+      observation: "1",
       patreonUserId: "u_mixed",
       email: "m@x.com",
       ownedCampaignId: "9999",
@@ -213,6 +218,7 @@ describe("IdentityService.completeUnifiedPatreonPatronOAuth", () => {
 
   it("still issues a session when the user has zero on-Relay memberships", async () => {
     const out = await service.completeUnifiedPatreonPatronOAuth({
+      observation: "1",
       patreonUserId: "u_lonely",
       email: "l@x.com",
       ownedCampaignId: null,
@@ -233,6 +239,7 @@ describe("IdentityService.completeUnifiedPatreonPatronOAuth", () => {
     const fileService = new IdentityService(new FileLikeStore());
     await expect(
       fileService.completeUnifiedPatreonPatronOAuth({
+      observation: "1",
         patreonUserId: "u",
         email: "e@x.com",
         ownedCampaignId: null,

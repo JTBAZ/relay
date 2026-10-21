@@ -16,6 +16,7 @@ import { finalizePatreonPostMedia } from "./merge-ingest-media.js";
 import { decodeHtmlEscapedUrl, normalizePatreonMediaUrl } from "./media-url-normalize.js";
 import { flattenProseMirrorDoc, normalizePatreonPostContent } from "./post-content.js";
 import { sanitizeOptionalPostDescriptionHtml } from "../security/sanitize-post-html.js";
+import { patreonPostContentHash, patreonMediaContentHash } from "./post-content-revision.js";
 
 const IMG_IN_CONTENT_RE =
   /https?:\/\/[^\s"'<>]+?\.(?:jpg|jpeg|png|gif|webp)(?:\?[^\s"'<>]*)?/gi;
@@ -141,12 +142,12 @@ export function applyPatreonAccessToTierIds(
   if (patreonTierIds.length > 0) return patreonTierIds;
   const paid = patreonBoolAttr(attrs, "is_paid");
   if (paid === true) return [RELAY_TIER_ALL_PATRONS];
-  if (paid === false) return [RELAY_TIER_PUBLIC];
+  // is_paid describes pay-per-post billing, not whether an unspecified audience is public.
   return patreonTierIds;
 }
 
 /**
- * Same rules as {@link applyPatreonAccessToTierIds} except for one case that matters
+ * Conservative rules for the www/cookie source, which differs from OAuth metadata.
  * on **www/cookie** payloads: creator sessions often send `is_paid: false` for every
  * post. With empty `tiers` and no `is_public`, treating that as **public** would leak
  * paid content. Prefer member-only until OAuth list/per-post enrichment corrects it.
@@ -255,17 +256,18 @@ export function mapPatreonPostToIngest(resource: JsonApiResource): IngestPost {
   const a = resource.attributes ?? {};
   const titleRaw = strAttr(a, "title");
   const title = titleRaw.trim() ? titleRaw.trim() : "(untitled)";
-  let publishedAt = strAttr(a, "published_at").trim();
-  if (!publishedAt) {
-    publishedAt = new Date().toISOString();
+  const rawPublishedAt = strAttr(a, "published_at").trim();
+  if (!rawPublishedAt || !Number.isFinite(Date.parse(rawPublishedAt))) {
+    throw new Error("Patreon post has no valid publication time; retry after source metadata is available.");
   }
-  const editedAt = strAttr(a, "edited_at").trim();
-  const revTime = editedAt || publishedAt;
+  const publishedAt = new Date(rawPublishedAt).toISOString();
+  const revTime = publishedAt;
   const revBase = `${id}:${publishedAt}:${revTime}`;
   const upstream_revision = `patreon:${revBase}`;
 
   const baseTiers = tierIdsFromPatreonPost(resource);
   const tier_ids = applyPatreonAccessToTierIds(baseTiers, a);
+  if (tier_ids.length === 0) throw new Error("Patreon post audience is unknown; retry after source metadata is available.");
 
   const content =
     normalizePatreonPostContent(a.content) ||
@@ -303,7 +305,7 @@ export function mapPatreonPostToIngest(resource: JsonApiResource): IngestPost {
     pushUrl(url, `img_${mediaSeq + 1}`, `patreon_img`);
   }
 
-  return {
+  const post: IngestPost = {
     post_id: `patreon_post_${id}`,
     title,
     description: sanitizeOptionalPostDescriptionHtml(content),
@@ -313,6 +315,10 @@ export function mapPatreonPostToIngest(resource: JsonApiResource): IngestPost {
     upstream_revision,
     media: finalizePatreonPostMedia(media)
   };
+  const hash = patreonPostContentHash(post);
+  post.upstream_revision += `:sha256:${hash}`;
+  for (const item of post.media) item.upstream_revision += `:sha256:${patreonMediaContentHash(item)}`;
+  return post;
 }
 
 /** Read Patreon campaign art + patron_count from OAuth campaigns list (fields must be requested on the request). */

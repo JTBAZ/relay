@@ -1,4 +1,4 @@
-import { mkdtemp } from "node:fs/promises";
+import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { randomBytes } from "node:crypto";
@@ -25,6 +25,14 @@ import {
 import { loadPilotUxSeedSpec, validatePilotUxSeedSpec } from "../src/pilot-ux/pilot-ux-seed-spec.js";
 import { readFileSync } from "node:fs";
 import { join as pathJoin } from "node:path";
+
+const actualSeedBytes = vi.hoisted(() => ({ present: true }));
+vi.mock("../src/storage/r2-config.js", () => ({ getR2ClientConfigFromEnv: () => ({ bucket: "fixture" }) }));
+vi.mock("../src/storage/relay-upload-r2.js", async (original) => ({
+  ...await original<typeof import("../src/storage/relay-upload-r2.js")>(),
+  getR2ObjectBuffer: async () => { if (!actualSeedBytes.present) throw new Error("Missing seed object"); return Buffer.from("existing seed bytes"); },
+  headR2ObjectContentLength: async () => { if (!actualSeedBytes.present) throw new Error("Missing seed object"); return { contentLength: Buffer.byteLength("existing seed bytes") }; }
+}));
 
 const fixturePath = pathJoin(process.cwd(), "tests/fixtures/pilot-ux-seed.json");
 
@@ -126,13 +134,15 @@ describe("simulatePilotUxMediaImport", () => {
     ).rejects.toBeInstanceOf(PilotUxWalkthroughForbiddenError);
   });
 
-  it("seeds walkthrough posts, export index, and sync health", async () => {
+  it.each([true, false])("seeds walkthrough posts and proves only existing object bytes (present=%s)", async (present) => {
+    actualSeedBytes.present = present;
     const tempDir = await mkdtemp(join(tmpdir(), "relay-pux-media-"));
     const exportIndex = new FileExportIndex(join(tempDir, "exports"));
     const upsert = vi.fn().mockResolvedValue({});
     const createMany = vi.fn().mockResolvedValue({ count: 1 });
     const deleteMany = vi.fn().mockResolvedValue({ count: 0 });
     const syncUpsert = vi.fn().mockResolvedValue({});
+    const updateMany = vi.fn().mockResolvedValue({ count: 1 });
     const onboardingFind = vi.fn().mockResolvedValue(null);
     const onboardingCreate = vi.fn().mockResolvedValue({});
     const prisma = {
@@ -141,7 +151,7 @@ describe("simulatePilotUxMediaImport", () => {
       post: { upsert },
       postVersion: { upsert },
       postTier: { deleteMany, createMany },
-      mediaAsset: { upsert },
+      mediaAsset: { upsert, updateMany },
       creatorSyncState: { upsert: syncUpsert, findUnique: vi.fn().mockResolvedValue(null) },
       creatorOnboardingState: {
         findUnique: onboardingFind,
@@ -157,15 +167,20 @@ describe("simulatePilotUxMediaImport", () => {
     );
 
     expect(result.posts_written).toBe(PILOT_UX_ONBOARDING_WALKTHROUGH_MEDIA_POSTS.length);
-    expect(result.export_media_count).toBe(PILOT_UX_ONBOARDING_WALKTHROUGH_MEDIA_POSTS.length);
+    expect(result.export_media_count).toBe(present ? PILOT_UX_ONBOARDING_WALKTHROUGH_MEDIA_POSTS.length : 0);
     expect(result.media_ids).toHaveLength(PILOT_UX_ONBOARDING_WALKTHROUGH_MEDIA_POSTS.length);
     expect(upsert).toHaveBeenCalled();
     expect(syncUpsert).toHaveBeenCalled();
 
     const index = await exportIndex.load(PILOT_UX_ONBOARDING_RELAY_CREATOR_ID);
-    expect(Object.keys(index.media ?? {})).toHaveLength(
-      PILOT_UX_ONBOARDING_WALKTHROUGH_MEDIA_POSTS.length
-    );
+    expect(Object.keys(index.media ?? {})).toHaveLength(present ? PILOT_UX_ONBOARDING_WALKTHROUGH_MEDIA_POSTS.length : 0);
+    if (present) {
+      expect(updateMany).toHaveBeenCalledWith(expect.objectContaining({
+        where: expect.objectContaining({ creatorId: PILOT_UX_ONBOARDING_RELAY_CREATOR_ID, currentVersionSeq: 1, currentUpstreamRevision: "pilot-ux-walkthrough-v1" }),
+        data: { versionsJson: [expect.objectContaining({ export_record: expect.objectContaining({ byte_length: Buffer.byteLength("existing seed bytes"), sha256: expect.stringMatching(/^[a-f0-9]{64}$/) }) })] }
+      }));
+    } else expect(updateMany).not.toHaveBeenCalled();
+    await rm(tempDir, { recursive: true, force: true });
   });
 });
 

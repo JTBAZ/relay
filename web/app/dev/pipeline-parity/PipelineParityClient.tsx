@@ -369,7 +369,7 @@ export default function PipelineParityClient() {
             checked={probeUpstream}
             onChange={(e) => setProbeUpstream(e.target.checked)}
           />
-          Probe upstream (sync-state <code className="text-xs">probe_upstream=true</code>)
+          Include saved upstream probe evidence (does not contact Patreon)
         </label>
       </div>
 

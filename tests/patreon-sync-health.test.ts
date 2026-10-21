@@ -147,12 +147,17 @@ describe("classifySyncError", () => {
   });
 });
 
+async function auth(identity: ReturnType<typeof createApp>["identityService"], creatorId: string) {
+  const now = new Date().toISOString();
+  return `Bearer ${(await identity.issueSessionForUser({ user_id: "fixture", creator_id: creatorId, email: "fixture@example.test", password_hash: "fixture", auth_provider: "independent", tier_ids: [], created_at: now, updated_at: now })).token}`;
+}
+
 describe("Patreon sync health persistence + GET sync-state", () => {
   it("records successful scrape and exposes last_post_scrape + oauth on sync-state", async () => {
     const tempDir = await mkdtemp(join(tmpdir(), "relay-sync-health-"));
     const healthPath = join(tempDir, "patreon_sync_health.json");
     const fetchImpl = mockFetch();
-    const { app } = createApp(testConfig(tempDir, fetchImpl));
+    const { app, identityService } = createApp(testConfig(tempDir, fetchImpl));
 
     await request(app).post("/api/v1/auth/patreon/exchange").send({
       creator_id: "cr_health",
@@ -175,6 +180,7 @@ describe("Patreon sync health persistence + GET sync-state", () => {
 
     const state = await request(app)
       .get("/api/v1/patreon/sync-state")
+      .set("Authorization", await auth(identityService, "cr_health"))
       .query({ creator_id: "cr_health", campaign_id: "999" });
     expect(state.status).toBe(200);
     expect(state.body.data.oauth).toMatchObject({
@@ -199,7 +205,7 @@ describe("Patreon sync health persistence + GET sync-state", () => {
   it("records scrape failure and sync-state surfaces classified hint", async () => {
     const tempDir = await mkdtemp(join(tmpdir(), "relay-sync-health-fail-"));
     const fetchImpl = mockFetch();
-    const { app } = createApp(testConfig(tempDir, fetchImpl));
+    const { app, identityService } = createApp(testConfig(tempDir, fetchImpl));
 
     const bad = await request(app).post("/api/v1/patreon/scrape").send({
       creator_id: "no_one_here",
@@ -210,8 +216,10 @@ describe("Patreon sync health persistence + GET sync-state", () => {
 
     const state = await request(app)
       .get("/api/v1/patreon/sync-state")
+      .set("Authorization", await auth(identityService, "no_one_here"))
       .query({ creator_id: "no_one_here", campaign_id: "999" });
-    expect(state.status).toBe(404);
+    expect(state.status).toBe(200);
+    expect(state.body.data).toMatchObject({ availability: "unavailable", unavailable_reason: "missing_tokens", oauth: { availability: "unavailable" } });
 
     const healthPath = join(tempDir, "patreon_sync_health.json");
     const raw = await readFile(healthPath, "utf8");
@@ -220,5 +228,20 @@ describe("Patreon sync health persistence + GET sync-state", () => {
     };
     expect(health.records.no_one_here?.last_post_scrape?.ok).toBe(false);
     expect(health.records.no_one_here?.last_post_scrape?.error?.code).toBe("no_tokens");
+  });
+  it("records a long provider throttle as retryable failure without a partial success or provider body", async () => {
+    const tempDir = await mkdtemp(join(tmpdir(), "relay-ps07-health-"));
+    const base = mockFetch();
+    const fetchImpl: typeof fetch = async (input, init) => String(input).includes("/campaigns/999/posts")
+      ? Response.json({ errors: [{ retry_after_seconds: 1800, detail: "secret fixture body" }] }, { status: 429 })
+      : base(input, init);
+    const { app } = createApp(testConfig(tempDir, fetchImpl));
+    expect((await request(app).post("/api/v1/auth/patreon/exchange").send({ creator_id: "ps07", code: "fixture", redirect_uri: "http://localhost/cb" })).status).toBe(200);
+    const result = await request(app).post("/api/v1/patreon/scrape").send({ creator_id: "ps07", campaign_id: "999" });
+    expect(result.status).toBe(502);
+    const raw = await readFile(join(tempDir, "patreon_sync_health.json"), "utf8");
+    expect(JSON.parse(raw).records.ps07.last_post_scrape).toMatchObject({ ok: false, error: { code: "patreon_retry_required" } });
+    expect(raw).toContain("1800 seconds");
+    expect(raw + JSON.stringify(result.body)).not.toContain("secret fixture body");
   });
 });

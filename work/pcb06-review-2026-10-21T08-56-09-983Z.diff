@@ -1,0 +1,1421 @@
+diff --git "a/C:\\Users\\jorda\\Documents\\Codex\\2026-10-11\\c\\work\\relay\\work\\pcb05-accepted\\src\\distribution\\conversation-draft-variants.ts" "b/C:\\Users\\jorda\\Documents\\Codex\\2026-10-11\\c\\work\\relay\\src\\distribution\\conversation-draft-variants.ts"
+index f8f8912..36b3f7c 100644
+--- "a/C:\\Users\\jorda\\Documents\\Codex\\2026-10-11\\c\\work\\relay\\work\\pcb05-accepted\\src\\distribution\\conversation-draft-variants.ts"
++++ "b/C:\\Users\\jorda\\Documents\\Codex\\2026-10-11\\c\\work\\relay\\src\\distribution\\conversation-draft-variants.ts"
+@@ -1,3 +1,4 @@
++import { randomUUID } from 'node:crypto';
+ import { MediaProcessingStatus, MediaUpstreamStatus, PostUpstreamStatus, Prisma, type PrismaClient } from '@prisma/client';
+ import { fingerprint } from '../gallery-editor/state.js';
+ import { serializable } from '../gallery-editor/service.js';
+@@ -17,7 +18,8 @@ export type ConversationDraftIdentity = {
+   destination: ConversationDraftDestination; copy: ConversationDraftCopy;
+ };
+ type JournalEntry = { revision: number; reviewId: string; before: ConversationDraftCopy | null; after: ConversationDraftCopy; confirmedAt: string };
+-type ManagedState = { version: 1; sourcePostId: string; sourceVersionId: string; previewMediaId: string; exportHash: string; sourceDigest: string; variants: Record<string, { variantId: string; revision: number; revisions: JournalEntry[] }>; scheduleReceipts?: ConversationScheduleReceipt[] };
++type ManagedHandoffReceipt = { reviewId: string; attemptId: string; planId: string; variantId: string; destination: ConversationDraftDestination; sourcePostId: string; sourceVersionId: string; previewMediaId: string; exportHash: string; copyHash: string; revision: number; taskId: string; scheduledFor: string; confirmedAt: string };
++type ManagedState = { version: 1; sourcePostId: string; sourceVersionId: string; previewMediaId: string; exportHash: string; sourceDigest: string; variants: Record<string, { variantId: string; revision: number; revisions: JournalEntry[] }>; scheduleReceipts?: ConversationScheduleReceipt[]; handoffReceipts?: ManagedHandoffReceipt[] };
+ type Receipt = { reviewId: string; planId: string; variantId: string; destination: ConversationDraftDestination; sourcePostId: string; sourceVersionId: string; previewMediaId: string; revision: number; confirmedAt: string };
+ export type ConversationScheduleReceipt = { reviewId: string; planId: string; variantId: string; taskId: string; destination: ConversationDraftDestination; sourcePostId: string; sourceVersionId: string; previewMediaId: string; scheduledLocal: string; timezone: string; scheduledFor: string; confirmedAt: string };
+ const ns = 'conversation_draft_v1';
+@@ -113,6 +115,79 @@ export function createPrismaConversationDraftVariantStore(prisma: PrismaClient)
+     });
+   }
+ 
++  const copyFor = (destination: ConversationDraftDestination, row: { postText: string | null; title: string | null; bodyText: string | null; tags: string[] }): ConversationDraftCopy =>
++    destination === 'x' ? { postText: row.postText ?? '' } : { title: row.title ?? '', bodyText: row.bodyText ?? '', tags: [...row.tags] };
++
++  async function recordHandoffReview(creatorId: string, variantId: string) {
++    const managed = await inspectManaged(creatorId, variantId);
++    const copy = copyFor(managed.row.destination as ConversationDraftDestination, managed.row);
++    const revision = [...managed.entry.revisions].reverse().find(row => row.revision === managed.entry.revision);
++    const schedule = [...(managed.state.scheduleReceipts ?? [])].reverse().find(row => row.variantId === variantId);
++    if (!['draft', 'approved'].includes(managed.row.status) || !revision || !same(revision.after, copy) || !schedule || schedule.planId !== managed.plan.id || schedule.destination !== managed.row.destination || schedule.sourcePostId !== managed.state.sourcePostId || schedule.sourceVersionId !== managed.state.sourceVersionId || schedule.previewMediaId !== managed.state.previewMediaId) throw new ConversationDraftError('conflict', 'The destination draft needs a current confirmed Rail schedule before handoff.');
++    await serializable(prisma, async tx => {
++      await validatePinnedAssets(tx, creatorId, managed.state);
++      const task = await tx.postbotTask.findFirst({ where: { id: schedule.taskId, creatorId, planId: managed.plan.id, postId: managed.state.sourcePostId, variantId, destination: managed.row.destination, action: 'post', status: 'pending' }, select: { id: true, suggestedTime: true } });
++      if (!task?.suggestedTime || task.suggestedTime.toISOString() !== schedule.scheduledFor || managed.row.scheduledFor?.toISOString() !== schedule.scheduledFor) throw new ConversationDraftError('conflict', 'The confirmed Rail cue changed. Review the schedule again.');
++    });
++    return { ...managed, copy, copyHash: fingerprint(copy), schedule };
++  }
++
++  async function confirmHandoff(input: {
++    reviewId: string; creatorId: string; actorId: string; sessionId: string; sessionRevision: number; nowMs: number;
++    expectedVariantRevision: number; variantId: string; planId: string; destination: ConversationDraftDestination;
++    sourcePostId: string; sourceVersionId: string; previewMediaId: string; exportHash: string; copyHash: string;
++    taskId: string; scheduledFor: string;
++  }): Promise<{ receipt: ManagedHandoffReceipt; reused: boolean }> {
++    return serializable(prisma, async tx => {
++      const sessionKey = { id: input.sessionId, creatorId: input.creatorId, actorId: input.actorId };
++      const replaySession = await tx.galleryEditorSession.findFirst({ where: sessionKey, select: { context: true } });
++      const replayContext = object(replaySession?.context), replayConversation = object(replayContext.conversation);
++      const sessionReceipt = (Array.isArray(replayConversation.handoffReceipts) ? replayConversation.handoffReceipts : []).find((row: any) => row.reviewId === input.reviewId) as ManagedHandoffReceipt | undefined;
++      if (sessionReceipt) return { receipt: sessionReceipt, reused: true };
++
++      await tx.$queryRaw`SELECT id FROM gallery_editor_sessions WHERE id = ${input.sessionId} AND creator_id = ${input.creatorId} AND actor_id = ${input.actorId} FOR UPDATE`;
++      const session = await tx.galleryEditorSession.findFirst({ where: sessionKey });
++      const context = object(session?.context), conversation = object(context.conversation), pending = object(conversation.pendingHandoffReview);
++      if (!session || session.revision !== input.sessionRevision || pending.id !== input.reviewId || pending.expectedRevision !== input.sessionRevision || pending.expiresAt <= input.nowMs || pending.expectedVariantRevision !== input.expectedVariantRevision || pending.variantId !== input.variantId || pending.planId !== input.planId || pending.destination !== input.destination || pending.sourcePostId !== input.sourcePostId || pending.sourceVersionId !== input.sourceVersionId || pending.previewMediaId !== input.previewMediaId || pending.exportHash !== input.exportHash || pending.copyHash !== input.copyHash || pending.taskId !== input.taskId || pending.scheduledFor !== input.scheduledFor || context.selectedPostIds?.length !== 1 || context.selectedPostIds[0] !== input.sourcePostId) throw new ConversationDraftError('conflict', 'This handoff review is stale. Review the current draft again.');
++
++      await tx.$queryRaw`SELECT id FROM post_distribution_plans WHERE id = ${input.planId} AND creator_id = ${input.creatorId} FOR UPDATE`;
++      const plan = await tx.postDistributionPlan.findFirst({ where: { id: input.planId, creatorId: input.creatorId } });
++      const state = object(object(plan?.assistantPlan)[ns]) as ManagedState;
++      const entry = state.variants?.[input.destination];
++      if (!plan?.conversationalGroupKey?.startsWith('conversation-draft:') || state.version !== 1 || state.sourcePostId !== input.sourcePostId || state.sourceVersionId !== input.sourceVersionId || state.previewMediaId !== input.previewMediaId || state.exportHash !== input.exportHash || !entry || entry.variantId !== input.variantId || entry.revision !== input.expectedVariantRevision) throw new ConversationDraftError('conflict', 'The destination draft changed after handoff review. Review it again.');
++      const prior = (state.handoffReceipts ?? []).find(row => row.reviewId === input.reviewId);
++      if (prior) return { receipt: prior, reused: true };
++
++      await tx.$queryRaw`SELECT id FROM post_distribution_variants WHERE id = ${input.variantId} AND creator_id = ${input.creatorId} AND plan_id = ${input.planId} FOR UPDATE`;
++      const variant = await tx.postDistributionVariant.findFirst({ where: { id: input.variantId, creatorId: input.creatorId, planId: input.planId, postId: input.sourcePostId, destination: input.destination } });
++      if (!variant || !['draft', 'approved'].includes(variant.status)) throw new ConversationDraftError('conflict', 'The destination draft is no longer available for handoff.');
++      const copy = copyFor(input.destination, variant);
++      const latestRevision = [...entry.revisions].reverse().find(row => row.revision === entry.revision);
++      if (fingerprint(copy) !== input.copyHash || !latestRevision || !same(latestRevision.after, copy)) throw new ConversationDraftError('conflict', 'The approved copy changed after handoff review. Review it again.');
++      await validatePinnedAssets(tx, input.creatorId, state);
++
++      await tx.$queryRaw`SELECT id FROM postbot_tasks WHERE id = ${input.taskId} AND creator_id = ${input.creatorId} AND plan_id = ${input.planId} AND variant_id = ${input.variantId} FOR UPDATE`;
++      const schedule = [...(state.scheduleReceipts ?? [])].reverse().find(row => row.variantId === input.variantId && row.taskId === input.taskId);
++      const task = await tx.postbotTask.findFirst({ where: { id: input.taskId, creatorId: input.creatorId, planId: input.planId, postId: input.sourcePostId, variantId: input.variantId, destination: input.destination, action: 'post', status: 'pending' }, select: { id: true, suggestedTime: true } });
++      if (!schedule || schedule.scheduledFor !== input.scheduledFor || !task?.suggestedTime || task.suggestedTime.toISOString() !== input.scheduledFor || variant.scheduledFor?.toISOString() !== input.scheduledFor) throw new ConversationDraftError('conflict', 'The confirmed Rail cue changed after handoff review. Review the schedule again.');
++
++      const priorForRevision = (state.handoffReceipts ?? []).find(row => row.variantId === input.variantId && row.revision === entry.revision);
++      if (priorForRevision) return { receipt: priorForRevision, reused: true };
++      const confirmedAt = new Date(input.nowMs).toISOString();
++      const receipt: ManagedHandoffReceipt = { reviewId: input.reviewId, attemptId: `pda_${randomUUID()}`, planId: input.planId, variantId: input.variantId, destination: input.destination, sourcePostId: input.sourcePostId, sourceVersionId: input.sourceVersionId, previewMediaId: input.previewMediaId, exportHash: input.exportHash, copyHash: input.copyHash, revision: entry.revision, taskId: input.taskId, scheduledFor: input.scheduledFor, confirmedAt };
++      const updatedVariant = await tx.postDistributionVariant.updateMany({ where: { id: input.variantId, creatorId: input.creatorId, planId: input.planId, updatedAt: variant.updatedAt, status: variant.status }, data: { status: 'handed_off', approvedAt: variant.approvedAt ?? new Date(input.nowMs) } });
++      if (updatedVariant.count !== 1) throw new ConversationDraftError('conflict', 'The destination draft changed while handoff was confirmed.');
++      await tx.postDistributionAttempt.create({ data: { id: receipt.attemptId, variantId: input.variantId, postId: input.sourcePostId, creatorId: input.creatorId, destination: input.destination, status: 'started' } });
++      await tx.postDistributionPlan.update({ where: { id: input.planId }, data: { assistantPlan: { ...object(plan.assistantPlan), [ns]: { ...state, handoffReceipts: [...(state.handoffReceipts ?? []), receipt] } } as Prisma.InputJsonValue } });
++      const cart = object(session.cart);
++      const nextConversation: Record<string, any> = { ...conversation, handoffReceipts: [...(Array.isArray(conversation.handoffReceipts) ? conversation.handoffReceipts : []), receipt] };
++      delete nextConversation.pendingHandoffReview;
++      const updatedSession = await tx.galleryEditorSession.updateMany({ where: { id: input.sessionId, creatorId: input.creatorId, actorId: input.actorId, revision: input.sessionRevision }, data: { revision: input.sessionRevision + 1, context: { ...context, conversation: nextConversation } as Prisma.InputJsonValue, cart: { ...cart, revision: input.sessionRevision + 1 } as Prisma.InputJsonValue } });
++      if (updatedSession.count !== 1) throw new ConversationDraftError('conflict', 'The conversation changed before handoff was confirmed.');
++      return { receipt, reused: false };
++    });
++  }
++
+   async function lockSession(tx: Prisma.TransactionClient, input: ConversationDraftIdentity & { expectedVariantRevision?: number; variantId?: string }, expectedReviewKind: 'create' | 'edit') {
+     await tx.$queryRaw`SELECT id FROM gallery_editor_sessions WHERE id = ${input.sessionId} AND creator_id = ${input.creatorId} AND actor_id = ${input.actorId} FOR UPDATE`;
+     const session = await tx.galleryEditorSession.findFirst({ where: { id: input.sessionId, creatorId: input.creatorId, actorId: input.actorId } });
+@@ -266,5 +341,5 @@ export function createPrismaConversationDraftVariantStore(prisma: PrismaClient)
+     });
+   }
+ 
+-  return { confirmCreate, confirmEdit, inspectManaged, assertReceipt, readSourceDigest, readHistory, recordScheduleReview, confirmSchedule };
++  return { confirmCreate, confirmEdit, inspectManaged, assertReceipt, readSourceDigest, readHistory, recordScheduleReview, confirmSchedule, recordHandoffReview, confirmHandoff };
+ }
+diff --git "a/C:\\Users\\jorda\\Documents\\Codex\\2026-10-11\\c\\work\\relay\\work\\pcb05-accepted\\src\\editor-bench\\real-library-conversation-routes.ts" "b/C:\\Users\\jorda\\Documents\\Codex\\2026-10-11\\c\\work\\relay\\src\\editor-bench\\real-library-conversation-routes.ts"
+index 47ac805..d98f3ff 100644
+--- "a/C:\\Users\\jorda\\Documents\\Codex\\2026-10-11\\c\\work\\relay\\work\\pcb05-accepted\\src\\editor-bench\\real-library-conversation-routes.ts"
++++ "b/C:\\Users\\jorda\\Documents\\Codex\\2026-10-11\\c\\work\\relay\\src\\editor-bench\\real-library-conversation-routes.ts"
+@@ -38,6 +38,8 @@ export type RealLibraryConversationView = {
+   draftReceipts?: Array<{ reviewId: string; planId: string; variantId: string; destination: ConversationDraftDestination; sourcePostId: string; sourceVersionId: string; previewMediaId: string; revision: number; confirmedAt: string }>;
+   scheduleReview?: { reviewId: string; expiresAt: string; expectedVariantRevision: number; planId: string; variantId: string; destination: ConversationDraftDestination; sourcePostId: string; sourceVersionId: string; previewMediaId: string; previewMediaUrl: string; scheduledLocal: string; timezone: string; scheduledFor: string };
+   scheduleReceipts?: Array<{ reviewId: string; planId: string; variantId: string; taskId: string; destination: ConversationDraftDestination; sourcePostId: string; sourceVersionId: string; previewMediaId: string; scheduledLocal: string; timezone: string; scheduledFor: string; confirmedAt: string }>;
++  handoffReview?: { reviewId: string; expiresAt: string; expectedVariantRevision: number; planId: string; variantId: string; destination: ConversationDraftDestination; sourcePostId: string; sourceVersionId: string; previewMediaId: string; copyHash: string; taskId: string; scheduledFor: string; copy: ConversationDraftCopy };
++  handoffReceipts?: Array<{ reviewId: string; attemptId: string; planId: string; variantId: string; destination: ConversationDraftDestination; sourcePostId: string; sourceVersionId: string; previewMediaId: string; exportHash: string; copyHash: string; revision: number; taskId: string; scheduledFor: string; confirmedAt: string }>;
+ };
+ function applyTagDelta(tags: string[], action: Extract<EditReviewAction, { kind: 'tags' }>): string[] {
+   return [...new Set([...tags.filter(tag => !action.remove.includes(tag)), ...action.add])].sort();
+@@ -99,6 +101,7 @@ function view(session: Session, snapshot: LargeRealLibrarySnapshot, status: Real
+   const previewReview = session.editor.context.conversation!.pendingPreviewReview;
+   const draftReview = session.editor.context.conversation!.pendingDraftReview;
+   const scheduleReview = session.editor.context.conversation!.pendingScheduleReview;
++  const handoffReview = session.editor.context.conversation!.pendingHandoffReview;
+   const source = pending ? snapshot.posts.find(post => post.postId === pending.action.postId) : undefined;
+   const before = source ? { title: source.title, tags: [...source.tags] } : undefined;
+   let after: { title: string; tags: string[] } | undefined;
+@@ -132,6 +135,8 @@ function view(session: Session, snapshot: LargeRealLibrarySnapshot, status: Real
+     ...(session.editor.context.conversation!.draftReceipts?.length ? { draftReceipts: session.editor.context.conversation!.draftReceipts } : {}),
+     ...(scheduleReview ? { scheduleReview: { reviewId: scheduleReview.id, ...scheduleReview, expiresAt: new Date(scheduleReview.expiresAt).toISOString(), previewMediaUrl: `/api/v1/export/media/${encodeURIComponent(session.principal.creatorId)}/${encodeURIComponent(scheduleReview.previewMediaId)}/content` } } : {}),
+     ...(session.editor.context.conversation!.scheduleReceipts?.length ? { scheduleReceipts: session.editor.context.conversation!.scheduleReceipts } : {}),
++    ...(handoffReview ? { handoffReview: { reviewId: handoffReview.id, expiresAt: new Date(handoffReview.expiresAt).toISOString(), expectedVariantRevision: handoffReview.expectedVariantRevision, planId: handoffReview.planId, variantId: handoffReview.variantId, destination: handoffReview.destination, sourcePostId: handoffReview.sourcePostId, sourceVersionId: handoffReview.sourceVersionId, previewMediaId: handoffReview.previewMediaId, copyHash: handoffReview.copyHash, taskId: handoffReview.taskId, scheduledFor: handoffReview.scheduledFor, copy: handoffReview.copy } } : {}),
++    ...(session.editor.context.conversation!.handoffReceipts?.length ? { handoffReceipts: session.editor.context.conversation!.handoffReceipts } : {}),
+     ...(pending && before && after ? { editReview: { reviewId: pending.id, revision: pending.expectedRevision, expiresAt: new Date(pending.expiresAt).toISOString(), before, after } } : {}),
+     ...(matchedPostIds ? { result: { matchedPostIds } } : {}), ...(usage ? { usage } : {})
+   };
+@@ -242,7 +247,9 @@ export function registerRealLibraryConversationRoutes(app: express.Application,
+       const draftReceipts = session.editor.context.conversation?.draftReceipts ?? [];
+       const scheduleReceipts = session.editor.context.conversation?.scheduleReceipts ?? [];
+       const drafts = await draftVariants.readHistory(principal.creatorId, draftReceipts);
+-      return res.status(200).json(successEnvelope({ sessionId: session.editor.id, revision: session.editor.revision, draftReceipts, drafts, scheduleReceipts }, traceId));
++      const handoffReceipts = session.editor.context.conversation?.handoffReceipts ?? [];
++      const handoffReview = session.editor.context.conversation?.pendingHandoffReview;
++      return res.status(200).json(successEnvelope({ sessionId: session.editor.id, revision: session.editor.revision, draftReceipts, drafts, scheduleReceipts, handoffReceipts, ...(handoffReview ? { handoffReview } : {}) }, traceId));
+     } catch { return res.status(503).json(errorEnvelope('SERVICE_UNAVAILABLE', 'Conversation drafts could not be loaded.', traceId)); }
+   });
+ 
+@@ -309,6 +316,51 @@ export function registerRealLibraryConversationRoutes(app: express.Application,
+     } catch (error) { return sendDraftError(res, traceId, error); }
+   });
+ 
++  app.post(`${basePath}/session/:sessionId/draft/handoff/review`, async (req, res) => {
++    const traceId = options.traceId(req); res.setHeader('Cache-Control', 'private, no-store');
++    const principal = await principalFor(req, res, traceId); if (!principal) return;
++    if (!record(req.body) || !exactKeys(req.body, ['expectedRevision', 'variantId']) || !Number.isSafeInteger(req.body.expectedRevision) || (req.body.expectedRevision as number) < 0 || typeof req.body.variantId !== 'string' || !req.body.variantId.trim()) return invalid(res, traceId, 'Provide the current conversation revision and destination draft to review for handoff.');
++    const session = await owned(principal, req.params.sessionId, res, traceId);
++    if (!session) return res.headersSent ? undefined : res.status(404).json(errorEnvelope('NOT_FOUND', 'Library conversation not found.', traceId));
++    if (!draftVariants || !options.prisma) return res.status(503).json(errorEnvelope('SERVICE_UNAVAILABLE', 'Destination handoff is unavailable.', traceId));
++    if (req.body.expectedRevision !== session.editor.revision) return res.status(409).json(errorEnvelope('CONFLICT', 'The conversation changed. Read it again before reviewing the handoff.', traceId));
++    const authorized = await editorMutationPrincipal(req, res, traceId, principal); if (!authorized) return;
++    try {
++      const managed = await draftVariants.recordHandoffReview(principal.creatorId, req.body.variantId.trim());
++      if (session.editor.context.selectedPostIds.length !== 1 || session.editor.context.selectedPostIds[0] !== managed.state.sourcePostId) return res.status(409).json(errorEnvelope('CONFLICT', 'Select the destination draft’s source before reviewing its handoff.', traceId));
++      const review = {
++        id: randomUUID(), expectedRevision: session.editor.revision + 1, expectedVariantRevision: managed.entry.revision,
++        expiresAt: (options.nowMs ?? Date.now)() + 15 * 60 * 1000, variantId: managed.row.id, planId: managed.plan.id,
++        destination: managed.row.destination as ConversationDraftDestination, sourcePostId: managed.state.sourcePostId,
++        sourceVersionId: managed.state.sourceVersionId, previewMediaId: managed.state.previewMediaId,
++        exportHash: managed.state.exportHash, copyHash: managed.copyHash, taskId: managed.schedule.taskId,
++        scheduledFor: managed.schedule.scheduledFor, copy: managed.copy
++      };
++      const context: EditorContext = { ...session.editor.context, conversation: { ...session.editor.context.conversation!, pendingHandoffReview: review } };
++      session.editor = await options.editor.revise(principal.creatorId, principal.accountId, session.editor.id, session.editor.revision, session.editor.cart.actions, context, session.editor.messages, 'manual', undefined, true);
++      return res.status(200).json(successEnvelope({ scope: 'real_library_conversation_handoff_review', sessionId: session.editor.id, revision: session.editor.revision, review: { reviewId: review.id, ...review, expiresAt: new Date(review.expiresAt).toISOString(), previewMediaUrl: `/api/v1/export/media/${encodeURIComponent(principal.creatorId)}/${encodeURIComponent(review.previewMediaId)}/content` } }, traceId));
++    } catch (error) { return sendDraftError(res, traceId, error); }
++  });
++
++  app.post(`${basePath}/session/:sessionId/draft/handoff/confirm`, async (req, res) => {
++    const traceId = options.traceId(req); res.setHeader('Cache-Control', 'private, no-store');
++    const principal = await principalFor(req, res, traceId); if (!principal) return;
++    if (!record(req.body) || !exactKeys(req.body, ['expectedRevision', 'reviewId']) || !Number.isSafeInteger(req.body.expectedRevision) || (req.body.expectedRevision as number) < 0 || typeof req.body.reviewId !== 'string' || !req.body.reviewId.trim()) return invalid(res, traceId, 'Provide the handoff review ID and current conversation revision to confirm.');
++    const session = await owned(principal, req.params.sessionId, res, traceId);
++    if (!session) return res.headersSent ? undefined : res.status(404).json(errorEnvelope('NOT_FOUND', 'Library conversation not found.', traceId));
++    if (!draftVariants || !options.prisma) return res.status(503).json(errorEnvelope('SERVICE_UNAVAILABLE', 'Destination handoff is unavailable.', traceId));
++    const authorized = await editorMutationPrincipal(req, res, traceId, principal); if (!authorized) return;
++    const prior = session.editor.context.conversation?.handoffReceipts?.find(receipt => receipt.reviewId === req.body.reviewId);
++    if (prior) return res.status(200).json(successEnvelope({ scope: 'real_library_conversation_handoff', status: 'confirmed', replayed: true, receipt: prior }, traceId));
++    const pending = session.editor.context.conversation?.pendingHandoffReview;
++    const nowMs = (options.nowMs ?? Date.now)();
++    if (req.body.expectedRevision !== session.editor.revision || !pending || pending.id !== req.body.reviewId || pending.expectedRevision !== session.editor.revision || pending.expiresAt <= nowMs) return res.status(409).json(errorEnvelope('CONFLICT', 'This handoff review is stale or unavailable. Review the draft again.', traceId));
++    try {
++      const result = await draftVariants.confirmHandoff({ reviewId: pending.id, creatorId: principal.creatorId, actorId: principal.accountId, sessionId: session.editor.id, sessionRevision: session.editor.revision, nowMs, expectedVariantRevision: pending.expectedVariantRevision, variantId: pending.variantId, planId: pending.planId, destination: pending.destination, sourcePostId: pending.sourcePostId, sourceVersionId: pending.sourceVersionId, previewMediaId: pending.previewMediaId, exportHash: pending.exportHash, copyHash: pending.copyHash, taskId: pending.taskId, scheduledFor: pending.scheduledFor });
++      return res.status(200).json(successEnvelope({ scope: 'real_library_conversation_handoff', status: 'confirmed', replayed: result.reused, receipt: result.receipt }, traceId));
++    } catch (error) { return sendDraftError(res, traceId, error); }
++  });
++
+   app.post(`${basePath}/session/:sessionId/preview/review`, async (req, res) => {
+     const traceId = options.traceId(req);
+     res.setHeader('Cache-Control', 'private, no-store');
+@@ -529,7 +581,7 @@ export function registerRealLibraryConversationRoutes(app: express.Application,
+     try {
+       const snapshot = await load(principal);
+       if (!await store.contains(session) || session.runtime.generation !== generation) return res.status(409).json(errorEnvelope('CONFLICT', 'The conversation changed before it could be refreshed.', traceId));
+-      const context: EditorContext = { ...session.editor.context, selectedPostIds: [], conversation: { catalogRevision: snapshot.catalogRevision, excludedPostIds: [], lastRequest: null, selectionInitialized: false, previewReceipts: session.editor.context.conversation?.previewReceipts ?? [], draftReceipts: session.editor.context.conversation?.draftReceipts ?? [], scheduleReceipts: session.editor.context.conversation?.scheduleReceipts ?? [] } };
++      const context: EditorContext = { ...session.editor.context, selectedPostIds: [], conversation: { catalogRevision: snapshot.catalogRevision, excludedPostIds: [], lastRequest: null, selectionInitialized: false, previewReceipts: session.editor.context.conversation?.previewReceipts ?? [], draftReceipts: session.editor.context.conversation?.draftReceipts ?? [], scheduleReceipts: session.editor.context.conversation?.scheduleReceipts ?? [], handoffReceipts: session.editor.context.conversation?.handoffReceipts ?? [] } };
+       session.editor = await options.editor.revise(principal.creatorId, principal.accountId, session.editor.id, session.editor.revision, session.editor.cart.actions, context, session.editor.messages, 'manual', undefined, true);
+       return res.status(200).json(successEnvelope(view(session, snapshot, 'ready', 'Library refreshed and selection cleared.'), traceId));
+     } catch (error) { return snapshotError(res, traceId, error); }
+diff --git "a/C:\\Users\\jorda\\Documents\\Codex\\2026-10-11\\c\\work\\relay\\work\\pcb05-accepted\\src\\gallery-editor\\types.ts" "b/C:\\Users\\jorda\\Documents\\Codex\\2026-10-11\\c\\work\\relay\\src\\gallery-editor\\types.ts"
+index cabbbc8..2967395 100644
+--- "a/C:\\Users\\jorda\\Documents\\Codex\\2026-10-11\\c\\work\\relay\\work\\pcb05-accepted\\src\\gallery-editor\\types.ts"
++++ "b/C:\\Users\\jorda\\Documents\\Codex\\2026-10-11\\c\\work\\relay\\src\\gallery-editor\\types.ts"
+@@ -115,6 +115,39 @@ export interface EditorContext {
+       scheduledFor: string;
+       confirmedAt: string;
+     }>;
++    pendingHandoffReview?: {
++      id: string;
++      expectedRevision: number;
++      expectedVariantRevision: number;
++      expiresAt: number;
++      variantId: string;
++      planId: string;
++      destination: 'x' | 'deviantart';
++      sourcePostId: string;
++      sourceVersionId: string;
++      previewMediaId: string;
++      exportHash: string;
++      copyHash: string;
++      taskId: string;
++      scheduledFor: string;
++      copy: { postText: string } | { title: string; bodyText: string; tags: string[] };
++    };
++    handoffReceipts?: Array<{
++      reviewId: string;
++      attemptId: string;
++      planId: string;
++      variantId: string;
++      destination: 'x' | 'deviantart';
++      sourcePostId: string;
++      sourceVersionId: string;
++      previewMediaId: string;
++      exportHash: string;
++      copyHash: string;
++      revision: number;
++      taskId: string;
++      scheduledFor: string;
++      confirmedAt: string;
++    }>;
+     pendingReview?: {
+       id: string;
+       action: Extract<EditAction, { kind: "rename_post" | "tags" }>;
+diff --git "a/C:\\Users\\jorda\\Documents\\Codex\\2026-10-11\\c\\work\\relay\\work\\pcb-final-baseline\\src\\distribution\\distribution-package.ts" "b/C:\\Users\\jorda\\Documents\\Codex\\2026-10-11\\c\\work\\relay\\src\\distribution\\distribution-package.ts"
+index 80b4cf3..e229e55 100644
+--- "a/C:\\Users\\jorda\\Documents\\Codex\\2026-10-11\\c\\work\\relay\\work\\pcb-final-baseline\\src\\distribution\\distribution-package.ts"
++++ "b/C:\\Users\\jorda\\Documents\\Codex\\2026-10-11\\c\\work\\relay\\src\\distribution\\distribution-package.ts"
+@@ -2,8 +2,10 @@
+  * @fileoverview Assemble extension/API packages from approved distribution variants.
+  */
+ 
++import { createHash } from "node:crypto";
+ import type { PrismaClient } from "@prisma/client";
+-import type { CrossPostPackageMediaEntry } from "../extension/cross-post-media-entries.js";
++import { fingerprint } from "../gallery-editor/state.js";
++import { crossPostMediaContentUrlPath, filenameForMedia, type CrossPostPackageMediaEntry } from "../extension/cross-post-media-entries.js";
+ import {
+   buildDeviantArtCrossPostPackage,
+   buildPatreonCrossPostPackage,
+@@ -23,6 +25,7 @@ import {
+ } from "./media-binding.js";
+ import {
+   loadVariantForPackage,
++  type DistributionAttemptWire,
+   type DistributionVariantWire
+ } from "./post-distribution-service.js";
+ import type { DistributionDestination } from "./platform-destinations.js";
+@@ -32,7 +35,10 @@ export type BuildFromAttemptResult =
+   | { status: "forbidden" }
+   | { status: "no_primary_creator" }
+   | { status: "invalid_media_binding"; message: string }
+-  | { status: "ok"; destination: DistributionDestination; package: unknown; variant: DistributionVariantWire };
++  | { status: "ok"; destination: DistributionDestination; package: unknown; variant: DistributionVariantWire; managed_handoff_v1?: { attempt_id: string; post_id: string; destination: "x" | "deviantart"; variant_id: string; revision: number; task_id: string; scheduled_for: string; copy_hash: string; export_hash: string } };
++
++export const MAX_CONVERSATION_HANDOFF_JPEG_BYTES = 1024 * 1024;
++export type ConversationHandoffObjectReader = (storageKey: string, maxBytes: number) => Promise<Buffer>;
+ 
+ const X_IMAGE_MAX = 4;
+ const DEVIANTART_IMAGE_MAX = 1;
+@@ -131,10 +137,67 @@ async function finalizePackage<T extends RelayCrossPostPackage>(
+   return { ...pkg, media: withMedia.media };
+ }
+ 
++const object = (value: unknown): Record<string, any> => value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, any> : {};
++
++async function buildManagedConversationHandoff(
++  prisma: PrismaClient,
++  creatorId: string,
++  attemptId: string,
++  attempt: DistributionAttemptWire,
++  variant: DistributionVariantWire,
++  groupKey: string | null,
++  assistantPlan: Record<string, unknown>,
++  readObject?: ConversationHandoffObjectReader
++): Promise<BuildFromAttemptResult | null> {
++  if (!groupKey?.startsWith("conversation-draft:")) return null;
++  const destination = variant.destination;
++  if (destination !== "x" && destination !== "deviantart") return { status: "not_found" };
++  const state = object(assistantPlan.conversation_draft_v1);
++  const entry = object(state.variants)[destination];
++  const handoffs = Array.isArray(state.handoffReceipts) ? state.handoffReceipts : [];
++  const receipt = handoffs.find((row: any) => row?.attemptId === attemptId);
++  if (state.version !== 1 || !entry || entry.variantId !== variant.variant_id || !receipt || receipt.variantId !== variant.variant_id || receipt.planId !== variant.plan_id || receipt.destination !== variant.destination || receipt.sourcePostId !== variant.post_id || receipt.sourceVersionId !== state.sourceVersionId || receipt.previewMediaId !== state.previewMediaId || receipt.exportHash !== state.exportHash || receipt.revision !== entry.revision || attempt.attempt_id !== attemptId || attempt.variant_id !== variant.variant_id || attempt.post_id !== variant.post_id || attempt.destination !== variant.destination || !["started", "package_fetched", "tab_opened", "injected", "fill_failed", "fill_partial", "fill_succeeded"].includes(attempt.status) || !["handed_off", "fill_failed"].includes(variant.status) || !variant.approved_at) return { status: "not_found" };
++  if (!readObject) return { status: "invalid_media_binding", message: "The confirmed Previewizer image is unavailable for handoff." };
++
++  const post = await prisma.post.findFirst({ where: { id: receipt.sourcePostId, creatorId, upstreamStatus: "active", versions: { some: { id: receipt.sourceVersionId } } }, select: { id: true } });
++  if (!post) return { status: "invalid_media_binding", message: "The pinned Library source version is no longer available." };
++
++  const copy = destination === "x"
++    ? { postText: variant.post_text ?? "" }
++    : { title: variant.title ?? "", bodyText: variant.body_text ?? "", tags: variant.tags ?? [] };
++  const latest = Array.isArray(entry.revisions) ? [...entry.revisions].reverse().find((row: any) => row?.revision === entry.revision) : null;
++  if (fingerprint(copy) !== receipt.copyHash || !latest || fingerprint(latest.after) !== receipt.copyHash) return { status: "invalid_media_binding", message: "The destination copy changed after handoff confirmation." };
++
++  const taskReceipt = (Array.isArray(state.scheduleReceipts) ? state.scheduleReceipts : []).find((row: any) => row?.variantId === variant.variant_id && row.taskId === receipt.taskId);
++  const task = await prisma.postbotTask.findFirst({ where: { id: receipt.taskId, creatorId, postId: receipt.sourcePostId, planId: receipt.planId, variantId: variant.variant_id, destination: variant.destination, action: "post", status: "pending" }, select: { id: true, suggestedTime: true } });
++  if (!taskReceipt || taskReceipt.scheduledFor !== receipt.scheduledFor || !task?.suggestedTime || task.suggestedTime.toISOString() !== receipt.scheduledFor || variant.scheduled_for !== receipt.scheduledFor) return { status: "invalid_media_binding", message: "The confirmed Rail cue changed after handoff confirmation." };
++
++  const media = await prisma.mediaAsset.findFirst({ where: { id: receipt.previewMediaId, creatorId, primaryPostId: receipt.sourcePostId, upstreamStatus: "active", processingStatus: "READY", currentMimeType: "image/jpeg" }, select: { id: true, currentStorageKey: true, currentMimeType: true, versionsJson: true } });
++  const provenance = Array.isArray(media?.versionsJson) ? object(media.versionsJson[0]) : {};
++  if (!media?.currentStorageKey || media.currentStorageKey !== provenance.storage_key || provenance.sha256 !== receipt.exportHash || provenance.source_post_id !== receipt.sourcePostId || provenance.source_version_id !== receipt.sourceVersionId) return { status: "invalid_media_binding", message: "The confirmed Previewizer image changed after handoff confirmation." };
++  let bytes: Buffer;
++  try { bytes = await readObject(media.currentStorageKey, MAX_CONVERSATION_HANDOFF_JPEG_BYTES); }
++  catch { return { status: "invalid_media_binding", message: "The confirmed Previewizer image is unavailable for handoff." }; }
++  if (!Buffer.isBuffer(bytes) || bytes.length === 0 || bytes.length > MAX_CONVERSATION_HANDOFF_JPEG_BYTES || bytes[0] !== 0xff || bytes[1] !== 0xd8 || bytes[2] !== 0xff || createHash("sha256").update(bytes).digest("hex") !== receipt.exportHash) return { status: "invalid_media_binding", message: "The confirmed Previewizer image failed its integrity check." };
++
++  const mediaEntry: CrossPostPackageMediaEntry = {
++    media_id: media.id, filename: filenameForMedia(media.id, media.currentMimeType), mime_type: "image/jpeg",
++    content_url: crossPostMediaContentUrlPath(creatorId, media.id), sha256: receipt.exportHash
++  };
++  const pkg = destination === "x"
++    ? { relay_post_id: receipt.sourcePostId, title: copy.postText, body_text: "", post_text: copy.postText, media: [mediaEntry] }
++    : { relay_post_id: receipt.sourcePostId, title: copy.title, body_text: copy.bodyText, tags: [...(copy.tags ?? [])], media: [mediaEntry] };
++  return {
++    status: "ok", destination, variant, package: pkg,
++    managed_handoff_v1: { attempt_id: attemptId, post_id: receipt.sourcePostId, destination, variant_id: variant.variant_id, revision: receipt.revision, task_id: receipt.taskId, scheduled_for: receipt.scheduledFor, copy_hash: receipt.copyHash, export_hash: receipt.exportHash }
++  };
++}
++
+ export async function buildCrossPostPackageFromAttempt(
+   prisma: PrismaClient,
+   accountId: string,
+-  attemptId: string
++  attemptId: string,
++  readHandoffObject?: ConversationHandoffObjectReader
+ ): Promise<BuildFromAttemptResult> {
+   const account = await prisma.account.findUnique({
+     where: { id: accountId.trim() },
+@@ -150,7 +213,9 @@ export async function buildCrossPostPackageFromAttempt(
+     return { status: "not_found" };
+   }
+ 
+-  const { variant, attempt, assistant_plan } = loaded;
++  const { variant, attempt, assistant_plan, plan_conversational_group_key } = loaded;
++  const managed = await buildManagedConversationHandoff(prisma, creatorId, attemptId, attempt, variant, plan_conversational_group_key, assistant_plan, readHandoffObject);
++  if (managed) return managed;
+   const destination = variant.destination;
+   const rhythmPlan=await prisma.postDistributionPlan.findFirst({where:{id:variant.plan_id,creatorId,rhythmActionId:{not:null}},select:{rhythmActionId:true}});
+   if(rhythmPlan?.rhythmActionId){
+diff --git "a/C:\\Users\\jorda\\Documents\\Codex\\2026-10-11\\c\\work\\relay\\work\\pcb04-accepted\\src\\distribution\\post-distribution-service.ts" "b/C:\\Users\\jorda\\Documents\\Codex\\2026-10-11\\c\\work\\relay\\src\\distribution\\post-distribution-service.ts"
+index 3717e49..f92f237 100644
+--- "a/C:\\Users\\jorda\\Documents\\Codex\\2026-10-11\\c\\work\\relay\\work\\pcb04-accepted\\src\\distribution\\post-distribution-service.ts"
++++ "b/C:\\Users\\jorda\\Documents\\Codex\\2026-10-11\\c\\work\\relay\\src\\distribution\\post-distribution-service.ts"
+@@ -44,6 +44,7 @@ import {
+   resolveMediaVersionForDestination
+ } from "./media-binding.js";
+ import { buildDistributionPlanCreateData, buildDistributionVariantCreateData } from "./distribution-row-builders.js";
++import { fingerprint } from "../gallery-editor/state.js";
+ 
+ const COACH_REVIEW_ASSISTANT_MODE = "coach_review";
+ 
+@@ -938,20 +939,47 @@ export type FillResultInput = {
+   error_detail?: string | null;
+ };
+ 
++async function assertCurrentManagedAttempt(tx: any, attemptId: string, creatorId: string, mode: "fill" | "complete") {
++  const initial = await tx.postDistributionAttempt.findFirst({
++    where: { id: attemptId, creatorId },
++    include: { variant: { include: { plan: true } } }
++  });
++  if (!initial) throw new PostDistributionNotFoundError("Attempt not found.");
++  if (!initial.variant?.plan?.conversationalGroupKey?.startsWith("conversation-draft:")) return initial;
++  await tx.$queryRaw`SELECT id FROM post_distribution_plans WHERE id = ${initial.variant.planId} AND creator_id = ${creatorId} FOR UPDATE`;
++  await tx.$queryRaw`SELECT id FROM post_distribution_variants WHERE id = ${initial.variantId} AND creator_id = ${creatorId} AND plan_id = ${initial.variant.planId} FOR UPDATE`;
++  const current = await tx.postDistributionAttempt.findFirst({ where: { id: attemptId, creatorId }, include: { variant: { include: { plan: true } } } });
++  if (!current) throw new PostDistributionNotFoundError("Attempt not found.");
++  const plan = current.variant?.plan;
++  if (!plan?.conversationalGroupKey?.startsWith("conversation-draft:")) return current;
++  const journal = (plan.assistantPlan as any)?.conversation_draft_v1;
++  const entry = journal?.variants?.[current.destination];
++  const receipt = Array.isArray(journal?.handoffReceipts)
++    ? journal.handoffReceipts.find((row: any) => row?.attemptId === current.id)
++    : null;
++  const copy = current.destination === "x"
++    ? { postText: current.variant.postText ?? "" }
++    : { title: current.variant.title ?? "", bodyText: current.variant.bodyText ?? "", tags: current.variant.tags };
++  const latest = Array.isArray(entry?.revisions)
++    ? [...entry.revisions].reverse().find((row: any) => row?.revision === entry.revision)
++    : null;
++  if (!receipt || !entry || receipt.variantId !== current.variantId || receipt.revision !== entry.revision || receipt.planId !== current.variant.planId || receipt.destination !== current.destination || receipt.sourcePostId !== current.postId || receipt.copyHash !== fingerprint(copy) || !latest || fingerprint(latest.after) !== receipt.copyHash || !current.variant.approvedAt || !["handed_off", "fill_failed"].includes(current.variant.status)) {
++    throw new PostDistributionValidationError("This handoff belongs to an older confirmed draft. Review the current copy before continuing.", [{ field: "conversation_managed", issue: "stale_attempt" }]);
++  }
++  if (["posted", "abandoned", "failed"].includes(current.status) || (mode === "fill" && ["fill_partial", "fill_succeeded"].includes(current.status))) {
++    throw new PostDistributionValidationError("This handoff already has a recorded outcome.", [{ field: "attempt", issue: "terminal_outcome" }]);
++  }
++  return current;
++}
++
+ export async function recordDistributionFillResult(
+   prisma: PrismaClient,
+   creatorId: string,
+   attemptId: string,
+   input: FillResultInput
+ ): Promise<DistributionAttemptWire> {
+-  const attempt = await prisma.postDistributionAttempt.findFirst({
+-    where: { id: attemptId, creatorId }
+-  });
+-  if (!attempt) {
+-    throw new PostDistributionNotFoundError("Attempt not found.");
+-  }
+-
+   const updated = await prisma.$transaction(async (tx) => {
++    const attempt = await assertCurrentManagedAttempt(tx, attemptId, creatorId, "fill");
+     const row = await tx.postDistributionAttempt.update({
+       where: { id: attemptId },
+       data: {
+@@ -963,10 +991,7 @@ export async function recordDistributionFillResult(
+       }
+     });
+     if (input.status === "fill_failed") {
+-      await tx.postDistributionVariant.update({
+-        where: { id: attempt.variantId },
+-        data: { status: "fill_failed" }
+-      });
++      await tx.postDistributionVariant.update({ where: { id: attempt.variantId }, data: { status: "fill_failed" } });
+     }
+     return row;
+   });
+@@ -990,7 +1015,7 @@ export async function completeDistributionAttempt(
+     where: { id: attemptId, creatorId },
+     include: {
+       variant: {
+-        select: { platformFields: true, plan: { select: { rhythmActionId: true, assistantPlan: true } } }
++        select: { platformFields: true, plan: { select: { rhythmActionId: true, assistantPlan: true, conversationalGroupKey: true } } }
+       }
+     }
+   });
+@@ -1019,6 +1044,9 @@ export async function completeDistributionAttempt(
+     input.external_id
+   );
+   const updated = await prisma.$transaction(async (tx) => {
++    if (attempt.variant?.plan?.conversationalGroupKey?.startsWith("conversation-draft:")) {
++      await assertCurrentManagedAttempt(tx, attemptId, creatorId, "complete");
++    }
+     const row = await tx.postDistributionAttempt.update({
+       where: { id: attemptId },
+       data: {
+@@ -1158,13 +1186,14 @@ export async function loadVariantForPackage(
+   attempt: DistributionAttemptWire;
+   variant: DistributionVariantWire;
+   assistant_plan: Record<string, unknown>;
++  plan_conversational_group_key: string | null;
+ } | null> {
+   const attemptRow = await prisma.postDistributionAttempt.findFirst({
+     where: { id: attemptId, creatorId },
+     include: {
+       variant: {
+         include: {
+-          plan: { select: { assistantPlan: true } },
++          plan: { select: { assistantPlan: true, conversationalGroupKey: true } },
+           attempts: { orderBy: { createdAt: "desc" }, take: 1 },
+           postbotTasks: { orderBy: { createdAt: "asc" } }
+         }
+@@ -1181,7 +1210,8 @@ export async function loadVariantForPackage(
+   return {
+     attempt: mapAttempt(attemptRow),
+     variant: mapVariant(attemptRow.variant),
+-    assistant_plan: assistantPlan
++    assistant_plan: assistantPlan,
++    plan_conversational_group_key: attemptRow.variant.plan.conversationalGroupKey
+   };
+ }
+ 
+diff --git "a/C:\\Users\\jorda\\Documents\\Codex\\2026-10-11\\c\\work\\relay\\work\\pcb04-accepted\\src\\server.ts" "b/C:\\Users\\jorda\\Documents\\Codex\\2026-10-11\\c\\work\\relay\\src\\server.ts"
+index 7160692..a99cd97 100644
+--- "a/C:\\Users\\jorda\\Documents\\Codex\\2026-10-11\\c\\work\\relay\\work\\pcb04-accepted\\src\\server.ts"
++++ "b/C:\\Users\\jorda\\Documents\\Codex\\2026-10-11\\c\\work\\relay\\src\\server.ts"
+@@ -3465,13 +3477,18 @@ export function createApp(config: AppConfig): CreateAppResult {
+         .status(403)
+         .json(errorEnvelope("FORBIDDEN", "Session is not linked to an account.", traceId));
+     }
++    const extensionAccount = await config.prisma.account.findUnique({ where: { id: accountId }, select: { primaryRelayCreatorId: true } });
++    const extensionCreatorId = extensionAccount?.primaryRelayCreatorId?.trim() ?? "";
+     const attemptId = typeof req.params.attempt_id === "string" ? req.params.attempt_id.trim() : "";
+     if (!attemptId) {
+       return res
+         .status(400)
+         .json(errorEnvelope("VALIDATION_ERROR", "attempt_id is required.", traceId));
+     }
+-    const result = await buildCrossPostPackageFromAttempt(config.prisma, accountId, attemptId);
++    const handoffR2 = getR2ClientConfigFromEnv();
++    const result = await buildCrossPostPackageFromAttempt(config.prisma, accountId, attemptId, handoffR2
++      ? (key, maxBytes) => getR2ObjectBuffer(handoffR2, key, { timeoutMs: 10_000, maxBytes })
++      : undefined);
+     switch (result.status) {
+       case "no_primary_creator":
+         return res.status(403).json(
+@@ -3494,8 +3511,8 @@ export function createApp(config: AppConfig): CreateAppResult {
+           errorEnvelope("VALIDATION_ERROR", result.message, traceId)
+         );
+       case "ok":
+-        await config.prisma.postDistributionAttempt.update({
+-          where: { id: attemptId },
++        await config.prisma.postDistributionAttempt.updateMany({
++          where: { id: attemptId, creatorId: extensionCreatorId, status: "started" },
+           data: { status: "package_fetched" }
+         });
+         res.setHeader("Cache-Control", "private, no-store");
+@@ -3504,7 +3521,8 @@ export function createApp(config: AppConfig): CreateAppResult {
+             {
+               destination: result.destination,
+               package: result.package,
+-              attempt_id: attemptId
++              attempt_id: attemptId,
++              ...(result.managed_handoff_v1 ? { managed_handoff_v1: result.managed_handoff_v1 } : {})
+             },
+             traceId
+           )
+diff --git "a/C:\\Users\\jorda\\Documents\\Codex\\2026-10-11\\c\\work\\relay\\work\\pcb-final-baseline\\src\\extension\\cross-post-media-entries.ts" "b/C:\\Users\\jorda\\Documents\\Codex\\2026-10-11\\c\\work\\relay\\src\\extension\\cross-post-media-entries.ts"
+index 2bb932b..4b995fe 100644
+--- "a/C:\\Users\\jorda\\Documents\\Codex\\2026-10-11\\c\\work\\relay\\work\\pcb-final-baseline\\src\\extension\\cross-post-media-entries.ts"
++++ "b/C:\\Users\\jorda\\Documents\\Codex\\2026-10-11\\c\\work\\relay\\src\\extension\\cross-post-media-entries.ts"
+@@ -10,6 +10,7 @@ export type CrossPostPackageMediaEntry = {
+   filename: string;
+   mime_type: string;
+   content_url: string;
++  sha256?: string;
+ };
+ 
+ /** Relay export route used by the extension to fetch media bytes with its bearer token. */
+diff --git "a/C:\\Users\\jorda\\Documents\\Codex\\2026-10-11\\c\\work\\relay\\work\\pcb-final-baseline\\extension\\src\\lib\\cross-post-fetch.ts" "b/C:\\Users\\jorda\\Documents\\Codex\\2026-10-11\\c\\work\\relay\\extension\\src\\lib\\cross-post-fetch.ts"
+index ccf0e8c..a469716 100644
+--- "a/C:\\Users\\jorda\\Documents\\Codex\\2026-10-11\\c\\work\\relay\\work\\pcb-final-baseline\\extension\\src\\lib\\cross-post-fetch.ts"
++++ "b/C:\\Users\\jorda\\Documents\\Codex\\2026-10-11\\c\\work\\relay\\extension\\src\\lib\\cross-post-fetch.ts"
+@@ -11,12 +11,14 @@ import { parseXCrossPostPackage } from "./cross-post-types";
+ import * as storage from "./storage";
+ import { BENCH_X_HANDOFF_MAX_BYTES, BENCH_X_HANDOFF_PACKET_TTL_MS, encodeBenchXHandoffBytes, parseBenchXHandoffEnvelope, type BenchXHandoffPacket } from "./bench-x-handoff";
+ import { BENCH_DEVIANTART_HANDOFF_MAX_BYTES, createBenchDeviantArtHandoffPacket, parseBenchDeviantArtHandoffEnvelope, type BenchDeviantArtHandoffPacket } from "./bench-deviantart-handoff";
++import { createManagedCrossPostHandoffPacket, type ManagedCrossPostHandoffPacket } from "./managed-cross-post-handoff";
+ 
+ export type CrossPostFetchResult =
+   | { ok: true; relay_post_id: string; destination: CrossPostDestination; schedule_event_id?: never }
+   | { ok: true; relay_post_id: string; destination: "x"; schedule_event_id: string }
+   | { ok: true; relay_post_id: string; destination: "x"; handoff_id: string; packet: BenchXHandoffPacket }
+   | { ok: true; relay_post_id: string; destination: "deviantart"; handoff_id: string; packet: BenchDeviantArtHandoffPacket }
++  | { ok: true; relay_post_id: string; destination: "x" | "deviantart"; managed_attempt_id: string; packet: ManagedCrossPostHandoffPacket }
+   | {
+       ok: false;
+       reason:
+@@ -91,8 +93,6 @@ export async function fetchAndStoreCrossPostPackage(
+     return { ok: false, reason: "not_connected" };
+   }
+ 
+-  await storage.clearPendingCrossPost();
+-
+   const url = attempt
+     ? attemptPackagePath(attempt)
+     : packagePath(destination, postId);
+@@ -115,9 +115,21 @@ export async function fetchAndStoreCrossPostPackage(
+   }
+ 
+   const json = (await res.json().catch(() => ({}))) as {
+-    data?: { destination?: CrossPostDestination; package?: unknown };
++    data?: { destination?: CrossPostDestination; package?: unknown; attempt_id?: string; managed_handoff_v1?: unknown };
+   };
++  if (attempt && json.data?.managed_handoff_v1 !== undefined) {
++    if ((destination !== "x" && destination !== "deviantart") || json.data.attempt_id !== attempt) return { ok: false, reason: "package_fetch_failed", detail: "attempt_mismatch" };
++    const managed = await createManagedCrossPostHandoffPacket({
++      data: json.data,
++      message: { relay_post_id: postId, destination, distribution_attempt_id: attempt },
++      token: grant.token.trim()
++    });
++    if (managed && "revoked" in managed) { await storage.clearGrant(); return { ok: false, reason: "grant_revoked" }; }
++    if (!managed) return { ok: false, reason: "package_fetch_failed", detail: "invalid_managed_package" };
++    return { ok: true, relay_post_id: managed.packet.relay_post_id, destination, managed_attempt_id: attempt, packet: managed.packet };
++  }
+   try {
++    await storage.clearPendingCrossPost();
+     const resolvedDestination =
+       attempt && json.data?.destination ? json.data.destination : destination;
+     const platform = getCrossPostPlatform(resolvedDestination);
+diff --git "a/C:\\Users\\jorda\\Documents\\Codex\\2026-10-11\\c\\work\\relay\\work\\pcb-final-baseline\\extension\\src\\lib\\cross-post-flow.ts" "b/C:\\Users\\jorda\\Documents\\Codex\\2026-10-11\\c\\work\\relay\\extension\\src\\lib\\cross-post-flow.ts"
+index f720d95..80f54a2 100644
+--- "a/C:\\Users\\jorda\\Documents\\Codex\\2026-10-11\\c\\work\\relay\\work\\pcb-final-baseline\\extension\\src\\lib\\cross-post-flow.ts"
++++ "b/C:\\Users\\jorda\\Documents\\Codex\\2026-10-11\\c\\work\\relay\\extension\\src\\lib\\cross-post-flow.ts"
+@@ -16,6 +16,7 @@ export type CrossPostFlowResult =
+   | { ok: true; tab_id: number; relay_post_id: string; destination: "x"; schedule_event_id: string }
+   | { ok: true; tab_id: number; relay_post_id: string; destination: "x"; handoff_id: string }
+   | { ok: true; tab_id: number; relay_post_id: string; destination: "deviantart"; handoff_id: string }
++  | { ok: true; tab_id: number; relay_post_id: string; destination: "x" | "deviantart"; attempt_id: string }
+   | {
+       ok: false;
+       reason:
+@@ -39,6 +40,20 @@ export async function runRelayCrossPostFlow(
+   if (!fetched.ok) {
+     return fetched;
+   }
++  if ("managed_attempt_id" in fetched) {
++    if (fetched.managed_attempt_id !== message.distribution_attempt_id || fetched.destination !== message.destination || fetched.relay_post_id !== message.relay_post_id) return { ok: false, reason: "package_fetch_failed", detail: "attempt_mismatch" };
++    let tabId: number;
++    try {
++      const opened = await openCrossPostTab(fetched.destination);
++      if (opened === undefined) return { ok: false, reason: "tab_open_failed" };
++      tabId = opened;
++    } catch { return { ok: false, reason: "tab_open_failed" }; }
++    try { await waitForCrossPostTabReady(tabId, fetched.destination); }
++    catch { return { ok: false, reason: "tab_load_timeout" }; }
++    const injected = await injectCrossPostFillScript(tabId, fetched.destination, undefined, fetched.packet);
++    if (!injected) return { ok: false, reason: "inject_failed" };
++    return { ok: true, tab_id: tabId, relay_post_id: fetched.relay_post_id, destination: fetched.destination, attempt_id: fetched.managed_attempt_id };
++  }
+   let destination = requestedDestination;
+   let checkedScheduleEventId: string | undefined;
+   if ("schedule_event_id" in message) {
+diff --git "a/C:\\Users\\jorda\\Documents\\Codex\\2026-10-11\\c\\work\\relay\\work\\pcb-final-baseline\\extension\\src\\lib\\cross-post-tab-inject.ts" "b/C:\\Users\\jorda\\Documents\\Codex\\2026-10-11\\c\\work\\relay\\extension\\src\\lib\\cross-post-tab-inject.ts"
+index 92c440e..25db671 100644
+--- "a/C:\\Users\\jorda\\Documents\\Codex\\2026-10-11\\c\\work\\relay\\work\\pcb-final-baseline\\extension\\src\\lib\\cross-post-tab-inject.ts"
++++ "b/C:\\Users\\jorda\\Documents\\Codex\\2026-10-11\\c\\work\\relay\\extension\\src\\lib\\cross-post-tab-inject.ts"
+@@ -4,6 +4,7 @@ import { getCrossPostPlatform } from "./cross-post-registry";
+ import type { CrossPostDestination } from "./cross-post-types";
+ import { BENCH_X_HANDOFF_PACKET_KEY, type BenchXHandoffPacket } from "./bench-x-handoff";
+ import { BENCH_DEVIANTART_HANDOFF_PACKET_KEY, type BenchDeviantArtHandoffPacket } from "./bench-deviantart-handoff";
++import { MANAGED_CROSS_POST_HANDOFF_PACKET_KEY, type ManagedCrossPostHandoffPacket } from "./managed-cross-post-handoff";
+ 
+ export { DEVIANTART_SUBMIT_URL, PATREON_NEW_POST_URL, X_COMPOSE_URL };
+ 
+@@ -76,7 +77,8 @@ export async function openCrossPostTab(
+ export async function injectCrossPostFillScript(
+   tabId: number,
+   destination: CrossPostDestination,
+-  benchPacket?: BenchXHandoffPacket | BenchDeviantArtHandoffPacket
++  benchPacket?: BenchXHandoffPacket | BenchDeviantArtHandoffPacket,
++  managedPacket?: ManagedCrossPostHandoffPacket
+ ): Promise<boolean> {
+   const { fillScript } = getCrossPostPlatform(destination);
+   try {
+@@ -90,6 +92,11 @@ export async function injectCrossPostFillScript(
+       func: (packet: BenchDeviantArtHandoffPacket, key: string) => { Object.defineProperty(globalThis, key, { value: packet, configurable: true, writable: false }); },
+       args: [benchPacket as BenchDeviantArtHandoffPacket, BENCH_DEVIANTART_HANDOFF_PACKET_KEY]
+     });
++    if (managedPacket && managedPacket.destination === destination) await browser.scripting.executeScript({
++      target: { tabId }, world: "ISOLATED",
++      func: (packet: ManagedCrossPostHandoffPacket, key: string) => { Object.defineProperty(globalThis, key, { value: packet, configurable: true, writable: false }); },
++      args: [managedPacket, MANAGED_CROSS_POST_HANDOFF_PACKET_KEY]
++    });
+     await browser.scripting.executeScript({
+       target: { tabId },
+       files: [fillScript]
+
+NEW FILE extension/src/lib/managed-cross-post-handoff.ts
+import { RELAY_API_BASE } from "./constants";
+import { encodeBenchXHandoffBytes } from "./bench-x-handoff";
+
+export const MANAGED_CROSS_POST_HANDOFF_PACKET_KEY = "__relayManagedCrossPostHandoffPacket" as const;
+export const MANAGED_HANDOFF_MAX_BYTES = 1024 * 1024;
+const PACKET_TTL_MS = 60_000;
+
+type ManagedCrossPostHandoffCommon = {
+  version: 1;
+  attempt_id: string;
+  relay_post_id: string;
+  media_id: string;
+  filename: string;
+  sha256: string;
+  jpeg_base64: string;
+  expires_at: number;
+};
+
+export type ManagedCrossPostHandoffPacket =
+  | (ManagedCrossPostHandoffCommon & { destination: "x"; post_text: string })
+  | (ManagedCrossPostHandoffCommon & { destination: "deviantart"; title: string; body_text: string; tags: string[] });
+
+export type ManagedAttemptMessage = { relay_post_id: string; destination: "x" | "deviantart"; distribution_attempt_id: string };
+
+function record(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function exact(value: Record<string, unknown>, keys: string[]): boolean {
+  return Object.keys(value).length === keys.length && keys.every((key) => Object.hasOwn(value, key));
+}
+
+async function sha256(bytes: Uint8Array): Promise<string> {
+  return Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", bytes)), (value) => value.toString(16).padStart(2, "0")).join("");
+}
+
+function canonical(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(canonical);
+  if (value && typeof value === "object") return Object.fromEntries(Object.entries(value).sort(([a], [b]) => a.localeCompare(b)).map(([key, item]) => [key, canonical(item)]));
+  return value;
+}
+
+async function readBytes(response: Response): Promise<Uint8Array | null> {
+  if (!response.body) return null;
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      size += value.byteLength;
+      if (size > MANAGED_HANDOFF_MAX_BYTES) { await reader.cancel(); return null; }
+      chunks.push(value);
+    }
+  } catch { return null; }
+  if (size < 3) return null;
+  const bytes = new Uint8Array(size);
+  let offset = 0;
+  for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.length; }
+  return bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff ? bytes : null;
+}
+
+/** Validates a server-owned attempt envelope and binds its exact copy and JPEG to one tab. */
+export async function createManagedCrossPostHandoffPacket(input: {
+  data: unknown;
+  message: ManagedAttemptMessage;
+  token: string;
+  fetcher?: typeof fetch;
+}): Promise<{ packet: ManagedCrossPostHandoffPacket } | { revoked: true } | null> {
+  const data = input.data;
+  if (!record(data) || data.attempt_id !== input.message.distribution_attempt_id || data.destination !== input.message.destination || !record(data.managed_handoff_v1) || !record(data.package)) return null;
+  const authority = data.managed_handoff_v1;
+  const authorityKeys = ["attempt_id", "post_id", "destination", "variant_id", "revision", "task_id", "scheduled_for", "copy_hash", "export_hash"];
+  if (!exact(authority, authorityKeys) || authority.attempt_id !== input.message.distribution_attempt_id || authority.post_id !== input.message.relay_post_id || authority.destination !== input.message.destination || typeof authority.variant_id !== "string" || !Number.isSafeInteger(authority.revision) || typeof authority.task_id !== "string" || typeof authority.scheduled_for !== "string" || typeof authority.copy_hash !== "string" || !/^[a-f0-9]{64}$/.test(authority.copy_hash) || typeof authority.export_hash !== "string" || !/^[a-f0-9]{64}$/.test(authority.export_hash)) return null;
+  const pkg = data.package;
+  if (!record(pkg) || pkg.relay_post_id !== input.message.relay_post_id || !Array.isArray(pkg.media) || pkg.media.length !== 1 || !record(pkg.media[0])) return null;
+  const media = pkg.media[0];
+  if (!exact(media, ["media_id", "filename", "mime_type", "content_url", "sha256"]) || typeof media.media_id !== "string" || typeof media.filename !== "string" || media.mime_type !== "image/jpeg" || typeof media.content_url !== "string" || !media.content_url.startsWith("/api/v1/export/media/") || !media.content_url.endsWith(`/${encodeURIComponent(media.media_id)}/content`) || media.sha256 !== authority.export_hash) return null;
+
+  let copy: Record<string, unknown>;
+  if (input.message.destination === "x") {
+    if (!exact(pkg, ["relay_post_id", "title", "body_text", "post_text", "media"]) || typeof pkg.title !== "string" || typeof pkg.body_text !== "string" || pkg.body_text !== "" || typeof pkg.post_text !== "string" || !pkg.post_text.trim() || pkg.title !== pkg.post_text) return null;
+    copy = { postText: pkg.post_text };
+  } else {
+    if (!exact(pkg, ["relay_post_id", "title", "body_text", "tags", "media"]) || typeof pkg.title !== "string" || !pkg.title.trim() || typeof pkg.body_text !== "string" || !pkg.body_text.trim() || !Array.isArray(pkg.tags) || pkg.tags.length > 30 || !pkg.tags.every((tag) => typeof tag === "string")) return null;
+    copy = { title: pkg.title, bodyText: pkg.body_text, tags: pkg.tags };
+  }
+  if (await sha256(new TextEncoder().encode(JSON.stringify(canonical(copy)))) !== authority.copy_hash) return null;
+
+  let response: Response;
+  try { response = await (input.fetcher ?? fetch)(`${RELAY_API_BASE}${media.content_url}`, { method: "GET", cache: "no-store", headers: { Accept: "image/jpeg", Authorization: `Bearer ${input.token}` } }); }
+  catch { return null; }
+  if (response.status === 401) return { revoked: true };
+  if (!response.ok || response.headers.get("content-type")?.split(";")[0]?.trim().toLowerCase() !== "image/jpeg") return null;
+  const bytes = await readBytes(response);
+  if (!bytes || await sha256(bytes) !== authority.export_hash) return null;
+  const common = { version: 1 as const, attempt_id: input.message.distribution_attempt_id, relay_post_id: input.message.relay_post_id, media_id: media.media_id, filename: media.filename, sha256: authority.export_hash, jpeg_base64: encodeBenchXHandoffBytes(bytes), expires_at: Date.now() + PACKET_TTL_MS };
+  const packet: ManagedCrossPostHandoffPacket = input.message.destination === "x"
+    ? { ...common, destination: "x", post_text: copy.postText as string }
+    : { ...common, destination: "deviantart", title: copy.title as string, body_text: copy.bodyText as string, tags: [...copy.tags as string[]] };
+  return { packet };
+}
+
+export function isManagedCrossPostHandoffPacket(value: unknown, now = Date.now()): value is ManagedCrossPostHandoffPacket {
+  if (!record(value)) return false;
+  const common = ["version", "attempt_id", "relay_post_id", "destination", "media_id", "filename", "sha256", "jpeg_base64", "expires_at"];
+  const fields = value.destination === "x" ? ["post_text"] : value.destination === "deviantart" ? ["title", "body_text", "tags"] : [];
+  if (!fields.length || !exact(value, [...common, ...fields]) || value.version !== 1 || typeof value.attempt_id !== "string" || !value.attempt_id.trim() || typeof value.relay_post_id !== "string" || !value.relay_post_id.trim() || typeof value.media_id !== "string" || !value.media_id.trim() || typeof value.filename !== "string" || !value.filename.toLowerCase().endsWith(".jpg") || typeof value.sha256 !== "string" || !/^[a-f0-9]{64}$/.test(value.sha256) || typeof value.jpeg_base64 !== "string" || value.jpeg_base64.length === 0 || value.jpeg_base64.length > Math.ceil(MANAGED_HANDOFF_MAX_BYTES / 3) * 4 || !/^[A-Za-z0-9+/]+={0,2}$/.test(value.jpeg_base64) || typeof value.expires_at !== "number" || value.expires_at <= now) return false;
+  if (value.destination === "x") return typeof value.post_text === "string" && !!value.post_text.trim() && value.post_text.length <= 280;
+  return typeof value.title === "string" && !!value.title.trim() && typeof value.body_text === "string" && !!value.body_text.trim() && Array.isArray(value.tags) && value.tags.length <= 30 && value.tags.every((tag) => typeof tag === "string");
+}
+
+export function decodeManagedHandoffJpeg(value: string): Uint8Array | null {
+  if (!value || value.length > Math.ceil(MANAGED_HANDOFF_MAX_BYTES / 3) * 4 || !/^[A-Za-z0-9+/]+={0,2}$/.test(value)) return null;
+  try {
+    const binary = atob(value);
+    if (binary.length < 3 || binary.length > MANAGED_HANDOFF_MAX_BYTES) return null;
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+    return bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff ? bytes : null;
+  } catch { return null; }
+}
+
+diff --git "a/C:\\Users\\jorda\\Documents\\Codex\\2026-10-11\\c\\work\\relay\\work\\pcb-final-baseline\\extension\\src\\content\\fill-x-compose.ts" "b/C:\\Users\\jorda\\Documents\\Codex\\2026-10-11\\c\\work\\relay\\extension\\src\\content\\fill-x-compose.ts"
+index 9171ff1..451e345 100644
+--- "a/C:\\Users\\jorda\\Documents\\Codex\\2026-10-11\\c\\work\\relay\\work\\pcb-final-baseline\\extension\\src\\content\\fill-x-compose.ts"
++++ "b/C:\\Users\\jorda\\Documents\\Codex\\2026-10-11\\c\\work\\relay\\extension\\src\\content\\fill-x-compose.ts"
+@@ -10,6 +10,7 @@ import {
+   type XCrossPostPackage
+ } from "../lib/cross-post-types";
+ import { BENCH_X_HANDOFF_PACKET_KEY, decodeBenchXHandoffBytes, isBenchXHandoffPacket, type BenchXHandoffPacket } from "../lib/bench-x-handoff";
++import { decodeManagedHandoffJpeg, isManagedCrossPostHandoffPacket, MANAGED_CROSS_POST_HANDOFF_PACKET_KEY, type ManagedCrossPostHandoffPacket } from "../lib/managed-cross-post-handoff";
+ import {
+   notifyDistributionFillResult,
+   readPendingAttemptId,
+@@ -31,6 +32,7 @@ const POLL_MS = 200;
+ const BANNER_ID = "relay-cross-post-banner";
+ const GRANT_STORAGE_KEY = "grant";
+ const MAX_IMAGES = 4;
++let managedHandoffAttemptId: string | null = null;
+ 
+ const COMPOSE_SELECTORS = [
+   '[data-testid="tweetTextarea_0"]',
+@@ -213,12 +215,14 @@ async function waitForExpectedText(
+   return composeFieldMatchesExpected(el.textContent ?? "", expectedText);
+ }
+ 
+-async function settleComposeAfterInsert(el: HTMLElement, expectedText: string): Promise<boolean> {
+-  if (textTriggersHashtagTypeahead(expectedText)) {
++async function settleComposeAfterInsert(el: HTMLElement, expectedText: string, exactLiteral = false): Promise<boolean> {
++  if (!exactLiteral && textTriggersHashtagTypeahead(expectedText)) {
+     await waitForTypeaheadClosed(el, typeaheadSettleTimeoutMs(expectedText));
+   }
+-  const matched = await waitForExpectedText(el, expectedText, verifyTimeoutMsForText(expectedText));
+-  if (matched && textTriggersHashtagTypeahead(expectedText)) {
++  const matched = exactLiteral
++    ? (await waitForExpectedText(el, expectedText, verifyTimeoutMsForText(expectedText))) && (el.textContent ?? "") === expectedText
++    : await waitForExpectedText(el, expectedText, verifyTimeoutMsForText(expectedText));
++  if (!exactLiteral && matched && textTriggersHashtagTypeahead(expectedText)) {
+     el.focus();
+     moveComposeCursorToEnd(el);
+     try {
+@@ -251,6 +255,7 @@ type InsertComposeSegmentOptions = {
+   append: boolean;
+   expectedFull: string;
+   expectedPartial?: string;
++  exactLiteral?: boolean;
+ };
+ 
+ async function pasteSegmentIntoCompose(el: HTMLElement, segment: string): Promise<boolean> {
+@@ -284,6 +289,7 @@ function segmentVerifyTarget(opts: InsertComposeSegmentOptions): string {
+ 
+ function segmentMatchesTarget(el: HTMLElement, opts: InsertComposeSegmentOptions): boolean {
+   const target = segmentVerifyTarget(opts);
++  if (opts.exactLiteral) return (el.textContent ?? "") === target;
+   if (opts.expectedPartial) {
+     return composeFieldMatchesExpected(el.textContent ?? "", target);
+   }
+@@ -312,13 +318,13 @@ async function insertComposeSegment(
+   const verifyTarget = segmentVerifyTarget(opts);
+ 
+   if (await pasteSegmentIntoCompose(el, segment)) {
+-    if (await settleComposeAfterInsert(el, verifyTarget)) {
++    if (await settleComposeAfterInsert(el, verifyTarget, Boolean(opts.exactLiteral))) {
+       return segmentMatchesTarget(el, opts);
+     }
+   }
+ 
+   if (shouldSkipInsertFallback(el, opts.expectedFull)) {
+-    return settleComposeAfterInsert(el, opts.expectedFull);
++    return settleComposeAfterInsert(el, opts.expectedFull, Boolean(opts.exactLiteral));
+   }
+ 
+   if (opts.append || !opts.clearFirst) {
+@@ -327,13 +333,13 @@ async function insertComposeSegment(
+ 
+   if (await insertTextSegmentIntoCompose(el, segment)) {
+     el.dispatchEvent(new InputEvent("input", { bubbles: true }));
+-    if (await settleComposeAfterInsert(el, verifyTarget)) {
++    if (await settleComposeAfterInsert(el, verifyTarget, Boolean(opts.exactLiteral))) {
+       return segmentMatchesTarget(el, opts);
+     }
+   }
+ 
+   if (shouldSkipInsertFallback(el, opts.expectedFull)) {
+-    return settleComposeAfterInsert(el, opts.expectedFull);
++    return settleComposeAfterInsert(el, opts.expectedFull, Boolean(opts.exactLiteral));
+   }
+ 
+   return false;
+@@ -450,30 +456,33 @@ async function clearComposeField(el: HTMLElement): Promise<void> {
+ async function fillComposeField(
+   el: HTMLElement,
+   text: string,
+-  options: { clearFirst?: boolean; allowTextContentFallback?: boolean } = {}
++  options: { clearFirst?: boolean; allowTextContentFallback?: boolean; preserveWhitespace?: boolean } = {}
+ ): Promise<boolean> {
+   const clearFirst = options.clearFirst ?? true;
+   const allowTextContentFallback = options.allowTextContentFallback ?? true;
+   el.focus();
+   if (!el.isContentEditable) return false;
+   el.click();
+-  const pasteText = text.trim();
++  const pasteText = options.preserveWhitespace ? text : text.trim();
+ 
+   if (shouldSkipInsertFallback(el, pasteText)) {
+-    return true;
++    return options.preserveWhitespace ? (el.textContent ?? "") === pasteText : true;
+   }
+ 
+   const segmentOk = await insertComposeSegment(el, pasteText, {
+     clearFirst,
+     append: false,
+-    expectedFull: pasteText
++    expectedFull: pasteText,
++    exactLiteral: options.preserveWhitespace
+   });
+   if (segmentOk) {
+     return true;
+   }
+ 
+   if (!allowTextContentFallback) {
+-    return shouldSkipInsertFallback(el, pasteText);
++    return options.preserveWhitespace
++      ? (el.textContent ?? "") === pasteText
++      : shouldSkipInsertFallback(el, pasteText);
+   }
+ 
+   if (clearFirst) {
+@@ -491,7 +500,7 @@ async function fillComposeField(
+       })
+     );
+     el.dispatchEvent(new InputEvent("input", { bubbles: true }));
+-    return settleComposeAfterInsert(el, pasteText);
++    return settleComposeAfterInsert(el, pasteText, Boolean(options.preserveWhitespace));
+   } catch {
+     return false;
+   }
+@@ -500,8 +509,13 @@ async function fillComposeField(
+ async function fillComposeText(
+   el: HTMLElement,
+   postText: string,
+-  mediaAttached: boolean
++  mediaAttached: boolean,
++  preserveWhitespace = false
+ ): Promise<{ ok: boolean; mode: "split" | "single" }> {
++  if (preserveWhitespace) {
++    const ok = await fillComposeField(el, postText, { clearFirst: !mediaAttached, allowTextContentFallback: !textTriggersHashtagTypeahead(postText), preserveWhitespace: true });
++    return { ok, mode: "single" };
++  }
+   const split = splitXPostTextForFill(postText);
+   const clearFirst = !mediaAttached;
+ 
+@@ -808,6 +822,18 @@ async function takeBenchHandoffPacket(): Promise<{ packet: BenchXHandoffPacket;
+   return digest === raw.sha256 ? { packet: raw, bytes } : "invalid";
+ }
+ 
++async function takeManagedHandoffPacket(): Promise<{ packet: ManagedCrossPostHandoffPacket; bytes: Uint8Array } | null | "invalid"> {
++  const target = globalThis as typeof globalThis & Record<string, unknown>;
++  if (!Object.hasOwn(target, MANAGED_CROSS_POST_HANDOFF_PACKET_KEY)) return null;
++  const raw = target[MANAGED_CROSS_POST_HANDOFF_PACKET_KEY];
++  delete target[MANAGED_CROSS_POST_HANDOFF_PACKET_KEY];
++  if (!isManagedCrossPostHandoffPacket(raw) || raw.destination !== "x") return "invalid";
++  const bytes = decodeManagedHandoffJpeg(raw.jpeg_base64);
++  if (!bytes) return "invalid";
++  const digest = Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", bytes)), value => value.toString(16).padStart(2, "0")).join("");
++  return digest === raw.sha256 ? { packet: raw, bytes } : "invalid";
++}
++
+ function buildBannerMessage(textOk: boolean, imageOutcome: ImageAttachOutcome): {
+   message: string;
+   tone: "success" | "error" | "partial";
+@@ -857,15 +883,22 @@ async function waitForComposeField(): Promise<HTMLElement | null> {
+ }
+ 
+ void (async () => {
++  const managedHandoff = await takeManagedHandoffPacket();
++  if (managedHandoff === "invalid") { showBanner("Relay could not verify the confirmed X draft. Return to Relay and open the handoff again.", "error"); return; }
++  if (managedHandoff) managedHandoffAttemptId = managedHandoff.packet.attempt_id;
+   const handoffPacket = await takeBenchHandoffPacket();
+   if (handoffPacket === "invalid") { showBanner("Relay could not verify the scheduled X draft image. Return to Relay and retry the handoff.", "error"); return; }
+   let pkg: XCrossPostPackage | null;
+-  if (handoffPacket) {
++  if (managedHandoff) {
++    const postText = "post_text" in managedHandoff.packet ? managedHandoff.packet.post_text : "";
++    pkg = { relay_post_id: managedHandoff.packet.relay_post_id, title: postText, body_text: "", post_text: postText, media: [{ media_id: managedHandoff.packet.media_id, filename: managedHandoff.packet.filename, mime_type: "image/jpeg", content_url: "" }] };
++  } else if (handoffPacket) {
+     pkg = { relay_post_id: handoffPacket.packet.relay_post_id, title: handoffPacket.packet.post_text, body_text: "", post_text: handoffPacket.packet.post_text, media: [{ media_id: handoffPacket.packet.media_id, filename: handoffPacket.packet.filename, mime_type: "image/jpeg", content_url: "" }] };
+   } else pkg = await readPendingPackage();
+   if (!pkg || !isFillableXCrossPostPackage(pkg)) {
+     showBanner("Relay could not load the X cross-post draft.", "error");
+-    if (!handoffPacket) await clearPending();
++    if (!handoffPacket && !managedHandoff) await clearPending();
++    if (managedHandoff) await notifyDistributionFillResult({ attemptId: managedHandoff.packet.attempt_id, status: "fill_failed", fillResult: { page_url: window.location.href }, errorCode: "package_missing" });
+     return;
+   }
+ 
+@@ -875,19 +908,20 @@ void (async () => {
+       "Relay opened X but could not find the compose field. Paste your draft manually.",
+       "partial"
+     );
+-    if (!handoffPacket) await clearPending();
++    if (!handoffPacket && !managedHandoff) await clearPending();
++    if (managedHandoff) await notifyDistributionFillResult({ attemptId: managedHandoff.packet.attempt_id, status: "fill_partial", fillResult: { post_text_ok: false, images_attached: 0, page_url: window.location.href }, errorCode: "compose_field_missing" });
+     return;
+   }
+ 
+-  const preparedFiles = handoffPacket ? [new File([handoffPacket.bytes], handoffPacket.packet.filename, { type: "image/jpeg" })] : undefined;
++  const preparedFiles = managedHandoff ? [new File([managedHandoff.bytes], managedHandoff.packet.filename, { type: "image/jpeg" })] : handoffPacket ? [new File([handoffPacket.bytes], handoffPacket.packet.filename, { type: "image/jpeg" })] : undefined;
+   const imageOutcome = await attemptImageAttach(pkg, field, preparedFiles);
+   const mediaAttached = imageOutcome.attachedCount > 0;
+-  const textFill = await fillComposeText(field, pkg.post_text, mediaAttached);
++  const textFill = await fillComposeText(field, pkg.post_text, mediaAttached, Boolean(managedHandoff));
+   const textOk = textFill.ok;
+   const banner = buildBannerMessage(textOk, imageOutcome);
+   showBanner(banner.message, banner.tone);
+-  if (!handoffPacket) {
+-    const attemptId = await readPendingAttemptId();
++  if (!handoffPacket || managedHandoff) {
++    const attemptId = managedHandoff?.packet.attempt_id ?? await readPendingAttemptId();
+     await notifyDistributionFillResult({
+     attemptId,
+     status:
+@@ -906,6 +940,8 @@ void (async () => {
+       page_url: window.location.href
+     }
+     });
+-    await clearPending();
++    if (!managedHandoff) await clearPending();
+   }
+-})();
++})().catch(async () => {
++  if (managedHandoffAttemptId) await notifyDistributionFillResult({ attemptId: managedHandoffAttemptId, status: "fill_failed", fillResult: { page_url: window.location.href }, errorCode: "script_error" });
++});
+diff --git "a/C:\\Users\\jorda\\Documents\\Codex\\2026-10-11\\c\\work\\relay\\work\\pcb-final-baseline\\extension\\src\\content\\fill-deviantart-submit.ts" "b/C:\\Users\\jorda\\Documents\\Codex\\2026-10-11\\c\\work\\relay\\extension\\src\\content\\fill-deviantart-submit.ts"
+index c23ab62..6db97c2 100644
+--- "a/C:\\Users\\jorda\\Documents\\Codex\\2026-10-11\\c\\work\\relay\\work\\pcb-final-baseline\\extension\\src\\content\\fill-deviantart-submit.ts"
++++ "b/C:\\Users\\jorda\\Documents\\Codex\\2026-10-11\\c\\work\\relay\\extension\\src\\content\\fill-deviantart-submit.ts"
+@@ -16,6 +16,7 @@ import {
+ } from "../lib/cross-post-types";
+ import { BENCH_DEVIANTART_HANDOFF_PACKET_KEY, isBenchDeviantArtHandoffPacket, type BenchDeviantArtHandoffPacket } from "../lib/bench-deviantart-handoff";
+ import { decodeBenchXHandoffBytes } from "../lib/bench-x-handoff";
++import { decodeManagedHandoffJpeg, isManagedCrossPostHandoffPacket, MANAGED_CROSS_POST_HANDOFF_PACKET_KEY, type ManagedCrossPostHandoffPacket } from "../lib/managed-cross-post-handoff";
+ 
+ const WAIT_MS = 12_000;
+ const PHASE2_WAIT_MS = 65_000;
+@@ -24,6 +25,7 @@ const BANNER_ID = "relay-cross-post-banner";
+ const MAX_IMAGES = 1;
+ const GRANT_STORAGE_KEY = "grant";
+ let mockBenchHandoff = false;
++let managedHandoffAttemptId: string | null = null;
+ 
+ const BANNER_SUCCESS =
+   "Draft filled from Relay. Review the deviation in DeviantArt, then publish manually.";
+@@ -222,29 +224,31 @@ function fillContentEditable(el: HTMLElement, text: string, html?: string): bool
+   return Boolean((el.textContent ?? "").trim() || (el.innerHTML ?? "").trim());
+ }
+ 
+-function fillTitle(el: HTMLElement, title: string): boolean {
+-  const value = title.trim();
++function fillTitle(el: HTMLElement, title: string, preserveWhitespace = false): boolean {
++  const value = preserveWhitespace ? title : title.trim();
+   if (!value) return false;
+   if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) {
+     setNativeInputValue(el, value);
+-    return el.value.trim() === value;
++    return preserveWhitespace ? el.value === value : el.value.trim() === value;
+   }
+   if (el.isContentEditable) {
+-    return fillContentEditable(el, value);
++    const filled = fillContentEditable(el, value);
++    return preserveWhitespace ? filled && (el.textContent ?? "") === value : filled;
+   }
+   return false;
+ }
+ 
+-function fillDescription(el: HTMLElement, bodyText: string, bodyHtml?: string): boolean {
+-  const text = bodyText.trim();
++function fillDescription(el: HTMLElement, bodyText: string, bodyHtml?: string, preserveWhitespace = false): boolean {
++  const text = preserveWhitespace ? bodyText : bodyText.trim();
+   const html = bodyHtml?.trim();
+   if (!text && !html) return false;
+   if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) {
+     setNativeInputValue(el, text);
+-    return el.value.trim().length > 0;
++    return preserveWhitespace ? el.value === text : el.value.trim().length > 0;
+   }
+   if (el.isContentEditable) {
+-    return fillContentEditable(el, text, html);
++    const filled = fillContentEditable(el, text, html);
++    return preserveWhitespace ? filled && (el.textContent ?? "") === text : filled;
+   }
+   return false;
+ }
+@@ -580,7 +584,7 @@ async function waitForIncreasedMediaMarkers(baseline: number, timeoutMs = 8000):
+   return false;
+ }
+ 
+-async function attemptImageAttach(pkg: DeviantArtCrossPostPackage): Promise<ImageAttachOutcome> {
++async function attemptImageAttach(pkg: DeviantArtCrossPostPackage, preparedFiles?: File[]): Promise<ImageAttachOutcome> {
+   const images = partitionImages(pkg.media);
+   const outcome: ImageAttachOutcome = {
+     imageCount: images.length,
+@@ -591,26 +595,34 @@ async function attemptImageAttach(pkg: DeviantArtCrossPostPackage): Promise<Imag
+     return outcome;
+   }
+ 
+-  const token = await readGrantToken();
+-  if (!token) {
++  const token = preparedFiles ? undefined : await readGrantToken();
++  if (!preparedFiles && !token) {
+     outcome.failedFilenames = images.map((i) => i.filename || i.media_id);
+     return outcome;
+   }
+ 
+-  const { files, failedFilenames: fetchFailures } = await fetchImageFiles(images, token);
++  const { files, failedFilenames: fetchFailures } = preparedFiles ? { files: preparedFiles, failedFilenames: [] } : await fetchImageFiles(images, token!);
+   outcome.failedFilenames.push(...fetchFailures);
+   if (files.length === 0) {
+     return outcome;
+   }
+ 
++  const baseline = preparedFiles ? countMediaPreviewMarkers() : undefined;
+   const input = await tryRevealFileInput();
+   if (!input || !assignFilesToInput(input, files)) {
+     outcome.failedFilenames = files.map((f) => f.name);
+     return outcome;
+   }
+ 
+-  const baseline = countMediaPreviewMarkers();
+-  await waitForIncreasedMediaMarkers(baseline);
++  if (preparedFiles) {
++    if (!await waitForIncreasedMediaMarkers(baseline!)) {
++      outcome.failedFilenames = files.map((f) => f.name);
++      return outcome;
++    }
++  } else {
++    const legacyBaseline = countMediaPreviewMarkers();
++    await waitForIncreasedMediaMarkers(legacyBaseline);
++  }
+   outcome.attachedCount = files.length;
+   outcome.failedFilenames = [];
+   return outcome;
+@@ -728,7 +740,36 @@ async function openLatestDraftEditor(): Promise<HTMLElement | null> {
+   return waitForPhase2TitleField();
+ }
+ 
++async function consumeManagedHandoffPacket(): Promise<{ packet: ManagedCrossPostHandoffPacket & { destination: "deviantart" }; bytes: Uint8Array } | null | "invalid"> {
++  const key = MANAGED_CROSS_POST_HANDOFF_PACKET_KEY;
++  if (!Object.hasOwn(globalThis, key)) return null;
++  const raw = Reflect.get(globalThis, key);
++  Reflect.deleteProperty(globalThis, key);
++  if (!isManagedCrossPostHandoffPacket(raw) || raw.destination !== "deviantart") return "invalid";
++  const bytes = decodeManagedHandoffJpeg(raw.jpeg_base64);
++  if (!bytes) return "invalid";
++  const digest = Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", bytes)), value => value.toString(16).padStart(2, "0")).join("");
++  return digest === raw.sha256 ? { packet: raw, bytes } : "invalid";
++}
++
++async function runManagedHandoffFill(packet: ManagedCrossPostHandoffPacket & { destination: "deviantart" }, bytes: Uint8Array): Promise<void> {
++  managedHandoffAttemptId = packet.attempt_id;
++  const pkg: DeviantArtCrossPostPackage = { relay_post_id: packet.relay_post_id, title: packet.title, body_text: packet.body_text, tags: [...packet.tags], media: [{ media_id: packet.media_id, filename: packet.filename, mime_type: "image/jpeg", content_url: "" }] };
++  const imageOutcome = await attemptImageAttach(pkg, [new File([bytes], packet.filename, { type: "image/jpeg" })]);
++  const titleEl = await waitForPhase2TitleField();
++  const editor = titleEl ?? await openLatestDraftEditor();
++  if (!editor) {
++    showBanner(imageOutcome.attachedCount ? "The confirmed image is attached. Open the matching DeviantArt editor to fill the reviewed details." : "DeviantArt did not confirm the confirmed image. Upload it manually, then enter the reviewed details.", "warn");
++    await notifyDistributionFillResult({ attemptId: packet.attempt_id, status: "fill_partial", fillResult: { title_ok: false, body_ok: false, tags_ok: false, images_attached: imageOutcome.attachedCount, images_failed: imageOutcome.failedFilenames, page_url: window.location.href }, errorCode: "editor_not_ready" });
++    return;
++  }
++  await fillPhase2Fields(pkg, editor, packet.attempt_id, true, imageOutcome);
++}
++
+ async function runFill(): Promise<void> {
++  const managed = await consumeManagedHandoffPacket();
++  if (managed === "invalid") { showBanner(BANNER_ERROR, "error"); return; }
++  if (managed) { await runManagedHandoffFill(managed.packet, managed.bytes); return; }
+   if (Object.hasOwn(globalThis, BENCH_DEVIANTART_HANDOFF_PACKET_KEY)) {
+     mockBenchHandoff = true;
+     await runBenchHandoffFill();
+@@ -788,7 +829,10 @@ async function runFill(): Promise<void> {
+ 
+ async function fillPhase2Fields(
+   pkg: DeviantArtCrossPostPackage,
+-  titleEl: HTMLElement | null
++  titleEl: HTMLElement | null,
++  attemptIdOverride?: string | null,
++  preserveCopyWhitespace = false,
++  suppliedImageOutcome?: ImageAttachOutcome
+ ): Promise<void> {
+   // Small delay to let DA's editor fully initialize
+   await new Promise((r) => window.setTimeout(r, 500));
+@@ -802,19 +846,20 @@ async function fillPhase2Fields(
+     ? await waitForCandidate(findTagsCandidate, 5000)
+     : null;
+ 
+-  const titleOk = actualTitleEl ? fillTitle(actualTitleEl, pkg.title) : false;
++  const titleOk = actualTitleEl ? fillTitle(actualTitleEl, pkg.title, preserveCopyWhitespace) : false;
+   const bodyOk = hasDescriptionContent(pkg)
+     ? descriptionEl
+-      ? fillDescription(descriptionEl, pkg.body_text, pkg.body_html)
++      ? fillDescription(descriptionEl, pkg.body_text, pkg.body_html, preserveCopyWhitespace)
+       : false
+     : true;
+-  const tagsOk = pkg.tags.length > 0 ? (tagsEl ? await fillTags(tagsEl, pkg.tags) : false) : true;
++  const managedTagsLiteral = !preserveCopyWhitespace || pkg.tags.every((tag) => tag === toDeviantArtTag(tag));
++  const tagsOk = pkg.tags.length > 0 ? (tagsEl && managedTagsLiteral ? await fillTags(tagsEl, pkg.tags) : false) : true;
+ 
+   if (!titleOk) markMissing(actualTitleEl);
+   if (!bodyOk) markMissing(descriptionEl);
+   if (!tagsOk) markMissing(tagsEl);
+ 
+-  const imageOutcome: ImageAttachOutcome = {
++  const imageOutcome: ImageAttachOutcome = suppliedImageOutcome ?? {
+     imageCount: partitionImages(pkg.media).length,
+     attachedCount: partitionImages(pkg.media).length,
+     failedFilenames: []
+@@ -822,9 +867,10 @@ async function fillPhase2Fields(
+   const banner = buildBanner({ titleOk, bodyOk, tagsOk, imageOutcome });
+   showBanner(banner.message, banner.tone);
+ 
+-  const attemptId = await readPendingAttemptId();
+-  const allOk = titleOk && bodyOk && tagsOk;
+-  const anyOk = titleOk || bodyOk || tagsOk;
++  const attemptId = attemptIdOverride ?? await readPendingAttemptId();
++  const imageOk = imageOutcome.imageCount === imageOutcome.attachedCount && imageOutcome.failedFilenames.length === 0;
++  const allOk = titleOk && bodyOk && tagsOk && imageOk;
++  const anyOk = titleOk || bodyOk || tagsOk || imageOutcome.attachedCount > 0;
+   await notifyDistributionFillResult({
+     attemptId,
+     status: allOk ? "fill_succeeded" : anyOk ? "fill_partial" : "fill_failed",
+@@ -899,10 +945,10 @@ void runFill().catch(async () => {
+   showBanner(BANNER_ERROR, "error");
+   if (mockBenchHandoff) return;
+   await notifyDistributionFillResult({
+-    attemptId: await readPendingAttemptId(),
++    attemptId: managedHandoffAttemptId ?? await readPendingAttemptId(),
+     status: "fill_failed",
+     fillResult: { page_url: window.location.href },
+     errorCode: "script_error"
+   });
+-  void clearPendingPackage();
++  if (!managedHandoffAttemptId) void clearPendingPackage();
+ });
+diff --git "a/C:\\Users\\jorda\\Documents\\Codex\\2026-10-11\\c\\work\\relay\\work\\pcb05-accepted\\tests\\editor-bench\\real-library-draft-variants-postgres.integration.test.ts" "b/C:\\Users\\jorda\\Documents\\Codex\\2026-10-11\\c\\work\\relay\\tests\\editor-bench\\real-library-draft-variants-postgres.integration.test.ts"
+index 129c1f2..0b11cbf 100644
+--- "a/C:\\Users\\jorda\\Documents\\Codex\\2026-10-11\\c\\work\\relay\\work\\pcb05-accepted\\tests\\editor-bench\\real-library-draft-variants-postgres.integration.test.ts"
++++ "b/C:\\Users\\jorda\\Documents\\Codex\\2026-10-11\\c\\work\\relay\\tests\\editor-bench\\real-library-draft-variants-postgres.integration.test.ts"
+@@ -4,11 +4,14 @@ import request from 'supertest';
+ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+ import { MediaIngestOrigin, MediaProcessingStatus, MediaUpstreamStatus, PrismaClient } from '@prisma/client';
+ import { PrismaPg } from '@prisma/adapter-pg';
++import sharp from 'sharp';
+ import { GalleryEditorService } from '../../src/gallery-editor/service.js';
+ import { registerRealLibraryConversationRoutes } from '../../src/editor-bench/real-library-conversation-routes.js';
+ import { loadLargeRealLibrarySnapshot } from '../../src/editor-bench/library-selection-catalog.js';
+ import { buildRelayR2ObjectKey } from '../../src/storage/relay-upload-r2.js';
+-import { approveDistributionVariant, patchDistributionVariant, startDistributionHandoff } from '../../src/distribution/post-distribution-service.js';
++import { approveDistributionVariant, patchDistributionVariant, startDistributionHandoff, recordDistributionFillResult, completeDistributionAttempt } from '../../src/distribution/post-distribution-service.js';
++import { buildCrossPostPackageFromAttempt } from '../../src/distribution/distribution-package.js';
++import { fingerprint } from '../../src/gallery-editor/state.js';
+ import { createPrismaConversationDraftVariantStore } from '../../src/distribution/conversation-draft-variants.js';
+ import { getCreatorScheduleRail } from '../../src/distribution/schedule-rail-service.js';
+ 
+@@ -21,7 +24,9 @@ describe.skipIf(!databaseUrl)('durable Library Conversation destination drafts 
+   let drafts: ReturnType<typeof createPrismaConversationDraftVariantStore>;
+   const creatorId = `draft_it_${randomUUID()}`, accountId = `draft_account_${randomUUID()}`, campaignId = `draft_campaign_${randomUUID()}`;
+   const postId = `draft_post_${randomUUID()}`, sourceMediaId = `draft_source_${randomUUID()}`, previewMediaId = `relay_m_${randomUUID()}`;
+-  const sourceVersionId = `draft_version_${randomUUID()}`, exportHash = createHash('sha256').update('synthetic-pcb04-jpeg').digest('hex');
++  const sourceVersionId = `draft_version_${randomUUID()}`;
++  let previewBytes: Buffer;
++  let exportHash: string;
+   const previewReviewId = `preview_${randomUUID()}`, previewKey = buildRelayR2ObjectKey(creatorId, previewMediaId);
+   const base = '/api/v1/editor-bench/real-library-conversation';
+   const copyX = { postText: 'Exact X teaser copy, with punctuation.' };
+@@ -43,7 +48,7 @@ describe.skipIf(!databaseUrl)('durable Library Conversation destination drafts 
+     const snapshot = await loadLargeRealLibrarySnapshot(db, accountId, creatorId);
+     return editor.create(creatorId, accountId, { selectedPostIds: [postId], conversation: {
+       catalogRevision: snapshot.catalogRevision, excludedPostIds: [], lastRequest: null, selectionInitialized: true,
+-      previewReceipts: [{ reviewId: previewReviewId, sourcePostId: postId, sourceVersionId, sourceMediaId, sourceMediaFingerprint: 'source-fingerprint-v1', mediaId: previewMediaId, exportHash, size: 21, templateId: 'template_1', templateUpdatedAt: new Date().toISOString(), templateConfigHash: 'template-hash', confirmedAt: new Date().toISOString() }]
++      previewReceipts: [{ reviewId: previewReviewId, sourcePostId: postId, sourceVersionId, sourceMediaId, sourceMediaFingerprint: 'source-fingerprint-v1', mediaId: previewMediaId, exportHash, size: previewBytes.length, templateId: 'template_1', templateUpdatedAt: new Date().toISOString(), templateConfigHash: 'template-hash', confirmedAt: new Date().toISOString() }]
+     } });
+   };
+   const reviewCreate = (instance: express.Express, sessionId: string, revision: number, destination: 'x' | 'deviantart', copy: unknown) =>
+@@ -53,7 +58,11 @@ describe.skipIf(!databaseUrl)('durable Library Conversation destination drafts 
+ 
+   beforeAll(async () => {
+     db = new PrismaClient({ adapter: new PrismaPg({ connectionString: databaseUrl! }) });
++    previewBytes = await sharp({ create: { width: 1, height: 1, channels: 3, background: '#336699' } }).jpeg().toBuffer();
++    exportHash = createHash('sha256').update(previewBytes).digest('hex');
+     editor = new GalleryEditorService(db); drafts = createPrismaConversationDraftVariantStore(db);
++    await db.tenant.create({ data: { relayCreatorId: creatorId } });
++    await db.account.create({ data: { id: accountId, identityAuthProvider: 'independent', primaryRelayCreatorId: creatorId } });
+     await db.campaign.create({ data: { id: campaignId, creatorId, name: 'Draft fixture', upstreamUpdatedAt: new Date(), versionSeq: 1 } });
+     await db.post.create({ data: { id: postId, creatorId, campaignId, upstreamStatus: 'active', source: 'PATREON', createdAt: new Date(), versions: { create: {
+       id: sourceVersionId, versionSeq: 1, upstreamRevision: 'draft-source-1', title: 'Source artwork', publishedAt: new Date(), ingestedAt: new Date(), mediaIds: [sourceMediaId], tagIds: ['tag_coast'], tierIds: []
+@@ -66,7 +75,7 @@ describe.skipIf(!databaseUrl)('durable Library Conversation destination drafts 
+     await db.mediaAsset.create({ data: {
+       id: previewMediaId, creatorId, postIds: [postId], primaryPostId: postId, upstreamStatus: MediaUpstreamStatus.active,
+       currentVersionSeq: 1, currentUpstreamRevision: `relay:preview-export:${previewReviewId}`, currentMimeType: 'image/jpeg', currentUpstreamUrl: null, currentRole: 'preview', currentStorageKey: previewKey,
+-      currentIngestedAt: new Date(), versionsJson: [{ sha256: exportHash, size: 21, storage_key: previewKey, source_post_id: postId, source_version_id: sourceVersionId, review_id: previewReviewId }],
++      currentIngestedAt: new Date(), versionsJson: [{ sha256: exportHash, size: previewBytes.length, storage_key: previewKey, source_post_id: postId, source_version_id: sourceVersionId, review_id: previewReviewId }],
+       ingestOrigin: MediaIngestOrigin.RELAY_UPLOAD, processingStatus: MediaProcessingStatus.READY, processingError: null
+     } });
+   });
+@@ -82,6 +91,8 @@ describe.skipIf(!databaseUrl)('durable Library Conversation destination drafts 
+     await db.mediaAsset.deleteMany({ where: { creatorId } });
+     await db.post.deleteMany({ where: { creatorId } });
+     await db.campaign.deleteMany({ where: { creatorId } });
++    await db.account.deleteMany({ where: { id: accountId } });
++    await db.tenant.deleteMany({ where: { relayCreatorId: creatorId } });
+     await db.$disconnect();
+   });
+ 
+@@ -106,15 +117,16 @@ describe.skipIf(!databaseUrl)('durable Library Conversation destination drafts 
+     expect(await db.postDistributionVariant.count({ where: { planId: plan.id } })).toBe(1);
+ 
+     await db.postDistributionVariant.update({ where: { id: xVariant.id }, data: { status: 'approved', approvedAt: new Date() } });
+-    const editRead = await request(instance).post(`${base}/session/${session.id}/draft/edit/review`).send({ expectedRevision: firstConfirmedRevision + 1, expectedVariantRevision: 0, variantId: xVariant.id, copy: { postText: 'Exact edited X copy.' } }).expect(200);
++    const exactWhitespaceCopy = '  Exact edited X copy.\n ';
++    const editRead = await request(instance).post(`${base}/session/${session.id}/draft/edit/review`).send({ expectedRevision: firstConfirmedRevision + 1, expectedVariantRevision: 0, variantId: xVariant.id, copy: { postText: exactWhitespaceCopy } }).expect(200);
+     const editConfirm = await request(instance).post(`${base}/session/${session.id}/draft/edit/confirm`).send({ expectedRevision: editRead.body.data.revision, reviewId: editRead.body.data.review.reviewId }).expect(200);
+     expect(editConfirm.body.data.receipt.revision).toBe(1);
+     const edited = await db.postDistributionVariant.findFirstOrThrow({ where: { id: xVariant.id } });
+-    expect(edited).toMatchObject({ status: 'draft', approvedAt: null, postText: 'Exact edited X copy.' });
++    expect(edited).toMatchObject({ status: 'draft', approvedAt: null, postText: exactWhitespaceCopy });
+     const history = (await db.postDistributionPlan.findFirstOrThrow({ where: { id: plan.id } })).assistantPlan as any;
+     expect(history.conversation_draft_v1.variants.x.revisions).toMatchObject([
+       { revision: 0, before: null, after: copyX },
+-      { revision: 1, before: copyX, after: { postText: 'Exact edited X copy.' } }
++      { revision: 1, before: copyX, after: { postText: exactWhitespaceCopy } }
+     ]);
+     await request(instance).post(`${base}/session/${session.id}/draft/edit/review`).send({ expectedRevision: editRead.body.data.revision + 1, expectedVariantRevision: 0, variantId: xVariant.id, copy: { postText: 'Stale revision.' } }).expect(409);
+ 
+@@ -133,7 +145,7 @@ describe.skipIf(!databaseUrl)('durable Library Conversation destination drafts 
+ 
+     editor = new GalleryEditorService(db);
+     const reopened = await request(app()).get(`${base}/session/${session.id}/drafts`).expect(200);
+-    expect(reopened.body.data.drafts.find((row: any) => row.variantId === xVariant.id)).toMatchObject({ currentRevision: 1, currentCopy: { postText: 'Exact edited X copy.' }, revisions: [{ revision: 0 }, { revision: 1 }] });
++    expect(reopened.body.data.drafts.find((row: any) => row.variantId === xVariant.id)).toMatchObject({ currentRevision: 1, currentCopy: { postText: exactWhitespaceCopy }, revisions: [{ revision: 0 }, { revision: 1 }] });
+     const exactReplay = await confirm(app(), session.id, editRead.body.data.revision + 1, editRead.body.data.review.reviewId).expect(200);
+     expect(exactReplay.body.data.replayed).toBe(true);
+     const staleSourceSession = await createSession();
+@@ -144,7 +156,7 @@ describe.skipIf(!databaseUrl)('durable Library Conversation destination drafts 
+     const durableSession = await editor.read(creatorId, accountId, session.id);
+     await db.creatorPostingGoal.create({ data: { creatorId, timezone: 'Europe/Berlin' } });
+     const scheduleReview = await request(app()).post(`${base}/session/${session.id}/draft/schedule/review`).send({ expectedRevision: durableSession.revision, variantId: xVariant.id, scheduledLocal: '2026-11-02T09:30' }).expect(200);
+-    expect(scheduleReview.body.data.review).toMatchObject({ destination: 'x', sourcePostId: postId, sourceVersionId, previewMediaId, scheduledLocal: '2026-11-02T09:30', timezone: 'Europe/Berlin', scheduledFor: '2026-11-02T08:30:00.000Z', copy: { postText: 'Exact edited X copy.' } });
++    expect(scheduleReview.body.data.review).toMatchObject({ destination: 'x', sourcePostId: postId, sourceVersionId, previewMediaId, scheduledLocal: '2026-11-02T09:30', timezone: 'Europe/Berlin', scheduledFor: '2026-11-02T08:30:00.000Z', copy: { postText: exactWhitespaceCopy } });
+     const scheduleBody = { expectedRevision: scheduleReview.body.data.revision, reviewId: scheduleReview.body.data.review.reviewId };
+     const [scheduleA, scheduleB] = await Promise.all([
+       request(app()).post(`${base}/session/${session.id}/draft/schedule/confirm`).send(scheduleBody),
+@@ -169,6 +181,50 @@ describe.skipIf(!databaseUrl)('durable Library Conversation destination drafts 
+     expect(railItem).toMatchObject({ post_id: postId, variant_id: xVariant.id, at: '2026-11-02T08:30:00.000Z', media_ids: [previewMediaId], media_count: 1, needs_media: false });
+     expect([...rail.ready, ...rail.events].filter(item => item.task_id === scheduleA.body.data.receipt.taskId)).toHaveLength(1);
+ 
++    const handoffSession = await editor.read(creatorId, accountId, session.id);
++    const handoffReview = await request(app()).post(`${base}/session/${session.id}/draft/handoff/review`).send({ expectedRevision: handoffSession.revision, variantId: xVariant.id }).expect(200);
++    expect(handoffReview.body.data.review).toMatchObject({ destination: 'x', copy: { postText: exactWhitespaceCopy }, taskId: scheduleA.body.data.receipt.taskId, scheduledFor: '2026-11-02T08:30:00.000Z' });
++    const handoffConfirmBody = { expectedRevision: handoffReview.body.data.revision, reviewId: handoffReview.body.data.review.reviewId };
++    const handoff = await request(app()).post(`${base}/session/${session.id}/draft/handoff/confirm`).send(handoffConfirmBody).expect(200);
++    expect(handoff.body.data).toMatchObject({ status: 'confirmed', replayed: false });
++    expect(handoff.body.data).not.toHaveProperty('open_url');
++    const handoffReplay = await request(app()).post(`${base}/session/${session.id}/draft/handoff/confirm`).send(handoffConfirmBody).expect(200);
++    expect(handoffReplay.body.data).toMatchObject({ status: 'confirmed', replayed: true, receipt: { attemptId: handoff.body.data.receipt.attemptId } });
++    expect(await db.postDistributionAttempt.count({ where: { variantId: xVariant.id } })).toBe(1);
++    const packageResult = await buildCrossPostPackageFromAttempt(db, accountId, handoff.body.data.receipt.attemptId, async (key, maxBytes) => {
++      expect(key).toBe(previewKey); expect(maxBytes).toBe(1024 * 1024); return previewBytes;
++    });
++    expect(packageResult.status).toBe('ok');
++    if (packageResult.status === 'ok') {
++      expect(packageResult.managed_handoff_v1).toMatchObject({ attempt_id: handoff.body.data.receipt.attemptId, post_id: postId, destination: 'x', export_hash: exportHash });
++      expect((packageResult.package as any).post_text).toBe(exactWhitespaceCopy);
++      expect((packageResult.package as any).media).toHaveLength(1);
++      expect((packageResult.package as any).media[0]).toMatchObject({ sha256: exportHash, mime_type: 'image/jpeg' });
++    }
++    expect((await buildCrossPostPackageFromAttempt(db, accountId, handoff.body.data.receipt.attemptId, async () => Buffer.from('not-a-jpeg'))).status).toBe('invalid_media_binding');
++    expect((await buildCrossPostPackageFromAttempt(db, accountId, handoff.body.data.receipt.attemptId, async () => Buffer.alloc(1024 * 1024 + 1, 1))).status).toBe('invalid_media_binding');
++    await expect(buildCrossPostPackageFromAttempt(db, accountId, handoff.body.data.receipt.attemptId, async () => { throw new Error('missing object'); })).resolves.toMatchObject({ status: 'invalid_media_binding' });
++    await db.postDistributionVariant.update({ where: { id: xVariant.id }, data: { postText: 'Tampered after review.' } });
++    expect((await buildCrossPostPackageFromAttempt(db, accountId, handoff.body.data.receipt.attemptId, async () => previewBytes)).status).toBe('invalid_media_binding');
++    await db.postDistributionVariant.update({ where: { id: xVariant.id }, data: { postText: exactWhitespaceCopy } });
++    await db.postbotTask.update({ where: { id: scheduleA.body.data.receipt.taskId }, data: { status: 'done' } });
++    expect((await buildCrossPostPackageFromAttempt(db, accountId, handoff.body.data.receipt.attemptId, async () => previewBytes)).status).toBe('invalid_media_binding');
++    await db.postbotTask.update({ where: { id: scheduleA.body.data.receipt.taskId }, data: { status: 'pending' } });
++    await recordDistributionFillResult(db, creatorId, handoff.body.data.receipt.attemptId, { status: 'fill_failed' });
++    const openAgainPackage = await buildCrossPostPackageFromAttempt(db, accountId, handoff.body.data.receipt.attemptId, async () => previewBytes);
++    expect(openAgainPackage.status).toBe('ok');
++    await recordDistributionFillResult(db, creatorId, handoff.body.data.receipt.attemptId, { status: 'fill_partial', fill_result: { text_ok: true, images_ok: false } });
++    await expect(completeDistributionAttempt(db, creatorId, handoff.body.data.receipt.attemptId, { status: 'abandoned' })).resolves.toMatchObject({ status: 'abandoned' });
++    const editSession = await editor.read(creatorId, accountId, session.id);
++    const postFailEdit = await request(app()).post(`${base}/session/${session.id}/draft/edit/review`).send({ expectedRevision: editSession.revision, expectedVariantRevision: 1, variantId: xVariant.id, copy: { postText: 'A new reviewed copy after failure.' } }).expect(200);
++    const postFailEditConfirm = await request(app()).post(`${base}/session/${session.id}/draft/edit/confirm`).send({ expectedRevision: postFailEdit.body.data.revision, reviewId: postFailEdit.body.data.review.reviewId }).expect(200);
++    expect(postFailEditConfirm.body.data.receipt.revision).toBe(2);
++    await expect(recordDistributionFillResult(db, creatorId, handoff.body.data.receipt.attemptId, { status: 'fill_succeeded' })).rejects.toMatchObject({ details: [{ field: 'conversation_managed', issue: 'stale_attempt' }] });
++    await expect(completeDistributionAttempt(db, creatorId, handoff.body.data.receipt.attemptId, { status: 'abandoned' })).rejects.toMatchObject({ details: [{ field: 'conversation_managed', issue: 'stale_attempt' }] });
++    const regressiveFetch = await db.postDistributionAttempt.updateMany({ where: { id: handoff.body.data.receipt.attemptId, creatorId, status: 'started' }, data: { status: 'package_fetched' } });
++    expect(regressiveFetch.count).toBe(0);
++    expect(await db.postDistributionAttempt.findFirstOrThrow({ where: { id: handoff.body.data.receipt.attemptId } })).toMatchObject({ status: 'abandoned' });
++
+     const daSession = await editor.read(creatorId, accountId, session.id);
+     const timezoneReview = await request(app()).post(`${base}/session/${session.id}/draft/schedule/review`).send({ expectedRevision: daSession.revision, variantId: daVariant.id, scheduledLocal: '2026-11-03T09:30' }).expect(200);
+     await db.creatorPostingGoal.update({ where: { creatorId }, data: { timezone: 'UTC' } });
+@@ -186,9 +242,25 @@ describe.skipIf(!databaseUrl)('durable Library Conversation destination drafts 
+     expect(await db.postbotTask.count({ where: { creatorId, planId: plan.id } })).toBe(1);
+     await db.creatorPostingGoal.update({ where: { creatorId }, data: { timezone: 'Europe/Berlin' } });
+ 
++    const daScheduleSession = await editor.read(creatorId, accountId, session.id);
++    const daScheduleReview = await request(app()).post(`${base}/session/${session.id}/draft/schedule/review`).send({ expectedRevision: daScheduleSession.revision, variantId: daVariant.id, scheduledLocal: '2026-11-04T09:30' }).expect(200);
++    const daSchedule = await request(app()).post(`${base}/session/${session.id}/draft/schedule/confirm`).send({ expectedRevision: daScheduleReview.body.data.revision, reviewId: daScheduleReview.body.data.review.reviewId }).expect(200);
++    const daHandoffSession = await editor.read(creatorId, accountId, session.id);
++    const daHandoffReview = await request(app()).post(`${base}/session/${session.id}/draft/handoff/review`).send({ expectedRevision: daHandoffSession.revision, variantId: daVariant.id }).expect(200);
++    const daHandoff = await request(app()).post(`${base}/session/${session.id}/draft/handoff/confirm`).send({ expectedRevision: daHandoffReview.body.data.revision, reviewId: daHandoffReview.body.data.review.reviewId }).expect(200);
++    const daPackage = await buildCrossPostPackageFromAttempt(db, accountId, daHandoff.body.data.receipt.attemptId, async () => previewBytes);
++    expect(daPackage.status).toBe('ok');
++    if (daPackage.status === 'ok') {
++      expect(daPackage.managed_handoff_v1).toMatchObject({ attempt_id: daHandoff.body.data.receipt.attemptId, destination: 'deviantart', copy_hash: fingerprint(copyDa) });
++      expect(daPackage.package).toMatchObject({ title: copyDa.title, body_text: copyDa.bodyText, tags: copyDa.tags, media: [{ sha256: exportHash }] });
++    }
++    await recordDistributionFillResult(db, creatorId, daHandoff.body.data.receipt.attemptId, { status: 'fill_succeeded', fill_result: { title_ok: true, body_ok: true, tags_ok: true, images_attached: 1 } });
++    await expect(completeDistributionAttempt(db, creatorId, daHandoff.body.data.receipt.attemptId, { status: 'abandoned' })).resolves.toMatchObject({ status: 'abandoned' });
++
+     const refreshed = await request(app()).post(`${base}/session/${session.id}/refresh`).send({ expectedRevision: (await editor.read(creatorId, accountId, session.id)).revision }).expect(200);
+-    expect(refreshed.body.data.draftReceipts).toHaveLength(3);
+-    expect(refreshed.body.data.scheduleReceipts).toHaveLength(1);
++    expect(refreshed.body.data.draftReceipts).toHaveLength(4);
++    expect(refreshed.body.data.scheduleReceipts).toHaveLength(2);
++    expect(refreshed.body.data.handoffReceipts).toHaveLength(2);
+     const draftReceipts = await request(app()).get(`${base}/session/${session.id}/drafts`).expect(200);
+     expect(draftReceipts.body.data.drafts).toHaveLength(2);
+   });

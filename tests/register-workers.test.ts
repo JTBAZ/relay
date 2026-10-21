@@ -7,11 +7,13 @@ import type { PatreonTokenStore } from "../src/auth/token-store.js";
 import type { TokenEncryption } from "../src/lib/crypto.js";
 import type { PatreonSyncService } from "../src/patreon/patreon-sync-service.js";
 import type { IngestService } from "../src/ingest/ingest-service.js";
+import { registerRelayBullMqRepeatSchedulers } from "../src/jobs/schedule-bullmq-repeat.js";
 import { registerRelayBullMqWorkers } from "../src/jobs/register-workers.js";
 import { RELAY_JOB_QUEUE_NAMES } from "../src/jobs/queue-names.js";
 
 const hoisted = vi.hoisted(() => ({
   workerCalls: [] as { name: string; opts: Record<string, unknown> }[],
+  queueCalls: [] as { name: string; add: ReturnType<typeof vi.fn> }[],
   redisInstances: [] as { quit: ReturnType<typeof vi.fn> }[]
 }));
 
@@ -25,6 +27,11 @@ vi.mock("ioredis", () => {
 });
 
 vi.mock("bullmq", () => ({
+  Queue: vi.fn((name: string) => {
+    const add = vi.fn().mockResolvedValue({});
+    hoisted.queueCalls.push({ name, add });
+    return { name, add, getRepeatableJobs: vi.fn().mockResolvedValue([]), removeRepeatableByKey: vi.fn().mockResolvedValue(undefined), close: vi.fn().mockResolvedValue(undefined) };
+  }),
   Worker: vi.fn((name: string, _processor: unknown, opts: Record<string, unknown>) => {
     hoisted.workerCalls.push({ name, opts });
     return {
@@ -47,6 +54,7 @@ describe("registerRelayBullMqWorkers", () => {
 
   beforeEach(() => {
     hoisted.workerCalls.length = 0;
+    hoisted.queueCalls.length = 0;
     hoisted.redisInstances.length = 0;
     WorkerMock.mockClear();
     RedisConstructor.mockClear();
@@ -85,6 +93,32 @@ describe("registerRelayBullMqWorkers", () => {
     expect(
       hoisted.workerCalls.every((c) => c.opts.connection === firstConn)
     ).toBe(true);
+  });
+  it("registers the durable Patreon change worker whenever shared persistence is available", () => {
+    registerRelayBullMqWorkers(minimalDeps());
+    expect(hoisted.workerCalls.some((call) => call.name === RELAY_JOB_QUEUE_NAMES.PATREON_CHANGE_WORK)).toBe(true);
+  });
+
+  it("registers the production media processor and propagates its failure", async () => {
+    const repairMediaCampaigns = vi.fn().mockResolvedValue(undefined);
+    const close = registerRelayBullMqWorkers({ ...minimalDeps(), patreonSyncService: { repairMediaCampaigns } as unknown as PatreonSyncService });
+    try {
+      const call = WorkerMock.mock.calls.find(([name]) => name === RELAY_JOB_QUEUE_NAMES.PATREON_MEDIA_REPAIR)!;
+      const process = call[1] as (job: { id: string; data: Record<string, never> }) => Promise<void>;
+      await process({ id: "media-tick", data: {} });
+      expect(repairMediaCampaigns).toHaveBeenCalledTimes(1);
+      const failure = new Error("Repair retry required"); repairMediaCampaigns.mockRejectedValueOnce(failure);
+      await expect(process({ id: "retry-tick", data: {} })).rejects.toBe(failure);
+    } finally { await close(); }
+  });
+
+  it("registers the media recovery repeat independently of disabled autosync using mocked queues", async () => {
+    const close = await registerRelayBullMqRepeatSchedulers({ redis: {} as Redis, prisma: {} as PrismaClient, env: { RELAY_PATREON_INCREMENTAL_AUTOSYNC_MS: "0" } });
+    try {
+      const media = hoisted.queueCalls.find((queue) => queue.name === RELAY_JOB_QUEUE_NAMES.PATREON_MEDIA_REPAIR)!;
+      expect(media.add).toHaveBeenCalledWith("relay-tick", {}, expect.objectContaining({ repeat: { every: 60000 } }));
+      expect(hoisted.queueCalls.some((queue) => queue.name === RELAY_JOB_QUEUE_NAMES.PATREON_INCREMENTAL_AUTOSYNC)).toBe(false);
+    } finally { await close(); }
   });
 
   it("applies per-queue concurrency from env", () => {

@@ -3,11 +3,11 @@
  * @description Regenerates clone models and offers preview/parity helpers for operators.
  * @see ./clone-generator.js
  * @see ./clone-store.js
- * @see ../export/export-index.js FileExportIndex
+ * @see ../export/export-index.js ExportIndex
  */
 
 import type { CanonicalStore } from "../ingest/canonical-store.js";
-import type { FileExportIndex } from "../export/export-index.js";
+import type { ExportIndex } from "../export/export-index.js";
 import { generateCloneSiteModel } from "./clone-generator.js";
 import type { CloneSiteStore } from "./clone-store.js";
 import type { ClonePreviewPage, CloneSiteModel } from "./types.js";
@@ -18,7 +18,7 @@ import type { ClonePreviewPage, CloneSiteModel } from "./types.js";
  */
 export class CloneService {
   private readonly canonical: CanonicalStore;
-  private readonly exportIndex: FileExportIndex;
+  private readonly exportIndex: ExportIndex;
   private readonly cloneStore: CloneSiteStore;
 
   /**
@@ -28,7 +28,7 @@ export class CloneService {
    */
   public constructor(
     canonical: CanonicalStore,
-    exportIndex: FileExportIndex,
+    exportIndex: ExportIndex,
     cloneStore: CloneSiteStore
   ) {
     this.canonical = canonical;
@@ -48,8 +48,12 @@ export class CloneService {
     creatorId: string,
     baseUrl: string
   ): Promise<CloneSiteModel> {
-    const snap = await this.canonical.load();
+    const snap = await this.canonical.loadForCreator(creatorId);
     const idx = await this.exportIndex.load(creatorId);
+    for (const [id, record] of Object.entries(idx.media)) {
+      const current = snap.media[creatorId]?.[id];
+      if (current && (current.upstream_status !== "active" || current.current.upstream_revision !== record.upstream_revision)) delete idx.media[id];
+    }
     const model = generateCloneSiteModel(creatorId, snap, idx, baseUrl);
     await this.cloneStore.upsert(model);
     return model;
@@ -102,7 +106,7 @@ export class CloneService {
     parity_percent: number;
     missing_post_ids: string[];
   }> {
-    const snap = await this.canonical.load();
+    const snap = await this.canonical.loadForCreator(creatorId);
     const posts = snap.posts[creatorId] ?? {};
     const activeIds = Object.keys(posts).filter(
       (id) => posts[id].upstream_status === "active"

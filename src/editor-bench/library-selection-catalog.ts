@@ -11,6 +11,9 @@ export type RealLibraryPost = {
   collectionIds: string[]; collections: Array<{ id: string; title: string }>;
   media: Array<{ id: string; mimeType: string | null; role: string | null; processingStatus: string }>;
 };
+export function realLibraryCatalogRevision(accountId: string, creatorId: string, posts: RealLibraryPost[]): string {
+  return createHash('sha256').update(JSON.stringify({ accountId, creatorId, posts }), 'utf8').digest('hex');
+}
 export type RealLibraryCatalog = { scope: 'real_library'; catalogRevision: string; complete: true; supportedFields: readonly string[]; timezone: 'Europe/London'; posts: RealLibraryPost[] };
 export class RealLibraryCatalogError extends Error {
   constructor(public readonly code: 'catalog_too_large'|'catalog_incomplete', message: string) { super(message); }
@@ -76,8 +79,7 @@ export async function loadRealLibraryCatalog(prisma: PrismaClient, accountId: st
   if (rows.length > MAX_POSTS) throw new RealLibraryCatalogError('catalog_too_large', 'This Library has more than 40 active posts. Narrow it in the Library before selecting.');
   const posts = await normalizeLibraryRows(prisma, creatorId, rows as SnapshotRow[], MAX_MEDIA);
   if (posts.some(post => post.postId.length > 200 || post.title.length > 200 || post.descriptionText.length > 2000 || post.tags.some(tag => tag.length > 200) || (post.workId?.length ?? 0) > 200 || (post.workTitle?.length ?? 0) > 200 || (post.seriesId?.length ?? 0) > 200 || (post.seriesTitle?.length ?? 0) > 200 || post.collectionIds.some(id => id.length > 200) || post.collections.some(collection => collection.title.length > 200) || post.media.some(media => media.id.length > 200 || (media.mimeType?.length ?? 0) > 200 || (media.role?.length ?? 0) > 200 || media.processingStatus.length > 200))) throw new RealLibraryCatalogError('catalog_too_large', 'Some Library metadata exceeds the supported selection size. Narrow it in the Library before selecting.');
-  const canonical = { accountId, creatorId, posts };
-  const catalogRevision = createHash('sha256').update(JSON.stringify(canonical), 'utf8').digest('hex');
+  const catalogRevision = realLibraryCatalogRevision(accountId, creatorId, posts);
   const catalog: RealLibraryCatalog = { scope: 'real_library', catalogRevision, complete: true, supportedFields: REAL_LIBRARY_SUPPORTED_FIELDS, timezone: 'Europe/London', posts };
   if (Buffer.byteLength(JSON.stringify(catalog), 'utf8') > MAX_BYTES) throw new RealLibraryCatalogError('catalog_too_large', 'The complete Library metadata is larger than this selection view supports. Narrow it in the Library before selecting.');
   return catalog;
@@ -124,8 +126,7 @@ export async function loadLargeRealLibrarySnapshot(prisma: PrismaClient, account
       }
     }
     if (signal?.aborted) throw new Error('grounded_selection_cancelled');
-    const canonical = { accountId, creatorId, posts };
-    const catalogRevision = createHash('sha256').update(JSON.stringify(canonical), 'utf8').digest('hex');
+    const catalogRevision = realLibraryCatalogRevision(accountId, creatorId, posts);
     return { scope: 'real_library_retrieval', catalogRevision, complete: true, supportedFields: REAL_LIBRARY_SUPPORTED_FIELDS, timezone: 'Europe/London', posts };
   }, { isolationLevel: 'RepeatableRead', timeout: 30_000, maxWait: 5_000 });
 }

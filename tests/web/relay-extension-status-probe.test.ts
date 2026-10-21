@@ -230,7 +230,7 @@ describe("sendConsentCodeToExtension return value", () => {
     }
   });
 
-  it("treats missing response shape as ok:true for backward compat", async () => {
+  it("requires an explicit authorization acknowledgment", async () => {
     const restore = patchEnv("ext-abc123");
     try {
       let result!: { ok: boolean };
@@ -240,7 +240,7 @@ describe("sendConsentCodeToExtension return value", () => {
           result = await sendConsentCodeToExtension("ext-abc123", "code");
         }
       );
-      expect(result.ok).toBe(true);
+      expect(result.ok).toBe(false);
     } finally {
       restore();
     }

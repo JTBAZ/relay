@@ -4,6 +4,7 @@ import { getCrossPostPlatform } from "./cross-post-registry";
 import type { CrossPostDestination } from "./cross-post-types";
 import { BENCH_X_HANDOFF_PACKET_KEY, type BenchXHandoffPacket } from "./bench-x-handoff";
 import { BENCH_DEVIANTART_HANDOFF_PACKET_KEY, type BenchDeviantArtHandoffPacket } from "./bench-deviantart-handoff";
+import { MANAGED_CROSS_POST_HANDOFF_PACKET_KEY, type ManagedCrossPostHandoffPacket } from "./managed-cross-post-handoff";
 
 export { DEVIANTART_SUBMIT_URL, PATREON_NEW_POST_URL, X_COMPOSE_URL };
 
@@ -76,7 +77,8 @@ export async function openCrossPostTab(
 export async function injectCrossPostFillScript(
   tabId: number,
   destination: CrossPostDestination,
-  benchPacket?: BenchXHandoffPacket | BenchDeviantArtHandoffPacket
+  benchPacket?: BenchXHandoffPacket | BenchDeviantArtHandoffPacket,
+  managedPacket?: ManagedCrossPostHandoffPacket
 ): Promise<boolean> {
   const { fillScript } = getCrossPostPlatform(destination);
   try {
@@ -89,6 +91,11 @@ export async function injectCrossPostFillScript(
       target: { tabId }, world: "ISOLATED",
       func: (packet: BenchDeviantArtHandoffPacket, key: string) => { Object.defineProperty(globalThis, key, { value: packet, configurable: true, writable: false }); },
       args: [benchPacket as BenchDeviantArtHandoffPacket, BENCH_DEVIANTART_HANDOFF_PACKET_KEY]
+    });
+    if (managedPacket && managedPacket.destination === destination) await browser.scripting.executeScript({
+      target: { tabId }, world: "ISOLATED",
+      func: (packet: ManagedCrossPostHandoffPacket, key: string) => { Object.defineProperty(globalThis, key, { value: packet, configurable: true, writable: false }); },
+      args: [managedPacket, MANAGED_CROSS_POST_HANDOFF_PACKET_KEY]
     });
     await browser.scripting.executeScript({
       target: { tabId },

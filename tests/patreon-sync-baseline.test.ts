@@ -1,5 +1,8 @@
-import { readFileSync } from "node:fs";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { readFileSync, mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { FilePatreonPostProgressStore } from "../src/patreon/post-sync-progress-file.js";
+import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { FilePatreonCookieStore } from "../src/auth/cookie-store.js";
 import type { PatreonAuthService } from "../src/auth/auth-service.js";
 import type { PatreonTokenStore } from "../src/auth/token-store.js";
@@ -23,36 +26,39 @@ const fixture = JSON.parse(readFileSync(new URL("./fixtures/patreon/sync-baselin
 };
 const creatorId = fixture.creator_id;
 
-function setup() {
+const progressDirs: string[] = [];
+afterAll(() => { for (const path of progressDirs) rmSync(path, { recursive: true, force: true }); });
+function setup(resumable = false) {
+  const progressPath = resumable ? mkdtempSync(join(tmpdir(), "relay-ps11-baseline-")) : undefined;
+  if (progressPath) progressDirs.push(progressPath);
   const snapshot: CanonicalSnapshot = { campaigns: {}, tiers: {}, posts: {}, media: {}, ingest_idempotency: {} };
   const bus = new InMemoryEventBus();
-  const state = { head: structuredClone(fixture.head), cookie: false, watermark: null as string | null, failExport: false };
+  const state = { head: structuredClone(fixture.head), cookie: false, watermark: null as string | null, oldPost: null as JsonApiResource | null };
   const mutateForCreator = vi.fn<CanonicalStore["mutateForCreator"]>(async (_id, mutate) => { await mutate(snapshot); });
-  const ingest = new IngestService({ mutateForCreator } as unknown as CanonicalStore, bus);
+  const ingest = new IngestService({ supportsAtomicCreatorMutations: !resumable, mutateForCreator, loadForCreator: async () => snapshot } as unknown as CanonicalStore, bus);
   const fetchImpl = vi.fn<typeof fetch>(async (input) => {
     const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url);
     if (url.pathname === "/api/oauth2/v2/campaigns") return Response.json(fixture.campaigns);
     if (url.pathname === `/api/oauth2/v2/campaigns/${fixture.campaign_id}/posts`) {
       return Response.json(url.searchParams.has("page[cursor]") ? fixture.tail : state.head);
     }
+    if (url.pathname === "/api/oauth2/v2/posts/9001") return state.oldPost ? Response.json({ data: { ...state.oldPost, relationships: { campaign: { data: { type: "campaign", id: fixture.campaign_id } } } } }) : new Response("{}", { status: 404 });
     if (url.pathname === "/api/posts") return Response.json(fixture.cookie_head);
     throw new Error(`Unexpected baseline request: ${url.pathname}`);
   });
-  const exportMedia = vi.fn(async () => {
-    if (state.failExport) throw new Error("Synthetic exhausted download failure");
-  });
+  const exportMedia = vi.fn(async () => {});
   const service = new PatreonSyncService(
     { getByCreatorId: async () => ({ access_token: "fixture-only", credential_health_status: "healthy" }) } as unknown as PatreonTokenStore,
     { getCookieLocalStatus: async () => state.cookie ? "ok" : "none", getSessionId: async () => state.cookie ? "fixture-only" : null } as unknown as FilePatreonCookieStore,
     ingest,
-    { get: async () => state.watermark, getRow: async () => null, set: async (_creator, _campaign, value) => { state.watermark = value; } },
+    { ...(progressPath ? { postProgress: new FilePatreonPostProgressStore(join(progressPath, "progress.json")) } : {}), get: async () => state.watermark, getRow: async () => null, set: async (_creator, _campaign, value) => { state.watermark = value; } },
     { ensureFreshAccessForAutomation: async () => {} } as unknown as PatreonAuthService,
     fetchImpl,
     { exportMedia } as unknown as ExportService
   );
-  const sync = (maxPages = 2) => service.scrapeOrSync(creatorId, "ps00-baseline", { campaign_id: fixture.campaign_id, max_post_pages: maxPages });
+  const sync = (maxPages = 2) => service.scrapeOrSync(creatorId, "ps00-baseline", { campaign_id: fixture.campaign_id, max_post_pages: maxPages, ...(resumable ? { resume_archive: true } : {}) });
   const dispatch = (eventHeader: string) => dispatchVerifiedPatreonPlatformPayload({
-    creatorId, eventHeader, campaignId: fixture.campaign_id, traceId: "ps00-webhook", syncService: service,
+    creatorId, eventHeader, resourceId: "9001", campaignId: fixture.campaign_id, traceId: "ps00-webhook", syncService: service,
     memberCoordinator: {} as PatreonMemberSyncCoordinator
   });
   return { snapshot, bus, state, sync, dispatch, mutateForCreator, exportMedia };
@@ -89,7 +95,8 @@ describe("PS-05 / R05 completed baseline", () => {
   });
 });
 
-// Each owning fix removes its expected-failure marker. Setup errors fail normally in beforeEach.
+// PS12 hosted repair cases live in patreon-media-repair.integration.test.ts (real PG opt-in).
+// These controls retain the original PS00/09/11 fixture lane.
 const gaps: Array<{ id: string; name: string; observe: () => Promise<unknown>; expected: unknown }> = [
   {
     id: "PS-09 / R09", name: "an old-post update refreshes its imported title", expected: "Older edited",
@@ -98,6 +105,7 @@ const gaps: Array<{ id: string; name: string; observe: () => Promise<unknown>; e
       await run.sync();
       const newest = (fixture.head.data as JsonApiResource[])[0]!;
       run.state.head = { data: [newest, fixture.updated_old_post], links: {} };
+      run.state.oldPost = fixture.updated_old_post;
       await run.dispatch("posts:update");
       return run.snapshot.posts[creatorId]!.patreon_post_9001!.current.title;
     }
@@ -115,32 +123,10 @@ const gaps: Array<{ id: string; name: string; observe: () => Promise<unknown>; e
   {
     id: "PS-11 / R11", name: "a capped archive reaches its tail on the following run", expected: 2,
     observe: async () => {
-      const run = setup();
+      const run = setup(true);
       await run.sync(1);
       await run.sync(1);
       return Object.keys(run.snapshot.posts[creatorId]!).length;
-    }
-  },
-  {
-    id: "PS-12 / R12", name: "cookie recovery fills media on an already imported post", expected: 1,
-    observe: async () => {
-      const run = setup();
-      await run.sync();
-      run.state.cookie = true;
-      await run.sync();
-      return run.snapshot.posts[creatorId]!.patreon_post_9002!.current.media_ids.length;
-    }
-  },
-  {
-    id: "PS-12 / R12", name: "a later ordinary sync retries an exhausted media download", expected: 2,
-    observe: async () => {
-      const run = setup();
-      run.state.cookie = true;
-      run.state.failExport = true;
-      await run.sync();
-      run.state.failExport = false;
-      await run.sync();
-      return run.exportMedia.mock.calls.length;
     }
   }
 ];
@@ -148,5 +134,5 @@ const gaps: Array<{ id: string; name: string; observe: () => Promise<unknown>; e
 describe.each(gaps)("$id: $name", ({ observe, expected }) => {
   let observed: unknown;
   beforeEach(async () => { observed = await observe(); });
-  it.fails("does not yet meet the owning acceptance case", () => { expect(observed).toEqual(expected); });
+  it("meets the owning acceptance case", () => { expect(observed).toEqual(expected); });
 });

@@ -138,6 +138,9 @@ export async function registerRelayBullMqRepeatSchedulers(
   }
 
   if (args.prisma) {
+    await replaceRepeatEvery(openQueue(RELAY_JOB_QUEUE_NAMES.PATREON_CHANGE_WORK), 5000, {}, log);
+    await replaceRepeatEvery(openQueue(RELAY_JOB_QUEUE_NAMES.PATREON_MEMBER_RECONCILE), 60_000, {}, log);
+    await replaceRepeatEvery(openQueue(RELAY_JOB_QUEUE_NAMES.PATREON_MEDIA_REPAIR), 60_000, {}, log);
     const staleEvery = patronEntitlementStaleRefreshIntervalFromEnv(env);
     if (staleEvery > 0) {
       await replaceRepeatEvery(

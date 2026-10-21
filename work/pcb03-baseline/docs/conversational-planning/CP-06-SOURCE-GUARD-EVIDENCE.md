@@ -1,0 +1,7 @@
+# CP-06 existing-post draft source guard
+
+The compiler now uses one source-focused clarification when a primary draft is marked `draft_only` and its trusted source resolves to an existing Library post, whether the creator selected no media or selected media attached to that post. Before this correction, the post-only case already returned a `missing_post` clarification with `field: "source_media"`, while the attached-media case reached the later `field: "media_attachment"` clarification. Both now identify the existing-post source and explain that a new draft needs eligible staged art, or the creator can request handoff from the existing post.
+
+The clarification runs before the compiler can produce a draft step for these `draft_only` cases. Compilation remains read-only. Ready unattached staged media can still produce a draft-only plan. Under the existing guard, an explicit existing-post handoff still requires selected attached media. The separate primary-request `delivery_intent: "none"` path is not changed or claimed as closed here. Teaser-only contract-gap and revision handling are unchanged.
+
+`tests/conversational-planning/compiler.test.ts` covers both diagnostic shapes and asserts that each result is an unpersisted clarification preview. Existing compiler tests cover staged-media draft-only and existing-post handoff behavior. No database, provider, or network calls are involved.

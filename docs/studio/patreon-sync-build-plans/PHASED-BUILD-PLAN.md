@@ -6,7 +6,7 @@ Use [the program index](00-README.md) for current status, ownership, and scope. 
 
 ### PS-00: Freeze failure cases and authority boundaries
 
-Status: complete. See [baseline evidence and contracts](BASELINE-CONTRACTS.md). The two original fixture controls and the completed PS-05 assertion pass. Five desired-behavior assertions remain explicitly expected failures owned by PS-09, PS-11, and PS-12.
+Status: complete. See [baseline evidence and contracts](BASELINE-CONTRACTS.md). The two original fixture controls and the completed PS-05/PS-09 assertions pass. Two desired-behavior assertions remain explicitly expected failures owned by PS-12.
 
 Dependencies: none. Review coverage: all findings.
 
@@ -92,6 +92,8 @@ Exit: simultaneous updates for two creators and updates from two processes prese
 
 ### PS-07: Make OAuth requests explicit and bounded
 
+Status: complete locally. [PS-07 evidence](PS-07-OAUTH-RELIABILITY.md) records bounded fielded requests, source-content revisions resolved under the creator lock, list-first enrichment, coordinated refresh across actual processes, and deployment limits. Production rollout remains separate.
+
 Dependencies: Phase 1. Review: 13; supports all later sync items.
 
 Use explicit supported fieldsets for list and single-post requests in `src/patreon/patreon-resource-api.ts`. Include supported embed metadata already consumed by the mapper. Validate sparse/null fields without inventing publication dates or interpreting missing audience information as public access. Where a reliable provider revision is absent, derive the accepted revision from normalized source content and access data, excluding transient signed URLs; retain replay compatibility.
@@ -103,6 +105,8 @@ Code: `src/patreon/patreon-resource-api.ts`, `patreon-sync-service.ts`, `map-pat
 Exit: request tests reject fixtures that return unrequested required fields. Sparse responses fail safely; normalized content/access changes are accepted while URL renewal alone does not create a content revision. Concurrent refresh, 429, timeout, and interrupted pagination are tested.
 
 ### PS-08: Persist signed change work before acknowledging it
+
+Status: complete locally. [PS-08 evidence](PS-08-DURABLE-CHANGE-WORK.md) records committed minimal receipts, capped coalescing, BullMQ recovery, leased execution, provider-aware retries, retention, and PostgreSQL/Redis verification. Deployment and targeted PS-09/PS-10 execution remain separate.
 
 Dependencies: PS-07.
 
@@ -118,6 +122,8 @@ Exit: a crash after acknowledgment and before processing loses no accepted work.
 
 ### PS-09: Refresh the affected post and apply safe deletions
 
+Status: complete locally. [PS-09 evidence](PS-09-TARGETED-POSTS.md) records targeted authoritative refresh, access-first persistence, shared observation fences, stable soft deletions, retained media audit references, and independent review. All 261 connected checks and the root production build pass. Live staging and deployment remain pending.
+
 Dependencies: PS-08. Review: 1.
 
 Use the event's post ID to refresh that post independently of the publication watermark. A post update rereads authoritative access metadata and the available media source, then uses canonical ingest. Handle signed deletions with stable replayable deletion markers and existing soft-deletion rules, preserving Relay-owned records and audit history.
@@ -130,6 +136,10 @@ Exit: an old post's title, body, media, and audience changes converge; removal d
 
 ### PS-10: Reconcile member changes and complete rosters
 
+The [platform projection follow-up](PS-10-PLATFORM-PROJECTIONS.md) is independently approved locally. Atomic projections, cancellation/unlink invalidation, unresolved coverage and strict creator-scoped OAuth/refresh admission pass the affected 90 checks and independent 12 PostgreSQL plus 14 guard checks. The latest combined build passes; writer activation and release remain pending.
+
+Status: complete locally. [PS-10 evidence](PS-10-MEMBER-RECONCILIATION.md) records targeted member work, resumable roster reconciliation, atomic entitlement/ledger acceptance, observation fences and unlink/purge continuity. All 243 connected checks, 65 independent checks, strict TypeScript and the production build pass. Legacy unverified bindings, old-writer replacement, production migration and live acceptance remain cutover gates.
+
 Dependencies: PS-08; integrate after PS-09. Review: 6 and 7.
 
 Process targeted member events durably, preserving member resource ID and campaign binding. For deletion, clear only the affected provider's entitlement through the existing identity path. Periodically reconcile a complete creator roster to recover missed events, independently of post publication. Preserve the separate patron OAuth stale-refresh worker and cross-provider entitlement merge.
@@ -141,6 +151,8 @@ Code: `patreon-sync-service.ts`, `patreon-member-sync-coordinator.ts`, `membersh
 Exit: canceled/deleted members, missed events, more than one capped page window, continuous deliveries, and restarts converge safely. Replays neither duplicate lifecycle events nor clear another provider's tiers. Free membership never becomes paid access.
 
 ### PS-11: Resume archives and reconcile changes fairly
+
+Status: complete locally. [PS-11 evidence](PS-11-RESUMABLE-POSTS.md) records atomic page checkpoints, resumable archive/catch-up, verified older-post reconciliation, safe file replay and persisted creator fairness. All 327 connected checks, 131 independent non-PG checks, nine independent PostgreSQL cases, seven final file checks, strict TypeScript and the root build pass. Hosted cutover and live acceptance remain pending.
 
 Dependencies: PS-09 and PS-10. Review: 2 and the fallback limitations behind 1.
 
@@ -156,6 +168,8 @@ Exit: archives larger than the per-run cap finish over repeated runs, including 
 
 ### PS-12: Repair media independently of post discovery
 
+Status: complete locally and independently approved. The [completion record](PS-12-MEDIA-REPAIR.md) records durable repair, current blob/source proof, bounded reads, obsolete-work retirement and preserved provider lanes. Connected checks pass 474/474, final affected checks 56/56 and independent checks 125/125. The latest combined build passes; hosted migration, activation and live acceptance remain pending.
+
 Dependencies: Phase 2. Review: 3 and 14.
 
 Keep the existing download retries and Library Retry control. Add durable bounded repair work for incomplete posts and failed media, independent of the post watermark. A restored cookie makes eligible incomplete records repairable without forcing a new publication or full archive rewrite. Expired URLs trigger a targeted source refresh; export retries use the current accepted asset revision and remain tenant-scoped.
@@ -165,6 +179,10 @@ Use `loadForCreator` in `ExportService` instead of loading every creator for eac
 Exit: OAuth-only import followed by cookie consent recovers old media; an exhausted download retries later after recovery; browser closure does not stop server-capable repair. Repeated repair preserves parent identity, links, metric history, and shared assets. Failed blobs cannot produce a false complete state.
 
 ### PS-13: Restrict the extension to verified consent and bounded collection
+
+Status: complete locally and independently approved. The [verification record](PS-13-VERIFIED-EXTENSION.md) covers 127 independent passes, one existing Windows skip, two API processes, the passing combined build and scoped UI rendering. Installed Chrome/Firefox authentication, packaging and full-web limits remain PS-15 gates.
+
+Status: in progress under `later_reliability_scout`. Follow the [extension design](PS-13-DESIGN.md), preserving concurrent cross-post handoff changes.
 
 Dependencies: PS-06 and PS-12. Review: 4 and 12.
 
@@ -179,6 +197,8 @@ Code: `extension/src/lib/sync-now.ts`, `storage.ts`, `patreon-post-metrics-fetch
 Exit: grant/workspace switches upload correctly; an unchanged cookie still verifies Relay state; an idle expired grant requests consent; remote rejection does not loop. Chrome and Firefox tests demonstrate the actual authenticated request and failure states, beyond mocked fetch tests. Builds retain their current production-origin restrictions.
 
 ### PS-14: Expose completeness and targeted repair
+
+Status: in progress, claimed by `later_reliability_scout` with independent review by `ps09_build`. Follow the [accepted design](PS-14-DESIGN.md); preserve the completed upstream contracts and concurrent Library changes.
 
 Dependencies: PS-11 to PS-13.
 

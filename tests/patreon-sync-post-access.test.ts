@@ -10,6 +10,9 @@ import type { JsonApiResource } from "../src/patreon/jsonapi-types.js";
 const paidTiers = ["patreon_tier_555", "patreon_tier_777"];
 
 describe("sync post access gate normalization", () => {
+  it("rejects unknown OAuth audience instead of replacing a known gate", () => {
+    expect(() => oauthPostAccessGateFromResource({ type: "post", id: "1", attributes: { is_public: null, tiers: [], is_paid: false } }, paidTiers)).toThrow("audience is unknown");
+  });
   it("treats relay_tier_public as public with empty tier list", () => {
     expect(normalizePostAccessGate([RELAY_TIER_PUBLIC], undefined, paidTiers)).toEqual({
       isPublic: true,

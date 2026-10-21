@@ -278,7 +278,9 @@ export function buildGalleryItems(
       if (!m || m.upstream_status === "deleted") {
         continue;
       }
-      const hasExport = Boolean(exportIndex.media[mediaId] || m.current.storage_key);
+      const exported = exportIndex.media[mediaId];
+      const imported = postRow.source !== "RELAY" && m.current.upstream_revision !== "relay:upload:committed";
+      const hasExport = Boolean(exported && exported.upstream_revision === m.current.upstream_revision) || (!imported && Boolean(m.current.storage_key));
       const failRec = exportIndex.export_failures?.[mediaId];
       const rowTags = galleryRowTags(baseTags, m.current.role, mediaId, false);
       const tags = applyMediaRowTagDelta(rowTags, creatorId, postId, mediaId, overrides);

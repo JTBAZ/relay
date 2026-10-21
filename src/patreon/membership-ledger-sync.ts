@@ -11,6 +11,7 @@ import {
 import type { PrismaClient } from "@prisma/client";
 
 export type PlannedMembershipLedgerEvent = {
+  dedupeKey?: string;
   creatorId: string;
   patreonMemberId: string;
   eventType: CreatorMembershipEventType;
@@ -143,7 +144,7 @@ export function planMembershipLedgerEvents(
 }
 
 export async function maxTierFloorCentsForCreator(
-  prisma: PrismaClient,
+  prisma: PrismaClient | Prisma.TransactionClient,
   creatorId: string,
   relayTierIds: string[]
 ): Promise<number> {
@@ -165,7 +166,7 @@ export async function maxTierFloorCentsForCreator(
 
 /** One query per member sync — tier floors for upgrade/downgrade comparison. */
 export async function loadCreatorTierAmountMap(
-  prisma: PrismaClient,
+  prisma: PrismaClient | Prisma.TransactionClient,
   creatorId: string
 ): Promise<Map<string, number>> {
   const rows = await prisma.tier.findMany({
@@ -195,13 +196,15 @@ export function maxTierFloorFromMap(
 }
 
 export async function appendMembershipLedgerEvents(
-  prisma: PrismaClient,
+  prisma: PrismaClient | Prisma.TransactionClient,
   events: PlannedMembershipLedgerEvent[]
 ): Promise<void> {
   for (const row of events) {
+    if (row.dedupeKey && await prisma.creatorMembershipEvent.findUnique({ where: { dedupeKey: row.dedupeKey } })) continue;
     try {
       await prisma.creatorMembershipEvent.create({
         data: {
+          dedupeKey: row.dedupeKey,
           creatorId: row.creatorId,
           patreonMemberId: row.patreonMemberId,
           eventType: row.eventType,
@@ -217,7 +220,7 @@ export async function appendMembershipLedgerEvents(
         e instanceof PrismaNamespace.PrismaClientKnownRequestError &&
         e.code === "P2002"
       ) {
-        continue;
+        if (!row.dedupeKey) continue;
       }
       throw e;
     }

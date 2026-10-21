@@ -7,6 +7,7 @@ import {
 } from "./lib/messages";
 import { PATREON_SESSION_COOKIE_NAME, PATREON_URL, RELAY_WEB_BASE } from "./lib/constants";
 import type { SyncResult } from "./lib/sync-now";
+import type { CredentialStatus } from "./lib/storage";
 import { renderPostLinkFallbackSections } from "./popup-post-link";
 
 type StatusPayload = {
@@ -16,6 +17,7 @@ type StatusPayload = {
   accountId: string | null;
   relayCreatorId: string | null;
   consentError: string | null;
+  credentialState?: CredentialStatus | null;
 };
 
 const region = document.getElementById("relay-region");
@@ -24,6 +26,7 @@ if (!region) {
 }
 
 let lastSyncFailure: string | null = null;
+let checking = false;
 
 function formatRelative(iso: string | null): string {
   if (!iso) return "—";
@@ -50,6 +53,12 @@ function syncResultMessage(r: SyncResult): string {
       return "No Patreon login detected in this browser.";
     case "grant_revoked":
       return "This device was disconnected.";
+    case "consent_required":
+      return "Authorize this device again to capture your current Patreon session.";
+    case "timeout":
+      return "Relay took too long to respond. Check the connection again.";
+    case "superseded":
+      return "The connection changed. Use the latest authorization.";
     case "rate_limited":
       return "Too many sync attempts. Try again later.";
     case "http_error":
@@ -193,22 +202,21 @@ async function render(): Promise<void> {
     return;
   }
 
-  const syncErr = lastSyncFailure;
+  if (status.credentialState?.status === "consent_required" || status.credentialState?.status === "capture_unavailable") {
+    renderError("Authorize this device again to capture your current Patreon session.", actions);
+    const authorize = el("button", { type: "button", class: "relay-btn-primary" }, "Authorize again");
+    authorize.addEventListener("click", async () => { await browser.runtime.sendMessage({ type: MSG_START_CONSENT }); window.close(); });
+    actions.append(authorize);
+    return;
+  }
+
+  const stateFailure = status.credentialState?.status;
+  const syncErr = lastSyncFailure ?? (stateFailure === "http_error" || stateFailure === "timeout" || stateFailure === "rate_limited"
+    ? syncResultMessage({ ok: false, reason: stateFailure }) : null);
   if (syncErr) {
     renderError(syncErr, actions);
-    const retry = el("button", { type: "button", class: "relay-btn-primary" }, "Retry sync");
-    retry.addEventListener("click", async () => {
-      const r = (await browser.runtime.sendMessage({
-        type: MSG_SYNC_NOW
-      })) as SyncResult;
-      if (r.ok) {
-        lastSyncFailure = null;
-        await render();
-      } else {
-        lastSyncFailure = syncResultMessage(r);
-        await render();
-      }
-    });
+    const retry = el("button", { type: "button", class: "relay-btn-primary" }, "Check connection");
+    retry.addEventListener("click", () => void checkConnection(retry));
     actions.append(retry);
     return;
   }
@@ -222,11 +230,14 @@ async function render(): Promise<void> {
   const syncLine = el(
     "p",
     {},
-    `Last synced ${formatRelative(status.lastSyncAt)}${
+    `Last credential check ${formatRelative(status.lastSyncAt)}${
       status.lastSyncStatus ? ` · ${status.lastSyncStatus}` : ""
     }.`
   );
   region.append(studioLine, syncLine);
+  region.append(el("p", { class: "relay-muted" }, `Browser session observed ${formatRelative(status.credentialState?.observed_at ?? null)}.`));
+  region.append(el("p", { class: "relay-muted" }, status.credentialState?.data_sync_at
+    ? `Last data sync ${formatRelative(status.credentialState.data_sync_at)}.` : "Data sync status is available in Relay."));
 
   await renderPostLinkFallbackSections(region, render);
 
@@ -239,18 +250,12 @@ async function render(): Promise<void> {
     });
   });
 
-  const syncBtn = el("button", { type: "button" }, "Sync now");
-  syncBtn.addEventListener("click", async () => {
-    const r = (await browser.runtime.sendMessage({ type: MSG_SYNC_NOW })) as SyncResult;
-    if (!r.ok) {
-      lastSyncFailure = syncResultMessage(r);
-    }
-    await render();
-  });
+  const syncBtn = el("button", { type: "button" }, "Check connection");
+  syncBtn.addEventListener("click", () => void checkConnection(syncBtn));
 
   const disc = el("button", { type: "button", class: "relay-btn-danger" }, "Disconnect this device");
   disc.addEventListener("click", async () => {
-    if (!window.confirm("Disconnect this device from Relay? You can connect again later.")) {
+    if (!window.confirm("Disconnect this device from Relay? The server's Patreon session stays stored. Remove it on Relay's Patreon cookie page if needed.")) {
       return;
     }
     await browser.runtime.sendMessage({ type: MSG_REVOKE_LOCAL });
@@ -260,6 +265,21 @@ async function render(): Promise<void> {
 
   actions.append(syncBtn, manage, disc);
   region.append(actions);
+}
+
+async function checkConnection(button: HTMLElement): Promise<void> {
+  if (checking) return;
+  checking = true;
+  button.setAttribute("disabled", "");
+  button.textContent = "Checking…";
+  region!.setAttribute("aria-busy", "true");
+  try {
+    const result = await browser.runtime.sendMessage({ type: MSG_SYNC_NOW }) as SyncResult;
+    lastSyncFailure = result.ok || result.reason === "superseded" ? null : syncResultMessage(result);
+  } catch { lastSyncFailure = "Could not reach the extension. Open it again to retry."; }
+  finally { checking = false; region!.setAttribute("aria-busy", "false"); }
+  await render();
+  (region!.querySelector("button") as HTMLButtonElement | null)?.focus();
 }
 
 void render();

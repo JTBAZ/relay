@@ -13,13 +13,14 @@ import type { PatreonTokenStore } from "../auth/token-store.js";
 import type { TokenEncryption } from "../lib/crypto.js";
 import { pickDefaultCampaignId } from "./map-patreon-to-ingest.js";
 import type { PatreonCampaignCreatorIndex } from "./patreon-campaign-creator-index.js";
-import { createWebhook, listWebhooks } from "./patreon-webhook-api.js";
+import { createWebhook, listWebhooks, updateWebhook } from "./patreon-webhook-api.js";
 import type { PatreonWebhookMetadataStore } from "./patreon-webhook-metadata-store.js";
 import { asDataArray, fetchCampaignsWithTiers } from "./patreon-resource-api.js";
 import type { JsonApiDocument, JsonApiResource } from "./jsonapi-types.js";
 
 /** Member + post triggers for Relay (one webhook). */
 export const PATREON_PLATFORM_WEBHOOK_TRIGGERS = [
+  "members:create",
   "members:pledge:create",
   "members:pledge:update",
   "members:update",
@@ -182,6 +183,13 @@ export async function ensurePatreonPlatformWebhook(args: {
     if (existing?.id && typeof existing.attributes?.secret === "string") {
       webhookId = String(existing.id);
       secret = existing.attributes.secret;
+      const actual = Array.isArray(existing.attributes.triggers) ? existing.attributes.triggers : [];
+      if (PATREON_PLATFORM_WEBHOOK_TRIGGERS.some((trigger) => !actual.includes(trigger))) {
+        await updateWebhook(fetchOpts, webhookId, [...new Set([...actual.filter((value): value is string => typeof value === "string"), ...PATREON_PLATFORM_WEBHOOK_TRIGGERS])]);
+        const verified = findWebhookResourceByUri(await listWebhooks(fetchOpts), uri);
+        const triggers = verified?.attributes?.triggers;
+        if (!Array.isArray(triggers) || PATREON_PLATFORM_WEBHOOK_TRIGGERS.some((trigger) => !triggers.includes(trigger))) throw new Error("Patreon webhook trigger reconciliation was not confirmed.");
+      }
       log(`Patreon webhook reuse creator=${args.creatorId} webhook_id=${webhookId}`);
     } else {
       const created = await createWebhook(fetchOpts, {
@@ -193,6 +201,9 @@ export async function ensurePatreonPlatformWebhook(args: {
       if (!row?.id || typeof row.attributes?.secret !== "string") {
         throw new Error("Unexpected create webhook response shape");
       }
+      const actual = Array.isArray(row.attributes.triggers) ? row.attributes.triggers :
+        findWebhookResourceByUri(await listWebhooks(fetchOpts), uri)?.attributes?.triggers;
+      if (!Array.isArray(actual) || PATREON_PLATFORM_WEBHOOK_TRIGGERS.some((trigger) => !actual.includes(trigger))) throw new Error("Patreon webhook trigger registration was not confirmed.");
       webhookId = String(row.id);
       secret = row.attributes.secret;
       log(`Patreon webhook created creator=${args.creatorId} webhook_id=${webhookId}`);

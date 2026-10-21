@@ -1,0 +1,16 @@
+{
+  "files": [
+    "tests/editor-bench/real-library-conversation-routes.test.ts",
+    "tests/editor-bench/conversation.test.ts",
+    "tests/gallery-editor-routes.test.ts",
+    "tests/relay-upload-r2.test.ts",
+    "tests/relay-upload-route.test.ts",
+    "tests/preview-template-service.test.ts",
+    "tests/editor-bench/real-library-retrieval.test.ts",
+    "tests/editor-bench/large-library-chat.test.ts"
+  ],
+  "exitCode": 0,
+  "error": null,
+  "report": "work/pcb03-root-tests-2026-10-20T22-25-44-748Z.json",
+  "log": "work/pcb03-root-tests-2026-10-20T22-25-44-748Z.log"
+}

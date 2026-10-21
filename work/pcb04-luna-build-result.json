@@ -1,0 +1,16 @@
+{
+  "command": "npm run build",
+  "exitCode": 0,
+  "logPath": "work/pcb04-luna-build-04.log",
+  "sourceFiles": [
+    "src/distribution/conversation-draft-variants.ts",
+    "src/editor-bench/real-library-conversation-routes.ts",
+    "src/gallery-editor/types.ts",
+    "src/server.ts",
+    "src/distribution/post-distribution-service.ts",
+    "src/distribution/coach-checkpoint-service.ts",
+    "src/distribution/schedule-rail-service.ts",
+    "tests/editor-bench/real-library-draft-variants-postgres.integration.test.ts",
+    "tests/schedule-rail-service.test.ts"
+  ]
+}

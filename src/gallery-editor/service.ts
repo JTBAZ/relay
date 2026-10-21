@@ -113,7 +113,13 @@ export class GalleryEditorService {
     if(receipt){session.lastReceipt={...(receipt.receipt as unknown as CommitReceipt),...(receipt.reversedAt?{reversedAt:receipt.reversedAt.toISOString()}:{})};session.lastReceipt.summary=receiptCopy(session.lastReceipt);}
     return session;
   }
-  async revise(creatorId:string,actorId:string,id:string,revision:number,actions:EditAction[],context?:EditorContext,messages?:EditorSession["messages"],origin:"manual"|"ai"="manual",compiled?:{patch:CartPatch;factualPreview:boolean;uninspectedMediaCount?:number}):Promise<EditorSession>{
+  async readCommitReceiptByKey(creatorId:string,actorId:string,sessionId:string,idempotencyKey:string):Promise<CommitReceipt|null>{
+    const row=await this.prisma.galleryEditorCommit.findUnique({where:{creatorId_idempotencyKey:{creatorId,idempotencyKey}}});
+    if(!row||row.actorId!==actorId||row.sessionId!==sessionId||row.reversalOfId)return null;
+    const receipt=row.receipt as unknown as CommitReceipt;
+    return row.reversedAt?{...receipt,reversedAt:row.reversedAt.toISOString()}:receipt;
+  }
+  async revise(creatorId:string,actorId:string,id:string,revision:number,actions:EditAction[],context?:EditorContext,messages?:EditorSession["messages"],origin:"manual"|"ai"="manual",compiled?:{patch:CartPatch;factualPreview:boolean;uninspectedMediaCount?:number},trustedConversationContext=false):Promise<EditorSession>{
     return serializable(this.prisma,async tx=>{
       const session=await this.read(creatorId,actorId,id,tx);checkRevision(session.revision,revision);
       if(compiled)actions=mergeCartPatch(session.cart,compiled.patch);
@@ -125,14 +131,14 @@ export class GalleryEditorService {
         return [action.id,prior&&fingerprint(prior)===fingerprint(action)?session.cart.actionOrigins?.[action.id]??(session.cart.origin==='ai'?'ai':'manual'):origin];
       }));
       if(compiled?.factualPreview&&messages?.length)messages=[...messages.slice(0,-1),{role:'assistant',text:previewCopy(cart)+(compiled.uninspectedMediaCount?` ${compiled.uninspectedMediaCount} requested media could not be inspected. Visual observations cover only inspected images.`:'')}];
-      const ctx=context??session.context;
+      const ctx=context?(trustedConversationContext?context:{...context,...(session.context.conversation?{conversation:session.context.conversation}:{})}):session.context;
       if(ctx.selectedPostIds.length){const count=await tx.post.count({where:{creatorId,id:{in:ctx.selectedPostIds}}});if(count!==new Set(ctx.selectedPostIds).size)throw new EditorError("INVALID_TARGET","Selection contains unavailable posts.",404);}
       const changed=await tx.galleryEditorSession.updateMany({where:{id,creatorId,actorId,revision},data:{revision:next,cart:json(cart),context:json(ctx),...(messages?{messages:json(messages.slice(-40))}:{})}});
       if(changed.count!==1)throw new EditorError("STALE_CART","The cart was edited in another tab.",409);
       return this.read(creatorId,actorId,id,tx);
     });
   }
-  async apply(creatorId:string,actorId:string,id:string,revision:number,idempotencyKey:string,origin?:string):Promise<CommitReceipt>{
+  async apply(creatorId:string,actorId:string,id:string,revision:number,idempotencyKey:string,origin?:string,contextAfterApply?:(receipt:CommitReceipt,session:EditorSession)=>EditorContext):Promise<CommitReceipt>{
     if(!idempotencyKey||idempotencyKey.length>200)throw new EditorError("INVALID_KEY","An idempotency key is required.");
     try{return await serializable(this.prisma,async tx=>{
       const replay=await tx.galleryEditorCommit.findUnique({where:{creatorId_idempotencyKey:{creatorId,idempotencyKey}}});
@@ -160,7 +166,8 @@ export class GalleryEditorService {
       receipt.summary=receiptCopy(receipt);
       await tx.galleryEditorCommit.create({data:{id:commitId,creatorId,actorId,sessionId:id,idempotencyKey,origin:origin??session.cart.origin??"manual",actions:json(session.cart.actions),before:json(before),after:json(after),dependencies:json(session.cart.dependencies),receipt:json(receipt)}});
       const empty:ChangeCart={revision:revision+1,actions:[],items:[],dependencies:{},conflicts:[],notice:RENAME_NOTICE};
-      await tx.galleryEditorSession.update({where:{id},data:{revision:revision+1,cart:json(empty)}});
+      const nextContext=contextAfterApply?.(receipt,session);
+      await tx.galleryEditorSession.update({where:{id},data:{revision:revision+1,cart:json(empty),...(nextContext?{context:json(nextContext)}:{})}});
       return receipt;
     });}catch(error){
       if(error instanceof Prisma.PrismaClientKnownRequestError&&error.code==="P2002"){

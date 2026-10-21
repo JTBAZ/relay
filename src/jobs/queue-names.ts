@@ -6,6 +6,9 @@
 /** Stable queue name literals (BullMQ `Queue`/`Worker` name). */
 export const RELAY_JOB_QUEUE_NAMES = {
   PATREON_INCREMENTAL_AUTOSYNC: "patreon_incremental_autosync",
+  PATREON_CHANGE_WORK: "patreon_change_work",
+  PATREON_MEMBER_RECONCILE: "patreon_member_reconcile",
+  PATREON_MEDIA_REPAIR: "patreon_media_repair",
   SUBSCRIBESTAR_GRAPHQL_POSTS_INGEST: "subscribestar_graphql_posts_ingest",
   PATRON_ENTITLEMENT_STALE_REFRESH: "patron_entitlement_stale_refresh",
   NOTIFICATION_DELIVERY: "notification_delivery",
@@ -35,6 +38,9 @@ export type RelayJobQueueName =
 /** All queues in registration order (repeatable schedulers, dashboards). */
 export const ALL_RELAY_JOB_QUEUE_NAMES: readonly RelayJobQueueName[] = [
   RELAY_JOB_QUEUE_NAMES.PATREON_INCREMENTAL_AUTOSYNC,
+  RELAY_JOB_QUEUE_NAMES.PATREON_CHANGE_WORK,
+  RELAY_JOB_QUEUE_NAMES.PATREON_MEMBER_RECONCILE,
+  RELAY_JOB_QUEUE_NAMES.PATREON_MEDIA_REPAIR,
   RELAY_JOB_QUEUE_NAMES.SUBSCRIBESTAR_GRAPHQL_POSTS_INGEST,
   RELAY_JOB_QUEUE_NAMES.PATRON_ENTITLEMENT_STALE_REFRESH,
   RELAY_JOB_QUEUE_NAMES.NOTIFICATION_DELIVERY,
@@ -72,6 +78,9 @@ export type PatreonIncrementalAutosyncJobData = RelayJobTraceFields & {
   /** Optional: restrict cycle to one Relay creator id (ops / replay). */
   creatorId?: string;
 };
+
+/** Optional opaque work reference; empty repeat ticks recover due database receipts. */
+export type PatreonChangeWorkJobData = RelayJobTraceFields & { workId?: string };
 
 /** SubscribeStar GraphQL posts → ingest autosync cycle (see subscribestar-graphql-ingest-autosync). */
 export type SubscribeStarGraphqlPostsIngestJobData = RelayJobTraceFields & {
@@ -206,6 +215,8 @@ export type GoalCycleOutcomeRefreshJobData = RelayJobTraceFields & {
 
 /** Maps queue name → default job payload shape for typing `Job<T>` / processors. */
 export type RelayJobPayloadByQueue = {
+  [RELAY_JOB_QUEUE_NAMES.PATREON_CHANGE_WORK]: PatreonChangeWorkJobData;
+  [RELAY_JOB_QUEUE_NAMES.PATREON_MEMBER_RECONCILE]: PatreonIncrementalAutosyncJobData;
   [RELAY_JOB_QUEUE_NAMES.PATREON_INCREMENTAL_AUTOSYNC]: PatreonIncrementalAutosyncJobData;
   [RELAY_JOB_QUEUE_NAMES.SUBSCRIBESTAR_GRAPHQL_POSTS_INGEST]: SubscribeStarGraphqlPostsIngestJobData;
   [RELAY_JOB_QUEUE_NAMES.PATRON_ENTITLEMENT_STALE_REFRESH]: PatronEntitlementStaleRefreshJobData;

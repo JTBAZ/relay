@@ -1,0 +1,35 @@
+# PS-11: Resumable post discovery and fair reconciliation
+
+Status: complete locally and independently approved. Root production build passed. No deployment or production migration was run. Requirements: [PS-11 phased plan](PHASED-BUILD-PLAN.md#ps-11-resume-archives-and-reconcile-changes-fairly), [R11 acceptance](ACCEPTANCE.md), and [approved design](PS-11-DESIGN.md).
+
+## Behavior
+
+Post discovery now persists separate archive and forward catch-up traversals in `SyncCursor`. An old publication watermark leaves archive coverage unknown. Each accepted page saves its continuation, pass identity and page count; a page budget leaves coverage partial. Only a valid terminal response closes a traversal and promotes its candidate publication watermark. OAuth discovery makes no timestamp cutoff, so equal-time IDs and older pages remain eligible. A newer completed watermark survives an older archive traversal.
+
+The runner shares a bounded budget between archive, catch-up and known-post reconciliation. Persisted turns survive failed collection. A failed reconciliation target advances the local keyset with an unverified warning and receives another attempt on the next walk. Completed catch-up becomes due after 15 minutes; a completed reconciliation walk becomes due after six hours. A matching newest-time probe cannot cancel due discovery, unfinished archive or reconciliation. Explicit `force_refresh_post_access` starts a bounded catch-up when the previous pass is complete and resumes an already partial pass.
+
+Creator selection uses a database scheduler row with a short transaction lock. Independent workers select after the saved creator ID with wraparound before provider work. Failed, unhealthy and probe-skipped selections therefore yield the creator cap. Targeted creator jobs leave this global cursor alone. Campaign work uses a renewable two-minute lease with a token and checkpoint version.
+
+Provider requests run outside canonical transactions. PostgreSQL accepts page data and progress together under the existing creator lock. A lost lease, checkpoint failure or stale PS-09 observation rolls the transaction back. Metadata and gates commit before optional cookie enrichment and export. Existing PS-09 revision handling, audit retention and creator ownership checks remain in force; PS-10 roster scheduling stays independent.
+
+Reconciliation rereads current single-post resources. Scheduled 404/410 removal requires a stored campaign binding established by an explicit authoritative resource relationship. Unknown bindings, 403 and transport failures cannot establish deletion. Missing rows in any scan never produce tombstones. A verified list observation can repair an old wrong campaign binding for the same creator; a relationship mismatch remains unverified. Cross-creator rejection rules remain unchanged.
+
+Saved cursor destinations are source-bound and validated before credentials are sent. A rejected continuation restarts only after a successful first-page control request. Cursor receipts detect repeated pages; ordinal-aware receipts allow local replay after an uncheckpointed canonical write. Malformed links, cursors or continuation containers cannot close coverage. The legacy cookie paginator now uses a one-page helper that returns a validated cookie continuation and terminal flag.
+
+## Scope and verification
+
+The exact 25 runtime/schema/test paths and before/after hashes are saved at `C:/Users/jorda/AppData/Local/Temp/relay-ps11-before/scope-runtime.json`; `scope-runtime.diff` contains only these changes against captured PS-10-final bytes. The final completion scope also includes this new record. Prior PS-07–10 and unrelated Library changes are excluded.
+
+The connected run passed 327/327 checks across 30 files with no skips, using guarded disposable PostgreSQL and Redis. It includes nine new PostgreSQL cases, local checkpoint-failure restart, capped archive/catch-up, equal-time arrivals after completed traversal through the actual worker, manual forced repair, lost-lease rollback, stale list versus targeted paid update, same-creator binding repair, deletion safety and independent capped selection. Existing shared-media, replay, ownership, PS-09 and PS-10 suites passed, including real BullMQ lost-dispatch recovery. Evidence: `connected-final.json` beside the scope manifest.
+
+After the last continuation-container validation change, 11 affected checks passed again (`validation-final.json`). Scoped strict TypeScript for changed tests and connected imports passed. Root `npm run build` passed (exit 0), including Prisma Client 7.7.0 generation, production TypeScript and asset copying after test clients closed. Independent runtime review cleared the declared scope before that build. Final independent verification passed 131 non-PG checks, followed by nine PostgreSQL and seven file cases after the build. The reviewer approved the final declared scope with no remaining findings and verified its hashes and record links. The original PS-11 expected-failure baseline is now a normal passing assertion. Two PS-12 assertions remain expected failures. One connected cookie/OAuth fixture now expects the campaign include already required by PS-09; no PS-09 runtime behavior was changed to satisfy that assertion.
+
+The additive migration passed isolated-schema validation and rollback, including nullable legacy watermarks, progress columns, the lease-pair constraint and scheduler RLS. It was applied only to the guarded private database. Evidence: `migration-verification.json`. No live Patreon account or linked Supabase project was accessed.
+
+## Cutover and limits
+
+Hosted API and worker processes require shared canonical, progress, creator OAuth and cookie storage. Enable `RELAY_DB_STORE_CANONICAL=1`, `RELAY_DB_STORE_WATERMARK=1`, `RELAY_DB_STORE_CREATOR_OAUTH=1` and shared Patreon session storage consistently. Configuration rejects shared progress with file canonical/OAuth storage; the cookie selector requires the shared vault, and hosted autosync rejects nonshared progress. Apply the schema before replacing old writers together; old binaries do not honor the new checkpoint protocol.
+
+Legacy manual and dry-run file callers remain compatible. Explicit service-level `resume_archive` enables local OAuth progress with atomic file replacement and canonical-first/checkpoint-second replay. Separate files cannot commit atomically. This mode assumes one canonical writer and does not claim shared-worker fencing or scheduled deletion reconciliation. Optional cookie detail collection retains PS-09's shared-adapter guard.
+
+[Patreon's pagination documentation](https://docs.patreon.com/#pagination) provides opaque cursors without a documented stable ordering, snapshot or cursor lifetime guarantee. Completion describes the observed traversal. Frequent source churn or cursor invalidation can keep coverage partial. Media repair remains PS-12; event delivery retains PS-05's post-commit crash limitation. Full-repository tests, live-provider validation, production migration and rollout remain outside this local record and under the later acceptance gates.

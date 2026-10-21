@@ -34,7 +34,7 @@ const STALE_AFTER = new Date("2099-01-01T00:00:00.000Z");
 
 const { prisma } = await import("../dist/src/lib/db.js");
 const { EntitlementSource } = await import("@prisma/client");
-const { upsertPatronEntitlementSnapshot } = await import(
+const { upsertPlatformPatronEntitlementProjection } = await import(
   "../dist/src/identity/patron-entitlement-snapshot.js"
 );
 
@@ -157,11 +157,10 @@ async function readQuinnSnapshot(membershipId) {
 }
 
 async function resubscribe(membershipId) {
-  await upsertPatronEntitlementSnapshot(prisma, {
+  await upsertPlatformPatronEntitlementProjection(prisma, {
     patronMembershipId: membershipId,
     relayCreatorId: CREATOR_ID,
     entitledTierIds: [TIER_ID],
-    source: EntitlementSource.manual_support,
     campaignId: "pilot_patreon_campaign_quinn"
   });
   await prisma.patronEntitlementSnapshot.update({

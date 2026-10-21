@@ -21,6 +21,143 @@ export type EditAction =
   | { id: string; kind: "link_work_post"; workId: string; postId: string; titleMode: PostTitleMode; customTitle?: string; memberLabel?: string; sortOrder: number };
 export interface EditorContext {
   selectedPostIds: string[];
+  /** Trusted server-owned state for the development real-Library conversation adapter. */
+  conversation?: {
+    catalogRevision: string;
+    excludedPostIds: string[];
+    lastRequest: string | null;
+    selectionInitialized: boolean;
+    pendingPreviewReview?: {
+      id: string;
+      expectedRevision: number;
+      expiresAt: number;
+      sourcePostId: string;
+      sourceVersionId: string;
+      sourceMediaId: string;
+      sourceMediaFingerprint: string;
+      templateId: string;
+      templateUpdatedAt: string;
+      templateConfig: Record<string, unknown>;
+      templateConfigHash: string;
+      stagedMediaId: string;
+      stagedStorageKey: string;
+      exportHash: string;
+      size: number;
+    };
+    previewReceipts?: Array<{
+      reviewId: string;
+      sourcePostId: string;
+      sourceVersionId: string;
+      sourceMediaId: string;
+      sourceMediaFingerprint: string;
+      mediaId: string;
+      exportHash: string;
+      size: number;
+      templateId: string;
+      templateUpdatedAt: string;
+      templateConfigHash: string;
+      confirmedAt: string;
+    }>;
+    pendingDraftReview?: {
+      id: string;
+      kind: 'create' | 'edit';
+      expectedRevision: number;
+      expectedVariantRevision?: number;
+      expiresAt: number;
+      sourcePostId: string;
+      sourceVersionId: string;
+      previewMediaId: string;
+      exportHash: string;
+      sourceDigest: string;
+      destination: 'x' | 'deviantart';
+      variantId?: string;
+      before: Record<string, unknown> | null;
+      after: Record<string, unknown>;
+    };
+    draftReceipts?: Array<{
+      reviewId: string;
+      planId: string;
+      variantId: string;
+      destination: 'x' | 'deviantart';
+      sourcePostId: string;
+      sourceVersionId: string;
+      previewMediaId: string;
+      revision: number;
+      confirmedAt: string;
+    }>;
+    pendingScheduleReview?: {
+      id: string;
+      expectedRevision: number;
+      expectedVariantRevision: number;
+      expiresAt: number;
+      variantId: string;
+      planId: string;
+      destination: 'x' | 'deviantart';
+      sourcePostId: string;
+      sourceVersionId: string;
+      previewMediaId: string;
+      exportHash: string;
+      scheduledLocal: string;
+      timezone: string;
+      scheduledFor: string;
+    };
+    scheduleReceipts?: Array<{
+      reviewId: string;
+      planId: string;
+      variantId: string;
+      taskId: string;
+      destination: 'x' | 'deviantart';
+      sourcePostId: string;
+      sourceVersionId: string;
+      previewMediaId: string;
+      scheduledLocal: string;
+      timezone: string;
+      scheduledFor: string;
+      confirmedAt: string;
+    }>;
+    pendingHandoffReview?: {
+      id: string;
+      expectedRevision: number;
+      expectedVariantRevision: number;
+      expiresAt: number;
+      variantId: string;
+      planId: string;
+      destination: 'x' | 'deviantart';
+      sourcePostId: string;
+      sourceVersionId: string;
+      previewMediaId: string;
+      exportHash: string;
+      copyHash: string;
+      taskId: string;
+      scheduledFor: string;
+      copy: { postText: string } | { title: string; bodyText: string; tags: string[] };
+    };
+    handoffReceipts?: Array<{
+      reviewId: string;
+      attemptId: string;
+      planId: string;
+      variantId: string;
+      destination: 'x' | 'deviantart';
+      sourcePostId: string;
+      sourceVersionId: string;
+      previewMediaId: string;
+      exportHash: string;
+      copyHash: string;
+      revision: number;
+      taskId: string;
+      scheduledFor: string;
+      confirmedAt: string;
+    }>;
+    pendingReview?: {
+      id: string;
+      action: Extract<EditAction, { kind: "rename_post" | "tags" }>;
+      actionDigest: string;
+      sourceDigest: string;
+      expectedRevision: number;
+      expiresAt: number;
+    };
+    lastConfirmation?: { reviewId: string; idempotencyKey: string; actionDigest: string; commitId: string };
+  };
   /** Visible posts in the current Library page, in display order; distinct from selection. */
   loadedPostIds?: string[];
   selectedMediaIds?: string[];

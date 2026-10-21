@@ -4,7 +4,7 @@
  * @security-audit-required Codes bind `accountId` + `installationId`; HTTP handlers must verify session ownership before minting.
  */
 
-import { createHash, createHmac, timingSafeEqual } from "node:crypto";
+import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 
 const CODE_VERSION = "1";
 
@@ -81,6 +81,7 @@ export function signExtensionConsentCode(args: {
     v: 1,
     a: args.accountId,
     i: args.installationId.trim(),
+    n: randomBytes(16).toString("base64url"),
     exp
   };
   const payloadB64 = Buffer.from(JSON.stringify(payload), "utf8").toString("base64url");
@@ -91,7 +92,7 @@ export function signExtensionConsentCode(args: {
 
 /** @description Discriminated union for consent verification outcomes. */
 export type VerifyExtensionConsentCodeResult =
-  | { ok: true; accountId: string; installationId: string }
+  | { ok: true; accountId: string; installationId: string; expiresAt: number }
   | { ok: false; reason: string };
 
 /**
@@ -127,11 +128,11 @@ export function verifyExtensionConsentCode(code: string): VerifyExtensionConsent
   } catch {
     return { ok: false, reason: "payload" };
   }
-  if (parsed.exp < Date.now()) {
+  if (!Number.isFinite(parsed.exp) || parsed.exp <= Date.now()) {
     return { ok: false, reason: "expired" };
   }
   if (typeof parsed.a !== "string" || typeof parsed.i !== "string") {
     return { ok: false, reason: "payload" };
   }
-  return { ok: true, accountId: parsed.a, installationId: parsed.i };
+  return { ok: true, accountId: parsed.a, installationId: parsed.i, expiresAt: parsed.exp };
 }

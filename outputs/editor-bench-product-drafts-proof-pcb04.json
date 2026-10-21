@@ -1,0 +1,119 @@
+{
+  "ticket": "PCB-04",
+  "date": "2026-10-21",
+  "status": "accepted_backend_connector_with_recorded_verification_limits",
+  "planner": "Sol High; work/pcb-final-sol-plan.md",
+  "builder": "gpt-6-luna/high",
+  "reviewer": "root; scoped Ponytail Review",
+  "branch": "codex/local-build-2026-10-19",
+  "head": "91a72d2f1ea18a7b1326305e6dd4b1d224fbcbd1",
+  "committed": false,
+  "result": "Separate review and confirmation create or reuse exact X and DeviantArt drafts from one confirmed owned preview. Later literal replacement edits preserve before/after revisions and clear approval. Source originals and durable Conversation context remain intact.",
+  "persistence": "Existing PostDistributionPlan/Variant rows and row builders. conversation_draft_v1 in server-owned assistantPlan JSON holds pinned source/export and per-destination revisions. Unique conversationalGroupKey scopes the plan; no schema/migration. History is application-enforced append-only, not database-enforced immutable.",
+  "api": {
+    "base": "/api/v1/editor-bench/real-library-conversation",
+    "developmentOnly": true,
+    "createReview": "POST /session/:sessionId/draft/review {expectedRevision, sourcePostId, previewReviewId, destination, copy}",
+    "createConfirm": "POST /session/:sessionId/draft/confirm {expectedRevision, reviewId}",
+    "editReview": "POST /session/:sessionId/draft/edit/review {expectedRevision, expectedVariantRevision, variantId, copy}",
+    "editConfirm": "POST /session/:sessionId/draft/edit/confirm {expectedRevision, reviewId}",
+    "read": "GET /session/:sessionId/drafts; unique current drafts, per-variant revision history and confirmation receipts, independent of current catalog revision",
+    "copy": "X {postText}; DeviantArt {title, bodyText, tags}. Explicit literal text, bounded destination input, no model call or formatter truncation."
+  },
+  "safeguards": [
+    "Existing authenticated creator/account/session and mutation gates",
+    "Server-owned unique selection and confirmed preview receipt",
+    "Owned active source version and retained ready preview provenance",
+    "Pending source presentation digest, exact copy and revision checked at confirmation",
+    "Serializable transaction, identity lock, variant/session compare-and-set and receipt replay",
+    "Legacy patch/approve/handoff rejected for managed variants",
+    "Legacy active-plan/Coach lookup excludes only conversation-draft namespace",
+    "Rail copy seed blocks managed targets, including null-plan fallback, before source mutations",
+    "Refresh preserves confirmed draft and preview receipts"
+  ],
+  "verification": {
+    "rootBackend": {
+      "passed": 111,
+      "files": 9,
+      "report": "work/pcb04-root-tests-2026-10-21T08-00-47-025Z.json"
+    },
+    "finalRailDelta": {
+      "passed": 32,
+      "report": "work/pcb04-rail-tests-2026-10-21T08-05-08-317Z.json"
+    },
+    "postgres": {
+      "passed": 4,
+      "files": 3,
+      "evidence": "work/pcb04-postgres-2026-10-21T08-02-05-282Z.json",
+      "cleanup": "fresh nonce-owned disposable database dropped",
+      "checked": [
+        "PCB02 durable-edit regression",
+        "PCB03 exact JPEG export regression",
+        "imported Patreon source X/DA exact drafts",
+        "independent destinations and concurrent destination reuse",
+        "replacement edit history and approval reset",
+        "stale revision, overlong copy, wrong preview and changed-source rejection",
+        "restart/history/receipt replay and refresh persistence"
+      ]
+    },
+    "build": {
+      "exitCode": 0,
+      "evidence": "work/pcb04-luna-build-result.json"
+    },
+    "review": {
+      "scope": "work/pcb04-review-2026-10-21T08-05-15-422Z.json",
+      "files": [
+        "src/distribution/conversation-draft-variants.ts",
+        "src/editor-bench/real-library-conversation-routes.ts",
+        "src/gallery-editor/types.ts",
+        "src/distribution/post-distribution-service.ts",
+        "src/distribution/coach-checkpoint-service.ts",
+        "src/distribution/schedule-rail-service.ts",
+        "src/server.ts",
+        "tests/editor-bench/real-library-draft-variants-postgres.integration.test.ts",
+        "tests/schedule-rail-service.test.ts"
+      ],
+      "whitespace": "clean",
+      "findingsResolved": [
+        "duplicate replay binding",
+        "Prisma void advisory-lock return shape",
+        "preserve published-post error ordering",
+        "null-plan Rail copy-seeding bypass"
+      ],
+      "remainingTaskFindings": []
+    }
+  },
+  "failuresPreserved": [
+    "work/pcb04-luna-build.log",
+    "work/pcb04-postgres-2026-10-21T07-56-57-908Z.json",
+    "work/pcb04-postgres-2026-10-21T07-58-55-686Z.json",
+    "work/pcb04-root-tests-2026-10-21T07-56-57-836Z.json"
+  ],
+  "limits": [
+    "Synthetic local records and injected authentication only; no actual account or cloud writes.",
+    "No paid model calls, product UI mount, frontend/extension tests or builds, browser check, installed-extension execution, API restart, production migration or deployment. Publishing remains manual.",
+    "Historical unrelated distribution-package fixture failures and generic PostgreSQL concurrency error-code failure remain recorded; full backend suite is not claimed green.",
+    "PCB05/06 are authorized successors; neither was implemented before this acceptance."
+  ],
+  "preservation": {
+    "priorReportsUnchanged": 88,
+    "configurationUnchanged": true,
+    "ledgerRows": 919,
+    "ledgerSha256": "969cc6310604f9c506f63d55056c0c9221297400570229d8ba6c50f5bd86b7d9",
+    "developmentRemainingUsd": 0.34483654,
+    "heldoutRemainingUsd": 8.9690346,
+    "authoritativeLedger": "C:\\Users\\jorda\\Documents\\Codex\\2026-10-11\\c\\work\\relay\\.relay-data\\gallery-editor-budget.json",
+    "paidCalls": 0
+  },
+  "sourceHashes": {
+    "src/distribution/conversation-draft-variants.ts": "cb57201ce664a07fb149cf5157b2a0bd2f4f2f47aa4ec21475c7140c7df576cd",
+    "src/editor-bench/real-library-conversation-routes.ts": "e7a85834cc1252256b7c154507a19dfe5fef1f1df1b334ce92aa62aea74008d1",
+    "src/gallery-editor/types.ts": "2b60ff07d78c1079180be05772e16791000a42fe3a8470111d9e4e9686065659",
+    "src/distribution/post-distribution-service.ts": "44fc8bc68d78bff7674f6461a69d5f4f138d4ef433650c75bf9c74f19d86ae8b",
+    "src/distribution/coach-checkpoint-service.ts": "8c895fa800a5c004bca230c2e0650f73f7b6ebf3634baaf551bebe685cca5c72",
+    "src/distribution/schedule-rail-service.ts": "57ee7837b4cd35ca41d980c4f99c4191b6b8138b81cbd069567fd7b2a3874128",
+    "src/server.ts": "5b31435908d3b789bbcb33e7e6ed484e92bf9ec75eeee1527b807b48a95a9ca9",
+    "tests/editor-bench/real-library-draft-variants-postgres.integration.test.ts": "098adf42cf43a65c34df5abf5cab99cbbcd4e173943b408c4ec41cec5cd7f74b",
+    "tests/schedule-rail-service.test.ts": "cbdcbe0fc7ad513d54569281973354c652f3cc66d66751bf6acc0f3db82c63bc"
+  }
+}

@@ -19,6 +19,7 @@ export type SessionKindTs = "web" | "extension";
  * @see src/jsdoc-core-entities.ts
  */
 export type UserAccount = {
+  patreon_observation?: string;
   user_id: string;
   creator_id: string;
   email: string;
@@ -50,6 +51,10 @@ export type SessionToken = {
  * @description File-backed root document for `FileIdentityStore` (`users` keyed by membership id, `sessions` keyed by token).
  */
 export type IdentityStoreRoot = {
+  patreon_observation?: number;
+  patreon_members?: Record<string, import("../patreon/member-reconciliation.js").PatreonMemberState>;
+  patreon_rosters?: Record<string, import("../patreon/member-reconciliation.js").PatreonRosterState>;
+  patreon_member_events?: Record<string, Omit<import("../patreon/membership-ledger-sync.js").PlannedMembershipLedgerEvent, "occurredAt"> & { occurredAt: string }>;
   users: Record<string, UserAccount>;
   sessions: Record<string, SessionToken>;
 };

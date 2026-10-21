@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 /**
  * @fileoverview Persistence helpers for patron Patreon OAuth tokens using `PatronOAuthCredential` rows.
  * @description Mirrors creator `OAuthCredential` encryption envelopes for PE-H refresh workers.
@@ -5,7 +6,7 @@
  * @see prisma/schema.prisma PatronOAuthCredential, TenantMembership, Account
  */
 
-import { CredentialHealth, type PrismaClient } from "@prisma/client";
+import { CredentialHealth, type Prisma, type PrismaClient } from "@prisma/client";
 import type { PatreonTokenResponse } from "./patreon-client.js";
 import { RELAY_TOKEN_KEY_ID } from "./token-store-db.js";
 import type { TokenEncryption } from "../lib/crypto.js";
@@ -30,7 +31,7 @@ type PatronOAuthPayloadJson = {
  * @security-audit-required Persists bearer-grade secrets tied to patrons; callers must authorize `accountId` first.
  */
 export async function upsertPatronOAuthCredential(
-  prisma: PrismaClient,
+  prisma: PrismaClient | Prisma.TransactionClient,
   accountId: string,
   tokens: Pick<PatreonTokenResponse, "access_token" | "refresh_token">,
   encryption: TokenEncryption
@@ -68,7 +69,7 @@ export async function upsertPatronOAuthCredential(
  * @throws {Error} When membership row is missing or underlying `upsertPatronOAuthCredential` fails.
  */
 export async function upsertPatronOAuthCredentialForMembership(
-  prisma: PrismaClient,
+  prisma: PrismaClient | Prisma.TransactionClient,
   tenantMembershipId: string,
   tokens: Pick<PatreonTokenResponse, "access_token" | "refresh_token">,
   encryption: TokenEncryption
@@ -103,10 +104,18 @@ export type DecryptedPatronOAuthTokens = Pick<
  * @security-audit-required Returns bearer secrets; never log return value.
  */
 export async function getPatronOAuthTokensForAccount(
-  prisma: PrismaClient,
+  prisma: PrismaClient | Prisma.TransactionClient,
   accountId: string,
   encryption: TokenEncryption
 ): Promise<DecryptedPatronOAuthTokens | null> {
+  return (await getPatronOAuthCredentialSnapshot(prisma, accountId, encryption))?.tokens ?? null;
+}
+
+export async function getPatronOAuthCredentialSnapshot(
+  prisma: PrismaClient | Prisma.TransactionClient,
+  accountId: string,
+  encryption: TokenEncryption
+): Promise<{ tokens: DecryptedPatronOAuthTokens; version: string } | null> {
   const row = await prisma.patronOAuthCredential.findUnique({
     where: { accountId },
     select: { encryptedPayload: true }
@@ -121,10 +130,10 @@ export async function getPatronOAuthTokensForAccount(
     return null;
   }
   try {
-    return {
+    return { version: patronCredentialVersion(row.encryptedPayload), tokens: {
       access_token: encryption.decrypt(parsed.encrypted_access_token),
       refresh_token: encryption.decrypt(parsed.encrypted_refresh_token)
-    };
+    } };
   } catch {
     return null;
   }
@@ -140,7 +149,7 @@ export async function getPatronOAuthTokensForAccount(
  * @throws {Error} On Prisma `findUnique` failure.
  */
 export async function getPatronOAuthTokensForMembership(
-  prisma: PrismaClient,
+  prisma: PrismaClient | Prisma.TransactionClient,
   tenantMembershipId: string,
   encryption: TokenEncryption
 ): Promise<DecryptedPatronOAuthTokens | null> {
@@ -167,3 +176,6 @@ export async function listAccountIdsWithPatronOAuthCredentials(
   });
   return rows.map((r) => r.accountId);
 }
+
+/** Opaque revision of the exact encrypted credential used for a provider request. */
+export function patronCredentialVersion(payload: Uint8Array): string { return createHash("sha256").update(payload).digest("hex"); }

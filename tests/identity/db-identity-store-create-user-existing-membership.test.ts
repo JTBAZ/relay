@@ -34,6 +34,7 @@ describe("DbIdentityStore.createUser — existing TenantMembership for (account,
     const creatorProfileFindFirst = vi.fn().mockResolvedValue(null);
 
     const tx = {
+      $queryRaw: vi.fn().mockResolvedValue([{ value: 1n }]),
       tenant: { upsert: vi.fn().mockResolvedValue(tenant) },
       account: {
         findUnique: vi
@@ -54,6 +55,7 @@ describe("DbIdentityStore.createUser — existing TenantMembership for (account,
         create: vi.fn()
       },
       tenantMembership: {
+        findMany: vi.fn().mockResolvedValue([]),
         findUnique: vi
           .fn()
           .mockImplementation(
@@ -61,9 +63,10 @@ describe("DbIdentityStore.createUser — existing TenantMembership for (account,
               where: { accountId_tenantId?: { accountId: string; tenantId: string } };
             }) => {
               if (args.where.accountId_tenantId) return existingMembership;
-              return null;
+              return { ...existingMembership, account, tenant, tierIds: [], patreonObservation: 0n };
             }
           ),
+        update: vi.fn().mockResolvedValue({}),
         upsert: tenantMembershipUpsert
       },
       patronEntitlementSnapshot: { findUnique: snapshotFindUnique, upsert: snapshotUpsert },

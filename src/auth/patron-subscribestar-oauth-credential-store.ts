@@ -1,3 +1,4 @@
+import { patronCredentialVersion } from "./patron-oauth-credential-store.js";
 /**
  * @fileoverview Encrypted SubscribeStar **subscriber** OAuth tokens (`PatronSubscribestarOAuthCredential`).
  * @description Mirrors {@link ./patron-oauth-credential-store.js} for a second provider on the same `Account`.
@@ -50,6 +51,14 @@ export async function getPatronSubscribestarOAuthTokensForAccount(
   accountId: string,
   encryption: TokenEncryption
 ): Promise<DecryptedPatronSubscribestarOAuthTokens | null> {
+  return (await getPatronSubscribestarOAuthCredentialSnapshot(prisma, accountId, encryption))?.tokens ?? null;
+}
+
+export async function getPatronSubscribestarOAuthCredentialSnapshot(
+  prisma: PrismaClient,
+  accountId: string,
+  encryption: TokenEncryption
+): Promise<{ tokens: DecryptedPatronSubscribestarOAuthTokens; version: string } | null> {
   const row = await prisma.patronSubscribestarOAuthCredential.findUnique({
     where: { accountId },
     select: { encryptedPayload: true }
@@ -62,10 +71,10 @@ export async function getPatronSubscribestarOAuthTokensForAccount(
     return null;
   }
   try {
-    return {
+    return { version: patronCredentialVersion(row.encryptedPayload), tokens: {
       access_token: encryption.decrypt(parsed.encrypted_access_token),
       refresh_token: encryption.decrypt(parsed.encrypted_refresh_token)
-    };
+    } };
   } catch {
     return null;
   }

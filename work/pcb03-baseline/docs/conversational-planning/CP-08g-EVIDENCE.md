@@ -1,0 +1,7 @@
+# CP-08g — Explicit approved-plan preparation resume
+
+Root accepted service/route infrastructure, 2026-10-17. POST /api/v1/conversational-planning/plans/:planId/resume-preparation accepts exactly {approvedRevision}; it uses the existing account/Tenant/Autopost/feature/Studio mutation guards and actual preparation availability. The service requires the current exact approved revision and fresh context before invoking the adapter, then checks the post-adapter current revision/context/pointers before returning that stored result. It writes no new approval, composition revision or request ledger, and performs no model call. Existing confirm/approve replay behavior is unchanged.
+
+Root independently passed 33 service/route tests, combined with 38 persistence tests (71 total), and backend build. Worker strict targeted TypeScript passed. Tests include exact bodies, same-revision repeated resume without approval writes, pre/post source changes, cancelled/replaced revisions, partial/unavailable adapters, original confirm replay, fresh-key confirm conflict and existing strict route guards. They do not prove real adapter output uniqueness/rollback; CP-09c2 remains required.
+
+Production preparation remains unavailable until the accepted materializer/composition-root wiring exists. The web client is a separate bounded slice; no UI, browser storage, flags, schema, ordinary database or external publication changed here.

@@ -1,5 +1,6 @@
 import type { AppConfig } from "../server.js";
 import { resolvePublicWebhookBaseFromEnv } from "../patreon/patreon-webhook-registration.js";
+import { parseOptionalEnvBool } from "../security/production-env-defaults.js";
 
 /**
  * @fileoverview Describes effective backing stores (Postgres vs file) for parity/debug surfaces.
@@ -56,9 +57,9 @@ export type RelayRuntimeManifest = {
     deploy: FlaggedDomain;
     creator_oauth: FlaggedDomain;
   };
-  /** Always file-backed in current Relay (see truth matrix). */
+  /** Legacy file-routing indicators retained for diagnostic clients. */
   always_file: {
-    patreon_session_cookies: true;
+    patreon_session_cookies: boolean;
     patreon_webhook_metadata: true;
     patreon_campaign_creator_index: true;
   };
@@ -67,6 +68,7 @@ export type RelayRuntimeManifest = {
   /** False when `RELAY_PUBLIC_WEBHOOK_BASE_URL` / `PUBLIC_WEBHOOK_BASE_URL` / `public_webhook_base_url` are unset. */
   public_webhook_base_configured: boolean;
   prisma_configured: boolean;
+  patreon_cookie_store?: { readPath: StoreReadPath };
 }
 
 /**
@@ -76,6 +78,7 @@ export type RelayRuntimeManifest = {
  * @returns Effective store routing metadata.
  */
 export function buildRelayRuntimeManifest(config: AppConfig): RelayRuntimeManifest {
+  const cookieDb = config.relay_db_store_patreon_cookie ?? parseOptionalEnvBool(process.env.RELAY_DB_STORE_PATREON_COOKIE) ?? (process.env.NODE_ENV === "production" && Boolean(config.prisma));
   const identity = flagDb(config, "relay_db_store_identity", "RELAY_DB_STORE_IDENTITY");
   const canonical = flagDb(config, "relay_db_store_canonical", "RELAY_DB_STORE_CANONICAL");
   const watermark = flagDb(config, "relay_db_store_watermark", "RELAY_DB_STORE_WATERMARK");
@@ -129,12 +132,13 @@ export function buildRelayRuntimeManifest(config: AppConfig): RelayRuntimeManife
       creator_oauth: fd("RELAY_DB_STORE_CREATOR_OAUTH", creator_oauth)
     },
     always_file: {
-      patreon_session_cookies: true,
+      patreon_session_cookies: !cookieDb,
       patreon_webhook_metadata: true,
       patreon_campaign_creator_index: true
     },
     webhook_endpoint_table: { wired_as_live: true },
     public_webhook_base_configured: publicWebhookBaseConfigured,
-    prisma_configured: Boolean(config.prisma)
+    prisma_configured: Boolean(config.prisma),
+    patreon_cookie_store: { readPath: cookieDb ? "postgres" : "file" }
   };
 }

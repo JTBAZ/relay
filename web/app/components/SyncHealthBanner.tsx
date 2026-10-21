@@ -9,13 +9,14 @@ import {
 type Props = {
   syncState: PatreonSyncStateData | null;
   onViewDetails: () => void;
+  refreshError?: string | null;
 };
 
-export default function SyncHealthBanner({ syncState, onViewDetails }: Props) {
-  if (!syncState || !shouldShowSyncHealthBanner(syncState)) return null;
+export default function SyncHealthBanner({ syncState, onViewDetails, refreshError }: Props) {
+  if (!refreshError && (!syncState || !shouldShowSyncHealthBanner(syncState))) return null;
 
-  const status = syncState.sync_health.status;
-  const line = formatSyncHealthRollupBanner(syncState);
+  const status = syncState?.sync_health.status;
+  const line = refreshError ?? (syncState ? formatSyncHealthRollupBanner(syncState) : "Patreon status unavailable.");
 
   const box =
     status === "failed"
@@ -30,7 +31,7 @@ export default function SyncHealthBanner({ syncState, onViewDetails }: Props) {
       aria-label="Patreon sync status"
       className={`flex shrink-0 items-center justify-between gap-3 border-b px-3 py-2 text-xs leading-snug text-[var(--lib-fg)] ${box}`}
     >
-      <p className="min-w-0 flex-1">{line}</p>
+      <p role="status" className="min-w-0 flex-1 break-words">{line}</p>
       <button
         type="button"
         className="shrink-0 rounded-md border border-[color-mix(in_srgb,var(--lib-fg)_18%,var(--lib-border))] bg-[var(--lib-card)] px-2.5 py-1 text-[11px] font-medium text-[var(--lib-fg)] transition-colors hover:border-[var(--lib-primary)]/50 hover:text-[var(--lib-fg)]"

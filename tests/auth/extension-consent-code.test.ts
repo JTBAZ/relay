@@ -28,11 +28,15 @@ describe("extension-consent-code", () => {
       installationId: "inst_a"
     });
     const v = verifyExtensionConsentCode(consent_code);
-    expect(v).toEqual({
+    expect(v).toMatchObject({
       ok: true,
       accountId: "acc_1",
       installationId: "inst_a"
     });
+  });
+  it("mints distinct fresh codes at the same instant", () => {
+    const input = { accountId: "same-account", installationId: "same-installation" };
+    expect(signExtensionConsentCode(input).consent_code).not.toBe(signExtensionConsentCode(input).consent_code);
   });
 
   it("verify rejects bad signature", () => {

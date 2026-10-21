@@ -69,8 +69,10 @@ export function creatorSyncHealthStateToWebDto(
   }
 
   const successTimes: string[] = [];
-  if (post?.ok === true) successTimes.push(post.finished_at);
-  if (member?.ok === true) successTimes.push(member.finished_at);
+  if (post?.last_verified_at) successTimes.push(post.last_verified_at);
+  else if (post?.ok === true) successTimes.push(post.finished_at);
+  if (member?.last_verified_at) successTimes.push(member.last_verified_at);
+  else if (member?.ok === true) successTimes.push(member.finished_at);
   const last_success_at = maxIsoTimes(successTimes);
 
   const campaign_id =

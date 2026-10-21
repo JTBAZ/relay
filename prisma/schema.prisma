@@ -82,6 +82,7 @@ enum OAuthPurpose {
 enum OAuthTransactionPurpose {
   patron_link
   creator_ingest
+  extension_consent
 }
 
 enum OAuthTransactionStatus {
@@ -250,6 +251,8 @@ model Tenant {
   usageEvents    UsageEvent[]
   conversationalPlans CreatorConversationalPlan[]
   patreonSession PatreonSession?
+  patreonChangeWork PatreonChangeWork[]
+  patreonMediaRepairs PatreonMediaRepair[]
 
   @@map("tenants")
 }
@@ -325,6 +328,7 @@ model Account {
 
 /// Per-tenant membership for an `Account` (tier entitlements, patron sessions, etc.).
 model TenantMembership {
+  patreonObservation BigInt @default(0) @map("patreon_observation")
   id           String     @id @default(cuid())
   accountId    String     @map("account_id")
   account      Account    @relation(fields: [accountId], references: [id], onDelete: Cascade)
@@ -731,11 +735,21 @@ model PostTier {
 model SyncCursor {
   creatorId    String   @map("creator_id")
   campaignId   String   @map("campaign_id")
-  lastSyncedAt DateTime @map("last_synced_at")
+  lastSyncedAt DateTime? @map("last_synced_at")
   updatedAt    DateTime @map("updated_at")
+  postProgress Json? @map("post_progress")
+  postVersion Int @default(0) @map("post_version")
+  postLeaseToken String? @map("post_lease_token")
+  postLeaseUntil DateTime? @map("post_lease_until")
 
   @@id([creatorId, campaignId])
   @@map("sync_cursors")
+}
+
+model PatreonPostScheduler {
+  id String @id
+  afterCreatorId String? @map("after_creator_id")
+  @@map("patreon_post_scheduler")
 }
 
 /// Replaces file-backed `PatreonSyncHealthStore` (`last_post_scrape` / `last_member_sync` JSON blobs).
@@ -2369,6 +2383,7 @@ enum RelayEngagementEventType {
 /// Append-only Patreon membership lifecycle (opaque `patreon_member_id` only).
 /// **Idempotency (P5a-db-003):** at most one row per `(creator_id, patreon_member_id, event_type, occurred_at)` so sync/webhook replays cannot double-insert the same logical event. If upstream ever collides within the same `TIMESTAMP(3)` bucket, introduce a separate `dedupe_key` column + unique instead.
 model CreatorMembershipEvent {
+  dedupeKey       String?                      @unique @map("dedupe_key")
   id              String                       @id @default(cuid())
   creatorId       String                       @map("creator_id")
   patreonMemberId String                       @map("patreon_member_id")
@@ -2379,7 +2394,7 @@ model CreatorMembershipEvent {
   source          CreatorMembershipEventSource
   payload         Json?
 
-  @@unique([creatorId, patreonMemberId, eventType, occurredAt])
+  // Legacy rows retain a partial unique index in SQL; keyed transitions use dedupeKey.
   @@index([creatorId, occurredAt])
   @@map("creator_membership_events")
 }
@@ -3668,4 +3683,85 @@ model CreatorPostingRhythmWindow {
   cursor Json?
   @@index([rhythmId, eligibleFrom])
   @@map("creator_posting_rhythm_windows")
+}
+
+/// Minimal durable Patreon work; one coalesced record per creator/campaign/resource.
+model PatreonMediaRepair {
+  creatorId String @map("creator_id")
+  tenant Tenant @relation(fields: [creatorId], references: [relayCreatorId], onDelete: Cascade)
+  kind String
+  resourceId String @map("resource_id")
+  head String
+  generation Int @default(1)
+  phase String @default("pending")
+  attempts Int @default(0)
+  dueAt DateTime @default(now()) @map("due_at")
+  leaseToken String? @map("lease_token")
+  leaseUntil DateTime? @map("lease_until")
+  lastError String? @map("last_error")
+  verifiedAt DateTime? @map("verified_at")
+  collection String?
+  updatedAt DateTime @updatedAt @map("updated_at")
+  @@id([creatorId, kind, resourceId])
+  @@index([dueAt, leaseUntil])
+  @@map("patreon_media_repairs")
+}
+
+model PatreonChangeWork {
+  id String @id @default(cuid())
+  creatorId String @map("creator_id")
+  tenant Tenant @relation(fields: [creatorId], references: [relayCreatorId], onDelete: Cascade)
+  campaignId String @map("campaign_id")
+  resourceType String @map("resource_type")
+  resourceId String @map("resource_id")
+  eventType String @map("event_type")
+  deliveryHash String @map("delivery_hash")
+  generation Int @default(1)
+  completedGeneration Int @default(0) @map("completed_generation")
+  status String @default("pending")
+  attempts Int @default(0)
+  firstPendingAt DateTime? @map("first_pending_at")
+  lastAcceptedAt DateTime @default(now()) @map("last_accepted_at")
+  dueAt DateTime @map("due_at")
+  leaseToken String? @map("lease_token")
+  retryNotBefore DateTime? @map("retry_not_before")
+  leaseUntil DateTime? @map("lease_until")
+  completedAt DateTime? @map("completed_at")
+  lastErrorCode String? @map("last_error_code")
+  @@unique([creatorId, campaignId, resourceType, resourceId])
+  @@index([status, dueAt])
+  @@index([status, leaseUntil])
+  @@index([status, completedAt])
+  @@map("patreon_change_work")
+}
+
+
+/// PS-10 durable member observations; opaque identities only. SQL adds a creator/user JSON expression index.
+model PatreonMemberState {
+  creatorId String @map("creator_id")
+  campaignId String @map("campaign_id")
+  memberId String @map("member_id")
+  seenScanId String? @map("seen_scan_id")
+  state Json
+  @@id([creatorId, campaignId, memberId])
+  @@index([creatorId, campaignId, seenScanId])
+  @@map("patreon_member_states")
+}
+
+/// PS-10 roster continuation, distinct from publication watermarks.
+model PatreonRosterState {
+  creatorId String @map("creator_id")
+  campaignId String @map("campaign_id")
+  state Json
+  updatedAt DateTime @updatedAt @map("updated_at")
+  @@id([creatorId, campaignId])
+  @@map("patreon_roster_states")
+}
+
+/// Hashed provider identity watermark fences pre-unlink/purge collectors without retaining raw mappings.
+model PatreonIdentityFence {
+  identityHash String @id @map("identity_hash")
+  observation BigInt
+
+  @@map("patreon_identity_fences")
 }

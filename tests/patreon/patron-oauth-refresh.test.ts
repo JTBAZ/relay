@@ -6,6 +6,8 @@ describe("refreshPatronOAuthTokensWithStoredRefreshToken", () => {
   it("returns null when no stored refresh token path yields empty", async () => {
     const enc = new TokenEncryption(Buffer.alloc(32, 1).toString("base64"));
     const prisma = {
+      account: { findUnique: vi.fn().mockResolvedValue({ patronPatreonUserId: "user" }) },
+      $queryRaw: vi.fn().mockResolvedValue([{ value: 1n }]),
       patronOAuthCredential: { findUnique: vi.fn().mockResolvedValue(null) }
     };
     const patreonClient = { refreshToken: vi.fn() };
@@ -28,6 +30,9 @@ describe("refreshPatronOAuthTokensWithStoredRefreshToken", () => {
     };
     const upsert = vi.fn().mockResolvedValue({});
     const prisma = {
+      account: { findUnique: vi.fn().mockResolvedValue({ patronPatreonUserId: "user" }) },
+      $queryRaw: vi.fn().mockImplementation(async (sql) => String(sql).includes("SELECT observation") ? [] : [{ value: 1n }]),
+      $transaction: async (cb: (tx: unknown) => Promise<unknown>): Promise<unknown> => cb(prisma),
       patronOAuthCredential: {
         findUnique: vi.fn().mockResolvedValue({
           encryptedPayload: Buffer.from(JSON.stringify(inner), "utf8")

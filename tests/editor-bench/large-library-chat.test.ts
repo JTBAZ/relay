@@ -70,8 +70,8 @@ describe('large synthetic Library chat', () => {
     expect(JSON.stringify(smallInput)).not.toContain('Wonder Woman shoreline study');
     expect(buildMockLibraryVocabulary(small, firstRequest)).toEqual(buildMockLibraryVocabulary(large, firstRequest));
     expect(Buffer.byteLength(JSON.stringify({ input: smallInput, tools: [], responseSchema: smallSeen[0]!.responseSchema }), 'utf8')).toBeLessThanOrEqual(LARGE_LIBRARY_CHAT_LIMITS.modelRequestBytes);
-    expect(Buffer.byteLength(JSON.stringify({ input: smallInput, tools: [], responseSchema: smallSeen[0]!.responseSchema }), 'utf8')).toBe(9965);
-    expect(createHash('sha256').update(JSON.stringify({ input: smallInput, tools: [], responseSchema: smallSeen[0]!.responseSchema })).digest('hex')).toBe('8da68cfc9d012d090fe6e498eae1c575ee51485e885aedae0f48869a92bdc5dd');
+    expect(Buffer.byteLength(JSON.stringify({ input: smallInput, tools: [], responseSchema: smallSeen[0]!.responseSchema }), 'utf8')).toBe(9955);
+    expect(createHash('sha256').update(JSON.stringify({ input: smallInput, tools: [], responseSchema: smallSeen[0]!.responseSchema })).digest('hex')).toBe('a44792a67e4732ba7bcae9c773b41be15adba188d41fae95c18ff64953185800');
   });
 
   it('adds a full-catalog OR union over the long description and late series while keeping prior exclusions', async () => {

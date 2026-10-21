@@ -402,7 +402,7 @@ export function registerPipelineParityRoutes(
             : null,
           sync_cursor: syncCursor
             ? {
-                last_synced_at: syncCursor.lastSyncedAt.toISOString(),
+                last_synced_at: syncCursor.lastSyncedAt?.toISOString() ?? null,
                 updated_at: syncCursor.updatedAt.toISOString()
               }
             : null,

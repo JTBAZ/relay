@@ -182,6 +182,26 @@ export function tierIdsFromIdentityDoc(doc: PatreonIdentityDocument, campaignId:
   return [...new Set(tiers)];
 }
 
+/** Strict creator admission requires explicit links; the general parser keeps its legacy fallback. */
+export function hasVerifiedCreatorMembershipRelationships(doc: PatreonIdentityDocument, campaignId: string): boolean {
+  const included = doc.included ?? [];
+  if (!Array.isArray(included)) return false;
+  const link = (value: unknown, type: string): value is { type: string; id: string } => {
+    if (!value || typeof value !== "object") return false;
+    const row = value as { type?: unknown; id?: unknown };
+    return row.type === type && typeof row.id === "string" && row.id.length > 0 && row.id.trim() === row.id;
+  };
+  for (const member of included) {
+    if (member?.type !== "member" || member.attributes?.patron_status !== "active_patron") continue;
+    const campaign = member.relationships?.campaign?.data;
+    if (!link(campaign, "campaign")) return false;
+    if (campaign.id !== campaignId) continue;
+    const tiers = member.relationships?.currently_entitled_tiers?.data;
+    if (!Array.isArray(tiers) || !tiers.every((tier) => link(tier, "tier"))) return false;
+  }
+  return true;
+}
+
 export function extractPatronSyncFromIdentity(
   doc: PatreonIdentityDocument,
   patreonCampaignNumericId: string

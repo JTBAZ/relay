@@ -180,7 +180,7 @@ describe("executeDeletion", () => {
     const modUpdate = vi.fn().mockResolvedValue({ count: 0 });
     const blockCount = vi.fn().mockResolvedValue(2);
     const followCount = vi.fn().mockResolvedValue(5);
-    const memberships = [{ id: "m1" }, { id: "m2" }];
+    const memberships = [{ id: "m1", tenant: { relayCreatorId: "creator" } }, { id: "m2", tenant: { relayCreatorId: "creator" } }];
     const outboxCreate = vi.fn().mockResolvedValue({ id: "ev1" });
 
     const prisma = {
@@ -203,6 +203,7 @@ describe("executeDeletion", () => {
       $transaction: async (cb: (tx: unknown) => Promise<unknown>) =>
         cb({
           tenantMembership: { findMany: vi.fn().mockResolvedValue(memberships) },
+          patronEntitlementSnapshot: { findMany: vi.fn().mockResolvedValue([]) },
           patronFavorite: { deleteMany: favRes },
           patronSavedCollectionEntry: { count: entryCount },
           patronSavedCollection: { deleteMany: colRes },
@@ -212,7 +213,8 @@ describe("executeDeletion", () => {
           moderationAction: { updateMany: modUpdate },
           accountBlock: { count: blockCount },
           accountFollow: { count: followCount },
-          account: { delete: accountDelete },
+          account: { delete: accountDelete, findUnique: vi.fn().mockResolvedValue(null) },
+          $queryRaw: vi.fn().mockResolvedValue([]),
           accountDeletion: { update: updateAccountDeletion }
         })
     } as never;

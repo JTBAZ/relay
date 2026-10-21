@@ -50,7 +50,7 @@ describe("DbCanonicalStore — creator-owned relationships survive Patreon refre
         count: vi.fn().mockResolvedValue(0),
         createMany: vi.fn().mockResolvedValue({})
       },
-      mediaAsset: { deleteMany: vi.fn().mockResolvedValue({}), createMany: vi.fn().mockResolvedValue({}) },
+      mediaAsset: { findMany: vi.fn().mockResolvedValue([]), deleteMany: vi.fn().mockResolvedValue({}), createMany: vi.fn().mockResolvedValue({}) },
       postVersion: { deleteMany: vi.fn().mockResolvedValue({}) },
       post: {
         findMany: postFindMany,
@@ -158,6 +158,7 @@ describe("DbCanonicalStore — creator-owned relationships survive Patreon refre
     expect(tx.mediaAsset.deleteMany).toHaveBeenCalledWith({
       where: {
         primaryPostId: { in: ["patreon_post_stomp_me"] },
+        id: { notIn: [] },
         ingestOrigin: "PATREON"
       }
     });

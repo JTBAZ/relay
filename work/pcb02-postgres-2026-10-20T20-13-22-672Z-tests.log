@@ -1,0 +1,69 @@
+
+ RUN  v3.2.4 C:/Users/jorda/Documents/Codex/2026-10-11/c/work/relay
+
+ ❯ tests/gallery-editor-postgres.integration.test.ts (26 tests | 1 failed) 3568ms
+   ✓ Gallery editor — PostgreSQL atomic execution > merges compiled patches against the transaction cart, preserving manual provenance and rejecting stale revisions  600ms
+   ✓ Gallery editor — PostgreSQL atomic execution > legacy manual merge preserves displayed names, journals mode changes, and supports Undo 285ms
+   ✓ Gallery editor — PostgreSQL atomic execution > legacy manual link preserves displayed names, journals mode changes, and supports Undo 152ms
+   ✓ Gallery editor — PostgreSQL atomic execution > legacy manual split preserves displayed names, journals mode changes, and supports Undo 144ms
+   ✓ Gallery editor — PostgreSQL atomic execution > preview writes only the session; family commit inherits source titles and preserves custom exceptions 95ms
+   ✓ Gallery editor — PostgreSQL atomic execution > explicit post rename is affected and is not counted as a preserved exception 65ms
+   ✓ Gallery editor — PostgreSQL atomic execution > journals an Inspect Save rename and exposes its receipt to old and new sessions before Undo 86ms
+   ✓ Gallery editor — PostgreSQL atomic execution > creates a series with ordered part labels and resolves the live inherited title 144ms
+   ✓ Gallery editor — PostgreSQL atomic execution > searches current and historical composed series titles containing quotes  367ms
+   ✓ Gallery editor — PostgreSQL atomic execution > mixed presentation, tags and collection edits commit in one journal and safely undo 143ms
+   ✓ Gallery editor — PostgreSQL atomic execution > invalid multi-action proposal rolls back its session revision and artist writes 35ms
+   ✓ Gallery editor — PostgreSQL atomic execution > rolls actual artist writes back if durable journal insertion fails 68ms
+   ✓ Gallery editor — PostgreSQL atomic execution > Undo restores original work membership and removes newly created naming parents 117ms
+   ✓ Gallery editor — PostgreSQL atomic execution > Undo after reparenting cannot overwrite later edits to the old family 81ms
+   ✓ Gallery editor — PostgreSQL atomic execution > shows destination siblings in a reparent preview without changing their titles 44ms
+   ✓ Gallery editor — PostgreSQL atomic execution > links an unbundled post atomically and Undo restores its absent membership 134ms
+   ✓ Gallery editor — PostgreSQL atomic execution > splits into a fresh work when the deterministic default is occupied and leaves its family intact 87ms
+   ✓ Gallery editor — PostgreSQL atomic execution > journals both source and destination family closure for a manual merge 68ms
+   ✓ Gallery editor — PostgreSQL atomic execution > cart exposes changed part label and ordering even when the work row stays inherited 82ms
+   ✓ Gallery editor — PostgreSQL atomic execution > same-key concurrent Apply returns one receipt and one atomic journal 121ms
+   ✓ Gallery editor — PostgreSQL atomic execution > two distinct keys cannot both consume the same cart revision 66ms
+   × Gallery editor — PostgreSQL atomic execution > concurrent sessions cannot commit competing previews for the same post 103ms
+     → expected PrismaClientKnownRequestError{ …(7) } to match object { code: 'STALE_PREVIEW' }
+(5 matching properties omitted from actual)
+   ✓ Gallery editor — PostgreSQL atomic execution > new family members invalidate the preview and prevent partial Apply 55ms
+   ✓ Gallery editor — PostgreSQL atomic execution > Undo refuses to overwrite later manual edits or a new family child 142ms
+   ✓ Gallery editor — PostgreSQL atomic execution > enforces creator/actor ownership in sessions, actions and relational naming links 73ms
+   ✓ Gallery editor — PostgreSQL atomic execution > database constraints enforce one naming series per work and valid part ordering 184ms
+ ✓ tests/editor-bench/real-library-conversation-postgres.integration.test.ts (1 test) 620ms
+   ✓ durable Library conversation — PostgreSQL > persists selected context and confirms a literal source edit atomically, then replays the original receipt  506ms
+
+ Test Files  1 failed | 1 passed (2)
+      Tests  1 failed | 26 passed (27)
+   Start at  22:13:27
+   Duration  6.92s (transform 585ms, setup 27ms, collect 2.38s, tests 4.19s, environment 0ms, prepare 87ms)
+
+
+(node:52240) DeprecationWarning: Calling client.query() when the client is already executing a query is deprecated and will be removed in pg@9.0. Use async/await or an external async flow control mechanism instead.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/gallery-editor-postgres.integration.test.ts > Gallery editor — PostgreSQL atomic execution > concurrent sessions cannot commit competing previews for the same post
+AssertionError: expected PrismaClientKnownRequestError{ …(7) } to match object { code: 'STALE_PREVIEW' }
+(5 matching properties omitted from actual)
+
+- Expected
++ Received
+
+- {
+-   "code": "STALE_PREVIEW",
++ PrismaClientKnownRequestError {
++   "code": "P2002",
+  }
+
+ ❯ tests/gallery-editor-postgres.integration.test.ts:419:90
+    417|     expect(readers).toBe(2);
+    418|     expect(results.filter(r => r.status === "fulfilled")).toHaveLength…
+    419|     expect((results.find(r => r.status === "rejected") as PromiseRejec…
+       |                                                                                          ^
+    420|     expect(await db.galleryEditorCommit.count({ where: { creatorId } }…
+    421|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+

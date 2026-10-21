@@ -11,6 +11,7 @@ import {
   IdentityAuthProvider,
   OAuthPurpose,
   PrismaClient,
+  Prisma,
   ProviderKind,
   PublicSlugSource,
   UserKind
@@ -62,6 +63,20 @@ export class DbPatreonTokenStore implements PatreonTokenStore {
    * @throws {Error} Unique constraint clashes on `providerAccount`, transaction failures, or decryption/encryption errors from upstream callers.
    */
   public async upsert(tokens: PersistedPatreonTokens): Promise<void> {
+    await this.updateForCreator(tokens.creator_id, async () => tokens);
+  }
+
+  public async updateForCreator(creatorId: string, update: (current: PersistedPatreonTokens | null) => Promise<PersistedPatreonTokens>): Promise<void> {
+    await this.prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`SET LOCAL lock_timeout = '10s'`;
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`patreon-oauth:${creatorId}`}, 0))`;
+      const tokens = await update(await this.readTokens(tx, creatorId));
+      if (tokens.creator_id !== creatorId) throw new Error("Patreon token scope mismatch.");
+      await this.persistTokens(tx, tokens);
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted, timeout: 50_000, maxWait: 10_000 });
+  }
+
+  private async persistTokens(tx: Prisma.TransactionClient, tokens: PersistedPatreonTokens): Promise<void> {
     const enc = this.encryption;
     const payload: EncryptedPayloadJson = {
       encrypted_access_token: enc.encrypt(tokens.access_token),
@@ -73,110 +88,108 @@ export class DbPatreonTokenStore implements PatreonTokenStore {
       tokens.provider_user_id?.trim() ||
       `relay_creator:${tokens.creator_id}`;
 
-    await this.prisma.$transaction(async (tx) => {
-      const tenant = await tx.tenant.upsert({
-        where: { relayCreatorId: tokens.creator_id },
-        create: { relayCreatorId: tokens.creator_id },
-        update: {}
-      });
+    const tenant = await tx.tenant.upsert({
+      where: { relayCreatorId: tokens.creator_id },
+      create: { relayCreatorId: tokens.creator_id },
+      update: {}
+    });
 
-      let creatorUser = await tx.user.findFirst({
-        where: { tenantId: tenant.id, kind: UserKind.creator }
+    let creatorUser = await tx.user.findFirst({
+      where: { tenantId: tenant.id, kind: UserKind.creator }
+    });
+    if (!creatorUser) {
+      creatorUser = await tx.user.create({
+        data: {
+          tenantId: tenant.id,
+          kind: UserKind.creator,
+          identityAuthProvider: IdentityAuthProvider.patreon,
+          tierIds: []
+        }
       });
-      if (!creatorUser) {
-        creatorUser = await tx.user.create({
-          data: {
-            tenantId: tenant.id,
-            kind: UserKind.creator,
-            identityAuthProvider: IdentityAuthProvider.patreon,
-            tierIds: []
-          }
-        });
-        const publicSlug = await allocateUniquePublicSlug(tx, null);
-        await tx.creatorProfile.create({
-          data: {
-            tenantId: tenant.id,
-            userId: creatorUser.id,
-            publicSlug,
-            slugSource: PublicSlugSource.allocated
-          }
-        });
-      }
-
-      let pa = await tx.providerAccount.findFirst({
-        where: {
+      const publicSlug = await allocateUniquePublicSlug(tx, null);
+      await tx.creatorProfile.create({
+        data: {
+          tenantId: tenant.id,
           userId: creatorUser.id,
-          provider: ProviderKind.patreon,
-          oauthCredential: {
-            is: { purpose: OAuthPurpose.creator_ingest }
+          publicSlug,
+          slugSource: PublicSlugSource.allocated
+        }
+      });
+    }
+
+    let pa = await tx.providerAccount.findFirst({
+      where: {
+        userId: creatorUser.id,
+        provider: ProviderKind.patreon,
+        oauthCredential: {
+          is: { purpose: OAuthPurpose.creator_ingest }
+        }
+      }
+    });
+
+    if (!pa) {
+      pa = await tx.providerAccount.findUnique({
+        where: {
+          provider_providerUserId: {
+            provider: ProviderKind.patreon,
+            providerUserId: pid
           }
         }
       });
-
       if (!pa) {
-        pa = await tx.providerAccount.findUnique({
-          where: {
-            provider_providerUserId: {
-              provider: ProviderKind.patreon,
-              providerUserId: pid
-            }
-          }
-        });
-        if (!pa) {
-          pa = await tx.providerAccount.create({
-            data: {
-              userId: creatorUser.id,
-              provider: ProviderKind.patreon,
-              providerUserId: pid
-            }
-          });
-        } else if (pa.userId !== creatorUser.id) {
-          await tx.providerAccount.update({
-            where: { id: pa.id },
-            data: { userId: creatorUser.id }
-          });
-        }
-      } else if (
-        pa.providerUserId.startsWith("relay_creator:") &&
-        tokens.provider_user_id?.trim() &&
-        !tokens.provider_user_id.trim().startsWith("relay_creator:")
-      ) {
-        const nextPid = tokens.provider_user_id.trim();
-        const clash = await tx.providerAccount.findFirst({
-          where: {
+        pa = await tx.providerAccount.create({
+          data: {
+            userId: creatorUser.id,
             provider: ProviderKind.patreon,
-            providerUserId: nextPid,
-            NOT: { id: pa.id }
+            providerUserId: pid
           }
         });
-        if (clash) {
-          throw new Error(
-            "This Patreon login is already connected to a different Relay studio. " +
-              "Use the same Patreon account you used for this studio, or ask support if you need to move the link."
-          );
-        }
+      } else if (pa.userId !== creatorUser.id) {
         await tx.providerAccount.update({
           where: { id: pa.id },
-          data: { providerUserId: nextPid }
+          data: { userId: creatorUser.id }
         });
       }
-
-      await tx.oAuthCredential.upsert({
-        where: { providerAccountId: pa.id },
-        create: {
-          providerAccountId: pa.id,
-          purpose: OAuthPurpose.creator_ingest,
-          encryptedPayload,
-          keyId: RELAY_TOKEN_KEY_ID,
-          healthStatus: toPrismaHealth(tokens.credential_health_status),
-          expiresAtHint: new Date(tokens.access_token_expires_at)
-        },
-        update: {
-          encryptedPayload,
-          healthStatus: toPrismaHealth(tokens.credential_health_status),
-          expiresAtHint: new Date(tokens.access_token_expires_at)
+    } else if (
+      pa.providerUserId.startsWith("relay_creator:") &&
+      tokens.provider_user_id?.trim() &&
+      !tokens.provider_user_id.trim().startsWith("relay_creator:")
+    ) {
+      const nextPid = tokens.provider_user_id.trim();
+      const clash = await tx.providerAccount.findFirst({
+        where: {
+          provider: ProviderKind.patreon,
+          providerUserId: nextPid,
+          NOT: { id: pa.id }
         }
       });
+      if (clash) {
+        throw new Error(
+          "This Patreon login is already connected to a different Relay studio. " +
+            "Use the same Patreon account you used for this studio, or ask support if you need to move the link."
+        );
+      }
+      await tx.providerAccount.update({
+        where: { id: pa.id },
+        data: { providerUserId: nextPid }
+      });
+    }
+
+    await tx.oAuthCredential.upsert({
+      where: { providerAccountId: pa.id },
+      create: {
+        providerAccountId: pa.id,
+        purpose: OAuthPurpose.creator_ingest,
+        encryptedPayload,
+        keyId: RELAY_TOKEN_KEY_ID,
+        healthStatus: toPrismaHealth(tokens.credential_health_status),
+        expiresAtHint: new Date(tokens.access_token_expires_at)
+      },
+      update: {
+        encryptedPayload,
+        healthStatus: toPrismaHealth(tokens.credential_health_status),
+        expiresAtHint: new Date(tokens.access_token_expires_at)
+      }
     });
   }
 
@@ -190,7 +203,11 @@ export class DbPatreonTokenStore implements PatreonTokenStore {
   public async getByCreatorId(
     creatorId: string
   ): Promise<PersistedPatreonTokens | null> {
-    const cred = await this.prisma.oAuthCredential.findFirst({
+    return this.readTokens(this.prisma, creatorId);
+  }
+
+  private async readTokens(db: Prisma.TransactionClient, creatorId: string): Promise<PersistedPatreonTokens | null> {
+    const cred = await db.oAuthCredential.findFirst({
       where: {
         purpose: OAuthPurpose.creator_ingest,
         providerAccount: {

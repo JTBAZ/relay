@@ -5,6 +5,8 @@
  */
 
 import {
+  EntitlementSource,
+  Prisma,
   IdentityAuthProvider,
   PrismaClient,
   SessionKind,
@@ -13,11 +15,15 @@ import {
   type Tenant,
   type TenantMembership
 } from "@prisma/client";
+import { assertPatreonIdentityObservation } from "./patreon-identity-mutation.js";
+import { randomUUID } from "node:crypto";
+import type { PatreonMemberMutationRunner, PatreonMemberState, PatreonRosterState } from "../patreon/member-reconciliation.js";
+import { appendMembershipLedgerEvents, loadCreatorTierAmountMap } from "../patreon/membership-ledger-sync.js";
 import type { IdentityStore, SessionReadOptions } from "./identity-store.js";
 import { hashPassword, verifyPassword } from "./password.js";
 import { getPlatformRelayCreatorId } from "./platform-tenant.js";
 import { hashOpaqueSessionToken } from "./session-token-hash.js";
-import { upsertPatronEntitlementSnapshotForOAuth } from "./patron-entitlement-snapshot.js";
+import { loadPlatformPatronProjections, mergeEntitledTierIdsCrossProvider, upsertPatronEntitlementSnapshot, upsertPatronEntitlementSnapshotForOAuth } from "./patron-entitlement-snapshot.js";
 import { EXTENSION_SESSION_TTL_MS } from "./session-constants.js";
 import type { AuthProvider, IdentityStoreRoot, SessionToken, UserAccount } from "./types.js";
 
@@ -58,6 +64,7 @@ function membershipToAccount(
     password_hash: m.account.passwordHash ?? "",
     auth_provider: mapAuthProviderFromDb(m.account.identityAuthProvider),
     patreon_user_id: m.account.patronPatreonUserId ?? undefined,
+    patreon_observation: m.patreonObservation?.toString(),
     tier_ids: [...m.tierIds],
     created_at: m.createdAt.toISOString(),
     updated_at: m.updatedAt.toISOString()
@@ -91,8 +98,16 @@ export class DbIdentityStore implements IdentityStore {
   }
 
   public async createUser(user: UserAccount): Promise<void> {
-    const emailNorm = user.email.toLowerCase().trim();
     await this.prisma.$transaction(async (tx) => {
+      if (user.patreon_user_id) await tx.$queryRaw`SELECT 1 FROM pg_advisory_xact_lock(hashtextextended(${`patreon-identity:${user.patreon_user_id}`}, 0))`;
+      await tx.$queryRaw`SELECT 1 FROM pg_advisory_xact_lock(hashtextextended(${`entitlements:${user.creator_id}`}, 0))`;
+      await this.createUserInTransaction(tx, user);
+    });
+  }
+
+  private async createUserInTransaction(tx: Prisma.TransactionClient, user: UserAccount, preserveProfile = false, deferEntitlements = false): Promise<void> {
+    if (user.patreon_user_id && user.patreon_observation) await assertPatreonIdentityObservation(tx, user.patreon_user_id, user.patreon_observation, user.creator_id);
+    const emailNorm = user.email.toLowerCase().trim();
       const tenant = await tx.tenant.upsert({
         where: { relayCreatorId: user.creator_id },
         create: { relayCreatorId: user.creator_id },
@@ -135,11 +150,9 @@ export class DbIdentityStore implements IdentityStore {
         account = await tx.account.update({
           where: { id: account.id },
           data: {
-            emailNorm: emailNorm.length > 0 ? emailNorm : account.emailNorm,
-            username: user.username ?? account.username,
-            usernameNorm: user.username_norm ?? account.usernameNorm,
-            passwordHash: user.password_hash || null,
-            identityAuthProvider: mapAuthProvider(user.auth_provider),
+            ...(preserveProfile ? {} : { emailNorm: emailNorm.length > 0 ? emailNorm : account.emailNorm,
+              username: user.username ?? account.username, usernameNorm: user.username_norm ?? account.usernameNorm,
+              passwordHash: user.password_hash || null, identityAuthProvider: mapAuthProvider(user.auth_provider) }),
             patronPatreonUserId: user.patreon_user_id ?? account.patronPatreonUserId,
             legacyFileId: user.user_id
           }
@@ -155,6 +168,7 @@ export class DbIdentityStore implements IdentityStore {
         where: { accountId_tenantId: { accountId: account.id, tenantId: tenant.id } }
       });
       const membershipId = existingMembership?.id ?? user.user_id;
+      if (user.patreon_user_id) user.tier_ids = mergeEntitledTierIdsCrossProvider(existingMembership?.tierIds, user.tier_ids, "patreon");
 
       await tx.tenantMembership.upsert({
         where: { id: membershipId },
@@ -183,15 +197,103 @@ export class DbIdentityStore implements IdentityStore {
       // resolve to a phantom row.
       user.user_id = membershipId;
 
-      if (user.creator_id !== getPlatformRelayCreatorId()) {
+      if (!deferEntitlements && user.creator_id !== getPlatformRelayCreatorId()) {
         await upsertPatronEntitlementSnapshotForOAuth(tx, {
           patronMembershipId: membershipId,
           relayCreatorId: user.creator_id,
-          entitledTierIds: user.tier_ids
+          entitledTierIds: user.tier_ids,
+          patreonObservation: user.patreon_observation, inTransaction: true
         });
       }
-    });
   }
+
+  public async capturePatreonObservation(): Promise<string> {
+    const rows = await this.prisma.$queryRaw<Array<{ value: bigint }>>`SELECT nextval('patreon_member_observation_seq') AS value`;
+    return rows[0]!.value.toString();
+  }
+
+  public async registerPatreonUser(creatorId: string, id: string, email: string, tiers: string[], observation?: string, campaignScope?: string): Promise<UserAccount> {
+    return this.mutatePatreonMembers(creatorId, "oauth", async (tx) => {
+      await tx.saveUser(id, tiers, observation, email);
+      return (await tx.user(id))!;
+    }, { userIds: [id], source: "oauth_exchange", campaignScope });
+  }
+
+  public readonly supportsSharedPatreonMembers = true;
+  public readonly mutatePatreonMembers: PatreonMemberMutationRunner = async (creatorId, campaignId, operation, options) => this.prisma.$transaction(async (tx) => {
+    for (const id of [...new Set(options?.userIds ?? [])].sort()) await tx.$queryRaw`SELECT 1 FROM pg_advisory_xact_lock(hashtextextended(${`patreon-identity:${id}`}, 0))`;
+    await tx.$queryRaw`SELECT 1 FROM pg_advisory_xact_lock(hashtextextended(${`entitlements:${creatorId}`}, 0))`;
+    const key = { creatorId, campaignId };
+    let amounts: Promise<Map<string, number>> | undefined;
+    const findUser = async (id: string) => {
+      const row = await tx.tenantMembership.findFirst({ where: { tenant: { relayCreatorId: creatorId }, account: { patronPatreonUserId: id }, role: TenantRole.patron }, include: { account: true, tenant: true } });
+      return row ? membershipToAccount(row) : null;
+    };
+    return operation({
+      assertObservation: (id, token) => assertPatreonIdentityObservation(tx, id, token, creatorId),
+      member: async (memberId) => {
+        const row = await tx.patreonMemberState.findUnique({ where: { creatorId_campaignId_memberId: { ...key, memberId } } });
+        return row ? row.state as unknown as PatreonMemberState : null;
+      },
+      saveMember: async (value) => { await tx.patreonMemberState.upsert({ where: { creatorId_campaignId_memberId: { ...key, memberId: value.memberId } },
+        create: { ...key, memberId: value.memberId, seenScanId: value.seenScanId, state: value as unknown as Prisma.InputJsonValue },
+        update: { seenScanId: value.seenScanId, state: value as unknown as Prisma.InputJsonValue } }); },
+      roster: async () => {
+        const row = await tx.patreonRosterState.findUnique({ where: { creatorId_campaignId: key } });
+        return row ? row.state as unknown as PatreonRosterState : null;
+      },
+      saveRoster: async (value) => { await tx.patreonRosterState.upsert({ where: { creatorId_campaignId: key },
+        create: { ...key, state: value as unknown as Prisma.InputJsonValue }, update: { state: value as unknown as Prisma.InputJsonValue } }); },
+      absent: async (scanId, limit) => (await tx.patreonMemberState.findMany({ where: { ...key, OR: [{ seenScanId: null }, { seenScanId: { not: scanId } }] }, orderBy: { memberId: "asc" }, take: limit })).map((row) => row.state as unknown as PatreonMemberState),
+      unmapped: async () => {
+        const rows = await tx.$queryRaw<Array<{ count: number }>>`WITH evidence AS (
+          SELECT a.id AS account_id, a.patron_patreon_user_id AS provider_id, unnest(m.tier_ids) AS tier_id
+            FROM tenants t JOIN tenant_memberships m ON m.tenant_id = t.id JOIN accounts a ON a.id = m.account_id
+            WHERE t.relay_creator_id = ${creatorId} AND m.role = 'patron'
+          UNION ALL
+          SELECT a.id AS account_id, a.patron_patreon_user_id AS provider_id, unnest(p.entitled_tier_ids) AS tier_id
+            FROM patron_entitlement_snapshots p JOIN tenant_memberships m ON m.id = p.patron_user_id
+              JOIN tenants t ON t.id = m.tenant_id JOIN accounts a ON a.id = m.account_id
+            WHERE p.relay_creator_id = ${creatorId} AND t.relay_creator_id = ${getPlatformRelayCreatorId()} AND m.role = 'patron'
+          ) SELECT COUNT(DISTINCT evidence.account_id)::int AS count FROM evidence
+          WHERE left(evidence.tier_id, 13) = 'patreon_tier_'
+            AND NOT EXISTS (SELECT 1 FROM patreon_member_states s WHERE s.creator_id = ${creatorId}
+              AND s.state->>'userId' = evidence.provider_id AND (s.state->'tiers') ? evidence.tier_id)`;
+        return rows[0]!.count;
+      },
+      user: async (id) => {
+        const user = await findUser(id);
+        const account = await tx.account.findUnique({ where: { patronPatreonUserId: id } });
+        if (!account) return user;
+        const projections = await loadPlatformPatronProjections(tx, account.id, creatorId);
+        const tiers = projections.flatMap((row) => row.snapshot?.entitledTierIds ?? []);
+        if (user) return { ...user, tier_ids: [...new Set([...user.tier_ids, ...tiers])] };
+        const anchor = projections.find((row) => row.snapshot);
+        if (!anchor) return null;
+        const row = await tx.tenantMembership.findUnique({ where: { id: anchor.id }, include: { account: true, tenant: true } });
+        const prior = row ? membershipToAccount(row) : null;
+        return prior ? { ...prior, creator_id: creatorId, tier_ids: [...new Set(tiers)] } : null;
+      },
+      saveUser: async (id, tiers, observation, email) => {
+        const reserved = observation ? null : await tx.$queryRaw<Array<{ value: bigint }>>`SELECT nextval('patreon_member_observation_seq') AS value`;
+        const token = observation ?? reserved![0]!.value.toString();
+        await assertPatreonIdentityObservation(tx, id, token, creatorId);
+        let user = await findUser(id);
+        if (!user) {
+          const now = new Date().toISOString();
+          user = { user_id: `usr_${randomUUID()}`, creator_id: creatorId, patreon_user_id: id, email: email?.trim().toLowerCase() || `patreon_${id}@relay.local`,
+            password_hash: "", auth_provider: "patreon", tier_ids: tiers, created_at: now, updated_at: now, patreon_observation: token };
+          // Final scoped acceptance below writes canonical state and its projections once.
+          await this.createUserInTransaction(tx, user, email === undefined, true);
+        }
+        await upsertPatronEntitlementSnapshot(tx, { patronMembershipId: user.user_id, relayCreatorId: creatorId, ...(campaignId !== "oauth" ? { campaignId } : {}),
+          entitledTierIds: tiers.filter((tier) => tier.startsWith("patreon_tier_")), source: options?.source ?? EntitlementSource.webhook, inTransaction: true,
+          crossProviderMergeSource: "patreon", patreonObservation: token, patreonCampaignScope: options?.campaignScope });
+      },
+      tierAmounts: () => amounts ??= loadCreatorTierAmountMap(tx, creatorId),
+      ledger: (events) => appendMembershipLedgerEvents(tx, events)
+    });
+  }, { timeout: 30_000, isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted });
 
   public async registerAccountEmailPassword(
     email: string,
@@ -373,10 +475,6 @@ export class DbIdentityStore implements IdentityStore {
       include: { tenant: true }
     });
     if (!m || m.role !== TenantRole.patron) return;
-    await this.prisma.tenantMembership.update({
-      where: { id: userId },
-      data: { tierIds }
-    });
     const relayCreatorId = m.tenant.relayCreatorId;
     if (!relayCreatorId) return;
     await upsertPatronEntitlementSnapshotForOAuth(this.prisma, {

@@ -1,0 +1,13 @@
+{
+  "files": [
+    "src/editor-bench/real-library-conversation-routes.ts",
+    "src/editor-bench/real-library-preview-export.ts",
+    "src/gallery-editor/types.ts",
+    "src/server.ts",
+    "src/storage/relay-upload-r2.ts",
+    "tests/editor-bench/real-library-preview-export-postgres.integration.test.ts",
+    "tests/relay-upload-r2.test.ts"
+  ],
+  "patch": "work/pcb03-review-2026-10-20T22-25-29-195Z.diff",
+  "whitespace": ""
+}

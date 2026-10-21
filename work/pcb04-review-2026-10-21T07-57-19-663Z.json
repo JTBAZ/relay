@@ -1,0 +1,14 @@
+{
+  "files": [
+    "src/distribution/conversation-draft-variants.ts",
+    "src/editor-bench/real-library-conversation-routes.ts",
+    "src/gallery-editor/types.ts",
+    "src/distribution/post-distribution-service.ts",
+    "src/distribution/coach-checkpoint-service.ts",
+    "src/distribution/schedule-rail-service.ts",
+    "src/server.ts",
+    "tests/editor-bench/real-library-draft-variants-postgres.integration.test.ts"
+  ],
+  "patch": "work/pcb04-review-2026-10-21T07-57-19-663Z.diff",
+  "whitespace": ""
+}

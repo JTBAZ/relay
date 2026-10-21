@@ -8,7 +8,7 @@ import { createApp } from "../src/server.js";
 import { FilePatreonCookieStore } from "../src/auth/cookie-store.js";
 
 describe("cookie vault HTTP failures", () => {
-  it.each(["upsert", "remove", "getSessionId"] as const)("returns a private 503 when %s fails", async (method) => {
+  it.each(["upsert", "remove", "checkCredential"] as const)("returns a private 503 when %s fails", async (method) => {
     const root = await mkdtemp(join(tmpdir(), "relay-cookie-http-"));
     const { app } = createApp({
       relay_token_encryption_key: randomBytes(32).toString("base64"), patreon_client_id: "fixture", patreon_client_secret: "fixture",
@@ -22,7 +22,7 @@ describe("cookie vault HTTP failures", () => {
       }).expect(201);
       failure = vi.spyOn(FilePatreonCookieStore.prototype, method).mockRejectedValueOnce(new Error("private-session-material"));
       const token = registered.body.data.token as string;
-      const response = method === "getSessionId"
+      const response = method === "checkCredential"
         ? await request(app).get("/api/v1/patreon/cookie/status").query({ creator_id: "fixture-creator" }).set("Authorization", `Bearer ${token}`)
         : await request(app)[method === "upsert" ? "post" : "delete"]("/api/v1/patreon/cookie").set("Authorization", `Bearer ${token}`)
           .send({ creator_id: "fixture-creator", session_id: "fixture-only" });

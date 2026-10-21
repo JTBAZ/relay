@@ -3269,10 +3269,11 @@ export function galleryParamsFromLayoutFilterQuery(query: Record<string, unknown
 
 /** Patreon incremental sync watermark (GET /api/v1/patreon/sync-state). */
 export type PatreonOAuthHealthData = {
-  credential_health_status: "healthy" | "refresh_failed";
-  access_token_expires_at: string;
-  access_token_expired: boolean;
-  access_token_expires_soon: boolean;
+  availability?: "available" | "unavailable";
+  credential_health_status: "healthy" | "refresh_failed" | "unavailable";
+  access_token_expires_at: string | null;
+  access_token_expired: boolean | null;
+  access_token_expires_soon: boolean | null;
 };
 
 export type SyncHealthErrorData = {
@@ -3331,7 +3332,22 @@ export type WebhookRegistrationSummaryData = {
   updated_at?: string;
 };
 
+export type PatreonRepairTargetData = { kind: "post" | "media" | "change"; resource_id: string; generation: number; head: string | null; due_at: string };
+export type PatreonCompletenessLaneData = {
+  status: "unknown" | "pending" | "partial" | "complete" | "stale" | "failed" | "unavailable";
+  scope: "campaign" | "bounded" | null;
+  last_attempt_at: string | null; last_verified_at: string | null;
+  counts: Record<string, number> | null;
+  next_action: "continue_sync" | "sync_members" | "retry_media" | "retry_change" | null;
+  repairs?: PatreonRepairTargetData[];
+  sources?: string[];
+};
 export type PatreonSyncStateData = {
+  availability?: "available" | "unavailable";
+  unavailable_reason?: "missing_tokens" | "missing_binding" | "binding_mismatch";
+  server_checked_at?: string;
+  upstream_probe?: { availability: "available" | "unavailable"; observed_at: string | null };
+  completeness?: { attention: boolean; archive: PatreonCompletenessLaneData; posts_access: PatreonCompletenessLaneData; members: PatreonCompletenessLaneData; media: PatreonCompletenessLaneData };
   creator_id: string;
   patreon_campaign_id: string;
   watermark_published_at: string | null;
@@ -3386,6 +3402,7 @@ export function patreonOAuthReconnectNeeded(
   runtimeErrors?: Array<string | null | undefined>
 ): boolean {
   if (s) {
+    if (s.oauth.availability === "unavailable") return true;
     if (s.oauth.access_token_expired) return true;
     if (s.oauth.credential_health_status === "refresh_failed") return true;
     const codes = [
@@ -3405,6 +3422,8 @@ export function patreonOAuthReconnectNeeded(
 
 /** True when the Library should show a sync-issue pill without opening the menu. */
 export function syncStateNeedsAttention(s: PatreonSyncStateData): boolean {
+  if (s.oauth.availability === "unavailable") return true;
+  if (s.availability === "unavailable" || s.completeness?.attention) return true;
   if (s.oauth.credential_health_status === "refresh_failed") return true;
   if (s.oauth.access_token_expired) return true;
   if (s.cookie_session_status === "expired_local") return true;
@@ -3452,14 +3471,17 @@ export function formatSyncHealthBanner(s: PatreonSyncStateData): string | null {
 
 /** True when the Library should show the P5-sync-003 rollup banner (not shown for `healthy`). */
 export function shouldShowSyncHealthBanner(s: PatreonSyncStateData): boolean {
+  if (s.availability === "unavailable" || s.completeness?.attention) return true;
   const st = s.sync_health?.status;
   return st === "failed" || st === "degraded" || st === "unknown";
 }
 
 /** Copy for the rollup banner: OAuth/cookie/webhook/scrape hints first, then `sync_health.message_key` fallbacks. */
 export function formatSyncHealthRollupBanner(s: PatreonSyncStateData): string {
+  if (s.availability === "unavailable") return s.unavailable_reason === "missing_tokens" ? "Reconnect Patreon to restore the connection." : "Patreon campaign binding is unavailable. Reconnect Patreon or check studio setup.";
   const fromLegacy = formatSyncHealthBanner(s);
   if (fromLegacy) return fromLegacy;
+  if (s.completeness?.attention) return "Patreon sync has incomplete or unverified work. Open details for a targeted repair.";
   const key = s.sync_health?.message_key;
   if (key === "sync_health.post_scrape_warnings") {
     return "Patreon import finished with warnings — open details for more.";
@@ -3525,6 +3547,10 @@ export async function fetchPatreonSyncState(
     q.set("probe_upstream", "true");
   }
   return relayFetch<PatreonSyncStateData>(`/api/v1/patreon/sync-state?${q}`);
+}
+
+export async function postPatreonRepair(body: { creator_id: string; kind: "post" | "media" | "change"; resource_id: string; generation: number; head: string | null }) {
+  return relayFetch<{ status: "accepted" | "already_pending"; completed: false }>("/api/v1/patreon/repair", { method: "POST", body: JSON.stringify(body), signal: AbortSignal.timeout(10_000) });
 }
 
 export async function postPatreonScrape(body: {

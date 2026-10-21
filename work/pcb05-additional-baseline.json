@@ -1,0 +1,7 @@
+{
+  "reason": "These two tracked files were clean in the initial git status and outside the initial snapshot directories; capture their unchanged HEAD as the pre-PCB05 source.",
+  "files": {
+    "src/goal-cycle/planner/schedule-local.ts": "9cbb34b03c3c8bc0b81b94f66b829a1c730c8847f20feb9de414f4d58ac46db6",
+    "tests/goal-cycle/schedule-local.test.ts": "0b4c8b4a2d009da310bdfd6053a8a673ec1eec7a74b2b1e05eb4b4ba42c948e2"
+  }
+}

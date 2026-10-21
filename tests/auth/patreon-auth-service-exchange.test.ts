@@ -16,6 +16,7 @@ describe("PatreonAuthService.exchangeCodeAndPersist", () => {
     };
 
     const tokenStore: PatreonTokenStore = {
+      updateForCreator: async (id, update) => tokenStore.upsert(await update(await tokenStore.getByCreatorId(id))),
       upsert: vi.fn().mockResolvedValue(undefined),
       getByCreatorId: vi.fn().mockResolvedValue({
         creator_id: "c1",
@@ -56,6 +57,7 @@ describe("PatreonAuthService.exchangeCodeAndPersist", () => {
     };
 
     const tokenStore: PatreonTokenStore = {
+      updateForCreator: async (id, update) => tokenStore.upsert(await update(await tokenStore.getByCreatorId(id))),
       upsert: vi.fn().mockResolvedValue(undefined),
       getByCreatorId: vi.fn().mockResolvedValue(null),
       listCreatorIds: vi.fn().mockResolvedValue([])

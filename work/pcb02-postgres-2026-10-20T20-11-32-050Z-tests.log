@@ -1,0 +1,40 @@
+
+ RUN  v3.2.4 C:/Users/jorda/Documents/Codex/2026-10-11/c/work/relay
+
+ ✓ tests/gallery-editor-postgres.integration.test.ts (26 tests) 4282ms
+   ✓ Gallery editor — PostgreSQL atomic execution > merges compiled patches against the transaction cart, preserving manual provenance and rejecting stale revisions  620ms
+   ✓ Gallery editor — PostgreSQL atomic execution > legacy manual merge preserves displayed names, journals mode changes, and supports Undo  384ms
+   ✓ Gallery editor — PostgreSQL atomic execution > searches current and historical composed series titles containing quotes  421ms
+ ❯ tests/editor-bench/real-library-conversation-postgres.integration.test.ts (1 test | 1 failed) 466ms
+   × durable Library conversation — PostgreSQL > persists selected context and confirms a literal source edit atomically, then replays the original receipt 310ms
+     → expected 200 "OK", got 409 "Conflict"
+
+ Test Files  1 failed | 1 passed (2)
+      Tests  1 failed | 26 passed (27)
+   Start at  22:11:59
+   Duration  13.37s (transform 640ms, setup 36ms, collect 8.18s, tests 4.75s, environment 0ms, prepare 116ms)
+
+
+(node:21628) DeprecationWarning: Calling client.query() when the client is already executing a query is deprecated and will be removed in pg@9.0. Use async/await or an external async flow control mechanism instead.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/editor-bench/real-library-conversation-postgres.integration.test.ts > durable Library conversation — PostgreSQL > persists selected context and confirms a literal source edit atomically, then replays the original receipt
+Error: expected 200 "OK", got 409 "Conflict"
+ ❯ tests/editor-bench/real-library-conversation-postgres.integration.test.ts:90:183
+     88|     expect(review.body.data.after.title).toBe('Durable title');
+     89|     expect((await loadPostNaming(db, creatorId))[postId]?.effectiveTit…
+     90|     const confirmed = await request(firstApp).post(`${base}/session/${…
+       |                                                                                                                                                                                       ^
+     91|     expect(confirmed.body.data.receipt.actionCount).toBe(1);
+     92|     expect(confirmed.body.data.conversation.selection.postIds).toEqual…
+ ❯ Test._assertStatus node_modules/supertest/lib/test.js:309:14
+ ❯ node_modules/supertest/lib/test.js:365:13
+ ❯ Test._assertFunction node_modules/supertest/lib/test.js:342:13
+ ❯ Test.assert node_modules/supertest/lib/test.js:195:23
+ ❯ localAssert node_modules/supertest/lib/test.js:138:14
+ ❯ Server.<anonymous> node_modules/supertest/lib/test.js:152:11
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+

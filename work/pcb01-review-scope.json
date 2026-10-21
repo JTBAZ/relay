@@ -1,0 +1,68 @@
+{
+  "src/editor-bench/large-library-chat.ts": {
+    "sha256": "3b4af25170b869d1d0b2fb0dfef60a6544edd2f55a31c4da85d107cafa747c02",
+    "hunks": [
+      "@@ -35,0 +36,4 @@ export type LargeLibraryChatResult = { status: number; body: LargeLibraryChatRes",
+      "@@ -37 +41 @@ export type LargeLibraryChatResult = { status: number; body: LargeLibraryChatRes",
+      "@@ -133,2 +137,2 @@ function usageInfo(usage: ProviderUsage | undefined) {",
+      "@@ -136 +140 @@ function response(body: GroundedSelectionResponse, provenance: LargeLibraryChatR",
+      "@@ -138 +142 @@ function unchanged(snapshot: LargeRealLibrarySnapshot, state: RetrievalRefinemen",
+      "@@ -240 +244 @@ function extractOutput(output: unknown): string {",
+      "@@ -243 +247 @@ export async function runMockLargeLibraryChat(options: {",
+      "@@ -250 +254 @@ export async function runMockLargeLibraryChat(options: {",
+      "@@ -254 +258 @@ export async function runMockLargeLibraryChat(options: {",
+      "@@ -311,0 +316,7 @@ export async function runMockLargeLibraryChat(options: {"
+    ],
+    "taskHunks": [
+      "@@ -35,0 +36,4 @@ export type LargeLibraryChatResult = { status: number; body: LargeLibraryChatRes",
+      "@@ -37 +41 @@ export type LargeLibraryChatResult = { status: number; body: LargeLibraryChatRes",
+      "@@ -133,2 +137,2 @@ function usageInfo(usage: ProviderUsage | undefined) {",
+      "@@ -136 +140 @@ function response(body: GroundedSelectionResponse, provenance: LargeLibraryChatR",
+      "@@ -138 +142 @@ function unchanged(snapshot: LargeRealLibrarySnapshot, state: RetrievalRefinemen",
+      "@@ -240 +244 @@ function extractOutput(output: unknown): string {",
+      "@@ -243 +247 @@ export async function runMockLargeLibraryChat(options: {",
+      "@@ -250 +254 @@ export async function runMockLargeLibraryChat(options: {",
+      "@@ -254 +258 @@ export async function runMockLargeLibraryChat(options: {",
+      "@@ -311,0 +316,7 @@ export async function runMockLargeLibraryChat(options: {"
+    ]
+  },
+  "src/server.ts": {
+    "sha256": "5a69758d8d9c5487851451ce5daeea3652e5e6d21fda78459fe3129de1485321",
+    "hunks": [
+      "@@ -14 +14 @@ import express, { Request, Response } from \"express\";",
+      "@@ -694,0 +695 @@ import { mountGroundedLibrarySelectionBodyParser, registerGroundedLibrarySelecti",
+      "@@ -915 +915,0 @@ import { PatreonCampaignCreatorIndex } from \"./patreon/patreon-campaign-creator-",
+      "@@ -922 +922 @@ import {",
+      "@@ -927,0 +928,2 @@ import { processPatreonWebhookStub } from \"./webhooks/patreon-webhook.js\";",
+      "@@ -2103,5 +2105 @@ export function createApp(config: AppConfig): CreateAppResult {",
+      "@@ -2250,65 +2247,0 @@ export function createApp(config: AppConfig): CreateAppResult {",
+      "@@ -2316,7 +2249,53 @@ export function createApp(config: AppConfig): CreateAppResult {",
+      "@@ -2323,0 +2303,26 @@ export function createApp(config: AppConfig): CreateAppResult {",
+      "@@ -2327,2 +2332,2 @@ export function createApp(config: AppConfig): CreateAppResult {",
+      "@@ -19517,0 +19523,16 @@ export function createApp(config: AppConfig): CreateAppResult {"
+    ],
+    "taskHunks": [
+      "@@ -694,0 +695 @@ import { mountGroundedLibrarySelectionBodyParser, registerGroundedLibrarySelecti",
+      "@@ -19517,0 +19523,16 @@ export function createApp(config: AppConfig): CreateAppResult {"
+    ]
+  },
+  "tests/editor-bench/large-library-chat.test.ts": {
+    "sha256": "d19f7703856ed765385d05ca9722dac0f7fe1b1a223a511c594c58b14e4dd9ed",
+    "hunks": [
+      "@@ -73,2 +73,2 @@ describe('large synthetic Library chat', () => {"
+    ],
+    "taskHunks": [
+      "@@ -73,2 +73,2 @@ describe('large synthetic Library chat', () => {"
+    ]
+  },
+  "src/editor-bench/real-library-conversation-routes.ts": {
+    "sha256": "3175885ce3d5723310ae36f96d04ac576a34cfc3e0142cf274bc3d6d040e9312",
+    "newFile": true,
+    "lines": 247
+  },
+  "tests/editor-bench/real-library-conversation-routes.test.ts": {
+    "sha256": "d9d5a608b3b500b27aefc3caae1dea3bf8fd6440268d12b3af23fd757fbcf135",
+    "newFile": true,
+    "lines": 176
+  }
+}

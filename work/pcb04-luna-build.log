@@ -1,0 +1,18 @@
+
+> relay@0.1.0 build
+> prisma generate && tsc -p tsconfig.build.json && node scripts/copy-build-assets.mjs
+
+Loaded Prisma config from prisma.config.ts.
+
+Prisma schema loaded from prisma\schema.prisma.
+
+✔ Generated Prisma Client (v7.7.0) to .\node_modules\@prisma\client in 6.46s
+
+Start by importing your Prisma Client (See: https://pris.ly/d/importing-client)
+
+
+src/distribution/conversation-draft-variants.ts(76,29): error TS2339: Property 'pendingDraftReview' does not exist on type '{ draftReceipts: any[]; }'.
+src/distribution/conversation-draft-variants.ts(171,13): error TS2451: Cannot redeclare block-scoped variable 'replay'.
+src/distribution/conversation-draft-variants.ts(181,13): error TS2451: Cannot redeclare block-scoped variable 'replay'.
+src/distribution/conversation-draft-variants.ts(182,264): error TS2339: Property 'revision' does not exist on type 'never'.
+src/distribution/conversation-draft-variants.ts(182,294): error TS2339: Property 'confirmedAt' does not exist on type 'never'.

@@ -14,6 +14,8 @@ import {
   Prisma,
   type PrismaClient
 } from "@prisma/client";
+import type { PostSyncCheckpoint } from "../patreon/post-sync-progress.js";
+import { checkpointPostSync } from "../patreon/post-sync-progress-db.js";
 import { ensureDefaultCreativeWorkForPost } from "../analytics/creative-work-service.js";
 import { ensurePatreonPlatformInstanceForIngestedPost } from "../analytics/platform-instance-service.js";
 import { IngestOwnershipConflict } from "./ownership-conflict.js";
@@ -64,6 +66,10 @@ function inferCampaignIdForPost(
   snapshot: CanonicalSnapshot
 ): string {
   const cmap = snapshot.campaigns[creatorId] ?? {};
+  if (post.campaign_id) {
+    if (cmap[post.campaign_id]?.creator_id !== creatorId) throw new Error("Post campaign is unavailable in this creator snapshot.");
+    return post.campaign_id;
+  }
   const campaignIds = Object.keys(cmap);
   if (campaignIds.length === 1) {
     return campaignIds[0]!;
@@ -182,6 +188,7 @@ function pickWinner<T extends { version_seq: number; creator_id: string }>(
  * @see ./canonical-store.js
  */
 export class DbCanonicalStore implements CanonicalStore {
+  public readonly supportsAtomicCreatorMutations = true;
   public constructor(private readonly prisma: PrismaClient) {}
 
   // ---------------------------------------------------------------------------
@@ -286,6 +293,7 @@ export class DbCanonicalStore implements CanonicalStore {
       const current = sorted[sorted.length - 1]!;
       const postRow: PostRow = {
         post_id: p.id,
+        campaign_id: p.campaignId ?? undefined,
         creator_id: p.creatorId,
         is_public: p.isPublic,
         current,
@@ -313,6 +321,8 @@ export class DbCanonicalStore implements CanonicalStore {
         role: m.currentRole ?? undefined,
         ingested_at: m.currentIngestedAt.toISOString()
       };
+      const proof = Array.isArray(versions) ? versions.find((v) => v.version_seq === current.version_seq && v.upstream_revision === current.upstream_revision)?.export_record : undefined;
+      if (proof?.relative_blob_path === current.storage_key) current.export_record = proof;
       const row: MediaRow = {
         media_id: m.id,
         creator_id: m.creatorId,
@@ -450,7 +460,7 @@ export class DbCanonicalStore implements CanonicalStore {
         const haveFp = versionListFingerprint(
           (dbP.versions ?? []).map((v) => ({ versionSeq: v.versionSeq, upstreamRevision: v.upstreamRevision }))
         );
-        if (wantFp === haveFp) {
+        if (wantFp === haveFp && JSON.stringify(post.current.tier_ids) === JSON.stringify(dbP.versions.at(-1)?.tierIds ?? [])) {
           preservePostIds.add(post.post_id);
         }
       }
@@ -462,6 +472,7 @@ export class DbCanonicalStore implements CanonicalStore {
         await tx.mediaAsset.deleteMany({
           where: {
             primaryPostId: { in: stompPostIds },
+            id: { notIn: Object.keys(mediaMap) },
             ingestOrigin
           }
         });
@@ -470,7 +481,7 @@ export class DbCanonicalStore implements CanonicalStore {
       if (removedPostIds.length > 0) {
         await tx.post.deleteMany({ where: { id: { in: removedPostIds } } });
       }
-      return { preservePostIds, existingPostIds: new Set(existingById.keys()) };
+      return { preservePostIds, existingPostIds: new Set(existingById.keys()), existingGates: existingById };
     }
 
     const lanePatreon = await mirrorLane(
@@ -532,13 +543,15 @@ export class DbCanonicalStore implements CanonicalStore {
       entries: PostRow[];
       preserve: Set<string>;
       existing: Set<string>;
+      existingGates: Map<string, { isPublic: boolean; requiredTierId: string | null }>;
       source: PostSource;
     }> = [
-      { entries: postEntriesPatreon, preserve: preservePostIdsPat, existing: lanePatreon.existingPostIds, source: PostSource.PATREON },
+      { entries: postEntriesPatreon, preserve: preservePostIdsPat, existing: lanePatreon.existingPostIds, existingGates: lanePatreon.existingGates, source: PostSource.PATREON },
       {
         entries: postEntriesSubscribestar,
         preserve: preservePostIdsSs,
         existing: laneSubscribestar.existingPostIds,
+        existingGates: laneSubscribestar.existingGates,
         source: PostSource.SUBSCRIBESTAR
       }
     ];
@@ -548,6 +561,14 @@ export class DbCanonicalStore implements CanonicalStore {
     for (const lane of mirrorLanes) {
       for (const post of lane.entries) {
         if (lane.preserve.has(post.post_id)) {
+          const previousGate = lane.existingGates.get(post.post_id);
+          const requiredTierId = post.is_public ? null : post.current.tier_ids[0] ?? null;
+          if (post.is_public !== undefined && (post.is_public !== previousGate?.isPublic || requiredTierId !== previousGate?.requiredTierId)) {
+            await tx.post.updateMany({
+              where: { id: post.post_id, creatorId, source: lane.source },
+              data: { isPublic: post.is_public, requiredTierId }
+            });
+          }
           continue;
         }
         postIdsToMaterialize.add(post.post_id);
@@ -565,6 +586,10 @@ export class DbCanonicalStore implements CanonicalStore {
         const data = {
           campaignId,
           upstreamStatus: snapshotToUpstreamStatus(post),
+          ...(post.is_public !== undefined ? {
+            isPublic: post.is_public,
+            requiredTierId: post.is_public ? null : post.current.tier_ids[0] ?? null
+          } : {}),
           createdAt,
           versions: { create: versionsForDb.map((v) => mapVersionRow(v)) }
         };
@@ -619,13 +644,15 @@ export class DbCanonicalStore implements CanonicalStore {
         lane.source === PostSource.PATREON
           ? MediaIngestOrigin.PATREON
           : MediaIngestOrigin.SUBSCRIBESTAR;
-      // A preserved parent can share fresh media revisions with newly materialized posts.
-      if (lane.preserve.size > 0) {
+      // Keep accepted media IDs in place so refreshes retain media-linked audit records.
+      const existingMediaIds = new Set<string>();
+      if (lane.existing.size > 0) {
         const preservedMedia = await tx.mediaAsset.findMany({
-          where: { creatorId, ingestOrigin: ingestOriginLane, primaryPostId: { in: [...lane.preserve] } },
+          where: { creatorId, ingestOrigin: ingestOriginLane, primaryPostId: { in: [...lane.existing] } },
           select: { id: true, primaryPostId: true, currentUpstreamRevision: true, currentUpstreamUrl: true, upstreamStatus: true }
         });
         for (const row of preservedMedia) {
+          existingMediaIds.add(row.id);
           const media = mediaMap[row.id];
           if (!media) continue;
           const advanceRevision = media.current.upstream_revision !== row.currentUpstreamRevision &&
@@ -661,6 +688,7 @@ export class DbCanonicalStore implements CanonicalStore {
         }
       }
       const mediaEntries = mediaEntriesAll.filter((m) => {
+        if (existingMediaIds.has(m.media_id)) return false;
         const primary = m.post_ids[0];
         if (!primary || !postIdsToMaterialize.has(primary)) {
           return false;
@@ -734,7 +762,8 @@ export class DbCanonicalStore implements CanonicalStore {
   // ---------------------------------------------------------------------------
   public async mutateForCreator(
     creatorId: string,
-    fn: (snapshot: CanonicalSnapshot) => void | Promise<void>
+    fn: (snapshot: CanonicalSnapshot) => void | Promise<void>,
+    checkpoint?: PostSyncCheckpoint
   ): Promise<void> {
     let snapshot: CanonicalSnapshot | undefined;
     try {
@@ -744,6 +773,10 @@ export class DbCanonicalStore implements CanonicalStore {
         snapshot = await this.loadImpl(creatorId, tx);
         await fn(snapshot);
         await this.saveForCreatorInTransaction(creatorId, snapshot, tx);
+        if (checkpoint) {
+          if (checkpoint.lease.creatorId !== creatorId) throw new Error("Patreon progress creator mismatch.");
+          await checkpointPostSync(tx, checkpoint);
+        }
       }, { timeout: 30_000, isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted });
     } catch (error) {
       if (snapshot) await this.checkOwnershipAfterUniqueConflict(error, creatorId, snapshot);

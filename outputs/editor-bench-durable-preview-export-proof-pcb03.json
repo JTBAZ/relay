@@ -1,0 +1,195 @@
+{
+  "ticket": "PCB-03",
+  "status": "accepted_backend_connector_with_recorded_verification_limits",
+  "date": "2026-10-21",
+  "planner": "existing Sol High product connection plan",
+  "builder": "gpt-6-luna/high",
+  "reviewer": "root; scoped Ponytail Review",
+  "branch": "codex/local-build-2026-10-19",
+  "head": "91a72d2f1ea18a7b1326305e6dd4b1d224fbcbd1",
+  "committed": false,
+  "behavior": [
+    "One server-selected owned source post and explicitly chosen source image are bound to an owned Previewizer template and staged JPEG. Review changes only durable Conversation state; confirmation is separate.",
+    "Review pins source PostVersion/media fingerprint, parsed owned template config/revision/hash, staged upload identity and exact decoded JPEG hash/size. Changed facts require a new review.",
+    "Confirmation copies the exact validated bytes to a new server-only deterministic storage key, creates an owned MediaAsset with provenance, and appends a durable receipt atomically with Conversation revision.",
+    "Original source rows and PostVersion.mediaIds remain unchanged. Selected IDs, exclusions, prior edit history, recent messages and unrelated cart work are preserved.",
+    "Concurrent confirmations return the same receipt and produce one sealed object. Exact successful retry reads the prior receipt without rebasing newer state.",
+    "Confirmed exports remain readable after service reconstruction, deselection and explicit refresh. Pending review resumes with its template snapshot and staged image URL."
+  ],
+  "api": {
+    "base": "/api/v1/editor-bench/real-library-conversation",
+    "developmentOnly": true,
+    "upload": "Existing Relay staging upload, omitting post_id; never finalize the JPEG into the source PostVersion.",
+    "review": "POST /session/:sessionId/preview/review {expectedRevision, sourcePostId, sourceMediaId, templateId, stagedMediaId}",
+    "confirm": "POST /session/:sessionId/preview/confirm {reviewId, expectedRevision}; no model call",
+    "resume": "GET /session/:sessionId exposes data.previewReview while catalog is current",
+    "receipts": "GET /session/:sessionId/previews exposes data.previewExports independently of current catalog revision",
+    "bytes": "URLs use the existing /api/v1/export/media/:creatorId/:mediaId/content route and its existing media-access policy; no new byte-delivery route.",
+    "mutationGuards": [
+      "authenticated creator/account and owned session",
+      "editor feature flag and creator allowlist",
+      "ready DB stores",
+      "existing tenant mutation and Studio sync writable guards",
+      "server-owned unique selection",
+      "current source/template/upload and expected revision"
+    ],
+    "limits": {
+      "selectedPosts": 1,
+      "exportsPerReview": 1,
+      "jpegMaxBytes": 1048576,
+      "jpegMaxPixels": 16000000,
+      "pendingReviewMinutes": 15
+    },
+    "persistence": "Existing GalleryEditorSession.context, MediaAsset and CreatorPreviewTemplate records; no new table or migration."
+  },
+  "verification": {
+    "rootBackend": {
+      "passed": 92,
+      "failed": 0,
+      "files": 8,
+      "evidence": "work/pcb03-root-tests-2026-10-20T22-25-44-748Z.json"
+    },
+    "lunaBackend": {
+      "passed": 21,
+      "failed": 0,
+      "evidence": "work/pcb03-luna-focused-02.log"
+    },
+    "backendBuild": {
+      "exitCode": 0,
+      "evidence": "work/pcb03-luna-build-04.exit.json"
+    },
+    "postgres": {
+      "passed": 3,
+      "failed": 0,
+      "files": 2,
+      "evidence": "work/pcb03-postgres-2026-10-20T22-23-18-096Z.json",
+      "fixture": "Fresh nonce-owned local disposable PostgreSQL database with canonical migrations, synthetic source/template/upload records and an injected create-only object store; no actual account or cloud bucket.",
+      "checked": [
+        "corrupt JPEG rejection",
+        "missing/foreign/oversized upload rejection",
+        "changed source/template/JPEG rejection",
+        "pending review read-back",
+        "concurrent confirmation exact receipt and one object write",
+        "new owned MediaAsset provenance",
+        "original source media list unchanged",
+        "service reconstruction and exact bytes",
+        "receipt persistence across explicit refresh",
+        "PCB-02 durable source-edit regression"
+      ],
+      "cleanup": "owned disposable database dropped",
+      "warning": "pg emitted its concurrent client.query deprecation warning; current checks passed. No database-client upgrade or unrelated query refactor was made."
+    },
+    "review": {
+      "scope": "work/pcb03-review-2026-10-20T22-25-29-195Z.json",
+      "files": [
+        "src/editor-bench/real-library-conversation-routes.ts",
+        "src/editor-bench/real-library-preview-export.ts",
+        "src/gallery-editor/types.ts",
+        "src/server.ts",
+        "src/storage/relay-upload-r2.ts",
+        "tests/editor-bench/real-library-preview-export-postgres.integration.test.ts",
+        "tests/relay-upload-r2.test.ts"
+      ],
+      "whitespace": "clean",
+      "assumedLoad": "Several hundred owned posts, existing bounded catalog, concurrent requests across API workers; one export per confirmation with bounded JPEG bytes.",
+      "connectedCode": [
+        "GalleryEditorService revise/read and serializable retry helper",
+        "Gallery editor context input parser and trusted Conversation boundary",
+        "owned Library snapshot/media associations",
+        "Previewizer template parser/service",
+        "Relay staging presign/commit and native upload finalizer",
+        "existing export content ownership/access and native MediaAsset reads",
+        "server development registration and mutation guards",
+        "R2 conditional-put SDK command"
+      ],
+      "resolved": [
+        "Never attach an export by rewriting the original source PostVersion.",
+        "Seal exact reviewed bytes in a new server-only key rather than trusting a reusable staging presigned URL.",
+        "Use atomic conditional object create across workers and compare-and-set session revision in a short serializable transaction.",
+        "Preserve the winning receipt on concurrent retry and retain it across refresh.",
+        "Use canonical JSON fingerprints across PostgreSQL JSONB read-back."
+      ],
+      "remainingTaskFindings": [],
+      "verdict": "Backend slice accepted within recorded gates"
+    }
+  },
+  "failuresAndLimits": [
+    {
+      "issue": "First backend build failed on scoped TypeScript issues; subsequent build passed. Earlier logs are preserved.",
+      "evidence": "work/pcb03-luna-build-01.log"
+    },
+    {
+      "issue": "Expanded PostgreSQL fixture initially expected pendingPreviewReview instead of public previewReview, and used a flat selection path. Fixture assertions were corrected; product behavior was unchanged.",
+      "evidence": "work/pcb03-postgres-2026-10-20T22-21-41-129Z.json"
+    },
+    {
+      "issue": "The server validates JPEG bytes and records the chosen owned template configuration. It does not prove that the rendered pixels were produced from that template. Client Previewizer rendering/mount acceptance remains deferred."
+    },
+    {
+      "issue": "Actual R2 was not called. The injected object store proves application behavior; the SDK test checks create-only request and 412 handling.",
+      "protocolSource": "https://developers.cloudflare.com/r2/api/s3/extensions/"
+    },
+    {
+      "issue": "A successful sealed-object write followed by a failed/stale DB transaction may leave one unreferenced deterministic object for that review. Retry reuses it safely; no deletion-on-failure or new cleanup service was introduced."
+    },
+    {
+      "issue": "No frontend mount/test/build/lint/typecheck/render, installed-extension execution, paid semantic evaluation, actual-account write, production migration, deployment, env change or API restart. The mock demo remains unchanged; publishing stays manual."
+    },
+    {
+      "issue": "The full backend suite is not claimed green. The previously recorded generic PostgreSQL competing-session error-code assertion and three distribution-package fixture failures are outside this ticket and were not rerun or fixed."
+    },
+    {
+      "issue": "PCB-04 through PCB-06 remain planned and are not dispatched. Durable destination variants, Rail cues and manual extension packages are separate connections."
+    }
+  ],
+  "preservedFailureArtifacts": [
+    "work/pcb03-luna-build-01.exit.json",
+    "work/pcb03-luna-build-01.log",
+    "work/pcb03-luna-build-02.exit.json",
+    "work/pcb03-luna-build-02.log",
+    "work/pcb03-luna-build-03.exit.json",
+    "work/pcb03-luna-build-03.log",
+    "work/pcb03-luna-build-04.exit.json",
+    "work/pcb03-luna-build-04.log",
+    "work/pcb03-luna-focused-01.exit.json",
+    "work/pcb03-luna-focused-01.log",
+    "work/pcb03-luna-focused-02.exit.json",
+    "work/pcb03-luna-focused-02.log",
+    "work/pcb03-postgres-2026-10-20T22-19-12-724Z-migrations.log",
+    "work/pcb03-postgres-2026-10-20T22-19-12-724Z-tests.log",
+    "work/pcb03-postgres-2026-10-20T22-19-12-724Z.json",
+    "work/pcb03-postgres-2026-10-20T22-21-41-129Z-migrations.log",
+    "work/pcb03-postgres-2026-10-20T22-21-41-129Z-tests.log",
+    "work/pcb03-postgres-2026-10-20T22-21-41-129Z.json",
+    "work/pcb03-postgres-2026-10-20T22-23-18-096Z-migrations.log",
+    "work/pcb03-postgres-2026-10-20T22-23-18-096Z-tests.log",
+    "work/pcb03-postgres-2026-10-20T22-23-18-096Z.json",
+    "work/pcb03-root-tests-2026-10-20T22-25-44-748Z.exit.json",
+    "work/pcb03-root-tests-2026-10-20T22-25-44-748Z.json",
+    "work/pcb03-root-tests-2026-10-20T22-25-44-748Z.log"
+  ],
+  "preservation": {
+    "earlierReports": 87,
+    "reportsUnchanged": true,
+    "configUnchanged": true,
+    "schemaChange": false,
+    "ledger": {
+      "rows": 919,
+      "sha256": "969cc6310604f9c506f63d55056c0c9221297400570229d8ba6c50f5bd86b7d9",
+      "unchanged": true,
+      "developmentRemainingUsd": 0.34483654,
+      "heldoutRemainingUsd": 8.9690346,
+      "absolutePath": "C:\\Users\\jorda\\Documents\\Codex\\2026-10-11\\c\\work\\relay\\.relay-data\\gallery-editor-budget.json"
+    },
+    "paidCalls": 0
+  },
+  "sourceHashes": {
+    "src/editor-bench/real-library-conversation-routes.ts": "c8eccd2aeeb4fc9af06eca486cd4c5a8fbd87eb08df1317efe40cad0c3245f1b",
+    "src/editor-bench/real-library-preview-export.ts": "85452a27890f75a986c77ef625b9be0f8885577e831f06ae58e952426225dcea",
+    "src/gallery-editor/types.ts": "c4d4f4072f15e4b822e8eeaf7b4de3b7841fa0ef4d504ceff3a25c185aeede94",
+    "src/server.ts": "3ed1a5901246f79673a899b673697ebf0ae94a52d340a609e1923cf9d76f6906",
+    "src/storage/relay-upload-r2.ts": "a548002638a3a1b68d8c6d642ef66031a0bf57d5b27022ac4b6bcae6f8a94d07",
+    "tests/editor-bench/real-library-preview-export-postgres.integration.test.ts": "fafb27920ee21874dfac9567cb9f285fe65ad88f6d9bc0c0ba1346d34188ba1a",
+    "tests/relay-upload-r2.test.ts": "6ba7d9c2f698b4b93ac0c31957d7a1b9903913b90f464377a1ac2670eb02448c"
+  }
+}

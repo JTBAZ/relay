@@ -5,6 +5,7 @@
  * @see src/jsdoc-core-entities.ts
  */
 
+import type { PostSyncCheckpoint } from "../patreon/post-sync-progress.js";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 
@@ -41,6 +42,7 @@ export type PostVersionRow = {
 
 export type PostRow = {
   post_id: string;
+  campaign_id?: string;
   creator_id: string;
   /** DB round-trip: true when the post is readable without patron tier membership. */
   is_public?: boolean;
@@ -58,6 +60,8 @@ export type MediaVersionRow = {
   upstream_url?: string;
   /** Materialized blob key: export-relative path or future R2 object key (MIG-31). */
   storage_key?: string;
+  /** Verified immutable bytes for exactly this accepted version. */
+  export_record?: import("../export/types.js").ExportMediaRecord;
   role?: string;
   ingested_at: string;
 };
@@ -102,6 +106,8 @@ function emptySnapshot(): CanonicalSnapshot {
 
 /** Implemented by `FileCanonicalStore` and `DbCanonicalStore` (`canonical-store-db.ts`). */
 export interface CanonicalStore {
+  /** Shared creator mutations commit atomically across independent server processes. */
+  readonly supportsAtomicCreatorMutations?: boolean;
   load(): Promise<CanonicalSnapshot>;
   save(snapshot: CanonicalSnapshot): Promise<void>;
   mutate(
@@ -125,7 +131,8 @@ export interface CanonicalStore {
    */
   mutateForCreator(
     creatorId: string,
-    fn: (snapshot: CanonicalSnapshot) => void | Promise<void>
+    fn: (snapshot: CanonicalSnapshot) => void | Promise<void>,
+    checkpoint?: PostSyncCheckpoint
   ): Promise<void>;
 }
 
@@ -133,6 +140,7 @@ export interface CanonicalStore {
  * @description Loads/saves `canonical.json` and implements global mutate (no per-creator slice in file mode).
  */
 export class FileCanonicalStore implements CanonicalStore {
+  public readonly supportsAtomicCreatorMutations = false;
   private readonly filePath: string;
 
   public constructor(filePath: string) {

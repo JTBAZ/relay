@@ -62,6 +62,7 @@ import { PATREON_SESSION_COOKIE_NAME, RELAY_WEB_BASE } from "./lib/constants";
 import { RELAY_API_BASE, syncNow } from "./lib/sync-now";
 import { notifyRelayWebDistributionUpdated } from "./lib/relay-tab-notify";
 import * as storage from "./lib/storage";
+import { exchangeConsentCode, cancelConsentExchange } from "./lib/consent-flow";
 
 const ALARM_RELAY_COOKIE = "relay-cookie-refresh";
 
@@ -116,10 +117,10 @@ browser.alarms.onAlarm.addListener((alarm) => {
 });
 
 browser.cookies.onChanged.addListener((changeInfo) => {
-  const { cookie, removed } = changeInfo;
-  if (removed || cookie.name !== PATREON_SESSION_COOKIE_NAME) return;
+  const { cookie } = changeInfo;
+  if (cookie.name !== PATREON_SESSION_COOKIE_NAME) return;
   const host = (cookie.domain || "").replace(/^\./, "").toLowerCase();
-  if (!host.endsWith("patreon.com")) return;
+  if (host !== "patreon.com" && !host.endsWith(".patreon.com")) return;
   void (async () => {
     const g = await storage.getGrant();
     if (!g) return;
@@ -134,6 +135,7 @@ type StatusPayload = {
   accountId: string | null;
   relayCreatorId: string | null;
   consentError: string | null;
+  credentialState: storage.CredentialStatus | null;
 };
 
 async function startPostLinkWatchForFill(
@@ -196,6 +198,7 @@ async function handleInternalMessage(
     case MSG_SYNC_NOW:
       return syncNow();
     case MSG_REVOKE_LOCAL: {
+      cancelConsentExchange();
       const g = await storage.getGrant();
       await storage.clearGrant();
       await storage.clearLastSync();
@@ -227,7 +230,8 @@ async function handleInternalMessage(
         lastSyncStatus: last?.status ?? null,
         accountId: g?.account_id ?? null,
         relayCreatorId: g?.relay_creator_id ?? null,
-        consentError: err ?? null
+        consentError: err ?? null,
+        credentialState: await storage.getCredentialStatus()
       };
       return payload;
     }
@@ -351,95 +355,6 @@ browser.runtime.onMessage.addListener((message: unknown, sender) =>
   handleInternalMessage(message, sender)
 );
 
-async function exchangeConsentCode(
-  code: string
-): Promise<{ ok: true } | { ok: false; error: string }> {
-  const installationId = await storage.ensureInstallationId();
-  const res = await fetch(`${RELAY_API_BASE}/api/v1/auth/extension/consent/exchange`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Accept: "application/json"
-    },
-    body: JSON.stringify({
-      consent_code: code.trim(),
-      installation_id: installationId
-    })
-  });
-
-  const json = (await res.json().catch(() => ({}))) as {
-    data?: Record<string, unknown>;
-    error?: { message?: string };
-  };
-
-  if (!res.ok) {
-    const msg =
-      json.error?.message ??
-      (res.status === 409
-        ? "Consent code already used."
-        : res.status === 410
-          ? "Consent code expired."
-          : `Exchange failed (${res.status}).`);
-    await storage.setConsentLastError(msg);
-    return { ok: false, error: msg };
-  }
-
-  const d = json.data;
-  if (!d || typeof d !== "object") {
-    const msg = "Invalid exchange response.";
-    await storage.setConsentLastError(msg);
-    return { ok: false, error: msg };
-  }
-
-  const token = d.token;
-  const tokenId = d.token_id;
-  const expiresAt = d.expires_at;
-  const accountId = d.account_id;
-  const relayCreatorId = d.relay_creator_id;
-
-  if (typeof token !== "string" || typeof tokenId !== "string" || typeof expiresAt !== "string") {
-    const msg = "Exchange response missing token fields.";
-    await storage.setConsentLastError(msg);
-    return { ok: false, error: msg };
-  }
-  if (typeof accountId !== "string") {
-    const msg = "Exchange response missing account_id.";
-    await storage.setConsentLastError(msg);
-    return { ok: false, error: msg };
-  }
-
-  const rc =
-    relayCreatorId === null || relayCreatorId === undefined
-      ? ""
-      : typeof relayCreatorId === "string"
-        ? relayCreatorId
-        : "";
-  if (!rc.trim()) {
-    const msg = "Relay workspace not provisioned — open the studio and try again.";
-    await storage.setConsentLastError(msg);
-    return { ok: false, error: msg };
-  }
-
-  try {
-    await storage.setGrant({
-      token: token.trim(),
-      token_id: tokenId.trim(),
-      expires_at: expiresAt.trim(),
-      account_id: accountId.trim(),
-      relay_creator_id: rc.trim(),
-      created_at: new Date().toISOString()
-    });
-  } catch {
-    const msg = "Could not store grant.";
-    await storage.setConsentLastError(msg);
-    return { ok: false, error: msg };
-  }
-
-  await storage.setConsentLastError(undefined);
-  await syncNow();
-  return { ok: true };
-}
-
 async function handleExternalStatusRequest(): Promise<ExternalStatusResponse> {
   const g = await storage.getGrant();
   const last = await storage.getLastSync();
@@ -459,7 +374,8 @@ async function handleExternalStatusRequest(): Promise<ExternalStatusResponse> {
     relayCreatorId: g?.relay_creator_id ?? null,
     patreonCookiePresent,
     lastSyncAt: last?.at ?? null,
-    lastSyncStatus: last?.status ?? null
+    lastSyncStatus: last?.status ?? null,
+    credentialState: await storage.getCredentialStatus()
   };
 }
 

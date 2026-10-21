@@ -75,12 +75,11 @@ describe("read-only session resolution", () => {
     const expired = { ...session, expires_at: "2000-01-01T00:00:00.000Z" };
     await writeFile(file, JSON.stringify({ users: {}, sessions: { [sessionToken]: expired } }), "utf8");
     const store = new FileIdentityStore(file);
-    const save = vi.spyOn(store, "save");
+    const before = await readFile(file, "utf8");
     expect(await store.getSession(sessionToken, { cleanupExpired: false })).toBeNull();
-    expect(save).not.toHaveBeenCalled();
+    expect(await readFile(file, "utf8")).toBe(before);
     expect(JSON.parse(await readFile(file, "utf8")).sessions[sessionToken]).toBeDefined();
     expect(await store.getSession(sessionToken)).toBeNull();
-    expect(save).toHaveBeenCalledOnce();
     expect(JSON.parse(await readFile(file, "utf8")).sessions[sessionToken]).toBeUndefined();
   });
 });

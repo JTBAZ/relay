@@ -693,14 +693,50 @@ export async function getCreatorScheduleRail(
 
   const planIds = [...new Set(classified.map((row) => row.planId).filter(Boolean))] as string[];
   const draftByPlanId = new Map<string, string>();
+  const managedVariantIds = new Set<string>();
+  const previewMediaByVariantId = new Map<string, string | null>();
   const plannedFormatByPlanId = new Map<string, PlannedPostFormat>();
   const postDetailsStateByPlanId = new Map<string, "authored">();
   const draftTagsByPlanId = new Map<string, string[]>();
+  const rowsByPlanId = new Map<string, Row[]>();
+  for (const row of classified) if (row.planId) {
+    const rows = rowsByPlanId.get(row.planId) ?? [];
+    rows.push(row);
+    rowsByPlanId.set(row.planId, rows);
+  }
   if (planIds.length > 0) {
     const plans = await prisma.postDistributionPlan.findMany({
       where: { id: { in: planIds }, creatorId: id },
-      select: { id: true, sourceDraftId: true, assistantPlan: true }
+      select: { id: true, sourceDraftId: true, assistantPlan: true, conversationalGroupKey: true }
     });
+    const pinned = new Map<string, { mediaId: string; exportHash: string; sourcePostId: string; sourceVersionId: string }>();
+    for (const plan of plans) {
+      if (!plan.conversationalGroupKey?.startsWith("conversation-draft:")) continue;
+      const planRows = rowsByPlanId.get(plan.id) ?? [];
+      for (const row of planRows) managedVariantIds.add(row.variantId);
+      const assistantPlan = plan.assistantPlan && typeof plan.assistantPlan === "object" && !Array.isArray(plan.assistantPlan) ? plan.assistantPlan as Record<string, unknown> : {};
+      const state = assistantPlan.conversation_draft_v1 && typeof assistantPlan.conversation_draft_v1 === "object" && !Array.isArray(assistantPlan.conversation_draft_v1) ? assistantPlan.conversation_draft_v1 as Record<string, unknown> : {};
+      const previewMediaId = assistantPlan.preview_media_id;
+      const variants = state.variants && typeof state.variants === "object" && !Array.isArray(state.variants) ? state.variants as Record<string, unknown> : {};
+      if (state.version !== 1 || typeof previewMediaId !== "string" || typeof state.exportHash !== "string" || typeof state.sourcePostId !== "string" || typeof state.sourceVersionId !== "string") continue;
+      for (const row of planRows) {
+        const entry = variants[row.destination] && typeof variants[row.destination] === "object" && !Array.isArray(variants[row.destination]) ? variants[row.destination] as Record<string, unknown> : {};
+        if (entry.variantId !== row.variantId) continue;
+        if (assistantPlan.media_routing_by_destination && typeof assistantPlan.media_routing_by_destination === "object" && (assistantPlan.media_routing_by_destination as Record<string, unknown>)[row.destination] === "preview") {
+          pinned.set(row.variantId, { mediaId: previewMediaId, exportHash: state.exportHash, sourcePostId: state.sourcePostId, sourceVersionId: state.sourceVersionId });
+        }
+      }
+    }
+    const pinnedRows = pinned.size ? await prisma.mediaAsset.findMany({
+      where: { id: { in: [...new Set([...pinned.values()].map(value => value.mediaId))] }, creatorId: id, primaryPostId: { in: [...new Set([...pinned.values()].map(value => value.sourcePostId))] }, upstreamStatus: "active", processingStatus: "READY", currentMimeType: "image/jpeg" },
+      select: { id: true, currentStorageKey: true, versionsJson: true }
+    }) : [];
+    const pinnedById = new Map(pinnedRows.map(row => [row.id, row]));
+    for (const [variantId, receipt] of pinned) {
+      const media = pinnedById.get(receipt.mediaId);
+      const provenance = Array.isArray(media?.versionsJson) && media.versionsJson[0] && typeof media.versionsJson[0] === "object" ? media.versionsJson[0] as Record<string, unknown> : {};
+      previewMediaByVariantId.set(variantId, media && provenance.sha256 === receipt.exportHash && provenance.source_post_id === receipt.sourcePostId && provenance.source_version_id === receipt.sourceVersionId && media.currentStorageKey === provenance.storage_key ? receipt.mediaId : null);
+    }
     const draftIds = [
       ...new Set(
         plans
@@ -768,7 +804,9 @@ export async function getCreatorScheduleRail(
     const action = mapAction(row.action);
     const destination = mapDestination(row.destination);
     const meta = row.planId ? planMeta.get(`${row.planId}:${row.id}`) : undefined;
-    const mediaIds = mediaByPostId.get(row.postId) ?? [];
+    const mediaIds = managedVariantIds.has(row.variantId)
+      ? (previewMediaByVariantId.get(row.variantId) ? [previewMediaByVariantId.get(row.variantId)!] : [])
+      : (mediaByPostId.get(row.postId) ?? []);
     const versionMeta = versionMetaByPostId.get(row.postId);
     const plannedFormat = row.planId ? (plannedFormatByPlanId.get(row.planId) ?? null) : null;
     const detailsState = row.planId
@@ -1511,6 +1549,17 @@ export async function attachMediaToScheduleRailEvent(
   }
 
   const target = await resolveScheduleRailAttachTarget(prisma, id, tid);
+  if (target.plan_id) {
+    const plan = await prisma.postDistributionPlan.findFirst({
+      where: { id: target.plan_id, creatorId: id },
+      select: { conversationalGroupKey: true }
+    });
+    if (plan?.conversationalGroupKey?.startsWith("conversation-draft:")) {
+      throw new ScheduleRailValidationError(
+        "Manage this destination media through Conversation."
+      );
+    }
+  }
   const postId = target.post_id;
 
   const version = await prisma.postVersion.findFirst({
@@ -1753,6 +1802,24 @@ export async function updateScheduleRailEventPostDetails(
     );
   }
 
+  let planId = target.plan_id;
+  if (planId) {
+    const plan = await prisma.postDistributionPlan.findFirst({ where: { id: planId, creatorId: id }, select: { conversationalGroupKey: true } });
+    if (plan?.conversationalGroupKey?.startsWith("conversation-draft:")) throw new ScheduleRailValidationError("Edit this destination draft through its confirmed Conversation review.");
+  } else {
+    const managedPlan = await prisma.postDistributionPlan.findFirst({
+      where: { postId, creatorId: id, conversationalGroupKey: { startsWith: "conversation-draft:" } },
+      select: { id: true }
+    });
+    if (managedPlan) throw new ScheduleRailValidationError("Edit this destination draft through its confirmed Conversation review.");
+    const plan = await prisma.postDistributionPlan.findFirst({
+      where: { postId, creatorId: id, status: "active", OR: [{ conversationalGroupKey: null }, { conversationalGroupKey: { not: { startsWith: "conversation-draft:" } } }] },
+      orderBy: { createdAt: "desc" },
+      select: { id: true }
+    });
+    planId = plan?.id ?? null;
+  }
+
   const version = await prisma.postVersion.findFirst({
     where: { postId, post: { creatorId: id } },
     orderBy: { versionSeq: "desc" }
@@ -1773,16 +1840,6 @@ export async function updateScheduleRailEventPostDetails(
     input.tags !== undefined
       ? normalizePostDetailTags(input.tags)
       : normalizePostDetailTags(version.tagIds);
-
-  let planId = target.plan_id;
-  if (!planId) {
-    const plan = await prisma.postDistributionPlan.findFirst({
-      where: { postId, creatorId: id, status: "active" },
-      orderBy: { createdAt: "desc" },
-      select: { id: true }
-    });
-    planId = plan?.id ?? null;
-  }
 
   const variantsRows = planId
     ? await prisma.postDistributionVariant.findMany({

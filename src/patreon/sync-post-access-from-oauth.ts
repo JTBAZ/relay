@@ -5,9 +5,9 @@
 import { PostSource, type PrismaClient } from "@prisma/client";
 import type { PatreonAuthService } from "../auth/auth-service.js";
 import type { PatreonTokenStore } from "../auth/token-store.js";
-import { tierStableId } from "../ingest/canonical-store-db.js";
+import { tierStableId, DbCanonicalStore } from "../ingest/canonical-store-db.js";
 import type { IngestTier } from "../ingest/types.js";
-import { updatePostAudienceTierGate } from "../relay/update-post-audience-tier-gate.js";
+import { patreonPostState, patreonPostStates, finishPatreonPostRefresh, recordAccessVerification } from "./post-refresh-state.js";
 import {
   expandAllPatronsTierIds,
   listCampaignPaidPatreonTierIds
@@ -80,6 +80,7 @@ export function oauthPostAccessGateFromResource(
 ): PostAccessGate {
   const base = tierIdsFromPatreonPost(resource);
   const tierIds = applyPatreonAccessToTierIds(base, resource.attributes ?? {});
+  if (tierIds.length === 0) throw new Error("Patreon post audience is unknown; retry after source metadata is available.");
   return normalizePostAccessGate(tierIds, undefined, paidPatreonTierIds);
 }
 
@@ -132,6 +133,8 @@ export async function syncPostAccessFromOAuth(args: {
   const { creatorId, traceId, prisma, authService, tokenStore, fetchImpl } = args;
   const options = args.options ?? {};
   const warnings: string[] = [];
+  const canonicalStore = new DbCanonicalStore(prisma);
+  const expectedStates = patreonPostStates(await canonicalStore.loadForCreator(creatorId), creatorId);
 
   await authService.ensureFreshAccessForAutomation(creatorId, traceId);
   const cred = await tokenStore.getByCreatorId(creatorId);
@@ -183,6 +186,7 @@ export async function syncPostAccessFromOAuth(args: {
   let relayPostsMatched = 0;
   let postsUpdated = 0;
   let postsUnchanged = 0;
+  const observedGates = new Map<string, PostAccessGate>();
   let nextUrl: string | null | undefined = null;
 
   do {
@@ -200,18 +204,9 @@ export async function syncPostAccessFromOAuth(args: {
       const dbTierIds = existing.versions[0]?.tierIds ?? [];
       const dbGate = normalizePostAccessGate(dbTierIds, existing.isPublic, paidPatreonTierIds);
 
-      if (postAccessGatesEqual(oauthGate, dbGate)) {
-        postsUnchanged += 1;
-        continue;
-      }
-
-      await updatePostAudienceTierGate(prisma, {
-        creatorId,
-        postId: relayPostId,
-        tierIds: oauthGate.tierIds,
-        isPublic: oauthGate.isPublic
-      });
-      postsUpdated += 1;
+      observedGates.set(relayPostId, oauthGate);
+      if (postAccessGatesEqual(oauthGate, dbGate)) postsUnchanged += 1;
+      else postsUpdated += 1;
     }
 
     nextUrl = doc.links?.next ?? undefined;
@@ -223,6 +218,21 @@ export async function syncPostAccessFromOAuth(args: {
       }
     }
   } while (nextUrl && pages < maxPages);
+
+  if (observedGates.size > 0) {
+    await canonicalStore.mutateForCreator(creatorId, (snapshot) => {
+      for (const [postId, gate] of observedGates) {
+        const row = snapshot.posts[creatorId]?.[postId];
+        if (!row || row.source !== "PATREON" || patreonPostState(snapshot, creatorId, postId) !== expectedStates[postId]) {
+          throw new Error("Patreon post changed during access collection; retry current source metadata.");
+        }
+        row.current.tier_ids = gate.isPublic ? [RELAY_TIER_PUBLIC] : [...gate.tierIds];
+        finishPatreonPostRefresh(snapshot, creatorId, [postId]);
+        row.is_public = gate.isPublic;
+        recordAccessVerification(snapshot, creatorId, [postId], "access_only");
+      }
+    });
+  }
 
   if (pages >= maxPages && nextUrl) {
     warnings.push(

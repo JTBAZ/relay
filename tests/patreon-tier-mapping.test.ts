@@ -102,16 +102,12 @@ describe("Patreon tier mapping", () => {
     expect(applyPatreonAccessToTierIds([], { is_paid: true })).toEqual([
       RELAY_TIER_ALL_PATRONS
     ]);
-    expect(applyPatreonAccessToTierIds([], { is_paid: false })).toEqual([
-      RELAY_TIER_PUBLIC
-    ]);
+    expect(applyPatreonAccessToTierIds([], { is_paid: false })).toEqual([]);
     expect(applyPatreonAccessToTierIds([], {})).toEqual([]);
   });
 
   it("applyPatreonAccessToTierIdsForCookie does not treat empty tiers + is_paid false as public", () => {
-    expect(applyPatreonAccessToTierIds([], { is_paid: false })).toEqual([
-      RELAY_TIER_PUBLIC
-    ]);
+    expect(applyPatreonAccessToTierIds([], { is_paid: false })).toEqual([]);
     expect(applyPatreonAccessToTierIdsForCookie([], { is_paid: false })).toEqual([
       RELAY_TIER_ALL_PATRONS
     ]);

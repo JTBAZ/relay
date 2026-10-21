@@ -1,0 +1,17 @@
+{
+  "passed": true,
+  "head": "91a72d2f1ea18a7b1326305e6dd4b1d224fbcbd1",
+  "productSourceChanges": 0,
+  "docsChanged": [
+    "docs/relay-cheaper-model-handoff.md",
+    "docs/conversational-planning/WORK-ITEMS.md",
+    "docs/conversational-planning/DISPATCH.md",
+    "docs/conversational-planning/README.md",
+    "docs/conversational-planning/EDITOR-BENCH-PLAN.md"
+  ],
+  "priorEvidenceFilesPreserved": 82,
+  "oldHandoffAndDocumentBodiesPreserved": true,
+  "ledgerRows": 919,
+  "developmentRemainingUsd": 0.34483654,
+  "report": "outputs/editor-bench-journey-proof-bje01.json"
+}

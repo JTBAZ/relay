@@ -11,12 +11,14 @@ import { parseXCrossPostPackage } from "./cross-post-types";
 import * as storage from "./storage";
 import { BENCH_X_HANDOFF_MAX_BYTES, BENCH_X_HANDOFF_PACKET_TTL_MS, encodeBenchXHandoffBytes, parseBenchXHandoffEnvelope, type BenchXHandoffPacket } from "./bench-x-handoff";
 import { BENCH_DEVIANTART_HANDOFF_MAX_BYTES, createBenchDeviantArtHandoffPacket, parseBenchDeviantArtHandoffEnvelope, type BenchDeviantArtHandoffPacket } from "./bench-deviantart-handoff";
+import { createManagedCrossPostHandoffPacket, type ManagedCrossPostHandoffPacket } from "./managed-cross-post-handoff";
 
 export type CrossPostFetchResult =
   | { ok: true; relay_post_id: string; destination: CrossPostDestination; schedule_event_id?: never }
   | { ok: true; relay_post_id: string; destination: "x"; schedule_event_id: string }
   | { ok: true; relay_post_id: string; destination: "x"; handoff_id: string; packet: BenchXHandoffPacket }
   | { ok: true; relay_post_id: string; destination: "deviantart"; handoff_id: string; packet: BenchDeviantArtHandoffPacket }
+  | { ok: true; relay_post_id: string; destination: "x" | "deviantart"; managed_attempt_id: string; packet: ManagedCrossPostHandoffPacket }
   | {
       ok: false;
       reason:
@@ -91,8 +93,6 @@ export async function fetchAndStoreCrossPostPackage(
     return { ok: false, reason: "not_connected" };
   }
 
-  await storage.clearPendingCrossPost();
-
   const url = attempt
     ? attemptPackagePath(attempt)
     : packagePath(destination, postId);
@@ -115,9 +115,21 @@ export async function fetchAndStoreCrossPostPackage(
   }
 
   const json = (await res.json().catch(() => ({}))) as {
-    data?: { destination?: CrossPostDestination; package?: unknown };
+    data?: { destination?: CrossPostDestination; package?: unknown; attempt_id?: string; managed_handoff_v1?: unknown };
   };
+  if (attempt && json.data?.managed_handoff_v1 !== undefined) {
+    if ((destination !== "x" && destination !== "deviantart") || json.data.attempt_id !== attempt) return { ok: false, reason: "package_fetch_failed", detail: "attempt_mismatch" };
+    const managed = await createManagedCrossPostHandoffPacket({
+      data: json.data,
+      message: { relay_post_id: postId, destination, distribution_attempt_id: attempt },
+      token: grant.token.trim()
+    });
+    if (managed && "revoked" in managed) { await storage.clearGrant(); return { ok: false, reason: "grant_revoked" }; }
+    if (!managed) return { ok: false, reason: "package_fetch_failed", detail: "invalid_managed_package" };
+    return { ok: true, relay_post_id: managed.packet.relay_post_id, destination, managed_attempt_id: attempt, packet: managed.packet };
+  }
   try {
+    await storage.clearPendingCrossPost();
     const resolvedDestination =
       attempt && json.data?.destination ? json.data.destination : destination;
     const platform = getCrossPostPlatform(resolvedDestination);

@@ -1,0 +1,12 @@
+{
+  "files": {
+    "src/distribution/conversation-draft-variants.ts": "9934b92cb43e5c2c98d71c6e07f0737a425ae07c82137ce33377854249347c7a",
+    "src/editor-bench/real-library-conversation-routes.ts": "522e129dc23fa81c3ae431452418c5448329888af3d5591e2255906b93e44e9a",
+    "src/gallery-editor/types.ts": "a556a689eedfbdb298d79ba8cbc6dd399181e61f2fee9b34d468f965c8497a53",
+    "src/distribution/schedule-rail-service.ts": "81ea3c187c502cc972e6f688ba8db89556daf80dd2fd9bfb547fecff841e39ce",
+    "src/goal-cycle/planner/schedule-local.ts": "d248cd56e1a8f9374ddbf149fb46508f4a3ffec845348e7be9845b44ca113c06",
+    "tests/editor-bench/real-library-draft-variants-postgres.integration.test.ts": "2cebc92d2d239c49ed73ec01ba976b9aa0f82842d2f09ab770f43b5e0eef32c6",
+    "tests/goal-cycle/schedule-local.test.ts": "c29e92e87b4b232d8463a72385f34c8e663df0bd2988beb4d733cde3786b4212",
+    "tests/schedule-rail-service.test.ts": "f8bf787f9a320aeeebfe89b810a86c5cd5c87bf6ae0c1e75645ee1de4b101028"
+  }
+}

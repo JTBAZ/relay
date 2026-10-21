@@ -28,6 +28,10 @@ export default function ConnectedExtensionsPage() {
           Devices and browsers where you approved the Relay extension. Revoke any session you no
           longer trust.
         </p>
+        <p className="mt-2 text-sm text-stone-400">
+          Revoking a device stops its extension access. To remove the server&apos;s stored Patreon
+          session too, use the <Link href="/connect/patreon/cookie" className="underline">Patreon cookie page</Link>.
+        </p>
       </div>
 
       <ConnectedExtensionsClient />

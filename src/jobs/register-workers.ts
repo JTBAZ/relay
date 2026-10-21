@@ -9,6 +9,11 @@ import type { SubscribeStarCreatorAuthService } from "../auth/subscribestar-auth
 import type { SubscribeStarOAuthClient } from "../subscribestar/subscribestar-client.js";
 import type { IngestService } from "../ingest/ingest-service.js";
 import { runIncrementalAutosyncOnce } from "../patreon/incremental-sync-worker.js";
+import { PatreonChangeWorkStore } from "../patreon/patreon-change-work.js";
+import { processPatreonChanges } from "../patreon/patreon-change-worker.js";
+import { dispatchVerifiedPatreonPlatformPayload } from "../patreon/patreon-webhook-platform.js";
+import { PatreonMemberSyncCoordinator } from "../patreon/patreon-member-sync-coordinator.js";
+import { resolvePatreonWebhookCampaignOwnership } from "../patreon/campaign-tenant-resolve.js";
 import {
   patronEntitlementStaleRefreshBatchFromEnv,
   runPatronEntitlementStaleRefreshOnce
@@ -49,6 +54,7 @@ import {
   type NotificationDeliveryJobData,
   type NotificationDigestJobData,
   type PatreonIncrementalAutosyncJobData,
+  type PatreonChangeWorkJobData,
   type PatronEntitlementStaleRefreshJobData,
   type PlatformMetricDailyRollupJobData,
   type ExternalMetricDailyRollupJobData,
@@ -80,6 +86,14 @@ import {
 } from "../usage/coach-plan-credit-grant-worker.js";
 import { processGoalCycleTrendResearchJob } from "../goal-cycle/trends/trend-research-worker.js";
 import { runGoalCycleOutcomeRefreshOnce } from "../goal-cycle/outcomes/goal-cycle-outcome-worker.js";
+
+/** One processor shared by production registration and isolated transport checks. */
+export function createPatreonMediaRepairProcessor(
+  service: Pick<PatreonSyncService, "repairMediaCampaigns">,
+  log: (msg: string, ctx?: Record<string, unknown>) => void = () => {}
+): (job: { id?: string; data: RelayJobTraceFields }) => Promise<void> {
+  return (job) => runRelayBullMqJob(log, RELAY_JOB_QUEUE_NAMES.PATREON_MEDIA_REPAIR, job, () => service.repairMediaCampaigns());
+}
 
 export type RegisterRelayBullMqWorkersDeps = {
   prisma: PrismaClient | null;
@@ -273,6 +287,30 @@ export function registerRelayBullMqWorkers(
 
   if (deps.prisma) {
     const prisma = deps.prisma;
+    workers.push(new Worker(RELAY_JOB_QUEUE_NAMES.PATREON_MEDIA_REPAIR, createPatreonMediaRepairProcessor(deps.patreonSyncService, log), mk(RELAY_JOB_QUEUE_NAMES.PATREON_MEDIA_REPAIR)));
+    workers.push(new Worker<PatreonIncrementalAutosyncJobData>(RELAY_JOB_QUEUE_NAMES.PATREON_MEMBER_RECONCILE, async (job) => runRelayBullMqJob(log, RELAY_JOB_QUEUE_NAMES.PATREON_MEMBER_RECONCILE, job, async () => {
+      if (!deps.patreonSyncService.supportsSharedPatreonMembers) throw new Error("Patreon roster jobs require shared transactional identity storage.");
+      const ids = job.data.creatorId ? [job.data.creatorId] : await deps.tokenStore.listCreatorIds();
+      for (const creatorId of ids) {
+        try { await deps.patreonSyncService.reconcileMemberCampaigns(creatorId); }
+        catch { log("Patreon roster reconciliation requires retry", { creatorId }); }
+      }
+    }), mk(RELAY_JOB_QUEUE_NAMES.PATREON_MEMBER_RECONCILE)));
+    {
+      const changes = new PatreonChangeWorkStore(prisma);
+      const members = new PatreonMemberSyncCoordinator(deps.patreonSyncService, deps.syncHealthStore);
+      workers.push(new Worker<PatreonChangeWorkJobData>(RELAY_JOB_QUEUE_NAMES.PATREON_CHANGE_WORK, async (job) => {
+        await runRelayBullMqJob(log, RELAY_JOB_QUEUE_NAMES.PATREON_CHANGE_WORK, job, async () => {
+          await processPatreonChanges(changes, async (row) => {
+            const ownership = await resolvePatreonWebhookCampaignOwnership({ creatorIdFromRoute: row.creatorId, campaignNumericId: row.campaignId,
+              fileIndexGetCreatorId: (id) => deps.campaignCreatorIndex?.getCreatorId(id) ?? Promise.resolve(null), prisma });
+            if (!ownership.ok) throw new Error("Patreon change campaign ownership mismatch.");
+            await dispatchVerifiedPatreonPlatformPayload({ creatorId: row.creatorId, campaignId: row.campaignId, eventHeader: row.eventType,
+              resourceId: row.resourceId, traceId: relayJobTraceIdForProcessing(job.data), syncService: deps.patreonSyncService, memberCoordinator: members });
+          }, job.data.workId);
+        });
+      }, mk(RELAY_JOB_QUEUE_NAMES.PATREON_CHANGE_WORK)));
+    }
     workers.push(
       new Worker<PatronEntitlementStaleRefreshJobData>(
         RELAY_JOB_QUEUE_NAMES.PATRON_ENTITLEMENT_STALE_REFRESH,

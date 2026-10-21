@@ -6,7 +6,7 @@
  */
 
 import type { CanonicalStore } from "../ingest/canonical-store.js";
-import type { FileExportIndex } from "../export/export-index.js";
+import type { ExportIndex } from "../export/export-index.js";
 import { evaluateTierRules } from "../clone/tier-rules.js";
 import type { SessionToken } from "../identity/types.js";
 import {
@@ -41,7 +41,7 @@ export type LoadPostPresentationOverlays = (
  */
 export class GalleryService {
   private readonly canonical: CanonicalStore;
-  private readonly exportIndex: FileExportIndex;
+  private readonly exportIndex: ExportIndex;
   private readonly overrides: GalleryOverridesStore;
   private collections: RelayCollectionsStore | null = null;
   private readonly loadPostPresentations?: LoadPostPresentationOverlays;
@@ -55,7 +55,7 @@ export class GalleryService {
    */
   public constructor(
     canonical: CanonicalStore,
-    exportIndex: FileExportIndex,
+    exportIndex: ExportIndex,
     overrides: GalleryOverridesStore,
     options?: { loadPostPresentations?: LoadPostPresentationOverlays }
   ) {
@@ -95,8 +95,8 @@ export class GalleryService {
   public async list(
     params: GalleryListParams & { patron_session?: SessionToken | null }
   ): Promise<GalleryListResult> {
-    const snapshot = await this.canonical.load();
-    const index = await this.exportIndex.load(params.creator_id);
+    const snapshot = await this.canonical.loadForCreator(params.creator_id);
+    const index = await this.exportIndex.load(params.creator_id, { includeMissing: true });
     const ov = await this.overrides.load();
     const cols = await this.loadCollections(params.creator_id);
     const pres = await this.presentationByPostId(params.creator_id);
@@ -106,6 +106,11 @@ export class GalleryService {
       all = galleryItemsPostPrimaryView(all);
     }
     const result = listGalleryItems(all, params);
+    const pagePosts = new Set(result.items.map((item) => item.post_id));
+    const ids = all.filter((item) => pagePosts.has(item.post_id)).map((item) => item.media_id);
+    const verified = await this.exportIndex.load(params.creator_id, { mediaIds: ids });
+    const verifiedItems = new Map(buildGalleryItems(params.creator_id, snapshot, verified, ov, cols, pres).map((item) => [JSON.stringify([item.post_id, item.media_id]), item]));
+    result.items = result.items.map((item) => verifiedItems.get(JSON.stringify([item.post_id, item.media_id])) ?? item);
     if (params.visitor_catalog) {
       const tierMap = snapshot.tiers[params.creator_id] ?? {};
       const tierRules = evaluateTierRules(tierMap);
@@ -138,7 +143,7 @@ export class GalleryService {
     /** Count of entries in export index. Omitted for `visitor_catalog`. */
     export_media_count?: number;
   }> {
-    const snapshot = await this.canonical.load();
+    const snapshot = await this.canonical.loadForCreator(creatorId);
     const index = await this.exportIndex.load(creatorId);
     const ov = await this.overrides.load();
     const cols = await this.loadCollections(creatorId);
@@ -197,12 +202,12 @@ export class GalleryService {
     postId: string,
     options?: { visitor_catalog?: boolean; patron_session?: SessionToken | null }
   ): Promise<GalleryPostDetail | null> {
-    const snapshot = await this.canonical.load();
+    const snapshot = await this.canonical.loadForCreator(creatorId);
     const post = snapshot.posts[creatorId]?.[postId];
     if (!post || post.upstream_status === "deleted") {
       return null;
     }
-    const index = await this.exportIndex.load(creatorId);
+    const index = await this.exportIndex.load(creatorId, { mediaIds: post.current.media_ids });
     const ov = await this.overrides.load();
     const cols = await this.loadCollections(creatorId);
     const pres = await this.presentationByPostId(creatorId);
@@ -270,8 +275,8 @@ export class GalleryService {
    * @throws Propagates backing store failures.
    */
   public async visitorVisiblePostIdSet(creatorId: string): Promise<Set<string>> {
-    const snapshot = await this.canonical.load();
-    const index = await this.exportIndex.load(creatorId);
+    const snapshot = await this.canonical.loadForCreator(creatorId);
+    const index = await this.exportIndex.load(creatorId, { includeMissing: true });
     const ov = await this.overrides.load();
     const cols = await this.loadCollections(creatorId);
     const pres = await this.presentationByPostId(creatorId);

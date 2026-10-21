@@ -1,0 +1,5 @@
+{
+  "command": "npm test -- --pool=forks --maxWorkers=1 --minWorkers=1 tests/editor-bench/real-library-conversation-routes.test.ts tests/editor-bench/real-library-retrieval.test.ts tests/editor-bench/real-library-selection.test.ts tests/editor-bench/large-library-chat.test.ts tests/editor-bench/conversation.test.ts",
+  "exitCode": 1,
+  "log": "work/pcb01-luna-focused-03.log"
+}
