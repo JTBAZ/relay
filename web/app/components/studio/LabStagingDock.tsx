@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from "react";
+import { useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState, type DragEvent, type Ref } from "react";
 import { createPortal } from "react-dom";
 import {
   CheckCircle2,
@@ -35,13 +35,18 @@ import {
   type StagedMediaDragPayload
 } from "@/lib/staged-media-dnd";
 
+export type StagingIntakeHandle = { uploadFiles: (files: File[]) => Promise<void> };
 type Props = {
   creatorId: string;
   onError?: (message: string) => void;
   onAddToNewPost?: (items: ImportBinItem[]) => void;
   onAutopost?: (items: ImportBinItem[]) => void;
   /** studio = lab2 material runway with Bay→Rail corridor cue. */
-  variant?: "default" | "studio";
+  variant?: "default" | "studio" | "conversation";
+  intakeRef?: Ref<StagingIntakeHandle>;
+  onSelectionChange?: (items: ImportBinItem[]) => void;
+  onBusyChange?: (busy: boolean) => void;
+  onUploadFailureChange?: (failed: boolean) => void;
   /** Lab2: bay media drag session — arms the Scheduler intake corridor. */
   onCorridorDragChange?: (dragging: boolean) => void;
 };
@@ -471,13 +476,20 @@ export function LabStagingDock({
   onAddToNewPost,
   onAutopost,
   variant = "default",
-  onCorridorDragChange
+  onCorridorDragChange,
+  intakeRef,
+  onSelectionChange,
+  onBusyChange,
+  onUploadFailureChange
 }: Props) {
-  const isStudio = variant === "studio";
+  const isStudio = variant === "studio" || variant === "conversation";
+  const isConversation = variant === "conversation";
   const [items, setItems] = useState<ImportBinItem[]>([]);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
   const [loading, setLoading] = useState(false);
   const [uploadBusy, setUploadBusy] = useState(false);
+  const [failedFiles, setFailedFiles] = useState<File[]>([]);
+  useEffect(() => { onUploadFailureChange?.(failedFiles.length > 0); }, [failedFiles, onUploadFailureChange]);
   const [discordOpen, setDiscordOpen] = useState(false);
   const [fileDropArmed, setFileDropArmed] = useState(false);
   const [stripDragging, setStripDragging] = useState(false);
@@ -489,6 +501,9 @@ export function LabStagingDock({
   const [mintError, setMintError] = useState<string | null>(null);
   const dockRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const uploadPending = useRef(false);
+  const stagingGeneration = useRef(0);
+  const selectionLoaded = useRef(false);
 
   const setCorridorDragging = useCallback(
     (dragging: boolean) => {
@@ -509,19 +524,30 @@ export function LabStagingDock({
 
   const loadStaging = useCallback(async () => {
     if (!creatorId.trim()) return;
+    const generation = ++stagingGeneration.current;
     setLoading(true);
     try {
       const list = await fetchRelayLibraryStaging(creatorId.trim());
+      if (generation !== stagingGeneration.current) return;
       const mapped = list.items.map(unifiedStagingToBinItem);
       setItems(mapped);
       const validIds = new Set(mapped.map((it) => it.id));
-      setSelectedIds((selPrev) => new Set(Array.from(selPrev).filter((id) => validIds.has(id))));
+      let remembered: string[] = [];
+      if (isConversation && !selectionLoaded.current) {
+        try { const value: unknown = JSON.parse(localStorage.getItem(`relay.lab2.material:${creatorId}`) ?? "[]"); if (Array.isArray(value)) remembered = value.filter((id): id is string => typeof id === "string"); } catch { /* Optional browser storage. */ }
+      }
+      selectionLoaded.current = true;
+      setSelectedIds((selPrev) => new Set([...selPrev, ...remembered].filter((id) => validIds.has(id))));
     } catch (e) {
       onError?.(e instanceof RelayApiError ? e.message : String(e));
     } finally {
-      setLoading(false);
+      if (generation === stagingGeneration.current) setLoading(false);
     }
-  }, [creatorId, onError]);
+  }, [creatorId, onError, isConversation]);
+  useEffect(() => {
+    if (!isConversation || !selectionLoaded.current) return;
+    try { localStorage.setItem(`relay.lab2.material:${creatorId}`, JSON.stringify([...selectedIds])); } catch { /* Optional browser storage. */ }
+  }, [creatorId, isConversation, selectedIds]);
 
   const loadDiscord = useCallback(async () => {
     if (!creatorId.trim()) return;
@@ -570,6 +596,8 @@ export function LabStagingDock({
     () => items.filter((it) => selectedIds.has(it.id)),
     [items, selectedIds]
   );
+  useEffect(() => { onSelectionChange?.(selectedItems); }, [onSelectionChange, selectedItems]);
+  useEffect(() => { onBusyChange?.(uploadBusy || loading); }, [onBusyChange, uploadBusy, loading]);
   const selectedComposable = useMemo(
     () => selectedItems.filter((it) => it.serverStaged === true),
     [selectedItems]
@@ -617,11 +645,16 @@ export function LabStagingDock({
 
   const handleFiles = useCallback(
     async (files: File[]) => {
+      if (uploadPending.current) { onError?.("An upload is already in progress. Add these files again when it finishes."); return; }
       if (!creatorId.trim()) {
         onError?.("Sign in to upload files to your Library.");
         return;
       }
       if (files.length === 0) return;
+      uploadPending.current = true;
+      stagingGeneration.current += 1;
+      setLoading(false);
+      selectionLoaded.current = true;
       setUploadBusy(true);
       const cid = creatorId.trim();
       try {
@@ -645,13 +678,28 @@ export function LabStagingDock({
             return [newItem, ...filtered];
           });
         }
+        if (isConversation) setSelectedIds((previous) => new Set([...previous, ...uploaded.map((item) => item.media_id)]));
+        if (isConversation) {
+          const successes = [...uploaded];
+          setFailedFiles(files.filter((file) => {
+            const index = successes.findIndex((item) => item.filename === file.name && item.byte_size === file.size);
+            if (index < 0) return true;
+            successes.splice(index, 1);
+            return false;
+          }));
+        }
         for (const msg of errors) onError?.(msg);
+      } catch (cause) {
+        if (isConversation) setFailedFiles(files);
+        onError?.(cause instanceof Error ? cause.message : String(cause));
       } finally {
+        uploadPending.current = false;
         setUploadBusy(false);
       }
     },
-    [creatorId, onError]
+    [creatorId, onError, isConversation]
   );
+  useImperativeHandle(intakeRef, () => ({ uploadFiles: handleFiles }), [handleFiles]);
 
   const onMint = useCallback(async () => {
     if (!creatorId.trim()) return;
@@ -756,7 +804,7 @@ export function LabStagingDock({
           setDiscordOpen((o) => !o);
           if (!discordConn) void loadDiscord();
         }}
-        className={`flex h-3.5 w-3.5 items-center justify-center rounded-md transition-all active:scale-[0.96] ${
+        className={`flex ${isConversation ? "h-8 w-8" : "h-3.5 w-3.5"} items-center justify-center rounded-md transition-colors focus-visible:ring-2 focus-visible:ring-[var(--lib-ring)] active:scale-[0.96] ${
           discordLoading
             ? "text-[#555]"
             : discordLinked
@@ -764,7 +812,7 @@ export function LabStagingDock({
               : "text-[#e8c45a] hover:bg-[#e8c45a14]"
         } ${discordOpen ? (discordLinked ? "bg-[#5865F214]" : "bg-[#e8c45a14]") : ""}`}
       >
-        <DiscordLogoIcon className="h-[7px] w-[7px]" />
+        <DiscordLogoIcon className={isConversation ? "h-4 w-4" : "h-[7px] w-[7px]"} />
       </button>
 
       {discordOpen ? (
@@ -782,7 +830,7 @@ export function LabStagingDock({
             </p>
           ) : discordLinked ? (
             <p className="mt-1.5 text-[11px] leading-relaxed text-[#7a8480]">
-              Connected. Captures land in this Import Bay with uploads — no separate tab.
+              Connected. Captures appear here with your uploads.
               {discordConn?.discord_channel_id ? (
                 <>
                   {" "}
@@ -869,6 +917,7 @@ export function LabStagingDock({
       setFileDropArmed(false);
       if (![...e.dataTransfer.types].includes("Files")) return;
       e.preventDefault();
+      e.stopPropagation();
       const files = Array.from(e.dataTransfer.files);
       if (files.length > 0) void handleFiles(files);
     }
@@ -896,10 +945,22 @@ export function LabStagingDock({
       aria-hidden
     >
       <span className="rounded-full border border-[#9bf0c466] bg-[#0c1510] px-3 py-1 text-[11px] text-[#9bf0c4]">
-        Drop to Import Bay
+        {isConversation ? "Drop to attach files" : "Drop to Import Bay"}
       </span>
     </div>
   ) : null;
+
+  if (isConversation) {
+    return <div {...dockShellProps} className="studio-attachments" ref={dockRef}>
+      {hiddenFileInput}
+      <div className="studio-attachment-tools"><button type="button" onClick={openFilePicker} disabled={uploadBusy} className="studio-attach-button">{uploadBusy ? "Uploading…" : "Attach files"}</button>{discordControl}<span role="status">{loading ? "Loading files…" : `${selectedIds.size} attached`}</span></div>
+      {failedFiles.length ? <div role="alert" className="mt-2 text-xs text-red-300"><p>{failedFiles.map((file) => file.name).join(", ")} could not be uploaded. Your request is kept.</p><button type="button" className="studio-attach-button mt-2" disabled={uploadBusy} onClick={() => void handleFiles(failedFiles)}>Retry failed files</button><button type="button" className="studio-attach-button ml-2 mt-2" disabled={uploadBusy} onClick={() => setFailedFiles([])}>Remove failed files</button></div> : null}
+      {items.length ? <div className="studio-attachment-list" aria-label="Available files">{items.map((item) => <button key={item.id} type="button" aria-pressed={selectedIds.has(item.id)} onClick={() => handleToggle(item.id)} className="studio-attachment" title={item.filename || "Uploaded file"}>
+        {item.src && item.mimeType?.startsWith("image/") ? <img src={item.src} width={32} height={32} alt="" /> : null}<span>{item.filename || "Uploaded file"}</span>{selectedIds.has(item.id) ? <CheckCircle2 size={14} aria-hidden /> : null}
+      </button>)}</div> : null}
+      {dropOverlay}
+    </div>;
+  }
 
   /* ── lab2 / studio: v0 compact strip ── */
   if (isStudio) {
@@ -912,7 +973,7 @@ export function LabStagingDock({
       >
         {hiddenFileInput}
         <div
-          className={`relative flex h-[76px] flex-shrink-0 items-center gap-3 px-5 transition-colors duration-200 ${
+          className={`relative flex ${isConversation ? "min-h-[76px] flex-wrap py-2" : "h-[76px]"} flex-shrink-0 items-center gap-3 px-5 transition-colors duration-200 ${
             stripDragging || fileDropArmed ? "bg-[#0a120c]" : "bg-[#080c09]"
           }`}
         >
@@ -930,12 +991,12 @@ export function LabStagingDock({
           <div className="flex flex-shrink-0 flex-col gap-0.5">
             <div className="flex items-center gap-1.5">
               <span className="text-[9.5px] font-semibold uppercase tracking-[0.16em] text-[#404a44]">
-                Import Bay
+                {isConversation ? "Material" : "Import Bay"}
               </span>
               {discordControl}
             </div>
-            <span className="text-[10px] text-[#2e3a32]">
-              {uploadBusy ? "uploading…" : "drag to schedule →"}
+            <span role="status" className={`text-[10px] ${isConversation ? "text-[var(--lib-fg-muted)]" : "text-[#2e3a32]"}`}>
+              {uploadBusy ? "Uploading…" : isConversation ? `${selectedIds.size} selected` : "drag to schedule →"}
             </span>
           </div>
 
@@ -943,8 +1004,8 @@ export function LabStagingDock({
 
           <div className="flex min-w-0 flex-1 items-center gap-2 overflow-x-auto library-hide-scrollbars">
             {items.length === 0 && !loading ? (
-              <p className="text-[10px] text-[#2e3a32]">
-                Drop files or press + to stage media
+              <p className={`text-[10px] ${isConversation ? "text-[var(--lib-fg-muted)]" : "text-[#2e3a32]"}`}>
+                {isConversation ? "Drop files into this conversation or add files" : "Drop files or press + to stage media"}
               </p>
             ) : null}
             {loading && items.length === 0 ? (
@@ -983,7 +1044,7 @@ export function LabStagingDock({
 
           {selectionActions}
 
-          <div
+          {!isConversation ? <div
             className={`flex flex-shrink-0 items-center gap-1.5 transition-colors duration-200 ${
               stripDragging ? "text-[#9bf0c4]" : "text-[#1e2a22]"
             }`}
@@ -1012,7 +1073,7 @@ export function LabStagingDock({
                 />
               </svg>
             ))}
-          </div>
+          </div> : null}
         </div>
         {dropOverlay}
       </div>

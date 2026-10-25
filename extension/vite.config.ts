@@ -4,40 +4,26 @@ import { fileURLToPath } from "node:url";
 import { crx } from "@crxjs/vite-plugin";
 import { defineConfig } from "vite";
 import { extensionDevApiPort } from "./dev-api-port.mjs";
+import { extensionBuildProfile, manifestForProfile } from "./build-profile.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
-function manifestPath(): string {
-  const target = process.env.EXT_TARGET ?? "chrome";
-  const env = process.env.EXT_ENV ?? "dev";
-  if (target === "firefox") {
-    return resolve(__dirname, "manifests/manifest.firefox.prod.json");
-  }
-  if (env === "prod") {
-    return resolve(__dirname, "manifests/manifest.chrome.prod.json");
-  }
-  return resolve(__dirname, "manifests/manifest.chrome.dev.json");
-}
+const profile = extensionBuildProfile(process.env.EXT_TARGET ?? "chrome", process.env.EXT_ENV ?? "dev");
 
 function loadManifest(): Record<string, unknown> {
-  const raw = readFileSync(manifestPath(), "utf8");
-  return JSON.parse(raw) as Record<string, unknown>;
+  const raw = readFileSync(resolve(__dirname, "manifests", profile.manifestFile), "utf8");
+  return manifestForProfile(JSON.parse(raw), profile);
 }
-
-const target = process.env.EXT_TARGET ?? "chrome";
-const env = process.env.EXT_ENV ?? "dev";
-const outDir =
-  target === "firefox" ? "dist/firefox-prod" : `dist/chrome-${env}`;
 
 export default defineConfig({
   // Firefox prod uses `background.scripts` (MV3) — not in Chrome's ManifestV3 typedef.
   plugins: [crx({ manifest: loadManifest() as unknown as chrome.runtime.ManifestV3 })],
   define: {
-    __EXT_ENV__: JSON.stringify(env),
-    __EXT_DEV_API_PORT__: String(env === "dev" ? extensionDevApiPort() : 8787)
+    __EXT_ENV__: JSON.stringify(profile.env),
+    __EXT_DEV_API_PORT__: String(profile.env === "dev" ? extensionDevApiPort() : 8787)
   },
   build: {
-    outDir,
+    outDir: profile.outDir,
     emptyOutDir: true
   }
 });

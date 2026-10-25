@@ -252,7 +252,7 @@ export async function sendRelayBenchXHandoffToExtension(sessionId: string, hando
   try {
     const response = await sendExtensionMessage(runtime, extensionId, { type: RELAY_CROSS_POST_MESSAGE_TYPE, session_id: sessionId, handoff_id: handoffId, destination: "x" });
     const row = response !== null && typeof response === "object" ? response as Record<string, unknown> : null;
-    if (row?.ok === true && row.handoff_id === handoffId && row.destination === "x" && typeof row.tab_id === "number" && Number.isFinite(row.tab_id) && typeof row.relay_post_id === "string" && row.relay_post_id.startsWith("bench_handoff_")) return { ok: true, response: row as SendRelayBenchXHandoffResult["response"] };
+    if (row?.ok === true && row.handoff_id === handoffId && row.destination === "x" && typeof row.tab_id === "number" && Number.isFinite(row.tab_id) && typeof row.relay_post_id === "string" && row.relay_post_id.startsWith("bench_handoff_")) return { ok: true, response: row as Extract<SendRelayBenchXHandoffResult, { ok: true }>["response"] };
     return { ok: false, error: describeRelayScheduleEventFailure(response) };
   } catch (error) { return { ok: false, error: describeRelayScheduleEventFailure(error instanceof Error ? error.message : String(error)) }; }
 }
@@ -269,7 +269,7 @@ export async function sendRelayBenchDeviantArtHandoffToExtension(sessionId: stri
   try {
     const response = await sendExtensionMessage(runtime, extensionId, { type: RELAY_CROSS_POST_MESSAGE_TYPE, session_id: sessionId, handoff_id: handoffId, destination: "deviantart" });
     const row = response !== null && typeof response === "object" ? response as Record<string, unknown> : null;
-    if (row?.ok === true && row.handoff_id === handoffId && row.destination === "deviantart" && typeof row.tab_id === "number" && Number.isFinite(row.tab_id) && typeof row.relay_post_id === "string" && row.relay_post_id.startsWith("bench_handoff_")) return { ok: true, response: row as SendRelayBenchDeviantArtHandoffResult["response"] };
+    if (row?.ok === true && row.handoff_id === handoffId && row.destination === "deviantart" && typeof row.tab_id === "number" && Number.isFinite(row.tab_id) && typeof row.relay_post_id === "string" && row.relay_post_id.startsWith("bench_handoff_")) return { ok: true, response: row as Extract<SendRelayBenchDeviantArtHandoffResult, { ok: true }>["response"] };
     return { ok: false, error: describeRelayScheduleEventFailure(response) };
   } catch (error) { return { ok: false, error: describeRelayScheduleEventFailure(error instanceof Error ? error.message : String(error)) }; }
 }

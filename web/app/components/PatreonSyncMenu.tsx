@@ -415,7 +415,7 @@ export default function PatreonSyncMenu({
             Pulls from Patreon into your Library. What you curate here (visibility, collections)
             controls what visitors see on your public page — layout is in Designer.
           </p>
-          <button ref={statusRefreshRef} type="button" disabled={loadingState} className="mt-2 rounded border border-[var(--lib-border)] px-2 py-1 text-[11px] text-[var(--lib-fg)] hover:border-[var(--lib-primary)] disabled:opacity-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--lib-primary)]" onClick={() => void loadState()}>Refresh saved status</button>
+          <button ref={statusRefreshRef} type="button" disabled={loadingState} className="mt-2 rounded border border-[var(--lib-border)] px-2 py-1 text-[11px] text-[var(--lib-fg)] hover:border-[var(--lib-primary)] disabled:opacity-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--lib-primary)]" onClick={() => { repairFocusBinding.current = binding; void loadState(); }}>Refresh saved status</button>
           <p className="mt-3 text-[11px] font-semibold uppercase tracking-wide text-[var(--lib-fg-muted)]">
             Sync state
           </p>

@@ -1,0 +1,107 @@
+import {readFileSync} from 'node:fs';
+import {Script,runInNewContext} from 'node:vm';
+import assert from 'node:assert/strict';
+const html=readFileSync('.impeccable/mocks/decision/modal-select-confirm.html','utf8'),script=html.match(/<script>([\s\S]*?)<\/script>/)[1];
+new Script(script);
+const performance=script.slice(script.indexOf('const performanceFixtures='),script.indexOf('const performanceDialog='));
+const tree=script.slice(script.indexOf('const treeMemberFixtures='),script.indexOf("const workTree=$('work-tree')"));
+const cross=script.slice(script.indexOf('const crossPlatforms='),script.indexOf("const crosspostDialog=$('crosspost-dialog')"));
+const line=name=>script.split('\n').find(line=>line.startsWith('function '+name+'('));
+const change=script.split('\n').find(line=>line.startsWith("crosspostDialog.addEventListener('change'"));
+const submit=script.split('\n').find(line=>line.startsWith("crosspostDialog.addEventListener('submit'"));
+runInNewContext(`${performance}\n${tree}\n${cross}
+const mediaGroups={2:['c','c','c']},scheduledPosts=new Map(),member=treeMembersFor(2)[0],draft=crossDraftFor(2,member,'patreon');
+let crosspostState={workId:2,memberId:member.id};
+const currentCrossMember=()=>member,currentCrossDraft=()=>draft,renderCrosspost=()=>{},refreshPlatformUI=()=>{},nodes={};
+const $=id=>nodes[id]??=( {textContent:'',focus(){},scrollIntoView(){}} );
+${line('crossPreview')}
+assert.deepEqual(Array.from(crossPreviewOptions(draft,'patreon').indices),[]);
+assert.equal(crossPreviewOptions(draft,'bluesky'),null);
+draft.media=new Set([0]);
+const base=draft.captions.patreon;
+runCrossCoach();assert.equal(draft.captions.patreon,base);assert.match(draft.coach.patreon.text,/What catches your eye/);
+assert.equal(buildCrosspostReview(2,member,draft).field,'coach');
+draft.captions.patreon='Manual edit';useCrossCoach();assert.equal(draft.captions.patreon,'Manual edit');assert.match(nodes['crosspost-error'].textContent,/Caption changed/);
+runCrossCoach();draft.coach.patreon.text='Accepted coach text';useCrossCoach();assert.equal(draft.captions.patreon,'Accepted coach text');assert.ok(crossCoachApplied(draft,'patreon'));
+draft.captions.bluesky='Other platform';assert.ok(!crossCoachApplied(draft,'bluesky'));
+undoCrossCoach();assert.equal(draft.captions.patreon,'Manual edit');
+draft.selected=new Set(['bluesky']);draft.active='bluesky';draft.captions.bluesky='Base';runCrossCoach();draft.coach.bluesky.text='x'.repeat(301);useCrossCoach();assert.equal(draft.captions.bluesky,'Base');assert.match(nodes['crosspost-error'].textContent,/300/);
+delete draft.coach.bluesky;draft.selected=new Set(['patreon']);draft.active='patreon';
+const option={...crossPreviewOptions(draft,'patreon'),index:0,indices:[0]},rendered=crossPreviewSymbolMarkup(2,option);
+assert.match(rendered.markup,/<symbol/);assert.match(rendered.markup,/href="#c"/);assert.match(rendered.id,/frosted_glass_card-center/);
+assert.notEqual(crossPreviewSymbolMarkup(2,{...option,style:'mystery_crop',focus:'left'}).id,rendered.id);
+assert.throws(()=>crossPreviewSymbolMarkup(2,{...option,style:'unknown'}));assert.throws(()=>crossPreviewSymbolMarkup(2,{...option,focus:'foreign'}));
+draft.previewDrafts={patreon:option};assert.equal(buildCrosspostReview(2,member,draft).field,'preview');
+draft.previews={patreon:{...option,items:[{...option,symbolId:rendered.id}]}};delete draft.previewDrafts.patreon;
+runCrossCoach();draft.coach.patreon.text='Reviewed caption';useCrossCoach();
+const review=buildCrosspostReview(2,member,draft);assert.ok(!review.error);assert.equal(review.targets[0].coach,true);assert.equal(review.targets[0].preview.items[0].symbolId,rendered.id);
+assert.deepEqual(Array.from(crossOutputMedia(2,review.targets[0])),[rendered.id]);
+draft.previews.patreon.focus='right';assert.equal(review.targets[0].preview.focus,'center');
+const scheduled=buildCrossScheduledPosts({...review,delivery:'schedule',date:'2026-11-09',time:'18:00',timeZone:'Europe/Berlin'},member)[0];
+assert.deepEqual(Array.from(scheduled.media),[rendered.id]);assert.equal(scheduled.caption,'Reviewed caption');
+draft.prepared.patreon=structuredClone(review.targets[0]);
+${line('setCrossPosted')}
+${line('undoCrossPosted')}
+const before=JSON.stringify(performancePostsFor(2));setCrossPosted('patreon',true);const record=performancePostsFor(2).at(-1);
+assert.deepEqual(Array.from(record.renderedMedia),[rendered.id]);assert.equal(record.role,'teaser');assert.deepEqual(Array.from(record.media),[0]);
+undoCrossPosted('patreon');assert.equal(JSON.stringify(performancePostsFor(2)),before);
+draft.media.add(2);assert.ok(crossAppliedPreview(draft,'patreon'));assert.deepEqual(Array.from(crossOutputMedia(2,buildCrosspostReview(2,member,draft).targets[0])),[rendered.id,'c']);
+delete draft.previews.patreon;assert.ok(!buildCrosspostReview(2,member,draft).targets[0].preview);
+draft.media=new Set([0]);assert.equal(crossAppliedPreview(draft,'bluesky'),null);
+let changeHandler;const crosspostDialog={addEventListener(type,callback){changeHandler=callback;}};
+nodes['crosspost-content']={querySelector(){return {focus(){}};}};
+${change}
+delete draft.captions.bluesky;changeHandler({target:{name:'destinations',id:'crosspost-dest-bluesky',value:'bluesky',checked:true}});
+assert.equal(draft.active,'bluesky');assert.deepEqual(Array.from(draft.selected),['bluesky']);
+assert.equal(draft.captions.bluesky,treeMemberRecords(2,member).find(post=>post.id===draft.sourceId).caption);
+let submitHandler;crosspostDialog.addEventListener=(type,callback)=>{submitHandler=callback;};
+${submit}
+draft.selected=new Set(['patreon']);draft.active='patreon';draft.media=new Set([2]);draft.modPane=null;
+draft.previews.patreon={...option,items:[{...option,symbolId:rendered.id}]};delete draft.previewDrafts.patreon;
+submitHandler({target:{id:'crosspost-form'},preventDefault(){}});
+assert.equal(draft.modPane,'preview');assert.deepEqual(Array.from(draft.previewDrafts.patreon.indices),[]);
+assert.equal(draft.previewDrafts.patreon.sourceId,draft.sourceId);
+assert.match(nodes['crosspost-error'].textContent,/Post media changed/);
+
+delete draft.previews.patreon;draft.media=new Set([0,2]);draft.previewDrafts.patreon=crossPreviewOptions(draft,'patreon');
+const originalMedia=JSON.stringify(mediaGroups),symbols=new Map();
+const document={getElementById:id=>symbols.get(id),querySelector:()=>({insertAdjacentHTML(position,markup){symbols.set(markup.match(/id="([^"]+)"/)[1],markup);}})};
+const choose=(index,checked)=>changeHandler({target:{name:'preview-images',dataset:{crossPreviewIndex:String(index)},checked}});
+assert.ok(!crossModificationIssue(draft,'patreon'));
+choose(2,true);choose(0,true);assert.deepEqual(Array.from(draft.previewDrafts.patreon.indices),[0,2]);
+assert.deepEqual(Array.from(draft.media),[0,2]);assert.equal(buildCrosspostReview(2,member,draft).field,'preview');
+choose(0,false);useCrossPreview();assert.deepEqual(Array.from(draft.previews.patreon.indices),[2]);
+const secondId=draft.previews.patreon.items[0].symbolId;
+assert.deepEqual(Array.from(crossOutputMedia(2,buildCrosspostReview(2,member,draft).targets[0])),['c',secondId]);
+let clickHandler;crosspostDialog.addEventListener=(type,callback)=>clickHandler=callback;
+${script.split("\n").find(line=>line.startsWith("crosspostDialog.addEventListener('click'"))}
+const applied=JSON.stringify(draft.previews.patreon);
+draft.previewDrafts.patreon={...crossPreviewOptions(draft,'patreon'),indices:[0]};
+const action=kind=>clickHandler({target:{closest(selector){return selector==='[data-cross-mod-action]'?{dataset:{crossModAction:kind}}:null;}}});
+action('cancel-preview');assert.equal(JSON.stringify(draft.previews.patreon),applied);assert.ok(!draft.previewDrafts.patreon);
+draft.previewDrafts.patreon={...crossPreviewOptions(draft,'patreon'),indices:[0,2]};useCrossPreview();
+const batchReview=buildCrosspostReview(2,member,draft),derived=Array.from(batchReview.targets[0].preview.items,item=>item.symbolId);
+assert.equal(derived.length,2);assert.deepEqual(Array.from(crossOutputMedia(2,batchReview.targets[0])),derived);
+const batchScheduled=buildCrossScheduledPosts({...batchReview,delivery:'schedule',date:'2026-11-09',time:'18:00',timeZone:'Europe/Berlin'},member)[0];
+assert.deepEqual(Array.from(batchScheduled.media),derived);
+draft.prepared.patreon=structuredClone(batchReview.targets[0]);setCrossPosted('patreon',true);
+assert.deepEqual(Array.from(performancePostsFor(2).at(-1).renderedMedia),derived);assert.deepEqual(Array.from(performancePostsFor(2).at(-1).media),[0,2]);undoCrossPosted('patreon');
+draft.media.delete(0);assert.equal(crossAppliedPreview(draft,'patreon'),null);
+draft.previewDrafts.patreon=crossPreviewOptions(draft,'patreon');assert.deepEqual(Array.from(draft.previewDrafts.patreon.indices),[2]);
+useCrossPreview();assert.deepEqual(Array.from(crossOutputMedia(2,buildCrosspostReview(2,member,draft).targets[0])),[secondId]);
+draft.previewDrafts.patreon={...crossPreviewOptions(draft,'patreon'),indices:[]};assert.equal(crossModificationIssue(draft,'patreon').field,'preview');
+useCrossPreview();assert.match(nodes['crosspost-error'].textContent,/Choose images in the Previewize table/);
+action('remove-preview');assert.ok(!draft.previews.patreon);assert.ok(!draft.previewDrafts.patreon);
+assert.deepEqual(Array.from(crossOutputMedia(2,buildCrosspostReview(2,member,draft).targets[0])),['c']);
+assert.equal(JSON.stringify(mediaGroups),originalMedia);
+draft.previews.patreon={...option,items:[{...option,symbolId:rendered.id}]};draft.media.clear();delete draft.previewDrafts.patreon;
+assert.match(crossPreviewTableMarkup(draft,2,'patreon'),/Use all originals/);
+action('remove-preview');assert.ok(!buildCrosspostReview(2,member,draft).error);
+assert.match(crossReviewMedia([],2),/Text-only post/);
+
+`,{assert,Intl,structuredClone,works:[{art:'a'},{art:'b'},{art:'c'}]});
+const expand=line('expandScheduleButton');assert.match(expand,/href="#calendar"/);assert.ok(!expand.includes('rhythmsControl'));
+assert.match(html,/<button[^>]*class="nav-tool nav-rhythms"[^>]*data-open-rhythms/);
+assert.ok(!html.includes('rail-rhythms'));assert.ok(!html.includes('.rail [data-open-rhythms]'));
+assert.ok(!html.includes('cross-source-options'));assert.ok(!html.includes('id="crosspost-source"'));
+console.log('Cross-post modifications: reviewed Coach candidates, stale/length guards, reversible copy, preview lineage, output snapshots, schedule/Now media, independent subset/multiple selection, mixed output order, cancel/repair/originals and nav placement passed.');

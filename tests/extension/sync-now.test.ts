@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const fixture = vi.hoisted(() => ({ raw: {} as Record<string, unknown>, cookie: "browser-current", fetch: vi.fn() }));
 vi.mock("../../extension/src/lib/browser", () => ({ default: {
@@ -18,6 +18,8 @@ const grant = (id = "a") => ({ token: `test-${id}`, token_id: id, account_id: `a
 const reply = (status: number, data: Record<string, unknown> = {}) => new Response(JSON.stringify({ data }), { status });
 async function connected() { await storage.setInstallationId("installation"); await storage.setGrant(grant()); return (await storage.getCredentialContext())!; }
 beforeEach(() => { fixture.raw = {}; fixture.cookie = "browser-current"; fixture.fetch.mockReset(); vi.stubGlobal("fetch", fixture.fetch); });
+
+afterEach(() => { vi.unstubAllGlobals(); });
 
 describe("PS13 bound credential checks", () => {
   it("checks an unchanged cookie on Relay despite old cached expiry, preserving separate evidence", async () => {

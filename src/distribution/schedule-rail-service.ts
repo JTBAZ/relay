@@ -1212,6 +1212,8 @@ export type CreateScheduledPostInput = {
   note?: string;
   /** From Create Event dialogue — text posts skip media gate. */
   planned_format?: PlannedPostFormat | string;
+  /** Continue the exact saved draft, including its reserved media. */
+  draft_id?: string;
 };
 
 function resolveCreateDestinations(input: CreateScheduledPostInput): NonNullable<ScheduleRailDestination>[] {
@@ -1248,6 +1250,11 @@ export async function createScheduledPostForRail(
   creatorId: string,
   input: CreateScheduledPostInput
 ): Promise<ScheduleRailEventItem> {
+  if (input.draft_id) return prisma.$transaction(async (tx) => createScheduledPostForRailInner(tx as unknown as PrismaClient, creatorId, input, true));
+  return createScheduledPostForRailInner(prisma, creatorId, input, false);
+}
+
+async function createScheduledPostForRailInner(prisma: PrismaClient, creatorId: string, input: CreateScheduledPostInput, transactional: boolean): Promise<ScheduleRailEventItem> {
   const id = creatorId.trim();
   const scheduledFor = new Date(input.scheduled_for);
   if (Number.isNaN(scheduledFor.getTime())) {
@@ -1258,8 +1265,13 @@ export async function createScheduledPostForRail(
     ? input.planned_format
     : "mixed";
   const isText = plannedFormat === "text";
-  const title = (input.title?.trim() || "Scheduled post").slice(0, 200);
-  const note = input.note?.trim() || null;
+  if (input.draft_id) await prisma.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${id + ':' + input.draft_id}))`;
+  const sourceDraft = input.draft_id ? await prisma.autopostDraft.findFirst({ where: { id: input.draft_id, creatorId: id, status: { in: ["drafting", "previewing", "nudged"] }, publishedPostId: null } }) : null;
+  if (input.draft_id && !sourceDraft) throw new ScheduleRailValidationError("Editable draft not found in this Studio.");
+  if (sourceDraft && await prisma.postDistributionPlan.findFirst({ where: { creatorId: id, sourceDraftId: sourceDraft.id } })) throw new ScheduleRailValidationError("This draft is already scheduled. Open its event in the schedule rail.");
+  const mediaIds = sourceDraft?.mediaIds ?? [];
+  const title = (sourceDraft?.title?.trim() || input.title?.trim() || "Scheduled post").slice(0, 200);
+  const note = sourceDraft?.bodyText ?? input.note?.trim() ?? null;
   const notify = input.notify !== false;
   const rationale =
     note || "Scheduled from the Studio calendar.";
@@ -1276,10 +1288,10 @@ export async function createScheduledPostForRail(
       requiredTierId: null,
       tierIds: [],
       tagIds: [],
-      mediaIds: [],
+      mediaIds,
       publish: false,
       publishedAtInput: null
-    });
+    }, transactional ? { tx: prisma as unknown as Prisma.TransactionClient } : undefined);
     createdPostId = out.post.id;
   } catch (err) {
     if (err instanceof RelayCreatePostError) {
@@ -1289,7 +1301,8 @@ export async function createScheduledPostForRail(
   }
 
   let draftId: string;
-  try {
+  if (sourceDraft) draftId = sourceDraft.id;
+  else try {
     const draft = await saveAutopostDraft(prisma, id, {
       media_ids: [],
       title,
@@ -1320,7 +1333,7 @@ export async function createScheduledPostForRail(
     link: string | null;
   };
 
-  const tasks = await prisma.$transaction(async (tx) => {
+  const buildTasks = async (tx: Prisma.TransactionClient) => {
     const plan = await tx.postDistributionPlan.create({
       data: {
         creatorId: id,
@@ -1377,12 +1390,13 @@ export async function createScheduledPostForRail(
       });
     }
     return created;
-  });
+  };
+  const tasks = transactional ? await buildTasks(prisma as unknown as Prisma.TransactionClient) : await prisma.$transaction(buildTasks);
 
   const needsMedia = computeNeedsMedia({
     action: "post",
     taskStatus: "pending",
-    mediaIds: [],
+    mediaIds,
     plannedFormat
   });
 
@@ -1402,7 +1416,7 @@ export async function createScheduledPostForRail(
     plan_label: null,
     status: "pending" as const,
     needs_media: needsMedia,
-    media_count: 0,
+    media_count: mediaIds.length,
     draft_id: draftId
   }));
 

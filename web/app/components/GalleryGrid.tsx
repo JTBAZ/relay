@@ -123,7 +123,7 @@ function GalleryGrid({
     return () => ro.disconnect();
   }, []);
 
-  const columnCount = galleryGridColumnCount(viewportWidth, gridDensity);
+  const columnCount = gridDensity === "lab2" ? Math.max(1, Math.floor(((scrollWidth || 360) - 24) / 150)) : galleryGridColumnCount(viewportWidth, gridDensity);
   const rowCount = Math.ceil(cards.length / columnCount) || 0;
   const isLab2Grid = gridDensity === "lab2";
   const isLabGrid = gridDensity === "lab" || isLab2Grid;

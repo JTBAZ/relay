@@ -176,8 +176,13 @@ async function handleRelayHttpErrors(res: Response): Promise<void> {
 /**
  * Low-level Relay API request with shared 401/403/5xx handling.
  * Use for non-JSON bodies (e.g. `HEAD`) — caller reads the returned `Response`.
+ * Same-origin Next API routes retain native fetch options and caller-owned HTTP errors.
  */
-export async function relayRequest(path: string, init?: RequestInit): Promise<Response> {
+export async function relayRequest(path: string, init?: RequestInit, target: "relay" | "same-origin" = "relay"): Promise<Response> {
+  if (target === "same-origin") {
+    if (!path.startsWith("/api/")) throw new TypeError("Same-origin API requests require a /api/ path.");
+    return fetch(path, init);
+  }
   let res: Response;
   try {
     res = await fetch(`${RELAY_API_BASE}${path}`, {

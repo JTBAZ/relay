@@ -75,6 +75,7 @@ describe("platform metric detail (PMD-013)", () => {
           message: "Gross revenue fell week over week.",
           severity: "warning",
           relatedMetricKey: "revenue.gross",
+          relatedSection: "revenue",
           sourceContext: "WoW trend"
         },
         {
@@ -83,6 +84,7 @@ describe("platform metric detail (PMD-013)", () => {
           message: "Unrelated",
           severity: "warning",
           relatedMetricKey: "activity.dau",
+          relatedSection: "activity",
           sourceContext: "DoD trend"
         }
       ]

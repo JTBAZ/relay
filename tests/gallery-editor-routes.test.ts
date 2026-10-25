@@ -1,10 +1,11 @@
 import express from "express";
+import { createServer, request as httpRequest } from "node:http";
 import type { PrismaClient } from "@prisma/client";
 import request from "supertest";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const service = vi.hoisted(() => ({
-  create: vi.fn(), read: vi.fn(), revise: vi.fn(), apply: vi.fn(), undo: vi.fn(),
+  create: vi.fn(), read: vi.fn(), revise: vi.fn(), appendPerformanceTurn: vi.fn(), apply: vi.fn(), undo: vi.fn(),
 }));
 vi.mock("../src/gallery-editor/service.js", () => ({
   GalleryEditorService: class { constructor() { return service; } },
@@ -18,7 +19,7 @@ const principal = { creatorId: "alice", actorId: "actor-a" };
 const emptyCart = { revision: 0, actions: [], items: [], dependencies: {}, conflicts: [], notice: "notice" };
 const session = { id: "session-a", creatorId: "alice", revision: 0, context: { selectedPostIds: [] }, messages: [], cart: emptyCart };
 
-function app(options: { storesReady?: boolean; authorize?: ReturnType<typeof vi.fn>; prisma?: unknown } = {}) {
+function app(options: { storesReady?: boolean; authorize?: ReturnType<typeof vi.fn>; prisma?: unknown; provider?: { respond: (request: any) => Promise<any> } } = {}) {
   const server = express(); server.use(express.json());
   const authorize = options.authorize ?? vi.fn(async () => principal);
   registerGalleryEditorRoutes(server, {
@@ -27,6 +28,7 @@ function app(options: { storesReady?: boolean; authorize?: ReturnType<typeof vi.
     traceId: () => "trace-test",
     storageRoot: ".",
     storesReady: options.storesReady ?? true,
+    ...(options.provider ? { provider: options.provider as any } : {}),
   });
   return { server, authorize };
 }
@@ -35,12 +37,14 @@ beforeEach(() => {
   vi.stubEnv("RELAY_GALLERY_EDITOR_ENABLED", "1");
   vi.stubEnv("RELAY_GALLERY_EDITOR_ALLOWLIST", "alice");
   vi.stubEnv("RELAY_GALLERY_EDITOR_AI_ENABLED", "0");
+  vi.stubEnv("RELAY_GALLERY_EDITOR_PERFORMANCE_ENABLED", "0");
   vi.stubEnv("OPENAI_API_KEY", "");
   vi.stubEnv("LIBRARY_EDITOR_MODEL_PRICING_JSON", "");
   vi.clearAllMocks();
   service.create.mockResolvedValue(session);
   service.read.mockResolvedValue(session);
   service.revise.mockResolvedValue(session);
+  service.appendPerformanceTurn.mockResolvedValue({ ...session, revision: 1 });
   service.apply.mockResolvedValue({ id: "receipt-a" });
   service.undo.mockResolvedValue({ id: "receipt-a", reversedAt: "2026-01-01T00:00:00.000Z" });
 });
@@ -74,6 +78,7 @@ describe("gallery editor route access", () => {
     const blocked = app();
     const capabilities = await request(blocked.server).get(`${base}/capabilities`);
     expect(capabilities.body.data).toMatchObject({ enabled: false, aiAvailable: false });
+    expect(capabilities.body.data.performance).toEqual({ enabled: false, aiAvailable: false });
     const denied = await request(blocked.server).post(`${base}/sessions`).send({ context: { selectedPostIds: [] } });
     expect(denied.status).toBe(403);
     expect(denied.body.error.code).toBe("EDITOR_DISABLED");
@@ -83,6 +88,158 @@ describe("gallery editor route access", () => {
     expect(unavailable.status).toBe(403);
     expect(unavailable.body.error.code).toBe("EDITOR_DISABLED");
     expect(service.create).not.toHaveBeenCalled();
+  });
+
+  it("passes a validated explicit work selection kind to the interpreter for multiple anchors without exposing model-controlled IDs", async () => {
+    vi.stubEnv("RELAY_GALLERY_EDITOR_PERFORMANCE_ENABLED", "1");
+    service.read.mockResolvedValue({ ...session, context: { selectedPostIds: ["post-a", "post-b"] } });
+    const prisma = {
+      post: {
+        count: vi.fn(async ({ where }: any) => where.creatorId === "alice" && where.id.in.length === 2 ? 2 : 0),
+        findMany: vi.fn(async ({ where }: any) => where.creatorId === "alice" ? where.id.in.map((id: string) => ({ id })) : [])
+      },
+      tenant: { findUnique: vi.fn(async ({ where }: any) => where.relayCreatorId === "alice" ? { id: "tenant-a" } : null) },
+      creativeWork: { findFirst: vi.fn(async ({ where }: any) => where.creatorId === "alice" && where.id === "work-a" ? { id: "work-a", creatorId: "alice", title: "Selected work", titleMode: "independent", seriesMember: null, members: [{ postId: "post-a", sortOrder: 0 }, { postId: "post-b", sortOrder: 1 }] } : null) },
+      platformInstance: { findMany: vi.fn(async ({ where }: any) => where.creatorId === "alice" ? [] : (() => { throw new Error("unscoped links"); })()) },
+      externalPostMetricSnapshot: { findFirst: vi.fn(async () => null), findMany: vi.fn(async () => []) },
+      patreonInsightsPostMetric: { findMany: vi.fn(async () => []) },
+      $queryRaw: vi.fn(async () => [])
+    };
+    let input: any[] = [];
+    const provider = { respond: vi.fn(async (request: any) => {
+      input = request.input;
+      expect(request.tools.find((tool: any) => tool.name === "readPiecePerformance").parameters.required).toEqual(["range", "destination"]);
+      return { output: [{ type: "function_call", name: "readPiecePerformance", call_id: "performance-call", arguments: JSON.stringify({ range: "30d", destination: null }) }], usage: { inputTokens: 1, outputTokens: 1, costUsd: 0 } };
+    }) };
+    const { server } = app({ prisma, provider });
+    const response = await request(server).post(`${base}/sessions/session-a/turn`).send({
+      revision: 0, message: "How is this work performing?", context: { selectedPostIds: ["post-a", "post-b"] }, performanceSubject: { kind: "work", id: "work-a" }
+    });
+    expect(response.status).toBe(200);
+    expect(provider.respond).toHaveBeenCalledTimes(1);
+    const developerText = input.filter(item => item.role === "developer").map(item => item.content).join("\n");
+    expect(developerText).toContain("selected subject kind for this turn is work");
+    expect(developerText).not.toContain("work-a");
+    expect(service.appendPerformanceTurn).toHaveBeenCalledWith("alice", "actor-a", "session-a", expect.objectContaining({
+      binding: expect.objectContaining({ subject: { kind: "work", id: "work-a", title: "Selected work", post_ids: ["post-a", "post-b"] } }),
+      performanceAnswer: expect.objectContaining({ kind: "piece_performance", subject: { kind: "work", id: "work-a", title: "Selected work", post_ids: ["post-a", "post-b"] } })
+    }));
+    expect(service.revise).not.toHaveBeenCalled();
+  });
+
+  it("rejects malformed performance hints before provider work", async () => {
+    vi.stubEnv("RELAY_GALLERY_EDITOR_PERFORMANCE_ENABLED", "1");
+    const provider = { respond: vi.fn() };
+    const { server } = app({ provider });
+    const response = await request(server).post(`${base}/sessions/session-a/turn`).send({ revision: 0, message: "How is this performing?", context: { selectedPostIds: ["post-a"] }, performanceSubject: { kind: "work", id: " work-a " } });
+    expect(response.status).toBe(400);
+    expect(response.body.error.code).toBe("INVALID_SELECTION");
+    expect(provider.respond).not.toHaveBeenCalled();
+  });
+
+  it("keeps feature-off conversational edits on the existing revise path", async () => {
+    const provider = { respond: vi.fn(async () => ({ output: [{ type: "message", content: [{ type: "output_text", text: JSON.stringify({ message: "No change.", disposition: "clarification", actions: [] }) }] }, { type: "reasoning" }], usage: { inputTokens: 1, outputTokens: 1, costUsd: 0 } })) };
+    const { server } = app({ provider });
+    const response = await request(server).post(`${base}/sessions/session-a/turn`).send({ revision: 0, message: "Rename it", context: { selectedPostIds: [] } });
+    expect(response.status).toBe(200);
+    expect(service.revise).toHaveBeenCalledTimes(1);
+    expect(service.appendPerformanceTurn).not.toHaveBeenCalled();
+    const firstCall = (provider.respond.mock.calls as unknown as Array<[any]>)[0]?.[0];
+    expect(firstCall.tools.some((tool: any) => tool.name === "readPiecePerformance")).toBe(false);
+  });
+
+  it("checks owned session revision and selected-post ownership before provider work", async () => {
+    const provider = { respond: vi.fn() };
+    const { server } = app({ provider, prisma: { post: { count: vi.fn(async () => 0) } } });
+    service.read.mockResolvedValueOnce({ ...session, revision: 1 });
+    const stale = await request(server).post(`${base}/sessions/session-a/turn`).send({ revision: 0, message: "How is it performing?", context: { selectedPostIds: ["post-a"] } });
+    expect(stale.status).toBe(409);
+    expect(provider.respond).not.toHaveBeenCalled();
+    vi.stubEnv("RELAY_GALLERY_EDITOR_PERFORMANCE_ENABLED", "1");
+    service.read.mockResolvedValueOnce(session);
+    const foreign = await request(server).post(`${base}/sessions/session-a/turn`).send({ revision: 0, message: "How is it performing?", context: { selectedPostIds: ["foreign-post"] } });
+    expect(foreign.status).toBe(404);
+    expect(provider.respond).not.toHaveBeenCalled();
+  });
+
+  it("stops before provider work when the client disconnects during the initial binding read", async () => {
+    vi.stubEnv("RELAY_GALLERY_EDITOR_PERFORMANCE_ENABLED", "1");
+    service.read.mockResolvedValue({ ...session, context: { selectedPostIds: ["post-a", "post-b"] } });
+    let enteredBinding!: () => void;
+    let releaseBinding!: () => void;
+    const bindingEntered = new Promise<void>(resolve => { enteredBinding = resolve; });
+    const bindingGate = new Promise<void>(resolve => { releaseBinding = resolve; });
+    const prisma = {
+      post: {
+        count: vi.fn(async ({ where }: any) => where.creatorId === "alice" ? where.id.in.length : 0),
+        findMany: vi.fn(async ({ where }: any) => where.creatorId === "alice" ? where.id.in.map((id: string) => ({ id })) : [])
+      },
+      tenant: { findUnique: vi.fn(async () => ({ id: "tenant-a" })) },
+      creativeWork: { findFirst: vi.fn(async () => { enteredBinding(); await bindingGate; return null; }) },
+      platformInstance: { findMany: vi.fn(async () => []) }
+    };
+    const provider = { respond: vi.fn() };
+    const { server: appServer } = app({ prisma, provider });
+    const server = createServer(appServer);
+    await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
+    const address = server.address();
+    if (!address || typeof address === "string") throw new Error("Expected a local test server address.");
+    const socketClosed = new Promise<void>(resolve => server.once("connection", socket => socket.once("close", () => resolve())));
+    const client = httpRequest(`http://127.0.0.1:${address.port}${base}/sessions/session-a/turn`, { method: "POST", headers: { "content-type": "application/json" } });
+    client.on("error", () => undefined);
+    client.end(JSON.stringify({ revision: 0, message: "How is this work performing?", context: { selectedPostIds: ["post-a", "post-b"] }, performanceSubject: { kind: "work", id: "work-a" } }));
+    try {
+      await bindingEntered;
+      client.destroy();
+      await socketClosed;
+      releaseBinding();
+      await new Promise<void>(resolve => server.close(() => resolve()));
+      expect(provider.respond).not.toHaveBeenCalled();
+      expect(service.appendPerformanceTurn).not.toHaveBeenCalled();
+    } finally {
+      releaseBinding();
+      if (server.listening) await new Promise<void>(resolve => server.close(() => resolve()));
+    }
+  });
+
+  it("keeps client cancellation wired until a held append finishes", async () => {
+    vi.stubEnv("RELAY_GALLERY_EDITOR_PERFORMANCE_ENABLED", "1");
+    let appendStarted!: (signal: AbortSignal | undefined) => void;
+    let releaseAppend!: () => void;
+    const started = new Promise<AbortSignal | undefined>(resolve => { appendStarted = resolve; });
+    const appendGate = new Promise<void>(resolve => { releaseAppend = resolve; });
+    service.appendPerformanceTurn.mockImplementation(async (_creatorId, _actorId, _id, input) => {
+      appendStarted(input.signal);
+      await appendGate;
+      return { ...session, revision: 1 };
+    });
+    const provider = { respond: vi.fn(async () => ({
+      output: [{ type: "message", content: [{ type: "output_text", text: JSON.stringify({ message: "Choose one piece.", actions: [], disposition: "performance_clarification" }) }] }],
+      usage: { inputTokens: 1, outputTokens: 1, costUsd: 0 }
+    })) };
+    const { server: appServer } = app({ provider });
+    const server = createServer(appServer);
+    await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
+    const address = server.address();
+    if (!address || typeof address === "string") throw new Error("Expected a local test server address.");
+    const socketClosed = new Promise<void>(resolve => server.once("connection", socket => socket.once("close", () => resolve())));
+    const client = httpRequest(`http://127.0.0.1:${address.port}${base}/sessions/session-a/turn`, { method: "POST", headers: { "content-type": "application/json" } });
+    client.on("error", () => undefined);
+    client.end(JSON.stringify({ revision: 0, message: "How is this performing?", context: { selectedPostIds: [] } }));
+    try {
+      const signal = await started;
+      expect(signal).toBeDefined();
+      expect(signal?.aborted).toBe(false);
+      client.destroy();
+      await socketClosed;
+      expect(signal?.aborted).toBe(true);
+      releaseAppend();
+      await new Promise<void>(resolve => server.close(() => resolve()));
+    } finally {
+      releaseAppend();
+      if (server.listening) await new Promise<void>(resolve => server.close(() => resolve()));
+    }
+    expect(service.appendPerformanceTurn).toHaveBeenCalledTimes(1);
   });
 
   it("serves a manual session while AI is disabled and makes no cart write on turn", async () => {

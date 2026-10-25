@@ -9588,6 +9588,7 @@ export function createApp(config: AppConfig): CreateAppResult {
         ? body.destinations.filter((d): d is string => typeof d === "string")
         : undefined;
       const event = await createScheduledPostForRail(config.prisma, relayCreatorId, {
+        draft_id: typeof body.draft_id === "string" ? body.draft_id.trim() || undefined : undefined,
         title: typeof body.title === "string" ? body.title : undefined,
         scheduled_for: scheduledFor,
         destination: typeof body.destination === "string" ? body.destination : undefined,

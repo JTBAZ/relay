@@ -2,11 +2,11 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { defineConfig } from "vite";
 import { extensionDevApiPort } from "./dev-api-port.mjs";
+import { extensionBuildProfile } from "./build-profile.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
-const outDir = process.env.EXT_OUT_DIR ?? "dist/chrome-dev";
-const extEnv = process.env.EXT_ENV === "prod" ? "prod" : "dev";
+const profile = extensionBuildProfile(process.env.EXT_TARGET ?? "chrome", process.env.EXT_ENV ?? "dev");
 const contentEntry = process.env.EXT_CONTENT_ENTRY ?? "fill-patreon-editor";
 
 const entries: Record<string, string> = {
@@ -50,12 +50,12 @@ const bundle = bundleConfig[contentEntry] ?? bundleConfig["fill-patreon-editor"]
 /** Standalone injectable IIFE — must not share Rollup chunks with the service worker bundle. */
 export default defineConfig({
   define: {
-    __EXT_ENV__: JSON.stringify(extEnv),
-    __EXT_DEV_API_PORT__: String(extEnv === "dev" ? extensionDevApiPort() : 8787)
+    __EXT_ENV__: JSON.stringify(profile.env),
+    __EXT_DEV_API_PORT__: String(profile.env === "dev" ? extensionDevApiPort() : 8787)
   },
   build: {
     emptyOutDir: false,
-    outDir,
+    outDir: profile.outDir,
     lib: {
       entry,
       formats: ["iife"],

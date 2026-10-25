@@ -1,4 +1,5 @@
 /** Shared contract for the Library editor. The model proposes; authenticated services commit. */
+import type { PiecePerformanceAnswer } from "../analytics/piece-performance-findings.js";
 export const RENAME_NOTICE = "Changes titles in Relay. Existing Patreon posts are unchanged.";
 export type PostTitleMode = "source" | "inherit_work" | "custom";
 export type WorkTitleMode = "independent" | "inherit_series";
@@ -210,7 +211,10 @@ export interface ChangeCart {
   conflicts: string[];
   notice: string;
 }
-export interface EditorMessage { role: "user" | "assistant"; text: string }
+export type EditorPerformanceSubjectRef = { kind: "post" | "work"; id: string };
+export type EditorMessage =
+  | { role: "user"; text: string }
+  | { role: "assistant"; text: string; performanceAnswer?: PiecePerformanceAnswer };
 export interface EditorSession {
   id: string;
   creatorId: string;

@@ -20,10 +20,10 @@ describe("worker entry smoke", () => {
           // Worker subprocess inherits NODE_ENV=test from Vitest; logger defaults to silent — allow banner assertion.
           LOG_LEVEL: "info",
           RELAY_TOKEN_ENCRYPTION_KEY:
-            process.env.RELAY_TOKEN_ENCRYPTION_KEY ?? Buffer.alloc(32).toString("base64"),
+            process.env.RELAY_TOKEN_ENCRYPTION_KEY?.trim() || Buffer.alloc(32).toString("base64"),
           // CI has no root .env; createApp still validates Patreon client config at boot.
-          PATREON_CLIENT_ID: process.env.PATREON_CLIENT_ID ?? "ci-smoke-patreon-client",
-          PATREON_CLIENT_SECRET: process.env.PATREON_CLIENT_SECRET ?? "ci-smoke-patreon-secret"
+          PATREON_CLIENT_ID: process.env.PATREON_CLIENT_ID?.trim() || "ci-smoke-patreon-client",
+          PATREON_CLIENT_SECRET: process.env.PATREON_CLIENT_SECRET?.trim() || "ci-smoke-patreon-secret"
         },
         timeout: 60_000
       });

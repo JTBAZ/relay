@@ -9,6 +9,8 @@ export type AutopostDraftAiInput = {
   styleProfile: CreatorStyleProfileWire;
   mediaCaptions: string[];
   titleHint?: string | null;
+  currentBody?: string | null;
+  mediaCount?: number;
   /** Nudged / Insights frame intent — already stored on the draft. */
   draft_intent?: string | null;
   /** Durable Insights studio brief (no live metrics search). */
@@ -50,7 +52,9 @@ export function buildAutopostDraftAiFacts(input: AutopostDraftAiInput): Record<s
     voice_script: input.styleProfile.voice_script,
     discord_captions: input.mediaCaptions,
     title_hint: input.titleHint?.trim() || null,
-    media_count: input.mediaCaptions.length,
+    current_body: input.currentBody ?? null,
+    media_count: input.mediaCount ?? input.mediaCaptions.length,
+    media_inspection: "Only supplied captions and instructions are available. Image contents have not been inspected.",
     draft_intent: input.draft_intent?.trim() || null,
     studio_brief: brief
       ? {
@@ -94,6 +98,7 @@ export async function generateAutopostDraftCopy(
       "Use ONLY the facts in the user message. Do not invent metrics, links, or dates.",
       "If studio_brief or mounted_findings are present, align tone and angle with them — do not invent new analytics.",
       "draft_intent is a framing hint from Insights; honor it when present.",
+      "When current_body is present, revise that copy according to draft_intent. Do not claim to have inspected images or fetched reference links.",
       "Return JSON with keys title and body_text only.",
       "body_text may use plain text or simple HTML paragraphs.",
       "Keep it concise (under 120 words unless the artist notes ask for more)."

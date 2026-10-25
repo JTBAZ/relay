@@ -1,6 +1,8 @@
 # Patreon sync acceptance and rollout
 
-Status: planned verification. The cases below are requirements, not evidence that the new behavior has shipped. Use [the phased plan](PHASED-BUILD-PLAN.md) for owners and prerequisites.
+Status: PS-15 remains open. Local checks, actual backend/web image builds and private isolated API/web probes and the public staging HTTPS smoke are recorded; installed-browser/provider acceptance and release are held. The cases below remain requirements. Use [the phased plan](PHASED-BUILD-PLAN.md) for owners/prerequisites and the [PS-15 record](PS-15-RELIABILITY-ACCEPTANCE.md) for actual results and open gates.
+
+The original failed full suite and its 13 transport denials remain recorded, with no full-suite rerun. Independent read-only triage maps 48 of the original 72 failures to later exact-case passes; 24 remain in eight files (22 fixture/setup cases, one trigger verification and one billing timeout). Focused integration, private RLS, staging extensions, the ten-file web prerequisite repair and both real image builds pass their recorded checks. Isolated DB/R2/Redis bindings, two private APIs and a private web login shell are verified. These results do not close R01–R16: fresh user/provider consent, test-owned content and collection permission, installed Chrome/Firefox authentication, hydration and actual two-API/two-worker overlap/restart evidence remain required. Dependency audits remain open. PS-16 and later implementation stays gated by PS-15.
 
 R04 now has local PostgreSQL evidence in [Import 04](../../../.scratch/import-persistence/issues/04-persist-shared-media-revisions-before-replay-markers.md): fourteen shared-media cases pass for Patreon and SubscribeStar. Deployment and the complete reliability acceptance run remain separate.
 
@@ -24,7 +26,7 @@ R12 has local evidence in [PS-12](PS-12-MEDIA-REPAIR.md): durable consent/downlo
 
 R13/R14 have local evidence in [PS-13](PS-13-VERIFIED-EXTENSION.md): server-confirmed checks, bound grant generations, original credential age, shared one-use consent, pure cookie reads and truthful partial metrics pass 127 independent checks, with one existing Windows skip. Actual API process replay and exact-width UI fixtures pass. Authenticated installed Chrome/Firefox behavior remains required live evidence.
 
-The initial combined build failed on nine diagnostics in concurrent Library files outside PS-10/PS-12. After those files changed, the full production build passed with no blocked transports and all 592 recorded source hashes stable during the run. Evidence: `C:/Users/jorda/AppData/Local/Temp/relay-ps13-before/root-build-final.json`. The old failure remains recorded; this later pass does not close PS-15 or establish hosted rollout. Extension phase2 still fails its localhost assertion; full web verification has the separate limits recorded in PS-13.
+The initial combined backend build failed on nine concurrent Library diagnostics; its later passing build and preserved failure remain recorded at `C:/Users/jorda/AppData/Local/Temp/relay-ps13-before/root-build-final.json`. The older editor/planning lint, guard-denied Google Fonts fetch and first real web semantic failure are also preserved as historical attempts. The independently reviewed candidate-2 repair now passes 34 affected tests, semantic web typechecking and full lint with zero denials, and the genuine production web image completed all existing lint/type/build stages. The unchanged extension phase2 checks and current staging outputs pass. None of these build results substitutes for the installed-browser or live acceptance cases.
 
 [PS-00's baseline record](BASELINE-CONTRACTS.md) distinguishes committed PS-01/PS-02 fixes, passing controls, historical expected failures, and later regression work. Expected-failure assertions do not satisfy these release cases. PS-02's existing live database evidence remains recorded in Import 02; it was not rerun by PS-00.
 
@@ -74,7 +76,7 @@ Keep the smallest regression that fails for each defect, with the owning impleme
 
 Existing mocked tests cover portions of these contracts; new acceptance cases require new failure/restart/overlap fixtures. Use disposable PostgreSQL and Redis databases for destructive fixtures and multi-process checks. Never aim test cleanup at a shared development or production tenant.
 
-For changed backend code, run focused tests and `npm run build`. For extension changes, run `npm run verify:phase2 --prefix extension` and installed-browser checks. For changed web code, run relevant tests, `npm run lint --prefix web`, `npm run build --prefix web`, and rendered checks. Finish integration with the root suite, recording pre-existing failures separately. These commands are future implementation checks; no runtime behavior was changed in the planning task.
+For changed backend code, run focused tests and `npm run build`. For extension changes, run `npm run verify:phase2 --prefix extension` and installed-browser checks. For changed web code, run relevant tests, `npm run lint --prefix web`, `npm run build --prefix web`, and rendered checks. Finish integration with the root suite, recording pre-existing failures separately. Record actual commands and limits in the owning completion record; a focused pass does not replace a failed full-suite result.
 
 ## Release records
 
@@ -93,3 +95,5 @@ Reliability can ship independently of metadata. New metadata collectors and view
 7. Release Phase 4 fields incrementally, then their Phase 5 consumers. A failed parser/measure can be disabled independently of sync, repair, access, and posting.
 
 Existing Import 03's migration-policy approval still governs foreign-owner transfers. Platform permission for unsupported collection must be resolved before expanding collection or publicly rolling it out. Production changes, test publications, and extension-store releases require the applicable existing authorization; this plan performs none of them.
+
+R15/R16 now have independent local evidence in [PS-14](PS-14-PERSISTED-HEALTH.md): saved archive/access/member/media coverage, source and verification times, pure authenticated health reads, retained proof after failed attempts, unfinished catch-up bounds, concurrent health writers and scoped repair pass 158 implementation checks and 67 independent checks, including 16 PostgreSQL cases. The final backend build passes with 1,164 unchanged source hashes and zero transport denials. Actual rendered checks cover 320/390/768/1440 CSS pixels and keyboard/focus behavior; physical touch, 200% zoom and installed-browser authentication remain unverified. These checks do not close hosted acceptance or PS-15.

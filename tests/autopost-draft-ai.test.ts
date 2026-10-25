@@ -18,6 +18,8 @@ describe("buildAutopostDraftAiFacts", () => {
       styleProfile,
       mediaCaptions: ["sketch caption"],
       titleHint: "Morning study",
+      currentBody: "My hand-edited caption",
+      mediaCount: 3,
       draft_intent: "Lead with the finding about hooks",
       studio_brief: {
         goals: ["engagement_optimization"],
@@ -34,6 +36,8 @@ describe("buildAutopostDraftAiFacts", () => {
       }
     });
 
+    expect(facts.current_body).toBe("My hand-edited caption");
+    expect(facts.media_count).toBe(3);
     expect(facts.draft_intent).toBe("Lead with the finding about hooks");
     expect(facts.studio_brief).toEqual({
       goals: ["engagement_optimization"],

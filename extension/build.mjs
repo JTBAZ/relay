@@ -1,27 +1,22 @@
 #!/usr/bin/env node
 /**
  * Sets EXT_TARGET / EXT_ENV then runs `vite build`.
- * Usage: node build.mjs <chrome|firefox> <dev|prod>
+ * Usage: node build.mjs <chrome|firefox> <dev|prod|staging>
  */
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
+import { extensionBuildProfile } from "./build-profile.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 const target = process.argv[2];
 const env = process.argv[3];
 
-if (
-  (target !== "chrome" && target !== "firefox") ||
-  (env !== "dev" && env !== "prod")
-) {
-  console.error("Usage: node build.mjs <chrome|firefox> <dev|prod>");
-  process.exit(1);
-}
-
-if (target === "firefox" && env !== "prod") {
-  console.error("Firefox builds use prod manifest only (EXT_ENV=prod).");
+try {
+  extensionBuildProfile(target, env);
+} catch (error) {
+  console.error(error.message);
   process.exit(1);
 }
 
@@ -42,11 +37,6 @@ if (r.status !== 0) {
   process.exit(r.status === null ? 1 : r.status);
 }
 
-const outDir = target === "firefox" ? "dist/firefox-prod" : `dist/chrome-${env}`;
-const contentEnv = {
-  ...envVars,
-  EXT_OUT_DIR: outDir
-};
 
 const contentEntries = [
   "fill-patreon-editor",
@@ -64,7 +54,7 @@ for (const contentEntry of contentEntries) {
     [viteBin, "build", "--config", "vite.content.config.ts"],
     {
       cwd: __dirname,
-      env: { ...contentEnv, EXT_CONTENT_ENTRY: contentEntry },
+      env: { ...envVars, EXT_CONTENT_ENTRY: contentEntry },
       stdio: "inherit"
     }
   );

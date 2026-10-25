@@ -54,6 +54,9 @@ type StudioScheduleRailProps = {
   dropPresentation?: "default" | "ritual";
   /** Lab2: Import Bay drag session arms the intake corridor. */
   corridorArmed?: boolean;
+  /** Lab 2 owns its column and scrolling; other hosts keep the fixed rail. */
+  embedded?: boolean;
+  calendarView?: boolean;
 };
 
 export type StudioScheduleRailHandle = {
@@ -61,6 +64,7 @@ export type StudioScheduleRailHandle = {
   refreshAndHighlight: (opts: {
     focusEventId: string | null;
     highlightEventIds: string[];
+    month?: string;
   }) => Promise<void>;
 };
 
@@ -69,7 +73,7 @@ export type StudioScheduleRailHandle = {
  */
 const StudioScheduleRail = forwardRef<StudioScheduleRailHandle, StudioScheduleRailProps>(
   function StudioScheduleRail(
-    { onCommitMedia, widthPx, dropPresentation = "default", corridorArmed = false },
+    { onCommitMedia, widthPx, dropPresentation = "default", corridorArmed = false, embedded = false, calendarView = false },
     ref
   ) {
   const { creatorId } = useStudioSession();
@@ -135,14 +139,14 @@ const StudioScheduleRail = forwardRef<StudioScheduleRailHandle, StudioScheduleRa
   useImperativeHandle(
     ref,
     () => ({
-      refreshAndHighlight: async ({ focusEventId: focusId, highlightEventIds: ids }) => {
+      refreshAndHighlight: async ({ focusEventId: focusId, highlightEventIds: ids, month }) => {
         const unique = [...new Set(ids.map((id) => id.trim()).filter(Boolean))];
         // Never animate ghost events — only after a persisted receipt with real ids.
         if (!focusId && unique.length === 0) {
-          await loadRail(monthRef.current);
+          await loadRail(month ?? monthRef.current);
           return;
         }
-        await loadRail(monthRef.current);
+        await loadRail(month ?? monthRef.current);
         setHighlightEventIds(unique);
         setFocusEventId(focusId ?? unique[0] ?? null);
       }
@@ -450,19 +454,23 @@ const StudioScheduleRail = forwardRef<StudioScheduleRailHandle, StudioScheduleRa
 
   return (
     <>
-      <div
+      {!embedded ? <div
         className="hidden shrink-0 lg:block"
         style={{ width: railWidth }}
         aria-hidden
-      />
+      /> : null}
       <div
-        className={`pointer-events-none fixed bottom-0 right-0 z-[60] hidden min-h-0 lg:block ${pinTopClass}`}
-        style={{ width: railWidth + SCHEDULE_RAIL_POPOVER_GUTTER_PX }}
+        className={embedded ? "relative flex min-h-0 flex-1" : `pointer-events-none fixed bottom-0 right-0 z-[60] hidden min-h-0 lg:block ${pinTopClass}`}
+        style={{ width: embedded ? "100%" : railWidth + SCHEDULE_RAIL_POPOVER_GUTTER_PX }}
       >
         <div
           className="pointer-events-auto relative ml-auto flex h-full min-h-0 flex-col overflow-visible bg-[#080808]"
-          style={{ width: railWidth }}
+          style={{ width: embedded ? "100%" : railWidth }}
         >
+          {embedded ? <nav aria-label="Schedule months" className="flex shrink-0 items-center justify-between border-b border-[#242424] px-4 py-2 text-xs text-[#a9b8ae]">
+            <button type="button" onClick={() => { const next = new Date(`${data.month}-01T12:00:00Z`); next.setUTCMonth(next.getUTCMonth() - 1); void loadRail(next.toISOString().slice(0, 7)).catch(() => {}); }}>Previous month</button>
+            <button type="button" onClick={() => { const next = new Date(`${data.month}-01T12:00:00Z`); next.setUTCMonth(next.getUTCMonth() + 1); void loadRail(next.toISOString().slice(0, 7)).catch(() => {}); }}>Next month</button>
+          </nav> : null}
           {loading && !bootstrapped ? (
             <div className="flex flex-1 items-start justify-center border-l border-[#1a1a1a] px-2 pt-4">
               <p className="text-[10px] text-[#555]">Loading schedule…</p>
@@ -470,6 +478,7 @@ const StudioScheduleRail = forwardRef<StudioScheduleRailHandle, StudioScheduleRa
           ) : null}
           {bootstrapped ? (
             <ScheduleRail
+              calendarView={calendarView}
               data={data}
               onDataChange={setData}
               remindersGlobal={remindersOn}

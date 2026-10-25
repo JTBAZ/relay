@@ -1,16 +1,16 @@
 'use client'
 
-import { useCallback, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import PatreonSyncMenu from '@/app/components/PatreonSyncMenu'
 import { GoalsLabLauncher } from '@/app/components/goals-lab/GoalsLabLauncher'
-import StudioScheduleRail from '@/app/components/schedule-rail/StudioScheduleRail'
-import { SCHEDULE_RAIL_LAB2_WIDTH_PX } from '@/app/components/schedule-rail/ScheduleRail'
-import { LabStagingDock } from '@/app/components/studio/LabStagingDock'
+import StudioScheduleRail, { type StudioScheduleRailHandle } from '@/app/components/schedule-rail/StudioScheduleRail'
 import type { ImportBinItem } from '@/app/components/LibraryImportBay'
 import { useStudioSession } from '@/lib/studio-session-context'
-import Lab2ActivePostsLive from './Lab2ActivePostsLive'
+import Lab2ActivePostsLive, { type Lab2EditorSelection } from './Lab2ActivePostsLive'
+import Lab2ConversationIntake from './Lab2ConversationIntake'
+import './studio-workspace.css'
 
 const patreonCampaignIdEnv =
   process.env.NEXT_PUBLIC_RELAY_PATREON_CAMPAIGN_ID?.trim() || undefined
@@ -114,11 +114,25 @@ function TopBar({
  * Lab2 chassis: v0 /4 composition with live panels and Bay→Rail drag corridor.
  */
 export default function StudioLab2Chassis() {
-  const router = useRouter()
   const { creatorId } = useStudioSession()
-  const [bayError, setBayError] = useState<string | null>(null)
+  return <StudioLab2Workspace key={creatorId} creatorId={creatorId} />
+}
+
+function StudioLab2Workspace({ creatorId }: { creatorId: string }) {
+  const router = useRouter()
+  const scheduleRail = useRef<StudioScheduleRailHandle>(null)
+  const calendar = useRef<HTMLDialogElement>(null)
+  const [calendarExpanded, setCalendarExpanded] = useState(false)
+  useEffect(() => {
+    const dialog = calendar.current
+    if (!dialog) return
+    if (calendarExpanded) { dialog.close(); dialog.showModal() }
+    else if (dialog.matches(':modal')) { dialog.close(); dialog.setAttribute('open', '') }
+  }, [calendarExpanded])
   const [activePostsReloadToken, setActivePostsReloadToken] = useState(0)
   const [bayDragging, setBayDragging] = useState(false)
+  const [view, setView] = useState('editor')
+  const [editorSelection, setEditorSelection] = useState<Lab2EditorSelection>({ context: { selectedPostIds: [], selectedMediaIds: [], loadedPostIds: [] }, selectedItems: [], writeBlocked: false })
 
   const pushAutopost = useCallback(
     (mediaIds: string[], stage?: 'platforms') => {
@@ -131,15 +145,6 @@ export default function StudioLab2Chassis() {
   )
 
   const handleImportBayAutopost = useCallback(
-    (items: ImportBinItem[]) => {
-      pushAutopost(
-        items.filter((item) => item.serverStaged).map((item) => item.id)
-      )
-    },
-    [pushAutopost]
-  )
-
-  const handleImportBayAddToNewPost = useCallback(
     (items: ImportBinItem[]) => {
       pushAutopost(
         items.filter((item) => item.serverStaged).map((item) => item.id)
@@ -169,7 +174,7 @@ export default function StudioLab2Chassis() {
 
   return (
     <div
-      className="studio-lab2-v0 flex min-h-0 flex-1 flex-col overflow-hidden bg-[#050706]"
+      className="library-shell studio-lab2-v0 studio-workspace"
       data-bay-dragging={bayDragging ? 'true' : undefined}
     >
       <TopBar
@@ -179,59 +184,50 @@ export default function StudioLab2Chassis() {
         onAfterPatreonScrape={afterPatreonScrape}
       />
 
-      {bayError ? (
-        <div
-          className="mx-5 mt-2 rounded-md border border-red-900/50 bg-red-950/30 px-3 py-2 text-[12px] text-[#e8e8e8]"
-          role="alert"
-        >
-          <span className="font-semibold text-red-300">Import Bay</span>
-          <span className="mt-0.5 block text-[#9ca3af]">{bayError}</span>
-        </div>
-      ) : null}
-
-      <div className="flex min-h-0 flex-1 overflow-hidden">
-        <div className="flex min-w-0 flex-1 flex-col">
-          <LabStagingDock
+      <a className="studio-skip" href="#studio-editor">Skip to editor</a>
+      <nav className="studio-view-switch" aria-label="Studio workspace views">
+        {(['gallery', 'editor', 'schedule'] as const).map((value) => <button type="button" key={value} aria-pressed={view === value} onClick={() => { setView(value); if (value === 'gallery') document.querySelector('.studio-gallery')?.scrollIntoView({ block: 'start' }); }}>{value === 'gallery' ? `Gallery${editorSelection.context.selectedPostIds.length ? ` · ${editorSelection.context.selectedPostIds.length} selected` : ''}` : value === 'editor' ? 'Editor' : 'Schedule'}</button>)}
+      </nav>
+      <main className="studio-workspace-grid" data-view={view}>
+        <div className="studio-canvas">
+        <div id="studio-editor" tabIndex={-1} className="studio-editor">
+          <Lab2ConversationIntake
+            key={creatorId}
             creatorId={creatorId}
-            variant="studio"
-            onError={setBayError}
+            selection={editorSelection}
+            onChanged={afterPatreonScrape}
             onAutopost={handleImportBayAutopost}
-            onAddToNewPost={handleImportBayAddToNewPost}
             onCorridorDragChange={setBayDragging}
+            onScheduled={(event) => { void scheduleRail.current?.refreshAndHighlight({ focusEventId: event.id, highlightEventIds: [event.id], month: event.at.slice(0, 7) }).catch(() => { /* The rail shows its refresh error and retry control. */ }); setView('schedule') }}
           />
-          <Lab2ActivePostsLive reloadToken={activePostsReloadToken} />
+        </div>
+        <section className="studio-gallery" aria-label="Gallery">
+          <Lab2ActivePostsLive reloadToken={activePostsReloadToken} onEditorContextChange={setEditorSelection} />
+          {editorSelection.context.selectedPostIds.length ? <button type="button" className="studio-use-selection" onClick={() => { setView('editor'); document.getElementById('library-editor-message')?.focus() }}>Edit {editorSelection.context.selectedPostIds.length} selected {editorSelection.context.selectedPostIds.length === 1 ? 'post' : 'posts'}</button> : null}
+        </section>
         </div>
 
-        <div
-          className={`relative flex flex-shrink-0 flex-col transition-colors duration-150 ${
-            bayDragging ? 'bg-[#070c09]' : 'bg-[#070a08]'
-          }`}
-          style={{ width: SCHEDULE_RAIL_LAB2_WIDTH_PX }}
+        <dialog
+          ref={calendar}
+          open
+          aria-label="Schedule calendar"
+          className={`studio-schedule ${calendarExpanded ? 'studio-calendar-expanded' : ''}`}
+          onCancel={(event) => { event.preventDefault(); setCalendarExpanded(false) }}
           data-lab2-scheduler-column
           data-corridor-armed={bayDragging ? 'true' : undefined}
         >
-          <div
-            aria-hidden="true"
-            className="pointer-events-none absolute inset-y-0 left-0 z-10 w-px transition-opacity duration-300"
-            style={{
-              background: bayDragging
-                ? 'linear-gradient(to bottom, transparent, #9bf0c438 22%, #9bf0c438 78%, transparent)'
-                : 'linear-gradient(to bottom, transparent, #14201a 20%, #14201a 80%, transparent)',
-            }}
-          />
-          <div
-            aria-hidden="true"
-            className="pointer-events-none absolute inset-y-0 left-0 z-10 w-10"
-            style={{ background: 'linear-gradient(to right, #0000000d, transparent)' }}
-          />
+          <div className="studio-schedule-intro"><div className="flex items-center justify-between gap-2"><h2>Schedule</h2><button type="button" className="studio-calendar-toggle" aria-expanded={calendarExpanded} onClick={() => setCalendarExpanded((value) => !value)}>{calendarExpanded ? 'Close calendar' : 'Expand'}</button></div><p>Prepared work, one month at a time.</p></div>
           <StudioScheduleRail
-            widthPx={SCHEDULE_RAIL_LAB2_WIDTH_PX}
+            ref={scheduleRail}
+            embedded
+            calendarView={calendarExpanded}
+            widthPx={260}
             dropPresentation="ritual"
             corridorArmed={bayDragging}
             onCommitMedia={handleScheduleRailAutopost}
           />
-        </div>
-      </div>
+        </dialog>
+      </main>
     </div>
   )
 }

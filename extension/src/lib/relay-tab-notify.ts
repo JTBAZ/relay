@@ -2,16 +2,11 @@
  * Notify open Relay web tabs that distribution data changed (e.g. post link confirmed).
  */
 import browser from "./browser";
+import { relayTabUrlPatterns } from "./constants";
 
 export const RELAY_DISTRIBUTION_UPDATED_EVENT = "relay:distribution-updated" as const;
 export const RELAY_EXTERNAL_METRICS_UPDATED_EVENT = "relay:external-metrics-updated" as const;
 
-function relayTabUrlPatterns(): string[] {
-  if (__EXT_ENV__ === "dev") {
-    return ["http://localhost/*", "http://127.0.0.1/*", "https://relayapp.me/*"];
-  }
-  return ["https://relayapp.me/*"];
-}
 
 export async function notifyRelayWebDistributionUpdated(): Promise<void> {
   await notifyRelayWebCustomEvent(RELAY_DISTRIBUTION_UPDATED_EVENT);

@@ -54,6 +54,7 @@ export async function readSyncCompleteness(db: PrismaClient | null, progressStor
     const sampled = posts.slice(0, 100), mediaIds = [...new Set(sampled.flatMap((post) => post.versions[0]?.mediaIds ?? []))].slice(0, 100);
     const populationAt = latest([progress?.archive.verifiedAt, progress?.catchup.verifiedAt].filter(validIso));
     const populationKnown = progress?.archive.status === "complete" && validIso(progress.archive.verifiedAt) && posts.length <= 100;
+    const populationUnfinished = progress?.catchup.status === "partial";
     const proofKeys = sampled.flatMap((post) => {
       const v = post.versions[0];
       if (!v) return [];
@@ -70,8 +71,9 @@ export async function readSyncCompleteness(db: PrismaClient | null, progressStor
       });
       const verified = latest(accepted); if (verified) accessTimes.push(verified);
     }
-    const accessComplete = populationKnown && accessTimes.length === sampled.length;
-    const accessAt = oldest([...accessTimes, ...(accessComplete && populationAt ? [populationAt] : [])]);
+    const accessCovered = populationKnown && accessTimes.length === sampled.length;
+    const accessComplete = accessCovered && !populationUnfinished;
+    const accessAt = oldest([...accessTimes, ...(accessCovered && populationAt ? [populationAt] : [])]);
     result.posts_access = { ...lane(accessComplete ? accessAt && Date.parse(accessAt) < Date.now() - 6 * 60 * 60_000 ? "stale" : "complete" : accessTimes.length ? "partial" : "unknown"),
       scope: accessComplete ? "campaign" : "bounded", last_verified_at: accessAt, counts: { inspected_posts: sampled.length, verified: accessTimes.length, unknown: sampled.length - accessTimes.length }, sources: [...accessSources], next_action: accessComplete && accessAt && Date.parse(accessAt) >= Date.now() - 6 * 60 * 60_000 ? null : "continue_sync" };
     const media = mediaIds.length ? await db.mediaAsset.findMany({ where: { creatorId, id: { in: mediaIds }, ingestOrigin: "PATREON", upstreamStatus: "active" } }) : [];
@@ -97,12 +99,13 @@ export async function readSyncCompleteness(db: PrismaClient | null, progressStor
     }
     const allMedia = [...new Set(sampled.flatMap((post) => post.versions[0]?.mediaIds ?? []))];
     unknown += allMedia.filter((id) => !media.some((asset) => asset.id === id)).length;
-    const bounded = !populationKnown || allMedia.length > 100;
+    const sampleBounded = !populationKnown || allMedia.length > 100;
+    const bounded = sampleBounded || populationUnfinished;
     const emptyVerified = sampled.length === 0 && progress?.archive.status === "complete" && validIso(progress.archive.verifiedAt);
     const complete = !bounded && !unknown && !pending && !failed && (resources.length > 0 || emptyVerified);
     if (complete && populationAt && Date.parse(populationAt) < Date.now() - 24 * 60 * 60_000) stale++;
     result.media = { ...lane(failed ? "failed" : pending && !unknown && !verified ? "pending" : bounded || unknown || pending ? "partial" : complete ? stale ? "stale" : "complete" : "unknown"),
-      scope: bounded || verifiedTimes.length < resources.length ? "bounded" : "campaign", last_attempt_at: latest(attempts), last_verified_at: oldest([...verifiedTimes, ...(!bounded && populationAt ? [populationAt] : [])]) ?? (emptyVerified ? progress?.archive.verifiedAt ?? null : null),
+      scope: bounded || verifiedTimes.length < resources.length ? "bounded" : "campaign", last_attempt_at: latest(attempts), last_verified_at: oldest([...verifiedTimes, ...(!sampleBounded && populationAt ? [populationAt] : [])]) ?? (emptyVerified ? progress?.archive.verifiedAt ?? null : null),
       counts: { inspected_posts: sampled.length, inspected_media: media.length, verified, verified_empty: empty, pending, failed, unknown }, next_action: failed ? "retry_media" : complete && !stale ? null : "continue_sync", repairs };
     const changes = await db.patreonChangeWork.findMany({ where: { creatorId, campaignId, resourceType: "post", status: { in: ["failed", "pending", "running"] } }, orderBy: { lastAcceptedAt: "desc" }, take: 26 });
     const inspected = changes.slice(0, 25), failures = inspected.filter((change) => change.status === "failed");

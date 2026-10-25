@@ -276,6 +276,31 @@ describe("createScheduledPostForRail", () => {
     });
   });
 
+  it("schedules the exact owned draft and media in one transaction without creating another draft", async () => {
+    mockedCreateRelayPost.mockResolvedValue({ post: { id: "post_draft" } } as any);
+    const tx = {
+      $executeRaw: vi.fn().mockResolvedValue(1),
+      autopostDraft: { findFirst: vi.fn().mockResolvedValue({ id: "saved-draft", title: "Saved title", bodyText: "Saved copy", mediaIds: ["art"] }) },
+      postDistributionPlan: { findFirst: vi.fn().mockResolvedValue(null), create: vi.fn().mockResolvedValue({ id: "plan" }) },
+      postDistributionVariant: { create: vi.fn().mockResolvedValue({ id: "variant" }) },
+      postbotTask: { create: vi.fn().mockResolvedValue({ id: "task", variantId: "variant", postId: "post_draft", destination: "x", rationale: "Saved copy", link: null }) }
+    };
+    const prisma = { $transaction: vi.fn(async (fn) => fn(tx)) } as any;
+    const event = await createScheduledPostForRail(prisma, "cr1", { draft_id: "saved-draft", destinations: ["x"], scheduled_for: "2026-11-01T12:00:00Z" });
+    expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+    expect(tx.autopostDraft.findFirst).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ creatorId: "cr1", id: "saved-draft", publishedPostId: null }) }));
+    expect(mockedCreateRelayPost.mock.calls[0]?.[2]).toMatchObject({ mediaIds: ["art"], publish: false, title: "Saved title", description: "Saved copy" });
+    expect(mockedCreateRelayPost.mock.calls[0]?.[3]).toEqual({ tx });
+    expect(mockedSaveAutopostDraft).not.toHaveBeenCalled();
+    expect(tx.postDistributionPlan.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ sourceDraftId: "saved-draft" }) }));
+    expect(event).toMatchObject({ draft_id: "saved-draft", media_count: 1, needs_media: false });
+    tx.postDistributionPlan.findFirst.mockResolvedValue({ id: "plan" });
+    await expect(createScheduledPostForRail(prisma, "cr1", { draft_id: "saved-draft", destinations: ["x"], scheduled_for: "2026-11-01T12:00:00Z" })).rejects.toThrow("already scheduled");
+    expect(mockedCreateRelayPost).toHaveBeenCalledTimes(1);
+    tx.autopostDraft.findFirst.mockResolvedValue(null);
+    await expect(createScheduledPostForRail(prisma, "cr2", { draft_id: "saved-draft", scheduled_for: "2026-11-01T12:00:00Z" })).rejects.toThrow("not found");
+  });
+
   it("rejects invalid scheduled_for", async () => {
     await expect(
       createScheduledPostForRail({} as PrismaClient, "cr1", {

@@ -39,6 +39,21 @@ describe("PS14 persisted scoped completeness", () => {
     else f.db.patreonChangeWork.findMany.mockRejectedValue(new Error("Unavailable"));
     expect((await f.read()).posts_access).toMatchObject({ status: "unavailable", counts: null, last_verified_at: f.at });
   });
+  it("keeps a new unfinished catch-up bounded while retaining the previous accepted verification time", async () => {
+    const f = fixture(), previous = new Date(Date.now() - 15 * 60_000).toISOString();
+    f.progress.archive.status = "complete"; f.progress.archive.verifiedAt = new Date(Date.now() - 30 * 60_000).toISOString();
+    f.progress.catchup.status = "complete"; f.progress.catchup.verifiedAt = previous;
+    const post = f.posts[0], v = post.versions[0];
+    const head = accessVerificationHead({ creatorId: "creator", postId: post.id, campaignId: post.campaignId, status: post.upstreamStatus, version: v.versionSeq, revision: v.upstreamRevision, tiers: v.tierIds, isPublic: post.isPublic });
+    f.receipts.push({ batchKey: accessReceiptKey("creator", post.id, head, "catchup"), firstSeenAt: new Date(f.at) });
+    const before = await f.read();
+    expect(before.posts_access).toMatchObject({ status: "complete", last_verified_at: previous });
+    expect(before.media).toMatchObject({ status: "complete", last_verified_at: previous });
+    f.progress.catchup.status = "partial"; f.progress.catchup.next = "unseen-next-page";
+    const after = await f.read();
+    expect(after.posts_access).toMatchObject({ status: "partial", scope: "bounded", last_verified_at: previous });
+    expect(after.media).toMatchObject({ status: "partial", scope: "bounded", last_verified_at: previous });
+  });
   it("never promotes complete known media to complete campaign coverage during a partial archive", async () => {
     const f = fixture(); f.progress.archive.status = "partial"; f.progress.archive.next = "cursor";
     const result = await f.read();

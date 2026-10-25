@@ -73,7 +73,7 @@ Every reliability finding has one implementation owner and a defined acceptance 
 | 1. Old updates/deletions | PS-09; durable dispatch PS-08 | R08, R09 | Executable baseline above; platform webhook route/payload suites need affected resource identity. |
 | 2. Archive page loss | PS-11 | R11 | Executable baseline; sync watermark and incremental-worker suites need restart/equal-time/creator-fairness cases. |
 | 3. Media after recovery | PS-12 | R12 | Executable baseline; export retries and media-source suites need durable repair restart cases. |
-| 4. Cached extension success | PS-13 | R13 | [Local PS-13 approval](PS-13-VERIFIED-EXTENSION.md): bound checks, real two-API consent replay, age and recovery proof pass. Installed-browser checks remain pending. |
+| 4. Cached extension success | PS-13, PS-14 | R13, R15 | [PS-13](PS-13-VERIFIED-EXTENSION.md) verifies bound checks and consent replay; [PS-14](PS-14-PERSISTED-HEALTH.md) verifies pure persisted health and honest bounded completeness. Installed-browser and live acceptance remain pending. |
 | 5. Cookie write overlap | PS-06 | R06 | Pending: two writers, corrupt vault, age-preserving migration; cookie-auth tests remain controls. |
 | 6. Volatile member timers | PS-08, PS-10 | R08, R10 | Pending: acknowledgment/restart and continuous-event maximum wait; member coordinator suite currently checks debounce. |
 | 7. Absent roster member | PS-10 | R10 | Pending: active/absent fixture with confirmed complete coverage; partial/empty anomaly response cannot mass-revoke. |
@@ -135,3 +135,7 @@ PS-11 was unclaimed after a fresh plan, diff and chat check. [PS-11](PS-11-RESUM
 | Exhausted download after source recovery | `retries exhausted downloads through ordinary sync from durable work after a fresh service starts` |
 
 Acceptance requires the explicit private PostgreSQL/Redis opt-ins and zero skipped cases. The final connected batch passed 474 checks, the final affected batch passed 56, and independent review passed 125, all without skips or blocked transport attempts. R2/provider transports are injected; these are local acceptance results. Prisma generation passed, but the combined build failed on nine unrelated concurrent Library diagnostics. Deployment, live provider/browser evidence and PS-15 remain open. Ownership policy and unrelated changes are preserved.
+
+## PS-14 local completion update
+
+[PS-14](PS-14-PERSISTED-HEALTH.md) is independently approved. Its pure health reads preserve prior accepted verification, distinguish partial catch-up from campaign completion and expose targeted repair in the existing Library controls. The final backend build, 158 implementation checks, 67 independent checks and rendered checks at 320/390/768/1440 pass. Full-web limitations, hosted runtime and authenticated Chrome/Firefox acceptance remain PS-15 gates. Concurrent Library changes and the separate ownership policy are preserved.

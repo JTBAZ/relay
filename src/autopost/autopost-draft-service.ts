@@ -715,6 +715,8 @@ export async function saveAutopostDraft(
       styleProfile: styleProfile!,
       mediaCaptions: collectMediaCaptions(mediaRows),
       titleHint: title,
+      currentBody: bodyText,
+      mediaCount: mediaIds.length,
       draft_intent: intent,
       studio_brief: mounted.assistant_context,
       mounted_report: mounted.mounted_report,
@@ -722,6 +724,9 @@ export async function saveAutopostDraft(
     });
     if (!ai.ok) {
       throw new AutopostDraftValidationError(ai.error, [{ field: "generate", issue: "ai_failed" }]);
+    }
+    if (ai.ai_skipped && input.generate === true) {
+      throw new AutopostDraftValidationError(`Draft generation is unavailable. ${ai.reason}`, [{ field: "generate", issue: "ai_unavailable" }]);
     }
     if (!title?.trim() && ai.title) title = ai.title;
     if (bodyText == null || (input.generate === true && !input.body_text)) {
@@ -827,6 +832,8 @@ export async function patchAutopostDraft(
       styleProfile,
       mediaCaptions: collectMediaCaptions(mediaRows),
       titleHint: title,
+      currentBody: bodyText,
+      mediaCount: mediaIds.length,
       draft_intent: intentForAi,
       studio_brief: mounted.assistant_context,
       mounted_report: mounted.mounted_report,
@@ -834,6 +841,9 @@ export async function patchAutopostDraft(
     });
     if (!ai.ok) {
       throw new AutopostDraftValidationError(ai.error, [{ field: "regenerate", issue: "ai_failed" }]);
+    }
+    if (ai.ai_skipped) {
+      throw new AutopostDraftValidationError(`Draft generation is unavailable. Your saved copy is unchanged. ${ai.reason}`, [{ field: "regenerate", issue: "ai_unavailable" }]);
     }
     if (ai.title) title = ai.title;
     bodyText = ai.body_text;

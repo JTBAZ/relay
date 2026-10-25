@@ -26,9 +26,11 @@ describe.skipIf(!targetUrl)("PS13 shared one-use consent and original credential
   });
   afterAll(async () => {
     await Promise.all(children.map((child) => new Promise<void>((done) => {
-      if (child.exitCode !== null) return done();
+      if (child.exitCode !== null || child.signalCode !== null) return done();
       const timer = setTimeout(() => { child.kill(); done(); }, 10_000);
-      child.once("close", () => { clearTimeout(timer); done(); }); child.send("close");
+      child.once("close", () => { clearTimeout(timer); done(); });
+      if (child.connected) child.send("close", (error) => { if (error) child.kill(); });
+      else child.kill();
     })));
     if (first) {
       await first.account.deleteMany({ where: { id: { in: accountIds } } });
@@ -48,12 +50,33 @@ describe.skipIf(!targetUrl)("PS13 shared one-use consent and original credential
     const root = await mkdtemp(join(tmpdir(), "relay-ps13-api-")); roots.push(root);
     return new Promise<number>((accept, reject) => {
       const child = spawn(process.execPath, [resolve("node_modules/vite-node/vite-node.mjs"), resolve("tests/helpers/extension-consent-process.ts")], {
-        windowsHide: true, stdio: ["ignore", "ignore", "ignore", "ipc"],
+        windowsHide: true, stdio: ["ignore", "ignore", "pipe", "ipc"],
         env: { ...process.env, PS13_CONSENT_INPUT: JSON.stringify({ url: targetUrl, key, secret, root }) }
       }); children.push(child);
-      const timeout = setTimeout(() => { child.kill(); reject(new Error("Private API fixture timed out")); }, 60_000);
-      child.once("message", (message: unknown) => { clearTimeout(timeout); if (message && typeof message === "object" && "port" in message) accept(Number(message.port)); else reject(new Error("Private API fixture unavailable")); });
-      child.once("error", () => { clearTimeout(timeout); reject(new Error("Private API fixture unavailable")); });
+      let settled = false, stderr = "";
+      // Only the hermetic private runner may execute this fixture; redact its ephemeral secrets too.
+      child.stderr?.setEncoding("utf8");
+      child.stderr?.on("data", (chunk: string) => { stderr = (stderr + chunk).slice(-2048); });
+      const fail = (reason: string) => {
+        if (settled) return;
+        settled = true; clearTimeout(timeout); child.kill();
+        let detail = stderr;
+        for (const value of [key, secret, targetUrl]) if (value) detail = detail.split(value).join("[redacted]");
+        detail = detail.replace(/Bearer\s+[^\s]+/gi, "Bearer [redacted]")
+          .replace(/([a-z][a-z0-9+.-]*:\/\/)[^\s/@]+:[^\s/@]+@/gi, "$1[redacted]@");
+        reject(new Error(reason + (detail.trim() ? "\n" + detail.trim() : "")));
+      };
+      const timeout = setTimeout(() => fail("Private API fixture timed out before ready"), 60_000);
+      child.once("message", (message: unknown) => {
+        if (settled) return;
+        const port = message && typeof message === "object" && "port" in message ? message.port : null;
+        if (typeof port !== "number" || !Number.isInteger(port) || port < 1 || port > 65535) {
+          fail("Private API fixture reported bootstrap failure"); return;
+        }
+        settled = true; clearTimeout(timeout); accept(port);
+      });
+      child.once("error", () => fail("Private API fixture could not spawn"));
+      child.once("close", (code, signal) => fail(`Private API fixture exited before ready (code ${code ?? "none"}, signal ${signal ?? "none"})`));
     });
   }
   it("preserves age across clients and cannot rotate after another client removes/rejects/expires storage", async () => {

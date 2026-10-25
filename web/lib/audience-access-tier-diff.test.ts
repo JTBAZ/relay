@@ -11,12 +11,14 @@ const catalog: RelayComposeTierRow[] = [
   {
     tier_id: "prisma_supporter",
     relay_tier_id: "patreon_tier_supporter",
+    campaign_id: "campaign_test",
     title: "Supporter",
     amount_cents: 500
   },
   {
     tier_id: "prisma_studio",
     relay_tier_id: "patreon_tier_studio",
+    campaign_id: "campaign_test",
     title: "Studio",
     amount_cents: 2500
   }

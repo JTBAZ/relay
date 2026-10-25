@@ -1,6 +1,6 @@
 # Patreon sync reliability and metadata build plan
 
-Status: PS-00 through PS-13 complete locally as of 2026-10-21, including the independently reviewed [PS-10 platform projection correction](PS-10-PLATFORM-PROJECTIONS.md), [PS-12 media repair](PS-12-MEDIA-REPAIR.md) and [PS-13 extension checks](PS-13-VERIFIED-EXTENSION.md). PS-14 is in progress. The latest combined production build passes; deployment and reliability release remain pending. PS-01 to PS-03 were completed by the existing import-persistence work; PS-03 landed separately as `c82c9ed`. The completion records below retain each item's checks and rollout limits.
+Status: PS-00 through PS-14 are complete locally as of 2026-10-21, including the independently reviewed [PS-10 platform projection correction](PS-10-PLATFORM-PROJECTIONS.md), [PS-12 media repair](PS-12-MEDIA-REPAIR.md) and [PS-13 extension checks](PS-13-VERIFIED-EXTENSION.md). [PS-15](PS-15-RELIABILITY-ACCEPTANCE.md) remains open: real backend/web image builds, private isolated API/web checks and the public staging HTTPS smoke pass, while installed-browser authentication, fresh provider consent, overlap/restart acceptance and release remain pending. The original failed full suite is preserved; it has not been rerun in full. PS-16–22 implementation remains gated by PS-15. PS-01–03 were completed by existing import-persistence work; PS-03 landed separately as `c82c9ed`. Earlier completion records retain their own evidence and historical limits.
 
 Keep Relay's hybrid Patreon connection. Make imports, updates, access changes, and media recovery dependable before adding more analytics. Use the extension for the remaining browser-dependent work, while the server owns scheduling, progress, retries, and access decisions.
 
@@ -16,6 +16,8 @@ Keep Relay's hybrid Patreon connection. Make imports, updates, access changes, a
 - [PS-13 proposed extension checks and collection design](PS-13-DESIGN.md)
 - [PS-13 verified extension checks](PS-13-VERIFIED-EXTENSION.md)
 - [PS-14 proposed completeness and repair design](PS-14-DESIGN.md)
+- [PS-14 persisted health and repair completion](PS-14-PERSISTED-HEALTH.md)
+- [PS-15 local reliability evidence and live acceptance gates](PS-15-RELIABILITY-ACCEPTANCE.md)
 - [Metadata evidence readiness](METADATA-READINESS.md)
 - [PS-00 baseline, contracts, and regression ownership](BASELINE-CONTRACTS.md)
 - [Existing sync hardening ledger](../../part1-sync-hardening-ledger.md)
@@ -62,7 +64,7 @@ The extension does not acquire a second job scheduler, become the authority for 
 | 0. Confirm baseline and contracts | PS-00 | Current fixes and data boundaries are recorded; reproductions cover the remaining failures. | Complete; see baseline record |
 | 1. Protect accepted data and credentials | PS-01 to PS-06 | Persistence survives overlap, conflicts, rollback, and session writes; existing import tickets are satisfied. | Complete locally; hosted migration/cutover and rollout verification remain pending |
 | 2. Keep posts and members current | PS-07 to PS-11 | Durable targeted updates, safe deletion, complete roster reconciliation, and resumable archive/catch-up work. | Complete locally; production cutover and live acceptance remain pending |
-| 3. Recover media and verify health | PS-12 to PS-15 | Media recovery and extension checks work end to end; reliability acceptance passes. | PS-12/13 locally complete; PS-14 in progress; PS-15 pending |
+| 3. Recover media and verify health | PS-12 to PS-15 | Media recovery and extension checks work end to end; reliability acceptance passes. | PS-12 through PS-14 locally complete; PS-15 in progress |
 | 4. Collect useful evidence | PS-16 to PS-19 | Freshness, windows, conversions, member lifecycle, and asset metadata retain source meaning. | Waits for PS-15 |
 | 5. Use the evidence in existing products | PS-20 to PS-22 | Library and Coach use the evidence without changing attribution or publishing contracts. | Waits for Phase 4 |
 
@@ -100,4 +102,4 @@ Recheck these when implementing a provider-facing item. Availability in a help a
 
 ## Next action
 
-PS-14 is implementing persisted completeness and targeted repair after PS-13 passed independent review. Concurrent Library edits are preserved. The latest combined build passes; isolated staging, remaining checks and live acceptance still precede release. The supervisor continues through PS-22 as dependencies and checks pass. Ownership policy is unchanged; metadata/product implementation still waits for PS-15.
+PS-15 has independently approved focused integration, private RLS, staging-extension and ten-file web build-prerequisite evidence. Both real production image builds pass, and the new isolated host serves two healthy private APIs plus the private web login shell. Auth settings and a separate Patreon client are configured; fresh user login/consent, installed Chrome/Firefox requests, hydration and live reliability acceptance remain open. Dependency audits and 24 residual cases from the original failed full suite remain unresolved. See the [current deployment evidence](DEPLOYMENT-READINESS.md) and [PS-15 record](PS-15-RELIABILITY-ACCEPTANCE.md). Ownership policy is unchanged; metadata/product implementation still waits for PS-15.

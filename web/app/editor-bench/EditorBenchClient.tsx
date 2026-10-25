@@ -5,9 +5,9 @@ import GalleryGrid from "@/app/components/GalleryGrid";
 import { groupGalleryItemsByPost } from "@/lib/gallery-group";
 import { PreviewizerOverlay } from "@/app/components/distribution/PreviewizerOverlay";
 import type { GalleryItem } from "@/lib/relay-api";
-import { RelayApiError } from "@/lib/relay-api";
+import { RelayApiError, relayRequest } from "@/lib/relay-api";
 import { sendRelayScheduleEventToExtension } from "@/lib/relay-extension-messaging";
-import { cancelBenchConversationPreview, chatBenchVariantEdit, completeBenchConversationPreview, confirmBenchVariantEdit, confirmBenchSchedule, fetchRealLibraryPost, fetchRealLibraryPosts, fetchRealLibrarySelectionCatalog, reviewRealLibraryAgain, reviewRealLibrarySchedule, reviewBenchSchedule, updateRealLibrarySelection, openBenchConversationPreview, startBenchConversation, getBenchConversation, sendBenchConversationTurn, confirmBenchConversation, reviewBenchConversationXDraft, reviewBenchConversationDeviantArtDraft, confirmBenchConversationXDraft, confirmBenchConversationDeviantArtDraft, reviewBenchConversationXDraftSchedule, confirmBenchConversationXDraftSchedule, reviewBenchConversationDeviantArtDraftSchedule, confirmBenchConversationDeviantArtDraftSchedule, reviewBenchConversationXHandoff, confirmBenchConversationXHandoff, reviewBenchConversationDeviantArtHandoff, confirmBenchConversationDeviantArtHandoff, toggleBenchConversationSelection, updateBenchConversationCell, uploadBenchConversationPreview, RealLibrarySelectionApiError, type BenchCatalog, type BenchExample, type BenchMode, type BenchRefinementState, type BenchResponse, type BenchRuntime, type BenchVariantEditChatResult, type BenchVariantEditConfirmResult, type BenchConversationSnapshot, type BenchConversationTurn, type BenchConversationConfirm, type BenchConversationPreviewOpen, type BenchConversationXDraftReview, type BenchConversationXDraftScheduleReview, type BenchConversationXHandoffReview, type BenchConversationXHandoffConfirm, type BenchConversationDestination, type RealLibraryPost, type RealLibrarySelectionCatalog, type RealLibraryRefinementState, type RealLibrarySelectionResult, type RealLibraryReviewResult, type ScheduleBatchReviewResult, type ScheduleConfirmResult, type ScheduleReviewResponse } from "@/lib/editor-bench";
+import { cancelBenchConversationPreview, chatBenchVariantEdit, completeBenchConversationPreview, confirmBenchVariantEdit, confirmBenchSchedule, fetchRealLibraryPost, fetchRealLibraryPosts, fetchRealLibrarySelectionCatalog, reviewRealLibraryAgain, reviewRealLibrarySchedule, reviewBenchSchedule, updateRealLibrarySelection, openBenchConversationPreview, startBenchConversation, getBenchConversation, sendBenchConversationTurn, confirmBenchConversation, reviewBenchConversationXDraft, reviewBenchConversationDeviantArtDraft, confirmBenchConversationXDraft, confirmBenchConversationDeviantArtDraft, reviewBenchConversationXDraftSchedule, confirmBenchConversationXDraftSchedule, reviewBenchConversationDeviantArtDraftSchedule, confirmBenchConversationDeviantArtDraftSchedule, reviewBenchConversationXHandoff, confirmBenchConversationXHandoff, reviewBenchConversationDeviantArtHandoff, confirmBenchConversationDeviantArtHandoff, toggleBenchConversationSelection, updateBenchConversationCell, uploadBenchConversationPreview, RealLibrarySelectionApiError, type BenchCatalog, type BenchExample, type BenchMode, type BenchRefinementState, type BenchResponse, type BenchRuntime, type BenchVariantEditChatResult, type BenchVariantEditConfirmResult, type BenchConversationSnapshot, type BenchConversationTurn, type BenchConversationConfirm, type BenchConversationPreviewOpen, type BenchConversationXDraftReview, type BenchConversationXDraftScheduleReview, type BenchConversationXHandoffReview, type BenchConversationDestination, type RealLibraryPost, type RealLibrarySelectionCatalog, type RealLibraryRefinementState, type RealLibrarySelectionResult, type RealLibraryReviewResult, type ScheduleBatchReviewResult, type ScheduleConfirmResult, type ScheduleReviewResponse } from "@/lib/editor-bench";
 import { sendRelayBenchDeviantArtHandoffToExtension, sendRelayBenchXHandoffToExtension } from "@/lib/relay-extension-messaging";
 
 const statuses = ["proposal", "clarification", "limitation", "unchanged", "selected", "rejected", "unavailable"];
@@ -24,27 +24,31 @@ const preparationRequirementLabels: Record<string, string> = {
   source_selection: "select posts", template: "choose a template", copy_choice: "choose a copy option",
   previewizer: "run Previewizer", source_media_review: "review source media",
 };
-function isBenchResponse(value: any, catalog: BenchCatalog): value is BenchResponse {
-  const selectionValid = value?.selection === undefined || (
-    value.selection && typeof value.selection === "object" && !Array.isArray(value.selection) &&
-    Object.keys(value.selection).length === 3 && ["postIds", "mediaIds", "changed"].every(key => Object.hasOwn(value.selection, key)) &&
-    Array.isArray(value.selection.postIds) && Array.isArray(value.selection.mediaIds) && typeof value.selection.changed === "boolean" &&
-    value.selection.postIds.every((id: unknown) => typeof id === "string" && catalog.cards.some(card => card.postId === id)) &&
-    value.selection.mediaIds.every((id: unknown) => typeof id === "string" && catalog.media.some(item => item.id === id && value.selection.postIds.includes(item.postId))) &&
-    new Set(value.selection.postIds).size === value.selection.postIds.length && new Set(value.selection.mediaIds).size === value.selection.mediaIds.length
+function isBenchResponse(input: unknown, catalog: BenchCatalog): input is BenchResponse {
+  const value = input as Partial<BenchResponse> | null | undefined;
+  const selection = value?.selection;
+  const selectionValid = selection === undefined || (
+    selection && typeof selection === "object" && !Array.isArray(selection) &&
+    Object.keys(selection).length === 3 && ["postIds", "mediaIds", "changed"].every(key => Object.hasOwn(selection, key)) &&
+    Array.isArray(selection.postIds) && Array.isArray(selection.mediaIds) && typeof selection.changed === "boolean" &&
+    selection.postIds.every((id: unknown) => typeof id === "string" && catalog.cards.some(card => card.postId === id)) &&
+    selection.mediaIds.every((id: unknown) => typeof id === "string" && catalog.media.some(item => item.id === id && selection.postIds.includes(item.postId))) &&
+    new Set(selection.postIds).size === selection.postIds.length && new Set(selection.mediaIds).size === selection.mediaIds.length
   );
-  const usageValid = value?.usage === undefined || (
-    value.usage && typeof value.usage === "object" && !Array.isArray(value.usage) &&
-    Object.keys(value.usage).length === 5 && ["calls", "known", "inputTokens", "outputTokens", "costUsd"].every(key => Object.hasOwn(value.usage, key)) &&
-    Number.isInteger(value.usage.calls) && value.usage.calls >= 0 && typeof value.usage.known === "boolean" &&
-    [value.usage.inputTokens, value.usage.outputTokens, value.usage.costUsd].every((item: unknown) => item === null || (typeof item === "number" && Number.isFinite(item) && item >= 0))
+  const usage = value?.usage;
+  const usageValid = usage === undefined || (
+    usage && typeof usage === "object" && !Array.isArray(usage) &&
+    Object.keys(usage).length === 5 && ["calls", "known", "inputTokens", "outputTokens", "costUsd"].every(key => Object.hasOwn(usage, key)) &&
+    Number.isInteger(usage.calls) && usage.calls >= 0 && typeof usage.known === "boolean" &&
+    [usage.inputTokens, usage.outputTokens, usage.costUsd].every((item: unknown) => item === null || (typeof item === "number" && Number.isFinite(item) && item >= 0))
   );
-  return value && ["curation", "mock_posting"].includes(value.mode) && statuses.includes(value.status) && selectionValid && usageValid &&
-    provenances.includes(value.provenance) && Array.isArray(value.beforeAfter) && Array.isArray(value.diagnostics) &&
+  return !!value && ["curation", "mock_posting"].includes(value.mode ?? "") && statuses.includes(value.status ?? "") && selectionValid && usageValid &&
+    provenances.includes(value.provenance ?? "") && Array.isArray(value.beforeAfter) && Array.isArray(value.diagnostics) &&
     (value.message === undefined || typeof value.message === "string") && (value.runtime === undefined || isBenchRuntime(value.runtime));
 }
-function isBenchRuntime(value: any): value is BenchRuntime {
-  return value && typeof value.enabled === "boolean" && (value.model === null || typeof value.model === "string") &&
+function isBenchRuntime(input: unknown): input is BenchRuntime {
+  const value = input as Partial<BenchRuntime> | null | undefined;
+  return !!value && typeof value.enabled === "boolean" && (value.model === null || typeof value.model === "string") &&
     (value.reasoningEffort === null || value.reasoningEffort === "none") &&
     (value.remainingUsd === null || typeof value.remainingUsd === "number") && (value.reason === null || typeof value.reason === "string");
 }
@@ -94,9 +98,6 @@ function isRealLibrarySelectionResult(value: unknown, catalog: RealLibrarySelect
 }
 function destinationLabel(destination: "patreon" | "x" | "deviantart") {
   return destination === "x" ? "X" : destination === "deviantart" ? "DeviantArt" : "Patreon";
-}
-function isBatchReview(review: ScheduleReviewResponse): review is ScheduleBatchReviewResult {
-  return review.reviewKind === "manual_batch";
 }
 function isGroupedReview(review: ScheduleReviewResponse): review is ScheduleBatchReviewResult | RealLibraryReviewResult {
   return "items" in review;
@@ -201,7 +202,7 @@ export default function EditorBenchClient() {
     setSelected([]);
     setCatalogError("");
     try {
-      const result = await fetch("/api/editor-bench", { signal: controller.signal });
+      const result = await relayRequest("/api/editor-bench", { signal: controller.signal }, "same-origin");
       if (!result.ok) throw new Error(`Catalog request failed (${result.status}).`);
       const value = await result.json();
       if (!value || !Array.isArray(value.cards) || !Array.isArray(value.examples) || !Array.isArray(value.media) || (value.runtime !== undefined && !isBenchRuntime(value.runtime))) throw new Error("Catalog response was malformed.");
@@ -801,7 +802,7 @@ export default function EditorBenchClient() {
     acceptedFreeTextProposal.current = null;
     try {
       const requestBody = options?.includeRefinementState ? { ...(body as Record<string, unknown>), refinementState: options.refinementState ?? null } : body;
-      const result = await fetch("/api/editor-bench", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(requestBody), signal: controller.signal });
+      const result = await relayRequest("/api/editor-bench", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(requestBody), signal: controller.signal }, "same-origin");
       const value = await result.json();
       if (!result.ok) throw new Error(value?.error ? `Request failed: ${value.error}` : `Request failed (${result.status}).`);
       if (!isBenchResponse(value, catalog!)) throw new Error("The bench returned an invalid response.");
@@ -834,7 +835,7 @@ export default function EditorBenchClient() {
     clearRealLibraryContext();
     setCurationSource("fixture");
     setRefinementState(null);
-    let body: any;
+    let body: unknown;
     try {
       const parsed = JSON.parse(intent);
       const isPairedExample = pair.current && pair.current.mode === mode && pair.current.latestRequest === request && JSON.stringify(pair.current.structuredIntent) === JSON.stringify(parsed);
@@ -926,7 +927,7 @@ export default function EditorBenchClient() {
         const result = await reviewRealLibrarySchedule({ latestRequest: text, postId: libraryPost.postId, mediaIds: selectedMedia }, controller.signal);
         if (token !== generation.current) return;
         if ("kind" in result && result.kind === "clarification") { setChat(messages => [...messages, result.question]); return; }
-        setScheduleReview(result); setScheduleError("");
+        if ("reviewKind" in result) { setScheduleReview(result); setScheduleError(""); }
       } catch (error) { if (token === generation.current && !controller.signal.aborted) setScheduleError(error instanceof Error ? error.message : "Schedule review failed."); }
       finally { if (token === generation.current) { setBusy(false); if (realRequestAbort.current === controller) realRequestAbort.current = null; } }
       return;
@@ -962,7 +963,7 @@ export default function EditorBenchClient() {
     scheduleGeneration.current++;
     setBusy(true); setRequestError(""); setResponse(null); setScheduleReview(null); setScheduleError(""); setScheduleBusy(false); setReceipt(null); setBatchReceipts({}); setRowErrors({});
     try {
-      const result = await fetch("/api/editor-bench", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ mode: "curation", selectedPostIds: [], selectedMediaIds: [], replay: { kind: "selection_reset" } }), signal: controller.signal });
+      const result = await relayRequest("/api/editor-bench", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ mode: "curation", selectedPostIds: [], selectedMediaIds: [], replay: { kind: "selection_reset" } }), signal: controller.signal }, "same-origin");
       const value = await result.json();
       if (!result.ok) throw new Error(value?.error ? `Request failed: ${value.error}` : `Request failed (${result.status}).`);
       if (!isBenchResponse(value, catalog) || !value.selection || value.selection.postIds.length !== 0 || value.selection.mediaIds.length !== 0 || !isBenchRefinementState(value.refinementState, catalog, []) || value.refinementState.excludedPostIds.length !== 0) throw new Error("The reset response was invalid.");
@@ -1073,6 +1074,7 @@ export default function EditorBenchClient() {
 
   if (!catalog) return <main className="p-8 text-slate-900">{catalogError ? <div>{catalogError} <button onClick={() => void loadCatalog()} className="underline">Retry</button></div> : "Loading…"}</main>;
   const runtime = catalog.runtime;
+  const conversationPreview = conversationTurn?.preview;
   const directProposal = response?.result?.manualPostingEvent;
   const directProposals = response?.result?.manualPostingEvents;
   const showDirectProposal = !scheduleReview && !receipt && Object.keys(batchReceipts).length === 0 && response?.mode === "mock_posting" && response.status === "proposal" &&
@@ -1104,7 +1106,7 @@ export default function EditorBenchClient() {
         <h2 className="text-sm font-semibold">Selected fixture previews</h2>
         {conversationSession.selection.postIds.map(postId => {
           const card = conversationSession.cards.find(item => item.postId === postId);
-          const images = conversationSession.media.filter(item => item.postId === postId && item.processingStatus === "ready" && item.mimeType.startsWith("image/"));
+          const images = conversationSession.media.filter(item => item.postId === postId && item.processingStatus === "ready" && item.mimeType?.startsWith("image/"));
           const status = conversationSession.previewStatus?.[postId];
           const cells = conversationSession.matrixCells?.filter(cell => cell.postId === postId) ?? [];
           return <article key={postId} className="rounded-lg bg-slate-50 px-3 py-2">
@@ -1172,7 +1174,7 @@ export default function EditorBenchClient() {
       {conversationMode && <p className="mb-2 text-sm text-slate-600">Use the chat to select artwork and choose X, DeviantArt, or both for preview-first drafts. After Previewizer, review and confirm each destination cell. Scheduling and handoff have separate confirmations. Nothing is published.</p>}
       {mode === "mock_posting" && sourceMode === "fixture" && !conversationMode && <div className="mb-2 flex items-center gap-2 text-sm"><button onClick={() => { invalidate(); setEditDraftMode(value => !value); }} className={`rounded-full px-3 py-1.5 ${editDraftMode ? "bg-indigo-700 text-white" : "border bg-white"}`}>{editDraftMode ? "Edit draft mode · on" : "Edit draft"}</button>{editDraftMode && <span className="text-slate-600">Quote the exact replacement, for example: Change the X caption to “Aurora at dawn”. Unquoted rewrites need clarification.</span>}</div>}
       <div className="flex gap-2"><textarea id="bench-request" name="bench-request" autoComplete="off" value={request} disabled={conversationRestoreLoading || manualSelectionBusy || xDraftConfirming.current || draftScheduleConfirming.current || xHandoffConfirming.current} onChange={event => { if (conversationRestoreLoading || manualSelectionInFlight.current || xDraftConfirming.current || draftScheduleConfirming.current || xHandoffConfirming.current) return; setRequest(event.target.value); setXDraftReview(null); setDraftScheduleReview(null); setXHandoffReview(null); invalidate(); }} placeholder={conversationMode ? 'Select Aurora Study and exclude Tide pools.' : mode === "curation" && curationSource === "real_library" ? "Describe which Library posts to select…" : mode === "mock_posting" && sourceMode === "real_library" ? "Describe manual posting cues for the selected Library media…" : mode === "mock_posting" && editDraftMode ? "For Aurora in X, replace it with “Aurora at dawn”. Unquoted rewrites need clarification." : "Describe a change…"} className="min-h-12 min-w-0 flex-1 resize-y rounded-xl border p-3 focus-visible:outline focus-visible:outline-2 focus-visible:outline-indigo-700 disabled:opacity-60" /><button type="button" onClick={() => void send()} disabled={!catalog || conversationRestoreLoading || busy || realLibraryBusy || !request.trim() || (mode === "curation" && curationSource === "real_library" && (!realLibraryCatalog || realLibraryLoading)) || (mode === "mock_posting" && sourceMode === "real_library" && (!libraryPost || libraryMediaIds.length < 1))} className="self-end rounded-xl bg-indigo-700 px-5 py-3 font-medium text-white hover:bg-indigo-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-700 disabled:opacity-50">{busy ? "Sending…" : "Send"}</button></div>
-      {conversationTurn?.status === "review" && conversationTurn.preview && <article className="mt-3 rounded-xl border border-indigo-200 bg-indigo-50 p-4"><p className="text-sm font-semibold">Review mock {conversationTurn.preview.kind === "posting" ? "posting cue" : "edit"} · revision {conversationTurn.revision}</p>{conversationTurn.preview.kind === "edit" ? <><p className="mt-2 text-sm">Post: {visibleCards.find(card => card.postId === conversationTurn.preview!.postId)?.title ?? "Selected post"}</p>{(conversationTurn.preview.beforeAfter as any[]).map((change, index) => <p key={index} className="mt-1 break-words text-sm">{String(change.before)} → {String(change.after)}</p>)}{(conversationTurn.preview.action as any)?.kind === "tags" && <p className="mt-2 text-sm">Add: {((conversationTurn.preview.action as any).add as string[]).join(", ") || "none"} · Remove: {((conversationTurn.preview.action as any).remove as string[]).join(", ") || "none"}</p>}</> : <><p className="mt-2 text-sm">Source: {String((conversationTurn.preview.review as any)?.source?.title)} · {String((conversationTurn.preview.review as any)?.destination).toUpperCase()}</p><p className="break-words text-sm">Title: {String((conversationTurn.preview.review as any)?.title)}</p><p className="text-sm">Time: {String((conversationTurn.preview.review as any)?.dueAt?.local)} Europe/London</p></>}<details className="mt-2 text-xs"><summary className="cursor-pointer">Full mock preview</summary><pre className="mt-2 max-h-48 overflow-auto whitespace-pre-wrap break-words">{JSON.stringify(conversationTurn.preview, null, 2)}</pre></details><div className="mt-3 flex gap-2"><button type="button" onClick={() => void confirmConversation()} disabled={busy || !conversationTurn.reviewToken} className="rounded-lg bg-indigo-700 px-4 py-2 text-sm text-white hover:bg-indigo-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-700 disabled:opacity-50">{conversationTurn.preview.kind === "posting" ? "Confirm posting cue" : "Confirm edit"}</button><button type="button" onClick={() => { invalidate(); }} disabled={busy} className="rounded-lg border px-4 py-2 text-sm hover:bg-slate-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-700">Cancel</button></div></article>}
+      {conversationTurn?.status === "review" && conversationPreview && <article className="mt-3 rounded-xl border border-indigo-200 bg-indigo-50 p-4"><p className="text-sm font-semibold">Review mock {conversationPreview.kind === "posting" ? "posting cue" : "edit"} · revision {conversationTurn.revision}</p>{conversationPreview.kind === "edit" ? <><p className="mt-2 text-sm">Post: {visibleCards.find(card => card.postId === conversationPreview.postId)?.title ?? "Selected post"}</p>{conversationPreview.beforeAfter.map((change, index) => <p key={index} className="mt-1 break-words text-sm">{String(change.before)} → {String(change.after)}</p>)}{conversationPreview.action?.kind === "tags" && <p className="mt-2 text-sm">Add: {conversationPreview.action.add.join(", ") || "none"} · Remove: {conversationPreview.action.remove.join(", ") || "none"}</p>}</> : <><p className="mt-2 text-sm">Source: {String(conversationPreview.review?.source?.title)} · {String(conversationPreview.review?.destination).toUpperCase()}</p><p className="break-words text-sm">Title: {String(conversationPreview.review?.title)}</p><p className="text-sm">Time: {String(conversationPreview.review?.dueAt?.local)} Europe/London</p></>}<details className="mt-2 text-xs"><summary className="cursor-pointer">Full mock preview</summary><pre className="mt-2 max-h-48 overflow-auto whitespace-pre-wrap break-words">{JSON.stringify(conversationPreview, null, 2)}</pre></details><div className="mt-3 flex gap-2"><button type="button" onClick={() => void confirmConversation()} disabled={busy || !conversationTurn.reviewToken} className="rounded-lg bg-indigo-700 px-4 py-2 text-sm text-white hover:bg-indigo-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-700 disabled:opacity-50">{conversationPreview.kind === "posting" ? "Confirm posting cue" : "Confirm edit"}</button><button type="button" onClick={() => { invalidate(); }} disabled={busy} className="rounded-lg border px-4 py-2 text-sm hover:bg-slate-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-700">Cancel</button></div></article>}
       {conversationReceipt && <p aria-live="polite" className="mt-3 rounded-lg bg-emerald-50 p-3 text-sm">{conversationReceipt.receipt.kind === "edit" ? "Mock edit saved." : "Mock posting cue saved. Publishing is manual."}</p>}
       {variantEditReview?.decision === "review" && <article className="mt-3 rounded-xl border border-indigo-200 bg-indigo-50 p-4"><p className="text-sm font-semibold">Review {variantEditReview.destination === "deviantart" ? "DeviantArt" : "X"} draft edit · revision {variantEditReview.expectedRevision} · mock only</p><p className="mt-2 text-sm">Before: {variantEditReview.oldText}</p><p className="text-sm">After: {variantEditReview.newText}</p><div className="mt-3 flex gap-2"><button onClick={() => void confirmVariantEdit()} disabled={busy || !variantEditReview.reviewToken} className="rounded-lg bg-indigo-700 px-4 py-2 text-sm text-white disabled:opacity-50">Confirm edit</button><button onClick={() => { invalidate(); }} disabled={busy} className="rounded-lg border px-4 py-2 text-sm">Cancel</button></div></article>}
       {variantEditReview?.decision === "unchanged" && <p className="mt-3 rounded-lg bg-slate-100 p-3 text-sm">The draft already has that exact text; no edit was made.</p>}
@@ -1184,7 +1186,7 @@ export default function EditorBenchClient() {
     <div>
       {mode === "curation" && curationSource === "real_library" && <section className="rounded-2xl bg-white p-5 shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="text-lg font-semibold">Real Library posts</h2><p className="text-xs text-slate-600">Complete metadata-only view · no images or media identifiers are sent in selection requests.</p></div><button onClick={() => void loadRealLibraryCatalog()} disabled={realLibraryLoading || realLibraryBusy || busy} className="rounded-lg border px-3 py-1.5 text-sm disabled:opacity-50">{realLibraryLoading ? "Loading…" : "Reload Library"}</button></div>
-        <p className="mt-2 rounded-lg bg-slate-50 p-3 text-xs text-slate-600">Dates use Europe/London calendar days. Created means the stored Library record date, often an ingest or gallery-order timestamp, not artwork creation. Published means the latest version's publish date; drafts have no published date.</p>
+        <p className="mt-2 rounded-lg bg-slate-50 p-3 text-xs text-slate-600">Dates use Europe/London calendar days. Created means the stored Library record date, often an ingest or gallery-order timestamp, not artwork creation. Published means the latest version&apos;s publish date; drafts have no published date.</p>
         {realLibraryError && <div role="alert" className="mt-3 rounded-lg bg-amber-50 p-3 text-sm text-amber-950"><p>{realLibraryError.message}</p>{realLibraryError.code === "stale_library_selection" && <p className="mt-1 text-xs">The catalog changed. Reload it, then start a new selection.</p>}{realLibraryCatalog && <button onClick={() => void resetRealLibrarySelection()} disabled={realLibraryBusy || busy} className="mt-2 rounded-lg border px-3 py-1.5 text-xs disabled:opacity-50">Start over</button>}</div>}
         {realLibraryLoading && <p className="mt-3 text-sm text-slate-600">Loading the complete Library catalog…</p>}
         {!realLibraryLoading && realLibraryCatalog && <>{realLibraryCatalog.posts.length === 0 ? <p className="mt-4 text-sm text-slate-600">No active Library posts were found.</p> : <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">{realLibraryCatalog.posts.map(post => {
@@ -1288,7 +1290,7 @@ export default function EditorBenchClient() {
         <p className="mt-1 text-xs text-slate-600">Sample media is not attached · no autopost · no reminder.</p>
         <div className="mt-3 flex gap-2"><button onClick={() => void confirmSchedule(scheduleReview.reviewToken)} disabled={scheduleBusy} className="rounded-lg bg-indigo-700 px-4 py-2 text-sm font-medium text-white disabled:opacity-50">{scheduleBusy ? "Saving…" : "Confirm event"}</button><button onClick={() => { scheduleGeneration.current++; setScheduleReview(null); setScheduleError(""); }} disabled={scheduleBusy} className="rounded-lg border px-4 py-2 text-sm">Cancel</button></div>
       </article>}
-      {showBatchProposal && <article className="mb-4 rounded-xl border border-indigo-200 bg-indigo-50 p-4"><h2 className="font-semibold">Manual posting events proposed</h2><p className="mt-1 text-sm text-slate-700">Review confirmation before saving. Each item is a separate event; nothing is published.</p><div className="mt-3 space-y-2">{directProposals.map((proposal: any, index: number) => <div key={`${proposal.destination}-${index}`} className="rounded-lg border border-indigo-100 bg-white p-3"><p className="font-medium">{destinationLabel(proposal.destination)} · {proposal.title}</p><p className="text-sm">{proposal.dueAt.local} ({proposal.dueAt.timezone})</p><p className="text-sm">Sample source: {proposal.source.title} · {proposal.source.mediaLabel}</p><p className="mt-1 text-xs text-slate-600">{proposal.warning} Sample media is not attached.</p></div>)}</div></article>}
+      {showBatchProposal && <article className="mb-4 rounded-xl border border-indigo-200 bg-indigo-50 p-4"><h2 className="font-semibold">Manual posting events proposed</h2><p className="mt-1 text-sm text-slate-700">Review confirmation before saving. Each item is a separate event; nothing is published.</p><div className="mt-3 space-y-2">{directProposals.map((proposal, index: number) => <div key={`${proposal.destination}-${index}`} className="rounded-lg border border-indigo-100 bg-white p-3"><p className="font-medium">{destinationLabel(proposal.destination)} · {proposal.title}</p><p className="text-sm">{proposal.dueAt.local} ({proposal.dueAt.timezone})</p><p className="text-sm">Sample source: {proposal.source.title} · {proposal.source.mediaLabel}</p><p className="mt-1 text-xs text-slate-600">{proposal.warning} Sample media is not attached.</p></div>)}</div></article>}
       {showDirectProposal && <article className="mb-4 rounded-xl border border-indigo-200 bg-indigo-50 p-4">
         <h2 className="font-semibold">Manual posting event proposed</h2>
         <p className="mt-2 text-sm">Sample source: {directProposal.source.title} · {directProposal.source.mediaLabel}</p>
@@ -1318,13 +1320,13 @@ export default function EditorBenchClient() {
           })}
         </div>
         {response.mode === "mock_posting" && Array.isArray(response.result?.steps) && <div className="mt-4 space-y-2">
-          {response.result.steps.map((step: any) => {
-            const anchorTitle = response.result.steps.find((candidate: any) => candidate.id === step.time?.anchor_step_id)?.title;
+          {response.result.steps.map((step) => {
+            const anchorTitle = response.result?.steps?.find((candidate) => candidate.id === step.time?.anchor_step_id)?.title;
             return <article key={step.id} className="rounded-xl border p-4">
             <b>{capabilityLabels[step.capability] || step.capability}</b> · {step.title || "Untitled"}
             <p className="text-sm">Destination: {step.destination || "Internal step"} · readiness: {step.destinationReadiness || "internal step"} · {step.enabled ? "enabled" : "paused"}</p>
             <p className="text-sm">Timing: {step.time?.local ? `${step.time.local} (${step.time.timezone}) · UTC ${step.time.at_utc}` : step.time?.kind === "after_publication_calendar_days" ? `${step.time.day_offset} days after verified publication of ${anchorTitle || "this plan item"} at ${step.time.local_time} (${step.time.timezone})` : step.time?.kind || "none"}</p>
-            <details className="text-xs text-slate-500"><summary>Graph details</summary>{step.id} · depends on {(step.dependsOn || []).join(", ") || "nothing"} · verified publication anchor {step.time?.anchor_step_id ? response.result.steps.find((candidate: any) => candidate.id === step.time.anchor_step_id)?.title || step.time.anchor_step_id : "none"}</details>
+            <details className="text-xs text-slate-500"><summary>Graph details</summary>{step.id} · depends on {(step.dependsOn || []).join(", ") || "nothing"} · verified publication anchor {step.time?.anchor_step_id ? response.result?.steps?.find((candidate) => candidate.id === step.time?.anchor_step_id)?.title || step.time.anchor_step_id : "none"}</details>
           </article>;
           })}
         </div>}

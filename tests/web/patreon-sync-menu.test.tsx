@@ -55,6 +55,20 @@ describe("PS14 existing health controls", () => {
     fireEvent.keyDown(trigger, { key: "Escape" });
     expect(screen.queryByRole("dialog")).toBeNull(); expect(document.activeElement).toBe(trigger);
   });
+  it.each(["success", "failure"])("restores explicit refresh focus after %s without moving focus on initial open", async (outcome) => {
+    render(<PatreonSyncMenu creatorId="creator" onAfterScrape={() => {}} />);
+    const trigger = screen.getByRole("button", { name: "Patreon" }); trigger.focus(); fireEvent.click(trigger);
+    await screen.findByRole("region", { name: "Saved Patreon coverage" }); expect(document.activeElement).toBe(trigger);
+    let finish!: (value: unknown) => void, fail!: (reason: Error) => void;
+    fixture.read.mockImplementationOnce(() => new Promise((resolve, reject) => { finish = resolve; fail = reject; }));
+    const refresh = screen.getByRole("button", { name: "Refresh saved status" }) as HTMLButtonElement;
+    refresh.focus(); fireEvent.click(refresh); fireEvent.click(refresh);
+    expect(refresh.disabled).toBe(true); expect(fixture.read).toHaveBeenCalledTimes(2);
+    if (outcome === "success") finish(state()); else fail(new Error("Status refresh unavailable"));
+    await waitFor(() => { expect(refresh.disabled).toBe(false); expect(document.activeElement).toBe(refresh); });
+    expect(screen.getByText("Archive: partial")).toBeTruthy();
+    if (outcome === "failure") expect(screen.getByRole("alert").textContent).toContain("previous saved status");
+  });
   it.each(["Escape", "Close"])("returns focus to the actual trigger on %s", async (action) => {
     await open();
     if (action === "Escape") fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" });

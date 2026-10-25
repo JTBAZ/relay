@@ -152,6 +152,8 @@ describe("simulatePilotUxMediaImport", () => {
       postVersion: { upsert },
       postTier: { deleteMany, createMany },
       mediaAsset: { upsert, updateMany },
+      $transaction: vi.fn(async (fn: (tx: unknown) => Promise<unknown>) => fn(prisma)),
+      $queryRaw: vi.fn().mockResolvedValue([]),
       creatorSyncState: { upsert: syncUpsert, findUnique: vi.fn().mockResolvedValue(null) },
       creatorOnboardingState: {
         findUnique: onboardingFind,

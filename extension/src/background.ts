@@ -58,7 +58,7 @@ import {
   MSG_SYNC_NOW,
   type ExternalStatusResponse
 } from "./lib/messages";
-import { PATREON_SESSION_COOKIE_NAME, RELAY_WEB_BASE } from "./lib/constants";
+import { PATREON_SESSION_COOKIE_NAME, RELAY_WEB_BASE, relayWebOriginAllowed } from "./lib/constants";
 import { RELAY_API_BASE, syncNow } from "./lib/sync-now";
 import { notifyRelayWebDistributionUpdated } from "./lib/relay-tab-notify";
 import * as storage from "./lib/storage";
@@ -74,15 +74,6 @@ startPostLinkWatcher();
 startScheduleReminderWatcher();
 void purgeLegacyPostLinkWatchKeys();
 
-/** Match `externally_connectable`. Dev-only localhost checks use `import.meta.env.DEV` so prod bundles stay free of `localhost` (P-12). */
-function relayWebOriginAllowed(url: string | undefined): boolean {
-  if (!url) return false;
-  if (url.startsWith("https://relayapp.me/")) return true;
-  if (__EXT_ENV__ === "dev") {
-    return url.startsWith("http://localhost:") || url.startsWith("http://127.0.0.1:");
-  }
-  return false;
-}
 
 async function ensureRefreshAlarm(): Promise<void> {
   const existing = await browser.alarms.get(ALARM_RELAY_COOKIE);

@@ -129,8 +129,11 @@ export class FileIdentityStore implements IdentityStore {
         let user = findUser(id);
         if (!user) {
           const now = new Date().toISOString();
+          // Legacy registration may declare shared tiers; provider observations cannot add them.
+          const legacyTiers = campaignId === "oauth" && observation === undefined
+            ? tiers.map((tier) => tier.trim()).filter((tier) => !tier.startsWith("patreon_tier_") && !tier.startsWith("substar_tier_")) : [];
           user = { user_id: `usr_${randomUUID()}`, creator_id: creatorId, patreon_user_id: id, email: email?.trim().toLowerCase() || `patreon_${id}@relay.local`,
-            password_hash: "", auth_provider: "patreon", tier_ids: [], created_at: now, updated_at: now };
+            password_hash: "", auth_provider: "patreon", tier_ids: legacyTiers, created_at: now, updated_at: now };
           root.users[user.user_id] = user;
         }
         const token = observation ?? String(root.patreon_observation = (root.patreon_observation ?? 0) + 1);

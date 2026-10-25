@@ -3,6 +3,8 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from
 import { PrismaClient } from "@prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { GalleryEditorService } from "../src/gallery-editor/service.js";
+import { buildPiecePerformanceFacts, readPiecePerformanceBinding } from "../src/analytics/piece-performance-facts.js";
+import { buildPiecePerformanceFindings, finalizePiecePerformanceAnswer } from "../src/analytics/piece-performance-findings.js";
 import { loadPostNaming } from "../src/gallery-editor/naming.js";
 import { searchLibraryPosts } from "../src/gallery-editor/context.js";
 import { editorHistoryReader } from "../src/gallery-editor/routes.js";
@@ -91,6 +93,65 @@ describe.skipIf(!databaseUrl)("Gallery editor — PostgreSQL atomic execution", 
     const undone=await editor.undo(creatorId,actorId,receipt.id);
     expect(undone.summary).toContain('Undone:');
     expect((await db.creativeWork.findUniqueOrThrow({where:{id:workId}})).title).toBe('Original work');
+  });
+
+  it("appends a performance answer without cart writes, then supports a compiled edit and Apply at the higher session revision", async () => {
+    await db.tenant.create({ data: { relayCreatorId: creatorId } });
+    const original = await draft([{ id: "manual-before-answer", kind: "rename_post", postId: postA, title: "Pending manual title" }]);
+    const request = { selectedPostIds: [postA], subject: { kind: "post" as const, id: postA } };
+    const binding = await readPiecePerformanceBinding(db, creatorId, request);
+    expect(binding.ok).toBe(true);
+    if (!binding.ok) return;
+    const asOf = new Date();
+    const facts = {
+      as_of: asOf.toISOString(), range: "30d" as const,
+      time_range: { start: new Date(asOf.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString(), end: asOf.toISOString() },
+      subject: binding.binding.subject, subject_fingerprint: binding.binding.subject_fingerprint, status: "no_data" as const,
+      metrics: [], coverage: [{ id: "coverage-integration", post_id: postA, destination: "patreon", state: "unlinked" as const, missing_metrics: ["impressions" as const] }], source_failures: [] as []
+    };
+    const prepared = buildPiecePerformanceFindings(facts);
+    expect(prepared.ok).toBe(true);
+    if (!prepared.ok) return;
+    const performanceAnswer = finalizePiecePerformanceAnswer(facts, prepared.findings, null, { status: "deterministic", reason: "no_data" });
+    const appended = await editor.appendPerformanceTurn(creatorId, actorId, original.id, {
+      revision: original.revision, context: original.context, userText: "How is it performing?", assistantText: performanceAnswer.summary,
+      performanceAnswer, bindingRequest: request, binding: binding.binding
+    });
+    expect(appended.revision).toBe(original.revision + 1);
+    expect(appended.cart).toEqual(original.cart);
+    const savedMessage = appended.messages.at(-1);
+    expect(savedMessage?.role).toBe("assistant");
+    if (savedMessage?.role === "assistant") expect(savedMessage.performanceAnswer).toEqual(performanceAnswer);
+    expect(await db.galleryEditorCommit.count({ where: { creatorId, sessionId: original.id } })).toBe(0);
+    const patch = { revision: appended.cart.revision, changes: [{ kind: "add" as const, action: { id: "compiled-after-answer", kind: "rename_work" as const, workId, title: "Compiled title" } }] };
+    const edited = await editor.revise(creatorId, actorId, original.id, appended.revision, [], appended.context, undefined, "ai", { patch, factualPreview: false });
+    expect(edited.revision).toBe(edited.cart.revision);
+    expect(edited.cart.actions.map(action => action.id)).toEqual(["manual-before-answer", "compiled-after-answer"]);
+    const receipt = await editor.apply(creatorId, actorId, edited.id, edited.revision, newId());
+    expect(receipt.actionCount).toBe(2);
+  });
+
+  it("projects native Relay engagement as bounded window activity without a captured-total claim", async () => {
+    await db.tenant.create({ data: { relayCreatorId: creatorId } });
+    const asOf = new Date("2026-04-30T12:00:00.000Z");
+    const occurredAt = new Date("2026-04-27T14:30:00.000Z");
+    await db.relayEngagementEvent.createMany({ data: [
+      { id: newId(), creatorId, postId: postA, eventType: "gallery_view", occurredAt },
+      { id: newId(), creatorId, postId: postA, eventType: "gallery_view", occurredAt: new Date(occurredAt.getTime() + 60_000) },
+      { id: newId(), creatorId, postId: postA, eventType: "profile_view", occurredAt: new Date(occurredAt.getTime() + 120_000) }
+    ] });
+    const result = await buildPiecePerformanceFacts(db, creatorId, {
+      selectedPostIds: [postA], subject: { kind: "post", id: postA }, range: "7d", destination: "relay", asOf
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const relayMetrics = result.facts.metrics.filter(metric => metric.destination === "relay");
+    expect(relayMetrics.some(metric => metric.basis === "captured_total")).toBe(false);
+    expect(relayMetrics).toContainEqual(expect.objectContaining({
+      metric: "views", basis: "window_change", value: 3, availability: "available", source: "manual",
+      captured_at: new Date(occurredAt.getTime() + 120_000).toISOString(),
+      evidence: [expect.objectContaining({ kind: "relay_aggregate", observed_at: new Date(occurredAt.getTime() + 120_000).toISOString() })]
+    }));
   });
 
   it.each(["merge","link","split"] as const)("legacy manual %s preserves displayed names, journals mode changes, and supports Undo",async operation=>{

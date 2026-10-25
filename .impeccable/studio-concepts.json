@@ -1,0 +1,45 @@
+{
+  "title": "Shape your Studio",
+  "question": "Compare three ways to bring conversation, artwork, and the month together. Open a sketch at full size, then choose a starting point or describe what to combine.",
+  "options": [
+    {
+      "id": "open-studio",
+      "kind": "assigned",
+      "label": "Open Studio",
+      "thesis": "A calm conversation above a broad, compact artwork grid.",
+      "palette": ["#080c0a", "#111a15", "#a8edc9", "#e6eee9"],
+      "materials": ["quiet surfaces", "compact artwork", "clear type"],
+      "viewport": "A centered conversation opens into one searchable gallery. The right rail groups the month by day.",
+      "risk": "The open canvas gives less space to a long conversation or a complicated order.",
+      "html": ".impeccable/mocks/decision/open-studio.html",
+      "comp": ".impeccable/mocks/decision/open-studio.png"
+    },
+    {
+      "id": "collection-shelves",
+      "kind": "dealt",
+      "label": "Collection Shelves",
+      "thesis": "A gallery organized into recognizable bodies of work, with conversation above it.",
+      "palette": ["#080c0a", "#111a15", "#a8edc9", "#e6eee9"],
+      "materials": ["collection headings", "compact artwork", "month overview"],
+      "viewport": "A shallow chat sits above named gallery shelves. A small month calendar and agenda share the right rail.",
+      "risk": "Collection groups need to stay useful when work belongs to several projects.",
+      "html": ".impeccable/mocks/decision/collection-shelves.html",
+      "comp": ".impeccable/mocks/decision/collection-shelves.png"
+    },
+    {
+      "id": "batch-desk",
+      "kind": "dealt",
+      "label": "Batch Desk",
+      "thesis": "Keep a visible order beside the conversation while selecting across a dense gallery.",
+      "palette": ["#080c0a", "#111a15", "#a8edc9", "#e6eee9"],
+      "materials": ["visible working set", "selection marks", "color-coded agenda"],
+      "viewport": "The conversation and its current order share the top area. A dense gallery fills the center; the month stays at the right.",
+      "risk": "More information is visible at once, so the first visit may feel busier.",
+      "html": ".impeccable/mocks/decision/batch-desk.html",
+      "comp": ".impeccable/mocks/decision/batch-desk.png"
+    }
+  ],
+  "buildPath": {"value": "code", "toggle": true},
+  "steer": true,
+  "reroll": true
+}

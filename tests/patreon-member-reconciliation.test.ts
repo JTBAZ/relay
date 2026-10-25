@@ -16,6 +16,22 @@ async function fixture() {
   return { ...memberFixture(new IdentityService(store)), store, path };
 }
 describe("PS10 coordinated file member reconciliation", () => {
+  it.each(["substar_tier_injected", " substar_tier_injected "])("preserves initial legacy generic tiers without admitting foreign tier %s", async (foreignTier) => {
+    const f = await fixture();
+    const user = await f.identity.registerPatreonFallback(f.creatorId, "legacy-generic", "legacy@example.test",
+      [" t_silver ", "relay_shared", "patreon_tier_paid", foreignTier]);
+    expect(user.tier_ids).toEqual(["patreon_tier_paid", "t_silver", "relay_shared"]);
+    expect((await f.store.findByPatreonId("legacy-generic", f.creatorId))!.tier_ids).toEqual(user.tier_ids);
+  });
+  it.each(["oauth", "member"])("does not admit generic or foreign-provider tiers from a new %s observation", async (source) => {
+    const f = await fixture(), tiers = ["generic_injected", "substar_tier_injected", "patreon_tier_paid"];
+    if (source === "oauth") {
+      const observation = await f.identity.capturePatreonObservation();
+      await f.identity.registerPatreonFallback(f.creatorId, "observed", "observed@example.test", tiers, observation);
+    } else await f.store.mutatePatreonMembers(f.creatorId, f.campaignId, async (tx) => { await tx.saveUser("observed", tiers); });
+    expect((await f.store.findByPatreonId("observed", f.creatorId))!.tier_ids).toEqual(["patreon_tier_paid"]);
+  });
+
   it("uses documented single-member identity and explicit relationships", () => {
     const url = new URL(singleMemberUrl("member-123"));
     expect(url.pathname).toBe("/api/oauth2/v2/members/member-123");

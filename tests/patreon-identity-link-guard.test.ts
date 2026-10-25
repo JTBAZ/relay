@@ -16,9 +16,11 @@ describe("Patreon ↔ Account guard (DbIdentityStore.createUser)", () => {
       emailNorm: "other@example.com",
       patronPatreonUserId: null
     };
+    const queryRaw = vi.fn().mockResolvedValue([]);
     const prisma = {
       $transaction: (fn: (tx: unknown) => Promise<unknown>) =>
         fn({
+          $queryRaw: queryRaw,
           tenant: {
             upsert: vi.fn().mockResolvedValue({ id: "ten_1", relayCreatorId: "cre_1" })
           },
@@ -52,5 +54,6 @@ describe("Patreon ↔ Account guard (DbIdentityStore.createUser)", () => {
         updated_at: new Date().toISOString()
       })
     ).rejects.toBeInstanceOf(PatreonAccountLinkConflictError);
+    expect(queryRaw).toHaveBeenCalledTimes(2);
   });
 });

@@ -45,6 +45,18 @@ function baseDraft(over: Record<string, unknown> = {}) {
 }
 
 describe("autopost-draft-service", () => {
+  it("keeps saved copy untouched when regeneration is skipped", async () => {
+    const prisma = prismaStub({
+      autopostDraft: { findFirst: vi.fn().mockResolvedValue(baseDraft({ bodyText: "Keep this copy" })), update: vi.fn() },
+      creatorStyleProfile: { findFirst: vi.fn().mockResolvedValue({ id: "style", creatorId: "cr1", label: "Manual", tonePreset: "none", voiceScript: "", userPrompt: null, updatedAt: new Date() }) },
+      creatorStudioBrief: { findUnique: vi.fn().mockResolvedValue(null) },
+      postDistributionPlan: { findFirst: vi.fn().mockResolvedValue(null) },
+      mediaAsset: { findMany: vi.fn().mockResolvedValue([{ discordCaptureJson: null }]) }
+    });
+    await expect(patchAutopostDraft(prisma, "cr1", "d1", { regenerate: true })).rejects.toThrow("saved copy is unchanged");
+    expect(prisma.autopostDraft.update).not.toHaveBeenCalled();
+  });
+
   it("requires a style profile before generating a draft", async () => {
     const prisma = prismaStub({
       creatorStyleProfile: { findFirst: vi.fn().mockResolvedValue(null) },

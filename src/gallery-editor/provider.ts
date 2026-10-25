@@ -4,7 +4,7 @@ import { PROPOSAL_SCHEMA } from './action-validation.js';
 export type ResponseItem = Record<string, unknown>;
 export interface ProviderUsage { inputTokens: number; outputTokens: number; costUsd?: number; calls?: number }
 export interface EditorProvider {
-  respond(request: { input: ResponseItem[]; tools: ResponseItem[]; signal: AbortSignal; responseSchema?: typeof PROPOSAL_SCHEMA }): Promise<{ output: ResponseItem[]; usage?: ProviderUsage }>;
+  respond(request: { input: ResponseItem[]; tools: ResponseItem[]; signal: AbortSignal; responseSchema?: Record<string, unknown> | null }): Promise<{ output: ResponseItem[]; usage?: ProviderUsage }>;
 }
 /** Implement with an atomic durable ledger shared by all workers; never a process-local counter. */
 export interface ProviderBudget {
@@ -37,7 +37,7 @@ export function createResponsesProvider(options: ResponsesProviderOptions): Edit
       if(options.pricing.cachedInputUsdPerMillion!==undefined&&(!validRate(options.pricing.cachedInputUsdPerMillion)||options.pricing.cachedInputUsdPerMillion>options.pricing.inputUsdPerMillion))throw new EditorError('provider_config','The cached-token rate is invalid.',503);
       if (!Number.isSafeInteger(maxOutputTokens) || maxOutputTokens < 256 || maxOutputTokens > 16000) throw new EditorError('provider_config', 'The editor output limit is invalid.', 503);
       signal.throwIfAborted();
-      const body = { model, store: false, input, tools, parallel_tool_calls: false, max_output_tokens: maxOutputTokens, include: ['reasoning.encrypted_content'], text: { format: { type: 'json_schema', name: 'library_edit_proposal', strict: true, schema: responseSchema ?? PROPOSAL_SCHEMA } } };
+      const body = { model, store: false, input, tools, parallel_tool_calls: false, max_output_tokens: maxOutputTokens, include: ['reasoning.encrypted_content'], ...(responseSchema === null ? {} : { text: { format: { type: 'json_schema', name: 'library_edit_proposal', strict: true, schema: responseSchema ?? PROPOSAL_SCHEMA } } }) };
       let images = 0;
       // Account conservatively at one token per UTF-8 byte, plus explicit image allowance.
       const serialized = JSON.stringify(body, (_key, value) => {
@@ -88,12 +88,12 @@ export function createResponsesProvider(options: ResponsesProviderOptions): Edit
 }
 
 /** Rates are explicit per configured model. Never infer another model's rates or key aliases. */
-export function responsesProviderFromEnv(budget: ProviderBudget, env: NodeJS.ProcessEnv = process.env, fetch?: typeof globalThis.fetch): EditorProvider {
+export function responsesProviderFromEnv(budget: ProviderBudget, env: NodeJS.ProcessEnv = process.env, fetch?: typeof globalThis.fetch, maxOutputTokens?: number): EditorProvider {
   const model = env.LIBRARY_EDITOR_MODEL?.trim() || 'gpt-6-astra';
   let pricing: ModelPricing | undefined;
   try {
     const prices = JSON.parse(env.LIBRARY_EDITOR_MODEL_PRICING_JSON ?? '{}') as Record<string, ModelPricing>;
     if (Object.hasOwn(prices, model)) pricing = prices[model];
   } catch { /* Missing or malformed pricing fails closed in respond. */ }
-  return createResponsesProvider({ apiKey: env.OPENAI_API_KEY, model, pricing, budget, fetch });
+  return createResponsesProvider({ apiKey: env.OPENAI_API_KEY, model, pricing, budget, fetch, maxOutputTokens });
 }

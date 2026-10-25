@@ -30,6 +30,7 @@ import {
 } from "./config.js";
 import { DisabledAiProvider } from "./disabled-provider.js";
 import { MockAiProvider } from "./mock-provider.js";
+import { OpenAiProvider } from "./openai-provider.js";
 import type { AiGenerateTextInput, AiGenerateTextResult, AiProvider } from "./types.js";
 
 export function createAiProvider(overrides: AiServiceConfig = {}): AiProvider {
@@ -38,6 +39,8 @@ export function createAiProvider(overrides: AiServiceConfig = {}): AiProvider {
     return new DisabledAiProvider();
   }
   switch (cfg.provider) {
+    case "openai":
+      return new OpenAiProvider();
     case "anthropic":
       return new AnthropicAiProvider(cfg);
     case "mock":

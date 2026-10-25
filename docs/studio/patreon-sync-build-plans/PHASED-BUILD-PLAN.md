@@ -6,7 +6,7 @@ Use [the program index](00-README.md) for current status, ownership, and scope. 
 
 ### PS-00: Freeze failure cases and authority boundaries
 
-Status: complete. See [baseline evidence and contracts](BASELINE-CONTRACTS.md). The two original fixture controls and the completed PS-05/PS-09 assertions pass. Two desired-behavior assertions remain explicitly expected failures owned by PS-12.
+Status: complete. See [baseline evidence and contracts](BASELINE-CONTRACTS.md). The original controls and later PS-05/PS-09/PS-11 assertions pass. PS-12 adds passing PostgreSQL equivalents for both historical media failures; no expected-failure marker remains in the baseline suite.
 
 Dependencies: none. Review coverage: all findings.
 
@@ -182,7 +182,7 @@ Exit: OAuth-only import followed by cookie consent recovers old media; an exhaus
 
 Status: complete locally and independently approved. The [verification record](PS-13-VERIFIED-EXTENSION.md) covers 127 independent passes, one existing Windows skip, two API processes, the passing combined build and scoped UI rendering. Installed Chrome/Firefox authentication, packaging and full-web limits remain PS-15 gates.
 
-Status: in progress under `later_reliability_scout`. Follow the [extension design](PS-13-DESIGN.md), preserving concurrent cross-post handoff changes.
+
 
 Dependencies: PS-06 and PS-12. Review: 4 and 12.
 
@@ -198,7 +198,7 @@ Exit: grant/workspace switches upload correctly; an unchanged cookie still verif
 
 ### PS-14: Expose completeness and targeted repair
 
-Status: in progress, claimed by `later_reliability_scout` with independent review by `ps09_build`. Follow the [accepted design](PS-14-DESIGN.md); preserve the completed upstream contracts and concurrent Library changes.
+Status: complete locally and independently approved. The [completion record](PS-14-PERSISTED-HEALTH.md) records pure persisted health reads, bounded completeness and targeted repair, 158 implementation checks, 67 independent checks and a passing final backend build. Rendered checks pass at 320/390/768/1440 CSS pixels. Full-web and installed-browser limits remain PS-15 gates; upstream contracts and concurrent Library changes are preserved.
 
 Dependencies: PS-11 to PS-13.
 
@@ -209,6 +209,8 @@ Server health uses persisted results from webhook work, reconciliation, and repa
 Exit: the creator can repair one failed item or credential problem without resyncing the Library. Partial imports and old healthy-but-stale records remain visible. Changed controls pass desktop/mobile rendering, keyboard/focus, error, and duplicate-action checks.
 
 ### PS-15: Prove and release reliability
+
+Status: PS-15 remains open under the supervisor. Isolated schema/strict-TLS DB role checks, private R2/Redis bindings, real backend/web image builds, two healthy private APIs and the private web login shell and public staging HTTPS smoke are verified. Workers remain stopped; browser authentication is not established. The full-web build limits referenced in earlier completion snapshots are historical; all existing lint/type/build stages now pass. The failed original root suite is preserved, with 48 exact later passes and 24 residual cases rather than a full rerun. Fresh installed-browser/user/provider consent, hydration, overlap/restart acceptance, dependency findings and release remain open. PS-16–22 implementation stays gated by this exit.
 
 Dependencies: PS-01 to PS-14 complete, including the approved ownership policy in PS-03.
 

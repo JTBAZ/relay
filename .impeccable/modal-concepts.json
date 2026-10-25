@@ -1,0 +1,11 @@
+{
+  "title": "Review a request",
+  "question": "Compare three ways to check selected work and confirm the exact actions. Expand a sketch to try its sample flow; these demos do not change your real gallery or schedule.",
+  "options": [
+    {"id":"selection-plan","kind":"assigned","label":"Selection + plan","thesis":"See selected artwork beside a clear list of intended actions.","palette":["#080c0a","#111a15","#a8edc9","#e6eee9"],"materials":["artwork grid","explicit action list"],"viewport":"Selection and follow-up edits on the left; renamed copies and dated X posts on the right.","risk":"Attention is split between the selected work and its plan.","html":".impeccable/mocks/decision/modal-selection-plan.html"},
+    {"id":"select-confirm","kind":"dealt","label":"Select, then confirm","thesis":"Finish the selection first, then review the actions in a focused second step.","palette":["#080c0a","#111a15","#a8edc9","#e6eee9"],"materials":["selection stage","action preview"],"viewport":"A generous artwork selection view leads to a separate preview of every copy and scheduled post.","risk":"The extra step takes longer for a small request.","html":".impeccable/mocks/decision/modal-select-confirm.html"},
+    {"id":"action-ledger","kind":"dealt","label":"Action ledger","thesis":"Each work sits on one row with its new name and scheduled destination.","palette":["#080c0a","#111a15","#a8edc9","#e6eee9"],"materials":["item-by-item preview","compact rows"],"viewport":"A single table connects each selected item to the exact actions proposed for it.","risk":"Dense rows can be harder to scan for a large collection.","html":".impeccable/mocks/decision/modal-action-ledger.html"}
+  ],
+  "steer": true,
+  "reroll": true
+}

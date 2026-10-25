@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Posting Rhythms · Layout studies</title>
+  <link rel="stylesheet" href="styles.css">
+  <style>
+    body{background:var(--ground)}
+    .comparison{width:min(1420px,calc(100% - 36px));margin:28px auto 60px}
+    .comparison-head{display:flex;align-items:end;justify-content:space-between;gap:18px;padding-bottom:18px;border-bottom:1px solid var(--line)}
+    .comparison-head h1{margin:0;font-size:22px;font-weight:500}
+    .comparison-head p{max-width:520px;margin:7px 0 0;color:var(--muted);font-size:13px}
+    .studies{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;margin-top:20px}
+    .study{min-width:0;overflow:hidden;background:var(--surface);border:1px solid var(--line);border-radius:10px}
+    .study-head{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:13px 14px}
+    .study-head h2{margin:0;font-size:14px;font-weight:500}
+    .study-head p{margin:4px 0 0;color:var(--muted);font-size:12px}
+    .open-link{flex:none;color:var(--mint);font-size:12px;text-underline-offset:3px}
+    .preview-window{height:304px;overflow:hidden;border-top:1px solid var(--line);background:var(--ground);position:relative}
+    .preview-window iframe{display:block;width:1120px;height:900px;border:0;transform:scale(.34);transform-origin:top left;pointer-events:none}
+    @media(max-width:1120px){.studies{grid-template-columns:repeat(2,minmax(0,1fr))}}
+    @media(max-width:760px){.comparison{width:calc(100% - 24px);margin:16px auto 36px}.comparison-head{display:block}.studies{grid-template-columns:minmax(0,1fr);gap:12px}.preview-window{height:290px}.preview-window iframe{transform:scale(.31)}}
+  </style>
+</head>
+<body>
+  <main class="comparison">
+    <header class="comparison-head">
+      <div><h1>Posting Rhythms</h1><p>Three layout directions for the same simulated release plan.</p></div>
+      <span class="sim-badge">Sketch · No posts are sent</span>
+    </header>
+    <section class="studies" aria-label="Rhythm layout comparisons">
+      <article class="study">
+        <header class="study-head"><div><h2>Open sheet</h2><p>Both releases stay open for a comfortable read-through.</p></div><a class="open-link" href="open-sheet.html">Open layout</a></header>
+        <div class="preview-window"><iframe src="open-sheet.html" title="Open sheet desktop layout preview" tabindex="-1" aria-hidden="true" loading="lazy"></iframe></div>
+      </article>
+      <article class="study">
+        <header class="study-head"><div><h2>Release sequence</h2><p>A stronger step-by-step path through the releases.</p></div><a class="open-link" href="release-sequence.html">Open layout</a></header>
+        <div class="preview-window"><iframe src="release-sequence.html" title="Release sequence desktop layout preview" tabindex="-1" aria-hidden="true" loading="lazy"></iframe></div>
+      </article>
+      <article class="study">
+        <header class="study-head"><div><h2>Plan beside editor</h2><p>Configuration sits beside a live plain-language summary.</p></div><a class="open-link" href="split-plan.html">Open layout</a></header>
+        <div class="preview-window"><iframe src="split-plan.html" title="Plan beside editor desktop layout preview" tabindex="-1" aria-hidden="true" loading="lazy"></iframe></div>
+      </article>
+    </section>
+  </main>
+</body>
+</html>

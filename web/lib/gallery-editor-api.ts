@@ -1,8 +1,8 @@
 import { relayFetch } from "./relay-api";
-import type { CommitReceipt, EditAction, EditorContext, EditorSession } from "../../src/gallery-editor/types";
+import type { CommitReceipt, EditAction, EditorContext, EditorPerformanceSubjectRef, EditorSession } from "../../src/gallery-editor/types";
 
-export type { CartItem, CommitReceipt, EditAction, EditorContext, EditorSession, NamingProvenance } from "../../src/gallery-editor/types";
-export interface LibraryEditorCapabilities { enabled: boolean; aiAvailable: boolean; notice: string }
+export type { CartItem, CommitReceipt, EditAction, EditorContext, EditorPerformanceSubjectRef, EditorSession, NamingProvenance } from "../../src/gallery-editor/types";
+export interface LibraryEditorCapabilities { enabled: boolean; aiAvailable: boolean; performance: { enabled: boolean; aiAvailable: boolean }; notice: string }
 const base = "/api/v1/gallery/editor";
 export function fetchLibraryEditorCapabilities(creatorId: string, signal?: AbortSignal): Promise<LibraryEditorCapabilities> {
   return relayFetch(`${base}/capabilities?creator_id=${encodeURIComponent(creatorId)}`, { signal });
@@ -16,8 +16,8 @@ export function fetchLibraryEditorSession(id: string): Promise<EditorSession> {
 export function reviseLibraryEditorSession(session: EditorSession, actions: EditAction[], context: EditorContext): Promise<EditorSession> {
   return relayFetch(`${base}/sessions/${encodeURIComponent(session.id)}`, { method: "PATCH", body: JSON.stringify({ revision: session.revision, actions, context }) });
 }
-export function sendLibraryEditorMessage(session: EditorSession, message: string, context: EditorContext): Promise<EditorSession> {
-  return relayFetch(`${base}/sessions/${encodeURIComponent(session.id)}/turn`, { method: "POST", body: JSON.stringify({ revision: session.revision, message, context }) });
+export function sendLibraryEditorMessage(session: EditorSession, message: string, context: EditorContext, performanceSubject?: EditorPerformanceSubjectRef, signal?: AbortSignal): Promise<EditorSession> {
+  return relayFetch(`${base}/sessions/${encodeURIComponent(session.id)}/turn`, { method: "POST", signal, body: JSON.stringify({ revision: session.revision, message, context, ...(performanceSubject ? { performanceSubject } : {}) }) });
 }
 export function applyLibraryEditorSession(session: EditorSession, idempotencyKey: string): Promise<{ receipt: CommitReceipt }> {
   return relayFetch(`${base}/sessions/${encodeURIComponent(session.id)}/apply`, { method: "POST", body: JSON.stringify({ revision: session.revision, idempotencyKey }) });

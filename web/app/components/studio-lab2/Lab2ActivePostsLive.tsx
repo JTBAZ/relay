@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState, type PointerEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent } from "react";
 import { useRouter } from "next/navigation";
 import BulkActionBar from "@/app/components/BulkActionBar";
 import GalleryGrid from "@/app/components/GalleryGrid";
@@ -21,6 +21,7 @@ import {
   collapsePostGroupsToGridCards
 } from "@/lib/active-post-linked-sets";
 import { galleryItemKey, groupGalleryItemsByPost } from "@/lib/gallery-group";
+import type { EditorContext } from "@/lib/gallery-editor-api";
 import {
   HERO_DEFAULT_RANGE,
   type HeroInspectKey
@@ -46,6 +47,12 @@ import { useStudioSession } from "@/lib/studio-session-context";
 import { useDebouncedValue } from "@/lib/use-debounced-value";
 
 const GALLERY_SEARCH_DEBOUNCE_MS = 320;
+
+export type Lab2EditorSelection = {
+  context: EditorContext;
+  selectedItems: GalleryItem[];
+  writeBlocked: boolean;
+};
 
 function SectionLabel({ children }: { children: React.ReactNode }) {
   return (
@@ -80,10 +87,12 @@ function galleryItemsToDistributionMedia(
  * presence chips, selection toolkit, and drilldowns.
  */
 export default function Lab2ActivePostsLive({
-  reloadToken = 0
+  reloadToken = 0,
+  onEditorContextChange
 }: {
   /** Bump after Patreon scrape / external library refresh. */
   reloadToken?: number;
+  onEditorContextChange?: (selection: Lab2EditorSelection) => void;
 }) {
   const router = useRouter();
   const { creatorId } = useStudioSession();
@@ -93,6 +102,8 @@ export default function Lab2ActivePostsLive({
   const [tierPick, setTierPick] = useState<string[]>([]);
   const [mediaTypes, setMediaTypes] = useState<MediaTypeValue[]>([]);
   const [items, setItems] = useState<GalleryItem[]>([]);
+  const [resolvedEditorPage, setResolvedEditorPage] = useState<Pick<EditorContext, "loadedPostIds" | "filters"> | null>(null);
+  const pageRequest = useRef(0);
   const [loading, setLoading] = useState(false);
   const [listError, setListError] = useState<string | null>(null);
   const [facets, setFacets] = useState<FacetsData>({
@@ -143,9 +154,12 @@ export default function Lab2ActivePostsLive({
   );
 
   const fetchPage = useCallback(async () => {
+    const request = ++pageRequest.current;
     const id = creatorId?.trim();
     if (!id) {
       setItems([]);
+      setResolvedEditorPage(null);
+      setLoading(false);
       return;
     }
     setLoading(true);
@@ -162,15 +176,23 @@ export default function Lab2ActivePostsLive({
         limit: 120
       });
       const data = await relayFetchWithoutAuthRedirect<GalleryListData>(path);
+      if (request !== pageRequest.current) return;
       setItems(data.items);
+      setResolvedEditorPage({
+        loadedPostIds: [...new Set(data.items.filter((item) =>
+          !item.shadow_cover && (!mediaTypes.length || mediaTypes.includes(item.mime_type?.split("/")[0] as MediaTypeValue))
+        ).map((item) => item.post_id))].slice(0, 100),
+        filters: { query: debouncedQ, tags: tagPick.join(","), tiers: tierPick.join(","), mediaTypes: mediaTypes.join(",") }
+      });
       setFocusIndex(-1);
     } catch (error) {
+      if (request !== pageRequest.current) return;
       setListError(error instanceof Error ? error.message : String(error));
       setItems([]);
     } finally {
-      setLoading(false);
+      if (request === pageRequest.current) setLoading(false);
     }
-  }, [creatorId, debouncedQ, mediaTypeQuery, tagPick, tierPick]);
+  }, [creatorId, debouncedQ, mediaTypeQuery, mediaTypes, tagPick, tierPick]);
 
   const fetchFacets = useCallback(async () => {
     const id = creatorId?.trim();
@@ -272,6 +294,28 @@ export default function Lab2ActivePostsLive({
       ),
     [selectedItems]
   );
+
+  const editorContext = useMemo<EditorContext>(
+    () => ({
+      selectedPostIds,
+      selectedMediaIds: [...new Set(selectedItems.map((item) => item.media_id))],
+      loadedPostIds: resolvedEditorPage?.loadedPostIds ?? [],
+      filters: resolvedEditorPage?.filters ?? { query: "", tags: "", tiers: "", mediaTypes: "" }
+    }),
+    [selectedPostIds, selectedItems, resolvedEditorPage]
+  );
+
+  const editorWriteBlocked = studioWriteBlocked || !resolvedEditorPage || loading || Boolean(listError) ||
+    q !== resolvedEditorPage.filters?.query || tagPick.join(",") !== resolvedEditorPage.filters?.tags ||
+    tierPick.join(",") !== resolvedEditorPage.filters?.tiers || mediaTypes.join(",") !== resolvedEditorPage.filters?.mediaTypes;
+
+  useEffect(() => {
+    onEditorContextChange?.({
+      context: editorContext,
+      selectedItems,
+      writeBlocked: editorWriteBlocked
+    });
+  }, [onEditorContextChange, editorContext, selectedItems, editorWriteBlocked]);
 
   const linkedSetCards = useMemo(
     () => collapsePostGroupsToGridCards(postGroups),

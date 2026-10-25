@@ -32,13 +32,15 @@ const IS_EXTENSION_DEV_BUILD = __EXT_ENV__ === "dev";
 
 /** Next.js web app (consent page, settings deep links). Dev: :3000; prod: relayapp.me. */
 
-export const RELAY_WEB_BASE = IS_EXTENSION_DEV_BUILD ? "http://localhost:3000" : RELAY_HOSTED;
+export const RELAY_WEB_BASE = IS_EXTENSION_DEV_BUILD ? "http://localhost:3000"
+  : __EXT_ENV__ === "staging" ? "https://staging.relayapp.me" : RELAY_HOSTED;
 
 
 
 /** Express API (extension bearer routes). Dev defaults to :8787 and supports a build-only local port override; prod: relayapp.me. */
 
-export const RELAY_API_BASE = IS_EXTENSION_DEV_BUILD ? `http://localhost:${__EXT_DEV_API_PORT__}` : RELAY_HOSTED;
+export const RELAY_API_BASE = IS_EXTENSION_DEV_BUILD ? `http://localhost:${__EXT_DEV_API_PORT__}`
+  : __EXT_ENV__ === "staging" ? "https://api.staging.relayapp.me" : RELAY_HOSTED;
 
 
 
@@ -46,3 +48,18 @@ export const RELAY_API_BASE = IS_EXTENSION_DEV_BUILD ? `http://localhost:${__EXT
 
 export const RELAY_BASE = RELAY_API_BASE;
 
+
+/** Match the selected build's externally-connectable Relay web origins. */
+export function relayWebOriginAllowed(url: string | undefined): boolean {
+  if (!url) return false;
+  if (__EXT_ENV__ === "staging") return url.startsWith("https://staging.relayapp.me/");
+  if (url.startsWith("https://relayapp.me/")) return true;
+  if (__EXT_ENV__ === "dev") return url.startsWith("http://localhost:") || url.startsWith("http://127.0.0.1:");
+  return false;
+}
+
+export function relayTabUrlPatterns(): string[] {
+  if (__EXT_ENV__ === "staging") return ["https://staging.relayapp.me/*"];
+  if (__EXT_ENV__ === "dev") return ["http://localhost/*", "http://127.0.0.1/*", "https://relayapp.me/*"];
+  return ["https://relayapp.me/*"];
+}

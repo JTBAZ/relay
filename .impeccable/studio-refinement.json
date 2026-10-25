@@ -1,0 +1,16 @@
+{
+  "title": "Open Studio, refined",
+  "question": "A larger chat invites the artist to give Relay a task. Current order has been removed; the gallery and monthly schedule retain their space. This is a design review sketch with sample content.",
+  "options": [{
+    "id": "open-studio-refined",
+    "kind": "assigned",
+    "label": "Open Studio · larger chat",
+    "thesis": "One generous rounded chat box above the gallery, with the monthly schedule on the right.",
+    "palette": ["#080c0a", "#111a15", "#a8edc9", "#e6eee9"],
+    "materials": ["compact artwork", "invitation-led chat", "simple composer"],
+    "viewport": "The chat fills the upper workspace. A file + sits at its bottom-left corner; the searchable gallery remains below.",
+    "risk": "A longer conversation will need a deliberate expansion behavior in a later iteration.",
+    "html": ".impeccable/mocks/decision/open-studio-refined.html"
+  }],
+  "steer": true
+}

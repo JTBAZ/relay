@@ -54,8 +54,13 @@ describe("PS13 cookie age and consent boundary", () => {
   });
   it("checks and status reads cannot prune expired cookie or renew a session", async () => {
     const { root, key, path, store } = await setup();
-    const { app } = createApp({ relay_token_encryption_key: key, patreon_client_id: "fixture", patreon_client_secret: "fixture",
+    const { app, identityService } = createApp({ relay_token_encryption_key: key, patreon_client_id: "fixture", patreon_client_secret: "fixture",
       credential_store_path: join(root, "tokens.json"), cookie_store_path: path, identity_store_path: join(root, "identity.json") });
+    const pendingTouches: Promise<void>[] = [];
+    const originalTouch = identityService.touchSessionExpiry.bind(identityService);
+    const touchSpy = vi.spyOn(identityService, "touchSessionExpiry").mockImplementation((token) => {
+      const pending = originalTouch(token); pendingTouches.push(pending); return pending;
+    });
     const registered = await request(app).post("/api/v1/identity/register").send({ creator_id: "creator", email: "fixture@example.com", password: "fixture-password", tier_ids: [] }).expect(201);
     await store.upsert("creator", "before");
     const raw = JSON.parse(await readFile(path, "utf8")); raw.records.creator.stored_at = "2020-01-01T00:00:00.000Z"; await writeFile(path, JSON.stringify(raw));
@@ -70,15 +75,22 @@ describe("PS13 cookie age and consent boundary", () => {
     expect(await readFile(path, "utf8")).toBe(beforeCookie);
     expect(await readFile(join(root, "identity.json"), "utf8")).toBe(beforeSession);
     const check = await request(app).post("/api/v1/patreon/cookie/check").set("Authorization", auth).send({ creator_id: "creator", installation_id: "installation" }).expect(200);
+    await Promise.all(pendingTouches);
     expect(check.body.data).toMatchObject({ status: "expired_local", requires_consent: true, stored_at: raw.records.creator.stored_at });
     expect(await readFile(path, "utf8")).toBe(beforeCookie);
     await request(app).post("/api/v1/patreon/cookie").set("Authorization", auth).send({ creator_id: "creator", installation_id: "installation", session_id: "must-not-resurrect" }).expect(409);
+    await Promise.all(pendingTouches);
     await request(app).post("/api/v1/patreon/cookie/check").set("Authorization", auth).send({ creator_id: "creator", installation_id: "other-installation" }).expect(403);
+    await Promise.all(pendingTouches);
     await request(app).post("/api/v1/patreon/cookie/check").send({ creator_id: "creator" }).expect(401);
+    // Earlier POST auth renewals must finish before this separate expired-read fixture is written.
+    await Promise.all(pendingTouches);
+    const touchCount = touchSpy.mock.calls.length;
     const expiredIdentity = JSON.parse(await readFile(join(root, "identity.json"), "utf8"));
     expiredIdentity.sessions[registered.body.data.token].expires_at = "2020-01-01T00:00:00.000Z";
     const expiredBytes = JSON.stringify(expiredIdentity); await writeFile(join(root, "identity.json"), expiredBytes);
     await request(app).get("/api/v1/patreon/cookie/status").query({ creator_id: "creator" }).set("Authorization", auth).expect(401);
+    expect(touchSpy).toHaveBeenCalledTimes(touchCount);
     expect(await readFile(join(root, "identity.json"), "utf8")).toBe(expiredBytes);
   });
 });

@@ -1,0 +1,42 @@
+import {readFileSync} from 'node:fs';
+import {Script,runInNewContext} from 'node:vm';
+import assert from 'node:assert/strict';
+const script=readFileSync('.impeccable/mocks/decision/modal-select-confirm.html','utf8').match(/<script>([\s\S]*?)<\/script>/)[1];
+new Script(script);
+const performance=script.slice(script.indexOf('const performanceFixtures='),script.indexOf('const performanceDialog='));
+const tree=script.slice(script.indexOf('const treeMemberFixtures='),script.indexOf("const workTree=$('work-tree')"));
+const cross=script.slice(script.indexOf('const crossPlatforms='),script.indexOf("const crosspostDialog=$('crosspost-dialog')"));
+const line=name=>script.split('\n').find(line=>line.startsWith('function '+name+'('));
+runInNewContext(`${performance}\n${tree}\n${cross}
+const scheduledPosts=new Map(),member=treeMembersFor(2)[0];
+const draft=crossDraftFor(2,member,'patreon');
+assert.equal(draft.delivery,'now');assert.deepEqual(Array.from(draft.selected),['patreon']);
+draft.captions.patreon='Patreon-specific rewrite';draft.edited.add('patreon');
+crossDraftFor(2,member,'bluesky');assert.deepEqual(Array.from(draft.selected),['bluesky']);
+draft.captions.bluesky='Bluesky version';
+crossDraftFor(2,member,'patreon');assert.deepEqual(Array.from(draft.selected),['patreon']);
+assert.equal(draft.captions.patreon,'Patreon-specific rewrite');
+crossDraftFor(2,member,'deviantart');assert.equal(draft.selected.size,0);assert.equal(draft.active,null);
+crossDraftFor(2,member,'x');assert.equal(draft.selected.size,0);assert.equal(draft.active,null);
+crossDraftFor(2,member,'patreon');
+const before=JSON.stringify(performancePostsFor(2)),review=buildCrosspostReview(2,member,draft);
+assert.equal(review.delivery,'now');assert.equal(review.targets.length,1);
+assert.equal(review.targets[0].platform,'Patreon');assert.equal(review.targets[0].caption,'Patreon-specific rewrite');
+assert.deepEqual(Array.from(review.targets[0].media),[0,2]);
+assert.equal(JSON.stringify(performancePostsFor(2)),before);assert.equal(scheduledPosts.size,0);
+draft.prepared.patreon=structuredClone(review.targets[0]);
+let crosspostState={workId:2,memberId:member.id};
+const currentCrossMember=()=>member,currentCrossDraft=()=>draft;
+const refreshPlatformUI=()=>{},renderCrosspost=()=>{},$=()=>({textContent:''});
+${line('setCrossPosted')}
+${line('undoCrossPosted')}
+setCrossPosted('patreon',true);setCrossPosted('patreon',true);
+const post=performancePostsFor(2).at(-1);
+assert.equal(post.source,'Simulated publish · sample');assert.equal(post.caption,review.targets[0].caption);
+assert.equal(post.metrics.likes,null);assert.equal(scheduledPosts.size,0);
+assert.equal(performancePostsFor(2).length,2);assert.equal(memberPresence(2,member,'patreon').state,'posted');
+undoCrossPosted('patreon');assert.equal(JSON.stringify(performancePostsFor(2)),before);
+assert.equal(draft.captions.patreon,'Patreon-specific rewrite');assert.equal(draft.media.size,2);
+draft.captions.patreon='';assert.match(buildCrosspostReview(2,member,draft).error,/caption/);
+`,{assert,Intl,structuredClone,works:[{art:'a'},{art:'b'},{art:'c'}]});
+console.log('Focused cross-poster: single destination, per-platform edits, exact Now payload, simulated publication, duplicate guard and Undo passed.');

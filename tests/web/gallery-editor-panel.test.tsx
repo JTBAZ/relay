@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import LibraryEditorPanel from "../../web/app/components/studio/LibraryEditorPanel";
 import type { CommitReceipt, EditAction, EditorSession } from "../../src/gallery-editor/types";
+import type { PiecePerformanceAnswer } from "../../src/analytics/piece-performance-findings";
 import type { GalleryItem } from "../../web/lib/relay-api";
 
 const api = vi.hoisted(() => ({
@@ -42,7 +43,7 @@ beforeEach(() => {
   api.applyLibraryEditorSession.mockImplementation(async () => { current = { ...fixtureSession(), lastReceipt: receipt }; return { receipt }; });
   api.undoLibraryEditorCommit.mockImplementation(async () => ({ receipt: { ...receipt, reversedAt: "2026-10-11T01:00:00Z" } }));
 });
-afterEach(cleanup);
+afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
 describe("Library editor panel", () => {
   it("rebuilds a conflicting preview while preserving the authoritative cart", async () => {
@@ -146,8 +147,166 @@ describe("Library editor panel", () => {
     fireEvent.change(screen.getByLabelText("What would you like to change?"), { target: { value: "Rename the old shared title" } });
     fireEvent.click(screen.getByRole("button", { name: "Propose changes" }));
     await screen.findByText("Which of the two historical titles do you mean?");
-    expect(api.sendLibraryEditorMessage).toHaveBeenCalledWith(expect.objectContaining({ id: "session1" }), "Rename the old shared title", context);
+    expect(api.sendLibraryEditorMessage).toHaveBeenCalledWith(expect.objectContaining({ id: "session1" }), "Rename the old shared title", context, undefined, expect.any(AbortSignal));
     expect(api.applyLibraryEditorSession).not.toHaveBeenCalled();
+  });
+
+  it("freezes a one-post subject across duplicate media and selection changes while Send is pending", async () => {
+    const twoPosts = { ...context, selectedPostIds: ["post1"], selectedMediaIds: ["media1", "media2"] };
+    const items = [selectedItems[0]!, { ...selectedItems[0]!, media_id: "media2" }];
+    api.fetchLibraryEditorCapabilities.mockResolvedValue({ enabled: true, aiAvailable: true, performance: { enabled: true, aiAvailable: true }, notice });
+    let resolveTurn!: (value: EditorSession) => void;
+    api.sendLibraryEditorMessage.mockImplementationOnce(() => new Promise<EditorSession>((resolve) => { resolveTurn = resolve; }));
+    const view = render(<LibraryEditorPanel creatorId="alice" inline context={twoPosts} selectedItems={items} onChanged={onChanged} />);
+    await waitFor(() => expect(api.createLibraryEditorSession).toHaveBeenCalled());
+    await waitFor(() => expect(screen.queryByText("Loading draft…")).toBeNull());
+    fireEvent.change(screen.getByLabelText("Performance scope"), { target: { value: "post" } });
+    fireEvent.change(screen.getByLabelText("Your request"), { target: { value: "Show performance" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send request" }));
+    await waitFor(() => expect(api.sendLibraryEditorMessage).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect((screen.getByRole("button", { name: "Send request" }) as HTMLButtonElement).disabled).toBe(true));
+    fireEvent.click(screen.getByRole("button", { name: "Send request" }));
+    expect(api.sendLibraryEditorMessage).toHaveBeenCalledTimes(1);
+    expect(api.sendLibraryEditorMessage.mock.calls[0][2]).toEqual(twoPosts);
+    expect(api.sendLibraryEditorMessage.mock.calls[0][3]).toEqual({ kind: "post", id: "post1" });
+    const signal = api.sendLibraryEditorMessage.mock.calls[0][4] as AbortSignal;
+    view.rerender(<LibraryEditorPanel creatorId="alice" inline context={{ ...context, selectedPostIds: ["post2"] }} selectedItems={[{ ...selectedItems[0]!, post_id: "post2" }]} onChanged={onChanged} />);
+    resolveTurn({ ...fixtureSession(), revision: 2, messages: [{ role: "assistant", text: "Saved answer for post1" }] });
+    await screen.findByText("Saved answer for post1");
+    const composer = screen.getByLabelText("Your request") as HTMLTextAreaElement;
+    await waitFor(() => expect(document.activeElement).toBe(composer));
+    expect(composer.disabled).toBe(false);
+    expect(signal.aborted).toBe(false);
+    expect(api.applyLibraryEditorSession).not.toHaveBeenCalled();
+  });
+
+  it("uses the explicit work scope only when selected anchors share one work", async () => {
+    const workContext = { ...context, selectedPostIds: ["post1", "post2"] };
+    const workItems = [selectedItems[0]!, { ...selectedItems[0]!, post_id: "post2", media_id: "media2" }];
+    api.fetchLibraryEditorCapabilities.mockResolvedValue({ enabled: true, aiAvailable: true, performance: { enabled: true, aiAvailable: true }, notice });
+    render(<LibraryEditorPanel creatorId="alice" inline context={workContext} selectedItems={workItems} onChanged={onChanged} />);
+    await waitFor(() => expect(api.createLibraryEditorSession).toHaveBeenCalled());
+    await waitFor(() => expect(screen.queryByText("Loading draft…")).toBeNull());
+    fireEvent.change(screen.getByLabelText("Performance scope"), { target: { value: "work" } });
+    fireEvent.change(screen.getByLabelText("Your request"), { target: { value: "Compare this work" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send request" }));
+    await waitFor(() => expect(api.sendLibraryEditorMessage).toHaveBeenCalled());
+    expect(api.sendLibraryEditorMessage.mock.calls[0][3]).toEqual({ kind: "work", id: "work1" });
+    expect(api.sendLibraryEditorMessage.mock.calls[0][2].selectedPostIds).toEqual(["post1", "post2"]);
+  });
+
+  it("keeps a failed request in the composer and restores focus", async () => {
+    api.fetchLibraryEditorCapabilities.mockResolvedValue({ enabled: true, aiAvailable: true, performance: { enabled: true, aiAvailable: true }, notice });
+    api.sendLibraryEditorMessage.mockRejectedValueOnce(new Error("The request could not be sent."));
+    render(<LibraryEditorPanel creatorId="alice" inline context={context} selectedItems={selectedItems} onChanged={onChanged} />);
+    await waitFor(() => expect(api.createLibraryEditorSession).toHaveBeenCalled());
+    const composer = screen.getByLabelText("Your request") as HTMLTextAreaElement;
+    fireEvent.change(composer, { target: { value: "How did this post perform?" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send request" }));
+    await screen.findByText("The request could not be sent.");
+    await waitFor(() => expect(document.activeElement).toBe(composer));
+    expect(composer.value).toBe("How did this post perform?");
+    expect(composer.closest(".studio-composer")?.querySelector('[role="alert"]')?.textContent).toContain("The request could not be sent.");
+  });
+
+  it("scrolls only to a newly appended performance answer header and respects reduced motion", async () => {
+    const answer = {
+      v: 1, kind: "piece_performance", report_id: "new-report", status: "no_data",
+      subject: { kind: "post", id: "post1", title: "Old title", post_ids: ["post1"] },
+      as_of: "2026-10-22T12:00:00.000Z", range: "30d", time_range: { start: "2026-09-22T12:00:00.000Z", end: "2026-10-22T12:00:00.000Z" }, destination: null,
+      metrics: [], coverage: [], source_failures: [], findings: [], summary: "New recorded answer.",
+      synthesis: { status: "deterministic", reason: "no_data" }, links: [{ kind: "view_analytics", href: "/studio/analytics" }]
+    } as PiecePerformanceAnswer;
+    api.fetchLibraryEditorCapabilities.mockResolvedValue({ enabled: true, aiAvailable: true, performance: { enabled: true, aiAvailable: true }, notice });
+    api.sendLibraryEditorMessage.mockImplementationOnce(async (session: EditorSession, message: string) => ({
+      ...session, revision: session.revision + 1,
+      messages: [...session.messages, { role: "user", text: message }, { role: "assistant", text: answer.summary, performanceAnswer: answer }]
+    }));
+    vi.spyOn(window, "matchMedia").mockReturnValue({ matches: true, media: "(prefers-reduced-motion: reduce)" } as MediaQueryList);
+    const view = render(<LibraryEditorPanel creatorId="alice" inline context={context} selectedItems={selectedItems} onChanged={onChanged} />);
+    await waitFor(() => expect(api.createLibraryEditorSession).toHaveBeenCalled());
+    await waitFor(() => expect(screen.queryByText("Loading draft…")).toBeNull());
+    const scrollContainer = view.container.querySelector(".studio-conversation-scroll") as HTMLDivElement;
+    const scrollTo = vi.fn();
+    Object.defineProperty(scrollContainer, "scrollTo", { configurable: true, value: scrollTo });
+    Object.defineProperty(scrollContainer, "scrollTop", { configurable: true, value: 40, writable: true });
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function () {
+      if ((this as HTMLElement).dataset.performanceReport === "new-report") return { top: 1325 } as DOMRect;
+      if ((this as HTMLElement).classList.contains("studio-conversation-scroll")) return { top: 56 } as DOMRect;
+      return { top: 0 } as DOMRect;
+    });
+
+    fireEvent.change(screen.getByLabelText("Your request"), { target: { value: "Show performance" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send request" }));
+    await waitFor(() => expect(scrollTo).toHaveBeenCalledWith({ top: 1309, behavior: "auto" }));
+    view.rerender(<LibraryEditorPanel creatorId="alice" inline context={{ ...context, filters: { query: "changed", includeHidden: false } }} selectedItems={selectedItems} onChanged={onChanged} />);
+    expect(scrollTo).toHaveBeenCalledTimes(1);
+  });
+
+  it("renders a structured performance answer restored from the saved session", async () => {
+    const savedAnswer = {
+      v: 1, kind: "piece_performance", report_id: "r1", status: "no_data",
+      subject: { kind: "post", id: "post1", title: "Old title", post_ids: ["post1"] },
+      as_of: "2026-10-22T12:00:00.000Z", range: "30d", time_range: { start: "2026-09-22T12:00:00.000Z", end: "2026-10-22T12:00:00.000Z" }, destination: null,
+      metrics: [], coverage: [], source_failures: [], findings: [], summary: "No recorded observations were available.",
+      synthesis: { status: "deterministic", reason: "no_data" }, links: [{ kind: "view_analytics", href: "/studio/analytics" }]
+    } as PiecePerformanceAnswer;
+    current = { ...fixtureSession(), messages: [{ role: "assistant", text: savedAnswer.summary, performanceAnswer: savedAnswer }] };
+    api.fetchLibraryEditorCapabilities.mockResolvedValue({ enabled: true, aiAvailable: true, performance: { enabled: true, aiAvailable: true }, notice });
+    render(<LibraryEditorPanel creatorId="alice" inline context={context} selectedItems={selectedItems} onChanged={onChanged} />);
+    await screen.findByText("No recorded observations were available.");
+    expect(screen.getByText("Old title")).toBeTruthy();
+    expect(screen.getByText(/30d/)).toBeTruthy();
+    expect(screen.queryByText("AI summary is unavailable; recorded facts are shown below.")).toBeNull();
+    expect(api.sendLibraryEditorMessage).not.toHaveBeenCalled();
+  });
+
+  it("ignores a late rejection from a previous creator lifecycle after A to B to A", async () => {
+    api.fetchLibraryEditorCapabilities.mockResolvedValue({ enabled: true, aiAvailable: true, performance: { enabled: true, aiAvailable: true }, notice });
+    let rejectOld!: (reason: Error) => void;
+    api.sendLibraryEditorMessage.mockImplementationOnce(() => new Promise<EditorSession>((_resolve, reject) => { rejectOld = reject; }));
+    const view = render(<LibraryEditorPanel creatorId="alice" inline context={context} selectedItems={selectedItems} onChanged={onChanged} />);
+    await waitFor(() => expect(api.createLibraryEditorSession).toHaveBeenCalled());
+    fireEvent.change(screen.getByLabelText("Your request"), { target: { value: "First turn" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send request" }));
+    await waitFor(() => expect(api.sendLibraryEditorMessage).toHaveBeenCalledTimes(1));
+    const oldSignal = api.sendLibraryEditorMessage.mock.calls[0][4] as AbortSignal;
+    view.rerender(<LibraryEditorPanel creatorId="bob" inline context={context} selectedItems={selectedItems} onChanged={onChanged} />);
+    view.rerender(<LibraryEditorPanel creatorId="alice" inline context={context} selectedItems={selectedItems} onChanged={onChanged} />);
+    await waitFor(() => expect(oldSignal.aborted).toBe(true));
+    await waitFor(() => expect(api.createLibraryEditorSession.mock.calls.some((call) => call[0] === "alice")).toBe(true));
+    fireEvent.change(screen.getByLabelText("Your request"), { target: { value: "Current turn" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send request" }));
+    await waitFor(() => expect(api.sendLibraryEditorMessage).toHaveBeenCalledTimes(2));
+    rejectOld(new Error("stale failure"));
+    await screen.findByText("Which of the two historical titles do you mean?");
+    expect(screen.queryByText("stale failure")).toBeNull();
+  });
+
+  it("does not accept a delayed saved-session response from an earlier creator lifecycle", async () => {
+    let resolveOld!: (value: EditorSession) => void;
+    api.createLibraryEditorSession.mockImplementationOnce(() => new Promise<EditorSession>((resolve) => { resolveOld = resolve; }));
+    api.createLibraryEditorSession.mockImplementation(async (owner: string) => ({ ...fixtureSession(), creatorId: owner, messages: [{ role: "assistant", text: "Fresh session" }] }));
+    const view = render(<LibraryEditorPanel creatorId="alice" inline context={context} selectedItems={selectedItems} onChanged={onChanged} />);
+    await waitFor(() => expect(api.createLibraryEditorSession).toHaveBeenCalledTimes(1));
+    view.rerender(<LibraryEditorPanel creatorId="bob" inline context={context} selectedItems={selectedItems} onChanged={onChanged} />);
+    view.rerender(<LibraryEditorPanel creatorId="alice" inline context={context} selectedItems={selectedItems} onChanged={onChanged} />);
+    await screen.findByText("Fresh session");
+    resolveOld({ ...fixtureSession(), messages: [{ role: "assistant", text: "Stale session" }] });
+    await waitFor(() => expect(screen.queryByText("Stale session")).toBeNull());
+    expect(screen.getByText("Fresh session")).toBeTruthy();
+  });
+
+  it("hydrates creator prompts before persisting when switching between studios", async () => {
+    localStorage.setItem("relay.lab2.prompt:alice", "Alice saved prompt");
+    localStorage.setItem("relay.lab2.prompt:bob", "Bob saved prompt");
+    api.fetchLibraryEditorCapabilities.mockResolvedValue({ enabled: true, aiAvailable: true, performance: { enabled: true, aiAvailable: true }, notice });
+    const view = render(<LibraryEditorPanel creatorId="alice" inline context={context} selectedItems={selectedItems} onChanged={onChanged} />);
+    await waitFor(() => expect((screen.getByLabelText("Your request") as HTMLTextAreaElement).value).toBe("Alice saved prompt"));
+    view.rerender(<LibraryEditorPanel creatorId="bob" inline context={context} selectedItems={selectedItems} onChanged={onChanged} />);
+    await waitFor(() => expect((screen.getByLabelText("Your request") as HTMLTextAreaElement).value).toBe("Bob saved prompt"));
+    expect(localStorage.getItem("relay.lab2.prompt:alice")).toBe("Alice saved prompt");
+    expect(localStorage.getItem("relay.lab2.prompt:bob")).toBe("Bob saved prompt");
   });
 });
 

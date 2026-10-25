@@ -19,7 +19,7 @@ describe("mergePreviewMediaPickerOptions", () => {
           content_url_path: "/export/main/content",
           preview_url_path: "",
           thumb_url_path: "/export/main/thumb",
-          visibility: "public",
+          visibility: "visible",
           collection_ids: [],
           collection_theme_tag_ids: []
         }
@@ -57,7 +57,7 @@ describe("mergePreviewMediaPickerOptions", () => {
           content_url_path: "/export/library/content",
           preview_url_path: "",
           thumb_url_path: "/export/library/thumb",
-          visibility: "public",
+          visibility: "visible",
           collection_ids: [],
           collection_theme_tag_ids: []
         }

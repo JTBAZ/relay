@@ -26,6 +26,7 @@ const sampleProfile: PatronProfileMe = {
   notification_digest_cadence: "weekly",
   notification_digest_slot: "evening",
   notification_digest_timezone: null,
+  hide_mature_content: false,
 };
 
 describe("fetchPatronProfileMe", () => {

@@ -2,7 +2,7 @@ import { buildSync } from "esbuild";
 import { runInNewContext } from "node:vm";
 import { describe, expect, it } from "vitest";
 
-function reminderBuild(env: "dev" | "prod") {
+function reminderBuild(env: "dev" | "prod" | "staging") {
   const result = buildSync({
     stdin: { contents: `
       export { RELAY_WEB_HOSTS, isInjectEligibleHost } from "./extension/src/lib/schedule-reminder-types";
@@ -17,17 +17,19 @@ function reminderBuild(env: "dev" | "prod") {
     typeof import("../../extension/src/lib/goal-cycle-reminder");
 }
 
-describe.each(["dev", "prod"] as const)("%s reminder build origins", (env) => {
+describe.each(["dev", "prod", "staging"] as const)("%s reminder build origins", (env) => {
   it("keeps local injection and Relay deep links exclusive to development", () => {
     const reminder = reminderBuild(env);
     expect([...reminder.RELAY_WEB_HOSTS]).toEqual(env === "dev"
-      ? ["localhost", "127.0.0.1", "relayapp.me"] : ["relayapp.me"]);
+      ? ["localhost", "127.0.0.1", "relayapp.me"] : env === "staging" ? ["staging.relayapp.me"] : ["relayapp.me"]);
     for (const host of ["localhost", "127.0.0.1"]) {
       expect(reminder.isInjectEligibleHost(host)).toBe(env === "dev");
       expect(reminder.isAllowedGoalCycleDeepLink(`http://${host}:3000/studio`, null)).toBe(env === "dev");
     }
-    expect(reminder.isInjectEligibleHost("relayapp.me")).toBe(true);
-    expect(reminder.isAllowedGoalCycleDeepLink("https://relayapp.me/studio", null)).toBe(true);
+    expect(reminder.isInjectEligibleHost("relayapp.me")).toBe(env !== "staging");
+    expect(reminder.isInjectEligibleHost("staging.relayapp.me")).toBe(true);
+    expect(reminder.isAllowedGoalCycleDeepLink("https://relayapp.me/studio", null)).toBe(env !== "staging");
+    expect(reminder.isAllowedGoalCycleDeepLink("https://staging.relayapp.me/studio", null)).toBe(true);
     expect(reminder.isInjectEligibleHost("www.patreon.com")).toBe(true);
     expect(reminder.isAllowedGoalCycleDeepLink("https://www.patreon.com/posts/12", "patreon")).toBe(true);
     expect(reminder.isInjectEligibleHost("relayapp.me.attacker.example")).toBe(false);

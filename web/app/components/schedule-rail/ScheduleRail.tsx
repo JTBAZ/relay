@@ -56,6 +56,7 @@ function dayOfEvent(event: ScheduleEvent | ReadyItem, timeZone: string): number 
 }
 
 interface ScheduleRailProps {
+  calendarView?: boolean;
   data: ScheduleData;
   onDataChange: (data: ScheduleData) => void;
   remindersGlobal: boolean;
@@ -215,6 +216,7 @@ export function ScheduleRail({
   highlightEventIds = [],
   onFocusEventConsumed,
   corridorArmed = false,
+  calendarView = false,
   widthPx,
 }: ScheduleRailProps) {
   const railWidth = widthPx ?? SCHEDULE_RAIL_WIDTH_PX;
@@ -427,7 +429,8 @@ export function ScheduleRail({
       const row = dayRowRefs.current.get(todayDay);
       if (row) {
         scrolledToTodayRef.current = true;
-        row.scrollIntoView({ behavior: "smooth", block: "center" });
+        const list = dayListRef.current;
+        if (list) list.scrollTo({ top: list.scrollTop + row.getBoundingClientRect().top - list.getBoundingClientRect().top - list.clientHeight / 2 + row.clientHeight / 2, behavior: window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches ? "auto" : "smooth" });
         return;
       }
       if (attempts < 8) {
@@ -472,7 +475,8 @@ export function ScheduleRail({
     const startTimer = window.setTimeout(() => {
       if (day != null && Number.isFinite(day)) {
         const row = dayRowRefs.current.get(day);
-        row?.scrollIntoView({ behavior: scrollBehavior, block: "center" });
+        const list = dayListRef.current;
+        if (row && list) list.scrollTo({ top: list.scrollTop + row.getBoundingClientRect().top - list.getBoundingClientRect().top - list.clientHeight / 2 + row.clientHeight / 2, behavior: scrollBehavior });
         setPulseDay(day);
       }
       setPopSliceId(event.id);
@@ -1039,7 +1043,7 @@ export function ScheduleRail({
         ) : null}
 
         {/* Month axis */}
-        <div ref={dayListRef} className={`min-h-0 flex-1 overflow-y-auto ${isRitual ? "px-3 py-2" : "px-2 py-3"}`}>
+        <div ref={dayListRef} data-schedule-day-list data-calendar-view={calendarView ? "true" : undefined} className={`min-h-0 flex-1 overflow-y-auto ${isRitual ? "px-3 py-2" : "px-2 py-3"}`}>
           {!isRitual ? (
             <div className="flex items-center justify-between px-3 pb-3">
               <span className="text-[9px] font-medium uppercase tracking-[0.16em] text-[#68706c]">
@@ -1059,6 +1063,7 @@ export function ScheduleRail({
             />
           ) : null}
 
+          {calendarView ? <div className="studio-calendar-weekdays">{["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((name) => <span key={name}>{name}</span>)}</div> : null}
           {days.map((day) => {
             const eventsForDay = byDay[day] ?? [];
             const isToday = todayDay > 0 && day === todayDay;
@@ -1126,6 +1131,8 @@ export function ScheduleRail({
               return (
                 <div
                   key={day}
+                  data-schedule-day={day}
+                  style={calendarView && day === 1 ? { gridColumnStart: (new Date(`${data.month}-01T00:00:00Z`).getUTCDay() + 6) % 7 + 1 } : undefined}
                   ref={(el) => {
                     if (el) dayRowRefs.current.set(day, el);
                     else dayRowRefs.current.delete(day);

@@ -285,7 +285,7 @@ describe("StudioLab2Chassis (Phase 3 live bay + rail + nav)", () => {
     expect(screen.getByText("drag to schedule →")).toBeTruthy();
     expect(screen.getByLabelText("Add files")).toBeTruthy();
     expect(document.querySelector("[data-import-bay]")?.getAttribute("data-variant")).toBe(
-      "studio"
+      "conversation"
     );
     expect(screen.getByText("Active Posts")).toBeTruthy();
     expect(screen.getByLabelText("Scheduler")).toBeTruthy();

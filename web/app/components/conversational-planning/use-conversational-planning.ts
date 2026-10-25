@@ -34,7 +34,6 @@ function detailError(error: unknown): "stale_source" | "forbidden" | "unavailabl
   if ((error instanceof RelayApiError && error.status === 404) || (error instanceof RelayServerError && error.status === 503)) return "unavailable";
   return "other";
 }
-const emptyList = (): PlanListView => ({ kind: "ready", items: [], nextCursor: null, loadingMore: false, loadMoreError: null });
 
 export function useConversationalPlanning(input: PlanningControllerInput) {
   const identity = `${input.creatorId}\u0000${input.studioIdFromSession}\u0000${input.sessionReady}`;

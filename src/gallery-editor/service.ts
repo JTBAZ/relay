@@ -5,6 +5,8 @@ import { buildChangeCart, clone, dependencies, fingerprint, loadEditorState, row
 import type { PostPresentationUpsertPayload } from "../gallery/post-presentation-mutate.js";
 import { mergeCartPatch, type CartPatch } from './cart-patch.js';
 import { previewCopy, receiptCopy } from './factual-copy.js';
+import { readPiecePerformanceBinding, type PiecePerformanceBinding, type PiecePerformanceBindingRequest } from "../analytics/piece-performance-facts.js";
+import { renderPiecePerformanceAnswerText, validatePiecePerformanceAnswer, type PiecePerformanceAnswer } from "../analytics/piece-performance-findings.js";
 
 const json = (value: unknown) => clone(value) as Prisma.InputJsonValue;
 const WRITABLE: Table[] = ["series", "works", "seriesMembers", "workMembers", "presentations", "overrides", "collections", "collectionPosts"];
@@ -35,6 +37,7 @@ export async function persistEditorState(db:EditorDb,before:EditorState,after:Ed
 }
 function checkRevision(actual:number,expected:number){if(!Number.isInteger(expected)||actual!==expected)throw new EditorError("STALE_CART","The cart changed. Reload it before applying or editing.",409);}
 function checkDependencies(expected:Record<string,string>,state:EditorState){if(fingerprint(expected)!==fingerprint(dependencies(state)))throw new EditorError("STALE_PREVIEW","Related content changed since this preview. Refresh the cart before applying.",409);}
+function samePerformanceSubject(a:PiecePerformanceBinding["subject"],b:PiecePerformanceBinding["subject"]):boolean{return a.kind===b.kind&&a.id===b.id&&a.title===b.title&&a.post_ids.length===b.post_ids.length&&a.post_ids.every((id,index)=>id===b.post_ids[index]);}
 export async function serializable<T>(prisma:PrismaClient,fn:(tx:Prisma.TransactionClient)=>Promise<T>):Promise<T>{
   for(let attempt=0;;attempt++)try{return await prisma.$transaction(fn,{isolationLevel:Prisma.TransactionIsolationLevel.Serializable,maxWait:5000,timeout:20000});}catch(error){
     if(isRetryableTransactionError(error)&&attempt<2)continue;
@@ -53,7 +56,26 @@ export function isRetryableTransactionError(error:unknown):boolean{
   return inspect(error,0);
 }
 function sessionWire(row:{id:string;creatorId:string;revision:number;context:unknown;messages:unknown;cart:unknown}):EditorSession{
-  return {id:row.id,creatorId:row.creatorId,revision:row.revision,context:row.context as EditorContext,messages:row.messages as EditorSession["messages"],cart:row.cart as ChangeCart};
+  const rawMessages = Array.isArray(row.messages) ? row.messages : [];
+  const messages: EditorSession["messages"] = [];
+  for (const raw of rawMessages) {
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) continue;
+    const item = raw as Record<string, unknown>;
+    if ((item.role !== "user" && item.role !== "assistant") || typeof item.text !== "string") continue;
+    if (item.role === "assistant") {
+      const message: Extract<EditorSession["messages"][number], { role: "assistant" }> = { role: "assistant", text: item.text };
+      if (Object.hasOwn(item, "performanceAnswer")) {
+        if (validatePiecePerformanceAnswer(item.performanceAnswer)) {
+          message.performanceAnswer = item.performanceAnswer;
+          message.text = renderPiecePerformanceAnswerText(item.performanceAnswer);
+        } else message.text = "This saved performance answer could not be verified. Ask again to load the latest evidence.";
+      }
+      messages.push(message);
+    } else {
+      messages.push({ role: "user", text: item.text });
+    }
+  }
+  return {id:row.id,creatorId:row.creatorId,revision:row.revision,context:row.context as EditorContext,messages,cart:row.cart as ChangeCart};
 }
 /** Caller supplies committed snapshots and the existing transaction; never starts a nested transaction. */
 export async function recordManualStateChange(tx:Prisma.TransactionClient,input:{creatorId:string;actorId:string;before:EditorState;after:EditorState;actions:EditAction[];scope:string}):Promise<CommitReceipt>{
@@ -136,6 +158,34 @@ export class GalleryEditorService {
       const changed=await tx.galleryEditorSession.updateMany({where:{id,creatorId,actorId,revision},data:{revision:next,cart:json(cart),context:json(ctx),...(messages?{messages:json(messages.slice(-40))}:{})}});
       if(changed.count!==1)throw new EditorError("STALE_CART","The cart was edited in another tab.",409);
       return this.read(creatorId,actorId,id,tx);
+    });
+  }
+  async appendPerformanceTurn(creatorId:string,actorId:string,id:string,input:{revision:number;context:EditorContext;userText:string;assistantText:string;performanceAnswer?:PiecePerformanceAnswer;bindingRequest?:PiecePerformanceBindingRequest;binding?:PiecePerformanceBinding;signal?:AbortSignal}):Promise<EditorSession>{
+    if(input.performanceAnswer&&!validatePiecePerformanceAnswer(input.performanceAnswer))throw new EditorError("INVALID_PERFORMANCE_ANSWER","The performance answer could not be verified.",422);
+    if(!input.userText.trim()||input.userText.length>20000||!input.assistantText.trim()||(input.performanceAnswer?input.assistantText!==renderPiecePerformanceAnswerText(input.performanceAnswer)||Buffer.byteLength(input.assistantText,"utf8")>64*1024:input.assistantText.length>20000))throw new EditorError("INVALID_PERFORMANCE_ANSWER","The performance answer could not be verified.",422);
+    if(input.performanceAnswer&&(!input.bindingRequest||!input.binding))throw new EditorError("PERFORMANCE_SUBJECT_CHANGED","The selected piece could not be verified. Ask again.",409);
+    return serializable(this.prisma,async tx=>{
+      if(input.signal?.aborted)throw new EditorError("intent_aborted","The editor request was canceled.",408);
+      const session=await this.read(creatorId,actorId,id,tx);checkRevision(session.revision,input.revision);
+      if(input.context.selectedPostIds.length){
+        const count=await tx.post.count({where:{creatorId,id:{in:input.context.selectedPostIds}}});
+        if(count!==new Set(input.context.selectedPostIds).size)throw new EditorError("INVALID_TARGET","Selection contains unavailable posts.",404);
+      }
+      if(input.bindingRequest&&input.binding){
+        const current=await readPiecePerformanceBinding(tx,creatorId,input.bindingRequest);
+        if(!current.ok||current.binding.subject_fingerprint!==input.binding.subject_fingerprint||!samePerformanceSubject(current.binding.subject,input.binding.subject))throw new EditorError("PERFORMANCE_SUBJECT_CHANGED","The selected piece changed while the answer was being prepared. Ask again.",409);
+        if(input.performanceAnswer&&!samePerformanceSubject(current.binding.subject,input.performanceAnswer.subject))throw new EditorError("PERFORMANCE_SUBJECT_CHANGED","The saved answer does not match the selected piece. Ask again.",409);
+      }
+      if(input.signal?.aborted)throw new EditorError("intent_aborted","The editor request was canceled.",408);
+      const context={...input.context,...(session.context.conversation?{conversation:session.context.conversation}:{})};
+      const assistant:EditorSession["messages"][number]={role:"assistant",text:input.assistantText,...(input.performanceAnswer?{performanceAnswer:input.performanceAnswer}:{})};
+      const messages=[...session.messages,{role:"user" as const,text:input.userText},assistant].slice(-40);
+      const changed=await tx.galleryEditorSession.updateMany({where:{id,creatorId,actorId,revision:input.revision},data:{revision:input.revision+1,context:json(context),messages:json(messages)}});
+      if(input.signal?.aborted)throw new EditorError("intent_aborted","The editor request was canceled.",408);
+      if(changed.count!==1)throw new EditorError("STALE_CART","The session changed in another tab.",409);
+      const saved=await this.read(creatorId,actorId,id,tx);
+      if(input.signal?.aborted)throw new EditorError("intent_aborted","The editor request was canceled.",408);
+      return saved;
     });
   }
   async apply(creatorId:string,actorId:string,id:string,revision:number,idempotencyKey:string,origin?:string,contextAfterApply?:(receipt:CommitReceipt,session:EditorSession)=>EditorContext):Promise<CommitReceipt>{

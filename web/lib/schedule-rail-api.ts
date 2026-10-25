@@ -27,6 +27,7 @@ export async function fetchScheduleRail(params?: {
 }
 
 export type CreateScheduledPostBody = {
+  draft_id?: string;
   title?: string;
   scheduled_for: string;
   destination?: Destination;
